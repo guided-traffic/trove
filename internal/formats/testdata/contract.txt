@@ -23,6 +23,7 @@ formats.CacheStatus: field Stored bool
 formats.CacheStatus: field TTL time.Duration
 formats.Capabilities: field ItemsRestorer ItemsRestorer
 formats.Capabilities: field Remote RemoteCaps
+formats.Capabilities: field Vulnerability VulnerabilityAdapter
 formats.Class: alias catalog.Class
 formats.Client: field DisplayName string
 formats.Client: field ID string
@@ -156,6 +157,7 @@ formats.Host: method Remote() RemoteFetcher
 formats.Host: method Renditions() RenditionCache
 formats.Host: method Resolver() Resolver
 formats.Host: method RestoredAt(context.Context) (time.Time, error)
+formats.Host: method Vulnerabilities() VulnerabilityData
 formats.Host: method Write(context.Context, *Request, func(Tx, PackageWriter) error) error
 formats.ID: alias catalog.ID
 formats.IngestOptions: field Expect Digests
@@ -452,6 +454,16 @@ formats.VirtualAdapter: method Merge(context.Context, *Request, Path, []MemberDo
 formats.VirtualAdapter: method Strategy(Path) Strategy
 formats.VirtualPlan: field Admitted bool
 formats.VirtualPlan: field Members []PlannedMember
+formats.VulnerabilityAdapter: method AdvisoryName(string) (string, bool)
+formats.VulnerabilityAdapter: method AdvisoryVersion(string) (string, bool)
+formats.VulnerabilityAdapter: method CompareVersions(string, string) (int, error)
+formats.VulnerabilityAdapter: method Ecosystem() string
+formats.VulnerabilityData: method Affects(VulnerabilityAdapter, advisory.Affected, string) match.Result
+formats.VulnerabilityData: method All(context.Context, string) ([]advisory.Advisory, error)
+formats.VulnerabilityData: method CountAudit(ID, string, string)
+formats.VulnerabilityData: method ForNames(context.Context, string, []string) (map[string][]advisory.Advisory, error)
+formats.VulnerabilityData: method InternalNames(context.Context, ID, []string) (map[string]bool, error)
+formats.VulnerabilityData: method State(string) advisory.DataState
 formats.CapabilitiesFor: func(ID) Capabilities
 formats.CapabilitiesOf: func(Format) Capabilities
 formats.CatalogEntry: func(Format) catalog.Entry
@@ -461,6 +473,7 @@ formats.GuideTopics: func() []string
 formats.List: func() []Format
 formats.Lookup: func(string) (Format, bool)
 formats.MatchRoutes: func([]Route, string, string) (*Route, Params, error)
+formats.NoVulnerabilityData: func() VulnerabilityData
 formats.RefusalFrom: func(*http.Request) (Refusal, bool)
 formats.Register: func(Format)
 formats.RemoteCapabilities: func(ID) RemoteCaps
@@ -540,6 +553,7 @@ formats.Volatile: value = (repeated, place 6 of its group)
 catalog.Class: method Valid() bool
 catalog.Class: type string
 catalog.Entry: embedded Facts
+catalog.Entry: field Ecosystem string
 catalog.Entry: field Exposure Exposure
 catalog.Entry: field Names Names
 catalog.Entry: method HasSettings() bool

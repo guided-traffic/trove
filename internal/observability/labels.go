@@ -15,7 +15,7 @@ func allowedLabels() []string {
 		"listener", "endpoint", "handler", "method", "code", "code_class", "format", "class", "repo", "subscription", "issuer",
 		"operation", "kind", "result", "outcome", "task", "cache", "state", "status", "direction", "auth_method",
 		"query", "name", "reason", "mode", "family", "label", "source", "check", "action", "trigger", "via", "limit",
-		"area", "db_pool", "command", "mechanism", "limiter", "key_id",
+		"area", "db_pool", "command", "mechanism", "limiter", "key_id", "ecosystem", "severity",
 	}
 }
 

@@ -85,8 +85,8 @@ Roles are fixed; there are no custom roles. A role is bound to a user, a group o
 | Role | Capabilities |
 |---|---|
 | `admin` | All capabilities, including `content:bypass`, which passes every repository action |
-| `security-admin` | `identities:read`, `identities:write`, `policies:read`, `policies:write`, `roles:read`, `ci:read`, `ci:write`, `tokens:read`, `tokens:revoke`, `repositories:read-config`, `projects:read`, `settings:read`, `security-settings:write`, `audit:read`, `endpoints:read`, `endpoints:write` |
-| `auditor` | `identities:read`, `policies:read`, `roles:read`, `ci:read`, `tokens:read`, `repositories:read-config`, `projects:read`, `webhooks:read`, `settings:read`, `audit:read`, `endpoints:read`, `content:metadata-read` |
+| `security-admin` | `identities:read`, `identities:write`, `policies:read`, `policies:write`, `roles:read`, `ci:read`, `ci:write`, `tokens:read`, `tokens:revoke`, `repositories:read-config`, `projects:read`, `settings:read`, `security-settings:write`, `audit:read`, `endpoints:read`, `endpoints:write`, `vulnerabilities:triage` |
+| `auditor` | `identities:read`, `policies:read`, `roles:read`, `ci:read`, `tokens:read`, `repositories:read-config`, `projects:read`, `webhooks:read`, `settings:read`, `audit:read`, `endpoints:read`, `content:metadata-read`, `vulnerabilities:triage` |
 | `repository-admin` | `repositories:read-config`, `repositories:write-config`, `projects:read`, `endpoints:read` |
 | `webhook-admin` | `webhooks:read`, `webhooks:write` |
 
@@ -96,6 +96,7 @@ Roles are fixed; there are no custom roles. A role is bound to a user, a group o
 |---|---|
 | `content:bypass` | Every repository action on every repository, within the endpoint ceiling |
 | `content:metadata-read` | The metadata of every repository, within the endpoint ceiling: the repository list, the package lists and package pages, versions, the npm package document, the NuGet version list, registration and search, and the folder listings of raw repositories. Never a download (a tarball, a `.nupkg`, a raw file) and no write |
+| `vulnerabilities:triage` | Changing the status of vulnerability findings, which sets, lifts or restores download blocks (the vulnerability report is part of the vulnerability scanning, which is being built; the capability is already held by `admin`, `auditor` and `security-admin`). It takes effect together with `read` on the finding's repository or `content:metadata-read`, no repository action grants it, and a token's scope can carry it as a system item |
 | `identities:read`, `identities:write` | **Users**, **Groups**, **Service accounts**: read; create, change, disable, delete, end sessions |
 | `policies:read`, `policies:write` | **Permission policies**: read and the preview; create, change, delete |
 | `roles:read`, `roles:write` | **System roles**: read; bind and unbind. Changing a user or group that holds a role needs `roles:write` too |

@@ -249,6 +249,45 @@ const (
 
 // <<< M4 ci
 //
+// >>> M4b vulnerabilities
+
+// Codes of the vulnerability scanning (R-VULN-004, R-VULN-005, R-VULN-012, R-VULN-013, R-VULN-015 to R-VULN-017,
+// R-VULN-020). The first six are answers of the download path and the API; the sync codes are the `code` of the problem
+// object a failed run records in vuln_source_state.last_error (R-ARCH-023), never an answer to a request.
+const (
+	// CodeVulnerabilityBlocked: the download of a version is refused because a finding blocks it (403, R-VULN-015).
+	CodeVulnerabilityBlocked = "vulnerability_blocked"
+	// CodeVulnerabilityDataMissing: refused because the ecosystem's advisory data was never imported and the repository
+	// sets onMissingData block (403, R-VULN-015).
+	CodeVulnerabilityDataMissing = "vulnerability_data_missing"
+	// CodeVulnerabilityDataUnavailable: the npm audit before the npm advisory data is complete (503, R-VULN-017).
+	CodeVulnerabilityDataUnavailable = "vulnerability_data_unavailable"
+	// CodeFindingNotConfirmed: blocked is set on a finding that is not confirmed (409, R-VULN-012).
+	CodeFindingNotConfirmed = "finding_not_confirmed"
+	// CodeFindingResolved: a status change of a resolved finding (409, R-VULN-013).
+	CodeFindingResolved = "finding_resolved"
+	// CodeStatusNotSettable: a person sets resolved (422, R-VULN-012).
+	CodeStatusNotSettable = "status_not_settable"
+	// CodeExportTooLarge: an export that would exceed vulnerabilities.export.max_rows (422, R-VULN-020).
+	CodeExportTooLarge = "export_too_large"
+
+	// The error codes of a failed sync run (R-VULN-004, R-VULN-005).
+	// CodeArchiveTooLarge: the archive is larger than max_archive_size.
+	CodeArchiveTooLarge = "archive_too_large"
+	// CodeArchiveDigestMismatch: the MD5 of the received bytes differs from x-goog-hash.
+	CodeArchiveDigestMismatch = "archive_digest_mismatch"
+	// CodeArchiveLimit: the archive crossed a limit of untrusted.NewZip (entries, record size, ratio, total, names).
+	CodeArchiveLimit = "archive_limit"
+	// CodeTooManyInvalidRecords: more than 1 % of a full sync's records were rejected.
+	CodeTooManyInvalidRecords = "too_many_invalid_records"
+	// CodeShrinkRefused: a full sync would delete more than max_shrink of the stored records.
+	CodeShrinkRefused = "shrink_refused"
+	// CodeMirrorRepositoryInvalid: mode repository names a repository that is not a generic local one.
+	CodeMirrorRepositoryInvalid = "mirror_repository_invalid"
+)
+
+// <<< M4b vulnerabilities
+//
 // >>> M13 bastion
 
 // Codes of the trove Bastion (R-BAS-004, R-BAS-008, R-BAS-009, R-BAS-014, R-BAS-029). The ones the two sides
@@ -621,6 +660,22 @@ var registry = []CodeInfo{
 	{CodePolicyOutsideProject, Invalid, "Policy outside the project", "A project administrator's mapping may name only policies of its own project."},
 	{CodeMappingsUnpinned, Conflict, "Mappings unpinned", "The issuer change would leave mappings that pin none of the issuer's pin_claims where the pin rules require one (pin_required on a public issuer, unpinned_write on a private one); the problem lists them in mappings. Pin them, or delete them, first."},
 	// <<< M4 ci
+	//
+	// >>> M4b vulnerabilities
+	{CodeVulnerabilityBlocked, Forbidden, "Download blocked by a finding", "trove refuses the version: a malicious-package finding is open, or a triager blocked a finding of it in this repository. The problem names the advisory and the finding; a dismissal lifts it. The response is never cached."},
+	{CodeVulnerabilityDataMissing, Forbidden, "Advisory data missing", "The repository sets onMissingData block and the advisory data of the version's ecosystem was never imported completely, so the version cannot be evaluated. The response is never cached."},
+	{CodeVulnerabilityDataUnavailable, Unavailable, "Advisory data not imported", "trove's advisory data for the ecosystem is not imported yet, so the audit has nothing to answer from; retry after the Retry-After period."},
+	{CodeFindingNotConfirmed, Conflict, "Finding not confirmed", "blocked is set on a confirmed finding only; confirm the finding first."},
+	{CodeFindingResolved, Conflict, "Finding resolved", "The finding is resolved by trove: no stored version is affected any longer. A person cannot change it; it returns to its earlier status when the match returns."},
+	{CodeStatusNotSettable, Unprocessable, "Status not settable", "The status resolved is set by trove only."},
+	{CodeExportTooLarge, Unprocessable, "Export too large", "The export would exceed vulnerabilities.export.max_rows; narrow the filter."},
+	{CodeArchiveTooLarge, UpstreamFailed, "Advisory archive too large", "The advisory archive is larger than vulnerabilities.sources.osv.max_archive_size; the previous data stays in force."},
+	{CodeArchiveDigestMismatch, UpstreamFailed, "Advisory archive digest mismatch", "The MD5 of the downloaded archive differs from the digest the source announced; the previous data stays in force."},
+	{CodeArchiveLimit, UpstreamFailed, "Advisory archive limit crossed", "The archive crossed a limit on entries, record size, compression ratio, inflated size or names; the previous data stays in force."},
+	{CodeTooManyInvalidRecords, UpstreamFailed, "Too many invalid advisory records", "More than 1 % of the records of a full sync failed validation, which indicates a truncated or tampered source; the previous data stays in force."},
+	{CodeShrinkRefused, UpstreamFailed, "Advisory data would shrink too much", "A full sync would delete more than max_shrink of the stored records; the previous data stays in force. A manual run with acceptShrink overrides it once."},
+	{CodeMirrorRepositoryInvalid, Conflict, "Mirror repository invalid", "mode repository names a repository that is not a generic local repository; every run fails until the configuration names one."},
+	// <<< M4b vulnerabilities
 	//
 	// >>> M13 bastion
 	{CodeBastionTokenInvalid, Unauthenticated, "Bastion token invalid", "The Bastion token of the request is invalid, revoked, expired or its registration is disabled. It concerns the Bastion, not the caller."},

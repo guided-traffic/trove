@@ -860,3 +860,120 @@ type VirtualPinRule struct {
 	Position        int32
 	PackagePatterns []string
 }
+
+type VulnAdvisory struct {
+	Ecosystem      string
+	ID             string
+	CanonicalID    string
+	Modified       pgtype.Timestamptz
+	Published      pgtype.Timestamptz
+	Withdrawn      pgtype.Timestamptz
+	Kind           string
+	Aliases        []string
+	Summary        string
+	Details        string
+	Severity       string
+	SeveritySource string
+	CvssVersion    pgtype.Text
+	CvssVector     pgtype.Text
+	CvssScore      pgtype.Numeric
+	KnownExploited bool
+	KevDateAdded   pgtype.Date
+	References     []byte
+	CweIds         []string
+	RecordSha256   []byte
+}
+
+type VulnAffected struct {
+	Ecosystem    string
+	AdvisoryID   string
+	Ord          int16
+	Name         string
+	Ranges       []byte
+	Versions     []string
+	EveryVersion bool
+	Fixed        []string
+}
+
+type VulnClaimedMatch struct {
+	Ecosystem   string
+	AdvisoryID  string
+	Name        string
+	Kind        string
+	FirstSeenAt pgtype.Timestamptz
+}
+
+type VulnFinding struct {
+	ID                     pgtype.UUID
+	RepoID                 int64
+	Ecosystem              string
+	PackageName            string
+	Version                string
+	AdvisoryID             string
+	PackageID              pgtype.Int8
+	VersionID              pgtype.Int8
+	Kind                   string
+	Severity               string
+	SeverityRank           int16
+	CvssScore              pgtype.Numeric
+	KnownExploited         bool
+	FixAvailable           bool
+	FixedVersions          []string
+	Status                 string
+	StatusBeforeResolution pgtype.Text
+	DismissalReason        pgtype.Text
+	Comment                pgtype.Text
+	ResolvedReason         pgtype.Text
+	Revision               int64
+	AdvisoryModified       pgtype.Timestamptz
+	DetectedAt             pgtype.Timestamptz
+	ResolvedAt             pgtype.Timestamptz
+	StatusChangedAt        pgtype.Timestamptz
+	StatusChangedBy        pgtype.UUID
+}
+
+type VulnFindingEvent struct {
+	FindingID  pgtype.UUID
+	Seq        int64
+	At         pgtype.Timestamptz
+	Actor      pgtype.UUID
+	Change     string
+	FromStatus pgtype.Text
+	ToStatus   pgtype.Text
+	Reason     pgtype.Text
+	Comment    pgtype.Text
+	Details    []byte
+}
+
+type VulnKev struct {
+	CveID      string
+	DateAdded  pgtype.Date
+	DueDate    pgtype.Date
+	Ransomware pgtype.Text
+}
+
+type VulnPendingEvaluation struct {
+	Ecosystem  string
+	AdvisoryID string
+	EnqueuedAt pgtype.Timestamptz
+}
+
+type VulnSourceState struct {
+	Source                    string
+	Ecosystem                 string
+	State                     string
+	DataEpoch                 int64
+	Etag                      pgtype.Text
+	ArchiveSha256             []byte
+	Watermark                 pgtype.Timestamptz
+	FullSyncedAt              pgtype.Timestamptz
+	SyncedAt                  pgtype.Timestamptz
+	AttemptedAt               pgtype.Timestamptz
+	Failures                  int32
+	LastError                 []byte
+	Records                   int32
+	Rejected                  int32
+	Unevaluable               int32
+	MatcherVersion            int32
+	FullEvaluationRequestedAt pgtype.Timestamptz
+}

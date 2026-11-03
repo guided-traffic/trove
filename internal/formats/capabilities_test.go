@@ -6,7 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
+	"github.com/guided-traffic/trove/internal/vuln/advisory"
 )
 
 // restorable is a format with the optional restore hook.
@@ -53,4 +55,57 @@ func TestQ_ARCH_259_NotifyAreasAreSignalAreasOfTheCatalog(t *testing.T) {
 		t.Fatalf("Validate = %v", err)
 	}
 	mustPanic(t, fake{d: d}, "notification area")
+}
+
+// scannable is a format with the optional vulnerability adapter (R-VULN-009, ADR-150).
+type scannable struct{ fake }
+
+func (scannable) Ecosystem() string                        { return "Test" }
+func (scannable) AdvisoryName(n string) (string, bool)     { return n, n != "" }
+func (scannable) AdvisoryVersion(v string) (string, bool)  { return v, v != "" }
+func (scannable) CompareVersions(a, b string) (int, error) { return strings.Compare(a, b), nil }
+
+// R-VULN-009 (contract test, ADR-150): CapabilitiesOf finds the vulnerability adapter, Register records it and derives the
+// catalog entry's ecosystem from it; a format without it has neither.
+func TestVulnerabilityAdapterIsFoundRecordedAndReachesTheCatalog(t *testing.T) {
+	if c := CapabilitiesOf(fake{d: valid("vuln-plain")}); c.Vulnerability != nil {
+		t.Fatal("a format without the adapter has one")
+	}
+	s := scannable{fake{d: valid("vuln-scanned")}}
+	if c := CapabilitiesOf(s); c.Vulnerability == nil || c.Vulnerability.Ecosystem() != "Test" {
+		t.Fatalf("capabilities = %+v", c)
+	}
+	if e := CatalogEntry(s); e.Ecosystem != "Test" {
+		t.Errorf("the catalog entry's ecosystem = %q, want Test", e.Ecosystem)
+	}
+	if e := CatalogEntry(fake{d: valid("vuln-plain")}); e.Ecosystem != "" {
+		t.Errorf("a format without the adapter has the ecosystem %q", e.Ecosystem)
+	}
+	Register(s)
+	if CapabilitiesFor("vuln-scanned").Vulnerability == nil || CapabilitiesFor("vuln-unknown").Vulnerability != nil {
+		t.Fatal("Register did not record the capability, or an unregistered format has one")
+	}
+}
+
+// R-VULN-017: the host that has not wired the scanning reports every ecosystem as not complete and refuses reads with
+// vulnerability_data_unavailable.
+func TestNoVulnerabilityDataIsNotCompleteAndRefusesReads(t *testing.T) {
+	d := NoVulnerabilityData()
+	if st := d.State("npm"); st.Complete {
+		t.Errorf("State = %+v", st)
+	}
+	ctx := context.Background()
+	for name, err := range map[string]error{
+		"ForNames":      func() error { _, err := d.ForNames(ctx, "npm", []string{"a"}); return err }(),
+		"All":           func() error { _, err := d.All(ctx, "npm"); return err }(),
+		"InternalNames": func() error { _, err := d.InternalNames(ctx, "npm", []string{"a"}); return err }(),
+	} {
+		if e, ok := errs.As(err); !ok || e.Code != errs.CodeVulnerabilityDataUnavailable || e.Kind != errs.Unavailable {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	e := advisory.Affected{Versions: []string{"1.0.0"}}
+	if r := d.Affects(scannable{}, e, "1.0.0"); !r.Affected {
+		t.Errorf("Affects = %+v", r)
+	}
 }

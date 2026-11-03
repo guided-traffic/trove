@@ -297,6 +297,7 @@ flowchart LR
 | authz | `internal/authz` | Permission decisions | [authorization.md](authorization.md) |
 | scope | `internal/auth/scope` | The value type of a token's scope (leaf), shared by the stage, the token service and the decision point | R-AUTH-024 |
 | jws | `internal/auth/jws` | Compact-JWS parsing and verification and JWK sets (leaf), shared by the login and the subject-token validation of the CI exchange | R-AUTH-006, R-CI-004, Q-CI-19 |
+| vuln | `internal/vuln`, `internal/vuln/{advisory,match,osv,metrics,store,sync,evaluate,triage,report}` | Vulnerability scanning: the domain vocabulary and ports at the root; the advisory records, the matcher, the OSV decoder and the metrics are leaves | [vulnerability-scanning.md](vulnerability-scanning.md), Q-VULN-23 |
 | catalog | `internal/formats/catalog` | The format catalog (leaf): every format's facts, its package-name rule and its exposure facts; `repository` and `authz` read it | R-REPO-003, R-AUTHZ-005, Q-ARCH-188 |
 | api | `internal/api/v1`, `internal/api/edge` | Management REST API; the conversions every HTTP entry point shares (the request to the `authz.Subject`, the holder of a request's index) | [api-and-ui.md](api-and-ui.md), R-AUTHZ-015 |
 | dispatch | `internal/api/dispatch` | The format dispatcher: `/api/<id>/<repoKey>/…` for every format with routes, and the error shape of the prefix | R-ARCH-005, R-ARCH-011, Q-ARCH-214 |
@@ -486,7 +487,7 @@ trove/
 │   ├── formats/                 # contract (Format, Host), registry
 │   │   ├── all/                 # imports and registers every format
 │   │   ├── catalog/             # the format catalog: facts, name rule, exposure (leaf layer, Q-ARCH-188)
-│   │   ├── untrusted/           # resource limits and bounded readers for untrusted content (R-ARCH-028)
+│   │   ├── untrusted/           # resource limits and bounded readers for untrusted content (R-ARCH-028; leaf layer, Q-VULN-23)
 │   │   ├── formattest/          # conformance kit, in-memory Host (Q-ARCH-216)
 │   │   │   ├── crafted/         # generators of the hostile inputs of check 6 (standard library only)
 │   │   │   └── testformat/      # the kit's own test format and its defects
@@ -497,6 +498,11 @@ trove/
 │   │   ├── upstream/            # per-remote HTTP clients, credentials, hop policy
 │   │   └── invalidation/        # invalidation set, fold task
 │   ├── virtual/                 # per-caller resolution, merged-metadata cache, shadowing check (Q-ARCH-192)
+│   ├── vuln/                    # vulnerability scanning: statuses, the repository member, the download verdict and the ports (R-VULN-001 to R-VULN-029)
+│   │   ├── advisory/            # the normalized advisory records, severities, source attribution, audit ids (leaf layer)
+│   │   ├── match/               # the matcher over a format's version order (leaf layer)
+│   │   ├── osv/                 # the OSV and KEV decoders (leaf layer)
+│   │   └── store/ sync/ evaluate/ triage/ report/   # the tables' wrappers, the sync jobs, evaluation and lifecycle, status changes, the report
 │   ├── formatdata/              # store ports of the formats, implemented over the generated queries (Q-ARCH-193)
 │   │   └── npm/
 │   ├── blob/                    # BlobStore interface, spool, digests
@@ -1330,7 +1336,44 @@ type ItemsRestorer interface {
 type Capabilities struct {
 	ItemsRestorer ItemsRestorer // nil for a format without a restore hook
 	Remote        RemoteCaps    // the optional interfaces of the remote adapter (WP3.0a, WP3.0b)
+	Vulnerability VulnerabilityAdapter // nil for a format without the vulnerability adapter (R-VULN-009, ADR-150)
 }
+
+// VulnerabilityAdapter lets the core match stored versions against OSV advisories (vulnerability-scanning.md R-VULN-009).
+type VulnerabilityAdapter interface {
+	// Ecosystem is the OSV ecosystem name of the format ("npm", "NuGet").
+	Ecosystem() string
+	// AdvisoryName normalizes a package name of an advisory as the format normalizes stored names; ok is false for a name
+	// the format refuses.
+	AdvisoryName(name string) (normalized string, ok bool)
+	// AdvisoryVersion normalizes a version of an advisory as package_versions.version is normalized.
+	AdvisoryVersion(v string) (normalized string, ok bool)
+	// CompareVersions orders two normalized versions by the format's precedence (-1, 0, +1); an error for a version that
+	// does not parse.
+	CompareVersions(a, b string) (int, error)
+}
+
+// VulnerabilityData is what a format's audit routes read of the scanning (R-VULN-017, R-VULN-018); Host.Vulnerabilities
+// returns it. Its types are those of the leaf packages internal/vuln/advisory and internal/vuln/match.
+type VulnerabilityData interface {
+	// State is the state of the ecosystem's advisory data from the replica's cache, no query; not complete when the
+	// scanning is not wired or the ecosystem was never imported.
+	State(ecosystem string) advisory.DataState
+	// ForNames returns the non-withdrawn advisories that name any of the names, keyed by name, in one query.
+	ForNames(ctx context.Context, ecosystem string, names []string) (map[string][]advisory.Advisory, error)
+	// All returns every non-withdrawn advisory of the ecosystem (the NuGet page).
+	All(ctx context.Context, ecosystem string) ([]advisory.Advisory, error)
+	// InternalNames reports which names are internal names of the format (R-VULN-010), which an audit withholds.
+	InternalNames(ctx context.Context, format ID, names []string) (map[string]bool, error)
+	// Affects reports whether a stored version is affected by an affected entry (R-VULN-009).
+	Affects(a VulnerabilityAdapter, e advisory.Affected, version string) match.Result
+	// CountAudit counts one audit in trove_vuln_audit_requests_total (R-VULN-024), so that a format imports no metric package.
+	CountAudit(format ID, mode, outcome string)
+}
+
+// NoVulnerabilityData returns the VulnerabilityData of a host that has not wired the scanning: every ecosystem is not
+// complete and a read answers 503 vulnerability_data_unavailable.
+func NoVulnerabilityData() VulnerabilityData
 
 // CapabilitiesOf reads the capabilities off a format: the one place that asserts to an interface of this package.
 func CapabilitiesOf(f Format) Capabilities
@@ -1496,8 +1539,9 @@ every change of it is an ADR, and R-ARCH-025 says which changes keep the version
 **Optional behaviour.** `Format` holds what every format answers. A behaviour that only some formats have, or that
 the core cannot call yet, is an optional interface of this package, found by `CapabilitiesOf` when the format registers
 and recorded in the registry (`CapabilitiesFor`); the core never asks the format value (the architecture test allows
-that assertion in `CapabilitiesOf` alone). Today there are three: `ItemsRestorer` on the format, and `Discoverer` and
-`FillInspector` on its remote adapter (`Capabilities.Remote`, Q-ARCH-267, Q-ARCH-268). A behaviour that every format
+that assertion in `CapabilitiesOf` alone). Today there are four: `ItemsRestorer` on the format, `Discoverer` and
+`FillInspector` on its remote adapter (`Capabilities.Remote`, Q-ARCH-267, Q-ARCH-268), and `VulnerabilityAdapter` on the
+format (`Capabilities.Vulnerability`, R-VULN-009, [ADR-150](../decisions.md#adr-150--the-format-contract-gains-the-optional-vulnerability-adapter)). A behaviour that every format
 answers, and whose default is a correct answer for a format without it, is a method with that default in `Base` or
 `RemoteBase` instead (`ExpectsType`, `BeforeArtifact`, `UpstreamQuery`). The rule for adding to the contract is in
 R-ARCH-025.
@@ -1606,6 +1650,7 @@ type Host interface {
 	Renditions() RenditionCache  // rendered documents (R-ARCH-012), keyed by a struct the core hashes
 	FormatData(id ID) any        // the data port bound to a format (Q-ARCH-193); nil without Descriptor.DataPort
 	RestoredAt(ctx context.Context) (time.Time, error) // system_state restored_at; zero until a restore ran
+	Vulnerabilities() VulnerabilityData // the scanning's data for the audit routes (R-VULN-017, R-VULN-018); NoVulnerabilityData until wired
 }
 
 type PackageStore interface {

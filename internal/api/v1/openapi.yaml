@@ -133,6 +133,14 @@ tags:
       version (R-ARCH-025, R-BAS-009).
   # <<< M13 bastion
   #
+  # >>> M4b vulnerabilities
+  - name: vulnerabilities
+    description: |
+      Vulnerability scanning (R-VULN-001 to R-VULN-029): the findings and their triage, the advisories, the summary and the
+      trend, the advisory sources, the claimed-name matches, the vulnerabilities of a package version and the rescan of a
+      repository.
+  # <<< M4b vulnerabilities
+  #
 security:
   - bearerAuth: []
 paths:
@@ -9101,6 +9109,576 @@ paths:
           $ref: "#/components/responses/Unavailable"
   # <<< M13 bastion
   #
+  # >>> M4b vulnerabilities
+  /api/v1/vulnerabilities/findings:
+    get:
+      operationId: listVulnerabilityFindings
+      tags: [vulnerabilities]
+      summary: List vulnerability findings
+      description: |
+        The findings the caller can read, with cursor pagination (R-VULN-020). A finding is visible to a caller who holds `read`
+        on its repository, narrowed by the package-name patterns of the grant, evaluated in SQL; a virtual repository in a
+        filter expands to the members the caller can read (R-VULN-019). A cursor grants nothing: every page is filtered again.
+        `sort` is `-severity` (the default: level, then score), `severity`, `-detectedAt`, `detectedAt`, `package`, `-package`,
+        `advisory`, `-advisory`, `status` or `-status`. Without a `status` filter resolved findings are left out. An unknown
+        filter answers `400`. `blocked` and `blockReason` are computed with the rule of R-VULN-015 and the repository's
+        current policy.
+      x-trove-permission:
+        authenticated: true
+      parameters:
+        - {name: repository, in: query, description: "A repository key; a virtual repository expands to the members the caller can read. Repeat for several.", schema: {type: array, items: {type: string}}}
+        - {name: format, in: query, description: "A format ID, for example npm or nuget. Repeat for several.", schema: {type: array, items: {type: string}}}
+        - {name: package, in: query, description: "A normalized package name. Repeat for several.", schema: {type: array, items: {type: string}}}
+        - {name: packagePrefix, in: query, description: "Packages whose name starts with this text, for example @team-a/.", schema: {type: string}}
+        - {name: version, in: query, description: "A normalized version. Repeat for several.", schema: {type: array, items: {type: string}}}
+        - {name: advisory, in: query, description: "A canonical advisory identifier or an alias (R-VULN-006).", schema: {type: string}}
+        - {name: severity, in: query, description: "critical, high, medium, low, none or unknown. Repeat for several.", schema: {type: array, items: {$ref: "#/components/schemas/VulnerabilitySeverity"}}}
+        - {name: status, in: query, description: "needs_triage, confirmed, blocked, dismissed or resolved; blocked is among the values. Repeat for several. Without it resolved findings are left out.", schema: {type: array, items: {$ref: "#/components/schemas/VulnerabilityStatus"}}}
+        - {name: kind, in: query, description: "vulnerability or malicious.", schema: {$ref: "#/components/schemas/VulnerabilityKind"}}
+        - {name: knownExploited, in: query, description: "true: only findings of advisories on the CISA known-exploited list.", schema: {type: boolean}}
+        - {name: fixAvailable, in: query, description: "true: only findings with a fixed version.", schema: {type: boolean}}
+        - {name: blocked, in: query, description: "true: only findings that block their version's download under the repository's policy; false: the others.", schema: {type: boolean}}
+        - {name: blockReason, in: query, description: "malicious or triage.", schema: {$ref: "#/components/schemas/VulnerabilityBlockReason"}}
+        - {name: detectedFrom, in: query, description: "Detected at or after (RFC 3339).", schema: {type: string, format: date-time}}
+        - {name: detectedTo, in: query, description: "Detected before (RFC 3339).", schema: {type: string, format: date-time}}
+        - {name: q, in: query, description: "A text that occurs in the package name, the advisory identifier or the summary.", schema: {type: string}}
+        - name: sort
+          in: query
+          description: The sort order of R-VULN-020.
+          schema:
+            type: string
+            enum: [-severity, severity, -detectedAt, detectedAt, package, -package, advisory, -advisory, status, -status]
+            default: -severity
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of findings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VulnerabilityFindingList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/vulnerabilities/findings/export:
+    get:
+      operationId: exportVulnerabilityFindings
+      tags: [vulnerabilities]
+      summary: Export the findings of a filter as CSV
+      description: |
+        The list's filters (without paging; `format` is the format-ID filter, the answer is CSV only, Q-VULN-24), streamed as CSV with one header row and the columns `findingId`, `status`,
+        `severity`, `cvssScore`, `cvssVersion`, `kind`, `knownExploited`, `advisory`, `aliases`, `summary`, `format`,
+        `repository`, `package`, `version`, `fixAvailable`, `fixedVersions`, `blocked`, `blockReason`, `detectedAt`,
+        `resolvedAt`, `dismissalReason` (R-VULN-020). A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets
+        a leading apostrophe. An export that would exceed `vulnerabilities.export.max_rows` answers `422 export_too_large`
+        before anything is streamed.
+      x-trove-permission:
+        authenticated: true
+      parameters:
+        - {name: repository, in: query, description: "A repository key; a virtual repository expands to the members the caller can read. Repeat for several.", schema: {type: array, items: {type: string}}}
+        - {name: format, in: query, description: "A format ID, for example npm or nuget. Repeat for several.", schema: {type: array, items: {type: string}}}
+        - {name: package, in: query, description: "A normalized package name. Repeat for several.", schema: {type: array, items: {type: string}}}
+        - {name: packagePrefix, in: query, description: "Packages whose name starts with this text, for example @team-a/.", schema: {type: string}}
+        - {name: version, in: query, description: "A normalized version. Repeat for several.", schema: {type: array, items: {type: string}}}
+        - {name: advisory, in: query, description: "A canonical advisory identifier or an alias (R-VULN-006).", schema: {type: string}}
+        - {name: severity, in: query, description: "critical, high, medium, low, none or unknown. Repeat for several.", schema: {type: array, items: {$ref: "#/components/schemas/VulnerabilitySeverity"}}}
+        - {name: status, in: query, description: "needs_triage, confirmed, blocked, dismissed or resolved; blocked is among the values. Repeat for several. Without it resolved findings are left out.", schema: {type: array, items: {$ref: "#/components/schemas/VulnerabilityStatus"}}}
+        - {name: kind, in: query, description: "vulnerability or malicious.", schema: {$ref: "#/components/schemas/VulnerabilityKind"}}
+        - {name: knownExploited, in: query, description: "true: only findings of advisories on the CISA known-exploited list.", schema: {type: boolean}}
+        - {name: fixAvailable, in: query, description: "true: only findings with a fixed version.", schema: {type: boolean}}
+        - {name: blocked, in: query, description: "true: only findings that block their version's download under the repository's policy; false: the others.", schema: {type: boolean}}
+        - {name: blockReason, in: query, description: "malicious or triage.", schema: {$ref: "#/components/schemas/VulnerabilityBlockReason"}}
+        - {name: detectedFrom, in: query, description: "Detected at or after (RFC 3339).", schema: {type: string, format: date-time}}
+        - {name: detectedTo, in: query, description: "Detected before (RFC 3339).", schema: {type: string, format: date-time}}
+        - {name: q, in: query, description: "A text that occurs in the package name, the advisory identifier or the summary.", schema: {type: string}}
+        - name: sort
+          in: query
+          description: The sort order of R-VULN-020.
+          schema:
+            type: string
+            enum: [-severity, severity, -detectedAt, detectedAt, package, -package, advisory, -advisory, status, -status]
+            default: -severity
+      responses:
+        "200":
+          description: The CSV document.
+          content:
+            text/csv:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/vulnerabilities/findings/set-status:
+    post:
+      operationId: setVulnerabilityFindingsStatus
+      tags: [vulnerabilities]
+      summary: Change the status of several findings
+      description: |
+        Changes up to 500 findings in one transaction and answers `200` with one result per id (R-VULN-013): `changed`,
+        `unchanged`, `404` for an id the caller cannot read, `409 finding_resolved`, `409 finding_not_confirmed`. A batch over
+        500 ids answers `422`. Every change writes a history row and the audit event `vulnerability.finding.status_changed`
+        with one bulk identifier. Needs the capability `vulnerabilities:triage` and `read` on each finding.
+      x-trove-permission:
+        permission: vulnerabilities:triage
+      x-trove-idempotency-key: optional
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VulnerabilitySetStatusRequest"
+            example:
+              ids: ["01933b2a-7c1e-7d10-9a4b-3f0e2c1d0a11"]
+              status: dismissed
+              dismissalReason: not_exploitable
+              comment: The vulnerable function is not reachable from our code.
+      responses:
+        "200":
+          description: One result per id.
+          headers:
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VulnerabilitySetStatusResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/vulnerabilities/findings/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The finding ID (a UUIDv7). A string that is no finding the caller can read answers `404`, whatever its shape.
+        schema:
+          type: string
+          x-trove-reserved-names: [export, set-status]
+    get:
+      operationId: getVulnerabilityFinding
+      tags: [vulnerabilities]
+      summary: Read one finding
+      description: |
+        The finding with its advisory (identifier, aliases, summary, details, source and license, CVSS, known-exploited date,
+        affected ranges, fixed versions, references), its version and repository, the readable virtual repositories whose
+        effective member list contains the repository, `blocked` with `blockReason`, for a block set in triage the principal
+        and time that set it, and the history (R-VULN-020). A finding the caller cannot read answers `404`. The `ETag` is the
+        finding's revision.
+      x-trove-permission:
+        authenticated: true
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: The finding.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VulnerabilityFindingDetail"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: updateVulnerabilityFinding
+      tags: [vulnerabilities]
+      summary: Triage one finding
+      description: |
+        Applies a JSON merge patch (RFC 7396, `application/merge-patch+json`) with `status`, `dismissalReason` (required with
+        `dismissed`, refused otherwise) and `comment` (at most 4,000 characters); `If-Match` is required (R-VULN-013).
+        `{"status": "blocked"}` sets a download block and is accepted for a `confirmed` finding only (`409
+        finding_not_confirmed`); `confirmed` or `dismissed` on a `blocked` finding lifts it. A resolved finding answers `409
+        finding_resolved`, and `{"status": "resolved"}` answers `422 status_not_settable`. Needs the capability
+        `vulnerabilities:triage` and `read` on the finding; a finding the caller cannot read answers `404`.
+      x-trove-permission:
+        permission: vulnerabilities:triage
+      x-trove-if-match: required
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/VulnerabilityFindingPatch"
+            example:
+              status: blocked
+              comment: Confirmed malicious by the security team.
+      responses:
+        "200":
+          description: The finding after the change.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VulnerabilityFindingDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/vulnerabilities/advisories/{ecosystem}/{id}:
+    parameters:
+      - name: ecosystem
+        in: path
+        required: true
+        description: The OSV ecosystem name, `npm` or `NuGet`.
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        description: An advisory identifier or an alias, percent-encoded.
+        schema:
+          type: string
+    get:
+      operationId: getVulnerabilityAdvisory
+      tags: [vulnerabilities]
+      summary: Read an advisory with its readable findings
+      description: |
+        An advisory by identifier or alias (R-VULN-020), with its source and license (R-VULN-003) and the findings of it that
+        the caller can read, across repositories and versions: the "where is it used" view. The advisory is public data and
+        visible to every authenticated caller; the list of findings is filtered as the findings list is (R-VULN-019).
+      x-trove-permission:
+        authenticated: true
+      responses:
+        "200":
+          description: The advisory.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VulnerabilityAdvisoryDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/vulnerabilities/summary:
+    get:
+      operationId: getVulnerabilitySummary
+      tags: [vulnerabilities]
+      summary: Counts of the open findings
+      description: |
+        Open findings counted by severity and by kind, `needsTriage`, `blocked` (versions) and `fixAvailable`; the coverage of
+        the repositories by evaluation state; the data age per ecosystem (R-VULN-021). Computed per request over the findings
+        the caller can read, never cached across callers (R-VULN-019).
+      x-trove-permission:
+        authenticated: true
+      parameters:
+        - {name: repository, in: query, description: "A repository key. Repeat for several.", schema: {type: array, items: {type: string}}}
+        - {name: format, in: query, description: "A format ID. Repeat for several.", schema: {type: array, items: {type: string}}}
+      responses:
+        "200":
+          description: The summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VulnerabilitySummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/vulnerabilities/trend:
+    get:
+      operationId: getVulnerabilityTrend
+      tags: [vulnerabilities]
+      summary: Open findings per day
+      description: |
+        Per day from `from` to `to` (at most 400 days, default the last 90): the findings detected and not resolved at the
+        end of the day, by severity (R-VULN-021, Q-VULN-16). It counts a finding under its current severity and counts
+        dismissed findings until they resolve; `basis` says so. Computed over the findings the caller can read.
+      x-trove-permission:
+        authenticated: true
+      parameters:
+        - {name: from, in: query, description: "First day (RFC 3339 date); default 90 days before `to`.", schema: {type: string, format: date}}
+        - {name: to, in: query, description: "Last day, inclusive (RFC 3339 date); default today.", schema: {type: string, format: date}}
+        - {name: repository, in: query, description: "A repository key. Repeat for several.", schema: {type: array, items: {type: string}}}
+        - {name: format, in: query, description: "A format ID. Repeat for several.", schema: {type: array, items: {type: string}}}
+        - {name: kind, in: query, description: "vulnerability or malicious.", schema: {$ref: "#/components/schemas/VulnerabilityKind"}}
+      responses:
+        "200":
+          description: The trend.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VulnerabilityTrend"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/vulnerabilities/sources:
+    get:
+      operationId: listVulnerabilitySources
+      tags: [vulnerabilities]
+      summary: The advisory sources and their state
+      description: |
+        Per source and ecosystem: `mode`, `state`, `stale`, `syncedAt`, `fullSyncedAt`, `attemptedAt`, `failures`, `lastError`,
+        `records`, `rejected`, `unevaluable` and `nextRunAt` (R-VULN-021).
+      x-trove-permission:
+        permission: settings:read
+      responses:
+        "200":
+          description: The sources.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VulnerabilitySourceList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/vulnerabilities/claimed-name-matches:
+    get:
+      operationId: listClaimedNameMatches
+      tags: [vulnerabilities]
+      summary: Public advisories that name an internal name
+      description: |
+        The advisories, above all `MAL-` records, for a package name the installation treats as internal (R-VULN-010): the sign
+        of a dependency-confusion attempt.
+      x-trove-permission:
+        permission: repositories:read-config
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of matches.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimedNameMatchList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/packages/{packageId}/versions/{version}/vulnerabilities:
+    parameters:
+      - $ref: "#/components/parameters/PackageId"
+      - $ref: "#/components/parameters/PackageVersionPath"
+    get:
+      operationId: getPackageVersionVulnerabilities
+      tags: [vulnerabilities]
+      summary: The vulnerabilities of one version, per repository
+      description: |
+        Per readable repository that holds the version: `evaluation` (R-VULN-001), `blocked`, `blockReason` and the findings
+        (R-VULN-020): the download status without downloading.
+      x-trove-permission:
+        authenticated: true
+      responses:
+        "200":
+          description: The version's state per repository.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VulnerabilityVersionReport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/packages/{packageId}/vulnerabilities:
+    parameters:
+      - $ref: "#/components/parameters/PackageId"
+    get:
+      operationId: getPackageVulnerabilities
+      tags: [vulnerabilities]
+      summary: The open findings of a package, per version
+      description: |
+        Open findings per version of the package, counted by severity, over the findings the caller can read (R-VULN-020).
+      x-trove-permission:
+        authenticated: true
+      responses:
+        "200":
+          description: The counts per version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VulnerabilityPackageReport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/repositories/{key}/vulnerabilities/rescan:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        description: The repository key (R-REPO-002).
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+    post:
+      operationId: rescanRepositoryVulnerabilities
+      tags: [vulnerabilities]
+      summary: Evaluate every stored version of a repository again
+      description: |
+        Enqueues a `vuln-rescan` job of the repository and answers `202` with the job (R-VULN-011); `409` with the running job
+        while one is queued or running. A change of the repository's scanning settings enqueues the same job itself. Needs
+        `manage` on the repository.
+      x-trove-permission:
+        action: manage
+        repository: path.key
+      x-trove-idempotency-key: optional
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "202":
+          description: The rescan is queued.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobReferenceEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  # <<< M4b vulnerabilities
+  #
 components:
   securitySchemes:
     bearerAuth:
@@ -9555,6 +10133,11 @@ components:
             memoryLimitBytes:
               type: integer
               format: int64
+        vulnerabilityData:
+          description: "From M4b (R-VULN-024): the advisory data's state; `null` where the scanning is not wired on this replica."
+          oneOf:
+            - $ref: "#/components/schemas/VulnerabilityDataFacts"
+            - type: "null"
               description: The container memory limit; 0 when none is known.
     ReplicaSummary:
       type: object
@@ -9872,7 +10455,7 @@ components:
       pattern: "^[a-z][a-z0-9_.:-]{0,62}$"
     TaskRunRequest:
       type: object
-      description: The parameters of the task; each task defines its own (garbage collection takes `dryRun`).
+      description: The parameters of the task; each task defines its own (garbage collection takes `dryRun`, the OSV sync tasks `vuln-sync-osv` and `vuln-sync-osv-full` take `acceptShrink`).
       additionalProperties: true
     JobProgress:
       type: object
@@ -12168,6 +12751,8 @@ components:
           $ref: "#/components/schemas/NpmSettings"
         nuget:
           $ref: "#/components/schemas/NugetSettings"
+        vulnerabilities:
+          $ref: "#/components/schemas/VulnerabilitySettings"
         lifecycle:
           type: string
           enum: [active, deleting]
@@ -14121,3 +14706,482 @@ components:
         replica:
           type: string
     # <<< M13 bastion
+    #
+    # >>> M4b vulnerabilities
+    VulnerabilitySeverity:
+      type: string
+      enum: [critical, high, medium, low, none, unknown]
+      description: The level of an advisory (R-VULN-007); `unknown` is a level of its own and sorts last.
+    VulnerabilityKind:
+      type: string
+      enum: [vulnerability, malicious]
+      description: "`malicious` for the OpenSSF malicious-packages records (identifier prefix `MAL-`), else `vulnerability`."
+    VulnerabilityStatus:
+      type: string
+      enum: [needs_triage, confirmed, blocked, dismissed, resolved]
+      description: |
+        The status of a finding (R-VULN-012). `needs_triage`, `confirmed` and `blocked` are open; `resolved` is set by trove
+        only.
+    VulnerabilityBlockReason:
+      type: string
+      enum: [malicious, triage]
+      description: Why the version's download is refused (R-VULN-015).
+    VulnerabilityDismissalReason:
+      type: string
+      enum: [not_exploitable, false_positive, risk_accepted, mitigated, test_only]
+    VulnerabilityResolvedReason:
+      type: string
+      enum: [no_longer_affected, advisory_withdrawn, version_removed, scanning_disabled]
+    VulnerabilityEvaluation:
+      type: string
+      enum: [evaluated, pending_data, internal, not_covered]
+      description: |
+        The derived evaluation state of a stored version in a repository (R-VULN-001): `evaluated` (the advisory data is
+        complete), `pending_data` (it was never imported completely), `internal` (public advisories do not apply to the name)
+        or `not_covered` (scanning is off, the upstream is not recognised, or the format has no adapter).
+    VulnerabilitySettings:
+      type: object
+      additionalProperties: false
+      description: |
+        The `vulnerabilities` member of a repository document (R-VULN-002): local and remote repositories of a format with the
+        vulnerability adapter (npm, NuGet). Virtual repositories and other formats answer `422 not_applicable` at
+        `/vulnerabilities`. A member that sets some fields takes the defaults of the others. A change of `enabled` or
+        `matchPublicAdvisories` enqueues a `vuln-rescan` of the repository in the same transaction; `blockMalicious` and
+        `onMissingData` act without a job.
+      properties:
+        enabled: {type: boolean, default: true, description: "false: the repository's stored versions are neither evaluated nor blocked."}
+        matchPublicAdvisories:
+          type: string
+          enum: [auto, always, never]
+          default: auto
+          description: Which stored versions public advisories apply to (R-VULN-010).
+        blockMalicious: {type: boolean, default: true, description: Refuse the versions an open malicious finding names (R-VULN-015).}
+        onMissingData:
+          type: string
+          enum: [allow, block]
+          default: allow
+          description: What a version of an ecosystem whose advisory data was never imported completely gets (R-VULN-015).
+    VulnerabilityCvss:
+      type: object
+      additionalProperties: false
+      required: [version, score, vector]
+      description: The vector the severity was scored from (R-VULN-007); trove never mixes versions in one value.
+      properties:
+        version: {type: string, enum: ["4.0", "3.1", "3.0", "2.0"]}
+        score: {type: number, minimum: 0, maximum: 10}
+        vector: {type: string}
+    VulnerabilitySource:
+      type: object
+      additionalProperties: false
+      required: [name, license, url]
+      description: The attribution of an advisory (R-VULN-003).
+      properties:
+        name: {type: string, example: GitHub Advisory Database}
+        license: {type: [string, "null"], example: CC-BY 4.0}
+        url: {type: string}
+    VulnerabilityFinding:
+      type: object
+      additionalProperties: false
+      required: [id, repository, format, package, version, advisory, aliases, kind, summary, severity, cvss, knownExploited, fixAvailable, fixedVersions, status, blocked, blockReason, detectedAt, resolvedAt]
+      description: |
+        One finding: one canonical advisory affects one stored version in one repository (R-VULN-012). `blocked` and
+        `blockReason` are computed with the rule of R-VULN-015 and the repository's current policy, so the API, the report and
+        the download agree.
+      properties:
+        id: {type: string, format: uuid}
+        repository: {type: string}
+        format: {type: string}
+        package: {type: string}
+        version: {type: string}
+        advisory: {type: string, description: The canonical identifier.}
+        aliases: {type: array, maxItems: 1000, items: {type: string}}
+        kind: {$ref: "#/components/schemas/VulnerabilityKind"}
+        summary: {type: string}
+        severity: {$ref: "#/components/schemas/VulnerabilitySeverity"}
+        cvss:
+          oneOf:
+            - $ref: "#/components/schemas/VulnerabilityCvss"
+            - type: "null"
+        knownExploited: {type: boolean}
+        knownExploitedAddedAt: {type: [string, "null"], format: date}
+        fixAvailable: {type: boolean}
+        fixedVersions: {type: array, maxItems: 1000, items: {type: string}}
+        status: {$ref: "#/components/schemas/VulnerabilityStatus"}
+        dismissalReason:
+          oneOf:
+            - $ref: "#/components/schemas/VulnerabilityDismissalReason"
+            - type: "null"
+        resolvedReason:
+          oneOf:
+            - $ref: "#/components/schemas/VulnerabilityResolvedReason"
+            - type: "null"
+        blocked: {type: boolean}
+        blockReason:
+          oneOf:
+            - $ref: "#/components/schemas/VulnerabilityBlockReason"
+            - type: "null"
+        detectedAt: {type: string, format: date-time}
+        resolvedAt: {type: [string, "null"], format: date-time}
+      example:
+        id: 01933b2a-7c1e-7d10-9a4b-3f0e2c1d0a11
+        repository: npm-remote
+        format: npm
+        package: lodash
+        version: 4.17.20
+        advisory: GHSA-35jh-r3h4-6jhm
+        aliases: [CVE-2021-23337]
+        kind: vulnerability
+        summary: Command Injection in lodash
+        severity: high
+        cvss: {version: "3.1", score: 7.2, vector: "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H"}
+        knownExploited: false
+        fixAvailable: true
+        fixedVersions: [4.17.21]
+        status: needs_triage
+        blocked: false
+        blockReason: null
+        detectedAt: "2026-10-31T09:12:00Z"
+        resolvedAt: null
+    VulnerabilityFindingList:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items: {type: array, items: {$ref: "#/components/schemas/VulnerabilityFinding"}}
+        nextCursor: {type: [string, "null"]}
+    VulnerabilityAffected:
+      type: object
+      additionalProperties: false
+      required: [name, ranges, versions, fixed]
+      description: One affected entry of an advisory, as stored (R-VULN-006).
+      properties:
+        name: {type: string}
+        ranges:
+          type: array
+          maxItems: 1000
+          items:
+            type: object
+            additionalProperties: false
+            required: [type, events]
+            properties:
+              type: {type: string, enum: [SEMVER, ECOSYSTEM, GIT]}
+              events:
+                type: array
+                maxItems: 1000
+                items:
+                  type: object
+                  description: "One event: exactly one of introduced, fixed, last_affected and limit."
+                  additionalProperties: {type: string}
+        versions: {type: array, maxItems: 10000, items: {type: string}}
+        fixed: {type: array, maxItems: 1000, items: {type: string}}
+    VulnerabilityAdvisory:
+      type: object
+      additionalProperties: false
+      required: [ecosystem, id, aliases, kind, summary, details, severity, cvss, knownExploited, knownExploitedAddedAt, cwe, affected, fixedVersions, references, source, modified, published, withdrawn]
+      description: One advisory (R-VULN-020). `details` is Markdown from an untrusted source and has to be rendered through the sanitizer (R-UI-008).
+      properties:
+        ecosystem: {type: string}
+        id: {type: string, description: The canonical identifier.}
+        aliases: {type: array, maxItems: 1000, items: {type: string}}
+        kind: {$ref: "#/components/schemas/VulnerabilityKind"}
+        summary: {type: string}
+        details: {type: string}
+        severity: {$ref: "#/components/schemas/VulnerabilitySeverity"}
+        cvss:
+          oneOf:
+            - $ref: "#/components/schemas/VulnerabilityCvss"
+            - type: "null"
+        knownExploited: {type: boolean}
+        knownExploitedAddedAt: {type: [string, "null"], format: date}
+        cwe: {type: array, maxItems: 100, items: {type: string}}
+        affected: {type: array, maxItems: 1000, items: {$ref: "#/components/schemas/VulnerabilityAffected"}}
+        fixedVersions: {type: array, maxItems: 1000, items: {type: string}}
+        references:
+          type: array
+          maxItems: 64
+          items:
+            type: object
+            additionalProperties: false
+            required: [url]
+            properties:
+              type: {type: string}
+              url: {type: string}
+        source: {$ref: "#/components/schemas/VulnerabilitySource"}
+        modified: {type: string, format: date-time}
+        published: {type: [string, "null"], format: date-time}
+        withdrawn: {type: [string, "null"], format: date-time}
+    VulnerabilityFindingEvent:
+      type: object
+      additionalProperties: false
+      required: [at, actor, change, fromStatus, toStatus, reason, comment]
+      description: One row of a finding's history (R-VULN-012).
+      properties:
+        at: {type: string, format: date-time}
+        actor:
+          type: [object, "null"]
+          description: The principal behind the change; `null` for trove.
+          additionalProperties: false
+          required: [id, name]
+          properties:
+            id: {type: string}
+            name: {type: [string, "null"]}
+        change: {type: string, enum: [detected, status_changed, resolved, redetected, reopened, advisory_changed]}
+        fromStatus: {type: [string, "null"]}
+        toStatus: {type: [string, "null"]}
+        reason: {type: [string, "null"]}
+        comment: {type: [string, "null"]}
+        details: {type: [object, "null"], additionalProperties: true}
+    VulnerabilityFindingDetail:
+      type: object
+      additionalProperties: false
+      required: [finding, advisory, virtualRepositories, blockedBy, comment, history]
+      description: |
+        A finding with its advisory, the readable virtual repositories whose effective member list contains its repository, for
+        a block set in triage the principal and time that set it, and the history (R-VULN-020).
+      properties:
+        finding: {$ref: "#/components/schemas/VulnerabilityFinding"}
+        advisory: {$ref: "#/components/schemas/VulnerabilityAdvisory"}
+        virtualRepositories: {type: array, maxItems: 1000, items: {type: string}}
+        blockedBy:
+          type: [object, "null"]
+          description: Who set the block, for `blockReason` triage; `null` otherwise.
+          additionalProperties: false
+          required: [principal, at, comment]
+          properties:
+            principal: {type: [object, "null"], additionalProperties: false, required: [id, name], properties: {id: {type: string}, name: {type: [string, "null"]}}}
+            at: {type: string, format: date-time}
+            comment: {type: [string, "null"]}
+        comment: {type: [string, "null"], maxLength: 4000}
+        statusChangedAt: {type: string, format: date-time}
+        history: {type: array, maxItems: 1000, items: {$ref: "#/components/schemas/VulnerabilityFindingEvent"}}
+    VulnerabilityFindingPatch:
+      type: object
+      additionalProperties: false
+      description: The merge patch of a triage (R-VULN-013).
+      properties:
+        status:
+          description: "`resolved` is refused (`422 status_not_settable`); `blocked` needs a confirmed finding (`409 finding_not_confirmed`)."
+          $ref: "#/components/schemas/VulnerabilityStatus"
+        dismissalReason:
+          description: Required with `dismissed`, refused otherwise.
+          $ref: "#/components/schemas/VulnerabilityDismissalReason"
+        comment: {type: [string, "null"], maxLength: 4000}
+    VulnerabilitySetStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [ids, status]
+      properties:
+        ids: {type: array, minItems: 1, maxItems: 500, items: {type: string, format: uuid}}
+        status: {$ref: "#/components/schemas/VulnerabilityStatus"}
+        dismissalReason: {$ref: "#/components/schemas/VulnerabilityDismissalReason"}
+        comment: {type: string, maxLength: 4000}
+    VulnerabilitySetStatusResult:
+      type: object
+      additionalProperties: false
+      required: [bulkId, results]
+      properties:
+        bulkId: {type: string, description: The identifier every event of the operation carries.}
+        results:
+          type: array
+          maxItems: 500
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, outcome, status, code]
+            properties:
+              id: {type: string, format: uuid}
+              outcome: {type: string, enum: [changed, unchanged, failed]}
+              status: {type: integer, description: "200 for changed and unchanged, 404 for an id the caller cannot read, 409 for finding_resolved and finding_not_confirmed."}
+              code: {type: [string, "null"], description: The problem code of a failure.}
+    VulnerabilityAdvisoryDetail:
+      type: object
+      additionalProperties: false
+      required: [advisory, findings]
+      properties:
+        advisory: {$ref: "#/components/schemas/VulnerabilityAdvisory"}
+        findings: {type: array, maxItems: 1000, items: {$ref: "#/components/schemas/VulnerabilityFinding"}}
+        truncated:
+          type: boolean
+          description: True when the caller can read more findings than the 1,000 listed; the findings list filtered by `advisory` pages through all of them.
+    VulnerabilitySeverityCounts:
+      type: object
+      additionalProperties: false
+      required: [critical, high, medium, low, none, unknown]
+      properties:
+        critical: {type: integer, format: int64}
+        high: {type: integer, format: int64}
+        medium: {type: integer, format: int64}
+        low: {type: integer, format: int64}
+        none: {type: integer, format: int64}
+        unknown: {type: integer, format: int64}
+    VulnerabilitySummary:
+      type: object
+      additionalProperties: false
+      required: [bySeverity, byKind, needsTriage, blockedVersions, fixAvailable, coverage, data]
+      description: The open findings the caller can read (R-VULN-021).
+      properties:
+        bySeverity: {$ref: "#/components/schemas/VulnerabilitySeverityCounts"}
+        byKind:
+          type: object
+          additionalProperties: false
+          required: [vulnerability, malicious]
+          properties:
+            vulnerability: {type: integer, format: int64}
+            malicious: {type: integer, format: int64}
+        needsTriage: {type: integer, format: int64}
+        blockedVersions: {type: integer, format: int64, description: The versions whose download is refused.}
+        fixAvailable: {type: integer, format: int64}
+        coverage:
+          type: object
+          additionalProperties: false
+          required: [evaluated, pendingData, internal, notCovered]
+          description: The readable repositories by the evaluation state of their scanning.
+          properties:
+            evaluated: {type: integer}
+            pendingData: {type: integer}
+            internal: {type: integer}
+            notCovered: {type: integer}
+        data:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [ecosystem, state, stale, syncedAt]
+            properties:
+              ecosystem: {type: string}
+              state: {type: string, enum: [empty, complete]}
+              stale: {type: boolean}
+              syncedAt: {type: [string, "null"], format: date-time}
+    VulnerabilityTrend:
+      type: object
+      additionalProperties: false
+      required: [from, to, basis, points]
+      properties:
+        from: {type: string, format: date}
+        to: {type: string, format: date}
+        basis: {type: string, description: "How the counts are made: a finding counts under its current severity, and dismissed findings count until they resolve."}
+        points:
+          type: array
+          maxItems: 400
+          items:
+            type: object
+            additionalProperties: false
+            required: [date, counts]
+            properties:
+              date: {type: string, format: date}
+              counts: {$ref: "#/components/schemas/VulnerabilitySeverityCounts"}
+    VulnerabilitySourceState:
+      type: object
+      additionalProperties: false
+      required: [source, ecosystem, mode, state, stale, syncedAt, fullSyncedAt, attemptedAt, failures, lastError, records, rejected, unevaluable, nextRunAt]
+      description: One source and ecosystem (R-VULN-021).
+      properties:
+        source: {type: string, enum: [osv, kev]}
+        ecosystem: {type: string, description: The OSV ecosystem; empty for kev.}
+        mode: {type: string, enum: [online, repository, off]}
+        state: {type: string, enum: [empty, complete]}
+        stale: {type: boolean}
+        syncedAt: {type: [string, "null"], format: date-time}
+        fullSyncedAt: {type: [string, "null"], format: date-time}
+        attemptedAt: {type: [string, "null"], format: date-time}
+        failures: {type: integer, description: Consecutive failed runs.}
+        lastError:
+          oneOf:
+            - $ref: "#/components/schemas/Problem"
+            - type: "null"
+        records: {type: integer}
+        rejected: {type: integer}
+        unevaluable: {type: integer}
+        nextRunAt: {type: [string, "null"], format: date-time}
+    VulnerabilitySourceList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, maxItems: 100, items: {$ref: "#/components/schemas/VulnerabilitySourceState"}}
+    ClaimedNameMatch:
+      type: object
+      additionalProperties: false
+      required: [ecosystem, advisory, name, kind, claimRepository, firstSeenAt]
+      description: A public advisory for a name the installation treats as internal (R-VULN-010).
+      properties:
+        ecosystem: {type: string}
+        advisory: {type: string, description: The canonical identifier.}
+        name: {type: string}
+        kind: {$ref: "#/components/schemas/VulnerabilityKind"}
+        claimRepository: {type: [string, "null"], description: The repository whose claim covers the name.}
+        firstSeenAt: {type: string, format: date-time}
+    ClaimedNameMatchList:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items: {type: array, items: {$ref: "#/components/schemas/ClaimedNameMatch"}}
+        nextCursor: {type: [string, "null"]}
+    VulnerabilityVersionReport:
+      type: object
+      additionalProperties: false
+      required: [packageId, version, repositories]
+      description: What the scanning says of one version in every readable repository that holds it (R-VULN-020).
+      properties:
+        packageId: {type: string}
+        version: {type: string}
+        repositories:
+          type: array
+          maxItems: 1000
+          items:
+            type: object
+            additionalProperties: false
+            required: [repository, evaluation, blocked, blockReason, findings]
+            properties:
+              repository: {type: string}
+              evaluation: {$ref: "#/components/schemas/VulnerabilityEvaluation"}
+              syncedAt: {type: [string, "null"], format: date-time, description: The data's `syncedAt` for an evaluated version.}
+              blocked: {type: boolean}
+              blockReason:
+                oneOf:
+                  - $ref: "#/components/schemas/VulnerabilityBlockReason"
+                  - type: "null"
+              findings: {type: array, maxItems: 1000, items: {$ref: "#/components/schemas/VulnerabilityFinding"}}
+    VulnerabilityPackageReport:
+      type: object
+      additionalProperties: false
+      required: [packageId, versions]
+      properties:
+        packageId: {type: string}
+        versions:
+          type: array
+          maxItems: 100000
+          items:
+            type: object
+            additionalProperties: false
+            required: [version, open]
+            properties:
+              version: {type: string}
+              open: {$ref: "#/components/schemas/VulnerabilitySeverityCounts"}
+    VulnerabilityDataFacts:
+      type: object
+      additionalProperties: false
+      required: [enforcement, sources]
+      description: |
+        The advisory data's state as an operator reads it (R-OPS-004, R-VULN-024), from `vuln_source_state` as the sources
+        operation reads it. It is cluster-wide state and never affects readiness.
+      properties:
+        enforcement: {type: string, enum: [enforce, report]}
+        sources:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [source, ecosystem, mode, state, stale, syncedAt, failures]
+            properties:
+              source: {type: string, enum: [osv, kev]}
+              ecosystem: {type: string}
+              mode: {type: string, enum: [online, repository, off]}
+              state: {type: string, enum: [empty, complete]}
+              stale: {type: boolean}
+              syncedAt: {type: [string, "null"], format: date-time}
+              failures: {type: integer}
+    # <<< M4b vulnerabilities

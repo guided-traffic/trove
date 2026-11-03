@@ -11,6 +11,7 @@ import (
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
+	"github.com/guided-traffic/trove/internal/vuln"
 )
 
 var errForeignTx = errors.New("repository: the transaction is not one of internal/meta/postgres")
@@ -80,6 +81,12 @@ func toRepository(r q.Repository, cat *catalog.Registry) (Repository, error) {
 	out.autoClaim = known && info.PinsAndClaims && info.PackageNames
 	if s.Local != nil && s.Local.AutoClaim != nil {
 		out.autoClaim = out.autoClaim && *s.Local.AutoClaim
+	}
+	if out.Class != Virtual && known && info.Ecosystem != "" {
+		out.vulnEcosystem, out.vulnerabilities = info.Ecosystem, vuln.DefaultSettings()
+		if s.Vulnerabilities != nil {
+			out.vulnerabilities = *s.Vulnerabilities
+		}
 	}
 	if out.Class == Virtual {
 		out.virt = &virtualState{settings: VirtualSettings{Members: []string{}, MergedMetadataTTLSeconds: ptr(mergedTTLOf(s)), Pinning: Pinning{Rules: []PinRule{}}}}

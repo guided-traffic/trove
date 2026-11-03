@@ -82,7 +82,10 @@ type Options struct {
 	Resolver formats.Resolver
 	// DownloadBuffer is storage.download.buffer_size; below 4,096 uses 4,096.
 	DownloadBuffer int
-	Log            *slog.Logger
+	// Vuln are the ports of the vulnerability scanning behind Host.Vulnerabilities; the zero value is a replica that
+	// has not wired them (vulnerability.go).
+	Vuln VulnPorts
+	Log  *slog.Logger
 }
 
 // Host implements formats.Host.

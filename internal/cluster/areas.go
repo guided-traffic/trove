@@ -128,6 +128,12 @@ func init() {
 	RegisterArea(Area{Name: AreaCIMappings, Owner: "R-CI-009", Class: ChangeArea, PayloadVersion: 1})
 	RegisterArea(Area{Name: AreaCIIssuerKeys, Owner: "R-CI-003", Class: ChangeArea, PayloadVersion: 1})
 	// <<< M4 ci
+	//
+	// The area of the vulnerability scanning (vulnerability-scanning.md, R-VULN-027). Its cluster_epoch row is
+	// seeded by 00035_vulnerabilities.
+	// >>> M4b vulnerabilities
+	RegisterArea(Area{Name: AreaVulnData, Owner: "R-VULN-027", Class: ChangeArea, PayloadVersion: 1})
+	// <<< M4b vulnerabilities
 }
 
 // Names of the areas of this package.
@@ -208,3 +214,14 @@ const AreaCIMappings = "ci_mappings"
 const AreaCIIssuerKeys = "ci_issuer_keys"
 
 // <<< M4 ci
+
+// >>> M4b vulnerabilities
+
+// AreaVulnData carries a changed advisory data state of one ecosystem (R-VULN-027): written once per sync run that
+// changed records or the state (a first complete import, a changed `complete`), never per request. Every replica
+// reloads its copy of vuln_source_state, the cache `vuln_source_state` of SafetyTTL 60 s, and the rendered NuGet page,
+// `vuln_nuget_page`, keyed by the epoch, validates itself against it (R-VULN-018). The payload is
+// {"ecosystem": "npm", "epoch": 42}.
+const AreaVulnData = "vuln_data"
+
+// <<< M4b vulnerabilities

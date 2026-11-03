@@ -453,6 +453,15 @@ Expand steps of beta phase 5 ([ci-oidc.md](ci-oidc.md)): 00026 creates `ci_issue
 `ON DELETE CASCADE`, Q-CI-20), seeds the epoch rows of `ci_mappings` and `ci_issuer_keys`, and adds `package_owner_ci_issuer_id_fkey` `NOT VALID`; 00027 builds its index
 `CONCURRENTLY`; 00028 validates it. 00029 to 00031 add the indexes of the issuance statements (Q-CI-53), each a single `CREATE INDEX CONCURRENTLY` in its own no-transaction step (R-HA-018): `ci_issuances_issued` (the list without a filter), `ci_issuances_issuer_issued` (the list of one issuer) and `ci_issuances_contributions` (a GIN on `grants -> 'contributions'` for a project's list). There is no index on `audit_event.token_id`: the table is partitioned, `CREATE INDEX CONCURRENTLY` is refused on a partitioned table, and the usage summary reads a window of the partitions' primary key. The plans are checked on a seeded table by [ci_issuance_plans_test.go](../../test/integration/postgres/ci_issuance_plans_test.go). These steps add indexes only, so nothing is registered in [tables_ci.go](../../internal/meta/postgres/tables_ci.go) and no export class changes.
 
+## Vulnerability tables (00035, 00036)
+
+Expand steps of beta phase 6 ([vulnerabilities.md](vulnerabilities.md)): 00035 creates the eight tables of the specification's data models (`vuln_source_state`, `vuln_advisory` with
+the added column `cwe_ids`, `vuln_affected`, `vuln_pending_evaluation`, `vuln_kev`, `vuln_claimed_match`, `vuln_finding`, `vuln_finding_event`) and seeds the epoch row of the area
+`vuln_data`; 00036 builds `packages_name` on `packages (name)` `CONCURRENTLY` as a step of its own (Q-VULN-24). `vuln_finding` and `vuln_finding_event` are data in backups, the other six
+tables transient, and `vuln_finding.revision` is a revision column ([tables_vuln.go](../../internal/meta/postgres/tables_vuln.go)). The queries are in one file per work package
+(`vuln_sync.sql`, `vuln_evaluate.sql`, `vuln_enforce.sql`, `vuln_audits.sql`, `vuln_api.sql`, `vuln_ops.sql`). Tested by
+[vuln_test.go](../../test/integration/postgres/vuln_test.go).
+
 ## Migrations of the Bastion (Q-BAS-48)
 
 Beta phase 5b ([bastion.md](bastion.md)) adds three steps. A registration is a principal of the kind `bastion` plus a row of `bastion`,

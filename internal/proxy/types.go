@@ -128,6 +128,10 @@ type Request struct {
 	// Package is the normalized package name the path belongs to, "" for none. It
 	// drives the gone-package rule and the ownership of URL-map rows.
 	Package string
+	// Version is the normalized version the path belongs to, "" for none (a package document, a path the format does
+	// not map to a version). The vulnerability scanning evaluates an artifact request with it before the fetch
+	// (R-VULN-015 "Remote miss").
+	Version string
 	Mode    Mode
 	// Populate is the populate check; see [Populate].
 	Populate Populate

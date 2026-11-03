@@ -133,6 +133,16 @@ schema bounds `ci.replay.retention_after_expiry` at `1m` at least (Q-CI-51); the
 file and in the environment with the names of its replacements (`retiredKeys`, [load.go](../../internal/config/load.go), R-CI-021). A list element may hold
 scalars, pointers to scalars (a key left out is nil and takes the default of R-CI-001) and lists of strings. Only `trove migrate` applies `ci.issuers`.
 
+## Vulnerability keys
+
+The `vulnerabilities` section ([vulnerabilities.go](../../internal/config/vulnerabilities.go), [vulnerabilities.md](vulnerabilities.md)): `enabled`, `enforcement` (`enforce` or `report`),
+`stale_after`, `sources.osv.*` (`mode`, `base_url`, `ecosystems`, `repository`, `full_resync_threshold`, `overlap`, `max_shrink`, `timeout`, `max_archive_size`, `max_record_size`),
+`sources.kev.*`, `sources.epss.*` (P1: only `off` is accepted), `matching.public_upstreams` (a map of format ID to hosts, replaced as a whole), `findings.resolved_retention` and
+`export.max_rows`, each with the default of R-VULN-025. The four maintenance tasks `vuln-sync-osv`, `vuln-sync-osv-full`, `vuln-sync-kev` and `vuln-findings-retention` are in the default of
+`maintenance.tasks`. `Vulnerabilities.Validate` refuses what R-VULN-025's criterion names, each time with the key: `max_shrink` outside 0 to 1, an `ecosystems` entry of no format of this
+release (the fixed list `npm`, `NuGet`, spelled as OSV spells them), `mode: repository` without `repository`, a source URL that is not an https URL (INV-20), and an `epss` mode other than
+`off`. A source URL is checked also while its source is off, so a typo does not wait for the day the mode changes.
+
 ## Bastion keys
 
 Two trees serve the Bastion ([bastion.md](bastion.md), Q-BAS-50).

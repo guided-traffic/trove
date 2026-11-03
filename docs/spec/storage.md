@@ -226,7 +226,7 @@ CREATE TABLE packages (
     created_at    timestamptz NOT NULL DEFAULT now(),
     UNIQUE (repo_id, name)                     -- also serves the rev_seq reads (R-ARCH-012, R-ARCH-015)
 );
-CREATE INDEX packages_name ON packages (name); -- from M4b: lookup by name across repositories (vulnerability-scanning.md R-VULN-011)
+CREATE INDEX packages_name ON packages (name); -- from M4b, built CONCURRENTLY in a step of its own: lookup by name across repositories (vulnerability-scanning.md R-VULN-011, Q-VULN-24)
 
 CREATE TABLE package_versions (
     id               bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

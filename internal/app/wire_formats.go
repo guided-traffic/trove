@@ -196,7 +196,7 @@ type hostBinder interface {
 // ownership (R-AUTHZ-018) and the namespace auto claim (R-REPO-023) are bound to
 // the seams of the package writer; a seam that is not bound makes the writer refuse
 // the claim, so a publish is never let through unchecked (fail closed).
-func (a *App) wireFormats(_ context.Context, in infra, fp formatPortsArea, vr virtualArea, ow ownershipArea) (formatsArea, error) {
+func (a *App) wireFormats(_ context.Context, in infra, fp formatPortsArea, vr virtualArea, ow ownershipArea, vz vulnArea) (formatsArea, error) {
 	if err := requireInputs(AreaFormats, given("format data ports", fp.bindings)); err != nil {
 		return formatsArea{}, err
 	}
@@ -218,12 +218,12 @@ func (a *App) wireFormats(_ context.Context, in infra, fp formatPortsArea, vr vi
 		}
 		return h, nil
 	}, d)
-	return formatsArea{deps: d, hooks: formathost.NewHooks(d), seam: seam}, nil
+	return formatsArea{deps: d, hooks: vz.hooks(formathost.NewHooks(d)), seam: seam}, nil
 }
 
 // wireFormatHost builds the Host and the dispatcher on the item store and the
 // decision point.
-func (a *App) wireFormatHost(_ context.Context, in infra, fm formatsArea, repo repositoryArea, ex exposureArea, fa filesArea, eng proxyEngineArea, ve virtualEngineArea) (formatHostArea, error) {
+func (a *App) wireFormatHost(_ context.Context, in infra, fm formatsArea, repo repositoryArea, ex exposureArea, fa filesArea, eng proxyEngineArea, ve virtualEngineArea, vz vulnArea) (formatHostArea, error) {
 	if err := requireInputs(AreaFormatHost, given("item store", fa.items), given("decision point", fa.decider),
 		given("repository reader", repo.reader), given("exposure ceiling", ex.ceiling), given("virtual engine", ve.engine)); err != nil {
 		return formatHostArea{}, err
@@ -244,6 +244,7 @@ func (a *App) wireFormatHost(_ context.Context, in infra, fm formatsArea, repo r
 	host, err := formathost.New(formathost.Options{
 		Runner: in.db, Decider: fa.decider, Items: fa.items, Packages: pkgs, Deps: fm.deps, Renditions: rend, Engine: eng.remote(),
 		Resolver:       resolver,
+		Vuln:           formathost.VulnPorts{States: vz.states, Advisories: vz.advisories, Audit: vz.countAudit},
 		DownloadBuffer: int(a.cfg.Storage.Download.BufferSize), Log: a.log.With("component", "formats"),
 	})
 	if err != nil {

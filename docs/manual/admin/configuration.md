@@ -215,6 +215,28 @@ The tables below list the keys an installation most often sets. Every key with i
 </details>
 
 <details>
+<summary>Vulnerability scanning</summary>
+
+The scanning of stored packages against public advisory data is being built in this version; its keys are read and checked at start-up, and the behaviour they set arrives with it. A source URL that is not an `https` URL, an ecosystem no format of this release has an adapter for, `max_shrink` outside 0 to 1, a source in mode `repository` without a `repository`, and an `epss` mode other than `off` stop the start and name the key.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `vulnerabilities.enabled` | `true` | `false`: no sync, no evaluation and no block |
+| `vulnerabilities.enforcement` | `enforce` | `report` blocks nothing anywhere and only counts what would have been blocked |
+| `vulnerabilities.stale_after` | `24h` | Advisory data older than this is shown as stale; evaluation continues |
+| `vulnerabilities.sources.osv.mode`, `.kev.mode` | `online` | `online`, `repository` (air-gapped: files uploaded to a generic repository) or `off` |
+| `vulnerabilities.sources.osv.base_url`, `.kev.url` | the OSV export bucket, the CISA catalog | `https` only |
+| `vulnerabilities.sources.osv.ecosystems` | `[]` | Narrows the imported ecosystems (`npm`, `NuGet`); empty means all of them |
+| `vulnerabilities.sources.osv.max_shrink` | `0.2` | The share of an ecosystem's records a full sync may delete before it is refused |
+| `vulnerabilities.sources.osv.max_archive_size`, `.max_record_size` | `1GiB`, `1MiB` | Largest archive and largest record |
+| `vulnerabilities.matching.public_upstreams` | npm `registry.npmjs.org`; NuGet `api.nuget.org`, `www.nuget.org` | The hosts of the public registries; a remote repository whose upstream is not listed is not scanned until it sets `matchPublicAdvisories: always` |
+| `vulnerabilities.findings.resolved_retention` | `9600h` | How long a resolved finding is kept |
+| `vulnerabilities.export.max_rows` | `100000` | The most rows of a findings export |
+| `maintenance.tasks.vuln-sync-osv`, `vuln-sync-osv-full`, `vuln-sync-kev`, `vuln-findings-retention` | `*/15 * * * *`, `17 3 * * 0`, `41 */6 * * *`, `50 3 * * *` | The schedules of the scanning's tasks |
+
+</details>
+
+<details>
 <summary>UI</summary>
 
 | Key | Default | Meaning |

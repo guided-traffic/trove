@@ -59,6 +59,11 @@ const (
 	// content:bypass it is a system scope item, and a token's repository scope
 	// narrows it like a grant (R-AUTHZ-013).
 	ContentMetadataRead Capability = "content:metadata-read"
+	// VulnerabilitiesTriage changes the status of vulnerability findings, which sets, lifts or restores download
+	// blocks (R-VULN-013, Q-VULN-8, Q-VULN-20). It is effective only together with read on the finding's repository or
+	// content:metadata-read (R-VULN-019), no repository action grants it, and it is a system scope item, so a token's scope
+	// can carry it (R-AUTHZ-013). admin and auditor hold it (Q-VULN-27).
+	VulnerabilitiesTriage Capability = "vulnerabilities:triage"
 )
 
 // RequestKind is the request kind of the request descriptor (R-REPO-003); the

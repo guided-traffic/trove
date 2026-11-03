@@ -60,6 +60,10 @@ type Host interface {
 	// RestoredAt returns system_state restored_at (C-16), the zero time until a
 	// restore has run (M5).
 	RestoredAt(ctx context.Context) (time.Time, error)
+	// Vulnerabilities is the scanning's data as an audit route reads it (R-VULN-017, R-VULN-018, ADR-150): the state
+	// of an ecosystem's advisory data, its advisories, the internal names and the matcher. A host that has not wired
+	// the scanning answers [NoVulnerabilityData], so a format never meets nil.
+	Vulnerabilities() VulnerabilityData
 }
 
 // Ingestor is the upload pipeline of R-ARCH-014.

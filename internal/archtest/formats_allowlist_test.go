@@ -29,6 +29,13 @@ func TestFormatAllowlistSplit(t *testing.T) {
 	t.Run("R-ARCH-008 a format may import the untrusted-content limits", func(t *testing.T) {
 		wantClean(t, CheckModuleImportBans(mod, []Package{pkg("internal/formats/npm", "internal/formats/untrusted", "internal/formats")}))
 	})
+	t.Run("R-VULN-009 a format may import the leaf types of the vulnerability scanning and not its domain", func(t *testing.T) {
+		wantClean(t, CheckModuleImportBans(mod, []Package{pkg("internal/formats/npm", "internal/vuln/advisory", "internal/vuln/match")}))
+		vs := CheckModuleImportBans(mod, []Package{pkg("internal/formats/npm", "internal/vuln", "internal/vuln/store", "internal/vuln/osv")})
+		wantEdge(t, vs, "R-ARCH-008", "internal/formats/npm", "internal/vuln")
+		wantEdge(t, vs, "R-ARCH-008", "internal/formats/npm", "internal/vuln/store")
+		wantEdge(t, vs, "R-ARCH-008", "internal/formats/npm", "internal/vuln/osv")
+	})
 	t.Run("R-ARCH-008 the contract importing the object store is named", func(t *testing.T) {
 		vs := CheckModuleImportBans(mod, []Package{pkg("internal/formats", "internal/blob", "internal/meta/postgres")})
 		wantEdge(t, vs, "R-ARCH-008", "internal/formats", "internal/blob")

@@ -867,19 +867,19 @@ func (e EndpointConfigurationExposure) Valid() bool {
 
 // Defines values for EndpointConfigurationReplicaHeader.
 const (
-	Always        EndpointConfigurationReplicaHeader = "always"
-	Authenticated EndpointConfigurationReplicaHeader = "authenticated"
-	Never         EndpointConfigurationReplicaHeader = "never"
+	EndpointConfigurationReplicaHeaderAlways        EndpointConfigurationReplicaHeader = "always"
+	EndpointConfigurationReplicaHeaderAuthenticated EndpointConfigurationReplicaHeader = "authenticated"
+	EndpointConfigurationReplicaHeaderNever         EndpointConfigurationReplicaHeader = "never"
 )
 
 // Valid indicates whether the value is a known member of the EndpointConfigurationReplicaHeader enum.
 func (e EndpointConfigurationReplicaHeader) Valid() bool {
 	switch e {
-	case Always:
+	case EndpointConfigurationReplicaHeaderAlways:
 		return true
-	case Authenticated:
+	case EndpointConfigurationReplicaHeaderAuthenticated:
 		return true
-	case Never:
+	case EndpointConfigurationReplicaHeaderNever:
 		return true
 	default:
 		return false
@@ -2383,6 +2383,459 @@ func (e VirtualFormatName) Valid() bool {
 	}
 }
 
+// Defines values for VulnerabilityAffectedRangesType.
+const (
+	ECOSYSTEM VulnerabilityAffectedRangesType = "ECOSYSTEM"
+	GIT       VulnerabilityAffectedRangesType = "GIT"
+	SEMVER    VulnerabilityAffectedRangesType = "SEMVER"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilityAffectedRangesType enum.
+func (e VulnerabilityAffectedRangesType) Valid() bool {
+	switch e {
+	case ECOSYSTEM:
+		return true
+	case GIT:
+		return true
+	case SEMVER:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilityBlockReason.
+const (
+	VulnerabilityBlockReasonMalicious VulnerabilityBlockReason = "malicious"
+	VulnerabilityBlockReasonTriage    VulnerabilityBlockReason = "triage"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilityBlockReason enum.
+func (e VulnerabilityBlockReason) Valid() bool {
+	switch e {
+	case VulnerabilityBlockReasonMalicious:
+		return true
+	case VulnerabilityBlockReasonTriage:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilityCvssVersion.
+const (
+	N20 VulnerabilityCvssVersion = "2.0"
+	N30 VulnerabilityCvssVersion = "3.0"
+	N31 VulnerabilityCvssVersion = "3.1"
+	N40 VulnerabilityCvssVersion = "4.0"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilityCvssVersion enum.
+func (e VulnerabilityCvssVersion) Valid() bool {
+	switch e {
+	case N20:
+		return true
+	case N30:
+		return true
+	case N31:
+		return true
+	case N40:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilityDataFactsEnforcement.
+const (
+	Enforce VulnerabilityDataFactsEnforcement = "enforce"
+	Report  VulnerabilityDataFactsEnforcement = "report"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilityDataFactsEnforcement enum.
+func (e VulnerabilityDataFactsEnforcement) Valid() bool {
+	switch e {
+	case Enforce:
+		return true
+	case Report:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilityDataFactsSourcesMode.
+const (
+	VulnerabilityDataFactsSourcesModeOff        VulnerabilityDataFactsSourcesMode = "off"
+	VulnerabilityDataFactsSourcesModeOnline     VulnerabilityDataFactsSourcesMode = "online"
+	VulnerabilityDataFactsSourcesModeRepository VulnerabilityDataFactsSourcesMode = "repository"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilityDataFactsSourcesMode enum.
+func (e VulnerabilityDataFactsSourcesMode) Valid() bool {
+	switch e {
+	case VulnerabilityDataFactsSourcesModeOff:
+		return true
+	case VulnerabilityDataFactsSourcesModeOnline:
+		return true
+	case VulnerabilityDataFactsSourcesModeRepository:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilityDataFactsSourcesSource.
+const (
+	VulnerabilityDataFactsSourcesSourceKev VulnerabilityDataFactsSourcesSource = "kev"
+	VulnerabilityDataFactsSourcesSourceOsv VulnerabilityDataFactsSourcesSource = "osv"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilityDataFactsSourcesSource enum.
+func (e VulnerabilityDataFactsSourcesSource) Valid() bool {
+	switch e {
+	case VulnerabilityDataFactsSourcesSourceKev:
+		return true
+	case VulnerabilityDataFactsSourcesSourceOsv:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilityDataFactsSourcesState.
+const (
+	VulnerabilityDataFactsSourcesStateComplete VulnerabilityDataFactsSourcesState = "complete"
+	VulnerabilityDataFactsSourcesStateEmpty    VulnerabilityDataFactsSourcesState = "empty"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilityDataFactsSourcesState enum.
+func (e VulnerabilityDataFactsSourcesState) Valid() bool {
+	switch e {
+	case VulnerabilityDataFactsSourcesStateComplete:
+		return true
+	case VulnerabilityDataFactsSourcesStateEmpty:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilityDismissalReason.
+const (
+	FalsePositive  VulnerabilityDismissalReason = "false_positive"
+	Mitigated      VulnerabilityDismissalReason = "mitigated"
+	NotExploitable VulnerabilityDismissalReason = "not_exploitable"
+	RiskAccepted   VulnerabilityDismissalReason = "risk_accepted"
+	TestOnly       VulnerabilityDismissalReason = "test_only"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilityDismissalReason enum.
+func (e VulnerabilityDismissalReason) Valid() bool {
+	switch e {
+	case FalsePositive:
+		return true
+	case Mitigated:
+		return true
+	case NotExploitable:
+		return true
+	case RiskAccepted:
+		return true
+	case TestOnly:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilityEvaluation.
+const (
+	VulnerabilityEvaluationEvaluated   VulnerabilityEvaluation = "evaluated"
+	VulnerabilityEvaluationInternal    VulnerabilityEvaluation = "internal"
+	VulnerabilityEvaluationNotCovered  VulnerabilityEvaluation = "not_covered"
+	VulnerabilityEvaluationPendingData VulnerabilityEvaluation = "pending_data"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilityEvaluation enum.
+func (e VulnerabilityEvaluation) Valid() bool {
+	switch e {
+	case VulnerabilityEvaluationEvaluated:
+		return true
+	case VulnerabilityEvaluationInternal:
+		return true
+	case VulnerabilityEvaluationNotCovered:
+		return true
+	case VulnerabilityEvaluationPendingData:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilityFindingEventChange.
+const (
+	VulnerabilityFindingEventChangeAdvisoryChanged VulnerabilityFindingEventChange = "advisory_changed"
+	VulnerabilityFindingEventChangeDetected        VulnerabilityFindingEventChange = "detected"
+	VulnerabilityFindingEventChangeRedetected      VulnerabilityFindingEventChange = "redetected"
+	VulnerabilityFindingEventChangeReopened        VulnerabilityFindingEventChange = "reopened"
+	VulnerabilityFindingEventChangeResolved        VulnerabilityFindingEventChange = "resolved"
+	VulnerabilityFindingEventChangeStatusChanged   VulnerabilityFindingEventChange = "status_changed"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilityFindingEventChange enum.
+func (e VulnerabilityFindingEventChange) Valid() bool {
+	switch e {
+	case VulnerabilityFindingEventChangeAdvisoryChanged:
+		return true
+	case VulnerabilityFindingEventChangeDetected:
+		return true
+	case VulnerabilityFindingEventChangeRedetected:
+		return true
+	case VulnerabilityFindingEventChangeReopened:
+		return true
+	case VulnerabilityFindingEventChangeResolved:
+		return true
+	case VulnerabilityFindingEventChangeStatusChanged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilityKind.
+const (
+	VulnerabilityKindMalicious     VulnerabilityKind = "malicious"
+	VulnerabilityKindVulnerability VulnerabilityKind = "vulnerability"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilityKind enum.
+func (e VulnerabilityKind) Valid() bool {
+	switch e {
+	case VulnerabilityKindMalicious:
+		return true
+	case VulnerabilityKindVulnerability:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilityResolvedReason.
+const (
+	AdvisoryWithdrawn VulnerabilityResolvedReason = "advisory_withdrawn"
+	NoLongerAffected  VulnerabilityResolvedReason = "no_longer_affected"
+	ScanningDisabled  VulnerabilityResolvedReason = "scanning_disabled"
+	VersionRemoved    VulnerabilityResolvedReason = "version_removed"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilityResolvedReason enum.
+func (e VulnerabilityResolvedReason) Valid() bool {
+	switch e {
+	case AdvisoryWithdrawn:
+		return true
+	case NoLongerAffected:
+		return true
+	case ScanningDisabled:
+		return true
+	case VersionRemoved:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilitySetStatusResultResultsOutcome.
+const (
+	VulnerabilitySetStatusResultResultsOutcomeChanged   VulnerabilitySetStatusResultResultsOutcome = "changed"
+	VulnerabilitySetStatusResultResultsOutcomeFailed    VulnerabilitySetStatusResultResultsOutcome = "failed"
+	VulnerabilitySetStatusResultResultsOutcomeUnchanged VulnerabilitySetStatusResultResultsOutcome = "unchanged"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilitySetStatusResultResultsOutcome enum.
+func (e VulnerabilitySetStatusResultResultsOutcome) Valid() bool {
+	switch e {
+	case VulnerabilitySetStatusResultResultsOutcomeChanged:
+		return true
+	case VulnerabilitySetStatusResultResultsOutcomeFailed:
+		return true
+	case VulnerabilitySetStatusResultResultsOutcomeUnchanged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilitySettingsMatchPublicAdvisories.
+const (
+	VulnerabilitySettingsMatchPublicAdvisoriesAlways VulnerabilitySettingsMatchPublicAdvisories = "always"
+	VulnerabilitySettingsMatchPublicAdvisoriesAuto   VulnerabilitySettingsMatchPublicAdvisories = "auto"
+	VulnerabilitySettingsMatchPublicAdvisoriesNever  VulnerabilitySettingsMatchPublicAdvisories = "never"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilitySettingsMatchPublicAdvisories enum.
+func (e VulnerabilitySettingsMatchPublicAdvisories) Valid() bool {
+	switch e {
+	case VulnerabilitySettingsMatchPublicAdvisoriesAlways:
+		return true
+	case VulnerabilitySettingsMatchPublicAdvisoriesAuto:
+		return true
+	case VulnerabilitySettingsMatchPublicAdvisoriesNever:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilitySettingsOnMissingData.
+const (
+	Allow VulnerabilitySettingsOnMissingData = "allow"
+	Block VulnerabilitySettingsOnMissingData = "block"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilitySettingsOnMissingData enum.
+func (e VulnerabilitySettingsOnMissingData) Valid() bool {
+	switch e {
+	case Allow:
+		return true
+	case Block:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilitySeverity.
+const (
+	VulnerabilitySeverityCritical VulnerabilitySeverity = "critical"
+	VulnerabilitySeverityHigh     VulnerabilitySeverity = "high"
+	VulnerabilitySeverityLow      VulnerabilitySeverity = "low"
+	VulnerabilitySeverityMedium   VulnerabilitySeverity = "medium"
+	VulnerabilitySeverityNone     VulnerabilitySeverity = "none"
+	VulnerabilitySeverityUnknown  VulnerabilitySeverity = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilitySeverity enum.
+func (e VulnerabilitySeverity) Valid() bool {
+	switch e {
+	case VulnerabilitySeverityCritical:
+		return true
+	case VulnerabilitySeverityHigh:
+		return true
+	case VulnerabilitySeverityLow:
+		return true
+	case VulnerabilitySeverityMedium:
+		return true
+	case VulnerabilitySeverityNone:
+		return true
+	case VulnerabilitySeverityUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilitySourceStateMode.
+const (
+	VulnerabilitySourceStateModeOff        VulnerabilitySourceStateMode = "off"
+	VulnerabilitySourceStateModeOnline     VulnerabilitySourceStateMode = "online"
+	VulnerabilitySourceStateModeRepository VulnerabilitySourceStateMode = "repository"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilitySourceStateMode enum.
+func (e VulnerabilitySourceStateMode) Valid() bool {
+	switch e {
+	case VulnerabilitySourceStateModeOff:
+		return true
+	case VulnerabilitySourceStateModeOnline:
+		return true
+	case VulnerabilitySourceStateModeRepository:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilitySourceStateSource.
+const (
+	VulnerabilitySourceStateSourceKev VulnerabilitySourceStateSource = "kev"
+	VulnerabilitySourceStateSourceOsv VulnerabilitySourceStateSource = "osv"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilitySourceStateSource enum.
+func (e VulnerabilitySourceStateSource) Valid() bool {
+	switch e {
+	case VulnerabilitySourceStateSourceKev:
+		return true
+	case VulnerabilitySourceStateSourceOsv:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilitySourceStateState.
+const (
+	VulnerabilitySourceStateStateComplete VulnerabilitySourceStateState = "complete"
+	VulnerabilitySourceStateStateEmpty    VulnerabilitySourceStateState = "empty"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilitySourceStateState enum.
+func (e VulnerabilitySourceStateState) Valid() bool {
+	switch e {
+	case VulnerabilitySourceStateStateComplete:
+		return true
+	case VulnerabilitySourceStateStateEmpty:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilityStatus.
+const (
+	VulnerabilityStatusBlocked     VulnerabilityStatus = "blocked"
+	VulnerabilityStatusConfirmed   VulnerabilityStatus = "confirmed"
+	VulnerabilityStatusDismissed   VulnerabilityStatus = "dismissed"
+	VulnerabilityStatusNeedsTriage VulnerabilityStatus = "needs_triage"
+	VulnerabilityStatusResolved    VulnerabilityStatus = "resolved"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilityStatus enum.
+func (e VulnerabilityStatus) Valid() bool {
+	switch e {
+	case VulnerabilityStatusBlocked:
+		return true
+	case VulnerabilityStatusConfirmed:
+		return true
+	case VulnerabilityStatusDismissed:
+		return true
+	case VulnerabilityStatusNeedsTriage:
+		return true
+	case VulnerabilityStatusResolved:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VulnerabilitySummaryDataState.
+const (
+	VulnerabilitySummaryDataStateComplete VulnerabilitySummaryDataState = "complete"
+	VulnerabilitySummaryDataStateEmpty    VulnerabilitySummaryDataState = "empty"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilitySummaryDataState enum.
+func (e VulnerabilitySummaryDataState) Valid() bool {
+	switch e {
+	case VulnerabilitySummaryDataStateComplete:
+		return true
+	case VulnerabilitySummaryDataStateEmpty:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WhoamiCredentialType.
 const (
 	WhoamiCredentialTypeCit     WhoamiCredentialType = "cit"
@@ -2911,6 +3364,90 @@ const (
 func (e ListUsersParamsSort) Valid() bool {
 	switch e {
 	case Username:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListVulnerabilityFindingsParamsSort.
+const (
+	ListVulnerabilityFindingsParamsSortAdvisory        ListVulnerabilityFindingsParamsSort = "advisory"
+	ListVulnerabilityFindingsParamsSortDetectedAt      ListVulnerabilityFindingsParamsSort = "detectedAt"
+	ListVulnerabilityFindingsParamsSortMinusAdvisory   ListVulnerabilityFindingsParamsSort = "-advisory"
+	ListVulnerabilityFindingsParamsSortMinusDetectedAt ListVulnerabilityFindingsParamsSort = "-detectedAt"
+	ListVulnerabilityFindingsParamsSortMinusPackage    ListVulnerabilityFindingsParamsSort = "-package"
+	ListVulnerabilityFindingsParamsSortMinusSeverity   ListVulnerabilityFindingsParamsSort = "-severity"
+	ListVulnerabilityFindingsParamsSortMinusStatus     ListVulnerabilityFindingsParamsSort = "-status"
+	ListVulnerabilityFindingsParamsSortPackage         ListVulnerabilityFindingsParamsSort = "package"
+	ListVulnerabilityFindingsParamsSortSeverity        ListVulnerabilityFindingsParamsSort = "severity"
+	ListVulnerabilityFindingsParamsSortStatus          ListVulnerabilityFindingsParamsSort = "status"
+)
+
+// Valid indicates whether the value is a known member of the ListVulnerabilityFindingsParamsSort enum.
+func (e ListVulnerabilityFindingsParamsSort) Valid() bool {
+	switch e {
+	case ListVulnerabilityFindingsParamsSortAdvisory:
+		return true
+	case ListVulnerabilityFindingsParamsSortDetectedAt:
+		return true
+	case ListVulnerabilityFindingsParamsSortMinusAdvisory:
+		return true
+	case ListVulnerabilityFindingsParamsSortMinusDetectedAt:
+		return true
+	case ListVulnerabilityFindingsParamsSortMinusPackage:
+		return true
+	case ListVulnerabilityFindingsParamsSortMinusSeverity:
+		return true
+	case ListVulnerabilityFindingsParamsSortMinusStatus:
+		return true
+	case ListVulnerabilityFindingsParamsSortPackage:
+		return true
+	case ListVulnerabilityFindingsParamsSortSeverity:
+		return true
+	case ListVulnerabilityFindingsParamsSortStatus:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ExportVulnerabilityFindingsParamsSort.
+const (
+	ExportVulnerabilityFindingsParamsSortAdvisory        ExportVulnerabilityFindingsParamsSort = "advisory"
+	ExportVulnerabilityFindingsParamsSortDetectedAt      ExportVulnerabilityFindingsParamsSort = "detectedAt"
+	ExportVulnerabilityFindingsParamsSortMinusAdvisory   ExportVulnerabilityFindingsParamsSort = "-advisory"
+	ExportVulnerabilityFindingsParamsSortMinusDetectedAt ExportVulnerabilityFindingsParamsSort = "-detectedAt"
+	ExportVulnerabilityFindingsParamsSortMinusPackage    ExportVulnerabilityFindingsParamsSort = "-package"
+	ExportVulnerabilityFindingsParamsSortMinusSeverity   ExportVulnerabilityFindingsParamsSort = "-severity"
+	ExportVulnerabilityFindingsParamsSortMinusStatus     ExportVulnerabilityFindingsParamsSort = "-status"
+	ExportVulnerabilityFindingsParamsSortPackage         ExportVulnerabilityFindingsParamsSort = "package"
+	ExportVulnerabilityFindingsParamsSortSeverity        ExportVulnerabilityFindingsParamsSort = "severity"
+	ExportVulnerabilityFindingsParamsSortStatus          ExportVulnerabilityFindingsParamsSort = "status"
+)
+
+// Valid indicates whether the value is a known member of the ExportVulnerabilityFindingsParamsSort enum.
+func (e ExportVulnerabilityFindingsParamsSort) Valid() bool {
+	switch e {
+	case ExportVulnerabilityFindingsParamsSortAdvisory:
+		return true
+	case ExportVulnerabilityFindingsParamsSortDetectedAt:
+		return true
+	case ExportVulnerabilityFindingsParamsSortMinusAdvisory:
+		return true
+	case ExportVulnerabilityFindingsParamsSortMinusDetectedAt:
+		return true
+	case ExportVulnerabilityFindingsParamsSortMinusPackage:
+		return true
+	case ExportVulnerabilityFindingsParamsSortMinusSeverity:
+		return true
+	case ExportVulnerabilityFindingsParamsSortMinusStatus:
+		return true
+	case ExportVulnerabilityFindingsParamsSortPackage:
+		return true
+	case ExportVulnerabilityFindingsParamsSortSeverity:
+		return true
+	case ExportVulnerabilityFindingsParamsSortStatus:
 		return true
 	default:
 		return false
@@ -3929,6 +4466,27 @@ type CiWarning struct {
 	Code    string  `json:"code"`
 	Detail  string  `json:"detail"`
 	Pointer *string `json:"pointer,omitempty"`
+}
+
+// ClaimedNameMatch A public advisory for a name the installation treats as internal (R-VULN-010).
+type ClaimedNameMatch struct {
+	// Advisory The canonical identifier.
+	Advisory string `json:"advisory"`
+
+	// ClaimRepository The repository whose claim covers the name.
+	ClaimRepository *string   `json:"claimRepository"`
+	Ecosystem       string    `json:"ecosystem"`
+	FirstSeenAt     time.Time `json:"firstSeenAt"`
+
+	// Kind `malicious` for the OpenSSF malicious-packages records (identifier prefix `MAL-`), else `vulnerability`.
+	Kind VulnerabilityKind `json:"kind"`
+	Name string            `json:"name"`
+}
+
+// ClaimedNameMatchList defines model for ClaimedNameMatchList.
+type ClaimedNameMatchList struct {
+	Items      []ClaimedNameMatch `json:"items"`
+	NextCursor *string            `json:"nextCursor"`
 }
 
 // ClientSetup defines model for ClientSetup.
@@ -5523,6 +6081,13 @@ type Repository struct {
 	// deleted (`409 repository_referenced`, or `detach=true`); the document is rendered from them.
 	Virtual *VirtualSettings `json:"virtual,omitempty"`
 
+	// Vulnerabilities The `vulnerabilities` member of a repository document (R-VULN-002): local and remote repositories of a format with the
+	// vulnerability adapter (npm, NuGet). Virtual repositories and other formats answer `422 not_applicable` at
+	// `/vulnerabilities`. A member that sets some fields takes the defaults of the others. A change of `enabled` or
+	// `matchPublicAdvisories` enqueues a `vuln-rescan` of the repository in the same transaction; `blockMalicious` and
+	// `onMissingData` act without a job.
+	Vulnerabilities *VulnerabilitySettings `json:"vulnerabilities,omitempty"`
+
 	// Warnings Findings of the write that did not block it; present on create, replace and update.
 	Warnings *[]RepositoryWarning `json:"warnings,omitempty"`
 }
@@ -5874,12 +6439,10 @@ type SystemInfo struct {
 	ObjectStore     ObjectStoreFacts `json:"objectStore"`
 	Replicas        ReplicaSummary   `json:"replicas"`
 	Runtime         struct {
-		Goarch     string `json:"goarch"`
-		Gomaxprocs int    `json:"gomaxprocs"`
-		Goos       string `json:"goos"`
-
-		// MemoryLimitBytes The container memory limit; 0 when none is known.
-		MemoryLimitBytes int64 `json:"memoryLimitBytes"`
+		Goarch           string `json:"goarch"`
+		Gomaxprocs       int    `json:"gomaxprocs"`
+		Goos             string `json:"goos"`
+		MemoryLimitBytes int64  `json:"memoryLimitBytes"`
 	} `json:"runtime"`
 
 	// Valkey Installation facts only; each replica's view is in the replica registry. No Sentinel address appears.
@@ -5889,6 +6452,9 @@ type SystemInfo struct {
 		Revision  string `json:"revision"`
 		Version   string `json:"version"`
 	} `json:"version"`
+
+	// VulnerabilityData From M4b (R-VULN-024): the advisory data's state; `null` where the scanning is not wired on this replica.
+	VulnerabilityData *VulnerabilityDataFacts `json:"vulnerabilityData,omitempty"`
 }
 
 // SystemInfoAnsweredByRole defines model for SystemInfo.AnsweredBy.Role.
@@ -5929,7 +6495,7 @@ type TaskList struct {
 // TaskName defines model for TaskName.
 type TaskName = string
 
-// TaskRunRequest The parameters of the task; each task defines its own (garbage collection takes `dryRun`).
+// TaskRunRequest The parameters of the task; each task defines its own (garbage collection takes `dryRun`, the OSV sync tasks `vuln-sync-osv` and `vuln-sync-osv-full` take `acceptShrink`).
 type TaskRunRequest map[string]interface{}
 
 // Token A token as a list or an inspection shows it (R-AUTH-028). Neither the value nor its hash is part of it.
@@ -6241,6 +6807,400 @@ type VirtualSettings struct {
 	Pinning                  *struct {
 		Rules *[]PinRule `json:"rules,omitempty"`
 	} `json:"pinning,omitempty"`
+}
+
+// VulnerabilityAdvisory One advisory (R-VULN-020). `details` is Markdown from an untrusted source and has to be rendered through the sanitizer (R-UI-008).
+type VulnerabilityAdvisory struct {
+	Affected      []VulnerabilityAffected `json:"affected"`
+	Aliases       []string                `json:"aliases"`
+	Cvss          *VulnerabilityCvss      `json:"cvss"`
+	Cwe           []string                `json:"cwe"`
+	Details       string                  `json:"details"`
+	Ecosystem     string                  `json:"ecosystem"`
+	FixedVersions []string                `json:"fixedVersions"`
+
+	// Id The canonical identifier.
+	Id string `json:"id"`
+
+	// Kind `malicious` for the OpenSSF malicious-packages records (identifier prefix `MAL-`), else `vulnerability`.
+	Kind                  VulnerabilityKind   `json:"kind"`
+	KnownExploited        bool                `json:"knownExploited"`
+	KnownExploitedAddedAt *openapi_types.Date `json:"knownExploitedAddedAt"`
+	Modified              time.Time           `json:"modified"`
+	Published             *time.Time          `json:"published"`
+	References            []struct {
+		Type *string `json:"type,omitempty"`
+		Url  string  `json:"url"`
+	} `json:"references"`
+
+	// Severity The level of an advisory (R-VULN-007); `unknown` is a level of its own and sorts last.
+	Severity VulnerabilitySeverity `json:"severity"`
+
+	// Source The attribution of an advisory (R-VULN-003).
+	Source    VulnerabilitySource `json:"source"`
+	Summary   string              `json:"summary"`
+	Withdrawn *time.Time          `json:"withdrawn"`
+}
+
+// VulnerabilityAdvisoryDetail defines model for VulnerabilityAdvisoryDetail.
+type VulnerabilityAdvisoryDetail struct {
+	// Advisory One advisory (R-VULN-020). `details` is Markdown from an untrusted source and has to be rendered through the sanitizer (R-UI-008).
+	Advisory VulnerabilityAdvisory  `json:"advisory"`
+	Findings []VulnerabilityFinding `json:"findings"`
+
+	// Truncated True when the caller can read more findings than the 1,000 listed; the findings list filtered by `advisory` pages through all of them.
+	Truncated *bool `json:"truncated,omitempty"`
+}
+
+// VulnerabilityAffected One affected entry of an advisory, as stored (R-VULN-006).
+type VulnerabilityAffected struct {
+	Fixed  []string `json:"fixed"`
+	Name   string   `json:"name"`
+	Ranges []struct {
+		Events []map[string]string             `json:"events"`
+		Type   VulnerabilityAffectedRangesType `json:"type"`
+	} `json:"ranges"`
+	Versions []string `json:"versions"`
+}
+
+// VulnerabilityAffectedRangesType defines model for VulnerabilityAffected.Ranges.Type.
+type VulnerabilityAffectedRangesType string
+
+// VulnerabilityBlockReason Why the version's download is refused (R-VULN-015).
+type VulnerabilityBlockReason string
+
+// VulnerabilityCvss The vector the severity was scored from (R-VULN-007); trove never mixes versions in one value.
+type VulnerabilityCvss struct {
+	Score   float32                  `json:"score"`
+	Vector  string                   `json:"vector"`
+	Version VulnerabilityCvssVersion `json:"version"`
+}
+
+// VulnerabilityCvssVersion defines model for VulnerabilityCvss.Version.
+type VulnerabilityCvssVersion string
+
+// VulnerabilityDataFacts The advisory data's state as an operator reads it (R-OPS-004, R-VULN-024), from `vuln_source_state` as the sources
+// operation reads it. It is cluster-wide state and never affects readiness.
+type VulnerabilityDataFacts struct {
+	Enforcement VulnerabilityDataFactsEnforcement `json:"enforcement"`
+	Sources     []struct {
+		Ecosystem string                              `json:"ecosystem"`
+		Failures  int                                 `json:"failures"`
+		Mode      VulnerabilityDataFactsSourcesMode   `json:"mode"`
+		Source    VulnerabilityDataFactsSourcesSource `json:"source"`
+		Stale     bool                                `json:"stale"`
+		State     VulnerabilityDataFactsSourcesState  `json:"state"`
+		SyncedAt  *time.Time                          `json:"syncedAt"`
+	} `json:"sources"`
+}
+
+// VulnerabilityDataFactsEnforcement defines model for VulnerabilityDataFacts.Enforcement.
+type VulnerabilityDataFactsEnforcement string
+
+// VulnerabilityDataFactsSourcesMode defines model for VulnerabilityDataFacts.Sources.Mode.
+type VulnerabilityDataFactsSourcesMode string
+
+// VulnerabilityDataFactsSourcesSource defines model for VulnerabilityDataFacts.Sources.Source.
+type VulnerabilityDataFactsSourcesSource string
+
+// VulnerabilityDataFactsSourcesState defines model for VulnerabilityDataFacts.Sources.State.
+type VulnerabilityDataFactsSourcesState string
+
+// VulnerabilityDismissalReason defines model for VulnerabilityDismissalReason.
+type VulnerabilityDismissalReason string
+
+// VulnerabilityEvaluation The derived evaluation state of a stored version in a repository (R-VULN-001): `evaluated` (the advisory data is
+// complete), `pending_data` (it was never imported completely), `internal` (public advisories do not apply to the name)
+// or `not_covered` (scanning is off, the upstream is not recognised, or the format has no adapter).
+type VulnerabilityEvaluation string
+
+// VulnerabilityFinding One finding: one canonical advisory affects one stored version in one repository (R-VULN-012). `blocked` and
+// `blockReason` are computed with the rule of R-VULN-015 and the repository's current policy, so the API, the report and
+// the download agree.
+type VulnerabilityFinding struct {
+	// Advisory The canonical identifier.
+	Advisory        string                        `json:"advisory"`
+	Aliases         []string                      `json:"aliases"`
+	BlockReason     *VulnerabilityBlockReason     `json:"blockReason"`
+	Blocked         bool                          `json:"blocked"`
+	Cvss            *VulnerabilityCvss            `json:"cvss"`
+	DetectedAt      time.Time                     `json:"detectedAt"`
+	DismissalReason *VulnerabilityDismissalReason `json:"dismissalReason,omitempty"`
+	FixAvailable    bool                          `json:"fixAvailable"`
+	FixedVersions   []string                      `json:"fixedVersions"`
+	Format          string                        `json:"format"`
+	Id              openapi_types.UUID            `json:"id"`
+
+	// Kind `malicious` for the OpenSSF malicious-packages records (identifier prefix `MAL-`), else `vulnerability`.
+	Kind                  VulnerabilityKind            `json:"kind"`
+	KnownExploited        bool                         `json:"knownExploited"`
+	KnownExploitedAddedAt *openapi_types.Date          `json:"knownExploitedAddedAt,omitempty"`
+	Package               string                       `json:"package"`
+	Repository            string                       `json:"repository"`
+	ResolvedAt            *time.Time                   `json:"resolvedAt"`
+	ResolvedReason        *VulnerabilityResolvedReason `json:"resolvedReason,omitempty"`
+
+	// Severity The level of an advisory (R-VULN-007); `unknown` is a level of its own and sorts last.
+	Severity VulnerabilitySeverity `json:"severity"`
+
+	// Status The status of a finding (R-VULN-012). `needs_triage`, `confirmed` and `blocked` are open; `resolved` is set by trove
+	// only.
+	Status  VulnerabilityStatus `json:"status"`
+	Summary string              `json:"summary"`
+	Version string              `json:"version"`
+}
+
+// VulnerabilityFindingDetail A finding with its advisory, the readable virtual repositories whose effective member list contains its repository, for
+// a block set in triage the principal and time that set it, and the history (R-VULN-020).
+type VulnerabilityFindingDetail struct {
+	// Advisory One advisory (R-VULN-020). `details` is Markdown from an untrusted source and has to be rendered through the sanitizer (R-UI-008).
+	Advisory VulnerabilityAdvisory `json:"advisory"`
+
+	// BlockedBy Who set the block, for `blockReason` triage; `null` otherwise.
+	BlockedBy *struct {
+		At        time.Time `json:"at"`
+		Comment   *string   `json:"comment"`
+		Principal *struct {
+			Id   string  `json:"id"`
+			Name *string `json:"name"`
+		} `json:"principal"`
+	} `json:"blockedBy"`
+	Comment *string `json:"comment"`
+
+	// Finding One finding: one canonical advisory affects one stored version in one repository (R-VULN-012). `blocked` and
+	// `blockReason` are computed with the rule of R-VULN-015 and the repository's current policy, so the API, the report and
+	// the download agree.
+	Finding             VulnerabilityFinding        `json:"finding"`
+	History             []VulnerabilityFindingEvent `json:"history"`
+	StatusChangedAt     *time.Time                  `json:"statusChangedAt,omitempty"`
+	VirtualRepositories []string                    `json:"virtualRepositories"`
+}
+
+// VulnerabilityFindingEvent One row of a finding's history (R-VULN-012).
+type VulnerabilityFindingEvent struct {
+	// Actor The principal behind the change; `null` for trove.
+	Actor *struct {
+		Id   string  `json:"id"`
+		Name *string `json:"name"`
+	} `json:"actor"`
+	At         time.Time                       `json:"at"`
+	Change     VulnerabilityFindingEventChange `json:"change"`
+	Comment    *string                         `json:"comment"`
+	Details    *map[string]interface{}         `json:"details,omitempty"`
+	FromStatus *string                         `json:"fromStatus"`
+	Reason     *string                         `json:"reason"`
+	ToStatus   *string                         `json:"toStatus"`
+}
+
+// VulnerabilityFindingEventChange defines model for VulnerabilityFindingEvent.Change.
+type VulnerabilityFindingEventChange string
+
+// VulnerabilityFindingList defines model for VulnerabilityFindingList.
+type VulnerabilityFindingList struct {
+	Items      []VulnerabilityFinding `json:"items"`
+	NextCursor *string                `json:"nextCursor"`
+}
+
+// VulnerabilityFindingPatch The merge patch of a triage (R-VULN-013).
+type VulnerabilityFindingPatch struct {
+	Comment *string `json:"comment,omitempty"`
+
+	// DismissalReason Required with `dismissed`, refused otherwise.
+	DismissalReason *VulnerabilityDismissalReason `json:"dismissalReason,omitempty"`
+
+	// Status `resolved` is refused (`422 status_not_settable`); `blocked` needs a confirmed finding (`409 finding_not_confirmed`).
+	Status *VulnerabilityStatus `json:"status,omitempty"`
+}
+
+// VulnerabilityKind `malicious` for the OpenSSF malicious-packages records (identifier prefix `MAL-`), else `vulnerability`.
+type VulnerabilityKind string
+
+// VulnerabilityPackageReport defines model for VulnerabilityPackageReport.
+type VulnerabilityPackageReport struct {
+	PackageId string `json:"packageId"`
+	Versions  []struct {
+		Open    VulnerabilitySeverityCounts `json:"open"`
+		Version string                      `json:"version"`
+	} `json:"versions"`
+}
+
+// VulnerabilityResolvedReason defines model for VulnerabilityResolvedReason.
+type VulnerabilityResolvedReason string
+
+// VulnerabilitySetStatusRequest defines model for VulnerabilitySetStatusRequest.
+type VulnerabilitySetStatusRequest struct {
+	Comment         *string                       `json:"comment,omitempty"`
+	DismissalReason *VulnerabilityDismissalReason `json:"dismissalReason,omitempty"`
+	Ids             []openapi_types.UUID          `json:"ids"`
+
+	// Status The status of a finding (R-VULN-012). `needs_triage`, `confirmed` and `blocked` are open; `resolved` is set by trove
+	// only.
+	Status VulnerabilityStatus `json:"status"`
+}
+
+// VulnerabilitySetStatusResult defines model for VulnerabilitySetStatusResult.
+type VulnerabilitySetStatusResult struct {
+	// BulkId The identifier every event of the operation carries.
+	BulkId  string `json:"bulkId"`
+	Results []struct {
+		// Code The problem code of a failure.
+		Code    *string                                    `json:"code"`
+		Id      openapi_types.UUID                         `json:"id"`
+		Outcome VulnerabilitySetStatusResultResultsOutcome `json:"outcome"`
+
+		// Status 200 for changed and unchanged, 404 for an id the caller cannot read, 409 for finding_resolved and finding_not_confirmed.
+		Status int `json:"status"`
+	} `json:"results"`
+}
+
+// VulnerabilitySetStatusResultResultsOutcome defines model for VulnerabilitySetStatusResult.Results.Outcome.
+type VulnerabilitySetStatusResultResultsOutcome string
+
+// VulnerabilitySettings The `vulnerabilities` member of a repository document (R-VULN-002): local and remote repositories of a format with the
+// vulnerability adapter (npm, NuGet). Virtual repositories and other formats answer `422 not_applicable` at
+// `/vulnerabilities`. A member that sets some fields takes the defaults of the others. A change of `enabled` or
+// `matchPublicAdvisories` enqueues a `vuln-rescan` of the repository in the same transaction; `blockMalicious` and
+// `onMissingData` act without a job.
+type VulnerabilitySettings struct {
+	// BlockMalicious Refuse the versions an open malicious finding names (R-VULN-015).
+	BlockMalicious *bool `json:"blockMalicious,omitempty"`
+
+	// Enabled false: the repository's stored versions are neither evaluated nor blocked.
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// MatchPublicAdvisories Which stored versions public advisories apply to (R-VULN-010).
+	MatchPublicAdvisories *VulnerabilitySettingsMatchPublicAdvisories `json:"matchPublicAdvisories,omitempty"`
+
+	// OnMissingData What a version of an ecosystem whose advisory data was never imported completely gets (R-VULN-015).
+	OnMissingData *VulnerabilitySettingsOnMissingData `json:"onMissingData,omitempty"`
+}
+
+// VulnerabilitySettingsMatchPublicAdvisories Which stored versions public advisories apply to (R-VULN-010).
+type VulnerabilitySettingsMatchPublicAdvisories string
+
+// VulnerabilitySettingsOnMissingData What a version of an ecosystem whose advisory data was never imported completely gets (R-VULN-015).
+type VulnerabilitySettingsOnMissingData string
+
+// VulnerabilitySeverity The level of an advisory (R-VULN-007); `unknown` is a level of its own and sorts last.
+type VulnerabilitySeverity string
+
+// VulnerabilitySeverityCounts defines model for VulnerabilitySeverityCounts.
+type VulnerabilitySeverityCounts struct {
+	Critical int64 `json:"critical"`
+	High     int64 `json:"high"`
+	Low      int64 `json:"low"`
+	Medium   int64 `json:"medium"`
+	None     int64 `json:"none"`
+	Unknown  int64 `json:"unknown"`
+}
+
+// VulnerabilitySource The attribution of an advisory (R-VULN-003).
+type VulnerabilitySource struct {
+	License *string `json:"license"`
+	Name    string  `json:"name"`
+	Url     string  `json:"url"`
+}
+
+// VulnerabilitySourceList defines model for VulnerabilitySourceList.
+type VulnerabilitySourceList struct {
+	Items []VulnerabilitySourceState `json:"items"`
+}
+
+// VulnerabilitySourceState One source and ecosystem (R-VULN-021).
+type VulnerabilitySourceState struct {
+	AttemptedAt *time.Time `json:"attemptedAt"`
+
+	// Ecosystem The OSV ecosystem; empty for kev.
+	Ecosystem string `json:"ecosystem"`
+
+	// Failures Consecutive failed runs.
+	Failures     int                            `json:"failures"`
+	FullSyncedAt *time.Time                     `json:"fullSyncedAt"`
+	LastError    *Problem                       `json:"lastError"`
+	Mode         VulnerabilitySourceStateMode   `json:"mode"`
+	NextRunAt    *time.Time                     `json:"nextRunAt"`
+	Records      int                            `json:"records"`
+	Rejected     int                            `json:"rejected"`
+	Source       VulnerabilitySourceStateSource `json:"source"`
+	Stale        bool                           `json:"stale"`
+	State        VulnerabilitySourceStateState  `json:"state"`
+	SyncedAt     *time.Time                     `json:"syncedAt"`
+	Unevaluable  int                            `json:"unevaluable"`
+}
+
+// VulnerabilitySourceStateMode defines model for VulnerabilitySourceState.Mode.
+type VulnerabilitySourceStateMode string
+
+// VulnerabilitySourceStateSource defines model for VulnerabilitySourceState.Source.
+type VulnerabilitySourceStateSource string
+
+// VulnerabilitySourceStateState defines model for VulnerabilitySourceState.State.
+type VulnerabilitySourceStateState string
+
+// VulnerabilityStatus The status of a finding (R-VULN-012). `needs_triage`, `confirmed` and `blocked` are open; `resolved` is set by trove
+// only.
+type VulnerabilityStatus string
+
+// VulnerabilitySummary The open findings the caller can read (R-VULN-021).
+type VulnerabilitySummary struct {
+	// BlockedVersions The versions whose download is refused.
+	BlockedVersions int64 `json:"blockedVersions"`
+	ByKind          struct {
+		Malicious     int64 `json:"malicious"`
+		Vulnerability int64 `json:"vulnerability"`
+	} `json:"byKind"`
+	BySeverity VulnerabilitySeverityCounts `json:"bySeverity"`
+
+	// Coverage The readable repositories by the evaluation state of their scanning.
+	Coverage struct {
+		Evaluated   int `json:"evaluated"`
+		Internal    int `json:"internal"`
+		NotCovered  int `json:"notCovered"`
+		PendingData int `json:"pendingData"`
+	} `json:"coverage"`
+	Data []struct {
+		Ecosystem string                        `json:"ecosystem"`
+		Stale     bool                          `json:"stale"`
+		State     VulnerabilitySummaryDataState `json:"state"`
+		SyncedAt  *time.Time                    `json:"syncedAt"`
+	} `json:"data"`
+	FixAvailable int64 `json:"fixAvailable"`
+	NeedsTriage  int64 `json:"needsTriage"`
+}
+
+// VulnerabilitySummaryDataState defines model for VulnerabilitySummary.Data.State.
+type VulnerabilitySummaryDataState string
+
+// VulnerabilityTrend defines model for VulnerabilityTrend.
+type VulnerabilityTrend struct {
+	// Basis How the counts are made: a finding counts under its current severity, and dismissed findings count until they resolve.
+	Basis  string             `json:"basis"`
+	From   openapi_types.Date `json:"from"`
+	Points []struct {
+		Counts VulnerabilitySeverityCounts `json:"counts"`
+		Date   openapi_types.Date          `json:"date"`
+	} `json:"points"`
+	To openapi_types.Date `json:"to"`
+}
+
+// VulnerabilityVersionReport What the scanning says of one version in every readable repository that holds it (R-VULN-020).
+type VulnerabilityVersionReport struct {
+	PackageId    string `json:"packageId"`
+	Repositories []struct {
+		BlockReason *VulnerabilityBlockReason `json:"blockReason"`
+		Blocked     bool                      `json:"blocked"`
+
+		// Evaluation The derived evaluation state of a stored version in a repository (R-VULN-001): `evaluated` (the advisory data is
+		// complete), `pending_data` (it was never imported completely), `internal` (public advisories do not apply to the name)
+		// or `not_covered` (scanning is off, the upstream is not recognised, or the format has no adapter).
+		Evaluation VulnerabilityEvaluation `json:"evaluation"`
+		Findings   []VulnerabilityFinding  `json:"findings"`
+		Repository string                  `json:"repository"`
+
+		// SyncedAt The data's `syncedAt` for an evaluated version.
+		SyncedAt *time.Time `json:"syncedAt,omitempty"`
+	} `json:"repositories"`
+	Version string `json:"version"`
 }
 
 // Whoami defines model for Whoami.
@@ -6995,6 +7955,12 @@ type ReplaceRepositoryParams struct {
 	IfMatch IfMatch `json:"If-Match"`
 }
 
+// RescanRepositoryVulnerabilitiesParams defines parameters for RescanRepositoryVulnerabilities.
+type RescanRepositoryVulnerabilitiesParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
 // ListCacheEntriesParams defines parameters for ListCacheEntries.
 type ListCacheEntriesParams struct {
 	// PathPrefix Only entries below this path prefix; empty or absent lists all of them.
@@ -7319,6 +8285,180 @@ type UpdateUserParams struct {
 	IfMatch IfMatch `json:"If-Match"`
 }
 
+// ListClaimedNameMatchesParams defines parameters for ListClaimedNameMatches.
+type ListClaimedNameMatchesParams struct {
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListVulnerabilityFindingsParams defines parameters for ListVulnerabilityFindings.
+type ListVulnerabilityFindingsParams struct {
+	// Repository A repository key; a virtual repository expands to the members the caller can read. Repeat for several.
+	Repository *[]string `form:"repository,omitempty" json:"repository,omitempty"`
+
+	// Format A format ID, for example npm or nuget. Repeat for several.
+	Format *[]string `form:"format,omitempty" json:"format,omitempty"`
+
+	// Package A normalized package name. Repeat for several.
+	Package *[]string `form:"package,omitempty" json:"package,omitempty"`
+
+	// PackagePrefix Packages whose name starts with this text, for example @team-a/.
+	PackagePrefix *string `form:"packagePrefix,omitempty" json:"packagePrefix,omitempty"`
+
+	// Version A normalized version. Repeat for several.
+	Version *[]string `form:"version,omitempty" json:"version,omitempty"`
+
+	// Advisory A canonical advisory identifier or an alias (R-VULN-006).
+	Advisory *string `form:"advisory,omitempty" json:"advisory,omitempty"`
+
+	// Severity critical, high, medium, low, none or unknown. Repeat for several.
+	Severity *[]VulnerabilitySeverity `form:"severity,omitempty" json:"severity,omitempty"`
+
+	// Status needs_triage, confirmed, blocked, dismissed or resolved; blocked is among the values. Repeat for several. Without it resolved findings are left out.
+	Status *[]VulnerabilityStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// Kind vulnerability or malicious.
+	Kind *VulnerabilityKind `form:"kind,omitempty" json:"kind,omitempty"`
+
+	// KnownExploited true: only findings of advisories on the CISA known-exploited list.
+	KnownExploited *bool `form:"knownExploited,omitempty" json:"knownExploited,omitempty"`
+
+	// FixAvailable true: only findings with a fixed version.
+	FixAvailable *bool `form:"fixAvailable,omitempty" json:"fixAvailable,omitempty"`
+
+	// Blocked true: only findings that block their version's download under the repository's policy; false: the others.
+	Blocked *bool `form:"blocked,omitempty" json:"blocked,omitempty"`
+
+	// BlockReason malicious or triage.
+	BlockReason *VulnerabilityBlockReason `form:"blockReason,omitempty" json:"blockReason,omitempty"`
+
+	// DetectedFrom Detected at or after (RFC 3339).
+	DetectedFrom *time.Time `form:"detectedFrom,omitempty" json:"detectedFrom,omitempty"`
+
+	// DetectedTo Detected before (RFC 3339).
+	DetectedTo *time.Time `form:"detectedTo,omitempty" json:"detectedTo,omitempty"`
+
+	// Q A text that occurs in the package name, the advisory identifier or the summary.
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+
+	// Sort The sort order of R-VULN-020.
+	Sort *ListVulnerabilityFindingsParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListVulnerabilityFindingsParamsSort defines parameters for ListVulnerabilityFindings.
+type ListVulnerabilityFindingsParamsSort string
+
+// ExportVulnerabilityFindingsParams defines parameters for ExportVulnerabilityFindings.
+type ExportVulnerabilityFindingsParams struct {
+	// Repository A repository key; a virtual repository expands to the members the caller can read. Repeat for several.
+	Repository *[]string `form:"repository,omitempty" json:"repository,omitempty"`
+
+	// Format A format ID, for example npm or nuget. Repeat for several.
+	Format *[]string `form:"format,omitempty" json:"format,omitempty"`
+
+	// Package A normalized package name. Repeat for several.
+	Package *[]string `form:"package,omitempty" json:"package,omitempty"`
+
+	// PackagePrefix Packages whose name starts with this text, for example @team-a/.
+	PackagePrefix *string `form:"packagePrefix,omitempty" json:"packagePrefix,omitempty"`
+
+	// Version A normalized version. Repeat for several.
+	Version *[]string `form:"version,omitempty" json:"version,omitempty"`
+
+	// Advisory A canonical advisory identifier or an alias (R-VULN-006).
+	Advisory *string `form:"advisory,omitempty" json:"advisory,omitempty"`
+
+	// Severity critical, high, medium, low, none or unknown. Repeat for several.
+	Severity *[]VulnerabilitySeverity `form:"severity,omitempty" json:"severity,omitempty"`
+
+	// Status needs_triage, confirmed, blocked, dismissed or resolved; blocked is among the values. Repeat for several. Without it resolved findings are left out.
+	Status *[]VulnerabilityStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// Kind vulnerability or malicious.
+	Kind *VulnerabilityKind `form:"kind,omitempty" json:"kind,omitempty"`
+
+	// KnownExploited true: only findings of advisories on the CISA known-exploited list.
+	KnownExploited *bool `form:"knownExploited,omitempty" json:"knownExploited,omitempty"`
+
+	// FixAvailable true: only findings with a fixed version.
+	FixAvailable *bool `form:"fixAvailable,omitempty" json:"fixAvailable,omitempty"`
+
+	// Blocked true: only findings that block their version's download under the repository's policy; false: the others.
+	Blocked *bool `form:"blocked,omitempty" json:"blocked,omitempty"`
+
+	// BlockReason malicious or triage.
+	BlockReason *VulnerabilityBlockReason `form:"blockReason,omitempty" json:"blockReason,omitempty"`
+
+	// DetectedFrom Detected at or after (RFC 3339).
+	DetectedFrom *time.Time `form:"detectedFrom,omitempty" json:"detectedFrom,omitempty"`
+
+	// DetectedTo Detected before (RFC 3339).
+	DetectedTo *time.Time `form:"detectedTo,omitempty" json:"detectedTo,omitempty"`
+
+	// Q A text that occurs in the package name, the advisory identifier or the summary.
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+
+	// Sort The sort order of R-VULN-020.
+	Sort *ExportVulnerabilityFindingsParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+}
+
+// ExportVulnerabilityFindingsParamsSort defines parameters for ExportVulnerabilityFindings.
+type ExportVulnerabilityFindingsParamsSort string
+
+// SetVulnerabilityFindingsStatusParams defines parameters for SetVulnerabilityFindingsStatus.
+type SetVulnerabilityFindingsStatusParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// GetVulnerabilityFindingParams defines parameters for GetVulnerabilityFinding.
+type GetVulnerabilityFindingParams struct {
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// UpdateVulnerabilityFindingParams defines parameters for UpdateVulnerabilityFinding.
+type UpdateVulnerabilityFindingParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
+}
+
+// GetVulnerabilitySummaryParams defines parameters for GetVulnerabilitySummary.
+type GetVulnerabilitySummaryParams struct {
+	// Repository A repository key. Repeat for several.
+	Repository *[]string `form:"repository,omitempty" json:"repository,omitempty"`
+
+	// Format A format ID. Repeat for several.
+	Format *[]string `form:"format,omitempty" json:"format,omitempty"`
+}
+
+// GetVulnerabilityTrendParams defines parameters for GetVulnerabilityTrend.
+type GetVulnerabilityTrendParams struct {
+	// From First day (RFC 3339 date); default 90 days before `to`.
+	From *openapi_types.Date `form:"from,omitempty" json:"from,omitempty"`
+
+	// To Last day, inclusive (RFC 3339 date); default today.
+	To *openapi_types.Date `form:"to,omitempty" json:"to,omitempty"`
+
+	// Repository A repository key. Repeat for several.
+	Repository *[]string `form:"repository,omitempty" json:"repository,omitempty"`
+
+	// Format A format ID. Repeat for several.
+	Format *[]string `form:"format,omitempty" json:"format,omitempty"`
+
+	// Kind vulnerability or malicious.
+	Kind *VulnerabilityKind `form:"kind,omitempty" json:"kind,omitempty"`
+}
+
 // ExchangeCiTokenJSONRequestBody defines body for ExchangeCiToken for application/json ContentType.
 type ExchangeCiTokenJSONRequestBody = CiExchangeRequest
 
@@ -7474,6 +8614,12 @@ type DisableUserJSONRequestBody = DisableRequest
 
 // PatchUserGroupsJSONRequestBody defines body for PatchUserGroups for application/json ContentType.
 type PatchUserGroupsJSONRequestBody = MembershipChange
+
+// SetVulnerabilityFindingsStatusJSONRequestBody defines body for SetVulnerabilityFindingsStatus for application/json ContentType.
+type SetVulnerabilityFindingsStatusJSONRequestBody = VulnerabilitySetStatusRequest
+
+// UpdateVulnerabilityFindingApplicationMergePatchPlusJSONRequestBody defines body for UpdateVulnerabilityFinding for application/merge-patch+json ContentType.
+type UpdateVulnerabilityFindingApplicationMergePatchPlusJSONRequestBody = VulnerabilityFindingPatch
 
 // AsRepositorySummary returns the union data inside the RepositoryList_Items_Item as a RepositorySummary
 func (t RepositoryList_Items_Item) AsRepositorySummary() (RepositorySummary, error) {
@@ -7799,6 +8945,12 @@ type ServerInterface interface {
 	// GetPackageVersionReadme Read the rendered README of a version
 	// (GET /api/v1/packages/{packageId}/versions/{version}/readme)
 	GetPackageVersionReadme(w http.ResponseWriter, r *http.Request, packageId PackageId, version PackageVersionPath, params GetPackageVersionReadmeParams)
+	// GetPackageVersionVulnerabilities The vulnerabilities of one version, per repository
+	// (GET /api/v1/packages/{packageId}/versions/{version}/vulnerabilities)
+	GetPackageVersionVulnerabilities(w http.ResponseWriter, r *http.Request, packageId PackageId, version PackageVersionPath)
+	// GetPackageVulnerabilities The open findings of a package, per version
+	// (GET /api/v1/packages/{packageId}/vulnerabilities)
+	GetPackageVulnerabilities(w http.ResponseWriter, r *http.Request, packageId PackageId)
 	// ListPermissionPolicies List permission policies
 	// (GET /api/v1/permission-policies)
 	ListPermissionPolicies(w http.ResponseWriter, r *http.Request, params ListPermissionPoliciesParams)
@@ -7898,6 +9050,9 @@ type ServerInterface interface {
 	// TestRepositoryUpstream Test the saved upstream of a remote repository
 	// (POST /api/v1/repositories/{key}/upstream-test)
 	TestRepositoryUpstream(w http.ResponseWriter, r *http.Request, key string)
+	// RescanRepositoryVulnerabilities Evaluate every stored version of a repository again
+	// (POST /api/v1/repositories/{key}/vulnerabilities/rescan)
+	RescanRepositoryVulnerabilities(w http.ResponseWriter, r *http.Request, key string, params RescanRepositoryVulnerabilitiesParams)
 	// ListCacheEntries List the cache entries of a remote repository
 	// (GET /api/v1/repositories/{repoKey}/cache/entries)
 	ListCacheEntries(w http.ResponseWriter, r *http.Request, repoKey string, params ListCacheEntriesParams)
@@ -8102,6 +9257,36 @@ type ServerInterface interface {
 	// UnlockBreakGlass Clear the lockout of the break-glass account
 	// (POST /api/v1/users/{username}/unlock)
 	UnlockBreakGlass(w http.ResponseWriter, r *http.Request, username string)
+	// GetVulnerabilityAdvisory Read an advisory with its readable findings
+	// (GET /api/v1/vulnerabilities/advisories/{ecosystem}/{id})
+	GetVulnerabilityAdvisory(w http.ResponseWriter, r *http.Request, ecosystem string, id string)
+	// ListClaimedNameMatches Public advisories that name an internal name
+	// (GET /api/v1/vulnerabilities/claimed-name-matches)
+	ListClaimedNameMatches(w http.ResponseWriter, r *http.Request, params ListClaimedNameMatchesParams)
+	// ListVulnerabilityFindings List vulnerability findings
+	// (GET /api/v1/vulnerabilities/findings)
+	ListVulnerabilityFindings(w http.ResponseWriter, r *http.Request, params ListVulnerabilityFindingsParams)
+	// ExportVulnerabilityFindings Export the findings of a filter as CSV
+	// (GET /api/v1/vulnerabilities/findings/export)
+	ExportVulnerabilityFindings(w http.ResponseWriter, r *http.Request, params ExportVulnerabilityFindingsParams)
+	// SetVulnerabilityFindingsStatus Change the status of several findings
+	// (POST /api/v1/vulnerabilities/findings/set-status)
+	SetVulnerabilityFindingsStatus(w http.ResponseWriter, r *http.Request, params SetVulnerabilityFindingsStatusParams)
+	// GetVulnerabilityFinding Read one finding
+	// (GET /api/v1/vulnerabilities/findings/{id})
+	GetVulnerabilityFinding(w http.ResponseWriter, r *http.Request, id string, params GetVulnerabilityFindingParams)
+	// UpdateVulnerabilityFinding Triage one finding
+	// (PATCH /api/v1/vulnerabilities/findings/{id})
+	UpdateVulnerabilityFinding(w http.ResponseWriter, r *http.Request, id string, params UpdateVulnerabilityFindingParams)
+	// ListVulnerabilitySources The advisory sources and their state
+	// (GET /api/v1/vulnerabilities/sources)
+	ListVulnerabilitySources(w http.ResponseWriter, r *http.Request)
+	// GetVulnerabilitySummary Counts of the open findings
+	// (GET /api/v1/vulnerabilities/summary)
+	GetVulnerabilitySummary(w http.ResponseWriter, r *http.Request, params GetVulnerabilitySummaryParams)
+	// GetVulnerabilityTrend Open findings per day
+	// (GET /api/v1/vulnerabilities/trend)
+	GetVulnerabilityTrend(w http.ResponseWriter, r *http.Request, params GetVulnerabilityTrendParams)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -11266,6 +12451,67 @@ func (siw *ServerInterfaceWrapper) GetPackageVersionReadme(w http.ResponseWriter
 	handler.ServeHTTP(w, r)
 }
 
+// GetPackageVersionVulnerabilities operation middleware
+func (siw *ServerInterfaceWrapper) GetPackageVersionVulnerabilities(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "packageId" -------------
+	var packageId PackageId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "packageId", r.PathValue("packageId"), &packageId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "version" -------------
+	var version PackageVersionPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "version", r.PathValue("version"), &version, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "version", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPackageVersionVulnerabilities(w, r, packageId, version)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPackageVulnerabilities operation middleware
+func (siw *ServerInterfaceWrapper) GetPackageVulnerabilities(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "packageId" -------------
+	var packageId PackageId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "packageId", r.PathValue("packageId"), &packageId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPackageVulnerabilities(w, r, packageId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListPermissionPolicies operation middleware
 func (siw *ServerInterfaceWrapper) ListPermissionPolicies(w http.ResponseWriter, r *http.Request) {
 
@@ -12994,6 +14240,56 @@ func (siw *ServerInterfaceWrapper) TestRepositoryUpstream(w http.ResponseWriter,
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.TestRepositoryUpstream(w, r, key)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RescanRepositoryVulnerabilities operation middleware
+func (siw *ServerInterfaceWrapper) RescanRepositoryVulnerabilities(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "key" -------------
+	var key string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RescanRepositoryVulnerabilitiesParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RescanRepositoryVulnerabilities(w, r, key, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -15722,6 +17018,885 @@ func (siw *ServerInterfaceWrapper) UnlockBreakGlass(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// GetVulnerabilityAdvisory operation middleware
+func (siw *ServerInterfaceWrapper) GetVulnerabilityAdvisory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "ecosystem" -------------
+	var ecosystem string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ecosystem", r.PathValue("ecosystem"), &ecosystem, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ecosystem", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetVulnerabilityAdvisory(w, r, ecosystem, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListClaimedNameMatches operation middleware
+func (siw *ServerInterfaceWrapper) ListClaimedNameMatches(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListClaimedNameMatchesParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListClaimedNameMatches(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListVulnerabilityFindings operation middleware
+func (siw *ServerInterfaceWrapper) ListVulnerabilityFindings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListVulnerabilityFindingsParams
+
+	// ------------- Optional query parameter "repository" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "repository"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repository", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "format" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "format", r.URL.Query(), &params.Format, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "format"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "format", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "package" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "package", r.URL.Query(), &params.Package, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "package"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "package", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "packagePrefix" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "packagePrefix", r.URL.Query(), &params.PackagePrefix, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "packagePrefix"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packagePrefix", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "version" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "version", r.URL.Query(), &params.Version, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "version"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "version", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "advisory" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "advisory", r.URL.Query(), &params.Advisory, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "advisory"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "advisory", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "severity" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "severity", r.URL.Query(), &params.Severity, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "severity"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "severity", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "knownExploited" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "knownExploited", r.URL.Query(), &params.KnownExploited, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "knownExploited"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "knownExploited", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "fixAvailable" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "fixAvailable", r.URL.Query(), &params.FixAvailable, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "fixAvailable"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "fixAvailable", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "blocked" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "blocked", r.URL.Query(), &params.Blocked, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "blocked"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "blocked", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "blockReason" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "blockReason", r.URL.Query(), &params.BlockReason, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "blockReason"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "blockReason", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "detectedFrom" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "detectedFrom", r.URL.Query(), &params.DetectedFrom, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "detectedFrom"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "detectedFrom", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "detectedTo" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "detectedTo", r.URL.Query(), &params.DetectedTo, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "detectedTo"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "detectedTo", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListVulnerabilityFindings(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ExportVulnerabilityFindings operation middleware
+func (siw *ServerInterfaceWrapper) ExportVulnerabilityFindings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ExportVulnerabilityFindingsParams
+
+	// ------------- Optional query parameter "repository" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "repository"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repository", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "format" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "format", r.URL.Query(), &params.Format, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "format"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "format", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "package" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "package", r.URL.Query(), &params.Package, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "package"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "package", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "packagePrefix" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "packagePrefix", r.URL.Query(), &params.PackagePrefix, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "packagePrefix"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packagePrefix", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "version" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "version", r.URL.Query(), &params.Version, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "version"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "version", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "advisory" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "advisory", r.URL.Query(), &params.Advisory, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "advisory"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "advisory", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "severity" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "severity", r.URL.Query(), &params.Severity, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "severity"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "severity", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "knownExploited" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "knownExploited", r.URL.Query(), &params.KnownExploited, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "knownExploited"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "knownExploited", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "fixAvailable" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "fixAvailable", r.URL.Query(), &params.FixAvailable, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "fixAvailable"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "fixAvailable", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "blocked" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "blocked", r.URL.Query(), &params.Blocked, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "blocked"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "blocked", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "blockReason" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "blockReason", r.URL.Query(), &params.BlockReason, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "blockReason"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "blockReason", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "detectedFrom" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "detectedFrom", r.URL.Query(), &params.DetectedFrom, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "detectedFrom"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "detectedFrom", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "detectedTo" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "detectedTo", r.URL.Query(), &params.DetectedTo, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "detectedTo"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "detectedTo", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExportVulnerabilityFindings(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetVulnerabilityFindingsStatus operation middleware
+func (siw *ServerInterfaceWrapper) SetVulnerabilityFindingsStatus(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SetVulnerabilityFindingsStatusParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetVulnerabilityFindingsStatus(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetVulnerabilityFinding operation middleware
+func (siw *ServerInterfaceWrapper) GetVulnerabilityFinding(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetVulnerabilityFindingParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetVulnerabilityFinding(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateVulnerabilityFinding operation middleware
+func (siw *ServerInterfaceWrapper) UpdateVulnerabilityFinding(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateVulnerabilityFindingParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateVulnerabilityFinding(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListVulnerabilitySources operation middleware
+func (siw *ServerInterfaceWrapper) ListVulnerabilitySources(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListVulnerabilitySources(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetVulnerabilitySummary operation middleware
+func (siw *ServerInterfaceWrapper) GetVulnerabilitySummary(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetVulnerabilitySummaryParams
+
+	// ------------- Optional query parameter "repository" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "repository"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repository", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "format" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "format", r.URL.Query(), &params.Format, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "format"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "format", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetVulnerabilitySummary(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetVulnerabilityTrend operation middleware
+func (siw *ServerInterfaceWrapper) GetVulnerabilityTrend(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetVulnerabilityTrendParams
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: "date"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "to", r.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: "date"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "repository" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "repository"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repository", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "format" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "format", r.URL.Query(), &params.Format, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "format"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "format", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetVulnerabilityTrend(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -16009,6 +18184,19 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/bastion/check", wrapper.BastionCheck)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/bastion/feed", wrapper.BastionFeed)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/bastion/downloads", wrapper.BastionDownloads)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/vulnerabilities/findings", wrapper.ListVulnerabilityFindings)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/vulnerabilities/findings/export", wrapper.ExportVulnerabilityFindings)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/vulnerabilities/findings/set-status", wrapper.SetVulnerabilityFindingsStatus)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/vulnerabilities/findings/{id}", wrapper.GetVulnerabilityFinding)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/vulnerabilities/findings/{id}", wrapper.UpdateVulnerabilityFinding)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/vulnerabilities/advisories/{ecosystem}/{id}", wrapper.GetVulnerabilityAdvisory)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/vulnerabilities/summary", wrapper.GetVulnerabilitySummary)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/vulnerabilities/trend", wrapper.GetVulnerabilityTrend)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/vulnerabilities/sources", wrapper.ListVulnerabilitySources)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/vulnerabilities/claimed-name-matches", wrapper.ListClaimedNameMatches)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/versions/{version}/vulnerabilities", wrapper.GetPackageVersionVulnerabilities)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/vulnerabilities", wrapper.GetPackageVulnerabilities)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{key}/vulnerabilities/rescan", wrapper.RescanRepositoryVulnerabilities)
 
 	return m
 }

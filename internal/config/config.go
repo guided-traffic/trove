@@ -47,6 +47,9 @@ type Config struct {
 	// The M4 section: the GitLab CI OIDC federation (ci.go).
 	CI CI `yaml:"ci"`
 
+	// The M4b section: the vulnerability scanning (vulnerabilities.go).
+	Vulnerabilities Vulnerabilities `yaml:"vulnerabilities"`
+
 	// The Bastion interface of the main installation (R-BAS-004 to R-BAS-017): the registrations, the check, the
 	// feed and the download intake (bastions.go). The Bastion's own configuration is a tree of its own
 	// (BastionConfig in bastion_role.go); the section named bastion there has nothing to do with this one.

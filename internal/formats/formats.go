@@ -210,6 +210,9 @@ type Capabilities struct {
 	// Remote are the optional interfaces of the format's remote adapter (the fill
 	// hook and the discovery document); the zero value for a format without them.
 	Remote RemoteCaps
+	// Vulnerability is the adapter that lets the core match the format's stored versions against advisories
+	// (R-VULN-009, ADR-150); nil for a format without one, whose repositories are not_covered.
+	Vulnerability VulnerabilityAdapter
 }
 
 // CapabilitiesOf reads the capabilities off a format. It is the one function of the
@@ -219,6 +222,9 @@ func CapabilitiesOf(f Format) Capabilities {
 	var c Capabilities
 	if r, ok := f.(ItemsRestorer); ok {
 		c.ItemsRestorer = r
+	}
+	if v, ok := f.(VulnerabilityAdapter); ok {
+		c.Vulnerability = v
 	}
 	if ra := f.Remote(); ra != nil {
 		c.Remote.Discovery, _ = ra.(Discoverer)
@@ -272,6 +278,9 @@ func CapabilitiesFor(id ID) Capabilities {
 func CatalogEntry(f Format) catalog.Entry {
 	d := f.Descriptor()
 	e := catalog.Entry{Facts: d.Facts, Names: d.Names}
+	if v := CapabilitiesOf(f).Vulnerability; v != nil {
+		e.Ecosystem = v.Ecosystem()
+	}
 	if x := f.Exposure(); x != nil {
 		dim := x.Dimensions()
 		e.Exposure = catalog.Exposure{Exposable: true, Packages: dim.Packages, Versions: dim.Versions, Tags: dim.Tags}

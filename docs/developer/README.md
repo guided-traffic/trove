@@ -5,8 +5,8 @@ its configuration, the database and cache layers, the S3 blob layer, the system 
 endpoints, the OIDC login and the break-glass account, the tokens, the permission policies and the grant index,
 the endpoints and exposure rules, the generic repository format with raw transfer under `/files/`, the npm format with its local, remote (pull-through proxy) and virtual repositories, the audit
 trail, the Angular admin UI with the package screens, client setup and the in-app manual, the Helm chart, the local development profile on kind, the integration, end-to-end
-and chart tests, and the CI workflows. No NuGet format, no GitLab CI federation,
-no vulnerability scanning and no backup exists yet. Everything marked *planned* below is the target design in
+and chart tests, and the CI workflows. No NuGet format, no GitLab CI federation
+and no backup exists yet; the vulnerability scanning has its contracts laid ([vulnerabilities.md](vulnerabilities.md)) and no work package built. Everything marked *planned* below is the target design in
 [docs/spec/](../spec/README.md).
 
 ## What to have in your head first
@@ -70,6 +70,7 @@ no vulnerability scanning and no backup exists yet. Everything marked *planned* 
 | [projects.md](projects.md) | Projects and delegated administration: the contracts (engine questions, project service, API operations and declarations, error codes, audit events, schema), the decisions behind them, who owns which file, and the tests that pass when |
 | [bastion.md](bastion.md) | The trove Bastion (phase 5b): the contracts of the eight work packages: package tree, the seams and who implements each, the interface guard, the request flows (hit, check, miss, write probe), the schema and configuration it added, how to run the role locally; status: contracts laid, work packages pending |
 | [ci-oidc.md](ci-oidc.md) | GitLab CI OIDC federation: the contracts laid for beta phase 5 (schema, the `internal/ci` packages and interfaces, the token and evaluation seam, the gate, API, configuration, events, tasks), the project tier, the work packages W1 to W7 and their files; status: contracts laid, work packages pending |
+| [vulnerabilities.md](vulnerabilities.md) | Vulnerability scanning (phase 6, M4b): the contracts laid for the eight work packages (the packages and layers, the ports `States`, `Evaluator` and `Advisories`, the download policy and verdict, the format contract's optional vulnerability adapter, the schema, the API operations and their handler stubs, configuration, coordination, audit, metrics and errors), the work packages S and A to H with the files each owns, the contract files; status: contracts laid, work packages pending |
 | [files.md](files.md) | Raw transfer under `/files/`: the generic layer over the item store, deploy, download with Range, folders, the items API, deletes, activity and download statistics |
 | [items.md](items.md) | The item store: the one commit and its order, the storage hooks, spool, read, listing rows, subtree delete and the `items-delete` job |
 | [formats.md](formats.md) | The format contract: `formats.Format`, the registry and its start-up checks, the `Host`, the storage hooks, the dispatcher for `/api/<format>/<repoKey>/`, content headers and error shapes, the wiring, how to add a format |
@@ -174,6 +175,7 @@ trove/
 │   ├── formats/              # format contract and registry; catalog/ (the facts of every format, a leaf), untrusted/ (limits of
 │   │                         # untrusted content), generic/ (raw files), all/ registers every format
 │   ├── secrets/              # key ring and sealed-column registry
+│   ├── vuln/                 # vulnerability scanning (contracts laid, vulnerabilities.md): the domain vocabulary and ports; advisory/, match/, osv/, metrics/ are leaves; store/, sync/, evaluate/, triage/, report/ are the work packages'
 │   ├── tools/coverage/       # the requirement coverage generator (docs/coverage)
 │   └── webui/                # go:embed of the Angular build; dist/index.html is the committed placeholder
 ├── web/                      # Angular workspace: angular.json, src/, scripts/ (build-embed, check-budget), .nvmrc

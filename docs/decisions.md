@@ -211,6 +211,7 @@ checked every earlier decision against them:
 | [ADR-147](#adr-147--a-ci-token-carries-its-frozen-grants-in-its-cache-entry-and-the-management-api-refuses-ci-tokens-by-default) | A CI token carries its frozen grants in its cache entry, and the management API refuses CI tokens by default | Decided by the development agent — owner review at the walkthrough |
 | [ADR-148](#adr-148--migrations-on-main-are-immutable-and-a-defect-is-fixed-forward) | Migrations on main are immutable, and a defect is fixed forward | Decided by the owner on 2026-11-02 (option (b)) |
 | [ADR-149](#adr-149--the-format-contract-gains-setupdatabastion-under-version-1) | The format contract gains `SetupData.Bastion` under version 1 | Decided by the development agent — owner review at the walkthrough |
+| [ADR-150](#adr-150--the-format-contract-gains-the-optional-vulnerability-adapter) | The format contract gains the optional vulnerability adapter under version 1 | Decided by the development agent — owner review at the walkthrough |
 
 </details>
 
@@ -5329,6 +5330,53 @@ format); rewriting npm's snippet in the core (format knowledge outside the forma
 **Revisit condition:** a format needs more about the Bastion than the flag (its name or its registration), which would be a field of its own
 and an ADR of its own.
 
+### ADR-150 · The format contract gains the optional vulnerability adapter
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** Vulnerability scanning (M4b, [ADR-131](#adr-131--own-vulnerability-scanning-with-a-dashboard-in-the-beta)) matches
+the stored versions of a format against OSV advisories with the format's own version order and name normalization
+([R-VULN-009](spec/vulnerability-scanning.md#r-vuln-009--version-matching-per-format),
+[Q-VULN-15](spec/vulnerability-scanning.md#q-vuln-15--how-formats-join-after-the-contract-freeze)). The format contract is frozen at
+version 1 ([ADR-141](#adr-141--the-format-contract-is-frozen-at-version-1)), and every change of it is an ADR of its own.
+Two things reach the formats: the adapter, which a format implements so that the core can match its versions, and the
+scanning's data, which a format's audit routes (npm's `-/npm/v1/security/advisories/bulk`, NuGet's `VulnerabilityInfo` page)
+read.
+
+**Decision.** The contract gains, as additions:
+- the optional interface `formats.VulnerabilityAdapter` (R-VULN-009: `Ecosystem`, `AdvisoryName`, `AdvisoryVersion`,
+  `CompareVersions`), found by `CapabilitiesOf` when the format registers and recorded as `Capabilities.Vulnerability`, nil
+  for a format without it, whose repositories are `not_covered`; `CapabilitiesOf` stays the one place that asserts to an
+  interface of the contract;
+- the Host service `Host.Vulnerabilities() formats.VulnerabilityData`, which a format's audit routes call and never
+  implement: the state of an ecosystem's advisory data, the advisories of names, all advisories of an ecosystem, the internal
+  names, and the matcher. A host that has not wired the scanning answers `formats.NoVulnerabilityData()`, for which every
+  ecosystem is not complete, so a format never meets nil;
+- the catalog leaf's `Entry.Ecosystem`, derived by `formats.Register` from the adapter, so that the repository model, which
+  cannot import the contract, knows which formats the member `vulnerabilities` applies to.
+
+The types the new methods speak are the leaf types of `internal/vuln/advisory` and `internal/vuln/match`; the contract imports
+them and a format may too (the architecture test's allow-list gains exactly these two packages, not the scanning's domain).
+`match.Adapter` has the method set of `VulnerabilityAdapter`, so the scanning's domain, which is below the contract, takes a
+format's adapter by structural typing. `ContractVersion` stays 1: no registered format changes, and no other format has to
+implement the adapter. npm and NuGet implement it in the work package that builds the matching. The spec blocks of R-ARCH-008
+and the surface file `internal/formats/testdata/contract.txt` are updated in the same change.
+
+**Consequences.** A later format joins the scanning by implementing four methods and its repositories change from
+`not_covered` to scanned; no change of the core. The conformance kit runs the matching corpus for a format that has the adapter
+(Q-VULN-15). The `Host` interface gains a method that only the core implements (`internal/formathost` and the kit's in-memory
+host), so a format value is unchanged.
+
+**Alternatives considered.** A method on `Format` (every format would have to decide; a changed method set of a frozen
+interface, which raises the version, Q-VULN-15 option b); a table of version orders in the core (format rules in the core,
+against R-ARCH-008); handing the scanning's ports to a format as a bound data port (the data port is a format's own table,
+Q-ARCH-193, and the audit's data is the core's).
+
+**Revisit condition:** more optional interfaces accumulate (Q-VULN-15's condition), which would justify a contract version.
+
+**Spec:** [spec/vulnerability-scanning.md](spec/vulnerability-scanning.md) R-VULN-009, Q-VULN-15, Q-VULN-23;
+[spec/architecture.md](spec/architecture.md) R-ARCH-008.
+
 ## trove Bastion
 
 ### ADR-142 · The trove Bastion: an internet-facing, read-only cache instance in the beta
@@ -6455,6 +6503,11 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-VULN-20](spec/vulnerability-scanning.md#q-vuln-20--which-findings-block-a-download-and-who-sets-and-lifts-a-block) | Which findings block a download, and who sets and lifts a block? | (a) triage only: malicious versions blocked by default; every other block set by a holder of `vulnerabilities:triage` on a confirmed finding, for that version in that repository, and lifted in triage; no severity threshold (owner, 2026-10-31) | [ADR-134](#adr-134--malicious-versions-are-blocked-at-download-by-default) |
 | [Q-VULN-21](spec/vulnerability-scanning.md#q-vuln-21--epss-is-an-operator-option-whose-terms-the-operator-decides) | Who decides on EPSS's terms of use? | (a) EPSS stays P1, an operator option off by default; the operator who switches it on decides, and the documentation says FIRST states no licence (owner, 2026-10-31) | — |
 | [Q-VULN-22](spec/vulnerability-scanning.md#q-vuln-22--a-block-set-in-triage-is-a-finding-status) | How is a block set in triage stored and changed? | (a) a finding status `blocked`, reached from `confirmed` and left to `confirmed` or `dismissed` | [ADR-134](#adr-134--malicious-versions-are-blocked-at-download-by-default) |
+| [Q-VULN-23](spec/vulnerability-scanning.md#q-vuln-23--the-package-layout-of-the-scanning-and-the-leaf-move-of-the-untrusted-content-limits) | How are the packages of the scanning layered, and where do the ports live? | (b) pure parts as leaves (`advisory`, `match`, `osv`), `internal/formats/untrusted` moves to the leaf layer, the domain root imports no other domain package and its ports speak plain values; the format contract may import the two leaves it spells | [ADR-150](#adr-150--the-format-contract-gains-the-optional-vulnerability-adapter) |
+| [Q-VULN-24](spec/vulnerability-scanning.md#q-vuln-24--four-places-where-the-data-model-and-the-api-cannot-be-built-as-the-page-wrote-them) | What changes where the data model and the API cannot be built as written? | (b) the column `"references"` quoted, the index `packages_name` as its own `CONCURRENTLY` step 00036, a column `cwe_ids`, and the export without an output-format parameter | — |
+| [Q-VULN-25](spec/vulnerability-scanning.md#q-vuln-25--the-operations-of-the-scanning-answer-503-until-their-services-exist) | What do the declared operations answer before their services exist? | (a) 503 `unavailable` from the handlers of `vuln_api.go`, replaced by work package E | — |
+| [Q-VULN-26](spec/vulnerability-scanning.md#q-vuln-26--the-repository-member-vulnerabilities-is-decoded-and-validated-by-the-repository-model) | How does the repository model take the member `vulnerabilities`? | (a) a typed member decoded into `vuln.Settings`, applicability read from the catalog entry's ecosystem | — |
+| [Q-VULN-27](spec/vulnerability-scanning.md#q-vuln-27--the-capability-vulnerabilitiestriage-belongs-to-admin-auditor-and-security-admin-and-what-reads-and-what-rescans) | Which roles hold `vulnerabilities:triage`, and how are reads and the rescan declared? | (b) `admin`, `auditor` and `security-admin`; reads `authenticated` and narrowed in SQL; the rescan `manage` on the repository | — |
 | [Q-BAS-1](spec/bastion.md#q-bas-1--the-bastion-asks-the-main-installation-and-keeps-no-copy-of-users-tokens-or-policies) | How does the Bastion know what a caller may read? | (a) it asks the main installation and keeps the answers briefly; no copy of users, tokens or policies (owner, 2026-10-31) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
 | [Q-BAS-2](spec/bastion.md#q-bas-2--the-bastion-is-read-only-for-package-content) | May the Bastion take writes? | (a) read-only for package content; writes refused in the protocol's shape, pointing at the main installation (owner, 2026-10-31) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
 | [Q-BAS-3](spec/bastion.md#q-bas-3--the-bastions-credential-is-a-token-issued-by-an-administrator-of-the-main-installation) | What is the Bastion's credential towards the main installation? | (a) a token issued by an administrator of the main installation, not a client certificate (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |

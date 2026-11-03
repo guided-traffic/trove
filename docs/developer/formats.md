@@ -115,7 +115,7 @@ freezes the catalog ([wire_formats.go](../../internal/app/wire_formats.go) `wire
 `Register` also records the format's [`Capabilities`](../../internal/formats/formats.go) once (`CapabilitiesOf`, read back with `CapabilitiesFor`):
 the optional `ItemsRestorer` and, in `Capabilities.Remote` (`RemoteCaps`, read back with `RemoteCapabilities(id)`), the optional interfaces of the
 remote adapter, `Discoverer` (a discovery document such as NuGet's service index, Q-ARCH-268) and `FillInspector` (inspect a fetched artifact
-before it is stored, Q-ARCH-267). The remote adapter must be a stable value, because the instance `Remote()` returned at `Register` is the one
+before it is stored, Q-ARCH-267); and, on the format itself, the optional `VulnerabilityAdapter` (`Capabilities.Vulnerability`, R-VULN-009, [ADR-150](../decisions.md#adr-150--the-format-contract-gains-the-optional-vulnerability-adapter)), from which `Register` also derives `catalog.Entry.Ecosystem`; a format's audit routes read the scanning through `Host.Vulnerabilities()` ([vulnerabilities.md](vulnerabilities.md)). The remote adapter must be a stable value, because the instance `Remote()` returned at `Register` is the one
 recorded. What the engine does with them is in [proxy.md](proxy.md#what-a-format-adds-to-the-engine).
 
 ## The request path of a format route

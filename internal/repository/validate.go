@@ -128,6 +128,7 @@ func validateSections(v *validation, info catalog.Entry, d *Document) {
 	}
 	applyOwnershipDefault(info, d)
 	validateFormatSettings(v, info, d)
+	validateVulnerabilities(v, info, d, na)
 	if len(d.Storage) > 0 {
 		trimmed := bytes.TrimSpace(d.Storage)
 		var probe map[string]json.RawMessage
@@ -250,4 +251,24 @@ func (v *validation) err() error {
 		}
 	}
 	return errs.E(errs.Invalid, code, detail, errs.WithFields(v.fields...))
+}
+
+// validateVulnerabilities checks the member `vulnerabilities` (R-VULN-002, Q-VULN-26): it applies to local and remote
+// repositories of a format with the vulnerability adapter, and the catalog entry's ecosystem says which formats have one. A
+// virtual repository stores nothing and is not scanned, and a format without the adapter has nothing to match, so both answer
+// not_applicable at the member's pointer; the values of an applicable member are checked as the other enumerated settings.
+func validateVulnerabilities(v *validation, info catalog.Entry, d *Document, na func(pointer, why string)) {
+	if d.Vulnerabilities == nil {
+		return
+	}
+	switch {
+	case d.Class == Virtual:
+		na("/vulnerabilities", "virtual repositories store nothing and are not scanned; their views aggregate the findings of their members")
+	case info.Ecosystem == "":
+		na("/vulnerabilities", fmt.Sprintf("the %s format has no vulnerability adapter, so its stored versions are not scanned", info.ID))
+	default:
+		for _, f := range d.Vulnerabilities.Validate() {
+			v.add("/vulnerabilities"+f.Pointer, f.Code, f.Detail)
+		}
+	}
 }

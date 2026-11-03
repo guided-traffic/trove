@@ -1,0 +1,2 @@
+-- Statements of the vulnerability scanning, work package enforce (docs/developer/vulnerabilities.md). One file per work package;
+-- every statement of this file is the package's. Plain Go types only (no pgtype): COALESCE nullable columns.

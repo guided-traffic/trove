@@ -11,7 +11,7 @@ import (
 type layer int
 
 const (
-	layerLeaf   layer = iota // config, errs, buildinfo, observability, cache, meta, backup/tables, tlsfiles, formats/catalog, formats/nuget/{id,version,nupkg,nuspec}, formats/<id>/rows, auth/scope, ci/{reason,claims,subject}, auth/jws, docs/manual: usable from every layer
+	layerLeaf   layer = iota // config, errs, buildinfo, observability, cache, meta, backup/tables, tlsfiles, formats/catalog, formats/untrusted, formats/nuget/{id,version,nupkg,nuspec}, formats/<id>/rows, auth/scope, ci/{reason,claims,subject}, auth/jws, vuln/{advisory,match,osv,metrics}, docs/manual: usable from every layer
 	layerInfra               // meta/postgres, blob, cluster, outbound, secrets
 	layerDomain              // repository, proxy, virtual, formatdata, authz, project, auth, jobs, audit, backup, manual
 	layerEdge                // httpserver, api/v1, webui, formats
@@ -56,6 +56,10 @@ func layerTable() []layerRule {
 		{"internal/backup/tables", layerLeaf},
 		{"internal/tlsfiles", layerLeaf},
 		{"internal/formats/catalog", layerLeaf},
+		// The untrusted-content limits and bounded readers import only errs and the standard library. They are a leaf since
+		// the vulnerability scanning (Q-VULN-23): the OSV decoder (internal/vuln/osv, a leaf like the other pure parsers)
+		// reads the advisory archives through them, and a leaf may not import an edge package.
+		{"internal/formats/untrusted", layerLeaf},
 		// The NuGet rule libraries import only errs, the standard library and each other. They are leaves so that
 		// the format (edge), its data port (domain) and the jobs that reindex can all use one parser (R-NUGET-003, R-NUGET-005).
 		{"internal/formats/nuget/id", layerLeaf},
@@ -71,7 +75,15 @@ func layerTable() []layerRule {
 		{"internal/ci/claims", layerLeaf},
 		{"internal/ci/subject", layerLeaf},
 		{"internal/auth/jws", layerLeaf},
-		{"docs/manual", layerLeaf}, // the embedded files of the manual, nothing but embed (R-API-054)
+		// The vulnerability scanning's pure parts (R-VULN-006 to R-VULN-009, Q-VULN-23): the normalized advisory
+		// records, the matcher over a format's version order and the OSV and KEV decoders import only the standard
+		// library, errs, the untrusted-content limits and each other, so that the format contract can hand advisories to
+		// a format and the format's adapter can be matched without the format importing the scanning's domain.
+		{"internal/vuln/advisory", layerLeaf},
+		{"internal/vuln/match", layerLeaf},
+		{"internal/vuln/osv", layerLeaf},
+		{"internal/vuln/metrics", layerLeaf}, // the collectors and names of R-VULN-024: the Prometheus client only
+		{"docs/manual", layerLeaf},           // the embedded files of the manual, nothing but embed (R-API-054)
 		// The trove Bastion (R-BAS-001, Q-BAS-51): the wire contract, the answers' validity rules and the metrics are
 		// leaves that the main installation's side and the Bastion's share or read; they import nothing of the module.
 		{"internal/bastion/iface", layerLeaf},
@@ -101,6 +113,9 @@ func layerTable() []layerRule {
 		{"internal/authz", layerDomain},
 		{"internal/project", layerDomain}, // projects, the unit of delegated administration (R-AUTHZ-026)
 		{"internal/ci", layerDomain},      // the GitLab CI OIDC federation (R-CI-001 to R-CI-030)
+		// The vulnerability scanning (R-VULN-001 to R-VULN-029): the shared domain types and ports at the root, and the
+		// store, sync, evaluate, triage and report packages below it (the pure parts are leaves above).
+		{"internal/vuln", layerDomain},
 		{"internal/auth", layerDomain},
 		{"internal/jobs", layerDomain},
 		{"internal/audit", layerDomain},

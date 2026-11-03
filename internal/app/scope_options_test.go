@@ -17,6 +17,7 @@ func TestR_AUTH_024_ScopePatternsUseTheAuthorizationValidators(t *testing.T) {
 	ok := map[string]string{
 		"a key, a key pattern and a class selector": grant(`"npm-local","npm-team-*","@any-local:npm"`, `"@acme/*"`, `"releases/**"`),
 		"every capability of R-AUTHZ-010":           `{"system":["content:bypass","endpoints:write","audit:read"]}`,
+		"the triage capability of R-VULN-019":       `{"inherit":false,"system":["vulnerabilities:triage"]}`,
 	}
 	for name, doc := range ok {
 		t.Run("R-AUTH-024 accepts "+name, func(t *testing.T) {

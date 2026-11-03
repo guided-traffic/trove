@@ -17,6 +17,7 @@ import (
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/secrets"
+	"github.com/guided-traffic/trove/internal/vuln"
 )
 
 // The wiring of the API conventions (WP1.6): the start-up canary of the key ring
@@ -155,6 +156,9 @@ func (a *App) apiServices() v1.Services {
 		TaskArgs: map[string]func() any{
 			"gc":      func() any { return &blob.GCJobArgs{} },
 			"gc-full": func() any { return &blob.GCJobArgs{} },
+			// The manual run of the OSV sync takes {"acceptShrink": true} (R-VULN-004).
+			vuln.TaskSyncOSV:     func() any { return &vuln.SyncArgs{} },
+			vuln.TaskSyncOSVFull: func() any { return &vuln.SyncArgs{} },
 		},
 	}
 	db := a.database()

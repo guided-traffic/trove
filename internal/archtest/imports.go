@@ -147,6 +147,7 @@ func CheckModuleBans(module string, pkgs []Package) []Violation {
 func formatAllowed() []string {
 	return []string{
 		"internal/formats", "internal/formats/catalog", "internal/formats/untrusted",
+		"internal/vuln/advisory", "internal/vuln/match",
 		"internal/errs", "internal/config", "internal/observability",
 	}
 }
@@ -230,7 +231,7 @@ func CheckModuleImportBans(module string, pkgs []Package) []Violation {
 			}
 			out = append(out, Violation{
 				Rule: "R-ARCH-008", From: p.Rel, To: target,
-				Detail: "a format reaches the core only through Host; it may import the format contract, the catalog, the untrusted-content limits, errs, config types and observability primitives, and nothing else",
+				Detail: "a format reaches the core only through Host; it may import the format contract, the catalog, the untrusted-content limits, the leaf types of the vulnerability scanning, errs, config types and observability primitives, and nothing else",
 			})
 		}
 	}

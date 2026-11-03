@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/formats/catalog"
+	"github.com/guided-traffic/trove/internal/vuln"
 )
 
 // Class is the class of a repository (R-REPO-001). It is fixed at creation. The
@@ -86,6 +87,31 @@ type Repository struct {
 	rid       int64
 	autoClaim bool
 	virt      *virtualState
+	// vulnerabilities is the member `vulnerabilities` with its defaults, vulnEcosystem the OSV ecosystem of the format's
+	// vulnerability adapter, "" for a virtual repository or a format without one (R-VULN-002).
+	vulnerabilities vuln.Settings
+	vulnEcosystem   string
+}
+
+// VulnerabilitySettings returns the repository's member `vulnerabilities` with the defaults of the members it does not set
+// (R-VULN-002). A repository the scanning does not apply to (virtual, or a format without the adapter) returns the defaults.
+func (r Repository) VulnerabilitySettings() vuln.Settings {
+	if r.vulnEcosystem == "" {
+		return vuln.DefaultSettings()
+	}
+	return r.vulnerabilities
+}
+
+// VulnerabilityEcosystem returns the OSV ecosystem the repository's stored versions are matched in, "" when the scanning does
+// not apply to the repository: a virtual repository stores nothing, and a format without the vulnerability adapter has none
+// (R-VULN-001).
+func (r Repository) VulnerabilityEcosystem() string { return r.vulnEcosystem }
+
+// VulnerabilityPolicy resolves the repository's member with the installation's switches (vulnerabilities.enabled and
+// vulnerabilities.enforcement) into the policy the download path applies (R-VULN-015). It reads the replica's snapshot, so it
+// costs no query; a change is in force on every replica within the propagation bound of the repo_config area.
+func (r Repository) VulnerabilityPolicy(installationEnabled bool, enforcement vuln.Enforcement) vuln.Policy {
+	return vuln.PolicyFor(r.VulnerabilitySettings(), r.vulnEcosystem, installationEnabled, enforcement)
 }
 
 // Admits reports whether a canonical path is admitted by the repository's

@@ -61,6 +61,9 @@ type HostOptions struct {
 	Resolver formats.Resolver
 	// RestoredAt is system_state restored_at.
 	RestoredAt time.Time
+	// Vulnerabilities is the scanning's data an audit route reads (R-VULN-017, R-VULN-018); nil answers
+	// formats.NoVulnerabilityData, as the production Host does until the scanning is wired.
+	Vulnerabilities formats.VulnerabilityData
 	// Subject is who acts on every request the Host builds; the zero value is a
 	// subject without a name, which is neither anonymous nor authenticated.
 	Subject authz.Subject
@@ -307,6 +310,14 @@ func (h *Host) FormatData(id formats.ID) any {
 
 // RestoredAt implements formats.Host.
 func (h *Host) RestoredAt(context.Context) (time.Time, error) { return h.opts.RestoredAt, nil }
+
+// Vulnerabilities implements formats.Host.
+func (h *Host) Vulnerabilities() formats.VulnerabilityData {
+	if h.opts.Vulnerabilities != nil {
+		return h.opts.Vulnerabilities
+	}
+	return formats.NoVulnerabilityData()
+}
 
 type renditions struct{ h *Host }
 

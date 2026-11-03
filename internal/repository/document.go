@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/vuln"
 )
 
 // Hide-existence values of the document (R-AUTHZ-017).
@@ -63,6 +64,11 @@ type Settings struct {
 	// NuGet is the settings member of the NuGet format (R-NUGET-007, R-NUGET-014), under
 	// the same rules as NPM.
 	NuGet json.RawMessage `json:"nuget,omitempty"`
+	// Vulnerabilities is the member owned by vulnerability-scanning.md (R-VULN-002): local and remote repositories of a
+	// format with the vulnerability adapter. It is absent until set, and an absent member means the defaults of
+	// [vuln.DefaultSettings]; a member set with a few fields takes the defaults of the others (Q-VULN-26). Virtual
+	// repositories and formats without the adapter answer not_applicable for it.
+	Vulnerabilities *vuln.Settings `json:"vulnerabilities,omitempty"`
 
 	// pending are the secret fields of the validated document that still have to
 	// be written to repository_secrets. They carry the plaintext of a request, so

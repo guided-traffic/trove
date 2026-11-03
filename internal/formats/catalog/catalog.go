@@ -194,6 +194,11 @@ type Entry struct {
 	// Names is nil exactly when the format has no package names.
 	Names    Names
 	Exposure Exposure
+	// Ecosystem is the OSV ecosystem name of the format's vulnerability adapter (R-VULN-009), "" for a format without
+	// one. formats.Register derives it; the repository model reads it to refuse the member `vulnerabilities` where it
+	// does not apply (R-VULN-002), and the scanning derives the ecosystems it syncs from the entries that have one
+	// (R-VULN-003).
+	Ecosystem string
 
 	// settings is the compiled SettingsSchema, filled by Register.
 	settings *settingsSchema

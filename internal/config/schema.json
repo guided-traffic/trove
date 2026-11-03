@@ -1929,6 +1929,22 @@
             "storage-summary": {
               "Enabled": true,
               "Schedule": "17 * * * *"
+            },
+            "vuln-findings-retention": {
+              "Enabled": true,
+              "Schedule": "50 3 * * *"
+            },
+            "vuln-sync-kev": {
+              "Enabled": true,
+              "Schedule": "41 */6 * * *"
+            },
+            "vuln-sync-osv": {
+              "Enabled": true,
+              "Schedule": "*/15 * * * *"
+            },
+            "vuln-sync-osv-full": {
+              "Enabled": true,
+              "Schedule": "17 3 * * 0"
             }
           },
           "type": "object",
@@ -3873,6 +3889,236 @@
       "required": [
         "key_prefix"
       ],
+      "type": "object"
+    },
+    "vulnerabilities": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "false: no sync, no evaluation, no block and no client-audit mode local; the stored findings stay as they are.",
+          "type": "boolean",
+          "x-trove-env": "TROVE_VULNERABILITIES_ENABLED"
+        },
+        "enforcement": {
+          "default": "enforce",
+          "description": "enforce refuses the downloads the findings block (R-VULN-015); report blocks nothing anywhere: the would-be blocks are counted in trove_vuln_downloads_blocked_total{mode=\"report\"} and recorded with enforced false. The installation-wide override for an emergency and for measuring a policy before enforcing it.",
+          "enum": [
+            "enforce",
+            "report"
+          ],
+          "type": "string",
+          "x-trove-env": "TROVE_VULNERABILITIES_ENFORCEMENT"
+        },
+        "export": {
+          "additionalProperties": false,
+          "properties": {
+            "max_rows": {
+              "default": 100000,
+              "description": "An export that would exceed this answers 422 export_too_large before anything is streamed.",
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_VULNERABILITIES_EXPORT_MAX_ROWS"
+            }
+          },
+          "type": "object"
+        },
+        "findings": {
+          "additionalProperties": false,
+          "properties": {
+            "resolved_retention": {
+              "default": "9600h",
+              "description": "A resolved finding and its events are kept this long (400 days) after it resolved; the task vuln-findings-retention deletes older ones. A finding that is re-detected before that is kept. Go durations have no day unit.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_VULNERABILITIES_FINDINGS_RESOLVED_RETENTION",
+              "x-trove-type": "duration"
+            }
+          },
+          "type": "object"
+        },
+        "matching": {
+          "additionalProperties": false,
+          "properties": {
+            "public_upstreams": {
+              "default": {
+                "npm": [
+                  "registry.npmjs.org"
+                ],
+                "nuget": [
+                  "api.nuget.org",
+                  "www.nuget.org"
+                ]
+              },
+              "description": "Per format ID, the hosts of the public registries. A remote repository whose upstream host is listed is matched with matchPublicAdvisories auto; any other remote is not_covered until it sets always. Replaces the whole map when set.",
+              "type": "object",
+              "x-trove-env": "TROVE_VULNERABILITIES_MATCHING_PUBLIC_UPSTREAMS"
+            }
+          },
+          "type": "object"
+        },
+        "sources": {
+          "additionalProperties": false,
+          "properties": {
+            "epss": {
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "default": "off",
+                  "description": "Off, and only off is built in this release (P1). The operator who switches EPSS on decides whether the data's terms permit the installation's use: FIRST publishes the EPSS scores without a stated licence, its site reads \"All Rights Reserved\", and it asks for attribution in products that use the scores; trove makes no statement about what that permits.",
+                  "enum": [
+                    "online",
+                    "repository",
+                    "off"
+                  ],
+                  "type": "string",
+                  "x-trove-env": "TROVE_VULNERABILITIES_SOURCES_EPSS_MODE"
+                },
+                "repository": {
+                  "default": "",
+                  "description": "Mode repository: the key of a generic local repository.",
+                  "type": "string",
+                  "x-trove-env": "TROVE_VULNERABILITIES_SOURCES_EPSS_REPOSITORY"
+                },
+                "url": {
+                  "default": "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz",
+                  "description": "The daily EPSS file; https only. Not fetched while mode is off.",
+                  "type": "string",
+                  "x-trove-env": "TROVE_VULNERABILITIES_SOURCES_EPSS_URL"
+                }
+              },
+              "type": "object"
+            },
+            "kev": {
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "default": "online",
+                  "description": "online, repository (kev/known_exploited_vulnerabilities.json in the mirror repository) or off; with off every known-exploited flag stays as it was last computed.",
+                  "enum": [
+                    "online",
+                    "repository",
+                    "off"
+                  ],
+                  "type": "string",
+                  "x-trove-env": "TROVE_VULNERABILITIES_SOURCES_KEV_MODE"
+                },
+                "repository": {
+                  "default": "",
+                  "description": "Mode repository: the key of a generic local repository.",
+                  "type": "string",
+                  "x-trove-env": "TROVE_VULNERABILITIES_SOURCES_KEV_REPOSITORY"
+                },
+                "url": {
+                  "default": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+                  "description": "The catalog; https only.",
+                  "type": "string",
+                  "x-trove-env": "TROVE_VULNERABILITIES_SOURCES_KEV_URL"
+                }
+              },
+              "type": "object"
+            },
+            "osv": {
+              "additionalProperties": false,
+              "properties": {
+                "base_url": {
+                  "default": "https://osv-vulnerabilities.storage.googleapis.com/",
+                  "description": "The root of the OSV export bucket; https only. The sync requests \u003cecosystem\u003e/all.zip, \u003cecosystem\u003e/modified_id.csv and \u003cecosystem\u003e/\u003cid\u003e.json below it, never the global archive.",
+                  "type": "string",
+                  "x-trove-env": "TROVE_VULNERABILITIES_SOURCES_OSV_BASE_URL"
+                },
+                "ecosystems": {
+                  "default": [],
+                  "description": "OSV ecosystems to import. Empty: every ecosystem of a format that has the vulnerability adapter in this release (npm, NuGet). The list may only narrow that set; an ecosystem without an adapter is refused.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "x-trove-env": "TROVE_VULNERABILITIES_SOURCES_OSV_ECOSYSTEMS"
+                },
+                "full_resync_threshold": {
+                  "default": 2000,
+                  "description": "Changed records above which an incremental run turns into a full one.",
+                  "minimum": 1,
+                  "type": "integer",
+                  "x-trove-env": "TROVE_VULNERABILITIES_SOURCES_OSV_FULL_RESYNC_THRESHOLD"
+                },
+                "max_archive_size": {
+                  "default": "1GiB",
+                  "description": "Largest archive accepted. The worker's spool (worker.spool.sizeLimit) must hold one archive plus headroom.",
+                  "type": [
+                    "string",
+                    "integer"
+                  ],
+                  "x-trove-env": "TROVE_VULNERABILITIES_SOURCES_OSV_MAX_ARCHIVE_SIZE",
+                  "x-trove-type": "bytes"
+                },
+                "max_record_size": {
+                  "default": "1MiB",
+                  "description": "Largest advisory record, in the archive uncompressed and as a single record.",
+                  "type": [
+                    "string",
+                    "integer"
+                  ],
+                  "x-trove-env": "TROVE_VULNERABILITIES_SOURCES_OSV_MAX_RECORD_SIZE",
+                  "x-trove-type": "bytes"
+                },
+                "max_shrink": {
+                  "default": 0.2,
+                  "description": "The share of an ecosystem's stored records a full sync may delete. A larger shrink fails the run with shrink_refused and changes nothing; a manual run with {\"acceptShrink\": true} overrides it once.",
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number",
+                  "x-trove-env": "TROVE_VULNERABILITIES_SOURCES_OSV_MAX_SHRINK"
+                },
+                "mode": {
+                  "default": "online",
+                  "description": "online: the worker role fetches the per-ecosystem archives (R-VULN-004); repository: it reads them from a generic local repository of the installation, for an air-gapped installation (R-VULN-005); off: the stored data stays as it is and ages, and is never deleted by turning the source off.",
+                  "enum": [
+                    "online",
+                    "repository",
+                    "off"
+                  ],
+                  "type": "string",
+                  "x-trove-env": "TROVE_VULNERABILITIES_SOURCES_OSV_MODE"
+                },
+                "overlap": {
+                  "default": "1h",
+                  "description": "Subtracted from the time a download started to set the watermark, because the exporter writes the archive and the change file at different times (Q-VULN-11).",
+                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+                  "type": "string",
+                  "x-trove-env": "TROVE_VULNERABILITIES_SOURCES_OSV_OVERLAP",
+                  "x-trove-type": "duration"
+                },
+                "repository": {
+                  "default": "",
+                  "description": "Mode repository: the key of a generic local repository that holds osv/\u003cecosystem\u003e/all.zip (R-VULN-005). Whoever holds deploy on it decides the advisory data of the installation.",
+                  "type": "string",
+                  "x-trove-env": "TROVE_VULNERABILITIES_SOURCES_OSV_REPOSITORY"
+                },
+                "timeout": {
+                  "default": "10m",
+                  "description": "Timeout of one archive download; a record or a part of the change file has 30 s.",
+                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+                  "type": "string",
+                  "x-trove-env": "TROVE_VULNERABILITIES_SOURCES_OSV_TIMEOUT",
+                  "x-trove-type": "duration"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "stale_after": {
+          "default": "24h",
+          "description": "An ecosystem whose last successful sync is older than this is stale: evaluation and enforcement continue on the stored data, the report shows a banner and the alert TroveVulnerabilityDataStale fires. Staleness never affects readiness.",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+          "type": "string",
+          "x-trove-env": "TROVE_VULNERABILITIES_STALE_AFTER",
+          "x-trove-type": "duration"
+        }
+      },
       "type": "object"
     }
   },

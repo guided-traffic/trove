@@ -3269,6 +3269,303 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/vulnerabilities/findings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List vulnerability findings
+         * @description The findings the caller can read, with cursor pagination (R-VULN-020). A finding is visible to a caller who holds `read`
+         *     on its repository, narrowed by the package-name patterns of the grant, evaluated in SQL; a virtual repository in a
+         *     filter expands to the members the caller can read (R-VULN-019). A cursor grants nothing: every page is filtered again.
+         *     `sort` is `-severity` (the default: level, then score), `severity`, `-detectedAt`, `detectedAt`, `package`, `-package`,
+         *     `advisory`, `-advisory`, `status` or `-status`. Without a `status` filter resolved findings are left out. An unknown
+         *     filter answers `400`. `blocked` and `blockReason` are computed with the rule of R-VULN-015 and the repository's
+         *     current policy.
+         */
+        get: operations["listVulnerabilityFindings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vulnerabilities/findings/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export the findings of a filter as CSV
+         * @description The list's filters (without paging; `format` is the format-ID filter, the answer is CSV only, Q-VULN-24), streamed as CSV with one header row and the columns `findingId`, `status`,
+         *     `severity`, `cvssScore`, `cvssVersion`, `kind`, `knownExploited`, `advisory`, `aliases`, `summary`, `format`,
+         *     `repository`, `package`, `version`, `fixAvailable`, `fixedVersions`, `blocked`, `blockReason`, `detectedAt`,
+         *     `resolvedAt`, `dismissalReason` (R-VULN-020). A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets
+         *     a leading apostrophe. An export that would exceed `vulnerabilities.export.max_rows` answers `422 export_too_large`
+         *     before anything is streamed.
+         */
+        get: operations["exportVulnerabilityFindings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vulnerabilities/findings/set-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change the status of several findings
+         * @description Changes up to 500 findings in one transaction and answers `200` with one result per id (R-VULN-013): `changed`,
+         *     `unchanged`, `404` for an id the caller cannot read, `409 finding_resolved`, `409 finding_not_confirmed`. A batch over
+         *     500 ids answers `422`. Every change writes a history row and the audit event `vulnerability.finding.status_changed`
+         *     with one bulk identifier. Needs the capability `vulnerabilities:triage` and `read` on each finding.
+         */
+        post: operations["setVulnerabilityFindingsStatus"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vulnerabilities/findings/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The finding ID (a UUIDv7). A string that is no finding the caller can read answers `404`, whatever its shape. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Read one finding
+         * @description The finding with its advisory (identifier, aliases, summary, details, source and license, CVSS, known-exploited date,
+         *     affected ranges, fixed versions, references), its version and repository, the readable virtual repositories whose
+         *     effective member list contains the repository, `blocked` with `blockReason`, for a block set in triage the principal
+         *     and time that set it, and the history (R-VULN-020). A finding the caller cannot read answers `404`. The `ETag` is the
+         *     finding's revision.
+         */
+        get: operations["getVulnerabilityFinding"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Triage one finding
+         * @description Applies a JSON merge patch (RFC 7396, `application/merge-patch+json`) with `status`, `dismissalReason` (required with
+         *     `dismissed`, refused otherwise) and `comment` (at most 4,000 characters); `If-Match` is required (R-VULN-013).
+         *     `{"status": "blocked"}` sets a download block and is accepted for a `confirmed` finding only (`409
+         *     finding_not_confirmed`); `confirmed` or `dismissed` on a `blocked` finding lifts it. A resolved finding answers `409
+         *     finding_resolved`, and `{"status": "resolved"}` answers `422 status_not_settable`. Needs the capability
+         *     `vulnerabilities:triage` and `read` on the finding; a finding the caller cannot read answers `404`.
+         */
+        patch: operations["updateVulnerabilityFinding"];
+        trace?: never;
+    };
+    "/api/v1/vulnerabilities/advisories/{ecosystem}/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The OSV ecosystem name, `npm` or `NuGet`. */
+                ecosystem: string;
+                /** @description An advisory identifier or an alias, percent-encoded. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Read an advisory with its readable findings
+         * @description An advisory by identifier or alias (R-VULN-020), with its source and license (R-VULN-003) and the findings of it that
+         *     the caller can read, across repositories and versions: the "where is it used" view. The advisory is public data and
+         *     visible to every authenticated caller; the list of findings is filtered as the findings list is (R-VULN-019).
+         */
+        get: operations["getVulnerabilityAdvisory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vulnerabilities/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Counts of the open findings
+         * @description Open findings counted by severity and by kind, `needsTriage`, `blocked` (versions) and `fixAvailable`; the coverage of
+         *     the repositories by evaluation state; the data age per ecosystem (R-VULN-021). Computed per request over the findings
+         *     the caller can read, never cached across callers (R-VULN-019).
+         */
+        get: operations["getVulnerabilitySummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vulnerabilities/trend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Open findings per day
+         * @description Per day from `from` to `to` (at most 400 days, default the last 90): the findings detected and not resolved at the
+         *     end of the day, by severity (R-VULN-021, Q-VULN-16). It counts a finding under its current severity and counts
+         *     dismissed findings until they resolve; `basis` says so. Computed over the findings the caller can read.
+         */
+        get: operations["getVulnerabilityTrend"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vulnerabilities/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The advisory sources and their state
+         * @description Per source and ecosystem: `mode`, `state`, `stale`, `syncedAt`, `fullSyncedAt`, `attemptedAt`, `failures`, `lastError`,
+         *     `records`, `rejected`, `unevaluable` and `nextRunAt` (R-VULN-021).
+         */
+        get: operations["listVulnerabilitySources"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vulnerabilities/claimed-name-matches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Public advisories that name an internal name
+         * @description The advisories, above all `MAL-` records, for a package name the installation treats as internal (R-VULN-010): the sign
+         *     of a dependency-confusion attempt.
+         */
+        get: operations["listClaimedNameMatches"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/packages/{packageId}/versions/{version}/vulnerabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The server-generated package identifier (R-API-029). */
+                packageId: components["parameters"]["PackageId"];
+                /** @description The version string, percent-encoded. */
+                version: components["parameters"]["PackageVersionPath"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The vulnerabilities of one version, per repository
+         * @description Per readable repository that holds the version: `evaluation` (R-VULN-001), `blocked`, `blockReason` and the findings
+         *     (R-VULN-020): the download status without downloading.
+         */
+        get: operations["getPackageVersionVulnerabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/packages/{packageId}/vulnerabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The server-generated package identifier (R-API-029). */
+                packageId: components["parameters"]["PackageId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The open findings of a package, per version
+         * @description Open findings per version of the package, counted by severity, over the findings the caller can read (R-VULN-020).
+         */
+        get: operations["getPackageVulnerabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/repositories/{key}/vulnerabilities/rescan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The repository key (R-REPO-002). */
+                key: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Evaluate every stored version of a repository again
+         * @description Enqueues a `vuln-rescan` job of the repository and answers `202` with the job (R-VULN-011); `409` with the running job
+         *     while one is queued or running. A change of the repository's scanning settings enqueues the same job itself. Needs
+         *     `manage` on the repository.
+         */
+        post: operations["rescanRepositoryVulnerabilities"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3365,12 +3662,11 @@ export interface components {
                 goos: string;
                 goarch: string;
                 gomaxprocs: number;
-                /**
-                 * Format: int64
-                 * @description The container memory limit; 0 when none is known.
-                 */
+                /** Format: int64 */
                 memoryLimitBytes: number;
             };
+            /** @description From M4b (R-VULN-024): the advisory data's state; `null` where the scanning is not wired on this replica. */
+            vulnerabilityData?: components["schemas"]["VulnerabilityDataFacts"] | null;
         };
         ReplicaSummary: {
             live: number;
@@ -3534,7 +3830,7 @@ export interface components {
         /** @enum {string} */
         JobState: "queued" | "running" | "succeeded" | "failed" | "cancelling" | "cancelled";
         TaskName: string;
-        /** @description The parameters of the task; each task defines its own (garbage collection takes `dryRun`). */
+        /** @description The parameters of the task; each task defines its own (garbage collection takes `dryRun`, the OSV sync tasks `vuln-sync-osv` and `vuln-sync-osv-full` take `acceptShrink`). */
         TaskRunRequest: {
             [key: string]: unknown;
         };
@@ -5261,6 +5557,7 @@ export interface components {
             };
             npm?: components["schemas"]["NpmSettings"];
             nuget?: components["schemas"]["NugetSettings"];
+            vulnerabilities?: components["schemas"]["VulnerabilitySettings"];
             /** @enum {string} */
             readonly lifecycle?: "active" | "deleting";
             /** Format: date-time */
@@ -6418,6 +6715,420 @@ export interface components {
             sha256: string;
             userAgent?: string;
             replica: string;
+        };
+        /**
+         * @description The level of an advisory (R-VULN-007); `unknown` is a level of its own and sorts last.
+         * @enum {string}
+         */
+        VulnerabilitySeverity: "critical" | "high" | "medium" | "low" | "none" | "unknown";
+        /**
+         * @description `malicious` for the OpenSSF malicious-packages records (identifier prefix `MAL-`), else `vulnerability`.
+         * @enum {string}
+         */
+        VulnerabilityKind: "vulnerability" | "malicious";
+        /**
+         * @description The status of a finding (R-VULN-012). `needs_triage`, `confirmed` and `blocked` are open; `resolved` is set by trove
+         *     only.
+         * @enum {string}
+         */
+        VulnerabilityStatus: "needs_triage" | "confirmed" | "blocked" | "dismissed" | "resolved";
+        /**
+         * @description Why the version's download is refused (R-VULN-015).
+         * @enum {string}
+         */
+        VulnerabilityBlockReason: "malicious" | "triage";
+        /** @enum {string} */
+        VulnerabilityDismissalReason: "not_exploitable" | "false_positive" | "risk_accepted" | "mitigated" | "test_only";
+        /** @enum {string} */
+        VulnerabilityResolvedReason: "no_longer_affected" | "advisory_withdrawn" | "version_removed" | "scanning_disabled";
+        /**
+         * @description The derived evaluation state of a stored version in a repository (R-VULN-001): `evaluated` (the advisory data is
+         *     complete), `pending_data` (it was never imported completely), `internal` (public advisories do not apply to the name)
+         *     or `not_covered` (scanning is off, the upstream is not recognised, or the format has no adapter).
+         * @enum {string}
+         */
+        VulnerabilityEvaluation: "evaluated" | "pending_data" | "internal" | "not_covered";
+        /**
+         * @description The `vulnerabilities` member of a repository document (R-VULN-002): local and remote repositories of a format with the
+         *     vulnerability adapter (npm, NuGet). Virtual repositories and other formats answer `422 not_applicable` at
+         *     `/vulnerabilities`. A member that sets some fields takes the defaults of the others. A change of `enabled` or
+         *     `matchPublicAdvisories` enqueues a `vuln-rescan` of the repository in the same transaction; `blockMalicious` and
+         *     `onMissingData` act without a job.
+         */
+        VulnerabilitySettings: {
+            /**
+             * @description false: the repository's stored versions are neither evaluated nor blocked.
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * @description Which stored versions public advisories apply to (R-VULN-010).
+             * @default auto
+             * @enum {string}
+             */
+            matchPublicAdvisories: "auto" | "always" | "never";
+            /**
+             * @description Refuse the versions an open malicious finding names (R-VULN-015).
+             * @default true
+             */
+            blockMalicious: boolean;
+            /**
+             * @description What a version of an ecosystem whose advisory data was never imported completely gets (R-VULN-015).
+             * @default allow
+             * @enum {string}
+             */
+            onMissingData: "allow" | "block";
+        };
+        /** @description The vector the severity was scored from (R-VULN-007); trove never mixes versions in one value. */
+        VulnerabilityCvss: {
+            /** @enum {string} */
+            version: "4.0" | "3.1" | "3.0" | "2.0";
+            score: number;
+            vector: string;
+        };
+        /** @description The attribution of an advisory (R-VULN-003). */
+        VulnerabilitySource: {
+            /** @example GitHub Advisory Database */
+            name: string;
+            /** @example CC-BY 4.0 */
+            license: string | null;
+            url: string;
+        };
+        /**
+         * @description One finding: one canonical advisory affects one stored version in one repository (R-VULN-012). `blocked` and
+         *     `blockReason` are computed with the rule of R-VULN-015 and the repository's current policy, so the API, the report and
+         *     the download agree.
+         * @example {
+         *       "id": "01933b2a-7c1e-7d10-9a4b-3f0e2c1d0a11",
+         *       "repository": "npm-remote",
+         *       "format": "npm",
+         *       "package": "lodash",
+         *       "version": "4.17.20",
+         *       "advisory": "GHSA-35jh-r3h4-6jhm",
+         *       "aliases": [
+         *         "CVE-2021-23337"
+         *       ],
+         *       "kind": "vulnerability",
+         *       "summary": "Command Injection in lodash",
+         *       "severity": "high",
+         *       "cvss": {
+         *         "version": "3.1",
+         *         "score": 7.2,
+         *         "vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H"
+         *       },
+         *       "knownExploited": false,
+         *       "fixAvailable": true,
+         *       "fixedVersions": [
+         *         "4.17.21"
+         *       ],
+         *       "status": "needs_triage",
+         *       "blocked": false,
+         *       "blockReason": null,
+         *       "detectedAt": "2026-10-31T09:12:00Z",
+         *       "resolvedAt": null
+         *     }
+         */
+        VulnerabilityFinding: {
+            /** Format: uuid */
+            id: string;
+            repository: string;
+            format: string;
+            package: string;
+            version: string;
+            /** @description The canonical identifier. */
+            advisory: string;
+            aliases: string[];
+            kind: components["schemas"]["VulnerabilityKind"];
+            summary: string;
+            severity: components["schemas"]["VulnerabilitySeverity"];
+            cvss: components["schemas"]["VulnerabilityCvss"] | null;
+            knownExploited: boolean;
+            /** Format: date */
+            knownExploitedAddedAt?: string | null;
+            fixAvailable: boolean;
+            fixedVersions: string[];
+            status: components["schemas"]["VulnerabilityStatus"];
+            dismissalReason?: components["schemas"]["VulnerabilityDismissalReason"] | null;
+            resolvedReason?: components["schemas"]["VulnerabilityResolvedReason"] | null;
+            blocked: boolean;
+            blockReason: components["schemas"]["VulnerabilityBlockReason"] | null;
+            /** Format: date-time */
+            detectedAt: string;
+            /** Format: date-time */
+            resolvedAt: string | null;
+        };
+        VulnerabilityFindingList: {
+            items: components["schemas"]["VulnerabilityFinding"][];
+            nextCursor: string | null;
+        };
+        /** @description One affected entry of an advisory, as stored (R-VULN-006). */
+        VulnerabilityAffected: {
+            name: string;
+            ranges: {
+                /** @enum {string} */
+                type: "SEMVER" | "ECOSYSTEM" | "GIT";
+                events: {
+                    [key: string]: string;
+                }[];
+            }[];
+            versions: string[];
+            fixed: string[];
+        };
+        /** @description One advisory (R-VULN-020). `details` is Markdown from an untrusted source and has to be rendered through the sanitizer (R-UI-008). */
+        VulnerabilityAdvisory: {
+            ecosystem: string;
+            /** @description The canonical identifier. */
+            id: string;
+            aliases: string[];
+            kind: components["schemas"]["VulnerabilityKind"];
+            summary: string;
+            details: string;
+            severity: components["schemas"]["VulnerabilitySeverity"];
+            cvss: components["schemas"]["VulnerabilityCvss"] | null;
+            knownExploited: boolean;
+            /** Format: date */
+            knownExploitedAddedAt: string | null;
+            cwe: string[];
+            affected: components["schemas"]["VulnerabilityAffected"][];
+            fixedVersions: string[];
+            references: {
+                type?: string;
+                url: string;
+            }[];
+            source: components["schemas"]["VulnerabilitySource"];
+            /** Format: date-time */
+            modified: string;
+            /** Format: date-time */
+            published: string | null;
+            /** Format: date-time */
+            withdrawn: string | null;
+        };
+        /** @description One row of a finding's history (R-VULN-012). */
+        VulnerabilityFindingEvent: {
+            /** Format: date-time */
+            at: string;
+            /** @description The principal behind the change; `null` for trove. */
+            actor: {
+                id: string;
+                name: string | null;
+            } | null;
+            /** @enum {string} */
+            change: "detected" | "status_changed" | "resolved" | "redetected" | "reopened" | "advisory_changed";
+            fromStatus: string | null;
+            toStatus: string | null;
+            reason: string | null;
+            comment: string | null;
+            details?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * @description A finding with its advisory, the readable virtual repositories whose effective member list contains its repository, for
+         *     a block set in triage the principal and time that set it, and the history (R-VULN-020).
+         */
+        VulnerabilityFindingDetail: {
+            finding: components["schemas"]["VulnerabilityFinding"];
+            advisory: components["schemas"]["VulnerabilityAdvisory"];
+            virtualRepositories: string[];
+            /** @description Who set the block, for `blockReason` triage; `null` otherwise. */
+            blockedBy: {
+                principal: {
+                    id: string;
+                    name: string | null;
+                } | null;
+                /** Format: date-time */
+                at: string;
+                comment: string | null;
+            } | null;
+            comment: string | null;
+            /** Format: date-time */
+            statusChangedAt?: string;
+            history: components["schemas"]["VulnerabilityFindingEvent"][];
+        };
+        /** @description The merge patch of a triage (R-VULN-013). */
+        VulnerabilityFindingPatch: {
+            /** @description `resolved` is refused (`422 status_not_settable`); `blocked` needs a confirmed finding (`409 finding_not_confirmed`). */
+            status?: components["schemas"]["VulnerabilityStatus"];
+            /** @description Required with `dismissed`, refused otherwise. */
+            dismissalReason?: components["schemas"]["VulnerabilityDismissalReason"];
+            comment?: string | null;
+        };
+        VulnerabilitySetStatusRequest: {
+            ids: string[];
+            status: components["schemas"]["VulnerabilityStatus"];
+            dismissalReason?: components["schemas"]["VulnerabilityDismissalReason"];
+            comment?: string;
+        };
+        VulnerabilitySetStatusResult: {
+            /** @description The identifier every event of the operation carries. */
+            bulkId: string;
+            results: {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                outcome: "changed" | "unchanged" | "failed";
+                /** @description 200 for changed and unchanged, 404 for an id the caller cannot read, 409 for finding_resolved and finding_not_confirmed. */
+                status: number;
+                /** @description The problem code of a failure. */
+                code: string | null;
+            }[];
+        };
+        VulnerabilityAdvisoryDetail: {
+            advisory: components["schemas"]["VulnerabilityAdvisory"];
+            findings: components["schemas"]["VulnerabilityFinding"][];
+            /** @description True when the caller can read more findings than the 1,000 listed; the findings list filtered by `advisory` pages through all of them. */
+            truncated?: boolean;
+        };
+        VulnerabilitySeverityCounts: {
+            /** Format: int64 */
+            critical: number;
+            /** Format: int64 */
+            high: number;
+            /** Format: int64 */
+            medium: number;
+            /** Format: int64 */
+            low: number;
+            /** Format: int64 */
+            none: number;
+            /** Format: int64 */
+            unknown: number;
+        };
+        /** @description The open findings the caller can read (R-VULN-021). */
+        VulnerabilitySummary: {
+            bySeverity: components["schemas"]["VulnerabilitySeverityCounts"];
+            byKind: {
+                /** Format: int64 */
+                vulnerability: number;
+                /** Format: int64 */
+                malicious: number;
+            };
+            /** Format: int64 */
+            needsTriage: number;
+            /**
+             * Format: int64
+             * @description The versions whose download is refused.
+             */
+            blockedVersions: number;
+            /** Format: int64 */
+            fixAvailable: number;
+            /** @description The readable repositories by the evaluation state of their scanning. */
+            coverage: {
+                evaluated: number;
+                pendingData: number;
+                internal: number;
+                notCovered: number;
+            };
+            data: {
+                ecosystem: string;
+                /** @enum {string} */
+                state: "empty" | "complete";
+                stale: boolean;
+                /** Format: date-time */
+                syncedAt: string | null;
+            }[];
+        };
+        VulnerabilityTrend: {
+            /** Format: date */
+            from: string;
+            /** Format: date */
+            to: string;
+            /** @description How the counts are made: a finding counts under its current severity, and dismissed findings count until they resolve. */
+            basis: string;
+            points: {
+                /** Format: date */
+                date: string;
+                counts: components["schemas"]["VulnerabilitySeverityCounts"];
+            }[];
+        };
+        /** @description One source and ecosystem (R-VULN-021). */
+        VulnerabilitySourceState: {
+            /** @enum {string} */
+            source: "osv" | "kev";
+            /** @description The OSV ecosystem; empty for kev. */
+            ecosystem: string;
+            /** @enum {string} */
+            mode: "online" | "repository" | "off";
+            /** @enum {string} */
+            state: "empty" | "complete";
+            stale: boolean;
+            /** Format: date-time */
+            syncedAt: string | null;
+            /** Format: date-time */
+            fullSyncedAt: string | null;
+            /** Format: date-time */
+            attemptedAt: string | null;
+            /** @description Consecutive failed runs. */
+            failures: number;
+            lastError: components["schemas"]["Problem"] | null;
+            records: number;
+            rejected: number;
+            unevaluable: number;
+            /** Format: date-time */
+            nextRunAt: string | null;
+        };
+        VulnerabilitySourceList: {
+            items: components["schemas"]["VulnerabilitySourceState"][];
+        };
+        /** @description A public advisory for a name the installation treats as internal (R-VULN-010). */
+        ClaimedNameMatch: {
+            ecosystem: string;
+            /** @description The canonical identifier. */
+            advisory: string;
+            name: string;
+            kind: components["schemas"]["VulnerabilityKind"];
+            /** @description The repository whose claim covers the name. */
+            claimRepository: string | null;
+            /** Format: date-time */
+            firstSeenAt: string;
+        };
+        ClaimedNameMatchList: {
+            items: components["schemas"]["ClaimedNameMatch"][];
+            nextCursor: string | null;
+        };
+        /** @description What the scanning says of one version in every readable repository that holds it (R-VULN-020). */
+        VulnerabilityVersionReport: {
+            packageId: string;
+            version: string;
+            repositories: {
+                repository: string;
+                evaluation: components["schemas"]["VulnerabilityEvaluation"];
+                /**
+                 * Format: date-time
+                 * @description The data's `syncedAt` for an evaluated version.
+                 */
+                syncedAt?: string | null;
+                blocked: boolean;
+                blockReason: components["schemas"]["VulnerabilityBlockReason"] | null;
+                findings: components["schemas"]["VulnerabilityFinding"][];
+            }[];
+        };
+        VulnerabilityPackageReport: {
+            packageId: string;
+            versions: {
+                version: string;
+                open: components["schemas"]["VulnerabilitySeverityCounts"];
+            }[];
+        };
+        /**
+         * @description The advisory data's state as an operator reads it (R-OPS-004, R-VULN-024), from `vuln_source_state` as the sources
+         *     operation reads it. It is cluster-wide state and never affects readiness.
+         */
+        VulnerabilityDataFacts: {
+            /** @enum {string} */
+            enforcement: "enforce" | "report";
+            sources: {
+                /** @enum {string} */
+                source: "osv" | "kev";
+                ecosystem: string;
+                /** @enum {string} */
+                mode: "online" | "repository" | "off";
+                /** @enum {string} */
+                state: "empty" | "complete";
+                stale: boolean;
+                /** Format: date-time */
+                syncedAt: string | null;
+                failures: number;
+            }[];
         };
     };
     responses: {
@@ -13806,6 +14517,516 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             501: components["responses"]["NotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listVulnerabilityFindings: {
+        parameters: {
+            query?: {
+                /** @description A repository key; a virtual repository expands to the members the caller can read. Repeat for several. */
+                repository?: string[];
+                /** @description A format ID, for example npm or nuget. Repeat for several. */
+                format?: string[];
+                /** @description A normalized package name. Repeat for several. */
+                package?: string[];
+                /** @description Packages whose name starts with this text, for example @team-a/. */
+                packagePrefix?: string;
+                /** @description A normalized version. Repeat for several. */
+                version?: string[];
+                /** @description A canonical advisory identifier or an alias (R-VULN-006). */
+                advisory?: string;
+                /** @description critical, high, medium, low, none or unknown. Repeat for several. */
+                severity?: components["schemas"]["VulnerabilitySeverity"][];
+                /** @description needs_triage, confirmed, blocked, dismissed or resolved; blocked is among the values. Repeat for several. Without it resolved findings are left out. */
+                status?: components["schemas"]["VulnerabilityStatus"][];
+                /** @description vulnerability or malicious. */
+                kind?: components["schemas"]["VulnerabilityKind"];
+                /** @description true: only findings of advisories on the CISA known-exploited list. */
+                knownExploited?: boolean;
+                /** @description true: only findings with a fixed version. */
+                fixAvailable?: boolean;
+                /** @description true: only findings that block their version's download under the repository's policy; false: the others. */
+                blocked?: boolean;
+                /** @description malicious or triage. */
+                blockReason?: components["schemas"]["VulnerabilityBlockReason"];
+                /** @description Detected at or after (RFC 3339). */
+                detectedFrom?: string;
+                /** @description Detected before (RFC 3339). */
+                detectedTo?: string;
+                /** @description A text that occurs in the package name, the advisory identifier or the summary. */
+                q?: string;
+                /** @description The sort order of R-VULN-020. */
+                sort?: "-severity" | "severity" | "-detectedAt" | "detectedAt" | "package" | "-package" | "advisory" | "-advisory" | "status" | "-status";
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of findings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VulnerabilityFindingList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    exportVulnerabilityFindings: {
+        parameters: {
+            query?: {
+                /** @description A repository key; a virtual repository expands to the members the caller can read. Repeat for several. */
+                repository?: string[];
+                /** @description A format ID, for example npm or nuget. Repeat for several. */
+                format?: string[];
+                /** @description A normalized package name. Repeat for several. */
+                package?: string[];
+                /** @description Packages whose name starts with this text, for example @team-a/. */
+                packagePrefix?: string;
+                /** @description A normalized version. Repeat for several. */
+                version?: string[];
+                /** @description A canonical advisory identifier or an alias (R-VULN-006). */
+                advisory?: string;
+                /** @description critical, high, medium, low, none or unknown. Repeat for several. */
+                severity?: components["schemas"]["VulnerabilitySeverity"][];
+                /** @description needs_triage, confirmed, blocked, dismissed or resolved; blocked is among the values. Repeat for several. Without it resolved findings are left out. */
+                status?: components["schemas"]["VulnerabilityStatus"][];
+                /** @description vulnerability or malicious. */
+                kind?: components["schemas"]["VulnerabilityKind"];
+                /** @description true: only findings of advisories on the CISA known-exploited list. */
+                knownExploited?: boolean;
+                /** @description true: only findings with a fixed version. */
+                fixAvailable?: boolean;
+                /** @description true: only findings that block their version's download under the repository's policy; false: the others. */
+                blocked?: boolean;
+                /** @description malicious or triage. */
+                blockReason?: components["schemas"]["VulnerabilityBlockReason"];
+                /** @description Detected at or after (RFC 3339). */
+                detectedFrom?: string;
+                /** @description Detected before (RFC 3339). */
+                detectedTo?: string;
+                /** @description A text that occurs in the package name, the advisory identifier or the summary. */
+                q?: string;
+                /** @description The sort order of R-VULN-020. */
+                sort?: "-severity" | "severity" | "-detectedAt" | "detectedAt" | "package" | "-package" | "advisory" | "-advisory" | "status" | "-status";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The CSV document. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    setVulnerabilityFindingsStatus: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "ids": [
+                 *         "01933b2a-7c1e-7d10-9a4b-3f0e2c1d0a11"
+                 *       ],
+                 *       "status": "dismissed",
+                 *       "dismissalReason": "not_exploitable",
+                 *       "comment": "The vulnerable function is not reachable from our code."
+                 *     }
+                 */
+                "application/json": components["schemas"]["VulnerabilitySetStatusRequest"];
+            };
+        };
+        responses: {
+            /** @description One result per id. */
+            200: {
+                headers: {
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VulnerabilitySetStatusResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getVulnerabilityFinding: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
+            path: {
+                /** @description The finding ID (a UUIDv7). A string that is no finding the caller can read answers `404`, whatever its shape. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The finding. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VulnerabilityFindingDetail"];
+                };
+            };
+            304: components["responses"]["NotModified"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    updateVulnerabilityFinding: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The finding ID (a UUIDv7). A string that is no finding the caller can read answers `404`, whatever its shape. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "status": "blocked",
+                 *       "comment": "Confirmed malicious by the security team."
+                 *     }
+                 */
+                "application/merge-patch+json": components["schemas"]["VulnerabilityFindingPatch"];
+            };
+        };
+        responses: {
+            /** @description The finding after the change. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VulnerabilityFindingDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getVulnerabilityAdvisory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The OSV ecosystem name, `npm` or `NuGet`. */
+                ecosystem: string;
+                /** @description An advisory identifier or an alias, percent-encoded. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The advisory. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VulnerabilityAdvisoryDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getVulnerabilitySummary: {
+        parameters: {
+            query?: {
+                /** @description A repository key. Repeat for several. */
+                repository?: string[];
+                /** @description A format ID. Repeat for several. */
+                format?: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The summary. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VulnerabilitySummary"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getVulnerabilityTrend: {
+        parameters: {
+            query?: {
+                /** @description First day (RFC 3339 date); default 90 days before `to`. */
+                from?: string;
+                /** @description Last day, inclusive (RFC 3339 date); default today. */
+                to?: string;
+                /** @description A repository key. Repeat for several. */
+                repository?: string[];
+                /** @description A format ID. Repeat for several. */
+                format?: string[];
+                /** @description vulnerability or malicious. */
+                kind?: components["schemas"]["VulnerabilityKind"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The trend. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VulnerabilityTrend"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listVulnerabilitySources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The sources. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VulnerabilitySourceList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listClaimedNameMatches: {
+        parameters: {
+            query?: {
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of matches. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaimedNameMatchList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getPackageVersionVulnerabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The server-generated package identifier (R-API-029). */
+                packageId: components["parameters"]["PackageId"];
+                /** @description The version string, percent-encoded. */
+                version: components["parameters"]["PackageVersionPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The version's state per repository. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VulnerabilityVersionReport"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getPackageVulnerabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The server-generated package identifier (R-API-029). */
+                packageId: components["parameters"]["PackageId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The counts per version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VulnerabilityPackageReport"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    rescanRepositoryVulnerabilities: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description The repository key (R-REPO-002). */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The rescan is queued. */
+            202: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobReferenceEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];
         };
     };
