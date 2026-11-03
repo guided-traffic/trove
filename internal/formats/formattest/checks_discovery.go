@@ -46,8 +46,8 @@ func (r *run) discovery(d formats.Discoverer, lim untrusted.Limits) {
 			return err
 		}, lim)
 		switch {
-		case m.elapsed > timeBound():
-			r.failf("discovery case %q: ParseDiscovery took %v, the bound is %v", c.Name, m.elapsed.Round(time.Millisecond), timeBound())
+		case m.elapsed > TimeBound():
+			r.failf("discovery case %q: ParseDiscovery took %v, the bound is %v", c.Name, m.elapsed.Round(time.Millisecond), TimeBound())
 		case errors.Is(m.err, errPanicked):
 			r.failf("discovery case %q: ParseDiscovery %s", c.Name, strings.TrimPrefix(m.err.Error(), "inspect "))
 		case c.Valid && m.err != nil:

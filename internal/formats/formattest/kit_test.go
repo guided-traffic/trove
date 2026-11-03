@@ -3,9 +3,11 @@ package formattest_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/formattest"
@@ -461,8 +463,10 @@ func TestR_ARCH_028_Check6Bounds(t *testing.T) {
 			return nil, ctx.Err()
 		}}
 		got := messages(formattest.Evaluate(o, fx), formattest.CheckInspect)
-		if !strings.Contains(got, "took 5s") && !strings.Contains(got, "took 5.") {
-			t.Fatalf("got %q", got)
+		// The bound is five seconds, stretched in a build under the race detector (formattest.TimeBound).
+		secs := int(formattest.TimeBound() / time.Second)
+		if !strings.Contains(got, fmt.Sprintf("took %ds", secs)) && !strings.Contains(got, fmt.Sprintf("took %d.", secs)) {
+			t.Fatalf("got %q, want an Inspect that took about %v", got, formattest.TimeBound())
 		}
 	})
 	t.Run("R-ARCH-028 an Inspect that panics is a failure of the check, not of the run", func(t *testing.T) {
