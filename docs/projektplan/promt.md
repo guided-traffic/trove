@@ -204,6 +204,24 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
+Found on 2026-11-03 while closing phase 5:
+
+### Tests and tools
+
+- **F-34 · `TestR_CI_021_TheAddressBudgetIsOneAcrossReplicas` holds "1,000 requests within 5 s" as a hard bound** (read, by
+  the development agent that built the exchange). R-CI-021's criterion bounds the admitted answers of 1,000 requests sent
+  within 5 s; the test fails outright when the flood itself takes longer, which a CPU-limited CI runner may do without a
+  defect. It passed in every Test and Release run of the phase. Done when the test measures the budget over the time the
+  flood took (the limiter's rate times that window plus its burst) instead of failing on the duration.
+- **F-35 · `TestR_CI_003_StaleAndUnreachable` failed once** (read). In one full run of `test/integration/ci` while three
+  development agents shared the integration stack it failed, and it passed alone and in every later run; not reproduced.
+  Done when a run under load (`-count` with CPU load) reproduces it and the cause is fixed, or 200 runs under load pass.
+- **F-36 · The issuer double's fixtures were recorded on a local GitLab 19.0.1-ee, not on the owner's instance**
+  (confirmed). The owner's GitLab (namespace `gitlab` of his cluster) cannot create projects: the web service dials Gitaly
+  under a name its certificate does not carry. Machine-level for the owner (his GitOps repository). Done when, after the
+  certificate is fixed, `make oidc-fixtures` against his instance records the fixtures again (the licensed
+  `environment_protected: "true"` included) and the double still reproduces them.
+
 Found on 2026-11-01 while writing the manual (`docs/manual`) and the design change of Q-UI-88:
 
 ### Tests and tools

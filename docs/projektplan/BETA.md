@@ -453,8 +453,10 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   row belongs to its mapping's principal (`ON DELETE CASCADE`), so the rows went without `ci.token.revoked` and its journal
   entry. The tokens are revoked first now (`TestR_CI_002_ACascadeDeleteRevokesTheTokensBeforeTheMappingsGo` found 0 events
   before the fix)
-- 🟡 A second GitLab project that publishes byte-identical content for an existing npm version gets 201, the registry's
-  answer to a retried publish, without the ownership check; nothing is written (observed by W5, not checked further)
+- 🟢 A second GitLab project that publishes byte-identical content for an existing npm version gets 201, the registry's
+  answer to a retried publish, without the ownership check; nothing is written (observed by W5, not checked further) — no defect: the answer
+  acknowledges the retry of a publish whose bytes the registry already holds, writes nothing, and gives the second project
+  neither a version nor the name
 - 🟢 `make image` failed with "no space left on device": the build context took in `.claude/worktrees`, the worktrees of
   the development sessions with their tool binaries; `.dockerignore` leaves `.claude` out
 - 🟢 The owner's dev cluster runs the current main again (owner, 2026-11-02, option a): its `trove` schema was dropped and the
@@ -463,10 +465,10 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   and the pod spec were unchanged. `deploy/dev/up.sh` now puts the loaded image's ID into the pod annotation `trove-dev/image-id` of
   both roles, so the pods roll exactly when the image changed and a second run with the same image changes nothing (checked on the
   dev cluster: a changed image rolled `web` and `worker`, the next `make dev-up` left the pods alone; W7)
-- 🟡 `TestR_CI_021_TheAddressBudgetIsOneAcrossReplicas` holds R-CI-021's "1,000 requests within 5 s" as a hard bound; on a
-  CPU-limited CI runner the flood may need longer, which would fail the test without a defect (W4's note; watched)
-- 🟡 R-CI-029's "every replica stays ready and reports `degraded: [valkey]`" while Valkey is stopped has no assertion in the
-  integration tier (W7)
+- ➡️ `TestR_CI_021_TheAddressBudgetIsOneAcrossReplicas` holds R-CI-021's "1,000 requests within 5 s" as a hard bound; on a
+  CPU-limited CI runner the flood may need longer, which would fail the test without a defect (W4's note; watched) — moved to the open findings as [F-34](promt.md#8--open-findings)
+- 🟢 R-CI-029's "every replica stays ready and reports `degraded: [valkey]`" while Valkey is stopped has no assertion in the
+  integration tier (W7) — asserted by `TestCIHAValkeyStopped` (set `ci-ha`, W7)
 - 🟢 Test and Release run 41549404703 failed in `compat`: W4 typed the exchange's `ttl` as a string with a pattern, a breaking
   change against v0.13.0 (R-ARCH-025), which the local check missed because the tag `v0.13.0` was not fetched; `ttl` keeps the
   released `integer`, and the handler takes a JSON number or a string of digits as before
@@ -481,8 +483,8 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   the bytes in the socket, and the test's 100 ms chunk gap against a 300 ms stall timeout (the cut came 0.3 s after chunk 7, the
   run took 0.94 s) did not survive a 200 ms pause of a loaded runner; the gap is now a sixteenth of the stall timeout and the
   transfer lasts three stall timeouts, both derived from the configured timeout
-- 🟡 `TestR_CI_003_StaleAndUnreachable` failed once in W3's full run of `test/integration/ci` while three agents shared
-  the stack, and passed alone and in the next full run; watched, not yet reproduced
+- ➡️ `TestR_CI_003_StaleAndUnreachable` failed once in W3's full run of `test/integration/ci` while three agents shared
+  the stack, and passed alone and in the next full run; watched, not yet reproduced — moved to the open findings as [F-35](promt.md#8--open-findings)
 - 🟢 Test and Release run 41518863868 failed in `e2e on kind (access-long)`: the journey `06` clicked "Refresh now" by a
   substring match, and the new task `ci-keys-refresh` added a "Run task ci-keys-refresh now" button to the same screen; the
   locator is exact now
@@ -511,11 +513,13 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - 🟢 MEDIUM · The UI offers a project administrator no CI snippet, although the project route exists (`mapping-editor.ts`,
   `ci-api.ts`) — `CiApi.snippet` takes the project and reads `getProjectCiSnippet`; the editor offers the button to a project
   administrator whose `managePolicies` switch is on
-- 🟡 MEDIUM · The manual, the README, OpenAPI (26 `501` responses) and the contract page still say the federation answers 501
-  or is not built (W7 closes the documentation)
+- 🟢 MEDIUM · The manual, the README, OpenAPI (26 `501` responses) and the contract page still say the federation answers 501
+  or is not built (W7 closes the documentation) — closed by W7: the notes and the 501
+  responses are gone and the pages describe the built screens
 - 🟢 MEDIUM (UI part of the line above) · The UI's "not available yet" card was dead code with misleading text — `CiError`, its
   strings and the `ci_not_implemented` message are removed; every CI screen shows the shared error notice
-- 🟡 LOW (backend) · A just-created or re-enabled issuer is refused on a lagging replica until the cache's SafetyTTL (fix wave A)
+- 🟢 LOW (backend) · A just-created or re-enabled issuer is refused on a lagging replica until the cache's SafetyTTL (fix wave A) — a miss re-reads the issuer at most once per replica and
+  poll interval (Q-CI-51)
 - 🟢 LOW · The CI editors keep no draft across a re-authentication (R-UI-042) — the mapping editor and the issuer form keep the
   write body in `DraftStore` on `401 reauthentication_required`, register it for "Copy draft as JSON" and restore it once
 - 🟢 LOW · Browse keeps a reloaded node's old size and kind — a node read again takes the new meta, a node of another kind is
@@ -524,8 +528,9 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - 🟢 MEDIUM · Disabling or deleting a mapping scans every issuance of the issuer within the retention while the issuer row is
   locked `FOR UPDATE`, so its exchanges wait into 503 (`CiMappingHasIssuances`). Fixed (Q-CI-53): the question reads
   unexpired records only (`expires_at > now()`, `ci_issuances_expiry`); the plan is in `ci_issuance_plans_test.go`
-- 🟡 MEDIUM · The other part of the same finding, the two revocation statements `CiIssuanceTokensOfMapping` and
-  `CiIssuanceTokensOfIssuer`, is fix wave A's
+- 🟢 MEDIUM · The other part of the same finding, the two revocation statements `CiIssuanceTokensOfMapping` and
+  `CiIssuanceTokensOfIssuer`, is fix wave A's — fix wave A bounded both to
+  unexpired records
 - 🟢 LOW · The "audience removed on A" subtest did not reach the in-transaction re-validation. Fixed: a test of its own seeds B's
   issuer copy first, stops B's change log with Valkey down, and shows `audience_invalid` from the row B re-reads in the
   transaction (`TestR_CI_007_AnAudienceRemovedOnAIsRefusedOnBFromTheRowReadInTheTransaction`, the stale counter is 1)
@@ -537,9 +542,10 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   on `mapping_ids`, no expiry bound) while the issuer row is locked `FOR UPDATE`, so its exchanges wait into 503 — fixed:
   `CiIssuanceTokensOfMapping` and `CiIssuanceTokensOfIssuer` read the unexpired records only through the expiry index
   (`TestR_CI_017_ARevocationReadsOnlyTheUnexpiredRecords`, 3,000 expired records beside 20,000 live tokens)
-- 🟡 LOW · The "audience removed on A" subtest does not reach the in-transaction re-validation; the CI editors keep no draft
+- 🟢 LOW · The "audience removed on A" subtest does not reach the in-transaction re-validation; the CI editors keep no draft
   across a re-authentication (R-UI-042); Browse keeps a reloaded node's old size and kind; the claim tester has no form view
-  (R-UI-036)
+  (R-UI-036) — all parts fixed: the re-validation's own test (wave B),
+  the drafts, the reloaded node and the claim tester's form view (UI wave), the lagging replica (wave A)
 - 🟢 LOW · A just-created or re-enabled issuer is refused on a lagging replica until the cache's SafetyTTL — fixed: a miss or a
   disabled hit of the issuer copy re-reads the issuers at most once per replica and `cluster.epoch_poll_interval` (Q-CI-51,
   `TestR_CI_003_ALaggingReplicaLearnsANewIssuerWithinThePollInterval`)
@@ -575,14 +581,14 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   events, change areas, limiters, tasks, metrics, and the seam between the CI token and the evaluator (`claims.Frozen` on
   the token, the gate for CI tokens) ([ci-oidc.md](../developer/ci-oidc.md), Q-CI-17 to Q-CI-22, ADR-147); the GitLab-shaped
   issuer double `test/oidcstub` (Q-CI-23, Q-CI-24)
-- 🟡 GitLab as trusted issuer: discovery, signing keys, key rotation; several GitLab instances side by side (R-CI-005).
+- 🟢 GitLab as trusted issuer: discovery, signing keys, key rotation; several GitLab instances side by side (R-CI-005).
   Built (W1): the issuer API, the key fetch through the egress policy with the issuer's own CA, the shared key row and the
   per-replica copy, the unknown-`kid` re-read and refetch throttles, `max_stale`, `ci-keys-refresh` on workers
-  (`test/integration/ci`, [ci-federation.md](../security/ci-federation.md), Q-CI-30 to Q-CI-32); open: the criteria that need
-  the exchange and the revoker (W4, W5), listed as pending on the contract page
-- 🟡 GitLab issuers declared in the Helm values (`config.ci.issuers`), applied by `trove migrate`, shown in trove and
-  read-only there ([Q-CI-16](../spec/gitlab-ci-oidc.md#q-ci-16--ci-issuers-provisioned-through-the-helm-values-are-read-only-in-trove), owner 2026-11-02); built (`ApplyDeclared` in `trove migrate`, `TestR_CI_001_*` in `test/integration/ci`), open: removing
-  an issuer that has issuance records waits for the revoker (W5)
+  (`test/integration/ci`, [ci-federation.md](../security/ci-federation.md), Q-CI-30 to Q-CI-32); the criteria that
+  needed the exchange and the revoker pass since W4 and W5, and end to end in the set `ci` (W7)
+- 🟢 GitLab issuers declared in the Helm values (`config.ci.issuers`), applied by `trove migrate`, shown in trove and
+  read-only there ([Q-CI-16](../spec/gitlab-ci-oidc.md#q-ci-16--ci-issuers-provisioned-through-the-helm-values-are-read-only-in-trove), owner 2026-11-02); built (`ApplyDeclared` in `trove migrate`, `TestR_CI_001_*` in `test/integration/ci`); removing an
+  issuer that has issuance records disables it and revokes its tokens (W5), and a changed URL or kind stops the migration (Q-CI-48)
 - 🟢 Token exchange: GitLab ID token (`id_tokens:` with trove as audience) in, short-lived CI token (`trv_cit_`) out;
   `CI_JOB_TOKEN` is not accepted (owner 2026-11-02; its fallback stays P2, R-CI-022). Built (W4): `POST /api/v1/auth/oidc/token` with
   form and JSON bodies, the scope, the lifetime, the re-check of the issuer and the mappings `FOR SHARE` in one transaction with the
@@ -603,25 +609,25 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   W7 removed the "not available yet" notes and the 501 paragraphs, added the section on the screens, checked the labels against
   `web/src/app/features/ci` and the nuget.config of the pipeline against the run (Q-CI-44), and removed the "not released yet"
   wording of the related pages ([ci-oidc.md](../developer/ci-oidc.md#the-manual-pages))
-- 🟡 Project administrators manage the CI mappings of their project (owner, 2026-11-02; Q-CI-26): a mapping tier per
+- 🟢 Project administrators manage the CI mappings of their project (owner, 2026-11-02; Q-CI-26): a mapping tier per
   project, grants only over the project's repositories and policies, the save-time rules unchanged; issuers stay the
   system administrators'. Built (W3): the project routes with the narrowing, the bounds, the dry run and the snippet of the
-  tier, `project_not_empty` for a project with mappings (`TestQ_CI_26_*`); open: the issuances of the project (W5)
-- 🟡 Identity mappings: conditions on project, branch, protected ref, environment; templated grants. The claim engine is
+  tier, `project_not_empty` for a project with mappings (`TestQ_CI_26_*`); the project's issuances (W5, Q-CI-52) and the journey `13-ci` (W7)
+- 🟢 Identity mappings: conditions on project, branch, protected ref, environment; templated grants. The claim engine is
   built (W2: conditions with their limits and trace, glob, RE2, templates with escaping per context, grants with the
   ownership default, the scope grammar, the cross-project cap per mapping, every save-time rule and warning, the project
   tier's rules; Q-CI-27 to Q-CI-29); the subject-token validation of R-CI-004 and the shared JWS leaf `internal/auth/jws`
   the login uses too. The mapping store and API are built (W3: the principals, `mappings_version`, the policy binding, the
-  per-replica copy, `Select`, the dry run, the snippet; Q-CI-35 to Q-CI-37, `TestR_CI_009_*` in `test/integration/ci`); open:
-  the criteria that need the exchange (W4), listed as pending on the contract page
-- 🟡 Package ownership: a CI project writes only the packages it owns, reads what it is granted. Built (W5): a CI token's rights per
+  per-replica copy, `Select`, the dry run, the snippet; Q-CI-35 to Q-CI-37, `TestR_CI_009_*` in `test/integration/ci`); the criteria
+  that needed the exchange pass since W4 and in the set `ci` (W7); a project tier changes only its own contribution (Q-CI-47)
+- 🟢 Package ownership: a CI project writes only the packages it owns, reads what it is granted. Built (W5): a CI token's rights per
   contributing mapping (policies, listed groups, frozen inline grants; the cap `read` of one mapping caps only its own; a project tier
   bound to its project's repositories and policies; never `manage`; the scope as ceiling), the claim of a name for the GitLab project
   on its first publish also where ownership is off, `403 package_owned_by_other_owner` for every other project, an administrator adding
   `ci:<issuer>:project:<id>`, the revocation of CI tokens by mapping, issuer, bulk, one token and the token itself within 2 s on every
   replica with and without Valkey, the issuance API with a project's view, the two retention tasks (Q-CI-38 to Q-CI-40; H-415 to H-417).
-  Verified by the integration tests of `test/integration/ci` with tokens issued through `IssueCITx`; open: the same through the exchange
-  (W4) and the mapping store (W3), and the e2e journey (W7)
+  Verified by the integration tests of `test/integration/ci` with tokens issued through `IssueCITx`; and end to end through the
+  exchange with the real npm and .NET clients in the set `ci` (E4.1, W7)
 - 🟡 Admin UI: CI issuers, mappings, dry run and claim tester; the issuances, bulk revoke and the project's CI screens
   (`/admin/ci…`, `/admin/projects/:key/ci…`, Q-UI-99, Q-UI-100; 713 web tests). Against the real backend by the journey `13-ci`
   (an administrator registers the issuer double with its CA, creates the reference mapping in the editor, tests a claim set with a pasted
@@ -632,8 +638,9 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - 🟢 Reference pipeline: `.gitlab-ci.yml` publishing an npm package and pushing a NuGet package: the Examples of the
   specification, run as written by `TestCIPipeline` (`make e2e SET=ci`); the first run found that the Example's `dotnet nuget push` needs
   the push source in `nuget.config` (Q-CI-44)
-- 🟡 GitLab's behaviour validated against the owner's unused GitLab instance and recorded as fixtures of the issuer
-  double; no integration or e2e test runs against a real GitLab or gitlab.com (owner, 2026-11-02; Q-CI-25)
+- 🟢 GitLab's behaviour validated against the owner's unused GitLab instance and recorded as fixtures of the issuer
+  double; no integration or e2e test runs against a real GitLab or gitlab.com (owner, 2026-11-02; Q-CI-25); recorded on a local GitLab 19.0.1-ee because
+  the owner's instance cannot create projects; recording again there is [F-36](promt.md#8--open-findings)
 - 🟢 Integration tests: invalid signatures, wrong audience, expired tokens, fork merge requests: every reason of R-CI-008 the MVP
   reaches, through the endpoint with status, `error` and `reason` (`TestR_CI_008_EveryReasonOfTheErrorTable`), the recorded fork merge
   request run in the parent (`TestR_CI_012_ForkPipelines`), 2,000 forged tokens beside a legitimate project, and a grep of every answer
