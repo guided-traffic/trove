@@ -79,6 +79,8 @@ export function sampleAdvisory(over: Partial<VulnerabilityAdvisory> = {}): Vulne
     kind: 'vulnerability',
     summary: 'Prototype pollution in trove-test-vuln',
     details: 'A crafted object can pollute the prototype.\n\n<script>window.pwned = 1</script>\n\nSee [the report](javascript:alert(1)).',
+    // What the server's sanitizer of the README makes of `details` (R-UI-008): no script, no javascript: link.
+    detailsHtml: '<p>A crafted object can pollute the prototype.</p>\n<p>See <a href="https://example.com/report">the report</a>.</p>',
     severity: 'high',
     cvss: { version: '3.1', score: 7.5, vector: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H' },
     knownExploited: false,
@@ -499,6 +501,7 @@ export function sampleSource(over: Partial<VulnerabilitySourceState> = {}): Vuln
     fullSyncedAt: ago(1),
     attemptedAt: ago(0.1),
     failures: 0,
+    repository: null,
     lastError: null,
     records: 1234,
     rejected: 0,

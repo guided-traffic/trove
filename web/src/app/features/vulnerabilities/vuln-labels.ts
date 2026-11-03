@@ -7,6 +7,7 @@ import {
   VulnerabilityResolvedReason,
   VulnerabilitySeverity,
   VulnerabilityStatus,
+  VulnerabilityVersionBlockReason,
 } from '../../api/vulnerabilities-api';
 
 /*
@@ -65,10 +66,16 @@ export function statusLabel(s: VulnerabilityStatus): string {
   }
 }
 
-export function blockReasonLabel(r: VulnerabilityBlockReason): string {
-  return r === 'malicious'
-    ? $localize`:@@vuln.block-reason.malicious:malicious package`
-    : $localize`:@@vuln.block-reason.triage:blocked in triage`;
+/** The reason of a block; `missing_data` is a version's only: the ecosystem's advisory data is not complete and onMissingData is block (R-VULN-015). */
+export function blockReasonLabel(r: VulnerabilityBlockReason | VulnerabilityVersionBlockReason): string {
+  switch (r) {
+    case 'malicious':
+      return $localize`:@@vuln.block-reason.malicious:malicious package`;
+    case 'missing_data':
+      return $localize`:@@vuln.block-reason.missing-data:advisory data not yet available`;
+    default:
+      return $localize`:@@vuln.block-reason.triage:blocked in triage`;
+  }
 }
 
 export function kindLabel(k: VulnerabilityKind): string {

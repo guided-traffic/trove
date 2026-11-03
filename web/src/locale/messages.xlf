@@ -17783,7 +17783,7 @@
     </unit>
     <unit id="vuln.adv.identifier">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:50,51</note>
+        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:53,54</note>
       </notes>
       <segment>
         <source>Identifier</source>
@@ -17791,7 +17791,7 @@
     </unit>
     <unit id="vuln.adv.aliases">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:53,54</note>
+        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:56,57</note>
       </notes>
       <segment>
         <source>Aliases</source>
@@ -17799,7 +17799,7 @@
     </unit>
     <unit id="vuln.adv.kind">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:56,57</note>
+        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:59,60</note>
       </notes>
       <segment>
         <source>Kind</source>
@@ -17807,7 +17807,7 @@
     </unit>
     <unit id="vuln.adv.severity">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:58,60</note>
+        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:61,63</note>
       </notes>
       <segment>
         <source>Severity</source>
@@ -17815,7 +17815,7 @@
     </unit>
     <unit id="vuln.adv.exploited">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:66,68</note>
+        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:69,71</note>
       </notes>
       <segment>
         <source>Known exploited</source>
@@ -17823,7 +17823,7 @@
     </unit>
     <unit id="vuln.adv.exploited-yes">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:69,70</note>
+        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:72,73</note>
       </notes>
       <segment>
         <source>Yes, on the CISA known-exploited list</source>
@@ -17831,7 +17831,7 @@
     </unit>
     <unit id="vuln.adv.exploited-since">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:71,72</note>
+        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:74,75</note>
       </notes>
       <segment>
         <source>since <ph id="0" equiv="INTERPOLATION" disp="{{ a.knownExploitedAddedAt }}"/></source>
@@ -17839,7 +17839,7 @@
     </unit>
     <unit id="vuln.adv.cwe">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:76,77</note>
+        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:79,80</note>
       </notes>
       <segment>
         <source>Weaknesses</source>
@@ -17847,7 +17847,7 @@
     </unit>
     <unit id="vuln.adv.published">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:80,82</note>
+        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:83,85</note>
       </notes>
       <segment>
         <source>Published</source>
@@ -17855,7 +17855,7 @@
     </unit>
     <unit id="vuln.adv.modified">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:85,87</note>
+        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:88,90</note>
       </notes>
       <segment>
         <source>Modified</source>
@@ -17863,7 +17863,7 @@
     </unit>
     <unit id="vuln.adv.withdrawn">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:90,92</note>
+        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:93,95</note>
       </notes>
       <segment>
         <source>Withdrawn</source>
@@ -17871,7 +17871,7 @@
     </unit>
     <unit id="vuln.adv.fixed">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:95,96</note>
+        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:98,99</note>
       </notes>
       <segment>
         <source>Fixed in</source>
@@ -17879,7 +17879,7 @@
     </unit>
     <unit id="vuln.adv.affected">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:105,106</note>
+        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:110,111</note>
       </notes>
       <segment>
         <source>Affected</source>
@@ -17887,7 +17887,7 @@
     </unit>
     <unit id="vuln.adv.references">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:114,116</note>
+        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:119,121</note>
       </notes>
       <segment>
         <source>References</source>
@@ -17895,7 +17895,7 @@
     </unit>
     <unit id="vuln.adv.external">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:124,126</note>
+        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:129,131</note>
       </notes>
       <segment>
         <source>(opens another site)</source>
@@ -17903,7 +17903,7 @@
     </unit>
     <unit id="vuln.adv.source">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:134,135</note>
+        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:139,140</note>
       </notes>
       <segment>
         <source>Source:</source>
@@ -17911,7 +17911,7 @@
     </unit>
     <unit id="vuln.adv.license">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:137,138</note>
+        <note category="location">src/app/features/vulnerabilities/advisory-view.ts:142,143</note>
       </notes>
       <segment>
         <source>, licensed under</source>
@@ -18404,7 +18404,7 @@
     </unit>
     <unit id="vuln.severity.critical">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:21</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:22</note>
       </notes>
       <segment>
         <source>Critical</source>
@@ -18412,7 +18412,7 @@
     </unit>
     <unit id="vuln.severity.high">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:23</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:24</note>
       </notes>
       <segment>
         <source>High</source>
@@ -18420,7 +18420,7 @@
     </unit>
     <unit id="vuln.severity.medium">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:25</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:26</note>
       </notes>
       <segment>
         <source>Medium</source>
@@ -18428,7 +18428,7 @@
     </unit>
     <unit id="vuln.severity.low">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:27</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:28</note>
       </notes>
       <segment>
         <source>Low</source>
@@ -18436,7 +18436,7 @@
     </unit>
     <unit id="vuln.severity.none">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:29</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:30</note>
       </notes>
       <segment>
         <source>None</source>
@@ -18444,7 +18444,7 @@
     </unit>
     <unit id="vuln.severity.unknown">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:31</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:32</note>
       </notes>
       <segment>
         <source>Unknown</source>
@@ -18452,7 +18452,7 @@
     </unit>
     <unit id="vuln.status.needs-triage">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:56</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:57</note>
       </notes>
       <segment>
         <source>Needs triage</source>
@@ -18460,7 +18460,7 @@
     </unit>
     <unit id="vuln.status.confirmed">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:58</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:59</note>
       </notes>
       <segment>
         <source>Confirmed</source>
@@ -18468,7 +18468,7 @@
     </unit>
     <unit id="vuln.status.blocked">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:60</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:61</note>
       </notes>
       <segment>
         <source>Blocked</source>
@@ -18476,7 +18476,7 @@
     </unit>
     <unit id="vuln.status.dismissed">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:62</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:63</note>
       </notes>
       <segment>
         <source>Dismissed</source>
@@ -18484,7 +18484,7 @@
     </unit>
     <unit id="vuln.status.resolved">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:64</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:65</note>
       </notes>
       <segment>
         <source>Resolved</source>
@@ -18492,15 +18492,23 @@
     </unit>
     <unit id="vuln.block-reason.malicious">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:70</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:73</note>
       </notes>
       <segment>
         <source>malicious package</source>
       </segment>
     </unit>
+    <unit id="vuln.block-reason.missing-data">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:75</note>
+      </notes>
+      <segment>
+        <source>advisory data not yet available</source>
+      </segment>
+    </unit>
     <unit id="vuln.block-reason.triage">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:71</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:77</note>
       </notes>
       <segment>
         <source>blocked in triage</source>
@@ -18508,7 +18516,7 @@
     </unit>
     <unit id="vuln.kind.malicious">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:76</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:83</note>
       </notes>
       <segment>
         <source>Malicious package</source>
@@ -18516,7 +18524,7 @@
     </unit>
     <unit id="vuln.kind.vulnerability">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:77</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:84</note>
       </notes>
       <segment>
         <source>Vulnerability</source>
@@ -18524,7 +18532,7 @@
     </unit>
     <unit id="vuln.dismissal.not-exploitable">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:83</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:90</note>
       </notes>
       <segment>
         <source>Not exploitable</source>
@@ -18532,7 +18540,7 @@
     </unit>
     <unit id="vuln.dismissal.false-positive">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:85</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:92</note>
       </notes>
       <segment>
         <source>False positive</source>
@@ -18540,7 +18548,7 @@
     </unit>
     <unit id="vuln.dismissal.risk-accepted">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:87</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:94</note>
       </notes>
       <segment>
         <source>Risk accepted</source>
@@ -18548,7 +18556,7 @@
     </unit>
     <unit id="vuln.dismissal.mitigated">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:89</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:96</note>
       </notes>
       <segment>
         <source>Mitigated elsewhere</source>
@@ -18556,7 +18564,7 @@
     </unit>
     <unit id="vuln.dismissal.test-only">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:91</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:98</note>
       </notes>
       <segment>
         <source>Test code only</source>
@@ -18564,7 +18572,7 @@
     </unit>
     <unit id="vuln.resolved.no-longer-affected">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:98</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:105</note>
       </notes>
       <segment>
         <source>The version is no longer affected</source>
@@ -18572,7 +18580,7 @@
     </unit>
     <unit id="vuln.resolved.withdrawn">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:100</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:107</note>
       </notes>
       <segment>
         <source>The advisory was withdrawn</source>
@@ -18580,7 +18588,7 @@
     </unit>
     <unit id="vuln.resolved.removed">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:102</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:109</note>
       </notes>
       <segment>
         <source>The version was removed</source>
@@ -18588,7 +18596,7 @@
     </unit>
     <unit id="vuln.resolved.scanning-disabled">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:104</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:111</note>
       </notes>
       <segment>
         <source>Scanning was switched off</source>
@@ -18596,7 +18604,7 @@
     </unit>
     <unit id="vuln.evaluation.evaluated">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:111</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:118</note>
       </notes>
       <segment>
         <source>Evaluated</source>
@@ -18604,7 +18612,7 @@
     </unit>
     <unit id="vuln.evaluation.pending">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:113</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:120</note>
       </notes>
       <segment>
         <source>Waiting for advisory data</source>
@@ -18612,7 +18620,7 @@
     </unit>
     <unit id="vuln.evaluation.internal">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:115</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:122</note>
       </notes>
       <segment>
         <source>Internal name, public advisories do not apply</source>
@@ -18620,7 +18628,7 @@
     </unit>
     <unit id="vuln.evaluation.not-covered">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:117</note>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:124</note>
       </notes>
       <segment>
         <source>Not covered by scanning</source>
@@ -19597,7 +19605,7 @@
       </notes>
       <segment>
         <source>
-          A source in the mode repository reads its files from a generic local repository, with no network access. Download each file on a machine that is connected, then upload it with any client that writes to the file API. Replace the placeholder with the key of the mirror repository (the setting vulnerabilities.sources.osv.repository). Whoever may deploy to that repository decides the advisory data of this installation.
+          A source in the mode repository reads its files from a generic local repository, with no network access. Download each file on a machine that is connected, then upload it with any client that writes to the file API. Upload each file to the mirror repository named in the command (the setting vulnerabilities.sources.osv.repository, and vulnerabilities.sources.kev.repository for the catalog). Whoever may deploy to that repository decides the advisory data of this installation.
         </source>
       </segment>
     </unit>

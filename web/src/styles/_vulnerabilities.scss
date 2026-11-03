@@ -325,11 +325,10 @@
   overflow-wrap: anywhere;
 }
 
-// The advisory's details are plain text from an untrusted source: line breaks kept, nothing interpreted (Q-VULN-52).
+// The advisory's details are untrusted text the server rendered and sanitized (Q-VULN-52); the README component binds them.
 .advisory-text {
   max-inline-size: 70ch;
   margin-block: var(--trove-space-2) var(--trove-space-4);
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 

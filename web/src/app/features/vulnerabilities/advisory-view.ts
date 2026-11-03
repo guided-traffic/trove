@@ -1,6 +1,8 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, input } from '@angular/core';
 import { VulnerabilityAdvisory } from '../../api/vulnerabilities-api';
+import { PackageReadme } from '../../api/packages-api';
+import { PackageReadmeView } from '../packages/package-readme';
 import { EXTERNAL_REL, safeHttpUrl } from '../packages/package-links';
 import { kindLabel } from './vuln-labels';
 import { SeverityBadge } from './vuln-parts';
@@ -34,15 +36,16 @@ export function referenceLinks(advisory: Pick<VulnerabilityAdvisory, 'references
  * vector, the known-exploited date, CWEs, affected ranges, fixed versions, the references as external links, and the
  * source and license line of R-VULN-003.
  *
- * The advisory's `details` are Markdown from an untrusted source (R-VULN-006). The API carries no rendered form, so the
- * text is shown as plain text, escaped by the template and with its line breaks kept: no HTML is built from it and no
- * link in it is made live (Q-VULN-52). A reference is a link only for an http or https address, with
+ * The advisory's `details` are Markdown from an untrusted source (R-VULN-006). The API renders them with the sanitizer
+ * of the package README and sends the result as `detailsHtml`; the view binds that HTML through the README component
+ * (Angular's sanitizer and the Trusted Types policy as further layers, the component's own link and image rules) and
+ * never renders `details` itself (Q-VULN-52). A reference is a link only for an http or https address, with
  * `rel="nofollow noopener noreferrer"` and no `target`.
  */
 @Component({
   selector: 'trove-advisory',
   preserveWhitespaces: true,
-  imports: [DatePipe, SeverityBadge],
+  imports: [DatePipe, PackageReadmeView, SeverityBadge],
   template: `
     @let a = advisory();
     <section class="advisory" [attr.aria-label]="a.id">
@@ -97,8 +100,10 @@ export function referenceLinks(advisory: Pick<VulnerabilityAdvisory, 'references
       </dl>
 
       <h3 translate="no">{{ a.summary }}</h3>
-      @if (a.details) {
-        <div class="advisory-text" translate="no">{{ a.details }}</div>
+      @if (text(); as readme) {
+        <div class="advisory-text" translate="no">
+          <trove-package-readme [readme]="readme" />
+        </div>
       }
 
       @if (affected().length > 0) {
@@ -148,6 +153,11 @@ export class AdvisoryView {
   readonly advisory = input.required<VulnerabilityAdvisory>();
 
   protected readonly rel = EXTERNAL_REL;
+  /** The sanitized HTML of the details as the README component takes it, none for an advisory without details. */
+  protected readonly text = computed((): PackageReadme | null => {
+    const html = this.advisory().detailsHtml;
+    return html ? { contentType: 'text/markdown', html, truncated: false, externalImagesBlocked: 0 } : null;
+  });
   protected readonly kind = computed(() => kindLabel(this.advisory().kind));
   protected readonly affected = computed(() => affectedLines(this.advisory()));
   protected readonly references = computed(() => referenceLinks(this.advisory()));

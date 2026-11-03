@@ -21987,6 +21987,15 @@
         <target>schädliches Paket</target>
       </segment>
     </unit>
+    <unit id="vuln.block-reason.missing-data">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:73</note>
+      </notes>
+      <segment>
+        <source>advisory data not yet available</source>
+        <target>Advisory-Daten noch nicht verfügbar</target>
+      </segment>
+    </unit>
     <unit id="vuln.block-reason.triage">
       <notes>
         <note category="location">src/app/features/vulnerabilities/vuln-labels.ts:71</note>
@@ -23219,9 +23228,9 @@
       </notes>
       <segment>
         <source>
-          A source in the mode repository reads its files from a generic local repository, with no network access. Download each file on a machine that is connected, then upload it with any client that writes to the file API. Replace the placeholder with the key of the mirror repository (the setting vulnerabilities.sources.osv.repository). Whoever may deploy to that repository decides the advisory data of this installation.
+          A source in the mode repository reads its files from a generic local repository, with no network access. Download each file on a machine that is connected, then upload it with any client that writes to the file API. Upload each file to the mirror repository named in the command (the setting vulnerabilities.sources.osv.repository, and vulnerabilities.sources.kev.repository for the catalog). Whoever may deploy to that repository decides the advisory data of this installation.
         </source>
-        <target>Eine Quelle im Modus repository liest ihre Dateien aus einem lokalen generischen Repository, ohne Netzzugriff. Laden Sie jede Datei auf einem Rechner mit Verbindung herunter und laden Sie sie dann mit einem beliebigen Client hoch, der in die Datei-API schreibt. Ersetzen Sie den Platzhalter durch den Schlüssel des Spiegel-Repositorys (die Einstellung vulnerabilities.sources.osv.repository). Wer in dieses Repository veröffentlichen darf, bestimmt die Advisory-Daten dieser Installation.</target>
+        <target>Eine Quelle im Modus repository liest ihre Dateien aus einem lokalen generischen Repository, ohne Netzzugriff. Laden Sie jede Datei auf einem Rechner mit Verbindung herunter und laden Sie sie dann mit einem beliebigen Client hoch, der in die Datei-API schreibt. Laden Sie jede Datei in das Spiegel-Repository hoch, das der Befehl nennt (die Einstellung vulnerabilities.sources.osv.repository, für den Katalog vulnerabilities.sources.kev.repository). Wer in dieses Repository veröffentlichen darf, bestimmt die Advisory-Daten dieser Installation.</target>
       </segment>
     </unit>
     <unit id="vuln.sources.caption">
