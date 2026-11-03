@@ -9,8 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats/untrusted"
+	"github.com/guided-traffic/trove/internal/vuln"
 	"github.com/guided-traffic/trove/internal/vuln/match"
 	"github.com/guided-traffic/trove/internal/vuln/osv"
 	"github.com/guided-traffic/trove/internal/vuln/store"
@@ -46,6 +48,8 @@ type entryMeta struct {
 	id       string
 	modified time.Time
 	sha      [sha256.Size]byte
+	// size is the length of the record as received, the measure that cuts the batches by bytes.
+	size int
 }
 
 // scanResult is the first pass over an archive.
@@ -87,7 +91,7 @@ func (s *Service) scanArchive(ctx context.Context, z *untrusted.ZipReader, eco s
 			continue
 		}
 		res.unevaluable += rec.Unevaluable
-		m := entryMeta{idx: i, id: rec.Advisory.ID, modified: rec.Advisory.Modified, sha: rec.SHA256}
+		m := entryMeta{idx: i, id: rec.Advisory.ID, modified: rec.Advisory.Modified, sha: rec.SHA256, size: len(data)}
 		if j, dup := byID[m.id]; dup {
 			if m.modified.Before(res.metas[j].modified) {
 				continue
@@ -113,6 +117,25 @@ type checkpoint struct {
 	Written int    `json:"written,omitempty"`
 }
 
+// batchEnds cuts the records of an archive into the batches of the second pass: at most BatchSize records and, once a batch holds
+// BatchBytes of record bytes, no more. A record larger than BatchBytes is a batch of its own. The cut depends on the archive only,
+// so a resumed run, which reads the same archive, finds the batch its checkpoint counted. It returns the end offset of each batch.
+func batchEnds(metas []entryMeta) []int {
+	var ends []int
+	start, bytes := 0, 0
+	for i, m := range metas {
+		if i > start && (i-start >= BatchSize || bytes+m.size > BatchBytes) {
+			ends = append(ends, i)
+			start, bytes = i, 0
+		}
+		bytes += m.size
+	}
+	if len(metas) > start {
+		ends = append(ends, len(metas))
+	}
+	return ends
+}
+
 // full is what a full sync passes to the final step.
 type fullInput struct {
 	eco     string
@@ -121,6 +144,15 @@ type fullInput struct {
 	arch    *archive
 	started time.Time
 	mirror  *mirrorFacts
+	// force is true when the stored records were imported with an older adapter version: every record is written again, whatever
+	// the stored digest says (Q-VULN-63).
+	force bool
+}
+
+// adapterStale reports whether the records stored for an ecosystem were imported with an older adapter than this release's, so
+// that the next run must import them again, in full and unconditionally (Q-VULN-63).
+func adapterStale(eco string, st store.SyncState) bool {
+	return st.AdapterVersion < match.AdapterVersion(eco)
 }
 
 // applyArchive runs a full sync over a downloaded or mirrored archive: pass 1, the integrity guards, pass 2 in batches with a
@@ -165,6 +197,8 @@ func (s *Service) applyArchive(ctx context.Context, run Run, p Params, cp *check
 	}
 
 	// Pass 2: the batches, from the checkpoint when the archive is the one it was taken on.
+	in.force = adapterStale(in.eco, in.state)
+	ends := batchEnds(scan.metas)
 	start := 0
 	if cp.Ecosystem == in.eco && cp.Ident == in.arch.ident && cp.Batches > 0 {
 		start, res.Written = cp.Batches, cp.Written
@@ -175,14 +209,17 @@ func (s *Service) applyArchive(ctx context.Context, run Run, p Params, cp *check
 	if err != nil {
 		return res, archiveError(err)
 	}
-	touched := newTouchSet()
 	total := int64(len(scan.metas))
-	for b := start; b*BatchSize < len(scan.metas); b++ {
+	for b := start; b < len(ends); b++ {
 		if err := ctx.Err(); err != nil {
 			return res, context.Cause(ctx)
 		}
-		chunk := scan.metas[b*BatchSize : min((b+1)*BatchSize, len(scan.metas))]
-		w, k, err := s.writeChunk(ctx, z2, in.eco, in.ad, chunk, touched)
+		lo := 0
+		if b > 0 {
+			lo = ends[b-1]
+		}
+		chunk := scan.metas[lo:ends[b]]
+		w, k, err := s.writeChunk(ctx, z2, in.eco, in.ad, chunk, in.force)
 		if err != nil {
 			return res, err
 		}
@@ -192,7 +229,7 @@ func (s *Service) applyArchive(ctx context.Context, run Run, p Params, cp *check
 		if err := run.SaveCheckpoint(ctx, cp); err != nil {
 			return res, err
 		}
-		_ = run.SaveProgress(ctx, int64(min((b+1)*BatchSize, len(scan.metas))), total, "records")
+		_ = run.SaveProgress(ctx, int64(ends[b]), total, "records")
 		if hook := s.batchHook(); hook != nil {
 			hook(in.eco, b+1)
 		}
@@ -208,20 +245,16 @@ func (s *Service) applyArchive(ctx context.Context, run Run, p Params, cp *check
 	res.Deleted = deleted
 	s.count(store.SourceOSV, in.eco, "deleted", deleted)
 
-	// The names a resumed run wrote before its checkpoint are in the pending table; the run's own are in memory.
-	if start > 0 {
-		pend, err := s.pendingIDs(ctx, in.eco)
-		if err != nil {
-			return res, err
-		}
-		touched.addNames(pend...)
-	}
+	// The names the run wrote, those of an earlier run that failed after some batches and those of the records deleted are in the
+	// touched table; the records whose canonical record is gone join them.
 	orphans, err := s.orphanIDs(ctx, in.eco)
 	if err != nil {
 		return res, err
 	}
-	touched.addNames(orphans...)
-	if err := s.finishGroups(ctx, in.eco, touched); err != nil {
+	if err := s.touch(ctx, in.eco, orphans); err != nil {
+		return res, err
+	}
+	if err := s.finishGroups(ctx, in.eco, in.state.Complete()); err != nil {
 		return res, err
 	}
 	res.Records = len(scan.metas)
@@ -230,7 +263,7 @@ func (s *Service) applyArchive(ctx context.Context, run Run, p Params, cp *check
 
 // writeChunk writes the records of one batch that differ from the stored ones: it compares the first pass's identity with the
 // stored modified time and digest, reads and decodes the others again, and upserts them in one transaction.
-func (s *Service) writeChunk(ctx context.Context, z *untrusted.ZipReader, eco string, ad match.Adapter, chunk []entryMeta, touched *touchSet) (written, skipped int, err error) {
+func (s *Service) writeChunk(ctx context.Context, z *untrusted.ZipReader, eco string, ad match.Adapter, chunk []entryMeta, force bool) (written, skipped int, err error) {
 	ids := make([]string, len(chunk))
 	for i, m := range chunk {
 		ids[i] = m.id
@@ -247,7 +280,7 @@ func (s *Service) writeChunk(ctx context.Context, z *untrusted.ZipReader, eco st
 	var batch []store.Written
 	entries := z.Entries()
 	for _, m := range chunk {
-		if st, ok := stored[m.id]; ok && bytes.Equal(st.SHA256, m.sha[:]) && st.Modified.Equal(m.modified) {
+		if st, ok := stored[m.id]; ok && !force && bytes.Equal(st.SHA256, m.sha[:]) && st.Modified.Equal(m.modified) {
 			skipped++
 			continue
 		}
@@ -261,22 +294,25 @@ func (s *Service) writeChunk(ctx context.Context, z *untrusted.ZipReader, eco st
 		}
 		batch = append(batch, store.Written{Advisory: rec.Advisory, SHA256: rec.SHA256[:]})
 	}
-	if err := s.commitBatch(ctx, eco, batch, touched); err != nil {
+	if err := s.commitBatch(ctx, eco, batch); err != nil {
 		return 0, 0, err
 	}
 	return len(batch), skipped, nil
 }
 
-// commitBatch upserts a batch and queues its records for the evaluation in one transaction (R-VULN-004 step 4).
-func (s *Service) commitBatch(ctx context.Context, eco string, batch []store.Written, touched *touchSet) error {
+// commitBatch upserts a batch, queues its records for the evaluation and records their names as touched in one transaction
+// (R-VULN-004 step 4, Q-VULN-62).
+func (s *Service) commitBatch(ctx context.Context, eco string, batch []store.Written) error {
 	if len(batch) == 0 {
 		return nil
 	}
 	ids := make([]string, 0, len(batch))
+	var names []string
 	for _, w := range batch {
 		ids = append(ids, w.Advisory.ID)
+		names = append(names, touchedNames(w.Advisory)...)
 	}
-	err := s.o.DB.InTx(ctx, func(tx metaTx) error {
+	return s.o.DB.InTx(ctx, func(tx metaTx) error {
 		db, err := store.DBOf(tx)
 		if err != nil {
 			return err
@@ -284,28 +320,30 @@ func (s *Service) commitBatch(ctx context.Context, eco string, batch []store.Wri
 		if err := (store.Sync{}).Upsert(ctx, db, eco, batch); err != nil {
 			return err
 		}
+		if err := (store.Sync{}).TouchedAdd(ctx, db, eco, names); err != nil {
+			return err
+		}
 		return (store.Sync{}).AddPending(ctx, db, eco, ids)
 	})
-	if err != nil {
-		return err
+}
+
+// touch adds names to the run's touched set.
+func (s *Service) touch(ctx context.Context, eco string, names []string) error {
+	if len(names) == 0 {
+		return nil
 	}
-	for _, w := range batch {
-		touched.add(w.Advisory)
-	}
-	return nil
+	return s.o.DB.InTx(ctx, func(tx metaTx) error {
+		db, err := store.DBOf(tx)
+		if err != nil {
+			return err
+		}
+		return (store.Sync{}).TouchedAdd(ctx, db, eco, names)
+	})
 }
 
 func (s *Service) storedIDs(ctx context.Context, eco string) (ids []string, err error) {
 	err = s.o.DB.Read(ctx, func(db dbtx) (err error) {
 		ids, err = store.Sync{}.IDs(ctx, db, eco)
-		return err
-	})
-	return ids, err
-}
-
-func (s *Service) pendingIDs(ctx context.Context, eco string) (ids []string, err error) {
-	err = s.o.DB.Read(ctx, func(db dbtx) (err error) {
-		ids, err = store.Sync{}.PendingIDs(ctx, db, eco)
 		return err
 	})
 	return ids, err
@@ -334,6 +372,9 @@ func (s *Service) deleteIDs(ctx context.Context, eco string, ids []string) (int,
 			if err := (store.Sync{}).AddPending(ctx, db, eco, chunk); err != nil {
 				return err
 			}
+			if err := (store.Sync{}).TouchedAddRecords(ctx, db, eco, chunk); err != nil {
+				return err
+			}
 			n, err := (store.Sync{}).Delete(ctx, db, eco, chunk)
 			total += n
 			return err
@@ -346,25 +387,72 @@ func (s *Service) deleteIDs(ctx context.Context, eco string, ids []string) (int,
 }
 
 // finishGroups recomputes the alias groups of the touched names, applies the known-exploited flags to their canonical records
-// and queues what the recomputation changed (R-VULN-006, R-VULN-008).
-func (s *Service) finishGroups(ctx context.Context, eco string, touched *touchSet) error {
-	stats, err := s.recomputeGroups(ctx, eco, touched.sorted())
-	if err != nil {
+// and queues what the recomputation changed (R-VULN-006, R-VULN-008). The names come from the touched table, page by page; the
+// table is cleared by the transaction that ends the run, so that a run that fails here leaves them for the next one (Q-VULN-62).
+// announce says whether a change of a group's kind is an audit event: not in the first import of an ecosystem, where every
+// group is new (Q-VULN-61).
+func (s *Service) finishGroups(ctx context.Context, eco string, announce bool) error {
+	var canonical []string
+	after := ""
+	for {
+		var page []string
+		err := s.o.DB.Read(ctx, func(db dbtx) (err error) {
+			page, err = store.Sync{}.TouchedPage(ctx, db, eco, after, touchedPage)
+			return err
+		})
+		if err != nil {
+			return err
+		}
+		if len(page) == 0 {
+			break
+		}
+		after = page[len(page)-1]
+		stats, err := s.recomputeGroups(ctx, eco, page, announce)
+		if err != nil {
+			return err
+		}
+		canonical = append(canonical, stats.canonical...)
+	}
+	_, err := s.applyKEV(ctx, eco, canonical)
+	return err
+}
+
+// recoverTouched finishes what a run that failed after some batches left: the names it touched are in the table, the records are
+// stored and queued, and nothing has recomputed their groups or raised the epoch. It runs at the start of every run of the
+// ecosystem, before the source is asked, so that an unchanged source (304, no new rows) does not leave the groups as they were.
+func (s *Service) recoverTouched(ctx context.Context, eco string, st store.SyncState) error {
+	var left bool
+	if err := s.o.DB.Read(ctx, func(db dbtx) (err error) {
+		left, err = store.Sync{}.TouchedExists(ctx, db, eco)
+		return err
+	}); err != nil {
 		return err
 	}
-	if _, err := s.applyKEV(ctx, eco, slices.Clone(stats.canonical)); err != nil {
-		return err
-	}
-	slices.Sort(stats.requeue)
-	stats.requeue = slices.Compact(stats.requeue)
-	if len(stats.requeue) == 0 {
+	if !left {
 		return nil
+	}
+	s.log.Info("recomputing the alias groups of a run that did not finish", "ecosystem", eco)
+	if err := s.finishGroups(ctx, eco, st.Complete()); err != nil {
+		return err
 	}
 	return s.o.DB.InTx(ctx, func(tx metaTx) error {
 		db, err := store.DBOf(tx)
 		if err != nil {
 			return err
 		}
-		return (store.Sync{}).AddPending(ctx, db, eco, stats.requeue)
+		if err := (store.Sync{}).TouchedClear(ctx, db, eco); err != nil {
+			return err
+		}
+		if !st.Complete() {
+			return nil // the first full import raises the epoch and requests the evaluation when it ends
+		}
+		epoch, err := (store.Sync{}).BumpEpoch(ctx, db, eco)
+		if err != nil {
+			return err
+		}
+		if err := s.o.Changes.Notify(tx, cluster.AreaVulnData, vuln.DataChangePayloadVersion, vuln.DataChange{Ecosystem: eco, Epoch: epoch}); err != nil {
+			return err
+		}
+		return s.enqueueEvaluate(ctx, tx)
 	})
 }

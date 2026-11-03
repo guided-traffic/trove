@@ -1813,6 +1813,7 @@ asynchronous. "Hook" marks events that webhooks may select (R-OPS-037).
 | `vulnerability.claimed_name_match` | A | — | From M4b, security event: a public advisory names a claimed internal name, once per advisory and name (R-VULN-010) | `package`, `advisory`, `kind`, `claimRepository` |
 | `vulnerability.source.failed` | A | — | From M4b: an advisory sync run failed; at most once an hour per source and ecosystem (R-VULN-004) | `source`, `ecosystem`, `code` |
 | `vulnerability.source.imported` | T | — | From M4b: a sync run in mode `repository` imported an item (R-VULN-005) | `source`, `ecosystem`, `sha256`, `deployedBy`, `acceptShrink` |
+| `vulnerability.advisory.kind_changed` | T | — | The kind of an advisory alias group changed because its canonical record changed (R-VULN-006, Q-VULN-61) | `ecosystem`, `advisory`, `previous`, `from`, `to`, `members` |
 
 </details>
 

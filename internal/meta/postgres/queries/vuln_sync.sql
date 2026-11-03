@@ -17,7 +17,7 @@ SELECT source, ecosystem, state, data_epoch, COALESCE(etag, '')::text AS etag, C
        COALESCE(extract(epoch FROM synced_at) * 1000000, 0)::bigint AS synced_us,
        COALESCE(extract(epoch FROM attempted_at) * 1000000, 0)::bigint AS attempted_us,
        failures, COALESCE(last_error, 'null'::jsonb)::jsonb AS last_error, records, rejected, unevaluable, matcher_version,
-       COALESCE(extract(epoch FROM full_evaluation_requested_at) * 1000000, 0)::bigint AS eval_requested_us
+       COALESCE(extract(epoch FROM full_evaluation_requested_at) * 1000000, 0)::bigint AS eval_requested_us, adapter_version
   FROM vuln_source_state
  WHERE source = sqlc.arg(source)::text AND ecosystem = sqlc.arg(ecosystem)::text;
 
@@ -30,7 +30,7 @@ SELECT source, ecosystem, state, data_epoch, COALESCE(etag, '')::text AS etag, C
        COALESCE(extract(epoch FROM synced_at) * 1000000, 0)::bigint AS synced_us,
        COALESCE(extract(epoch FROM attempted_at) * 1000000, 0)::bigint AS attempted_us,
        failures, COALESCE(last_error, 'null'::jsonb)::jsonb AS last_error, records, rejected, unevaluable, matcher_version,
-       COALESCE(extract(epoch FROM full_evaluation_requested_at) * 1000000, 0)::bigint AS eval_requested_us
+       COALESCE(extract(epoch FROM full_evaluation_requested_at) * 1000000, 0)::bigint AS eval_requested_us, adapter_version
   FROM vuln_source_state
  WHERE source = sqlc.arg(source)::text AND ecosystem = sqlc.arg(ecosystem)::text
    FOR UPDATE;
@@ -51,7 +51,7 @@ UPDATE vuln_source_state
        synced_at = CASE WHEN sqlc.arg(synced_us)::bigint = 0 THEN NULL ELSE to_timestamp(sqlc.arg(synced_us)::bigint / 1000000.0) END,
        attempted_at = now(), failures = 0, last_error = NULL,
        records = sqlc.arg(records)::int, rejected = sqlc.arg(rejected)::int, unevaluable = sqlc.arg(unevaluable)::int,
-       matcher_version = sqlc.arg(matcher_version)::int,
+       matcher_version = sqlc.arg(matcher_version)::int, adapter_version = sqlc.arg(adapter_version)::int,
        full_evaluation_requested_at = CASE WHEN sqlc.arg(eval_requested_us)::bigint = 0 THEN NULL
                                            ELSE to_timestamp(sqlc.arg(eval_requested_us)::bigint / 1000000.0) END
  WHERE source = sqlc.arg(source)::text AND ecosystem = sqlc.arg(ecosystem)::text;
@@ -85,22 +85,27 @@ SELECT id FROM vuln_advisory WHERE ecosystem = sqlc.arg(ecosystem)::text;
 SELECT count(*)::int FROM vuln_advisory WHERE ecosystem = sqlc.arg(ecosystem)::text;
 
 -- name: VulnAdvisoryUpsert :exec
--- Upserts the documents of a batch. A rewritten record keeps its canonical identifier and its known-exploited flag until the
--- group recomputation at the end of the run (R-VULN-006, R-VULN-008) sets them.
+-- Upserts the documents of a batch. A new record's decided severity is its own; a rewritten record keeps its canonical
+-- identifier, its decided severity and its known-exploited flag until the group recomputation at the end of the run (R-VULN-006,
+-- R-VULN-007 rule 3, R-VULN-008) sets them, and its own severity is written to the own_* columns (Q-VULN-62).
 INSERT INTO vuln_advisory (ecosystem, id, canonical_id, modified, published, withdrawn, kind, aliases, summary, details,
-                           severity, severity_source, cvss_version, cvss_vector, cvss_score, "references", cwe_ids, record_sha256)
+                           severity, severity_source, cvss_version, cvss_vector, cvss_score,
+                           own_severity, own_severity_source, own_cvss_version, own_cvss_vector, own_cvss_score,
+                           "references", cwe_ids, record_sha256)
 SELECT sqlc.arg(ecosystem)::text, d.id, d.id, d.modified, d.published, d.withdrawn, d.kind,
        ARRAY(SELECT jsonb_array_elements_text(d.aliases)), d.summary, d.details, d.severity, d.severity_source,
-       d.cvss_version, d.cvss_vector, d.cvss_score, COALESCE(d.refs, '[]'::jsonb),
+       d.cvss_version, d.cvss_vector, d.cvss_score, d.severity, d.severity_source, d.cvss_version, d.cvss_vector, d.cvss_score,
+       COALESCE(d.refs, '[]'::jsonb),
        ARRAY(SELECT jsonb_array_elements_text(d.cwe_ids)), decode(d.record_sha256, 'hex')
   FROM jsonb_to_recordset(sqlc.arg(docs)::jsonb) AS d(id text, modified timestamptz, published timestamptz, withdrawn timestamptz,
        kind text, aliases jsonb, summary text, details text, severity text, severity_source text, cvss_version text,
        cvss_vector text, cvss_score numeric, refs jsonb, cwe_ids jsonb, record_sha256 text)
 ON CONFLICT (ecosystem, id) DO UPDATE
    SET modified = EXCLUDED.modified, published = EXCLUDED.published, withdrawn = EXCLUDED.withdrawn, kind = EXCLUDED.kind,
-       aliases = EXCLUDED.aliases, summary = EXCLUDED.summary, details = EXCLUDED.details, severity = EXCLUDED.severity,
-       severity_source = EXCLUDED.severity_source, cvss_version = EXCLUDED.cvss_version, cvss_vector = EXCLUDED.cvss_vector,
-       cvss_score = EXCLUDED.cvss_score, "references" = EXCLUDED."references", cwe_ids = EXCLUDED.cwe_ids,
+       aliases = EXCLUDED.aliases, summary = EXCLUDED.summary, details = EXCLUDED.details,
+       own_severity = EXCLUDED.own_severity, own_severity_source = EXCLUDED.own_severity_source,
+       own_cvss_version = EXCLUDED.own_cvss_version, own_cvss_vector = EXCLUDED.own_cvss_vector,
+       own_cvss_score = EXCLUDED.own_cvss_score, "references" = EXCLUDED."references", cwe_ids = EXCLUDED.cwe_ids,
        record_sha256 = EXCLUDED.record_sha256;
 
 -- name: VulnAffectedDelete :exec
@@ -115,10 +120,12 @@ SELECT sqlc.arg(ecosystem)::text, e.advisory_id, e.ord, e.name, COALESCE(e.range
        every_version boolean, fixed jsonb);
 
 -- name: VulnPendingAdd :exec
--- Queues advisories for the evaluation (R-VULN-011); one already queued stays as it is.
-INSERT INTO vuln_pending_evaluation (ecosystem, advisory_id)
-SELECT sqlc.arg(ecosystem)::text, unnest(sqlc.arg(ids)::text[])
-ON CONFLICT (ecosystem, advisory_id) DO NOTHING;
+-- Queues advisories for the evaluation (R-VULN-011). One already queued takes a new enqueue time, the time of this statement
+-- and not of its transaction: the evaluation deletes a row only while it still holds the time it read, so that an advisory
+-- changed again while a batch is being evaluated stays queued.
+INSERT INTO vuln_pending_evaluation (ecosystem, advisory_id, enqueued_at)
+SELECT sqlc.arg(ecosystem)::text, unnest(sqlc.arg(ids)::text[]), clock_timestamp()
+ON CONFLICT (ecosystem, advisory_id) DO UPDATE SET enqueued_at = clock_timestamp();
 
 -- name: VulnAdvisoryDelete :execrows
 -- Deletes advisories the full sync's source no longer has; their affected entries go with them.
@@ -126,9 +133,16 @@ DELETE FROM vuln_advisory WHERE ecosystem = sqlc.arg(ecosystem)::text AND id = A
 
 -- name: VulnAdvisoryGroupRows :many
 -- The stored records that are or alias any of the names: one round of the closure that finds an alias group (R-VULN-006).
-SELECT id, canonical_id, aliases, kind, severity, severity_source,
+-- severity* is the severity decided for the record, own_* the record's own; a row stored before 00038 has no own_* and its
+-- decided columns stand in.
+SELECT id, canonical_id, aliases, kind, (withdrawn IS NOT NULL)::boolean AS is_withdrawn, severity, severity_source,
        COALESCE(cvss_version, '')::text AS cvss_version, COALESCE(cvss_vector, '')::text AS cvss_vector,
-       COALESCE(cvss_score, 0)::float8 AS cvss_score
+       COALESCE(cvss_score, 0)::float8 AS cvss_score,
+       (CASE WHEN own_severity IS NULL THEN severity ELSE own_severity END)::text AS own_severity,
+       (CASE WHEN own_severity IS NULL THEN severity_source ELSE own_severity_source END)::text AS own_severity_source,
+       (CASE WHEN own_severity IS NULL THEN COALESCE(cvss_version, '') ELSE COALESCE(own_cvss_version, '') END)::text AS own_cvss_version,
+       (CASE WHEN own_severity IS NULL THEN COALESCE(cvss_vector, '') ELSE COALESCE(own_cvss_vector, '') END)::text AS own_cvss_vector,
+       (CASE WHEN own_severity IS NULL THEN COALESCE(cvss_score, 0) ELSE COALESCE(own_cvss_score, 0) END)::float8 AS own_cvss_score
   FROM vuln_advisory
  WHERE ecosystem = sqlc.arg(ecosystem)::text AND (id = ANY(sqlc.arg(names)::text[]) OR aliases && sqlc.arg(names)::text[]);
 
@@ -137,7 +151,7 @@ UPDATE vuln_advisory SET canonical_id = sqlc.arg(canonical)::text
  WHERE ecosystem = sqlc.arg(ecosystem)::text AND id = ANY(sqlc.arg(ids)::text[]) AND canonical_id <> sqlc.arg(canonical)::text;
 
 -- name: VulnAdvisorySetSeverity :exec
--- The severity of a canonical record decided with its aliases (R-VULN-007 rule 3).
+-- The severity decided for a record by its alias group (R-VULN-007 rule 3); its own severity stays in the own_* columns.
 UPDATE vuln_advisory
    SET severity = sqlc.arg(severity)::text, severity_source = sqlc.arg(severity_source)::text,
        cvss_version = NULLIF(sqlc.arg(cvss_version)::text, ''), cvss_vector = NULLIF(sqlc.arg(cvss_vector)::text, ''),
@@ -183,9 +197,33 @@ UPDATE vuln_advisory a
    AND (a.known_exploited IS DISTINCT FROM (h.added IS NOT NULL) OR a.kev_date_added IS DISTINCT FROM h.added)
 RETURNING a.id;
 
--- name: VulnPendingIDs :many
--- The advisories queued for the evaluation: what a run that resumed after a drain wrote before its checkpoint.
-SELECT advisory_id FROM vuln_pending_evaluation WHERE ecosystem = sqlc.arg(ecosystem)::text;
+-- name: VulnTouchedAdd :exec
+-- The names a batch wrote, in the batch's transaction (Q-VULN-62): the alias groups of the run are recomputed from this set.
+INSERT INTO vuln_sync_touched (ecosystem, name)
+SELECT sqlc.arg(ecosystem)::text, unnest(sqlc.arg(names)::text[])
+ON CONFLICT (ecosystem, name) DO NOTHING;
+
+-- name: VulnTouchedAddRecords :exec
+-- The identifiers and aliases of stored records that are about to be deleted, so that the groups they leave are recomputed.
+INSERT INTO vuln_sync_touched (ecosystem, name)
+SELECT a.ecosystem, n.name
+  FROM vuln_advisory a CROSS JOIN LATERAL (SELECT a.id AS name UNION SELECT unnest(a.aliases)) n
+ WHERE a.ecosystem = sqlc.arg(ecosystem)::text AND a.id = ANY(sqlc.arg(ids)::text[])
+ON CONFLICT (ecosystem, name) DO NOTHING;
+
+-- name: VulnTouchedPage :many
+-- One page of the touched names, in name order, after the last one of the previous page.
+SELECT name FROM vuln_sync_touched
+ WHERE ecosystem = sqlc.arg(ecosystem)::text AND name > sqlc.arg(after)::text
+ ORDER BY name
+ LIMIT sqlc.arg(max_rows)::int;
+
+-- name: VulnTouchedExists :one
+SELECT EXISTS (SELECT 1 FROM vuln_sync_touched WHERE ecosystem = sqlc.arg(ecosystem)::text)::boolean;
+
+-- name: VulnTouchedClear :exec
+-- Ends the set in the transaction that ends the run.
+DELETE FROM vuln_sync_touched WHERE ecosystem = sqlc.arg(ecosystem)::text;
 
 -- name: VulnAdvisoryOrphans :many
 -- Records whose canonical record is gone, after a deletion: their group needs a new canonical identifier.

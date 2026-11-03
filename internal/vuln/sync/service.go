@@ -44,6 +44,9 @@ const Purpose = "vuln_source"
 const (
 	// BatchSize is the number of records one transaction upserts.
 	BatchSize = 1000
+	// BatchBytes is the size of the records, as received, above which a batch is cut before BatchSize records: a batch is one
+	// jsonb document of its records, and 1,000 records of the largest size must not become one statement.
+	BatchBytes = 32 << 20
 	// RangeSize is the part of the change file one ranged request asks for.
 	RangeSize = 64 << 10
 	// FetchParallel is the number of single-record requests in flight.

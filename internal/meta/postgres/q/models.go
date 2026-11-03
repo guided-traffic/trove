@@ -862,26 +862,31 @@ type VirtualPinRule struct {
 }
 
 type VulnAdvisory struct {
-	Ecosystem      string
-	ID             string
-	CanonicalID    string
-	Modified       pgtype.Timestamptz
-	Published      pgtype.Timestamptz
-	Withdrawn      pgtype.Timestamptz
-	Kind           string
-	Aliases        []string
-	Summary        string
-	Details        string
-	Severity       string
-	SeveritySource string
-	CvssVersion    pgtype.Text
-	CvssVector     pgtype.Text
-	CvssScore      pgtype.Numeric
-	KnownExploited bool
-	KevDateAdded   pgtype.Date
-	References     []byte
-	CweIds         []string
-	RecordSha256   []byte
+	Ecosystem         string
+	ID                string
+	CanonicalID       string
+	Modified          pgtype.Timestamptz
+	Published         pgtype.Timestamptz
+	Withdrawn         pgtype.Timestamptz
+	Kind              string
+	Aliases           []string
+	Summary           string
+	Details           string
+	Severity          string
+	SeveritySource    string
+	CvssVersion       pgtype.Text
+	CvssVector        pgtype.Text
+	CvssScore         pgtype.Numeric
+	KnownExploited    bool
+	KevDateAdded      pgtype.Date
+	References        []byte
+	CweIds            []string
+	RecordSha256      []byte
+	OwnSeverity       pgtype.Text
+	OwnSeveritySource pgtype.Text
+	OwnCvssVersion    pgtype.Text
+	OwnCvssVector     pgtype.Text
+	OwnCvssScore      pgtype.Numeric
 }
 
 type VulnAffected struct {
@@ -976,4 +981,10 @@ type VulnSourceState struct {
 	Unevaluable               int32
 	MatcherVersion            int32
 	FullEvaluationRequestedAt pgtype.Timestamptz
+	AdapterVersion            int32
+}
+
+type VulnSyncTouched struct {
+	Ecosystem string
+	Name      string
 }

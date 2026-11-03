@@ -110,7 +110,7 @@ func (s *Service) fullMirror(ctx context.Context, run Run, p Params, eco string,
 		s.countRun(store.SourceOSV, eco, kindFull, outcomeUnchanged)
 		return res, nil
 	}
-	if st.Complete() && bytes.Equal(st.ArchiveSHA256, item.SHA256[:]) {
+	if st.Complete() && bytes.Equal(st.ArchiveSHA256, item.SHA256[:]) && !adapterStale(eco, st) {
 		return s.finishUnchanged(ctx, eco, kindFull)
 	}
 	if item.Size > int64(s.o.Config.Sources.OSV.MaxArchiveSize) {

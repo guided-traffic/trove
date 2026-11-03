@@ -45,8 +45,9 @@ func (s *Service) finishFull(ctx context.Context, p Params, in fullInput, res Re
 		}
 		next := cur
 		first := !cur.Complete()
-		changed := res.Written > 0 || res.Deleted > 0 || first
+		changed := res.Written > 0 || res.Deleted > 0 || first || in.force
 		next.State = store.StateComplete
+		next.AdapterVersion = match.AdapterVersion(in.eco)
 		next.ETag = in.arch.etag
 		next.ArchiveSHA256 = nil
 		if in.mirror != nil {
@@ -66,6 +67,9 @@ func (s *Service) finishFull(ctx context.Context, p Params, in fullInput, res Re
 			next.MatcherVersion, next.EvalRequestedAt = match.MatcherVersion, now
 		}
 		if err := s.st.Save(ctx, db, next); err != nil {
+			return err
+		}
+		if err := s.st.TouchedClear(ctx, db, in.eco); err != nil {
 			return err
 		}
 		if changed {
@@ -168,6 +172,9 @@ func (s *Service) finishIncremental(ctx context.Context, eco string, res Result,
 			next.MatcherVersion, next.EvalRequestedAt = match.MatcherVersion, now
 		}
 		if err := s.st.Save(ctx, db, next); err != nil {
+			return err
+		}
+		if err := s.st.TouchedClear(ctx, db, eco); err != nil {
 			return err
 		}
 		if changed {

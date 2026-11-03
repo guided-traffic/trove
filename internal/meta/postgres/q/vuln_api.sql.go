@@ -20,7 +20,7 @@ WITH hit AS (
    ORDER BY (a.id = $2::text) DESC, (a.canonical_id = $2::text) DESC, a.modified DESC
    LIMIT 1
 ), rep AS (
-  SELECT a.ecosystem, a.id, a.canonical_id, a.modified, a.published, a.withdrawn, a.kind, a.aliases, a.summary, a.details, a.severity, a.severity_source, a.cvss_version, a.cvss_vector, a.cvss_score, a.known_exploited, a.kev_date_added, a."references", a.cwe_ids, a.record_sha256 FROM vuln_advisory a JOIN hit ON a.canonical_id = hit.canonical_id
+  SELECT a.ecosystem, a.id, a.canonical_id, a.modified, a.published, a.withdrawn, a.kind, a.aliases, a.summary, a.details, a.severity, a.severity_source, a.cvss_version, a.cvss_vector, a.cvss_score, a.known_exploited, a.kev_date_added, a."references", a.cwe_ids, a.record_sha256, a.own_severity, a.own_severity_source, a.own_cvss_version, a.own_cvss_vector, a.own_cvss_score FROM vuln_advisory a JOIN hit ON a.canonical_id = hit.canonical_id
    WHERE a.ecosystem = $1::text
    ORDER BY (a.id = hit.canonical_id) DESC, a.modified DESC
    LIMIT 1

@@ -98,6 +98,7 @@ contract speaks in: `internal/vuln/advisory` (types, fields, methods and constan
 |---|---|
 | [00035_vulnerabilities.sql](../../internal/meta/postgres/migrations/00035_vulnerabilities.sql) | the eight tables exactly as the spec page has them (`vuln_source_state`, `vuln_advisory`, `vuln_affected`, `vuln_pending_evaluation`, `vuln_kev`, `vuln_claimed_match`, `vuln_finding`, `vuln_finding_event`), plus `vuln_advisory.cwe_ids` and the quoted column `"references"` (Q-VULN-24), and the epoch row of `vuln_data` |
 | [00036_vulnerabilities_packages_name.sql](../../internal/meta/postgres/migrations/00036_vulnerabilities_packages_name.sql) | `CREATE INDEX CONCURRENTLY packages_name ON packages (name)`, a step of its own (R-HA-018, Q-VULN-24) |
+| [00038_vulnerability_sync_fixes.sql](../../internal/meta/postgres/migrations/00038_vulnerability_sync_fixes.sql) | the sync's fixes (Q-VULN-62, Q-VULN-63): the table `vuln_sync_touched`, the nullable `vuln_advisory.own_*` columns (a record's own severity) and `vuln_source_state.adapter_version`; all additive |
 | [tables_vuln.go](../../internal/meta/postgres/tables_vuln.go) | export classes (`vuln_finding` and `vuln_finding_event` data, the other six transient) and the revision column `vuln_finding.revision`; the package `meta/postgres` is linked by every binary, so [cmd/trove/registry.go](../../cmd/trove/registry.go) needs no line |
 
 Tested by [TestVulnMigration](../../test/integration/postgres/vuln_test.go) (classes, steps, the seeded area, the constraints, the cascade).
@@ -195,8 +196,22 @@ offline, the guards, the checkpoint, `States`), [internal/vuln/store/sync.go](..
 [internal/app/wire_vuln_sync.go](../../internal/app/wire_vuln_sync.go). The sync takes the adapters of the registered formats, as production does; the tests of [test/integration/vulnsync](../../test/integration/vulnsync)
 run with them and with no worker on the default queue, so that the jobs of the evaluation stay queued and the tests see what the sync leaves for it.
 
-The decisions are [Q-VULN-30 to Q-VULN-34](../spec/vulnerability-scanning.md#q-vuln-30--a-full-sync-validates-before-it-writes-in-two-passes), the gaps
-[H-477 to H-479](../security/vulnerability-scanning.md#what-this-does-not-cover), the operator's page is [the manual](../manual/admin/vulnerability-sources.md).
+The decisions are [Q-VULN-30 to Q-VULN-34](../spec/vulnerability-scanning.md#q-vuln-30--a-full-sync-validates-before-it-writes-in-two-passes) and
+[Q-VULN-61 to Q-VULN-63](../spec/vulnerability-scanning.md#q-vuln-61--a-withdrawn-record-never-leads-an-alias-group-and-a-change-of-a-groups-kind-is-an-audit-event), the gaps
+[H-478, H-479, H-495 and H-496](../security/vulnerability-scanning.md#what-this-does-not-cover) (H-477 is closed by Q-VULN-62), the operator's page is [the manual](../manual/admin/vulnerability-sources.md).
+
+How a run is built, in the order the code runs it:
+
+| Step | Where | What holds |
+|---|---|---|
+| Recover | [archive.go](../../internal/vuln/sync/archive.go) `recoverTouched`, called by `syncOne` | Names left in `vuln_sync_touched` by a run that did not end are recomputed first; on a `complete` ecosystem the epoch is raised and `vuln-evaluate` enqueued (Q-VULN-62) |
+| Choose full or incremental | [run.go](../../internal/vuln/sync/run.go) `syncOne`, `adapterStale` | A stale `adapter_version` (below `match.AdapterVersion`) forces a full run with no `If-None-Match`, no digest skip and, in mode `repository`, no skip by the item's digest (Q-VULN-63); raise the constant in [match/adapter_version.go](../../internal/vuln/match/adapter_version.go) when an adapter changes what it stores |
+| Batches | `batchEnds`, `writeChunk`, `fetchApply` | At most `BatchSize` records and `BatchBytes` of record bytes; the cut is a function of the archive's metadata, so a checkpoint's index means the same batch after a resume. `commitBatch` writes records, the queue and the touched names in one transaction |
+| Incremental guards | [records.go](../../internal/vuln/sync/records.go) | The fetched body's `id` must be the requested one; a record older than the stored one is skipped (`fetchedNotNewer`) |
+| Groups | [group.go](../../internal/vuln/sync/group.go) `finishGroups`, `recomputeGroups`, `writeGroup` | Names are read page by page from the table; one transaction per chunk writes the canonical identifiers (`canonicalOfRows`: never a withdrawn record while another exists), each record's decided severity from the `own_*` values of the group, the queue, and the audit event of a kind change (`recordKindChange`, not on the first import) |
+| End | [finish.go](../../internal/vuln/sync/finish.go) | The final transaction saves the state with the adapter version and clears the ecosystem's touched names |
+
+`vuln_pending_evaluation.enqueued_at` takes the time of the statement on every queueing (`VulnPendingAdd`), because the evaluation deletes a row only while it still holds the time it read. The columns `severity*`, `cvss_*` of `vuln_advisory` stay what every reader reads; a new reader of a record's own decision reads `own_*`.
 
 ### B · Matching and findings
 

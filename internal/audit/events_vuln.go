@@ -9,7 +9,8 @@ package audit
 //
 // Transactional (written in the transaction of the change): vulnerability.finding.status_changed (the triager's change, or
 // each change of a bulk set-status, all with one bulk id), vulnerability.finding.reopened (trove's reopen of a dismissed
-// finding) and vulnerability.source.imported (an import of mode repository). Asynchronous: the security events
+// finding), vulnerability.source.imported (an import of mode repository) and vulnerability.advisory.kind_changed (the sync's
+// change of an alias group's canonical record to one of another kind). Asynchronous: the security events
 // vulnerability.download_blocked (at most once a minute per repository, version and client address, R-OPS-015) and
 // vulnerability.claimed_name_match (once per advisory and name), and vulnerability.source.failed (at most once an hour per
 // source and ecosystem).
@@ -29,6 +30,7 @@ const (
 	EventVulnClaimedNameMatch     = "vulnerability.claimed_name_match"
 	EventVulnSourceFailed         = "vulnerability.source.failed"
 	EventVulnSourceImported       = "vulnerability.source.imported"
+	EventVulnAdvisoryKindChanged  = "vulnerability.advisory.kind_changed"
 )
 
 func init() {
@@ -89,5 +91,17 @@ func init() {
 			`"source":{"type":"string"},"ecosystem":{"type":"string"},"sha256":{"type":"string"},"deployedBy":{"type":"string"},` +
 			`"acceptShrink":{"type":"boolean"}},` +
 			`"required":["source","ecosystem","sha256"],"additionalProperties":false}`,
+	})
+	// The kind of an alias group changed because its canonical record changed (R-VULN-006, Q-VULN-61): a record joined the group
+	// or left it, or was withdrawn, and the canonical record is now of the other kind. advisory is the new canonical identifier,
+	// previous the old one, from and to the kinds; members are the identifiers of the group, at most 50. The findings of the
+	// group follow the kind of the record whose entry matched (R-VULN-012); this event is the trace of the change.
+	Register(EventType{
+		Name: EventVulnAdvisoryKindChanged, Category: CategorySystem, Mode: Transactional,
+		Schema: `{"type":"object","properties":{` +
+			`"ecosystem":{"type":"string"},"advisory":{"type":"string"},"previous":{"type":"string"},` +
+			`"from":{"type":"string","enum":["vulnerability","malicious"]},"to":{"type":"string","enum":["vulnerability","malicious"]},` +
+			`"members":{"type":"array","maxItems":50,"items":{"type":"string"}}},` +
+			`"required":["ecosystem","advisory","previous","from","to"],"additionalProperties":false}`,
 	})
 }

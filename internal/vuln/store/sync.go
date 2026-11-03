@@ -52,6 +52,8 @@ type SyncState struct {
 	Failures                                                        int
 	LastError                                                       json.RawMessage
 	Records, Rejected, Unevaluable, MatcherVersion                  int
+	// AdapterVersion is the version of the format adapter's normalization the stored records were imported with (match.AdapterVersion).
+	AdapterVersion int
 }
 
 // Complete reports whether a full import of the source has finished.
@@ -93,7 +95,7 @@ func (Sync) Get(ctx context.Context, db q.DBTX, source, ecosystem string) (SyncS
 		return SyncState{}, false, err
 	}
 	return stateOf(r.Source, r.Ecosystem, r.State, r.DataEpoch, r.Etag, r.ArchiveSha256, r.WatermarkUs, r.FullSyncedUs, r.SyncedUs,
-		r.AttemptedUs, r.Failures, r.LastError, r.Records, r.Rejected, r.Unevaluable, r.MatcherVersion, r.EvalRequestedUs), true, nil
+		r.AttemptedUs, r.Failures, r.LastError, r.Records, r.Rejected, r.Unevaluable, r.MatcherVersion, r.EvalRequestedUs, r.AdapterVersion), true, nil
 }
 
 // Lock reads the row and locks it until the transaction ends; the row must exist ([Sync.Ensure]).
@@ -103,17 +105,17 @@ func (Sync) Lock(ctx context.Context, db q.DBTX, source, ecosystem string) (Sync
 		return SyncState{}, err
 	}
 	return stateOf(r.Source, r.Ecosystem, r.State, r.DataEpoch, r.Etag, r.ArchiveSha256, r.WatermarkUs, r.FullSyncedUs, r.SyncedUs,
-		r.AttemptedUs, r.Failures, r.LastError, r.Records, r.Rejected, r.Unevaluable, r.MatcherVersion, r.EvalRequestedUs), nil
+		r.AttemptedUs, r.Failures, r.LastError, r.Records, r.Rejected, r.Unevaluable, r.MatcherVersion, r.EvalRequestedUs, r.AdapterVersion), nil
 }
 
 func stateOf(source, eco, state string, epoch int64, etag string, sha []byte, wm, full, synced, attempted int64, failures int32,
-	lastErr []byte, records, rejected, unevaluable, matcher int32, evalReq int64,
+	lastErr []byte, records, rejected, unevaluable, matcher int32, evalReq int64, adapter int32,
 ) SyncState {
 	return SyncState{
 		Source: source, Ecosystem: eco, State: state, DataEpoch: epoch, ETag: etag, ArchiveSHA256: sha,
 		Watermark: microTime(wm), FullSyncedAt: microTime(full), SyncedAt: microTime(synced), AttemptedAt: microTime(attempted),
 		EvalRequestedAt: microTime(evalReq), Failures: int(failures), LastError: jsonOrNil(lastErr),
-		Records: int(records), Rejected: int(rejected), Unevaluable: int(unevaluable), MatcherVersion: int(matcher),
+		Records: int(records), Rejected: int(rejected), Unevaluable: int(unevaluable), MatcherVersion: int(matcher), AdapterVersion: int(adapter),
 	}
 }
 
@@ -146,7 +148,8 @@ func (Sync) Save(ctx context.Context, db q.DBTX, s SyncState) error {
 		WatermarkUs: micros(s.Watermark), FullSyncedUs: micros(s.FullSyncedAt), SyncedUs: micros(s.SyncedAt),
 		Records: int32(s.Records), Rejected: int32(s.Rejected), Unevaluable: int32(s.Unevaluable), //nolint:gosec // counts of one archive
 		MatcherVersion: int32(s.MatcherVersion), EvalRequestedUs: micros(s.EvalRequestedAt), //nolint:gosec // a small constant
-		Source: s.Source, Ecosystem: s.Ecosystem,
+		AdapterVersion: int32(s.AdapterVersion), //nolint:gosec // a small constant
+		Source:         s.Source, Ecosystem: s.Ecosystem,
 	})
 }
 
@@ -324,9 +327,22 @@ type GroupRow struct {
 	ID, CanonicalID string
 	Aliases         []string
 	Kind            advisory.Kind
-	Severity        advisory.Severity
-	SeveritySource  advisory.SeveritySource
-	CVSS            advisory.CVSS
+	// Withdrawn is true for a record the source has withdrawn; a withdrawn record is never the canonical record of a group that
+	// has another (R-VULN-006, Q-VULN-61).
+	Withdrawn bool
+	// Severity, SeveritySource and CVSS are the severity decided for the record by its group (R-VULN-007 rule 3), what the
+	// readers read; Own is what the record itself decides (rules 1, 2, 4, 5), the input of the group decision (Q-VULN-62).
+	Severity       advisory.Severity
+	SeveritySource advisory.SeveritySource
+	CVSS           advisory.CVSS
+	Own            GroupOwn
+}
+
+// GroupOwn is the severity a record decides for itself.
+type GroupOwn struct {
+	Severity       advisory.Severity
+	SeveritySource advisory.SeveritySource
+	CVSS           advisory.CVSS
 }
 
 // GroupRows returns the stored records that are, or alias, any of the names.
@@ -338,9 +354,13 @@ func (Sync) GroupRows(ctx context.Context, db q.DBTX, ecosystem string, names []
 	out := make([]GroupRow, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, GroupRow{
-			ID: r.ID, CanonicalID: r.CanonicalID, Aliases: r.Aliases, Kind: advisory.Kind(r.Kind),
+			ID: r.ID, CanonicalID: r.CanonicalID, Aliases: r.Aliases, Kind: advisory.Kind(r.Kind), Withdrawn: r.IsWithdrawn,
 			Severity: advisory.Severity(r.Severity), SeveritySource: advisory.SeveritySource(r.SeveritySource),
 			CVSS: advisory.CVSS{Version: r.CvssVersion, Vector: r.CvssVector, Score: r.CvssScore},
+			Own: GroupOwn{
+				Severity: advisory.Severity(r.OwnSeverity), SeveritySource: advisory.SeveritySource(r.OwnSeveritySource),
+				CVSS: advisory.CVSS{Version: r.OwnCvssVersion, Vector: r.OwnCvssVector, Score: r.OwnCvssScore},
+			},
 		})
 	}
 	return out, nil
@@ -402,9 +422,35 @@ func (Sync) ApplyKEV(ctx context.Context, db q.DBTX, ecosystem string, ids []str
 	return q.New(db).VulnKEVApply(ctx, q.VulnKEVApplyParams{Ecosystem: ecosystem, Ids: ids})
 }
 
-// PendingIDs returns the advisories of the ecosystem queued for the evaluation.
-func (Sync) PendingIDs(ctx context.Context, db q.DBTX, ecosystem string) ([]string, error) {
-	return q.New(db).VulnPendingIDs(ctx, ecosystem)
+// TouchedAdd records names of a run in the transaction that wrote them (Q-VULN-62).
+func (Sync) TouchedAdd(ctx context.Context, db q.DBTX, ecosystem string, names []string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	return q.New(db).VulnTouchedAdd(ctx, q.VulnTouchedAddParams{Ecosystem: ecosystem, Names: names})
+}
+
+// TouchedAddRecords records the identifiers and aliases of stored records, before they are deleted.
+func (Sync) TouchedAddRecords(ctx context.Context, db q.DBTX, ecosystem string, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return q.New(db).VulnTouchedAddRecords(ctx, q.VulnTouchedAddRecordsParams{Ecosystem: ecosystem, Ids: ids})
+}
+
+// TouchedPage returns up to max touched names of the ecosystem that sort after the given one.
+func (Sync) TouchedPage(ctx context.Context, db q.DBTX, ecosystem, after string, max int) ([]string, error) {
+	return q.New(db).VulnTouchedPage(ctx, q.VulnTouchedPageParams{Ecosystem: ecosystem, After: after, MaxRows: int32(max)}) //nolint:gosec // a page size
+}
+
+// TouchedExists reports whether a run of the ecosystem left names behind.
+func (Sync) TouchedExists(ctx context.Context, db q.DBTX, ecosystem string) (bool, error) {
+	return q.New(db).VulnTouchedExists(ctx, ecosystem)
+}
+
+// TouchedClear ends the set of the ecosystem; it runs in the transaction that ends the run.
+func (Sync) TouchedClear(ctx context.Context, db q.DBTX, ecosystem string) error {
+	return q.New(db).VulnTouchedClear(ctx, ecosystem)
 }
 
 // Orphans returns the records of the ecosystem whose canonical record is gone.

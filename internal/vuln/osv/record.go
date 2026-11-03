@@ -268,10 +268,15 @@ func affectedOf(ad match.Adapter, name string, ranges []struct {
 		if (t != advisory.RangeSemver && t != advisory.RangeEcosystem) || len(r.Events) == 0 {
 			continue // GIT ranges and empty ranges have no effect
 		}
+		events := slices.Clone(r.Events)
 		if !evaluable(ad, r.Events) {
 			unevaluable++
+			// What cannot be evaluated is stored for the record's sake only; no control or format character of it is.
+			for i := range events {
+				events[i].Version = cleanVersion(events[i].Version)
+			}
 		}
-		aff.Ranges = append(aff.Ranges, advisory.Range{Type: t, Events: slices.Clone(r.Events)})
+		aff.Ranges = append(aff.Ranges, advisory.Range{Type: t, Events: events})
 		for _, ev := range r.Events {
 			if ev.Kind != advisory.EventFixed {
 				continue
@@ -313,8 +318,37 @@ func evaluable(ad match.Adapter, events []advisory.Event) bool {
 	return true
 }
 
-// cleanText removes the control characters other than tab and newline and cuts the text to max bytes on a character
-// boundary (R-VULN-006).
+// maxVersion bounds a version of an unevaluable range as it is stored.
+const maxVersion = 128
+
+// invisible reports a character that is not displayed as itself: a control character, a format character (the bidirectional
+// controls U+202A to U+202E and U+2066 to U+2069, the zero-width characters U+200B to U+200F, the byte order mark U+FEFF, the
+// soft hyphen and the like) or a line or paragraph separator. Such a character in a title lets an author spoof what a reader
+// sees.
+func invisible(r rune) bool {
+	return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r)
+}
+
+// cleanVersion strips every invisible character, including tab and newline, and cuts the version to maxVersion bytes.
+func cleanVersion(v string) string {
+	var b strings.Builder
+	for _, r := range v {
+		if r == utf8.RuneError {
+			r = '�'
+		}
+		if invisible(r) {
+			continue
+		}
+		if b.Len()+utf8.RuneLen(r) > maxVersion {
+			break
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// cleanText removes the control, format and separator characters other than tab and newline and cuts the text to max bytes on
+// a character boundary (R-VULN-006).
 func cleanText(s string, max int) string {
 	var b strings.Builder
 	b.Grow(min(len(s), max))
@@ -322,7 +356,7 @@ func cleanText(s string, max int) string {
 		if r == utf8.RuneError {
 			r = '�'
 		}
-		if unicode.IsControl(r) && r != '\t' && r != '\n' {
+		if invisible(r) && r != '\t' && r != '\n' {
 			continue
 		}
 		if b.Len()+utf8.RuneLen(r) > max {
@@ -333,9 +367,9 @@ func cleanText(s string, max int) string {
 	return b.String()
 }
 
-// hasControl reports a control character, which no identifier, name, version or URL of a record may hold.
+// hasControl reports a control or format character, which no identifier, name, version or URL of a record may hold.
 func hasControl(s string) bool {
-	return strings.IndexFunc(s, unicode.IsControl) >= 0 || !utf8.ValidString(s)
+	return strings.IndexFunc(s, invisible) >= 0 || !utf8.ValidString(s)
 }
 
 // clip shortens a value for an error message.

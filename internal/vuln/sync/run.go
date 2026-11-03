@@ -85,10 +85,14 @@ func (s *Service) syncOne(ctx context.Context, run Run, p Params, forceFull bool
 	}); err != nil {
 		return Result{Ecosystem: eco}, err
 	}
+	// What an earlier run that failed after some batches left is finished first: its alias groups, the epoch, the evaluation.
+	if err := s.recoverTouched(ctx, eco, st); err != nil {
+		return Result{Ecosystem: eco}, err
+	}
 	if s.o.Config.Sources.OSV.Mode == "repository" {
 		return s.fullMirror(ctx, run, p, eco, ad, st, cp)
 	}
-	if !forceFull && st.Complete() && !st.Watermark.IsZero() && s.now().Sub(st.Watermark) <= MaxWatermarkAge {
+	if !forceFull && st.Complete() && !st.Watermark.IsZero() && s.now().Sub(st.Watermark) <= MaxWatermarkAge && !adapterStale(eco, st) {
 		res, escalate, err := s.incremental(ctx, eco, ad, st)
 		if err != nil || !escalate {
 			return res, err
@@ -102,7 +106,7 @@ func (s *Service) fullOnline(ctx context.Context, run Run, p Params, eco string,
 	started := s.now()
 	dctx, cancel := context.WithTimeout(ctx, s.o.Config.Sources.OSV.Timeout)
 	ifNone := ""
-	if st.Complete() {
+	if st.Complete() && !adapterStale(eco, st) {
 		ifNone = st.ETag
 	}
 	arch, notModified, err := s.downloadArchive(dctx, eco, ifNone)
@@ -147,11 +151,10 @@ func (s *Service) incremental(ctx context.Context, eco string, ad match.Adapter,
 		}
 		ids = append(ids, r.ID)
 	}
-	touched := newTouchSet()
 	for len(ids) > 0 {
 		chunk := ids[:min(BatchSize, len(ids))]
 		ids = ids[len(chunk):]
-		w, k, rej, err := s.fetchApply(ctx, eco, ad, chunk, touched)
+		w, k, rej, err := s.fetchApply(ctx, eco, ad, chunk)
 		if err != nil {
 			return res, false, err
 		}
@@ -162,7 +165,7 @@ func (s *Service) incremental(ctx context.Context, eco string, ad match.Adapter,
 	s.count(store.SourceOSV, eco, "written", res.Written)
 	s.count(store.SourceOSV, eco, "skipped", res.Skipped)
 	s.count(store.SourceOSV, eco, "rejected", res.Rejected)
-	if err := s.finishGroups(ctx, eco, touched); err != nil {
+	if err := s.finishGroups(ctx, eco, st.Complete()); err != nil {
 		return res, false, err
 	}
 	var newest time.Time

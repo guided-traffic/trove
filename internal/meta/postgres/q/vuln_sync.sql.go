@@ -39,9 +39,14 @@ func (q *Queries) VulnAdvisoryDelete(ctx context.Context, arg VulnAdvisoryDelete
 }
 
 const vulnAdvisoryGroupRows = `-- name: VulnAdvisoryGroupRows :many
-SELECT id, canonical_id, aliases, kind, severity, severity_source,
+SELECT id, canonical_id, aliases, kind, (withdrawn IS NOT NULL)::boolean AS is_withdrawn, severity, severity_source,
        COALESCE(cvss_version, '')::text AS cvss_version, COALESCE(cvss_vector, '')::text AS cvss_vector,
-       COALESCE(cvss_score, 0)::float8 AS cvss_score
+       COALESCE(cvss_score, 0)::float8 AS cvss_score,
+       (CASE WHEN own_severity IS NULL THEN severity ELSE own_severity END)::text AS own_severity,
+       (CASE WHEN own_severity IS NULL THEN severity_source ELSE own_severity_source END)::text AS own_severity_source,
+       (CASE WHEN own_severity IS NULL THEN COALESCE(cvss_version, '') ELSE COALESCE(own_cvss_version, '') END)::text AS own_cvss_version,
+       (CASE WHEN own_severity IS NULL THEN COALESCE(cvss_vector, '') ELSE COALESCE(own_cvss_vector, '') END)::text AS own_cvss_vector,
+       (CASE WHEN own_severity IS NULL THEN COALESCE(cvss_score, 0) ELSE COALESCE(own_cvss_score, 0) END)::float8 AS own_cvss_score
   FROM vuln_advisory
  WHERE ecosystem = $1::text AND (id = ANY($2::text[]) OR aliases && $2::text[])
 `
@@ -52,18 +57,26 @@ type VulnAdvisoryGroupRowsParams struct {
 }
 
 type VulnAdvisoryGroupRowsRow struct {
-	ID             string
-	CanonicalID    string
-	Aliases        []string
-	Kind           string
-	Severity       string
-	SeveritySource string
-	CvssVersion    string
-	CvssVector     string
-	CvssScore      float64
+	ID                string
+	CanonicalID       string
+	Aliases           []string
+	Kind              string
+	IsWithdrawn       bool
+	Severity          string
+	SeveritySource    string
+	CvssVersion       string
+	CvssVector        string
+	CvssScore         float64
+	OwnSeverity       string
+	OwnSeveritySource string
+	OwnCvssVersion    string
+	OwnCvssVector     string
+	OwnCvssScore      float64
 }
 
 // The stored records that are or alias any of the names: one round of the closure that finds an alias group (R-VULN-006).
+// severity* is the severity decided for the record, own_* the record's own; a row stored before 00038 has no own_* and its
+// decided columns stand in.
 func (q *Queries) VulnAdvisoryGroupRows(ctx context.Context, arg VulnAdvisoryGroupRowsParams) ([]VulnAdvisoryGroupRowsRow, error) {
 	rows, err := q.db.Query(ctx, vulnAdvisoryGroupRows, arg.Ecosystem, arg.Names)
 	if err != nil {
@@ -78,11 +91,17 @@ func (q *Queries) VulnAdvisoryGroupRows(ctx context.Context, arg VulnAdvisoryGro
 			&i.CanonicalID,
 			&i.Aliases,
 			&i.Kind,
+			&i.IsWithdrawn,
 			&i.Severity,
 			&i.SeveritySource,
 			&i.CvssVersion,
 			&i.CvssVector,
 			&i.CvssScore,
+			&i.OwnSeverity,
+			&i.OwnSeveritySource,
+			&i.OwnCvssVersion,
+			&i.OwnCvssVector,
+			&i.OwnCvssScore,
 		); err != nil {
 			return nil, err
 		}
@@ -180,7 +199,7 @@ type VulnAdvisorySetSeverityParams struct {
 	ID             string
 }
 
-// The severity of a canonical record decided with its aliases (R-VULN-007 rule 3).
+// The severity decided for a record by its alias group (R-VULN-007 rule 3); its own severity stays in the own_* columns.
 func (q *Queries) VulnAdvisorySetSeverity(ctx context.Context, arg VulnAdvisorySetSeverityParams) error {
 	_, err := q.db.Exec(ctx, vulnAdvisorySetSeverity,
 		arg.Severity,
@@ -240,19 +259,23 @@ func (q *Queries) VulnAdvisoryStored(ctx context.Context, arg VulnAdvisoryStored
 
 const vulnAdvisoryUpsert = `-- name: VulnAdvisoryUpsert :exec
 INSERT INTO vuln_advisory (ecosystem, id, canonical_id, modified, published, withdrawn, kind, aliases, summary, details,
-                           severity, severity_source, cvss_version, cvss_vector, cvss_score, "references", cwe_ids, record_sha256)
+                           severity, severity_source, cvss_version, cvss_vector, cvss_score,
+                           own_severity, own_severity_source, own_cvss_version, own_cvss_vector, own_cvss_score,
+                           "references", cwe_ids, record_sha256)
 SELECT $1::text, d.id, d.id, d.modified, d.published, d.withdrawn, d.kind,
        ARRAY(SELECT jsonb_array_elements_text(d.aliases)), d.summary, d.details, d.severity, d.severity_source,
-       d.cvss_version, d.cvss_vector, d.cvss_score, COALESCE(d.refs, '[]'::jsonb),
+       d.cvss_version, d.cvss_vector, d.cvss_score, d.severity, d.severity_source, d.cvss_version, d.cvss_vector, d.cvss_score,
+       COALESCE(d.refs, '[]'::jsonb),
        ARRAY(SELECT jsonb_array_elements_text(d.cwe_ids)), decode(d.record_sha256, 'hex')
   FROM jsonb_to_recordset($2::jsonb) AS d(id text, modified timestamptz, published timestamptz, withdrawn timestamptz,
        kind text, aliases jsonb, summary text, details text, severity text, severity_source text, cvss_version text,
        cvss_vector text, cvss_score numeric, refs jsonb, cwe_ids jsonb, record_sha256 text)
 ON CONFLICT (ecosystem, id) DO UPDATE
    SET modified = EXCLUDED.modified, published = EXCLUDED.published, withdrawn = EXCLUDED.withdrawn, kind = EXCLUDED.kind,
-       aliases = EXCLUDED.aliases, summary = EXCLUDED.summary, details = EXCLUDED.details, severity = EXCLUDED.severity,
-       severity_source = EXCLUDED.severity_source, cvss_version = EXCLUDED.cvss_version, cvss_vector = EXCLUDED.cvss_vector,
-       cvss_score = EXCLUDED.cvss_score, "references" = EXCLUDED."references", cwe_ids = EXCLUDED.cwe_ids,
+       aliases = EXCLUDED.aliases, summary = EXCLUDED.summary, details = EXCLUDED.details,
+       own_severity = EXCLUDED.own_severity, own_severity_source = EXCLUDED.own_severity_source,
+       own_cvss_version = EXCLUDED.own_cvss_version, own_cvss_vector = EXCLUDED.own_cvss_vector,
+       own_cvss_score = EXCLUDED.own_cvss_score, "references" = EXCLUDED."references", cwe_ids = EXCLUDED.cwe_ids,
        record_sha256 = EXCLUDED.record_sha256
 `
 
@@ -261,8 +284,9 @@ type VulnAdvisoryUpsertParams struct {
 	Docs      []byte
 }
 
-// Upserts the documents of a batch. A rewritten record keeps its canonical identifier and its known-exploited flag until the
-// group recomputation at the end of the run (R-VULN-006, R-VULN-008) sets them.
+// Upserts the documents of a batch. A new record's decided severity is its own; a rewritten record keeps its canonical
+// identifier, its decided severity and its known-exploited flag until the group recomputation at the end of the run (R-VULN-006,
+// R-VULN-007 rule 3, R-VULN-008) sets them, and its own severity is written to the own_* columns (Q-VULN-62).
 func (q *Queries) VulnAdvisoryUpsert(ctx context.Context, arg VulnAdvisoryUpsertParams) error {
 	_, err := q.db.Exec(ctx, vulnAdvisoryUpsert, arg.Ecosystem, arg.Docs)
 	return err
@@ -426,9 +450,9 @@ func (q *Queries) VulnKEVInsert(ctx context.Context, entries []byte) error {
 }
 
 const vulnPendingAdd = `-- name: VulnPendingAdd :exec
-INSERT INTO vuln_pending_evaluation (ecosystem, advisory_id)
-SELECT $1::text, unnest($2::text[])
-ON CONFLICT (ecosystem, advisory_id) DO NOTHING
+INSERT INTO vuln_pending_evaluation (ecosystem, advisory_id, enqueued_at)
+SELECT $1::text, unnest($2::text[]), clock_timestamp()
+ON CONFLICT (ecosystem, advisory_id) DO UPDATE SET enqueued_at = clock_timestamp()
 `
 
 type VulnPendingAddParams struct {
@@ -436,35 +460,12 @@ type VulnPendingAddParams struct {
 	Ids       []string
 }
 
-// Queues advisories for the evaluation (R-VULN-011); one already queued stays as it is.
+// Queues advisories for the evaluation (R-VULN-011). One already queued takes a new enqueue time, the time of this statement
+// and not of its transaction: the evaluation deletes a row only while it still holds the time it read, so that an advisory
+// changed again while a batch is being evaluated stays queued.
 func (q *Queries) VulnPendingAdd(ctx context.Context, arg VulnPendingAddParams) error {
 	_, err := q.db.Exec(ctx, vulnPendingAdd, arg.Ecosystem, arg.Ids)
 	return err
-}
-
-const vulnPendingIDs = `-- name: VulnPendingIDs :many
-SELECT advisory_id FROM vuln_pending_evaluation WHERE ecosystem = $1::text
-`
-
-// The advisories queued for the evaluation: what a run that resumed after a drain wrote before its checkpoint.
-func (q *Queries) VulnPendingIDs(ctx context.Context, ecosystem string) ([]string, error) {
-	rows, err := q.db.Query(ctx, vulnPendingIDs, ecosystem)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var advisory_id string
-		if err := rows.Scan(&advisory_id); err != nil {
-			return nil, err
-		}
-		items = append(items, advisory_id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const vulnStateAttempt = `-- name: VulnStateAttempt :exec
@@ -543,7 +544,7 @@ SELECT source, ecosystem, state, data_epoch, COALESCE(etag, '')::text AS etag, C
        COALESCE(extract(epoch FROM synced_at) * 1000000, 0)::bigint AS synced_us,
        COALESCE(extract(epoch FROM attempted_at) * 1000000, 0)::bigint AS attempted_us,
        failures, COALESCE(last_error, 'null'::jsonb)::jsonb AS last_error, records, rejected, unevaluable, matcher_version,
-       COALESCE(extract(epoch FROM full_evaluation_requested_at) * 1000000, 0)::bigint AS eval_requested_us
+       COALESCE(extract(epoch FROM full_evaluation_requested_at) * 1000000, 0)::bigint AS eval_requested_us, adapter_version
   FROM vuln_source_state
  WHERE source = $1::text AND ecosystem = $2::text
 `
@@ -571,6 +572,7 @@ type VulnStateGetRow struct {
 	Unevaluable     int32
 	MatcherVersion  int32
 	EvalRequestedUs int64
+	AdapterVersion  int32
 }
 
 func (q *Queries) VulnStateGet(ctx context.Context, arg VulnStateGetParams) (VulnStateGetRow, error) {
@@ -594,6 +596,7 @@ func (q *Queries) VulnStateGet(ctx context.Context, arg VulnStateGetParams) (Vul
 		&i.Unevaluable,
 		&i.MatcherVersion,
 		&i.EvalRequestedUs,
+		&i.AdapterVersion,
 	)
 	return i, err
 }
@@ -644,7 +647,7 @@ SELECT source, ecosystem, state, data_epoch, COALESCE(etag, '')::text AS etag, C
        COALESCE(extract(epoch FROM synced_at) * 1000000, 0)::bigint AS synced_us,
        COALESCE(extract(epoch FROM attempted_at) * 1000000, 0)::bigint AS attempted_us,
        failures, COALESCE(last_error, 'null'::jsonb)::jsonb AS last_error, records, rejected, unevaluable, matcher_version,
-       COALESCE(extract(epoch FROM full_evaluation_requested_at) * 1000000, 0)::bigint AS eval_requested_us
+       COALESCE(extract(epoch FROM full_evaluation_requested_at) * 1000000, 0)::bigint AS eval_requested_us, adapter_version
   FROM vuln_source_state
  WHERE source = $1::text AND ecosystem = $2::text
    FOR UPDATE
@@ -673,6 +676,7 @@ type VulnStateLockRow struct {
 	Unevaluable     int32
 	MatcherVersion  int32
 	EvalRequestedUs int64
+	AdapterVersion  int32
 }
 
 // The same row, locked for the transaction that ends a run (the run's own writer is exclusive; the lock orders it against a
@@ -698,6 +702,7 @@ func (q *Queries) VulnStateLock(ctx context.Context, arg VulnStateLockParams) (V
 		&i.Unevaluable,
 		&i.MatcherVersion,
 		&i.EvalRequestedUs,
+		&i.AdapterVersion,
 	)
 	return i, err
 }
@@ -711,10 +716,10 @@ UPDATE vuln_source_state
        synced_at = CASE WHEN $7::bigint = 0 THEN NULL ELSE to_timestamp($7::bigint / 1000000.0) END,
        attempted_at = now(), failures = 0, last_error = NULL,
        records = $8::int, rejected = $9::int, unevaluable = $10::int,
-       matcher_version = $11::int,
-       full_evaluation_requested_at = CASE WHEN $12::bigint = 0 THEN NULL
-                                           ELSE to_timestamp($12::bigint / 1000000.0) END
- WHERE source = $13::text AND ecosystem = $14::text
+       matcher_version = $11::int, adapter_version = $12::int,
+       full_evaluation_requested_at = CASE WHEN $13::bigint = 0 THEN NULL
+                                           ELSE to_timestamp($13::bigint / 1000000.0) END
+ WHERE source = $14::text AND ecosystem = $15::text
 `
 
 type VulnStateSaveParams struct {
@@ -729,6 +734,7 @@ type VulnStateSaveParams struct {
 	Rejected        int32
 	Unevaluable     int32
 	MatcherVersion  int32
+	AdapterVersion  int32
 	EvalRequestedUs int64
 	Source          string
 	Ecosystem       string
@@ -748,9 +754,101 @@ func (q *Queries) VulnStateSave(ctx context.Context, arg VulnStateSaveParams) er
 		arg.Rejected,
 		arg.Unevaluable,
 		arg.MatcherVersion,
+		arg.AdapterVersion,
 		arg.EvalRequestedUs,
 		arg.Source,
 		arg.Ecosystem,
 	)
 	return err
+}
+
+const vulnTouchedAdd = `-- name: VulnTouchedAdd :exec
+INSERT INTO vuln_sync_touched (ecosystem, name)
+SELECT $1::text, unnest($2::text[])
+ON CONFLICT (ecosystem, name) DO NOTHING
+`
+
+type VulnTouchedAddParams struct {
+	Ecosystem string
+	Names     []string
+}
+
+// The names a batch wrote, in the batch's transaction (Q-VULN-62): the alias groups of the run are recomputed from this set.
+func (q *Queries) VulnTouchedAdd(ctx context.Context, arg VulnTouchedAddParams) error {
+	_, err := q.db.Exec(ctx, vulnTouchedAdd, arg.Ecosystem, arg.Names)
+	return err
+}
+
+const vulnTouchedAddRecords = `-- name: VulnTouchedAddRecords :exec
+INSERT INTO vuln_sync_touched (ecosystem, name)
+SELECT a.ecosystem, n.name
+  FROM vuln_advisory a CROSS JOIN LATERAL (SELECT a.id AS name UNION SELECT unnest(a.aliases)) n
+ WHERE a.ecosystem = $1::text AND a.id = ANY($2::text[])
+ON CONFLICT (ecosystem, name) DO NOTHING
+`
+
+type VulnTouchedAddRecordsParams struct {
+	Ecosystem string
+	Ids       []string
+}
+
+// The identifiers and aliases of stored records that are about to be deleted, so that the groups they leave are recomputed.
+func (q *Queries) VulnTouchedAddRecords(ctx context.Context, arg VulnTouchedAddRecordsParams) error {
+	_, err := q.db.Exec(ctx, vulnTouchedAddRecords, arg.Ecosystem, arg.Ids)
+	return err
+}
+
+const vulnTouchedClear = `-- name: VulnTouchedClear :exec
+DELETE FROM vuln_sync_touched WHERE ecosystem = $1::text
+`
+
+// Ends the set in the transaction that ends the run.
+func (q *Queries) VulnTouchedClear(ctx context.Context, ecosystem string) error {
+	_, err := q.db.Exec(ctx, vulnTouchedClear, ecosystem)
+	return err
+}
+
+const vulnTouchedExists = `-- name: VulnTouchedExists :one
+SELECT EXISTS (SELECT 1 FROM vuln_sync_touched WHERE ecosystem = $1::text)::boolean
+`
+
+func (q *Queries) VulnTouchedExists(ctx context.Context, ecosystem string) (bool, error) {
+	row := q.db.QueryRow(ctx, vulnTouchedExists, ecosystem)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const vulnTouchedPage = `-- name: VulnTouchedPage :many
+SELECT name FROM vuln_sync_touched
+ WHERE ecosystem = $1::text AND name > $2::text
+ ORDER BY name
+ LIMIT $3::int
+`
+
+type VulnTouchedPageParams struct {
+	Ecosystem string
+	After     string
+	MaxRows   int32
+}
+
+// One page of the touched names, in name order, after the last one of the previous page.
+func (q *Queries) VulnTouchedPage(ctx context.Context, arg VulnTouchedPageParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, vulnTouchedPage, arg.Ecosystem, arg.After, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
