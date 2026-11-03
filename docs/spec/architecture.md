@@ -3051,7 +3051,9 @@ Normative rules:
 
 Acceptance criteria:
 - After the integration suite, `valkey-cli --scan` lists only keys that start with the prefix, and
-  `TTL` returns a positive value for each of them.
+  `TTL` returns a positive value for each of them. The integration stack's Valkey is shared with the Bastion's suites, whose
+  keys are a Bastion's own keyspace `trove-bastion:<prefix>:` ([bastion.md](bastion.md) R-BAS-034); they are admitted by the scan
+  and must carry a TTL too.
 - With Valkey stopped for the whole e2e client suite, the suite passes, and every replica stays
   ready with `"degraded":["valkey"]`.
 - `valkey-cli FLUSHALL` in the middle of the reference load test makes no client request fail.

@@ -36,13 +36,18 @@ func TestZKeysHavePrefixAndTTL(t *testing.T) {
 			keys, _ := arr[1].AsStrSlice()
 			for _, k := range keys {
 				total++
-				if !strings.HasPrefix(k, "trove:") {
-					t.Errorf("key %q does not start with the prefix trove:", k)
+				// The stack's Valkey is shared with the Bastion's integration tests, whose keys are the Bastion's own
+				// keyspace (R-BAS-034, trove-bastion:<prefix>:): every one of them has a TTL too.
+				bastion := strings.HasPrefix(k, "trove-bastion:")
+				if !strings.HasPrefix(k, "trove:") && !bastion {
+					t.Errorf("key %q does not start with the prefix trove: or the Bastion's trove-bastion:", k)
 				}
-				if !strings.HasPrefix(k, runPrefix) {
+				if !strings.HasPrefix(k, runPrefix) && !bastion {
 					continue
 				}
-				mine++
+				if !bastion {
+					mine++
+				}
 				ttl, err := admin.Do(ctx, admin.B().Pttl().Key(k).Build()).AsInt64()
 				if err != nil {
 					t.Fatal(err)
