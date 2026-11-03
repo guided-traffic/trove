@@ -3139,8 +3139,8 @@ type CiExchangeRequest struct {
 	SubjectToken     string                            `json:"subject_token"`
 	SubjectTokenType CiExchangeRequestSubjectTokenType `json:"subject_token_type"`
 
-	// Ttl Requested lifetime in whole seconds (a JSON body may send it as a number too); can only shorten, and one below `ci.token.min_ttl` answers `ttl_below_minimum` (R-CI-016, Q-CI-41).
-	Ttl *string `json:"ttl,omitempty"`
+	// Ttl Requested lifetime in whole seconds; a form body sends it as digits and a JSON body as a number or a string of digits; can only shorten, and one below `ci.token.min_ttl` answers `ttl_below_minimum` (R-CI-016, Q-CI-41).
+	Ttl *int64 `json:"ttl,omitempty"`
 }
 
 // CiExchangeRequestGrantType defines model for CiExchangeRequest.GrantType.

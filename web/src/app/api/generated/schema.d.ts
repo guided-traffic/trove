@@ -4228,8 +4228,11 @@ export interface components {
             actor_token_type?: string;
             /** @description Must match the issuer selected by `iss`. */
             ci_issuer?: string;
-            /** @description Requested lifetime in whole seconds (a JSON body may send it as a number too); can only shorten, and one below `ci.token.min_ttl` answers `ttl_below_minimum` (R-CI-016, Q-CI-41). */
-            ttl?: string;
+            /**
+             * Format: int64
+             * @description Requested lifetime in whole seconds; a form body sends it as digits and a JSON body as a number or a string of digits; can only shorten, and one below `ci.token.min_ttl` answers `ttl_below_minimum` (R-CI-016, Q-CI-41).
+             */
+            ttl?: number;
         };
         /** @description The token response (R-CI-007). The token value appears only here. */
         CiExchangeResponse: {

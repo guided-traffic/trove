@@ -465,6 +465,12 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   CPU-limited CI runner the flood may need longer, which would fail the test without a defect (W4's note; watched)
 - 🟡 R-CI-029's "every replica stays ready and reports `degraded: [valkey]`" while Valkey is stopped has no assertion in the
   integration tier (W7)
+- 🟢 Test and Release run 41549404703 failed in `compat`: W4 typed the exchange's `ttl` as a string with a pattern, a breaking
+  change against v0.13.0 (R-ARCH-025), which the local check missed because the tag `v0.13.0` was not fetched; `ttl` keeps the
+  released `integer`, and the handler takes a JSON number or a string of digits as before
+- 🟡 Test and Release run 41549404703 failed in `unit tests` at `TestFlightLockSubscriptions` ("fifty waiters of one flight
+  cost one SUBSCRIBE", R-ARCH-033): a waiter saw the flight `gone` without its outcome; the flight code is unchanged in this
+  phase, so the flake predates it; cause not known yet
 - 🟡 `TestR_CI_003_StaleAndUnreachable` failed once in W3's full run of `test/integration/ci` while three agents shared
   the stack, and passed alone and in the next full run; watched, not yet reproduced
 - 🟢 Test and Release run 41518863868 failed in `e2e on kind (access-long)`: the journey `06` clicked "Refresh now" by a
