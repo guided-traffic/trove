@@ -105,7 +105,11 @@ func TestR_BAS_020_AnAnswerIsUsableForThePeriodAndThenAskedAgain(t *testing.T) {
 	if s.main.count() != before {
 		t.Fatal("the answer was dropped inside its period")
 	}
-	s.clock.advance(2 * time.Second)
+	// A read in the last fifth of the period renews the answer in the background (R-BAS-020); let that end, so
+	// that the test does not depend on how fast the goroutine runs, and then let a whole period pass again.
+	s.e.wg.Wait()
+	before = s.main.count()
+	s.clock.advance(s.cfg.Bastion.Answers.Period + time.Second)
 	if w := s.get(tgz, "Authorization", bearer(s.full)); w.Code != 200 {
 		t.Fatal(w.Code)
 	}

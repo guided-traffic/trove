@@ -54,6 +54,11 @@ type rq struct {
 	collapsed             bool
 	mainRequestID         string
 	limiter               string
+
+	// flight is the flight this request leads, nil if it leads none; hold is the context of the request to the
+	// main installation, which a fill takes over from the request (Q-BAS-123).
+	flight *handle
+	hold   *mainHold
 }
 
 // countingWriter counts the body bytes served by their source (trove_bastion_bytes_served_total).
@@ -270,11 +275,26 @@ func (e *engine) stepPath(q *rq) bool {
 }
 
 // classifyPath reads the family, the format and the repository key from the path as received. The key rule is
-// INV-5's; the Bastion reads no other part of a path (R-BAS-018).
+// INV-5's; the Bastion reads no other part of a path (R-BAS-018). The main installation's router decodes every
+// segment before it compares it (net/http.ServeMux), so a segment that names the family, the format or the key
+// in an encoded spelling (/api/%761/users is /api/v1/users there) is not one the Bastion can classify by what it
+// received: such a path is not served, and so is a path with a dot segment, which the router answers with a
+// redirect to the cleaned path (R-BAS-003, Q-BAS-121).
 func classifyPath(p string) (format, repo string, ok bool) {
-	parts := strings.Split(strings.TrimPrefix(p, "/"), "/")
 	if !strings.HasPrefix(p, "/") {
 		return "", "", false
+	}
+	parts := strings.Split(strings.TrimPrefix(p, "/"), "/")
+	// The segments the classification reads: the family and the key of /files/<key>, and the family, the format
+	// and the key of /api/<format>/<key>.
+	named := 3
+	if parts[0] == "files" {
+		named = 2
+	}
+	for i, seg := range parts {
+		if seg == "." || seg == ".." || (i < named && strings.Contains(seg, "%")) {
+			return "", "", false
+		}
 	}
 	switch parts[0] {
 	case "files":
@@ -342,10 +362,8 @@ func (e *engine) refuseVerdict(q *rq, v guard.Verdict) {
 	if v.Quiet {
 		markQuiet(q.ctx())
 	}
-	status, code := v.Status, v.Code
-	if status == 0 {
-		status = http.StatusTooManyRequests
-	}
+	// Every refusal of the guard is a 429 (guard.Verdict.Status says so); the problem class carries it.
+	code := v.Code
 	if code == "" {
 		code = iface.CodeRateLimited
 	}
@@ -357,7 +375,6 @@ func (e *engine) refuseVerdict(q *rq, v guard.Verdict) {
 		errs.WithRetryAfter(v.RetryAfter),
 		errs.WithHeader("RateLimit-Policy", `"`+name+`";q=`+strconv.Itoa(quota)+";w="+strconv.Itoa(window)),
 		errs.WithHeader("RateLimit", `"`+name+`";r=0;t=`+strconv.FormatInt(retry, 10)))
-	_ = status
 	e.refuse(q, err, v.Reason)
 }
 

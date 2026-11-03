@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
-	"slices"
 	"sync/atomic"
 	"time"
 
@@ -187,26 +186,67 @@ func answerBase(kind answers.Kind, o time.Time, sub iface.Subject, repo string) 
 	return answers.Answer{Kind: kind, ObtainedAt: o, TokenID: id, PrincipalID: pid, TokenExpiresAt: exp, Repository: repo}
 }
 
-// Drop implements [link.AnswerSink]: a feed entry deletes the answers it matches from the replica's memory
-// and, best effort, from the shared store (R-BAS-026). The validity rules hold whether or not anything is
-// deleted here, so a failure to delete costs memory only.
-func (s *answerStore) Drop(entry iface.FeedEntry) {
-	s.dropWhere(func(a answers.Answer) bool { return matchesEntry(entry, a) })
+// Drop implements [link.AnswerSink]: the entries of one feed page delete the answers they match from the
+// replica's memory and, best effort, from the shared store (R-BAS-026), in one pass over the answers however
+// many entries the page holds (Q-BAS-126). The validity rules hold whether or not anything is deleted here, so a
+// failure to delete costs memory only.
+func (s *answerStore) Drop(entries []iface.FeedEntry) {
+	m := newEntryMatcher(entries)
+	if m.empty() {
+		return
+	}
+	s.dropWhere(m.matches)
 }
 
-// matchesEntry reports whether a feed entry makes the answer unusable (R-BAS-015, rule 3 of R-BAS-020): the
-// token or principal of the answer is named; a grants entry stales every shape and URL answer; a content entry
-// stales the URL answers of the repositories it names. A settings entry invalidates no answer.
-func matchesEntry(entry iface.FeedEntry, a answers.Answer) bool {
-	switch entry.Kind {
-	case iface.FeedToken:
-		return a.TokenID != "" && slices.Contains(entry.Tokens, a.TokenID)
-	case iface.FeedPrincipal:
-		return a.PrincipalID != "" && slices.Contains(entry.Principals, a.PrincipalID)
-	case iface.FeedGrants:
-		return a.Kind == answers.Shape || a.Kind == answers.URL
-	case iface.FeedContent:
-		return a.Kind == answers.URL && slices.Contains(entry.Repositories, a.Repository)
+// entryMatcher is what a set of feed entries makes unusable (R-BAS-015, rule 3 of R-BAS-020): the token or
+// principal of an answer is named; a grants entry stales every shape and URL answer; a content entry stales the
+// URL answers of the repositories it names. A settings entry invalidates no answer.
+type entryMatcher struct {
+	tokens, principals, repos map[string]struct{}
+	grants                    bool
+}
+
+func newEntryMatcher(entries []iface.FeedEntry) entryMatcher {
+	m := entryMatcher{tokens: map[string]struct{}{}, principals: map[string]struct{}{}, repos: map[string]struct{}{}}
+	for _, e := range entries {
+		switch e.Kind {
+		case iface.FeedToken:
+			for _, id := range e.Tokens {
+				m.tokens[id] = struct{}{}
+			}
+		case iface.FeedPrincipal:
+			for _, id := range e.Principals {
+				m.principals[id] = struct{}{}
+			}
+		case iface.FeedGrants:
+			m.grants = true
+		case iface.FeedContent:
+			for _, r := range e.Repositories {
+				m.repos[r] = struct{}{}
+			}
+		}
+	}
+	return m
+}
+
+func (m entryMatcher) empty() bool {
+	return !m.grants && len(m.tokens) == 0 && len(m.principals) == 0 && len(m.repos) == 0
+}
+
+func (m entryMatcher) matches(a answers.Answer) bool {
+	if _, ok := m.tokens[a.TokenID]; ok && a.TokenID != "" {
+		return true
+	}
+	if _, ok := m.principals[a.PrincipalID]; ok && a.PrincipalID != "" {
+		return true
+	}
+	if m.grants && (a.Kind == answers.Shape || a.Kind == answers.URL) {
+		return true
+	}
+	if a.Kind == answers.URL {
+		if _, ok := m.repos[a.Repository]; ok {
+			return true
+		}
 	}
 	return false
 }

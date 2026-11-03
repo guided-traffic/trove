@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/bastion/cache"
@@ -59,117 +60,188 @@ func hasEntryHeaders(r *http.Request) bool {
 	return r.Header.Get("Range") != "" || r.Header.Get("If-Range") != "" || r.Header.Get("If-None-Match") != ""
 }
 
-// fillArtifact streams an artifact into a cache fill while it streams to the caller, with the withheld tail of
-// R-REPO-041 (R-BAS-021): the last 64 KiB reach the caller only after the SHA-256 equals the content address of
-// the ETag and the fill is committed and its entry written. On a mismatch the transfer is aborted and nothing
-// is kept. A request with Range or a conditional is answered from the fill after it was committed. The
-// verification, the commit under the content address and the signed entry are the cache's (package 5); what is
-// the engine's is the tail towards the client.
+// fillState is where a fill stands.
+type fillState int
+
+const (
+	fillRunning fillState = iota
+	// fillOK: the whole body arrived, its SHA-256 equals the content address and the commit was tried. The
+	// withheld tail may be released.
+	fillOK
+	// fillFailed: the bytes cannot be trusted or could not be spooled; nothing is kept.
+	fillFailed
+)
+
+// fillRun is the fill of an artifact (R-BAS-021, Q-BAS-123). It reads the main installation's body into the
+// spool at the speed of the main installation, whatever the client does, and releases the budget slot when the
+// body ends. The client of the request that started it, and nobody else, is served from the spool at its own
+// speed ([engine.follow]): the bytes it may have are the ones written except for the withheld tail, which is
+// released only after the digest equals the content address and the entry is written. The flight of the
+// collapsed fetch ends at that point, so the waiters of other requests never wait for a client.
+type fillRun struct {
+	e    *engine
+	fill *cache.Fill
+	sha  string
+	size int64
+	// key and ent are the cache key and the entry written after a successful commit; key is empty when the
+	// response must not be kept (it varies by something the Bastion cannot key on).
+	key string
+	ent cache.Entry
+
+	mu      sync.Mutex
+	written int64
+	state   fillState
+	notify  chan struct{}
+	refs    int
+}
+
+// snapshot returns what a follower needs to decide, and the channel that is closed at the next change.
+func (r *fillRun) snapshot() (written int64, st fillState, ch <-chan struct{}) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.written, r.state, r.notify
+}
+
+func (r *fillRun) wake() {
+	close(r.notify)
+	r.notify = make(chan struct{})
+}
+
+func (r *fillRun) advance(n int64) {
+	r.mu.Lock()
+	r.written = n
+	r.wake()
+	r.mu.Unlock()
+}
+
+func (r *fillRun) finishWith(st fillState) {
+	r.mu.Lock()
+	if r.state == fillRunning {
+		r.state = st
+		r.wake()
+	}
+	r.mu.Unlock()
+}
+
+// release gives up a reference; the last one removes the spool file.
+func (r *fillRun) release() {
+	r.mu.Lock()
+	r.refs--
+	last := r.refs == 0
+	r.mu.Unlock()
+	if last {
+		r.fill.Abort()
+	}
+}
+
+// run reads the body to its end, verifies and commits. It runs once, in a goroutine of the engine (in the
+// request's own while the engine drains). end cancels the request to the main installation; flightDone ends the
+// flight of the collapsed fetch.
+func (r *fillRun) run(body io.ReadCloser, end, flightDone func()) {
+	e := r.e
+	defer r.release()
+	defer flightDone()
+	defer end()
+	stall := time.AfterFunc(e.fillStall, end)
+	defer stall.Stop()
+	defer body.Close()
+
+	buf := make([]byte, 64<<10)
+	var total int64
+	for {
+		n, rerr := body.Read(buf)
+		if n > 0 {
+			stall.Reset(e.fillStall)
+			total += int64(n)
+			if total > r.size {
+				e.log.Warn("the main installation sent more bytes than it announced", "sha256", r.sha, "want", r.size)
+				r.finishWith(fillFailed)
+				return
+			}
+			if _, werr := r.fill.Write(buf[:n]); werr != nil {
+				// The spool cannot take the bytes, so the transfer cannot be verified: it is cut, never
+				// passed on unverified.
+				e.log.Warn("the spool of a fill could not be written", "error", werr)
+				r.finishWith(fillFailed)
+				return
+			}
+			r.advance(total)
+		}
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			r.finishWith(fillFailed)
+			return
+		}
+	}
+	_ = body.Close() // the response is complete: the budget slot is free while the commit and the clients go on
+	if total != r.size {
+		e.log.Warn("the main installation sent another number of bytes than it announced", "sha256", r.sha, "got", total, "want", r.size)
+		r.finishWith(fillFailed)
+		return
+	}
+	ctx := context.Background()
+	err := r.fill.Commit(ctx, r.sha)
+	if errors.Is(err, cache.ErrMismatch) {
+		e.log.Warn("the main installation sent bytes that do not match their content address", "sha256", r.sha)
+		r.finishWith(fillFailed)
+		return
+	}
+	if err == nil && r.key != "" {
+		// A failure of the backend is counted by the cache and the fill is still served: the transfer is not
+		// a failed request (R-BAS-030).
+		_ = e.saveEntry(ctx, r.key, r.ent)
+	}
+	r.finishWith(fillOK)
+}
+
+// fillArtifact spools an artifact while it streams to the caller, with the withheld tail of R-REPO-041
+// (R-BAS-021): the last 64 KiB reach the caller only after the SHA-256 equals the content address of the ETag
+// and the fill is committed and its entry written. On a mismatch the transfer is aborted and nothing is kept. A
+// request with Range or a conditional is answered from the fill after it was committed. The spooling runs
+// without the client ([fillRun]); the verification, the commit under the content address and the signed entry
+// are the cache's (package 5); what is the engine's is the tail towards the client.
 func (e *engine) fillArtifact(q *rq, resp *mainclient.Response, sha string, size int64, sent time.Time) {
 	fill, err := e.d.Cache.NewFill(cache.EntryArtifact)
 	if err != nil {
 		e.passThrough(q, resp, nil, metrics.ClassArtifact, metrics.ResultMiss)
 		return
 	}
-	defer fill.Abort()
-
-	stream := !hasEntryHeaders(q.r)
-	if !stream {
-		fill.Keep() // the committed bytes answer the Range or conditional request, and a refused commit does not fail it
+	fill.Keep() // the committed bytes still answer the client, and a refused commit does not fail the request
+	r := &fillRun{e: e, fill: fill, sha: sha, size: size, notify: make(chan struct{}), refs: 2}
+	if key, keep := e.learnVary(q, resp.Header); keep {
+		r.key, r.ent = key, e.artifactEntry(q, resp, sha, size, sent)
 	}
+	hdr := replayHeader(resp.Header)
+	stream := !hasEntryHeaders(q.r)
 	q.out.source = metrics.SourceMain
 	if stream {
 		q.finish(metrics.ClassArtifact, metrics.ResultMiss)
-		copyHeader(q.w.Header(), replayHeader(resp.Header))
+		copyHeader(q.w.Header(), hdr)
 		q.w.WriteHeader(http.StatusOK)
 	}
-	var (
-		pending  []byte
-		total    int64
-		spoolOK  = true
-		clientOK = stream
-	)
-	buf := make([]byte, 32<<10)
-	for {
-		n, rerr := resp.Body.Read(buf)
-		if n > 0 {
-			total += int64(n)
-			if total > size {
-				e.abortFill(q, stream)
-				return
-			}
-			if spoolOK {
-				if _, werr := fill.Write(buf[:n]); werr != nil {
-					spoolOK = false
-				}
-			}
-			if clientOK {
-				pending = append(pending, buf[:n]...)
-				if len(pending) > withheldTail {
-					cut := len(pending) - withheldTail
-					if _, werr := q.out.Write(pending[:cut]); werr != nil {
-						clientOK = false
-					}
-					pending = append(pending[:0], pending[cut:]...)
-				}
-			}
-		}
-		if rerr == io.EOF {
-			break
-		}
-		if rerr != nil {
-			e.abortFill(q, stream)
-			return
-		}
+	// The fill takes over the response, the request to the main installation and the flight.
+	body := resp.Body
+	resp.Body = http.NoBody
+	end := func() {}
+	if q.hold != nil {
+		end, _ = q.hold.take()
 	}
-	if total != size {
-		e.log.Warn("the main installation sent another number of bytes than it announced", "sha256", sha, "got", total, "want", size)
-		e.abortFill(q, stream)
+	flightDone := q.flight.take()
+	defer r.release()
+	if !e.background(func() { r.run(body, end, flightDone) }) {
+		r.run(body, end, flightDone) // the engine drains: the fill runs in the request, which releases its reference
+	}
+	if stream {
+		e.follow(q, r)
 		return
 	}
-	committed := false
-	if spoolOK {
-		err := fill.Commit(context.WithoutCancel(q.ctx()), sha)
-		if errors.Is(err, cache.ErrMismatch) {
-			e.log.Warn("the main installation sent bytes that do not match their content address", "sha256", sha)
-			e.abortFill(q, stream)
-			return
-		}
-		committed = err == nil
-	}
-	if committed {
-		e.commitEntry(q, resp, sha, size, sent)
-	}
-	switch {
-	case stream:
-		if clientOK {
-			_, _ = q.out.Write(pending)
-		}
-	case spoolOK:
-		q.finish(metrics.ClassArtifact, metrics.ResultMiss)
-		e.serveFill(q, fill, resp, size)
-	default:
-		e.fail(q, mainclient.ErrUnreachable)
-	}
+	e.waitFill(q, r, hdr)
 }
 
-// abortFill ends a fill whose bytes cannot be trusted: nothing is kept. With the headers sent the connection
-// is cut so the caller sees an incomplete transfer; before them it is an error answer.
-func (e *engine) abortFill(q *rq, streamed bool) {
-	if streamed {
-		panic(http.ErrAbortHandler)
-	}
-	e.fail(q, mainclient.ErrUnreachable)
-}
-
-// commitEntry writes the signed entry of a committed artifact (R-BAS-021). A failure of the backend is counted
-// by the cache and the fill is still served: the transfer is not a failed request (R-BAS-030).
-func (e *engine) commitEntry(q *rq, resp *mainclient.Response, sha string, size int64, sent time.Time) {
-	ctx := context.WithoutCancel(q.ctx())
-	key, keep := e.learnVary(q, resp.Header)
-	if !keep {
-		return
-	}
+// artifactEntry is the signed entry of a committed artifact (R-BAS-021).
+func (e *engine) artifactEntry(q *rq, resp *mainclient.Response, sha string, size int64, sent time.Time) cache.Entry {
 	h := keepHeader(resp.Header)
 	if h.Get("Etag") == "" {
 		h.Set("Etag", `"`+sha+`"`)
@@ -178,19 +250,79 @@ func (e *engine) commitEntry(q *rq, resp *mainclient.Response, sha string, size 
 	if repo == "" {
 		repo = q.repo
 	}
-	_ = e.saveEntry(ctx, key, cache.Entry{
+	return cache.Entry{
 		Kind: cache.EntryArtifact, SHA256: sha, Size: size, Header: h, Repository: repo, Status: http.StatusOK, ValidatedAt: sent,
-	})
+	}
+}
+
+// follow serves the client of the request from the spool as it grows: everything but the withheld tail while the
+// fill runs, the tail once it is verified. The client's speed decides nothing but its own pace. A fill that
+// failed cuts the transfer so the caller sees an incomplete response, never a complete one with wrong bytes.
+func (e *engine) follow(q *rq, r *fillRun) {
+	buf := make([]byte, 32<<10)
+	var off int64
+	for {
+		written, st, ch := r.snapshot()
+		if st == fillFailed {
+			panic(http.ErrAbortHandler)
+		}
+		limit := written
+		if st == fillRunning {
+			limit = max(0, written-withheldTail)
+		}
+		for off < limit {
+			n, err := r.fill.Reader().ReadAt(buf[:min(int64(len(buf)), limit-off)], off)
+			if n > 0 {
+				if _, werr := q.out.Write(buf[:n]); werr != nil {
+					return
+				}
+				off += int64(n)
+			}
+			if err != nil && !errors.Is(err, io.EOF) {
+				panic(http.ErrAbortHandler)
+			}
+		}
+		if st == fillOK && off >= r.size {
+			return
+		}
+		select {
+		case <-ch:
+		case <-q.ctx().Done():
+			return
+		}
+	}
+}
+
+// waitFill answers a request with a Range or a conditional header from the committed fill.
+func (e *engine) waitFill(q *rq, r *fillRun, hdr http.Header) {
+	for {
+		_, st, ch := r.snapshot()
+		switch st {
+		case fillFailed:
+			e.fail(q, mainclient.ErrUnreachable)
+			return
+		case fillOK:
+			q.finish(metrics.ClassArtifact, metrics.ResultMiss)
+			e.serveFill(q, r, hdr)
+			return
+		}
+		select {
+		case <-ch:
+		case <-q.ctx().Done():
+			q.finish(metrics.ClassPass, metrics.ResultError)
+			return
+		}
+	}
 }
 
 // serveFill answers a Range or conditional request from the committed fill.
-func (e *engine) serveFill(q *rq, fill *cache.Fill, resp *mainclient.Response, size int64) {
-	h := replayHeader(resp.Header)
+func (e *engine) serveFill(q *rq, r *fillRun, hdr http.Header) {
+	h := hdr.Clone()
 	h.Del("Content-Length")
 	src := &source{
-		size: size, header: h, etag: h.Get("Etag"), label: metrics.SourceMain,
+		size: r.size, header: h, etag: h.Get("Etag"), label: metrics.SourceMain,
 		open: func(context.Context) (io.ReadCloser, error) {
-			return io.NopCloser(fill.Reader()), nil
+			return io.NopCloser(r.fill.Reader()), nil
 		},
 	}
 	e.serveSource(q, src)

@@ -11,6 +11,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/bastion/guard"
 	"github.com/guided-traffic/trove/internal/bastion/iface"
+	"github.com/guided-traffic/trove/internal/bastion/mainclient"
 	"github.com/guided-traffic/trove/internal/bastion/metrics"
 	"github.com/guided-traffic/trove/internal/repository"
 )
@@ -292,7 +293,7 @@ func TestR_BAS_019_TheSyntaxCheckAgreesWithTheMainInstallationsFormat(t *testing
 	for _, typ := range []token.Type{token.TypePAT, token.TypeSAT, token.TypeCIT, token.TypeBST} {
 		for i := 0; i < 50; i++ {
 			raw := newToken(t, typ)
-			got, ok := tokenType(raw)
+			got, ok := mainclient.TokenType(raw)
 			want, err := token.Check(raw)
 			if !ok || err != nil || got != string(want) {
 				t.Fatalf("%s: engine (%q, %v), main (%q, %v)", raw, got, ok, want, err)
@@ -303,7 +304,7 @@ func TestR_BAS_019_TheSyntaxCheckAgreesWithTheMainInstallationsFormat(t *testing
 				if string(bad) == raw {
 					bad[pos] = 'Y'
 				}
-				_, ok := tokenType(string(bad))
+				_, ok := mainclient.TokenType(string(bad))
 				_, err := token.Check(string(bad))
 				if ok != (err == nil) {
 					t.Fatalf("%s: engine %v, main %v", bad, ok, err)

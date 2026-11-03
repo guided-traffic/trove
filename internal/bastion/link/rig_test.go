@@ -73,12 +73,14 @@ type recSink struct {
 	mu      sync.Mutex
 	dropped []iface.FeedEntry
 	all     int
+	calls   int
 }
 
-func (r *recSink) Drop(e iface.FeedEntry) {
+func (r *recSink) Drop(es []iface.FeedEntry) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.dropped = append(r.dropped, e)
+	r.dropped = append(r.dropped, es...)
+	r.calls++
 }
 
 func (r *recSink) DropAll() {

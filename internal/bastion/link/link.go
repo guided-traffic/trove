@@ -80,8 +80,8 @@ func ConfigFrom(c *config.BastionConfig) Config {
 // answers.State hold whether or not the sink deletes anything; deleting only frees memory and takes the
 // answer out of Valkey for the other replicas.
 type AnswerSink interface {
-	// Drop deletes the answers that the entry matches.
-	Drop(e iface.FeedEntry)
+	// Drop deletes the answers that the entries of one feed page match, in one pass over the answers.
+	Drop(entries []iface.FeedEntry)
 	// DropAll deletes every answer, on a reset.
 	DropAll()
 }
@@ -285,6 +285,16 @@ func (l *Link) Tick(ctx context.Context) {
 	l.evaluate()
 }
 
+// callContext bounds one call of the link at unreachable_after: a connection that swallows the request holds
+// the call no longer than the time after which the replica treats the main installation as unreachable
+// anyway, so the state is evaluated at that time and not after response_header_timeout (Q-BAS-126).
+func (l *Link) callContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if l.cfg.UnreachableAfter <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, l.cfg.UnreachableAfter)
+}
+
 func (l *Link) takeHandshakeDue() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -295,6 +305,8 @@ func (l *Link) takeHandshakeDue() bool {
 
 // handshake calls the main installation and applies the answer.
 func (l *Link) handshake(ctx context.Context) {
+	ctx, cancel := l.callContext(ctx)
+	defer cancel()
 	hs, err := l.o.Client.Handshake(ctx)
 	if err != nil {
 		l.fail("handshake", err)
@@ -381,7 +393,9 @@ func (l *Link) pollOnce(ctx context.Context) (more, ok bool) {
 	after := l.cursor
 	l.mu.Unlock()
 	sent := l.now()
-	ans, err := l.o.Client.Feed(ctx, after, l.cfg.FeedLimit)
+	cctx, cancel := l.callContext(ctx)
+	defer cancel()
+	ans, err := l.o.Client.Feed(cctx, after, l.cfg.FeedLimit)
 	if err != nil {
 		l.fail("feed", err)
 		l.mu.Lock()
@@ -405,19 +419,24 @@ func (l *Link) pollOnce(ctx context.Context) (more, ok bool) {
 			next = iface.Cursor{At: sent.UTC()}
 		}
 	}
-	l.o.Feed.Prune(received.Add(-(l.cfg.AnswerPeriod + l.cfg.GracePeriod + answers.SkewMargin)))
+	l.o.Feed.Prune(answers.PruneCutoffs(received, l.cfg.AnswerPeriod, l.cfg.GracePeriod))
 
 	l.mu.Lock()
 	l.cursor = next
 	l.lastPollOK = received
-	l.needPoll = false
+	if !ans.More {
+		// A replica that begins unreachable ends that state with a read that reached the end of the feed; a
+		// first page that says more is not that read (Q-BAS-126).
+		l.needPoll = false
+	}
 	if l.pollFailed {
 		// The first poll after a failure is a reconnect: the handshake follows (R-BAS-010).
 		l.pollFailed = false
 		l.handshakeDue = true
 	}
-	if !ans.Reset && l.st.HistoryStart.IsZero() {
-		// The first read of a start began at the synthetic cursor: the replica knows every entry since then.
+	if !ans.Reset && !ans.More && l.st.HistoryStart.IsZero() {
+		// The first read of a start began at the synthetic cursor and reached the end of the feed: the replica
+		// knows every entry since then. A page that says more has not shown that.
 		l.st.HistoryStart = l.startCursorLocked()
 	}
 	l.mu.Unlock()
@@ -431,8 +450,12 @@ func (l *Link) startCursorLocked() time.Time {
 	return l.start.Add(-(l.cfg.AnswerPeriod + l.cfg.GracePeriod + answers.SkewMargin)).UTC()
 }
 
-// applyEntries records each new entry with its receipt time and deletes the answers it matches (R-BAS-026).
+// applyEntries records each new entry of a page with its receipt time and then deletes the answers the page's
+// entries match in one pass (R-BAS-026): recording is what makes the answers unusable (rule 3), so it comes
+// first for the whole page, and the deletion that only frees memory and Valkey follows once however many
+// entries the page holds (Q-BAS-126).
 func (l *Link) applyEntries(entries []iface.FeedEntry, received time.Time) {
+	fresh := make([]iface.FeedEntry, 0, len(entries))
 	for _, e := range entries {
 		if !e.Kind.Valid() {
 			// A kind this build does not know cannot occur under equal versions (R-BAS-009); if it does,
@@ -444,14 +467,15 @@ func (l *Link) applyEntries(entries []iface.FeedEntry, received time.Time) {
 			continue
 		}
 		l.o.Metrics.FeedApplied.WithLabelValues(string(e.Kind)).Inc()
-		if sink := l.sink(); sink != nil {
-			sink.Drop(e)
-		}
+		fresh = append(fresh, e)
 		if e.Kind == iface.FeedSettings {
 			l.mu.Lock()
 			l.handshakeDue = true
 			l.mu.Unlock()
 		}
+	}
+	if sink := l.sink(); sink != nil && len(fresh) > 0 {
+		sink.Drop(fresh)
 	}
 }
 

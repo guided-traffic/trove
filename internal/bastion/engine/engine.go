@@ -123,6 +123,14 @@ type engine struct {
 
 	checks, probeFlights, fetches *group
 
+	// The bounds of the transfers that must not depend on a client's speed (Q-BAS-123); the defaults are the
+	// constants below, tests shorten them.
+	collapseWait time.Duration
+	fillStall    time.Duration
+	paceGrace    time.Duration
+	paceMinRate  int64
+	paceChunk    time.Duration
+
 	mu       sync.Mutex
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
@@ -131,6 +139,19 @@ type engine struct {
 }
 
 const (
+	// collapseWaitMax is how long a request waits for the fetch of another request of this replica for the same
+	// cache key before it answers 503 bastion_busy with Retry-After (R-BAS-025).
+	collapseWaitMax = 30 * time.Second
+	// fillStallMax is how long the main installation may send no byte to a fill before it is abandoned.
+	fillStallMax = 60 * time.Second
+	// paceGraceMax and paceMinRate bound how long a client may hold a budget slot with a pass-through body: after
+	// the grace period the client must have taken at least paceMinRate bytes per second on average or the
+	// transfer is cut (R-BAS-025).
+	paceGraceMax = 30 * time.Second
+	paceMinRate  = 64 << 10
+	// paceChunkMax is how long the write of one chunk (32 KiB) to the client may take.
+	paceChunkMax = 10 * time.Second
+
 	volatileTTL     = time.Minute
 	volatileEntries = 10000
 	varyEntries     = 20000
@@ -152,6 +173,7 @@ func newFlow(d Deps) (*engine, error) {
 		d: d, cfg: &d.Config.Bastion, log: d.Log, nowFunc: d.Now, baseHost: strings.ToLower(u.Hostname()),
 		forwarded: d.Config.Server.ForwardedHeader == "forwarded",
 		checks:    newGroup(), probeFlights: newGroup(), fetches: newGroup(),
+		collapseWait: collapseWaitMax, fillStall: fillStallMax, paceGrace: paceGraceMax, paceMinRate: paceMinRate, paceChunk: paceChunkMax,
 	}
 	if e.nowFunc == nil {
 		e.nowFunc = time.Now
@@ -254,7 +276,7 @@ func (e *engine) Ready(ctx context.Context) error { return e.d.Cache.Ready(ctx) 
 func (e *engine) janitor() {
 	now := e.now()
 	e.answers.prune(now)
-	e.d.Link.Feed().Prune(now.Add(-(e.cfg.Answers.Period + e.cfg.Answers.GracePeriod + answers.SkewMargin)))
+	e.d.Link.Feed().Prune(answers.PruneCutoffs(now, e.cfg.Answers.Period, e.cfg.Answers.GracePeriod))
 	e.volatile.retain(func(_ string, t time.Time) bool { return now.Before(t) })
 	e.probes.retain(func(_ string, p *probeRec) bool { return now.Before(p.until) })
 }

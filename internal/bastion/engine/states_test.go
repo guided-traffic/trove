@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -113,27 +114,70 @@ func TestR_BAS_027_AWriteWhileUnreachableAnswers503(t *testing.T) {
 // ---- R-BAS-028 --------------------------------------------------------------------------------------------
 
 func TestR_BAS_028_AMismatchOrARefusedTokenOnARequestMakesTheReplicaUnreachable(t *testing.T) {
-	for name, cause := range map[string]error{
-		"a mismatch":      fmt.Errorf("%w", &mainclient.MismatchError{Main: iface.InterfaceVersion + 1}),
-		"a refused token": mainclient.ErrTokenRefused,
+	mismatch := fmt.Errorf("%w", &mainclient.MismatchError{Main: iface.InterfaceVersion + 1})
+	for _, row := range []struct {
+		name     string
+		cause    error
+		viaCheck bool
+	}{
+		{"a mismatch on a forward", mismatch, false},
+		{"a mismatch on a check", mismatch, true},
+		// A refused token counts on the Bastion's own calls only; on a forward it does not (Q-BAS-121).
+		{"a refused token on a check", mainclient.ErrTokenRefused, true},
 	} {
-		t.Run(name, func(t *testing.T) {
+		t.Run(row.name, func(t *testing.T) {
 			s := newSiteHarness(t, options{})
-			s.main.doFn = func(mainclient.Forward) (*mainclient.Response, error) { return nil, cause }
-			w := s.get(tgz, "Authorization", bearer(s.full))
+			who := s.full
+			if row.viaCheck {
+				s.site.artifacts[tgz] = []byte("tarball")
+				// The entry exists and the reader has no shape answer yet: the check asks the main installation.
+				if w := s.get(tgz, "Authorization", bearer(s.full)); w.Code != 200 {
+					t.Fatalf("prime: %d %s", w.Code, w.Body)
+				}
+				who = s.part
+				s.main.checkFn = func(iface.CheckRequest) (iface.CheckAnswer, error) { return iface.CheckAnswer{}, row.cause }
+			}
+			s.main.doFn = func(mainclient.Forward) (*mainclient.Response, error) { return nil, row.cause }
+			w := s.get(tgz, "Authorization", bearer(who))
 			if w.Code != 503 || problemCode(w) != "main_unreachable" {
 				t.Fatalf("%d %s", w.Code, w.Body)
 			}
 			if s.link.Reachable() {
 				t.Fatal("the link was not told: Link.Guard makes the replica unreachable at once")
 			}
-			if st := s.link.State(); name == "a mismatch" && !st.InterfaceMismatch {
+			if st := s.link.State(); errors.Is(row.cause, mainclient.ErrInterfaceMismatch) && !st.InterfaceMismatch {
 				t.Fatalf("the mismatch is not recorded: %+v", st)
 			}
 			before := s.main.count()
-			s.get(tgz, "Authorization", bearer(s.full))
+			s.get(tgz, "Authorization", bearer(who))
 			if s.main.count() != before {
 				t.Fatal("the replica kept sending to the main installation")
+			}
+		})
+	}
+}
+
+// TestR_BAS_006_R_BAS_021_ARefusalOfTheTokenOnAForwardDoesNotMakeTheReplicaUnreachable: a forward is a path the
+// caller chose, so an answer that refuses the Bastion's token to it (the bad answer the real client makes of it, 502, or
+// the typed refusal, which the guard does not note either) leaves the link reachable (Q-BAS-121).
+func TestR_BAS_006_R_BAS_021_ARefusalOfTheTokenOnAForwardDoesNotMakeTheReplicaUnreachable(t *testing.T) {
+	for name, row := range map[string]struct {
+		cause  error
+		status int
+		code   string
+	}{
+		"the typed refusal": {mainclient.ErrTokenRefused, 503, "main_unreachable"},
+		"the bad answer":    {&mainclient.AnswerError{Status: 401, Code: iface.CodeTokenInvalid}, 502, "main_failed"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newSiteHarness(t, options{})
+			s.main.doFn = func(mainclient.Forward) (*mainclient.Response, error) { return nil, row.cause }
+			w := s.get(tgz, "Authorization", bearer(s.full))
+			if w.Code != row.status || problemCode(w) != row.code {
+				t.Fatalf("%d %s", w.Code, w.Body)
+			}
+			if !s.link.Reachable() {
+				t.Fatal("a forward made the replica unreachable")
 			}
 		})
 	}
@@ -279,7 +323,7 @@ func TestR_BAS_014_AWriteIsProbedWithoutBodyAndCredentialAndTheRefusalIsReplayed
 		t.Fatalf("%d requests", len(reqs))
 	}
 	r := reqs[0]
-	if r.Kind != mainclient.KindProbe || !r.Probe || r.Method != http.MethodPut || r.Target != "/api/npm/npm-all/acme-sdk" || r.Class != mainclient.Anonymous {
+	if r.Kind != mainclient.KindProbe || !r.Probe || r.Method != http.MethodPut || r.Target != "/api/npm/npm-all/acme-sdk" || r.Class != mainclient.Authenticated {
 		t.Fatalf("%+v", r)
 	}
 	if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" || len(r.Body) != 0 {

@@ -17,6 +17,7 @@ import (
 // TestR_BAS_006_TheSyntaxCheckAgreesWithTheMainInstallationsFormat holds it equal to internal/auth/token.
 const (
 	tokenLength    = 57
+	prefixLength   = 8
 	checksumDigits = 6
 	base62         = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 	hintLength     = 12
@@ -26,17 +27,34 @@ const (
 // wrong length, a character outside base62, or a failed checksum. It names no part of the value.
 var ErrTokenMalformed = errors.New("mainclient: the token is not a well-formed Bastion token (trv_bst_, 57 characters, checksum)")
 
-// ParseToken checks the syntax and the checksum of a Bastion token (R-BAS-006) and returns it with its hint.
-func ParseToken(raw string) (Token, error) {
-	if len(raw) != tokenLength || !strings.HasPrefix(raw, iface.TokenPrefix) {
-		return Token{}, ErrTokenMalformed
+// TokenType returns the type ("pat", "sat", "cit" or "bst") of a syntactically valid trove token string:
+// the prefix, the length, the alphabet and the checksum hold (R-AUTH-022). It is the one syntax check of the
+// Bastion: the request flow refuses a credential that fails it before any request (R-BAS-019), and
+// [ParseToken] reads the token file with it.
+func TokenType(raw string) (string, bool) {
+	if len(raw) != tokenLength || !strings.HasPrefix(raw, "trv_") || raw[7] != '_' {
+		return "", false
 	}
-	for i := 0; i < len(raw); i++ {
-		if i >= len(iface.TokenPrefix) && strings.IndexByte(base62, raw[i]) < 0 {
-			return Token{}, ErrTokenMalformed
+	typ := raw[4:7]
+	switch typ {
+	case "pat", "sat", "cit", "bst":
+	default:
+		return "", false
+	}
+	for i := prefixLength; i < tokenLength; i++ {
+		if strings.IndexByte(base62, raw[i]) < 0 {
+			return "", false
 		}
 	}
 	if raw[tokenLength-checksumDigits:] != base62Digits(uint64(crc32.ChecksumIEEE([]byte(raw[:tokenLength-checksumDigits]))), checksumDigits) {
+		return "", false
+	}
+	return typ, true
+}
+
+// ParseToken checks the syntax and the checksum of a Bastion token (R-BAS-006) and returns it with its hint.
+func ParseToken(raw string) (Token, error) {
+	if typ, ok := TokenType(raw); !ok || typ != "bst" || !strings.HasPrefix(raw, iface.TokenPrefix) {
 		return Token{}, ErrTokenMalformed
 	}
 	return Token{Value: raw, Hint: raw[:hintLength]}, nil

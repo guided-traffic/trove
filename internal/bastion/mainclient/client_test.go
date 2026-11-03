@@ -365,13 +365,6 @@ func TestR_BAS_006_ARefusedTokenAndAMismatchAreTypedErrors(t *testing.T) {
 				return err
 			},
 			"downloads": func() error { return r.c.Downloads(ctx, iface.DownloadsRequest{Events: []iface.DownloadEvent{}}) },
-			"forward": func() error {
-				resp, err := r.c.Do(ctx, forward(http.MethodGet, "/api/npm/npm-all/x"))
-				if resp != nil {
-					closeBody(t, resp)
-				}
-				return err
-			},
 		}
 		for name, call := range calls {
 			if err := call(); !errors.Is(err, mainclient.ErrTokenRefused) {

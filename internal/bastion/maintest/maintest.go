@@ -654,6 +654,8 @@ type Faulty struct {
 	Next http.RoundTripper
 	down atomic.Bool
 	fail atomic.Int64
+	// after counts the requests that still pass before the link is cut, plus one; zero means no cut is planned.
+	after atomic.Int64
 }
 
 // SetDown cuts or restores the link.
@@ -662,8 +664,15 @@ func (f *Faulty) SetDown(down bool) { f.down.Store(down) }
 // FailNext makes the next n requests fail.
 func (f *Faulty) FailNext(n int) { f.fail.Store(int64(n)) }
 
+// FailAfter lets the next n requests pass and then cuts the link, until SetDown(false) restores it: a failure
+// in the middle of a sequence of requests (the second page of a feed read).
+func (f *Faulty) FailAfter(n int) { f.after.Store(int64(n) + 1) }
+
 // RoundTrip implements http.RoundTripper.
 func (f *Faulty) RoundTrip(r *http.Request) (*http.Response, error) {
+	if f.cutNow() {
+		f.down.Store(true)
+	}
 	if f.down.Load() || f.take() {
 		if r.Body != nil {
 			_ = r.Body.Close()
@@ -671,6 +680,19 @@ func (f *Faulty) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, &net.OpError{Op: "dial", Net: "tcp", Err: fmt.Errorf("maintest: link cut")}
 	}
 	return f.Next.RoundTrip(r)
+}
+
+// cutNow counts a request against FailAfter and reports whether it is the first one that is cut.
+func (f *Faulty) cutNow() bool {
+	for {
+		n := f.after.Load()
+		if n <= 0 {
+			return false
+		}
+		if f.after.CompareAndSwap(n, n-1) {
+			return n == 1
+		}
+	}
 }
 
 func (f *Faulty) take() bool {

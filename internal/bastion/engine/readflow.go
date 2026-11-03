@@ -69,7 +69,10 @@ func isFull(shape *answerVal) bool { return shape != nil && shape.Read == iface.
 func (e *engine) fromEntry(q *rq, ent cache.Entry, shape, url *answerVal) bool {
 	unreachable := !e.d.Link.Reachable()
 	allowed := isFull(shape) || (url != nil && url.Allowed)
-	if allowed && (unreachable || e.fresh(ent)) {
+	// The grace period of R-BAS-027 extends the validity of an answer, never past a withdrawal: a content entry
+	// of the feed received after validatedAt - 15 s makes the entry unservable while unreachable as well
+	// (Q-BAS-122).
+	if allowed && !e.withdrawn(ent) && (unreachable || e.fresh(ent)) {
 		if !e.serveEntry(q, ent, metrics.ResultHit) {
 			return false
 		}
@@ -269,23 +272,25 @@ func (e *engine) conditional(q *rq, ent *cache.Entry, priv *privDoc) bool {
 // and the bucket backend, across replicas (R-BAS-025). It reports true when the request waited for a fetch and
 // is to be decided again.
 func (e *engine) miss(q *rq) (again bool) {
-	if q.collapsed || e.isVolatile(q.cacheKey) {
+	if q.collapsed || e.isVolatileFor(q) {
 		e.forward(q, mainclient.KindForward, "", nil)
 		return false
 	}
-	c, leader := e.fetches.join(q.cacheKey)
+	key := q.cacheKey
+	c, leader := e.fetches.join(key)
 	if !leader {
-		if err := c.wait(q.ctx()); err != nil {
-			q.finish(metrics.ClassPass, metrics.ResultError)
-			return false
-		}
-		return true
+		return e.waitLeader(q, c)
 	}
-	defer e.fetches.finish(q.cacheKey, c, nil, nil)
 	held, release := e.remoteLock(q)
-	if release != nil {
-		defer release()
-	}
+	// The flight ends when the request returns, or, for an artifact fill that outlives the request, when the
+	// fill is committed or lost: the waiters wait for the main installation's speed, never for a client's.
+	q.flight = newHandle(func() {
+		if release != nil {
+			release()
+		}
+		e.fetches.finish(key, c, nil, nil)
+	})
+	defer q.flight.done()
 	if !held {
 		// Another replica fetches the key: wait for it, then decide again.
 		return e.waitRemote(q)
@@ -294,14 +299,51 @@ func (e *engine) miss(q *rq) (again bool) {
 	return false
 }
 
-// isVolatile reports whether recent fetches of the key left nothing shareable (a private document, a search,
-// a refusal): they are not collapsed, so no waiter pays a second round trip for nothing.
+// waitLeader waits for the fetch another request of this replica leads for the same cache key. A wait that
+// outlasts collapseWait is not extended and not turned into a request of its own, which would multiply the load
+// on a main installation that is slow: it answers 503 bastion_busy with Retry-After, and the retry finds the
+// entry or joins the fetch again (R-BAS-025, Q-BAS-123).
+func (e *engine) waitLeader(q *rq, c *call) (again bool) {
+	t := time.NewTimer(e.collapseWait)
+	defer t.Stop()
+	select {
+	case <-c.done:
+		return true
+	case <-q.ctx().Done():
+		q.finish(metrics.ClassPass, metrics.ResultError)
+		return false
+	case <-t.C:
+		e.refuse(q, errBusy(), metrics.RefusedBusy)
+		return false
+	}
+}
+
+// isVolatileFor reports whether recent fetches of the request's cache key left nothing shareable (a search, a
+// document too large to keep) or nothing shareable for this caller (a private document, a refusal): such a fetch
+// is not collapsed, so no waiter pays a second round trip for nothing. A mark that depends on the caller is the
+// caller's own and never switches collapsing off for anyone else (Q-BAS-125).
+func (e *engine) isVolatileFor(q *rq) bool {
+	return e.isVolatile(q.cacheKey) || e.isVolatile(volatileKeyOf(q))
+}
+
+// isVolatile reports whether the mark of a key is set and has not run out.
 func (e *engine) isVolatile(key string) bool {
 	until, ok := e.volatile.get(key)
 	return ok && e.now().Before(until)
 }
 
+// volatileKeyOf is the mark of the caller for the request's cache key; a cache key starts with "/", a
+// credential key never does, so the two kinds of mark cannot meet.
+func volatileKeyOf(q *rq) string { return q.cred.key + "|" + q.cacheKey }
+
+// markVolatile marks the cache key for every caller: what the main installation answered does not depend on
+// who asked.
 func (e *engine) markVolatile(key string) { e.volatile.put(key, e.now().Add(volatileTTL), 0) }
+
+// markVolatileFor marks the cache key for this caller alone: the answer depended on the caller's rights.
+func (e *engine) markVolatileFor(q *rq) {
+	e.volatile.put(volatileKeyOf(q), e.now().Add(volatileTTL), 0)
+}
 
 // remoteLock takes the fetch lock across replicas when Valkey and the bucket backend make a fetch of one
 // replica useful to the others (R-BAS-025). held is true when the caller fetches; a lock that cannot be taken

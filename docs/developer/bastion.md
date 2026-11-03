@@ -32,7 +32,7 @@ parallel: it says which package owns which file, which seams join them, how a re
   splitting those three platform packages ([H-473](../spec/bastion.md#h-473--the-roles-binary-contains-packages-of-the-main-installation-it-never-starts));
   when you do, delete the entries it makes unnecessary.
 - **The role builds real components only.** There is no placeholder client, cache, download buffer, guard or engine, and `engine.Deps` has no
-  `Stubbed`: `server.New` fails when a component cannot be built, and `engine.New` refuses a missing dependency. The operations of the
+  `Stubbed`: `server.New` fails when a component cannot be built, and `engine.New` refuses a missing dependency except `Deps.Shared`: a nil one is replaced by the local form (`shared.NewLocal`, one replica's worth), which is what the engine tests rely on; `server.New` always passes the real one. The operations of the
   management API are built; no `501 bastion_not_implemented` stub is left.
 - **Every file has one owner.** The tables below name it. Shared files carry `>>> package n` markers
   ([wire_bastion.go](../../internal/app/wire_bastion.go)); edit your block only.
@@ -144,13 +144,13 @@ internal/bastionmain/ the main installation's seams (a domain package)
 | [engine/answerstore.go](../../internal/bastion/engine/answerstore.go) | answers in memory and in the shared store, negative entries, private copies, the `AnswerSink` the link calls |
 | [engine/readflow.go](../../internal/bastion/engine/readflow.go) | the decision between hit, check and miss, the check, the collapsing of misses |
 | [engine/forward.go](../../internal/bastion/engine/forward.go) | the forwarded request, the handling of a marked response by its class, documents and refusals |
-| [engine/fill.go](../../internal/bastion/engine/fill.go) | the artifact fill through `cache.Fill`, with the withheld tail towards the client |
+| [engine/fill.go](../../internal/bastion/engine/fill.go) | `fillRun`, the artifact fill that reads the main installation's body into `cache.Fill` without the client, and `follow`, which serves the client from the spool with the withheld tail |
 | [engine/serve.go](../../internal/bastion/engine/serve.go) | serving a representation with RFC 9110 semantics, the stream with the withheld tail, the download event |
 | [engine/entries.go](../../internal/bastion/engine/entries.go) | the cache key and Vary, the entry through `cache.Cache`, freshness |
 | [engine/probe.go](../../internal/bastion/engine/probe.go) | the write probe and the real request of a read route that takes a body |
 | [engine/background.go](../../internal/bastion/engine/background.go) | the background refresh of a shape answer |
 | [engine/quiet.go](../../internal/bastion/engine/quiet.go) | `WithQuietSlot`, `Quiet`: how a quiet verdict reaches the server's request log |
-| [engine/lru.go](../../internal/bastion/engine/lru.go), [engine/flight.go](../../internal/bastion/engine/flight.go) | the bounded LRU, the single-flight |
+| [engine/lru.go](../../internal/bastion/engine/lru.go), [engine/flight.go](../../internal/bastion/engine/flight.go) | the bounded LRU, the single-flight and the `handle` of a flight that a fill takes over |
 | [server/server.go](../../internal/bastion/server/server.go) | `Run`, `New`, `Start`, `Shutdown`; `buildDeps` and `wireLink` build and connect the components, `runLink` runs their loops |
 | [maintest/maintest.go](../../internal/bastion/maintest/maintest.go) | `Main`, the in-process main installation; `Faulty`, `MemSpool` |
 | [roletest/roletest.go](../../internal/bastion/roletest/roletest.go) | `Run`: the scenario of the whole role for one cache backend |
@@ -337,7 +337,8 @@ backend's first `Check`; it never depends on the main installation (Q-BAS-44).
   (`TestR_BAS_025_EveryPathClosesTheResponseBodyAndSoReleasesItsSlot` serves every kind of answer over a budget of one slot and counts the slots after each).
 - `Forward.Class` is `Anonymous` for a request without a credential: those requests share the anonymous slots.
 - Errors, mapped to the answers of R-BAS-029: `ErrBusy` (`503 bastion_busy`); `ErrUnreachable` (`*UnreachableError`;
-  `Timeout` true means `504 main_timeout`, otherwise `502 main_failed`); `ErrBadAnswer` (`502 main_failed`); `ErrTokenRefused` and
+  `Timeout` true means `504 main_timeout`, otherwise `502 main_failed`); `ErrBadAnswer` (`502 main_failed`); `ErrTokenRefused` (only in
+  the answer to a call of the interface's own: a `401 bastion_token_invalid` to a forward is an `*AnswerError`, `502 main_failed`, and moves nothing, Q-BAS-121) and
   `ErrInterfaceMismatch` concern the Bastion, are never passed on, and have already made the link unreachable by `Link.Guard` (`503
   main_unreachable` for the caller). Any other error of a forward does not make the link unreachable (R-BAS-027, Q-BAS-44). A context error of the
   caller's own context is returned as it is.
@@ -350,8 +351,8 @@ backend's first `Check`; it never depends on the main installation (Q-BAS-44).
 - `Link.AnswerState(now)` returns the `answers.State` of R-BAS-020: period, grace period, `Unreachable`, `HistoryStart`, the log.
   The engine judges every answer with it and decides nothing about validity itself.
 - `Link.Watch(f)` calls `f` after each change of the state, on the link's goroutine; it must not block. The server uses it to follow `recordDownloads`.
-- `Link.SetSink(s)` takes a `link.AnswerSink`: `Drop(entry)` deletes the answers the entry matches from memory and, best effort, from the
-  shared answer store; `DropAll()` on a reset. The engine implements it (`answerStore.Drop`, `DropAll`) and calls `SetSink` in `engine.New`.
+- `Link.SetSink(s)` takes a `link.AnswerSink`: `Drop(entries)` deletes the answers the entries of one page match, in one pass, from memory and, best effort, from the
+  shared answer store (the page is recorded in the feed log first); `DropAll()` on a reset. The engine implements it (`answerStore.Drop`, `DropAll`) and calls `SetSink` in `engine.New`.
 - Before the first successful feed read `HistoryStart` is zero and `answers.State` refuses every answer, so a replica that started
   during an outage serves nothing from Valkey and nothing from memory until the main installation answers once.
 
@@ -363,7 +364,7 @@ stateDiagram-v2
     Unreachable --> Reachable: a handshake and a feed poll succeed after the state began
     Reachable --> Unreachable: a handshake fails (connect, TLS, timeout, 5xx, 401, 400 mismatch) or the base URL differs
     Reachable --> Unreachable: no feed poll succeeded for unreachable_after
-    Reachable --> Unreachable: 401 bastion_token_invalid or a version mismatch in any answer
+    Reachable --> Unreachable: 401 bastion_token_invalid to a call of the interface's own, or a version mismatch in any answer
 ```
 
 Handshake: at start, every `handshake_interval`, on `RequestHandshake` (a settings entry, a reloaded token) and at every tick
@@ -391,7 +392,7 @@ flow is `engine.ServeHTTP` ([request.go](../../internal/bastion/engine/request.g
 |---|---|---|
 | 1 host | `stepHost`: the request's host, or the forwarded host of a trusted proxy (Q-BAS-83) | `421 misdirected_request` |
 | 2 block list | `stepBlocked` → `guard.Blocked` | `429 address_blocked` |
-| 3 path | `stepPath`: `/api/<format>/<key>/…` and `/files/<key>/…`, the key rule of INV-5 | `404 bastion_not_served`, no request |
+| 3 path | `stepPath` → `classifyPath`: `/api/<format>/<key>/…` and `/files/<key>/…`, the key rule of INV-5; a percent-encoded family, format or key segment and a dot segment are refused, because the main installation's router decodes (Q-BAS-121) | `404 bastion_not_served`, no request |
 | 4 limits, credentials | `stepLimits` → `guard.Request`; for `GET` and `HEAD` `stepCredentials`: syntax and checksum before any request, `bst` and unknown prefixes refused, anonymous only while the handshake said `anonymousAccess` (before the first handshake: `503`, Q-BAS-99), the failed-authentication timeout for a credential without a usable answer | `429 rate_limited`, `401 invalid_token`, `401 credentials_required`, `429 auth_timeout` |
 | 5 method | `OPTIONS` → `405`; other methods → [probe.go](../../internal/bastion/engine/probe.go) (Q-BAS-81) | |
 | 6 read flow | [readflow.go](../../internal/bastion/engine/readflow.go) `read` | below |
@@ -399,13 +400,12 @@ flow is `engine.ServeHTTP` ([request.go](../../internal/bastion/engine/request.g
 **Read flow** (`attempt`, up to two rounds when a request waited for a collapsed fetch): kept `invalid` credential → `401`; shape answer `none` → the
 stored status; kept URL refusal → replayed; cache entry → `fromEntry`; negative entry → `fromNegative`; the caller's private copy → conditional
 request; else `miss`. `fromEntry` serves without a request when the caller is allowed (shape `full`, or a URL answer `allowed`) and the entry is fresh
-(`fresh`: the period of the kind and the feed log, no `content` entry of the repository after `validatedAt − 15 s`) or the main installation is
-unreachable; asks `checkShape` when the caller has neither answer; and otherwise sends the conditional request. Every request to the main
+(`fresh`: the period of the kind and the feed log, no `content` or `grants` entry that names the repository after `validatedAt − 15 s`) or the main installation is
+unreachable, and in both cases only if no `content` entry for the repository was received after `validatedAt − 15 s` (`withdrawn`, Q-BAS-122); asks `checkShape` when the caller has neither answer; and otherwise sends the conditional request. Every request to the main
 installation first asks `guard.Miss`, and `mainclient` takes the budget slot. [forward.go](../../internal/bastion/engine/forward.go) `process`
 records the credential and shape answers of a marked response and then acts by its class: `artifact` and `shared` 200 are kept (artifact: the fill of
 [fill.go](../../internal/bastion/engine/fill.go), a document: held whole and written through a `cache.Fill` with its entry), a `304` closes its body, serves
-and renews the entry, `private` is kept in memory as the caller's copy, `absent` fills the negative cache, everything else is passed through (a `403` and a
-conditional `404` are also kept as the caller's URL answer, Q-BAS-80). An unmarked `5xx`, a connect error and a timeout answer `502 main_failed` or
+and renews the entry, `private` is kept in memory as the caller's copy, `absent` fills the negative cache, everything else is passed through (a `403` is also kept as the caller's URL answer; a `404` that is not `absent` never is, Q-BAS-124). An unmarked `5xx`, a connect error and a timeout answer `502 main_failed` or
 `504 main_timeout`.
 
 **The cache** (Q-BAS-98): the engine holds a `*cache.Cache` and nothing of the raw `cache.Backend`. An entry is found by `LookupEntry` (the signature, the
@@ -413,11 +413,19 @@ bytes' existence and size are checked there, a stale entry is deleted there and 
 the bytes are read by `Open` (verified while served, the last 64 KiB held back, a mismatch deletes the object and the entry and fails the read with
 `cache.ErrCorrupt`) and `Touch` writes the throttled access marker. The engine counts none of this.
 
-**Fill** (R-BAS-021): `cache.NewFill` spools the body below the volume or the pod's temporary directory while it is streamed; everything but the last 64 KiB
-is written to the caller as it arrives, and the tail is released after `Fill.Commit` checked the SHA-256 against the content address of the `ETag` and
-stored the bytes and the entry was written. A mismatch cuts the connection (`http.ErrAbortHandler`) and keeps nothing. A request with `Range` or a
-conditional header is answered from the committed fill (`Fill.Keep` leaves the spool readable, so a backend that refuses the commit does not fail the
-request, R-BAS-030). The withheld tail towards the client is the engine's; the verification, the commit and the entry are the cache's.
+**Fill** (R-BAS-021, [Q-BAS-123](../spec/bastion.md#q-bas-123--the-fill-reads-the-main-installation-at-its-own-speed-and-no-client-holds-a-slot-or-a-waiter)): `cache.NewFill`
+spools the body below the volume or the pod's temporary directory. `fillArtifact` takes over three things from the request and hands them to `fillRun.run`, a goroutine of the
+engine (`background`; in the request while the engine drains): the body of the response (the slot of the budget is freed when it ends), the context of the request to the
+main installation (`mainHold`: `forward` builds it detached from the client's, and it ends with the client's unless the fill took it over) and the end of the flight of the collapsed
+fetch (`handle`: the waiters wake at the commit and not when the leader's client is done). `run` reads at the main installation's speed, with a 60 s stall bound, writes the spool,
+checks the length and `Fill.Commit` checks the SHA-256 against the content address of the `ETag`, writes the entry, and then `fillOK`; a mismatch, a wrong length or a spool that
+cannot take the bytes is `fillFailed` and keeps nothing. The client of the request is served by `follow` from the spool at its own pace: everything but the last 64 KiB while the
+fill runs, the rest at `fillOK`, a cut connection (`http.ErrAbortHandler`) at `fillFailed`. A request with `Range` or a conditional header waits for the end (`waitFill`) and is
+answered from the committed fill (`Fill.Keep` leaves the spool readable, so a backend that refuses the commit does not fail the request, R-BAS-030). The spool file is removed when the
+goroutine and the follower have both let go (a reference count). A fill goes on when its client has left (H-472). The withheld tail towards the client is the engine's; the verification,
+the commit and the entry are the cache's. The body of a **pass-through** (`passThrough`) cannot be spooled and holds its slot at the client's pace: each chunk has a write deadline of 10 s
+and after 30 s the average must reach 64 KiB per second (`tooSlow`), or the transfer is cut (H-471). The bounds are fields of `engine` set from the constants in
+[engine.go](../../internal/bastion/engine/engine.go) (`collapseWait`, `fillStall`, `paceGrace`, `paceMinRate`, `paceChunk`), so a test shortens them.
 
 **Serving from the cache** ([serve.go](../../internal/bastion/engine/serve.go)): `serveSource` answers `If-None-Match`, `Range` with `If-Range`, `HEAD`
 and `416`; `streamVerified` copies the cache's verifying reader and withholds the last 64 KiB of the output until the whole object was read, so a
@@ -427,12 +435,14 @@ body was delivered from the cache, `200` or `206`; a `HEAD` and a `304` are no d
 **Answers** ([answerstore.go](../../internal/bastion/engine/answerstore.go)): an LRU in memory (`answers.max_entries`) and, when `Shared.Shared()` is
 true, records in `shared.AnswerStore`, which signs and verifies them itself (Q-BAS-93): the engine hands over plain JSON. `answerStore.get` judges every
 answer with `answers.State.Check` (the four rules, through `Link.AnswerState`) at every use, counts `trove_bastion_answers_total`, and drops what fails.
-Private copies are never written anywhere but memory. A feed entry reaches the store through `Drop` (the link's `AnswerSink`, R-BAS-026): the answers it matches are
-deleted from memory and, in the background and best effort, from the shared store.
+Private copies are never written anywhere but memory. The entries of a feed page reach the store through `Drop` (the link's `AnswerSink`, R-BAS-026): an `entryMatcher` built
+from the page's tokens, principals and repositories selects the answers in one pass, and they are deleted from memory and, in the background and best effort, from the shared store.
 
 **Collapsing**: `group` is a single-flight per replica (checks are shared with their result, misses with a wait and a second decision); with the
 bucket backend and Valkey `shared.FlightLock` makes the other replicas wait (`waitRemote`, at most 30 s); a lock that cannot be asked
-returns `held` with an error and the replica fetches itself. A key whose last fetch left nothing shareable is marked for a minute and not collapsed (Q-BAS-86).
+returns `held` with an error and the replica fetches itself. A waiter of the replica's own flight waits at most `collapseWait` (30 s) and then answers `503 bastion_busy` (`waitLeader`).
+A key whose last fetch left nothing shareable is marked for a minute and not collapsed (Q-BAS-86): a mark that depends on the caller's rights (a refusal, a private document) is the caller's own
+(`markVolatileFor`, keyed by credential and cache key), a mark that does not (a search, a document too large to keep) is the key's (`markVolatile`, Q-BAS-125).
 
 **Background**: `Start` runs the janitor (every minute: answers past period and grace, the feed entries no answer can depend on, the registries' expired
 items); a shape answer used in the last fifth of its period is refreshed by one collapsed check in a task `Drain` waits for (`background`). Nothing else
@@ -536,8 +546,7 @@ exports them. A cycle measures both areas (one listing each); an area above 95 %
 (two listings), orders by the later of an object's marker and its own time (a refill counts as an access), and deletes oldest first until
 85 % remain, taking the markers along. The sweep does not read entries (H-452). Who runs it: the volume, every replica its own; the
 bucket with Valkey (`st.Shared()`), the replica that wins `shared.SweepLease` for `2 × sweep_interval`; the bucket without Valkey, every
-replica at `sweep_interval ± 20 %`. The package 6 forms plug in through `shared.State`; until they land, `shared.NewLocal` is what the
-tests use.
+replica at `sweep_interval ± 20 %`. The forms plug in through `shared.State` (the Valkey form of the server, `shared.NewLocal` in the tests).
 
 **Errors.** Every backend error except a missing key, an invalid name and a cancelled context is counted in
 `trove_bastion_cache_errors_total{op}` (`get`, `put`, `delete`, `list`, `spool`) where it happens, so a caller only has to turn an error
@@ -630,12 +639,11 @@ set -a; . .dev/integration/env; set +a; go test -tags integration -v -run TestR_
 To run the role by hand against a main installation you control, copy `Run` in [roletest.go](../../internal/bastion/roletest/roletest.go): it writes the
 configuration file, the token file and the CA file of the double into a temporary directory.
 
-**3. Against a main installation of the development stack (not exercised in this change).** Register a Bastion on the main installation, which issues a
+**3. Against a main installation of the development stack.** Register a Bastion on the main installation, which issues a
 `trv_bst_` token (package 1: `trove admin bastion …` and the screen of the management UI), write it to the token file, set `bastion.main.url` to the main
 installation's https URL (and `bastion.main.ca_file` when its certificate is not signed by a root the machine trusts), and set `server.base_url` to the address
-clients will use for the Bastion: the handshake refuses a base URL the main installation does not honour (`trove_bastion_base_url_mismatch`). This works
-once the main installation's side of the interface (package 2: the four operations, the Recognize and Mark stages) is on `main`; until then the handshake
-fails and the role stays unreachable.
+clients will use for the Bastion: the handshake refuses a base URL the main installation does not honour (`trove_bastion_base_url_mismatch`). The main installation's side of the interface (the four operations, the Recognize and Mark stages) is built, so the handshake succeeds against a current release; against an
+older one the handshake fails and the role stays unreachable.
 
 ## Tests
 
@@ -657,6 +665,7 @@ fails and the role stays unreachable.
 | `go test ./internal/formats/...` | kit check 12 on npm and NuGet, the defect `varies-by-caller` |
 | `make test-integration` (`test/integration/proxy`) | `TestR_BAS_013_UpstreamNotFoundIsMarkedAbsent`: the remote engine marks an upstream 404 and its negative entry, not a cache view miss |
 | `go test ./cmd/trove` | the role's start: another section's key, an http main URL, a missing token file |
+| `go test -race ./internal/bastion/engine ./internal/bastion/link ./internal/bastion/mainclient ./internal/bastion/server` (the review of the engine, the client and the link, Q-BAS-121 to Q-BAS-126) | the path rule against `net/http.ServeMux` ([path_test.go](../../internal/bastion/engine/path_test.go)); a refused token on a forward ([forward_token_test.go](../../internal/bastion/mainclient/forward_token_test.go), `TestR_BAS_006_R_BAS_021_ARefusalOfTheTokenOnAForwardDoesNotMakeTheReplicaUnreachable`); a withdrawal while unreachable ([withdraw_test.go](../../internal/bastion/engine/withdraw_test.go)); the fill without the client, the waiter bound and the pass-through floor ([decouple_test.go](../../internal/bastion/engine/decouple_test.go), [pace_test.go](../../internal/bastion/engine/pace_test.go), and over real sockets with slow readers [slow_clients_test.go](../../internal/bastion/server/slow_clients_test.go)); the `404` oracle ([oracle_test.go](../../internal/bastion/engine/oracle_test.go)); the probe's slot class ([probe_class_test.go](../../internal/bastion/engine/probe_class_test.go)); the mirror of the `304` ([mirror_test.go](../../internal/bastion/engine/mirror_test.go)); the marks of collapsing ([volatile_test.go](../../internal/bastion/engine/volatile_test.go)); the start read, the black-holed call, the burst page and the retained IDs ([pages_test.go](../../internal/bastion/link/pages_test.go), [blackhole_test.go](../../internal/bastion/link/blackhole_test.go), [burst_test.go](../../internal/bastion/engine/burst_test.go), [seen_test.go](../../internal/bastion/answers/seen_test.go)) |
 | `go test -race ./internal/bastion/cache` | the volume backend on a temporary directory, the fill, the sweep and its order, the audit spool, the verifying reader, the signed entries, the first-readiness gate and counted errors |
 | `make test-integration` (`test/integration/bastioncache`) | the bucket backend on the stack's SeaweedFS (S3, TLS), under a prefix of its own in `trove-backups`: two replicas on one bucket, the five operations asserted through a counting transport, eviction of 300 MiB to a 100 MiB limit, two sweepers, a replaced object, a rewritten entry |
 | `make test-integration` (`test/integration/postgres`) | `TestBastionMigration`: the three migrations, the constraints, the guards and every query of the Bastion files |

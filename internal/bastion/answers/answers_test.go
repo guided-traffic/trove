@@ -122,7 +122,7 @@ func TestR_BAS_026_AnEntryIsAppliedOnceAndPruned(t *testing.T) {
 	if !log.Record(e, t0) || log.Record(e, t0.Add(time.Second)) {
 		t.Fatal("an entry was applied twice or not at all")
 	}
-	log.Prune(t0.Add(time.Minute))
+	log.Prune(t0.Add(time.Minute), t0.Add(time.Minute))
 	if !log.Record(e, t0.Add(2*time.Minute)) {
 		t.Fatal("a pruned entry is unknown again, so a later re-send applies it again")
 	}

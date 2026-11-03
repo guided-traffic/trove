@@ -57,7 +57,7 @@ whose disagreement with the main installation could serve bytes.
 - **Writes.** None reach the main installation as writes: the Bastion sends a bodiless probe, the main installation answers `403
   bastion_read_only` in the protocol's shape, and no upload body leaves the Bastion (R-BAS-014).
 - **Learn about others.** The Bastion sends no cache state (Q-BAS-40), and negative entries go only to callers who read the whole
-  repository, so a narrowed reader cannot time hidden names (Q-BAS-42). The time of a hit still tells whether a readable package
+  repository, and a `404` that is not `absent` is never kept for anybody, so a narrowed reader cannot time hidden names (Q-BAS-42, Q-BAS-124). The time of a hit still tells whether a readable package
   was fetched recently (H-390).
 - **Flood it.** See [Where abuse is stopped](#where-abuse-is-stopped).
 
@@ -222,7 +222,7 @@ What each layer of the cache holds, and what protects it:
 
 A fill is spooled to a temporary directory of the volume or the pod's `tmp` and committed under its address only after its digest
 was checked (`cache.Fill.Commit`), and the engine releases the last 64 KiB of the transfer to the caller only after that, so a reader never sees a partial
-object and a caller never receives a complete corrupt one; if the spool fails during the transfer the check is lost and the bytes pass through (H-459); the backend checks the digest and size of every `PutObject` once more. Every
+object and a caller never receives a complete corrupt one; a spool that fails during the transfer cuts it, so bytes are never passed on unverified (Q-BAS-123); the backend checks the digest and size of every `PutObject` once more. Every
 name that becomes a path or a key (content address, key hash, replica, spool file) is validated as hex or a fixed form before use.
 The bucket is reached over `https` with the trust bundle of the chart, and its credential is a file the replica re-reads.
 An answer record that Valkey returns is verified by the store (not by the engine) against its kind and key before anything else sees it: a record that is altered,
@@ -239,12 +239,28 @@ this is what they do about the security of the connection and of what flows over
 | Where the token and the callers' credentials go | `https` only; the trust is the system roots plus `bastion.main.ca_file`, read again without a restart; a redirect is returned, never followed, because the Bastion token travels in a header that no redirect policy strips; the address policy of upstream clients is not applied to the main installation (H-446) | [client.go](../../internal/bastion/mainclient/client.go) |
 | What a forward sends | the caller's `Authorization` as it came; the Bastion token in `Trove-Bastion-Authorization`; `Cookie`, `Range`, `If-*`, `Forwarded`, `X-Forwarded-*`, `Trove-*` and trace headers of the caller removed; exactly one client address in both families, replacing the caller's; a write probe carries no credential of the caller and no body | [client.go](../../internal/bastion/mainclient/client.go) |
 | What is logged | no header is logged; errors of the client name no URL query and no header; the token file's content is in no error; a token appears as its ID (`token_id`) and as a hint that the log scrubber already reduces to `trv_bst_[REDACTED]` (R-OPS-013) | [reload.go](../../internal/bastion/mainclient/reload.go), [link.go](../../internal/bastion/link/link.go) |
-| Rotation of the Bastion token | the file is re-read every `token_reload_interval` and when its identity changes; a malformed or vanished file keeps the token in use, is logged as an error and counted as refused; a revoked token in use makes the replica unreachable and sets `trove_bastion_main_token_refused` | [reload.go](../../internal/bastion/mainclient/reload.go) |
+| Rotation of the Bastion token | the file is re-read every `token_reload_interval` and when its identity changes; a malformed or vanished file keeps the token in use, is logged as an error and counted as refused; a revoked token in use makes the replica unreachable and sets `trove_bastion_main_token_refused`, when the answer to a call of the interface's own says so; the same answer to a forward moves nothing (Q-BAS-121) | [reload.go](../../internal/bastion/mainclient/reload.go) |
 | Revocations | every replica polls the feed and records each entry with its receipt time; an answer is refused if a matching entry was received after it was asked for, whatever the order in which the answer and the entry reached the replica (R-BAS-020 rule 3); a reset or a start without history refuses every older answer | [link.go](../../internal/bastion/link/link.go), [answers](../../internal/bastion/answers/answers.go) |
 | The main installation cannot be reached | the replica is unreachable after a failed handshake, a refused token, a version mismatch, a base URL the main installation does not honour, or `unreachable_after` without a successful poll; only then do held answers live on for the grace period (H-383), a token the replica has not seen gets a `503`, and nothing is served after `period + grace_period` | [link.go](../../internal/bastion/link/link.go) |
 | A main installation that does not know the Bastion's host | the handshake's response base URL must equal `server.base_url`, so no client receives a document with the main installation's URLs | [link.go](../../internal/bastion/link/link.go) |
-| The concurrency budget | `ceil(max_concurrent / replicas)` slots per replica, anonymous callers at most their share; a slot is held until the response body ends | [budget.go](../../internal/bastion/mainclient/budget.go) |
+| The concurrency budget | `ceil(max_concurrent / replicas)` slots per replica, anonymous callers at most their share; a slot is held until the response body ends, and no client's speed decides when that is: a fill reads at the main installation's speed, a pass-through is cut below 64 KiB per second after 30 s or when a chunk takes 10 s (Q-BAS-123, H-471) | [budget.go](../../internal/bastion/mainclient/budget.go), [fill.go](../../internal/bastion/engine/fill.go) |
 | Download events | a bounded memory buffer; the excess is counted and reported in the audit; at a drain the buffer is sent or written to the cache backend's audit spool, which any replica delivers (H-444) | [reporter.go](../../internal/bastion/downloads/reporter.go) |
+
+## Findings of the review of the engine, the client and the link
+
+A security review with proofs of concept found the defects below on the Bastion's own side; each is closed by a decision of the spec page and a test that goes through the code path of the proof. The
+gaps that remain are the H-items in [What this does not cover](#what-this-does-not-cover).
+
+| Finding | What it allowed | Closed by | Test |
+|---|---|---|---|
+| P1: an encoded `v1` in the path | `GET /api/%761/users` reached the management API through the Bastion; `GET /api/%761/bastion/handshake` made the main installation answer `401 bastion_token_invalid`, which the Bastion read as a refusal of its own token: one request from anyone made the replica unreachable | the path is classified by what the main installation's router will read, an encoded family, format or key segment and a dot segment are refused ([Q-BAS-121](../spec/bastion.md#q-bas-121--a-path-is-classified-as-the-main-installations-router-will-read-it-and-a-token-refusal-on-a-forward-is-no-statement-about-the-bastions-token)); a token refusal counts only on a call of the interface's own | `TestR_BAS_003_R_BAS_018_APathIsClassifiedAsTheMainInstallationsRouterWillRouteIt`, `TestR_BAS_003_R_BAS_006_AnEncodedSpellingOfTheInterfaceRoutesCannotTurnTheReplicaUnreachable` |
+| P2: a withdrawal while unreachable | an artifact withdrawn through the feed was served on while the replica was unreachable and its link still read the feed | a `content` entry ends the service of an entry also then ([Q-BAS-122](../spec/bastion.md#q-bas-122--a-content-entry-ends-the-service-of-a-cached-entry-also-while-the-main-installation-is-unreachable)) | `TestR_BAS_022_R_BAS_027_AWithdrawnArtifactIsNotServedWhileTheMainInstallationIsUnreachable` |
+| P3, B4: slots and waiters held by slow clients | seventeen connections that took their tarball one buffer at a time held every anonymous slot; a second caller of the key waited without bound | the fill does not wait for the client, the flight ends at the commit, a waiter is bounded, a pass-through has a floor ([Q-BAS-123](../spec/bastion.md#q-bas-123--the-fill-reads-the-main-installation-at-its-own-speed-and-no-client-holds-a-slot-or-a-waiter)) | `TestR_BAS_025_ClientsThatReadSlowlyDoNotHoldTheBudgetSlots`, `TestR_BAS_025_AWaiterOfACollapsedFetchIsNotHeldByTheLeadersClient` |
+| P4: the `404` oracle | a narrowed reader's second request for a name was answered from memory when the name is cached and hidden, and from the main installation when it does not exist | a `404` that is not `absent` is never kept ([Q-BAS-124](../spec/bastion.md#q-bas-124--a-404-that-is-not-marked-absent-is-never-kept-as-a-url-answer)) | `TestR_BAS_024_ANarrowedReaderCannotTellACachedHiddenNameFromAMissingOne` |
+| B2: the probe's slot | with `anonymous_share: 0` every write refusal answered `503` | the probe takes the class of the caller | `TestR_BAS_014_R_BAS_025_AProbeTakesTheSlotClassOfTheCaller` |
+| B10: a mark of one caller | a caller without rights could keep collapsing off for a popular key | a mark that depends on the caller's rights is the caller's ([Q-BAS-125](../spec/bastion.md#q-bas-125--a-result-that-depends-on-the-callers-rights-switches-collapsing-off-for-that-caller-only)) | `TestR_BAS_025_ARefusalOfOneCallerDoesNotSwitchCollapsingOffForOthers` |
+| B3, B7, B8, B11: the link | a half-read start counted as the start of the history; a burst page of 1,000 entries cost 1,000 passes over the answers; a black-holed call held the tick for `response_header_timeout`; IDs forgotten before the feed stopped re-sending ([Q-BAS-126](../spec/bastion.md#q-bas-126--the-link-applies-a-page-as-a-unit-ends-the-start-read-at-the-end-of-the-feed-and-bounds-each-call), H-470) | see the decision | `TestR_BAS_026_TheHistoryStartsOnlyWhenTheStartReadReachedItsEnd`, `TestR_BAS_026_AFeedPageOfAThousandEntriesIsAppliedAgainstTwoHundredThousandAnswersWithinTheBound`, `TestR_BAS_027_ACallThatTheMainInstallationNeverAnswersIsCutAtUnreachableAfter`, `TestR_BAS_026_AnAppliedIDIsKeptForAtLeastTheFeedLookback` |
+| B1 (mirror): a `304` marked `shared` against the caller's private copy | the caller, who sent no condition, received an empty `304` | the copy's bytes answer as a `200` | `TestR_BAS_023_A304SharedAgainstThePrivateCopyAnswersTheCallerWithTheCopysBytes` |
 
 ## What this does not cover
 
@@ -324,10 +340,16 @@ The gaps of the Bastion's mechanisms are recorded on the spec page, where the me
   `endpoints:read` is not offered the Bastion as a target;
 - [H-458](../spec/bastion.md#h-458--the-address-a-registration-reports-chooses-among-the-listed-addresses-and-the-name-is-testable) —
   the reported address chooses among the listed addresses, and the name is testable;
-- [H-459](../spec/bastion.md#h-459--an-artifact-whose-spool-fails-during-the-transfer-reaches-the-caller-unverified-and-a-range-request-on-it-fails) —
-  an artifact whose spool fails during the transfer reaches the caller unverified;
 - [H-460](../spec/bastion.md#h-460--without-a-signing-key-the-entries-on-the-volume-are-not-authenticated) — without a signing key the entries on the
   volume are not authenticated;
+- [H-461](../spec/bastion.md#h-461--the-suites-front-reaches-the-main-installations-replica-in-plain-http) — the suite's front reaches the main installation's replica in plain HTTP;
+- [H-462](../spec/bastion.md#h-462--a-main-installation-that-reports-a-higher-interface-version-in-its-own-problem-body-is-not-exercised) — a main installation that reports a higher interface version in its own problem body is not exercised;
+- [H-463](../spec/bastion.md#h-463--the-bound-on-the-upload-body-a-bastion-reads-is-shown-by-the-answer-not-by-a-counter) — the bound on the upload body a Bastion reads is shown by the answer, not by a counter;
+- [H-470](../spec/bastion.md#h-470--the-bastion-assumes-the-feeds-default-lookback-when-it-keeps-the-ids-of-applied-entries) — the Bastion assumes the
+  feed's default lookback when it keeps the IDs of applied entries;
+- [H-471](../spec/bastion.md#h-471--a-pass-through-body-at-the-floor-rate-holds-its-budget-slot-for-the-length-of-the-transfer) — a pass-through body at
+  the floor rate holds its budget slot for the length of the transfer;
+- [H-472](../spec/bastion.md#h-472--a-fill-goes-on-after-its-client-has-left) — a fill goes on after its client has left;
 - [H-473](../spec/bastion.md#h-473--the-roles-binary-contains-packages-of-the-main-installation-it-never-starts) — the role's binary contains
   packages of the main installation it never starts;
 - [H-474](../spec/bastion.md#h-474--the-sliding-estimate-of-a-limit-admits-more-than-the-limit-in-a-minute-that-spans-a-boundary) — the sliding

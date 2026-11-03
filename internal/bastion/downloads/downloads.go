@@ -25,12 +25,10 @@ type Buffer interface {
 	// counting and nothing is sent.
 	SetEnabled(on bool)
 	// Run sends batches until ctx ends; it retries while the main installation is unreachable and keeps the
-	// events, up to the bound.
+	// events, up to the bound. It also reads the spool files of any replica and sends them once the main
+	// installation is reachable, deleting each after a 2xx (R-BAS-039; [Reporter.Adopt]).
 	Run(ctx context.Context) error
 	// Drain sends what is buffered within ctx and spools the rest to the cache backend, at most
 	// bastion.audit.spool_max_events (R-BAS-039). It is called at shutdown, after the listeners stopped.
 	Drain(ctx context.Context) error
-	// Adopt reads the spool files of any replica and sends them once the main installation is reachable,
-	// deleting each after a 2xx (R-BAS-039).
-	Adopt(ctx context.Context) error
 }

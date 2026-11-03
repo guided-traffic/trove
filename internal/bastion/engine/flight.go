@@ -9,6 +9,7 @@ import (
 // call is one in-flight operation that concurrent callers of the same key share.
 type call struct {
 	done chan struct{}
+	once sync.Once
 	val  any
 	err  error
 }
@@ -35,13 +36,18 @@ func (g *group) join(key string) (*call, bool) {
 	return c, true
 }
 
-// finish ends the leader's call and wakes the waiters.
+// finish ends the leader's call and wakes the waiters. A call ends once: a second finish changes nothing, and
+// never removes a later call of the same key.
 func (g *group) finish(key string, c *call, val any, err error) {
-	g.mu.Lock()
-	delete(g.calls, key)
-	g.mu.Unlock()
-	c.val, c.err = val, err
-	close(c.done)
+	c.once.Do(func() {
+		g.mu.Lock()
+		if g.calls[key] == c {
+			delete(g.calls, key)
+		}
+		g.mu.Unlock()
+		c.val, c.err = val, err
+		close(c.done)
+	})
 }
 
 // wait blocks until the leader finished or ctx ended.
@@ -52,6 +58,45 @@ func (c *call) wait(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// handle is what a request that leads a fetch holds: the end of the flight, which wakes the waiters and frees the
+// fetch lock of the other replicas. The request ends it when it returns; a fill that outlives the request takes
+// it over ([handle.take]) and ends it at the commit, so the waiters never wait for a client's speed (Q-BAS-123).
+type handle struct {
+	mu    sync.Mutex
+	end   func()
+	taken bool
+}
+
+func newHandle(end func()) *handle {
+	var once sync.Once
+	return &handle{end: func() { once.Do(end) }}
+}
+
+// done ends the flight unless it was taken over.
+func (h *handle) done() {
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	taken := h.taken
+	h.mu.Unlock()
+	if !taken {
+		h.end()
+	}
+}
+
+// take gives the end of the flight to the caller, who must call the returned function once the result of the
+// fetch is in the cache or lost. Taking from a nil handle (a request that leads no flight) gives a no-op.
+func (h *handle) take() func() {
+	if h == nil {
+		return func() {}
+	}
+	h.mu.Lock()
+	h.taken = true
+	h.mu.Unlock()
+	return h.end
 }
 
 // do runs fn once per key at a time and hands its result to every concurrent caller. A waiter whose leader

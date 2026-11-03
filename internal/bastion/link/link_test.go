@@ -119,8 +119,8 @@ func TestR_BAS_027_NoSuccessfulPollForUnreachableAfterBeginsUnreachable(t *testi
 }
 
 // TestR_BAS_027_AForwardErrorAloneDoesNotBeginUnreachableButARefusedTokenDoes: errors of the request flow that
-// say nothing about the link are not the link's business; a 401 bastion_token_invalid or a mismatch in any
-// answer is, at once, and sets trove_bastion_main_token_refused.
+// say nothing about the link are not the link's business; a 401 bastion_token_invalid on a call of the interface's
+// own or a mismatch in any answer is, at once, and the former sets trove_bastion_main_token_refused.
 func TestR_BAS_027_AForwardErrorAloneDoesNotBeginUnreachableButARefusedTokenDoes(t *testing.T) {
 	r := newRig(t, rigOpts{})
 	r.connect()
@@ -151,8 +151,16 @@ func TestR_BAS_027_AForwardErrorAloneDoesNotBeginUnreachableButARefusedTokenDoes
 	}
 	r.main.Force("forward", 0)
 	r.main.Revoke(r.token)
-	if err := do(); !errors.Is(err, mainclient.ErrTokenRefused) {
+	// On a forward the refusal is no statement about the Bastion's token (the path is the caller's, Q-BAS-121);
+	// on a call of the interface's own it is, at once.
+	if err := do(); errors.Is(err, mainclient.ErrTokenRefused) || err == nil {
 		t.Fatalf("forward with a revoked token: %v", err)
+	}
+	if !r.l.State().Reachable || r.gauge("refused") != 0 {
+		t.Fatalf("a forward's 401 bastion_token_invalid moved the link: reachable %v refused %v", r.l.State().Reachable, r.gauge("refused"))
+	}
+	if _, err := guarded.Check(context.Background(), mainclient.Authenticated, iface.CheckRequest{Repositories: []string{"npm-all"}}); !errors.Is(err, mainclient.ErrTokenRefused) {
+		t.Fatalf("check with a revoked token: %v", err)
 	}
 	if r.l.State().Reachable || r.gauge("reachable") != 0 || r.gauge("refused") != 1 {
 		t.Errorf("after a refused token: reachable %v gauge %v refused %v", r.l.State().Reachable, r.gauge("reachable"), r.gauge("refused"))

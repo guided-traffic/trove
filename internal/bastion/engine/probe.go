@@ -79,7 +79,7 @@ func (e *engine) probe(ctx context.Context, q *rq, key string) probeResult {
 	fr := e.forwardRequest(q)
 	fr.Header.Del("Authorization")
 	resp, err := e.d.Main.Do(ctx, mainclient.Forward{
-		Request: fr, Class: mainclient.Anonymous, Kind: mainclient.KindProbe, ClientAddress: q.clientText, Probe: true,
+		Request: fr, Class: e.probeClass(q), Kind: mainclient.KindProbe, ClientAddress: q.clientText, Probe: true,
 	})
 	if err != nil {
 		return probeResult{err: err}
@@ -104,6 +104,17 @@ func (e *engine) probe(ctx context.Context, q *rq, key string) probeResult {
 		e.probes.put(key, &probeRec{ref: *ref, until: e.now().Add(e.cfg.Cache.MetadataRevalidateAfter)}, 0)
 	}
 	return probeResult{ref: ref}
+}
+
+// probeClass is the class of the budget slot of a probe: the probe itself carries no credential, but it is made
+// on behalf of the caller, so a caller that presented one takes an authenticated slot and only a caller without
+// one takes an anonymous slot (R-BAS-025). With bastion.main.anonymous_share 0 a credentialed caller's write is
+// still refused by the main installation's probe answer and not by the budget.
+func (e *engine) probeClass(q *rq) mainclient.Class {
+	if q.hasAuth {
+		return mainclient.Authenticated
+	}
+	return mainclient.Anonymous
 }
 
 // forwardWithBody forwards the real request of a read route that takes a body, after a 204 probe (R-BAS-014):

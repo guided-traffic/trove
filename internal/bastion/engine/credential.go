@@ -4,9 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"hash/crc32"
 	"net/http"
 	"strings"
+
+	"github.com/guided-traffic/trove/internal/bastion/mainclient"
 )
 
 // anonymousKey is the credential key of every anonymous caller (R-BAS-019): the main installation's decision
@@ -25,48 +26,8 @@ type credential struct {
 	method string
 }
 
-// The token format of R-AUTH-022 as far as the Bastion checks it: the Bastion links none of the main
-// installation's token code (R-BAS-001), so the syntax is written here; TestR_BAS_019_TheSyntaxCheckAgreesWithTheMainInstallationsFormat
-// holds it equal to internal/auth/token.
-const (
-	tokenLength    = 57
-	prefixLength   = 8
-	checksumDigits = 6
-	base62         = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-	hintLength     = 12
-)
-
-// tokenType returns the type of a syntactically valid token string ("pat", "sat", "cit", "bst") and whether the
-// prefix, length, alphabet and checksum hold.
-func tokenType(raw string) (string, bool) {
-	if len(raw) != tokenLength || !strings.HasPrefix(raw, "trv_") || raw[7] != '_' {
-		return "", false
-	}
-	typ := raw[4:7]
-	switch typ {
-	case "pat", "sat", "cit", "bst":
-	default:
-		return "", false
-	}
-	for i := prefixLength; i < tokenLength; i++ {
-		if strings.IndexByte(base62, raw[i]) < 0 {
-			return "", false
-		}
-	}
-	if raw[tokenLength-checksumDigits:] != base62Digits(uint64(crc32.ChecksumIEEE([]byte(raw[:tokenLength-checksumDigits]))), checksumDigits) {
-		return "", false
-	}
-	return typ, true
-}
-
-func base62Digits(v uint64, width int) string {
-	out := make([]byte, width)
-	for i := width - 1; i >= 0; i-- {
-		out[i] = base62[v%62]
-		v /= 62
-	}
-	return string(out)
-}
+// hintLength is the length of the public prefix of a token in logs: the prefix and four characters.
+const hintLength = 12
 
 // credentialKey is the SHA-256 of the token string in hex.
 func credentialKey(token string) string {
@@ -110,7 +71,7 @@ func parseCredential(h http.Header) (c credential, ok bool) {
 	if !present {
 		return credential{anonymous: true, key: anonymousKey}, true
 	}
-	typ, valid := tokenType(token)
+	typ, valid := mainclient.TokenType(token)
 	if !valid || typ == "bst" {
 		return credential{method: method}, false
 	}

@@ -452,15 +452,16 @@ func TestR_BAS_022_APartialReaderCostsOneConditionalRequestPerTarballAnsweredByA
 	if checks != 1 || cond != len(paths) {
 		t.Fatalf("checks %d conditional %d, want 1 and %d", checks, cond, len(paths))
 	}
-	// the tarball outside @acme/*: the main installation's 404 is replayed, and kept as the caller's answer
+	// the tarball outside @acme/*: the main installation's 404 is replayed and not kept, as the 404 of a plain
+	// fetch is not kept (Q-BAS-124)
 	before = s.main.count()
 	for i := 0; i < 3; i++ {
 		if w := s.get(other, "Authorization", bearer(s.part)); w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "not_found") {
 			t.Fatalf("%d %s", w.Code, w.Body)
 		}
 	}
-	if n := s.main.count() - before; n != 1 {
-		t.Fatalf("%d requests for a refused URL, want 1 per period", n)
+	if n := s.main.count() - before; n != 3 {
+		t.Fatalf("%d requests for three reads of a name the reader may not see, want one each (Q-BAS-124)", n)
 	}
 	// the entry stays for the others
 	if w := s.get(other, "Authorization", bearer(s.full)); w.Code != http.StatusOK {

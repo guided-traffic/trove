@@ -118,6 +118,13 @@ func (e *engine) fresh(ent cache.Entry) bool {
 	return st.Usable(answers.Answer{Kind: answers.URL, ObtainedAt: ent.ValidatedAt, Repository: ent.Repository})
 }
 
+// withdrawn reports whether a content entry of the feed names the entry's repository and was received after
+// validatedAt - 15 s: the main installation changed what the repository holds after the entry was validated. It
+// holds whether or not the main installation is reachable (R-BAS-022, R-BAS-027).
+func (e *engine) withdrawn(ent cache.Entry) bool {
+	return e.d.Link.Feed().ContentSince(ent.Repository, ent.ValidatedAt.Add(-answers.SkewMargin))
+}
+
 // entrySource is the source of a cache entry's bytes: the cache's verified read, which withholds the last
 // 64 KiB until the SHA-256 and the length equal the entry's and, on a mismatch, deletes the object and the
 // entry and fails the read with cache.ErrCorrupt (R-BAS-032).

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/bastion/answers"
@@ -37,15 +38,58 @@ func (e *engine) forward(q *rq, kind mainclient.Kind, validator string, bl *base
 		return
 	}
 	sent := e.now()
-	resp, err := e.d.Main.Do(q.ctx(), mainclient.Forward{
+	// The request to the main installation does not end with the client: an artifact fill reads on at the
+	// main installation's speed when the client is slow or gone (Q-BAS-123). Everything else ends with the client.
+	hold := newHold(q.ctx())
+	q.hold = hold
+	resp, err := e.d.Main.Do(hold.ctx, mainclient.Forward{
 		Request: e.forwardRequest(q), Class: e.budgetClass(q), Kind: kind, ClientAddress: q.clientText, IfNoneMatch: validator,
 	})
 	if err != nil {
+		hold.release()
 		e.mainError(q, err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() {
+		hold.release()
+		_ = resp.Body.Close() // the body of a fill that took the response over is replaced by an empty one
+	}()
 	e.process(q, resp, sent, bl)
+}
+
+// mainHold is the context of a request to the main installation: it ends with the client's request unless a
+// fill takes it over.
+type mainHold struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	stop   func() bool
+	mu     sync.Mutex
+	taken  bool
+}
+
+func newHold(client context.Context) *mainHold {
+	ctx, cancel := context.WithCancel(context.WithoutCancel(client))
+	return &mainHold{ctx: ctx, cancel: cancel, stop: context.AfterFunc(client, cancel)}
+}
+
+// release ends the request to the main installation with the client's, unless a fill took it over.
+func (h *mainHold) release() {
+	h.mu.Lock()
+	taken := h.taken
+	h.mu.Unlock()
+	if !taken {
+		h.stop()
+		h.cancel()
+	}
+}
+
+// take gives the request to the main installation to a fill: the client going away no longer cancels it. The
+// returned function ends it. ok is false when the client went away before: the request is cancelled already.
+func (h *mainHold) take() (end func(), ok bool) {
+	h.mu.Lock()
+	h.taken = true
+	h.mu.Unlock()
+	return h.cancel, h.stop()
 }
 
 // stripRequest are the request headers that are never forwarded (R-BAS-021): the cookie, the forwarded-for
@@ -111,7 +155,7 @@ func (e *engine) process(q *rq, resp *mainclient.Response, sent time.Time, bl *b
 	case iface.ClassAbsent:
 		e.onAbsent(q, resp, bl)
 	default:
-		e.onPass(q, resp, sent, bl)
+		e.onPass(q, resp, sent)
 	}
 }
 
@@ -163,11 +207,21 @@ func (e *engine) passThrough(q *rq, resp *mainclient.Response, pre []byte, class
 		}
 	}
 	buf := make([]byte, 32<<10)
+	began, sent := time.Now(), int64(len(pre))
+	rc := http.NewResponseController(q.out)
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
+			_ = rc.SetWriteDeadline(time.Now().Add(e.paceChunk)) // a chunk that the client does not take in time ends the transfer
 			if _, werr := q.out.Write(buf[:n]); werr != nil {
 				return
+			}
+			sent += int64(n)
+			if e.tooSlow(began, sent) {
+				// The budget slot is held until the body ends: a client that takes the body slower than the
+				// floor does not keep it (R-BAS-025, Q-BAS-123).
+				e.log.Warn("a pass-through transfer is cut: the client takes it slower than the floor", "bytes", sent, "after", time.Since(began).Round(time.Second).String())
+				panic(http.ErrAbortHandler)
 			}
 		}
 		if err == io.EOF {
@@ -179,13 +233,24 @@ func (e *engine) passThrough(q *rq, resp *mainclient.Response, pre []byte, class
 	}
 }
 
-// onPass handles every other answer: nothing is kept but a refusal of the read (R-BAS-020). A 403 is kept; a
-// 404 only when it answers a conditional request for something the Bastion holds, because a 404 that answers a
-// plain fetch may be a missing name, and a partial reader asking for one twice sends two requests (R-BAS-024,
-// Q-BAS-80).
-func (e *engine) onPass(q *rq, resp *mainclient.Response, sent time.Time, bl *baseline) {
-	e.markVolatile(q.cacheKey)
-	keepable := resp.Status == http.StatusForbidden || (resp.Status == http.StatusNotFound && bl != nil && (bl.ent != nil || bl.priv != nil))
+// tooSlow reports whether a pass-through transfer has taken longer than the grace period and moved fewer bytes
+// per second, on average since it began, than the floor.
+func (e *engine) tooSlow(began time.Time, sent int64) bool {
+	el := time.Since(began)
+	return el > e.paceGrace && float64(sent) < el.Seconds()*float64(e.paceMinRate)
+}
+
+// onPass handles every other answer: nothing is kept but a refusal of the read (R-BAS-020). A 403 is kept. A
+// 404 that is not marked absent is never kept, whether it answers a plain fetch or a conditional request: it may
+// be a missing name or one the caller may not see, and replaying it only for names the Bastion holds would show a
+// narrowed reader which hidden names are cached (R-BAS-024, Q-BAS-42, Q-BAS-124).
+func (e *engine) onPass(q *rq, resp *mainclient.Response, sent time.Time) {
+	if resp.Status >= http.StatusBadRequest {
+		e.markVolatileFor(q) // a refusal is this caller's: the main installation answers another caller otherwise
+	} else {
+		e.markVolatile(q.cacheKey) // a search or another answer that is nobody's to share
+	}
+	keepable := resp.Status == http.StatusForbidden
 	if q.r.Method == http.MethodGet && keepable {
 		body, rest, whole := readBounded(resp.Body, maxRefusalBody)
 		if whole {
@@ -245,7 +310,7 @@ func (e *engine) onAbsent(q *rq, resp *mainclient.Response, bl *baseline) {
 // onPrivate handles a document filtered for the caller (R-BAS-023): the caller's last copy is kept in memory,
 // validated with a conditional request on every use.
 func (e *engine) onPrivate(q *rq, resp *mainclient.Response, sent time.Time, bl *baseline) {
-	e.markVolatile(q.cacheKey)
+	e.markVolatileFor(q) // the document is filtered for this caller; a full reader's fetch is shareable
 	sub := q.subject
 	if resp.Status == http.StatusNotModified && bl != nil && bl.priv != nil {
 		_ = resp.Body.Close()
@@ -305,6 +370,18 @@ func (e *engine) onShared(q *rq, resp *mainclient.Response, sent time.Time, bl *
 			e.forward(q, mainclient.KindForward, "", nil)
 		}
 		return
+	}
+	if resp.Status == http.StatusNotModified && bl != nil && bl.ent == nil && bl.priv != nil {
+		// The Bastion's own condition named the validator of the caller's private copy and the main installation
+		// no longer filters the document for the caller: the copy is current, and it answers the caller, who sent
+		// no condition, as a 200. The copy itself is gone (process); the shared entry is not this caller's to
+		// renew (R-BAS-023, Q-BAS-107).
+		_ = resp.Body.Close()
+		src := bytesSource(bl.priv.Header, bl.priv.Body)
+		if e.serveSource(q, src) {
+			q.finish(metrics.ClassShared, metrics.ResultChecked)
+			return
+		}
 	}
 	if q.r.Method != http.MethodGet || resp.Status != http.StatusOK {
 		e.passThrough(q, resp, nil, metrics.ClassShared, metrics.ResultMiss)

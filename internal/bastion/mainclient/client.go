@@ -366,12 +366,20 @@ func readProblem(body io.Reader) (problem, []byte) {
 	return p, buf
 }
 
-// classify turns an answer that refuses the Bastion into its typed error; nil means it does not.
-func (c *HTTPClient) classify(status int, p problem) error {
+// classify turns an answer that refuses the Bastion into its typed error; nil means it does not. own is true for
+// the Bastion's own calls of the interface (handshake, feed, check, downloads) and false for a forward: the
+// Bastion's token is refused only when the answer to a call it made itself says so. A forward carries a path the
+// caller chose, which can name a route of the interface or of the management API, so a 401 bastion_token_invalid
+// on it is no statement about the Bastion's token: it is an [AnswerError] that answers the caller 502
+// main_failed (R-BAS-006, R-BAS-021, Q-BAS-121).
+func (c *HTTPClient) classify(status int, p problem, own bool) error {
 	switch {
 	case status == http.StatusBadRequest && p.Code == iface.CodeInterfaceMismatch:
 		return &MismatchError{Main: p.InterfaceVersion}
 	case status == http.StatusUnauthorized && p.Code == iface.CodeTokenInvalid:
+		if !own {
+			return &AnswerError{Status: status, Code: p.Code}
+		}
 		c.o.Metrics.MainTokenRefused.Set(1)
 		return ErrTokenRefused
 	}
@@ -399,7 +407,7 @@ func (c *HTTPClient) decode(resp *http.Response, call ifaceCall) error {
 		return nil
 	}
 	p, _ := readProblem(resp.Body)
-	if err := c.classify(resp.StatusCode, p); err != nil {
+	if err := c.classify(resp.StatusCode, p, true); err != nil {
 		return err
 	}
 	if resp.StatusCode >= 500 {
@@ -456,7 +464,7 @@ func (c *HTTPClient) accept(resp *http.Response, release func()) (*Response, err
 	if (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnauthorized) &&
 		strings.HasPrefix(resp.Header.Get("Content-Type"), iface.ProblemMediaType) {
 		p, buf := readProblem(body)
-		if err := c.classify(resp.StatusCode, p); err != nil {
+		if err := c.classify(resp.StatusCode, p, false); err != nil {
 			return nil, err
 		}
 		body = &prefixed{Reader: io.MultiReader(bytes.NewReader(buf), resp.Body), Closer: resp.Body}

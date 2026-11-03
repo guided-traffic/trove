@@ -75,8 +75,10 @@ type TokenSource interface {
 var (
 	// ErrBusy: no slot of the budget within the queue timeout; 503 bastion_busy.
 	ErrBusy = errors.New("mainclient: no slot of the concurrency budget")
-	// ErrTokenRefused: 401 bastion_token_invalid. The engine treats the main installation as unreachable and
-	// sets trove_bastion_main_token_refused (R-BAS-006).
+	// ErrTokenRefused: 401 bastion_token_invalid in the answer to a call of the interface's own (handshake,
+	// feed, check, downloads). The link treats the main installation as unreachable and the client sets
+	// trove_bastion_main_token_refused (R-BAS-006). On a forward the same answer is an *AnswerError: the path of
+	// a forward is the caller's (Q-BAS-121).
 	ErrTokenRefused = errors.New("mainclient: the main installation refused the Bastion token")
 	// ErrInterfaceMismatch: 400 bastion_interface_mismatch, or an answer whose Trove-Bastion-Interface differs
 	// (R-BAS-009, R-BAS-028). The wrapping error is *MismatchError.

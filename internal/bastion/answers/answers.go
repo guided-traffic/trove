@@ -25,6 +25,20 @@ import (
 // the clock skew between replicas.
 const SkewMargin = 15 * time.Second
 
+// FeedLookback is the lookback of the main installation's feed at its default (bastions.feed.lookback, R-BAS-015):
+// a read returns the entries newer than its cursor minus this period, so an entry is sent again for that long
+// after it was first received. The log keeps the IDs it applied for at least this long, so that a re-sent entry
+// is not applied again (Q-BAS-126, H-470).
+const FeedLookback = 5 * time.Minute
+
+// PruneCutoffs returns the two cutoffs of [FeedLog.Prune] at the given time: entries received before the first
+// no answer can depend on (period + grace period + [SkewMargin]), IDs received before the second can no longer
+// be re-sent (the same period, and at least the [FeedLookback] plus the margin).
+func PruneCutoffs(now time.Time, period, grace time.Duration) (entries, ids time.Time) {
+	keep := period + grace + SkewMargin
+	return now.Add(-keep), now.Add(-max(keep, FeedLookback+SkewMargin))
+}
+
 // Kind is the kind of an answer (R-BAS-020).
 type Kind string
 
@@ -156,15 +170,23 @@ func (l *FeedLog) Record(e iface.FeedEntry, received time.Time) (applied bool) {
 }
 
 // Prune forgets what no answer can still depend on: entries received before cutoff, which the caller sets to
-// now − (period + grace period + [SkewMargin]) (R-BAS-026).
-func (l *FeedLog) Prune(cutoff time.Time) {
+// now − (period + grace period + [SkewMargin]) (R-BAS-026), and the IDs applied before idCutoff, which is not
+// later than that and not later than now − ([FeedLookback] + [SkewMargin]); see [PruneCutoffs]. An ID that is
+// forgotten while the feed still re-sends its entry would apply the entry again and make every answer obtained
+// since its first receipt unusable once more.
+func (l *FeedLog) Prune(cutoff, idCutoff time.Time) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	for _, m := range []map[string]time.Time{l.seen, l.tokens, l.principals, l.repos} {
+	for _, m := range []map[string]time.Time{l.tokens, l.principals, l.repos} {
 		for k, t := range m {
 			if t.Before(cutoff) {
 				delete(m, k)
 			}
+		}
+	}
+	for k, t := range l.seen {
+		if t.Before(idCutoff) {
+			delete(l.seen, k)
 		}
 	}
 	if l.grants.Before(cutoff) {
@@ -182,6 +204,16 @@ func (l *FeedLog) Reset() {
 	l.principals = map[string]time.Time{}
 	l.repos = map[string]time.Time{}
 	l.grants = time.Time{}
+}
+
+// ContentSince reports whether a content entry that names the repository was received after the given time. The
+// engine asks it of a cache entry with validatedAt − [SkewMargin]: a withdrawal makes the entry unservable also
+// while the main installation is unreachable (R-BAS-022, R-BAS-027).
+func (l *FeedLog) ContentSince(repo string, after time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	t, ok := l.repos[repo]
+	return ok && t.After(after)
 }
 
 // matches reports rule 3: an entry that matches the answer was received after o − SkewMargin.

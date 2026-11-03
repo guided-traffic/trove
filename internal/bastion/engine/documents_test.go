@@ -482,8 +482,8 @@ func TestR_BAS_025_APrivateResultIsNotCollapsedAcrossCallers(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if !s.e.isVolatile(doc) {
-		t.Fatal("the key is not marked as not shareable")
+	if !s.e.isVolatile(credentialKey(parts[0]) + "|" + doc) {
+		t.Fatal("the key is not marked as not shareable for the partial reader")
 	}
 	before := m.count()
 	start := time.Now()

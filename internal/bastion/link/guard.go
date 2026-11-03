@@ -2,13 +2,15 @@ package link
 
 import (
 	"context"
+	"errors"
 
 	"github.com/guided-traffic/trove/internal/bastion/iface"
 	"github.com/guided-traffic/trove/internal/bastion/mainclient"
 )
 
 // Guard wraps the client the request flow uses so that a refused Bastion token or an interface mismatch in any
-// answer makes the link unreachable at once, whichever request met it (R-BAS-006, R-BAS-028). The link's own
+// answer of the interface's own calls makes the link unreachable at once, whichever call met it (R-BAS-006,
+// R-BAS-028); the refusal of the token in the answer to a forward does not (Q-BAS-121). The link's own
 // requests go through the unwrapped client and handle their errors themselves.
 func (l *Link) Guard(c mainclient.Client) mainclient.Client { return guarded{c: c, l: l} }
 
@@ -43,6 +45,10 @@ func (g guarded) Downloads(ctx context.Context, req iface.DownloadsRequest) erro
 
 func (g guarded) Do(ctx context.Context, f mainclient.Forward) (*mainclient.Response, error) {
 	resp, err := g.c.Do(ctx, f)
-	g.l.Note(err)
+	if !errors.Is(err, mainclient.ErrTokenRefused) {
+		// A refusal of the token on a forward says nothing about the Bastion's own token: the path of a
+		// forward is the caller's (Q-BAS-121). Only a mismatch is noted.
+		g.l.Note(err)
+	}
 	return resp, err
 }

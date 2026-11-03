@@ -429,7 +429,6 @@ func (d *fakeDownloads) Add(e iface.DownloadEvent) {
 func (d *fakeDownloads) SetEnabled(bool)               {}
 func (d *fakeDownloads) Run(ctx context.Context) error { <-ctx.Done(); return nil }
 func (d *fakeDownloads) Drain(context.Context) error   { return nil }
-func (d *fakeDownloads) Adopt(context.Context) error   { return nil }
 func (d *fakeDownloads) list() []iface.DownloadEvent {
 	d.mu.Lock()
 	defer d.mu.Unlock()

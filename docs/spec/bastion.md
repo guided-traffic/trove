@@ -221,7 +221,10 @@ Priority: **MVP** · Covers: DIST-024
 - The Bastion serves package clients and raw downloads with tokens only (owner,
   [Q-BAS-14](#q-bas-14--no-web-interface-at-the-bastion)): the path families `/api/<format>/…` (every path below `/api/`
   except `/api/v1/…`) and `/files/…` of INV-6, mirrored from the main installation (R-BAS-018). Every other path answers `404`
-  from the Bastion itself (R-BAS-029): `/`, `/ui/…`, `/auth/…`, `/api/v1/…`, `/-/…`, `/v2/…`, `/.well-known/…`.
+  from the Bastion itself (R-BAS-029): `/`, `/ui/…`, `/auth/…`, `/api/v1/…`, `/-/…`, `/v2/…`, `/.well-known/…`. The main
+  installation's router decodes every segment before it compares it, so `/api/%761/users` is `/api/v1/users` there: a path
+  whose family, format or key segment contains a percent-encoding, and a path with a `.` or `..` segment, answer `404` from the
+  Bastion as well ([Q-BAS-121](#q-bas-121--a-path-is-classified-as-the-main-installations-router-will-read-it-and-a-token-refusal-on-a-forward-is-no-statement-about-the-bastions-token)).
 - There is no login, no session, no cookie and no browser flow. A `Cookie` header is ignored and never forwarded. A session
   token never reaches the Bastion from trove, because trove never sets a cookie for the Bastion's host.
 - The ops listener serves `/healthz`, `/readyz` and `/metrics` as on every trove role ([operations-and-observability.md](operations-and-observability.md)
@@ -233,6 +236,10 @@ Acceptance criteria:
   flow; the others answer `404` with `bastion_not_served` and the counting double of the main installation records no request.
 - A request with `Cookie: __Host-trv_session=…` and no other credential is treated as anonymous, and the request the Bastion
   forwards carries no `Cookie`.
+- `/api/%761/users`, `/api/%76%31/bastion/handshake` and every other encoded spelling of a family, format or key segment
+  answer `404 bastion_not_served`, reach the main installation never, and leave the replica reachable however often they are
+  repeated (`TestR_BAS_003_R_BAS_018_APathIsClassifiedAsTheMainInstallationsRouterWillRouteIt`,
+  `TestR_BAS_003_R_BAS_006_AnEncodedSpellingOfTheInterfaceRoutesCannotTurnTheReplicaUnreachable`).
 
 ## Trust between the Bastion and the main installation
 
@@ -345,8 +352,9 @@ The renewal is manual (owner, [Q-BAS-19](#q-bas-19--the-bastion-token-is-renewed
    rotation of the mounted Secret does not wait for the interval
    ([Q-BAS-77](#q-bas-77--the-token-file-is-watched-by-a-one-second-identity-check-besides-the-interval-read)).
 4. The administrator revokes the old token once the screen of R-BAS-007 shows the new token's `lastUsedAt` from every replica's
-   contact. A replica that still uses a revoked token gets `401 bastion_token_invalid` and treats the main installation as
-   unreachable (R-BAS-027), `trove_bastion_main_token_refused` is 1 and `TroveBastionTokenRefused` fires (R-BAS-041).
+   contact. A replica that still uses a revoked token gets `401 bastion_token_invalid` to a call of its own (handshake, feed,
+   check, download batch) and treats the main installation as unreachable (R-BAS-027; the same answer to a forward is not that statement,
+   [Q-BAS-121](#q-bas-121--a-path-is-classified-as-the-main-installations-router-will-read-it-and-a-token-refusal-on-a-forward-is-no-statement-about-the-bastions-token)), `trove_bastion_main_token_refused` is 1 and `TroveBastionTokenRefused` fires (R-BAS-041).
 
 - **Remaining lifetime.** The handshake returns the expiry of the token in use (R-BAS-010). The Bastion exports
   `trove_bastion_token_remaining_seconds` and logs a warning at start and then once a day while the remaining lifetime is below
@@ -876,7 +884,8 @@ Q-BAS-17). Each request passes these steps in order; the first that answers ends
 3. **Path family.** `/api/v1/…` and every path outside `/api/<format>/<key>/…` and `/files/<key>/…` answer `404
    bastion_not_served` (R-BAS-003). `<key>` is the addressed repository key for the Bastion's bookkeeping until the main
    installation's `Trove-Bastion-Repository` confirms it; a key that does not match `^[a-z0-9][a-z0-9._-]{1,63}$` (INV-5)
-   answers `404` without a request. The Bastion reads no other part of a path.
+   answers `404` without a request. The Bastion reads no other part of a path. A family, format or key segment that is
+   percent-encoded and a `.` or `..` segment are not classified: the path answers `404 bastion_not_served` (Q-BAS-121).
 4. **Per-address limits** (R-BAS-035) and **credentials** (R-BAS-019), including the failed-authentication timeout (R-BAS-036).
 5. **Method.** `GET` and `HEAD` go to the read flow (R-BAS-020 to R-BAS-024); `OPTIONS` answers `405`; every other method goes
    to the write refusal of R-BAS-014. A write needs no credential before its probe ([Q-BAS-81](#q-bas-81--a-write-is-decided-by-the-probe-first-its-credential-is-checked-only-if-the-real-request-is-forwarded)).
@@ -947,9 +956,10 @@ An answer is what the main installation said about a caller (owner,
      replicas;
   4. `o` is not earlier than the start of the replica's feed history plus 15 s (R-BAS-026).
 - A refused or invalid answer is kept like an allowed one, so a refused caller costs the main installation one request per
-  period; a widening of a right may take the period to reach the Bastion (owner). A `403` is kept, and a `404` only
-  when it answers a conditional request for content the Bastion holds; a `404` that answers a plain fetch is not, because it may be a
-  missing name that a narrowed reader asks for again ([Q-BAS-80](#q-bas-80--a-404-that-answers-a-plain-fetch-is-not-kept-as-the-callers-url-answer)).
+  period; a widening of a right may take the period to reach the Bastion (owner). A `403` is kept; a `404` that is not marked `absent` never is,
+  whether it answers a plain fetch or a conditional request, because it may be a missing name or a hidden one, and replaying it only
+  for names the Bastion holds would show a narrowed reader which hidden names are cached
+  ([Q-BAS-124](#q-bas-124--a-404-that-is-not-marked-absent-is-never-kept-as-a-url-answer), which replaces [Q-BAS-80](#q-bas-80--a-404-that-answers-a-plain-fetch-is-not-kept-as-the-callers-url-answer)).
 - Answers live in the replica's memory (at most `bastion.answers.max_entries`, least recently used first) and, with Valkey, in
   Valkey as signed records (R-BAS-034). A replica may refresh an answer that a request uses in the last fifth of its period in
   the background, with one collapsed request (the shape answer, through the check; URL answers renew by use, [Q-BAS-84](#q-bas-84--the-background-refresh-renews-shape-and-credential-answers-url-answers-renew-by-use)).
@@ -986,7 +996,11 @@ and the Bastion keeps what may be kept (owner, Q-BAS-7):
   headers.
 - **Streaming.** An artifact is spooled while it is streamed to the caller, with R-REPO-041's withheld tail: the last 64 KiB
   are released only after the SHA-256 equals the content address of its `ETag` and the entry is committed; on a mismatch the
-  transfer is aborted and nothing is kept. A document is kept once it has arrived whole. An artifact without `Content-Length`
+  transfer is aborted and nothing is kept. The spooling does not wait for the caller
+  ([Q-BAS-123](#q-bas-123--the-fill-reads-the-main-installation-at-its-own-speed-and-no-client-holds-a-slot-or-a-waiter)): the fill reads the
+  main installation's body into the spool at the main installation's speed and frees the budget slot when the body ends, and the
+  caller is served from the spool at its own speed. A fill goes on when its caller goes away, so the next request is a hit. A spool that
+  cannot take the bytes cuts the transfer; the bytes are never passed on unverified. A document is kept once it has arrived whole. An artifact without `Content-Length`
   or above `bastion.cache.max_object_bytes`, and a document above 64 MiB, are passed through and not kept. A `HEAD` miss is
   forwarded as `HEAD` and keeps answers only.
 - **Errors.** An answer that carries the marking is the main installation's own, whatever its status, and is passed on
@@ -1013,13 +1027,15 @@ for the bound (owner, Q-BAS-7):
   the check of R-BAS-011 for it, one request per credential and repository, collapsed; the shape then decides below. A caller
   whose credential the main installation called `invalid` gets the `401` of R-BAS-029.
 - **Serve from the cache without a request** when the entry is fresh and the caller is allowed:
-  - fresh: `now < validatedAt + bastion.cache.artifact_revalidate_after` and no `content` entry for its repository was received
-    after `validatedAt − 15 s` ([Q-BAS-31](#q-bas-31--cached-artifacts-are-revalidated-after-a-period));
+  - fresh: `now < validatedAt + bastion.cache.artifact_revalidate_after` and no `content` or `grants` entry for its repository was received
+    after `validatedAt − 15 s` ([Q-BAS-31](#q-bas-31--cached-artifacts-are-revalidated-after-a-period)); the `content` entry also ends
+    an entry's service while the main installation is unreachable and its periods are extended
+    ([Q-BAS-122](#q-bas-122--a-content-entry-ends-the-service-of-a-cached-entry-also-while-the-main-installation-is-unreachable));
   - allowed: a usable read-shape answer `full` for the repository, or a usable URL answer `allowed` for the cache key.
 - **Check** otherwise: a conditional `GET` with the caller's own credential and `If-None-Match: "<sha256>"` through the real
   route ([Q-BAS-27](#q-bas-27--a-cached-artifact-is-checked-through-the-real-route)). `304`: the bytes are served from the cache,
   and `validatedAt` and the caller's URL answer are renewed. `200`: the new bytes replace the entry and are served. A refusal:
-  the main installation's answer is replayed and kept as the caller's URL answer, and the entry stays for other callers; only a
+  the main installation's answer is replayed, a `403` is kept as the caller's URL answer and a `404` is not (Q-BAS-124), and the entry stays for other callers; only a
   `404` marked `absent` removes it. The main installation answers the conditional from PostgreSQL without reading its object
   store (R-STOR-012), so a check costs no artifact transfer.
 - **Refuse without a request** when the caller's shape answer is `none`: the Bastion answers the stored status (R-BAS-029).
@@ -1030,7 +1046,7 @@ Acceptance criteria:
 
 - Warm cache, `$FULL` with a usable `full` answer: `npm ci` of 20 tarballs sends no request to the main installation.
 - Warm cache, `$PART` for `@acme/sdk` tarballs: 1 conditional request per tarball, each answered `304`, no tarball bytes from
-  the main installation; for a tarball outside `@acme/*` the main installation's `404` is replayed.
+  the main installation; for a tarball outside `@acme/*` the main installation's `404` is replayed, and asked for again by each request.
 - `$NONE` with a `none` answer on `npm-all`: the tarball request answers `404` without a request.
 - After `artifact_revalidate_after`, the next request for a cached tarball by `$FULL` sends one conditional request.
 
@@ -1102,7 +1118,8 @@ Acceptance criteria:
 - Anonymous access on, `anonymous` a `full` reader of `npm-all`: 10,000 anonymous requests from 100 addresses for 100 random
   missing names within a minute cause at most one request per name and replica (plus one check per replica) to the main
   installation, and one per name with Valkey.
-- `$PART` asking for a missing name twice sends two requests to the main installation.
+- `$PART` asking for a missing name twice sends two requests to the main installation, and asking for a name that is cached but
+  hidden from it twice sends two as well (`TestR_BAS_024_ANarrowedReaderCannotTellACachedHiddenNameFromAMissingOne`).
 
 ### R-BAS-025 · Concurrency budget towards the main installation and collapsed misses
 Priority: **MVP** · Covers: trove-only
@@ -1113,11 +1130,19 @@ Priority: **MVP** · Covers: trove-only
   behalf of anonymous callers may hold at most `bastion.main.anonymous_share`, rounded down and at least one slot while the share is above 0
   ([Q-BAS-75](#q-bas-75--the-anonymous-cap-of-the-budget-is-the-share-rounded-down-at-least-one-slot)). A request that gets no slot within
   `bastion.main.queue_timeout` answers `503 bastion_busy` with `Retry-After: 1`. Misses can therefore never put more than the
-  budget onto the main installation, whatever arrives.
+  budget onto the main installation, whatever arrives. A slot is held until the response body ends, and no client's speed
+  decides how long that is ([Q-BAS-123](#q-bas-123--the-fill-reads-the-main-installation-at-its-own-speed-and-no-client-holds-a-slot-or-a-waiter)):
+  an artifact fill reads its body at the main installation's speed; the body of a pass-through is cut when the client takes a chunk
+  slower than 10 s or, after a grace period of 30 s, averages less than 64 KiB per second. A write probe takes the class of the
+  caller (a caller that presented a credential takes an authenticated slot, so `anonymous_share: 0` does not refuse its write
+  with `503`).
 - **Collapsing.** Concurrent misses for one cache key share one fetch per replica (single-flight), and with Valkey one fetch
   across replicas with the bucket backend, under a fetch lock of R-ARCH-033's form (`trove-bastion:<prefix>:flight:<sha256 of
   the cache key>`, 30 s, extended by the holder). A waiter is served from the result only when its own answer allows it
-  (R-BAS-022, R-BAS-023); otherwise it makes its own conditional request. Collapsing never shares a decision.
+  (R-BAS-022, R-BAS-023); otherwise it makes its own conditional request. Collapsing never shares a decision. The flight ends
+  when the fill is committed, not when the leader's client has taken the bytes, and a waiter that has waited 30 s answers `503
+  bastion_busy` with `Retry-After: 1` and makes no request of its own. A result that depends on the caller's rights (a private
+  document, a refusal) keeps collapsing off for that caller only ([Q-BAS-125](#q-bas-125--a-result-that-depends-on-the-callers-rights-switches-collapsing-off-for-that-caller-only)).
 - `bastion.replicas` is rendered by the chart: `replicaCount`, or `autoscaling.maxReplicas` with autoscaling, so the sum over
   replicas never exceeds the configured budget ([Q-BAS-34](#q-bas-34--without-valkey-budgets-divide-by-the-charts-replica-count)).
 
@@ -1136,6 +1161,9 @@ Acceptance criteria:
   never show more than 8 in-flight requests at the main installation, and anonymous ones never more than 2.
 - 50 concurrent cold requests for one tarball cause one request to the main installation per replica, and one with Valkey and
   the bucket backend.
+- Three connections that take a cold tarball one socket buffer at a time hold no slot: an unrelated anonymous request is
+  served at once, and a second caller of the same cold key is served from the committed entry
+  (`TestR_BAS_025_ClientsThatReadSlowlyDoNotHoldTheBudgetSlots`, `TestR_BAS_025_AWaiterOfACollapsedFetchIsNotHeldByTheLeadersClient`).
 
 ### R-BAS-026 · Applying the revocation feed
 Priority: **MVP** · Covers: trove-only
@@ -1145,11 +1173,16 @@ The Bastion follows the revocation feed every few seconds, so a revoked token or
 
 - Every replica polls `feed` every `bastion.feed.poll_interval` and applies each new entry by its ID: it records the entry with
   its receipt time, which makes every matching answer unusable (R-BAS-020 rule 3), and deletes the matching answers from memory
-  and, best effort, from Valkey. `settings` triggers a handshake. Entries are kept for `answers.period + grace_period + 15 s`.
+  and, best effort, from Valkey. `settings` triggers a handshake. A page is recorded as a whole and then the answers it matches are deleted in one pass
+  ([Q-BAS-126](#q-bas-126--the-link-applies-a-page-as-a-unit-ends-the-start-read-at-the-end-of-the-feed-and-bounds-each-call)). Entries are kept for
+  `answers.period + grace_period + 15 s`; the IDs of applied entries for at least the feed's lookback (5 minutes, the default of
+  `bastions.feed.lookback`) as well, so that an entry the feed sends again is not applied again (H-470).
 - **Start.** A starting replica reads the feed from `t:<now − answers.period − answers.grace_period − 15 s>` before it uses any
   answer from Valkey; that time is the start of its feed history (rule 4). Until the first read succeeds it uses no shared answer. A read that returns no entry moves a synthetic cursor forward to
   the time of the request, so the next read is cheap and the main installation's lookback covers late commits
-  ([Q-BAS-76](#q-bas-76--the-synthetic-feed-cursor-moves-to-the-send-time-of-an-empty-read))
+  ([Q-BAS-76](#q-bas-76--the-synthetic-feed-cursor-moves-to-the-send-time-of-an-empty-read)). The history starts, and the
+  unreachable state of a start ends, when the start read returns a page that says `more: false`; a first page that says
+  more is not that read.
 - **Reset.** On `reset: true` the replica drops every answer it holds and ignores every answer in Valkey obtained before the
   reset (rule 4 with the reset time as the history start).
 - **Bound.** While the main installation is reachable, a narrowing committed at the main installation is in force at every
@@ -1181,14 +1214,17 @@ Answers the Bastion already holds stay valid for a configurable grace period bey
 - **Unreachable** ([Q-BAS-44](#q-bas-44--unreachable-means-a-failed-handshake-or-a-stale-feed)) is a state of each replica: it
   begins when the handshake fails (connect or TLS error, timeout, `5xx`, `401 bastion_token_invalid`, `400
   bastion_interface_mismatch`, a base URL mismatch) or when no feed poll has succeeded for `bastion.main.unreachable_after`, and
-  ends when a handshake and a feed poll succeed again. Forward errors alone do not begin it, and neither does one failed feed
-  poll. A replica starts unreachable, since its start; the first poll that succeeds after a failed one is followed by a
+  ends when a handshake and a feed poll succeed again. Forward errors alone do not begin it (a `401 bastion_token_invalid` to a forward is a forward error, Q-BAS-121), and neither does one failed feed
+  poll. Every call of the link ends after `unreachable_after`, so a connection that swallows the request is a failed call at that time
+  and not at `response_header_timeout`. A replica starts unreachable, since its start; the first poll that succeeds after a failed one is followed by a
   handshake; a `401 bastion_token_invalid` or a mismatch in the answer to any request begins the state at once
   ([Q-BAS-79](#q-bas-79--the-link-is-one-state-machine-per-replica-run-by-the-server)).
 - While unreachable, the replica sends nothing to the main installation except handshake and feed probes every
   `poll_interval`, and:
   - a caller whose answers allow a cached entry (R-BAS-022, R-BAS-023, with rule 1 extended by `grace_period`) gets cached
-    artifacts and shared documents, also past their revalidation periods (possibly stale metadata), and its own private copies;
+    artifacts and shared documents, also past their revalidation periods (possibly stale metadata), and its own private copies; an
+    entry that a `content` entry of the feed (which the link still reads while it can) names, received after `validatedAt − 15 s`,
+    is not served: the grace period extends an answer, never past a withdrawal (Q-BAS-122);
   - a token the Bastion has not seen, and a miss, get `503 main_unreachable` with `Retry-After: 30`;
   - after the grace period of every answer has passed, at the latest `answers.period + grace_period` after unreachability began,
     the replica serves nothing: every read answers `503`.
@@ -3887,7 +3923,7 @@ allows.
 
 ### Q-BAS-80 · A 404 that answers a plain fetch is not kept as the caller's URL answer
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded by [Q-BAS-124](#q-bas-124--a-404-that-is-not-marked-absent-is-never-kept-as-a-url-answer)**: the conditional `404` is no longer kept either.
 
 Context: R-BAS-020 keeps "the stored refusal" of a forwarded or conditional request as a URL answer, so a refused caller costs the main
 installation one request per period. R-BAS-024's acceptance says a `partial` reader asking for a missing name twice sends two
@@ -4486,6 +4522,165 @@ engine looked for the route in the stripped header, so it never saw it: the Bast
 **Applied in the spec:** R-BAS-014; code: `internal/bastion/mainclient/client.go`, `internal/bastion/engine/probe.go`, `TestR_BAS_014_TheRouteOfAProbeAnswerSurvivesTheStrippedMarking`,
 `TestR_BAS_014_WritesAreRefusedInTheFormatsShape`.
 
+### Q-BAS-121 · A path is classified as the main installation's router will read it, and a token refusal on a forward is no statement about the Bastion's token
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: security finding P1. The main installation's router decodes every segment of a path before it compares it, and the engine compared the raw segment with `v1`. `GET /api/%761/users`
+reached the management API through the Bastion, and `GET /api/%761/bastion/handshake` made the main installation answer `401 bastion_token_invalid`, which the client and the link read as a
+refusal of the Bastion's own token: the replica turned unreachable, once per poll, for one request from anyone. Two causes, two decisions.
+
+**The classification.**
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse what cannot be read as the router will read it: a percent-encoding in the family, format or key segment, and a `.` or `..` segment, answer `404 bastion_not_served` (chosen) | The Bastion still compares what it received; it just does not classify an ambiguous spelling | No format or router knowledge in the Bastion; a test holds the rule against `net/http.ServeMux` | A client that encodes a letter of the family, format or key (none does) is refused |
+| (b) Decode every segment and forward the decoded form | The Bastion reads as the router does | Equal reading | Changes the cache key and the bytes that reach the main installation; two spellings of one URL are two readings |
+| (c) Link the main installation's router | Same code | Exact | Against R-BAS-001 (the Bastion links none of the main installation's code) |
+
+**The reading of `401 bastion_token_invalid`.**
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) It refuses the Bastion's token only in the answer to a call the Bastion makes itself: handshake, feed, check, download batch; the same answer to a forward is a bad answer (`502 main_failed`), the gauge stays and the link is not told (chosen) | The path of a forward is the caller's, so the answer to it can come from any route | The only calls whose path the Bastion chooses are the ones that count | A really revoked token is noticed by the next feed poll (within `poll_interval`), not by a forward |
+| (b) Keep reading it on a forward | Nothing changes | One mechanism | Any caller turns the replica unreachable by naming a route of the interface in a spelling the Bastion does not catch |
+| (c) Tell the two apart by a header of the answer | The main installation marks its answers | Exact | Needs a change of the interface, and `InterfaceVersion` |
+
+**Choice:** (a) and (a).
+
+**Rationale:** the classification now fails closed, and the reading of the refusal no longer depends on it: the second line of defence holds even for a spelling the first one misses. The main
+installation refuses a forward outside the mirrored families in parallel (its side of the same finding). The development agent would revisit the first choice if a format needs an encoded
+segment in the first three positions of its paths, and the second if the interface gains a header that marks the answers to its own calls.
+
+**Applied in the spec:** R-BAS-003, R-BAS-006, R-BAS-018, R-BAS-027; code: `engine.classifyPath`, `mainclient.classify`, `link.Guard`;
+`TestR_BAS_003_R_BAS_018_APathIsClassifiedAsTheMainInstallationsRouterWillRouteIt`, `TestR_BAS_003_AnEncodedSpellingOfTheManagementAPIIsNeverForwarded`,
+`TestR_BAS_003_R_BAS_006_AnEncodedSpellingOfTheInterfaceRoutesCannotTurnTheReplicaUnreachable`, `TestR_BAS_006_R_BAS_021_ATokenRefusalAnswerToAForwardIsNoRefusalOfTheBastionsToken`,
+`TestR_BAS_006_R_BAS_021_ARefusalOfTheTokenOnAForwardDoesNotMakeTheReplicaUnreachable`.
+
+### Q-BAS-122 · A `content` entry ends the service of a cached entry also while the main installation is unreachable
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: security finding P2. The engine served an entry when the replica was unreachable or the entry was fresh, and only freshness looked at the `content` entries of the feed. A replica the main
+installation could not be reached by, but whose link still read the feed (a forced handshake failure, for one), kept serving an artifact that was withdrawn through the feed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The entry is unservable when a `content` entry naming its repository was received after `validatedAt − 15 s`, reachable or not (chosen) | The grace period extends an answer, never past a withdrawal | Judged at use, like rule 3 of R-BAS-020; nothing to delete; the entry is usable again after the next successful check | While the feed is readable and the main installation is not, a publish in a repository makes the entries of it validated before unservable |
+| (b) Delete the entry when the `content` entry arrives | The entry is gone | Memory | A deletion that fails leaves the entry; the entry may be wanted after the outage |
+| (c) Leave it | Grace serves everything | Most availability | The finding |
+
+**Choice:** (a).
+
+**Rationale:** a feed that is readable means the main installation is reachable enough to say what changed; a replica that cannot read the feed receives no entry and serves as R-BAS-027 says. The
+case where the two differ (the handshake fails and the feed does not) is rare and short. The development agent would revisit it if such partial outages turn out to be common and the repositories
+change so often that the grace period stops helping.
+
+**Applied in the spec:** R-BAS-022, R-BAS-027; code: `answers.FeedLog.ContentSince`, `engine.withdrawn`; `TestR_BAS_022_R_BAS_027_AWithdrawnArtifactIsNotServedWhileTheMainInstallationIsUnreachable`.
+
+### Q-BAS-123 · The fill reads the main installation at its own speed, and no client holds a slot or a waiter
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: security findings P3 and B4. A budget slot is held until the response body ends, and the body was read at the client's write speed, so seventeen connections that took their tarball one
+socket buffer at a time held every anonymous slot (everybody else got `503 bastion_busy`), and a second caller of the same cold key waited behind a slow leader without a bound.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Decouple the fill: a goroutine reads the main installation's body into the spool and frees the slot when the body ends; the caller is served from the spool at its own pace, with the withheld tail; the flight of the collapsed fetch ends at the commit (chosen) | The speed of the main installation decides how long a slot is held | Uses the spool the fill already writes; the withheld tail is the same | The spool file lives as long as the slowest follower; a fill goes on when its caller leaves (H-472); a spool that fails cuts the transfer |
+| (b) Tee into a bounded memory buffer between the body and the client | A client that falls behind blocks the body | No spool read | The slot is held again once the buffer is full |
+| (c) Cut slow clients with a shorter stall timeout | `server.transfer_stall_timeout` is the bound | One value | A client that takes one chunk per timeout still holds the slot; a legitimate slow link is cut |
+
+For the waiters:
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A waiter that has waited 30 s answers `503 bastion_busy` with `Retry-After: 1` (chosen) | The retry joins the fetch again or finds the entry | No extra load on a main installation that is slow | The caller retries |
+| (b) It makes its own request | N requests after the wait | The caller is served | A slow main installation gets the multiplied load the collapsing exists to avoid |
+
+For the body of a pass-through, which cannot be spooled (an answer above `max_object_bytes`, without `Content-Length`, a document above the limit): the client must take each 32 KiB chunk within 10 s,
+and after a grace period of 30 s it must have averaged 64 KiB per second, or the transfer is cut and the body closed (chosen over a total time, which would cut a legitimate large download on a slow link).
+
+**Choice:** (a), (a), and the floor.
+
+**Rationale:** a slot is the scarce thing, and the only party that should decide how long it is held is the main installation. The values are constants of the engine (`collapseWaitMax`, `paceGraceMax`,
+`paceMinRate`, `paceChunkMax`, `fillStallMax` for a main installation that sends no byte for 60 s) and not keys: no operator has asked to tune them. The development agent would revisit it if
+a deployment needs another floor, and the pass-through at the floor is the gap H-471. A spool that cannot take the bytes now cuts the transfer instead of passing them on unverified, which closes
+the gap H-459 of the first build.
+
+**Applied in the spec:** R-BAS-021, R-BAS-025; code: `engine.fillRun`, `engine.fillArtifact`, `engine.follow`, `engine.waitLeader`, `engine.passThrough`, `engine.handle`, `engine.mainHold`;
+`TestR_BAS_025_ClientsThatReadSlowlyDoNotHoldTheBudgetSlots`, `TestR_BAS_025_AWaiterOfACollapsedFetchIsNotHeldByTheLeadersClient`, `TestR_BAS_021_R_BAS_025_TheFillOutlivesTheClientThatStartedIt`,
+`TestR_BAS_025_AWaiterThatWaitsTooLongForTheLeaderAnswers503WithRetryAfter`, `TestR_BAS_025_APassThroughBodyDoesNotHoldItsSlotForAClientThatDoesNotTakeIt`,
+`TestR_BAS_025_TheFloorOfAPassThroughStartsAfterTheGracePeriodAndIsAnAverage`.
+
+### Q-BAS-124 · A `404` that is not marked `absent` is never kept as a URL answer
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: security finding P4. A `404` to a conditional request was kept as the caller's URL answer and replayed without a request, while the `404` to a plain fetch was not (Q-BAS-80). A narrowed
+reader asking for a name twice got a second answer from memory for a name the Bastion holds and from the main installation for one it does not: the timing told which hidden names are cached,
+against R-BAS-024 and Q-BAS-42.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Never keep it, on either path (chosen) | Every `404` that is not `absent` is asked for again | One rule; the acceptance of R-BAS-024 holds as written | A narrowed reader's hidden cached name costs one request per read (it costs what a missing name costs) |
+| (b) Always keep it, per caller and cache key | Both paths answer the second request from memory | Fewer requests | Contradicts the acceptance of R-BAS-024 (`$PART` asking twice sends two requests); a name published inside the period stays a `404` |
+| (c) Keep the conditional one (Q-BAS-80) | The first build | Fewest requests for the hidden cached name | The finding |
+
+**Choice:** (a).
+
+**Rationale:** the per-address miss limit and the budget bound what a narrowed reader's repeated reads cost the main installation; the oracle was the difference between two paths, and (a) removes the
+difference. A `403` is kept as before: it is the same for a name that does not exist and for one that does, so it shows nothing. The development agent would revisit it if narrowed readers' reads
+dominate the main installation's load; the answer then is a short per-caller memory for both cases at once, never for one.
+
+**Applied in the spec:** R-BAS-020, R-BAS-022, R-BAS-024; Q-BAS-80 is superseded; code: `engine.onPass`; `TestR_BAS_024_ANarrowedReaderCannotTellACachedHiddenNameFromAMissingOne`,
+`TestR_BAS_022_APartialReaderCostsOneConditionalRequestPerTarballAnsweredByA304`.
+
+### Q-BAS-125 · A result that depends on the caller's rights switches collapsing off for that caller only
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: security finding B10. A refusal, a private document or any other answer that is not shared marked the cache key volatile for everyone, so the fetches of the key were no longer collapsed. A caller
+without rights could keep collapsing off for a popular key.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A mark that depends on the caller (a refusal, a private document) is the caller's, keyed by its credential and the cache key; a mark that does not (a search, a document above the limit, a `Vary` the Bastion cannot key on) stays the key's (chosen) | The result decides whose mark it is | An attacker affects only itself | A partial reader's first request after a minute may wait for a leader and then fetch itself |
+| (b) No marks | Collapsing always on | Simple | Every waiter of a private result pays a second round trip, which the marks exist to avoid |
+| (c) Marks only from callers with a `full` answer | A caller without rights cannot mark | Simple | A private document is the result of a partial reader, so the marks would never be set |
+
+**Choice:** (a).
+
+**Rationale:** collapsing never shares a decision (R-BAS-025), so scoping a mark to its caller loses nothing but the saved round trip of a result that was not shareable anyway. The marks are in the
+least-recently-used registry that already bounds them. The development agent would revisit it if the registry fills with per-caller marks.
+
+**Applied in the spec:** R-BAS-025; code: `engine.markVolatileFor`, `engine.isVolatileFor`; `TestR_BAS_025_ARefusalOfOneCallerDoesNotSwitchCollapsingOffForOthers`.
+
+### Q-BAS-126 · The link applies a page as a unit, ends the start read at the end of the feed, and bounds each call
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: security findings B3, B7, B8 and B11, all in the link. (1) The history started, and the replica turned reachable, after the first page even when it said `more`; a failing second page left a
+replica that knew a part of the feed. (2) Every entry of a page was recorded and then followed by a full pass over the answers that dropped what it matched: a burst page of 1,000 entries against 200,000
+answers was a thousand passes. (3) Reachability was evaluated after a whole tick, and a connection that swallowed the request held the call until `response_header_timeout`. (4) The IDs of applied
+entries were pruned with the entries, after `period + grace_period + 15 s`, which is shorter than the feed's lookback (5 minutes) for a short period: an entry the feed sent again was applied again
+and made every answer obtained since unusable.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The start read ends at the page that says `more: false`; a page is recorded whole and then dropped in one pass with sets of the tokens, principals and repositories it names; every call ends after `unreachable_after`; IDs are kept for at least the lookback (chosen) | Each cause is removed | Four small changes with one test each | The default lookback is a constant of the Bastion (H-470) |
+| (b) Keep the first page's behaviour and the per-entry drop, and rely on the 5 s bound | Nothing changes | None | B3 leaves a replica with a half-known history; B7 costs seconds under a burst |
+| (c) Read the lookback from the handshake | The Bastion follows the main installation's value | Exact | A change of the interface, and `InterfaceVersion` |
+
+**Choice:** (a).
+
+**Rationale:** the validity rules already make every matching answer unusable at the moment the page is recorded (R-BAS-020 rule 3), so the deletion is memory and Valkey housekeeping and may be one pass. The
+development agent would revisit (c) if operators set `bastions.feed.lookback` above its default.
+
+**Applied in the spec:** R-BAS-026, R-BAS-027; code: `link.pollOnce`, `link.applyEntries`, `link.callContext`, `engine.answerStore.Drop`, `answers.PruneCutoffs`;
+`TestR_BAS_026_TheHistoryStartsOnlyWhenTheStartReadReachedItsEnd`, `TestR_BAS_026_AFeedPageOfAThousandEntriesIsAppliedAgainstTwoHundredThousandAnswersWithinTheBound`,
+`TestR_BAS_027_ACallThatTheMainInstallationNeverAnswersIsCutAtUnreachableAfter`, `TestR_BAS_026_AnAppliedIDIsKeptForAtLeastTheFeedLookback`.
+
 ### Q-BAS-127 · A refused request or miss does not consume the limit it was refused by
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -4917,7 +5112,8 @@ Live on every Bastion. The fills in progress of a replica hold together at most 
 temporary storage, and the chart sizes the volume from it, so the pod is not evicted for a burst of cold requests for large artifacts. What
 the bound costs: a fill that would pass it is passed through unkept and counted in `trove_bastion_cache_errors_total{op="spool"}`, so
 under a burst of large cold artifacts the cache keeps fewer of them (a client retrying later finds the spool free); and a request with
-`Range` or a conditional header, which is answered from the spool, answers `502 main_failed` ([H-459](#h-459--an-artifact-whose-spool-fails-during-the-transfer-reaches-the-caller-unverified-and-a-range-request-on-it-fails)).
+`Range` or a conditional header, which is answered from the spool, answers `502 main_failed`; one whose spool fails during the transfer is cut (Q-BAS-123). A spool file lives until the last client of its fill is done, so a
+slow client keeps its file for as long as it reads.
 With the volume backend the spool is a directory of the cache volume: the chart checks that `cacheVolume.size` holds `max_bytes` plus
 the spool, but nothing watches what else a volume holds, and a volume (`emptyDir`) filled by something else is still evicted. What makes
 it real: several concurrent fills of objects near `max_object_bytes` (two of 1.5 GiB pass 2 GiB), or `spool_max_bytes` set to the
@@ -5012,16 +5208,6 @@ whether a registration of that name exists. What makes it real: a stolen Bastion
 different purpose; an attacker who guesses names (at most 16 registrations, each name matching `^[a-z][a-z0-9-]{0,19}$`) learns only
 that a name exists, never a token or a contact.
 
-### H-459 · An artifact whose spool fails during the transfer reaches the caller unverified, and a Range request on it fails
-
-Stage: R-BAS-021, the fill of a miss. Subject: the bytes of one transfer.
-
-Live on every Bastion, and dormant until the temporary storage of the replica fails (a full volume, a pod's temporary directory that cannot be written). The digest of an artifact is
-taken by the fill as the bytes are written to it. When a write to the spool fails, the fill stops taking bytes, the replica cannot check the whole transfer against the content address,
-and it passes the bytes through as a miss it cannot keep: the caller receives them without the withheld tail's guarantee, and nothing is stored. A request with `Range` or a conditional
-header, which is answered from the committed fill, answers `502 main_failed`. The main installation is reached over a verified TLS connection, so the unverified bytes are the ones it sent;
-what is lost is the check against its own `ETag`. What makes it real: a full volume together with a main installation that serves corrupt bytes.
-
 ### H-460 · Without a signing key the entries on the volume are not authenticated
 
 Stage: R-BAS-032, Q-BAS-98. Subject: which bytes an entry names.
@@ -5055,6 +5241,34 @@ Stage: R-BAS-014. Subject: how much of an upload body the Bastion consumes befor
 Live in the suite. The Bastion has no counter of request-body bytes, so the test announces 4 MiB, sends 1 KiB, and requires the refusal to arrive before the rest is sent; it proves the refusal does
 not wait for the body, and bounds what was read by what was sent (1 KiB), not by what the Bastion's socket buffers took in a long upload. What makes it real: a change that reads the body after
 answering, which this test would not see.
+
+### H-470 · The Bastion assumes the feed's default lookback when it keeps the IDs of applied entries
+
+Stage: R-BAS-026, `answers.FeedLog`. Subject: the entries a Bastion applies once.
+
+Live on every Bastion whose main installation sets `bastions.feed.lookback` above its default of 5 minutes (the key allows up to 1 hour), and dormant otherwise. The Bastion keeps the ID of an applied entry
+for `answers.period + grace_period + 15 s` and at least 5 minutes plus 15 s, so that an entry the feed sends again is not applied again. With a longer lookback and a short period, the feed sends an entry
+again after the ID is forgotten, and it is applied again: it is recorded with a new receipt time, so every answer obtained since the first receipt is unusable once more. That costs the main installation
+requests; it cannot serve anything that should not be served. What makes it real: a lookback of 30 minutes and `answers.period: 1m`, `grace_period: 1m`.
+
+### H-471 · A pass-through body at the floor rate holds its budget slot for the length of the transfer
+
+Stage: R-BAS-025, the pass-through of a response that is not kept (Q-BAS-123). Subject: the slots of the budget.
+
+Live on every Bastion. A fill frees its slot when the main installation's body ends; the body of a pass-through (an answer above `max_object_bytes`, one without `Content-Length`, a document above the
+limit) is read at the pace of the client and holds the slot meanwhile. A client that takes each chunk within 10 s and averages 64 KiB per second after the first 30 s is not cut, so a reader at that rate of
+an object of 2 GiB holds one slot for about nine hours. Readers from many addresses can take the share of anonymous callers this way (H-388 is the same budget). The Bastion does not cut by total time,
+because it would cut a large download on a slow link. What makes it real: an attacker with a credential, or anonymous access on, a repository that serves an object above the limit or without a length,
+and one connection per slot.
+
+### H-472 · A fill goes on after its client has left
+
+Stage: R-BAS-021, `engine.fillRun`. Subject: a slot of the budget, the spool, and the main installation's bandwidth.
+
+Live on every Bastion. The fill of an artifact is independent of the client that started it, so a client that asks for a cold object and disconnects leaves a fill that reads the whole object and commits it,
+which is what makes the next request a hit. An attacker who sends cold requests for distinct large objects and disconnects makes the Bastion fetch them. What bounds it: the per-address request and miss limits, the concurrency budget (a
+fill holds a slot until its body ends), `bastion.cache.max_object_bytes` and a main installation that sends no byte for 60 s is abandoned. What makes it real: an attacker below the limits who names objects
+that exist, from many addresses.
 
 ### H-473 · The role's binary contains packages of the main installation it never starts
 
