@@ -198,7 +198,7 @@ type BastionToken struct {
 // the mode none as the default. The credentials are chart-managed files.
 type BastionValkey struct {
 	Mode                 string           `yaml:"mode" default:"none" validate:"oneof=none|sentinel|standalone" doc:"none: no Valkey (the default); sentinel; standalone is for development only."`
-	Sentinel             ValkeySentinel   `yaml:"sentinel"`
+	Sentinel             BastionSentinel  `yaml:"sentinel"`
 	Address              string           `yaml:"address" default:"" doc:"Standalone mode only."`
 	Database             int              `yaml:"database" default:"0" validate:"min=0"`
 	KeyPrefix            string           `yaml:"key_prefix" default:"" doc:"Part of every key, trove-bastion:<key_prefix>:…; empty means the host of server.base_url (R-BAS-034)."`
@@ -213,6 +213,18 @@ type BastionValkey struct {
 	HealthCheckInterval  time.Duration    `yaml:"health_check_interval" default:"5s" validate:"min=100ms"`
 	Reconnect            ValkeyReconnect  `yaml:"reconnect"`
 	CircuitBreaker       ValkeyBreaker    `yaml:"circuit_breaker"`
+}
+
+// BastionSentinel is ValkeySentinel with the Sentinels' credential files rendered by the chart (R-BAS-046): from
+// secrets.valkeySentinel. The Sentinels of a production Valkey require a password, so the files are keys of the
+// section; the fields equal ValkeySentinel, so the Valkey client reads the section by conversion.
+type BastionSentinel struct {
+	Addresses       []string      `yaml:"addresses" default:"[]" doc:"Sentinel host:port list; required in sentinel mode."`
+	PrimaryName     string        `yaml:"primary_name" default:"" doc:"Name in the Sentinels' monitor line; required in sentinel mode."`
+	UsernameFile    string        `yaml:"username_file" default:"" chart:"managed" doc:"Empty means the default user; rendered by the chart from secrets.valkeySentinel."`
+	PasswordFile    string        `yaml:"password_file" default:"" secret:"file" chart:"managed"`
+	TLS             bool          `yaml:"tls" default:"true" doc:"Use valkey.tls for Sentinel connections too."`
+	RefreshInterval time.Duration `yaml:"refresh_interval" default:"5s" validate:"min=1s" doc:"Periodic reconciliation with the Sentinels."`
 }
 
 // BastionValkeyTLS is ValkeyTLS with ca_file rendered by the chart (R-BAS-046): from secrets.valkeyCA or, without
@@ -377,7 +389,7 @@ func (v *BastionValkey) ValidateFor(cmd Command, r *Report) {
 // Bastion's keyspace trove-bastion:<key_prefix>: (R-BAS-034).
 func (v BastionValkey) Valkey() Valkey {
 	return Valkey{
-		Mode: v.Mode, Sentinel: v.Sentinel, Address: v.Address, Database: v.Database,
+		Mode: v.Mode, Sentinel: ValkeySentinel(v.Sentinel), Address: v.Address, Database: v.Database,
 		KeyPrefix:    BastionKeyspace + strings.TrimSuffix(v.KeyPrefix, ":") + ":",
 		UsernameFile: v.UsernameFile, PasswordFile: v.PasswordFile, TLS: ValkeyTLS(v.TLS), AllowInsecure: v.AllowInsecure,
 		ConnectTimeout: v.ConnectTimeout, CommandTimeout: v.CommandTimeout, SentinelQueryTimeout: v.SentinelQueryTimeout,

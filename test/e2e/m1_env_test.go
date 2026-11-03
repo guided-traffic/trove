@@ -112,7 +112,8 @@ func restoreProfile() {
 	profileMu.Lock()
 	cur := currentProfile
 	profileMu.Unlock()
-	if cur != "default" && os.Getenv("TROVE_E2E_SCATTER_RETURN") != "0" {
+	// TROVE_E2E_BASTION_KEEP=1 leaves the Bastions installed, and with them the profile their main installation needs
+	if cur != "default" && os.Getenv("TROVE_E2E_SCATTER_RETURN") != "0" && (cur != "bastion" || !keepBastions()) {
 		if err := runUp("default"); err != nil {
 			fmt.Fprintln(os.Stderr, "e2e: returning to the default profile:", err)
 		}

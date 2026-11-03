@@ -12,5 +12,7 @@
 - server.tls
 - tracing.ca_file
 - valkey.password_file
+- valkey.sentinel.password_file
+- valkey.sentinel.username_file
 - valkey.tls.ca_file
 - valkey.username_file

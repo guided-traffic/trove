@@ -139,7 +139,7 @@ func valkeySection(t *testing.T, prefix string, unreachable bool) config.Bastion
 		KeyPrefix:    prefix,
 		UsernameFile: writeFile(t, "username", bastionUser+"\n"),
 		PasswordFile: writeFile(t, "password", bastionPass+"\n"),
-		Sentinel: config.ValkeySentinel{
+		Sentinel: config.BastionSentinel{
 			Addresses: sentinels, PrimaryName: v.PrimaryName, PasswordFile: writeFile(t, "sentinel-password", v.SentinelPassword+"\n"),
 			TLS: true, RefreshInterval: 2 * time.Second,
 		},

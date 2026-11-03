@@ -942,7 +942,9 @@ Q-BAS-17). Each request passes these steps in order; the first that answers ends
 
 - **Cache key**: the path and query exactly as received (percent-encoding kept), and the normalized values of the request
   headers the main installation's `Vary` named for that path (`Accept`, `Accept-Encoding` for npm documents). The host is
-  constant.
+  constant. A replica learns the names from the responses it receives and, for a target it has not seen, from the entry that a peer
+  also stored under the key without the values, so a document one replica kept is a hit on every replica that shares the backend
+  (`TestR_BAS_023_AnotherReplicaServesTheDocumentAPeerKeptWithoutKnowingItsVary`).
 
 Acceptance criteria:
 
@@ -1877,7 +1879,7 @@ The complete `values.yaml` of `trove-bastion`. Every value carries `# default (p
 are the Bastion's configuration file (R-BAS-001); the chart-managed keys (`server.tls`, `bastion.main.token_file`,
 `bastion.main.ca_file`, `bastion.signing_key_file`, `bastion.cache.volume.dir`, `bastion.cache.bucket.ca_file`,
 `bastion.cache.bucket.credentials.access_key_id_file` and `secret_access_key_file`, `bastion.replicas`, the Valkey secret files
-`valkey.username_file`, `valkey.password_file` and `valkey.tls.ca_file`) are rendered by the chart and refused when set; the binary
+`valkey.username_file`, `valkey.password_file`, `valkey.sentinel.username_file`, `valkey.sentinel.password_file` and `valkey.tls.ca_file`) are rendered by the chart and refused when set; the binary
 marks them in its schema (`x-trove-chart-managed`), and so are `server.ops_tls` and `tracing.ca_file`. The schema the chart
 validates `config` against is `internal/config/bastion.schema.json`. The role has no `incoming_context` key under `tracing`
 (R-BAS-042).
@@ -2076,6 +2078,10 @@ secrets:
   valkey:
     existingSecret: ""                  # default (proposed): no authentication; example: trove-bastion-valkey
     usernameKey: username               # default (proposed)
+    passwordKey: password               # default (proposed)
+  valkeySentinel:
+    existingSecret: ""                  # default (proposed): no authentication at the Sentinels; example: trove-bastion-valkey-sentinel
+    usernameKey: username               # default (proposed): empty = the default user
     passwordKey: password               # default (proposed)
   valkeyCA:
     existingSecret: ""                  # default (proposed): system roots plus trustedCA
@@ -2307,15 +2313,15 @@ Bastion's Ingress:
 |---|---|
 | Cold cache | `npm ci` and `dotnet restore` succeed with `$FULL`; every tarball and package reaches the main installation once |
 | Warm cache | a second run with an empty client cache within `metadata_revalidate_after` sends no request for a tarball, a `.nupkg` or a document to the main installation; after it, only conditional requests that transfer no artifact |
-| Main installation unreachable | NetworkPolicy cut: warm runs succeed for the grace period, a cold package and an unseen token get `503`, everything `503` after `period + grace_period`; `TroveBastionMainUnreachable` fires |
+| Main installation unreachable | NetworkPolicy cut: warm runs succeed for the grace period, a cold package and an unseen token get `503`, everything `503` after `period + grace_period`; `TroveBastionMainUnreachable` fires ([Q-BAS-112](#q-bas-112--the-alert-rows-assert-the-gauges-the-rules-read-held-for-the-rules-for-the-profile-has-no-prometheus)) |
 | Token revoked at the main installation | a client loop is refused within 5 s on both replicas |
-| Interface mismatch | an upgrade of the main installation to `InterfaceVersion + 1` fires `TroveBastionInterfaceMismatch`; the Bastion's upgrade clears it |
+| Interface mismatch | an upgrade of the main installation to `InterfaceVersion + 1` fires `TroveBastionInterfaceMismatch`; the Bastion's upgrade clears it ([Q-BAS-111](#q-bas-111--the-interface-mismatch-is-exercised-with-a-release-binary-built-under-a-go-overlay), Q-BAS-112) |
 | Flooding address | an address sending 2,000 requests a minute is blocked on both replicas; another address is unaffected |
 | Failed-authentication timeout | 21 random tokens put the address into the timeout; a known token from it keeps working |
 | Anonymous miss flood | anonymous requests for 10,000 random names within a minute send at most the anonymous miss budget and the anonymous share of `max_concurrent` to the main installation |
 | Read-only | `npm publish` and `dotnet nuget push` are refused in the client's shape, pointing at the main installation |
 | Drain | `kubectl drain` of one Bastion replica's node during a 10-minute client loop: zero failed runs |
-| Hidden content | a version hidden by an exposure rule or a permission at the main installation is hidden at the Bastion, cached or not |
+| Hidden content | a package hidden by a permission at the main installation is hidden at the Bastion, cached or not, and a narrowed permission hides cached content within the revocation bound ([Q-BAS-114](#q-bas-114--hidden-content-in-the-suite-is-a-package-permission-the-exposure-rules-of-an-endpoint-are-not-the-bastions)) |
 
 - The drain, the flood and the anonymous flood are long tests: they run nightly, on dispatch and locally, not in the release
   path, and a red long leg is a finding, not a blocker (the owner's rule of 2026-11-01). The other scenarios run with every
@@ -2323,8 +2329,17 @@ Bastion's Ingress:
 
 Acceptance criteria:
 
-- The e2e job `bastion` runs the short scenarios on every push that changes `internal/bastion`, `deploy/helm/trove-bastion` or
-  this page, and the nightly job runs all of them.
+- The e2e job `bastion` runs the short scenarios on every push that changes `internal/bastion`, `internal/bastionmain`,
+  `deploy/helm/trove-bastion`, this page or the suite's own files, and is green without running anything for any other change (the
+  release's `needs` holds it); the nightly job runs all of them, the long ones in the set `bastion-long`.
+- The suite is deployed and measured as [developer/e2e.md](../developer/e2e.md#the-bastion-tests) says, with the decisions
+  [Q-BAS-110](#q-bas-110--the-e2e-bastions-are-two-releases-of-the-chart-in-one-namespace-the-bucket-one-with-a-valkey-of-its-own) to
+  [Q-BAS-114](#q-bas-114--hidden-content-in-the-suite-is-a-package-permission-the-exposure-rules-of-an-endpoint-are-not-the-bastions) where the profile cannot do
+  what a row says. The second flood of the flooding-address row, which yields 30 minutes (R-BAS-037), needs the first block to expire (15 minutes) and is the
+  integration tier's.
+- The end-to-end run found four defects, each fixed with a test: the Bastion chart had no Sentinel credential (R-BAS-046, `secrets.valkeySentinel`); a replica did not find
+  the document its peer kept (R-BAS-018, R-BAS-023: the Vary names are learned per replica); a write probe through a main installation that refuses anonymous requests
+  got `401` instead of `403 bastion_read_only` (R-BAS-014, fixed on main by Q-BAS-118); and a partial reader got a `304` it had not asked for (R-BAS-023, Q-BAS-107).
 
 ## Deferred
 
@@ -4509,6 +4524,109 @@ themselves become the subject of a test.
 
 **Applied in the spec:** R-BAS-043, R-BAS-048; code: `internal/bastion/roletest`, `test/integration/bastion`.
 
+### Q-BAS-110 · The e2e Bastions are two releases of the chart in one namespace, the bucket one with a Valkey of its own
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-BAS-049 installs the chart `trove-bastion` "once with the volume backend and once with a SeaweedFS bucket and Valkey" next to the dev profile, and leaves open whether
+that Valkey is the profile's own, a database or prefix of it, or a separate one.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Two releases, `bastion-volume` and `bastion-bucket`, in the namespace `trove-bastion`; the bucket one uses a Valkey resource of that namespace (`bastion-valkey`: two data pods, three Sentinels, TLS) (chosen) | The DMZ shape of the design: nothing the Bastion uses is in the main installation's namespace except the bucket and the main installation itself | The NetworkPolicy of R-BAS-047 is exercised with the Valkey, the bucket and the main installation as three different egress targets; the Valkey cannot be reached from the main installation's pods; both backends run side by side, so a scenario runs against both | Five more small pods (about 160m CPU and 400 MiB requested); a copy of the dev CA's Secret in the namespace |
+| (b) The profile's Valkey with a key prefix or a database of its own | One Valkey less | Cheaper | A Bastion would be allowed to reach the main installation's Valkey, which R-BAS-047 does not allow in production; the profile's NetworkPolicy of that Valkey admits only the main installation's pods |
+| (c) One release, reinstalled with each backend in turn | Half the pods at a time | Cheapest | Doubles the run, and the cache of the first backend is gone when the second runs |
+
+**Choice:** (a). The periods of the e2e values (`deploy/dev/bastion-chart-common.yaml`) are short so that the unreachable and revalidation scenarios end in minutes:
+`answers.period` 30 s, `answers.grace_period` 90 s, `metadata_revalidate_after` and `artifact_revalidate_after` 90 s, `feed.poll_interval` 1 s; the chart's defaults stay in
+R-BAS-046. The volume release routes by path (R-BAS-033), because with two replicas and no routing a second run would meet the replica that does not hold a tarball. Both releases
+share the main installation of the `bastion` profile (`deploy/dev/values-bastion.yaml`: the pod range as `bastions.trusted_proxies`, both base URLs in
+`server.additional_base_urls`) and are registered as `partners` (volume) and `partners-bucket` (bucket).
+
+**Rationale:** the scenarios that need shared state (the flood blocked on both replicas, the token refused on both, the warm run after the cut) can only be shown with the bucket
+and Valkey; the scenarios that show the cache as a volume only with the volume. The development agent would revisit the choice if a runner cannot hold the pods.
+
+**Applied in the spec:** R-BAS-049 (the deployment), R-BAS-046 (`secrets.valkeySentinel`, found when the Sentinels of the profile's Valkey required a password); code:
+`deploy/dev/bastion.sh`, `bastion.yaml`, `bastion-chart-*.yaml`, `values-bastion.yaml`.
+
+### Q-BAS-111 · The interface mismatch is exercised with a release binary built under a Go overlay
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-BAS-028 and R-BAS-049 upgrade the main installation to `InterfaceVersion + 1`. The version is a constant (`iface.InterfaceVersion`), so no linker flag changes it, and the
+checkout must not change for a test.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `go build -overlay` replaces `internal/bastion/iface/version.go` and the embedded `internal/api/v1/openapi.yaml` by copies that say 2; the binary goes into the release image as `guidedtraffic/trove:iface` (chosen) | Nothing in the tree changes; the real release code runs on both sides at versions 1 and 2 | No seam in production code; the test fails with a clear message when the line it replaces moves | The build takes a minute on a cold cache; the embedded OpenAPI document names the version too and the main installation refuses to start when it differs, so the overlay replaces that copy as well |
+| (b) A build tag or an environment variable that raises the version | A seam in the binary | Faster | A way to run a Bastion at a wrong version in production |
+| (c) The integration tier only | No cluster | Cheap | The rolling upgrade of the main installation and the Bastion's upgrade are not shown |
+
+**Choice:** (a). The scenario upgrades the main installation to the `iface` image (`up.sh` with `TROVE_HELM_EXTRA`), waits for both replicas to report `trove_bastion_interface_mismatch 1`
+with the main installation's version 2, serves warm content, upgrades the Bastion to the same image, and waits for the mismatch to clear; its cleanup returns both to `dev`.
+
+**Rationale:** the property is that two real builds refuse each other and recover when both move. The development agent would revisit the choice if the version becomes a variable.
+
+**Applied in the spec:** R-BAS-028, R-BAS-049; code: `test/e2e/bastion_upgrade_test.go`.
+
+### Q-BAS-112 · The alert rows assert the gauges the rules read, held for the rule's `for`; the profile has no Prometheus
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-BAS-027, R-BAS-028, R-BAS-041 and R-BAS-049 ask that `TroveBastionMainUnreachable` and `TroveBastionInterfaceMismatch` fire "in the cluster's Prometheus". The local profile
+installs no Prometheus, no ServiceMonitor CRD and no PrometheusRule CRD (checked: `kubectl get crd`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The suite reads the gauges of every replica and requires the rule's condition to hold for the rule's `for` (2 minutes of `trove_bastion_main_reachable 0`; 1 minute of `trove_bastion_interface_mismatch 1` with the two versions); the rules themselves are covered by `promtool test rules` (R-BAS-041) (chosen) | The inputs of the alert are proven on the cluster, the expression and the delay in the rule tests | No new component; nothing to pin | The step from the gauge to a fired alert is not exercised on a cluster |
+| (b) Install a Prometheus and the Prometheus Operator CRDs into the profile | The alert fires for real | Complete | Two more pinned components, memory and time on every run of the profile, for two rows |
+| (c) Leave the rows out | — | — | A hole in the table |
+
+**Choice:** (a), recorded as not covered in [developer/e2e.md](../developer/e2e.md#the-bastion-tests).
+
+**Rationale:** the rules read gauges and `for` only; a rule that is correct under `promtool` and gauges that are right on the cluster leave only the scrape and the delivery, which are
+Prometheus's. The development agent would revisit the choice when the profile gets a Prometheus for another reason.
+
+**Applied in the spec:** R-BAS-027, R-BAS-028, R-BAS-041, R-BAS-049 (acceptance wording); code: `test/e2e/bastion_unreachable_test.go`, `bastion_upgrade_test.go`.
+
+### Q-BAS-113 · What the main installation was asked is counted from its request log, by the address of the Bastion's pods
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the rows "cold cache", "warm cache" and "anonymous miss flood" count requests at the main installation, "e.g. its request log or metrics".
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The request log of the `web` replicas: a record is a request of a Bastion when its `peer_addr` is the address of a Bastion pod; the interface (`/api/v1/bastion/…`) is set aside; tarballs and `.nupkg` files are artifacts, every other path of the two test repositories a document (chosen) | Independent of the Bastion's own counters; shows the status and the bytes of each request (a `304` with 0 bytes is a conditional request that transferred no artifact) | The path, the status and the bytes per request | Needs the request log on (the dev profile has it) and the addresses of the pods, which the harness reads |
+| (b) The metrics of the main installation | `trove_http_requests_total` per handler and code | No log parsing | No peer: a client's own request is not told from a Bastion's; no bytes |
+| (c) The Bastion's `trove_bastion_main_requests_total` | Simple | The Bastion's view only, which is what is under test |
+
+**Choice:** (a); the Bastion's counters are used as a second witness where they say something else (hits per replica, the refusals per reason).
+
+**Rationale:** a count made by the system under test proves nothing about the other side. The development agent would revisit the choice if the request log gets a field for the
+Bastion's registration.
+
+**Applied in the spec:** R-BAS-049 (acceptance); code: `test/e2e/bastion_env_test.go` (`mainLog`, `fromBastion`).
+
+### Q-BAS-114 · Hidden content in the suite is a package permission; the exposure rules of an endpoint are not the Bastion's
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the last row of R-BAS-049 says "a version hidden by an exposure rule or a permission". The exposure rules (R-EP-012 to R-EP-017) decide what an endpoint with `exposure: rules`
+serves; the Bastion connects to the default endpoint (Q-BAS-4), which serves everything the caller may read.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The scenario hides a package by a permission (`$PART` reads `bas<run>-open*` and nothing else; the policy is narrowed during the scenario), cached at the Bastion or not (chosen) | The decision point of the main installation hides it; the Bastion must follow, also within the revocation bound after a change | The mechanism the Bastion relies on (R-BAS-012, R-BAS-022) | The exposure rule is not exercised |
+| (b) A Bastion in front of the endpoint `customers` | Exposure rules apply | Both mechanisms | Contradicts Q-BAS-4: the Bastion connects to the default endpoint |
+| (c) A rule on the default endpoint | — | — | The default endpoint is `exposure: all` (R-EP-002): its rules decide nothing |
+
+**Choice:** (a).
+
+**Rationale:** exposure is a property of an endpoint's listener, which no Bastion shares. The development agent would revisit the choice if a Bastion may be given another endpoint.
+
+**Applied in the spec:** R-BAS-049 (the row names the permission); code: `test/e2e/bastion_scenarios_test.go` (`TestBastion_R_BAS_049_HiddenContent`).
+
 ### Q-BAS-105 · The integration suite's main installation is the web role behind a TLS front; another interface version is simulated on the wire
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -5555,3 +5673,15 @@ Live on every Bastion. The estimate is `previous x (1 - elapsed) + current` over
 `current <= limit x elapsed` more events in the next window, so a true sliding minute that spans the boundary can hold up to twice the limit (a measured cold start with a 30-a-minute limit: 37 in 60 s). The counted-in-fixed-window bound of the acceptance holds (at most the limit
 per window), and the concurrency budget (R-BAS-025) bounds what reaches the main installation either way. Before Q-BAS-127 the refusals also counted, which hid the effect behind starvation. What makes it real: an attacker who times its bursts to the boundary
 (window = one minute for the misses; `burst / rate` for the request limits), gaining at most one more budget per boundary; a smaller error needs more counters per key.
+
+### H-464 · A client that sends `Accept-Encoding: gzip` was asked about at the main installation on every artifact read, cause not found
+
+Stage: R-BAS-022, a read of a cached artifact. Subject: the load on the main installation, not a confidentiality property.
+
+Observed once by the end-to-end run (`TestBastion_R_BAS_049_RoutingByPath` before it used `curl` from a client pod): 36 tarballs requested twice by the Go client of the test
+machine, which sends `Accept-Encoding: gzip` by default, caused 72 conditional requests (every one answered `304`) and no hit, on the volume Bastion, while the same paths requested
+without that header by `curl` caused one conditional request per stale path and hits afterwards (a probe of one path, and a loop of 20 requests, checked in the cluster). The package
+managers of the suite (npm, pnpm, Yarn 4, `dotnet restore`) were served from the cache as the acceptance requires. The cache key carries the values of the headers the main
+installation's `Vary` names (R-BAS-018); the cause is probably a variant that is keyed by `Accept-Encoding` and never becomes fresh, and it was not found. Live for a client that sends the header
+and reads a cached artifact: it costs the main installation one conditional request per read, never the bytes. What makes it real: a client built on a library that compresses by default
+and reads the same artifacts many times; the Bastion's concurrency budget (R-BAS-025) bounds what reaches the main installation.

@@ -1,0 +1,15 @@
+# The `bastion` e2e profile (R-BAS-049), layered after values-dev.yaml by up.sh when TROVE_PROFILE=bastion: the settings the
+# main installation needs for the Bastions of deploy/dev/bastion.sh (R-BAS-017, R-BAS-010).
+#
+# bastions.trusted_proxies: the Bastion's pods call the main endpoint directly from the pod range of whichever worker node they
+# run on, and send the address of the real caller in X-Forwarded-For and Forwarded and their own host. The main installation
+# honours them only on a request whose Bastion token was recognized and whose peer is in this list; the pod subnet is the one in
+# kind.yaml. (They are not listed in server.trusted_proxies, which stays the edge's range of values-dev.yaml.)
+#
+# server.additional_base_urls: the host the Bastions call the main endpoint on (the Service name, https://trove.trove.svc:8080: the
+# main installation answers 421 for a host it does not serve, also on the interface routes) and the two Bastion base URLs, https://bastion-volume.trove.localhost:<edge port> and
+# https://bastion-bucket.trove.localhost:<edge port>; up.sh passes them with --set-json because the edge port follows
+# TROVE_DEV_HTTP_PORT.
+config:
+  bastions:
+    trusted_proxies: ["10.244.0.0/16"]

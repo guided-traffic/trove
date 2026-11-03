@@ -218,6 +218,13 @@ Secret rolls nothing.
 {{- end -}}
 {{- $_ := set $vk "password_file" "/var/run/secrets/trove/valkey/password" -}}
 {{- end -}}
+{{- if $s.valkeySentinel.existingSecret -}}
+{{- $sn := dict "password_file" "/var/run/secrets/trove/valkey-sentinel/password" -}}
+{{- if $s.valkeySentinel.usernameKey -}}
+{{- $_ := set $sn "username_file" "/var/run/secrets/trove/valkey-sentinel/username" -}}
+{{- end -}}
+{{- $_ := set $vk "sentinel" $sn -}}
+{{- end -}}
 {{- if $s.valkeyCA.existingSecret -}}
 {{- $_ := set $vk "tls" (dict "ca_file" "/var/run/secrets/trove/valkey-ca/ca.crt") -}}
 {{- else if $trust -}}
@@ -259,6 +266,14 @@ and the TLS material), and never become environment variables.
 {{- end -}}
 {{- $items = append $items (dict "key" $s.valkey.passwordKey "path" "password") -}}
 {{- $out = append $out (dict "name" "valkey" "kind" "secret" "object" $s.valkey.existingSecret "path" "/var/run/secrets/trove/valkey" "items" $items) -}}
+{{- end -}}
+{{- if and (include "trove-bastion.valkeyOn" .) $s.valkeySentinel.existingSecret -}}
+{{- $snItems := list -}}
+{{- if $s.valkeySentinel.usernameKey -}}
+{{- $snItems = append $snItems (dict "key" $s.valkeySentinel.usernameKey "path" "username") -}}
+{{- end -}}
+{{- $snItems = append $snItems (dict "key" $s.valkeySentinel.passwordKey "path" "password") -}}
+{{- $out = append $out (dict "name" "valkey-sentinel" "kind" "secret" "object" $s.valkeySentinel.existingSecret "path" "/var/run/secrets/trove/valkey-sentinel" "items" $snItems) -}}
 {{- end -}}
 {{- if and (include "trove-bastion.valkeyOn" .) $s.valkeyCA.existingSecret -}}
 {{- $out = append $out (dict "name" "valkey-ca" "kind" "secret" "object" $s.valkeyCA.existingSecret "path" "/var/run/secrets/trove/valkey-ca" "items" (list (dict "key" $s.valkeyCA.key "path" "ca.crt"))) -}}

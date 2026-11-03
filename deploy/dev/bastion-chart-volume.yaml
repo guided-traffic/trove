@@ -1,0 +1,19 @@
+# The e2e Bastion with the volume backend (R-BAS-049): release bastion-volume, registration `partners`, no Valkey. The host
+# is bastion-volume.trove.localhost on the dev edge; bastion.sh passes the base URL (it carries the edge port).
+fullnameOverride: bastion-volume
+config:
+  bastion:
+    cache:
+      backend: volume
+# The path is pinned to a replica by the ingress (R-BAS-033): a second run finds its tarballs on the replica that holds them.
+cacheVolume:
+  routeByPath: true
+secrets:
+  mainToken:
+    existingSecret: bastion-token-volume
+tls:
+  existingSecret: ""
+ingress:
+  tls:
+    - secretName: bastion-volume-edge-tls
+      hosts: [bastion-volume.trove.localhost]

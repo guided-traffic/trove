@@ -1398,6 +1398,7 @@
                 "password_file": {
                   "default": "",
                   "type": "string",
+                  "x-trove-chart-managed": true,
                   "x-trove-env": "TROVE_VALKEY_SENTINEL_PASSWORD_FILE",
                   "x-trove-secret": "file-only"
                 },
@@ -1423,7 +1424,9 @@
                 },
                 "username_file": {
                   "default": "",
+                  "description": "Empty means the default user; rendered by the chart from secrets.valkeySentinel.",
                   "type": "string",
+                  "x-trove-chart-managed": true,
                   "x-trove-env": "TROVE_VALKEY_SENTINEL_USERNAME_FILE"
                 }
               },
@@ -1538,6 +1541,22 @@
           "additionalProperties": false
         },
         "valkey": {
+          "type": "object",
+          "properties": {
+            "existingSecret": {
+              "type": "string"
+            },
+            "usernameKey": {
+              "type": "string"
+            },
+            "passwordKey": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "valkeySentinel": {
           "type": "object",
           "properties": {
             "existingSecret": {

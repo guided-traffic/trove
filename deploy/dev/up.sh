@@ -16,6 +16,9 @@
 #                         balances round robin per request with its keep-alive to the pods off
 #                         (values-scatter.yaml: HAProxy Ingress annotations on trove's Ingress).
 #                         Run up.sh again without it to switch back.
+#   TROVE_PROFILE=bastion the `bastion` e2e profile (R-BAS-049): the main installation trusts the pod range as a proxy
+#                         and lists the base URLs of the e2e Bastions (values-bastion.yaml, deploy/dev/bastion.sh).
+#                         Run up.sh again without it to switch back.
 #   TROVE_POOLER=1        also install the transaction-mode poolers and point the chart at them
 #                         (pooler.yaml, values-pooler.yaml, R-HA-058).
 #   TROVE_IMAGE=<ref>     the trove image to load into the cluster (default guidedtraffic/trove:dev,
@@ -30,7 +33,7 @@ set -euo pipefail
 SKIP_RELEASE="${TROVE_SKIP_RELEASE:-0}"
 POOLER="${TROVE_POOLER:-0}"
 PROFILE="${TROVE_PROFILE:-default}"
-case "$PROFILE" in default|scatter) ;; *) die "TROVE_PROFILE must be default or scatter, not '$PROFILE'" ;; esac
+case "$PROFILE" in default|scatter|bastion) ;; *) die "TROVE_PROFILE must be default, scatter or bastion, not '$PROFILE'" ;; esac
 IMAGE="${TROVE_IMAGE:-guidedtraffic/trove:dev}"
 LOGS="$STATE_DIR/logs"
 START="$(date +%s)"
@@ -254,6 +257,9 @@ else
   values+=(--set-string "web.podAnnotations.trove-dev/image-id=$image_id" --set-string "worker.podAnnotations.trove-dev/image-id=$image_id")
   [ "$POOLER" = "1" ] && values+=(-f "$DEV_DIR/values-pooler.yaml")
   [ "$PROFILE" = "scatter" ] && values+=(-f "$DEV_DIR/values-scatter.yaml")
+  # The Bastions' base URLs (deploy/dev/bastion.sh) carry the edge port the cluster was created with.
+  [ "$PROFILE" = "bastion" ] && values+=(-f "$DEV_DIR/values-bastion.yaml" \
+    --set-json "config.server.additional_base_urls=[\"https://trove.trove.svc:8080\",\"https://bastion-volume.trove.localhost:$EDGE_PORT\",\"https://bastion-bucket.trove.localhost:$EDGE_PORT\"]")
   log "installing the trove release (helm upgrade --install trove, migration Job first)"
   # shellcheck disable=SC2086
   helm --kube-context "$CTX" upgrade --install trove "$REPO_ROOT/deploy/helm/trove" -n "$NS" \

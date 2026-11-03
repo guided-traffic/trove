@@ -39,6 +39,10 @@
 #                       NuGet client pods, E4.1 and E4.4 to E4.6; CI: job e2e-ci
 #   e2e.sh ci-ha        TestCIHA...: the pipeline under a drained node, with Valkey stopped, across a forced Sentinel failover and FLUSHALL,
 #                       and under a deleted web pod, E4.7 (CI: job e2e-ci in the nightly HA and Performance workflow)
+#   e2e.sh bastion      the short scenarios of R-BAS-049: the chart trove-bastion (volume backend; bucket backend with Valkey) in
+#                       front of the main installation, npm, pnpm, Yarn 4 and dotnet restore from the client pods; CI: job
+#                       e2e-bastion (a change to the Bastion) and the nightly HA and Performance workflow
+#   e2e.sh bastion-long the long scenarios of R-BAS-049: the drain, the flood and the anonymous flood (nightly, dispatch, locally)
 #   e2e.sh <regex>      any other argument is a `go test -run` expression
 #
 # Environment: TROVE_DEV_HTTP_PORT (the port the cluster was created with; read back from the node),
@@ -105,6 +109,15 @@ case "$set_name" in
   ci) run='^TestCI'; skip='^TestCIHA'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=2; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=2; export TROVE_E2E_OIDCSTUB=1 ;;
   ci-ha) run='^TestCIHA'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=2; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=2; export TROVE_E2E_OIDCSTUB=1 TROVE_E2E_OIDCSTUB_SINGLE=1 ;;
   # <<< M4 ci
+  # >>> M5b bastion
+  # The Bastions of R-BAS-049 (docs/developer/e2e.md#the-bastion-tests): the main installation in the `bastion` profile, the
+  # chart trove-bastion twice in the namespace trove-bastion (deploy/dev/bastion.sh), and the npm and NuGet client pods
+  # outside it. `bastion` is the short scenarios (CI: job e2e-bastion on a change to the Bastion, and nightly);
+  # `bastion-long` the drain, the flood and the anonymous flood (nightly, on dispatch, locally: a red long leg is a finding,
+  # not a blocker, owner 2026-11-01). TROVE_E2E_BASTION_KEEP=1 leaves the Bastions installed.
+  bastion) run='^TestBastion_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=2; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=2 ;;
+  bastion-long) run='^TestBastionLong_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=2; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=2 ;;
+  # <<< M5b bastion
   *) run="$set_name" ;;
 esac
 
@@ -315,8 +328,9 @@ npm_clients_up() {
           nodeSelector: { "node-role.kubernetes.io/control-plane": "" },
           tolerations: [{ key: "node-role.kubernetes.io/control-plane", operator: "Exists", effect: "NoSchedule" }],
           automountServiceAccountToken: false,
-          # the host of the customers endpoint (values-dev.yaml) is the forwarder too: E2.12 uses its registry URLs unchanged
-          hostAliases: [{ ip: "127.0.0.1", hostnames: ["packages.trove.localhost"] }],
+          # the host of the customers endpoint (values-dev.yaml) is the forwarder too: E2.12 uses its registry URLs unchanged;
+          # so are the hosts of the e2e Bastions (deploy/dev/bastion.sh)
+          hostAliases: [{ ip: "127.0.0.1", hostnames: ["packages.trove.localhost", "bastion-volume.trove.localhost", "bastion-bucket.trove.localhost"] }],
           securityContext: { runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: { type: "RuntimeDefault" } },
           containers: [{
             name: "clients", image: $image, imagePullPolicy: "IfNotPresent",
@@ -378,8 +392,9 @@ nuget_clients_up() {
           nodeSelector: { "node-role.kubernetes.io/control-plane": "" },
           tolerations: [{ key: "node-role.kubernetes.io/control-plane", operator: "Exists", effect: "NoSchedule" }],
           automountServiceAccountToken: false,
-          # the host of the customers endpoint (values-dev.yaml) is the forwarder too: R-NUGET-034 uses its registry URLs unchanged
-          hostAliases: [{ ip: "127.0.0.1", hostnames: ["packages.trove.localhost"] }],
+          # the host of the customers endpoint (values-dev.yaml) is the forwarder too: R-NUGET-034 uses its registry URLs unchanged;
+          # so are the hosts of the e2e Bastions (deploy/dev/bastion.sh)
+          hostAliases: [{ ip: "127.0.0.1", hostnames: ["packages.trove.localhost", "bastion-volume.trove.localhost", "bastion-bucket.trove.localhost"] }],
           securityContext: { runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: { type: "RuntimeDefault" } },
           containers: [{
             name: "clients", image: $image, imagePullPolicy: "IfNotPresent",

@@ -92,9 +92,36 @@ func (e *engine) loadEntry(ctx context.Context, key string) (cache.Entry, bool) 
 	return ent, err == nil
 }
 
-// saveEntry writes the signed entry of a cache key; the cache counts a failure.
+// saveEntry writes the signed entry of a cache key; the cache counts a failure. An entry kept under a key that carries
+// the values of the Vary headers is also written under the key without them: the names of a target's Vary are learned
+// per replica, and a replica that has not learned them yet finds the names in the entry at the plain key (see
+// learnVaryFromCache) and then the entry under the full key, so a document one replica kept is a hit on every replica
+// that shares the backend (R-BAS-023, R-BAS-049).
 func (e *engine) saveEntry(ctx context.Context, key string, ent cache.Entry) error {
-	return e.d.Cache.StoreEntry(ctx, key, ent)
+	err := e.d.Cache.StoreEntry(ctx, key, ent)
+	if i := strings.IndexByte(key, 0); i > 0 && err == nil {
+		_ = e.d.Cache.StoreEntry(ctx, key[:i], ent)
+	}
+	return err
+}
+
+// learnVaryFromCache teaches this replica the Vary names of the request's target from the entry at the plain key, which
+// a replica that kept the response wrote (saveEntry), and recomputes the cache key. It does nothing for a target whose
+// names are known.
+func (e *engine) learnVaryFromCache(ctx context.Context, q *rq) {
+	if _, known := e.vary.get(q.baseKey); known {
+		return
+	}
+	ent, ok := e.loadEntry(ctx, q.baseKey)
+	if !ok {
+		return
+	}
+	names, keep := varyNames(ent.Header)
+	if !keep {
+		return
+	}
+	e.vary.put(q.baseKey, names, 0)
+	e.computeKey(q)
 }
 
 // dropEntry removes an entry; the bytes stay for the sweep, other entries may point at them.

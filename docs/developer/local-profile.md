@@ -80,7 +80,7 @@ is measured by [the end-to-end suite](e2e.md), which runs them under load.
 | `TROVE_SKIP_RELEASE=1` | unset | `up.sh` installs the dependency stack only, not the trove release. Use it while the image does not serve yet, or to work on the dependencies |
 | `TROVE_IMAGE` | `guidedtraffic/trove:dev` | the image `up.sh` loads into the cluster with `kind load docker-image`; build it with `make image` (its default `IMAGE`) first. `VERSION` defaults to `dev` (or the number of a `v0.*` tag on `HEAD`), the one non-release version the binary accepts ([e2e.md](e2e.md#findings-of-the-suite)) |
 | `TROVE_DEV_HTTP_PORT` | `8080` | host port of the edge (HTTPS). Set it when 8080 is taken (`up.sh` checks and says so); `config.server.base_url` and `endpoints.customers.baseUrl` follow. Fixed when the cluster is created |
-| `TROVE_PROFILE=scatter` | `default` | the `scatter` e2e profile, see below |
+| `TROVE_PROFILE=scatter` or `bastion` | `default` | the `scatter` and `bastion` e2e profiles, see below |
 | `TROVE_POOLER=1` | unset | also installs the two transaction-mode poolers ([pooler.yaml](../../deploy/dev/pooler.yaml)) and layers [values-pooler.yaml](../../deploy/dev/values-pooler.yaml). The manifests are applied and the poolers start; the pooler profile itself is verified in M5 |
 | `TROVE_HELM_EXTRA` | unset | extra arguments for the `helm upgrade` of the trove release |
 | `TROVE_DEV_CLUSTER`, `TROVE_DEV_NAMESPACE` | `trove`, `trove` | cluster and namespace names. The certificates name the namespace (`trove.<namespace>.svc`, ...), and the Valkey names in values-dev.yaml are written for `trove`, so change both only with a fresh cluster and matching values |
@@ -95,6 +95,17 @@ for this backend only, so HAProxy keeps no idle connection to a pod and balances
 own. Run `up.sh` without the variable to switch back. [TestE99Scatter](../../test/e2e/e99_scatter_test.go) (E0.11)
 switches to the profile, runs the M0 checks, shows sixty sequential requests reaching the three pods twenty times each
 and runs the 100 requests/s load; `e2e.sh` returns the cluster to the default profile afterwards.
+
+### The `bastion` profile
+
+`TROVE_PROFILE=bastion deploy/dev/up.sh` layers [values-bastion.yaml](../../deploy/dev/values-bastion.yaml) on the main installation for the
+Bastions of R-BAS-049: the pod range `10.244.0.0/16` as `config.bastions.trusted_proxies` (the Bastion's pods call the main endpoint from the range of
+whichever node they run on, and the main installation resolves the client address from what they send, R-BAS-017) and the Service address the Bastions call, `https://trove.trove.svc:8080` (a host the main installation does not serve is answered `421`, also on the interface routes), and the two base URLs
+`https://bastion-volume.trove.localhost:<edge port>` and `https://bastion-bucket.trove.localhost:<edge port>` as
+`config.server.additional_base_urls` (R-BAS-010; `up.sh` passes them because the edge port follows `TROVE_DEV_HTTP_PORT`). The Bastions themselves are not part of
+`up.sh`: `deploy/dev/bastion.sh infra` and `install <volume|bucket>` make the namespace `trove-bastion`, a Valkey of its own, the certificates and the two releases of the chart
+`trove-bastion` ([the Bastion tests](e2e.md#the-bastion-tests)); `bastion.sh down` removes them. Without the profile the Bastions are refused with `421 misdirected_request`,
+because their host is not one the main installation serves.
 
 ## How `up.sh` works
 

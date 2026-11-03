@@ -198,7 +198,8 @@ func TestR_BAS_021_ADocumentIsKeptOnceWholeAndAboveTheLimitPassedThrough(t *test
 			t.Fatalf("%d %q", w.Code, w.Body)
 		}
 	}
-	if s.main.count() != 1 || s.cache.entryCount() != 1 {
+	// the document's entry and the same entry at the plain key, which tells another replica the Vary (saveEntry)
+	if s.main.count() != 1 || s.cache.entryCount() != 2 {
 		t.Fatalf("requests %d entries %d", s.main.count(), s.cache.entryCount())
 	}
 	for i := 0; i < 2; i++ {
@@ -206,7 +207,7 @@ func TestR_BAS_021_ADocumentIsKeptOnceWholeAndAboveTheLimitPassedThrough(t *test
 			t.Fatalf("%d %d bytes", w.Code, w.Body.Len())
 		}
 	}
-	if s.cache.entryCount() != 1 {
+	if s.cache.entryCount() != 2 {
 		t.Fatal("a document above the limit was kept")
 	}
 	if s.main.count() != 3 {

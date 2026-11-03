@@ -35,6 +35,7 @@ func (e *engine) read(q *rq) {
 func (e *engine) attempt(q *rq) (again bool) {
 	ctx := q.ctx()
 	e.computeKey(q) // a fetch the request waited for may have taught the Vary of the target
+	e.learnVaryFromCache(ctx, q)
 	shape := e.answers.shape(ctx, q.cred.key, q.repo)
 	if shape != nil && shape.Read == iface.ReadNone {
 		e.refuseNone(q, shape)

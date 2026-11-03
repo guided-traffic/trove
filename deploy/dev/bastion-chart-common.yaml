@@ -1,0 +1,89 @@
+# Chart values shared by the two e2e Bastions (R-BAS-049, deploy/dev/bastion.sh): the chart trove-bastion in front of the
+# main installation of the dev profile, over TLS on every connection. The per-release values (host, token Secret, cache
+# backend) are in bastion-chart-volume.yaml and bastion-chart-bucket.yaml; bastion.sh adds the Docker network ranges as
+# networkPolicy.ingress.probeCIDRs and the image ID as a pod annotation.
+image:
+  registry: docker.io
+  repository: guidedtraffic/trove
+  tag: dev                       # built by `make image`, loaded by up.sh; the interface-mismatch scenario installs another tag
+  pullPolicy: IfNotPresent
+
+# Two replicas as the chart's default; the dev nodes are small.
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+    ephemeral-storage: 256Mi
+  limits:
+    memory: 1Gi
+terminationGracePeriodSeconds: 60
+cacheVolume:
+  size: 2Gi
+
+tls:
+  certManager:
+    issuerRef:
+      kind: Issuer
+      name: trove-dev-ca         # bastion.yaml: the dev CA in this namespace
+
+trustedCA:
+  existingSecret: bastion-ca-bundle   # bastion.sh: ca.crt of the dev CA as ca-bundle.crt; trust for the main installation and the bucket
+  keys: [ca-bundle.crt]
+
+config:
+  server:
+    # HAProxy Ingress runs on the control-plane node, whose pod range values-dev.yaml of the main installation names too
+    trusted_proxies: ["10.244.0.0/24"]
+  bastion:
+    main:
+      url: https://trove.trove.svc:8080     # the Service of the main installation: the main endpoint, certificate trove-tls names trove.trove.svc
+      unreachable_after: 10s
+      token_reload_interval: 5s
+    # Short periods so that the unreachable scenario ends in minutes (R-BAS-027): an answer lives 30 s and the grace
+    # period is 90 s, so everything answers 503 two minutes after the last answer was obtained. The defaults are 5m and 15m.
+    answers:
+      period: 30s
+      grace_period: 90s
+    feed:
+      poll_interval: 1s
+    # Short revalidation periods so that the cold, warm and "after the period" runs of R-BAS-049 fit into minutes; the
+    # defaults are 1m and 10m. Both are 90 s: tests/bastion_scenarios_test.go (basRevalidate) waits for them.
+    cache:
+      # sizes below the 2Gi cache volume; the chart derives /tmp (tmp.sizeLimit) from spool_max_bytes plus 256Mi
+      max_bytes: 1GiB
+      max_object_bytes: 256MiB
+      spool_max_bytes: 512MiB
+      documents_max_bytes: 128MiB
+      metadata_revalidate_after: 90s
+      artifact_revalidate_after: 90s
+  log:
+    level: info
+
+networkPolicy:
+  ingress:
+    https:
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-controller
+  egress:
+    main:
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: trove
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: trove
+              app.kubernetes.io/component: web
+      ports: [8080]
+
+ingress:
+  className: haproxy
+
+# Metrics are read by the e2e tests through the API server. There is no Prometheus in the dev profile (Q-BAS-112).
+metrics:
+  serviceMonitor:
+    enabled: false
+  prometheusRule:
+    enabled: false

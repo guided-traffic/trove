@@ -121,7 +121,8 @@ func TestR_BAS_023_APartialReaderNeverReceivesTheSharedDocumentAndTheSharedEntry
 	if after := s.cache.entryRecords(); string(after[key]) != string(rec) {
 		t.Fatal("the shared entry was touched")
 	}
-	if len(s.cache.entryRecords()) != 1 || s.cache.objectCount() != 1 {
+	// the document's entry under its key and the same entry at the plain key, which tells another replica the Vary; the bytes once
+	if len(s.cache.entryRecords()) > 2 || s.cache.objectCount() != 1 {
 		t.Fatal("a private copy reached the backend")
 	}
 	// from the second request on the validator is the caller's own copy, and a 304 serves it
@@ -535,5 +536,29 @@ func TestR_BAS_025_ConcurrentColdRequestsAcrossReplicasCauseOneRequestWithTheBuc
 	}
 	if forwards != 1 {
 		t.Fatalf("%d forwards across two replicas, want 1", forwards)
+	}
+}
+
+// A document one replica kept is a hit on another replica that shares the backend, although the second replica has not
+// learned the target's Vary yet: the names are read from the entry at the plain key (found by the end-to-end run of
+// R-BAS-049, where the second client run reached the other replica and sent a document request to the main installation).
+func TestR_BAS_023_AnotherReplicaServesTheDocumentAPeerKeptWithoutKnowingItsVary(t *testing.T) {
+	a := newSiteHarness(t, options{signer: true})
+	a.site.docs[doc] = "all packages"
+	if w := a.get(doc, "Authorization", bearer(a.full)); w.Code != 200 || w.Body.String() != "all packages" {
+		t.Fatalf("replica A: %d %q", w.Code, w.Body)
+	}
+	b := newHarness(t, options{signer: true, cache: a.cache, main: a.main})
+	if _, known := b.e.vary.get(doc); known {
+		t.Fatal("replica B knows the Vary of the target before its first request")
+	}
+	before := b.main.count()
+	if w := b.get(doc, "Authorization", bearer(a.full)); w.Code != 200 || w.Body.String() != "all packages" {
+		t.Fatalf("replica B: %d %q", w.Code, w.Body)
+	}
+	for _, r := range b.main.requests()[before:] {
+		if r.Kind == mainclient.KindForward || r.Kind == mainclient.KindConditional {
+			t.Fatalf("replica B asked the main installation for the document: %+v", r)
+		}
 	}
 }

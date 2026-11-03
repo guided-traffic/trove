@@ -189,6 +189,10 @@ secrets:
     existingSecret: ""                  # default (proposed): no authentication; example: trove-bastion-valkey
     usernameKey: username               # default (proposed)
     passwordKey: password               # default (proposed)
+  valkeySentinel:
+    existingSecret: ""                  # default (proposed): no authentication at the Sentinels; example: trove-bastion-valkey-sentinel
+    usernameKey: username               # default (proposed): empty = the default user
+    passwordKey: password               # default (proposed)
   valkeyCA:
     existingSecret: ""                  # default (proposed): system roots plus trustedCA
     key: ca.crt                         # default (proposed)

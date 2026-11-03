@@ -36,6 +36,8 @@ secrets:
     existingSecret: trove-bastion-s3                  # example
   valkey:
     existingSecret: trove-bastion-valkey              # example
+  valkeySentinel:
+    existingSecret: trove-bastion-valkey-sentinel     # example
   valkeyCA:
     existingSecret: trove-bastion-valkey-ca           # example
 trustedCA:

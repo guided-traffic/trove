@@ -193,8 +193,9 @@ func TestR_BAS_018_TheCacheKeyHoldsThePathQueryAndTheVaryHeaders(t *testing.T) {
 	get("Application/vnd.npm.install-v1+json") // the same variant, spelled differently
 	get("application/vnd.npm.install-v1+json") // hit
 	s.clock.advance(0)
-	if n := s.cache.entryCount(); n != 2 {
-		t.Fatalf("%d cache entries, want one per Accept variant (2)", n)
+	// one entry per Accept variant, and the entry at the plain key that tells another replica the Vary (saveEntry)
+	if n := s.cache.entryCount(); n != 3 {
+		t.Fatalf("%d cache entries, want one per Accept variant (2) and the plain-key entry", n)
 	}
 	// the path and query exactly as received: two spellings are two keys
 	a := s.e.keyFor("/api/npm/npm-all/x?a=%2F", nil)

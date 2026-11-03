@@ -498,7 +498,8 @@ HPA owns it.
 **Configuration (R-BAS-002).** `trove-bastion.config` merges `config` with the keys the chart manages (managed wins):
 `bastion.main.token_file`, `bastion.main.ca_file` and `bastion.cache.bucket.ca_file` (the one key of `trustedCA`),
 `bastion.signing_key_file`, `bastion.cache.volume.dir` (`/var/cache/trove-bastion`, volume backend), the bucket credential
-files (`source: static`), `bastion.replicas`, `valkey.username_file`, `valkey.password_file` and `valkey.tls.ca_file` (the Valkey CA,
+files (`source: static`), `bastion.replicas`, `valkey.username_file`, `valkey.password_file`, `valkey.sentinel.username_file`, `valkey.sentinel.password_file`
+(from `secrets.valkeySentinel`; the Sentinels of a Valkey that requires a password need them, found by the end-to-end run) and `valkey.tls.ca_file` (the Valkey CA,
 else the trust bundle) while Valkey is configured, and `server.tls` with the listener pair while `tls.enabled` (`server.ops_tls` keeps
 its default, which inherits it). `trove-bastion.validate` refuses a managed key under `config`. The ConfigMap `<fullname>-config` is
 mounted at `/etc/trove/trove.yaml` with `subPath`, and `checksum/config` is the hash of the merged text only: the Secrets are

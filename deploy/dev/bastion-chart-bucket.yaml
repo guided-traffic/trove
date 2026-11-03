@@ -1,0 +1,64 @@
+# The e2e Bastion with a SeaweedFS bucket and Valkey (R-BAS-049): release bastion-bucket, registration `partners-bucket`,
+# the Valkey bastion-valkey of the Bastion namespace (bastion.yaml, Q-BAS-110). The bucket backend keeps the cache outside
+# the pods, Valkey shares the answers, the limiters and the block list between the replicas.
+fullnameOverride: bastion-bucket
+config:
+  bastion:
+    cache:
+      backend: bucket
+      bucket:
+        endpoint: https://trove-s3.trove.svc:9000    # SeaweedFS of the dev profile; the certificate names trove-s3.trove.svc
+        region: us-east-1
+        bucket: trove-bastion-partners
+        prefix: trove-bastion
+        force_path_style: true
+        credentials:
+          source: static
+  valkey:
+    mode: sentinel
+    sentinel:
+      addresses:
+        - bastion-valkey-sentinel-0.bastion-valkey-sentinel-headless.trove-bastion.svc.cluster.local:36379
+        - bastion-valkey-sentinel-1.bastion-valkey-sentinel-headless.trove-bastion.svc.cluster.local:36379
+        - bastion-valkey-sentinel-2.bastion-valkey-sentinel-headless.trove-bastion.svc.cluster.local:36379
+      primary_name: bastion-valkey
+      tls: true
+    tls:
+      mode: verify-full
+secrets:
+  mainToken:
+    existingSecret: bastion-token-bucket
+  signingKey:
+    existingSecret: bastion-signing-key
+  cacheBucket:
+    existingSecret: bastion-s3
+  valkey:
+    existingSecret: bastion-valkey-auth
+    usernameKey: ""
+  valkeySentinel:
+    existingSecret: bastion-valkey-auth      # the Valkey operator has one password for the data pods and the Sentinels (as values-dev.yaml)
+    usernameKey: ""
+  valkeyCA:
+    existingSecret: bastion-valkey-tls
+ingress:
+  tls:
+    - secretName: bastion-bucket-edge-tls
+      hosts: [bastion-bucket.trove.localhost]
+networkPolicy:
+  egress:
+    valkey:
+      to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: bastion-valkey
+              app.kubernetes.io/managed-by: vko.gtrfc.com
+      ports: [16379, 36379]      # the Valkey operator's TLS ports (the chart's defaults are the stock ports)
+    cacheBucket:
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: trove
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: trove-s3
+      ports: [9000]

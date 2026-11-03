@@ -41,6 +41,8 @@ deploy/dev/pg-kill.sh       force-delete the PostgreSQL primary, wait for the re
 deploy/dev/pg-stop.sh       stop PostgreSQL for a time by fencing the CloudNativePG cluster
 deploy/dev/valkey-stop.sh   stop Valkey and the Sentinels until valkey-start.sh (the M1 tests hold the outage themselves)
 deploy/dev/valkey-cli.sh    valkey-cli against the current primary (FLUSHALL of E1.11, CLIENT PAUSE of E1.8)
+deploy/dev/bastion.sh       the e2e Bastions of R-BAS-049: infra, install <volume|bucket>, status, down (the Bastion tests, below)
+deploy/dev/bastion*.yaml    their manifests and chart values; values-bastion.yaml is the main installation's `bastion` profile
 test/e2e/                   the Go tests, build tag `e2e`, package e2e
   env_test.go               kubectl, the API-server proxy to :8081, the driver and k6 helpers
   e03_cluster_test.go       E0.3, E0.7 (Pod Security, NetworkPolicy enforcement)
@@ -118,6 +120,8 @@ make e2e SET=nuget-ha        # TestNuGetHA...: drain and failover under the NuGe
 make nuget-clients-image     # only build the NuGet clients image into the local Docker
 make nuget-clients-smoke     # the image like a pod against the counting NuGet test upstream, without a cluster
 make nuget-reference-check   # perf/nuget/reference against a regeneration (no cluster, no Docker)
+make e2e SET=bastion         # the short scenarios of R-BAS-049 with npm, pnpm, Yarn 4 and dotnet restore (CI job e2e-bastion, when the change touches the Bastion; nightly)
+make e2e SET=bastion-long    # the drain, and the anonymous miss flood (CI: nightly and on dispatch; a red long leg is a finding, not a blocker)
 make fuzz-npm FUZZ=FuzzMatch FUZZTIME=1m   # npm's fuzz targets (CI: 30 minutes, closing run only)
 ```
 
@@ -1875,6 +1879,139 @@ outside the project, and a publish into the project's remote repository, are `40
 while a read of a repository outside the project is `404`.
 Not covered: a project whose switches are off (R-AUTHZ-026's `project_switch_off` is a case of the API tests, the browser journey
 `12-projects.spec.ts` shows it), the yarn rows of npm, nuget.exe, and a project administrator through a group.
+
+## The Bastion tests
+
+Work package WP10 of phase 5b: [R-BAS-049](../spec/bastion.md#r-bas-049--end-to-end-suite-on-kind-with-npm-and-nuget) on the dev cluster, with the real clients, through the
+Bastion's own Ingress. The Bastion is described in [bastion.md](bastion.md), its chart in [helm-chart.md](helm-chart.md#the-bastion-chart). Decisions: Q-BAS-110 to Q-BAS-114.
+
+```mermaid
+flowchart LR
+  subgraph trove["namespace trove"]
+    c["client pods<br/>npm, pnpm, Yarn 4, dotnet<br/>(trove-e2e-npm-i, trove-e2e-nuget-i)"]
+    m["main installation<br/>profile bastion"]
+    pg[("PostgreSQL")]
+    s3[("SeaweedFS")]
+  end
+  subgraph tb["namespace trove-bastion"]
+    v["bastion-volume x2<br/>volume backend, routeByPath"]
+    b["bastion-bucket x2<br/>bucket backend"]
+    vk[("bastion-valkey<br/>2 + 3 Sentinels")]
+  end
+  c -- "https, hosts bastion-*.trove.localhost" --> h["HAProxy Ingress<br/>ingress-controller"]
+  h -- "HTTPS, verified" --> v
+  h -- "HTTPS, verified" --> b
+  v -- "bst token, :8080" --> m
+  b -- "bst token, :8080" --> m
+  b --> vk
+  b -- "bucket trove-bastion-partners" --> s3
+  m --> pg
+```
+
+### What is deployed
+
+`make e2e SET=bastion` (and `bastion-long`) starts the npm and the NuGet client pods (two each, outside the Bastion's namespace, with the hosts of the Bastions as host aliases of
+their forwarders), and the first test calls `basFx` ([bastion_env_test.go](../../test/e2e/bastion_env_test.go)), which does, once per run:
+
+1. `up.sh` with `TROVE_PROFILE=bastion`: the main installation with [values-bastion.yaml](../../deploy/dev/values-bastion.yaml) (`bastions.trusted_proxies` the pod range, so the
+   Bastions' forwarded client address counts, and both Bastion base URLs in `server.additional_base_urls`; R-BAS-017). The profile is returned to `default` at the end of the run, like
+   the scatter profile, unless `TROVE_E2E_BASTION_KEEP=1`.
+2. `deploy/dev/bastion.sh infra`: the namespace `trove-bastion` (Pod Security `restricted`), the dev CA as an Issuer and as the trust bundle, the bucket credentials copied from
+   `trove-s3`, and [bastion.yaml](../../deploy/dev/bastion.yaml): the certificates of the two hosts, the signing key and Valkey password (internal-secrets-operator), the Valkey
+   `bastion-valkey` with its NetworkPolicy, and the Job that makes the bucket `trove-bastion-partners`.
+3. The registrations `partners` and `partners-bucket` through the management API, their old tokens revoked, one `bst` token each, written into the Secrets `bastion-token-volume`
+   and `bastion-token-bucket` that the chart reads (R-BAS-004, R-BAS-006).
+4. `deploy/dev/bastion.sh install volume|bucket` (in parallel): `helm upgrade --install` of [deploy/helm/trove-bastion](../../deploy/helm/trove-bastion) with
+   [bastion-chart-common.yaml](../../deploy/dev/bastion-chart-common.yaml) and `bastion-chart-volume.yaml` or `bastion-chart-bucket.yaml`, the Docker network ranges as
+   `networkPolicy.ingress.probeCIDRs`, and the image ID as a pod annotation, so that a rebuilt image rolls the pods and an unchanged one rolls nothing. When the releases existed, the
+   deployments are restarted and the Valkey is flushed, so that no block, answer or cached byte of an earlier run is in them.
+5. The content of the run on the main installation: the repositories `bas-npm` and `bas-nuget`, the accounts `e2e-bas-pub` (publisher), `e2e-bas-full` (`$FULL`, reads everything)
+   and `e2e-bas-part` (`$PART`, reads the packages `bas<run>-open*` only), the npm packages (a root with 19, 7 and 7 dependencies for npm, pnpm and Yarn 4, so the cold run of
+   each client has tarballs the others did not fetch; plus an open and a hidden library) and six NuGet packages packed by the real SDK.
+
+| File | Responsibility |
+|---|---|
+| [deploy/dev/bastion.sh](../../deploy/dev/bastion.sh), [bastion.yaml](../../deploy/dev/bastion.yaml) | `infra`, `install <variant>`, `status`, `down` |
+| [bastion-chart-common.yaml](../../deploy/dev/bastion-chart-common.yaml), `bastion-chart-volume.yaml`, `bastion-chart-bucket.yaml` | the values of the two releases; the short periods (answers 30 s, grace 90 s, revalidation 90 s, feed poll 1 s) |
+| [deploy/dev/values-bastion.yaml](../../deploy/dev/values-bastion.yaml), `up.sh` | the `bastion` profile of the main installation |
+| [test/e2e/bastion_env_test.go](../../test/e2e/bastion_env_test.go) | `basFx`, registrations, tokens, the content, Bastion metrics, `mainLog` and `mainWindow` (what the main installation was asked) |
+| [test/e2e/bastion_clients_test.go](../../test/e2e/bastion_clients_test.go) | the clients: the snippets of `client-setup?bastion=` written into the pods, lockfiles, `dotnet restore` |
+| [test/e2e/bastion_scenarios_test.go](../../test/e2e/bastion_scenarios_test.go), `bastion_scx_checks_test.go`, `bastion_unreachable_test.go`, `bastion_upgrade_test.go`, `bastion_zflood_test.go` | the short scenarios, in the order of their file names (the destructive ones last) |
+| [test/e2e/bastion_journey_test.go](../../test/e2e/bastion_journey_test.go), [web/e2e/bastion/14-bastions.spec.ts](../../web/e2e/bastion/14-bastions.spec.ts), `web/e2e/playwright.bastion.config.ts` | the browser journey of R-BAS-007 |
+| [test/e2e/bastion_long_test.go](../../test/e2e/bastion_long_test.go) | the long scenarios |
+
+### How a scenario measures
+
+- **The clients are configured the way a user does it.** The snippets are the ones `GET /api/v1/repositories/bas-npm/client-setup?client=npm&bastion=partners&credentials=env`
+  renders (`.npmrc` with `replace-registry-host=always`, `~/.npmrc` of pnpm, `.yarnrc.yml`, `nuget.config`); the token is the environment variable the snippet names. Lockfiles are
+  written against the main installation's address (`npm install --package-lock-only`, `pnpm install --lockfile-only`, `yarn install --mode=update-lockfile`) and installed through the
+  Bastion, which also shows that the host of a lockfile is replaced.
+- **What the main installation was asked** is read from its request log (Q-BAS-113): `mainLog` takes the records of both `web` replicas, `fromBastion` keeps those whose `peer_addr` is a pod of
+  a Bastion, `kind` sorts them (`iface`, `artifact`, `document`). A `mainWindow` is the difference between two snapshots.
+- **Addresses.** This machine reaches the Bastion through the edge as the Docker gateway (floods, the token loop); the client pods have their own addresses (the unaffected address of the flood,
+  the clients of every other scenario). The flood scenarios come last because they block this machine's address at the Bastion for 15 minutes.
+- **Metrics** of a replica are read through the API server's pod proxy (`https:<pod>:8081`), as for the main installation. There is no Prometheus in the profile (Q-BAS-112).
+
+### The scenarios
+
+| Test | Row of R-BAS-049 | What it asserts |
+|---|---|---|
+| `TestBastion_R_BAS_049_ColdAndWarmCache` | cold cache, warm cache | per Bastion and per client (npm, pnpm, Yarn 4, `dotnet restore`): a cold run sends every tarball or `.nupkg` once, each answered `200`; a second run with an empty client cache within 90 s sends no tarball, `.nupkg` or document (npm adds `npm view`, for a document request); `trove_bastion_requests_total{class=artifact,result=hit}` rises by 20 on the warm `npm ci` of 20 tarballs (R-BAS-040); after 90 s exactly one request per artifact, each a `304` that transferred nothing |
+| `TestBastion_R_BAS_049_RoutingByPath` | R-BAS-033 | every tarball path of the pnpm set requested twice at the volume Bastion causes at most one request to the main installation, both replicas serve hits |
+| `TestBastion_R_BAS_049_ReadOnly` | read-only | `npm publish` of a 1.5 MB package exits non-zero with `E403` and the main installation's URL, the Bastion read less than 64 KiB of the upload, the package does not exist at the main installation; `dotnet nuget push` exits non-zero with `403` |
+| `TestBastion_R_BAS_049_HiddenContent` | hidden content | what `$PART` may not read is a `404` identical to the main installation's, with the Bastion holding it for `$FULL` or not; narrowing the permission hides the cached open package within 20 s |
+| `TestBastion_R_BAS_049_TokenRevoked` | token revoked | a loop at 20 requests a second; the revocation returns; the last `200` is at most 5 s after it and every later answer is a `401`; both replicas refused requests |
+| `TestBastion_R_BAS_049_FailedAuthenticationTimeout` | failed-authentication timeout | from a client pod, 20 random well-formed tokens are `401` (asked at the main installation), the 21st and later are `429 auth_timeout` with `Retry-After`, none of the later reaches the main installation, and `$FULL` keeps working |
+| `TestBastion_R_BAS_049_NetworkPolicy` | R-BAS-047 | from an ephemeral container in a Bastion pod: the main installation's port and the bucket's port open; PostgreSQL's Service, another Service of the namespace and `registry.npmjs.org:443` refused; the same two targets are reachable from a client pod, so the refusal is the policy's |
+| `TestBastion_R_BAS_049_ChartRender` | R-BAS-045 | `helm template` with the required values only: Deployment with two replicas, PDB, Ingress with the edge-limit annotations, NetworkPolicy, no Secret, Role or claim; `edgeLimit.requestsPerSecond=50` fails and names both values |
+| `TestBastion_R_BAS_049_Metrics` | R-BAS-040 | every metric of the table is exported by both replicas of both Bastions |
+| `TestBastion_R_BAS_049_MainUnreachable` | main installation unreachable | the egress rule to the main installation is removed from the NetworkPolicy and the `web` pods of the main installation are deleted (a policy stops new connections only; a replica that was restarted instead could not use its answers, R-BAS-026); both replicas report `main_reachable 0` within 60 s; the warm `npm ci` and `dotnet restore` succeed; a cold package and an unseen token get `503 main_unreachable` with `Retry-After: 30`; 135 s after the last answer everything is `503`; the gauge stays 0 for two minutes (the `for` of `TroveBastionMainUnreachable`); after the policy returns both replicas are reachable within 40 s and the audit buffers empty |
+| `TestBastion_R_BAS_049_InterfaceMismatch` | interface mismatch | Q-BAS-111: the main installation at version 2 makes both replicas report the mismatch (main version 2, own 1) for a minute, the Bastion serves warm content, a cold package is `503`; the Bastion at version 2 clears it and a cold package is `200`; cleanup restores both |
+| `TestBastion_R_BAS_049_EdgeLimit` | R-BAS-038 | 20,000 requests from one address through 200 connections: some `429` are the ingress's (no problem document) and are not counted by the Bastion, none is shed, no replica restarts |
+| `TestBastion_R_BAS_049_FloodingAddress` | flooding address | 2,000 requests from one address, paced at 80 a second (below the ingress's limit, above the Bastion's), block it (`trove_bastion_blocks_total`), then 60 requests answer `429 address_blocked`, both replicas count `blocked` refusals, a client pod's address is served |
+| `TestBastion_R_BAS_007_Journey` | R-BAS-007 | the browser journey: the card of `partners` shows both replicas' last contact; a registration is created, a token of 20 days issued, copied once (clipboard compared), gone after a reload, with the warning mark |
+| `TestBastionLong_R_BAS_049_Drain` | drain | `kubectl drain` of a replica's node (not the PostgreSQL primary's) two minutes into a ten-minute loop of `npm ci` and `dotnet restore`: zero failed runs, the replica is rescheduled |
+| `TestBastionLong_R_BAS_049_AnonymousMissFlood` | anonymous miss flood | 10,000 anonymous requests for random names: at most 30 reach the main installation per minute, at most 16 (the anonymous quarter of `max_concurrent`) in flight |
+
+### Running it
+
+```shell
+make image VERSION=dev && make dev-up
+make e2e SET=bastion          # the short scenarios; the profile and the Bastions are made by the first test (about 40 minutes)
+make e2e SET=bastion-long     # the drain (TROVE_E2E_BASTION_LOOP shortens the loop while a test is written) and the anonymous flood
+TROVE_E2E_BASTION_KEEP=1 make e2e SET=bastion TROVE_E2E_RUN='^TestBastion_R_BAS_049_ReadOnly$'   # one test; the Bastions and the profile stay
+deploy/dev/bastion.sh status | down
+```
+
+The journey needs `npm ci` in `web/` and `npx playwright install --with-deps chromium`, like the journeys of E1.11. CI: job `e2e-bastion` of Test and Release runs the set `bastion` when
+the change touches `internal/bastion`, `internal/bastionmain`, `deploy/helm/trove-bastion`, `docs/spec/bastion.md` or the suite's own files (a scope step diffs against the base of the
+push or the pull request, and the job is green after it otherwise), and Semantic Release needs it; job `e2e-bastion` of HA and Performance (nightly) runs both sets.
+
+### Findings of the Bastion tests
+
+The first runs of the suite found these; each is fixed, with a test, or recorded as a harness fact.
+
+| Finding | Cause | Fix |
+|---|---|---|
+| The Bastion could not use the profile's Valkey: `NOAUTH` from the Sentinels | the chart `trove-bastion` had no Sentinel credential; the Sentinels of a Valkey that requires a password need `valkey.sentinel.username_file` and `password_file` (R-BAS-046, R-ARCH-031) | `secrets.valkeySentinel`, `BastionSentinel` in `internal/config/bastion_role.go`, the generated schema, `_helpers.tpl`, `TestR_BAS_002_…`, the manual |
+| A warm run on the bucket Bastion sent a document request to the main installation | the names of a target's `Vary` are learned per replica, so the replica that did not fetch a document did not find the entry its peer wrote under the key with the values (R-BAS-018, R-BAS-023) | `saveEntry` also writes the entry at the plain key, `learnVaryFromCache` reads the names there ([entries.go](../../internal/bastion/engine/entries.go)); `TestR_BAS_023_AnotherReplicaServesTheDocumentAPeerKeptWithoutKnowingItsVary` |
+| `npm publish` and `dotnet nuget push` through a Bastion got `401 credentials_required`, not `403 bastion_read_only` | the write probe carries no credential and the authentication stage refused it on an endpoint that refuses anonymous requests (R-BAS-014) | fixed on main (Q-BAS-118) |
+| `$PART` read a document `$FULL` had cached and got a `304` it had not asked for | a partial reader's `304` to the shared entry's validator was passed on (R-BAS-023) | fixed on main (Q-BAS-107); this suite found it first |
+| A warm run could not tell a client that never asked from a Bastion that served | pnpm 11 and later ignore `npm_config_store_dir`: its store is below `$HOME/.local`, so a "warm" run found everything locally | the wipe removes `$HOME/.local`, and every warm run asserts that the Bastion's hit counter rose by the number of artifacts |
+| The main installation answered `421 misdirected_request` to the Bastions' handshake | after the fix wave it checks the host of the request before it recognizes a Bastion; the Service name the Bastions call is not a host it serves | `https://trove.trove.svc:8080` is listed in `server.additional_base_urls` of the profile |
+| A NetworkPolicy did not cut the Bastion off | a policy stops new connections only; the replicas kept the connection they held | the scenario restarts the replicas after the cut, so every connection is new (the answers and bytes are in Valkey and the bucket) |
+| The flood did not reach the Bastion's own stage | the edge limit (100 requests a second) refused 90 % of a fast flood first | the flood of R-BAS-037 is paced below the edge limit and above the Bastion's (80 a second) |
+| `kubectl debug` was refused by the Pod Security Standard | the default profile adds `SYS_PTRACE` | `--profile=restricted` with an `IfNotPresent` image |
+| `go build -overlay` of the version alone made the main installation fail to start | `internal/api/v1/document.go` checks `x-trove-bastion-interface` of the embedded OpenAPI document against the constant | the overlay replaces the embedded copy as well |
+
+Measured on the dev cluster: the first token loop was refused 54 ms after the revocation returned (bound: 5 s); a narrowed permission reached a Bastion in under 1 s; the edge refused 19,897 of 20,000 requests in one second (limit 100 a second per address, 50 connections); 2,000 requests at 80 a second blocked the address after 301 `rate_limited` answers.
+
+### Not covered by the Bastion tests
+
+- The alerts do not fire in a Prometheus: the profile has none (Q-BAS-112). The rules are covered by `promtool test rules` (R-BAS-041) and the gauges by these tests.
+- The second flood after a block, which yields 30 minutes (R-BAS-037), needs the first block to expire: 15 minutes. The integration tier covers the doubling.
+- The exposure rules of an endpoint (Q-BAS-114).
+- The Bastion in front of the main installation's own Ingress: the Bastion calls the Service of the main installation inside the cluster, so the TLS-terminating reverse proxy that Q-BAS-3 mentions is not in the path.
 
 ## Extension checklist
 

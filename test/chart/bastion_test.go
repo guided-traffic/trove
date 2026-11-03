@@ -414,6 +414,8 @@ func TestR_BAS_002_ConfigurationOnlyThroughTheChart(t *testing.T) {
 			"bastion.cache.bucket.ca_file":        "/etc/trove/trusted-ca/ca-bundle.crt",
 			"valkey.password_file":                "/var/run/secrets/trove/valkey/password",
 			"valkey.username_file":                "/var/run/secrets/trove/valkey/username",
+			"valkey.sentinel.password_file":       "/var/run/secrets/trove/valkey-sentinel/password",
+			"valkey.sentinel.username_file":       "/var/run/secrets/trove/valkey-sentinel/username",
 			"valkey.tls.ca_file":                  "/var/run/secrets/trove/valkey-ca/ca.crt",
 			"bastion.replicas":                    2,
 			"server.tls.certificates.0.cert_file": "/var/run/secrets/trove/tls/tls.crt",
@@ -445,7 +447,7 @@ func TestR_BAS_002_ConfigurationOnlyThroughTheChart(t *testing.T) {
 				secrets[s] = true
 			}
 		}
-		for _, s := range []string{"trove-bastion-token", "trove-bastion-signing", "trove-bastion-s3", "trove-bastion-valkey", "trove-bastion-valkey-ca", "trove-bastion-listener"} {
+		for _, s := range []string{"trove-bastion-token", "trove-bastion-signing", "trove-bastion-s3", "trove-bastion-valkey", "trove-bastion-valkey-sentinel", "trove-bastion-valkey-ca", "trove-bastion-listener"} {
 			if !secrets[s] {
 				t.Errorf("Secret %s is not mounted", s)
 			}

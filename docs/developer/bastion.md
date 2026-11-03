@@ -5,7 +5,8 @@ role) and the role is built: package 1 (registrations and the `bst` token), pack
 interface](#package-2-the-main-installations-interface)), package 3 ([marking, the write probe and the read
 shape](#marking-the-write-probe-and-the-read-shape-package-3)), package 4 ([the link to the main installation](#the-link-to-the-main-installation-package-4a),
 [the engine](#the-engine-package-4b) and [how the role is wired](#how-the-role-is-wired-package-4c)), package 5 ([the cache backends](#the-cache-backends-package-5)),
-package 6 ([shared state and guard](#shared-state-and-the-guard)) and package 8 (the screen, client setup and the manual). The specification is
+package 6 ([shared state and guard](#shared-state-and-the-guard)) and package 8 (the screen, client setup and the manual); the end-to-end suite of R-BAS-049 on kind
+is described in [e2e.md](e2e.md#the-bastion-tests). The specification is
 [spec/bastion.md](../spec/bastion.md) (R-BAS-001 to R-BAS-049, decisions Q-BAS-1 onward), its security perspective [security/bastion.md](../security/bastion.md), the plan
 [projektplan/BETA.md](../projektplan/BETA.md#phase-5b--trove-bastion-m13).
 
@@ -315,6 +316,13 @@ engine keeps what the class allows, streams the rest.
 coarse action other than `read` it returns the `bastion_read_only` error, which the format renders in its own shape; for a read route
 that takes a body it answers `204` with `Trove-Bastion-Route: read-with-body` and reports `handled`. The Bastion replays a `403` or
 `404` and, after a `204`, forwards the real request.
+
+**One cache, several replicas.** An entry kept under a key that carries the values of the request headers named by `Vary` is also written
+under the key without them ([entries.go](../../internal/bastion/engine/entries.go) `saveEntry`), and a replica that has not learned the
+target's `Vary` reads the names from that entry (`learnVaryFromCache`). The names are learned per replica, so without the second entry a
+replica of the bucket backend would not find a document its peer kept and would ask the main installation again. The plain-key entry is a
+pointer to the names, never served for a request of a target with names. A partial reader's `304` to the validator of the shared entry is
+not its answer (`onPrivate`): the request is repeated without a validator.
 
 
 ## The link to the main installation (package 4a)

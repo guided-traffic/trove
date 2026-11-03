@@ -87,6 +87,7 @@ func TestMain(m *testing.M) {
 	}
 	code := m.Run()
 	stopForwards()
+	basTeardown()
 	restoreProfile()
 	stop()
 	os.Exit(code)
@@ -174,9 +175,15 @@ const (
 	selTrove  = "app.kubernetes.io/instance=trove,trove/serve=true,app.kubernetes.io/component in (web,worker)" // the replicas: not the driver pod, which carries the serve label for the Valkey NetworkPolicy
 )
 
-func podsOf(t testing.TB, selector string) []pod {
+func podsOf(t testing.TB, selector string) []pod { return podsOfIn(t, cfg.namespace, selector) }
+
+// podsOfIn lists the pods of a namespace.
+func podsOfIn(t testing.TB, namespace, selector string) []pod {
 	t.Helper()
-	raw := kn(t, "get", "pods", "-l", selector, "-o", "json")
+	raw, kerr := kubectl("-n", namespace, "get", "pods", "-l", selector, "-o", "json")
+	if kerr != nil {
+		t.Fatal(kerr)
+	}
 	var l struct {
 		Items []struct {
 			Metadata struct {

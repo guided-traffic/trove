@@ -1,0 +1,203 @@
+# The namespace-scoped parts of the e2e Bastions (R-BAS-049, deploy/dev/bastion.sh): what the two releases of the chart
+# trove-bastion need around them, applied to the namespace ${BASTION_NS} (the Pod Security Standard restricted).
+#
+#   Issuer trove-dev-ca            the dev CA again, in this namespace: it signs the pods' listener certificates (chart
+#                                  tls.certManager), the edge certificates below and the Valkey operator's certificate.
+#                                  bastion.sh copies the CA's Secret here first (a dev profile shortcut: the CA key is a
+#                                  development key).
+#   Certificate bastion-*-edge-tls the edge's certificates for the two hosts of the Bastions (ingress.tls)
+#   Secret bastion-valkey-auth     the Bastion Valkey's password (internal-secrets-operator, as secrets.yaml)
+#   Secret bastion-signing-key     the 32 random bytes that sign cache entries and answers (secrets.signingKey, R-BAS-032)
+#   Valkey bastion-valkey          the Bastions' own Valkey (Q-BAS-110): two data pods, three Sentinels, TLS, no persistence
+#   NetworkPolicy bastion-valkey-clients  admits the Bastions' pods to it on the TLS ports only
+#
+# The Bastion bucket is made in the namespace of SeaweedFS by the Job at the end (namespace ${NS}).
+# The images are substituted by lib.sh (render), ${BASTION_NS} and ${EDGE_PORT} by bastion.sh.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: trove-dev-ca
+  namespace: ${BASTION_NS}
+spec:
+  ca:
+    secretName: trove-dev-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: bastion-volume-edge-tls
+  namespace: ${BASTION_NS}
+spec:
+  secretName: bastion-volume-edge-tls
+  commonName: bastion-volume.trove.localhost
+  duration: 2160h
+  renewBefore: 720h
+  privateKey: {algorithm: ECDSA, size: 256}
+  usages: [digital signature, key encipherment, server auth]
+  dnsNames: [bastion-volume.trove.localhost]
+  issuerRef: {name: trove-dev-ca, kind: Issuer, group: cert-manager.io}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: bastion-bucket-edge-tls
+  namespace: ${BASTION_NS}
+spec:
+  secretName: bastion-bucket-edge-tls
+  commonName: bastion-bucket.trove.localhost
+  duration: 2160h
+  renewBefore: 720h
+  privateKey: {algorithm: ECDSA, size: 256}
+  usages: [digital signature, key encipherment, server auth]
+  dnsNames: [bastion-bucket.trove.localhost]
+  issuerRef: {name: trove-dev-ca, kind: Issuer, group: cert-manager.io}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bastion-valkey-auth
+  namespace: ${BASTION_NS}
+  annotations:
+    iso.gtrfc.com/autogenerate: password
+    iso.gtrfc.com/length: "32"
+type: Opaque
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bastion-signing-key
+  namespace: ${BASTION_NS}
+  annotations:
+    iso.gtrfc.com/autogenerate: key
+    iso.gtrfc.com/type: bytes
+    iso.gtrfc.com/length: "32"
+type: Opaque
+---
+apiVersion: vko.gtrfc.com/v1
+kind: Valkey
+metadata:
+  name: bastion-valkey
+  namespace: ${BASTION_NS}
+spec:
+  replicas: 2
+  image: ${DEV_VALKEY_IMAGE}
+  sentinel:
+    enabled: true
+    replicas: 3
+    resources:
+      requests: {cpu: 20m, memory: 32Mi}
+      limits: {memory: 128Mi}
+  auth:
+    secretName: bastion-valkey-auth
+    secretPasswordKey: password
+  tls:
+    enabled: true
+    unifiedCertificate: true
+    certManager:
+      issuer:
+        kind: Issuer
+        name: trove-dev-ca
+  persistence:
+    enabled: false
+  podDisruptionBudget:
+    enabled: true
+  antiAffinity:
+    mode: hard
+    topologyKey: topology.kubernetes.io/zone
+  networkPolicy:
+    enabled: true
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {memory: 320Mi}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bastion-valkey-clients
+  namespace: ${BASTION_NS}
+  labels:
+    app.kubernetes.io/part-of: trove-dev
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: bastion-valkey
+      app.kubernetes.io/managed-by: vko.gtrfc.com
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: trove-bastion
+      ports:
+        - {port: 16379, protocol: TCP}
+        - {port: 36379, protocol: TCP}
+---
+# The bucket of the Bastion with the bucket backend, in the SeaweedFS of the dev profile (trove-s3, namespace ${NS}). The
+# Bastion's identity is the profile's (a copy of Secret trove-s3 in the Bastion namespace); the bucket is its own.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: trove-s3-bastion-bucket
+  namespace: ${NS}
+  labels:
+    app.kubernetes.io/name: trove-s3-bastion-bucket
+    app.kubernetes.io/part-of: trove-dev
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: trove-s3-bastion-bucket
+        app.kubernetes.io/part-of: trove-dev
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bucket
+          image: ${DEV_AWSCLI_IMAGE}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              export AWS_ACCESS_KEY_ID="$(cat /secrets/access-key-id)"
+              export AWS_SECRET_ACCESS_KEY="$(cat /secrets/secret-access-key)"
+              export AWS_DEFAULT_REGION=us-east-1
+              export AWS_CA_BUNDLE=/tls/ca.crt
+              s3() { aws --endpoint-url https://trove-s3.${NS}.svc:9000 "$@"; }
+              b=trove-bastion-partners
+              s3 s3api head-bucket --bucket "$b" 2>/dev/null || s3 s3api create-bucket --bucket "$b"
+              echo "bucket: $b"
+          env:
+            - {name: HOME, value: /tmp}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: s3-secret, mountPath: /secrets, readOnly: true}
+            - {name: tls, mountPath: /tls, readOnly: true}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: s3-secret
+          secret:
+            secretName: trove-s3
+            defaultMode: 0440
+            items:
+              - {key: access-key-id, path: access-key-id}
+              - {key: secret-access-key, path: secret-access-key}
+        - name: tls
+          secret:
+            secretName: trove-s3-tls
+            items:
+              - {key: ca.crt, path: ca.crt}

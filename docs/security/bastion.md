@@ -362,7 +362,9 @@ The gaps of the Bastion's mechanisms are recorded on the spec page, where the me
 - [H-473](../spec/bastion.md#h-473--the-roles-binary-contains-packages-of-the-main-installation-it-never-starts) — the role's binary contains
   packages of the main installation it never starts;
 - [H-474](../spec/bastion.md#h-474--the-sliding-estimate-of-a-limit-admits-more-than-the-limit-in-a-minute-that-spans-a-boundary) — the sliding
-  estimate of a limit admits more than the limit in a minute that spans a boundary.
+  estimate of a limit admits more than the limit in a minute that spans a boundary;
+- [H-464](../spec/bastion.md#h-464--a-client-that-sends-accept-encoding-gzip-was-asked-about-at-the-main-installation-on-every-artifact-read-cause-not-found) — a client that sends
+  `Accept-Encoding: gzip` was asked about at the main installation on every artifact read, cause not found.
 
 This page does not describe the main installation's own mechanisms that the Bastion relies on (the decision point, token
 validation, the revocation journal); their pages and gaps are linked above. It records no gap of its own.
