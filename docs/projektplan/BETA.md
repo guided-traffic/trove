@@ -1,7 +1,7 @@
 # trove · Project plan to the beta release
 
 **Status:** ⚪ not started · 🟡 in progress or partly done · 🟢 done
-**Last updated:** 2026-11-02
+**Last updated:** 2026-11-03
 
 The way from zero to the beta release. The beta is trove with two package registries, **npm** and
 **NuGet (.NET)**, each with local, remote (pull-through) and virtual repositories, running on the
@@ -28,7 +28,7 @@ numbers (owner, 2026-11-02).
 | [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | 🟢 |
 | [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | 🟢 |
 | [5a · Projects](#phase-5a--projects-and-delegated-administration) | Projects with project administrators who manage their repositories, policies and the technical accounts of external parties | 🟢 |
-| [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | 🟡 |
+| [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | 🟢 |
 | [5b · trove Bastion](#phase-5b--trove-bastion-m13) | An exposed, read-only cache instance in front of the main installation that serves released content to external parties and takes load off it | ⚪ |
 | [6 · Vulnerability scanning](#phase-6--vulnerability-scanning-m4b) | Own advisory mirror, findings and vulnerability report, malicious versions blocked, npm and NuGet audits from trove's data | ⚪ |
 | [6b · Remote full mirror](#phase-6b--remote-full-mirror) | A remote repository can mirror every discoverable package of its upstream in the background, besides the default pull-through | ⚪ |
@@ -391,6 +391,18 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - 🟢 F-33: the e2e sign-ins wait out the break-glass rotation hold (`test/e2e/rotationhold`, `submitLocalForm` in
   `web/e2e/support.ts`, [Q-AUTH-194](../spec/identity-and-authentication.md#q-auth-194--the-e2e-sign-ins-wait-out-the-break-glass-rotation-hold));
   verified on kind inside a forced rotation (the first sign-in waited 33 s, 19 journeys green)
+
+**Exit criteria of M4 and their evidence (2026-11-03)**
+- 🟢 E4.1 (against the issuer double, Q-CI-25): `TestCIPipeline` of the set `ci` (Test and Release job `e2e-ci`, per change)
+- 🟢 E4.2: the negative cases of R-CI-004 in `internal/ci/subject` and `test/integration/ci` (`exchange_errors_test.go`), the
+  algorithm-confusion token (Q-CI-24), the key rotation against the double (`keys_test.go`)
+- 🟢 E4.3: `replay_test.go` (two replicas, single use off and on)
+- 🟢 E4.4: `TestCIPipeline`'s fork case (`cross_project_source_denied`; with `read_only` the publish gets 403)
+- 🟢 E4.5: `TestCIPipeline`'s dry-run comparison over the five claim sets
+- 🟢 E4.6: `TestCITokens` (401 after expiry on three replicas, a revocation in force within 37 to 42 ms)
+- 🟢 E4.7: the set `ci-ha` in the dispatched run 41575201390 of `HA and Performance (nightly)` (drain, Valkey stopped with every
+  replica ready and `degraded: [valkey]`, single use across a Sentinel failover and `FLUSHALL`, a web pod deleted under 50
+  jobs); the restore part waits for M5 (E5.12)
 
 **The owner's requests during the run (2026-11-02)**
 - 🟢 Migrations are immutable once on `main`, released or not: a committed file is never edited, renamed or removed, and a
@@ -898,6 +910,6 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
 | **npm** | 🟢 | 🟢 | 🟡 |
 | **NuGet (.NET)** | 🟢 | 🟡 | ⚪ |
 | Projects (delegated administration) | 🟢 | 🟢 | — |
-| GitLab CI OIDC | 🟢 | 🟢 | 🟡 |
+| GitLab CI OIDC | 🟢 | 🟢 | 🟢 |
 | Vulnerability scanning | ⚪ | ⚪ | ⚪ |
 | Backup and restore | ⚪ | ⚪ | — |

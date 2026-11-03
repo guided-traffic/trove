@@ -216,6 +216,15 @@ Found on 2026-11-03 while closing phase 5:
 - **F-35 · `TestR_CI_003_StaleAndUnreachable` failed once** (read). In one full run of `test/integration/ci` while three
   development agents shared the integration stack it failed, and it passed alone and in every later run; not reproduced.
   Done when a run under load (`-count` with CPU load) reproduces it and the cause is fixed, or 200 runs under load pass.
+- **F-37 · `TestE14Drain` refused a request with `database_unavailable` during the drain** (read). In Test and Release
+  run 41575195688 (job `e2e on kind (push)`) the driver's probe during the drain of a node with a web and a worker pod got
+  `database_unavailable`, while the dispatched nightly run 41575201390 used the same self-hosted runners; every other run of
+  the phase passed it. The same run's `integration (shard a)` failed on a DNS error of the artifact upload
+  (`EAI_AGAIN`), which is the runner's network. Done when the drain is shown to hold under the runners' load (the failure
+  reproduced and its cause fixed, or the case passing in parallel with a nightly run).
+- **F-38 · `npm-ha` and `npm-ha-soak` were red in the nightly run 41575201390** (read). The npm load under drains and
+  failovers is the phase 7 item "npm load in the drain and failover tests reliably green"; `npm-ha` passed in run 41568514247
+  hours before. Done with that item.
 - **F-36 · The issuer double's fixtures were recorded on a local GitLab 19.0.1-ee, not on the owner's instance**
   (confirmed). The owner's GitLab (namespace `gitlab` of his cluster) cannot create projects: the web service dials Gitaly
   under a name its certificate does not carry. Machine-level for the owner (his GitOps repository). Done when, after the

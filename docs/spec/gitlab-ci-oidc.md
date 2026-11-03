@@ -1,9 +1,7 @@
 # GitLab CI OIDC federation
 
-Status: specification — the contracts of beta phase 5 are laid (schema, packages, interfaces, API document, configuration,
-audit events, coordination; [developer/ci-oidc.md](../developer/ci-oidc.md)); work packages W1 to W6 are built (the issuers and
-keys, the claim engine and the subject-token validation, the mappings, the token exchange, the use of a CI token, the admin UI),
-W7 (the end-to-end tests with the real clients) is pending
+Status: implemented in beta phase 5 (2026-11-03) for R-CI-001 to R-CI-021 and R-CI-028 to R-CI-030 — see the contract
+page [ci-oidc.md](../developer/ci-oidc.md); R-CI-022 to R-CI-027 stay P1 and P2 as marked.
 
 This page specifies how a CI job gets trove permissions without a stored secret. A GitLab job
 asks GitLab for an OIDC ID token addressed to trove. It exchanges that token at
