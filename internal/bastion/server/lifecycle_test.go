@@ -259,6 +259,9 @@ func TestR_BAS_039_TheDrainSpoolsTheBufferDuringAnOutageAndAnotherReplicaDeliver
 	srv, logs := newLinked(t, linkedConfig(main, dir, tokenFileFor(t, dir, main.NewToken()), ""), nil)
 	run(t, srv, logs)
 	eventually(t, 20*time.Second, "the handshake, which says recordDownloads", func() bool { return srv.link.State().Handshaken })
+	// The outage begins before the events are added, so that no flush can deliver them before the drain: the
+	// reporter keeps what it cannot send (R-BAS-039), whenever its flush runs.
+	main.SetDown(true)
 	at := time.Date(2026, 11, 2, 10, 0, 3, 0, time.UTC)
 	for i := 0; i < 3; i++ {
 		srv.deps.Downloads.Add(iface.DownloadEvent{At: at.Add(time.Duration(i) * time.Second), Repository: "npm-all", Path: fmt.Sprintf("/api/npm/npm-all/p%d.tgz", i), ClientAddress: "203.0.113.7", Replica: "replica-a"})
@@ -266,7 +269,6 @@ func TestR_BAS_039_TheDrainSpoolsTheBufferDuringAnOutageAndAnotherReplicaDeliver
 	if v := maintest.Value(srv.bm.AuditBuffer); v != 3 {
 		t.Fatalf("buffer = %v", v)
 	}
-	main.SetDown(true)
 	if err := srv.Shutdown(context.Background()); err != nil {
 		t.Fatalf("shutdown: %v", err)
 	}
