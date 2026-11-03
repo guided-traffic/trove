@@ -23,6 +23,7 @@ import (
 	"github.com/guided-traffic/trove/internal/proxy/invalidation"
 	"github.com/guided-traffic/trove/internal/proxy/upstream"
 	"github.com/guided-traffic/trove/internal/repository"
+	"github.com/guided-traffic/trove/internal/vuln/enforce"
 )
 
 // CacheMetadataBytes is the name of the registered cache of the bytes of metadata
@@ -84,6 +85,10 @@ type Options struct {
 	GlobalOffline func() bool
 	Audit         audit.Recorder
 	Config        config.Proxy
+	// Enforce applies the download policy of the vulnerability scanning (R-VULN-015): the lookup of a stored artifact
+	// reads its block with the repository's policy, and a miss of a version is evaluated before the fetch. Nil is a
+	// replica that has not wired the scanning.
+	Enforce *enforce.Enforcer
 	// SafetyTTL bounds the age of the per-repository state cache
 	// (cache.snapshot_safety_ttl); zero is five minutes.
 	SafetyTTL time.Duration

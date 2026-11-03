@@ -52,6 +52,9 @@ type Options struct {
 	// Extra registers more client-listener routes before the route table is
 	// checked. Tests and the drain fixture use it; production passes nil.
 	Extra func(*httpserver.Router)
+	// Vuln replaces ports of the vulnerability scanning with fakes; tests only (the integration tests of the download
+	// block name the data state and the verdict of a remote miss without the sync and the evaluation). Production passes nil.
+	Vuln *VulnOverride
 	// SkipInfrastructure starts the HTTP shell without PostgreSQL and Valkey. The
 	// shell tests use it; a production caller never sets it.
 	SkipInfrastructure bool

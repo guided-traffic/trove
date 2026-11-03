@@ -181,17 +181,32 @@ SELECT i.id, i.repo_id, i.path, i.parent_path, i.kind, i.blob_sha256, i.size, i.
        i.created_at, i.modified_at, i.updated_at,
        COALESCE(CASE cp.kind WHEN 'ci_mapping' THEN 'ci' ELSE cp.kind END || ':' || cp.name, '')::text AS created_by_name,
        COALESCE(CASE mp.kind WHEN 'ci_mapping' THEN 'ci' ELSE mp.kind END || ':' || mp.name, '')::text AS modified_by_name,
-       b.sha1 AS blob_sha1, b.md5 AS blob_md5, b.sha512 AS blob_sha512, b.content_status AS content_status
+       b.sha1 AS blob_sha1, b.md5 AS blob_md5, b.sha512 AS blob_sha512, b.content_status AS content_status,
+       COALESCE(i.version_id, 0)::bigint AS version_id,
+       COALESCE(blk.id::text, '')::text AS block_finding_id,
+       COALESCE(blk.advisory_id, '')::text AS block_advisory_id,
+       COALESCE(blk.kind, '')::text AS block_kind,
+       COALESCE(blk.status, '')::text AS block_status
   FROM items i
   LEFT JOIN blobs b ON b.sha256 = i.blob_sha256
   LEFT JOIN principal cp ON cp.id = i.created_by
   LEFT JOIN principal mp ON mp.id = i.modified_by
- WHERE i.repo_id = $1::bigint AND i.path = $2::text AND i.trashed_at IS NULL
+  LEFT JOIN LATERAL (
+        SELECT f.id, f.advisory_id, f.kind, f.status
+          FROM vuln_finding f
+         WHERE $1::boolean AND f.version_id = i.version_id
+           AND f.status IN ('needs_triage', 'confirmed', 'blocked')
+           AND (f.status = 'blocked' OR (f.kind = 'malicious' AND $2::boolean))
+         ORDER BY (f.kind = 'malicious' AND $2::boolean) DESC, f.severity_rank DESC, f.advisory_id
+         LIMIT 1) AS blk ON true
+ WHERE i.repo_id = $3::bigint AND i.path = $4::text AND i.trashed_at IS NULL
 `
 
 type GetLiveItemParams struct {
-	RepoID int64
-	Path   string
+	Enforce        bool
+	BlockMalicious bool
+	RepoID         int64
+	Path           string
 }
 
 type GetLiveItemRow struct {
@@ -220,6 +235,11 @@ type GetLiveItemRow struct {
 	BlobMd5          []byte
 	BlobSha512       []byte
 	ContentStatus    pgtype.Text
+	VersionID        int64
+	BlockFindingID   string
+	BlockAdvisoryID  string
+	BlockKind        string
+	BlockStatus      string
 }
 
 // The statements of the files transfer and the items API (R-STOR-007, R-STOR-012,
@@ -229,8 +249,17 @@ type GetLiveItemRow struct {
 // A name that a join does not find is the empty string.
 // Paths are compared in the "C" collation (the column's), so that the range
 // [prefix + "/", prefix + "0") is exactly the subtree of prefix.
+// The item lookup of every download route. version_id names the stored version the item belongs to (0: none) and the
+// lateral join is the block of the vulnerability scanning (R-VULN-015): the finding that blocks the version in this
+// repository, read with the repository's policy as parameters so that a download costs no further query. enforce is false
+// for a repository that is not scanned and for every caller that is no download; the join then reads nothing.
 func (q *Queries) GetLiveItem(ctx context.Context, arg GetLiveItemParams) ([]GetLiveItemRow, error) {
-	rows, err := q.db.Query(ctx, getLiveItem, arg.RepoID, arg.Path)
+	rows, err := q.db.Query(ctx, getLiveItem,
+		arg.Enforce,
+		arg.BlockMalicious,
+		arg.RepoID,
+		arg.Path,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -264,6 +293,11 @@ func (q *Queries) GetLiveItem(ctx context.Context, arg GetLiveItemParams) ([]Get
 			&i.BlobMd5,
 			&i.BlobSha512,
 			&i.ContentStatus,
+			&i.VersionID,
+			&i.BlockFindingID,
+			&i.BlockAdvisoryID,
+			&i.BlockKind,
+			&i.BlockStatus,
 		); err != nil {
 			return nil, err
 		}

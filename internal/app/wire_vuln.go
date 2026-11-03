@@ -7,6 +7,7 @@ import (
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/vuln"
+	"github.com/guided-traffic/trove/internal/vuln/enforce"
 	vmetrics "github.com/guided-traffic/trove/internal/vuln/metrics"
 	"github.com/guided-traffic/trove/internal/vuln/store"
 )
@@ -20,7 +21,7 @@ import (
 //
 //	>>> WP-A  advisory data: the source-state cache and States, the sync service, the kinds vuln-sync-osv, vuln-sync-osv-full and vuln-sync-kev
 //	>>> WP-B  matching and findings: the Evaluator, the commit hooks, the kinds vuln-evaluate, vuln-rescan and vuln-findings-retention, the repository hook of a settings change
-//	>>> WP-C  enforcement: nothing here; it takes the area as an input of wireFiles, wireProxyEngine and the item store's lookup
+//	>>> WP-C  enforcement: the enforcer over the ports above (it follows the blocks of the ports); wireFiles, wireProxyEngine and wireFormatHost take it from the area
 //	>>> WP-D  client audits: the Advisories port and the cache vuln_nuget_page
 //	>>> WP-E  API and triage: the services behind api/v1's vuln_api.go
 //	>>> WP-G  operations: the database gauges of R-VULN-024 and the vulnerabilityData facts
@@ -41,6 +42,9 @@ type vulnArea struct {
 	advisories vuln.Advisories
 	// metrics are the collectors of R-VULN-024.
 	metrics *vmetrics.Metrics
+	// enforcer applies the download policy: the policy of a repository for the item lookup, the verdict, the remote miss gate
+	// and the refusal (work package C). Nil is a replica without the area.
+	enforcer *enforce.Enforcer
 }
 
 // wireVuln builds the area: the metrics today, and the ports as the work packages fill their blocks.
@@ -74,8 +78,32 @@ func (a *App) wireVuln(_ context.Context, in infra) (vulnArea, error) {
 		func() []store.ExpectedSource { return store.ExpectedSources(vcfg) },
 		func() []string { return vcfg.Sources.OSV.EffectiveEcosystems() }))
 	// <<< WP-G
+	// >>> WP-C
+	if o := a.o.Vuln; o != nil {
+		if o.States != nil {
+			out.states = o.States
+		}
+		if o.Evaluator != nil {
+			out.evaluator = o.Evaluator
+		}
+	}
+	// The enforcer takes the ports of the blocks above, so it is built after them: a port that is still nil is a part that is
+	// not wired, and the enforcer then resolves every policy as disabled.
+	out.enforcer = enforce.New(enforce.Options{
+		Enabled: a.cfg.Vulnerabilities.Enabled, Enforcement: vuln.Enforcement(a.cfg.Vulnerabilities.Enforcement),
+		States: out.states, Evaluator: out.evaluator, Names: store.NewEnforce(in.db), Metrics: m, Audit: in.rec,
+		BaseURL: a.cfg.Server.BaseURL, Log: a.log.With("component", "vuln-enforce"),
+	})
+	// <<< WP-C
 
 	return out, nil
+}
+
+// VulnOverride replaces ports of the scanning, for tests (Options.Vuln): the state of an ecosystem's advisory data and the
+// verdict of a remote miss. A nil member keeps the port the work package built.
+type VulnOverride struct {
+	States    vuln.States
+	Evaluator vuln.Evaluator
 }
 
 // countAudit counts one client audit (trove_vuln_audit_requests_total); the Host hands it to the formats' audit routes.

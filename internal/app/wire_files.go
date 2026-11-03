@@ -79,7 +79,7 @@ func (c *filesComponent) Sync(ctx context.Context) error {
 // The files service names its decision point through the entry points that
 // serve it, so the area takes the authz area: a role that serves /files/ without
 // a decision point is refused at start-up instead of answering 503 on the route.
-func (a *App) wireFiles(ctx context.Context, in infra, repo repositoryArea, az authzArea, fm formatsArea) (filesArea, error) {
+func (a *App) wireFiles(ctx context.Context, in infra, repo repositoryArea, az authzArea, fm formatsArea, vz vulnArea) (filesArea, error) {
 	if err := requireInputs(AreaFiles, given("repository reader", repo.reader), given("authorizer", az.engine), given("format hooks", fm.hooks), given("format seam", fm.seam)); err != nil {
 		return filesArea{}, err
 	}
@@ -93,7 +93,7 @@ func (a *App) wireFiles(ctx context.Context, in infra, repo repositoryArea, az a
 	if err != nil {
 		return filesArea{}, err
 	}
-	svc, err := files.New(files.Options{Items: store, Repos: repo.reader, Formats: fm.seam, Log: log})
+	svc, err := files.New(files.Options{Items: store, Repos: repo.reader, Formats: fm.seam, Enforce: vz.enforcer, Log: log})
 	if err != nil {
 		return filesArea{}, err
 	}

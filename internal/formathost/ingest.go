@@ -166,7 +166,11 @@ func (s itemStore) Stat(ctx context.Context, repo formats.RepoRef, p formats.Pat
 	if err := formats.RepositoryAllowed(ctx, repo); err != nil {
 		return formats.Item{}, false, err
 	}
-	it, found, err := s.h.o.Items.Live(ctx, itemsRepo(repo), p.Path)
+	ref, err := s.h.liveRef(ctx, repo)
+	if err != nil {
+		return formats.Item{}, false, err
+	}
+	it, found, err := s.h.o.Items.Live(ctx, ref, p.Path)
 	if err != nil {
 		return formats.Item{}, false, err
 	}
@@ -197,6 +201,13 @@ func (s itemStore) Serve(ctx context.Context, rq *formats.Request, w http.Respon
 			bastionmain.NoteUnknown(ctx)
 			return err
 		}
+	}
+	// The block of the vulnerability scanning comes after the format's own check, so that a version the caller may not
+	// read stays the format's 404 (R-VULN-015); every route that serves a stored item passes here: the format's
+	// downloads, the remote hit and the cache view, and every tier of virtual resolution.
+	if err := s.h.refuseBlocked(ctx, rq, it.Ref.Repo, row); err != nil {
+		bastionmain.NoteUnknown(ctx) // a block is never a negative entry (R-BAS-013)
+		return err
 	}
 	edge.ServeItem(w, rq.Request, row,
 		func(rng *items.Range) (io.ReadCloser, error) { return s.h.o.Items.Open(ctx, row, rng) },
@@ -230,7 +241,11 @@ func (s itemStore) row(ctx context.Context, it formats.Item) (items.Item, error)
 	if err := formats.RepositoryAllowed(ctx, it.Ref.Repo); err != nil {
 		return items.Item{}, err
 	}
-	row, found, err := s.h.o.Items.Live(ctx, itemsRepo(it.Ref.Repo), it.Ref.Path)
+	ref, err := s.h.liveRef(ctx, it.Ref.Repo)
+	if err != nil {
+		return items.Item{}, err
+	}
+	row, found, err := s.h.o.Items.Live(ctx, ref, it.Ref.Path)
 	if err != nil {
 		return items.Item{}, err
 	}

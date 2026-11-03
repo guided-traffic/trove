@@ -92,6 +92,17 @@ A `404` with `not_found` has several causes, and trove does not say which, by de
 
 When trove cannot ask the remote member whether it serves the name, the first publish answers `503` `shadow_check_unavailable` and stores nothing; retry later.
 
+### A download is blocked (E403 on install or restore)
+
+When trove refuses to hand out a version it answers `403` and says why. npm prints the text after `E403`; `dotnet restore` shows the status of the `.nupkg` address, and `curl` on that address prints the one-line reason. The text names the package and version, the repository you used, the reason and a link to the page that explains it, for example `trove blocked trove-test-mal@1.0.0 in npm-all: malicious package (MAL-2026-1234). Details: https://trove.example.com/ui/vulnerabilities/findings/…`.
+
+| Code | Cause | Fix |
+|---|---|---|
+| `vulnerability_blocked` | A finding of this version in the repository that stores it blocks it: it is a known malicious package, or a triager of your installation blocked it | Use another version (the advisory page names the fixed one, if there is one). Only a triager can lift the block, by dismissing the finding or setting it back to confirmed; the next request then succeeds. An answer is never cached |
+| `vulnerability_data_missing` | The repository refuses what it cannot check yet, and trove has not imported the advisory data of this ecosystem | Retry after the first import has finished; ask an administrator when it does not |
+
+A request through a virtual repository ends at the member that stores the blocked version: trove does not serve the same version from another member. The same version in another repository has a finding of its own and may download.
+
 ### E405 and E409 when publishing
 
 `E405` means the address is a remote repository or a virtual one without a deployment target. `E409` with `npm_version_exists` or `npm_version_unpublished` means the version number is taken for good: publish a new version. `npm_stale_rev` means another change came between your client's read and its write; run the command again, and with pnpm 11 or 12 unpublish at the deployment target instead of through a virtual repository.
@@ -165,6 +176,8 @@ Each code with its status and meaning. `GET /api/v1/problems/<code>` gives the d
 | `package_owned_by_other_owner` | 403 | The package has owners and you are none of them |
 | `shadows_remote_package` | 403 | A first publish would replace a package a remote repository serves |
 | `populate_not_permitted` | 403 | Not cached, and you may not fetch it from the upstream |
+| `vulnerability_blocked` | 403 | A finding of this version blocks it in this repository (a known malicious package, or a block set in triage) |
+| `vulnerability_data_missing` | 403 | The repository blocks what it cannot check, and the advisory data was never imported |
 | `pat_not_allowed` | 403 | Personal tokens are restricted to members of certain groups |
 | `derivation_exceeds_parent` | 403 | A token created with a token would outlive or outrank it |
 | `not_found` | 404 | Does not exist, or is hidden from you |

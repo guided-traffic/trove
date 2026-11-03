@@ -5,6 +5,8 @@ import (
 
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
+	"github.com/guided-traffic/trove/internal/vuln"
+	"github.com/guided-traffic/trove/internal/vuln/advisory"
 )
 
 // Kinds of an item.
@@ -42,6 +44,14 @@ type Item struct {
 	// CreatedBy and ModifiedBy are "<kind>:<name>" of the principal, "" when the
 	// row has none (a break-glass administrator, an erased principal).
 	CreatedBy, ModifiedBy string
+	// VersionID is the package_versions.id of the stored version the item belongs to, 0 for an item that belongs to
+	// none (R-VULN-015 applies to items that have one).
+	VersionID int64
+	// Block is the finding that blocks the item's version in its repository, read in the lookup with the policy of
+	// RepoRef.Vuln; the zero value is none. Policy is the policy it was read with. [vuln.Verdict] turns both into the
+	// decision on a download.
+	Block  vuln.BlockRow
+	Policy vuln.Policy
 }
 
 // itemFrom converts the row of GetLiveItem.
@@ -51,7 +61,12 @@ func itemFrom(repoKey string, r q.GetLiveItemRow) Item {
 		DeclaredSHA256: r.DeclaredSha256, DeclaredSHA512: r.DeclaredSha512, DeclaredSHA1: r.DeclaredSha1, DeclaredMD5: r.DeclaredMd5,
 		DeclaredMismatch: r.DeclaredMismatch, Explicit: r.ExplicitFolder, Generated: r.Generated, UpstreamURL: r.UpstreamUrl.String,
 		CreatedAt: r.CreatedAt.Time.UTC(), ModifiedAt: r.ModifiedAt.Time.UTC(), UpdatedAt: r.UpdatedAt.Time.UTC(),
-		CreatedBy: r.CreatedByName, ModifiedBy: r.ModifiedByName,
+		CreatedBy: r.CreatedByName, ModifiedBy: r.ModifiedByName, VersionID: r.VersionID,
+	}
+	if r.BlockFindingID != "" {
+		it.Block = vuln.BlockRow{
+			FindingID: r.BlockFindingID, AdvisoryID: r.BlockAdvisoryID, Kind: advisory.Kind(r.BlockKind), Status: vuln.Status(r.BlockStatus),
+		}
 	}
 	if r.Kind != KindFile {
 		return it

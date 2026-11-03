@@ -7,17 +7,34 @@
 -- [prefix + "/", prefix + "0") is exactly the subtree of prefix.
 
 -- name: GetLiveItem :many
+-- The item lookup of every download route. version_id names the stored version the item belongs to (0: none) and the
+-- lateral join is the block of the vulnerability scanning (R-VULN-015): the finding that blocks the version in this
+-- repository, read with the repository's policy as parameters so that a download costs no further query. enforce is false
+-- for a repository that is not scanned and for every caller that is no download; the join then reads nothing.
 SELECT i.id, i.repo_id, i.path, i.parent_path, i.kind, i.blob_sha256, i.size, i.media_type,
        i.declared_sha256, i.declared_sha512, i.declared_sha1, i.declared_md5, i.declared_mismatch,
        i.explicit_folder, i.generated, i.upstream_url,
        i.created_at, i.modified_at, i.updated_at,
        COALESCE(CASE cp.kind WHEN 'ci_mapping' THEN 'ci' ELSE cp.kind END || ':' || cp.name, '')::text AS created_by_name,
        COALESCE(CASE mp.kind WHEN 'ci_mapping' THEN 'ci' ELSE mp.kind END || ':' || mp.name, '')::text AS modified_by_name,
-       b.sha1 AS blob_sha1, b.md5 AS blob_md5, b.sha512 AS blob_sha512, b.content_status AS content_status
+       b.sha1 AS blob_sha1, b.md5 AS blob_md5, b.sha512 AS blob_sha512, b.content_status AS content_status,
+       COALESCE(i.version_id, 0)::bigint AS version_id,
+       COALESCE(blk.id::text, '')::text AS block_finding_id,
+       COALESCE(blk.advisory_id, '')::text AS block_advisory_id,
+       COALESCE(blk.kind, '')::text AS block_kind,
+       COALESCE(blk.status, '')::text AS block_status
   FROM items i
   LEFT JOIN blobs b ON b.sha256 = i.blob_sha256
   LEFT JOIN principal cp ON cp.id = i.created_by
   LEFT JOIN principal mp ON mp.id = i.modified_by
+  LEFT JOIN LATERAL (
+        SELECT f.id, f.advisory_id, f.kind, f.status
+          FROM vuln_finding f
+         WHERE sqlc.arg(enforce)::boolean AND f.version_id = i.version_id
+           AND f.status IN ('needs_triage', 'confirmed', 'blocked')
+           AND (f.status = 'blocked' OR (f.kind = 'malicious' AND sqlc.arg(block_malicious)::boolean))
+         ORDER BY (f.kind = 'malicious' AND sqlc.arg(block_malicious)::boolean) DESC, f.severity_rank DESC, f.advisory_id
+         LIMIT 1) AS blk ON true
  WHERE i.repo_id = sqlc.arg(repo_id)::bigint AND i.path = sqlc.arg(path)::text AND i.trashed_at IS NULL;
 
 -- name: LockLiveItem :many

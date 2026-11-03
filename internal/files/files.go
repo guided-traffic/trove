@@ -34,6 +34,7 @@ import (
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/repository"
+	"github.com/guided-traffic/trove/internal/vuln/enforce"
 )
 
 // Items is the part of the item store the generic layer uses; *items.Store
@@ -80,6 +81,9 @@ type Options struct {
 	// Formats is the seam to the formats (Q-ARCH-206); nil treats every repository
 	// as the generic format.
 	Formats Formats
+	// Enforce applies the download policy of the vulnerability scanning (R-VULN-015); nil is a replica that has not wired
+	// the scanning: nothing is refused.
+	Enforce *enforce.Enforcer
 	Log     *slog.Logger
 }
 
@@ -88,6 +92,7 @@ type Service struct {
 	items   Items
 	repos   repository.Reader
 	formats Formats
+	enforce *enforce.Enforcer
 	log     *slog.Logger
 }
 
@@ -102,7 +107,7 @@ func New(o Options) (*Service, error) {
 	if o.Log == nil {
 		o.Log = slog.Default()
 	}
-	return &Service{items: o.Items, repos: o.Repos, formats: o.Formats, log: o.Log}, nil
+	return &Service{items: o.Items, repos: o.Repos, formats: o.Formats, enforce: o.Enforce, log: o.Log}, nil
 }
 
 // Caller is who acts: the request's decision holder, the subject behind it (whose

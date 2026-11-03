@@ -17,6 +17,7 @@ import (
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 	"github.com/guided-traffic/trove/internal/repository"
+	"github.com/guided-traffic/trove/internal/vuln/enforce"
 )
 
 // errDigestChanged is returned by the fill transaction of an artifact whose entry
@@ -80,6 +81,14 @@ func (e *Engine) Artifact(ctx context.Context, rq Request, w http.ResponseWriter
 	if !e.mayFill(ctx, rq) {
 		return e.denyFill(ctx, rq)
 	}
+	// The remote miss of the vulnerability scanning (R-VULN-015): the version the path maps to is evaluated before anything
+	// is fetched; a blocked version is not fetched, not stored and not served, and no upstream is contacted for it.
+	if err := e.o.Enforce.GateMiss(ctx, enforce.Miss{
+		Repo: rem.Repo, Package: rq.Package, Version: rq.Version, Path: rq.Path,
+		Actor: auditActor(rq.Caller), Source: rq.Caller.Source, Endpoint: rq.Caller.Endpoint,
+	}); err != nil {
+		return err
+	}
 	e.m.lookup(rem.Repo.Key, Artifact, resultMiss)
 	if r.Method == http.MethodHead {
 		return e.head(ctx, rq, w)
@@ -139,7 +148,7 @@ func (e *Engine) artifactAnswer(ctx context.Context, rq Request, st *reqState, w
 // is the entry the request read when it served from the cache: the announced digests
 // are then compared with the stored ones (R-REPO-041).
 func (e *Engine) serveStored(ctx context.Context, rq Request, w http.ResponseWriter, cs CacheStatus, en *entry) error {
-	it, found, err := e.o.Items.Live(ctx, items.RepoOf(rq.Remote.Repo), rq.Path)
+	it, found, err := e.o.Items.Live(ctx, e.liveRef(rq.Remote.Repo), rq.Path)
 	if err != nil {
 		return err
 	}
@@ -167,7 +176,16 @@ func (e *Engine) Cached(ctx context.Context, rq Request) (items.Item, bool, erro
 	if err != nil || !found || en.Gone() {
 		return items.Item{}, false, err
 	}
-	return e.o.Items.Live(ctx, items.RepoOf(rem.Repo), rq.Path)
+	return e.o.Items.Live(ctx, e.liveRef(rem.Repo), rq.Path)
+}
+
+// liveRef is the reference a stored artifact is read with: the repository and its download policy, so that the lookup reads
+// the blocking finding of the artifact's version in the same statement (R-VULN-015). The verdict is applied where the item
+// is served (the host's Serve), for the remote hit, the cache view and the tiers of a virtual repository alike.
+func (e *Engine) liveRef(r repository.Repository) items.RepoRef {
+	ref := items.RepoOf(r)
+	ref.Vuln = e.o.Enforce.PolicyOf(r)
+	return ref
 }
 
 // checkAnnounced is the "immutable stays immutable" rule (R-REPO-041): the upstream's

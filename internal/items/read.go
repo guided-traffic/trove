@@ -50,11 +50,15 @@ func (s *Store) Live(ctx context.Context, repo RepoRef, path string) (it Item, f
 }
 
 func liveItem(ctx context.Context, qs *q.Queries, repo RepoRef, path string) (Item, bool, error) {
-	rows, err := qs.GetLiveItem(ctx, q.GetLiveItemParams{RepoID: repo.ID, Path: path})
+	rows, err := qs.GetLiveItem(ctx, q.GetLiveItemParams{
+		RepoID: repo.ID, Path: path, Enforce: repo.Vuln.QueryEnforce(), BlockMalicious: repo.Vuln.QueryBlockMalicious(),
+	})
 	if err != nil || len(rows) == 0 {
 		return Item{}, false, err
 	}
-	return itemFrom(repo.Key, rows[0]), true, nil
+	it := itemFrom(repo.Key, rows[0])
+	it.Policy = repo.Vuln
+	return it, true, nil
 }
 
 // ContentError refuses a file whose blob is not ok: 503 with Retry-After for a

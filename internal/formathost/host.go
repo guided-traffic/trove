@@ -26,6 +26,7 @@ import (
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/packages"
 	"github.com/guided-traffic/trove/internal/repository"
+	"github.com/guided-traffic/trove/internal/vuln/enforce"
 )
 
 // ItemOps is the part of the item store the host uses; *items.Store implements it.
@@ -85,7 +86,12 @@ type Options struct {
 	// Vuln are the ports of the vulnerability scanning behind Host.Vulnerabilities; the zero value is a replica that
 	// has not wired them (vulnerability.go).
 	Vuln VulnPorts
-	Log  *slog.Logger
+	// Enforce applies the download policy of the vulnerability scanning to every stored item the host serves
+	// (R-VULN-015, R-VULN-016), and Repos is the snapshot reader that gives it the policy of the repository an item is
+	// read in. A host without either reads no block and refuses nothing (a replica that has not wired the scanning).
+	Enforce *enforce.Enforcer
+	Repos   repository.Reader
+	Log     *slog.Logger
 }
 
 // Host implements formats.Host.

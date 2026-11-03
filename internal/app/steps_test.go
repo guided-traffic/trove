@@ -128,7 +128,7 @@ func TestR_ARCH_024_AMissingPrerequisiteIsAStartupError(t *testing.T) {
 	})
 
 	t.Run("R-ARCH-024 the files step refuses a missing decision point by name", func(t *testing.T) {
-		_, err := (&App{}).wireFiles(t.Context(), infra{}, repositoryArea{}, authzArea{}, formatsArea{})
+		_, err := (&App{}).wireFiles(t.Context(), infra{}, repositoryArea{}, authzArea{}, formatsArea{}, vulnArea{})
 		if err == nil || !strings.HasPrefix(err.Error(), "files: no repository reader, no authorizer, no format hooks, no format seam") {
 			t.Fatalf("err = %v", err)
 		}
@@ -272,7 +272,7 @@ func TestR_ARCH_024_AStepRefusesANilInput(t *testing.T) {
 			"ci":           {second(a.wireCI(ctx, infra{})), "ci: no database, no change log, no cache registry, no outbound factory, no audit recorder"},
 			"vuln":         {second(a.wireVuln(ctx, infra{})), "vuln: no database, no change log, no cache registry, no audit recorder"},
 			"formathost":   {second(a.wireFormatHost(ctx, infra{}, formatsArea{}, repositoryArea{}, exposureArea{}, filesArea{}, proxyEngineArea{}, virtualEngineArea{}, vulnArea{})), "formathost: no item store, no decision point, no repository reader, no exposure ceiling"},
-			"proxy-engine": {second(a.wireProxyEngine(ctx, infra{}, proxyArea{}, invalidationArea{}, filesArea{}, limitsArea{})), "proxy-engine: no upstream clients, no invalidation set, no item store, no replica count"},
+			"proxy-engine": {second(a.wireProxyEngine(ctx, infra{}, proxyArea{}, invalidationArea{}, filesArea{}, limitsArea{}, vulnArea{})), "proxy-engine: no upstream clients, no invalidation set, no item store, no replica count"},
 			"virtual":      {second(a.wireVirtual(ctx, infra{}, repositoryArea{})), "virtual: no repository snapshot"},
 			"proxy":        {second(a.wireProxy(ctx, infra{}, repositoryArea{}, invalidationArea{})), "proxy: no repository service, no invalidation service"},
 		} {

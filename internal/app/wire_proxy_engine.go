@@ -29,7 +29,7 @@ func (p proxyEngineArea) remote() formathost.RemoteEngine {
 // invalidation set and the flight lock. It is a component: the shutdown drains it
 // (no new cross-replica flight, R-ARCH-024 step 1) and cancels the fetches still
 // running 5 s before the deadline, releasing their locks with failed (step 4).
-func (a *App) wireProxyEngine(ctx context.Context, in infra, px proxyArea, inv invalidationArea, fa filesArea, lim limitsArea) (proxyEngineArea, error) {
+func (a *App) wireProxyEngine(ctx context.Context, in infra, px proxyArea, inv invalidationArea, fa filesArea, lim limitsArea, vz vulnArea) (proxyEngineArea, error) {
 	if err := requireInputs(AreaProxyEngine, given("upstream clients", px.clients), given("invalidation set", inv.set),
 		given("item store", fa.items), given("replica count", lim.replicas)); err != nil {
 		return proxyEngineArea{}, err
@@ -41,7 +41,7 @@ func (a *App) wireProxyEngine(ctx context.Context, in infra, px proxyArea, inv i
 	opts := proxy.Options{
 		Runner: in.db, Items: fa.items, Blobs: in.blobs, Flights: flights, Negatives: cluster.NewNegativeStore(in.vk),
 		Changes: in.changes, Clients: px.clients, Invalid: inv.set, Caches: in.caches,
-		Replicas: lim.replicas.Get, Audit: in.rec, Config: a.cfg.Proxy, SafetyTTL: a.cfg.Cache.SnapshotSafetyTTL,
+		Replicas: lim.replicas.Get, Audit: in.rec, Config: a.cfg.Proxy, Enforce: vz.enforcer, SafetyTTL: a.cfg.Cache.SnapshotSafetyTTL,
 		Metrics: a.tele.metrics.Registry(), Log: a.log.With("component", "proxy"),
 	}
 	if in.vk != nil { // a nil *cluster.Valkey in the interface would not be nil

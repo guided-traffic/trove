@@ -216,6 +216,61 @@ findings gauge, `ExpectedSources`) and [app/vuln_facts_test.go](../../internal/a
 tested (`TestR_VULN_028_TheSeededInstallation`, 100,000 versions in about 2 s), the scenarios run once A to E are merged. How to read
 a run: [perf/README.md](../../perf/README.md#the-vulnerability-scanning-run).
 
+### WP-C · Enforcement
+
+The download block of [R-VULN-015](../spec/vulnerability-scanning.md#r-vuln-015--download-blocking) and [R-VULN-016](../spec/vulnerability-scanning.md#r-vuln-016--refusals-in-the-protocols-shapes).
+Decisions: [Q-VULN-40 to Q-VULN-43](../spec/vulnerability-scanning.md#q-vuln-40--the-download-policy-rides-in-the-item-lookups-repository-reference-and-the-block-is-read-by-that-one-statement).
+The security view, with the gaps H-483 to H-485, is [security/vulnerability-scanning.md](../security/vulnerability-scanning.md).
+
+**The flow of one download.** The route that serves a stored item resolves the policy of the repository the item is read in from the replica's
+snapshot (`repository.Repository.VulnerabilityPolicy`, through `enforce.Enforcer.PolicyOf`) and puts it in the `items.RepoRef` of the lookup.
+`GetLiveItem` ([files.sql](../../internal/meta/postgres/queries/files.sql)) joins the finding of R-VULN-015 laterally, with `enforce` and
+`block_malicious` as parameters, and returns `items.version_id` and the row; [items.Item](../../internal/items/item.go) carries `VersionID`, `Block`
+(a `vuln.BlockRow`) and the `Policy` it was read with. The serving function then calls `Enforcer.Decide` (which is `vuln.Verdict` over the cached
+`States`) and `Enforcer.Refuse` (count, audit, error). A lookup whose reference carries no policy reads no block, so every other reader of
+`Live` is unchanged.
+
+| Where | File | What |
+|---|---|---|
+| the lookup | [read.go](../../internal/items/read.go), [item.go](../../internal/items/item.go), [items.go](../../internal/items/items.go) | `RepoRef.Vuln`, `Item.VersionID/Block/Policy` |
+| the format routes, the remote hit, the cache view, every virtual tier | [formathost/enforce.go](../../internal/formathost/enforce.go), [ingest.go](../../internal/formathost/ingest.go) | `Host.liveRef` (policy by the item's own repository key, through `Options.Repos`), `Host.refuseBlocked` in `itemStore.Serve` after `ServeCheck`; a `403` is no tier miss, so the virtual walk ends |
+| `/files/` | [files/download.go](../../internal/files/download.go) | `Service.Stat`, after `ServeCheck` |
+| the remote engine | [proxy/artifact.go](../../internal/proxy/artifact.go) | `Engine.liveRef` for `serveStored` and `Cached`; the miss gate `Enforcer.GateMiss` between `mayFill` and the HEAD or the fetch |
+| the decision and the refusal | [vuln/enforce](../../internal/vuln/enforce/enforce.go) | `PolicyOf`, `Decide`, `Refuse`, `GateMiss`; the text, the extensions `advisory` and `findingId`, `Cache-Control: no-store`, the metric, the audit event with its one-minute dedup in the replica's memory |
+| the name of a refused version | [vuln/store/enforce.go](../../internal/vuln/store/enforce.go), [queries/vuln_enforce.sql](../../internal/meta/postgres/queries/vuln_enforce.sql) | `VersionNames`, read when a download is refused (and kept for a minute), never on a served one |
+| the wiring | [app/wire_vuln.go](../../internal/app/wire_vuln.go) block `WP-C`, `wireFiles`, `wireProxyEngine`, `wireFormatHost` | `vulnArea.enforcer`; the three consumers take the area |
+
+The refusal needs no code in a format: the npm and NuGet `WriteError` and the problem writer render kind, code, text and headers of an `errs`
+error already, so the npm body, the NuGet line and the problem details of R-VULN-016 are one error.
+
+**What the others rely on.** `vulnArea.enforcer` (nil-safe: a nil `*Enforcer` resolves no policy and refuses nothing); `items.Item.Block` and
+`Item.VersionID` for any reader of the lookup; `enforce.Enforcer.GateMiss` for a further remote path that fetches an artifact. WP-E's `blocked`
+and `blockReason` use `Policy.BlockReasonOf`, which `Verdict` uses too. The enforcer resolves a repository as unscanned unless the replica has a
+`States` (work package A) and the repository's format has the adapter (work package B).
+
+**Contract changes.** (1) `GetLiveItem` of `files.sql` (the lateral join, `version_id`; its parameters and row type changed, so the generated
+`files.sql.go` did too); (2) `items.RepoRef` gains `Vuln` and `items.Item` gains `VersionID`, `Block` and `Policy` (the lookup's contract, not a
+file of the list above); (3) `app.Options.Vuln` (`app.VulnOverride`) replaces the `States` and `Evaluator` ports in tests, and the
+integration harness passes it (`testenv.ReplicaOptions.Vuln`); (4) `wireFiles`, `wireProxyEngine` take `vulnArea`, `formathost.Options` gains
+`Enforce` and `Repos`, `files.Options` and `proxy.Options` gain `Enforce`; (5) the marked block `WP-C` is filled and the comment line of the
+header says what it builds.
+
+**The query budget.** R-ARCH-027 budgets one query for a local download and one for a remote hit. The code spent more before the scanning
+and spends the same with it: [querycount_test.go](../../test/integration/vulnblock/querycount_test.go) counts the statements a download runs
+from the PostgreSQL log, on a replica that scans and one that does not, in one database, and requires the same statements per download and
+one `GetLiveItem`. Measured: a local download runs `GetLiveItem` and `NPMTombstoned` (2 statements), the raw view the same, a remote hit
+`ProxyEntryGet`, `GetLiveItem` and `NPMRemoteTarballFacts` twice (4); the scanning adds none. The overrun against the budget is not this
+package's to fix.
+
+**Tests.** Unit: [enforce_test.go](../../internal/vuln/enforce/enforce_test.go) (the verdict, the text, the dedup, the report mode, the miss
+gate). Integration, in [test/integration/vulnblock](../../test/integration/vulnblock/) (`make test-integration`; findings inserted directly, the
+`States` and `Evaluator` ports faked through `app.Options.Vuln`, every test with Valkey unreachable unless it asks for it): the npm tarball, the
+NuGet `.nupkg`, `/files/`, the remote hit, the cache view, the virtual tiers, the remote miss without an upstream request, `onMissingData`, the
+report mode, the dedup, the installation switch, the dismissal on a second replica (with Valkey), and the statement counts. Not reached at this
+tier: the client runs (`npm install`, `npm ci`, `dotnet restore -v n`) and a NuGet remote repository, which are the end-to-end wave's; the
+text on an endpoint with exposure rules is not asserted.
+
+
 ## Tests that pass now
 
 These contract tests carry their requirement IDs in comments or in names that say what they pin; the evidence of a requirement comes from the tests of its work package (Q-ROAD-5).

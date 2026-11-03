@@ -36,6 +36,7 @@ import (
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/repository"
+	"github.com/guided-traffic/trove/internal/vuln"
 )
 
 // Spooled is a body in the replica-local spool with its digests, ready to commit
@@ -131,6 +132,11 @@ type RepoRef struct {
 	Key    string
 	Class  string
 	Format string
+	// Vuln is the download policy of the vulnerability scanning for the repository (R-VULN-015). A lookup of an item
+	// through Live reads the blocking finding of the item's version in the same query when the policy is enabled
+	// (Item.Block); the zero value is a repository that is not scanned and a caller that is no download. It never
+	// travels in a job: the job carries the reference it was queued with.
+	Vuln vuln.Policy `json:"-"`
 }
 
 // RepoOf converts a repository read model. The id of a repository is the decimal
