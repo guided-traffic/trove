@@ -39,11 +39,13 @@ func newScanning(advs ...advisory.Advisory) *scanning {
 }
 
 func (s *scanning) State(string) advisory.DataState { return s.state }
+func (s *scanning) Enabled() bool                   { return s.enabled }
+func (s *scanning) LocalByDefault() bool            { return s.enabled && s.byDefault }
+
 func (s *scanning) CountAudit(id formats.ID, mode, outcome string) {
 	s.counted = append(s.counted, string(id)+"/"+mode+"/"+outcome)
 }
-func (s *scanning) Enabled() bool                   { return s.enabled }
-func (s *scanning) LocalByDefault() bool            { return s.enabled && s.byDefault }
+
 func (s *scanning) PageKey(string) string {
 	return strconv.FormatInt(s.state.Epoch, 10) + "." + s.pageKey
 }
