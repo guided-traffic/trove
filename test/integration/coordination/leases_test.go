@@ -178,11 +178,16 @@ func TestLeases(t *testing.T) {
 		if n := e.scalar(`SELECT count(*) FROM coord_fence WHERE replica = $1 AND seq = $2`, first.replica, first.seq); n != 1 {
 			t.Fatalf("the old holder's rows = %d, want only the write before the loss", n)
 		}
-		select {
-		case <-first.held.Context().Done():
-		default:
-			t.Fatal("the holder's context was not cancelled")
-		}
+		// The lease is marked invalid first, so that no write passes from that moment on (R-HA-006), and its
+		// context is cancelled right after; a reader that saw the flag waits for that second step, briefly.
+		waitFor(t, "the holder's context being cancelled", time.Second, func() bool {
+			select {
+			case <-first.held.Context().Done():
+				return true
+			default:
+				return false
+			}
+		})
 
 		waitFor(t, "a new holder", 5*time.Second, func() bool {
 			for _, h := range log.valid() {
@@ -209,7 +214,11 @@ func TestLeases(t *testing.T) {
 	})
 
 	t.Run("R-ARCH-017 a lease released explicitly moves on without waiting for a session to end", func(t *testing.T) {
-		cur := log.valid()[0]
+		valid := log.valid()
+		if len(valid) == 0 {
+			t.Fatal("no replica holds the lease (an earlier case left none)")
+		}
+		cur := valid[0]
 		before := len(log.all())
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
