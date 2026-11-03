@@ -39,6 +39,9 @@ type evalCheckpoint struct {
 	RequestedUs int64  `json:"requestedUs,omitempty"`
 	Cursor      string `json:"cursor,omitempty"`
 	Done        int64  `json:"done,omitempty"`
+	// Repository and Inputs are the rescan's: the repository and the scanning inputs the cursor belongs to (R-VULN-027).
+	Repository int64  `json:"repository,omitempty"`
+	Inputs     string `json:"inputs,omitempty"`
 }
 
 // RunEvaluate is the handler of vuln-evaluate (R-VULN-011, Q-VULN-18): first the full evaluation of each ecosystem whose
@@ -123,6 +126,17 @@ func (s *Service) fullEvaluation(ctx context.Context, run JobRun, cp *evalCheckp
 	}
 	if !complete {
 		return false, nil
+	}
+	if cp.Cursor == "" {
+		// The files that remote repositories cached before the scanning recorded versions get their version rows first, so that
+		// the evaluation below sees them (Q-VULN-67). A resumed run has done it.
+		n, err := s.backfillVersions(ctx, eco)
+		if err != nil {
+			return false, err
+		}
+		if n > 0 {
+			s.log.Info("vulnerability evaluation: cached artifacts of remote repositories got their versions", "ecosystem", eco.Name, "items", n)
+		}
 	}
 	req := store.FullRequest{Ecosystem: cp.Ecosystem, RequestedUs: cp.RequestedUs}
 	for {
@@ -209,13 +223,20 @@ func (s *Service) evaluateBatch(ctx context.Context, tx meta.Tx, ev *store.Eval,
 // advisories name or named, each batch one transaction that also deletes its queue rows (R-VULN-011). It returns the number
 // of advisories worked off.
 func (s *Service) evaluatePending(ctx context.Context, run JobRun) (int, error) {
+	// A queued advisory of an ecosystem this build has no adapter for stays queued for a build that has (a rolling upgrade): it is
+	// neither read nor deleted here (Q-VULN-65).
+	known := make([]string, 0, len(s.eco))
+	for name := range s.eco {
+		known = append(known, name)
+	}
+	sort.Strings(known)
 	var total int64
 	if err := s.o.Runner.InTx(ctx, func(tx meta.Tx) error {
 		ev, err := store.EvalOf(tx)
 		if err != nil {
 			return err
 		}
-		total, err = ev.PendingCount(ctx)
+		total, err = ev.PendingCount(ctx, known)
 		return err
 	}); err != nil {
 		return 0, err
@@ -232,7 +253,7 @@ func (s *Service) evaluatePending(ctx context.Context, run JobRun) (int, error) 
 			if err != nil {
 				return err
 			}
-			batch, err := ev.PendingBatch(ctx, s.o.BatchNames)
+			batch, err := ev.PendingBatch(ctx, known, s.o.BatchNames)
 			if err != nil || len(batch) == 0 {
 				return err
 			}
@@ -253,7 +274,6 @@ func (s *Service) evaluatePending(ctx context.Context, run JobRun) (int, error) 
 			for _, name := range ecosystems {
 				eco, ok := s.eco[name]
 				if !ok {
-					s.log.Warn("vulnerability evaluation: queued advisories of an ecosystem this build cannot evaluate are dropped", "ecosystem", name, "advisories", len(byEco[name]))
 					continue
 				}
 				names, err := s.namesOf(ctx, ev, name, byEco[name])
@@ -383,6 +403,10 @@ func (s *Service) RunRescan(ctx context.Context, run JobRun, args json.RawMessag
 	if !s.o.Enabled {
 		return run.SetResult(map[string]string{"skipped": "vulnerabilities.enabled is false"})
 	}
+	var saved evalCheckpoint
+	if _, err := run.LoadCheckpoint(&saved); err != nil {
+		return err
+	}
 	rounds, versions := 0, 0
 	for ; rounds < maxRescanRounds; rounds++ {
 		first, err := s.readInputs(ctx, a.RepositoryID)
@@ -392,7 +416,13 @@ func (s *Service) RunRescan(ctx context.Context, run JobRun, args json.RawMessag
 		if first.deleted {
 			return run.SetResult(map[string]string{"skipped": "the repository is gone or not scanned"})
 		}
-		n, err := s.rescanOnce(ctx, run, first.view)
+		// An earlier attempt of this job that was cut off (a drain, a crash) resumes at its cursor while the repository's scanning
+		// inputs are those it was running with (R-VULN-027); a changed input starts over, as a round does.
+		var resume evalCheckpoint
+		if inputs := fingerprint(first.view); rounds == 0 && saved.Cursor != "" && saved.Repository == a.RepositoryID && saved.Inputs == inputs {
+			resume = saved
+		}
+		n, err := s.rescanOnce(ctx, run, first.view, resume)
 		if err != nil {
 			return err
 		}
@@ -408,8 +438,18 @@ func (s *Service) RunRescan(ctx context.Context, run JobRun, args json.RawMessag
 	return fmt.Errorf("vuln-rescan: the scanning inputs of repository %d kept changing for %d rounds", a.RepositoryID, maxRescanRounds)
 }
 
+// fingerprint identifies the scanning inputs of a repository view, for the checkpoint of a rescan.
+func fingerprint(v repoView) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
 // rescanOnce is one pass over a repository with the inputs it was given.
-func (s *Service) rescanOnce(ctx context.Context, run JobRun, rv repoView) (int, error) {
+// from is the checkpoint to resume at, the zero value to start from the first name.
+func (s *Service) rescanOnce(ctx context.Context, run JobRun, rv repoView, from evalCheckpoint) (int, error) {
 	eco, ok := s.byFmt[rv.Format]
 	if !ok {
 		return 0, nil
@@ -444,7 +484,8 @@ func (s *Service) rescanOnce(ctx context.Context, run JobRun, rv repoView) (int,
 		return 0, err
 	}
 	lookup := func(id int64) (repoView, bool) { return rv, id == rv.ID }
-	cursor, done := "", 0
+	cursor, done := from.Cursor, int(from.Done)
+	inputs := fingerprint(rv)
 	for {
 		if err := ctx.Err(); err != nil {
 			return done, context.Cause(ctx)
@@ -471,7 +512,7 @@ func (s *Service) rescanOnce(ctx context.Context, run JobRun, rv repoView) (int,
 			return done, nil
 		}
 		cursor, done = names[len(names)-1], done+n
-		if err := run.SaveCheckpoint(ctx, evalCheckpoint{Ecosystem: eco.Name, Cursor: cursor, Done: int64(done)}); err != nil {
+		if err := run.SaveCheckpoint(ctx, evalCheckpoint{Ecosystem: eco.Name, Cursor: cursor, Done: int64(done), Repository: rv.ID, Inputs: inputs}); err != nil {
 			return done, err
 		}
 		if err := run.SaveProgress(ctx, int64(done), max(total, int64(done)), ProgressUnit); err != nil {

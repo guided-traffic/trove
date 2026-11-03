@@ -232,9 +232,25 @@ Files: [internal/vuln/match/affects.go](../../internal/vuln/match/affects.go) (t
 - **The claims rule** is one exported value for the client audits: `evaluate.ClaimRule{Claims, Repos}.InternalNames(ctx, format string, names []string) (map[string]bool, error)` (and `Claim` for the
   holder). `Service.Claims()` returns it over the replica's claim index. The audits (work package D) implement `Advisories.InternalNames` with it.
 - **The remote miss.** `Service.EvaluateMiss` returns the whole verdict (Q-VULN-38) and writes nothing.
-- **The npm remote fill** now records the version (Q-VULN-37): see [npm.md](npm.md#remote-fills-record-the-version).
+- **The npm remote fill** now records the version (Q-VULN-37): see [npm.md](npm.md#remote-fills-record-the-version). A tarball cached before that gets its
+  rows in the full evaluation: `backfill.go` reads the cached files of the ecosystem's remote repositories that have no version (`VulnUnversionedItems`, 500 per transaction,
+  a cursor over item ids), asks the adapter (`ArtifactClassifier`, npm: [vuln_backfill.go](../../internal/formats/npm/vuln_backfill.go)) for the package and version of each path, and writes the rows
+  through `packages.Writer` (Q-VULN-67, H-497).
+- **Kind, merge, re-key.** `VulnAffectedForNames` returns the kind of the record the entry belongs to; `matchVersion` makes a match malicious when a record of the group whose entry affects the
+  version is (Q-VULN-65). `apply` takes the findings of a version in id order, re-keys a finding whose advisory joined a group, resolved ones too, and `merge`s it into the finding of the new identifier when
+  there is one: the stronger status (`strength`: blocked, confirmed, needs_triage, dismissed; a resolved finding counts as its status before), the history moved (`MergeInto`), the audit event
+  `vulnerability.finding.status_changed` with `block` when the version's block changes. `EvaluateMiss` reads the findings by the group's identifier (`RekeyTargets`) and lets the strongest finding decide.
+- **Conditional writes.** `upsert` inserts with `RETURNING id` and reads the finding by identity when it exists; `run.transition` is the one place that changes a status for the evaluation: a conditional
+  `UPDATE … WHERE status = $read AND revision = $read`, three attempts with a re-read, then the change no longer applies. `VulnSetFindingStatus` keeps the triage comment unless the finding leaves `dismissed`.
+- **History.** A bare `modified` is `VulnTouchFindingModified` (no revision, no event); `redetectedEvent` takes back a `resolved` event of reason `version_removed` younger than `flapWindow` (one hour) and writes
+  `redetected` once (Q-VULN-66).
+- **Cost of a commit.** `OnVersionCommitted` reads four statements (`ItemVersion`, `FindingsOfRepoNames`, `DataComplete`, `AffectedForNames`), a fifth for an internal name (the prune of claimed matches, which
+  the single-version run skips for a name that is not internal); `TestR_VULN_011_TheCommitEvaluationCostsAFixedNumberOfStatements` counts them with `postgres.WithQueryTracer`.
+- **Queue and rescan.** `vuln-evaluate` reads and deletes only the queued advisories of the ecosystems the build has an adapter for; `vuln-rescan`'s checkpoint carries the repository and its inputs
+  (`fingerprint`) and the job resumes at the cursor while they are unchanged. `Service.InScope` answers the scope question of R-VULN-010 for a stored version's data rule.
 
-Contract changes: `vuln.CommittedVersion` gains `RepoKey`; `wireVuln` takes `repositoryArea` and `virtualArea`; `wireRepository` adds the scanning's hook; the Makefile gains `osv-expected`.
+Migration [00037_vulnerabilities_finding_indexes.sql](../../internal/meta/postgres/migrations/00037_vulnerabilities_finding_indexes.sql): `vuln_finding (version_id)`, `(package_id)`, a partial `(resolved_at)`
+(Q-VULN-64). Contract changes: `vuln.CommittedVersion` gains `RepoKey`; `wireVuln` takes `repositoryArea` and `virtualArea`; `wireRepository` adds the scanning's hook; the Makefile gains `osv-expected`.
 
 Tests: unit ([evaluate_test.go](../../internal/vuln/evaluate/evaluate_test.go), the table tests and the corpus tests `vuln_test.go` and `vuln_corpus_test.go` of both formats; the corpus compares with
 [osv-scanner-expected.json](../../internal/vuln/match/testdata/osv-scanner-expected.json), frozen by osv-scanner v2.7.0 in offline mode, `make osv-expected`), integration

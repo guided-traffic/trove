@@ -94,7 +94,7 @@ func (s *Service) OnVersionCommitted(ctx context.Context, tx meta.Tx, c vuln.Com
 		return err
 	}
 	r := &run{
-		s: s, tx: tx, ev: ev, eco: eco, trigger: trigger, canResolve: complete, inTx: ev,
+		s: s, tx: tx, ev: ev, eco: eco, trigger: trigger, canResolve: complete, inTx: ev, single: true,
 		repos: func(id int64) (repoView, bool) { return rv, id == rv.ID },
 	}
 	if err := r.evaluateNames(ctx, []string{ver.Name}, []store.StoredVersion{ver}, ofVersion); err != nil {
@@ -145,32 +145,7 @@ func (s *Service) EvaluateMiss(ctx context.Context, m vuln.Miss) (vuln.Block, er
 		return vuln.Block{}, err
 	}
 	pol := repo.VulnerabilityPolicy(s.o.Enabled, s.o.Enforcement)
-	data := s.state(eco.Name)
-	var found map[string]*matched
-	var existing []store.Finding
-	var st stats
-	err = s.o.Runner.InTx(ctx, func(tx meta.Tx) error {
-		ev, err := store.EvalOf(tx)
-		if err != nil {
-			return err
-		}
-		rows, err := ev.AffectedForNames(ctx, eco.Name, []string{m.Name})
-		if err != nil {
-			return err
-		}
-		found = matchVersion(eco.Adapter, groupAffected(rows)[m.Name], m.Version, &st)
-		all, err := ev.FindingsOfRepoNames(ctx, rv.ID, eco.Name, []string{m.Name})
-		if err != nil {
-			return err
-		}
-		existing = existing[:0]
-		for _, f := range all {
-			if f.Version == m.Version {
-				existing = append(existing, f)
-			}
-		}
-		return nil
-	})
+	in, st, err := s.readMiss(ctx, eco, rv.ID, m)
 	if err != nil {
 		return vuln.Block{}, err
 	}
@@ -181,11 +156,62 @@ func (s *Service) EvaluateMiss(ctx context.Context, m vuln.Miss) (vuln.Block, er
 			s.o.Metrics.UnevaluableRanges.WithLabelValues(eco.Name).Add(float64(st.unevaluable))
 		}
 	}
+	return missVerdict(pol, in, s.state(eco.Name), s.complete(eco.Name)), nil
+}
+
+// missInput is what the evaluation of a miss reads: the advisories that affect the version, the findings of the version in the
+// repository and where the advisories of findings that are no canonical identifier any more went.
+type missInput struct {
+	found    map[string]*matched
+	existing []store.Finding
+	rekey    map[string]string
+}
+
+// readMiss reads the input of a miss in one transaction; it writes nothing.
+func (s *Service) readMiss(ctx context.Context, eco Ecosystem, repoID int64, m vuln.Miss) (missInput, stats, error) {
+	var in missInput
+	var st stats
+	err := s.o.Runner.InTx(ctx, func(tx meta.Tx) error {
+		ev, err := store.EvalOf(tx)
+		if err != nil {
+			return err
+		}
+		rows, err := ev.AffectedForNames(ctx, eco.Name, []string{m.Name})
+		if err != nil {
+			return err
+		}
+		in.found = matchVersion(eco.Adapter, groupAffected(rows)[m.Name], m.Version, &st)
+		all, err := ev.FindingsOfRepoNames(ctx, repoID, eco.Name, []string{m.Name})
+		if err != nil {
+			return err
+		}
+		in.existing = in.existing[:0]
+		var stray []string
+		for _, f := range all {
+			if f.Version == m.Version {
+				in.existing = append(in.existing, f)
+				if in.found[f.AdvisoryID] == nil {
+					stray = append(stray, f.AdvisoryID)
+				}
+			}
+		}
+		// A finding of an advisory that joined another group since (even a resolved one, a blocked finding that was evicted)
+		// stands for the group's advisory: the fill's evaluation re-keys it (Q-VULN-65).
+		if len(stray) > 0 {
+			in.rekey, err = ev.RekeyTargets(ctx, eco.Name, stray)
+		}
+		return err
+	})
+	return in, st, err
+}
+
+// missVerdict is the verdict of a remote miss over what was read: the finding of the strongest status of each advisory group of the
+// version decides, and the data rule answers when none blocks. complete says whether the ecosystem's data is complete.
+func missVerdict(pol vuln.Policy, in missInput, data advisory.DataState, complete bool) vuln.Block {
 	enforced := pol.Enforcement != vuln.EnforceReport
 	var best *blocking
 	consider := func(mm *matched, f *store.Finding) {
-		status := effectiveStatus(f, mm)
-		reason, blocks := pol.BlockReasonOf(mm.Kind, status)
+		reason, blocks := pol.BlockReasonOf(mm.Kind, effectiveStatus(f, mm))
 		if !blocks {
 			return
 		}
@@ -197,26 +223,38 @@ func (s *Service) EvaluateMiss(ctx context.Context, m vuln.Miss) (vuln.Block, er
 			best = &b
 		}
 	}
-	have := map[string]*store.Finding{}
-	for i := range existing {
-		have[existing[i].AdvisoryID] = &existing[i]
+	have := map[string][]*store.Finding{}
+	for i := range in.existing {
+		f := &in.existing[i]
+		id := f.AdvisoryID
+		if in.found[id] == nil && in.found[in.rekey[id]] != nil {
+			id = in.rekey[id]
+		}
+		have[id] = append(have[id], f)
 	}
-	for _, id := range sortedIDs(found) {
-		consider(found[id], have[id])
+	for _, id := range sortedIDs(in.found) {
+		// Several findings of one group stand for one: the one with the strongest status decides, as the merge keeps it.
+		var strongest *store.Finding
+		for _, f := range have[id] {
+			if strongest == nil || strength(effectiveStatus(f, in.found[id])) > strength(effectiveStatus(strongest, in.found[id])) {
+				strongest = f
+			}
+		}
+		consider(in.found[id], strongest)
 	}
 	// A blocked finding that resolved with version_removed counts although no advisory matches now, while the data cannot
 	// say that the advisory stopped applying: a restored installation has none (R-VULN-011, no resolution without data).
-	if !s.complete(eco.Name) {
-		for i := range existing {
-			f := &existing[i]
-			if found[f.AdvisoryID] == nil && f.Status == vuln.StatusResolved && f.ResolvedReason == vuln.ResolvedVersionRemoved &&
-				f.BeforeResolution == vuln.StatusBlocked {
+	if !complete {
+		for i := range in.existing {
+			f := &in.existing[i]
+			if in.found[f.AdvisoryID] == nil && in.found[in.rekey[f.AdvisoryID]] == nil && f.Status == vuln.StatusResolved &&
+				f.ResolvedReason == vuln.ResolvedVersionRemoved && f.BeforeResolution == vuln.StatusBlocked {
 				consider(&matched{ID: f.AdvisoryID, Kind: f.Kind, Severity: f.Severity, KnownExploited: f.KnownExploited, ModifiedUs: f.AdvisoryModifiedU}, f)
 			}
 		}
 	}
 	if best != nil {
-		return vuln.Block{Reason: best.reason, FindingID: best.id, AdvisoryID: best.m.ID, Enforced: enforced}, nil
+		return vuln.Block{Reason: best.reason, FindingID: best.id, AdvisoryID: best.m.ID, Enforced: enforced}
 	}
-	return vuln.Verdict(pol, vuln.BlockRow{}, data), nil
+	return vuln.Verdict(pol, vuln.BlockRow{}, data)
 }

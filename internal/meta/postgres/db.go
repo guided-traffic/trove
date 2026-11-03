@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/guided-traffic/trove/internal/config"
@@ -85,6 +86,9 @@ func Open(ctx context.Context, cfg config.Database, instance, role string, log *
 		if err != nil {
 			return nil, err
 		}
+		if o.queryTracer != nil && s.kind.class == classMain {
+			pc.ConnConfig.Tracer = o.queryTracer
+		}
 		return pgxpool.NewWithConfig(ctx, pc)
 	}
 	common := poolSpec{
@@ -133,8 +137,13 @@ func Open(ctx context.Context, cfg config.Database, instance, role string, log *
 type Option func(*openOptions)
 
 type openOptions struct {
-	tlsMetrics *tlsfiles.Metrics
+	tlsMetrics  *tlsfiles.Metrics
+	queryTracer pgx.QueryTracer
 }
+
+// WithQueryTracer traces every statement of the request pool (and of the control connection). It is for the tests that count the
+// statements of a code path against its budget (R-ARCH-027, R-VULN-011).
+func WithQueryTracer(t pgx.QueryTracer) Option { return func(o *openOptions) { o.queryTracer = t } }
 
 // WithTLSMetrics records the expiry, reload and reload-error families of the
 // root CA and the client certificate (kind database).

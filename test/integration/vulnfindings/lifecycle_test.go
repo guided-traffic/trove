@@ -34,7 +34,8 @@ func TestR_VULN_012_AVersionRemovedAndPublishedAgainKeepsItsFinding(t *testing.T
 		FROM vuln_finding`); got != id+" dismissed - risk_accepted true" {
 		t.Errorf("after the return: %q", got)
 	}
-	if got := e.history("npm-vendor", "trove-test-life", "1.0.0"); got != "detected,resolved,redetected" {
+	// The removal did not last: the pair of events is taken back and the history says what happened once (Q-VULN-66).
+	if got := e.history("npm-vendor", "trove-test-life", "1.0.0"); got != "detected,redetected" {
 		t.Errorf("history %q", got)
 	}
 }
@@ -71,7 +72,8 @@ func TestR_VULN_012_AMaterialChangeReopensADismissedFindingAndOtherChangesDoNot(
 	if got := e.status("npm-vendor", "trove-test-b", "1.0.0"); got != "dismissed" {
 		t.Errorf("the finding of the reworded advisory is %q, want dismissed", got)
 	}
-	if got := e.history("npm-vendor", "trove-test-b", "1.0.0"); got != "detected,advisory_changed" {
+	// Only the record was modified (the wording): the time is stored, no event and no new revision (Q-VULN-66).
+	if got := e.history("npm-vendor", "trove-test-b", "1.0.0"); got != "detected" {
 		t.Errorf("history %q", got)
 	}
 	if got := e.events("vulnerability.finding.reopened"); got != 1 {

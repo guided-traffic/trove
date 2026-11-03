@@ -159,6 +159,8 @@ type Finding struct {
 	BeforeResolution  vuln.Status
 	ResolvedReason    vuln.ResolvedReason
 	AdvisoryModifiedU int64
+	// Revision is the finding's revision as read: a status change of the evaluation holds only while it is still current.
+	Revision int64
 }
 
 // FindingsForNames returns every finding of the names of an ecosystem, in every repository, resolved ones too.
@@ -193,7 +195,7 @@ func findingOf(r q.VulnFindingsOfRepoNamesRow) Finding {
 		VersionID: r.VersionID, Kind: advisory.Kind(r.Kind), Severity: advisory.Severity(r.Severity), CVSS: r.CvssScore,
 		KnownExploited: r.KnownExploited, FixAvailable: r.FixAvailable, FixedVersions: r.FixedVersions, Status: vuln.Status(r.Status),
 		BeforeResolution: vuln.Status(r.StatusBeforeResolution), ResolvedReason: vuln.ResolvedReason(r.ResolvedReason),
-		AdvisoryModifiedU: r.AdvisoryModifiedUs,
+		AdvisoryModifiedU: r.AdvisoryModifiedUs, Revision: r.Revision,
 	}
 }
 
@@ -215,15 +217,37 @@ type NewFinding struct {
 	AdvisoryModifiedU int64
 }
 
-// InsertFinding inserts a finding; a finding of the same identity that exists is left as it is.
-func (e *Eval) InsertFinding(ctx context.Context, f NewFinding) error {
-	return e.qs.VulnInsertFinding(ctx, q.VulnInsertFindingParams{
+// InsertFinding inserts a finding; it reports whether this call wrote the row. A finding of the same identity that exists is
+// left as it is and false is returned: the caller reads it with [Eval.FindingByIdentity].
+func (e *Eval) InsertFinding(ctx context.Context, f NewFinding) (bool, error) {
+	ids, err := e.qs.VulnInsertFinding(ctx, q.VulnInsertFindingParams{
 		ID: f.ID, RepoID: f.RepoID, Ecosystem: f.Ecosystem, PackageName: f.Name, Version: f.Version, AdvisoryID: f.AdvisoryID,
 		PackageID: f.PackageID, VersionID: f.VersionID, Kind: string(f.Kind), Severity: string(f.Severity),
 		SeverityRank: int16(f.Severity.Rank()), //nolint:gosec // a rank is 0 to 5
 		CvssScore:    f.CVSS, KnownExploited: f.KnownExploited, FixAvailable: f.FixAvailable,
 		FixedVersions: nonNil(f.FixedVersions), AdvisoryModifiedUs: f.AdvisoryModifiedU,
 	})
+	return len(ids) > 0, err
+}
+
+// FindingByIdentity reads the finding of one identity; false when there is none.
+func (e *Eval) FindingByIdentity(ctx context.Context, repoID int64, ecosystem, name, version, advisoryID string) (Finding, bool, error) {
+	rows, err := e.qs.VulnFindingsByIdentity(ctx, q.VulnFindingsByIdentityParams{
+		RepoID: repoID, Ecosystem: ecosystem, PackageName: name, Version: version, AdvisoryID: advisoryID,
+	})
+	if err != nil || len(rows) == 0 {
+		return Finding{}, false, err
+	}
+	return findingOf(q.VulnFindingsOfRepoNamesRow(rows[0])), true, nil
+}
+
+// FindingByID reads one finding; false when it is gone.
+func (e *Eval) FindingByID(ctx context.Context, id string) (Finding, bool, error) {
+	rows, err := e.qs.VulnFindingByID(ctx, id)
+	if err != nil || len(rows) == 0 {
+		return Finding{}, false, err
+	}
+	return findingOf(q.VulnFindingsOfRepoNamesRow(rows[0])), true, nil
 }
 
 // RefreshFinding stores the advisory's facts as the evaluation last saw them and the version the finding points to.
@@ -236,9 +260,52 @@ func (e *Eval) RefreshFinding(ctx context.Context, id string, f NewFinding) erro
 	})
 }
 
-// SetStatus is trove's own status change: a re-detection or a reopen. It clears the resolution.
-func (e *Eval) SetStatus(ctx context.Context, id string, status vuln.Status) error {
-	return e.qs.VulnSetFindingStatus(ctx, q.VulnSetFindingStatusParams{ID: id, Status: string(status)})
+// SetStatus is trove's own status change: a re-detection or a reopen. It clears the resolution. It holds only while the finding
+// still has the status and the revision the caller read, and reports whether it did: a finding that a triage changed meanwhile is
+// left as it is.
+func (e *Eval) SetStatus(ctx context.Context, id string, expect vuln.Status, revision int64, status vuln.Status) (bool, error) {
+	n, err := e.qs.VulnSetFindingStatus(ctx, q.VulnSetFindingStatusParams{
+		ID: id, Status: string(status), ExpectStatus: string(expect), ExpectRevision: revision,
+	})
+	return n > 0, err
+}
+
+// TouchModified stores the modification time of the advisory's record without a revision or a history entry.
+func (e *Eval) TouchModified(ctx context.Context, id string, modifiedUs int64) error {
+	return e.qs.VulnTouchFindingModified(ctx, q.VulnTouchFindingModifiedParams{ID: id, AdvisoryModifiedUs: modifiedUs})
+}
+
+// MergeInto moves the history of a finding to another one of the same version and deletes it.
+func (e *Eval) MergeInto(ctx context.Context, from, to string) error {
+	if err := e.qs.VulnMoveFindingEvents(ctx, q.VulnMoveFindingEventsParams{FromID: from, ToID: to}); err != nil {
+		return err
+	}
+	return e.qs.VulnDeleteFinding(ctx, from)
+}
+
+// RecentEvent is one of the last events of a finding with its age.
+type RecentEvent struct {
+	Seq        int64
+	Change     vuln.Change
+	AgeSeconds float64
+}
+
+// RecentEvents returns the last events of a finding, newest first.
+func (e *Eval) RecentEvents(ctx context.Context, findingID string, limit int) ([]RecentEvent, error) {
+	rows, err := e.qs.VulnRecentFindingEvents(ctx, q.VulnRecentFindingEventsParams{FindingID: findingID, MaxRows: int32(limit)}) //nolint:gosec // a small count
+	if err != nil {
+		return nil, err
+	}
+	out := make([]RecentEvent, len(rows))
+	for i, r := range rows {
+		out[i] = RecentEvent{Seq: r.Seq, Change: vuln.Change(r.Change), AgeSeconds: r.AgeSeconds}
+	}
+	return out, nil
+}
+
+// DeleteEvent deletes one event of a finding's history.
+func (e *Eval) DeleteEvent(ctx context.Context, findingID string, seq int64) error {
+	return e.qs.VulnDeleteFindingEvent(ctx, q.VulnDeleteFindingEventParams{FindingID: findingID, Seq: seq})
 }
 
 // Rekey moves a finding to the new canonical identifier of its advisory group.
@@ -363,8 +430,10 @@ func (e *Eval) DataComplete(ctx context.Context, ecosystem string) (bool, error)
 	return e.qs.VulnDataComplete(ctx, ecosystem)
 }
 
-// PendingCount counts the queued advisories.
-func (e *Eval) PendingCount(ctx context.Context) (int64, error) { return e.qs.VulnPendingCount(ctx) }
+// PendingCount counts the queued advisories of the ecosystems.
+func (e *Eval) PendingCount(ctx context.Context, ecosystems []string) (int64, error) {
+	return e.qs.VulnPendingCount(ctx, nonNil(ecosystems))
+}
 
 // Pending is a queued advisory with the time it was queued.
 type Pending struct {
@@ -372,9 +441,10 @@ type Pending struct {
 	EnqueuedUs            int64
 }
 
-// PendingBatch returns the oldest queued advisories.
-func (e *Eval) PendingBatch(ctx context.Context, limit int) ([]Pending, error) {
-	rows, err := e.qs.VulnPendingBatch(ctx, int32(limit)) //nolint:gosec // a batch size
+// PendingBatch returns the oldest queued advisories of the ecosystems; a row of another ecosystem stays queued for a build
+// that can evaluate it.
+func (e *Eval) PendingBatch(ctx context.Context, ecosystems []string, limit int) ([]Pending, error) {
+	rows, err := e.qs.VulnPendingBatch(ctx, q.VulnPendingBatchParams{Ecosystems: nonNil(ecosystems), MaxRows: int32(limit)}) //nolint:gosec // a batch size
 	if err != nil {
 		return nil, fmt.Errorf("pending evaluation: %w", err)
 	}
@@ -469,4 +539,24 @@ func nonNilInt(s []int64) []int64 {
 		return []int64{}
 	}
 	return s
+}
+
+// UnversionedItem is a cached file of a remote repository that no version belongs to.
+type UnversionedItem struct {
+	ItemID, RepoID int64
+	Path           string
+}
+
+// UnversionedItems returns up to limit cached files of the remote repositories of the formats whose path matches the SQL pattern
+// and that belong to no version, with an id after the cursor.
+func (e *Eval) UnversionedItems(ctx context.Context, formats []string, pathLike string, after int64, limit int) ([]UnversionedItem, error) {
+	rows, err := e.qs.VulnUnversionedItems(ctx, q.VulnUnversionedItemsParams{After: after, Formats: formats, PathLike: pathLike, MaxRows: int32(limit)}) //nolint:gosec // a batch size
+	if err != nil {
+		return nil, fmt.Errorf("unversioned items: %w", err)
+	}
+	out := make([]UnversionedItem, len(rows))
+	for i, r := range rows {
+		out[i] = UnversionedItem{ItemID: r.ItemID, RepoID: r.RepoID, Path: r.Path}
+	}
+	return out, nil
 }

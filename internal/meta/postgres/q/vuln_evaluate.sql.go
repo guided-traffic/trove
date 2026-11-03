@@ -14,7 +14,7 @@ const vulnAffectedForNames = `-- name: VulnAffectedForNames :many
 SELECT a.name::text AS name, v.id::text AS record_id, v.canonical_id::text AS canonical_id,
        (extract(epoch FROM COALESCE(c.modified, v.modified)) * 1000000)::bigint AS modified_us,
        (v.withdrawn IS NOT NULL)::boolean AS withdrawn,
-       COALESCE(c.kind, v.kind)::text AS kind,
+       v.kind::text AS kind,
        COALESCE(c.severity, v.severity)::text AS severity,
        COALESCE(c.cvss_score, v.cvss_score, -1)::float8 AS cvss_score,
        (COALESCE(c.known_exploited, false) OR v.known_exploited)::boolean AS known_exploited,
@@ -52,8 +52,9 @@ type VulnAffectedForNamesRow struct {
 // microseconds since the epoch, an id of a finding as text.
 // The affected entries of the ecosystem that name any of the names, with the advisory's facts, in one query (R-VULN-011): the
 // index vuln_affected_name serves it. Severity, kind and the known-exploited flag are those of the canonical record of the alias
-// group when it is stored (Q-VULN-35), else those of the record itself. Withdrawn records are returned with their flag: they
-// match nothing, and tell a resolution `advisory_withdrawn` from `no_longer_affected`.
+// group when it is stored (Q-VULN-35), else those of the record itself; the kind is that of the record whose entry this is (Q-VULN-65:
+// a malicious record makes a version malicious only when its own entry affects it). Withdrawn records are returned with their
+// flag: they match nothing, and tell a resolution `advisory_withdrawn` from `no_longer_affected`.
 func (q *Queries) VulnAffectedForNames(ctx context.Context, arg VulnAffectedForNamesParams) ([]VulnAffectedForNamesRow, error) {
 	rows, err := q.db.Query(ctx, vulnAffectedForNames, arg.Ecosystem, arg.Names)
 	if err != nil {
@@ -183,6 +184,29 @@ func (q *Queries) VulnDataComplete(ctx context.Context, ecosystem string) (bool,
 	return column_1, err
 }
 
+const vulnDeleteFinding = `-- name: VulnDeleteFinding :exec
+DELETE FROM vuln_finding WHERE id = $1::text::uuid
+`
+
+func (q *Queries) VulnDeleteFinding(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, vulnDeleteFinding, id)
+	return err
+}
+
+const vulnDeleteFindingEvent = `-- name: VulnDeleteFindingEvent :exec
+DELETE FROM vuln_finding_event WHERE finding_id = $1::text::uuid AND seq = $2::bigint
+`
+
+type VulnDeleteFindingEventParams struct {
+	FindingID string
+	Seq       int64
+}
+
+func (q *Queries) VulnDeleteFindingEvent(ctx context.Context, arg VulnDeleteFindingEventParams) error {
+	_, err := q.db.Exec(ctx, vulnDeleteFindingEvent, arg.FindingID, arg.Seq)
+	return err
+}
+
 const vulnDeletePending = `-- name: VulnDeletePending :exec
 DELETE FROM vuln_pending_evaluation p
  USING (SELECT unnest($1::text[]) AS ecosystem, unnest($2::text[]) AS advisory_id,
@@ -217,13 +241,85 @@ type VulnDeleteResolvedFindingsParams struct {
 }
 
 // The retention task (R-VULN-014): resolved findings older than the retention, with their events (the foreign key cascades), in
-// batches. A finding re-detected before then is not resolved and stays.
+// batches (vuln_finding_resolved_at serves the order). A finding re-detected before then is not resolved and stays.
 func (q *Queries) VulnDeleteResolvedFindings(ctx context.Context, arg VulnDeleteResolvedFindingsParams) (int64, error) {
 	result, err := q.db.Exec(ctx, vulnDeleteResolvedFindings, arg.RetentionSeconds, arg.MaxRows)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const vulnFindingByID = `-- name: VulnFindingByID :many
+SELECT f.id::text AS id, f.repo_id::bigint AS repo_id, f.package_name::text AS package_name, f.version::text AS version,
+       f.advisory_id::text AS advisory_id, COALESCE(f.package_id, 0)::bigint AS package_id, COALESCE(f.version_id, 0)::bigint AS version_id,
+       f.kind::text AS kind, f.severity::text AS severity, COALESCE(f.cvss_score, -1)::float8 AS cvss_score, f.known_exploited::boolean AS known_exploited,
+       f.fix_available::boolean AS fix_available, f.fixed_versions::text[] AS fixed_versions, f.status::text AS status,
+       COALESCE(f.status_before_resolution, '')::text AS status_before_resolution, COALESCE(f.resolved_reason, '')::text AS resolved_reason,
+       (extract(epoch FROM f.advisory_modified) * 1000000)::bigint AS advisory_modified_us, f.revision::bigint AS revision
+  FROM vuln_finding f
+ WHERE f.id = $1::text::uuid
+`
+
+type VulnFindingByIDRow struct {
+	ID                     string
+	RepoID                 int64
+	PackageName            string
+	Version                string
+	AdvisoryID             string
+	PackageID              int64
+	VersionID              int64
+	Kind                   string
+	Severity               string
+	CvssScore              float64
+	KnownExploited         bool
+	FixAvailable           bool
+	FixedVersions          []string
+	Status                 string
+	StatusBeforeResolution string
+	ResolvedReason         string
+	AdvisoryModifiedUs     int64
+	Revision               int64
+}
+
+// One finding by its id, read again after a conditional status update lost (Q-VULN-65).
+func (q *Queries) VulnFindingByID(ctx context.Context, id string) ([]VulnFindingByIDRow, error) {
+	rows, err := q.db.Query(ctx, vulnFindingByID, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []VulnFindingByIDRow{}
+	for rows.Next() {
+		var i VulnFindingByIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepoID,
+			&i.PackageName,
+			&i.Version,
+			&i.AdvisoryID,
+			&i.PackageID,
+			&i.VersionID,
+			&i.Kind,
+			&i.Severity,
+			&i.CvssScore,
+			&i.KnownExploited,
+			&i.FixAvailable,
+			&i.FixedVersions,
+			&i.Status,
+			&i.StatusBeforeResolution,
+			&i.ResolvedReason,
+			&i.AdvisoryModifiedUs,
+			&i.Revision,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const vulnFindingNamesForAdvisories = `-- name: VulnFindingNamesForAdvisories :many
@@ -258,13 +354,100 @@ func (q *Queries) VulnFindingNamesForAdvisories(ctx context.Context, arg VulnFin
 	return items, nil
 }
 
+const vulnFindingsByIdentity = `-- name: VulnFindingsByIdentity :many
+SELECT f.id::text AS id, f.repo_id::bigint AS repo_id, f.package_name::text AS package_name, f.version::text AS version,
+       f.advisory_id::text AS advisory_id, COALESCE(f.package_id, 0)::bigint AS package_id, COALESCE(f.version_id, 0)::bigint AS version_id,
+       f.kind::text AS kind, f.severity::text AS severity, COALESCE(f.cvss_score, -1)::float8 AS cvss_score, f.known_exploited::boolean AS known_exploited,
+       f.fix_available::boolean AS fix_available, f.fixed_versions::text[] AS fixed_versions, f.status::text AS status,
+       COALESCE(f.status_before_resolution, '')::text AS status_before_resolution, COALESCE(f.resolved_reason, '')::text AS resolved_reason,
+       (extract(epoch FROM f.advisory_modified) * 1000000)::bigint AS advisory_modified_us, f.revision::bigint AS revision
+  FROM vuln_finding f
+ WHERE f.repo_id = $1::bigint AND f.ecosystem = $2::text AND f.package_name = $3::text
+   AND f.version = $4::text AND f.advisory_id = $5::text
+`
+
+type VulnFindingsByIdentityParams struct {
+	RepoID      int64
+	Ecosystem   string
+	PackageName string
+	Version     string
+	AdvisoryID  string
+}
+
+type VulnFindingsByIdentityRow struct {
+	ID                     string
+	RepoID                 int64
+	PackageName            string
+	Version                string
+	AdvisoryID             string
+	PackageID              int64
+	VersionID              int64
+	Kind                   string
+	Severity               string
+	CvssScore              float64
+	KnownExploited         bool
+	FixAvailable           bool
+	FixedVersions          []string
+	Status                 string
+	StatusBeforeResolution string
+	ResolvedReason         string
+	AdvisoryModifiedUs     int64
+	Revision               int64
+}
+
+// The finding of one identity, read again after an insert that found it (a concurrent evaluation wrote it first).
+func (q *Queries) VulnFindingsByIdentity(ctx context.Context, arg VulnFindingsByIdentityParams) ([]VulnFindingsByIdentityRow, error) {
+	rows, err := q.db.Query(ctx, vulnFindingsByIdentity,
+		arg.RepoID,
+		arg.Ecosystem,
+		arg.PackageName,
+		arg.Version,
+		arg.AdvisoryID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []VulnFindingsByIdentityRow{}
+	for rows.Next() {
+		var i VulnFindingsByIdentityRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepoID,
+			&i.PackageName,
+			&i.Version,
+			&i.AdvisoryID,
+			&i.PackageID,
+			&i.VersionID,
+			&i.Kind,
+			&i.Severity,
+			&i.CvssScore,
+			&i.KnownExploited,
+			&i.FixAvailable,
+			&i.FixedVersions,
+			&i.Status,
+			&i.StatusBeforeResolution,
+			&i.ResolvedReason,
+			&i.AdvisoryModifiedUs,
+			&i.Revision,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const vulnFindingsForNames = `-- name: VulnFindingsForNames :many
 SELECT f.id::text AS id, f.repo_id::bigint AS repo_id, f.package_name::text AS package_name, f.version::text AS version,
        f.advisory_id::text AS advisory_id, COALESCE(f.package_id, 0)::bigint AS package_id, COALESCE(f.version_id, 0)::bigint AS version_id,
        f.kind::text AS kind, f.severity::text AS severity, COALESCE(f.cvss_score, -1)::float8 AS cvss_score, f.known_exploited::boolean AS known_exploited,
        f.fix_available::boolean AS fix_available, f.fixed_versions::text[] AS fixed_versions, f.status::text AS status,
        COALESCE(f.status_before_resolution, '')::text AS status_before_resolution, COALESCE(f.resolved_reason, '')::text AS resolved_reason,
-       (extract(epoch FROM f.advisory_modified) * 1000000)::bigint AS advisory_modified_us
+       (extract(epoch FROM f.advisory_modified) * 1000000)::bigint AS advisory_modified_us, f.revision::bigint AS revision
   FROM vuln_finding f
  WHERE f.ecosystem = $1::text
    AND f.package_name = ANY($2::text[])
@@ -293,6 +476,7 @@ type VulnFindingsForNamesRow struct {
 	StatusBeforeResolution string
 	ResolvedReason         string
 	AdvisoryModifiedUs     int64
+	Revision               int64
 }
 
 // Every finding of the names of an ecosystem in every repository, resolved ones too; vuln_finding_package serves it.
@@ -323,6 +507,7 @@ func (q *Queries) VulnFindingsForNames(ctx context.Context, arg VulnFindingsForN
 			&i.StatusBeforeResolution,
 			&i.ResolvedReason,
 			&i.AdvisoryModifiedUs,
+			&i.Revision,
 		); err != nil {
 			return nil, err
 		}
@@ -340,7 +525,7 @@ SELECT f.id::text AS id, f.repo_id::bigint AS repo_id, f.package_name::text AS p
        f.kind::text AS kind, f.severity::text AS severity, COALESCE(f.cvss_score, -1)::float8 AS cvss_score, f.known_exploited::boolean AS known_exploited,
        f.fix_available::boolean AS fix_available, f.fixed_versions::text[] AS fixed_versions, f.status::text AS status,
        COALESCE(f.status_before_resolution, '')::text AS status_before_resolution, COALESCE(f.resolved_reason, '')::text AS resolved_reason,
-       (extract(epoch FROM f.advisory_modified) * 1000000)::bigint AS advisory_modified_us
+       (extract(epoch FROM f.advisory_modified) * 1000000)::bigint AS advisory_modified_us, f.revision::bigint AS revision
   FROM vuln_finding f
  WHERE f.repo_id = $1::bigint
    AND f.ecosystem = $2::text
@@ -371,6 +556,7 @@ type VulnFindingsOfRepoNamesRow struct {
 	StatusBeforeResolution string
 	ResolvedReason         string
 	AdvisoryModifiedUs     int64
+	Revision               int64
 }
 
 // The findings of the names in one repository, resolved ones too (the batches of a rescan).
@@ -401,6 +587,7 @@ func (q *Queries) VulnFindingsOfRepoNames(ctx context.Context, arg VulnFindingsO
 			&i.StatusBeforeResolution,
 			&i.ResolvedReason,
 			&i.AdvisoryModifiedUs,
+			&i.Revision,
 		); err != nil {
 			return nil, err
 		}
@@ -473,7 +660,7 @@ func (q *Queries) VulnInsertClaimedMatch(ctx context.Context, arg VulnInsertClai
 	return result.RowsAffected(), nil
 }
 
-const vulnInsertFinding = `-- name: VulnInsertFinding :exec
+const vulnInsertFinding = `-- name: VulnInsertFinding :many
 INSERT INTO vuln_finding (id, repo_id, ecosystem, package_name, version, advisory_id, package_id, version_id, kind, severity, severity_rank,
                           cvss_score, known_exploited, fix_available, fixed_versions, status, advisory_modified)
 VALUES ($1::text::uuid, $2::bigint, $3::text, $4::text, $5::text,
@@ -482,6 +669,7 @@ VALUES ($1::text::uuid, $2::bigint, $3::text, $4::text, $5::text,
         $13::boolean, $14::boolean, $15::text[], 'needs_triage',
         to_timestamp($16::bigint / 1000000.0))
 ON CONFLICT (repo_id, ecosystem, package_name, version, advisory_id) DO NOTHING
+RETURNING id::text AS id
 `
 
 type VulnInsertFindingParams struct {
@@ -503,8 +691,10 @@ type VulnInsertFindingParams struct {
 	AdvisoryModifiedUs int64
 }
 
-func (q *Queries) VulnInsertFinding(ctx context.Context, arg VulnInsertFindingParams) error {
-	_, err := q.db.Exec(ctx, vulnInsertFinding,
+// The id comes back for the row this statement wrote and for none when the identity exists already, so that the history is
+// written for a row that exists (Q-VULN-65).
+func (q *Queries) VulnInsertFinding(ctx context.Context, arg VulnInsertFindingParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, vulnInsertFinding,
 		arg.ID,
 		arg.RepoID,
 		arg.Ecosystem,
@@ -522,7 +712,22 @@ func (q *Queries) VulnInsertFinding(ctx context.Context, arg VulnInsertFindingPa
 		arg.FixedVersions,
 		arg.AdvisoryModifiedUs,
 	)
-	return err
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const vulnInsertFindingEvent = `-- name: VulnInsertFindingEvent :exec
@@ -598,6 +803,21 @@ func (q *Queries) VulnItemVersion(ctx context.Context, itemID int64) ([]VulnItem
 	return items, nil
 }
 
+const vulnMoveFindingEvents = `-- name: VulnMoveFindingEvents :exec
+UPDATE vuln_finding_event SET finding_id = $1::text::uuid WHERE finding_id = $2::text::uuid
+`
+
+type VulnMoveFindingEventsParams struct {
+	ToID   string
+	FromID string
+}
+
+// The history of a finding that merges into another one (two findings of one version whose advisories joined one alias group).
+func (q *Queries) VulnMoveFindingEvents(ctx context.Context, arg VulnMoveFindingEventsParams) error {
+	_, err := q.db.Exec(ctx, vulnMoveFindingEvents, arg.ToID, arg.FromID)
+	return err
+}
+
 const vulnPackageNamesPage = `-- name: VulnPackageNamesPage :many
 SELECT n.name::text AS name FROM (
     SELECT DISTINCT p.name
@@ -650,9 +870,15 @@ func (q *Queries) VulnPackageNamesPage(ctx context.Context, arg VulnPackageNames
 const vulnPendingBatch = `-- name: VulnPendingBatch :many
 SELECT ecosystem::text AS ecosystem, advisory_id::text AS advisory_id, (extract(epoch FROM enqueued_at) * 1000000)::bigint AS enqueued_us
   FROM vuln_pending_evaluation
+ WHERE ecosystem = ANY($1::text[])
  ORDER BY enqueued_at, ecosystem, advisory_id
- LIMIT $1::int
+ LIMIT $2::int
 `
+
+type VulnPendingBatchParams struct {
+	Ecosystems []string
+	MaxRows    int32
+}
 
 type VulnPendingBatchRow struct {
 	Ecosystem  string
@@ -660,8 +886,8 @@ type VulnPendingBatchRow struct {
 	EnqueuedUs int64
 }
 
-func (q *Queries) VulnPendingBatch(ctx context.Context, maxRows int32) ([]VulnPendingBatchRow, error) {
-	rows, err := q.db.Query(ctx, vulnPendingBatch, maxRows)
+func (q *Queries) VulnPendingBatch(ctx context.Context, arg VulnPendingBatchParams) ([]VulnPendingBatchRow, error) {
+	rows, err := q.db.Query(ctx, vulnPendingBatch, arg.Ecosystems, arg.MaxRows)
 	if err != nil {
 		return nil, err
 	}
@@ -681,11 +907,12 @@ func (q *Queries) VulnPendingBatch(ctx context.Context, maxRows int32) ([]VulnPe
 }
 
 const vulnPendingCount = `-- name: VulnPendingCount :one
-SELECT count(*)::bigint FROM vuln_pending_evaluation
+SELECT count(*)::bigint FROM vuln_pending_evaluation WHERE ecosystem = ANY($1::text[])
 `
 
-func (q *Queries) VulnPendingCount(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, vulnPendingCount)
+// The queued advisories of the ecosystems this build evaluates: a row of another ecosystem stays for a build that has its adapter.
+func (q *Queries) VulnPendingCount(ctx context.Context, ecosystems []string) (int64, error) {
+	row := q.db.QueryRow(ctx, vulnPendingCount, ecosystems)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -709,6 +936,46 @@ type VulnPruneClaimedMatchesParams struct {
 func (q *Queries) VulnPruneClaimedMatches(ctx context.Context, arg VulnPruneClaimedMatchesParams) error {
 	_, err := q.db.Exec(ctx, vulnPruneClaimedMatches, arg.Ecosystem, arg.Names, arg.Keep)
 	return err
+}
+
+const vulnRecentFindingEvents = `-- name: VulnRecentFindingEvents :many
+SELECT seq::bigint AS seq, change::text AS change, extract(epoch FROM now() - at)::float8 AS age_seconds
+  FROM vuln_finding_event
+ WHERE finding_id = $1::text::uuid
+ ORDER BY seq DESC
+ LIMIT $2::int
+`
+
+type VulnRecentFindingEventsParams struct {
+	FindingID string
+	MaxRows   int32
+}
+
+type VulnRecentFindingEventsRow struct {
+	Seq        int64
+	Change     string
+	AgeSeconds float64
+}
+
+// The last events of a finding, newest first, with their age: the evaluation coalesces a resolution that did not last (Q-VULN-66).
+func (q *Queries) VulnRecentFindingEvents(ctx context.Context, arg VulnRecentFindingEventsParams) ([]VulnRecentFindingEventsRow, error) {
+	rows, err := q.db.Query(ctx, vulnRecentFindingEvents, arg.FindingID, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []VulnRecentFindingEventsRow{}
+	for rows.Next() {
+		var i VulnRecentFindingEventsRow
+		if err := rows.Scan(&i.Seq, &i.Change, &i.AgeSeconds); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const vulnRefreshFinding = `-- name: VulnRefreshFinding :exec
@@ -926,7 +1193,7 @@ func (q *Queries) VulnResolveFindings(ctx context.Context, arg VulnResolveFindin
 const vulnResolveRemovedVersions = `-- name: VulnResolveRemovedVersions :many
 WITH old AS (
     SELECT f.id, f.status FROM vuln_finding f
-     WHERE f.version_id = ANY($1::bigint[]) AND f.status <> 'resolved'
+     WHERE f.version_id = ANY($1::bigint[]) AND f.status <> 'resolved'  -- vuln_finding_version_id serves the lookup
        AND NOT EXISTS (SELECT 1 FROM package_versions pv
                         WHERE pv.id = f.version_id
                           AND (EXISTS (SELECT 1 FROM items l WHERE l.id = pv.lead_item_id)
@@ -1008,25 +1275,39 @@ func (q *Queries) VulnResolveRepoFindings(ctx context.Context, repoID int64) ([]
 	return items, nil
 }
 
-const vulnSetFindingStatus = `-- name: VulnSetFindingStatus :exec
+const vulnSetFindingStatus = `-- name: VulnSetFindingStatus :execrows
 UPDATE vuln_finding
    SET status = $1::text, status_before_resolution = NULL, resolved_reason = NULL, resolved_at = NULL,
-       dismissal_reason = CASE WHEN $1::text = 'dismissed' THEN dismissal_reason END,
-       comment = CASE WHEN $1::text = 'dismissed' THEN comment END,
+       dismissal_reason = CASE WHEN $1::text = 'dismissed' OR NOT (status = 'dismissed' OR (status = 'resolved' AND status_before_resolution = 'dismissed'))
+                               THEN dismissal_reason END,
+       comment = CASE WHEN $1::text = 'dismissed' OR NOT (status = 'dismissed' OR (status = 'resolved' AND status_before_resolution = 'dismissed'))
+                      THEN comment END,
        status_changed_at = now(), status_changed_by = NULL, revision = revision + 1
- WHERE id = $2::text::uuid
+ WHERE id = $2::text::uuid AND status = $3::text AND revision = $4::bigint
 `
 
 type VulnSetFindingStatusParams struct {
-	Status string
-	ID     string
+	Status         string
+	ID             string
+	ExpectStatus   string
+	ExpectRevision int64
 }
 
-// trove's own status change: a re-detection or a reopen. The resolution is cleared; a status other than dismissed drops the
-// dismissal's reason and comment (the history keeps them).
-func (q *Queries) VulnSetFindingStatus(ctx context.Context, arg VulnSetFindingStatusParams) error {
-	_, err := q.db.Exec(ctx, vulnSetFindingStatus, arg.Status, arg.ID)
-	return err
+// trove's own status change: a re-detection or a reopen, only when the finding still has the status and the revision the evaluation
+// read, so that a triage that came between is never overwritten (Q-VULN-65). The resolution is cleared. The dismissal's reason and
+// comment go when the finding moves away from dismissed (also from a resolution that came from dismissed); a triage comment on
+// any other status stays (the history keeps what went).
+func (q *Queries) VulnSetFindingStatus(ctx context.Context, arg VulnSetFindingStatusParams) (int64, error) {
+	result, err := q.db.Exec(ctx, vulnSetFindingStatus,
+		arg.Status,
+		arg.ID,
+		arg.ExpectStatus,
+		arg.ExpectRevision,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const vulnSourceFullEvaluations = `-- name: VulnSourceFullEvaluations :many
@@ -1109,6 +1390,75 @@ func (q *Queries) VulnStoredVersions(ctx context.Context, arg VulnStoredVersions
 			&i.VersionID,
 			&i.Version,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const vulnTouchFindingModified = `-- name: VulnTouchFindingModified :exec
+UPDATE vuln_finding SET advisory_modified = to_timestamp($1::bigint / 1000000.0)
+ WHERE id = $2::text::uuid
+`
+
+type VulnTouchFindingModifiedParams struct {
+	AdvisoryModifiedUs int64
+	ID                 string
+}
+
+// The record of an advisory was modified and nothing a finding shows changed: the time is stored, the revision and the history
+// stay (Q-VULN-66).
+func (q *Queries) VulnTouchFindingModified(ctx context.Context, arg VulnTouchFindingModifiedParams) error {
+	_, err := q.db.Exec(ctx, vulnTouchFindingModified, arg.AdvisoryModifiedUs, arg.ID)
+	return err
+}
+
+const vulnUnversionedItems = `-- name: VulnUnversionedItems :many
+SELECT i.id::bigint AS item_id, i.repo_id::bigint AS repo_id, i.path::text AS path
+  FROM items i
+  JOIN repositories r ON r.id = i.repo_id
+ WHERE i.id > $1::bigint
+   AND r.class = 'remote' AND r.lifecycle = 'active' AND r.format = ANY($2::text[])
+   AND i.version_id IS NULL AND i.kind = 'file' AND i.trashed_at IS NULL AND i.path LIKE $3::text
+ ORDER BY i.id
+ LIMIT $4::int
+`
+
+type VulnUnversionedItemsParams struct {
+	After    int64
+	Formats  []string
+	PathLike string
+	MaxRows  int32
+}
+
+type VulnUnversionedItemsRow struct {
+	ItemID int64
+	RepoID int64
+	Path   string
+}
+
+// The cached files of the remote repositories of the formats that no version row belongs to (the tarballs a remote repository
+// cached before the scanning recorded versions, Q-VULN-67), after a cursor, in the order of their ids; path_like narrows them to
+// the format's artifact suffix.
+func (q *Queries) VulnUnversionedItems(ctx context.Context, arg VulnUnversionedItemsParams) ([]VulnUnversionedItemsRow, error) {
+	rows, err := q.db.Query(ctx, vulnUnversionedItems,
+		arg.After,
+		arg.Formats,
+		arg.PathLike,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []VulnUnversionedItemsRow{}
+	for rows.Next() {
+		var i VulnUnversionedItemsRow
+		if err := rows.Scan(&i.ItemID, &i.RepoID, &i.Path); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

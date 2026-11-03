@@ -5,12 +5,13 @@
 -- name: VulnAffectedForNames :many
 -- The affected entries of the ecosystem that name any of the names, with the advisory's facts, in one query (R-VULN-011): the
 -- index vuln_affected_name serves it. Severity, kind and the known-exploited flag are those of the canonical record of the alias
--- group when it is stored (Q-VULN-35), else those of the record itself. Withdrawn records are returned with their flag: they
--- match nothing, and tell a resolution `advisory_withdrawn` from `no_longer_affected`.
+-- group when it is stored (Q-VULN-35), else those of the record itself; the kind is that of the record whose entry this is (Q-VULN-65:
+-- a malicious record makes a version malicious only when its own entry affects it). Withdrawn records are returned with their
+-- flag: they match nothing, and tell a resolution `advisory_withdrawn` from `no_longer_affected`.
 SELECT a.name::text AS name, v.id::text AS record_id, v.canonical_id::text AS canonical_id,
        (extract(epoch FROM COALESCE(c.modified, v.modified)) * 1000000)::bigint AS modified_us,
        (v.withdrawn IS NOT NULL)::boolean AS withdrawn,
-       COALESCE(c.kind, v.kind)::text AS kind,
+       v.kind::text AS kind,
        COALESCE(c.severity, v.severity)::text AS severity,
        COALESCE(c.cvss_score, v.cvss_score, -1)::float8 AS cvss_score,
        (COALESCE(c.known_exploited, false) OR v.known_exploited)::boolean AS known_exploited,
@@ -83,7 +84,7 @@ SELECT f.id::text AS id, f.repo_id::bigint AS repo_id, f.package_name::text AS p
        f.kind::text AS kind, f.severity::text AS severity, COALESCE(f.cvss_score, -1)::float8 AS cvss_score, f.known_exploited::boolean AS known_exploited,
        f.fix_available::boolean AS fix_available, f.fixed_versions::text[] AS fixed_versions, f.status::text AS status,
        COALESCE(f.status_before_resolution, '')::text AS status_before_resolution, COALESCE(f.resolved_reason, '')::text AS resolved_reason,
-       (extract(epoch FROM f.advisory_modified) * 1000000)::bigint AS advisory_modified_us
+       (extract(epoch FROM f.advisory_modified) * 1000000)::bigint AS advisory_modified_us, f.revision::bigint AS revision
   FROM vuln_finding f
  WHERE f.ecosystem = sqlc.arg(ecosystem)::text
    AND f.package_name = ANY(sqlc.arg(names)::text[]);
@@ -95,13 +96,38 @@ SELECT f.id::text AS id, f.repo_id::bigint AS repo_id, f.package_name::text AS p
        f.kind::text AS kind, f.severity::text AS severity, COALESCE(f.cvss_score, -1)::float8 AS cvss_score, f.known_exploited::boolean AS known_exploited,
        f.fix_available::boolean AS fix_available, f.fixed_versions::text[] AS fixed_versions, f.status::text AS status,
        COALESCE(f.status_before_resolution, '')::text AS status_before_resolution, COALESCE(f.resolved_reason, '')::text AS resolved_reason,
-       (extract(epoch FROM f.advisory_modified) * 1000000)::bigint AS advisory_modified_us
+       (extract(epoch FROM f.advisory_modified) * 1000000)::bigint AS advisory_modified_us, f.revision::bigint AS revision
   FROM vuln_finding f
  WHERE f.repo_id = sqlc.arg(repo_id)::bigint
    AND f.ecosystem = sqlc.arg(ecosystem)::text
    AND f.package_name = ANY(sqlc.arg(names)::text[]);
 
--- name: VulnInsertFinding :exec
+-- name: VulnFindingsByIdentity :many
+-- The finding of one identity, read again after an insert that found it (a concurrent evaluation wrote it first).
+SELECT f.id::text AS id, f.repo_id::bigint AS repo_id, f.package_name::text AS package_name, f.version::text AS version,
+       f.advisory_id::text AS advisory_id, COALESCE(f.package_id, 0)::bigint AS package_id, COALESCE(f.version_id, 0)::bigint AS version_id,
+       f.kind::text AS kind, f.severity::text AS severity, COALESCE(f.cvss_score, -1)::float8 AS cvss_score, f.known_exploited::boolean AS known_exploited,
+       f.fix_available::boolean AS fix_available, f.fixed_versions::text[] AS fixed_versions, f.status::text AS status,
+       COALESCE(f.status_before_resolution, '')::text AS status_before_resolution, COALESCE(f.resolved_reason, '')::text AS resolved_reason,
+       (extract(epoch FROM f.advisory_modified) * 1000000)::bigint AS advisory_modified_us, f.revision::bigint AS revision
+  FROM vuln_finding f
+ WHERE f.repo_id = sqlc.arg(repo_id)::bigint AND f.ecosystem = sqlc.arg(ecosystem)::text AND f.package_name = sqlc.arg(package_name)::text
+   AND f.version = sqlc.arg(version)::text AND f.advisory_id = sqlc.arg(advisory_id)::text;
+
+-- name: VulnFindingByID :many
+-- One finding by its id, read again after a conditional status update lost (Q-VULN-65).
+SELECT f.id::text AS id, f.repo_id::bigint AS repo_id, f.package_name::text AS package_name, f.version::text AS version,
+       f.advisory_id::text AS advisory_id, COALESCE(f.package_id, 0)::bigint AS package_id, COALESCE(f.version_id, 0)::bigint AS version_id,
+       f.kind::text AS kind, f.severity::text AS severity, COALESCE(f.cvss_score, -1)::float8 AS cvss_score, f.known_exploited::boolean AS known_exploited,
+       f.fix_available::boolean AS fix_available, f.fixed_versions::text[] AS fixed_versions, f.status::text AS status,
+       COALESCE(f.status_before_resolution, '')::text AS status_before_resolution, COALESCE(f.resolved_reason, '')::text AS resolved_reason,
+       (extract(epoch FROM f.advisory_modified) * 1000000)::bigint AS advisory_modified_us, f.revision::bigint AS revision
+  FROM vuln_finding f
+ WHERE f.id = sqlc.arg(id)::text::uuid;
+
+-- name: VulnInsertFinding :many
+-- The id comes back for the row this statement wrote and for none when the identity exists already, so that the history is
+-- written for a row that exists (Q-VULN-65).
 INSERT INTO vuln_finding (id, repo_id, ecosystem, package_name, version, advisory_id, package_id, version_id, kind, severity, severity_rank,
                           cvss_score, known_exploited, fix_available, fixed_versions, status, advisory_modified)
 VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(repo_id)::bigint, sqlc.arg(ecosystem)::text, sqlc.arg(package_name)::text, sqlc.arg(version)::text,
@@ -109,7 +135,8 @@ VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(repo_id)::bigint, sqlc.arg(ecosystem)
         sqlc.arg(severity)::text, sqlc.arg(severity_rank)::smallint, NULLIF(sqlc.arg(cvss_score)::float8, -1)::numeric(3,1),
         sqlc.arg(known_exploited)::boolean, sqlc.arg(fix_available)::boolean, sqlc.arg(fixed_versions)::text[], 'needs_triage',
         to_timestamp(sqlc.arg(advisory_modified_us)::bigint / 1000000.0))
-ON CONFLICT (repo_id, ecosystem, package_name, version, advisory_id) DO NOTHING;
+ON CONFLICT (repo_id, ecosystem, package_name, version, advisory_id) DO NOTHING
+RETURNING id::text AS id;
 
 -- name: VulnRefreshFinding :exec
 -- The facts of the advisory as the evaluation last saw them, and the version the finding points to now (a version fetched
@@ -123,19 +150,47 @@ UPDATE vuln_finding
        revision = revision + 1
  WHERE id = sqlc.arg(id)::text::uuid;
 
--- name: VulnSetFindingStatus :exec
--- trove's own status change: a re-detection or a reopen. The resolution is cleared; a status other than dismissed drops the
--- dismissal's reason and comment (the history keeps them).
+-- name: VulnTouchFindingModified :exec
+-- The record of an advisory was modified and nothing a finding shows changed: the time is stored, the revision and the history
+-- stay (Q-VULN-66).
+UPDATE vuln_finding SET advisory_modified = to_timestamp(sqlc.arg(advisory_modified_us)::bigint / 1000000.0)
+ WHERE id = sqlc.arg(id)::text::uuid;
+
+-- name: VulnSetFindingStatus :execrows
+-- trove's own status change: a re-detection or a reopen, only when the finding still has the status and the revision the evaluation
+-- read, so that a triage that came between is never overwritten (Q-VULN-65). The resolution is cleared. The dismissal's reason and
+-- comment go when the finding moves away from dismissed (also from a resolution that came from dismissed); a triage comment on
+-- any other status stays (the history keeps what went).
 UPDATE vuln_finding
    SET status = sqlc.arg(status)::text, status_before_resolution = NULL, resolved_reason = NULL, resolved_at = NULL,
-       dismissal_reason = CASE WHEN sqlc.arg(status)::text = 'dismissed' THEN dismissal_reason END,
-       comment = CASE WHEN sqlc.arg(status)::text = 'dismissed' THEN comment END,
+       dismissal_reason = CASE WHEN sqlc.arg(status)::text = 'dismissed' OR NOT (status = 'dismissed' OR (status = 'resolved' AND status_before_resolution = 'dismissed'))
+                               THEN dismissal_reason END,
+       comment = CASE WHEN sqlc.arg(status)::text = 'dismissed' OR NOT (status = 'dismissed' OR (status = 'resolved' AND status_before_resolution = 'dismissed'))
+                      THEN comment END,
        status_changed_at = now(), status_changed_by = NULL, revision = revision + 1
- WHERE id = sqlc.arg(id)::text::uuid;
+ WHERE id = sqlc.arg(id)::text::uuid AND status = sqlc.arg(expect_status)::text AND revision = sqlc.arg(expect_revision)::bigint;
 
 -- name: VulnRekeyFinding :exec
 -- The canonical identifier of the alias group changed: the finding follows it and keeps its status and history.
 UPDATE vuln_finding SET advisory_id = sqlc.arg(advisory_id)::text, revision = revision + 1 WHERE id = sqlc.arg(id)::text::uuid;
+
+-- name: VulnMoveFindingEvents :exec
+-- The history of a finding that merges into another one (two findings of one version whose advisories joined one alias group).
+UPDATE vuln_finding_event SET finding_id = sqlc.arg(to_id)::text::uuid WHERE finding_id = sqlc.arg(from_id)::text::uuid;
+
+-- name: VulnDeleteFinding :exec
+DELETE FROM vuln_finding WHERE id = sqlc.arg(id)::text::uuid;
+
+-- name: VulnRecentFindingEvents :many
+-- The last events of a finding, newest first, with their age: the evaluation coalesces a resolution that did not last (Q-VULN-66).
+SELECT seq::bigint AS seq, change::text AS change, extract(epoch FROM now() - at)::float8 AS age_seconds
+  FROM vuln_finding_event
+ WHERE finding_id = sqlc.arg(finding_id)::text::uuid
+ ORDER BY seq DESC
+ LIMIT sqlc.arg(max_rows)::int;
+
+-- name: VulnDeleteFindingEvent :exec
+DELETE FROM vuln_finding_event WHERE finding_id = sqlc.arg(finding_id)::text::uuid AND seq = sqlc.arg(seq)::bigint;
 
 -- name: VulnResolveFindings :many
 -- trove resolves findings: the previous status is kept in status_before_resolution. Only a finding that is not resolved yet
@@ -157,7 +212,7 @@ RETURNING f.id::text AS id, old.status::text AS old_status;
 -- no file left.
 WITH old AS (
     SELECT f.id, f.status FROM vuln_finding f
-     WHERE f.version_id = ANY(sqlc.arg(version_ids)::bigint[]) AND f.status <> 'resolved'
+     WHERE f.version_id = ANY(sqlc.arg(version_ids)::bigint[]) AND f.status <> 'resolved'  -- vuln_finding_version_id serves the lookup
        AND NOT EXISTS (SELECT 1 FROM package_versions pv
                         WHERE pv.id = f.version_id
                           AND (EXISTS (SELECT 1 FROM items l WHERE l.id = pv.lead_item_id)
@@ -190,7 +245,7 @@ VALUES (sqlc.arg(finding_id)::text::uuid, sqlc.arg(change)::text, NULLIF(sqlc.ar
 
 -- name: VulnDeleteResolvedFindings :execrows
 -- The retention task (R-VULN-014): resolved findings older than the retention, with their events (the foreign key cascades), in
--- batches. A finding re-detected before then is not resolved and stays.
+-- batches (vuln_finding_resolved_at serves the order). A finding re-detected before then is not resolved and stays.
 DELETE FROM vuln_finding
  WHERE id IN (SELECT f.id FROM vuln_finding f
                WHERE f.status = 'resolved' AND f.resolved_at < now() - make_interval(secs => sqlc.arg(retention_seconds)::float8)
@@ -229,11 +284,13 @@ UPDATE vuln_source_state
 SELECT EXISTS (SELECT 1 FROM vuln_source_state WHERE source = 'osv' AND ecosystem = sqlc.arg(ecosystem)::text AND state = 'complete')::boolean;
 
 -- name: VulnPendingCount :one
-SELECT count(*)::bigint FROM vuln_pending_evaluation;
+-- The queued advisories of the ecosystems this build evaluates: a row of another ecosystem stays for a build that has its adapter.
+SELECT count(*)::bigint FROM vuln_pending_evaluation WHERE ecosystem = ANY(sqlc.arg(ecosystems)::text[]);
 
 -- name: VulnPendingBatch :many
 SELECT ecosystem::text AS ecosystem, advisory_id::text AS advisory_id, (extract(epoch FROM enqueued_at) * 1000000)::bigint AS enqueued_us
   FROM vuln_pending_evaluation
+ WHERE ecosystem = ANY(sqlc.arg(ecosystems)::text[])
  ORDER BY enqueued_at, ecosystem, advisory_id
  LIMIT sqlc.arg(max_rows)::int;
 
@@ -284,3 +341,16 @@ SELECT pattern::text AS pattern FROM namespace_claims WHERE repo_id = sqlc.arg(r
 SELECT id::bigint AS id, key::text AS key, class::text AS class, format::text AS format, lifecycle::text AS lifecycle, config::text AS config
   FROM repositories
  WHERE id = sqlc.arg(id)::bigint;
+
+-- name: VulnUnversionedItems :many
+-- The cached files of the remote repositories of the formats that no version row belongs to (the tarballs a remote repository
+-- cached before the scanning recorded versions, Q-VULN-67), after a cursor, in the order of their ids; path_like narrows them to
+-- the format's artifact suffix.
+SELECT i.id::bigint AS item_id, i.repo_id::bigint AS repo_id, i.path::text AS path
+  FROM items i
+  JOIN repositories r ON r.id = i.repo_id
+ WHERE i.id > sqlc.arg(after)::bigint
+   AND r.class = 'remote' AND r.lifecycle = 'active' AND r.format = ANY(sqlc.arg(formats)::text[])
+   AND i.version_id IS NULL AND i.kind = 'file' AND i.trashed_at IS NULL AND i.path LIKE sqlc.arg(path_like)::text
+ ORDER BY i.id
+ LIMIT sqlc.arg(max_rows)::int;
