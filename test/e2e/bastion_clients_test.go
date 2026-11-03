@@ -113,6 +113,7 @@ func (c *npmClient) basInstall(t *testing.T, dir string, set *basNPMSet) npmRun 
 	c.sh(dir, `rm -rf "`+c.home()+`/.local"`)
 	r := c.run(dir, c.frozenInstall()...)
 	if r.Code != 0 {
+		basDumpLogs(t, t.Name())
 		t.Fatalf("%s %s exited %d:\n%s", c.row, strings.Join(c.frozenInstall(), " "), r.Code, tailLines(r.Out, 30))
 	}
 	// pnpm does not hoist a dependency into the project's node_modules: the root is what the project loads, and the install

@@ -135,6 +135,13 @@ func TestBastion_R_BAS_049_InterfaceMismatch(t *testing.T) {
 	// The rollout of the main installation takes longer than the grace period, and an answer is renewed by use: a client keeps
 	// installing until the mismatch is seen, so that the answers the grace period extends are those of the last moments before it.
 	stopLoop, loopDone := make(chan struct{}), make(chan struct{})
+	// every install of the loop is recorded, so that a refusal of the grace period's install can be told from answers that were
+	// never warm: the loop's own results say whether the cache was filled by the moment the mismatch began
+	type loopInstall struct {
+		start, end time.Time
+		code       int
+	}
+	var installs []loopInstall
 	go func() {
 		defer close(loopDone)
 		for {
@@ -143,8 +150,11 @@ func TestBastion_R_BAS_049_InterfaceMismatch(t *testing.T) {
 				return
 			default:
 			}
+			in := loopInstall{start: time.Now()}
 			c.wipeClientState(dir)
-			c.run(dir, c.frozenInstall()...)
+			in.code = c.run(dir, c.frozenInstall()...).Code
+			in.end = time.Now()
+			installs = append(installs, in)
 			time.Sleep(10 * time.Second)
 		}
 	}()
@@ -155,12 +165,30 @@ func TestBastion_R_BAS_049_InterfaceMismatch(t *testing.T) {
 		m, v := basMismatch(t, site)
 		return allEqual(m, 1) && allEqual(v, 2)
 	})
+	mismatchAt := time.Now()
 	close(stopLoop)
 	<-loopDone
 	seen := time.Now()
-	t.Run("the Bastion serves warm content during the grace period", func(t *testing.T) {
+	var history strings.Builder
+	lastOK := time.Time{}
+	for _, in := range installs {
+		fmt.Fprintf(&history, "  install %s to %s (%s): exit %d\n", in.start.Format("15:04:05"), in.end.Format("15:04:05"), in.end.Sub(in.start).Round(time.Second), in.code)
+		if in.code == 0 {
+			lastOK = in.end
+		}
+	}
+	t.Logf("installs of the loop (the mismatch was seen at %s):\n%s", mismatchAt.Format("15:04:05"), history.String())
+	if !t.Run("the Bastion serves warm content during the grace period", func(t *testing.T) {
 		c.basInstall(t, dir, setN)
-	})
+	}) {
+		basDumpLogs(t, "grace-period")
+		if lastOK.IsZero() {
+			t.Errorf("no install of the loop succeeded, the cache was never warm through this client:\n%s", history.String())
+		} else {
+			t.Errorf("the last successful install of the loop ended %s before both replicas reported the mismatch and %s before the grace-period install began (answer period %s, grace period %s):\n%s",
+				mismatchAt.Sub(lastOK).Round(time.Second), seen.Sub(lastOK).Round(time.Second), basAnswerPeriod, basGrace, history.String())
+		}
+	}
 	if err := <-rollout; err != nil {
 		t.Fatal(err)
 	}

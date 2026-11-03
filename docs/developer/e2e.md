@@ -2120,6 +2120,12 @@ their forwarders), and the first test calls `basFx` ([bastion_env_test.go](../..
 | `TestBastionLong_R_BAS_049_Drain` | drain | `kubectl drain` of a replica's node (not the PostgreSQL primary's) two minutes into a ten-minute loop of `npm ci` and `dotnet restore`: zero failed runs, the replica is rescheduled |
 | `TestBastionLong_R_BAS_049_AnonymousMissFlood` | anonymous miss flood | 10,000 anonymous requests for random names: at most 30 reach the main installation per minute, at most 16 (the anonymous quarter of `max_concurrent`) in flight |
 
+**Diagnostics of a failure.** A failed Bastion install (`basInstall`) and a failed grace-period install of the interface-mismatch scenario write
+`bastion-diag-<test>/` into the artifact directory ([bastion_diag_test.go](../../test/e2e/bastion_diag_test.go)): the pods, the events and the logs (previous
+containers too) of the namespace `trove-bastion` and of the main installation, taken before the scenario replaces the pods. The mismatch scenario records every
+install of its warm-up loop and, on a failure, says when the last one succeeded relative to the moment the mismatch was seen, which tells answers that
+expired from a cache that was never warm.
+
 ### Running it
 
 ```shell
