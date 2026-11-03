@@ -435,15 +435,23 @@ func TestR_NPM_038_TheAuditSettingsThroughTheAPI(t *testing.T) {
 		}
 	})
 
-	t.Run("the member is a member of every class: a local repository takes local or disabled (R-VULN-017)", func(t *testing.T) {
-		for i, mode := range []string{"disabled", "local"} {
-			a := create("npm-audit-local-"+strconv.Itoa(i), "local", map[string]any{"audit": map[string]any{"mode": mode}})
+	t.Run("the member is a member of every class: a local repository takes local or disabled (R-VULN-017, Q-VULN-74)", func(t *testing.T) {
+		for i, audit := range []map[string]any{{"mode": "disabled"}, {"local": true}} {
+			a := create("npm-audit-local-"+strconv.Itoa(i), "local", map[string]any{"audit": audit})
 			if a.Status != 201 {
-				t.Fatalf("mode %s: %d %s", mode, a.Status, a.Body)
+				t.Fatalf("%v: %d %s", audit, a.Status, a.Body)
 			}
-			if got, _ := json.Marshal(a.JSON(t)["npm"]); !strings.Contains(string(got), `"mode":"`+mode+`"`) {
-				t.Errorf("read back %s, want mode %s", got, mode)
+			want, _ := json.Marshal(audit)
+			if got, _ := json.Marshal(a.JSON(t)["npm"]); !strings.Contains(string(got), string(want)[1:len(want)-1]) {
+				t.Errorf("read back %s, want %s", got, want)
 			}
+		}
+	})
+
+	t.Run("mode local is no value of the frozen enum: the local answer is npm.audit.local (R-ARCH-025, Q-VULN-74)", func(t *testing.T) {
+		a := create("npm-audit-enum", "remote", map[string]any{"audit": map[string]any{"mode": "local"}})
+		if a.Status != 422 || settingsErrors(t, a)["/npm/audit/mode"] != "invalid_value" {
+			t.Errorf("%d %s", a.Status, a.Body)
 		}
 	})
 }

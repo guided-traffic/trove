@@ -417,6 +417,9 @@ func (s *Service) update(ctx context.Context, c Caller, key string, pre Precondi
 		nd, v := s.checkUpdate(cur, nd)
 		refuseProjectChange(v, w, project)
 		delegatedRemote(v, w, &cur, &nd)
+		if err := delegatedVulnerabilities(w, &cur, &nd); err != nil {
+			return err
+		}
 		// >>> M2 virtual
 		rel, err := s.resolveVirtual(ctx, qs, v, &nd, newVirtualGuard(w, curRel))
 		if err != nil {
@@ -441,13 +444,7 @@ func (s *Service) update(ctx context.Context, c Caller, key string, pre Precondi
 			return err
 		}
 		changes := changedMembers(oldFull, newFull)
-		if hasSecretWrites(nd.pending) && !slices.Contains(changes, "remote") {
-			// A new secret value reads like the old one ({"set": true}); it is still a
-			// change, and it moves config_version so that the clients built with the
-			// old value are replaced.
-			changes = append(changes, "remote")
-			sort.Strings(changes)
-		}
+		changes = withSecretChange(changes, nd)
 		if len(changes) == 0 {
 			out, err = s.stored(ctx, qs, row, v.warnings) // nothing to write: same version, no event
 			return err
@@ -481,7 +478,7 @@ func (s *Service) update(ctx context.Context, c Caller, key string, pre Precondi
 		if err != nil {
 			return err
 		}
-		if err := s.afterWrite(ctx, tx, c, EventUpdated, out.Repository, changes); err != nil {
+		if err := s.recordAndNotify(ctx, tx, c, EventUpdated, out.Repository, updateDetails(out.Repository, changes, &cur, &nd), strings.TrimPrefix(EventUpdated, "repository.")); err != nil {
 			return err
 		}
 		// >>> M2 virtual
@@ -653,6 +650,31 @@ type eventDetails struct {
 	Changes []string `json:"changes"`
 	Phase   string   `json:"phase,omitempty"`
 	Project string   `json:"project,omitempty"`
+	// Block is "lifted" when the write weakens the member `vulnerabilities` and so may lift download blocks of the
+	// repository, and Weakened names the members (R-VULN-002, Q-VULN-69): one audit filter finds every such write.
+	Block    string   `json:"block,omitempty"`
+	Weakened []string `json:"weakened,omitempty"`
+}
+
+// withSecretChange adds "remote" to the changes of a write that sends a new secret value. A new secret value reads like the old
+// one ({"set": true}); it is still a change, and it moves config_version so that the clients built with the old value are
+// replaced.
+func withSecretChange(changes []string, nd Document) []string {
+	if hasSecretWrites(nd.pending) && !slices.Contains(changes, "remote") {
+		changes = append(changes, "remote")
+		sort.Strings(changes)
+	}
+	return changes
+}
+
+// updateDetails is the audit details of an update: what changed, and, for a write that weakens the member `vulnerabilities`,
+// `block: lifted` (Q-VULN-69).
+func updateDetails(r Repository, changes []string, cur, nd *Document) eventDetails {
+	d := eventDetails{Class: r.Class, Format: r.Format, Changes: changes, Project: r.ProjectKey}
+	if weak := weakenedVulnerabilities(cur, nd); len(weak) > 0 {
+		d.Block, d.Weakened = "lifted", weak
+	}
+	return d
 }
 
 // afterWrite records the audit event and the change-log row of a write in the

@@ -162,6 +162,19 @@ func (s *Service) scopeOf(ctx context.Context, rv repoView, name string, inTx cl
 	return ScopeMatched, "", nil
 }
 
+// ScopeOf is the table of R-VULN-010 for a reader that is not the evaluation, the views of the report: the one scope function
+// of the installation, the claim rule included (A5, Q-VULN-70). It reads the repository's own facts and the replica's claim
+// index only; claimRepo names the repository whose claim made the name internal. A repository the scanning does not apply to
+// (virtual, or a format without the adapter) is [ScopeNotCovered].
+func ScopeOf(ctx context.Context, repo repository.Repository, name string, rule ClaimRule, publicUpstreams map[string][]string) (sc Scope, claimRepo string, err error) {
+	rv, ok := viewOf(repo)
+	if !ok {
+		return ScopeNotCovered, "", nil
+	}
+	s := &Service{rule: rule, o: Options{PublicUpstreams: publicUpstreams}}
+	return s.scopeOf(ctx, rv, name, nil)
+}
+
 // claimReader is the read of a repository's own claims in the writing transaction.
 type claimReader interface {
 	RepoClaims(ctx context.Context, repoID int64) ([]string, error)

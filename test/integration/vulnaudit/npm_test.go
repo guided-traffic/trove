@@ -186,9 +186,9 @@ func TestR_VULN_017_WhereTheAuditStaysRefused(t *testing.T) {
 	}
 
 	// An installation that switched the scanning off answers audits like disabled.
-	e.st.Exec(`UPDATE repositories SET config = '{"npm":{"audit":{"mode":"local"}}}'::jsonb || (config - 'npm') WHERE key = $1`, npmRemote)
+	e.st.Exec(`UPDATE repositories SET config = '{"npm":{"audit":{"local":true}}}'::jsonb || (config - 'npm') WHERE key = $1`, npmRemote)
 	off := e.replica("web-off", "TROVE_VULNERABILITIES_ENABLED=false")
 	if x := e.post(off, npmRemote, bulk, e.tokReader, body); x.Status != http.StatusNotImplemented {
-		t.Errorf("mode local with the scanning disabled: %d %s", x.Status, x.Body)
+		t.Errorf("local with the scanning disabled: %d %s", x.Status, x.Body)
 	}
 }

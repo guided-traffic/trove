@@ -3,6 +3,7 @@ package npm
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -328,7 +329,7 @@ func TestR_VULN_017_WhereLocalStillAnswers501(t *testing.T) {
 		{"the cache view", formats.Remote, `{}`, formats.EndpointFacts{Name: "default", CacheFill: true}, true, nil},
 		{"an endpoint with exposure rules", formats.Remote, `{}`, formats.EndpointFacts{Name: "customers", Rules: true, CacheFill: true}, false, nil},
 		{"mode disabled", formats.Remote, `{"npm":{"audit":{"mode":"disabled"}}}`, formats.EndpointFacts{Name: "default", CacheFill: true}, false, nil},
-		{"mode local while the scanning is off", formats.Remote, `{"npm":{"audit":{"mode":"local"}}}`, formats.EndpointFacts{Name: "default", CacheFill: true}, false, func(s *scanning) { s.enabled = false }},
+		{"local while the scanning is off", formats.Remote, `{"npm":{"audit":{"local":true}}}`, formats.EndpointFacts{Name: "default", CacheFill: true}, false, func(s *scanning) { s.enabled = false }},
 		{"mode forward on a local repository", formats.Local, `{"npm":{"audit":{"mode":"forward"}}}`, formats.EndpointFacts{Name: "default", CacheFill: true}, false, nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -384,6 +385,68 @@ func TestR_VULN_017_WhereLocalStillAnswers501(t *testing.T) {
 	})
 }
 
+// TestR_VULN_017_AHostileBodyIsBounded (S4, Q-VULN-71): the versions of one name and of the whole body are capped in mode local,
+// a cancelled request stops the evaluation, and a name with thousands of ranges is evaluated without normalizing the ranges
+// per version.
+func TestR_VULN_017_AHostileBodyIsBounded(t *testing.T) {
+	versions := func(n int) string {
+		var b strings.Builder
+		for i := range n {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			fmt.Fprintf(&b, `"1.%d.%d"`, i/1000, i%1000)
+		}
+		return b.String()
+	}
+	h := localHost(t, formats.Remote, `{"npm":{"audit":{"maxBodySize":"10MiB"}}}`, newScanning())
+	t.Run("one name over the per-name bound", func(t *testing.T) {
+		r := audit(t, h, auditBulkPath, `{"a":[`+versions(auditMaxVersionsPerName+1)+`]}`)
+		if r.Code != 413 || errorCode(t, r) != errs.CodeNPMTooLarge {
+			t.Fatalf("%d %s", r.Code, r.Body)
+		}
+	})
+	t.Run("the bound itself is answered", func(t *testing.T) {
+		if r := audit(t, h, auditBulkPath, `{"a":[`+versions(auditMaxVersionsPerName)+`]}`); r.Code != 200 {
+			t.Fatalf("%d %s", r.Code, r.Body)
+		}
+	})
+	t.Run("the whole body over the total bound", func(t *testing.T) {
+		var b strings.Builder
+		b.WriteString("{")
+		per := versions(auditMaxVersionsPerName)
+		for i := 0; i <= auditMaxVersions/auditMaxVersionsPerName; i++ {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			fmt.Fprintf(&b, `"p%d":[%s]`, i, per)
+		}
+		b.WriteString("}")
+		r := audit(t, h, auditBulkPath, b.String())
+		if r.Code != 413 || errorCode(t, r) != errs.CodeNPMTooLarge {
+			t.Fatalf("%d %.200s", r.Code, r.Body)
+		}
+	})
+	t.Run("many ranges and many versions are evaluated", func(t *testing.T) {
+		entry := advisory.Affected{Name: "a"}
+		for i := 0; i < 200; i++ {
+			entry.Ranges = append(entry.Ranges, advisory.Range{Type: advisory.RangeSemver, Events: []advisory.Event{
+				{Kind: advisory.EventIntroduced, Version: fmt.Sprintf("%d.0.0", i+10)}, {Kind: advisory.EventFixed, Version: fmt.Sprintf("%d.5.0", i+10)},
+			}})
+		}
+		a := vulnAdvisory("GHSA-aaaa-bbbb-0001", "a", advisory.SeverityHigh, entry)
+		d := localHost(t, formats.Remote, `{"npm":{"audit":{"maxBodySize":"10MiB"}}}`, newScanning(a))
+		start := time.Now()
+		r := audit(t, d, auditBulkPath, `{"a":[`+versions(auditMaxVersionsPerName)+`,"10.1.0"]}`)
+		if r.Code != 413 && r.Code != 200 {
+			t.Fatalf("%d %s", r.Code, r.Body)
+		}
+		if took := time.Since(start); took > 5*time.Second {
+			t.Errorf("the evaluation took %s", took)
+		}
+	})
+}
+
 // TestR_VULN_017_TheDefaultMode: local while the installation answers audits from its data, else the mode of R-NPM-038.
 func TestR_VULN_017_TheDefaultMode(t *testing.T) {
 	for _, c := range []struct {
@@ -400,8 +463,16 @@ func TestR_VULN_017_TheDefaultMode(t *testing.T) {
 		{formats.Virtual, `{}`, false, true, auditForward},
 		{formats.Local, `{}`, false, true, auditDisabled},
 		{formats.Remote, `{}`, false, false, auditForward},
-		{formats.Remote, `{"npm":{"audit":{"mode":"local"}}}`, false, true, auditLocal},
-		{formats.Remote, `{"npm":{"audit":{"mode":"local"}}}`, false, false, auditDisabled},
+		{formats.Remote, `{"npm":{"audit":{"local":true}}}`, false, true, auditLocal},
+		{formats.Remote, `{"npm":{"audit":{"local":true}}}`, false, false, auditDisabled},
+		{formats.Remote, `{"npm":{"audit":{"local":true,"mode":"forward"}}}`, true, true, auditLocal},
+		// npm.audit.local false hands the answer to the frozen mode of v0.15.1 (Q-VULN-74).
+		{formats.Remote, `{"npm":{"audit":{"local":false}}}`, true, true, auditForward},
+		{formats.Local, `{"npm":{"audit":{"local":false}}}`, true, true, auditDisabled},
+		{formats.Remote, `{"npm":{"audit":{"local":false,"mode":"disabled"}}}`, true, true, auditDisabled},
+		{formats.Remote, `{"npm":{"audit":{"local":false,"mode":"forward"}}}`, true, true, auditForward},
+		// a stored mode "local" of a document written before the member existed is no mode: the default applies.
+		{formats.Remote, `{"npm":{"audit":{"mode":"local"}}}`, true, true, auditLocal},
 		{formats.Remote, `{"npm":{"audit":{"mode":"forward"}}}`, true, true, auditForward},
 		{formats.Local, `{"npm":{"audit":{"mode":"forward"}}}`, true, true, auditDisabled},
 		{formats.Remote, `{"npm":{"audit":{"mode":"disabled"}}}`, true, true, auditDisabled},

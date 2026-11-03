@@ -1626,6 +1626,9 @@ export interface paths {
          *     obtained by `GET` can be sent back: the read-only members are ignored. `If-Match` is required
          *     (`428` without it, `412` with `currentEtag` when stale, `*` for a deliberate blind write). Key,
          *     class and format cannot change (`422 validation_failed`, field code `immutable`). `PUT` never creates a repository.
+         *     A project administrator's replace that weakens the member `vulnerabilities`, which includes leaving out a member that sets
+         *     stricter values than the defaults, answers `403 vulnerability_weakening_refused` unless the caller also holds
+         *     `vulnerabilities:triage` (R-VULN-002, Q-VULN-69).
          */
         put: operations["replaceRepository"];
         post?: never;
@@ -1649,6 +1652,9 @@ export interface paths {
          *     (R-REPO-011): arrays are replaced as a whole, `null` removes an optional setting. `If-Match` is
          *     required. A patch that changes nothing writes nothing: same version, no event. Key, class and
          *     format cannot change (`422 validation_failed`, field code `immutable`); a value equal to the stored one is ignored.
+         *     A project administrator's patch that weakens the member `vulnerabilities` (`enabled` to false, fewer public advisories
+         *     matched, `blockMalicious` to false, `onMissingData` from `block` to `allow`) answers `403 vulnerability_weakening_refused`
+         *     unless the caller also holds `vulnerabilities:triage` (R-VULN-002, Q-VULN-69).
          */
         patch: operations["updateRepository"];
         trace?: never;
@@ -5607,14 +5613,19 @@ export interface components {
              */
             audit?: {
                 /**
-                 * @description `local` answers from trove's own advisory data and sends nothing out (every class; `503 vulnerability_data_unavailable`
-                 *     until the npm data is complete; answers like `disabled` while `vulnerabilities.enabled` is false); `forward` answers
-                 *     through the first remote that forwards (remote and virtual repositories; a local repository answers like `disabled`);
-                 *     `disabled` answers 501 `npm_audit_unavailable`. Left out, the mode is `local` while `vulnerabilities.enabled` is true and
-                 *     the OSV source is not off, else `forward` on remote and virtual repositories and `disabled` on local ones.
+                 * @description `true` answers from trove's own advisory data and sends nothing out (every class; `503 vulnerability_data_unavailable`
+                 *     until the npm data is complete; answers like `disabled` while `vulnerabilities.enabled` is false); `false` lets `mode`
+                 *     apply as before the scanning existed. Left out, the audit answers from trove's data while `vulnerabilities.enabled` is true
+                 *     and the OSV source is not `off` and the document sets no `mode`; a document that sets `mode` keeps it (Q-VULN-74).
+                 */
+                local?: boolean;
+                /**
+                 * @description Used while `local` is not `true`. `forward` answers through the first remote that forwards (remote and virtual
+                 *     repositories; a local repository answers like `disabled`); `disabled` answers 501 `npm_audit_unavailable`. Left out,
+                 *     and with `local` false, the mode is `forward` on remote and virtual repositories and `disabled` on local ones.
                  * @enum {string}
                  */
-                mode?: "local" | "forward" | "disabled";
+                mode?: "forward" | "disabled";
                 /**
                  * Format: uri
                  * @description Mode `forward` only. The https registry URL of the advisory provider, without user info, query or fragment; null is the remote's

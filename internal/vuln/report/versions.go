@@ -2,15 +2,14 @@ package report
 
 import (
 	"context"
-	"net/url"
 	"slices"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/vuln"
 	"github.com/guided-traffic/trove/internal/vuln/advisory"
+	"github.com/guided-traffic/trove/internal/vuln/evaluate"
 	"github.com/guided-traffic/trove/internal/vuln/store"
 )
 
@@ -42,57 +41,21 @@ func (s *Service) stale(syncedAt *time.Time, now time.Time) bool {
 	return syncedAt != nil && s.cfg.StaleAfter > 0 && now.Sub(*syncedAt) > s.cfg.StaleAfter
 }
 
-// publicUpstream reports whether the host of a remote repository's upstream URL is a public registry of its format
-// (vulnerabilities.matching.public_upstreams, R-VULN-010).
-func (s *Service) publicUpstream(r repository.Repository) bool {
-	rs, ok := r.Remote()
-	if !ok {
-		return false
-	}
-	u, err := url.Parse(rs.URL)
-	if err != nil {
-		return false
-	}
-	host := strings.ToLower(u.Hostname())
-	return slices.ContainsFunc(s.cfg.PublicUpstreams[r.Format], func(h string) bool { return strings.EqualFold(strings.TrimSpace(h), host) })
-}
-
-// matchesPublic is the table of R-VULN-010 for a repository whose scanning is on: whether public advisories apply to the
-// versions of the repository at all (a local repository's internal names are the version's matter, internalName).
-func (s *Service) matchesPublic(r repository.Repository) (matched bool, local bool) {
-	set := r.VulnerabilitySettings()
-	switch r.Class {
-	case repository.Remote:
-		switch set.MatchPublicAdvisories {
-		case vuln.MatchAlways:
-			return true, false
-		case vuln.MatchNever:
-			return false, false
-		}
-		return s.publicUpstream(r), false
-	default:
-		return set.MatchPublicAdvisories != vuln.MatchNever, true
-	}
-}
-
-// evaluation derives the evaluation state of a repository's versions (R-VULN-001): name is the package of a version, "" for
-// the repository as a whole, which a local repository's names count as public for.
+// evaluation derives the evaluation state of a repository's versions (R-VULN-001) with the scope function of the evaluation
+// (R-VULN-010, [evaluate.ScopeOf]): name is the package of a version, "" for the repository as a whole, which a local
+// repository's names count as public for.
 func (s *Service) evaluation(ctx context.Context, r repository.Repository, name string, data map[string]DataInfo) vuln.Evaluation {
 	p := r.VulnerabilityPolicy(s.cfg.Enabled, s.cfg.Enforcement)
 	if !p.Enabled {
 		return vuln.EvaluationNotCovered
 	}
-	matched, local := s.matchesPublic(r)
-	if !matched {
-		if local {
-			return vuln.EvaluationInternal
-		}
+	// An error of the rule leaves the name matched, as the evaluation does: a rule that cannot read a claim withholds less.
+	sc, _, _ := evaluate.ScopeOf(ctx, r, name, s.rule, s.cfg.PublicUpstreams)
+	switch sc {
+	case evaluate.ScopeInternal:
+		return vuln.EvaluationInternal
+	case evaluate.ScopeNotCovered:
 		return vuln.EvaluationNotCovered
-	}
-	if local && name != "" && r.VulnerabilitySettings().MatchPublicAdvisories == vuln.MatchAuto && s.adv != nil {
-		if internal, err := s.adv.InternalNames(ctx, r.Format, []string{name}); err == nil && internal[name] {
-			return vuln.EvaluationInternal
-		}
 	}
 	if data[p.Ecosystem].Complete {
 		return vuln.EvaluationEvaluated

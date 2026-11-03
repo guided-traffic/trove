@@ -1298,7 +1298,6 @@ func (e ManualHeadingLevel) Valid() bool {
 const (
 	NpmSettingsAuditModeDisabled NpmSettingsAuditMode = "disabled"
 	NpmSettingsAuditModeForward  NpmSettingsAuditMode = "forward"
-	NpmSettingsAuditModeLocal    NpmSettingsAuditMode = "local"
 )
 
 // Valid indicates whether the value is a known member of the NpmSettingsAuditMode enum.
@@ -1307,8 +1306,6 @@ func (e NpmSettingsAuditMode) Valid() bool {
 	case NpmSettingsAuditModeDisabled:
 		return true
 	case NpmSettingsAuditModeForward:
-		return true
-	case NpmSettingsAuditModeLocal:
 		return true
 	default:
 		return false
@@ -5339,14 +5336,18 @@ type NpmSettings struct {
 	// Audit Every class (R-NPM-038, R-VULN-017). The security audit endpoint: answer from trove's own advisory data, or
 	// forward the names this remote has fetched, and that nothing marks internal, to an advisory provider.
 	Audit *struct {
+		// Local `true` answers from trove's own advisory data and sends nothing out (every class; `503 vulnerability_data_unavailable`
+		// until the npm data is complete; answers like `disabled` while `vulnerabilities.enabled` is false); `false` lets `mode`
+		// apply as before the scanning existed. Left out, the audit answers from trove's data while `vulnerabilities.enabled` is true
+		// and the OSV source is not `off` and the document sets no `mode`; a document that sets `mode` keeps it (Q-VULN-74).
+		Local *bool `json:"local,omitempty"`
+
 		// MaxBodySize The largest audit body as sent, `1KiB` to `10MiB`; ten times that decompressed. Larger bodies answer 413.
 		MaxBodySize *string `json:"maxBodySize,omitempty"`
 
-		// Mode `local` answers from trove's own advisory data and sends nothing out (every class; `503 vulnerability_data_unavailable`
-		// until the npm data is complete; answers like `disabled` while `vulnerabilities.enabled` is false); `forward` answers
-		// through the first remote that forwards (remote and virtual repositories; a local repository answers like `disabled`);
-		// `disabled` answers 501 `npm_audit_unavailable`. Left out, the mode is `local` while `vulnerabilities.enabled` is true and
-		// the OSV source is not off, else `forward` on remote and virtual repositories and `disabled` on local ones.
+		// Mode Used while `local` is not `true`. `forward` answers through the first remote that forwards (remote and virtual
+		// repositories; a local repository answers like `disabled`); `disabled` answers 501 `npm_audit_unavailable`. Left out,
+		// and with `local` false, the mode is `forward` on remote and virtual repositories and `disabled` on local ones.
 		Mode *NpmSettingsAuditMode `json:"mode,omitempty"`
 
 		// ProviderURL Mode `forward` only. The https registry URL of the advisory provider, without user info, query or fragment; null is the remote's
@@ -5371,11 +5372,9 @@ type NpmSettings struct {
 	ServeRemovedVersions *bool `json:"serveRemovedVersions,omitempty"`
 }
 
-// NpmSettingsAuditMode `local` answers from trove's own advisory data and sends nothing out (every class; `503 vulnerability_data_unavailable`
-// until the npm data is complete; answers like `disabled` while `vulnerabilities.enabled` is false); `forward` answers
-// through the first remote that forwards (remote and virtual repositories; a local repository answers like `disabled`);
-// `disabled` answers 501 `npm_audit_unavailable`. Left out, the mode is `local` while `vulnerabilities.enabled` is true and
-// the OSV source is not off, else `forward` on remote and virtual repositories and `disabled` on local ones.
+// NpmSettingsAuditMode Used while `local` is not `true`. `forward` answers through the first remote that forwards (remote and virtual
+// repositories; a local repository answers like `disabled`); `disabled` answers 501 `npm_audit_unavailable`. Left out,
+// and with `local` false, the mode is `forward` on remote and virtual repositories and `disabled` on local ones.
 type NpmSettingsAuditMode string
 
 // NpmSettingsDistTagStrategy Virtual repositories (R-NPM-031). How the other dist-tags are merged.

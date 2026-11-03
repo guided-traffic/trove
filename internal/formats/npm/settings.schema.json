@@ -37,10 +37,14 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "local": {
+          "description": "true answers from trove's own advisory data and sends nothing out (every class; 503 vulnerability_data_unavailable until the npm data is complete; answers like disabled while vulnerabilities.enabled is false); false lets mode apply as before the scanning existed. Left out, the audit answers from trove's data while vulnerabilities.enabled is true and the OSV source is not off and the document sets no mode; a document that sets mode keeps it.",
+          "type": "boolean"
+        },
         "mode": {
-          "description": "local answers from trove's own advisory data and sends nothing out (every class; 503 vulnerability_data_unavailable until the npm data is complete; answers like disabled while vulnerabilities.enabled is false); forward answers through the first remote that forwards (remote and virtual repositories; a local repository answers like disabled); disabled answers 501 npm_audit_unavailable. Left out, the mode is local while vulnerabilities.enabled is true and the OSV source is not off, else forward on remote and virtual repositories and disabled on local ones.",
+          "description": "Used while local is not true. forward answers through the first remote that forwards (remote and virtual repositories; a local repository answers like disabled); disabled answers 501 npm_audit_unavailable. Left out, and with local false, the mode is forward on remote and virtual repositories and disabled on local ones.",
           "type": "string",
-          "enum": ["local", "forward", "disabled"]
+          "enum": ["forward", "disabled"]
         },
         "providerURL": {
           "description": "Mode forward only. The https registry URL of the advisory provider, without user info, query or fragment; null is the remote's upstream URL. The provider gets the repository's sealed upstream credentials only when it is the upstream's origin or an extraHosts entry with sendCredentials (R-REPO-033), never through the URL.",

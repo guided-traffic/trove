@@ -29,23 +29,30 @@ const (
 	auditLocalNotice = "trove audited %d of %d packages from its own advisory data; %d internal names were not matched against public advisories"
 	// auditUnimported is the 503 before the npm data is complete.
 	auditUnimported = "trove's advisory data for npm is not imported yet"
+	// auditMaxVersionsPerName and auditMaxVersions bound the versions of one name and of the whole body in mode local, which
+	// evaluates every version against every advisory of its name (S4, Q-VULN-71): a lockfile lists a handful of versions per
+	// name, and a body above these bounds is a request for work the answer does not need. 413 npm_too_large.
+	auditMaxVersionsPerName = 500
+	auditMaxVersions        = 200_000
 	// malwareCWE is the weakness a malicious record without CWE identifiers is reported with.
 	malwareCWE = "CWE-506"
 )
 
-// auditModeOf resolves the audit mode of a repository of the class (R-VULN-017, Q-VULN-44). A mode the document sets is
-// used, except that local needs the installation's vulnerabilities.enabled, and forward needs a class that can forward
-// (a local repository has no upstream); both answer like disabled otherwise. A document that leaves the mode out is
-// local while the installation answers audits from its own data, else forward on remote and virtual repositories and
-// disabled on local ones (R-NPM-038).
+// auditModeOf resolves the audit mode of a repository of the class (R-VULN-017, Q-VULN-44, Q-VULN-74). npm.audit.local true
+// answers from trove's data, which needs the installation's vulnerabilities.enabled and answers like disabled otherwise.
+// npm.audit.local false, or a document without it that sets npm.audit.mode, leaves the answer to the mode of v0.15.1:
+// forward needs a class that can forward (a local repository has no upstream) and answers like disabled otherwise. A
+// document that sets neither is local while the installation answers audits from its own data, else forward on remote and
+// virtual repositories and disabled on local ones (R-NPM-038).
 func auditModeOf(h formats.Host, class formats.Class, s auditSettings) string {
 	d := h.Vulnerabilities()
-	switch s.Mode {
-	case auditLocal:
+	if s.Local != nil && *s.Local {
 		if d.Enabled() {
 			return auditLocal
 		}
 		return auditDisabled
+	}
+	switch s.Mode {
 	case auditForward:
 		if class == formats.Local {
 			return auditDisabled
@@ -55,7 +62,7 @@ func auditModeOf(h formats.Host, class formats.Class, s auditSettings) string {
 		return auditDisabled
 	}
 	switch {
-	case d.LocalByDefault():
+	case s.Local == nil && d.LocalByDefault():
 		return auditLocal
 	case class == formats.Local:
 		return auditDisabled
@@ -84,6 +91,9 @@ func (f *Format) handleAuditLocal(ctx context.Context, rq *formats.Request, w ht
 	if err != nil {
 		return err
 	}
+	if err := checkLocalBounds(rq.Repo.Key, body); err != nil {
+		return err
+	}
 	data := rq.Host.Vulnerabilities()
 	state := data.State(auditEcosystem)
 	if !state.Complete {
@@ -110,7 +120,7 @@ func (f *Format) handleAuditLocal(ctx context.Context, rq *formats.Request, w ht
 	if err != nil {
 		return err
 	}
-	out, err := renderLocalAudit(data, body, ask, found)
+	out, err := renderLocalAudit(ctx, body, ask, found)
 	if err != nil {
 		return err
 	}
@@ -129,6 +139,20 @@ func (f *Format) handleAuditLocal(ctx context.Context, rq *formats.Request, w ht
 	}
 	auditHeaders(w, headerValue(notice))
 	return writeJSON(w, http.StatusOK, out)
+}
+
+// checkLocalBounds refuses a body whose versions the local audit would have to evaluate in a number that no lockfile has.
+func checkLocalBounds(key string, body map[string][]string) error {
+	total := 0
+	for n, vs := range body {
+		total += len(vs)
+		if len(vs) > auditMaxVersionsPerName || total > auditMaxVersions {
+			return errs.E(errs.TooLarge, errs.CodeNPMTooLarge, fmt.Sprintf(
+				"The audit body exceeds what %s answers from its own advisory data: at most %d versions of one package (%q has %d) and %d versions in all.",
+				key, auditMaxVersionsPerName, n, len(vs), auditMaxVersions))
+		}
+	}
+	return nil
 }
 
 // headerValue strips CR and LF from a header value (R-VULN-017).
@@ -201,6 +225,7 @@ func slicesClone(in []advisory.Affected) []advisory.Affected {
 type requestedVersion struct {
 	raw, canonical string
 	valid          bool
+	parsed         semver.Version // set when valid; parsed once, for the order
 }
 
 // requestedVersions normalizes the versions of one name, dropping duplicates, in the order of precedence.
@@ -217,17 +242,24 @@ func requestedVersions(in []string) []requestedVersion {
 			continue
 		}
 		seen[key] = true
-		out = append(out, requestedVersion{raw: v, canonical: key, valid: ok})
+		rv := requestedVersion{raw: v, canonical: key, valid: ok}
+		if ok {
+			rv.parsed, rv.valid = parseOnce(key)
+		}
+		out = append(out, rv)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return versionLess(out[i], out[j]) })
 	return out
 }
 
+func parseOnce(s string) (semver.Version, bool) {
+	v, err := semver.Parse(s)
+	return v, err == nil
+}
+
 func versionLess(a, b requestedVersion) bool {
 	if a.valid && b.valid {
-		x, _ := semver.Parse(a.canonical)
-		y, _ := semver.Parse(b.canonical)
-		if c := semver.Compare(x, y); c != 0 {
+		if c := semver.Compare(a.parsed, b.parsed); c != 0 {
 			return c < 0
 		}
 	}
@@ -239,7 +271,7 @@ func versionLess(a, b requestedVersion) bool {
 
 // renderLocalAudit builds the answer: for each asked name the advisories that affect a requested version, with the ids of
 // one answer assigned together (Q-VULN-17). A name without an advisory is absent.
-func renderLocalAudit(_ formats.VulnerabilityData, body map[string][]string, ask []string, found map[string][]advisory.Advisory) (map[string][]localAdvisory, error) {
+func renderLocalAudit(ctx context.Context, body map[string][]string, ask []string, found map[string][]advisory.Advisory) (map[string][]localAdvisory, error) {
 	type hit struct {
 		g        advisoryGroup
 		text     string
@@ -248,12 +280,25 @@ func renderLocalAudit(_ formats.VulnerabilityData, body map[string][]string, ask
 	hits := map[string][]hit{}
 	var canonicals []string
 	for _, n := range ask {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		versions := requestedVersions(body[n])
 		for _, g := range groupAdvisories(found[n]) {
+			// The ranges of an entry are normalized and sorted once, not once per requested version.
+			prepared := make([]*match.Entry, len(g.entries))
+			for i, e := range g.entries {
+				prepared[i] = match.Prepare(vulnAdapter, e)
+			}
 			var affected []requestedVersion
-			for _, v := range versions {
-				for _, e := range g.entries {
-					if match.Affects(vulnAdapter, e, v.canonical).Affected {
+			for i, v := range versions {
+				if i%256 == 0 {
+					if err := ctx.Err(); err != nil {
+						return nil, err
+					}
+				}
+				for _, e := range prepared {
+					if e.Affects(v.canonical).Affected {
 						affected = append(affected, v)
 						break
 					}

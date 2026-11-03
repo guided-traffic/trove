@@ -43,6 +43,8 @@ type vulnArea struct {
 	enabled bool
 	// advisories reads advisory data for the client audits; nil while vulnerabilities.enabled is false.
 	advisories vuln.Advisories
+	// rule is the internal-names rule of R-VULN-010 behind the advisories; the report's views apply it too.
+	rule evaluate.ClaimRule
 	// pages is the cache vuln_nuget_page of the NuGet vulnerability page.
 	pages *store.Pages
 	// localAudits is whether the client-audit modes that a repository document leaves out default to local: the scanning is

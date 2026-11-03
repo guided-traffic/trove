@@ -1893,20 +1893,21 @@ names, each with a list of versions:
   when its replica starts to drain ends before the shutdown deadline
   ([architecture.md](../architecture.md) R-ARCH-024, R-NPM-046).
 - **Mode `local`, from M4b** ([vulnerability-scanning.md](../vulnerability-scanning.md)
-  R-VULN-017, Q-VULN-9). The modes become `local | forward | disabled`, and `npm.audit` becomes a
-  member of every class: `local` and `disabled` on every class, `forward` on remote and virtual
+  R-VULN-017, Q-VULN-9, Q-VULN-74). `npm.audit.mode` stays the closed enum `forward | disabled`
+  (R-ARCH-025); the new boolean `npm.audit.local` answers from trove's data. `npm.audit` becomes a
+  member of every class: `local: true` and `disabled` on every class, `forward` on remote and virtual
   repositories (a virtual repository in `forward` forwards through its first forwarding member, as
-  above). In mode `local` trove answers the bulk endpoint from its own advisory data on local,
+  above). With `npm.audit.local: true` ("mode `local`" in the text of this page) trove answers the bulk endpoint from its own advisory data on local,
   remote and virtual repositories and sends nothing out; a virtual repository answers itself and
   consults no member. The body bounds and the request handling above apply in every mode;
-  `providerURL` and `timeout` apply to `forward` only. The default is `local` while the
+  `providerURL` and `timeout` apply to `forward` only. `local: false` leaves the answer to `mode`; `local: true` wins over `mode`. A document that sets neither is `local` while the
   installation's `vulnerabilities.enabled` is `true` and its OSV source is not `off` (R-VULN-025);
   otherwise it is the default above: `forward` on remote and virtual repositories, `disabled` on
   local ones. The 501 cases above then hold for modes `forward` and `disabled`; in mode `local`
   only the cache view and an endpoint with exposure rules (R-NPM-048, Q-VULN-19) answer 501, a local
   repository and an offline remote answer, and while trove's npm advisory data is not complete the
   answer is 503 `vulnerability_data_unavailable` (R-NPM-005). With the installation's
-  `vulnerabilities.enabled: false`, mode `local` answers like `disabled`. npm 6's endpoints keep
+  `vulnerabilities.enabled: false`, `local: true` answers like `disabled`. A document that sets `mode` and not `local` keeps its mode. npm 6's endpoints keep
   their 501 in every mode, with the text that names the bulk endpoint where it is served.
 
 Configuration (`npm` section of a remote repository, validated by
@@ -2564,7 +2565,7 @@ document and before compression:
   (R-NPM-038) answers 501 `npm_audit_unavailable`, as in mode `disabled`, because forwarding
   would contact an upstream. It does so on an endpoint with exposure rules as well, because the
   split into forwarded and withheld names tells which names a remote has fetched, the fact
-  `Cache-Status` is hidden for there (Q-EP-60, Q-NPM-62). From M4b, mode `local`
+  `Cache-Status` is hidden for there (Q-EP-60, Q-NPM-62). From M4b, mode `local` (`npm.audit.local: true`, Q-VULN-74)
   ([vulnerability-scanning.md](../vulnerability-scanning.md) R-VULN-017) contacts no upstream, so
   an endpoint with `cache_fill: false` answers audits in that mode; an endpoint with exposure rules
   keeps the 501 in every mode, because in mode `local` the withheld names tell which names the
@@ -2779,7 +2780,7 @@ Withdrawn packages stay forwardable, because malware advisories are exactly what
 find. The development agent would revisit this if `trove_npm_audit_names_withheld_total{reason="not_proxied"}`
 stays high for real users, which would call for an opt-in per remote to forward unproxied names.
 
-Revisited 2026-10-31: from M4b the default is mode `local` while scanning is on
+Revisited 2026-10-31: from M4b the default is `npm.audit.local` (Q-VULN-74) while scanning is on
 ([vulnerability-scanning.md](../vulnerability-scanning.md) Q-VULN-9): the audit is answered from
 trove's own advisory data and nothing is sent out, so forwarding becomes opt-in per remote and
 virtual repository. Choice (c) stays the rule of mode `forward`, and its default where scanning is

@@ -23,11 +23,13 @@ FROM vuln_affected af
 JOIN vuln_advisory adv ON adv.ecosystem = af.ecosystem AND adv.id = af.advisory_id
 WHERE af.ecosystem = $1::text AND af.name = ANY($2::text[]) AND adv.withdrawn IS NULL
 ORDER BY af.name, adv.canonical_id, adv.id, af.ord
+LIMIT $3::int
 `
 
 type AuditAdvisoriesForNamesParams struct {
 	Ecosystem string
 	Names     []string
+	MaxRows   int32
 }
 
 type AuditAdvisoriesForNamesRow struct {
@@ -58,9 +60,10 @@ type AuditAdvisoriesForNamesRow struct {
 // The client audits read the non-withdrawn advisories with their affected entries, one row per affected entry. Times are
 // epoch microseconds (0 when absent) and the score a float, so that no driver type leaves the store.
 // The advisories of an ecosystem that name any of the (normalized) names (R-VULN-017): one query for the whole body, over
-// the index vuln_affected_name.
+// the index vuln_affected_name. At most max_rows rows: the caller asks for one more than it accepts and refuses a body that
+// names more.
 func (q *Queries) AuditAdvisoriesForNames(ctx context.Context, arg AuditAdvisoriesForNamesParams) ([]AuditAdvisoriesForNamesRow, error) {
-	rows, err := q.db.Query(ctx, auditAdvisoriesForNames, arg.Ecosystem, arg.Names)
+	rows, err := q.db.Query(ctx, auditAdvisoriesForNames, arg.Ecosystem, arg.Names, arg.MaxRows)
 	if err != nil {
 		return nil, err
 	}

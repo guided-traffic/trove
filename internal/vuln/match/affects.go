@@ -21,25 +21,51 @@ const zeroVersion = "0"
 // version that does not parse matches only through versions[] and every_version. Affects never reads a database and never
 // fails: what it cannot evaluate is counted.
 func Affects(a Adapter, e advisory.Affected, version string) Result {
-	if e.EveryVersion {
-		return Result{Affected: true}
+	return Prepare(a, e).Affects(version)
+}
+
+// Entry is an affected entry prepared for many versions: its ranges are normalized and sorted once, so that a client audit
+// that asks for thousands of versions of one name does not normalize and sort the same events for each of them (R-VULN-017).
+// It gives the answers of [Affects] and is safe for concurrent use.
+type Entry struct {
+	a           Adapter
+	every       bool
+	versions    []string
+	ranges      [][]advisory.Event // sorted events of the evaluable ranges
+	unevaluable int
+}
+
+// Prepare normalizes the entry's ranges with the adapter and sorts their events.
+func Prepare(a Adapter, e advisory.Affected) *Entry {
+	p := &Entry{a: a, every: e.EveryVersion, versions: e.Versions}
+	if p.every {
+		return p
 	}
-	res := Result{Affected: slices.Contains(e.Versions, version)}
-	_, perr := a.CompareVersions(version, version)
-	parses := perr == nil
 	for _, r := range e.Ranges {
 		if r.Type != advisory.RangeSemver && r.Type != advisory.RangeEcosystem {
 			continue
 		}
 		events, ok := normalizeEvents(a, r.Events)
 		if !ok {
-			res.Unevaluable++
+			p.unevaluable++
 			continue
 		}
-		if !parses {
-			continue
-		}
-		if in, fix := evalRange(a, events, version); in {
+		p.ranges = append(p.ranges, sortEvents(a, events))
+	}
+	return p
+}
+
+// Affects is [Affects] for the prepared entry.
+func (p *Entry) Affects(version string) Result {
+	if p.every {
+		return Result{Affected: true}
+	}
+	res := Result{Affected: slices.Contains(p.versions, version), Unevaluable: p.unevaluable}
+	if _, err := p.a.CompareVersions(version, version); err != nil {
+		return res // a stored version that does not parse matches only through versions[] and every_version
+	}
+	for _, events := range p.ranges {
+		if in, fix := evalSorted(p.a, events, version); in {
 			res.Affected = true
 			res.FixAvailable = res.FixAvailable || fix
 		}
@@ -68,10 +94,8 @@ func normalizeEvents(a Adapter, in []advisory.Event) ([]advisory.Event, bool) {
 	return out, true
 }
 
-// evalRange runs the state machine of the OSV schema over the events sorted by version, an introduced event before the
-// others at the same version. in is whether the version is affected; fix whether the interval that contains it ends in a
-// fixed event.
-func evalRange(a Adapter, events []advisory.Event, version string) (in, fix bool) {
+// sortEvents orders the events by version, "0" first and an introduced event before the others at the same version.
+func sortEvents(a Adapter, events []advisory.Event) []advisory.Event {
 	cmp := func(x, y string) int {
 		c, _ := a.CompareVersions(x, y) // every version was checked to parse
 		return c
@@ -91,6 +115,16 @@ func evalRange(a Adapter, events []advisory.Event, version string) (in, fix bool
 		}
 		return rankOf(x.Kind) - rankOf(y.Kind) // two spellings of one version
 	})
+	return sorted
+}
+
+// evalSorted runs the state machine of the OSV schema over the sorted events. in is whether the version is affected; fix
+// whether the interval that contains it ends in a fixed event.
+func evalSorted(a Adapter, sorted []advisory.Event, version string) (in, fix bool) {
+	cmp := func(x, y string) int {
+		c, _ := a.CompareVersions(x, y)
+		return c
+	}
 	opened := -1
 	for i, ev := range sorted {
 		switch ev.Kind {

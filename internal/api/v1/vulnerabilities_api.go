@@ -140,13 +140,13 @@ func severityNames() []string {
 
 // findingFilter reads the filters of the list and the export (R-VULN-020). A virtual repository in the repository filter
 // stands for its members; the scope then narrows them to what the caller can read.
-func findingFilter(lq ListQuery, sn *report.Snapshot) (store.Filter, error) {
+func findingFilter(lq ListQuery, sn *report.Snapshot, caller report.Caller) (store.Filter, error) {
 	f := store.Filter{
 		Formats: splitValues(lq.Filter["format"]), Packages: splitValues(lq.Filter["package"]), PackagePrefix: lq.First("packagePrefix"),
 		Versions: splitValues(lq.Filter["version"]), Advisory: lq.First("advisory"), Q: lq.First("q"),
 	}
 	if reps, ok := lq.Filter["repository"]; ok {
-		f.Repos, f.HasRepos = sn.Expand(splitValues(reps)), true
+		f.Repos, f.HasRepos = sn.ExpandFor(caller, splitValues(reps)), true
 	}
 	var err error
 	if f.Severities, err = queryManyOf(lq, "severity", severityNames()); err != nil {
@@ -246,7 +246,7 @@ func (s *Server) ListVulnerabilityFindings(w http.ResponseWriter, r *http.Reques
 	ctx, sn, caller, err := s.vulnRequest(r, rep)
 	var f store.Filter
 	if err == nil {
-		f, err = findingFilter(lq, sn)
+		f, err = findingFilter(lq, sn, caller)
 	}
 	var after *store.After
 	if err == nil && lq.After != nil {
@@ -724,7 +724,7 @@ func (s *Server) ExportVulnerabilityFindings(w http.ResponseWriter, r *http.Requ
 	ctx, sn, caller, err := s.vulnRequest(r, rep)
 	var f store.Filter
 	if err == nil {
-		f, err = findingFilter(lq, sn)
+		f, err = findingFilter(lq, sn, caller)
 	}
 	var sc report.Scope
 	if err == nil {

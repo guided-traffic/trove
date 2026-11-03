@@ -697,6 +697,7 @@ match.Adapter: method AdvisoryName(string) (string, bool)
 match.Adapter: method AdvisoryVersion(string) (string, bool)
 match.Adapter: method CompareVersions(string, string) (int, error)
 match.Adapter: method Ecosystem() string
+match.Entry: method Affects(string) Result
 match.Result: field Affected bool
 match.Result: field FixAvailable bool
 match.Result: field Unevaluable int

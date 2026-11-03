@@ -751,9 +751,14 @@ func (s *Server) writeRepository(w http.ResponseWriter, r *http.Request, key str
 	if err == nil {
 		cfg, err = s.holds(r.Context(), capabilityReadConfig)
 	}
+	// A project administrator may weaken the member `vulnerabilities` only with the triage capability (R-VULN-002, Q-VULN-69).
+	var triage bool
+	if err == nil && delegate != "" {
+		triage, err = s.holds(r.Context(), string(authz.VulnerabilitiesTriage))
+	}
 	var st repository.Stored
 	if err == nil {
-		st, err = write(svc, repositoryPrecondition(pre), doc, repository.Write{Project: project, Delegate: delegate})
+		st, err = write(svc, repositoryPrecondition(pre), doc, repository.Write{Project: project, Delegate: delegate, MayWeakenVulnerabilities: triage})
 	}
 	if err != nil {
 		httpserver.Problem(w, r, err)

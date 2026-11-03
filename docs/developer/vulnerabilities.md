@@ -261,7 +261,7 @@ evaluation reads no blob; the test versions have none), the restore hook (no tra
 
 The download block of [R-VULN-015](../spec/vulnerability-scanning.md#r-vuln-015--download-blocking) and [R-VULN-016](../spec/vulnerability-scanning.md#r-vuln-016--refusals-in-the-protocols-shapes).
 Decisions: [Q-VULN-40 to Q-VULN-43](../spec/vulnerability-scanning.md#q-vuln-40--the-download-policy-rides-in-the-item-lookups-repository-reference-and-the-block-is-read-by-that-one-statement).
-The security view, with the gaps H-483 to H-485, is [security/vulnerability-scanning.md](../security/vulnerability-scanning.md).
+The security view, with the gaps H-484 and H-485, is [security/vulnerability-scanning.md](../security/vulnerability-scanning.md).
 
 **The flow of one download.** The route that serves a stored item resolves the policy of the repository the item is read in from the replica's
 snapshot (`repository.Repository.VulnerabilityPolicy`, through `enforce.Enforcer.PolicyOf`) and puts it in the `items.RepoRef` of the lookup.
@@ -321,6 +321,12 @@ What a client's audit reads of the scanning: npm's `local` mode of the bulk endp
 [Q-VULN-44 to Q-VULN-47](../spec/vulnerability-scanning.md#q-vuln-44--how-the-format-learns-the-installations-default-for-the-audit-modes-and-what-an-explicit-mode-means-on-a-class);
 the security view is [security/vulnerability-scanning.md](../security/vulnerability-scanning.md).
 
+| Part | What it does |
+|---|---|
+| `npm.audit.local` and `npm.audit.mode` | `auditModeOf` ([handlers_audit_local.go](../../internal/formats/npm/handlers_audit_local.go)) resolves the pair: `local: true` is local (needs `Enabled()`), `local: false` or a stored `mode` hands over to `forward` / `disabled`, neither is the installation's default (`LocalByDefault()`). `mode` is the frozen enum of v0.15.1, so R-ARCH-025 holds ([Q-VULN-74](../spec/vulnerability-scanning.md#q-vuln-74--the-audit-answers-from-troves-data-through-a-new-boolean-because-npmauditmode-is-a-frozen-enum)) |
+| bounds of the local audit | `checkLocalBounds`: 500 versions per name, 200,000 in all, `413 npm_too_large`; `match.Prepare` normalizes and sorts the ranges of an entry once; `store.Audits.ForNames` reads through the runner's read-only `Read` with a cap of `store.MaxAuditRows` entries; the context is checked in `renderLocalAudit` ([Q-VULN-71](../spec/vulnerability-scanning.md)) |
+| NuGet on a hidden view | `vulnRefusedOn` ([vuln_documents.go](../../internal/formats/nuget/vuln_documents.go)): the cache view and an endpoint with exposure rules neither list nor serve the resource |
+
 ### E · API and triage
 
 Files: [internal/vuln/report](../../internal/vuln/report) (the read side), [internal/vuln/triage](../../internal/vuln/triage) (the status changes),
@@ -332,7 +338,11 @@ How it works:
 | Part | What it does |
 |---|---|
 | `report.Service.Scope` / `PackageScope` | classifies the physical repositories with `authz.ReadScope`; a repository read whole goes to the statements as `whole`, the versions read in part as `rows` (`repo\x1fname\x1fversion`), decided once per distinct version; the package views load the stored versions of the package as candidates ([Q-VULN-50](../spec/vulnerability-scanning.md)) |
-| `queries/vuln_api.sql` | the filter block is generated into `VulnFindingsList` and `VulnFindingsCount` (the same text); the sort key is `(k_num, k_txt, id)` compared bytewise, so the cursor is `[k_num, k_txt, id]`; `blocked`/`blockReason` filters take the repositories' policy as arrays (`enabled_repos`, `malicious_repos`) |
+| `queries/vuln_api.sql` | the filter block is generated into `VulnFindingsList` and `VulnFindingsCount` (the same text); the sort key is `(k_num, k_txt, id)` compared bytewise, so the cursor is `[k_num, k_txt, id]`. `VulnFindingsList` is `WITH base AS NOT MATERIALIZED (filter)` and ten branches, one per sort and direction, each ordering by the expression of an index of [00039](../../internal/meta/postgres/migrations/00039_vulnerabilities_list_indexes.sql) and comparing the cursor against it ([Q-VULN-68](../spec/vulnerability-scanning.md)); a new sort is a branch and an index. `package` also matches the lowercased filter value for NuGet. `blocked`/`blockReason` filters take the repositories' policy as arrays (`enabled_repos`, `malicious_repos`) |
+| one scope function | `report.evaluation` calls `evaluate.ScopeOf` ([scope.go](../../internal/vuln/evaluate/scope.go)) with `Options.Rule` (the `evaluate.ClaimRule` of the audits); `ClaimedMatches` asks the same rule for the holder ([Q-VULN-70](../spec/vulnerability-scanning.md)) |
+| one view of the source state | `store.ReadSources` is the one statement over `vuln_source_state`; `report.SourceViews` the one view, for `Sources`, the `vulnerabilityData` facts (`app/vuln_facts.go`) and the gauges |
+| the repository filter | `Snapshot.ExpandFor(caller, keys)` expands a virtual repository only when the caller reads it |
+| weakening a repository's member | `repository.Write.MayWeakenVulnerabilities` (set by `writeRepository` from `vulnerabilities:triage`) and `delegatedVulnerabilities` ([delegated.go](../../internal/repository/delegated.go)): `403 vulnerability_weakening_refused`; every weakening write adds `block: lifted` and `weakened` to `repository.updated` ([Q-VULN-69](../spec/vulnerability-scanning.md)) |
 | block of a finding | `vuln.Verdict` over `Repository.VulnerabilityPolicy`, in every mode (Q-VULN-49); a version's verdict adds `missing_data` |
 | `triage.Service.Apply` | locks the readable ids in id order, `vuln.CheckTransition`, history row, audit event with `block` set or lifted, journal entry on `set`; per-id results, one bulk id |
 | trend | two aggregate queries (detections and resolutions per day and severity, days before the range summed into the day before) and a running sum in Go |
@@ -434,7 +444,7 @@ a run: [perf/README.md](../../perf/README.md#the-vulnerability-scanning-run).
 | [npm/handlers_audit_local.go](../../internal/formats/npm/handlers_audit_local.go) | mode resolution (`auditModeOf`), the local handler, the answer's members, the notice |
 | [npm/handlers_audit_ranges.go](../../internal/formats/npm/handlers_audit_ranges.go) | `vulnerable_versions` text with the `\|\| =V` completion; `auditAdapter`, npm's face for the matcher |
 | [nuget/vuln_documents.go](../../internal/formats/nuget/vuln_documents.go) | the two documents, the mode (`vulnInfoModeOf`), the listing flag of the service index, the ETags, the page rendering and the NuGet intervals |
-| `npm/settings*.go`, `settings.schema.json`; `nuget/settings*.go`, `settings.schema.json`; `nuget/index.go` | `npm.audit.mode` (`local`, `forward`, `disabled`) on every class; `nuget.vulnerabilityInfo` (`local`, `off`) on every class (`upstream` is refused until R-NUGET-023); the index entry and the ETag input |
+| `npm/settings*.go`, `settings.schema.json`; `nuget/settings*.go`, `settings.schema.json`; `nuget/index.go` | `npm.audit.local` (boolean) and `npm.audit.mode` (`forward`, `disabled`; frozen by R-ARCH-025, Q-VULN-74) on every class; `nuget.vulnerabilityInfo` (`local`, `off`) on every class (`upstream` is refused until R-NUGET-023); the index entry and the ETag input |
 | [test/integration/vulnaudit](../../test/integration/vulnaudit) | the HTTP tier: rows inserted directly, two replicas, claims and epochs published as a writer does |
 **The mode of an audit.** A repository document that sets the mode is read; a document that leaves it out takes the installation's default, which a
 format learns through two Host switches (`Enabled`, `LocalByDefault`; the composition root wires the advisories, and so `Enabled`, only while

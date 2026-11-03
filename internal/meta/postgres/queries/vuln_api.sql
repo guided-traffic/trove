@@ -21,7 +21,8 @@ SELECT r.key AS repo_key, f.package_name AS name, f.version AS version
   JOIN repositories r ON r.id = f.repo_id
  WHERE r.key = ANY(sqlc.arg(keys)::text[])
    AND (cardinality(sqlc.arg(formats)::text[]) = 0 OR r.format = ANY(sqlc.arg(formats)::text[]))
-   AND (cardinality(sqlc.arg(packages)::text[]) = 0 OR f.package_name = ANY(sqlc.arg(packages)::text[]))
+   AND (cardinality(sqlc.arg(packages)::text[]) = 0 OR f.package_name = ANY(sqlc.arg(packages)::text[])
+          OR (f.ecosystem = 'NuGet' AND f.package_name = ANY(SELECT lower(x) FROM unnest(sqlc.arg(packages)::text[]) AS x)))
    AND (sqlc.arg(package_prefix)::text = '' OR starts_with(f.package_name, lower(sqlc.arg(package_prefix)::text)))
    AND (cardinality(sqlc.arg(versions)::text[]) = 0 OR f.version = ANY(sqlc.arg(versions)::text[]))
    AND (cardinality(sqlc.arg(ids)::text[]) = 0 OR f.id::text = ANY(sqlc.arg(ids)::text[]))
@@ -45,29 +46,24 @@ SELECT r.key AS repo_key, p.name, pv.version
 
 -- name: VulnFindingsList :many
 -- One page of the findings the caller can read, in keyset order. sort is severity, detectedAt, package, advisory or status;
--- the sort key is (k_num, k_txt, id), compared bytewise, so a cursor means the same on every replica. The advisory's
--- columns are looked up for the rows of the page only.
-WITH base AS (
+-- the sort key is (k_num, k_txt, id), compared bytewise, so a cursor means the same on every replica. Each sort and direction
+-- is a branch that orders by a stored column or by the expression of an index of 00039 and compares the cursor against the
+-- same expression, so a page reads the first rows of one index in order and stops (Q-VULN-68); a branch whose sort is not
+-- asked does not run. The advisory's columns are looked up for the rows of the page only.
+WITH base AS NOT MATERIALIZED (
   SELECT f.id, r.key AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind, f.severity,
-         f.severity_rank, COALESCE(f.cvss_score, -1)::float8 AS cvss_score, f.known_exploited, f.fix_available,
+         f.severity_rank, f.cvss_score AS cvss_raw, COALESCE(f.cvss_score, -1)::float8 AS cvss_score, f.known_exploited, f.fix_available,
          f.fixed_versions, f.status, COALESCE(f.dismissal_reason, '')::text AS dismissal_reason,
          COALESCE(f.resolved_reason, '')::text AS resolved_reason, COALESCE(f.comment, '')::text AS comment,
-         f.revision, f.detected_at, f.resolved_at, f.status_changed_at, f.status_changed_by,
-         (CASE sqlc.arg(sort)::text
-              WHEN 'severity' THEN f.severity_rank::bigint * 1000 + (COALESCE(f.cvss_score, 0) * 10)::bigint
-              WHEN 'detectedAt' THEN (extract(epoch FROM f.detected_at) * 1000000)::bigint
-              WHEN 'status' THEN (CASE f.status WHEN 'needs_triage' THEN 0 WHEN 'confirmed' THEN 1 WHEN 'blocked' THEN 2 WHEN 'dismissed' THEN 3 ELSE 4 END)::bigint
-              ELSE 0::bigint END)::bigint AS k_num, (CASE sqlc.arg(sort)::text
-              WHEN 'package' THEN f.package_name || chr(31) || f.version
-              WHEN 'advisory' THEN f.advisory_id
-              ELSE '' END)::text AS k_txt
+         f.revision, f.detected_at, f.resolved_at, f.status_changed_at, f.status_changed_by
     FROM vuln_finding f
     JOIN repositories r ON r.id = f.repo_id
    WHERE (r.key = ANY(sqlc.arg(whole)::text[])
           OR concat_ws(chr(31), r.key, f.package_name, f.version) = ANY(sqlc.arg(rows)::text[]))
      AND (NOT sqlc.arg(has_repos)::boolean OR r.key = ANY(sqlc.arg(repos)::text[]))
      AND (cardinality(sqlc.arg(formats)::text[]) = 0 OR r.format = ANY(sqlc.arg(formats)::text[]))
-     AND (cardinality(sqlc.arg(packages)::text[]) = 0 OR f.package_name = ANY(sqlc.arg(packages)::text[]))
+     AND (cardinality(sqlc.arg(packages)::text[]) = 0 OR f.package_name = ANY(sqlc.arg(packages)::text[])
+          OR (f.ecosystem = 'NuGet' AND f.package_name = ANY(SELECT lower(x) FROM unnest(sqlc.arg(packages)::text[]) AS x)))
      AND (sqlc.arg(package_prefix)::text = '' OR starts_with(f.package_name, lower(sqlc.arg(package_prefix)::text)))
      AND (cardinality(sqlc.arg(versions)::text[]) = 0 OR f.version = ANY(sqlc.arg(versions)::text[]))
      AND (sqlc.arg(ecosystem)::text = '' OR f.ecosystem = sqlc.arg(ecosystem)::text)
@@ -100,19 +96,60 @@ WITH base AS (
                              OR position(lower(sqlc.arg(q)::text) in lower(a.id)) > 0
                              OR EXISTS (SELECT 1 FROM unnest(a.aliases) al WHERE position(lower(sqlc.arg(q)::text) in lower(al)) > 0))))
 ), p AS (
-  SELECT * FROM base b
-   WHERE NOT sqlc.arg(has_after)::boolean
-      OR CASE WHEN sqlc.arg(descending)::boolean
-              THEN (b.k_num, b.k_txt COLLATE "C", b.id) < (sqlc.arg(after_num)::bigint, sqlc.arg(after_txt)::text COLLATE "C", sqlc.arg(after_id)::text::uuid)
-              ELSE (b.k_num, b.k_txt COLLATE "C", b.id) > (sqlc.arg(after_num)::bigint, sqlc.arg(after_txt)::text COLLATE "C", sqlc.arg(after_id)::text::uuid) END
-   ORDER BY
-   (CASE WHEN NOT sqlc.arg(descending)::boolean THEN b.k_num END) ASC NULLS LAST,
-   (CASE WHEN sqlc.arg(descending)::boolean THEN b.k_num END) DESC NULLS LAST,
-   (CASE WHEN NOT sqlc.arg(descending)::boolean THEN b.k_txt END) COLLATE "C" ASC NULLS LAST,
-   (CASE WHEN sqlc.arg(descending)::boolean THEN b.k_txt END) COLLATE "C" DESC NULLS LAST,
-   (CASE WHEN NOT sqlc.arg(descending)::boolean THEN b.id END) ASC NULLS LAST,
-   (CASE WHEN sqlc.arg(descending)::boolean THEN b.id END) DESC NULLS LAST
-   LIMIT sqlc.arg(max_rows)::int
+  (SELECT b.*, (b.severity_rank::bigint * 1000 + (COALESCE(b.cvss_raw, 0) * 10)::bigint)::bigint AS k_num, ''::text AS k_txt FROM base b
+    WHERE sqlc.arg(sort)::text = 'severity' AND NOT sqlc.arg(descending)::boolean
+      AND (NOT sqlc.arg(has_after)::boolean OR ((b.severity_rank::bigint * 1000 + (COALESCE(b.cvss_raw, 0) * 10)::bigint), b.id) > (sqlc.arg(after_num)::bigint, sqlc.arg(after_id)::text::uuid))
+    ORDER BY (b.severity_rank::bigint * 1000 + (COALESCE(b.cvss_raw, 0) * 10)::bigint) ASC, b.id ASC LIMIT sqlc.arg(max_rows)::int)
+  UNION ALL
+  (SELECT b.*, (extract(epoch FROM b.detected_at) * 1000000)::bigint AS k_num, ''::text AS k_txt FROM base b
+    WHERE sqlc.arg(sort)::text = 'detectedAt' AND NOT sqlc.arg(descending)::boolean
+      AND (NOT sqlc.arg(has_after)::boolean OR (b.detected_at, b.id) > (('epoch'::timestamptz + sqlc.arg(after_num)::bigint * interval '1 microsecond'), sqlc.arg(after_id)::text::uuid))
+    ORDER BY b.detected_at ASC, b.id ASC LIMIT sqlc.arg(max_rows)::int)
+  UNION ALL
+  (SELECT b.*, ((CASE b.status WHEN 'needs_triage' THEN 0 WHEN 'confirmed' THEN 1 WHEN 'blocked' THEN 2 WHEN 'dismissed' THEN 3 ELSE 4 END)::bigint) AS k_num, ''::text AS k_txt FROM base b
+    WHERE sqlc.arg(sort)::text = 'status' AND NOT sqlc.arg(descending)::boolean
+      AND (NOT sqlc.arg(has_after)::boolean OR (((CASE b.status WHEN 'needs_triage' THEN 0 WHEN 'confirmed' THEN 1 WHEN 'blocked' THEN 2 WHEN 'dismissed' THEN 3 ELSE 4 END)::bigint), b.id) > (sqlc.arg(after_num)::bigint, sqlc.arg(after_id)::text::uuid))
+    ORDER BY ((CASE b.status WHEN 'needs_triage' THEN 0 WHEN 'confirmed' THEN 1 WHEN 'blocked' THEN 2 WHEN 'dismissed' THEN 3 ELSE 4 END)::bigint) ASC, b.id ASC LIMIT sqlc.arg(max_rows)::int)
+  UNION ALL
+  (SELECT b.*, 0::bigint AS k_num, ((b.package_name || chr(31) || b.version) COLLATE "C")::text AS k_txt FROM base b
+    WHERE sqlc.arg(sort)::text = 'package' AND NOT sqlc.arg(descending)::boolean
+      AND (NOT sqlc.arg(has_after)::boolean OR (((b.package_name || chr(31) || b.version) COLLATE "C"), b.id) > (sqlc.arg(after_txt)::text COLLATE "C", sqlc.arg(after_id)::text::uuid))
+    ORDER BY ((b.package_name || chr(31) || b.version) COLLATE "C") ASC, b.id ASC LIMIT sqlc.arg(max_rows)::int)
+  UNION ALL
+  (SELECT b.*, 0::bigint AS k_num, (b.advisory_id COLLATE "C")::text AS k_txt FROM base b
+    WHERE sqlc.arg(sort)::text = 'advisory' AND NOT sqlc.arg(descending)::boolean
+      AND (NOT sqlc.arg(has_after)::boolean OR ((b.advisory_id COLLATE "C"), b.id) > (sqlc.arg(after_txt)::text COLLATE "C", sqlc.arg(after_id)::text::uuid))
+    ORDER BY (b.advisory_id COLLATE "C") ASC, b.id ASC LIMIT sqlc.arg(max_rows)::int)
+  UNION ALL
+  (SELECT b.*, (b.severity_rank::bigint * 1000 + (COALESCE(b.cvss_raw, 0) * 10)::bigint)::bigint AS k_num, ''::text AS k_txt FROM base b
+    WHERE sqlc.arg(sort)::text = 'severity' AND sqlc.arg(descending)::boolean
+      AND (NOT sqlc.arg(has_after)::boolean OR ((b.severity_rank::bigint * 1000 + (COALESCE(b.cvss_raw, 0) * 10)::bigint), b.id) < (sqlc.arg(after_num)::bigint, sqlc.arg(after_id)::text::uuid))
+    ORDER BY (b.severity_rank::bigint * 1000 + (COALESCE(b.cvss_raw, 0) * 10)::bigint) DESC, b.id DESC LIMIT sqlc.arg(max_rows)::int)
+  UNION ALL
+  (SELECT b.*, (extract(epoch FROM b.detected_at) * 1000000)::bigint AS k_num, ''::text AS k_txt FROM base b
+    WHERE sqlc.arg(sort)::text = 'detectedAt' AND sqlc.arg(descending)::boolean
+      AND (NOT sqlc.arg(has_after)::boolean OR (b.detected_at, b.id) < (('epoch'::timestamptz + sqlc.arg(after_num)::bigint * interval '1 microsecond'), sqlc.arg(after_id)::text::uuid))
+    ORDER BY b.detected_at DESC, b.id DESC LIMIT sqlc.arg(max_rows)::int)
+  UNION ALL
+  (SELECT b.*, ((CASE b.status WHEN 'needs_triage' THEN 0 WHEN 'confirmed' THEN 1 WHEN 'blocked' THEN 2 WHEN 'dismissed' THEN 3 ELSE 4 END)::bigint) AS k_num, ''::text AS k_txt FROM base b
+    WHERE sqlc.arg(sort)::text = 'status' AND sqlc.arg(descending)::boolean
+      AND (NOT sqlc.arg(has_after)::boolean OR (((CASE b.status WHEN 'needs_triage' THEN 0 WHEN 'confirmed' THEN 1 WHEN 'blocked' THEN 2 WHEN 'dismissed' THEN 3 ELSE 4 END)::bigint), b.id) < (sqlc.arg(after_num)::bigint, sqlc.arg(after_id)::text::uuid))
+    ORDER BY ((CASE b.status WHEN 'needs_triage' THEN 0 WHEN 'confirmed' THEN 1 WHEN 'blocked' THEN 2 WHEN 'dismissed' THEN 3 ELSE 4 END)::bigint) DESC, b.id DESC LIMIT sqlc.arg(max_rows)::int)
+  UNION ALL
+  (SELECT b.*, 0::bigint AS k_num, ((b.package_name || chr(31) || b.version) COLLATE "C")::text AS k_txt FROM base b
+    WHERE sqlc.arg(sort)::text = 'package' AND sqlc.arg(descending)::boolean
+      AND (NOT sqlc.arg(has_after)::boolean OR (((b.package_name || chr(31) || b.version) COLLATE "C"), b.id) < (sqlc.arg(after_txt)::text COLLATE "C", sqlc.arg(after_id)::text::uuid))
+    ORDER BY ((b.package_name || chr(31) || b.version) COLLATE "C") DESC, b.id DESC LIMIT sqlc.arg(max_rows)::int)
+  UNION ALL
+  (SELECT b.*, 0::bigint AS k_num, (b.advisory_id COLLATE "C")::text AS k_txt FROM base b
+    WHERE sqlc.arg(sort)::text = 'advisory' AND sqlc.arg(descending)::boolean
+      AND (NOT sqlc.arg(has_after)::boolean OR ((b.advisory_id COLLATE "C"), b.id) < (sqlc.arg(after_txt)::text COLLATE "C", sqlc.arg(after_id)::text::uuid))
+    ORDER BY (b.advisory_id COLLATE "C") DESC, b.id DESC LIMIT sqlc.arg(max_rows)::int)
+  UNION ALL
+  (SELECT b.*, 0::bigint AS k_num, ''::text AS k_txt FROM base b
+    WHERE sqlc.arg(sort)::text NOT IN ('severity', 'detectedAt', 'status', 'package', 'advisory')
+      AND (NOT sqlc.arg(has_after)::boolean OR b.id > sqlc.arg(after_id)::text::uuid)
+    ORDER BY b.id ASC LIMIT sqlc.arg(max_rows)::int)
 )
 SELECT p.id::text AS id, p.repo_key, p.format, p.ecosystem, p.package_name, p.version, p.advisory_id, p.kind, p.severity,
        p.cvss_score, p.known_exploited, p.fix_available, p.fixed_versions, p.status, p.dismissal_reason, p.resolved_reason,
@@ -154,7 +191,8 @@ SELECT count(*)::bigint AS n
           OR concat_ws(chr(31), r.key, f.package_name, f.version) = ANY(sqlc.arg(rows)::text[]))
            AND (NOT sqlc.arg(has_repos)::boolean OR r.key = ANY(sqlc.arg(repos)::text[]))
      AND (cardinality(sqlc.arg(formats)::text[]) = 0 OR r.format = ANY(sqlc.arg(formats)::text[]))
-     AND (cardinality(sqlc.arg(packages)::text[]) = 0 OR f.package_name = ANY(sqlc.arg(packages)::text[]))
+     AND (cardinality(sqlc.arg(packages)::text[]) = 0 OR f.package_name = ANY(sqlc.arg(packages)::text[])
+          OR (f.ecosystem = 'NuGet' AND f.package_name = ANY(SELECT lower(x) FROM unnest(sqlc.arg(packages)::text[]) AS x)))
      AND (sqlc.arg(package_prefix)::text = '' OR starts_with(f.package_name, lower(sqlc.arg(package_prefix)::text)))
      AND (cardinality(sqlc.arg(versions)::text[]) = 0 OR f.version = ANY(sqlc.arg(versions)::text[]))
      AND (sqlc.arg(ecosystem)::text = '' OR f.ecosystem = sqlc.arg(ecosystem)::text)
@@ -190,13 +228,13 @@ SELECT count(*)::bigint AS n
 
 -- name: VulnFindingsLock :many
 -- The findings of the given ids the caller can read, locked for a status change, in id order so that two bulk changes
--- never wait for each other in a circle.
+-- never wait for each other in a circle. The ids are UUIDs the caller validated; the array compares against the primary key.
 SELECT f.id::text AS id, r.key AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind,
        f.status, COALESCE(f.dismissal_reason, '')::text AS dismissal_reason, COALESCE(f.comment, '')::text AS comment,
        f.revision
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
- WHERE f.id::text = ANY(sqlc.arg(ids)::text[])
+ WHERE f.id = ANY(sqlc.arg(ids)::text[]::uuid[])
    AND (r.key = ANY(sqlc.arg(whole)::text[])
           OR concat_ws(chr(31), r.key, f.package_name, f.version) = ANY(sqlc.arg(rows)::text[]))
  ORDER BY f.id
@@ -354,11 +392,3 @@ SELECT ecosystem, advisory_id, name, kind, first_seen_at
        > (sqlc.arg(after_ecosystem)::text COLLATE "C", sqlc.arg(after_advisory)::text COLLATE "C", sqlc.arg(after_name)::text COLLATE "C")
  ORDER BY ecosystem COLLATE "C", advisory_id COLLATE "C", name COLLATE "C"
  LIMIT sqlc.arg(max_rows)::int;
-
--- name: VulnClaims :many
--- Every namespace claim with the key of the repository that holds it: the claimed-name matches name the repository whose
--- claim covers the name (R-VULN-010).
-SELECT r.format, c.pattern, r.key AS repo_key
-  FROM namespace_claims c
-  JOIN repositories r ON r.id = c.repo_id
- ORDER BY r.id, c.pattern COLLATE "C";

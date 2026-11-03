@@ -16,9 +16,10 @@ func TestR_VULN_024_VulnerabilityDataFacts(t *testing.T) {
 	var v config.Vulnerabilities
 	v.Enabled, v.Enforcement, v.StaleAfter = true, "enforce", 24*time.Hour
 	v.Sources.OSV.Mode, v.Sources.KEV.Mode = "online", "repository"
-	rows := []store.SourceState{
-		{Source: "osv", Ecosystem: "npm", State: "complete", SyncedAt: now.Add(-48 * time.Hour), Failures: 3},
-		{Source: "osv", Ecosystem: "PyPI", State: "complete", SyncedAt: now},
+	old, fresh := now.Add(-48*time.Hour), now
+	rows := []store.SourceRow{
+		{Source: "osv", Ecosystem: "npm", State: "complete", SyncedAt: &old, Failures: 3},
+		{Source: "osv", Ecosystem: "PyPI", State: "complete", SyncedAt: &fresh},
 	}
 	got := vulnFactsFrom(v, rows, now)
 	if got.Enforcement != gen.VulnerabilityDataFactsEnforcement("enforce") {

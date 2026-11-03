@@ -31,7 +31,7 @@ func (a *App) wireVulnAPI(_ context.Context, in infra, az authzArea, repo reposi
 	enforcement := vuln.Enforcement(cfg.Enforcement)
 	st := store.NewAPI(in.db)
 	rep, err := report.New(report.Options{
-		Store: st, Repositories: repo.reader, Advisories: vz.advisories,
+		Store: st, Repositories: repo.reader, Advisories: vz.advisories, Rule: vz.rule,
 		Config: report.Config{
 			Enabled: cfg.Enabled, Enforcement: enforcement, StaleAfter: cfg.StaleAfter, ExportMaxRows: cfg.Export.MaxRows,
 			PublicUpstreams: cfg.Matching.PublicUpstreams, OSVMode: cfg.Sources.OSV.Mode, KEVMode: cfg.Sources.KEV.Mode,

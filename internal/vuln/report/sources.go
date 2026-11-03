@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/vuln"
 	"github.com/guided-traffic/trove/internal/vuln/advisory"
 	"github.com/guided-traffic/trove/internal/vuln/store"
@@ -33,20 +32,34 @@ type SourceView struct {
 	Records, Rejected, Unevaluable int
 }
 
-// Sources returns the state of every configured source and ecosystem, in the order of source and ecosystem. nextRun answers the
-// next scheduled run of a task by its name (vuln.TaskSyncOSV, vuln.TaskSyncKEV), nil for none.
-func (s *Service) Sources(ctx context.Context, nextRun func(task string) *time.Time) ([]SourceView, error) {
-	_, rows, err := s.dataStates(ctx)
-	if err != nil {
-		return nil, err
-	}
+// SourceConfig is what the view of the sources reads of the configuration.
+type SourceConfig struct {
+	// Enabled is vulnerabilities.enabled: while false every mode is off.
+	Enabled bool
+	// OSVMode and KEVMode are the modes of the sources (online, repository, off).
+	OSVMode, KEVMode string
+	// Ecosystems are the ecosystems the OSV source imports (config EffectiveEcosystems).
+	Ecosystems []string
+	// StaleAfter is vulnerabilities.stale_after; zero never marks a source stale.
+	StaleAfter time.Duration
+}
+
+// SourceViews is the one view of vuln_source_state, for the sources operation and the system information (A6): an entry for the
+// KEV catalog and for every configured ecosystem, with state empty where the source never ran (a restore removes the rows), and
+// for a stored row of an ecosystem the configuration no longer names, with the mode off, because nothing syncs it; in the order of
+// source and ecosystem. The mirror repository and the next run are the operation's own and are not set here.
+func SourceViews(cfg SourceConfig, rows []store.SourceRow, now time.Time) []SourceView {
 	have := map[string]store.SourceRow{}
 	for _, r := range rows {
 		have[r.Source+"\x00"+r.Ecosystem] = r
 	}
-	keys := map[string]bool{SourceKEV + "\x00": true}
-	for _, e := range s.cfg.Ecosystems {
-		keys[SourceOSV+"\x00"+e] = true
+	configured := map[string]bool{SourceKEV + "\x00": true}
+	for _, e := range cfg.Ecosystems {
+		configured[SourceOSV+"\x00"+e] = true
+	}
+	keys := map[string]bool{}
+	for k := range configured {
+		keys[k] = true
 	}
 	for k := range have {
 		keys[k] = true
@@ -56,7 +69,6 @@ func (s *Service) Sources(ctx context.Context, nextRun func(task string) *time.T
 		order = append(order, k)
 	}
 	sort.Strings(order)
-	now := s.now()
 	out := make([]SourceView, 0, len(order))
 	for _, k := range order {
 		r, ok := have[k]
@@ -64,37 +76,55 @@ func (s *Service) Sources(ctx context.Context, nextRun func(task string) *time.T
 			src, eco, _ := strings.Cut(k, "\x00")
 			r = store.SourceRow{Source: src, Ecosystem: eco, State: "empty"}
 		}
-		v := SourceView{
-			Source: r.Source, Ecosystem: r.Ecosystem, Mode: s.mode(r.Source), State: r.State, SyncedAt: r.SyncedAt,
-			FullSyncedAt: r.FullSyncedAt, AttemptedAt: r.AttemptedAt, Failures: r.Failures, LastError: r.LastError,
-			Records: r.Records, Rejected: r.Rejected, Unevaluable: r.Unevaluable, Stale: s.stale(r.SyncedAt, now),
+		mode := "off"
+		switch {
+		case !cfg.Enabled || !configured[k]:
+		case r.Source == SourceKEV:
+			mode = cfg.KEVMode
+		default:
+			mode = cfg.OSVMode
 		}
+		out = append(out, SourceView{
+			Source: r.Source, Ecosystem: r.Ecosystem, Mode: mode, State: r.State, SyncedAt: r.SyncedAt,
+			FullSyncedAt: r.FullSyncedAt, AttemptedAt: r.AttemptedAt, Failures: r.Failures, LastError: r.LastError,
+			Records: r.Records, Rejected: r.Rejected, Unevaluable: r.Unevaluable,
+			Stale: cfg.StaleAfter > 0 && r.SyncedAt != nil && now.Sub(*r.SyncedAt) > cfg.StaleAfter,
+		})
+	}
+	return out
+}
+
+// Sources returns the state of every configured source and ecosystem, in the order of source and ecosystem. nextRun answers the
+// next scheduled run of a task by its name (vuln.TaskSyncOSV, vuln.TaskSyncKEV), nil for none.
+func (s *Service) Sources(ctx context.Context, nextRun func(task string) *time.Time) ([]SourceView, error) {
+	rows, err := s.st.Sources(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := SourceViews(s.sourceConfig(), rows, s.now())
+	for i := range out {
+		v := &out[i]
 		if v.Mode == "repository" {
 			v.Repository = s.cfg.OSVRepository
-			if r.Source == SourceKEV {
+			if v.Source == SourceKEV {
 				v.Repository = s.cfg.KEVRepository
 			}
 		}
 		if nextRun != nil && v.Mode != "off" {
 			task := vuln.TaskSyncOSV
-			if r.Source == SourceKEV {
+			if v.Source == SourceKEV {
 				task = vuln.TaskSyncKEV
 			}
 			v.NextRunAt = nextRun(task)
 		}
-		out = append(out, v)
 	}
 	return out, nil
 }
 
-func (s *Service) mode(source string) string {
-	if !s.cfg.Enabled {
-		return "off"
+func (s *Service) sourceConfig() SourceConfig {
+	return SourceConfig{
+		Enabled: s.cfg.Enabled, OSVMode: s.cfg.OSVMode, KEVMode: s.cfg.KEVMode, Ecosystems: s.cfg.Ecosystems, StaleAfter: s.cfg.StaleAfter,
 	}
-	if source == SourceKEV {
-		return s.cfg.KEVMode
-	}
-	return s.cfg.OSVMode
 }
 
 // ClaimedMatch is a public advisory that names an internal name (R-VULN-010).
@@ -112,10 +142,6 @@ func (s *Service) ClaimedMatches(ctx context.Context, after *store.ClaimedAfter,
 	if err != nil || len(rows) == 0 {
 		return nil, err
 	}
-	claims, err := s.st.Claims(ctx)
-	if err != nil {
-		return nil, err
-	}
 	repos, err := s.repo.List(ctx)
 	if err != nil {
 		return nil, err
@@ -126,24 +152,12 @@ func (s *Service) ClaimedMatches(ctx context.Context, after *store.ClaimedAfter,
 			formatOf[eco] = r.Format
 		}
 	}
-	type compiled struct {
-		format, repo string
-		pat          repository.ClaimPattern
-	}
-	var pats []compiled
-	for _, c := range claims {
-		if p, err := repository.ParseClaimPattern(c.Pattern); err == nil {
-			pats = append(pats, compiled{format: c.Format, repo: c.Repository, pat: p})
-		}
-	}
 	out := make([]ClaimedMatch, 0, len(rows))
 	for _, r := range rows {
 		m := ClaimedMatch{Ecosystem: r.Ecosystem, Advisory: r.Advisory, Name: r.Name, Kind: r.Kind, FirstSeenAt: r.FirstSeenAt}
-		for _, c := range pats {
-			if c.format == formatOf[r.Ecosystem] && c.pat.Match(r.Name) {
-				m.ClaimRepository = c.repo
-				break
-			}
+		// The holder is the rule's: the most specific claim of a local repository that does not set always (R-VULN-010).
+		if holder, internal, err := s.rule.Claim(ctx, formatOf[r.Ecosystem], r.Name); err == nil && internal {
+			m.ClaimRepository = holder
 		}
 		out = append(out, m)
 	}

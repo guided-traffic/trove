@@ -5381,6 +5381,8 @@ R-VULN-018: the metric, the two switches and the cache of the NuGet page), all a
 `Affects` is removed from the interface: the matcher is a pure function of the leaf `internal/vuln/match`, which a format
 imports and calls itself. The surface file now also records the types of `internal/vuln/advisory` (with its constants) and
 `internal/vuln/match`, so a change of a type the contract returns fails `TestR_ARCH_025` like a change of the contract.
+The same fix wave added `match.Prepare` and the method `Entry.Affects` (an affected entry normalized once and evaluated
+against many versions, for the bounded local audit of [Q-VULN-71](spec/vulnerability-scanning.md#q-vuln-71--what-the-client-audits-and-the-list-filters-tell-a-caller)): an addition, recorded in the surface file.
 
 **Spec:** [spec/vulnerability-scanning.md](spec/vulnerability-scanning.md) R-VULN-009, Q-VULN-15, Q-VULN-23, Q-VULN-73;
 [spec/architecture.md](spec/architecture.md) R-ARCH-008.

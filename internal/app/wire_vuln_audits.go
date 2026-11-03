@@ -36,7 +36,7 @@ func (a *App) wireAudits(in infra, repo repositoryArea, vir virtualArea, out *vu
 	if err != nil {
 		return err
 	}
-	out.advisories, out.pages = adv, pages
+	out.advisories, out.pages, out.rule = adv, pages, rule
 	out.localAudits = cfg.Sources.OSV.Mode != "off"
 	return nil
 }

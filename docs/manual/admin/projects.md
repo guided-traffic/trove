@@ -108,6 +108,7 @@ After you sign in, **Administration** shows **Projects** only. The global lists,
 | The repository was moved to another project in the meantime | `project_owner_changed`: the repository belongs to another project than the request expected; read it again and decide again |
 | Enter the password or token of this upstream again | `secret_value_required`: a reference of the installation, or a stored password kept while the URL or a credential host changes |
 | The outbound path of this repository is set by an administrator of trove | `outbound_path_restricted`: a direct connection or a source network chosen by the project |
+| The write would weaken the vulnerability scanning of the repository | `vulnerability_weakening_refused` (403): switching `vulnerabilities.enabled` off, matching fewer public advisories, turning `blockMalicious` off or `onMissingData` from `block` to `allow` lifts download blocks, which needs the permission to write configuration or the triage capability; a project administrator may make the scanning stricter |
 | Other repositories still include this one | `repository_referenced`; for a project administrator also when a virtual repository outside the project includes it, which an administrator of trove removes |
 
 ## Limits of this version

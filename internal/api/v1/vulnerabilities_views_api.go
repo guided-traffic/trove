@@ -50,7 +50,7 @@ func (s *Server) GetVulnerabilitySummary(w http.ResponseWriter, r *http.Request,
 	var f store.Filter
 	if err == nil {
 		repos, has := lq.Filter["repository"]
-		f = report.SummaryFilter(sn.Expand(splitValues(repos)), has, splitValues(lq.Filter["format"]))
+		f = report.SummaryFilter(sn.ExpandFor(caller, splitValues(repos)), has, splitValues(lq.Filter["format"]))
 	}
 	var sc report.Scope
 	if err == nil {
@@ -133,7 +133,7 @@ func (s *Server) GetVulnerabilityTrend(w http.ResponseWriter, r *http.Request, _
 	var f store.Filter
 	if err == nil {
 		repos, has := lq.Filter["repository"]
-		f = store.Filter{Repos: sn.Expand(splitValues(repos)), HasRepos: has, Formats: splitValues(lq.Filter["format"]), Kind: kind}
+		f = store.Filter{Repos: sn.ExpandFor(caller, splitValues(repos)), HasRepos: has, Formats: splitValues(lq.Filter["format"]), Kind: kind}
 	}
 	var sc report.Scope
 	if err == nil {

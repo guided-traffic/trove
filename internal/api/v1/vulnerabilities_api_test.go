@@ -65,7 +65,7 @@ func TestR_VULN_020_FilterParsing(t *testing.T) {
 		r := httptest.NewRequest("GET", "/x?"+bad, nil)
 		lq, err := ParseList(r, spec, apiCfg())
 		if err == nil {
-			_, err = findingFilter(lq, &report.Snapshot{})
+			_, err = findingFilter(lq, &report.Snapshot{}, report.Caller{})
 		}
 		if err == nil {
 			t.Errorf("%s accepted", bad)

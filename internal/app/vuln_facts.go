@@ -2,11 +2,11 @@ package app
 
 import (
 	"context"
-	"sort"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/config"
+	"github.com/guided-traffic/trove/internal/vuln/report"
 	"github.com/guided-traffic/trove/internal/vuln/store"
 )
 
@@ -16,7 +16,7 @@ import (
 //
 // One entry per source and ecosystem the configuration names (the effective ecosystems of the OSV source and the KEV
 // catalog), whatever its mode, so that an installation whose rows a restore removed shows its sources with state empty;
-// a stored row of an ecosystem the configuration no longer names is listed with mode off. With the scanning disabled
+// a stored row of an ecosystem the configuration no longer names is listed with mode off, as the sources operation lists it. With the scanning disabled
 // every mode is off. A source that never ran has no syncedAt and is not stale: its state says empty.
 func (a *App) vulnerabilityFacts(ctx context.Context, now time.Time) *gen.VulnerabilityDataFacts {
 	if _, wired := lookup[vulnArea](a.parts); !wired {
@@ -26,7 +26,7 @@ func (a *App) vulnerabilityFacts(ctx context.Context, now time.Time) *gen.Vulner
 	if db == nil {
 		return nil
 	}
-	rows, err := store.SourceStates(ctx, db)
+	rows, err := store.ReadSources(ctx, db)
 	if err != nil {
 		return nil
 	}
@@ -44,57 +44,20 @@ type vulnFactSource = struct {
 	SyncedAt  *time.Time                              `json:"syncedAt"`
 }
 
-// vulnFactsFrom is the pure part of vulnerabilityFacts.
-func vulnFactsFrom(v config.Vulnerabilities, rows []store.SourceState, now time.Time) *gen.VulnerabilityDataFacts {
+// vulnFactsFrom is the pure part of vulnerabilityFacts: the view of the sources operation (report.SourceViews), which this
+// block and GET /api/v1/vulnerabilities/sources share (A6), in the shape of the system information.
+func vulnFactsFrom(v config.Vulnerabilities, rows []store.SourceRow, now time.Time) *gen.VulnerabilityDataFacts {
 	out := &gen.VulnerabilityDataFacts{Enforcement: gen.VulnerabilityDataFactsEnforcement(v.Enforcement)}
-	mode := func(m string) gen.VulnerabilityDataFactsSourcesMode {
-		if !v.Enabled {
-			return gen.VulnerabilityDataFactsSourcesModeOff
-		}
-		return gen.VulnerabilityDataFactsSourcesMode(m)
-	}
-	byKey := map[store.ExpectedSource]store.SourceState{}
-	for _, r := range rows {
-		byKey[store.ExpectedSource{Source: r.Source, Ecosystem: r.Ecosystem}] = r
-	}
-	type entry struct {
-		key  store.ExpectedSource
-		mode gen.VulnerabilityDataFactsSourcesMode
-	}
-	var entries []entry
-	seen := map[store.ExpectedSource]bool{}
-	add := func(k store.ExpectedSource, m gen.VulnerabilityDataFactsSourcesMode) {
-		seen[k] = true
-		entries = append(entries, entry{k, m})
-	}
-	for _, e := range v.Sources.OSV.EffectiveEcosystems() {
-		add(store.ExpectedSource{Source: "osv", Ecosystem: e}, mode(v.Sources.OSV.Mode))
-	}
-	add(store.ExpectedSource{Source: "kev"}, mode(v.Sources.KEV.Mode))
-	for _, r := range rows {
-		k := store.ExpectedSource{Source: r.Source, Ecosystem: r.Ecosystem}
-		if !seen[k] {
-			add(k, gen.VulnerabilityDataFactsSourcesModeOff)
-		}
-	}
-	sort.SliceStable(entries, func(i, j int) bool {
-		if entries[i].key.Source != entries[j].key.Source {
-			return entries[i].key.Source < entries[j].key.Source
-		}
-		return entries[i].key.Ecosystem < entries[j].key.Ecosystem
-	})
-	for _, e := range entries {
-		r, ok := byKey[e.key]
-		s := vulnFactSource{Ecosystem: e.key.Ecosystem, Mode: e.mode, Source: gen.VulnerabilityDataFactsSourcesSource(e.key.Source), State: "empty"}
-		if ok {
-			s.Failures, s.State = int(r.Failures), gen.VulnerabilityDataFactsSourcesState(r.State)
-			if !r.SyncedAt.IsZero() {
-				t := r.SyncedAt
-				s.SyncedAt = &t
-				s.Stale = now.Sub(t) > v.StaleAfter
-			}
-		}
-		out.Sources = append(out.Sources, s)
+	views := report.SourceViews(report.SourceConfig{
+		Enabled: v.Enabled, OSVMode: v.Sources.OSV.Mode, KEVMode: v.Sources.KEV.Mode,
+		Ecosystems: v.Sources.OSV.EffectiveEcosystems(), StaleAfter: v.StaleAfter,
+	}, rows, now)
+	for _, e := range views {
+		out.Sources = append(out.Sources, vulnFactSource{
+			Ecosystem: e.Ecosystem, Failures: e.Failures, Mode: gen.VulnerabilityDataFactsSourcesMode(e.Mode),
+			Source: gen.VulnerabilityDataFactsSourcesSource(e.Source), Stale: e.Stale,
+			State: gen.VulnerabilityDataFactsSourcesState(e.State), SyncedAt: e.SyncedAt,
+		})
 	}
 	return out
 }

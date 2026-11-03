@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
@@ -23,6 +24,16 @@ type Audits struct {
 }
 
 var _ vuln.Advisories = (*Audits)(nil)
+
+// MaxAuditRows is the number of advisory entries one audit reads (S4): the rows are held in memory and evaluated for every
+// requested version, so a body whose names match more is refused with 413 rather than answered from a partial set.
+const MaxAuditRows = 50_000
+
+// reader is the read-only access of the runner the composition root hands in; a runner without it (a test's) is used in a
+// transaction.
+type reader interface {
+	Read(ctx context.Context, fn func(q.DBTX) error) error
+}
 
 // NewAudits builds the advisory reads over a runner and the rule of the internal names.
 func NewAudits(run meta.Runner, names InternalNameRule) (*Audits, error) {
@@ -60,16 +71,30 @@ func (a *Audits) ForNames(ctx context.Context, ecosystem string, names []string)
 		return out, nil
 	}
 	var rows []q.AuditAdvisoriesForNamesRow
-	err := a.run.InTx(ctx, func(tx meta.Tx) error {
-		qs, err := queriesOf(tx)
-		if err != nil {
+	p := q.AuditAdvisoriesForNamesParams{Ecosystem: ecosystem, Names: names, MaxRows: MaxAuditRows + 1}
+	var err error
+	if r, ok := a.run.(reader); ok {
+		// A read-only statement with the failover retry: a client audit never writes (S4).
+		err = r.Read(ctx, func(db q.DBTX) (err error) {
+			rows, err = q.New(db).AuditAdvisoriesForNames(ctx, p)
 			return err
-		}
-		rows, err = qs.AuditAdvisoriesForNames(ctx, q.AuditAdvisoriesForNamesParams{Ecosystem: ecosystem, Names: names})
-		return err
-	})
+		})
+	} else {
+		err = a.run.InTx(ctx, func(tx meta.Tx) error {
+			qs, err := queriesOf(tx)
+			if err != nil {
+				return err
+			}
+			rows, err = qs.AuditAdvisoriesForNames(ctx, p)
+			return err
+		})
+	}
 	if err != nil {
 		return nil, fmt.Errorf("vuln store: advisories of %d names: %w", len(names), err)
+	}
+	if len(rows) > MaxAuditRows {
+		return nil, errs.E(errs.TooLarge, errs.CodeNPMTooLarge, fmt.Sprintf(
+			"The names of the audit match more than %d advisory entries; ask for fewer packages.", MaxAuditRows))
 	}
 	for _, r := range rows {
 		ad, err := groupRow(ecosystem, auditRow(r), out[r.Name])

@@ -66,11 +66,21 @@ func vulnInfoModeOf(d formats.VulnerabilityData, s settings) string {
 }
 
 // vulnListed says whether the service index of the repository lists VulnerabilityInfo: the mode is local and the NuGet
-// data is complete, as the protocol asks of a feed without data (R-VULN-018).
+// data is complete, as the protocol asks of a feed without data (R-VULN-018). The cache view of a remote repository and an
+// endpoint with exposure rules do not list it, as the npm audit is not answered there (Q-VULN-19, Q-VULN-71): the page names
+// the packages of the installation's data minus its internal names, which tells a caller which names a hidden package or a
+// claim stands for.
 func vulnListed(rq *formats.Request) bool {
+	if vulnRefusedOn(rq) {
+		return false
+	}
 	d := rq.Host.Vulnerabilities()
 	return vulnInfoModeOf(d, settingsOf(rq.Repo.Config)) == VulnInfoLocal && d.State(vulnEcosystem).Complete
 }
+
+// vulnRefusedOn is whether the request addresses a view on which the resource is neither listed nor served: the cache view and
+// an endpoint with exposure rules (Q-VULN-71).
+func vulnRefusedOn(rq *formats.Request) bool { return rq.CacheView || rq.Endpoint.Rules }
 
 // matchVulnerabilities matches "v3/vulnerabilities/{file}" for one of the two documents.
 func matchVulnerabilities(file string) func(string) (formats.Params, bool) {
@@ -87,7 +97,7 @@ func matchVulnerabilities(file string) func(string) (formats.Params, bool) {
 // is not listed either), 503 vulnerability_data_unavailable while the NuGet data is not complete.
 func vulnAvailable(rq *formats.Request) (formats.VulnerabilityData, error) {
 	d := rq.Host.Vulnerabilities()
-	if vulnInfoModeOf(d, settingsOf(rq.Repo.Config)) != VulnInfoLocal {
+	if vulnRefusedOn(rq) || vulnInfoModeOf(d, settingsOf(rq.Repo.Config)) != VulnInfoLocal {
 		return nil, errNoSuchResource()
 	}
 	if !d.State(vulnEcosystem).Complete {

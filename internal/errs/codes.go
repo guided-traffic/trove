@@ -262,6 +262,9 @@ const (
 	CodeVulnerabilityDataMissing = "vulnerability_data_missing"
 	// CodeVulnerabilityDataUnavailable: the npm audit before the npm advisory data is complete (503, R-VULN-017).
 	CodeVulnerabilityDataUnavailable = "vulnerability_data_unavailable"
+	// CodeVulnerabilityWeakeningRefused: a project administrator's write of a repository would weaken the member
+	// `vulnerabilities` and the caller holds neither repositories:write-config nor vulnerabilities:triage (403, R-VULN-002).
+	CodeVulnerabilityWeakeningRefused = "vulnerability_weakening_refused"
 	// CodeFindingNotConfirmed: blocked is set on a finding that is not confirmed (409, R-VULN-012).
 	CodeFindingNotConfirmed = "finding_not_confirmed"
 	// CodeFindingResolved: a status change of a resolved finding (409, R-VULN-013).
@@ -664,6 +667,7 @@ var registry = []CodeInfo{
 	// >>> M4b vulnerabilities
 	{CodeVulnerabilityBlocked, Forbidden, "Download blocked by a finding", "trove refuses the version: a malicious-package finding is open, or a triager blocked a finding of it in this repository. The problem names the advisory and the finding; a dismissal lifts it. The response is never cached."},
 	{CodeVulnerabilityDataMissing, Forbidden, "Advisory data missing", "The repository sets onMissingData block and the advisory data of the version's ecosystem was never imported completely, so the version cannot be evaluated. The response is never cached."},
+	{CodeVulnerabilityWeakeningRefused, Forbidden, "Vulnerability settings cannot be weakened", "The write would switch the scanning of the repository off, stop it matching public advisories, stop blocking malicious versions or stop blocking on missing data. That needs the capability repositories:write-config or vulnerabilities:triage; a project administrator's manageRepositories does not carry it."},
 	{CodeVulnerabilityDataUnavailable, Unavailable, "Advisory data not imported", "trove's advisory data for the ecosystem is not imported yet, so the audit has nothing to answer from; retry after the Retry-After period."},
 	{CodeFindingNotConfirmed, Conflict, "Finding not confirmed", "blocked is set on a confirmed finding only; confirm the finding first."},
 	{CodeFindingResolved, Conflict, "Finding resolved", "The finding is resolved by trove: no stored version is affected any longer. A person cannot change it; it returns to its earlier status when the match returns."},

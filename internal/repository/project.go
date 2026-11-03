@@ -31,6 +31,10 @@ type Write struct {
 	// virtual repository's new members and its deploy target must be repositories of
 	// it (Q-AUTHZ-178). The handler has checked the right and the switch.
 	Delegate string
+	// MayWeakenVulnerabilities is whether the writer may weaken the member `vulnerabilities` (R-VULN-002): it holds
+	// vulnerabilities:triage (a holder of repositories:write-config is no delegate and is never refused). The handler
+	// sets it; it matters only while Delegate is set.
+	MayWeakenVulnerabilities bool
 }
 
 // projectKey is the key the body names, "" for none.

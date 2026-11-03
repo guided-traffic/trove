@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"regexp"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
@@ -459,10 +460,14 @@ func optT(valid bool, t time.Time) *time.Time {
 }
 
 // Sources returns every source row.
-func (a *API) Sources(ctx context.Context) ([]SourceRow, error) {
+func (a *API) Sources(ctx context.Context) ([]SourceRow, error) { return ReadSources(ctx, a.db) }
+
+// ReadSources is the one read of vuln_source_state: the sources operation, the system information and the gauges all go through
+// it (A6), so that they cannot disagree on a row.
+func ReadSources(ctx context.Context, db Database) ([]SourceRow, error) {
 	var rows []q.VulnSourceStatesRow
-	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
-		rows, err = q.New(db).VulnSourceStates(ctx)
+	err := db.Read(ctx, func(c q.DBTX) (err error) {
+		rows, err = q.New(c).VulnSourceStates(ctx)
 		return err
 	})
 	out := make([]SourceRow, 0, len(rows))
@@ -512,23 +517,6 @@ func (a *API) ClaimedMatches(ctx context.Context, after *ClaimedAfter, max int) 
 	return out, err
 }
 
-// ClaimPattern is a namespace claim of a format and the repository that holds it.
-type ClaimPattern struct{ Format, Pattern, Repository string }
-
-// Claims returns every namespace claim with its repository key, for the claimed-name matches.
-func (a *API) Claims(ctx context.Context) ([]ClaimPattern, error) {
-	var rows []q.VulnClaimsRow
-	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
-		rows, err = q.New(db).VulnClaims(ctx)
-		return err
-	})
-	out := make([]ClaimPattern, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, ClaimPattern{Format: r.Format, Pattern: r.Pattern, Repository: r.RepoKey})
-	}
-	return out, err
-}
-
 // Locked is a finding the caller may read, locked for a status change.
 type Locked struct {
 	ID, Repository, Format, Ecosystem, Package, Version, Advisory string
@@ -546,6 +534,21 @@ func queries(tx meta.Tx) (*q.Queries, error) {
 	return q.New(ptx), nil
 }
 
+// uuidShape is the canonical text of a finding id, the only form the old text comparison matched.
+var uuidShape = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// uuidTexts keeps the ids that are canonical UUID text: the lock compares the array with the primary key (uuid[]), and an id
+// that is none can match no finding but would fail the cast of the whole statement.
+func uuidTexts(ids []string) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if uuidShape.MatchString(id) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // Lock locks the findings of the ids that are in scope, in id order; an id that is not in scope, or does not exist, is absent
 // from the result.
 func (a *API) Lock(ctx context.Context, tx meta.Tx, sc Scope, ids []string) ([]Locked, error) {
@@ -553,7 +556,7 @@ func (a *API) Lock(ctx context.Context, tx meta.Tx, sc Scope, ids []string) ([]L
 	if err != nil {
 		return nil, err
 	}
-	rows, err := qs.VulnFindingsLock(ctx, q.VulnFindingsLockParams{Ids: nn(ids), Whole: nn(sc.Whole), Rows: nn(sc.Rows)})
+	rows, err := qs.VulnFindingsLock(ctx, q.VulnFindingsLockParams{Ids: uuidTexts(ids), Whole: nn(sc.Whole), Rows: nn(sc.Rows)})
 	if err != nil {
 		return nil, err
 	}

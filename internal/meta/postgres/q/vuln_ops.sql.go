@@ -43,6 +43,7 @@ func (q *Queries) VulnOpsClaimedMatchCounts(ctx context.Context) ([]VulnOpsClaim
 }
 
 const vulnOpsFindingCounts = `-- name: VulnOpsFindingCounts :many
+
 SELECT severity, status, kind, count(*)::bigint AS n
   FROM vuln_finding
  GROUP BY severity, status, kind
@@ -55,6 +56,8 @@ type VulnOpsFindingCountsRow struct {
 	N        int64
 }
 
+// Statements of the vulnerability scanning, work package ops (docs/developer/vulnerabilities.md). One file per work package;
+// every statement of this file is the package's. Plain Go types only (no pgtype): COALESCE nullable columns.
 // trove_vuln_findings (R-VULN-024): the findings by severity, status and kind.
 func (q *Queries) VulnOpsFindingCounts(ctx context.Context) ([]VulnOpsFindingCountsRow, error) {
 	rows, err := q.db.Query(ctx, vulnOpsFindingCounts)
@@ -70,60 +73,6 @@ func (q *Queries) VulnOpsFindingCounts(ctx context.Context) ([]VulnOpsFindingCou
 			&i.Status,
 			&i.Kind,
 			&i.N,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const vulnOpsSourceStates = `-- name: VulnOpsSourceStates :many
-
-SELECT source, ecosystem, state,
-       COALESCE(extract(epoch FROM synced_at), 0)::float8 AS synced_epoch,
-       (synced_at IS NOT NULL)::boolean AS has_synced,
-       records::bigint AS records,
-       failures::bigint AS failures
-  FROM vuln_source_state
- ORDER BY source, ecosystem
-`
-
-type VulnOpsSourceStatesRow struct {
-	Source      string
-	Ecosystem   string
-	State       string
-	SyncedEpoch float64
-	HasSynced   bool
-	Records     int64
-	Failures    int64
-}
-
-// Statements of the vulnerability scanning, work package ops (docs/developer/vulnerabilities.md). One file per work package;
-// every statement of this file is the package's. Plain Go types only (no pgtype): COALESCE nullable columns.
-// The source state of every source and ecosystem as the database gauges and the vulnerabilityData facts read it
-// (R-VULN-024): the last run that ended changed or unchanged as epoch seconds (0 for a source that never had one), the
-// record count, the consecutive failures, the state and the time of the last attempt. KEV rows have the ecosystem ”.
-func (q *Queries) VulnOpsSourceStates(ctx context.Context) ([]VulnOpsSourceStatesRow, error) {
-	rows, err := q.db.Query(ctx, vulnOpsSourceStates)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []VulnOpsSourceStatesRow{}
-	for rows.Next() {
-		var i VulnOpsSourceStatesRow
-		if err := rows.Scan(
-			&i.Source,
-			&i.Ecosystem,
-			&i.State,
-			&i.SyncedEpoch,
-			&i.HasSynced,
-			&i.Records,
-			&i.Failures,
 		); err != nil {
 			return nil, err
 		}

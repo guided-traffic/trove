@@ -21,6 +21,7 @@ import (
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/vuln"
 	"github.com/guided-traffic/trove/internal/vuln/advisory"
+	"github.com/guided-traffic/trove/internal/vuln/evaluate"
 	"github.com/guided-traffic/trove/internal/vuln/store"
 )
 
@@ -57,6 +58,9 @@ type Options struct {
 	// Advisories answers which names are internal (R-VULN-010) for the evaluation state of a version in a local repository;
 	// nil treats every name as public.
 	Advisories vuln.Advisories
+	// Rule is the internal-names rule of R-VULN-010 that the evaluation and the client audits apply; the views of a version
+	// and the claimed-name matches use it, so that they say what a download does (Q-VULN-70). A zero rule has no claims.
+	Rule evaluate.ClaimRule
 	// Now returns the current time; nil is time.Now.
 	Now func() time.Time
 }
@@ -67,6 +71,7 @@ type Service struct {
 	repo repository.Reader
 	cfg  Config
 	adv  vuln.Advisories
+	rule evaluate.ClaimRule
 	now  func() time.Time
 }
 
@@ -75,7 +80,7 @@ func New(o Options) (*Service, error) {
 	if o.Store == nil || o.Repositories == nil {
 		return nil, errs.E(errs.Internal, errs.CodeInternal, "vuln report: the store and the repository snapshot are required")
 	}
-	s := &Service{st: o.Store, repo: o.Repositories, cfg: o.Config, adv: o.Advisories, now: o.Now}
+	s := &Service{st: o.Store, repo: o.Repositories, cfg: o.Config, adv: o.Advisories, rule: o.Rule, now: o.Now}
 	if s.now == nil {
 		s.now = time.Now
 	}
@@ -241,8 +246,20 @@ func (sc Scope) VirtualContaining(repo string) []string {
 	return out
 }
 
-// Expand maps the repository keys of a filter to the physical repositories they stand for.
-func (sn *Snapshot) Expand(keys []string) []string { return sn.Topo.Expand(keys) }
+// ExpandFor maps the repository keys of a filter to the physical repositories they stand for. A virtual repository the caller
+// cannot read stands for nothing: expanding it would tell the caller, by the findings that come back or not, which members
+// it has (R-AUTHZ-016); a key that is no virtual repository of the snapshot is left to the scope, which narrows it.
+func (sn *Snapshot) ExpandFor(c Caller, keys []string) []string {
+	virtual := sn.Topo.Virtual()
+	allowed := make([]string, 0, len(keys))
+	for _, k := range keys {
+		if slices.Contains(virtual, k) && !slices.Contains(c.VirtualReadable, k) {
+			continue
+		}
+		allowed = append(allowed, k)
+	}
+	return sn.Topo.Expand(allowed)
+}
 
 // policy returns the download policy of a repository (R-VULN-015).
 func (s *Service) policy(sn *Snapshot, key string) vuln.Policy {

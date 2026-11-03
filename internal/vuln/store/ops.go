@@ -24,21 +24,17 @@ type SourceState struct {
 	Records, Failures int64
 }
 
-// SourceStates reads every row of vuln_source_state, ordered by source and ecosystem.
+// SourceStates reads every row of vuln_source_state, ordered by source and ecosystem, through [ReadSources].
 func SourceStates(ctx context.Context, db Database) ([]SourceState, error) {
-	var out []SourceState
-	err := db.Read(ctx, func(c q.DBTX) error {
-		rows, err := q.New(c).VulnOpsSourceStates(ctx)
-		out = make([]SourceState, 0, len(rows))
-		for _, r := range rows {
-			s := SourceState{Source: r.Source, Ecosystem: r.Ecosystem, State: r.State, Records: r.Records, Failures: r.Failures}
-			if r.HasSynced {
-				s.SyncedAt = time.UnixMicro(int64(r.SyncedEpoch * 1e6)).UTC()
-			}
-			out = append(out, s)
+	rows, err := ReadSources(ctx, db)
+	out := make([]SourceState, 0, len(rows))
+	for _, r := range rows {
+		s := SourceState{Source: r.Source, Ecosystem: r.Ecosystem, State: r.State, Records: int64(r.Records), Failures: int64(r.Failures)}
+		if r.SyncedAt != nil {
+			s.SyncedAt = *r.SyncedAt
 		}
-		return err
-	})
+		out = append(out, s)
+	}
 	return out, err
 }
 
