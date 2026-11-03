@@ -180,6 +180,30 @@ type checkResult struct {
 	sentAt time.Time
 }
 
+// storedCheck rebuilds the result of a check from the answers a check that ended meanwhile stored, so the caller
+// that reached the collapse after that check left it uses them and sends none of its own (R-BAS-022). It reports
+// false when the store holds no usable shape answer and, for a token, no usable credential answer of a valid
+// token.
+func (e *engine) storedCheck(ctx context.Context, q *rq) (checkResult, bool) {
+	shape := e.answers.shape(ctx, q.cred.key, q.repo)
+	if shape == nil {
+		return checkResult{}, false
+	}
+	sub := iface.Subject{Kind: iface.SubjectAnonymous}
+	if !q.cred.anonymous {
+		cred := e.answers.credential(ctx, q.cred.key)
+		if cred == nil || cred.Subject.Kind != iface.SubjectToken {
+			return checkResult{}, false
+		}
+		sub = cred.Subject
+	}
+	rr := iface.RepositoryRead{Read: shape.Read, Status: shape.Status}
+	return checkResult{
+		answer: iface.CheckAnswer{Subject: sub, Repositories: map[string]iface.RepositoryRead{q.repo: rr}},
+		sentAt: shape.ObtainedAt,
+	}, true
+}
+
 // checkShape asks the check of R-BAS-011 for the caller's credential and the addressed repository, one request
 // per credential and repository, collapsed (R-BAS-022). done is true when it answered the request itself.
 func (e *engine) checkShape(q *rq) (shape *answerVal, done bool) {
@@ -192,6 +216,11 @@ func (e *engine) checkShape(q *rq) (shape *answerVal, done bool) {
 		return nil, true
 	}
 	res, err := e.checks.do(q.ctx(), "check|"+q.cred.key+"|"+q.repo, func(ctx context.Context) (any, error) {
+		// This caller read its answers before the check of an earlier leader stored its own, and led only
+		// after that check left the collapse: what the earlier check stored answers it.
+		if r, ok := e.storedCheck(ctx, q); ok {
+			return r, nil
+		}
 		req := iface.CheckRequest{ClientAddress: q.clientText, Repositories: []string{q.repo}}
 		if !q.cred.anonymous {
 			t := q.cred.token

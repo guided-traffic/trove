@@ -425,6 +425,30 @@ func TestR_BAS_022_ACallerWithoutAnAnswerCostsOneCollapsedCheckAndNoBytes(t *tes
 	}
 }
 
+// A caller that read its answers before the check of an earlier leader stored its own reaches the collapse after that
+// check left it: it uses what the check stored and sends none.
+func TestR_BAS_022_ACallerReachingTheCheckAfterAnEarlierCheckEndedSendsNoSecond(t *testing.T) {
+	s := newSiteHarness(t, options{})
+	s.site.artifacts[tgz] = payload(2000)
+	tok := newToken(t, "pat")
+	s.site.addReader(tok, &reader{id: "full2", read: iface.ReadFull})
+	if w := s.get(tgz, "Authorization", bearer(tok)); w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	before := s.main.count()
+	q := &rq{e: s.e, r: httptest.NewRequest(http.MethodGet, tgz, nil), cred: credential{token: tok, key: credentialKey(tok)}, repo: "npm-all", addr: "203.0.113.7", clientText: "203.0.113.7"}
+	shape, done := s.e.checkShape(q)
+	if done || shape == nil || shape.Read != iface.ReadFull {
+		t.Fatalf("the stored answers did not answer the late caller: done=%v shape=%+v", done, shape)
+	}
+	if q.subject.Kind != iface.SubjectToken {
+		t.Fatalf("the late caller has the subject %+v", q.subject)
+	}
+	if got := s.main.count(); got != before {
+		t.Fatalf("the late caller sent %d more requests", got-before)
+	}
+}
+
 func TestR_BAS_022_APartialReaderCostsOneConditionalRequestPerTarballAnsweredByA304(t *testing.T) {
 	s := newSiteHarness(t, options{})
 	paths := fillTarballs(t, s, 5, s.full)

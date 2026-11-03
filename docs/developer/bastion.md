@@ -470,7 +470,7 @@ A key whose last fetch left nothing shareable is marked for a minute and not col
 (`markVolatileFor`, keyed by credential and cache key), a mark that does not (a search, a document too large to keep) is the key's (`markVolatile`, Q-BAS-125).
 
 **Background**: `Start` runs the janitor (every minute: answers past period and grace, the feed entries no answer can depend on, the registries' expired
-items); a shape answer used in the last fifth of its period is refreshed by one collapsed check in a task `Drain` waits for (`background`). Nothing else
+items); a shape answer used in the last fifth of its period is refreshed by one collapsed check in a task `Drain` waits for (`background`). A request reads its answers before it reaches a collapse, so a check that ended in between has already stored its result: `refreshShape` and the leader of `checkShape` read the answers again before they send a check (`storedCheck`), and a late caller costs no second one. Nothing else
 runs in the engine: the link, the token reload, the download buffer and the cache sweep are the server's.
 
 **Logs and trace** (R-BAS-042): `rq.end` sets the fields of the request log (`bastion_class`, `bastion_result`, `token_hint`, `main_request_id`, the

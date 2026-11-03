@@ -24,6 +24,13 @@ func (e *engine) refreshShape(q *rq, shape *answerVal) {
 	if !leader {
 		return
 	}
+	// The shape this request holds may be older than the answer a refresh that ended meanwhile stored: the
+	// request read it before the refresh stored its result and reaches this point after the refresh left the
+	// collapse. Only the current answer decides whether a check is due.
+	if cur := e.answers.shape(context.Background(), q.cred.key, q.repo); cur != nil && e.now().Sub(cur.ObtainedAt) < period/5*4 {
+		e.checks.finish(key, c, nil, nil)
+		return
+	}
 	cred, repo, addr, client, class := q.cred, q.repo, q.addr, q.clientText, e.budgetClass(q)
 	if !e.background(func() {
 		defer e.checks.finish(key, c, nil, nil)

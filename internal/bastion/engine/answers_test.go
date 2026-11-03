@@ -320,6 +320,30 @@ func TestR_BAS_020_AnAnswerInTheLastFifthOfItsPeriodIsRefreshedInTheBackgroundWi
 	}
 }
 
+// A request that read the shape answer before a refresh renewed it reaches refreshShape after that refresh left the
+// collapse: it must not start a second check for an answer that is young again.
+func TestR_BAS_020_ARequestHoldingTheShapeOfBeforeTheRefreshStartsNoSecondCheck(t *testing.T) {
+	s := newSiteHarness(t, options{cfg: []func(*configT){func(c *configT) { c.Bastion.Cache.ArtifactRevalidateAfter = time.Hour }}})
+	warm(t, s)
+	s.clock.advance(s.cfg.Bastion.Answers.Period/5*4 + time.Second)
+	key := credentialKey(s.full)
+	stale := s.e.answers.shape(context.Background(), key, "npm-all")
+	if stale == nil {
+		t.Fatal("warm left no shape answer")
+	}
+	if w := s.get(tgz, "Authorization", bearer(s.full)); w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	s.e.wg.Wait()
+	before := s.main.count()
+	q := &rq{e: s.e, cred: credential{token: s.full, key: key}, repo: "npm-all"}
+	s.e.refreshShape(q, stale)
+	s.e.wg.Wait()
+	if got := s.main.count(); got != before {
+		t.Fatalf("a request with the old shape started %d more checks after the refresh", got-before)
+	}
+}
+
 func TestR_BAS_020_TheCounterAndTheGaugeOfTheAnswersFollowTheLookups(t *testing.T) {
 	s := newSiteHarness(t, options{})
 	warm(t, s)
