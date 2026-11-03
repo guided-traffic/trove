@@ -401,13 +401,12 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   `00019_projects.sql` was rewritten into expand steps, and every rollout then failed on the checksum mismatch; its database was
   reset. The owner: pre-alpha, that reset was an accepted cost; from the completion of this plan on, reliability of installed
   data is priority 1
-- 🟡 The Browse screen reinvented: a real two-pane browser over the full height with a compact tree toolbar (filter as you
+- 🟢 The Browse screen reinvented: a real two-pane browser over the full height with a compact tree toolbar (filter as you
   type, filter panel with chips, sort), a details pane with the selection's path and actions, folders as the shared data
   table, clear empty states (R-UI-010, R-UI-011; owner: "the worst design I have ever seen";
   [Q-UI-98](../spec/api-and-ui.md#q-ui-98--the-file-browser-is-two-panes-with-a-toolbar-and-a-details-header)); built,
-  625 web tests and axe in English and German, light and dark, against a stub API; open: the journeys `02` and `03`
-  (updated) on kind, whose dev cluster cannot roll out the current main (its database recorded `00019_projects.sql`
-  before phase 5a split it)
+  625 web tests and axe in English and German, light and dark, against a stub API; the journeys `02` and
+  `03` are green on kind (`make e2e SET=access-long`, 20 journeys, 2026-11-03)
 - 🟢 The manual uses the width of the screen (phase 8, beta documentation; Q-UI-97)
 
 **Findings of the run (2026-11-02, while writing the manual against the contracts; status per item)**
@@ -628,13 +627,13 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   replica with and without Valkey, the issuance API with a project's view, the two retention tasks (Q-CI-38 to Q-CI-40; H-415 to H-417).
   Verified by the integration tests of `test/integration/ci` with tokens issued through `IssueCITx`; and end to end through the
   exchange with the real npm and .NET clients in the set `ci` (E4.1, W7)
-- 🟡 Admin UI: CI issuers, mappings, dry run and claim tester; the issuances, bulk revoke and the project's CI screens
+- 🟢 Admin UI: CI issuers, mappings, dry run and claim tester; the issuances, bulk revoke and the project's CI screens
   (`/admin/ci…`, `/admin/projects/:key/ci…`, Q-UI-99, Q-UI-100; 713 web tests). Against the real backend by the journey `13-ci`
   (an administrator registers the issuer double with its CA, creates the reference mapping in the editor, tests a claim set with a pasted
   token decoded in the browser, reads the issuance and revokes it; a project administrator manages a mapping of its project; axe in
-  both colour schemes; part of `TestE1_11Journeys`). Open: the axe check of the issuance detail dialog fails with
-  `scrollable-region-focusable` (its two `<pre>` blocks and the dialog content scroll without keyboard access), so `13-ci` and
-  `make e2e SET=access-long` are red until that screen is fixed; the rest of the journey passes
+  both colour schemes; part of `TestE1_11Journeys`). The axe check first found the issuance dialog's scrolling blocks without
+  keyboard access (`scrollable-region-focusable`); they are tab stops now, and `13-ci` is green on kind with the other 19 journeys
+  (`make e2e SET=access-long`, 2026-11-03)
 - 🟢 Reference pipeline: `.gitlab-ci.yml` publishing an npm package and pushing a NuGet package: the Examples of the
   specification, run as written by `TestCIPipeline` (`make e2e SET=ci`); the first run found that the Example's `dotnet nuget push` needs
   the push source in `nuget.config` (Q-CI-44)
