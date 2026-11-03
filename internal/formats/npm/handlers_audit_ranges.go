@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/guided-traffic/trove/internal/formats"
-	"github.com/guided-traffic/trove/internal/formats/npm/name"
 	"github.com/guided-traffic/trove/internal/formats/npm/semver"
 	"github.com/guided-traffic/trove/internal/vuln/advisory"
 )
@@ -14,39 +13,9 @@ import (
 // The text of vulnerable_versions of the answer (R-VULN-017): the affected ranges of an advisory as node-semver text, which
 // pnpm and npm evaluate themselves against the installed versions.
 
-// auditAdapter is npm's face for the matcher: names are the package identity, versions are node-semver's canonical form,
-// and the order is node-semver's (R-VULN-009). It is the adapter the audit hands to the matcher.
-type auditAdapter struct{}
-
-var _ formats.VulnerabilityAdapter = auditAdapter{}
-
-// Ecosystem implements [formats.VulnerabilityAdapter].
-func (auditAdapter) Ecosystem() string { return auditEcosystem }
-
-// AdvisoryName implements [formats.VulnerabilityAdapter].
-func (auditAdapter) AdvisoryName(n string) (string, bool) {
-	p, err := name.Parse(n)
-	if err != nil {
-		return "", false
-	}
-	return p.String(), true
-}
-
-// AdvisoryVersion implements [formats.VulnerabilityAdapter].
-func (auditAdapter) AdvisoryVersion(v string) (string, bool) { return semver.Clean(v) }
-
-// CompareVersions implements [formats.VulnerabilityAdapter].
-func (auditAdapter) CompareVersions(a, b string) (int, error) {
-	x, err := semver.Parse(a)
-	if err != nil {
-		return 0, err
-	}
-	y, err := semver.Parse(b)
-	if err != nil {
-		return 0, err
-	}
-	return semver.Compare(x, y), nil
-}
+// vulnAdapter is the format's VulnerabilityAdapter (vuln.go), which the audit hands to the matcher, so that the audit and
+// the evaluation read advisory versions alike (R-VULN-009, Q-VULN-36).
+var vulnAdapter formats.VulnerabilityAdapter = (*Format)(nil)
 
 // Wildcard is the text of every version.
 const wildcard = "*"

@@ -8,6 +8,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/repository"
+	"github.com/guided-traffic/trove/internal/vuln/evaluate"
 )
 
 // wireRepository is the repository area: the snapshot reader and the service at
@@ -35,7 +36,9 @@ func (a *App) wireRepository(_ context.Context, in infra, ex exposureArea) (repo
 		// (R-AUTHZ-031) and endpoint.exposure.deleted for the rules a deletion takes with it (H-164);
 		// the policy hook moves the epoch and the policy versions the deletion changes (R-AUTHZ-028);
 		// the ownership hook removes the ownership rows of the deleted repository (wire_ownership.go).
-		Hooks: repository.MultiHooks(authz.NewSettingsHook(in.rec), authz.NewExposureHook(ex.rules), authz.NewPolicyHook(in.changes), ownershipHook()),
+		// The scanning's hook enqueues a vuln-rescan in the transaction of a change of a repository's scanning inputs (R-VULN-002).
+		Hooks: repository.MultiHooks(authz.NewSettingsHook(in.rec), authz.NewExposureHook(ex.rules), authz.NewPolicyHook(in.changes), ownershipHook(),
+			evaluate.NewRepositoryHook(in.queue)),
 	})
 	if err != nil {
 		return repositoryArea{}, err

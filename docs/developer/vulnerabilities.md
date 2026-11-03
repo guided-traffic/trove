@@ -190,6 +190,34 @@ export, the auditor, the scoped service-account token, 412, the bulk results, th
 The decisions are [Q-VULN-30 to Q-VULN-34](../spec/vulnerability-scanning.md#q-vuln-30--a-full-sync-validates-before-it-writes-in-two-passes), the gaps
 [H-477 to H-479](../security/vulnerability-scanning.md#what-this-does-not-cover), the operator's page is [the manual](../manual/admin/vulnerability-sources.md).
 
+### B · Matching and findings
+
+Files: [internal/vuln/match/affects.go](../../internal/vuln/match/affects.go) (the OSV algorithm over a format's order), [internal/formats/npm/vuln.go](../../internal/formats/npm/vuln.go) and
+[internal/formats/nuget/vuln.go](../../internal/formats/nuget/vuln.go) (the adapters), [internal/vuln/evaluate](../../internal/vuln/evaluate) (`engine.go` the evaluation of names and versions,
+`lifecycle.go` the rules that need no database, `scope.go` the claims rule and the scope table of R-VULN-010, `evaluator.go` the port, `hooks.go` the item-store decorator and the repository hook,
+`jobs.go` the three jobs), [internal/vuln/store/evaluate.go](../../internal/vuln/store/evaluate.go) over [queries/vuln_evaluate.sql](../../internal/meta/postgres/queries/vuln_evaluate.sql),
+[internal/app/wire_vuln_eval.go](../../internal/app/wire_vuln_eval.go), [internal/tools/osvexpect](../../internal/tools/osvexpect) with `make osv-expected`.
+
+- **One evaluation, three entries.** `run.evaluateNames` takes names, the stored versions to evaluate and the findings that exist; the commit hook passes one version, the jobs pass every stored version of a batch of
+  names. It matches with `match.Affects`, groups entries by canonical identifier (Q-VULN-35), and applies the lifecycle: insert, re-detect, reopen, refresh (`advisory_changed`), re-key, resolve. It resolves only
+  when the ecosystem's data is complete (the commit path reads `States`, the jobs read PostgreSQL).
+- **Hooks.** `evaluate.Hooks(inner, evaluator)` runs the evaluation after the format's `OnCommit` (a companion file of a version, not its lead item, is skipped) and the resolution of removed versions before the format's
+  `OnItemsRemoved` (Q-VULN-39). `evaluate.NewRepositoryHook(queue)` is in `wireRepository`'s `MultiHooks` and enqueues `vuln-rescan` in the transaction of a change of `enabled`, `matchPublicAdvisories` or the upstream URL.
+- **Jobs.** `vuln-evaluate` (coalescing) serves each full-evaluation request in `vuln_source_state.full_evaluation_requested_at` in batches of 1,000 package names with a checkpoint, clears the request in the
+  last batch only when it still holds the value read at the start, then works off `vuln_pending_evaluation` in batches of 1,000 advisories; `vuln-rescan` (exclusive per repository, arguments `{"repository": key, "repositoryId": n}`, the field names of the rescan endpoint) reads the
+  repository row at its start and its end and runs again when the inputs differ; `vuln-findings-retention` deletes resolved findings past `resolved_retention`.
+- **The claims rule** is one exported value for the client audits: `evaluate.ClaimRule{Claims, Repos}.InternalNames(ctx, format string, names []string) (map[string]bool, error)` (and `Claim` for the
+  holder). `Service.Claims()` returns it over the replica's claim index. Work package D implements `Advisories.InternalNames` with it.
+- **The remote miss.** `Service.EvaluateMiss` returns the whole verdict (Q-VULN-38) and writes nothing.
+- **The npm remote fill** now records the version (Q-VULN-37): see [npm.md](npm.md#remote-fills-record-the-version).
+
+Contract changes: `vuln.CommittedVersion` gains `RepoKey`; `wireVuln` takes `repositoryArea` and `virtualArea`; `wireRepository` adds the scanning's hook; the Makefile gains `osv-expected`.
+
+Tests: unit ([evaluate_test.go](../../internal/vuln/evaluate/evaluate_test.go), the table tests and the corpus tests `vuln_test.go` and `vuln_corpus_test.go` of both formats; the corpus compares with
+[osv-scanner-expected.json](../../internal/vuln/match/testdata/osv-scanner-expected.json), frozen by osv-scanner v2.7.0 in offline mode, `make osv-expected`), integration
+([test/integration/vulnfindings](../../test/integration/vulnfindings), [remote_vuln_test.go](../../test/integration/npm/remote_vuln_test.go)). Not reachable in this tier: the object-store GET counters (the
+evaluation reads no blob; the test versions have none), the restore hook (no trash can), the metric of a failed audit.
+
 ### F · The UI (R-VULN-022, R-VULN-023)
 
 Q-VULN-52 to Q-VULN-54, H-490. The description of the screens, their files and specs is in [web-ui.md](web-ui.md#the-vulnerability-screens); the manual page is

@@ -32,6 +32,7 @@ LINT_BIN       := .bin/golangci-lint-$(GOLANGCI_LINT_VERSION)-$(GOVERSION)
 GOVULNCHECK_BIN := .bin/govulncheck-$(GOVULNCHECK_VERSION)-$(GOVERSION)
 GOCYCLO_BIN    := .bin/gocyclo-$(GOCYCLO_VERSION)-$(GOVERSION)
 OASDIFF_BIN    := .bin/oasdiff-$(OASDIFF_VERSION)-$(GOVERSION)
+OSV_SCANNER_BIN := .bin/osv-scanner-$(OSV_SCANNER_VERSION)-$(GOVERSION)
 # promtool is a release binary, not built by Go, so its name carries the pin only (tools/versions.env).
 PROMTOOL_BIN   := .bin/promtool-$(PROMTOOL_VERSION)
 PROMTOOL_OS    := $(shell uname -s | tr '[:upper:]' '[:lower:]')
@@ -534,6 +535,16 @@ osv-stub-image: ## Build the test advisory source image (OSV_STUB_IMAGE, IMAGE_A
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(IMAGE_ARCH) go build -trimpath -ldflags '-s -w' -o .out/osvstub/osvstub-linux-$(IMAGE_ARCH) ./test/osvstub/cmd/osvstub
 	docker buildx build --load --platform linux/$(IMAGE_ARCH) --build-arg RUNTIME_BASE_IMAGE=$(RUNTIME_BASE_IMAGE) \
 	  -f test/osvstub/Containerfile -t $(OSV_STUB_IMAGE) .out/osvstub
+
+$(OSV_SCANNER_BIN):
+	@mkdir -p .bin
+	@tmp="$$(mktemp -d)"; \
+	  GOBIN="$$tmp" go install github.com/google/osv-scanner/v2/cmd/osv-scanner@$(OSV_SCANNER_VERSION) && \
+	  mv "$$tmp/osv-scanner" $@ && rmdir "$$tmp"
+
+.PHONY: osv-expected
+osv-expected: $(OSV_SCANNER_BIN) ## Freeze the results of osv-scanner's offline mode (pinned) over the real OSV records in internal/vuln/match/testdata (R-VULN-009; needs the module proxy once)
+	go run ./internal/tools/osvexpect -osv-scanner $(OSV_SCANNER_BIN) -real test/osvstub/testdata/real -out internal/vuln/match/testdata/osv-scanner-expected.json
 
 .PHONY: osv-real-refresh
 osv-real-refresh: ## Fetch the real OSV records of test/osvstub/testdata/real/ids.txt again from api.osv.dev (needs network); review the diff, the tests name fields of them

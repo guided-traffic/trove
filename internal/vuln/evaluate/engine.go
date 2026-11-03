@@ -1,0 +1,550 @@
+package evaluate
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"sort"
+	"time"
+
+	"github.com/guided-traffic/trove/internal/audit"
+	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/repository"
+	"github.com/guided-traffic/trove/internal/vuln"
+	"github.com/guided-traffic/trove/internal/vuln/advisory"
+	"github.com/guided-traffic/trove/internal/vuln/match"
+	vmetrics "github.com/guided-traffic/trove/internal/vuln/metrics"
+	"github.com/guided-traffic/trove/internal/vuln/store"
+)
+
+// BatchNames is the number of package names (and of queued advisories) one batch of the jobs evaluates in one transaction
+// (R-VULN-011).
+const BatchNames = 1000
+
+// Options configure [New].
+type Options struct {
+	Runner meta.Runner
+	// Repos is the replica's repository snapshot.
+	Repos repository.Reader
+	// Claims is the replica's claim index (repository.Routing).
+	Claims ClaimIndex
+	// States answers the state of an ecosystem's data from the replica's cache; nil is a replica that has not wired it, which
+	// reads as "not complete" on the paths that must not query (the commit hook and the miss).
+	States vuln.States
+	// Recorder writes the audit events; nil writes none.
+	Recorder audit.Recorder
+	// Metrics are the collectors of R-VULN-024; nil counts nothing.
+	Metrics *vmetrics.Metrics
+	// Ecosystems are the ecosystems of the formats that have the adapter.
+	Ecosystems []Ecosystem
+	// Enabled is vulnerabilities.enabled, Enforcement vulnerabilities.enforcement.
+	Enabled     bool
+	Enforcement vuln.Enforcement
+	// PublicUpstreams is vulnerabilities.matching.public_upstreams by format ID.
+	PublicUpstreams map[string][]string
+	// Retention is vulnerabilities.findings.resolved_retention.
+	Retention time.Duration
+	Log       *slog.Logger
+	// BatchNames overrides [BatchNames]; tests only.
+	BatchNames int
+}
+
+// Service is the evaluation: the [vuln.Evaluator] port and the jobs. A replica builds one; it holds no state between calls
+// beyond its configuration.
+type Service struct {
+	o     Options
+	rule  ClaimRule
+	eco   map[string]Ecosystem
+	byFmt map[string]Ecosystem
+	log   *slog.Logger
+}
+
+var _ vuln.Evaluator = (*Service)(nil)
+
+// New builds the service.
+func New(o Options) (*Service, error) {
+	switch {
+	case o.Runner == nil:
+		return nil, errors.New("evaluate: no transaction runner")
+	case o.Repos == nil:
+		return nil, errors.New("evaluate: no repository snapshot")
+	}
+	if o.Log == nil {
+		o.Log = slog.Default()
+	}
+	if o.BatchNames <= 0 {
+		o.BatchNames = BatchNames
+	}
+	if o.Enforcement == "" {
+		o.Enforcement = vuln.EnforceBlocks
+	}
+	s := &Service{o: o, rule: ClaimRule{Claims: o.Claims, Repos: o.Repos}, eco: map[string]Ecosystem{}, byFmt: map[string]Ecosystem{}, log: o.Log}
+	for _, e := range o.Ecosystems {
+		if e.Name == "" || e.Adapter == nil {
+			return nil, fmt.Errorf("evaluate: the ecosystem %q has no adapter", e.Name)
+		}
+		s.eco[e.Name] = e
+		for _, f := range e.Formats {
+			s.byFmt[f] = e
+		}
+	}
+	return s, nil
+}
+
+// Claims returns the internal-names rule of R-VULN-010 over this service's claim index and snapshot: the one rule the
+// evaluation and the client audits share.
+func (s *Service) Claims() ClaimRule { return s.rule }
+
+// stats are what one evaluation did, for the metrics.
+type stats struct {
+	versions    int
+	unevaluable int
+}
+
+// affEntry is one affected entry of a name with what the evaluation reads of it.
+type affEntry struct {
+	row store.AffectedRow
+}
+
+// nameAdvisories is everything the advisory data says about one name.
+type nameAdvisories struct {
+	entries []affEntry
+	// withdrawn is the set of canonical identifiers whose every entry for the name is withdrawn.
+	withdrawn map[string]bool
+	// live is the set of canonical identifiers that have a non-withdrawn entry for the name, with the kind.
+	live map[string]advisory.Kind
+}
+
+func groupAffected(rows []store.AffectedRow) map[string]*nameAdvisories {
+	out := map[string]*nameAdvisories{}
+	total := map[string]map[string]int{}
+	gone := map[string]map[string]int{}
+	for _, r := range rows {
+		na := out[r.Name]
+		if na == nil {
+			na = &nameAdvisories{withdrawn: map[string]bool{}, live: map[string]advisory.Kind{}}
+			out[r.Name] = na
+			total[r.Name], gone[r.Name] = map[string]int{}, map[string]int{}
+		}
+		na.entries = append(na.entries, affEntry{row: r})
+		total[r.Name][r.CanonicalID]++
+		if r.Withdrawn {
+			gone[r.Name][r.CanonicalID]++
+		} else {
+			na.live[r.CanonicalID] = r.Kind
+		}
+	}
+	for name, na := range out {
+		for id, n := range total[name] {
+			if gone[name][id] == n {
+				na.withdrawn[id] = true
+			}
+		}
+	}
+	return out
+}
+
+// matchVersion evaluates one stored version against the entries of its name with the format's own order (R-VULN-009): the
+// canonical advisories that affect it, and the number of ranges the order could not evaluate.
+func matchVersion(a match.Adapter, na *nameAdvisories, version string, st *stats) map[string]*matched {
+	out := map[string]*matched{}
+	if na == nil {
+		return out
+	}
+	for _, e := range na.entries {
+		r := e.row
+		if r.Withdrawn {
+			continue
+		}
+		res := match.Affects(a, r.Entry, version)
+		st.unevaluable += res.Unevaluable
+		if r.RangesInvalid {
+			st.unevaluable++
+		}
+		if !res.Affected {
+			continue
+		}
+		m := out[r.CanonicalID]
+		if m == nil {
+			m = &matched{
+				ID: r.CanonicalID, Kind: r.Kind, Severity: r.Severity, CVSS: r.CVSS, KnownExploited: r.KnownExploited,
+				ModifiedUs: r.ModifiedUs,
+			}
+			out[r.CanonicalID] = m
+		}
+		m.FixAvailable = m.FixAvailable || res.FixAvailable
+		m.Fixed = union(m.Fixed, r.Entry.Fixed)
+	}
+	return out
+}
+
+// repoLookup resolves a repository id to its view; false for one the scanning does not apply to.
+type repoLookup func(id int64) (repoView, bool)
+
+// run is one evaluation in one transaction.
+type run struct {
+	s       *Service
+	tx      meta.Tx
+	ev      *store.Eval
+	eco     Ecosystem
+	repos   repoLookup
+	trigger vuln.Trigger
+	// canResolve is false while the ecosystem's data is not complete: the evaluation then only adds (R-VULN-011).
+	canResolve bool
+	// inTx lets a first publish see its own auto claim.
+	inTx claimReader
+	st   stats
+}
+
+// evaluateNames evaluates stored versions against the advisory data in tx: for the versions given (a commit) or every stored
+// version of the names (a job), the findings are upserted and resolved by their identity (R-VULN-012). existing are the
+// findings of those names, resolved ones included; a finding whose version is not among the versions is not touched.
+func (r *run) evaluateNames(ctx context.Context, names []string, versions []store.StoredVersion, existing []store.Finding) error {
+	rows, err := r.ev.AffectedForNames(ctx, r.eco.Name, names)
+	if err != nil {
+		return err
+	}
+	byName := groupAffected(rows)
+	rekey, err := r.rekeyTargets(ctx, existing, byName)
+	if err != nil {
+		return err
+	}
+	type key struct {
+		repo          int64
+		name, version string
+	}
+	byKey := map[key][]*store.Finding{}
+	for i := range existing {
+		f := &existing[i]
+		k := key{f.RepoID, f.Name, f.Version}
+		byKey[k] = append(byKey[k], f)
+	}
+	sort.SliceStable(versions, func(i, j int) bool {
+		a, b := versions[i], versions[j]
+		if a.RepoID != b.RepoID {
+			return a.RepoID < b.RepoID
+		}
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		return a.Version < b.Version
+	})
+	scopes := map[string]scopeResult{}
+	for _, v := range versions {
+		rv, ok := r.repos(v.RepoID)
+		if !ok || !rv.Settings.Enabled || rv.Ecosystem != r.eco.Name {
+			continue
+		}
+		sk := fmt.Sprintf("%d/%s", v.RepoID, v.Name)
+		sc, ok := scopes[sk]
+		if !ok {
+			var err error
+			sc.scope, sc.claimRepo, err = r.s.scopeOf(ctx, rv, v.Name, r.inTx)
+			if err != nil {
+				return err
+			}
+			scopes[sk] = sc
+		}
+		var found map[string]*matched
+		if sc.scope == ScopeMatched {
+			found = matchVersion(r.eco.Adapter, byName[v.Name], v.Version, &r.st)
+		}
+		r.st.versions++
+		var withdrawn map[string]bool
+		if na := byName[v.Name]; na != nil {
+			withdrawn = na.withdrawn
+		}
+		if err := r.apply(ctx, rv, v, found, byKey[key{v.RepoID, v.Name, v.Version}], withdrawn, rekey); err != nil {
+			return err
+		}
+	}
+	return r.recordClaimed(ctx, names, byName)
+}
+
+type scopeResult struct {
+	scope     Scope
+	claimRepo string
+}
+
+// rekeyTargets finds, for the advisory identifiers that findings carry and that are no canonical identifier of the advisory
+// data any more, the identifier of the alias group the record belongs to now (R-VULN-006): the findings follow it.
+func (r *run) rekeyTargets(ctx context.Context, existing []store.Finding, byName map[string]*nameAdvisories) (map[string]string, error) {
+	canonical := map[string]bool{}
+	for _, na := range byName {
+		for id := range na.live {
+			canonical[id] = true
+		}
+		for id := range na.withdrawn {
+			canonical[id] = true
+		}
+	}
+	seen := map[string]bool{}
+	var candidates []string
+	for _, f := range existing {
+		if f.Status == vuln.StatusResolved || canonical[f.AdvisoryID] || seen[f.AdvisoryID] {
+			continue
+		}
+		seen[f.AdvisoryID] = true
+		candidates = append(candidates, f.AdvisoryID)
+	}
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+	return r.ev.RekeyTargets(ctx, r.eco.Name, candidates)
+}
+
+// apply brings the findings of one stored version in line with what the evaluation found.
+func (r *run) apply(ctx context.Context, rv repoView, v store.StoredVersion, found map[string]*matched, existing []*store.Finding,
+	withdrawn map[string]bool, rekey map[string]string,
+) error {
+	// A group whose canonical identifier changed: the finding follows it and keeps its status and history.
+	for _, f := range existing {
+		if found[f.AdvisoryID] != nil || f.Status == vuln.StatusResolved {
+			continue
+		}
+		to := rekey[f.AdvisoryID]
+		if to == "" || to == f.AdvisoryID || found[to] == nil || hasAdvisory(existing, to) {
+			continue
+		}
+		if err := r.ev.Rekey(ctx, f.ID, to); err != nil {
+			return err
+		}
+		if err := r.ev.AddEvent(ctx, f.ID, vuln.ChangeAdvisoryChanged, f.Status, f.Status, "", map[string]any{"canonicalId": map[string]string{"from": f.AdvisoryID, "to": to}}); err != nil {
+			return err
+		}
+		f.AdvisoryID = to
+	}
+	have := map[string]*store.Finding{}
+	for _, f := range existing {
+		have[f.AdvisoryID] = f
+	}
+	for _, id := range sortedIDs(found) {
+		m := found[id]
+		if err := r.upsert(ctx, rv, v, m, have[id]); err != nil {
+			return err
+		}
+	}
+	if !r.canResolve {
+		return nil
+	}
+	byReason := map[vuln.ResolvedReason][]string{}
+	for _, f := range existing {
+		if f.Status == vuln.StatusResolved || found[f.AdvisoryID] != nil {
+			continue
+		}
+		reason := vuln.ResolvedNoLongerAffected
+		if withdrawn[f.AdvisoryID] {
+			reason = vuln.ResolvedWithdrawn
+		}
+		byReason[reason] = append(byReason[reason], f.ID)
+	}
+	for _, reason := range []vuln.ResolvedReason{vuln.ResolvedWithdrawn, vuln.ResolvedNoLongerAffected} {
+		if err := r.resolve(ctx, byReason[reason], reason); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func hasAdvisory(list []*store.Finding, id string) bool {
+	for _, f := range list {
+		if f.AdvisoryID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// resolve resolves findings and writes their history.
+func (r *run) resolve(ctx context.Context, ids []string, reason vuln.ResolvedReason) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	done, err := r.ev.Resolve(ctx, ids, reason)
+	if err != nil {
+		return err
+	}
+	return r.s.resolvedEvents(ctx, r.ev, done, reason)
+}
+
+func (s *Service) resolvedEvents(ctx context.Context, ev *store.Eval, done []store.Resolved, reason vuln.ResolvedReason) error {
+	for _, d := range done {
+		if err := ev.AddEvent(ctx, d.ID, vuln.ChangeResolved, d.Old, vuln.StatusResolved, string(reason), nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// upsert inserts, re-detects or refreshes the finding of one canonical advisory on one version.
+func (r *run) upsert(ctx context.Context, rv repoView, v store.StoredVersion, m *matched, f *store.Finding) error {
+	nf := store.NewFinding{
+		RepoID: v.RepoID, Ecosystem: r.eco.Name, Name: v.Name, Version: v.Version, AdvisoryID: m.ID, PackageID: v.PackageID,
+		VersionID: v.VersionID, Kind: m.Kind, Severity: m.Severity, CVSS: m.CVSS, KnownExploited: m.KnownExploited,
+		FixAvailable: m.FixAvailable, FixedVersions: m.Fixed, AdvisoryModifiedU: m.ModifiedUs,
+	}
+	if f == nil {
+		nf.ID = store.NewFindingID()
+		if err := r.ev.InsertFinding(ctx, nf); err != nil {
+			return err
+		}
+		return r.ev.AddEvent(ctx, nf.ID, vuln.ChangeDetected, "", vuln.StatusNeedsTriage, "", nil)
+	}
+	changed := m.changes(f)
+	pointsElsewhere := f.VersionID != v.VersionID || f.PackageID != v.PackageID
+	switch f.Status {
+	case vuln.StatusResolved:
+		status, reopened, change := redetected(f, m)
+		if err := r.ev.RefreshFinding(ctx, f.ID, nf); err != nil {
+			return err
+		}
+		if err := r.ev.SetStatus(ctx, f.ID, status); err != nil {
+			return err
+		}
+		if reopened {
+			return r.reopen(ctx, rv, v, f, m, vuln.StatusResolved, change)
+		}
+		return r.ev.AddEvent(ctx, f.ID, vuln.ChangeRedetected, vuln.StatusResolved, status, "", nil)
+	case vuln.StatusDismissed:
+		if change, yes := m.material(f); yes {
+			if err := r.ev.RefreshFinding(ctx, f.ID, nf); err != nil {
+				return err
+			}
+			if err := r.ev.SetStatus(ctx, f.ID, vuln.StatusNeedsTriage); err != nil {
+				return err
+			}
+			return r.reopen(ctx, rv, v, f, m, vuln.StatusDismissed, change)
+		}
+	}
+	if len(changed) > 0 || pointsElsewhere {
+		if err := r.ev.RefreshFinding(ctx, f.ID, nf); err != nil {
+			return err
+		}
+	}
+	if len(changed) > 0 {
+		return r.ev.AddEvent(ctx, f.ID, vuln.ChangeAdvisoryChanged, f.Status, f.Status, "", map[string]any{"changed": changed})
+	}
+	return nil
+}
+
+// reopen writes the history of a dismissed finding that returned to needs_triage after a material change of its advisory and
+// the audit event of it (R-VULN-012): block is set when the reopened finding is malicious and blocks again.
+func (r *run) reopen(ctx context.Context, rv repoView, v store.StoredVersion, f *store.Finding, m *matched, from vuln.Status, change map[string]any) error {
+	if err := r.ev.AddEvent(ctx, f.ID, vuln.ChangeReopened, from, vuln.StatusNeedsTriage, "", change); err != nil {
+		return err
+	}
+	if r.s.o.Recorder == nil {
+		return nil
+	}
+	pol := vuln.PolicyFor(rv.Settings, rv.Ecosystem, r.s.o.Enabled, r.s.o.Enforcement)
+	body := map[string]any{"finding": f.ID, "advisory": m.ID, "change": change}
+	if reason, ok := pol.BlockReasonOf(m.Kind, vuln.StatusNeedsTriage); ok && reason == vuln.BlockMalicious && pol.Enforcement == vuln.EnforceBlocks {
+		body["block"] = "set"
+	}
+	details, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	return r.s.o.Recorder.RecordTx(ctx, r.tx, audit.Event{
+		Type: audit.EventVulnFindingReopened, Actor: audit.Actor{Kind: "system", Name: "vulnerability-scanning"}, Outcome: audit.Success,
+		Repository: rv.Key, Path: v.Name + "@" + v.Version, Details: details,
+	})
+}
+
+// recordClaimed records the public advisories that name an internal name (R-VULN-010): one row per advisory and name and, when
+// the row is new, the security event `vulnerability.claimed_name_match` after the transaction committed. A name that is no
+// longer internal, or that an advisory no longer names, loses its rows.
+func (r *run) recordClaimed(ctx context.Context, names []string, byName map[string]*nameAdvisories) error {
+	var keepNames, keepIDs []string
+	for _, name := range names {
+		var claimRepo string
+		internal := false
+		for _, f := range r.eco.Formats {
+			repo, yes, err := r.s.rule.Claim(ctx, f, name)
+			if err != nil {
+				return err
+			}
+			if yes {
+				claimRepo, internal = repo, true
+				break
+			}
+		}
+		if !internal {
+			continue
+		}
+		na := byName[name]
+		if na == nil {
+			continue
+		}
+		ids := make([]string, 0, len(na.live))
+		for id := range na.live {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			kind := na.live[id]
+			keepNames, keepIDs = append(keepNames, name), append(keepIDs, id)
+			isNew, err := r.ev.InsertClaimedMatch(ctx, r.eco.Name, id, name, kind)
+			if err != nil {
+				return err
+			}
+			if isNew {
+				r.claimedEvent(ctx, name, id, kind, claimRepo)
+			}
+		}
+	}
+	return r.ev.PruneClaimedMatches(ctx, r.eco.Name, names, keepNames, keepIDs)
+}
+
+// claimedEvent queues the security event for after the commit: a transaction that rolls back and runs again writes it once.
+func (r *run) claimedEvent(ctx context.Context, name, id string, kind advisory.Kind, claimRepo string) {
+	rec := r.s.o.Recorder
+	if rec == nil {
+		return
+	}
+	details, err := json.Marshal(map[string]string{"package": name, "advisory": id, "kind": string(kind), "claimRepository": claimRepo})
+	if err != nil {
+		return
+	}
+	bg := context.WithoutCancel(ctx)
+	r.tx.After(func() {
+		rec.Record(bg, audit.Event{
+			Type: audit.EventVulnClaimedNameMatch, Actor: audit.Actor{Kind: "system", Name: "vulnerability-scanning"}, Outcome: audit.Success,
+			Repository: claimRepo, Path: name, Details: details,
+		})
+	})
+}
+
+// finish counts one evaluation in the metrics.
+func (r *run) finish(started time.Time) {
+	m := r.s.o.Metrics
+	if m == nil {
+		return
+	}
+	t := string(r.trigger)
+	m.Evaluations.WithLabelValues(t).Add(float64(max(r.st.versions, 1)))
+	m.EvaluationDuration.WithLabelValues(t).Observe(time.Since(started).Seconds())
+	if r.st.unevaluable > 0 {
+		m.UnevaluableRanges.WithLabelValues(r.eco.Name).Add(float64(r.st.unevaluable))
+	}
+}
+
+// snapshotLookup is the repoLookup over the replica's snapshot: the repositories of a batch are read once.
+func (s *Service) snapshotLookup(ctx context.Context) (repoLookup, error) {
+	list, err := s.o.Repos.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[int64]repoView, len(list))
+	for _, repo := range list {
+		if repo.Lifecycle != repository.Active {
+			continue
+		}
+		if v, ok := viewOf(repo); ok {
+			byID[v.ID] = v
+		}
+	}
+	return func(id int64) (repoView, bool) { v, ok := byID[id]; return v, ok }, nil
+}

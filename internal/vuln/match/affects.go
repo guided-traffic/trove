@@ -17,16 +17,16 @@ const zeroVersion = "0"
 // the range. GIT ranges are ignored. The caller has matched the entry's name and dropped withdrawn advisories.
 //
 // version is a stored (normalized) version. A range one of whose event versions does not parse is skipped and counted in
-// Result.Unevaluable; a stored version that does not parse matches only through versions[] and every_version. Affects
-// never reads a database and never fails: what it cannot evaluate is counted.
+// Result.Unevaluable, whether or not the stored version parses, so that the count depends on the advisory alone; a stored
+// version that does not parse matches only through versions[] and every_version. Affects never reads a database and never
+// fails: what it cannot evaluate is counted.
 func Affects(a Adapter, e advisory.Affected, version string) Result {
 	if e.EveryVersion {
 		return Result{Affected: true}
 	}
 	res := Result{Affected: slices.Contains(e.Versions, version)}
-	if _, err := a.CompareVersions(version, version); err != nil {
-		return res
-	}
+	_, perr := a.CompareVersions(version, version)
+	parses := perr == nil
 	for _, r := range e.Ranges {
 		if r.Type != advisory.RangeSemver && r.Type != advisory.RangeEcosystem {
 			continue
@@ -34,6 +34,9 @@ func Affects(a Adapter, e advisory.Affected, version string) Result {
 		events, ok := normalizeEvents(a, r.Events)
 		if !ok {
 			res.Unevaluable++
+			continue
+		}
+		if !parses {
 			continue
 		}
 		if in, fix := evalRange(a, events, version); in {
@@ -83,7 +86,10 @@ func evalRange(a Adapter, events []advisory.Event, version string) (in, fix bool
 		case x.Version == y.Version:
 			return rankOf(x.Kind) - rankOf(y.Kind)
 		}
-		return cmp(x.Version, y.Version)
+		if c := cmp(x.Version, y.Version); c != 0 {
+			return c
+		}
+		return rankOf(x.Kind) - rankOf(y.Kind) // two spellings of one version
 	})
 	opened := -1
 	for i, ev := range sorted {

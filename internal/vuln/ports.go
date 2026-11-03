@@ -24,8 +24,10 @@ type States interface {
 // runs, names the version; an item without one (a file that belongs to no version) is no evaluation.
 type CommittedVersion struct {
 	RepoID int64
-	Format string
-	ItemID int64
+	// RepoKey is the repository's key; the evaluation reads the repository's snapshot with it, which costs no query.
+	RepoKey string
+	Format  string
+	ItemID  int64
 	// Trigger is TriggerPublish for an upload and TriggerFill for the fill of a remote cache.
 	Trigger Trigger
 }

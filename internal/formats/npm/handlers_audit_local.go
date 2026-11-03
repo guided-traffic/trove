@@ -252,7 +252,7 @@ func renderLocalAudit(data formats.VulnerabilityData, body map[string][]string, 
 			var affected []requestedVersion
 			for _, v := range versions {
 				for _, e := range g.entries {
-					if data.Affects(auditAdapter{}, e, v.canonical).Affected {
+					if data.Affects(vulnAdapter, e, v.canonical).Affected {
 						affected = append(affected, v)
 						break
 					}

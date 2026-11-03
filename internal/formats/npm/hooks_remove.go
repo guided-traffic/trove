@@ -38,6 +38,9 @@ type removed struct {
 // the same lock before the first row goes (Q-AUTHZ-161). The writer of this hook is
 // bound to no request and decides none.
 func (f *Format) OnItemsRemoved(ctx context.Context, tx formats.Tx, e formats.ItemsEvent) error {
+	if e.Repo.Class == formats.Remote {
+		return f.removeCached(ctx, e)
+	}
 	if e.Repo.Class != formats.Local {
 		return nil
 	}
@@ -109,6 +112,38 @@ func (f *Format) removedFiles(items []formats.RemovedItem) map[string]*removed {
 		}
 	}
 	return out
+}
+
+// removeCached removes the version rows of the tarballs a remote repository's cache lost (an eviction, a delete of the cached
+// item): the row commitFill wrote goes with its item, so the scanning resolves the version's findings with version_removed and a
+// fill writes the row again. A remote has no tombstones and no dist-tags of its own here.
+func (f *Format) removeCached(ctx context.Context, e formats.ItemsEvent) error {
+	locked := map[string]formats.PackageRef{}
+	for _, it := range e.Items {
+		if it.Version == 0 || !strings.HasSuffix(it.Item.Path, tarballSuffix) {
+			continue
+		}
+		pkgName := f.Classify(formats.Path{Path: it.Item.Path}).Package
+		if pkgName == "" {
+			continue
+		}
+		if _, ok := locked[pkgName]; !ok {
+			pkg, _, err := e.Packages.EnsureLocked(ctx, e.Repo, pkgName, pkgName)
+			if err != nil {
+				return err
+			}
+			locked[pkgName] = pkg
+		}
+		if err := e.Packages.TrashOrDeleteVersion(ctx, it.Version, true); err != nil {
+			return err
+		}
+	}
+	for _, pkg := range locked {
+		if _, _, err := e.Packages.BumpRevision(ctx, pkg); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // removal says how versions leave a package.

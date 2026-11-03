@@ -8,6 +8,7 @@ import (
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/vuln"
 	"github.com/guided-traffic/trove/internal/vuln/enforce"
+	"github.com/guided-traffic/trove/internal/vuln/evaluate"
 	vmetrics "github.com/guided-traffic/trove/internal/vuln/metrics"
 	"github.com/guided-traffic/trove/internal/vuln/store"
 	vsync "github.com/guided-traffic/trove/internal/vuln/sync"
@@ -58,7 +59,7 @@ type vulnArea struct {
 }
 
 // wireVuln builds the area: the metrics today, and the ports as the work packages fill their blocks.
-func (a *App) wireVuln(_ context.Context, in infra, repo repositoryArea, vir virtualArea) (vulnArea, error) {
+func (a *App) wireVuln(ctx context.Context, in infra, repo repositoryArea, vir virtualArea) (vulnArea, error) {
 	if err := requireInputs(AreaVuln, given("database", in.db), given("change log", in.changes), given("cache registry", in.caches),
 		given("audit recorder", in.rec), given("repository reader", repo.reader), given("claim routing", vir.routing)); err != nil {
 		return vulnArea{}, err
@@ -79,7 +80,10 @@ func (a *App) wireVuln(_ context.Context, in infra, repo repositoryArea, vir vir
 	// <<< WP-A
 
 	// >>> WP-B
-	// The evaluator over the store and the repository snapshot: out.evaluator.
+	// The evaluator over the store, the repository snapshot and the claim index: out.evaluator.
+	if err := a.wireVulnEvaluation(ctx, in, repo, vir, &out); err != nil {
+		return vulnArea{}, err
+	}
 	// <<< WP-B
 
 	// >>> WP-D
@@ -136,7 +140,9 @@ func (v vulnArea) countAudit(format, mode, outcome string) {
 // the format's OnCommit linked the item to it, and a removal resolves the version's findings in the removing transaction).
 func (v vulnArea) hooks(inner items.Hooks) items.Hooks {
 	// >>> WP-B
-	// if v.evaluator != nil { return evaluate.Hooks(inner, v.evaluator) }
+	if v.evaluator != nil {
+		return evaluate.Hooks(inner, v.evaluator)
+	}
 	// <<< WP-B
 	return inner
 }
@@ -163,7 +169,6 @@ func (a *App) registerVulnJobs(r *jobs.Registry) {
 	// <<< WP-A
 
 	// >>> WP-B
-	// vuln-evaluate (queue default, key vuln.DedupEvaluate, Coalesce), vuln-rescan (default, key vuln.RescanKey(id),
-	// Exclusive) and vuln-findings-retention (maintenance) with its task.
+	a.registerVulnEvaluationJobs(r)
 	// <<< WP-B
 }

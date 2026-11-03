@@ -653,3 +653,11 @@ Add a tarball rule:
 - Hosted-git ranges for the gist host and ranges that need percent-decoding are left unchanged.
 - Unicode normalization collisions between entry names are not checked.
 - The ratio check is approximate by design (a 128 KiB allowance for the inflater's read-ahead).
+
+## Remote fills record the version
+
+The fill hook of a remote repository (`commitFill` in [hooks.go](../../internal/formats/npm/hooks.go)) records the tarball it cached as a version: for a path that `Classify` maps to a content item with a package and a
+canonical version it ensures the package row, writes the version row (or links the item to the live one) with the item as lead item and raises the revision. No npm rows are written: the remote's documents come from the
+`npm_remote_*` tables. A published and a cached version are told apart by the class of the repository. The removal hook of a remote (`removeCached`) deletes the version row of a removed tarball, so a cache that
+evicts and fetches again writes a new row and a finding of the version re-detects (R-VULN-011, R-VULN-012, Q-VULN-37). Tested by
+[remote_vuln_test.go](../../test/integration/npm/remote_vuln_test.go).

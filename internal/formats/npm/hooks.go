@@ -3,6 +3,7 @@ package npm
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
@@ -70,9 +71,42 @@ func (f *Format) OnCommit(ctx context.Context, tx formats.Tx, c formats.CommitEv
 		return f.commitSigstore(ctx, c, p)
 	}
 	if c.Origin == formats.OriginFill {
-		return nil
+		return f.commitFill(ctx, c)
 	}
 	return manifest.BadPublish("A file reaches an npm repository through npm publish; a raw upload is not supported.")
+}
+
+// commitFill records the tarball a remote repository cached as a version of its package: the package and version rows, with the
+// item linked as the version's lead item, so that the scanning evaluates the version in the fill's commit and a block reaches
+// the item (R-VULN-001, R-VULN-011, R-VULN-015, Q-VULN-35). A remote version row is told from a published one by the class of
+// its repository; it carries no npm rows (the remote's documents come from the npm_remote tables). Any other file of a fill (a
+// metadata document, a provenance bundle) gets no version. A tarball whose path names no canonical package and version gets none.
+func (f *Format) commitFill(ctx context.Context, c formats.CommitEvent) error {
+	if c.Repo.Class != formats.Remote || !strings.HasSuffix(c.Path.Path, tarballSuffix) {
+		return nil
+	}
+	info := f.Classify(c.Path)
+	if info.Kind != formats.Content || info.Package == "" || info.Version == "" {
+		return nil
+	}
+	pkg, _, err := c.Packages.EnsureLocked(ctx, c.Repo, info.Package, info.Package)
+	if err != nil {
+		return err
+	}
+	live, err := c.Packages.Versions(ctx, pkg)
+	if err != nil {
+		return err
+	}
+	for _, v := range live {
+		if v.Version == info.Version {
+			return c.Packages.LinkItem(ctx, c.Item, v.ID, true)
+		}
+	}
+	if _, err := c.Packages.InsertVersion(ctx, pkg, formats.NewVersion{Version: info.Version, DisplayVersion: info.Version, LeadItem: &c.Item}); err != nil {
+		return err
+	}
+	_, _, err = c.Packages.BumpRevision(ctx, pkg)
+	return err
 }
 
 func storeOf(data any) (Store, error) {

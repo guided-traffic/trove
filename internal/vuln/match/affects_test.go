@@ -107,6 +107,17 @@ func TestR_VULN_009_Affects(t *testing.T) {
 			Ranges: []advisory.Range{rng(ev("introduced", "0"), ev("fixed", "x")), introducedFixed},
 		}, "1.1.0", Result{Affected: true, FixAvailable: true, Unevaluable: 1}},
 		{"a stored version that does not parse matches ranges never", advisory.Affected{Ranges: []advisory.Range{rng(ev("introduced", "0"))}}, "latest", Result{}},
+		{"an unevaluable range is counted for a stored version that does not parse", advisory.Affected{Ranges: []advisory.Range{rng(ev("introduced", "0"), ev("fixed", "x"))}}, "latest", Result{Unevaluable: 1}},
+		{"last_affected then a new interval", advisory.Affected{Ranges: []advisory.Range{
+			rng(ev("introduced", "1.0.0"), ev("last_affected", "1.5.0"), ev("introduced", "3.0.0"), ev("fixed", "3.2.0")),
+		}}, "3.1.0", Result{Affected: true, FixAvailable: true}},
+		{"last_affected ends an interval without a fix", advisory.Affected{Ranges: []advisory.Range{
+			rng(ev("introduced", "1.0.0"), ev("last_affected", "1.5.0")),
+		}}, "1.2.0", Result{Affected: true}},
+		{"a fixed range and an open one: the fix counts for the range that affects", advisory.Affected{Ranges: []advisory.Range{
+			introducedFixed, rng(ev("introduced", "0")),
+		}}, "1.1.0", Result{Affected: true, FixAvailable: true}},
+		{"every version with a version that parses", advisory.Affected{EveryVersion: true}, "1.0.0", Result{Affected: true}},
 		{"a stored version that does not parse still matches versions[]", advisory.Affected{Versions: []string{"latest"}}, "latest", Result{Affected: true}},
 	}
 	for _, c := range cases {
