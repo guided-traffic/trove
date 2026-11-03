@@ -208,12 +208,20 @@ Found on 2026-11-03 while closing phase 5:
 
 ### Tests and tools
 
-- **F-37 · `TestE14Drain` refused a request with `database_unavailable` during the drain** (read). In Test and Release
-  run 41575195688 (job `e2e on kind (push)`) the driver's probe during the drain of a node with a web and a worker pod got
-  `database_unavailable`, while the dispatched nightly run 41575201390 used the same self-hosted runners; every other run of
-  the phase passed it. The same run's `integration (shard a)` failed on a DNS error of the artifact upload
-  (`EAI_AGAIN`), which is the runner's network. Done when the drain is shown to hold under the runners' load (the failure
-  reproduced and its cause fixed, or the case passing in parallel with a nightly run).
+- **F-37 · `TestE14Drain` failed in run 41575195688 on a PostgreSQL failover that the runner's load caused, before the drain**
+  (confirmed from the job's artifacts; not reproduced). The refusal was not a request a trove pod served and not the drain:
+  `driver probe` (`e14_drain_test.go:237`, which comes before `drain.sh`) is a peer that opens its own pool to
+  `trove-db-rw` (`test/e2e/cmd/driver/main.go`), and the service had no ready endpoint (`connection refused`). The
+  artifact `e2e-cluster-state-push` shows why: from about 04:13:50 the probes of both PostgreSQL pods timed out
+  (`Client.Timeout exceeded`, `context deadline exceeded`), the primary `trove-db-1` was killed by its liveness probe, and
+  CloudNativePG initiated the failover (`FailingOver`, `PodDisruptionBudget trove-db-primary: NoPods`) at about 04:16:20,
+  the moment of the refusal. The drained node (`worker2`) held a web and a worker pod, not a PostgreSQL pod. A local
+  `make e2e SET=drain` under 30 busy processes and a 200-run integration loop passed (176 s), so the defect is not in
+  trove or in the drain. The load was the self-hosted runners' CPU, shared with the dispatched nightly run 41575201390. The
+  same run's `integration (shard a)` failed on a DNS error (`EAI_AGAIN`), the runner's network. Open as a runner capacity
+  matter: done when `e2e on kind (push)` runs next to a nightly run without PostgreSQL probe timeouts in
+  `events-trove.txt` of the cluster-state artifact (more CPU for the runners or runner labels that keep the two apart);
+  a probe-timeout setting in `deploy/dev/postgres.yaml` would hide the starvation and is not the fix.
 - **F-38 · `npm-ha` and `npm-ha-soak` were red in the nightly run 41575201390** (read). The npm load under drains and
   failovers is the phase 7 item "npm load in the drain and failover tests reliably green"; `npm-ha` passed in run 41568514247
   hours before. Done with that item.
