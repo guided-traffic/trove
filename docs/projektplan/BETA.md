@@ -471,9 +471,12 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - 🟡 Test and Release run 41549404703 failed in `unit tests` at `TestFlightLockSubscriptions` ("fifty waiters of one flight
   cost one SUBSCRIBE", R-ARCH-033): a waiter saw the flight `gone` without its outcome; the flight code is unchanged in this
   phase, so the flake predates it; cause not known yet
-- 🟡 Test and Release run 41553486196 failed in `unit tests` at `TestStallTimeout` ("every successful chunk moves the deadline,
-  so a slow but steady transfer completes", R-ARCH-005: the body arrived cut at 70 bytes); `internal/httpserver`'s stall
-  handling is unchanged in this phase, so the timing flake predates it on the loaded runners; cause not known yet
+- 🟢 Test and Release run 41553486196 failed in `unit tests` at `TestStallTimeout` ("every successful chunk moves the deadline,
+  so a slow but steady transfer completes", R-ARCH-005: the body arrived cut at 70 bytes); the server keeps its promise, the
+  test left no margin: net deadlines are absolute and a read whose goroutine is not scheduled before the deadline fails even with
+  the bytes in the socket, and the test's 100 ms chunk gap against a 300 ms stall timeout (the cut came 0.3 s after chunk 7, the
+  run took 0.94 s) did not survive a 200 ms pause of a loaded runner; the gap is now a sixteenth of the stall timeout and the
+  transfer lasts three stall timeouts, both derived from the configured timeout
 - 🟡 `TestR_CI_003_StaleAndUnreachable` failed once in W3's full run of `test/integration/ci` while three agents shared
   the stack, and passed alone and in the next full run; watched, not yet reproduced
 - 🟢 Test and Release run 41518863868 failed in `e2e on kind (access-long)`: the journey `06` clicked "Refresh now" by a

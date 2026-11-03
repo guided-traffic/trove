@@ -301,16 +301,27 @@ func TestStallTimeout(t *testing.T) {
 	})
 
 	t.Run("R-ARCH-005 every successful chunk moves the deadline, so a slow but steady transfer completes", func(t *testing.T) {
+		// The margin is the stall timeout minus the chunk gap: net deadlines are absolute, so a
+		// read whose goroutine is not scheduled before the deadline fails even with the bytes
+		// already in the socket. A loaded runner pauses a process for a few hundred milliseconds,
+		// hence the gap is a sixteenth of the stall timeout (a pause of 15/16 of it is survived)
+		// and the transfer lasts three stall timeouts, so it only completes if every chunk moves
+		// the deadline.
+		const (
+			stall  = 400 * time.Millisecond
+			gap    = stall / 16
+			chunks = int(3 * stall / gap)
+		)
 		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			n, _ := io.Copy(io.Discard, r.Body)
 			_, _ = fmt.Fprint(w, n)
 		})
-		_, addr := start(t, ServerConfig{Handler: h, StallTimeout: 300 * time.Millisecond})
+		_, addr := start(t, ServerConfig{Handler: h, StallTimeout: stall})
 		pr, pw := io.Pipe()
 		go func() {
-			for range 8 { // 8 x 100 ms = 800 ms in total, each gap far below the stall timeout
+			for range chunks {
 				_, _ = pw.Write([]byte("0123456789"))
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(gap)
 			}
 			pw.Close()
 		}()
@@ -320,8 +331,8 @@ func TestStallTimeout(t *testing.T) {
 		}
 		defer resp.Body.Close()
 		b, _ := io.ReadAll(resp.Body)
-		if string(b) != "80" {
-			t.Fatalf("body = %q", b)
+		if want := fmt.Sprint(10 * chunks); string(b) != want {
+			t.Fatalf("body = %q, want %q", b, want)
 		}
 	})
 }
