@@ -1,0 +1,610 @@
+package store
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"math"
+	"time"
+
+	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/meta/postgres"
+	"github.com/guided-traffic/trove/internal/meta/postgres/q"
+	"github.com/guided-traffic/trove/internal/vuln"
+	"github.com/guided-traffic/trove/internal/vuln/advisory"
+)
+
+// The statements of work package E (queries/vuln_api.sql): the report over the findings, the advisory view, the sources and
+// the status change of a triager. Every read takes the caller's [Scope], the repositories and rows the decision point let
+// the caller read (R-VULN-019), and applies it in the statement that selects, so that a count, a page and an export agree.
+
+// DB is what the package needs of the database: reads with the failover retry, and transactions.
+type DB interface {
+	meta.Runner
+	Read(ctx context.Context, fn func(q.DBTX) error) error
+}
+
+// API reads and writes through the statements of the report and the triage.
+type API struct{ db DB }
+
+// NewAPI returns the package's access to the database.
+func NewAPI(db DB) *API { return &API{db: db} }
+
+// Scope is what a caller may read, as the statements take it: the repositories whose every finding the caller may read, and
+// the "<repository>\x1f<package>\x1f<version>" entries of the versions it may read in the others.
+type Scope struct {
+	Whole, Rows []string
+}
+
+// Filter narrows the findings a statement selects. The zero value selects every finding in scope that is not resolved.
+type Filter struct {
+	// Repos are the physical repositories a repository filter stands for; HasRepos tells "no filter" from "names nothing".
+	Repos    []string
+	HasRepos bool
+	Formats  []string
+	Packages []string
+	// PackagePrefix is matched case-insensitively against the normalized name.
+	PackagePrefix string
+	Versions      []string
+	// Ecosystem is exact; Advisory is a canonical identifier or an alias.
+	Ecosystem, Advisory string
+	Severities          []string
+	// Statuses empty means every status but resolved.
+	Statuses []string
+	Kind     string
+	// KnownExploited, FixAvailable and Blocked are tri-state: nil does not filter.
+	KnownExploited, FixAvailable, Blocked *bool
+	// BlockReason is malicious or triage.
+	BlockReason string
+	// EnabledRepos and MaliciousRepos carry the policy of the repositories (vuln.Policy.QueryEnforce, QueryBlockMalicious).
+	EnabledRepos, MaliciousRepos []string
+	DetectedFrom, DetectedTo     *time.Time
+	IDs                          []string
+	// Q is a text that occurs in the package name, the advisory identifier or the summary.
+	Q string
+}
+
+// Order is the sort of a list: severity, detectedAt, package, advisory or status.
+type Order struct {
+	Sort string
+	Desc bool
+}
+
+// After is the position after which a page starts: the sort key of the last row of the previous page.
+type After struct {
+	Num int64
+	Txt string
+	ID  string
+}
+
+// Row is one finding as the list reads it, with the lookups of its advisory.
+type Row struct {
+	ID, Repository, Format, Ecosystem, Package, Version, Advisory string
+	Aliases                                                       []string
+	Kind                                                          advisory.Kind
+	Summary                                                       string
+	Severity                                                      advisory.Severity
+	// CVSSScore is negative when the advisory carries none.
+	CVSSScore               float64
+	CVSSVersion, CVSSVector string
+	KnownExploited          bool
+	KnownExploitedAddedAt   string
+	FixAvailable            bool
+	FixedVersions           []string
+	Status                  vuln.Status
+	DismissalReason         string
+	ResolvedReason          string
+	Comment                 string
+	Revision                int64
+	DetectedAt              time.Time
+	ResolvedAt              *time.Time
+	StatusChangedAt         time.Time
+	StatusChangedBy         string
+	StatusChangedByName     string
+	KeyNum                  int64
+	KeyTxt                  string
+}
+
+// rows32 is a row limit as the statements take it.
+func rows32(n int) int32 { return int32(min(max(n, 0), math.MaxInt32)) }
+
+func nn(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
+func stamp(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339Nano)
+}
+
+func tri(b *bool) (has, v bool) {
+	if b == nil {
+		return false, false
+	}
+	return true, *b
+}
+
+// Candidate is a (repository, package, version) triple a scope decides on.
+type Candidate struct{ Repository, Package, Version string }
+
+// Candidates returns the triples of the findings of the repositories that match the filter, at most max; the caller asks for
+// one more than it accepts.
+func (a *API) Candidates(ctx context.Context, keys []string, f Filter, max int) ([]Candidate, error) {
+	var rows []q.VulnScopeCandidatesRow
+	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
+		rows, err = q.New(db).VulnScopeCandidates(ctx, q.VulnScopeCandidatesParams{
+			Keys: nn(keys), Formats: nn(f.Formats), Packages: nn(f.Packages), PackagePrefix: f.PackagePrefix,
+			Versions: nn(f.Versions), Ids: nn(f.IDs), Statuses: nn(f.Statuses), MaxRows: rows32(max),
+		})
+		return err
+	})
+	out := make([]Candidate, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, Candidate{Repository: r.RepoKey, Package: r.Name, Version: r.Version})
+	}
+	return out, err
+}
+
+// PackageCandidates returns the triples of one package's stored versions in the repositories; version "" means every one.
+func (a *API) PackageCandidates(ctx context.Context, keys []string, format, name, version string, max int) ([]Candidate, error) {
+	var rows []q.VulnPackageCandidatesRow
+	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
+		rows, err = q.New(db).VulnPackageCandidates(ctx, q.VulnPackageCandidatesParams{
+			Keys: nn(keys), Format: format, Name: name, Version: version, MaxRows: rows32(max),
+		})
+		return err
+	})
+	out := make([]Candidate, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, Candidate{Repository: r.RepoKey, Package: r.Name, Version: r.Version})
+	}
+	return out, err
+}
+
+func (f Filter) listParams(sc Scope) q.VulnFindingsListParams {
+	hasKE, ke := tri(f.KnownExploited)
+	hasFix, fix := tri(f.FixAvailable)
+	hasBl, bl := tri(f.Blocked)
+	return q.VulnFindingsListParams{
+		Whole: nn(sc.Whole), Rows: nn(sc.Rows), HasRepos: f.HasRepos, Repos: nn(f.Repos), Formats: nn(f.Formats),
+		Packages: nn(f.Packages), PackagePrefix: f.PackagePrefix, Versions: nn(f.Versions), Ecosystem: f.Ecosystem,
+		Advisory: f.Advisory, Severities: nn(f.Severities), Statuses: nn(f.Statuses), Kind: f.Kind,
+		HasKnownExploited: hasKE, KnownExploited: ke, HasFixAvailable: hasFix, FixAvailable: fix, HasBlocked: hasBl, Blocked: bl,
+		EnabledRepos: nn(f.EnabledRepos), MaliciousRepos: nn(f.MaliciousRepos), BlockReason: f.BlockReason,
+		HasFrom: f.DetectedFrom != nil, DetectedFrom: stamp(f.DetectedFrom), HasTo: f.DetectedTo != nil, DetectedTo: stamp(f.DetectedTo),
+		Ids: nn(f.IDs), Q: f.Q,
+	}
+}
+
+// List returns at most max findings after the position in the order, so that the caller learns whether a next page exists.
+func (a *API) List(ctx context.Context, sc Scope, f Filter, o Order, after *After, max int) ([]Row, error) {
+	p := f.listParams(sc)
+	p.Sort, p.Descending, p.MaxRows = o.Sort, o.Desc, rows32(max)
+	if after != nil {
+		p.HasAfter, p.AfterNum, p.AfterTxt, p.AfterID = true, after.Num, after.Txt, after.ID
+	}
+	var rows []q.VulnFindingsListRow
+	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
+		rows, err = q.New(db).VulnFindingsList(ctx, p)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Row, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, rowOf(r))
+	}
+	return out, nil
+}
+
+// ListTx is List inside a transaction, for the read that follows a change.
+func (a *API) ListTx(ctx context.Context, tx meta.Tx, sc Scope, f Filter, o Order, max int) ([]Row, error) {
+	qs, err := queries(tx)
+	if err != nil {
+		return nil, err
+	}
+	p := f.listParams(sc)
+	p.Sort, p.Descending, p.MaxRows = o.Sort, o.Desc, rows32(max)
+	rows, err := qs.VulnFindingsList(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Row, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, rowOf(r))
+	}
+	return out, nil
+}
+
+func rowOf(r q.VulnFindingsListRow) Row {
+	out := Row{
+		ID: r.ID, Repository: r.RepoKey, Format: r.Format, Ecosystem: r.Ecosystem, Package: r.PackageName, Version: r.Version,
+		Advisory: r.AdvisoryID, Aliases: r.Aliases, Kind: advisory.Kind(r.Kind), Summary: r.Summary,
+		Severity: advisory.Severity(r.Severity), CVSSScore: r.CvssScore, CVSSVersion: r.CvssVersion, CVSSVector: r.CvssVector,
+		KnownExploited: r.KnownExploited, KnownExploitedAddedAt: r.KevAdded, FixAvailable: r.FixAvailable,
+		FixedVersions: r.FixedVersions, Status: vuln.Status(r.Status), DismissalReason: r.DismissalReason,
+		ResolvedReason: r.ResolvedReason, Comment: r.Comment, Revision: r.Revision, DetectedAt: r.DetectedAt.Time.UTC(),
+		StatusChangedAt: r.StatusChangedAt.Time.UTC(), StatusChangedBy: r.StatusChangedBy, StatusChangedByName: r.StatusChangedByName,
+		KeyNum: r.KNum, KeyTxt: r.KTxt,
+	}
+	if r.ResolvedAt.Valid {
+		t := r.ResolvedAt.Time.UTC()
+		out.ResolvedAt = &t
+	}
+	return out
+}
+
+// Count returns the number of findings the filter selects in scope, at most cap.
+func (a *API) Count(ctx context.Context, sc Scope, f Filter, limit int) (int64, error) {
+	lp := f.listParams(sc)
+	p := q.VulnFindingsCountParams{
+		Whole: lp.Whole, Rows: lp.Rows, HasRepos: lp.HasRepos, Repos: lp.Repos, Formats: lp.Formats, Packages: lp.Packages,
+		PackagePrefix: lp.PackagePrefix, Versions: lp.Versions, Ecosystem: lp.Ecosystem, Advisory: lp.Advisory,
+		Severities: lp.Severities, Statuses: lp.Statuses, Kind: lp.Kind, HasKnownExploited: lp.HasKnownExploited,
+		KnownExploited: lp.KnownExploited, HasFixAvailable: lp.HasFixAvailable, FixAvailable: lp.FixAvailable,
+		HasBlocked: lp.HasBlocked, Blocked: lp.Blocked, EnabledRepos: lp.EnabledRepos, MaliciousRepos: lp.MaliciousRepos,
+		BlockReason: lp.BlockReason, HasFrom: lp.HasFrom, DetectedFrom: lp.DetectedFrom, HasTo: lp.HasTo, DetectedTo: lp.DetectedTo,
+		Ids: lp.Ids, Q: lp.Q, Cap: rows32(limit),
+	}
+	var n int64
+	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
+		n, err = q.New(db).VulnFindingsCount(ctx, p)
+		return err
+	})
+	return n, err
+}
+
+// Event is one row of a finding's history.
+type Event struct {
+	At                                                    time.Time
+	ActorID, ActorName, Change, From, To, Reason, Comment string
+	Details                                               json.RawMessage
+}
+
+// Events returns the history of a finding, oldest first.
+func (a *API) Events(ctx context.Context, id string) ([]Event, error) {
+	var rows []q.VulnFindingEventsRow
+	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
+		rows, err = q.New(db).VulnFindingEvents(ctx, id)
+		return err
+	})
+	out := make([]Event, 0, len(rows))
+	for _, r := range rows {
+		e := Event{
+			At: r.At.Time.UTC(), ActorID: r.ActorID, ActorName: r.ActorName, Change: r.Change, From: r.FromStatus,
+			To: r.ToStatus, Reason: r.Reason, Comment: r.Comment,
+		}
+		if r.Details != "" {
+			e.Details = json.RawMessage(r.Details)
+		}
+		out = append(out, e)
+	}
+	return out, err
+}
+
+// Advisory is an advisory group as the API shows it: the record of the canonical identifier, with the aliases of the group.
+type Advisory struct {
+	advisory.Advisory
+	// CVSSScore is negative when the advisory carries none.
+	CVSSScore             float64
+	KnownExploitedAddedAt string
+}
+
+// Advisory resolves an identifier or alias of an ecosystem; found is false for an unknown one.
+func (a *API) Advisory(ctx context.Context, ecosystem, id string) (out Advisory, found bool, err error) {
+	var r q.VulnAdvisoryResolveRow
+	err = a.db.Read(ctx, func(db q.DBTX) (err error) {
+		r, err = q.New(db).VulnAdvisoryResolve(ctx, q.VulnAdvisoryResolveParams{Ecosystem: ecosystem, ID: id})
+		return err
+	})
+	if postgres.IsNoRows(err) {
+		return Advisory{}, false, nil
+	}
+	if err != nil {
+		return Advisory{}, false, err
+	}
+	adv := advisory.Advisory{
+		Ecosystem: r.Ecosystem, ID: r.ID, CanonicalID: r.ID, Kind: advisory.Kind(r.Kind), Aliases: r.Aliases, Summary: r.Summary,
+		Details: r.Details, Severity: advisory.Severity(r.Severity), KnownExploited: r.KnownExploited, CWEIDs: r.CweIds,
+		CVSS:     advisory.CVSS{Version: r.CvssVersion, Vector: r.CvssVector, Score: max(r.CvssScore, 0)},
+		Modified: r.Modified.Time.UTC(),
+	}
+	if r.Published.Valid {
+		adv.Published = r.Published.Time.UTC()
+	}
+	if r.Withdrawn.Valid {
+		adv.Withdrawn = r.Withdrawn.Time.UTC()
+	}
+	if len(r.Refs) > 0 {
+		if err := json.Unmarshal(r.Refs, &adv.References); err != nil {
+			return Advisory{}, false, errs.Wrap(err, "vuln store: the references of an advisory")
+		}
+	}
+	var raw []struct {
+		Name     string           `json:"name"`
+		Ranges   []advisory.Range `json:"ranges"`
+		Versions []string         `json:"versions"`
+		Fixed    []string         `json:"fixed"`
+	}
+	if r.Affected != "" {
+		if err := json.Unmarshal([]byte(r.Affected), &raw); err != nil {
+			return Advisory{}, false, errs.Wrap(err, "vuln store: the affected entries of an advisory")
+		}
+	}
+	for _, e := range raw {
+		adv.Affected = append(adv.Affected, advisory.Affected{Name: e.Name, Ranges: e.Ranges, Versions: e.Versions, Fixed: e.Fixed})
+	}
+	return Advisory{Advisory: adv, CVSSScore: r.CvssScore, KnownExploitedAddedAt: r.KevAdded}, true, nil
+}
+
+// VersionCount is the number of open findings of one severity of one version.
+type VersionCount struct {
+	Version  string
+	Severity advisory.Severity
+	N        int64
+}
+
+// PackageCounts returns the open findings of one package in scope, per version and severity.
+func (a *API) PackageCounts(ctx context.Context, sc Scope, format, name string) ([]VersionCount, error) {
+	var rows []q.VulnPackageCountsRow
+	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
+		rows, err = q.New(db).VulnPackageCounts(ctx, q.VulnPackageCountsParams{Whole: nn(sc.Whole), Rows: nn(sc.Rows), Format: format, Name: name})
+		return err
+	})
+	out := make([]VersionCount, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, VersionCount{Version: r.Version, Severity: advisory.Severity(r.Severity), N: r.N})
+	}
+	return out, err
+}
+
+// SummaryRow counts the open findings of one severity and kind.
+type SummaryRow struct {
+	Severity                       advisory.Severity
+	Kind                           advisory.Kind
+	Total, NeedsTriage, FixAvailab int64
+}
+
+// SummaryCounts returns the open findings in scope per severity and kind, narrowed by repositories and formats.
+func (a *API) SummaryCounts(ctx context.Context, sc Scope, f Filter) ([]SummaryRow, error) {
+	var rows []q.VulnSummaryCountsRow
+	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
+		rows, err = q.New(db).VulnSummaryCounts(ctx, q.VulnSummaryCountsParams{
+			Whole: nn(sc.Whole), Rows: nn(sc.Rows), HasRepos: f.HasRepos, Repos: nn(f.Repos), Formats: nn(f.Formats),
+		})
+		return err
+	})
+	out := make([]SummaryRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, SummaryRow{
+			Severity: advisory.Severity(r.Severity), Kind: advisory.Kind(r.Kind), Total: r.Total,
+			NeedsTriage: r.NeedsTriage, FixAvailab: r.FixAvailable,
+		})
+	}
+	return out, err
+}
+
+// BlockedVersions counts the versions in scope that an open finding blocks under the repositories' policy.
+func (a *API) BlockedVersions(ctx context.Context, sc Scope, f Filter) (int64, error) {
+	var n int64
+	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
+		n, err = q.New(db).VulnSummaryBlocked(ctx, q.VulnSummaryBlockedParams{
+			EnabledRepos: nn(f.EnabledRepos), MaliciousRepos: nn(f.MaliciousRepos), Whole: nn(sc.Whole), Rows: nn(sc.Rows),
+			HasRepos: f.HasRepos, Repos: nn(f.Repos), Formats: nn(f.Formats),
+		})
+		return err
+	})
+	return n, err
+}
+
+// DayCount is the number of findings of one severity on one day (YYYY-MM-DD).
+type DayCount struct {
+	Day      string
+	Severity advisory.Severity
+	N        int64
+}
+
+// Trend returns the detections and the resolutions in scope up to the last day, per day and severity; the days before the
+// first day are summed into the day before it.
+func (a *API) Trend(ctx context.Context, sc Scope, f Filter, from, to string) (detected, resolved []DayCount, err error) {
+	err = a.db.Read(ctx, func(db q.DBTX) error {
+		qs := q.New(db)
+		d, err := qs.VulnTrendDetected(ctx, q.VulnTrendDetectedParams{
+			FromDay: from, ToDay: to, Whole: nn(sc.Whole), Rows: nn(sc.Rows),
+			HasRepos: f.HasRepos, Repos: nn(f.Repos), Formats: nn(f.Formats), Kind: f.Kind,
+		})
+		if err != nil {
+			return err
+		}
+		for _, r := range d {
+			detected = append(detected, DayCount{Day: r.Day, Severity: advisory.Severity(r.Severity), N: r.N})
+		}
+		rs, err := qs.VulnTrendResolved(ctx, q.VulnTrendResolvedParams{
+			FromDay: from, ToDay: to, Whole: nn(sc.Whole), Rows: nn(sc.Rows),
+			HasRepos: f.HasRepos, Repos: nn(f.Repos), Formats: nn(f.Formats), Kind: f.Kind,
+		})
+		if err != nil {
+			return err
+		}
+		for _, r := range rs {
+			resolved = append(resolved, DayCount{Day: r.Day, Severity: advisory.Severity(r.Severity), N: r.N})
+		}
+		return nil
+	})
+	return detected, resolved, err
+}
+
+// SourceRow is a row of vuln_source_state as the sources operation shows it (SourceState is the gauges' and facts' view).
+type SourceRow struct {
+	Source, Ecosystem, State                 string
+	SyncedAt, FullSyncedAt, AttemptedAt      *time.Time
+	Failures, Records, Rejected, Unevaluable int
+	// LastError is the problem object of the last failed run, nil when there is none.
+	LastError json.RawMessage
+}
+
+func optT(valid bool, t time.Time) *time.Time {
+	if !valid {
+		return nil
+	}
+	u := t.UTC()
+	return &u
+}
+
+// Sources returns every source row.
+func (a *API) Sources(ctx context.Context) ([]SourceRow, error) {
+	var rows []q.VulnSourceStatesRow
+	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
+		rows, err = q.New(db).VulnSourceStates(ctx)
+		return err
+	})
+	out := make([]SourceRow, 0, len(rows))
+	for _, r := range rows {
+		s := SourceRow{
+			Source: r.Source, Ecosystem: r.Ecosystem, State: r.State,
+			SyncedAt: optT(r.SyncedAt.Valid, r.SyncedAt.Time), FullSyncedAt: optT(r.FullSyncedAt.Valid, r.FullSyncedAt.Time),
+			AttemptedAt: optT(r.AttemptedAt.Valid, r.AttemptedAt.Time), Failures: int(r.Failures), Records: int(r.Records),
+			Rejected: int(r.Rejected), Unevaluable: int(r.Unevaluable),
+		}
+		if r.LastError != "" {
+			s.LastError = json.RawMessage(r.LastError)
+		}
+		out = append(out, s)
+	}
+	return out, err
+}
+
+// ClaimedMatch is a public advisory that names an internal name.
+type ClaimedMatch struct {
+	Ecosystem, Advisory, Name string
+	Kind                      advisory.Kind
+	FirstSeenAt               time.Time
+}
+
+// ClaimedAfter is the position of a page of claimed-name matches.
+type ClaimedAfter struct{ Ecosystem, Advisory, Name string }
+
+// ClaimedMatches returns at most max matches after the position, in the order of (ecosystem, advisory, name).
+func (a *API) ClaimedMatches(ctx context.Context, after *ClaimedAfter, max int) ([]ClaimedMatch, error) {
+	p := q.VulnClaimedMatchesParams{MaxRows: rows32(max)}
+	if after != nil {
+		p.HasAfter, p.AfterEcosystem, p.AfterAdvisory, p.AfterName = true, after.Ecosystem, after.Advisory, after.Name
+	}
+	var rows []q.VulnClaimedMatch
+	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
+		rows, err = q.New(db).VulnClaimedMatches(ctx, p)
+		return err
+	})
+	out := make([]ClaimedMatch, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, ClaimedMatch{
+			Ecosystem: r.Ecosystem, Advisory: r.AdvisoryID, Name: r.Name, Kind: advisory.Kind(r.Kind),
+			FirstSeenAt: r.FirstSeenAt.Time.UTC(),
+		})
+	}
+	return out, err
+}
+
+// ClaimPattern is a namespace claim of a format and the repository that holds it.
+type ClaimPattern struct{ Format, Pattern, Repository string }
+
+// Claims returns every namespace claim with its repository key, for the claimed-name matches.
+func (a *API) Claims(ctx context.Context) ([]ClaimPattern, error) {
+	var rows []q.VulnClaimsRow
+	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
+		rows, err = q.New(db).VulnClaims(ctx)
+		return err
+	})
+	out := make([]ClaimPattern, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, ClaimPattern{Format: r.Format, Pattern: r.Pattern, Repository: r.RepoKey})
+	}
+	return out, err
+}
+
+// Locked is a finding the caller may read, locked for a status change.
+type Locked struct {
+	ID, Repository, Format, Ecosystem, Package, Version, Advisory string
+	Kind                                                          advisory.Kind
+	Status                                                        vuln.Status
+	DismissalReason, Comment                                      string
+	Revision                                                      int64
+}
+
+func queries(tx meta.Tx) (*q.Queries, error) {
+	ptx, ok := postgres.Unwrap(tx)
+	if !ok {
+		return nil, errors.New("vuln store: the transaction is not one of internal/meta/postgres")
+	}
+	return q.New(ptx), nil
+}
+
+// Lock locks the findings of the ids that are in scope, in id order; an id that is not in scope, or does not exist, is absent
+// from the result.
+func (a *API) Lock(ctx context.Context, tx meta.Tx, sc Scope, ids []string) ([]Locked, error) {
+	qs, err := queries(tx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := qs.VulnFindingsLock(ctx, q.VulnFindingsLockParams{Ids: nn(ids), Whole: nn(sc.Whole), Rows: nn(sc.Rows)})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Locked, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, Locked{
+			ID: r.ID, Repository: r.RepoKey, Format: r.Format, Ecosystem: r.Ecosystem, Package: r.PackageName,
+			Version: r.Version, Advisory: r.AdvisoryID, Kind: advisory.Kind(r.Kind), Status: vuln.Status(r.Status),
+			DismissalReason: r.DismissalReason, Comment: r.Comment, Revision: r.Revision,
+		})
+	}
+	return out, nil
+}
+
+// Change is a status change of one locked finding.
+type Change struct {
+	ID, From, To, DismissalReason string
+	// Comment is stored when HasComment, else the finding keeps its comment.
+	Comment    string
+	HasComment bool
+	// Actor is the principal's ID, "" for none. Expected is the revision the caller read, negative for any.
+	Actor    string
+	Expected int64
+	// Details is the JSON object of the event's details ("" for none): the bulk operation id.
+	Details string
+}
+
+// ErrStale says the finding's revision is no longer the expected one.
+var ErrStale = errors.New("vuln store: the finding changed")
+
+// SetStatus writes the change and its history row, and returns the new revision. A stale revision is [ErrStale].
+func (a *API) SetStatus(ctx context.Context, tx meta.Tx, c Change) (int64, error) {
+	qs, err := queries(tx)
+	if err != nil {
+		return 0, err
+	}
+	rev, err := qs.VulnFindingSetStatus(ctx, q.VulnFindingSetStatusParams{
+		Status: c.To, DismissalReason: c.DismissalReason, HasComment: c.HasComment, Comment: c.Comment, Actor: c.Actor, ID: c.ID, Expected: c.Expected,
+	})
+	if postgres.IsNoRows(err) {
+		return 0, ErrStale
+	}
+	if err != nil {
+		return 0, err
+	}
+	comment := ""
+	if c.HasComment {
+		comment = c.Comment
+	}
+	err = qs.VulnFindingEventInsert(ctx, q.VulnFindingEventInsertParams{
+		FindingID: c.ID, FromStatus: c.From, ToStatus: c.To, Reason: c.DismissalReason, Comment: comment, Actor: c.Actor, Details: c.Details,
+	})
+	return rev, err
+}

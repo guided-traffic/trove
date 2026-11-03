@@ -76,3 +76,12 @@ func TaskDefaults() []TaskDefault {
 type SyncArgs struct {
 	AcceptShrink bool `json:"acceptShrink"`
 }
+
+// RescanArgs are the arguments of a vuln-rescan job (R-VULN-011): the repository by key and numeric ID. The arguments only
+// name the repository; the inputs of the rescan are read from the repository snapshot when the job starts and again when it
+// ends, because a coalescing enqueue that finds a running job drops the arguments of its own (Q-VULN-18). The API's rescan
+// operation enqueues it with this type, under the dedup key RescanKey.
+type RescanArgs struct {
+	Repository   string `json:"repository"`
+	RepositoryID int64  `json:"repositoryId"`
+}

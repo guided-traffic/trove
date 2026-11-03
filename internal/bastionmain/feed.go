@@ -42,6 +42,7 @@ func feedActions() []string {
 		"endpoint.exposure.updated", "endpoint.exposure.deleted",
 		audit.EventSettingsAuthChanged, audit.EventProjectRepositoryUnassigned,
 		audit.EventNPMUnpublish, audit.EventPackageDeleted,
+		audit.EventVulnFindingStatusChanged, audit.EventVulnFindingReopened,
 	}
 }
 
@@ -125,7 +126,9 @@ type detailsDoc struct {
 	PrincipalID string          `json:"principalId"`
 	Endpoint    string          `json:"endpoint"`
 	Removed     json.RawMessage `json:"removed"`
-	Before      *struct {
+	// Block is "set" in the details of a finding event that set a download block (R-VULN-013).
+	Block  string `json:"block"`
+	Before *struct {
 		AnonymousAccess *bool `json:"anonymousAccess"`
 	} `json:"before"`
 	After *struct {
@@ -202,6 +205,13 @@ func mapEvent(ev FeedEvent, defaultEndpoint string) []rawEntry {
 		return out
 	case audit.EventNPMUnpublish, audit.EventPackageDeleted:
 		if ev.Repository == "" {
+			return nil
+		}
+		return []rawEntry{{kind: iface.FeedContent, repository: ev.Repository}}
+	case audit.EventVulnFindingStatusChanged, audit.EventVulnFindingReopened:
+		// A finding event that set a block withdraws a version a Bastion may hold (R-VULN-015); one that lifted a block or
+		// touched none narrows nothing. The entry is the content of the finding's repository and of the virtual ones above it.
+		if d.Block != "set" || ev.Repository == "" {
 			return nil
 		}
 		return []rawEntry{{kind: iface.FeedContent, repository: ev.Repository}}

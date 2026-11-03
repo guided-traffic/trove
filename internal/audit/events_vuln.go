@@ -14,9 +14,12 @@ package audit
 // vulnerability.claimed_name_match (once per advisory and name), and vulnerability.source.failed (at most once an hour per
 // source and ecosystem).
 //
-// None carries the journal flag yet. The two finding events with `block: "set"` are the ones the Bastion feed carries as
-// content entries (R-BAS-015); the work package that produces them (E) adds the flag with an optional entry, the feed
-// mapping and its classification test in the same change (docs/developer/vulnerabilities.md).
+// The journal (R-OPS-014, Q-VULN-48): the two finding events carry the revocation flag with an optional entry. A change
+// that sets a download block removes access to a version, which a restore to a point before it would bring back, so its
+// producer supplies the entry; a change that lifts a block, or touches none, widens or keeps access and supplies none. The
+// entry is optional because the same type is written for the changes that set no block, and because two packages produce
+// the types (the triage the first, the evaluation's reopen the second). The Bastion feed reads both as `content` entries
+// when their details say `block: "set"` (internal/bastionmain/feed.go, R-BAS-015).
 
 // Names of the vulnerability events, for the producers.
 const (
@@ -34,7 +37,7 @@ func init() {
 	// change; block says that the change set or lifted a download block under the repository's current policy (R-VULN-013),
 	// absent when it touched none.
 	Register(EventType{
-		Name: EventVulnFindingStatusChanged, Category: CategoryContent, Mode: Transactional,
+		Name: EventVulnFindingStatusChanged, Category: CategoryContent, Mode: Transactional, Journal: JournalRevocation, Entry: EntryOptional,
 		Schema: `{"type":"object","properties":{` +
 			`"finding":{"type":"string"},"package":{"type":"string"},"version":{"type":"string"},"advisory":{"type":"string"},` +
 			`"from":{"type":"string"},"to":{"type":"string"},"reason":{"type":"string"},"bulk":{"type":"string"},` +
@@ -44,7 +47,7 @@ func init() {
 	// change is what moved a dismissed finding to needs_triage (the severity level rose, the kind became malicious, the
 	// advisory became known exploited); block is set when the reopened finding is malicious and blocks again (R-VULN-012).
 	Register(EventType{
-		Name: EventVulnFindingReopened, Category: CategoryContent, Mode: Transactional,
+		Name: EventVulnFindingReopened, Category: CategoryContent, Mode: Transactional, Journal: JournalRevocation, Entry: EntryOptional,
 		Schema: `{"type":"object","properties":{` +
 			`"finding":{"type":"string"},"advisory":{"type":"string"},"change":{"type":["string","object"]},` +
 			`"block":{"type":"string","enum":["set"]}},` +

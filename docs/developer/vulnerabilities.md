@@ -119,8 +119,7 @@ paths, the responses and the schemas), with its `x-trove-permission` (R-VULN-019
 | `rescanRepositoryVulnerabilities` | `POST /repositories/{key}/vulnerabilities/rescan` (`202` with the job, `409`) | E (the job: B) |
 | `vulnerabilityData` of `getSystemInfo` | `Facts` of [handlers.go](../../internal/api/v1/handlers.go) | G |
 
-The generated interface is implemented by [vuln_api.go](../../internal/api/v1/vuln_api.go), whose methods answer `503 unavailable` until E replaces them (Q-VULN-25: the response conformance test of
-R-API-002 allows no other 5xx for a `GET`, and an area whose service is not wired answers 503 elsewhere too). When E builds an operation it removes nothing from the document but the
+The generated interface is implemented by the `vulnerabilities*_api.go` files of [internal/api/v1](../../internal/api/v1) (work package E replaced the 503 stubs of Q-VULN-25); a replica that has not wired the scanning still answers 503 (`VulnServices` zero). When E builds an operation it removes nothing from the document but the
 503-only state of its handler. The filters of the list are the document's query parameters, the sorts its `sort` enum; the permission narrowing in SQL is E's design.
 
 ### Configuration, coordination, audit, metrics, errors
@@ -162,6 +161,30 @@ Each work package adds its section here, in the shape of [ci-oidc.md](ci-oidc.md
 What a client's audit reads of the scanning: npm's `local` mode of the bulk endpoint and NuGet's `VulnerabilityInfo/6.7.0`. Decisions:
 [Q-VULN-44 to Q-VULN-47](../spec/vulnerability-scanning.md#q-vuln-44--how-the-format-learns-the-installations-default-for-the-audit-modes-and-what-an-explicit-mode-means-on-a-class);
 the security view is [security/vulnerability-scanning.md](../security/vulnerability-scanning.md).
+
+#### E · API and triage
+Files: [internal/vuln/report](../../internal/vuln/report) (the read side), [internal/vuln/triage](../../internal/vuln/triage) (the status changes),
+[internal/vuln/store/api.go](../../internal/vuln/store/api.go) and [queries/vuln_api.sql](../../internal/meta/postgres/queries/vuln_api.sql) (the statements),
+[vulnerabilities_api.go](../../internal/api/v1/vulnerabilities_api.go), [vulnerabilities_views_api.go](../../internal/api/v1/vulnerabilities_views_api.go) (the handlers, the rescan,
+the `vulnerabilityData` block of `GET /system/info`), [wire_vuln_api.go](../../internal/app/wire_vuln_api.go) (the step `vuln-api`, which takes `vulnArea` for the
+advisories port), tests in [test/integration/vulnapi](../../test/integration/vulnapi) and next to the packages.
+How it works:
+| Part | What it does |
+|---|---|
+| `report.Service.Scope` / `PackageScope` | classifies the physical repositories with `authz.ReadScope`; a repository read whole goes to the statements as `whole`, the versions read in part as `rows` (`repo\x1fname\x1fversion`), decided once per distinct version; the package views load the stored versions of the package as candidates ([Q-VULN-50](../spec/vulnerability-scanning.md)) |
+| `queries/vuln_api.sql` | the filter block is generated into `VulnFindingsList` and `VulnFindingsCount` (the same text); the sort key is `(k_num, k_txt, id)` compared bytewise, so the cursor is `[k_num, k_txt, id]`; `blocked`/`blockReason` filters take the repositories' policy as arrays (`enabled_repos`, `malicious_repos`) |
+| block of a finding | `vuln.Verdict` over `Repository.VulnerabilityPolicy`, in every mode (Q-VULN-49); a version's verdict adds `missing_data` |
+| `triage.Service.Apply` | locks the readable ids in id order, `vuln.CheckTransition`, history row, audit event with `block` set or lifted, journal entry on `set`; per-id results, one bulk id |
+| trend | two aggregate queries (detections and resolutions per day and severity, days before the range summed into the day before) and a running sum in Go |
+| export | `Count` against `export.max_rows` first (`422 export_too_large` before any byte), then keyset pages of 500; `csvSafe` of the audit export |
+| rescan | enqueues `vuln-rescan` with `vuln.RescanArgs` under the dedup key `vuln.RescanKey`; `409` carries the running job; it needs the kind registered by work package B |
+Contract changes of E: `VulnerabilityVersionBlockReason` (`missing_data`) for the version report; `detailsHtml` on the advisory and `repository` on the source item
+(Q-VULN-51); `vuln.RescanArgs` in `internal/vuln/jobs.go`; the journal flag with an optional entry on the two finding events and the two names in `audit` shared types
+(Q-VULN-48); the `vuln-api` step in `steps.go` and the `Vuln` option of the API. The integration tests that touch a block or an evaluation state need the npm and
+NuGet adapters of work package B (a repository's ecosystem comes from them).
+Tests: `TestR_VULN_013_*`, `TestR_VULN_019_*`, `TestR_VULN_020_*`, `TestR_VULN_021_*` in `test/integration/vulnapi` (the `@team-a/*` narrowing in list, counts, trend and
+export, the auditor, the scoped service-account token, 412, the bulk results, the scatter paging with three replicas, the journal row). Not reached at this tier: the
+`403` of an auditor on the download (the file service's), the rescan's `202` and `409` (the kind is B's), and the criteria that need the evaluation to write findings.
 
 ### F · The UI (R-VULN-022, R-VULN-023)
 

@@ -14738,6 +14738,13 @@ components:
       type: string
       enum: [malicious, triage]
       description: Why the version's download is refused (R-VULN-015).
+    VulnerabilityVersionBlockReason:
+      type: string
+      enum: [malicious, triage, missing_data]
+      description: |
+        Why a version's download is refused in a repository (R-VULN-015): a finding blocks it (`malicious`, `triage`), or the
+        repository sets `onMissingData: block` and the ecosystem's advisory data was never imported completely
+        (`missing_data`, no finding behind it).
     VulnerabilityDismissalReason:
       type: string
       enum: [not_exploitable, false_positive, risk_accepted, mitigated, test_only]
@@ -14889,7 +14896,7 @@ components:
     VulnerabilityAdvisory:
       type: object
       additionalProperties: false
-      required: [ecosystem, id, aliases, kind, summary, details, severity, cvss, knownExploited, knownExploitedAddedAt, cwe, affected, fixedVersions, references, source, modified, published, withdrawn]
+      required: [ecosystem, id, aliases, kind, summary, details, detailsHtml, severity, cvss, knownExploited, knownExploitedAddedAt, cwe, affected, fixedVersions, references, source, modified, published, withdrawn]
       description: One advisory (R-VULN-020). `details` is Markdown from an untrusted source and has to be rendered through the sanitizer (R-UI-008).
       properties:
         ecosystem: {type: string}
@@ -14898,6 +14905,11 @@ components:
         kind: {$ref: "#/components/schemas/VulnerabilityKind"}
         summary: {type: string}
         details: {type: string}
+        detailsHtml:
+          type: string
+          description: |
+            `details` rendered by the sanitizer of the package README (R-UI-008): script, event handlers, `javascript:` links and
+            images from origins that are not allowed do not survive. A client shows this and never renders `details` itself.
         severity: {$ref: "#/components/schemas/VulnerabilitySeverity"}
         cvss:
           oneOf:
@@ -15086,12 +15098,15 @@ components:
     VulnerabilitySourceState:
       type: object
       additionalProperties: false
-      required: [source, ecosystem, mode, state, stale, syncedAt, fullSyncedAt, attemptedAt, failures, lastError, records, rejected, unevaluable, nextRunAt]
+      required: [source, ecosystem, mode, repository, state, stale, syncedAt, fullSyncedAt, attemptedAt, failures, lastError, records, rejected, unevaluable, nextRunAt]
       description: One source and ecosystem (R-VULN-021).
       properties:
         source: {type: string, enum: [osv, kev]}
         ecosystem: {type: string, description: The OSV ecosystem; empty for kev.}
         mode: {type: string, enum: [online, repository, off]}
+        repository:
+          type: [string, "null"]
+          description: The key of the configured mirror repository in the mode `repository` (R-VULN-005), else `null`.
         state: {type: string, enum: [empty, complete]}
         stale: {type: boolean}
         syncedAt: {type: [string, "null"], format: date-time}
@@ -15153,7 +15168,7 @@ components:
               blocked: {type: boolean}
               blockReason:
                 oneOf:
-                  - $ref: "#/components/schemas/VulnerabilityBlockReason"
+                  - $ref: "#/components/schemas/VulnerabilityVersionBlockReason"
                   - type: "null"
               findings: {type: array, maxItems: 1000, items: {$ref: "#/components/schemas/VulnerabilityFinding"}}
     VulnerabilityPackageReport:

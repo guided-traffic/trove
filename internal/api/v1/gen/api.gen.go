@@ -2857,6 +2857,27 @@ func (e VulnerabilitySummaryDataState) Valid() bool {
 	}
 }
 
+// Defines values for VulnerabilityVersionBlockReason.
+const (
+	VulnerabilityVersionBlockReasonMalicious   VulnerabilityVersionBlockReason = "malicious"
+	VulnerabilityVersionBlockReasonMissingData VulnerabilityVersionBlockReason = "missing_data"
+	VulnerabilityVersionBlockReasonTriage      VulnerabilityVersionBlockReason = "triage"
+)
+
+// Valid indicates whether the value is a known member of the VulnerabilityVersionBlockReason enum.
+func (e VulnerabilityVersionBlockReason) Valid() bool {
+	switch e {
+	case VulnerabilityVersionBlockReasonMalicious:
+		return true
+	case VulnerabilityVersionBlockReasonMissingData:
+		return true
+	case VulnerabilityVersionBlockReasonTriage:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WhoamiCredentialType.
 const (
 	WhoamiCredentialTypeCit     WhoamiCredentialType = "cit"
@@ -6852,13 +6873,17 @@ type VirtualSettings struct {
 
 // VulnerabilityAdvisory One advisory (R-VULN-020). `details` is Markdown from an untrusted source and has to be rendered through the sanitizer (R-UI-008).
 type VulnerabilityAdvisory struct {
-	Affected      []VulnerabilityAffected `json:"affected"`
-	Aliases       []string                `json:"aliases"`
-	Cvss          *VulnerabilityCvss      `json:"cvss"`
-	Cwe           []string                `json:"cwe"`
-	Details       string                  `json:"details"`
-	Ecosystem     string                  `json:"ecosystem"`
-	FixedVersions []string                `json:"fixedVersions"`
+	Affected []VulnerabilityAffected `json:"affected"`
+	Aliases  []string                `json:"aliases"`
+	Cvss     *VulnerabilityCvss      `json:"cvss"`
+	Cwe      []string                `json:"cwe"`
+	Details  string                  `json:"details"`
+
+	// DetailsHtml `details` rendered by the sanitizer of the package README (R-UI-008): script, event handlers, `javascript:` links and
+	// images from origins that are not allowed do not survive. A client shows this and never renders `details` itself.
+	DetailsHtml   string   `json:"detailsHtml"`
+	Ecosystem     string   `json:"ecosystem"`
+	FixedVersions []string `json:"fixedVersions"`
 
 	// Id The canonical identifier.
 	Id string `json:"id"`
@@ -7155,18 +7180,21 @@ type VulnerabilitySourceState struct {
 	Ecosystem string `json:"ecosystem"`
 
 	// Failures Consecutive failed runs.
-	Failures     int                            `json:"failures"`
-	FullSyncedAt *time.Time                     `json:"fullSyncedAt"`
-	LastError    *Problem                       `json:"lastError"`
-	Mode         VulnerabilitySourceStateMode   `json:"mode"`
-	NextRunAt    *time.Time                     `json:"nextRunAt"`
-	Records      int                            `json:"records"`
-	Rejected     int                            `json:"rejected"`
-	Source       VulnerabilitySourceStateSource `json:"source"`
-	Stale        bool                           `json:"stale"`
-	State        VulnerabilitySourceStateState  `json:"state"`
-	SyncedAt     *time.Time                     `json:"syncedAt"`
-	Unevaluable  int                            `json:"unevaluable"`
+	Failures     int                          `json:"failures"`
+	FullSyncedAt *time.Time                   `json:"fullSyncedAt"`
+	LastError    *Problem                     `json:"lastError"`
+	Mode         VulnerabilitySourceStateMode `json:"mode"`
+	NextRunAt    *time.Time                   `json:"nextRunAt"`
+	Records      int                          `json:"records"`
+	Rejected     int                          `json:"rejected"`
+
+	// Repository The key of the configured mirror repository in the mode `repository` (R-VULN-005), else `null`.
+	Repository  *string                        `json:"repository"`
+	Source      VulnerabilitySourceStateSource `json:"source"`
+	Stale       bool                           `json:"stale"`
+	State       VulnerabilitySourceStateState  `json:"state"`
+	SyncedAt    *time.Time                     `json:"syncedAt"`
+	Unevaluable int                            `json:"unevaluable"`
 }
 
 // VulnerabilitySourceStateMode defines model for VulnerabilitySourceState.Mode.
@@ -7224,12 +7252,17 @@ type VulnerabilityTrend struct {
 	To openapi_types.Date `json:"to"`
 }
 
+// VulnerabilityVersionBlockReason Why a version's download is refused in a repository (R-VULN-015): a finding blocks it (`malicious`, `triage`), or the
+// repository sets `onMissingData: block` and the ecosystem's advisory data was never imported completely
+// (`missing_data`, no finding behind it).
+type VulnerabilityVersionBlockReason string
+
 // VulnerabilityVersionReport What the scanning says of one version in every readable repository that holds it (R-VULN-020).
 type VulnerabilityVersionReport struct {
 	PackageId    string `json:"packageId"`
 	Repositories []struct {
-		BlockReason *VulnerabilityBlockReason `json:"blockReason"`
-		Blocked     bool                      `json:"blocked"`
+		BlockReason *VulnerabilityVersionBlockReason `json:"blockReason"`
+		Blocked     bool                             `json:"blocked"`
 
 		// Evaluation The derived evaluation state of a stored version in a repository (R-VULN-001): `evaluated` (the advisory data is
 		// complete), `pending_data` (it was never imported completely), `internal` (public advisories do not apply to the name)

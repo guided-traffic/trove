@@ -6737,6 +6737,13 @@ export interface components {
          * @enum {string}
          */
         VulnerabilityBlockReason: "malicious" | "triage";
+        /**
+         * @description Why a version's download is refused in a repository (R-VULN-015): a finding blocks it (`malicious`, `triage`), or the
+         *     repository sets `onMissingData: block` and the ecosystem's advisory data was never imported completely
+         *     (`missing_data`, no finding behind it).
+         * @enum {string}
+         */
+        VulnerabilityVersionBlockReason: "malicious" | "triage" | "missing_data";
         /** @enum {string} */
         VulnerabilityDismissalReason: "not_exploitable" | "false_positive" | "risk_accepted" | "mitigated" | "test_only";
         /** @enum {string} */
@@ -6883,6 +6890,11 @@ export interface components {
             kind: components["schemas"]["VulnerabilityKind"];
             summary: string;
             details: string;
+            /**
+             * @description `details` rendered by the sanitizer of the package README (R-UI-008): script, event handlers, `javascript:` links and
+             *     images from origins that are not allowed do not survive. A client shows this and never renders `details` itself.
+             */
+            detailsHtml: string;
             severity: components["schemas"]["VulnerabilitySeverity"];
             cvss: components["schemas"]["VulnerabilityCvss"] | null;
             knownExploited: boolean;
@@ -7048,6 +7060,8 @@ export interface components {
             ecosystem: string;
             /** @enum {string} */
             mode: "online" | "repository" | "off";
+            /** @description The key of the configured mirror repository in the mode `repository` (R-VULN-005), else `null`. */
+            repository: string | null;
             /** @enum {string} */
             state: "empty" | "complete";
             stale: boolean;
@@ -7098,7 +7112,7 @@ export interface components {
                  */
                 syncedAt?: string | null;
                 blocked: boolean;
-                blockReason: components["schemas"]["VulnerabilityBlockReason"] | null;
+                blockReason: components["schemas"]["VulnerabilityVersionBlockReason"] | null;
                 findings: components["schemas"]["VulnerabilityFinding"][];
             }[];
         };

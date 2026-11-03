@@ -482,6 +482,8 @@ func (a *App) startClient() error {
 			// The operations of the Bastion work answer 501 until their packages are built (wire_bastion.go).
 			Bastions: a.bastionRegistrations(),
 			Bastion:  a.bastionServices(rt),
+			// The vulnerability scanning's operations (wire_vuln_api.go).
+			Vuln: part[vulnAPIArea](a.parts).services,
 		})
 		// The router drops the routes of a family the endpoint's surface does not hold.
 		api.Register(router)

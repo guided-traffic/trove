@@ -1504,8 +1504,7 @@ code.
 share a name, or when an array in a data schema has no `maxItems` or one above 1,000. It also
 fails when an entry declares `journal` with a value other than `revocation` or with an audit mode
 other than `transactional`, when an entry declares `journal_entry` without `journal`, when an
-entry outside the list of shared types in the registry code (today `package.published` and
-`package.deleted`) declares `journal_entry: optional`, or when an event listed in
+entry outside the list of shared types in the registry code (`package.published`, `package.deleted` and the two finding events of the vulnerability scanning) declares `journal_entry: optional`, or when an event listed in
 R-HA-054 lacks the flag, is optional or is missing from the registry. An integration test writes
 `token.revoked` without an entry through a test hook and finds the revocation rolled back; an npm
 publish writes `package.published` and no `revocation_outbox` row, and a NuGet push to a local
@@ -1563,7 +1562,7 @@ Audit events are stored in PostgreSQL and copied to the log stream (INV-16).
   R-HA-054) in the same transaction.
   - No entry, no row. For a type with `journal_entry: required`, a missing entry fails the
     transaction instead, like a failed audit insert. For a type with `journal_entry: optional`
-    (`package.published`, `package.deleted`), a missing entry means the producer does not journal
+    (`package.published`, `package.deleted`, `vulnerability.finding.status_changed`, `vulnerability.finding.reopened`), a missing entry means the producer does not journal
     it: an npm publish writes no row, a push to a local NuGet repository writes one with the entry
     of [formats/nuget.md](formats/nuget.md) R-NUGET-033.
   - The row takes the event's `id`, its `occurred_at` as `at` and its registry name as `event`.

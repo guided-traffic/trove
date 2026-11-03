@@ -205,6 +205,12 @@ type Options struct {
 	Bastion BastionServices
 	// <<< package 2
 	// <<< M13 bastion
+
+	// >>> M4b vulnerabilities
+	// Vuln holds the services of the vulnerability scanning's operations (vulnerabilities_api.go); a zero value answers them
+	// with 503.
+	Vuln VulnServices
+	// <<< M4b vulnerabilities
 }
 
 // Server implements gen.ServerInterface.
