@@ -42,6 +42,9 @@ type Backend struct {
 	// YAML returns the lines below `bastion:` that configure the cache and what it needs (indented by two
 	// spaces); dir is a temporary directory of the run.
 	YAML func(dir string) string
+	// Client sends the scenario's requests to the role's listeners. The caller builds it in its _test.go file,
+	// because a client is made only by internal/outbound or by a test (R-ARCH-022).
+	Client *http.Client
 }
 
 // Volume is the volume backend on a directory of the run, without a signing key (Q-BAS-98).
@@ -149,6 +152,9 @@ func (w *world) forward(m *maintest.Main) http.HandlerFunc {
 // Run is the scenario for one backend.
 func Run(t *testing.T, b Backend) {
 	t.Helper()
+	if b.Client == nil {
+		t.Fatal("roletest: Backend.Client is nil")
+	}
 	dir := t.TempDir()
 	ck := &clock{t: time.Now().UTC().Truncate(time.Second)}
 	main := maintest.New(t)
@@ -207,13 +213,13 @@ bastion:
 	})
 	client, ops := "http://"+srv.ClientAddr().String(), "http://"+srv.OpsAddr().String()
 	eventually(t, 20*time.Second, "ready and connected", func() bool {
-		return srv.Health().Ready() && strings.Contains(metrics(t, ops), "\ntrove_bastion_main_reachable 1\n")
+		return srv.Health().Ready() && strings.Contains(metrics(t, b.Client, ops), "\ntrove_bastion_main_reachable 1\n")
 	})
 
 	reader1, reader2, reader3 := maintest.GenerateTokenWithPrefix(t, "trv_pat_"), maintest.GenerateTokenWithPrefix(t, "trv_pat_"), maintest.GenerateTokenWithPrefix(t, "trv_pat_")
 	w.add(reader1, "tok-1")
 	w.add(reader2, "tok-2")
-	get := func(tok string) (int, []byte, http.Header) { return fetch(t, client+pkg, tok) }
+	get := func(tok string) (int, []byte, http.Header) { return fetch(t, b.Client, client+pkg, tok) }
 	forwards, checks := func() int { return len(main.Forwards()) }, func() int { return len(main.Checks()) }
 
 	// A cold miss is fetched from the main installation and kept.
@@ -265,7 +271,7 @@ bastion:
 	// The main installation is cut off: the replica notices at its next handshake.
 	main.SetDown(true)
 	ck.Advance(6 * time.Second)
-	eventually(t, 20*time.Second, "unreachable", func() bool { return strings.Contains(metrics(t, ops), "\ntrove_bastion_main_reachable 0\n") })
+	eventually(t, 20*time.Second, "unreachable", func() bool { return strings.Contains(metrics(t, b.Client, ops), "\ntrove_bastion_main_reachable 0\n") })
 	f0, c0 = forwards(), checks()
 	// Past the period, inside the grace period: a reader the replica knows is still served from the cache.
 	ck.Advance(period)
@@ -287,7 +293,7 @@ bastion:
 	}
 }
 
-func fetch(t *testing.T, url, tok string) (int, []byte, http.Header) {
+func fetch(t *testing.T, c *http.Client, url, tok string) (int, []byte, http.Header) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -297,7 +303,7 @@ func fetch(t *testing.T, url, tok string) (int, []byte, http.Header) {
 	}
 	req.Host = hostName
 	req.Header.Set("Authorization", "Bearer "+tok)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.Do(req)
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
 	}
@@ -309,13 +315,13 @@ func fetch(t *testing.T, url, tok string) (int, []byte, http.Header) {
 	return resp.StatusCode, b, resp.Header
 }
 
-func metrics(t *testing.T, ops string) string {
+func metrics(t *testing.T, c *http.Client, ops string) string {
 	t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ops+"/metrics", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}

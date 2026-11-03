@@ -13,6 +13,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -76,7 +77,7 @@ func TestR_BAS_048_TheWholeRoleServesAColdMissAWarmHitARevocationAndTheOutage_Bu
 		}
 	})
 
-	roletest.Run(t, roletest.Backend{Name: "bucket", YAML: func(dir string) string {
+	roletest.Run(t, roletest.Backend{Name: "bucket", Client: &http.Client{Timeout: 10 * time.Second}, YAML: func(dir string) string {
 		key := make([]byte, 32)
 		if _, err := rand.Read(key); err != nil {
 			t.Fatal(err)
