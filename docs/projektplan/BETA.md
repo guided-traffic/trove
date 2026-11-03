@@ -493,6 +493,23 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   across a re-authentication (R-UI-042); Browse keeps a reloaded node's old size and kind; the claim tester has no form view
   (R-UI-036); a just-created or re-enabled issuer is refused on a lagging replica until the cache's SafetyTTL
 
+**Security audit of the phase (2026-11-03; status per item)**
+- 🟡 HIGH · A project-tier mapping reaches the tokens of every job it matches, against R-CI-009's "tiers combine by union": its
+  `maxTtlSeconds` bounds every token (1 s blocks every exchange with `ttl_below_minimum`), a render failure of its template fails
+  the whole exchange after the system tier contributed, and disabling or deleting it revokes every token whose issuance lists
+  it, the system tier's included (`select.go`, `exchange_tx.go`, `ttl.go`, `revoke.go`, `CiIssuanceTokensOfMapping`)
+- 🟡 MEDIUM · `trove migrate` changes a declared issuer's `issuer` URL and `kind` in place under the same issuer ID, which the
+  API refuses as `immutable`: pins, package owners (`ci:<issuer>:project:<id>`) and unpinned private-issuer mappings move to the
+  new instance, the old key set stays valid until the next refresh, nothing is revoked (`issuers_declared.go`)
+- 🟡 MEDIUM · The project's issuance view keeps `grantedScope` and `requestedScope` of every tier (also a code review finding)
+- 🟡 MEDIUM · Stored mappings make every exchange expensive inside its transaction: up to 1,000 mappings per issuer shared by all
+  tiers, each evaluated to its end with a trace and its regexes compiled twice per evaluation, unbounded literal sizes, while the
+  exchange holds `FOR SHARE` on the issuer row
+- 🟡 LOW · Project key prefixes overlap (`ab-` matches `ab-c-release`), so H-413's probe reaches another project's names; a changed
+  `jwks_uri` or `discovery_url` keeps the old key set until the next refresh; switching `public_issuer` to true does not re-check
+  the unpinned mappings; H-418's key-existence oracle is reachable by any project administrator; `ci.replay.retention_after_expiry:
+  0` leaves a single-use replay window of the clock skew between a replica and the database
+
 **Phase**
 - 🟢 Contracts: schema (migrations `00026` to `00028`), packages (`internal/ci`, `claims`, `subject`, `reason`), every
   operation of R-API-035 and the project routes in OpenAPI (answering 501 until built), configuration `ci.*`, the audit
