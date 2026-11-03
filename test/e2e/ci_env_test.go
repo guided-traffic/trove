@@ -71,8 +71,13 @@ type oidcDouble struct {
 	stub string // oidcstub or oidcstub-single
 	host string // <stub>.<ns>.svc, the issuer is https://<host>
 	tok  string
-	c    *http.Client
+	c    *http.Client // a connection per request: the control calls of the tests, one at a time
+	pool *http.Client // keep-alive, at most mintWorkers connections: the bulk mints (mintAll)
 }
+
+// mintWorkers is the number of mints mintAll has in flight, so that the control port is served by a handful of kept-alive
+// connections through the one kubectl port-forward instead of one new TLS handshake and one new forwarded stream per token.
+const mintWorkers = 6
 
 var (
 	doubleMu sync.Mutex
@@ -93,15 +98,22 @@ func double(t testing.TB, stub, hostEnv string) *oidcDouble {
 	}
 	addr := portForward(t, "svc/"+stub, 8444).addr
 	var dialer net.Dialer
-	d := &oidcDouble{
-		stub: stub, host: host, tok: secretValue(t, "trove-"+stub, "control-token"),
-		c: &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{
-			DisableKeepAlives: true,
+	pool := caPool(t)
+	transport := func(keepAlive bool) *http.Transport {
+		return &http.Transport{
+			DisableKeepAlives:   !keepAlive,
+			MaxIdleConnsPerHost: mintWorkers,
+			MaxConnsPerHost:     mintWorkers * 2,
 			DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
 				return dialForward(ctx, &dialer, network, addr)
 			},
-			TLSClientConfig: &tls.Config{RootCAs: caPool(t), MinVersion: tls.VersionTLS12, ServerName: host},
-		}},
+			TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12, ServerName: host},
+		}
+	}
+	d := &oidcDouble{
+		stub: stub, host: host, tok: secretValue(t, "trove-"+stub, "control-token"),
+		c:    &http.Client{Timeout: 30 * time.Second, Transport: transport(false)},
+		pool: &http.Client{Timeout: 30 * time.Second, Transport: transport(true)},
 	}
 	doubles[stub] = d
 	return d
@@ -120,6 +132,10 @@ func (d *oidcDouble) send(t testing.TB, method, path string, body any) []byte {
 
 // trySend is send for a goroutine that must not call t.Fatal.
 func (d *oidcDouble) trySend(method, path string, body any) ([]byte, error) {
+	return d.trySendOn(d.c, method, path, body)
+}
+
+func (d *oidcDouble) trySendOn(c *http.Client, method, path string, body any) ([]byte, error) {
 	var rd io.Reader
 	if body != nil {
 		raw, _ := json.Marshal(body)
@@ -130,7 +146,7 @@ func (d *oidcDouble) trySend(method, path string, body any) ([]byte, error) {
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+d.tok)
-	resp, err := d.c.Do(req)
+	resp, err := c.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +160,11 @@ func (d *oidcDouble) trySend(method, path string, body any) ([]byte, error) {
 
 // tryMint is mint for a goroutine that must not call t.Fatal.
 func (d *oidcDouble) tryMint(claims map[string]any) (string, error) {
-	raw, err := d.trySend(http.MethodPost, "/mint", map[string]any{"claims": claims})
+	return d.tryMintOn(d.c, claims)
+}
+
+func (d *oidcDouble) tryMintOn(c *http.Client, claims map[string]any) (string, error) {
+	raw, err := d.trySendOn(c, http.MethodPost, "/mint", map[string]any{"claims": claims})
 	if err != nil {
 		return "", err
 	}
@@ -158,6 +178,33 @@ func (d *oidcDouble) tryMint(claims map[string]any) (string, error) {
 		return "", fmt.Errorf("mint: the answer holds no token")
 	}
 	return out.Token, nil
+}
+
+// mintAll mints n tokens (claims(i) for token i) before the measured window of a test starts: mintWorkers requests at a time over
+// kept-alive connections, so a test with many jobs does not open one TLS connection and one forwarded stream per job at the same
+// moment. A refused mint fails the test; nothing of trove is measured yet.
+func (d *oidcDouble) mintAll(t testing.TB, n int, claims func(i int) map[string]any) []string {
+	t.Helper()
+	toks := make([]string, n)
+	errs := make([]error, n)
+	sem := make(chan struct{}, mintWorkers)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			toks[i], errs[i] = d.tryMintOn(d.pool, claims(i))
+		}()
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("issuer double mint %d of %d: %v", i, n, err)
+		}
+	}
+	return toks
 }
 
 // resetAll heals the faults, restores the caching and replaces the keys by a fresh default key set.

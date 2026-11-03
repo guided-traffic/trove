@@ -302,24 +302,23 @@ func TestCIHAPodDelete(t *testing.T) {
 	fx := ciFx(t)
 	const jobs = 50
 	var (
-		mu     sync.Mutex
-		bad    []string
-		total  atomic.Int64
-		stopAt = time.Now().Add(100 * time.Second)
-		wg     sync.WaitGroup
+		mu    sync.Mutex
+		bad   []string
+		total atomic.Int64
+		wg    sync.WaitGroup
 	)
+	// the ID tokens first, a few requests at a time over kept-alive connections: the control API of the double is test
+	// infrastructure and must not be what the window measures
+	toks := fx.dbl.mintAll(t, jobs, func(j int) map[string]any {
+		pid := strconv.Itoa(6000 + j)
+		return map[string]any{"aud": fx.base, "project_id": pid, "job_project_id": pid, "job_id": fmt.Sprint(fx.jobBase*1000 + 500 + int64(j))}
+	})
+	stopAt := time.Now().Add(100 * time.Second)
 	for j := range jobs {
+		tok := toks[j]
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			pid := strconv.Itoa(6000 + j)
-			tok, err := fx.dbl.tryMint(map[string]any{"aud": fx.base, "project_id": pid, "job_project_id": pid, "job_id": fmt.Sprint(fx.jobBase*1000 + 500 + int64(j))})
-			if err != nil {
-				mu.Lock()
-				bad = append(bad, fmt.Sprintf("job %d mint: %v", j, err))
-				mu.Unlock()
-				return
-			}
 			time.Sleep(time.Duration(j) * 140 * time.Millisecond) // spread the jobs over the period
 			for time.Now().Before(stopAt) {
 				r, err := newAPI(t).send(http.MethodPost, "/api/v1/auth/oidc/token", formExchange(tok), "Content-Type", "application/x-www-form-urlencoded")

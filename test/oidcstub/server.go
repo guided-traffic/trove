@@ -562,7 +562,9 @@ func hostURL(scheme string, ln net.Listener) string {
 func (s *Server) newHTTPServer(h http.Handler, cfg *tls.Config) *http.Server {
 	srv := &http.Server{
 		Handler: h, TLSConfig: cfg, ReadHeaderTimeout: 10 * time.Second,
-		ErrorLog: slog.NewLogLogger(s.cfg.Logger.Handler(), slog.LevelWarn),
+		// a kept-alive connection of a test client (the control API is used over pooled connections) does not outlive its client
+		IdleTimeout: 2 * time.Minute,
+		ErrorLog:    slog.NewLogLogger(s.cfg.Logger.Handler(), slog.LevelWarn),
 	}
 	// HTTP/1.1 only: a kept-alive connection can then be dropped by the Unreachable fault.
 	srv.TLSNextProto = map[string]func(*http.Server, *tls.Conn, http.Handler){}

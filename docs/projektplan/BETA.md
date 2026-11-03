@@ -484,13 +484,21 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   transfer lasts three stall timeouts, both derived from the configured timeout
 - ➡️ `TestR_CI_003_StaleAndUnreachable` failed once in W3's full run of `test/integration/ci` while three agents shared
   the stack, and passed alone and in the next full run; watched, not yet reproduced — moved to the open findings as [F-35](promt.md#8--open-findings)
-- 🟡 The dispatched run 41568514247 of `HA and Performance (nightly)`, the closing evidence of E4.7: `failover`, `npm-ha`,
-  `npm-ha-soak`, `nuget-ha` and the latency leg are green; `ci-ha` passed its drain, Valkey-stopped and single-use cases (250
-  tokens, one 200 each across a Sentinel failover and `FLUSHALL`) and failed in `TestCIHAPodDelete`, where 50 jobs minting their
-  ID tokens at the issuer double's control API got `EOF` from the double; being fixed
 - 🟢 Test and Release run 41518863868 failed in `e2e on kind (access-long)`: the journey `06` clicked "Refresh now" by a
   substring match, and the new task `ci-keys-refresh` added a "Run task ci-keys-refresh now" button to the same screen; the
   locator is exact now
+- 🟢 The dispatched run 41568514247 of HA and Performance (nightly) failed `TestCIHAPodDelete` in `e2e-ci on kind (ci-ha)`
+  (drain, Valkey stopped, single use and FLUSHALL passed): 15 of the 50 jobs got `Post "https://oidcstub.trove.svc:8444/mint": EOF`
+  and the other 35 ran 444 exchanges. No exchange was refused; the test infrastructure failed. The jobs minted their ID tokens at the
+  same moment, each over a new TLS connection (`DisableKeepAlives`) through the one `kubectl port-forward` to the double's control
+  port, and the CI runner is CPU-limited. The double is not the limit (verified: 400 simultaneous new TLS mints through a
+  port-forward to the double on kind all answered 200, and `TestControlAPICarriesConcurrentMints` has 200 on a new connection each
+  under `-race`); the burst of 50 new forwarded streams is the one thing the path has that those do not. Not reproduced on the
+  laptop, so the stream creation of `kubectl port-forward` on the starved runner is the likely link, not proven. Now `mintAll`
+  mints the 50 tokens before the window, 6 at a time over kept-alive connections, and fails the test on a refused mint, so the
+  measured window holds trove's exchanges only and the criterion is unchanged (every exchange 200, no reset, no 5xx, no retry).
+  `make e2e SET=ci-ha` twice on kind: 403.7 s and 380.3 s, 628 exchanges by 50 jobs both times, all 200. The nightly run
+  after this change is the closing evidence
 
 **Code review of the phase (2026-11-03; status per item)**
 - 🟢 HIGH · "Overwrite" in the conflict dialog of the mapping editor and the issuer form sends the whole stale form with the

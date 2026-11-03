@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -84,6 +85,48 @@ func TestControlAPIRequiresTheToken(t *testing.T) {
 	off.ControlHandler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("API without a token: %d", rec.Code)
+	}
+}
+
+// TestControlAPICarriesConcurrentMints is the load of the 50-job e2e tests (R-CI-029): many clients mint at the same moment, each over
+// a new TLS connection, and every one is answered.
+func TestControlAPICarriesConcurrentMints(t *testing.T) {
+	c := newControl(t)
+	tr, ok := c.client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("the fixture's transport is %T", c.client.Transport)
+	}
+	tr = tr.Clone()
+	tr.DisableKeepAlives = true
+	cl := &http.Client{Transport: tr, Timeout: 30 * time.Second}
+	const clients = 200
+	errs := make(chan error, clients)
+	for range clients {
+		go func() {
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, c.url+"/mint", strings.NewReader(`{"claims":{}}`))
+			if err != nil {
+				errs <- err
+				return
+			}
+			req.Header.Set("Authorization", "Bearer "+testToken)
+			resp, err := cl.Do(req)
+			if err != nil {
+				errs <- err
+				return
+			}
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"token"`)) {
+				errs <- fmt.Errorf("mint answered %d: %s", resp.StatusCode, body)
+				return
+			}
+			errs <- nil
+		}()
+	}
+	for range clients {
+		if err := <-errs; err != nil {
+			t.Error(err)
+		}
 	}
 }
 

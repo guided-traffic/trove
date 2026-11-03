@@ -1621,6 +1621,13 @@ the requests are never counted and no fault touches them.
 | `POST /mint` | `MintOptions` as JSON in, `{"token": "..."}` out; for example `{"claims":{"jti":null},"remove":["nbf"],"alg":"ES256"}`, or `{"job_token":true}` |
 | `GET/POST /fault`, `GET/POST /cache` | the fault set (durations as `"4s"`); `{"max_age":"30s"}` (GitLab's directives and ETag), `{"max_age":"30s","only_max_age":true,"no_etag":true}` |
 
+The control API under load (`TestControlAPICarriesConcurrentMints`: 200 clients, each on a new TLS connection, all answered; it listens with the
+defaults of `net/http`, no connection limit, `ReadHeaderTimeout` 10 s, `IdleTimeout` 2 min for kept-alive clients). The tests reach it through a
+`kubectl port-forward` to the Service, and that path is what a burst of new connections stresses: every new TLS connection is a new forwarded
+stream. So a test that needs many tokens at once does not mint from every job at the same moment: `oidcDouble.mintAll`
+([ci_env_test.go](../../test/e2e/ci_env_test.go)) mints them before the measured window, `mintWorkers` (6) at a time over a pooled keep-alive
+client, and fails the test if one mint is refused; `TestCIHAPodDelete` uses it, so its window holds trove's exchanges only.
+
 ### In the cluster
 
 [deploy/dev/oidcstub.yaml](../../deploy/dev/oidcstub.yaml): Service `${STUB}` with port 443 (issuer), 8444 (control) and 8080 (plain HTTP,
