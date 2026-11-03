@@ -16,10 +16,41 @@ func TestQ_CI_26_AProjectsRecordShowsItsOwnMappingsOnly(t *testing.T) {
 	f.Version, f.Issuer, f.IssuerID, f.ProjectID = claims.FrozenVersion, "gitlab-main", "i", "4711"
 	f.Add(claims.FrozenMapping{Ref: "ci:gitlab-main/acme-read", ID: "m1", Tier: "system"})
 	f.Add(claims.FrozenMapping{Ref: "ci:gitlab-main/web-publish", ID: "m2", Tier: "project:web", Project: &claims.FrozenProject{Key: "web", ID: "p"}})
-	is := onlyProject(Issuance{MappingIDs: f.MappingIDs, MappingNames: []string{"acme-read", "web-publish"}, Grants: f}, ProjectTier("web"))
+	is := onlyProject(Issuance{
+		MappingIDs: f.MappingIDs, MappingNames: []string{"acme-read", "web-publish"}, Grants: f,
+		RequestedScope: "read:npm-internal deploy:npm-web", GrantedScope: "read:npm-internal deploy:npm-web read:npm-acme",
+		JTI: "jti-1", UserID: "7", UserLogin: "alice", ClientIP: "192.0.2.7", UserAgent: "curl/8",
+		Claims: map[string]any{"project_id": "4711", "job_id": "77", "ref": "main", "user_id": "7", "user_login": "alice", "jti": "jti-1", "runner_id": 3.0},
+	}, ProjectTier("web"))
 	if !slices.Equal(is.MappingNames, []string{"web-publish"}) || !slices.Equal(is.MappingIDs, []string{"m2"}) ||
 		len(is.Grants.Contributions) != 1 || is.Grants.Mappings[0] != "ci:gitlab-main/web-publish" || is.Grants.ProjectID != "4711" {
 		t.Fatalf("narrowed %+v", is)
+	}
+	// Q-CI-52: the scope strings list every tier's items, so the project's view has none; the person, the token ID of
+	// the exchange and the client are left out of the record and of its claim snapshot, the job's identity stays.
+	if is.GrantedScope != "" || is.RequestedScope != "" {
+		t.Errorf("the scope strings %q and %q survive", is.GrantedScope, is.RequestedScope)
+	}
+	if is.JTI != "" || is.UserID != "" || is.UserLogin != "" || is.ClientIP != "" || is.UserAgent != "" {
+		t.Errorf("personal or client fields survive: %+v", is)
+	}
+	for _, name := range []string{"user_id", "user_login", "jti", "runner_id"} {
+		if _, ok := is.Claims[name]; ok {
+			t.Errorf("the claim snapshot keeps %s", name)
+		}
+	}
+	if is.Claims["project_id"] != "4711" || is.Claims["job_id"] != "77" || is.Claims["ref"] != "main" {
+		t.Errorf("the job's identity is gone: %v", is.Claims)
+	}
+}
+
+// R-CI-020, Q-CI-52: a record is active only when its token row exists, is unrevoked and the record is unexpired; a
+// token row that is gone while the record is unexpired reads as removed.
+func TestR_CI_020_TheStateOfARecordIsOneValue(t *testing.T) {
+	for state, active := range map[string]bool{StateActive: true, StateRevoked: false, StateExpired: false, StateRemoved: false} {
+		if got := (Issuance{State: state}).Active(); got != active {
+			t.Errorf("state %q: Active() = %v", state, got)
+		}
 	}
 }
 

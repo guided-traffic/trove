@@ -483,18 +483,21 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   (`mapping-editor.ts`, `issuer-form.ts`, the shared resolver builds merge patches; R-CI-002, R-UI-042) — the resolver hands
   the stored record to `send`, and the `PUT` body after "Overwrite" is that record plus only the members the user changed
   (`overwriteBody`, Q-UI-101); two specs prove the other administrator's narrowing survives
-- 🟡 MEDIUM · An issuance record whose token row went with a deleted mapping's principal shows `active: true` and no
-  `revokedAt` until it expires; `?active=false` returns it with `"active": true` (`ci_issuances.sql`, `issuance.go`)
+- 🟢 MEDIUM · An issuance record whose token row went with a deleted mapping's principal shows `active: true` and no
+  `revokedAt` until it expires; `?active=false` returns it with `"active": true` (`ci_issuances.sql`, `issuance.go`).
+  Fixed (Q-CI-52): the database computes one `state` (`active`, `revoked`, `expired`, `removed`) for the column and the
+  filter, a missing token row is never active, and the representation, OpenAPI and the issuance list show why;
+  `TestR_CI_020_ARecordWhoseTokenWentWithItsMappingIsNotActive`
 - 🟢 MEDIUM · The bulk revoke confirms the count of all applied filters but sends only issuer, project ID, pipeline, job and
   mapping, so it revokes every active token of that mapping across projects and time (`issuance-list.ts`) — the revoke is
   disabled while a filter it cannot carry is applied and the note names it, and the day filters are the local day (Q-UI-102)
 - 🟢 MEDIUM · Browse: revealing a selection while a load of the same folder runs loops in microtasks and freezes the tab
   (`browse.ts` `findChild`/`loadChildren`) — a node keeps the promise of its load in flight and `findChild` awaits it; the
   spec hung the runner before the fix
-- 🟡 MEDIUM · Disabling or deleting a mapping or an issuer scans every issuance of the issuer within the retention (no index
-  on `mapping_ids`, no expiry bound) while the issuer row is locked `FOR UPDATE`, so its exchanges wait into 503
-- 🟡 MEDIUM · A project's view of an issuance strips the other tiers' grants but keeps `grantedScope` and `requestedScope`,
-  which list them (`issuances.go` `onlyProject`)
+- 🟢 MEDIUM · A project's view of an issuance strips the other tiers' grants but keeps `grantedScope` and `requestedScope`,
+  which list them, and the claim snapshot of jobs it only contributed to (`issuances.go` `onlyProject`). Fixed (Q-CI-52): the
+  view omits both scope strings, the person, the subject token's ID and the client and trims the same claims from the snapshot;
+  `TestQ_CI_26_AProjectsRecordShowsItsOwnMappingsOnly` and its integration twin check the fields
 - 🟢 MEDIUM · The UI offers a project administrator no CI snippet, although the project route exists (`mapping-editor.ts`,
   `ci-api.ts`) — `CiApi.snippet` takes the project and reads `getProjectCiSnippet`; the editor offers the button to a project
   administrator whose `managePolicies` switch is on
@@ -502,13 +505,24 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   or is not built (W7 closes the documentation)
 - 🟢 MEDIUM (UI part of the line above) · The UI's "not available yet" card was dead code with misleading text — `CiError`, its
   strings and the `ci_not_implemented` message are removed; every CI screen shows the shared error notice
-- 🟡 LOW (backend) · The "audience removed on A" subtest does not reach the in-transaction re-validation; a just-created or
-  re-enabled issuer is refused on a lagging replica until the cache's SafetyTTL
+- 🟡 LOW (backend) · A just-created or re-enabled issuer is refused on a lagging replica until the cache's SafetyTTL (fix wave A)
 - 🟢 LOW · The CI editors keep no draft across a re-authentication (R-UI-042) — the mapping editor and the issuer form keep the
   write body in `DraftStore` on `401 reauthentication_required`, register it for "Copy draft as JSON" and restore it once
 - 🟢 LOW · Browse keeps a reloaded node's old size and kind — a node read again takes the new meta, a node of another kind is
   replaced, and the `nodes` map drops what left a folder with its subtree
 - 🟢 LOW · The claim tester has no form view (R-UI-036) — a JSON / Form switch edits the top-level claims as rows (Q-UI-103)
+- 🟢 MEDIUM · Disabling or deleting a mapping scans every issuance of the issuer within the retention while the issuer row is
+  locked `FOR UPDATE`, so its exchanges wait into 503 (`CiMappingHasIssuances`). Fixed (Q-CI-53): the question reads
+  unexpired records only (`expires_at > now()`, `ci_issuances_expiry`); the plan is in `ci_issuance_plans_test.go`
+- 🟡 MEDIUM · The other part of the same finding, the two revocation statements `CiIssuanceTokensOfMapping` and
+  `CiIssuanceTokensOfIssuer`, is fix wave A's
+- 🟢 LOW · The "audience removed on A" subtest did not reach the in-transaction re-validation. Fixed: a test of its own seeds B's
+  issuer copy first, stops B's change log with Valkey down, and shows `audience_invalid` from the row B re-reads in the
+  transaction (`TestR_CI_007_AnAudienceRemovedOnAIsRefusedOnBFromTheRowReadInTheTransaction`, the stale counter is 1)
+- 🟢 LOW · The list endpoints of the issuances sorted all records per page without a project filter, tested `grants` with `@>`
+  without a GIN index and read `audit_event` by `token_id` for the usage summary. Fixed (Q-CI-53): migrations 00029 to
+  00031 (three `CONCURRENTLY` indexes) and the issuer filter as an equality on its ID; the usage summary stays without an
+  index on the partitioned `audit_event` (window on the primary key, plan checked)
 
 **Security audit of the phase (2026-11-03; status per item)**
 - 🟡 HIGH · A project-tier mapping reaches the tokens of every job it matches, against R-CI-009's "tiers combine by union": its
@@ -518,7 +532,8 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - 🟡 MEDIUM · `trove migrate` changes a declared issuer's `issuer` URL and `kind` in place under the same issuer ID, which the
   API refuses as `immutable`: pins, package owners (`ci:<issuer>:project:<id>`) and unpinned private-issuer mappings move to the
   new instance, the old key set stays valid until the next refresh, nothing is revoked (`issuers_declared.go`)
-- 🟡 MEDIUM · The project's issuance view keeps `grantedScope` and `requestedScope` of every tier (also a code review finding)
+- 🟢 MEDIUM · The project's issuance view keeps `grantedScope` and `requestedScope` of every tier (also a code review finding;
+  fixed with it, Q-CI-52)
 - 🟡 MEDIUM · Stored mappings make every exchange expensive inside its transaction: up to 1,000 mappings per issuer shared by all
   tiers, each evaluated to its end with a trace and its regexes compiled twice per evaluation, unbounded literal sizes, while the
   exchange holds `FOR SHARE` on the issuer row

@@ -10361,7 +10361,7 @@ components:
       type: object
       description: The record of one exchange (R-CI-020). It holds no token, no hash and no claim outside the allowlist.
       additionalProperties: false
-      required: [tokenId, issuer, mappingNames, subjectKind, projectId, jobId, claims, grants, grantedScope, crossProject, issuedAt, expiresAt, active]
+      required: [tokenId, issuer, mappingNames, subjectKind, projectId, jobId, claims, grants, grantedScope, crossProject, issuedAt, expiresAt, active, state]
       properties:
         tokenId: {type: string, format: uuid}
         issuer: {type: string}
@@ -10384,12 +10384,19 @@ components:
         claims: {type: object, additionalProperties: true, description: The allowlisted claim snapshot.}
         grants: {type: object, additionalProperties: true, description: "The frozen use-time bundle: rendered inline grants, policy and group names, caps."}
         requestedScope: {type: [string, "null"]}
-        grantedScope: {type: string}
+        grantedScope: {type: string, description: "The scope the token was issued with. Empty in a project administrator's view, whose kept contributions show their own inline grants (Q-CI-52)."}
         crossProject: {type: boolean}
         issuedAt: {type: string, format: date-time}
         expiresAt: {type: string, format: date-time}
-        revokedAt: {type: [string, "null"], format: date-time}
-        active: {type: boolean}
+        revokedAt: {type: [string, "null"], format: date-time, description: Set when the token row carries a revocation; absent when the token row is gone.}
+        active: {type: boolean, description: "True exactly when `state` is `active`; the filter `active` selects on the same value."}
+        state:
+          type: string
+          enum: [active, revoked, expired, removed]
+          description: |
+            Why the token is or is not usable (Q-CI-52). `active`: unrevoked and unexpired. `revoked`: the token was
+            revoked (`revokedAt`). `expired`: the expiry has passed. `removed`: the token row is gone before its expiry
+            because it went with the principal of a deleted mapping; no revocation time is known.
         clientIp: {type: [string, "null"]}
         userAgent: {type: [string, "null"]}
     CiIssuanceList:

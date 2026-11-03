@@ -17548,6 +17548,15 @@
         <target>Widerrufen</target>
       </segment>
     </unit>
+    <unit id="ci.issuance.removed">
+      <notes>
+        <note category="location">src/app/features/ci/issuance-list.ts:48,49</note>
+      </notes>
+      <segment>
+        <source>Removed with its mapping</source>
+        <target>Mit ihrem Mapping entfernt</target>
+      </segment>
+    </unit>
     <unit id="ci.issuance.active">
       <notes>
         <note category="location">src/app/features/ci/issuance-list.ts:46,47</note>
@@ -17755,6 +17764,15 @@
       <segment>
         <source>Revoked</source>
         <target>Widerrufen</target>
+      </segment>
+    </unit>
+    <unit id="ci.issuance.removed-short">
+      <notes>
+        <note category="location">src/app/features/ci/issuance-list.ts:194</note>
+      </notes>
+      <segment>
+        <source>Removed</source>
+        <target>Entfernt</target>
       </segment>
     </unit>
     <unit id="ci.issuances.details">

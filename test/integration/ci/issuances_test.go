@@ -161,6 +161,9 @@ func TestQ_CI_26_AProjectAdministratorListsTheTokensOfItsMappings(t *testing.T) 
 	both := e.bundle("4711", "acme/web/frontend", sys.contribution(nil),
 		claims.FrozenMapping{Ref: web.ref(), ID: web.id, Tier: "project:web", Project: &claims.FrozenProject{Key: "web", ID: webID}})
 	tok := e.issue(a, both, job{"1", "77"}, 10*time.Minute)
+	e.exec(`UPDATE ci_token_issuances SET user_id = '7', user_login = 'alice', jti = 'jti-1', requested_scope = 'read',
+	        claims = claims || '{"job_id":"77","user_id":"7","user_login":"alice","jti":"jti-1","runner_id":3,"runner_environment":"self-hosted"}'::jsonb
+	 WHERE token_id = $1::uuid`, tok.id)
 	e.issue(a, e.bundle("4712", "acme/other", sys.contribution(nil)), job{"1", "78"}, 10*time.Minute)
 
 	r := e.as(a, e.bobPAT, "GET", "/api/v1/projects/web/ci/issuances", nil, "Trove-Authz-Min-Epoch", epoch)
@@ -174,10 +177,88 @@ func TestQ_CI_26_AProjectAdministratorListsTheTokensOfItsMappings(t *testing.T) 
 	if len(names) != 1 || names[0] != "web-publish" || len(contributions) != 1 {
 		t.Errorf("the record shows another tier's mappings: %v %v", names, contributions)
 	}
+	// Q-CI-52: the scope strings list every tier's items and the person and the client are not the project's business.
+	for _, field := range []string{"requestedScope", "userId", "userLogin", "jti", "clientIp", "userAgent"} {
+		if v, present := got[0][field]; present && v != nil {
+			t.Errorf("the project's view shows %s = %v", field, v)
+		}
+	}
+	if got[0]["grantedScope"] != "" {
+		t.Errorf("the project's view shows grantedScope = %v", got[0]["grantedScope"])
+	}
+	claimsOf, _ := got[0]["claims"].(map[string]any)
+	for _, name := range []string{"user_id", "user_login", "jti", "runner_id", "runner_environment"} {
+		if _, present := claimsOf[name]; present {
+			t.Errorf("the project's claim snapshot holds %s", name)
+		}
+	}
+	if claimsOf["project_id"] != "4711" || claimsOf["job_id"] != "77" {
+		t.Errorf("the project's claim snapshot lost the job's identity: %v", claimsOf)
+	}
+	if full := e.do(a, "GET", issuancesPath+"/"+tok.id, nil).JSON(t)["issuance"].(map[string]any); full["grantedScope"] == nil || full["grantedScope"] == "" {
+		t.Errorf("the system view lost grantedScope: %v", full["grantedScope"])
+	}
 	if r := e.as(a, carolTok, "GET", "/api/v1/projects/web/ci/issuances", nil, "Trove-Authz-Min-Epoch", epoch); r.Status != 404 {
 		t.Errorf("another project's administrator got %d", r.Status)
 	}
 	if r := e.as(a, carolTok, "GET", "/api/v1/projects/data/ci/issuances", nil, "Trove-Authz-Min-Epoch", epoch); r.Status != 200 || len(items(t, r.JSON(t))) != 0 {
 		t.Errorf("the other project lists %d %s", r.Status, r.Body)
+	}
+}
+
+// R-CI-020, Q-CI-52: the state of a record is one value in the list, in the read and in the filter. A token row goes
+// with the principal of a deleted mapping (api_token.principal_id cascades), so the record outlives its token: it reads
+// as not active with the state `removed`, the filter ?active=false lists it and ?active=true leaves it out. A revoked
+// and an expired token read as `revoked` and `expired`.
+func TestR_CI_020_ARecordWhoseTokenWentWithItsMappingIsNotActive(t *testing.T) {
+	e := newCIEnv(t, false, "acme-read", "acme-gone", "acme-late")
+	a := e.web("web-a")
+	kept := e.issue(a, e.bundle("4711", "acme/web/frontend", e.maps["acme-read"].contribution(nil)), job{"1", "10"}, 10*time.Minute)
+	time.Sleep(5 * time.Millisecond)
+	gone := e.issue(a, e.bundle("4711", "acme/web/frontend", e.maps["acme-gone"].contribution(nil)), job{"1", "11"}, 10*time.Minute)
+	time.Sleep(5 * time.Millisecond)
+	late := e.issue(a, e.bundle("4711", "acme/web/frontend", e.maps["acme-late"].contribution(nil)), job{"1", "12"}, 10*time.Minute)
+	wantStatus(t, e.do(a, "POST", issuancesPath+"/revoke", map[string]any{"issuer": ciIssuerName, "jobId": "10"}), 200, "")
+	// The helper's row carries a condition the store would not write; the delete decodes it.
+	e.exec(`UPDATE ci_mappings SET match = '{"claim":"project_id","equals":"4711"}'::jsonb WHERE id = $1::uuid`, e.maps["acme-gone"].id)
+	wantStatus(t, e.do(a, "DELETE", mappingsOf(ciIssuerName)+"/acme-gone", nil), 204, "")
+	e.exec(`UPDATE ci_token_issuances SET expires_at = now() - interval '1 minute' WHERE token_id = $1::uuid`, late.id)
+	e.exec(`UPDATE api_token SET expires_at = now() - interval '1 minute' WHERE id = $1::uuid`, late.id)
+	if n := e.number(`SELECT count(*) FROM api_token WHERE id = $1::uuid`, gone.id); n != 0 {
+		t.Fatalf("the token row of the deleted mapping is still there (%d)", n)
+	}
+
+	state := map[string]string{kept.id: "revoked", gone.id: "removed", late.id: "expired"}
+	for id, want := range state {
+		r := e.do(a, "GET", issuancesPath+"/"+id, nil)
+		wantStatus(t, r, 200, "")
+		rec := r.JSON(t)["issuance"].(map[string]any)
+		if rec["state"] != want || rec["active"] != false {
+			t.Errorf("record %s reads as state %v active %v, want %s and false", id, rec["state"], rec["active"], want)
+		}
+	}
+	listed := func(query string) map[string]map[string]any {
+		r := e.do(a, "GET", issuancesPath+query, nil)
+		wantStatus(t, r, 200, "")
+		out := map[string]map[string]any{}
+		for _, it := range items(t, r.JSON(t)) {
+			out[it["tokenId"].(string)] = it
+		}
+		return out
+	}
+	if got := listed("?active=true"); len(got) != 0 {
+		t.Errorf("?active=true lists %v", got)
+	}
+	inactive := listed("?active=false")
+	if len(inactive) != 3 {
+		t.Fatalf("?active=false lists %d records, want 3", len(inactive))
+	}
+	for id, want := range state {
+		if rec := inactive[id]; rec["state"] != want || rec["active"] != false {
+			t.Errorf("the list shows %s as %v/%v, want %s/false", id, rec["state"], rec["active"], want)
+		}
+	}
+	if rec := inactive[gone.id]; rec["revokedAt"] != nil {
+		t.Errorf("a record whose token row is gone shows revokedAt %v", rec["revokedAt"])
 	}
 }

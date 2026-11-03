@@ -1797,11 +1797,15 @@ System administrators manage mappings (delegates in P1, R-CI-023):
 Representation rules (closed enums, PUT as full replacement, ETag concurrency with `If-Match`
 required on PUT, lowerCamelCase on the wire) are those of R-CI-002.
 
-**Project administrators (Q-CI-26).** A project administrator with `managePolicies` manages the mappings of its project's
+**Project administrators (Q-CI-26, Q-CI-52).** A project administrator with `managePolicies` manages the mappings of its project's
 tier through the project routes, which are these operations with the tier fixed by the path
 (`/api/v1/projects/{key}/ci/…`): `GET …/ci/issuers` (the issuers read-only: name, kind, issuer URL, `publicIssuer`),
 `GET` and `POST …/ci/mappings` (the body names the `issuer`), `GET`, `PUT` and `DELETE …/ci/mappings/{issuer}/{name}`,
-`POST …/ci/issuers/{issuer}/evaluate`, `GET …/ci/issuers/{issuer}/snippets/{kind}` and `GET …/ci/issuances`. The step admits the capability holder or any project
+`POST …/ci/issuers/{issuer}/evaluate`, `GET …/ci/issuers/{issuer}/snippets/{kind}` and `GET …/ci/issuances`. The record of that list
+shows the project's mappings only: the names, IDs and contributions of the other tiers are left out, and so are `grantedScope` and
+`requestedScope` (they list every tier's items), `jti`, `userId`, `userLogin`, `clientIp`, `userAgent` and the claims `user_id`,
+`user_login`, `jti`, `runner_id` and `runner_environment` of the snapshot; the job's identity, the times and the state stay (Q-CI-52).
+The step admits the capability holder or any project
 administrator and the handler narrows (404 for a project the caller does not administer, 403 `project_switch_off`,
 ADR-146). The bounds of a project mapping, on top of every rule of R-CI-010 and R-CI-011 (`pin_required`,
 `unprotected_write`, `unpinned_write`, `catch_all_condition`):
@@ -1924,7 +1928,7 @@ token and what that token did.
 
 `token_id` names the token row without a foreign key, because the retention task of the token table deletes token rows
 long before `ci.issuances.retention` ends and the record must outlive them; a record whose token row is gone reads as
-expired. `issuer_id` cascades: an issuer is deleted only when an administrator decides it, the audit events keep the
+expired or removed (the state below). `issuer_id` cascades: an issuer is deleted only when an administrator decides it, the audit events keep the
 history, and a restriction would make an issuer with a single exchange undeletable (Q-CI-20).
 
 ```sql
@@ -1961,7 +1965,16 @@ CREATE TABLE ci_token_issuances (
 CREATE INDEX ci_issuances_project ON ci_token_issuances (issuer_id, project_id, issued_at DESC);
 CREATE INDEX ci_issuances_job     ON ci_token_issuances (issuer_id, job_id);
 CREATE INDEX ci_issuances_expiry  ON ci_token_issuances (expires_at);
+-- the list statements (Q-CI-53), each its own CONCURRENTLY step after the table (migrations 00029 to 00031)
+CREATE INDEX ci_issuances_issued         ON ci_token_issuances (issued_at DESC, token_id DESC);
+CREATE INDEX ci_issuances_issuer_issued  ON ci_token_issuances (issuer_id, issued_at DESC, token_id DESC);
+CREATE INDEX ci_issuances_contributions  ON ci_token_issuances USING gin ((grants -> 'contributions') jsonb_path_ops);
 ```
+
+A record reads one **state** (Q-CI-52), computed by the database for the column and for the filter `active`: `revoked` (the token row
+says so), `expired` (the record's expiry has passed, also when the retention task deleted the token row), `removed` (the token row is
+gone before the expiry, because it went with the principal of a deleted mapping, `api_token.principal_id` cascades; no revocation time is
+known) or `active`. `active` is true exactly for `active`; `?active=true` lists those and `?active=false` the others.
 
 **API** (system administrator; read access for the auditor role, which holds `tokens:read`,
 [authorization.md](authorization.md) R-AUTHZ-011)
@@ -1969,7 +1982,7 @@ CREATE INDEX ci_issuances_expiry  ON ci_token_issuances (expires_at);
 | Method and path | Purpose |
 |---|---|
 | `GET /api/v1/ci/issuances?issuer=&project_id=&project_path=&pipeline_id=&job_id=&mapping=&active=&from=&to=` | List issuance records, newest first |
-| `GET /api/v1/ci/issuances/{token_id}` | One record, plus a usage summary from the audit store: request count, last use, packages deployed |
+| `GET /api/v1/ci/issuances/{token_id}` | One record with its `state` and `active`, plus a usage summary from the audit store: request count, last use, packages deployed |
 | `POST /api/v1/ci/issuances/revoke` | Revoke all unexpired CI tokens that match a filter (`issuer` required; at least one of `project_id`, `pipeline_id`, `job_id`, `mapping`). Returns `{"revoked": <n>}`. |
 
 **Audit events** (stored and streamed per INV-16, see
@@ -3871,7 +3884,8 @@ decides who may grant through policies decides who may grant through mappings, a
 a project policy's (Q-AUTHZ-179), so a project administrator cannot reach beyond its repositories by any door. The name
 prefix keeps the principal names `<issuer>/<key>-…` unique without a coordination step. The development agent would revisit
 (a) if administrators want to manage mappings without being able to write policies (then a fourth right), or if the
-issuances of a shared mapping leak more than the project's mappings (the record shows the project's only).
+issuances of a shared mapping leak more than the project's mappings (the record shows the project's only; what that leaves out of the
+scopes, the person and the claim snapshot is Q-CI-52).
 
 **Applied in the spec:** R-CI-009 (tiers, the project tier, `project_id`), R-CI-019 (the project routes and bounds), R-CI-023
 (what stays P1), R-AUTHZ-026 (the table), R-API-035, R-UI-035. Code: migration 00026 (`project_id`), `internal/ci` (the
@@ -4288,6 +4302,77 @@ R-CI-022 is built (its three reasons then get their integration tests) or if a s
 
 **Applied in the spec:** R-CI-008 (the criterion names the four exceptions and the unit test). Code:
 `internal/ci/exchange_service_test.go`; `test/integration/ci/exchange_errors_test.go` (the other reasons).
+
+### Q-CI-52 · The state of an issuance record, and what a project's view of one shows
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the record joins the token row without a foreign key (Q-CI-20), and the token row belongs to the principal of its mapping
+(`api_token.principal_id … ON DELETE CASCADE`). Deleting a mapping revokes its tokens and then deletes the principal, which takes
+the token rows with it. Such a record has no token row to read `revoked_at` from and, until its `expires_at`, was shown as
+`active: true` without a `revokedAt`, while `?active=true` left it out and `?active=false` listed it with `active: true`. The
+project administrator's view (Q-CI-26) cut the contributions down to the project's tier but kept `grantedScope` and
+`requestedScope`, which list the items of every tier, and the claim snapshot with the person who started the pipeline.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `active` computed by the database for the column and the filter, a fourth state `removed` beside `active`, `revoked`, `expired` (chosen) | One CASE expression (a lateral subquery of the three read statements) gives `state`; `active` is `state = 'active'`; a missing token row is `expired` after the record's expiry and `removed` before it | One definition for what the filter selects and what the record shows; the reason is in the representation | A new enum in the representation |
+| (b) Fix only `active` (a missing row is not active) | `state` stays implicit in `revokedAt` and `expiresAt` | No new field | The record then shows `active: false`, no `revokedAt` and a future `expiresAt`, which reads as a contradiction |
+| (c) Keep the token row of a deleted mapping (set null or no cascade) | The row survives with `revoked_at` | The revocation time is known | Changes the token table of identity-and-authentication.md for CI's sake; the cascade is what keeps a deleted principal from leaving usable tokens |
+
+For the project view of a record the options were: (d) keep the scope strings and the claim snapshot as stored; (e) rebuild
+`grantedScope` from the kept contributions; (f) omit both scope strings and the person and client fields (chosen).
+
+**Choice:** (a) for the state, (f) for the project view. `GET /api/v1/ci/issuances` and the read of one record carry `state`
+(`active`, `revoked`, `expired`, `removed`) beside `active` (true exactly for `active`); `removed` means the token row is gone before
+the expiry because it went with its mapping, and has no `revokedAt`. A project administrator's view of a record keeps the
+mappings, the contributions, the cross-project flag and the identity of the job its mapping matched (GitLab project, pipeline, job,
+ref, sha, environment, pipeline source, the times and the state), and leaves out `grantedScope`, `requestedScope`, `jti`,
+`userId`, `userLogin`, `clientIp`, `userAgent` and, from the claim snapshot, `user_id`, `user_login`, `jti`, `runner_id` and
+`runner_environment`. `grantedScope` stays a required string of the representation (a nullable member would break the clients of the released contract) and is empty in that view; `requestedScope` is absent as it is for a record without one.
+
+**Rationale:** the filter and the column read the same computed value, so they cannot disagree again. The scope strings are the
+result of the evaluation over every contributing tier and carry no per-tier part to rebuild (the caps and the intersection with the
+request make the string no sum of its tiers); the inline grants of the kept contributions show what the project's mapping gave,
+which is what its administrator needs. The person who started a pipeline and the address of the runner belong to the job of another
+GitLab project when the mapping matched more than the project's own pipelines, and a project administrator manages mappings, not
+people. The development agent would revisit (f) if project administrators need to find who started a job (then `userLogin` returns
+for records of projects they administer in GitLab, which needs a link between a trove project and a GitLab project that does not
+exist), and (a) if the revocation time of a deleted mapping's tokens is asked for (then (c) with a journal read).
+
+**Applied in the spec:** R-CI-020 (the state and the project's view, in the API paragraph), Q-CI-26 (the record shows the project's
+mappings only: the rule above). Code: `internal/meta/postgres/queries/ci_issuances.sql` (`CiIssuanceList`, `CiIssuanceGet`,
+`CiIssuanceListForProject`), `internal/ci/issuance.go`, `internal/ci/issuances.go` (`onlyProject`), `internal/api/v1/ci_issuances_api.go`,
+`api/openapi.yaml` (`CiIssuance.state`), `web/src/app/features/ci/issuance-list.ts`.
+
+### Q-CI-53 · The indexes of the issuance statements and the bound of the mapping's token question
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `ci_issuances_project` leads with `issuer_id, project_id`, so the list without a project filter sorted every record per
+page; a project's list tests `grants -> 'contributions' @> …` without an index; the usage summary filters `audit_event` by `token_id`;
+and `CiMappingHasIssuances`, which runs while the issuer row is locked `FOR UPDATE`, read every record of the issuer within the
+retention.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Three expand indexes on `ci_token_issuances` (`(issued_at DESC, token_id DESC)`, `(issuer_id, issued_at DESC, token_id DESC)`, a GIN on `grants -> 'contributions'`), none on `audit_event`; the mapping question bound to unexpired records (chosen) | Each index is its own `CREATE INDEX CONCURRENTLY` step (R-HA-018); the issuer filter becomes an equality on the issuer's ID | The three list shapes stop sorting the table; the exchange's inserts are not blocked; the lock is held for the unexpired records only | Three more indexes to maintain on the exchange's insert |
+| (b) The same plus a partial index `audit_event (token_id, occurred_at) WHERE token_id IS NOT NULL` | The usage summary by index | Exact lookup | `audit_event` is partitioned and `CREATE INDEX CONCURRENTLY` is refused on a partitioned table; a plain `CREATE INDEX` on it locks the inserts of the audit writer of every partition for the build, on the busiest table |
+| (c) One index only (`issued_at, token_id`) | The unfiltered order | Cheapest | A small issuer is found by walking all records newest first |
+
+**Choice:** (a). Migrations 00029 (`ci_issuances_issued`), 00030 (`ci_issuances_issuer_issued`) and 00031 (`ci_issuances_contributions`).
+The usage summary stays without an index: its window is the token's lifetime plus a minute, a range of the primary key
+`(occurred_at, id)` of the partitions it touches, and the plan on a seeded table (200,000 events) reads that range and filters it
+(`test/integration/postgres/ci_issuance_plans_test.go`).
+
+**Rationale:** a record is unexpired for at most the token lifetime (R-CI-016), so the bound makes the locked read independent of
+the retention (`ci.issuances.retention`). The two revocation statements are the revoker's and select by token state already. The
+development agent would revisit the audit decision if a token's lifetime grows to days or the event rate makes a window of minutes
+hold millions of rows (then an index per partition by the audit maintenance function, which is also the place a partitioned index is
+attached without the lock), and the number of indexes if the exchange's insert rate shows the maintenance cost.
+
+**Applied in the spec:** R-CI-020 (the data model lists the three indexes). Code: migrations 00029 to 00031,
+`internal/meta/postgres/queries/ci_issuances.sql`, `internal/meta/postgres/queries/ci_mappings.sql` (`CiMappingHasIssuances`).
 
 ## What this does not cover
 

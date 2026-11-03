@@ -38,12 +38,13 @@ test/oidcstub.
 
 ## The contracts
 
-### Schema (migrations 00026 to 00028)
+### Schema (migrations 00026 to 00031)
 
 | File | What |
 |---|---|
 | [00026_ci_oidc.sql](../../internal/meta/postgres/migrations/00026_ci_oidc.sql) | `ci_issuers`, `ci_issuer_keys`, `ci_mappings` (with `tier`, `project_id`), `ci_subject_token_uses`, `ci_token_issuances`; the epoch rows of `ci_mappings` and `ci_issuer_keys`; `package_owner.ci_issuer_id → ci_issuers` `NOT VALID` |
 | [00027](../../internal/meta/postgres/migrations/00027_ci_oidc_owner_index.sql), [00028](../../internal/meta/postgres/migrations/00028_ci_oidc_validate.sql) | the index `CONCURRENTLY`, the validation (R-HA-018) |
+| [00029](../../internal/meta/postgres/migrations/00029_ci_issuances_issued_index.sql), [00030](../../internal/meta/postgres/migrations/00030_ci_issuances_issuer_index.sql), [00031](../../internal/meta/postgres/migrations/00031_ci_issuances_contributions_index.sql) | the three indexes of the issuance statements, each its own `CONCURRENTLY` step (Q-CI-53): `(issued_at DESC, token_id DESC)`, `(issuer_id, issued_at DESC, token_id DESC)`, a GIN on `grants -> 'contributions'`; none on `audit_event` (it is partitioned) |
 | [tables_ci.go](../../internal/meta/postgres/tables_ci.go) | export classes (`ci_issuer_keys` transient, the rest data) and the revision columns `ci_issuers.version`, `.mappings_version`, `ci_mappings.version` |
 
 Deviations from the spec's data models are Q-CI-20 and Q-CI-26: no key on `ci_token_issuances.token_id`, `ON DELETE CASCADE` on its issuer, `project_id` on mappings.
@@ -324,7 +325,7 @@ One READ COMMITTED transaction: the project row `FOR UPDATE` (a project's create
 row, the bindings, `CiIssuerBumpMappings` and `cluster.Notify` on `ci_mappings`, and the event with the journal entry. A name that
 exists is 409 `already_exists`, a priority held by another mapping of the tier 409 `priority_taken`, a limit 422
 `mapping_limit_reached`. A disable or delete revokes only when the mapping has a row in `ci_token_issuances`
-(`CiMappingHasIssuances`) and then calls `Revoker.RevokeMappingTx`; with the stub that answers 501 and nothing changes.
+(`CiMappingHasIssuances`, bounded to unexpired records, Q-CI-53) and then calls `Revoker.RevokeMappingTx`; with the stub that answers 501 and nothing changes.
 
 ### What the other packages rely on
 
@@ -439,7 +440,7 @@ reach). The gaps are H-418 to H-420 of [ci-federation.md](../security/ci-federat
 | [exchange_errors_test.go](../../test/integration/ci/exchange_errors_test.go) | R-CI-008: every reason the MVP reaches with status, `error` and `reason` (`database_unavailable` by a lock held beyond the lock timeout, `signing_keys_unavailable` by an aged key row and an unreachable double, `internal` by a mapping row that does not decode); the denial event before and after the signature; `expose_reason: false`; the 404 and 405 |
 | [replay_test.go](../../test/integration/ci/replay_test.go) | R-CI-018: single use on and off, concurrent exchanges on two replicas, a failed transaction that leaves no `jti`, the restore cut-off with its skew, `ci.exchange.replayed` and `.repeated` |
 | [ratelimit_test.go](../../test/integration/ci/ratelimit_test.go) | R-CI-021: 1,000 requests in 5 s on three replicas, one replica and three with Valkey stopped; `exempt_cidrs` and the subject budget; 2,000 forged tokens from 20 addresses beside a legitimate project; 10,000 garbage requests without a fetch and under 100 audit rows; R-CI-029: the Valkey keys of the keyspace and an outage that changes no answer |
-| [exchange_mappings_test.go](../../test/integration/ci/exchange_mappings_test.go) | R-CI-007's three criteria on a replica whose change log is stopped with Valkey stopped (R-CI-019's shadowing mapping, `trove_ci_mapping_set_stale_total`), R-CI-009's first match and render failure, R-CI-012's fork pipelines and the recorded fork-in-parent fixture, R-CI-013's live policy binding, R-CI-017's revocation of an exchanged token on three replicas, R-CI-001's removed issuer, R-CI-020's issuance record and events |
+| [exchange_mappings_test.go](../../test/integration/ci/exchange_mappings_test.go) | R-CI-007's criteria on a replica whose change log is stopped with Valkey stopped (R-CI-019's shadowing mapping, a disabled mapping, and, in a test of its own, an audience removed on A that B refuses from the issuer row it re-reads in the transaction; `trove_ci_mapping_set_stale_total`), R-CI-009's first match and render failure, R-CI-012's fork pipelines and the recorded fork-in-parent fixture, R-CI-013's live policy binding, R-CI-017's revocation of an exchanged token on three replicas, R-CI-001's removed issuer, R-CI-020's issuance record and events |
 | [exchange_service_test.go](../../internal/ci/exchange_service_test.go), [exchange_request_test.go](../../internal/ci/exchange_request_test.go), [exchange_denials_test.go](../../internal/ci/exchange_denials_test.go), [ttl_test.go](../../internal/ci/ttl_test.go) | the exchange without PostgreSQL: the stale paths and the second mismatch (Q-CI-43), step 1, the aggregation, `ComputeTTL` |
 | [ci_exchange_test.go](../../internal/api/v1/ci_exchange_test.go), [authz/ci_scope_test.go](../../internal/authz/ci_scope_test.go) | the body's decoding and the rate-limit exemption; the index's scope answers |
 
@@ -467,8 +468,8 @@ and the events of a revocation), [Q-CI-39](../spec/gitlab-ci-oidc.md#q-ci-39--a-
 | [authz/index.go](../../internal/authz/index.go), [decide.go](../../internal/authz/decide.go), [visible.go](../../internal/authz/visible.go) | `Index.groups`, `grant.project`; `evalState.isCI` and `ci`; the CI branch of `allowedAction` and `readShape` |
 | [auth/token/cit.go](../../internal/auth/token/cit.go) | `IssueCITx`, `checkCIT`, `decodeCIContext` (with `claims.DecodeFrozen`), `RecordCIRevoked` (at most 1,000 IDs per event, the journal entry), `recordCIRevoked` (called by `revokeTree`: causes `single` and `self`) |
 | [ci/revoke.go](../../internal/ci/revoke.go) | `TokenRevoker`: `RevokeMappingTx` (the tokens the mapping owns and those it contributes to), `RevokeIssuerTx`, `RevokeMatching` (422 without `issuer` or a filter, 404 for an unknown issuer) |
-| [ci/issuances.go](../../internal/ci/issuances.go) | `IssuanceStore`: `List`, `ListForProject` (found through the bundle's contributions, shown with the project's mappings only), `Get` with the usage summary, `CleanupReplay`, `RetainIssuances` (single-statement batches of 1,000), `ActiveTokens`, `IssuanceSortKey` |
-| [ci_issuances_api.go](../../internal/api/v1/ci_issuances_api.go), [ci_project_api.go](../../internal/api/v1/ci_project_api.go) | the three issuance operations and `listProjectCiIssuances` |
+| [ci/issuances.go](../../internal/ci/issuances.go) | `IssuanceStore`: `List`, `ListForProject` (found through the bundle's contributions, shown with the project's mappings only and without the scope strings, the person and the client, `onlyProject`, Q-CI-52), `Get` with the usage summary, `CleanupReplay`, `RetainIssuances` (single-statement batches of 1,000), `ActiveTokens`, `IssuanceSortKey` |
+| [ci_issuances_api.go](../../internal/api/v1/ci_issuances_api.go), [ci_project_api.go](../../internal/api/v1/ci_project_api.go) | the three issuance operations and `listProjectCiIssuances`; `issuanceBody` renders `state` and `active` from the database's value |
 | [queries/ci_issuances.sql](../../internal/meta/postgres/queries/ci_issuances.sql) | the statements above; `OwnershipOwners` of [ownership.sql](../../internal/meta/postgres/queries/ownership.sql) joins the issuer's name |
 | [app/wire_ci.go](../../internal/app/wire_ci.go), [migrate_declared.go](../../internal/app/migrate_declared.go) | the revoker and the issuance service replace their stubs, also in `trove migrate`; `App.CIRevoker`, `App.CITokenIssuer` for the integration tests |
 
@@ -485,7 +486,7 @@ and the events of a revocation), [Q-CI-39](../spec/gitlab-ci-oidc.md#q-ci-39--a-
   issuer and the bulk revoke find tokens through it (Q-CI-32).
 - **W6, the UI.** The issuance list is the `CiIssuanceList` of the document with `nextCursor`; `usage.packagesDeployed` holds
   `<repository>/<package>@<version>`; the bulk revoke answers `{"revoked": n}`, `422 validation_failed` without a filter (`errors[]`
-  names `/issuer` or the missing filter) and `404` for an unknown issuer. A project's list shows the project's mappings only.
+  names `/issuer` or the missing filter) and `404` for an unknown issuer. A project's list shows the project's mappings only, with an empty `grantedScope`, without `requestedScope`, the person and the client. `state` is `active`, `revoked`, `expired` or `removed` (the token row went with its mapping); `active` is `state == active` and is what `?active=` filters on (Q-CI-52).
 - **The evaluator for everyone.** A CI subject is decided on its bundle; a CI subject without one holds nothing. Code that builds a
   `Subject` of kind `ci` by hand (a test) must set `CI`.
 
@@ -515,5 +516,5 @@ and the events of a revocation), [Q-CI-39](../spec/gitlab-ci-oidc.md#q-ci-39--a-
 | [use_test.go](../../test/integration/ci/use_test.go) | R-CI-013's install, publish and refusal; R-AUTHZ-014's escaped claim and the removal from a policy on three replicas with Valkey running and stopped; R-AUTHZ-002; R-CI-017's Bearer, Basic and `X-NuGet-ApiKey` |
 | [ownership_test.go](../../test/integration/ci/ownership_test.go) | R-CI-015's four criteria; R-AUTHZ-014's `bind_project` and `none` defaults; a `bind_project` grant in a repository whose ownership is off |
 | [revoke_test.go](../../test/integration/ci/revoke_test.go) | R-CI-017's 2 s bound on three replicas with and without Valkey for the bulk, the mapping's and one token's revocation; `DELETE /tokens/current`; R-CI-002's disable and delete of an issuer; R-CI-001's removed configuration issuer |
-| [issuances_test.go](../../test/integration/ci/issuances_test.go) | R-CI-020's list, filters, paging, usage, bulk revoke and gauge; who may read; Q-CI-26's project view |
+| [issuances_test.go](../../test/integration/ci/issuances_test.go) | R-CI-020's list, filters, paging, usage, bulk revoke and gauge; who may read; Q-CI-26's project view and what Q-CI-52 leaves out of it; the states of a revoked, an expired and a removed record |
 | [retention_test.go](../../test/integration/ci/retention_test.go) | R-CI-030's two tasks over more than one batch, run twice |

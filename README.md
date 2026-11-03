@@ -338,7 +338,7 @@ The label sets of the M1 families are not restated per family in this pass; read
 | CI token | `trv_cit_…` | issued by `POST /api/v1/auth/oidc/token`; `created_via` `ci-exchange`; owner is the mapping principal; its grants are `api_token.ci_context` |
 | Limiters | `ci_exchange_address`, `ci_exchange_subject` | cluster scope ([R-CI-021](docs/spec/gitlab-ci-oidc.md)) |
 | Tasks | `ci-keys-refresh` (`*/5 * * * *`), `ci-replay-cleanup` (`7 * * * *`), `ci-issuance-retention` (`40 3 * * *`) | exclusive, `maintenance.tasks.<name>` |
-| Tables | `ci_issuers`, `ci_issuer_keys` (transient in backups), `ci_mappings`, `ci_subject_token_uses`, `ci_token_issuances` | migrations 00026 to 00028 |
+| Tables | `ci_issuers`, `ci_issuer_keys` (transient in backups), `ci_mappings`, `ci_subject_token_uses`, `ci_token_issuances` | migrations 00026 to 00031 |
 
 ### Projects
 

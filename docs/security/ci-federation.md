@@ -242,7 +242,10 @@ Every cause ends its tokens in the transaction that decides it ([revoke.go](../.
 ([Q-CI-38](../spec/gitlab-ci-oidc.md)). The change-log poll applies it on every replica within `auth.revocation_bound` (2 s) whatever
 Valkey does; the integration tests measure it on three replicas with Valkey running and stopped. A mapping's revocation also ends the
 tokens it contributed to as a mapping of another tier, found through their issuance records. An issuance record outlives its token
-(Q-CI-20) and reads as expired once the token row is gone.
+(Q-CI-20); once the token row is gone it reads as `expired` after the record's expiry and as `removed` before it (the row went with the
+principal of a deleted mapping), and in both cases as not active ([Q-CI-52](../spec/gitlab-ci-oidc.md)). A project administrator's view of a
+record shows its own mappings and the job's identity only: the scope strings (they list every tier's items), the person who started the
+pipeline, the runner and the client address are left out of the record and of its claim snapshot.
 
 ## What this does not cover
 

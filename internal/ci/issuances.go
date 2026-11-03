@@ -108,7 +108,17 @@ func (s *IssuanceStore) ListForProject(ctx context.Context, project string, f Is
 	return out, nil
 }
 
-// onlyProject narrows a record to the contributions of one tier.
+// projectHiddenClaims are the claims of the snapshot a project's view leaves out (Q-CI-52): the person who started the
+// pipeline, the token ID of the subject token and the runner. A project's mapping matched the job, so the job's
+// identity (project, pipeline, job, ref, sha, environment, source) stays; who ran it and on what is the system
+// administrators' business.
+var projectHiddenClaims = []string{"user_id", "user_login", "jti", "runner_id", "runner_environment"}
+
+// onlyProject narrows a record to the contributions of one tier (Q-CI-26, Q-CI-52). The mapping names and IDs, the
+// grants bundle and the cross-project flag follow the kept contributions. The two scope strings are left out: they
+// list the items of every tier and cannot be rebuilt from one tier's contributions (the kept inline grants show what
+// the project's mapping gave). The person, the subject token's ID and the client are left out of the record and of the
+// claim snapshot.
 func onlyProject(is Issuance, tier string) Issuance {
 	var keep claims.Frozen
 	keep.Version, keep.Issuer, keep.IssuerID = is.Grants.Version, is.Grants.Issuer, is.Grants.IssuerID
@@ -123,6 +133,15 @@ func onlyProject(is Issuance, tier string) Issuance {
 		is.MappingNames = append(is.MappingNames, mappingName(m.Ref))
 	}
 	is.Grants = keep
+	is.GrantedScope, is.RequestedScope = "", ""
+	is.JTI, is.UserID, is.UserLogin, is.ClientIP, is.UserAgent = "", "", "", "", ""
+	narrowed := make(map[string]any, len(is.Claims))
+	for name, v := range is.Claims {
+		if !slices.Contains(projectHiddenClaims, name) {
+			narrowed[name] = v
+		}
+	}
+	is.Claims = narrowed
 	return is
 }
 
@@ -249,7 +268,7 @@ func issuanceOf(r q.CiIssuanceListRow) Issuance {
 		PipelineID: r.PipelineID, JobID: r.JobID, Ref: r.Ref, RefType: r.RefType, PipelineSource: r.PipelineSource,
 		Environment: r.Environment, SHA: r.Sha, UserID: r.UserID, UserLogin: r.UserLogin, RequestedScope: r.RequestedScope,
 		GrantedScope: r.GrantedScope, CrossProject: r.CrossProject, IssuedAt: time.UnixMicro(r.IssuedUs).UTC(),
-		ExpiresAt: time.UnixMicro(r.ExpiresUs).UTC(), ClientIP: r.ClientIp, UserAgent: r.UserAgent,
+		ExpiresAt: time.UnixMicro(r.ExpiresUs).UTC(), ClientIP: r.ClientIp, UserAgent: r.UserAgent, State: r.State,
 	}
 	switch r.RefProtected {
 	case "true":

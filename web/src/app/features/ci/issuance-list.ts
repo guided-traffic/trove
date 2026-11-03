@@ -44,6 +44,8 @@ export interface IssuanceDetailData {
             <span class="bad"><span class="material-icons" aria-hidden="true">block</span> <ng-container i18n="@@ci.issuance.revoked">Revoked</ng-container> {{ data.issuance.revokedAt | date: 'medium' }}</span>
           } @else if (data.issuance.active) {
             <span class="ok"><span class="material-icons" aria-hidden="true">check_circle</span> <ng-container i18n="@@ci.issuance.active">Active</ng-container></span>
+          } @else if (data.issuance.state === 'removed') {
+            <span class="bad"><span class="material-icons" aria-hidden="true">block</span> <ng-container i18n="@@ci.issuance.removed">Removed with its mapping</ng-container></span>
           } @else {
             <span class="muted"><span class="material-icons" aria-hidden="true">schedule</span> <ng-container i18n="@@ci.issuance.expired">Expired</ng-container></span>
           }
@@ -69,7 +71,7 @@ export interface IssuanceDetailData {
         <dt i18n="@@ci.issuance.requested-scope">Requested scope</dt>
         <dd translate="no">{{ data.issuance.requestedScope ?? '–' }}</dd>
         <dt i18n="@@ci.issuance.granted-scope">Granted scope</dt>
-        <dd translate="no">{{ data.issuance.grantedScope }}{{ data.issuance.crossProject ? ' (cross-project)' : '' }}</dd>
+        <dd translate="no">{{ data.issuance.grantedScope || '–' }}{{ data.issuance.crossProject ? ' (cross-project)' : '' }}</dd>
         <dt i18n="@@ci.issuance.client">Client</dt>
         <dd translate="no">{{ data.issuance.clientIp ?? '–' }} {{ data.issuance.userAgent ?? '' }}</dd>
         @if (usage(); as u) {
@@ -205,6 +207,8 @@ function dayStart(value: string, plusDays = 0): string | undefined {
                     <span class="bad"><span class="material-icons" aria-hidden="true">block</span> <ng-container i18n="@@ci.issuance.revoked-short">Revoked</ng-container></span>
                   } @else if (i.active) {
                     <span class="ok"><span class="material-icons" aria-hidden="true">check_circle</span> <ng-container i18n="@@ci.issuance.active">Active</ng-container></span>
+                  } @else if (i.state === 'removed') {
+                    <span class="bad"><span class="material-icons" aria-hidden="true">block</span> <ng-container i18n="@@ci.issuance.removed-short">Removed</ng-container></span>
                   } @else {
                     <span class="muted"><span class="material-icons" aria-hidden="true">schedule</span> <ng-container i18n="@@ci.issuance.expired">Expired</ng-container></span>
                   }

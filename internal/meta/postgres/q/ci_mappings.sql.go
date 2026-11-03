@@ -302,7 +302,7 @@ func (q *Queries) CiMappingDelete(ctx context.Context, id string) error {
 
 const ciMappingHasIssuances = `-- name: CiMappingHasIssuances :many
 SELECT 1::int AS one FROM ci_token_issuances
- WHERE issuer_id = $1::text::uuid AND $2::text::uuid = ANY(mapping_ids) LIMIT 1
+ WHERE issuer_id = $1::text::uuid AND expires_at > now() AND $2::text::uuid = ANY(mapping_ids) LIMIT 1
 `
 
 type CiMappingHasIssuancesParams struct {
@@ -310,8 +310,10 @@ type CiMappingHasIssuancesParams struct {
 	ID       string
 }
 
-// Whether a token was ever issued through the mapping: a token exists only with its issuance record
-// (R-CI-020), so no row means nothing to revoke.
+// Whether an unexpired token was issued through the mapping: a token exists only with its issuance record
+// (R-CI-020), so no row means nothing to revoke. Bounded to the unexpired records (the index ci_issuances_expiry),
+// not to every record of the issuer within the retention, because the caller holds the issuer row FOR UPDATE; an
+// expired token is not revocable, so the rows left out are ones the revocation would skip (Q-CI-53).
 func (q *Queries) CiMappingHasIssuances(ctx context.Context, arg CiMappingHasIssuancesParams) ([]int32, error) {
 	rows, err := q.db.Query(ctx, ciMappingHasIssuances, arg.IssuerID, arg.ID)
 	if err != nil {

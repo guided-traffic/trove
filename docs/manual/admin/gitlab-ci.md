@@ -406,15 +406,26 @@ Every successful exchange writes an issuance record in the same transaction that
 
 | Call | Returns | Needs |
 |---|---|---|
-| `GET /api/v1/ci/issuances` | Records, newest first; filters `issuer`, `projectId`, `projectPath`, `pipelineId`, `jobId`, `mapping`, `active` (unexpired and unrevoked), `from`, `to`; pages with `limit` and `cursor` (`nextCursor`) | `tokens:read` |
+| `GET /api/v1/ci/issuances` | Records, newest first; filters `issuer`, `projectId`, `projectPath`, `pipelineId`, `jobId`, `mapping`, `active` (`true`: state `active`; `false`: the other states), `from`, `to`; pages with `limit` and `cursor` (`nextCursor`) | `tokens:read` |
 | `GET /api/v1/ci/issuances/{tokenId}` | One record and its use from the audit log: the number of events the token is the credential of (an allowed read counts only while `authz.audit.reads` records reads), the last of them, and the npm and NuGet versions it published | `tokens:read` |
-| `GET /api/v1/projects/{key}/ci/issuances` | The records of tokens one of the project's mappings contributed to, naming the project's mappings only; filters `issuer`, `jobId`, `active` | Administration of the project with **Manage policies and service accounts**, or `tokens:read` |
+| `GET /api/v1/projects/{key}/ci/issuances` | The records of tokens one of the project's mappings contributed to, naming the project's mappings only and leaving out the scopes, the person who started the pipeline and the client; filters `issuer`, `jobId`, `active` | Administration of the project with **Manage policies and service accounts**, or `tokens:read` |
 
 ```shell
 trove_curl "https://trove.example.com/api/v1/ci/issuances?issuer=gitlab-main&jobId=981"
 ```
 
-A record names `tokenId`, `issuer`, `mappingNames`, `projectId`, `projectPath`, `namespaceId`, `pipelineId`, `jobId`, `ref`, `refType`, `refProtected`, `pipelineSource`, `environment`, `sha`, `userId` and `userLogin` of the job, the allowlisted `claims`, the frozen `grants`, `requestedScope` and `grantedScope`, `crossProject`, `issuedAt`, `expiresAt`, `revokedAt`, `active`, `clientIp` and `userAgent`. The audit events of package operations carry the same `tokenId`, so a publish leads back to the job that made it. Records are kept for `ci.issuances.retention` (one year by default) after the token expired.
+A record names `tokenId`, `issuer`, `mappingNames`, `projectId`, `projectPath`, `namespaceId`, `pipelineId`, `jobId`, `ref`, `refType`, `refProtected`, `pipelineSource`, `environment`, `sha`, `userId` and `userLogin` of the job, the allowlisted `claims`, the frozen `grants`, `requestedScope` and `grantedScope`, `crossProject`, `issuedAt`, `expiresAt`, `revokedAt`, `active`, `state`, `clientIp` and `userAgent`. The audit events of package operations carry the same `tokenId`, so a publish leads back to the job that made it. Records are kept for `ci.issuances.retention` (one year by default) after the token expired.
+
+`state` says why a token is or is not usable; `active` is `true` only for the first row:
+
+| `state` | Meaning |
+|---|---|
+| `active` | The token is unexpired and not revoked |
+| `revoked` | The token was revoked (`revokedAt` has the time): by hand, by the bulk revoke, or because its mapping or issuer was disabled or deleted |
+| `expired` | The token's lifetime has passed |
+| `removed` | The token's row is gone before its expiry because the mapping it belongs to was deleted. The token does not work; no revocation time is known, and the audit log has the `ci.token.revoked` event of the deletion |
+
+A project administrator's view of a record leaves out `grantedScope`, `requestedScope`, `jti`, `userId`, `userLogin`, `clientIp` and `userAgent`, and `user_id`, `user_login`, `jti`, `runner_id` and `runner_environment` of the claim snapshot: the scopes list the items of every mapping that contributed, and the person and the runner are not a project's business. The job's project, pipeline, job, ref, commit and the state stay.
 
 The exchange and its consequences are also audit events under **Administration › System › Audit log**:
 

@@ -7,8 +7,13 @@
 
 -- name: CiIssuanceList :many
 -- Newest first with the token state joined; the filters of R-CI-020 are optional, active is
--- 'true' (unexpired and unrevoked), 'false' (the others) or '' (both); 0 for a time or the cursor is none. A token row deleted by its retention
--- task reads as expired. The cursor is (issued_at, token_id) of the last row of the previous page.
+-- 'true' (state active), 'false' (the other states) or '' (both); 0 for a time or the cursor is none. The state is
+-- computed once, in the lateral subquery st, for the column and for the filter (Q-CI-52): revoked (the token row says
+-- so), expired (the record's expiry has passed, also when the retention task deleted the token row), removed (the token
+-- row is gone while the record is unexpired: it went with the principal of a deleted mapping, api_token.principal_id
+-- cascades) or active. The cursor is (issued_at, token_id) of the last row of the previous page. The issuer filter is
+-- an equality on issuer_id against the issuer's ID looked up once (an InitPlan), so ci_issuances_issuer_issued serves it
+-- (Q-CI-53); a join on the name would hide the selectivity from the planner.
 SELECT s.token_id::text AS token_id, i.name AS issuer, s.issuer_id::text AS issuer_id, s.mapping_ids::text[] AS mapping_ids,
        s.mapping_names, s.subject_kind, COALESCE(s.jti, '')::text AS jti, s.project_id, COALESCE(s.project_path, '')::text AS project_path,
        COALESCE(s.namespace_id, '')::text AS namespace_id, COALESCE(s.pipeline_id, '')::text AS pipeline_id, s.job_id,
@@ -18,18 +23,22 @@ SELECT s.token_id::text AS token_id, i.name AS issuer, s.issuer_id::text AS issu
        s.claims, s.grants, COALESCE(s.requested_scope, '')::text AS requested_scope, s.granted_scope, s.cross_project,
        (extract(epoch FROM s.issued_at) * 1000000)::bigint AS issued_us, (extract(epoch FROM s.expires_at) * 1000000)::bigint AS expires_us,
        COALESCE(host(s.client_ip), '')::text AS client_ip, COALESCE(s.user_agent, '')::text AS user_agent,
-       COALESCE(extract(epoch FROM t.revoked_at) * 1000000, 0)::bigint AS revoked_us
+       COALESCE(extract(epoch FROM t.revoked_at) * 1000000, 0)::bigint AS revoked_us, st.state::text AS state
   FROM ci_token_issuances s
   JOIN ci_issuers i ON i.id = s.issuer_id
   LEFT JOIN api_token t ON t.id = s.token_id
- WHERE (sqlc.arg(issuer)::text = '' OR i.name = sqlc.arg(issuer)::text)
+  CROSS JOIN LATERAL (SELECT CASE WHEN t.id IS NULL THEN CASE WHEN s.expires_at > now() THEN 'removed' ELSE 'expired' END
+                                  WHEN t.revoked_at IS NOT NULL THEN 'revoked'
+                                  WHEN s.expires_at <= now() THEN 'expired'
+                                  ELSE 'active' END AS state) st
+ WHERE (sqlc.arg(issuer)::text = '' OR s.issuer_id = (SELECT x.id FROM ci_issuers x WHERE x.name = sqlc.arg(issuer)::text))
    AND (sqlc.arg(project_id)::text = '' OR s.project_id = sqlc.arg(project_id)::text)
    AND (sqlc.arg(project_path)::text = '' OR s.project_path = sqlc.arg(project_path)::text)
    AND (sqlc.arg(pipeline_id)::text = '' OR s.pipeline_id = sqlc.arg(pipeline_id)::text)
    AND (sqlc.arg(job_id)::text = '' OR s.job_id = sqlc.arg(job_id)::text)
    AND (sqlc.arg(mapping)::text = '' OR sqlc.arg(mapping)::text = ANY(s.mapping_names))
    AND (sqlc.arg(active)::text = ''
-        OR (sqlc.arg(active)::text = 'true') = (t.id IS NOT NULL AND t.revoked_at IS NULL AND s.expires_at > now()))
+        OR (sqlc.arg(active)::text = 'true') = (st.state = 'active'))
    AND (sqlc.arg(from_us)::bigint = 0 OR s.issued_at >= to_timestamp(sqlc.arg(from_us)::bigint / 1000000.0))
    AND (sqlc.arg(to_us)::bigint = 0 OR s.issued_at < to_timestamp(sqlc.arg(to_us)::bigint / 1000000.0))
    AND (sqlc.arg(after_us)::bigint = 0
@@ -114,10 +123,14 @@ SELECT s.token_id::text AS token_id, i.name AS issuer, s.issuer_id::text AS issu
        s.claims, s.grants, COALESCE(s.requested_scope, '')::text AS requested_scope, s.granted_scope, s.cross_project,
        (extract(epoch FROM s.issued_at) * 1000000)::bigint AS issued_us, (extract(epoch FROM s.expires_at) * 1000000)::bigint AS expires_us,
        COALESCE(host(s.client_ip), '')::text AS client_ip, COALESCE(s.user_agent, '')::text AS user_agent,
-       COALESCE(extract(epoch FROM t.revoked_at) * 1000000, 0)::bigint AS revoked_us
+       COALESCE(extract(epoch FROM t.revoked_at) * 1000000, 0)::bigint AS revoked_us, st.state::text AS state
   FROM ci_token_issuances s
   JOIN ci_issuers i ON i.id = s.issuer_id
   LEFT JOIN api_token t ON t.id = s.token_id
+  CROSS JOIN LATERAL (SELECT CASE WHEN t.id IS NULL THEN CASE WHEN s.expires_at > now() THEN 'removed' ELSE 'expired' END
+                                  WHEN t.revoked_at IS NOT NULL THEN 'revoked'
+                                  WHEN s.expires_at <= now() THEN 'expired'
+                                  ELSE 'active' END AS state) st
  WHERE s.token_id = sqlc.arg(token_id)::text::uuid;
 
 -- name: CiIssuanceListForProject :many
@@ -133,15 +146,19 @@ SELECT s.token_id::text AS token_id, i.name AS issuer, s.issuer_id::text AS issu
        s.claims, s.grants, COALESCE(s.requested_scope, '')::text AS requested_scope, s.granted_scope, s.cross_project,
        (extract(epoch FROM s.issued_at) * 1000000)::bigint AS issued_us, (extract(epoch FROM s.expires_at) * 1000000)::bigint AS expires_us,
        COALESCE(host(s.client_ip), '')::text AS client_ip, COALESCE(s.user_agent, '')::text AS user_agent,
-       COALESCE(extract(epoch FROM t.revoked_at) * 1000000, 0)::bigint AS revoked_us
+       COALESCE(extract(epoch FROM t.revoked_at) * 1000000, 0)::bigint AS revoked_us, st.state::text AS state
   FROM ci_token_issuances s
   JOIN ci_issuers i ON i.id = s.issuer_id
   LEFT JOIN api_token t ON t.id = s.token_id
+  CROSS JOIN LATERAL (SELECT CASE WHEN t.id IS NULL THEN CASE WHEN s.expires_at > now() THEN 'removed' ELSE 'expired' END
+                                  WHEN t.revoked_at IS NOT NULL THEN 'revoked'
+                                  WHEN s.expires_at <= now() THEN 'expired'
+                                  ELSE 'active' END AS state) st
  WHERE s.grants->'contributions' @> jsonb_build_array(jsonb_build_object('project', jsonb_build_object('id', sqlc.arg(project_id)::text)))
    AND (sqlc.arg(issuer)::text = '' OR i.name = sqlc.arg(issuer)::text)
    AND (sqlc.arg(job_id)::text = '' OR s.job_id = sqlc.arg(job_id)::text)
    AND (sqlc.arg(active)::text = ''
-        OR (sqlc.arg(active)::text = 'true') = (t.id IS NOT NULL AND t.revoked_at IS NULL AND s.expires_at > now()))
+        OR (sqlc.arg(active)::text = 'true') = (st.state = 'active'))
    AND (sqlc.arg(after_us)::bigint = 0
         OR (s.issued_at, s.token_id) < (to_timestamp(sqlc.arg(after_us)::bigint / 1000000.0), sqlc.arg(after_id)::text::uuid))
  ORDER BY s.issued_at DESC, s.token_id DESC

@@ -131,10 +131,12 @@ SELECT name FROM ci_mappings
    AND id <> sqlc.arg(id)::text::uuid;
 
 -- name: CiMappingHasIssuances :many
--- Whether a token was ever issued through the mapping: a token exists only with its issuance record
--- (R-CI-020), so no row means nothing to revoke.
+-- Whether an unexpired token was issued through the mapping: a token exists only with its issuance record
+-- (R-CI-020), so no row means nothing to revoke. Bounded to the unexpired records (the index ci_issuances_expiry),
+-- not to every record of the issuer within the retention, because the caller holds the issuer row FOR UPDATE; an
+-- expired token is not revocable, so the rows left out are ones the revocation would skip (Q-CI-53).
 SELECT 1::int AS one FROM ci_token_issuances
- WHERE issuer_id = sqlc.arg(issuer_id)::text::uuid AND sqlc.arg(id)::text::uuid = ANY(mapping_ids) LIMIT 1;
+ WHERE issuer_id = sqlc.arg(issuer_id)::text::uuid AND expires_at > now() AND sqlc.arg(id)::text::uuid = ANY(mapping_ids) LIMIT 1;
 
 -- name: CiMappingPolicyBindings :many
 -- The policies whose principal list names one of the mapping principals (R-CI-013: the binding is

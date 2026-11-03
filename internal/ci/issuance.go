@@ -42,13 +42,28 @@ type Issuance struct {
 	ClientIP       string
 	UserAgent      string
 
-	// Revoked and RevokedAt are read from the token row, which the record joins; a token row deleted
-	// by its retention task reads as expired.
+	// RevokedAt is read from the token row, which the record joins; a token row that is gone has none.
 	RevokedAt *time.Time
+	// State is the state the database computed for the record (Q-CI-52), one of the State constants. The
+	// filter ?active= and the representation read the same value.
+	State string
 }
 
-// Active reports whether the record's token is unexpired and unrevoked at now.
-func (i Issuance) Active(now time.Time) bool { return i.RevokedAt == nil && now.Before(i.ExpiresAt) }
+// The states of an issuance record (R-CI-020, Q-CI-52). Only StateActive is active.
+const (
+	// StateActive: the token row exists, is unrevoked and the record is unexpired.
+	StateActive = "active"
+	// StateRevoked: the token row carries a revocation.
+	StateRevoked = "revoked"
+	// StateExpired: the record's expiry has passed (the token row may be deleted by its retention task).
+	StateExpired = "expired"
+	// StateRemoved: the token row is gone while the record is unexpired, because it went with the principal of
+	// a deleted mapping (api_token.principal_id cascades).
+	StateRemoved = "removed"
+)
+
+// Active reports whether the record's token can still be used: its state is StateActive.
+func (i Issuance) Active() bool { return i.State == StateActive }
 
 // IssuanceFilter is the query of GET /api/v1/ci/issuances (R-CI-020), newest first.
 type IssuanceFilter struct {

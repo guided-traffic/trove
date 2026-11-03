@@ -273,6 +273,15 @@ describe('The issued CI tokens (R-UI-035, R-CI-020)', () => {
     expect(ci(get).issuances).toHaveLength(2);
   });
 
+  it('R-CI-020, Q-CI-52 a record whose token went with its mapping reads as removed, not as expired', async () => {
+    const { root } = await renderScreen(IssuancesPage, {
+      setup: (g) => (ci(g).issuances = [sampleIssuance({ active: false, state: 'removed' })]),
+    });
+    const row = root.querySelector('tbody tr') as HTMLElement;
+    expect(text(row)).toContain('Removed');
+    expect(text(row)).not.toContain('Expired');
+  });
+
   it('R-CI-020 the detail shows the claims snapshot, the grants, the scope and the usage summary', async () => {
     const { root, fixture } = await renderScreen(IssuancesPage);
     buttonByText(root, 'Details').click();

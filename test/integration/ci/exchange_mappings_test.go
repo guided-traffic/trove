@@ -42,7 +42,7 @@ func mrReadOnly(name string, priority int) map[string]any {
 
 // TestR_CI_007_AReplicaWithALaggingCopyIssuesWhatIsCommitted is R-CI-007's three criteria with replica B's change-log
 // poll and its Valkey subscription blocked (Valkey stopped, B's change log stopped): a mapping created on A that
-// shadows a broader one (R-CI-019), a disabled mapping, an audience removed from the issuer.
+// shadows a broader one (R-CI-019) and a disabled mapping. The audience removed from the issuer has its own test below.
 func TestR_CI_007_AReplicaWithALaggingCopyIssuesWhatIsCommitted(t *testing.T) {
 	x := newXEnv(t, options{valkey: false})
 	a, b := x.web("web-a"), x.web("web-b")
@@ -86,18 +86,40 @@ func TestR_CI_007_AReplicaWithALaggingCopyIssuesWhatIsCommitted(t *testing.T) {
 			wantOAuth(t, got, 400, "invalid_request", "no_matching_mapping")
 		}
 	})
+}
 
-	t.Run("R-CI-007 an audience removed on A is audience_invalid on B and issues no token", func(t *testing.T) {
-		g := x.do(a, "GET", issuersPath+"/"+xIssuer, nil)
-		body := g.JSON(t)
-		body["allowedAudiences"] = []string{troveAudience}
-		wantStatus(t, x.do(a, "PUT", issuersPath+"/"+xIssuer, body, "If-Match", etag(g)), 200, "")
-		tokens := x.number("SELECT count(*) FROM api_token WHERE type = 'cit'")
-		wantOAuth(t, x.exchange(b, x.mint(oidcstub.MintOptions{Claims: map[string]any{"aud": "https://vault.example.com"}})), 400, "invalid_request", "audience_invalid")
-		if n := x.number("SELECT count(*) FROM api_token WHERE type = 'cit'"); n != tokens {
-			t.Errorf("a token was issued: %d -> %d", tokens, n)
-		}
-	})
+// TestR_CI_007_AnAudienceRemovedOnAIsRefusedOnBFromTheRowReadInTheTransaction is R-CI-007's third criterion on its own:
+// B holds the issuer's copy that still allows the second audience (a first exchange loaded it), B's change-log poll is
+// stopped and Valkey is down, so nothing but the exchange's own transaction can tell B that the audience is gone. The
+// refusal therefore comes from the issuer row B re-reads under FOR SHARE and validates the held subject token against
+// again (R-CI-004 steps 5 to 9); the stale counter shows that this path ran, and no token is issued.
+func TestR_CI_007_AnAudienceRemovedOnAIsRefusedOnBFromTheRowReadInTheTransaction(t *testing.T) {
+	x := newXEnv(t, options{valkey: false})
+	a, b := x.web("web-a"), x.web("web-b")
+	x.issuer(a, map[string]any{"allowedAudiences": []string{troveAudience, "https://vault.example.com"}})
+	x.addMapping(a, releaseMapping("acme-release-publish", 50))
+	vault := map[string]any{"aud": "https://vault.example.com"}
+	// B's copy of the issuer is loaded by a first exchange with the second audience, and nothing reloads it after.
+	wantToken(t, x.exchange(b, x.mint(oidcstub.MintOptions{Claims: vault})))
+	if err := b.App.Changes().Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	stale := func() float64 {
+		return metric(t, b, fmt.Sprintf(`trove_ci_mapping_set_stale_total{issuer=%q}`, xIssuer))
+	}
+	g := x.do(a, "GET", issuersPath+"/"+xIssuer, nil)
+	body := g.JSON(t)
+	body["allowedAudiences"] = []string{troveAudience}
+	wantStatus(t, x.do(a, "PUT", issuersPath+"/"+xIssuer, body, "If-Match", etag(g)), 200, "")
+
+	before, tokens := stale(), x.number("SELECT count(*) FROM api_token WHERE type = 'cit'")
+	wantOAuth(t, x.exchange(b, x.mint(oidcstub.MintOptions{Claims: vault})), 400, "invalid_request", "audience_invalid")
+	if got := stale() - before; got != 1 {
+		t.Errorf("the transaction re-validated %v times on B, want 1: the refusal did not come from the re-read row", got)
+	}
+	if n := x.number("SELECT count(*) FROM api_token WHERE type = 'cit'"); n != tokens {
+		t.Errorf("a token was issued: %d -> %d", tokens, n)
+	}
 }
 
 func TestR_CI_009_AMergeRequestPipelineOfAProtectedBranchCannotPublish(t *testing.T) {

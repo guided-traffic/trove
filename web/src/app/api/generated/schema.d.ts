@@ -4167,15 +4167,27 @@ export interface components {
                 [key: string]: unknown;
             };
             requestedScope?: string | null;
+            /** @description The scope the token was issued with. Empty in a project administrator's view, whose kept contributions show their own inline grants (Q-CI-52). */
             grantedScope: string;
             crossProject: boolean;
             /** Format: date-time */
             issuedAt: string;
             /** Format: date-time */
             expiresAt: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description Set when the token row carries a revocation; absent when the token row is gone.
+             */
             revokedAt?: string | null;
+            /** @description True exactly when `state` is `active`; the filter `active` selects on the same value. */
             active: boolean;
+            /**
+             * @description Why the token is or is not usable (Q-CI-52). `active`: unrevoked and unexpired. `revoked`: the token was
+             *     revoked (`revokedAt`). `expired`: the expiry has passed. `removed`: the token row is gone before its expiry
+             *     because it went with the principal of a deleted mapping; no revocation time is known.
+             * @enum {string}
+             */
+            state: "active" | "revoked" | "expired" | "removed";
             clientIp?: string | null;
             userAgent?: string | null;
         };

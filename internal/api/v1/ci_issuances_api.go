@@ -133,7 +133,7 @@ func issuanceBody(is ci.Issuance) gen.CiIssuance {
 		TokenId: parseUUID(is.TokenID), Issuer: is.Issuer, MappingNames: orEmpty(is.MappingNames),
 		SubjectKind: gen.CiIssuanceSubjectKind(is.SubjectKind), ProjectId: is.ProjectID, JobId: is.JobID,
 		Claims: is.Claims, GrantedScope: is.GrantedScope, CrossProject: is.CrossProject,
-		IssuedAt: is.IssuedAt, ExpiresAt: is.ExpiresAt, RevokedAt: is.RevokedAt, Active: is.Active(time.Now()),
+		IssuedAt: is.IssuedAt, ExpiresAt: is.ExpiresAt, RevokedAt: is.RevokedAt, Active: is.Active(), State: gen.CiIssuanceState(is.State),
 		Jti: nonEmpty(is.JTI), ProjectPath: nonEmpty(is.ProjectPath), NamespaceId: nonEmpty(is.NamespaceID),
 		PipelineId: nonEmpty(is.PipelineID), Ref: nonEmpty(is.Ref), RefType: nonEmpty(is.RefType), RefProtected: is.RefProtected,
 		PipelineSource: nonEmpty(is.PipelineSource), Environment: nonEmpty(is.Environment), Sha: nonEmpty(is.SHA),

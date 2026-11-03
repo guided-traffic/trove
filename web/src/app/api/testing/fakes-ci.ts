@@ -142,6 +142,7 @@ export function sampleIssuance(over: Partial<CiIssuance> = {}): CiIssuance {
     expiresAt: '2026-11-02T08:15:00Z',
     revokedAt: null,
     active: true,
+    state: 'active',
     clientIp: '203.0.113.9',
     userAgent: 'curl/8',
     ...over,
@@ -576,7 +577,7 @@ export class FakeCiApi extends CiApi {
         (!request.mapping || i.mappingNames.includes(request.mapping));
       if (!hit) return i;
       revoked++;
-      return { ...i, active: false, revokedAt: '2026-11-02T09:30:00Z' };
+      return { ...i, active: false, state: 'revoked', revokedAt: '2026-11-02T09:30:00Z' };
     });
     return revoked;
   }

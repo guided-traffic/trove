@@ -310,6 +310,30 @@ func (e CiInlineGrantOwnership) Valid() bool {
 	}
 }
 
+// Defines values for CiIssuanceState.
+const (
+	CiIssuanceStateActive  CiIssuanceState = "active"
+	CiIssuanceStateExpired CiIssuanceState = "expired"
+	CiIssuanceStateRemoved CiIssuanceState = "removed"
+	CiIssuanceStateRevoked CiIssuanceState = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the CiIssuanceState enum.
+func (e CiIssuanceState) Valid() bool {
+	switch e {
+	case CiIssuanceStateActive:
+		return true
+	case CiIssuanceStateExpired:
+		return true
+	case CiIssuanceStateRemoved:
+		return true
+	case CiIssuanceStateRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CiIssuanceSubjectKind.
 const (
 	CiIssuanceSubjectKindIdToken  CiIssuanceSubjectKind = "id_token"
@@ -3196,6 +3220,7 @@ type CiInlineGrantOwnership string
 
 // CiIssuance The record of one exchange (R-CI-020). It holds no token, no hash and no claim outside the allowlist.
 type CiIssuance struct {
+	// Active True exactly when `state` is `active`; the filter `active` selects on the same value.
 	Active bool `json:"active"`
 
 	// Claims The allowlisted claim snapshot.
@@ -3204,7 +3229,9 @@ type CiIssuance struct {
 	CrossProject bool                   `json:"crossProject"`
 	Environment  *string                `json:"environment,omitempty"`
 	ExpiresAt    time.Time              `json:"expiresAt"`
-	GrantedScope string                 `json:"grantedScope"`
+
+	// GrantedScope The scope the token was issued with. Empty in a project administrator's view, whose kept contributions show their own inline grants (Q-CI-52).
+	GrantedScope string `json:"grantedScope"`
 
 	// Grants The frozen use-time bundle: rendered inline grants, policy and group names, caps.
 	Grants         map[string]interface{} `json:"grants"`
@@ -3222,14 +3249,26 @@ type CiIssuance struct {
 	RefProtected   *bool                  `json:"refProtected,omitempty"`
 	RefType        *string                `json:"refType,omitempty"`
 	RequestedScope *string                `json:"requestedScope,omitempty"`
-	RevokedAt      *time.Time             `json:"revokedAt,omitempty"`
-	Sha            *string                `json:"sha,omitempty"`
-	SubjectKind    CiIssuanceSubjectKind  `json:"subjectKind"`
-	TokenId        openapi_types.UUID     `json:"tokenId"`
-	UserAgent      *string                `json:"userAgent,omitempty"`
-	UserId         *string                `json:"userId,omitempty"`
-	UserLogin      *string                `json:"userLogin,omitempty"`
+
+	// RevokedAt Set when the token row carries a revocation; absent when the token row is gone.
+	RevokedAt *time.Time `json:"revokedAt,omitempty"`
+	Sha       *string    `json:"sha,omitempty"`
+
+	// State Why the token is or is not usable (Q-CI-52). `active`: unrevoked and unexpired. `revoked`: the token was
+	// revoked (`revokedAt`). `expired`: the expiry has passed. `removed`: the token row is gone before its expiry
+	// because it went with the principal of a deleted mapping; no revocation time is known.
+	State       CiIssuanceState       `json:"state"`
+	SubjectKind CiIssuanceSubjectKind `json:"subjectKind"`
+	TokenId     openapi_types.UUID    `json:"tokenId"`
+	UserAgent   *string               `json:"userAgent,omitempty"`
+	UserId      *string               `json:"userId,omitempty"`
+	UserLogin   *string               `json:"userLogin,omitempty"`
 }
+
+// CiIssuanceState Why the token is or is not usable (Q-CI-52). `active`: unrevoked and unexpired. `revoked`: the token was
+// revoked (`revokedAt`). `expired`: the expiry has passed. `removed`: the token row is gone before its expiry
+// because it went with the principal of a deleted mapping; no revocation time is known.
+type CiIssuanceState string
 
 // CiIssuanceSubjectKind defines model for CiIssuance.SubjectKind.
 type CiIssuanceSubjectKind string
