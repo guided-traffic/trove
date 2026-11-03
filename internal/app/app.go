@@ -35,7 +35,6 @@ import (
 	"github.com/guided-traffic/trove/internal/proxy/invalidation"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/secrets"
-	"github.com/guided-traffic/trove/internal/vuln/match"
 	"github.com/guided-traffic/trove/internal/webui"
 )
 
@@ -59,9 +58,6 @@ type Options struct {
 	// SkipInfrastructure starts the HTTP shell without PostgreSQL and Valkey. The
 	// shell tests use it; a production caller never sets it.
 	SkipInfrastructure bool
-	// VulnAdapters replaces the vulnerability adapters of the format registry (R-VULN-003): the tests of the advisory sync
-	// run with adapters of their own, without the formats that provide them. Production passes nil.
-	VulnAdapters func() map[string]match.Adapter
 }
 
 // App is one running replica.

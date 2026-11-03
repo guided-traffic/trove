@@ -48,7 +48,7 @@ func TestR_VULN_003_AnOffSourceKeepsItsData(t *testing.T) {
 			if err := e.worker.Stop(); err != nil {
 				t.Fatal(err)
 			}
-			e.worker = e.st.Start(t, testenv.ReplicaOptions{Name: "worker2", Role: "worker", VulnAdapters: testAdapters, Env: []string{tc.env}})
+			e.worker = e.st.Start(t, testenv.ReplicaOptions{Name: "worker2", Role: "worker", Env: []string{tc.env}})
 			e.stub.ResetCounts()
 			j := e.mustSucceed(taskOSVFull, nil)
 			if !strings.Contains(j.Result, "skipped") {

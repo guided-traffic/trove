@@ -175,7 +175,7 @@ func TestR_VULN_015_ScanningAddsNoQueryToARemoteHit(t *testing.T) {
 	if a := e.do(on, "GET", tgzPath(rRemote, e.pkg, e.ver), e.tokReader); a.Status != 200 {
 		t.Fatalf("fill: %d %s", a.Status, a.Body)
 	}
-	e.linkRemote(rRemote, e.pkg, e.ver)
+	e.requireLinked(rRemote, e.pkg, e.ver)
 	e.finding(rRemote, "npm", e.pkg, e.ver, malA, "malicious", "dismissed")
 	statementsPerDownload(t, e, on, off, tgzPath(rRemote, e.pkg, e.ver))
 }

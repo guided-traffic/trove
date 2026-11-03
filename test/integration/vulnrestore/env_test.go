@@ -75,6 +75,8 @@ func newEnv(t *testing.T, extra ...string) *env {
 		"TROVE_VULNERABILITIES_SOURCES_OSV_BASE_URL=" + run.URL + "/",
 		`TROVE_VULNERABILITIES_SOURCES_OSV_ECOSYSTEMS=["npm"]`,
 		"TROVE_VULNERABILITIES_SOURCES_KEV_MODE=off",
+		// A worker enqueues the latest due slot of its tasks when it starts; the test decides when the sync runs.
+		`TROVE_MAINTENANCE_TASKS={"vuln-sync-osv":{"enabled":false,"schedule":"*/15 * * * *"},"vuln-sync-osv-full":{"enabled":false,"schedule":"17 3 * * 0"},"vuln-sync-kev":{"enabled":false,"schedule":"41 */6 * * *"}}`,
 		"TROVE_METRICS_DB_GAUGE_INTERVAL=1s",
 	}, extra...)})
 	e := &env{t: t, st: st, stub: stub, run: run}
@@ -82,8 +84,9 @@ func newEnv(t *testing.T, extra ...string) *env {
 	st.Bind("admin", e.admin)
 	e.tokAdmin = st.Token(e.admin, scope.Scope{Inherit: true, Admin: true})
 	e.tokReader = st.Token(e.reader, scope.Default())
-	st.Repository(repoLocal, "local", "npm", `{"local":{"packageOwnership":"enforce"}}`)
-	st.Repository(repoBlocked, "local", "npm", `{"local":{"packageOwnership":"enforce"}}`)
+	// always: the published names are claimed (enforce), and an auto repository matches no public advisory for an internal name (R-VULN-010).
+	st.Repository(repoLocal, "local", "npm", `{"local":{"packageOwnership":"enforce"},"vulnerabilities":{"matchPublicAdvisories":"always"}}`)
+	st.Repository(repoBlocked, "local", "npm", `{"local":{"packageOwnership":"enforce"},"vulnerabilities":{"matchPublicAdvisories":"always"}}`)
 	st.Policy("npm-readers", []string{"read"}, []string{repoLocal, repoBlocked}, e.reader)
 	return e
 }

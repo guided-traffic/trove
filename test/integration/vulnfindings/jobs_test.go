@@ -76,7 +76,7 @@ func TestR_VULN_011_AFullEvaluationRequestedWhileAnIncrementalJobWaitsStillRuns(
 func TestR_VULN_011_ARescanIsExclusivePerRepository(t *testing.T) {
 	e := newEnvRole(t, "web")
 	id := e.st.Number(`SELECT id FROM repositories WHERE key = 'npm-remote'`)
-	spec := jobs.EnqueueSpec{Kind: vuln.KindRescan, Args: evaluate.RescanArgs{Repository: "npm-remote", RepositoryID: id}, DedupKey: vuln.RescanKey(id)}
+	spec := jobs.EnqueueSpec{Kind: vuln.KindRescan, Args: vuln.RescanArgs{Repository: "npm-remote", RepositoryID: id}, DedupKey: vuln.RescanKey(id)}
 	first, err := e.rep.App.Queue().EnqueueNow(context.Background(), spec)
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +89,7 @@ func TestR_VULN_011_ARescanIsExclusivePerRepository(t *testing.T) {
 		t.Fatalf("first %+v, second %+v", first, second)
 	}
 	other := e.st.Number(`SELECT id FROM repositories WHERE key = 'npm-mirror'`)
-	third, err := e.rep.App.Queue().EnqueueNow(context.Background(), jobs.EnqueueSpec{Kind: vuln.KindRescan, Args: evaluate.RescanArgs{Repository: "npm-mirror", RepositoryID: other}, DedupKey: vuln.RescanKey(other)})
+	third, err := e.rep.App.Queue().EnqueueNow(context.Background(), jobs.EnqueueSpec{Kind: vuln.KindRescan, Args: vuln.RescanArgs{Repository: "npm-mirror", RepositoryID: other}, DedupKey: vuln.RescanKey(other)})
 	if err != nil || !third.Created {
 		t.Fatalf("another repository's rescan: %+v, %v", third, err)
 	}
@@ -116,6 +116,7 @@ func (f *fakeRun) SaveCheckpoint(context.Context, any) error {
 	}
 	return nil
 }
+
 func (f *fakeRun) SaveProgress(_ context.Context, done, total int64, _ string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -162,7 +163,7 @@ func TestR_VULN_011_ASettingChangedWhileARescanRunsIsAppliedBeforeItEnds(t *test
 	}
 	svc := e.service(evaluate.Options{BatchNames: 2})
 	repoID := e.st.Number(`SELECT id FROM repositories WHERE key = 'npm-mirror'`)
-	args, _ := json.Marshal(evaluate.RescanArgs{Repository: "npm-mirror", RepositoryID: repoID})
+	args, _ := json.Marshal(vuln.RescanArgs{Repository: "npm-mirror", RepositoryID: repoID})
 	run := &fakeRun{afterBatch: func(n int) {
 		if n != 1 {
 			return

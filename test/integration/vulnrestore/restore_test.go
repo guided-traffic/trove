@@ -167,9 +167,6 @@ func TestR_VULN_026_TheStateARestoreLeaves(t *testing.T) {
 // TestR_VULN_026_FailSafeBeforeTheFirstSync: with empty advisory tables, the blocked and the malicious version answer 403,
 // the dismissed one 200, an evaluation that runs resolves nothing and the system information, the sources gauges and
 // the findings gauge show the state (R-VULN-026, R-VULN-011, R-VULN-024).
-//
-// Needs the work of the other packages to pass: the 403 answers need the block check (work package C), the evaluation that
-// resolves nothing needs the evaluation (work package B). The facts and the gauges are this package's.
 func TestR_VULN_026_FailSafeBeforeTheFirstSync(t *testing.T) {
 	e := newEnv(t)
 	e.seedInstallation()
@@ -237,7 +234,7 @@ func TestR_VULN_026_FailSafeBeforeTheFirstSync(t *testing.T) {
 		}
 	})
 
-	t.Run("the blocks hold and the dismissal holds (work package C)", func(t *testing.T) {
+	t.Run("the blocks hold and the dismissal holds", func(t *testing.T) {
 		if a := e.download(web, repoLocal, osvstub.NPMMal, "1.0.0"); a.Status != 403 {
 			t.Errorf("the open malicious version answers %d, want 403: %s", a.Status, a.Body)
 		}
@@ -252,7 +249,7 @@ func TestR_VULN_026_FailSafeBeforeTheFirstSync(t *testing.T) {
 		}
 	})
 
-	t.Run("an evaluation without data resolves nothing (work package B)", func(t *testing.T) {
+	t.Run("an evaluation without data resolves nothing", func(t *testing.T) {
 		// The worker has no source (mode off), so the data stays empty. The pending row names an advisory that is not in
 		// vuln_advisory: an evaluation that read the absence as "no longer affected" would resolve the findings of
 		// GHSA-aaaa-aaaa-0001, which is what R-VULN-011 forbids until an import has completed.
@@ -283,10 +280,6 @@ func TestR_VULN_026_FailSafeBeforeTheFirstSync(t *testing.T) {
 // TestR_VULN_026_AfterTheSyncAndTheFullEvaluation: the first sync after a restore imports the data, the full evaluation
 // follows, and the installation is as before the restore: the dismissal, the block and the open malicious finding hold, the
 // history of every finding is intact and the downloads answer as before (R-VULN-026).
-//
-// Needs the work of the other packages: the sync (work package A, the sources of the test advisory source and the job kinds
-// vuln-sync-osv), the full evaluation after the first complete import (work package B, vuln_source_state.
-// full_evaluation_requested_at) and the block check (work package C).
 func TestR_VULN_026_AfterTheSyncAndTheFullEvaluation(t *testing.T) {
 	e := newEnv(t)
 	e.seedInstallation()

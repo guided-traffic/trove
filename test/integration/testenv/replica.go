@@ -16,7 +16,6 @@ import (
 	"github.com/guided-traffic/trove/internal/app"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/httpserver"
-	"github.com/guided-traffic/trove/internal/vuln/match"
 )
 
 // SyncBuffer is a log sink that is safe to read while a replica writes.
@@ -53,9 +52,6 @@ type ReplicaOptions struct {
 	Extra func(*httpserver.Router)
 	// Vuln replaces ports of the vulnerability scanning (app.Options.Vuln).
 	Vuln *app.VulnOverride
-	// VulnAdapters replaces the vulnerability adapters of the format registry (app.Options.VulnAdapters), for the tests of the
-	// advisory sync, which run without the formats that provide them.
-	VulnAdapters func() map[string]match.Adapter
 }
 
 // Replica is one in-process replica started through app.New.
@@ -94,7 +90,7 @@ func (s *Stack) Start(tb testing.TB, o ReplicaOptions) *Replica {
 		tb.Fatalf("config: %v", err)
 	}
 	logs := &SyncBuffer{}
-	a, err := app.New(app.Options{Loaded: loaded, Role: o.Role, Environ: environ, LogWriter: logs, Extra: o.Extra, Vuln: o.Vuln, VulnAdapters: o.VulnAdapters})
+	a, err := app.New(app.Options{Loaded: loaded, Role: o.Role, Environ: environ, LogWriter: logs, Extra: o.Extra, Vuln: o.Vuln})
 	if err != nil {
 		tb.Fatalf("new %s: %v", o.Name, err)
 	}

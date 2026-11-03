@@ -36,7 +36,7 @@ func TestR_VULN_003_RequestsOnlyTheArchivesOfTheEcosystemsItServes(t *testing.T)
 }
 
 // R-VULN-004 acceptance: against an empty database the first run imports both archives, sets both ecosystems complete and
-// requests the full evaluation of each; a vuln-evaluate job is enqueued when the evaluation's kind is registered in the build.
+// requests the full evaluation of each; a vuln-evaluate job is enqueued.
 func TestR_VULN_004_FirstRunImportsBothArchives(t *testing.T) {
 	e := newEnv(t, options{})
 	before := time.Now()
@@ -77,14 +77,9 @@ func TestR_VULN_004_FirstRunImportsBothArchives(t *testing.T) {
 	if err := json.Unmarshal([]byte(j.Result), &res); err != nil || len(res) != 2 {
 		t.Fatalf("result %s: %v", j.Result, err)
 	}
-	// The job that works the change off is the evaluation's; its kind is registered by its work package.
-	jobs := e.number("SELECT count(*) FROM job WHERE kind = 'vuln-evaluate'")
-	registered := !strings.Contains(e.worker.Logs.String(), "is not registered in this build")
-	if registered && jobs != 1 {
-		t.Errorf("%d vuln-evaluate jobs, want 1", jobs)
-	}
-	if !registered && jobs != 0 {
-		t.Errorf("%d vuln-evaluate jobs without the kind", jobs)
+	// The job that works the change off is the evaluation's.
+	if jobs := e.number("SELECT count(*) FROM job WHERE kind = 'vuln-evaluate' AND state = 'queued'"); jobs != 1 {
+		t.Errorf("%d queued vuln-evaluate jobs, want 1 (coalesced)", jobs)
 	}
 	metrics := e.worker.Metrics(t)
 	for _, s := range []string{
@@ -402,7 +397,7 @@ func TestR_VULN_004_DigestMismatchIsRefused(t *testing.T) {
 	if err := e.stub.SetFault("npm", osvstub.Fault{Scope: "archive", DigestMismatch: true}); err != nil {
 		t.Fatal(err)
 	}
-	e.worker = e.st.Start(t, testenv.ReplicaOptions{Name: "worker", Role: "worker", VulnAdapters: testAdapters})
+	e.worker = e.st.Start(t, testenv.ReplicaOptions{Name: "worker", Role: "worker"})
 	if got := e.mustFail(taskOSV, "osv", "npm", nil); got != "archive_digest_mismatch" {
 		t.Fatalf("code %q", got)
 	}

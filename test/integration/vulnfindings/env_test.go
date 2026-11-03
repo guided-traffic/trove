@@ -8,7 +8,6 @@
 package vulnfindings
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -163,9 +162,9 @@ func (e *env) waitJob(id, kind string) jobs.Job {
 			return false
 		}
 		j = got
-		return string(got.State) == "succeeded" || string(got.State) == "failed" || string(got.State) == "dead"
+		return got.State == "succeeded" || got.State == "failed" || got.State == "dead"
 	})
-	if string(j.State) != "succeeded" {
+	if j.State != "succeeded" {
 		e.t.Fatalf("the job %s ended %s: %s", kind, j.State, j.Error)
 	}
 	return j
@@ -181,7 +180,7 @@ func (e *env) evaluate() jobs.Job {
 func (e *env) rescan(repo string) jobs.Job {
 	e.t.Helper()
 	id := e.st.Number(`SELECT id FROM repositories WHERE key = $1`, repo)
-	return e.run(vuln.KindRescan, vuln.RescanKey(id), evaluate.RescanArgs{Repository: repo, RepositoryID: id})
+	return e.run(vuln.KindRescan, vuln.RescanKey(id), vuln.RescanArgs{Repository: repo, RepositoryID: id})
 }
 
 // findings counts the findings of a repository (any status) for a package version and advisory; "" matches any.
@@ -238,15 +237,6 @@ func (e *env) unpublish(repo, name, version string) {
 	if a := e.st.Do(e.rep, "DELETE", path, e.adm, nil); a.Status != 204 {
 		e.t.Fatalf("delete %s: %d %s", path, a.Status, a.Body)
 	}
-}
-
-func mustJSON(t testing.TB, v any) string {
-	t.Helper()
-	b, err := json.Marshal(v)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(bytes.TrimSpace(b))
 }
 
 // waitSnapshot waits until a condition that reads the replica's repository snapshot holds: a change of a repository reaches the

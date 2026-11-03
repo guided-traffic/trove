@@ -4,9 +4,7 @@
 // stack and the test advisory source of test/osvstub: a TLS server in the test process that the worker replica trusts and
 // may reach, whose request log says what the sync asked of it.
 //
-// The worker runs with the vulnerability adapters of this package (testAdapters), not those of the formats: the sync needs
-// only the name and version rules of a format to normalize a record and to tell an evaluable range from one that is not, and
-// the tests of the sync must not depend on the formats' packages.
+// The replicas run with the adapters of the formats (npm and NuGet), as production does.
 package vulnsync
 
 import (
@@ -21,7 +19,6 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/auth/scope"
-	"github.com/guided-traffic/trove/internal/vuln/match"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 	"github.com/guided-traffic/trove/test/osvstub"
 )
@@ -89,15 +86,20 @@ func newEnv(t *testing.T, o options) *env {
 		"TROVE_VULNERABILITIES_SOURCES_KEV_URL=" + srv.URL + kevPathName,
 		"TROVE_MAINTENANCE_TASKS=" + taskOff,
 		"TROVE_CLUSTER_EPOCH_POLL_INTERVAL=500ms", "TROVE_JOBS_POLL_INTERVAL=200ms",
+		// The sync kinds run on the maintenance queue and the evaluation on the default queue: with no worker on the default
+		// queue the evaluation's jobs stay queued, so that the tests see what the sync leaves for the evaluation (the pending
+		// advisories, the requests of the full evaluation, the job) before anything consumes it. The evaluation's own tests
+		// are test/integration/vulnfindings and vulnflow.
+		"TROVE_JOBS_WORKERS_DEFAULT=0",
 	}, o.Env...)})
 	e := &env{t: t, st: st, stub: stub, srv: srv}
 	rita := st.User("rita")
 	st.Bind("admin", rita)
 	e.admin = st.Token(rita, scope.Scope{Inherit: true, Admin: true})
 	st.Repository(mirrorRepo, "local", "generic", "{}")
-	e.web = st.Start(t, testenv.ReplicaOptions{Name: "web", Role: "web", VulnAdapters: testAdapters})
+	e.web = st.Start(t, testenv.ReplicaOptions{Name: "web", Role: "web"})
 	if !o.NoWorker {
-		e.worker = st.Start(t, testenv.ReplicaOptions{Name: "worker", Role: "worker", VulnAdapters: testAdapters})
+		e.worker = st.Start(t, testenv.ReplicaOptions{Name: "worker", Role: "worker"})
 	}
 	return e
 }
@@ -218,66 +220,4 @@ func (e *env) requestLog() string {
 		b.WriteString(r.Method + " " + r.Path + " " + strconv.Itoa(r.Status) + "\n")
 	}
 	return b.String()
-}
-
-// testAdapters are the adapters of the two ecosystems the source serves: the rules of a format that matter to the sync (a
-// name is non-empty and has no whitespace, NuGet names are lowercased; a version is dotted numbers with an optional
-// pre-release), with the numeric order of the dotted part.
-func testAdapters() map[string]match.Adapter {
-	return map[string]match.Adapter{"npm": adapter{eco: "npm"}, "NuGet": adapter{eco: "NuGet", lower: true}}
-}
-
-type adapter struct {
-	eco   string
-	lower bool
-}
-
-func (a adapter) Ecosystem() string { return a.eco }
-
-func (a adapter) AdvisoryName(n string) (string, bool) {
-	if n == "" || strings.ContainsAny(n, " \t\r\n") {
-		return "", false
-	}
-	if a.lower {
-		n = strings.ToLower(n)
-	}
-	return n, true
-}
-
-func (a adapter) AdvisoryVersion(v string) (string, bool) {
-	core, _, _ := strings.Cut(v, "-")
-	if core == "" {
-		return v, false
-	}
-	for _, p := range strings.Split(core, ".") {
-		if _, err := strconv.Atoi(p); err != nil {
-			return v, false
-		}
-	}
-	return v, true
-}
-
-func (a adapter) CompareVersions(x, y string) (int, error) {
-	xs, ys := strings.Split(strings.SplitN(x, "-", 2)[0], "."), strings.Split(strings.SplitN(y, "-", 2)[0], ".")
-	for i := range max(len(xs), len(ys)) {
-		xi, yi := 0, 0
-		var err error
-		if i < len(xs) {
-			if xi, err = strconv.Atoi(xs[i]); err != nil {
-				return 0, err
-			}
-		}
-		if i < len(ys) {
-			if yi, err = strconv.Atoi(ys[i]); err != nil {
-				return 0, err
-			}
-		}
-		if xi != yi {
-			if xi < yi {
-				return -1, nil
-			}
-			return 1, nil
-		}
-	}
-	return 0, nil
 }

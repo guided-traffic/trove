@@ -364,15 +364,13 @@ func metric(t *testing.T, r *testenv.Replica, series string) float64 {
 	return 0
 }
 
-// linkRemote gives the cached tarball of a remote repository the version rows a fill records: the fill of an npm artifact does
-// not create them yet (npm's OnCommit stores nothing for a fill), so the test inserts what the evaluation's trigger would find.
-func (e *env) linkRemote(repo, name, version string) {
+// requireLinked asserts that the fill of a remote repository recorded the version and linked the cached tarball to it
+// (npm's fill writes the packages and package_versions rows and items.version_id), which the evaluation's trigger finds.
+func (e *env) requireLinked(repo, name, version string) {
 	e.t.Helper()
-	e.st.Exec(`WITH r AS (SELECT id FROM repositories WHERE key = $1),
-		p AS (INSERT INTO packages (repo_id, name, display_name) SELECT id, $2, $2 FROM r ON CONFLICT (repo_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id),
-		v AS (INSERT INTO package_versions (package_id, version, display_version) SELECT id, $3, $3 FROM p RETURNING id)
-		UPDATE items SET version_id = (SELECT id FROM v) WHERE repo_id = (SELECT id FROM r) AND path LIKE '%' || $4`, repo, name, version, name+"-"+version+".tgz")
-	if n := e.st.Number(`SELECT count(*) FROM items i JOIN repositories r ON r.id = i.repo_id WHERE r.key = $1 AND i.version_id IS NOT NULL`, repo); n != 1 {
-		e.t.Fatalf("%d items of %s are linked to a version, want 1", n, repo)
+	if n := e.st.Number(`SELECT count(*) FROM items i JOIN repositories r ON r.id = i.repo_id
+		JOIN package_versions v ON v.id = i.version_id JOIN packages p ON p.id = v.package_id
+		WHERE r.key = $1 AND p.name = $2 AND v.version = $3`, repo, name, version); n != 1 {
+		e.t.Fatalf("%d items of %s are linked to %s@%s by the fill, want 1", n, repo, name, version)
 	}
 }

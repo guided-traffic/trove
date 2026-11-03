@@ -194,7 +194,7 @@ func TestR_VULN_005_TheMirrorRepositoryMustBeAGenericLocalRepository(t *testing.
 			e := newEnv(t, o)
 			e.st.Repository("npm-local", "local", "npm", "{}")
 			e.worker = e.st.Start(t, testenv.ReplicaOptions{
-				Name: "worker", Role: "worker", VulnAdapters: testAdapters,
+				Name: "worker", Role: "worker",
 				Env: []string{"TROVE_VULNERABILITIES_SOURCES_OSV_REPOSITORY=" + tc.repo},
 			})
 			if got := e.mustFail(taskOSV, "osv", "npm", nil); got != "mirror_repository_invalid" {

@@ -67,9 +67,6 @@ func (a *App) newVulnSync(in infra, m *vmetrics.Metrics) (*vsync.Service, error)
 		return nil, err
 	}
 	adapters := vulnAdapters
-	if a.o.VulnAdapters != nil {
-		adapters = a.o.VulnAdapters
-	}
 	if have := adapters(); len(have) > 0 {
 		if err := checkVulnEcosystems(a.cfg.Vulnerabilities.Sources.OSV.Ecosystems, have); err != nil {
 			return nil, err

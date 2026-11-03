@@ -332,7 +332,7 @@ func TestR_VULN_015_ACachedRemoteArtifactIsRefusedOnEveryRouteAndTheDismissalRea
 		t.Fatalf("%d upstream tarball requests for the fill", got)
 	}
 	etag := filled.Header.Get("ETag")
-	e.linkRemote(rRemote, e.pkg, e.ver)
+	e.requireLinked(rRemote, e.pkg, e.ver)
 	id := e.finding(rRemote, "npm", e.pkg, e.ver, malA, "malicious", "needs_triage")
 	if id == "" {
 		t.Fatal("the fill recorded no version to attach a finding to")
