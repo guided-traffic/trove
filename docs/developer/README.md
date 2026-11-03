@@ -1,12 +1,14 @@
 # Developer documentation
 
-Status: phases 1 to 3 are built: the foundation (M0), the access core (M1) and the npm registry (M2). The repository holds the Go binary,
+Status: phases 1 to 6 are built: the foundation (M0), the access core (M1), the npm registry (M2), the NuGet registry (M3), projects, the GitLab CI OIDC federation,
+the trove Bastion and the vulnerability scanning (M4b). The repository holds the Go binary,
 its configuration, the database and cache layers, the S3 blob layer, the system and management APIs, the ops
 endpoints, the OIDC login and the break-glass account, the tokens, the permission policies and the grant index,
-the endpoints and exposure rules, the generic repository format with raw transfer under `/files/`, the npm format with its local, remote (pull-through proxy) and virtual repositories, the audit
+the endpoints and exposure rules, the generic repository format with raw transfer under `/files/`, the npm and NuGet formats with their local, remote (pull-through proxy) and virtual repositories, the audit
 trail, the Angular admin UI with the package screens, client setup and the in-app manual, the Helm chart, the local development profile on kind, the integration, end-to-end
-and chart tests, and the CI workflows. No NuGet format, no GitLab CI federation
-and no backup exists yet; the vulnerability scanning has its contracts laid ([vulnerabilities.md](vulnerabilities.md)) and no work package built. Everything marked *planned* below is the target design in
+and chart tests, and the CI workflows. The vulnerability scanning (the advisory mirror, the findings and their triage, the download block, the client audits, the report) is integrated
+and its flow is tested end to end at the integration tier ([vulnerabilities.md](vulnerabilities.md), [test/integration/vulnflow](../../test/integration/vulnflow)); its browser journeys and client runs are the
+end-to-end wave's. No backup exists yet (phase 7: only the export classes of the tables). Everything marked *planned* below is the target design in
 [docs/spec/](../spec/README.md).
 
 ## What to have in your head first
@@ -70,7 +72,7 @@ and no backup exists yet; the vulnerability scanning has its contracts laid ([vu
 | [projects.md](projects.md) | Projects and delegated administration: the contracts (engine questions, project service, API operations and declarations, error codes, audit events, schema), the decisions behind them, who owns which file, and the tests that pass when |
 | [bastion.md](bastion.md) | The trove Bastion (phase 5b): the contracts of the eight work packages: package tree, the seams and who implements each, the interface guard, the request flows (hit, check, miss, write probe), the schema and configuration it added, how to run the role locally; status: contracts laid, work packages pending |
 | [ci-oidc.md](ci-oidc.md) | GitLab CI OIDC federation: the contracts laid for beta phase 5 (schema, the `internal/ci` packages and interfaces, the token and evaluation seam, the gate, API, configuration, events, tasks), the project tier, the work packages W1 to W7 and their files; status: contracts laid, work packages pending |
-| [vulnerabilities.md](vulnerabilities.md) | Vulnerability scanning (phase 6, M4b): the contracts laid for the eight work packages (the packages and layers, the ports `States`, `Evaluator` and `Advisories`, the download policy and verdict, the format contract's optional vulnerability adapter, the schema, the API operations and their handler stubs, configuration, coordination, audit, metrics and errors), the work packages S and A to H with the files each owns, the contract files; status: contracts laid, work packages pending |
+| [vulnerabilities.md](vulnerabilities.md) | Vulnerability scanning (phase 6, M4b): the contracts of the work packages and a section per package A to G (the packages and layers, the ports `States`, `Evaluator` and `Advisories`, the download policy and verdict, the format contract's optional vulnerability adapter, the schema, the API operations, configuration, coordination, audit, metrics and errors), the work packages S and A to H with the files each owns, the contract files; status: built and integrated |
 | [files.md](files.md) | Raw transfer under `/files/`: the generic layer over the item store, deploy, download with Range, folders, the items API, deletes, activity and download statistics |
 | [items.md](items.md) | The item store: the one commit and its order, the storage hooks, spool, read, listing rows, subtree delete and the `items-delete` job |
 | [formats.md](formats.md) | The format contract: `formats.Format`, the registry and its start-up checks, the `Host`, the storage hooks, the dispatcher for `/api/<format>/<repoKey>/`, content headers and error shapes, the wiring, how to add a format |
@@ -212,7 +214,7 @@ M2 starts with its schema: the tables of the remote engine, the virtual engine, 
 ([database.md](database.md#m2-tables)), with their configuration keys ([configuration.md](configuration.md#m2-keys)), change
 areas and layer rows in `internal/archtest`. Built, from [R-ARCH-003](../spec/architecture.md): the npm format (`internal/formats/npm`), its store
 (`internal/formatdata/npm`), the remote fetch engine (`internal/proxy/`) and the virtual engine (`internal/virtual/`).
-Not built yet: the NuGet format (`internal/formats/nuget`).
+The NuGet format (`internal/formats/nuget`) followed in phase 4 ([nuget.md](nuget.md)).
 
 ## Test tiers
 

@@ -647,8 +647,8 @@ it or a list that cannot be read). The query `?bastion=<name>` selects a Bastion
 ## The vulnerability screens
 
 R-VULN-022 (the section) and R-VULN-023 (the package page) against the operations of R-VULN-020 and R-VULN-021; decisions
-[Q-VULN-52](../spec/vulnerability-scanning.md#q-vuln-52--the-advisory-text-is-shown-as-plain-text) to
-[Q-VULN-54](../spec/vulnerability-scanning.md#q-vuln-54--the-mirror-commands-name-the-repository-as-a-placeholder). The manual page is
+[Q-VULN-52](../spec/vulnerability-scanning.md#q-vuln-52--the-advisory-text-is-the-apis-sanitized-html-which-the-ui-binds) to
+[Q-VULN-54](../spec/vulnerability-scanning.md#q-vuln-54--the-mirror-commands-name-the-repository-the-source-item-carries). The manual page is
 [user/vulnerabilities.md](../manual/user/vulnerabilities.md), which the "?" of every screen under `/vulnerabilities` opens. The security view is
 [security/vulnerability-scanning.md](../security/vulnerability-scanning.md). The section is in the area *Packages and files* of the sidebar for every signed-in
 user; what a caller may read is narrowed by the API, so a caller without a readable repository sees an empty report.
@@ -671,7 +671,7 @@ user; what a caller may read is narrowed by the API, so a caller without a reada
 - *The banner* is built from the summary's data ages (stale, never imported) and, for a holder of `settings:read`, the sources' failures (`dataNotices`).
 - *The trend* is an SVG drawn by `trendGeometry` (one path per severity, one rectangle per day), with a `<desc>` that states the last day's numbers, a legend with icons and "Show as
   table" (Q-VULN-53). Its colours are the tokens `--trove-chart-*` of [design-language.md](design-language.md#where-the-values-live); a severity is never colour alone.
-- *The advisory text is plain text* (Q-VULN-52): `white-space: pre-wrap`, never HTML; a reference is a link for `http` and `https` only, with `rel="nofollow noopener noreferrer"`.
+- *The advisory text is the API's `detailsHtml`* (Q-VULN-52): the server's sanitized rendering of the Markdown, bound through `trove-package-readme` (the README component: Angular's sanitizer, the Trusted Types policy, its link and image rules); the UI never renders `details` itself. A reference is a link for `http` and `https` only, with `rel="nofollow noopener noreferrer"`.
 - *Export.* "Export CSV" calls the export operation with the list's filters and sort, takes the text answer (`ApiClient.getText` with `accept: 'text/csv'`) and hands it to the browser through a Blob URL
   that is revoked at once; a `422 export_too_large` is shown as the problem it is, and nothing is downloaded.
 - *Whitespace.* The components that build sentences from text and elements (`preserveWhitespaces: true`) keep their spaces, so that "Set by alice on …" reads as words.

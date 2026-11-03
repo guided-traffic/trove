@@ -40,7 +40,7 @@ Select a heading to sort by severity, status, identifier, package or detection t
 
 Select an identifier to open the finding. It shows the status, the severity and score, the package and version, the repository, the virtual repositories that expose it, the versions that fix it, when it was detected, and its history. Below that is the advisory itself: aliases, CVSS vector, weaknesses, affected ranges, references and the source with its license.
 
-The advisory text comes from a public source and is untrusted, so trove shows it as plain text with its line breaks and never as formatted or clickable content. References are links only for addresses that start with http or https; they open another site in a new tab. **Where else is it used?** opens the advisory page, which lists every finding of the advisory that you may read, across repositories and versions.
+The advisory text comes from a public source and is untrusted, so trove formats it the way it formats a package's README: headings, lists and code show as formatted text, and anything that could run (scripts, event handlers, unsafe links, images from other sites) is removed. References are links only for addresses that start with http or https; they open another site in a new tab. **Where else is it used?** opens the advisory page, which lists every finding of the advisory that you may read, across repositories and versions.
 
 When the download of the version is refused, a banner at the top says so: **Downloads of the package@version are blocked in the repository**, with the reason. A block for a malicious package is lifted by dismissing the finding. A block set in triage shows who set it, when, and their comment.
 
@@ -74,4 +74,4 @@ The **Vulnerabilities** tab of a package version lists, per repository you may r
 
 If you may read the settings, **Advisory sources** at the top of the report opens the table of sources: per source and ecosystem its mode, whether its data is current or stale, when it was last synchronised, the failed runs in a row with the last error, the number of records, rejected records and ranges trove cannot compare, and the next run. With the permission to change settings you can start a synchronisation from there.
 
-A source in the mode **Mirror repository** reads its files from a generic local repository instead of the network, for installations without internet access. The screen shows the commands that download each file on a connected machine and upload it to that repository. Replace the placeholder with the key of the mirror repository.
+A source in the mode **Mirror repository** reads its files from a generic local repository instead of the network, for installations without internet access. The screen shows the commands that download each file on a connected machine and upload it to that repository, which the commands name (the setting `vulnerabilities.sources.<source>.repository`).

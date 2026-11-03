@@ -1,14 +1,16 @@
 # Vulnerability scanning: contracts
 
-Status: the contracts of beta phase 6 (M4b) are laid: the shared types and packages, the ports, the format contract's addition, the
-schema, the configuration, the capability, the errors, the audit events, the metrics, the OpenAPI document with its handler stubs, and the
-places in the composition root where each work package registers its parts. No work package is built. The specification is
+Status: the vulnerability scanning of beta phase 6 (M4b) is built and integrated: the contracts below (the shared types and packages, the ports, the format contract's addition, the
+schema, the configuration, the capability, the errors, the audit events, the metrics, the OpenAPI document) are implemented by the seven work packages A to G (the sections
+[A](#a--advisory-data-r-vuln-003-to-r-vuln-008-the-sync-half-of-r-vuln-024-r-vuln-026-and-r-vuln-027) to [G](#g--operations)), the UI binds the API, and the integration tier runs the whole
+flow with no fake behind a port ([test/integration/vulnflow](../../test/integration/vulnflow)). Left to the end-to-end wave and the nightly: the browser journeys and the client runs (`npm audit`, `pnpm audit`,
+`yarn npm audit`, `dotnet restore`), the drain of a node during a full sync, and the performance scenarios of R-VULN-028. The specification is
 [spec/vulnerability-scanning.md](../spec/vulnerability-scanning.md) (R-VULN-001 to R-VULN-029; R-VULN-030 to R-VULN-032 are P1 and not built), the
 roadmap entry [M4b](../coverage/roadmap.md#m4b--vulnerability-scanning), the plan [projektplan/BETA.md](../projektplan/BETA.md). The decisions
 behind the contracts are [Q-VULN-23 to Q-VULN-27](../spec/vulnerability-scanning.md#q-vuln-23--the-package-layout-of-the-scanning-and-the-leaf-move-of-the-untrusted-content-limits)
 and [ADR-150](../decisions.md#adr-150--the-format-contract-gains-the-optional-vulnerability-adapter).
 
-The page is the contract between the eight work packages that build the scanning in parallel, each in a git worktree of its own, in the shape of
+The page was the contract between the eight work packages that built the scanning in parallel, each in a git worktree of its own, and is now their record, in the shape of
 [ci-oidc.md](ci-oidc.md).
 
 ## What has to be in your head
@@ -119,8 +121,7 @@ paths, the responses and the schemas), with its `x-trove-permission` (R-VULN-019
 | `rescanRepositoryVulnerabilities` | `POST /repositories/{key}/vulnerabilities/rescan` (`202` with the job, `409`) | E (the job: B) |
 | `vulnerabilityData` of `getSystemInfo` | `Facts` of [handlers.go](../../internal/api/v1/handlers.go) | G |
 
-The generated interface is implemented by the `vulnerabilities*_api.go` files of [internal/api/v1](../../internal/api/v1) (work package E replaced the 503 stubs of Q-VULN-25); a replica that has not wired the scanning still answers 503 (`VulnServices` zero). When E builds an operation it removes nothing from the document but the
-503-only state of its handler. The filters of the list are the document's query parameters, the sorts its `sort` enum; the permission narrowing in SQL is E's design.
+The generated interface is implemented by the `vulnerabilities*_api.go` files of [internal/api/v1](../../internal/api/v1) (work package E replaced the 503 stubs of Q-VULN-25); a replica that has not wired the scanning still answers 503 (`VulnServices` zero). The filters of the list are the document's query parameters, the sorts its `sort` enum; the permission narrowing in SQL is E's design.
 
 ### Configuration, coordination, audit, metrics, errors
 
@@ -156,37 +157,13 @@ throughout, H last. A and B meet at `advisory`, `match` and the tables; C at the
 Each work package adds its section here, in the shape of [ci-oidc.md](ci-oidc.md): Files, what the others rely on, contract changes, tests. Numbers it may use: Q-VULN 28 to 29 (S), 30 to 34 (A), 35 to 39 (B), 40 to 43 (C),
 44 to 47 (D), 48 to 51 (E), 52 to 54 (F), 55 to 58 (G), 59 to 60 (H); H-numbers 477 to 479 (A), 480 to 482 (B), 483 to 485 (C), 486 to 487 (D), 488 to 489 (E), 490 (F), 491 to 493 (G), 494 (H).
 
-#### D · Client audits (R-VULN-017, R-VULN-018)
+### A · Advisory data (R-VULN-003 to R-VULN-008, the sync half of R-VULN-024, R-VULN-026 and R-VULN-027)
 
-What a client's audit reads of the scanning: npm's `local` mode of the bulk endpoint and NuGet's `VulnerabilityInfo/6.7.0`. Decisions:
-[Q-VULN-44 to Q-VULN-47](../spec/vulnerability-scanning.md#q-vuln-44--how-the-format-learns-the-installations-default-for-the-audit-modes-and-what-an-explicit-mode-means-on-a-class);
-the security view is [security/vulnerability-scanning.md](../security/vulnerability-scanning.md).
+Files: [internal/vuln/osv](../../internal/vuln/osv) (record decode, validation, severity, the KEV catalog), [internal/vuln/sync](../../internal/vuln/sync) (the three sync jobs online and
+offline, the guards, the checkpoint, `States`), [internal/vuln/store/sync.go](../../internal/vuln/store/sync.go) over [queries/vuln_sync.sql](../../internal/meta/postgres/queries/vuln_sync.sql),
+[internal/app/wire_vuln_sync.go](../../internal/app/wire_vuln_sync.go). The sync takes the adapters of the registered formats, as production does; the tests of [test/integration/vulnsync](../../test/integration/vulnsync)
+run with them and with no worker on the default queue, so that the jobs of the evaluation stay queued and the tests see what the sync leaves for it.
 
-#### E · API and triage
-Files: [internal/vuln/report](../../internal/vuln/report) (the read side), [internal/vuln/triage](../../internal/vuln/triage) (the status changes),
-[internal/vuln/store/api.go](../../internal/vuln/store/api.go) and [queries/vuln_api.sql](../../internal/meta/postgres/queries/vuln_api.sql) (the statements),
-[vulnerabilities_api.go](../../internal/api/v1/vulnerabilities_api.go), [vulnerabilities_views_api.go](../../internal/api/v1/vulnerabilities_views_api.go) (the handlers, the rescan,
-the `vulnerabilityData` block of `GET /system/info`), [wire_vuln_api.go](../../internal/app/wire_vuln_api.go) (the step `vuln-api`, which takes `vulnArea` for the
-advisories port), tests in [test/integration/vulnapi](../../test/integration/vulnapi) and next to the packages.
-How it works:
-| Part | What it does |
-|---|---|
-| `report.Service.Scope` / `PackageScope` | classifies the physical repositories with `authz.ReadScope`; a repository read whole goes to the statements as `whole`, the versions read in part as `rows` (`repo\x1fname\x1fversion`), decided once per distinct version; the package views load the stored versions of the package as candidates ([Q-VULN-50](../spec/vulnerability-scanning.md)) |
-| `queries/vuln_api.sql` | the filter block is generated into `VulnFindingsList` and `VulnFindingsCount` (the same text); the sort key is `(k_num, k_txt, id)` compared bytewise, so the cursor is `[k_num, k_txt, id]`; `blocked`/`blockReason` filters take the repositories' policy as arrays (`enabled_repos`, `malicious_repos`) |
-| block of a finding | `vuln.Verdict` over `Repository.VulnerabilityPolicy`, in every mode (Q-VULN-49); a version's verdict adds `missing_data` |
-| `triage.Service.Apply` | locks the readable ids in id order, `vuln.CheckTransition`, history row, audit event with `block` set or lifted, journal entry on `set`; per-id results, one bulk id |
-| trend | two aggregate queries (detections and resolutions per day and severity, days before the range summed into the day before) and a running sum in Go |
-| export | `Count` against `export.max_rows` first (`422 export_too_large` before any byte), then keyset pages of 500; `csvSafe` of the audit export |
-| rescan | enqueues `vuln-rescan` with `vuln.RescanArgs` under the dedup key `vuln.RescanKey`; `409` carries the running job; it needs the kind registered by work package B |
-Contract changes of E: `VulnerabilityVersionBlockReason` (`missing_data`) for the version report; `detailsHtml` on the advisory and `repository` on the source item
-(Q-VULN-51); `vuln.RescanArgs` in `internal/vuln/jobs.go`; the journal flag with an optional entry on the two finding events and the two names in `audit` shared types
-(Q-VULN-48); the `vuln-api` step in `steps.go` and the `Vuln` option of the API. The integration tests that touch a block or an evaluation state need the npm and
-NuGet adapters of work package B (a repository's ecosystem comes from them).
-Tests: `TestR_VULN_013_*`, `TestR_VULN_019_*`, `TestR_VULN_020_*`, `TestR_VULN_021_*` in `test/integration/vulnapi` (the `@team-a/*` narrowing in list, counts, trend and
-export, the auditor, the scoped service-account token, 412, the bulk results, the scatter paging with three replicas, the journal row). Not reached at this tier: the
-`403` of an auditor on the download (the file service's), the rescan's `202` and `409` (the kind is B's), and the criteria that need the evaluation to write findings.
-
-#### WP-A · Advisory data (R-VULN-003 to R-VULN-008, the sync half of R-VULN-024, R-VULN-026 and R-VULN-027)
 The decisions are [Q-VULN-30 to Q-VULN-34](../spec/vulnerability-scanning.md#q-vuln-30--a-full-sync-validates-before-it-writes-in-two-passes), the gaps
 [H-477 to H-479](../security/vulnerability-scanning.md#what-this-does-not-cover), the operator's page is [the manual](../manual/admin/vulnerability-sources.md).
 
@@ -207,7 +184,7 @@ Files: [internal/vuln/match/affects.go](../../internal/vuln/match/affects.go) (t
   last batch only when it still holds the value read at the start, then works off `vuln_pending_evaluation` in batches of 1,000 advisories; `vuln-rescan` (exclusive per repository, arguments `{"repository": key, "repositoryId": n}`, the field names of the rescan endpoint) reads the
   repository row at its start and its end and runs again when the inputs differ; `vuln-findings-retention` deletes resolved findings past `resolved_retention`.
 - **The claims rule** is one exported value for the client audits: `evaluate.ClaimRule{Claims, Repos}.InternalNames(ctx, format string, names []string) (map[string]bool, error)` (and `Claim` for the
-  holder). `Service.Claims()` returns it over the replica's claim index. Work package D implements `Advisories.InternalNames` with it.
+  holder). `Service.Claims()` returns it over the replica's claim index. The audits (work package D) implement `Advisories.InternalNames` with it.
 - **The remote miss.** `Service.EvaluateMiss` returns the whole verdict (Q-VULN-38) and writes nothing.
 - **The npm remote fill** now records the version (Q-VULN-37): see [npm.md](npm.md#remote-fills-record-the-version).
 
@@ -217,6 +194,92 @@ Tests: unit ([evaluate_test.go](../../internal/vuln/evaluate/evaluate_test.go), 
 [osv-scanner-expected.json](../../internal/vuln/match/testdata/osv-scanner-expected.json), frozen by osv-scanner v2.7.0 in offline mode, `make osv-expected`), integration
 ([test/integration/vulnfindings](../../test/integration/vulnfindings), [remote_vuln_test.go](../../test/integration/npm/remote_vuln_test.go)). Not reachable in this tier: the object-store GET counters (the
 evaluation reads no blob; the test versions have none), the restore hook (no trash can), the metric of a failed audit.
+
+### C · Enforcement
+
+The download block of [R-VULN-015](../spec/vulnerability-scanning.md#r-vuln-015--download-blocking) and [R-VULN-016](../spec/vulnerability-scanning.md#r-vuln-016--refusals-in-the-protocols-shapes).
+Decisions: [Q-VULN-40 to Q-VULN-43](../spec/vulnerability-scanning.md#q-vuln-40--the-download-policy-rides-in-the-item-lookups-repository-reference-and-the-block-is-read-by-that-one-statement).
+The security view, with the gaps H-483 to H-485, is [security/vulnerability-scanning.md](../security/vulnerability-scanning.md).
+
+**The flow of one download.** The route that serves a stored item resolves the policy of the repository the item is read in from the replica's
+snapshot (`repository.Repository.VulnerabilityPolicy`, through `enforce.Enforcer.PolicyOf`) and puts it in the `items.RepoRef` of the lookup.
+`GetLiveItem` ([files.sql](../../internal/meta/postgres/queries/files.sql)) joins the finding of R-VULN-015 laterally, with `enforce` and
+`block_malicious` as parameters, and returns `items.version_id` and the row; [items.Item](../../internal/items/item.go) carries `VersionID`, `Block`
+(a `vuln.BlockRow`) and the `Policy` it was read with. The serving function then calls `Enforcer.Decide` (which is `vuln.Verdict` over the cached
+`States`) and `Enforcer.Refuse` (count, audit, error). A lookup whose reference carries no policy reads no block, so every other reader of
+`Live` is unchanged.
+
+| Where | File | What |
+|---|---|---|
+| the lookup | [read.go](../../internal/items/read.go), [item.go](../../internal/items/item.go), [items.go](../../internal/items/items.go) | `RepoRef.Vuln`, `Item.VersionID/Block/Policy` |
+| the format routes, the remote hit, the cache view, every virtual tier | [formathost/enforce.go](../../internal/formathost/enforce.go), [ingest.go](../../internal/formathost/ingest.go) | `Host.liveRef` (policy by the item's own repository key, through `Options.Repos`), `Host.refuseBlocked` in `itemStore.Serve` after `ServeCheck`; a `403` is no tier miss, so the virtual walk ends |
+| `/files/` | [files/download.go](../../internal/files/download.go) | `Service.Stat`, after `ServeCheck` |
+| the remote engine | [proxy/artifact.go](../../internal/proxy/artifact.go) | `Engine.liveRef` for `serveStored` and `Cached`; the miss gate `Enforcer.GateMiss` between `mayFill` and the HEAD or the fetch |
+| the decision and the refusal | [vuln/enforce](../../internal/vuln/enforce/enforce.go) | `PolicyOf`, `Decide`, `Refuse`, `GateMiss`; the text, the extensions `advisory` and `findingId`, `Cache-Control: no-store`, the metric, the audit event with its one-minute dedup in the replica's memory |
+| the name of a refused version | [vuln/store/enforce.go](../../internal/vuln/store/enforce.go), [queries/vuln_enforce.sql](../../internal/meta/postgres/queries/vuln_enforce.sql) | `VersionNames`, read when a download is refused (and kept for a minute), never on a served one |
+| the wiring | [app/wire_vuln.go](../../internal/app/wire_vuln.go) block `WP-C`, `wireFiles`, `wireProxyEngine`, `wireFormatHost` | `vulnArea.enforcer`; the three consumers take the area |
+
+The refusal needs no code in a format: the npm and NuGet `WriteError` and the problem writer render kind, code, text and headers of an `errs`
+error already, so the npm body, the NuGet line and the problem details of R-VULN-016 are one error.
+
+**What the others rely on.** `vulnArea.enforcer` (nil-safe: a nil `*Enforcer` resolves no policy and refuses nothing); `items.Item.Block` and
+`Item.VersionID` for any reader of the lookup; `enforce.Enforcer.GateMiss` for a further remote path that fetches an artifact. WP-E's `blocked`
+and `blockReason` use `Policy.BlockReasonOf`, which `Verdict` uses too. The enforcer resolves a repository as unscanned unless the replica has a
+`States` (work package A, `sync.States`) and the repository's format has the adapter (work package B: npm and NuGet).
+
+**Contract changes.** (1) `GetLiveItem` of `files.sql` (the lateral join, `version_id`; its parameters and row type changed, so the generated
+`files.sql.go` did too); (2) `items.RepoRef` gains `Vuln` and `items.Item` gains `VersionID`, `Block` and `Policy` (the lookup's contract, not a
+file of the list above); (3) `app.Options.Vuln` (`app.VulnOverride`) replaces the `States` and `Evaluator` ports in tests, and the
+integration harness passes it (`testenv.ReplicaOptions.Vuln`); (4) `wireFiles`, `wireProxyEngine` take `vulnArea`, `formathost.Options` gains
+`Enforce` and `Repos`, `files.Options` and `proxy.Options` gain `Enforce`; (5) the marked block `WP-C` is filled and the comment line of the
+header says what it builds.
+
+**The query budget.** R-ARCH-027 budgets one query for a local download and one for a remote hit. The code spent more before the scanning
+and spends the same with it: [querycount_test.go](../../test/integration/vulnblock/querycount_test.go) counts the statements a download runs
+from the PostgreSQL log, on a replica that scans and one that does not, in one database, and requires the same statements per download and
+one `GetLiveItem`. Measured: a local download runs `GetLiveItem` and `NPMTombstoned` (2 statements), the raw view the same, a remote hit
+`ProxyEntryGet`, `GetLiveItem` and `NPMRemoteTarballFacts` twice (4); the scanning adds none. The overrun against the budget is not this
+package's to fix.
+
+**Tests.** Unit: [enforce_test.go](../../internal/vuln/enforce/enforce_test.go) (the verdict, the text, the dedup, the report mode, the miss
+gate). Integration, in [test/integration/vulnblock](../../test/integration/vulnblock/) (`make test-integration`; findings inserted directly, the
+`States` and `Evaluator` ports faked through `app.Options.Vuln`, every test with Valkey unreachable unless it asks for it): the npm tarball, the
+NuGet `.nupkg`, `/files/`, the remote hit, the cache view, the virtual tiers, the remote miss without an upstream request, `onMissingData`, the
+report mode, the dedup, the installation switch, the dismissal on a second replica (with Valkey), and the statement counts. Not reached at this
+tier: the client runs (`npm install`, `npm ci`, `dotnet restore -v n`) and a NuGet remote repository, which are the end-to-end wave's; the
+text on an endpoint with exposure rules is not asserted.
+
+### D · Client audits (R-VULN-017, R-VULN-018)
+
+What a client's audit reads of the scanning: npm's `local` mode of the bulk endpoint and NuGet's `VulnerabilityInfo/6.7.0`. Decisions:
+[Q-VULN-44 to Q-VULN-47](../spec/vulnerability-scanning.md#q-vuln-44--how-the-format-learns-the-installations-default-for-the-audit-modes-and-what-an-explicit-mode-means-on-a-class);
+the security view is [security/vulnerability-scanning.md](../security/vulnerability-scanning.md).
+
+### E · API and triage
+
+Files: [internal/vuln/report](../../internal/vuln/report) (the read side), [internal/vuln/triage](../../internal/vuln/triage) (the status changes),
+[internal/vuln/store/api.go](../../internal/vuln/store/api.go) and [queries/vuln_api.sql](../../internal/meta/postgres/queries/vuln_api.sql) (the statements),
+[vulnerabilities_api.go](../../internal/api/v1/vulnerabilities_api.go), [vulnerabilities_views_api.go](../../internal/api/v1/vulnerabilities_views_api.go) (the handlers, the rescan,
+the `vulnerabilityData` block of `GET /system/info`), [wire_vuln_api.go](../../internal/app/wire_vuln_api.go) (the step `vuln-api`, which takes `vulnArea` for the
+advisories port), tests in [test/integration/vulnapi](../../test/integration/vulnapi) and next to the packages.
+How it works:
+| Part | What it does |
+|---|---|
+| `report.Service.Scope` / `PackageScope` | classifies the physical repositories with `authz.ReadScope`; a repository read whole goes to the statements as `whole`, the versions read in part as `rows` (`repo\x1fname\x1fversion`), decided once per distinct version; the package views load the stored versions of the package as candidates ([Q-VULN-50](../spec/vulnerability-scanning.md)) |
+| `queries/vuln_api.sql` | the filter block is generated into `VulnFindingsList` and `VulnFindingsCount` (the same text); the sort key is `(k_num, k_txt, id)` compared bytewise, so the cursor is `[k_num, k_txt, id]`; `blocked`/`blockReason` filters take the repositories' policy as arrays (`enabled_repos`, `malicious_repos`) |
+| block of a finding | `vuln.Verdict` over `Repository.VulnerabilityPolicy`, in every mode (Q-VULN-49); a version's verdict adds `missing_data` |
+| `triage.Service.Apply` | locks the readable ids in id order, `vuln.CheckTransition`, history row, audit event with `block` set or lifted, journal entry on `set`; per-id results, one bulk id |
+| trend | two aggregate queries (detections and resolutions per day and severity, days before the range summed into the day before) and a running sum in Go |
+| export | `Count` against `export.max_rows` first (`422 export_too_large` before any byte), then keyset pages of 500; `csvSafe` of the audit export |
+| rescan | enqueues `vuln-rescan` with `vuln.RescanArgs` under the dedup key `vuln.RescanKey`; `409` carries the running job; the kind is registered by work package B (`wire_vuln_eval.go`) |
+Contract changes of E: `VulnerabilityVersionBlockReason` (`missing_data`) for the version report; `detailsHtml` on the advisory and `repository` on the source item
+(Q-VULN-51); `vuln.RescanArgs` in `internal/vuln/jobs.go`; the journal flag with an optional entry on the two finding events and the two names in `audit` shared types
+(Q-VULN-48); the `vuln-api` step in `steps.go` and the `Vuln` option of the API. The integration tests that touch a block or an evaluation state run with the adapters of the formats and the evaluation of work package B (a repository's ecosystem comes from them).
+Tests: `TestR_VULN_013_*`, `TestR_VULN_019_*`, `TestR_VULN_020_*`, `TestR_VULN_021_*` in `test/integration/vulnapi` (the `@team-a/*` narrowing in list, counts, trend and
+export, the auditor, the scoped service-account token, 412, the bulk results, the scatter paging with three replicas, the journal row). Not reached at this tier: the
+`403` of an auditor on the download (the file service's) and the browser journeys. The rescan's `202` and `409` (`TestR_VULN_011_RescanAnswers202ThenTheRunningJobWith409`) and the evaluation states
+(`TestR_VULN_001_TheEvaluationStatesOfAVersion`: `pending_data`, `evaluated`, `internal`, `not_covered`) run against the kind and the adapters of work package B; the findings of those tests are inserted by SQL, and the flow that has the
+evaluation write them is [vulnflow](../../test/integration/vulnflow).
 
 ### F · The UI (R-VULN-022, R-VULN-023)
 
@@ -229,7 +292,7 @@ Q-VULN-52 to Q-VULN-54, H-490. The description of the screens, their files and s
   `features/packages/package-detail.*`, the links of `features/repositories/repository-list.html` and `repository-detail.html`, the route, navigation, help topic and provider blocks marked
   `>>> M4b vulnerabilities`, the German targets in `web/src/locale/messages.de.xlf`, and `web/e2e/vuln/**`.
 - **What the others rely on.** The generated types of the contract commit (`schema.d.ts`, regenerated with `npm run generate:api`; the UI compiles against them). The UI reads only the
-  API: no screen computes a count, a block or a status the API did not send. The handlers of work package E answer 503 until they are built; the package page then shows no
+  API: no screen computes a count, a block or a status the API did not send. A replica that has not wired the scanning answers 503; the package page then shows no
   tab, no badge and no banner, and the report shows the error notice with its retry.
 - **Contract changes.** None to the document. Two small additions to shared web code: `ReadOptions.accept` of `ApiClient` (the export asks for `text/csv`), and `trove-chart-*` tokens
   with their pairs in `palette.spec.ts`. The manual page needed a line in `internal/manual/manual.go` (the contents are fixed there) and in `docs/manual/README.md`.
@@ -266,8 +329,8 @@ gaps: H-491 to H-493 on [the security page](../security/vulnerability-scanning.m
 is; it does not read A's cache, because the system information is a rare, bounded read and must not depend on the cache's `SafetyTTL`.
 
 **Gauges.** Zero-filling (Q-VULN-56) is what makes `TroveVulnerabilityDataStale` fire for a restored installation: the gauge carries
-`source`/`ecosystem` for every configured source, 0 without a row. If a work package makes the sync create the row of every configured
-source at start-up, nothing changes: the value of a row without `synced_at` is 0 as well.
+`source`/`ecosystem` for every configured source, 0 without a row. If the sync were to create the row of every configured
+source at start-up, nothing would change: the value of a row without `synced_at` is 0 as well.
 
 **The restore test** ([restore_test.go](../../test/integration/vulnrestore/restore_test.go)) builds the state a restore leaves, by SQL
 (`seedInstallation`): four versions published through a replica, the synced state of an earlier life (source state, advisories,
@@ -364,9 +427,9 @@ R-EP-012, the scanning switched off; R-VULN-018: the listing on every class, the
 - `vuln_pending_evaluation` holds every record a run wrote, every record a full sync deleted, every record whose known-exploited flag changed, and, when a group's canonical identifier or severity changed, the
   identifiers of the group and the old canonical identifier. The evaluation reads advisory rows for the identifiers it finds there; a deleted record has no row left, its findings are the way to its versions.
 - `vuln_source_state.full_evaluation_requested_at` is set in the transaction of the first complete import and of a raised `match.MatcherVersion`, and `vuln-evaluate` is enqueued in the same transaction; the
-  sync never clears it. The enqueue skips an unregistered `vuln-evaluate` kind with a warning (a build without the evaluation), so the sync works before it exists.
+  sync never clears it. The kind `vuln-evaluate` is registered in every build, so an enqueue that finds it unknown is a wiring error and fails the run.
 - A run that fails leaves the data as it was: `last_error` is a problem object with `at` and `eventAt`, `failures` counts consecutive failures. The metrics are `trove_vuln_sync_runs_total` and
-  `trove_vuln_sync_records_total`; the gauges of R-VULN-024 are work package G's and read the same columns.
+  `trove_vuln_sync_records_total`; the gauges of R-VULN-024 (work package G) read the same columns.
 - The package's goroutines: the eight record fetches of an incremental run end with the batch; nothing outlives a run.
 | File | Change |
 | [formats/untrusted/zip.go](../../internal/formats/untrusted/zip.go) | `NewZipDeclared`: `NewZip` with limits used as given instead of tightened against the defaults (R-ARCH-028 asks a pass outside `Inspect` to declare its own finite bounds; the advisory archive needs 1,000,000 entries and 4 GiB), every bound required to be set; `NewZip` is unchanged |
@@ -381,63 +444,9 @@ R-EP-012, the scanning switched off; R-VULN-018: the listing on every class, the
 | [vulnsync](../../test/integration/vulnsync) | every criterion of R-VULN-003 to R-VULN-008 that the integration tier reaches, against [test/osvstub](../../test/osvstub) with a worker and a web replica: the requests of the first and the second run, three changed records, the source without `Range`, the change file in parts, the turn to a full sync, the guards and the override, the digest mismatch, the archive too large, `egress_denied` and the failure record, one OSV sync at a time, the sources off, mode `repository` (the upload, the same bytes again, the shrunken archive, the catalog, the repository that is not generic), the records of R-VULN-006, the severities of R-VULN-007, the catalog flag of R-VULN-008, the matcher version of R-VULN-011, a web replica following the worker (R-VULN-027), the release of a job and its resumption |
 Not reachable in the integration tier, and why: the drain of a node ("`queued` again with `attempt` unchanged, another worker completes it", R-VULN-004) is the e2e wave's; the test releases the job with
 `jobs.ErrReleased` and resumes it with a run handle that keeps the checkpoint, which is what the job table does, and `Service.SetBatchHook` is the seam. The advisory detail naming
-"OpenSSF malicious-packages, Apache-2.0" (R-VULN-003) is the API's of work package E; `advisory.SourceOf` is pinned by the contract tests. The finding that returns to `needs_triage` with the event `reopened`
-(R-VULN-008) is the evaluation's of work package B. The alert `TroveVulnerabilitySyncFailing` and the readiness of the replicas (R-VULN-024) are work package G's.
-
-### WP-C · Enforcement
-
-The download block of [R-VULN-015](../spec/vulnerability-scanning.md#r-vuln-015--download-blocking) and [R-VULN-016](../spec/vulnerability-scanning.md#r-vuln-016--refusals-in-the-protocols-shapes).
-Decisions: [Q-VULN-40 to Q-VULN-43](../spec/vulnerability-scanning.md#q-vuln-40--the-download-policy-rides-in-the-item-lookups-repository-reference-and-the-block-is-read-by-that-one-statement).
-The security view, with the gaps H-483 to H-485, is [security/vulnerability-scanning.md](../security/vulnerability-scanning.md).
-
-**The flow of one download.** The route that serves a stored item resolves the policy of the repository the item is read in from the replica's
-snapshot (`repository.Repository.VulnerabilityPolicy`, through `enforce.Enforcer.PolicyOf`) and puts it in the `items.RepoRef` of the lookup.
-`GetLiveItem` ([files.sql](../../internal/meta/postgres/queries/files.sql)) joins the finding of R-VULN-015 laterally, with `enforce` and
-`block_malicious` as parameters, and returns `items.version_id` and the row; [items.Item](../../internal/items/item.go) carries `VersionID`, `Block`
-(a `vuln.BlockRow`) and the `Policy` it was read with. The serving function then calls `Enforcer.Decide` (which is `vuln.Verdict` over the cached
-`States`) and `Enforcer.Refuse` (count, audit, error). A lookup whose reference carries no policy reads no block, so every other reader of
-`Live` is unchanged.
-
-| Where | File | What |
-|---|---|---|
-| the lookup | [read.go](../../internal/items/read.go), [item.go](../../internal/items/item.go), [items.go](../../internal/items/items.go) | `RepoRef.Vuln`, `Item.VersionID/Block/Policy` |
-| the format routes, the remote hit, the cache view, every virtual tier | [formathost/enforce.go](../../internal/formathost/enforce.go), [ingest.go](../../internal/formathost/ingest.go) | `Host.liveRef` (policy by the item's own repository key, through `Options.Repos`), `Host.refuseBlocked` in `itemStore.Serve` after `ServeCheck`; a `403` is no tier miss, so the virtual walk ends |
-| `/files/` | [files/download.go](../../internal/files/download.go) | `Service.Stat`, after `ServeCheck` |
-| the remote engine | [proxy/artifact.go](../../internal/proxy/artifact.go) | `Engine.liveRef` for `serveStored` and `Cached`; the miss gate `Enforcer.GateMiss` between `mayFill` and the HEAD or the fetch |
-| the decision and the refusal | [vuln/enforce](../../internal/vuln/enforce/enforce.go) | `PolicyOf`, `Decide`, `Refuse`, `GateMiss`; the text, the extensions `advisory` and `findingId`, `Cache-Control: no-store`, the metric, the audit event with its one-minute dedup in the replica's memory |
-| the name of a refused version | [vuln/store/enforce.go](../../internal/vuln/store/enforce.go), [queries/vuln_enforce.sql](../../internal/meta/postgres/queries/vuln_enforce.sql) | `VersionNames`, read when a download is refused (and kept for a minute), never on a served one |
-| the wiring | [app/wire_vuln.go](../../internal/app/wire_vuln.go) block `WP-C`, `wireFiles`, `wireProxyEngine`, `wireFormatHost` | `vulnArea.enforcer`; the three consumers take the area |
-
-The refusal needs no code in a format: the npm and NuGet `WriteError` and the problem writer render kind, code, text and headers of an `errs`
-error already, so the npm body, the NuGet line and the problem details of R-VULN-016 are one error.
-
-**What the others rely on.** `vulnArea.enforcer` (nil-safe: a nil `*Enforcer` resolves no policy and refuses nothing); `items.Item.Block` and
-`Item.VersionID` for any reader of the lookup; `enforce.Enforcer.GateMiss` for a further remote path that fetches an artifact. WP-E's `blocked`
-and `blockReason` use `Policy.BlockReasonOf`, which `Verdict` uses too. The enforcer resolves a repository as unscanned unless the replica has a
-`States` (work package A) and the repository's format has the adapter (work package B).
-
-**Contract changes.** (1) `GetLiveItem` of `files.sql` (the lateral join, `version_id`; its parameters and row type changed, so the generated
-`files.sql.go` did too); (2) `items.RepoRef` gains `Vuln` and `items.Item` gains `VersionID`, `Block` and `Policy` (the lookup's contract, not a
-file of the list above); (3) `app.Options.Vuln` (`app.VulnOverride`) replaces the `States` and `Evaluator` ports in tests, and the
-integration harness passes it (`testenv.ReplicaOptions.Vuln`); (4) `wireFiles`, `wireProxyEngine` take `vulnArea`, `formathost.Options` gains
-`Enforce` and `Repos`, `files.Options` and `proxy.Options` gain `Enforce`; (5) the marked block `WP-C` is filled and the comment line of the
-header says what it builds.
-
-**The query budget.** R-ARCH-027 budgets one query for a local download and one for a remote hit. The code spent more before the scanning
-and spends the same with it: [querycount_test.go](../../test/integration/vulnblock/querycount_test.go) counts the statements a download runs
-from the PostgreSQL log, on a replica that scans and one that does not, in one database, and requires the same statements per download and
-one `GetLiveItem`. Measured: a local download runs `GetLiveItem` and `NPMTombstoned` (2 statements), the raw view the same, a remote hit
-`ProxyEntryGet`, `GetLiveItem` and `NPMRemoteTarballFacts` twice (4); the scanning adds none. The overrun against the budget is not this
-package's to fix.
-
-**Tests.** Unit: [enforce_test.go](../../internal/vuln/enforce/enforce_test.go) (the verdict, the text, the dedup, the report mode, the miss
-gate). Integration, in [test/integration/vulnblock](../../test/integration/vulnblock/) (`make test-integration`; findings inserted directly, the
-`States` and `Evaluator` ports faked through `app.Options.Vuln`, every test with Valkey unreachable unless it asks for it): the npm tarball, the
-NuGet `.nupkg`, `/files/`, the remote hit, the cache view, the virtual tiers, the remote miss without an upstream request, `onMissingData`, the
-report mode, the dedup, the installation switch, the dismissal on a second replica (with Valkey), and the statement counts. Not reached at this
-tier: the client runs (`npm install`, `npm ci`, `dotnet restore -v n`) and a NuGet remote repository, which are the end-to-end wave's; the
-text on an endpoint with exposure rules is not asserted.
-
+"OpenSSF malicious-packages, Apache-2.0" (R-VULN-003) is the API's (work package E, tested in vulnapi); `advisory.SourceOf` is pinned by the contract tests. The finding that returns to `needs_triage` with the event `reopened`
+(R-VULN-008) is the evaluation's (work package B, tested in vulnfindings). The alert `TroveVulnerabilitySyncFailing` and the readiness of the replicas (R-VULN-024) are work package G's, in the chart tests.
+The worker of the package's tests has no worker on the default queue (`TROVE_JOBS_WORKERS_DEFAULT=0`): the `vuln-evaluate` job stays queued, which is what the tests read; the evaluation that consumes it is run by vulnfindings, vulnrestore and vulnflow.
 
 ## Tests that pass now
 
@@ -452,6 +461,7 @@ These contract tests carry their requirement IDs in comments or in names that sa
 | [vulnerabilities_triage_test.go](../../internal/authz/vulnerabilities_triage_test.go) | the capability's role sets and its place among the system scope items |
 | [formats_allowlist_test.go](../../internal/archtest/formats_allowlist_test.go) | a format may import the two leaves and nothing else of the scanning |
 | [TestVulnMigration](../../test/integration/postgres/vuln_test.go) | the schema |
+| [vulnflow](../../test/integration/vulnflow) | `TestR_VULN_015_E4b3_E4b4_TheFlowFromTheAdvisorySourceToTheBlockedDownload`: no fake behind any port, three replicas of the real application. The test advisory source is imported by `vuln-sync-osv` started through the task API; the `vuln-evaluate` job writes the findings of `trove-test-vuln@1.0.0` published to a local repository (`matchPublicAdvisories: always`) and cached through an npm remote (its host listed in `vulnerabilities.matching.public_upstreams`); a publish after the import is evaluated in its own commit; the findings API of another replica lists them; a triage PATCH confirms and blocks one (an open finding blocks nothing); the download is refused in npm's shape on another replica, through the virtual repository, and only in the blocked repository; lifting the block serves it again; `trove-test-mal@1.0.0` is refused on a remote miss with no upstream tarball request and nothing stored; npm's bulk audit names the advisory in mode `local` with no upstream request |
 
 ## Contract files
 
