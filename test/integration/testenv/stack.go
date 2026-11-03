@@ -199,6 +199,11 @@ func (s *Stack) environ(host, port, name, userFile, passFile string) []string {
 		// elsewhere they would only slow the suite (a suite that tests them sets
 		// TROVE_API_RATE_LIMITS_ENABLED=true).
 		"TROVE_API_RATE_LIMITS_ENABLED=false",
+		// The advisory sources of the vulnerability scanning default to the public internet. A test never reaches it: the
+		// default hosts are .invalid (RFC 6761), so a scheduled sync of a worker fails at once instead of holding the one
+		// maintenance worker while it downloads the public archives; a test of the scanning sets the test advisory source.
+		"TROVE_VULNERABILITIES_SOURCES_OSV_BASE_URL=https://osv.invalid/",
+		"TROVE_VULNERABILITIES_SOURCES_KEV_URL=https://kev.invalid/known_exploited_vulnerabilities.json",
 		"TROVE_HEALTH_CHECK_INTERVAL=300ms", "TROVE_HEALTH_CHECK_TIMEOUT=200ms", "TROVE_HEALTH_SHUTDOWN_DRAIN_DELAY=200ms",
 		"TROVE_SERVER_SHUTDOWN_TIMEOUT=5s", "TROVE_STORAGE_SPOOL_DIR=" + filepath.Join(dir, "spool"),
 		"TROVE_SYSTEM_HEARTBEAT_INTERVAL=1s", "TROVE_SYSTEM_HEARTBEAT_STALE_AFTER=3s",

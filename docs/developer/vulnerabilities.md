@@ -99,7 +99,7 @@ contract speaks in: `internal/vuln/advisory` (types, fields, methods and constan
 | [00035_vulnerabilities.sql](../../internal/meta/postgres/migrations/00035_vulnerabilities.sql) | the eight tables exactly as the spec page has them (`vuln_source_state`, `vuln_advisory`, `vuln_affected`, `vuln_pending_evaluation`, `vuln_kev`, `vuln_claimed_match`, `vuln_finding`, `vuln_finding_event`), plus `vuln_advisory.cwe_ids` and the quoted column `"references"` (Q-VULN-24), and the epoch row of `vuln_data` |
 | [00036_vulnerabilities_packages_name.sql](../../internal/meta/postgres/migrations/00036_vulnerabilities_packages_name.sql) | `CREATE INDEX CONCURRENTLY packages_name ON packages (name)`, a step of its own (R-HA-018, Q-VULN-24) |
 | [00038_vulnerability_sync_fixes.sql](../../internal/meta/postgres/migrations/00038_vulnerability_sync_fixes.sql) | the sync's fixes (Q-VULN-62, Q-VULN-63): the table `vuln_sync_touched`, the nullable `vuln_advisory.own_*` columns (a record's own severity) and `vuln_source_state.adapter_version`; all additive |
-| [tables_vuln.go](../../internal/meta/postgres/tables_vuln.go) | export classes (`vuln_finding` and `vuln_finding_event` data, the other six transient) and the revision column `vuln_finding.revision`; the package `meta/postgres` is linked by every binary, so [cmd/trove/registry.go](../../cmd/trove/registry.go) needs no line |
+| [tables_vuln.go](../../internal/meta/postgres/tables_vuln.go) | export classes (`vuln_finding` and `vuln_finding_event` data, the other six transient; `vuln_sync_touched` of the sync is transient too, in tables_vuln_sync.go) and the revision column `vuln_finding.revision`; the package `meta/postgres` is linked by every binary, so [cmd/trove/registry.go](../../cmd/trove/registry.go) needs no line |
 
 Tested by [TestVulnMigration](../../test/integration/postgres/vuln_test.go) (classes, steps, the seeded area, the constraints, the cascade).
 
@@ -396,7 +396,7 @@ source at start-up, nothing would change: the value of a row without `synced_at`
 **The restore test** ([restore_test.go](../../test/integration/vulnrestore/restore_test.go)) builds the state a restore leaves, by SQL
 (`seedInstallation`): four versions published through a replica, the synced state of an earlier life (source state, advisories,
 affected entries, a KEV row, a pending evaluation, a claimed match), three findings with their history (a dismissed one, a blocked one in
-a second repository, an open malicious one), then `TRUNCATE` of the six transient tables taken from the export registry
+a second repository, an open malicious one), then `TRUNCATE` of the seven transient tables taken from the export registry
 (`transientTables`), so a seventh transient table is emptied too. `snapshot` and `requireHeld` compare the statuses and require that the
 history of every finding keeps its first events (an evaluation may add events, never change one).
 

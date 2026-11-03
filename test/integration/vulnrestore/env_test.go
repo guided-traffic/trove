@@ -2,7 +2,7 @@
 
 // Package vulnrestore tests the operations of the vulnerability scanning against the integration stack: the state a restore
 // leaves (R-VULN-026) and the database gauges (R-VULN-024). The backup job is phase 7 and does not exist, so the tests
-// produce the state a restore leaves by SQL: the findings and their events kept (export class data), the six transient
+// produce the state a restore leaves by SQL: the findings and their events kept (export class data), the seven transient
 // tables empty, which makes every ecosystem "empty" (R-VULN-026).
 package vulnrestore
 
