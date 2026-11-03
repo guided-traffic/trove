@@ -94,8 +94,3 @@ SELECT t.id::text AS token_id, t.principal_id::text AS bastion_id, p.name, (p.st
   FROM api_token t JOIN principal p ON p.id = t.principal_id
  WHERE t.secret_sha256 = sqlc.arg(secret_sha256)::bytea AND t.type = 'bst' AND p.kind = 'bastion';
 
--- name: BastionLockRegistrations :exec
--- Serializes the creation of registrations (a transaction-scoped advisory lock), so that two creates on
--- different replicas cannot both pass bastions.max_registrations (R-BAS-004). The lock is held to the end of
--- the transaction and taken before BastionCount.
-SELECT pg_advisory_xact_lock(hashtextextended('trove.bastion.registrations', 0));

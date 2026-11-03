@@ -306,18 +306,6 @@ func (q *Queries) BastionLock(ctx context.Context, name string) ([]BastionLockRo
 	return items, nil
 }
 
-const bastionLockRegistrations = `-- name: BastionLockRegistrations :exec
-SELECT pg_advisory_xact_lock(hashtextextended('trove.bastion.registrations', 0))
-`
-
-// Serializes the creation of registrations (a transaction-scoped advisory lock), so that two creates on
-// different replicas cannot both pass bastions.max_registrations (R-BAS-004). The lock is held to the end of
-// the transaction and taken before BastionCount.
-func (q *Queries) BastionLockRegistrations(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, bastionLockRegistrations)
-	return err
-}
-
 const bastionSetEnabled = `-- name: BastionSetEnabled :many
 UPDATE principal SET status = CASE WHEN $1::boolean THEN 'active' ELSE 'disabled' END
  WHERE id = $2::text::uuid AND kind = 'bastion'

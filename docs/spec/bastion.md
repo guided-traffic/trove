@@ -3449,7 +3449,7 @@ Status: **Decided by the development agent** — selected from the options below
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) A transaction-scoped advisory lock (`BastionLockRegistrations`) before the count of `bastions.max_registrations` (chosen) | Two creates on different replicas cannot both pass the limit | Exact limit, no trigger | Creates are serialized (at most 256 rows, an administrator's action) |
+| (a) The transaction-scoped configuration lock of R-ARCH-017 (`cluster.ConfigBastionRegistrations`, object type 4) before the count of `bastions.max_registrations` (chosen) | Two creates on different replicas cannot both pass the limit | Exact limit, no trigger | Creates are serialized (at most 256 rows, an administrator's action) |
 | (b) Count without a lock | Simplest | No lock | The limit can be exceeded by the number of concurrent creates; it bounds a metric label (R-BAS-008) |
 | (c) A constraint trigger on `principal` | Enforced in the database | Holds for writes around the API | A new trigger on a hot table for a limit of 16 |
 

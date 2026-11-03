@@ -11,6 +11,7 @@ import (
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/token"
+	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
@@ -131,10 +132,11 @@ func (r *Registrations) Create(ctx context.Context, c principal.Caller, in NewRe
 	}
 	var out Registration
 	err := r.o.DB.InTx(ctx, func(tx meta.Tx) error {
-		qs := principal.Queries(tx)
-		if err := qs.BastionLockRegistrations(ctx); err != nil {
+		// The configuration lock of R-ARCH-017 serializes the creates of all replicas before the count.
+		if err := cluster.LockConfigObject(ctx, tx, cluster.ConfigBastionRegistrations); err != nil {
 			return err
 		}
+		qs := principal.Queries(tx)
 		n, err := qs.BastionCount(ctx)
 		if err != nil {
 			return err

@@ -41,13 +41,16 @@ const (
 	// ConfigProjects serialises the creation of projects: the overlap rule of their
 	// keys reads every other key (R-AUTHZ-026, Q-AUTHZ-194).
 	ConfigProjects int32 = 3
+	// ConfigBastionRegistrations serialises the creation of Bastion registrations, so that two creates on
+	// different replicas cannot both pass bastions.max_registrations (R-BAS-004).
+	ConfigBastionRegistrations int32 = 4
 )
 
 // LockConfigObject takes the transaction-scoped configuration lock of an
 // object type as the first statement of a configuration transaction. It ends
 // with the transaction and works through a transaction-mode pooler.
 func LockConfigObject(ctx context.Context, tx meta.Tx, object int32) error {
-	if object != ConfigVirtualMembership && object != ConfigDocuments && object != ConfigProjects {
+	if object != ConfigVirtualMembership && object != ConfigDocuments && object != ConfigProjects && object != ConfigBastionRegistrations {
 		return fmt.Errorf("cluster: %d is not a registered configuration lock object", object)
 	}
 	ptx, ok := postgres.Unwrap(tx)
