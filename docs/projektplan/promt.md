@@ -204,6 +204,24 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
+Found on 2026-11-03 while building phase 6:
+
+### Tests and tools
+
+- **F-41 · A download spends more statements than the budget of R-ARCH-027** (confirmed). Counted on the PostgreSQL log by the
+  development agent that built the download block of phase 6: a local npm download runs 2 statements (`GetLiveItem`, then the
+  serve-time check `NPMTombstoned`), a remote hit 4 (`ProxyEntryGet`, `GetLiveItem` and `NPMRemoteTarballFacts` twice), against
+  the budget of 1 for each ([architecture.md](../spec/architecture.md) R-ARCH-027). The scanning adds none
+  (`test/integration/vulnblock/querycount_test.go`); the overrun is older than phase 6. Done when a download meets the budget,
+  or a decision revises the budget with measured numbers, and a test counts the statements per route.
+- **F-42 · Two timing tests failed under the load of parallel agents** (read). In a full run of `test/integration/npm` and
+  `test/integration/proxy` beside seven agents on the shared stack, `TestR_NPM_010_ThousandVersions` took 403 ms against
+  200 ms on a miss and 41 ms against 10 ms from the cache, and one case of `TestCollapse` served a waiter after 4.6 s with a 3 s
+  lock and a 100 ms poll (not the case F-39 fixed). Both passed in the integration agent's run and in Test and Release run
+  41677819243. `TestR_BAS_020` of `internal/bastion/engine` failed once in a full `go test -race ./internal/...` and passed
+  alone three times. Done when a run under load (`-count` beside CPU load, as for F-35 and F-39) reproduces one and its cause is
+  fixed, or 200 runs under load pass.
+
 Found on 2026-11-03 while closing phase 5:
 
 ### Tests and tools
@@ -229,6 +247,10 @@ Found on 2026-11-03 while closing phase 5:
   41637173366 lost `e2e-nuget on kind (nuget)` the same way, in "Set up job", when the runner could not download
   `docker/login-action`. Machine-level (the self-hosted runners' network and resolver). Done when two scheduled nightly runs pass their upload steps, or the `failover` test is shown
   red in a run whose log is kept, which makes it a test finding of its own.
+  The dispatched nightly run 41657499686 (2026-11-03, phase 6) was red in five legs on the same machine level: `ci-ha` and
+  `bastion-long` before any test, on a chart repository unreachable over IPv6 (`dial tcp [2606:50c0:8001::153]:443`) and an
+  interrupted pull of `mcr.microsoft.com/dotnet/sdk`; the logs of `npm-ha`, `npm-ha-soak` and `bastion` are not retrievable
+  (`BlobNotFound`). The Bastion's long legs have therefore not run in CI yet.
 - **F-38 · `npm-ha` and `npm-ha-soak` were red in the nightly run 41575201390** (read). The npm load under drains and
   failovers is the phase 7 item "npm load in the drain and failover tests reliably green"; `npm-ha` passed in run 41568514247
   hours before. Done with that item.

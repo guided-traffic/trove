@@ -972,8 +972,8 @@ R-BAK-004, and the package-page tab of R-UI-007. The npm audit endpoint's reques
   finding restores until a triager confirms the finding and sets the block, then fails `dotnet restore`, and restores again
   once the block is lifted (Q-VULN-20); a dismissal unblocks on another replica at the next request; downloads keep one query
   each (`pg_stat_statements`).
-- **E4b.5** Client audits (R-VULN-017, R-VULN-018): `npm audit` for the reference lockfile lists the GHSA identifiers of the
-  recorded public answer, with no request to any upstream; `pnpm audit` (pnpm 11, 12) and `yarn npm audit` (Yarn 4) report the
+- **E4b.5** Client audits (R-VULN-017, R-VULN-018): `npm audit` for the reference lockfile, and for a control body of real
+  packages recorded the same day, lists the GHSA identifiers of the recorded public answer, with no request to any upstream; `pnpm audit` (pnpm 11, 12) and `yarn npm audit` (Yarn 4) report the
   test advisory through `npm-local`, `npm-remote` and `npm-all`; `dotnet restore` (.NET 8, 9, 10) reports NU1903 and NU1904
   through `nuget-all`, and from `nuget-local` as a second source.
 - **E4b.6** The report (R-VULN-020 to R-VULN-023): the browser journeys pass with axe across three `web` replicas with random
