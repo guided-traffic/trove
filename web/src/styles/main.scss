@@ -8,6 +8,9 @@
 // >>> M1 ui-a
 @use 'catalog-screens';
 // <<< M1 ui-a
+// >>> M4b vulnerabilities
+@use 'vulnerabilities';
+// <<< M4b vulnerabilities
 
 // Material is themed through its design tokens and mapped to trove's custom properties in
 // tokens. Compact density (-2) everywhere (Q-UI-2). `color-scheme: light dark` makes the

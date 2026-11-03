@@ -109,6 +109,13 @@
               <a mat-button [routerLink]="['/browse', row.key]" i18n="@@repo.action.browse"
                 >Browse</a
               >
+              <!-- >>> M4b vulnerabilities -->
+              @if (row.format !== 'generic' && row.class !== 'virtual') {
+                <a mat-button routerLink="/vulnerabilities" [queryParams]="{ repository: row.key }" i18n="@@repo.action.vulnerabilities"
+                  >Vulnerabilities</a
+                >
+              }
+              <!-- <<< M4b vulnerabilities -->
               @if (canDeleteRow(row) && row.lifecycle !== 'deleting' && !deleting().has(row.key)) {
                 <button
                   mat-button

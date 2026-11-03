@@ -30,6 +30,9 @@ import { CiApi, HttpCiApi } from './ci-api';
 // >>> M5b bastion
 import { BastionsApi, HttpBastionsApi } from './bastions-api';
 // <<< M5b bastion
+// >>> M4b vulnerabilities
+import { HttpVulnerabilitiesApi, VulnerabilitiesApi } from './vulnerabilities-api';
+// <<< M4b vulnerabilities
 
 /**
  * Binds every service interface of `api/` to its HTTP implementation. Specs and component tests
@@ -71,5 +74,8 @@ export function provideApiServices(): Provider[] {
     // >>> M5b bastion
     { provide: BastionsApi, useClass: HttpBastionsApi },
     // <<< M5b bastion
+    // >>> M4b vulnerabilities
+    { provide: VulnerabilitiesApi, useClass: HttpVulnerabilitiesApi },
+    // <<< M4b vulnerabilities
   ];
 }

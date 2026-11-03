@@ -59,7 +59,7 @@ light palettes of `internal/ui/fyneui/theme.go` in guided-traffic/cogpit), and k
 | Side bar text, muted | white, light blue grey | `#e8eaec`, grey | `#ffffff`, `#b9c3d9` | `#e8eaec`, `#9aa1ad` | 11.9:1 and 6.7:1; 14.8:1 and 6.9:1 |
 | Current navigation entry | white text, green bar | green text and icon | white bold, blue bar | blue bold, blue bar | `--trove-nav-accent` is `#4aa8ff` in both schemes, because the frame is dark in both: 4.7:1 on the light side bar, the icon 3.3:1 on the light active row (a mark); the bar and the weight carry the state as well (R-UI-044) |
 | Search field in the top bar | white field | card fill with border | `#ffffff` | `#121822`, outline `#646c78` | `--trove-search-*` |
-| Data: teal, violet | `#347da0`, `#8577e6` | `#347da0`, `#8577e6` | — | — | for charts once trove has one; not tokens yet |
+| Data: teal, violet | `#347da0`, `#8577e6` | `#347da0`, `#8577e6` | `#347da0`, `#8577e6` | `#5cb3d6`, `#a99cff` | the vulnerability trend's low and unknown series (`--trove-chart-low`, `--trove-chart-unknown`); the other four series are `--trove-chart-critical` (`#b3261e`, `#ff8a80`), `-high` (`#c2570c`, `#ff9d57`), `-medium` (`#8a5a00`, `#ffc857`) and `-none` (`#5b6270`, `#9aa1ad`). None is green and none is the accent; each keeps 3:1 against the page and the raised surface in both schemes (`palette.spec.ts`), and the chart names every series in a legend and a table, so the colour is never the only carrier (Q-VULN-53) |
 
 The light top bar and side bar differ slightly (`#1e2e4a` and `#233564`); the dark ones too (`#060e19` and `#121822`). Both
 are kept, because the step is what lets the top bar read as a bar.
@@ -208,7 +208,7 @@ Do not start using either pair.
 ## What this does not cover
 
 - The type is the system font stack, not the humanist sans of the screens (Q-UI-88): no web font is shipped.
-- trove has no charts yet; the data colours are recorded here and become tokens with the first chart.
+- The vulnerability trend is the one chart; its series colours are tokens (`--trove-chart-*`). Another chart takes its series from the same family and adds its pairs to `palette.spec.ts`.
 - The example screens show no dialog, menu or form field; those take Material's components with the system colours above
   (menus on the card fill, dialogs one step lighter), which no screen of the owner has confirmed yet.
 - The blue palette of Q-UI-96 has not been through the browser tier's axe run. axe checks text against the background it

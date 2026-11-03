@@ -14,8 +14,13 @@ import { InstallPanel } from './install-panel';
 import { EXTERNAL_REL, packageCommands, safeHttpUrl } from './package-links';
 import { PackageMemory } from './package-memory';
 import { PackageReadmeView } from './package-readme';
+// >>> M4b vulnerabilities
+import { VulnerabilitiesApi, VulnerabilityPackageReport, VulnerabilitySeverity, VulnerabilityVersionReport } from '../../api/vulnerabilities-api';
+import { blockedRepositories, highestOpen, openFindings, PackageVulnerabilities } from '../vulnerabilities/package-vulnerabilities';
+import { SeverityBadge } from '../vulnerabilities/vuln-parts';
+// <<< M4b vulnerabilities
 
-export type DetailTab = 'readme' | 'metadata' | 'files' | 'repositories' | 'versions';
+export type DetailTab = 'readme' | 'metadata' | 'files' | 'repositories' | 'versions' | 'vulnerabilities';
 
 /** A link of the metadata tab: a URL when its scheme is http or https, else the text alone (R-UI-007). */
 interface MetadataLink {
@@ -90,6 +95,10 @@ function frameworkGroups(value: unknown): FrameworkGroup[] {
     ErrorNotice,
     InstallPanel,
     PackageReadmeView,
+    // >>> M4b vulnerabilities
+    PackageVulnerabilities,
+    SeverityBadge,
+    // <<< M4b vulnerabilities
   ],
   templateUrl: './package-detail.html',
   styleUrl: './package-detail.scss',
@@ -98,6 +107,9 @@ export class PackageDetail {
   private readonly api = inject(PackagesApi);
   private readonly router = inject(Router);
   private readonly memory = inject(PackageMemory);
+  // >>> M4b vulnerabilities
+  private readonly vulnerabilityApi = inject(VulnerabilitiesApi);
+  // <<< M4b vulnerabilities
 
   /** Route parameters of the matcher, bound by component input binding. */
   readonly format = input.required<string>();
@@ -146,6 +158,52 @@ export class PackageDetail {
     loader: ({ params }) => this.api.readme(params.id, params.version),
   });
 
+  // >>> M4b vulnerabilities
+  /**
+   * What the scanning says of the selected version in every readable repository (R-VULN-023). The package page works without
+   * it: an answer that fails (the scanning is not available on this replica, or the caller may not ask) leaves no tab, no
+   * badge and no banner, and no error.
+   */
+  protected readonly vulnerabilities = resource({
+    params: () => {
+      const id = valueOf(this.summary)?.id;
+      const version = this.selected();
+      return id && version ? { id, version } : undefined;
+    },
+    loader: async ({ params }): Promise<VulnerabilityVersionReport | null> => {
+      try {
+        return await this.vulnerabilityApi.versionReport(params.id, params.version);
+      } catch {
+        return null;
+      }
+    },
+  });
+  protected readonly vulnerabilityReport = computed(() => valueOf(this.vulnerabilities) ?? null);
+  /** The open findings per version, for the badges of *All versions*. */
+  protected readonly packageVulnerabilities = resource({
+    params: () => valueOf(this.summary)?.id,
+    loader: async ({ params }): Promise<VulnerabilityPackageReport | null> => {
+      try {
+        return await this.vulnerabilityApi.packageReport(params);
+      } catch {
+        return null;
+      }
+    },
+  });
+  protected readonly worstByVersion = computed(() => {
+    const out = new Map<string, VulnerabilitySeverity>();
+    for (const v of valueOf(this.packageVulnerabilities)?.versions ?? []) {
+      const worst = highestOpen(v.open);
+      if (worst) out.set(v.version, worst);
+    }
+    return out;
+  });
+  protected readonly worstKnown = computed(() => valueOf(this.packageVulnerabilities) != null);
+  protected readonly blockedIn = computed(() => blockedRepositories(this.vulnerabilityReport()));
+  protected readonly vulnerabilitiesAvailable = computed(() => !this.vulnerabilities.isLoading() && this.vulnerabilityReport() !== null);
+  protected readonly openCount = computed(() => openFindings(this.vulnerabilityReport()).length);
+  // <<< M4b vulnerabilities
+
   protected readonly loadFailure = computed(() => {
     const e = this.summary.error() ?? this.versions.error() ?? this.details.error();
     return e ? asApiError(e) : null;
@@ -161,7 +219,22 @@ export class PackageDetail {
     { id: 'files', label: $localize`:@@pkg.tab.files:Files` },
     { id: 'repositories', label: $localize`:@@pkg.tab.repositories:Repositories` },
     { id: 'versions', label: $localize`:@@pkg.tab.versions:All versions` },
+    // >>> M4b vulnerabilities
+    ...(this.vulnerabilityReport() !== null || this.vulnerabilities.isLoading()
+      ? [{ id: 'vulnerabilities' as const, label: this.vulnerabilityTabLabel() }]
+      : []),
+    // <<< M4b vulnerabilities
   ]);
+
+  // >>> M4b vulnerabilities
+  /** The tab's label carries the count of the open findings of the selected version (R-VULN-023). */
+  private vulnerabilityTabLabel(): string {
+    const n = this.openCount();
+    return n > 0
+      ? $localize`:@@pkg.tab.vulnerabilities-count:Vulnerabilities (${n}:count:)`
+      : $localize`:@@pkg.tab.vulnerabilities:Vulnerabilities`;
+  }
+  // <<< M4b vulnerabilities
   protected readonly activeIndex = computed(() => {
     const i = this.tabs().findIndex((t) => t.id === this.tab());
     return i < 0 ? 0 : i;
@@ -245,6 +318,9 @@ export class PackageDetail {
     { id: 'size', label: $localize`:@@pkg.ver.size:Size`, numeric: true },
     { id: 'repositories', label: $localize`:@@pkg.ver.repositories:Repositories` },
     { id: 'downloads', label: $localize`:@@pkg.ver.downloads:Downloads`, numeric: true },
+    // >>> M4b vulnerabilities
+    { id: 'vulnerabilities', label: $localize`:@@pkg.ver.vulnerabilities:Open vulnerabilities` },
+    // <<< M4b vulnerabilities
   ];
   protected readonly repositoryColumns: readonly TableColumn[] = [
     { id: 'repository', label: $localize`:@@pkg.repo.repository:Repository` },

@@ -13,6 +13,9 @@ export interface HelpTopic {
 export const HELP_TOPICS: readonly (readonly [route: string, topic: HelpTopic])[] = [
   ['/packages', { section: 'user', page: 'packages' }],
   ['/browse', { section: 'user', page: 'files' }],
+  // >>> M4b vulnerabilities
+  ['/vulnerabilities', { section: 'user', page: 'vulnerabilities' }],
+  // <<< M4b vulnerabilities
   ['/guides', { section: 'user', page: 'client-setup' }],
   ['/setup', { section: 'user', page: 'client-setup' }],
   ['/profile/tokens', { section: 'user', page: 'access-tokens' }],

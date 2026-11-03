@@ -1,0 +1,385 @@
+// The vulnerability screens (R-VULN-022, R-VULN-023): the header counts, the severity and status marks, the trend
+// chart, the advisory text and the package tab. Global like the other screen partials, because the data table
+// projects its rows from the screens. Colours and lengths come from the tokens only (R-UI-044). A severity is an
+// icon and a word; the tint below only reinforces them.
+
+.sev,
+.fstatus {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--trove-space-1);
+  white-space: nowrap;
+
+  .material-icons {
+    font-size: 1.125rem;
+  }
+}
+
+.sev-critical,
+.sev-high {
+  color: var(--trove-status-bad);
+}
+
+.sev-medium {
+  color: var(--trove-status-warn);
+}
+
+.sev-low,
+.sev-none,
+.sev-unknown {
+  color: var(--trove-text-muted);
+}
+
+.sev-score {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.fstatus-blocked {
+  color: var(--trove-status-bad);
+  font-weight: 600;
+}
+
+.fstatus-reason {
+  font-weight: 400;
+}
+
+.vuln-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--trove-space-1);
+  margin-inline-start: var(--trove-space-2);
+  padding: 0 var(--trove-space-2);
+  border: 1px solid var(--mat-sys-outline);
+  border-radius: var(--mat-sys-corner-extra-small);
+  font-size: 0.75rem;
+  font-weight: 400;
+
+  .material-icons {
+    font-size: 0.875rem;
+  }
+}
+
+// ---- Header counts -----------------------------------------------------------------------
+
+.vuln-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: var(--trove-space-3);
+  margin: 0 0 var(--trove-space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.vuln-count {
+  display: flex;
+  flex-direction: column;
+  gap: var(--trove-space-1);
+  block-size: 100%;
+  box-sizing: border-box;
+  padding: var(--trove-space-3);
+  border: 1px solid var(--trove-border);
+  border-radius: var(--trove-radius-m);
+  background: var(--trove-surface-raised);
+  color: var(--mat-sys-on-surface);
+  text-decoration: none;
+
+  &:hover {
+    background: var(--trove-row-hover);
+  }
+
+  &:focus-visible {
+    outline: var(--trove-focus-ring);
+    outline-offset: 2px;
+  }
+}
+
+.vuln-count-number {
+  font: var(--mat-sys-headline-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.vuln-count-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--trove-space-1);
+  color: var(--trove-text-muted);
+  font-size: var(--trove-text-muted-size);
+
+  .material-icons {
+    font-size: 1.125rem;
+  }
+}
+
+.vuln-count.sev-critical .vuln-count-label,
+.vuln-count.sev-high .vuln-count-label {
+  color: var(--trove-status-bad);
+}
+
+.vuln-count.sev-medium .vuln-count-label {
+  color: var(--trove-status-warn);
+}
+
+.vuln-coverage {
+  margin: 0 0 var(--trove-space-4);
+  color: var(--trove-text-muted);
+  font-size: var(--trove-text-muted-size);
+}
+
+// ---- Trend -------------------------------------------------------------------------------
+
+.vuln-trend {
+  margin-block: var(--trove-space-4);
+  padding: var(--trove-space-3) var(--trove-space-4);
+  border: 1px solid var(--trove-border);
+  border-radius: var(--trove-radius-m);
+  background: var(--trove-surface-raised);
+}
+
+.vuln-trend-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-3);
+
+  h2 {
+    margin: 0;
+    margin-inline-end: auto;
+    font: var(--mat-sys-title-medium);
+  }
+}
+
+.vuln-range {
+  display: inline-flex;
+  gap: var(--trove-space-1);
+
+  button[aria-pressed='true'] {
+    background: var(--trove-accent-container);
+    color: var(--trove-on-accent-container);
+  }
+}
+
+.trend-chart {
+  display: block;
+  inline-size: 100%;
+  max-block-size: 16rem;
+  margin-block-start: var(--trove-space-3);
+}
+
+.trend-grid {
+  stroke: var(--trove-border);
+  stroke-width: 1;
+}
+
+.trend-tick {
+  fill: var(--trove-text-muted);
+  font-size: 11px;
+}
+
+.trend-series {
+  stroke: var(--trove-surface-raised);
+  stroke-width: 0.25;
+}
+
+.trend-critical {
+  fill: var(--trove-chart-critical);
+  background: var(--trove-chart-critical);
+}
+
+.trend-high {
+  fill: var(--trove-chart-high);
+  background: var(--trove-chart-high);
+}
+
+.trend-medium {
+  fill: var(--trove-chart-medium);
+  background: var(--trove-chart-medium);
+}
+
+.trend-low {
+  fill: var(--trove-chart-low);
+  background: var(--trove-chart-low);
+}
+
+.trend-none {
+  fill: var(--trove-chart-none);
+  background: var(--trove-chart-none);
+}
+
+.trend-unknown {
+  fill: var(--trove-chart-unknown);
+  background: var(--trove-chart-unknown);
+}
+
+.trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--trove-space-2) var(--trove-space-4);
+  margin: var(--trove-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--trove-space-1);
+    font-size: var(--trove-text-muted-size);
+  }
+
+  .material-icons {
+    font-size: 1rem;
+  }
+}
+
+.trend-swatch {
+  inline-size: 0.75rem;
+  block-size: 0.75rem;
+  border-radius: 2px;
+}
+
+.trend-table-scroll {
+  max-block-size: 18rem;
+  margin-block-start: var(--trove-space-3);
+  overflow: auto;
+  border: 1px solid var(--trove-border);
+  border-radius: var(--trove-radius-s);
+
+  &:focus-visible {
+    outline: var(--trove-focus-ring);
+    outline-offset: -2px;
+  }
+
+  table {
+    inline-size: 100%;
+    border-collapse: collapse;
+  }
+
+  th,
+  td {
+    padding: var(--trove-space-1) var(--trove-space-3);
+    text-align: start;
+    border-block-end: 1px solid var(--trove-border);
+  }
+
+  thead th {
+    position: sticky;
+    inset-block-start: 0;
+    background: var(--trove-table-head-bg);
+  }
+
+  .num {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+// ---- List, finding and advisory ----------------------------------------------------------
+
+.vuln-list-title {
+  margin-block: var(--trove-space-4) var(--trove-space-2);
+  font: var(--mat-sys-title-medium);
+}
+
+.vuln-selected {
+  font-weight: 600;
+}
+
+.vuln-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--trove-space-2);
+  margin-block: var(--trove-space-3);
+
+  .material-icons {
+    font-size: 1.125rem;
+    margin-inline-end: var(--trove-space-1);
+  }
+}
+
+.finding-title {
+  margin-block: var(--trove-space-3);
+  font: var(--mat-sys-title-large);
+  overflow-wrap: anywhere;
+}
+
+.secondary-inline {
+  margin-inline-start: var(--trove-space-2);
+  color: var(--trove-text-muted);
+  font-size: var(--trove-text-muted-size);
+  font-weight: 400;
+}
+
+.secondary-link {
+  margin-inline-start: var(--trove-space-3);
+  font-size: var(--trove-text-muted-size);
+  font-weight: 400;
+}
+
+.vuln-blocked strong {
+  display: block;
+}
+
+.vuln-comment {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+// The advisory's details are plain text from an untrusted source: line breaks kept, nothing interpreted (Q-VULN-52).
+.advisory-text {
+  max-inline-size: 70ch;
+  margin-block: var(--trove-space-2) var(--trove-space-4);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.advisory h3 {
+  margin-block: var(--trove-space-4) var(--trove-space-2);
+  font: var(--mat-sys-title-small);
+}
+
+.vuln-source {
+  margin-block-start: var(--trove-space-4);
+  color: var(--trove-text-muted);
+  font-size: var(--trove-text-muted-size);
+}
+
+table.history {
+  inline-size: 100%;
+  border-collapse: collapse;
+
+  th,
+  td {
+    padding: var(--trove-space-2) var(--trove-space-3);
+    text-align: start;
+    vertical-align: top;
+    border-block-end: 1px solid var(--trove-border);
+  }
+}
+
+.command {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--trove-space-2);
+
+  pre {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+}
+
+.vuln-repo {
+  margin-block-end: var(--trove-space-5);
+
+  h2 {
+    margin-block: 0 var(--trove-space-2);
+    font: var(--mat-sys-title-medium);
+  }
+}
+
+.vuln-evaluation,
+.vuln-clean {
+  margin-block: var(--trove-space-1) var(--trove-space-3);
+}

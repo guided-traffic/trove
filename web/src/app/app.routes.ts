@@ -73,6 +73,14 @@ export const routes: Routes = [
         loadChildren: () => import('./features/help/help.routes').then((m) => m.HELP_ROUTES),
       },
       // <<< M2 manual
+      // >>> M4b vulnerabilities
+      {
+        path: 'vulnerabilities',
+        data: wrapper($localize`:@@route.vulnerabilities.title:Vulnerabilities`),
+        loadChildren: () =>
+          import('./features/vulnerabilities/vulnerabilities.routes').then((m) => m.VULNERABILITIES_ROUTES),
+      },
+      // <<< M4b vulnerabilities
       {
         path: 'profile',
         data: { crumbs: [{ label: $localize`:@@route.profile.title:Profile`, link: true }] satisfies CrumbSpec[] },

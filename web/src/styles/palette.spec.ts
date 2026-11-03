@@ -177,6 +177,11 @@ const markPairs: readonly (readonly [string, string])[] = [
   ['--trove-nav-accent', 'top bar'],
   ['--trove-nav-accent', 'active entry'],
   ['--trove-nav-accent', 'active entry in an open group'],
+  // The marks of the vulnerability trend (R-VULN-022), on the page and on the raised surface the chart sits on.
+  ...['critical', 'high', 'medium', 'low', 'none', 'unknown'].flatMap((s): [string, string][] => [
+    [`--trove-chart-${s}`, 'page'],
+    [`--trove-chart-${s}`, 'raised'],
+  ]),
 ];
 
 function failures(pairs: readonly (readonly [string, string])[], min: number): string[] {

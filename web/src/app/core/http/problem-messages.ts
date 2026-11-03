@@ -8,6 +8,9 @@ import { describeCiProblem } from './problem-messages-ci';
 // >>> M5b bastion
 import { describeBastionProblem } from './problem-messages-bastion';
 // <<< M5b bastion
+// >>> M4b vulnerabilities
+import { describeVulnerabilityProblem } from './problem-messages-vulnerability';
+// <<< M4b vulnerabilities
 
 export interface ProblemText {
   /** The message to show. */
@@ -125,7 +128,7 @@ export function describeProblem(error: ApiError): ProblemText {
     // <<< M2 ownership
     default:
       // >>> M1 ui-b
-      return accessProblem(error) ?? ciProblem(error) ?? bastionProblem(error) ?? fallback(error);
+      return accessProblem(error) ?? ciProblem(error) ?? bastionProblem(error) ?? vulnerabilityProblem(error) ?? fallback(error);
       // <<< M1 ui-b
   }
 }
@@ -150,6 +153,13 @@ function bastionProblem(error: ApiError): ProblemText | null {
   return text === null ? null : { text, known: true };
 }
 // <<< M5b bastion
+
+// >>> M4b vulnerabilities
+function vulnerabilityProblem(error: ApiError): ProblemText | null {
+  const text = describeVulnerabilityProblem(error.code);
+  return text === null ? null : { text, known: true };
+}
+// <<< M4b vulnerabilities
 
 function rateLimited(seconds: number | null): string {
   return seconds === null

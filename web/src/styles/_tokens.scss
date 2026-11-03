@@ -80,6 +80,15 @@
   --trove-status-ok: light-dark(#1a6e3c, #3db064);
   --trove-status-warn: light-dark(#8a5a00, #ffc857);
   --trove-status-bad: light-dark(#b3261e, #ffb4ab);
+  // The marks of the vulnerability trend (R-VULN-022): one per severity, none of them green and none of them the
+  // accent. Every pair keeps 3:1 against the page and the raised surface (WCAG 1.4.11); the legend and the table
+  // name the level, so the colour is never the only carrier (R-UI-044). palette.spec.ts holds the pairs.
+  --trove-chart-critical: light-dark(#b3261e, #ff8a80);
+  --trove-chart-high: light-dark(#c2570c, #ff9d57);
+  --trove-chart-medium: light-dark(#8a5a00, #ffc857);
+  --trove-chart-low: light-dark(#347da0, #5cb3d6);
+  --trove-chart-none: light-dark(#5b6270, #9aa1ad);
+  --trove-chart-unknown: light-dark(#8577e6, #a99cff);
   --trove-banner-bg: var(--mat-sys-tertiary-container);
   --trove-banner-fg: var(--mat-sys-on-tertiary-container);
 }

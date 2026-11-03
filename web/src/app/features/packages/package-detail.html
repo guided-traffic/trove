@@ -69,6 +69,14 @@
         >
       </p>
     }
+    @if (blockedIn().length > 0) {
+      <p class="banner-warning" role="note">
+        <span class="material-icons inline warn" aria-hidden="true">block</span>
+        <span
+          ><strong i18n="@@pkg.blocked-in">Blocked in</strong>{{ ' ' }}<span translate="no">{{ blockedIn().join(', ') }}</span></span
+        >
+      </p>
+    }
     @if (deprecated(); as why) {
       <p class="banner-warning" role="note">
         <span class="material-icons inline warn" aria-hidden="true">warning</span>
@@ -220,6 +228,13 @@
                     }
                   </trove-data-table>
                 }
+                @case ('vulnerabilities') {
+                  @if (vulnerabilities.isLoading()) {
+                    <p role="status" i18n="@@pkg.loading">Loading.</p>
+                  } @else {
+                    <trove-package-vulnerabilities [report]="vulnerabilityReport()" />
+                  }
+                }
                 @case ('versions') {
                   <trove-data-table [caption]="tableCaptionVersions" [columns]="versionColumns" [empty]="all().length === 0">
                     @for (v of all(); track v.version) {
@@ -242,6 +257,15 @@
                         <td class="num" [attr.title]="v.sizeBytes + ' B'">{{ size(v.sizeBytes) }}</td>
                         <td translate="no">{{ v.repositories.join(', ') }}</td>
                         <td class="num">{{ v.downloadCount | number }}</td>
+                        <td>
+                          @if (worstByVersion().get(v.version); as worst) {
+                            <trove-severity [severity]="worst" />
+                          } @else if (worstKnown()) {
+                            <span class="secondary-inline" i18n="@@pkg.ver.no-vulnerabilities">None</span>
+                          } @else {
+                            <span class="secondary-inline">–</span>
+                          }
+                        </td>
                       </tr>
                     }
                   </trove-data-table>

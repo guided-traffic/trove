@@ -149,7 +149,7 @@ describe('Package details', () => {
     const rows = [...r.root.querySelectorAll('tbody tr')].map((row) => text(row));
     expect(rows).toHaveLength(3);
     expect(rows[0]).toContain('1.5.0-beta.1pre-release');
-    expect(rows[1]).toMatch(/^1\.4\.0.*47\.1 KiBnpm-local, npm-all410$/);
+    expect(rows[1]).toMatch(/^1\.4\.0.*47\.1 KiBnpm-local, npm-all410/);
     await expectAccessible(r.root);
   });
 

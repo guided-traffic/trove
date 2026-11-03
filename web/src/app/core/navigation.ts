@@ -47,6 +47,9 @@ export const NAV_AREAS: readonly NavArea[] = [
       // <<< M2 ui-packages
       { kind: 'item', route: '/browse', icon: 'folder_open', label: $localize`:@@nav.browse:Browse` },
       { kind: 'item', route: '/guides', icon: 'menu_book', label: $localize`:@@nav.guides:Guides` },
+      // >>> M4b vulnerabilities
+      { kind: 'item', route: '/vulnerabilities', icon: 'security', label: $localize`:@@nav.vulnerabilities:Vulnerabilities` },
+      // <<< M4b vulnerabilities
     ],
   },
   {

@@ -12,7 +12,7 @@ with folding groups and an icon rail and a drawer below, breadcrumbs, banner are
 cross-cutting UI mechanism are in place, so the screens are content. Built: sign-in, signed out, the system status
 screen with its jobs screen, the repository list, wizard and edit form with the format settings rendered from the format's schema (see
 [The repository settings form](#the-repository-settings-form-rendered-from-the-formats-schema)), the file tree, the endpoint screens with the exposure rule editor and
-the audit log (see [Screens of the catalog area](#screens-of-the-catalog-area)), and the package screens: the list, the details with the install panel and the README, and the client setup page (see [Package screens and client setup](#package-screens-and-client-setup)), and the guides area with the How to use tab of the repository screen (see [Guides](#guides)), the help area with the manual (see [manual.md](manual.md)), and the Bastions screen (see [The Bastions screen](#the-bastions-screen)); the other routed M1 screens are placeholders with their final
+the audit log (see [Screens of the catalog area](#screens-of-the-catalog-area)), and the package screens: the list, the details with the install panel and the README, and the client setup page (see [Package screens and client setup](#package-screens-and-client-setup)), and the guides area with the How to use tab of the repository screen (see [Guides](#guides)), the help area with the manual (see [manual.md](manual.md)), the Bastions screen (see [The Bastions screen](#the-bastions-screen)), and the vulnerability screens with the package page's tab (see [The vulnerability screens](#the-vulnerability-screens)); the other routed M1 screens are placeholders with their final
 path and title until their work package replaces them. Requirements: [R-UI-002 to R-UI-005](../spec/api-and-ui.md),
 [R-UI-010, R-UI-011](../spec/api-and-ui.md), [R-UI-020, R-UI-021](../spec/api-and-ui.md), [R-UI-037, R-UI-038](../spec/api-and-ui.md),
 [R-UI-042 to R-UI-047](../spec/api-and-ui.md), [R-EP-017](../spec/endpoints.md); decisions Q-UI-10 to Q-UI-19 and Q-UI-68 (shell and list layout) on the same page.
@@ -643,6 +643,51 @@ it or a list that cannot be read). The query `?bastion=<name>` selects a Bastion
 - *Guides.* With a Bastion as the target and a repository chosen, the page shows the Bastion's address and the configure and install snippets of the setup operation instead of the format's
   guide, which describes the installation (publishing, tags, unpublishing); without a repository it asks for one and sends no request. The links between the two pages carry the choice.
 - Specs: [client-setup-bastion.spec.ts](../../web/src/app/features/setup/client-setup-bastion.spec.ts).
+
+## The vulnerability screens
+
+R-VULN-022 (the section) and R-VULN-023 (the package page) against the operations of R-VULN-020 and R-VULN-021; decisions
+[Q-VULN-52](../spec/vulnerability-scanning.md#q-vuln-52--the-advisory-text-is-shown-as-plain-text) to
+[Q-VULN-54](../spec/vulnerability-scanning.md#q-vuln-54--the-mirror-commands-name-the-repository-as-a-placeholder). The manual page is
+[user/vulnerabilities.md](../manual/user/vulnerabilities.md), which the "?" of every screen under `/vulnerabilities` opens. The security view is
+[security/vulnerability-scanning.md](../security/vulnerability-scanning.md). The section is in the area *Packages and files* of the sidebar for every signed-in
+user; what a caller may read is narrowed by the API, so a caller without a readable repository sees an empty report.
+
+| Route or place | Component | Services | Notes |
+|---|---|---|---|
+| `/vulnerabilities` | [vulnerability-report](../../web/src/app/features/vulnerabilities/vulnerability-report.ts) | `VulnerabilitiesApi`, `RepositoriesApi`, `SessionStore` | The header ([report-summary](../../web/src/app/features/vulnerabilities/report-summary.ts)), the trend ([report-trend](../../web/src/app/features/vulnerabilities/report-trend.ts)) and the list on the shared data table and filter panel. Every filter, the sort and the trend's period are query parameters bound as component inputs; a value the API does not know (a hand-edited URL) is dropped before the request, so the API's 400 is never the answer. Every applied filter is a chip |
+| `/vulnerabilities/findings/{id}` | [vulnerability-finding](../../web/src/app/features/vulnerabilities/vulnerability-finding.ts) | `VulnerabilitiesApi`, `SessionStore`, `MatDialog` | The block banner with its reason, the facts, the advisory, the history, and the triage actions (`triageActions` per status). The loaded `ETag` goes with every change; the resource is read again after each dialog closes |
+| `/vulnerabilities/advisories/{ecosystem}/{id}` | [vulnerability-advisory](../../web/src/app/features/vulnerabilities/vulnerability-advisory.ts) | `VulnerabilitiesApi` | A `UrlMatcher` ([vulnerabilities.routes.ts](../../web/src/app/features/vulnerabilities/vulnerabilities.routes.ts)) so that the breadcrumb has one step for the advisory; the findings of it that the caller can read, and a note when the list is cut at 1,000 |
+| `/vulnerabilities/sources` | [vulnerability-sources](../../web/src/app/features/vulnerabilities/vulnerability-sources.ts) | `VulnerabilitiesApi`, `JobsApi`, `ServerAddress` | The table of R-VULN-021, "run now" for `settings:write` through `JobsApi.runTask` (`vuln-sync-osv`, `vuln-sync-osv-full`, `vuln-sync-kev`), and in mode `repository` the commands of R-VULN-005 (`mirrorCommands`) |
+| (dialog) | [triage-dialog](../../web/src/app/features/vulnerabilities/triage-dialog.ts) | `VulnerabilitiesApi` | One dialog for a single finding (`PATCH` with the `ETag`) and for the bulk change (`POST …/set-status` with an idempotency key that lives as long as the dialog; one result per row, shown in the dialog). A dismissal asks for the reason; a block says whose clients are refused |
+| (parts) | [vuln-parts](../../web/src/app/features/vulnerabilities/vuln-parts.ts), [vuln-labels](../../web/src/app/features/vulnerabilities/vuln-labels.ts), [advisory-view](../../web/src/app/features/vulnerabilities/advisory-view.ts) | none | `trove-severity` (icon, word, score) and `trove-finding-status` (a block shows as **Blocked** with its reason); every label of the screens in one file; the advisory as the finding and the advisory page show it |
+| package page | [package-vulnerabilities](../../web/src/app/features/vulnerabilities/package-vulnerabilities.ts), additions in [package-detail](../../web/src/app/features/packages/package-detail.ts) | `VulnerabilitiesApi` | The tab `?tab=vulnerabilities` with the count of the open findings of the selected version in its label, the badge column of *All versions* (the highest open severity), and the header "Blocked in …". Both reads swallow their failure: where the scanning answers nothing the page has no tab, no badge and no banner, and no error |
+| repository list and form | `repository-list.html`, `repository-detail.html` | none | A **Vulnerabilities** link to `/vulnerabilities?repository=<key>` for a local or remote repository of a format other than generic (the per-repository view) |
+
+- *Absent controls (R-UI-005).* The selection column, "Select all loaded findings", "Change status" and the finding's actions need `vulnerabilities:triage`; the sources link needs
+  `settings:read`, "run now" `settings:write`. They are not rendered without the capability; the API refuses the request in any case.
+- *The counts are links.* A count of the header opens the list with its filter (`severity=…` with the three open statuses, `kind=malicious`, `status=needs_triage`, `blocked=true`) and keeps
+  `repository` and `format`, so the count and the list name the same findings.
+- *The banner* is built from the summary's data ages (stale, never imported) and, for a holder of `settings:read`, the sources' failures (`dataNotices`).
+- *The trend* is an SVG drawn by `trendGeometry` (one path per severity, one rectangle per day), with a `<desc>` that states the last day's numbers, a legend with icons and "Show as
+  table" (Q-VULN-53). Its colours are the tokens `--trove-chart-*` of [design-language.md](design-language.md#where-the-values-live); a severity is never colour alone.
+- *The advisory text is plain text* (Q-VULN-52): `white-space: pre-wrap`, never HTML; a reference is a link for `http` and `https` only, with `rel="nofollow noopener noreferrer"`.
+- *Export.* "Export CSV" calls the export operation with the list's filters and sort, takes the text answer (`ApiClient.getText` with `accept: 'text/csv'`) and hands it to the browser through a Blob URL
+  that is revoked at once; a `422 export_too_large` is shown as the problem it is, and nothing is downloaded.
+- *Whitespace.* The components that build sentences from text and elements (`preserveWhitespaces: true`) keep their spaces, so that "Set by alice on …" reads as words.
+- Files: [vulnerabilities-api.ts](../../web/src/app/api/vulnerabilities-api.ts) (`VulnerabilitiesApi`, `HttpVulnerabilitiesApi`, the generated types, the filter and sort vocabularies),
+  [fakes-vulnerabilities.ts](../../web/src/app/api/testing/fakes-vulnerabilities.ts) (`FakeVulnerabilitiesApi`: the filters and sorts of the list, the `ETag` and its 412, the transitions of
+  R-VULN-013, the block rule; an unconfigured version report answers 503 like the operation does until the scanning is wired),
+  [problem-messages-vulnerability.ts](../../web/src/app/core/http/problem-messages-vulnerability.ts), the styles in [_vulnerabilities.scss](../../web/src/styles/_vulnerabilities.scss), the route in
+  [app.routes.ts](../../web/src/app/app.routes.ts), the entry in [navigation.ts](../../web/src/app/core/navigation.ts), the help topic in [help-topics.ts](../../web/src/app/core/help-topics.ts).
+  Specs: [vulnerability-report.spec.ts](../../web/src/app/features/vulnerabilities/vulnerability-report.spec.ts) (counts, links, columns, sort, chips, filters, banner, trend, selection,
+  bulk, export, navigation), [vulnerability-finding.spec.ts](../../web/src/app/features/vulnerabilities/vulnerability-finding.spec.ts) (the facts, the plain-text advisory, the references,
+  block, lift, dismiss, a stale tag, the absent controls), [vulnerability-pages.spec.ts](../../web/src/app/features/vulnerabilities/vulnerability-pages.spec.ts) (advisory, sources, the package
+  tab, the badges, the header), [vulnerabilities-api.spec.ts](../../web/src/app/api/vulnerabilities-api.spec.ts) (the requests), and the screens in `app.routes.spec.ts`.
+- *Browser journeys.* [15-vulnerabilities.spec.ts](../../web/e2e/vuln/15-vulnerabilities.spec.ts) (own config [playwright.vuln.config.ts](../../web/e2e/playwright.vuln.config.ts), because it needs the
+  scanning against the test advisory source) writes the journeys of R-VULN-022 and R-VULN-023; the e2e wave runs them ([e2e.md](e2e.md#browser-journeys)). They have not run against a backend
+  yet. The built UI was checked in Chromium against a mocked API with axe (`color-contrast` included) in the light and the dark scheme and in German: no serious or critical violation on the
+  report, the table form of the trend, a blocked finding, the triage dialog, the advisory, the sources and the package tab; the page does not scroll sideways at 390 CSS px.
 
 ## How to add a feature area
 

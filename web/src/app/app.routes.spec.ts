@@ -4,6 +4,7 @@ import { Router, TitleStrategy, provideRouter, withComponentInputBinding } from 
 import { App } from './app';
 import { routes } from './app.routes';
 import { provideFakeApis } from './api/testing/fakes';
+import { Breadcrumbs } from './core/breadcrumbs';
 import { TroveTitleStrategy } from './core/title-strategy';
 import { seriousViolations } from './testing/axe';
 
@@ -39,6 +40,12 @@ const SCREENS: readonly (readonly [url: string, heading: string])[] = [
   ['/admin/tokens', 'Token administration'],
   ['/admin/endpoints', 'Endpoints'],
   ['/admin/bastions', 'Bastions'],
+  // >>> M4b vulnerabilities
+  ['/vulnerabilities', 'Vulnerabilities'],
+  ['/vulnerabilities/findings/0193a000-0000-7000-8000-000000000001', 'Finding'],
+  ['/vulnerabilities/advisories/npm/GHSA-aaaa-aaaa-0001', 'Advisory'],
+  ['/vulnerabilities/sources', 'Advisory sources'],
+  // <<< M4b vulnerabilities
   ['/admin/endpoints/main', 'Endpoint'],
   ['/admin/endpoints/main/rules/new', 'New exposure rule'],
   ['/admin/endpoints/main/rules/r1', 'Exposure rule'],
@@ -93,6 +100,20 @@ describe('route map', () => {
     expect(root.querySelector('main h1')?.textContent?.trim()).toBe('@team-a/ui');
     expect(document.title).toBe('Package – trove');
     expect(await seriousViolations(root)).toEqual([]);
+  });
+
+  it('R-VULN-022 /vulnerabilities/advisories/{ecosystem}/{id} binds both parameters and the trail names the advisory once, with a link that exists', async () => {
+    const root = await open('/vulnerabilities/advisories/npm/GHSA-aaaa-aaaa-0001');
+    expect(root.querySelector('main')?.textContent).toContain('Prototype pollution in trove-test-vuln');
+    const trail = TestBed.inject(Breadcrumbs).trail();
+    expect(trail.map((c) => c.label)).toEqual(['Vulnerabilities', 'GHSA-aaaa-aaaa-0001']);
+    expect(trail[1]?.commands).toEqual(['/', 'vulnerabilities', 'advisories', 'npm', 'GHSA-aaaa-aaaa-0001']);
+  });
+
+  it('R-VULN-022 /vulnerabilities/findings/{id} binds the finding and the trail links the report', async () => {
+    const root = await open('/vulnerabilities/findings/0193a000-0000-7000-8000-000000000001');
+    expect(root.querySelector('main')?.textContent).toContain('trove-test-vuln@1.0.0');
+    expect(TestBed.inject(Breadcrumbs).trail().map((c) => c.label)).toEqual(['Vulnerabilities', '0193a000-0000-7000-8000-000000000001']);
   });
 
   it('R-UI-003 /admin/settings opens the authentication settings', async () => {

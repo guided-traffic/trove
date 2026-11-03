@@ -54,7 +54,7 @@ describe('The administration area for project administrators (R-UI-041, Q-AUTHZ-
   it('R-UI-041 a caller without any capability that administers a project sees the project screens only', async () => {
     const { root } = await render('/admin', PROJECT_ADMIN);
     expect(root.querySelector('nav [id="nav-admin"]')?.textContent).toContain('Administration');
-    const admin = navLabels(root).filter((l) => !['Packages', 'Browse', 'Guides'].includes(l));
+    const admin = navLabels(root).filter((l) => !['Packages', 'Browse', 'Guides', 'Vulnerabilities'].includes(l));
     expect(admin).toEqual(['Projects']);
     // /admin starts at the projects, because the repository list is not for this caller.
     expect(root.querySelector('main h1')?.textContent?.trim()).toBe('Projects');

@@ -163,6 +163,25 @@ What a client's audit reads of the scanning: npm's `local` mode of the bulk endp
 [Q-VULN-44 to Q-VULN-47](../spec/vulnerability-scanning.md#q-vuln-44--how-the-format-learns-the-installations-default-for-the-audit-modes-and-what-an-explicit-mode-means-on-a-class);
 the security view is [security/vulnerability-scanning.md](../security/vulnerability-scanning.md).
 
+### F · The UI (R-VULN-022, R-VULN-023)
+
+Q-VULN-52 to Q-VULN-54, H-490. The description of the screens, their files and specs is in [web-ui.md](web-ui.md#the-vulnerability-screens); the manual page is
+[user/vulnerabilities.md](../manual/user/vulnerabilities.md) (registered in [internal/manual/manual.go](../../internal/manual/manual.go) and in the contents of
+[docs/manual/README.md](../manual/README.md)); the security view is [security/vulnerability-scanning.md](../security/vulnerability-scanning.md).
+
+- **Files.** `web/src/app/features/vulnerabilities/**`, `web/src/app/api/vulnerabilities-api.ts` (and its spec, and the fake in `api/testing/fakes-vulnerabilities.ts`),
+  `core/http/problem-messages-vulnerability.ts`, `web/src/styles/_vulnerabilities.scss` and the `--trove-chart-*` tokens, the tab, the badge column and the header of
+  `features/packages/package-detail.*`, the links of `features/repositories/repository-list.html` and `repository-detail.html`, the route, navigation, help topic and provider blocks marked
+  `>>> M4b vulnerabilities`, the German targets in `web/src/locale/messages.de.xlf`, and `web/e2e/vuln/**`.
+- **What the others rely on.** The generated types of the contract commit (`schema.d.ts`, regenerated with `npm run generate:api`; the UI compiles against them). The UI reads only the
+  API: no screen computes a count, a block or a status the API did not send. The handlers of work package E answer 503 until they are built; the package page then shows no
+  tab, no badge and no banner, and the report shows the error notice with its retry.
+- **Contract changes.** None to the document. Two small additions to shared web code: `ReadOptions.accept` of `ApiClient` (the export asks for `text/csv`), and `trove-chart-*` tokens
+  with their pairs in `palette.spec.ts`. The manual page needed a line in `internal/manual/manual.go` (the contents are fixed there) and in `docs/manual/README.md`.
+- **Left to the e2e wave.** Running `web/e2e/vuln/15-vulnerabilities.spec.ts` in the scatter profile with the test advisory source and `TROVE_E2E_VULN=1` (and the Go harness that
+  sets it), the acceptance criterion "the same journey across three `web` replicas with random distribution" (the journey asserts two replicas answered), and the browser tier's axe
+  run of the German dark scheme on the vulnerability screens against a real backend (it was run against a mocked API, see web-ui.md).
+
 ### G · Operations
 
 R-VULN-024 (the gauges, the alerts, the facts), R-VULN-026 (the restore), R-VULN-027 (nothing built: the page is documentation, the

@@ -2,6 +2,13 @@
   <h1 tabindex="-1" i18n="@@repo.detail.heading">Repository</h1>
   <a mat-button routerLink="/admin/repositories" i18n="@@repo.detail.back">All repositories</a>
   <a mat-button [routerLink]="['/browse', key()]" i18n="@@repo.action.browse">Browse</a>
+  <!-- >>> M4b vulnerabilities -->
+  @if (stored(); as repo) {
+    @if (repo.format !== 'generic' && repo.class !== 'virtual') {
+      <a mat-button routerLink="/vulnerabilities" [queryParams]="{ repository: key() }" i18n="@@repo.action.vulnerabilities">Vulnerabilities</a>
+    }
+  }
+  <!-- <<< M4b vulnerabilities -->
 </header>
 
 @if (loadFailure(); as f) {

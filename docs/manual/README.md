@@ -14,11 +14,12 @@ Readers on GitHub can browse the same files here.
 1. [Getting started](user/getting-started.md)
 2. [Repositories](user/repositories.md)
 3. [Packages](user/packages.md)
-4. [Browsing and transferring files](user/files.md)
-5. [Connecting a package client](user/client-setup.md)
-6. [Personal access tokens](user/access-tokens.md)
-7. [GitLab CI pipelines](user/gitlab-ci-pipelines.md)
-8. [Errors and troubleshooting](user/troubleshooting.md)
+4. [Vulnerabilities](user/vulnerabilities.md)
+5. [Browsing and transferring files](user/files.md)
+6. [Connecting a package client](user/client-setup.md)
+7. [Personal access tokens](user/access-tokens.md)
+8. [GitLab CI pipelines](user/gitlab-ci-pipelines.md)
+9. [Errors and troubleshooting](user/troubleshooting.md)
 
 ## Administrator guide
 

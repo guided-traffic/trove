@@ -16,6 +16,8 @@ export interface ReadOptions {
   readonly params?: QueryParams;
   /** Sends `If-None-Match`; a 304 answer is not mapped. Optional on every GET. */
   readonly ifNoneMatch?: string;
+  /** The media type a text answer is asked for (`getText`); the default is `text/plain`. */
+  readonly accept?: string;
 }
 
 export interface CreateOptions {
@@ -73,7 +75,7 @@ export class ApiClient {
   async getText(url: string, options: ReadOptions = {}): Promise<ApiResponse<string>> {
     return this.send<string>('GET', url, undefined, {
       params: options.params,
-      headers: { Accept: 'text/plain, application/problem+json' },
+      headers: { Accept: `${options.accept ?? 'text/plain'}, application/problem+json` },
       responseType: 'text',
     });
   }
