@@ -211,7 +211,7 @@ func (s *Service) evaluateBatch(ctx context.Context, tx meta.Tx, ev *store.Eval,
 	if err != nil {
 		return 0, err
 	}
-	r := &run{s: s, tx: tx, ev: ev, eco: eco, repos: repos, trigger: trigger, canResolve: canResolve}
+	r := &run{s: s, tx: tx, ev: ev, eco: eco, repos: repos, trigger: trigger, canResolve: canResolve, rule: s.rule}
 	if err := r.evaluateNames(ctx, names, versions, existing); err != nil {
 		return 0, err
 	}
@@ -355,6 +355,22 @@ type rowConfig struct {
 	} `json:"remote"`
 }
 
+// viewOfRow builds the view of a repository from its row, with the defaults of the members the document does not set.
+func viewOfRow(row store.RepoInputs, eco Ecosystem) (repoView, error) {
+	var cfg rowConfig
+	if err := json.Unmarshal([]byte(row.Config), &cfg); err != nil {
+		return repoView{}, fmt.Errorf("the document of repository %d: %w", row.ID, err)
+	}
+	v := repoView{ID: row.ID, Key: row.Key, Format: row.Format, Class: repository.Class(row.Class), Ecosystem: eco.Name, Settings: vuln.DefaultSettings()}
+	if cfg.Vulnerabilities != nil {
+		v.Settings = *cfg.Vulnerabilities
+	}
+	if cfg.Remote != nil {
+		v.UpstreamHost = hostOf(cfg.Remote.URL)
+	}
+	return v, nil
+}
+
 func (s *Service) readInputs(ctx context.Context, repoID int64) (rescanInputs, error) {
 	var in rescanInputs
 	err := s.o.Runner.InTx(ctx, func(tx meta.Tx) error {
@@ -371,16 +387,9 @@ func (s *Service) readInputs(ctx context.Context, repoID int64) (rescanInputs, e
 			in = rescanInputs{deleted: true}
 			return nil
 		}
-		var cfg rowConfig
-		if err := json.Unmarshal([]byte(row.Config), &cfg); err != nil {
-			return fmt.Errorf("the document of repository %d: %w", repoID, err)
-		}
-		v := repoView{ID: row.ID, Key: row.Key, Format: row.Format, Class: repository.Class(row.Class), Ecosystem: eco.Name, Settings: vuln.DefaultSettings()}
-		if cfg.Vulnerabilities != nil {
-			v.Settings = *cfg.Vulnerabilities
-		}
-		if cfg.Remote != nil {
-			v.UpstreamHost = hostOf(cfg.Remote.URL)
+		v, err := viewOfRow(row, eco)
+		if err != nil {
+			return err
 		}
 		in = rescanInputs{view: v}
 		return nil

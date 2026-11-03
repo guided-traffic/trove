@@ -244,8 +244,13 @@ Files: [internal/vuln/match/affects.go](../../internal/vuln/match/affects.go) (t
   `UPDATE … WHERE status = $read AND revision = $read`, three attempts with a re-read, then the change no longer applies. `VulnSetFindingStatus` keeps the triage comment unless the finding leaves `dismissed`.
 - **History.** A bare `modified` is `VulnTouchFindingModified` (no revision, no event); `redetectedEvent` takes back a `resolved` event of reason `version_removed` younger than `flapWindow` (one hour) and writes
   `redetected` once (Q-VULN-66).
-- **Cost of a commit.** `OnVersionCommitted` reads four statements (`ItemVersion`, `FindingsOfRepoNames`, `DataComplete`, `AffectedForNames`), a fifth for an internal name (the prune of claimed matches, which
+- **Cost of a commit.** `OnVersionCommitted` reads six statements (`RepositoryInputs`, `ItemVersion`, `FindingsOfRepoNames`, `DataComplete`, `AffectedForNames`, `ClaimHolders`), a seventh for an internal name (the prune of claimed matches, which
   the single-version run skips for a name that is not internal); `TestR_VULN_011_TheCommitEvaluationCostsAFixedNumberOfStatements` counts them with `postgres.WithQueryTracer`.
+- **The commit takes no second connection.** The commit holds a pool connection, and concurrent commits that wait for one row lock hold the others, so nothing the hook reads may load through the pool: not the
+  repository snapshot, not the claim index, not the state cache (`TestR_NUGET_006_ConcurrentPushesOfOneVersion`, `TestR_VULN_011_TenPublishesOfOneVersionWithDifferentBuildsDoNotStarveTheCommit`). The hook reads the repository row
+  (`viewInTx`), the data state and the claims in its transaction. The claims come from `txClaims` ([txclaims.go](../../internal/vuln/evaluate/txclaims.go)), a `HolderIndex` over `Eval.ClaimHolders` (the claims of the format's
+  local repositories that can cover the name, with the holder's document, one statement per name) matched by `repository.MatchClaims` (the order and pattern semantics of the claim index); `ClaimRule` stays the one rule
+  (Q-VULN-70) and takes the holder from the index instead of the snapshot. The jobs keep the replica's index: a worker's batch does not wait on a row lock.
 - **Queue and rescan.** `vuln-evaluate` reads and deletes only the queued advisories of the ecosystems the build has an adapter for; `vuln-rescan`'s checkpoint carries the repository and its inputs
   (`fingerprint`) and the job resumes at the cursor while they are unchanged. `Service.InScope` answers the scope question of R-VULN-010 for a stored version's data rule.
 

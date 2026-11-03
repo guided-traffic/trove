@@ -199,8 +199,9 @@ type run struct {
 	trigger vuln.Trigger
 	// canResolve is false while the ecosystem's data is not complete: the evaluation then only adds (R-VULN-011).
 	canResolve bool
-	// inTx lets a first publish see its own auto claim.
-	inTx claimReader
+	// rule is the claims rule of the run: the replica's for a job, the transaction's own for the commit hook (txClaims), whose
+	// evaluation must not take a second pool connection.
+	rule ClaimRule
 	// single is true for the commit hook's evaluation of one version.
 	single bool
 	st     stats
@@ -249,7 +250,7 @@ func (r *run) evaluateNames(ctx context.Context, names []string, versions []stor
 		sc, ok := scopes[sk]
 		if !ok {
 			var err error
-			sc.scope, sc.claimRepo, err = r.s.scopeOf(ctx, rv, v.Name, r.inTx)
+			sc.scope, sc.claimRepo, err = r.s.scopeOf(ctx, rv, v.Name, r.rule)
 			if err != nil {
 				return err
 			}
@@ -680,7 +681,7 @@ func (r *run) recordClaimed(ctx context.Context, names []string, byName map[stri
 		var claimRepo string
 		internal := false
 		for _, f := range r.eco.Formats {
-			repo, yes, err := r.s.rule.Claim(ctx, f, name)
+			repo, yes, err := r.rule.Claim(ctx, f, name)
 			if err != nil {
 				return err
 			}

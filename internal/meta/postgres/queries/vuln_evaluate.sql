@@ -331,9 +331,20 @@ SELECT v.id::text AS id, v.canonical_id::text AS canonical_id, v.aliases::text[]
  WHERE v.ecosystem = sqlc.arg(ecosystem)::text
    AND (v.id = ANY(sqlc.arg(ids)::text[]) OR v.aliases && sqlc.arg(ids)::text[]);
 
--- name: VulnRepoClaims :many
--- The claims of a repository, read in the transaction of a publish whose auto claim the replica's claim index does not hold yet.
-SELECT pattern::text AS pattern FROM namespace_claims WHERE repo_id = sqlc.arg(repo_id)::bigint;
+-- name: VulnClaimHolders :many
+-- The namespace claims of the local repositories of a format that can cover a name, with the holder's scanning inputs, read in the
+-- transaction of a commit: the claims rule of R-VULN-010 must not take a second connection while the commit holds one. The
+-- prefilter only narrows (an exact claim, or a literal prefix of the name); a pattern with an escape is always returned and the
+-- caller matches every row with the pattern semantics of the claim index.
+SELECT c.repo_id::bigint AS repo_id, r.key::text AS key, r.config::text AS config,
+       c.pattern::text AS pattern, c.scope::text AS scope, c.source::text AS source
+  FROM namespace_claims c
+  JOIN repositories r ON r.id = c.repo_id
+ WHERE r.format = sqlc.arg(format)::text
+   AND r.class = 'local'
+   AND (c.pattern = sqlc.arg(name)::text
+        OR position(chr(92) IN c.pattern) > 0
+        OR (right(c.pattern, 1) = '*' AND starts_with(sqlc.arg(name)::text, rtrim(c.pattern, '*'))));
 
 -- name: VulnRepositoryInputs :many
 -- The scanning inputs of a repository, read from the row and not from a replica's snapshot, so that a rescan sees a change

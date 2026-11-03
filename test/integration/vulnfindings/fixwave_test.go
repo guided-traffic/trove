@@ -84,7 +84,10 @@ func (e *env) serviceDB(o evaluate.Options, tr pgx.QueryTracer) (*evaluate.Servi
 		e.t.Fatal(err)
 	}
 	e.t.Cleanup(db.Close)
-	o.Runner, o.Repos = db, e.rep.App.Repositories()
+	o.Runner = db
+	if o.Repos == nil {
+		o.Repos = e.rep.App.Repositories()
+	}
 	if o.Ecosystems == nil {
 		o.Ecosystems = ecosystems()
 	}
@@ -448,13 +451,15 @@ func TestR_VULN_012_TheHistoryDoesNotGrowByModificationsOrByAFlappingCache(t *te
 }
 
 // R-VULN-011, Q-VULN-66 (A4): the statements of the commit hook's evaluation of one version. A version of a name that is no
-// internal name costs four: the version of the item, the findings of the name in the repository, the data state and the affected
-// entries; a claimed name adds the prune of its matches.
+// internal name costs six: the repository row, the version of the item, the findings of the name in the repository, the data state,
+// the affected entries and the claims that can cover the name (the repository row and the claims are read in the transaction, so
+// that the commit takes no second pool connection); a claimed name adds the prune of its matches. The claim of npm-local is the
+// auto claim of the first publish.
 func TestR_VULN_011_TheCommitEvaluationCostsAFixedNumberOfStatements(t *testing.T) {
 	e := newEnv(t)
 	e.setComplete("npm", true)
 	tr := &stmtCounter{}
-	svc, db := e.serviceDB(evaluate.Options{Claims: fixedClaims{"trove-test-count-b": "npm-local"}}, tr)
+	svc, db := e.serviceDB(evaluate.Options{}, tr)
 	ctx := context.Background()
 	count := func(repo, name string) []string {
 		t.Helper()
@@ -470,11 +475,75 @@ func TestR_VULN_011_TheCommitEvaluationCostsAFixedNumberOfStatements(t *testing.
 		}
 		return tr.statements()
 	}
-	if got := count("npm-vendor", "trove-test-count-a"); len(got) != 4 {
-		t.Errorf("%d statements for a public name, want 4:\n%s", len(got), strings.Join(got, "\n---\n"))
+	if got := count("npm-vendor", "trove-test-count-a"); len(got) != 6 {
+		t.Errorf("%d statements for a public name, want 6:\n%s", len(got), strings.Join(got, "\n---\n"))
 	}
-	if got := count("npm-local", "trove-test-count-b"); len(got) != 5 {
-		t.Errorf("%d statements for a claimed name, want 5:\n%s", len(got), strings.Join(got, "\n---\n"))
+	if got := count("npm-local", "trove-test-count-b"); len(got) != 7 {
+		t.Errorf("%d statements for a claimed name, want 7:\n%s", len(got), strings.Join(got, "\n---\n"))
+	}
+}
+
+// forbiddenClaims and forbiddenRepos fail the test when the commit hook reads a replica cache: the claim index and the repository
+// snapshot load through the pool on a miss, and a commit that waits for a second connection starves behind the waiters of its row
+// lock (R-VULN-011, R-NUGET-006).
+type forbiddenClaims struct{ t *testing.T }
+
+func (f forbiddenClaims) ClaimsFor(context.Context, string, string) ([]repository.ClaimMatch, error) {
+	f.t.Error("the commit's evaluation read the replica's claim index")
+	return nil, nil
+}
+
+type forbiddenRepos struct {
+	repository.Reader
+	t *testing.T
+}
+
+func (f forbiddenRepos) ByKey(ctx context.Context, key string) (repository.Repository, error) {
+	f.t.Errorf("the commit's evaluation read the replica's repository snapshot for %s", key)
+	return f.Reader.ByKey(ctx, key)
+}
+
+func (f forbiddenRepos) List(ctx context.Context) ([]repository.Repository, error) {
+	f.t.Error("the commit's evaluation listed the replica's repository snapshot")
+	return f.Reader.List(ctx)
+}
+
+// R-VULN-010, R-VULN-011: the commit hook reads the claims rule and the repository in its own transaction. With a claim index and a
+// snapshot that fail the test when they are read, a name that a claim of another repository covers is internal (the claim is
+// written to the table after the replica's index loaded, so only a read in the transaction sees it), and the name is matched
+// again once the claim is gone.
+func TestR_VULN_011_TheCommitEvaluationReadsTheClaimsAndTheRepositoryInItsTransaction(t *testing.T) {
+	e := newEnv(t)
+	e.setComplete("npm", true)
+	svc, db := e.serviceDB(evaluate.Options{Claims: forbiddenClaims{t}, Repos: forbiddenRepos{Reader: e.rep.App.Repositories(), t: t}}, nil)
+	ctx := context.Background()
+	const name = "trove-test-txclaim"
+	e.publish("npm-noclaim", name, "1.0.0")
+	item := e.st.Number(`SELECT pv.lead_item_id FROM package_versions pv JOIN packages p ON p.id = pv.package_id JOIN repositories r ON r.id = p.repo_id
+		WHERE r.key = 'npm-noclaim' AND p.name = $1`, name)
+	repoID := e.st.Number(`SELECT id FROM repositories WHERE key = 'npm-noclaim'`)
+	commit := func() {
+		t.Helper()
+		if err := db.InTx(ctx, func(tx meta.Tx) error {
+			return svc.OnVersionCommitted(ctx, tx, vuln.CommittedVersion{RepoID: repoID, RepoKey: "npm-noclaim", Format: "npm", ItemID: item})
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e.addAdvisory("npm", "MAL-2026-9101", "", "malicious", "critical")
+	e.addAffected("npm", "MAL-2026-9101", 0, name, everyVersionRange, nil, true, nil)
+	e.st.Exec(`INSERT INTO namespace_claims (repo_id, pattern, source, scope) SELECT id, 'trove-test-txclaim*', 'manual', 'members' FROM repositories WHERE key = 'npm-local'`)
+	commit()
+	if got := e.findings("npm-noclaim", name, "", ""); got != 0 {
+		t.Errorf("%d findings of a name that a claim of npm-local covers", got)
+	}
+	if got := e.st.Number(`SELECT count(*) FROM vuln_claimed_match WHERE name = $1`, name); got != 1 {
+		t.Errorf("%d claimed-name matches, want 1", got)
+	}
+	e.st.Exec(`DELETE FROM namespace_claims WHERE pattern = 'trove-test-txclaim*'`)
+	commit()
+	if got := e.findings("npm-noclaim", name, "", ""); got != 1 {
+		t.Errorf("%d findings once the claim is gone, want 1", got)
 	}
 }
 

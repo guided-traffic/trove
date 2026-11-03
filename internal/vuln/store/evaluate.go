@@ -513,9 +513,28 @@ func (e *Eval) RekeyTargets(ctx context.Context, ecosystem string, ids []string)
 	return out, nil
 }
 
-// RepoClaims returns the claim patterns of a repository.
-func (e *Eval) RepoClaims(ctx context.Context, repoID int64) ([]string, error) {
-	return e.qs.VulnRepoClaims(ctx, repoID)
+// ClaimHolder is one claim of a local repository with the holder's configuration document, as the commit's transaction reads it.
+type ClaimHolder struct {
+	RepoID  int64
+	Key     string
+	Config  string
+	Pattern string
+	Scope   string
+	Source  string
+}
+
+// ClaimHolders returns the claims of the local repositories of the format that can cover the normalized name, from PostgreSQL in
+// the transaction. The query narrows by the name; the caller matches the patterns.
+func (e *Eval) ClaimHolders(ctx context.Context, format, name string) ([]ClaimHolder, error) {
+	rows, err := e.qs.VulnClaimHolders(ctx, q.VulnClaimHoldersParams{Format: format, Name: name})
+	if err != nil {
+		return nil, fmt.Errorf("claims of %s: %w", format, err)
+	}
+	out := make([]ClaimHolder, len(rows))
+	for i, r := range rows {
+		out[i] = ClaimHolder{RepoID: r.RepoID, Key: r.Key, Config: r.Config, Pattern: r.Pattern, Scope: r.Scope, Source: r.Source}
+	}
+	return out, nil
 }
 
 // RepoInputs is a repository row as a rescan reads it.

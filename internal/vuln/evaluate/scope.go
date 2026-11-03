@@ -45,10 +45,33 @@ type ClaimIndex interface {
 	ClaimsFor(ctx context.Context, format, name string) ([]repository.ClaimMatch, error)
 }
 
+// ClaimHolder is what the claims rule needs of the repository that holds a claim.
+type ClaimHolder struct {
+	Key      string
+	Format   string
+	Class    repository.Class
+	Settings vuln.Settings
+}
+
+// counts reports whether a claim of the holder makes a name internal for the format: a local repository of the format that does
+// not declare, with matchPublicAdvisories always, that it holds public packages.
+func (h ClaimHolder) counts(format string) bool {
+	return h.Class == repository.Local && h.Format == format && h.Settings.MatchPublicAdvisories != vuln.MatchAlways
+}
+
+// HolderIndex is a [ClaimIndex] that brings the holders of its claims with it, so that the rule does not read the repository
+// snapshot: the index of a writing transaction (see txClaims), whose reads must stay on the transaction's connection.
+type HolderIndex interface {
+	ClaimIndex
+	// Holder returns the holder of a claim the index returned; false when it knows none for the key.
+	Holder(key string) (ClaimHolder, bool)
+}
+
 // ClaimRule is the internal-names rule of R-VULN-010, in one place for the evaluation and the client audits: a package name
 // is internal when a namespace claim of either scope covers it, held by a local repository of the format that does not set
 // matchPublicAdvisories always. A repository with always declares that it holds public packages, so its claims serve routing
-// only. Claims come from the claim index and the repository setting from the snapshot: the rule costs no query.
+// only. Claims come from the claim index and the repository setting from the snapshot: the rule costs no query. A [HolderIndex]
+// brings the holders itself; the commit's evaluation uses one read in its transaction.
 type ClaimRule struct {
 	Claims ClaimIndex
 	Repos  repository.Reader
@@ -65,13 +88,23 @@ func (r ClaimRule) Claim(ctx context.Context, format, name string) (claimRepo st
 	if err != nil {
 		return "", false, err
 	}
+	holders, _ := r.Claims.(HolderIndex)
 	for _, m := range matches {
-		repo, err := r.Repos.ByKey(ctx, m.Repository)
-		if err != nil {
-			return m.Repository, true, nil //nolint:nilerr // see above: an unreadable holder still withholds
+		var h ClaimHolder
+		if holders != nil {
+			var ok bool
+			if h, ok = holders.Holder(m.Repository); !ok {
+				return m.Repository, true, nil
+			}
+		} else {
+			repo, err := r.Repos.ByKey(ctx, m.Repository)
+			if err != nil {
+				return m.Repository, true, nil //nolint:nilerr // see above: an unreadable holder still withholds
+			}
+			h = ClaimHolder{Key: repo.Key, Format: repo.Format, Class: repo.Class, Settings: repo.VulnerabilitySettings()}
 		}
-		if repo.Class == repository.Local && repo.Format == format && repo.VulnerabilitySettings().MatchPublicAdvisories != vuln.MatchAlways {
-			return repo.Key, true, nil
+		if h.counts(format) {
+			return h.Key, true, nil
 		}
 	}
 	return "", false, nil
@@ -133,31 +166,18 @@ func hostOf(raw string) string {
 	return strings.ToLower(u.Hostname())
 }
 
-// scopeOf applies the table of R-VULN-010. For a local repository with matchPublicAdvisories auto the claims decide, and
-// claimRepo names the repository whose claim made the name internal. inTx, when not nil, adds the claims of the repository
-// itself read in the writing transaction: a first publish creates its auto claim in the same transaction, which the
-// per-replica index does not hold yet.
-func (s *Service) scopeOf(ctx context.Context, rv repoView, name string, inTx claimReader) (sc Scope, claimRepo string, err error) {
+// scopeOf applies the table of R-VULN-010 with the rule given. For a local repository with matchPublicAdvisories auto the claims
+// decide, and claimRepo names the repository whose claim made the name internal.
+func (s *Service) scopeOf(ctx context.Context, rv repoView, name string, rule ClaimRule) (sc Scope, claimRepo string, err error) {
 	if sc, decided := repositoryScope(s.o.PublicUpstreams, rv); decided {
 		return sc, "", nil
 	}
-	repo, internal, err := s.rule.Claim(ctx, rv.Format, name)
+	repo, internal, err := rule.Claim(ctx, rv.Format, name)
 	if err != nil {
 		return ScopeMatched, "", err
 	}
 	if internal {
 		return ScopeInternal, repo, nil
-	}
-	if inTx != nil {
-		own, err := inTx.RepoClaims(ctx, rv.ID)
-		if err != nil {
-			return ScopeMatched, "", err
-		}
-		for _, p := range own {
-			if cp, perr := repository.ParseClaimPattern(p); perr == nil && cp.Match(name) {
-				return ScopeInternal, rv.Key, nil
-			}
-		}
 	}
 	return ScopeMatched, "", nil
 }
@@ -172,12 +192,7 @@ func ScopeOf(ctx context.Context, repo repository.Repository, name string, rule 
 		return ScopeNotCovered, "", nil
 	}
 	s := &Service{rule: rule, o: Options{PublicUpstreams: publicUpstreams}}
-	return s.scopeOf(ctx, rv, name, nil)
-}
-
-// claimReader is the read of a repository's own claims in the writing transaction.
-type claimReader interface {
-	RepoClaims(ctx context.Context, repoID int64) ([]string, error)
+	return s.scopeOf(ctx, rv, name, rule)
 }
 
 // publicUpstream reports whether the host is listed in vulnerabilities.matching.public_upstreams for the format.

@@ -43,6 +43,21 @@ func (s *Service) view(ctx context.Context, key string) (repoView, repository.Re
 	return v, repo, ok, nil
 }
 
+// viewInTx reads the repository row in the transaction and builds the view of a repository the scanning applies to: false for one
+// that is gone, not active, virtual or of a format without the adapter.
+func (s *Service) viewInTx(ctx context.Context, ev *store.Eval, repoID int64) (repoView, Ecosystem, bool, error) {
+	row, ok, err := ev.RepositoryInputs(ctx, repoID)
+	if err != nil || !ok || row.Lifecycle != string(repository.Active) || repository.Class(row.Class) == repository.Virtual {
+		return repoView{}, Ecosystem{}, false, err
+	}
+	eco, known := s.byFmt[row.Format]
+	if !known {
+		return repoView{}, Ecosystem{}, false, nil
+	}
+	v, err := viewOfRow(row, eco)
+	return v, eco, err == nil, err
+}
+
 // OnVersionCommitted implements [vuln.Evaluator]: it evaluates the version of the item a commit wrote, in the commit's
 // transaction, after the format's OnCommit linked the item to its version (R-VULN-011). The cost is the lookup of the item's
 // version, one indexed query on vuln_affected, the findings of the name in the repository and the state row of the ecosystem; findings are written in the
@@ -51,19 +66,18 @@ func (s *Service) OnVersionCommitted(ctx context.Context, tx meta.Tx, c vuln.Com
 	if !s.o.Enabled {
 		return nil
 	}
-	rv, _, ok, err := s.view(ctx, c.RepoKey)
-	if err != nil || !ok || !rv.Settings.Enabled {
-		return err
-	}
-	eco, known := s.eco[rv.Ecosystem]
-	if !known {
-		return nil
-	}
-	started := time.Now()
 	ev, err := store.EvalOf(tx)
 	if err != nil {
 		return err
 	}
+	// Nothing here takes a second pool connection: the commit holds one, and concurrent commits that wait for one row lock hold the
+	// connections a cache load would need. The repository row, the claims and the data state are read in the transaction; the
+	// replica's snapshot, claim index and state cache load through the pool on a miss, so they are not read.
+	rv, eco, ok, err := s.viewInTx(ctx, ev, c.RepoID)
+	if err != nil || !ok || !rv.Settings.Enabled {
+		return err
+	}
+	started := time.Now()
 	ver, ok, err := ev.ItemVersion(ctx, c.ItemID)
 	if err != nil || !ok {
 		return err
@@ -86,15 +100,12 @@ func (s *Service) OnVersionCommitted(ctx context.Context, tx meta.Tx, c vuln.Com
 	if trigger == "" {
 		trigger = vuln.TriggerPublish
 	}
-	// The data state is read on the commit's own connection: the replica's cache loads through the pool, and a commit that holds a
-	// connection while it waits for another one starves the pool when commits run concurrently (the waiters of one row lock hold
-	// the connections the load needs).
 	complete, err := ev.DataComplete(ctx, eco.Name)
 	if err != nil {
 		return err
 	}
 	r := &run{
-		s: s, tx: tx, ev: ev, eco: eco, trigger: trigger, canResolve: complete, inTx: ev, single: true,
+		s: s, tx: tx, ev: ev, eco: eco, trigger: trigger, canResolve: complete, rule: ClaimRule{Claims: newTxClaims(ev)}, single: true,
 		repos: func(id int64) (repoView, bool) { return rv, id == rv.ID },
 	}
 	if err := r.evaluateNames(ctx, []string{ver.Name}, []store.StoredVersion{ver}, ofVersion); err != nil {
@@ -141,7 +152,7 @@ func (s *Service) EvaluateMiss(ctx context.Context, m vuln.Miss) (vuln.Block, er
 		return vuln.Block{}, nil
 	}
 	started := time.Now()
-	if sc, _, err := s.scopeOf(ctx, rv, m.Name, nil); err != nil || sc != ScopeMatched {
+	if sc, _, err := s.scopeOf(ctx, rv, m.Name, s.rule); err != nil || sc != ScopeMatched {
 		return vuln.Block{}, err
 	}
 	pol := repo.VulnerabilityPolicy(s.o.Enabled, s.o.Enforcement)

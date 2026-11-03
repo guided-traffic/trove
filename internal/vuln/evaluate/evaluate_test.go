@@ -272,7 +272,7 @@ func TestR_VULN_010_ScopeOfARemote(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, _, err := s.scopeOf(context.Background(), c.view, "x", nil)
+			got, _, err := s.scopeOf(context.Background(), c.view, "x", ClaimRule{})
 			if err != nil || got != c.want {
 				t.Errorf("scope = %v, %v; want %v", got, err, c.want)
 			}

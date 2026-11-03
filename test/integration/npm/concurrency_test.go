@@ -223,3 +223,34 @@ func TestR_NPM_007_TheSamePublishTwiceAtOnce(t *testing.T) {
 		}
 	}
 }
+
+// TestR_VULN_011_TenPublishesOfOneVersionWithDifferentBuildsDoNotStarveTheCommit: ten publishes of one version with ten different
+// tarballs, over two replicas whose pool holds six connections. Nine wait for the row lock of the first publish while holding a
+// connection each, so the commit of the first must evaluate the version on its own connection: a read of a replica cache that
+// loads through the pool (the claim index, the repository snapshot, the data state) would wait for the waiters, which wait for
+// the commit until their lock timeout, and the nine would answer 503 database_timeout instead of 409 (R-VULN-011, R-NPM-007).
+func TestR_VULN_011_TenPublishesOfOneVersionWithDifferentBuildsDoNotStarveTheCommit(t *testing.T) {
+	e := newEnv(t)
+	a, b := e.replica("web-a"), e.replica("web-b")
+	for round := range 3 {
+		name := fmt.Sprintf("starve-%d", round)
+		reqs := make([]func() int, 10)
+		for i := range reqs {
+			r := a
+			if i%2 == 1 {
+				r = b
+			}
+			reqs[i] = publisher(e, r, e.tokA, pkg{Name: name, Version: "1.0.0", Files: map[string]string{"build.txt": fmt.Sprintf("build %d", i)}})
+		}
+		counts := map[int]int{}
+		for _, s := range race(e, reqs) {
+			counts[s]++
+		}
+		if counts[201] != 1 || counts[409] != 9 {
+			t.Fatalf("%s: statuses %v, want one 201 and nine 409", name, counts)
+		}
+		if e.versions("npm-local", name) != 1 {
+			t.Fatalf("%s: %d versions", name, e.versions("npm-local", name))
+		}
+	}
+}

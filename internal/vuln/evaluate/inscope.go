@@ -22,7 +22,7 @@ func (s *Service) InScope(ctx context.Context, repo repository.Repository, name 
 	if _, known := s.eco[rv.Ecosystem]; !known {
 		return false, nil
 	}
-	sc, _, err := s.scopeOf(ctx, rv, name, nil)
+	sc, _, err := s.scopeOf(ctx, rv, name, s.rule)
 	if err != nil {
 		return false, err
 	}

@@ -126,6 +126,63 @@ func (q *Queries) VulnCanonicalOfRecords(ctx context.Context, arg VulnCanonicalO
 	return items, nil
 }
 
+const vulnClaimHolders = `-- name: VulnClaimHolders :many
+SELECT c.repo_id::bigint AS repo_id, r.key::text AS key, r.config::text AS config,
+       c.pattern::text AS pattern, c.scope::text AS scope, c.source::text AS source
+  FROM namespace_claims c
+  JOIN repositories r ON r.id = c.repo_id
+ WHERE r.format = $1::text
+   AND r.class = 'local'
+   AND (c.pattern = $2::text
+        OR position(chr(92) IN c.pattern) > 0
+        OR (right(c.pattern, 1) = '*' AND starts_with($2::text, rtrim(c.pattern, '*'))))
+`
+
+type VulnClaimHoldersParams struct {
+	Format string
+	Name   string
+}
+
+type VulnClaimHoldersRow struct {
+	RepoID  int64
+	Key     string
+	Config  string
+	Pattern string
+	Scope   string
+	Source  string
+}
+
+// The namespace claims of the local repositories of a format that can cover a name, with the holder's scanning inputs, read in the
+// transaction of a commit: the claims rule of R-VULN-010 must not take a second connection while the commit holds one. The
+// prefilter only narrows (an exact claim, or a literal prefix of the name); a pattern with an escape is always returned and the
+// caller matches every row with the pattern semantics of the claim index.
+func (q *Queries) VulnClaimHolders(ctx context.Context, arg VulnClaimHoldersParams) ([]VulnClaimHoldersRow, error) {
+	rows, err := q.db.Query(ctx, vulnClaimHolders, arg.Format, arg.Name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []VulnClaimHoldersRow{}
+	for rows.Next() {
+		var i VulnClaimHoldersRow
+		if err := rows.Scan(
+			&i.RepoID,
+			&i.Key,
+			&i.Config,
+			&i.Pattern,
+			&i.Scope,
+			&i.Source,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const vulnClearFullEvaluation = `-- name: VulnClearFullEvaluation :execrows
 UPDATE vuln_source_state
    SET full_evaluation_requested_at = NULL
@@ -1070,31 +1127,6 @@ func (q *Queries) VulnRekeyTargets(ctx context.Context, arg VulnRekeyTargetsPara
 			return nil, err
 		}
 		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const vulnRepoClaims = `-- name: VulnRepoClaims :many
-SELECT pattern::text AS pattern FROM namespace_claims WHERE repo_id = $1::bigint
-`
-
-// The claims of a repository, read in the transaction of a publish whose auto claim the replica's claim index does not hold yet.
-func (q *Queries) VulnRepoClaims(ctx context.Context, repoID int64) ([]string, error) {
-	rows, err := q.db.Query(ctx, vulnRepoClaims, repoID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var pattern string
-		if err := rows.Scan(&pattern); err != nil {
-			return nil, err
-		}
-		items = append(items, pattern)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

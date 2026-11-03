@@ -236,6 +236,48 @@ func (x *claimIndex) lookup(format, name string) []claimHit {
 	return out
 }
 
+// StoredClaim is a claim as a caller read it from the table, for [MatchClaims].
+type StoredClaim struct {
+	RepoID     int64
+	Repository string
+	Pattern    string
+	Scope      string
+	Source     string
+}
+
+// MatchClaims returns the claims that cover the normalized name in the order of [Routing.ClaimsFor]: the most specific first,
+// equal specificity by repository id. It is for a caller that holds the claims from a read of its own transaction and must not
+// load the replica's index (which loads through the pool); the pattern semantics and the order are those of the index. A
+// stored pattern that does not parse protects nothing, as in the index.
+func MatchClaims(claims []StoredClaim, name string) []ClaimMatch {
+	if name == "" {
+		return nil
+	}
+	type hit struct {
+		c StoredClaim
+		p ClaimPattern
+	}
+	var hits []hit
+	for _, c := range claims {
+		p, err := ParseClaimPattern(c.Pattern)
+		if err != nil || !p.Match(name) {
+			continue
+		}
+		hits = append(hits, hit{c, p})
+	}
+	sort.SliceStable(hits, func(i, j int) bool {
+		if !hits[i].p.sameRank(hits[j].p) {
+			return hits[i].p.moreSpecific(hits[j].p)
+		}
+		return hits[i].c.RepoID < hits[j].c.RepoID
+	})
+	out := make([]ClaimMatch, len(hits))
+	for i, h := range hits {
+		out[i] = ClaimMatch{Repository: h.c.Repository, Pattern: h.p.String(), Scope: h.c.Scope, Source: h.c.Source}
+	}
+	return out
+}
+
 // mostSpecific keeps the hits that share the highest rank. hits are sorted.
 func mostSpecific(hits []claimHit) []claimHit {
 	n := 0
