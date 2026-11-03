@@ -65,6 +65,9 @@ Rules for code:
   with an innocent key cannot print it.
 - Errors that leave the process (client responses, support bundles) go through `observability.ScrubError` or
   `Scrubber.Error`.
+- `Trove-Bastion-Authorization` is a secret header (R-BAS-008): `SensitiveKey` matches the word `authorization` in a header name, so a logged
+  `http.Header` shows it as `[REDACTED]`, and `trv_bst_…` is a token for the scrubber like every `trv_<type>_` value. The Recognize stage also
+  removes the header from the request the later stages receive. The other `Trove-Bastion-*` headers carry no secret.
 - Never log bodies or headers other than `User-Agent`, `Content-Type`, `Content-Length`, `Accept`.
 - Span attributes are scrubbed again right before export (`scrubExporter`), so a missed call site cannot leak.
 
@@ -82,6 +85,12 @@ exported at 0 per endpoint (`Metrics.ExportEndpoints`); see [endpoints.md](endpo
 `trove_http_requests_shed_total{endpoint,reason}` for each reason (`in_flight`, `memory_slots`, `heap`; `Metrics.RequestShed`
 counts no other), beside the gauges `trove_http_memory_slots` (`Metrics.MemorySlots`) and `trove_http_memory_slots_in_use` (`Metrics.MemorySlotsInUse`, read at each scrape) of the memory guard
 ([architecture.md](architecture.md#stage-4-and-the-memory-guard)).
+
+The main installation's side of the Bastion adds `trove_bastion_interface_requests_total{bastion,operation,outcome}`, counted by the Recognize
+stage for every request on `/api/v1/bastion/…` (the outcome from the status of the answer: `ok`, `refused`, `error`, `not_implemented`; `invalid_token` and
+`interface_mismatch` from the stage's own refusals), and `trove_bastion_forwarded_requests_total{bastion,class}`, counted by the marking; both are
+defined once in [bastionmain/metrics.go](../../internal/bastionmain/metrics.go) and registered once by `App.bastionMetrics`. The `bastion` label is the registration's
+name, bounded by `bastions.max_registrations`; a token that names no registration counts as `unknown`.
 
 `m.Handler()` serves `GET /metrics` for the operations listener: Prometheus text 0.0.4, OpenMetrics when the
 `Accept` header asks (histograms carry the trace ID of a sampled request as an exemplar), `404` with

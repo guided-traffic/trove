@@ -34,6 +34,10 @@ const (
 	// KindBreakGlass is the break-glass administrator (R-AUTH-014). Authorization
 	// grants it the administrator role without a role binding (R-AUTHZ-010).
 	KindBreakGlass PrincipalKind = "break_glass"
+	// KindBastion is the registration of a Bastion on its interface routes (R-BAS-008): the principal of a
+	// request whose Bastion token the recognition stage checked. It holds no grant and is no subject of a
+	// decision; the request log and the rate limits name it.
+	KindBastion PrincipalKind = "bastion"
 )
 
 // AuthMethod is the credential source that proved the principal (R-AUTH-001).
@@ -82,6 +86,9 @@ type Credential struct {
 	// TokenID and TokenType identify the token (MethodBearer, MethodBasic, MethodAPIKey).
 	TokenID   string
 	TokenType TokenType
+	// ExpiresAt is the token's expiry; nil for a token that does not expire and for a credential that is no
+	// token. The marking of a Bastion request reports it (R-BAS-013).
+	ExpiresAt *time.Time
 	// Scope is the token's ceiling: the owner's grants at use time intersected
 	// with it (R-AUTH-024, R-AUTHZ-013); it never grants anything. Nil means there
 	// is none: sessions and the break-glass session are bounded by the
@@ -91,9 +98,6 @@ type Credential struct {
 	// BasicUsername is the username of a Basic credential, recorded for
 	// diagnostics and otherwise ignored (R-AUTH-001).
 	BasicUsername string
-	// ExpiresAt is the token's expiry, nil when the credential does not expire (a session, a service account
-	// token without one). The marking of a response to a Bastion request states it (R-BAS-013).
-	ExpiresAt *time.Time
 }
 
 // Principal is the authenticated caller, or the anonymous one. It is the seam

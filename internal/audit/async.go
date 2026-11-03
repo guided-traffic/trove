@@ -20,7 +20,11 @@ func (w *Writer) Record(_ context.Context, ev Event) {
 		return
 	}
 	now := w.now()
-	r, err := toRow(t, ev, newID(now), now, w.o.Replica)
+	at := now
+	if !ev.At.IsZero() {
+		at = ev.At
+	}
+	r, err := toRow(t, ev, newID(at), at, w.o.Replica)
 	if err != nil {
 		w.app.Error("audit: invalid event skipped", "type", ev.Type, "error", err)
 		return

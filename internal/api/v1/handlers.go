@@ -194,14 +194,14 @@ type Options struct {
 	// <<< M2 manual
 
 	// >>> M13 bastion
-	// BastionStubs is set by the composition root while an operation of the Bastion work is a stub
-	// (bastion_*_api.go): the stub answers 501 bastion_not_implemented. Unset, as in the tests of this
-	// package, a stub answers 503 like an operation whose service is not wired. The flag and the stubs leave
-	// together with the last of them.
-	BastionStubs bool
 	// Bastions is the registration service behind /api/v1/bastions (R-BAS-004); nil answers its operations
 	// with 503.
 	Bastions *bastionmain.Registrations
+	// >>> package 2
+	// Bastion holds the services of the four operations of the Bastion interface (bastion_services.go); a
+	// member that is nil answers them with 503.
+	Bastion BastionServices
+	// <<< package 2
 	// <<< M13 bastion
 }
 

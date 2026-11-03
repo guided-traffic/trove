@@ -45,10 +45,10 @@ func principalFromResult(r auth.Result) httpserver.Principal {
 			Method:        httpserver.AuthMethod(r.Credential.Method),
 			SessionID:     r.Credential.SessionID,
 			TokenID:       r.Credential.TokenID,
+			ExpiresAt:     r.Credential.ExpiresAt,
 			TokenType:     httpserver.TokenType(r.Credential.TokenType),
 			BasicUsername: r.Credential.BasicUsername,
 			Scope:         r.Credential.Scope,
-			ExpiresAt:     r.Credential.ExpiresAt,
 		},
 	}
 	for _, g := range r.Groups {

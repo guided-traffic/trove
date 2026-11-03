@@ -5,14 +5,16 @@ import (
 	"net/http"
 
 	"github.com/guided-traffic/trove/internal/api/bastionmark"
+	v1 "github.com/guided-traffic/trove/internal/api/v1"
+	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/bastionmain"
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
 // The wiring of the main installation's side of the trove Bastion (docs/developer/bastion.md, R-BAS-004 to
 // R-BAS-017). The contract work wires nothing but the seams' places: the chain stage of the default endpoint,
-// which is empty until the work packages fill it, and the flag that makes the unbuilt operations of the
-// management API answer 501 (v1.Options.BastionStubs).
+// which is empty until the work packages fill it.
 //
 // Each work package edits its own marked block, and only that one, and adds the fields it needs to App in
 // its own block of app.go:
@@ -37,7 +39,7 @@ func (a *App) bastionStage(isDefault bool) func(http.Handler) http.Handler {
 func (a *App) bastionStages() bastionmain.Stages {
 	var st bastionmain.Stages
 	// >>> package 2
-	// st.Recognize = …(the TokenAuthenticator of package 1, …)
+	st.Recognize = a.bastionRecognize()
 	// <<< package 2
 
 	// >>> package 3
@@ -104,3 +106,63 @@ func (a *App) bastionMetrics() *bastionmain.Metrics {
 }
 
 // <<< package 3
+
+// >>> package 2
+
+// bastionRecognize is the Recognize stage (R-BAS-008, R-BAS-009): its refusals are problem details of the
+// management API on every path, written with the request's ID and logger.
+func (a *App) bastionRecognize() func(http.Handler) http.Handler {
+	return bastionmain.Recognize(bastionmain.RecognizeOptions{
+		Tokens: a.bastionAuthenticator(), Metrics: a.bastionMetrics(), Throttle: a.bastionThrottle(),
+		Problem: func(w http.ResponseWriter, r *http.Request, err error) {
+			errs.Write(w, r, err, httpserver.RequestID(r.Context()), httpserver.Logger(r.Context()))
+		},
+	})
+}
+
+// bastionThrottle builds the failed-credential throttle of the request's client address for the recognition of
+// a Bastion token: the limiter and the exempt addresses of the authentication stage (R-AUTH-038). A replica
+// without the limiter (the shell profile) has none.
+func (a *App) bastionThrottle() func(*http.Request) bastionmain.Throttle {
+	lim := part[limitsArea](a.parts).failures
+	if lim == nil {
+		return nil
+	}
+	exempt := a.cfg.Auth.RateLimit.ExemptPrefixes()
+	return func(r *http.Request) bastionmain.Throttle {
+		// A nil token.Throttle converts to a nil bastionmain.Throttle: no typed nil.
+		return auth.NewAddressThrottle(lim, clientAddr(r), exempt, bastionmain.ThrottleScope)
+	}
+}
+
+// bastionServices are the services of the four interface operations of the default endpoint (R-BAS-010,
+// R-BAS-011, R-BAS-015, R-BAS-016); a replica without a database, and every other endpoint, has none.
+func (a *App) bastionServices(rt *endpointRuntime) v1.BastionServices {
+	in, id := part[infra](a.parts), part[identityArea](a.parts)
+	if !rt.cfg.Default || in.db == nil || id.settings == nil {
+		return v1.BastionServices{}
+	}
+	cfg := a.cfg
+	rec := a.auditRecorder()
+	return v1.BastionServices{
+		Config: cfg.Bastions, Release: buildVersion(), BaseURL: cfg.Server.BaseURL,
+		Anonymous: func(ctx context.Context) (bool, error) {
+			if !rt.cfg.Anonymous {
+				return false, nil
+			}
+			eff, err := id.settings.Effective(ctx)
+			return eff.AnonymousAccess, err
+		},
+		Authenticate: a.credentialStage(rt),
+		Shapes:       a.bastionShapes(),
+		Feed: bastionmain.NewFeed(bastionmain.FeedOptions{
+			DB: in.db, Lookback: cfg.Bastions.Feed.Lookback, MaxPage: cfg.Bastions.Feed.MaxPage, Endpoint: rt.cfg.Name, Log: a.log,
+		}),
+		Contacts: bastionmain.NewContacts(bastionmain.ContactOptions{DB: in.db, Audit: rec}),
+		Downloads: bastionmain.NewIntake(bastionmain.IntakeOptions{
+			DB: in.db, Audit: rec, MaxBatch: cfg.Bastions.Downloads.MaxBatch, MaxAge: cfg.Bastions.Downloads.MaxAge, Record: cfg.Audit.RecordDownloads,
+		}),
+	}
+}
+
+// <<< package 2

@@ -142,7 +142,9 @@ func classify(r *http.Request) (limiter, bucket string) {
 		return LimiterAnonymous, httpserver.InfoFrom(r.Context()).Client.String()
 	}
 	limiter = LimiterWrite
-	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
+	// The interface of a Bastion has read semantics whatever the method: its check and its report of downloads
+	// are POSTs that change no package content, and the write class is sized for a person's changes (R-BAS-008).
+	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions || p.Kind == httpserver.KindBastion {
 		limiter = LimiterRead
 	}
 	if packages {

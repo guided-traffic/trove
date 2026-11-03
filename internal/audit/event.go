@@ -3,6 +3,7 @@ package audit
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/meta"
 )
@@ -69,6 +70,11 @@ type Event struct {
 	Repository string
 	Path       string
 	Endpoint   string
+	// At, when set, is the time the event happened (occurred_at) for an asynchronous event
+	// whose producer learned of it later: the download intake of the Bastion interface
+	// records the time the Bastion reports (R-BAS-016). The zero value is the time of the
+	// call. A transactional event is always stamped by the database (the transaction's now()).
+	At time.Time
 	// Details is a JSON object of the type's data schema; nil is {}.
 	Details json.RawMessage
 	// Journal is the producer's journal entry (R-HA-054): IDs and states, never

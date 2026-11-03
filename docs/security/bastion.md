@@ -3,8 +3,9 @@
 Status: specified for phase 5b of the [project plan](../projektplan/BETA.md#phase-5b--trove-bastion-m13) and built in part. This
 page describes the design of [spec/bastion.md](../spec/bastion.md), because the threat model of an instance exposed to the internet is
 part of that design; it changes to describe the code, with links to it, in the change that builds each mechanism. Built so far on the
-main installation's side: the registrations and the Bastion token ([below](#the-registration-and-its-token-on-the-main-installation));
-the rest describes the design.
+main installation's side: the registrations and the Bastion token ([below](#the-registration-and-its-token-on-the-main-installation))
+and the interface (recognition, check, feed, download intake, contact; [its section](#the-main-installations-side-of-the-interface));
+on the Bastion's side: the cache, the shared state and the guard. The rest describes the design.
 
 This page says what the internet-facing Bastion can do, what an attacker who reaches it can do, what the Bastion's own token
 can do, and where abuse is stopped. The roles and boundaries of the main installation are in
@@ -95,6 +96,26 @@ that owns it:
   `bastion`, a revocation is journaled, and deleting a registration revokes its tokens first.
 - **Disabling is not revoking.** A disabled registration refuses its tokens within `auth.revocation_bound` on every replica and enabling
   it restores them; nothing is deleted.
+
+## The main installation's side of the interface
+
+What the main installation does with a request that claims to come from a Bastion, in the order the request meets it
+([R-BAS-008](../spec/bastion.md#r-bas-008--interface-routes-recognition-and-headers) to
+[R-BAS-017](../spec/bastion.md#r-bas-017--the-real-client-and-the-bastions-host-at-the-main-installation)):
+
+| Mechanism | What it guarantees | Code |
+|---|---|---|
+| Recognition | A request is a Bastion's only with a valid, enabled `bst` token in `Trove-Bastion-Authorization` (a forwarded request) or `Authorization` (an interface route); every other `Trove-Bastion-*` header is ignored. The stages behind it get a copy of the request without the Bastion token, so neither the dispatcher nor a remote repository's outbound client can pass it on. | [recognize.go](../../internal/bastionmain/recognize.go) |
+| Throttle of rejected Bastion tokens | The stage runs before the authentication stage, so it counts rejected `trv_bst_` tokens per client address (a budget of its own, the size of R-AUTH-038's) and refuses a throttled address before the token store is asked ([Q-BAS-65](../spec/bastion.md#q-bas-65--the-recognition-admits-an-interface-route-on-its-own-proof-throttles-tokens-it-cannot-place-and-counts-the-bastion-in-the-read-class), H-440) | [recognize.go](../../internal/bastionmain/recognize.go), [limiter.go](../../internal/auth/limiter.go) |
+| Interface routes | Admitted on the recognition alone, as the registration, which holds no grant; the registration's requests are charged to the read class under its token ([H-438](../spec/bastion.md#h-438--the-interface-calls-of-a-bastion-share-the-read-budget-of-its-token)) | [bastion_services.go](../../internal/api/v1/bastion_services.go) |
+| Check | The caller's credential is validated by the authentication stage of the default endpoint as a direct request from the caller's address: the endpoint's token types, the failed-credential throttle and `token.rejected` apply to that address, never to the Bastion's. A subject that is not usable gets no shapes. No `authz.denied` is written. | [bastion_check_api.go](../../internal/api/v1/bastion_check_api.go) |
+| Feed | Entries carry IDs and repository keys only. A cursor that is gone, from the future beyond the lookback or older than the audit retention, or too far behind, answers `reset`, never a truncated list. An event whose target cannot be read drops every answer. | [feed.go](../../internal/bastionmain/feed.go) |
+| Download intake | Events are recorded as `artifact.downloaded` marked `origin: bastion` with the registration's name, a time in the future at the time of receipt; a lost, expired or malformed event is counted in `bastion.downloads.dropped`. The time the Bastion reports is trusted ([H-439](../spec/bastion.md#h-439--download-events-enter-the-audit-trail-with-the-time-the-bastion-reports)). | [downloads.go](../../internal/bastionmain/downloads.go) |
+| Last contact | Written at most once a minute per replica, at most 256 rows per registration; a change of a reported value is `bastion.contact`. The values are what the Bastion says about itself, except the address, which is the one the main installation saw. | [contact.go](../../internal/bastionmain/contact.go) |
+
+`Trove-Bastion-Authorization` is redacted like `Authorization` in every log, span and support bundle: the key rule of R-OPS-013 matches
+the word `authorization` in a header name (tested in [redact_bastion_test.go](../../internal/observability/redact_bastion_test.go)). No
+`Trove-Bastion-*` request header is echoed; the one header on an answer to a Bastion request is the interface version.
 
 ## Where abuse is stopped
 
@@ -217,6 +238,12 @@ The gaps of the Bastion's mechanisms are recorded on the spec page, where the me
   a deleted registration's token leaves no rejection log;
 - [H-437](../spec/bastion.md#h-437--a-bastion-tokens-last-use-is-one-value-per-token-at-the-granularity-of-the-last-used-buffer) — the last
   use of a Bastion token is one value per token;
+- [H-438](../spec/bastion.md#h-438--the-interface-calls-of-a-bastion-share-the-read-budget-of-its-token) — the interface calls of a
+  Bastion share the read budget of its token;
+- [H-439](../spec/bastion.md#h-439--download-events-enter-the-audit-trail-with-the-time-the-bastion-reports) — download events enter
+  the audit trail with the time the Bastion reports, behind the position of a tailing consumer;
+- [H-440](../spec/bastion.md#h-440--an-address-that-sends-rejected-bastion-tokens-is-refused-its-valid-bastion-token-for-a-minute) — an
+  address that sends rejected Bastion tokens is refused its valid one for a minute;
 - [H-441](../spec/bastion.md#h-441--absent-rests-on-the-notes-of-the-cores-lookups-not-on-the-routes) — the class `absent` rests on the
   notes of the core's lookups;
 - [H-442](../spec/bastion.md#h-442--a-401-states-the-subject-as-invalid-whether-the-credential-was-rejected-or-none-was-sent) — a `401`

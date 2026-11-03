@@ -177,6 +177,15 @@ unchanged), so a fill that raced a revocation serves one request and is not cach
   ([login.md](login.md#seams-to-the-other-areas)) and the revocation by value; both callers pass the bucket through
   `auth.AddressBucket`, which maps an IPv6 address to its `/64` (Q-AUTH-90).
 
+## The Bastion's token in the stage (R-BAS-008)
+
+The stage never sees a Bastion token: `token.Service.Check` answers a `trv_bst_` value as an unknown token, and a Bastion request is recognized
+before the stage runs ([bastion.md](bastion.md#package-2-the-main-installations-interface)). Three things there touch the stage: `auth.Credential.ExpiresAt`
+(and `httpserver.Credential.ExpiresAt`) carry the validated token's expiry for the marking and the check; `auth.NewAddressThrottle(limiter, addr, exempt, scope)`
+builds the throttle of one address, with a bucket prefix for a kind of credential that counts apart (the Bastion token, `bastionmain.ThrottleScope`);
+and the check of the Bastion interface calls the same stage function as a direct request does, from a request of its own with the caller's address
+(`httpserver.WithClient`), so the rules of this page apply to the caller of a Bastion unchanged.
+
 ## Tests
 
 | Tier | Where | What |

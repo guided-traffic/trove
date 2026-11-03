@@ -5,6 +5,8 @@ import (
 	"net/netip"
 	"sync"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/auth/token"
 )
 
 // FailureLimiter is the count-only limiter of R-ARCH-034 that the failed-credential
@@ -117,6 +119,19 @@ type addrThrottle struct {
 
 func (t addrThrottle) Exceeded(ctx context.Context) bool { return t.l.Exceeded(ctx, t.bucket) }
 func (t addrThrottle) Count(ctx context.Context)         { t.l.Count(ctx, t.bucket) }
+
+// NewAddressThrottle returns the failed-credential throttle of one client address (R-AUTH-038): the address is
+// the bucket, and an address in auth.rate_limit.exempt_cidrs is never throttled. scope, when it is not empty,
+// prefixes the bucket, so that the failures of one kind of credential count against a budget of their own: the
+// recognition of a Bastion token (R-BAS-008) counts rejected Bastion tokens apart from the rejected credentials
+// of the authentication stage. It is nil when there is no limiter or no valid address, which every user of a
+// [token.Throttle] reads as no throttle.
+func NewAddressThrottle(l FailureLimiter, addr netip.Addr, exemptCIDRs []netip.Prefix, scope string) token.Throttle {
+	if l == nil || !addr.IsValid() || exempt(addr, exemptCIDRs) {
+		return nil
+	}
+	return addrThrottle{l: l, bucket: scope + addr.String()}
+}
 
 // AddressBucket is the bucket of a client address in auth.flow_starts
 // (R-AUTH-038, Q-AUTH-90): an IPv4 address as it is, an IPv6 address as its

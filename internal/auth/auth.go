@@ -34,15 +34,14 @@ const HeaderAPIKey = "X-NuGet-ApiKey" //nolint:gosec // G101: a header name, not
 
 // Credential is what proved the principal: IDs and states only.
 type Credential struct {
-	Method        Method
-	SessionID     string
-	TokenID       string
-	TokenType     token.Type
+	Method    Method
+	SessionID string
+	TokenID   string
+	TokenType token.Type
+	// ExpiresAt is the token's expiry, nil when it has none or the credential is no token.
+	ExpiresAt     *time.Time
 	Scope         *scope.Scope // nil: no ceiling (sessions)
 	BasicUsername string
-	// ExpiresAt is the expiry of the token, nil for a session and for a token that does not expire. The marking
-	// of a response to a Bastion request states it (R-BAS-013).
-	ExpiresAt *time.Time
 }
 
 // Result is what the stage yields for an authenticated or anonymous request. A

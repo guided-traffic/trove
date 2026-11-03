@@ -1,9 +1,10 @@
 # The trove Bastion: contracts
 
 Status: the contracts of phase 5b are laid (the shared types, interfaces, schema, routes, configuration and the skeleton of the
-role); the logic of the work packages is built package by package. Built: package 3 ([marking, the write probe and the read
-shape](#marking-the-write-probe-and-the-read-shape-package-3)), package 5 ([the cache backends](#the-cache-backends-package-5)), package 6
-([shared state and guard](#shared-state-and-the-guard)) and package 8 (the screen, client setup and the manual). The specification is [spec/bastion.md](../spec/bastion.md)
+role); the logic of the work packages is built package by package. Built: package 1 (registrations and the `bst` token),
+package 2 ([the main installation's interface](#package-2-the-main-installations-interface)), package 3 ([marking, the write
+probe and the read shape](#marking-the-write-probe-and-the-read-shape-package-3)), package 5 ([the cache backends](#the-cache-backends-package-5)),
+package 6 ([shared state and guard](#shared-state-and-the-guard)) and package 8 (the screen, client setup and the manual). The specification is [spec/bastion.md](../spec/bastion.md)
 (R-BAS-001 to R-BAS-049, decisions Q-BAS-1 to Q-BAS-97), its security perspective [security/bastion.md](../security/bastion.md), the plan
 [projektplan/BETA.md](../projektplan/BETA.md#phase-5b--trove-bastion-m13).
 
@@ -22,7 +23,7 @@ parallel: it says which package owns which file, which seams join them, how a re
   only and `internal/blob/s3` for `cache` only.
 - **Stubs are obviously stubs.** `mainclient.Stub`, `cache.Stub`, `downloads.Stub` and the placeholder engine answer
   [ErrNotBuilt](../../internal/bastion/mainclient/mainclient.go) or `404 bastion_not_served`; the operations of the management API
-  answer `501 bastion_not_implemented` ([bastion_stub.go](../../internal/api/v1/bastion_stub.go)). `server` logs the placeholders at
+  are built; the stub that answered `501 bastion_not_implemented` is gone with the last of them. `server` logs the placeholders at
   start. Replace a stub, never wrap it.
 - **Every file has one owner.** The tables below name it. Shared files carry `>>> package n` markers
   ([wire_bastion.go](../../internal/app/wire_bastion.go)); edit your block only.
@@ -43,6 +44,33 @@ parallel: it says which package owns which file, which seams join them, how a re
 
 The contract work (this page's author) owns [internal/bastion/iface](../../internal/bastion/iface), the schema, the OpenAPI document,
 the configuration trees and the skeleton. A change to one of those in a work package is a contract change: say so in the review.
+
+## Package 2: the main installation's interface
+
+Requests of a Bastion meet these pieces in this order: the Recognize stage in the chain of the default endpoint
+([recognize.go](../../internal/bastionmain/recognize.go): token, throttle, version, `Recognition`), the authentication function
+(`v1.BastionRouteAuth` admits an interface route as the registration, every other request is the stage's), the shared authorization step
+(`{bastion: true}`), then the handler. The four handlers are thin over the services of `v1.BastionServices`.
+
+| File | Responsibility |
+|---|---|
+| [bastionmain/recognize.go](../../internal/bastionmain/recognize.go) | `Recognize`, `RecognizeOptions`, `Throttle`, the interface metrics, the removal of the Bastion token from the request behind it |
+| [bastionmain/feed.go](../../internal/bastionmain/feed.go) | `Feed` (`Read`, `Position`), `mapEvent`: the table of R-BAS-015, the cursor, the resets |
+| [bastionmain/contact.go](../../internal/bastionmain/contact.go) | `Contacts.Record`: the contact upsert, the memory gate, the cap of 256 rows, `bastion.contact`; `Release` |
+| [bastionmain/downloads.go](../../internal/bastionmain/downloads.go) | `Intake.Accept`: `artifact.downloaded` per event, `bastion.downloads.dropped` |
+| [api/v1/bastion_services.go](../../internal/api/v1/bastion_services.go) | `BastionServices`, `writeInterface`, `BastionPrincipal`, `BastionRouteAuth` |
+| [api/v1/bastion_handshake_api.go](../../internal/api/v1/bastion_handshake_api.go), [bastion_check_api.go](../../internal/api/v1/bastion_check_api.go), [bastion_feed_api.go](../../internal/api/v1/bastion_feed_api.go), [bastion_downloads_api.go](../../internal/api/v1/bastion_downloads_api.go) | the four operations |
+| [app/wire_bastion.go](../../internal/app/wire_bastion.go) (the `package 2` block) | the Recognize stage, `bastionServices`, the metrics, the throttle; `bastionTokens` and `bastionShapes` are the two accessors packages 1 and 3 fill |
+| [audit/events_bastion_iface.go](../../internal/audit/events_bastion_iface.go) | `bastion.contact`, `bastion.downloads.dropped` |
+| [meta/postgres/queries/bastion_feed_names.sql](../../internal/meta/postgres/queries/bastion_feed_names.sql), [bastion_contact_cap.sql](../../internal/meta/postgres/queries/bastion_contact_cap.sql) | the two statements package 2 added to the contract's files |
+
+Things other code now relies on: `httpserver.Credential.ExpiresAt` (the marking's `expires=` and the check's `expiresAt`), `httpserver.KindBastion`,
+`httpserver.WithClient` (the check runs a credential for the caller's address), `audit.Event.At`, `auth.NewAddressThrottle`,
+`postgres.IsNoRows`. Recognition is also where the main installation's own hot path can be slowed by a Bastion: it adds a header lookup to every
+request of the default endpoint and a store lookup only for a value that starts with `trv_bst_`.
+
+To replace a seam: `App.bastionTokens` returns package 1's `TokenAuthenticator` (without one, every Bastion token is invalid), `App.bastionShapes`
+returns package 3's `ShapeResolver` (without one, the check answers `503`).
 
 ## Package tree
 
@@ -345,6 +373,9 @@ add `database: {host: x}` to the file and the start names `database.host` and th
 | `go test ./internal/api/v1` | the document's interface operations, the `{bastion: true}` form, the stubs; the registration operations answer 503 without their service |
 | `go test ./internal/bastionmain ./internal/auth ./internal/authz ./internal/project ./internal/auth/principal ./cmd/trove` | package 1: the authenticator, a Bastion token as no credential on any other route, the refusals of a Bastion as principal, the usage of `trove admin bastion` |
 | `make test-integration` (`test/integration/bastionreg`) | package 1 against PostgreSQL: `TestR_BAS_004_*` and `TestR_BAS_005_*` (registrations, tokens, limits, capabilities, events and journal, the authenticator across replicas, the admin commands) |
+| `go test ./internal/api/v1` | the document's interface operations, the `{bastion: true}` form, the stubs, the check against a fake stage and resolver, the intake's HTTP side, the read class of a Bastion |
+| `go test ./internal/bastionmain ./internal/httpserver ./internal/observability` | the Recognize stage and its throttle, the feed's mapping table, the intake and the contact helpers; the forwarded headers of a Bastion (`bastion_forwarded_test.go`); the redaction of `Trove-Bastion-Authorization` |
+| `make test-integration` (`test/integration/bastioniface`) | the Recognize stage and the four operations behind the real chain, stage, token service, decision point and audit writer on PostgreSQL, with fakes for the two seams of packages 1 and 3 |
 | `go test ./internal/archtest/...` | R-BAS-001's import rule and the layers of the Bastion's packages |
 | `go test ./internal/authz -run R_BAS_012` | the shape against the decision point ([authorization.md](authorization.md#read-shapes)) |
 | `go test ./internal/api/bastionmark ./internal/api/rawfiles ./internal/bastionmain ./internal/formathost` | the marking: class by kind, status and shape, the subject, the strip over the route table of npm and NuGet, the write probe in npm's and NuGet's shape, the notes of the lookups |

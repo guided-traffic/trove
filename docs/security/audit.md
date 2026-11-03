@@ -87,6 +87,24 @@ boundary and removes NUL bytes, so a hostile header cannot make a row large or m
 UUID is not stored in the `uuid` column; the actor's name is. A client address is stored only when it parses as an IP address.
 Details larger than 1 MiB are refused; at that size the producer is the bug.
 
+## Events a Bastion reports
+
+A Bastion reports the downloads it served from its cache through the interface of the main installation (R-BAS-016), and the main
+installation writes two events about its dealings with Bastions itself. All three are asynchronous
+([events_files.go](../../internal/audit/events_files.go), [events_bastion_iface.go](../../internal/audit/events_bastion_iface.go)):
+
+- `artifact.downloaded` with `details.origin: bastion`, `details.bastion` (the registration) and `details.replica`. The caller's token
+  and principal IDs, the client address, the path and the digest are what the Bastion reports: a holder of a Bastion token can name
+  any of them ([H-386](../spec/bastion.md#h-386--whoever-holds-the-bastion-token-can-test-credentials-name-client-addresses-and-add-download-events)),
+  which is why the event is marked and the registration's name is not the Bastion's to choose. `occurred_at` is the reported time, the
+  time of receipt for a future one (a Bastion cannot write into the future), and the writer places it in the partition of that time. A
+  consumer that follows the trail by time can miss an event that lands behind its position
+  ([H-439](../spec/bastion.md#h-439--download-events-enter-the-audit-trail-with-the-time-the-bastion-reports)).
+- `bastion.downloads.dropped` records events the Bastion lost or the intake dropped, so the loss is in the trail itself.
+- `bastion.contact` records the first report of a replica and a change of what it reports; the actor is the registration.
+
+The check of a Bastion writes `token.rejected` with the caller's address and the reason, as a direct request does, and no `authz.denied`.
+
 ## What this does not cover
 
 ### H-39 · Audit records are not tamper-evident
@@ -140,3 +158,7 @@ filters, and leave no trace of what they looked for; a compromised credential wi
 well. The refusal of a caller without the capability is recorded (`authz.denied`), and the request log (`log: request`) has the access, but the
 audit trail does not say who read which events. What makes it real: an `audit:read` credential in the wrong hands. Mitigations
 outside trove: grant the capability to few principals, and ship the `log: request` stream, which records every access, to the same place as the audit stream.
+
+The gaps of the Bastion interface's audit events are recorded with the Bastion's mechanisms on [the spec page](../spec/bastion.md#what-this-does-not-cover)
+and linked from [bastion.md](bastion.md#what-this-does-not-cover): [H-439](../spec/bastion.md#h-439--download-events-enter-the-audit-trail-with-the-time-the-bastion-reports)
+is the one that concerns this trail.

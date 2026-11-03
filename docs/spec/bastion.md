@@ -3,7 +3,9 @@
 Status: specification — the contracts of phase 5b are laid in the code ([developer/bastion.md](../developer/bastion.md), decisions
 [Q-BAS-48](#q-bas-48--a-registration-is-a-principal-row-plus-a-subtype-table-the-kind-and-the-token-type-are-admitted-by-one-contract-step)
 to [Q-BAS-54](#q-bas-54--the-roles-process-reuses-the-shell-of-the-others-and-answers-bastion_not_served-until-the-engine-exists)); the logic of the
-work packages is not built. Phase 5b of the [project plan](../projektplan/BETA.md#phase-5b--trove-bastion-m13)
+work packages is built as each of them lands (the main installation's interface, work package 2, with
+[Q-BAS-65](#q-bas-65--the-recognition-admits-an-interface-route-on-its-own-proof-throttles-tokens-it-cannot-place-and-counts-the-bastion-in-the-read-class)
+to [Q-BAS-69](#q-bas-69--the-last-contact-is-remembered-per-replica-bounded-per-registration-and-its-event-is-asynchronous)). Phase 5b of the [project plan](../projektplan/BETA.md#phase-5b--trove-bastion-m13)
 builds the MVP requirements of this page (milestone M13 of the [roadmap](../coverage/roadmap.md#p1-platform-milestones), moved
 into the beta by the owner on 2026-11-02). The owner's decisions of 2026-10-31 and 2026-11-02 are binding and recorded as
 [Q-BAS-1](#q-bas-1--the-bastion-asks-the-main-installation-and-keeps-no-copy-of-users-tokens-or-policies) to
@@ -424,6 +426,13 @@ installation's ingress or its Service.
 - Main side metrics: `trove_bastion_interface_requests_total{bastion, operation, outcome}` and
   `trove_bastion_forwarded_requests_total{bastion, class}` (`class` of R-BAS-013); `bastion` is the registration name, bounded
   by `bastions.max_registrations`.
+- **Recognition in detail** ([Q-BAS-65](#q-bas-65--the-recognition-admits-an-interface-route-on-its-own-proof-throttles-tokens-it-cannot-place-and-counts-the-bastion-in-the-read-class)).
+  The token is the Bearer credential of the first line of the header, and only a value that starts with `trv_bst_` is looked at; any
+  other credential leaves the request ordinary. The stages behind the recognition receive the request without the Bastion token. A
+  rejected Bastion token counts as a failure of the client address in a budget of its own, and an address in throttled mode is
+  refused `429 rate_limited` before the token is looked up; a request whose token names no registration is counted under the
+  registration `unknown`. A recognized interface request is the registration's, not the address's: the request log names it and the
+  general limits charge it to the class `read` under the bucket `token:<token ID>`, whatever the method.
 
 Acceptance criteria:
 
@@ -497,6 +506,8 @@ after every reconnect, and after a feed entry of the kind `settings` (R-BAS-015)
 - The main installation records the last contact of the registration (time, client address, `release` from `User-Agent`,
   interface version, `responseBaseUrl`, replica) at most once a minute per replica, and writes `bastion.contact` (asynchronous)
   when one of the reported values changes.
+  The contact is bounded: a registration keeps at most 256 replica rows, the newest, and a failure to record it does not fail the
+  handshake ([Q-BAS-69](#q-bas-69--the-last-contact-is-remembered-per-replica-bounded-per-registration-and-its-event-is-asynchronous)).
 
 Acceptance criteria:
 
@@ -542,6 +553,11 @@ content is cached and no fetch is needed (R-BAS-022, R-BAS-023).
 - The check writes no `authz.denied` events: it asks about repositories, not about a request a client made; the request that
   follows a `none` is the Bastion's own refusal (R-BAS-029), and its audit is the request log of the Bastion.
 - An answer has no lifetime of its own: the Bastion keeps it for its period (R-BAS-020), never beyond `expiresAt`.
+- **How the check validates** ([Q-BAS-66](#q-bas-66--the-check-runs-the-credential-through-the-endpoints-authentication-stage)). The
+  credential goes through the authentication stage of the default endpoint as a direct request from `clientAddress` would, so the
+  endpoint's token types and bindings apply, a rejected Bastion token presented as the caller's credential is `invalid`, and the last use
+  of the token names the caller's address. A subject that is not usable (`invalid`, `anonymous_refused`, `throttled`) carries an empty
+  `repositories` object. A `none` always names a status, and `401` for an anonymous caller.
 
 ```yaml
 bastions:                              # the main installation's section (the Bastion's own is bastion)
@@ -726,6 +742,10 @@ the content events below ([Q-BAS-29](#q-bas-29--the-feed-reads-the-journals-even
   entries of the whole lifetime of an answer (R-BAS-026,
   [Q-BAS-33](#q-bas-33--a-replica-starts-with-the-feed-history-of-an-answers-lifetime)).
 - Entries carry IDs, never names or secrets. The feed costs one indexed query per poll and replica.
+- **Cursor and cuts in detail** ([Q-BAS-68](#q-bas-68--the-feed-advances-over-every-event-it-consumed-is-cut-at-event-boundaries-and-resolves-member-names-when-it-is-read)).
+  The cursor names the last audit event the read consumed, also one that yielded no entry; a page ends between events, so the two
+  entries of one event are never separated; the member names of a membership event become IDs when the feed is read, and an event
+  whose target cannot be read drops every answer (`grants`).
 
 ```yaml
 bastions:                              # the main installation's section (the Bastion's own is bastion)
@@ -773,6 +793,10 @@ most `bastions.downloads.max_batch` (owner, [Q-BAS-13](#q-bas-13--downloads-serv
   handshake and does not send.
 - Downloads the Bastion fetched from the main installation are recorded by the main installation itself as the caller's
   request; the Bastion reports only downloads it served from its cache, so no download is counted twice.
+- **Events that cannot be recorded** ([Q-BAS-67](#q-bas-67--a-download-event-that-breaks-its-contract-is-dropped-and-counted-the-batch-is-refused-only-when-it-is-too-large)).
+  An event that breaks its contract (no time, repository or path, a SHA-256 that is no digest) is dropped like one older than `max_age`;
+  both are added to the count of `bastion.downloads.dropped`, which also names the parts (`reported`, `expired`, `invalid`). A batch above
+  `max_batch` is refused `422`.
 
 ```yaml
 bastions:                              # the main installation's section (the Bastion's own is bastion)
@@ -3437,6 +3461,139 @@ installations register Bastions by a name that later needs correcting.
 
 **Applied in the spec:** R-BAS-004; code: `internal/meta/postgres/queries/bastion_registration.sql`, `internal/bastionmain/registrations.go`.
 
+### Q-BAS-65 · The recognition admits an interface route on its own proof, throttles tokens it cannot place, and counts the Bastion in the read class
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the Recognize stage runs before the authentication stage (Q-BAS-52). On an interface route the authentication stage would
+see no credential and refuse the request whenever the default endpoint admits no anonymous request or the runtime switch is off,
+which is the normal state of a main installation that has a Bastion; and the stage runs before the rate limits and before the
+failed-credential throttle, so a flood of well-formed `trv_bst_` tokens would reach the token store unthrottled.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The authentication step of the chain admits a recognized interface route as the registration, the recognition applies the failed-credential throttle itself, and the registration is a principal of the kind `bastion` for the rate limits (chosen) | `v1.BastionRouteAuth` wraps the endpoint's stage; `bastionmain.Recognize` takes a throttle of the client address; the general limits classify the registration's requests in the read class under `token:<ID>` | The Bastion is never refused by the anonymous rules; the request log names the registration; a flood of tokens is throttled like any other credential; check and downloads (POSTs) are not charged to the write class | A line in the chain's authentication function and in the limit classifier |
+| (b) Declare the interface operations public and let the stage pass them | `{public: true}` plus the recognition as the real gate | No change to the chain | The document would state that the operations are open; the declaration `{bastion: true}` of Q-BAS-52 would mean nothing |
+| (c) Leave the interface routes to the anonymous classes by address | The Bastion's egress address is the bucket | No change to the limits | One address for all of a Bastion's traffic, in the class sized for strangers |
+
+**Choice:** (a). The recognition takes a token only from the first line of `Trove-Bastion-Authorization` (a forwarded request) or of
+`Authorization` (an interface route) and only when the scheme is Bearer and the value starts with `trv_bst_`; anything else is no
+Bastion request and every `Trove-Bastion-*` header is ignored. A recognized request reaches the stages behind it as a clone without
+the Bastion token. A token the authenticator refuses counts as a failure of the client address, in a bucket of its own (the limiter of R-AUTH-038, the
+prefix `bastion:`, so that the rejected credentials of the authentication stage never refuse a Bastion token and the other way round), and an
+address in throttled mode (300 rejected Bastion tokens a minute by default) is refused `429 rate_limited` with `Retry-After` before the
+authenticator is asked, a valid token included: an address that sent 300 rejected Bastion tokens in a minute is not a Bastion. The principal of a recognized interface request is the registration
+(`httpserver.KindBastion`); it is the bucket `token:<token ID>` of the class `read` of R-API-016 whatever the method.
+
+**Rationale:** the stage that refuses anonymous callers must not refuse the one caller whose proof it has just checked; and the cheapest
+way to hold the token store to the strength of every other credential is to count its failures where they are seen. The development
+agent would revisit the read class if a Bastion with many cold callers meets the budget (H-438), and the refusal of a valid token from
+a throttled address if the Bastion's egress address turns out to be shared with strangers that send rejected tokens (H-440).
+
+**Applied in the spec:** R-BAS-008; code: [recognize.go](../../internal/bastionmain/recognize.go), [bastion_services.go](../../internal/api/v1/bastion_services.go),
+[ratelimit.go](../../internal/api/v1/ratelimit.go), [limiter.go](../../internal/auth/limiter.go), [wire_bastion.go](../../internal/app/wire_bastion.go).
+
+### Q-BAS-66 · The check runs the credential through the endpoint's authentication stage
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The handler hands the credential to the authentication stage of the default endpoint in a request of its own and turns the verdict into the subject (chosen) | `GET /api/bastion-check` with `Authorization: Bearer <credential>` and the context of the request, whose client address is the one the body names | Exactly what a direct request is: the token types and bindings of the endpoint, the failed-credential throttle for the address, `token.rejected` with `source_ip = clientAddress`, `token.rejected` for a type the endpoint refuses, the last use of the token with the caller's address; one code path | The request is synthetic, and the stage's path rules (a package-protocol path with a safe method) are assumed |
+| (b) The handler calls `token.Service.Check` with a throttle of its own | Reimplements the stage's order | Smaller surface | A second implementation of R-AUTH-023, R-EP-010 and R-AUTH-038 that drifts from the first |
+| (c) A method on the stage that takes a credential and an address | Exported entry point of the stage | No synthetic request | A change to `internal/auth` for one caller |
+
+**Choice:** (a). The verdicts become the subject: a principal is `token` (with `tokenId`, `principalId` and the token's expiry,
+`httpserver.Credential.ExpiresAt`, absent for a token that does not expire) or `anonymous`; `invalid_token` and `principal_disabled`
+are `invalid`; `credentials_required` is `anonymous_refused`; `rate_limited` is `throttled` with `retryAfterSeconds` rounded up; a
+failure of the stage's stores is an error of the operation (`503`), never a verdict. A subject that cannot be used (`invalid`,
+`anonymous_refused`, `throttled`) carries an empty `repositories` object: the Bastion answers its caller from the kind. For a usable
+subject the shapes come from `bastionmain.ShapeResolver` on the index the request begins (`authz.Decider.Begin`, no audit event); a
+`none` without a status is completed with `404`, `401` for an anonymous caller, and a status the wire does not carry is replaced the
+same way. A body that is not valid is `400` (unknown member, trailing data, a wrong type) or `422` (an address that is none, no or too
+many repositories, an empty key, a credential longer than 8 KiB).
+
+**Rationale:** the acceptance of R-BAS-011 is that the check is a direct request's validation; the stage is the only place that
+holds it. The development agent would revisit (a) if the stage's rules start to depend on more of the request than its path, method,
+credential headers and client address.
+
+**Applied in the spec:** R-BAS-011; code: [bastion_check_api.go](../../internal/api/v1/bastion_check_api.go).
+
+### Q-BAS-67 · A download event that breaks its contract is dropped and counted; the batch is refused only when it is too large
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Drop and count the single event; refuse only a batch above `max_batch` (chosen) | An event without a time, repository or path, or with a SHA-256 that is no digest, and one older than `max_age`, are not recorded and counted | A poison event cannot hold the Bastion's buffer forever; the loss is in the audit trail | The Bastion learns of it from the audit trail and a log line only |
+| (b) Refuse the whole batch with `422` | Strict | The Bastion sees its bug at once | The Bastion (work package 7) retries the same batch, which blocks every later event |
+| (c) Record whatever arrives | No validation | Simple | An event that the table or the schema of `artifact.downloaded` cannot hold would be dropped by the writer without a trace |
+
+**Choice:** (a). One `bastion.downloads.dropped` event per batch holds `count` (the sum of the reported `dropped`, the events older than
+`max_age` and the invalid ones), the three parts as `reported`, `expired` and `invalid`, the period (`since`, when events were reported
+lost) and the replica; the batch without a loss writes none. The actor of an `artifact.downloaded` event is the principal the
+Bastion reports (kind from the principal table; a principal that is gone is recorded as a user with its ID), or `anonymous`, with the
+caller's token ID; `source_ip` is the caller's address and `occurred_at` the reported time, the time of receipt for one in the future.
+With `audit.record_downloads` off nothing is recorded, the lost-event count included.
+
+**Rationale:** R-BAS-016 says the loss belongs in the audit trail and an event older than `max_age` is "counted as dropped"; one event
+carries both. The development agent would revisit it if the owner wants a metric for the main side as well; that is a line in
+`bastionmain/metrics.go` and R-BAS-008.
+
+**Applied in the spec:** R-BAS-016; code: [downloads.go](../../internal/bastionmain/downloads.go), [events_bastion_iface.go](../../internal/audit/events_bastion_iface.go),
+[events_files.go](../../internal/audit/events_files.go) (`origin`, `bastion`, `replica`), [event.go](../../internal/audit/event.go) (`Event.At`).
+
+### Q-BAS-68 · The feed advances over every event it consumed, is cut at event boundaries and resolves member names when it is read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The cursor names the last audit event consumed, a page is cut between events, names become IDs at read time, and a target that cannot be read drops every answer (chosen) | Two queries (behind and ahead) over `audit_event`; at most one lookup of the virtual closure per repository and one of member names per page | The cursor never stalls on an event that yields no entry; an event with two entries is never split; no new write path | A read does up to two small extra queries |
+| (b) The cursor names the last entry | As the specification reads | Literal | An event that yields no entry (a membership event that only added members) would be re-read forever once it is the last one |
+| (c) Store the names resolved at write time | The producers put member IDs in the journal | No lookup at read | Changes the events of the identity area for the Bastion |
+
+**Choice:** (a). The table of R-BAS-015 is `mapEvent` in [feed.go](../../internal/bastionmain/feed.go). Details the table leaves open:
+`authz.role.unbound` reads the principal reference of the event (`user:` and `sa:` give a `principal` entry with `principalId`, every other
+reference a `grants` entry); `group.members.changed` entries come from the removed members only and the names are looked up in the principal table
+(`sa:<name>` for a service account) — members that no longer resolve give `grants`; `user.groups.synced` is a `principal` entry for the
+user only when groups were removed; an exposure event names the endpoint, and only the default endpoint's reaches the feed;
+`settings.auth.changed` yields `settings` and, when `anonymousAccess` went from on (or unknown) to off, `grants`; a token event whose ID cannot be
+read yields `grants`; a withdrawal event without a repository yields no entry and a warning in the log. The entries behind the cursor
+are counted as events, `4 × max_page` of them at most (`reset` beyond). A reset answers no entries and the position of now, which is the
+newest journaled event within the lookback or, without one, `t:<database clock>`; the handshake's `feed.cursor` is the same position.
+`content` entries list the repository first, then every virtual repository that includes it, recursively, in key order.
+The project events (`project.*`) and the ownership events are journaled but yield no entry, as the table says; the vulnerability events join with M4b.
+
+**Rationale:** each choice keeps a Bastion from keeping an answer an event may have narrowed, and from stalling. The development agent
+would revisit the count of events behind the cursor if journaled events become so frequent that the bound is reached in normal operation
+(Q-BAS-49's condition), and `grants` for an unresolvable member if the identity area records member IDs.
+
+**Applied in the spec:** R-BAS-015, R-BAS-010 (the cursor of the handshake); code: [feed.go](../../internal/bastionmain/feed.go),
+[bastion_feed_names.sql](../../internal/meta/postgres/queries/bastion_feed_names.sql), [bastion_feed_api.go](../../internal/api/v1/bastion_feed_api.go).
+
+### Q-BAS-69 · The last contact is remembered per replica, bounded per registration, and its event is asynchronous
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The statement of `BastionContactUpsert` enforces the minute, the replica remembers its own writes, and the rows of a registration are capped at 256 (chosen) | A repeat of unchanged values within a minute costs no statement; a statement that wrote nothing is not remembered; the newest 256 rows stay | The rule holds across replicas of the main installation; the replica name, which the Bastion chooses, cannot grow the table | Up to 256 replicas per registration are shown |
+| (b) The memory alone | Smaller | No statement for a repeat | Two replicas of the main installation write twice a minute |
+| (c) The statement alone, no cap | As the contract work wrote it | Fewer lines | A holder of the Bastion token creates a row per name until the 30-day prune |
+
+**Choice:** (a). The release is the text after `trove-bastion/` in the `User-Agent` up to the first space, at most 64 characters (empty for
+any other agent); the replica is `Trove-Bastion-Replica` (control characters removed, at most 253 characters) or `unknown`; the client address is the
+address after the trusted-proxy rule. `bastion.contact` is written (asynchronous, category `system`, the registration as actor) when the row is new or a
+reported value (address, release, version, base URL) changed, with these values in `details`. A failure to record the contact is logged and
+does not fail the handshake. The contacts not heard for 30 days are pruned by the writer, at most once an hour per replica.
+
+**Rationale:** the handshake is the Bastion's way to learn the main installation's state; the record about the call must not take it down, and
+must not be a way to fill a table. The development agent would revisit the cap if one registration legitimately runs more than 256 replicas.
+
+**Applied in the spec:** R-BAS-010; code: [contact.go](../../internal/bastionmain/contact.go), [bastion_contact_cap.sql](../../internal/meta/postgres/queries/bastion_contact_cap.sql),
+[bastion_handshake_api.go](../../internal/api/v1/bastion_handshake_api.go).
+
 ### Q-BAS-70 · `absent` is derived from the notes of the core's lookups, and only for a full reader
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -3991,6 +4148,44 @@ each replica used at its last handshake, up to `bastion.main.handshake_interval`
 the old token on the strength of the new token's `lastUsedAt` alone, with a replica that has not reloaded its Secret; the screen of
 R-BAS-007 shows the contacts next to the tokens, and a replica that still uses a revoked token gets `bastion_token_invalid` and treats
 the main installation as unreachable (R-BAS-027).
+
+### H-438 · The interface calls of a Bastion share the read budget of its token
+
+Stage: the general limits of R-API-016 on the Bastion interface (Q-BAS-65). Subject: the availability of the check, the feed and the
+handshake for a Bastion that serves many callers it has no answer for.
+
+Live on every main installation with a Bastion and `api.rate_limits.enabled`. Every interface request, the POSTs included, is
+charged to the class `read` under the bucket `token:<token ID>` of the Bastion token: 50 requests a second with a burst of 200 by default,
+cluster-wide. A Bastion that meets a flood of callers it has no answer for asks one check per credential and repository, bounded by its
+concurrency budget towards the main installation (R-BAS-025), which is far below that; beyond the budget the main installation answers `429`
+and the Bastion treats it as the main installation not answering. What makes it real: a cold Bastion in front of thousands of distinct
+credentials arriving within seconds, or a raised concurrency budget; `api.rate_limits.read` is the knob. The same budget bounds a
+compromised Bastion token (H-386), which is a feature.
+
+### H-439 · Download events enter the audit trail with the time the Bastion reports
+
+Stage: R-BAS-016 and the keyset readers of the audit trail (R-OPS-017). Subject: consumers that follow the trail by `(occurred_at, id)`.
+
+Live wherever `audit.record_downloads` is on and a Bastion reports. An `artifact.downloaded` event is stored with `occurred_at` set to the time
+the Bastion gives, up to `bastions.downloads.max_age` (30 days) before its arrival, and the Bastion buffers for minutes: the event lands
+behind the position of a consumer that already read past that instant (an export that pages by time, a SIEM that tails the trail) and that
+consumer never sees it unless it re-reads. The holder of the Bastion token can place events anywhere in the last 30 days (H-386). The events
+carry `origin: bastion` and the registration, so they are recognizable; the feed (R-BAS-015) reads no download event and is not affected.
+What makes it real: a tailing consumer of `GET /api/v1/audit/events` or of the export that must see every download; a shorter
+`max_age` narrows the window, and the consumer can filter on the registration and re-read the last window.
+
+### H-440 · An address that sends rejected Bastion tokens is refused its valid Bastion token for a minute
+
+Stage: the failed-credential throttle in the recognition (Q-BAS-65). Subject: the Bastion whose egress address is shared with a client that sends
+rejected tokens to the main installation.
+
+Live on every main installation with a Bastion. The recognition counts a rejected `trv_bst_` token against the client address, in a budget of
+its own (the size of the failed-credential budget of R-AUTH-038: 300 a minute by default), and refuses the address with `429` while it is in
+throttled mode, without looking at the token it carries: a Bastion's valid token from that address is refused as well. A forwarded request is counted against the
+caller's address (the one the Bastion forwards), so the Bastion itself is only affected on its interface routes, where the address is its egress
+address. What makes it real: another workload behind the same egress address that sends 300 or more rejected Bastion tokens to the main
+installation within a minute, or a Bastion whose own token was revoked and keeps calling; `auth.rate_limit.exempt_cidrs` with the Bastion's egress
+address closes it, at the price of letting that address guess tokens.
 ### H-441 · `absent` rests on the notes of the core's lookups, not on the routes
 
 Stage: R-BAS-013 and R-BAS-024, the marking of a `404`. Subject: a negative entry at the Bastion for an item that is merely

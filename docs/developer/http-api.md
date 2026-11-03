@@ -366,6 +366,16 @@ share one database and one Valkey.
   without a walk of its own. The first feature that registers another column writes its walk (the sealed counter in `listq`
   is the pattern).
 
+## The Bastion interface (R-BAS-008)
+
+The four operations with the tag `bastion` are `x-trove-permission: {bastion: true}` and `x-trove-bastion-interface: <n>`; the document refuses a version other than the
+build's. They are not part of the v1 promise but of the interface version, their bodies are the types of [internal/bastion/iface](../../internal/bastion/iface), and every
+answer carries `Trove-Bastion-Interface`. The shared authorization step admits them on the recognition alone; their handlers are
+[bastion_handshake_api.go](../../internal/api/v1/bastion_handshake_api.go), [bastion_check_api.go](../../internal/api/v1/bastion_check_api.go),
+[bastion_feed_api.go](../../internal/api/v1/bastion_feed_api.go) and [bastion_downloads_api.go](../../internal/api/v1/bastion_downloads_api.go); the services they take are
+`v1.BastionServices` (a nil member answers `503`). The registration of the caller of the stage is a principal of the kind `bastion` and the general limits charge it
+to the class `read` under its token whatever the method. Read [bastion.md](bastion.md#package-2-the-main-installations-interface) for the flow.
+
 ## Rate limits, CORS and response headers
 
 The chain's stage 7 is `v1.EdgeStage(CORS, rate limit)` built in [wire_api.go](../../internal/app/wire_api.go) and set as

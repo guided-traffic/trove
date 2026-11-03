@@ -289,6 +289,14 @@ refusal is `429 rate_limited` with `Retry-After`, as problem+json; on a package 
   `all` is the warning `endpoint_not_in_rules_mode` of the rule and of the check; the client address is the endpoint's
   `configuration.baseUrl` plus the format's `ProtocolBasePath` from `GET /api/v1/formats`.
 
+## The Bastion stage (R-BAS-008)
+
+Only the chain of the default endpoint carries the Bastion stage (`Chain.Bastion`, [wire_bastion.go](../../internal/app/wire_bastion.go)); a further endpoint
+never recognizes a Bastion, so a `trv_bst_` token there is an unknown token of a type the endpoint does not accept. The default endpoint's `auth.anonymous`
+and the host set do not matter to the interface routes: the Bastion is admitted by its token alone, and the response base URL of its handshake is derived
+as for any request (R-EP-003) from the forwarded host and `server.additional_base_urls`, which is how the Bastion learns whether the main installation
+honours its host.
+
 ## Surface
 
 `FamilyOf(pattern)` classifies a ServeMux pattern: `ui` (`GET /{$}`, `/ui/`, `/auth/`), `ci_exchange`

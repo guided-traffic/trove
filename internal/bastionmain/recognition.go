@@ -1,6 +1,9 @@
 package bastionmain
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Recognition is the result of recognizing a request of a Bastion (R-BAS-008, Q-BAS-25): the request carried a
 // valid `bst` token of an enabled registration, in Trove-Bastion-Authorization on a forwarded request or in
@@ -15,8 +18,10 @@ type Recognition struct {
 	// Bastion is the registration's name and BastionID its principal ID.
 	Bastion   string
 	BastionID string
-	// TokenID is the ID of the Bastion token that authenticated the request.
-	TokenID string
+	// TokenID is the ID of the Bastion token that authenticated the request and TokenExpiresAt its expiry
+	// (the handshake reports both, R-BAS-010).
+	TokenID        string
+	TokenExpiresAt time.Time
 	// Interface is the interface version the request announced; recognition requires it to equal
 	// iface.InterfaceVersion, so after recognition the two are the same number.
 	Interface int

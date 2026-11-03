@@ -88,6 +88,16 @@ func PrincipalFrom(ctx context.Context) Principal {
 	return AnonymousPrincipal()
 }
 
+// WithClient returns ctx whose resolved request information names client as the caller's address. The check
+// operation of the Bastion interface uses it to run a credential through the authentication stage on behalf
+// of the caller the Bastion serves: the failed-credential throttle and the audit events of the stage then
+// apply to that address and not to the Bastion's (R-BAS-011).
+func WithClient(ctx context.Context, client netip.Addr) context.Context {
+	info := InfoFrom(ctx)
+	info.Client = client
+	return context.WithValue(ctx, keyInfo, info)
+}
+
 // WithPrincipal stores the caller; the authentication stage and tests use it.
 func WithPrincipal(ctx context.Context, p Principal) context.Context {
 	return context.WithValue(ctx, keyPrincipal, p)

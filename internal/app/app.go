@@ -477,8 +477,8 @@ func (a *App) startClient() error {
 			Resolution: a.resolutionExplainer(),
 			LoadManual: help,
 			// The operations of the Bastion work answer 501 until their packages are built (wire_bastion.go).
-			BastionStubs: true,
-			Bastions:     a.bastionRegistrations(),
+			Bastions: a.bastionRegistrations(),
+			Bastion:  a.bastionServices(rt),
 		})
 		// The router drops the routes of a family the endpoint's surface does not hold.
 		api.Register(router)

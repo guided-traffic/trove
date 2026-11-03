@@ -66,23 +66,19 @@ func TestR_BAS_009_ADocumentedInterfaceVersionOtherThanTheCodesStopsTheLoad(t *t
 // TestR_BAS_005_AnInterfaceRouteAdmitsOnTheRecognitionAlone: without the recognition stage's proof the route
 // answers 401 bastion_token_invalid; with it the request reaches the handler, whatever the Access says.
 func TestR_BAS_005_AnInterfaceRouteAdmitsOnTheRecognitionAlone(t *testing.T) {
-	for _, stubs := range []bool{false, true} {
-		s := newSetup(t, func(o *Options) { o.Access, o.BastionStubs = bootstrapLike{}, stubs }, nil)
-		w := s.get(iface.PathHandshake)
-		if w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), errs.CodeBastionTokenInvalid) {
-			t.Fatalf("without recognition: %d %s", w.Code, w.Body.String())
-		}
-		rec := httptest.NewRecorder()
-		r := httptest.NewRequest(http.MethodGet, iface.PathHandshake, nil)
-		r = r.WithContext(bastionmain.WithRecognition(r.Context(), bastionmain.Recognition{Bastion: "partners", Route: true, Interface: iface.InterfaceVersion}))
-		s.handler.ServeHTTP(rec, r)
-		wantStatus, wantCode := http.StatusServiceUnavailable, errs.CodeUnavailable
-		if stubs {
-			wantStatus, wantCode = http.StatusNotImplemented, errs.CodeBastionNotImplemented
-		}
-		if rec.Code != wantStatus || !strings.Contains(rec.Body.String(), wantCode) {
-			t.Fatalf("with recognition and stubs=%v: %d %s", stubs, rec.Code, rec.Body.String())
-		}
+	s := newSetup(t, func(o *Options) { o.Access = bootstrapLike{} }, nil)
+	w := s.get(iface.PathHandshake)
+	if w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), errs.CodeBastionTokenInvalid) {
+		t.Fatalf("without recognition: %d %s", w.Code, w.Body.String())
+	}
+	rec := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, iface.PathHandshake, nil)
+	r = r.WithContext(bastionmain.WithRecognition(r.Context(), bastionmain.Recognition{Bastion: "partners", Route: true, Interface: iface.InterfaceVersion}))
+	s.handler.ServeHTTP(rec, r)
+	// The handshake has no services wired in this setup: the handler is reached and answers like every
+	// operation of the API whose service is missing.
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), errs.CodeUnavailable) {
+		t.Fatalf("with recognition and no service: %d %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -90,7 +86,7 @@ func TestR_BAS_005_AnInterfaceRouteAdmitsOnTheRecognitionAlone(t *testing.T) {
 // (work package 1); on a replica without the registration service, as in the tests of this package, they answer
 // 503 unavailable to a caller that may call them, not 501.
 func TestR_BAS_004_TheRegistrationOperationsAnswer503WithoutTheirService(t *testing.T) {
-	s := newSetup(t, func(o *Options) { o.BastionStubs = true }, authed)
+	s := newSetup(t, nil, authed)
 	for _, c := range []struct{ method, path string }{
 		{http.MethodGet, "/api/v1/bastions"},
 		{http.MethodGet, "/api/v1/bastions/partners"},

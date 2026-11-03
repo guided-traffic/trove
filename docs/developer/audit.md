@@ -15,8 +15,8 @@ its event types here.
 | File | Responsibility |
 |---|---|
 | [registry.go](../../internal/audit/registry.go), [schema.go](../../internal/audit/schema.go) | `EventType`, `Register` (panics on a programming error), `Freeze`, `Lookup`, `Types`; the rules of R-OPS-014 and the bounded-array check of the data schema |
-| [event.go](../../internal/audit/event.go) | `Event`, `Actor`, `Subject`, `Source`, `Outcome`, `Recorder`, `Nop` |
-| [events_audit.go](../../internal/audit/events_audit.go), `events_<area>.go` | the types of one area; the audit area registers `audit.exported`, [events_bastion.go](../../internal/audit/events_bastion.go) the `bastion.*` events of a registration (no journal flag; the token events of a Bastion token are registered with the identity events and carry `resource_type` `bastion`, R-BAS-004) |
+| [event.go](../../internal/audit/event.go) | `Event` (with `At`, the time of an asynchronous event the producer learned of later), `Actor`, `Subject`, `Source`, `Outcome`, `Recorder`, `Nop` |
+| [events_audit.go](../../internal/audit/events_audit.go), `events_<area>.go` | the types of one area; the audit area registers `audit.exported`, [events_bastion.go](../../internal/audit/events_bastion.go) the `bastion.*` events of a registration (no journal flag; the token events of a Bastion token are registered with the identity events and carry `resource_type` `bastion`, R-BAS-004); [events_bastion_iface.go](../../internal/audit/events_bastion_iface.go) the two events of the Bastion interface (`bastion.contact`, `bastion.downloads.dropped`) |
 | [recorder.go](../../internal/audit/recorder.go) | `Writer`, `New`, `RecordTx` (the transactional path), the journal rule, the PostgreSQL sink |
 | [async.go](../../internal/audit/async.go) | `Record` (the asynchronous path), the bounded buffer, the batch loop, the backoff, `Flush` |
 | [dedup.go](../../internal/audit/dedup.go) | deduplication of `authz.denied` and `token.rejected`, the switches for anonymous denials and downloads |
@@ -106,6 +106,27 @@ with `details.count` = the repeats and `details.repeat_of` = the first event's I
 of 0 turns deduplication off. The table holds at most `async_buffer` open windows (Q-OPS-42). `artifact.downloaded` is recorded only with
 `audit.record_downloads`. A producer therefore passes `details.required_action` with every `authz.denied`.
 
+## The Bastion feed over the journal
+
+The revocation feed of the Bastion interface (R-BAS-015, [Q-BAS-29](../spec/bastion.md#q-bas-29--the-feed-reads-the-journals-events-from-the-audit-table),
+[Q-BAS-68](../spec/bastion.md#q-bas-68--the-feed-advances-over-every-event-it-consumed-is-cut-at-event-boundaries-and-resolves-member-names-when-it-is-read))
+reads the journaled events from `audit_event` itself, not from `revocation_outbox` (which a worker ships and deletes) and adds no write path.
+It lives in [bastionmain/feed.go](../../internal/bastionmain/feed.go), over the queries of
+[bastion_feed.sql](../../internal/meta/postgres/queries/bastion_feed.sql) and [bastion_feed_names.sql](../../internal/meta/postgres/queries/bastion_feed_names.sql).
+
+- **The list of actions** is `feedActions()`: the subset of the registry that the table of R-BAS-015 maps. A test checks that every name is a
+  registered, transactional event and that each journaled type the table names is in it. A new event type that narrows access needs a row in the table, a
+  case in `mapEvent` and an entry in the list, or the Bastion keeps what it should drop.
+- **A poll** is `BastionFeedCursorState` (does the cursor's event exist, the database clock, the retention), `BastionFeedBehind` (the events within the
+  lookback up to and including the cursor, at most `4 × max_page + 1`) and `BastionFeedAhead` (the events after it, `limit + 1`), all by the primary key
+  `(occurred_at, id)`; a `content` entry adds `BastionVirtualClosure` per repository and a membership event one `BastionPrincipalIDsByName`.
+- **`reset`** is the cursor's event gone within the retention, a cursor in the future beyond the lookback, a cursor before the retention, or more than
+  `4 × max_page` events behind it. The test deletes the cursor's row to stand for a point-in-time restore.
+- **The fields an event must carry** for its entry: `resource_id` (the token, user or service account ID), `repository` (`npm.unpublish`,
+  `package.deleted`), `details.predecessor` (`token.rotated`), `details.tokenIds` (`ci.token.revoked`), `details.principal` and `details.principalId`
+  (`authz.role.unbound`), `details.removed[].member` (`group.members.changed`), `details.endpoint` (`endpoint.exposure.*`) and `details.before` and
+  `details.after` with `anonymousAccess` (`settings.auth.changed`). Changing one of them in its producer changes the feed.
+
 ## Query
 
 `Store.Query(ctx, Filter, Page)` returns `Result{Items, Next}`; `Next` is the keyset position `(OccurredAt, ID)` of the last item, to
@@ -182,6 +203,7 @@ The composition root holds the recorder as `a.m1.recorder` (set at step 4) and t
 | Where | What |
 |---|---|
 | [internal/audit](../../internal/audit) `*_test.go` | `journal_list_test.go` reads the table of R-HA-054 from the specification and checks that every event it names is registered with the journal flag, transactional and with a required entry (the events of areas that do not exist yet are on an explicit pending list, and a registered one must leave it); registry rules, row mapping, the writer against a fake sink (batching, backoff, drop on a full buffer, a refused row, flush at a deadline), deduplication, the switches |
+| [test/integration/bastioniface](../../test/integration/bastioniface) | the feed over real events and over events inserted at chosen instants: the lookback, paging, event boundaries, the four resets (`feed_test.go`), the intake and the dropped count (`downloads_test.go`) |
 | [test/integration/audit](../../test/integration/audit) | `tx_test.go` rollback, journal row, fault injection, ties; `async_test.go` batching, the locked table, the lost connection, a refused row, dedup over replicas; `partitions_test.go` start-up, retention, migrate; `query_test.go` ordering, keyset, filters, `Get`; `privileges_test.go` the runtime role |
 | [test/integration/login/e1_5_test.go](../../test/integration/login/e1_5_test.go) | E1.5 across all the producers it names (login, failed login, token creation and revocation, policy change, denied deploy) through the real routes, found by the query and in the log stream ([login.md](login.md)) |
 | [test/integration/audit/api_test.go](../../test/integration/audit/api_test.go) on [test/integration/stack](../../test/integration/stack) | E1.5 through HTTP on three replicas (policy changes and a denied deploy found by the query and present in the log stream), the permission on all three operations, the filter validation, a limit=1 walk across replicas with a write between pages, the correct count and `repeat_of` of denial summaries and the anonymous key by address, the export (2,300 events over three batches in both formats, `audit.exported` first, a slow reader holding no transaction, bad ranges, an export that cannot be recorded), and `authz.settings.changed` from a real repository update |
