@@ -218,8 +218,8 @@ Found on 2026-11-03 while building phase 6:
   `test/integration/proxy` beside seven agents on the shared stack, `TestR_NPM_010_ThousandVersions` took 403 ms against
   200 ms on a miss and 41 ms against 10 ms from the cache, and one case of `TestCollapse` served a waiter after 4.6 s with a 3 s
   lock and a 100 ms poll (not the case F-39 fixed). Both passed in the integration agent's run and in Test and Release run
-  41677819243. `TestR_BAS_020` of `internal/bastion/engine` failed once in a full `go test -race ./internal/...` and passed
-  alone three times. Done when a run under load (`-count` beside CPU load, as for F-35 and F-39) reproduces one and its cause is
+  41677819243. (`TestR_BAS_020` of `internal/bastion/engine`, which failed the same way, is fixed: it read the answer inside its renewal
+  window.) Done when a run under load (`-count` beside CPU load, as for F-35 and F-39) reproduces one and its cause is
   fixed, or 200 runs under load pass.
 
 Found on 2026-11-03 while closing phase 5:
