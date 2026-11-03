@@ -151,7 +151,10 @@ func TestBastion_R_BAS_049_InterfaceMismatch(t *testing.T) {
 			default:
 			}
 			in := loopInstall{start: time.Now()}
-			c.wipeClientState(dir)
+			// The store below $HOME/.local too: a client that has the versions in its store installs them without a
+			// request, and then nothing keeps the Bastion's answers fresh (the loop's installs took 0 s in run
+			// 41714935482, and the grace-period install met expired answers).
+			c.wipeAll(dir)
 			in.code = c.run(dir, c.frozenInstall()...).Code
 			in.end = time.Now()
 			installs = append(installs, in)
