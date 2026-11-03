@@ -280,9 +280,16 @@ func TestCollapse(t *testing.T) {
 		plain := e.newReplica("plain", replicaOpts{valkey: vkUnreachable})
 		admin := e.valkeyAdmin(b)
 		setForeign(t, admin, e.lockKey(rem, path, ""), 30*time.Second)
-		results := make(chan served, 50)
+		type finished struct {
+			served
+			at time.Time
+		}
+		results := make(chan finished, 50)
 		for range 50 {
-			go func() { results <- b.artifact(rem, path) }()
+			go func() {
+				s := b.artifact(rem, path)
+				results <- finished{s, time.Now()}
+			}()
 		}
 		time.Sleep(300 * time.Millisecond)
 		if s := plain.artifact(rem, path); s.status != 200 {
@@ -290,19 +297,43 @@ func TestCollapse(t *testing.T) {
 		}
 		released := time.Now()
 		delKey(t, admin, e.lockKey(rem, path, ""))
+		var last time.Time
 		for range 50 {
 			select {
 			case s := <-results:
 				if s.status != 200 || !bytes.Equal(s.body, tarball) {
 					t.Fatalf("%d (%v)", s.status, s.err)
 				}
-			case <-time.After(10 * time.Second):
+				if s.at.After(last) {
+					last = s.at
+				}
+			case <-time.After(30 * time.Second):
 				t.Fatal("a waiter was not served")
 			}
 		}
-		if took := time.Since(released); took > time.Second {
-			t.Fatalf("the waiters needed %s after the lock vanished; the poll interval is 100 ms", took)
+		// Every waiter notices the missing key within one poll (100 ms) and then
+		// serves the stored entry like a hit: 50 bodies of 400 kB through the
+		// replica, the database and the object store. That serving is CPU work,
+		// and a fixed bound on it fails on a loaded runner (the last waiter was
+		// served 2 to 5 s after the delete with 30 busy processes beside the
+		// test, while the poll itself is a timer of 100 ms). What the test pins is
+		// that the waiters are woken by the poll and not by the lock's TTL (30 s)
+		// or the wait bound. So the bound is ten polls (1 s) for the wake-up plus
+		// four times what the same 50 requests cost as plain hits right now, under
+		// the same load (the waiters were 0.4 to 2.5 times that in 42 runs under
+		// load). A waiter that wakes on the TTL or the wait bound exceeds it.
+		took := last.Sub(released)
+		hitsStart := time.Now()
+		for i, s := range burst(50, []*replica{b}, rem, path) {
+			if s.status != 200 || !bytes.Equal(s.body, tarball) {
+				t.Fatalf("hit %d: %d (%v)", i, s.status, s.err)
+			}
 		}
+		hits := time.Since(hitsStart)
+		if limit := time.Second + 4*hits; took > limit {
+			t.Fatalf("the waiters needed %s after the lock vanished; the poll interval is 100 ms and 50 hits take %s (limit %s)", took, hits, limit)
+		}
+		t.Logf("waiters %s after the delete, 50 hits %s", took, hits)
 		if n := up.Count("GET", "/"+path); n != 1 {
 			t.Fatalf("the upstream saw %d GETs", n)
 		}

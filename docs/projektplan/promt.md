@@ -222,10 +222,6 @@ Found on 2026-11-03 while closing phase 5:
   matter: done when `e2e on kind (push)` runs next to a nightly run without PostgreSQL probe timeouts in
   `events-trove.txt` of the cluster-state artifact (more CPU for the runners or runner labels that keep the two apart);
   a probe-timeout setting in `deploy/dev/postgres.yaml` would hide the starvation and is not the fix.
-- **F-39 · `TestCollapse` of `test/integration/proxy` failed twice in a full run of the package under load** (read). Seen on
-  2026-11-03 by the development agent that built the marking of phase 5b, while eight agents shared the integration stack; it
-  passed alone (33 s), and the change under test does not touch collapsing. The failure is in the flight-lock timing. Done when
-  a run under load (`-count` beside CPU load, as for F-35) reproduces it and the cause is fixed, or 200 runs under load pass.
 - **F-40 · The scheduled nightly run 41611487424 was red in `failover` and `ci-ha` on the runner's DNS, not on a test** (read).
   Both jobs failed in their artifact upload step: `ci-ha` with `getaddrinfo EAI_AGAIN` for the artifact service after its test
   step passed, `failover` in the step "Upload the go test -json report", whose log is no longer retrievable (`BlobNotFound`), so
