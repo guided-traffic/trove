@@ -138,46 +138,28 @@ func hostOf(raw string) string {
 // itself read in the writing transaction: a first publish creates its auto claim in the same transaction, which the
 // per-replica index does not hold yet.
 func (s *Service) scopeOf(ctx context.Context, rv repoView, name string, inTx claimReader) (sc Scope, claimRepo string, err error) {
-	switch rv.Class {
-	case repository.Remote:
-		switch rv.Settings.MatchPublicAdvisories {
-		case vuln.MatchAlways:
-			return ScopeMatched, "", nil
-		case vuln.MatchNever:
-			return ScopeNotCovered, "", nil
-		}
-		if s.publicUpstream(rv.Format, rv.UpstreamHost) {
-			return ScopeMatched, "", nil
-		}
-		return ScopeNotCovered, "", nil
-	case repository.Local:
-		switch rv.Settings.MatchPublicAdvisories {
-		case vuln.MatchAlways:
-			return ScopeMatched, "", nil
-		case vuln.MatchNever:
-			return ScopeInternal, "", nil
-		}
-		repo, internal, err := s.rule.Claim(ctx, rv.Format, name)
+	if sc, decided := repositoryScope(s.o.PublicUpstreams, rv); decided {
+		return sc, "", nil
+	}
+	repo, internal, err := s.rule.Claim(ctx, rv.Format, name)
+	if err != nil {
+		return ScopeMatched, "", err
+	}
+	if internal {
+		return ScopeInternal, repo, nil
+	}
+	if inTx != nil {
+		own, err := inTx.RepoClaims(ctx, rv.ID)
 		if err != nil {
 			return ScopeMatched, "", err
 		}
-		if internal {
-			return ScopeInternal, repo, nil
-		}
-		if inTx != nil {
-			own, err := inTx.RepoClaims(ctx, rv.ID)
-			if err != nil {
-				return ScopeMatched, "", err
-			}
-			for _, p := range own {
-				if cp, perr := repository.ParseClaimPattern(p); perr == nil && cp.Match(name) {
-					return ScopeInternal, rv.Key, nil
-				}
+		for _, p := range own {
+			if cp, perr := repository.ParseClaimPattern(p); perr == nil && cp.Match(name) {
+				return ScopeInternal, rv.Key, nil
 			}
 		}
-		return ScopeMatched, "", nil
 	}
-	return ScopeNotCovered, "", nil
+	return ScopeMatched, "", nil
 }
 
 // claimReader is the read of a repository's own claims in the writing transaction.
@@ -186,14 +168,57 @@ type claimReader interface {
 }
 
 // publicUpstream reports whether the host is listed in vulnerabilities.matching.public_upstreams for the format.
-func (s *Service) publicUpstream(format, host string) bool {
+func publicUpstream(public map[string][]string, format, host string) bool {
 	if host == "" {
 		return false
 	}
-	for _, h := range s.o.PublicUpstreams[format] {
+	for _, h := range public[format] {
 		if strings.EqualFold(h, host) {
 			return true
 		}
 	}
 	return false
+}
+
+// repositoryScope is the part of the table of R-VULN-010 that the repository alone decides: a remote repository by its
+// matchPublicAdvisories and upstream host, a local one by always (matched) and never (internal). decided is false for a local
+// repository with auto, whose scope depends on the name.
+func repositoryScope(public map[string][]string, rv repoView) (sc Scope, decided bool) {
+	switch rv.Class {
+	case repository.Remote:
+		switch rv.Settings.MatchPublicAdvisories {
+		case vuln.MatchAlways:
+			return ScopeMatched, true
+		case vuln.MatchNever:
+			return ScopeNotCovered, true
+		}
+		if publicUpstream(public, rv.Format, rv.UpstreamHost) {
+			return ScopeMatched, true
+		}
+		return ScopeNotCovered, true
+	case repository.Local:
+		switch rv.Settings.MatchPublicAdvisories {
+		case vuln.MatchAlways:
+			return ScopeMatched, true
+		case vuln.MatchNever:
+			return ScopeInternal, true
+		}
+		return ScopeMatched, false
+	}
+	return ScopeNotCovered, true
+}
+
+// RepositoryCovered reports whether versions of the repository can be in scope, as the snapshot and the configured public
+// upstreams (vulnerabilities.matching.public_upstreams by format) alone say (no query): false for a remote repository whose
+// upstream is not public and for a local one with matchPublicAdvisories never, whose versions are never evaluated, so never
+// pending (R-VULN-015, R-VULN-001). A local repository with auto is covered here, because a claimed name is internal and the
+// name is not known to the caller (Q-VULN-75); a repository the evaluation does not apply to is covered as well, so that the
+// answer never withholds less.
+func RepositoryCovered(public map[string][]string, repo repository.Repository) bool {
+	rv, ok := viewOf(repo)
+	if !ok {
+		return true
+	}
+	sc, decided := repositoryScope(public, rv)
+	return !decided || sc == ScopeMatched
 }

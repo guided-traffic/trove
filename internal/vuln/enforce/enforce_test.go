@@ -81,7 +81,7 @@ func newFixture(t *testing.T, st states, enforcement vuln.Enforcement) *fixture 
 	return f
 }
 
-var scanned = vuln.Policy{Ecosystem: "npm", Enabled: true, Enforcement: vuln.EnforceBlocks, BlockMalicious: true, OnMissingData: vuln.MissingAllow}
+var scanned = vuln.Policy{Ecosystem: "npm", Enabled: true, Covered: true, Enforcement: vuln.EnforceBlocks, BlockMalicious: true, OnMissingData: vuln.MissingAllow}
 
 func malRow() vuln.BlockRow {
 	return vuln.BlockRow{FindingID: "01933b2a-0000", AdvisoryID: "MAL-2026-1234", Kind: advisory.KindMalicious, Status: vuln.StatusNeedsTriage}

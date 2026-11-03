@@ -49,6 +49,10 @@ type Options struct {
 	// States answers the state of an ecosystem's data; nil is a replica that has not wired the scanning, which resolves
 	// every policy as disabled.
 	States vuln.States
+	// Covered is the repository-level part of the scope rule (R-VULN-010): whether versions of the repository can be in
+	// scope. A repository that is not covered is never refused for missing data (R-VULN-015, Q-VULN-75). Nil covers every
+	// repository, which is the fail-closed answer.
+	Covered func(repository.Repository) bool
 	// Evaluator evaluates a remote miss; nil evaluates none (only the missing-data rule applies).
 	Evaluator vuln.Evaluator
 	// Names reads the package and version of a stored version when a download is refused; nil names the path only.
@@ -99,7 +103,9 @@ func (e *Enforcer) PolicyOf(r repository.Repository) vuln.Policy {
 	if e == nil || e.o.States == nil {
 		return vuln.Policy{}
 	}
-	return r.VulnerabilityPolicy(e.o.Enabled, e.o.Enforcement)
+	p := r.VulnerabilityPolicy(e.o.Enabled, e.o.Enforcement)
+	p.Covered = e.o.Covered == nil || e.o.Covered(r)
+	return p
 }
 
 // Decide is the verdict on a download of a stored item: the policy and blocking row the lookup returned, and the state of
@@ -115,6 +121,11 @@ func (e *Enforcer) Decide(p vuln.Policy, row vuln.BlockRow, versionID int64) vul
 // repository whose onMissingData is block, and only when no finding blocks already, so the download of a version in a
 // repository that allows missing data never touches the state cache (R-VULN-015, R-ARCH-032).
 func (e *Enforcer) verdict(p vuln.Policy, row vuln.BlockRow) vuln.Block {
+	if !p.Covered && p.OnMissingData == vuln.MissingBlock {
+		// Not covered: the version is internal or not covered, never pending, so the missing-data rule does not apply
+		// (R-VULN-015); complete data makes the rule a no-op without reading the state.
+		return vuln.Verdict(p, row, advisory.DataState{Complete: true})
+	}
 	if p.OnMissingData != vuln.MissingBlock {
 		return vuln.Verdict(p, row, advisory.DataState{})
 	}

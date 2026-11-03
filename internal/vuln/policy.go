@@ -31,6 +31,11 @@ type Policy struct {
 	// BlockMalicious and OnMissingData are the repository's members.
 	BlockMalicious bool
 	OnMissingData  OnMissingData
+	// Covered is true when versions of the repository can be in scope of public advisories, as the repository's settings and
+	// upstream alone say (R-VULN-010). Only a covered policy can be pending data: a repository whose versions are never
+	// evaluated (a remote whose upstream is not public, a local one with matchPublicAdvisories never) is never refused for
+	// missing data (R-VULN-015, Q-VULN-75). The enforcer fills it; a policy built elsewhere leaves it false.
+	Covered bool
 }
 
 // PolicyFor resolves the repository's member for its format's ecosystem and the installation's switches.

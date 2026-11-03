@@ -281,6 +281,11 @@ snapshot (`repository.Repository.VulnerabilityPolicy`, through `enforce.Enforcer
 | the name of a refused version | [vuln/store/enforce.go](../../internal/vuln/store/enforce.go), [queries/vuln_enforce.sql](../../internal/meta/postgres/queries/vuln_enforce.sql) | `VersionNames`, read when a download is refused (and kept for a minute), never on a served one |
 | the wiring | [app/wire_vuln.go](../../internal/app/wire_vuln.go) (the enforcer, built last), `wireFiles`, `wireProxyEngine`, `wireFormatHost` | `vulnArea.enforcer`; the three consumers take the area |
 
+**The missing-data rule is scoped by the repository (C6, Q-VULN-75).** `Enforcer.PolicyOf` fills `vuln.Policy.Covered` through `enforce.Options.Covered`,
+which [app/wire_vuln.go](../../internal/app/wire_vuln.go) wires to `evaluate.RepositoryCovered` ([scope.go](../../internal/vuln/evaluate/scope.go): the
+repository-level part of `scopeOf`, no query), and `Enforcer.verdict` applies `onMissingData: block` to a covered policy only, so a remote with a non-public
+upstream is served on the miss and on the stored download alike. A policy built by hand must set `Covered`; the claimed-name part stays fail-closed (H-502).
+
 The refusal needs no code in a format: the npm and NuGet `WriteError` and the problem writer render kind, code, text and headers of an `errs`
 error already, so the npm body, the NuGet line and the problem details of R-VULN-016 are one error.
 

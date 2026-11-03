@@ -7,6 +7,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/jobs"
+	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/vuln"
 	"github.com/guided-traffic/trove/internal/vuln/enforce"
 	"github.com/guided-traffic/trove/internal/vuln/evaluate"
@@ -109,8 +110,9 @@ func (a *App) wireVuln(ctx context.Context, in infra, repo repositoryArea, vir v
 
 	// The enforcer takes the ports above, so it is built last: a port that is still nil is a part that is not wired, and the
 	// enforcer then resolves every policy as disabled.
+	public := vcfg.Matching.PublicUpstreams
 	out.enforcer = enforce.New(enforce.Options{
-		Enabled: vcfg.Enabled, Enforcement: vuln.Enforcement(vcfg.Enforcement),
+		Covered: func(r repository.Repository) bool { return evaluate.RepositoryCovered(public, r) }, Enabled: vcfg.Enabled, Enforcement: vuln.Enforcement(vcfg.Enforcement),
 		States: out.states, Evaluator: out.evaluator, Names: store.NewEnforce(in.db), Metrics: m, Audit: in.rec,
 		BaseURL: a.cfg.Server.BaseURL, Log: a.log.With("component", "vuln-enforce"),
 	})

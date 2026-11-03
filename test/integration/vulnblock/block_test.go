@@ -432,6 +432,53 @@ func TestR_VULN_015_ARemoteMissWithMissingDataIsRefusedBeforeTheFetchWhenTheRepo
 	}
 }
 
+// R-VULN-015 "Not evaluated yet", R-VULN-001, Q-VULN-75 (C6): onMissingData block applies only to versions in scope. A remote
+// whose upstream is not public never has a version in scope, so its miss and its stored download are both served before the
+// first import; a remote that matches public advisories refuses both with vulnerability_data_missing.
+func TestR_VULN_015_MissingDataAppliesOnlyToVersionsInScope(t *testing.T) {
+	e := newEnv(t, options{})
+	r := e.replica("web-1")
+	e.states.set("npm", advisory.DataState{})
+	for _, repo := range []string{"npm-remote-strict", rPrivate} {
+		if a := e.do(r, "GET", "/api/npm/"+repo+"/"+e.pkg, e.tokReader); a.Status != 200 {
+			t.Fatalf("document of %s: %d %s", repo, a.Status, a.Body)
+		}
+	}
+	// Not public: the miss is fetched and stored, the stored item is served.
+	path := tgzPath(rPrivate, e.pkg, e.ver)
+	for _, what := range []string{"the miss", "the stored download", "the stored download again"} {
+		if a := e.do(r, "GET", path, e.tokReader); a.Status != 200 {
+			t.Fatalf("%s of the not public remote: %d %s", what, a.Status, a.Body)
+		}
+	}
+	if got := e.stub.Counts().Tarballs(e.pkg); got != 1 {
+		t.Errorf("%d upstream tarball requests for the not public remote, want the one of the miss", got)
+	}
+	e.requireLinked(rPrivate, e.pkg, e.ver)
+	// Matched: the miss is refused before the fetch, and so is a stored download once the data is incomplete again.
+	strict := tgzPath("npm-remote-strict", e.pkg, e.ver)
+	refused := func(what string) {
+		t.Helper()
+		a := e.do(r, "GET", strict, e.tokReader)
+		if a.Status != http.StatusForbidden || npmError(t, a)["code"] != errs.CodeVulnerabilityDataMissing {
+			t.Fatalf("%s of the matched remote: %d %s", what, a.Status, a.Body)
+		}
+	}
+	refused("the miss")
+	if got := e.stub.Counts().Tarballs(e.pkg); got != 1 {
+		t.Errorf("%d upstream tarball requests after a refused miss, want the one of the other remote", got)
+	}
+	e.states.set("npm", advisory.DataState{Complete: true})
+	if a := e.do(r, "GET", strict, e.tokReader); a.Status != 200 {
+		t.Fatalf("the matched remote with complete data: %d %s", a.Status, a.Body)
+	}
+	e.states.set("npm", advisory.DataState{})
+	refused("the stored download")
+	if a := e.do(r, "GET", path, e.tokReader); a.Status != 200 {
+		t.Errorf("the not public remote after the data went incomplete again: %d %s", a.Status, a.Body)
+	}
+}
+
 // R-VULN-015: the installation switch off blocks nothing, whatever the findings say.
 func TestR_VULN_015_TheInstallationSwitchOffBlocksNothing(t *testing.T) {
 	e := newEnv(t, options{Env: []string{"TROVE_VULNERABILITIES_ENABLED=false"}})

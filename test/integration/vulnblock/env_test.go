@@ -48,6 +48,9 @@ const (
 	rVirtual = "npm-virtual"
 	rTwin    = "npm-twin"
 	rBlockMD = "npm-strict"
+	// rPrivate is a remote repository whose upstream is not public (matchPublicAdvisories auto, and the stub is no public
+	// upstream) with onMissingData block: its versions are never in scope.
+	rPrivate = "npm-remote-private"
 	// rHidden is a local repository the reader has no grant on.
 	rHidden = "npm-hidden"
 )
@@ -142,7 +145,8 @@ func newEnv(t *testing.T, o options) *env {
 	st.Repository(rNuGet, "local", "nuget", `{}`)
 	st.Repository(rBlockMD, "local", "npm", `{"vulnerabilities":{"onMissingData":"block"}}`)
 	st.Repository(rRemote, "remote", "npm", e.remoteConfig(`{}`))
-	st.Repository("npm-remote-strict", "remote", "npm", e.remoteConfig(`{"vulnerabilities":{"onMissingData":"block"}}`))
+	st.Repository("npm-remote-strict", "remote", "npm", e.remoteConfig(`{"vulnerabilities":{"matchPublicAdvisories":"always","onMissingData":"block"}}`))
+	st.Repository(rPrivate, "remote", "npm", e.remoteConfig(`{"vulnerabilities":{"onMissingData":"block"}}`))
 	virtual := func(key string, members ...string) {
 		st.Repository(key, "virtual", "npm", `{}`)
 		for i, m := range members {
@@ -152,9 +156,9 @@ func newEnv(t *testing.T, o options) *env {
 	}
 	virtual(rVirtual, rNPM, rRemote)
 	virtual(rTwin, rNPM, rNPMB)
-	st.Policy("readers", []string{"read"}, []string{rNPM, rNPMB, rNuGet, rRemote, rVirtual, rTwin, rBlockMD, "npm-remote-strict"}, reader)
+	st.Policy("readers", []string{"read"}, []string{rNPM, rNPMB, rNuGet, rRemote, rVirtual, rTwin, rBlockMD, "npm-remote-strict", rPrivate}, reader)
 	st.Policy("writers", []string{"read", "deploy", "delete"}, []string{rNPM, rNPMB, rHidden, rNuGet, rBlockMD}, rita)
-	st.Policy("fillers", []string{"read"}, []string{rRemote, rVirtual, rTwin, "npm-remote-strict"}, rita)
+	st.Policy("fillers", []string{"read"}, []string{rRemote, rVirtual, rTwin, "npm-remote-strict", rPrivate}, rita)
 	return e
 }
 
