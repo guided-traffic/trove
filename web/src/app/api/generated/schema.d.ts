@@ -3119,8 +3119,9 @@ export interface paths {
         /**
          * Change or disable a Bastion registration
          * @description Changes the description and enables or disables the registration (JSON merge patch). A disabled registration refuses its
-         *     tokens like a disabled service account's (R-AUTH-020). Records `bastion.updated`; a switch to disabled is journaled
-         *     for the feed as `principal` (R-BAS-015).
+         *     tokens like a disabled service account's (R-AUTH-020) within the revocation bound of every replica; the tokens stay
+         *     unrevoked, so enabling the registration again restores them. Records `bastion.updated`, which carries no journal
+         *     entry: the revocation feed tells a Bastion what changed for the callers it answers (R-BAS-015, Q-BAS-61).
          */
         patch: operations["updateBastion"];
         trace?: never;

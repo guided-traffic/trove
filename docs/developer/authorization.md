@@ -226,6 +226,7 @@ Validation answers 422 with the code of the **first** problem and every problem 
 | `invalid_action`, `invalid_pattern`, `unknown_principal`, `unknown_repository`, `unknown_format`, `duplicate_principal` | R-AUTHZ-021, R-AUTHZ-004, R-AUTHZ-005 |
 | `anonymous_write_action`, `anonymous_dynamic_selector` | R-AUTHZ-003 |
 | `authenticated_write_action` | R-AUTHZ-030 |
+| `principal_not_allowed` (top-level 422) | a policy entry, a role binding or an owner record that names `bastion:<name>`: `ParseRef` parses the kind and each write path refuses it with `principal.BastionNotAllowed`; the filters answer an empty list (R-BAS-004, Q-BAS-60) |
 | `action_not_allowed` | a CI mapping never holds `manage` (R-AUTHZ-014) |
 | `virtual_action_not_applicable` | a key selector of a virtual repository accepts `read` and `manage` only |
 | `role_not_allowed`, `unknown_role` | R-AUTHZ-010 |

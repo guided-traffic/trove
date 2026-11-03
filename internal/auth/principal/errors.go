@@ -44,3 +44,11 @@ func DBErr(op string, err error) error {
 func NotFound(what string) error {
 	return errs.E(errs.NotFound, errs.CodeNotFound, what+" does not exist.")
 }
+
+// BastionNotAllowed is the 422 of every write that would give a Bastion registration a grant, a role, an
+// ownership or a membership (R-BAS-004): a policy entry, a role binding, an owner record, a group member or a
+// project administrator that names bastion:<name>. what says which of them was asked for.
+func BastionNotAllowed(what string) error {
+	return errs.E(errs.Unprocessable, errs.CodePrincipalNotAllowed,
+		"A Bastion registration holds no grant, role, ownership or membership; it cannot be "+what+".")
+}

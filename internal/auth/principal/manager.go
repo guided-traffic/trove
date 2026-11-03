@@ -721,6 +721,9 @@ func (m *Manager) DeleteUser(ctx context.Context, c Caller, name string) error {
 // resolve to nothing.
 func memberRef(ctx context.Context, qs *q.Queries, ref string) (id string, kind Kind, err error) {
 	kind, name := KindUser, ref
+	if strings.HasPrefix(ref, "bastion:") {
+		return "", "", BastionNotAllowed("a member of a group")
+	}
 	if rest, ok := strings.CutPrefix(ref, "sa:"); ok {
 		kind, name = KindServiceAccount, rest
 	}

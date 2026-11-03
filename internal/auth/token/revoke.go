@@ -88,7 +88,7 @@ func (s *Service) revokeTree(ctx context.Context, tx meta.Tx, qs *q.Queries, c p
 		if !r.Root {
 			why = ReasonParentRevoked
 		}
-		if err := s.recordRevoked(ctx, tx, c, r.ID, r.OwnerID, why, nil); err != nil {
+		if err := s.recordRevoked(ctx, tx, c, r.ID, r.OwnerID, why, r.Type, nil); err != nil {
 			return nil, err
 		}
 	}
@@ -100,8 +100,23 @@ func (s *Service) revokeTree(ctx context.Context, tx meta.Tx, qs *q.Queries, c p
 	return out, nil
 }
 
-func (s *Service) recordRevoked(ctx context.Context, tx meta.Tx, c principal.Caller, id, ownerID, reason string, cascaded []string) error {
+func (s *Service) recordRevoked(ctx context.Context, tx meta.Tx, c principal.Caller, id, ownerID, reason string, typ Type, cascaded []string) error {
 	d := map[string]any{"reason": reason, "cascaded": orEmpty(cascaded)}
+	subject := audit.Subject{Kind: "token", ID: id}
+	if typ == TypeBST {
+		// A Bastion token's event has the resource type bastion (R-BAS-004) and the token as the resource; the
+		// registration is in the data.
+		rows, err := principal.Queries(tx).IdentityPrincipalByID(ctx, ownerID)
+		if err != nil {
+			return err
+		}
+		if len(rows) > 0 {
+			d["owner"] = Owner{ID: ownerID, Kind: principal.KindBastion, Name: rows[0].Name}.Ref()
+			d["bastion"] = rows[0].Name
+		}
+		d["tokenId"] = id
+		subject.Kind = "bastion"
+	}
 	// The event of a token of a project service account carries the project
 	// (Q-AUTHZ-169).
 	projects, err := principal.Queries(tx).IdentityIsProjectServiceAccount(ctx, ownerID)
@@ -113,7 +128,7 @@ func (s *Service) recordRevoked(ctx context.Context, tx meta.Tx, c principal.Cal
 	}
 	return s.o.Recorder.RecordTx(ctx, tx, audit.Event{
 		Type: audit.EventTokenRevoked, Outcome: audit.Success, Reason: reason, Actor: c.Actor, Source: c.Source,
-		Subject: audit.Subject{Kind: "token", ID: id}, Details: mustJSON(d),
+		Subject: subject, Details: mustJSON(d),
 		Journal: mustJSON(map[string]string{"tokenId": id, "reason": reason}),
 	})
 }
@@ -199,7 +214,7 @@ func (s *Service) RevokeAll(ctx context.Context, c principal.Caller, principalID
 			return err
 		}
 		for _, id := range ids {
-			if err := s.recordRevoked(ctx, tx, c, id, principalID, reason, nil); err != nil {
+			if err := s.recordRevoked(ctx, tx, c, id, principalID, reason, "", nil); err != nil {
 				return err
 			}
 		}

@@ -16,6 +16,9 @@ commands:
   token create --service-account <name> [--ttl 15m] [--scope-file <file>]   print a token once (R-AUTH-015)
   token revoke --id <uuid> | --value-stdin     revoke a token (R-AUTH-015)
   user disable <username> [--keep-tokens]      disable a user (R-AUTH-015)
+  bastion create <name> [--description <text>]   register a Bastion (R-BAS-004)
+  bastion token create <name> [--ttl 8760h]     print a Bastion token once (R-BAS-004)
+  bastion token revoke <name> <token-id>        revoke a Bastion token (R-BAS-004)
 
 every command takes --config <file> and --log-level <level>`
 
@@ -40,6 +43,8 @@ func adminCmd(args []string, s streams) error {
 		return tokenCmd(args[1:], s)
 	case "user":
 		return userCmd(args[1:], s)
+	case "bastion":
+		return bastionCmd(args[1:], s)
 	}
 	return usageError{adminUsage}
 }

@@ -34,6 +34,8 @@ func (s *Service) bindable(ctx context.Context, role Role, ref string) (Ref, str
 		return Ref{}, "", roleProblem("/principal", errs.CodeUnknownPrincipal, err.Error())
 	}
 	switch r.Kind {
+	case principal.KindBastion:
+		return Ref{}, "", principal.BastionNotAllowed("bound to a role")
 	case principal.KindAnonymous, principal.KindAuthenticated, principal.KindCI:
 		return Ref{}, "", roleProblem("/principal", errs.CodeRoleNotAllowed,
 			"System roles are bound to users, groups and service accounts only.")
@@ -239,6 +241,9 @@ func (s *Service) ListBindings(ctx context.Context, role Role, ref string) ([]Bi
 		r, err := ParseRef(ref)
 		if err != nil {
 			return nil, roleProblem("/principal", errs.CodeUnknownPrincipal, err.Error())
+		}
+		if r.Kind == principal.KindBastion {
+			return []Binding{}, nil // a Bastion registration holds no binding (R-BAS-004)
 		}
 		if pid, err = s.principalID(ctx, r); err != nil {
 			if errors.Is(err, principal.ErrNotFound) {

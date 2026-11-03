@@ -228,7 +228,8 @@ Priority: **MVP** · Covers: DIST-025
 - **Registration.** A Bastion is registered on the main installation as a principal of the kind `bastion`, reference
   `bastion:<name>`, name `^[a-z][a-z0-9-]{0,19}$` ([authorization.md](authorization.md) R-AUTHZ-002). It holds no grants, no
   roles, no group memberships and no package ownership: a policy entry, a role binding, an owner record or a membership that
-  names it answers `422 principal_not_allowed`. It is never part of `authenticated` (R-AUTHZ-030). At most
+  names it answers `422 principal_not_allowed` ([Q-BAS-60](#q-bas-60--a-bastion-registration-is-refused-by-every-write-path-with-one-top-level-422-principal_not_allowed)).
+  It is never part of `authenticated` (R-AUTHZ-030): its token is refused by every route that could admit it. At most
   `bastions.max_registrations` registrations exist. A registration can be disabled, which refuses its tokens like a disabled
   service account's ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-020), and deleted, which revokes
   them.
@@ -237,8 +238,14 @@ Priority: **MVP** · Covers: DIST-025
   [Q-BAS-23](#q-bas-23--the-bastion-token-is-a-token-type-of-its-own-on-a-bastion-principal)). It follows the format, storage,
   validation, caching and revocation bound of R-AUTH-022 and R-AUTH-023 and the revocation of R-AUTH-029; its owner principal
   is the registration. It has no scope: what it may do is fixed by its type (R-BAS-005). It always expires: `ttlSeconds` is at
-  most `auth.tokens.bst.max_ttl`, defaulting to `auth.tokens.bst.default_ttl`. At most `auth.tokens.max_active_per_principal.bst`
-  unrevoked tokens exist per registration, so an overlap (R-BAS-006) fits and a forgotten token does not accumulate.
+  most `auth.tokens.bst.max_ttl`, defaulting to `auth.tokens.bst.default_ttl`; 0, a negative value, under 60 seconds and above the
+  maximum are `400 invalid_ttl`, and a missing description becomes `Bastion <name>`
+  ([Q-BAS-63](#q-bas-63--a-bastion-tokens-lifetime-is-ttlseconds-alone-every-violation-is-400-invalid_ttl-the-description-is-optional)).
+  At most `auth.tokens.max_active_per_principal.bst` unrevoked tokens exist per registration, so an overlap (R-BAS-006) fits and a
+  forgotten token does not accumulate. The validation is the token service's, through its cache and revocation bound
+  ([Q-BAS-62](#q-bas-62--the-bastion-token-authenticator-is-the-token-services-with-its-cache-gate-and-change-area)); disabling a
+  registration revokes nothing, deleting it revokes every token first
+  ([Q-BAS-61](#q-bas-61--the-registration-events-carry-no-journal-entry-a-bastion-tokens-events-name-the-registration-in-their-data)).
 - **API** (management API conventions of [api-and-ui.md](api-and-ui.md); capability in brackets,
   [Q-BAS-24](#q-bas-24--bastion-registrations-are-managed-with-the-endpoint-capabilities)):
 
@@ -254,7 +261,9 @@ Priority: **MVP** · Covers: DIST-025
 - `trove admin bastion create <name>`, `trove admin bastion token create <name> --ttl <duration>` and
   `trove admin bastion token revoke <name> <id>` do the same from a `web` pod (R-AUTH-015's pattern). Every operation writes its
   audit event: `bastion.created`, `bastion.updated`, `bastion.deleted`, and `token.created` / `token.revoked` with
-  `resource_type: bastion`.
+  `resource_type: bastion`. The three registration events carry no journal entry; `token.revoked` keeps its flag and its entry. At most
+  `bastions.max_registrations` is held exactly, also when creates race
+  ([Q-BAS-64](#q-bas-64--creating-registrations-is-serialized-by-an-advisory-lock-a-registrations-name-never-changes)).
 
 ```yaml
 auth:
@@ -275,6 +284,9 @@ Acceptance criteria:
   fourth unrevoked token answers `409 token_limit_reached` (the registry's code for the limit, [Q-BAS-53](#q-bas-53--unbuilt-operations-answer-501-bastion_not_implemented-three-codes-follow-the-existing-registry)).
 - A policy entry for `bastion:partners` and a role binding of `admin` to it answer `422 principal_not_allowed`.
 - A caller with `endpoints:read` only gets `403` on the token creation; `tokens:revoke` alone may revoke a Bastion token.
+- Deleting `partners` revokes its tokens (a `token.revoked` with `resource_type: bastion` and a journal entry each), removes the
+  registration and its contacts, and the revoked token is refused on every replica within `auth.revocation_bound`; disabling it
+  refuses the tokens in the same time and enabling it restores them.
 
 ### R-BAS-005 · What the Bastion token can do
 Priority: **MVP** · Covers: DIST-025
@@ -3324,6 +3336,107 @@ The development agent would revisit (c) if the chart ever has to release without
 
 **Applied in the spec:** R-BAS-045 (released with the chart `trove`).
 
+### Q-BAS-60 · A Bastion registration is refused by every write path with one top-level `422 principal_not_allowed`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-BAS-004 says a policy entry, a role binding, an owner record or a membership that names `bastion:<name>` answers `422
+principal_not_allowed`. The paths that take a principal reference are the policy writes and the validation of a policy
+(`internal/authz/validate.go`), the role bindings (`bindings.go`), the owner records (`ownership.go`), the group members
+(`internal/auth/principal/manager.go`) and the project administrators (`internal/project/members.go`). The reference parser knew no
+prefix `bastion`, so each of them would have answered `unknown principal`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `authz.ParseRef` parses `bastion:<name>` into the kind `bastion`; each write path refuses that kind with the registry's `422 principal_not_allowed` as the top-level code (chosen) | One helper, `principal.BastionNotAllowed`, one answer everywhere; the filters of the reads (`?principal=bastion:…`) answer an empty list | The code is the one the page names and the registry holds (Q-BAS-53); a caller learns why, not that the principal is unknown | The policy validation (`validate-policy`), which reports findings in a body, answers the error for this one finding |
+| (b) The same code as a field error inside `validation_failed`, like `principal_outside_project` | The policy report keeps its shape | Consistent with the neighbouring codes | The page says `422 principal_not_allowed`; the registry kind is `Unprocessable`, which carries no fields |
+| (c) Leave the prefix unknown | `unknown_principal` everywhere | No code change | A caller cannot tell a Bastion from a typo; the page's acceptance would not hold |
+
+**Choice:** (a). The database stays the second line: the guards of `authz_role_binding`, `group_membership` and `api_token` name the kinds
+they admit (migrations 00007, 00011, 00032), which the integration test shows by writing around the API.
+
+**Rationale:** the answer is the page's and the registry's own wording, and a single helper keeps the five paths from drifting. The
+validation of a policy returning the error instead of a finding is accepted because no policy that names a Bastion can ever be
+valid. The development agent would revisit (b) if the policy editor needs the finding in the report to point at the entry.
+
+**Applied in the spec:** R-BAS-004; code: `internal/authz/ref.go`, `validate.go`, `bindings.go`, `policy_list.go`, `ownership.go`,
+`internal/auth/principal/errors.go`, `manager.go`, `internal/project/members.go`.
+
+### Q-BAS-61 · The registration events carry no journal entry; a Bastion token's events name the registration in their data
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-BAS-004 lists `bastion.created`, `bastion.updated`, `bastion.deleted` and `token.created` / `token.revoked` with
+`resource_type: bastion`, "registered with their journal flags". The committed OpenAPI text said that a switch to disabled is
+journaled for the feed as `principal`, which R-BAS-015's table does not list.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The three `bastion.*` events are transactional without a journal flag; `token.revoked` keeps its flag and carries the entry `{tokenId, reason}` for a Bastion token as for every token; the resource of a Bastion token's event is the token, the registration is in the data (`bastion`, `owner: bastion:<name>`, `tokenId`) (chosen) | Nothing new for the feed's mapper: a `token.revoked` row names its token in `resource_id` as ever | The feed carries what changes for callers (R-BAS-015); the revocation of a Bastion token is journaled as asked | The audit trail lists a Bastion token's events under the token, not under the registration; a filter by registration uses `details.bastion` |
+| (b) Journal `bastion.updated` and `bastion.deleted` as `principal` entries | A Bastion would learn that a registration was disabled or deleted | One more entry kind | The Bastion learns that from `401 bastion_token_invalid` on its next call (R-BAS-006); the entries concern no caller the Bastion answers |
+| (c) The registration is the resource of the token events | The trail groups by registration | Natural reading of `resource_type: bastion` | The mapper of R-BAS-015 would read the registration's ID as a token ID |
+
+**Choice:** (a). Disabling a registration revokes nothing: its tokens fail as a disabled service account's do (R-AUTH-020) and work
+again when it is enabled. Deleting it revokes every token first (reason `admin`), one `token.revoked` with its journal entry each, then
+removes the registration, its tokens and its contacts, and records `bastion.deleted` last.
+
+**Rationale:** the feed exists for the callers' credentials; the Bastion's own token is refused where it is presented. The development
+agent would revisit (c) if the audit screen needs to list a registration's token events without reading the data.
+
+**Applied in the spec:** R-BAS-004; the OpenAPI text of `updateBastion`; code: `internal/audit/events_bastion.go`,
+`events_identity.go`, `internal/auth/token/revoke.go`.
+
+### Q-BAS-62 · The Bastion token authenticator is the token service's, with its cache, gate and change area
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `token.Service.AuthenticateBastion` validates through the replica's `auth_tokens` cache, the freshness gate and the change area `auth`; `bastionmain.Authenticator` maps its verdicts to `ErrTokenInvalid` and notes the use (chosen) | The revocation bound of R-AUTH-023, the single-flight lookup, the rejection log (`token.rejected` once an hour) and the last-used buffer are the ones of every token; a disabled registration and a revocation flush the same cache entries | No second cache to keep correct; `Service.Check` stays closed to the type | The type `bst` is known to the token service, which refuses it on `Check` and accepts it on a method of its own |
+| (b) A cache and a lookup of its own in `internal/bastionmain` | Independent of the token service | No change to the token package | A second implementation of the bound, the flights and the invalidation on the hot path of the interface |
+
+**Choice:** (a). The lookup is the contract's query `BastionTokenBySecret`, extended by `rejection_due`. The authenticator is called
+without the failed-credential throttle of R-AUTH-038 (the seam has no request), which H-435 records.
+
+**Rationale:** the bound is a property of the cache, not of the type. The development agent would revisit (b) if the interface gets its
+own revocation channel.
+
+**Applied in the spec:** R-BAS-004, R-BAS-005; H-435; code: `internal/auth/token/bastion.go`, `internal/bastionmain/authenticator.go`.
+
+### Q-BAS-63 · A Bastion token's lifetime is `ttlSeconds` alone, every violation is `400 invalid_ttl`, the description is optional
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `ttlSeconds` from 60 to `auth.tokens.bst.max_ttl`, default `default_ttl`; 0, a negative value, under 60 and above the maximum are `400 invalid_ttl`; no `expiresAt`; a missing description becomes `Bastion <name>` (chosen) | The page's acceptance holds for every violation; the document has `ttlSeconds` only | One code | An absolute expiry cannot be requested; the maximum has its own text in the detail |
+| (b) The lifetime rules of the other types (`ttl_exceeds_maximum` above the maximum, `0` for non-expiring where allowed) | One rule set | Reuse | The page names `invalid_ttl`; a non-expiring Bastion token must not exist |
+
+**Choice:** (a). The command takes `--ttl <duration>`, which becomes the same value.
+
+**Rationale:** a Bastion token always expires (R-BAS-004), so the rules of the other types that allow "never" do not apply. The
+development agent would revisit the missing `expiresAt` if an operator needs to align the expiry to a date.
+
+**Applied in the spec:** R-BAS-004; code: `internal/auth/token/bastion.go`.
+
+### Q-BAS-64 · Creating registrations is serialized by an advisory lock; a registration's name never changes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A transaction-scoped advisory lock (`BastionLockRegistrations`) before the count of `bastions.max_registrations` (chosen) | Two creates on different replicas cannot both pass the limit | Exact limit, no trigger | Creates are serialized (at most 256 rows, an administrator's action) |
+| (b) Count without a lock | Simplest | No lock | The limit can be exceeded by the number of concurrent creates; it bounds a metric label (R-BAS-008) |
+| (c) A constraint trigger on `principal` | Enforced in the database | Holds for writes around the API | A new trigger on a hot table for a limit of 16 |
+
+**Choice:** (a). The name is the handle in the API, the audit trail and the metrics label, and the patch accepts it as a read-only
+member that is ignored; a rename is a delete and a create with a new token.
+
+**Rationale:** the limit protects the cardinality of the `bastion` label. The development agent would revisit the missing rename if
+installations register Bastions by a name that later needs correcting.
+
+**Applied in the spec:** R-BAS-004; code: `internal/meta/postgres/queries/bastion_registration.sql`, `internal/bastionmain/registrations.go`.
+
 ### Q-BAS-70 · `absent` is derived from the notes of the core's lookups, and only for a full reader
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -3841,6 +3954,43 @@ absent (the Bastion's own limits and blocking still hold), and with `routeByPath
 instead of one (performance only, the volumes together hold less). What makes it real: a different ingress class, or a hardened
 HAProxy Ingress; NOTES.txt names the dependence, and the e2e run checks the annotations against the local profile's controller only.
 
+### H-435 · Unknown Bastion tokens presented on the interface are not counted by the failed-credential throttle
+
+Stage: the Bastion interface and the recognition of a forwarded request (R-BAS-005, R-BAS-008), with the throttle of R-AUTH-038.
+Subject: the load on the token table and the main installation's failed-credential protection for the interface routes.
+
+Live on every main installation: any client that reaches the default endpoint can send `Authorization: Bearer trv_bst_…` to an
+interface route or a `Trove-Bastion-Authorization` header. The
+authenticator behind `bastionmain.TokenAuthenticator` takes no request, so a Bastion token that fails (unknown, revoked, expired, or its registration disabled) is neither counted against the client address nor refused without a lookup while the address is in
+throttled mode, as `Service.Check` does for every other credential. A well-formed unknown token costs one indexed read; a
+guess cannot succeed (256 random bits). What makes it real: an attacker who reaches the interface routes and sends well-formed
+random tokens at the rate the request limits allow; closing it needs the recognition stage to pass its throttle to
+`AuthenticateBastion` (the parameter exists), which is the work of the recognition package.
+
+### H-436 · Deleting a registration deletes its token rows, so a later use of a deleted token is unknown and not logged
+
+Stage: `DELETE /api/v1/bastions/{name}` (R-BAS-004) and the rejection log of R-AUTH-023 step 4. Subject: the audit evidence of a
+Bastion token that is presented after its registration was deleted.
+
+Live on every deletion. The deletion revokes each token (one `token.revoked` with its journal entry each) and then removes the
+registration, which removes its tokens by cascade. A replica that still holds the deleted token and presents it is told
+`bastion_token_invalid`, as for a revoked one, but the main installation finds no row and writes no `token.rejected` for it (an
+unknown token is only counted). The Bastion's own metric and alert (R-BAS-041) still show the refused token. What makes it real: a
+leaked Bastion token that is used after its registration was deleted rather than its token revoked; revoking the token first and
+deleting the registration later keeps the row for the retention (`auth.tokens.retention_after_end`) and the rejection log.
+
+### H-437 · A Bastion token's last use is one value per token, at the granularity of the last-used buffer
+
+Stage: R-BAS-004 (the registration's tokens) and R-BAS-006 step 4, with R-AUTH-031. Subject: the evidence that every replica of a
+Bastion uses the new token before the old one is revoked.
+
+Live on every registration with two tokens. `lastUsedAt` is written from the replicas' last-used buffers, one value per token, at most
+once per `auth.tokens.last_used_granularity` (5 minutes by default): it shows that some replica used the token recently, not that every
+replica did. The per-replica evidence is the last contact (`bastion_contact.token_id`, written by the handshake), which names the token
+each replica used at its last handshake, up to `bastion.main.handshake_interval` old. What makes it real: an administrator who revokes
+the old token on the strength of the new token's `lastUsedAt` alone, with a replica that has not reloaded its Secret; the screen of
+R-BAS-007 shows the contacts next to the tokens, and a replica that still uses a revoked token gets `bastion_token_invalid` and treats
+the main installation as unreachable (R-BAS-027).
 ### H-441 · `absent` rests on the notes of the core's lookups, not on the routes
 
 Stage: R-BAS-013 and R-BAS-024, the marking of a `404`. Subject: a negative entry at the Bastion for an item that is merely

@@ -243,6 +243,23 @@ what it carries ([R-CI-017](../spec/gitlab-ci-oidc.md#r-ci-017--ci-token-identit
 
 What a CI token may do with its grants, and how it owns package names, is [ci-federation.md](ci-federation.md#what-a-ci-token-can-do).
 
+## Bastion tokens
+
+A Bastion token (`trv_bst_`) has the format, the hashing and the cache of every token and belongs to a Bastion registration, a principal that
+holds no grant ([R-BAS-004](../spec/bastion.md#r-bas-004--bastion-registrations-and-the-bastion-token-on-the-main-installation),
+[R-BAS-005](../spec/bastion.md#r-bas-005--what-the-bastion-token-can-do)). The whole page of the Bastion is [bastion.md](bastion.md); what
+differs from the tokens above:
+
+| Property | Rule | Where |
+|---|---|---|
+| presentation | refused on every route but the Bastion interface, as `Authorization: Bearer`, as the Basic password and as `X-NuGet-ApiKey`: `401 invalid_token` of an unknown token, counted against the client address, before the cache and the token table are asked (`TestR_BAS_005_ABastionTokenIsNoCredentialOnAnyOtherRoute` shows that no database call happens) | `Service.Check` ([validate.go](../../internal/auth/token/validate.go)) |
+| `auth.token_types` | `bst` stops start-up and names the key: no list of accepted types can widen the rule | [endpoints.go](../../internal/config/endpoints.go) |
+| issuance | an administrator holding `endpoints:write`, through `POST /api/v1/bastions/{name}/tokens` or `trove admin bastion token create`; always expires (`ttlSeconds` from 60 up to `auth.tokens.bst.max_ttl`, else `400 invalid_ttl`); at most `auth.tokens.max_active_per_principal.bst` unrevoked tokens per registration, counted under the lock of the registration's principal row; the value only in the answer | [bastion.go](../../internal/auth/token/bastion.go) |
+| scope | none: what the token may do is fixed by its type; its scope column holds the default document and is never evaluated | `AuthenticateBastion` |
+| management API | the token API neither lists nor reads nor revokes it (`404`); `/bastions/{name}/tokens` does, and `tokens:revoke` alone suffices to revoke one | [identity.sql](../../internal/meta/postgres/queries/identity.sql), [bastion_registrations_api.go](../../internal/api/v1/bastion_registrations_api.go) |
+| validation on the interface | the replica's `auth_tokens` cache while the change log is fresh, then `BastionTokenBySecret`; a revoked or expired token logs `token.rejected` once an hour; a disabled or deleted registration and a revocation are in force within `auth.revocation_bound` | `AuthenticateBastion`; [H-435](../spec/bastion.md#h-435--unknown-bastion-tokens-presented-on-the-interface-are-not-counted-by-the-failed-credential-throttle), [H-436](../spec/bastion.md#h-436--deleting-a-registration-deletes-its-token-rows-so-a-later-use-of-a-deleted-token-is-unknown-and-not-logged), [H-437](../spec/bastion.md#h-437--a-bastion-tokens-last-use-is-one-value-per-token-at-the-granularity-of-the-last-used-buffer) |
+| events | `token.created` and `token.revoked` with `resource_type` `bastion` (the token as the resource, the registration and the token ID in the data), no value and no hash; `token.revoked` is journaled (R-HA-054) | [events_identity.go](../../internal/audit/events_identity.go) |
+
 ## What this does not cover
 
 ### H-82 · Rejected credentials of one address are counted together

@@ -497,9 +497,16 @@ func (s *Service) insertTx(ctx context.Context, tx meta.Tx, sp insertSpec) (Crea
 	if sp.rotatedFrom != "" {
 		d["rotatedFrom"] = sp.rotatedFrom
 	}
+	subject := audit.Subject{Kind: "token", ID: id, Name: rec.Hint}
+	if r.Type == TypeBST {
+		// A Bastion token's event has the resource type bastion (R-BAS-004); the registration is in the data.
+		subject.Kind = "bastion"
+		d["bastion"] = owner.Name
+		d["tokenId"] = id
+	}
 	if err := s.o.Recorder.RecordTx(ctx, tx, audit.Event{
 		Type: audit.EventTokenCreated, Outcome: audit.Success, Actor: r.Caller.Actor, Source: r.Caller.Source,
-		Subject: audit.Subject{Kind: "token", ID: id, Name: rec.Hint}, Details: mustJSON(d),
+		Subject: subject, Details: mustJSON(d),
 	}); err != nil {
 		return Created{}, err
 	}
@@ -524,8 +531,11 @@ func lockOwner(ctx context.Context, qs *q.Queries, ownerID string, t Type) (Owne
 	}
 	p := rows[0]
 	want := principal.KindUser
-	if t == TypeSAT {
+	switch t {
+	case TypeSAT:
 		want = principal.KindServiceAccount
+	case TypeBST:
+		want = principal.KindBastion
 	}
 	switch {
 	case p.IsBreakGlass:

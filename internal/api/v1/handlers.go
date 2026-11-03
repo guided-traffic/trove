@@ -11,6 +11,7 @@ import (
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/authz"
+	"github.com/guided-traffic/trove/internal/bastionmain"
 	"github.com/guided-traffic/trove/internal/buildinfo"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/files"
@@ -198,6 +199,9 @@ type Options struct {
 	// package, a stub answers 503 like an operation whose service is not wired. The flag and the stubs leave
 	// together with the last of them.
 	BastionStubs bool
+	// Bastions is the registration service behind /api/v1/bastions (R-BAS-004); nil answers its operations
+	// with 503.
+	Bastions *bastionmain.Registrations
 	// <<< M13 bastion
 }
 

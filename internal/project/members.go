@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/guided-traffic/trove/internal/audit"
@@ -34,6 +35,9 @@ func parseAdminRef(ref string) (kind PrincipalKind, name string, ok bool, err er
 }
 
 func notAdministrator(ref string) error {
+	if strings.HasPrefix(ref, "bastion:") {
+		return principal.BastionNotAllowed("the administrator of a project") // R-BAS-004
+	}
 	detail := fmt.Sprintf("%q cannot administer a project: only users and groups do.", ref)
 	return errs.E(errs.Invalid, errs.CodeValidation, detail, errs.WithFields(errs.FieldError{
 		Pointer: "/principalRef", Code: "principal_kind_not_allowed", Detail: detail,

@@ -748,6 +748,8 @@ func ownerRef(ctx context.Context, qs *q.Queries, ref string) (Ref, string, erro
 	}
 	kind := ""
 	switch r.Kind {
+	case principal.KindBastion:
+		return Ref{}, "", principal.BastionNotAllowed("the owner of a package")
 	case principal.KindUser:
 		kind = dbUser
 	case principal.KindGroup:

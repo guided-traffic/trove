@@ -13,6 +13,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/authz"
+	"github.com/guided-traffic/trove/internal/bastionmain"
 	"github.com/guided-traffic/trove/internal/cache"
 )
 
@@ -39,6 +40,8 @@ type identityParts struct {
 	manager *principal.Manager
 	tokens  *token.Service
 	caller  principal.Caller
+	// bastions is the registration service of R-BAS-004 (trove admin bastion).
+	bastions *bastionmain.Registrations
 }
 
 // identity builds the manager and the token service for a command.
@@ -61,7 +64,10 @@ func (e *adminEnv) identity() (*identityParts, error) {
 		DB: e.db, Notifier: e.changes, Recorder: e.recorder, Principals: principals, Settings: settings, Cache: caches, Gate: gate,
 		Tokens: cfg.Tokens, Log: e.log, Scope: app.TokenScopeOptions(e.cfg),
 	})
-	return &identityParts{manager: manager, tokens: tokens, caller: principal.Caller{Actor: e.actor}}, nil
+	bastions := bastionmain.NewRegistrations(bastionmain.RegistrationOptions{
+		DB: e.db, Notifier: e.changes, Recorder: e.recorder, Tokens: tokens, Max: e.cfg.Bastions.MaxRegistrations,
+	})
+	return &identityParts{manager: manager, tokens: tokens, caller: principal.Caller{Actor: e.actor}, bastions: bastions}, nil
 }
 
 // serviceAccountCmd is trove admin service-account create <name>.

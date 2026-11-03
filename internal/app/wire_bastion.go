@@ -1,10 +1,12 @@
 package app
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/guided-traffic/trove/internal/api/bastionmark"
 	"github.com/guided-traffic/trove/internal/bastionmain"
+	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
 // The wiring of the main installation's side of the trove Bastion (docs/developer/bastion.md, R-BAS-004 to
@@ -48,6 +50,32 @@ func (a *App) bastionStages() bastionmain.Stages {
 	return st
 }
 
+// >>> package 1
+
+// bastionRegistrations builds the registration service behind /api/v1/bastions (R-BAS-004). It is nil on a
+// replica that has no identity area (a worker), whose API operations then answer 503.
+func (a *App) bastionRegistrations() *bastionmain.Registrations {
+	in, id := part[infra](a.parts), part[identityArea](a.parts)
+	if in.db == nil || id.tokens == nil {
+		return nil
+	}
+	return bastionmain.NewRegistrations(bastionmain.RegistrationOptions{
+		DB: in.db, Notifier: in.changes, Recorder: in.rec, Tokens: id.tokens, Max: a.cfg.Bastions.MaxRegistrations,
+	})
+}
+
+// bastionAuthenticator builds the bastionmain.TokenAuthenticator over the token service (R-BAS-005): the
+// recognition stage of package 2 validates a Bastion token with it. It is nil where the token service is not
+// built.
+func (a *App) bastionAuthenticator() bastionmain.TokenAuthenticator {
+	id := part[identityArea](a.parts)
+	if id.tokens == nil {
+		return nil
+	}
+	return bastionmain.NewAuthenticator(id.tokens, func(ctx context.Context) string { return httpserver.SourceFrom(ctx).ClientAddr })
+}
+
+// <<< package 1
 // >>> package 3
 
 // bastionShapes returns the ShapeResolver over the decision point (R-BAS-012): the Mark stage asks it for the

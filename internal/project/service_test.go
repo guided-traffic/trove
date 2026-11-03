@@ -247,3 +247,16 @@ func TestR_AUTHZ_026_EmptyProject(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 }
+
+// TestR_BAS_004_ABastionIsNoProjectAdministrator: bastion:<name> as an administrator answers 422
+// principal_not_allowed, as no Bastion registration holds a role, a grant or a membership.
+func TestR_BAS_004_ABastionIsNoProjectAdministrator(t *testing.T) {
+	err := notAdministrator("bastion:partners")
+	e, ok := errs.As(err)
+	if !ok || e.Status() != 422 || e.Code != errs.CodePrincipalNotAllowed {
+		t.Fatalf("notAdministrator = %v, want 422 principal_not_allowed", err)
+	}
+	if other, _ := errs.As(notAdministrator("sa:ci-bot")); other.Code != errs.CodeValidation {
+		t.Fatalf("a service account keeps its code: %v", other.Code)
+	}
+}

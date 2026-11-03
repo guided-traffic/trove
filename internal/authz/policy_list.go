@@ -41,32 +41,12 @@ func unprocessable(param, code, detail string) error {
 // value"). The group membership is resolved now, never from a token
 // (R-AUTHZ-002).
 func (s *Service) Select(ctx context.Context, all []Policy, f ListFilter) ([]Policy, error) {
-	var refs map[string]bool
-	if f.Principal != "" {
-		ref, err := ParseRef(f.Principal)
-		if err != nil {
-			return nil, unprocessable("principal", errs.CodeUnknownPrincipal, err.Error())
-		}
-		id, err := s.principalID(ctx, ref)
-		if err != nil {
-			if errors.Is(err, principal.ErrNotFound) {
-				if f.Delegated {
-					return []Policy{}, nil
-				}
-				return nil, unprocessable("principal", errs.CodeUnknownPrincipal, fmt.Sprintf("No principal %s exists.", f.Principal))
-			}
-			return nil, err
-		}
-		refs = map[string]bool{ref.String(): true}
-		if f.ExpandGroups && !f.Delegated && ref.Kind != principal.KindAnonymous && ref.Kind != principal.KindAuthenticated {
-			groups, err := s.o.Principals.Groups(ctx, id)
-			if err != nil {
-				return nil, err
-			}
-			for _, g := range groups {
-				refs["group:"+g.Name] = true
-			}
-		}
+	refs, none, err := s.principalFilter(ctx, f)
+	if err != nil {
+		return nil, err
+	}
+	if none {
+		return []Policy{}, nil
 	}
 	var repo *repoView
 	repoProject := ""
@@ -125,6 +105,43 @@ func (s *Service) Select(ctx context.Context, all []Policy, f ListFilter) ([]Pol
 		out = append(out, p)
 	}
 	return out, nil
+}
+
+// principalFilter resolves the principal filter of a list: the references whose entries are kept (nil for no
+// filter), and none when the filter selects nothing, a delegated caller's unknown principal and a Bastion
+// registration, which no policy names (R-BAS-004).
+func (s *Service) principalFilter(ctx context.Context, f ListFilter) (refs map[string]bool, none bool, err error) {
+	if f.Principal == "" {
+		return nil, false, nil
+	}
+	ref, err := ParseRef(f.Principal)
+	if err != nil {
+		return nil, false, unprocessable("principal", errs.CodeUnknownPrincipal, err.Error())
+	}
+	if ref.Kind == principal.KindBastion {
+		return nil, true, nil
+	}
+	id, err := s.principalID(ctx, ref)
+	if err != nil {
+		if errors.Is(err, principal.ErrNotFound) {
+			if f.Delegated {
+				return nil, true, nil
+			}
+			return nil, false, unprocessable("principal", errs.CodeUnknownPrincipal, fmt.Sprintf("No principal %s exists.", f.Principal))
+		}
+		return nil, false, err
+	}
+	refs = map[string]bool{ref.String(): true}
+	if f.ExpandGroups && !f.Delegated && ref.Kind != principal.KindAnonymous && ref.Kind != principal.KindAuthenticated {
+		groups, err := s.o.Principals.Groups(ctx, id)
+		if err != nil {
+			return nil, false, err
+		}
+		for _, g := range groups {
+			refs["group:"+g.Name] = true
+		}
+	}
+	return refs, false, nil
 }
 
 func grantsTo(p Policy, refs map[string]bool) bool {

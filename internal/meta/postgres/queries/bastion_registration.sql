@@ -85,10 +85,17 @@ SELECT t.id::text AS id, t.principal_id::text AS bastion_id, t.revoked_at
 
 -- name: BastionTokenBySecret :many
 -- The lookup of the Bastion authenticator (internal/bastionmain.TokenAuthenticator): one indexed read by the
--- secret hash, joined with the registration. The type is checked by the caller against 'bst'; a row of
--- another type is never returned here.
+-- secret hash, joined with the registration; a row of another type is never returned here. rejection_due says
+-- whether token.rejected is due for this token (at most once an hour, as for every token, R-AUTH-023 step 4).
 SELECT t.id::text AS token_id, t.principal_id::text AS bastion_id, p.name, (p.status = 'active')::boolean AS enabled,
        t.expires_at, coalesce(t.expires_at IS NOT NULL AND t.expires_at <= now(), false)::boolean AS expired,
-       (t.revoked_at IS NOT NULL)::boolean AS revoked, t.hint
+       (t.revoked_at IS NOT NULL)::boolean AS revoked, t.hint,
+       coalesce(t.rejection_logged_at IS NULL OR t.rejection_logged_at < now() - interval '1 hour', true)::boolean AS rejection_due
   FROM api_token t JOIN principal p ON p.id = t.principal_id
  WHERE t.secret_sha256 = sqlc.arg(secret_sha256)::bytea AND t.type = 'bst' AND p.kind = 'bastion';
+
+-- name: BastionLockRegistrations :exec
+-- Serializes the creation of registrations (a transaction-scoped advisory lock), so that two creates on
+-- different replicas cannot both pass bastions.max_registrations (R-BAS-004). The lock is held to the end of
+-- the transaction and taken before BastionCount.
+SELECT pg_advisory_xact_lock(hashtextextended('trove.bastion.registrations', 0));

@@ -306,6 +306,18 @@ func (q *Queries) BastionLock(ctx context.Context, name string) ([]BastionLockRo
 	return items, nil
 }
 
+const bastionLockRegistrations = `-- name: BastionLockRegistrations :exec
+SELECT pg_advisory_xact_lock(hashtextextended('trove.bastion.registrations', 0))
+`
+
+// Serializes the creation of registrations (a transaction-scoped advisory lock), so that two creates on
+// different replicas cannot both pass bastions.max_registrations (R-BAS-004). The lock is held to the end of
+// the transaction and taken before BastionCount.
+func (q *Queries) BastionLockRegistrations(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, bastionLockRegistrations)
+	return err
+}
+
 const bastionSetEnabled = `-- name: BastionSetEnabled :many
 UPDATE principal SET status = CASE WHEN $1::boolean THEN 'active' ELSE 'disabled' END
  WHERE id = $2::text::uuid AND kind = 'bastion'
@@ -343,25 +355,27 @@ func (q *Queries) BastionSetEnabled(ctx context.Context, arg BastionSetEnabledPa
 const bastionTokenBySecret = `-- name: BastionTokenBySecret :many
 SELECT t.id::text AS token_id, t.principal_id::text AS bastion_id, p.name, (p.status = 'active')::boolean AS enabled,
        t.expires_at, coalesce(t.expires_at IS NOT NULL AND t.expires_at <= now(), false)::boolean AS expired,
-       (t.revoked_at IS NOT NULL)::boolean AS revoked, t.hint
+       (t.revoked_at IS NOT NULL)::boolean AS revoked, t.hint,
+       coalesce(t.rejection_logged_at IS NULL OR t.rejection_logged_at < now() - interval '1 hour', true)::boolean AS rejection_due
   FROM api_token t JOIN principal p ON p.id = t.principal_id
  WHERE t.secret_sha256 = $1::bytea AND t.type = 'bst' AND p.kind = 'bastion'
 `
 
 type BastionTokenBySecretRow struct {
-	TokenID   string
-	BastionID string
-	Name      string
-	Enabled   bool
-	ExpiresAt pgtype.Timestamptz
-	Expired   bool
-	Revoked   bool
-	Hint      string
+	TokenID      string
+	BastionID    string
+	Name         string
+	Enabled      bool
+	ExpiresAt    pgtype.Timestamptz
+	Expired      bool
+	Revoked      bool
+	Hint         string
+	RejectionDue bool
 }
 
 // The lookup of the Bastion authenticator (internal/bastionmain.TokenAuthenticator): one indexed read by the
-// secret hash, joined with the registration. The type is checked by the caller against 'bst'; a row of
-// another type is never returned here.
+// secret hash, joined with the registration; a row of another type is never returned here. rejection_due says
+// whether token.rejected is due for this token (at most once an hour, as for every token, R-AUTH-023 step 4).
 func (q *Queries) BastionTokenBySecret(ctx context.Context, secretSha256 []byte) ([]BastionTokenBySecretRow, error) {
 	rows, err := q.db.Query(ctx, bastionTokenBySecret, secretSha256)
 	if err != nil {
@@ -380,6 +394,7 @@ func (q *Queries) BastionTokenBySecret(ctx context.Context, secretSha256 []byte)
 			&i.Expired,
 			&i.Revoked,
 			&i.Hint,
+			&i.RejectionDue,
 		); err != nil {
 			return nil, err
 		}

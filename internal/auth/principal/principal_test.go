@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
 )
 
@@ -197,4 +198,14 @@ type notifierFunc func(area string, version int, payload any) error
 
 func (f notifierFunc) Notify(_ meta.Tx, area string, version int, payload any) error {
 	return f(area, version, payload)
+}
+
+// TestR_BAS_004_ABastionIsNoGroupMember: bastion:<name> as a member answers 422 principal_not_allowed before
+// any lookup.
+func TestR_BAS_004_ABastionIsNoGroupMember(t *testing.T) {
+	_, _, err := memberRef(context.Background(), nil, "bastion:partners")
+	e, ok := errs.As(err)
+	if !ok || e.Status() != 422 || e.Code != errs.CodePrincipalNotAllowed {
+		t.Fatalf("memberRef = %v, want 422 principal_not_allowed", err)
+	}
 }

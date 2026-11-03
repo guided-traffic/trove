@@ -176,7 +176,7 @@ The canonical paths under which a NuGet remote repository stores what it fetched
 | `X-Request-Id` | every response; the same value is `requestId` in problem bodies and the trace ID of the request | yes (`internal/httpserver/chain.go`) |
 | `X-Trove-Replica` | the instance name, on responses where `server.replica_header` allows it (default `authenticated`) | yes (`internal/httpserver/chain.go`) |
 | `X-Forwarded-For` or `Forwarded` | the family the edge rewrites: exactly one, chosen by `server.forwarded_header`; the other is never read | yes (`internal/httpserver/clientaddr.go`) |
-| `Authorization` | `Bearer <token>` with a `trv_pat_`, `trv_sat_` or `trv_cit_` value (the CI token of the exchange). The status code of a refused value is not restated here | yes (`internal/auth/stage.go`) |
+| `Authorization` | `Bearer <token>` with a `trv_pat_`, `trv_sat_` or `trv_cit_` value (the CI token of the exchange); a `trv_bst_` value (a Bastion token) is `401 invalid_token` on every route but the Bastion interface. The status code of a refused value is not restated here | yes (`internal/auth/stage.go`) |
 | `X-NuGet-ApiKey` | `<token>` or `<any>:<token>`, read first and only on a route that declares the API key (NuGet's push, delete, relist and symbol push) while `auth.clients.nuget_api_key_header` is on; a value without a well-formed token, such as `az`, is ignored and `Authorization` applies | yes (`internal/auth/stage.go`); the NuGet routes are not registered yet |
 | `X-CSRF-Token` | the value of the `__Host-trv_csrf` cookie, on a state-changing request that the session cookie authenticates; with a same-origin `Origin` or `Sec-Fetch-Site`. Failure: `403 csrf_failed` | yes (`internal/auth/session`) |
 | `Idempotency-Key` | on a create: a replay answers the stored outcome; the same key with another body answers `422 idempotency_key_reused`, a concurrent duplicate `409 idempotency_in_progress` | yes (`internal/api/v1/idempotency.go`) |
@@ -195,6 +195,7 @@ The canonical paths under which a NuGet remote repository stores what it fetched
 | Personal token prefix | `trv_pat_` (`internal/auth/token/token.go`, `TypePAT`) | yes |
 | Service-account token prefix | `trv_sat_` | yes |
 | CI token prefix | `trv_cit_` (`TypeCIT`); issued by the GitLab CI exchange `POST /api/v1/auth/oidc/token` only | yes ([GitLab CI OIDC](docs/spec/gitlab-ci-oidc.md)) |
+| Bastion token prefix | `trv_bst_` (`TypeBST`, 57 characters like every token); issued by `POST /api/v1/bastions/{name}/tokens` or `trove admin bastion token create`; refused as `401 invalid_token` on every route but the Bastion interface | yes ([R-BAS-004](docs/spec/bastion.md), [identity](docs/developer/identity.md#bastion-registrations-and-tokens-r-bas-004-r-bas-005)) |
 
 ### Environment variables
 
@@ -349,6 +350,16 @@ The label sets of the M1 families are not restated per family in this pass; read
 | Tasks | `ci-keys-refresh` (`*/5 * * * *`), `ci-replay-cleanup` (`7 * * * *`), `ci-issuance-retention` (`40 3 * * *`) | exclusive, `maintenance.tasks.<name>` |
 | Tables | `ci_issuers`, `ci_issuer_keys` (transient in backups), `ci_mappings`, `ci_subject_token_uses`, `ci_token_issuances` | migrations 00026 to 00031 |
 
+### Bastion registrations
+
+| Name | Pattern | Rule |
+|---|---|---|
+| Registration name | `^[a-z][a-z0-9-]{0,19}$` | unique; immutable; the handle in the API, the audit trail and the `bastion` label of the metrics; at most `bastions.max_registrations` exist |
+| Registration principal | kind `bastion`; API reference `bastion:<name>` | holds no policy entry, role, ownership or membership: every such write answers `422 principal_not_allowed` |
+| Bastion token | `trv_bst_…` (57 characters) | owner is the registration; always expires; at most `auth.tokens.max_active_per_principal.bst` unrevoked per registration; `created_via` `api`, `ui` or `admin-cli`; hint `trv_bst_` and four characters |
+| Commands | `trove admin bastion create <name>`, `trove admin bastion token create <name> [--ttl <duration>]`, `trove admin bastion token revoke <name> <token-id>` | from a `web` pod, actor `admin-cli` |
+| Tables | `bastion`, `bastion_contact` (transient) | migrations 00032 to 00034 |
+
 ### Projects
 
 | Name | Pattern | Rule |
@@ -371,7 +382,8 @@ The names of the event registry ([internal/audit](internal/audit/)). Each event 
 |---|---|
 | Login | `auth.login.succeeded`, `auth.login.failed`, `auth.breakglass.login`, `auth.breakglass.locked`, `auth.breakglass.unlocked`, `auth.logout`, `auth.session.ended`, `auth.csrf_failed`, `auth.credential.rejected` |
 | Authorization | `authz.denied`, `authz.read.allowed`, `authz.write.allowed`, `authz.policy.created`, `authz.policy.updated`, `authz.policy.deleted`, `authz.project.created`, `authz.project.updated`, `authz.project.deleted`, `authz.project.admin_added`, `authz.project.admin_removed`, `authz.project.repository_assigned`, `authz.project.repository_unassigned`, `authz.role.bound`, `authz.role.unbound`, `authz.settings.changed`, `authz.ownership.claimed`, `authz.ownership.added`, `authz.ownership.removed`, `authz.ownership.released` |
-| Tokens | `token.created`, `token.rotated`, `token.revoked`, `token.expiring`, `token.rejected` |
+| Tokens | `token.created`, `token.rotated`, `token.revoked`, `token.expiring`, `token.rejected`; for a Bastion token (type `bst`) `token.created` and `token.revoked` carry `resource_type` `bastion` and the registration in the data (`token.revoked` keeps its journal entry) |
+| Bastion registrations | `bastion.created`, `bastion.updated`, `bastion.deleted` ([internal/audit/events_bastion.go](internal/audit/events_bastion.go); no journal entry) |
 | CI federation | `ci.exchange.succeeded`, `ci.exchange.denied`, `ci.exchange.replayed`, `ci.exchange.repeated`, `ci.token.revoked`, `ci.issuer.created`, `ci.issuer.updated`, `ci.issuer.disabled`, `ci.issuer.enabled`, `ci.issuer.deleted`, `ci.mapping.created`, `ci.mapping.updated`, `ci.mapping.disabled`, `ci.mapping.enabled`, `ci.mapping.deleted`, `ci.keys.refreshed`, `ci.keys.refresh_failed`, `ci.package_ownership.claimed`, `ci.package_ownership.conflict`, `ci.job_token.lookup` ([internal/audit/events_ci.go](internal/audit/events_ci.go)); `ci.token.revoked` and the `.updated`, `.disabled` and `.deleted` events of issuers and mappings carry the journal entry |
 | Users | `user.created`, `user.updated`, `user.renamed`, `user.rename_conflict`, `user.disabled`, `user.enabled`, `user.deleted`, `user.dormancy_warning`, `user.groups.synced`, `user.groups.claim_missing` |
 | Groups and service accounts | `group.created`, `group.updated`, `group.deleted`, `group.members.changed`, `serviceaccount.created`, `serviceaccount.updated`, `serviceaccount.disabled`, `serviceaccount.deleted` |
@@ -393,7 +405,7 @@ The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every pro
 - General: `internal`, `malformed_request`, `validation_failed`, `unauthenticated`, `forbidden`, `not_found`, `method_not_allowed`, `conflict`, `precondition_failed`, `payload_too_large`, `unsupported_media_type`, `rate_limited`, `insufficient_storage`, `unavailable`, `upstream_failed`, `upstream_timeout`, `repository_not_found`, `database_unavailable`, `egress_denied`, `key_ring_incompatible`, `object_store_unavailable`, `shutting_down`, `server_busy`, `database_timeout`, `misdirected_request`, `invalid_cursor`, `invalid_header`, `already_exists`, `idempotency_in_progress`, `idempotency_key_reused`, `precondition_required`, `reserved_name`, `managed_by_config`
 - Tokens: `invalid_token`, `credentials_required`, `invalid_credentials`, `principal_disabled`, `invalid_scope`, `invalid_ttl`, `ttl_exceeds_maximum`, `default_above_maximum`, `exceeds_ceiling`, `non_expiring_not_allowed`, `non_expiring_restricted`, `pat_not_allowed`, `ci_token_restricted`, `token_already_issued`, `token_limit_reached`, `derivation_exceeds_parent`, `description_required`, `not_a_token`
 - Identities and login: `managed_by_scim`, `last_admin`, `anonymous_not_allowed`, `auto_join_admin_conflict`, `username_invalid`, `session_expired`, `reauthentication_required`, `csrf_failed`, `browser_mismatch`, `flow_expired`, `provider_unavailable`, `break_glass_restricted`, `break_glass_immutable`, `break_glass_rotating`, `local_login_disabled`, `break_glass_locked`, `too_many_pending_logins`
-- Authorization: `authz_stale`, `authz_epoch_unknown`, `role_not_allowed`, `unknown_role`, `authenticated_write_action`, `anonymous_write_action`, `anonymous_dynamic_selector`, `action_not_allowed`, `invalid_action`, `invalid_pattern`, `unknown_principal`, `unknown_repository`, `unknown_format`, `duplicate_principal`, `virtual_action_not_applicable`, `role_binding_managed_by_configuration`, `repository_outside_project`, `unknown_project`, `principal_outside_project`, `project_prefix_required`, `name_reserved_by_project`, `project_account_not_groupable`, `project_not_empty`, `repository_assigned`, `project_owner_changed`, `project_key_overlap`, `project_switch_off`, `secret_value_required`, `outbound_path_restricted`
+- Authorization: `authz_stale`, `authz_epoch_unknown`, `role_not_allowed`, `unknown_role`, `authenticated_write_action`, `anonymous_write_action`, `anonymous_dynamic_selector`, `action_not_allowed`, `invalid_action`, `invalid_pattern`, `unknown_principal`, `unknown_repository`, `unknown_format`, `duplicate_principal`, `virtual_action_not_applicable`, `role_binding_managed_by_configuration`, `repository_outside_project`, `unknown_project`, `principal_outside_project`, `principal_not_allowed`, `project_prefix_required`, `name_reserved_by_project`, `project_account_not_groupable`, `project_not_empty`, `repository_assigned`, `project_owner_changed`, `project_key_overlap`, `project_switch_off`, `secret_value_required`, `outbound_path_restricted`
 - Repositories and formats: `repository_disabled`, `repository_referenced`, `invalid_key`, `invalid_member`, `invalid_document`, `not_applicable`, `unsupported_class`, `unsupported_layout`, `batch_too_large`, `not_a_package`, `no_deploy_target`
 - Files: `invalid_path`, `not_admitted`, `path_conflict`, `content_unavailable`, `range_not_satisfiable`
 - Endpoints and exposure: `endpoint_read_only`, `invalid_version_range`, `dimension_not_supported`, `format_not_exposable`, `endpoint_not_configured`, `exposure_rule_limit_reached`
@@ -1083,9 +1095,13 @@ auth:
       allow_non_expiring: false         # default: an administrator may create a non-expiring service-account token only when true
     cit:
       max_ttl: 6h                       # default; 1m to 6h; hard ceiling
+    bst:
+      default_ttl: 8760h                # default; at least 1h, at most bst.max_ttl: the lifetime of a Bastion token when the request names none
+      max_ttl: 9480h                    # default; at least 1h: the ceiling of a Bastion token's lifetime (400 invalid_ttl above it)
     max_active_per_principal:
       pat: 50                           # default
       sat: 20                           # default
+      bst: 3                            # default; unrevoked Bastion tokens per registration, so that a renewal's overlap fits (409 token_limit_reached)
   anonymous:
     allowed: true                       # default: the ceiling of the runtime switch anonymousAccess
   clients:
@@ -1202,6 +1218,9 @@ ci:                                     # GitLab CI OIDC (docs/spec/gitlab-ci-oi
   #     public_issuer: false            # example: an instance without open sign-up; default true
   #     allowed_audiences: ["https://packages.example.com"]   # example; default: the base URL and npm:<host name>
   #     ca_bundle_ref: file:/var/run/secrets/gitlab-ca/ca.crt # example: an instance behind a private CA
+bastions:                               # the main installation's side of the Bastion (docs/spec/bastion.md; the Bastion's own tree is a separate file)
+  max_registrations: 16                 # default; 1 to 256; also bounds the bastion label of the interface metrics (R-BAS-004)
+  # check, feed and downloads: the keys of the Bastion interface (R-BAS-011, R-BAS-015, R-BAS-016)
 ui:
   readme:
     max_source_bytes: 512KiB            # default; 1KiB to 16MiB: a longer README is cut and flagged `truncated`
@@ -1342,6 +1361,18 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 | `DELETE /api/v1/users/{username}/tokens` | `revokeUserTokens` | `tokens:revoke` |
 | `POST /api/v1/service-accounts/{name}/tokens` | `createServiceAccountToken` | authenticated · recent sign-in |
 | `DELETE /api/v1/service-accounts/{name}/tokens` | `revokeServiceAccountTokens` | `tokens:revoke` or project administrator (`any`) |
+
+**bastions**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/bastions` | `listBastions` | `endpoints:read` |
+| `POST /api/v1/bastions` | `createBastion` | `endpoints:write` |
+| `GET /api/v1/bastions/{name}` | `getBastion` | `endpoints:read` |
+| `PATCH /api/v1/bastions/{name}` | `updateBastion` | `endpoints:write` · `If-Match` |
+| `DELETE /api/v1/bastions/{name}` | `deleteBastion` | `endpoints:write` |
+| `POST /api/v1/bastions/{name}/tokens` | `createBastionToken` | `endpoints:write` · idempotent · the secret once |
+| `DELETE /api/v1/bastions/{name}/tokens/{id}` | `revokeBastionToken` | `endpoints:write` or `tokens:revoke` |
 
 **auth-settings**
 

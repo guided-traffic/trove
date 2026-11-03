@@ -12,7 +12,7 @@ import (
 )
 
 // The contract tests of the Bastion operations (R-BAS-004, R-BAS-008, R-BAS-009): the document, the
-// declaration form of the interface routes and the stubs that answer until their work packages fill them.
+// declaration form of the interface routes and the stubs that answer until their work packages fill them (the registration operations are built).
 
 // TestR_BAS_008_TheInterfaceOperationsAreTaggedAndVersioned: exactly the four interface routes carry the
 // permission form {bastion: true} and x-trove-bastion-interface equal to the interface version of this build.
@@ -86,9 +86,10 @@ func TestR_BAS_005_AnInterfaceRouteAdmitsOnTheRecognitionAlone(t *testing.T) {
 	}
 }
 
-// TestR_BAS_004_TheManagementStubsAnswerNotImplemented: until work package 1 fills them, the registration
-// operations answer 501 bastion_not_implemented to a caller that may call them.
-func TestR_BAS_004_TheManagementStubsAnswerNotImplemented(t *testing.T) {
+// TestR_BAS_004_TheRegistrationOperationsAnswer503WithoutTheirService: the registration operations are built
+// (work package 1); on a replica without the registration service, as in the tests of this package, they answer
+// 503 unavailable to a caller that may call them, not 501.
+func TestR_BAS_004_TheRegistrationOperationsAnswer503WithoutTheirService(t *testing.T) {
 	s := newSetup(t, func(o *Options) { o.BastionStubs = true }, authed)
 	for _, c := range []struct{ method, path string }{
 		{http.MethodGet, "/api/v1/bastions"},
@@ -98,7 +99,7 @@ func TestR_BAS_004_TheManagementStubsAnswerNotImplemented(t *testing.T) {
 	} {
 		rec := httptest.NewRecorder()
 		s.handler.ServeHTTP(rec, httptest.NewRequest(c.method, c.path, nil))
-		if rec.Code != http.StatusNotImplemented || !strings.Contains(rec.Body.String(), errs.CodeBastionNotImplemented) ||
+		if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), errs.CodeUnavailable) ||
 			rec.Header().Get("Content-Type") != errs.ProblemContentType {
 			t.Errorf("%s %s: %d %s", c.method, c.path, rec.Code, rec.Body.String())
 		}

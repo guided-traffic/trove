@@ -26,6 +26,8 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 | [internal/auth/principal](../../internal/auth/principal) | The principal table: read side with cache (`PGStore`), write side (`Manager`), the login seam (`PGProvisioner`), the change payloads (`Change`), the freshness gate (`Gate`, `Flights`), the identity metrics (`Metrics`) |
 | [internal/auth/token](../../internal/auth/token) | Token format, scopes, lifetime policy, `Service` (create, rotate, revoke, list, validate with cache), `SettingsStore` (runtime settings), the two scheduled tasks |
 | [internal/audit/events_identity.go](../../internal/audit/events_identity.go) | The identity event types with their data schemas and journal flags |
+| [internal/audit/events_bastion.go](../../internal/audit/events_bastion.go) | `bastion.created`, `bastion.updated`, `bastion.deleted` (no journal entry, Q-BAS-61) |
+| [internal/bastionmain](../../internal/bastionmain) | The Bastion registrations (`registrations.go`: `Registrations`, the service behind `/api/v1/bastions` and `trove admin bastion`) and the `TokenAuthenticator` over the token service (`authenticator.go`); see [bastion.md](bastion.md) |
 | [internal/cluster/valkey_tokseen.go](../../internal/cluster/valkey_tokseen.go) | `TokenSeen`: the throttle-exemption marker (key family `tokseen`) |
 | [internal/meta/postgres/queries/identity.sql](../../internal/meta/postgres/queries/identity.sql) | Every identity query; parameters are plain Go types because the packages above import no driver |
 | [internal/app/wire_identity.go](../../internal/app/wire_identity.go) | The composition: `wireIdentity`, `registerIdentityJobs`, `publicRoute`, `apiKeyRoute` (the dispatcher's answer to "is this an API-key route", Q-AUTH-186) |
@@ -63,7 +65,8 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 | `lifetime.go` | `resolveLifetime` (R-AUTH-026) |
 | `service.go` | `Service`: `Create`, `Get`, `List`, the record types; `CreateRequest.Delegated` (a project administrator issues the token of a project service account: no `system` item, `admin: false`, 422 `invalid_scope`; not self-rotatable, 422 `validation_failed` at `/selfRotatable`, Q-AUTH-192; both in `checkDelegated`; never non-expiring, capped at the SAT maximum, Q-AUTH-190); `token.created` and `token.revoked` carry the owner's `project`; `insert` with `lineageCheck` (locks the parent and the rotated token with their `derived_from` chains and decides on what it finds then) |
 | `rotate.go`, `revoke.go` | `Rotate` (the successor keeps the lineage, Q-AUTH-89), `Revoke`, `RevokeByValue`, `RevokeAll`; `revokeTree` locks the tree before the cascade |
-| `validate.go` | `Service.Check`/`Validate`: the validation path, the cache `auth_tokens`, `token.rejected` |
+| `validate.go` | `Service.Check`/`Validate`: the validation path, the cache `auth_tokens`, `token.rejected`; the type `bst` is refused here as unknown before the cache and the table (R-BAS-005) |
+| `bastion.go` | The Bastion token (type `bst`, R-BAS-004): `CreateBastion`/`CreateBastionTx` (the lifetime rule of `auth.tokens.bst`, the limit per registration under the owner lock), `RevokeBastionToken`, `RevokeAllOfBastionTx` (deleting a registration), `AuthenticateBastion` (the validation of the interface, through the cache `auth_tokens` and `BastionTokenBySecret`) |
 | `settings.go` | `SettingsStore`: cache `auth_settings`, `Effective`, `Update` (R-AUTH-040) |
 | `tasks.go` | `Cleanup` (`token-cleanup`), `NoticeExpiring` (`token-expiry-notice`) |
 
@@ -180,7 +183,9 @@ unchanged), so a fill that raced a revocation serves one request and is not cach
 |---|---|---|
 | Unit | `internal/auth/stage_test.go` | precedence, no fall-through, challenges, session path rules, anonymous rules, exchange routes, endpoint rules, the Basic switch, failure codes; E1.8 for Bearer and Basic against a shared fake limiter and against per-replica shares |
 | Unit | `internal/auth/token/*_test.go` | the format test vector, scope validation, the derivation rule, lifetime table, the closed gate with an unreachable database (503), throttle consultation, cache eviction by payload kind |
-| Unit | `internal/auth/principal/principal_test.go` | name rules, UUIDv7, payload helpers, shared lookups |
+| Unit | `internal/auth/principal/principal_test.go` | name rules, UUIDv7, payload helpers, shared lookups; a Bastion is no group member (`TestR_BAS_004_ABastionIsNoGroupMember`) |
+| Unit | `internal/auth/bastion_token_test.go`, `internal/bastionmain/authenticator_test.go` | `TestR_BAS_005_ABastionTokenIsNoCredentialOnAnyOtherRoute` (Bearer, Basic and API key on the npm, raw-file and management routes with the real token service: 401 `invalid_token`, no read of the token table), the mapping of the authenticator's verdicts |
+| Integration, HTTP | `test/integration/bastionreg/` | `TestR_BAS_004_*` and `TestR_BAS_005_*`: registrations, tokens, limits, capabilities, the refusals (`principal_not_allowed`), the events and their journal entries, the authenticator across two replicas, the admin commands (builds the binary) |
 | Integration | `test/integration/identity/` | two or three in-process replicas against the shared stack, each with Valkey running or stopped: E1.2 (database text scan finds no token value; revocation within 2 s), the provisioner and group sync, concurrent first logins, memberships, disable/enable/delete, service accounts, creation limits under concurrency, derivation, rotation, revocation by value, settings and the anonymous switch across replicas, throttle markers, the scheduled tasks |
 | Integration, HTTP | `test/integration/identity/api_*_test.go` | the same replicas serving the real handlers ([test/integration/idapi](../../test/integration/idapi): the production chain, the real stage and decision point), every answer validated against the document: `TestAPIOperations` reaches every identity operation and asserts `Uncovered` is empty; E1.2 over HTTP with Valkey running and stopped; concurrent idempotent creates on three replicas; E1.8 for Bearer and Basic across three replicas (cluster limiter, and the per-replica share without Valkey); the flow-start budget of the revocation by value; `audit_event` rows for token creation and revocation (E1.5) |
 
@@ -300,6 +305,26 @@ Extension checklist, **a new identity operation**: add the path and schemas betw
 with `s.identityReady`, call the domain function, answer with `failIdentity`, add it to `identityOperations` in
 [api_test.go](../../test/integration/identity/api_test.go) so that `Uncovered` fails until a test reaches it.
 
+## Bastion registrations and tokens (R-BAS-004, R-BAS-005)
+
+A Bastion registration is a principal of the kind `bastion` plus a row of the table `bastion`; its tokens are `api_token` rows of the type
+`bst`. The API is `listBastions`, `createBastion`, `getBastion`, `updateBastion`, `deleteBastion`, `createBastionToken` and
+`revokeBastionToken` in [bastion_registrations_api.go](../../internal/api/v1/bastion_registrations_api.go); the rules are
+`bastionmain.Registrations`, which the handlers and `trove admin bastion` call. What differs from a service account:
+
+- **The token API does not see a `bst` token** (`IdentityListTokens` and `IdentityTokenRow` exclude it): it is issued, listed and
+  revoked through its registration. `token.Service.Check` refuses the type as unknown before the cache and the table.
+- **Validation** is `token.Service.AuthenticateBastion` through the same `auth_tokens` cache, freshness gate and change area as every token;
+  `bastionmain.Authenticator` maps its verdicts to `ErrTokenInvalid` and notes the use for `lastUsedAt`. Disabling a registration
+  notifies `ChangePrincipal` (the cache flushes) and revokes nothing; deleting one revokes every token with its journal entry first.
+- **A registration holds nothing.** `authz.ParseRef` parses `bastion:<name>`; the policy writes, role bindings, owner records, group
+  members and project administrators refuse it with `principal.BastionNotAllowed` (422 `principal_not_allowed`); the database guards are
+  the second line.
+- **Events**: the three `bastion.*` events and `token.created` / `token.revoked` with `resource_type` `bastion` (the token as the resource,
+  the registration in `details.bastion`).
+- **Wiring**: the `package 1` block of [wire_bastion.go](../../internal/app/wire_bastion.go) builds `bastionRegistrations` (passed as
+  `v1.Options.Bastions`) and `bastionAuthenticator`, which the recognition stage of the interface consumes.
+
 ## Bootstrap commands
 
 `trove admin service-account create`, `token create|revoke` and `user disable` (R-AUTH-015) are
@@ -310,6 +335,10 @@ with the actor `admin-cli`. `service-account create --admin` binds the role in t
 standard output (default lifetime 15 minutes, the SAT maximum applies; `--scope-file` is validated by
 `app.TokenScopeOptions`); `token revoke --value-stdin` reads the value from standard input and revokes with reason `leaked`.
 The integration test is [admin_test.go](../../test/integration/login/admin_test.go).
+
+`trove admin bastion create <name>`, `bastion token create <name> [--ttl <duration>]` and `bastion token revoke <name> <id>`
+([admin_bastion.go](../../cmd/trove/admin_bastion.go), R-BAS-004) use the same `identityParts`, with `bastionmain.Registrations` on top;
+`token create` prints only the secret. The integration test is [cli_test.go](../../test/integration/bastionreg/cli_test.go).
 
 ## Extension checklists
 

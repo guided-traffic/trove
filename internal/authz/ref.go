@@ -55,6 +55,10 @@ func ParseRef(s string) (Ref, error) {
 		return Ref{Kind: principal.KindServiceAccount, Name: name}, nil
 	case "ci":
 		return Ref{Kind: principal.KindCI, Name: name}, nil
+	case "bastion":
+		// A Bastion registration is a principal that holds nothing (R-BAS-004): the reference parses so that
+		// every write path refuses it with 422 principal_not_allowed instead of an unknown kind.
+		return Ref{Kind: principal.KindBastion, Name: name}, nil
 	}
 	return Ref{}, fmt.Errorf("%q has the unknown principal kind %q", s, prefix)
 }

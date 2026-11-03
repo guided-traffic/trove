@@ -53,13 +53,14 @@ func init() {
 	}
 
 	token(EventTokenCreated, Transactional, NoJournal, `{"type":"object","properties":{`+
-		`"type":{"type":"string","enum":["pat","sat","cit"]},"owner":{"type":"string"},"scope":`+eventSchemaScope+`,`+
+		`"type":{"type":"string","enum":["pat","sat","cit","bst"]},"owner":{"type":"string"},"scope":`+eventSchemaScope+`,`+
 		`"expiresAt":{"type":["string","null"]},"createdVia":{"type":"string"},"description":{"type":"string"},"derivedFrom":{"type":"string"},`+
-		`"project":{"type":"string"},"ciIssuer":{"type":"string"},"ciMappings":`+eventSchemaNames+`,"ciClaims":{"type":"object"}}}`)
+		`"project":{"type":"string"},"bastion":{"type":"string"},"tokenId":{"type":"string"},"ciIssuer":{"type":"string"},"ciMappings":`+eventSchemaNames+`,"ciClaims":{"type":"object"}}}`)
 	token(EventTokenRotated, Transactional, JournalRevocation, `{"type":"object","properties":{`+
 		`"predecessor":{"type":"string"},"overlapSeconds":{"type":"integer"},"predecessorExpiresAt":{"type":["string","null"]}}}`)
 	token(EventTokenRevoked, Transactional, JournalRevocation, `{"type":"object","properties":{`+
-		`"reason":{"type":"string"},"cascaded":`+eventSchemaNames+`,"owner":{"type":"string"},"project":{"type":"string"}}}`)
+		`"reason":{"type":"string"},"cascaded":`+eventSchemaNames+`,"owner":{"type":"string"},"project":{"type":"string"},`+
+		`"bastion":{"type":"string"},"tokenId":{"type":"string"}}}`)
 	token(EventTokenExpiring, Transactional, NoJournal, `{"type":"object","properties":{`+
 		`"owner":{"type":"string"},"hint":{"type":"string"},"description":{"type":"string"},"expiresAt":{"type":"string"}}}`)
 	token(EventTokenRejected, Async, NoJournal, `{"type":"object","properties":{`+

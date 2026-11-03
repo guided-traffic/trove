@@ -415,6 +415,10 @@ func (s *Service) resolve(ctx context.Context, in PolicyInput, stored bool, opts
 			ps = append(ps, field(ptr+"/principal", errs.CodeUnknownPrincipal, err.Error()))
 			continue
 		}
+		if ref.Kind == principal.KindBastion {
+			// R-BAS-004: a Bastion registration is granted nothing; 422 principal_not_allowed.
+			return nil, nil, principal.BastionNotAllowed("named in a policy")
+		}
 		id, perr := s.principalID(ctx, ref)
 		if perr != nil {
 			if errors.Is(perr, principal.ErrNotFound) {

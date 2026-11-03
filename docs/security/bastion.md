@@ -1,9 +1,10 @@
 # trove Bastion
 
-Status: specified for phase 5b of the [project plan](../projektplan/BETA.md#phase-5b--trove-bastion-m13) and not built. This
-page describes the design of [spec/bastion.md](../spec/bastion.md) before its code exists, because the threat model of an
-instance exposed to the internet is part of that design; it changes to describe the code, with links to it, in the change that
-builds each mechanism.
+Status: specified for phase 5b of the [project plan](../projektplan/BETA.md#phase-5b--trove-bastion-m13) and built in part. This
+page describes the design of [spec/bastion.md](../spec/bastion.md), because the threat model of an instance exposed to the internet is
+part of that design; it changes to describe the code, with links to it, in the change that builds each mechanism. Built so far on the
+main installation's side: the registrations and the Bastion token ([below](#the-registration-and-its-token-on-the-main-installation));
+the rest describes the design.
 
 This page says what the internet-facing Bastion can do, what an attacker who reaches it can do, what the Bastion's own token
 can do, and where abuse is stopped. The roles and boundaries of the main installation are in
@@ -74,6 +75,26 @@ API key (R-BAS-005).
 
 What its holder can still do with those rights is H-386. It is revoked like every token, journaled, and renewed by hand with an
 overlap (R-BAS-006); the Bastion warns 30 days before it expires and alerts when the main installation refuses it (R-BAS-041).
+
+## The registration and its token on the main installation
+
+Built ([R-BAS-004](../spec/bastion.md#r-bas-004--bastion-registrations-and-the-bastion-token-on-the-main-installation),
+[R-BAS-005](../spec/bastion.md#r-bas-005--what-the-bastion-token-can-do)). The token's whole security is in the type and in the registration
+that owns it:
+
+- **A registration holds no grant.** Every write that would give it a policy entry, a role, an ownership or a membership answers `422
+  principal_not_allowed`, and the database refuses the rows when they are written around the API
+  ([permissions.md](permissions.md#a-bastion-registration-holds-nothing)).
+- **The token is refused everywhere but on the interface.** As `Authorization: Bearer`, as the Basic password and as `X-NuGet-ApiKey` it
+  is `401 invalid_token` before any lookup; listing it in an endpoint's `auth.token_types` stops start-up
+  ([tokens-and-credentials.md](tokens-and-credentials.md#bastion-tokens)).
+- **It always expires and is limited in number.** At most three unrevoked tokens per registration by default, so that an overlap fits and
+  a forgotten token does not accumulate; the value is shown once and is in no event, no log line and no list.
+- **Who manages it.** `endpoints:write` registers, issues, disables and deletes; `tokens:revoke` alone may revoke a token, so a
+  security administrator can end a leaked token without managing endpoints. Every operation is an audit event with `resource_type`
+  `bastion`, a revocation is journaled, and deleting a registration revokes its tokens first.
+- **Disabling is not revoking.** A disabled registration refuses its tokens within `auth.revocation_bound` on every replica and enabling
+  it restores them; nothing is deleted.
 
 ## Where abuse is stopped
 
@@ -190,6 +211,12 @@ The gaps of the Bastion's mechanisms are recorded on the spec page, where the me
   installation by address;
 - [H-434](../spec/bastion.md#h-434--a-controller-that-ignores-the-annotations-turns-the-edge-limit-and-routing-off-silently) — a
   controller that ignores the Ingress annotations turns the edge limit and routing off silently;
+- [H-435](../spec/bastion.md#h-435--unknown-bastion-tokens-presented-on-the-interface-are-not-counted-by-the-failed-credential-throttle) —
+  unknown Bastion tokens on the interface are not counted by the failed-credential throttle;
+- [H-436](../spec/bastion.md#h-436--deleting-a-registration-deletes-its-token-rows-so-a-later-use-of-a-deleted-token-is-unknown-and-not-logged) —
+  a deleted registration's token leaves no rejection log;
+- [H-437](../spec/bastion.md#h-437--a-bastion-tokens-last-use-is-one-value-per-token-at-the-granularity-of-the-last-used-buffer) — the last
+  use of a Bastion token is one value per token;
 - [H-441](../spec/bastion.md#h-441--absent-rests-on-the-notes-of-the-cores-lookups-not-on-the-routes) — the class `absent` rests on the
   notes of the core's lookups;
 - [H-442](../spec/bastion.md#h-442--a-401-states-the-subject-as-invalid-whether-the-credential-was-rejected-or-none-was-sent) — a `401`

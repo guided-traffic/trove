@@ -16,7 +16,7 @@ its event types here.
 |---|---|
 | [registry.go](../../internal/audit/registry.go), [schema.go](../../internal/audit/schema.go) | `EventType`, `Register` (panics on a programming error), `Freeze`, `Lookup`, `Types`; the rules of R-OPS-014 and the bounded-array check of the data schema |
 | [event.go](../../internal/audit/event.go) | `Event`, `Actor`, `Subject`, `Source`, `Outcome`, `Recorder`, `Nop` |
-| [events_audit.go](../../internal/audit/events_audit.go), `events_<area>.go` | the types of one area; the audit area registers `audit.exported` |
+| [events_audit.go](../../internal/audit/events_audit.go), `events_<area>.go` | the types of one area; the audit area registers `audit.exported`, [events_bastion.go](../../internal/audit/events_bastion.go) the `bastion.*` events of a registration (no journal flag; the token events of a Bastion token are registered with the identity events and carry `resource_type` `bastion`, R-BAS-004) |
 | [recorder.go](../../internal/audit/recorder.go) | `Writer`, `New`, `RecordTx` (the transactional path), the journal rule, the PostgreSQL sink |
 | [async.go](../../internal/audit/async.go) | `Record` (the asynchronous path), the bounded buffer, the batch loop, the backoff, `Flush` |
 | [dedup.go](../../internal/audit/dedup.go) | deduplication of `authz.denied` and `token.rejected`, the switches for anonymous denials and downloads |
