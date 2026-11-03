@@ -1,21 +1,13 @@
 # trove Bastion
 
-Status: specification — the contracts of phase 5b are laid in the code ([developer/bastion.md](../developer/bastion.md), decisions
-[Q-BAS-48](#q-bas-48--a-registration-is-a-principal-row-plus-a-subtype-table-the-kind-and-the-token-type-are-admitted-by-one-contract-step)
-to [Q-BAS-54](#q-bas-54--the-roles-process-reuses-the-shell-of-the-others-and-answers-bastion_not_served-until-the-engine-exists)); both sides
-are built: the main installation's side (registrations and the `bst` token, the interface with
-[Q-BAS-65](#q-bas-65--the-recognition-admits-an-interface-route-on-its-own-proof-throttles-tokens-it-cannot-place-and-counts-the-bastion-in-the-read-class)
-to [Q-BAS-69](#q-bas-69--the-last-contact-is-remembered-per-replica-bounded-per-registration-and-its-event-is-asynchronous), the marking and the
-probe) and the Bastion's own side (the client and the link, the engine, the cache, the shared state and the guard, the server), wired into one role
-([Q-BAS-100](#q-bas-100--one-implementation-of-the-link-the-budget-the-sweep-and-the-cache-use-and-the-role-builds-real-components-only)); a review of the
-main installation's side tightened recognition, forwarded-header trust and the download intake
-([Q-BAS-115](#q-bas-115--a-request-with-trove-bastion-authorization-is-a-forward-and-a-forward-reaches-only-the-package-families) to
-[Q-BAS-120](#q-bas-120--unassigning-a-repository-from-a-project-drops-every-permission-answer-and-every-journaled-event-is-classified)). Phase 5b of the [project plan](../projektplan/BETA.md#phase-5b--trove-bastion-m13)
-builds the MVP requirements of this page (milestone M13 of the [roadmap](../coverage/roadmap.md#p1-platform-milestones), moved
-into the beta by the owner on 2026-11-02). The owner's decisions of 2026-10-31 and 2026-11-02 are binding and recorded as
+Status: implemented in beta phase 5b (2026-11-03) for R-BAS-001 to R-BAS-049 — the role as built is described on
+[developer/bastion.md](../developer/bastion.md), the integration suite is `test/integration/bastion` (R-BAS-048) and the end-to-end
+suite `make e2e SET=bastion` and `SET=bastion-long` (R-BAS-049, [developer/e2e.md](../developer/e2e.md)); the open gaps are the H- items of
+[What this does not cover](#what-this-does-not-cover). The owner's decisions of 2026-10-31 and 2026-11-02 are binding and recorded as
 [Q-BAS-1](#q-bas-1--the-bastion-asks-the-main-installation-and-keeps-no-copy-of-users-tokens-or-policies) to
 [Q-BAS-21](#q-bas-21--internet-exposure-limits-blocking-failed-sign-in-timeouts-and-a-configurable-cache); the record is
-[ADR-142](../decisions.md#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta).
+[ADR-142](../decisions.md#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta); the development agent's
+decisions are Q-BAS-22 to Q-BAS-131, for the owner's walkthrough.
 
 This page specifies the trove Bastion: a second, smaller deployment of trove that is exposed to the internet, gives external
 parties read access to the content of a main installation with the main installation's own tokens, keeps a cache of what it

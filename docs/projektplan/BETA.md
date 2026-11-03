@@ -29,7 +29,7 @@ numbers (owner, 2026-11-02).
 | [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | 🟢 |
 | [5a · Projects](#phase-5a--projects-and-delegated-administration) | Projects with project administrators who manage their repositories, policies and the technical accounts of external parties | 🟢 |
 | [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | 🟢 |
-| [5b · trove Bastion](#phase-5b--trove-bastion-m13) | An exposed, read-only cache instance in front of the main installation that serves released content to external parties and takes load off it | 🟡 |
+| [5b · trove Bastion](#phase-5b--trove-bastion-m13) | An exposed, read-only cache instance in front of the main installation that serves released content to external parties and takes load off it | 🟢 |
 | [6 · Vulnerability scanning](#phase-6--vulnerability-scanning-m4b) | Own advisory mirror, findings and vulnerability report, malicious versions blocked, npm and NuGet audits from trove's data | ⚪ |
 | [6b · Remote full mirror](#phase-6b--remote-full-mirror) | A remote repository can mirror every discoverable package of its upstream in the background, besides the default pull-through | ⚪ |
 | [7 · HA, backup, Helm](#phase-7--ha-hardening-backup-and-helm-m5) | Drains and failovers without errors, backup and restore; beta candidate | ⚪ |
@@ -700,77 +700,77 @@ to denial-of-service attempts.
   R-BAS-034). Catalog entries it pulls forward: the chained remote repository (RMT-040, RMT-041, RMT-044) and the read-only
   deployment profile with its trust between source and instance (DIST-024, DIST-025), raised to MVP with the page; RMT-042,
   RMT-043, RMT-045 and RMT-046 stay P2 (Q-BAS-47)
-- 🟡 A second Helm chart (`trove-bastion`) for this instance type (owner, 2026-11-02) with its own Ingress, Service, NetworkPolicy and TLS Secret; horizontal replicas
+- 🟢 A second Helm chart (`trove-bastion`) for this instance type (owner, 2026-11-02) with its own Ingress, Service, NetworkPolicy and TLS Secret; horizontal replicas
   without PostgreSQL of its own if the design allows, otherwise the smallest state that keeps the replicas consistent
-- 🟡 Same authentication as the main installation: personal, service-account and CI tokens and the same login, with
+- 🟢 Same authentication as the main installation: personal, service-account and CI tokens and the same login, with
   revocation reaching the Bastion within a stated bound; permissions and exposure rules of the main installation
   enforced on every request, cached content included
-- 🟡 Package cache: immutable content (tarballs, `.nupkg`) kept and served without asking the main installation again,
+- 🟢 Package cache: immutable content (tarballs, `.nupkg`) kept and served without asking the main installation again,
   metadata revalidated against it with conditional requests; collapsing of concurrent misses; behavior while the main
   installation is unreachable (stale metadata, cached content) as for remote repositories
-- 🟡 Read-only for package content (owner, 2026-10-31): publish, unpublish and tag writes answer in each protocol's shape and
+- 🟢 Read-only for package content (owner, 2026-10-31): publish, unpublish and tag writes answer in each protocol's shape and
   point at the main installation; client setup snippets for a Bastion
-- 🟡 Observability: cache hit rate, bytes served from the cache, upstream requests to the main installation
-- 🟡 Integration and e2e tests: npm and NuGet clients against a Bastion on kind in front of a main installation, cold and
+- 🟢 Observability: cache hit rate, bytes served from the cache, upstream requests to the main installation
+- 🟢 Integration and e2e tests: npm and NuGet clients against a Bastion on kind in front of a main installation, cold and
   warm cache, main installation unreachable, token revoked at the main installation, drain of a Bastion replica
-- 🟡 What a caller reads (owner, 2026-11-02): there is no release step of its own. The right is the token's: a caller reads
+- 🟢 What a caller reads (owner, 2026-11-02): there is no release step of its own. The right is the token's: a caller reads
   through the Bastion exactly what its token may read on the main installation, and read access behaves the same on both
-- 🟡 How the Bastion fetches (owner, 2026-11-02): with the caller's token. On a cache miss it forwards the caller's token,
+- 🟢 How the Bastion fetches (owner, 2026-11-02): with the caller's token. On a cache miss it forwards the caller's token,
   the main installation decides and serves, and the Bastion caches the bytes; a cached artifact is served to another
   caller only after the main installation said that this caller may read it (an answer kept for the bound). The
   Bastion's own token identifies the Bastion and may only have tokens checked; it reads no package
-- 🟡 How fast a revocation reaches the Bastion (owner, 2026-11-02): the Bastion keeps the main installation's answers for a
+- 🟢 How fast a revocation reaches the Bastion (owner, 2026-11-02): the Bastion keeps the main installation's answers for a
   configurable period (some minutes) and follows a revocation feed of the main installation every few seconds, so a
   revoked token or a narrowed right is dropped within seconds; widening a right may take the period
-- 🟡 The main installation unreachable (owner, 2026-11-02): answers the Bastion already holds stay valid for a configurable
+- 🟢 The main installation unreachable (owner, 2026-11-02): answers the Bastion already holds stay valid for a configurable
   grace period (proposed 15 minutes) beyond their normal period; callers with a valid answer get cached artifacts and
   possibly stale metadata, a token the Bastion has not seen gets `503`, and after the grace period it serves nothing
-- 🟡 The cache (owner, 2026-11-02): a small part of the artifacts, never the main installation's object store, which the
+- 🟢 The cache (owner, 2026-11-02): a small part of the artifacts, never the main installation's object store, which the
   Bastion cannot read; its backend is chosen in the chart, a bucket of the Bastion's own shared by its replicas or a local
   volume per replica, with size limit, eviction by last access and the metadata revalidation period configurable
-- 🟡 Shared state (owner, 2026-11-02): Valkey is optional. With it, the replicas share blocked addresses, rate-limit and
+- 🟢 Shared state (owner, 2026-11-02): Valkey is optional. With it, the replicas share blocked addresses, rate-limit and
   failed-sign-in counters, the coordination of fetches and the main installation's answers; without it, each replica works
   alone with the budgets divided by the number of replicas; losing Valkey costs performance, never correctness (INV-3).
   With a local volume per replica, the chart can route by path so that each artifact lives on one replica
-- 🟡 Anonymous reads (owner, 2026-11-02): as on the main installation; the Bastion admits anonymous requests exactly when
+- 🟢 Anonymous reads (owner, 2026-11-02): as on the main installation; the Bastion admits anonymous requests exactly when
   the main installation does. Because an anonymous request costs an attacker nothing, the Bastion absorbs misses itself:
   a negative cache for names the main installation does not have, a budget of concurrent requests to the main
   installation that misses cannot exceed, and stricter per-address limits for requests without a credential
-- 🟡 Audit of downloads (owner, 2026-11-02): the Bastion reports the downloads it serves from its cache to the main
+- 🟢 Audit of downloads (owner, 2026-11-02): the Bastion reports the downloads it serves from its cache to the main
   installation in batches (who, what, when, address; origin Bastion), under the same `audit.record_downloads` switch; it
   buffers them, bounded, while the main installation is unreachable and sends them later; events lost to a full buffer are
   counted and reported
-- 🟡 No web interface (owner, 2026-11-02): the Bastion serves the package clients and raw downloads with tokens only; no
+- 🟢 No web interface (owner, 2026-11-02): the Bastion serves the package clients and raw downloads with tokens only; no
   login, no session, no UI
-- 🟡 Configured only through its Helm chart (owner, 2026-11-02): the Bastion has no settings held anywhere else; every value
+- 🟢 Configured only through its Helm chart (owner, 2026-11-02): the Bastion has no settings held anywhere else; every value
   (main installation, its token, cache, periods, limits, blocking, trusted proxies) is a chart value, and a change is a
   rollout
-- 🟡 Blocking in two stages (owner, 2026-11-02): the Bastion itself enforces the rules that need trove's knowledge (failed
+- 🟢 Blocking in two stages (owner, 2026-11-02): the Bastion itself enforces the rules that need trove's knowledge (failed
   authentication, misses, block duration, a block list shared through Valkey); its chart can put a coarser per-address
   limit in front at HAProxy Ingress, which can be switched off and is set wider than the Bastion's own. Volumetric attacks
   on bandwidth are the network provider's, not the Bastion's
-- 🟡 The URL space of the main installation (2026-11-02): the Bastion holds no repository list; every repository of the main
+- 🟢 The URL space of the main installation (2026-11-02): the Bastion holds no repository list; every repository of the main
   installation is reachable under the same paths, and the main installation renders documents for the Bastion's host
   (the Bastion sends its base URL as the forwarded host; the main installation lists the Bastion in `trusted_proxies` and
   `additional_base_urls`), so the Bastion carries no format knowledge
-- 🟡 Metadata (owner, 2026-11-02): the main installation marks a document that is the same for every caller who reads the
+- 🟢 Metadata (owner, 2026-11-02): the main installation marks a document that is the same for every caller who reads the
   whole repository; the Bastion serves that copy for the metadata period to each caller for whom the main installation
   confirmed a full read of the repository (an answer kept like the others, under the revocation feed). A filtered
   document is never shared: it goes to the main installation per caller with a conditional request. Artifacts are shared
   after the main installation said the caller may read them
-- 🟡 The Bastion's token (owner, 2026-11-02): renewed by hand with an overlap: an administrator issues a second token before
+- 🟢 The Bastion's token (owner, 2026-11-02): renewed by hand with an overlap: an administrator issues a second token before
   the first expires, it reaches the Bastion's Secret through GitOps, the old one is revoked; the Bastion reloads a changed
   Secret without a restart, exports the remaining lifetime as a metric and warns in its log from a chart-set period before
   expiry (proposed 30 days). The Bastion holds no right to write Secrets or to issue tokens
-- 🟡 Interface version (owner, 2026-11-02): the Bastion interface of the main installation (token checks, revocation feed,
+- 🟢 Interface version (owner, 2026-11-02): the Bastion interface of the main installation (token checks, revocation feed,
   audit intake) has a version of its own, separate from the release number, raised only when that interface changes,
   which after the stable release is rare. Main installation and Bastion talk only when they speak the same interface
   version; on a mismatch the Bastion treats the main installation as unreachable (the grace period, then nothing) and
   raises a Prometheus alert (a metric plus a rule its chart ships)
-- 🟡 The main installation counts the real client: the Bastion stops abuse before a request reaches the main installation,
+- 🟢 The main installation counts the real client: the Bastion stops abuse before a request reaches the main installation,
   and the main installation lists the Bastion's addresses in `server.trusted_proxies`, so its per-address limits apply to
   the client and not to the Bastion
-- 🟡 Internet exposure (owner, 2026-11-02): rate limits per client address, automatic blocking of addresses that flood it,
+- 🟢 Internet exposure (owner, 2026-11-02): rate limits per client address, automatic blocking of addresses that flood it,
   a timeout for an address after too many failed authentication attempts, and a configurable cache (size, retention,
   metadata revalidation)
 
@@ -911,5 +911,6 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
 | **NuGet (.NET)** | 🟢 | 🟡 | ⚪ |
 | Projects (delegated administration) | 🟢 | 🟢 | — |
 | GitLab CI OIDC | 🟢 | 🟢 | 🟢 |
+| trove Bastion | 🟢 | 🟢 | 🟡 |
 | Vulnerability scanning | ⚪ | ⚪ | ⚪ |
 | Backup and restore | ⚪ | ⚪ | — |
