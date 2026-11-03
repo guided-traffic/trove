@@ -157,12 +157,19 @@ throughout, H last. A and B meet at `advisory`, `match` and the tables; C at the
 Each work package adds its section here, in the shape of [ci-oidc.md](ci-oidc.md): Files, what the others rely on, contract changes, tests. Numbers it may use: Q-VULN 28 to 29 (S), 30 to 34 (A), 35 to 39 (B), 40 to 43 (C),
 44 to 47 (D), 48 to 51 (E), 52 to 54 (F), 55 to 58 (G), 59 to 60 (H); H-numbers 477 to 479 (A), 480 to 482 (B), 483 to 485 (C), 486 to 487 (D), 488 to 489 (E), 490 (F), 491 to 493 (G), 494 (H).
 
+#### D · Client audits (R-VULN-017, R-VULN-018)
+
+What a client's audit reads of the scanning: npm's `local` mode of the bulk endpoint and NuGet's `VulnerabilityInfo/6.7.0`. Decisions:
+[Q-VULN-44 to Q-VULN-47](../spec/vulnerability-scanning.md#q-vuln-44--how-the-format-learns-the-installations-default-for-the-audit-modes-and-what-an-explicit-mode-means-on-a-class);
+the security view is [security/vulnerability-scanning.md](../security/vulnerability-scanning.md).
+
 ### G · Operations
 
 R-VULN-024 (the gauges, the alerts, the facts), R-VULN-026 (the restore), R-VULN-027 (nothing built: the page is documentation, the
 state is the other packages'), R-VULN-028 (the performance run) and the chart's part of R-VULN-025. Decisions:
 [Q-VULN-55 to Q-VULN-58](../spec/vulnerability-scanning.md#q-vuln-55--the-alerts-are-scoped-to-the-releases-namespace-and-the-stale-threshold-is-vulnerabilitiesstale_after);
 gaps: H-491 to H-493 on [the security page](../security/vulnerability-scanning.md).
+
 
 **Files**
 
@@ -215,6 +222,49 @@ findings gauge, `ExpectedSources`) and [app/vuln_facts_test.go](../../internal/a
 **Performance.** `perf/vuln` seeds in SQL and measures V-1 to V-9 against the code of the other packages; it compiles and its setup is
 tested (`TestR_VULN_028_TheSeededInstallation`, 100,000 versions in about 2 s), the scenarios run once A to E are merged. How to read
 a run: [perf/README.md](../../perf/README.md#the-vulnerability-scanning-run).
+
+| [queries/vuln_audits.sql](../../internal/meta/postgres/queries/vuln_audits.sql) | `AuditAdvisoriesForNames` (one query for a body of names, over `vuln_affected_name`) and `AuditAllAdvisories`; one row per affected entry, times as epoch microseconds, so that no driver type leaves the store |
+| [vuln/store/audits.go](../../internal/vuln/store/audits.go) | `Audits` implements `vuln.Advisories`: `ForNames` (per name, the advisories with that name's entries), `All`, `InternalNames` over an `InternalNameRule` |
+| [vuln/store/audits_pages.go](../../internal/vuln/store/audits_pages.go) | `Pages`, the cache `vuln_nuget_page`: `Key(ecosystem)` (the data epoch and the applied epochs of `claims` and `repo_config`), `Page(ctx, key, render)` over `cache.Cache.Load` (the fill rule of R-ARCH-018); areas `vuln_data`, `claims`, `repo_config`; four entries, safety TTL 15 minutes |
+| [app/wire_vuln_audits.go](../../internal/app/wire_vuln_audits.go) | `internalNameRule`, the rule of R-VULN-010 over the claim index (`Routing.ClaimsFor`) and the snapshot (a claim of a local repository of the format counts unless that repository sets `matchPublicAdvisories: always`); `wireAudits`, called from the `WP-D` block; `vulnArea.hostPorts()` |
+| [npm/handlers_audit.go](../../internal/formats/npm/handlers_audit.go) | the dispatch by mode and the count of every answer (`trove_vuln_audit_requests_total`); the forwarder reads the effective mode |
+| [npm/handlers_audit_local.go](../../internal/formats/npm/handlers_audit_local.go) | mode resolution (`auditModeOf`), the local handler, the answer's members, the notice |
+| [npm/handlers_audit_ranges.go](../../internal/formats/npm/handlers_audit_ranges.go) | `vulnerable_versions` text with the `\|\| =V` completion; `auditAdapter`, npm's face for the matcher |
+| [nuget/vuln_documents.go](../../internal/formats/nuget/vuln_documents.go) | the two documents, the mode (`vulnInfoModeOf`), the listing flag of the service index, the ETags, the page rendering and the NuGet intervals |
+| `npm/settings*.go`, `settings.schema.json`; `nuget/settings*.go`, `settings.schema.json`; `nuget/index.go` | `npm.audit.mode` (`local`, `forward`, `disabled`) on every class; `nuget.vulnerabilityInfo` (`local`, `off`) on every class (`upstream` is refused until R-NUGET-023); the index entry and the ETag input |
+| [test/integration/vulnaudit](../../test/integration/vulnaudit) | the HTTP tier: rows inserted directly, two replicas, claims and epochs published as a writer does |
+**The mode of an audit.** A repository document that sets the mode is read; a document that leaves it out takes the installation's default, which a
+format learns through two Host switches (`Enabled`, `LocalByDefault`; the composition root wires the advisories, and so `Enabled`, only while
+`vulnerabilities.enabled` is `true`). `auditModeOf` (npm) and `vulnInfoModeOf` (NuGet) are the two places that resolve it; both are pure functions of
+the document, the class and the Host, and the table test of `TestR_VULN_017_TheDefaultMode` pins every cell.
+**The npm answer.** Body bounds are the forward's (`readAuditBody`); the data state is checked after the body (so a 413 is still a 413), then the names
+are split into internal (withheld, never read) and the rest, whose advisories come from one `ForNames`. An advisory is listed when `Affects` finds one
+requested version in one of its entries; its `vulnerable_versions` is the ranges as node-semver text plus `|| =V` for each affected version that the
+text, evaluated without pre-release inclusion, does not match. Ids are assigned over the whole answer (`NPMAuditIDs`). Everything is a function of
+the stored rows and the request, so two replicas answer the same bytes.
+**The NuGet documents.** Both are `Computed` routes (the same for every caller that may read the repository). The index ETag covers the feed the `@id`
+names and the data state (epoch, time of the last sync); the page ETag covers the render version, the data epoch and `PageKey`. The service index lists
+the resource while the mode is `local` and the data is complete, and its ETag covers that flag, so that a client's cached index gains the entry.
+**What the other packages rely on.** `Advisories` is complete; B's matcher and adapters are used by the audit through `Host.Vulnerabilities().Affects` with
+an adapter of the audit's own (`auditAdapter`, below), which the development agent folds into the adapter of B (`internal/formats/npm/vuln.go`) at the
+merge. The internal-name rule exists twice by design until then: `app.internalNameRule` (this package, R-VULN-010 as the audits read it) and the
+evaluation's own (B); the two must say the same.
+**Contract changes**
+- `formats.VulnerabilityData` gains `Enabled()`, `LocalByDefault()`, `PageKey(ecosystem)` and `Page(ctx, key, render)` (Q-VULN-44, Q-VULN-45), with
+  [formathost/vulnerability.go](../../internal/formathost/vulnerability.go) (`VulnPorts.LocalDefault`, `VulnPorts.Pages`, `PageCache`), the spec block of
+  R-ARCH-008 and `internal/formats/testdata/contract.txt`.
+- `wireVuln` takes the repository and the virtual areas (`repo repositoryArea, vir virtualArea`), for the claim index and the snapshot; `vulnArea` gains
+  `pages` and `localAudits`; `wire_formats.go` hands `vz.hostPorts()` to the Host.
+- The NuGet route table gains `nuget.vulnerabilities.index` and `nuget.vulnerabilities.page`; `ServiceIndex` keeps its signature (the rendering with the
+  entry is `serviceIndexOf`), `indexETag` gains the listing flag.
+**Tests.** Unit: `handlers_audit_local_test.go` (npm: rendering, ids, ranges and the completion, severities, the withheld names and the notice, the 503, the
+501 cases, the default table), `vuln_documents_test.go` (NuGet: the listing, both documents, the cache, the ETags, the 304), `vulnerability_audit_test.go` (the
+Host's switches), `wire_vuln_audits_test.go` (the internal-name rule). Integration: `test/integration/vulnaudit` (R-VULN-017: every class, byte-identical on two
+replicas, the internal name and the notice, a claim that is added, the pre-release, the 503, the 501 cases including the cache view and the rules endpoint of
+R-EP-012, the scanning switched off; R-VULN-018: the listing on every class, the documents, the 304, the ETag after an epoch change and after a claim, 404 and
+503). Not reached at this tier, and why: the client runs (`npm audit`, `pnpm audit`, `yarn npm audit`, `dotnet restore`, NU1903, NU1904,
+`NuGetAuditSuppress`, the reference lockfile's identity with the public registry's answer) are the end-to-end tier's; the propagation bound of the page's ETag
+"with Valkey stopped" is shown here with the stack's Valkey unreachable (the replicas of the tests run without it) and a poll, not with a timed bound.
 
 ### WP-C · Enforcement
 

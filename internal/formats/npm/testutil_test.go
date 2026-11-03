@@ -81,3 +81,6 @@ func defaultConfig(t *testing.T) *config.Config {
 	t.Helper()
 	return &config.Config{NPM: defaultReplica().cfg}
 }
+
+// Vulnerabilities is the host of a unit test that has not wired the scanning.
+func (h *fakeHost) Vulnerabilities() formats.VulnerabilityData { return formats.NoVulnerabilityData() }

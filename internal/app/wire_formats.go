@@ -244,7 +244,7 @@ func (a *App) wireFormatHost(_ context.Context, in infra, fm formatsArea, repo r
 	host, err := formathost.New(formathost.Options{
 		Runner: in.db, Decider: fa.decider, Items: fa.items, Packages: pkgs, Deps: fm.deps, Renditions: rend, Engine: eng.remote(),
 		Resolver: resolver,
-		Vuln:     formathost.VulnPorts{States: vz.states, Advisories: vz.advisories, Audit: vz.countAudit},
+		Vuln:     vz.hostPorts(),
 		Enforce:  vz.enforcer, Repos: repo.reader,
 		DownloadBuffer: int(a.cfg.Storage.Download.BufferSize), Log: a.log.With("component", "formats"),
 	})

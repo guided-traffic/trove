@@ -38,8 +38,13 @@ type vulnArea struct {
 	states vuln.States
 	// evaluator evaluates stored versions: the commit hook, the removal hook and the remote miss (work package B).
 	evaluator vuln.Evaluator
-	// advisories reads advisory data for the client audits (work package D).
+	// advisories reads advisory data for the client audits (work package D); nil while vulnerabilities.enabled is false.
 	advisories vuln.Advisories
+	// pages is the cache vuln_nuget_page of the NuGet vulnerability page (work package D).
+	pages *store.Pages
+	// localAudits is whether the client-audit modes that a repository document leaves out default to local: the scanning is
+	// enabled and the OSV source is not off (work package D, Q-VULN-44).
+	localAudits bool
 	// metrics are the collectors of R-VULN-024.
 	metrics *vmetrics.Metrics
 	// enforcer applies the download policy: the policy of a repository for the item lookup, the verdict, the remote miss gate
@@ -48,9 +53,9 @@ type vulnArea struct {
 }
 
 // wireVuln builds the area: the metrics today, and the ports as the work packages fill their blocks.
-func (a *App) wireVuln(_ context.Context, in infra) (vulnArea, error) {
+func (a *App) wireVuln(_ context.Context, in infra, repo repositoryArea, vir virtualArea) (vulnArea, error) {
 	if err := requireInputs(AreaVuln, given("database", in.db), given("change log", in.changes), given("cache registry", in.caches),
-		given("audit recorder", in.rec)); err != nil {
+		given("audit recorder", in.rec), given("repository reader", repo.reader), given("claim routing", vir.routing)); err != nil {
 		return vulnArea{}, err
 	}
 	m, err := vmetrics.New(a.tele.metrics.Registry())
@@ -68,7 +73,10 @@ func (a *App) wireVuln(_ context.Context, in infra) (vulnArea, error) {
 	// <<< WP-B
 
 	// >>> WP-D
-	// The advisories over the store, the claim index and the cache vuln_nuget_page: out.advisories.
+	// The advisories over the store, the claim index and the cache vuln_nuget_page: out.advisories, out.pages (wire_vuln_audits.go).
+	if err := a.wireAudits(in, repo, vir, &out); err != nil {
+		return vulnArea{}, err
+	}
 	// <<< WP-D
 
 	// >>> WP-G

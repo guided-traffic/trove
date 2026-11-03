@@ -87,16 +87,19 @@ func (f *Format) forwarder(ctx context.Context, rq *formats.Request) (*auditForw
 	}
 	switch rq.Repo.Class {
 	case formats.Remote:
-		if s := settingsOf(rq.Repo.Config).Audit; s.Forward {
+		if s := settingsOf(rq.Repo.Config).Audit; auditModeOf(rq.Host, rq.Repo.Class, s) == auditForward {
 			return &auditForwarder{rq: rq, set: s}, nil
 		}
 	case formats.Virtual:
+		if auditModeOf(rq.Host, rq.Repo.Class, settingsOf(rq.Repo.Config).Audit) != auditForward {
+			break // the virtual repository's own mode is local or disabled (R-VULN-017)
+		}
 		members := slices.Clone(rq.Repo.Members())
 		sort.SliceStable(members, func(i, j int) bool { return members[i].PriorityMember && !members[j].PriorityMember })
 		for i := range members {
 			m := &members[i]
 			s := settingsOf(m.Config).Audit
-			if m.Class != formats.Remote || m.Disabled || !s.Forward {
+			if m.Class != formats.Remote || m.Disabled || auditModeOf(rq.Host, m.Class, s) != auditForward {
 				continue
 			}
 			mrq, err := rq.Member(m)
@@ -112,8 +115,39 @@ func (f *Format) forwarder(ctx context.Context, rq *formats.Request) (*auditForw
 	return nil, auditUnavailable(rq.Repo.Key)
 }
 
-// handleAudit answers POST -/npm/v1/security/advisories/bulk (R-NPM-038).
+// handleAudit answers POST -/npm/v1/security/advisories/bulk (R-NPM-038, R-VULN-017): from trove's own advisory
+// data in mode local, else through the forwarding remote. Every answer is counted by mode and outcome.
 func (f *Format) handleAudit(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
+	mode := auditModeOf(rq.Host, rq.Repo.Class, settingsOf(rq.Repo.Config).Audit)
+	var err error
+	if mode == auditLocal {
+		err = f.handleAuditLocal(ctx, rq, w)
+	} else {
+		err = f.handleAuditForward(ctx, rq, w)
+	}
+	rq.Host.Vulnerabilities().CountAudit(ID, mode, auditOutcome(err))
+	return err
+}
+
+// auditOutcome is the outcome label of trove_vuln_audit_requests_total.
+func auditOutcome(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	e, ok := errs.As(err)
+	switch {
+	case !ok:
+		return "error"
+	case e.Kind == errs.NotImplemented:
+		return "refused"
+	case e.Code == errs.CodeVulnerabilityDataUnavailable:
+		return "unavailable"
+	}
+	return "error"
+}
+
+// handleAuditForward answers the bulk endpoint by forwarding (R-NPM-038).
+func (f *Format) handleAuditForward(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
 	start := time.Now()
 	fw, err := f.forwarder(ctx, rq)
 	if err != nil {
@@ -337,7 +371,11 @@ func providerStatus(key string, status int) error {
 // endpoint when the bulk request fails, and then print this answer, so a repository without
 // a forwarder answers the text of the bulk endpoint.
 func (f *Format) handleAuditLegacy(ctx context.Context, rq *formats.Request, _ http.ResponseWriter) error {
-	if _, err := f.forwarder(ctx, rq); err != nil {
+	if auditModeOf(rq.Host, rq.Repo.Class, settingsOf(rq.Repo.Config).Audit) == auditLocal {
+		if err := localAuditAllowed(rq); err != nil {
+			return err
+		}
+	} else if _, err := f.forwarder(ctx, rq); err != nil {
 		return err
 	}
 	return errs.E(errs.NotImplemented, errs.CodeNPMAuditUnavailable,

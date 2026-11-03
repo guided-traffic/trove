@@ -1369,6 +1369,16 @@ type VulnerabilityData interface {
 	Affects(a VulnerabilityAdapter, e advisory.Affected, version string) match.Result
 	// CountAudit counts one audit in trove_vuln_audit_requests_total (R-VULN-024), so that a format imports no metric package.
 	CountAudit(format ID, mode, outcome string)
+	// Enabled reports whether the installation's vulnerabilities.enabled is true, which an audit mode local needs (R-VULN-017).
+	Enabled() bool
+	// LocalByDefault reports whether the audit mode of a repository whose document does not set one is local: Enabled and the
+	// OSV source is not off (R-VULN-017, R-VULN-018, Q-VULN-44).
+	LocalByDefault() bool
+	// PageKey is the data epoch of the ecosystem and the applied epochs of the claims and repo_config areas as text: the
+	// input of the weak ETag of the NuGet vulnerability page (R-VULN-018, Q-VULN-45).
+	PageKey(ecosystem string) string
+	// Page returns the page cached under the key in the replica's cache vuln_nuget_page, or renders and caches it.
+	Page(ctx context.Context, key string, render func(context.Context) ([]byte, error)) ([]byte, error)
 }
 
 // NoVulnerabilityData returns the VulnerabilityData of a host that has not wired the scanning: every ecosystem is not

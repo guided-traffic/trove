@@ -111,6 +111,12 @@ func (f *Format) buildRoutes() []formats.Route {
 		route(routeSymbolPush, http.MethodPut, "/v3/symbolpackage[/]", formats.Upload, deploy,
 			matchPublish(resSymbolPackage), []string{"v3/symbolpackage", "v3/symbolpackage/"}, f.handleSymbolPush),
 
+		// The vulnerability information (R-VULN-018): the same for every caller that may read the repository.
+		route(routeVulnIndex, http.MethodGet, "/v3/vulnerabilities/index.json", formats.Computed, read,
+			matchVulnerabilities(indexFile), []string{"v3/vulnerabilities/index.json"}, f.handleVulnIndex),
+		route(routeVulnPage, http.MethodGet, "/v3/vulnerabilities/trove.json", formats.Computed, read,
+			matchVulnerabilities(vulnPageFile), []string{"v3/vulnerabilities/trove.json"}, f.handleVulnPage),
+
 		// The symbol server (R-NUGET-021, P1): the key is <file>/<index>/<file>.
 		route(routeSymbols, http.MethodGet, "/v3/symbols/{key...}", formats.Download, read,
 			matchSymbolKey, []string{"v3/symbols/acme.widgets.pdb/0123456789abcdef0123456789abcdefFFFFFFFF/acme.widgets.pdb"}, f.handleSymbols),

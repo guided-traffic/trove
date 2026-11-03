@@ -115,6 +115,7 @@ func TestR_NPM_041_TheGuideQuotesWhatTroveSends(t *testing.T) {
 		fmt.Sprintf(latestKeptNotice, "<version>"),
 		fmt.Sprintf(retryAcknowledgedNotice, "<name>", "<version>", "<time>"),
 		strings.ReplaceAll(strings.Replace(strings.Replace(strings.Replace(auditPartialNotice, "%d", "<n>", 1), "%d", "<m>", 1), "%d", "<k>", 1), "%%", "%"),
+		strings.ReplaceAll(strings.Replace(strings.Replace(strings.Replace(auditLocalNotice, "%d", "<n>", 1), "%d", "<m>", 1), "%d", "<k>", 1), "%%", "%"),
 		strings.Split(auditUnavailableText, "%s")[0],
 	} {
 		if !strings.Contains(all, want) {
@@ -164,7 +165,7 @@ func TestR_NPM_041_TheGuideStatesTheDefaults(t *testing.T) {
 	p := schema.Properties
 	if p["latestGuard"].Default != true || p["serveRemovedVersions"].Default != false ||
 		p["latestStrategy"].Default != "highest-member-latest" || p["distTagStrategy"].Default != "member-order" ||
-		p["audit"].Properties["mode"].Default != "forward" {
+		p["audit"].Properties["mode"].Default != nil { // the audit mode has no schema default: it depends on the installation (Q-VULN-44)
 		t.Errorf("the settings the guide describes changed their defaults: %+v", p)
 	}
 	local := renderGuide(t, guideData(formats.Local, "npm", false, false))["npm.local.what"]

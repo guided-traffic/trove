@@ -174,6 +174,8 @@ func conformance(f *Format) formattest.Fixture {
 		Host: func() formattest.HostOptions {
 			return formattest.HostOptions{
 				Data: newDocStore(),
+				// The vulnerability information is served while trove's NuGet data is complete (R-VULN-018).
+				Vulnerabilities: newScanning(),
 				// The push reads the shadowing verdict and the search the scope of the caller (R-AUTHZ-016).
 				Resolver: conformanceResolver{shadowResolver: shadowResolver{out: formats.ShadowOutcome{Proceed: true}}, scope: scopeFake{shape: formats.ReadAll}},
 				Subject:  authz.Subject{Kind: "user", ID: "11111111-1111-1111-1111-111111111111", Name: "alice"},
@@ -210,6 +212,8 @@ func conformance(f *Format) formattest.Fixture {
 			{Name: "registration page", Path: feed("registration-gz/acme.widgets/page/1.0.0/2.0.0.json"), Seed: seedWidgets},
 			{Name: "registration leaf", Path: feed("registration/acme.widgets/1.2.3.json"), Seed: seedWidgets},
 			{Name: "search", Path: feed("search")},
+			{Name: "vulnerability index", Path: feed("vulnerabilities/index.json")},
+			{Name: "vulnerability page", Path: feed("vulnerabilities/trove.json")},
 			{Name: "autocomplete", Path: feed("autocomplete"), Status: notBuilt},
 			{Name: "symbols", Path: feed("symbols/acme.widgets.pdb/0123456789abcdef0123456789abcdefFFFFFFFF/acme.widgets.pdb"), Status: notBuilt},
 		},

@@ -19,7 +19,8 @@ imports the format contract and the leaf packages below, and reaches its tables 
 | [paths.go](../../internal/formats/nuget/paths.go) | The canonical paths (`NupkgPath`, `NuspecPath`, `PackageDocumentPath`), `Classify`, `CanonicalPath` (route to canonical path), the routing name of a symbol key |
 | [index.go](../../internal/formats/nuget/index.go) | `ServiceIndex` (the document), `handleIndex`, the weak ETag and `If-None-Match` |
 | [errors.go](../../internal/formats/nuget/errors.go) | `WriteError`: the one-line `text/plain` body `<code>: <message>`, the Basic challenge, `Retry-After` capped at 30 s, the message of the v2 404 |
-| [settings.go](../../internal/formats/nuget/settings.go), [settings.schema.json](../../internal/formats/nuget/settings.schema.json) | The `nuget` member of a repository document: `deleteMode`, `forwardSearch`; `settingsOf` |
+| [settings.go](../../internal/formats/nuget/settings.go), [settings.schema.json](../../internal/formats/nuget/settings.schema.json) | The `nuget` member of a repository document: `deleteMode`, `forwardSearch`, `vulnerabilityInfo`; `settingsOf` |
+| [vuln_documents.go](../../internal/formats/nuget/vuln_documents.go) | The vulnerability information of trove's own data (R-VULN-018): the documents `v3/vulnerabilities/index.json` and `trove.json`, the mode, whether the service index lists the resource (`vulnListed`, an input of `indexETag`), the weak ETags, the page rendering and the NuGet intervals; [developer/vulnerabilities.md](vulnerabilities.md#d--client-audits-r-vuln-017-r-vuln-018) |
 | [bind.go](../../internal/formats/nuget/bind.go) | `Bind`: the `nuget` section of the configuration per Host; `archiveLimits` maps `nuget.archive` onto `nupkg.Limits` |
 | [store.go](../../internal/formats/nuget/store.go) | The data port interface `Store`; the block `>>> M3 nuget-read` holds the reads of the document and search packages |
 | [view.go](../../internal/formats/nuget/view.go) | The `ViewAdapter` of the package screens: `Compare`, `Describe`, `Find`, `Withheld`, `Stored`, and `viewPort`, the part of the data port it reads (Q-NUGET-48) |
@@ -83,7 +84,7 @@ search packages need are typed in [rows/read.go](../../internal/formats/nuget/ro
 
 ### Settings and configuration
 
-The member `nuget` of a repository document holds `deleteMode` (`unlist` default, `delete`; local) and `forwardSearch` (`true` default; remote); the symbol and vulnerability members
+The member `nuget` of a repository document holds `deleteMode` (`unlist` default, `delete`; local), `forwardSearch` (`true` default; remote) and, from M4b, `vulnerabilityInfo` (`local` or `off`, every class; the default follows the installation, `vulnInfoModeOf`, R-VULN-018, Q-VULN-44); the symbol member and the pass-through `upstream` of the vulnerability information
 arrive with R-NUGET-022 and R-NUGET-023 (Q-NUGET-31). The system file has `nuget.archive`, `nuget.registration` and `nuget.search`
 ([configuration.md](configuration.md#m2-keys)). The metadata period of Q-NUGET-2 is the generic `cache.metadataTtlSeconds` of a remote repository with the format's default of 300 s.
 

@@ -63,11 +63,12 @@ The settings of a format are drawn from the schema the format publishes, so the 
 | Generic local | none | | |
 | NuGet local | **deleteMode** | `unlist` | What `dotnet nuget delete` and `nuget delete` do: `unlist` hides the version from search and keeps it downloadable; `delete` removes the version for good and keeps its number blocked. A delete through the API, the UI or `/files/` always removes |
 | NuGet remote | **forwardSearch** | on | Forward the search of this remote to its upstream. The forwarding is not built yet: the search of a remote answers from the packages it has cached, whatever the setting says |
+| NuGet, every class | **vulnerabilityInfo** | `local` while vulnerability scanning is on and the OSV source is not off, else `off` | `local` lists the vulnerability information in the service index and serves trove's own NuGet advisory data once it has been imported, so `dotnet restore` reports known vulnerabilities (NU1901 to NU1904); `off` lists nothing. Passing the upstream's information through (`upstream`) is not built |
 | npm local | **latestGuard** | on | A publish under `latest` never moves `latest` backwards or onto a pre-release in front of a release; the version is stored and `latest` stays |
 | npm remote | **serveRemovedVersions** | off | Keep serving cached tarballs of versions the upstream no longer lists; the package documents never list them |
-| npm remote | **audit** › **mode** | `forward` | `forward` answers `npm audit` through this remote; `disabled` answers 501 `npm_audit_unavailable` |
-| npm remote | **audit** › **providerURL** | the upstream | An `https` URL of another advisory provider |
-| npm remote | **audit** › **timeout**, **maxBodySize** | `30s`, `1MiB` | Limits of one audit request |
+| npm, every class | **audit** › **mode** | `local` while vulnerability scanning is on and the OSV source is not off, else `forward` (remote and virtual) or `disabled` (local) | `local` answers `npm audit` from trove's own advisory data and sends nothing out; the answer is `503 vulnerability_data_unavailable` until the npm advisory data has been imported. `forward` answers through the first remote that forwards, with that remote's provider (remote and virtual repositories only). `disabled` answers 501 `npm_audit_unavailable`. With `vulnerabilities.enabled: false`, `local` answers like `disabled` |
+| npm remote | **audit** › **providerURL** | the upstream | Mode `forward` only: an `https` URL of another advisory provider |
+| npm, every class | **audit** › **timeout**, **maxBodySize** | `30s`, `1MiB` | Limits of one audit request; the body limit applies in every mode, the timeout to `forward` only |
 | npm virtual | **latestStrategy** | `highest-member-latest` | How `latest` is merged: the highest `latest` of the members, or `newest-published` |
 | npm virtual | **distTagStrategy** | `member-order` | How other dist-tags are merged: the first member in order, `highest-semver` or `newest-published` |
 

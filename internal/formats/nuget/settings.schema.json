@@ -18,6 +18,11 @@
       "type": "boolean",
       "default": true,
       "x-trove-classes": ["remote"]
+    },
+    "vulnerabilityInfo": {
+      "description": "The vulnerability information of the service index (R-VULN-018): local lists VulnerabilityInfo/6.7.0 and serves trove's own NuGet advisory data while that data is complete (every class; answers like off while vulnerabilities.enabled is false); off lists nothing. Left out, the mode is local while vulnerabilities.enabled is true and the OSV source is not off, else off. The pass-through of the upstream's information, upstream, is refused until R-NUGET-023 is built.",
+      "type": "string",
+      "enum": ["local", "off"]
     }
   }
 }

@@ -17,8 +17,9 @@ This page lists what this version of trove does not do, and the known weak spots
 ## Vulnerability scanning
 
 - trove does not scan stored packages, keeps no advisory data, blocks no malicious versions and has no vulnerability report.
-- `npm audit`, `pnpm audit` and `yarn npm audit` work through remote and virtual npm repositories by forwarding the audit to the remote's upstream or to its configured provider. The answer is that provider's, passed on unchanged. Local repositories and endpoints with exposure rules or without cache fill answer `501`.
-- Names of packages that the remote has never fetched are withheld from the forwarded audit and reported as clean. npm prints a notice about withheld names; pnpm and Yarn do not. Install through trove before you audit, and watch `trove_npm_audit_names_withheld_total`.
+- `npm audit`, `pnpm audit` and `yarn npm audit` (pnpm 11 and later, Yarn 4) are answered from trove's own advisory data on local, remote and virtual npm repositories while the repository's audit mode is `local`, which is the default while vulnerability scanning is on; trove sends nothing out. In mode `forward`, remote and virtual repositories forward the audit to the remote's upstream or to its configured provider and pass the answer on unchanged. The cache view of a remote and endpoints with exposure rules answer `501`; endpoints without cache fill are answered in mode `local` and are `501` in mode `forward`.
+- Names that the installation treats as internal (a namespace claim of a local repository covers them) are withheld from the audit in mode `local` and reported as clean, so a public advisory of a package that shares an internal name is not applied to it. npm prints a notice about withheld names; pnpm and Yarn do not. In mode `forward`, names the remote has never fetched are withheld as well; install through trove before you audit, and watch `trove_npm_audit_names_withheld_total`.
+- NuGet repositories of every class list the vulnerability information in their service index once the NuGet advisory data has been imported; a restore that audits packages (`NuGetAudit`) then reports advisories from trove's data. Until then the resource is not listed and the restore skips the audit silently.
 
 ## Backup and restore
 

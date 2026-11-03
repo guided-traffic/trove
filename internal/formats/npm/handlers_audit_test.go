@@ -410,16 +410,19 @@ func TestR_NPM_038_SettingsSchemaAndDefaults(t *testing.T) {
 			t.Errorf("%s is accepted", bad)
 		}
 	}
-	if vs := e.ValidateSettings(catalog.Local, []byte(`{"audit":{}}`)); len(vs) != 1 || vs[0].Code != catalog.SettingNotApplicable {
-		t.Errorf("audit on a local repository: %+v", vs)
+	// npm.audit is a member of every class from M4b (R-VULN-017).
+	for _, class := range []catalog.Class{catalog.Local, catalog.Remote, catalog.Virtual} {
+		if vs := e.ValidateSettings(class, []byte(`{"audit":{"mode":"local"}}`)); len(vs) != 0 {
+			t.Errorf("audit mode local on %s: %+v", class, vs)
+		}
 	}
 
 	d := settingsOf(nil).Audit
-	if !d.Forward || d.Provider != nil || d.Timeout != 30*time.Second || d.MaxBodySize != 1<<20 {
+	if d.Mode != "" || d.Provider != nil || d.Timeout != 30*time.Second || d.MaxBodySize != 1<<20 {
 		t.Errorf("defaults %+v", d)
 	}
 	s := settingsOf([]byte(`{"npm":{"audit":{"mode":"disabled","providerURL":"https://a.example.org/x","timeout":"5s","maxBodySize":"512KiB"}}}`)).Audit
-	if s.Forward || s.Provider.String() != "https://a.example.org/x" || s.Timeout != 5*time.Second || s.MaxBodySize != 512<<10 {
+	if s.Mode != "disabled" || s.Provider.String() != "https://a.example.org/x" || s.Timeout != 5*time.Second || s.MaxBodySize != 512<<10 {
 		t.Errorf("read %+v", s)
 	}
 	// A value the schema refuses can only come from a row written around the service: the default.

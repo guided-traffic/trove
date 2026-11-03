@@ -142,7 +142,8 @@ Cached packages are served while the upstream is down. Content that is no NuGet 
 ### EINTEGRITY, audits and upstream failures
 
 - `EINTEGRITY` usually means the lockfile was written against a registry that served other bytes for that version.
-- An audit that answers `501` `npm_audit_unavailable` went to a repository that forwards no audits, such as a local repository; audit through a remote or virtual repository.
+- An audit that answers `501` `npm_audit_unavailable` went to a repository whose audit mode is `disabled`, to the cache view of a remote repository (`<key>~cache`) or to an endpoint with exposure rules; audit through the repository itself. An audit that answers `503` `vulnerability_data_unavailable` came before trove had imported its npm advisory data; `npm install` completes and only logs it, and the audit works once the import is done.
+- `npm audit` through trove lists the advisories of the public advisory database for the versions in your lockfile. A package whose name your organisation has claimed in a local repository is not matched against public advisories, and npm says how many names were left out.
 - `502`, `503` and `504` with an `upstream_` code concern a package that is not cached while the remote repository's upstream fails; what is cached is still served. Retry later, and tell an administrator if it persists.
 
 ## Session ended and re-authentication

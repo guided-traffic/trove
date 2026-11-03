@@ -27,7 +27,9 @@ internal/formats/npm/
 ├── handlers_unpublish.go the three unpublish requests
 ├── handlers_identity.go  whoami and ping
 ├── handlers_deprecate.go the metadata PUT; answers 404 until deprecate is built (R-NPM-018, R-NPM-043), 400 for a body without versions
-├── handlers_audit.go     the security audit: the forwarder, the bounds of the body, the forwarded set, the forward and npm 6's endpoints (R-NPM-038)
+├── handlers_audit.go     the security audit: the dispatch by mode, the forwarder, the bounds of the body, the forwarded set, the forward and npm 6's endpoints (R-NPM-038)
+├── handlers_audit_local.go   the audit in mode local, from trove's own advisory data: the mode of a repository, the answer and its notice (R-VULN-017)
+├── handlers_audit_ranges.go  vulnerable_versions as node-semver text, the pre-release completion, the adapter the audit hands to the matcher (R-VULN-017)
 ├── tags.go          the dist-tag rules of R-NPM-016 on the SemVer order
 ├── exposure.go      the exposure adapter (ranges, pre-releases, dimensions) and the filter of rows and documents (R-NPM-048)
 ├── store.go         the data port (Store), with marked blocks for the work packages that add to it
@@ -268,7 +270,7 @@ internal/meta/postgres/queries/npm_remote.sql
 | How is a virtual document built? | `Resolver.Metadata` plans (patterns, claims, pins, `read`, `MayFill`), collects `LocalDocument` and the engine's documents, calls `Merge`; a member the caller may not fill is `Restricted` and supplies cached versions only (R-AUTHZ-008). Tarball addresses are neutral in the cache and rewritten per response (Q-NPM-34) |
 | Where do writes go? | Write routes are `Classes: local`. The dispatcher sends every write kind of a virtual repository to its target; a remote repository's 405 becomes `npm_class_not_writable` in `WriteError` (Q-NPM-36). `?write=true` on a virtual repository reads the target's own document |
 | What does an exposure rule do here? | `exposedDocument` rewrites, filters with `filterDocument(viewOf(rq))` and parses again; dist-tags and `latest` come from the filtered document; a hidden version is 404 before any fetch (`hiddenVersion`) (R-NPM-048, H-295) |
-| Settings | `latestGuard` (local, default `true`), `serveRemovedVersions` and `audit` (remote, defaults `false` and [Security audit](#security-audit)), `latestStrategy` (virtual, default `highest-member-latest`) and `distTagStrategy` (virtual, default `member-order`) are the `npm` member of the repository document; the repository service validates it against [settings.schema.json](../../internal/formats/npm/settings.schema.json) (a member of another class is refused), and `settingsOf` reads it from the stored document of the request's repository (Q-NPM-59). The repository wizard and edit form render the settings from the schema ([web-ui.md](web-ui.md#the-repository-settings-form-rendered-from-the-formats-schema)) |
+| Settings | `latestGuard` (local, default `true`), `serveRemovedVersions` (remote, default `false`) and `audit` (every class from M4b, [Security audit](#security-audit)), `latestStrategy` (virtual, default `highest-member-latest`) and `distTagStrategy` (virtual, default `member-order`) are the `npm` member of the repository document; the repository service validates it against [settings.schema.json](../../internal/formats/npm/settings.schema.json) (a member of another class is refused), and `settingsOf` reads it from the stored document of the request's repository (Q-NPM-59). The repository wizard and edit form render the settings from the schema ([web-ui.md](web-ui.md#the-repository-settings-form-rendered-from-the-formats-schema)) |
 
 Metrics: `trove_npm_virtual_version_conflicts_total`, `trove_npm_removed_upstream_versions_total`, `trove_npm_stale_upstream_documents_total`,
 `trove_npm_tarball_document_revalidations_total{outcome}`, `trove_npm_audit_names_withheld_total{reason}` ([bind.go](../../internal/formats/npm/bind.go)). A fill reaches its replica through the data port it is handed
@@ -312,7 +314,9 @@ flowchart TD
 | npm 6's endpoints? | `handleAuditLegacy`: 501 `npm_audit_unavailable`, with the text of the bulk endpoint where no repository forwards (npm 7 to 10 ask the quick endpoint after a failed bulk request and print its answer), else a text that names the bulk endpoint. pnpm 10 asks only these and is not served (Q-NPM-65) |
 | What is counted? | `trove_npm_audit_names_withheld_total{repo,reason}`, labelled with the forwarding remote; the request itself in `trove_npm_requests_total{operation="audit.bulk"}` and the upstream request in `trove_remote_upstream_requests_total` |
 
-Settings: `npm.audit` of a remote repository, `{mode, providerURL, timeout, maxBodySize}` with the defaults `forward`, null, `30s`, `1MiB`
+From M4b `npm.audit.mode` is `local`, `forward` or `disabled` on every class and `auditModeOf` resolves it (the installation's default through `Host.Vulnerabilities().LocalByDefault()`, Q-VULN-44); mode `local` is [handlers_audit_local.go](../../internal/formats/npm/handlers_audit_local.go) (R-VULN-017, [vulnerabilities.md](vulnerabilities.md#d--client-audits-r-vuln-017-r-vuln-018)), which reads `Host.Vulnerabilities()` and contacts no upstream.
+
+Settings: `npm.audit` `{mode, providerURL, timeout, maxBodySize}` with the defaults (mode: see above; `providerURL` and `timeout` apply to `forward` only) null, `30s`, `1MiB`
 ([settings.schema.json](../../internal/formats/npm/settings.schema.json)); `providerURL` is `https` without user info, query or fragment, so no
 credential sits in the document. Security: [data-and-secret-flow.md](../security/data-and-secret-flow.md#the-audit-forward).
 

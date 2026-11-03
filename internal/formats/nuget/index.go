@@ -45,7 +45,11 @@ type serviceIndex struct {
 // and a virtual one with a deployment target (R-NUGET-019). The resources of the P1
 // requirements (autocomplete, vulnerability information, the README template) are listed
 // when they are served.
-func ServiceIndex(feed string, publish bool) []byte {
+func ServiceIndex(feed string, publish bool) []byte { return serviceIndexOf(feed, publish, false) }
+
+// serviceIndexOf renders the service index; vulnerabilities says that VulnerabilityInfo/6.7.0 is listed, which it is while
+// nuget.vulnerabilityInfo is local and trove's NuGet advisory data is complete (R-VULN-018).
+func serviceIndexOf(feed string, publish, vulnerabilities bool) []byte {
 	var rs []resource
 	add := func(path string, types ...string) {
 		for _, t := range types {
@@ -61,6 +65,9 @@ func ServiceIndex(feed string, publish bool) []byte {
 	add(resRegistrationGz+"/", "RegistrationsBaseUrl/3.4.0")
 	add(resRegistrationSV2+"/", "RegistrationsBaseUrl/3.6.0")
 	add(resSearch, "SearchQueryService", "SearchQueryService/3.0.0-beta", "SearchQueryService/3.0.0-rc", "SearchQueryService/3.5.0")
+	if vulnerabilities {
+		add(resVulnerabilities+"/"+indexFile, "VulnerabilityInfo/6.7.0")
+	}
 	b, err := json.Marshal(serviceIndex{Version: serviceIndexVersion, Resources: rs})
 	if err != nil { // cannot happen: strings only
 		panic(err)
@@ -89,9 +96,10 @@ func takesPushes(ctx context.Context, rq *formats.Request) (bool, error) {
 // of the rendering, computed without rendering. The inputs are the render version, the
 // repository (its id, and the key it is served under, which the URLs of the document
 // carry) and its configuration version, the base URL, whether the publish resources
-// are listed, and the endpoint of the request with its exposure fingerprint (R-NUGET-034).
+// are listed, whether trove's own vulnerability information is listed (the mode is local and the NuGet data is
+// complete, R-VULN-018), and the endpoint of the request with its exposure fingerprint (R-NUGET-034).
 // Every replica sends the same value for the same inputs.
-func indexETag(rq *formats.Request, base string, publish bool) string {
+func indexETag(rq *formats.Request, base string, publish, vulnerabilities bool) string {
 	h := sha256.New()
 	field := func(s string) {
 		var n [8]byte
@@ -106,6 +114,7 @@ func indexETag(rq *formats.Request, base string, publish bool) string {
 	field(strconv.FormatInt(rq.Repo.Version, 10))
 	field(base)
 	field(strconv.FormatBool(publish))
+	field(strconv.FormatBool(vulnerabilities))
 	field(rq.Endpoint.Name)
 	field(rq.Endpoint.ExposureFingerprint)
 	return `W/"` + hex.EncodeToString(h.Sum(nil)[:16]) + `"`
@@ -133,14 +142,15 @@ func (f *Format) handleIndex(ctx context.Context, rq *formats.Request, w http.Re
 	// An endpoint with exposure rules accepts no writes, so it advertises no publish resource
 	// (R-NUGET-034, Q-EP-68).
 	publish = publish && !onRulesEndpoint(rq)
-	etag := indexETag(rq, links.Base(), publish)
+	vulnerabilities := vulnListed(rq)
+	etag := indexETag(rq, links.Base(), publish, vulnerabilities)
 	h := w.Header()
 	h.Set("ETag", etag)
 	if ifNoneMatch(rq.Header.Get("If-None-Match"), etag) {
 		w.WriteHeader(http.StatusNotModified)
 		return nil
 	}
-	body := ServiceIndex(feed, publish)
+	body := serviceIndexOf(feed, publish, vulnerabilities)
 	h.Set("Content-Type", jsonContentType)
 	h.Set("Content-Length", strconv.Itoa(len(body)))
 	w.WriteHeader(http.StatusOK)

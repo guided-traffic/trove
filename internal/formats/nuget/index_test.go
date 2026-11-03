@@ -186,22 +186,22 @@ func TestR_NUGET_002_TheETagFollowsItsInputs(t *testing.T) {
 		t.Fatal(err)
 	}
 	const base2 = "https://trove.test"
-	orig := indexETag(rq, base2, true)
-	if indexETag(rq, base2, false) == orig {
+	orig := indexETag(rq, base2, true, false)
+	if indexETag(rq, base2, false, false) == orig {
 		t.Error("the publish resources do not change the ETag")
 	}
 	rq.Repo.Version++
-	if indexETag(rq, base2, true) == orig {
+	if indexETag(rq, base2, true, false) == orig {
 		t.Error("a new configuration version keeps the ETag")
 	}
 	rq.Repo.Version--
 	rq.Endpoint.ExposureFingerprint = "rules-1"
-	if indexETag(rq, base2, true) == orig {
+	if indexETag(rq, base2, true, false) == orig {
 		t.Error("an exposure fingerprint keeps the ETag")
 	}
 	rq.Endpoint.ExposureFingerprint = ""
 	rq.Endpoint.Name = "customers"
-	if indexETag(rq, base2, true) == orig {
+	if indexETag(rq, base2, true, false) == orig {
 		t.Error("another endpoint keeps the ETag")
 	}
 }

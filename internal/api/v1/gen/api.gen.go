@@ -1298,6 +1298,7 @@ func (e ManualHeadingLevel) Valid() bool {
 const (
 	NpmSettingsAuditModeDisabled NpmSettingsAuditMode = "disabled"
 	NpmSettingsAuditModeForward  NpmSettingsAuditMode = "forward"
+	NpmSettingsAuditModeLocal    NpmSettingsAuditMode = "local"
 )
 
 // Valid indicates whether the value is a known member of the NpmSettingsAuditMode enum.
@@ -1306,6 +1307,8 @@ func (e NpmSettingsAuditMode) Valid() bool {
 	case NpmSettingsAuditModeDisabled:
 		return true
 	case NpmSettingsAuditModeForward:
+		return true
+	case NpmSettingsAuditModeLocal:
 		return true
 	default:
 		return false
@@ -1363,6 +1366,24 @@ func (e NugetSettingsDeleteMode) Valid() bool {
 	case NugetSettingsDeleteModeDelete:
 		return true
 	case NugetSettingsDeleteModeUnlist:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NugetSettingsVulnerabilityInfo.
+const (
+	NugetSettingsVulnerabilityInfoLocal NugetSettingsVulnerabilityInfo = "local"
+	NugetSettingsVulnerabilityInfoOff   NugetSettingsVulnerabilityInfo = "off"
+)
+
+// Valid indicates whether the value is a known member of the NugetSettingsVulnerabilityInfo enum.
+func (e NugetSettingsVulnerabilityInfo) Valid() bool {
+	switch e {
+	case NugetSettingsVulnerabilityInfoLocal:
+		return true
+	case NugetSettingsVulnerabilityInfoOff:
 		return true
 	default:
 		return false
@@ -5294,21 +5315,25 @@ type NewUser struct {
 // fails on any difference between the two. A setting that does not apply to the class of the repository
 // answers 422 `not_applicable`. An omitted setting takes its default.
 type NpmSettings struct {
-	// Audit Remote repositories (R-NPM-038). The security audit endpoint: forward the names this remote has fetched,
-	// and that nothing marks internal, to an advisory provider.
+	// Audit Every class (R-NPM-038, R-VULN-017). The security audit endpoint: answer from trove's own advisory data, or
+	// forward the names this remote has fetched, and that nothing marks internal, to an advisory provider.
 	Audit *struct {
 		// MaxBodySize The largest audit body as sent, `1KiB` to `10MiB`; ten times that decompressed. Larger bodies answer 413.
 		MaxBodySize *string `json:"maxBodySize,omitempty"`
 
-		// Mode `forward` answers audits through this remote; `disabled` answers 501 `npm_audit_unavailable`.
+		// Mode `local` answers from trove's own advisory data and sends nothing out (every class; `503 vulnerability_data_unavailable`
+		// until the npm data is complete; answers like `disabled` while `vulnerabilities.enabled` is false); `forward` answers
+		// through the first remote that forwards (remote and virtual repositories; a local repository answers like `disabled`);
+		// `disabled` answers 501 `npm_audit_unavailable`. Left out, the mode is `local` while `vulnerabilities.enabled` is true and
+		// the OSV source is not off, else `forward` on remote and virtual repositories and `disabled` on local ones.
 		Mode *NpmSettingsAuditMode `json:"mode,omitempty"`
 
-		// ProviderURL The https registry URL of the advisory provider, without user info, query or fragment; null is the remote's
+		// ProviderURL Mode `forward` only. The https registry URL of the advisory provider, without user info, query or fragment; null is the remote's
 		// upstream URL. The provider gets the repository's sealed upstream credentials only when it is the upstream's
 		// origin or an `extraHosts` entry with `sendCredentials` (R-REPO-033), never through the URL.
 		ProviderURL *string `json:"providerURL,omitempty"`
 
-		// Timeout The longest a forward may take, `1s` to `300s`; never longer than `server.shutdown_timeout` minus one second.
+		// Timeout Mode `forward` only. The longest a forward may take, `1s` to `300s`; never longer than `server.shutdown_timeout` minus one second.
 		Timeout *string `json:"timeout,omitempty"`
 	} `json:"audit,omitempty"`
 
@@ -5325,7 +5350,11 @@ type NpmSettings struct {
 	ServeRemovedVersions *bool `json:"serveRemovedVersions,omitempty"`
 }
 
-// NpmSettingsAuditMode `forward` answers audits through this remote; `disabled` answers 501 `npm_audit_unavailable`.
+// NpmSettingsAuditMode `local` answers from trove's own advisory data and sends nothing out (every class; `503 vulnerability_data_unavailable`
+// until the npm data is complete; answers like `disabled` while `vulnerabilities.enabled` is false); `forward` answers
+// through the first remote that forwards (remote and virtual repositories; a local repository answers like `disabled`);
+// `disabled` answers 501 `npm_audit_unavailable`. Left out, the mode is `local` while `vulnerabilities.enabled` is true and
+// the OSV source is not off, else `forward` on remote and virtual repositories and `disabled` on local ones.
 type NpmSettingsAuditMode string
 
 // NpmSettingsDistTagStrategy Virtual repositories (R-NPM-031). How the other dist-tags are merged.
@@ -5347,12 +5376,24 @@ type NugetSettings struct {
 	// ForwardSearch Remote repositories (R-NUGET-016, Q-NUGET-4). Forward the search and autocomplete requests to the upstream's
 	// search resource; `false` answers from the packages the remote has cached.
 	ForwardSearch *bool `json:"forwardSearch,omitempty"`
+
+	// VulnerabilityInfo The vulnerability information of the service index (R-VULN-018): `local` lists VulnerabilityInfo/6.7.0 and serves trove's
+	// own NuGet advisory data while that data is complete (every class; answers like `off` while `vulnerabilities.enabled` is
+	// false); `off` lists nothing. Left out, the mode is `local` while `vulnerabilities.enabled` is true and the OSV source is not
+	// off, else `off`. The pass-through of the upstream's information, `upstream`, is refused until R-NUGET-023 is built.
+	VulnerabilityInfo *NugetSettingsVulnerabilityInfo `json:"vulnerabilityInfo,omitempty"`
 }
 
 // NugetSettingsDeleteMode Local repositories (R-NUGET-007, Q-NUGET-1). What the protocol `DELETE` of a package does: `unlist` keeps the
 // version in the flat container and downloadable, `delete` removes it and writes its tombstone. A delete through
 // the management API, the UI or `/files/` is always a hard delete.
 type NugetSettingsDeleteMode string
+
+// NugetSettingsVulnerabilityInfo The vulnerability information of the service index (R-VULN-018): `local` lists VulnerabilityInfo/6.7.0 and serves trove's
+// own NuGet advisory data while that data is complete (every class; answers like `off` while `vulnerabilities.enabled` is
+// false); `off` lists nothing. Left out, the mode is `local` while `vulnerabilities.enabled` is true and the OSV source is not
+// off, else `off`. The pass-through of the upstream's information, `upstream`, is refused until R-NUGET-023 is built.
+type NugetSettingsVulnerabilityInfo string
 
 // ObjectStoreFacts defines model for ObjectStoreFacts.
 type ObjectStoreFacts struct {

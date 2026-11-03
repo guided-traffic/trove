@@ -33,19 +33,17 @@
       "x-trove-classes": ["virtual"]
     },
     "audit": {
-      "description": "The security audit endpoint (R-NPM-038): forward the names this remote has fetched, and that nothing marks internal, to an advisory provider.",
+      "description": "The security audit endpoint (R-NPM-038, R-VULN-017): answer from trove's own advisory data, or forward the names this remote has fetched, and that nothing marks internal, to an advisory provider.",
       "type": "object",
       "additionalProperties": false,
-      "x-trove-classes": ["remote"],
       "properties": {
         "mode": {
-          "description": "forward answers audits through this remote; disabled answers 501 npm_audit_unavailable.",
+          "description": "local answers from trove's own advisory data and sends nothing out (every class; 503 vulnerability_data_unavailable until the npm data is complete; answers like disabled while vulnerabilities.enabled is false); forward answers through the first remote that forwards (remote and virtual repositories; a local repository answers like disabled); disabled answers 501 npm_audit_unavailable. Left out, the mode is local while vulnerabilities.enabled is true and the OSV source is not off, else forward on remote and virtual repositories and disabled on local ones.",
           "type": "string",
-          "enum": ["forward", "disabled"],
-          "default": "forward"
+          "enum": ["local", "forward", "disabled"]
         },
         "providerURL": {
-          "description": "The https registry URL of the advisory provider, without user info, query or fragment; null is the remote's upstream URL. The provider gets the repository's sealed upstream credentials only when it is the upstream's origin or an extraHosts entry with sendCredentials (R-REPO-033), never through the URL.",
+          "description": "Mode forward only. The https registry URL of the advisory provider, without user info, query or fragment; null is the remote's upstream URL. The provider gets the repository's sealed upstream credentials only when it is the upstream's origin or an extraHosts entry with sendCredentials (R-REPO-033), never through the URL.",
           "type": ["string", "null"],
           "format": "uri",
           "pattern": "^https://[^/?#@\\s]+(/[^?#\\s]*)?$",
@@ -53,7 +51,7 @@
           "default": null
         },
         "timeout": {
-          "description": "The longest a forward may take, 1s to 300s; never longer than server.shutdown_timeout minus one second.",
+          "description": "Mode forward only. The longest a forward may take, 1s to 300s; never longer than server.shutdown_timeout minus one second.",
           "type": "string",
           "pattern": "^([1-9]|[1-9][0-9]|[12][0-9]{2}|300)s$",
           "default": "30s"

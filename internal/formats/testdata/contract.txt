@@ -461,8 +461,12 @@ formats.VulnerabilityAdapter: method Ecosystem() string
 formats.VulnerabilityData: method Affects(VulnerabilityAdapter, advisory.Affected, string) match.Result
 formats.VulnerabilityData: method All(context.Context, string) ([]advisory.Advisory, error)
 formats.VulnerabilityData: method CountAudit(ID, string, string)
+formats.VulnerabilityData: method Enabled() bool
 formats.VulnerabilityData: method ForNames(context.Context, string, []string) (map[string][]advisory.Advisory, error)
 formats.VulnerabilityData: method InternalNames(context.Context, ID, []string) (map[string]bool, error)
+formats.VulnerabilityData: method LocalByDefault() bool
+formats.VulnerabilityData: method Page(context.Context, string, func(context.Context) ([]byte, error)) ([]byte, error)
+formats.VulnerabilityData: method PageKey(string) string
 formats.VulnerabilityData: method State(string) advisory.DataState
 formats.CapabilitiesFor: func(ID) Capabilities
 formats.CapabilitiesOf: func(Format) Capabilities

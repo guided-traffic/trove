@@ -31,13 +31,15 @@ type settings struct {
 	ServeRemovedVersions bool
 	// LatestStrategy and DistTagStrategy are those of a virtual repository.
 	LatestStrategy, DistTagStrategy string
-	// Audit is npm.audit of a remote repository.
+	// Audit is npm.audit, a member of every class.
 	Audit auditSettings
 }
 
-// auditSettings are npm.audit (R-NPM-038, Q-NPM-64).
+// auditSettings are npm.audit (R-NPM-038, R-VULN-017, Q-NPM-64).
 type auditSettings struct {
-	Forward bool
+	// Mode is npm.audit.mode: local, forward or disabled; "" when the document leaves it out, which the default rule of
+	// [auditModeOf] resolves because it depends on the installation (Q-VULN-44).
+	Mode string
 	// Provider is providerURL; nil is the remote's upstream URL.
 	Provider    *url.URL
 	Timeout     time.Duration
@@ -46,6 +48,7 @@ type auditSettings struct {
 
 // The audit modes.
 const (
+	auditLocal    = "local"
 	auditForward  = "forward"
 	auditDisabled = "disabled"
 )
@@ -53,7 +56,7 @@ const (
 func defaultSettings() settings {
 	return settings{
 		LatestGuard: true, LatestStrategy: merge.HighestMemberLatest, DistTagStrategy: merge.MemberOrder,
-		Audit: auditSettings{Forward: true, Timeout: 30 * time.Second, MaxBodySize: 1 << 20},
+		Audit: auditSettings{Timeout: 30 * time.Second, MaxBodySize: 1 << 20},
 	}
 }
 
@@ -92,7 +95,10 @@ func settingsOf(config []byte) settings {
 		out.DistTagStrategy = doc.NPM.DistTagStrategy
 	}
 	a := doc.NPM.Audit
-	out.Audit.Forward = a.Mode != auditDisabled
+	switch a.Mode {
+	case auditLocal, auditForward, auditDisabled:
+		out.Audit.Mode = a.Mode
+	}
 	// A provider gets credentials only through the remote's sealed upstream credentials, never
 	// through user info in the URL, which the document shows to every reader of the
 	// configuration (H-303); a URL the schema refuses is the default here too.
