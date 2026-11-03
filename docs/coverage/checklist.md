@@ -9,13 +9,13 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 359 of 678 spec requirements are implemented: a passing test names them and no
+**Status.** 394 of 678 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 700 specified (310 of them implemented), 1,539 open.
+**Totals.** 2,239 catalog features on 60 pages: 700 specified (311 of them implemented), 1,539 open.
 678 spec requirements: 543 cover catalog features, 135 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
@@ -41,7 +41,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 28 |
 | [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 43 | 57 | 20 |
 | [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 26 | 56 | 2 |
-| [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | 2 of 2 | 2 | 68 | 0 |
+| [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | 2 of 2 | 2 | 68 | 1 |
 | [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | 18 of 18 | 18 | 80 | 0 |
 | [UI inventory](#ui-inventory-ui) | `UI` | 61 | 33 of 33 | 47 | 14 | 1 |
 | [Content API operation catalog](#content-api-operation-catalog-api) | `API` | 166 | 11 of 11 | 67 | 99 | 14 |
@@ -217,11 +217,11 @@ Catalog page: [remote-repositories.md](../features/remote-repositories.md) · sp
 | RMT-037 | Priority resolution | P1 | specified | [R-NPM-028](../spec/formats/npm.md), [R-REPO-022](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-038 | Remote folder listing | P2 | open | – |
 | RMT-039 | Configuration sharing | P2 | open | – |
-| RMT-040 | Chained remote repository | MVP | specified | [R-BAS-008](../spec/bastion.md), [R-BAS-010](../spec/bastion.md), [R-BAS-011](../spec/bastion.md), [R-BAS-012](../spec/bastion.md), [R-BAS-013](../spec/bastion.md), [R-BAS-015](../spec/bastion.md), [R-BAS-021](../spec/bastion.md), [R-BAS-022](../spec/bastion.md), [R-BAS-023](../spec/bastion.md) |
-| RMT-041 | Download statistics reporting | MVP | specified | [R-BAS-016](../spec/bastion.md), [R-BAS-039](../spec/bastion.md) |
+| RMT-040 | Chained remote repository | MVP | specified | [R-BAS-008](../spec/bastion.md) (implemented), [R-BAS-010](../spec/bastion.md), [R-BAS-011](../spec/bastion.md) (implemented), [R-BAS-012](../spec/bastion.md) (implemented), [R-BAS-013](../spec/bastion.md) (implemented), [R-BAS-015](../spec/bastion.md) (implemented), [R-BAS-021](../spec/bastion.md), [R-BAS-022](../spec/bastion.md), [R-BAS-023](../spec/bastion.md) |
+| RMT-041 | Download statistics reporting | MVP | specified | [R-BAS-016](../spec/bastion.md), [R-BAS-039](../spec/bastion.md) (implemented) |
 | RMT-042 | Property synchronization | P2 | open | – |
 | RMT-043 | Source absence detection | P2 | open | – |
-| RMT-044 | Uncached retrieval through a virtual repository for chained requests | MVP | specified | [R-BAS-013](../spec/bastion.md), [R-BAS-021](../spec/bastion.md) |
+| RMT-044 | Uncached retrieval through a virtual repository for chained requests | MVP | specified | [R-BAS-013](../spec/bastion.md) (implemented), [R-BAS-021](../spec/bastion.md) |
 | RMT-045 | Search through a chained remote | P2 | open | – |
 | RMT-046 | Parallel chunked download of large files | P2 | open | – |
 | RMT-047 | Project-scoped remote repository | P2 | open | – |
@@ -1174,7 +1174,7 @@ Catalog page: [events-and-extensibility.md](../features/events-and-extensibility
 Catalog page: [distribution-and-lifecycle.md](../features/distribution-and-lifecycle.md) · specified by priority: MVP 2 of 2 · Later 0 of 67 · Out of scope 0 of 1
 
 <details>
-<summary>70 features: 2 specified, 68 open, 0 implemented</summary>
+<summary>70 features: 2 specified, 68 open, 1 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1201,8 +1201,8 @@ Catalog page: [distribution-and-lifecycle.md](../features/distribution-and-lifec
 | DIST-021 | Promotion rollback | Later | open | – |
 | DIST-022 | Promotion records and queries | Later | open | – |
 | DIST-023 | Security scan gate for release sets | Later | open | – |
-| DIST-024 | Distribution topology and edge instances | MVP | specified | [R-BAS-001](../spec/bastion.md), [R-BAS-002](../spec/bastion.md), [R-BAS-003](../spec/bastion.md), [R-BAS-045](../spec/bastion.md), [R-BAS-046](../spec/bastion.md) |
-| DIST-025 | Trust between source and edge instances | MVP | specified | [R-BAS-004](../spec/bastion.md), [R-BAS-005](../spec/bastion.md), [R-BAS-006](../spec/bastion.md) |
+| DIST-024 | Distribution topology and edge instances | MVP | specified | [R-BAS-001](../spec/bastion.md) (implemented), [R-BAS-002](../spec/bastion.md) (implemented), [R-BAS-003](../spec/bastion.md), [R-BAS-045](../spec/bastion.md) (implemented), [R-BAS-046](../spec/bastion.md) (implemented) |
+| DIST-025 | Trust between source and edge instances | MVP | implemented | [R-BAS-004](../spec/bastion.md) (implemented), [R-BAS-005](../spec/bastion.md) (implemented), [R-BAS-006](../spec/bastion.md) (implemented) |
 | DIST-026 | Signing key propagation to targets | Later | open | – |
 | DIST-027 | Distribute a release set version | Later | open | – |
 | DIST-028 | Target path mapping and repository auto-creation | Later | open | – |
@@ -3018,34 +3018,34 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-BAK-022 | State a restore rebuilds or invalidates | MVP | [backup-and-restore.md](../spec/backup-and-restore.md) |
 | R-BAK-024 | Revocation journal replay after a restore | MVP | [backup-and-restore.md](../spec/backup-and-restore.md) |
 | R-BAK-027 | Client-side encryption of the database files | P1 | [backup-and-restore.md](../spec/backup-and-restore.md) |
-| R-BAS-007 | Bastions in the main installation's screen, client setup and manual | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-009 | The interface version | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-014 | Writes through a Bastion are refused by the main installation | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-007 (implemented) | Bastions in the main installation's screen, client setup and manual | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-009 (implemented) | The interface version | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-014 (implemented) | Writes through a Bastion are refused by the main installation | MVP | [bastion.md](../spec/bastion.md) |
 | R-BAS-017 | The real client and the Bastion's host at the main installation | MVP | [bastion.md](../spec/bastion.md) |
 | R-BAS-018 | Request classification at the Bastion | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-019 | Credentials at the Bastion | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-020 | Answers and their validity | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-019 (implemented) | Credentials at the Bastion | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-020 (implemented) | Answers and their validity | MVP | [bastion.md](../spec/bastion.md) |
 | R-BAS-024 | Negative cache | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-025 | Concurrency budget towards the main installation and collapsed misses | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-026 | Applying the revocation feed | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-025 (implemented) | Concurrency budget towards the main installation and collapsed misses | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-026 (implemented) | Applying the revocation feed | MVP | [bastion.md](../spec/bastion.md) |
 | R-BAS-027 | The main installation unreachable: grace period, then nothing | MVP | [bastion.md](../spec/bastion.md) |
 | R-BAS-028 | Interface version mismatch at the Bastion | MVP | [bastion.md](../spec/bastion.md) |
 | R-BAS-029 | Responses of the Bastion's own | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-030 | Cache backends | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-031 | Size, eviction by last access and sweeps | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-032 | Integrity of cached content | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-033 | Routing by path for local volumes | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-034 | Optional Valkey | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-035 | Per-address rate limits | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-036 | Failed-authentication timeout | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-037 | Blocking of flooding addresses and the shared block list | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-038 | The coarse per-address limit at HAProxy Ingress | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-040 | Metrics | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-041 | PrometheusRule | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-042 | Logs, traces and redaction | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-043 | Startup, readiness and drains | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-044 | TLS on every connection of the Bastion | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-047 | Network policy | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-030 (implemented) | Cache backends | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-031 (implemented) | Size, eviction by last access and sweeps | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-032 (implemented) | Integrity of cached content | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-033 (implemented) | Routing by path for local volumes | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-034 (implemented) | Optional Valkey | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-035 (implemented) | Per-address rate limits | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-036 (implemented) | Failed-authentication timeout | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-037 (implemented) | Blocking of flooding addresses and the shared block list | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-038 (implemented) | The coarse per-address limit at HAProxy Ingress | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-040 (implemented) | Metrics | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-041 (implemented) | PrometheusRule | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-042 (implemented) | Logs, traces and redaction | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-043 (implemented) | Startup, readiness and drains | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-044 (implemented) | TLS on every connection of the Bastion | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-047 (implemented) | Network policy | MVP | [bastion.md](../spec/bastion.md) |
 | R-BAS-048 | Integration suite against an in-process main installation | MVP | [bastion.md](../spec/bastion.md) |
 | R-BAS-049 | End-to-end suite on kind with npm and NuGet | MVP | [bastion.md](../spec/bastion.md) |
 | R-EP-002 (implemented) | Endpoint identity comes from the listener | MVP | [endpoints.md](../spec/endpoints.md) |

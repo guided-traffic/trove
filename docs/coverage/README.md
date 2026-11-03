@@ -17,7 +17,7 @@ regenerated.
 <!-- coverage-gen:begin headline -->
 | Number | Value | Kind |
 |---|---|---|
-| **Implemented** | **13.8%** (310 of 2,239 catalog features) | measured from passing tests that name requirements (Q-ROAD-4) |
+| **Implemented** | **13.9%** (311 of 2,239 catalog features) | measured from passing tests that name requirements (Q-ROAD-4) |
 | **MVP features covered by spec requirements** | **100%** (390 of 390) | measured from `Covers:` lines |
 | P1 features covered by spec requirements | 56.4% (290 of 514) | measured from `Covers:` lines |
 | In-scope features covered (MVP, P1, P2, Later) | 32.3% (700 of 2,167) | measured from `Covers:` lines |
@@ -51,12 +51,12 @@ see [Honesty notes](#honesty-notes).
 <!-- coverage-gen:begin priority -->
 | Priority | Features | Specified | Open | Specified share | Covered by an MVP requirement | Implemented |
 |---|---:|---:|---:|---:|---:|---:|
-| **MVP** | 390 | 390 | 0 | 100% | 390 | 246 |
+| **MVP** | 390 | 390 | 0 | 100% | 390 | 247 |
 | **P1** | 514 | 290 | 224 | 56.4% | 68 | 55 |
 | **P2** | 889 | 20 | 869 | 2.2% | 12 | 9 |
 | **Later** | 374 | 0 | 374 | 0% | 0 | 0 |
 | **Out of scope** | 72 | 0 | 72 | 0% | 0 | 0 |
-| **Total** | 2,239 | 700 | 1,539 | 31.3% | 470 | 310 |
+| **Total** | 2,239 | 700 | 1,539 | 31.3% | 470 | 311 |
 <!-- coverage-gen:end priority -->
 
 The column *Covered by an MVP requirement* shows where the spec pulls work forward: 55 P1 features
