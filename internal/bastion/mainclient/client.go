@@ -467,8 +467,9 @@ func (c *HTTPClient) accept(resp *http.Response, release func()) (*Response, err
 	if marked {
 		c.o.Metrics.MainTokenRefused.Set(0)
 	}
+	route := resp.Header.Get(iface.HeaderRoute)
 	iface.StripMarking(resp.Header)
-	return &Response{Status: resp.StatusCode, Header: resp.Header, Body: &slotBody{ReadCloser: body, release: release}, Marking: m, Marked: marked}, nil
+	return &Response{Status: resp.StatusCode, Header: resp.Header, Body: &slotBody{ReadCloser: body, release: release}, Marking: m, Marked: marked, Route: route}, nil
 }
 
 type prefixed struct {

@@ -89,7 +89,7 @@ func (e *engine) probe(ctx context.Context, q *rq, key string) probeResult {
 	if !resp.Marked && resp.Status >= 500 {
 		return probeResult{err: mainclient.ErrUnreachable}
 	}
-	if resp.Status == http.StatusNoContent && resp.Header.Get(iface.HeaderRoute) == iface.RouteReadWithBody {
+	if resp.Status == http.StatusNoContent && resp.Route == iface.RouteReadWithBody {
 		return probeResult{withBody: true}
 	}
 	body, _, whole := readBounded(resp.Body, maxRefusalBody)

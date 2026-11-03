@@ -181,6 +181,9 @@ type Response struct {
 	// [ErrUnreachable]. The Trove-Bastion-* headers are removed from Header, so that nothing replays them.
 	Marking iface.Marking
 	Marked  bool
+	// Route is the value of Trove-Bastion-Route, read before the marking headers are removed: the answer of a
+	// probe to a read route that takes a body is a 204 with iface.RouteReadWithBody (R-BAS-014).
+	Route string
 }
 
 // Client is the Bastion's view of the main installation. Every method takes the budget slot its kind needs

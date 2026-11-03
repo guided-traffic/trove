@@ -134,6 +134,29 @@ func TestR_BAS_023_APartialReaderNeverReceivesTheSharedDocumentAndTheSharedEntry
 	}
 }
 
+// TestR_BAS_023_A304ForAPrivateDocumentAnswersTheCallerWithTheSharedEntrysBytes: the Bastion's conditional request
+// names the shared entry's validator; for a partial reader whose document is the same bytes the main installation
+// answers 304, marked private. The caller sent no condition and gets the bytes as a 200, the entry stays untouched.
+func TestR_BAS_023_A304ForAPrivateDocumentAnswersTheCallerWithTheSharedEntrysBytes(t *testing.T) {
+	s := newSiteHarness(t, options{})
+	same := newToken(t, "pat")
+	s.site.addReader(same, &reader{id: "same", read: iface.ReadPartial, sameDoc: true})
+	s.site.docs[doc] = "all packages"
+	s.get(doc, "Authorization", bearer(s.full))
+	rec := s.cache.entryRecords()
+	for i := 0; i < 2; i++ {
+		w := s.get(doc, "Authorization", bearer(same))
+		if w.Code != 200 || w.Body.String() != "all packages" {
+			t.Fatalf("round %d: %d %q", i, w.Code, w.Body)
+		}
+	}
+	for k, v := range s.cache.entryRecords() {
+		if string(rec[k]) != string(v) {
+			t.Fatal("the shared entry was renewed on behalf of a partial reader")
+		}
+	}
+}
+
 func TestR_BAS_023_SearchAndEveryOtherPassAnswerGoToTheMainInstallationPerCallerAndAreNeverKept(t *testing.T) {
 	s := newSiteHarness(t, options{})
 	for i := 0; i < 2; i++ {

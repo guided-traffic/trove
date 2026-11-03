@@ -475,7 +475,7 @@ Acceptance criteria:
 
 - An in-process main installation built with `InterfaceVersion = 2` and a Bastion with 1: the handshake answers `400
   bastion_interface_mismatch` with `"interfaceVersion": 2`, the Bastion sets `trove_bastion_interface_mismatch 1` and
-  `trove_bastion_main_interface_version 2`, serves cached artifacts to callers with live answers for the grace period, and
+  `trove_bastion_interface_version{side="main"} 2` ([Q-BAS-106](#q-bas-106--the-main-installations-interface-version-is-the-series-with-side-main-of-trove_bastion_interface_version)), serves cached artifacts to callers with live answers for the grace period, and
   `503` afterwards.
 - Adding a field to the check answer without raising the version fails `TestR_BAS_009_TheInterfaceChangesOnlyWithItsVersion`,
   and `-update-interface` refuses to regenerate.
@@ -676,6 +676,8 @@ answers a write in the client's protocol shape and points at the main installati
   - a read route that takes a body (npm's `POST …/-/npm/v1/security/advisories/bulk`): `204` with `Trove-Bastion-Route:
     read-with-body`;
   - no route: the format's or the core's `404`.
+- The Bastion reads `Trove-Bastion-Route` of the probe answer before its client removes the `Trove-Bastion-` headers
+  ([Q-BAS-108](#q-bas-108--the-route-of-a-probe-answer-is-read-before-the-marking-is-stripped)).
 - The Bastion replays a `403` or `404` probe answer to the caller and keeps it per method and path for
   `bastion.cache.metadata_revalidate_after`. After a `204` it forwards the real request with its body (at most
   `bastion.main.max_forwarded_body`; a larger body answers `413` from the Bastion) and the caller's credential; the answer is
@@ -1036,7 +1038,9 @@ for the metadata period with each caller for whom the main installation confirme
   `validatedAt − 15 s`; a caller without a shape answer gets one first, as in R-BAS-022. Otherwise a conditional `GET` with the
   caller's credential and the stored validator: `304` with
   `shared` renews it and serves it; `200` with `shared` replaces it; `200` with `private` is served to this caller only and kept
-  as its private copy; a refusal is replayed.
+  as its private copy; a refusal is replayed. A `304` marked `private` to the Bastion's own condition (the caller is a partial
+  reader whose document is the same bytes) is answered with the entry's bytes as the caller's `200`, and the entry is not renewed
+  ([Q-BAS-107](#q-bas-107--a-304-for-a-private-document-is-answered-with-the-shared-entrys-bytes)).
 - **Private document** (`private`, a document filtered for the caller): never shared. It goes to the main installation per
   caller with a conditional request on every use: the Bastion keeps the caller's last copy in memory only, under (credential
   key, cache key), at most `bastion.cache.private_documents_max_bytes` per replica, and sends its validator; `304` serves the
@@ -2156,6 +2160,14 @@ at least:
 - write probes, the read route with a body, the marking contract over the route table;
 - the negative cache, the budget, collapsing, the limits, the failed-authentication timeout, blocking with and without Valkey;
 - corrupt cache content, forged entries and answers, a feed reset.
+
+**As built** ([Q-BAS-105](#q-bas-105--the-integration-suites-main-installation-is-the-web-role-behind-a-tls-front-another-interface-version-is-simulated-on-the-wire)):
+`test/integration/bastion` starts, per test, the web role of the stack (PostgreSQL, Valkey with Sentinel, S3) with `npm-local`, `npm-remote`
+(over the counting test upstream), `npm-all` and the NuGet counterparts, the fixture principals, a registration `partners` with its token,
+`server.trusted_proxies` and `server.additional_base_urls`, behind a TLS front that records every request of the Bastion and can cut the link,
+delay, hold or alter the interface version of a request or an answer; and one or two Bastion replicas from a configuration file, with the volume
+backend or the stack's S3, with and without Valkey. The tests are named `TestR_BAS_0nn_…`; the table of
+[developer/bastion.md](../developer/bastion.md#the-integration-suite-r-bas-048) lists them.
 
 Acceptance criteria:
 
@@ -4353,6 +4365,87 @@ themselves become the subject of a test.
 
 **Applied in the spec:** R-BAS-043, R-BAS-048; code: `internal/bastion/roletest`, `test/integration/bastion`.
 
+### Q-BAS-105 · The integration suite's main installation is the web role behind a TLS front; another interface version is simulated on the wire
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-BAS-048 asks for the web role as the main installation, and R-BAS-009 for "a main installation built with `InterfaceVersion = 2`". The Bastion talks to the
+main endpoint over TLS only (R-BAS-044), the stack's replicas listen in plain HTTP, and `InterfaceVersion` is a constant of `internal/bastion/iface`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A TLS front in the test process, in front of the web replica; it records the Bastion's requests and rewrites the version of a request or of an answer (chosen) | The replica is the real one; the front is the ingress of a deployment; a cut link, a delay and a hold are one switch each | No change to the code under test; the request count is exact; the real main installation's refusal of a foreign version is exercised | A "main installation built with another version" is not literally built |
+| (b) Turn `InterfaceVersion` into a variable the test sets | The real main installation answers with version 2 | Literal | Changes `internal/bastion/iface`, whose surface is guarded; a variable invites production use |
+| (c) The replica serves TLS itself and a counting wrapper sits in its handler | No front | One hop less | The cut and the answer rewrite need a front anyway; the request log is not a count |
+
+**Choice:** (a). In one direction the front raises the version the Bastion's request carries, and the real main installation refuses it with its real `400
+bastion_interface_mismatch`; in the other it raises the version its answers claim, and the Bastion's own check refuses them.
+
+**Rationale:** the two directions are the two code paths of the mismatch (R-BAS-009, R-BAS-028); neither needs the constant to move. The development agent would revisit
+(b) if the interface gets a version negotiation. The hop from the front to the replica is plain HTTP (H-461); a main installation that itself speaks a higher version in its
+problem body is not exercised (H-462).
+
+**Applied in the spec:** R-BAS-048; code: `test/integration/bastion/front_test.go`, `outage_test.go`.
+
+### Q-BAS-106 · The main installation's interface version is the series with side main of `trove_bastion_interface_version`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the acceptance criterion of R-BAS-009 named the metric `trove_bastion_main_interface_version`, R-BAS-028 and the table of R-BAS-040 name `trove_bastion_interface_version{side}`.
+The metrics test compares the code with the table of R-BAS-040.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The criterion of R-BAS-009 names `trove_bastion_interface_version{side="main"}` (chosen) | One metric, two series | The code, R-BAS-028 and R-BAS-040 agree; no new metric | A text edit |
+| (b) A second metric `trove_bastion_main_interface_version` | The criterion stays | The criterion is literal | A second name for one fact; alert rules would have to read both |
+
+**Choice:** (a).
+
+**Rationale:** the criterion was the only place with the other name. The development agent would revisit it if alert rules ask for a metric without a label.
+
+**Applied in the spec:** R-BAS-009; code: `TestR_BAS_009_R_BAS_028_InterfaceMismatch`.
+
+### Q-BAS-107 · A 304 for a private document is answered with the shared entry's bytes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: for a caller without a usable `full` answer the Bastion sends a conditional request with the shared entry's validator (R-BAS-023). A partial reader whose document is the same bytes
+as the shared one (it may read every package the document lists, but not the whole repository) gets `304` from the main installation, marked `private`. The engine had no private copy of the
+caller and passed the `304` to the caller, who had sent no condition: an npm client received an empty `304`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Serve the entry's bytes as the caller's `200`, do not renew the entry (chosen) | The main installation said the caller's document has this validator, so the bytes are the caller's | The caller gets its document; the shared entry stays as `full` readers made it | The class counted in the metrics is `shared` |
+| (b) Refetch without a validator | One more transfer | Simple | A document transfer for every such request |
+| (c) Keep the 304 and require the caller's condition | Nothing changes | None | It is wrong for a client that sent no condition |
+
+**Choice:** (a).
+
+**Rationale:** R-NPM-013's validators derive from what the caller may read, so a `304` to the shared validator proves equality for this caller. The development agent would revisit it if a format's validator
+stops being derived from the caller's readable content.
+
+**Applied in the spec:** R-BAS-023; code: `internal/bastion/engine/forward.go` (`onPrivate`), `TestR_BAS_023_A304ForAPrivateDocumentAnswersTheCallerWithTheSharedEntrysBytes`,
+`TestR_BAS_021_R_BAS_023_R_BAS_024_EveryCallerIsAnsweredAsTheMainInstallationAnswers`.
+
+### Q-BAS-108 · The route of a probe answer is read before the marking is stripped
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the probe of a read route that takes a body is answered `204` with `Trove-Bastion-Route: read-with-body` (R-BAS-014). The client removes every `Trove-Bastion-` header from the response (R-BAS-021), and the
+engine looked for the route in the stripped header, so it never saw it: the Bastion answered the caller `204` and never forwarded the real request (npm's bulk advisories).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `mainclient.Response.Route`, read before the strip (chosen) | The client hands the route over in a field | Nothing else leaves the client with a `Trove-Bastion-` name | A field on `Response` (not on `iface`: no interface version change) |
+| (b) Keep this one header | The strip skips it | Small | The header could be replayed to a caller |
+
+**Choice:** (a).
+
+**Rationale:** the strip exists so that nothing is replayed; a field is the narrowest way across. The development agent would revisit it if more headers of the family have to cross.
+
+**Applied in the spec:** R-BAS-014; code: `internal/bastion/mainclient/client.go`, `internal/bastion/engine/probe.go`, `TestR_BAS_014_TheRouteOfAProbeAnswerSurvivesTheStrippedMarking`,
+`TestR_BAS_014_WritesAreRefusedInTheFormatsShape`.
+
 ## What this does not cover
 
 ### H-382 · A volumetric attack on bandwidth is not absorbed by the Bastion
@@ -4791,3 +4884,27 @@ and the headers of a cached response and is stored as plain JSON. Whoever can wr
 `validatedAt`, so that a caller receives other cached bytes under the name of the first, or an entry that never expires. The bytes themselves are verified against their content address at every
 read, and a replaced object is detected. What makes it real: write access to the volume of a replica, which is a compromised pod or a mounted volume that something else writes to; the
 chart gives the volume to one pod.
+
+### H-461 · The suite's front reaches the main installation's replica in plain HTTP
+
+Stage: R-BAS-044, R-BAS-048. Subject: the hop between the main installation's ingress and its web replica.
+
+Live in `test/integration/bastion` only; dormant in a deployment, where the chart's Service and Ingress carry the TLS of the main chart (R-HA-063). The Bastion's own connection is TLS and verified
+against the front's CA; the hop from the front to the replica is not. What makes it real: a defect in the main installation's own TLS listener that only shows with a Bastion's headers (the
+forwarded scheme of a Bastion request arriving over a TLS peer). The listener's TLS is tested by `test/integration/tls`.
+
+### H-462 · A main installation that reports a higher interface version in its own problem body is not exercised
+
+Stage: R-BAS-009, R-BAS-028. Subject: the version the Bastion learns from a `400 bastion_interface_mismatch`.
+
+Live in the suite (Q-BAS-105): the front simulates the foreign version in the answer's header and in the request, so the Bastion reads the main installation's version from the header and a real `400`
+carries the real main installation's own version. A `400` whose `interfaceVersion` member names a higher version than the header does is covered by the unit tests of `mainclient`, not by an in-process
+main installation. What makes it real: a main installation of a later release that moves the member and the header apart.
+
+### H-463 · The bound on the upload body a Bastion reads is shown by the answer, not by a counter
+
+Stage: R-BAS-014. Subject: how much of an upload body the Bastion consumes before it refuses.
+
+Live in the suite. The Bastion has no counter of request-body bytes, so the test announces 4 MiB, sends 1 KiB, and requires the refusal to arrive before the rest is sent; it proves the refusal does
+not wait for the body, and bounds what was read by what was sent (1 KiB), not by what the Bastion's socket buffers took in a long upload. What makes it real: a change that reads the body after
+answering, which this test would not see.

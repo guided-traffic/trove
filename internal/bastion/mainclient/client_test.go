@@ -318,6 +318,31 @@ func TestR_BAS_021_AForwardedBodyIsStreamedAndTheMarkingIsStripped(t *testing.T)
 	}
 }
 
+// TestR_BAS_014_TheRouteOfAProbeAnswerSurvivesTheStrippedMarking: the 204 of a probe to a read route that takes a
+// body names Trove-Bastion-Route; the client removes every Trove-Bastion header from the response and hands the
+// route over in Response.Route, because the engine decides on it.
+func TestR_BAS_014_TheRouteOfAProbeAnswerSurvivesTheStrippedMarking(t *testing.T) {
+	r := newRig(t, nil)
+	r.main.SetForward(func(w http.ResponseWriter, _ *http.Request) {
+		r.main.Mark(w, iface.Marking{Class: iface.ClassPass, Repository: "npm-all", Subject: iface.Subject{Kind: iface.SubjectAnonymous}})
+		w.Header().Set(iface.HeaderRoute, iface.RouteReadWithBody)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	f := forward(http.MethodPost, "/api/npm/npm-all/-/npm/v1/security/advisories/bulk")
+	f.Probe = true
+	resp, err := r.c.Do(context.Background(), f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.Status != http.StatusNoContent || resp.Route != iface.RouteReadWithBody {
+		t.Errorf("status %d, route %q", resp.Status, resp.Route)
+	}
+	if resp.Header.Get(iface.HeaderRoute) != "" {
+		t.Error("the route header was not stripped")
+	}
+}
+
 // TestR_BAS_006_ARefusedTokenAndAMismatchAreTypedErrors: 401 bastion_token_invalid is ErrTokenRefused and sets
 // trove_bastion_main_token_refused; 400 bastion_interface_mismatch and an answer with another version are
 // *MismatchError with the main installation's version; every operation maps them the same way (R-BAS-009).

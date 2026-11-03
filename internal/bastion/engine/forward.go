@@ -255,6 +255,17 @@ func (e *engine) onPrivate(q *rq, resp *mainclient.Response, sent time.Time, bl 
 		e.servePrivate(q, &d, metrics.ResultChecked)
 		return
 	}
+	if resp.Status == http.StatusNotModified && bl != nil && bl.ent != nil {
+		// The Bastion's own condition named the shared entry's validator and the main installation answered 304 for
+		// this caller: the caller's rendition is the entry's bytes (R-NPM-013's validators are derived from what the
+		// caller may read). The entry is served as this caller's 200, without renewing it: it is not this caller's
+		// to renew (R-BAS-023). Passing the 304 on would answer a request that carried no condition.
+		_ = resp.Body.Close()
+		if !e.serveEntry(q, *bl.ent, metrics.ResultChecked) {
+			e.forward(q, mainclient.KindForward, "", nil)
+		}
+		return
+	}
 	limit := min(maxDocumentBytes, int64(e.cfg.Cache.PrivateDocumentsMaxBytes))
 	if q.r.Method != http.MethodGet || resp.Status != http.StatusOK || limit <= 0 {
 		e.passThrough(q, resp, nil, metrics.ClassPrivate, metrics.ResultMiss)

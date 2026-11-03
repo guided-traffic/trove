@@ -285,6 +285,10 @@ the catalog, routing and recorder of the claims and invalidation tests of `repos
 `api`, which serve the management API over an upstream client of their own (`component_test.go`). A new format suite uses
 only the harness.
 
+[bastion](../../test/integration/bastion) is the harness with a TLS front of its own in front of the web replica and in-process Bastion replicas next to it (the role started from a
+configuration file, the volume or the bucket backend, with or without Valkey); [developer/bastion.md](bastion.md#the-integration-suite-r-bas-048) describes it. It runs in
+shard `b` of `make test-integration` (about 90 s).
+
 Three things a suite should know. A replica's start is a real start-up: a principal that is named like the break-glass
 account (`auth.break_glass.username`, default `admin`) is refused (the `files` and `api` stacks move the account
 or name the user otherwise). The audit table can be made to refuse an insert with

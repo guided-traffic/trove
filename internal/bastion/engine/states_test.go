@@ -346,7 +346,10 @@ func TestR_BAS_014_ANuGetPushWithoutACredentialIsStillRefusedByTheProbe(t *testi
 func TestR_BAS_014_ARouteThatTakesABodyIsForwardedWithTheCallersCredentialAfter204(t *testing.T) {
 	s := newSiteHarness(t, options{})
 	s.site.probe = func(f mainclient.Forward) (*mainclient.Response, error) {
-		return resp(204, marking(iface.ClassPass, "", "npm-all", iface.Subject{Kind: iface.SubjectAnonymous}), http.Header{iface.HeaderRoute: {iface.RouteReadWithBody}}, ""), nil
+		// The client removes the marking headers and hands the route over in its own field.
+		r := resp(204, marking(iface.ClassPass, "", "npm-all", iface.Subject{Kind: iface.SubjectAnonymous}), nil, "")
+		r.Route = iface.RouteReadWithBody
+		return r, nil
 	}
 	inner := s.main.doFn
 	s.main.doFn = func(f mainclient.Forward) (*mainclient.Response, error) {

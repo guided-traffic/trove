@@ -35,6 +35,9 @@ type reader struct {
 	read    iface.Read
 	allowed func(path string) bool
 	expires *time.Time
+	// sameDoc makes a partial reader's document byte-identical to the shared one (it may read everything the
+	// document lists): the main installation marks it private and answers 304 to the shared validator.
+	sameDoc bool
 }
 
 // site is a double of the main installation's read routes: artifacts by content address, documents shared for
@@ -168,6 +171,9 @@ func (s *site) doFn(f mainclient.Forward) (*mainclient.Response, error) {
 		class, etag, content := iface.ClassShared, `"d`+itoa(rev)+`"`, doc
 		if r.read != iface.ReadFull {
 			class, etag, content = iface.ClassPrivate, `"p`+itoa(rev)+`-`+r.id+`"`, "filtered:"+doc
+			if r.sameDoc {
+				etag, content = `"d`+itoa(rev)+`"`, doc
+			}
 		}
 		hdr := http.Header{"Etag": {etag}, "Content-Type": {"application/json"}, "Vary": {"Accept"}}
 		if f.IfNoneMatch == etag {
