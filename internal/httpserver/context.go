@@ -18,6 +18,7 @@ const (
 	keyInfo
 	keyPrincipal
 	keyShapes
+	keyPrincipalNote
 )
 
 // RequestInfo is what the chain resolves once per request (R-ARCH-005 step 5).
@@ -90,6 +91,14 @@ func PrincipalFrom(ctx context.Context) Principal {
 // WithPrincipal stores the caller; the authentication stage and tests use it.
 func WithPrincipal(ctx context.Context, p Principal) context.Context {
 	return context.WithValue(ctx, keyPrincipal, p)
+}
+
+// WithPrincipalNote returns ctx carrying f, which the authentication stage calls with the caller it accepted
+// (the anonymous principal included). A stage that runs before authentication and answers or marks the
+// response after it uses this to learn who the caller turned out to be (R-BAS-013); the request that did not
+// pass authentication is never reported.
+func WithPrincipalNote(ctx context.Context, f func(Principal)) context.Context {
+	return context.WithValue(ctx, keyPrincipalNote, f)
 }
 
 // Problem renders err as problem+json with the request's ID and logger

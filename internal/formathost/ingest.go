@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/guided-traffic/trove/internal/api/edge"
+	"github.com/guided-traffic/trove/internal/bastionmain"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/files"
 	"github.com/guided-traffic/trove/internal/formats"
@@ -166,8 +167,15 @@ func (s itemStore) Stat(ctx context.Context, repo formats.RepoRef, p formats.Pat
 		return formats.Item{}, false, err
 	}
 	it, found, err := s.h.o.Items.Live(ctx, itemsRepo(repo), p.Path)
-	if err != nil || !found {
+	if err != nil {
 		return formats.Item{}, false, err
+	}
+	if !found {
+		// A local repository that holds no item at the path holds none for any subject (R-BAS-013).
+		if repo.Class == formats.Local {
+			bastionmain.NoteMissing(ctx)
+		}
+		return formats.Item{}, false, nil
 	}
 	return itemOf(repo, it), true, nil
 }
@@ -181,10 +189,12 @@ func (s itemStore) Serve(ctx context.Context, rq *formats.Request, w http.Respon
 		return err
 	}
 	if err := items.ContentError(row); err != nil {
+		bastionmain.NoteUnknown(ctx) // a serve-time refusal is never a negative entry (R-BAS-013)
 		return err
 	}
 	if f, ok := s.h.o.Formats(rq.Repo.Format); ok {
 		if err := f.ServeCheck(ctx, s.h, it.Ref.Repo, it.Ref, mode); err != nil {
+			bastionmain.NoteUnknown(ctx)
 			return err
 		}
 	}
@@ -237,8 +247,15 @@ func (p packageStore) Package(ctx context.Context, repo formats.RepoRef, name st
 		return formats.PackageRow{}, false, err
 	}
 	row, found, err := p.s.Package(ctx, repo.ID, name)
-	if err != nil || !found {
+	if err != nil {
 		return formats.PackageRow{}, false, err
+	}
+	if !found {
+		// A local repository that holds no such package holds none for any subject (R-BAS-013).
+		if repo.Class == formats.Local {
+			bastionmain.NoteMissing(ctx)
+		}
+		return formats.PackageRow{}, false, nil
 	}
 	return formats.PackageRow{Ref: packageRef(repo, row.Ref), DisplayName: row.DisplayName, Attributes: row.Attributes}, true, nil
 }

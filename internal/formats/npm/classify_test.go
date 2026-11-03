@@ -38,8 +38,8 @@ func TestR_NPM_003_Classification(t *testing.T) {
 		{"@acme/ui/-/other-1.2.0.tgz", formats.Content, "@acme/ui", ""},
 		{"@acme/ui/-/ui-1.2.tgz", formats.Content, "@acme/ui", ""},
 		{"@acme/ui/-/ui-1.2.0.tar", formats.Content, "@acme/ui", ""},
-		{"-/ping", formats.PathComputed, "", ""},
-		{"-/whoami", formats.PathComputed, "", ""},
+		{"-/ping", formats.PathVolatile, "", ""},
+		{"-/whoami", formats.PathVolatile, "", ""},
 		{"-/v1/search", formats.PathComputed, "", ""},
 		{"-/package/lodash/dist-tags", formats.PathComputed, "", ""},
 		// a path the format cannot classify is metadata (R-REPO-003)

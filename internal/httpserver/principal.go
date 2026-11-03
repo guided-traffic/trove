@@ -1,6 +1,8 @@
 package httpserver
 
 import (
+	"time"
+
 	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/ci/claims"
 )
@@ -89,6 +91,9 @@ type Credential struct {
 	// BasicUsername is the username of a Basic credential, recorded for
 	// diagnostics and otherwise ignored (R-AUTH-001).
 	BasicUsername string
+	// ExpiresAt is the token's expiry, nil when the credential does not expire (a session, a service account
+	// token without one). The marking of a response to a Bastion request states it (R-BAS-013).
+	ExpiresAt *time.Time
 }
 
 // Principal is the authenticated caller, or the anonymous one. It is the seam

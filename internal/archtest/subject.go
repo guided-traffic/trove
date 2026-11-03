@@ -25,12 +25,15 @@ const subjectRule = "R-EP-013"
 // subject has no endpoint and so no ceiling) and an assignment to a field of a
 // subject. Passing a subject on, as a parameter, a field, a result or the value
 // of edge.SubjectFrom, is what every package does and is not flagged. Test files
-// are not loaded.
+// are not loaded, and neither is the conformance kit (internal/formats/formattest), which is test support.
 func CheckSubjectConstruction(module string, pkgs []*packages.Package) []Violation {
 	var out []Violation
 	for _, p := range pkgs {
 		r := rel(module, p.PkgPath)
-		if p.TypesInfo == nil || under(r, "internal/authz") || under(r, "internal/api/edge") {
+		// The conformance kit is test support that happens to live in non-test files so that every format's own
+		// tests can import it: its in-memory Host acts as a caller it is told to be, and check 12 sends one request as
+		// several callers to compare what the format renders for them (R-BAS-013, Q-BAS-72). It serves no request.
+		if p.TypesInfo == nil || under(r, "internal/authz") || under(r, "internal/api/edge") || under(r, "internal/formats/formattest") {
 			continue
 		}
 		seen := map[string]bool{}

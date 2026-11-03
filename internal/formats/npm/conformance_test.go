@@ -115,7 +115,7 @@ func conformance(t *testing.T) formattest.Fixture {
 			{Path: "@acme/ui/-/ui-1.2.0.tgz", Want: formats.PathInfo{Kind: formats.Content, Package: "@acme/ui", Version: "1.2.0"}},
 			{Path: "@acme%2fui/-/ui-1.2.0.sigstore", Want: formats.PathInfo{Kind: formats.Content, Package: "@acme/ui", Version: "1.2.0"}},
 			{Path: "lodash/-/other-1.0.0.tgz", Want: formats.PathInfo{Kind: formats.Content, Package: "lodash"}},
-			{Path: "-/ping", Want: formats.PathInfo{Kind: formats.PathComputed}},
+			{Path: "-/ping", Want: formats.PathInfo{Kind: formats.PathVolatile}},
 			{Path: "a/b/c", Want: formats.PathInfo{Kind: formats.PathMetadata}},
 		},
 		Inspect: formattest.InspectTarGz("lodash/-/lodash-1.0.0.tgz", "package/package.json"),

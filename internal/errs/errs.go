@@ -116,6 +116,11 @@ type Error struct {
 	// Headers are further response headers of the answer, set after the headers
 	// of the kind: the Cache-Status of a remote repository's refusal (R-REPO-047).
 	Headers map[string]string
+	// Absent marks a NotFound that says the item is missing for every subject: the upstream of a remote
+	// repository answered 404 or 410, or its negative entry stands for that. It is not set for a hidden item, a
+	// refusal, a serve-time check or a cache that merely does not hold the item. Only the core's lookups read
+	// it, to tell the marking of a Bastion request that a negative entry may stand for the answer (R-BAS-013).
+	Absent bool
 	// status, when set, replaces the status of the kind. It exists for the one
 	// case the kind cannot express: a 400 that lists the offending member of an
 	// unparsable body (R-API-003).
@@ -179,6 +184,15 @@ func WithHeader(name, value string) Option {
 		}
 		e.Headers[name] = value
 	}
+}
+
+// WithAbsent marks a NotFound as "missing for every subject" (see [Error.Absent]).
+func WithAbsent() Option { return func(e *Error) { e.Absent = true } }
+
+// IsAbsent reports whether err is, or wraps, a NotFound marked [WithAbsent].
+func IsAbsent(err error) bool {
+	e, ok := As(err)
+	return ok && e.Kind == NotFound && e.Absent
 }
 
 // WithAllow sets the Allow methods of a MethodNotAllowed error.

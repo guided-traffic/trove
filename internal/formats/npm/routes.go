@@ -78,9 +78,11 @@ func (f *Format) buildRoutes() []formats.Route {
 		route("disttag.delete", http.MethodDelete, "/-/package/{name}/dist-tags/{tag}", formats.Admin, deploy,
 			packageOp(tailDistTag), []string{"-/package/lodash/dist-tags/next", "-/package/@acme%2fui/dist-tags/next"}, f.handleDistTagDelete),
 
-		// Identity (R-NPM-019).
-		route("ping", http.MethodGet, "/-/ping", formats.Computed, read, matchOp("ping"), []string{"-/ping"}, f.handlePing),
-		route("whoami", http.MethodGet, "/-/whoami", formats.Computed, read, matchOp("whoami"), []string{"-/whoami"}, f.handleWhoami),
+		// Identity (R-NPM-019). Both answer by who asks (a 401 for the anonymous caller, the caller's name), so
+		// they are Volatile: a Computed route is the same for every caller that may read everything, which a
+		// Bastion relies on (R-BAS-013, kit check 12).
+		route("ping", http.MethodGet, "/-/ping", formats.Volatile, read, matchOp("ping"), []string{"-/ping"}, f.handlePing),
+		route("whoami", http.MethodGet, "/-/whoami", formats.Volatile, read, matchOp("whoami"), []string{"-/whoami"}, f.handleWhoami),
 
 		// The security audit (R-NPM-038): forwarded and never cached, and a read of every
 		// class, so the dispatcher sends a virtual repository's audit to no deployment

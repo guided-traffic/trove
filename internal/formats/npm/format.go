@@ -142,7 +142,7 @@ func (f *Format) Classify(p formats.Path) formats.PathInfo {
 	}
 	segs := strings.Split(p.Path, "/")
 	if segs[0] == "-" { // a protocol operation
-		if isAudit(p.Path) { // forwarded and never cached (R-NPM-038)
+		if isAudit(p.Path) || isIdentity(p.Path) { // forwarded and never cached (R-NPM-038, R-NPM-019)
 			return formats.PathInfo{Kind: formats.PathVolatile}
 		}
 		return formats.PathInfo{Kind: formats.PathComputed}

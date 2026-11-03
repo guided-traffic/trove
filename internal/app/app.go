@@ -18,6 +18,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/backup/tables"
+	"github.com/guided-traffic/trove/internal/bastionmain"
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/cluster"
@@ -64,6 +65,10 @@ type App struct {
 	sub  Subsystems
 	log  *slog.Logger
 	tele *telemetry
+	// bastionMx are the metrics of the main installation's side of the Bastion, registered once by
+	// bastionMetrics (wire_bastion.go).
+	bastionMx     *bastionmain.Metrics
+	bastionMxOnce sync.Once
 	// budget splits the margin after the server phase (shutdown.go); tests scale it.
 	budget shutdownBudget
 	// warnInterval overrides warnEvery in tests.

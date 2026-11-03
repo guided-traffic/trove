@@ -13,6 +13,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/authz"
+	"github.com/guided-traffic/trove/internal/bastionmain"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/httpserver"
@@ -70,6 +71,7 @@ func (r *remote) Artifact(ctx context.Context, rq *formats.Request, p formats.Pa
 	if expected.SHA256 == nil && expected.SHA512 == nil && expected.SHA1 == nil {
 		// The format's marks and the digests its metadata announces (BeforeArtifact).
 		if expected, err = r.gate(ctx, rq, p); err != nil {
+			noteRemote(rq, err)
 			return err
 		}
 	}
@@ -84,7 +86,22 @@ func (r *remote) Artifact(ctx context.Context, rq *formats.Request, p formats.Pa
 		h.Set("Accept-Ranges", "bytes")
 		h.Set("Cache-Control", edge.CacheControl(rq.Request))
 	}
-	return r.e.Artifact(ctx, preq, w, rq.Request)
+	err = r.e.Artifact(ctx, preq, w, rq.Request)
+	noteRemote(rq, err)
+	return err
+}
+
+// noteRemote tells the marking of a Bastion request what an answer of the remote engine means (R-BAS-013): a
+// NotFound the engine marked absent is a lookup that found the item missing for every subject, any other
+// NotFound (not cached offline, only-if-cached, a gone package, a format's gate) is a 404 that proves nothing.
+func noteRemote(rq *formats.Request, err error) {
+	switch {
+	case err == nil:
+	case errs.IsAbsent(err):
+		bastionmain.NoteMissing(rq.Context())
+	case errs.KindOf(err) == errs.NotFound:
+		bastionmain.NoteUnknown(rq.Context())
+	}
 }
 
 // gate asks the format's remote adapter (BeforeArtifact) whether the request may have the artifact
@@ -248,7 +265,12 @@ func formatSettings(config []byte, id formats.ID) json.RawMessage {
 // document converts the engine's document to the format's.
 func (r *remote) document(rq *formats.Request, d *proxy.Document, err error) (*formats.RemoteDocument, error) {
 	if err != nil {
+		noteRemote(rq, err)
 		return nil, err
+	}
+	if d != nil && d.Status.Negative {
+		// The negative entry stands for an upstream 404 (R-REPO-025): the document is missing for every subject.
+		bastionmain.NoteMissing(rq.Context())
 	}
 	if d == nil {
 		return nil, errs.E(errs.Internal, errs.CodeInternal, "The remote engine returned no document.")

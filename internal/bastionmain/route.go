@@ -19,6 +19,10 @@ const (
 	KindVolatile = "volatile"
 )
 
+// FormatFiles is RouteMatch.Format of the raw file routes under /files/, which have no format prefix
+// (R-BAS-013, R-BAS-014).
+const FormatFiles = "files"
+
 // RouteMatch is what the dispatcher tells the observer once the format matched the request to a route and
 // before any decision or handler (R-BAS-013, R-BAS-014).
 type RouteMatch struct {
@@ -57,7 +61,9 @@ type RouteObserver interface {
 	// (R-BAS-014). handled reports that the observer answered the request itself (the 204 with
 	// Trove-Bastion-Route: read-with-body), so the dispatcher writes nothing.
 	Matched(w http.ResponseWriter, r *http.Request, m RouteMatch) (handled bool, err error)
-	// Decided is called when the decision allowed the request and the repository resolved.
+	// Decided is called when the decision allowed the request and the repository resolved. The raw file
+	// handler calls it as soon as the caller exists, before its service decides the path, with no Class:
+	// the observer takes the subject and the index and computes the shape, which does not depend on the path.
 	Decided(r *http.Request, d RouteDecision)
 }
 

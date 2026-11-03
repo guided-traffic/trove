@@ -24,6 +24,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/authz"
+	"github.com/guided-traffic/trove/internal/bastionmain"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/files"
@@ -91,6 +92,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpserver.Problem(w, r, err)
 		return
 	}
+	// The marking stage of a Bastion request learns the route here, before the caller is decided or a body
+	// is read, and may refuse a write or answer a probe (R-BAS-013, R-BAS-014, Q-BAS-52).
+	obs := bastionmain.ObserverFrom(r.Context())
+	if obs != nil {
+		if match, ok := routeOf(r, key, p); ok {
+			handled, err := obs.Matched(w, r, match)
+			if err != nil {
+				httpserver.Problem(w, r, err)
+				return
+			}
+			if handled {
+				return
+			}
+		}
+	}
 	if h.svc == nil { // a replica without PostgreSQL or the object store
 		httpserver.Problem(w, r, errs.E(errs.Unavailable, errs.CodeUnavailable, "The files service is not available on this replica.", errs.WithRetryAfter(time.Second)))
 		return
@@ -101,6 +117,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			httpserver.Problem(w, r, err)
 			return
+		}
+		if obs != nil {
+			if match, ok := routeOf(r, key, p); ok {
+				decided(obs, r, caller, match)
+			}
 		}
 		switch r.Method {
 		case http.MethodGet, http.MethodHead:
@@ -114,6 +135,37 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpserver.Problem(w, r, errs.E(errs.MethodNotAllowed, errs.CodeMethodNotAllowed, "The resource does not support this method.",
 			errs.WithAllow(http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete)))
 	}
+}
+
+// routeOf is the route a request on /files/ is, as the marking stage sees it (R-BAS-013): a GET or HEAD of a
+// file is a download, of a folder (a path with a trailing slash, or the root) a listing that is like a
+// document, a PUT an upload and a DELETE a delete. It reports false for a method the handler refuses.
+func routeOf(r *http.Request, key string, p repository.Cleaned) (bastionmain.RouteMatch, bool) {
+	m := bastionmain.RouteMatch{Format: bastionmain.FormatFiles, RepoKey: key, Method: r.Method}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		m.Name, m.Kind, m.Action = "files.get", bastionmain.KindDownload, authz.Read
+		if p.Folder || p.Path == "" {
+			m.Name, m.Kind = "files.list", bastionmain.KindMetadata
+		}
+	case http.MethodPut:
+		m.Name, m.Kind, m.Action = "files.put", bastionmain.KindUpload, authz.Deploy
+	case http.MethodDelete:
+		m.Name, m.Kind, m.Action = "files.delete", bastionmain.KindDelete, authz.Delete
+	default:
+		return m, false
+	}
+	return m, true
+}
+
+// decided tells the observer the subject and the index the request decides on. The decision itself is the
+// service's, made while it resolves the path, so the observer learns them as soon as the caller exists.
+func decided(obs bastionmain.RouteObserver, r *http.Request, caller files.Caller, m bastionmain.RouteMatch) {
+	var idx *authz.Index
+	if acc, ok := caller.Access.(*edge.Access); ok {
+		idx = acc.Index()
+	}
+	obs.Decided(r, bastionmain.RouteDecision{Match: m, Subject: caller.Subject, Index: idx})
 }
 
 // splitPath cuts "/files/<key>/<rest>" at the first slash after the key and

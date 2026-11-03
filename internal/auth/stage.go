@@ -303,7 +303,7 @@ func (s *Stage) byToken(r *http.Request, ep EndpointRules, raw string, method Me
 		Groups:    groups,
 		CI:        info.CI,
 		Credential: Credential{
-			Method: method, TokenID: info.ID, TokenType: info.Type, Scope: &sc, BasicUsername: user,
+			Method: method, TokenID: info.ID, TokenType: info.Type, Scope: &sc, BasicUsername: user, ExpiresAt: info.ExpiresAt,
 		},
 	}, nil
 }

@@ -77,7 +77,7 @@ func TestR_ARCH_010_Defects(t *testing.T) {
 	}{
 		{
 			"R-ARCH-010 /{package} and /{scope}/{name} without a disambiguating rule fail check 1", testformat.AmbiguousRoutes, formattest.CheckAmbiguity, "ambiguous routes",
-			[]formattest.Check{formattest.CheckHeaders, formattest.CheckNames},
+			[]formattest.Check{formattest.CheckHeaders, formattest.CheckNames, formattest.CheckShared},
 		},
 		{"R-ARCH-010 a Match that cleans the path itself fails check 2", testformat.CleaningMatch, formattest.CheckTraversal, "resolves to route", nil},
 		{"R-ARCH-010 a package document classified as content fails check 3", testformat.ContentMetadata, formattest.CheckClassify, "says content", nil},
@@ -101,6 +101,7 @@ func TestR_ARCH_010_Defects(t *testing.T) {
 			[]formattest.Check{formattest.CheckClassify},
 		},
 		{"R-ARCH-010 a document path no GET route resolves fails check 10", testformat.WrongDocumentPath, formattest.CheckNames, "does not match a route", nil},
+		{"R-BAS-013 a package document that names the caller fails check 12", testformat.VariesByCaller, formattest.CheckShared, "the document differs between", nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

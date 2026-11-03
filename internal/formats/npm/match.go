@@ -219,7 +219,14 @@ func matchAuditLegacy(escaped string) (formats.Params, bool) {
 	return matchOp("npm", "v1", "security", "audits", "quick")(escaped)
 }
 
-// isAudit says whether a path is one of the audit endpoints, which have routes of their own.
+// isIdentity says whether a path is -/ping or -/whoami, whose answers depend on who asks (R-NPM-019).
+func isIdentity(escaped string) bool {
+	_, ping := matchOp("ping")(escaped)
+	_, whoami := matchOp("whoami")(escaped)
+	return ping || whoami
+}
+
+// isAudit reports whether the path is one of the security audit endpoints.
 func isAudit(escaped string) bool {
 	_, bulk := matchOp(auditBulkOp()...)(escaped)
 	_, legacy := matchAuditLegacy(escaped)

@@ -571,6 +571,12 @@ Acceptance criteria:
 - `acme-full` without the populate right on `npm-remote` has shape `partial` on `npm-all`; with it, `full`.
 - An exposure rule on the default endpoint makes every shape on the exposed repository `partial` at most.
 
+The rules the list leaves open are decided in [Q-BAS-73](#q-bas-73--the-read-shape-is-computed-inside-the-decision-point-and-agrees-with-it-by-test):
+the capability `content:metadata-read` alone never makes a shape `full` (it reads no artifact); the gate of a nested virtual
+repository is asked as a member's read; a virtual repository without a readable member is `none`; and a `none` shape carries the
+status a refused read gets (`401` for an anonymous subject, `403` or `404` as R-AUTHZ-016 says), taken from the decision point
+itself. The tests are `TestR_BAS_012_ShapeAgreesWithTheDecisionPoint` and `TestR_BAS_012_Shapes` in `internal/authz`.
+
 ### R-BAS-013 · Marking of responses to Bastion requests
 Priority: **MVP** · Covers: RMT-040, RMT-044
 
@@ -589,15 +595,25 @@ recognized Bastion request; no format code is involved, because the dispatcher k
 | `Trove-Bastion-Subject` | `token=<token ID>; principal=<principal ID>; expires=<unix seconds>` (`expires` left out for a token that does not expire, [Q-BAS-49](#q-bas-49--the-interface-is-one-package-of-wire-types-four-details-of-the-contract-are-fixed-in-it)), or `anonymous`, or `invalid` on a `401` for a rejected credential |
 | `Trove-Bastion-Interface` | the main installation's interface version |
 
-- `absent` is set only by the remote and virtual engines and the local lookup when they know the item is missing for every
-  subject; a refusal by the decision point, a hidden item and a serve-time refusal are `pass`, so a negative entry never stands
-  for a hidden item (R-BAS-024).
+- `absent` is set only when the core's own lookups (the remote engine, through which a virtual repository's remote members
+  answer, and the local lookup of a package or an item) know the item is missing for every subject; a refusal by the decision
+  point, a hidden item and a serve-time refusal are `pass`, so a negative entry never stands for a hidden item (R-BAS-024). How
+  the lookups tell the marking without format code, and why `absent` needs a `full` shape as well, is
+  [Q-BAS-70](#q-bas-70--absent-is-derived-from-the-notes-of-the-cores-lookups-and-only-for-a-full-reader).
 - `shared` follows from the shape and the route kind alone: a document of a `full` subject is the unfiltered rendition for the
   Bastion's host, and its ETag is the same for every `full` subject (R-NPM-013's inputs). A format whose document varies by
   anything but the repository's content and the request headers it names in `Vary` must render such a route as `Volatile`; the
-  conformance kit gains a check that sends one document request as two `full` subjects and compares the bytes.
+  conformance kit has a check (check 12, [Q-BAS-72](#q-bas-72--the-conformance-kit-compares-documents-between-callers-as-check-12)) that
+  sends one document request as a user, a service account and the anonymous caller and compares status, bytes and validators.
+  npm's `-/whoami` and `-/ping` answer by who asks and are `Volatile` since that check found them.
 - The headers are added only to Bastion requests and stripped from every other response, so an ordinary caller never learns
   its own shape.
+- Details the table leaves open ([Q-BAS-71](#q-bas-71--the-mark-stage-is-an-edge-package-and-learns-the-caller-from-the-authentication-stage)):
+  the subject is `invalid` on every `401` and on a credential that is no token (a session cookie), and `anonymous` for a caller
+  without a credential; a response that no route matched or that the decision refused carries the repository when the route is
+  known and no `Trove-Bastion-Read`; a response on an interface route of the Bastion carries `Trove-Bastion-Class: pass` and
+  `Trove-Bastion-Interface` only; a `/files/` path with a trailing slash, and the root, is a listing (`shared` or `private`
+  like a document), any other `/files/` path a download.
 
 Acceptance criteria:
 
@@ -633,6 +649,11 @@ answers a write in the client's protocol shape and points at the main installati
   `pass`. A request with a body above the limit is refused before the probe.
 - A forwarded non-probe write that reaches the main installation anyway (a defect) is refused the same way, since the
   Bastion token makes every write `bastion_read_only`.
+- The test is the route's kind and action, not the method alone ([Q-BAS-74](#q-bas-74--a-write-is-a-route-of-a-writing-kind-or-a-coarse-action-other-than-read)):
+  a `PUT`, `DELETE` or `POST` on an `Upload`, `Delete` or `Admin` route, or on any route whose coarse action is not `read`, is
+  refused whoever sent it; npm's family of unimplemented endpoints (`Admin`, whatever the method) is therefore `403
+  bastion_read_only` to a Bastion, where a direct client gets its `404` or `501`. The real request of a read route that takes a
+  body (npm's audit) is served.
 
 Acceptance criteria:
 
@@ -3303,6 +3324,131 @@ The development agent would revisit (c) if the chart ever has to release without
 
 **Applied in the spec:** R-BAS-045 (released with the chart `trove`).
 
+### Q-BAS-70 · `absent` is derived from the notes of the core's lookups, and only for a full reader
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The remote engine marks the `NotFound` it answers for an upstream 404 or 410 (`errs.WithAbsent`); the host's local lookups and the remote wrappers note into a per-request record whether something was found missing for every subject or something made the 404 mean less; the Mark stage sets `absent` for a `404` of a read route when the shape is `full`, something was missing and nothing was unknown (chosen) | No format code is involved; a refusal, a serve-time check, a pattern refusal, a remote member that could not tell and a package row the lookup holds are all `unknown` or `found` | Exact where the lookups are the core's; a hidden item is never absent because a `full` reader has nothing hidden by grant | The record is filled by the lookups the core makes, not by the routes: a lookup a format makes through its own data port is not seen (H-441) |
+| (b) Each format returns a typed error for a missing item | The format says it | Exact per route | Format code in every route of every format; against R-BAS-013 and Q-BAS-27 |
+| (c) `absent` for every `404` of a read route | The status alone | Trivial | A hidden item or a blocked version would stand as a negative entry (R-BAS-024) |
+
+**Choice:** (a). The sites: `proxy` marks the upstream 404 and 410 of an artifact and of a document, the negative hit of both, with
+`errs.WithAbsent`; `formathost` notes **missing** for a package row or an item that a *local* repository does not hold and for a
+remote answer that is marked or is a negative document, and **unknown** for the refusal of `Authorize` (the decision, the
+repository's include and exclude patterns, a global claim on a remote name), for a serve-time refusal (`ServeCheck`, a damaged
+item) and for any other `NotFound` of the remote engine (offline, not cached, only-if-cached, a gone package); `files` notes
+missing for a local path that holds nothing. The record lives in the request's context only while a Bastion request is
+recognized (`bastionmain.WithAbsence`), so the calls cost nothing for anyone else. The class is `absent` only for a `full` shape:
+a caller who may read everything has nothing the decision point hides from it, and a negative entry is served to full readers
+only (Q-BAS-42), so a `partial` or `none` caller's `404` is `pass` whatever the lookups found.
+
+**Rationale:** "missing for every subject" is a fact about the repository, which the lookups know and the routes only relay. The
+remote answers are the upstream's, so they are subject-independent; a local package lookup is by repository and name; everything
+else that produces a `404` is either decided by subject (the decision point) or by state that can change without the item
+changing (a block, a tombstone), which Q-BAS-27 already routes to `pass`. The development agent would revisit the choice if a
+format route is found that answers a `404` of its own after an empty lookup (H-441); the contract then gains a typed reason on the
+format's side.
+
+**Applied in the spec:** R-BAS-013, R-BAS-024; code: `internal/errs` (`Absent`), `internal/proxy`, `internal/formathost`,
+`internal/files`, `internal/bastionmain/absence.go`, `internal/api/bastionmark`.
+
+### Q-BAS-71 · The Mark stage is an edge package and learns the caller from the authentication stage
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `internal/api/bastionmark` (edge) implements `Stages.Mark`; the chain's authentication stage reports the caller it accepted through a generic hook in the context (`httpserver.WithPrincipalNote`) (chosen) | The stage runs before authentication, so it sees the response of every later stage, and reads the principal the way edge code does | Layering holds (`bastionmain` stays a domain package); the subject is right for a `429`, a `404` of no route and a refusal that never reach the observer | A small hook in the chain |
+| (b) The marking in `internal/bastionmain` | One package | Matches the contracts page | It would import `internal/httpserver` for the principal and the content, an edge package |
+| (c) The observer captures the subject at `Decided` only | No hook | Nothing in the chain | Every earlier answer would have no subject |
+
+**Choice:** (a). The authentication stage calls the note after it accepted a credential or the anonymous caller; a request that
+never reached a successful authentication (a rejected credential, a refusal of an earlier stage) has no note and its subject is
+`invalid`. The stage maps the principal to the header: a token with its ID, principal ID and expiry (`httpserver.Credential` gains
+`ExpiresAt`, filled from the token the validator returned), `anonymous` without a credential, and `invalid` for a credential that
+is no token. A `401` is `invalid` whatever the principal was: the Bastion cannot use the credential. Interface routes carry
+`Trove-Bastion-Class: pass` and `Trove-Bastion-Interface` and nothing else. The stage counts
+`trove_bastion_forwarded_requests_total{bastion, class}` (the class `probe` for a write probe) on the metrics instance of the
+composition root.
+
+**Rationale:** the contracts page named the stage and its place in the chain; where it lives was open. The development agent would
+revisit (b) if the recognition and the principal become one value in a domain package.
+
+**Applied in the spec:** R-BAS-013, R-BAS-008 (the counters); code: `internal/api/bastionmark`, `internal/httpserver/context.go`,
+`internal/httpserver/chain.go`, `internal/auth/stage.go`, `internal/app/wire_bastion.go`.
+
+### Q-BAS-72 · The conformance kit compares documents between callers as check 12
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Check 12: every content case that a `Metadata` or `Computed` route serves is sent to one seeded Host as a user, a service account and the anonymous caller; status, bytes and the validators must be equal; the unbuilt vulnerability check becomes 13 (chosen) | One number, one place; the anonymous caller is included because a shared copy would otherwise reach it | Finds what a Bastion would share wrongly | Renumbers a check that is not built |
+| (b) Check 13, leaving 12 for the vulnerability check | No renumbering | Nothing renumbered | A gap in the numbers for as long as M4b is unbuilt |
+| (c) Compare two `full` subjects only | The spec's wording | Smaller | `-/ping` answers `401` to anonymous and `200` to a user, and a shared copy would serve the `200` to the anonymous full reader |
+
+**Choice:** (a). The seed is made once, by the fixture's own subject, so only the rendering is compared and not what a publisher
+left in a row. The kit builds its three callers from the fixture's Host subject and is exempt from the rule of R-EP-013 that only
+`internal/authz` and `internal/api/edge` build an `authz.Subject` (it is test support in non-test files and serves no request). The
+check found two routes in npm: `-/whoami` (the caller's name) and `-/ping` (`401` for anonymous) are `Volatile` now, and
+`Classify` says `PathVolatile` for both. NuGet passes unchanged. The testformat gains the defect `varies-by-caller`.
+
+**Rationale:** the property is the one a Bastion relies on (R-BAS-013): a `shared` document is the same for every full reader. The
+development agent would revisit the number when the vulnerability check is built.
+
+**Applied in the spec:** R-BAS-013, R-ARCH-010 (checks 12 and 13); code: `internal/formats/formattest/checks_shared.go`,
+`internal/formats/npm/routes.go`, `internal/formats/npm/format.go`, `internal/archtest/subject.go`.
+
+### Q-BAS-73 · The read shape is computed inside the decision point and agrees with it by test
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `authz.Engine.ReachOn` classifies keys as full, partial or none with the refusal a read gets; `bastionmain.NewShapeResolver` maps it to the wire (chosen) | The rules sit next to `readShape`, `populate` and `evaluate`, which they must agree with | The index's private data (members, require-authentication, the populate action) stays private; one oracle test | A new exported method of the engine |
+| (b) The resolver in `bastionmain` over `ReadScoper`, `Decider.DecideOn` and the repository reader | No change to authz | Only public calls | It cannot tell `content:metadata-read` from a grant, audits every probe it makes and reads the members from a second source |
+
+**Choice:** (a). A local or remote repository is `full` when the read shape of the grants alone, with `content:metadata-read` left
+out, is "all" and, for a remote repository, the populate check passes; `none` when the shape is "none" or the endpoint does not
+expose it; `partial` otherwise (an endpoint with exposure rules, a token scope that narrows, a path-only grant, a missing populate
+right, the session cookie). A virtual repository is `none` when its gate refuses (the anonymous rule 6 included) or no member is
+readable, `full` when the gate admits an artifact read and every member is `full` (a nested virtual repository is a member whose
+own gate is asked as a read through the addressed one), `partial` otherwise; the empty virtual repository is `none`. The status
+of a `none` is the outcome of a metadata read of the key by the same subject. The oracle test crosses thirteen kinds of subject,
+three endpoints, two states of the anonymous switch, ten repositories (local, remote that fills on read and on deploy, one that
+requires authentication, virtual, nested virtual, empty, unknown), packages, versions, paths and both request kinds, and asks
+`DecideOn` and `MayPopulateOn` for every read.
+
+**Rationale:** "never full where a read is refused" is a property of one function, so it belongs beside the function. The
+development agent would revisit the entry if the resolver of a virtual repository asks more of a member than the gate and the
+read (the oracle then fails).
+
+**Applied in the spec:** R-BAS-012; code: `internal/authz/reach.go`, `internal/bastionmain/shape_resolver.go`.
+
+### Q-BAS-74 · A write is a route of a writing kind or a coarse action other than read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The observer refuses a request whose method is not `GET` or `HEAD` on a route of kind `Upload`, `Delete`, `Admin`, an unknown kind or an action other than `read`, probe or not; a probe of a read route answers `204` with `Trove-Bastion-Route: read-with-body`; `GET` and `HEAD` pass (chosen) | The route decides, as the spec says; the real request of npm's audit is served | Covers a defect of the Bastion (a write forwarded without the probe) | npm's unimplemented endpoints (`Admin`, action `read`) answer `403` to a Bastion instead of `404`/`501` |
+| (b) Refuse on the method alone | Simple | Trivial | The audit `POST` could not be forwarded |
+| (c) Refuse only the probe | Narrow | Nothing else changes | A forwarded write would reach the handler |
+
+**Choice:** (a). The refusal is rendered by the format (`WriteError`, R-ARCH-023): npm's body carries `bastion_read_only` and the
+detail `This is a read-only Bastion of <server.base_url>; publish to <server.base_url>/api/npm/<key>/` (`/files/<key>/` for the
+raw file routes, which call the observer themselves with the kinds `download`, `metadata` for a listing, `upload` and `delete`).
+A `GET` on an `Admin` route is not a write and is decided as the caller's own request. The class label of a probe in
+`trove_bastion_forwarded_requests_total` is `probe`.
+
+**Rationale:** the Bastion token makes every write `bastion_read_only` (R-BAS-014); the kind and the action are what the format
+declared for the route, so no route table is copied. The development agent would revisit the `Admin`-with-`read` case if a format
+adds a route of that shape that a Bastion must forward.
+
+**Applied in the spec:** R-BAS-014; code: `internal/api/bastionmark`, `internal/api/rawfiles/handler.go`.
+
 ### Q-BAS-87 · The bytes of documents have a tree of their own
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -3695,6 +3841,31 @@ absent (the Bastion's own limits and blocking still hold), and with `routeByPath
 instead of one (performance only, the volumes together hold less). What makes it real: a different ingress class, or a hardened
 HAProxy Ingress; NOTES.txt names the dependence, and the e2e run checks the annotations against the local profile's controller only.
 
+### H-441 · `absent` rests on the notes of the core's lookups, not on the routes
+
+Stage: R-BAS-013 and R-BAS-024, the marking of a `404`. Subject: a negative entry at the Bastion for an item that is merely
+refused or blocked for everyone.
+
+Live on every Bastion from the day the Mark stage is wired; it errs towards `pass`, so the live part is speed, and the dormant
+part is correctness. Speed: a missing version of a package a local repository holds, and every route whose lookup goes through a
+format's own data port (NuGet's registration and flat container, npm's version and dist-tag documents), is `pass`, so the
+Bastion asks the main installation each time. Correctness: `absent` needs a note of a missing lookup and none of anything
+unknown. A route that looks up an optional row (found is not an error), then answers a `404` for a reason of its own that is no
+refusal and no serve-time check, would be marked `absent` for a `full` reader. Verified in this repository: the lookups of
+`formathost` and `files`, and the `404` paths of the npm and NuGet routes that reach `Authorize` or `ServeCheck`. Not verified:
+every `404` of every handler of both formats. What makes it real: a new format route of that shape; kit check 12 does not look
+at `404`s.
+
+### H-442 · A `401` states the subject as `invalid` whether the credential was rejected or none was sent
+
+Stage: R-BAS-013, `Trove-Bastion-Subject` on a `401`. Subject: the Bastion's picture of its callers.
+
+Live on every `401` of a recognized request. The header cannot tell a rejected credential from an anonymous caller who must
+sign in (a repository that requires authentication, anonymous access off): both are `invalid`, because the Bastion has no use for
+the credential either way. A Bastion that counted `invalid` subjects as failed authentications would count the anonymous
+callers; the failed-authentication timeout of R-BAS-036 counts credentials the main installation rejected, which the Bastion
+knows from the request it sent (a credential present) and not from this header. What makes it real: a change of the Bastion that
+reads the header for that count.
 ### H-451 · A ranged read of a cached artifact is not verified
 
 Stage: R-BAS-022's answer to `Range` and `If-Range` from the cache, and R-BAS-032. Subject: the integrity of the bytes of a ranged

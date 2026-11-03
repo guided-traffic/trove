@@ -106,7 +106,7 @@ when the code exists). To add a section: a file in `guide/`, a line in `guideSec
 
 ### Tests
 
-`go test ./internal/formats/nuget/` runs the conformance kit (all eleven checks run and none is skipped, `TestR_ARCH_010_NoCheckIsSkipped`; check 6 runs the crafted
+`go test ./internal/formats/nuget/` runs the conformance kit (all twelve checks run and none is skipped, `TestR_ARCH_010_NoCheckIsSkipped`; check 6 runs the crafted
 packages through the remote adapter's fill hook as well, and crafted service indexes (`discoveryFixture`) through `ParseDiscovery`, and the three P1 routes that answer 501, embedded files, autocomplete and the symbol server, are the
 fixture's `NoContent` entries, Q-ARCH-281), the route and matching tables, the classification, the error shape and the service index. [test/integration/nuget](../../test/integration/nuget) creates repositories through the management
 API, reads the service index over HTTP with every credential form, and asserts the 404, 405, 409 and 501 answers; [view_store_test.go](../../test/integration/nuget/view_store_test.go) runs the view reads against PostgreSQL and [view_api_test.go](../../test/integration/nuget/view_api_test.go) the package screens of the management API over NuGet rows.

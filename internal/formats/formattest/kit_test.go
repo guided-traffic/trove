@@ -94,7 +94,7 @@ func TestR_ARCH_010_KitSkips(t *testing.T) {
 		formattest.CheckMerge: "no virtual class", formattest.CheckInspect: "Inspect reads no archive",
 		formattest.CheckHeaders: "no routes", formattest.CheckSetup: "no clients",
 		formattest.CheckRevision: "no package rows", formattest.CheckNames: "no package names",
-		formattest.CheckView: "no package screens",
+		formattest.CheckView: "no package screens", formattest.CheckShared: "no routes",
 	}
 	fx := formattest.Fixture{
 		Paths: []formattest.PathCase{{Path: "a/b.bin", Want: formats.PathInfo{Kind: formats.Content}}},
@@ -128,6 +128,7 @@ func TestR_ARCH_010_KitSkips(t *testing.T) {
 		want := []formattest.Check{
 			formattest.CheckAmbiguity, formattest.CheckClassify, formattest.CheckRewrite, formattest.CheckMerge, formattest.CheckInspect,
 			formattest.CheckHeaders, formattest.CheckSetup, formattest.CheckRevision, formattest.CheckNames, formattest.CheckView,
+			formattest.CheckShared,
 		}
 		got := rep.Failed()
 		if len(got) != len(want) {
@@ -142,7 +143,7 @@ func TestR_ARCH_010_KitSkips(t *testing.T) {
 	t.Run("R-ARCH-010 a skip the format contradicts fails: routes, an upload route, a write route, a remote adapter, a virtual adapter, clients, package names", func(t *testing.T) {
 		for _, c := range []formattest.Check{
 			formattest.CheckAmbiguity, formattest.CheckClassify, formattest.CheckRewrite, formattest.CheckMerge, formattest.CheckHeaders,
-			formattest.CheckSetup, formattest.CheckNames, formattest.CheckTraversal, formattest.CheckInspect, formattest.CheckRevision,
+			formattest.CheckSetup, formattest.CheckNames, formattest.CheckTraversal, formattest.CheckInspect, formattest.CheckRevision, formattest.CheckShared,
 		} {
 			rep := formattest.Evaluate(testformat.New(), formattest.Fixture{Skip: map[formattest.Check]string{c: "not applicable"}})
 			if got := messages(rep, c); !strings.Contains(got, "skipped") && !strings.Contains(got, "always applies") {

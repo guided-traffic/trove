@@ -65,6 +65,7 @@ security view is [permissions.md](../security/permissions.md).
 | [project.go](../../internal/authz/project.go) | `ProjectRight`, `AdministeredProject`, the three questions of a project administrator and `Index.ProjectOf` ([Projects](#projects)) |
 | [settings.go](../../internal/authz/settings.go) | `SettingsHook`, the `repository.Hooks` that records `authz.settings.changed` in the transaction of a repository update (R-AUTHZ-031) |
 | [populate.go](../../internal/authz/populate.go) | The populate check of R-AUTHZ-008 (`MayPopulateOn`, `PopulateOn`) and `MemberUsableOn` of R-AUTHZ-015 |
+| [reach.go](../../internal/authz/reach.go) | `Reacher` and `Engine.ReachOn`: the read shape of a repository for a Bastion, full, partial or none with the refusal a read gets ([Read shapes](#read-shapes)) |
 | [ownership.go](../../internal/authz/ownership.go) | Package ownership: `Ownership` with `CheckTx`, `ClaimTx`, `EnforceTx` for writers, `PrecheckWrite` (the same rule read-only, in a transaction of its own, for a writer that decides before it reads a body; Q-ARCH-226), the owner operations `Owners`, `AddOwner`, `RemoveOwner`, `OwnedBy`, and `OwnershipHook` for the repository deletion |
 | [ownership.sql](../../internal/meta/postgres/queries/ownership.sql) | The statements of ownership: the locked read of a claim, the claim (`INSERT … ON CONFLICT DO NOTHING`), owners, release, the deletion of a domain, the list by owner |
 | [audit.go](../../internal/authz/audit.go), [events_authz.go](../../internal/audit/events_authz.go) | The decision audit, the event registry entries |
@@ -345,6 +346,29 @@ without an endpoint (a job, a command) has no cache-fill ceiling. The policy war
 `warningsFor` in [validate.go](../../internal/authz/validate.go)) is unchanged: it flags an `anonymous` read entry on a remote
 repository that fills on read, whatever the anonymous switch says.
 
+## Read shapes
+
+`Engine.ReachOn(ctx, idx, sub, keys)` ([reach.go](../../internal/authz/reach.go)) answers R-BAS-012 for the trove Bastion: whether the
+subject may read the whole of a repository (`ReachFull`), something of it (`ReachPartial`) or nothing (`ReachNone`, with the outcome a
+read of the repository is refused with). `bastionmain.NewShapeResolver` maps it to the wire; the Mark stage asks it once per forwarded
+request on the index the decision used, and the check operation of the Bastion interface asks it for a validated credential.
+
+| Repository | `ReachFull` | `ReachNone` | `ReachPartial` |
+|---|---|---|---|
+| local, remote | `readShape` over the grants alone is `ReadAll` (an unrestricted read grant or `content:bypass`, no narrowing scope, an endpoint in mode all); for a remote repository also the populate check (`populate`, R-AUTHZ-008) | `readShape` is `ReadNone`, an anonymous subject on `requireAuthentication` or with the switch off, the endpoint does not expose the key, an unknown key | everything else: rows decided one by one (exposure rules, a scope that lists elements, a path-only grant), no populate right, the session cookie, `content:metadata-read` without a grant |
+| virtual | the gate (`read` on it, as a metadata and as an artifact read) admits and every member, recursively, is `ReachFull` on the terms of a read through the virtual repository (`Addressed`); a nested virtual repository is a member whose own gate is asked as such | the gate refuses (the anonymous rule 6 included) or no member is readable; no member at all | everything else |
+
+`content:metadata-read` is left out of the shape used for `ReachFull` (`evalState.metadata` cleared), because it reads no artifact
+(Q-AUTHZ-172): an auditor is partial wherever it holds no grant. The outcome of a `ReachNone` is the one a metadata read of the
+key gets from `evaluate` (401 for anonymous, 403 only where the repository does not hide, 404 otherwise), so the status the Bastion
+replays is the main installation's own.
+
+The invariants (a full shape never meets a refused read, a none shape never an allowed one) are held by
+`TestR_BAS_012_ShapeAgreesWithTheDecisionPoint` ([reach_test.go](../../internal/authz/reach_test.go)): it asks `DecideOn` and
+`MayPopulateOn` for every subject, endpoint, repository, package, version, path and request kind of its fixture, with the anonymous switch on
+and off. Change `readShape`, `populate`, the virtual rules of `evaluate` or `MemberUsableOn` and that test is the one to run; add the case
+that your change introduces to its fixture (`reachFixture`) before you change the rule.
+
 ## Package ownership
 
 The rules are R-AUTHZ-018 and R-AUTHZ-019; the decisions behind the code are Q-AUTHZ-154 to Q-AUTHZ-158.
@@ -565,6 +589,7 @@ the anonymous gate and before the repository lookup, on the index the request de
 | Integration | [test/integration/authz](../../test/integration/authz) | E1.3 against PostgreSQL, the policy and role store, the reused epoch, the consistent build, E1.12 with three replicas, Valkey stopped and propagation slowed to 30 s |
 | Integration | [declared_test.go](../../test/integration/authz/declared_test.go), [declared_cmd_test.go](../../test/integration/postgres/declared_cmd_test.go) | `TestR_AUTHZ_010_BindingsFromTheConfiguration` (the declared group created and bound, a repeat that changes nothing, `DELETE` 409 and `PUT` 200 over HTTP, a member synced by the real provisioner holds `admin`, a take-over, a removal that the member's next request sees, a missing user or service account and an auto-join group stop the run and apply nothing), `TestR_AUTHZ_022_DeclaredRemovalKeepsAnAdministrator`, `TestR_AUTHZ_010_MigrateCommandAppliesTheDeclaredBindings` (the binary with a configuration file); `testenv.DeclareRoleBindings` runs the step as the command composes it |
 | Integration, HTTP | [auditor_test.go](../../test/integration/packages/auditor_test.go) (npm, raw files), [auditor_test.go](../../test/integration/nuget/auditor_test.go) (NuGet) | `TestQ_AUTHZ_172_AuditorReadsNpmMetadata`, `TestQ_AUTHZ_172_AuditorReadsNuGetMetadata`: an auditor bound directly and one through a declared group read documents, version lists, registrations, folder listings and the configuration, and get 404 for every download and 403 for every write |
+| Unit | [reach_test.go](../../internal/authz/reach_test.go) | `TestR_BAS_012_ShapeAgreesWithTheDecisionPoint` (the oracle over the reach fixture: thirteen kinds of subject, three endpoints, anonymous on and off, ten repositories including remote mirrors, nested and empty virtual repositories) and `TestR_BAS_012_Shapes` (the named cases of the acceptance criteria) |
 | Unit | [populate_test.go](../../internal/authz/populate_test.go), [ownership_test.go](../../internal/authz/ownership_test.go) | `TestR_AUTHZ_008_PopulateCheck` (session cookie, frozen mirror, endpoint cache fill, anonymous), `TestR_AUTHZ_015_MemberUsable` (the table), `TestR_AUTHZ_018_OwnershipRules` (rules 1, 2, 3, 6 on the read state), `TestR_AUTHZ_018_WhenOwnershipIsChecked`, `TestR_AUTHZ_018_ClaimOwners` |
 | Integration | [ownership_test.go](../../test/integration/authz/ownership_test.go) | `TestR_AUTHZ_018_TwoReplicasClaimOneNewName` (a held claim on replica a, replica b's insert waiting on it, exactly one wins; a rolled-back claim; 20 pairs started at once), group owner, unclaimed with versions needs `manage`, the owner operations of R-AUTHZ-019 (pre-assignment, 409 `last_owner`, release, concurrent removals, `ci_token_restricted`, 403 for refused writes), the deletion hook through the real deletion job, the populate check and the `anonymous_populates_remote` warning on PostgreSQL |
 | Integration, HTTP | [ownership_api_test.go](../../test/integration/authz/ownership_api_test.go) | `TestR_AUTHZ_019_OwnershipOperationsOverHTTP`: the four operations on two replicas through `idapi.Handler` with the replicas' engines, every answer validated against the document (the encoded name, `Location`, 409 and an `Idempotency-Key` replay, 403 whatever exists, `ci_token_restricted`, 422, `last_owner` and release, the list with its cursor) |

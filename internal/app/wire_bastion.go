@@ -3,6 +3,7 @@ package app
 import (
 	"net/http"
 
+	"github.com/guided-traffic/trove/internal/api/bastionmark"
 	"github.com/guided-traffic/trove/internal/bastionmain"
 )
 
@@ -38,7 +39,40 @@ func (a *App) bastionStages() bastionmain.Stages {
 	// <<< package 2
 
 	// >>> package 3
-	// st.Mark = …(the ShapeResolver, …)
+	if shapes := a.bastionShapes(); shapes != nil {
+		st.Mark = bastionmark.New(bastionmark.Options{
+			Shapes: shapes, MainURL: a.cfg.Server.BaseURL, Metrics: a.bastionMetrics(), Log: a.log.With("component", "bastion"),
+		}).Stage()
+	}
 	// <<< package 3
 	return st
 }
+
+// >>> package 3
+
+// bastionShapes returns the ShapeResolver over the decision point (R-BAS-012): the Mark stage asks it for the
+// caller's shape on the addressed repository and the check operation for a credential it has validated. A
+// replica without the authorization area has none.
+func (a *App) bastionShapes() bastionmain.ShapeResolver {
+	eng := part[authzArea](a.parts).engine
+	if eng == nil {
+		return nil
+	}
+	return bastionmain.NewShapeResolver(eng)
+}
+
+// bastionMetrics returns the metrics of the main installation's side, registered once: the Mark stage counts
+// the forwarded requests on the value the interface handlers count the interface requests on.
+func (a *App) bastionMetrics() *bastionmain.Metrics {
+	a.bastionMxOnce.Do(func() {
+		m, err := bastionmain.NewMetrics(a.tele.metrics.Registry())
+		if err != nil {
+			a.log.Error("the Bastion metrics could not be registered", "error", err)
+			return
+		}
+		a.bastionMx = m
+	})
+	return a.bastionMx
+}
+
+// <<< package 3

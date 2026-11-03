@@ -48,6 +48,7 @@ func principalFromResult(r auth.Result) httpserver.Principal {
 			TokenType:     httpserver.TokenType(r.Credential.TokenType),
 			BasicUsername: r.Credential.BasicUsername,
 			Scope:         r.Credential.Scope,
+			ExpiresAt:     r.Credential.ExpiresAt,
 		},
 	}
 	for _, g := range r.Groups {

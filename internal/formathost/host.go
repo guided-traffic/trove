@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/authz"
+	"github.com/guided-traffic/trove/internal/bastionmain"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/items"
@@ -173,9 +174,11 @@ func (h *Host) Authorize(ctx context.Context, rq *formats.Request, t formats.Tar
 	c := coordinate(rq, t)
 	d := h.o.Decider.DecideOn(ctx, rq.Index, rq.Subject, c)
 	if !d.Allowed() {
+		bastionmain.NoteUnknown(ctx) // a refusal is never a negative entry (R-BAS-013)
 		return d.Err()
 	}
 	if subject, ok := h.patternSubject(rq, t); ok && !rq.Repo.Admits(subject, false) {
+		bastionmain.NoteUnknown(ctx)
 		if writes(t.Actions) {
 			return errs.E(errs.Forbidden, errs.CodeNotAdmitted, "The package is not admitted by the include and exclude patterns of the repository.")
 		}
@@ -189,6 +192,7 @@ func (h *Host) Authorize(ctx context.Context, rq *formats.Request, t formats.Tar
 			return err
 		}
 		if refused {
+			bastionmain.NoteUnknown(ctx)
 			return authz.NotFound()
 		}
 	}

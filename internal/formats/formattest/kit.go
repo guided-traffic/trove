@@ -11,7 +11,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/formattest/crafted"
 )
 
-// Check is one of the eleven checks of R-ARCH-010, numbered as the spec numbers them.
+// Check is one of the twelve checks of R-ARCH-010, numbered as the spec numbers them.
 type Check int
 
 // The checks.
@@ -27,8 +27,9 @@ const (
 	CheckRevision
 	CheckNames
 	CheckView
+	CheckShared
 
-	lastCheck = CheckView
+	lastCheck = CheckShared
 )
 
 // name is the short name of the check.
@@ -56,6 +57,8 @@ func (c Check) name() string {
 		return "package names"
 	case CheckView:
 		return "package view"
+	case CheckShared:
+		return "shared documents"
 	}
 	return "unknown"
 }
@@ -353,6 +356,8 @@ func runCheck(c Check, f formats.Format, fx Fixture) (res Result) {
 		r.names()
 	case CheckView:
 		r.view()
+	case CheckShared:
+		r.shared()
 	}
 	return res
 }
@@ -391,7 +396,7 @@ func (r *run) skipProblem(c Check, reason string) string {
 	switch {
 	case c == CheckTraversal:
 		return fmt.Sprintf("%s always applies, to a format without routes as well: Match must refuse every traversal input", c)
-	case (c == CheckAmbiguity || c == CheckHeaders || c == CheckClassify) && routes > 0:
+	case (c == CheckAmbiguity || c == CheckHeaders || c == CheckClassify || c == CheckShared) && routes > 0:
 		return fmt.Sprintf("%s is skipped (%s) and the format has %d routes", c, reason, routes)
 	case c == CheckRewrite && r.f.Remote() != nil:
 		return fmt.Sprintf("%s is skipped (%s) and the format has a remote adapter", c, reason)

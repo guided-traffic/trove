@@ -2,6 +2,7 @@ package auth
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/scope"
@@ -39,6 +40,9 @@ type Credential struct {
 	TokenType     token.Type
 	Scope         *scope.Scope // nil: no ceiling (sessions)
 	BasicUsername string
+	// ExpiresAt is the expiry of the token, nil for a session and for a token that does not expire. The marking
+	// of a response to a Bastion request states it (R-BAS-013).
+	ExpiresAt *time.Time
 }
 
 // Result is what the stage yields for an authenticated or anonymous request. A

@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/guided-traffic/trove/internal/authz"
+	"github.com/guided-traffic/trove/internal/bastionmain"
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/repository"
 )
@@ -49,6 +50,10 @@ func (s *Service) Stat(ctx context.Context, c Caller, repoKey string, p reposito
 		return Resolved{}, err
 	}
 	if !found || (p.Folder && it.Kind != items.KindFolder) {
+		if !found && repo.Class == repository.Local {
+			// A local repository that holds nothing at the path holds nothing for any subject (R-BAS-013).
+			bastionmain.NoteMissing(ctx)
+		}
 		return Resolved{}, notFound()
 	}
 	if it.Kind == items.KindFolder {

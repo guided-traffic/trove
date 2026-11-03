@@ -73,7 +73,7 @@ func (e *Engine) Artifact(ctx context.Context, rq Request, w http.ResponseWriter
 	// Step 8.
 	if _, hit := e.neg.lookup(ctx, rem, rq.Path, rq.Variant); hit {
 		e.m.lookup(rem.Repo.Key, Artifact, resultNegative)
-		return withStatus(errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist upstream."),
+		return withStatus(errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist upstream.", errs.WithAbsent()),
 			CacheStatus{Hit: true, Negative: true, Detail: detailNegative})
 	}
 	// Step 9.
@@ -123,7 +123,7 @@ func (e *Engine) artifactAnswer(ctx context.Context, rq Request, st *reqState, w
 	case res.err != nil:
 		return withStatus(res.err, CacheStatus{Forwarded: "uri-miss", FwdStatus: res.status})
 	case res.negative:
-		return withStatus(errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist upstream."),
+		return withStatus(errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist upstream.", errs.WithAbsent()),
 			CacheStatus{Hit: true, Negative: true, Detail: detailNegative, Collapsed: st.collapsed})
 	case res.stored:
 		if !st.collapsed {
@@ -245,7 +245,7 @@ func (e *Engine) head(ctx context.Context, rq Request, w http.ResponseWriter) er
 		w.WriteHeader(s)
 		return nil
 	case s == http.StatusNotFound || s == http.StatusGone:
-		return withStatus(errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist upstream."), CacheStatus{Forwarded: "uri-miss", FwdStatus: s})
+		return withStatus(errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist upstream.", errs.WithAbsent()), CacheStatus{Forwarded: "uri-miss", FwdStatus: s})
 	}
 	res := f.failed(ctx, classifyStatus(rem, resp))
 	return withStatus(res.err, CacheStatus{Forwarded: "uri-miss", FwdStatus: resp.StatusCode})

@@ -1783,16 +1783,21 @@ own tests:
     class, and a package it does not hold, without an error and without a version; over a package the fixture seeds,
     `Stored` lists exactly the versions the repository serves, newest arrival first, within its limit, with tags only
     when the query asks for them, and `Withheld` lists none of them (Q-ARCH-253, Q-EP-67).
-12. From M4b, for a format that implements `VulnerabilityAdapter`: the matching corpus of
+12. For a format with routes: the document of every `Metadata` and `Computed` route that a content case serves is the same
+    for a user, a service account and the anonymous caller, on one seeded Host: equal status, equal bytes and equal
+    `ETag`, `Content-Type`, `Content-Encoding`, `Vary` and `Cache-Control` (R-BAS-013, Q-BAS-72). A route whose document
+    depends on who asks is `Volatile`. A `Metadata` or `Computed` route without a content case that serves a document and
+    without a `NoContent` entry fails, as in check 7.
+13. From M4b, for a format that implements `VulnerabilityAdapter`: the matching corpus of
     [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-009 (the event table test and the
     frozen real-record corpus) gives the expected results (Q-VULN-15).
 
 A check that cannot apply to a format is skipped in the format's test with a stated reason (generic
 has no routes, no clients and no package names); a skip without a reason fails the check, so a
 later class cannot pass a check vacuously. The kit also refuses a skip that the format contradicts:
-checks 1, 3 and 7 on a format that has routes, check 4 on one with a remote adapter, check 5 with a
+checks 1, 3, 7 and 12 on a format that has routes, check 4 on one with a remote adapter, check 5 with a
 virtual adapter, check 6 with an `Upload` route, check 8 with clients, setup templates or a guide, check 9 with
-package names or a route that writes, check 10 with package names, check 11 with a view adapter, check 12 with a
+package names or a route that writes, check 10 with package names, check 11 with a view adapter, check 13 with a
 vulnerability adapter. Check 2 is never skipped. A check with nothing to run over (an empty fixture) fails unless it
 is skipped. npm and NuGet skip no check (`TestR_ARCH_010_NoCheckIsSkipped`); what a check of theirs does not look at
 is an entry of `NoRevision` or `NoContent`, each with its reason, in the format's `conformance_test.go`.

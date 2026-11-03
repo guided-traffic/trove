@@ -322,6 +322,9 @@ func (c Chain) authStage(next http.Handler) http.Handler {
 		if c.ReplicaHeader == ReplicaAuthenticated && !p.Anonymous && c.Replica != "" {
 			w.Header().Set(HeaderReplica, c.Replica)
 		}
+		if note, ok := r.Context().Value(keyPrincipalNote).(func(Principal)); ok {
+			note(p) // a stage before this one asked to learn who the caller is (WithPrincipalNote)
+		}
 		next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), p)))
 	})
 }

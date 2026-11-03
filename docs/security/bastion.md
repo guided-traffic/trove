@@ -106,6 +106,31 @@ Without Valkey every counter and block holds per replica at the configured value
   request. What Valkey holds is chosen by whoever can write to it; the answers are signed (below), the blocks and counters are not.
   Write access to the Bastion's Valkey therefore lets its holder block an address or reset a counter, which is a denial or a missing limit
   and no grant of access; the ACL rule of the Bastion's user confines it to `trove-bastion:*`.
+## What the main installation tells the Bastion about a response
+
+The main installation marks the response of a recognized Bastion request (R-BAS-013) and refuses writes (R-BAS-014). The code is
+[internal/api/bastionmark](../../internal/api/bastionmark/mark.go); the lookups that feed `absent` are in `internal/formathost` and
+`internal/files`.
+
+- **Only a recognized Bastion sees the marking.** The headers are added to the response of a request that carries a valid Bastion token
+  and stripped from every other response, a header a handler set included. A caller learns its own shape from nobody. This is held for the
+  default endpoint's chain, the only one that carries the stage; the other endpoints add no such header (nothing sets one) and
+  the remote engine copies a fixed list of upstream headers.
+- **`absent` is never a hidden item.** A negative entry is replayed to full readers only (R-BAS-024). The class `absent` therefore
+  needs a `full` shape, a lookup that found the item missing for every subject, and no refusal, pattern refusal, serve-time check or
+  remote member that could not tell on the way; every other `404` is `pass` ([Q-BAS-70](../spec/bastion.md#q-bas-70--absent-is-derived-from-the-notes-of-the-cores-lookups-and-only-for-a-full-reader)).
+  The residual risk is [H-441](../spec/bastion.md#h-441--absent-rests-on-the-notes-of-the-cores-lookups-not-on-the-routes).
+- **`full` is checked against the decision point.** A full shape never meets a refused read: `TestR_BAS_012_ShapeAgreesWithTheDecisionPoint`
+  asks the decision point for every read of its fixture, and `content:metadata-read` alone, a scope that narrows, exposure rules and a
+  missing populate right are all `partial`.
+- **A shared document is the same for every full reader.** Kit check 12 sends each `Metadata` and `Computed` document as a user, a
+  service account and the anonymous caller; npm's `-/whoami` and `-/ping`, which differed, are `Volatile`.
+- **The Bastion token cannot write.** A write route (kind `Upload`, `Delete`, `Admin`, or an action other than `read`) is refused before any
+  handler runs and before a body is read, as a probe and as a forwarded request; the refusal names the main installation's URL of the
+  repository and no secret. `GET` and `HEAD` on those routes are decided as the caller's own request.
+- **The subject header carries IDs and an expiry.** `token=<token ID>; principal=<principal ID>; expires=<unix seconds>`, `anonymous` or
+  `invalid` (every `401`, a session cookie): no name, no group. [H-442](../spec/bastion.md#h-442--a-401-states-the-subject-as-invalid-whether-the-credential-was-rejected-or-none-was-sent)
+  records what `invalid` does not say.
 
 ## Integrity of what it serves
 
@@ -165,6 +190,10 @@ The gaps of the Bastion's mechanisms are recorded on the spec page, where the me
   installation by address;
 - [H-434](../spec/bastion.md#h-434--a-controller-that-ignores-the-annotations-turns-the-edge-limit-and-routing-off-silently) — a
   controller that ignores the Ingress annotations turns the edge limit and routing off silently;
+- [H-441](../spec/bastion.md#h-441--absent-rests-on-the-notes-of-the-cores-lookups-not-on-the-routes) — the class `absent` rests on the
+  notes of the core's lookups;
+- [H-442](../spec/bastion.md#h-442--a-401-states-the-subject-as-invalid-whether-the-credential-was-rejected-or-none-was-sent) — a `401`
+  states the subject as `invalid` whatever the reason;
 - [H-451](../spec/bastion.md#h-451--a-ranged-read-of-a-cached-artifact-is-not-verified) — a ranged read of a cached artifact is not
   verified;
 - [H-452](../spec/bastion.md#h-452--the-entries-of-evicted-bytes-stay-until-they-are-read-and-are-not-counted-in-the-cache-size) —

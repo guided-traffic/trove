@@ -1,8 +1,10 @@
 # The trove Bastion: contracts
 
 Status: the contracts of phase 5b are laid (the shared types, interfaces, schema, routes, configuration and the skeleton of the
-role); the logic of the work packages is built package by package. Built: package 6 ([shared state and guard](#shared-state-and-the-guard)). The specification is [spec/bastion.md](../spec/bastion.md)
-(R-BAS-001 to R-BAS-049, decisions Q-BAS-1 to Q-BAS-54), its security perspective [security/bastion.md](../security/bastion.md), the plan
+role); the logic of the work packages is built package by package. Built: package 3 ([marking, the write probe and the read
+shape](#marking-the-write-probe-and-the-read-shape-package-3)), package 5 ([the cache backends](#the-cache-backends-package-5)), package 6
+([shared state and guard](#shared-state-and-the-guard)) and package 8 (the screen, client setup and the manual). The specification is [spec/bastion.md](../spec/bastion.md)
+(R-BAS-001 to R-BAS-049, decisions Q-BAS-1 to Q-BAS-97), its security perspective [security/bastion.md](../security/bastion.md), the plan
 [projektplan/BETA.md](../projektplan/BETA.md#phase-5b--trove-bastion-m13).
 
 The Bastion is a role of the one image, `trove serve --role bastion`, with a configuration tree of its own, no PostgreSQL, no UI and a
@@ -32,7 +34,7 @@ parallel: it says which package owns which file, which seams join them, how a re
 |---|---|---|---|
 | 1 | Registrations and the `bst` token type (R-BAS-004, R-BAS-005) | [bastion_registrations_api.go](../../internal/api/v1/bastion_registrations_api.go) (replace the stubs), a registration service and the `trove admin bastion …` commands, the token issuance for the type `bst` in `internal/auth/token`, the `bastion.*` audit events | `bastionmain.TokenAuthenticator` |
 | 2 | Interface handlers, recognition (R-BAS-008 to R-BAS-012, R-BAS-015 to R-BAS-017) | [bastion_handshake_api.go](../../internal/api/v1/bastion_handshake_api.go), [bastion_check_api.go](../../internal/api/v1/bastion_check_api.go), [bastion_feed_api.go](../../internal/api/v1/bastion_feed_api.go), [bastion_downloads_api.go](../../internal/api/v1/bastion_downloads_api.go), the Recognize stage, the feed mapping over [bastion_feed.sql](../../internal/meta/postgres/queries/bastion_feed.sql), the contact upsert | `Stages.Recognize`; uses `ShapeResolver` |
-| 3 | Marking and the write probe (R-BAS-013, R-BAS-014) | the Mark stage and the `RouteObserver`, the `ShapeResolver` (R-BAS-012), the calls in `internal/api/rawfiles`, the conformance-kit check for shared documents | `Stages.Mark`, `RouteObserver`, `ShapeResolver` |
+| 3 | Marking and the write probe (R-BAS-013, R-BAS-014) | **built**: [internal/api/bastionmark](../../internal/api/bastionmark) (the Mark stage and the `RouteObserver`), `authz.Engine.ReachOn` and `bastionmain.NewShapeResolver` (R-BAS-012), the notes of the lookups (`bastionmain.NoteMissing`), the calls in `internal/api/rawfiles`, kit check 12 | `Stages.Mark`, `RouteObserver`, `ShapeResolver` |
 | 4 | The engine (R-BAS-006, R-BAS-018 to R-BAS-029, R-BAS-042 to R-BAS-044) | [internal/bastion/engine](../../internal/bastion/engine) (replace `New`), the body of `mainclient.Client`, the token reloader, the feed application over `answers.FeedLog` | `engine.Engine`, `mainclient.Client`, `mainclient.Budget` |
 | 5 | Cache backends, eviction, integrity (R-BAS-030 to R-BAS-032) | the two implementations of `cache.Backend` in `internal/bastion/cache/…`, the sweep | `cache.Backend` |
 | 6 | Valkey, rate limits, failed-auth timeout, blocking (R-BAS-034 to R-BAS-037) — **built** | the Valkey implementation of `shared.*` in `internal/bastion/shared/…`, `guard.New` and its `Instance`, the Valkey mechanism in `internal/cluster/valkey_bastion.go` | `shared.State`, `guard.Guard` |
@@ -95,6 +97,9 @@ internal/bastionmain/ the main installation's seams (a domain package)
 | [bastionmain/recognition.go](../../internal/bastionmain/recognition.go) | `Recognition`, `WithRecognition`, `RecognitionFrom` |
 | [bastionmain/auth.go](../../internal/bastionmain/auth.go) | `TokenAuthenticator`, `BastionToken`, `ErrTokenInvalid` |
 | [bastionmain/shape.go](../../internal/bastionmain/shape.go) | `ShapeResolver`, `Shape` |
+| [bastionmain/shape_resolver.go](../../internal/bastionmain/shape_resolver.go) | `NewShapeResolver`: the resolver over `authz.Reacher`, the status of a `none` |
+| [bastionmain/absence.go](../../internal/bastionmain/absence.go) | `Absence`, `WithAbsence`, `NoteMissing`, `NoteUnknown`: the per-request record of what the lookups found |
+| [api/bastionmark/mark.go](../../internal/api/bastionmark/mark.go) | `New`, `Marker.Stage`: the Mark stage, its observer, the marking at the status line, the write refusal and the probe answer, the strip |
 | [bastionmain/route.go](../../internal/bastionmain/route.go) | `RouteObserver`, `RouteMatch`, `RouteDecision`, `WithObserver`, `ObserverFrom`, the kind names |
 | [bastionmain/stages.go](../../internal/bastionmain/stages.go) | `Stages` (Recognize, Mark, Chain), `Stub`, `ErrNotImplemented` |
 | [bastionmain/metrics.go](../../internal/bastionmain/metrics.go) | `trove_bastion_interface_requests_total`, `trove_bastion_forwarded_requests_total` |
@@ -107,8 +112,8 @@ internal/bastionmain/ the main installation's seams (a domain package)
 |---|---|---|---|
 | Recognition result in the request context | [bastionmain/recognition.go](../../internal/bastionmain/recognition.go) | package 2 (the Recognize stage) | package 3, the shared authorization step ([authorize.go](../../internal/api/v1/authorize.go), built), the interface handlers (package 2) |
 | `TokenAuthenticator` (raw token → enabled registration, token ID, expiry) | [bastionmain/auth.go](../../internal/bastionmain/auth.go) | package 1 (query `BastionTokenBySecret`, the token cache and revocation bound of R-AUTH-023) | package 2 |
-| `ShapeResolver` (subject × repositories → full, partial, none, status) | [bastionmain/shape.go](../../internal/bastionmain/shape.go) | **package 3** (Q-BAS-51) | package 3 (marking), package 2 (check) |
-| Route kind and coarse action to a middleware | `RouteObserver` in [bastionmain/route.go](../../internal/bastionmain/route.go); called by [dispatcher.go](../../internal/api/dispatch/dispatcher.go) after the match and after the decision (built) and, to be added, by `internal/api/rawfiles` | package 3 | package 3 |
+| `ShapeResolver` (subject × repositories → full, partial, none, status) | [bastionmain/shape.go](../../internal/bastionmain/shape.go) | **package 3** (Q-BAS-51): `NewShapeResolver(engine)`, wired by `App.bastionShapes` | package 3 (marking), package 2 (check) |
+| Route kind and coarse action to a middleware | `RouteObserver` in [bastionmain/route.go](../../internal/bastionmain/route.go); called by [dispatcher.go](../../internal/api/dispatch/dispatcher.go) after the match and after the decision and by [rawfiles/handler.go](../../internal/api/rawfiles/handler.go) (`routeOf`, `decided`) | package 3 ([bastionmark](../../internal/api/bastionmark/mark.go)) | package 3 |
 | The chain stage | `Chain.Bastion` in [chain.go](../../internal/httpserver/chain.go) (built); `Stages` | package 2 (Recognize), package 3 (Mark), composed in [wire_bastion.go](../../internal/app/wire_bastion.go) | the default endpoint's chain only |
 | The permission form `{bastion: true}` | [authorize.go](../../internal/api/v1/authorize.go) (built) | contract work | the four interface operations |
 | `bst` is unknown to every other route | [token.Service.Check](../../internal/auth/token/validate.go) (built) | contract work | all |
@@ -268,6 +273,27 @@ skipped, so no input becomes a path.
 **Run it.** `go test -race ./internal/bastion/cache`; the bucket tests need the stack (`make integration-up`) and run in
 `make test-integration` or alone with `go test -tags integration ./test/integration/bastioncache` after sourcing
 `.dev/integration/env`. They write below `it-bastioncache/<run>/` of the `trove-backups` bucket and remove it.
+## Marking, the write probe and the read shape (package 3)
+
+The Mark stage ([bastionmark](../../internal/api/bastionmark/mark.go)) wraps the response writer of every request that carries a
+`Recognition` and strips every `Trove-Bastion-` header from every other response. The chain is `client address → Recognize → Mark →
+authentication → rate limits → router`; the authentication stage reports the caller it accepted through `httpserver.WithPrincipalNote`,
+so the subject is right for answers that never reach a route. What happens to one forwarded read:
+
+1. The dispatcher (or `rawfiles`) matches the route and calls `Observer.Matched`. A write is refused here (`bastion_read_only`, rendered by the format's
+   `WriteError`); the probe of a read route that takes a body is answered `204` with `Trove-Bastion-Route: read-with-body`. Nothing has
+   been decided or read yet.
+2. The decision point allows the request and the repository resolves; the dispatcher calls `Observer.Decided` with the subject and the
+   index of the decision. The stage asks `ShapeResolver` for the caller's shape on the addressed repository, once.
+3. The handler runs. The core's lookups note into the request's `Absence`: `NoteMissing` for a package row or an item a local repository does not
+   hold and for a remote answer marked `errs.WithAbsent` or a negative document; `NoteUnknown` for a refusal of `Host.Authorize`, a serve-time
+   refusal and any other `NotFound` of the remote engine. A route needs to do nothing.
+4. At the status line the stage sets the class from the route kind, the status and the shape (R-BAS-013's table; `absent` needs a `404`, a
+   `full` shape, a missing lookup and no unknown one), the repository, the shape, the subject and the interface version.
+
+Adding a lookup that decides a `404` in the core (a new engine, a new host store): call `bastionmain.NoteMissing(ctx)` only when the result is
+independent of the subject and of state that can change without the item changing; otherwise `NoteUnknown`. Both are no-ops outside a Bastion
+request. Do not note a lookup whose empty result is not an answer (an optional row).
 
 ## Schema and queries
 
@@ -318,6 +344,10 @@ add `database: {host: x}` to the file and the start names `database.host` and th
 | `go test ./internal/config` | the role's defaults, the refusal of another section's keys, the ranges, the chart-managed marking, the committed schema |
 | `go test ./internal/api/v1` | the document's interface operations, the `{bastion: true}` form, the stubs |
 | `go test ./internal/archtest/...` | R-BAS-001's import rule and the layers of the Bastion's packages |
+| `go test ./internal/authz -run R_BAS_012` | the shape against the decision point ([authorization.md](authorization.md#read-shapes)) |
+| `go test ./internal/api/bastionmark ./internal/api/rawfiles ./internal/bastionmain ./internal/formathost` | the marking: class by kind, status and shape, the subject, the strip over the route table of npm and NuGet, the write probe in npm's and NuGet's shape, the notes of the lookups |
+| `go test ./internal/formats/...` | kit check 12 on npm and NuGet, the defect `varies-by-caller` |
+| `make test-integration` (`test/integration/proxy`) | `TestR_BAS_013_UpstreamNotFoundIsMarkedAbsent`: the remote engine marks an upstream 404 and its negative entry, not a cache view miss |
 | `go test ./cmd/trove` | the role's start: another section's key, an http main URL, a missing token file |
 | `go test -race ./internal/bastion/cache` | the volume backend on a temporary directory, the fill, the sweep and its order, the audit spool, the verifying reader, the signed entries, the first-readiness gate and counted errors |
 | `make test-integration` (`test/integration/bastioncache`) | the bucket backend on the stack's SeaweedFS (S3, TLS), under a prefix of its own in `trove-backups`: two replicas on one bucket, the five operations asserted through a counting transport, eviction of 300 MiB to a 100 MiB limit, two sweepers, a replaced object, a rewritten entry |

@@ -68,7 +68,7 @@ only writer is `Member` (Q-ARCH-252, [Q-AUTHZ-165](../spec/authorization.md)).
 |---|---|
 | [internal/formats/catalog](../../internal/formats/catalog/) | The facts of every format, the name rule, the exposure facts and the compiled settings schema with `Entry.ValidateSettings` (a leaf layer); `Register` fills it |
 | [internal/formats/untrusted](../../internal/formats/untrusted/) | `Limits`, `DefaultLimits`, `Tighten`, and the bounded readers of R-ARCH-028 (see [Untrusted content](#untrusted-content)) |
-| [internal/formats/formattest](../../internal/formats/formattest/) | The conformance kit: the in-memory `Host`, the eleven checks, the fuzz helpers (see [Conformance kit](#conformance-kit)); `crafted/` generates the hostile inputs, `testformat/` is the kit's own format with one named defect per check |
+| [internal/formats/formattest](../../internal/formats/formattest/) | The conformance kit: the in-memory `Host`, the twelve checks, the fuzz helpers (see [Conformance kit](#conformance-kit)); `crafted/` generates the hostile inputs, `testformat/` is the kit's own format with one named defect per check |
 | [internal/formats/generic](../../internal/formats/generic/) | The generic format: no routes, `Classify`, a paths-only exposure adapter, the curl setup templates ([setup.go](../../internal/formats/generic/setup.go)) and the guide of curl ([guide.go](../../internal/formats/generic/guide.go), [guide/](../../internal/formats/generic/guide/)) |
 | [internal/formats/all](../../internal/formats/all/all.go) | Registers every format at compile time (R-ARCH-010) |
 | [internal/httpserver/content](../../internal/httpserver/content/content.go) | The content-header wrapper (`File`, `Index`, `Document`); `httpserver.ContentWriterFor` is the request-aware call |
@@ -239,6 +239,22 @@ line through `WriteError` without `Content-Disposition`, and aborts the connecti
 On an endpoint with exposure rules (`rq.Endpoint.Rules`) its writer removes `Cache-Status` when the status line goes out, from a handler, an engine or an
 error's headers alike (`trackWriter.scrub`, Q-EP-60; `TestR_EP_018_NoCacheStatusOnAnEndpointWithRules`).
 
+## What a Bastion needs of a format
+
+A trove Bastion ([bastion.md](bastion.md)) is a read-only cache in front of a main installation. The main installation marks the
+response of a forwarded request without asking the format (R-BAS-013): the dispatcher tells the marking stage the route's kind and
+coarse action, the stage derives the class from the kind, the status and the caller's read shape. A format author owes four things
+and writes no marking code:
+
+| The Bastion relies on | So |
+|---|---|
+| `Download` is immutable bytes for a path | a route that serves bytes that change under one path is not `Download` |
+| A `Metadata` or `Computed` document is the same for every caller that may read everything (`shared`) | a document that names the caller, lists the caller's groups, or answers `401` to the anonymous caller is `Volatile` (npm's `-/whoami` and `-/ping`). Kit check 12 sends each such route's content case as three callers and fails on a difference; it is the only place that finds it |
+| A write has a writing kind or an action other than `read` | `Upload`, `Delete` and `Admin` routes are refused for a Bastion token before the handler runs, in your `WriteError` shape (code `bastion_read_only`); nothing to implement, but the shape must render any `*errs.Error`. A read route that takes a body (npm's audit) is `Volatile` with action `read`: the Bastion forwards it after a `204` probe answer |
+| `absent` means missing for every subject | look the package up with `rq.Host.Packages().Package`, the item with `rq.Host.Items().Stat` and remote content with `rq.Host.Remote()`: those lookups tell the marking what was missing. A `404` after a lookup through your own data port is `pass` (correct, slower); never add a `Trove-Bastion-` header yourself, the core strips and sets them |
+
+The mechanism is in [bastion.md](bastion.md#marking-the-write-probe-and-the-read-shape-package-3).
+
 ## Wiring
 
 [wire_formats.go](../../internal/app/wire_formats.go) is the only wiring:
@@ -314,7 +330,7 @@ The fixture ([kit.go](../../internal/formats/formattest/kit.go)) holds what only
 | `OptionNames` | 8 | Literal client option names a template may spell although they contain `token`, `password` or `_auth` |
 | `Skip` | all | The checks that do not apply, each with the reason |
 
-### The eleven checks
+### The twelve checks
 
 | # | The kit does | Fails when |
 |---|---|---|
@@ -328,8 +344,9 @@ The fixture ([kit.go](../../internal/formats/formattest/kit.go)) holds what only
 | 8 | Every client has a `configure` and an `install` template; every template parses and executes over `SetupData`; no template text matches `(?i)token\|password\|_auth` outside the whitelisted option names. Then the guide ([guide.go](../../internal/formats/formattest/guide.go), Q-ARCH-236): every section has an ID, a known topic, a title, classes and clients of the descriptor and a valid `Snippets`; it executes over `GuideData` for every class and client it applies to and every reader variant (a named repository and none, with and without a publish target, signed in and anonymous, with and without exposure rules); its fenced code blocks match the credential pattern only in the option names, `${TROVE_TOKEN}` and the variable name; no output holds `trv_(pat\|sat\|cit)_`; every class and client has the required topics, which say something in every variant, and the `configure` and `install` topics attach those snippets | A missing section or template, an unknown client, a duplicate ID, a bad language or section, a credential; a class or client without a required topic, a required topic that says nothing, a section that attaches a section its client has no template of, a guide without clients |
 | 9 | Each `ChangeCase` against the in-memory host: `rev_seq` of its package before and after, and the routes and hooks it ran | The revision did not rise; a route of kind `Upload`, `Delete` or `Admin`, or a hook the format has (`OnCommit` and `OnItemsRemoved` with package names, `OnItemsRestored` with `ItemsRestorer`), without a case or a `NoRevision` entry |
 | 10 | For each spelling: normalize, `PackageDocumentPath`, escape, `Protocol` when the fixture has one, `Match("GET", …)`; all spellings of one name | A name the format rejects, spellings that normalize differently or lead to two paths, a path that matches no `GET` route |
+| 12 | Every content case that a `Metadata` or `Computed` route serves, sent once to one seeded Host as a user, a service account and the anonymous caller ([checks_shared.go](../../internal/formats/formattest/checks_shared.go); the callers are derived from the Host's own subject, the seed is made once so only the rendering is compared) | The status, the bytes or `ETag`, `Content-Type`, `Content-Encoding`, `Vary` or `Cache-Control` differ between the callers; a `Metadata` or `Computed` route without a case that serves a document and without a `NoContent` entry. The message says to render the route `Volatile` or to take the caller out of the document |
 
-A skip without a reason fails the check. So does a skip the format contradicts: checks 1, 3 and 7 with routes, 4 with a remote adapter, 5 with a virtual
+A skip without a reason fails the check. So does a skip the format contradicts: checks 1, 3, 7 and 12 with routes, 4 with a remote adapter, 5 with a virtual
 adapter, 6 with an `Upload` route, 8 with clients, setup templates or a guide, 9 with package names or a route that writes, 10 with package names, 11 with a
 view adapter, and check 2 always. npm and NuGet skip nothing (`TestR_ARCH_010_NoCheckIsSkipped` in each package). A check with nothing to run over and no skip fails: that is how a later generic remote
 class cannot pass vacuously ([generic's test](../../internal/formats/generic/conformance_test.go) shows the skips of a format with no routes).

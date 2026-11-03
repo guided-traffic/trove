@@ -94,6 +94,10 @@ const (
 	// ReadsOtherRepository lets the document route read a package from a repository
 	// that is neither the request's nor a member of it: the Host refuses it.
 	ReadsOtherRepository Defect = "reads-other-repository"
+	// VariesByCaller lets the package document name the caller in its bytes, as a document that lists
+	// "your" groups or marks what the caller may publish does: a Metadata route must answer every caller
+	// that may read everything alike, so check 12 fails it (R-BAS-013).
+	VariesByCaller Defect = "varies-by-caller"
 )
 
 // Option adjusts the format; it is not a defect.
@@ -666,6 +670,9 @@ func (f Format) docGet(ctx context.Context, rq *formats.Request, w http.Response
 	}
 	if !found {
 		return errs.E(errs.NotFound, errs.CodeNotFound, "The package does not exist.")
+	}
+	if f.has(string(VariesByCaller)) {
+		doc = append(append([]byte(nil), doc...), []byte("\n// served to "+rq.Subject.Name)...)
 	}
 	f.strip(w)
 	w.Header().Set("Content-Type", "application/json")
