@@ -484,6 +484,10 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   transfer lasts three stall timeouts, both derived from the configured timeout
 - ➡️ `TestR_CI_003_StaleAndUnreachable` failed once in W3's full run of `test/integration/ci` while three agents shared
   the stack, and passed alone and in the next full run; watched, not yet reproduced — moved to the open findings as [F-35](promt.md#8--open-findings)
+- 🟡 The dispatched run 41568514247 of `HA and Performance (nightly)`, the closing evidence of E4.7: `failover`, `npm-ha`,
+  `npm-ha-soak`, `nuget-ha` and the latency leg are green; `ci-ha` passed its drain, Valkey-stopped and single-use cases (250
+  tokens, one 200 each across a Sentinel failover and `FLUSHALL`) and failed in `TestCIHAPodDelete`, where 50 jobs minting their
+  ID tokens at the issuer double's control API got `EOF` from the double; being fixed
 - 🟢 Test and Release run 41518863868 failed in `e2e on kind (access-long)`: the journey `06` clicked "Refresh now" by a
   substring match, and the new task `ci-keys-refresh` added a "Run task ci-keys-refresh now" button to the same screen; the
   locator is exact now
