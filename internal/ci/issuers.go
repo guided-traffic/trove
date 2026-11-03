@@ -87,7 +87,8 @@ type Service struct {
 
 	// issuers is the in-process copy of the issuers, one entry holding all of them: the exchange resolves
 	// the issuer of every token from it, and a token of an unknown issuer is answered from it too, so an
-	// anonymous request with a made-up `iss` costs no query. Invalidated by the change area ci_mappings.
+	// anonymous request with a made-up `iss` costs at most one read of the issuers per replica and
+	// cluster.epoch_poll_interval (Resolve). Invalidated by the change area ci_mappings.
 	issuers *cache.Cache[struct{}, *issuerSet]
 	// keys is the in-process copy of the key rows by issuer ID (R-CI-003). Invalidated by the change area
 	// ci_issuer_keys.
@@ -95,9 +96,13 @@ type Service struct {
 
 	mu     sync.Mutex
 	states map[string]*issuerState
+	// issuersReadAt is when the copy of the issuers was last read from PostgreSQL (loadSet), the throttle of the
+	// re-read on a miss (rereadIssuers, Q-CI-51).
+	issuersReadAt time.Time
 
-	rereads flight[*keyRow]
-	fetches flight[fetchOutcome]
+	rereads       flight[*keyRow]
+	fetches       flight[fetchOutcome]
+	issuerRereads flight[*issuerSet]
 }
 
 var _ Issuers = (*Service)(nil)
@@ -175,7 +180,7 @@ func New(o Options) (*Service, error) {
 }
 
 func (s *Service) limits() issuerLimits {
-	return issuerLimits{BaseURL: s.o.BaseURL, TokenMaxTTL: s.o.Config.Token.MaxTTL}
+	return issuerLimits{BaseURL: s.o.BaseURL, TokenMaxTTL: s.o.Config.Token.MaxTTL, TokenMinTTL: s.o.Config.Token.MinTTL}
 }
 
 // state returns the throttle state of an issuer.

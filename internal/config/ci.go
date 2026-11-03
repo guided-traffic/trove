@@ -60,6 +60,7 @@ type CIRateLimit struct {
 // CIMappings bounds the identity mappings (R-CI-009).
 type CIMappings struct {
 	MaxPerIssuer   int           `yaml:"max_per_issuer" default:"1000" validate:"min=1,max=100000" doc:"Most mappings of one CI issuer."`
+	MaxPerProject  int           `yaml:"max_per_project" default:"100" validate:"min=1,max=100000" doc:"Most mappings of one project's tier on one CI issuer, at most max_per_issuer: no project fills the issuer's limit alone (Q-CI-49)."`
 	CacheSafetyTTL time.Duration `yaml:"cache_safety_ttl" default:"10m" validate:"min=10s,max=24h" doc:"SafetyTTL of the in-process copy of the issuers and their mappings (R-ARCH-018)."`
 }
 
@@ -72,7 +73,7 @@ type CIToken struct {
 
 // CIReplay configures the replay set of subject tokens (R-CI-018).
 type CIReplay struct {
-	RetentionAfterExpiry time.Duration `yaml:"retention_after_expiry" default:"15m" validate:"min=0s,max=168h" doc:"How long a recorded jti is kept after the subject token's exp plus the issuer's clock skew."`
+	RetentionAfterExpiry time.Duration `yaml:"retention_after_expiry" default:"15m" validate:"min=1m,max=168h" doc:"How long a recorded jti is kept after the subject token's exp plus the issuer's clock skew; at least 1m, so a replica whose clock lags the database's by less than that never accepts a single-use subject token whose row ci-replay-cleanup deleted (Q-CI-51)."`
 	WarnAfterExchanges   int           `yaml:"warn_after_exchanges" default:"10" validate:"min=1" doc:"From this exchange count of one subject token on, every further exchange of an issuer without single use records ci.exchange.repeated."`
 }
 
@@ -143,6 +144,9 @@ func (c *Config) validateCI(r *Report) {
 	if sk.MaxStale < sk.MaxRefreshInterval {
 		r.Add("ci.signing_keys.max_stale", "%s is shorter than ci.signing_keys.max_refresh_interval (%s): a key set would fail closed before its next scheduled refresh", sk.MaxStale, sk.MaxRefreshInterval)
 	}
+	if ci.Mappings.MaxPerProject > ci.Mappings.MaxPerIssuer {
+		r.Add("ci.mappings.max_per_project", "(%d) must not exceed ci.mappings.max_per_issuer (%d)", ci.Mappings.MaxPerProject, ci.Mappings.MaxPerIssuer)
+	}
 	if ci.Exchange.MaxSubjectTokenBytes > ci.Exchange.MaxBodyBytes {
 		r.Add("ci.exchange.max_subject_token_bytes", "(%d) must not exceed ci.exchange.max_body_bytes (%d)", ci.Exchange.MaxSubjectTokenBytes, ci.Exchange.MaxBodyBytes)
 	}
@@ -195,8 +199,8 @@ func (c CI) validateIssuers(r *Report) {
 			r.Add(key+".allowed_audiences", "needs at least one entry, or leave it out for the default audiences")
 		}
 		if is.MaxTTLSeconds != nil {
-			if d := time.Duration(*is.MaxTTLSeconds) * time.Second; d < time.Second || d > c.Token.MaxTTL {
-				r.Add(key+".max_ttl_seconds", "(%d) must be between 1 and ci.token.max_ttl (%s)", *is.MaxTTLSeconds, c.Token.MaxTTL)
+			if d := time.Duration(*is.MaxTTLSeconds) * time.Second; d < max(c.Token.MinTTL, time.Second) || d > c.Token.MaxTTL {
+				r.Add(key+".max_ttl_seconds", "(%d) must be between ci.token.min_ttl (%s) and ci.token.max_ttl (%s)", *is.MaxTTLSeconds, c.Token.MinTTL, c.Token.MaxTTL)
 			}
 		}
 	}

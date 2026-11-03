@@ -1703,7 +1703,10 @@ export interface paths {
          *     immutable. `If-Match` is required (`428` without it, `412` with `currentEtag` for a stale tag). An issuer with
          *     `source: configuration` answers `409 issuer_managed_by_configuration`. One event is recorded, chosen by `enabled`:
          *     `ci.issuer.disabled`, `ci.issuer.enabled` or `ci.issuer.updated`; disabling revokes the unexpired tokens issued through
-         *     the issuer in the same transaction (R-CI-017).
+         *     the issuer in the same transaction (R-CI-017). Switching `publicIssuer` on, or removing a claim from `pinClaims`, answers
+         *     `409 mappings_unpinned` with the names in `mappings` while a mapping of the issuer would fail the pin rules of a save; a
+         *     changed `jwksUri` or `discoveryUrl` replaces the stored key set with the fail-closed placeholder in the same transaction and
+         *     fetches from the new location after the commit (Q-CI-50).
          */
         put: operations["replaceCiIssuer"];
         post?: never;
@@ -3814,7 +3817,10 @@ export interface components {
             pinClaims?: string[];
             /** @description Omitted: `false` for `gitlab`. */
             singleUseSubjectTokens?: boolean;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Between `ci.token.min_ttl` (30 s by default) and `ci.token.max_ttl`; below the floor answers `422 invalid_max_ttl` (R-CI-016, Q-CI-47).
+             */
             maxTtlSeconds?: number | null;
             /** @description A reference to a PEM bundle (file or environment variable), never key material. */
             caBundleRef?: string | null;
@@ -3891,7 +3897,10 @@ export interface components {
             pinClaims: string[];
             /** @description Omitted: `false` for `gitlab`. */
             singleUseSubjectTokens: boolean;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Between `ci.token.min_ttl` (30 s by default) and `ci.token.max_ttl`; below the floor answers `422 invalid_max_ttl` (R-CI-016, Q-CI-47).
+             */
             maxTtlSeconds: number | null;
             /** @description A reference to a PEM bundle (file or environment variable), never key material. */
             caBundleRef: string | null;
@@ -4011,7 +4020,10 @@ export interface components {
             subjectKinds: "id_token"[];
             match: components["schemas"]["CiCondition"];
             grants: components["schemas"]["CiGrants"];
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Between `ci.token.min_ttl` (30 s by default) and `ci.token.max_ttl` (`422 out_of_range` otherwise). It bounds what this mapping gives a token: the token's lifetime when the mapping owns it (a system mapping, or the project mapping that lives longest), otherwise this mapping's contribution only (R-CI-016, Q-CI-47).
+             */
             maxTtlSeconds?: number | null;
             options?: {
                 /**
@@ -4052,7 +4064,10 @@ export interface components {
             subjectKinds: "id_token"[];
             match: components["schemas"]["CiCondition"];
             grants: components["schemas"]["CiGrants"];
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Between `ci.token.min_ttl` (30 s by default) and `ci.token.max_ttl` (`422 out_of_range` otherwise). It bounds what this mapping gives a token: the token's lifetime when the mapping owns it (a system mapping, or the project mapping that lives longest), otherwise this mapping's contribution only (R-CI-016, Q-CI-47).
+             */
             maxTtlSeconds: number | null;
             options: {
                 /**

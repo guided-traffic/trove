@@ -40,6 +40,20 @@ SELECT m.id::text AS id, m.issuer_id::text AS issuer_id, i.name AS issuer, m.pri
 -- name: CiMappingCount :one
 SELECT count(*) FROM ci_mappings WHERE issuer_id = sqlc.arg(issuer_id)::text::uuid;
 
+-- name: CiMappingCountOfTier :one
+-- The mappings of one tier of an issuer: a project's tier holds at most ci.mappings.max_per_project of them, so no
+-- project fills the issuer's ci.mappings.max_per_issuer alone (Q-CI-49).
+SELECT count(*) FROM ci_mappings WHERE issuer_id = sqlc.arg(issuer_id)::text::uuid AND tier = sqlc.arg(tier)::text;
+
+-- name: CiMappingsActive :many
+-- The mappings whose contributions a CI token still carries at use time (Q-CI-47): enabled, with an active principal.
+-- Read by the build of the grant index in its snapshot (internal/authz); a contribution of a mapping that is not
+-- listed is dropped by the evaluator once the index is at least as fresh as the token's exchange.
+SELECT m.id::text AS id
+  FROM ci_mappings m JOIN principal p ON p.id = m.principal_id
+ WHERE m.enabled AND p.status = 'active'
+ ORDER BY m.id;
+
 -- name: CiMappingInsert :many
 -- No row back means the name or the priority of the tier is taken; the caller tells them apart
 -- (409 already_exists or priority_taken).

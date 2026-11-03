@@ -15,8 +15,8 @@ type TTLInput struct {
 	Requested *time.Duration
 	// Default, Max, Min are ci.token.default_ttl, ci.token.max_ttl and ci.token.min_ttl.
 	Default, Max, Min time.Duration
-	// IssuerMax is the issuer's max_ttl; MappingMax the smallest max_ttl of the contributing mappings.
-	// Nil is unbounded.
+	// IssuerMax is the issuer's max_ttl; MappingMax the max_ttl of the mapping that owns the token
+	// ([ComputeLifetime] sets it, Q-CI-47). Nil is unbounded.
 	IssuerMax, MappingMax *time.Duration
 	// SubjectExpiresAt is the `exp` of the subject token and Now the exchange's clock; a zero
 	// SubjectExpiresAt leaves the term out (the dry run of a claim set without `now`).
@@ -53,7 +53,7 @@ func ComputeTTL(in TTLInput) (ttl time.Duration, failure Reason, detail string) 
 		d    *time.Duration
 		name string
 	}{
-		{in.MappingMax, "the maxTtlSeconds of a contributing mapping"},
+		{in.MappingMax, "the maxTtlSeconds of the mapping that owns the token"},
 		{in.IssuerMax, "the maxTtlSeconds of the issuer"},
 		{&in.Max, "ci.token.max_ttl"},
 	} {
@@ -69,3 +69,76 @@ func ComputeTTL(in TTLInput) (ttl time.Duration, failure Reason, detail string) 
 }
 
 func seconds(d time.Duration) string { return strconv.FormatInt(int64(d/time.Second), 10) + " s" }
+
+// Lifetime is the lifetime of a token and of each of its contributions (R-CI-016, Q-CI-47).
+type Lifetime struct {
+	// TTL is the token's: expires_in and the token row's expiry.
+	TTL time.Duration
+	// Owner is the index of the contribution whose mapping owns the token (its principal is the token's owner).
+	Owner int
+	// Windows are the lifetimes of the contributions, in their order, each at most TTL: a contribution whose
+	// window is shorter than TTL ends before the token (claims.FrozenMapping.ExpiresAt).
+	Windows []time.Duration
+}
+
+// tokenOwner is the contribution that owns a token (Q-CI-47): the system tier's when it contributes, the
+// administrators' mapping, so no project's mapping decides the token of a job the system tier gives grants to;
+// otherwise the project contribution whose own bound is the longest (none is longest; a tie goes to the first in
+// evaluation order), so the token never outlives its owner's contribution.
+func tokenOwner(cs []Contribution) int {
+	owner := -1
+	for i, c := range cs {
+		if c.Mapping.Tier == TierSystem {
+			return i
+		}
+		if owner < 0 || longer(c.Mapping.MaxTTLSeconds, cs[owner].Mapping.MaxTTLSeconds) {
+			owner = i
+		}
+	}
+	return max(owner, 0)
+}
+
+// longer reports whether bound a is longer than b; nil is unbounded.
+func longer(a, b *int64) bool {
+	switch {
+	case a == nil:
+		return b != nil
+	case b == nil:
+		return false
+	}
+	return *a > *b
+}
+
+// ComputeLifetime is R-CI-016 over the contributions of one token (Q-CI-47): the token's lifetime is ComputeTTL with
+// the bound of its owner's mapping (tokenOwner) and no other mapping's, so a project tier's maxTtlSeconds never
+// shortens the token of another tier and never fails the exchange beside it; each other contribution lives for
+// the token's lifetime or its own mapping's bound, whichever is shorter. in.MappingMax is ignored. A failure is
+// ComputeTTL's, for the owner's bound.
+func ComputeLifetime(in TTLInput, cs []Contribution) (Lifetime, Reason, string) {
+	owner := tokenOwner(cs)
+	in.MappingMax = nil
+	if owner < len(cs) {
+		in.MappingMax = maxTTL(cs[owner].Mapping)
+	}
+	ttl, failure, detail := ComputeTTL(in)
+	if failure != "" {
+		return Lifetime{}, failure, detail
+	}
+	out := Lifetime{TTL: ttl, Owner: owner, Windows: make([]time.Duration, len(cs))}
+	for i, c := range cs {
+		out.Windows[i] = ttl
+		if b := maxTTL(c.Mapping); b != nil && *b < ttl {
+			out.Windows[i] = *b
+		}
+	}
+	return out, "", ""
+}
+
+// maxTTL is a mapping's maxTtlSeconds as a duration, nil when it has none.
+func maxTTL(m Mapping) *time.Duration {
+	if m.MaxTTLSeconds == nil {
+		return nil
+	}
+	d := time.Duration(*m.MaxTTLSeconds) * time.Second
+	return &d
+}

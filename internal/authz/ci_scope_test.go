@@ -63,10 +63,10 @@ func TestR_CI_007_TheScopeQuestionsOfTheExchange(t *testing.T) {
 		}
 	})
 
-	t.Run("R-CI-007 a key selector naming no repository is unknown; patterns and classes never are", func(t *testing.T) {
-		for sel, want := range map[string]bool{"npm-nowhere": true, "npm-internal": false, "npm-*": false, "@any-local:npm": false} {
-			if got := s.UnknownKey(sel); got != want {
-				t.Errorf("UnknownKey(%s) = %v", sel, got)
+	t.Run("H-418 a key selector naming no repository is held by nothing, as one the grants do not cover", func(t *testing.T) {
+		for _, sel := range []string{"npm-nowhere", "npm-shop"} {
+			if s.Held(claims.Read, sel) {
+				t.Errorf("Held(read, %s)", sel)
 			}
 		}
 	})

@@ -11,7 +11,7 @@ import (
 )
 
 func limits() issuerLimits {
-	return issuerLimits{BaseURL: "https://packages.example.com", TokenMaxTTL: time.Hour}
+	return issuerLimits{BaseURL: "https://packages.example.com", TokenMaxTTL: time.Hour, TokenMinTTL: 30 * time.Second}
 }
 
 func base() IssuerInput {
@@ -77,7 +77,7 @@ func TestR_CI_001_RefusalsOfTheSettings(t *testing.T) {
 	str := func(s string) *string { return &s }
 	off, five := false, 301
 	long := int64(7200)
-	zero := int64(0)
+	zero, belowFloor := int64(0), int64(29)
 	for _, tc := range []struct {
 		name string
 		edit func(*IssuerInput)
@@ -100,6 +100,8 @@ func TestR_CI_001_RefusalsOfTheSettings(t *testing.T) {
 		{"a clock skew above 300", func(in *IssuerInput) { in.ClockSkewSeconds = &five }, "/clockSkewSeconds invalid_clock_skew"},
 		{"a max TTL above the ceiling", func(in *IssuerInput) { in.MaxTTLSeconds = &long }, "/maxTtlSeconds invalid_max_ttl"},
 		{"a max TTL of zero", func(in *IssuerInput) { in.MaxTTLSeconds = &zero }, "/maxTtlSeconds invalid_max_ttl"},
+		// R-CI-016, Q-CI-47: a bound below ci.token.min_ttl would refuse every exchange of the issuer.
+		{"a max TTL below ci.token.min_ttl", func(in *IssuerInput) { in.MaxTTLSeconds = &belowFloor }, "/maxTtlSeconds invalid_max_ttl"},
 		{"the job-token fallback", func(in *IssuerInput) { in.JobTokenFallback = &JobTokenFallback{Enabled: true} }, "/jobTokenFallback/enabled job_token_fallback_not_available"},
 		{"a bundle variable outside the prefix", func(in *IssuerInput) { in.CABundleRef = str("env:GITLAB_CA") }, "/caBundleRef invalid_ca_bundle_ref"},
 		{"a relative bundle path", func(in *IssuerInput) { in.CABundleRef = str("file:ca.crt") }, "/caBundleRef invalid_ca_bundle_ref"},
@@ -250,5 +252,30 @@ func TestFlightSharesOneCall(t *testing.T) {
 	// A finished call leaves nothing behind.
 	if _, shared, _ := f.do("k", func() (int, error) { return 1, errors.New("x") }); shared {
 		t.Error("a later call joined a finished one")
+	}
+}
+
+// R-CI-001, Q-CI-48: trove migrate refuses a declared name whose issuer URL or kind changes, naming both values and
+// the remedy; the integration test TestR_CI_001_ADeclaredIssuerKeepsItsIssuerURL runs it through the command.
+func TestR_CI_001_ADeclaredNameKeepsItsIdentity(t *testing.T) {
+	before := Issuer{Name: "gitlab-main", Kind: KindGitLab, Issuer: "https://gitlab.example.com"}
+	if err := sameIdentity(before, before); err != nil {
+		t.Fatal(err)
+	}
+	moved, kind := before, before
+	moved.Issuer, kind.Kind = "https://gitlab.other.example.com", KindGitHub
+	for _, c := range []struct {
+		next Issuer
+		want []string
+	}{
+		{moved, []string{"https://gitlab.example.com", "https://gitlab.other.example.com", "new name"}},
+		{kind, []string{KindGitLab, KindGitHub, "new name"}},
+	} {
+		err := sameIdentity(before, c.next)
+		for _, w := range c.want {
+			if err == nil || !strings.Contains(err.Error(), w) {
+				t.Errorf("%v does not name %q", err, w)
+			}
+		}
 	}
 }

@@ -102,7 +102,9 @@ func TestR_CI_008_EveryReasonOfTheErrorTable(t *testing.T) {
 		{"manage in the scope", "invalid_scope", "scope_malformed", 400, func() testenv.Answer {
 			return x.exchange(a, good(), "scope", "manage:npm-internal")
 		}},
-		{"a scope key that names no repository", "invalid_scope", "scope_malformed", 400, func() testenv.Answer {
+		// H-418, Q-CI-51: a key that names no repository answers as one that exists and is not granted, so the scope
+		// tells a matched job nothing of which repositories exist.
+		{"a scope key that names no repository", "invalid_scope", "scope_not_granted", 400, func() testenv.Answer {
 			return x.exchange(a, good(), "scope", "read:npm-nowhere")
 		}},
 		{"a scope the grants do not hold", "invalid_scope", "scope_not_granted", 400, func() testenv.Answer {

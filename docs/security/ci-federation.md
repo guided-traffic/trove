@@ -24,7 +24,16 @@ or its TLS, can sign for it; the specification keeps that case as [H-24](../spec
 
 An issuer with source `configuration` cannot be changed or deleted through the API (409 `issuer_managed_by_configuration`) and is
 deleted only after it was removed from the configuration. That keeps a GitOps repository the one author of such an issuer; no replica
-writes it, so replicas of two releases never overwrite each other.
+writes it, so replicas of two releases never overwrite each other. A declared name keeps its issuer URL and its kind: `trove migrate`
+stops on an entry that changes either, naming both values, so the pins, the package owners and the mappings of the name never move to
+another GitLab instance under the same issuer ID ([Q-CI-48](../spec/gitlab-ci-oidc.md#q-ci-48--a-declared-issuers-issuer-url-and-kind-never-change-under-its-name)).
+
+Two settings carry trust that other state was derived from, and a write that moves them moves that state in its transaction
+([Q-CI-50](../spec/gitlab-ci-oidc.md#q-ci-50--an-issuer-change-that-moves-trust-resets-the-keys-or-is-refused),
+[issuers_trust.go](../../internal/ci/issuers_trust.go)): a changed `jwks_uri` or `discovery_url` replaces the stored key set with the
+fail-closed placeholder, so no key of the old location validates a token after the commit, and the new location is fetched after it;
+switching `public_issuer` on, or removing a claim from `pin_claims`, is refused with `409 mappings_unpinned` while a mapping of the issuer
+would fail the pin rule of a save under the new settings, and the answer names those mappings.
 
 The rules that keep a bad issuer out are the pure ones of [issuers_validate.go](../../internal/ci/issuers_validate.go): an https issuer
 URL without credentials, no `none` and no HMAC algorithm (RFC 8725), pin claims limited to the immutable ID claims, a public issuer
@@ -77,10 +86,13 @@ A token chooses its `kid` freely and is refused only by the signature check, so 
 ([keys_source.go](../../internal/ci/keys_source.go)): at most one re-read of the issuer's row per replica and
 `cluster.epoch_poll_interval`, shared by concurrent requests, then at most one fetch per replica and
 `ci.signing_keys.unknown_kid_refresh_interval`, shared the same way. A flood of random `kid` values therefore costs n row reads and n
-fetches per interval for n `web` replicas, never one per request, and a token of an unknown issuer costs no query at all because the
-issuer is resolved from the in-process copy of all issuers. The throttles are per-replica state that can change an answer for at most
-one interval ([R-ARCH-032](../spec/architecture.md)); [H-409](#h-409--an-attacker-can-delay-a-rotated-key-on-one-replica) is the one
-consequence.
+fetches per interval for n `web` replicas, never one per request. A token of an unknown issuer is answered from the in-process copy of
+all issuers; a miss, and a hit of an issuer the copy holds as disabled, re-read the issuers at most once per replica and
+`cluster.epoch_poll_interval` the same way ([issuers_read.go](../../internal/ci/issuers_read.go) `rereadIssuers`,
+[Q-CI-51](../spec/gitlab-ci-oidc.md#q-ci-51--what-the-exchange-tells-a-caller-and-when-a-replica-learns-an-issuer)), so made-up `iss`
+values cost one read per interval and replica, and a replica whose copy lags serves a just-created or re-enabled issuer within that
+interval. The throttles are per-replica state that can change an answer for at most one interval
+([R-ARCH-032](../spec/architecture.md)); [H-409](#h-409--an-attacker-can-delay-a-rotated-key-on-one-replica) is the one consequence.
 
 ## The mappings: the access control of an anonymous endpoint
 
@@ -113,7 +125,11 @@ hand an anonymous caller more than its author meant:
   mapping are read from their entries and counted ([Q-CI-35](../spec/gitlab-ci-oidc.md));
 - `manage` is never grantable, to a CI token or through a group that holds it (`action_not_allowed`);
 - a template that a claim value alone can turn into a repository selector is refused (`template_unanchored`), and a render failure
-  at the exchange fails it instead of falling through to a broader mapping;
+  at the exchange never falls through to a broader mapping of the tier: a failure of the system tier fails the exchange, a failure of
+  a project's tier drops that tier's contribution ([Q-CI-47](../spec/gitlab-ci-oidc.md#q-ci-47--a-project-tier-changes-only-what-its-own-tier-gives-a-token));
+- a condition is bounded in size (a literal 1,024 characters, a claim name 256, a path 16 members, the whole 64 KiB) and a project's
+  tier in count (`ci.mappings.max_per_project`), because every exchange of the issuer evaluates every tier
+  ([Q-CI-49](../spec/gitlab-ci-oidc.md#q-ci-49--what-bounds-the-cost-of-an-exchange), [H-426](#h-426--several-projects-together-can-fill-an-issuers-mapping-limit));
 - a cross-project (fork) job gets nothing from a mapping that has not opted in with `read_only`, and then only `read`; the first match
   of a tier decides, so a denying mapping does not fall through to a later one that would opt in
   ([select.go](../../internal/ci/select.go)).
@@ -122,7 +138,17 @@ hand an anonymous caller more than its author meant:
 its name starts with the project key, its policies are the project's, it has no groups, a literal repository of an inline grant is a
 repository of the project, and every contribution of the token names the project, so the evaluator compiles `@any` and patterns
 against the project's repositories only. A policy name that is not the project's, existing or not, answers the same
-(`policy_outside_project`). A create in the tier locks the project row, so a project cannot be deleted under a mapping.
+(`policy_outside_project`). A create in the tier locks the project row, so a project cannot be deleted under a mapping, and checks the
+prefix before the name is looked up, so `409 already_exists` answers only under the project's own prefix
+([H-413](#h-413--a-project-administrator-can-probe-the-mapping-names-of-the-system-tier-below-its-prefix)).
+
+A project's mapping reaches its own contribution to a token and nothing else of it
+([Q-CI-47](../spec/gitlab-ci-oidc.md#q-ci-47--a-project-tier-changes-only-what-its-own-tier-gives-a-token)): a token belongs to the
+system tier's mapping whenever it contributes ([ttl.go](../../internal/ci/ttl.go) `tokenOwner`), so the token's lifetime is the system
+tier's and the global bounds; the project's `maxTtlSeconds` ends its own contribution (`expiresAt` in the bundle); its render failure
+drops its contribution; its disable or delete revokes only the tokens it owns and ends its contribution to the others at use time
+([H-424](#h-424--a-project-mapping-that-owns-a-token-ends-the-other-projects-contributions-with-it),
+[H-425](#h-425--a-project-mappings-end-reaches-the-tokens-of-other-tiers-within-the-index-bound-not-the-revocation-bound)).
 
 **The principal** of a mapping mirrors `enabled`: disabling it sets the principal `disabled` in the transaction and notifies the
 change area `auth`, which is the status token validation reads ([R-CI-017](../spec/gitlab-ci-oidc.md), R-AUTH-023), and the exchange
@@ -152,16 +178,19 @@ anonymous caller can cause is bounded by the order of the checks: each step is c
 | the address budget `ci_exchange_address` | one counter in Valkey, before the body is read | 600 per minute and address, burst 100, cluster-wide; per-replica shares of it while Valkey is unavailable ([R-ARCH-034](../spec/architecture.md)); an address in `exempt_cidrs` skips it and is bounded by `server.max_in_flight` until its token is valid |
 | the body and the parameters | `ci.exchange.max_body_bytes` (64 KiB), the content type, a parameter twice, the pure checks of the parameters | a `ttl` below `ci.token.min_ttl` and an empty `subject_token` are refused here ([Q-CI-41](../spec/gitlab-ci-oidc.md#q-ci-41--the-reason-of-a-request-that-cannot-succeed-by-its-own-parameters)) |
 | the structure of the subject token | `ci.exchange.max_subject_token_bytes` (16 KiB), the JWS and JSON rules ([subject.go](../../internal/ci/subject/subject.go)) | no lookup |
-| the issuer | the in-process copy of every issuer | an unknown `iss` costs no query |
+| the issuer | the in-process copy of every issuer | an unknown `iss` costs at most one read of the issuers per replica and `cluster.epoch_poll_interval` ([above](#what-a-forged-kid-costs)) |
 | the signature | the key lookup and at most 10 verifications | an unknown `kid` costs at most one row read and one fetch per interval and replica ([above](#what-a-forged-kid-costs)) |
 | the subject budget `ci_exchange_subject` | one counter, per issuer and the first pin claim (`project_id`) | 300 per minute, burst 100, cluster-wide; a forged token never reaches it, so it cannot spend a project's budget |
+| the selection | every tier of the issuer's mapping set, on the replica's copy, with the compiled conditions, short-circuit and no trace, before the transaction ([Q-CI-49](../spec/gitlab-ci-oidc.md#q-ci-49--what-bounds-the-cost-of-an-exchange)) | `ci.mappings.max_per_issuer` mappings, `ci.mappings.max_per_project` per project, the size bounds of a condition |
 | the transaction | the reads `FOR SHARE`, the replay upsert, the token row, the issuance record | only for a validly signed token of a configured issuer within its project's budget |
 
-**One transaction decides** ([exchange_tx.go](../../internal/ci/exchange_tx.go)). It re-reads the issuer row and the matched mapping
-rows `FOR SHARE` and compares `version` and `mappings_version` with the replica's copies ([Q-CI-15](../spec/gitlab-ci-oidc.md)). On a
-mismatch it validates the token again against the re-read issuer (an audience removed a moment ago refuses the token), evaluates the
-mapping set it reads in the same transaction and refreshes the copies, so a token reflects the configuration committed when it was
-issued whether or not a change message reached the replica. A refused or failed transaction leaves no `jti`, no token and no record.
+**One transaction decides** ([exchange_tx.go](../../internal/ci/exchange_tx.go)). The selection is made on the replica's copy before it;
+the transaction re-reads the issuer row and the matched mapping rows `FOR SHARE` and compares `version` and `mappings_version` with the
+versions the copy was read at ([Q-CI-15](../spec/gitlab-ci-oidc.md)), which every mapping write moves under `FOR UPDATE` of the same
+row, so equal versions mean the selection is the one an evaluation of the committed set would make. On a mismatch it validates the
+token again against the re-read issuer (an audience removed a moment ago refuses the token), evaluates the mapping set it reads in the
+same transaction and refreshes the copies, so a token reflects the configuration committed when it was issued whether or not a change
+message reached the replica. A refused or failed transaction leaves no `jti`, no token and no record.
 Single use, the restore cut-off and the `jti` are PostgreSQL's alone ([Q-CI-13](../spec/gitlab-ci-oidc.md)): concurrent exchanges of
 one `jti` serialise on its row, and Valkey holds nothing but the two budgets' counters, so its loss or a forged entry can refuse
 exchanges with 429 and cannot make trove accept one.
@@ -189,17 +218,22 @@ exchanges with 429 and cannot make trove accept one.
 or group grant, a class or a format filter) the replica's grant index answers ([ci_scope.go](../../internal/authz/ci_scope.go)); the
 index can lag a policy change by the bound of [R-AUTHZ-028](../spec/authorization.md), which can refuse a requested item or leave one
 out of the answer's `scope` but never grants, because the policy grants of a CI token are decided live at use time. A key that names no
-repository is `scope_malformed` once the token matched
-([H-418](#h-418--a-matched-job-learns-which-repository-keys-exist-through-its-scope)).
+repository is `scope_not_granted`, with the description of every item the grants do not hold, so the answer tells nobody which
+repositories exist ([H-418](#h-418--a-matched-job-learns-which-repository-keys-exist-through-its-scope)).
 
 ## What a CI token can do
 
 A CI token (`trv_cit_`) carries the frozen bundle of its exchange in `api_token.ci_context` ([Q-CI-17](../spec/gitlab-ci-oidc.md)):
-its issuer, its GitLab project and, per contributing mapping, the tier, the project of a project tier, the groups, the rendered inline
-grants and the caps. The token validator decodes it with `claims.DecodeFrozen` into the token cache entry; a bundle of another version
-or an inconsistent one is a storage fault and the request fails, never an acceptance without it. The evaluator
-([internal/authz/ci.go](../../internal/authz/ci.go)) reads the bundle and the grant index and queries nothing
-([R-AUTHZ-015](../spec/authorization.md)). Per contribution, and for that contribution only:
+its issuer, its GitLab project, the authorization epoch of its exchange and, per contributing mapping, the tier, the project of a
+project tier, the groups, the rendered inline grants, the caps and the end of its own window when its mapping's `maxTtlSeconds` is
+shorter than the token's lifetime. The token validator decodes it with `claims.DecodeFrozen` into the token cache entry (version 2, and
+version 1 of the tokens issued before); a bundle of another version or an inconsistent one is a storage fault and the request fails,
+never an acceptance without it ([H-427](#h-427--a-replica-of-the-previous-release-refuses-the-ci-tokens-of-bundle-version-2)). The
+evaluator ([internal/authz/ci.go](../../internal/authz/ci.go)) reads the bundle and the grant index and queries nothing
+([R-AUTHZ-015](../spec/authorization.md)). A contribution counts until its own window ends, and only while its mapping is enabled with
+an active principal in a grant index at least as fresh as the token's exchange (`ciContributes`,
+[Q-CI-47](../spec/gitlab-ci-oidc.md#q-ci-47--a-project-tier-changes-only-what-its-own-tier-gives-a-token)). Per contribution, and for
+that contribution only:
 
 | Source | What it gives | The bound |
 |---|---|---|
@@ -231,7 +265,7 @@ project that later takes over a released path gains nothing.
 
 | Cause | Who | Row reason | Events |
 |---|---|---|---|
-| a mapping disabled or deleted (W3 calls the revoker) | `ci:write`, the project's administrators | `mapping_deleted` | `ci.token.revoked` cause `mapping` |
+| a mapping disabled or deleted (W3 calls the revoker): the tokens it owns, for a system mapping also those whose record lists it | `ci:write`, the project's administrators | `mapping_deleted` | `ci.token.revoked` cause `mapping` |
 | an issuer disabled, deleted, or removed from `ci.issuers` | `ci:write`, `trove migrate` | `admin` | `ci.token.revoked` cause `issuer` |
 | `POST /api/v1/ci/issuances/revoke` | `tokens:revoke` | `admin` | `ci.token.revoked` cause `bulk`, with the filter |
 | `DELETE /api/v1/tokens/{id}` | `tokens:revoke` | `admin` | `token.revoked`, `ci.token.revoked` cause `single` |
@@ -240,8 +274,13 @@ project that later takes over a released path gains nothing.
 Every cause ends its tokens in the transaction that decides it ([revoke.go](../../internal/ci/revoke.go)), records the change of the area
 `auth` with the token IDs and hashes, and writes `ci.token.revoked` with at most 1,000 IDs per event and its journal entry
 ([Q-CI-38](../spec/gitlab-ci-oidc.md)). The change-log poll applies it on every replica within `auth.revocation_bound` (2 s) whatever
-Valkey does; the integration tests measure it on three replicas with Valkey running and stopped. A mapping's revocation also ends the
-tokens it contributed to as a mapping of another tier, found through their issuance records. An issuance record outlives its token
+Valkey does; the integration tests measure it on three replicas with Valkey running and stopped. A system mapping's revocation also
+finds, through their issuance records, the tokens it contributed to (it owns each of them). A project mapping's revocation ends only
+the tokens it owns; its contribution to a token of another tier is not revoked but ignored by the evaluator once the grant index no
+longer holds the mapping as active, within the index's bound
+([H-425](#h-425--a-project-mappings-end-reaches-the-tokens-of-other-tiers-within-the-index-bound-not-the-revocation-bound)). The
+statements read the unexpired issuance records only, through the expiry index, so a revocation under the issuer row's `FOR UPDATE`
+costs the tokens of the last `ci.token.max_ttl`, not the records of the retention. An issuance record outlives its token
 (Q-CI-20); once the token row is gone it reads as `expired` after the record's expiry and as `removed` before it (the row went with the
 principal of a deleted mapping), and in both cases as not active ([Q-CI-52](../spec/gitlab-ci-oidc.md)). A project administrator's view of a
 record shows its own mappings and the job's identity only: the scope strings (they list every tier's items), the person who started the
@@ -294,9 +333,14 @@ project's repositories only. The widening is visible in the policy's own event, 
 
 The name of a mapping is unique per issuer across all tiers, and a create that finds the name taken answers 409 `already_exists`
 ([mappings_write.go](../../internal/ci/mappings_write.go)). A project administrator names its mappings `<key>-…` and can therefore
-learn whether a mapping of any tier, a system administrator's included, has a given name that starts with its own project key on an
-issuer it can see. Live for project administrators with `managePolicies`; the answer reveals the existence of one name at a time and
-nothing of the mapping, and the prefix limits the probe to the project's own namespace.
+learn whether a mapping of the system tier has a given name that starts with its own project key on an issuer it can see. Live for
+project administrators with `managePolicies`; the answer reveals the existence of one name at a time and nothing of the mapping.
+
+The gap was wider than written until Q-CI-51: the create looked the name up before it applied the project's prefix, so the 409 answered
+for any name of any tier. The prefix is now checked first (`claims.CheckProjectName`), and the prefix covers no other project's names,
+because no project key is another's followed by a hyphen ([authorization.md](../spec/authorization.md) Q-AUTHZ-176); what stays open is
+the system tier's names under the prefix, which a system administrator can choose freely (option (c) of
+[Q-CI-51](../spec/gitlab-ci-oidc.md#q-ci-51--what-the-exchange-tells-a-caller-and-when-a-replica-learns-an-issuer) would reserve them).
 
 ### H-414 · A binding removed by a mapping save is not in the policy's own journal
 
@@ -337,11 +381,18 @@ deleted group for another team.
 ### H-418 · A matched job learns which repository keys exist through its scope
 
 Component: the `scope` parameter of the exchange (R-CI-007). Subject: a job whose token matches a mapping and that sends
-`scope=read:<key>` for keys it is not granted. A key that names no repository answers `scope_malformed`, one that exists and is not
-granted `scope_not_granted`, so the job learns whether a repository of that key exists, which `authz.hide_existence` hides from every
-other caller. Live for every job that matches a mapping; on a public issuer that is a pinned project only (R-CI-005), on a private one
-every job a mapping matches. What bounds it: one key per item, 50 items per request, the per-subject budget, and the
-`ci.exchange.denied` events, which hold the reason per request; nothing about the repository is revealed beyond its existence.
+`scope=read:<key>` for keys it is not granted.
+
+The earlier gap is closed ([Q-CI-51](../spec/gitlab-ci-oidc.md#q-ci-51--what-the-exchange-tells-a-caller-and-when-a-replica-learns-an-issuer),
+[exchange_scope.go](../../internal/ci/exchange_scope.go)): a key that named no repository answered `scope_malformed` and one that exists
+and is not granted `scope_not_granted`, so the job learnt whether a repository of that key exists, which `authz.hide_existence` hides
+from every other caller. It was wider than written: every project administrator who controls a pipeline can save a mapping of its tier
+that matches it, so the oracle reached every repository key of the installation from any project, not only from the jobs of a system
+mapping. Now an item whose key names no repository is held by no grant and answers `scope_not_granted` with the same description as
+every item the grants do not hold.
+
+What stays open: an item answers whether the token's own grants hold it, which its mapping's author knows already; nothing is told of a
+repository the grants do not cover.
 
 ### H-419 · A flood from many addresses writes one denial row per address
 
@@ -359,3 +410,45 @@ validly signed token of a public issuer. With `ci.exchange.expose_reason: true`,
 does not trust from one it does (`signature_invalid`, `unknown_signing_key`), and for a token of gitlab.com `no_matching_mapping` tells
 whether a mapping matches its claims. Live with the default. What bounds it: the per-address budget; `expose_reason: false` answers every
 400 with `invalid_request` and keeps the reason in the log and the audit trail, at the cost of the diagnosis a pipeline prints.
+
+### H-424 · A project mapping that owns a token ends the other projects' contributions with it
+
+Component: the owner of a CI token ([ttl.go](../../internal/ci/ttl.go) `tokenOwner`, R-CI-009 step 4, Q-CI-47). Subject: a job that no
+system mapping matches and the mappings of two or more projects do. The token belongs to one principal: the system tier's mapping when
+it contributes, otherwise the project contribution that lives longest. Disabling or deleting that project's mapping revokes the token,
+and with it the contributions of the other projects, because the token row belongs to the owner's principal (its status refuses the
+token, its deletion deletes the row). Live today. What makes it real: two projects whose mappings match the same pipelines, and an
+administrator of the owning project who toggles its mapping; the job loses its token mid-run and exchanges again, which gives it the
+other projects' grants under a new owner. Nothing a project grants reaches another project's repositories either way (Q-CI-26), so the
+cost is availability, not access.
+
+### H-425 · A project mapping's end reaches the tokens of other tiers within the index bound, not the revocation bound
+
+Component: the contributions of a CI token at use time ([internal/authz/ci.go](../../internal/authz/ci.go) `ciContributes`,
+R-CI-017, Q-CI-47). Subject: a token another tier owns, to which a project mapping contributed, after that mapping was disabled or
+deleted. The token is not revoked; the evaluator ignores the contribution once the replica's grant index, rebuilt from the change area
+`authz` that the mapping write notified, no longer holds the mapping as active. That takes effect within the bound of
+[R-AUTHZ-028](../spec/authorization.md) (typically 100 ms plus a build, at most `cluster.epoch_poll_interval` plus a build with a working
+poll, never more than `authz.cache.max_staleness` plus a build, about 10.5 s), not within `auth.revocation_bound` (2 s), and no
+`ci.token.revoked` names those tokens. After a point-in-time restore the mapping's `.disabled` or `.deleted` journal entry is replayed,
+which disables the principal again, and the next index drops the contribution. Live today for every token in which a project mapping
+contributes beside another tier. What makes it real: a project administrator who disables a mapping to stop a leaked token's project
+grants and expects the 2-second bound; the bulk revoke by `mapping` (R-CI-020) ends such tokens at once, the other tier's grants with
+them.
+
+### H-426 · Several projects together can fill an issuer's mapping limit
+
+Component: the mapping limits (R-CI-009, Q-CI-49). Subject: an issuer on which many projects save mappings. `ci.mappings.max_per_project`
+(100) keeps one project from filling `ci.mappings.max_per_issuer` (1,000), but ten projects at their quota fill it, and the next save of
+any tier, a system administrator's included, answers `422 mapping_limit_reached`. Live when many projects use one issuer. What bounds
+it: project administrators are named by the administrators of trove, the quota is a configuration key, and every mapping is listed
+with its project.
+
+### H-427 · A replica of the previous release refuses the CI tokens of bundle version 2
+
+Component: the frozen bundle (Q-CI-17, Q-CI-47). Subject: a CI token issued by a replica of this release and used on a replica of the
+release before it, during the rolling update between them. The previous release reads bundle version 1 only and treats version 2 as a
+storage fault, so it refuses the token; it cannot honour a contribution's own expiry, and ignoring it would grant a project's
+contribution beyond its bound. Live during that one update and dormant afterwards. What makes it real: a job whose exchange and whose
+package requests reach replicas of different releases while the update rolls; it fails and runs again. The reverse direction works:
+this release reads version 1.

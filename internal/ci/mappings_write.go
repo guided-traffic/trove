@@ -133,6 +133,12 @@ func (s *MappingService) create(ctx context.Context, caller Actor, issuerName st
 				return projectNotFound(tr.project)
 			}
 			projectID = ids[0]
+			// The project's prefix before the name is looked up (H-413, Q-CI-51): a name outside it is refused whether or
+			// not a mapping of another tier holds it, so the 409 of a taken name never answers for a name the caller may
+			// not take. A project that does not exist is 404 first, as on every project route.
+			if err := claims.CheckProjectName(tr.project, in.Name); err != nil {
+				return mappingViolation(fieldOfCheck(err))
+			}
 		}
 		lock, err := lockIssuer(ctx, qs, issuerName, errs.AnyRevision)
 		if err != nil {
@@ -153,6 +159,9 @@ func (s *MappingService) create(ctx context.Context, caller Actor, issuerName st
 		}
 		if limit := s.o.Config.Mappings.MaxPerIssuer; limit > 0 && int(n) >= limit {
 			return mappingViolation([]errs.FieldError{field("", errs.CodeMappingLimitReached, fmt.Sprintf("The issuer holds %d mappings, the limit ci.mappings.max_per_issuer.", limit))})
+		}
+		if err := s.checkProjectQuota(ctx, qs, is.ID, tr); err != nil {
+			return err
 		}
 		sv, err := s.check(ctx, qs, is, tr, projectID, "", in)
 		if err != nil {
@@ -188,6 +197,9 @@ func (s *MappingService) create(ctx context.Context, caller Actor, issuerName st
 		if err := s.bump(ctx, tx, qs, is.ID); err != nil {
 			return err
 		}
+		if err := s.notifyMappingState(tx, id); err != nil {
+			return err
+		}
 		after, err := mappingByID(ctx, qs, id)
 		if err != nil {
 			return err
@@ -207,6 +219,26 @@ func (s *MappingService) bump(ctx context.Context, tx meta.Tx, qs *q.Queries, is
 		return err
 	}
 	return s.notifyMappings(tx, issuerID)
+}
+
+// checkProjectQuota is the 422 of a project's tier that holds ci.mappings.max_per_project mappings of the issuer
+// (Q-CI-49): every exchange of the issuer evaluates every tier, so one project's mappings must neither fill the
+// issuer's limit nor make the exchanges of every other project's jobs expensive. The issuer row is locked, so the
+// count holds until the write commits.
+func (s *MappingService) checkProjectQuota(ctx context.Context, qs *q.Queries, issuerID string, tr tierRef) error {
+	limit := s.o.Config.Mappings.MaxPerProject
+	if tr.project == "" || limit <= 0 {
+		return nil
+	}
+	n, err := qs.CiMappingCountOfTier(ctx, q.CiMappingCountOfTierParams{IssuerID: issuerID, Tier: tr.tier})
+	if err != nil {
+		return err
+	}
+	if int(n) >= limit {
+		return mappingViolation([]errs.FieldError{field("", errs.CodeMappingLimitReached,
+			fmt.Sprintf("The project %q holds %d mappings of this issuer, the limit ci.mappings.max_per_project.", tr.project, limit))})
+	}
+	return nil
 }
 
 func priorityTaken(priority int, tier string) error {
@@ -322,6 +354,9 @@ func (s *MappingService) replace(ctx context.Context, caller Actor, issuer, name
 			if err := s.setStatus(ctx, tx, qs, before.PrincipalID, sv.enabled); err != nil {
 				return err
 			}
+			if err := s.notifyMappingState(tx, before.ID); err != nil {
+				return err
+			}
 		}
 		rows, err := qs.CiMappingUpdate(ctx, q.CiMappingUpdateParams{
 			ID: before.ID, Priority: int32(in.Priority), Enabled: sv.enabled, SubjectKinds: sv.kinds, //nolint:gosec // 1 to 1000000, checked
@@ -411,6 +446,9 @@ func (s *MappingService) remove(ctx context.Context, tx meta.Tx, qs *q.Queries, 
 		return err
 	}
 	if err := qs.CiMappingPrincipalDelete(ctx, m.PrincipalID); err != nil {
+		return err
+	}
+	if err := s.notifyMappingState(tx, m.ID); err != nil {
 		return err
 	}
 	return principal.NotifyPrincipals(s.o.Changes, tx, principal.ChangePrincipal, m.PrincipalID)

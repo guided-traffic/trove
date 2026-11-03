@@ -87,6 +87,14 @@ func (f *fakeTokens) IssueCITx(_ context.Context, _ meta.Tx, r token.CITRequest)
 type fakeQueries struct {
 	versions map[string]int64
 	uses     map[string]int32
+	// nowUs and epoch are the database clock and the authorization epoch the transaction reads.
+	nowUs, epoch int64
+	clockReads   int
+}
+
+func (f *fakeQueries) CiExchangeClock(context.Context) (q.CiExchangeClockRow, error) {
+	f.clockReads++
+	return q.CiExchangeClockRow{NowUs: f.nowUs, AuthzEpoch: f.epoch}, nil
 }
 
 func (f *fakeQueries) CiExchangeLockMappings(_ context.Context, ids []string) ([]q.CiExchangeLockMappingsRow, error) {
@@ -108,7 +116,6 @@ func (f *fakeQueries) CiExchangeInsertIssuance(context.Context, q.CiExchangeInse
 
 type noIndex struct{}
 
-func (noIndex) UnknownKey(string) bool          { return false }
 func (noIndex) Held(claims.Action, string) bool { return false }
 func (noIndex) PolicyItems() []string           { return nil }
 
@@ -358,6 +365,65 @@ func TestR_CI_007_TheExchangeWithoutADatabase(t *testing.T) {
 			if strings.Contains(s, tok[len(tok)-20:]) || strings.Contains(s, "actor-secret-value") || strings.Contains(s, "trv_cit_abcdefghij") {
 				t.Errorf("printed a token: %s", s)
 			}
+		}
+	})
+}
+
+// projectMapping is a mapping of the tier of project web that matches project 7, with its own lifetime bound.
+func projectMapping(id string, maxTTL int64) Mapping {
+	m := testMapping(1, 10)
+	m.ID, m.Name, m.Ref, m.PrincipalID = id, "web-"+id, "ci:gitlab-test/web-"+id, "p-"+id
+	m.Tier, m.Project, m.ProjectID = ProjectTier("web"), "web", "pid-web"
+	m.Grants.Inline[0].Repositories = []string{"web-npm"}
+	if maxTTL > 0 {
+		m.MaxTTLSeconds = &maxTTL
+	}
+	return m
+}
+
+// R-CI-009, R-CI-016, Q-CI-47: a project tier's maxTtlSeconds bounds its own contribution in the bundle and neither
+// the token nor the system tier's grants; the token belongs to the system tier's mapping, and the bundle carries the
+// authorization epoch of the transaction.
+func TestQ_CI_47_TheExchangeKeepsTheTiersApart(t *testing.T) {
+	dbNow := time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)
+	t.Run("Q-CI-47 a project's bound of 1 s ends its contribution, not the token", func(t *testing.T) {
+		x := newTestExchange(t)
+		x.queries.nowUs, x.queries.epoch = dbNow.UnixMicro(), 77
+		x.mappings.set.Mappings = append(x.mappings.set.Mappings, projectMapping("m-web", 1))
+		x.queries.versions["m-web"] = 1
+		res, err := x.s.Exchange(t.Context(), x.request(x.sign(t, nil)))
+		if err != nil || res.ExpiresIn != 900 {
+			t.Fatalf("Exchange = %+v, %v", res, err)
+		}
+		r := x.tokens.issued[0]
+		if r.OwnerID != "p-1" || r.TTL != 15*time.Minute || r.Frozen.AuthzEpoch != 77 || r.Frozen.Version != claims.FrozenVersion {
+			t.Fatalf("issued %+v", r)
+		}
+		cs := r.Frozen.Contributions
+		if len(cs) != 2 || cs[0].ExpiresAt != nil || cs[1].ExpiresAt == nil || !cs[1].ExpiresAt.Equal(dbNow.Add(time.Second)) {
+			t.Fatalf("contributions %+v", cs)
+		}
+	})
+	t.Run("Q-CI-47 without the system tier the longest project contribution owns the token", func(t *testing.T) {
+		x := newTestExchange(t)
+		x.queries.nowUs = dbNow.UnixMicro()
+		x.mappings.set.Mappings = []Mapping{projectMapping("m-web", 120)}
+		x.queries.versions["m-web"] = 1
+		res, err := x.s.Exchange(t.Context(), x.request(x.sign(t, nil)))
+		if err != nil || res.ExpiresIn != 120 {
+			t.Fatalf("Exchange = %+v, %v", res, err)
+		}
+		if r := x.tokens.issued[0]; r.OwnerID != "p-m-web" || r.Frozen.Contributions[0].ExpiresAt != nil {
+			t.Fatalf("issued %+v", r)
+		}
+	})
+	t.Run("Q-CI-49 the copy is evaluated before the transaction, which only re-confirms the versions", func(t *testing.T) {
+		x := newTestExchange(t)
+		if _, err := x.s.Exchange(t.Context(), x.request(x.sign(t, nil))); err != nil {
+			t.Fatal(err)
+		}
+		if x.mappings.freshReads != 0 || x.queries.clockReads != 1 {
+			t.Errorf("fresh reads %d, clock reads %d", x.mappings.freshReads, x.queries.clockReads)
 		}
 	})
 }

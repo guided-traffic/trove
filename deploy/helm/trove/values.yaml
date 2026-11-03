@@ -204,6 +204,11 @@ config:
   #       exempt_cidrs: []              # default (proposed); example: ["10.20.0.0/16"], a runner network behind NAT
   #   signing_keys:
   #     max_stale: 24h                  # default (proposed): older key sets fail closed with 503
+  #   mappings:
+  #     max_per_issuer: 1000            # default (proposed): mappings of one issuer, all tiers
+  #     max_per_project: 100            # default (proposed): of one project's tier on one issuer, at most max_per_issuer
+  #   replay:
+  #     retention_after_expiry: 15m     # default (proposed): at least 1m, the margin for a replica clock behind the database's
   #   issuers:
   #     - name: gitlab-main             # example: ^[a-z0-9][a-z0-9._-]{1,63}$
   #       kind: gitlab                  # the only kind of this release

@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/ci/claims"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -20,7 +21,9 @@ import (
 //
 //	⋃ over the contributions m of (policy grants of m.Ref ∪ group grants of m.Groups ∪ m.Inline) ∩ m.Caps
 //
-// then the token scope as the ceiling it is for every token (R-AUTHZ-013), where
+// then the token scope as the ceiling it is for every token (R-AUTHZ-013). Only the contributions that still count
+// are in the union (ciContributes, Q-CI-47): not one after its own ExpiresAt, and not one whose mapping an index at
+// least as fresh as the bundle's AuthzEpoch no longer holds as enabled with an active principal. Further,
 //
 //   - the policy grants of m are those of the policies whose entries name the mapping principal
 //     "ci:<issuer>/<mapping>" (Index.ci resolves the name); for a project tier only the project's own policies
@@ -82,14 +85,45 @@ type CIGrantSet struct {
 	contributions []ciContribution
 }
 
+// activeCIMappings is the set of the active CI mappings of a snapshot (Q-CI-47).
+func activeCIMappings(ids []string) map[string]bool {
+	out := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out
+}
+
+// ciContributes reports whether a contribution of the bundle still gives its grants (Q-CI-47): not after its own
+// expiry (claims.FrozenMapping.ExpiresAt, a project tier's maxTtlSeconds), and not once its mapping is no longer
+// active, which an index at least as fresh as the token's exchange decides. Every write that creates, enables,
+// disables or deletes a mapping notifies the area authz in its transaction, and the exchange read the epoch after
+// the issuer row FOR SHARE, so an index at the bundle's epoch or later holds every contributing mapping that is
+// still enabled with an active principal. An older index cannot know a mapping created just before the exchange:
+// the token's issuance is the newer evidence, and the contribution stays until the index catches up, within the
+// bound of R-AUTHZ-028. Disabling or deleting a project mapping thus ends its contribution to the tokens other
+// tiers own within that bound, without revoking them (R-CI-017).
+func (x *Index) ciContributes(f *claims.Frozen, m claims.FrozenMapping, now time.Time) bool {
+	if m.ExpiredAt(now) {
+		return false
+	}
+	return x.label.AuthzEpoch < f.AuthzEpoch || x.ciActive[m.ID]
+}
+
 // CIGrants resolves the bundle of a CI subject against the index. A subject without Subject.CI yields an empty
-// set that allows nothing.
-func (x *Index) CIGrants(sub Subject) CIGrantSet {
+// set that allows nothing. A contribution that ended or whose mapping is no longer active is left out
+// (ciContributes).
+func (x *Index) CIGrants(sub Subject) CIGrantSet { return x.ciGrantsAt(sub, time.Now()) }
+
+func (x *Index) ciGrantsAt(sub Subject, now time.Time) CIGrantSet {
 	if kindOf(sub) != kindCI || sub.CI == nil {
 		return CIGrantSet{}
 	}
 	var out CIGrantSet
 	for _, m := range sub.CI.Contributions {
+		if !x.ciContributes(sub.CI, m, now) {
+			continue
+		}
 		name := strings.TrimPrefix(m.Ref, "ci:")
 		c := ciContribution{m: m, name: name, pid: x.ci[name], readOnly: m.HasCap(claims.CapRead)}
 		if m.Project != nil {

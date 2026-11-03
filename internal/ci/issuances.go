@@ -111,8 +111,10 @@ func (s *IssuanceStore) ListForProject(ctx context.Context, project string, f Is
 // projectHiddenClaims are the claims of the snapshot a project's view leaves out (Q-CI-52): the person who started the
 // pipeline, the token ID of the subject token and the runner. A project's mapping matched the job, so the job's
 // identity (project, pipeline, job, ref, sha, environment, source) stays; who ran it and on what is the system
-// administrators' business.
-var projectHiddenClaims = []string{"user_id", "user_login", "jti", "runner_id", "runner_environment"}
+// administrators' business. A function, not a package variable, so no caller can change the list (R-ARCH-032).
+func projectHiddenClaims() []string {
+	return []string{"user_id", "user_login", "jti", "runner_id", "runner_environment"}
+}
 
 // onlyProject narrows a record to the contributions of one tier (Q-CI-26, Q-CI-52). The mapping names and IDs, the
 // grants bundle and the cross-project flag follow the kept contributions. The two scope strings are left out: they
@@ -137,7 +139,7 @@ func onlyProject(is Issuance, tier string) Issuance {
 	is.JTI, is.UserID, is.UserLogin, is.ClientIP, is.UserAgent = "", "", "", "", ""
 	narrowed := make(map[string]any, len(is.Claims))
 	for name, v := range is.Claims {
-		if !slices.Contains(projectHiddenClaims, name) {
+		if !slices.Contains(projectHiddenClaims(), name) {
 			narrowed[name] = v
 		}
 	}

@@ -240,6 +240,9 @@ const (
 	// global grants (Q-CI-26). CodePolicyOutsideProject: it names a policy that is not the project's.
 	CodeGroupsNotAllowedInProject = "groups_not_allowed_in_project"
 	CodePolicyOutsideProject      = "policy_outside_project"
+	// CodeMappingsUnpinned: an issuer change (public_issuer switched on, a claim removed from pin_claims) would
+	// leave mappings that the pin rules of a save refuse now (Q-CI-50); the problem lists them in `mappings`.
+	CodeMappingsUnpinned = "mappings_unpinned"
 )
 
 // <<< M4 ci
@@ -566,7 +569,7 @@ var registry = []CodeInfo{
 	{CodeIssuerMismatch, Invalid, "Issuer mismatch", "The issuer value of the discovery document is not exactly the configured issuer, or the ci_issuer of an exchange names another issuer than the token's iss."},
 	{CodeNoUsableKeys, Invalid, "No usable keys", "The key set of the issuer holds no key that meets the key rules (use, key_ops, key type, 2048-bit RSA)."},
 	{CodeAlgorithmsNotOffered, Invalid, "Algorithms not offered", "The issuer's id_token_signing_alg_values_supported does not intersect allowed_algorithms."},
-	{CodeConditionInvalid, Invalid, "Condition invalid", "The condition exceeds depth 4, 64 leaves, 256 values in an in list or 512 characters of a regular expression, or a leaf has no or several operators, an invalid glob or a regular expression that does not compile."},
+	{CodeConditionInvalid, Invalid, "Condition invalid", "The condition exceeds depth 4, 64 leaves, 256 values in an in list, 512 characters of a regular expression, 1,024 characters of a literal or a glob, 256 characters of a claim name or path member, 16 path members or 64 KiB in all, or a leaf has no or several operators, an invalid glob or a regular expression that does not compile."},
 	{CodeCatchAllCondition, Invalid, "Catch-all condition", "A condition needs at least one leaf; a mapping that matches every token is refused."},
 	{CodeUnprotectedWrite, Invalid, "Unprotected write", "A mapping that grants deploy, overwrite or delete needs ref_protected equals true in its top-level all, or options.allowUnprotectedRefs."},
 	{CodeUnpinnedWrite, Invalid, "Unpinned write", "A write granted through a policy or a group needs a pin on an immutable ID claim; an inline grant with ownership bind_project is the exception on a private issuer."},
@@ -575,11 +578,12 @@ var registry = []CodeInfo{
 	{CodeTemplateUnanchored, Invalid, "Template unanchored", "A template in repositories needs literal text next to every substitution, so a claim value alone cannot select a repository."},
 	{CodeUnknownPolicy, Invalid, "Unknown policy", "A mapping names a permission policy that does not exist."},
 	{CodeUnknownGroup, Invalid, "Unknown group", "A mapping names a group that does not exist."},
-	{CodeMappingLimitReached, Invalid, "Mapping limit reached", "The issuer holds ci.mappings.max_per_issuer mappings."},
+	{CodeMappingLimitReached, Invalid, "Mapping limit reached", "The issuer holds ci.mappings.max_per_issuer mappings, or the project's tier holds ci.mappings.max_per_project mappings of the issuer."},
 	{CodePriorityTaken, Conflict, "Priority taken", "Another mapping of the same tier has this priority; priorities are unique per tier."},
 	{CodeJobTokenFallbackNone, Invalid, "Job-token fallback not available", "The CI_JOB_TOKEN fallback is not built in this release."},
 	{CodeGroupsNotAllowedInProject, Invalid, "Groups not allowed in a project mapping", "A project administrator's mapping grants through the project's own policies and inline grants over its repositories; groups are global grants."},
 	{CodePolicyOutsideProject, Invalid, "Policy outside the project", "A project administrator's mapping may name only policies of its own project."},
+	{CodeMappingsUnpinned, Conflict, "Mappings unpinned", "The issuer change would leave mappings that pin none of the issuer's pin_claims where the pin rules require one (pin_required on a public issuer, unpinned_write on a private one); the problem lists them in mappings. Pin them, or delete them, first."},
 	// <<< M4 ci
 	//
 	// >>> M1 repository

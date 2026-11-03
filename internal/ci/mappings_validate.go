@@ -75,9 +75,13 @@ func (s *MappingService) shapeFields(in MappingInput) []errs.FieldError {
 		fe = append(fe, field("/description", "invalid_description", "The description has at most 1024 characters."))
 	}
 	if in.MaxTTLSeconds != nil {
+		// The floor is ci.token.min_ttl (R-CI-016, Q-CI-47): a bound below it would refuse every exchange the mapping
+		// owns with ttl_below_minimum, or give a contribution shorter than any token is worth.
 		limit := int64(s.o.Config.Token.MaxTTL.Seconds())
-		if *in.MaxTTLSeconds < 1 || *in.MaxTTLSeconds > limit {
-			fe = append(fe, field("/maxTtlSeconds", "out_of_range", fmt.Sprintf("maxTtlSeconds is between 1 and ci.token.max_ttl (%d seconds).", limit)))
+		floor := max(int64(s.o.Config.Token.MinTTL.Seconds()), 1)
+		if *in.MaxTTLSeconds < floor || *in.MaxTTLSeconds > limit {
+			fe = append(fe, field("/maxTtlSeconds", "out_of_range",
+				fmt.Sprintf("maxTtlSeconds is between ci.token.min_ttl (%d seconds) and ci.token.max_ttl (%d seconds).", floor, limit)))
 		}
 	}
 	return fe

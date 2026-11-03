@@ -161,3 +161,35 @@ func TestR_CI_001_ADeclaredIssuerThatClashesWithAnAPIIssuerStopsTheMigration(t *
 		t.Errorf("bad entry: %v", err)
 	}
 }
+
+// R-CI-001, Q-CI-48: a declared issuer keeps its issuer URL and its kind under its name, as the API keeps them
+// (immutable): a changed URL for an existing name stops `trove migrate` with an error that names both URLs and tells
+// the operator to declare the new instance under a new name; nothing is applied, so the pins, the package owners
+// ci:<issuer>:project:<id> and the mappings stay with the instance they were made for.
+func TestR_CI_001_ADeclaredIssuerKeepsItsIssuerURL(t *testing.T) {
+	d, other := startDouble(t, oidcstub.Config{}), startDouble(t, oidcstub.Config{})
+	e := newEnv(t, options{valkey: true})
+	if err := e.declare(declared(d, "gitlab-main")); err != nil {
+		t.Fatal(err)
+	}
+	id := e.text("SELECT id::text FROM ci_issuers WHERE name = 'gitlab-main'")
+	moved := declared(other, "gitlab-main")
+	err := e.declare(moved)
+	if err == nil || !strings.Contains(err.Error(), d.stub.Issuer()) || !strings.Contains(err.Error(), other.stub.Issuer()) || !strings.Contains(err.Error(), "new name") {
+		t.Fatalf("a changed issuer URL: %v", err)
+	}
+	if got := e.text("SELECT issuer FROM ci_issuers WHERE id = $1::uuid", id); got != d.stub.Issuer() {
+		t.Errorf("the issuer URL became %s", got)
+	}
+	t.Run("R-CI-001 the new instance under a new name is applied and the old name is disabled", func(t *testing.T) {
+		if err := e.declare(declared(other, "gitlab-next")); err != nil {
+			t.Fatal(err)
+		}
+		if e.text("SELECT enabled::text || removed_from_configuration::text FROM ci_issuers WHERE id = $1::uuid", id) != "falsetrue" {
+			t.Error("the removed name is not disabled and flagged")
+		}
+		if e.text("SELECT issuer FROM ci_issuers WHERE name = 'gitlab-next'") != other.stub.Issuer() {
+			t.Error("the new name does not hold the new instance")
+		}
+	})
+}

@@ -43,8 +43,10 @@ func gitlabRequiredClaims() []string {
 type issuerLimits struct {
 	// BaseURL is server.base_url; the default audiences are made from it.
 	BaseURL string
-	// TokenMaxTTL is ci.token.max_ttl, the bound of max_ttl_seconds.
-	TokenMaxTTL time.Duration
+	// TokenMaxTTL and TokenMinTTL are ci.token.max_ttl and ci.token.min_ttl, the bounds of max_ttl_seconds: a bound
+	// below the floor would refuse every exchange of the issuer with ttl_below_minimum (R-CI-016, Q-CI-47). A zero
+	// TokenMinTTL bounds at 1 s.
+	TokenMaxTTL, TokenMinTTL time.Duration
 }
 
 // publicByConstruction reports whether an issuer URL is public by construction: anyone can obtain a
@@ -147,9 +149,11 @@ func buildIssuer(in IssuerInput, lim issuerLimits) (Issuer, []errs.FieldError) {
 
 	if in.MaxTTLSeconds != nil {
 		v := *in.MaxTTLSeconds
-		if d := time.Duration(v) * time.Second; v < 1 || d > lim.TokenMaxTTL {
+		floor := max(lim.TokenMinTTL, time.Second)
+		if d := time.Duration(v) * time.Second; d < floor || d > lim.TokenMaxTTL {
 			fe = append(fe, field("/maxTtlSeconds", "invalid_max_ttl",
-				fmt.Sprintf("The bound is 1 to ci.token.max_ttl (%d) seconds, or null.", int64(lim.TokenMaxTTL/time.Second))))
+				fmt.Sprintf("The bound is ci.token.min_ttl (%d) to ci.token.max_ttl (%d) seconds, or null.",
+					int64(floor/time.Second), int64(lim.TokenMaxTTL/time.Second))))
 		}
 		is.MaxTTLSeconds = &v
 	}

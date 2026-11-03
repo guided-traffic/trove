@@ -11,7 +11,8 @@ import (
 // FuzzR_CI_010_Condition parses arbitrary bytes as a condition (R-CI-010): no panic; a refusal is
 // condition_invalid (or, from Validate, catch_all_condition); a condition that parses and validates
 // evaluates on the example claims with a trace whose every leaf has a pointer, marshals to JSON
-// that parses back to the same JSON, and stays within the limits after the round trip.
+// that parses back to the same JSON, and stays within the limits after the round trip; the compiled
+// condition of the exchange decides as the traced evaluation (Q-CI-49).
 //
 //	go test ./internal/ci/claims -run '^$' -fuzz '^FuzzR_CI_010_Condition$' -fuzztime 1m
 func FuzzR_CI_010_Condition(f *testing.F) {
@@ -39,6 +40,9 @@ func FuzzR_CI_010_Condition(f *testing.F) {
 			return
 		}
 		ev := n.Evaluate(c)
+		if claims.CompileCondition(n).Matches(c) != ev.Matched {
+			t.Fatal("the compiled condition of the exchange decides otherwise than the traced evaluation (Q-CI-49)")
+		}
 		if len(ev.Leaves) == 0 {
 			t.Fatal("a valid condition evaluated without a leaf in its trace")
 		}

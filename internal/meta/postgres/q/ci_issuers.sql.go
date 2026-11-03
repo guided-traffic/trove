@@ -974,6 +974,29 @@ func (q *Queries) CiKeysRecordError(ctx context.Context, arg CiKeysRecordErrorPa
 	return err
 }
 
+const ciKeysReset = `-- name: CiKeysReset :execrows
+UPDATE ci_issuer_keys
+   SET jwks = '{"keys": []}'::jsonb, jwks_uri = $1::text, fetched_at = to_timestamp(0), etag = NULL,
+       next_refresh_at = now(), last_error = NULL, last_error_at = NULL
+ WHERE issuer_id = $2::text::uuid
+`
+
+type CiKeysResetParams struct {
+	JwksUri  string
+	IssuerID string
+}
+
+// An issuer whose jwks_uri or discovery_url changed (Q-CI-50): the stored set came from the old location, so the row
+// becomes the fail-closed placeholder (an empty set, fetched_at at the epoch) in the issuer write's transaction, and
+// the next refresh is due at once. No key of the old location validates a token after the commit.
+func (q *Queries) CiKeysReset(ctx context.Context, arg CiKeysResetParams) (int64, error) {
+	result, err := q.db.Exec(ctx, ciKeysReset, arg.JwksUri, arg.IssuerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const ciKeysStore = `-- name: CiKeysStore :exec
 INSERT INTO ci_issuer_keys (issuer_id, jwks, jwks_uri, fetched_at, etag, next_refresh_at)
 VALUES ($1::text::uuid, $2::text::jsonb, $3::text,

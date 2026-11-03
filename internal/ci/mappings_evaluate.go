@@ -81,7 +81,7 @@ func (s *MappingService) evaluate(ctx context.Context, issuerName, project strin
 	if project != "" {
 		set = set.OnlyTier(ProjectTier(project))
 	}
-	sel := Select(set, kind, req.Claims)
+	sel := SelectTraced(set, kind, req.Claims)
 	res.CrossProject, res.Trace = sel.CrossProject, append(res.Trace, sel.Trace...)
 	if sel.Failure != "" {
 		res.Failure, res.Detail = sel.Failure, sel.Detail
@@ -182,21 +182,15 @@ func checkDryRunTimes(req EvaluateRequest, is Issuer) (reason.Reason, string) {
 	return "", ""
 }
 
-// dryRunTTL is the lifetime of R-CI-016 for a request without `ttl` ([ComputeTTL], the exchange's formula): the
-// subject token's remaining life counts when the request carries `now` and `exp` (Q-CI-36).
+// dryRunTTL is the token's lifetime of R-CI-016 for a request without `ttl` ([ComputeLifetime], the exchange's
+// formula: the bound of the mapping that owns the token, Q-CI-47): the subject token's remaining life counts when the
+// request carries `now` and `exp` (Q-CI-36).
 func (s *MappingService) dryRunTTL(is Issuer, cs []Contribution, req EvaluateRequest) (time.Duration, reason.Reason, string) {
 	cfg := s.o.Config.Token
 	in := TTLInput{Default: cfg.DefaultTTL, Max: cfg.MaxTTL, Min: cfg.MinTTL}
 	if is.MaxTTLSeconds != nil {
 		d := time.Duration(*is.MaxTTLSeconds) * time.Second
 		in.IssuerMax = &d
-	}
-	for _, c := range cs {
-		if c.Mapping.MaxTTLSeconds != nil {
-			if d := time.Duration(*c.Mapping.MaxTTLSeconds) * time.Second; in.MappingMax == nil || d < *in.MappingMax {
-				in.MappingMax = &d
-			}
-		}
 	}
 	if req.Now != nil {
 		if exp, ok := req.Claims.First("exp"); ok {
@@ -205,5 +199,6 @@ func (s *MappingService) dryRunTTL(is Issuer, cs []Contribution, req EvaluateReq
 			}
 		}
 	}
-	return ComputeTTL(in)
+	life, failure, detail := ComputeLifetime(in, cs)
+	return life.TTL, failure, detail
 }

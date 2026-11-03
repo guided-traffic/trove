@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/ci/reason"
 )
@@ -248,9 +249,16 @@ const (
 	CrossProjectReadOnly = "read_only"
 )
 
-// FrozenVersion is the version of the JSON form of [Frozen] that this code writes and reads. A
-// bundle of another version is a storage fault, never an acceptance (DecodeFrozen).
-const FrozenVersion = 1
+// FrozenVersion is the version of the JSON form of [Frozen] that this code writes. Version 2 (Q-CI-47) added
+// the per-contribution expiry (FrozenMapping.ExpiresAt) and the authorization epoch of the exchange
+// (Frozen.AuthzEpoch). [DecodeFrozen] still reads version 1, the form of the tokens issued before, which
+// carries neither: its contributions end with the token, whose lifetime was the minimum over every contributing
+// mapping, and its contributions are decided against every index. A bundle of any other version is a storage
+// fault, never an acceptance.
+const FrozenVersion = 2
+
+// FrozenVersion1 is the version of the bundles written before Q-CI-47; DecodeFrozen still reads it.
+const FrozenVersion1 = 1
 
 // Frozen is what a CI token carries to its use (R-AUTHZ-014, Q-CI-17): the identity, the mappings that
 // make its principal set and, per contributing mapping, its tier, its groups, its frozen inline
@@ -282,6 +290,12 @@ type Frozen struct {
 	Contributions []FrozenMapping `json:"contributions"`
 	// CrossProject records the classification of R-CI-012.
 	CrossProject bool `json:"crossProject,omitempty"`
+	// AuthzEpoch is the authorization epoch the exchange read in its transaction (version 2, Q-CI-47). Every
+	// write that creates, enables, disables or deletes a mapping notifies the change area authz, so a grant
+	// index whose epoch is at least this one knows the state of every contributing mapping: the evaluator drops
+	// a contribution whose mapping such an index does not hold as active. An older index cannot know a mapping
+	// created just before the exchange, so it keeps every contribution. 0 (version 1) is older than no index.
+	AuthzEpoch int64 `json:"authzEpoch,omitempty"`
 }
 
 // FrozenMapping is what one contributing mapping gives a token: the evaluator applies its Caps to the
@@ -304,6 +318,10 @@ type FrozenMapping struct {
 	Inline []InlineGrant `json:"inline,omitempty"`
 	// Caps bound this mapping's policy, group and inline grants; empty means none.
 	Caps []Cap `json:"caps,omitempty"`
+	// ExpiresAt ends this contribution before the token (version 2, Q-CI-47): a mapping's maxTtlSeconds bounds
+	// what that mapping gives, never the token of another tier's mapping (R-CI-016). nil: the contribution lives
+	// as long as the token. The evaluator ignores the contribution from this instant on.
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }
 
 // FrozenProject names the trove project of a project-tier mapping by key and ID; the ID survives a
@@ -315,6 +333,12 @@ type FrozenProject struct {
 
 // HasCap reports whether the mapping's grants carry the cap.
 func (m FrozenMapping) HasCap(c Cap) bool { return slices.Contains(m.Caps, c) }
+
+// ExpiredAt reports whether the contribution has ended at now (Q-CI-47); one without an expiry of its own ends
+// with the token.
+func (m FrozenMapping) ExpiredAt(now time.Time) bool {
+	return m.ExpiresAt != nil && !now.Before(*m.ExpiresAt)
+}
 
 // Add appends a contributing mapping and keeps Mappings and MappingIDs in step with it.
 func (f *Frozen) Add(m FrozenMapping) {
@@ -338,13 +362,19 @@ func (f Frozen) Groups() []string {
 	return out
 }
 
-// Check reports why a bundle must not be used: another version, no issuer, no contribution,
-// Mappings and MappingIDs out of step with Contributions, a contribution without ref or tier, a
-// project tier without its project or with another project's key, a system tier with a project.
+// Check reports why a bundle must not be used: a version other than FrozenVersion and FrozenVersion1, a
+// version-1 bundle with a member of version 2, a negative epoch, no issuer, no contribution, Mappings and
+// MappingIDs out of step with Contributions, a contribution without ref or tier, a project tier without its
+// project or with another project's key, a system tier with a project.
 func (f Frozen) Check() error {
 	switch {
-	case f.Version != FrozenVersion:
-		return errors.New("claims: frozen bundle of version " + strconv.Itoa(f.Version) + ", this code reads " + strconv.Itoa(FrozenVersion))
+	case f.Version != FrozenVersion && f.Version != FrozenVersion1:
+		return errors.New("claims: frozen bundle of version " + strconv.Itoa(f.Version) + ", this code reads " +
+			strconv.Itoa(FrozenVersion1) + " and " + strconv.Itoa(FrozenVersion))
+	case f.Version == FrozenVersion1 && (f.AuthzEpoch != 0 || slices.ContainsFunc(f.Contributions, func(m FrozenMapping) bool { return m.ExpiresAt != nil })):
+		return errors.New("claims: frozen bundle of version 1 with a member of version 2")
+	case f.AuthzEpoch < 0:
+		return errors.New("claims: frozen bundle with a negative authorization epoch")
 	case f.Issuer == "" || f.IssuerID == "":
 		return errors.New("claims: frozen bundle without issuer")
 	case len(f.Contributions) == 0:
@@ -373,7 +403,8 @@ func (f Frozen) Check() error {
 }
 
 // DecodeFrozen decodes api_token.ci_context or the grants of an issuance record and checks it
-// ([Frozen.Check]): the token validator treats an error as a storage fault, never as an acceptance.
+// ([Frozen.Check]): the token validator treats an error as a storage fault, never as an acceptance. It reads
+// version 2 and version 1 ([FrozenVersion]); a bundle keeps the version it was written in.
 func DecodeFrozen(raw []byte) (*Frozen, error) {
 	var f Frozen
 	if err := json.Unmarshal(raw, &f); err != nil {

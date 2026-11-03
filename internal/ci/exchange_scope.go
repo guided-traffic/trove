@@ -2,23 +2,21 @@ package ci
 
 import (
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/ci/claims"
-	"github.com/guided-traffic/trove/internal/ci/reason"
 )
 
 // The scope of the exchange (R-CI-007 step 8, Q-CI-2): the request's items narrow the bundle, the token stores
 // them as its scope, and the answer's `scope` lists the effective grants in the request grammar. What the text of
-// the inline grants cannot tell (a policy or group grant, a class or a format filter against a key, whether a key
-// names a repository) the grant index of the replica answers ([GrantIndex]), in memory.
+// the inline grants cannot tell (a policy or group grant, a class or a format filter against a key) the grant index
+// of the replica answers ([GrantIndex]), in memory. Whether a key names a repository is asked of nobody: a key that
+// names none is not held, and answers scope_not_granted like a repository that exists and is not granted (H-418,
+// Q-CI-51), so a matched job learns nothing of which repositories exist.
 
 // GrantIndex is the grant index of the replica seen from one bundle: internal/authz.CIScope.
 type GrantIndex interface {
-	// UnknownKey reports whether a key selector names no repository (scope_malformed).
-	UnknownKey(selector string) bool
 	// Held reports whether the bundle's grants (policies, groups, inline grants, each under its contribution's cap
 	// and project bound) hold the action on a repository the selector covers.
 	Held(a claims.Action, selector string) bool
@@ -45,17 +43,12 @@ type scoped struct {
 }
 
 // narrow applies the request's items to the bundle. Without items the token inherits the bundle unnarrowed
-// ({"inherit": true}) and the answer lists the policy and group items, then the inline items. With items, a key
-// selector naming no repository is scope_malformed, an item no grant holds scope_not_granted (no partial token), and
-// the answer lists the items the index held, then the narrowed inline items.
+// ({"inherit": true}) and the answer lists the policy and group items, then the inline items. With items, an item no
+// grant holds is scope_not_granted (no partial token), whether or not its key names a repository (H-418), and the
+// answer lists the items the index held, then the narrowed inline items.
 func narrow(f claims.Frozen, items []claims.ScopeItem, idx GrantIndex) (scoped, *ExchangeError) {
 	if len(items) == 0 {
 		return scoped{bundle: f, stored: scope.Scope{Inherit: true}, granted: joinItems(idx.PolicyItems(), f.InlineScope())}, nil
-	}
-	for i, it := range items {
-		if it.Selector != "" && idx.UnknownKey(it.Selector) {
-			return scoped{}, refuse(reason.ScopeMalformed, "scope item "+strconv.Itoa(i+1)+" names a repository key that does not exist")
-		}
 	}
 	var held []string
 	narrowed, err := claims.NarrowFrozen(f, items, func(a claims.Action, selector string) bool {

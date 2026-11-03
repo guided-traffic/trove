@@ -2,7 +2,7 @@
 
 Spec [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md) (R-CI-001 to R-CI-030), beta phase 5 (M4). The page is the contract between the work packages
 that build the federation in parallel, in the shape of [projects.md](projects.md). The decisions behind it are
-[Q-CI-17 to Q-CI-22, Q-CI-26, from W2 Q-CI-27 to Q-CI-29, from W3 Q-CI-35 to Q-CI-37, from W5 Q-CI-38 to Q-CI-40 and, from W4, Q-CI-41 to Q-CI-43](../decisions.md) with [ADR-147](../decisions.md#adr-147--a-ci-token-carries-its-frozen-grants-in-its-cache-entry-and-the-management-api-refuses-ci-tokens-by-default).
+[Q-CI-17 to Q-CI-22, Q-CI-26, from W2 Q-CI-27 to Q-CI-29, from W3 Q-CI-35 to Q-CI-37, from W5 Q-CI-38 to Q-CI-40, from W4 Q-CI-41 to Q-CI-43 and, from the fix wave A of the security audit, Q-CI-47 to Q-CI-51](../decisions.md) with [ADR-147](../decisions.md#adr-147--a-ci-token-carries-its-frozen-grants-in-its-cache-entry-and-the-management-api-refuses-ci-tokens-by-default).
 
 Status: contracts laid; W1 (issuers and keys, [below](#w1-issuers-and-signing-keys)), W2 (the claim engine, the subject-token
 validation and the shared JWS leaf, [below](#w2-the-claim-engine-and-the-validation)), W3 (the mappings, the dry run and the snippet,
@@ -24,9 +24,13 @@ test/oidcstub.
 - **A CI token carries its frozen grants** (Q-CI-17): `claims.Frozen` is written to `api_token.ci_context` by the exchange, read into the token
   cache entry, and travels `token.Info.CI` → `auth.Result.CI` → `httpserver.Principal.CI` → `authz.Subject.CI`. It is per contributing mapping
   (Q-CI-17 as amended 2026-11-02): `Frozen.Contributions` holds one `claims.FrozenMapping` per tier that matched, with its tier, its project
-  (key and ID) for a project tier, its groups, its inline grants and its caps; a cap bounds only its own mapping's grants (R-CI-012). Policy and
-  group grants stay live through the principal set (`Subject.Mappings`, each contribution's `Groups`). The JSON is versioned
-  (`claims.FrozenVersion`); `claims.DecodeFrozen` checks it.
+  (key and ID) for a project tier, its groups, its inline grants, its caps and, since version 2, its own `ExpiresAt`; a cap bounds only its own
+  mapping's grants (R-CI-012). Policy and group grants stay live through the principal set (`Subject.Mappings`, each contribution's `Groups`). The
+  JSON is versioned (`claims.FrozenVersion` 2, with `AuthzEpoch`); `claims.DecodeFrozen` checks it and still reads version 1 (Q-CI-47).
+- **Each contribution is its tier's** (Q-CI-47, [below](#fix-wave-a-tier-isolation-and-issuer-hardening)). The token belongs to the system tier's
+  contributing mapping, else to the longest-lived project contribution (`tokenOwner`); a project's render failure, `max_ttl_seconds` and disable or
+  delete reach its own contribution only, and the evaluator drops a contribution after its `ExpiresAt` and once an index at least as fresh as the
+  bundle's `AuthzEpoch` no longer holds its mapping as active (`Index.CIGrants`).
 - **The management API refuses CI tokens by default** (Q-CI-18): `ciGate` in [authorize.go](../../internal/api/v1/authorize.go); only public operations,
   the action form and `x-trove-ci: admitted` (`GET` and `DELETE /tokens/current`) admit one. Package protocols and `/files/…` are outside that table.
 - **Tiers.** First match inside a tier, union across tiers (R-CI-009). The tier `system` is the administrators'; a project's administrators manage the tier
@@ -67,11 +71,11 @@ values are `NULLIF(text, '')` or `0`. [TestCIMigration](../../test/integration/p
 
 | Step | Where |
 |---|---|
-| W4 builds the bundle | `Frozen{Version: claims.FrozenVersion, Issuer, IssuerID, ProjectID, ProjectPath, CrossProject}`, then `Frozen.Add(claims.Freeze(ref, id, tier, project, rendered, caps))` per contributing mapping in evaluation order (`Freeze` bounds the inline grants by the mapping's caps), then `claims.NarrowFrozen` with the request's `scope` items; `Frozen.Check` before the write |
-| W4 issues the token in the exchange transaction | `token.Service.IssueCITx(ctx, tx, token.CITRequest{OwnerID: mapping principal, Frozen, Scope, TTL, Claims, Source})` in [cit.go](../../internal/auth/token/cit.go) (built by W5): `created_via` `ci-exchange`, the owner read `FOR SHARE` and checked active and of kind `ci_mapping`, the expiry the database clock plus `TTL` (1 s to `auth.tokens.cit.max_ttl`), `Frozen.Check` before the write, `token.created` with `ciIssuer`, `ciMappings`, `ciClaims`; no user token list, no per-principal limit; the issuance record is written beside it (`CiExchangeInsertIssuance`) with `grants` = the same bundle and `expires_us` = `CITIssued.ExpiresAt` |
+| W4 builds the bundle | `Frozen{Version: claims.FrozenVersion, Issuer, IssuerID, ProjectID, ProjectPath, CrossProject, AuthzEpoch}` (the epoch of `CiExchangeClock`), then `Frozen.Add(claims.Freeze(ref, id, tier, project, rendered, caps))` per contributing mapping in evaluation order (`Freeze` bounds the inline grants by the mapping's caps), then `claims.NarrowFrozen` with the request's `scope` items, then `ExpiresAt` = the clock's `now()` plus the window of `ComputeLifetime` for every contribution whose window is shorter than the token's; `Frozen.Check` before the write |
+| W4 issues the token in the exchange transaction | `token.Service.IssueCITx(ctx, tx, token.CITRequest{OwnerID: the owner's principal (tokenOwner), Frozen, Scope, TTL, Claims, Source})` in [cit.go](../../internal/auth/token/cit.go) (built by W5): `created_via` `ci-exchange`, the owner read `FOR SHARE` and checked active and of kind `ci_mapping`, the expiry the database clock plus `TTL` (1 s to `auth.tokens.cit.max_ttl`), `Frozen.Check` before the write, `token.created` with `ciIssuer`, `ciMappings`, `ciClaims`; no user token list, no per-principal limit; the issuance record is written beside it (`CiExchangeInsertIssuance`) with `grants` = the same bundle and `expires_us` = `CITIssued.ExpiresAt` |
 | the validator reads it | `Service.load` decodes `ci_context` into `Info.CI` for type `cit` with `claims.DecodeFrozen` (built, W5): a missing bundle, another version and an inconsistent bundle are storage faults, never an acceptance |
 | the stage and the chain pass it on | `auth.Result.CI`, `Principal.CI` and `Principal.Mappings` ([m1_convert.go](../../internal/app/m1_convert.go)), `authz.Subject.CI` ([edge/subject.go](../../internal/api/edge/subject.go)) (done) |
-| W5: the evaluator (built) | [authz/ci.go](../../internal/authz/ci.go): `Index.CIGrants(sub)` resolves the contributions against the index, `ciGrantedBy` in `allowedAction`, `ciReadShape` in `readShape`, `Subject.CIProject()`; [below](#w5-use-time) |
+| W5: the evaluator (built) | [authz/ci.go](../../internal/authz/ci.go): `Index.CIGrants(sub)` resolves the contributions against the index and leaves out those `ciContributes` refuses (ended, or of a mapping the index no longer holds as active, Q-CI-47), `ciGrantedBy` in `allowedAction`, `ciReadShape` in `readShape`, `Subject.CIProject()`; [below](#w5-use-time) |
 | W5: ownership (built) | [ownership_ci.go](../../internal/authz/ownership_ci.go): the owner operations accept `ci:<issuer>:project:<id>` (the issuer by name), `ownerOfRow` shows the issuer name, `keyFor` and `ciFacts` add the project identity, the check of a `bind_project` write and its claim, `ci.package_ownership.*` |
 | W5: revocation (built) | [revoke.go](../../internal/ci/revoke.go): `Revoker` (mapping, issuer, bulk), the reasons of the token table (Q-CI-38), `ci.token.revoked` with the journal entry; the token service adds the causes `single` and `self` |
 
@@ -100,7 +104,7 @@ its own, and every answer but the 404 of a switched-off exchange and the router'
 
 | Where | What |
 |---|---|
-| [config/ci.go](../../internal/config/ci.go) | every `ci.*` key with its default; refusals: `ci.token.max_ttl` above `auth.tokens.cit.max_ttl` (both keys named), the retired `ci.exchange.rate_limit.per_issuer_per_second` (file and environment, names the replacements), `ci.job_token_fallback.enabled`; `ci.issuers` (list elements now hold pointers to scalars and string lists, [schema.go](../../internal/config/schema.go)); `trove migrate` calls `ApplyDeclared` always ([migrate_declared.go](../../internal/app/migrate_declared.go)) |
+| [config/ci.go](../../internal/config/ci.go) | every `ci.*` key with its default; refusals: `ci.token.max_ttl` above `auth.tokens.cit.max_ttl` (both keys named), `ci.mappings.max_per_project` above `ci.mappings.max_per_issuer`, `ci.replay.retention_after_expiry` below 1 m, a declared issuer's `max_ttl_seconds` outside `ci.token.min_ttl` to `ci.token.max_ttl`, the retired `ci.exchange.rate_limit.per_issuer_per_second` (file and environment, names the replacements), `ci.job_token_fallback.enabled`; `ci.issuers` (list elements now hold pointers to scalars and string lists, [schema.go](../../internal/config/schema.go)); `trove migrate` calls `ApplyDeclared` always ([migrate_declared.go](../../internal/app/migrate_declared.go)) |
 | [cluster/areas.go](../../internal/cluster/areas.go) | `ci_mappings`, `ci_issuer_keys` |
 | [app/wire_ci.go](../../internal/app/wire_ci.go) | the services (`wireCI`), the exchange (`wireCIExchange`, a component whose flush writes the denial counts at shutdown), limiters `ci_exchange_address` and `ci_exchange_subject` (cluster scope, held in `limitsArea`), tasks `ci-keys-refresh` `*/5 * * * *`, `ci-replay-cleanup` `7 * * * *`, `ci-issuance-retention` `40 3 * * *` (exclusive; a not-implemented answer is a success), the metrics and the two database gauges |
 | [audit/events_ci.go](../../internal/audit/events_ci.go) | the events of R-CI-020, categories and modes in Q-CI-22; journal flag on `ci.token.revoked` and the `.updated`, `.disabled`, `.deleted` events of issuers and mappings; the record schema has `project` |
@@ -178,7 +182,8 @@ What the later work packages need to know:
   nothing (and a `trove migrate` that removes such an issuer stops).
 - **The key source (W4).** `Issuers.KeySource(issuer).Keys(ctx, kid, alg)` returns `subject.ErrUnknownKey` and
   `subject.ErrKeysUnavailable`; a token without kid for an issuer with no stored set counts as an unknown kid. `Resolve` answers from
-  the copy of all issuers, so an unknown `iss` costs no query. The JWK rules are `jws.ParseJWKS`'s
+  the copy of all issuers; a miss or a disabled hit re-reads them at most once per replica and `cluster.epoch_poll_interval`
+  (`rereadIssuers`, Q-CI-51), so an unknown `iss` costs at most one query per interval. The JWK rules are `jws.ParseJWKS`'s
   ([Q-CI-42](../spec/gitlab-ci-oidc.md#q-ci-42--one-implementation-of-the-key-rules-the-shared-leaf)): keys_jwks.go reduces a fetched set
   entry by entry with it (a usable key keeps its public members, an ignored one its `kid`, `kty`, `alg` and the reason) and reads the
   stored form with it again; the candidates of a token are `jws.Candidates`, so the key status and the validation cannot disagree.
@@ -270,8 +275,9 @@ anchors), and the per-mapping bundle (Q-CI-17 as amended).
   `FrozenMapping.HasCap`. Nothing outside the package read the moved fields.
 - Added: `subject.CheckIssuer`, `subject.DefaultMaxBytes`, `subject.JobTokenPrefix`, `claims.ApplyCaps`, `Freeze`, `NarrowFrozen`,
   `Frozen.InlineScope`, `ScopeItem.String`, `Action.Valid`, `InlineGrant.Writes`, `InlineGrant.ResolvedOwnership`, `MaxGlobLength`.
-- The regular-expression memo of the first draft is not there: R-ARCH-032 allows no package-level `sync.Map`, so an expression compiles at
-  save and again per evaluation (a few microseconds).
+- The regular-expression memo of the first draft is not there: R-ARCH-032 allows no package-level `sync.Map`. Since Q-CI-49 the mapping set
+  of a replica holds each condition compiled (`claims.CompileCondition`, object state of the set), so the exchange compiles nothing; the
+  traced `Node.Evaluate` of the dry run compiles per evaluation.
 
 ### Fuzz targets
 
@@ -322,21 +328,24 @@ policy's principal list),
 One READ COMMITTED transaction: the project row `FOR UPDATE` (a project's create only), the issuer row `FOR UPDATE`
 (`lockIssuer`), the mapping, the policies named (`CiPoliciesLock`, in name order), then the rules (`check`: the policies and groups,
 `claims.Check` with `SaveInput.PolicyActions` and `IssuerFacts.Project`, the project's repositories), the priority, the principal, the
-row, the bindings, `CiIssuerBumpMappings` and `cluster.Notify` on `ci_mappings`, and the event with the journal entry. A name that
-exists is 409 `already_exists`, a priority held by another mapping of the tier 409 `priority_taken`, a limit 422
-`mapping_limit_reached`. A disable or delete revokes only when the mapping has a row in `ci_token_issuances`
-(`CiMappingHasIssuances`, bounded to unexpired records, Q-CI-53) and then calls `Revoker.RevokeMappingTx`; with the stub that answers 501 and nothing changes.
+row, the bindings, `CiIssuerBumpMappings` and `cluster.Notify` on `ci_mappings`, a create, enable, disable or delete also on `authz`
+(`notifyMappingState`, Q-CI-47), and the event with the journal entry. A project's create checks its prefix before anything is read
+(`claims.CheckProjectName`, Q-CI-51). A name that exists is 409 `already_exists`, a priority held by another mapping of the tier 409
+`priority_taken`, a limit 422 `mapping_limit_reached` (`ci.mappings.max_per_issuer`, or `ci.mappings.max_per_project` for a project's tier,
+`checkProjectQuota`). A disable or delete revokes only when the mapping has a row in `ci_token_issuances` (`CiMappingHasIssuances`, bounded to unexpired records, Q-CI-53) and
+then calls `Revoker.RevokeMappingTx`; with the stub that answers 501 and nothing changes.
 
 ### What the other packages rely on
 
 - **W4, the exchange.** `Mappings.Set(ctx, issuerID)` is the copy with the versions it was read at (read as: the issuer's counters first,
   then the rows, so a set is never labelled newer than it is); `SetTx` reads PostgreSQL in the exchange's transaction with every mapping
-  row `FOR SHARE` and refreshes the copy. `Select(set, "id_token", claims)` returns `Selection{CrossProject, Trace, Contributions,
-  Failure, Detail}`; there is no flat union of the rendered grants, because a cap and a project bound only their own mapping's. Build the
+  row `FOR SHARE` and refreshes the copy. `Select(set, "id_token", claims)` returns `Selection{CrossProject, Contributions, Dropped,
+  Failure, Detail}` without a trace (the exchange's, Q-CI-49) and `SelectTraced` the same with `Trace` (the dry run's); there is no flat
+  union of the rendered grants, because a cap and a project bound only their own mapping's. Build the
   bundle with `Frozen.Add(c.Frozen())` per contribution. `Contribution.Mapping` has `ID`, `Ref`, `Tier`, `Project`, `ProjectID`,
   `Version` and `PrincipalID`. `Mapping.Grants.Policies` is read from the policies' principal lists for display; the evaluator reads
-  the live index, not this field. The dry run computes the lifetime with `ComputeTTL`, the exchange's formula (`dryRunTTL` builds its
-  input, Q-CI-36, Q-CI-41).
+  the live index, not this field. The dry run computes the lifetime with `ComputeLifetime`, the exchange's formula (`dryRunTTL` builds its
+  input, Q-CI-36, Q-CI-41, Q-CI-47).
 - **W5, the revoker.** `RevokeMappingTx(ctx, tx, actor, mapping, CauseMapping)` runs in the write's transaction before the mapping row
   and its principal are deleted (delete) and before the principal's status is set (disable); the mapping is the one read under the issuer
   lock. W3 notifies the change area `auth` for the principal (`principal.NotifyPrincipals`) on a status change and a delete, and the
@@ -381,12 +390,12 @@ reach). The gaps are H-418 to H-420 of [ci-federation.md](../security/ci-federat
 | [exchange_service.go](../../internal/ci/exchange_service.go) | `ExchangeService`, `ExchangeOptions`, `NewExchange`; `CheckAddress` with `exempt_cidrs`, `Refused`, `Exchange` (steps 1 and 2, the subject budget), the mapping of errors to reasons, the metrics, the log line and the denial event |
 | [exchange_request.go](../../internal/ci/exchange_request.go) | step 1: the parameters (Q-CI-41) |
 | [exchange_tx.go](../../internal/ci/exchange_tx.go) | the transaction: `LockShareTx`, the comparison with the copies, the second validation and `SetTx` on a mismatch, `configuration_changed`, the restore cut-off and the `jti` upsert, the bundle, the scope, `ComputeTTL`, `IssueCITx`, the issuance record, `ci.exchange.succeeded`; the statements behind `exchangeQueries` |
-| [exchange_scope.go](../../internal/ci/exchange_scope.go) | `GrantIndex`, `GrantIndexes`, `GrantIndexFunc`; `narrow`: the stored scope, `scope_malformed` for an unknown key, `NarrowFrozen` with the index as `held`, the answer's `scope` |
+| [exchange_scope.go](../../internal/ci/exchange_scope.go) | `GrantIndex`, `GrantIndexes`, `GrantIndexFunc`; `narrow`: the stored scope, `NarrowFrozen` with the index as `held` (an unknown key is `scope_not_granted` like any item the grants do not hold, Q-CI-51), the answer's `scope` |
 | [exchange_denials.go](../../internal/ci/exchange_denials.go) | the per-replica aggregation of `ci.exchange.denied` (R-CI-021): per address, reason and minute, a timer the first entry arms, at most 10,000 addresses, the flush at shutdown |
-| [ttl.go](../../internal/ci/ttl.go) | `TTLInput`, `ComputeTTL` with the reason of its cause (moved out of exchange.go) |
-| [authz/ci_scope.go](../../internal/authz/ci_scope.go) | `Engine.CIScopeOf`: `UnknownKey`, `Held`, `PolicyItems` on the installed index; the index records the policy entries of CI mapping principals and groups as text (`ciTexts`, [index.go](../../internal/authz/index.go)) |
+| [ttl.go](../../internal/ci/ttl.go) | `TTLInput`, `ComputeTTL` with the reason of its cause (moved out of exchange.go); `ComputeLifetime`, `Lifetime` and `tokenOwner`: the token's lifetime from its owner's bound and the window of every other contribution (Q-CI-47) |
+| [authz/ci_scope.go](../../internal/authz/ci_scope.go) | `Engine.CIScopeOf`: `Held`, `PolicyItems` on the installed index; the index records the policy entries of CI mapping principals and groups as text (`ciTexts`, [index.go](../../internal/authz/index.go)) |
 | [keys_jwks.go](../../internal/ci/keys_jwks.go) | the stored form of a key set over `jws.ParseJWKS` (Q-CI-42) |
-| [ci_exchange.sql](../../internal/meta/postgres/queries/ci_exchange.sql) | `CiExchangeLockMappings`, `CiExchangeUseJTI`, `CiExchangeRestoredAt`, `CiExchangeInsertIssuance` |
+| [ci_exchange.sql](../../internal/meta/postgres/queries/ci_exchange.sql) | `CiExchangeLockMappings`, `CiExchangeClock` (the transaction's `now()` and the `authz` epoch, Q-CI-47), `CiExchangeUseJTI`, `CiExchangeRestoredAt`, `CiExchangeInsertIssuance` |
 
 ### The request path
 
@@ -396,13 +405,14 @@ reach). The gaps are H-418 to H-420 of [ci-federation.md](../security/ci-federat
 2. `Exchange`: step 1 (`checkRequest`); `subject.Parse`; `Issuers.Resolve` from the copy; `subject.CheckIssuer`; `ci_issuer`;
    `Verify` with the issuer's key source behind `heldKeys`, which asks it once and keeps the answer; the `jti` rule of single use; the
    subject budget (the first pin claim, else `sub`); `Mappings.Set` from the copy, before the transaction, because a miss reads on a
-   connection of its own.
-3. One `InTx`: the issuer row `FOR SHARE`; when its `version` and `mappings_version` equal the copies', `Select` on the copy and the
-   matched rows `FOR SHARE` (`CiExchangeLockMappings`); on any difference the stale path: `Verify` again against the re-read row with
-   the keys held (an issuer whose `version` moved), `SetTx`, `Select` again, and a second difference is `configuration_changed`. Then
-   the restore cut-off for a single-use issuer, the `jti` upsert, the selection's failure if any, the bundle (`Contribution.Frozen`
-   per contribution), `narrow`, `ComputeTTL`, `IssueCITx` (owner: the first contribution's principal), `CiExchangeInsertIssuance`
-   (the record's expiry is the token row's) and `ci.exchange.succeeded`, all in that transaction.
+   connection of its own; `Select` on the copy, without a trace and with the conditions the set holds compiled (Q-CI-49).
+3. One `InTx`: the issuer row `FOR SHARE`; when its `version` and `mappings_version` equal the copies', the selection made before stands
+   and only the matched rows are re-read `FOR SHARE` (`CiExchangeLockMappings`); on any difference the stale path: `Verify` again against
+   the re-read row with the keys held (an issuer whose `version` moved), `SetTx`, `Select` again, and a second difference is
+   `configuration_changed`. Then the restore cut-off for a single-use issuer, the `jti` upsert, the selection's failure if any,
+   `CiExchangeClock`, the bundle (`Contribution.Frozen` per contribution, `AuthzEpoch`), `narrow`, `ComputeLifetime` (and each shorter
+   contribution's `ExpiresAt`), `IssueCITx` (owner: `tokenOwner`), `CiExchangeInsertIssuance` (the record's expiry is the token row's) and
+   `ci.exchange.succeeded`, all in that transaction.
 4. After it: `Issuers.Reload` when the copy was stale (`SetTx` already refreshed the mapping copy), `trove_ci_mapping_set_stale_total`,
    `ci.exchange.replayed` or `.repeated` through the buffer, `trove_ci_exchanges_total` and `trove_ci_exchange_duration_seconds`.
 
@@ -467,7 +477,7 @@ and the events of a revocation), [Q-CI-39](../spec/gitlab-ci-oidc.md#q-ci-39--a-
 | [authz/ownership.go](../../internal/authz/ownership.go) | the hooks: `keyFor`, `ciResolveClaimers` in `CheckTx` and `PrecheckWrite`, the CI owner in `judge`, `ownerOfRow`, `ClaimTx`, `recordClaim`, `AddOwnerTx`, `RemoveOwnerTx`'s journal entry, `ownedRows` |
 | [authz/index.go](../../internal/authz/index.go), [decide.go](../../internal/authz/decide.go), [visible.go](../../internal/authz/visible.go) | `Index.groups`, `grant.project`; `evalState.isCI` and `ci`; the CI branch of `allowedAction` and `readShape` |
 | [auth/token/cit.go](../../internal/auth/token/cit.go) | `IssueCITx`, `checkCIT`, `decodeCIContext` (with `claims.DecodeFrozen`), `RecordCIRevoked` (at most 1,000 IDs per event, the journal entry), `recordCIRevoked` (called by `revokeTree`: causes `single` and `self`) |
-| [ci/revoke.go](../../internal/ci/revoke.go) | `TokenRevoker`: `RevokeMappingTx` (the tokens the mapping owns and those it contributes to), `RevokeIssuerTx`, `RevokeMatching` (422 without `issuer` or a filter, 404 for an unknown issuer) |
+| [ci/revoke.go](../../internal/ci/revoke.go) | `TokenRevoker`: `RevokeMappingTx` (the tokens the mapping owns, for a system mapping also those it contributes to, Q-CI-47), `RevokeIssuerTx`, `RevokeMatching` (422 without `issuer` or a filter, 404 for an unknown issuer) |
 | [ci/issuances.go](../../internal/ci/issuances.go) | `IssuanceStore`: `List`, `ListForProject` (found through the bundle's contributions, shown with the project's mappings only and without the scope strings, the person and the client, `onlyProject`, Q-CI-52), `Get` with the usage summary, `CleanupReplay`, `RetainIssuances` (single-statement batches of 1,000), `ActiveTokens`, `IssuanceSortKey` |
 | [ci_issuances_api.go](../../internal/api/v1/ci_issuances_api.go), [ci_project_api.go](../../internal/api/v1/ci_project_api.go) | the three issuance operations and `listProjectCiIssuances`; `issuanceBody` renders `state` and `active` from the database's value |
 | [queries/ci_issuances.sql](../../internal/meta/postgres/queries/ci_issuances.sql) | the statements above; `OwnershipOwners` of [ownership.sql](../../internal/meta/postgres/queries/ownership.sql) joins the issuer's name |
@@ -478,8 +488,9 @@ and the events of a revocation), [Q-CI-39](../spec/gitlab-ci-oidc.md#q-ci-39--a-
 - **W3, the mapping store.** `Revoker.RevokeMappingTx(ctx, tx, actor, mapping, CauseMapping)` needs `Mapping.ID`, `PrincipalID`, `IssuerID`,
   `Issuer` and `Name`. Call it before the principal is deleted: `api_token.principal_id` cascades, so a principal deleted first takes
   its token rows with it and the revocation finds nothing to record. Disabling sets the principal's status in the same transaction; the
-  token validator then refuses a token of the disabled owner with `principal_disabled`, and the revocation also ends the tokens that
-  list the mapping as a contribution of another tier, whose owner is another principal.
+  token validator then refuses a token of the disabled owner with `principal_disabled`. A project mapping's revocation ends only the
+  tokens it owns; its contribution to a token another tier owns ends in the evaluator once the index, rebuilt from the `authz`
+  notification of the write, no longer holds the mapping as active (Q-CI-47).
 - **W4, the exchange.** `IssueCITx` refuses a bundle that fails `Frozen.Check`, a `TTL` outside 1 s to `auth.tokens.cit.max_ttl` and an
   owner that is not an active `ci_mapping`; pass the allowlisted claim snapshot as `Claims`. The issuance record's `expires_us` is
   `CITIssued.ExpiresAt`, the token row's expiry, so the record and the row agree. A record must exist for every token: the revoker of an
@@ -518,3 +529,57 @@ and the events of a revocation), [Q-CI-39](../spec/gitlab-ci-oidc.md#q-ci-39--a-
 | [revoke_test.go](../../test/integration/ci/revoke_test.go) | R-CI-017's 2 s bound on three replicas with and without Valkey for the bulk, the mapping's and one token's revocation; `DELETE /tokens/current`; R-CI-002's disable and delete of an issuer; R-CI-001's removed configuration issuer |
 | [issuances_test.go](../../test/integration/ci/issuances_test.go) | R-CI-020's list, filters, paging, usage, bulk revoke and gauge; who may read; Q-CI-26's project view and what Q-CI-52 leaves out of it; the states of a revoked, an expired and a removed record |
 | [retention_test.go](../../test/integration/ci/retention_test.go) | R-CI-030's two tasks over more than one batch, run twice |
+
+## Fix wave A: tier isolation and issuer hardening
+
+The findings of the security audit and the code review of phase 5 (2026-11-03) on the tiers, the declared issuers, the cost of an
+exchange and the edges of the exchange and the issuer writes. Decided on the way:
+[Q-CI-47](../spec/gitlab-ci-oidc.md#q-ci-47--a-project-tier-changes-only-what-its-own-tier-gives-a-token) (a project tier changes only
+its own contribution),
+[Q-CI-48](../spec/gitlab-ci-oidc.md#q-ci-48--a-declared-issuers-issuer-url-and-kind-never-change-under-its-name) (a declared issuer's
+identity), [Q-CI-49](../spec/gitlab-ci-oidc.md#q-ci-49--what-bounds-the-cost-of-an-exchange) (the cost bounds),
+[Q-CI-50](../spec/gitlab-ci-oidc.md#q-ci-50--an-issuer-change-that-moves-trust-resets-the-keys-or-is-refused) (key location and pin
+changes), [Q-CI-51](../spec/gitlab-ci-oidc.md#q-ci-51--what-the-exchange-tells-a-caller-and-when-a-replica-learns-an-issuer) (the scope
+answer, the prefix order, the replay margin, the issuer re-read). The gaps are H-424 to H-427 of
+[ci-federation.md](../security/ci-federation.md#what-this-does-not-cover); H-413 and H-418 are corrected there.
+
+### What the other packages rely on
+
+- **The bundle is version 2.** Write `claims.FrozenVersion`; set `Frozen.AuthzEpoch` from the transaction (`CiExchangeClock`) and a
+  contribution's `ExpiresAt` only when its window is shorter than the token's. `DecodeFrozen` reads versions 2 and 1; a reader of an
+  issuance record's `grants` (the issuance views) sees `expiresAt` and `authzEpoch` beside the members it knew.
+- **The evaluator drops contributions.** Code that builds a CI `Subject` by hand (a test) and expects every contribution to count either
+  lists the mappings in `Snapshot.CIMappings` or sets `Frozen.AuthzEpoch` above the index's epoch (`laterEpoch` in
+  [authz/ci_test.go](../../internal/authz/ci_test.go)). The grant index reads `CiMappingsActive` in its snapshot.
+- **A mapping write notifies `authz`** on create, enable, disable and delete (payload `{"type": "ci_mapping", "id": …}`), so a test that
+  uses a token right after such a write waits for the replicas' index (`xenv.settled`) as it does after a policy change.
+- **`Select` has no trace.** The dry run calls `SelectTraced`; `MappingSet` built with `newMappingSet` (`loadSet`, `SetTx`) holds the
+  compiled conditions and the evaluation order, and a set built by hand is compiled and sorted per call.
+
+### Contract changes
+
+- `claims.FrozenVersion` is 2; `claims.FrozenVersion1`, `Frozen.AuthzEpoch`, `FrozenMapping.ExpiresAt`, `FrozenMapping.ExpiredAt` are new;
+  `Frozen.Check` accepts both versions and refuses a version-1 bundle with a member of version 2.
+- `claims.Condition`, `claims.CompileCondition`, `claims.PinViolation`, `claims.CheckProjectName` (was `checkProjectName`) and the size
+  bounds `MaxLiteralLength`, `MaxClaimNameLength`, `MaxPathMembers`, `MaxConditionBytes` are new.
+- `ci.SelectTraced`, `ci.Dropped`, `Selection.Dropped`, `ci.ComputeLifetime` and `ci.Lifetime` are new; `Select` carries no trace;
+  `TTLInput.MappingMax` is the owner's bound (`ComputeLifetime` sets it).
+- `GrantIndex.UnknownKey` and `authz.CIScope.UnknownKey` are gone.
+- `authz.Snapshot.CIMappings` is new; `Index.CIGrants` leaves out the contributions `ciContributes` refuses.
+- `CiIssuanceTokensOfMapping` takes `contributed` (the system tier's), and both revocation statements read unexpired records only;
+  `CiExchangeClock`, `CiMappingCountOfTier`, `CiMappingsActive` and `CiKeysReset` are new.
+- `ci.mappings.max_per_project` is new; `ci.replay.retention_after_expiry` is at least 1 m; `max_ttl_seconds` of a mapping and of an
+  issuer is at least `ci.token.min_ttl`.
+- The code `mappings_unpinned` (409) is new; `mapping_limit_reached` also answers the project's quota; `condition_invalid` also answers
+  the size bounds.
+
+### Tests
+
+| Test | What it proves |
+|---|---|
+| [tiers_test.go](../../test/integration/ci/tiers_test.go) | Q-CI-47 over HTTP on two replicas: a project's bound of 1 s ends its contribution and not the token, a project's render failure drops its tier only, disabling and deleting a project mapping keeps the system tier's token and ends the contribution on both replicas, a token a project mapping owns is revoked |
+| [bounds_test.go](../../test/integration/ci/bounds_test.go) | the floor of `maxTtlSeconds` for mappings and issuers, the project quota beside the system tier, a literal over its bound, the prefix before the lookup and the key overlap of Q-AUTHZ-176 |
+| [issuer_changes_test.go](../../test/integration/ci/issuer_changes_test.go) | a changed key location fails closed until its set is fetched, a public switch and a narrowed `pinClaims` refused with the unpinned mappings, a lagging replica serving a new and a re-enabled issuer within the poll interval |
+| [revoke_bound_test.go](../../test/integration/ci/revoke_bound_test.go) | the revocations of a mapping and an issuer read the unexpired issuance records only (3,000 expired records beside 20,000 live tokens of other kinds) |
+| [declared_test.go](../../test/integration/ci/declared_test.go) `TestR_CI_001_ADeclaredIssuerKeepsItsIssuerURL` | `trove migrate` refuses a changed issuer URL, naming both, and applies the new instance under a new name |
+| `TestQ_CI_47_*`, `TestR_CI_009_*`, `TestR_CI_016_*`, `TestQ_CI_51_*`, `TestR_CI_018_*` of [internal/ci](../../internal/ci), [internal/authz](../../internal/authz/ci_test.go), [internal/ci/claims](../../internal/ci/claims/bounds_test.go), [internal/config](../../internal/config/ci_test.go) | the selection per tier, the lifetimes, the bundle of the exchange, the evaluator's drop, version 2 and 1, the size bounds, the compiled condition against the trace, the scope answer, the stored expiry, the configuration floors |

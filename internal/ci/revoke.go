@@ -64,8 +64,14 @@ type victim struct {
 	hash []byte
 }
 
-// RevokeMappingTx revokes the unexpired tokens issued through a mapping, in the caller's transaction: the tokens
-// its principal owns and those whose issuance record lists it as a contributing mapping of another tier.
+// RevokeMappingTx revokes the unexpired tokens issued through a mapping, in the caller's transaction (R-CI-017,
+// Q-CI-47): the tokens its principal owns, and for a mapping of the system tier also those whose issuance record
+// lists it as a contributing mapping. A project tier's mapping ends only the tokens it owns (those of a job no system
+// mapping matched): a token another tier owns keeps that tier's grants, and the evaluator drops the project's
+// contribution once the grant index no longer holds the mapping as active (internal/authz, ciContributes). The
+// exchange makes the system tier's mapping the owner of every token it contributes to, so for that tier the second
+// branch keeps the sweep of R-CI-017 as it was: it would find a token whose record and owner disagree, which the
+// exchange never writes.
 func (r *TokenRevoker) RevokeMappingTx(ctx context.Context, tx meta.Tx, actor Actor, m Mapping, cause RevokeCause) (Revoked, error) {
 	if m.ID == "" || m.PrincipalID == "" || m.IssuerID == "" {
 		return Revoked{}, errs.E(errs.Internal, errs.CodeInternal, "", errs.WithOp("ci.revoke_mapping"), errs.WithCause(errors.New("a mapping without its IDs")))
@@ -74,7 +80,9 @@ func (r *TokenRevoker) RevokeMappingTx(ctx context.Context, tx meta.Tx, actor Ac
 	if err != nil {
 		return Revoked{}, err
 	}
-	rows, err := qs.CiIssuanceTokensOfMapping(ctx, q.CiIssuanceTokensOfMappingParams{PrincipalID: m.PrincipalID, IssuerID: m.IssuerID, MappingID: m.ID})
+	rows, err := qs.CiIssuanceTokensOfMapping(ctx, q.CiIssuanceTokensOfMappingParams{
+		PrincipalID: m.PrincipalID, Contributed: m.Tier == TierSystem, IssuerID: m.IssuerID, MappingID: m.ID,
+	})
 	if err != nil {
 		return Revoked{}, err
 	}

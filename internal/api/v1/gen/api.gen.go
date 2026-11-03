@@ -3322,10 +3322,12 @@ type CiIssuer struct {
 	Keys    *CiKeySummary `json:"keys,omitempty"`
 
 	// Kind `github` and `generic` answer `422 kind_not_available` in this release.
-	Kind          CiIssuerKind `json:"kind"`
-	MappingCount  *int         `json:"mappingCount,omitempty"`
-	MaxTtlSeconds *int64       `json:"maxTtlSeconds"`
-	Name          string       `json:"name"`
+	Kind         CiIssuerKind `json:"kind"`
+	MappingCount *int         `json:"mappingCount,omitempty"`
+
+	// MaxTtlSeconds Between `ci.token.min_ttl` (30 s by default) and `ci.token.max_ttl`; below the floor answers `422 invalid_max_ttl` (R-CI-016, Q-CI-47).
+	MaxTtlSeconds *int64 `json:"maxTtlSeconds"`
+	Name          string `json:"name"`
 
 	// PinClaims Omitted: the immutable ID claims of the kind.
 	PinClaims                []string `json:"pinClaims"`
@@ -3399,10 +3401,12 @@ type CiIssuerCreate struct {
 	Keys    *CiKeySummary `json:"keys,omitempty"`
 
 	// Kind `github` and `generic` answer `422 kind_not_available` in this release.
-	Kind          CiIssuerCreateKind `json:"kind"`
-	MappingCount  *int               `json:"mappingCount,omitempty"`
-	MaxTtlSeconds *int64             `json:"maxTtlSeconds,omitempty"`
-	Name          string             `json:"name"`
+	Kind         CiIssuerCreateKind `json:"kind"`
+	MappingCount *int               `json:"mappingCount,omitempty"`
+
+	// MaxTtlSeconds Between `ci.token.min_ttl` (30 s by default) and `ci.token.max_ttl`; below the floor answers `422 invalid_max_ttl` (R-CI-016, Q-CI-47).
+	MaxTtlSeconds *int64 `json:"maxTtlSeconds,omitempty"`
+	Name          string `json:"name"`
 
 	// PinClaims Omitted: the immutable ID claims of the kind.
 	PinClaims                *[]string `json:"pinClaims,omitempty"`
@@ -3462,10 +3466,12 @@ type CiIssuerInput struct {
 	Keys    *CiKeySummary `json:"keys,omitempty"`
 
 	// Kind `github` and `generic` answer `422 kind_not_available` in this release.
-	Kind          CiIssuerInputKind `json:"kind"`
-	MappingCount  *int              `json:"mappingCount,omitempty"`
-	MaxTtlSeconds *int64            `json:"maxTtlSeconds,omitempty"`
-	Name          string            `json:"name"`
+	Kind         CiIssuerInputKind `json:"kind"`
+	MappingCount *int              `json:"mappingCount,omitempty"`
+
+	// MaxTtlSeconds Between `ci.token.min_ttl` (30 s by default) and `ci.token.max_ttl`; below the floor answers `422 invalid_max_ttl` (R-CI-016, Q-CI-47).
+	MaxTtlSeconds *int64 `json:"maxTtlSeconds,omitempty"`
+	Name          string `json:"name"`
 
 	// PinClaims Omitted: the immutable ID claims of the kind.
 	PinClaims                *[]string `json:"pinClaims,omitempty"`
@@ -3548,9 +3554,11 @@ type CiMapping struct {
 
 	// Match A node of a condition tree (R-CI-010): a combinator (exactly one of `all`, `any`, `not`) or a leaf (`claim` or `path`
 	// with exactly one operator). At most depth 4, 64 leaves, 256 values in an `in` list.
-	Match         CiCondition `json:"match"`
-	MaxTtlSeconds *int64      `json:"maxTtlSeconds"`
-	Name          string      `json:"name"`
+	Match CiCondition `json:"match"`
+
+	// MaxTtlSeconds Between `ci.token.min_ttl` (30 s by default) and `ci.token.max_ttl` (`422 out_of_range` otherwise). It bounds what this mapping gives a token: the token's lifetime when the mapping owns it (a system mapping, or the project mapping that lives longest), otherwise this mapping's contribution only (R-CI-016, Q-CI-47).
+	MaxTtlSeconds *int64 `json:"maxTtlSeconds"`
+	Name          string `json:"name"`
 	Options       struct {
 		AllowUnprotectedRefs *bool                               `json:"allowUnprotectedRefs,omitempty"`
 		CrossProjectSource   *CiMappingOptionsCrossProjectSource `json:"crossProjectSource,omitempty"`
@@ -3593,9 +3601,11 @@ type CiMappingInput struct {
 
 	// Match A node of a condition tree (R-CI-010): a combinator (exactly one of `all`, `any`, `not`) or a leaf (`claim` or `path`
 	// with exactly one operator). At most depth 4, 64 leaves, 256 values in an `in` list.
-	Match         CiCondition `json:"match"`
-	MaxTtlSeconds *int64      `json:"maxTtlSeconds,omitempty"`
-	Name          string      `json:"name"`
+	Match CiCondition `json:"match"`
+
+	// MaxTtlSeconds Between `ci.token.min_ttl` (30 s by default) and `ci.token.max_ttl` (`422 out_of_range` otherwise). It bounds what this mapping gives a token: the token's lifetime when the mapping owns it (a system mapping, or the project mapping that lives longest), otherwise this mapping's contribution only (R-CI-016, Q-CI-47).
+	MaxTtlSeconds *int64 `json:"maxTtlSeconds,omitempty"`
+	Name          string `json:"name"`
 	Options       *struct {
 		AllowUnprotectedRefs *bool                                    `json:"allowUnprotectedRefs,omitempty"`
 		CrossProjectSource   *CiMappingInputOptionsCrossProjectSource `json:"crossProjectSource,omitempty"`

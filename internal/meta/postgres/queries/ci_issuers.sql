@@ -166,6 +166,15 @@ VALUES (sqlc.arg(issuer_id)::text::uuid, '{"keys": []}'::jsonb, sqlc.arg(jwks_ur
 ON CONFLICT (issuer_id) DO UPDATE
    SET last_error = EXCLUDED.last_error, last_error_at = EXCLUDED.last_error_at, next_refresh_at = EXCLUDED.next_refresh_at;
 
+-- name: CiKeysReset :execrows
+-- An issuer whose jwks_uri or discovery_url changed (Q-CI-50): the stored set came from the old location, so the row
+-- becomes the fail-closed placeholder (an empty set, fetched_at at the epoch) in the issuer write's transaction, and
+-- the next refresh is due at once. No key of the old location validates a token after the commit.
+UPDATE ci_issuer_keys
+   SET jwks = '{"keys": []}'::jsonb, jwks_uri = sqlc.arg(jwks_uri)::text, fetched_at = to_timestamp(0), etag = NULL,
+       next_refresh_at = now(), last_error = NULL, last_error_at = NULL
+ WHERE issuer_id = sqlc.arg(issuer_id)::text::uuid;
+
 -- name: CiKeysDue :many
 -- The run of ci-keys-refresh: every enabled issuer whose next_refresh_at has passed or that has no
 -- row yet (R-CI-030).

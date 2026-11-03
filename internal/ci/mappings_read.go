@@ -211,14 +211,14 @@ func (s *MappingService) loadSet(ctx context.Context, issuerID string) (MappingS
 		if err != nil {
 			return err
 		}
-		set = MappingSet{IssuerID: issuerID, IssuerVersion: vs[0].Version, MappingsVersion: vs[0].MappingsVersion, Mappings: ms}
+		set = newMappingSet(issuerID, vs[0].Version, vs[0].MappingsVersion, ms)
 		return nil
 	})
 	return set, err
 }
 
-// Set returns the issuer's mapping set from the in-process copy with the versions it was read at. The
-// slice is shared: a caller never changes it.
+// Set returns the issuer's mapping set from the in-process copy with the versions it was read at, in evaluation
+// order and with every condition compiled (Q-CI-49). The slice is shared: a caller never changes it.
 func (s *MappingService) Set(ctx context.Context, issuerID string) (MappingSet, error) {
 	return s.sets.Load(ctx, issuerID, func(ctx context.Context) (MappingSet, error) { return s.loadSet(ctx, issuerID) })
 }
@@ -246,7 +246,7 @@ func (s *MappingService) SetTx(ctx context.Context, tx meta.Tx, issuerID string)
 	if err != nil {
 		return MappingSet{}, err
 	}
-	set := MappingSet{IssuerID: issuerID, IssuerVersion: vs[0].Version, MappingsVersion: vs[0].MappingsVersion, Mappings: ms}
+	set := newMappingSet(issuerID, vs[0].Version, vs[0].MappingsVersion, ms)
 	s.sets.Set(issuerID, set)
 	return set, nil
 }

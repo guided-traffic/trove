@@ -50,6 +50,10 @@ type Snapshot struct {
 	// Exposure are the endpoint exposure rules of the active repositories
 	// (endpoints.md R-EP-012), read in the same snapshot.
 	Exposure []q.EndpointsExposureBuildRow
+	// CIMappings are the IDs of the CI identity mappings that are enabled with an
+	// active principal (Q-CI-47, ci.go): a CI token keeps a contribution only while
+	// its mapping is one of them.
+	CIMappings []string
 	// >>> M2 virtual
 
 	// VirtualMembers and DeployTargets are the rows of virtual_members and
@@ -127,6 +131,8 @@ type Index struct {
 	// the policy: the exchange answers a CI token's policy and group grants as `<action>:<selector>` items with the
 	// selectors as the policy writes them (R-CI-007, ci_scope.go).
 	ciTexts map[string][]textGrant
+	// ciActive holds the IDs of the active CI mappings (Snapshot.CIMappings, Q-CI-47).
+	ciActive map[string]bool
 	// exposure maps an endpoint name to its compiled exposure rules (R-EP-013).
 	exposure map[string]*endpointExposure
 	// projects maps a project key to the project (R-AUTHZ-026).
@@ -210,6 +216,7 @@ func BuildIndex(s *Snapshot, reg *catalog.Registry, log *slog.Logger) *Index {
 	}
 	b.addProjects(s.Projects, s.ProjectAdmins)
 	b.addRepositories(s.Repositories, s.VirtualMembers, s.DeployTargets)
+	b.x.ciActive = activeCIMappings(s.CIMappings)
 	b.x.exposure = buildExposure(s.Exposure, b.byID, b.reg, log)
 	for _, r := range s.Bindings {
 		if r.PrincipalProject != "" {

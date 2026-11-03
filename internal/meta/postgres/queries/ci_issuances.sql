@@ -70,24 +70,30 @@ UPDATE api_token SET revoked_at = now(), revoked_by = NULLIF(sqlc.arg(revoked_by
 RETURNING id::text AS id, secret_sha256;
 
 -- name: CiIssuanceTokensOfMapping :many
--- The unexpired tokens issued through a mapping: those it owns (its principal) and those whose issuance record
--- lists it among the contributing mappings of another tier (R-CI-009), so that disabling or deleting the mapping
--- ends every token that carries its frozen grants, in the same transaction (R-CI-017).
+-- The unexpired tokens a mapping's disable or delete ends, in the same transaction (R-CI-017, Q-CI-47): those it
+-- owns (its principal), and with contributed those whose issuance record lists it among the contributing mappings
+-- (the system tier, whose disable ends every token that carries its grants). A project tier's mapping ends only the
+-- tokens it owns; the evaluator drops its contribution to the others. Both branches read unexpired rows only: the
+-- records through the expiry index (expires_at > now(), the token row's expiry), so the caller, who holds the
+-- issuer row FOR UPDATE, scans the tokens of the last ci.token.max_ttl, not the retention.
 SELECT t.id::text AS id, t.secret_sha256
   FROM api_token t
  WHERE t.type = 'cit' AND t.revoked_at IS NULL AND t.expires_at > now()
    AND (t.principal_id = sqlc.arg(principal_id)::text::uuid
-        OR t.id IN (SELECT s.token_id FROM ci_token_issuances s
-                     WHERE s.issuer_id = sqlc.arg(issuer_id)::text::uuid AND sqlc.arg(mapping_id)::text::uuid = ANY(s.mapping_ids)))
+        OR (sqlc.arg(contributed)::boolean
+            AND t.id IN (SELECT s.token_id FROM ci_token_issuances s
+                          WHERE s.expires_at > now() AND s.issuer_id = sqlc.arg(issuer_id)::text::uuid
+                            AND sqlc.arg(mapping_id)::text::uuid = ANY(s.mapping_ids))))
  ORDER BY t.id
  FOR UPDATE OF t;
 
 -- name: CiIssuanceTokensOfIssuer :many
--- The unexpired tokens issued through an issuer (disable, delete).
+-- The unexpired tokens issued through an issuer (disable, delete), found through the unexpired records only (the
+-- expiry index), so the caller, who holds the issuer row FOR UPDATE, scans the tokens of the last ci.token.max_ttl.
 SELECT t.id::text AS id, t.secret_sha256
   FROM ci_token_issuances s
   JOIN api_token t ON t.id = s.token_id
- WHERE s.issuer_id = sqlc.arg(issuer_id)::text::uuid AND t.revoked_at IS NULL AND t.expires_at > now()
+ WHERE s.expires_at > now() AND s.issuer_id = sqlc.arg(issuer_id)::text::uuid AND t.revoked_at IS NULL AND t.expires_at > now()
  ORDER BY t.id
  FOR UPDATE OF t;
 

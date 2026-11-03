@@ -74,7 +74,8 @@ config:
 - They are read-only in the API: `PUT`, `DELETE`, enabling and disabling answer `409` `issuer_managed_by_configuration`. Change them in your values. Their mappings are managed through the API like any other.
 - An entry you remove is disabled at the next upgrade, not deleted: it shows `removedFromConfiguration: true`, refuses every exchange with `issuer_disabled`, and keeps its mappings and issuance records. Only then may an administrator delete it through the API.
 - The migration stops with an error that names both when an entry has the name of an issuer created through the API, or the issuer URL of another issuer; nothing is applied.
-- The start-up check refuses an entry whose name breaks the pattern, a kind other than `gitlab` (`github` and `generic` are not available in this version), an issuer URL that is not `https` or appears twice, an algorithm outside the list below, `clock_skew_seconds` outside 0 to 300, an empty `allowed_audiences`, and `max_ttl_seconds` above `ci.token.max_ttl`.
+- An entry keeps its `issuer` URL and its `kind`. The migration stops with an error that names the stored and the new value when an entry changes either: the mappings, the pins and the package owners of the name belong to the GitLab instance they were made for. To move to another instance, declare it under a new name and remove the old entry, which the next upgrade disables (its tokens revoked, its mappings and records kept); then recreate the mappings on the new name.
+- The start-up check refuses an entry whose name breaks the pattern, a kind other than `gitlab` (`github` and `generic` are not available in this version), an issuer URL that is not `https` or appears twice, an algorithm outside the list below, `clock_skew_seconds` outside 0 to 300, an empty `allowed_audiences`, and `max_ttl_seconds` below `ci.token.min_ttl` or above `ci.token.max_ttl`.
 
 Every field of an issuer can be set here in snake_case, except the job-token fallback:
 
@@ -100,7 +101,7 @@ Every field of an issuer can be set here in snake_case, except the job-token fal
 | `public_issuer` | `publicIssuer` | `true` | Anyone can obtain ID tokens from the instance; turns on the pinning rule ([below](#public-instances-and-gitlabcom)) |
 | `pin_claims` | `pinClaims` | `project_id`, `namespace_id`, `job_project_id`, `job_namespace_id` | The claims that count as immutable IDs for the pinning rule; only a subset of the default (`422` `pin_claim_not_immutable` otherwise) |
 | `single_use_subject_tokens` | `singleUseSubjectTokens` | `false` | Refuse a second exchange of the same ID token (`subject_token_replayed`). Off for GitLab, because a job has one ID token for its whole run |
-| `max_ttl_seconds` | `maxTtlSeconds` | `null`: only the global bound | Upper bound of this issuer's CI tokens, at most `ci.token.max_ttl` |
+| `max_ttl_seconds` | `maxTtlSeconds` | `null`: only the global bound | Upper bound of this issuer's CI tokens, from `ci.token.min_ttl` to `ci.token.max_ttl` |
 | `ca_bundle_ref` | `caBundleRef` | `null` | A reference to a PEM bundle for an instance behind a private CA ([below](#an-instance-behind-a-private-ca)); never key material |
 | `use_outbound_proxy` | `useOutboundProxy` | `false` | Fetch the discovery document and the keys through the installation's outbound proxy |
 | — | `validate` | `true` | API create only: fetch the discovery document and the keys before the issuer is stored |
@@ -132,7 +133,7 @@ The answer is `201` with the full record, every default filled in. With `validat
 | `GET /api/v1/ci/issuers` | Lists the issuers with their mapping count and key status |
 | `GET /api/v1/ci/issuers/{name}/keys` | The stored key set: key IDs, types, algorithms, ignored keys with the reason (`use_not_sig`, `key_ops_without_verify`, `unsupported_key_type`, `unsupported_curve`, `rsa_key_too_small`, `unsupported_algorithm`, `algorithm_key_mismatch`, `private_key_material`, `invalid_key_material`), the fetch time, the next refresh and the last error. The keys listed as usable are exactly the ones a token's signature is checked against |
 | `POST /api/v1/ci/issuers/{name}/keys/refresh` | Fetches the discovery document and the keys now; `502` when the instance is unreachable |
-| `PUT /api/v1/ci/issuers/{name}` | Replaces the issuer; `name`, `issuer` and `kind` are immutable |
+| `PUT /api/v1/ci/issuers/{name}` | Replaces the issuer; `name`, `issuer` and `kind` are immutable. Switching `publicIssuer` on, or removing a claim from `pinClaims`, answers `409` `mappings_unpinned` with the names in `mappings` while a mapping would no longer be pinned as its save requires; pin or delete those mappings first. A changed `jwksUri` or `discoveryUrl` drops the stored keys at once and fetches from the new location: until that fetch succeeds, exchanges answer `signing_keys_unavailable` |
 | `DELETE /api/v1/ci/issuers/{name}` | Deletes it; refused with `409` while it has mappings unless `?cascade=true`, which deletes them and their principals in the same transaction |
 
 Disabling or deleting an issuer revokes every unexpired token issued through it. trove refreshes the keys of every enabled issuer on its own: the task `ci-keys-refresh` runs on the `worker` replicas every five minutes and fetches each issuer whose refresh is due, which follows the instance's `Cache-Control: max-age` within 5 minutes and 24 hours, and is one hour without it. A token that names a key trove does not know triggers a fetch at once, at most once a minute per issuer and replica. A key that the instance removes from its key set stops being accepted after the next fetch.
@@ -177,7 +178,8 @@ The job's `aud` must be one of the issuer's `allowedAudiences`, compared exactly
 - Only enabled mappings of the issuer that the token's `iss` selects are considered.
 - Mappings are grouped in **tiers**: `system`, and one tier `project:<key>` per project. Within a tier they are evaluated in ascending `priority`, and the first one whose condition holds is the tier's match; the rest of the tier is not looked at. Across tiers the matches add up: a job that matches a system mapping and a mapping of project `web` carries the grants of both. A project's mapping can therefore neither shadow nor narrow a system mapping or another project's.
 - Because the first match decides, a mapping lists everything its jobs need, reading included. Put narrow rules at low numbers and broad ones at high numbers, for example a publish mapping at 100 and a read mapping for the whole group at 900.
-- No match in any tier refuses the exchange with `no_matching_mapping`. A matched mapping whose grants cannot be rendered refuses it with `grant_render_failed`; evaluation never falls through to the next mapping.
+- No match in any tier refuses the exchange with `no_matching_mapping`. A matched mapping whose grants cannot be rendered never falls through to the next mapping of its tier. In the `system` tier it refuses the exchange with `grant_render_failed`; in a project's tier it drops that tier's grants, and the job gets the other tiers' grants (the exchange is refused only when no tier gives anything). The dry run shows the failure of each tier.
+- **The tiers stay apart.** A project's mapping changes what its own tier gives a token and nothing else: its `maxTtlSeconds` ends its own grants early but never shortens the token, and disabling or deleting it ends its grants in tokens of other tiers within seconds without revoking those tokens. The token belongs to the system mapping that matched; when none did, to the project mapping that lives longest, and disabling that mapping revokes the token.
 - A mapping grants in up to three ways: **inline grants** (repositories, package-name or path patterns, actions and ownership), **policies** that list the mapping as a principal, and, in the system tier only, **groups**. Inline grants are frozen into the token at the exchange; policy and group grants are evaluated when the token is used, so changing a policy affects tokens already issued.
 - A policy a mapping lists names the mapping in its principal list, and the list is the one place of that binding. Saving the mapping adds the entry `ci:<issuer>/<mapping>` with the action `read` where the policy has none, and removes the entry of a policy the mapping no longer lists; an entry that stays keeps the actions the policy gives it. To let a mapping write through a policy, widen its entry in the policy; the mapping's rules (`unprotected_write`, `unpinned_write`) count the entry the next time the mapping is saved. Removing the mapping from the policy removes it from the mapping's `grants.policies` as well, and a token already issued loses the policy's grants at once.
 - A token's rights are those grants, narrowed by the `scope` the job asked for. The package ownership of the repository decides every write on top.
@@ -186,7 +188,9 @@ The job's `aud` must be one of the issuer's `allowedAudiences`, compared exactly
 
 A project's administrators manage the mappings of their project's tier, with every rule below plus these bounds:
 
-- The name starts with the project key and a hyphen (`422` `project_prefix_required`), so the principal `ci:<issuer>/<key>-…` is unique.
+- The name starts with the project key and a hyphen (`422` `project_prefix_required`), so the principal `ci:<issuer>/<key>-…` is unique. The prefix is checked before the name is looked up: `409` `already_exists` answers only for a name under the project's own prefix.
+- The project's tier holds at most `ci.mappings.max_per_project` (100) mappings of an issuer (`422` `mapping_limit_reached`), so one project cannot fill the issuer's limit.
+- A project's mapping changes only its own tier's grants in a token ([How mappings are evaluated](#how-mappings-are-evaluated)): its render failure, its `maxTtlSeconds` and its disable or delete never reach what the system tier or another project gives the same job.
 - Inline grants reach the project's repositories only: `@any` means every repository of the project, and a key outside the project is refused (`422` `repository_outside_project`).
 - `policies` name policies of the project only (`422` `policy_outside_project`, also for a name that does not exist, so the answer tells nothing about the policies of others); `groups` are refused (`422` `groups_not_allowed_in_project`); `manage` is never grantable (`422` `action_not_allowed`).
 - They list and dry-run only their project's tier, read the snippet (`GET /api/v1/projects/{key}/ci/issuers/{issuer}/snippets/gitlab-ci?mapping=<name>&format=npm`, or `nuget`) of their own mappings, and see the issuance records of tokens that one of their mappings contributed to, showing their mappings only.
@@ -204,10 +208,11 @@ The issuers stay with the system administrators: a project administrator lists t
 | `unpinned_write` | On a private issuer, a mapping without a pin writes through a policy or a group, or through an inline grant without `ownership: bind_project` |
 | `action_not_allowed` | `manage` in any grant |
 | `empty_grant` | No policy, group or inline grant |
-| `condition_invalid` | Deeper than 4 levels, more than 64 leaves, more than 256 values in an `in` list, a regular expression over 512 characters or one that does not compile, an invalid glob, a leaf with no or several operators |
+| `condition_invalid` | Deeper than 4 levels, more than 64 leaves, more than 256 values in an `in` list, a regular expression over 512 characters or one that does not compile, an invalid glob, a literal or a glob over 1,024 characters, a claim name or a path member over 256 characters, a path of more than 16 members, a condition over 64 KiB, a leaf with no or several operators |
 | `template_invalid`, `template_unanchored` | A template with a syntax error or an unknown filter; a `repositories` template without literal text next to its substitution |
 | `unknown_policy`, `unknown_group` | A named policy or group does not exist |
-| `mapping_limit_reached` | The issuer holds `ci.mappings.max_per_issuer` mappings |
+| `mapping_limit_reached` | The issuer holds `ci.mappings.max_per_issuer` mappings, or the project's tier holds `ci.mappings.max_per_project` of them |
+| `out_of_range` at `/maxTtlSeconds` | `maxTtlSeconds` below `ci.token.min_ttl` or above `ci.token.max_ttl` |
 | `priority_taken` (`409`) | Another mapping of the same tier and issuer has this priority |
 
 A save that succeeds can carry `warnings`: `unpinned_condition` (no pin on a private issuer), `write_without_pipeline_source` (a write mapping without a `pipeline_source` condition), `shared_ownership` (a writing grant with `ownership: none`), `repository_template_unconstrained` (a `repositories` template without a `require` filter), `unprotected_refs_allowed`, `cross_project_read_only`, `mutable_user_claim` (a condition on `user_login` or `user_email`, which GitLab users can change), `sub_pattern` (a glob or regular expression on `sub`) and `unguarded_template_claim` (a template on a claim that is neither required nor guarded by `present: true`).
@@ -280,6 +285,8 @@ The goal: the pipelines of the GitLab project `acme/invoice-api` publish the npm
    The answer is `201` with the stored mapping, its resolved defaults and any `warnings`. The mapping is the principal `ci:gitlab-main/web-invoice-api-publish`.
 5. **Test it** with the dry run ([below](#test-a-mapping-with-the-dry-run)): a claim set of a protected tag pipeline selects the mapping, the same claims with `"ref_protected": "false"` show the failing leaf.
 6. **Hand over the pipeline.** Give the developers the issuer's audience (trove's base URL), the repository addresses and [GitLab CI pipelines](../user/gitlab-ci-pipelines.md), whose reference pipeline matches this mapping.
+
+`maxTtlSeconds` (from `ci.token.min_ttl` to `ci.token.max_ttl`) bounds what this mapping gives: when no system mapping matches the job, the token's lifetime; when one does, only this mapping's grants, which end after 30 minutes while the token keeps the system mapping's.
 
 The third inline grant reads every repository of the project, the virtual repositories and their members included; an empty include list leaves package names unrestricted. It is part of this mapping because the first match decides: a protected pipeline of `acme/invoice-api` that matches this mapping does not also get a read mapping further down the tier. If the job installs from repositories outside the project, ask an administrator of trove for a grant there; a project mapping cannot name them.
 
@@ -392,7 +399,7 @@ Write the claims as GitLab sends them, IDs and booleans as strings. `scope` is o
 | Member | Shows |
 |---|---|
 | `crossProject` | Whether the claims classify as a fork pipeline |
-| `trace` | Every mapping looked at, per tier: `matched`, `contributes` (false for a matched mapping that denies a fork pipeline), `failedLeaf` (a pointer into the condition, such as `/all/1`; empty when the condition is a single leaf), `detail`, and `leaves` with each leaf's operator, expected and actual values and whether it passed |
+| `trace` | Every mapping looked at, per tier: `matched`, `contributes` (false for a matched mapping that denies a fork pipeline, and for one whose grants do not render, with the reason in `detail`), `failedLeaf` (a pointer into the condition, such as `/all/1`; empty when the condition is a single leaf), `detail`, and `leaves` with each leaf's operator, expected and actual values and whether it passed |
 | `selected` | The names of the mappings the token would carry |
 | `failure` | The reason the exchange would be refused with, such as `no_matching_mapping`; absent when it would succeed |
 | `grants`, `scope`, `ttlSeconds` | The rendered grants, the scope and the lifetime the token would get |
@@ -457,7 +464,12 @@ trove_curl -X POST -H 'Content-Type: application/json' \
   https://trove.example.com/api/v1/ci/issuances/revoke
 ```
 
-To disable a mapping of a project, read it with `trove_curl -i https://trove.example.com/api/v1/projects/web/ci/mappings/gitlab-main/web-acme-read`, set `"enabled": false` in the body, and send it back with `PUT` and `-H 'If-Match: "<the ETag>"'`. Disabling revokes the mapping's unexpired tokens and disables its principal in the same transaction, so a token that escaped the sweep is refused as well. Deleting a mapping revokes its tokens and deletes its principal: a mapping created later under the same name is a new principal and inherits no policy entry or ownership.
+To disable a mapping of a project, read it with `trove_curl -i https://trove.example.com/api/v1/projects/web/ci/mappings/gitlab-main/web-acme-read`, set `"enabled": false` in the body, and send it back with `PUT` and `-H 'If-Match: "<the ETag>"'`. Disabling revokes the unexpired tokens the mapping owns and disables its principal in the same transaction, so a token that escaped the sweep is refused as well. Deleting a mapping revokes those tokens and deletes its principal: a mapping created later under the same name is a new principal and inherits no policy entry or ownership.
+
+Which tokens a mapping owns depends on its tier:
+
+- A **system** mapping owns every token it contributes to. Disabling or deleting it revokes them all, within two seconds on every replica.
+- A **project's** mapping owns only the tokens of jobs that no system mapping matched. In a token the system tier (or a longer-lived project mapping) owns, disabling or deleting the project's mapping does not revoke the token: its grants from this mapping end on every replica within the bound of the authorization index (typically well under a second, about 10 seconds in the worst case), and the token keeps the other tiers' grants. To end such tokens at once, revoke them by `mapping` as well.
 
 - **First match.** Disabling or deleting a mapping lets its jobs fall through to the next mapping of the tier, which may grant more. Disabling a read-only mapping for merge request pipelines placed in front of a publish mapping lets those pipelines publish. Check the tier with the dry run before you disable.
 - **Editing does not revoke.** The inline grants of issued tokens stay as they were until the tokens expire; grants through policies follow a change at once. To cut a widened mapping off at once, edit it and revoke its tokens by `mapping`.
@@ -509,13 +521,13 @@ To work through a refusal: find the event by request ID, time or project; for a 
 | `subject_token_predates_restore` | 400 `invalid_request` | Single use is on and the ID token was issued before a restore of trove finished | Run the job again |
 | `cross_project_source_denied` | 400 `invalid_request` | A fork pipeline run in the parent project, and no matched mapping opts in | Intended; see [Fork pipelines](#fork-pipelines) |
 | `no_matching_mapping` | 400 `invalid_request` | No mapping of any tier holds for the claims | Dry-run the claim snapshot of the denial event |
-| `grant_render_failed` | 400 `invalid_request` | A template of the matched mapping refers to a missing claim, or a value fails its context or a `require` filter | Fix the template, or guard the claim with `present: true` |
+| `grant_render_failed` | 400 `invalid_request` | A template of the matched system mapping, or of the only tiers that matched, refers to a missing claim, or a value fails its context or a `require` filter. A project tier whose template fails beside another tier's match drops only its own grants; the dry run shows it | Fix the template, or guard the claim with `present: true` |
 | `subject_token_expires_too_soon` | 400 `invalid_request` | The ID token has less than `ci.token.min_ttl` (30 s by default) left | Exchange earlier in the job; give the job a longer timeout |
-| `ttl_below_minimum` | 400 `invalid_request` | The `ttl` the job asked for is below `ci.token.min_ttl`, or a mapping's or the issuer's `maxTtlSeconds` is (after the floor was raised); `error_description` names which | Ask for a longer `ttl`; raise the bound of the mapping or the issuer |
+| `ttl_below_minimum` | 400 `invalid_request` | The `ttl` the job asked for is below `ci.token.min_ttl`, or the `maxTtlSeconds` of the mapping that owns the token or of the issuer is (after the floor was raised); `error_description` names which. Another tier's bound never refuses the exchange | Ask for a longer `ttl`; raise the bound of the mapping or the issuer |
 | `job_token_rejected`, `job_not_running` | 400 `invalid_request` | Only with the job-token fallback, which this version does not have | — |
 | `grant_type_unsupported` | 400 `unsupported_grant_type` | `grant_type` is not the token-exchange type | `urn:ietf:params:oauth:grant-type:token-exchange` |
-| `scope_malformed` | 400 `invalid_scope` | An unknown action, `manage`, an invalid selector, or a key that names no repository (checked after the token matched a mapping) | Correct `scope` |
-| `scope_not_granted` | 400 `invalid_scope` | A `scope` item asks for an action the matched grants do not hold; no partial token is issued | Narrow `scope`, or extend the mapping |
+| `scope_malformed` | 400 `invalid_scope` | An unknown action, `manage` or an invalid selector | Correct `scope` |
+| `scope_not_granted` | 400 `invalid_scope` | A `scope` item asks for an action the matched grants do not hold, or names a repository key that does not exist (answered alike, so the answer tells nothing of which repositories exist); no partial token is issued | Check the key's spelling with the dry run, narrow `scope`, or extend the mapping |
 | `audience_not_this_server` | 400 `invalid_target` | The `audience` or `resource` parameter is not trove's base URL | Leave them out, or send the base URL |
 | `rate_limited` | 429 `slow_down` | A rate limit is spent; `Retry-After` says when to retry | See [Rate limits and runner networks](#rate-limits-and-runner-networks) |
 | `signing_keys_unavailable` | 503 `temporarily_unavailable` | The stored key set is older than `ci.signing_keys.max_stale` (24 h): the instance has been unreachable, or no `worker` replica ran the refresh | Check the key status and the `worker` replicas |
@@ -599,7 +611,8 @@ Project administrators manage the mappings of their project. These stay with hol
 | `ci.signing_keys.fetch_timeout`, `.max_response_bytes` | `5s`, `1048576` | One discovery or key request |
 | `ci.signing_keys.cache_safety_ttl`, `ci.mappings.cache_safety_ttl` | `10m` | The safety lifetime of each replica's in-memory copy of the keys and of the mappings |
 | `ci.mappings.max_per_issuer` | `1000` | Mappings of one issuer, all tiers together |
-| `ci.replay.retention_after_expiry` | `15m` | How long a used ID token is remembered after it expired |
+| `ci.mappings.max_per_project` | `100` | Mappings of one project's tier on one issuer, at most `ci.mappings.max_per_issuer` |
+| `ci.replay.retention_after_expiry` | `15m` | How long a used ID token is remembered after it expired; at least `1m`, the margin for a replica clock behind the database's |
 | `ci.replay.warn_after_exchanges` | `10` | From this count on, every further exchange of one ID token records `ci.exchange.repeated` |
 | `ci.issuances.retention` | `8760h` | How long an issuance record is kept after its token expired |
 | `ci.job_token_fallback.enabled` | `false` | The `CI_JOB_TOKEN` fallback is not built; `true` stops the start |

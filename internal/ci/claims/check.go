@@ -90,7 +90,7 @@ func Check(f IssuerFacts, in SaveInput, l Limits) (Checked, []Warning, error) {
 	if err := checkSubjectKinds(in.SubjectKinds); err != nil {
 		return Checked{}, nil, err
 	}
-	if err := checkProjectName(f.Project, in.Name); err != nil {
+	if err := CheckProjectName(f.Project, in.Name); err != nil {
 		return Checked{}, nil, err
 	}
 	if err := in.Match.Validate(l); err != nil {
@@ -131,7 +131,10 @@ func checkSubjectKinds(kinds []string) error {
 	return nil
 }
 
-func checkProjectName(project, name string) error {
+// CheckProjectName is the name rule of a project's mapping (Q-CI-26): "<project>-" and more; "" is the system tier,
+// which has none. The mapping service applies it before it looks the name up, so a taken name answers 409 only for a
+// name under the caller's own prefix (H-413, Q-CI-51).
+func CheckProjectName(project, name string) error {
 	if project == "" {
 		return nil
 	}
@@ -300,6 +303,23 @@ func checkWriteRules(f IssuerFacts, in SaveInput, grants Spec) error {
 	}
 	if !f.PublicIssuer && !pinned && (w.policy || w.unbound) {
 		return refuse(reason.UnpinnedWrite, "/match", "the mapping writes through a policy, a group or an inline grant without ownership bind_project: its condition needs an equals or in leaf on one of "+strings.Join(f.PinClaims, ", ")+" at the top level of its all")
+	}
+	return nil
+}
+
+// PinViolation applies the two rules of a saved mapping that the issuer's pin settings decide: pin_required on a
+// public issuer (R-CI-005) and unpinned_write on a private one (R-CI-010). in carries the stored condition, the
+// stored grants (their ownership resolved) and the actions its policies and groups give. An issuer change that
+// switches public_issuer on or removes a claim from pin_claims is refused while a mapping of the issuer would fail
+// one of them (Q-CI-50), so no mapping holds a grant that its save would refuse.
+func PinViolation(f IssuerFacts, in SaveInput) error {
+	pinned := in.Match.Pins(f.PinClaims)
+	w := writesOf(in, in.Grants)
+	switch {
+	case f.PublicIssuer && !pinned:
+		return refuse(reason.PinRequired, "/match", "the condition pins none of "+strings.Join(f.PinClaims, ", "))
+	case !f.PublicIssuer && !pinned && (w.policy || w.unbound):
+		return refuse(reason.UnpinnedWrite, "/match", "the mapping writes without ownership bind_project and its condition pins none of "+strings.Join(f.PinClaims, ", "))
 	}
 	return nil
 }

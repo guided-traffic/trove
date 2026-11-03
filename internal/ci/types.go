@@ -1,6 +1,7 @@
 package ci
 
 import (
+	"slices"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/authz"
@@ -246,6 +247,42 @@ type MappingSet struct {
 	IssuerVersion   int64
 	MappingsVersion int64
 	Mappings        []Mapping
+
+	// conds holds the compiled condition of every mapping by ID, and sorted says Mappings is in evaluation
+	// order: the state the copy owns (newMappingSet, Q-CI-49, R-ARCH-032), so an exchange compiles and sorts
+	// nothing. A set built by hand has neither; Select then compiles and sorts per call.
+	conds  map[string]claims.Condition
+	sorted bool
+}
+
+// newMappingSet is a mapping set as a replica holds it: the mappings in evaluation order, each condition compiled
+// once (Q-CI-49).
+func newMappingSet(issuerID string, issuerVersion, mappingsVersion int64, ms []Mapping) MappingSet {
+	ordered := slices.Clone(ms)
+	sortMappings(ordered)
+	conds := make(map[string]claims.Condition, len(ordered))
+	for _, m := range ordered {
+		conds[m.ID] = claims.CompileCondition(m.Match)
+	}
+	return MappingSet{IssuerID: issuerID, IssuerVersion: issuerVersion, MappingsVersion: mappingsVersion, Mappings: ordered, conds: conds, sorted: true}
+}
+
+// ordered returns the mappings in evaluation order; the slice of a set that is sorted is shared and never changed.
+func (s MappingSet) ordered() []Mapping {
+	if s.sorted {
+		return s.Mappings
+	}
+	out := slices.Clone(s.Mappings)
+	sortMappings(out)
+	return out
+}
+
+// condition returns the compiled condition of a mapping of the set, compiling it when the set holds none.
+func (s MappingSet) condition(m Mapping) claims.Condition {
+	if c, ok := s.conds[m.ID]; ok {
+		return c
+	}
+	return claims.CompileCondition(m.Match)
 }
 
 // Actor is who performs a management write: the caller of the request, as the audit event records

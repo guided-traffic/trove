@@ -7,8 +7,10 @@ import "regexp"
 // every expression is anchored as ^(?:…)$, so it must match the whole value.
 //
 // The save compiles every expression ([Node.Validate], [ParseTemplate]), so a stored one always
-// compiles; an evaluation compiles it again, a few microseconds for the 512 characters an
-// expression may have. The package keeps no compiled copy: it holds no state (R-ARCH-032).
+// compiles. The exchange evaluates a [Condition], which holds its compiled expressions; the mapping
+// set of a replica holds the Condition of each mapping (Q-CI-49), so an exchange compiles nothing.
+// The traced [Node.Evaluate] of the dry run compiles per evaluation. The package keeps no compiled
+// copy of its own: it holds no state (R-ARCH-032).
 
 // compileAnchored compiles an expression as ^(?:expr)$, with (?i) in front when fold is set (Unicode
 // simple case folding, as the regexp package defines it). The expression must compile on its own

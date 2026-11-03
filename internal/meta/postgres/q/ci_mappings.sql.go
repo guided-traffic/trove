@@ -291,6 +291,24 @@ func (q *Queries) CiMappingCountOfProject(ctx context.Context, projectID string)
 	return count, err
 }
 
+const ciMappingCountOfTier = `-- name: CiMappingCountOfTier :one
+SELECT count(*) FROM ci_mappings WHERE issuer_id = $1::text::uuid AND tier = $2::text
+`
+
+type CiMappingCountOfTierParams struct {
+	IssuerID string
+	Tier     string
+}
+
+// The mappings of one tier of an issuer: a project's tier holds at most ci.mappings.max_per_project of them, so no
+// project fills the issuer's ci.mappings.max_per_issuer alone (Q-CI-49).
+func (q *Queries) CiMappingCountOfTier(ctx context.Context, arg CiMappingCountOfTierParams) (int64, error) {
+	row := q.db.QueryRow(ctx, ciMappingCountOfTier, arg.IssuerID, arg.Tier)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const ciMappingDelete = `-- name: CiMappingDelete :exec
 DELETE FROM ci_mappings WHERE id = $1::text::uuid
 `
@@ -785,6 +803,36 @@ func (q *Queries) CiMappingVersions(ctx context.Context, issuerID string) ([]CiM
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciMappingsActive = `-- name: CiMappingsActive :many
+SELECT m.id::text AS id
+  FROM ci_mappings m JOIN principal p ON p.id = m.principal_id
+ WHERE m.enabled AND p.status = 'active'
+ ORDER BY m.id
+`
+
+// The mappings whose contributions a CI token still carries at use time (Q-CI-47): enabled, with an active principal.
+// Read by the build of the grant index in its snapshot (internal/authz); a contribution of a mapping that is not
+// listed is dropped by the evaluator once the index is at least as fresh as the token's exchange.
+func (q *Queries) CiMappingsActive(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, ciMappingsActive)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

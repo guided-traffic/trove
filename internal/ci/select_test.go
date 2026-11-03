@@ -2,6 +2,7 @@ package ci
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/ci/claims"
@@ -55,7 +56,7 @@ func TestR_CI_009_SelectTakesTheFirstMatchOfATier(t *testing.T) {
 		mappingOf(TierSystem, 10, "p10", onClaim("pipeline_source", "merge_request_event"), readGrant("npm-internal")),
 	}}
 	both := claims.Claims{"ref_protected": "true", "pipeline_source": "merge_request_event"}
-	sel := Select(set, SubjectIDToken, both)
+	sel := SelectTraced(set, SubjectIDToken, both)
 	if got := names(sel.Mappings()); !slices.Equal(got, []string{"p10"}) {
 		t.Errorf("both match: selected %v, want only p10", got)
 	}
@@ -63,7 +64,7 @@ func TestR_CI_009_SelectTakesTheFirstMatchOfATier(t *testing.T) {
 		t.Errorf("the trace %v names a mapping after the tier's first match", sel.Trace)
 	}
 	push := claims.Claims{"ref_protected": "true", "pipeline_source": "push"}
-	sel = Select(set, SubjectIDToken, push)
+	sel = SelectTraced(set, SubjectIDToken, push)
 	if got := names(sel.Mappings()); !slices.Equal(got, []string{"p20"}) || len(sel.Trace) != 2 || sel.Trace[0].Matched || !sel.Trace[1].Matched {
 		t.Errorf("a push: selected %v, trace %+v", got, sel.Trace)
 	}
@@ -79,7 +80,7 @@ func TestR_CI_009_SelectSkipsWhatIsNotConsidered(t *testing.T) {
 	job := mappingOf(TierSystem, 20, "job", onClaim("project_id", "1"), readGrant("npm-internal"))
 	job.SubjectKinds = []string{SubjectJobToken}
 	on := mappingOf(TierSystem, 30, "on", onClaim("project_id", "1"), readGrant("npm-internal"))
-	sel := Select(MappingSet{Mappings: []Mapping{off, job, on}}, SubjectIDToken, claims.Claims{"project_id": "1"})
+	sel := SelectTraced(MappingSet{Mappings: []Mapping{off, job, on}}, SubjectIDToken, claims.Claims{"project_id": "1"})
 	if got := names(sel.Mappings()); !slices.Equal(got, []string{"on"}) || len(sel.Trace) != 1 {
 		t.Errorf("selected %v, trace %v", got, sel.Trace)
 	}
@@ -96,7 +97,7 @@ func TestR_CI_009_SelectDoesNotFallThroughOnARenderFailure(t *testing.T) {
 		mappingOf(TierSystem, 10, "p10", onClaim("project_id", "1"), failing),
 		mappingOf(TierSystem, 20, "p20", onClaim("project_id", "1"), readGrant("npm-internal")),
 	}}
-	sel := Select(set, SubjectIDToken, claims.Claims{"project_id": "1"})
+	sel := SelectTraced(set, SubjectIDToken, claims.Claims{"project_id": "1"})
 	if sel.Failure != reason.GrantRenderFailed || len(sel.Contributions) != 0 {
 		t.Fatalf("failure %q, contributions %d", sel.Failure, len(sel.Contributions))
 	}
@@ -146,7 +147,7 @@ func TestR_CI_012_SelectDecidesTheCrossProjectOptInPerMapping(t *testing.T) {
 	later := mappingOf(TierSystem, 20, "later", onClaim("pipeline_source", "merge_request_event"), readGrant("npm-internal"))
 	later.Options.CrossProjectSource = claims.CrossProjectReadOnly
 
-	sel := Select(MappingSet{Mappings: []Mapping{deny, later}}, SubjectIDToken, fork)
+	sel := SelectTraced(MappingSet{Mappings: []Mapping{deny, later}}, SubjectIDToken, fork)
 	if !sel.CrossProject || sel.Failure != reason.CrossProjectSourceDenied || len(sel.Contributions) != 0 {
 		t.Errorf("failure %q: the first match denies and the tier does not fall through to the opt-in", sel.Failure)
 	}
@@ -171,5 +172,83 @@ func TestR_CI_012_SelectDecidesTheCrossProjectOptInPerMapping(t *testing.T) {
 	sel = Select(MappingSet{Mappings: []Mapping{sys, web}}, SubjectIDToken, fork)
 	if got := names(sel.Mappings()); !slices.Equal(got, []string{"web-fork"}) {
 		t.Errorf("selected %v, want only the mapping that opted in", got)
+	}
+}
+
+// renderFailing is a grant whose template names a claim the tokens of these tests do not carry.
+func renderFailing() claims.Spec {
+	return claims.Spec{Inline: []claims.InlineGrant{{Repositories: []string{"web-npm"}, Packages: &claims.PatternSet{Include: []string{"@{{ namespace_path | slug }}/*"}}, Actions: []claims.Action{claims.Read}}}}
+}
+
+// R-CI-009 step 6, Q-CI-47: a project tier's render failure drops that tier's contribution only; the system tier and
+// another project's tier still give what they give, and the trace names the failure.
+func TestR_CI_009_AProjectTiersRenderFailureDropsOnlyItsContribution(t *testing.T) {
+	system := mappingOf(TierSystem, 10, "sys", onClaim("project_id", "1"), readGrant("npm-internal"))
+	web := mappingOf(ProjectTier("web"), 10, "web-broken", onClaim("project_id", "1"), renderFailing())
+	data := mappingOf(ProjectTier("data"), 10, "data-reader", onClaim("project_id", "1"), readGrant("data-npm"))
+	set := MappingSet{Mappings: []Mapping{web, data, system}}
+	for name, sel := range map[string]Selection{
+		"traced":   SelectTraced(set, SubjectIDToken, claims.Claims{"project_id": "1"}),
+		"exchange": Select(set, SubjectIDToken, claims.Claims{"project_id": "1"}),
+	} {
+		if sel.Failure != "" || !slices.Equal(names(sel.Mappings()), []string{"sys", "data-reader"}) {
+			t.Fatalf("%s: failure %q, selected %v", name, sel.Failure, names(sel.Mappings()))
+		}
+		if len(sel.Dropped) != 1 || sel.Dropped[0].Mapping.Name != "web-broken" || sel.Dropped[0].Reason != reason.GrantRenderFailed ||
+			!strings.Contains(sel.Dropped[0].Detail, "namespace_path") {
+			t.Fatalf("%s: dropped %+v", name, sel.Dropped)
+		}
+	}
+	traced := SelectTraced(set, SubjectIDToken, claims.Claims{"project_id": "1"})
+	for _, e := range traced.Trace {
+		if e.Mapping == "web-broken" && (!e.Matched || e.Contributes || !strings.Contains(e.Detail, "namespace_path")) {
+			t.Errorf("the trace of the failed tier = %+v", e)
+		}
+	}
+
+	t.Run("R-CI-009 without another contribution the exchange fails with grant_render_failed", func(t *testing.T) {
+		sel := Select(MappingSet{Mappings: []Mapping{web}}, SubjectIDToken, claims.Claims{"project_id": "1"})
+		if sel.Failure != reason.GrantRenderFailed || len(sel.Contributions) != 0 || !strings.Contains(sel.Detail, "web-broken") {
+			t.Fatalf("failure %q (%s), contributions %d", sel.Failure, sel.Detail, len(sel.Contributions))
+		}
+	})
+	t.Run("R-CI-009 the system tier's render failure fails the exchange whatever the projects give", func(t *testing.T) {
+		broken := mappingOf(TierSystem, 10, "sys-broken", onClaim("project_id", "1"), renderFailing())
+		sel := Select(MappingSet{Mappings: []Mapping{data, broken}}, SubjectIDToken, claims.Claims{"project_id": "1"})
+		if sel.Failure != reason.GrantRenderFailed || len(sel.Contributions) != 0 || !strings.Contains(sel.Detail, "sys-broken") {
+			t.Fatalf("failure %q (%s), contributions %d", sel.Failure, sel.Detail, len(sel.Contributions))
+		}
+	})
+	t.Run("R-CI-009 a project tier's render failure does not fall through to the tier's next mapping", func(t *testing.T) {
+		later := mappingOf(ProjectTier("web"), 20, "web-later", onClaim("project_id", "1"), readGrant("web-npm"))
+		sel := Select(MappingSet{Mappings: []Mapping{web, later, system}}, SubjectIDToken, claims.Claims{"project_id": "1"})
+		if !slices.Equal(names(sel.Mappings()), []string{"sys"}) {
+			t.Fatalf("selected %v", names(sel.Mappings()))
+		}
+	})
+}
+
+// Q-CI-49: the exchange's selection carries no trace and decides as the dry run's, on the conditions the set holds
+// compiled and on a set built by hand without them.
+func TestR_CI_009_TheExchangesSelectionHasNoTraceAndDecidesAsTheDryRun(t *testing.T) {
+	ms := []Mapping{
+		mappingOf(TierSystem, 20, "p20", onClaim("ref_protected", "true"), readGrant("npm-internal")),
+		mappingOf(TierSystem, 10, "p10", onClaim("pipeline_source", "merge_request_event"), readGrant("npm-internal")),
+		mappingOf(ProjectTier("web"), 10, "web-reader", onClaim("ref_protected", "true"), readGrant("web-npm")),
+	}
+	for _, set := range []MappingSet{{Mappings: ms}, newMappingSet("i-1", 1, 2, ms)} {
+		for _, c := range []claims.Claims{
+			{"ref_protected": "true", "pipeline_source": "merge_request_event"},
+			{"ref_protected": "true", "pipeline_source": "push"},
+			{"pipeline_source": "push"},
+		} {
+			fast, traced := Select(set, SubjectIDToken, c), SelectTraced(set, SubjectIDToken, c)
+			if fast.Trace != nil {
+				t.Errorf("the exchange's selection carries a trace: %+v", fast.Trace)
+			}
+			if !slices.Equal(names(fast.Mappings()), names(traced.Mappings())) || fast.Failure != traced.Failure {
+				t.Errorf("%v: exchange %v %q, dry run %v %q", c, names(fast.Mappings()), fast.Failure, names(traced.Mappings()), traced.Failure)
+			}
+		}
 	}
 }

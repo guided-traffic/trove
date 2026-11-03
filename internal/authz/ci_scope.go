@@ -9,8 +9,8 @@ import (
 )
 
 // The questions the token exchange asks the index about the bundle it is about to issue (R-CI-007, steps 8 and
-// 10, work package W4 of docs/developer/ci-oidc.md): whether a `scope` item names a repository that exists,
-// whether the token's grants hold an item that the text of the inline grants cannot decide (a policy or group
+// 10, work package W4 of docs/developer/ci-oidc.md): whether the token's grants hold an item that the text of the
+// inline grants cannot decide (a policy or group
 // grant, a class or a format filter against a key), and which `<action>:<selector>` items the policy and group
 // grants give, for the `scope` member of the answer. The answers are the index's, in memory: the exchange asks
 // them inside its transaction, which calls no other service (R-ARCH-019).
@@ -40,16 +40,6 @@ func (e *Engine) CIScopeOf(f *claims.Frozen) CIScope {
 	}
 	sub := Subject{Kind: principal.KindCI, Name: "ci-exchange", CI: f, Mappings: f.Mappings}
 	return CIScope{e: e, idx: idx, g: idx.CIGrants(sub)}
-}
-
-// UnknownKey reports whether a selector of a `scope` item is a key selector naming no repository of the
-// installation (R-CI-007: scope_malformed). Patterns and classes are never unknown.
-func (s CIScope) UnknownKey(selector string) bool {
-	sel, err := parseSelector(selector)
-	if err != nil || sel.kind != selKey {
-		return false
-	}
-	return s.idx == nil || s.idx.repo(sel.key) == nil
 }
 
 // Held reports whether the token's grants hold the action on at least one repository the selector covers: the

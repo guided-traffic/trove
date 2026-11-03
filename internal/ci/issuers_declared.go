@@ -83,6 +83,9 @@ func (s *Service) applyOne(ctx context.Context, tx meta.Tx, qs *q.Queries, calle
 	if before.Source != SourceConfiguration {
 		return fmt.Errorf("the name is also the name of the CI issuer created through the API for %s; delete or rename one of them", before.Issuer)
 	}
+	if err := sameIdentity(before, next); err != nil {
+		return err
+	}
 	if other, err := qs.CiIssuerByIssuer(ctx, next.Issuer); err != nil {
 		return err
 	} else if len(other) > 0 && other[0].ID != before.ID {
@@ -94,6 +97,25 @@ func (s *Service) applyOne(ctx context.Context, tx meta.Tx, qs *q.Queries, calle
 	}
 	_, err = s.writeUpdate(ctx, tx, qs, caller, before, next)
 	return err
+}
+
+// sameIdentity refuses a declaration that changes the issuer URL or the kind of a declared name (R-CI-001, Q-CI-48),
+// which the API refuses as immutable: the pins, the package owners ci:<issuer>:project:<id> and the mappings, unpinned
+// ones of a private issuer included, belong to the instance they were made for, and moving them under the same ID to
+// another instance would hand that instance's projects what the old one's had. The operator declares the new instance
+// under a new name; the old name, no longer declared, is then disabled and its tokens revoked as for every removal.
+func sameIdentity(before, next Issuer) error {
+	switch {
+	case before.Issuer != next.Issuer:
+		return fmt.Errorf("the issuer URL changes from %s to %s; the issuer URL and the kind of a CI issuer never change: "+
+			"declare %s under a new name and remove this entry, which trove migrate then disables (its tokens revoked, its mappings kept)",
+			before.Issuer, next.Issuer, next.Issuer)
+	case before.Kind != next.Kind:
+		return fmt.Errorf("the kind changes from %s to %s; the issuer URL and the kind of a CI issuer never change: "+
+			"declare the issuer under a new name and remove this entry, which trove migrate then disables (its tokens revoked, its mappings kept)",
+			before.Kind, next.Kind)
+	}
+	return nil
 }
 
 func (s *Service) insertDeclared(ctx context.Context, tx meta.Tx, qs *q.Queries, caller Actor, next Issuer) error {

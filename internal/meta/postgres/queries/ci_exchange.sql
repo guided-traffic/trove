@@ -35,6 +35,15 @@ VALUES (sqlc.arg(token_id)::text::uuid, sqlc.arg(issuer_id)::text::uuid, sqlc.ar
         to_timestamp(sqlc.arg(expires_us)::bigint / 1000000.0), NULLIF(sqlc.arg(client_ip)::text, '')::inet,
         NULLIF(sqlc.arg(user_agent)::text, ''));
 
+-- name: CiExchangeClock :one
+-- The database clock of the transaction and the authorization epoch (Q-CI-47): now() is the instant the token row's
+-- expiry counts from (CiTokenInsert), so a contribution's own expiry, now() plus its window, never lies after the
+-- token's; the epoch is what the evaluator compares its grant index with before it drops the contribution of a
+-- mapping the index does not hold as active. Read after the issuer row FOR SHARE: every mapping write of the issuer
+-- committed before it, with its notification of the area authz.
+SELECT (extract(epoch FROM now()) * 1000000)::bigint AS now_us,
+       COALESCE((SELECT epoch FROM cluster_epoch WHERE area = 'authz'), 0)::bigint AS authz_epoch;
+
 -- name: CiExchangeRestoredAt :one
 -- The restore cut-off of a single-use issuer (R-CI-018, Q-CI-13): the time the last restore finished, the
 -- system_state key restored_at (R-BAK-022), in microseconds; 0 before the first restore. Read in the exchange's

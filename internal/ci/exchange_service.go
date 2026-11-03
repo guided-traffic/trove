@@ -245,7 +245,10 @@ func (s *ExchangeService) exchange(ctx context.Context, req ExchangeRequest, st 
 	if err != nil {
 		return ExchangeResult{}, s.unavailable(err)
 	}
-	return s.issue(ctx, req, p, exchangeInput{unverified: u, keys: keys, issuer: is, verified: v, set: set}, st)
+	// Steps 4 to 7 on the copy, before the transaction (Q-CI-49): the transaction holds a connection and the issuer
+	// row FOR SHARE only to confirm the versions the copy was read at.
+	sel := Select(set, SubjectIDToken, v.Claims)
+	return s.issue(ctx, req, p, exchangeInput{unverified: u, keys: keys, issuer: is, verified: v, set: set, sel: sel}, st)
 }
 
 // heldKeys is the key source of one exchange: it asks the issuer's key source once and keeps the answer, so the

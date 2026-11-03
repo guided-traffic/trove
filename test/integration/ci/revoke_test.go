@@ -79,7 +79,9 @@ func TestR_CI_017_ARevocationThroughOneReplicaIsRefusedOnTheOthersWithin2s(t *te
 				}
 			})
 
-			t.Run("R-CI-017 disabling a mapping ends its tokens and those it contributes to", func(t *testing.T) {
+			// A system mapping (Q-CI-47): its disable ends the tokens it owns and those it contributes to; a project mapping's
+			// ends only the tokens it owns (tiers_test.go).
+			t.Run("R-CI-017 disabling a system mapping ends its tokens and those it contributes to", func(t *testing.T) {
 				owned, contributed, other := use(read, job{"800", "3"}), use(rel, job{"801", "4"}, read.contribution(nil)), use(rel, job{"802", "5"})
 				start := time.Now()
 				_, db := a.App.CITokenIssuer()
@@ -87,7 +89,7 @@ func TestR_CI_017_ARevocationThroughOneReplicaIsRefusedOnTheOthersWithin2s(t *te
 				err := db.InTx(t.Context(), func(tx meta.Tx) error {
 					var err error
 					done, err = a.App.CIRevoker().RevokeMappingTx(t.Context(), tx, ci.Actor{Kind: "user", ID: e.bobID, Name: "bob"},
-						ci.Mapping{ID: read.id, PrincipalID: read.principalID, IssuerID: e.issuerID, Issuer: ciIssuerName, Name: read.name}, ci.CauseMapping)
+						ci.Mapping{ID: read.id, PrincipalID: read.principalID, IssuerID: e.issuerID, Issuer: ciIssuerName, Name: read.name, Tier: ci.TierSystem}, ci.CauseMapping)
 					return err
 				})
 				if err != nil || len(done.TokenIDs) != 2 {

@@ -66,6 +66,32 @@ func TestTheLifetimeCeilingIsOne(t *testing.T) {
 	})
 }
 
+// R-CI-018, Q-CI-51: a recorded jti is kept at least a minute past the subject token's exp and the issuer's skew, so a
+// replica whose clock lags the database's by less than that never accepts a single-use token whose row the cleanup
+// already deleted.
+func TestR_CI_018_TheReplayRetentionHasAFloor(t *testing.T) {
+	for _, v := range []string{"0s", "59s"} {
+		if _, err := loadCI(t, "ci:\n  replay:\n    retention_after_expiry: "+v+"\n"); err == nil || !strings.Contains(err.Error(), "ci.replay.retention_after_expiry") {
+			t.Errorf("%s: err = %v", v, err)
+		}
+	}
+	if l, err := loadCI(t, "ci:\n  replay:\n    retention_after_expiry: 1m\n"); err != nil || l.Config.CI.Replay.RetentionAfterExpiry != time.Minute {
+		t.Errorf("1m: %v", err)
+	}
+}
+
+// R-CI-009, Q-CI-49: a project's tier holds at most ci.mappings.max_per_project mappings of one issuer, at most
+// ci.mappings.max_per_issuer.
+func TestR_CI_009_TheMappingQuotaOfAProject(t *testing.T) {
+	l, err := loadCI(t, "")
+	if err != nil || l.Config.CI.Mappings.MaxPerProject != 100 {
+		t.Fatalf("default %v, %v", l, err)
+	}
+	if _, err := loadCI(t, "ci:\n  mappings:\n    max_per_issuer: 50\n    max_per_project: 60\n"); err == nil || !strings.Contains(err.Error(), "ci.mappings.max_per_project") {
+		t.Fatalf("a project quota above the issuer's limit: err = %v", err)
+	}
+}
+
 // Contract of R-CI-021 (phase 5); the requirement's evidence comes from the tests of its work package.
 func TestThePerIssuerBucketIsRetired(t *testing.T) {
 	t.Run("the key in the file names its replacement", func(t *testing.T) { // R-CI-021
@@ -119,6 +145,8 @@ func TestIssuersFromTheConfiguration(t *testing.T) {
 		{"an HMAC algorithm", "{name: gl, kind: gitlab, issuer: https://g.example.com, allowed_algorithms: [HS256]}", "ci.issuers[0].allowed_algorithms"},
 		{"a clock skew above 300", "{name: gl, kind: gitlab, issuer: https://g.example.com, clock_skew_seconds: 301}", "ci.issuers[0].clock_skew_seconds"},
 		{"an empty audience list", "{name: gl, kind: gitlab, issuer: https://g.example.com, allowed_audiences: []}", "ci.issuers[0].allowed_audiences"},
+		// R-CI-016, Q-CI-47: a bound below ci.token.min_ttl (30 s) would refuse every exchange of the issuer.
+		{"a max TTL below ci.token.min_ttl", "{name: gl, kind: gitlab, issuer: https://g.example.com, max_ttl_seconds: 29}", "ci.issuers[0].max_ttl_seconds"},
 	}
 	for _, tc := range refusals {
 		t.Run(tc.name+" is refused and names the key", func(t *testing.T) { // R-CI-001

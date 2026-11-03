@@ -944,6 +944,14 @@
               "minimum": 1,
               "type": "integer",
               "x-trove-env": "TROVE_CI_MAPPINGS_MAX_PER_ISSUER"
+            },
+            "max_per_project": {
+              "default": 100,
+              "description": "Most mappings of one project's tier on one CI issuer, at most max_per_issuer: no project fills the issuer's limit alone (Q-CI-49).",
+              "maximum": 100000,
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_CI_MAPPINGS_MAX_PER_PROJECT"
             }
           },
           "type": "object"
@@ -953,7 +961,7 @@
           "properties": {
             "retention_after_expiry": {
               "default": "15m",
-              "description": "How long a recorded jti is kept after the subject token's exp plus the issuer's clock skew.",
+              "description": "How long a recorded jti is kept after the subject token's exp plus the issuer's clock skew; at least 1m, so a replica whose clock lags the database's by less than that never accepts a single-use subject token whose row ci-replay-cleanup deleted (Q-CI-51).",
               "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
               "type": "string",
               "x-trove-env": "TROVE_CI_REPLAY_RETENTION_AFTER_EXPIRY",

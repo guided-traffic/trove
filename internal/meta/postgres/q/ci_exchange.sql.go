@@ -9,6 +9,28 @@ import (
 	"context"
 )
 
+const ciExchangeClock = `-- name: CiExchangeClock :one
+SELECT (extract(epoch FROM now()) * 1000000)::bigint AS now_us,
+       COALESCE((SELECT epoch FROM cluster_epoch WHERE area = 'authz'), 0)::bigint AS authz_epoch
+`
+
+type CiExchangeClockRow struct {
+	NowUs      int64
+	AuthzEpoch int64
+}
+
+// The database clock of the transaction and the authorization epoch (Q-CI-47): now() is the instant the token row's
+// expiry counts from (CiTokenInsert), so a contribution's own expiry, now() plus its window, never lies after the
+// token's; the epoch is what the evaluator compares its grant index with before it drops the contribution of a
+// mapping the index does not hold as active. Read after the issuer row FOR SHARE: every mapping write of the issuer
+// committed before it, with its notification of the area authz.
+func (q *Queries) CiExchangeClock(ctx context.Context) (CiExchangeClockRow, error) {
+	row := q.db.QueryRow(ctx, ciExchangeClock)
+	var i CiExchangeClockRow
+	err := row.Scan(&i.NowUs, &i.AuthzEpoch)
+	return i, err
+}
+
 const ciExchangeInsertIssuance = `-- name: CiExchangeInsertIssuance :exec
 INSERT INTO ci_token_issuances (token_id, issuer_id, mapping_ids, mapping_names, subject_kind, jti, project_id, project_path,
                                 namespace_id, pipeline_id, job_id, ref, ref_type, ref_protected, pipeline_source, environment,

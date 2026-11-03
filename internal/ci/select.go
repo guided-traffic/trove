@@ -18,7 +18,8 @@ type TraceEntry struct {
 	Matched bool
 	// Contributes is false for a matched mapping whose cross_project_source is deny on a
 	// cross-project token (R-CI-012): it is not one of the token's mappings. It is also false for
-	// a mapping that did not match.
+	// a mapping that did not match, and for a matched one whose grants did not render (Detail names
+	// the failure; a project tier's is Selection.Dropped, Q-CI-47).
 	Contributes bool
 	FailedLeaf  string
 	Detail      string
@@ -46,16 +47,28 @@ func (c Contribution) Frozen() claims.FrozenMapping {
 	return claims.Freeze(c.Mapping.Ref, c.Mapping.ID, c.Mapping.Tier, project, c.Rendered, c.Caps)
 }
 
+// Dropped is a matched mapping of a project tier whose grants did not render (R-CI-009 step 6, Q-CI-47): its tier
+// gives the token nothing and does not fall through to its next mapping, and the other tiers still give what they
+// give. Detail names the pattern and the claim, never a claim value.
+type Dropped struct {
+	Mapping Mapping
+	Reason  Reason
+	Detail  string
+}
+
 // Selection is the result of steps 4 to 7 of the exchange on one mapping set (R-CI-007): the
 // classification, the trace, the contributing mappings with their rendered grants and caps, one
 // contribution each. It is a pure function of the mapping set and the claims, so the dry run and the
 // exchange share it.
 type Selection struct {
 	CrossProject bool
-	Trace        []TraceEntry
+	// Trace is the dry run's ([SelectTraced]); the exchange's selection has none ([Select], Q-CI-49).
+	Trace []TraceEntry
 	// Contributions are the contributing mappings in evaluation order, at most one per tier. There is no
 	// union of their grants here: the bundle keeps them apart.
 	Contributions []Contribution
+	// Dropped are the project tiers whose match did not render (Q-CI-47), in evaluation order.
+	Dropped []Dropped
 	// Failure is no_matching_mapping, cross_project_source_denied or grant_render_failed, "" on a
 	// success; Detail names the mapping or the claim and holds no claim value.
 	Failure Reason
@@ -84,61 +97,100 @@ func tierLess(a, b string) bool {
 // mappings whose subject_kinds include it, per tier in ascending priority, the first match per tier;
 // the cross-project classification and the per-mapping opt-in (R-CI-012); the rendering of the
 // matched mappings' grants (R-CI-013, R-CI-014) without falling through on a render failure; the cap
-// `read` for a read_only opt-in. It records the trace of every mapping it looked at.
+// `read` for a read_only opt-in. It is the exchange's: the conditions the set holds compiled, evaluated
+// with short-circuit and without a trace (Q-CI-49). [SelectTraced] is the same decision with the trace of
+// every mapping it looked at, for the dry run.
 //
 // The first match of a tier decides the tier, also when it does not contribute: a cross-project token
 // whose first match in a tier has the default `deny` gets nothing from that tier and does not fall
 // through to a later, possibly broader mapping (R-CI-012, R-CI-009). The set's own order is not
 // relied on.
+//
+// A render failure never falls through to the tier's next mapping (R-CI-009 step 6). What it fails is the
+// tier's (Q-CI-47): a failure of the system tier, the administrators', fails the selection with
+// grant_render_failed whatever the projects' tiers give, so a broken administrators' mapping is never
+// silently replaced by what a project grants; a failure of a project's tier drops that tier's contribution
+// (Selection.Dropped) and the selection fails with grant_render_failed only when no tier contributes.
 func Select(set MappingSet, kind string, c claims.Claims) Selection {
+	return selectOn(set, kind, c, false)
+}
+
+// SelectTraced is [Select] with the trace of the dry run (R-CI-019, R-UI-036): every leaf of every mapping it
+// looked at.
+func SelectTraced(set MappingSet, kind string, c claims.Claims) Selection {
+	return selectOn(set, kind, c, true)
+}
+
+func selectOn(set MappingSet, kind string, c claims.Claims, traced bool) Selection {
 	sel := Selection{CrossProject: c.CrossProject()}
-	ordered := slices.Clone(set.Mappings)
-	sort.SliceStable(ordered, func(i, j int) bool {
-		if ordered[i].Tier != ordered[j].Tier {
-			return tierLess(ordered[i].Tier, ordered[j].Tier)
-		}
-		return ordered[i].Priority < ordered[j].Priority
-	})
 	decided := map[string]bool{}
 	matched := false
-	for _, m := range ordered {
+	trace := func(e TraceEntry) {
+		if traced {
+			sel.Trace = append(sel.Trace, e)
+		}
+	}
+	for _, m := range set.ordered() {
 		if !m.Enabled || !slices.Contains(m.SubjectKinds, kind) || decided[m.Tier] {
 			continue
 		}
-		ev := m.Match.Evaluate(c)
-		entry := TraceEntry{Tier: m.Tier, Mapping: m.Name, Matched: ev.Matched, FailedLeaf: ev.FailedLeaf, Detail: ev.Detail, Leaves: ev.Leaves}
-		if !ev.Matched {
-			sel.Trace = append(sel.Trace, entry)
+		entry := TraceEntry{Tier: m.Tier, Mapping: m.Name}
+		if traced {
+			ev := m.Match.Evaluate(c)
+			entry.Matched, entry.FailedLeaf, entry.Detail, entry.Leaves = ev.Matched, ev.FailedLeaf, ev.Detail, ev.Leaves
+		} else {
+			entry.Matched = set.condition(m).Matches(c)
+		}
+		if !entry.Matched {
+			trace(entry)
 			continue
 		}
 		decided[m.Tier], matched = true, true
 		var caps []claims.Cap
 		if sel.CrossProject {
 			if m.Options.CrossProjectSource != claims.CrossProjectReadOnly {
-				sel.Trace = append(sel.Trace, entry)
+				trace(entry)
 				continue
 			}
 			caps = []claims.Cap{claims.CapRead}
 		}
-		entry.Contributes = true
 		rendered, err := m.Grants.Render(c)
 		if err != nil {
 			entry.Detail = renderDetail(err)
-			sel.Trace = append(sel.Trace, entry)
-			sel.Failure, sel.Detail = reason.GrantRenderFailed, "the grants of the mapping "+m.Name+" cannot be rendered: "+entry.Detail
-			return sel
+			trace(entry)
+			if m.Tier == TierSystem {
+				sel.Contributions, sel.Dropped = nil, nil
+				sel.Failure, sel.Detail = reason.GrantRenderFailed, "the grants of the mapping "+m.Name+" cannot be rendered: "+entry.Detail
+				return sel
+			}
+			sel.Dropped = append(sel.Dropped, Dropped{Mapping: m, Reason: reason.GrantRenderFailed, Detail: entry.Detail})
+			continue
 		}
-		sel.Trace = append(sel.Trace, entry)
+		entry.Contributes = true
+		trace(entry)
 		sel.Contributions = append(sel.Contributions, Contribution{Mapping: m, Rendered: rendered, Caps: caps})
 	}
 	switch {
 	case len(sel.Contributions) > 0:
+	case len(sel.Dropped) > 0:
+		d := sel.Dropped[0]
+		sel.Failure, sel.Detail = reason.GrantRenderFailed, "the grants of the mapping "+d.Mapping.Name+" cannot be rendered: "+d.Detail
 	case matched:
 		sel.Failure, sel.Detail = reason.CrossProjectSourceDenied, "the matched mappings do not opt in to cross-project pipelines (options.crossProjectSource)"
 	default:
 		sel.Failure, sel.Detail = reason.NoMatchingMapping, "no enabled mapping of the issuer matches the claims"
 	}
 	return sel
+}
+
+// sortMappings orders mappings in evaluation order: the tiers by tierLess, each by ascending priority.
+func sortMappings(ms []Mapping) {
+	sort.SliceStable(ms, func(i, j int) bool {
+		if ms[i].Tier != ms[j].Tier {
+			return tierLess(ms[i].Tier, ms[j].Tier)
+		}
+		return ms[i].Priority < ms[j].Priority
+	})
 }
 
 // renderDetail is the sentence of a render failure: the pointer of the pattern, then the claim it names.

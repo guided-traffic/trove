@@ -112,3 +112,10 @@ func (s *MappingService) notifyMappings(tx meta.Tx, issuerID string) error {
 func (s *MappingService) notifyAuthz(tx meta.Tx, policyID string) error {
 	return s.o.Changes.Notify(tx, cluster.AreaAuthz, 1, map[string]string{"type": "policy", "id": policyID})
 }
+
+// notifyMappingState notifies the change area authz that a mapping was created, enabled, disabled or deleted: the
+// grant index holds the active mappings, and a CI token keeps the contribution of a mapping only while an index at
+// least as fresh as its exchange holds it (Q-CI-47), so the epoch must move in the transaction of the change.
+func (s *MappingService) notifyMappingState(tx meta.Tx, mappingID string) error {
+	return s.o.Changes.Notify(tx, cluster.AreaAuthz, 1, map[string]string{"type": "ci_mapping", "id": mappingID})
+}

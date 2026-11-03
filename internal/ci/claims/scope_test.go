@@ -272,7 +272,7 @@ func TestTheFrozenBundleOfATokenIsVersionedAndChecked(t *testing.T) {
 		name string
 		mut  func(*claims.Frozen)
 	}{
-		{"another version", func(f *claims.Frozen) { f.Version = 2 }},
+		{"another version", func(f *claims.Frozen) { f.Version = 3 }},
 		{"no version", func(f *claims.Frozen) { f.Version = 0 }},
 		{"no issuer", func(f *claims.Frozen) { f.IssuerID = "" }},
 		{"no contribution", func(f *claims.Frozen) { f.Contributions, f.Mappings, f.MappingIDs = nil, nil, nil }},

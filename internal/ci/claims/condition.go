@@ -27,6 +27,18 @@ type Limits struct {
 	MaxRegexLength int
 }
 
+// The size bounds of a condition (Q-CI-49): a stored condition is evaluated by every exchange of its issuer, so
+// the bytes it compares are bounded at save beside the counts of Limits. A literal of equals or in has at most
+// MaxLiteralLength characters (a glob MaxGlobLength, a regex Limits.MaxRegexLength), a claim name and a path member
+// MaxClaimNameLength, a path MaxPathMembers members, and the JSON form of the whole condition MaxConditionBytes
+// bytes. Over a bound the save is refused with 422 condition_invalid.
+const (
+	MaxLiteralLength   = 1024
+	MaxClaimNameLength = 256
+	MaxPathMembers     = 16
+	MaxConditionBytes  = 64 << 10
+)
+
 // DefaultLimits are the limits of R-CI-010: depth 4, 64 leaves, 256 values, 512 characters.
 func DefaultLimits() Limits {
 	return Limits{MaxDepth: 4, MaxLeaves: 64, MaxInValues: 256, MaxRegexLength: 512}
@@ -452,6 +464,9 @@ func (n Node) Validate(l Limits) error {
 	if v.leaves > l.MaxLeaves {
 		return conditionInvalid("", "the condition has "+strconv.Itoa(v.leaves)+" leaves, at most "+strconv.Itoa(l.MaxLeaves)+" are allowed")
 	}
+	if b, err := json.Marshal(n); err != nil || len(b) > MaxConditionBytes {
+		return conditionInvalid("", "the condition is larger than "+strconv.Itoa(MaxConditionBytes)+" bytes")
+	}
 	return nil
 }
 
@@ -521,16 +536,12 @@ func (v *validator) leaf(n Node, ptr string) error {
 	case n.IgnoreCase && n.Present != nil:
 		return conditionInvalid(ptr+"/ignoreCase", "ignoreCase goes with equals, in, glob and regex, not with present")
 	}
-	for i, p := range n.Path {
-		if p == "" {
-			return conditionInvalid(ptr+"/path/"+strconv.Itoa(i), "a path member is a non-empty string")
-		}
+	if err := checkTarget(n, ptr); err != nil {
+		return err
 	}
 	switch {
 	case n.Equals != nil:
-		if _, ok := literalValue(n.Equals); !ok {
-			return conditionInvalid(ptr+"/equals", "a literal is a string, an integer or a boolean")
-		}
+		return checkLiteral(n.Equals, ptr+"/equals")
 	case n.In != nil:
 		return v.in(n.In, ptr)
 	case n.Glob != nil:
@@ -551,9 +562,42 @@ func (v *validator) in(list []json.RawMessage, ptr string) error {
 		return conditionInvalid(ptr+"/in", "in holds "+strconv.Itoa(len(list))+" values, at most "+strconv.Itoa(v.limits.MaxInValues)+" are allowed")
 	}
 	for i, raw := range list {
-		if _, ok := literalValue(raw); !ok {
-			return conditionInvalid(ptr+"/in/"+strconv.Itoa(i), "a literal is a string, an integer or a boolean")
+		if err := checkLiteral(raw, ptr+"/in/"+strconv.Itoa(i)); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+// checkTarget bounds what a leaf reads (Q-CI-49): a claim name and each path member of at most MaxClaimNameLength
+// characters, a path of at most MaxPathMembers members, no empty member.
+func checkTarget(n Node, ptr string) error {
+	if utf8.RuneCountInString(n.Claim) > MaxClaimNameLength {
+		return conditionInvalid(ptr+"/claim", "the claim name has more than "+strconv.Itoa(MaxClaimNameLength)+" characters")
+	}
+	if len(n.Path) > MaxPathMembers {
+		return conditionInvalid(ptr+"/path", "the path has "+strconv.Itoa(len(n.Path))+" members, at most "+strconv.Itoa(MaxPathMembers)+" are allowed")
+	}
+	for i, p := range n.Path {
+		switch {
+		case p == "":
+			return conditionInvalid(ptr+"/path/"+strconv.Itoa(i), "a path member is a non-empty string")
+		case utf8.RuneCountInString(p) > MaxClaimNameLength:
+			return conditionInvalid(ptr+"/path/"+strconv.Itoa(i), "a path member has more than "+strconv.Itoa(MaxClaimNameLength)+" characters")
+		}
+	}
+	return nil
+}
+
+// checkLiteral is one literal of equals or in: a scalar of at most MaxLiteralLength characters in its normalized
+// form (Q-CI-49).
+func checkLiteral(raw json.RawMessage, ptr string) error {
+	v, ok := literalValue(raw)
+	switch {
+	case !ok:
+		return conditionInvalid(ptr, "a literal is a string, an integer or a boolean")
+	case utf8.RuneCountInString(v) > MaxLiteralLength:
+		return conditionInvalid(ptr, "the literal has more than "+strconv.Itoa(MaxLiteralLength)+" characters")
 	}
 	return nil
 }

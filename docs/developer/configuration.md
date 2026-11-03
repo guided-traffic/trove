@@ -125,8 +125,10 @@ checks what can be checked without a database (R-AUTHZ-010): a role of `SystemRo
 
 The `ci` section ([ci.go](../../internal/config/ci.go), [ci-oidc.md](ci-oidc.md)): `ci.signing_keys.*`, `ci.exchange.*` with `rate_limit.*`,
 `ci.mappings.*`, `ci.token.*`, `ci.replay.*`, `ci.issuances.retention` and the list `ci.issuers` (R-CI-001, Q-CI-16), each with the default of the
-specification. `Config.validateCI` refuses `ci.token.max_ttl` above `auth.tokens.cit.max_ttl` and names both keys (R-CI-016), `ci.job_token_fallback.enabled`
-(R-CI-022) and bad declared issuers (name, https URL, algorithms, skew); the retired key `ci.exchange.rate_limit.per_issuer_per_second` is refused in the
+specification. `Config.validateCI` refuses `ci.token.max_ttl` above `auth.tokens.cit.max_ttl` and names both keys (R-CI-016), `ci.mappings.max_per_project`
+(the mappings of one project's tier on one issuer, default `100`, Q-CI-49) above `ci.mappings.max_per_issuer`, `ci.job_token_fallback.enabled`
+(R-CI-022) and bad declared issuers (name, https URL, algorithms, skew, a `max_ttl_seconds` outside `ci.token.min_ttl` to `ci.token.max_ttl`); the
+schema bounds `ci.replay.retention_after_expiry` at `1m` at least (Q-CI-51); the retired key `ci.exchange.rate_limit.per_issuer_per_second` is refused in the
 file and in the environment with the names of its replacements (`retiredKeys`, [load.go](../../internal/config/load.go), R-CI-021). A list element may hold
 scalars, pointers to scalars (a key left out is nil and takes the default of R-CI-001) and lists of strings. Only `trove migrate` applies `ci.issuers`.
 

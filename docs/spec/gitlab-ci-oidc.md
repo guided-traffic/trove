@@ -130,7 +130,7 @@ cannot be mixed up):
 | `public_issuer` | Anyone can obtain tokens from this issuer (e.g. GitLab.com, or any instance with open sign-up). Turns on the ID-pinning rule of R-CI-010. | `true` # default (proposed) |
 | `pin_claims` | Claims that count as immutable identifiers for the pinning rule | `gitlab`: `project_id`, `namespace_id`, `job_project_id`, `job_namespace_id` # default (proposed) |
 | `single_use_subject_tokens` | Reject a second exchange of the same `jti` (R-CI-018, Q-CI-4) | kind preset: `false` for `gitlab`, `true` for `github` and `generic` # default (proposed) |
-| `max_ttl_seconds` | Upper bound for CI tokens of this issuer, at most `ci.token.max_ttl` | `null` (global bound only) # default (proposed) |
+| `max_ttl_seconds` | Upper bound for CI tokens of this issuer, between `ci.token.min_ttl` and `ci.token.max_ttl` ([Q-CI-47](#q-ci-47--a-project-tier-changes-only-what-its-own-tier-gives-a-token)) | `null` (global bound only) # default (proposed) |
 | `ca_bundle_ref` | Reference to a PEM bundle for instances behind a private CA: `file:<absolute path>` or `env:TROVE_CIC_<NAME>`, a variable that holds the PEM text ([Q-CI-31](#q-ci-31--the-syntax-of-ca_bundle_ref-and-the-trust-an-issuers-fetches-use)). It adds to the installation's trust (system roots and `proxy.outbound.tls.ca_files`), never replaces it | `null` # default (proposed) |
 | `use_outbound_proxy` | Route discovery, key and GitLab API calls through the system outbound proxy ([repositories-and-proxy.md](repositories-and-proxy.md)) | `false` # default (proposed) |
 | `job_token_fallback` | R-CI-022 settings (P2) | `{"enabled": false}` # default (proposed) |
@@ -189,6 +189,12 @@ ci:
   replica writes them, so replicas of two releases during a rolling update never overwrite each other.
 - A configuration issuer whose name is also an API-created issuer, or whose `issuer` URL another issuer already has,
   stops `trove migrate` with an error that names both; nothing is applied.
+- A declared name keeps its `issuer` URL and its `kind`, which the API keeps immutable too (R-CI-002): an entry that
+  changes either for an existing name stops `trove migrate` with an error that names the stored and the declared value
+  and tells the operator to declare the new instance under a new name; nothing is applied. The pins, the package owners
+  `ci:<issuer>:project:<id>` (R-CI-015) and the mappings of the name belong to the instance they were made for. Declared
+  under a new name, the new instance is created, and the old name, no longer declared, is disabled with its tokens
+  revoked as below ([Q-CI-48](#q-ci-48--a-declared-issuers-issuer-url-and-kind-never-change-under-its-name)).
 - An issuer that is no longer declared is disabled (`enabled = false`) and keeps `source = 'configuration'`, so its
   mappings and issuance records stay; the API shows `removedFromConfiguration: true`, and only then may an administrator
   delete it.
@@ -248,6 +254,8 @@ taken before a restore could match a different record of the same number afterwa
 - `ci.issuers` declares `gitlab-main`; after `trove migrate`, `GET /api/v1/ci/issuers/gitlab-main` answers 200 with
   `source: "configuration"`, and an exchange with an ID token of that instance works once a mapping exists. Removed from
   `ci.issuers`, the next `trove migrate` disables it; exchanges answer `issuer_disabled`, and its issuance records stay.
+- `ci.issuers` declares `gitlab-main` with another `issuer` URL than the stored one: `trove migrate` fails with an error
+  naming both URLs and a new name as the remedy, and the stored issuer is unchanged (Q-CI-48).
 - Creating a CI issuer with `allowed_algorithms: ["HS256"]` or `["none"]` fails with 422.
 - Creating a CI issuer with `issuer = http://gitlab.example.com` fails with 422.
 - Creating a `gitlab` CI issuer with `pin_claims: ["project_path"]` fails with 422
@@ -286,6 +294,14 @@ The representation is fixed so that the catalog's open points (CIOIDC-005) have 
 - PUT replaces the full representation. An omitted optional field takes its default, so changing
   one setting is GET, modify, PUT; the read-only fields of a GET body (`version`, `created_at`,
   `updated_at`) are accepted and ignored (R-API-003). There is no PATCH.
+- Two settings move trust that saved mappings and stored keys rest on
+  ([Q-CI-50](#q-ci-50--an-issuer-change-that-moves-trust-resets-the-keys-or-is-refused)), for a PUT and for `trove migrate`
+  alike. A change that switches `public_issuer` on, or removes a claim from `pin_claims`, answers 409 `mappings_unpinned`
+  while a mapping of the issuer would fail the pin rule its save applies now (`pin_required` on a public issuer,
+  `unpinned_write` on a private one, R-CI-010); the problem names them in `mappings`, and nothing changes. A change of
+  `jwks_uri` or `discovery_url` replaces the stored key set with the fail-closed placeholder of R-CI-003 in the write's
+  transaction, so no key of the old location validates a token after the commit, and fetches from the new location after
+  the commit; until a fetch stores a set, exchanges answer `signing_keys_unavailable`.
 - Field names: this page writes API fields in the snake_case of their database columns. On the
   wire, every management-API field of this page (issuers, mappings, conditions, grants,
   delegations, issuances, dry run) uses the lowerCamelCase form that R-API-003 requires, by
@@ -301,7 +317,7 @@ The representation is fixed so that the catalog's open points (CIOIDC-005) have 
 | `GET /api/v1/ci/issuers` | List CI issuers with mapping count and key status | 200 | 401, 403 |
 | `POST /api/v1/ci/issuers` | Create; validates discovery and keys unless `"validate": false` | 201 + record | 409 duplicate name or issuer, 422 invalid or unreachable |
 | `GET /api/v1/ci/issuers/{name}` | Read | 200 + `ETag` | 404 |
-| `PUT /api/v1/ci/issuers/{name}` | Replace; `name` and `issuer` are immutable; `If-Match` required | 200 + new `ETag` | 404, 412 `precondition_failed`, 422, 428 `precondition_required` |
+| `PUT /api/v1/ci/issuers/{name}` | Replace; `name` and `issuer` are immutable; `If-Match` required | 200 + new `ETag` | 404, 409 `mappings_unpinned`, 412 `precondition_failed`, 422, 428 `precondition_required` |
 | `DELETE /api/v1/ci/issuers/{name}` | Delete; refuses while mappings exist unless `?cascade=true`; `If-Match` optional | 204 | 404, 409, 412 |
 | `GET /api/v1/ci/issuers/{name}/keys` | Cached key set: `kid`, `kty`, `alg`, fetch time, next refresh, last error | 200 | 404 |
 | `POST /api/v1/ci/issuers/{name}/keys/refresh` | Force a discovery and key refresh now | 200 + key status | 404, 502 issuer unreachable |
@@ -445,6 +461,18 @@ Caching and refresh (Q-CI-12):
   interval rejects a key that another replica stored meanwhile, for at most
   `cluster.epoch_poll_interval`; a replica whose fetch throttle an earlier request has spent rejects
   a new key until some replica has stored it, for at most `unknown_kid_refresh_interval`.
+- **Unknown `iss`.** The issuer of a token is resolved from the replica's in-process copy of all CI
+  issuers, invalidated through the change area `ci_mappings`. A token whose `iss` the copy does not
+  hold, or holds as disabled, makes the replica re-read the issuers from PostgreSQL, bypassing the
+  copy, at most once per replica and `cluster.epoch_poll_interval`, shared by concurrent requests
+  like the re-read of step 1 ([Q-CI-51](#q-ci-51--what-the-exchange-tells-a-caller-and-when-a-replica-learns-an-issuer)).
+  A replica whose change message was lost or whose poll stalls therefore serves a just-created or
+  re-enabled issuer within that interval, not after the copy's `SafetyTTL`, and made-up `iss` values
+  cost one read of the issuers per replica and interval, never one per request.
+- **A new key location.** A change of an issuer's `jwks_uri` or `discovery_url` replaces its stored
+  key set with the placeholder of a failed first fetch (no set, `fetched_at` at the epoch) in the
+  write's transaction and fetches from the new location after the commit (R-CI-002, Q-CI-50); a key
+  of the old location validates no token after the commit.
 - Removed keys: a key that is missing from the latest successful fetch is no longer accepted, on
   every replica within the change-area bound of R-ARCH-018. Removing a key from the JWKS is how an
   issuer revokes it.
@@ -775,11 +803,11 @@ selector  = repository selector of authorization.md R-AUTHZ-004
   Items are case-sensitive, duplicates are ignored, and at most 50 distinct items are accepted
   (the grant limit of R-AUTH-024).
 - An unknown action, `manage` or an invalid selector answers 400 `invalid_scope` [`scope_malformed`] at
-  step 1; a key selector naming no existing repository answers the same at step 8, after the token
-  matched, so an anonymous caller learns nothing of the repositories
-  ([ci-federation.md](../security/ci-federation.md) H-418 keeps what a matched job learns). An item that admits no action the
-  matched grants hold at exchange time answers 400 `invalid_scope` [`scope_not_granted`]; no
-  partial token is issued. At use time the scope is a ceiling like every token scope
+  step 1. An item that admits no action the matched grants hold at exchange time answers 400 `invalid_scope`
+  [`scope_not_granted`] at step 8; no partial token is issued. A key selector naming no existing repository is
+  such an item and answers the same, with the same description, so neither an anonymous caller nor a matched job
+  learns which repositories exist ([Q-CI-51](#q-ci-51--what-the-exchange-tells-a-caller-and-when-a-replica-learns-an-issuer),
+  [ci-federation.md](../security/ci-federation.md) H-418). At use time the scope is a ceiling like every token scope
   (R-AUTHZ-013).
 - Package and path narrowing is not expressible in the request. The mapping's grants already
   carry it.
@@ -977,11 +1005,18 @@ Evaluation per exchange:
    that tier's match. Later mappings of the tier are not evaluated.
 4. The token's grants are the union of the tier matches: at most one mapping per tier, so a job that matches the
    system tier and a project's tier carries both, and the principal set of its token holds each contributing mapping.
-   A project's mapping can neither shadow a system mapping nor another project's, because tiers combine by union.
+   A project's mapping can neither shadow a system mapping nor another project's, because tiers combine by union, and
+   it changes nothing of what another tier gives the token ([Q-CI-47](#q-ci-47--a-project-tier-changes-only-what-its-own-tier-gives-a-token)):
+   its render failure (step 6), its `max_ttl_seconds` (R-CI-016) and its disable or delete (R-CI-017) reach its own
+   contribution only. The token belongs to the system tier's contributing mapping; without one, to the project
+   contribution whose `max_ttl_seconds` is the longest (none is longest; a tie goes to the first in evaluation order).
 5. No match in any tier → 400 [`no_matching_mapping`].
-6. If rendering the grants of a matched mapping fails (R-CI-014), the exchange fails
-   [`grant_render_failed`]. Evaluation does not fall through to the next mapping, because a
-   silent fall-through would hand out a different, unintended grant.
+6. If rendering the grants of a matched mapping fails (R-CI-014), evaluation does not fall through to the tier's next
+   mapping, because a silent fall-through would hand out a different, unintended grant. A failure of the system tier's
+   match fails the exchange [`grant_render_failed`], whatever the projects' tiers give: the administrators' mapping is
+   broken, and a token of the projects' grants alone would be a different token than the administrators configured. A
+   failure of a project tier's match drops that tier's contribution; the exchange fails [`grant_render_failed`] only when
+   no tier contributes. The dry run's trace shows the failure of every tier (R-CI-019).
 
 First match within a tier allows narrow rules at low priority numbers to shape what broader rules
 below them give. For example, "merge request pipelines of acme: read only" placed before "acme
@@ -990,7 +1025,11 @@ publishing, without a negated condition in the publish rule. The price is that a
 pipeline needs (typically a read policy) is listed in each mapping a job can match first. Q-CI-1
 records why this beats a plain union of all matches.
 
-Limits: at most `ci.mappings.max_per_issuer` mappings per CI issuer.
+Limits: at most `ci.mappings.max_per_issuer` mappings per CI issuer, and at most `ci.mappings.max_per_project` of them in
+one project's tier, so a project cannot fill the issuer's limit alone; a save over either answers 422
+`mapping_limit_reached` naming the key ([Q-CI-49](#q-ci-49--what-bounds-the-cost-of-an-exchange)). Every exchange of the issuer
+evaluates every tier, so the conditions are bounded in size at the save as well (R-CI-010), and the exchange evaluates the
+replica's copy of the mapping set, whose conditions it holds compiled, without a trace, before its transaction.
 
 **Principal.** Every mapping is a principal of kind `ci_mapping` in the principal table of
 [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-016, so policies, owner
@@ -1064,6 +1103,7 @@ project exclude each other (Q-CI-37). A list shows the system tier first, then t
 ci:
   mappings:
     max_per_issuer: 1000     # default (proposed)
+    max_per_project: 100     # default (proposed); per project's tier and issuer, at most max_per_issuer (Q-CI-49)
     cache_safety_ttl: 10m    # default (proposed); SafetyTTL of the in-process mapping cache
 ```
 
@@ -1075,6 +1115,11 @@ ci:
   `npm publish` gets 403.
 - A matched mapping whose template references an absent claim fails with
   `grant_render_failed`, even if a later mapping would match.
+- A job that matches a system mapping and a project's mapping whose template references an absent claim gets a token
+  with the system mapping's grants only; with the system mapping's template failing instead, the exchange fails with
+  `grant_render_failed` (Q-CI-47).
+- A project's tier holding `ci.mappings.max_per_project` mappings of an issuer refuses the next with 422
+  `mapping_limit_reached`, while the system tier still saves (Q-CI-49).
 - Two mappings with equal `priority` in one tier cannot be saved (409).
 - Mappings `release-publish` of CI issuers `gitlab-com` and `gitlab-internal` coexist. Their
   principals are `gitlab-com/release-publish` and `gitlab-internal/release-publish`, and a policy
@@ -1107,7 +1152,11 @@ Combinators: `all` (true if every child is true; an empty list is invalid), `any
 child is true; an empty list is invalid) and `not` (one child). The maximum depth is 4, counted
 in nodes on the longest path from the root to a leaf, the leaf included (so `all` → `any` → `not` →
 leaf is the deepest condition), a condition has at most 64 leaves, and an `in` list has at most 256
-values ([Q-CI-28](#q-ci-28--what-a-condition-accepts-where-r-ci-010-sets-no-rule)).
+values ([Q-CI-28](#q-ci-28--what-a-condition-accepts-where-r-ci-010-sets-no-rule)). Every exchange of the issuer evaluates
+a stored condition, so its size is bounded too ([Q-CI-49](#q-ci-49--what-bounds-the-cost-of-an-exchange)): a literal of
+`equals` or `in` has at most 1,024 characters (a glob as well), a claim name and a path member at most 256, a path at most
+16 members, and the JSON form of the whole condition at most 64 KiB. Over a bound the save answers 422
+`condition_invalid` with the pointer of the member.
 
 Leaves name a top-level claim with `claim`, or a nested value with `path` (an array of member
 names, e.g. `["job_config", "url"]`; dots in claim names are never interpreted). Each leaf has
@@ -1562,20 +1611,30 @@ The lifetime of a CI token is
 
 ```text
 ttl = min( requested ttl          (if the request sent `ttl`; otherwise ci.token.default_ttl),
-           mapping max_ttl        (smallest across matched mappings, if set),
+           owner's max_ttl        (of the mapping that owns the token, if set; R-CI-009 step 4),
            CI issuer max_ttl      (if set),
            ci.token.max_ttl,
            subject exp - now      (remaining ID-token lifetime) )
+
+contribution window of every other contributing mapping = min( ttl, its own max_ttl (if set) )
 ```
 
+- A mapping's `max_ttl_seconds` bounds what that mapping gives, never another tier's grants
+  ([Q-CI-47](#q-ci-47--a-project-tier-changes-only-what-its-own-tier-gives-a-token)). The owner is the system tier's
+  contributing mapping, else the project contribution whose bound is the longest, so the token never outlives its
+  owner's contribution; a project's bound beside a system mapping ends the project's contribution at the end of its
+  window (`expiresAt` of the contribution in the token's bundle, on the database clock of the token row's expiry), and
+  the token goes on with the other tiers' grants. A mapping's or an issuer's `max_ttl_seconds` is between
+  `ci.token.min_ttl` and `ci.token.max_ttl` at the save (422 otherwise).
 - GitLab sets the ID token's `exp` to the job timeout, or to 5 minutes when no timeout is
   specified. The last term therefore bounds the CI token by the remaining job lifetime.
 - `ttl < ci.token.min_ttl` is refused with the reason of its cause
   ([Q-CI-41](#q-ci-41--the-reason-of-a-request-that-cannot-succeed-by-its-own-parameters)): the subject token's
   remaining lifetime below the floor is 400 [`subject_token_expires_too_soon`]; a requested `ttl` below the floor is
-  the caller's error, 400 [`ttl_below_minimum`], refused at step 1 before the subject token is validated; a mapping's
+  the caller's error, 400 [`ttl_below_minimum`], refused at step 1 before the subject token is validated; the owner's
   or the issuer's `max_ttl_seconds` below the floor (possible once `ci.token.min_ttl` was raised after the save) is
-  400 [`ttl_below_minimum`] with the description naming the bound.
+  400 [`ttl_below_minimum`] with the description naming the bound. Another contribution's window below the floor is
+  not refused: it ends that contribution early.
 - `ci.token.max_ttl` MUST NOT exceed `auth.tokens.cit.max_ttl`, the CI token ceiling of
   [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-026 (6 h). trove
   refuses to start with a larger value. One ceiling governs every CI token, so the two pages
@@ -1605,6 +1664,9 @@ ci:
 - An ID token with 20 seconds left yields 400 `subject_token_expires_too_soon`; `ttl=10` yields 400
   `ttl_below_minimum` whose description names `ci.token.min_ttl`.
 - Using the CI token one second after `expires_in` returns 401 on `npm view`.
+- A system mapping without a bound and a project mapping with `max_ttl_seconds: 1` (with `ci.token.min_ttl: 1s`) match one
+  job: `expires_in` is the default 900, and after a second the token reads the system mapping's repositories but no
+  longer the project's (Q-CI-47). `max_ttl_seconds` below `ci.token.min_ttl` is refused at the save.
 - `TROVE_CI_TOKEN_MAX_TTL=12h` with the default `auth.tokens.cit.max_ttl` makes startup fail
   with a message that names both keys.
 
@@ -1620,11 +1682,13 @@ Priority: **MVP** · Covers: CIOIDC-010, CIOIDC-014, CIOIDC-018
   issuance API (R-CI-020).
 - The token row carries what its use needs: `api_token.ci_context` holds the frozen bundle (the issuer, the project
   identity and, per contributing mapping, its tier and for a project tier its project, its groups, its rendered inline
-  grants and its caps; the bundle carries its format version, Q-CI-17), written in the exchange's
+  grants, its caps and the end of its own window when that is shorter than the token's; the bundle carries its format
+  version, 2 since Q-CI-47, and the authorization epoch the exchange read, Q-CI-17), written in the exchange's
   transaction. The token cache entry of R-AUTH-023 carries it to the request, so the evaluator reads no row of
   PostgreSQL for it (R-AUTHZ-015, Q-CI-17). The issuance record holds the same bundle for the administrator.
 - Revocation is immediate (INV-8) and happens:
-  - when a mapping is disabled or deleted (its unexpired tokens);
+  - when a mapping is disabled or deleted: the unexpired tokens it owns, and for a system mapping every unexpired token
+    whose issuance record lists it (R-CI-009 step 4 makes it the owner of each);
   - when a CI issuer is disabled or deleted (all of its unexpired tokens);
   - through the bulk revoke operation (R-CI-020);
   - by an administrator revoking one token by ID (identity-and-authentication.md);
@@ -1641,8 +1705,14 @@ Priority: **MVP** · Covers: CIOIDC-010, CIOIDC-014, CIOIDC-018
   mapping disabled or deleted, `admin` for an issuer and the bulk revoke, the token API's reasons for one
   token by ID and for `DELETE /api/v1/tokens/current` (`owner`); the event's cause names which of the five it
   was ([Q-CI-38](#q-ci-38--the-revocation-reason-of-a-ci-tokens-row-and-the-events-of-a-revocation)). A
-  mapping's revocation ends the tokens it owns and those whose issuance record lists it as a contributing
-  mapping of another tier, because each of them carries its frozen grants.
+  project mapping's disable or delete ends only the tokens it owns, because a token another tier owns carries that
+  tier's grants too ([Q-CI-47](#q-ci-47--a-project-tier-changes-only-what-its-own-tier-gives-a-token)). In such a
+  token the project's contribution ends at use time instead: the evaluator ignores a contribution whose own window has
+  ended, and the contribution of a mapping that a grant index at least as fresh as the token's exchange does not hold as
+  enabled with an active principal. Every write that creates, enables, disables or deletes a mapping notifies the change
+  area `authz` in its transaction, so the contribution ends on every replica within the bound of
+  [authorization.md](authorization.md) R-AUTHZ-028 ([ci-federation.md](../security/ci-federation.md) H-425 keeps what
+  that bound means next to the revocation bound).
 - A revocation is a change of the area `auth` ([architecture.md](architecture.md) R-ARCH-018) and
   takes effect on every `web` replica within the bound of
   [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023, whether Valkey is
@@ -1651,10 +1721,11 @@ Priority: **MVP** · Covers: CIOIDC-010, CIOIDC-014, CIOIDC-018
 - The `principal` row of a mapping (kind `ci_mapping`, name `<CI issuer name>/<mapping name>`,
   R-CI-009; [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-016) mirrors
   `enabled`: disabling the mapping sets the principal's `status` to `disabled` in the same
-  transaction, and enabling it sets it back. Token validation (R-AUTH-023) then rejects every CI token of a disabled
-  mapping with `principal_disabled`, including one that escaped the revocation sweep. Together
-  with the re-check of R-CI-007, no token of a disabled mapping is usable beyond the revocation
-  latency bound.
+  transaction, and enabling it sets it back. Token validation (R-AUTH-023) then rejects every CI token a disabled
+  mapping owns with `principal_disabled`, including one that escaped the revocation sweep. Together
+  with the re-check of R-CI-007, no token a disabled mapping owns is usable beyond the revocation
+  latency bound, and the grant index, which reads the same status, drops the mapping's contribution to the tokens other
+  tiers own (above).
 
 **Acceptance criteria**
 
@@ -1662,6 +1733,10 @@ Priority: **MVP** · Covers: CIOIDC-010, CIOIDC-014, CIOIDC-018
   through Basic credentials, and with `dotnet nuget push -k`.
 - Disabling a mapping through replica A makes its unexpired tokens fail with 401 on replicas B and
   C within 2 s, with Valkey running and with Valkey stopped.
+- A job matches a system mapping and a project's mapping: disabling or deleting the project's mapping leaves the token
+  valid (`GET /api/v1/tokens/current` 200) with the system mapping's grants, and the project's grants end on every
+  replica within the bound of R-AUTHZ-028; a token the project's mapping owns (no system mapping matched) is revoked
+  (Q-CI-47).
 - `DELETE /api/v1/tokens/current` with a CI token answers 204, and the token gets 401 on the next
   `npm view`.
 
@@ -1717,7 +1792,10 @@ Priority: **MVP** · Covers: CIOIDC-018, CIOIDC-019
   administrator may override either way per CI issuer.
 - Rows are deleted by the task `ci-replay-cleanup` (R-CI-030) once
   `exp + clock_skew + ci.replay.retention_after_expiry` has passed. After that the token fails the
-  time check anyway.
+  time check anyway. The task compares on the database clock and the time check runs on the replica's,
+  so `retention_after_expiry` is at least 1 minute (trove refuses to start with less), the margin for a
+  replica clock that lags the database's; the row stores the subject's `exp` rounded up to the second
+  ([Q-CI-51](#q-ci-51--what-the-exchange-tells-a-caller-and-when-a-replica-learns-an-issuer)).
 - Why the default is off for GitLab: a GitLab job receives its ID tokens as the variables its
   `id_tokens:` block declares and has no documented way to request another one during the run.
   A job that exchanges in several steps, retries after a network error or outlives its first CI
@@ -1757,7 +1835,7 @@ RETURNING exchange_count;   -- > 1 with single use on: roll back and reject
 ```yaml
 ci:
   replay:
-    retention_after_expiry: 15m   # default (proposed)
+    retention_after_expiry: 15m   # default (proposed); at least 1m (Q-CI-51)
     warn_after_exchanges: 10      # default (proposed)
 ```
 
@@ -1811,6 +1889,10 @@ ADR-146). The bounds of a project mapping, on top of every rule of R-CI-010 and 
 `unprotected_write`, `unpinned_write`, `catch_all_condition`):
 
 - the name starts with `<key>-` (422 `project_prefix_required`), so the principal names `<issuer>/<key>-…` stay unique;
+  the rule is checked before the name is looked up, so 409 `already_exists` answers only for a name under the project's
+  own prefix, and since no project key is another's followed by a hyphen ([authorization.md](authorization.md) Q-AUTHZ-176),
+  that prefix covers no other project's names ([Q-CI-51](#q-ci-51--what-the-exchange-tells-a-caller-and-when-a-replica-learns-an-issuer));
+- the project's tier holds at most `ci.mappings.max_per_project` mappings of an issuer (422 `mapping_limit_reached`, Q-CI-49);
 - inline grants reach the project's repositories only: the evaluator compiles them against those repositories, so `@any`
   means every repository of the project (Q-AUTHZ-179), and a key selector outside the project is 422
   `repository_outside_project`;
@@ -3625,6 +3707,12 @@ treats that as a storage fault, never as an acceptance. No row with the earlier 
 Applied in the spec: R-CI-017. Code: `internal/ci/claims/grants.go` (`Frozen`, `FrozenMapping`, `FrozenProject`, `Add`,
 `Check`, `DecodeFrozen`), `scope.go` (`Freeze`, `NarrowFrozen`, `InlineScope`).
 
+**Amended 2026-11-03 by [Q-CI-47](#q-ci-47--a-project-tier-changes-only-what-its-own-tier-gives-a-token):** the bundle is version 2.
+A contribution carries `expiresAt` when its mapping's `max_ttl_seconds` ends it before the token, and the bundle carries the
+`authzEpoch` the exchange read; the evaluator ignores a contribution after its expiry and, on an index at least that fresh, a
+contribution whose mapping is no longer active. `DecodeFrozen` reads version 1 too and refuses a version-1 bundle with a member of
+version 2.
+
 ### Q-CI-18 · Where the gate lives that admits CI tokens on a few operations only
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -3891,6 +3979,13 @@ scopes, the person and the claim snapshot is Q-CI-52).
 (what stays P1), R-AUTHZ-026 (the table), R-API-035, R-UI-035. Code: migration 00026 (`project_id`), `internal/ci` (the
 `…In` methods of `Mappings`, `Issuers.Choices`, `Issuances.ListForProject`, `MappingSet.OnlyTier`), `claims.FrozenMapping.Project`,
 `claims.IssuerFacts.Project`, `internal/api/v1/ci_project_api.go`, `api/openapi.yaml`.
+
+**Amended 2026-11-03 by [Q-CI-47](#q-ci-47--a-project-tier-changes-only-what-its-own-tier-gives-a-token) and
+[Q-CI-49](#q-ci-49--what-bounds-the-cost-of-an-exchange):** the project tier is bounded in what it reaches of a token as well as in what
+it grants. Its render failure drops its own contribution, its `max_ttl_seconds` ends its own contribution, and its disable or delete
+revokes only the tokens it owns (a job no system mapping matched) and ends its contribution to the others at use time; it never owns
+a token the system tier contributes to. Its tier holds at most `ci.mappings.max_per_project` mappings of an issuer, and its
+administrator's create checks the prefix before the name is looked up ([Q-CI-51](#q-ci-51--what-the-exchange-tells-a-caller-and-when-a-replica-learns-an-issuer)).
 
 ### Q-CI-27 · The reason of a missing or malformed time claim
 
@@ -4302,6 +4397,202 @@ R-CI-022 is built (its three reasons then get their integration tests) or if a s
 
 **Applied in the spec:** R-CI-008 (the criterion names the four exceptions and the unit test). Code:
 `internal/ci/exchange_service_test.go`; `test/integration/ci/exchange_errors_test.go` (the other reasons).
+
+### Q-CI-47 · A project tier changes only what its own tier gives a token
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the security audit of phase 5 (2026-11-03, HIGH). R-CI-009 says that tiers combine by union and that a project's mapping
+can shadow no other tier, but a project tier's mapping reached the whole token of every job it matched. Its `max_ttl_seconds`
+bounded the token (the smallest bound of all contributing mappings; 1 s refused every exchange with `ttl_below_minimum`), a render
+failure of its template failed the exchange after the system tier had contributed, and its disable or delete revoked every token
+whose issuance record listed it, the system tier's included. A project administrator could thereby deny every job a system mapping
+serves, and shorten what the administrators grant.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep one lifetime and one revocation per token, document it | As built | No change | Contradicts R-CI-009's union; a project administrator can deny service to every job the system tier serves |
+| (b) Each contribution is its tier's (chosen) | The system tier's render failure fails the exchange, a project tier's drops its contribution; the token belongs to the system tier's mapping (else the longest-lived project contribution), whose bound is the token's lifetime, and every other contribution ends at its own bound (`expiresAt`); a project mapping's disable or delete revokes the tokens it owns, and the evaluator drops its contribution to the others once the grant index no longer holds it active | A project changes its own contribution and nothing else; no write to another tier's token; the system tier keeps R-CI-009 step 6 and its revocation | The bundle grows a version; a dropped contribution follows the index's bound, not the revocation bound (H-425); the grant index rebuilds on every mapping create, enable, disable and delete |
+| (c) One token per tier | The exchange issues a token per contributing tier | Isolation by construction | RFC 8693 answers one `access_token`; a client would have to choose; R-CI-009's union is gone |
+| (d) Rewrite the other tokens on a disable | Remove the contribution from `api_token.ci_context` and evict the tokens | Immediate on every replica | A write to every live token of the issuer under the issuer's lock, from the mapping store into the token table; the record and the token diverge |
+
+**Choice:** (b), precisely:
+
+- **Render failure.** The system tier's match that does not render fails the exchange with `grant_render_failed` whatever the
+  projects' tiers give (R-CI-009 step 6 as written): the administrators' mapping is broken, and the projects' grants alone would be a
+  token the administrators did not configure. A project tier's match that does not render drops that tier's contribution and does
+  not fall through; the exchange fails with `grant_render_failed` only when no tier contributes, naming the first such mapping. The
+  dry run's trace shows the failure (`Selection.Dropped`).
+- **Lifetime.** The token's owner is the system tier's contributing mapping, else the project contribution whose `max_ttl_seconds` is
+  the longest (none is longest; a tie goes to the first in evaluation order), so the token never outlives its owner's contribution.
+  The token's lifetime is R-CI-016's formula with the owner's bound only; every other contribution lives for the token's lifetime or
+  its own bound, whichever is shorter, frozen as `FrozenMapping.ExpiresAt` on the database clock that the token row's expiry counts
+  from (`CiExchangeClock`). A contribution's window below `ci.token.min_ttl` is not refused; the owner's is, as before. Saves refuse a
+  `max_ttl_seconds` of a mapping or an issuer below `ci.token.min_ttl`.
+- **Bundle version 2.** `claims.FrozenVersion` is 2: `expiresAt` per contribution and the `authzEpoch` the exchange read in its
+  transaction. `DecodeFrozen` still reads version 1, because a token issued before the upgrade lives on for up to
+  `ci.token.max_ttl` and needs no expiry of its own (its lifetime was the minimum over all its mappings); it refuses a version-1
+  bundle with a member of version 2 and every other version. The version moved instead of adding optional members, because a reader
+  of version 1 would ignore `expiresAt` and grant a project's contribution beyond its bound; it now refuses the bundle, as a storage
+  fault (H-427).
+- **Revocation.** A system mapping's disable or delete revokes as before: the tokens it owns and those whose record lists it (it owns
+  every token it contributes to). A project mapping's revokes the tokens it owns only. For the other tokens, the evaluator
+  (`Index.CIGrants`) ignores a contribution after its expiry, and a contribution whose mapping a grant index at least as fresh as the
+  bundle's `authzEpoch` does not hold as enabled with an active principal (`CiMappingsActive` in the index's snapshot). Every mapping
+  create, enable, disable and delete notifies the area `authz` in its transaction, after which the exchange reads the epoch under the
+  issuer row `FOR SHARE`, so an index at that epoch knows every contributing mapping; an older index keeps every contribution, because
+  it cannot know a mapping created just before the exchange.
+
+**Rationale:** the union of R-CI-009 is only a union if each tier's input stays its own: the frozen bundle was already per
+contribution (Q-CI-17 as amended), and lifetime and liveness are two more things that belong to a contribution. Keeping the system
+tier's render failure fatal and its revocation unchanged leaves the administrators' semantics as specified; the project tiers lose
+their reach into the other tiers. Deciding liveness in the evaluator reuses the index every request already confirms (R-AUTHZ-028)
+instead of a second write path into tokens. The development agent would revisit this if the index rebuilds caused by mapping writes
+show up as load (many project administrators toggling mappings on a large index), or if an installation needs a project mapping's
+end to take effect within the revocation bound rather than the index's (H-425); option (d) would then be the next step.
+
+**Applied in the spec:** R-CI-001 (`max_ttl_seconds` between the two bounds), R-CI-009 (steps 4 and 6, the owner, an acceptance
+criterion), R-CI-016 (the formula, the contribution window, the floor at the save, an acceptance criterion), R-CI-017 (the bundle,
+revocation per tier, the contribution dropped at use time, the principal mirror, an acceptance criterion), Q-CI-17 and Q-CI-26
+(amended). Code: `internal/ci/select.go` (`Select`, `SelectTraced`, `Dropped`), `internal/ci/ttl.go` (`ComputeLifetime`,
+`tokenOwner`), `internal/ci/exchange_tx.go` (`mint`), `internal/ci/revoke.go`, `internal/ci/mappings_write.go`
+(`notifyMappingState`), `internal/ci/claims/grants.go` (version 2), `internal/authz/ci.go` (`ciContributes`),
+`internal/authz/index.go` and `source.go` (`Snapshot.CIMappings`), `queries/ci_exchange.sql` (`CiExchangeClock`),
+`queries/ci_mappings.sql` (`CiMappingsActive`), `queries/ci_issuances.sql` (`CiIssuanceTokensOfMapping`'s `contributed`). Tests:
+`TestQ_CI_47_*` (`test/integration/ci/tiers_test.go`, `internal/authz/ci_test.go`, `internal/ci/exchange_service_test.go`,
+`internal/ci/claims/bounds_test.go`), `TestR_CI_009_AProjectTiersRenderFailureDropsOnlyItsContribution`,
+`TestR_CI_016_AMappingsBoundEndsOnlyItsOwnContribution`, `TestR_CI_016_ABoundBelowTheFloorIsRefusedAtTheSave`.
+
+### Q-CI-48 · A declared issuer's issuer URL and kind never change under its name
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the security audit of phase 5 (2026-11-03, MEDIUM). `trove migrate` replaced a declared issuer by name with whatever the
+entry said, `issuer` URL and `kind` included, although the API refuses both as `immutable`. The pins of its mappings, the package owners
+`ci:<issuer>:project:<id>` (stored by issuer ID) and the unpinned mappings of a private issuer moved under the same ID to another
+GitLab instance, whose projects with the same IDs then held what the old instance's had; the old key set stayed valid until the next
+refresh, and nothing was revoked.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse the change, name both values and the remedy (chosen) | `trove migrate` stops with an error naming the stored and the declared value and telling the operator to declare the new instance under a new name; nothing is applied | The same rule as the API; the operator decides the move consciously; the removal path that exists (disable, revoke, keep records) handles the old name | A GitOps change of an instance's URL takes two names |
+| (b) Treat the change as removal and creation under the same name | Disable and revoke the old, create a new ID | One step for the operator | The name would denote two issuers in the audit trail and in the issuance records; package owners and mappings would have to be dropped or migrated by a rule nobody reviews |
+| (c) Allow it and revoke everything | Keep the ID, revoke the tokens, reset the keys | Simple for the operator | The mappings and owners still move to the new instance, which is the exposure itself |
+
+**Choice:** (a), for the `issuer` URL and for the `kind`.
+
+**Rationale:** an issuer's identity is what every pin and every owner record of it means; a change of identity is a new issuer. The
+API already says so, and a declaration is the same object from another source (Q-CI-16). The development agent would revisit this if
+GitLab instances are routinely moved to new URLs with the same project IDs (a renamed host of one instance), in which case an
+explicit, audited rename operation would be the way, not an in-place edit.
+
+**Applied in the spec:** R-CI-001 (the configuration section, an acceptance criterion). Code: `internal/ci/issuers_declared.go`
+(`sameIdentity`). Tests: `TestR_CI_001_ADeclaredIssuerKeepsItsIssuerURL` (`test/integration/ci/declared_test.go`),
+`TestR_CI_001_ADeclaredNameKeepsItsIdentity` (`internal/ci/issuers_validate_test.go`).
+
+### Q-CI-49 · What bounds the cost of an exchange
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the security audit of phase 5 (2026-11-03, MEDIUM). Every validly signed token of an issuer, whichever project it comes from,
+evaluated up to `ci.mappings.max_per_issuer` (1,000) mappings shared by all tiers, each to its end with a trace, its regular
+expressions compiled twice per evaluation and its literals decoded per evaluation, with no bound on a literal's size, while the
+exchange held the issuer row `FOR SHARE` and a connection. One project's administrator could fill the issuer's limit and make every
+exchange of every other project expensive.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Lower `max_per_issuer` | One limit | No new key | Bounds neither one project's share nor the size of a condition |
+| (b) A per-project quota, size bounds at save, a compiled evaluation without trace before the transaction (chosen) | `ci.mappings.max_per_project` (100) per project's tier and issuer; a literal and a glob at most 1,024 characters, a claim name and a path member 256, a path 16 members, a condition 64 KiB; the replica's mapping set holds each condition compiled (`claims.Condition`: literals normalized, regexes compiled once, object state of the set, R-ARCH-032) and in evaluation order; the exchange runs `Select` (short-circuit, no trace) on the copy before its transaction, which only confirms the versions | Each cost has its bound; the transaction holds its locks only for the confirmation and the writes; the dry run keeps its trace (`SelectTraced`) | A second evaluator beside the traced one (held equal by `FuzzR_CI_010_Condition`) |
+| (c) Evaluate inside the transaction as before, with the compiled conditions | Keep `Select` after `FOR SHARE` | The decision is visibly taken under the lock | The lock and the connection are held for the evaluation of every tier |
+
+**Choice:** (b). `Select` before the transaction keeps Q-CI-15's guarantee: the selection is a pure function of the mapping set and the
+claims, and the transaction confirms that the set it was made on is the committed one (the issuer row's `version` and
+`mappings_version` under `FOR SHARE`, which every mapping write moves under `FOR UPDATE`, and the contributing rows `FOR SHARE`); equal
+versions mean no mapping write committed since the copy was read, and none can commit before the exchange does. On a mismatch the
+transaction reads the set `FOR SHARE` and evaluates it, as before: at most once per exchange, over at most `max_per_issuer` mappings of
+bounded size, with the compiled conditions and without a trace.
+
+**Rationale:** the exchange is an anonymous endpoint whose per-request cost a project administrator configures; each input of that
+cost needs its own bound, and the shared lock should not wait for work that needs no lock. The development agent would revisit this
+if evaluations still show up in the exchange's duration (`trove_ci_exchange_duration_seconds`) at the limits, in which case an index
+of the conditions by their pin values (an `in` on `project_id` decides most mappings) would skip the mappings a token cannot match.
+
+**Applied in the spec:** R-CI-009 (the limits, the configuration), R-CI-010 (the size bounds), R-CI-019 (the project's quota). Code:
+`internal/ci/claims/match.go` (`Condition`, `CompileCondition`), `internal/ci/claims/condition.go` (the size bounds),
+`internal/ci/types.go` (`newMappingSet`), `internal/ci/select.go`, `internal/ci/exchange_service.go`, `internal/ci/exchange_tx.go`
+(`evaluateCached`), `internal/ci/mappings_write.go` (`checkProjectQuota`), `internal/config/ci.go` (`ci.mappings.max_per_project`),
+`queries/ci_mappings.sql` (`CiMappingCountOfTier`). Tests: `TestR_CI_010_TheSizeBoundsOfACondition`,
+`TestR_CI_010_TheCompiledConditionDecidesAsTheTrace`, `TestR_CI_010_TheCompiledConditionCompilesNothingPerEvaluation`,
+`FuzzR_CI_010_Condition`, `TestR_CI_009_TheExchangesSelectionHasNoTraceAndDecidesAsTheDryRun`,
+`TestR_CI_009_AProjectCannotFillTheIssuersLimit`, `TestR_CI_010_TheSizeOfAConditionIsBoundedOverHTTP`,
+`TestR_CI_009_TheMappingQuotaOfAProject`.
+
+### Q-CI-50 · An issuer change that moves trust resets the keys or is refused
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the security audit of phase 5 (2026-11-03, LOW). A changed `jwks_uri` or `discovery_url` kept the stored key set of the old
+location until the next refresh (up to `ci.signing_keys.max_refresh_interval`, 24 h), so keys the administrator meant to stop trusting
+kept validating tokens. Switching `public_issuer` on, or removing a claim from `pin_claims`, left the mappings saved under the old
+settings in force, although their saves would now be refused (`pin_required`, `unpinned_write`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A changed key location resets the set to the placeholder and fetches; a pin change that unpins a mapping is refused with 409 listing the mappings (chosen) | In the write's transaction: `CiKeysReset` (the fail-closed placeholder of R-CI-003, refresh due at once) and the change area `ci_issuer_keys`; after the commit, a fetch from the new location; `409 mappings_unpinned` with `mappings` before anything is written | No key of the old location after the commit; no mapping that its save would refuse; the administrator sees which mappings to pin | Exchanges fail closed between the commit and the first successful fetch |
+| (b) Fetch from the new location inside the write | One step | No fail-closed window | A network call inside a transaction that holds the issuer row (R-ARCH-019) |
+| (c) Disable the unpinned mappings | The issuer change applies | No refusal | A silent grant change the administrator did not ask for; a disabled narrow mapping can let jobs fall through to a broader one |
+
+**Choice:** (a), for the API's `PUT` and for `trove migrate` (the error stops the migration).
+
+**Rationale:** the stored key set and the saved mappings are both derived from the issuer's settings; when the settings move, the
+derived state must move with them or the write must not happen. Failing closed until the new set arrives is the rule R-CI-003 already
+applies to a first fetch. The development agent would revisit this if administrators need to stage a key location change (for
+example a mirror that serves the set before the issuer switches), in which case a validated change, like the `validate` of a create,
+would fetch before the commit.
+
+**Applied in the spec:** R-CI-002 (the two settings, the 409 in the table), R-CI-003 (a new key location). Code:
+`internal/ci/issuers_trust.go` (`checkPinsTx`, `resetKeysTx`, `unpinnedMappings`), `internal/ci/issuers_write.go`
+(`writeUpdate`, `fetchMoved`), `internal/ci/claims/check.go` (`PinViolation`), `queries/ci_issuers.sql` (`CiKeysReset`),
+`internal/errs/codes.go` (`mappings_unpinned`). Tests: `TestR_CI_003_AChangedKeyLocationFailsClosedUntilItsSetIsFetched`,
+`TestR_CI_005_AnIssuerChangeThatUnpinsMappingsIsRefused` (`test/integration/ci/issuer_changes_test.go`).
+
+### Q-CI-51 · What the exchange tells a caller, and when a replica learns an issuer
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the security audit and the code review of phase 5 (2026-11-03, LOW). Four edges of the exchange and the mapping writes:
+a `scope` key that names no repository answered `scope_malformed` and one that exists `scope_not_granted`, an oracle of repository
+existence for every job a mapping matches, so for every project administrator who controls a pipeline; a project administrator's
+create answered `409 already_exists` before it checked the project's prefix, so it learnt whether any mapping of any tier had any
+name; `ci.replay.retention_after_expiry: 0` let the cleanup, which compares on the database clock, delete the `jti` of a single-use
+token that a replica with a lagging clock still accepts, and the stored `exp` was truncated to the second; and a replica whose copy
+of the issuers lagged refused a just-created or re-enabled issuer until the copy's `SafetyTTL` (10 min), because a miss was answered
+from the copy.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Close each edge where it is (chosen) | An unknown key answers `scope_not_granted` with the description of every item that is not granted; the project's prefix is checked before the name is looked up; `retention_after_expiry` at least 1 minute and the stored `exp` rounded up; a miss or a disabled hit of the issuer copy re-reads the issuers, at most once per replica and `cluster.epoch_poll_interval` | No existence oracle; the 409 only for the caller's own namespace; a margin for clock skew; a new issuer within one poll interval on any replica | A typo in a scope key reads as "not granted"; made-up `iss` values cost one read of the issuers per interval and replica |
+| (b) Document the edges | Widen H-413 and H-418 | No change | An oracle and a probe stay open to every project administrator |
+| (c) Reserve the project prefixes against the system tier too | A system mapping's name never starts with a project's key and a hyphen, as Q-AUTHZ-200 does for global policies | H-413 would close completely | The project create would have to check the mapping names of every issuer; the system tier's administrators are trusted with any name |
+
+**Choice:** (a). The finding "project key prefixes overlap" is not reachable: no project key is another's followed by a hyphen
+([authorization.md](authorization.md) Q-AUTHZ-176, `project_key_overlap` both ways), so a mapping of project `ab` named `ab-c-…`
+can never be project `ab-c`'s; `TestQ_CI_51_AProjectAdministratorProbesNoNameOutsideItsPrefix` holds it. What the probe could reach
+beyond the prefix was the order of the checks, which (a) fixes; what remains under the prefix is H-413.
+
+**Rationale:** an anonymous endpoint and a delegated write answer only what the caller may know; the re-read follows the protocol R-CI-003
+already uses for an unknown `kid`, with the same bound. The development agent would revisit the scope answer if clients need to tell a
+typo from a missing grant (a dry run with the `scope` tells them, R-CI-019), and the re-read if the reads of the issuers under a flood
+of made-up `iss` values show up in PostgreSQL.
+
+**Applied in the spec:** R-CI-003 (an unknown `iss`), R-CI-007 (the scope item naming no repository), R-CI-018 (the cleanup's margin,
+the configuration), R-CI-019 (the prefix before the lookup). Code: `internal/ci/exchange_scope.go` (`narrow`, `GrantIndex` without
+`UnknownKey`), `internal/authz/ci_scope.go`, `internal/ci/mappings_write.go` (`create`), `internal/ci/claims/check.go`
+(`CheckProjectName`), `internal/config/ci.go`, `internal/ci/exchange_tx.go` (`ceilUnix`), `internal/ci/issuers_read.go` (`Resolve`,
+`rereadIssuers`). Tests: `TestQ_CI_51_AnUnknownScopeKeyAnswersAsANotGrantedOne`, the scope cases of
+`TestR_CI_008_EveryReasonOfTheErrorTable` (`exchange_errors_test.go`), `TestQ_CI_51_AProjectAdministratorProbesNoNameOutsideItsPrefix`, `TestR_CI_018_TheReplayRetentionHasAFloor`,
+`TestR_CI_018_TheStoredSubjectExpiryRoundsUp`, `TestR_CI_003_ALaggingReplicaLearnsANewIssuerWithinThePollInterval`.
 
 ### Q-CI-52 · The state of an issuance record, and what a project's view of one shows
 

@@ -531,24 +531,41 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   without a GIN index and read `audit_event` by `token_id` for the usage summary. Fixed (Q-CI-53): migrations 00029 to
   00031 (three `CONCURRENTLY` indexes) and the issuer filter as an equality on its ID; the usage summary stays without an
   index on the partitioned `audit_event` (window on the primary key, plan checked)
+- 🟢 MEDIUM · Disabling or deleting a mapping or an issuer scans every issuance of the issuer within the retention (no index
+  on `mapping_ids`, no expiry bound) while the issuer row is locked `FOR UPDATE`, so its exchanges wait into 503 — fixed:
+  `CiIssuanceTokensOfMapping` and `CiIssuanceTokensOfIssuer` read the unexpired records only through the expiry index
+  (`TestR_CI_017_ARevocationReadsOnlyTheUnexpiredRecords`, 3,000 expired records beside 20,000 live tokens)
+- 🟡 LOW · The "audience removed on A" subtest does not reach the in-transaction re-validation; the CI editors keep no draft
+  across a re-authentication (R-UI-042); Browse keeps a reloaded node's old size and kind; the claim tester has no form view
+  (R-UI-036)
+- 🟢 LOW · A just-created or re-enabled issuer is refused on a lagging replica until the cache's SafetyTTL — fixed: a miss or a
+  disabled hit of the issuer copy re-reads the issuers at most once per replica and `cluster.epoch_poll_interval` (Q-CI-51,
+  `TestR_CI_003_ALaggingReplicaLearnsANewIssuerWithinThePollInterval`)
 
 **Security audit of the phase (2026-11-03; status per item)**
-- 🟡 HIGH · A project-tier mapping reaches the tokens of every job it matches, against R-CI-009's "tiers combine by union": its
+- 🟢 HIGH · A project-tier mapping reaches the tokens of every job it matches, against R-CI-009's "tiers combine by union": its
   `maxTtlSeconds` bounds every token (1 s blocks every exchange with `ttl_below_minimum`), a render failure of its template fails
   the whole exchange after the system tier contributed, and disabling or deleting it revokes every token whose issuance lists
-  it, the system tier's included (`select.go`, `exchange_tx.go`, `ttl.go`, `revoke.go`, `CiIssuanceTokensOfMapping`)
-- 🟡 MEDIUM · `trove migrate` changes a declared issuer's `issuer` URL and `kind` in place under the same issuer ID, which the
+  it, the system tier's included (`select.go`, `exchange_tx.go`, `ttl.go`, `revoke.go`, `CiIssuanceTokensOfMapping`) — fixed
+  (Q-CI-47): a project tier's render failure, bound (`expiresAt`, bundle version 2) and disable or delete reach its own
+  contribution only, the system tier owns its tokens, and the evaluator drops a project's ended or inactive contribution
+  (`tiers_test.go`; gaps H-424, H-425, H-427)
+- 🟢 MEDIUM · `trove migrate` changes a declared issuer's `issuer` URL and `kind` in place under the same issuer ID, which the
   API refuses as `immutable`: pins, package owners (`ci:<issuer>:project:<id>`) and unpinned private-issuer mappings move to the
-  new instance, the old key set stays valid until the next refresh, nothing is revoked (`issuers_declared.go`)
+  new instance, the old key set stays valid until the next refresh, nothing is revoked (`issuers_declared.go`) — fixed
+  (Q-CI-48): the migration stops, names both values and asks for a new name (`TestR_CI_001_ADeclaredIssuerKeepsItsIssuerURL`)
 - 🟢 MEDIUM · The project's issuance view keeps `grantedScope` and `requestedScope` of every tier (also a code review finding;
   fixed with it, Q-CI-52)
-- 🟡 MEDIUM · Stored mappings make every exchange expensive inside its transaction: up to 1,000 mappings per issuer shared by all
+- 🟢 MEDIUM · Stored mappings make every exchange expensive inside its transaction: up to 1,000 mappings per issuer shared by all
   tiers, each evaluated to its end with a trace and its regexes compiled twice per evaluation, unbounded literal sizes, while the
-  exchange holds `FOR SHARE` on the issuer row
-- 🟡 LOW · Project key prefixes overlap (`ab-` matches `ab-c-release`), so H-413's probe reaches another project's names; a changed
+  exchange holds `FOR SHARE` on the issuer row — fixed (Q-CI-49): `ci.mappings.max_per_project`, size bounds of a condition, the
+  conditions compiled in the mapping set, and `Select` without trace on the copy before the transaction (gap H-426)
+- 🟢 LOW · Project key prefixes overlap (`ab-` matches `ab-c-release`), so H-413's probe reaches another project's names; a changed
   `jwks_uri` or `discovery_url` keeps the old key set until the next refresh; switching `public_issuer` to true does not re-check
   the unpinned mappings; H-418's key-existence oracle is reachable by any project administrator; `ci.replay.retention_after_expiry:
-  0` leaves a single-use replay window of the clock skew between a replica and the database
+  0` leaves a single-use replay window of the clock skew between a replica and the database — fixed (Q-CI-50, Q-CI-51): keys
+  cannot overlap (Q-AUTHZ-176) and the prefix is now checked before the lookup, a new key location fails closed and is fetched,
+  an unpinning change is `409 mappings_unpinned`, an unknown scope key is `scope_not_granted`, the retention is at least 1 m
 
 **Phase**
 - 🟢 Contracts: schema (migrations `00026` to `00028`), packages (`internal/ci`, `claims`, `subject`, `reason`), every

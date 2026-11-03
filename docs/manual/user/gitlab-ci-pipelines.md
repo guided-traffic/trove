@@ -95,7 +95,7 @@ Without further parameters the token carries every grant of the matched mappings
 ```
 
 - `scope` is a space-separated list of items `<action>` or `<action>:<repository selector>`. The actions are `read`, `annotate`, `deploy`, `overwrite` and `delete`; the selectors are those of permission policies: a key (`web-npm`), a key pattern (`web-*`), a class (`@any`, `@any-local`) or a class or pattern with a format (`@any:npm`). An item without a selector stands for every repository.
-- An item that asks for an action the mappings do not grant refuses the whole exchange with `scope_not_granted`; there is no partial token. `manage`, an unknown action or a key that names no repository answers `scope_malformed`. At most 50 distinct items.
+- An item that asks for an action the mappings do not grant refuses the whole exchange with `scope_not_granted`; there is no partial token. A key that names no repository answers the same, so check the spelling of a key when you see it. `manage` or an unknown action answers `scope_malformed`. At most 50 distinct items.
 - `--data-urlencode 'ttl=600'` asks for a shorter lifetime in whole seconds. It can only shorten, and not below 30 seconds (`ttl_below_minimum`).
 - Package-name and path limits are not part of `scope`; the mapping's grants carry them.
 

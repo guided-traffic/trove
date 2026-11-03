@@ -205,6 +205,7 @@ func (s *Service) Replace(ctx context.Context, caller Actor, name string, expect
 		fields = append(fields, field("/name", "immutable", "The member cannot be changed after the resource was created."))
 	}
 	var out Issuer
+	moved := false
 	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
 		qs, err := queriesOf(tx)
 		if err != nil {
@@ -221,6 +222,7 @@ func (s *Service) Replace(ctx context.Context, caller Actor, name string, expect
 		if before.Source == SourceConfiguration {
 			return managedByConfiguration(before)
 		}
+		moved = keyLocationChanged(before, next)
 		all := append([]errs.FieldError(nil), fields...)
 		if in.Kind != before.Kind {
 			all = append(all, field("/kind", "immutable", "The member cannot be changed after the resource was created."))
@@ -238,7 +240,25 @@ func (s *Service) Replace(ctx context.Context, caller Actor, name string, expect
 	if err != nil {
 		return Issuer{}, err
 	}
+	if moved && out.Enabled {
+		s.fetchMoved(ctx, out, actorOf(caller))
+	}
 	return out, nil
+}
+
+// fetchMoved fetches the key set of an issuer whose key location a write changed, after the commit and outside any
+// transaction (R-ARCH-019), so the placeholder the write stored is replaced as soon as the new location answers
+// (Q-CI-50). A failure is recorded on the key row and in ci.keys.refresh_failed, as for every fetch; the write has
+// committed either way, and the next exchange or the task ci-keys-refresh tries again.
+func (s *Service) fetchMoved(ctx context.Context, is Issuer, actor audit.Actor) {
+	if s.o.Outbound == nil {
+		return
+	}
+	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*s.o.Config.SigningKeys.FetchTimeout)
+	defer cancel()
+	if err := s.refresh(fctx, is, TriggerAdmin, actor); err == nil {
+		s.keys.Invalidate(is.ID)
+	}
 }
 
 // uniqueFields removes a second field error of one pointer, so a kind that is both refused and
@@ -257,9 +277,13 @@ func uniqueFields(fields []errs.FieldError) []errs.FieldError {
 }
 
 // writeUpdate updates the locked row, notifies, revokes when the issuer is disabled and records the one
-// event of the change. before is the row as it was read under the lock.
+// event of the change. before is the row as it was read under the lock. A change that would unpin a mapping is
+// refused, and a new key location replaces the stored set with the fail-closed placeholder (Q-CI-50).
 func (s *Service) writeUpdate(ctx context.Context, tx meta.Tx, qs *q.Queries, caller Actor, before, next Issuer) (Issuer, error) {
 	actor := actorOf(caller)
+	if err := s.checkPinsTx(ctx, qs, before, next); err != nil {
+		return Issuer{}, err
+	}
 	if before.Enabled && !next.Enabled {
 		if err := s.revokeTokens(ctx, tx, qs, caller, before); err != nil {
 			return Issuer{}, err
@@ -271,6 +295,11 @@ func (s *Service) writeUpdate(ctx context.Context, tx meta.Tx, qs *q.Queries, ca
 	}
 	if len(rows) == 0 {
 		return Issuer{}, notFound(before.Name)
+	}
+	if keyLocationChanged(before, next) {
+		if err := s.resetKeysTx(ctx, tx, qs, next); err != nil {
+			return Issuer{}, err
+		}
 	}
 	if err := s.notifyMappings(tx, before.ID); err != nil {
 		return Issuer{}, err

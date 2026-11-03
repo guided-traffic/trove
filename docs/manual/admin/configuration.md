@@ -208,7 +208,8 @@ The federation is being built; until then these keys are accepted and the CI ope
 | `ci.exchange.rate_limit.exempt_cidrs` | `[]` | Runner networks that skip the per-address limit |
 | `ci.signing_keys.max_stale` | `24h` | A key set older than this fails closed with `503` |
 | `ci.mappings.max_per_issuer` | `1000` | Mappings of one issuer |
-| `ci.replay.retention_after_expiry` | `15m` | How long a used subject token is remembered |
+| `ci.mappings.max_per_project` | `100` | Mappings of one project's tier on one issuer; at most `ci.mappings.max_per_issuer`, or the start fails naming both keys |
+| `ci.replay.retention_after_expiry` | `15m` | How long a used subject token is remembered; at least `1m` |
 | `ci.issuances.retention` | `8760h` | How long the record of an issued CI token is kept |
 
 </details>

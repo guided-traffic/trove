@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -19,11 +20,12 @@ import (
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
 
-// The exchange's one transaction (R-CI-007 steps 3 to 10, R-CI-018, R-CI-020, Q-CI-15): the issuer row FOR SHARE
-// and the versions compared with what the replica's copies hold; on a mismatch the second validation against the
-// re-read issuer (R-CI-004 steps 5 to 9, with the key set already held) and the evaluation of the mapping set
-// read from PostgreSQL FOR SHARE; the restore cut-off; the jti; the selection, the bundle, the scope, the
-// lifetime, the token row, the issuance record and ci.exchange.succeeded. Everything between the statements is
+// The exchange's one transaction (R-CI-007 steps 3 to 10, R-CI-018, R-CI-020, Q-CI-15, Q-CI-49): the issuer row FOR
+// SHARE and the versions compared with what the replica's copies hold, which confirms the selection made on the copy
+// before the transaction; on a mismatch the second validation against the re-read issuer (R-CI-004 steps 5 to 9,
+// with the key set already held) and the evaluation of the mapping set read from PostgreSQL FOR SHARE; the restore
+// cut-off; the jti; the selection's failure, the bundle, the scope, the lifetimes (Q-CI-47), the token row, the
+// issuance record and ci.exchange.succeeded. Everything between the statements is
 // computed in memory: no Valkey, issuer or other service is called (R-ARCH-019). Any failure rolls the
 // transaction back, so a refused or failed exchange leaves no trace of its jti.
 
@@ -31,6 +33,7 @@ import (
 // unit tests of the second mismatch replace them (ExchangeService.queries).
 type exchangeQueries interface {
 	CiExchangeLockMappings(ctx context.Context, ids []string) ([]q.CiExchangeLockMappingsRow, error)
+	CiExchangeClock(ctx context.Context) (q.CiExchangeClockRow, error)
 	CiExchangeRestoredAt(ctx context.Context) (int64, error)
 	CiExchangeUseJTI(ctx context.Context, arg q.CiExchangeUseJTIParams) (int32, error)
 	CiExchangeInsertIssuance(ctx context.Context, arg q.CiExchangeInsertIssuanceParams) error
@@ -39,13 +42,15 @@ type exchangeQueries interface {
 // pgQueries is the statements of the PostgreSQL store on the exchange's transaction.
 func pgQueries(tx meta.Tx) (exchangeQueries, error) { return queriesOf(tx) }
 
-// exchangeInput is what steps 1 and 2 established outside the transaction.
+// exchangeInput is what steps 1 and 2 established outside the transaction, and the selection on the replica's copy
+// of the mapping set (Q-CI-49): the transaction only confirms the versions it was made at.
 type exchangeInput struct {
 	unverified subject.Unverified
 	keys       *heldKeys
 	issuer     Issuer
 	verified   subject.Verified
 	set        MappingSet
+	sel        Selection
 }
 
 // evaluation is steps 4 to 7 on one mapping set.
@@ -125,24 +130,30 @@ func (s *ExchangeService) inTx(ctx context.Context, tx meta.Tx, req ExchangeRequ
 	return s.mint(ctx, tx, qs, req, p, row, v, ev.sel)
 }
 
-// evaluateCached evaluates the replica's copy of the mapping set and confirms it against the locked issuer row and
-// the matched mapping rows (FOR SHARE): current is false when any of them changed (Q-CI-15).
+// evaluateCached confirms the selection made on the replica's copy before the transaction (Q-CI-49) against the
+// locked issuer row and the contributing mapping rows (FOR SHARE): current is false when any of them changed
+// (Q-CI-15). Every mapping write takes the issuer row FOR UPDATE and moves its mappings_version, and this
+// transaction holds the row FOR SHARE, so equal versions mean that the copy is the committed set and that it stays
+// so until the commit: the selection is the one an evaluation inside the transaction would make, and the
+// transaction evaluates nothing on this path.
 func (s *ExchangeService) evaluateCached(ctx context.Context, qs exchangeQueries, row Issuer, in exchangeInput) (evaluation, bool, error) {
 	if row.Version != in.issuer.Version || row.MappingsVersion != in.set.MappingsVersion {
 		return evaluation{}, false, nil
 	}
-	sel := Select(in.set, SubjectIDToken, in.verified.Claims)
-	same, err := s.matchedUnchanged(ctx, qs, sel)
+	same, err := s.matchedUnchanged(ctx, qs, in.sel)
 	if err != nil || !same {
 		return evaluation{}, false, err
 	}
-	return evaluation{set: in.set, sel: sel}, true, nil
+	return evaluation{set: in.set, sel: in.sel}, true, nil
 }
 
 // evaluateFresh reads the mapping set FOR SHARE in the transaction, which refreshes the replica's copy, and
 // evaluates it. A set that disagrees with the locked issuer row, or matched rows that changed again, are the second
 // mismatch: configuration_changed (R-CI-007). Under the lock protocol of R-CI-009 neither can happen (every
 // mapping write locks the issuer row this transaction holds FOR SHARE); a writer outside the protocol can cause it.
+// This is the one path that evaluates inside the transaction (Q-CI-49): only after the copy was found behind, at
+// most once per exchange, over a set bounded by ci.mappings.max_per_issuer and the condition limits, with the
+// compiled conditions and without a trace.
 func (s *ExchangeService) evaluateFresh(ctx context.Context, tx meta.Tx, qs exchangeQueries, row Issuer, c claims.Claims) (evaluation, error) {
 	set, err := s.o.Mappings.SetTx(ctx, tx, row.ID)
 	if err != nil {
@@ -210,7 +221,7 @@ func (s *ExchangeService) replay(ctx context.Context, qs exchangeQueries, row Is
 	if v.JTI == "" {
 		return nil
 	}
-	n, err := qs.CiExchangeUseJTI(ctx, q.CiExchangeUseJTIParams{IssuerID: row.ID, Jti: v.JTI, ExpiresUnix: v.ExpiresAt.Unix()})
+	n, err := qs.CiExchangeUseJTI(ctx, q.CiExchangeUseJTIParams{IssuerID: row.ID, Jti: v.JTI, ExpiresUnix: ceilUnix(v.ExpiresAt)})
 	if err != nil {
 		return s.unavailable(err)
 	}
@@ -225,25 +236,44 @@ func (s *ExchangeService) replay(ctx context.Context, qs exchangeQueries, row Is
 	return nil
 }
 
-// mint is steps 8 to 10: the bundle, the scope, the lifetime, the token row, the issuance record and the event.
+// ceilUnix is an instant in whole seconds, rounded up: the replay set never stores a subject expiry earlier than the
+// token's own (R-CI-018, Q-CI-51), whatever fraction of a second its exp carries.
+func ceilUnix(t time.Time) int64 {
+	s := t.Unix()
+	if time.Unix(s, 0).Before(t) {
+		s++
+	}
+	return s
+}
+
+// mint is steps 8 to 10: the lifetime of the token and of each contribution, the bundle, the scope, the token row,
+// the issuance record and the event.
+//
+// Every contribution is the tier's own (R-CI-009, Q-CI-47): the token belongs to its owner's mapping (tokenOwner:
+// the system tier's when it contributes), whose bound with the issuer's and the global bounds is the token's
+// lifetime (R-CI-016); a project tier's maxTtlSeconds ends that contribution only, frozen as its expiry on the
+// database clock that the token row's expiry counts from; and the bundle carries the authorization epoch read
+// here, against which the evaluator later decides whether each contributing mapping is still active.
 func (s *ExchangeService) mint(ctx context.Context, tx meta.Tx, qs exchangeQueries, req ExchangeRequest, p params, row Issuer, v subject.Verified, sel Selection) (issued, error) {
+	if len(sel.Contributions) == 0 {
+		return issued{}, errors.New("ci: a selection without a failure has no contribution")
+	}
+	clock, err := qs.CiExchangeClock(ctx)
+	if err != nil {
+		return issued{}, err
+	}
 	projectID, _ := v.Claims.First(claims.ClaimProjectID)
 	projectPath, _ := v.Claims.First("project_path")
 	f := claims.Frozen{
 		Version: claims.FrozenVersion, Issuer: row.Name, IssuerID: row.ID, ProjectID: projectID, ProjectPath: projectPath,
-		CrossProject: sel.CrossProject,
+		CrossProject: sel.CrossProject, AuthzEpoch: clock.AuthzEpoch,
 	}
-	var mappingMax *time.Duration
 	names := make([]string, 0, len(sel.Contributions))
 	for _, c := range sel.Contributions {
 		f.Add(c.Frozen())
 		names = append(names, c.Mapping.Name)
-		if c.Mapping.MaxTTLSeconds != nil {
-			if d := time.Duration(*c.Mapping.MaxTTLSeconds) * time.Second; mappingMax == nil || d < *mappingMax {
-				mappingMax = &d
-			}
-		}
 	}
+	// Step 8, the scope, before step 9, the lifetime (R-CI-007's order).
 	sc, ee := narrow(f, p.items, s.o.Grants.CIScope(&f))
 	if ee != nil {
 		return issued{}, ee
@@ -254,27 +284,33 @@ func (s *ExchangeService) mint(ctx context.Context, tx meta.Tx, qs exchangeQueri
 		issuerMax = &d
 	}
 	cfg := s.o.Config.Token
-	ttl, failure, detail := ComputeTTL(TTLInput{
-		Requested: p.ttl, Default: cfg.DefaultTTL, Max: cfg.MaxTTL, Min: cfg.MinTTL, IssuerMax: issuerMax, MappingMax: mappingMax,
+	life, failure, detail := ComputeLifetime(TTLInput{
+		Requested: p.ttl, Default: cfg.DefaultTTL, Max: cfg.MaxTTL, Min: cfg.MinTTL, IssuerMax: issuerMax,
 		SubjectExpiresAt: v.ExpiresAt, Now: s.now(),
-	})
+	}, sel.Contributions)
 	if failure != "" {
 		return issued{}, refuse(failure, detail)
 	}
-	if len(sel.Contributions) == 0 {
-		return issued{}, errors.New("ci: a selection without a failure has no contribution")
+	dbNow := time.UnixMicro(clock.NowUs).UTC()
+	sc.bundle.Contributions = slices.Clone(sc.bundle.Contributions)
+	for i := range sc.bundle.Contributions {
+		if life.Windows[i] < life.TTL {
+			end := dbNow.Add(life.Windows[i])
+			sc.bundle.Contributions[i].ExpiresAt = &end
+		}
 	}
+	ttl := life.TTL
 	snapshot := v.Claims.Snapshot()
-	first := sel.Contributions[0].Mapping
+	owner := sel.Contributions[life.Owner].Mapping
 	jobID, _ := v.Claims.First("job_id")
 	tok, err := s.o.Tokens.IssueCITx(ctx, tx, token.CITRequest{
-		OwnerID: first.PrincipalID, Description: description(row.Name, jobID), Frozen: sc.bundle, Scope: sc.stored, TTL: ttl,
+		OwnerID: owner.PrincipalID, Description: description(row.Name, jobID), Frozen: sc.bundle, Scope: sc.stored, TTL: ttl,
 		Claims: snapshot, Source: req.Source,
 	})
 	if err != nil {
 		return issued{}, err
 	}
-	if err := s.record(ctx, tx, qs, req, row, v, sc, first, names, snapshot, tok, ttl); err != nil {
+	if err := s.record(ctx, tx, qs, req, row, v, sc, owner, names, snapshot, tok, ttl); err != nil {
 		return issued{}, err
 	}
 	return issued{res: ExchangeResult{
