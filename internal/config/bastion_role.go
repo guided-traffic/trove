@@ -526,3 +526,22 @@ func LoadBastion(opts Options) (*BastionLoaded, error) {
 	}
 	return &BastionLoaded{Config: cfg, Schema: loaded.Schema, Sources: loaded.Sources, File: loaded.File}, nil
 }
+
+// StorageS3 returns the object-store client configuration of the bucket backend (R-BAS-030): the keys of the
+// Bastion's bucket on the defaults of storage.s3 (timeouts, retries, checksums), the endpoint reached over TLS
+// only and the credentials of cache.bucket.credentials. The cache bucket uses no server-side encryption setting
+// of its own, so the bucket's default applies.
+func (b BastionCacheBucket) StorageS3() StorageS3 {
+	s := mustDefaults[StorageS3]()
+	s.Endpoint, s.Region, s.Bucket, s.Prefix = b.Endpoint, b.Region, b.Bucket, b.Prefix
+	s.ForcePathStyle, s.AllowInsecureEndpoint, s.CAFile = b.ForcePathStyle, false, b.CAFile
+	s.Credentials = StorageS3Credentials{
+		Source: b.Credentials.Source, RoleARN: b.Credentials.RoleARN, WebIdentityTokenFile: b.Credentials.WebIdentityTokenFile,
+		AccessKeyIDFile: b.Credentials.AccessKeyIDFile, SecretAccessKeyFile: b.Credentials.SecretAccessKeyFile,
+	}
+	s.StartupCheck = false // the cache has its own first-readiness check (cache.Backend.Check)
+	// A cache that is slow to fail is worse than one that misses: a request must not wait out the SDK's default
+	// five attempts and 20 s of backoff before it is passed through (R-BAS-030, Q-BAS-89).
+	s.Retry = StorageS3Retry{MaxAttempts: 3, MaxBackoff: 2 * time.Second}
+	return s
+}

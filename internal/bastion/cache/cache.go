@@ -5,7 +5,8 @@
 //
 // The layout below the backend's root (a bucket prefix or the volume directory) is the same for both:
 //
-//	sha256/<h0h1>/<h2h3>/<64 hex>               the bytes of an artifact or a document, by content address
+//	sha256/<h0h1>/<h2h3>/<64 hex>               the bytes of an artifact, by content address
+//	documents/<h0h1>/<h2h3>/<64 hex>            the bytes of a shared document (see [WithArea], Q-BAS-87)
 //	entries/<k0k1>/<sha256 of the cache key>.json   signed entries
 //	access/<64 hex>                              empty access markers; the modification time is the last access
 //	audit-spool/<replica>/<unix ms>.jsonl        events a draining replica could not send
@@ -30,6 +31,14 @@ var (
 	ErrNotFound = errors.New("cache: not found")
 	// ErrBadSignature: a record failed its signature; it is ignored and deleted (R-BAS-032).
 	ErrBadSignature = errors.New("cache: bad signature")
+	// ErrMismatch: bytes offered under a content address do not have that SHA-256 or that size.
+	ErrMismatch = errors.New("cache: the bytes do not match their content address")
+	// ErrCorrupt: stored bytes failed verification while they were served (R-BAS-032); the object is deleted.
+	ErrCorrupt = errors.New("cache: stored bytes failed verification")
+	// ErrTooLarge: a fill grew past the limit of its kind (bastion.cache.max_object_bytes, documents_max_bytes).
+	ErrTooLarge = errors.New("cache: the object is larger than the cache keeps")
+	// ErrInvalid: a content address, key hash or replica name that is not of the layout's form.
+	ErrInvalid = errors.New("cache: invalid name")
 	// ErrNotBuilt is what [Stub] answers.
 	ErrNotBuilt = errors.New("cache: not built yet (work package 5)")
 )
@@ -67,7 +76,8 @@ type Entry struct {
 // ObjectInfo describes stored bytes.
 type ObjectInfo struct {
 	Size int64
-	// LastAccess is the modification time of the access marker, or the object's own time without one.
+	// LastAccess is the object's own modification time. The access markers are read by the sweep only; a
+	// head does not cost a second request for them.
 	LastAccess time.Time
 }
 

@@ -50,7 +50,7 @@ internal/bastion/
 ├── answers/          the validity rules of R-BAS-020 and the feed log; a leaf
 ├── metrics/          every metric of R-BAS-040, defined once; a leaf
 ├── mainclient/       the client of the main installation: Client, Budget, TokenSource, errors; token file and holder
-├── cache/            Backend, Entry, the HMAC Signer; implementations are package 5's
+├── cache/            Backend, Entry, the HMAC Signer; the volume and bucket backends, Cache, Fill, the sweep
 ├── shared/           the shared state (limiters, block list, flight lock, sweep lease, answer records) and its local form
 ├── guard/            Guard (R-BAS-035 to R-BAS-037) and the address key (an IPv6 address counts as its /64)
 ├── downloads/        Buffer of download events (R-BAS-039)
@@ -78,6 +78,11 @@ internal/bastionmain/ the main installation's seams (a domain package)
 | [mainclient/token.go](../../internal/bastion/mainclient/token.go) | `ParseToken` (prefix, length, base62, CRC), `ReadTokenFile`, `Holder` |
 | [cache/cache.go](../../internal/bastion/cache/cache.go) | the layout, `Backend`, `Entry`, `Usage`, `Stub` |
 | [cache/sign.go](../../internal/bastion/cache/sign.go) | `Signer` (Sign, Verify, SignEntry, VerifyEntry), `KeyHash`, the signature domains |
+| [cache/layout.go](../../internal/bastion/cache/layout.go) | the names of the layout, `WithArea`, validation of every name that becomes a path or a key |
+| [cache/core.go](../../internal/bastion/cache/core.go) | `backend`, the one implementation of `Backend` over a `store`: probe, spool, eviction sweep, audit spool, error counting |
+| [cache/volume.go](../../internal/bastion/cache/volume.go), [cache/bucket.go](../../internal/bastion/cache/bucket.go) | the two stores: a directory, and S3 through `internal/blob/s3` |
+| [cache/verify.go](../../internal/bastion/cache/verify.go), [cache/fill.go](../../internal/bastion/cache/fill.go) | the verifying reader with its hold-back, the `Fill` spool |
+| [cache/store.go](../../internal/bastion/cache/store.go), [cache/sweep.go](../../internal/bastion/cache/sweep.go) | `Cache` (what the engine uses), `New`, `NewVolume`, `NewBucket`, `Options`; `SweepOnce`, `RunSweeper` |
 | [shared/shared.go](../../internal/bastion/shared/shared.go) | `Limiter`, `BlockList`, `FlightLock`, `SweepLease`, `AnswerStore`, `State`, `NewLocal` |
 | [guard/guard.go](../../internal/bastion/guard/guard.go) | `Guard`, `Verdict`, `AddressKey`, `Stub` |
 | [downloads/downloads.go](../../internal/bastion/downloads/downloads.go) | `Buffer`, `Stub` |
@@ -147,6 +152,59 @@ coarse action other than `read` it returns the `bastion_read_only` error, which 
 that takes a body it answers `204` with `Trove-Bastion-Route: read-with-body` and reports `handled`. The Bastion replays a `403` or
 `404` and, after a `204`, forwards the real request.
 
+## The cache backends (package 5)
+
+Specification: R-BAS-030 to R-BAS-032, decisions Q-BAS-87 to Q-BAS-90, gaps H-451 to H-453. The consumers (engine, download buffer) hold
+a `*cache.Cache` from `cache.New(ctx, cfg.Cache, signer, cache.Options{…})`; the audit spool and the raw operations are on
+`Cache.Backend()`.
+
+**One implementation, two stores.** `backend` (core.go) implements `cache.Backend` over a `store` of seven primitives: put a file, put
+bytes, get a range, stat, list, remove, touch. `volumeStore` keeps the layout in `bastion.cache.volume.dir` and spools to `<dir>/tmp`
+on the same filesystem, so a fill is committed by a `rename`; stale spool files (older than an hour) are removed at start.
+`bucketStore` keeps it below `bastion.cache.bucket.prefix` through `internal/blob/s3` (the cache's only import beyond the platform
+list), spools to `<tmp>/trove-bastion-cache` in the pod, and uses nothing but PutObject, GetObject, HeadObject, ListObjectsV2 and
+DeleteObject, with no versioning and no conditional write. The S3 client is the main installation's, reached through the plain-typed
+methods of [plain.go](../../internal/blob/s3/plain.go) ([Q-BAS-89](../spec/bastion.md#q-bas-89--the-bucket-backend-reaches-s3-through-a-plain-adapter-and-fails-fast));
+`config.BastionCacheBucket.StorageS3()` maps the Bastion's keys onto it: `https` only, the trust bundle `ca_file`, credentials
+`static` (the files of `secrets.cacheBucket`, re-read when they change), `webIdentity` or `default`, three attempts and 2 s of backoff.
+Only the `static` source is exercised by the tests; the other two are the client's own, covered by its tests.
+
+**What was added to the contract.** `cache.Backend` has the committed methods and one convention: `cache.WithArea(ctx, cache.EntryDocument)`
+selects the area of the bytes (`sha256/` for artifacts, `documents/` for shared documents) on `PutObject`, `GetObject`, `HeadObject`
+and `DeleteObject`; the default is the artifact area, and the wrong area is a miss ([Q-BAS-87](../spec/bastion.md#q-bas-87--the-bytes-of-documents-have-a-tree-of-their-own)).
+`ObjectInfo.LastAccess` is the object's own time (a head does not read the marker). New errors: `ErrMismatch`, `ErrCorrupt`,
+`ErrTooLarge`, `ErrInvalid`. Beyond the interface, `cache.Cache` ([Q-BAS-90](../spec/bastion.md#q-bas-90--the-cache-package-offers-a-fill-a-verified-read-and-the-first-readiness-gate-beyond-backend)):
+
+| Call | What it does |
+|---|---|
+| `Ready(ctx)` | checks the backend (write, read, delete a probe) until one check succeeds, then answers nil without a request: the gate of the first readiness only |
+| `NewFill(kind)` → `Fill` | spools a response while it is streamed (`Write`, running `SHA256`, `Size`); `Commit(ctx, sha)` verifies, commits under the address and removes the spool, `Abort()` discards; refuses bytes past `max_object_bytes` (artifact) or `documents_max_bytes` (document) with `ErrTooLarge` |
+| `StoreEntry(ctx, cacheKey, entry)` | signs (HMAC over every field and the cache key) and stores; write the entry after `Commit` |
+| `LookupEntry(ctx, cacheKey)` | `ErrNotFound` is a miss: no entry, a failed signature (entry deleted, `evictions{stale}`), bytes gone (entry deleted, `evictions{missing}`), a size that differs from the entry's (counted corrupt, object deleted); any other error is the backend's: serve a miss |
+| `Open(ctx, cacheKey, entry)` | full read through the verifying reader; the last 64 KiB are released only after the SHA-256 and size matched; a mismatch returns `ErrCorrupt` from `Read`, deletes the object and the entry of the key, counts `trove_bastion_cache_corrupt_total`; a body longer than the entry is refused at once |
+| `OpenRange` | a range, not verified (H-451) |
+| `Touch(ctx, entry)` | the access marker, at most once per `access_resolution` per replica and content address; best effort |
+| `SweepOnce(ctx, state)`, `RunSweeper(ctx, state)` | the sweep of R-BAS-031 and its loop; publish `cache_bytes`, count `evictions{size}` |
+
+**The sweep.** The limits are `max_bytes − documents_max_bytes` for artifacts and `documents_max_bytes` for documents
+([Q-BAS-88](../spec/bastion.md#q-bas-88--documents-have-a-reserved-share-and-entries-are-removed-when-read)); `trove_bastion_cache_capacity_bytes{area}`
+exports them. A cycle measures both areas (one listing each); an area above 95 % of its limit is swept: it lists its bytes and `access/`
+(two listings), orders by the later of an object's marker and its own time (a refill counts as an access), and deletes oldest first until
+85 % remain, taking the markers along. The sweep does not read entries (H-452). Who runs it: the volume, every replica its own; the
+bucket with Valkey (`st.Shared()`), the replica that wins `shared.SweepLease` for `2 × sweep_interval`; the bucket without Valkey, every
+replica at `sweep_interval ± 20 %`. The package 6 forms plug in through `shared.State`; until they land, `shared.NewLocal` is what the
+tests use.
+
+**Errors.** Every backend error except a missing key, an invalid name and a cancelled context is counted in
+`trove_bastion_cache_errors_total{op}` (`get`, `put`, `delete`, `list`, `spool`) where it happens, so a caller only has to turn an error
+into a miss. **Audit spool** (package 7): `SpoolWrite(ctx, replica, jsonl)` names the file `audit-spool/<replica>/<unix ms>.jsonl`
+(raised by a millisecond on a clash in the process); `SpoolList` is oldest first; names that do not match the form are refused or
+skipped, so no input becomes a path.
+
+**Run it.** `go test -race ./internal/bastion/cache`; the bucket tests need the stack (`make integration-up`) and run in
+`make test-integration` or alone with `go test -tags integration ./test/integration/bastioncache` after sourcing
+`.dev/integration/env`. They write below `it-bastioncache/<run>/` of the `trove-backups` bucket and remove it.
+
 ## Schema and queries
 
 Migrations ([database.md](database.md#migrations-of-the-bastion-q-bas-48)): `00032_bastion` (expand: `bastion`, `bastion_contact`,
@@ -197,6 +255,8 @@ add `database: {host: x}` to the file and the start names `database.host` and th
 | `go test ./internal/api/v1` | the document's interface operations, the `{bastion: true}` form, the stubs |
 | `go test ./internal/archtest/...` | R-BAS-001's import rule and the layers of the Bastion's packages |
 | `go test ./cmd/trove` | the role's start: another section's key, an http main URL, a missing token file |
+| `go test -race ./internal/bastion/cache` | the volume backend on a temporary directory, the fill, the sweep and its order, the audit spool, the verifying reader, the signed entries, the first-readiness gate and counted errors |
+| `make test-integration` (`test/integration/bastioncache`) | the bucket backend on the stack's SeaweedFS (S3, TLS), under a prefix of its own in `trove-backups`: two replicas on one bucket, the five operations asserted through a counting transport, eviction of 300 MiB to a 100 MiB limit, two sweepers, a replaced object, a rewritten entry |
 | `make test-integration` (`test/integration/postgres`) | `TestBastionMigration`: the three migrations, the constraints, the guards and every query of the Bastion files |
 
 ## Extension checklist

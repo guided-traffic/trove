@@ -1169,7 +1169,8 @@ chooses the backend (`bastion.cache.backend`):
 
 - **`bucket`**: an S3 bucket of the Bastion's own, shared by every replica (credentials from `secrets.cacheBucket` or workload
   identity; a bucket of the guided-traffic stackit-s3-provisioner, or SeaweedFS in the local profile). Layout below `prefix`:
-  `sha256/<h0h1>/<h2h3>/<64 hex>` (bytes, INV-4's form), `entries/<k0k1>/<sha256 of the cache key>.json` (signed entries),
+  `sha256/<h0h1>/<h2h3>/<64 hex>` (the bytes of artifacts, INV-4's form), `documents/<h0h1>/<h2h3>/<64 hex>` (the bytes of shared
+  documents, [Q-BAS-87](#q-bas-87--the-bytes-of-documents-have-a-tree-of-their-own)), `entries/<k0k1>/<sha256 of the cache key>.json` (signed entries),
   `access/<64 hex>` (empty access markers, R-BAS-031), `audit-spool/<replica>/<unix ms>.jsonl` (R-BAS-039). Only `PutObject`,
   `GetObject`, `HeadObject`, `ListObjectsV2` and `DeleteObject` are used; no versioning, no conditional write.
 - **`volume`**: a local volume per replica, the same layout below `bastion.cache.volume.dir`; generic ephemeral
@@ -1177,6 +1178,8 @@ chooses the backend (`bastion.cache.backend`):
   shared (INV-13). Without routing by path (R-BAS-033) each replica fills its own copy.
 - A fill is spooled to the pod's temporary volume (`tmp`, bucket backend) or to a temporary directory of the cache volume, and
   is written or renamed to its content address only after verification (R-BAS-021).
+- The bucket's client fails fast: three attempts and at most 2 s of backoff, not the object store's five attempts and 20 s, so a
+  failing bucket is a miss within seconds ([Q-BAS-89](#q-bas-89--the-bucket-backend-reaches-s3-through-a-plain-adapter-and-fails-fast)).
 - The backend is gated at the first readiness only (R-STOR-035's pattern); a failing backend afterwards turns hits into misses
   that are passed through, counted in `trove_bastion_cache_errors_total{op}`, never into failed requests.
 
@@ -1210,13 +1213,14 @@ Acceptance criteria:
 ### R-BAS-031 · Size, eviction by last access and sweeps
 Priority: **MVP** · Covers: trove-only
 
-- **Size.** Bytes plus documents stay below `bastion.cache.max_bytes`; documents below `documents_max_bytes`. A sweep runs every
+- **Size.** Bytes plus documents stay below `bastion.cache.max_bytes`; documents below `documents_max_bytes`, which is their reserved
+  share: artifacts are limited to `max_bytes − documents_max_bytes` ([Q-BAS-88](#q-bas-88--documents-have-a-reserved-share-and-entries-are-removed-when-read)). A sweep runs every
   `bastion.cache.sweep_interval` and, above 95 % of a limit, deletes in order of last access until 85 % remain
   ([Q-BAS-43](#q-bas-43--the-bucket-backend-evicts-by-listing-access-markers)).
 - **Last access.** A served entry writes its access marker (an empty object or file named by its content address, or a touch of
   the entry) at most once per `bastion.cache.access_resolution` per replica; the sweep orders by the markers' modification times,
   read with two listings, and deletes the bytes, the entries that point at them and the markers. An entry whose bytes are gone is
-  a miss and is removed when it is read.
+  a miss and is removed when it is read; the sweep itself does not read entries (Q-BAS-88, H-452).
 - **Who sweeps.** With the volume backend every replica sweeps its own volume. With the bucket backend and Valkey one replica
   sweeps, under a lease in Valkey (`trove-bastion:<prefix>:sweep`, 2 × `sweep_interval`); without Valkey every replica sweeps at
   a randomized interval around `sweep_interval`, which is safe because a sweep only deletes, and may evict more than needed.
@@ -3279,6 +3283,83 @@ The development agent would revisit (c) if the chart ever has to release without
 
 **Applied in the spec:** R-BAS-045 (released with the chart `trove`).
 
+### Q-BAS-87 · The bytes of documents have a tree of their own
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `documents/<h0h1>/<h2h3>/<64 hex>` beside `sha256/`, chosen by an area on the call's context (chosen) | Artifacts and documents are two listings; the caller names the area of an entry's kind | The two limits of R-BAS-031 are two listings, with no read of entries; a call without the area is a miss, never a wrong answer | The layout of R-BAS-030 gains a directory; every call that handles a document carries its area |
+| (b) One tree; the area read from the entries | The sweep reads every entry to learn which bytes are documents | The layout of the spec stays | One request per entry in every sweep |
+| (c) The area in the object's metadata | `x-amz-meta-*` on the object | One tree | A listing does not return metadata; one head per object |
+| (d) A new `area` argument on every method of `Backend` | Explicit | No context | Breaks the packages that build against the committed interface in parallel |
+
+**Choice:** (a).
+
+**Rationale:** R-BAS-031 asks that documents never evict artifacts, which needs the two areas measured separately, and it asks for
+two listings. (a) is the only option that gives both on a store with five operations. `cache.WithArea(ctx, cache.EntryDocument)`
+selects the area; the default is the artifact area, so a caller that forgets it for a document gets a miss. The access markers stay
+in one `access/` namespace, one per content address. The development agent would revisit (d) if a third area appeared.
+
+**Applied in the spec:** R-BAS-030 (layout), [docs/developer/bastion.md](../developer/bastion.md).
+
+### Q-BAS-88 · Documents have a reserved share, and entries are removed when read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A reserved share: artifacts up to `max_bytes − documents_max_bytes`, documents up to `documents_max_bytes`; each swept on its own (chosen) | Two limits, 95 % and 85 % of each | Documents never evict artifacts, and the sum never exceeds `max_bytes` | A share the documents do not use is not used by artifacts |
+| (b) The total decides | Above 95 % of `max_bytes` delete the oldest of both areas | The whole size is used | A burst of documents evicts artifacts (R-BAS-023) |
+| (c) The sweep reads every entry and removes those of evicted bytes | Entries are deleted with their bytes | No orphan entry | One read per entry in every sweep, the cost Q-BAS-43 avoids |
+
+**Choice:** (a), with the removal of entries as R-BAS-031 states it: when read. The sweep deletes bytes and markers; an entry whose
+bytes are gone is a miss and is removed by the next lookup (counted `missing`), and an entry that fails its signature is removed and
+counted `stale`.
+
+**Rationale:** (a) is R-BAS-023's guarantee read literally; `trove_bastion_cache_capacity_bytes{area}` exports the two limits. The
+entries of evicted bytes stay in the bucket until read and are not counted in the size (H-452). The development agent would revisit
+(c) when entries become a measurable share of a bucket (about a million).
+
+**Applied in the spec:** R-BAS-031.
+
+### Q-BAS-89 · The bucket backend reaches S3 through a plain adapter and fails fast
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Plain-typed methods in `internal/blob/s3` (`PutPlain`, `OpenPlain`, `StatPlain`, `ListPlain`, `IsNotFound`) and three attempts with 2 s of backoff (chosen) | The cache imports only `internal/blob/s3` (R-BAS-001) and gets the five operations without `internal/blob` types | The allow-list of the archtest stays one package; the client's credential sources, TLS trust and stall detection are reused | A small addition to a package the main installation uses |
+| (b) Allow `internal/blob` for the cache | The types are importable | No adapter | Pulls the blob store's PostgreSQL-bound package into the Bastion's tree |
+| (c) A second S3 client in the cache | Own SDK use | No change in `s3` | A second place that imports the SDK ("the only package that imports it") |
+| (d) The object store's five attempts and 20 s of backoff | Unchanged retry | One setting | A failing bucket holds every request for seconds before it is a miss (R-BAS-030) |
+
+**Choice:** (a).
+
+**Rationale:** the methods add no request: each is the existing method of the same operation in plain types, and the integration
+suite counts the requests the client sends. `BastionCacheBucket.StorageS3` maps the Bastion's keys onto the client's configuration.
+The retry is not configurable; the development agent would revisit that if a provider needs more attempts.
+
+**Applied in the spec:** R-BAS-030.
+
+### Q-BAS-90 · The cache package offers a fill, a verified read and the first-readiness gate beyond `Backend`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `cache.Cache` around the backend: `NewFill`, `Open` (verified, with the hold-back), `LookupEntry`, `StoreEntry`, `Touch` (once per resolution), `Ready`, `SweepOnce`, `RunSweeper` (chosen) | R-BAS-021, R-BAS-022, R-BAS-031 and R-BAS-032 are applied once | The engine and the download buffer cannot get verification, signing or the throttle wrong; `Backend` is unchanged apart from the area on the context | The engine uses two types |
+| (b) The engine implements them over `PutObject(r)` | The fill is spooled by the engine | `Backend` is all | The engine needs the volume's temporary directory; two implementations of verification |
+| (c) Verification inside `GetObject` | The backend hashes | One place | A range cannot be verified; the backend does not know the entry |
+
+**Choice:** (a).
+
+**Rationale:** the spool of R-BAS-030 is a directory of the backend (the volume's `tmp`, or the pod's), which only the cache knows;
+a fill that is committed by a rename on the volume costs no second write. A range read is not verified (R-STOR-013's carve-out,
+H-451). The development agent would revisit it if a third consumer needed the raw backend.
+
+**Applied in the spec:** nothing beyond what R-BAS-021, R-BAS-030 and R-BAS-032 state; the interface is on [docs/developer/bastion.md](../developer/bastion.md).
+
 ## What this does not cover
 
 ### H-382 · A volumetric attack on bandwidth is not absorbed by the Bastion
@@ -3440,3 +3521,34 @@ forbids, with a log line at most; the chart cannot see which controller reads it
 absent (the Bastion's own limits and blocking still hold), and with `routeByPath` each replica fills its own copy of every path
 instead of one (performance only, the volumes together hold less). What makes it real: a different ingress class, or a hardened
 HAProxy Ingress; NOTES.txt names the dependence, and the e2e run checks the annotations against the local profile's controller only.
+
+### H-451 · A ranged read of a cached artifact is not verified
+
+Stage: R-BAS-022's answer to `Range` and `If-Range` from the cache, and R-BAS-032. Subject: the integrity of the bytes of a ranged
+download.
+
+Dormant until the engine serves ranges from the cache; then live on every Bastion that does. The verifying reader checks the SHA-256
+of a whole object; a range is a part of it and cannot be checked against the digest (the carve-out of R-STOR-013). Whoever can write
+the bucket, or the volume of a replica, and replaces a cached object, makes a ranged reader receive the other bytes, where a whole
+read aborts and deletes the object. The package managers the Bastion serves read whole files. What makes it real: a client that
+resumes a download with `Range` after the object was replaced; the next whole read deletes the object.
+
+### H-452 · The entries of evicted bytes stay until they are read and are not counted in the cache size
+
+Stage: R-BAS-031, Q-BAS-88. Subject: the size of the bucket and the volume.
+
+Dormant until phase 5b; then live on every Bastion. A sweep deletes bytes and markers and does not read entries, so the entry of an
+evicted object (about 1 KiB) stays until a request reads it, and the entries are not part of `trove_bastion_cache_bytes`. The number
+of entries is bounded by the distinct cache keys the main installation served (path and Vary values), not by a caller. What makes it
+real: a catalog with millions of keys and a short working set, where entries outgrow what `max_bytes` suggests; the revisit
+condition of Q-BAS-88 names it.
+
+### H-453 · Objects and markers are not signed: a replaced object is found only when it is read, and markers steer eviction
+
+Stage: R-BAS-030 to R-BAS-032 below the entries. Subject: the integrity of bytes at rest and the order of eviction.
+
+Dormant until phase 5b; then live on every Bastion. Only entries are signed; the bytes are checked against their address when they
+are served, and the access markers and modification times that order a sweep carry no signature. A holder of write access to the
+bucket (or of a replica's volume) who replaces an object leaves it until the next read, which aborts and deletes it; one who
+refreshes the markers of worthless objects makes a sweep evict the useful ones instead. Neither lets the Bastion serve other bytes;
+both cost a refill. What makes it real: the compromise of the Bastion's bucket credential (H-387's setting, without the key).

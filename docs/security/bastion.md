@@ -95,6 +95,20 @@ served (R-STOR-013's verifying reader): a replaced object aborts the transfer an
 and answers in the bucket and in Valkey are signed with HMAC-SHA-256; write access to either without the key only deletes. With the
 key, it forges (H-387).
 
+What each layer of the cache holds, and what protects it:
+
+| Held | Where | Protected by | What write access without the key does |
+|---|---|---|---|
+| Entries (content address, size, headers, repository, `validatedAt`) | `entries/` | HMAC-SHA-256 over every field and the cache key (`cache.Signer`); a record that fails is ignored, deleted and counted as `stale` | Deletes; cannot point an entry at other bytes, move it to another key, or extend its validity |
+| Artifact and document bytes | `sha256/`, `documents/` | the content address, checked while served by a verifying reader that withholds the last 64 KiB until the SHA-256 and the length match | Replaces: the next whole read aborts, deletes the object and the entry, and counts `trove_bastion_cache_corrupt_total`; the next request refetches. A ranged read is not verified (H-451); the replacement stays until read (H-453) |
+| Access markers, modification times | `access/` | nothing | Steers the order of eviction (H-453) |
+| The audit spool | `audit-spool/` | nothing; the files are events the main installation receives as reports of the Bastion's own token | Deletes events or adds events marked with the Bastion's registration (H-386's capability, from the bucket) |
+
+A fill is spooled to a temporary directory of the volume or the pod's `tmp` and committed under its address only after its digest
+was checked, so a reader never sees a partial object; the backend checks the digest and size of every `PutObject` once more. Every
+name that becomes a path or a key (content address, key hash, replica, spool file) is validated as hex or a fixed form before use.
+The bucket is reached over `https` with the trust bundle of the chart, and its credential is a file the replica re-reads.
+
 ## What this does not cover
 
 The gaps of the Bastion's mechanisms are recorded on the spec page, where the mechanisms are, and only linked here:
@@ -128,7 +142,13 @@ The gaps of the Bastion's mechanisms are recorded on the spec page, where the me
 - [H-433](../spec/bastion.md#h-433--the-egress-policy-names-the-main-installation-by-address) — the egress policy names the main
   installation by address;
 - [H-434](../spec/bastion.md#h-434--a-controller-that-ignores-the-annotations-turns-the-edge-limit-and-routing-off-silently) — a
-  controller that ignores the Ingress annotations turns the edge limit and routing off silently.
+  controller that ignores the Ingress annotations turns the edge limit and routing off silently;
+- [H-451](../spec/bastion.md#h-451--a-ranged-read-of-a-cached-artifact-is-not-verified) — a ranged read of a cached artifact is not
+  verified;
+- [H-452](../spec/bastion.md#h-452--the-entries-of-evicted-bytes-stay-until-they-are-read-and-are-not-counted-in-the-cache-size) —
+  entries of evicted bytes stay until read and are not counted in the size;
+- [H-453](../spec/bastion.md#h-453--objects-and-markers-are-not-signed-a-replaced-object-is-found-only-when-it-is-read-and-markers-steer-eviction)
+  — objects and markers are not signed.
 
 This page does not describe the main installation's own mechanisms that the Bastion relies on (the decision point, token
 validation, the revocation journal); their pages and gaps are linked above. It records no gap of its own.
