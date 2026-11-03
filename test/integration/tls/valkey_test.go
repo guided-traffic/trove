@@ -112,7 +112,13 @@ func TestValkeyTLS(t *testing.T) {
 
 	t.Run("R-HA-056 R-ARCH-035 a CA file that does not load keeps the last good CA across new handshakes", func(t *testing.T) {
 		before := seriesValue(t, reg, tlsfiles.FamilyReloadErrors, caFile)
-		tlstest.WriteFile(t, caFile, []byte("not a certificate"))
+		// Replaced in one step, as a mounted Secret is: an in-place write truncates the file first, and a reload that
+		// reads it in between counts the empty file as a second failed load.
+		tmp := caFile + ".new"
+		tlstest.WriteFile(t, tmp, []byte("not a certificate"))
+		if err := os.Rename(tmp, caFile); err != nil {
+			t.Fatal(err)
+		}
 		end := time.Now().Add(3 * time.Second) // three connection lifetimes
 		for time.Now().Before(end) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
