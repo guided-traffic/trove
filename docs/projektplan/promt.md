@@ -208,11 +208,6 @@ Found on 2026-11-03 while closing phase 5:
 
 ### Tests and tools
 
-- **F-34 · `TestR_CI_021_TheAddressBudgetIsOneAcrossReplicas` holds "1,000 requests within 5 s" as a hard bound** (read, by
-  the development agent that built the exchange). R-CI-021's criterion bounds the admitted answers of 1,000 requests sent
-  within 5 s; the test fails outright when the flood itself takes longer, which a CPU-limited CI runner may do without a
-  defect. It passed in every Test and Release run of the phase. Done when the test measures the budget over the time the
-  flood took (the limiter's rate times that window plus its burst) instead of failing on the duration.
 - **F-35 · `TestR_CI_003_StaleAndUnreachable` failed once** (read). In one full run of `test/integration/ci` while three
   development agents shared the integration stack it failed, and it passed alone and in every later run; not reproduced.
   Done when a run under load (`-count` with CPU load) reproduces it and the cause is fixed, or 200 runs under load pass.
