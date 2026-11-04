@@ -220,22 +220,23 @@ Found on 2026-11-04 while cutting trove into task areas (phase 6a):
 - **F-49 · The drain per role (`TestDrainRoles`, set `drain-roles`) runs with a reduced load** (confirmed, by reading the test).
   R-HA-059 "A drain per role" asks for the npm and dotnet client loops, the long-transfer probes and a loop of a browser journey
   beside the ping, transfer and management-call loops; the test has the latter three and the driver's jobs, and the full advisory sync
-  is drained by node in `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun`, not per pod from a checkpoint. The test has not run on a
-  cluster yet (WP6a.5 was written while the kind cluster was in use). Done when the client loops of `TestNPMHA` and the journey run
+  is drained by node in `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun`, not per pod from a checkpoint. With that load the test
+  passed in the dispatched nightly run 41902592855 (513 s, GitHub-hosted runner). Done when the client loops of `TestNPMHA` and the journey run
   beside the per-role drain and the sync is started before the first eviction of the pool `vuln`, or the owner narrows the criterion.
 
 - **F-46 · `TestE1_08RateLimits` was red in the `failover` leg of the scheduled nightly run 41804996351** (read, from the
   log). The bound cases passed, with Valkey stopped included (`e1_08_ratelimit_test.go` up to line 202); the case after
   `valkey-cli.sh client pause 4000 all` (line 230) saw 15 of 483 requests take 400 ms or more, and the credential-failure
   burst that follows (line 351) is where the test failed; its assertion is not yet read. The same run was red in `npm-ha`
-  (F-38) and in the performance run of R-VULN-028 (F-43). Done when the failing assertion is read, reproduced with
+  (F-38) and in the performance run of R-VULN-028 (F-43). The `failover` leg passed in the dispatched nightly run 41902592855 on a
+  GitHub-hosted runner. Done when the failing assertion is read, reproduced with
   `make e2e SET=failover` and its cause fixed, or shown to be the runner's load (F-37, F-40).
 
 Found on 2026-11-03 while building phase 6:
 
 ### Tests and tools
 
-- **F-43 · Two of the bounds V-1 to V-9 of R-VULN-028 are missed on the shared stack, and a run on the reference environment is
+- **F-43 · Three of the bounds V-1 to V-9 of R-VULN-028 (V-4, V-7b, V-8) are missed on CI runners, and a run on the reference environment is
   missing** (confirmed by the run, narrowed by the fix of 2026-11-04). The performance run `TestR_VULN_028_PerformanceRun` on the
   integration stack (not the reference environment, H-491), 2026-11-04: V-1 7.1 min, V-2 2.1 min, V-3 0.16 min, V-6 131 ms, V-7a
   37 ms and V-9 0.33 GiB met their targets; V-5b counts 2.04 transactions per cached download against the one of R-ARCH-027 (F-41,
@@ -252,8 +253,10 @@ Found on 2026-11-03 while building phase 6:
   Left: V-7b still reads the triple of every finding of a repository read in part (about 100 to 120 ms of statement and the
   transfer of 100,000 rows) and cannot be judged under the shared stack's load: `TestR_VULN_020_TheFirstPageAtScale` measured 1.7 to
   3.2 s for the pattern grant (and 60 ms to 1.2 s for the administrator) at a load average of 240, before and after the fix alike,
-  so the fix is shown by the benchmark and not by the end-to-end time; V-5b waits for F-41; V-4's exact value, V-7b and V-8 are
-  to be read on a run on the reference environment (H-491) and on the next nightly run. Done when that run reports all nine
+  so the fix is shown by the benchmark and not by the end-to-end time. The dispatched nightly run 41902592855 on a GitHub-hosted
+  runner (no CPU limit): V-1 3.5 min, V-2 0.02 min, V-3 0.10 min, V-5a, V-5b 0.83 transactions, V-6 83 ms, V-7a 24 ms and V-9 0.33 GiB
+  met; V-4 7.7 ms (the exact p99 of 300 publishes, median 2.2 ms) against 5 ms, V-7b 329 ms against 300 ms and V-8 52 ms against
+  25 ms missed. V-4, V-7b and V-8 are to be read on a run on the reference environment (H-491). Done when that run reports all nine
   within their targets, or a decision revises a bound with the measured cost (the next steps for V-7b are named in Q-VULN-77).
 
 Found on 2026-11-03 while closing phase 5:
@@ -290,7 +293,10 @@ Found on 2026-11-03 while closing phase 5:
 - **F-38 · `npm-ha` and `npm-ha-soak` were red in the nightly run 41575201390** (read). The npm load under drains and
   failovers is the phase 7 item "npm load in the drain and failover tests reliably green"; `npm-ha` passed in run 41568514247
   hours before. The dispatched nightly run 41739280012 (2026-11-04) was red in `npm-ha` again, in the drain variant A and the
-  PostgreSQL switchover case under the npm load. Done with that item.
+  PostgreSQL switchover case under the npm load. In the dispatched nightly run 41902592855 (GitHub-hosted runner, no CPU limit) the
+  drain variant A passed (no failed `npm ci` or publish, k6 only 2xx and 304) and the switchover case failed: k6 saw 205 answers `503`
+  and 135 connections without an answer during the 16 s of the fault, and sent 16,145 requests in 153 s against at least 17,474;
+  `npm ci` and publish had no failure. Done with that item.
 - **F-36 · The issuer double's fixtures were recorded on a local GitLab 19.0.1-ee, not on the owner's instance**
   (confirmed). The owner's GitLab (namespace `gitlab` of his cluster) cannot create projects: the web service dials Gitaly
   under a name its certificate does not carry. Machine-level for the owner (his GitOps repository). Done when, after the

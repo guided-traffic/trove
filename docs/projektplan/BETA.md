@@ -865,8 +865,9 @@ areas.
   budget, autoscaler and ingress rule per role, path routing, path and worker pools, the upgrade bridge (WP6a.1 to WP6a.4);
   the findings of the code review and the security audit fixed (Q-HA-90 to Q-HA-93, Q-ARCH-306, Q-ARCH-307, Q-UI-111)
 - 🟡 Tests: the role table in the architecture test, chart tests per role and `TestE03Roles` (every role deployed, routing,
-  access logs, the other family an unknown path at the pod) are green on kind. Open: `TestDrainRoles` (set `drain-roles`,
-  nightly) has not run yet, and the e2e test of the upgrade across the cut (E6a.7) is not built (WP6a.5, E6a.1 to E6a.8)
+  access logs, the other family an unknown path at the pod) are green on kind, and `TestDrainRoles` (set `drain-roles`, nightly)
+  passed in nightly run 41902592855, with the reduced load of F-49. Open: the e2e test of the upgrade across the cut (E6a.7) is
+  not built (WP6a.5, E6a.1 to E6a.8)
 
 ## Phase 6b · Remote full mirror
 
