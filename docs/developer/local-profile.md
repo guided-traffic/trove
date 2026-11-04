@@ -3,7 +3,7 @@
 The profile brings up an HA-shaped installation on a laptop with one command: a kind cluster with
 one control-plane and three worker nodes in three zones, PostgreSQL with a standby, Valkey with a
 replica and three Sentinels, an S3 store, an Ingress controller, the owner's stack of operators that
-generate the Secrets and the certificates, and the trove chart with two `web` and two `worker` replicas.
+generate the Secrets and the certificates, and the trove chart with every role: `api` 2 replicas, `packages` 3, `worker` 2 and a worker pool `vuln` of 2 ([Q-HA-87](../spec/ha-and-helm.md#q-ha-87--the-dev-profiles-sizing-of-the-roles-and-its-postgresql-connection-budget)).
 **Every connection is TLS**: client to the edge, edge to trove, trove to PostgreSQL, Valkey, the Sentinels and
 S3. It is the target of the failover and drain tests (E0.13, E0.14), of the certificate rotation drill (E0.15) and
 the base of the end-to-end tests. The requirements are [R-HA-051](../spec/ha-and-helm.md),
@@ -13,7 +13,7 @@ the base of the end-to-end tests. The requirements are [R-HA-051](../spec/ha-and
 ```mermaid
 flowchart LR
   host["host client / k6<br/>(dev CA)"] -- "https :28080 (NodePort 30443)" --> hap["HAProxy Ingress<br/>2 pods, control-plane node"]
-  hap -- "HTTPS, verify trove-tls CA,<br/>SNI trove.trove.svc" --> web["trove web / worker"]
+  hap -- "HTTPS, verify trove-tls CA,<br/>SNI trove.trove.svc" --> web["trove api / packages / worker"]
   web -- "verify-full" --> pg[("CloudNativePG<br/>trove-db")]
   web -- "TLS 36379 / 16379" --> vk[("Valkey operator:<br/>2 Valkey + 3 Sentinels")]
   web -- "https, ca_file" --> s3[("SeaweedFS")]
@@ -31,11 +31,11 @@ flowchart LR
 | internal-secrets-operator | namespace `internal-secrets-operator-system` | generates the Secrets of [secrets.yaml](../../deploy/dev/secrets.yaml) from annotations | `DEV_ISO_CHART_VERSION`, `DEV_ISO_IMAGE` |
 | Valkey operator | namespace `valkey-operator-system` | owns the `Valkey` resource and its StatefulSets | `DEV_VALKEY_OPERATOR_CHART_VERSION`, `DEV_VALKEY_OPERATOR_IMAGE` |
 | CloudNativePG operator | namespace `cnpg-system` | operator only | `CNPG_CHART_VERSION`, `DEV_CNPG_OPERATOR_IMAGE` |
-| PostgreSQL 18 | namespace `trove` | CloudNativePG `Cluster` `trove-db`: 2 instances (primary and standby), synchronous replication with `dataDurability: preferred`, database and owner `trove`, TLS | `DEV_CNPG_POSTGRES_IMAGE` |
+| PostgreSQL 18 | namespace `trove` | CloudNativePG `Cluster` `trove-db`: 2 instances (primary and standby), synchronous replication with `dataDurability: preferred`, database and owner `trove`, TLS, `max_connections` 400 (the chart's budget of the roles is 303, 383 with the bridge; R-HA-016) | `DEV_CNPG_POSTGRES_IMAGE` |
 | Valkey 9.1 | namespace `trove` | `Valkey` resource `trove-valkey` ([valkey.yaml](../../deploy/dev/valkey.yaml)): StatefulSet `trove-valkey` (2 pods) and `trove-valkey-sentinel` (3 pods), TLS only, `emptyDir`, PodDisruptionBudgets, one pod of each tier per zone. The Alpine image has every tool the operator's scripts need (checked against `RequiredImageTools` of the operator, 1.14.12) | `DEV_VALKEY_IMAGE` |
 | SeaweedFS | namespace `trove` | Deployment `trove-s3` (one `weed server` on `emptyDir`, pinned to the control-plane node like the edge, because no test drains it and an eviction would lose every blob; memory limit 4Gi: two 500 MB uploads at once were OOM-killed at 1Gi in E1.13), HTTPS on `trove-s3:9000` with `trove-s3-tls`, buckets `trove-blobs` (versioning on), `trove-pg-archive`, `trove-backups` | `DEV_SEAWEEDFS_IMAGE`, `DEV_AWSCLI_IMAGE` |
 | Keycloak (test IdP) | namespace `trove` | Deployment `trove-keycloak` ([keycloak.yaml](../../deploy/dev/keycloak.yaml)), `start-dev` with a realm import, HTTPS only on `trove-keycloak:8443` with `trove-keycloak-tls`; realm `trove` with the users `alice` and `bob`, the groups `trove-team-web` and `trove-platform-admins`, the client `trove` (Q-AUTH-35, [test IdP](#the-test-idp)) | `DEV_KEYCLOAK_IMAGE` |
-| trove | namespace `trove` | Helm release `trove` with [values-dev.yaml](../../deploy/dev/values-dev.yaml): 2 `web` with 1 GiB, 2 `worker` (grace period 60 s, so a drain test does not wait 300 s), migration Job, `health.shutdown_drain_delay` 15 s (the edge took longer than the default 5 s to drop a draining pod's endpoint on the CI runners), caches of 64, 32 and 64 MiB so a `web` pod keeps 858 memory slots instead of 90 (Q-ARCH-243), the chart's NetworkPolicies, `tls.enabled` with `trove-tls` and `reloadInterval: 2s`, the endpoint `customers` on `:8443`; `up.sh` adds the Docker `kind` network ranges as `networkPolicy.probeCIDRs` | image `guidedtraffic/trove:dev` (the default of `up.sh`, loaded into kind from the local Docker; `make image` builds it) |
+| trove | namespace `trove` | Helm release `trove` with [values-dev.yaml](../../deploy/dev/values-dev.yaml): `api` 2 and `packages` 3 with 1 GiB limits, `worker` 2 (grace period 60 s, so a drain test does not wait 300 s) and the pool `vuln` 2 (queue `vuln`, the settings of `worker`), migration Job, `health.shutdown_drain_delay` 15 s (the edge took longer than the default 5 s to drop a draining pod's endpoint on the CI runners), caches of 64, 32 and 64 MiB so a pod of the serving roles keeps 858 memory slots instead of 90 (Q-ARCH-243), the chart's NetworkPolicies, `tls.enabled` with `trove-tls` and `reloadInterval: 2s`, the endpoint `customers` on `:8443`; `up.sh` adds the Docker `kind` network ranges as `networkPolicy.probeCIDRs` | image `guidedtraffic/trove:dev` (the default of `up.sh`, loaded into kind from the local Docker; `make image` builds it) |
 
 The namespace `trove` enforces the restricted Pod Security Standard (`enforce`, `audit` and `warn`),
 and every dependency manifest satisfies it, the operators' generated pods included. Images are pinned by digest; the
@@ -56,7 +56,7 @@ selects are never touched.
 
 | Target | Script | What it does |
 |---|---|---|
-| `make dev-up` | `up.sh` | creates the cluster and installs everything; idempotent (a second run takes about 40 s). The ID of the loaded trove image is a pod annotation (`trove-dev/image-id`), so a newly built image rolls the `web` and `worker` pods and an unchanged one rolls nothing |
+| `make dev-up` | `up.sh` | creates the cluster and installs everything; idempotent (a second run takes about 40 s). The ID of the loaded trove image is a pod annotation (`trove-dev/image-id`), so a newly built image rolls the `api`, `packages` and `worker` pods (the pool inherits the annotation of `worker`) and an unchanged one rolls nothing |
 | `make dev-down` | `down.sh` | deletes the kind cluster `trove` and `.dev/` |
 | `make dev-failover` | `failover.sh [instance]` | PostgreSQL switchover to the standby, waits until the old primary is a standby again |
 | `make dev-valkey-failover` | `valkey-failover.sh` | `SENTINEL FAILOVER trove-valkey`, waits until another pod is primary |
@@ -66,7 +66,7 @@ selects are never touched.
 | `deploy/dev/valkey-cli.sh <command...>` | `valkey-cli.sh` | runs `valkey-cli` against the current primary (found through the Sentinels, over TLS, the password read inside the pod): `FLUSHALL` for E1.11, `CLIENT PAUSE` for the latency injection of R-ARCH-034 (E1.8) |
 | `make dev-pg-kill` | `pg-kill.sh` | force-deletes the PostgreSQL primary pod, waits until the operator reports a healthy cluster |
 | `make dev-pg-stop DURATION=30s` | `pg-stop.sh 30s` | fences every instance of `trove-db` (`cnpg.io/fencedInstances`, PostgreSQL stops, pods and volumes stay), waits, removes the fence, waits for a healthy cluster |
-| `make dev-drain` | `drain.sh` | the E0.14 test: drains a node with a web and a worker pod under the k6 load and cursor-persisting jobs; `drain.sh <node>` is the drain alone, `drain.sh --pick` prints the node |
+| `make dev-drain` | `drain.sh` | the E0.14 test: drains a node with an `api`, a `packages` and a `worker` pod under the k6 load and cursor-persisting jobs; `drain.sh <node>` is the drain alone, `drain.sh --pick` prints the node |
 | `make e2e SET=push\|failover\|access-long\|full\|drain\|npm\|npm-ha\|npm-ha-crash\|nuget\|nuget-ha\|<regexp>` | `e2e.sh` | the end-to-end suite, see [e2e.md](e2e.md); `npm-ha` drains a node and fails PostgreSQL and Valkey over under the npm load, `npm-ha-crash` force-deletes pods under it ([E2.11](e2e.md#drain-and-failover-under-npm-load)); `nuget-clients`, `nuget`, `nuget-closing`, `nuget-ha` start NuGet client pods (the .NET SDK and nuget.exe on Mono) and, but for the first, the counting NuGet test upstream ([the NuGet clients](e2e.md#the-nuget-clients)) |
 | `make chart-lint`, `make chart-test` | `test/chart/lint.sh`, `test/chart/test.sh` | see [helm-chart.md](helm-chart.md#value-sets-and-tests) |
 
@@ -88,7 +88,7 @@ is measured by [the end-to-end suite](e2e.md), which runs them under load.
 ### The `scatter` profile
 
 `TROVE_PROFILE=scatter deploy/dev/up.sh` (also on a running cluster) switches to the profile of
-R-ARCH-032 and E0.11: three `web` replicas ([values-scatter.yaml](../../deploy/dev/values-scatter.yaml)),
+R-ARCH-032 and E0.11: three `api` and three `packages` replicas ([values-scatter.yaml](../../deploy/dev/values-scatter.yaml)),
 and two HAProxy Ingress backend keys on trove's Ingress, `balance-algorithm: roundrobin` and
 `config-backend: "option http-server-close"`. The second one overrides the template's `option http-keep-alive`
 for this backend only, so HAProxy keeps no idle connection to a pod and balances every request round robin on its
@@ -100,7 +100,7 @@ and runs the 100 requests/s load; `e2e.sh` returns the cluster to the default pr
 
 `TROVE_PROFILE=bastion deploy/dev/up.sh` layers [values-bastion.yaml](../../deploy/dev/values-bastion.yaml) on the main installation for the
 Bastions of R-BAS-049: the pod range `10.244.0.0/16` as `config.bastions.trusted_proxies` (the Bastion's pods call the main endpoint from the range of
-whichever node they run on, and the main installation resolves the client address from what they send, R-BAS-017) and the Service address the Bastions call, `https://trove.trove.svc:8080` (a host the main installation does not serve is answered `421`, also on the interface routes), and the two base URLs
+whichever node they run on, and the main installation resolves the client address from what they send, R-BAS-017) and the Service addresses the Bastions call, `https://trove-api.trove.svc:8080` for `bastion.main.url` and `https://trove-packages.trove.svc:8080` for `bastion.main.packages_url` (a host the main installation does not serve is answered `421`, also on the interface routes), and the two base URLs
 `https://bastion-volume.trove.localhost:<edge port>` and `https://bastion-bucket.trove.localhost:<edge port>` as
 `config.server.additional_base_urls` (R-BAS-010; `up.sh` passes them because the edge port follows `TROVE_DEV_HTTP_PORT`). The Bastions themselves are not part of
 `up.sh`: `deploy/dev/bastion.sh infra` and `install <volume|bucket>` make the namespace `trove-bastion`, a Valkey of its own, the certificates and the two releases of the chart
@@ -142,9 +142,9 @@ Generated or created in namespace `trove`; nothing in `up.sh` makes a random val
 | `trove-valkey-tls` | `tls.crt`, `tls.key`, `ca.crt` | the Valkey operator, through cert-manager (`unifiedCertificate: true`: one Secret for both tiers) | Valkey and Sentinels; chart: `secrets.valkeyCA` (`ca.crt`) |
 | `trove-s3` | `access-key-id` (`trove-dev`), `secret-access-key` (40 characters) | internal-secrets-operator | SeaweedFS and the bucket Job; chart: `secrets.s3` |
 | `trove-encryption-keys` | `dev.key`: 32 random bytes, **raw** (`iso.gtrfc.com/type: bytes`) | internal-secrets-operator | chart: `secrets.encryption`; the file name without `.key`, `dev`, is the key ID. The key ring accepts a 32-byte file as it is and base64 text of 32 bytes |
-| `trove-break-glass` | `password` (32 characters, plaintext: at least 20 are required) | internal-secrets-operator, **rotated every 24 h** (`iso.gtrfc.com/rotate: 24h`) | chart: `secrets.breakGlass` (mounted into `web` pods, renders `auth.break_glass.password_file`); the e2e tests read it for E1.1 and R-AUTH-042 |
+| `trove-break-glass` | `password` (32 characters, plaintext: at least 20 are required) | internal-secrets-operator, **rotated every 24 h** (`iso.gtrfc.com/rotate: 24h`) | chart: `secrets.breakGlass` (mounted into `api` pods, renders `auth.break_glass.password_file`); the e2e tests read it for E1.1 and R-AUTH-042 |
 | `trove-dev-ca` | `tls.crt`, `tls.key`, `ca.crt` | cert-manager (self-signed root, ten years) | the Issuer `trove-dev-ca` |
-| `trove-tls` | `tls.crt`, `tls.key`, `ca.crt` | cert-manager | trove's listeners (`tls.secretName`) and HAProxy Ingress, which verifies it (`ingress.backendTLS.caSecret`) |
+| `trove-tls` | `tls.crt`, `tls.key`, `ca.crt` | cert-manager | trove's listeners (`tls.secretName`) and HAProxy Ingress, which verifies it (`ingress.backendTLS.caSecret`); it names `trove` (the SNI the edge sends), the role Services `trove-api` and `trove-packages` that the Bastions and other in-cluster callers use, and `localhost`. `trove-customers-tls` names `trove-ep-customers` and `trove-ep-customers-api` |
 | `trove-edge-tls` | `tls.crt`, `tls.key` | cert-manager | the edge's certificate for `localhost` |
 | `trove-s3-tls` | `tls.crt`, `tls.key`, `ca.crt` | cert-manager | SeaweedFS; trove mounts its `ca.crt` through `secrets.s3CA`, which renders `storage.s3.ca_file` |
 | `trove-customers-tls`, `trove-customers-wildcard-tls`, `trove-customers-edge-tls` | `tls.crt`, `tls.key`, `ca.crt` | cert-manager | the endpoint `customers` (below) |
@@ -153,7 +153,7 @@ Generated or created in namespace `trove`; nothing in `up.sh` makes a random val
 Go duration plus a `d` suffix, overwrites the field when the interval has passed, and refuses intervals below its
 `rotation.minInterval` (default `5m`; the profile installs it with the chart defaults) with a Warning Event on the Secret
 ([README of the operator](https://github.com/guided-traffic/internal-secrets-operator#automatic-rotation)). Each rotation
-reaches the `web` pods through the kubelet (a directory mount, no `subPath`); trove notices the new file within
+reaches the pods through the kubelet (a directory mount, no `subPath`); trove notices the new file within
 `auth.break_glass.check_interval` (10 s), then answers the local login with 503 `break_glass_rotating` for the 2-minute
 `rotation_hold` and ends the break-glass sessions (Q-AUTH-14). That is acceptable in the dev profile, and it is why the interval is
 24 h and not minutes. A rotation that falls into an e2e run (E1.1, E1.11) does not fail it: the local sign-ins of the suite
@@ -217,7 +217,7 @@ operator writes the StatefulSets, Services, ConfigMaps, the certificate request 
   values trove's spec names). After a failover the Sentinels refuse another automatic one for twice the failover
   timeout (120 s); a `SENTINEL FAILOVER` does not wait for that.
 - The operator's NetworkPolicy admits only its own components; `trove-valkey-clients` (in valkey.yaml) admits the pods
-  labelled `app.kubernetes.io/name=trove` and `trove/serve=true` (the chart's `web` and `worker` pods, and the e2e driver)
+  labelled `app.kubernetes.io/name=trove` and `trove/serve=true` (the chart's `api`, `packages` and `worker` pods, and the e2e driver)
   on 16379 and 36379. kind's CNI enforces both.
 - Pods are spread by zone (`antiAffinity` `hard` on `topology.kubernetes.io/zone`, each StatefulSet repels its own
   kind) and have PodDisruptionBudgets (data `maxUnavailable: 1`, Sentinel `minAvailable` = quorum).
@@ -312,7 +312,7 @@ kubectl --context kind-trove -n trove get secret trove-keycloak -o jsonpath='{.d
 ```
 
 The provider entry is part of values-dev.yaml. The client secret (Secret `trove-keycloak`) and the break-glass password
-(Secret `trove-break-glass`) are the chart values `secrets.oidc` and `secrets.breakGlass`, which mount them into the `web` pods
+(Secret `trove-break-glass`) are the chart values `secrets.oidc` and `secrets.breakGlass`, which mount them into the `api` pods
 and render `client_secret_file` and `password_file`. Only the CA of `trove-keycloak-tls` is still a volume of the dev values
 (`extraVolumes` / `extraVolumeMounts` at `/var/run/secrets/trove-dev/keycloak-ca.crt`): the chart has no `trustedCA` value yet
 (R-HA-043 is not built). That CA is in `proxy.outbound.tls.ca_files`, so the outbound client trusts the IdP's

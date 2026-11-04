@@ -2,7 +2,7 @@
 
 package e2e
 
-// The load scripts of R-ARCH-027 against npm (WP2.8): perf/k6/npm.js runs against one web replica from inside the
+// The load scripts of R-ARCH-027 against npm (WP2.8): perf/k6/npm.js runs against one packages replica from inside the
 // cluster and reports the P-targets an npm client meets. The dev profile is not the reference environment of
 // R-ARCH-027, so the numbers are reported and not gated here; the gate is the run on the reference environment in
 // roadmap E5.3, with GATE=1 (Q-ROAD-9). What fails this test is a script that does not run, a restart of the target
@@ -38,7 +38,7 @@ type perfScenario struct {
 
 func TestNPMPerf(t *testing.T) {
 	h := npmHAFx(t)
-	t.Run("R-ARCH-027 P-1 P-3 P-5 P-7 P-8 the npm load scripts of perf/k6 against one web replica from inside the cluster: every request answered 200 or shed with 503 server_busy, no restart of the pod, the targets reported (gated in E5.3 on the reference environment)", func(t *testing.T) {
+	t.Run("R-ARCH-027 P-1 P-3 P-5 P-7 P-8 the npm load scripts of perf/k6 against one packages replica from inside the cluster: every request answered 200 or shed with 503 server_busy, no restart of the pod, the targets reported (gated in E5.3 on the reference environment)", func(t *testing.T) {
 		adm := h.fx.adm
 		ensureSA(t, adm, perfSA)
 		ensurePolicy(t, adm, perfSA, []string{npmLocalKey, npmRemoteKey, npmAllKey}, [2]any{"sa:" + perfSA, []string{"read"}})
@@ -69,7 +69,7 @@ func TestNPMPerf(t *testing.T) {
 			return true
 		})
 
-		web := webReplicas(t, 1)[0]
+		web := packagesReplicas(t, 1)[0]
 		dir := filepath.Join(cfg.out, "perf-npm")
 		_ = os.RemoveAll(dir)
 		if err := os.MkdirAll(dir, 0o777); err != nil {
@@ -101,7 +101,7 @@ func TestNPMPerf(t *testing.T) {
 		out, err := exec.Command("docker", args...).CombinedOutput()
 		// An OOM kill restarts the container in place: the same pod with one restart more.
 		after := pod{Restarts: -1}
-		for _, p := range podsOf(t, selWeb) {
+		for _, p := range podsOf(t, selPackages) {
 			if p.Name == web.Name {
 				after = p
 			}

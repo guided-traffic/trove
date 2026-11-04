@@ -1,4 +1,4 @@
-# HAProxy Ingress is the Ingress controller of the dev cluster: the edge in front of the web Service,
+# HAProxy Ingress is the Ingress controller of the dev cluster: the edge in front of the role Services,
 # the owner's production controller at the owner's chart pin. up.sh installs it with the chart version
 # and the image pinned in tools/versions.env (DEV_HAPROXY_INGRESS_CHART_VERSION, DEV_HAPROXY_INGRESS_IMAGE).
 #

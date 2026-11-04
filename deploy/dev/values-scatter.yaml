@@ -1,9 +1,11 @@
 # The `scatter` e2e profile (R-ARCH-032, E0.11), layered after values-dev.yaml by up.sh when
-# TROVE_PROFILE=scatter: three web replicas, one per worker node. The other half of the profile is the
+# TROVE_PROFILE=scatter: three api and three packages replicas (values-dev.yaml has two api), one per worker node. The other half of the profile is the
 # edge: trove's Ingress asks HAProxy Ingress for round robin and no kept-alive connection to the pods
 # (the server side of every request is closed), so every request is balanced on its own and a client meets a
 # different replica on nearly every call. The keys are HAProxy Ingress backend keys, set on this Ingress only.
-web:
+api:
+  replicaCount: 3
+packages:
   replicaCount: 3
 ingress:
   annotations:

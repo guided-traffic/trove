@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// E1.11, the API part: requests that span replicas, in the scatter profile (three web replicas, every request to
+// E1.11, the API part: requests that span replicas, in the scatter profile (three api and three packages replicas, every request to
 // another one). The Playwright journeys of R-UI-047 are the other half; e1_11_journeys_test.go is their hook.
 
 // itemKey names a list item for the comparison of two walks.
@@ -285,9 +285,9 @@ func TestE1_11Scatter(t *testing.T) {
 	})
 	t.Run("R-AUTH-042 R-AUTH-023 E1.11 the same suite with Valkey stopped for its whole duration, every replica staying ready with degraded valkey", func(t *testing.T) {
 		withValkeyStopped(t, func() {
-			webReadyDegraded(t, true)
+			servingReadyDegraded(t, true)
 			r042Suite(t, adm, "Valkey stopped", 25, false)
-			webReadyDegraded(t, true)
+			servingReadyDegraded(t, true)
 		})
 	})
 	t.Run("R-AUTH-042 R-AUTH-023 E1.11 the same suite with FLUSHALL in the middle: no login, session or token request fails, no revoked token revives", func(t *testing.T) {
@@ -308,7 +308,7 @@ func r042Suite(t *testing.T, adm *api, mode string, logins int, flush bool) {
 	}
 
 	t.Run(mode+" break-glass lockout across replicas", func(t *testing.T) {
-		addrs, stop := podForwards(t)
+		addrs, stop := apiForwards(t)
 		defer stop()
 		direct := newAPI(t, withRoundRobin(addrs...))
 		unlock := func() { adm.do(http.MethodPost, "/api/v1/users/admin/unlock", nil).want(t, "unlock", 204) }

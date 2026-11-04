@@ -1,5 +1,5 @@
 # The `vuln` e2e profile (R-VULN-029, docs/developer/e2e.md#the-vulnerability-tests), layered after values-dev.yaml and
-# values-scatter.yaml (three web replicas, every request to another one; two worker replicas from values-dev.yaml) by
+# values-scatter.yaml (three api and three packages replicas, every request to another one; the worker and the vuln pool with two replicas each from values-dev.yaml) by
 # up.sh when TROVE_PROFILE=vuln: the scanning reads the test advisory source (deploy/dev/osvstub.yaml, started by
 # e2e.sh with TROVE_E2E_OSVSTUB=1) instead of osv.dev and CISA, and the hosts of the two test upstreams count as public
 # registries (R-VULN-010), so a remote repository over them is matched with matchPublicAdvisories auto.

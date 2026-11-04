@@ -3,7 +3,7 @@
 package e2e
 
 // The reference pipeline of R-CI-028 on kind (roadmap M4): the steps of the specification's Examples run with the real npm and .NET
-// clients of the client pods against the issuer double, in the scatter profile (three web replicas, every request to another
+// clients of the client pods against the issuer double, in the scatter profile (three packages replicas, every request to another
 // one), so a job's exchange, installs, publish and self-revocation reach different replicas. docs/developer/e2e.md,
 // "The CI tests", describes the set.
 

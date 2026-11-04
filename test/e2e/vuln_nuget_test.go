@@ -211,7 +211,7 @@ func TestVuln_R_VULN_015_NuGetBlockedRestoreInTriage(t *testing.T) {
 // IDs, carries the severity and url of the rule, is the same on every replica (ETag) and answers 304.
 func TestVuln_R_VULN_018_NuGetVulnerabilityInfoOnTheWire(t *testing.T) {
 	e := vulnFx(t)
-	addrs, stop := podForwards(t)
+	addrs, stop := packagesForwards(t)
 	defer stop()
 	var etags []string
 	for i, addr := range addrs {

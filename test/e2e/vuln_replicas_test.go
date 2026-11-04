@@ -37,22 +37,25 @@ func tarballPath(repo, name string) string {
 	return "/api/npm/" + repo + "/" + name + "/-/" + name + "-1.0.0.tgz"
 }
 
-// replicaClients are three clients of the default endpoint, each dialing one replica's pod: the administrator's (triage), the
-// publisher's (downloads). Index 0 is "replica A", index 1 "replica B".
+// replicaClients are the clients of the default endpoint, each dialing one replica's pod: the administrator's (triage), each
+// dialing an api pod, and the publisher's (downloads), each dialing a packages pod. Index 0 is "replica A", index 1 "replica B".
 type replicaClients struct {
 	admin, reader []*api
 }
 
 func (e *vulnEnv) replicaClients(t testing.TB) (replicaClients, func()) {
 	t.Helper()
-	addrs, stop := podForwards(t)
+	apiAddrs, stopAPI := apiForwards(t)
+	pkgAddrs, stopPkg := packagesForwards(t)
 	var rc replicaClients
 	adm := adminToken(t)
-	for _, addr := range addrs {
+	for _, addr := range apiAddrs {
 		rc.admin = append(rc.admin, apiAtPod(t, addr, adm))
+	}
+	for _, addr := range pkgAddrs {
 		rc.reader = append(rc.reader, apiAtPod(t, addr, e.npm.token))
 	}
-	return rc, stop
+	return rc, func() { stopAPI(); stopPkg() }
 }
 
 // patchRepo applies a merge patch to a repository through the client.
@@ -232,7 +235,7 @@ func TestVuln_R_VULN_010_ClaimedNamesAreInternal(t *testing.T) {
 // ETag on every replica; the same once more with Valkey stopped, for the page.
 func TestVuln_R_VULN_011_R_VULN_018_AnAdvisoryAppearsLate(t *testing.T) {
 	e := vulnFx(t)
-	addrs, stop := podForwards(t)
+	addrs, stop := packagesForwards(t)
 	defer stop()
 	pageETags := func(t *testing.T) []string {
 		var out []string

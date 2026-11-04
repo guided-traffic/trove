@@ -27,7 +27,7 @@ type partnerProject struct {
 }
 
 // newPartnerProject creates the project `<label>-<run>` with both switches on and bob as its administrator, and waits
-// until every web replica knows bob as that administrator. The project, its service account and its repositories go with the
+// until every api replica knows bob as that administrator. The project, its service account and its repositories go with the
 // test.
 func newPartnerProject(t *testing.T, adm *api, label string) *partnerProject {
 	t.Helper()
@@ -54,7 +54,7 @@ func newPartnerProject(t *testing.T, adm *api, label string) *partnerProject {
 		} `json:"projects"`
 	}
 	seen := map[string]bool{}
-	waitFor(t, "every web replica to list the project among bob's administered projects", time.Minute, 500*time.Millisecond, func() bool {
+	waitFor(t, "every api replica to list the project among bob's administered projects", time.Minute, 500*time.Millisecond, func() bool {
 		clear(seen)
 		for range 9 {
 			r := p.bob.get("/api/v1/authz/me")
@@ -136,7 +136,8 @@ func (p *partnerProject) revoke(tok createdToken) {
 	p.t.Helper()
 	p.bob.do(http.MethodDelete, "/api/v1/tokens/"+tok.ID, nil).want(p.t, "the project administrator revokes the token", 200, 204)
 	seen := map[string]bool{}
-	waitFor(p.t, "the revoked token is refused by every web replica", time.Minute, time.Second, func() bool {
+	defer awaitTokenRefusedOnPackagesPods(p.t, tok.Token)
+	waitFor(p.t, "the revoked token is refused by every api replica", time.Minute, time.Second, func() bool {
 		clear(seen)
 		for range 9 {
 			r, err := newAPI(p.t).withToken(tok.Token).send(http.MethodGet, "/api/v1/authz/me", nil)

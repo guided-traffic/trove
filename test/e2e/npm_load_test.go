@@ -721,28 +721,31 @@ func (r npmK6Result) p99(from, to time.Time) (time.Duration, int) {
 
 // ── misc ─────────────────────────────────────────────────────────────────────
 
-// troveSettled waits until the release has exactly its web and worker pods, all ready and none terminating, so a
+// troveSettled waits until the release has exactly its api, packages and worker pods, all ready and none terminating, so a
 // scenario does not start inside the recovery of the one before.
-func troveSettled(t *testing.T, web, worker int) {
+func troveSettled(t *testing.T, api, packages, worker int) {
 	t.Helper()
 	waitFor(t, "the trove pods to settle", 5*time.Minute, 2*time.Second, func() bool {
 		ps := podsOf(t, selTrove)
-		w, k := 0, 0
-		for _, p := range ps {
-			if !p.Ready || p.Deleting {
+		a, p, w := 0, 0, 0
+		for _, pd := range ps {
+			if !pd.Ready || pd.Deleting {
 				return false
 			}
-			if strings.Contains(p.Name, "-web-") {
+			switch {
+			case strings.HasPrefix(pd.Name, "trove-api-"):
+				a++
+			case strings.HasPrefix(pd.Name, "trove-packages-"):
+				p++
+			default:
 				w++
-			} else {
-				k++
 			}
 		}
-		return w == web && k == worker
+		return a == api && p == packages && w == worker
 	})
 }
 
-// replicaMetric reads one series of every trove pod (web and worker).
+// replicaMetric reads one series of every trove pod (api, packages and worker).
 func replicaMetric(t *testing.T, series string) map[string]float64 {
 	t.Helper()
 	out := map[string]float64{}
@@ -752,12 +755,12 @@ func replicaMetric(t *testing.T, series string) map[string]float64 {
 	return out
 }
 
-// deleteWebPod deletes a web pod with its grace period, as an operator or a node upgrade does, and returns its name.
-func deleteWebPod(t *testing.T) string {
+// deletePackagesPod deletes a packages pod with its grace period, as an operator or a node upgrade does, and returns its name.
+func deletePackagesPod(t *testing.T) string {
 	t.Helper()
-	webs := readyWebPods(t)
+	webs := readyPackagesPods(t)
 	if len(webs) == 0 {
-		t.Fatal("no ready web pod to delete")
+		t.Fatal("no ready packages pod to delete")
 	}
 	kn(t, "delete", "pod", webs[0], "--wait=false")
 	return webs[0]

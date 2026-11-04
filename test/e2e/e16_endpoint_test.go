@@ -205,7 +205,7 @@ echo "S2 $(sni %[3]s)"
 
 	t.Run("R-EP-008 E0.16 trove_http_requests_total carries both endpoint values and the endpoint listener is up", func(t *testing.T) {
 		seen := map[string]bool{}
-		for _, p := range livePods(t, selWeb) {
+		for _, p := range livePods(t, selServing) {
 			code, body := ops(p.Name, "/metrics")
 			if code != 200 {
 				t.Fatalf("%s :8081/metrics = %d", p.Name, code)

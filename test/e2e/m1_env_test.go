@@ -77,8 +77,8 @@ var (
 	scatterErr  error
 )
 
-// useScatter puts the cluster into the scatter profile (three web replicas, every request to another one) for the
-// tests of E1.8 to E1.14 and waits for the three replicas. It runs once per process; TestMain returns the cluster
+// useScatter puts the cluster into the scatter profile (three api and three packages replicas, every request to another
+// one) for the tests of E1.8 to E1.14 and waits for the six replicas. It runs once per process; TestMain returns the cluster
 // to the default profile at the end (TROVE_E2E_SCATTER_RETURN=0 keeps it).
 func useScatter(t testing.TB) {
 	t.Helper()
@@ -89,18 +89,12 @@ func useScatter(t testing.TB) {
 		}
 		deadline := time.Now().Add(4 * time.Minute)
 		for time.Now().Before(deadline) {
-			n := 0
-			for _, p := range livePods(t, selWeb) {
-				if p.Ready {
-					n++
-				}
-			}
-			if n == 3 && len(livePods(t, selWeb)) == 3 {
+			if len(readyAPIPods(t)) == 3 && len(livePods(t, selAPI)) == 3 && len(readyPackagesPods(t)) == 3 && len(livePods(t, selPackages)) == 3 {
 				return
 			}
 			time.Sleep(2 * time.Second)
 		}
-		scatterErr = fmt.Errorf("three ready web pods did not appear in the scatter profile")
+		scatterErr = fmt.Errorf("three ready api and three ready packages pods did not appear in the scatter profile")
 	})
 	if scatterErr != nil {
 		t.Fatal(scatterErr)
@@ -510,7 +504,7 @@ func adminToken(t testing.TB) string {
 			return
 		}
 		a := newAPI(t).withToken(adminTok)
-		// The command binds the role in PostgreSQL; every web replica learns of it through
+		// The command binds the role in PostgreSQL; every api and packages replica learns of it through
 		// the change log within R-AUTHZ-028's bound. Wait until the binding is in force on
 		// all of them, as an administrator who read the command's result would.
 		deadline := time.Now().Add(15 * time.Second)
@@ -611,10 +605,11 @@ func secretValue(t testing.TB, secret, key string) string {
 	return string(raw)
 }
 
-func readyWebPods(t testing.TB) []string {
+// readyPodsOf lists the names of the ready, not terminating pods of a selector.
+func readyPodsOf(t testing.TB, selector string) []string {
 	t.Helper()
 	var out []string
-	for _, p := range livePods(t, selWeb) {
+	for _, p := range livePods(t, selector) {
 		if p.Ready {
 			out = append(out, p.Name)
 		}
@@ -622,23 +617,33 @@ func readyWebPods(t testing.TB) []string {
 	return out
 }
 
-// waitWebSettled waits until a rollout of the web Deployment is over for the edge as well: exactly the expected
-// pods, all ready, none terminating (a terminating pod keeps serving during its drain, with the old configuration).
-func waitWebSettled(t testing.TB) {
+func readyAPIPods(t testing.TB) []string      { t.Helper(); return readyPodsOf(t, selAPI) }
+func readyPackagesPods(t testing.TB) []string { t.Helper(); return readyPodsOf(t, selPackages) }
+
+// readyServingPods are the ready pods of both serving roles, the ones that open the client listener.
+func readyServingPods(t testing.TB) []string { t.Helper(); return readyPodsOf(t, selServing) }
+
+// waitServingSettled waits until a rollout of the api and packages Deployments is over for the edge as well: exactly
+// the expected pods, all ready, none terminating (a terminating pod keeps serving during its drain, with the old
+// configuration).
+func waitServingSettled(t testing.TB) {
 	t.Helper()
-	want, _ := strconv.Atoi(strings.TrimSpace(kn(t, "get", "deployment", "trove-web", "-o", "jsonpath={.spec.replicas}")))
-	waitFor(t, "the web pods to settle after a rollout", 5*time.Minute, 2*time.Second, func() bool {
-		ps := podsOf(t, selWeb)
-		if len(ps) != want {
-			return false
-		}
-		for _, p := range ps {
-			if !p.Ready || p.Deleting {
+	for _, role := range []string{"api", "packages"} {
+		sel := map[string]string{"api": selAPI, "packages": selPackages}[role]
+		want, _ := strconv.Atoi(strings.TrimSpace(kn(t, "get", "deployment", "trove-"+role, "-o", "jsonpath={.spec.replicas}")))
+		waitFor(t, "the "+role+" pods to settle after a rollout", 5*time.Minute, 2*time.Second, func() bool {
+			ps := podsOf(t, sel)
+			if len(ps) != want {
 				return false
 			}
-		}
-		return true
-	})
+			for _, p := range ps {
+				if !p.Ready || p.Deleting {
+					return false
+				}
+			}
+			return true
+		})
+	}
 	time.Sleep(3 * time.Second) // the edge learns the endpoint changes within a second or two
 }
 
@@ -666,11 +671,11 @@ func metricsOf(t testing.TB, podName string) map[string]float64 {
 	return m
 }
 
-// sumSeries adds the values of the series of every web pod whose text starts with prefix and holds every part.
+// sumSeries adds the values of the series of every api and packages pod whose text starts with prefix and holds every part.
 func sumSeries(t testing.TB, prefix string, parts ...string) float64 {
 	t.Helper()
 	var sum float64
-	for _, p := range readyWebPods(t) {
+	for _, p := range readyServingPods(t) {
 		for s, v := range metricsOf(t, p) {
 			if !strings.HasPrefix(s, prefix) {
 				continue
@@ -709,13 +714,13 @@ func valkeyPrimaryCLI(t testing.TB, args ...string) string {
 	return script(t, "valkey-cli.sh", args...)
 }
 
-// webReadyDegraded checks the /readyz of every web pod: 200 and, with want true, "valkey" among the degraded.
-func webReadyDegraded(t testing.TB, want bool) {
+// servingReadyDegraded checks the /readyz of every api and packages pod: 200 and, with want true, "valkey" among the degraded.
+func servingReadyDegraded(t testing.TB, want bool) {
 	t.Helper()
 	if want {
 		// the health check needs a few of its intervals to see Valkey go (health.check_interval 5 s, two failures)
-		waitFor(t, "every web pod to report valkey as degraded", 90*time.Second, 2*time.Second, func() bool {
-			for _, p := range readyWebPods(t) {
+		waitFor(t, "every api and packages pod to report valkey as degraded", 90*time.Second, 2*time.Second, func() bool {
+			for _, p := range readyServingPods(t) {
 				code, body := ops(p, "/readyz")
 				if code != 200 || !strings.Contains(body, `"valkey"`) {
 					return false
@@ -724,8 +729,8 @@ func webReadyDegraded(t testing.TB, want bool) {
 			return true
 		})
 	} else {
-		waitFor(t, "every web pod to drop valkey from the degraded checks", 90*time.Second, 2*time.Second, func() bool {
-			for _, p := range readyWebPods(t) {
+		waitFor(t, "every api and packages pod to drop valkey from the degraded checks", 90*time.Second, 2*time.Second, func() bool {
+			for _, p := range readyServingPods(t) {
 				if code, body := ops(p, "/readyz"); code != 200 || strings.Contains(body, `"valkey"`) {
 					return false
 				}
@@ -733,7 +738,7 @@ func webReadyDegraded(t testing.TB, want bool) {
 			return true
 		})
 	}
-	for _, p := range readyWebPods(t) {
+	for _, p := range readyServingPods(t) {
 		code, body := ops(p, "/readyz")
 		if code != 200 {
 			t.Errorf("%s /readyz = %d %s", p, code, strings.TrimSpace(body))
@@ -981,26 +986,46 @@ func stopForwards() {
 	}
 }
 
-// podForwards opens a port-forward to the client listener of every ready web pod and returns the local addresses
-// (in pod order) and a function that closes them. A client built with withRoundRobin(addrs...) sends its
+// packagesForwards opens a port-forward to the client listener of every ready packages pod and returns the local
+// addresses (in pod order) and a function that closes them. A client built with withRoundRobin(addrs...) sends its
 // requests to the pods in turn, bypassing the edge. The client address the replicas see is the one of the
 // forward (127.0.0.1 inside the pod), a bucket of its own for the per-address limits, so the threshold tests do
 // not spend the budget of the edge address (the host behind the edge), which every other test shares. The pods'
 // certificate names localhost.
-func podForwards(t testing.TB) ([]string, func()) { return podForwardsPort(t, 8080) }
+func packagesForwards(t testing.TB) ([]string, func()) {
+	return podForwardsOf(t, selPackages, 8080)
+}
 
-// podForwardsPort is podForwards for another listener of the pods (8443 is the endpoint customers).
-func podForwardsPort(t testing.TB, port int) ([]string, func()) {
+// awaitTokenRefusedOnPackagesPods waits until every packages pod answers 401 to a token (a revoked one): the
+// authentication stage runs before the routing, so any route of the packages family tells. A revocation reaches the
+// pods within the bound of R-AUTHZ-028, and the packages pods are not the ones that /api/v1 requests through the edge reach.
+func awaitTokenRefusedOnPackagesPods(t testing.TB, token string) {
+	t.Helper()
+	addrs, stop := packagesForwards(t)
+	defer stop()
+	for i, addr := range addrs {
+		a := apiAtPod(t, addr, token)
+		waitFor(t, fmt.Sprintf("packages replica %d to refuse the revoked token", i), time.Minute, 500*time.Millisecond, func() bool {
+			return a.get("/api/npm/e2e-revoked/-/ping").Status == 401
+		})
+	}
+}
+
+// apiForwards is packagesForwards for the api pods: the management API, the sign-in and the UI.
+func apiForwards(t testing.TB) ([]string, func()) { return podForwardsOf(t, selAPI, 8080) }
+
+// podForwardsOf opens the forwards to a listener (8443 is the endpoint customers) of every ready pod of a selector.
+func podForwardsOf(t testing.TB, selector string, port int) ([]string, func()) {
 	t.Helper()
 	var addrs []string
 	var fs []*forward
-	for _, p := range readyWebPods(t) {
+	for _, p := range readyPodsOf(t, selector) {
 		f := portForward(t, "pod/"+p, port)
 		addrs = append(addrs, f.addr)
 		fs = append(fs, f)
 	}
 	if len(addrs) < 2 {
-		t.Fatalf("only %d ready web pods", len(addrs))
+		t.Fatalf("only %d ready pods for %s", len(addrs), selector)
 	}
 	return addrs, func() {
 		for _, f := range fs {

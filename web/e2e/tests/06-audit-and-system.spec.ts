@@ -49,16 +49,18 @@ test('R-UI-037 R-UI-038 the system status shows every replica and which one answ
   await page.goto('/ui/en/admin/system');
   await expect(page.getByRole('heading', { name: 'System status', level: 1 })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Replicas by role' })).toBeVisible();
-  await expect(page.getByRole('region', { name: /^web\s*live 3, ready 3, degraded 0/ }).first()).toBeVisible();
+  await expect(page.getByRole('region', { name: /^api\s*live 3, ready 3, degraded 0/ }).first()).toBeVisible();
+  await expect(page.getByRole('region', { name: /^packages\s*live 3, ready 3, degraded 0/ }).first()).toBeVisible();
+  await expect(page.getByRole('region', { name: /^worker\s*live 4, ready 4, degraded 0/ }).first()).toBeVisible();
   await expectAccessible(page, 'system status');
 
-  // "Answered by" names the replica that served the status request, and it is one of the three in the table. (Which one
+  // "Answered by" names the replica that served the status request, and it is one of the three api replicas in the table. (Which one
   // it is, is not asserted: a screen makes a fixed number of API calls and the round robin of the edge's pod that holds
   // the browser's connection is per request, so a given call can reach the same replica on every load. That the
   // journey as a whole was scattered is the assertion on `replicas` below.)
   const answered = (await page.locator('dt', { hasText: 'Answered by' }).locator('xpath=following-sibling::dd[1]').innerText()).trim();
-  expect(answered).toMatch(/^trove-web-/);
-  await expect(page.getByRole('region', { name: /^web\s*live 3/ }).first()).toContainText(answered);
+  expect(answered).toMatch(/^trove-api-/);
+  await expect(page.getByRole('region', { name: /^api\s*live 3/ }).first()).toContainText(answered);
   await page.getByRole('button', { name: 'Refresh now', exact: true }).click();
   await page.reload();
   await expect(page.getByRole('heading', { name: 'System status', level: 1 })).toBeVisible();

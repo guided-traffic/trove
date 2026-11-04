@@ -19,6 +19,8 @@
 #   e2e.sh access-long  the sign-in of E1.1, the replica scatter of E1.11, the 500 MB transfers of E1.13 (CI, every change)
 #   e2e.sh access       the M1 tests alone: E1.1, E1.8, E1.11, E1.13, E1.14 (they switch to the scatter profile and back)
 #   e2e.sh drain        E0.14 only (this is `make dev-drain`)
+#   e2e.sh drain-roles  the drain per role of R-HA-059 (E6a.6): api, packages, the worker and the pool vuln evicted pod by pod under load
+#                       (CI: job e2e of the nightly HA and Performance workflow; a long leg)
 #   e2e.sh clients      the smoke test of the npm client pods (R-NPM-045: every gate row runs --version, the base URL
 #                       reaches the cluster); builds the clients image and starts the pods, which stay up
 #   e2e.sh clients-down removes the client pods
@@ -38,12 +40,12 @@
 #   e2e.sh ci           the reference pipeline of GitLab CI OIDC (TestCI..., not TestCIHA...) against the issuer double with the npm and
 #                       NuGet client pods, E4.1 and E4.4 to E4.6; CI: job e2e-ci
 #   e2e.sh ci-ha        TestCIHA...: the pipeline under a drained node, with Valkey stopped, across a forced Sentinel failover and FLUSHALL,
-#                       and under a deleted web pod, E4.7 (CI: job e2e-ci in the nightly HA and Performance workflow)
+#                       and under a deleted api pod, E4.7 (CI: job e2e-ci in the nightly HA and Performance workflow)
 #   e2e.sh bastion      the short scenarios of R-BAS-049: the chart trove-bastion (volume backend; bucket backend with Valkey) in
 #                       front of the main installation, npm, pnpm, Yarn 4 and dotnet restore from the client pods; CI: job
 #                       e2e-bastion (a change to the Bastion) and the nightly HA and Performance workflow
 #   e2e.sh bastion-long the long scenarios of R-BAS-049: the drain, the flood and the anonymous flood (nightly, dispatch, locally)
-#   e2e.sh vuln         the short scenarios of R-VULN-029: the chart in the `vuln` profile (three web and two worker replicas, the scatter
+#   e2e.sh vuln         the short scenarios of R-VULN-029: the chart in the `vuln` profile (three api and three packages replicas, the main worker and the pool vuln with two replicas each, the scatter
 #                       edge, the scanning reading the test advisory source) with the npm, pnpm, Yarn 4 and dotnet clients, the audits,
 #                       the blocked installs and restores, the replicas with Valkey stopped and the browser journeys; CI: job e2e-vuln
 #                       (a change to the scanning) and the nightly HA and Performance workflow
@@ -76,11 +78,12 @@ case "$set_name" in
   access-long) run='^TestE1_(01|11|13)'; export TROVE_E2E_OIDCSTUB=1 ;;
   access) run='^TestE1_'; export TROVE_E2E_OIDCSTUB=1 ;;
   drain) run='^TestE14' ;;
+  drain-roles) run='^TestDrainRoles$' ;;
   # >>> M2 npm-clients
   clients) run='^TestNPMClients$'; NPM_CLIENTS=1 ;;
   clients-down) NPM_CLIENTS=down ;;
   # The npm acceptance matrix and the criteria E2.1 to E2.12 (test/e2e/npm_*_test.go): the counting test upstream,
-  # three client pods (one per web replica), the scatter profile. CI runs it as the job e2e-npm on every change.
+  # three client pods (one per packages replica), the scatter profile. CI runs it as the job e2e-npm on every change.
   npm) run='^TestNPM(Clients|Matrix|Replicas|Collapse|Upstream|Endpoint|Project)'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
   # The additions of the run that closes the phase: the matrix again with Valkey stopped, the read-only subset against
   # the public registry. Started by the workflow only when it is dispatched with closing=true (Q-NPM-46).

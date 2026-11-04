@@ -45,7 +45,7 @@ func whoamiMk(int) (string, string, any, []string) {
 }
 
 // TestE1_08RateLimits is exit criterion E1.8: R-AUTH-038's thresholds against Basic, Bearer and the login flow with
-// requests spread over three web replicas, R-API-016's limits with 429 and Retry-After, and R-ARCH-034's
+// requests spread over three api replicas, R-API-016's limits with 429 and Retry-After, and R-ARCH-034's
 // cluster-wide counting across three replicas, the same bound with Valkey stopped and no added delay with the
 // circuit open.
 func TestE1_08RateLimits(t *testing.T) {
@@ -56,8 +56,8 @@ func TestE1_08RateLimits(t *testing.T) {
 	revokeTokens := func() { adm.do(http.MethodDelete, "/api/v1/service-accounts/e2e-rl/tokens", nil) }
 	revokeTokens()
 	t.Cleanup(revokeTokens)
-	if got := len(readyWebPods(t)); got != 3 {
-		t.Fatalf("%d ready web pods, want 3", got)
+	if got := len(readyAPIPods(t)); got != 3 {
+		t.Fatalf("%d ready api pods, want 3", got)
 	}
 
 	t.Run("R-API-016 E1.8 the read class answers 429 with Retry-After after the burst and a second token is not slowed", func(t *testing.T) {
@@ -140,7 +140,7 @@ func TestE1_08RateLimits(t *testing.T) {
 			t.Errorf("the admitted requests reached %d replicas, want all 3", got)
 		}
 		one := newToken(t, adm, "e2e-rl")
-		addrs, stop := podForwards(t)
+		addrs, stop := apiForwards(t)
 		defer stop()
 		single := newAPI(t, withRoundRobin(addrs[0])).withToken(one.token)
 		n1, dur1, _ := oneToken(t, "one replica", single, 12)
@@ -170,18 +170,18 @@ func TestE1_08RateLimits(t *testing.T) {
 		withValkeyStopped(t, func() {
 			// The breaker opens after 5 failed calls per replica; send until every replica reports the fallback.
 			probe := newToken(t, adm, "e2e-rl")
-			waitFor(t, "trove_ratelimit_fallback{limiter=\"api_read\"} = 1 on every web pod", 2*time.Minute, time.Second, func() bool {
+			waitFor(t, "trove_ratelimit_fallback{limiter=\"api_read\"} = 1 on every api pod", 2*time.Minute, time.Second, func() bool {
 				for i := 0; i < 12; i++ {
 					probe.get("/api/v1/auth/whoami")
 				}
-				for _, p := range readyWebPods(t) {
+				for _, p := range readyAPIPods(t) {
 					if metricsOf(t, p)[`trove_ratelimit_fallback{limiter="api_read"}`] != 1 {
 						return false
 					}
 				}
 				return true
 			})
-			webReadyDegraded(t, true)
+			servingReadyDegraded(t, true)
 
 			tok := newToken(t, adm, "e2e-rl")
 			n, dur, _ := oneToken(t, "Valkey stopped", tok, 96)
@@ -191,7 +191,7 @@ func TestE1_08RateLimits(t *testing.T) {
 			if n < 3 {
 				t.Errorf("with Valkey stopped only %d were admitted: every replica has a share of at least one", n)
 			}
-			for _, p := range readyWebPods(t) {
+			for _, p := range readyAPIPods(t) {
 				if v := metricsOf(t, p)[`trove_ratelimit_fallback{limiter="api_read"}`]; v != 1 {
 					t.Errorf("%s trove_ratelimit_fallback{limiter=api_read} = %v, want 1", p, v)
 				}
@@ -207,12 +207,12 @@ func TestE1_08RateLimits(t *testing.T) {
 				t.Errorf("a request took %s with the circuit open, valkey.command_timeout is 500ms", maxDown)
 			}
 		})
-		webReadyDegraded(t, false)
+		servingReadyDegraded(t, false)
 	})
 
 	t.Run("R-ARCH-034 E1.8 a Valkey that answers a second late costs at most command_timeout on at most failure_threshold checks per replica and nothing once the circuit is open", func(t *testing.T) {
-		waitFor(t, "the circuit closed on every web pod", 2*time.Minute, time.Second, func() bool {
-			for _, p := range readyWebPods(t) {
+		waitFor(t, "the circuit closed on every api pod", 2*time.Minute, time.Second, func() bool {
+			for _, p := range readyAPIPods(t) {
 				if metricsOf(t, p)["trove_valkey_circuit_open"] != 0 {
 					return false
 				}
@@ -283,7 +283,7 @@ func TestE1_08RateLimits(t *testing.T) {
 			t.Errorf("only %d fast requests after the last held one: the circuit did not stay open for the rest of the pause", fastAfter)
 		}
 		waitFor(t, "the circuit closed again", 2*time.Minute, time.Second, func() bool {
-			for _, p := range readyWebPods(t) {
+			for _, p := range readyAPIPods(t) {
 				if metricsOf(t, p)["trove_valkey_circuit_open"] != 0 {
 					return false
 				}
@@ -304,7 +304,7 @@ func TestE1_08RateLimits(t *testing.T) {
 		var c createdToken
 		pat.JSON(t, &c)
 
-		addrs, stop := podForwards(t)
+		addrs, stop := apiForwards(t)
 		defer stop()
 		direct := newAPI(t, withRoundRobin(addrs...))
 		// A successful validation marks the token in Valkey; the burst must not lock it out on the other replicas.
@@ -345,7 +345,7 @@ func TestE1_08RateLimits(t *testing.T) {
 		}
 
 		diag := func(label string) {
-			for _, p := range readyWebPods(t) {
+			for _, p := range readyAPIPods(t) {
 				for series, v := range metricsOf(t, p) {
 					if strings.HasPrefix(series, "trove_ratelimit_decisions_total{limiter=\"auth.credential_failures\"") || strings.HasPrefix(series, "trove_ratelimit_fallback{limiter=\"auth.credential_failures\"") || series == "trove_valkey_circuit_open" || series == "trove_valkey_available" {
 						t.Logf("%s %s %s = %v", label, p, series, v)
@@ -381,7 +381,7 @@ func TestE1_08RateLimits(t *testing.T) {
 	})
 
 	t.Run("R-AUTH-038 E1.8 the login flow: 40 starts from one address over three replicas get 429 from the 31st on", func(t *testing.T) {
-		addrs, stop := podForwards(t)
+		addrs, stop := apiForwards(t)
 		defer stop()
 		direct := newAPI(t, withRoundRobin(addrs...))
 		var got []int
@@ -411,7 +411,7 @@ func TestE1_08RateLimits(t *testing.T) {
 
 	t.Run("R-AUTH-038 E1.8 with Valkey stopped the thresholds hold: at most 300 validations, the login flow limit and trove_ratelimit_fallback 1 on each replica", func(t *testing.T) {
 		withValkeyStopped(t, func() {
-			addrs, stop := podForwards(t)
+			addrs, stop := apiForwards(t)
 			defer stop()
 			direct := newAPI(t, withRoundRobin(addrs...))
 			started := time.Now()
@@ -441,7 +441,7 @@ func TestE1_08RateLimits(t *testing.T) {
 			if limited == 0 {
 				t.Error("no 429 with Valkey stopped")
 			}
-			for _, p := range readyWebPods(t) {
+			for _, p := range readyAPIPods(t) {
 				if v := metricsOf(t, p)[`trove_ratelimit_fallback{limiter="auth.credential_failures"}`]; v != 1 {
 					t.Errorf("%s trove_ratelimit_fallback{limiter=auth.credential_failures} = %v, want 1", p, v)
 				}

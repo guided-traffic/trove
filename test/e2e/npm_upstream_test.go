@@ -56,13 +56,13 @@ func (fx *npmFixture) upstreamRepos(t testing.TB, purpose string, settings map[s
 	return u
 }
 
-// awaitReadableOnEveryReplica waits until each web replica lets the token read the new repositories: a repository and
+// awaitReadableOnEveryReplica waits until each packages replica lets the token read the new repositories: a repository and
 // the policy that grants it reach the other replicas within the bound of R-AUTHZ-028 (1 s with Valkey,
 // epoch_poll_interval of 1 s plus 1 s without), and a replica that has not seen them yet answers 404. The tests allow one
 // more second for the poll and the request, as E1.14 does; a replica that takes longer fails the test.
 func awaitReadableOnEveryReplica(t testing.TB, token string, keys ...string) {
 	t.Helper()
-	addrs, stop := podForwards(t)
+	addrs, stop := packagesForwards(t)
 	defer stop()
 	const within = 3 * time.Second
 	for i, addr := range addrs {
@@ -149,7 +149,7 @@ func referenceLockfile(t testing.TB, key string) (pkgJSON, lock string, packages
 
 // ── E2.2 ─────────────────────────────────────────────────────────────────────
 
-// coldInstall is E2.2: three clients run `npm ci` at once with empty client caches, each against another web replica,
+// coldInstall is E2.2: three clients run `npm ci` at once with empty client caches, each against another packages replica,
 // from the reference lockfile, resolving through a virtual repository over npm-local and a remote that points at the
 // counting test upstream. valkeyStopped says that Valkey is down, which relaxes "one request" to "one per replica".
 func coldInstall(t *testing.T, fx *npmFixture, valkeyStopped bool) {
@@ -161,7 +161,7 @@ func coldInstall(t *testing.T, fx *npmFixture, valkeyStopped bool) {
 	if packages < 500 {
 		t.Fatalf("the reference lockfile resolves %d packages, E2.2 needs at least 500", packages)
 	}
-	webs := webReplicas(t, 3)
+	webs := packagesReplicas(t, 3)
 	clients := make([]*npmClient, 3)
 	dirs := make([]string, 3)
 	for i := range clients {
@@ -231,7 +231,7 @@ func TestNPMCollapse(t *testing.T) {
 		s.resetAll(t)
 		s.setMode(t, npmstub.Mode{DelayMS: map[string]int{"document": 1500}})
 		defer s.resetAll(t)
-		webs := webReplicas(t, 2)
+		webs := packagesReplicas(t, 2)
 		const name, misses = "@cobalt/eager-lantern", 100
 		path := "/api/npm/" + repos.remote + "/" + url.PathEscape(name)
 		// the system is quiet when the flight starts: a replica that came up a moment ago (the profile switch) may still
@@ -287,11 +287,11 @@ func TestNPMCollapse(t *testing.T) {
 		s.resetAll(t)
 		s.setMode(t, npmstub.Mode{DelayMS: map[string]int{"document": 1500}})
 		defer s.resetAll(t)
-		webs := webReplicas(t, 2)
+		webs := packagesReplicas(t, 2)
 		const name = "@cobalt/early-nozzle"
 		path := "/api/npm/" + repos.remote + "/" + url.PathEscape(name)
 		withValkeyStopped(t, func() {
-			webReadyDegraded(t, true)
+			servingReadyDegraded(t, true)
 			for i, st := range burstOver(t, webs, path, fx.token, 30) {
 				if st != 200 {
 					t.Errorf("request %d answered %d", i, st)
@@ -312,7 +312,7 @@ func TestNPMCollapse(t *testing.T) {
 		s.resetAll(t)
 		s.setMode(t, npmstub.Mode{DelayMS: map[string]int{"document": 4000}})
 		defer s.resetAll(t)
-		webs := webReplicas(t, 2)
+		webs := packagesReplicas(t, 2)
 		const name = "@cobalt/lucid-dial"
 		path := "/api/npm/" + repos.remote + "/" + url.PathEscape(name)
 		var statuses []int
@@ -350,8 +350,8 @@ func TestNPMCollapse(t *testing.T) {
 		s.resetAll(t)
 		s.setMode(t, npmstub.Mode{DelayMS: map[string]int{"document": 4000}})
 		defer s.resetAll(t)
-		webs := webReplicas(t, 2)
-		addrs, stop := podForwards(t)
+		webs := packagesReplicas(t, 2)
+		addrs, stop := packagesForwards(t)
 		defer stop()
 		const name = "@cobalt/ivory-ember"
 		path := "/api/npm/" + repos.remote + "/" + url.PathEscape(name)
@@ -372,7 +372,7 @@ func TestNPMCollapse(t *testing.T) {
 			t.Fatalf("the test upstream recorded %d document requests, want at most 2 (the killed holder's and the takeover's)", got)
 		}
 		<-held
-		waitWebSettled(t)
+		waitServingSettled(t)
 	})
 }
 

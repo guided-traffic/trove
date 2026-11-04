@@ -101,11 +101,11 @@ func TestBastion_R_BAS_049_MainUnreachable(t *testing.T) {
 
 	restore := basCutMain(t, site)
 	cutAt := time.Now()
-	// A NetworkPolicy stops new connections only: the replicas keep the connection to the main installation they hold. The `web`
-	// pods of the main installation are deleted, which ends those connections, and the connections the replicas then open are
+	// A NetworkPolicy stops new connections only: the replicas keep the connection to the main installation they hold. The api
+	// and packages pods of the main installation are deleted, which ends those connections, and the connections the replicas then open are
 	// the new ones that the policy drops. (A replica that was restarted instead could not use its answers: it has no feed
 	// history, R-BAS-026.)
-	kn(t, "delete", "pod", "-l", selWeb, "--wait=false", "--grace-period=1")
+	kn(t, "delete", "pod", "-l", selServing, "--wait=false", "--grace-period=1")
 	waitFor(t, "trove_bastion_main_reachable 0 on both replicas", 60*time.Second, time.Second, func() bool { return allEqual(basReachable(t, site), 0) })
 	t.Logf("both replicas unreachable %s after the cut", time.Since(cutAt).Round(time.Second))
 	for _, p := range basReadyPods(t, site) {
@@ -166,7 +166,7 @@ func TestBastion_R_BAS_049_MainUnreachable(t *testing.T) {
 	}
 
 	restore()
-	waitWebSettled(t)
+	waitServingSettled(t)
 	back := time.Now()
 	waitFor(t, "both replicas reachable again", 40*time.Second, time.Second, func() bool { return allEqual(basReachable(t, site), 1) })
 	t.Logf("both replicas reachable %s after the policy was restored", time.Since(back).Round(time.Second))

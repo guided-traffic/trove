@@ -31,19 +31,19 @@ func TestNPMClosing(t *testing.T) {
 	// reports Valkey as degraded; no client operation fails.
 	t.Run("R-NPM-045 R-NPM-046 E2.1 the scenario list with Valkey stopped", func(t *testing.T) {
 		withValkeyStopped(t, func() {
-			webReadyDegraded(t, true)
+			servingReadyDegraded(t, true)
 			runNPMMatrix(t, "matrix-valkey-stopped")
 		})
-		webReadyDegraded(t, false)
+		servingReadyDegraded(t, false)
 	})
 
 	// E2.2: with Valkey stopped the upstream records at most one request per replica for each document and tarball.
 	t.Run("R-NPM-046 E2.2 the cold-cache install with Valkey stopped", func(t *testing.T) {
 		withValkeyStopped(t, func() {
-			webReadyDegraded(t, true)
+			servingReadyDegraded(t, true)
 			coldInstall(t, fx, true)
 		})
-		webReadyDegraded(t, false)
+		servingReadyDegraded(t, false)
 	})
 
 	// R-NPM-045: the read-only subset against the public registry, for every gate row: documents and tarballs the real

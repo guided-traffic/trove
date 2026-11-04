@@ -50,7 +50,7 @@ var (
 )
 
 // nugetFx puts the cluster into the scatter profile and creates the repositories and the publisher. The profile is the
-// one R-NUGET-027 names for R-NUGET-030, and every test of this file runs in it: several web replicas, every request to
+// one R-NUGET-027 names for R-NUGET-030, and every test of this file runs in it: several packages replicas, every request to
 // another one.
 func nugetFx(t testing.TB) *nugetFixture {
 	t.Helper()
@@ -123,7 +123,7 @@ func (fx *nugetFixture) withAnonymousRead(t *testing.T) {
 	// the switch is in force on every replica within the revocation bound: wait until all three answer the anonymous read
 	feed := "/api/nuget/" + nugetOpenKey + "/v3/index.json"
 	seen := map[string]bool{}
-	waitFor(t, "anonymous read of the open feed on every web replica", time.Minute, time.Second, func() bool {
+	waitFor(t, "anonymous read of the open feed on every packages replica", time.Minute, time.Second, func() bool {
 		anon := newAPI(t)
 		for range 6 {
 			r, err := anon.send(http.MethodGet, feed, nil)

@@ -237,7 +237,7 @@ func buildBastionEnv(t testing.TB) (*basEnv, error) {
 	if err := runUp("bastion"); err != nil {
 		return nil, err
 	}
-	waitWebSettled(t)
+	waitServingSettled(t)
 	env := &basEnv{
 		vol: &basSite{variant: "volume", reg: basVolumeReg, release: "bastion-volume", host: "bastion-volume.trove.localhost"},
 		bkt: &basSite{variant: "bucket", reg: basBucketReg, release: "bastion-bucket", host: "bastion-bucket.trove.localhost"},
@@ -603,12 +603,12 @@ func (m mainReq) kind() string {
 	return "other"
 }
 
-// mainLog reads the request log of the web replicas, keyed by trace ID.
+// mainLog reads the request log of the api and packages replicas, keyed by trace ID.
 func mainLog(t testing.TB) map[string]mainReq {
 	t.Helper()
-	out, err := kubectl("-n", cfg.namespace, "logs", "-l", selWeb, "--since=3h", "--tail=-1", "--max-log-requests=8", "--prefix=false")
+	out, err := kubectl("-n", cfg.namespace, "logs", "-l", selServing, "--since=3h", "--tail=-1", "--max-log-requests=16", "--prefix=false")
 	if err != nil {
-		t.Fatalf("the logs of the web replicas: %v", err)
+		t.Fatalf("the logs of the api and packages replicas: %v", err)
 	}
 	m := map[string]mainReq{}
 	for _, line := range strings.Split(out, "\n") {

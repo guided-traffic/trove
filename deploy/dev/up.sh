@@ -12,7 +12,7 @@
 # Environment:
 #   TROVE_SKIP_RELEASE=1  install the dependency stack only, not the trove release. Use it while
 #                         the trove image does not serve yet, or to work on the dependencies.
-#   TROVE_PROFILE=scatter the `scatter` e2e profile (E0.11): three web replicas and an edge that
+#   TROVE_PROFILE=scatter the `scatter` e2e profile (E0.11): three api and three packages replicas and an edge that
 #                         balances round robin per request with its keep-alive to the pods off
 #                         (values-scatter.yaml: HAProxy Ingress annotations on trove's Ingress).
 #                         Run up.sh again without it to switch back.
@@ -253,17 +253,17 @@ else
   [ "$EDGE_PORT" = "8080" ] || values+=(--set "config.server.base_url=https://localhost:$EDGE_PORT" \
     --set "endpoints.customers.baseUrl=https://packages.trove.localhost:$EDGE_PORT")
   # The tag stays guidedtraffic/trove:dev while the image behind it changes, and kind load replaces the image on the nodes
-  # without touching the pod spec, so helm would find nothing to roll. The image ID in a pod annotation of both roles
+  # without touching the pod spec, so helm would find nothing to roll. The image ID in a pod annotation of every role
   # changes the spec exactly when the loaded image changed; a second run with the same image changes nothing (the profile
   # switches of the e2e suite run this script again and must not roll the pods).
   image_id="$(docker image inspect -f '{{.Id}}' "$IMAGE")"
-  values+=(--set-string "web.podAnnotations.trove-dev/image-id=$image_id" --set-string "worker.podAnnotations.trove-dev/image-id=$image_id")
+  values+=(--set-string "api.podAnnotations.trove-dev/image-id=$image_id" --set-string "packages.podAnnotations.trove-dev/image-id=$image_id" --set-string "worker.podAnnotations.trove-dev/image-id=$image_id")
   [ "$POOLER" = "1" ] && values+=(-f "$DEV_DIR/values-pooler.yaml")
   [ "$PROFILE" = "scatter" ] && values+=(-f "$DEV_DIR/values-scatter.yaml")
   [ "$PROFILE" = "vuln" ] && values+=(-f "$DEV_DIR/values-scatter.yaml" -f "$DEV_DIR/values-vuln.yaml")
   # The Bastions' base URLs (deploy/dev/bastion.sh) carry the edge port the cluster was created with.
   [ "$PROFILE" = "bastion" ] && values+=(-f "$DEV_DIR/values-bastion.yaml" \
-    --set-json "config.server.additional_base_urls=[\"https://trove.trove.svc:8080\",\"https://bastion-volume.trove.localhost:$EDGE_PORT\",\"https://bastion-bucket.trove.localhost:$EDGE_PORT\"]")
+    --set-json "config.server.additional_base_urls=[\"https://trove-api.trove.svc:8080\",\"https://trove-packages.trove.svc:8080\",\"https://bastion-volume.trove.localhost:$EDGE_PORT\",\"https://bastion-bucket.trove.localhost:$EDGE_PORT\"]")
   log "installing the trove release (helm upgrade --install trove, migration Job first)"
   # shellcheck disable=SC2086
   helm --kube-context "$CTX" upgrade --install trove "$REPO_ROOT/deploy/helm/trove" -n "$NS" \

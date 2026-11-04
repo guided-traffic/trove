@@ -560,7 +560,7 @@ func tailLines(s string, n int) string {
 
 // ── pinning a client to a replica ────────────────────────────────────────────
 
-// pinClient makes the forwarder of client pod i relay to one web pod's listener (pod IP, port 8080) instead of
+// pinClient makes the forwarder of client pod i relay to one packages pod's listener (pod IP, port 8080) instead of
 // the edge, through the target file of the forwarder (test/e2e/clients/fwd). The base URL the client uses and
 // the certificate it verifies stay those of the edge: the pod's certificate names localhost too.
 func pinClient(t testing.TB, i int, webPodIP string) {
@@ -691,7 +691,7 @@ func freshSAToken(t testing.TB, adm *api, sa string, ttl int, scope map[string]a
 	return newSAToken(t, adm, sa, ttl, scope)
 }
 
-// burstGet sends n concurrent GETs to a path from client pod i, whose forwarder is pinned to web pod p for the time of the
+// burstGet sends n concurrent GETs to a path from client pod i, whose forwarder is pinned to a packages pod p for the time of the
 // burst, each on a connection of its own, and returns the status codes (0 for a request that got no answer). The burst
 // starts inside the cluster: a `kubectl port-forward` per connection loses connections under this many at once, which
 // would be a finding about the harness and not about the replicas.
@@ -716,7 +716,7 @@ Promise.all(Array.from({length:+n},()=>new Promise(done=>{
 	return codes
 }
 
-// burstOver runs burstGet from client pods 0 and 1 against web pods 0 and 1 at once and returns all status codes.
+// burstOver runs burstGet from client pods 0 and 1 against packages pods 0 and 1 at once and returns all status codes.
 func burstOver(t testing.TB, webs []pod, path, token string, each int) []int {
 	t.Helper()
 	var wg sync.WaitGroup

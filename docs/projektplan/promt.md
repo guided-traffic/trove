@@ -208,6 +208,13 @@ Found on 2026-11-04 while cutting trove into task areas (phase 6a):
 
 ### Tests and tools
 
+- **F-49 · The drain per role (`TestDrainRoles`, set `drain-roles`) runs with a reduced load** (confirmed, by reading the test).
+  R-HA-059 "A drain per role" asks for the npm and dotnet client loops, the long-transfer probes and a loop of a browser journey
+  beside the ping, transfer and management-call loops; the test has the latter three and the driver's jobs, and the full advisory sync
+  is drained by node in `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun`, not per pod from a checkpoint. The test has not run on a
+  cluster yet (WP6a.5 was written while the kind cluster was in use). Done when the client loops of `TestNPMHA` and the journey run
+  beside the per-role drain and the sync is started before the first eviction of the pool `vuln`, or the owner narrows the criterion.
+
 - **F-46 · `TestE1_08RateLimits` was red in the `failover` leg of the scheduled nightly run 41804996351** (read, from the
   log). The bound cases passed, with Valkey stopped included (`e1_08_ratelimit_test.go` up to line 202); the case after
   `valkey-cli.sh client pause 4000 all` (line 230) saw 15 of 483 requests take 400 ms or more, and the credential-failure

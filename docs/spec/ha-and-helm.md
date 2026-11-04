@@ -1073,6 +1073,12 @@ package page, a download through the UI) and a loop of management API calls with
 the pods of the other roles keep their names and restart counts, and for `worker` a full advisory sync started before the
 first eviction ends on another worker from its checkpoint.
 
+The leg that runs it is the set `drain-roles` of the nightly workflow, on dispatch and locally ([Q-HA-88](#q-ha-88--which-legs-run-the-drain-per-role));
+`TestE14Drain` (variant A, one node) stays in the set `push`. The test of the set evicts with the eviction API and runs the ping load
+through the edge, the upload and download loop on `generic-local`, a loop of management calls with a token and the driver's changes and
+jobs. Not part of it yet: the npm and dotnet client loops and the browser journey of the table above (finding F-49), and the full
+advisory sync, which `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` drains with a node.
+
 On the local profile of R-HA-051, whose three worker nodes each host a Sentinel and most a Valkey pod or a PostgreSQL instance,
 variant A drains a node that hosts neither the PostgreSQL primary nor the Valkey primary; a Sentinel, a Valkey replica or the
 standby on it leaves by rule 5, and a primary that is in the way is moved before the load starts
@@ -5035,7 +5041,7 @@ Traefik route of its own for that host and a certificate from the dev CA, so E0.
 the host with `curl --resolve`, because the resolution of `*.localhost` differs between developer machines.
 
 A developer brings up an HA-shaped installation on a laptop with one command: the real chart with
-two `api`, two `packages` and two `worker` replicas (before phase 6a: two `web` and two `worker`), PostgreSQL with a
+two `api`, three `packages` and two `worker` replicas and a worker pool of the queue `vuln` with two (before phase 6a: two `web` and two `worker`; [Q-HA-87](#q-ha-87--the-dev-profiles-sizing-of-the-roles-and-its-postgresql-connection-budget)), PostgreSQL with a
 standby, Valkey with a replica and three
 Sentinels, an S3 store and the backup CronJob. Failover of every dependency can therefore be tested
 locally and in CI with the same files. Files live in `deploy/dev/`. Tool versions (kind, kubectl,
@@ -5050,7 +5056,7 @@ pinned by digest.
 | `deploy/dev/pooler.yaml` | Optional pooler overlay (`dev-up POOLER=1`): CloudNativePG `Pooler` resources `trove-db-pooler-rw` and `trove-db-pooler-control` in transaction mode with 2 instances each, as in R-HA-058, and the values that point `database.host`, `database.control_host` and `database.session_host` at them |
 | `deploy/dev/valkey.yaml` | Valkey with Sentinel (Q-HA-15), from the official `valkey/valkey` image: StatefulSet `trove-valkey` with 2 pods (pod 0 starts as primary, pod 1 as its replica) and StatefulSet `trove-valkey-sentinel` with 3 pods, both behind headless Services and spread over the three nodes, each with an `emptyDir` and no claim. Sentinels monitor the primary as `trove` with quorum 2, `down-after-milliseconds 5000`, `failover-timeout 60000`, `resolve-hostnames yes` and `announce-hostnames yes`, so stable pod host names survive restarts. An init container asks the running Sentinels for the current primary before a Sentinel or Valkey pod starts, so a restarted pod does not announce pod 0 as primary after a failover. TLS only (`port 0`, `tls-port 6379`, Sentinel `tls-port 26379`, `tls-replication yes`, `tls-auth-clients optional`), the ACL user `trove` with the example rule of [architecture.md](architecture.md) R-ARCH-031, a Sentinel password, `maxmemory 256mb`, `maxmemory-policy allkeys-lru`, `save ""`, `appendonly no`, a PDB with `maxUnavailable: 1` for each StatefulSet, and the ingress NetworkPolicy of R-HA-042 that admits only trove's `web` and `worker` pods and the Valkey pods themselves (H-49) |
 | `deploy/dev/s3.yaml` | Single-process SeaweedFS Deployment (master, volume server, filer and S3 gateway in one `weed` process) with an `emptyDir`, Service `trove-s3` on port 9000 mapped to the S3 gateway, plus a Job that creates bucket `trove-blobs` with versioning enabled, bucket `trove-pg-archive` for the WAL archive (Q-HA-3) and bucket `trove-backups` as backup target (R-HA-060) |
-| `deploy/dev/values-dev.yaml` | Chart values: `web` and `worker` 2 replicas each (phase 6a: `api`, `packages` and `worker` 2 each), `highAvailability.enforce: true`, `spool.sizeLimit: 4Gi`, `forcePathStyle: true`, static S3 credentials, `base_url: http://localhost:8080`, the CloudNativePG Secrets, the three Sentinel addresses with `primary_name: trove`, the Valkey Secrets, and the backup target `trove-backups` on the same SeaweedFS endpoint with a schedule every 6 hours |
+| `deploy/dev/values-dev.yaml` | Chart values: `web` and `worker` 2 replicas each (phase 6a: `api` 2, `packages` 3, `worker` 2 and the pool `vuln` 2, Q-HA-87), `highAvailability.enforce: true`, `spool.sizeLimit: 4Gi`, `forcePathStyle: true`, static S3 credentials, `base_url: http://localhost:8080`, the CloudNativePG Secrets, the three Sentinel addresses with `primary_name: trove`, the Valkey Secrets, and the backup target `trove-backups` on the same SeaweedFS endpoint with a schedule every 6 hours |
 
 Steps behind the task-runner target `dev-up` (GNU Make, the root `Makefile`; Q-HA-21):
 
@@ -6822,6 +6828,71 @@ The guard of R-HA-064 reads the cluster through `lookup`, which returns nothing 
 have one. The development agent would revisit this if Helm offers a way to inject cluster state into `helm template`.
 
 **Applied in the spec:** R-HA-016 (the notes), R-HA-064 (the guard's verification).
+
+### Q-HA-87 · The dev profile's sizing of the roles and its PostgreSQL connection budget
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-051 named two replicas of each role for the profile after the cut, while E6a.5 asks for `api` 2, `packages` 3 and
+`worker` 2 with a worker pool for `vuln` and random distribution by the Services, and R-HA-059 drains each Deployment pod by pod. The
+profile's PostgreSQL has `max_connections` 200, and the migration Job refuses a smaller server than the budget of R-HA-016.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `api` 2, `packages` 3, `worker` 2 and the pool `vuln` 2 (every Deployment at least two replicas for `highAvailability.enforce`); `max_connections` 400 on the profile's CloudNativePG cluster (chosen) | The chart's defaults for the serving roles plus the smallest pool the enforcement accepts | Random distribution is visible over three `packages` pods; the pool has its own drain; the budget is 303 with a surge of one per Deployment, 383 during the bridge, both below 400 | Nine pods instead of four; more requested CPU on the kind nodes |
+| (b) Two `packages` replicas and no pool | The earlier text of R-HA-051 | Fewer pods | No third replica to tell random from alternating; no pool to drain; the vuln queue shares the main worker |
+| (c) `max_connections` 231 and 311, the budget of the defaults without a pool | The numbers of R-HA-016's examples | Matches the examples | The pool's three more replicas at most (two and a surge) raise the chart's budget to 303 and 383, and the migration Job of the profile would refuse the cluster |
+
+**Choice:** (a).
+
+**Rationale:** the examples of R-HA-016 hold for the chart's defaults; the profile adds a pool, and the chart prints the number it
+needs (`helm install --dry-run` prints 303, and 383 with `web.enabled`). The development agent would revisit this when the pool's
+replica count or `database.pool.max_conns` of the profile changes.
+
+**Applied in the spec:** R-HA-051 (the sentence on the replicas and the row of `values-dev.yaml`); [deploy/dev/values-dev.yaml](../../deploy/dev/values-dev.yaml),
+[deploy/dev/postgres.yaml](../../deploy/dev/postgres.yaml).
+
+### Q-HA-88 · Which legs run the drain per role
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-059 "A drain per role" evicts every pod of `api`, `packages`, the main `worker` and the pool `vuln` one after the other,
+and the owner moved the drain, the failovers and the soak out of the release path on 2026-11-01 (Q-HA-67). The test of variant
+A (`TestE14Drain`) stays in the set `push` with its reduced load.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A set `drain-roles` (`TestDrainRoles`) in the nightly workflow, on dispatch and locally, with the ping load, the upload and download loop, a loop of management calls with a token and the jobs of the driver (chosen) | Nine evictions, each waiting for its replacement | Fits the rule of 2026-11-01; failures are findings, not blockers | The full load of the spec's table (npm and dotnet loops, the UI journey) is not part of it yet |
+| (b) The same test in the set `push` | Every change | Earlier feedback | Twenty minutes or more on a CPU-limited runner, against the rule of 2026-11-01 |
+| (c) Three drains of whole nodes | Reuses `drain.sh` | No new code | Does not drain a role alone: the other roles' pods leave with it |
+
+**Choice:** (a).
+
+**Rationale:** the long legs run where the owner put them. The development agent would revisit the load of the test when the npm
+and NuGet client loops of `TestNPMHA` can run beside it without the node drain.
+
+**Applied in the spec:** R-HA-059 ("A drain per role": the leg that runs it); [docs/developer/e2e.md](../developer/e2e.md).
+
+### Q-HA-89 · How the end-to-end harness addresses the roles
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the helpers of the suite took the pods of the one `web` Deployment and forwarded to all of them. After the cut a package
+request sent to an `api` pod answers the `404` of an unknown path (R-ARCH-001), so a helper over both roles breaks tests that look
+as if they pass.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A selector and a forward helper per role (`selAPI`, `selPackages`, `packagesForwards`, `apiForwards`); a test names the role whose pods its requests belong to; a revocation waits for `api` through the edge and for every `packages` pod through its forward (chosen) | The test says which role it exercises | A request cannot reach the wrong role unnoticed | Each test names its role |
+| (b) One helper over the pods of both roles | Few edits | Small diff | Half of the forwards answer `404` to the other family |
+| (c) Send every request through the edge | No forwards | Exercises path routing everywhere | The per-address limits of R-AUTH-038 cannot be tested from a bucket of their own |
+
+**Choice:** (a).
+
+**Rationale:** the roles are different pods with different families; a test that does not say which one it talks to proves little.
+The development agent would revisit this if a third serving role appears.
+
+**Applied in the spec:** none; [docs/developer/e2e.md](../developer/e2e.md).
 
 ## What this does not cover
 

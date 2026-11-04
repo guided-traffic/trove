@@ -257,7 +257,7 @@ func TestE1_13Transfers(t *testing.T) {
 	// A large transfer is not the management API's business: the write class does not apply to /files/ in the
 	// way a loop of small requests would hit it; the token is the one of the transfer account.
 
-	t.Run("R-HA-011 E1.13 no curl -T of 500 MB fails during kubectl rollout restart deploy/trove-web", func(t *testing.T) {
+	t.Run("R-HA-011 E1.13 no curl -T of 500 MB fails during kubectl rollout restart deploy/trove-packages", func(t *testing.T) {
 		file, sum := dataFile(t, "xfer-500mb.bin", 500<<20)
 		type up struct {
 			path       string
@@ -286,9 +286,9 @@ func TestE1_13Transfers(t *testing.T) {
 		}
 		time.Sleep(8 * time.Second) // uploads in flight
 		restartAt := time.Now()
-		kn(t, "rollout", "restart", "deployment/trove-web")
-		kn(t, "rollout", "status", "deployment/trove-web", "--timeout=10m")
-		waitWebSettled(t)
+		kn(t, "rollout", "restart", "deployment/trove-packages")
+		kn(t, "rollout", "status", "deployment/trove-packages", "--timeout=10m")
+		waitServingSettled(t)
 		restartDone := time.Now()
 		stop.Store(true)
 		wg.Wait()
@@ -335,14 +335,14 @@ func TestE1_13Transfers(t *testing.T) {
 	}
 	downloaded := filepath.Join(dataDir(), "download.bin")
 
-	t.Run("R-ARCH-024 E1.13 a download of a generic-local file survives a rollout restart of trove-web and its SHA-256 matches", func(t *testing.T) {
+	t.Run("R-ARCH-024 E1.13 a download of a generic-local file survives a rollout restart of trove-packages and its SHA-256 matches", func(t *testing.T) {
 		upload(t)
 		_ = os.Remove(downloaded)
 		dump := filepath.Join(dataDir(), "download-1.hdr")
 		_ = os.Remove(dump) // the headers of an earlier run would pass for this one
 		// The criterion's 20 MB/s (about 20 s) would let the restart miss the serving pod two times in three, so
 		// the transfer is slowed to outlast the rollout (about 50 s): 6 MB/s, about 70 s for 400 MiB, well inside the
-		// 110 s shutdown timeout of a drained web pod (grace 120 s - drain delay 5 s - 5 s). At 4 MB/s (100 s) a slow
+		// 110 s shutdown timeout of a drained packages pod (grace 120 s - drain delay 5 s - 5 s). At 4 MB/s (100 s) a slow
 		// object store made the transfer outlast that timeout and the drain cut it, correctly.
 		c := startCurl(t, "--limit-rate", "6M", "-H", auth, "-D", dump, "-o", downloaded, base+"e2e-xfer/400MiB.bin")
 		hdr := waitDump(t, dump)
@@ -368,12 +368,12 @@ func TestE1_13Transfers(t *testing.T) {
 			}
 		}()
 		restartAt := time.Now()
-		kn(t, "rollout", "restart", "deployment/trove-web")
-		kn(t, "rollout", "status", "deployment/trove-web", "--timeout=10m")
+		kn(t, "rollout", "restart", "deployment/trove-packages")
+		kn(t, "rollout", "status", "deployment/trove-packages", "--timeout=10m")
 		c.wait(t, 5*time.Minute)
 		lastBytes, timeline := stopTrace()
 		t.Logf("the file grew until +%s after the restart; timeline %v", lastBytes.Sub(restartAt).Round(time.Second), timeline)
-		waitWebSettled(t)
+		waitServingSettled(t)
 		var drainedAt time.Time
 		if d := drained.Load(); d != nil {
 			drainedAt = *d
@@ -462,7 +462,7 @@ func TestE1_13Transfers(t *testing.T) {
 		if raw, _ := os.ReadFile(filepath.Join(cfg.out, "e1-13-cut-download-"+serving+".log")); !strings.Contains(string(raw), "requests cut at the shutdown deadline") {
 			t.Errorf("the log of %s does not say that it cut a request at the shutdown deadline", serving)
 		}
-		waitWebSettled(t)
+		waitServingSettled(t)
 
 		dump2 := filepath.Join(dataDir(), "download-2b.hdr")
 		_ = os.Remove(dump2) // the headers of an earlier run would pass for this one
@@ -485,7 +485,7 @@ func TestE1_13Transfers(t *testing.T) {
 		}
 	})
 
-	t.Run("R-HA-002 E1.13 a GC run triggered through a web pod executes on a worker pod", func(t *testing.T) {
+	t.Run("R-HA-002 E1.13 a GC run triggered through an api pod executes on a worker pod", func(t *testing.T) {
 		r := adm.do(http.MethodPost, "/api/v1/system/tasks/gc/run", map[string]any{"dryRun": true}).want(t, "run gc", 202, 409)
 		if r.Status == 409 { // a run is queued or running: wait for it and ask again
 			waitFor(t, "the running gc job", 3*time.Minute, 2*time.Second, func() bool {
@@ -517,19 +517,19 @@ func TestE1_13Transfers(t *testing.T) {
 		if job.State != "succeeded" {
 			t.Errorf("the gc job ended %s", job.State)
 		}
-		if !strings.Contains(ran, "-worker-") || strings.Contains(ran, "-web-") {
+		if !strings.Contains(ran, "-worker-") || strings.Contains(ran, "-api-") || strings.Contains(ran, "-packages-") {
 			t.Errorf("the gc job ran on %q, want a worker pod", ran)
 		}
-		if !strings.Contains(webPod, "-web-") {
-			t.Errorf("the run was accepted by %q, want a web pod", webPod)
+		if !strings.Contains(webPod, "-api-") {
+			t.Errorf("the run was accepted by %q, want an api pod", webPod)
 		}
 		by := sql(t, `SELECT r.name FROM trove.job j JOIN trove.replica r ON r.instance_uid = j.ran_by WHERE j.id = '`+j.Job.ID+`'`)
 		if !strings.Contains(by, "-worker-") {
 			t.Errorf("job.ran_by of the gc job resolves to %q, want a worker pod", by)
 		}
-		webRuns := sql(t, `SELECT count(*) FROM trove.job j JOIN trove.replica r ON r.instance_uid = j.ran_by WHERE 'web' = ANY(r.roles)`)
+		webRuns := sql(t, `SELECT count(*) FROM trove.job j JOIN trove.replica r ON r.instance_uid = j.ran_by WHERE r.roles && ARRAY['api','packages','web']`)
 		if n, _ := strconv.Atoi(webRuns); n != 0 {
-			t.Errorf("%d jobs were run by a web replica", n)
+			t.Errorf("%d jobs were run by an api or packages replica", n)
 		}
 	})
 }

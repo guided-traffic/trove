@@ -118,7 +118,7 @@ func TestVuln_R_VULN_017_NPMAuditThroughEveryRepository(t *testing.T) {
 	// Warm the package documents the audits make the registries serve (npm asks for the document of every flagged package): through
 	// each repository, for both names, a miss included (npm-remote holds no trove-test-alias; its negative answer is cached).
 	// The caches are the replicas' own (INV-18), so every replica is asked, one by one.
-	addrs, stopForwards := podForwards(t)
+	addrs, stopForwards := packagesForwards(t)
 	for _, addr := range addrs {
 		a := apiAtPod(t, addr, e.npm.token)
 		for _, key := range repos {
@@ -208,7 +208,7 @@ type bulkAdvisory struct {
 func TestVuln_R_VULN_017_NPMAuditBody(t *testing.T) {
 	e := vulnFx(t)
 	e.seedAuditContent(t)
-	addrs, stop := podForwards(t)
+	addrs, stop := packagesForwards(t)
 	defer stop()
 	tree := map[string][]string{vulnAcme: {"1.0.0"}, vulnNPMMal: {"1.0.0"}, vulnNPMVuln: {"1.0.0"}, vulnNPMAlias: {"2.0.0"}}
 	req := bulkRequest(t, tree)

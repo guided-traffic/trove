@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// monitor polls /healthz and /readyz of every web and worker pod once a second, straight at the
+// monitor polls /healthz and /readyz of every api, packages and worker pod once a second, straight at the
 // pod through the API server, so the answer is the replica's own and not the Service's.
 type monitor struct {
 	mu      sync.Mutex

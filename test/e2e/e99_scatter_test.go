@@ -10,7 +10,7 @@ import (
 )
 
 // TestE99Scatter is E0.11 and runs last, because it switches the cluster to the scatter profile:
-// three web replicas and an edge that keeps no connection to a pod, so every request is balanced
+// three api and three packages replicas and an edge that keeps no connection to a pod, so every request is balanced
 // round robin on its own (deploy/dev/values-scatter.yaml, HAProxy Ingress balance-algorithm roundrobin and option http-server-close on trove's Ingress).
 // M0's end-to-end checks must pass in it: the E0.3 checks, a load of 100 requests/s that
 // records only 200, and the proof that requests really scatter. It returns the cluster to the default
@@ -20,21 +20,15 @@ func TestE99Scatter(t *testing.T) {
 		t.Cleanup(func() { switchProfile(t, "default") })
 	}
 	switchProfile(t, "scatter")
-	waitFor(t, "three ready web pods", 3*time.Minute, 2*time.Second, func() bool {
-		n := 0
-		for _, p := range livePods(t, selWeb) {
-			if p.Ready {
-				n++
-			}
-		}
-		return n == 3
+	waitFor(t, "three ready api and three ready packages pods", 3*time.Minute, 2*time.Second, func() bool {
+		return len(readyAPIPods(t)) == 3 && len(readyPackagesPods(t)) == 3
 	})
 
-	t.Run("R-ARCH-032 E0.11 the M0 checks pass in the scatter profile: three web, two worker, ping OK", func(t *testing.T) {
-		checkReleaseServes(t, 3, 2)
+	t.Run("R-ARCH-032 E0.11 the M0 checks pass in the scatter profile: three api, three packages, four worker, ping OK", func(t *testing.T) {
+		checkReleaseServes(t, 3, 3, 4)
 	})
 
-	t.Run("R-ARCH-032 R-ARCH-031 E0.11 E0.12 the Valkey connection check passes with three web replicas", checkClientList)
+	t.Run("R-ARCH-032 R-ARCH-031 E0.11 E0.12 the Valkey connection check passes with three api and three packages replicas", checkClientList)
 
 	t.Run("R-ARCH-032 R-HA-037 E0.11 every request is balanced on its own: sequential requests reach all three replicas evenly", func(t *testing.T) {
 		seen := map[string]int{}
@@ -48,7 +42,7 @@ func TestE99Scatter(t *testing.T) {
 		}
 		t.Logf("%d requests, each on a new connection: %v", n, seen)
 		if len(seen) != 3 {
-			t.Fatalf("requests reached %d replicas, want all 3 web replicas: %v", len(seen), seen)
+			t.Fatalf("requests reached %d replicas, want all 3 api replicas: %v", len(seen), seen)
 		}
 		for r, c := range seen {
 			if c < n/3-3 || c > n/3+3 {

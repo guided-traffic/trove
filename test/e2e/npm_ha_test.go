@@ -4,7 +4,7 @@ package e2e
 
 // Drain and failover under npm load (WP2.8, roadmap M2 E2.11): variant A of R-HA-059's drain test and the pod-crash,
 // PostgreSQL-switchover and Valkey-failover scenarios of R-HA-052, each under the npm part of R-HA-059's load
-// (npm_load_test.go), in the scatter profile with three web and two worker replicas. The pod crash is TestNPMHACrash, a set
+// (npm_load_test.go), in the scatter profile with three api, three packages and four worker replicas. The pod crash is TestNPMHACrash, a set
 // of its own: three force-deletes when run by hand, the full ten with TROVE_E2E_NPM_CRASH_SOAK=1 (nightly and closing run).
 // The Valkey outage of R-HA-052 belongs to the full suite and runs in the closing run (TestNPMHAClosing). Q-HA-65 and
 // Q-HA-67 to Q-HA-69 record the choices.
@@ -68,7 +68,7 @@ func TestNPMHA(t *testing.T) {
 func TestNPMHACrash(t *testing.T) {
 	h := npmHAFx(t)
 
-	t.Run("R-HA-052 R-NPM-046 pod crash: a random web or worker replica force-deleted every 2 min under the npm ci and publish loops, 3 times per change and 10 times over 20 min in the soak: no failed iteration, every listed version's tarball is readable", func(t *testing.T) {
+	t.Run("R-HA-052 R-NPM-046 pod crash: a random api, packages or worker replica force-deleted every 2 min under the npm ci and publish loops, 3 times per change and 10 times over 20 min in the soak: no failed iteration, every listed version's tarball is readable", func(t *testing.T) {
 		kills, every := 3, 2*time.Minute
 		if os.Getenv("TROVE_E2E_NPM_CRASH_SOAK") == "1" {
 			kills = 10
@@ -92,7 +92,7 @@ func TestNPMHACrash(t *testing.T) {
 		r.res.loopsSpan(t, r.faultAt, r.faultEnd)
 		r.res.committedTarballsReadable(t, h)
 		r.res.installPublished(t, h)
-		troveSettled(t, 3, 2)
+		troveSettled(t, 3, 3, 4)
 	})
 }
 
@@ -101,7 +101,7 @@ func TestNPMHAClosing(t *testing.T) {
 	requireClosingRun(t)
 	h := npmHAFx(t)
 
-	t.Run("R-HA-052 R-HA-057 R-NPM-046 Valkey outage of 5 minutes with a web pod deleted meanwhile, under the npm load: no failed iteration, k6 only 2xx and 304, the replacement becomes ready degraded, degraded clears within open_duration + health_check_interval + 5 s", func(t *testing.T) {
+	t.Run("R-HA-052 R-HA-057 R-NPM-046 Valkey outage of 5 minutes with a packages pod deleted meanwhile, under the npm load: no failed iteration, k6 only 2xx and 304, the replacement becomes ready degraded, degraded clears within open_duration + health_check_interval + 5 s", func(t *testing.T) {
 		var info struct {
 			OpenMS   int64 `json:"valkey_open_duration_ms"`
 			HealthMS int64 `json:"valkey_health_check_interval_ms"`
@@ -126,9 +126,9 @@ func TestNPMHAClosing(t *testing.T) {
 			}()
 			down := time.Now()
 			time.Sleep(2 * time.Minute)
-			deleted = deleteWebPod(t)
-			waitFor(t, "a replacement web pod ready in degraded mode", 3*time.Minute, 2*time.Second, func() bool {
-				for _, p := range livePods(t, selWeb) {
+			deleted = deletePackagesPod(t)
+			waitFor(t, "a replacement packages pod ready in degraded mode", 3*time.Minute, 2*time.Second, func() bool {
+				for _, p := range livePods(t, selPackages) {
 					if startedAt[p.Name] || !p.Ready {
 						continue
 					}
@@ -182,7 +182,7 @@ type npmFaultRun struct {
 // own recovery), lets the load run for after and stops it.
 func runNPMFault(t *testing.T, h *npmHAFixture, name string, o npmLoadOpts, before, after time.Duration, fault func()) npmFaultRun {
 	t.Helper()
-	troveSettled(t, 3, 2)
+	troveSettled(t, 3, 3, 4)
 	load := startNPMLoad(t, h, name, o)
 	time.Sleep(before)
 	r := npmFaultRun{initial: map[string]bool{}}
@@ -236,9 +236,9 @@ func k6Summary(k *npmK6Result) map[string]any {
 func npmDrainVariantA(t *testing.T, h *npmHAFixture) {
 	const before, after = 2 * time.Minute, 3 * time.Minute
 	const steps = 330 // probe jobs that run through the warm-up and the drain
-	troveSettled(t, 3, 2)
+	troveSettled(t, 3, 3, 4)
 	node := drainNodeVariantA(t)
-	troveSettled(t, 3, 2)
+	troveSettled(t, 3, 3, 4)
 	var onNode []pod
 	for _, p := range livePods(t, selTrove) {
 		if p.Node == node {
@@ -356,31 +356,25 @@ func npmDrainVariantA(t *testing.T, h *npmHAFixture) {
 		"p99_drain_ms": during.Milliseconds(), "k6": k6Summary(k), "moved_jobs": moved, "pending_pods": watch.pendFor,
 		"commands": len(res.Commands), "published": len(res.Published),
 	})
-	troveSettled(t, 3, 2)
+	troveSettled(t, 3, 3, 4)
 }
 
-// drainNodeVariantA picks the node of variant A (R-HA-059): it hosts a web and a worker pod, and neither the
+// drainNodeVariantA picks the node of variant A (R-HA-059): it hosts an api, a packages and a worker pod, and neither the
 // PostgreSQL primary (variant C, and its PodDisruptionBudget refuses the eviction) nor the Valkey primary (variant B).
 // On three worker nodes every node hosts a Sentinel, and may host the Valkey replica or the PostgreSQL standby;
 // their own disruption budgets drain them (Q-HA-68). A primary in the way is moved first, before the load starts.
 func drainNodeVariantA(t *testing.T) string {
 	t.Helper()
 	for attempt := 0; attempt < 3; attempt++ {
-		webs, workers := map[string]bool{}, map[string]bool{}
-		for _, p := range livePods(t, selWeb) {
-			webs[p.Node] = true
-		}
-		for _, p := range livePods(t, selWorker) {
-			workers[p.Node] = true
-		}
+		hosts := nodesHosting(t, selAPI, selPackages, selWorker)
 		pgNode := strings.TrimSpace(kn(t, "get", "pod", pgPrimary(t), "-o", "jsonpath={.spec.nodeName}"))
 		vkNode := strings.TrimSpace(kn(t, "get", "pod", valkeyPrimaryBySentinel(t), "-o", "jsonpath={.spec.nodeName}"))
 		var both []string
 		blockedByValkey := false
-		for n := range webs {
-			switch {
-			case !workers[n] || n == pgNode:
-			case n == vkNode:
+		for n := range hosts {
+			switch n {
+			case pgNode:
+			case vkNode:
 				blockedByValkey = true
 			default:
 				both = append(both, n)
@@ -392,14 +386,14 @@ func drainNodeVariantA(t *testing.T) string {
 			return both[0]
 		}
 		if blockedByValkey {
-			t.Logf("the only node with a web and a worker pod besides the PostgreSQL primary's hosts the Valkey primary (%s); failing it over first", vkNode)
+			t.Logf("the only node with an api, a packages and a worker pod besides the PostgreSQL primary's hosts the Valkey primary (%s); failing it over first", vkNode)
 			script(t, "valkey-failover.sh")
 			continue
 		}
-		t.Logf("the only node with a web and a worker pod is the PostgreSQL primary's (%s); switching the primary over first", pgNode)
+		t.Logf("the only node with an api, a packages and a worker pod is the PostgreSQL primary's (%s); switching the primary over first", pgNode)
 		script(t, "failover.sh")
 	}
-	t.Fatal("no node hosts a web and a worker pod without the PostgreSQL and the Valkey primary")
+	t.Fatal("no node hosts an api, a packages and a worker pod without the PostgreSQL and the Valkey primary")
 	return ""
 }
 

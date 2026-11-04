@@ -3,7 +3,7 @@
 package e2e
 
 // Cold cache, concurrent clients (exit criterion E3.2, R-NUGET-015): three clients run `dotnet restore --no-cache` at once,
-// each against another web replica, and restore the reference solution of perf/nuget/reference (at least 100 packages in
+// each against another packages replica, and restore the reference solution of perf/nuget/reference (at least 100 packages in
 // its restore graph) through a virtual repository over the local repository and a fresh remote on the counting test
 // upstream. All three succeed, and the upstream records one request per .nupkg: the three replicas collapse their misses
 // through the flight lock (Valkey runs; the closing run repeats the restore with Valkey stopped, nuget_closing_test.go).
@@ -57,7 +57,7 @@ func coldRestoreOfReference(t *testing.T, fx *nugetFixture, purpose string, perP
 	s.resetAll(t)
 	defer s.resetAll(t)
 	feed := nugetFeed(t, "localhost", repos.all)
-	webs := webReplicas(t, 3)
+	webs := packagesReplicas(t, 3)
 	files := referenceSolution(t)
 	clients := make([]*nugetClient, 3)
 	for i := range clients {

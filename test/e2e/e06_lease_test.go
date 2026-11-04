@@ -40,25 +40,25 @@ func TestE06Lease(t *testing.T) {
 		workers[p.Name] = true
 	}
 	webs := map[string]bool{}
-	for _, p := range livePods(t, selWeb) {
+	for _, p := range livePods(t, selServing) {
 		webs[p.Name] = true
 	}
 
-	t.Run("R-HA-006 R-ARCH-001 E0.6 the scheduler lease is held by exactly one worker; no web replica holds a lease connection or a job", func(t *testing.T) {
+	t.Run("R-HA-006 R-ARCH-001 E0.6 the scheduler lease is held by exactly one worker; no api or packages replica holds a lease connection or a job", func(t *testing.T) {
 		h := schedulerHolders(t)
 		if len(h) != 1 || !workers[h[0]] {
 			t.Fatalf("scheduler lease holders %v, want exactly one worker pod of %v", h, workers)
 		}
 		for _, line := range strings.Split(sql(t, `SELECT DISTINCT application_name FROM pg_stat_activity WHERE application_name LIKE 'trove:%:lease'`), "\n") {
 			if line = strings.TrimSpace(line); line != "" && webs[strings.Split(line, ":")[1]] {
-				t.Errorf("web replica holds a lease connection: %s", line)
+				t.Errorf("api or packages replica holds a lease connection: %s", line)
 			}
 		}
 		// Jobs run while this is sampled, so locked_by is populated.
 		l := startDriverLoad(t, "e06-steady", 25*time.Second)
 		for i := 0; i < 20; i++ {
-			if n := sql(t, `SELECT count(*) FROM trove.job j JOIN trove.replica r ON r.instance_uid = j.locked_by WHERE 'web' = ANY(r.roles)`); n != "0" {
-				t.Errorf("%s jobs are locked by a web replica", n)
+			if n := sql(t, `SELECT count(*) FROM trove.job j JOIN trove.replica r ON r.instance_uid = j.locked_by WHERE r.roles && ARRAY['api','packages','web']`); n != "0" {
+				t.Errorf("%s jobs are locked by an api or packages replica", n)
 			}
 			time.Sleep(time.Second)
 		}
@@ -181,8 +181,8 @@ func TestE06Lease(t *testing.T) {
 				// full 30 s; the 2 s are the polling of this test (every 500 ms, one API call each).
 				t.Errorf("the registry showed the killed instance as lost after %s, want within system.heartbeat_stale_after (30 s) plus 2 s of observation", lostAfter)
 			}
-			if n := sql(t, `SELECT count(*) FROM trove.job j JOIN trove.replica r ON r.instance_uid = j.locked_by WHERE 'web' = ANY(r.roles)`); n != "0" {
-				t.Errorf("%s jobs are locked by a web replica", n)
+			if n := sql(t, `SELECT count(*) FROM trove.job j JOIN trove.replica r ON r.instance_uid = j.locked_by WHERE r.roles && ARRAY['api','packages','web']`); n != "0" {
+				t.Errorf("%s jobs are locked by an api or packages replica", n)
 			}
 			waitFor(t, "two ready workers", 3*time.Minute, 2*time.Second, func() bool {
 				n := 0

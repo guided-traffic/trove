@@ -516,7 +516,8 @@ s.on('error',e=>{console.log('error '+e.code);process.exit(0)});`, host, port)
 			t.Errorf("%s: connection to %s:%s from the Bastion pod: %q, want open=%v", what, host, port, got, wantOpen)
 		}
 	}
-	check("trove.trove.svc", "8080", true, "the main installation's address is allowed")
+	check("trove-api.trove.svc", "8080", true, "the main installation's api Service is allowed")
+	check("trove-packages.trove.svc", "8080", true, "the main installation's packages Service is allowed")
 	check("trove-db-rw.trove.svc", "5432", false, "the PostgreSQL Service of the main installation")
 	check("trove-db-rw.trove.svc", "5432", false, "the PostgreSQL Service of the main installation, again")
 	check("trove-s3.trove.svc", "9000", true, "the cache bucket is allowed with the bucket backend")

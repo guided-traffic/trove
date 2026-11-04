@@ -3,7 +3,7 @@
 package e2e
 
 // The harness of the vulnerability tests (R-VULN-029, docs/developer/e2e.md#the-vulnerability-tests): the cluster in the
-// `vuln` profile (three web and two worker replicas, the scatter edge, the scanning reading the test advisory source of
+// `vuln` profile (three api and three packages replicas, two worker replicas and two of the pool vuln, the scatter edge, the scanning reading the test advisory source of
 // deploy/dev/osvstub.yaml), the repositories over the two counting test upstreams, a claimed scope, one package per client
 // row that only that row's triage test changes, the control clients of the three test upstreams, the synchronization of
 // the advisory data and what the findings API says. The tests are in vuln_*_test.go.
@@ -162,15 +162,15 @@ func buildVulnEnv(t testing.TB) (*vulnEnv, error) {
 	if err := runUp("vuln"); err != nil {
 		return nil, err
 	}
-	waitWebSettled(t)
-	waitFor(t, "two ready worker pods", 5*time.Minute, 2*time.Second, func() bool {
+	waitServingSettled(t)
+	waitFor(t, "four ready worker pods (the main worker and the pool vuln)", 5*time.Minute, 2*time.Second, func() bool {
 		n := 0
 		for _, p := range livePods(t, selWorker) {
 			if p.Ready && !p.Deleting {
 				n++
 			}
 		}
-		return n == 2
+		return n == 4
 	})
 	b := make([]byte, 3)
 	_, _ = rand.Read(b)

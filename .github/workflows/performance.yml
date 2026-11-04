@@ -5,7 +5,7 @@
 # (change propagation) and P-14 (job pick-up) with Valkey available, against the integration stack (R-ARCH-027,
 # Q-ARCH-220): the per-change integration tier asserts delivery and the p50 only, because the runner pods keep a CPU
 # limit and a throttled process stalls for 100 ms or more at a time. On kind clusters, job e2e runs the failover set
-# (E0.13, E1.8), job e2e-npm runs leg npm-ha (drain variant A and the PostgreSQL switchover and Valkey failover under the
+# (E0.13, E1.8) and the drain per role (set drain-roles, E6a.6), job e2e-npm runs leg npm-ha (drain variant A and the PostgreSQL switchover and Valkey failover under the
 # npm load, E2.11), job npm-ha-soak runs the 20-minute pod crash of R-HA-052 under the npm load and the npm load
 # scripts of R-ARCH-027 (Q-HA-67), job e2e-nuget runs leg nuget-ha (the drain and failover under the NuGet load, Q-ARCH-277;
 # no test of that name exists yet, so the set passes with a notice, Q-ARCH-276) and job e2e-ci runs leg ci-ha (the long legs of the GitLab CI OIDC
@@ -340,6 +340,9 @@ jobs:
           - set: failover
             port: "8081"
             # Declared so that the browser steps below type-check (actionlint); false skips them, as the e2e job skips them for failover.
+            browser: false
+          - set: drain-roles
+            port: "8097"
             browser: false
     env:
       # The image is built with an explicit VERSION=dev: the binary refuses a version that is not
@@ -796,8 +799,8 @@ jobs:
         if: always()
         run: make dev-down
 
-  # The long legs of the GitLab CI OIDC suite (set ci-ha, roadmap M4 E4.7): the reference pipeline while the node of a web replica is
-  # drained and again with Valkey stopped, single-use exchanges across a forced Sentinel failover and FLUSHALL, and a web pod deleted
+  # The long legs of the GitLab CI OIDC suite (set ci-ha, roadmap M4 E4.7): the reference pipeline while the node of an api replica is
+  # drained and again with Valkey stopped, single-use exchanges across a forced Sentinel failover and FLUSHALL, and an api pod deleted
   # while 50 jobs exchange (docs/developer/e2e.md#the-ci-tests). Its steps are those of the e2e-ci job of Test and Release, except that
   # the clients images are built by deploy/dev/e2e.sh when the set starts the client pods. Edge port 8092 is the first free one.
   e2e-ci:

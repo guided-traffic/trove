@@ -2,9 +2,9 @@
 
 package e2e
 
-// The long legs of the reference pipeline (roadmap M4 E4.7, R-CI-028, R-CI-029, R-CI-018): the pipeline while the node of a web
+// The long legs of the reference pipeline (roadmap M4 E4.7, R-CI-028, R-CI-029, R-CI-018): the pipeline while the node of an api
 // replica is drained, with Valkey stopped for the whole run (every replica stays ready and reports "degraded":["valkey"]),
-// single-use exchanges across a forced Sentinel failover and FLUSHALL, and a web pod deleted gracefully while 50 jobs exchange
+// single-use exchanges across a forced Sentinel failover and FLUSHALL, and an api pod deleted gracefully while 50 jobs exchange
 // in a loop. They take minutes, so they are the set ci-ha of the nightly HA and Performance workflow, not of a change
 // (deploy/dev/e2e.sh, docs/developer/e2e.md).
 
@@ -45,7 +45,7 @@ func (fx *ciFixture) pipelineOnce(t *testing.T, tag string, pod int) (start, end
 	return start, end
 }
 
-// TestCIHADrain is E4.7's first half: the pipeline passes while the node of one web replica is drained with kubectl drain during
+// TestCIHADrain is E4.7's first half: the pipeline passes while the node of one serving replica is drained with kubectl drain during
 // its run (R-CI-028).
 func TestCIHADrain(t *testing.T) {
 	fx := ciFx(t)
@@ -108,13 +108,13 @@ func boolInt(b bool) int64 {
 func TestCIHAValkeyStopped(t *testing.T) {
 	fx := ciFx(t)
 	withValkeyStopped(t, func() {
-		webReadyDegraded(t, true)
+		servingReadyDegraded(t, true)
 		fx.pipelineOnce(t, "v1.8.0", 0)
 		fx.pipelineOnce(t, "v1.8.1", 1)
-		webReadyDegraded(t, true)
-		live, ready := livePods(t, selWeb), readyWebPods(t)
+		servingReadyDegraded(t, true)
+		live, ready := livePods(t, selServing), readyServingPods(t)
 		if len(live) < 2 || len(ready) != len(live) {
-			t.Errorf("R-CI-029: %d of %d web replicas are ready with Valkey stopped, want all", len(ready), len(live))
+			t.Errorf("R-CI-029: %d of %d api and packages replicas are ready with Valkey stopped, want all", len(ready), len(live))
 		}
 		for _, p := range ready {
 			code, body := ops(p, "/readyz")
@@ -123,7 +123,7 @@ func TestCIHAValkeyStopped(t *testing.T) {
 			}
 		}
 	})
-	webReadyDegraded(t, false)
+	servingReadyDegraded(t, false)
 }
 
 // formExchange is the body of an exchange request.
@@ -295,7 +295,7 @@ func TestCIHASingleUse(t *testing.T) {
 	}
 }
 
-// TestCIHAPodDelete is R-CI-029: a web pod is deleted gracefully while 50 jobs exchange in a loop; every exchange answers 200 and no
+// TestCIHAPodDelete is R-CI-029: an api pod is deleted gracefully while 50 jobs exchange in a loop; every exchange answers 200 and no
 // client sees a reset connection or a 5xx. The jobs have projects of their own, so the per-subject budget is not the subject of
 // the test, and their pace keeps the address budget (600 a minute) unspent.
 func TestCIHAPodDelete(t *testing.T) {
@@ -335,10 +335,10 @@ func TestCIHAPodDelete(t *testing.T) {
 		}()
 	}
 	time.Sleep(15 * time.Second)
-	victim := readyWebPods(t)[0]
+	victim := readyAPIPods(t)[0]
 	t.Logf("deleting %s gracefully", victim)
 	kn(t, "delete", "pod", victim, "--wait=false")
-	waitWebSettled(t)
+	waitServingSettled(t)
 	wg.Wait()
 	t.Logf("%d exchanges by %d jobs", total.Load(), jobs)
 	for _, b := range bad {

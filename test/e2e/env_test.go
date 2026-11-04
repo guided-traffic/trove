@@ -170,9 +170,11 @@ type pod struct {
 }
 
 const (
-	selWeb    = "app.kubernetes.io/instance=trove,app.kubernetes.io/component=web,trove/serve=true"
-	selWorker = "app.kubernetes.io/instance=trove,app.kubernetes.io/component=worker,trove/serve=true"
-	selTrove  = "app.kubernetes.io/instance=trove,trove/serve=true,app.kubernetes.io/component in (web,worker)" // the replicas: not the driver pod, which carries the serve label for the Valkey NetworkPolicy
+	selAPI      = "app.kubernetes.io/instance=trove,app.kubernetes.io/component=api,trove/serve=true"
+	selPackages = "app.kubernetes.io/instance=trove,app.kubernetes.io/component=packages,trove/serve=true"
+	selWorker   = "app.kubernetes.io/instance=trove,app.kubernetes.io/component=worker,trove/serve=true"                   // the main worker and the pool vuln
+	selServing  = "app.kubernetes.io/instance=trove,trove/serve=true,app.kubernetes.io/component in (api,packages)"        // the pods that open the client listener :8080
+	selTrove    = "app.kubernetes.io/instance=trove,trove/serve=true,app.kubernetes.io/component in (api,packages,worker)" // the replicas: not the driver pod, which carries the serve label for the Valkey NetworkPolicy
 )
 
 func podsOf(t testing.TB, selector string) []pod { return podsOfIn(t, cfg.namespace, selector) }
@@ -289,6 +291,8 @@ type replica struct {
 		Name string `json:"name"`
 	} `json:"leases"`
 	InstanceUID string `json:"instanceUid"`
+	RoleName    string `json:"roleName"`
+	Pool        string `json:"pool"`
 }
 
 func replicas() ([]replica, error) {

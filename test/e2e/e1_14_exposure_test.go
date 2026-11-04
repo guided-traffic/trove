@@ -34,11 +34,11 @@ func customersAPI(t testing.TB, token string) *api {
 	return a
 }
 
-// customersOnPods returns one client per web pod that talks to that pod's listener of the endpoint directly
+// customersOnPods returns one client per packages pod that talks to that pod's listener of the endpoint directly
 // (port-forward to :8443), so a request provably reaches the replica and not another one.
 func customersOnPods(t testing.TB, token string) ([]*api, func()) {
 	t.Helper()
-	addrs, stop := podForwardsPort(t, 8443)
+	addrs, stop := podForwardsOf(t, selPackages, 8443)
 	var out []*api
 	for _, a := range addrs {
 		c := customersAPI(t, token)
@@ -102,12 +102,12 @@ func auditCount(t testing.TB, adm *api, action, rule string) int {
 	}
 }
 
-// metricAcrossPods is a series summed over the web pods.
+// metricAcrossPods is a series summed over the api and packages pods.
 func seriesNow(t testing.TB, prefix string, parts ...string) float64 {
 	return sumSeries(t, prefix, parts...)
 }
 
-// ensureRule creates the rule `releases` (paths releases/**) and waits until every web pod serves the exposed file: a
+// ensureRule creates the rule `releases` (paths releases/**) and waits until every packages pod serves the exposed file: a
 // rule reaches the other replicas within the bound of R-AUTHZ-028, so one pod answering is not the cluster answering.
 func ensureRule(t testing.TB, adm *api, token string) {
 	t.Helper()
@@ -438,7 +438,7 @@ func TestE1_14Exposure(t *testing.T) {
 		t.Run("Valkey stopped", func(t *testing.T) {
 			withValkeyStopped(t, func() {
 				run(t, "Valkey stopped")
-				for _, p := range readyWebPods(t) {
+				for _, p := range readyPackagesPods(t) {
 					if v := metricsOf(t, p)[`trove_ratelimit_fallback{limiter="endpoint_external"}`]; v != 1 {
 						t.Errorf("%s trove_ratelimit_fallback{limiter=endpoint_external} = %v, want 1", p, v)
 					}

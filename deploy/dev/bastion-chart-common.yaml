@@ -36,7 +36,8 @@ config:
     trusted_proxies: ["10.244.0.0/24"]
   bastion:
     main:
-      url: https://trove.trove.svc:8080     # the Service of the main installation: the main endpoint, certificate trove-tls names trove.trove.svc
+      url: https://trove-api.trove.svc:8080            # the Service of the main installation's api pods; certificate trove-tls names it
+      packages_url: https://trove-packages.trove.svc:8080   # the forwarded package and raw-file requests and the probes go to the packages pods
       unreachable_after: 10s
       token_reload_interval: 5s
     # Short periods so that the unreachable scenario ends in minutes (R-BAS-027): an answer lives 30 s and the grace
@@ -75,7 +76,8 @@ networkPolicy:
           podSelector:
             matchLabels:
               app.kubernetes.io/instance: trove
-              app.kubernetes.io/component: web
+            matchExpressions:
+              - {key: app.kubernetes.io/component, operator: In, values: [api, packages]}
       ports: [8080]
 
 ingress:

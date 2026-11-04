@@ -3,7 +3,7 @@
 package e2e
 
 // The helpers of the NuGet tests that need the counting test upstream (test/nugetstub, deploy/dev/nugetstub.yaml): the
-// control client, the remote and virtual repositories of one test, and the pinning of a clients pod to one web replica.
+// control client, the remote and virtual repositories of one test, and the pinning of a clients pod to one packages replica.
 // The scenarios are in nuget_remote_test.go, nuget_virtual_test.go and nuget_collapse_test.go.
 
 import (
@@ -137,11 +137,11 @@ func (fx *nugetFixture) upstreamRepos(t testing.TB, purpose string, settings map
 	return u
 }
 
-// nugetReadableOnEveryReplica waits until each web replica lets the token read the new repositories (the bound of
+// nugetReadableOnEveryReplica waits until each packages replica lets the token read the new repositories (the bound of
 // R-AUTHZ-028 plus one second for the poll and the request, as awaitReadableOnEveryReplica does for npm).
 func nugetReadableOnEveryReplica(t testing.TB, token string, keys ...string) {
 	t.Helper()
-	addrs, stop := podForwards(t)
+	addrs, stop := packagesForwards(t)
 	defer stop()
 	const within = 3 * time.Second
 	for i, addr := range addrs {
@@ -169,7 +169,7 @@ func nugetReadableOnEveryReplica(t testing.TB, token string, keys ...string) {
 	}
 }
 
-// nugetPin makes the forwarder of NuGet clients pod i relay to one web pod's listener (pod IP, port 8080) instead of the
+// nugetPin makes the forwarder of NuGet clients pod i relay to one packages pod's listener (pod IP, port 8080) instead of the
 // edge, through the target file of the forwarder (test/e2e/clients/fwd); the base URL and the certificate the client
 // verifies stay those of the edge. nugetUnpin returns it to the edge.
 func nugetPin(t testing.TB, i int, webPodIP string) {

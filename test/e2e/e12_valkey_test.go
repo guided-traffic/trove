@@ -39,12 +39,12 @@ func valkeyPrimaryPod(t testing.TB) string {
 	return ""
 }
 
-// clonedReplica starts a pod from the web Deployment's template with a mutation applied: a
+// clonedReplica starts a pod from the packages Deployment's template with a mutation applied: a
 // replica that joins the release, for the start-up cases of E0.12. The pod keeps the readiness
 // probe, so its Ready condition is the answer of /readyz.
 func clonedReplica(t *testing.T, name string, mutate func(spec map[string]any)) {
 	t.Helper()
-	raw := kn(t, "get", "deployment", "trove-web", "-o", "json")
+	raw := kn(t, "get", "deployment", "trove-packages", "-o", "json")
 	var d map[string]any
 	if err := json.Unmarshal([]byte(raw), &d); err != nil {
 		t.Fatal(err)
@@ -64,7 +64,7 @@ func clonedReplica(t *testing.T, name string, mutate func(spec map[string]any)) 
 	}
 	kn(t, "apply", "-f", f)
 	// The pod ends the way a replica does (SIGTERM, the clean shutdown deletes its row) and the test waits until the
-	// registry no longer lists it. A web-role row that lingers counts towards n, the replicas the fallback share of
+	// registry no longer lists it. A row of a serving role that lingers counts towards n, the replicas the fallback share of
 	// every rate limit divides by (R-ARCH-034, Q-ARCH-45): the rows of this file, left to go stale, made n 4 instead of 2
 	// for the test that followed (the transfer loop of E0.14 was refused at q=12 instead of 25 when its drain took the
 	// Valkey primary).
@@ -93,7 +93,7 @@ func addEnv(spec map[string]any, name, value string) {
 }
 
 // checkClientList is the connection check of E0.12: CLIENT LIST on the Valkey primary shows connections
-// named trove:<pod>:<class> from every web and worker pod, over TLS only, at most six per replica.
+// named trove:<pod>:<class> from every api, packages and worker pod, over TLS only, at most six per replica.
 func checkClientList(t *testing.T) {
 	t.Helper()
 	primary := valkeyPrimaryPod(t)
@@ -103,7 +103,7 @@ func checkClientList(t *testing.T) {
 	tlsPort := valkeyCLI(t, primary, "config", "get", "tls-port")
 	t.Logf("%s: tls-port %s", primary, strings.ReplaceAll(strings.TrimSpace(tlsPort), "\n", " "))
 	want := map[string]bool{}
-	for _, p := range append(livePods(t, selWeb), livePods(t, selWorker)...) {
+	for _, p := range livePods(t, selTrove) {
 		want[p.Name] = true
 	}
 	names := regexp.MustCompile(`name=trove:([^: ]+):(\S+)`)

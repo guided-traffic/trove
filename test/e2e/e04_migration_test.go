@@ -41,7 +41,7 @@ func TestE04MigrationFailure(t *testing.T) {
 		for _, p := range livePods(t, selTrove) {
 			before[p.Name] = p.UID
 		}
-		beforeGen := strings.TrimSpace(kn(t, "get", "deployment", "trove-web", "-o", "jsonpath={.metadata.generation}"))
+		beforeGen := deploymentGenerations(t)
 
 		// Requests flow through the Ingress while the upgrade runs.
 		var mu sync.Mutex
@@ -103,8 +103,8 @@ func TestE04MigrationFailure(t *testing.T) {
 				t.Errorf("pod %s is not ready", p.Name)
 			}
 		}
-		if gen := strings.TrimSpace(kn(t, "get", "deployment", "trove-web", "-o", "jsonpath={.metadata.generation}")); gen != beforeGen {
-			t.Errorf("the web Deployment changed (generation %s -> %s) although the pre-upgrade hook failed", beforeGen, gen)
+		if gen := deploymentGenerations(t); gen != beforeGen {
+			t.Errorf("a role Deployment changed (generations %s -> %s) although the pre-upgrade hook failed", beforeGen, gen)
 		}
 		if st := strings.TrimSpace(helmStatus(t)); st != "failed" {
 			t.Errorf("helm release status = %q, want failed", st)
@@ -118,8 +118,14 @@ func TestE04MigrationFailure(t *testing.T) {
 		if st := strings.TrimSpace(helmStatus(t)); st != "deployed" {
 			t.Errorf("helm release status after the repair = %q, want deployed", st)
 		}
-		checkReleaseServes(t, 2, 2)
+		checkReleaseServes(t, 2, 3, 4)
 	})
+}
+
+// deploymentGenerations lists the generation of every Deployment of the release (api, packages, worker, worker-vuln).
+func deploymentGenerations(t testing.TB) string {
+	t.Helper()
+	return strings.TrimSpace(kn(t, "get", "deployments", "-l", "app.kubernetes.io/instance=trove", "-o", `jsonpath={range .items[*]}{.metadata.name}={.metadata.generation} {end}`))
 }
 
 func helmStatus(t testing.TB) string {

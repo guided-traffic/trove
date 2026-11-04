@@ -14,7 +14,7 @@ failovers under npm load, in [Drain and failover under npm load](#drain-and-fail
 
 - **The release image is what is tested.** The tests start nothing test-only inside the replicas. The
   one thing the release image needed for E0.14 is a diagnostic job kind (below).
-- **M0 has no API that writes a change or enqueues a job.** A *driver* pod does what a `web` replica would
+- **M0 has no API that writes a change or enqueues a job.** A *driver* pod does what a serving replica would
   do, with the same packages and the same configuration: it writes a change through `internal/cluster`
   and enqueues a job through `internal/jobs`. The workers of the release run the jobs.
 - **A failed request is counted by the client.** k6 runs at 100 requests/s through the Ingress, and every
@@ -28,7 +28,7 @@ failovers under npm load, in [Drain and failover under npm load](#drain-and-fail
 - **The M1 tests start from a fresh installation's own tools.** The administrator they seed with is made the way
   [identity.md](identity.md#bootstrap-commands) says (`trove admin service-account create --admin`, `trove admin token
   create` through `kubectl exec` into a worker pod); everything else is the management API. They run in the `scatter`
-  profile (three `web` replicas, every request to another one) and `TestMain` returns the cluster to the default profile at
+  profile (three `api` and three `packages` replicas, every request to another one) and `TestMain` returns the cluster to the default profile at
   the end.
 - **A failing test here is a finding.** When a criterion fails because of the product, the test stays red
   and [Findings of the suite](#findings-of-the-suite) says what was measured. No threshold is moved to make it pass.
@@ -47,11 +47,13 @@ deploy/dev/bastion*.yaml    their manifests and chart values; values-bastion.yam
 test/e2e/                   the Go tests, build tag `e2e`, package e2e
   env_test.go               kubectl, the API-server proxy to :8081, the driver and k6 helpers
   e03_cluster_test.go       E0.3, E0.7 (Pod Security, NetworkPolicy enforcement)
+  e03_roles_test.go         E6a.5: the roles' Deployments, Services, path split, access logs and 404s (TestE03Roles)
   e04_migration_test.go     E0.4 chart part
   e06_lease_test.go         E0.6, P-13 and P-14 with Valkey
   e12_valkey_test.go        E0.12
   e13_failover_test.go      E0.13
   e14_drain_test.go         E0.14
+  e14_drain_roles_test.go   E6a.6: the drain per role (TestDrainRoles)
   e15_tls_test.go           E0.15: plaintext refused, the listener certificate renewed under load
   e16_endpoint_test.go      E0.16: the second endpoint `customers`
   m1_env_test.go            the M1 harness: edge client with a cookie jar, bootstrap administrator, browser login
@@ -103,6 +105,7 @@ make e2e SET=access-long     # E1.1, E1.11 with the browser journeys, E1.13 (CI,
 make e2e SET=access          # the M1 tests alone: E1.1, E1.8, E1.11, E1.13, E1.14
 make e2e SET=full            # everything, in the order of the milestone
 make e2e SET=drain           # E0.14 only (with the transfer loop of E1.13)
+make e2e SET=drain-roles     # the drain per role of R-HA-059 (E6a.6): api, packages, the worker and the pool vuln pod by pod under load (CI: nightly and on dispatch)
 make e2e SET='^TestE06'      # any go test -run expression
 make e2e SET=clients         # build the npm clients image, start the client pods, run the smoke test (the pods stay up)
 make e2e SET=clients-down    # remove the client pods
@@ -194,12 +197,12 @@ the exit criterion.
 
 | Criterion | Test | What it checks |
 |---|---|---|
-| E0.3 | `TestE03DevProfile` | two `web` and two `worker` pods Ready, every pod's `:8081/readyz` 200 (through the API-server proxy), `/system/replicas` lists two `web` and two `worker` and each pod under its role, `/system/ping` is `OK` through the Ingress; two PostgreSQL instances, two Valkey pods, three Sentinels. The 15-minute budget is measured by `make dev-up` itself (below) |
-| E0.4 | `TestE04MigrationFailure` | `helm upgrade` with a migration credential whose password is wrong. The Job fails for that real reason (SASL authentication, `28P01`); `helm upgrade` fails naming the Job; ping answers 200 throughout; no pod is replaced and the web Deployment's generation is unchanged; the release is `failed`; the repairing upgrade succeeds and the checks of E0.3 pass again |
-| E0.6 | `TestE06Lease` | the scheduler lease is read from `pg_locks` (class 1, object 1) joined to `pg_stat_activity` (`trove:<pod>:lease`), sampled every 200 ms from one psql session. One holder, a worker; no lease connection and no job lock of a `web` replica. Then two faults: force-delete, and SIGKILL of the process |
-| E0.7 | `TestE07PodSecurity`, `TestE07NetworkPolicy` | the namespace enforces `restricted`, the pods run, a privileged pod is refused; from another namespace `:8080` of a web pod answers and `:8081` does not |
+| E0.3 | `TestE03DevProfile` | two `api`, three `packages`, two `worker` and two pool `vuln` pods Ready, every pod's `:8081/readyz` 200 (through the API-server proxy), `/system/replicas` lists each pod under its `roleName` (the pool's with `pool` `vuln`), `/system/ping` is `OK` through the Ingress; two PostgreSQL instances, two Valkey pods, three Sentinels. The 15-minute budget is measured by `make dev-up` itself (below) |
+| E0.4 | `TestE04MigrationFailure` | `helm upgrade` with a migration credential whose password is wrong. The Job fails for that real reason (SASL authentication, `28P01`); `helm upgrade` fails naming the Job; ping answers 200 throughout; no pod is replaced and no Deployment's generation changes; the release is `failed`; the repairing upgrade succeeds and the checks of E0.3 pass again |
+| E0.6 | `TestE06Lease` | the scheduler lease is read from `pg_locks` (class 1, object 1) joined to `pg_stat_activity` (`trove:<pod>:lease`), sampled every 200 ms from one psql session. One holder, a worker; no lease connection and no job lock of an `api` or `packages` replica. Then two faults: force-delete, and SIGKILL of the process |
+| E0.7 | `TestE07PodSecurity`, `TestE07NetworkPolicy` | the namespace enforces `restricted`, the pods run, a privileged pod is refused; from another namespace `:8080` of an `api` pod answers and `:8081` does not |
 | E0.11 | `TestE99Scatter` | switches to `scatter`, runs the E0.3 checks and the Valkey connection check, 60 sequential requests reach three replicas 20 times each, k6 at 100 requests/s records only 200 spread evenly over the three |
-| E0.12 | `TestE12Valkey` | `CLIENT LIST` on the primary; three new replicas started from the web template with a wrong `primary_name`, a wrong password and an unreachable Sentinel; each is deleted with its normal grace period and the test waits until the registry no longer lists it, because a web-role row left to go stale counts towards the `n` that every fallback rate-limit share divides by (R-ARCH-034) and refused the transfer loop of E0.14 in the test that follows |
+| E0.12 | `TestE12Valkey` | `CLIENT LIST` on the primary; three new replicas started from the packages template with a wrong `primary_name`, a wrong password and an unreachable Sentinel; each is deleted with its normal grace period and the test waits until the registry no longer lists it, because a row of a serving role left to go stale counts towards the `n` that every fallback rate-limit share divides by (R-ARCH-034) and refused the transfer loop of E0.14 in the test that follows |
 | E0.13 | `TestE13Failover` | `faultRun`: k6 + driver `load` + a monitor of `/healthz` and `/readyz` of every replica run while the fault is injected: `failover.sh`, `pg-kill.sh`, `pg-stop.sh 30s`, `valkey-failover.sh`, `valkey-kill.sh`, `valkey-outage.sh 60s` |
 | E0.14 | `TestE14Drain` | see below |
 | E0.15 | `TestE15TLS` | see below |
@@ -240,7 +243,7 @@ so the answer is the pod's own, not a Service's.
 
 ### E0.14
 
-1. Pick the node ([drain.sh --pick](../../deploy/dev/drain.sh)): a worker node with a `web` and a `worker`
+1. Pick the node ([drain.sh --pick](../../deploy/dev/drain.sh)): a worker node with an `api`, a `packages` and a `worker`
    pod, not the PostgreSQL primary's (its PodDisruptionBudget refuses the eviction). When the only such
    node is the primary's, `failover.sh` moves the primary first.
 2. Start a watch on the trove pods (every transition with its arrival time), stream the logs of the pods
@@ -264,12 +267,12 @@ edge pod (25 connection errors in the first measured run, with the previous cont
 
 `TestE15TLS` has two subtests.
 
-1. **Plaintext is refused.** A pod of the namespace `default` sends a plaintext `GET` to `:8080` and `:8081` of a web
+1. **Plaintext is refused.** A pod of the namespace `default` sends a plaintext `GET` to `:8080` and `:8081` of a packages
    pod and to the object store (`http://trove-s3.trove.svc:9000/`). The listeners answer `400` (net/http's "Client sent
    an HTTP request to an HTTPS server") or nothing; any `200` fails the test. (Valkey's plaintext port is 0, checked by
    E0.12. PostgreSQL's plaintext refusal is a CloudNativePG default that this suite does not probe.)
 2. **The listener certificate is renewed under load.**
-   - Per trove pod (two web, two worker) an *ephemeral container* with the pinned openssl image
+   - Per trove pod (two api, three packages, four worker) an *ephemeral container* with the pinned openssl image
      (`OPENSSL_IMAGE`, same user as trove, `--target=trove`) polls every 100 ms: the serial of
      `/var/run/secrets/trove/tls/tls.crt` as the kubelet mounts it into the trove container (read through
      `/proc/1/root`), and the serial `openssl s_client` receives from `127.0.0.1:8080` and `:8081` of that pod. It logs
@@ -305,20 +308,55 @@ edge pod (25 connection errors in the first measured run, with the previous cont
   default endpoint's host goes to the default backend.
 - `trove_http_requests_total` carries both `endpoint` values and `trove_endpoint_listener_up{endpoint="customers"}` is 1.
 
+## The cut into roles (phase 6a)
+
+The dev profile runs every role ([values-dev.yaml](../../deploy/dev/values-dev.yaml)): `api` 2 replicas, `packages` 3, `worker` 2 and a
+worker pool `vuln` of 2 (the Deployments `trove-api`, `trove-packages`, `trove-worker`, `trove-worker-vuln`; the Services `trove-api` and
+`trove-packages`; the endpoint `customers` has `trove-ep-customers` for the packages pods and `trove-ep-customers-api` for the api pods). The scatter
+profile makes `api` 3 as well. There is no Deployment `trove-web` and no Service `trove` (the bridge `web.enabled` of R-HA-064 is not used
+by the suite). The sizing and the PostgreSQL `max_connections` of 400 (the chart's budget is 303, 383 with the bridge) are
+[Q-HA-87](../spec/ha-and-helm.md#q-ha-87--the-dev-profiles-sizing-of-the-roles-and-its-postgresql-connection-budget).
+
+**How a test names a role** ([Q-HA-89](../spec/ha-and-helm.md#q-ha-89--how-the-end-to-end-harness-addresses-the-roles)). A request of the other role's
+family answers the `404` of an unknown path at the pod, so a helper over both roles would send half of its requests to the wrong pods.
+
+| Helper ([env_test.go](../../test/e2e/env_test.go), [m1_env_test.go](../../test/e2e/m1_env_test.go)) | What it is |
+|---|---|
+| `selAPI`, `selPackages`, `selWorker` | label selectors of the role's pods; `selWorker` holds the main worker and the pool `vuln`; add `trove/pool=` (empty) or `trove/pool=vuln` for one Deployment |
+| `selServing`, `selTrove` | `api` and `packages` (the pods that open `:8080`); all three roles |
+| `readyAPIPods`, `readyPackagesPods`, `readyServingPods` | the names of the ready pods |
+| `apiForwards`, `packagesForwards`, `podForwardsOf(selector, port)` | port-forwards to the pods' listeners; the management API, sign-in and rate-limit tests use `apiForwards`, the package tests `packagesForwards`, the endpoint `customers` `podForwardsOf(selPackages, 8443)` |
+| `waitServingSettled` | waits for the rollouts of `api` and `packages` |
+| `awaitTokenRefusedOnPackagesPods` | a revocation reaches the packages pods within the bound of R-AUTHZ-028; the `revoke` helpers wait for `api` through the edge and call this for `packages` |
+| `checkReleaseServes(api, packages, worker)` | E0.3's checks per role; the registry names each pod under `roleName` and, for the pool, `pool` |
+
+The npm and NuGet clients of the client pods reach the cluster through the edge (the in-cluster HAProxy Ingress, `TROVE_E2E_NPM_CLIENTS_TARGET`
+and its NuGet twin), so the edge's path split between `api` and `packages` is exercised by every package test; `pinClient` and `nugetPin` pin a
+client to one `packages` pod.
+
+| Test | Criterion | What it checks |
+|---|---|---|
+| `TestE03Roles` (in the sets `default`, `push` and `full`) | E6a.5, R-HA-002, R-HA-037, R-ARCH-001 | every Deployment has its replicas ready and none named `trove-web` exists; the registry lists each pod with its `roleName` and the vuln pods with `pool` `vuln`; each role Service's EndpointSlices name the pods of its role alone and `sessionAffinity` is `None`; 90 requests of each family through the edge reach every pod of the role that serves the family and no other; with markers in the paths, package and raw-file requests appear in the access logs of the packages pods only and UI, sign-in and management requests in those of the api pods only (the logs are read since the start of the test, so a probe of another test does not count); at every pod, with an administrator token, a route of the other role's family answers the `404` of `/does-not-exist` with the same problem body |
+| `TestE14Drain` (set `push`, `drain`) | R-HA-059 variant A | the node hosts an `api`, a `packages` and a `worker` pod; the E0.14 steps below |
+| `TestDrainRoles` (set `drain-roles`, nightly) | E6a.6, R-HA-059 "A drain per role" | each of `api`, `packages`, the main worker and the pool `vuln` is evicted pod by pod through the eviction API (repeated while the PodDisruptionBudget answers `429`), each after the replacement is ready, under k6 ping, the upload and download loop, a management call with a token every 250 ms and the driver's jobs; k6 only `200`, no failed transfer or call, the pods of the other roles keep names, UIDs and restart counts, no SIGKILL, nothing `Pending` for 60 s, four probe jobs of the main worker finish with `attempt` 1 and at least one resumed from its cursor on another worker. Not part of it: [F-49](../projektplan/promt.md#8--open-findings) |
+
+The measured values further down this page were taken on the profile before the cut (one `web` Deployment) and are not re-measured; a
+line that says `web` there names that profile.
+
 ## M1 tests
 
 The tests of the access core run in the `scatter` profile. `useScatter` switches to it once per process (`up.sh` with
-`TROVE_PROFILE=scatter`, three ready `web` pods) and `TestMain` switches back at the end, as `TestE99Scatter` does.
+`TROVE_PROFILE=scatter`, three ready `api` and three ready `packages` pods) and `TestMain` switches back at the end, as `TestE99Scatter` does.
 Subtest names carry the requirement IDs and the criterion, as the M0 tests do.
 
 **The harness** ([m1_env_test.go](../../test/e2e/m1_env_test.go)):
 
 | Piece | What it does |
 |---|---|
-| `api` | an HTTP client of the edge that sends a new connection per request (so the scatter profile's round robin shows in `X-Trove-Replica`), with a Bearer token or a cookie jar and the CSRF header; `rt` routes names to the edge's published port, to a port-forward for the test IdP's Service name and, for the per-address tests, to the web pods in turn |
+| `api` | an HTTP client of the edge that sends a new connection per request (so the scatter profile's round robin shows in `X-Trove-Replica`), with a Bearer token or a cookie jar and the CSRF header; `rt` routes names to the edge's published port, to a port-forward for the test IdP's Service name and, for the per-address tests, to the `api` pods in turn |
 | `adminToken` | `trove admin service-account create e2e-admin --admin` and `trove admin token create` through `kubectl exec` into a worker pod: the bootstrap of a fresh installation. The account stays between runs, every run mints a token and revokes those of earlier runs |
 | `browser.oidcLogin` | the authorization code flow with PKCE: GET `/auth/oidc/keycloak/start`, the redirects followed by hand, the IdP's login form (found by its form id) posted with the user's password from the Secret `trove-keycloak`, the callback, the redirect into the UI. The trace records every hop and the answers of the start and the callback, so a test sees on which replicas they ran. It is an HTTP client, not a browser ([Q-AUTH-79](../spec/identity-and-authentication.md#q-auth-79--how-the-end-to-end-tests-drive-the-browser-login-of-e11-and-disable-the-break-glass-account)) |
-| `podForwards` | a `kubectl port-forward` to every ready web pod; a client that sends its requests to them in turn reaches the three replicas without the edge, from the address 127.0.0.1, a bucket of its own for the per-address limits of R-AUTH-038. Every test that exceeds such a limit uses it, so the edge address (the host, which every other test shares) keeps its budget. A forward is supervised: `kubectl port-forward` ends for good on the first connection through it that fails upstream (`lost connection to pod`) or when its stream to the kubelet breaks, (measured: a client that resets a connection through the forward, or a refused connection inside the pod, makes `kubectl` print `error: lost connection to pod` and exit; the listener is then gone for the next client), so the harness starts it again on the same local port, writes the end and its stderr to `.out/e2e/portforward-*.log`, and a client that finds the port closed in between (connection refused, nothing of its request sent) waits up to 30 s for the new process, then fails with that stderr |
+| `apiForwards`, `packagesForwards` | a `kubectl port-forward` to every ready `api` or `packages` pod; a client that sends its requests to them in turn reaches the three replicas without the edge, from the address 127.0.0.1, a bucket of its own for the per-address limits of R-AUTH-038. Every test that exceeds such a limit uses it, so the edge address (the host, which every other test shares) keeps its budget. A forward is supervised: `kubectl port-forward` ends for good on the first connection through it that fails upstream (`lost connection to pod`) or when its stream to the kubelet breaks, (measured: a client that resets a connection through the forward, or a refused connection inside the pod, makes `kubectl` print `error: lost connection to pod` and exit; the listener is then gone for the next client), so the harness starts it again on the same local port, writes the end and its stderr to `.out/e2e/portforward-*.log`, and a client that finds the port closed in between (connection refused, nothing of its request sent) waits up to 30 s for the new process, then fails with that stderr |
 | `withValkeyStopped` | `valkey-stop.sh`, the criterion, `valkey-start.sh` (also after a failure) |
 | `walkRetry` | a list read page by page; a 429 is waited out, because a walk with `limit=1` is more requests than the read class admits in a burst |
 | `withWriteBudget` | a copy of a client whose writes are counted against the write class of its token: it reads `q` and `w` of the member `"write"` of `RateLimit-Policy` from the answers and fails the write that would exceed `q` before it is sent, with a message that names the budget ([Q-AUTH-188](../spec/identity-and-authentication.md#q-auth-188--the-write-cases-of-e111-each-get-a-token-of-their-own-and-a-guard-holds-them-to-the-write-budget)). It counts every write of the token, not those of one window, so it needs a token that no other client uses (`freshAdmin`) |
@@ -352,17 +390,17 @@ and minute, not per token.
 
 | Criterion | Test | What it checks |
 |---|---|---|
-| E1.1 | `TestE1_01Login` | alice signs in through the Ingress with the code flow and PKCE (the authorization request carries `code_challenge_method=S256`, `state`, `nonce` and the redirect URI of the edge; the realm enforces S256, so a completed exchange proves the verifier); created just in time (`origin: jit`, deleted before the test so the creation is observable); groups `team-web` and `platform-admins` from the claim `groups` through the rule `trove-(.+)`, bob only `team-web`. Logout: the answer names the IdP's end-session endpoint with `id_token_hint`, `client_id` and the post-logout URI; the browser follows it; the cookie of the ended session is refused on every replica within `auth.revocation_bound`; a second sign-in in the same browser needs no password before the logout (the control) and asks for it again after (R-AUTH-013: the IdP session ended). Break-glass: wrong password `401`, the generated password `204`, `isAdmin` via `break-glass`; `TROVE_AUTH_BREAK_GLASS_ENABLED=false` on the web Deployment (R-AUTH-014: disabled): nine attempts over the three replicas get `403 local_login_disabled`, the earlier session `401 session_expired`; enabled again, the login works |
+| E1.1 | `TestE1_01Login` | alice signs in through the Ingress with the code flow and PKCE (the authorization request carries `code_challenge_method=S256`, `state`, `nonce` and the redirect URI of the edge; the realm enforces S256, so a completed exchange proves the verifier); created just in time (`origin: jit`, deleted before the test so the creation is observable); groups `team-web` and `platform-admins` from the claim `groups` through the rule `trove-(.+)`, bob only `team-web`. Logout: the answer names the IdP's end-session endpoint with `id_token_hint`, `client_id` and the post-logout URI; the browser follows it; the cookie of the ended session is refused on every replica within `auth.revocation_bound`; a second sign-in in the same browser needs no password before the logout (the control) and asks for it again after (R-AUTH-013: the IdP session ended). Break-glass: wrong password `401`, the generated password `204`, `isAdmin` via `break-glass`; `TROVE_AUTH_BREAK_GLASS_ENABLED=false` on the `trove-api` Deployment (R-AUTH-014: disabled): nine attempts over the three replicas get `403 local_login_disabled`, the earlier session `401 session_expired`; enabled again, the login works |
 | E1.8 | `TestE1_08RateLimits` | R-API-016: 400 reads with one token get `429` with `Retry-After`, `rate_limited` and the `RateLimit` fields of class `read` after the burst of 200, a second token is not slowed; the write class likewise at 50, and a token whose write budget is gone still reads. R-ARCH-034: 1000 requests with one token round robin over three replicas are admitted 200 times, not three bursts, and the same on one replica; with Valkey stopped the same bound holds (each replica's share, `trove_ratelimit_fallback{limiter="api_read"}` is 1 on all three), and sequential reads add no delay with the circuit open. The latency injection: `CLIENT PAUSE 4000 ALL` on the primary holds every check for `valkey.command_timeout`; exactly the 15 checks of `failure_threshold` 5 times three replicas are held, then thousands of fast requests. R-AUTH-038: 400 random well-formed tokens, Bearer and Basic alternating, are validated (401) 300 times and answer 429 after that, both kinds; a PAT used once before still works on all three replicas during the burst; 40 starts of the login flow get 429 from the 31st on; with Valkey stopped at most 300 validations and the 40 starts admit about 30 (each replica's share of 10), and `trove_ratelimit_fallback{limiter="auth.credential_failures"}` is 1 on each replica |
 | E1.11 | `TestE1_11Scatter` | every list operation (repositories, users, groups, service accounts, tokens, policies, role bindings, audit events, exposure rules, jobs) walked with `limit=1` returns what one page of 500 returns (read before and after, no duplicate, served by at least two replicas); an `Idempotency-Key` replayed 15 times is `201` with `Idempotency-Replayed: true`, the stored body and `Location`, from all three replicas, the same key with another body is `422 idempotency_key_reused` (R-API-051); a write on one replica is read back at once on the others, 24 times, and a new repository takes uploads on all three replicas at once (R-API-052); each of these two cases writes with a token of its own under `withWriteBudget` (18 and 41 writes, [Q-AUTH-188](../spec/identity-and-authentication.md#q-auth-188--the-write-cases-of-e111-each-get-a-token-of-their-own-and-a-guard-holds-them-to-the-write-budget)). R-AUTH-042, in three modes (Valkey up with 50 browser logins, Valkey stopped for its whole duration with 25 and every pod `degraded: valkey`, and `FLUSHALL` at the lockout, after the revocation and in the middle of 25 logins): break-glass lockout (five wrong passwords one after another over the three replicas, the correct one `429 break_glass_locked` with `Retry-After` on each, still locked after `FLUSHALL`, unlock through the API; five at once lock it as well), PAT revocation (the token worked on all three replicas, then 401 on all three within the 2 s of `auth.revocation_bound`, and after `FLUSHALL` too), re-authentication (the session's `authenticated_at` set back two hours: `401 reauthentication_required` on any replica, the silent round trip `purpose=reauth` needs no password and rotates the session, the old cookie is dead), logout, and the browser logins on varying replicas |
 | E1.11 journeys | `TestE1_11Journeys` | runs `npx playwright test` in `web/e2e` against the scatter profile and fails on any failure of any journey, including an axe violation of impact serious or critical on a visited screen; one subtest per journey, named by its title. A missing `npm ci` or browser is a failure that names the command to run, not a skip. See [Browser journeys](#browser-journeys) |
-| E1.13 | `TestE1_13Transfers` | R-HA-011: two loops of `curl -T` of 500 MB at 50 MB/s during `kubectl rollout restart deploy/trove-web`: none fails, uploads overlapped the rollout, and what arrived has the SHA-256 that was sent. R-ARCH-024, download 1: a 400 MiB file of `generic-local` is downloaded during a rollout restart and matches ([Q-ARCH-76](../spec/architecture.md#q-arch-76--the-pace-of-the-download-that-a-rollout-restart-must-not-break): at 6 MB/s, so that the serving pod is drained while it transfers, which the test asserts). Download 2: at 2 MB/s (200 s, longer than the grace period) with the serving pod deleted after 3 s: the bytes stop arriving about 110 s later (the shutdown timeout; the pod's log says `requests cut at the shutdown deadline`), curl ends with an error, `curl -C -` resumes with `206` from another replica and the SHA-256 matches. Download 1 was red in about half of the runs until [finding 5](#findings-of-the-suite) was fixed; the cut download must end for curl within 15 s of its last bytes. R-HA-002: `POST /api/v1/system/tasks/gc/run` through a web pod is executed by a worker (the job's `replica`, and `job.ran_by` resolved through the replica table), and no job was ever run by a web replica. E0.14: `TestE14Drain` runs `k6/transfer.js` next to the ping load (4 iterations/s: PUT, GET, SHA-256 compared) and fails on any transfer that is not 200/201, a wrong checksum or a dropped iteration |
+| E1.13 | `TestE1_13Transfers` | R-HA-011: two loops of `curl -T` of 500 MB at 50 MB/s during `kubectl rollout restart deploy/trove-packages`: none fails, uploads overlapped the rollout, and what arrived has the SHA-256 that was sent. R-ARCH-024, download 1: a 400 MiB file of `generic-local` is downloaded during a rollout restart and matches ([Q-ARCH-76](../spec/architecture.md#q-arch-76--the-pace-of-the-download-that-a-rollout-restart-must-not-break): at 6 MB/s, so that the serving pod is drained while it transfers, which the test asserts). Download 2: at 2 MB/s (200 s, longer than the grace period) with the serving pod deleted after 3 s: the bytes stop arriving about 110 s later (the shutdown timeout; the pod's log says `requests cut at the shutdown deadline`), curl ends with an error, `curl -C -` resumes with `206` from another replica and the SHA-256 matches. Download 1 was red in about half of the runs until [finding 5](#findings-of-the-suite) was fixed; the cut download must end for curl within 15 s of its last bytes. R-HA-002: `POST /api/v1/system/tasks/gc/run` through an `api` pod is executed by a worker (the job's `replica`, and `job.ran_by` resolved through the replica table), and no job was ever run by an `api` or `packages` replica. E0.14: `TestE14Drain` runs `k6/transfer.js` next to the ping load (4 iterations/s: PUT, GET, SHA-256 compared) and fails on any transfer that is not 200/201, a wrong checksum or a dropped iteration |
 | E1.14 | `TestE1_14Exposure` | on `customers` (through its own Ingress): without a rule nothing is exposed (`404`) and a write is `403 endpoint_read_only`, a rule with `packages` on a generic repository is `422 dimension_not_supported`; a rule `paths.include: ["releases/**"]` makes `releases/1.0/app.zip` downloadable with a service-account token bound to `customers` while `internal/x.bin` and several missing paths answer the same 404 (problem body without `instance` and `requestId`, same content type and cache control); the same token is `401 invalid_token` on the default endpoint; a PAT is `401 invalid_token` on `customers` with no query of the token table (`api_token` is locked `ACCESS EXCLUSIVE` for 14 s: 41 PATs are answered in milliseconds, while an unknown PAT on the default endpoint, the control, waits for the lock and ends `503` after the statement timeout; the statistics views are no evidence, an idle backend flushes its counters up to a minute late) and `trove_endpoint_credentials_refused_total{reason="token_type"}` +41; an unbound SAT is refused with `reason="token_binding"`; no credential and a valid session cookie are `401 credentials_required`; an administrator token bound to `customers` reads the exposed file, gets the 404 for the internal one, lists only `generic-local` among the repositories and no `internal` folder. The rule lifecycle (created, narrowed with a merge patch, deleted) is read on every replica through a port-forward to its endpoint listener within the bound of R-AUTHZ-028 (Valkey up and stopped), and each change is one audit event (`endpoint.exposure.created`, `.updated`, `.deleted`). R-EP-015: 400 reads with one token get `429` after the burst with `Retry-After` and the policy `endpoint:external`, a second bound token is not slowed, the same token is not held on the default endpoint; 1000 requests with one token over the three replicas are admitted at most burst plus decay, with Valkey stopped too, where `trove_ratelimit_fallback{limiter="endpoint_external"}` is 1 on every replica |
 
 ## Browser journeys
 
 `TestE1_11Journeys` is the second half of E1.11: the Playwright journeys of [R-UI-047](../spec/api-and-ui.md) in
-[web/e2e](../../web/e2e), run in Chromium against the chart-installed build in the `scatter` profile (three `web`
+[web/e2e](../../web/e2e), run in Chromium against the chart-installed build in the `scatter` profile (three `api` and three `packages`
 replicas, every request to another one). The unit and component tiers stay in `make web-test`
 ([web-ui.md](web-ui.md#test-tiers-r-ui-047)); this is the tier that sees the real layout, the real CSP, the real IdP page
 and, with `@axe-core/playwright`, `color-contrast` and the document-level rules (Q-UI-11, Q-UI-66).
@@ -376,7 +414,7 @@ and, with `@axe-core/playwright`, `color-contrast` and the document-level rules 
 | `03-access.spec.ts` | group, membership, policy editor, the effect for bob | R-UI-025, R-UI-026 | bob signs in (JIT) and sees no repository; the administrator creates a group, adds bob, writes a policy in the editor (the preview reports problems while the draft is empty, then the covered repository, and "Try it" explains the draft); bob sees the repository and its file on several requests; removing the membership takes it away again |
 | `04-tokens.spec.ts` | personal token create and revoke | R-UI-029 | alice creates a token, sees the value once, uses it six times (every replica), revokes it, and the token is refused six times after the bound of R-AUTH-042 |
 | `05-exposure.spec.ts` | exposure rule with the preview | R-UI-039, R-EP-017 | on the endpoint `customers`: the preview's verdict per path as the rule is typed, create, read back on another replica |
-| `06-audit-and-system.spec.ts` | audit log, system status | R-UI-036 to R-UI-038 | one entry for each action the journeys before it did (repository, group, membership, policy, token created and revoked, exposure rule), an event opened; the status screen shows three ready `web` replicas and "Answered by" names one of them |
+| `06-audit-and-system.spec.ts` | audit log, system status | R-UI-036 to R-UI-038 | one entry for each action the journeys before it did (repository, group, membership, policy, token created and revoked, exposure rule), an event opened; the status screen shows three ready `api`, three `packages` and four `worker` replicas and "Answered by" names one of the `api` ones |
 | `07-german-dark.spec.ts` | German, dark theme | R-UI-044, R-UI-045 | the break-glass sign-in at `/ui/de/...`, five screens in German with axe in the dark theme, the language menu back to English, sign-out |
 | `08-packages.spec.ts` | packages and client setup (E2.8); npm settings | R-UI-006, R-UI-008, R-UI-016, R-UI-021 | `beforeAll` creates an npm local repository and publishes a version to it with the npm protocol (`PUT /api/npm/<key>/<name>`, a tarball built in the journey whose README carries a `<script>`, an `onerror` image, a `javascript:` link and an `<iframe>`). The version is found in the packages list through the repository filter; its README tab shows the Markdown (a heading with its `user-content-` anchor, the code block) and none of the hostile elements, and none of them ran; "Set up your client for this repository" opens the setup page, where the configure snippet of npm, pnpm, Yarn Berry and Yarn Classic, with the environment-variable credential, equals character for character what `setupSnippet` of the npm matrix writes for that repository, with the same file name ([Q-UI-82](../spec/api-and-ui.md#q-ui-82--the-packages-journey-compares-the-setup-page-with-the-matrixs-snippet-written-out)). The second journey creates a local npm repository in the wizard with `latestGuard` off (the API shows `{"npm": {"latestGuard": false}}`), reads it back on the edit form's "npm settings" tab and turns it on again (the API shows no `npm` member) |
 | `09-guides.spec.ts` | the guides (E2.13) | R-UI-049, R-API-053 | `beforeAll` creates a local npm repository and a virtual one over it with the local one as deployment target. The side bar's "Guides" opens the guides area with generic and curl preselected, the first format of the catalog; choosing npm offers its four clients and the virtual class's guide; the virtual repository's "How to use" tab shows the virtual repository's sections and names its deployment target; its configure snippet is read and equals, character for character, the first configure snippet of the client setup page that the tab's link opens, with the environment-variable credential; the setup page's link opens the guide of the same repository again ([Q-UI-87](../spec/api-and-ui.md#q-ui-87--the-guides-journey-compares-the-guide-with-the-setup-page)) |
@@ -475,7 +513,7 @@ derivative needs the libraries Playwright lists installed by hand. This has not 
 same commands ran on macOS (the browser download without `--with-deps`).
 
 **After a new image** the deployment does not restart on its own (the chart does not change, the tag is `dev`):
-`kubectl -n trove rollout restart deploy/trove-web deploy/trove-worker`, then wait for the rollout.
+`kubectl -n trove rollout restart deploy/trove-api deploy/trove-packages deploy/trove-worker deploy/trove-worker-vuln`, then wait for the rollout.
 
 By hand against a running profile (after `TROVE_PROFILE=scatter deploy/dev/up.sh`): export the variables above, forward
 the IdP and run `npx playwright test` in `web/e2e` (`--ui` or `--headed` to watch). The HTML report is
@@ -593,7 +631,7 @@ profile after the fixes (`SET=push` and `SET=failover`, above): the measurements
 
 5. **Fixed in trove: the end of a download was lost when the replica that served it exited right after its last response**
    (`TestE1_13Transfers`, the download under a rollout restart; red in 4 of 8 runs, 2 of 2 on the day of the fix). The 400 MiB
-   file is downloaded at 6 MB/s through the edge while `kubectl rollout restart` replaces the web pods. trove logged the
+   file is downloaded at 6 MB/s through the edge while `kubectl rollout restart` replaces the pods. trove logged the
    request as `200` with `response_bytes` 419430400 and stopped 0.2 to 0.5 s later; curl had 396 to 399 MiB, got nothing more
    and ended after 2 min 33 s with `HTTP/2 stream 1 was not closed cleanly: PROTOCOL_ERROR` (exit 92). Cause: when the
    handler returned, the last 2 to 4 MiB were in the replica's kernel send queue, because the reader (curl at 6 MB/s through
@@ -727,7 +765,7 @@ test/e2e/clients/
   [deploy/dev/pki.yaml](../../deploy/dev/pki.yaml)). `fwd` relays bytes and terminates nothing. Its default target is
   the in-cluster HAProxy Ingress HTTPS port, `haproxy-ingress.ingress-controller.svc.cluster.local:443`
   (`TROVE_E2E_NPM_CLIENTS_TARGET`; verified on the 0.16.3 chart: the smoke test and the matrix reach the cluster through it).
-  `fwd -target-file /tmp/target` makes a test pin the client to one `web` pod
+  `fwd -target-file /tmp/target` makes a test pin the client to one `packages` pod
   ([Pinning a client to a replica](#pinning-a-client-to-a-replica)).
 - **The CA is mounted, not baked.** `deploy/dev/e2e.sh` writes the dev CA into the ConfigMap `trove-e2e-npm-ca`, the pod
   mounts it at `/etc/trove-ca/ca.crt` and sets `NODE_EXTRA_CA_CERTS`, which Node.js itself reads (npm, pnpm 10 and 11,
@@ -873,7 +911,7 @@ force-deletes in the second, each under the npm part of R-HA-059's load. `SET=np
 workflow) runs the pod crash with ten force-deletes over 20 minutes and then the npm load scripts of R-ARCH-027 as a report.
 `SET=npm-ha-closing`, the one leg a closing dispatch runs instead, runs all of it and adds the 5-minute Valkey outage, which R-HA-052 keeps
 for the full suite ([Q-HA-67](../spec/ha-and-helm.md#q-ha-67--where-and-how-often-the-scenarios-under-npm-load-run)). The harness of the npm tests is the base
-(three client pods, the counting test upstream, the scatter profile with three `web` and two `worker` replicas); the M0 drain harness
+(three client pods, the counting test upstream, the scatter profile with three `api`, three `packages` and four `worker` replicas); the M0 drain harness
 (`startPodWatch`, `checkEvents`, the driver's probe jobs, `startMonitor`) is reused. Decisions:
 [Q-HA-65 to Q-HA-69](../spec/ha-and-helm.md#q-ha-65--the-npm-part-of-r-ha-059s-load-before-nuget-exists-and-how-its-commands-are-counted) and
 [Q-ROAD-9](../coverage/roadmap.md#q-road-9--what-wp28-builds-of-r-arch-027s-load-scripts-and-where-they-run).
@@ -910,12 +948,12 @@ fault is therefore never a failed client command, and a loop that dies leaves no
 |---|---|---|---|
 | `TestNPMHA` drain | `drain.sh <node>`, 2 minutes after the load started; the load runs 3 more minutes after the drain returns; six `system.probe` jobs of 330 steps | all three | R-HA-059's: every `npm` command exits `0`; k6 only `2xx` and `304`, no connection error, no wrong tarball, no dropped iteration and 95 % of the rate; the p99 of the k6 requests from the first eviction until 2 minutes after the drain at most twice the p99 of the warm-up; every acknowledged publish installs afterwards; every probe job `succeeded` with `attempt` 1, at least one moved and resumed from its cursor; no container exit 137 or `OOMKilled`, no SIGKILL or `FailedKillPod` event; no trove pod `Pending` for more than 60 s; `drain.sh` returns within 10 minutes and the node is uncordoned |
 | `TestNPMHA` switchover | `failover.sh` (`dev-failover`) after 1 minute; 1 minute after | all three | every `npm` command exits `0`, every `npm ci` loop ran a command during the switchover; k6 as above; every acknowledged publish installs; `/healthz` 200 on every pod, no restart |
-| `TestNPMHA` Valkey failover | `valkey-failover.sh` (`dev-valkey-failover`) after 1 minute; 1 minute after | all three | as the switchover, and `/readyz` 200 on every pod throughout, and `trove_valkey_primary_changes_total` rises by exactly one on every `web` and `worker` replica (R-HA-057) |
-| `TestNPMHACrash` | `kubectl delete pod --grace-period=0 --force` of a random `web` or `worker` pod (the seed is logged), every 2 minutes: three times, ten with `TROVE_E2E_NPM_CRASH_SOAK=1` (`npm-ha-soak`, `npm-ha-closing`) | `npm ci` and publish loops (R-HA-052 adds k6 only to the drain and Valkey rows) | every `npm` command exits `0`; every version `npm-local` lists for the publish loop's package downloads with its `dist.integrity`, and every acknowledged one is listed (the interim of `trove admin storage verify`, [Q-HA-69](../spec/ha-and-helm.md#q-ha-69--the-storage-check-of-the-pod-crash-before-trove-admin-storage-verify-exists)); every acknowledged publish installs; `/healthz` 200 on every pod that was not deleted; three `web` and two `worker` pods ready at the end |
-| `TestNPMHAClosing` (closing run) | `valkey-stop.sh` after 1 minute; 2 minutes in, one `web` pod deleted with its grace period; `valkey-start.sh` 5 minutes after the stop | all three | every `npm` command exits `0`; k6 as above; the replacement pod becomes ready with `valkey` degraded; `/readyz` 200 throughout on every pod but the deleted one and its replacement; after the return, `degraded` clears on every replica within `open_duration` plus `health_check_interval` plus 5 s (15 s in the dev profile, read through `driver info`), counted from the first moment a Sentinel names a primary again (`valkeyClearWatch` polls while `valkey-start.sh` still waits for the StatefulSets and the operator) |
+| `TestNPMHA` Valkey failover | `valkey-failover.sh` (`dev-valkey-failover`) after 1 minute; 1 minute after | all three | as the switchover, and `/readyz` 200 on every pod throughout, and `trove_valkey_primary_changes_total` rises by exactly one on every `api`, `packages` and `worker` replica (R-HA-057) |
+| `TestNPMHACrash` | `kubectl delete pod --grace-period=0 --force` of a random `api`, `packages` or `worker` pod (the seed is logged), every 2 minutes: three times, ten with `TROVE_E2E_NPM_CRASH_SOAK=1` (`npm-ha-soak`, `npm-ha-closing`) | `npm ci` and publish loops (R-HA-052 adds k6 only to the drain and Valkey rows) | every `npm` command exits `0`; every version `npm-local` lists for the publish loop's package downloads with its `dist.integrity`, and every acknowledged one is listed (the interim of `trove admin storage verify`, [Q-HA-69](../spec/ha-and-helm.md#q-ha-69--the-storage-check-of-the-pod-crash-before-trove-admin-storage-verify-exists)); every acknowledged publish installs; `/healthz` 200 on every pod that was not deleted; three `api`, three `packages` and four `worker` pods ready at the end |
+| `TestNPMHAClosing` (closing run) | `valkey-stop.sh` after 1 minute; 2 minutes in, one `packages` pod deleted with its grace period; `valkey-start.sh` 5 minutes after the stop | all three | every `npm` command exits `0`; k6 as above; the replacement pod becomes ready with `valkey` degraded; `/readyz` 200 throughout on every pod but the deleted one and its replacement; after the return, `degraded` clears on every replica within `open_duration` plus `health_check_interval` plus 5 s (15 s in the dev profile, read through `driver info`), counted from the first moment a Sentinel names a primary again (`valkeyClearWatch` polls while `valkey-start.sh` still waits for the StatefulSets and the operator) |
 | `TestNPMPerf` | none | [perf/k6/npm.js](../../perf/k6/npm.js) | every request answered `200` or shed with the replica's `503 server_busy`; no restart of the target pod; the numbers are reported, not gated (below) |
 
-The drain picks its node with `drainNodeVariantA`: a worker node with a `web` and a `worker` pod and neither the PostgreSQL primary nor
+The drain picks its node with `drainNodeVariantA`: a worker node with an `api`, a `packages` and a `worker` pod and neither the PostgreSQL primary nor
 the Valkey primary, which it asks the Sentinels for. A primary in the way is moved first, before the load starts. On the three-node
 profile the node still carries a Sentinel and often the PostgreSQL standby or a Valkey replica; their own disruption budgets drain them
 ([Q-HA-68](../spec/ha-and-helm.md#q-ha-68--the-node-variant-a-drains-on-the-three-node-local-profile)). The first eviction is the first pod
@@ -929,7 +967,7 @@ joins with M5.
 
 ### The load scripts of R-ARCH-027
 
-`TestNPMPerf` ([npm_perf_test.go](../../test/e2e/npm_perf_test.go)) runs [perf/k6/npm.js](../../perf/k6/npm.js) against one `web` pod: the
+`TestNPMPerf` ([npm_perf_test.go](../../test/e2e/npm_perf_test.go)) runs [perf/k6/npm.js](../../perf/k6/npm.js) against one `packages` pod: the
 k6 container joins the network namespace of the control-plane node (`--network container:<cluster>-control-plane`), which routes the
 pod network, and resolves `localhost` to the pod's address, so the requests reach the pod's listener without the edge and the certificate
 is checked for `localhost`. Twenty tokens of the service account `e2e-npm-perf` carry the 2,000 requests/s of P-7 (the per-token budget
@@ -1341,7 +1379,7 @@ different web replicas. Verified on the dev cluster (linux/arm64, .NET SDK of `E
 | File | Content |
 |---|---|
 | [nuget_env_test.go](../../test/e2e/nuget_env_test.go) | the fixture (four local repositories, the publisher `e2e-nuget` and its token), `nugetClient` (a scenario in a pod: directory, `NUGET_PACKAGES`, `NUGET_HTTP_CACHE_PATH`, `nuget.config`, consumer project), `nugetPack` and `nugetPackSymbols` (a package with its `.snupkg`) |
-| [nuget_upstream_test.go](../../test/e2e/nuget_upstream_test.go) | the control client of the counting test upstream (`nugetStub`, `nugetCounts`, `nugetMode`), `upstreamRepos` (a remote and a virtual repository per test), `nugetPin` (a clients pod to one web replica), `runTogether` |
+| [nuget_upstream_test.go](../../test/e2e/nuget_upstream_test.go) | the control client of the counting test upstream (`nugetStub`, `nugetCounts`, `nugetMode`), `upstreamRepos` (a remote and a virtual repository per test), `nugetPin` (a clients pod to one packages replica), `runTogether` |
 | [nuget_local_test.go](../../test/e2e/nuget_local_test.go) | `TestNuGetPush`, `TestNuGetRestore`, `TestNuGetExe`, `TestNuGetUnlistRelistDelete` |
 | [nuget_replicas_test.go](../../test/e2e/nuget_replicas_test.go) | `TestNuGetReplicas` (`sameOnEveryReplica`, `documentsOnEveryReplica`: body and ETag of every document on all three replicas, 304 from any), `TestNuGetPushRetry` (E3.6, the dropped answer) |
 | [nuget_remote_test.go](../../test/e2e/nuget_remote_test.go) | `TestNuGetRemote`: `dotnet restore` and `nuget install` through a remote of the test upstream, the cache filled once, a stopped upstream |
@@ -1421,7 +1459,7 @@ different web replicas. Verified on the dev cluster (linux/arm64, .NET SDK of `E
 with status 201, counted in a stick table; [Q-NUGET-69](../spec/formats/nuget.md#q-nuget-69--how-the-edge-drops-the-answer-of-a-push-the-ingress-rule-of-the-npm-test-with-a-path-and-a-status)).
 The 201 matters: a push first draws the 401 of the credential challenge, and that answer is not the one to lose. The client prints "The response ended
 prematurely", repeats the push, and the repeat finds the version stored; `dotnet nuget push` exits 0. The evidence that it was repeated is
-`trove_nuget_push_replayed_total`, summed over the web pods, rising. The edge has two HAProxy pods with a stick table each, so two answers are lost and
+`trove_nuget_push_replayed_total`, summed over the `api` and `packages` pods, rising. The edge has two HAProxy pods with a stick table each, so two answers are lost and
 the third attempt is the one that succeeds (the client tries three times, R-NUGET-032). The test restores the annotation at its end.
 
 ### The customer endpoint (E3.7)
@@ -1954,11 +1992,11 @@ token the job revoked; the file is outside the log. The job's log goes to `.out/
 | `TestCITokens` clients | R-CI-017 | `npm whoami` with the token as the Bearer of `.npmrc`; `dotnet restore` with the Basic credentials of the Examples' `nuget.config`; `dotnet nuget push -k`; `DELETE /api/v1/tokens/current` answers 204 and `npm view` then fails with 401 |
 | `TestCITokens` expiry | R-CI-016, E4.6 | an exchange with `ttl=30`; a second after `expiresAt`, nine requests over all three replicas answer 401 |
 | `TestCITokens` revocation | R-CI-017, R-CI-020, E4.6 | after `POST /api/v1/ci/issuances/revoke` the token fails on all three replicas; the bound is 2 s |
-| `TestCITasks` | R-CI-030 | the three tasks are listed; a run of each succeeds; no job of them names a `web` replica and each has run on a `worker` replica (a job names its replica by instance UID, which `GET /api/v1/system/replicas` maps to the role) |
-| `TestCIHADrain` | R-CI-028, E4.7 | the pipeline runs in a loop while `drain.sh` drains the node of a `web` replica (the node of variant A of R-HA-059); every run passes and at least one overlaps the drain |
-| `TestCIHAValkeyStopped` | R-CI-028, R-CI-029, E4.7 | with Valkey and the Sentinels stopped (`valkey-stop.sh`) every `web` replica stays ready and `/readyz` reports `"degraded":["valkey"]`; two pipeline runs pass |
+| `TestCITasks` | R-CI-030 | the three tasks are listed; a run of each succeeds; no job of them names an `api` or `packages` replica and each has run on a `worker` replica (a job names its replica by instance UID, which `GET /api/v1/system/replicas` maps to the role) |
+| `TestCIHADrain` | R-CI-028, E4.7 | the pipeline runs in a loop while `drain.sh` drains the node of an `api` replica (the node of variant A of R-HA-059); every run passes and at least one overlaps the drain |
+| `TestCIHAValkeyStopped` | R-CI-028, R-CI-029, E4.7 | with Valkey and the Sentinels stopped (`valkey-stop.sh`) every `api` and `packages` replica stays ready and `/readyz` reports `"degraded":["valkey"]`; two pipeline runs pass |
 | `TestCIHASingleUse` | R-CI-018, R-CI-029, E4.7 | on `oidcstub-single`, registered with `singleUseSubjectTokens: true`: 250 ID tokens, each exchanged twice at once, give exactly one `200` and one `subject_token_replayed`, while `valkey-failover.sh` and `FLUSHALL` run on the new primary; 500 package requests with the issued tokens answer 200; no 5xx; Valkey holds no key of this page but the counters of the two limiters |
-| `TestCIHAPodDelete` | R-CI-029 | 50 jobs, each with a project of its own, exchange every 8 s for 100 s; a `web` pod is deleted gracefully after 15 s; every exchange answers 200 |
+| `TestCIHAPodDelete` | R-CI-029 | 50 jobs, each with a project of its own, exchange every 8 s for 100 s; an `api` pod is deleted gracefully after 15 s; every exchange answers 200 |
 
 ### Findings of these tests
 
@@ -1999,7 +2037,7 @@ and the single-use test retried a 429 so hard that the budget never refilled (it
 
 `TestNPMProjectPartner` (set `npm`) and `TestNuGetProjectPartner` (set `nuget`) are the end-to-end half of the beta phase 5a item "a
 partner's project service account installs with npm and restores with dotnet through the main installation" (R-AUTHZ-026). They run
-in the `scatter` profile through the edge, so every request of a client reaches another web replica. The regexp of the set `npm` names
+in the `scatter` profile through the edge, so every request of a client reaches another packages replica. The regexp of the set `npm` names
 `Project` (deploy/dev/e2e.sh); `nuget` takes every `TestNuGet...`.
 
 The harness is [project_env_test.go](../../test/e2e/project_env_test.go). `newPartnerProject` creates the project `<label>-<run>`
@@ -2106,7 +2144,7 @@ their forwarders), and the first test calls `basFx` ([bastion_env_test.go](../..
   renders (`.npmrc` with `replace-registry-host=always`, `~/.npmrc` of pnpm, `.yarnrc.yml`, `nuget.config`); the token is the environment variable the snippet names. Lockfiles are
   written against the main installation's address (`npm install --package-lock-only`, `pnpm install --lockfile-only`, `yarn install --mode=update-lockfile`) and installed through the
   Bastion, which also shows that the host of a lockfile is replaced.
-- **What the main installation was asked** is read from its request log (Q-BAS-113): `mainLog` takes the records of both `web` replicas, `fromBastion` keeps those whose `peer_addr` is a pod of
+- **What the main installation was asked** is read from its request log (Q-BAS-113): `mainLog` takes the records of the `api` and `packages` replicas, `fromBastion` keeps those whose `peer_addr` is a pod of
   a Bastion, `kind` sorts them (`iface`, `artifact`, `document`). A `mainWindow` is the difference between two snapshots.
 - **Addresses.** This machine reaches the Bastion through the edge as the Docker gateway (floods, the token loop); the client pods have their own addresses (the unaffected address of the flood,
   the clients of every other scenario). The flood scenarios come last because they block this machine's address at the Bastion for 15 minutes.
@@ -2125,7 +2163,7 @@ their forwarders), and the first test calls `basFx` ([bastion_env_test.go](../..
 | `TestBastion_R_BAS_049_NetworkPolicy` | R-BAS-047 | from an ephemeral container in a Bastion pod: the main installation's port and the bucket's port open; PostgreSQL's Service, another Service of the namespace and `registry.npmjs.org:443` refused; the same two targets are reachable from a client pod, so the refusal is the policy's |
 | `TestBastion_R_BAS_049_ChartRender` | R-BAS-045 | `helm template` with the required values only: Deployment with two replicas, PDB, Ingress with the edge-limit annotations, NetworkPolicy, no Secret, Role or claim; `edgeLimit.requestsPerSecond=50` fails and names both values |
 | `TestBastion_R_BAS_049_Metrics` | R-BAS-040 | every metric of the table is exported by both replicas of both Bastions |
-| `TestBastion_R_BAS_049_MainUnreachable` | main installation unreachable | the egress rule to the main installation is removed from the NetworkPolicy and the `web` pods of the main installation are deleted (a policy stops new connections only; a replica that was restarted instead could not use its answers, R-BAS-026); both replicas report `main_reachable 0` within 60 s; the warm `npm ci` and `dotnet restore` succeed; a cold package and an unseen token get `503 main_unreachable` with `Retry-After: 30`; 135 s after the last answer everything is `503`; the gauge stays 0 for two minutes (the `for` of `TroveBastionMainUnreachable`); after the policy returns both replicas are reachable within 40 s and the audit buffers empty |
+| `TestBastion_R_BAS_049_MainUnreachable` | main installation unreachable | the egress rule to the main installation is removed from the NetworkPolicy and the `api` and `packages` pods of the main installation are deleted (a policy stops new connections only; a replica that was restarted instead could not use its answers, R-BAS-026); both replicas report `main_reachable 0` within 60 s; the warm `npm ci` and `dotnet restore` succeed; a cold package and an unseen token get `503 main_unreachable` with `Retry-After: 30`; 135 s after the last answer everything is `503`; the gauge stays 0 for two minutes (the `for` of `TroveBastionMainUnreachable`); after the policy returns both replicas are reachable within 40 s and the audit buffers empty |
 | `TestBastion_R_BAS_049_InterfaceMismatch` | interface mismatch | Q-BAS-111: the main installation at version 2 makes both replicas report the mismatch (main version 2, own 1) for a minute, the Bastion serves warm content, a cold package is `503`; the Bastion at version 2 clears it and a cold package is `200`; cleanup restores both |
 | `TestBastion_R_BAS_049_EdgeLimit` | R-BAS-038 | 20,000 requests from one address through 200 connections: some `429` are the ingress's (no problem document) and are not counted by the Bastion, none is shed, no replica restarts |
 | `TestBastion_R_BAS_049_FloodingAddress` | flooding address | 2,000 requests from one address, paced at 80 a second (below the ingress's limit, above the Bastion's), block it (`trove_bastion_blocks_total`), then 60 requests answer `429 address_blocked`, both replicas count `blocked` refusals, a client pod's address is served |
@@ -2164,7 +2202,7 @@ The first runs of the suite found these; each is fixed, with a test, or recorded
 | `npm publish` and `dotnet nuget push` through a Bastion got `401 credentials_required`, not `403 bastion_read_only` | the write probe carries no credential and the authentication stage refused it on an endpoint that refuses anonymous requests (R-BAS-014) | fixed on main (Q-BAS-118) |
 | `$PART` read a document `$FULL` had cached and got a `304` it had not asked for | a partial reader's `304` to the shared entry's validator was passed on (R-BAS-023) | fixed on main (Q-BAS-107); this suite found it first |
 | A warm run could not tell a client that never asked from a Bastion that served | pnpm 11 and later ignore `npm_config_store_dir`: its store is below `$HOME/.local`, so a "warm" run found everything locally | the wipe removes `$HOME/.local`, and every warm run asserts that the Bastion's hit counter rose by the number of artifacts |
-| The main installation answered `421 misdirected_request` to the Bastions' handshake | after the fix wave it checks the host of the request before it recognizes a Bastion; the Service name the Bastions call is not a host it serves | `https://trove.trove.svc:8080` is listed in `server.additional_base_urls` of the profile |
+| The main installation answered `421 misdirected_request` to the Bastions' handshake | after the fix wave it checks the host of the request before it recognizes a Bastion; the Service name the Bastions call is not a host it serves | `https://trove-api.trove.svc:8080` and `https://trove-packages.trove.svc:8080` are listed in `server.additional_base_urls` of the profile (the Bastions' `bastion.main.url` and `bastion.main.packages_url`) |
 | A NetworkPolicy did not cut the Bastion off | a policy stops new connections only; the replicas kept the connection they held | the scenario restarts the replicas after the cut, so every connection is new (the answers and bytes are in Valkey and the bucket) |
 | The flood did not reach the Bastion's own stage | the edge limit (100 requests a second) refused 90 % of a fast flood first | the flood of R-BAS-037 is paced below the edge limit and above the Bastion's (80 a second) |
 | `kubectl debug` was refused by the Pod Security Standard | the default profile adds `SYS_PTRACE` | `--profile=restricted` with an `IfNotPresent` image |
@@ -2210,7 +2248,7 @@ flowchart LR
 `make e2e SET=vuln` (and `vuln-long`) starts the three test upstreams (`TROVE_E2E_NPMSTUB=1`, `TROVE_E2E_NUGETSTUB=1`, `TROVE_E2E_OSVSTUB=1`), three npm and three NuGet client pods, and the first
 test calls `vulnFx` ([vuln_env_test.go](../../test/e2e/vuln_env_test.go)), which does, once per run:
 
-1. `up.sh` with `TROVE_PROFILE=vuln`: the chart with [values-scatter.yaml](../../deploy/dev/values-scatter.yaml) (three `web` replicas, the edge balancing every request on its own) and
+1. `up.sh` with `TROVE_PROFILE=vuln`: the chart with [values-scatter.yaml](../../deploy/dev/values-scatter.yaml) (three `api` and three `packages` replicas, the edge balancing every request on its own; the profile's worker pool `vuln` runs the queue of the scanning) and
    [values-vuln.yaml](../../deploy/dev/values-vuln.yaml) (`vulnerabilities.sources.osv.base_url` and `kev.url` at the Service `osvstub`, `public_upstreams` with `npmstub.trove.svc` and
    `nugetstub.trove.svc` next to the public hosts); two `worker` replicas come from [values-dev.yaml](../../deploy/dev/values-dev.yaml), which switches both advisory sources off (`vulnerabilities.sources.osv.mode` and `kev.mode`: no test cluster reaches the public hosts, and the npm audit default is `forward` again, which the npm matrix expects); `values-vuln.yaml` turns them back on at the stub. The profile is returned to `default` at the end of the run.
 2. The three upstreams are reset (the source's dataset back to its fixture, the counters and modes of the npm and NuGet upstreams).

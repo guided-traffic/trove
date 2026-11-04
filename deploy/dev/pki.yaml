@@ -4,11 +4,12 @@
 #   trove-dev-ca        the root (Secret trove-dev-ca; ca.crt is what a client trusts, see local-profile.md)
 #   trove-tls           trove's own listeners (:8080, :8081), Secret trove-tls; chart tls.secretName and
 #                       ingress.backendTLS.caSecret. HAProxy Ingress verifies this certificate for the name
-#                       trove.trove.svc.
+#                       trove.trove.svc; clients in the cluster call the role Services trove-api and trove-packages.
 #   trove-edge-tls      the edge's certificate for clients on the host (https://localhost:<port>)
 #   trove-s3-tls        the SeaweedFS S3 endpoint (https://trove-s3.trove.svc:9000)
 #   trove-customers-tls            the endpoint `customers` (values-dev.yaml endpoints.customers): its exact host and
-#                                  the Service name the edge verifies, trove-ep-customers.<ns>.svc
+#                                  the Service names the edge verifies, trove-ep-customers.<ns>.svc (packages pods)
+#                                  and trove-ep-customers-api.<ns>.svc (api pods)
 #   trove-customers-wildcard-tls   the endpoint's wildcard pair (extraSecrets), chosen by SNI
 #   trove-customers-edge-tls       the edge's certificate for the endpoint's host and its wildcard
 #   <name>-tls          the Valkey operator's own Certificate for the Valkey CR (valkey.yaml, one for both tiers)
@@ -66,6 +67,14 @@ spec:
     - trove.${NS}
     - trove.${NS}.svc
     - trove.${NS}.svc.cluster.local
+    - trove-api
+    - trove-api.${NS}
+    - trove-api.${NS}.svc
+    - trove-api.${NS}.svc.cluster.local
+    - trove-packages
+    - trove-packages.${NS}
+    - trove-packages.${NS}.svc
+    - trove-packages.${NS}.svc.cluster.local
     - localhost
   ipAddresses:
     - 127.0.0.1
@@ -141,6 +150,10 @@ spec:
     - trove-ep-customers.${NS}
     - trove-ep-customers.${NS}.svc
     - trove-ep-customers.${NS}.svc.cluster.local
+    - trove-ep-customers-api
+    - trove-ep-customers-api.${NS}
+    - trove-ep-customers-api.${NS}.svc
+    - trove-ep-customers-api.${NS}.svc.cluster.local
   issuerRef:
     name: trove-dev-ca
     kind: Issuer

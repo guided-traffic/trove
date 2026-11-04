@@ -3,7 +3,7 @@
 package e2e
 
 // NuGet on interchangeable replicas (R-NUGET-030 to R-NUGET-032, exit criterion E3.6): every rendered document has the same
-// body and the same weak ETag on every web replica of the scatter profile, a conditional request is answered 304 by any of
+// body and the same weak ETag on every packages replica of the scatter profile, a conditional request is answered 304 by any of
 // them, and a push whose answer the edge drops is repeated by the client and exits 0. The closing run repeats the
 // documents with Valkey stopped (nuget_closing_test.go).
 
@@ -15,7 +15,7 @@ import (
 	"testing"
 )
 
-// sameOnEveryReplica fetches one document until all three web replicas have answered it and requires one body and one
+// sameOnEveryReplica fetches one document until all three packages replicas have answered it and requires one body and one
 // ETag. kind says what the ETag is: a rendered document carries a weak one (R-NUGET-030, Q-NUGET-9), a stored file the
 // strong ETag of its blob, the search none (it is volatile). A conditional request is then answered 304 by every replica.
 func (fx *nugetFixture) sameOnEveryReplica(t *testing.T, path, kind string) {
@@ -40,7 +40,7 @@ func (fx *nugetFixture) sameOnEveryReplica(t *testing.T, path, kind string) {
 		}
 	}
 	if len(byReplica) < 3 {
-		t.Fatalf("%s: only %d web replica(s) answered in 60 requests; the scatter profile reaches three", path, len(byReplica))
+		t.Fatalf("%s: only %d packages replica(s) answered in 60 requests; the scatter profile reaches three", path, len(byReplica))
 	}
 	if kind == "none" {
 		return

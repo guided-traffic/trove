@@ -158,13 +158,15 @@ func runProbePod(t testing.TB, name, script string) string {
 	return out
 }
 
-// isWeb: only a web replica opens the client listener :8080; a worker serves the ops listener only.
-func isWeb(p pod) bool { return strings.Contains(p.Name, "-web-") }
+// isServing: only an api or packages replica opens the client listener :8080; a worker serves the ops listener only.
+func isServing(p pod) bool {
+	return strings.HasPrefix(p.Name, "trove-api-") || strings.HasPrefix(p.Name, "trove-packages-")
+}
 
 func TestE15TLS(t *testing.T) {
 	t.Run("R-ARCH-035 R-HA-063 E0.15 a plaintext request to a trove pod's :8080 and :8081 and to the object store is not answered", func(t *testing.T) {
-		web := livePods(t, selWeb)[0]
-		ip := strings.TrimSpace(kn(t, "get", "pod", web.Name, "-o", "jsonpath={.status.podIP}"))
+		pk := livePods(t, selPackages)[0]
+		ip := strings.TrimSpace(kn(t, "get", "pod", pk.Name, "-o", "jsonpath={.status.podIP}"))
 		script := fmt.Sprintf(`for u in http://%[1]s:8080/api/v1/system/ping http://%[1]s:8081/readyz http://trove-s3.%[2]s.svc:9000/; do `+
 			`line="$(wget -T 5 -S -qO- "$u" 2>&1 | grep -m1 'HTTP/')"; echo "$u => ${line:-no response}"; done`, ip, cfg.namespace)
 		out := runProbePod(t, "e2e-plaintext-probe", script)
@@ -230,7 +232,7 @@ func TestE15TLS(t *testing.T) {
 					return false
 				}
 				l := ls[len(ls)-1]
-				if l.file != before || l.opsSer != before || (isWeb(p) && l.client != before) {
+				if l.file != before || l.opsSer != before || (isServing(p) && l.client != before) {
 					return false
 				}
 			}
@@ -265,7 +267,7 @@ func TestE15TLS(t *testing.T) {
 					opsL:   firstAt(ls, after, func(l probeLine) string { return l.opsSer }),
 				}
 				times[p.Name] = tm
-				done = done && tm.file >= 0 && (tm.client >= 0 || !isWeb(p)) && tm.opsL >= 0
+				done = done && tm.file >= 0 && (tm.client >= 0 || !isServing(p)) && tm.opsL >= 0
 			}
 			return done
 		})
@@ -282,14 +284,14 @@ func TestE15TLS(t *testing.T) {
 		for _, p := range pods {
 			tm := times[p.Name]
 			dClient, dOps := tm.client-tm.file, tm.opsL-tm.file
-			if isWeb(p) {
+			if isServing(p) {
 				t.Logf("%s: file changed at uptime %.2f s; :8080 served the new serial %.2f s later, :8081 %.2f s later (bound %s)", p.Name, tm.file, dClient, dOps, bound)
 				perPod[p.Name] = map[string]float64{"file_to_client_listener_s": dClient, "file_to_ops_listener_s": dOps}
 			} else {
 				t.Logf("%s (worker, ops listener only): file changed at uptime %.2f s; :8081 served the new serial %.2f s later (bound %s)", p.Name, tm.file, dOps, bound)
 				perPod[p.Name] = map[string]float64{"file_to_ops_listener_s": dOps}
 			}
-			if isWeb(p) && dClient > bound.Seconds() {
+			if isServing(p) && dClient > bound.Seconds() {
 				t.Errorf("%s: the client listener served the new certificate %.2f s after the file changed, bound %s", p.Name, dClient, bound)
 			}
 			if dOps > bound.Seconds() {

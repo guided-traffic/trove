@@ -78,7 +78,7 @@ func concurrentColdRestores(t *testing.T, fx *nugetFixture, purpose string) {
 	s.resetAll(t)
 	defer s.resetAll(t)
 	feed := nugetFeed(t, "localhost", repos.all)
-	webs := webReplicas(t, 3)
+	webs := packagesReplicas(t, 3)
 	for pod, web := range []pod{webs[0], webs[1], webs[0]} {
 		nugetPin(t, pod, web.IP)
 		defer nugetUnpin(t, pod)
@@ -115,20 +115,20 @@ func TestNuGetClosing(t *testing.T) {
 	t.Run("R-NUGET-016 R-REPO-023 a claim removes the cached forwarded result on every replica with Valkey stopped within epoch_poll_interval plus 1 s", func(t *testing.T) {
 		c := newClaimTiming(t, "claimstop")
 		withValkeyStopped(t, func() {
-			webReadyDegraded(t, true)
+			servingReadyDegraded(t, true)
 			// cached while Valkey is down, so the answer is still fresh (nuget.search.remote_result_ttl) when the claim lands
 			c.cachedEverywhere("Valkey stopped")
 			c.claimAndWait("Valkey stopped", 4*time.Second)
 		})
-		webReadyDegraded(t, false)
+		servingReadyDegraded(t, false)
 	})
 
 	t.Run("R-NUGET-030 R-NUGET-031 E3.6 the documents are the same on every replica with Valkey stopped", func(t *testing.T) {
 		withValkeyStopped(t, func() {
-			webReadyDegraded(t, true)
+			servingReadyDegraded(t, true)
 			fx.replicaScenario(t, "ReplicasValkeyStopped")
 		})
-		webReadyDegraded(t, false)
+		servingReadyDegraded(t, false)
 	})
 
 	// 51 iterations: 17 on each of the three clients
@@ -137,24 +137,24 @@ func TestNuGetClosing(t *testing.T) {
 	})
 	t.Run("R-NUGET-030 R-NUGET-031 E3.6 push with symbols and restore, 51 iterations through nuget-all, Valkey stopped", func(t *testing.T) {
 		withValkeyStopped(t, func() {
-			webReadyDegraded(t, true)
+			servingReadyDegraded(t, true)
 			pushRestoreLoop(t, fx, "loopdown", 17)
 		})
-		webReadyDegraded(t, false)
+		servingReadyDegraded(t, false)
 	})
 
 	t.Run("R-NUGET-015 R-NUGET-031 E3.2 the cold restore of the reference solution with Valkey stopped asks the upstream at most once per replica for each .nupkg", func(t *testing.T) {
 		withValkeyStopped(t, func() {
-			webReadyDegraded(t, true)
+			servingReadyDegraded(t, true)
 			coldRestoreOfReference(t, fx, "e32down", 3)
 		})
-		webReadyDegraded(t, false)
+		servingReadyDegraded(t, false)
 	})
 	t.Run("R-NUGET-031 concurrent restores of one uncached package on two replicas with Valkey stopped cost at most two upstream requests", func(t *testing.T) {
 		withValkeyStopped(t, func() {
-			webReadyDegraded(t, true)
+			servingReadyDegraded(t, true)
 			concurrentColdRestores(t, fx, "concdown")
 		})
-		webReadyDegraded(t, false)
+		servingReadyDegraded(t, false)
 	})
 }

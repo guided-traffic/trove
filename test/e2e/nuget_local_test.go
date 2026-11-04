@@ -4,7 +4,7 @@ package e2e
 
 // The NuGet acceptance tests of the local repositories (R-NUGET-027, exit criteria E3.1 Linux part, E3.5, E3.6): the real
 // clients of nuget_clients_test.go (the .NET 10 SDK and nuget.exe on Mono) against trove in the scatter profile, so that
-// consecutive requests of one client reach different web replicas. Every scenario has a pod, a directory and a
+// consecutive requests of one client reach different packages replicas. Every scenario has a pod, a directory and a
 // package ID of its own (nuget_env_test.go).
 
 import (
@@ -54,13 +54,14 @@ func (fx *nugetFixture) listedState(t testing.TB, repo, id string) map[string]bo
 	return out
 }
 
-// revoke revokes a token of the publisher and waits until every web replica refuses it: the revocation reaches the
+// revoke revokes a token of the publisher and waits until every api and packages replica refuses it: the revocation reaches the
 // replicas within the bound of R-AUTHZ-028, so the first requests after the call may still be answered with the old state.
 func (fx *nugetFixture) revoke(t *testing.T, tok createdToken) {
 	t.Helper()
 	fx.adm.do(http.MethodDelete, "/api/v1/tokens/"+tok.ID, nil).want(t, "revoke the token", 200, 204)
 	seen := map[string]bool{}
-	waitFor(t, "the revoked token is refused by every web replica", time.Minute, time.Second, func() bool {
+	defer awaitTokenRefusedOnPackagesPods(t, tok.Token)
+	waitFor(t, "the revoked token is refused by every api replica", time.Minute, time.Second, func() bool {
 		clear(seen)
 		for range 9 {
 			r, err := newAPI(t).withToken(tok.Token).send(http.MethodGet, "/api/v1/authz/me", nil)

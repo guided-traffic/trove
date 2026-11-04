@@ -52,7 +52,7 @@ spec:
     limits: {memory: 320Mi}
 ---
 # The operator's NetworkPolicy admits only its own components (ingress only). trove's pods are admitted
-# here, on the TLS ports only: the chart's web and worker pods and the e2e driver pod, which carries the
+# here, on the TLS ports only: the chart's api, packages and worker pods and the e2e driver pod, which carries the
 # same labels. Deleting this policy cuts trove off from Valkey (valkey-outage.sh does exactly that).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

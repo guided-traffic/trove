@@ -151,23 +151,38 @@ func (w *podWatch) longestPending() (string, time.Duration) {
 	return name, longest
 }
 
-// drainNode picks the node of variant A (R-HA-059): it hosts a web and a worker pod and is not the
+// nodesHosting returns the nodes that host a live pod of every selector.
+func nodesHosting(t testing.TB, selectors ...string) map[string]bool {
+	t.Helper()
+	var out map[string]bool
+	for _, sel := range selectors {
+		on := map[string]bool{}
+		for _, p := range livePods(t, sel) {
+			on[p.Node] = true
+		}
+		if out == nil {
+			out = on
+			continue
+		}
+		for n := range out {
+			if !on[n] {
+				delete(out, n)
+			}
+		}
+	}
+	return out
+}
+
+// drainNode picks the node of variant A (R-HA-059): it hosts an api, a packages and a worker pod and is not the
 // PostgreSQL primary's node, whose PodDisruptionBudget refuses its eviction. When the only node that
 // hosts both is the primary's, the primary is switched over first (variant B).
 func drainNode(t *testing.T) string {
 	t.Helper()
 	for attempt := 0; attempt < 2; attempt++ {
-		webs, workers := map[string]bool{}, map[string]bool{}
-		for _, p := range livePods(t, selWeb) {
-			webs[p.Node] = true
-		}
-		for _, p := range livePods(t, selWorker) {
-			workers[p.Node] = true
-		}
 		primary := strings.TrimSpace(kn(t, "get", "pod", pgPrimary(t), "-o", "jsonpath={.spec.nodeName}"))
 		var both []string
-		for n := range webs {
-			if workers[n] && n != primary {
+		for n := range nodesHosting(t, selAPI, selPackages, selWorker) {
+			if n != primary {
 				both = append(both, n)
 			}
 		}
@@ -175,10 +190,10 @@ func drainNode(t *testing.T) string {
 		if len(both) > 0 {
 			return both[0]
 		}
-		t.Logf("the only node with a web and a worker pod is the PostgreSQL primary's (%s); switching the primary over first", primary)
+		t.Logf("the only node with an api, a packages and a worker pod is the PostgreSQL primary's (%s); switching the primary over first", primary)
 		script(t, "failover.sh")
 	}
-	t.Fatal("no node hosts a web and a worker pod without the PostgreSQL primary")
+	t.Fatal("no node hosts an api, a packages and a worker pod without the PostgreSQL primary")
 	return ""
 }
 
@@ -196,7 +211,7 @@ type probeJob struct {
 }
 
 func TestE14Drain(t *testing.T) {
-	t.Run("R-ARCH-024 R-HA-011 R-HA-059 E0.14 E1.13 draining a node with a web and a worker pod under load, an upload and download loop on generic-local included: only 200, no failed transfer, the jobs resume on the other worker from their cursor, no SIGKILL, nothing Pending for 60 s", func(t *testing.T) {
+	t.Run("R-ARCH-024 R-HA-011 R-HA-059 E0.14 E1.13 draining a node with an api, a packages and a worker pod under load, an upload and download loop on generic-local included: only 200, no failed transfer, the jobs resume on the other worker from their cursor, no SIGKILL, nothing Pending for 60 s", func(t *testing.T) {
 		const steps = 150
 		node := drainNode(t)
 		var onNode []pod
@@ -304,7 +319,7 @@ func TestE14Drain(t *testing.T) {
 				first = first[:5]
 			}
 			// what the limiters decided on each replica, for the one who reads a refusal (the k6 log has the headers)
-			for _, p := range readyWebPods(t) {
+			for _, p := range readyServingPods(t) {
 				for k, v := range metricsOf(t, p) {
 					if strings.HasPrefix(k, "trove_ratelimit_decisions_total{limiter=\"api_write\"") || strings.HasPrefix(k, "trove_ratelimit_fallback{limiter=\"api_write\"") || strings.HasPrefix(k, "trove_api_rate_limited_total") {
 						t.Logf("%s %s = %v", p, k, v)
@@ -328,7 +343,7 @@ func TestE14Drain(t *testing.T) {
 			t.Logf("longest Pending of a trove pod: %s (%s)", d.Round(100*time.Millisecond), name)
 		}
 		checkEvents(t, onNode)
-		checkReleaseServes(t, 2, 2)
+		checkReleaseServes(t, 2, 3, 4)
 	})
 }
 

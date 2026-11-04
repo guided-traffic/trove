@@ -11,15 +11,17 @@ import (
 )
 
 // checkReleaseServes is the part of E0.3 that also holds in the scatter profile (E0.11): every
-// trove pod answers 200 on :8081/readyz, the registry lists the replicas of both roles and the
-// Ingress answers ping with OK.
-func checkReleaseServes(t *testing.T, wantWeb, wantWorker int) {
+// trove pod answers 200 on :8081/readyz, the registry lists the replicas of every role under
+// its exact name (roleName) and the Ingress answers ping with OK. wantWorker counts the pods of
+// the main worker and of the worker pool vuln.
+func checkReleaseServes(t *testing.T, wantAPI, wantPackages, wantWorker int) {
 	t.Helper()
-	webs, workers := livePods(t, selWeb), livePods(t, selWorker)
-	if len(webs) != wantWeb || len(workers) != wantWorker {
-		t.Fatalf("%d web and %d worker pods, want %d and %d", len(webs), len(workers), wantWeb, wantWorker)
+	apis, pkgs, workers := livePods(t, selAPI), livePods(t, selPackages), livePods(t, selWorker)
+	if len(apis) != wantAPI || len(pkgs) != wantPackages || len(workers) != wantWorker {
+		t.Fatalf("%d api, %d packages and %d worker pods, want %d, %d and %d", len(apis), len(pkgs), len(workers), wantAPI, wantPackages, wantWorker)
 	}
-	for _, p := range append(append([]pod{}, webs...), workers...) {
+	all := append(append(append([]pod{}, apis...), pkgs...), workers...)
+	for _, p := range all {
 		if !p.Ready {
 			t.Errorf("pod %s is not Ready", p.Name)
 		}
@@ -34,32 +36,25 @@ func checkReleaseServes(t *testing.T, wantWeb, wantWorker int) {
 		if err != nil {
 			return false
 		}
-		web, worker := 0, 0
+		got := map[string]int{}
 		for _, r := range rs {
-			switch {
-			case r.Lost:
-			case r.role() == "web":
-				web++
-			case r.role() == "worker":
-				worker++
+			if !r.Lost {
+				got[r.RoleName]++
 			}
 		}
-		return web == wantWeb && worker == wantWorker
+		return got["api"] == wantAPI && got["packages"] == wantPackages && got["worker"] == wantWorker
 	})
 	names := map[string]string{}
 	for _, r := range rs {
 		if !r.Lost {
-			names[r.Name] = r.role()
+			names[r.Name] = r.RoleName
 		}
 	}
-	for _, p := range webs {
-		if names[p.Name] != "web" {
-			t.Errorf("web pod %s is not listed as role web (%q)", p.Name, names[p.Name])
-		}
-	}
-	for _, p := range workers {
-		if names[p.Name] != "worker" {
-			t.Errorf("worker pod %s is not listed as role worker (%q)", p.Name, names[p.Name])
+	for role, ps := range map[string][]pod{"api": apis, "packages": pkgs, "worker": workers} {
+		for _, p := range ps {
+			if names[p.Name] != role {
+				t.Errorf("%s pod %s is not listed as role %s (%q)", role, p.Name, role, names[p.Name])
+			}
 		}
 	}
 	code, _, body, err := edge("/api/v1/system/ping")
@@ -69,8 +64,8 @@ func checkReleaseServes(t *testing.T, wantWeb, wantWorker int) {
 }
 
 func TestE03DevProfile(t *testing.T) {
-	t.Run("R-HA-051 R-HA-002 E0.3 two web and two worker replicas ready, listed by the registry, ping OK through the Ingress", func(t *testing.T) {
-		checkReleaseServes(t, 2, 2)
+	t.Run("R-HA-051 R-HA-002 E0.3 api 2, packages 3, worker 2 and the pool vuln 2 ready, listed by the registry, ping OK through the Ingress", func(t *testing.T) {
+		checkReleaseServes(t, 2, 3, 4)
 	})
 	t.Run("R-HA-051 E0.3 the dependencies are up: two PostgreSQL instances, two Valkey pods, three Sentinels", func(t *testing.T) {
 		if got := strings.TrimSpace(kn(t, "get", "cluster", "trove-db", "-o", "jsonpath={.status.readyInstances}")); got != "2" {
@@ -105,17 +100,17 @@ func TestE07PodSecurity(t *testing.T) {
 }
 
 // TestE07NetworkPolicy shows that the chart's NetworkPolicy (R-HA-042) is enforced by the cluster's
-// CNI, not only rendered: a pod of another namespace reaches the public port of a web pod and not
+// CNI, not only rendered: a pod of another namespace reaches the public port of an api pod and not
 // its ops port. (Not in the exit criteria; the dev profile has to prove that the policy it relies on
 // for the probes and the proxy works the way the chart says.)
 func TestE07NetworkPolicy(t *testing.T) {
-	t.Run("R-HA-042 E0.7 the NetworkPolicy is enforced: a pod of another namespace reaches :8080 of a web pod and not :8081", func(t *testing.T) {
+	t.Run("R-HA-042 E0.7 the NetworkPolicy is enforced: a pod of another namespace reaches :8080 of an api pod and not :8081", func(t *testing.T) {
 		image := os.Getenv("TROVE_E2E_OPENSSL_IMAGE")
 		if image == "" {
 			t.Fatal("TROVE_E2E_OPENSSL_IMAGE is not set; run the suite through deploy/dev/e2e.sh")
 		}
-		web := livePods(t, selWeb)[0]
-		ip := strings.TrimSpace(kn(t, "get", "pod", web.Name, "-o", "jsonpath={.status.podIP}"))
+		pk := livePods(t, selAPI)[0]
+		ip := strings.TrimSpace(kn(t, "get", "pod", pk.Name, "-o", "jsonpath={.status.podIP}"))
 		name := "e2e-netpol-probe"
 		_, _ = kubectl("-n", "default", "delete", "pod", name, "--ignore-not-found", "--wait=true")
 		t.Cleanup(func() { _, _ = kubectl("-n", "default", "delete", "pod", name, "--ignore-not-found", "--wait=false") })
@@ -133,12 +128,12 @@ func TestE07NetworkPolicy(t *testing.T) {
 			return ph == "Succeeded" || ph == "Failed"
 		})
 		out, _ := kubectl("-n", "default", "logs", name)
-		t.Logf("from namespace default to %s (%s): %s", web.Name, ip, strings.ReplaceAll(strings.TrimSpace(out), "\n", " "))
+		t.Logf("from namespace default to %s (%s): %s", pk.Name, ip, strings.ReplaceAll(strings.TrimSpace(out), "\n", " "))
 		if !strings.Contains(out, "OPS_BLOCKED") {
-			t.Errorf("the ops port of a web pod is reachable from another namespace: the CNI does not enforce the NetworkPolicy")
+			t.Errorf("the ops port of an api pod is reachable from another namespace: the CNI does not enforce the NetworkPolicy")
 		}
 		if !strings.Contains(out, "HTTP_REACHED") {
-			t.Errorf("the public port of a web pod is not reachable from another namespace: %q", out)
+			t.Errorf("the public port of an api pod is not reachable from another namespace: %q", out)
 		}
 	})
 }

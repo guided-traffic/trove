@@ -243,7 +243,7 @@ func TestCITasks(t *testing.T) {
 			switch r, known := role[*j.Replica]; {
 			case !known: // a replica that is gone (an earlier rollout): its role is no longer listed
 			case strings.Contains(r, "web"):
-				t.Errorf("R-CI-030: job %s of %s ran on the web replica %s", j.ID, kind, *j.Replica)
+				t.Errorf("R-CI-030: job %s of %s ran on the api or packages replica %s", j.ID, kind, *j.Replica)
 			case strings.Contains(r, "worker"):
 				onWorker++
 			}

@@ -1,5 +1,5 @@
-# Chart values of the local development profile (R-HA-051): the real chart with two web and
-# two worker replicas against the dependencies deploy/dev/up.sh installs into the "trove"
+# Chart values of the local development profile (R-HA-051): the real chart with every role, api (2 replicas), packages
+# (3) and worker (2) plus a worker pool for the queue vuln (2), against the dependencies deploy/dev/up.sh installs into the "trove"
 # namespace of the kind cluster "trove". The backup CronJob of R-HA-051 is not part of the chart
 # skeleton yet, so no backup target is configured here.
 image:
@@ -19,8 +19,20 @@ tls:
   secretName: trove-tls
   reloadInterval: 2s
 
-web:
+api:
   replicaCount: 2
+  spool:
+    sizeLimit: 4Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+      ephemeral-storage: 256Mi
+    limits:
+      memory: 1Gi
+
+packages:
+  replicaCount: 3
   resources:
     requests:
       cpu: 250m
@@ -41,6 +53,10 @@ worker:
       memory: 512Mi
   spool:
     sizeLimit: 4Gi
+  pools:
+    - name: vuln
+      queues: [vuln]
+      replicaCount: 2
 
 spool:
   sizeLimit: 4Gi
@@ -190,7 +206,8 @@ ingress:
 # certificate pair plus a wildcard pair chosen by SNI (all from cert-manager, pki.yaml), serves the package routes, the
 # raw files and the management API (`surface: [packages, files, api]`, Q-EP-54: E1.14 needs the files and the
 # listings of the management API under exposure; /ui/ is not allowed on a further endpoint and answers the 404 of an
-# unknown path), accepts only service-account tokens bound to it and exposes what its rules say (the chart's
+# unknown path; the packages pods open :8443 for the packages and files families and the api pods for the api family, the
+# Services are trove-ep-customers and trove-ep-customers-api and the edge splits the host by path), accepts only service-account tokens bound to it and exposes what its rules say (the chart's
 # defaults for a further endpoint), and has its own Ingress on the same HAProxy Ingress, which verifies the endpoint's certificate for
 # trove-ep-customers.<namespace>.svc. The host resolves to the loopback address on every system that treats
 # *.localhost that way; the edge port follows TROVE_DEV_HTTP_PORT (up.sh sets baseUrl).

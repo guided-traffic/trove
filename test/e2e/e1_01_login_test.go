@@ -193,13 +193,13 @@ func TestE1_01Login(t *testing.T) {
 		// The environment variable is the same key (docs/developer/configuration.md) and needs no migration Job;
 		// the cleanup removes it again.
 		restore := func() {
-			_, _ = kubectl("-n", cfg.namespace, "set", "env", "deployment/trove-web", "TROVE_AUTH_BREAK_GLASS_ENABLED-")
-			_, _ = kubectl("-n", cfg.namespace, "rollout", "status", "deployment/trove-web", "--timeout=5m")
-			waitWebSettled(t)
+			_, _ = kubectl("-n", cfg.namespace, "set", "env", "deployment/trove-api", "TROVE_AUTH_BREAK_GLASS_ENABLED-")
+			_, _ = kubectl("-n", cfg.namespace, "rollout", "status", "deployment/trove-api", "--timeout=5m")
+			waitServingSettled(t)
 		}
 		t.Cleanup(restore)
-		kn(t, "set", "env", "deployment/trove-web", "TROVE_AUTH_BREAK_GLASS_ENABLED=false")
-		waitWebSettled(t)
+		kn(t, "set", "env", "deployment/trove-api", "TROVE_AUTH_BREAK_GLASS_ENABLED=false")
+		waitServingSettled(t)
 
 		fresh := newBrowser(t)
 		seen := map[string]bool{}

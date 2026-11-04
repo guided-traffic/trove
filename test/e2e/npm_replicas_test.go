@@ -2,7 +2,7 @@
 
 package e2e
 
-// npm across replicas (R-NPM-046, R-ARCH-012): what a client sees when consecutive requests land on different web
+// npm across replicas (R-NPM-046, R-ARCH-012): what a client sees when consecutive requests land on different packages
 // replicas, and when Valkey is flushed or fails over underneath it. The clients are pinned to replicas through the
 // forwarder of their pods (pinClient) where the criterion names a replica, and go through the scatter edge where it
 // asks for scattered requests.
@@ -18,22 +18,22 @@ import (
 	"time"
 )
 
-// webReplicas returns the ready web pods in name order: name and pod IP.
-func webReplicas(t testing.TB, want int) []pod {
+// packagesReplicas returns the ready packages pods in name order: name and pod IP.
+func packagesReplicas(t testing.TB, want int) []pod {
 	t.Helper()
 	var out []pod
-	for _, p := range livePods(t, selWeb) {
+	for _, p := range livePods(t, selPackages) {
 		if p.Ready && p.IP != "" {
 			out = append(out, p)
 		}
 	}
 	if len(out) < want {
-		t.Fatalf("%d ready web pods, the test needs %d", len(out), want)
+		t.Fatalf("%d ready packages pods, the test needs %d", len(out), want)
 	}
 	return out
 }
 
-// pinnedClient is the client of row on client pod i, relayed to the web pod p until the returned function runs.
+// pinnedClient is the client of row on client pod i, relayed to the packages pod p until the returned function runs.
 func pinnedClient(t *testing.T, fx *npmFixture, row string, i int, p pod) (*npmClient, func()) {
 	t.Helper()
 	pinClient(t, i, p.IP)
@@ -45,7 +45,7 @@ func pinnedClient(t *testing.T, fx *npmFixture, row string, i int, p pod) (*npmC
 	return c, func() { unpinClient(t, i) }
 }
 
-// apiAtPod returns an API client that talks to the listener of one web pod through a port-forward.
+// apiAtPod returns an API client that talks to the listener of one pod through a port-forward.
 func apiAtPod(t testing.TB, addr, token string) *api {
 	a := newAPI(t, withRoundRobin(addr))
 	return a.withToken(token)
@@ -58,7 +58,7 @@ func TestNPMReplicas(t *testing.T) {
 	// E2.3: publish through replica A, view the version at once through replica B. R-ARCH-012: a committed write is
 	// in force on every replica when its answer arrives; the next request of the client may land anywhere.
 	t.Run("R-ARCH-012 E2.3 publish through replica A, view through replica B", func(t *testing.T) {
-		webs := webReplicas(t, 2)
+		webs := packagesReplicas(t, 2)
 		a, undoA := pinnedClient(t, fx, "npm11", 0, webs[0])
 		defer undoA()
 		b, undoB := pinnedClient(t, fx, "npm11", 1, webs[1])
@@ -85,11 +85,11 @@ func TestNPMReplicas(t *testing.T) {
 	// makes the validator of all the others stale at once. The validator is computed from PostgreSQL and the
 	// configuration, so no replica holds it.
 	t.Run("R-NPM-046 E2.10 a validator is answered 304 by every replica and changes with a publish", func(t *testing.T) {
-		webs := webReplicas(t, 3)
-		addrs, stop := podForwards(t)
+		webs := packagesReplicas(t, 3)
+		addrs, stop := packagesForwards(t)
 		defer stop()
 		if len(addrs) != len(webs) {
-			t.Fatalf("%d forwards for %d web pods", len(addrs), len(webs))
+			t.Fatalf("%d forwards for %d packages pods", len(addrs), len(webs))
 		}
 		name := fx.pkgName("npm11-"+fx.run, "etag", true)
 		c, undo := pinnedClient(t, fx, "npm11", 2, webs[2])
@@ -274,11 +274,11 @@ func duringChaos(t *testing.T, fx *npmFixture, row, name string, chaos func(stop
 	}
 }
 
-// npmRequestsPerReplica is the sum of trove_npm_requests_total of each ready web pod.
+// npmRequestsPerReplica is the sum of trove_npm_requests_total of each ready packages pod.
 func npmRequestsPerReplica(t testing.TB) map[string]float64 {
 	t.Helper()
 	out := map[string]float64{}
-	for _, p := range readyWebPods(t) {
+	for _, p := range readyPackagesPods(t) {
 		for series, v := range metricsOf(t, p) {
 			if strings.HasPrefix(series, "trove_npm_requests_total{") {
 				out[p] += v
@@ -305,7 +305,7 @@ func cacheInvalidationOnEveryReplica(t *testing.T, fx *npmFixture) {
 	s := stub(t)
 	s.resetAll(t)
 	defer s.resetAll(t)
-	addrs, stop := podForwards(t)
+	addrs, stop := packagesForwards(t)
 	defer stop()
 	path := "/api/npm/" + repos.remote + "/" + url.PathEscape(pkg)
 	for i := range addrs {

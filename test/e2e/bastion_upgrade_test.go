@@ -90,13 +90,13 @@ func upMainTry(extra string) error {
 	return nil
 }
 
-// upMain is upMainTry for a test, followed by the wait until the web pods have settled.
+// upMain is upMainTry for a test, followed by the wait until the api and packages pods have settled.
 func upMain(t testing.TB, extra string) {
 	t.Helper()
 	if err := upMainTry(extra); err != nil {
 		t.Fatal(err)
 	}
-	waitWebSettled(t)
+	waitServingSettled(t)
 }
 
 // basMismatch reads the mismatch gauge and the version the main installation reported, per replica.
@@ -195,7 +195,7 @@ func TestBastion_R_BAS_049_InterfaceMismatch(t *testing.T) {
 	if err := <-rollout; err != nil {
 		t.Fatal(err)
 	}
-	waitWebSettled(t)
+	waitServingSettled(t)
 	waitFor(t, "the mismatch to be steady on both replicas", 2*time.Minute, time.Second, func() bool {
 		m, v := basMismatch(t, site)
 		return allEqual(m, 1) && allEqual(v, 2)
