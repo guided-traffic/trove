@@ -13,8 +13,10 @@ func (t throttled) Error() string                     { return "throttled" }
 func (t throttled) RetryAfter() (time.Duration, bool) { return t.wait, t.wait > 0 }
 func (t throttled) RateLimitReason() string           { return "too_many_requests" }
 
+// Contract test of R-REPO-051, R-REPO-052, R-REPO-054 (the mirror mode, not built yet): the IDs stay out of the test names, so the
+// coverage evidence does not count a requirement whose engine is missing (Q-ROAD-5).
 func TestDiscoverContract(t *testing.T) {
-	t.Run("R-REPO-054 a wrapped rate-limit error is found with its wait", func(t *testing.T) {
+	t.Run("a wrapped rate-limit error is found with its wait", func(t *testing.T) {
 		err := fmt.Errorf("listing page 3: %w", throttled{wait: 7 * time.Second})
 		rl, ok := AsRateLimited(err)
 		if !ok {
@@ -27,7 +29,7 @@ func TestDiscoverContract(t *testing.T) {
 			t.Fatal("a transport error counts as a rate limit")
 		}
 	})
-	t.Run("R-REPO-051 auto tries feed, listing and names in that order", func(t *testing.T) {
+	t.Run("auto tries feed, listing and names in that order", func(t *testing.T) {
 		got := Order()
 		if len(got) != 3 || got[0] != MethodFeed || got[1] != MethodListing || got[2] != MethodNames {
 			t.Fatalf("Order() = %v", got)
@@ -41,7 +43,7 @@ func TestDiscoverContract(t *testing.T) {
 			t.Fatal("an unknown method is valid")
 		}
 	})
-	t.Run("R-REPO-052 the literal prefix and the bounding rule of include patterns", func(t *testing.T) {
+	t.Run("the literal prefix and the bounding rule of include patterns", func(t *testing.T) {
 		for _, tc := range []struct {
 			pattern  string
 			prefix   string

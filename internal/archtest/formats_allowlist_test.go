@@ -6,6 +6,8 @@ import "testing"
 // package have three allowlists (R-ARCH-008, Q-ARCH-189, Q-ARCH-216). The contract
 // spells core types for the formats, so only it imports them; a format reaches the
 // core through the aliases and Host.
+// Contract test of R-REPO-051 (the mirror mode, not built yet): the IDs stay out of the test names, so the
+// coverage evidence does not count a requirement whose engine is missing (Q-ROAD-5).
 func TestFormatAllowlistSplit(t *testing.T) {
 	t.Run("R-ARCH-008 the contract imports the subject, the repository model, the transaction type and the content headers", func(t *testing.T) {
 		wantClean(t, CheckModuleImportBans(mod, []Package{
@@ -36,7 +38,7 @@ func TestFormatAllowlistSplit(t *testing.T) {
 		wantEdge(t, vs, "R-ARCH-008", "internal/formats/npm", "internal/vuln/store")
 		wantEdge(t, vs, "R-ARCH-008", "internal/formats/npm", "internal/vuln/osv")
 	})
-	t.Run("R-REPO-051 a format may import the leaf contract of the mirror's discovery and not the engine", func(t *testing.T) {
+	t.Run("a format may import the leaf contract of the mirror's discovery and not the engine", func(t *testing.T) {
 		wantClean(t, CheckModuleImportBans(mod, []Package{pkg("internal/formats/npm", "internal/mirror/discover")}))
 		vs := CheckModuleImportBans(mod, []Package{pkg("internal/formats/nuget", "internal/mirror", "internal/proxy/upstream")})
 		wantEdge(t, vs, "R-ARCH-008", "internal/formats/nuget", "internal/mirror")

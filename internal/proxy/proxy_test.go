@@ -250,6 +250,8 @@ func TestIdleBody(t *testing.T) {
 	})
 }
 
+// Contract test of R-REPO-055 (the mirror mode, not built yet): the IDs stay out of the test names, so the
+// coverage evidence does not count a requirement whose engine is missing (Q-ROAD-5).
 func TestSlots(t *testing.T) {
 	t.Run("R-REPO-040 a repository's share is ceil(budget / n), at least 1", func(t *testing.T) {
 		n := 2
@@ -306,7 +308,7 @@ func TestSlots(t *testing.T) {
 		a()
 		b()
 	})
-	t.Run("R-REPO-055 the background share is min(concurrency, max(1, budget / 4))", func(t *testing.T) {
+	t.Run("the background share is min(concurrency, max(1, budget / 4))", func(t *testing.T) {
 		for _, tc := range []struct{ budget, concurrency, want int }{
 			{64, 4, 4}, {64, 32, 16}, {8, 4, 2}, {2, 4, 1}, {1, 1, 1}, {4096, 64, 64}, {64, 0, 1},
 		} {
@@ -315,7 +317,7 @@ func TestSlots(t *testing.T) {
 			}
 		}
 	})
-	t.Run("R-REPO-055 background slots stop at their ceiling, count in the replica and repository limits and never queue", func(t *testing.T) {
+	t.Run("background slots stop at their ceiling, count in the replica and repository limits and never queue", func(t *testing.T) {
 		s := newSlots(10, nil)
 		ctx := context.Background()
 		_, r1, err := s.acquireBackground(ctx, 1, 8, 2)

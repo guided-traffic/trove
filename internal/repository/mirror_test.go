@@ -54,8 +54,10 @@ func warningCodes(v *validation) map[string]string {
 	return out
 }
 
+// Contract test of R-REPO-050 (the mirror mode, not built yet): the IDs stay out of the test names, so the
+// coverage evidence does not count a requirement whose engine is missing (Q-ROAD-5).
 func TestMirrorSettings(t *testing.T) {
-	t.Run("R-REPO-050 a remote created with only url reads back pullThrough and every mirror member with its default", func(t *testing.T) {
+	t.Run("a remote created with only url reads back pullThrough and every mirror member with its default", func(t *testing.T) {
 		d, v := validateMirrorDoc(t, "mirrorable", "", `{"url":"https://partner.example.test/"}`)
 		if err := v.err(); err != nil {
 			t.Fatal(err)
@@ -79,7 +81,7 @@ func TestMirrorSettings(t *testing.T) {
 			}
 		}
 	})
-	t.Run("R-REPO-050 a section stored before the members existed reads back with them at their defaults", func(t *testing.T) {
+	t.Run("a section stored before the members existed reads back with them at their defaults", func(t *testing.T) {
 		d, v := validateMirrorDoc(t, "mirrorable", "", `{"url":"https://partner.example.test/"}`)
 		if err := v.err(); err != nil {
 			t.Fatal(err)
@@ -104,7 +106,7 @@ func TestMirrorSettings(t *testing.T) {
 			t.Fatalf("the read-back section differs from the canonical one:\n%s\n%s", doc.Remote, d.Remote)
 		}
 	})
-	t.Run("R-REPO-050 the ranges and the enumerations of the mirror members", func(t *testing.T) {
+	t.Run("the ranges and the enumerations of the mirror members", func(t *testing.T) {
 		for remote, pointer := range map[string]string{
 			`{"mirror":{"concurrency":0}}`:                `/remote/mirror/concurrency`,
 			`{"mirror":{"concurrency":65}}`:               `/remote/mirror/concurrency`,
@@ -130,7 +132,7 @@ func TestMirrorSettings(t *testing.T) {
 			t.Fatalf("the bounds themselves are refused: %v", err)
 		}
 	})
-	t.Run("R-REPO-050 a format that cannot discover refuses mode mirror with not_applicable", func(t *testing.T) {
+	t.Run("a format that cannot discover refuses mode mirror with not_applicable", func(t *testing.T) {
 		_, v := validateMirrorDoc(t, "npmlike", `["@acme/*"]`, `{"url":"https://partner.example.test/","mode":"mirror"}`)
 		if got := fieldCodes(v)["/remote/mode"]; got != "not_applicable" {
 			t.Fatalf("/remote/mode = %q (%v)", got, fieldCodes(v))
@@ -138,20 +140,22 @@ func TestMirrorSettings(t *testing.T) {
 	})
 }
 
+// Contract test of R-REPO-052 (the mirror mode, not built yet): the IDs stay out of the test names, so the
+// coverage evidence does not count a requirement whose engine is missing (Q-ROAD-5).
 func TestMirrorBound(t *testing.T) {
 	const known = `"url":"https://registry.example.org/","mode":"mirror"`
 	for _, tc := range []struct {
 		name, include, remote string
 		refused, warned       bool
 	}{
-		{"R-REPO-052 the well-known upstream without a bound is refused", "", `{` + known + `}`, true, false},
-		{"R-REPO-052 a literal prefix bounds it", `["@types/*"]`, `{` + known + `}`, false, false},
-		{"R-REPO-052 exact names bound it", `["lodash","react"]`, `{` + known + `}`, false, false},
-		{"R-REPO-052 ** does not bound it", `["**"]`, `{` + known + `}`, true, false},
-		{"R-REPO-052 one unbounded pattern unbounds the list", `["@types/*","@*/*"]`, `{` + known + `}`, true, false},
-		{"R-REPO-052 maxBytes bounds it", "", `{` + known + `,"mirror":{"maxBytes":10737418240}}`, false, false},
-		{"R-REPO-052 another upstream without a bound is saved with a warning", "", `{"url":"https://partner.example.test/","mode":"mirror"}`, false, true},
-		{"R-REPO-052 pullThrough needs no bound", "", `{"url":"https://registry.example.org/"}`, false, false},
+		{"the well-known upstream without a bound is refused", "", `{` + known + `}`, true, false},
+		{"a literal prefix bounds it", `["@types/*"]`, `{` + known + `}`, false, false},
+		{"exact names bound it", `["lodash","react"]`, `{` + known + `}`, false, false},
+		{"** does not bound it", `["**"]`, `{` + known + `}`, true, false},
+		{"one unbounded pattern unbounds the list", `["@types/*","@*/*"]`, `{` + known + `}`, true, false},
+		{"maxBytes bounds it", "", `{` + known + `,"mirror":{"maxBytes":10737418240}}`, false, false},
+		{"another upstream without a bound is saved with a warning", "", `{"url":"https://partner.example.test/","mode":"mirror"}`, false, true},
+		{"pullThrough needs no bound", "", `{"url":"https://registry.example.org/"}`, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, v := validateMirrorDoc(t, "mirrorable", tc.include, tc.remote)

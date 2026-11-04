@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+// Contract test of R-REPO-054 (the mirror mode, not built yet): the IDs stay out of the test names, so the
+// coverage evidence does not count a requirement whose engine is missing (Q-ROAD-5).
 func TestRateLimitOf(t *testing.T) {
 	now := time.Date(2026, 11, 4, 10, 0, 0, 0, time.UTC)
 	hdr := func(kv ...string) http.Header {
@@ -26,21 +28,21 @@ func TestRateLimitOf(t *testing.T) {
 		wait   time.Duration
 		hinted bool
 	}{
-		{"R-REPO-054 429 with Retry-After seconds", 429, hdr("Retry-After", "7"), nil, true, ReasonTooManyRequests, 7 * time.Second, true},
-		{"R-REPO-054 429 with Retry-After as an HTTP date", 429, hdr("Retry-After", now.Add(5*time.Second).Format(http.TimeFormat)), nil, true, ReasonTooManyRequests, 5 * time.Second, true},
-		{"R-REPO-054 429 without a hint", 429, hdr(), nil, true, ReasonTooManyRequests, 0, false},
-		{"R-REPO-054 429 with a date in the past is no hint", 429, hdr("Retry-After", now.Add(-time.Minute).Format(http.TimeFormat)), nil, true, ReasonTooManyRequests, 0, false},
-		{"R-REPO-054 503 SlowDown without Retry-After", 503, hdr(), slow, true, ReasonSlowDown, 0, false},
-		{"R-REPO-054 503 SlowDown with Retry-After", 503, hdr("Retry-After", "2"), slow, true, ReasonSlowDown, 2 * time.Second, true},
-		{"R-REPO-054 503 with Retry-After", 503, hdr("Retry-After", "30"), nil, true, ReasonRetryAfter, 30 * time.Second, true},
-		{"R-REPO-054 503 with an unreadable Retry-After is a failure", 503, hdr("Retry-After", "soon"), nil, false, "", 0, false},
-		{"R-REPO-054 a plain 503 is a failure, not a rate limit", 503, hdr(), []byte("<html>busy</html>"), false, "", 0, false},
-		{"R-REPO-054 403 with X-RateLimit-Remaining 0 and a reset", 403, hdr("X-RateLimit-Remaining", "0", "X-RateLimit-Reset", "1793786404"), nil, true, ReasonQuotaHeader, 4 * time.Second, true},
-		{"R-REPO-054 429 with RateLimit-Remaining 0 and RateLimit-Reset", 429, hdr("RateLimit-Remaining", "0", "RateLimit-Reset", "12"), nil, true, ReasonQuotaHeader, 12 * time.Second, true},
-		{"R-REPO-054 403 with remaining requests is no rate limit", 403, hdr("X-RateLimit-Remaining", "10"), nil, false, "", 0, false},
-		{"R-REPO-054 a plain 403 is no rate limit", 403, hdr(), nil, false, "", 0, false},
-		{"R-REPO-054 a wait above six hours is capped", 429, hdr("Retry-After", "999999"), nil, true, ReasonTooManyRequests, MaxRateLimitWait, true},
-		{"R-REPO-054 500 is no rate limit", 500, hdr("Retry-After", "5"), nil, false, "", 0, false},
+		{"429 with Retry-After seconds", 429, hdr("Retry-After", "7"), nil, true, ReasonTooManyRequests, 7 * time.Second, true},
+		{"429 with Retry-After as an HTTP date", 429, hdr("Retry-After", now.Add(5*time.Second).Format(http.TimeFormat)), nil, true, ReasonTooManyRequests, 5 * time.Second, true},
+		{"429 without a hint", 429, hdr(), nil, true, ReasonTooManyRequests, 0, false},
+		{"429 with a date in the past is no hint", 429, hdr("Retry-After", now.Add(-time.Minute).Format(http.TimeFormat)), nil, true, ReasonTooManyRequests, 0, false},
+		{"503 SlowDown without Retry-After", 503, hdr(), slow, true, ReasonSlowDown, 0, false},
+		{"503 SlowDown with Retry-After", 503, hdr("Retry-After", "2"), slow, true, ReasonSlowDown, 2 * time.Second, true},
+		{"503 with Retry-After", 503, hdr("Retry-After", "30"), nil, true, ReasonRetryAfter, 30 * time.Second, true},
+		{"503 with an unreadable Retry-After is a failure", 503, hdr("Retry-After", "soon"), nil, false, "", 0, false},
+		{"a plain 503 is a failure, not a rate limit", 503, hdr(), []byte("<html>busy</html>"), false, "", 0, false},
+		{"403 with X-RateLimit-Remaining 0 and a reset", 403, hdr("X-RateLimit-Remaining", "0", "X-RateLimit-Reset", "1793786404"), nil, true, ReasonQuotaHeader, 4 * time.Second, true},
+		{"429 with RateLimit-Remaining 0 and RateLimit-Reset", 429, hdr("RateLimit-Remaining", "0", "RateLimit-Reset", "12"), nil, true, ReasonQuotaHeader, 12 * time.Second, true},
+		{"403 with remaining requests is no rate limit", 403, hdr("X-RateLimit-Remaining", "10"), nil, false, "", 0, false},
+		{"a plain 403 is no rate limit", 403, hdr(), nil, false, "", 0, false},
+		{"a wait above six hours is capped", 429, hdr("Retry-After", "999999"), nil, true, ReasonTooManyRequests, MaxRateLimitWait, true},
+		{"500 is no rate limit", 500, hdr("Retry-After", "5"), nil, false, "", 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rl, ok := RateLimitOf(tc.status, tc.h, tc.body, now)

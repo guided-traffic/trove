@@ -72,10 +72,12 @@ func (listingRemote) MirrorPlan(_ context.Context, _ discover.Upstream, name str
 
 func (listingRemote) MirrorHosts(*url.URL) []string { return nil }
 
-// TestR_REPO_050_RegisterRecordsTheMirrorLister: the mirror's discovery is an optional interface of the remote adapter,
+// TestRegisterRecordsTheMirrorLister: the mirror's discovery is an optional interface of the remote adapter,
 // found once at Register; the catalog fact Mirror follows it, so the repository model refuses mode mirror for a format
 // without it (ADR-152).
-func TestR_REPO_050_RegisterRecordsTheMirrorLister(t *testing.T) {
+// Contract test of R-REPO-050 (the mirror mode, not built yet): the IDs stay out of the test names, so the
+// coverage evidence does not count a requirement whose engine is missing (Q-ROAD-5).
+func TestRegisterRecordsTheMirrorLister(t *testing.T) {
 	remote := func(id string) Descriptor {
 		d := valid(id)
 		d.Classes = []Class{Local, Remote}
