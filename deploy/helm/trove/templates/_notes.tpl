@@ -45,7 +45,7 @@ Endpoints
 {{- $e := include "trove.endpoint" (dict "root" $ "name" $name) | fromYaml }}
 {{- $hosts := include "trove.endpointHosts" $e | fromYamlArray }}
 {{- $roles := ternary (list "web") (include "trove.surfaceRoles" (dict "root" $ "name" $name) | fromYamlArray) $bridge }}
-  {{ $name }}   Service {{ $fullname }}-ep-{{ $name }}{{ if and (eq (len $roles) 2) (not $bridge) }}, {{ $fullname }}-ep-{{ $name }}-api{{ end }}:{{ $e.port }}   hosts: {{ join ", " $hosts }}{{ with $e.wildcardHost }}, {{ . }}{{ end }}   pods: {{ if $e.pool }}{{ range $i, $role := $roles }}{{ if $i }}, {{ end }}pool {{ $fullname }}-{{ $role }}-ep-{{ $name }}{{ end }}{{ else }}the main {{ join ", " $roles }} Deployment{{ if gt (len $roles) 1 }}s{{ end }}{{ end }}
+  {{ $name }}   Service {{ $fullname }}-ep-{{ $name }}{{ if and (eq (len $roles) 2) (not $bridge) }}, {{ $fullname }}-api-ep-{{ $name }}{{ end }}:{{ $e.port }}   hosts: {{ join ", " $hosts }}{{ with $e.wildcardHost }}, {{ . }}{{ end }}   pods: {{ if $e.pool }}{{ range $i, $role := $roles }}{{ if $i }}, {{ end }}pool {{ $fullname }}-{{ $role }}-ep-{{ $name }}{{ end }}{{ else }}the main {{ join ", " $roles }} Deployment{{ if gt (len $roles) 1 }}s{{ end }}{{ end }}
 {{- end }}
 {{- range $name := $names }}
 {{- $e := include "trove.endpoint" (dict "root" $ "name" $name) | fromYaml }}

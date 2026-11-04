@@ -20,8 +20,11 @@ http for the default endpoint and the endpoint's port number for a further one.
 {{- else -}}
 {{- range $role := list "api" "packages" -}}
 {{- range $p := (index $root.Values $role).pools -}}
+{{- /* routed: false renders the pool without its route, the first step of adding a pool (Q-HA-90). */ -}}
+{{- if dig "routed" true $p -}}
 {{- range $path := $p.paths -}}
 {{- $rules = append $rules (dict "path" $path "service" (printf "%s-%s-%s" $fullname $role $p.name)) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -39,7 +42,7 @@ http for the default endpoint and the endpoint's port number for a further one.
 {{- $rules = append $rules (dict "path" "/" "service" $svc) -}}
 {{- else -}}
 {{- /* A surface with families of both roles: the rows of the table whose families it holds. */ -}}
-{{- $api := printf "%s-api" $svc -}}
+{{- $api := printf "%s-api-ep-%s" $fullname $name -}}
 {{- $s := $e.surface -}}
 {{- if or (has "api" $s) (has "ci_exchange" $s) -}}
 {{- $rules = append $rules (dict "path" "/api/v1" "service" $api) -}}

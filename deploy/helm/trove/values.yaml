@@ -89,7 +89,7 @@ api:
   podAnnotations: {}
   podLabels: {}
   extraEnv: []                          # appended after the shared extraEnv
-  pools: []                             # example: [{name: admin, paths: [/api/v1/repositories], replicaCount: 2}]
+  pools: []                             # example: [{name: admin, paths: [/api/v1/repositories], replicaCount: 2}]; routed: false renders the pool without its route until its pods are ready
 
 # ── packages Deployment: trove serve --role packages ─────────────
 # The package protocols and the raw file transfer, tokens only; no login secret mounts here.
@@ -156,7 +156,7 @@ packages:
   podAnnotations: {}
   podLabels: {}
   extraEnv: []                          # appended after the shared extraEnv
-  pools: []                             # example: [{name: npm, paths: [/api/npm], replicaCount: 4}]
+  pools: []                             # example: [{name: npm, paths: [/api/npm], replicaCount: 4}]; routed: false renders the pool without its route until its pods are ready
 
 # ── web Deployment: the bridge of the upgrade across the cut ─────
 # Rendered only with web.enabled: trove serve --role web, the Service <fullname> and the edge of the releases

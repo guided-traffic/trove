@@ -1,7 +1,7 @@
 {{/*
 The alerts of the PrometheusRule (R-HA-045) as a YAML list, before disabledAlerts is applied. Names are
-stable. Only the alerts of the vulnerability scanning are rendered so far (R-VULN-024): the other rows of
-R-HA-045 are not implemented in this chart (docs/developer/helm-chart.md lists them).
+stable. Only the alerts of the vulnerability scanning (R-VULN-024) and the alert of a bridge left on (R-HA-064,
+Q-HA-92) are rendered so far: the other rows of R-HA-045 are not implemented in this chart (docs/developer/helm-chart.md lists them).
 
 Every selector is scoped to the namespace of the release, because one Prometheus can scrape several
 installations and a max() over all of them would blend their states. A scrape through the Prometheus
@@ -36,9 +36,17 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
   annotations:
     summary: A malicious-package advisory names a package name that this installation treats as internal.
     description: Look at GET /api/v1/vulnerabilities/claimed-name-matches. A public package of that name exists, which is how a dependency-confusion attempt looks (R-VULN-010, R-VULN-024).
+- alert: TroveBridgeLeftOn
+  expr: count(trove_build_info{ {{ $ns }},role="web" }) > 0
+  for: 24h
+  labels:
+    severity: warning
+  annotations:
+    summary: A web replica of the upgrade bridge has been running for 24 hours.
+    description: web.enabled is still true, so the web pods stay registered, hold the login secrets and answer on every host (R-HA-064, H-518). Finish the cut with a second helm upgrade and web.enabled false, once api, packages and their pools are ready.
 {{- end -}}
 
 {{/* The names of every alert the chart can render, for the check of disabledAlerts. */}}
 {{- define "trove.rules.names" -}}
-{{- toJson (list "TroveVulnerabilityDataStale" "TroveVulnerabilitySyncFailing" "TroveVulnerabilityClaimedNameMalicious") -}}
+{{- toJson (list "TroveVulnerabilityDataStale" "TroveVulnerabilitySyncFailing" "TroveVulnerabilityClaimedNameMalicious" "TroveBridgeLeftOn") -}}
 {{- end -}}

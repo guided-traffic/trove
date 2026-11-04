@@ -207,7 +207,7 @@ ingress:
 # raw files and the management API (`surface: [packages, files, api]`, Q-EP-54: E1.14 needs the files and the
 # listings of the management API under exposure; /ui/ is not allowed on a further endpoint and answers the 404 of an
 # unknown path; the packages pods open :8443 for the packages and files families and the api pods for the api family, the
-# Services are trove-ep-customers and trove-ep-customers-api and the edge splits the host by path), accepts only service-account tokens bound to it and exposes what its rules say (the chart's
+# Services are trove-ep-customers and trove-api-ep-customers and the edge splits the host by path), accepts only service-account tokens bound to it and exposes what its rules say (the chart's
 # defaults for a further endpoint), and has its own Ingress on the same HAProxy Ingress, which verifies the endpoint's certificate for
 # trove-ep-customers.<namespace>.svc. The host resolves to the loopback address on every system that treats
 # *.localhost that way; the edge port follows TROVE_DEV_HTTP_PORT (up.sh sets baseUrl).

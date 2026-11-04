@@ -590,7 +590,7 @@ endpoints: {}                             # default (proposed): only the default
 | Kind | Name | Rendered when |
 |---|---|---|
 | Configuration | `server.endpoints.<name>` in `trove.yaml`; chart-managed ([ha-and-helm.md](ha-and-helm.md) R-HA-030) | per entry |
-| Service | `<fullname>-ep-<name>`, one port `<port>` with `appProtocol: https` under `tls.enabled`, `sessionAffinity: None`, selecting the pods of the role that serves the surface's `packages` and `files` families, or of `api` when the surface holds neither; and `<fullname>-ep-<name>-api` the same way for the `api` pods when the surface holds families of both roles (Q-EP-71) | per further endpoint |
+| Service | `<fullname>-ep-<name>`, one port `<port>` with `appProtocol: https` under `tls.enabled`, `sessionAffinity: None`, selecting the pods of the role that serves the surface's `packages` and `files` families, or of `api` when the surface holds neither; and `<fullname>-api-ep-<name>` the same way for the `api` pods when the surface holds families of both roles (Q-EP-71) | per further endpoint |
 | Deployment, PodDisruptionBudget, HorizontalPodAutoscaler | `<fullname>-packages-ep-<name>` with `--role packages` and `<fullname>-api-ep-<name>` with `--role api`, one per role the surface holds, each with `TROVE_POOL_NAME=ep-<name>` and pod label `trove/pool: ep-<name>`; the rendered `pool` of the endpoint is `ep-<name>` (before phase 6a: one `<fullname>-web-ep-<name>` with `--role web`) | `pool.enabled` |
 | Ingress | `<fullname>-ep-<name>`: `ingressClassName`, one rule per host of the endpoint (the base URL's host, every exact host, the wildcard host) with the paths of [ha-and-helm.md](ha-and-helm.md) R-HA-037's table whose families the surface holds, each `pathType: Prefix` to the Service of its role on `<port>` (path `/` to the one Service when the surface lies within one role), over TLS as R-HA-063 wires it, with the endpoint's own `ingress.backendTLS` keys overriding the global block key by key ([Q-EP-17](#q-ep-17--backend-tls-of-a-further-endpoints-ingress)), and the `tls` entries | `ingress.enabled` |
 | HTTPRoute, BackendTLSPolicy | `<fullname>-ep-<name>`: `parentRefs`, `hostnames` with the same hosts (a wildcard as a leading `*.` label), the same path rules as `PathPrefix` matches; a BackendTLSPolicy per Service it names | `gateway.enabled` |
@@ -613,7 +613,7 @@ endpoints: {}                             # default (proposed): only the default
   through its own load balancer.
 - **Validation** ([ha-and-helm.md](ha-and-helm.md) R-HA-029): rendering fails and names the value
   for a `port` equal to 8080, 8081 or another endpoint's port; an invalid name or a name for which
-  `<fullname>-ep-<name>-api` (a surface with families of both roles) or, with a pool, `<fullname>-packages-ep-<name>`
+  `<fullname>-api-ep-<name>` (a surface with families of both roles) or, with a pool, `<fullname>-packages-ep-<name>`
   exceeds 63 characters; a missing `baseUrl`; a host in two endpoints;
   `config.server.endpoints` set inside `config`; `extraSecrets` or `clientCaSecret` with
   `tls.enabled: false`; and an endpoint pool below two replicas with `highAvailability.enforce`.
@@ -633,8 +633,8 @@ Acceptance criteria:
   the policy `trove-packages` with a rule admitting 8443 only from `networkPolicy.from`; no container port 8443 and no
   rule for it on the `api` pods; and `trove.yaml` with `server.endpoints.customers` and
   `server.endpoints.default.hosts: [trove.example.com]`.
-- With `surface: [packages, files, api]`: Services `trove-ep-customers` (packages pods) and `trove-ep-customers-api`
-  (api pods), both on 8443; the Ingress rules per host `/` and `/api/v1` to `trove-ep-customers-api`, `/api`, `/files`,
+- With `surface: [packages, files, api]`: Services `trove-ep-customers` (packages pods) and `trove-api-ep-customers`
+  (api pods), both on 8443; the Ingress rules per host `/` and `/api/v1` to `trove-api-ep-customers`, `/api`, `/files`,
   `/v2` and `/.well-known` to `trove-ep-customers`; the 8443 rule in both `trove-packages` and `trove-api`.
 - With `pool.enabled: true`: Deployment `trove-packages-ep-customers` with `--role packages` and
   `TROVE_POOL_NAME=ep-customers`, its disruption budget and its policy (8443 and 8081, no 8080), and the Service

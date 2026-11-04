@@ -3,7 +3,7 @@ Endpoints (R-EP-008). values.endpoints holds one entry per endpoint: the entry "
 default endpoint (hosts, surface and the policy keys only), every other entry is a further
 endpoint with its own listener port, Service, Ingress and, optionally, its own pool of pods per
 role its surface holds (Q-EP-70). Objects are named <fullname>-ep-<name>, and
-<fullname>-ep-<name>-api beside it for a surface with families of both roles (Q-EP-71); the pool
+<fullname>-api-ep-<name> beside it for a surface with families of both roles (Q-EP-71); the pool
 Deployments are <fullname>-packages-ep-<name> and <fullname>-api-ep-<name> (<fullname>-web-ep-<name>
 in the bridge of R-HA-064) and their pool label is ep-<name>. units.tpl lists them.
 */}}

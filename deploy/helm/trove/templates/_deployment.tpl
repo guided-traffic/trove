@@ -22,9 +22,19 @@ metadata:
     {{- . | nindent 4 }}
   {{- end }}
 spec:
-  {{- /* With an autoscaler the field is left out, so helm upgrade does not reset its choice (R-HA-032). */}}
+  {{- /*
+  With an autoscaler the field carries the live replicas of the Deployment, so helm upgrade neither resets
+  the autoscaler's choice nor lets the API server default the field to 1 when autoscaling is switched on
+  (R-HA-032, Q-HA-91). lookup returns nothing under helm template and on the first install; the field is
+  then left out.
+  */}}
   {{- if not (dig "autoscaling" "enabled" false $r) }}
   replicas: {{ $r.replicaCount }}
+  {{- else }}
+  {{- $live := lookup "apps/v1" "Deployment" $.Release.Namespace (printf "%s-%s" (include "trove.fullname" $) $name) }}
+  {{- if $live }}
+  replicas: {{ int (dig "spec" "replicas" 1 $live) }}
+  {{- end }}
   {{- end }}
   minReadySeconds: {{ $r.minReadySeconds }}
   revisionHistoryLimit: {{ $r.revisionHistoryLimit }}

@@ -312,7 +312,7 @@ edge pod (25 connection errors in the first measured run, with the previous cont
 
 The dev profile runs every role ([values-dev.yaml](../../deploy/dev/values-dev.yaml)): `api` 2 replicas, `packages` 3, `worker` 2 and a
 worker pool `vuln` of 2 (the Deployments `trove-api`, `trove-packages`, `trove-worker`, `trove-worker-vuln`; the Services `trove-api` and
-`trove-packages`; the endpoint `customers` has `trove-ep-customers` for the packages pods and `trove-ep-customers-api` for the api pods). The scatter
+`trove-packages`; the endpoint `customers` has `trove-ep-customers` for the packages pods and `trove-api-ep-customers` for the api pods). The scatter
 profile makes `api` 3 as well. There is no Deployment `trove-web` and no Service `trove` (the bridge `web.enabled` of R-HA-064 is not used
 by the suite). The sizing and the PostgreSQL `max_connections` of 400 (the chart's budget is 303, 383 with the bridge) are
 [Q-HA-87](../spec/ha-and-helm.md#q-ha-87--the-dev-profiles-sizing-of-the-roles-and-its-postgresql-connection-budget).

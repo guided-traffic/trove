@@ -51,6 +51,13 @@ pools) are added with those features.
 {{- end -}}
 {{- end -}}
 
+{{- /* A provider with a client secret gets it from secrets.oidc and so only on the api pods (and web in the bridge): the global extraEnv, extraEnvFrom, extraVolumes and extraVolumeMounts reach every Deployment and would spread it to packages and worker pods (R-AUTH-014, Q-HA-79). */ -}}
+{{- range $id, $prov := (dig "auth" "oidc" "providers" (dict) $cfg) -}}
+{{- if and (ne (dig "client_auth_method" "client_secret_basic" $prov) "none") (not (hasKey $oidcSeen $id)) -}}
+{{- fail (printf "trove: config.auth.oidc.providers.%s has client_auth_method %s and no entry in secrets.oidc: its client secret would have to come through extraEnv, extraEnvFrom, extraVolumes or extraVolumeMounts, which every Deployment receives, and the secret would leave the api pods. Add {providerId: %s, existingSecret: <Secret>} to secrets.oidc, or set client_auth_method: none for a public client" $id (dig "client_auth_method" "client_secret_basic" $prov) $id) -}}
+{{- end -}}
+{{- end -}}
+
 {{- /* Valkey (R-HA-056). */ -}}
 {{- if not $v.secrets.valkey.existingSecret -}}
 {{- fail "trove: secrets.valkey.existingSecret is required (example: trove-valkey)" -}}
@@ -237,7 +244,7 @@ Endpoints (R-EP-008, R-HA-029): every failure names the value. Argument: the roo
 {{- /* The Service of a surface with families of both roles, and the pool Deployments, must keep a valid name (R-EP-008). The rules of a pool (replicas, budget, spreading, memory) are checked with every Deployment in trove.validateRoles. */ -}}
 {{- $names := include "trove.surfaceRoles" (dict "root" $ "name" $name) | fromYamlArray -}}
 {{- if and (eq (len $names) 2) (gt (add (len $fullname) 8 (len $name)) 63) -}}
-{{- fail (printf "trove: %s: the Service name %s-ep-%s-api has %d characters, at most 63 are allowed; shorten the endpoint name or set fullnameOverride" $key $fullname $name (add (len $fullname) 8 (len $name))) -}}
+{{- fail (printf "trove: %s: the Service name %s-api-ep-%s has %d characters, at most 63 are allowed; shorten the endpoint name or set fullnameOverride" $key $fullname $name (add (len $fullname) 8 (len $name))) -}}
 {{- end -}}
 {{- if and $e.poolEnabled (gt (add (len $fullname) 13 (len $name)) 63) -}}
 {{- fail (printf "trove: %s.pool: the Deployment name %s-packages-ep-%s has %d characters, at most 63 are allowed; shorten the endpoint name or set fullnameOverride" $key $fullname $name (add (len $fullname) 13 (len $name))) -}}

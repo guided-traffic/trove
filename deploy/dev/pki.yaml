@@ -9,7 +9,7 @@
 #   trove-s3-tls        the SeaweedFS S3 endpoint (https://trove-s3.trove.svc:9000)
 #   trove-customers-tls            the endpoint `customers` (values-dev.yaml endpoints.customers): its exact host and
 #                                  the Service names the edge verifies, trove-ep-customers.<ns>.svc (packages pods)
-#                                  and trove-ep-customers-api.<ns>.svc (api pods)
+#                                  and trove-api-ep-customers.<ns>.svc (api pods)
 #   trove-customers-wildcard-tls   the endpoint's wildcard pair (extraSecrets), chosen by SNI
 #   trove-customers-edge-tls       the edge's certificate for the endpoint's host and its wildcard
 #   <name>-tls          the Valkey operator's own Certificate for the Valkey CR (valkey.yaml, one for both tiers)
@@ -150,10 +150,10 @@ spec:
     - trove-ep-customers.${NS}
     - trove-ep-customers.${NS}.svc
     - trove-ep-customers.${NS}.svc.cluster.local
-    - trove-ep-customers-api
-    - trove-ep-customers-api.${NS}
-    - trove-ep-customers-api.${NS}.svc
-    - trove-ep-customers-api.${NS}.svc.cluster.local
+    - trove-api-ep-customers
+    - trove-api-ep-customers.${NS}
+    - trove-api-ep-customers.${NS}.svc
+    - trove-api-ep-customers.${NS}.svc.cluster.local
   issuerRef:
     name: trove-dev-ca
     kind: Issuer

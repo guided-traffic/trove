@@ -207,9 +207,9 @@ func TestRolesDeployments(t *testing.T) {
 		}
 		_, docs = render(t, bridgeSet())
 		env = envByName(at(find(docs, "Job", "trove-migrate"), "spec", "template", "spec"))
-		// the bridge: api 3, packages 4, web 4, web endpoint pool 4: 15; the budget of the first step counts all of them
-		if got := str(env["TROVE_DATABASE_PREFLIGHT_EXPECTED_SERVING_REPLICAS"], "value"); got != "15" {
-			t.Errorf("serving replicas in the bridge = %q, want 15", got)
+		// the bridge: api 3, packages 4, web 4, web endpoint pool 4 and the packages endpoint pool 4: 19; the budget of the first step counts all of them
+		if got := str(env["TROVE_DATABASE_PREFLIGHT_EXPECTED_SERVING_REPLICAS"], "value"); got != "19" {
+			t.Errorf("serving replicas in the bridge = %q, want 19", got)
 		}
 	})
 
@@ -234,7 +234,7 @@ func TestRolesServices(t *testing.T) {
 			"trove-api-admin":        {"trove-api-admin"},
 			"trove-packages-npm":     {"trove-packages-npm"},
 			"trove-ep-customers":     {"trove-packages-ep-customers"},
-			"trove-ep-customers-api": {"trove-api-ep-customers"},
+			"trove-api-ep-customers": {"trove-api-ep-customers"},
 			"trove-ops":              deploymentNames(docs),
 		}
 		for _, s := range ofKind(docs, "Service") {
@@ -265,7 +265,7 @@ func TestRolesServices(t *testing.T) {
 				t.Errorf("Service %s ports = %v", n, at(s, "spec", "ports"))
 			}
 		}
-		for _, n := range []string{"trove-ep-customers", "trove-ep-customers-api"} {
+		for _, n := range []string{"trove-ep-customers", "trove-api-ep-customers"} {
 			s := find(docs, "Service", n)
 			if at(s, "spec", "ports", "0", "port") != 8443 || str(s, "spec", "ports", "0", "name") != "ep-customers" {
 				t.Errorf("Service %s ports = %v", n, at(s, "spec", "ports"))
@@ -308,6 +308,47 @@ func edgeRules(ing any) map[string]string {
 }
 
 func TestRolesEdge(t *testing.T) {
+	t.Run("R-HA-062 Q-HA-90 a pool with routed false renders without its route; the route follows when the key goes", func(t *testing.T) {
+		sets := []string{"ingress.enabled=true", "ingress.backendTLS.caSecret=trove-tls", "packages.pools[0].name=npm", "packages.pools[0].paths={/api/npm}"}
+		_, docs := render(t, required(), append(sets, "packages.pools[0].routed=false")...)
+		if find(docs, "Deployment", "trove-packages-npm") == nil {
+			t.Error("the pool Deployment is not rendered with routed: false")
+		}
+		if got := edgeRules(find(docs, "Ingress", "trove")); got["/api/npm"] != "" || len(got) != 6 {
+			t.Errorf("rules with routed: false = %v, want the six fixed rules", got)
+		}
+		_, docs = render(t, required(), sets...)
+		if got := edgeRules(find(docs, "Ingress", "trove")); got["/api/npm"] != "trove-packages-npm" {
+			t.Errorf("rules without routed = %v, want /api/npm to trove-packages-npm", got)
+		}
+	})
+
+	t.Run("R-EP-008 an endpoint named cust over both roles and an endpoint named cust-api name different Services", func(t *testing.T) {
+		_, docs := render(t, required(),
+			"endpoints.cust.port=8443", "endpoints.cust.baseUrl=https://a.example.com", "endpoints.cust.surface={packages,api}",
+			"endpoints.cust-api.port=8444", "endpoints.cust-api.baseUrl=https://b.example.com", "endpoints.cust-api.surface={packages}")
+		seen := map[string]bool{}
+		for _, s := range ofKind(docs, "Service") {
+			n := str(s, "metadata", "name")
+			if seen[n] {
+				t.Errorf("two Services are named %s", n)
+			}
+			seen[n] = true
+		}
+		for n, want := range map[string][]string{
+			"trove-ep-cust": {"trove-packages"}, "trove-api-ep-cust": {"trove-api"}, "trove-ep-cust-api": {"trove-packages"},
+		} {
+			s := find(docs, "Service", n)
+			if s == nil {
+				t.Errorf("Service %s not rendered", n)
+				continue
+			}
+			if got := podsSelectedBy(docs, at(s, "spec", "selector")); !equalStrings(got, want) {
+				t.Errorf("Service %s selects %v, want %v", n, got, want)
+			}
+		}
+	})
+
 	t.Run("R-HA-037 each host is split by the six fixed Prefix rules between the role Services", func(t *testing.T) {
 		_, docs := render(t, required(), "ingress.enabled=true", "ingress.backendTLS.caSecret=trove-tls", "ingress.hosts={trove.example.com,trove.internal.example.com}")
 		ing := find(docs, "Ingress", "trove")
@@ -361,7 +402,7 @@ func TestRolesEdge(t *testing.T) {
 		_, docs := render(t, rolesSet())
 		got := edgeRules(find(docs, "Ingress", "trove-ep-customers"))
 		want := map[string]string{
-			"/api/v1": "trove-ep-customers-api", "/": "trove-ep-customers-api",
+			"/api/v1": "trove-api-ep-customers", "/": "trove-api-ep-customers",
 			"/api": "trove-ep-customers", "/files": "trove-ep-customers", "/v2": "trove-ep-customers", "/.well-known": "trove-ep-customers",
 		}
 		if len(got) != len(want) {
@@ -387,7 +428,7 @@ func TestRolesEdge(t *testing.T) {
 		if got := podsSelectedBy(docs, at(find(docs, "Service", "trove-ep-c"), "spec", "selector")); !equalStrings(got, []string{"trove-api"}) {
 			t.Errorf("an api-only endpoint is served by %v, want trove-api", got)
 		}
-		if find(docs, "Service", "trove-ep-c-api") != nil {
+		if find(docs, "Service", "trove-api-ep-c") != nil {
 			t.Error("a second Service is rendered for a surface within one role")
 		}
 	})
@@ -529,6 +570,10 @@ func TestRolesValidation(t *testing.T) {
 		{"the upload of the UI larger than the api spool", pools("config.ui.deploy.max_upload_bytes=9663676416"), []string{"config.ui.deploy.max_upload_bytes", "api.spool.sizeLimit"}},
 		{"a UI upload limit of 0 falls back to the upload limit, larger than the api spool", pools("config.ui.deploy.max_upload_bytes=0", "spool.sizeLimit=20Gi", "api.spool.sizeLimit=5Gi"), []string{"config.storage.upload.max_size", "api.spool.sizeLimit"}},
 		{"networkPolicy egress", pools("networkPolicy.egress.enabled=true"), []string{"egress"}},
+		{"worker pools that claim every queue", pools("worker.pools[0].name=a", "worker.pools[0].queues={default,maintenance,index}", "worker.pools[1].name=b", "worker.pools[1].queues={delivery,mirror,vuln}"), []string{"worker.pools", "every queue", "main worker"}},
+		{"a worker pool with no replica", pools("highAvailability.enforce=false", "worker.pools[0].name=a", "worker.pools[0].queues={vuln}", "worker.pools[0].replicaCount=0"), []string{"worker.pools[a].replicaCount", "claimed by nobody"}},
+		{"a default surface without a family of the role packages and no endpoint served by it", pools("endpoints.default.surface={api,ui}"), []string{"endpoints.default.surface", "role packages"}},
+		{"a default surface without a family of the role api and no endpoint served by it", pools("endpoints.default.surface={packages}"), []string{"endpoints.default.surface", "role api"}},
 	} {
 		t.Run("R-HA-029 R-HA-062 "+tc.name, func(t *testing.T) { renderFails(t, required(), tc.sets, tc.want...) })
 	}
@@ -536,6 +581,12 @@ func TestRolesValidation(t *testing.T) {
 	t.Run("R-HA-029 a worker pool below two replicas renders without highAvailability.enforce, and an autoscaler counts by its minimum", func(t *testing.T) {
 		render(t, required(), "highAvailability.enforce=false", "worker.pools[0].name=a", "worker.pools[0].queues={vuln}", "worker.pools[0].replicaCount=1")
 		render(t, required(), "api.autoscaling.enabled=true", "api.autoscaling.minReplicas=2", "api.replicaCount=1")
+	})
+
+	t.Run("R-HA-062 a default surface that leaves a role to a further endpoint, and a worker pool kept by its autoscaler, render", func(t *testing.T) {
+		render(t, required(), "endpoints.default.surface={api,ui}", "endpoints.c.port=8443", "endpoints.c.baseUrl=https://p.example.com", "endpoints.c.surface={packages}")
+		render(t, required(), "worker.pools[0].name=a", "worker.pools[0].queues={vuln}", "worker.pools[0].replicaCount=0",
+			"worker.pools[0].autoscaling.enabled=true", "worker.pools[0].autoscaling.minReplicas=2", "worker.pools[0].autoscaling.targetCPUUtilizationPercentage=70")
 	})
 
 	t.Run("R-HA-029 the UI upload limit is checked against the api spool, the package upload limit against the packages spool", func(t *testing.T) {
@@ -594,8 +645,20 @@ func TestRolesBridge(t *testing.T) {
 		if got := strings.Join(containerArgs(pod), " "); got != "serve --role web" || str(envByName(pod)["TROVE_POOL_NAME"], "value") != "ep-customers" {
 			t.Errorf("pool args = %q, TROVE_POOL_NAME = %v", got, envByName(pod)["TROVE_POOL_NAME"])
 		}
-		if find(docs, "Deployment", "trove-packages-ep-customers") != nil || find(docs, "Deployment", "trove-api-ep-customers") != nil {
-			t.Error("endpoint pools of the roles are rendered next to the web pool")
+		// the pool of the role is rendered beside it, so step 2 switches the Service onto pods that are ready since step 1;
+		// no Service selects it yet (R-HA-064, Q-HA-90)
+		if find(docs, "Deployment", "trove-packages-ep-customers") == nil {
+			t.Error("the endpoint pool of the role packages is not rendered next to the web pool")
+		}
+		for _, s := range ofKind(docs, "Service") {
+			if str(s, "metadata", "name") == "trove-ops" {
+				continue
+			}
+			for _, n := range podsSelectedBy(docs, at(s, "spec", "selector")) {
+				if n == "trove-packages-ep-customers" || n == "trove-api-ep-customers" {
+					t.Errorf("Service %s selects the pool %s during the bridge", str(s, "metadata", "name"), n)
+				}
+			}
 		}
 		if got := podsSelectedBy(docs, at(find(docs, "Service", "trove-ep-customers"), "spec", "selector")); !equalStrings(got, []string{"trove-web-ep-customers"}) {
 			t.Errorf("Service trove-ep-customers selects the pods of %v", got)

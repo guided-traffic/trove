@@ -19,7 +19,7 @@ of being silently ignored.
 | role Services `<fullname>-api` and `<fullname>-packages`, pool Services, ops Service `<fullname>-ops`, `sessionAffinity: None` (R-HA-037) | ServiceMonitor, and every alert of the PrometheusRule but the three of the vulnerability scanning (R-HA-045, see [The PrometheusRule](#the-prometheusrule)) |
 | PodDisruptionBudget and HorizontalPodAutoscaler per Deployment, topology spread with `nodeTaintsPolicy: Honor` (R-HA-032) | |
 | one NetworkPolicy per Deployment and the migration Job, ingress only (R-HA-042, ADR-154) | |
-| PrometheusRule with the three alerts of the vulnerability scanning (R-HA-045, R-VULN-024), `metrics.prometheusRule.*` | |
+| PrometheusRule with the three alerts of the vulnerability scanning and `TroveBridgeLeftOn` (R-HA-045, R-VULN-024, Q-HA-92), `metrics.prometheusRule.*` | |
 | migration Job as `pre-install,pre-upgrade` hook, with hook ConfigMap and ServiceAccount (R-HA-019) | backup CronJob, restore Job, post-restore Job (R-HA-060) |
 | configuration file `trove.yaml`, Secret wiring including the login secrets `secrets.oidc` and `secrets.breakGlass`, downward-API variables (R-HA-030) | `secrets.backupTarget`, `trustedCA`, `bootstrap` |
 | restricted-PSS security contexts, probes, spool and `/tmp` volumes (R-HA-033 to R-HA-035, R-HA-061) | `initContainers`, `sidecars`, `lifecycle`, Service types beyond the three in the schema |
@@ -48,13 +48,13 @@ name, labels or selector.
 | Object | Rendered | Spec |
 |---|---|---|
 | Deployments | `<fullname>-api`, `<fullname>-packages`, `<fullname>-worker`; path pools `<fullname>-<role>-<pool>`; worker pools `<fullname>-worker-<pool>`; endpoint pools `<fullname>-packages-ep-<name>` and `<fullname>-api-ep-<name>` (one per role the surface holds) | R-HA-002, R-HA-062, R-EP-008 |
-| Services | `<fullname>-api` and `<fullname>-packages` on 8080; one per path pool; `<fullname>-ops`; per further endpoint `<fullname>-ep-<name>` and, for a surface of both roles, `<fullname>-ep-<name>-api`; worker pods have none | R-HA-002, R-HA-028, Q-EP-71 |
+| Services | `<fullname>-api` and `<fullname>-packages` on 8080; one per path pool; `<fullname>-ops`; per further endpoint `<fullname>-ep-<name>` and, for a surface of both roles, `<fullname>-api-ep-<name>`; worker pods have none | R-HA-002, R-HA-028, Q-EP-71 |
 | Edge | per host the `Prefix` rules `/` and `/api/v1` to `api`, `/api`, `/files`, `/v2`, `/.well-known` to `packages`, and the paths of the path pools before them ([_edge.tpl](../../deploy/helm/trove/templates/_edge.tpl), `trove.edgeRules`); a further endpoint over one role is routed whole, one over both by the rows of its families | R-HA-037, Q-HA-71 |
 | PDB, HPA | one per Deployment; the HPA (`autoscaling/v2`, CPU and memory targets, `metrics`, `behavior`) replaces `spec.replicas` | R-HA-032 |
 | NetworkPolicy | one per Deployment, named as it, a rule per port its pods open; none for egress | R-HA-042, Q-HA-76 |
 | Login secrets | `secrets.oidc[]` and `secrets.breakGlass` in `api` pods only (main, pools, endpoint pools) and the bridge's `web` pods | R-HA-030, Q-HA-79 |
 | Environment | `TROVE_POOL_NAME` on every pool, `TROVE_JOBS_QUEUES` (a JSON list) on a worker pool, `TROVE_JOBS_EXCLUDE_QUEUES` on the main worker beside pools; the two preflight counts on the migration Job | R-HA-030, R-HA-016, Q-HA-82 |
-| Upgrade bridge | `web.enabled: true` also renders `<fullname>-web`, the Service `<fullname>` and the edge `/` for the first of two steps; a `lookup` guard refuses the second step while `api` or `packages` is not ready | R-HA-064, Q-HA-73 |
+| Upgrade bridge | `web.enabled: true` also renders `<fullname>-web`, the Service `<fullname>` and the edge `/` for the first of two steps; the endpoint pools of the roles render beside the web pools; a `lookup` guard refuses the second step while a serving Deployment of the target shape (api, packages, path pools, endpoint pools) is not ready; `TroveBridgeLeftOn` reports a bridge left on | R-HA-064, Q-HA-73, Q-HA-90, Q-HA-92 |
 
 A **pool** is the role's values with the entry's keys on top, key by key (`trove.poolValues`, so `false` and `0` override, and
 `autoscaling` is inherited, Q-HA-84). A path pool opens the ports of the endpoints without a pool, like the main Deployment, but
@@ -66,6 +66,8 @@ Deployment, serving roles and worker apart, and passes `TROVE_DATABASE_PREFLIGHT
 `..._WORKER_REPLICAS` to the migration Job; `NOTES.txt` prints the resulting `max_connections` (231 with the defaults, 311 while the
 bridge runs). The key `expected_serving_replicas` is the binary's (WP6a.1); until it lands, `trove admin config validate` over
 the rendered environment names it as unknown.
+
+A path pool takes `routed: false` to render without its route, the first of two applies that add a pool (Q-HA-90). With an autoscaler a Deployment renders the live `spec.replicas` read through `lookup`, so switching the autoscaler on keeps the replicas (Q-HA-91). A provider of `config.auth.oidc.providers` that has a client secret and no entry in `secrets.oidc` fails the render (Q-HA-93).
 
 The **guard** of the bridge ([_validate_roles.tpl](../../deploy/helm/trove/templates/_validate_roles.tpl)) reads Deployments with
 `lookup`, which returns nothing under `helm template` and in these tests. The chart test checks that the rendering does not
@@ -346,7 +348,7 @@ keys, and the keys `default` may not set (`port`, `baseUrl`, `tls`, `pool`, `ing
 | Per further endpoint | Object | Notes |
 |---|---|---|
 | `port`, `baseUrl`, … | `server.endpoints.<name>` in `trove.yaml` | `listen: ":<port>"`; `pool: ep-<name>` when `pool.enabled`; keys that are unset render their defaults (a further endpoint: `surface: [packages]`, `auth` bound SAT only, `exposure: rules`, `cache_fill: false`, `rate_limit_class: external`, `replica_header: never`, `max_in_flight: 1024`) |
-| | Service `<fullname>-ep-<name>` and, for a surface over both roles, `<fullname>-ep-<name>-api` | port `ep-<name>` = `port` (target port numeric), `appProtocol: https` under `tls.enabled`, `sessionAffinity: None`; the first selects the pods of the role of the surface's `packages` and `files` families (`api` when it holds neither), the second the `api` pods, each the main Deployment or the pool; `service.type`, `annotations`, `loadBalancerSourceRanges` (Q-EP-71, `trove.surfaceRoles`) |
+| | Service `<fullname>-ep-<name>` and, for a surface over both roles, `<fullname>-api-ep-<name>` | port `ep-<name>` = `port` (target port numeric), `appProtocol: https` under `tls.enabled`, `sessionAffinity: None`; the first selects the pods of the role of the surface's `packages` and `files` families (`api` when it holds neither), the second the `api` pods, each the main Deployment or the pool; `service.type`, `annotations`, `loadBalancerSourceRanges` (Q-EP-71, `trove.surfaceRoles`) |
 | `pool.enabled` | Deployment, PodDisruptionBudget, HorizontalPodAutoscaler `<fullname>-packages-ep-<name>` and, with `api` families, `<fullname>-api-ep-<name>` | `serve --role packages` / `--role api`, `TROVE_POOL_NAME=ep-<name>`, label `trove/pool: ep-<name>`, the role's values with the keys of `pool` on top (merged key by key, so `false` and `0` do override); only these Deployments open the port, the main pods do not (Q-EP-70). In the bridge: `<fullname>-web-ep-<name>` with `--role web` |
 | `ingress.enabled` | Ingress `<fullname>-ep-<name>` | `className`, per host (the host of `baseUrl`, `hosts`, then `wildcardHost`) `/` to the one Service when the surface lies within one role, else the rows of R-HA-037's table whose families it holds (`/api/v1` and `/` to the `-api` Service), all `Prefix`, backend by port number, `ingress.tls` as given; backend-over-TLS annotations from `ingress.backendTLS`, any key of the endpoint's own `ingress.backendTLS` winning; the HAProxy verified name is the endpoint Service's `<name>.<ns>.svc`, which the endpoint's certificate must cover |
 | `networkPolicy.enabled` (global) | a rule in the policy of every Deployment that opens the port | its port from `networkPolicy.from` (empty = anywhere); an endpoint pool's policy holds that rule and 8081, no 8080 (Q-HA-76) |
@@ -445,8 +447,8 @@ tests in `chart_test.go` assert both, row by row.
 
 `metrics.prometheusRule.enabled` renders one PrometheusRule `<fullname>`, group `<fullname>`: every alert of
 [_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl) except `disabledAlerts`, then `extraRules`, with `labels` on the object. Only
-the three alerts of the vulnerability scanning are written (R-VULN-024): `TroveVulnerabilityDataStale`,
-`TroveVulnerabilitySyncFailing` and `TroveVulnerabilityClaimedNameMalicious`. The other rows of R-HA-045's table are not implemented
+the three alerts of the vulnerability scanning (R-VULN-024) and `TroveBridgeLeftOn` (a `web` replica registered for 24 hours, Q-HA-92) are written: `TroveVulnerabilityDataStale`,
+`TroveVulnerabilitySyncFailing`, `TroveVulnerabilityClaimedNameMalicious` and `TroveBridgeLeftOn`. The other rows of R-HA-045's table are not implemented
 (the list is in the spec's status paragraph of R-HA-045), and neither is the ServiceMonitor with its `role` and `pool` relabelings: the
 scrape is the operator's.
 

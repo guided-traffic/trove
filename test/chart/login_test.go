@@ -194,10 +194,17 @@ func TestLoginSecrets(t *testing.T) {
 	})
 
 	t.Run("R-HA-030 without secrets.oidc no client secret is rendered", func(t *testing.T) {
-		_, docs := render(t, required(), loginSets()...)
+		_, docs := render(t, required(), loginSets("config.auth.oidc.providers.corp.client_auth_method=none")...)
 		if at(configOf(t, docs), "auth", "oidc", "providers", "corp", "client_secret_file") != nil {
 			t.Error("client_secret_file rendered without secrets.oidc")
 		}
+	})
+
+	t.Run("R-HA-030 a provider with a client secret and no entry in secrets.oidc is refused, whatever the global extra mounts hold", func(t *testing.T) {
+		renderFails(t, required(), loginSets(), "config.auth.oidc.providers.corp", "client_secret_basic", "secrets.oidc")
+		renderFails(t, required(), loginSets("config.auth.oidc.providers.corp.client_auth_method=client_secret_post",
+			"extraEnv[0].name=TROVE_CORP", "extraEnv[0].value=x"), "config.auth.oidc.providers.corp", "client_secret_post", "extraEnv")
+		render(t, required(), loginSets("secrets.oidc[0].providerId=corp", "secrets.oidc[0].existingSecret=x")...)
 	})
 
 	t.Run("R-OPS-028 the rendered login configuration passes the binary", func(t *testing.T) {

@@ -263,6 +263,19 @@ role serves, a pool is routing and scheduling only.
   pools like any other Deployment. A pool's pods carry `trove/pool: <name>`, which keeps its selectors apart from the main
   Deployment's (R-HA-028) and becomes the target label `pool` of its series (R-HA-045). The names of path and worker pools
   match `^[a-z][a-z0-9-]{0,19}$` and may not start with `ep-`.
+- **Adding a pool without a gap (Q-HA-90).** A path pool's route is rendered in the same apply that creates its Deployment, so
+  the prefix would answer `503` until the pods are ready. A path pool therefore takes the key `routed` (default `true`): with
+  `routed: false` the pool's Deployment, Service, budget and policy render and its prefix stays on `<fullname>-<role>`. The
+  addition takes two applies: the pool with `routed: false`, then, once its pods are ready, without the key. The same
+  holds for a pool whose `paths` change. An endpoint pool has no such key: enabling `endpoints.<name>.pool` on a running
+  endpoint repoints that endpoint's Service in the apply that creates the pods, so the endpoint answers `503` for the start
+  time of the pool's pods; a new endpoint has no earlier traffic and is not affected.
+- **Refused combinations.** The chart refuses to render: worker pools that together claim every queue (the main worker's
+  exclude list would leave it none, and the binary refuses to start, [architecture.md](architecture.md) R-ARCH-016); a worker
+  pool with no replica (`replicaCount: 0`, or an autoscaler whose `minReplicas` is below 1), whose queues nobody would claim
+  because the main worker excludes them; and an `endpoints.default.surface` that holds no family of a role (`api`, `ci_exchange`,
+  `ui` for `api`; `packages`, `files` for `packages`) while no further endpoint is served by that role, so that the role's
+  Deployments would serve nothing.
 
 ```yaml
 api:
@@ -2315,13 +2328,15 @@ value `web.enabled` (Q-ARCH-295, Q-HA-73).
   - `<fullname>-web` with `--role web` from the `web` values, which keep every key of the releases before the cut, its
     disruption budget, autoscaler and ingress policy, and the endpoint pools of the old shape (`<fullname>-web-ep-<name>`,
     `--role web`, `TROVE_POOL_NAME=ep-<name>`);
+  - the endpoint pools of the target shape (`<fullname>-packages-ep-<name>`, `<fullname>-api-ep-<name>`) beside them, which no
+    Service selects yet, so that step 2 switches the endpoint's Service onto pods that are ready (Q-HA-90);
   - the Service `<fullname>` (port 8080, selecting the `web` pods of the main Deployment);
   - the edge of the old shape: every rendered Ingress and HTTPRoute routes each host whole (`/`, `pathType: Prefix`) to
     `<fullname>`, and each further endpoint's Service selects the `web` pods that served it before (the main `web`
     Deployment or `<fullname>-web-ep-<name>`).
 
-  The Deployments of `api`, `packages` and `worker`, their pools and their Services run beside it; `api` and `packages`
-  receive no edge traffic. `NOTES.txt` states that the cut is not complete and
+  The Deployments of `api`, `packages` and `worker`, their path pools and endpoint pools, and their Services run beside it;
+  `api` and `packages` receive no edge traffic, so their share of the fetch budget is unused during step 1 (below). `NOTES.txt` states that the cut is not complete and
   names the second step.
 - **Step 1.** `helm upgrade` with `--set web.enabled=true` and the values otherwise unchanged: `<fullname>-web` rolls to the
   new release by R-HA-020 with no gap, because the edge keeps its Service, and the new Deployments become ready meanwhile.
@@ -2331,14 +2346,23 @@ value `web.enabled` (Q-ARCH-295, Q-HA-73).
   Services whose pods have been ready since step 1, and Helm deletes `<fullname>-web`, its endpoint pools and the Service
   `<fullname>`; their pods drain by R-HA-011, so a request the edge still sends them is served.
 - **Guard.** Where the chart can read the cluster (`helm upgrade`, `helm install --dry-run=server`; Helm's `lookup`), it
-  refuses to render with `web.enabled: false` while the release's namespace holds a Deployment `<fullname>-web` and
-  `<fullname>-api` or `<fullname>-packages` does not exist or has fewer ready replicas than its `spec.replicas`; the message
-  names the two steps. Under `helm template` and other renderers without cluster access the guard has nothing to read, and
+  refuses to render with `web.enabled: false` while the release's namespace holds a Deployment `<fullname>-web` and a serving
+  Deployment of the target shape (`<fullname>-api`, `<fullname>-packages`, their path pools and their endpoint pools) does
+  not exist or has fewer ready replicas than its `spec.replicas`; the message names the Deployment and the two steps. Under `helm template` and other renderers without cluster access the guard has nothing to read, and
   the release notes carry the two steps.
 - **Mixed versions.** During step 1 the replicas of the release before the cut (role `web`) and the new release (roles
   `web`, `api`, `packages`, `worker`) run side by side, and R-HA-020's rules hold unchanged: the registry and the status
-  screen show the role `web` for both (R-OPS-003, R-UI-038), and an older worker does not claim the queue `vuln`
-  (R-ARCH-016).
+  screen list the `web` replicas of both releases under the role `web`, and the new `api` and `packages` replicas as new rows
+  with the roles `["api"]` and `["packages"]` (R-OPS-003, R-UI-038); the `web` replicas of the releases before the cut do not
+  list them. An older worker does not claim the queue `vuln` (R-ARCH-016).
+- **Fetch share during step 1.** The fetch share of a remote repository (R-REPO-040) counts the live replicas of `packages`,
+  `web` and `all`. During step 1 it therefore counts the `packages` pods of the main Deployment, which receive no edge traffic,
+  and the `packages` pods of endpoint pools, which fill nothing when the endpoint has `cacheFill: false`. Each pod that serves
+  holds fewer slots than it would without them: the budget is never exceeded, and the throughput of cache fills is lower until
+  step 2.
+- **Left on.** The guard acts on step 2 only. An installation that stays at step 1 keeps every host on the `web` pods, which
+  hold the login secrets ([H-518](../security/roles-and-trust-boundaries.md#h-518--the-bridge-and-the-development-role-hold-both-halves-of-the-cut));
+  the alert `TroveBridgeLeftOn` (Q-HA-92) reports a `web` replica registered for 24 hours.
 - **The way back** is a rollback of a release (R-ARCH-025) and is not covered by the zero-downtime promise: rolling back
   from step 2 recreates `<fullname>-web` while the edge already points at `<fullname>`, so the host answers `503` for the
   start time of the restored pods. Rolling back step 1 is a rollback of `<fullname>-web` alone and has no gap.
@@ -3075,7 +3099,7 @@ does not contain `trove`, overridable by `fullnameOverride`):
 | HTTPRoute | `<fullname>`: the same path rules | `gateway.enabled` |
 | Gateway | `<fullname>-gateway` | `gateway.enabled` and `gateway.create.enabled` (P1, R-HA-053) |
 | NetworkPolicy | one per Deployment, named as the Deployment (`<fullname>-api`, `<fullname>-packages`, `<fullname>-worker`, each pool, each endpoint pool, `<fullname>-web` in the bridge), and `<fullname>-migrate`, `<fullname>-restore`, `<fullname>-backup`; ingress rules only, each with its port (R-HA-042) | `networkPolicy.enabled` |
-| Service, Ingress, HTTPRoute | `<fullname>-ep-<name>` per further endpoint, and `<fullname>-ep-<name>-api` when its surface holds families of both roles: its Services and port, its own Ingress or HTTPRoute with its class, hosts (a wildcard host included), TLS entries and the path rules of its surface ([endpoints.md](endpoints.md) R-EP-008, Q-EP-71) | per entry of `endpoints`; the Ingress with its `ingress.enabled`, the HTTPRoute with its `gateway.enabled` |
+| Service, Ingress, HTTPRoute | `<fullname>-ep-<name>` per further endpoint, and `<fullname>-api-ep-<name>` when its surface holds families of both roles: its Services and port, its own Ingress or HTTPRoute with its class, hosts (a wildcard host included), TLS entries and the path rules of its surface ([endpoints.md](endpoints.md) R-EP-008, Q-EP-71) | per entry of `endpoints`; the Ingress with its `ingress.enabled`, the HTTPRoute with its `gateway.enabled` |
 | Deployment, PodDisruptionBudget, HorizontalPodAutoscaler | `<fullname>-packages-ep-<name>` and `<fullname>-api-ep-<name>`, the optional pool of an endpoint, one per role its surface holds ([endpoints.md](endpoints.md) R-EP-008, Q-EP-70) | `endpoints.<name>.pool.enabled` |
 | ServiceMonitor, PrometheusRule | `<fullname>` | `metrics.serviceMonitor.enabled`, `metrics.prometheusRule.enabled` |
 | anything | from `extraObjects` | listed |
@@ -3139,8 +3163,10 @@ The chart MUST refuse to render, naming the offending value, before anything is 
 | `restore.enabled` without `restore.backupId` | `restore.backupId` |
 | `restore.enabled` with a replica count above 0 or autoscaling enabled for any role or pool | `restore.enabled` and the value |
 | Two pools of a role with the same name, two pools with the same path prefix or queue, a pool path outside the families of its role or equal to one of the role's own prefixes of R-HA-037, a worker pool queue that does not exist, or a pool whose name starts with `ep-` (R-HA-062) | the pools |
-| `web.enabled: false` while the namespace holds `<fullname>-web` and `<fullname>-api` or `<fullname>-packages` is missing or not fully ready, read through `lookup` where the chart can read the cluster (R-HA-064) | `web.enabled` and the two steps |
-| An endpoint whose `port` equals 8080, 8081 or another endpoint's port; an invalid endpoint name or one for which `<fullname>-ep-<name>-api` (a surface with families of both roles) or `<fullname>-packages-ep-<name>` (a pool) exceeds 63 characters; a missing `baseUrl`; a host in two endpoints; `extraSecrets` or `clientCaSecret` with `tls.enabled: false`; an endpoint pool below two replicas with `highAvailability.enforce` ([endpoints.md](endpoints.md) R-EP-008) | the endpoint and the value |
+| `web.enabled: false` while the namespace holds `<fullname>-web` and a serving Deployment of the target shape (api, packages, path pools, endpoint pools) is missing or not fully ready, read through `lookup` where the chart can read the cluster (R-HA-064) | `web.enabled` and the two steps |
+| Worker pools that claim every queue; a worker pool without a replica; an `endpoints.default.surface` without a family of a role that no further endpoint is served by (R-HA-062) | the pool or the surface |
+| A provider of `config.auth.oidc.providers` with a `client_auth_method` other than `none` and no entry in `secrets.oidc` (R-HA-030, Q-HA-93) | the provider |
+| An endpoint whose `port` equals 8080, 8081 or another endpoint's port; an invalid endpoint name or one for which `<fullname>-api-ep-<name>` (a surface with families of both roles) or `<fullname>-packages-ep-<name>` (a pool) exceeds 63 characters; a missing `baseUrl`; a host in two endpoints; `extraSecrets` or `clientCaSecret` with `tls.enabled: false`; an endpoint pool below two replicas with `highAvailability.enforce` ([endpoints.md](endpoints.md) R-EP-008) | the endpoint and the value |
 | `gateway.enabled` without `gateway.parentRefs` and without `gateway.create.enabled` | `gateway.parentRefs` |
 | `gateway.enabled` and `.Capabilities.APIVersions` lacks `gateway.networking.k8s.io/v1/HTTPRoute` | the missing API |
 | `metrics.serviceMonitor.enabled` (or `prometheusRule`) and the `monitoring.coreos.com/v1` API missing | the missing API |
@@ -4298,7 +4324,7 @@ The HTTPRoute of R-HA-038 reads the same table and is not rendered yet (Q-HA-81)
   then the route does not exist, and its path answers `404` on either role.
 - **Further endpoints.** Each further endpoint has its own port, its own Ingress or HTTPRoute with its own class, hosts,
   optional wildcard host and TLS Secret, and Services by role: `<fullname>-ep-<name>` and, when its surface holds families
-  of both roles, `<fullname>-ep-<name>-api` ([endpoints.md](endpoints.md) R-EP-008, Q-EP-71). Its rules are the rows of the
+  of both roles, `<fullname>-api-ep-<name>` ([endpoints.md](endpoints.md) R-EP-008, Q-EP-71). Its rules are the rows of the
   table above whose families its surface holds, each to the Service of the role that serves it; an endpoint whose surface
   lies within one role is routed whole (`/`) to that Service. `ui` is never on a further endpoint.
 - There is no second route that bypasses anything, because no internal component sits behind the replicas. The operations
@@ -6893,6 +6919,76 @@ as if they pass.
 The development agent would revisit this if a third serving role appears.
 
 **Applied in the spec:** none; [docs/developer/e2e.md](../developer/e2e.md).
+
+### Q-HA-90 · How a new pool or a new endpoint pool gets its traffic without a gap
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Helm applies a release in one pass. A path pool's route and an endpoint pool's Service selector are rendered in the same apply that creates the pool's Deployment, so the prefix or the endpoint answers `503` until the new pods are ready. In the bridge of R-HA-064 the same class showed up for the endpoint pools of the roles, which were first created in step 2 by the apply that repoints the endpoint's Service at them.
+
+| Option | For | Against |
+|---|---|---|
+| (a) Render a pool's route only when `lookup` finds its Deployment ready | No new value; the second apply is implicit | `lookup` returns nothing under `helm template`, so GitOps renderers (Argo CD, Flux) would never render the route and the chart tests could not see it |
+| (b) A documented two-step procedure and no chart support | Nothing to build | Nothing prevents the one-step apply; the pool cannot be added without routing it |
+| (c) A key `routed` on a path pool (default `true`): `false` renders the pool without its route; the bridge renders the endpoint pools of the roles beside the web pools; an endpoint pool enabled on a running endpoint stays documented as a short gap (chosen) | Deterministic, the same under every renderer, testable offline; the guard of R-HA-064 can name every serving Deployment of the target shape | One more key; enabling an endpoint pool on a running endpoint is not covered |
+
+**Choice:** (c).
+
+**Rationale:** `lookup` is inert exactly where the answer matters most for GitOps, and a rule that depends on cluster state cannot be reviewed from the rendered output. `routed` moves the decision into values, where the two applies are two commits. An endpoint pool's Service selector, its listeners and the `pool` key of the configuration move together, so a pool that is rendered but not selected would need a second configuration shape; a new endpoint has no earlier traffic, and enabling a pool on a running endpoint is rare enough to document. The development agent would revisit this if an installation reports the gap of an endpoint pool, and add `pool.routed` then.
+
+**Applied in the spec:** R-HA-062 (path pool routing, the refused combinations), R-HA-064 (endpoint pools of the roles in the bridge, the guard over every serving unit), [values.schema.json](../../deploy/helm/trove/values.schema.json) (`routed`).
+
+### Q-HA-91 · The replicas of a Deployment when its autoscaler is switched on
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: with `autoscaling.enabled` the chart leaves `spec.replicas` out so that `helm upgrade` does not reset the autoscaler's choice (R-HA-032). On the upgrade that switches the autoscaler on, the field disappears from the manifest, the API server defaults it to 1 and the Deployment scales down before the autoscaler acts.
+
+| Option | For | Against |
+|---|---|---|
+| (a) Read the live replicas with `lookup` and render them while the autoscaler is on (chosen) | The field keeps the live value, so neither the transition nor later upgrades change it; no value, no step | `lookup` returns nothing under `helm template` and on the first install; the field is then left out as before, and a GitOps renderer applies its own server-side merge |
+| (b) Document a step: raise `replicaCount` to the expected load, then enable the autoscaler | Nothing to build | A step an operator forgets; the failure is a scale-down in production |
+
+**Choice:** (a).
+
+**Rationale:** The only moment the field matters is the transition, and the cluster holds the number the transition has to keep. Where `lookup` has nothing to read the chart renders what it rendered before. The development agent would revisit this if the field has to be set by a renderer without cluster access.
+
+**Applied in the spec:** [_deployment.tpl](../../deploy/helm/trove/templates/_deployment.tpl) (`spec.replicas`), R-HA-032.
+
+### Q-HA-92 · How an installation that stays on the bridge is reminded
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the guard of R-HA-064 runs only when `web.enabled` is false. An operator who stops after step 1 keeps every host on the `web` pods, which hold the login secrets ([H-518](../security/roles-and-trust-boundaries.md#h-518--the-bridge-and-the-development-role-hold-both-halves-of-the-cut)); only `NOTES.txt` says so.
+
+| Option | For | Against |
+|---|---|---|
+| (a) A refusal after a time | Enforces the end of the bridge | The chart has no clock; a refusal on a later unrelated upgrade would block it |
+| (b) An alert in the chart's PrometheusRule on `count(trove_build_info{namespace, role="web"}) > 0` for 24 hours, `TroveBridgeLeftOn`, severity warning, disableable like every alert (chosen) | Uses a series the binary already exports, scoped to the release namespace; the reminder reaches whoever watches the alerts | Needs `metrics.prometheusRule.enabled` and a scraping Prometheus; a clock of 24 hours is fixed |
+| (c) Only the text of H-518 | Nothing to build | No signal |
+
+**Choice:** (b).
+
+**Rationale:** The bridge is meant to last for one rollout; 24 hours is longer than any rollout and shorter than an unnoticed week. The development agent would revisit the time if an installation needs a longer step 1, and make it a value then.
+
+**Applied in the spec:** [_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl) (`TroveBridgeLeftOn`), [rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml), R-HA-064, [H-518](../security/roles-and-trust-boundaries.md#h-518--the-bridge-and-the-development-role-hold-both-halves-of-the-cut).
+
+### Q-HA-93 · A provider with a client secret must name its Secret in secrets.oidc
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the login secrets belong to the api pods and, in the bridge, the web pods (R-HA-030). A provider whose `client_auth_method` is not `none` and that has no entry in `secrets.oidc` can get its secret only through the global `extraEnv`, `extraEnvFrom`, `extraVolumes` or `extraVolumeMounts`, which every Deployment receives; the trust split would break silently.
+
+| Option | For | Against |
+|---|---|---|
+| (a) Fail the render, naming the provider (chosen) | The split cannot be broken by omission; the message names the two ways out | A provider whose secret an operator deliberately mounts everywhere is refused too |
+| (b) A warning in `NOTES.txt` | No refusal | A warning does not stop the spread |
+
+**Choice:** (a).
+
+**Rationale:** The chart cannot tell a deliberate global mount from an omission, and the cost of the refusal is one list entry. The development agent would revisit this if per-role extra mounts are added, because the global lists would then no longer reach every Deployment.
+
+**Applied in the spec:** [_validate.tpl](../../deploy/helm/trove/templates/_validate.tpl) (the login secrets), [_secrets.tpl](../../deploy/helm/trove/templates/_secrets.tpl) (the comment on who mounts them), R-HA-030.
 
 ## What this does not cover
 

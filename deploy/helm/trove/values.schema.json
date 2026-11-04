@@ -593,6 +593,10 @@
                 },
                 "minItems": 1,
                 "description": "Path prefixes inside the families of the role (R-HA-062)"
+              },
+              "routed": {
+                "type": "boolean",
+                "description": "false renders the pool without routing its paths, the first step of adding a pool (Q-HA-90)"
               }
             },
             "required": [
@@ -1124,6 +1128,10 @@
                 },
                 "minItems": 1,
                 "description": "Path prefixes inside the families of the role (R-HA-062)"
+              },
+              "routed": {
+                "type": "boolean",
+                "description": "false renders the pool without routing its paths, the first step of adding a pool (Q-HA-90)"
               }
             },
             "required": [

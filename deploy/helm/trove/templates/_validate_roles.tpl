@@ -32,6 +32,9 @@ root context.
 {{- end -}}
 {{- fail (printf "trove: %s must be at least 1; without a replica the edge has no backend for the families of the role %s (R-HA-002)" $minKey $u.role) -}}
 {{- end -}}
+{{- if and (eq $u.kind "pool") (eq $u.role "worker") (lt $min 1) -}}
+{{- fail (printf "trove: %s must be at least 1; with no replica the queues %s of the pool are claimed by nobody, because the main worker does not claim them (R-HA-062)" $minKey (join ", " $u.queues)) -}}
+{{- end -}}
 {{- if and $r.podDisruptionBudget.minAvailable $r.podDisruptionBudget.maxUnavailable -}}
 {{- fail (printf "trove: %s.podDisruptionBudget.minAvailable and %s.podDisruptionBudget.maxUnavailable are mutually exclusive; set one and null the other" $u.key $u.key) -}}
 {{- end -}}
@@ -112,18 +115,22 @@ than 64 requests cannot serve a handful of clients at once.
 {{- end -}}
 
 {{- /*
-The bridge guard (R-HA-064, Q-HA-73): with web.enabled false, a release whose namespace still holds
-<fullname>-web must see <fullname>-api and <fullname>-packages fully ready before the edge switches to
-them. lookup reads the cluster under helm upgrade and helm install --dry-run=server; under helm
-template it returns nothing and the guard is inert. It validates only and never changes what renders.
+The bridge guard (R-HA-064, Q-HA-73, Q-HA-90): with web.enabled false, a release whose namespace still holds
+<fullname>-web must see every serving Deployment of the target shape fully ready before the edge switches
+to them: the main api and packages Deployments, the path pools and the endpoint pools. lookup reads the
+cluster under helm upgrade and helm install --dry-run=server; under helm template it returns nothing and
+the guard is inert. It validates only and never changes what renders. The guard runs only while web.enabled
+is false; a release that stays at step 1 keeps the web pods (H-518), which the alert TroveBridgeLeftOn reports.
 */ -}}
 {{- if not $v.web.enabled -}}
 {{- $web := lookup "apps/v1" "Deployment" .Release.Namespace (printf "%s-web" $fullname) -}}
 {{- if $web -}}
-{{- range $role := list "api" "packages" -}}
-{{- $d := lookup "apps/v1" "Deployment" $.Release.Namespace (printf "%s-%s" $fullname $role) -}}
+{{- range $u := include "trove.units" . | fromYamlArray -}}
+{{- if ne $u.role "worker" -}}
+{{- $d := lookup "apps/v1" "Deployment" $.Release.Namespace (printf "%s-%s" $fullname $u.name) -}}
 {{- if or (not $d) (lt (int (dig "status" "readyReplicas" 0 $d)) (int (dig "spec" "replicas" 0 $d))) -}}
-{{- fail (printf "trove: web.enabled is false while the namespace holds the Deployment %s-web of the releases before the cut and %s-%s is missing or not fully ready. The cut takes two upgrades: first helm upgrade with --set web.enabled=true and wait until %s-api and %s-packages are ready, then helm upgrade with web.enabled: false (R-HA-064)" $fullname $fullname $role $fullname $fullname) -}}
+{{- fail (printf "trove: web.enabled is false while the namespace holds the Deployment %s-web of the releases before the cut and %s-%s is missing or not fully ready. The cut takes two upgrades: first helm upgrade with --set web.enabled=true and wait until every Deployment of the target shape (api, packages, their path pools and endpoint pools) is ready, then helm upgrade with web.enabled: false (R-HA-064)" $fullname $fullname $u.name) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -180,6 +187,30 @@ role, queues. Runs before the Deployments are listed. Argument: the root context
 {{- end -}}
 {{- $_ := set $seenPath $path (printf "%s.pools[%s]" $role $p.name) -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- /* The main worker excludes the queues of the pools and must keep one (internal/config/jobs.go refuses to start otherwise). */ -}}
+{{- if and $seenQueue (eq (len $seenQueue) (len $queues)) -}}
+{{- fail (printf "trove: worker.pools claim every queue (%s), so the main worker's exclude list leaves it none and trove refuses to start; leave at least one queue to the main worker (R-HA-062)" (join ", " $queues)) -}}
+{{- end -}}
+{{- /* A role whose Deployments serve no endpoint: the default endpoint's surface holds no family of it and no further endpoint is served by it (R-EP-008, Q-EP-70). */ -}}
+{{- $dsurface := dig "default" "surface" (list) $v.endpoints -}}
+{{- if $dsurface -}}
+{{- $served := dict -}}
+{{- range $name := include "trove.endpointNames" . | fromYamlArray -}}
+{{- range $sr := include "trove.surfaceRoles" (dict "root" $ "name" $name) | fromYamlArray -}}
+{{- $_ := set $served $sr true -}}
+{{- end -}}
+{{- end -}}
+{{- $families := dict "api" (list "api" "ci_exchange" "ui") "packages" (list "packages" "files") -}}
+{{- range $role := list "api" "packages" -}}
+{{- $has := false -}}
+{{- range $f := get $families $role -}}
+{{- if has $f $dsurface -}}{{- $has = true -}}{{- end -}}
+{{- end -}}
+{{- if and (not $has) (not (hasKey $served $role)) -}}
+{{- fail (printf "trove: endpoints.default.surface (%s) holds no family of the role %s and no further endpoint is served by it, so the %s Deployments would serve nothing; add a family of the role (%s) to endpoints.default.surface or serve a further endpoint from it" (join ", " $dsurface) $role $role (join ", " (get $families $role))) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

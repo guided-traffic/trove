@@ -82,7 +82,7 @@ The values of a pool: the role's values (without its pools and the bridge flag) 
 own keys on top, key by key. Argument: dict "base" <role values> "entry" <pool entry>. Returns YAML.
 */}}
 {{- define "trove.poolValues" -}}
-{{- include "trove.mergeValues" (dict "base" (omit .base "pools" "enabled") "over" (omit .entry "name" "paths" "queues" "enabled")) -}}
+{{- include "trove.mergeValues" (dict "base" (omit .base "pools" "enabled") "over" (omit .entry "name" "paths" "queues" "enabled" "routed")) -}}
 {{- end -}}
 
 {{/* Every Deployment as a YAML list of units. Argument: the root context. */}}
@@ -118,7 +118,11 @@ own keys on top, key by key. Argument: dict "base" <role values> "entry" <pool e
 {{- end -}}
 {{- range $name := include "trove.endpointNames" . | fromYamlArray -}}
 {{- if include "trove.endpointPool" (dict "root" $ "name" $name) -}}
-{{- $roles := ternary (list "web") (include "trove.surfaceRoles" (dict "root" $ "name" $name) | fromYamlArray) $bridge -}}
+{{- /* The bridge renders the pools of the roles beside the web pool, so the second step switches onto pods that are ready (R-HA-064); no Service selects them before. */ -}}
+{{- $roles := include "trove.surfaceRoles" (dict "root" $ "name" $name) | fromYamlArray -}}
+{{- if $bridge -}}
+{{- $roles = concat (list "web") $roles -}}
+{{- end -}}
 {{- range $role := $roles -}}
 {{- $units = append $units (dict "name" (printf "%s-ep-%s" $role $name) "role" $role "pool" (printf "ep-%s" $name) "kind" "endpoint" "key" (printf "endpoints.%s.pool" $name) "r" (include "trove.endpointPoolValues" (dict "root" $ "name" $name "role" $role) | fromYaml)) -}}
 {{- end -}}

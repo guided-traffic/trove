@@ -113,3 +113,27 @@ tests:
       - {series: 'trove_vuln_claimed_name_matches{namespace="other",ecosystem="npm",kind="malicious",pod="w1"}', values: '1x5'}
     alert_rule_test:
       - {eval_time: 3m, alertname: TroveVulnerabilityClaimedNameMalicious, exp_alerts: []}
+
+  # --- TroveBridgeLeftOn ---------------------------------------------------------------------------------
+  - name: TroveBridgeLeftOn fires when a web replica stays registered for 24 hours and not for a role of the cut shape
+    interval: 1m
+    input_series:
+      - {series: 'trove_build_info{namespace="default",role="web",pod="web-1"}', values: '1x1600'}
+      - {series: 'trove_build_info{namespace="default",role="api",pod="api-1"}', values: '1x1600'}
+    alert_rule_test:
+      - {eval_time: 1400m, alertname: TroveBridgeLeftOn, exp_alerts: []}
+      - eval_time: 1500m
+        alertname: TroveBridgeLeftOn
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: A web replica of the upgrade bridge has been running for 24 hours.
+              description: web.enabled is still true, so the web pods stay registered, hold the login secrets and answer on every host (R-HA-064, H-518). Finish the cut with a second helm upgrade and web.enabled false, once api, packages and their pools are ready.
+
+  - name: TroveBridgeLeftOn stays quiet after the cut
+    interval: 1m
+    input_series:
+      - {series: 'trove_build_info{namespace="default",role="api",pod="api-1"}', values: '1x1600'}
+      - {series: 'trove_build_info{namespace="other",role="web",pod="web-1"}', values: '1x1600'}
+    alert_rule_test:
+      - {eval_time: 1500m, alertname: TroveBridgeLeftOn, exp_alerts: []}

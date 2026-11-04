@@ -4,7 +4,8 @@ The Secret mounts of a pod (R-HA-030) as a YAML list. Argument: dict "root" . "s
 the keys that are projected and the file name each key gets. Secrets mount read-only with
 defaultMode 0440, with items and without subPath, so a rotated Secret reaches the files.
 Secrets never become environment variables. The login secrets (secrets.oidc, secrets.breakGlass) are
-mounted into web pods only.
+mounted into the pods of role api (the main Deployment, its pools and its endpoint pools) and, in the bridge of
+R-HA-064, into the web pods; never into packages, worker or the migration Job.
 */}}
 {{- define "trove.secretMounts" -}}
 {{- $s := .root.Values.secrets -}}

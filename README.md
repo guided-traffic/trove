@@ -365,14 +365,14 @@ The label sets of the M1 families are not restated per family in this pass; read
 | Pools | `<fullname>-api-<pool>`, `<fullname>-packages-<pool>` (path pools, with a Service of the same name), `<fullname>-worker-<pool>` (label `trove/pool: <pool>`) | yes (`_units.tpl`) |
 | Endpoint pools | `<fullname>-packages-ep-<name>` and `<fullname>-api-ep-<name>`, label `trove/pool: ep-<name>`, for an endpoint with `endpoints.<name>.pool.enabled` (one per role its surface holds) | yes (`_units.tpl`) |
 | Upgrade bridge | `<fullname>-web` (`--role web`) and the Service `<fullname>`, only with `web.enabled` | yes |
-| Endpoint objects | `<fullname>-ep-<name>` (and `<fullname>-ep-<name>-api` for a surface over both roles) for the Services and the Ingress of a further endpoint | yes |
+| Endpoint objects | `<fullname>-ep-<name>` (and `<fullname>-api-ep-<name>` for a surface over both roles) for the Services and the Ingress of a further endpoint | yes |
 | Disruption budgets, autoscalers | one per Deployment, named as the Deployment | yes |
 | Migration hook Job | `<fullname>-migrate` | yes |
 | ConfigMap | `<fullname>-config`, holding `trove.yaml` | yes |
 | Services | `<fullname>-api`, `<fullname>-packages` (client port), `<fullname>-ops` (ops port) | yes |
 | Network policies | one per Deployment, named as it (ingress only, a rule per port), and `<fullname>-migrate` | yes |
 | Edge | per host: `/` and `/api/v1` to `<fullname>-api`; `/api`, `/files`, `/v2`, `/.well-known` to `<fullname>-packages`; the paths of path pools to their Services | yes |
-| PrometheusRule | `<fullname>`, group `<fullname>`, with `metrics.prometheusRule.enabled` (needs the Prometheus operator's CRDs); alerts `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing`, `TroveVulnerabilityClaimedNameMalicious`, every selector scoped to the release namespace | yes (M4b; [prometheusrule.yaml](deploy/helm/trove/templates/prometheusrule.yaml), [_rules.tpl](deploy/helm/trove/templates/_rules.tpl)) |
+| PrometheusRule | `<fullname>`, group `<fullname>`, with `metrics.prometheusRule.enabled` (needs the Prometheus operator's CRDs); alerts `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing`, `TroveVulnerabilityClaimedNameMalicious`, `TroveBridgeLeftOn`, every selector scoped to the release namespace | yes (M4b; [prometheusrule.yaml](deploy/helm/trove/templates/prometheusrule.yaml), [_rules.tpl](deploy/helm/trove/templates/_rules.tpl)) |
 | Backup CronJob, restore Job | `<fullname>-backup`, `<fullname>-restore` | planned (M5) |
 | Bastion chart | `deploy/helm/trove-bastion`, released with the chart `trove` at the same version; its own `<fullname>` (release name, or `<release>-trove-bastion`) | yes (phase 5b) |
 | Bastion workload | `<fullname>` (Deployment, or StatefulSet with `cacheVolume.type: persistent`), `--role bastion`, ports `https` 8443 and `ops` 8081 | yes |
@@ -428,7 +428,7 @@ The label sets of the M1 families are not restated per family in this pass; read
 | Outbound purpose | `vuln_source` | the `kind` label of `trove_outbound_*` and the purpose of the upstream log |
 | Caches | `vuln_source_state` (safety TTL 60 s), `vuln_nuget_page` (the rendered NuGet page, at most four entries, safety TTL 15 min) | per replica; the change area `vuln_data` empties both, `claims` and `repo_config` the page too ([coordination.go](internal/vuln/coordination.go), [audits_pages.go](internal/vuln/store/audits_pages.go)) |
 | NuGet page | `@name` `trove`, at `<feed>/vulnerabilities/trove.json` | the one entry of `<feed>/vulnerabilities/index.json` |
-| Alerts | `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing`, `TroveVulnerabilityClaimedNameMalicious` | the names `metrics.prometheusRule.disabledAlerts` accepts |
+| Alerts | `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing`, `TroveVulnerabilityClaimedNameMalicious`, `TroveBridgeLeftOn` | the names `metrics.prometheusRule.disabledAlerts` accepts |
 | Tables | `vuln_source_state`, `vuln_advisory`, `vuln_affected`, `vuln_pending_evaluation`, `vuln_kev`, `vuln_claimed_match`, `vuln_finding`, `vuln_finding_event`, `vuln_sync_touched` | migrations 00035 to 00039; `vuln_finding` and `vuln_finding_event` are data in an export, the others transient ([tables_vuln.go](internal/meta/postgres/tables_vuln.go)) |
 
 ### Audit event types
@@ -1839,7 +1839,7 @@ api:                                    # the UI, the management API, sign-in, t
   autoscaling: {enabled: false, minReplicas: 2, maxReplicas: 4, targetCPUUtilizationPercentage: 70, targetMemoryUtilizationPercentage: 0, metrics: [], behavior: {}}   # default (behavior: slow scale-down, see values.yaml)
   podDisruptionBudget: {enabled: true, maxUnavailable: 1, minAvailable: null}   # default
   topologySpread: {enabled: true, nodeTaintsPolicy: Honor}     # default; zone ScheduleAnyway, host DoNotSchedule
-  pools: []                             # default; example: [{name: admin, paths: [/api/v1/repositories], replicaCount: 2}]; every key of api may be overridden in an entry
+  pools: []                             # default; example: [{name: admin, paths: [/api/v1/repositories], replicaCount: 2}]; every key of api may be overridden in an entry; routed: false renders the pool without its route, the first of two applies that add a pool, so the prefix is not routed before the pods are ready
 packages:                               # the package protocols and raw files, tokens only
   replicaCount: 3                       # default; ignored when autoscaling.enabled
   terminationGracePeriodSeconds: 120    # default
@@ -1851,7 +1851,7 @@ packages:                               # the package protocols and raw files, t
   autoscaling: {enabled: false, minReplicas: 3, maxReplicas: 8, targetCPUUtilizationPercentage: 70}   # default
   podDisruptionBudget: {enabled: true, maxUnavailable: 1, minAvailable: null}   # default
   topologySpread: {enabled: true, nodeTaintsPolicy: Honor}     # default; zone ScheduleAnyway, host DoNotSchedule
-  pools: []                             # default; example: [{name: npm, paths: [/api/npm], replicaCount: 4}]; paths below /api (not /api/v1), /files, /v2 or /.well-known
+  pools: []                             # default; example: [{name: npm, paths: [/api/npm], replicaCount: 4}]; paths below /api (not /api/v1), /files, /v2 or /.well-known; routed: false as for api.pools
 web:
   enabled: false                        # default; true for the first of the two upgrade steps across the cut (R-HA-064); the keys of the releases before the cut stay as they were
 worker:
@@ -2160,7 +2160,7 @@ commonAnnotations: {}                   # default
 
 ```yaml
 metrics:
-  prometheusRule:                       # R-HA-045; only the alerts of the vulnerability scanning so far
+  prometheusRule:                       # R-HA-045; the alerts of the vulnerability scanning and TroveBridgeLeftOn so far
     enabled: false                      # default; true renders the PrometheusRule <fullname>; needs the Prometheus operator's CRDs
     labels: {}                          # default; example: {release: kube-prometheus-stack}
     disabledAlerts: []                  # default; example: [TroveVulnerabilitySyncFailing]; a name that is no alert of the chart fails the render
@@ -2178,6 +2178,7 @@ config:
 | `TroveVulnerabilityDataStale` | `time() - max by (source, ecosystem) (trove_vuln_source_last_success_timestamp_seconds) > stale_after` for 15m; a source that never synced fires too | warning |
 | `TroveVulnerabilitySyncFailing` | `max by (source, ecosystem) (trove_vuln_source_consecutive_failures) >= 3` | warning |
 | `TroveVulnerabilityClaimedNameMalicious` | `max(trove_vuln_claimed_name_matches{kind="malicious"}) > 0` | critical |
+| `TroveBridgeLeftOn` | `count(trove_build_info{role="web"}) > 0` for 24h: `web.enabled` stayed true after the first step of the upgrade across the cut | warning |
 
 Every selector carries `namespace="<release namespace>"`, so one Prometheus that scrapes several installations does not blend them.
 The chart renders no ServiceMonitor; the scrape is the operator's.
