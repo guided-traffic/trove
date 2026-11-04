@@ -90,23 +90,36 @@ download list both show go1.27.3 as current stable). Angular 22 (npm `@angular/c
 one container image serves UI, management API and package protocols.
 
 **INV-2 · Process model and roles.** One binary and one container image, `trove`, with roles. A
-role is a set of enabled subsystems chosen by configuration, not a separate build. Roles of the
-MVP: `web` (every HTTP request: UI, management API, package protocols, raw files), `worker`
-(background jobs from the job queue: indexing, garbage collection, cleanup, webhook delivery),
-`backup` (the backup and restore commands, run as Kubernetes Job or CronJob) and `bastion` (the
-internet-facing read-only cache instance of [bastion.md](bastion.md), deployed only by the chart
-`trove-bastion`, without PostgreSQL; Q-BAS-22). The configuration
-key `process.role` selects the role of `trove serve`: `web`, `worker`, `bastion` or `all`, with no
-default ([architecture.md](architecture.md) R-ARCH-001); `all` never includes `bastion`, whose
-configuration schema is its own. The Helm chart deploys `web` and `worker` as
-separate Deployments from the start, each with its own replica count and autoscaling, and never
-renders `all`. The combined role `all` exists only for a binary started outside the chart during
-development; the local development profile runs the chart with separate `web` and `worker`
-Deployments ([ha-and-helm.md](ha-and-helm.md) R-HA-001, R-HA-051). A role can be split further
-later (for example a separate deployment for package traffic behind its own Service) without code
-changes. Every replica of a role is identical and interchangeable; there is no primary node.
-Subcommands: `trove serve`, `trove migrate`, `trove backup …`, `trove admin …` (bootstrap and
-recovery). Owner constraint since 2026-10-28.
+role is a set of enabled subsystems and wiring areas chosen by configuration, not a separate build,
+and every role the chart deploys runs as a Deployment of its own (the task areas of
+[ADR-153](../decisions.md#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries)
+and [ADR-155](../decisions.md#adr-155--three-roles-api-packages-and-worker-variants-are-pools), owner, 2026-11-04;
+specified for phase 6a, not built yet). Roles:
+- `api`: the route families `ui`, `api` and `ci_exchange` ([endpoints.md](endpoints.md) R-EP-005): the UI, the
+  management API, the sign-in with its sessions, the OIDC client secrets and the break-glass account, the CI token
+  exchange;
+- `packages`: the route families `packages` and `files`: the package protocols and the raw file transfer, with tokens
+  only and no session evaluation, and the cache fills of client misses;
+- `worker`: the job queue, the leases, the scheduler, the mirror's passes and the advisory sync, split into pools by
+  queue where an installation wants it;
+- `backup` (the backup and restore commands, run as Kubernetes Job or CronJob) and `bastion` (the internet-facing
+  read-only cache instance of [bastion.md](bastion.md), deployed only by the chart `trove-bastion`, without
+  PostgreSQL; Q-BAS-22), both unchanged by the cut.
+
+A variant of a role by path prefix or by queue is a pool of that role, rendered from chart values without code
+([ha-and-helm.md](ha-and-helm.md) R-HA-062). The configuration key `process.role` selects the role of `trove serve`:
+`api`, `packages`, `worker`, `bastion`, `web` or `all`, with no default ([architecture.md](architecture.md)
+R-ARCH-001). `web` is `api` and `packages` in one process: the role of the releases before the cut, kept as the
+bridge of the upgrade across it ([ha-and-helm.md](ha-and-helm.md) R-HA-064) and never a shape of a fresh
+installation. `all` is every role but `bastion` in one process, for a binary started outside the chart during
+development; the chart never renders it, and `bastion` keeps a configuration schema of its own. The Helm chart
+deploys `api`, `packages` and `worker` as separate Deployments, each with its own replica count, autoscaler,
+disruption budget and ingress policy; the local development profile runs the chart the same way
+([ha-and-helm.md](ha-and-helm.md) R-HA-001, R-HA-002, R-HA-051). Where a page says `web` without naming a family,
+the statement applies to the role that serves the family in question, and to both `api` and `packages` where it
+concerns every request (R-ARCH-001). Every replica of a role is identical and interchangeable; there is no primary
+node. Subcommands: `trove serve`, `trove migrate`, `trove backup …`, `trove admin …` (bootstrap and recovery).
+Owner constraint since 2026-10-28; the roles of the cut since 2026-11-04.
 
 **INV-3 · State.** PostgreSQL is the system of record: repository configuration, package and file
 metadata, users, groups, tokens, permissions, audit events, the durable job queue, the change log

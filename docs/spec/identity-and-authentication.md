@@ -1177,7 +1177,7 @@ Acceptance criteria:
 Priority: **MVP** · Covers: TOK-041, IAM-010
 
 The `trove admin` subcommands (INV-2) give an operator who can run commands in a replica pod
-(`kubectl exec deploy/trove-web`, [ha-and-helm.md](ha-and-helm.md) R-HA-030) the bootstrap and
+(`kubectl exec deploy/trove-api`, `deploy/trove-web` before phase 6a; [ha-and-helm.md](ha-and-helm.md) R-HA-030) the bootstrap and
 recovery operations. They use that pod's configuration and open their own short-lived database
 connection; someone with that access already holds the database credentials. They load neither
 the OIDC providers nor the break-glass password, so they also run in `worker` pods, which have
@@ -1219,8 +1219,8 @@ Acceptance criteria:
   `POST /api/v1/repositories`:
 
   ```shell
-  kubectl exec deploy/trove-web -- trove admin service-account create bootstrap --admin
-  T=$(kubectl exec deploy/trove-web -- trove admin token create --service-account bootstrap)
+  kubectl exec deploy/trove-api -- trove admin service-account create bootstrap --admin
+  T=$(kubectl exec deploy/trove-api -- trove admin token create --service-account bootstrap)
   ```
 
   After 15 minutes `$T` gets 401.

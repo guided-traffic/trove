@@ -1353,11 +1353,24 @@ requirements) and the request paths of R-ARCH-011 and R-ARCH-014 in
 | GET, HEAD | `/files/{repoKey}/{path}` | Download, `Range`, conditional requests, `Repr-Digest` | `read` |
 | PUT | `/files/{repoKey}/{path}` | Raw deploy; `Repr-Digest` verified; trailing `/` with empty body creates a folder | `deploy`; `overwrite` to replace different content |
 | DELETE | `/files/{repoKey}/{path}` | Same as the item DELETE | `delete` |
+| GET, HEAD, PUT | `/api/v1/repositories/{repoKey}/content/{path}` | The UI's content transfer (phase 6a, specified, not built yet; Q-UI-106): the semantics of the `/files/` row with the same method, for a request that the session cookie authenticates; served by the role `api` | as the `/files/` row |
 
 API conventions that apply on top:
 
 - A remote repository's items answer from the cache only; the metadata routes never trigger an
   upstream fetch.
+- **The content routes** (`/api/v1/repositories/{repoKey}/content/{path}`, Q-UI-106) exist because the session cookie
+  reaches only the role `api` after the cut into roles ([architecture.md](architecture.md) R-ARCH-001,
+  [endpoints.md](endpoints.md) R-EP-010), while `/files/` and the package protocols are served by `packages`. They run
+  the files transfer of `/files/` (path cleaning, the decision of every request, `Range`, conditional requests,
+  `Repr-Digest`, the content headers of R-ARCH-007 and the resource policy of Q-ARCH-86, blocking of R-VULN-015, the
+  download statistics) through the same item store, with three differences: a request that is not authenticated by the
+  session cookie answers the `404` problem of an unknown path, so token clients keep their bulk traffic on `packages`; a
+  `PUT` larger than `ui.deploy.max_upload_bytes` (when it is not 0) answers `413` before the body is spooled; and a path
+  that is not stored answers `404` without contacting an upstream, also in a remote repository. A `PUT` needs the
+  session's CSRF token as every unsafe request of a session does. Every `Item` of a file and every file of a
+  `PackageVersion` carries `contentUrl`, the relative URL of its content route, next to `downloadUrl`, the protocol URL
+  for clients.
 - npm and NuGet repositories refuse raw deploys of files and folders (`409` `conflict` before the body
   is read, with a reason naming the format's protocol address, where `npm publish` or `dotnet nuget push`
   sends), because a raw upload would bypass their metadata generation
@@ -1516,7 +1529,8 @@ remain as their owners define them.)
   format's (SemVer precedence for npm). `latestVersion` is the highest visible stable version, or the highest visible
   pre-release while no stable version is visible. The `downloadUrl` of a file is the protocol URL of the repository
   that holds it where the format has a protocol, else its `/files/` URL, built on the configured base URL of the
-  endpoint and never on the `Host` of the request.
+  endpoint and never on the `Host` of the request. Its `contentUrl` is the relative URL of the content route of R-API-025
+  for the item that holds the file (Q-UI-106, phase 6a).
 - The package summary, the version details and the README carry a strong `ETag` (a hash of the representation sent
   for the details and the summary, so two callers who see different versions never share one) and answer `304`
   for `If-None-Match`. The README tag is computed from its source, the renderer version and the hash of the
@@ -2449,9 +2463,10 @@ Priority: **MVP** · Covers: UI-058
   set, package content opened or shown in the browser loads from trove's content origin
   (R-ARCH-029); that origin is trove's own, not a foreign one.
 - Links to package content (R-ARCH-007, R-ARCH-029 in [architecture.md](architecture.md)):
-  - The UI never assembles a `/files/` or `/api/<format>/` URL from strings. Downloads, "Copy
-    download URL" and file links use the `downloadUrl` of the item or the version file
-    (R-API-025, R-API-029); README images are the URLs the server's renderer generated through
+  - The UI never assembles a `/files/` or `/api/<format>/` URL from strings. "Copy
+    download URL" uses the `downloadUrl` of the item or the version file, and the UI's own downloads and file links use
+    its `contentUrl`, which the session cookie authenticates on `api` (R-API-025, R-API-029, Q-UI-106; before phase 6a
+    the downloads use `downloadUrl` too); README images are the URLs the server's renderer generated through
     `LinkBuilder` (R-UI-008); registry and feed URLs come from the client setup answer
     (R-API-030). Moving content to a content origin (P1) therefore changes no UI code.
   - The UI never reads package content with `fetch` or XHR. Package content reaches the browser
@@ -2957,10 +2972,10 @@ Priority: **P1** · Covers: UI-013
   button, so dragging is never required), overwrite (only with `overwrite`).
 - The size limit `ui.deploy.max_upload_bytes` is checked before the upload starts; larger files are
   pointed to native clients or `curl`.
-- Uploads use `PUT /files/…` on the UI's own origin, built by the `files` client of
-  `web/src/app/api/` (R-UI-001), never by the dialog. Because the fetch backend reports no upload
+- Uploads use `PUT /api/v1/repositories/{repoKey}/content/{path}` on the UI's own origin (R-API-025, Q-UI-106; before
+  phase 6a `PUT /files/…`), built by the `files` client of `web/src/app/api/` (R-UI-001), never by the dialog. Because the fetch backend reports no upload
   progress, uploads go through an XHR-based `HttpClient` instance (`withXhr()`) to show progress.
-  This is the only XHR use for `/files/`, and it writes; the UI never reads package content with
+  This is the only XHR use for content, and it writes; the UI never reads package content with
   `fetch` or XHR (R-UI-001).
 - Files up to 256 MiB are hashed in the browser (Web Crypto SHA-256) and sent with `Repr-Digest`;
   larger files rely on the server's own digest.
@@ -3747,8 +3762,11 @@ INV-12 makes roles, drains and Valkey MVP and INV-19 the backup job (Q-UI-7).
   source; the maintenance mode, as a row only while it is not `normal` (Q-OPS-156); database (server version, schema version against the supported ones);
   scheduled tasks (`/system/tasks`: next run, last outcome) with "Run now", which runs on a
   `worker` replica; recent jobs (`/system/jobs`) with cancel.
-- **Replicas by role** (Q-UI-7). One group per role (`web`, `worker`; a replica with roles
-  `["all"]` of the development role forms a group `all`; from P1 one group per pool of R-HA-062),
+- **Replicas by role** (Q-UI-7, Q-UI-107). One group per role in the order `api`, `packages`, `worker` (phase 6a,
+  specified, not built yet; before it `web` and `worker`); a group `web` while a replica of that role is live, during the
+  upgrade across the cut ([ha-and-helm.md](ha-and-helm.md) R-HA-064); a replica with roles
+  `["all"]` of the development role forms a group `all`; within a group, one sub-group per pool of R-HA-062 and per
+  endpoint pool, each with its own counts and drain safety,
   headed with the role's `live`, `ready` and `degraded` counts from `replicas.roles` of
   `/system/info`, each listing its replicas with name, node, version, state (`starting`, `ready`,
   `unready`, `draining`, `lost`), heartbeat age and Valkey view. Each group states whether the role
@@ -3759,7 +3777,9 @@ INV-12 makes roles, drains and Valkey MVP and INV-19 the backup job (Q-UI-7).
   - "All ready replicas on one node": a drain of that node interrupts this role (shown only when
     every replica reports a node);
   - for `worker`, "No live worker replica": jobs and scheduled tasks are queued but nothing runs
-    them (R-API-015);
+    them (R-API-015); for a worker pool, "No live replica claims the queues `<queues>`", naming the pool's queues;
+  - for `packages`, "No live packages replica": package clients and raw downloads get no answer from the edge, while the
+    UI keeps working (Q-UI-107);
   - while replicas of two versions are live, an information notice naming both versions, because N
     and N-1 run side by side during every rolling upgrade (INV-3); it is not a warning.
 
@@ -7056,6 +7076,60 @@ and the schema `MirrorSettings`, which the configuration needs; the status schem
 enum value in an existing response is what the check exists to stop.
 
 **Applied in the spec:** `api/openapi.yaml` (`RemoteSettings.mode`, `RemoteSettings.mirror`, `MirrorSettings`); R-API-022.
+
+### Q-UI-106 · How the UI's downloads and uploads reach `api` after the cut
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: ADR-155 asked whether the UI calls a `packages` or `files` route with the session cookie, and if it does, that the
+call is served through `api`. Verified in [web/src](../../web/src/app): the upload and the folder creation are
+`PUT /files/{repo}/{path}` with the session cookie and the CSRF header ([files-api.ts](../../web/src/app/api/files-api.ts),
+`upload`, `createFolder`), and the Download buttons of the browse screen and the package page navigate to the `downloadUrl`
+of the item or the version file ([browse.html](../../web/src/app/features/browse/browse.html),
+[package-detail.html](../../web/src/app/features/packages/package-detail.html)), which is a `/files/` URL or a package
+protocol URL such as `/api/npm/npm-local/@team-a/ui/-/ui-1.4.0.tgz`. After the cut the edge sends those paths to `packages`,
+which evaluates no session cookie (R-EP-010).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Session-only content routes on `api`, `GET`, `HEAD`, `PUT /api/v1/repositories/{repoKey}/content/{path}`, running the `/files/` transfer through the same item store; `contentUrl` on items and version files (chosen) | The UI downloads and uploads through `api`; clients keep `downloadUrl` | No session reaches `packages`; one transfer implementation; token clients cannot move bulk traffic to `api` (a request without the session answers `404`); the UI still builds no content URL itself | A second path for the same transfer to test; `api` pods need a spool for the UI's uploads; a protocol URL opened in the browser asks for a credential, because the cookie no longer counts there |
+| (b) Signed short-lived download links that `packages` checks | `api` issues a signature for the session's principal, `packages` verifies it | Downloads stay on `packages` | A credential type of its own with expiry, replay and revocation rules; uploads still need a path through `api` |
+| (c) The edge routes requests that carry the session cookie to `api` | A header or cookie match at the edge | No URL change | Not portable (an implementation-specific match in the Gateway API, none in a plain Ingress); a misrouted request falls through to `packages` silently |
+| (d) `packages` evaluates sessions on `/files/` and package downloads | The old behaviour on those paths | No change | Puts the session store into `packages`, which ADR-155 excludes |
+
+**Choice:** (a). An upload through the content route is bounded by `ui.deploy.max_upload_bytes` on the server (it was a check
+in the browser only), which sizes the `api` spool (R-HA-029, R-HA-035).
+
+**Rationale:** the trust cut stays a property of the roles, the transfer stays one implementation, and the rule that the UI
+assembles no content URL holds because the API hands it `contentUrl`. The development agent would revisit this when the content
+origin of [architecture.md](architecture.md) R-ARCH-029 (P1) is built: package content shown in the browser then loads from that
+origin, and `contentUrl` points where that requirement says.
+
+**Applied in the spec:** R-API-025 (the routes and their rules), R-API-029 (`contentUrl`), the links to package content of the
+UI baseline, R-UI-012 (uploads); [endpoints.md](endpoints.md) R-EP-010; [architecture.md](architecture.md) R-ARCH-001 (what
+`api` builds); [ha-and-helm.md](ha-and-helm.md) R-HA-029, R-HA-035 (the `api` spool).
+
+### Q-UI-107 · How the status screen groups replicas after the cut
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-038 groups replicas by role (`web`, `worker`) and states drain safety per group (Q-UI-7). After the cut there are
+three roles, pools of each, endpoint pools, and during the upgrade across the cut the role `web` beside the new ones.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A group per role (`api`, `packages`, `worker`, and `web` or `all` while one is live), a sub-group per pool with its own counts and drain safety (chosen) | Roles first, pools inside | Drain safety is a property of a Deployment, which a pool is; the upgrade window shows both shapes | A longer screen with many pools |
+| (b) A flat group per Deployment | Every pool its own group | Simple | Hides which pools belong to one role; the role's totals are lost |
+| (c) Groups per role only, pools as a column | Short | Compact | A pool with one ready replica on one node looks drain-safe inside a healthy role |
+
+**Choice:** (a). The screen is served by `api`, so it is never shown with no live `api` replica; it warns when no `packages`
+replica is live, which the UI could otherwise not notice.
+
+**Rationale:** the N + 1 rule of R-HA-059 holds per role and pool; the screen shows it where it holds. The development agent
+would revisit this if installations run so many pools that the screen needs a filter.
+
+**Applied in the spec:** R-UI-038 (the groups and their notices); [operations-and-observability.md](operations-and-observability.md)
+Q-OPS-161 (the role values).
 
 ## What this does not cover
 

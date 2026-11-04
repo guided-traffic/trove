@@ -93,48 +93,102 @@ trove MUST build into one statically linked binary, `trove` (`CGO_ENABLED=0`). I
 management API, every package-format protocol, the embedded Angular build, the schema migrations
 and the background workers (INV-1, INV-2).
 
+**Status.** The roles `api` and `packages` are specified for phase 6a
+([ADR-153](../decisions.md#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries),
+[ADR-155](../decisions.md#adr-155--three-roles-api-packages-and-worker-variants-are-pools), Q-ARCH-294 to Q-ARCH-299) and
+not built yet: the binary knows `web`, `worker` and `all` ([internal/app/roles.go](../../internal/app/roles.go)), and
+`web` serves every route family. The tables below are the target of phase 6a's work packages
+([roadmap](../coverage/roadmap.md#phase-6a--task-areas)).
+
 | Invocation | Purpose |
 |---|---|
-| `trove serve --role web\|worker\|all` | Runs one replica of a role. The flag overrides `process.role`. |
+| `trove serve --role api\|packages\|worker\|web\|all` | Runs one replica of a role. The flag overrides `process.role`. |
 | `trove serve --role bastion` | Runs one replica of the trove Bastion, deployed only by the chart `trove-bastion` ([bastion.md](bastion.md) R-BAS-001, phase 5b). |
 | `trove migrate [up\|status]` | Applies or lists the embedded migrations behind the compatibility gate (R-ARCH-026). |
 | `trove backup create\|list\|verify\|delete\|prune\|restore` | The `backup` role: creates a consistent backup into the configured S3 target, lists, verifies, deletes or prunes the backups there, or restores one into an empty installation, then exits (INV-19, [backup-and-restore.md](backup-and-restore.md) R-BAK-009, R-BAK-016, R-BAK-018 to R-BAK-021). It has no client listener and uses no Valkey. The chart runs `create` as a CronJob and `restore` as a Job. |
-| `trove admin …` | Bootstrap and recovery: break-glass administrator ([identity-and-authentication.md](identity-and-authentication.md)), `admin config validate` ([operations-and-observability.md](operations-and-observability.md)), `admin secrets status` (R-ARCH-021; the same status is served by `GET /api/v1/system/encryption`). |
+| `trove admin …` | Bootstrap and recovery: break-glass administrator ([identity-and-authentication.md](identity-and-authentication.md)), `admin config validate` ([operations-and-observability.md](operations-and-observability.md)), `admin secrets status` (R-ARCH-021; the same status is served by `GET /api/v1/system/encryption`). The break-glass commands run in an `api` pod, the only role that mounts the break-glass secret. |
 | `trove --version` | Version, commit, build date. |
 
-A role is a set of enabled subsystems (INV-2). Every replica of a role runs the same subsystems and
-is interchangeable with any other replica of that role:
+**Roles** (INV-2, Q-ARCH-294, Q-ARCH-295). A role is a set of enabled subsystems and wiring areas. Every replica of a
+role runs the same ones and is interchangeable with any other replica of that role:
 
-| Subsystem | `web` | `worker` | `backup` | `all` (local profile only) |
-|---|---|---|---|---|
-| Client listener `:8080`: UI, management API, package protocols, raw files (R-ARCH-005) | yes | no | no | yes |
-| Ops listener `:8081`: probes and metrics | yes | yes | `/metrics` only, while a run lasts ([backup-and-restore.md](backup-and-restore.md) R-BAK-014) | yes |
-| Main pool, transaction-scoped work only (R-ARCH-019) | yes | yes | no | yes |
-| Session-scoped PostgreSQL connections: the lease pool (R-ARCH-017) | no | yes | its own control, snapshot and export connections (R-ARCH-019) | yes |
-| Job claim loop, reaper and scheduler (R-ARCH-016); outbox dispatcher (P1) | no | yes | no | yes |
-| Enqueueing jobs | yes | yes | no | yes |
-| Valkey client (R-ARCH-031) | yes | yes | no | yes |
-| Change-log poll and signal subscriber (R-ARCH-018) | yes | yes | no | yes |
-| Replica registry row and heartbeat ([operations-and-observability.md](operations-and-observability.md) R-OPS-003) | yes | yes | no | yes |
+| Role | Serves | Holds | Deployed by the chart as |
+|---|---|---|---|
+| `api` | the route families `ui`, `api`, `ci_exchange` of every endpoint whose surface holds them ([endpoints.md](endpoints.md) R-EP-005) | the session store, the OIDC client secrets, the break-glass password | `<fullname>-api`, its pools and the `api` part of endpoint pools ([ha-and-helm.md](ha-and-helm.md) R-HA-002, R-HA-062) |
+| `packages` | the route families `packages`, `files`; tokens only, a session cookie is ignored as absent; the fills of client misses and the shadowing probes | no session store, no login secret | `<fullname>-packages`, its pools and the `packages` part of endpoint pools |
+| `worker` | the job queue, its leases and the scheduler, the mirror's passes, the advisory sync; the queues it claims are configurable (R-ARCH-016) | the lease pool | `<fullname>-worker` and its pools by queue |
+| `web` | `api` and `packages` in one process: every family | everything `api` and `packages` hold | `<fullname>-web` only as the bridge of the upgrade across the cut (Q-ARCH-295, [ha-and-helm.md](ha-and-helm.md) R-HA-064) |
+| `all` | every role but `bastion` in one process | everything | never; a binary started outside the chart during development |
+| `backup`, `bastion` | unchanged: the `trove backup` subcommand (above), the Bastion's read flow ([bastion.md](bastion.md) R-BAS-001) | their own | the backup CronJob and restore Job; the chart `trove-bastion` |
 
-- The role `bastion` ([bastion.md](bastion.md) R-BAS-001) enables none of the subsystems of the table above except the ops
-  listener and, when its chart configures one, the Valkey client; its client listener serves the Bastion's read flow, and its
-  configuration schema refuses every key of another subsystem.
+| Subsystem | `api` | `packages` | `worker` | `backup` | `web`, `all` |
+|---|---|---|---|---|---|
+| Client listener `:8080` and the listeners of further endpoints (R-ARCH-005, [endpoints.md](endpoints.md) R-EP-002), each with the families of its surface that the role serves (Q-ARCH-298) | yes | yes | no | no | yes |
+| Ops listener `:8081`: probes and metrics | yes | yes | yes | `/metrics` only, while a run lasts ([backup-and-restore.md](backup-and-restore.md) R-BAK-014) | yes |
+| Main pool, transaction-scoped work only (R-ARCH-019) | yes | yes | yes | no | yes |
+| Session-scoped PostgreSQL connections: the lease pool (R-ARCH-017) | no | no | yes | its own control, snapshot and export connections (R-ARCH-019) | `all` only |
+| Job claim loop, reaper and scheduler (R-ARCH-016); outbox dispatcher (P1) | no | no | yes | no | `all` only |
+| Enqueueing jobs | yes | yes | yes | no | yes |
+| Valkey client (R-ARCH-031) | yes | yes | yes | no | yes |
+| Change-log poll and signal subscriber (R-ARCH-018) | yes | yes | yes | no | yes |
+| Replica registry row and heartbeat ([operations-and-observability.md](operations-and-observability.md) R-OPS-003) | yes | yes | yes | no | yes |
+
+**Wiring areas** (R-ARCH-024 step 8, Q-ARCH-209, Q-ARCH-294). The areas are the steps of
+[internal/app/steps.go](../../internal/app/steps.go); a role enables them as data (`SubsystemsFor` in
+[internal/app/roles.go](../../internal/app/roles.go)), and `planSteps` refuses a role whose steps cannot be satisfied. Every
+serving role (`api`, `packages`, `worker`, `web`, `all`) builds the infrastructure areas `keys`, `postgres`, `audit`, `blob`,
+`valkey`, `coordination`, `infra` and the domain areas `keyring`, `formatports`, `exposure`, `repository`, `virtual`,
+`invalidation`, `proxy`, `identity`, `authz`, `ownership`, `ci`, `vuln`, `formats` and `files`, because its jobs, its caches or its
+routes read them. The areas of the client listener are split by route family:
+
+| Area (step) | What it builds | `api` | `packages` | `worker` | `web`, `all` |
+|---|---|---|---|---|---|
+| `limits` | the cluster limiter set of the client listeners (R-ARCH-034) with the failure, flow-start, CI and Bastion-download limiters | yes | yes | no | yes |
+| `proxy-engine` | the remote engine: fills, flights, the negative cache (R-REPO-025) | **no** | yes | no | yes |
+| `virtual-engine` | the virtual engine (R-REPO-019) | the explanation only, over a read-only view of the remote members (Q-ARCH-294) | yes | no | yes |
+| `formathost` | the format host and the protocol dispatcher of `/api/<format>/` | **no** | yes | no | yes |
+| `packages-api` | the services of the package screens of the management API (R-API-029, R-API-030) | yes | **no** | no | yes |
+| `vuln-api` | the services of the vulnerability operations of the management API | yes | **no** | no | yes |
+| `sessions` | the session store (R-AUTH-001) | yes | **no** | no | yes |
+| `login` | the OIDC and break-glass login with its browser routes | yes | **no** | no | yes |
+| `auth` | the authentication stage of the chain | with the session credential | tokens only: no session store, a session cookie is ignored as absent | no | with the session credential |
+| `endpoints` | the rate-limit classes of the endpoints (R-EP-015) | yes | yes | no | yes |
+| `api` | stage 7 of the chain: CORS and the request limits of R-API-016, applied on every endpoint chain despite the name | yes | yes | no | yes |
+| `ci_exchange` | the CI token exchange (`POST /api/v1/auth/oidc/token`, the npm exchange of R-NPM-022 at P1) | yes | **no** | no | yes |
+
+- A `packages` replica MUST NOT build the areas `sessions`, `login`, `ci_exchange`, `packages-api` and `vuln-api`, MUST NOT
+  read the OIDC client-secret or break-glass files (the chart does not mount them, [ha-and-helm.md](ha-and-helm.md) R-HA-030),
+  and evaluates no session cookie on any endpoint ([endpoints.md](endpoints.md) R-EP-010). Its identity loops are the
+  last-used flush of tokens only ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-031).
+- An `api` replica MUST NOT build the areas `proxy-engine` and `formathost`, so no route it serves can fill a cache or
+  forward to an upstream: the only upstream request it sends is the upstream test of
+  [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-024, which takes no fetch slot (Q-ARCH-297). The
+  explanation of a virtual repository (R-REPO-019) asks the remote members only what the item store, the cache entries,
+  the negative store and the circuit state answer (`Cached`, `EntryState`); a read-only view gives them and refuses
+  `Metadata` and `Probe` with `Unavailable`. The UI's downloads and uploads reach `api` through the session-only content
+  routes of [api-and-ui.md](api-and-ui.md) R-API-025 (Q-UI-106), which go through the `files` area, never through the
+  format host.
+- `web` enables the union of the areas of `api` and `packages`, which is the list of the release before the cut; `all`
+  enables every area. A replica started with `web` or `all` logs a warning that names the role.
 - A role also names the **wiring areas** it enables (R-ARCH-024 step 8, Q-ARCH-209): the units of
   composition that build a typed part of the replica, such as the database, the audit recorder, the
   object store, the Valkey client and the coordination layer, and the domain areas on top of them.
   The areas are data of the role, not a consequence of which component happens to be present: a
-  `worker` enables the areas whose jobs it runs, a `web` replica the areas its listener serves. The
+  `worker` enables the areas whose jobs it runs, an `api` or `packages` replica the areas its families serve. The
   shell profile (an HTTP shell without PostgreSQL, Valkey and the object store, used by the
   composition root's own tests and the drain fixture) is a role with the listeners and no
   infrastructure areas, and it is only reachable through the test options, never through
   configuration.
 - `process.role` has no default. `trove serve` without a role exits non-zero with
-  `process.role must be web, worker or all`. The chart deploys `web` and `worker` as separate
-  Deployments from the start, each with its own replica count, autoscaler, disruption budget and
-  topology spread ([ha-and-helm.md](ha-and-helm.md)). `all` exists for the local development
-  profile; a replica started with it logs a warning that names the role.
-- A `web` replica MUST NOT:
+  `process.role must be api, packages, worker, web or all`. The chart deploys `api`, `packages` and `worker` as separate
+  Deployments, each with its own replica count, autoscaler, disruption budget, ingress policy and topology spread
+  ([ha-and-helm.md](ha-and-helm.md) R-HA-002).
+- **What "web" means elsewhere** (INV-2). The pages written before the cut name the client-serving role `web`. Such a
+  statement applies to the role that serves the route family it concerns (`api` for `ui`, `api` and `ci_exchange`,
+  `packages` for `packages` and `files`), and to both where it concerns every request, such as the listener, the
+  drain, the readiness checks and the limits of the chain. A statement about the `web` Deployment, its values or its
+  Service names the bridge of R-HA-064 only where it says so.
+- An `api` or `packages` replica MUST NOT:
   - claim or run jobs, or hold a lease;
   - open a session-scoped PostgreSQL connection;
   - run a background loop whose iterations take longer than a request. Its loops are each bounded
@@ -145,32 +199,39 @@ is interchangeable with any other replica of that role:
       use buffers of [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-012 and
       R-REPO-046 (P1), and the asynchronous audit buffer
       ([operations-and-observability.md](operations-and-observability.md) R-OPS-015);
-    - the identity loops of [identity-and-authentication.md](identity-and-authentication.md)
+    - on `api`, the identity loops of [identity-and-authentication.md](identity-and-authentication.md)
       R-AUTH-042: the OIDC discovery refresh and JWKS refetch (R-AUTH-004), the re-read of the
       client-secret and break-glass files including the break-glass rotation check (R-AUTH-014),
-      the last-used flush (R-AUTH-031) and the pending-flow count refresh (R-AUTH-038);
+      the last-used flush (R-AUTH-031) and the pending-flow count refresh (R-AUTH-038); on `packages`, the last-used
+      flush;
   - leave work running after a response that a later request depends on.
 
   Work that a request starts and that outlasts it is enqueued as a job, and the request answers
   with the job reference ([api-and-ui.md](api-and-ui.md) R-API-015). Examples are reindexing,
   repository deletion, bulk copy or move, garbage collection and re-encryption. Three bounded
-  exceptions remain on `web`, each ended at shutdown and none leaving anything half-stored
+  exceptions remain, each ended at shutdown and none leaving anything half-stored
   (R-ARCH-024):
-  - the remote fetch that collapsed waiters depend on, which runs detached from its initiating
+  - on `packages`, the remote fetch that collapsed waiters depend on, which runs detached from its initiating
     client ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026);
-  - the completion of a metadata refresh after the stale copy was served (R-REPO-027);
-  - the replica's own support-bundle part
+  - on `packages`, the completion of a metadata refresh after the stale copy was served (R-REPO-027);
+  - on both, the replica's own support-bundle part
     ([operations-and-observability.md](operations-and-observability.md) R-OPS-027, P1). It is
     bounded by `support.max_cpu_profile_seconds` plus the upload, never runs past
     `support.collect_timeout`, holds no database connection, and is abandoned at `SIGTERM`; the
     bundle then ends `partial`.
-- A `worker` replica serves only the ops listener and is not selected by the client Service.
+- A request of a family that the replica's role does not serve answers the `404` problem of an unknown path
+  ([endpoints.md](endpoints.md) R-EP-005), never `403`, `405` or a redirect: the edge splits a host by path prefix
+  between the roles ([ha-and-helm.md](ha-and-helm.md) R-HA-037), and a request the edge sends to the wrong role, or one
+  that reaches a role's Service directly, finds no route rather than another role's answer. The edge's routing is load
+  sharing, not a trust boundary: each role's own router decides what it serves.
+- A `worker` replica serves only the ops listener and is not selected by any client Service.
 - Load is shared by adding replicas of a role (INV-12). No code path depends on the number of
-  replicas of a role, and each role scales and drains on its own. A role can be split further, for
-  example package traffic behind its own Service, through configuration and chart values without
-  code changes (INV-2).
+  replicas of a role, and each role scales and drains on its own. A role is split further by path prefix (`api`,
+  `packages`) or by queue (`worker`) into pools through chart values without code changes (INV-2,
+  [ha-and-helm.md](ha-and-helm.md) R-HA-062).
 - No replica holds state that another replica needs to answer a later request (INV-18,
-  R-ARCH-032).
+  R-ARCH-032). This holds across roles too: a flow that spans both roles, such as an upload through the UI followed
+  by a client download or the command-line login of ADR-049 (P1), meets in PostgreSQL and object storage only.
   - Durable state lives in PostgreSQL, the system of record, and in object storage. Shared
     ephemeral state lives in Valkey (INV-3, R-ARCH-030).
   - In-process state is limited to caches that can be rebuilt (R-ARCH-018) and to the scratch
@@ -178,8 +239,8 @@ is interchangeable with any other replica of that role:
 - There is no primary node. Work that must run once per cluster runs as a job, where the queue
   guarantees one claimant (R-ARCH-016), or under a named lease (R-ARCH-017). Both live in
   PostgreSQL.
-- A `web` or `worker` replica registers itself on start in the replica registry, with its role
-  ([operations-and-observability.md](operations-and-observability.md)). It takes traffic or jobs as
+- An `api`, `packages`, `worker` or `web` replica registers itself on start in the replica registry, with its role
+  ([operations-and-observability.md](operations-and-observability.md) R-OPS-003). It takes traffic or jobs as
   soon as it is ready. No other step is needed to add or remove a replica.
 - One replica and many run the same code path. Even a single replica uses external PostgreSQL,
   Valkey and S3-compatible storage (INV-3, INV-4).
@@ -189,12 +250,12 @@ is interchangeable with any other replica of that role:
   - Production runs HA PostgreSQL, Valkey with Sentinel and S3 (INV-12).
   - The chart bundles no production database and no production Valkey.
 - Splitting roles is the trove form of separately scaled workloads (HA-015). The UI is never a
-  separate workload because it is embedded (INV-1).
+  separate workload because it is embedded (INV-1); it is served by `api`.
 
 ```yaml
 process:
-  role: ""            # no default: web | worker | all; the chart sets it per Deployment
-  # role: web         # example
+  role: ""            # no default: api | packages | worker | web | all; the chart sets it per Deployment (--role)
+  # role: packages    # example
 ```
 
 Acceptance criteria:
@@ -202,11 +263,21 @@ Acceptance criteria:
   shows `CGO_ENABLED=0`.
 - `trove serve` without `--role` and without `process.role` exits non-zero and names
   `process.role`.
+- **The role table is data and the architecture test holds it** (Q-ARCH-294). A test in `internal/app` compares
+  `SubsystemsFor` of every role with the tables above: the areas of each role equal its column, in step order;
+  `packages` has none of `sessions`, `login`, `ci_exchange`, `packages-api`, `vuln-api`; `api` has neither
+  `proxy-engine` nor `formathost`; `web` is the union of `api` and `packages`; and `planSteps` accepts every role.
 - A replica started with `--role worker` has no socket on `:8080` (`ss -ltn`). The instance ID of a
-  replica started with `--role web` never appears in `job.locked_by`, and `pg_stat_activity` never
-  shows a connection named `trove:<that replica>:lease`.
-- One of three `web` pods is deleted with `kubectl delete pod --grace-period=0 --force` during a
-  loop of 100 `npm ci` runs through the Service. The loop finishes with npm's default
+  replica started with `--role api` or `--role packages` never appears in `job.locked_by`, and `pg_stat_activity`
+  never shows a connection named `trove:<that replica>:lease`.
+- On a `packages` replica, `GET /ui/`, `GET /`, `GET /auth/oidc/corp/start`, `GET /api/v1/system/ping` and
+  `POST /api/v1/auth/oidc/token` answer the `404` problem of `GET /does-not-exist`, and a request with a valid
+  `__Host-trv_session` cookie and no token to `GET /api/npm/npm-local/@acme%2fsdk` is treated as one without a
+  credential (`401` `credentials_required` while anonymous access is off); on an `api` replica,
+  `GET /api/npm/npm-local/@acme%2fsdk`, `GET /files/generic-local/x` and `GET /v2/` answer that `404`, and a test
+  double of the upstream records no request from it while the e2e suite runs, except the upstream tests it sends.
+- One of three `packages` pods is deleted with `kubectl delete pod --grace-period=0 --force` during a
+  loop of 100 `npm ci` runs through the edge. The loop finishes with npm's default
   `fetch-retries`.
 
 ### R-ARCH-002 · Component model and dependency rules
@@ -2320,7 +2391,7 @@ CREATE UNIQUE INDEX job_task_slot ON job (task, scheduled_for) WHERE task IS NOT
 ```
 
 Only replicas of role `worker` (or `all`) run the claim loop, the reaper and the scheduler
-(R-ARCH-001). A `web` replica enqueues jobs and never claims one. Workers claim jobs on the main
+(R-ARCH-001). An `api` or `packages` replica enqueues jobs and never claims one. Workers claim jobs on the main
 pool, in short transactions that work through a transaction-mode pooler (R-ARCH-019):
 
 ```sql
@@ -2338,6 +2409,34 @@ UPDATE job SET state = 'running', locked_by = $4, locked_until = now() + $5::int
 FROM next WHERE job.id = next.id
 RETURNING job.*;
 ```
+
+**Queues** (Q-ARCH-296; specified for phase 6a, not built yet: the code knows the first five queues and claims every one
+of them on every worker, [internal/config/jobs.go](../../internal/config/jobs.go)). Every kind belongs to one queue, and
+`jobs.workers.<queue>` is the number of jobs of that queue one replica runs at a time:
+
+| Queue | Kinds (table below) | Slots per replica (default, proposed) |
+|---|---|---|
+| `default` | API operations and work a request starts: retention runs, `vuln-evaluate`, `vuln-rescan` | 4 |
+| `maintenance` | the scheduled housekeeping: `gc`, `gc-full`, sweeps, cleanups, prunes, `data_migration_*`, `secrets-reencrypt`, `vuln-findings-retention` | 1 |
+| `index` | `nuget-symbol-index` and later index builds | 2 |
+| `delivery` | webhook deliveries (P1) | 8 |
+| `mirror` | `mirror-dispatch`, `mirror-pass` (phase 6b) | 2 |
+| `vuln` | the advisory sync: `vuln-sync-osv`, `vuln-sync-osv-full`, `vuln-sync-kev` | 1 |
+
+- **Which queues a process claims.** `jobs.queues` lists the queues a worker claims; empty (the default) means every
+  queue. `jobs.exclude_queues` lists queues a worker does not claim; empty (the default) excludes none. Setting both, or
+  naming a queue that does not exist, stops start-up and names the key. The claim query's `$1` is the resulting list,
+  and the slots of a queue the process does not claim are never started. The chart sets `jobs.queues` on each worker
+  pool and `jobs.exclude_queues` on the main `worker` Deployment to the union of the pools' queues, so a queue never
+  stays unclaimed and a queue added in a later release is claimed by the main Deployment without a value
+  ([ha-and-helm.md](ha-and-helm.md) R-HA-062).
+- A replica that claims only some queues still runs the reaper (it returns expired jobs of every queue) and may hold
+  the `scheduler` lease (the scheduler enqueues into every queue), because both are cluster-wide and need no slot.
+- **A kind that changes its queue** is enqueued into the new queue by the release that moves it, and a row an older
+  release enqueued into the old queue is claimed by a process that claims the old queue and runs the kind; the slots it
+  runs in are those of the row's queue. During the mixed-version window of a rolling upgrade
+  ([ha-and-helm.md](ha-and-helm.md) R-HA-020), an older worker does not claim a queue it does not know, so a job of a
+  new queue waits for a worker of the new release.
 
 Normative rules:
 - Delivery is at least once, so handlers MUST be idempotent. Long handlers, such as garbage
@@ -2484,8 +2583,8 @@ Normative rules:
 | `nuget-symbol-index` | [formats/nuget.md](formats/nuget.md) R-NUGET-021 (P1) | Queue `index`, dedup key `nuget-symbol-index:<version id>`, `exclusive`: one job per symbol package, enqueued in the symbol push's commit and, for the backfill, by a data migration. The handler re-checks `indexed_at` under the `nuget_symbol_package` row lock, so a released, retried or reindex-started run commits nothing twice; a package that cannot be indexed ends with `index_error` instead of failing the job. |
 | `data_migration_nuget_semver2` | [formats/nuget.md](formats/nuget.md) R-NUGET-004 ([Q-NUGET-93](formats/nuget.md#q-nuget-93--the-versions-stored-before-the-semver-2-classification-counted-dependency-ranges-are-recomputed-once-by-a-background-job-in-go)) | Queue `maintenance`, `coalesce` under its name. Queued by every `worker` and `all` replica at start-up while `system_state` has no key `nuget_semver2_recomputed`; it waits, queuing the next run a minute later, while a live replica runs 0.9.0 or older (R-HA-022), checkpoints its cursor after each batch of `jobs.background_migrations.batch_size` rows, and records the key when it reaches the end. |
 | `cluster-change-prune` | R-ARCH-018 | Scheduled every 10 minutes, `exclusive`. Deletes a `cluster_change` row once the next row of its area is older than `cluster.change_retention`. The newest row of each area is therefore always kept, and a replica that polled within the retention still finds the row at its last applied epoch, which change-area step 5 of R-ARCH-018 checks. Idempotent. |
-| `vuln-sync-osv`, `vuln-sync-osv-full` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-004 (from M4b) | Queue `maintenance`. Dedup key `vuln-sync-osv`, shared by both kinds, `exclusive`, as for `gc` and `gc-full`. `MaxAttempts: 1`: a failed run waits for the next slot. A full sync checkpoints the index of its last committed batch and the archive's `ETag`. |
-| `vuln-sync-kev` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-008 (from M4b) | `exclusive` under its name; `MaxAttempts: 1`, as every sync run of R-VULN-004 |
+| `vuln-sync-osv`, `vuln-sync-osv-full` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-004 (from M4b) | Queue `vuln` (Q-ARCH-296; `maintenance` until phase 6a builds it). Dedup key `vuln-sync-osv`, shared by both kinds, `exclusive`, as for `gc` and `gc-full`. `MaxAttempts: 1`: a failed run waits for the next slot. A full sync checkpoints the index of its last committed batch and the archive's `ETag`. |
+| `vuln-sync-kev` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-008 (from M4b) | Queue `vuln` (Q-ARCH-296; `maintenance` until phase 6a builds it). `exclusive` under its name; `MaxAttempts: 1`, as every sync run of R-VULN-004 |
 | `vuln-evaluate` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-011 (from M4b) | Queue `default`. Dedup key `vuln-evaluate`, `coalesce`. Its work is read from tables, never from `args`: the advisories queued in `vuln_pending_evaluation` and the full evaluations requested in `vuln_source_state`, so an enqueue that a waiting job absorbs loses nothing (Q-VULN-18). Checkpoints after each batch. |
 | `vuln-rescan` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-011 (from M4b) | Dedup key `vuln-rescan:<repository id>`, `exclusive`; its manual trigger answers `409` with the running job. A run that finds other scanning inputs of its repository at its end than at its start runs again before it ends (Q-VULN-18). |
 | `vuln-findings-retention` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-014 (from M4b) | `exclusive` under its name; deletes in batches |
@@ -2510,6 +2609,9 @@ jobs:
     index: 2                       # default (proposed)
     delivery: 8                    # default (proposed), webhooks (P1)
     mirror: 2                      # default (proposed), the passes of mirrored remotes and their dispatch (R-REPO-053)
+    vuln: 1                        # default (proposed), the advisory sync (R-VULN-004, R-VULN-008; Q-ARCH-296)
+  queues: []                       # default (proposed): every queue; example: [index] on a worker pool (Q-ARCH-296)
+  exclude_queues: []               # default (proposed): none; example: [index, mirror] on the main worker beside two pools
   poll_interval: 2s                # default (proposed)
   lease_duration: 60s              # default (proposed)
   heartbeat_interval: 15s          # default (proposed)
@@ -2537,6 +2639,13 @@ Acceptance criteria:
   it from its checkpoint.
 - With Valkey stopped, an enqueued job is picked up within `jobs.poll_interval` plus 1 s, and no
   worker replica turns unready.
+- With `jobs.queues: [index]` on one worker and `jobs.exclude_queues: [index]` on another, 50 `nuget-symbol-index` jobs
+  and 50 `gc` jobs run with every `nuget-symbol-index` job's `locked_by` naming the first and every `gc` job's the
+  second; `jobs.queues: [index]` together with `jobs.exclude_queues: [mirror]`, and `jobs.queues: [indexing]`, each stop
+  start-up and name the key.
+- A full advisory sync (`vuln-sync-osv-full`) running on a worker with `jobs.workers.maintenance: 1` does not delay a
+  `gc` job enqueued meanwhile: the `gc` job starts within `jobs.poll_interval` plus 1 s (the queues `vuln` and
+  `maintenance` have their own slots).
 
 ### R-ARCH-017 · Session connections, leases and advisory-lock categories
 Priority: **MVP** · Covers: HA-002, HA-006, HA-007
@@ -3808,7 +3917,7 @@ Start-up order:
    Q-HA-13 decides. Run the first change-log poll (R-ARCH-018). Register in the replica registry
    with the role. On a `worker` replica, open the lease pool (R-ARCH-017).
 8. Load the snapshots and initialise the registered caches.
-9. Open the client listener (`web`) or start the job workers (`worker`), as the role allows.
+9. Open the client listeners (`api`, `packages`), each with the route families of its endpoint that the role serves (R-ARCH-001, Q-ARCH-298), or start the job workers on the queues the process claims (`worker`, R-ARCH-016), as the role allows.
 10. The `startup` readiness check passes. It requires that steps 3 to 9 have completed and that the
     audit partitions for the current and the next month exist (R-OPS-001). It does not require a
     reachable Valkey.
@@ -3909,7 +4018,7 @@ The pod's termination grace period must exceed `health.shutdown_drain_delay` plu
 `server.shutdown_timeout` from it ([ha-and-helm.md](ha-and-helm.md) R-HA-011), so the two cannot
 drift apart. A transfer that outlasts it is cut off (HA-047).
 
-No-outage drain needs, for each of the roles `web` and `worker`, at least two replicas on different
+No-outage drain needs, for each of the roles `api`, `packages` and `worker` and each pool, at least two replicas on different
 nodes and a disruption budget that evicts one pod at a time (INV-12,
 [ha-and-helm.md](ha-and-helm.md) R-HA-032). A replica holds nothing the others need: its requests
 are retried elsewhere (R-ARCH-032), its jobs are released or expire (R-ARCH-016), its leases are
@@ -7999,6 +8108,171 @@ regression slips through the factors.
 `make test-performance` enforces). Tests: `TestR_NPM_010_ThousandVersions` in `test/integration/npm/documents_test.go`, `TestCollapse`
 in `test/integration/proxy/collapse_test.go`.
 
+### Q-ARCH-294 · Which wiring areas the roles `api` and `packages` build
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: [ADR-155](../decisions.md#adr-155--three-roles-api-packages-and-worker-variants-are-pools) fixes the route families of
+each role and what `api` holds; [internal/app/steps.go](../../internal/app/steps.go) builds every listener area on `web`
+(`withListener`). Verified in the code: `wirePackagesAPI` takes the format host only in its input check
+([wire_packages.go](../../internal/app/wire_packages.go)); `wireAuth` takes the session store as a required input
+([wire_identity.go](../../internal/app/wire_identity.go)); `wireVirtualEngine` takes the proxy engine, and the explanation of
+R-REPO-019 asks the remote members only `Cached` and `EntryState` ([internal/virtual/explain.go](../../internal/virtual/explain.go));
+`wireFiles` takes no engine ([wire_files.go](../../internal/app/wire_files.go)). Not verified, and left to WP6a.1: whether any
+operation of the management API other than the explanation reaches the virtual or the remote engine.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) By family, with the fill path off `api` (chosen) | `packages` builds the engines and the format host, not `sessions`, `login`, `ci_exchange`, `packages-api`, `vuln-api`; `api` builds those, the virtual engine over a read-only view of the remote members, and neither `proxy-engine` nor `formathost` | "api contacts an upstream only for the upstream test" (ADR-155) becomes a property of the wiring that `planSteps` and the role-table test prove; `packages` cannot reach the session store or a login secret by construction | Three code changes: `packages-api` drops its format-host check, the virtual engine takes a read-only `Remotes` on `api`, and the authentication area becomes buildable without the sessions area |
+| (b) By family, `api` keeps the engines | `api` builds `proxy-engine` and `formathost` because `packages-api` and the virtual engine take them; no route of `api` calls them | No change to the engines' wiring | A fill path exists on `api` and is held off only by the route list; a later operation that resolves through the engine would fill from `api` without a start-up error |
+| (c) Every listener area on both roles; the router alone separates | The surface filter of Q-ARCH-298 is the whole cut | Smallest change | `packages` builds the session store and would read the login secrets if they were mounted: the trust split of ADR-155 is a convention, not a property |
+
+**Choice:** (a). The tables of R-ARCH-001 list each area per role; the authentication stage on `packages` carries no session
+credential and ignores a session cookie as absent, as R-EP-010 rule 1 does for an endpoint without `ui`.
+
+**Rationale:** the owner's cut is a trust cut: humans and their secrets in `api`, machine traffic with tokens in `packages`. Of
+the three, only (a) makes both halves of it hold by construction, and the step framework (Q-ARCH-209) turns a violation into a
+start-up error that names the area. The three changes are small and local to the composition root and the virtual engine. The
+development agent would revisit this if the read-only view of the remote members needs more of the engine than an adapter over
+the item store, the cache entries, the negative store and the circuit state: then (b), with the role-table test asserting that
+`api` registers no route of `packages` or `files`.
+
+**Applied in the spec:** R-ARCH-001 (the role, subsystem and area tables, the MUST NOT lists, the acceptance criterion of the
+role table); [coverage/roadmap.md](../coverage/roadmap.md#phase-6a--task-areas) WP6a.1.
+
+### Q-ARCH-295 · What becomes of the role name `web`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: every installation before the cut runs `<fullname>-web` with `--role web` behind the Service `<fullname>`, and its
+values files set `web.*`. R-HA-020 promises a zero-downtime rolling upgrade from the previous minor, and R-ARCH-025 keeps a
+values key until a major. Helm applies a release in one pass: it creates the new objects, patches the existing ones (the
+Ingress among them) and deletes the objects the new release no longer has, without waiting for a new pod to be ready
+([Helm's upgrade](https://helm.sh/docs/helm/helm_upgrade/)).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `web` stays as `api` and `packages` in one process, and the chart renders it only as the bridge of the upgrade (chosen) | The binary keeps the role (the union of the two area sets); `web.enabled: true` keeps the old shape for one step while the new Deployments start ([ha-and-helm.md](ha-and-helm.md) R-HA-064) | The only gap-free path from the old shape: the edge keeps routing the host whole to the old Service until `api` and `packages` are ready; existing `web.*` values stay valid; one entry in `SubsystemsFor` | Two `helm upgrade` runs for the upgrade across the cut; a role that a fresh installation never uses |
+| (b) `web` is removed | The binary refuses it; the chart refuses `web.*` with a message naming `api.*` and `packages.*` | One shape, one step | In one pass Helm points the edge at Deployments whose pods have not started and deletes `<fullname>-web`: the UI, the API and every package route answer `503` for the start time of the new pods, so R-HA-020's upgrade fails; removing `web.*` breaks R-ARCH-025's alias rule |
+| (c) `web` as a permanent chart shape for small installations | A value renders one Deployment for both roles | One pod type fewer on a small installation | A second shape to render, test and drain; the trust split becomes optional; contradicts ADR-153's "each task area its own Deployment" |
+| (d) `web.*` as a deprecated alias of `packages.*` | Old values configure the packages Deployment | Old values files keep rendering | The values silently mean something else (the UI on two default pods), and the gap of (b) remains |
+
+**Choice:** (a).
+
+**Rationale:** a Deployment cannot be renamed and an Ingress cannot switch its backend to pods that do not exist yet, so the
+upgrade needs a moment in which a process serves every family behind the old Service while the new roles start beside it. That
+process is `web`; keeping it costs the union of two area lists and a Deployment the chart already renders. A small installation
+runs the three roles with one replica each and `highAvailability.enforce: false`, which keeps one shape for every size. The
+development agent would revisit this when the owner cuts a major release (ADR-124), which may remove the bridge, or when a
+release of trove no longer supports an upgrade from a release before the cut.
+
+**Applied in the spec:** INV-2, R-ARCH-001 (the role `web`), [ha-and-helm.md](ha-and-helm.md) R-HA-002, R-HA-021, R-HA-031
+(`web.enabled`), R-HA-064 (new).
+
+### Q-ARCH-296 · The queues of the worker pools, the advisory sync's queue and the setting that restricts a process
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the queues today are `default`, `maintenance`, `index`, `delivery` and `mirror`
+([internal/config/jobs.go](../../internal/config/jobs.go)), and every worker claims all of them. The three advisory-sync kinds
+run on `maintenance` ([internal/app/wire_vuln_sync.go](../../internal/app/wire_vuln_sync.go), `vuln.QueueMaintenance`), whose
+single default slot they share with garbage collection, the cleanups, the change-log prune and the session cleanup. Phase 6's
+lesson: a full OSV sync runs for minutes (V-1: 7.1 min on the reference environment, more than 40 min on the CI runner, F-43)
+and holds that slot meanwhile, so the housekeeping waits behind it. ADR-155 names pools by queue: `maintenance`, `index`,
+`vuln`, `mirror`. The setting that restricts a process to queues is left to R-ARCH-016 by R-HA-062.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A queue `vuln` of its own for the three sync kinds, one slot by default; `jobs.queues` (claim only these) and `jobs.exclude_queues` (claim all but these), mutually exclusive (chosen) | The sync never takes the `maintenance` slot; a pool can claim `vuln` alone; the chart sets `jobs.queues` on a pool and `jobs.exclude_queues` on the main worker | The housekeeping no longer waits for a sync; the main worker claims every queue no pool lists, including one a later release adds, without a value | One more queue and one more goroutine per worker |
+| (b) Keep `maintenance`, raise its default slots to 2 | No new queue | Smaller change | Two long jobs (a sync and a full collection) still fill both slots; a pool for the sync alone is impossible |
+| (c) The sync on `default` | Shares the four API-operation slots | No new queue | Competes with rescans and evaluations, which a sync itself enqueues |
+| (d) Restrict a process with zero slots (`jobs.workers.<queue>: 0`) | The existing minimum of 0 | No new key | A pool must zero every other queue, and a queue a later release adds gets its default slots on the pool, which then claims it unasked |
+
+**Choice:** (a). `vuln-evaluate` and `vuln-rescan` stay on `default` and `vuln-findings-retention` on `maintenance`: the
+evaluation is the work a sync causes, not the sync, and the retention is housekeeping.
+
+**Rationale:** the slot of `maintenance` is one on purpose, so that housekeeping never runs in parallel with itself; a sync that
+runs for minutes is a different kind of work and belongs in a slot of its own. A deny list for the main worker is what makes
+"every queue that no pool lists" hold without the chart knowing the queues of a later release. The development agent would
+revisit the slot count if a sync and an import (`mode: repository`) need to run side by side, and the queue if the evaluation
+turns out to need isolation from the API operations as well.
+
+**Applied in the spec:** R-ARCH-016 (the queue table, `jobs.workers.vuln`, `jobs.queues`, `jobs.exclude_queues`, the kinds,
+the criteria); [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-004 (the queue);
+[ha-and-helm.md](ha-and-helm.md) R-HA-062 (the worker pools).
+
+### Q-ARCH-297 · Which replicas share a remote repository's fetch budget after the cut
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-040 shares `limits.maxConcurrentFetches` out as
+`ceil(budget ÷ n)` per replica, n being the live replicas "that serve client traffic (`web`, or `all`)" (Q-REPO-8, Q-REPO-97).
+After the cut, client misses and shadowing probes are filled on `packages`; `api` sends the upstream test of R-REPO-024 and
+nothing else (Q-ARCH-294); a mirror pass runs on a `worker` within its share B (R-REPO-055). Verified in the code: the upstream
+test takes no fetch slot ([internal/proxy/upstream/probe.go](../../internal/proxy/upstream/probe.go),
+[internal/repository/upstream.go](../../internal/repository/upstream.go)), so the expectation that it takes one does not
+match what is built.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) n counts the live replicas of `packages`, `web` and `all`, their pools included; the upstream test takes no slot, as built (chosen) | The shares go to the processes that fill | The whole budget serves client fills; the bound is `maxConcurrentFetches + n − 1` plus the upstream tests running at that moment | An administrator's test can add one connection above the bound for its duration |
+| (b) n counts `api` as well, and the upstream test takes a slot of `api`'s share | Every process that can contact an upstream holds a share | The bound holds for tests too | `api` holds shares it almost never uses: with a budget of 64, three `packages` and two `api` replicas, each `packages` replica gets 13 slots instead of 22 |
+| (c) n counts `packages` only, and the test takes a slot of a `packages` share | — | — | Impossible: the test runs on `api`, which has no share |
+
+**Choice:** (a).
+
+**Rationale:** the budget protects an upstream from the bursts of client fills; one GET of the probe resource per administrator
+action, bounded by the management API's rate-limit classes (R-API-016), is not such a burst. The development agent would revisit
+this if an operation that tests many remotes at once appears, which then takes slots of a share of its own.
+
+**Applied in the spec:** [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-040 (n and the test), R-REPO-055 (the
+client-serving process is `packages`, the one that claims `mirror` a `worker`);
+[operations-and-observability.md](operations-and-observability.md) R-OPS-003 (the count the registry gives).
+
+### Q-ARCH-298 · How a role restricts the routes of an endpoint
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: an endpoint's ServeMux registers only the families of its `surface` and answers every other path with the `404` of
+an unknown path ([endpoints.md](endpoints.md) R-EP-005, `NewEndpointRouter` and `CheckSurface` in
+[internal/httpserver/surface.go](../../internal/httpserver/surface.go)). A role now serves only some families, on the default
+endpoint and on further ones alike.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The effective surface is the endpoint's surface intersected with the role's families; a listener opens only when the intersection is not empty (chosen) | The router and the route-table test take the intersection as they take the surface today | One mechanism: a family the role does not serve is a family the endpoint does not serve, with the same `404`; the route-table test proves what each role registers | A pod no longer opens an endpoint whose families its role does not serve, which the chart must know (R-EP-008) |
+| (b) A middleware per role that answers `404` for the other families | The router keeps every family | No change to the router | Two filters; the route-table test no longer shows what a role serves; the other role's handlers are built and reachable through a bug in the middleware |
+| (c) A router per role written in code | Each role registers its own routes | Explicit | Duplicates the surface mechanism and the family classification |
+
+**Choice:** (a).
+
+**Rationale:** the families already partition every route, and the surface filter already answers a family that is not served
+exactly as an unknown path. Intersecting with the role adds one set and keeps one place that decides what a listener serves. The
+development agent would revisit this if a family ever has to be served by two roles with different handlers.
+
+**Applied in the spec:** R-ARCH-001, R-ARCH-024 step 9; [endpoints.md](endpoints.md) R-EP-002, R-EP-005, R-EP-008.
+
+### Q-ARCH-299 · How phase 6a is cut into work packages
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: phase 6a changes the composition root, the job queue's claim, the chart, the registry and status, the UI's content
+transfers and the end-to-end profile. Several builders work in parallel; R-ARCH-001, R-ARCH-016, R-HA-002, R-HA-037, R-HA-042,
+R-HA-062 and R-HA-064 are the contract between them.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Five work packages along the layers, meeting at the role names, the family table, the queue names, the chart's object names and the values (chosen) | The binary's roles; the worker queues; the chart; operations and the UI; the tests and the dev profile | Each owns its directories; the binary and the chart can be built side by side against the names this page and ha-and-helm.md fix | The e2e package waits for the other four |
+| (b) One work package per role | `api`, `packages`, `worker` | Follows the roles | Every role edits `roles.go`, `steps.go`, the chart's Deployment template and the values: the packages collide in every file |
+
+**Choice:** (a), with the work packages and their dependencies in [coverage/roadmap.md](../coverage/roadmap.md#phase-6a--task-areas).
+
+**Rationale:** the layers already separate the concerns, and the names that cross them are fixed in the spec before any of
+them is built. The development agent would revisit the cut if WP6a.1 has to change an environment variable or a label the
+chart already renders.
+
+**Applied in the spec:** [coverage/roadmap.md](../coverage/roadmap.md#phase-6a--task-areas) (WP6a.1 to WP6a.5, E6a.1 to E6a.8).
+
 ## What this does not cover
 
 
@@ -8171,3 +8445,23 @@ number of connections a replica accepts.
 What makes it real: a client that opens connections faster than the timeouts close them, tens of
 thousands at a time. Mitigation today: connection limits at the edge and the pod's file-descriptor
 limit.
+
+### H-517 · The cut into roles separates the login secrets, not the data credentials
+
+Stage: the role table of R-ARCH-001 (specified for phase 6a, not built yet; today every `web` replica holds everything below
+and the login secrets as well).
+
+Live once phase 6a is built, for every installation. Subject: the database login, the object-store and Valkey credentials, the
+stored-secret key ring, and through it the upstream credentials of every remote repository (R-ARCH-021), all of which a
+`packages` replica holds as an `api` replica does.
+
+The cut keeps the session store, the OIDC client secrets and the break-glass password out of `packages`, so a flaw reachable
+through a package protocol cannot forge or read a session or sign in as the break-glass administrator. It does not narrow what
+the process reaches in PostgreSQL: every role connects with the same runtime login and the same grants
+([ha-and-helm.md](ha-and-helm.md) R-HA-014), and every role builds the key ring (the area `keyring`), so a compromised
+`packages` replica reads the session table, the token hashes and the sealed upstream credentials as any other replica could.
+ADR-153 weighed a role with data access of its own (option (c)) and rejected it for the transactions that hold security
+guarantees in one database.
+
+What makes it real: an exploitable flaw in a code path of the `packages` or `files` family (request parsing, format code, H-1).
+The mitigation is the same as before the cut: the narrow runtime grants of R-HA-014 and the pod security context of R-HA-033.

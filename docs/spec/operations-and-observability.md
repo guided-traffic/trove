@@ -95,7 +95,9 @@ Priority: **MVP** · Covers: OPS-002, OPS-003, OPS-004, ADMAPI-069, HA-023
 Every `web` and `worker` replica MUST serve `GET /healthz` (liveness) and `GET /readyz`
 (readiness) on the operations listener (INV-6) without authentication. Neither path exists on the
 client listener, and a `worker` replica has no client listener at all
-([architecture.md](architecture.md) R-ARCH-001). `backup` pods have no probes
+([architecture.md](architecture.md) R-ARCH-001). After the cut into roles (phase 6a, specified, not built yet), `api`
+and `packages` replicas are what this requirement calls `web`: each runs the checks, loops and drain of the `web` column,
+and a ready one is an endpoint of its role's Service; the watched identity loops of R-AUTH-042 run on `api` only. `backup` pods have no probes
 ([ha-and-helm.md](ha-and-helm.md) R-HA-060).
 
 A probe request MUST answer from cached check results. It MUST NOT open a database connection, call
@@ -313,7 +315,8 @@ health:
   place, no `worker` replica's instance ID appears in `job.locked_by` of a newly claimed job.
   Remove the policy, and `/readyz` returns to `200` within 5 s.
 - Run `npm ci --registry https://trove.example.com/api/npm/npm-all/` in a loop while
-  `kubectl -n trove rollout restart deploy/trove-web deploy/trove-worker` runs. No iteration fails.
+  `kubectl -n trove rollout restart deploy/trove-api deploy/trove-packages deploy/trove-worker` runs (before phase 6a:
+  `deploy/trove-web deploy/trove-worker`). No iteration fails.
 - Kill the Valkey Pub/Sub connection of one replica (`CLIENT KILL TYPE pubsub` on the primary),
   then revoke a token through another replica. The token is rejected on the first replica within
   `cluster.epoch_poll_interval` plus 1 s, and its `/readyz` answers `200` throughout.
@@ -409,7 +412,7 @@ the HA mechanisms of [ha-and-helm.md](ha-and-helm.md) build on them (Q-HA-12 the
 status screen is MVP as well ([api-and-ui.md](api-and-ui.md) R-UI-038, Q-API-8): it renders only
 MVP endpoints and is the only view of the replicas, the scheduled tasks and the key ring.
 
-Every `web` and `worker` replica MUST register itself in PostgreSQL at startup, with its role, and
+Every `api`, `packages`, `worker` and `web` replica MUST register itself in PostgreSQL at startup, with its role, and
 refresh its row every `system.heartbeat_interval` on its control connection
 ([architecture.md](architecture.md) R-ARCH-019), so that a request pool exhausted under load never
 makes a live replica look lost. A row whose heartbeat is older than `system.heartbeat_stale_after`
@@ -422,8 +425,11 @@ pages count the live replicas of a role here: the per-replica fallback of cluste
 limits ([architecture.md](architecture.md) R-ARCH-034), the support bundle, which waits for one
 part per live replica (R-OPS-027), the gauge `trove_valkey_primary_views` (R-OPS-045), and the
 proxy's fetch shares ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-040), which
-divide a remote repository's `maxConcurrentFetches` by the count of live client-serving replicas
-(`web`, or `all` in the local profile), refreshed with the heartbeat. None of them needs Valkey.
+divide a remote repository's `maxConcurrentFetches` by the count of live replicas that fill client misses
+(`packages` and `web`, their pools included, or `all` in the local profile; [architecture.md](architecture.md)
+Q-ARCH-297), refreshed with the heartbeat. The rate-limit fallback counts the live replicas of the process's own role and pool, plus `web`
+and `all` replicas of that pool ([internal/app/replica_count.go](../../internal/app/replica_count.go) counts `web` and `all`
+today). None of them needs Valkey.
 
 **Node.** Each row names the Kubernetes node the replica runs on: `spec.nodeName`, which the
 downward API offers only as an environment variable, passed by the chart as `TROVE_NODE_NAME`
@@ -471,7 +477,7 @@ CREATE TABLE replica (
   name          text        NOT NULL,             -- pod name (TROVE_POD_NAME), else host name
   version       text        NOT NULL,
   revision      text        NOT NULL,
-  roles         text[]      NOT NULL,             -- {web}, {worker}, or {all} for the development role (INV-2)
+  roles         text[]      NOT NULL,             -- {api}, {packages}, {worker}; {web} for the upgrade bridge and the releases before the cut; {all} for the development role (INV-2, Q-OPS-161)
   state         text        NOT NULL CHECK (state IN ('starting','ready','unready','draining')),
   checks        jsonb       NOT NULL DEFAULT '{}',-- {"<check>":{"status":…,"reason":…}}: last results, gating and reported, sanitised
   leases        jsonb       NOT NULL DEFAULT '[]',-- [{"name":"scheduler","since":"…"}]; worker role only
@@ -494,11 +500,11 @@ API: `GET /api/v1/system/replicas` → `200`. Requires `system.read`.
 {
   "items": [
     {
-      "name": "trove-web-6f9c7d8b5-x2v4q",
+      "name": "trove-packages-6f9c7d8b5-x2v4q",
       "instanceUid": "8a0b…",
       "version": "0.3.0",
       "revision": "4f1c2a9e0d7b…",
-      "roles": ["web"],
+      "roles": ["packages"],
       "state": "ready",
       "lost": false,
       "startedAt": "2026-10-28T08:01:12.004Z",
@@ -547,9 +553,9 @@ system:
 
 **Acceptance criteria:**
 
-- With three `web` and two `worker` replicas, the list shows five `ready` entries, three with roles
-  `["web"]` and two with `["worker"]`, each with the node it runs on; only a `worker` entry lists a
-  lease. After
+- With two `api`, three `packages` and two `worker` replicas, the list shows seven `ready` entries, two with roles
+  `["api"]`, three with `["packages"]` and two with `["worker"]`, each with the node it runs on; only a `worker` entry
+  lists a lease; a pod of a pool carries its `pool`. After
   `kubectl delete pod --grace-period=0 --force <replica>`, that entry shows `"lost": true` within
   30 s and is replaced by the new pod's entry.
 - With Valkey stopped, every entry stays `ready`, lists `valkey` under `degraded`, and carries
@@ -580,11 +586,12 @@ replica registry (R-OPS-003) holds the per-replica view of every replica.
   "baseUrlSource": "config",
   "maintenanceMode": "normal",
   "replicas": {
-    "live": 5,
-    "ready": 5,
-    "versions": {"0.3.0": 5},
+    "live": 7,
+    "ready": 7,
+    "versions": {"0.3.0": 7},
     "roles": {
-      "web": {"live": 3, "ready": 3, "degraded": 0, "nodes": 3},
+      "api": {"live": 2, "ready": 2, "degraded": 0, "nodes": 2},
+      "packages": {"live": 3, "ready": 3, "degraded": 0, "nodes": 3},
       "worker": {"live": 2, "ready": 2, "degraded": 0, "nodes": 2}
     }
   },
@@ -659,8 +666,9 @@ arrives, and the screen of the system status shows no row for it while the value
 **Acceptance criteria:** the response contains no field whose value is a password, key, token or
 presigned URL. `grep -iE 'secret|password|trv_'` over the response finds only key names, never
 values and no Sentinel address. With Valkey stopped, the call answers `200` and
-`valkey.degradedReplicas` equals `replicas.live`. With three `web` replicas on one node,
-`replicas.roles.web.nodes` is `1`.
+`valkey.degradedReplicas` equals `replicas.live`. With three `packages` replicas on one node,
+`replicas.roles.packages.nodes` is `1`. `replicas.roles` has a key per role with a live replica, `web` included while
+the bridge of [ha-and-helm.md](ha-and-helm.md) R-HA-064 or a replica of a release before the cut is live.
 
 ### R-OPS-005 · External base URL and forwarded hosts
 Priority: **MVP** · Covers: OPS-051, OPS-052, ADMAPI-071
@@ -749,8 +757,8 @@ the request's `Accept` header asks for `application/openmetrics-text`, it uses t
   lasts ([backup-and-restore.md](backup-and-restore.md) R-BAK-014); every backup fact that alerts
   need is also a gauge on the replicas, read from PostgreSQL, because a finished Job cannot be
   scraped.
-- **Role and pool of a series** (Q-OPS-13). The process reports its role in
-  `trove_build_info{role}`. Every other series gets `role` and, for the pools of
+- **Role and pool of a series** (Q-OPS-13, Q-OPS-161). The process reports its role in
+  `trove_build_info{role}`, one of `api`, `packages`, `worker`, `web` and `all`. Every other series gets `role` and, for the pools of
   [ha-and-helm.md](ha-and-helm.md) R-HA-062, `pool` as *target labels*: the chart's ServiceMonitor
   copies them from the pod's labels by relabeling. The process does not add them itself. On
   `trove_build_info` the exposed `role` and the target label collide; with `honor_labels: false`,
@@ -1255,7 +1263,7 @@ log:
   ring_buffer_bytes: 8MiB         # default (proposed); the bytes the ring holds at most
 ```
 
-**Acceptance criteria:** `kubectl -n trove logs deploy/trove-web | jq -e 'has("time") and has("level") and has("log") and has("replica") and has("role")'`
+**Acceptance criteria:** `kubectl -n trove logs deploy/trove-packages | jq -e 'has("time") and has("level") and has("log") and has("replica") and has("role")'`
 succeeds for every line, and so does the same check over `deploy/trove-worker` and over the pod of
 a completed backup Job, whose records carry `"role":"backup"`.
 
@@ -5551,6 +5559,31 @@ The development agent would revisit the thresholds after the first installations
 
 **Applied in the spec:** R-OPS-046 (the rows).
 
+### Q-OPS-161 · Which role values the registry, the metrics and the logs carry after the cut
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the registry's `roles` is a text array (`{web}`, `{worker}`, `{all}`), the ServiceMonitor copies `role` from the pod
+label `app.kubernetes.io/component` (Q-OPS-13), and every log record carries `role`. The cut adds `api` and `packages` and
+keeps `web` as the upgrade bridge ([architecture.md](architecture.md) Q-ARCH-295).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The role name as given to `--role`: `api`, `packages`, `worker`, `web`, `all`; the pool in `pool` (chosen) | One vocabulary in the registry, the series, the logs and the pod label | A series, a registry row and a log line of one pod say the same; a dashboard groups by one label | Dashboards and alerts that select `role="web"` need the new values after the cut |
+| (b) `web` for both `api` and `packages`, the role in a second label | Old dashboards keep working | No query change | Two labels for one fact; `role="web"` would no longer tell the trust domains apart |
+| (c) `roles: ["api","packages"]` for the bridge `web` | The array holds the families' roles | Counts per role need no special case | The bridge would appear in two groups of the status screen and twice in per-role counts, and replicas of a release before the cut still register `{web}` |
+
+**Choice:** (a).
+
+**Rationale:** the role is the process's identity, and keeping one vocabulary is what makes per-role counts, alerts and the
+status screen agree. `web` stays a value for the bridge and for replicas of a release before the cut during an upgrade. The
+development agent would revisit this if a dashboard the chart ships depends on `role="web"`; none does today (R-HA-045
+renders no dashboard).
+
+**Applied in the spec:** R-OPS-003 (the `roles` column, the example, the criteria, the counts of the fetch shares), R-OPS-004
+(`replicas.roles`), R-OPS-006 (`trove_build_info{role}`); [ha-and-helm.md](ha-and-helm.md) R-HA-045;
+[api-and-ui.md](api-and-ui.md) R-UI-038.
+
 ## What this does not cover
 
 ### H-53 · Span export bypasses the egress address policy
@@ -5574,16 +5607,19 @@ resolves differently for the proxy, or changes in between, reaches whatever addr
 chooses. Proxy-side egress rules are the only full control. The gap is live only for subscriptions
 that use a proxy.
 
-### H-41 · Egress is unrestricted, and ingress enforcement is verified on one CNI only
+### H-41 · Ingress enforcement is verified on one CNI only
 
-With the default `metrics.auth: none`, any pod that can reach port 8081 of a `web` or `worker`
-replica reads metrics: repository keys, request and byte volumes, queue depth, backup run state. It
+With the default `metrics.auth: none`, any pod that can reach port 8081 of a trove replica (`web` and `worker` today;
+`api`, `packages` and `worker` after phase 6a) reads metrics: repository keys, request and byte volumes, queue depth, backup run state. It
 also reads verbose readiness: dependency latency, schema version, whether Valkey is reachable. The chart ships an
 ingress NetworkPolicy, enabled by default, that admits port 8081 only from the monitoring namespace and the probe
 CIDRs (R-HA-042). Its enforcement is verified on the kind profile's CNI (kindnet) in the end-to-end suite and on no other
 CNI. Clusters whose CNI does not enforce NetworkPolicy, or installations that switch it off, expose this data cluster-wide
-unless `metrics.auth: static` is set. Separately, the replicas' egress is not restricted: the chart renders no egress
-policy, so a compromised replica can reach any address the pod network reaches (R-HA-042, H-6). The security
+unless `metrics.auth: static` is set. Until 2026-11-04 this gap also held the unrestricted egress of the replicas, then
+planned as an optional egress policy; by the owner's rule
+([ADR-154](../decisions.md#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port)) the chart
+renders ingress rules only, and the egress gap is
+[H-516](../security/egress.md#h-516--the-chart-restricts-no-egress-of-its-pods). The security
 perspective is in [security/privilege-footprint.md](../security/privilege-footprint.md) and
 [security/egress.md](../security/egress.md).
 

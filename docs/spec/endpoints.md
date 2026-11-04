@@ -228,14 +228,16 @@ Priority: **MVP** · Covers: trove-only
 - **Connection reuse.** An HTTP/2 client may send a request for another host on a connection it
   holds. The endpoint stays the connection's, and the host check answers `421` (R-EP-003), so the
   client opens a new connection to the right endpoint.
-- **Which process opens which listener.** A `web` process opens the client listeners of the
-  endpoints of its pool: the endpoints whose `pool` equals the process's pool name, read from the
-  reserved variable `TROVE_POOL_NAME` ([operations-and-observability.md](operations-and-observability.md)
-  R-OPS-028), which is empty for the main `web` Deployment. A process in a pool that no endpoint
-  names (a path pool of [ha-and-helm.md](ha-and-helm.md) R-HA-062, P1) serves the endpoints without
-  a pool, like the main Deployment. A `worker` process opens no client listener. The development
-  role `all` opens every listener. Every process opens the ops listener as before.
-- **Lifecycle.** A `web` process binds every listener of its pool before it reports ready; a
+- **Which process opens which listener.** A process of a client-serving role (`api`, `packages`, or `web`, which
+  serves both) opens the client listeners of the endpoints of its pool whose surface holds at least one family of its
+  role ([architecture.md](architecture.md) Q-ARCH-298), each with only those families: the endpoints whose `pool`
+  equals the process's pool name, read from the reserved variable `TROVE_POOL_NAME`
+  ([operations-and-observability.md](operations-and-observability.md) R-OPS-028), which is empty for a role's main
+  Deployment. A process in a pool that no endpoint names (a path pool of [ha-and-helm.md](ha-and-helm.md) R-HA-062)
+  serves the endpoints without a pool, like the main Deployment of its role. A `worker` process opens no client listener.
+  The development role `all` opens every listener. Every process opens the ops listener as before. (The roles `api`
+  and `packages` are specified for phase 6a, not built yet; today the role `web` opens the listeners.)
+- **Lifecycle.** A client-serving process binds every listener it opens before it reports ready; a
   listener that cannot bind stops startup and names the endpoint. Shutdown drains every client
   listener with the same readiness flip, drain delay and in-flight completion
   ([architecture.md](architecture.md) R-ARCH-024).
@@ -259,8 +261,11 @@ Acceptance criteria:
   `internal/httpserver`) still passes, and an architecture test fails when a package other than
   `internal/httpserver` constructs an endpoint snapshot.
 - A process with `TROVE_POOL_NAME=ep-customers` and `customers` assigned to that pool listens on
-  `:8443` and `:8081` only; `ss -ltn` in its pod shows no `:8080`. A main `web` pod shows `:8080`
-  and `:8081` only.
+  `:8443` and `:8081` only; `ss -ltn` in its pod shows no `:8080`. A main `packages` pod shows `:8080`
+  and `:8081` only. With `customers` on `surface: [packages]` and no pool, a main `api` pod shows no `:8443`; with
+  `surface: [packages, files, api]`, both main Deployments show `:8443`, and on the `api` pod
+  `GET https://packages.example.com:8443/api/npm/npm-customers/` answers the `404` problem while
+  `GET /api/v1/repositories` there reaches the handler.
 - With `max_in_flight: 1` on `customers` and one slow request holding it, a second request on
   `customers` answers `503` `server_busy`, while a request on `:8080` answers `200`.
 
@@ -400,6 +405,12 @@ An endpoint serves only the route families of its `surface`:
   `ci_exchange` is enabled on an endpoint with `exposure: rules`.
 - The npm exchange routes belong to `ci_exchange`, not to `packages`, so an endpoint can serve npm
   packages without accepting identity-provider tokens on any route.
+- **The role narrows the surface** (phase 6a, specified, not built yet; [architecture.md](architecture.md) R-ARCH-001,
+  Q-ARCH-298). A process registers on each endpoint the families of its surface that its role serves: `api` the families
+  `ui`, `api` and `ci_exchange`, `packages` the families `packages` and `files`, `web` and `all` every family. A path of a
+  family of the surface that the process's role does not serve answers the same `404` as a family outside the surface. The
+  edge sends each family to the role that serves it ([ha-and-helm.md](ha-and-helm.md) R-HA-037); the route-table test runs
+  per role and endpoint.
 
 Acceptance criteria:
 
@@ -410,7 +421,9 @@ Acceptance criteria:
 - `surface: [ui, packages]` on `customers` stops startup and names
   `server.endpoints.customers.surface`.
 - The route-table test lists, per endpoint, exactly the registered patterns of its families, and
-  fails on a fixture that registers a `files` pattern on an endpoint without `files`.
+  fails on a fixture that registers a `files` pattern on an endpoint without `files`. Run per role, it lists on the
+  default endpoint of a `packages` process no pattern of `ui`, `api` or `ci_exchange`, and on an `api` process no pattern of
+  `packages` or `files`.
 
 ## Host roots and wildcard hosts
 
@@ -517,7 +530,14 @@ Priority: **MVP** · Covers: HA-038, HA-039, HA-040
 
 The chart renders each entry of `endpoints` into `trove.yaml` and into the Kubernetes objects that
 carry its traffic. The default endpoint keeps the objects of [ha-and-helm.md](ha-and-helm.md)
-R-HA-037 and R-HA-038 (`<fullname>`, `ingress.*`, `gateway.*`).
+R-HA-037 and R-HA-038 (the role Services `<fullname>-api` and `<fullname>-packages`, `ingress.*`, `gateway.*`).
+
+**The role of an endpoint's pods** (phase 6a, specified, not built yet; Q-EP-70, Q-EP-71). An endpoint is served by the
+roles whose families its surface holds: `packages` for `packages` and `files`, `api` for `api` and `ci_exchange` (`ui` is
+never on a further endpoint). Without a pool, the endpoint's port opens on the main Deployment of each of those roles; with
+`pool.enabled`, on a pool of each of them. An endpoint whose surface holds families of both roles is split by path at its
+edge like the default endpoint (R-HA-037's table, restricted to its families), onto a Service per role. Today, before
+phase 6a, the main `web` pods or the pool `<fullname>-web-ep-<name>` serve every family of the surface.
 
 ```yaml
 endpoints: {}                             # default (proposed): only the default endpoint; example:
@@ -543,8 +563,8 @@ endpoints: {}                             # default (proposed): only the default
 #      extraSecrets: []                   # default (proposed); example [trove-packages-wildcard-tls]: further pairs, chosen by SNI
 #      clientCaSecret: ""                 # default (proposed): no client certificates
 #    pool:
-#      enabled: false                     # default (proposed): served by <fullname>-web (Q-EP-3)
-#      replicaCount: 2                    # default (proposed) when enabled; every key of web may be overridden here, merged key by key over the web values ([Q-EP-16](#q-ep-16--rendering-of-the-endpoint-map-and-of-the-pool-values))
+#      enabled: false                     # default (proposed): served by the main Deployments of the roles its surface holds (Q-EP-3, Q-EP-70)
+#      replicaCount: 2                    # default (proposed) when enabled; every key of the role's values may be overridden here, merged key by key over the values of each pool's role (api or packages; web before phase 6a) ([Q-EP-16](#q-ep-16--rendering-of-the-endpoint-map-and-of-the-pool-values))
 #    service:
 #      type: ClusterIP                    # default (proposed): ClusterIP | LoadBalancer | NodePort
 #      annotations: {}                    # default (proposed)
@@ -558,25 +578,25 @@ endpoints: {}                             # default (proposed): only the default
 #      enabled: false                     # default (proposed)
 #      parentRefs: []                     # default (proposed); example [{name: external, namespace: gateway-system, sectionName: https}]
 #    networkPolicy:
-#      from: []                           # default (proposed): empty = from anywhere; example [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ingress-external}}}]
+#      from: []                           # default (proposed): empty = from anywhere; the rule for <port> in the policy of every Deployment that opens it (R-HA-042); example [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ingress-external}}}]
 ```
 
 | Kind | Name | Rendered when |
 |---|---|---|
 | Configuration | `server.endpoints.<name>` in `trove.yaml`; chart-managed ([ha-and-helm.md](ha-and-helm.md) R-HA-030) | per entry |
-| Service | `<fullname>-ep-<name>`, one port `<port>` with `appProtocol: https` under `tls.enabled`, `sessionAffinity: None`, selecting the pods that serve the endpoint | per further endpoint |
-| Deployment, PodDisruptionBudget, HorizontalPodAutoscaler | `<fullname>-web-ep-<name>` with `--role web`, `TROVE_POOL_NAME=ep-<name>`, pod label `trove/pool: ep-<name>`; the rendered `pool` of the endpoint is `ep-<name>` | `pool.enabled` |
-| Ingress | `<fullname>-ep-<name>`: `ingressClassName`, one rule per host of the endpoint (the base URL's host, every exact host, the wildcard host), path `/` with `pathType: Prefix`, backend `<fullname>-ep-<name>:<port>` over TLS as R-HA-063 wires it, with the endpoint's own `ingress.backendTLS` keys overriding the global block key by key ([Q-EP-17](#q-ep-17--backend-tls-of-a-further-endpoints-ingress)), and the `tls` entries | `ingress.enabled` |
-| HTTPRoute, BackendTLSPolicy | `<fullname>-ep-<name>`: `parentRefs`, `hostnames` with the same hosts (a wildcard as a leading `*.` label), one rule `PathPrefix /` | `gateway.enabled` |
-| NetworkPolicy | `<fullname>-ep-<name>`: admits `<port>` on the pods that serve the endpoint, from `networkPolicy.from` only | `networkPolicy.enabled` |
+| Service | `<fullname>-ep-<name>`, one port `<port>` with `appProtocol: https` under `tls.enabled`, `sessionAffinity: None`, selecting the pods of the role that serves the surface's `packages` and `files` families, or of `api` when the surface holds neither; and `<fullname>-ep-<name>-api` the same way for the `api` pods when the surface holds families of both roles (Q-EP-71) | per further endpoint |
+| Deployment, PodDisruptionBudget, HorizontalPodAutoscaler | `<fullname>-packages-ep-<name>` with `--role packages` and `<fullname>-api-ep-<name>` with `--role api`, one per role the surface holds, each with `TROVE_POOL_NAME=ep-<name>` and pod label `trove/pool: ep-<name>`; the rendered `pool` of the endpoint is `ep-<name>` (before phase 6a: one `<fullname>-web-ep-<name>` with `--role web`) | `pool.enabled` |
+| Ingress | `<fullname>-ep-<name>`: `ingressClassName`, one rule per host of the endpoint (the base URL's host, every exact host, the wildcard host) with the paths of [ha-and-helm.md](ha-and-helm.md) R-HA-037's table whose families the surface holds, each `pathType: Prefix` to the Service of its role on `<port>` (path `/` to the one Service when the surface lies within one role), over TLS as R-HA-063 wires it, with the endpoint's own `ingress.backendTLS` keys overriding the global block key by key ([Q-EP-17](#q-ep-17--backend-tls-of-a-further-endpoints-ingress)), and the `tls` entries | `ingress.enabled` |
+| HTTPRoute, BackendTLSPolicy | `<fullname>-ep-<name>`: `parentRefs`, `hostnames` with the same hosts (a wildcard as a leading `*.` label), the same path rules as `PathPrefix` matches; a BackendTLSPolicy per Service it names | `gateway.enabled` |
+| NetworkPolicy | none of its own: the rule for `<port>`, from `networkPolicy.from` only, is part of the policy of every Deployment that opens the port ([ha-and-helm.md](ha-and-helm.md) R-HA-042, Q-HA-76; before phase 6a a policy `<fullname>-ep-<name>`) | `networkPolicy.enabled` |
 | Secret mounts | `tls.existingSecret` and each of `extraSecrets` at `/var/run/secrets/trove/endpoints/<name>/<n>/` (keys `tls.crt`, `tls.key`), rendered as `tls.certificates`; `clientCaSecret` (`ca.crt`) as `tls.client_ca_file` | per entry that names them |
 
-- **Pods and ports.** The pods that serve an endpoint (the main `web` Deployment, or the endpoint's
-  pool) get its container port; no other pod listens on it (R-EP-002). An endpoint pool follows
-  the rules of a web pool of R-HA-062: at least two replicas with `highAvailability.enforce`,
-  spreading, a disruption budget, the drain rule of R-HA-059, and a share of the connection budget
-  of R-HA-016. Endpoint pools are MVP; the path pools of R-HA-062 stay P1, and their names may not
-  start with `ep-`.
+- **Pods and ports.** The pods that serve an endpoint (the main Deployments of the roles its surface holds, or the
+  endpoint's pools) get its container port; no other pod listens on it (R-EP-002). An endpoint pool follows
+  the rules of a pool of its role in R-HA-062: at least two replicas with `highAvailability.enforce`,
+  spreading, a disruption budget, the drain rule of R-HA-059, its ingress policy, and a share of the connection budget
+  of R-HA-016; a surface with families of both roles therefore costs two pools. Endpoint pools are MVP; the path pools of
+  R-HA-062 come with phase 6a, and their names may not start with `ep-`.
 - **Default endpoint hosts.** When at least one further endpoint is configured, the chart renders
   `server.endpoints.default.hosts` from the hosts of `config.server.base_url` and
   `config.server.additional_base_urls`, unless `endpoints.default.hosts` is set. Traffic that an
@@ -587,7 +607,8 @@ endpoints: {}                             # default (proposed): only the default
   through its own load balancer.
 - **Validation** ([ha-and-helm.md](ha-and-helm.md) R-HA-029): rendering fails and names the value
   for a `port` equal to 8080, 8081 or another endpoint's port; an invalid name or a name for which
-  `<fullname>-ep-<name>` exceeds 63 characters; a missing `baseUrl`; a host in two endpoints;
+  `<fullname>-ep-<name>-api` (a surface with families of both roles) or, with a pool, `<fullname>-packages-ep-<name>`
+  exceeds 63 characters; a missing `baseUrl`; a host in two endpoints;
   `config.server.endpoints` set inside `config`; `extraSecrets` or `clientCaSecret` with
   `tls.enabled: false`; and an endpoint pool below two replicas with `highAvailability.enforce`.
 - **NOTES.txt** lists each endpoint with its Service and hosts, and warns when an endpoint with
@@ -601,14 +622,18 @@ Acceptance criteria:
 - `helm template` with the `customers` example, `ingress.enabled: true`,
   `className: traefik-external` and `tls: [{secretName: packages-tls, hosts: [packages.example.com,
   "*.packages.example.com"]}]` renders: Service `trove-ep-customers` with port 8443 selecting the
-  main `web` pods; Ingress `trove-ep-customers` with that class, rules for `packages.example.com`
-  and `*.packages.example.com`, the TLS entry and the backend `trove-ep-customers:8443`;
-  NetworkPolicy `trove-ep-customers` admitting 8443 only from `networkPolicy.from`; and
-  `trove.yaml` with `server.endpoints.customers` and
+  main `packages` pods; Ingress `trove-ep-customers` with that class, rules for `packages.example.com`
+  and `*.packages.example.com`, each with path `/` to `trove-ep-customers:8443`, and the TLS entry;
+  the policy `trove-packages` with a rule admitting 8443 only from `networkPolicy.from`; no container port 8443 and no
+  rule for it on the `api` pods; and `trove.yaml` with `server.endpoints.customers` and
   `server.endpoints.default.hosts: [trove.example.com]`.
-- With `pool.enabled: true`: Deployment `trove-web-ep-customers` with `TROVE_POOL_NAME=ep-customers`,
-  its disruption budget, and the Service selecting only its pods; the main `web` pods carry no
-  container port 8443.
+- With `surface: [packages, files, api]`: Services `trove-ep-customers` (packages pods) and `trove-ep-customers-api`
+  (api pods), both on 8443; the Ingress rules per host `/` and `/api/v1` to `trove-ep-customers-api`, `/api`, `/files`,
+  `/v2` and `/.well-known` to `trove-ep-customers`; the 8443 rule in both `trove-packages` and `trove-api`.
+- With `pool.enabled: true`: Deployment `trove-packages-ep-customers` with `--role packages` and
+  `TROVE_POOL_NAME=ep-customers`, its disruption budget and its policy (8443 and 8081, no 8080), and the Service
+  selecting only its pods; the main `packages` pods carry no container port 8443; no `api` pool, because the default
+  surface holds no `api` family.
 - `--set endpoints.customers.port=8080` and `--set config.server.endpoints.x.listen=:9000` each fail
   and name the value.
 
@@ -664,8 +689,12 @@ R-AUTH-001) applies the endpoint's rules after it selects the credential, and be
 lookup that a rule makes unnecessary:
 
 1. **Session cookie.** Evaluated only on an endpoint whose surface holds `ui`, which is the default
-   endpoint. Elsewhere it is ignored as if absent: browsers do not isolate cookies by port, so a
-   further endpoint on the default endpoint's host name would otherwise receive the session.
+   endpoint, and only by a process whose role serves `ui` (`api`, and `web` and `all`). Elsewhere it is ignored as if
+   absent: browsers do not isolate cookies by port, so a further endpoint on the default endpoint's host name would
+   otherwise receive the session, and a `packages` process has no session store at all (phase 6a,
+   [architecture.md](architecture.md) R-ARCH-001). The UI's own downloads and uploads therefore go to `api` through the
+   session-only content routes of [api-and-ui.md](api-and-ui.md) R-API-025 (Q-UI-106), never to `/files/` or a package
+   URL.
 2. **Token type.** The prefix gives the type (R-AUTH-022). A type outside `auth.token_types` is
    rejected with `401` `invalid_token`, without a database lookup. This covers the NuGet API key.
 3. **Binding.** A token whose scope binds it to endpoints (R-EP-011) is rejected with `401`
@@ -693,7 +722,8 @@ Acceptance criteria:
   reaches authorization; the same bound SAT gets `401` on `default`.
 - `curl -b '__Host-trv_session=<valid session>' https://packages.example.com:8443/api/npm/npm-customers/@acme%2fsdk`
   answers `401` `credentials_required`, because the cookie is ignored and anonymous requests are
-  off.
+  off. On the default endpoint, the same cookie on `GET https://trove.example.com/api/npm/npm-local/@acme%2fsdk` (a
+  `packages` pod) is ignored as well, and the request is decided as one without a credential.
 - Anonymous access on (R-AUTH-037) and `anonymous` granted `read` on `npm-customers`: an anonymous
   `npm view @acme/sdk` succeeds on `default` and gets `E401` on `customers`.
 - Each case increments `trove_endpoint_credentials_refused_total` with its reason.
@@ -2265,6 +2295,54 @@ Context: `compileRule` compiles the `versions` include and exclude lists as name
 
 **Applied in the spec:** none (the rule dimensions are unchanged). Code: [exposure.go](../../internal/authz/exposure.go) `compileRule` (unchanged). Tests: `TestR_NUGET_034_VersionIncludesAndExcludesCompareTheCanonicalForm` (integration).
 
+### Q-EP-70 · Which role an endpoint pool is
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: an endpoint pool is a pool of `web` today (R-EP-008, Q-EP-3). After the cut, a pool is a variant of one role
+(ADR-155), and a further endpoint's surface may hold families of either role: the default surface is `[packages]`, and the dev
+profile's `customers` serves `[packages, files, api]` (Q-EP-54).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) By surface: a pool of each role whose families the surface holds; `packages` for `packages` and `files`, `api` for `api` and `ci_exchange` (chosen) | A package-only endpoint gets a `packages` pool, an API-only one an `api` pool, a mixed one one of each | Each pool holds only its role's areas and secrets: an external package endpoint's pool holds no login secret (H-57); every surface that was valid stays valid | A mixed surface with a pool costs two pools, four pods under the HA rule |
+| (b) Always `packages`, which then also serves the surface's `api` families | One pool per endpoint | One pool | `packages` would build the management API's areas on some pods: the role table would depend on configuration |
+| (c) Refuse a pool for a surface that spans both roles | One pool, one role | Simple | Breaks a valid configuration on upgrade, and an operator who wants isolation for a mixed endpoint gets none |
+| (d) The combined role `web` for a mixed surface | One pool | One pool | `web` exists only as the upgrade bridge (Q-ARCH-295); a pool of it holds every secret of `api` |
+
+**Choice:** (a).
+
+**Rationale:** the pool's purpose (Q-EP-3) is isolation of an audience; making it a pool of the role that serves the audience's
+families keeps that isolation and adds the trust split on top. Mixed surfaces are rare and their cost is explicit. The
+development agent would revisit this if mixed surfaces with pools turn out common, where (b) with a role of its own would be
+weighed with the owner.
+
+**Applied in the spec:** R-EP-008 (the role of an endpoint's pods, the Deployment row, the criteria);
+[ha-and-helm.md](ha-and-helm.md) R-HA-062 (endpoint pools), R-HA-028.
+
+### Q-EP-71 · How a further endpoint whose surface spans both roles is routed
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: an endpoint has one port and, today, one Service `<fullname>-ep-<name>` and one edge route `/`. A surface such as
+`[packages, files, api]` is served by two roles after the cut; a Service selecting both roles' pods would land half of the
+requests on a role that answers them `404`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A Service per role on the endpoint's port, `<fullname>-ep-<name>` for the role of `packages` and `files` (or `api` when the surface holds neither) and `<fullname>-ep-<name>-api` beside it for a mixed surface; the endpoint's edge splits its hosts by the prefixes of R-HA-037 restricted to its families (chosen) | The default endpoint's mechanism, per endpoint | The common, package-only endpoint keeps its Service name and its route `/`; a mixed endpoint works as the default endpoint does | A mixed endpoint's edge carries the path rules, and its certificate is verified for two Services |
+| (b) Two Services named by role for every endpoint (`-packages`, `-api`) | Uniform names | Symmetric | Renames the Service of every existing package-only endpoint, and with it the verification name of its edge |
+| (c) Refuse a surface that spans both roles | One Service per endpoint | Simple | Breaks the dev profile's `customers` and any installation like it (Q-EP-54) |
+
+**Choice:** (a). The edge verifies both Services under the name the endpoint's certificate carries for
+`<fullname>-ep-<name>.<namespace>.svc`.
+
+**Rationale:** (a) changes nothing for the default surface and reuses one routing table for every endpoint. The development
+agent would revisit this if the endpoint's certificate cannot carry the verification name for two Services on an edge.
+
+**Applied in the spec:** R-EP-008 (the Service, Ingress and HTTPRoute rows and the criteria), R-EP-002 (which pods open the
+port); [ha-and-helm.md](ha-and-helm.md) R-HA-037 (further endpoints), R-HA-028.
+
 ## What this does not cover
 
 ### H-57 · A further endpoint runs with every credential of a `web` replica
@@ -2283,7 +2361,10 @@ data as from any other request. No reduced-privilege role exists for endpoint po
 mounts the private key of the default endpoint's pair (`tls.secretName`) only into pods that load it:
 with `tls.ops.secretName` set and pairs of their own on the pool's endpoints, an endpoint pool and
 the workers hold no copy of it; without `tls.ops`, every pod holds it, because its operations
-listener inherits the pair. Set `tls.ops` when you run pools. What makes it real: an exploitable flaw in a code path that the
+listener inherits the pair. Set `tls.ops` when you run pools. The cut into roles (phase 6a, specified, not built yet;
+Q-EP-70, [ha-and-helm.md](ha-and-helm.md) Q-HA-79) narrows the subject for package endpoints: their pods are of role
+`packages`, which mounts no OIDC client secret and no break-glass password and evaluates no session; the credentials listed
+above stay ([architecture.md](architecture.md) H-517). What makes it real: an exploitable flaw in a code path that the
 endpoint's surface exposes.
 
 ### H-58 · Exposure rules are bound to an endpoint name

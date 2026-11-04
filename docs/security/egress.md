@@ -62,7 +62,7 @@ without naming the address in the answer.
 The default list does **not** contain the private ranges `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or the unique-local `fc00::/7`.
 An upstream that resolves to a private address is therefore reached by default. That is recorded as
 [H-6](../spec/repositories-and-proxy.md#h-6--remote-repositories-reach-private-networks), which also names an egress
-`NetworkPolicy` as the mitigation; the chart renders none ([H-41](../spec/operations-and-observability.md#h-41--egress-is-unrestricted-and-ingress-enforcement-is-verified-on-one-cni-only)).
+`NetworkPolicy` as the mitigation; the chart renders none ([H-516](#h-516--the-chart-restricts-no-egress-of-its-pods)).
 
 `proxy.outbound.address_policy.allow_cidrs` (default empty) permits a range, and an allowed range wins over the deny list. Zoned
 IPv6 addresses are refused before it is consulted, so an allow entry cannot open them.
@@ -76,7 +76,7 @@ IPv6 addresses are refused before it is consulted, so an allow entry cannot open
 - The connection a proxy makes after trove checked the target ([H-40](../spec/operations-and-observability.md#h-40--outbound-address-checks-are-weaker-through-an-outbound-proxy)).
 - The private ranges, which the default list does not deny ([H-6](../spec/repositories-and-proxy.md#h-6--remote-repositories-reach-private-networks)).
 - The pod's other outbound paths: database, Valkey and Sentinel connections have their own addresses from configuration and are not
-  checked by this policy. Their egress is the one of the pod network ([H-41](../spec/operations-and-observability.md#h-41--egress-is-unrestricted-and-ingress-enforcement-is-verified-on-one-cni-only)).
+  checked by this policy. Their egress is the one of the pod network ([H-516](#h-516--the-chart-restricts-no-egress-of-its-pods)).
 
 ## Which hosts receive credentials
 
@@ -160,8 +160,29 @@ HTTP status, the subject and expiry of the certificate, the duration and a code 
 unknown name. Subject: hosts and ports of the internal networks that the pods can reach, probed one request at a time by a principal who
 may already configure a remote repository.
 
-What makes it real: a principal with the capability and an installation without the egress `NetworkPolicy` of
-[H-41](../spec/operations-and-observability.md#h-41--egress-is-unrestricted-and-ingress-enforcement-is-verified-on-one-cni-only). The body of
+What makes it real: a principal with the capability and an installation whose cluster restricts no egress of trove's pods
+([H-516](#h-516--the-chart-restricts-no-egress-of-its-pods)). The body of
 the response is never returned, at most 64 KiB are read and dropped, and the messages never repeat the URL; the status and the timing are
 the channel.
 
+
+### H-516 · The chart restricts no egress of its pods
+
+Stage: the pod network of every pod the chart deploys (the serving Deployments, the migration Job, the backup and restore
+pods); the chart's policies are ingress rules only
+([networkpolicy.yaml](../../deploy/helm/trove/templates/networkpolicy.yaml)), by the owner's rule of 2026-11-04
+([ADR-154](../decisions.md#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port)).
+
+Live for every installation whose cluster operator adds no egress policy of their own. Subject: every address the pod
+network reaches from a trove pod, the cloud metadata endpoints (`169.254.169.254`) and in-cluster services among them,
+reached by a process that is no longer trove's own code, or by a connection the address check does not cover: the object
+store ([H-56](../spec/architecture.md#h-56--the-object-store-endpoint-skips-the-egress-address-policy)), the span export
+([H-53](../spec/operations-and-observability.md#h-53--span-export-bypasses-the-egress-address-policy)), and the database,
+Valkey and Sentinel connections, whose addresses come from configuration.
+
+What remains is the address policy of this page, which every outbound client that trove builds applies at connect time in
+every role, and the cluster operator's own policy. The second layer an egress policy of the chart would have added was weighed
+and dropped with the owner's rule; R-HA-042 lists what each role must reach for an operator who writes one.
+
+What makes it real: a flaw that lets an attacker run code in a trove process or steer a connection outside the outbound
+clients of `internal/outbound`, in a cluster without an egress policy.

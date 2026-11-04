@@ -1792,8 +1792,15 @@ R-ARCH-035):
 
 - its client listener (`server.tls`, the pair of `tls.existingSecret` or the cert-manager Certificate of the chart) and its ops
   listener;
-- the connection to the main installation (`https` required: an `http` `bastion.main.url` stops startup; the trust is the
-  system roots plus `trustedCA`);
+- the connection to the main installation (`https` required: an `http` `bastion.main.url` or `bastion.main.packages_url`
+  stops startup; the trust is the system roots plus `trustedCA`);
+- **after the main installation's cut into roles** (phase 6a, specified, not built yet;
+  [ha-and-helm.md](ha-and-helm.md) R-HA-002, Q-HA-74): the interface of R-BAS-008 (`/api/v1/bastion/…`) is served by the
+  main installation's role `api` and the forwarded package and raw-file requests by `packages`. A `bastion.main.url` that
+  names the main installation's edge reaches both, because the edge splits by path. A Bastion that calls the main
+  installation's Services directly sets `bastion.main.url` to the Service of `api` and `bastion.main.packages_url` to the
+  Service of `packages`; the forwards then go to `packages_url`, everything else to `url`. `packages_url` empty (the
+  default) means `url` for both;
 - Valkey and Sentinel (R-ARCH-031), and the cache bucket (`https` endpoint, `trustedCA`);
 - the chart's Ingress (`ingress.tls`), Service, probes and ServiceMonitor (R-HA-063's wiring).
 
@@ -1968,6 +1975,7 @@ config:
   bastion:
     main:
       url: ""                           # required; example: https://trove.example.com (the main endpoint)
+      packages_url: ""                  # default (proposed): empty = url; example: https://trove-packages.trove.svc:8080 (the main installation's packages Service, R-BAS-044)
       connect_timeout: 5s               # default (proposed)
       response_header_timeout: 30s      # default (proposed)
       max_concurrent: 64                # default (proposed), across all replicas (R-BAS-025)

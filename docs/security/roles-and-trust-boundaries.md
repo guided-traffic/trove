@@ -106,7 +106,7 @@ The ops listener serves `/healthz`, `/readyz` and `/metrics` without authenticat
 ([metrics.go](../../internal/observability/metrics.go), `authorized`). The readiness answer names checks and fixed reason
 codes (`no_sentinel`, `circuit_open`, `probe_failed` and the others of [valkey_reason.go](../../internal/cluster/valkey_reason.go)),
 never an address or a raw error text. Reachability of the listener is the one fence, and it is described under
-[H-41](../spec/operations-and-observability.md#h-41--egress-is-unrestricted-and-ingress-enforcement-is-verified-on-one-cni-only).
+[H-41](../spec/operations-and-observability.md#h-41--ingress-enforcement-is-verified-on-one-cni-only).
 
 ## Installation facts before identity ships
 

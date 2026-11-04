@@ -140,7 +140,8 @@ release that closes a milestone is recorded once it is published, in [BETA.md](.
 | [M3](#m3--nuget) | NuGet v3; freeze of the format contract | 28 MVP | M2's WP2.1 to WP2.3 | the release that closes it |
 | [M4](#m4--gitlab-ci-oidc) | GitLab CI OIDC token exchange | 28 MVP | M1 for the work, M3 for the exit | the release that closes it |
 | [M4b](#m4b--vulnerability-scanning) | Vulnerability scanning: advisory mirror from OSV, matching by package identity, findings and the vulnerability report, blocking of malicious versions, npm and NuGet audits from trove's data | 29 MVP | M3 for the exit; the advisory and npm work from M2 (Q-ROAD-8) | the release that closes it |
-| [6b](#phase-6b--remote-full-mirror) | Remote full mirror: background passes of a remote repository within its bounds, throttling, clients first, status; specified, not scheduled | 10 MVP | M4b and the owner's process topology | not scheduled |
+| [6a](#phase-6a--task-areas) | Task areas: the roles `api`, `packages` and `worker` as Deployments of their own, path routing at the edge, worker pools by queue, ingress rules per Deployment, the upgrade across the cut; specified, not built | R-HA-064 added; the requirements of its scope table changed | M4b | the release that closes it |
+| [6b](#phase-6b--remote-full-mirror) | Remote full mirror: background passes of a remote repository within its bounds, throttling, clients first, status; specified, not scheduled | 10 MVP | M4b and 6a (the roles and the queue restriction) | not scheduled |
 | [M5](#m5--ha-hardening-and-helm-ga) | HA hardening under drains and failovers, backup and restore with the revocation journal, Helm GA | 64 MVP | M3, M4 and M4b; the backup lane from M1 (Q-ROAD-2) | the release that closes it: the **beta candidate** |
 | [Walkthrough](#owner-walkthrough) | The owner reviews the prototype; objections are worked off | — | M5 | the **beta** release: the release cut from the commits that close phase 8 |
 | Beta phase | Beta feedback worked off, upgrade path from the beta, import tooling, user documentation ([FULL.md](../projektplan/FULL.md) block A) | — | Beta | further `v0` releases; 1.0 only on the owner's explicit decision |
@@ -164,6 +165,8 @@ flowchart LR
   B --> M5
   M4 --> M5
   V --> M5
+  V --> T6a["6a Task areas: api, packages, worker"]
+  T6a --> M5
   M5 --> R["Owner walkthrough, objections worked off = beta release"]
   R --> P1["M6 to M12 platform"]
   R --> F["F1 to F7 formats"]
@@ -1003,11 +1006,78 @@ R-BAK-004, and the package-page tab of R-UI-007. The npm audit endpoint's reques
 dismissals and vulnerabilities in NuGet registrations (P1, M6); curation policies with fallback, and with them any
 policy-based severity threshold (M12, Q-VULN-20); container images (F4); licenses, SBOMs and content analyses (Later).
 
+## Phase 6a · Task areas
+
+**Status:** specified on 2026-11-04, not built. The owner cut trove into task areas: roles of one binary, each its own
+Deployment, network seams only at trust or load boundaries, and no fetch service
+([ADR-153](../decisions.md#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries));
+network policies are ingress rules between the chart's pods, each with its port
+([ADR-154](../decisions.md#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port)); the roles
+are `api`, `packages` and `worker`, variants are pools
+([ADR-155](../decisions.md#adr-155--three-roles-api-packages-and-worker-variants-are-pools)). The phase comes before 6b, so
+that the mirror's passes and their upstream contacts land in their task area.
+
+**Goal.** `api` serves the UI, the management API and the CI exchange and holds the sessions and the login secrets; `packages`
+serves the package protocols and the raw files with tokens only; `worker` runs the queues, split into pools by queue where an
+installation wants it. One host is split by path prefix at the edge; every Deployment has its Service, disruption budget,
+autoscaler and ingress policy; an installation of the previous shape upgrades without downtime.
+
+**Scope.**
+
+| Area | Requirements |
+|---|---|
+| Roles, wiring areas, route families per role | INV-2, R-ARCH-001, R-ARCH-024 step 9, R-EP-002, R-EP-005, R-EP-010 (Q-ARCH-294, Q-ARCH-295, Q-ARCH-298) |
+| Queues and worker pools | R-ARCH-016, R-VULN-004's queue (Q-ARCH-296) |
+| Chart: Deployments, Services, edge, policies, pools, upgrade | R-HA-002, R-HA-016, R-HA-028 to R-HA-032, R-HA-035, R-HA-037, R-HA-038, R-HA-042, R-HA-045, R-HA-062, R-HA-064, R-EP-008 (Q-HA-71 to Q-HA-79, Q-EP-70, Q-EP-71) |
+| Operations, fetch shares, UI | R-OPS-001, R-OPS-003, R-OPS-004, R-OPS-006, R-REPO-040, R-REPO-055, R-API-025, R-API-029, R-UI-012, R-UI-038, the Bastion's `bastion.main.packages_url` (Q-ARCH-297, Q-OPS-161, Q-UI-106, Q-UI-107, Q-HA-74) |
+| Drains and upgrade | R-HA-059 (a drain per role), R-HA-020, R-HA-021, R-HA-064 |
+
+**Exit criteria.**
+
+- **E6a.1** The role table (R-ARCH-001): the test in `internal/app` that compares `SubsystemsFor` of every role with the
+  area tables passes; `planSteps` accepts `api`, `packages`, `worker`, `web` and `all`; a `packages` replica starts with no
+  login secret mounted and builds none of `sessions`, `login`, `ci_exchange`, `packages-api`, `vuln-api`; an `api` replica
+  builds neither `proxy-engine` nor `formathost`; `go test ./internal/archtest/...` passes.
+- **E6a.2** Families per role (R-ARCH-001, R-EP-002, R-EP-005, R-EP-010): the route-table test per role and endpoint; the
+  `404` criteria of R-ARCH-001 on both roles; a session cookie ignored on `packages`; on the dev profile's `customers`
+  (`[packages, files, api]`) both main Deployments open `:8443` with their own families only.
+- **E6a.3** Queues (R-ARCH-016): the integration criteria of `jobs.queues` and `jobs.exclude_queues`, the advisory sync on `vuln`
+  not delaying a `gc` job, a row of a moved kind in its old queue claimed and run.
+- **E6a.4** The chart per role (`test/chart`, `make chart-test`): Deployments, Services, PDBs, HPAs, NetworkPolicies with their
+  ports and no egress (R-HA-042), the edge's path rules (R-HA-037), the path and worker pools (R-HA-062), the endpoint pools per
+  role and the mixed surface (R-EP-008), the login secrets in `api` pods only (R-HA-030), the bridge and its guard (R-HA-064),
+  the validation rows (R-HA-029); `helm lint` and kubeconform over every `ci/` value set.
+- **E6a.5** e2e with every role deployed (dev profile: `api` 2, `packages` 3, `worker` 2 and a worker pool for `vuln`, random
+  distribution by the Services): the sets `access`, `npm`, `nuget`, `ci`, `vuln` and `bastion` pass; no `api` pod's access log records
+  a package or raw-file request and no `packages` pod's a UI, sign-in or management request (R-HA-037); the UI's download and
+  upload journeys go through the content routes (R-API-025, Q-UI-106).
+- **E6a.6** A drain per role (R-HA-059, "A drain per role"): `api`, `packages`, `worker` and the `vuln` pool, each evicted pod by
+  pod under the load, with every pass condition, the full advisory sync ending on another worker from its checkpoint.
+- **E6a.7** The upgrade across the cut (R-HA-064): from the latest release before the cut through both steps with no failed
+  iteration of the client loops and the UI journey; the guard refuses a one-step upgrade.
+- **E6a.8** Every requirement of the scope table has a passing test that names it (Q-ROAD-4); BETA.md's phase 6a items are 🟢.
+
+**Work packages** ([architecture.md](../spec/architecture.md) Q-ARCH-299). The packages meet at names the specification fixes:
+the role names and their families (R-ARCH-001), the queue names and keys (R-ARCH-016), the chart's object names, labels,
+environment variables and values (R-HA-028, R-HA-030, R-HA-031), the content routes and `contentUrl` (R-API-025).
+
+| WP | Content | Owns | Can start | Open items to settle in the package |
+|---|---|---|---|---|
+| WP6a.1 | Binary roles: `api`, `packages` and `web` in `SubsystemsFor` and the step list's role sets; the authentication area without the sessions area on `packages`; `packages-api` without its format-host check; the virtual engine over a read-only view of the remote members on `api`; `requireServing` per role; the role's families intersected with each endpoint's surface and the listener rule of R-EP-002; `process.role` values and its error; `database.preflight.expected_serving_replicas` with its alias; the per-role and per-pool replica count of the limiters; the Bastion's `bastion.main.packages_url` | `internal/app`, `internal/httpserver`, `internal/config` (role, preflight), `internal/bastion` (the forward URL) | now | Not verified: whether an operation of the management API other than the resolution explanation reaches the virtual or remote engine (Q-ARCH-294); how the authentication area is built without the sessions area under typed wiring, which has no optional inputs (Q-ARCH-209); whether the forward marking of the Bastion (`bastionServices`) needs an area that `packages` does not build; the limiters' count ([replica_count.go](../../internal/app/replica_count.go)) counts the replicas of the same pool, while R-REPO-040's fetch share counts every replica that fills: whether the proxy should take a count of its own |
+| WP6a.2 | Worker queues: the queue `vuln` and `jobs.workers.vuln`; `jobs.queues` and `jobs.exclude_queues` with their validation; the claim over the process's queues; the three sync kinds on `vuln` | `internal/config/jobs.go`, `internal/jobs`, `internal/vuln` (the queue constant), `internal/app/wire_vuln_sync.go` | now | How a list-valued key reaches the process through its environment variable (`TROVE_JOBS_QUEUES`): the configuration loader's form for lists; whether a row of a kind whose queue moved runs in the slots of its row's queue |
+| WP6a.3 | Chart: the three Deployments, the role Services, PDBs and HPAs per Deployment (the HPA is not rendered today), the edge's path rules on the Ingress, one NetworkPolicy per Deployment with its ports, the path and worker pools, the endpoint pools per role and the mixed surface's second Service, the login secrets in `api` pods only, the per-Deployment environment, the bridge `web.enabled` with its `lookup` guard, the validation rows, `values.yaml` and `values.schema.json`, the `ci/` value sets, `NOTES.txt` | `deploy/helm/trove`, `test/chart` | now, against the names of the specification | The HTTPRoute of R-HA-038 is not rendered today: it gets the path rules when it is built (phase 7's chart completion), or in this package if it is built here; that `lookup` reads the Deployments under `helm upgrade --dry-run=server` on the supported Helm version; the regular-expression rule of Q-HA-72 waits for R-NPM-022 (P1) |
+| WP6a.4 | Operations and UI: the role values in the registry, `replicas.roles`, `trove_build_info{role}` and the logs; the fetch share's count of the replicas that fill (Q-ARCH-297); the content routes and `contentUrl` in `api/openapi.yaml` and `internal/api/v1`; the UI's files client and Download links on `contentUrl`; the status screen's groups per role and pool; the manual's pages that name `deploy/trove-web` or the Service `trove` | `internal/cluster` (registry), `internal/api/v1`, `api/openapi.yaml`, `web/src`, `docs/manual` | WP6a.1's role constants | Not verified: whether `PackageFile.path` is the path of the item in the repository that holds it, which `contentUrl` needs; the CSRF check of a `PUT` on a route of `/api/v1/` that streams its body instead of decoding JSON |
+| WP6a.5 | Tests and the dev profile: `values-dev.yaml` with the three roles and a `vuln` pool, the Bastions' URLs to the role Services, the certificates' names for the role Services, the dev PostgreSQL's `max_connections` for the budget (231, 311 during the bridge); the e2e control clients' port-forwards to the role Services; the e2e set with every role, the drain per role, the access-log separation, the upgrade across the cut | `deploy/dev`, `test/e2e`, `docs/developer/e2e.md`, `docs/developer/local-profile.md` | WP6a.1 to WP6a.4 | The e2e helpers that forward to `svc/trove` or `deploy/trove-web` (for example `test/e2e/e1_13_transfer_test.go`) move to the role names; the upgrade test needs the image of the latest release before the cut |
+
+**Not in phase 6a:** a network seam between roles or an upstream fetch service (dropped by the owner, ADR-153); data access of
+its own for a role (option (c) of ADR-153); an egress policy (ADR-154); the npm exchange's edge rule, which comes with
+R-NPM-022 (P1, Q-HA-72); a gap-free way back from the cut (R-HA-064).
+
 ## Phase 6b · Remote full mirror
 
-**Status:** specified, not scheduled. The owner is reconsidering the process topology (2026-11-04); the specification is
-role-neutral (the passes are jobs on their own queue `mirror`), and the contract wave laid only the pieces that bind no
-topology (Q-ARCH-288).
+**Status:** specified, not scheduled. The process topology is decided (2026-11-04, [phase 6a](#phase-6a--task-areas)): a pass
+runs on a `worker`, or on a worker pool that claims the queue `mirror` alone, and the client fills it gives way to run on
+`packages` (R-REPO-055); the contract wave laid only the pieces that bind no topology (Q-ARCH-288).
 
 **Goal.** A remote repository can be set to mirror its upstream: background passes, jobs on their own queue `mirror`, store what the upstream offers
 within the remote's patterns and bounds before a client asks, honour the upstream's rate limits, and give way to clients. Pull-through
@@ -1060,7 +1130,7 @@ populate rule of R-AUTHZ-008 and R-AUTHZ-026. The catalog entries API-082 to API
 | WP6b.1 | Contracts (laid 2026-11-04): the spec, the leaf `internal/mirror/discover`, the members and validation, the typed rate-limit outcome, the background slots, the names of the kinds and the queue | phase 6 |
 | WP6b.2 | A · npm discovery in `internal/formats/npm` | WP6b.1 |
 | WP6b.3 | B · NuGet discovery in `internal/formats/nuget` | WP6b.1 |
-| WP6b.4 | C · the engine: `internal/mirror`, the migration of its tables, the background rules and pre-emption in `internal/proxy`, the pass's upstream in `internal/formathost`, the wiring, the signal area, metrics, pass events, the integration suite | WP6b.1 and the owner's process topology (a fake lister until WP6b.2 and WP6b.3) |
+| WP6b.4 | C · the engine: `internal/mirror`, the migration of its tables, the background rules and pre-emption in `internal/proxy`, the pass's upstream in `internal/formathost`, the wiring, the signal area, metrics, pass events, the integration suite | WP6b.1 and phase 6a's WP6a.1 and WP6a.2 (the roles and the queue restriction; a fake lister until WP6b.2 and WP6b.3) |
 | WP6b.5 | D · the status and run operations and their schemas, the format descriptor's `mirror`, the mirror section and tab of the admin UI, the manual | WP6b.1; the operations with WP6b.4's tables |
 | WP6b.6 | The e2e set `mirror` and the evidence of E6b.6 and E6b.7 | WP6b.2 to WP6b.5 |
 

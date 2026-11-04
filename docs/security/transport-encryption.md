@@ -232,7 +232,7 @@ certificate chains to no CA, so a scraper that verifies the ops listener fails i
 verify (the kubelet does not) cannot tell it from the real one. Subject: what `:8081` returns in that window, which is the
 probe answers and, with `metrics.auth: none`, the metrics; both are readable by an on-path attacker who impersonates the
 listener. What makes it real: a late or broken Secret together with an attacker on the path to `:8081`, which the ops
-NetworkPolicy ([H-41](../spec/operations-and-observability.md#h-41--egress-is-unrestricted-and-ingress-enforcement-is-verified-on-one-cni-only)) is meant to prevent.
+NetworkPolicy ([H-41](../spec/operations-and-observability.md#h-41--ingress-enforcement-is-verified-on-one-cni-only)) is meant to prevent.
 
 ### H-69 · `tracing.ca_file` is read once at start
 

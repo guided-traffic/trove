@@ -840,6 +840,10 @@ applies to the npm and NuGet parts of this phase.
 
 ## Phase 6a · Task areas
 
+Details: [roadmap phase 6a](../coverage/roadmap.md#phase-6a--task-areas) · spec: [architecture.md R-ARCH-001](../spec/architecture.md#r-arch-001--one-binary-identical-replicas-process-roles),
+[ha-and-helm.md R-HA-002](../spec/ha-and-helm.md#r-ha-002--role-split-into-api-packages-and-worker-deployments) to
+[R-HA-064](../spec/ha-and-helm.md#r-ha-064--upgrade-across-the-cut-into-roles)
+
 Decided by the owner on 2026-11-04: trove is cut into task areas, as roles of one binary that run as Deployments of
 their own, with network seams only at trust or load boundaries
 ([ADR-153](../decisions.md#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries)).
@@ -851,11 +855,16 @@ areas.
 - 🟢 Principle of the cut (ADR-153) and the network-policy rule (ADR-154)
 - 🟢 The roles of the cut: `api`, `packages` and `worker`, variants as pools; no fetch service
   ([ADR-155](../decisions.md#adr-155--three-roles-api-packages-and-worker-variants-are-pools))
-- ⚪ Specification rewritten: INV-2, R-ARCH-001, R-HA-002, R-HA-062 and R-HA-042 (its egress part, Q-HA-10 and H-41
-  removed under ADR-154); ADR-013 and ADR-104 revised
+- 🟢 Specification rewritten: INV-2, R-ARCH-001, R-ARCH-016 (the queue `vuln`, `jobs.queues`, `jobs.exclude_queues`),
+  R-HA-002, R-HA-037 (one host split by path prefix), R-HA-042 (one ingress policy per Deployment, each rule with its port; the
+  egress part removed, Q-HA-10 superseded, the egress gap H-516, H-41 narrowed to the ingress enforcement), R-HA-062 (path
+  and worker pools), R-HA-064 (the upgrade across the cut in two steps through the bridge `web.enabled`), R-EP-008 (endpoint
+  pools by role), the UI's content routes on `api` (Q-UI-106); ADR-013, ADR-104 and ADR-105 revised; decisions Q-ARCH-294 to
+  Q-ARCH-299, Q-HA-71 to Q-HA-79, Q-EP-70, Q-EP-71, Q-OPS-161, Q-UI-106, Q-UI-107; work packages WP6a.1 to WP6a.5
 - ⚪ The roles in the binary (`SubsystemsFor` and the wiring areas) and in the chart: a Deployment, Service, disruption
-  budget, autoscaler and ingress rule per role, path routing, worker pools by queue
-- ⚪ Tests: the role table in the architecture test, chart tests per role, e2e with every role deployed, a drain per role
+  budget, autoscaler and ingress rule per role, path routing, path and worker pools, the upgrade bridge (WP6a.1 to WP6a.4)
+- ⚪ Tests: the role table in the architecture test, chart tests per role, e2e with every role deployed, a drain per role,
+  the upgrade across the cut (WP6a.5, E6a.1 to E6a.8)
 
 ## Phase 6b · Remote full mirror
 

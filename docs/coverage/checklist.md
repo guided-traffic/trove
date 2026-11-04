@@ -9,14 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 432 of 688 spec requirements are implemented: a passing test names them and no
+**Status.** 432 of 689 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
 **Totals.** 2,239 catalog features on 60 pages: 704 specified (334 of them implemented), 1,535 open.
-688 spec requirements: 545 cover catalog features, 143 cover none (`trove-only`, [listed at the
+689 spec requirements: 546 cover catalog features, 143 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -956,7 +956,7 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 | HA-077 | Container installation without Kubernetes | P1 | open | – |
 | HA-078 | Host installation from OS packages, archives and playbooks | P2 | open | – |
 | HA-079 | Single-host evaluation installer | P2 | open | – |
-| HA-069 | Rolling upgrade without downtime | MVP | specified | [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-019](../spec/ha-and-helm.md) (implemented), [R-HA-020](../spec/ha-and-helm.md) |
+| HA-069 | Rolling upgrade without downtime | MVP | specified | [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-019](../spec/ha-and-helm.md) (implemented), [R-HA-020](../spec/ha-and-helm.md), [R-HA-064](../spec/ha-and-helm.md) |
 | HA-070 | Upgrade preparation | MVP | specified | [R-HA-021](../spec/ha-and-helm.md) |
 | HA-071 | Uninstall and data cleanup | MVP | specified | [R-HA-048](../spec/ha-and-helm.md) |
 | HA-072 | License installation and license gating of clustering | Out of scope | open | – |
@@ -1044,7 +1044,7 @@ Catalog page: [operations-and-monitoring.md](../features/operations-and-monitori
 | OPS-070 | Package metadata re-index | P2 | specified | [R-OPS-022](../spec/operations-and-observability.md) |
 | OPS-071 | Maven index calculation | P2 | open | – |
 | OPS-072 | Upgrade compatibility policy | MVP | specified | [R-ARCH-025](../spec/architecture.md) (implemented), [R-HA-021](../spec/ha-and-helm.md) |
-| OPS-073 | Rolling upgrade of a cluster | MVP | specified | [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-020](../spec/ha-and-helm.md) |
+| OPS-073 | Rolling upgrade of a cluster | MVP | specified | [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-020](../spec/ha-and-helm.md), [R-HA-064](../spec/ha-and-helm.md) |
 | OPS-074 | Schema and data migrations on upgrade | MVP | implemented | [R-ARCH-016](../spec/architecture.md) (implemented), [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-018](../spec/ha-and-helm.md) (implemented), [R-HA-022](../spec/ha-and-helm.md) (implemented) |
 | OPS-075 | Migration from another repository manager | P2 | open | – |
 | OPS-076 | Signed release artifacts | P1 | open | – |

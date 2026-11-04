@@ -2464,9 +2464,9 @@ Priority: **MVP** · Covers: trove-only
 - Private ranges ([RFC 1918](https://www.rfc-editor.org/rfc/rfc1918)), shared address space and
   unique-local IPv6 are permitted by default, unlike for webhooks
   ([R-OPS-042](operations-and-observability.md)): remote URLs are set by repository administrators,
-  and internal registries are the common case. The Helm chart's egress `NetworkPolicy` would be the
-  second layer ([ha-and-helm.md](ha-and-helm.md)); the chart renders none yet
-  ([H-41](operations-and-observability.md#h-41--egress-is-unrestricted-and-ingress-enforcement-is-verified-on-one-cni-only)).
+  and internal registries are the common case. A second layer is the cluster operator's egress policy: the Helm chart
+  renders ingress rules only ([ha-and-helm.md](ha-and-helm.md) R-HA-042, ADR-154;
+  [H-516](../security/egress.md#h-516--the-chart-restricts-no-egress-of-its-pods)).
 - A refused connection answers 502 `egress_denied`, is logged as a security event and does not count
   toward the circuit.
 - Through an outbound proxy, trove resolves and checks the target name itself before sending, but
@@ -2554,14 +2554,18 @@ Priority: **MVP** · Covers: trove-only
   - `limits.maxConcurrentFetches` protects the upstream. It is a budget for the whole installation
     (Q-REPO-8), divided among the replicas without coordination between them. Each replica allows
     `ceil(maxConcurrentFetches ÷ n)` fetches of the repository at a time. n is the number of live
-    replicas that serve client traffic (`web`, or `all` in the local profile) in the replica registry
+    replicas that fill client misses in the replica registry
     ([operations-and-observability.md](operations-and-observability.md) R-OPS-003), at least 1,
-    refreshed with the registry heartbeat; it is the count the rate-limit fallback of
-    [architecture.md](architecture.md) R-ARCH-034 uses.
+    refreshed with the registry heartbeat: `packages` and its pools after the cut into roles, `web` before it and in the
+    upgrade bridge, or `all` in the local profile ([architecture.md](architecture.md) Q-ARCH-297, phase 6a). `api`
+    replicas fill nothing and are not counted.
   - The cluster-wide total therefore stays within `maxConcurrentFetches + n − 1` whatever the
     replica count, once every replica has read the current n, which after a scale event takes one
     heartbeat. A budget smaller than n admits one fetch per replica. Valkey plays no part, so the
     bound holds while Valkey is unavailable.
+- The upstream test of R-REPO-024 is not a fetch and takes no slot: it sends one request of the format's probe resource per
+  call (verified: `internal/proxy/upstream/probe.go`), bounded by the management API's rate-limit classes. The bound below
+  therefore holds plus the tests running at that moment (Q-ARCH-297).
 - A slot is taken by the request that fetches, after it holds the flight or has gone on without
   the cross-replica lock (R-REPO-026 step 3), and returned when its fetch ends. Requests that fetch
   outside a flight, shadowing-check probes and pass-through artifact requests (R-REPO-044), take
@@ -3218,6 +3222,10 @@ budget (`limits.maxConcurrentFetches`, R-REPO-040, Q-REPO-8, Q-REPO-97), and cli
   and a per-repository background counter; it never queues: it waits outside the slots until one is free. It takes the
   cross-replica flight of R-REPO-026 like any fetch, so a client that asks for the same item joins it as a follower or a
   waiter instead of fetching twice.
+- **Who runs what** (phase 6a, [architecture.md](architecture.md) R-ARCH-001). A client-serving replica on this page is one
+  that fills client misses: `packages` (and `web` in the upgrade bridge); the process that claims the queue `mirror` is a
+  `worker`, or a worker pool that claims `mirror` alone ([ha-and-helm.md](ha-and-helm.md) R-HA-062). The two meet only
+  through PostgreSQL, Valkey and the signal below.
 - **Pre-emption on one replica.** Where client fetches and background fetches run in one process (one that serves clients and claims the queue
   `mirror`, such as role `all`), a background
   fetch starts only while no client fetch of the repository waits for a slot, and a client fetch that finds no free slot

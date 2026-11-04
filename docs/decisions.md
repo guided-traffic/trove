@@ -500,7 +500,7 @@ the service may be split.
 **Alternatives considered.** None; set by the owner.
 
 **Spec:** [owner constraints](spec/README.md#owner-constraints), [INV-2, INV-12, INV-18](spec/README.md#design-invariants),
-[R-ARCH-001](spec/architecture.md#r-arch-001--one-binary-identical-replicas-process-roles), [R-ARCH-024](spec/architecture.md#r-arch-024--process-lifecycle-start-up-readiness-graceful-shutdown), [R-HA-002](spec/ha-and-helm.md#r-ha-002--role-split-into-web-and-worker-deployments), [R-HA-059](spec/ha-and-helm.md#r-ha-059--node-drain-without-outage), [R-HA-062](spec/ha-and-helm.md#r-ha-062--further-splits-of-a-role-into-several-deployments).
+[R-ARCH-001](spec/architecture.md#r-arch-001--one-binary-identical-replicas-process-roles), [R-ARCH-024](spec/architecture.md#r-arch-024--process-lifecycle-start-up-readiness-graceful-shutdown), [R-HA-002](spec/ha-and-helm.md#r-ha-002--role-split-into-api-packages-and-worker-deployments), [R-HA-059](spec/ha-and-helm.md#r-ha-059--node-drain-without-outage), [R-HA-062](spec/ha-and-helm.md#r-ha-062--further-splits-of-a-role-into-several-deployments).
 
 ### ADR-094 · A configurable backup job writes consistent backups to S3
 
@@ -654,7 +654,7 @@ R-REPO-037 cannot provide.
 
 **Spec:** [owner constraints](spec/README.md#owner-constraints),
 [R-ARCH-001](spec/architecture.md#r-arch-001--one-binary-identical-replicas-process-roles),
-[R-HA-002](spec/ha-and-helm.md#r-ha-002--role-split-into-web-and-worker-deployments),
+[R-HA-002](spec/ha-and-helm.md#r-ha-002--role-split-into-api-packages-and-worker-deployments),
 [R-HA-062](spec/ha-and-helm.md#r-ha-062--further-splits-of-a-role-into-several-deployments).
 
 ### ADR-154 · Network policies are ingress rules between the chart's pods, each with its port
@@ -714,7 +714,10 @@ split, available as values under this decision.
 **Consequences.** ADR-013 and ADR-104 are revised by the specification of phase 6a, together with INV-2, R-ARCH-001,
 R-HA-002, R-HA-062 and R-HA-042. Routing splits one host by path prefix between `api` and `packages` (R-HA-037 routes a
 host whole today). Not verified when this was decided, and checked by the specification: that the UI never calls a
-`packages` or `files` route with a session cookie; if it does, that call is served through `api`. Each role that
+`packages` or `files` route with a session cookie; if it does, that call is served through `api`. The specification of
+phase 6a checked it: the UI's uploads and folders are `PUT /files/…` and its Download buttons navigate to `/files/` and package
+URLs, all with the session cookie; they move to session-only content routes of `api`
+([Q-UI-106](spec/api-and-ui.md#q-ui-106--how-the-uis-downloads-and-uploads-reach-api-after-the-cut)). Each role that
 fills or probes an upstream contacts it itself, as before: `packages` for client misses and shadowing probes, `api`
 for upstream tests, `worker` for the mirror's passes and the advisory sync.
 
@@ -741,7 +744,10 @@ changed it; the edit to spec/README.md is that question's cross-page consequence
 the owner's constraints ([ADR-092](#adr-092--high-availability-on-ha-postgresql-ha-valkey-with-sentinel-and-s3) to [ADR-095](#adr-095--no-readwritemany-storage)) changed INV-2, INV-3, INV-11, INV-12 and INV-13
 and added INV-18 and INV-19:
 - **INV-2:** roles `web`, `worker` and `backup`, split from the start; `all` only for development
-  ([ADR-013](#adr-013--one-binary-roles-split-from-the-start-identical-replicas-per-role-inv-2)).
+  ([ADR-013](#adr-013--one-binary-roles-split-from-the-start-identical-replicas-per-role-inv-2)). Changed again by the owner on
+  2026-11-04 ([ADR-153](#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries), [ADR-155](#adr-155--three-roles-api-packages-and-worker-variants-are-pools)): roles `api` (route families `ui`, `api`, `ci_exchange`; sessions and login secrets), `packages` (`packages`,
+  `files`; tokens only) and `worker` (queues, pools by queue), each its own Deployment; `web` is `api` and `packages` in one
+  process, kept as the bridge of the upgrade across the cut ([Q-ARCH-295](spec/architecture.md#q-arch-295--what-becomes-of-the-role-name-web)).
 - **INV-3:** PostgreSQL is the system of record; Valkey holds shared ephemeral state only, and the
   change log in PostgreSQL replaces `LISTEN/NOTIFY` ([ADR-014](#adr-014--postgresql-is-the-system-of-record-valkey-holds-only-shared-ephemeral-state-inv-3)).
 - **INV-11:** cross-replica collapsing through a Valkey lock ([ADR-022](#adr-022--pull-through-proxy-semantics-inv-11)).
@@ -794,7 +800,8 @@ the UI from a CDN: breaks air-gapped installations, which [R-UI-001](spec/api-an
 
 ### ADR-013 · One binary, roles split from the start, identical replicas per role (INV-2)
 
-**Status:** Decided by the development agent — owner review at the walkthrough
+**Status:** Decided by the development agent — owner review at the walkthrough; the role table changed by the owner's cut into
+task areas on 2026-11-04 ([ADR-153](#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries), [ADR-155](#adr-155--three-roles-api-packages-and-worker-variants-are-pools)), specified for phase 6a
 
 **Context.** High availability ([ADR-005](#adr-005--high-availability)) needs replicas that can be added, removed and
 replaced without coordination steps. Changed by the owner's constraints of 2026-10-28
@@ -821,7 +828,7 @@ own. Which subsystem runs in which role is [ADR-104](#adr-104--subsystems-per-ro
 PostgreSQL, Valkey (ephemeral only) or object storage; in-process state is limited to rebuildable
 caches and the scratch space of the running request or job ([ADR-096](#adr-096--no-state-between-requests-on-a-replica-inv-18)). Work that must run once
 runs as a job or under a lease on a `worker` replica ([ADR-034](#adr-034--one-postgresql-job-table-for-maintenance-api-operations-and-internal-work), [ADR-077](#adr-077--singleton-work-under-advisory-lock-leases-with-fencing)). The role split is MVP
-([R-HA-002](spec/ha-and-helm.md#r-ha-002--role-split-into-web-and-worker-deployments), whose heading keeps the earlier name `api`), and splitting a role into pools is P1
+([R-HA-002](spec/ha-and-helm.md#r-ha-002--role-split-into-api-packages-and-worker-deployments), whose heading keeps the earlier name `api`), and splitting a role into pools is P1
 ([R-HA-062](spec/ha-and-helm.md#r-ha-062--further-splits-of-a-role-into-several-deployments)). The replica registry's table, heartbeat, pruning of stale rows and read-only API are
 MVP, and so is the UI's system status screen that shows them ([Q-HA-12](spec/ha-and-helm.md#q-ha-12--replica-registry-at-mvp), option (c); [R-UI-038](spec/api-and-ui.md#r-ui-038--system-status)).
 Since 2026-10-28 the registry also records each replica's node and the Sentinels it reaches, so the
@@ -834,8 +841,30 @@ this design avoids entirely ([R-HA-001](spec/ha-and-helm.md#r-ha-001--active-act
 earlier decision: background work competes with request latency for CPU and memory, and one drain
 removes both functions from a node at once.
 
+**Changed on 2026-11-04.** The owner cut trove into task areas: roles of one binary, each its own Deployment, with network
+seams only at trust or load boundaries ([ADR-153](#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries)), and chose three roles ([ADR-155](#adr-155--three-roles-api-packages-and-worker-variants-are-pools)). The role table of this entry is replaced by
+[R-ARCH-001](spec/architecture.md#r-arch-001--one-binary-identical-replicas-process-roles)'s (specified for phase 6a, not built
+yet):
+- **`api`** serves the route families `ui`, `api` and `ci_exchange` and holds the sessions, the OIDC client secrets and the
+  break-glass password;
+- **`packages`** serves the route families `packages` and `files` with tokens only, evaluates no session cookie and fills the
+  client misses;
+- **`worker`** runs the job queue, the leases, the scheduler, the mirror's passes and the advisory sync, split into pools by
+  queue where an installation wants it;
+- **`backup`** and **`bastion`** stay as they were; **`all`** stays the development role;
+- **`web`**, until then every HTTP request, stays in the binary as `api` and `packages` in one process and is rendered by the
+  chart only as the bridge of the upgrade across the cut ([Q-ARCH-295](spec/architecture.md#q-arch-295--what-becomes-of-the-role-name-web),
+  [R-HA-064](spec/ha-and-helm.md#r-ha-064--upgrade-across-the-cut-into-roles)).
+
+The chart deploys `api`, `packages` and `worker` as separate Deployments, each with its own replica count, autoscaler,
+disruption budget, ingress policy ([ADR-154](#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port)) and topology spread; the edge splits each host by path prefix between the `api` and
+`packages` Services ([R-HA-037](spec/ha-and-helm.md#r-ha-037--service-ingress-and-tls-at-the-edge)). A variant of a role by
+path prefix or by queue is a pool of that role, rendered from values
+([R-HA-062](spec/ha-and-helm.md#r-ha-062--further-splits-of-a-role-into-several-deployments), now MVP). Until then this entry
+named `web` and `worker` as the chart's two Deployments and said that a further split was P1.
+
 **Spec:** [INV-2](spec/README.md#design-invariants), [R-ARCH-001](spec/architecture.md#r-arch-001--one-binary-identical-replicas-process-roles), [R-HA-001](spec/ha-and-helm.md#r-ha-001--active-active-replicas-without-a-primary-node),
-[R-HA-002](spec/ha-and-helm.md#r-ha-002--role-split-into-web-and-worker-deployments), [R-HA-003](spec/ha-and-helm.md#r-ha-003--replica-registry-as-the-coordination-view), [R-HA-062](spec/ha-and-helm.md#r-ha-062--further-splits-of-a-role-into-several-deployments); decided: [Q-HA-12](spec/ha-and-helm.md#q-ha-12--replica-registry-at-mvp), [Q-UI-7](spec/api-and-ui.md#q-ui-7--roles-drain-readiness-and-valkey-on-the-system-status-screen).
+[R-HA-002](spec/ha-and-helm.md#r-ha-002--role-split-into-api-packages-and-worker-deployments), [R-HA-003](spec/ha-and-helm.md#r-ha-003--replica-registry-as-the-coordination-view), [R-HA-062](spec/ha-and-helm.md#r-ha-062--further-splits-of-a-role-into-several-deployments); decided: [Q-HA-12](spec/ha-and-helm.md#q-ha-12--replica-registry-at-mvp), [Q-UI-7](spec/api-and-ui.md#q-ui-7--roles-drain-readiness-and-valkey-on-the-system-status-screen).
 
 ### ADR-014 · PostgreSQL is the system of record; Valkey holds only shared ephemeral state (INV-3)
 
@@ -982,7 +1011,7 @@ other client-listener pattern under `/v2/`, because ServeMux's conflict check do
 specific pattern ([R-HA-041](spec/ha-and-helm.md#r-ha-041--container-registry-routing-at-the-edge)). Protocols and the management API share the `/api/` prefix, so
 format IDs matching `^v[0-9]+$` are refused at registration, and ServeMux panics on a conflicting
 registration, so a collision cannot ship. With metrics authentication off by default, the operations
-listener relies on the chart's NetworkPolicy ([H-41](spec/operations-and-observability.md#h-41--egress-is-unrestricted-and-ingress-enforcement-is-verified-on-one-cni-only)).
+listener relies on the chart's NetworkPolicy ([H-41](spec/operations-and-observability.md#h-41--ingress-enforcement-is-verified-on-one-cni-only)).
 
 **Alternatives considered.** One host name per repository: the host root becomes the registry
 root, at the cost of DNS, TLS and Ingress objects per repository. One format at the host root:
@@ -1371,7 +1400,7 @@ validated parameters. Chart-generated secrets: regenerated wherever Helm's `look
 nothing needs and which a drain would have to move. A shared spool volume: not available
 ([ADR-095](#adr-095--no-readwritemany-storage)).
 
-**Spec:** [INV-13](spec/README.md#design-invariants), [R-HA-002](spec/ha-and-helm.md#r-ha-002--role-split-into-web-and-worker-deployments), [R-HA-028](spec/ha-and-helm.md#r-ha-028--chart-scope-rendered-resources-and-naming), [R-HA-029](spec/ha-and-helm.md#r-ha-029--fail-fast-chart-validation), [R-HA-030](spec/ha-and-helm.md#r-ha-030--configuration-rendering-and-secret-wiring),
+**Spec:** [INV-13](spec/README.md#design-invariants), [R-HA-002](spec/ha-and-helm.md#r-ha-002--role-split-into-api-packages-and-worker-deployments), [R-HA-028](spec/ha-and-helm.md#r-ha-028--chart-scope-rendered-resources-and-naming), [R-HA-029](spec/ha-and-helm.md#r-ha-029--fail-fast-chart-validation), [R-HA-030](spec/ha-and-helm.md#r-ha-030--configuration-rendering-and-secret-wiring),
 [R-HA-031](spec/ha-and-helm.md#r-ha-031--values-reference), [R-HA-038](spec/ha-and-helm.md#r-ha-038--gateway-api-exposure), [R-HA-042](spec/ha-and-helm.md#r-ha-042--network-policies), [R-HA-047](spec/ha-and-helm.md#r-ha-047--images-private-registries-air-gapped-installation-and-attestations), [R-HA-053](spec/ha-and-helm.md#r-ha-053--chart-created-gateway), [R-HA-060](spec/ha-and-helm.md#r-ha-060--backup-cronjob-and-restore-job),
 [R-HA-061](spec/ha-and-helm.md#r-ha-061--volumes-nothing-shared-nothing-persistent); decided: [Q-HA-7](spec/ha-and-helm.md#q-ha-7--priority-of-gateway-api), [Q-HA-8](spec/ha-and-helm.md#q-ha-8--who-creates-the-first-encryption-key), [Q-HA-10](spec/ha-and-helm.md#q-ha-10--default-of-the-egress-networkpolicy), [Q-HA-11](spec/ha-and-helm.md#q-ha-11--publishing-location-of-images-and-chart), [Q-HA-15](spec/ha-and-helm.md#q-ha-15--valkey-with-sentinel-in-the-local-profile-and-ci),
 [Q-HA-17](spec/ha-and-helm.md#q-ha-17--the-backup-cronjob-is-on-by-default), [Q-HA-18](spec/ha-and-helm.md#q-ha-18--how-a-restore-runs-in-the-chart).
@@ -2180,7 +2209,8 @@ queue latency to every miss and only moves the drain problem.
 
 ### ADR-104 · Subsystems per role: web serves, worker owns background work and leases
 
-**Status:** Decided by the development agent — owner review at the walkthrough
+**Status:** Decided by the development agent — owner review at the walkthrough; the serving role split into `api` and
+`packages` by the owner's decision of 2026-11-04 ([ADR-155](#adr-155--three-roles-api-packages-and-worker-variants-are-pools)), specified for phase 6a
 
 **Context.** [ADR-013](#adr-013--one-binary-roles-split-from-the-start-identical-replicas-per-role-inv-2) splits the roles from the start. Which subsystems each role runs decides what a
 drain of one role affects, which processes hold PostgreSQL sessions, and where work that outlasts a
@@ -2225,7 +2255,24 @@ rollouts only, which lets a stale worker run jobs on stale grants; worker-specif
 definition to keep in step. Remote fetches as `worker` jobs ([Q-REPO-7](spec/repositories-and-proxy.md#q-repo-7--remote-fetches-on-a-replica-that-is-shutting-down) (e)): queue latency on
 every miss.
 
-**Spec:** [R-ARCH-001](spec/architecture.md#r-arch-001--one-binary-identical-replicas-process-roles), [R-ARCH-016](spec/architecture.md#r-arch-016--background-job-framework-on-postgresql), [R-OPS-001](spec/operations-and-observability.md#r-ops-001--liveness-and-readiness-probes), [R-OPS-003](spec/operations-and-observability.md#r-ops-003--replica-registry-and-service-status), [R-HA-002](spec/ha-and-helm.md#r-ha-002--role-split-into-web-and-worker-deployments),
+**Changed on 2026-11-04.** The serving role of this entry is split in two ([ADR-155](#adr-155--three-roles-api-packages-and-worker-variants-are-pools); [R-ARCH-001](spec/architecture.md#r-arch-001--one-binary-identical-replicas-process-roles),
+Q-ARCH-294 to Q-ARCH-298; specified for phase 6a, not built yet). What this entry says of `web` holds for both new roles, and
+the subsystems divide by route family:
+- **`api`** runs the listener areas of the families `ui`, `api` and `ci_exchange`: the session store, the login, the CI
+  exchange, the services of the package and vulnerability screens, and the virtual engine for the resolution explanation over
+  a read-only view of the remote members. It builds neither the remote engine nor the format host, so it fills nothing; its
+  only upstream request is the upstream test, which takes no fetch slot (Q-ARCH-297).
+- **`packages`** runs the listener areas of `packages` and `files`: the remote and virtual engines, the format host, the files
+  transfer, the authentication stage over tokens only. It builds no session store, no login and no CI exchange, and the two of
+  the three bounded exceptions that concern remote fetches are its own.
+- **`worker`** is unchanged, and claims the queues `jobs.queues` names or all but `jobs.exclude_queues`; the advisory sync moves
+  to a queue `vuln` of its own (Q-ARCH-296).
+- **`web`** is the union of `api` and `packages`, kept for the upgrade bridge (Q-ARCH-295).
+
+Readiness, the counters and the labels keep their rules; the registry, the series and the status screen carry the new role
+names (Q-OPS-161, Q-UI-107). Until then this entry gave every listener area to `web`.
+
+**Spec:** [R-ARCH-001](spec/architecture.md#r-arch-001--one-binary-identical-replicas-process-roles), [R-ARCH-016](spec/architecture.md#r-arch-016--background-job-framework-on-postgresql), [R-OPS-001](spec/operations-and-observability.md#r-ops-001--liveness-and-readiness-probes), [R-OPS-003](spec/operations-and-observability.md#r-ops-003--replica-registry-and-service-status), [R-HA-002](spec/ha-and-helm.md#r-ha-002--role-split-into-api-packages-and-worker-deployments),
 [R-HA-062](spec/ha-and-helm.md#r-ha-062--further-splits-of-a-role-into-several-deployments), [R-STOR-046](spec/storage.md#r-stor-046--storage-work-per-role-and-across-replicas), [R-UI-038](spec/api-and-ui.md#r-ui-038--system-status); decided: [Q-ARCH-5](spec/architecture.md#q-arch-5--job-queue-implementation), [Q-OPS-12](spec/operations-and-observability.md#q-ops-12--what-readiness-means-on-a-worker-replica), [Q-OPS-13](spec/operations-and-observability.md#q-ops-13--how-a-series-names-its-role-and-pool),
 [Q-STOR-12](spec/storage.md#q-stor-12--counters-that-several-replicas-update-usage-quotas-and-download-statistics), [Q-UI-7](spec/api-and-ui.md#q-ui-7--roles-drain-readiness-and-valkey-on-the-system-status-screen).
 
@@ -4500,6 +4547,12 @@ carry, and the drain test runs with the defaults. A `worker` drain delays queued
 and fails no request. The capacity of one replica is unknown until the reference load test
 publishes it; until then the rule is a documented calculation, not a validation.
 
+**Changed on 2026-11-04.** With the cut into roles ([ADR-155](#adr-155--three-roles-api-packages-and-worker-variants-are-pools); specified for phase 6a), the rule applies to `api`, `packages`,
+`worker` and every pool, and the defaults become two `api`, three `packages` and two `worker` replicas
+([Q-HA-75](spec/ha-and-helm.md#q-ha-75--default-replica-counts-resources-and-drain-capacity-per-role)): `packages` carries the
+package load that the three `web` replicas carried, `api` a UI and management peak of one replica plus one for the drain. The
+drain test runs once per role as well ([R-HA-059](spec/ha-and-helm.md#r-ha-059--node-drain-without-outage)).
+
 **Alternatives considered.** Two per role: a drain leaves less capacity than the load needs. A
 capacity value the chart validates: an unmeasured number that gives false confidence; worth it once
 the load test publishes the capacity of one replica. A budget with `minAvailable` equal to the
@@ -5968,6 +6021,12 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-ARCH-291](spec/architecture.md#q-arch-291--how-does-a-download-read-the-rows-its-serve-check-decides-on-without-a-statement-of-its-own) | How does a download read the rows its serve check decides on, without a statement of its own? Decided by the development agent | (a) the item lookup reads them for a key the format names (`ServeFactsKeyer`, `FactsGate`); the facts carry their key | — |
 | [Q-ARCH-292](spec/architecture.md#q-arch-292--how-does-the-cache-entry-of-a-remote-hit-join-the-item-lookup) | How does the cache entry of a remote hit join the item lookup? Decided by the development agent | (a) the item lookup probes the entry; with no item the engine asks the entry once | — |
 | [Q-ARCH-293](spec/architecture.md#q-arch-293--where-a-wall-clock-target-of-a-functional-test-is-enforced) | Where is a wall-clock target of a functional test enforced? | (c) the targets of the reference environment under `TROVE_PERF_GATE=1`; per change a bound relative to the cost of the same work under the same load, not a wider fixed bound | — |
+| [Q-ARCH-294](spec/architecture.md#q-arch-294--which-wiring-areas-the-roles-api-and-packages-build) | Which wiring areas do the roles `api` and `packages` build? | (a) by route family: `packages` without `sessions`, `login`, `ci_exchange`, `packages-api`, `vuln-api`; `api` without `proxy-engine` and `formathost`, its virtual engine over a read-only view of the remote members | [ADR-155](#adr-155--three-roles-api-packages-and-worker-variants-are-pools) |
+| [Q-ARCH-295](spec/architecture.md#q-arch-295--what-becomes-of-the-role-name-web) | What becomes of the role name `web`? | (a) kept as `api` and `packages` in one process, rendered by the chart only as the bridge of the upgrade across the cut (`web.enabled`, R-HA-064) | [ADR-013](#adr-013--one-binary-roles-split-from-the-start-identical-replicas-per-role-inv-2) |
+| [Q-ARCH-296](spec/architecture.md#q-arch-296--the-queues-of-the-worker-pools-the-advisory-syncs-queue-and-the-setting-that-restricts-a-process) | Which queues do worker pools claim, where does the advisory sync run, and what restricts a process? | (a) a queue `vuln` with one slot for the three sync kinds; `jobs.queues` on a pool and `jobs.exclude_queues` on the main worker, mutually exclusive | [ADR-155](#adr-155--three-roles-api-packages-and-worker-variants-are-pools) |
+| [Q-ARCH-297](spec/architecture.md#q-arch-297--which-replicas-share-a-remote-repositorys-fetch-budget-after-the-cut) | Which replicas share a remote's fetch budget after the cut? | (a) the live `packages`, `web` and `all` replicas with their pools; the upstream test on `api` takes no slot, as built | — |
+| [Q-ARCH-298](spec/architecture.md#q-arch-298--how-a-role-restricts-the-routes-of-an-endpoint) | How does a role restrict the routes of an endpoint? | (a) the effective surface is the endpoint's surface intersected with the role's families; a listener opens only when it is not empty | — |
+| [Q-ARCH-299](spec/architecture.md#q-arch-299--how-phase-6a-is-cut-into-work-packages) | How is phase 6a cut into work packages? | (a) five work packages along the layers: binary roles, worker queues, chart, operations and UI, tests | — |
 | [Q-REPO-1](spec/repositories-and-proxy.md#q-repo-1--who-specifies-the-stored-secret-mechanism-iam-045) | Which page specifies the stored-secret mechanism? | (b) architecture.md's R-ARCH-021, for every stored secret; repository secrets only use it | [ADR-032](#adr-032--stored-secrets-are-sealed-under-a-key-ring-the-operator-supplies) |
 | [Q-REPO-2](spec/repositories-and-proxy.md#q-repo-2--lower-bound-of-the-metadata-period) | Lower bound of the metadata period? | (a) `0` is allowed and means revalidate on every request; no minimum. Revisited 2026-10-28, choice unchanged | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) |
 | [Q-REPO-3](spec/repositories-and-proxy.md#q-repo-3--generic-default-when-the-upstream-removes-a-cached-document) | Generic default when the upstream removes a cached document? | (b) mark the package gone; its documents and cached artifacts answer 404 until the upstream serves it again | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving), [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default) |
@@ -6483,7 +6542,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-HA-7](spec/ha-and-helm.md#q-ha-7--priority-of-gateway-api) | Priority of Gateway API? | (b) the HTTPRoute in the MVP, a chart-created Gateway in P1 | [ADR-024](#adr-024--the-helm-chart-is-the-supported-deployment-inv-13) |
 | [Q-HA-8](spec/ha-and-helm.md#q-ha-8--who-creates-the-first-encryption-key) | Who creates the first encryption key? | (b) the operator; the chart fails without it and prints the command that creates one | [ADR-032](#adr-032--stored-secrets-are-sealed-under-a-key-ring-the-operator-supplies), [ADR-079](#adr-079--the-chart-validates-before-it-renders-and-never-creates-secrets) |
 | [Q-HA-9](spec/ha-and-helm.md#q-ha-9--making-revocations-survive-a-database-restore-h-37) | Make revocations survive a database restore? | (b) at MVP: a write-once revocation journal in object storage that `post-restore` and the restore of a trove backup replay. Revisited 2026-10-28: was P1, with the manual procedure in the MVP | [ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-ordering-not-by-coordination) |
-| [Q-HA-10](spec/ha-and-helm.md#q-ha-10--default-of-the-egress-networkpolicy) | Default of the egress NetworkPolicy? | (a) off, with a `NOTES.txt` warning and an example values file | [ADR-024](#adr-024--the-helm-chart-is-the-supported-deployment-inv-13), [ADR-039](#adr-039--egress-address-checks-after-dns-resolution-for-every-remote-connection) |
+| [Q-HA-10](spec/ha-and-helm.md#q-ha-10--default-of-the-egress-networkpolicy) | Default of the egress NetworkPolicy? | superseded by the owner's rule of 2026-11-04 (ADR-154): no egress policy; was (a) off, with a `NOTES.txt` warning and an example values file | [ADR-154](#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port) |
 | [Q-HA-11](spec/ha-and-helm.md#q-ha-11--publishing-location-of-images-and-chart) | Where are images and the chart published? | (a) `ghcr.io/guided-traffic`, signed from the GitHub Actions release workflow. Owner decision of 2026-10-29 (overrides (a)): Docker Hub for the image, the GitHub Pages chart repository for the chart, provenance and SBOM attestations, no signatures | [ADR-024](#adr-024--the-helm-chart-is-the-supported-deployment-inv-13), [ADR-130](#adr-130--the-organisations-ci-and-release-standard) |
 | [Q-HA-12](spec/ha-and-helm.md#q-ha-12--replica-registry-at-mvp) | Replica registry at MVP? | (c) table, heartbeat, pruning and read-only API in the MVP, and the UI status screen (R-UI-038); since 2026-10-28 the registry also records each replica's node and reachable Sentinels (Q-UI-7) | [ADR-013](#adr-013--one-binary-roles-split-from-the-start-identical-replicas-per-role-inv-2) |
 | [Q-HA-13](spec/ha-and-helm.md#q-ha-13--valkey-and-readiness) | Valkey and readiness? | (d) only configuration errors (rejected credential, failed TLS verification, unknown primary name) hold back the first readiness; outages never affect readiness | [ADR-100](#adr-100--valkey-degrades-trove-but-never-gates-readiness-except-for-configuration-errors), [ADR-023](#adr-023--high-availability-and-horizontal-scale-on-ha-postgresql-ha-valkey-and-s3-inv-12) |
@@ -6514,6 +6573,15 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-HA-68](spec/ha-and-helm.md#q-ha-68--the-node-variant-a-drains-on-the-three-node-local-profile) | Which node does variant A drain on the three-node local profile? | (a) a node with a `web` and a `worker` pod and neither the PostgreSQL nor the Valkey primary; its Sentinel or standby drains by rule 5 | — |
 | [Q-HA-69](spec/ha-and-helm.md#q-ha-69--the-storage-check-of-the-pod-crash-before-trove-admin-storage-verify-exists) | How does the pod crash check its storage before `trove admin storage verify` exists? | (a) every version the scenario left is downloaded against its integrity | — |
 | [Q-HA-70](spec/ha-and-helm.md#q-ha-70--the-chart-refuses-a-web-pod-whose-memory-cannot-hold-what-it-admits) | Which combination of memory limit and buffers does the chart refuse? | (a) a `web` pod or endpoint pool without `limits.memory`, or with fewer than 64 memory slots by the binary's formula | — |
+| [Q-HA-71](spec/ha-and-helm.md#q-ha-71--how-the-edge-splits-one-host-between-api-and-packages) | How does the edge split one host between `api` and `packages`? | (a) six fixed `Prefix` rules per host: `/` and `/api/v1` to `api`; `/api`, `/files`, `/v2`, `/.well-known` to `packages` | [ADR-155](#adr-155--three-roles-api-packages-and-worker-variants-are-pools) |
+| [Q-HA-72](spec/ha-and-helm.md#q-ha-72--how-the-npm-exchange-below-a-registry-url-reaches-api) | How does the npm exchange below a registry URL reach `api`? | (a) a regular-expression rule of its own to `api`, rendered with R-NPM-022 (P1) | [ADR-155](#adr-155--three-roles-api-packages-and-worker-variants-are-pools) |
+| [Q-HA-73](spec/ha-and-helm.md#q-ha-73--how-an-installation-upgrades-across-the-cut-into-roles) | How does an installation upgrade across the cut into roles? | (a) two `helm upgrade` steps joined by `web.enabled`, with a `lookup` guard against a one-step upgrade | [ADR-013](#adr-013--one-binary-roles-split-from-the-start-identical-replicas-per-role-inv-2) |
+| [Q-HA-74](spec/ha-and-helm.md#q-ha-74--which-client-services-exist-after-the-cut-and-how-in-cluster-callers-reach-trove) | Which client Services exist after the cut, and how do in-cluster callers reach trove? | (a) `<fullname>-api` and `<fullname>-packages`; `<fullname>` only in the bridge; the Bastion gains `bastion.main.packages_url` | — |
+| [Q-HA-75](spec/ha-and-helm.md#q-ha-75--default-replica-counts-resources-and-drain-capacity-per-role) | Default replica counts, resources and drain capacity per role? | (a) `api` 2, `packages` 3, `worker` 2; `api` at half the requests of `web` with a 5Gi spool | [ADR-105](#adr-105--drain-capacity-one-replica-more-than-the-peak-needs-per-role) |
+| [Q-HA-76](spec/ha-and-helm.md#q-ha-76--how-the-network-policies-are-cut-after-the-cut-into-roles) | How are the network policies cut after the cut into roles? | (a) one policy per Deployment, named as the Deployment, with a rule per port its pods open | [ADR-154](#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port) |
+| [Q-HA-77](spec/ha-and-helm.md#q-ha-77--the-connection-budget-key-of-the-serving-roles) | Which key carries the serving replicas of the connection budget? | (a) `database.preflight.expected_serving_replicas`; `expected_web_replicas` a deprecated alias | — |
+| [Q-HA-78](spec/ha-and-helm.md#q-ha-78--whether-the-path-pools-of-api-and-packages-come-with-phase-6a) | Do the path pools of `api` and `packages` come with phase 6a? | (a) yes, with the worker pools | [ADR-155](#adr-155--three-roles-api-packages-and-worker-variants-are-pools) |
+| [Q-HA-79](spec/ha-and-helm.md#q-ha-79--which-pods-mount-the-login-secrets) | Which pods mount the login secrets? | (a) every pod of role `api` and `web` in the bridge; never `packages` | [ADR-155](#adr-155--three-roles-api-packages-and-worker-variants-are-pools) |
 | [Q-OPS-1](spec/operations-and-observability.md#q-ops-1--couple-liveness-to-prolonged-unreadiness) | Couple liveness to prolonged unreadiness? | (d) never; liveness is a watchdog over trove's own loops | [ADR-023](#adr-023--high-availability-and-horizontal-scale-on-ha-postgresql-ha-valkey-and-s3-inv-12) |
 | [Q-OPS-2](spec/operations-and-observability.md#q-ops-2--should-object-storage-reachability-gate-readiness) | Should object-storage reachability gate readiness? | (d) gate only the first readiness, then report and degrade; continuous gating as an opt-in; changes INV-12; same choice as Q-STOR-1 and Q-HA-1 | [ADR-023](#adr-023--high-availability-and-horizontal-scale-on-ha-postgresql-ha-valkey-and-s3-inv-12) |
 | [Q-OPS-3](spec/operations-and-observability.md#q-ops-3--anonymous-access-to-the-version-endpoint) | Anonymous access to the version endpoint? | (b) authenticated by default; `system.public_version: true` opens it | — |
@@ -6573,6 +6641,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-OPS-158](spec/operations-and-observability.md#q-ops-158--the-mirrors-metric-families-carry-the-repository-and-no-package) | Which metrics does the mirror export? | (a) ten families per repository with closed enumerations; gauges read from PostgreSQL | — |
 | [Q-OPS-159](spec/operations-and-observability.md#q-ops-159--the-mirror-writes-pass-events-and-its-fills-are-populate-events) | Which audit events does the mirror write? | (a) five `mirror.*` types; the fills as populate events | — |
 | [Q-OPS-160](spec/operations-and-observability.md#q-ops-160--two-alerts-for-mirrors-failing-and-stale) | Which alerts report a mirror? | (a) `TroveMirrorFailing` and `TroveMirrorStale` | — |
+| [Q-OPS-161](spec/operations-and-observability.md#q-ops-161--which-role-values-the-registry-the-metrics-and-the-logs-carry-after-the-cut) | Which role values do the registry, the metrics and the logs carry after the cut? | (a) the `--role` name: `api`, `packages`, `worker`, `web`, `all`; the pool in `pool` | — |
 | [Q-API-1](spec/api-and-ui.md#q-api-1--openapi-generation-approach) | How is the OpenAPI document produced? | (a) spec-first: oapi-codegen models and `net/http` server interface, openapi-typescript types, thin hand-written Angular clients | [ADR-083](#adr-083--the-openapi-31-document-is-the-api-contract) |
 | [Q-API-2](spec/api-and-ui.md#q-api-2--is-if-match-mandatory-on-writes) | Is `If-Match` mandatory on writes? | (b) required on PUT and PATCH of revisioned resources; `If-Match: *` is the explicit blind write | [ADR-084](#adr-084--uniform-api-conventions-problem-details-cursors-merge-patch-etags-idempotency-keys) |
 | [Q-API-3](spec/api-and-ui.md#q-api-3--cluster-wide-rate-limiting) | Cluster-wide rate limiting? | (e) cluster-wide sliding-window counters in Valkey (R-ARCH-034) with a per-replica fallback; revisited 2026-10-28; H-43 narrowed; same choice as Q-ARCH-17 | [ADR-102](#adr-102--cluster-wide-rate-limits-in-valkey-with-a-per-replica-fallback) |
@@ -6706,6 +6775,8 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-UI-103](spec/api-and-ui.md#q-ui-103--the-claim-testers-form-view-edits-the-top-level-claims-as-rows-and-the-json-text-is-the-one-source) | How does the claim tester's form view work? | (a) a JSON / Form switch; top-level claims as rows, each keeping its JSON type, the JSON text is the one source (development agent) | — |
 | [Q-UI-104](spec/api-and-ui.md#q-ui-104--the-mirror-is-a-section-of-the-remotes-form-and-a-tab-of-its-edit-form) | Where does the mirror show in the UI? | (a) a Mirror section among the remote settings and a Mirror tab with the status | — |
 | [Q-UI-105](spec/api-and-ui.md#q-ui-105--pause-and-resume-are-a-patch-of-the-document-a-pass-on-request-opens-its-job) | How do the UI's pause and run work? | (a) `PATCH` with `If-Match`; the run opens the job | — |
+| [Q-UI-106](spec/api-and-ui.md#q-ui-106--how-the-uis-downloads-and-uploads-reach-api-after-the-cut) | How do the UI's downloads and uploads reach `api` after the cut? | (a) session-only content routes `/api/v1/repositories/{repoKey}/content/{path}` on `api`; `contentUrl` on items and version files | [ADR-155](#adr-155--three-roles-api-packages-and-worker-variants-are-pools) |
+| [Q-UI-107](spec/api-and-ui.md#q-ui-107--how-the-status-screen-groups-replicas-after-the-cut) | How does the status screen group replicas after the cut? | (a) a group per role, a sub-group per pool with its own drain safety | — |
 | [Q-EP-1](spec/endpoints.md#q-ep-1--how-the-endpoint-of-a-request-is-identified) | How is the endpoint of a request identified? | (a) by the listener the connection arrived on; `Host` only selects among the endpoint's own hosts, a foreign host answers `421` | [ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) |
 | [Q-EP-2](spec/endpoints.md#q-ep-2--where-endpoint-configuration-and-exposure-rules-live) | Where do endpoint configuration and exposure rules live? | (c) network binding in the file, exposure rules in PostgreSQL, compiled into the grant index | [ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) |
 | [Q-EP-3](spec/endpoints.md#q-ep-3--separate-pool-or-shared-pods-for-a-further-endpoint) | Separate pool or shared pods for a further endpoint? | (c) an optional pool per endpoint, off by default, recommended for endpoints with exposure rules | [ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) |
@@ -6748,6 +6819,8 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-EP-67](spec/endpoints.md#q-ep-67--what-stored-lists-what-is-served-newest-first-tags-only-for-a-format-with-tags) | What does `Stored` list and in which order? | (a) what is answerable by exact version, newest by arrival/publish time/`Compare`, tags only when the format has them | (b) listed only; (c) `Compare` only |
 | [Q-EP-68](spec/endpoints.md#q-ep-68--a-nuget-endpoint-with-rules-lists-no-publish-resource-and-answers-a-write-sent-to-the-package-url-with-403) | What does a NuGet endpoint with rules advertise and answer for writes? | (a) no publish resource in the service index; 403 `endpoint_read_only` for a write sent to the package URL | (b) list and refuse; (c) 404 |
 | [Q-EP-69](spec/endpoints.md#q-ep-69--version-names-in-a-rule-are-compared-letter-by-letter-with-the-form-the-format-asks-about) | How are version names in a rule compared when a format has several spellings? | (a) letter by letter with the form the format passes; the range is the way to name versions (open gap H-380) | (b) a folding hook; (c) a warning |
+| [Q-EP-70](spec/endpoints.md#q-ep-70--which-role-an-endpoint-pool-is) | Which role is an endpoint pool? | (a) a pool of each role whose families the surface holds | [ADR-155](#adr-155--three-roles-api-packages-and-worker-variants-are-pools) |
+| [Q-EP-71](spec/endpoints.md#q-ep-71--how-a-further-endpoint-whose-surface-spans-both-roles-is-routed) | How is a further endpoint whose surface spans both roles routed? | (a) a Service per role on its port, `<fullname>-ep-<name>` and `<fullname>-ep-<name>-api`, and the edge split of R-HA-037 | — |
 | [Q-VULN-1](spec/vulnerability-scanning.md#q-vuln-1--scanner-and-advisory-data-source) | Which scanner and which advisory data source? | (d) hybrid: the OSV archives of the served ecosystems mirrored into PostgreSQL and matched by trove for package formats now; an image analyser (Trivy in client mode the candidate) with the OCI format | [ADR-132](#adr-132--advisories-mirrored-from-osv-and-matched-inside-trove-by-package-identity) |
 | [Q-VULN-2](spec/vulnerability-scanning.md#q-vuln-2--where-scan-state-lives) | Where does scan state live? | (a) PostgreSQL for the advisory mirror and the findings | [ADR-133](#adr-133--scan-state-lives-in-postgresql-a-re-fetchable-advisory-mirror-and-backed-up-findings) |
 | [Q-VULN-3](spec/vulnerability-scanning.md#q-vuln-3--which-stored-versions-public-advisories-apply-to) | Which stored versions do public advisories apply to? | (b) remotes with a recognised upstream and local names no claim covers; `matchPublicAdvisories` per repository; a match on a claimed name is an alert | [ADR-135](#adr-135--public-advisories-never-apply-to-claimed-internal-names) |

@@ -4,8 +4,9 @@ Status: specification — not implemented
 
 This page specifies how trove stays available, scales out and is deployed. It covers:
 
-- The replica model: identical, interchangeable replicas per role, with `web` and `worker` as
-  separate Deployments from the start and `backup` as a CronJob (INV-2), and how replicas
+- The replica model: identical, interchangeable replicas per role, with `api`, `packages` and `worker` as
+  separate Deployments (the task areas of ADR-153 and ADR-155, specified for phase 6a; built today: `web` and `worker`),
+  pools of a role by path prefix or queue, `backup` as a CronJob (INV-2), and how replicas
   coordinate through PostgreSQL and Valkey without talking to each other (INV-3, INV-12, INV-18).
 - The failure contract of every component: pod crash, node drain and node loss, PostgreSQL failover
   with reconnect and retry, Valkey failover through Sentinel and Valkey outage, object-storage
@@ -66,21 +67,27 @@ through workload identity). The storage entries themselves belong to [storage.md
 
 ## Topology
 
+The target of phase 6a (ADR-153, ADR-155; specified, not built yet). Until it is built, one Deployment `<fullname>-web`
+behind the Service `<fullname>` serves every path, which is the shape the upgrade bridge of R-HA-064 keeps for one step.
+
 ```text
              clients: npm, pnpm, Yarn, dotnet, nuget.exe, browsers, GitLab jobs
                                     │ HTTPS
                    ┌────────────────▼─────────────────┐
-                   │  Ingress controller or Gateway   │  TLS ends here (R-HA-037)
-                   └────────────────┬─────────────────┘
-                                    │ HTTP, Service <fullname>:8080, no session affinity
-            ┌───────────────────────┼───────────────────────┐
-     ┌──────▼──────┐         ┌──────▼──────┐         ┌──────▼──────┐
-     │ web pod     │         │ web pod     │   ...   │ web pod     │  Deployment <fullname>-web
-     │ :8080 :8081 │         │ :8080 :8081 │         │ :8080 :8081 │  spool: emptyDir
-     └─────────────┘         └─────────────┘         └─────────────┘
+                   │  Ingress controller or Gateway   │  TLS ends here; one host split by path prefix (R-HA-037)
+                   └───────┬─────────────────┬────────┘
+     /, /ui, /auth, /api/v1 │                 │ /api, /files, /v2, /.well-known
+     Service <fullname>-api │                 │ Service <fullname>-packages        (HTTPS :8080, no session affinity)
+            ┌───────────────┤                 ├─────────────────────────┐
+     ┌──────▼──────┐ ┌──────▼──────┐   ┌──────▼──────┐ ┌──────▼──────┐ ┌──────▼──────┐
+     │ api pod     │ │ api pod     │   │ packages    │ │ packages    │ │ packages    │  Deployments <fullname>-api and
+     │ :8080 :8081 │ │ :8080 :8081 │   │ :8080 :8081 │ │ :8080 :8081 │ │ :8080 :8081 │  <fullname>-packages; spool: emptyDir
+     └─────────────┘ └─────────────┘   └─────────────┘ └─────────────┘ └─────────────┘
+       UI, management API, sessions,     package protocols, raw files, tokens only,
+       OIDC and break-glass secrets      the fills of client misses
      ┌─────────────┐         ┌─────────────┐
-     │ worker pod  │   ...   │ worker pod  │  Deployment <fullname>-worker: jobs, :8081 only
-     └─────────────┘         └─────────────┘
+     │ worker pod  │   ...   │ worker pod  │  Deployment <fullname>-worker: jobs, :8081 only;
+     └─────────────┘         └─────────────┘  optional pools by queue <fullname>-worker-<pool> (R-HA-062)
      ┌─────────────┐
      │ backup pod  │  CronJob <fullname>-backup ──S3──▶ backup target bucket (R-HA-060)
      └─────────────┘
@@ -88,12 +95,12 @@ through workload identity). The storage entries themselves belong to [storage.md
   every pod ──SQL───▶ PostgreSQL primary ──streaming──▶ standbys (CloudNativePG, Patroni, RDS)
                       optional: request pool through a transaction-mode pooler, control
                       connection through a pool of its own (R-HA-058, Q-HA-20)
-  web, worker ─RESP─▶ Valkey primary ──replication──▶ replica; ≥ 3 Sentinels name the primary
+  api, packages, worker ─RESP─▶ Valkey primary ──replication──▶ replica; ≥ 3 Sentinels name the primary
                       (backup, restore and migration pods never connect to Valkey)
   every pod ──S3────▶ blob bucket, versioning recommended (AWS S3, MinIO, Ceph RGW, SeaweedFS)
 
   Helm hook before the Deployments: the migration Job. With restore.enabled: no migration Job,
-  both roles at zero, and the restore Job as an ordinary resource (R-HA-060, Q-HA-18)
+  every role at zero, and the restore Job as an ordinary resource (R-HA-060, Q-HA-18)
 ```
 
 Replicas never open connections to each other. Every cross-replica signal goes through PostgreSQL
@@ -108,8 +115,9 @@ keeps outside these three services is scratch space for one request or one job (
 ### R-HA-001 · Active-active replicas without a primary node
 Priority: **MVP** · Covers: HA-001, HA-002, HA-010
 
-- Every `web` replica MUST be able to serve every client request and every management request, and
-  every `worker` replica every job kind it implements. No replica holds state that another replica
+- Every replica of a client-serving role MUST be able to serve every request of the route families of its role (`api`: the
+  UI and every management request; `packages`: every package and raw-file request), and every `worker` replica every job
+  kind of the queues it claims (R-ARCH-016). No replica holds state that another replica
   needs to answer a request (INV-2, INV-18): consecutive requests of one client, the requests of a
   multi-request protocol included, may reach different replicas. The only local state is the spool
   of the request or job that is running (R-HA-035) and in-process caches, which are invalidated via
@@ -117,12 +125,16 @@ Priority: **MVP** · Covers: HA-001, HA-002, HA-010
 - There MUST be no primary, leader or seed replica in configuration. Work that must run once per
   cluster runs under leases that any `worker` replica can take (R-HA-005, R-HA-006).
 - **Roles** (INV-2, [architecture.md](architecture.md) R-ARCH-001). A process has one role,
-  `process.role: web|worker`, which has no default. The chart starts each Deployment with
+  `process.role: api|packages|worker|web|all`, which has no default. The chart starts each Deployment with
   `trove serve --role <role>`, the flag form that overrides `process.role` (R-HA-002), so the
   shared configuration file names no role:
-  - `web` serves the client listener and the operations listener, and never claims jobs or leases;
+  - `api` serves the route families `ui`, `api` and `ci_exchange` on the client listener and the operations listener, and
+    never claims jobs or leases;
+  - `packages` serves the route families `packages` and `files` on the client listener and the operations listener, with
+    tokens only, and never claims jobs or leases;
   - `worker` claims jobs and leases, and serves only the operations listener;
-  - `all` combines both. It exists only for the local profile, for a binary started outside the
+  - `web` is `api` and `packages` in one process, rendered only by the upgrade bridge of R-HA-064;
+  - `all` combines every role. It exists only for the local profile, for a binary started outside the
     chart during development, and the chart never renders it.
 
   The `backup` role is the `trove backup` subcommand. The backup CronJob and the restore Job run it
@@ -134,7 +146,8 @@ Priority: **MVP** · Covers: HA-001, HA-002, HA-010
   The catalog's "single node with embedded database and local file storage" topology does not exist
   in trove.
 - Load is shared by adding replicas of a role (INV-12). Capacity planning assumes that the peak load
-  needs more than one `web` replica. R-HA-059 states how many replicas a node drain needs on top.
+  needs more than one `packages` replica; the UI and management load fits one `api` replica. R-HA-059 states how many
+  replicas a node drain needs on top.
 - Adding a replica needs no configuration besides the replica count. A new `worker` replica takes
   jobs as soon as it is ready. Removing a replica needs no handover: its leases end with its
   database sessions (R-HA-006), its job leases expire (R-HA-005), and its Valkey locks expire
@@ -142,101 +155,135 @@ Priority: **MVP** · Covers: HA-001, HA-002, HA-010
 
 Acceptance criteria:
 
-- With three `web` replicas behind the Service, `for i in $(seq 1 300); do curl -s -o /dev/null -w '%{http_code}\n' https://trove.example.com/api/v1/system/ping; done | sort | uniq -c`
-  prints only `200`, and the `X-Trove-Replica` header of authenticated calls shows all three pod
-  names.
-- `kubectl scale deploy/trove-web --replicas=4` adds a replica that serves traffic and appears in
+- With two `api` replicas behind the edge, `for i in $(seq 1 300); do curl -s -o /dev/null -w '%{http_code}\n' https://trove.example.com/api/v1/system/ping; done | sort | uniq -c`
+  prints only `200`, and the `X-Trove-Replica` header of authenticated calls shows both `api` pod
+  names and no other; the same loop over `GET /api/npm/npm-all/lodash` with a token shows the three `packages` pod names.
+- `kubectl scale deploy/trove-packages --replicas=4` adds a replica that serves traffic and appears in
   `GET /api/v1/system/replicas` without any other change.
-- `helm upgrade … --set web.replicaCount=1 --set worker.replicaCount=1 --set highAvailability.enforce=false`
+- `helm upgrade … --set api.replicaCount=1 --set packages.replicaCount=1 --set worker.replicaCount=1 --set highAvailability.enforce=false`
   yields a working installation with one replica per role against the same database, Valkey and
   bucket.
-- A test proxy in front of the `web` pod IPs sends every request to a different replica in strict
-  rotation. Through it, these flows complete (INV-18): an npm web login with its polling requests,
+- A test proxy in front of the `api` and `packages` pod IPs, routing by the path prefixes of R-HA-037, sends every request
+  to a different replica of its role in strict rotation. Through it, these flows complete (INV-18): an npm web login with its polling requests,
   `dotnet nuget push` followed by a restore of the pushed version, `npm publish` followed by
   `npm view`, and a paged API listing followed to its last page.
 
-### R-HA-002 · Role split into web and worker Deployments
+### R-HA-002 · Role split into api, packages and worker Deployments
 Priority: **MVP** · Covers: HA-015
 
-The role that serves clients is named `web` (INV-2), and
-the split is no longer optional: it is an owner constraint since 2026-10-28.
+The split is no longer optional: it is an owner constraint since 2026-10-28, and the task areas `api`, `packages` and
+`worker` are the owner's cut of 2026-11-04 (INV-2,
+[ADR-153](../decisions.md#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries),
+[ADR-155](../decisions.md#adr-155--three-roles-api-packages-and-worker-variants-are-pools)).
 
-- The chart MUST always render two Deployments: `<fullname>-web`, whose container runs
-  `trove serve --role web`, and `<fullname>-worker`, whose container runs
-  `trove serve --role worker`. Each has its own replica count, resources, autoscaler, disruption
-  budget, termination grace period, spool size and scheduling settings (R-HA-031, R-HA-032). There
-  is no single-Deployment mode, and no value renders `--role all`.
-- The client Service selects only `web` pods. `worker` pods are reached only on the operations port
-  (probes and metrics).
+**Status.** Specified for phase 6a, not built yet: the chart renders `<fullname>-web` (`--role web`) and `<fullname>-worker`
+([deploy/helm/trove/templates/deployments.yaml](../../deploy/helm/trove/templates/deployments.yaml)), which is the shape that
+`web.enabled: true` keeps for the first step of R-HA-064.
+
+- The chart MUST always render three Deployments: `<fullname>-api`, whose container runs `trove serve --role api`,
+  `<fullname>-packages`, whose container runs `trove serve --role packages`, and `<fullname>-worker`, whose container runs
+  `trove serve --role worker`. Each has its own replica count, resources, autoscaler, disruption budget, termination grace
+  period, spool size, scheduling settings and ingress policy (R-HA-031, R-HA-032, R-HA-042). There is no single-Deployment
+  mode, and no value renders `--role all`. `--role web` is rendered only by the bridge of R-HA-064 (`web.enabled: true`).
+- **Services.** `<fullname>-api` (port `http` 8080) selects only the `api` pods of the main Deployment, and
+  `<fullname>-packages` (port `http` 8080) only the `packages` pods of the main Deployment; the edge routes each host's paths
+  to them by prefix (R-HA-037). `<fullname>-ops` selects every serving pod on 8081. `worker` pods are reached only on the
+  operations port (probes and metrics). The Service `<fullname>` of the releases before the cut is rendered only by the bridge
+  of R-HA-064 (Q-HA-74).
+- **In-cluster callers** that address trove without the edge, such as a Bastion calling the main installation by its
+  Service name ([bastion.md](bastion.md) R-BAS-008) or CI runners in the cluster, address the Service of the role whose
+  families they call: `<fullname>-api` for the UI, the management API and the CI exchange, `<fullname>-packages` for the
+  package protocols and raw files. A request that reaches the other role's Service answers the `404` of an unknown path
+  ([architecture.md](architecture.md) R-ARCH-001). A caller that needs both families in one base URL goes through the edge.
 - `worker.replicaCount` (or `worker.autoscaling.minReplicas`) MUST be at least 1, otherwise no
-  scheduled work runs. The chart refuses to render (R-HA-029). With `highAvailability.enforce` the
-  minimum is 2 for both roles, so that GC and other singleton work survive a worker pod loss without
-  waiting for a reschedule.
-- `web` and `worker` pods run the same image and the same configuration file; only the `--role`
-  argument differs. No component runs in a separate image or as a sidecar.
-- Why from the start: background work (GC, retention runs, reindexing, cache fills of prefetch jobs,
-  webhook delivery) never competes with request latency for CPU and memory; `web` scales on request
-  load and `worker` on job load; a drain or rollout of one role does not touch the other; and a
-  further split of either role (R-HA-062) is a change of values, not of code.
+  scheduled work runs, and `api.replicaCount` and `packages.replicaCount` MUST be at least 1, otherwise the edge has no
+  backend for their families. The chart refuses to render (R-HA-029). With `highAvailability.enforce` the minimum is 2 for
+  every role and every pool, so that GC and other singleton work survive a worker pod loss without waiting for a reschedule
+  and no family loses its last replica in a drain.
+- The roles' pods run the same image and the same configuration file; only the `--role` argument and the per-Deployment
+  environment of R-HA-062 (`TROVE_POOL_NAME`, `TROVE_JOBS_QUEUES`, `TROVE_JOBS_EXCLUDE_QUEUES`) differ. No component runs in a
+  separate image or as a sidecar.
+- Why: background work (GC, retention runs, reindexing, the mirror's passes, the advisory sync, webhook delivery) never
+  competes with request latency for CPU and memory; a surge of package traffic cannot starve the UI and the management API;
+  `packages` scales on package load, `api` on UI and API load and `worker` on job load; a drain or rollout of one role does
+  not touch the others; the login secrets live only in `api` pods (R-HA-030); and a further split of a role (R-HA-062) is a
+  change of values, not of code.
 
 Acceptance criteria:
 
-- With default values, `kubectl get deploy -l app.kubernetes.io/instance=trove` lists `trove-web`
-  and `trove-worker`, and `GET /api/v1/system/replicas` shows roles `["web"]` and `["worker"]`.
-- A manual GC run (`POST /api/v1/system/tasks/gc/run`) sent to a `web` pod is executed on a
+- With default values, `kubectl get deploy -l app.kubernetes.io/instance=trove` lists `trove-api`, `trove-packages`
+  and `trove-worker`, and `GET /api/v1/system/replicas` shows roles `["api"]`, `["packages"]` and `["worker"]`.
+- A manual GC run (`POST /api/v1/system/tasks/gc/run`) sent to an `api` pod is executed on a
   `worker` pod (the worker's instance ID appears in `job.locked_by` of the gc job), and the
-  instance ID of no `web` pod ever appears in `job.locked_by`.
-- `helm template … --set worker.replicaCount=0` fails and names `worker.replicaCount`.
-- For every value set in `ci/`, the rendered containers carry the argument `--role web` or
-  `--role worker`, never `all`.
+  instance ID of no `api` or `packages` pod ever appears in `job.locked_by`.
+- `helm template … --set worker.replicaCount=0` fails and names `worker.replicaCount`; `--set packages.replicaCount=0`
+  fails and names `packages.replicaCount`.
+- For every value set in `ci/`, the rendered containers carry the argument `--role api`, `--role packages` or
+  `--role worker`, `--role web` only where the value set enables the bridge, and never `all`.
+- The chart test of each role (`test/chart`): a Deployment, a Service where the role serves clients, a PodDisruptionBudget,
+  a HorizontalPodAutoscaler with `autoscaling.enabled`, a NetworkPolicy with the ports of R-HA-042, and the edge rules of
+  R-HA-037 that point at its Service.
 
 ### R-HA-062 · Further splits of a role into several Deployments
-Priority: **P1** · Covers: HA-015
+Priority: **MVP** · Covers: HA-015
 
-The owner allows several worker types and a split service (INV-2). Because every replica of a role
-can serve everything its role serves, a further split is routing and scheduling only.
+**Status.** Phase 6a, specified, not built yet; built today: the endpoint pools, as pools of `web`.
 
-- **Web pools.** Each entry of `web.pools` renders a Deployment `<fullname>-web-<name>` with
-  `--role web`, its own Service `<fullname>-web-<name>` (port 8080, no session affinity), PDB,
-  autoscaler and the keys of `web` as overrides. The Ingress and the HTTPRoute route the entry's
-  `paths` (path prefixes inside the same host, for example `/api/npm/` and `/api/nuget/`) to that
-  Service; every other path stays on `<fullname>`. Use: a surge of package traffic cannot starve
-  the UI and the management API. The host is still routed whole (R-HA-037): the pools split it by
-  prefix, never by rewriting.
-- **Worker pools.** Each entry of `worker.pools` renders a Deployment `<fullname>-worker-<name>`
-  with `--role worker` that claims only the job queues listed in `queues`; the queue names and the
-  setting that restricts a process to them belong to [architecture.md](architecture.md) R-ARCH-016.
-  The main `worker` Deployment claims every queue that no pool lists, so a queue never stays
-  unclaimed. Use: indexing or garbage collection on nodes of their own.
-- Every pool follows the rules of its role: at least two replicas with `highAvailability.enforce`,
-  spreading, PDB, the drain rule of R-HA-059, and the connection budget of R-HA-016, which counts
-  pools like any other Deployment. A pool's pods carry `trove/pool: <name>`, which keeps its
-  selectors apart from the main Deployment's (R-HA-028) and becomes the target label `pool` of its
-  series (R-HA-045).
-- **Endpoint pools are MVP.** The pool of a further endpoint (`endpoints.<name>.pool`,
-  [endpoints.md](endpoints.md) R-EP-008, Q-EP-3) is a web pool named `ep-<name>` that follows every
-  rule above, but is routed by its own port, Service and edge route instead of by path prefix, and
-  its pods open only the listeners of their endpoints (R-EP-002). The chart renders it from the MVP
-  on; the path pools of `web.pools` and the worker pools stay P1, and their names may not start with
-  `ep-`.
+The owner allows several worker types and a split service (INV-2); a variant of a role by path prefix or by queue is a
+pool of that role, rendered from values without code (ADR-155). Because every replica of a role can serve everything its
+role serves, a pool is routing and scheduling only.
+
+- **Path pools of `api` and `packages`.** Each entry of `api.pools` or `packages.pools` renders a Deployment
+  `<fullname>-<role>-<name>` with `--role <role>`, its own Service `<fullname>-<role>-<name>` (port 8080, no session
+  affinity), disruption budget, autoscaler, ingress policy and the keys of its role as overrides. The Ingress and the
+  HTTPRoute route the entry's `paths` (path prefixes inside the same host, for example `/api/npm` and `/api/nuget` in
+  `packages.pools`) to that Service; every other path of the role stays on `<fullname>-<role>`. A pool's paths MUST lie
+  inside the families of its role (R-HA-037's prefix table: below `/api` but not `/api/v1`, or `/files`, `/v2`,
+  `/.well-known` for `packages`; `/ui`, `/auth` or below `/api/v1` for `api`), MUST NOT equal one of the role's own prefixes
+  of R-HA-037, and two pools MUST NOT list the same prefix. Use: a surge of npm traffic cannot starve NuGet clients; a heavy
+  part of the management API on pods of its own.
+- **Worker pools.** Each entry of `worker.pools` renders a Deployment `<fullname>-worker-<name>` with `--role worker` and
+  `TROVE_JOBS_QUEUES` set to the entry's `queues`, so it claims only those queues (the queue names and the setting:
+  [architecture.md](architecture.md) R-ARCH-016, Q-ARCH-296). The main `worker` Deployment gets `TROVE_JOBS_EXCLUDE_QUEUES`
+  set to the union of every pool's queues and claims every other queue, so a queue never stays unclaimed, a queue a later
+  release adds is claimed by the main Deployment, and no queue is claimed by two pools. Use: the advisory sync (`vuln`),
+  the mirror's passes (`mirror`), indexing (`index`) or garbage collection (`maintenance`) on pods of their own. A pool's
+  `jobs.workers.<queue>` slots are those of the configuration unless its `extraEnv` sets them.
+- **Endpoint pools.** The pool of a further endpoint (`endpoints.<name>.pool`, [endpoints.md](endpoints.md) R-EP-008,
+  Q-EP-3) is named `ep-<name>` and is a pool of the role that serves the endpoint's surface (Q-EP-70): a pool of `packages`
+  for a surface within `packages` and `files`, of `api` for one within `api` and `ci_exchange`, and one of each for a surface
+  that holds families of both roles. It follows every rule below, but is routed by its own port, Services and edge route
+  instead of by path prefix, and its pods open only the listeners of their endpoints (R-EP-002). Endpoint pools are built
+  since the MVP as pools of `web`; the cut makes them pools of the role of their surface.
+- Every pool follows the rules of its role: at least two replicas with `highAvailability.enforce`, spreading, disruption
+  budget, the drain rule of R-HA-059, its own ingress policy (R-HA-042), and the connection budget of R-HA-016, which counts
+  pools like any other Deployment. A pool's pods carry `trove/pool: <name>`, which keeps its selectors apart from the main
+  Deployment's (R-HA-028) and becomes the target label `pool` of its series (R-HA-045). The names of path and worker pools
+  match `^[a-z][a-z0-9-]{0,19}$` and may not start with `ep-`.
 
 ```yaml
-web:
+api:
   pools: []                    # default (proposed); example:
-  # - name: packages           # example
-  #   paths: [/api/npm/, /api/nuget/, /files/]   # example
-  #   replicaCount: 4          # example; every key of web may be overridden here
+  # - name: admin              # example
+  #   paths: [/api/v1/repositories]   # example; prefixes inside the families of api
+  #   replicaCount: 2          # example; every key of api may be overridden here
+packages:
+  pools: []                    # default (proposed); example:
+  # - name: npm                # example
+  #   paths: [/api/npm]        # example; prefixes inside the families of packages
+  #   replicaCount: 4          # example; every key of packages may be overridden here
 worker:
   pools: []                    # default (proposed); example:
-  # - name: indexing           # example
-  #   queues: [index]          # example; queue names from architecture.md R-ARCH-016
-  #   replicaCount: 2          # example
+  # - name: vuln               # example
+  #   queues: [vuln]           # example; queue names from architecture.md R-ARCH-016
+  #   replicaCount: 2          # example; every key of worker may be overridden here
 ```
 
-Acceptance criteria: with one web pool for `/api/npm/` and one worker pool for the index queue,
-R-HA-059's drain test passes; npm requests appear only in the pool's access logs; jobs of the index
-queue run only on the pool's pods; `helm template` fails when two pools list the same path prefix
-or the same queue.
+Acceptance criteria: with one `packages` pool for `/api/npm` and one worker pool for the queue `vuln`, R-HA-059's drain test
+passes; npm requests appear only in the pool's access logs and NuGet requests only in those of `<fullname>-packages`; jobs of
+the queue `vuln` run only on the pool's pods and every other kind only on `<fullname>-worker`; `helm template` fails when two
+pools list the same path prefix or the same queue, when a `packages` pool lists `/api/v1/system` or an `api` pool lists
+`/files`, when a worker pool lists a queue that does not exist, and when a pool's name starts with `ep-`.
 
 ### R-HA-063 · Chart TLS wiring
 Priority: **MVP** · Covers: HA-018
@@ -321,7 +368,7 @@ tasks and the key ring. R-HA-001 and R-HA-020 verify rollouts through the replic
 Acceptance criteria:
 
 - During a rolling upgrade from 0.3.0 to 0.4.0, `GET /api/v1/system/replicas` shows both versions;
-  after `kubectl rollout status deploy/trove-web` and `deploy/trove-worker` return, only 0.4.0 is
+  after `kubectl rollout status` of `deploy/trove-api`, `deploy/trove-packages` and `deploy/trove-worker` returns, only 0.4.0 is
   listed within `system.heartbeat_stale_after`.
 - `kubectl delete pod --grace-period=0 --force <pod>` makes the row stale within 30 s; the
   contract guard of a migration started afterwards ignores it.
@@ -888,7 +935,7 @@ background work.
 
 Acceptance criteria:
 
-- `kubectl rollout restart deploy/trove-web` during a loop of `curl -T 500mb.bin …/files/generic-local/<n>.bin`
+- `kubectl rollout restart deploy/trove-packages` (before phase 6a: `deploy/trove-web`) during a loop of `curl -T 500mb.bin …/files/generic-local/<n>.bin`
   over a link limited to 50 MB/s: no upload fails.
 - `kubectl delete pod <worker>` during a test job that persists its cursor every second: the job
   continues on another replica from the persisted cursor with `attempt` unchanged.
@@ -941,12 +988,12 @@ what "sized for it" means.
    The capacity of one replica comes from the reference load test (R-HA-050). Kubernetes evicts
    before the replacement exists, so the remaining replicas carry the peak alone until the
    replacement is ready. The autoscaler may add replicas above the minimum, but the rule does not
-   count on it reacting during a drain. The defaults (three `web`, two `worker`, Q-HA-16) satisfy
-   the rule for a peak that two `web` replicas carry.
+   count on it reacting during a drain. The defaults (three `packages`, two `api`, two `worker`, Q-HA-16, Q-HA-75)
+   satisfy the rule for a peak that two `packages` replicas and one `api` replica carry.
 2. **One pod per role at a time.** Each role's PDB allows one unavailable pod (`maxUnavailable: 1`,
    R-HA-032). `kubectl drain` retries a refused eviction, so a node that hosts several pods of one
    role is drained one pod after the other, each after the previous replacement is ready.
-3. **Replacements can schedule.** Both roles spread over nodes with `DoNotSchedule` and
+3. **Replacements can schedule.** Every role and pool spreads over nodes with `DoNotSchedule` and
    `nodeTaintsPolicy: Honor` (R-HA-032). A cordoned node carries the
    `node.kubernetes.io/unschedulable` taint. With the default `nodeTaintsPolicy: Ignore` it would
    still count as a spreading domain holding zero pods, and the replacement of a role with one pod
@@ -977,9 +1024,9 @@ what "sized for it" means.
    `Range` request; uploads are repeated by the client. Installations that cannot accept it raise
    `terminationGracePeriodSeconds` to their p99 transfer duration (R-HA-050).
 
-**Acceptance test.** In a green full run of Test and Release on the commit that closes the phase, on the kind profile of R-HA-051 with three worker nodes; `web`
-runs 3 replicas, the chart default, set with `--set web.replicaCount=3` on top of
-`values-dev.yaml`, and `worker` 2. PostgreSQL and Valkey run on nodes other than the drained one,
+**Acceptance test.** In a green full run of Test and Release on the commit that closes the phase, on the kind profile of R-HA-051 with three worker nodes; `packages`
+runs 3 replicas, the chart default, set with `--set packages.replicaCount=3` on top of
+`values-dev.yaml`, `api` 2 and `worker` 2 (before phase 6a: `web` 3 and `worker` 2). PostgreSQL and Valkey run on nodes other than the drained one,
 except where a variant says otherwise. The load starts 5 minutes before the drain and runs until
 10 minutes after `kubectl drain` returns:
 
@@ -992,14 +1039,14 @@ except where a variant says otherwise. The load starts 5 minutes before the drai
 | Long-transfer probes: `curl --limit-rate 2M --retry 5 --retry-all-errors -C - -o big.bin …/files/generic-local/1gib.bin` (about 512 s, longer than the `web` grace period) | 2 parallel loops |
 
 The drain is `kubectl drain <node> --ignore-daemonsets --delete-emptydir-data --timeout=20m` of a
-node that hosts at least one `web` and one `worker` pod. Pass conditions:
+node that hosts at least one `api`, one `packages` and one `worker` pod. Pass conditions:
 
 - every `npm` and `dotnet` command exits `0` with the clients' default retries;
 - k6 records no response other than `2xx` or `304` and no connection error (k6 does not retry);
 - the p99 latency of k6 requests from the first eviction until 2 minutes after the drain is at most
   twice the p99 of the warm-up;
 - every acknowledged publish installs afterwards;
-- a long-transfer probe is cut at most once per evicted `web` pod that served it, completes through
+- a long-transfer probe is cut at most once per evicted `packages` pod that served it, completes through
   resume, and its SHA-256 matches; a cut on a pod that was not evicted fails the test;
 - the kubelet events show no `SIGKILL` of a trove container;
 - every job that ran on an evicted `worker` pod finishes on another one with `attempt` unchanged
@@ -1015,6 +1062,13 @@ Variants, with the same load and pass conditions:
 | C | the PostgreSQL primary | CloudNativePG switches over before the eviction | a green full run of Test and Release on the commit that closes the phase |
 | D | an instance of the transaction-mode pooler (pooler profile, R-HA-058) | — | a green full run of Test and Release on the commit that closes the phase |
 | E | a running backup pod (R-HA-060) | the backup Job completes, and the eviction is not counted against `backoffLimit` | a green full run of Test and Release on the commit that closes the phase |
+
+**A drain per role** (phase 6a). For each of `api`, `packages` and `worker` (and a worker pool of the queue `vuln` when the
+run configures one), the pods of that role alone are evicted one after the other through the eviction API, each after the
+previous replacement is ready, under the load above plus a loop of a browser journey of the UI (sign-in, repository list,
+package page, a download through the UI) and a loop of management API calls with a token. The pass conditions above hold,
+the pods of the other roles keep their names and restart counts, and for `worker` a full advisory sync started before the
+first eviction ends on another worker from its checkpoint.
 
 On the local profile of R-HA-051, whose three worker nodes each host a Sentinel and most a Valkey pod or a PostgreSQL instance,
 variant A drains a node that hosts neither the PostgreSQL primary nor the Valkey primary; a Sentinel, a Valkey replica or the
@@ -1380,13 +1434,13 @@ R-ARCH-019 owns the pools; this requirement owns the budget.
 
 | Source | Key | Default (proposed) | Roles | Connects to |
 |---|---|---|---|---|
-| Main pool (class `main`) | `database.pool.max_conns` | 20 | `web`, `worker` | `database.host`, the pooler with R-HA-058 |
+| Main pool (class `main`) | `database.pool.max_conns` | 20 | `api`, `packages`, `worker` (and `web` in the bridge of R-HA-064) | `database.host`, the pooler with R-HA-058 |
 | Lease pool (class `lease`, R-HA-006) | `database.lease_pool_size` | 4 | `worker` | session host |
 
 There is no listener session and no fetch-collapse lock pool any more: invalidations travel through
 the change log on the main pool (R-HA-004), and fetch collapse takes a Valkey lock since INV-11
 changed ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026,
-[architecture.md](architecture.md) Q-ARCH-14). There is no coordination session either, so a `web`
+[architecture.md](architecture.md) Q-ARCH-14). There is no coordination session either, so an `api` or `packages`
 replica opens nothing but its main pool. Jobs add the migration Job (2 connections) and the
 backup Job (`backup_conns` = 2 + `backup.database.parallel`, 4 with defaults,
 [backup-and-restore.md](backup-and-restore.md) R-BAK-005), counted once per cluster because one
@@ -1403,12 +1457,14 @@ connection reaches the server through the control pool of R-HA-058, whose server
 The PostgreSQL connection limit MUST satisfy:
 
 ```text
-web_max      = Σ over web Deployments (autoscaling.enabled ? maxReplicas : replicaCount) + rollingUpdate.maxSurge
-worker_max   = Σ over worker Deployments, the same terms
+serving_max  = Σ over the Deployments of api and packages, their path pools, the endpoint pools
+               and, with web.enabled (R-HA-064), the web Deployment and its endpoint pools,
+               of (autoscaling.enabled ? maxReplicas : replicaCount) + rollingUpdate.maxSurge
+worker_max   = Σ over the worker Deployment and its pools, the same terms
 session      = worker_max × database.lease_pool_size
 pooled       = database.pooler.mode == transaction
                  ? database.pooler.server_connections           (declared, R-HA-058: request and control pools)
-                 : (web_max + worker_max) × database.pool.max_conns
+                 : (serving_max + worker_max) × database.pool.max_conns
 budget       = pooled + session
                + 2                                              (migration Job)
                + backup_conns                                   (backup Job: 2 + backup.database.parallel, once per cluster)
@@ -1419,28 +1475,33 @@ max_connections ≥ budget
 
 Examples:
 
-- Defaults, direct connections, `web` 3 and `worker` 2 replicas with `maxSurge: 1`
-  (`web_max` 4, `worker_max` 3): 7 × 20 + 3 × 4 + 2 + 4 + 10 + 3 = **171**, with no `web_max × 1`
-  term, because `web` replicas hold no session connection. The PostgreSQL default of 100 is too
-  small, so the chart's NOTES print the computed budget.
-- Large profile (R-HA-050), `web` up to 16 and `worker` up to 6, `max_conns: 30`: without a pooler
-  24 × 30 + 7 × 4 + 19 = **767**; with a transaction-mode pooler declaring 100 server connections,
+- Defaults of the cut (Q-HA-75), direct connections, `api` 2, `packages` 3 and `worker` 2 replicas with `maxSurge: 1`
+  (`serving_max` 3 + 4 = 7, `worker_max` 3): 10 × 20 + 3 × 4 + 2 + 4 + 10 + 3 = **231**, with no `serving_max × 1`
+  term, because `api` and `packages` replicas hold no session connection. Before the cut, with `web` 3 and `worker` 2, it was
+  171. The PostgreSQL default of 100 is too small, so the chart's NOTES print the computed budget.
+- During the first step of the upgrade across the cut (R-HA-064), the `web` Deployment runs beside `api` and `packages`:
+  with the defaults `serving_max` is 4 + 3 + 4 = 11, and the budget **311**. The migration Job of that step checks it, so a
+  server sized only for the target fails the step before anything changes.
+- Large profile (R-HA-050), `packages` up to 16, `api` up to 4 and `worker` up to 6, `max_conns: 30`: without a pooler
+  (17 + 5 + 7) × 30 + 7 × 4 + 19 = **917**; with a transaction-mode pooler declaring 100 server connections,
   100 + 28 + 19 = **147**.
 
 **Growth with the replica count (INV-12).** Without a pooler, every added replica adds its whole
-main pool. With the pooler, the main pools add nothing at the server: an added `web` replica adds
+main pool. With the pooler, the main pools add nothing at the server: an added `api` or `packages` replica adds
 no server connection at all, and an added `worker` replica adds its lease pool. The server-side
 count then depends only on the number of `worker` replicas, which follow job load and stay small
 (Q-HA-6).
 
-- The chart passes `web_max` and `worker_max` to the migration Job
-  (`TROVE_DATABASE_PREFLIGHT_EXPECTED_WEB_REPLICAS`, `TROVE_DATABASE_PREFLIGHT_EXPECTED_WORKER_REPLICAS`).
+- The chart passes `serving_max` and `worker_max` to the migration Job
+  (`TROVE_DATABASE_PREFLIGHT_EXPECTED_SERVING_REPLICAS`, `TROVE_DATABASE_PREFLIGHT_EXPECTED_WORKER_REPLICAS`; Q-HA-77). The
+  key `database.preflight.expected_serving_replicas` replaces `expected_web_replicas`, which stays a deprecated alias with a
+  start-up warning (R-ARCH-025); the chart renders only the new name.
   The Job compares the budget with `SHOW max_connections`. With
   `database.preflight.connection_budget: enforce` (default) a shortfall fails the Job, and with it
   `helm upgrade`, before the larger deployment exists. With `warn` it logs and continues.
 - trove cannot read the pooler's limits. With the pooler, `NOTES.txt` prints the client connections
-  each pooler must accept, `(web_max + worker_max) × database.pool.max_conns` for the request pool
-  and `web_max + worker_max` for the control pool, next to the budget, and R-HA-058 lists the
+  each pooler must accept, `(serving_max + worker_max) × database.pool.max_conns` for the request pool
+  and `serving_max + worker_max` for the control pool, next to the budget, and R-HA-058 lists the
   pooler settings that must match.
 - Sizing the main pool: database time per request is a few milliseconds, so 20 connections serve
   several thousand short transactions per second per replica. More connections per replica rarely
@@ -1469,12 +1530,12 @@ database:
 Acceptance criteria:
 
 - Against a server with `max_connections = 100` and the default values, `helm upgrade --install`
-  fails in the migration Job with a message that names 171 required and 100 available.
+  fails in the migration Job with a message that names 231 required and 100 available.
 - Under the reference load test (R-HA-050, medium profile),
   `max(trove_db_pool_connections{state="acquired"})` stays below `max_conns`, and
   `SELECT count(*) FROM pg_stat_activity WHERE usename LIKE 'trove%'` never exceeds the computed
   budget.
-- With the pooler profile (R-HA-058), scaling `web` from 2 to 12 replicas leaves
+- With the pooler profile (R-HA-058), scaling `packages` from 2 to 12 replicas leaves
   `SELECT count(*) FROM pg_stat_activity WHERE usename LIKE 'trove%'` at or below the declared
   `database.pooler.server_connections` plus the `worker` leases and the one-off connections.
 
@@ -2143,14 +2204,15 @@ Acceptance criteria:
 ### R-HA-020 · Rolling upgrade and mixed-version operation
 Priority: **MVP** · Covers: HA-069, OPS-073
 
-- Both Deployments use `RollingUpdate` with `maxSurge: 1` and `maxUnavailable: 0`, plus
+- Every Deployment uses `RollingUpdate` with `maxSurge: 1` and `maxUnavailable: 0`, plus
   `minReadySeconds: 10`. Serving capacity never drops below the replica count during an upgrade,
   so the replica counts of the drain rule (R-HA-059) suffice for a zero-downtime upgrade. The
   catalog's recommendation of three nodes comes from upgrades that take a node out of service.
-- **Order.** Helm runs the migration hook first (R-HA-019) and then applies the `web` and `worker`
-  Deployments together; each rolls on its own.
-  No order between them is needed, because both roles tolerate the other role in release N−1
-  (below). The backup CronJob takes the new image for its next run; a run already in progress
+- **Order.** Helm runs the migration hook first (R-HA-019) and then applies the Deployments of every role and pool
+  together; each rolls on its own.
+  No order between them is needed, because every role tolerates the other roles in release N−1
+  (below). The upgrade from a release before the cut into roles takes the two steps of R-HA-064 instead, because a
+  Deployment cannot be renamed. The backup CronJob takes the new image for its next run; a run already in progress
   finishes on the old one, which the expand-only window allows.
 - During the mixed-version window, release N and N−1 serve the same clients alternately, and N−1
   workers may run jobs that N web replicas enqueued. Therefore:
@@ -2168,7 +2230,7 @@ Priority: **MVP** · Covers: HA-069, OPS-073
   configuration error, failed key check), because `maxUnavailable: 0` keeps all old pods.
   `kubectl rollout undo` or `helm rollback` returns to the previous release.
 - Upgrade verification:
-  - `kubectl rollout status deploy/trove-web` and `kubectl rollout status deploy/trove-worker`;
+  - `kubectl rollout status` of `deploy/trove-api`, `deploy/trove-packages` and `deploy/trove-worker` (and of each pool);
   - `GET /api/v1/system/replicas` lists only the new version;
   - `GET /api/v1/system/migrations` shows no pending step and the expected background migrations.
 
@@ -2187,7 +2249,8 @@ Priority: **MVP** · Covers: OPS-072, HA-070
 |---|---|
 | Patch (x.y.z → x.y.z+1) | Rolling, zero downtime; patch releases contain no contract steps |
 | Next minor (x.y → x.y+1) | Rolling, zero downtime (R-HA-020) |
-| Skipping minors (x.y → x.y+2 or later) | Stepwise through each minor with zero downtime, or in one step with downtime: scale both roles to zero, wait `system.heartbeat_stale_after`, then `helm upgrade`. The contract guard enforces this (R-HA-018, Q-HA-5) |
+| From a release before the cut into roles to the first release with `api` and `packages` | Two rolling steps with zero downtime, `web.enabled: true` and then `false` (R-HA-064); the release notes name them |
+| Skipping minors (x.y → x.y+2 or later) | Stepwise through each minor with zero downtime, or in one step with downtime: scale every role to zero, wait `system.heartbeat_stale_after`, then `helm upgrade`. The contract guard enforces this (R-HA-018, Q-HA-5) |
 | Major | As stated in the release notes; skipping a major is not supported |
 
 - The Helm chart is the only supported installation and upgrade method (INV-13). The chart version
@@ -2219,11 +2282,66 @@ Acceptance criteria:
 
 - Upgrading from 0.2.x directly to 0.4.x with a contract step headed
   `-- trove:requires-app >= 0.3.0` fails in the Job (`trove migrate` exits with status `3`) with
-  the message of R-HA-018. After `kubectl scale deploy/trove-web deploy/trove-worker --replicas=0`,
+  the message of R-HA-018. After `kubectl scale deploy/trove-api deploy/trove-packages deploy/trove-worker --replicas=0`,
   a 30 s wait and `helm upgrade`, it succeeds without any override.
 - A `helm upgrade` started while a backup's database phase runs waits for it; with the phase
   artificially held longer than `migrate.advisory_lock_wait`, the migration Job fails with a message
   that names the backup, and the old pods keep serving.
+
+### R-HA-064 · Upgrade across the cut into roles
+Priority: **MVP** · Covers: HA-069, OPS-073
+
+**Status.** Phase 6a, specified, not built yet.
+
+The releases before the cut run `<fullname>-web` behind the Service `<fullname>` and route every host whole to it. A
+Deployment cannot be renamed, and Helm applies a release in one pass: it creates the new Deployments, repoints the edge and
+deletes `<fullname>-web` before a new pod is ready. One `helm upgrade` from the old shape to the cut would therefore leave the
+edge without a ready backend for the start time of the new pods. The upgrade takes two steps instead, joined by the bridge
+value `web.enabled` (Q-ARCH-295, Q-HA-73).
+
+- **`web.enabled: true` (the bridge).** The chart renders, besides everything of R-HA-002 and R-HA-062:
+  - `<fullname>-web` with `--role web` from the `web` values, which keep every key of the releases before the cut, its
+    disruption budget, autoscaler and ingress policy, and the endpoint pools of the old shape (`<fullname>-web-ep-<name>`,
+    `--role web`, `TROVE_POOL_NAME=ep-<name>`);
+  - the Service `<fullname>` (port 8080, selecting the `web` pods of the main Deployment);
+  - the edge of the old shape: every rendered Ingress and HTTPRoute routes each host whole (`/`, `pathType: Prefix`) to
+    `<fullname>`, and each further endpoint's Service selects the `web` pods that served it before (the main `web`
+    Deployment or `<fullname>-web-ep-<name>`).
+
+  The Deployments of `api`, `packages` and `worker`, their pools and their Services run beside it; `api` and `packages`
+  receive no edge traffic. `NOTES.txt` states that the cut is not complete and
+  names the second step.
+- **Step 1.** `helm upgrade` with `--set web.enabled=true` and the values otherwise unchanged: `<fullname>-web` rolls to the
+  new release by R-HA-020 with no gap, because the edge keeps its Service, and the new Deployments become ready meanwhile.
+  Between the steps, in-cluster callers move to `<fullname>-api` and `<fullname>-packages` (R-HA-002), and the values gain
+  the `api.*` and `packages.*` sizing the installation wants.
+- **Step 2.** `helm upgrade` with `web.enabled: false` (the default): the edge switches to the path routing of R-HA-037 onto
+  Services whose pods have been ready since step 1, and Helm deletes `<fullname>-web`, its endpoint pools and the Service
+  `<fullname>`; their pods drain by R-HA-011, so a request the edge still sends them is served.
+- **Guard.** Where the chart can read the cluster (`helm upgrade`, `helm install --dry-run=server`; Helm's `lookup`), it
+  refuses to render with `web.enabled: false` while the release's namespace holds a Deployment `<fullname>-web` and
+  `<fullname>-api` or `<fullname>-packages` does not exist or has fewer ready replicas than its `spec.replicas`; the message
+  names the two steps. Under `helm template` and other renderers without cluster access the guard has nothing to read, and
+  the release notes carry the two steps.
+- **Mixed versions.** During step 1 the replicas of the release before the cut (role `web`) and the new release (roles
+  `web`, `api`, `packages`, `worker`) run side by side, and R-HA-020's rules hold unchanged: the registry and the status
+  screen show the role `web` for both (R-OPS-003, R-UI-038), and an older worker does not claim the queue `vuln`
+  (R-ARCH-016).
+- **The way back** is a rollback of a release (R-ARCH-025) and is not covered by the zero-downtime promise: rolling back
+  from step 2 recreates `<fullname>-web` while the edge already points at `<fullname>`, so the host answers `503` for the
+  start time of the restored pods. Rolling back step 1 is a rollback of `<fullname>-web` alone and has no gap.
+- A fresh installation never renders `web`: `web.enabled` defaults to `false`, and the chart's `ci/` value sets render the
+  bridge only in the value set that tests it.
+
+Acceptance criteria:
+
+- The upgrade e2e test installs the release before the cut, runs `npm ci` and `dotnet restore` loops and a browser journey of
+  the UI against it, runs step 1 and step 2 with `helm upgrade --wait`, and no iteration fails; between the steps,
+  `GET /api/v1/system/replicas` lists the roles `web`, `api`, `packages` and `worker`, and after step 2 no `web`.
+- `helm upgrade` with `web.enabled: false` against a namespace that holds `trove-web` and no ready `trove-api` fails before
+  anything changes, names `web.enabled` and the two steps; the same values under `helm template` render.
+- `helm template … --set web.enabled=true` renders `trove-web` with `--role web`, the Service `trove` selecting its pods, an
+  Ingress whose every rule is `/` to `trove`, and the Deployments and Services of `api`, `packages` and `worker`.
 
 ### R-HA-022 · Background data migrations
 Priority: **MVP** · Covers: OPS-074
@@ -2925,10 +3043,11 @@ does not contain `trove`, overridable by `fullnameOverride`):
 
 | Kind | Name | Rendered when |
 |---|---|---|
-| Deployment | `<fullname>-web`, `<fullname>-worker` | always (R-HA-002) |
-| Deployment, Service | `<fullname>-web-<pool>`, `<fullname>-worker-<pool>` (Deployment only) | per entry of `web.pools` and `worker.pools` (P1, R-HA-062) |
-| Service (ClusterIP) | `<fullname>`, port `http` 8080 → `web` pods, `sessionAffinity: None` | always |
-| Service (ClusterIP) | `<fullname>-ops`, port `ops` 8081, `web` and `worker` pods | always (probes from the kubelet do not need it; ServiceMonitor does) |
+| Deployment | `<fullname>-api`, `<fullname>-packages`, `<fullname>-worker` | always (R-HA-002; phase 6a, specified, not built yet: today `<fullname>-web` and `<fullname>-worker`) |
+| Deployment, Service | `<fullname>-api-<pool>`, `<fullname>-packages-<pool>`, `<fullname>-worker-<pool>` (Deployment only) | per entry of `api.pools`, `packages.pools` and `worker.pools` (R-HA-062) |
+| Service (ClusterIP) | `<fullname>-api` and `<fullname>-packages`, port `http` 8080 → the main Deployment's pods of that role, `sessionAffinity: None` | always |
+| Deployment, Service (ClusterIP) | `<fullname>-web` (`--role web`) and `<fullname>`, port `http` 8080 → `web` pods; `<fullname>-web-ep-<name>` for the endpoint pools of the old shape | `web.enabled`, the bridge of the upgrade across the cut (R-HA-064) |
+| Service (ClusterIP) | `<fullname>-ops`, port `ops` 8081, every serving pod (`api`, `packages`, `worker`, `web`) | always (probes from the kubelet do not need it; ServiceMonitor does) |
 | ConfigMap | `<fullname>-config` (`trove.yaml`) | always |
 | ServiceAccount | `<fullname>` | `serviceAccount.create` |
 | ConfigMap, ServiceAccount (hooks, weight −10) | `<fullname>-migrate` | `migrations.mode: hook` and not `restore.enabled` |
@@ -2938,14 +3057,14 @@ does not contain `trove`, overridable by `fullnameOverride`):
 | Job (hook) | `<fullname>-post-restore` | `postRestore.enabled` |
 | CronJob | `<fullname>-backup` | `backup.enabled` (R-HA-060) |
 | ServiceAccount | `<fullname>-backup` | `backup.enabled` and `backup.serviceAccount.create` |
-| PodDisruptionBudget | per Deployment, none for Jobs | `podDisruptionBudget.enabled` of the role |
-| HorizontalPodAutoscaler (`autoscaling/v2`) | per Deployment | `autoscaling.enabled` of the role |
-| Ingress | `<fullname>` | `ingress.enabled` |
-| HTTPRoute | `<fullname>` | `gateway.enabled` |
+| PodDisruptionBudget | per Deployment, none for Jobs | `podDisruptionBudget.enabled` of the role or pool |
+| HorizontalPodAutoscaler (`autoscaling/v2`) | per Deployment | `autoscaling.enabled` of the role or pool |
+| Ingress | `<fullname>`: per host the path rules of R-HA-037 to the role Services | `ingress.enabled` |
+| HTTPRoute | `<fullname>`: the same path rules | `gateway.enabled` |
 | Gateway | `<fullname>-gateway` | `gateway.enabled` and `gateway.create.enabled` (P1, R-HA-053) |
-| NetworkPolicy | `<fullname>` (`web` and `worker`), `<fullname>-migrate`, `<fullname>-restore`, `<fullname>-backup` | `networkPolicy.enabled` |
-| Service, Ingress, HTTPRoute, NetworkPolicy | `<fullname>-ep-<name>` per further endpoint: its Service and port, its own Ingress or HTTPRoute with its class, hosts (a wildcard host included) and TLS entries, and a NetworkPolicy for its port ([endpoints.md](endpoints.md) R-EP-008) | per entry of `endpoints`; the Ingress with its `ingress.enabled`, the HTTPRoute with its `gateway.enabled` |
-| Deployment, PodDisruptionBudget, HorizontalPodAutoscaler | `<fullname>-web-ep-<name>`, the optional pool of an endpoint ([endpoints.md](endpoints.md) R-EP-008) | `endpoints.<name>.pool.enabled` |
+| NetworkPolicy | one per Deployment, named as the Deployment (`<fullname>-api`, `<fullname>-packages`, `<fullname>-worker`, each pool, each endpoint pool, `<fullname>-web` in the bridge), and `<fullname>-migrate`, `<fullname>-restore`, `<fullname>-backup`; ingress rules only, each with its port (R-HA-042) | `networkPolicy.enabled` |
+| Service, Ingress, HTTPRoute | `<fullname>-ep-<name>` per further endpoint, and `<fullname>-ep-<name>-api` when its surface holds families of both roles: its Services and port, its own Ingress or HTTPRoute with its class, hosts (a wildcard host included), TLS entries and the path rules of its surface ([endpoints.md](endpoints.md) R-EP-008, Q-EP-71) | per entry of `endpoints`; the Ingress with its `ingress.enabled`, the HTTPRoute with its `gateway.enabled` |
+| Deployment, PodDisruptionBudget, HorizontalPodAutoscaler | `<fullname>-packages-ep-<name>` and `<fullname>-api-ep-<name>`, the optional pool of an endpoint, one per role its surface holds ([endpoints.md](endpoints.md) R-EP-008, Q-EP-70) | `endpoints.<name>.pool.enabled` |
 | ServiceMonitor, PrometheusRule | `<fullname>` | `metrics.serviceMonitor.enabled`, `metrics.prometheusRule.enabled` |
 | anything | from `extraObjects` | listed |
 
@@ -2953,13 +3072,14 @@ does not contain `trove`, overridable by `fullnameOverride`):
   store (R-HA-061).
 - Labels on every object: `app.kubernetes.io/name: trove`, `app.kubernetes.io/instance`,
   `app.kubernetes.io/version`, `app.kubernetes.io/managed-by`, `helm.sh/chart`, and
-  `app.kubernetes.io/component` (`web`, `worker`, `migrate`, `restore`, `backup`). `web` and
-  `worker` pods also carry `trove/pool` (name proposed): `<name>` for the pods of a pool of R-HA-062,
-  and the empty value for the main Deployments. The ServiceMonitor sets the target label `pool`
+  `app.kubernetes.io/component` (`api`, `packages`, `worker`, `web` in the bridge, `migrate`, `restore`, `backup`). The
+  pods of `api`, `packages`, `worker` and `web` also carry `trove/pool` (name proposed): `<name>` for the pods of a pool of
+  R-HA-062 (`ep-<name>` for an endpoint pool), and the empty value for the main Deployments. The ServiceMonitor sets the target label `pool`
   from it, and Prometheus drops an empty label, so the main Deployments' series carry no `pool`
-  (R-HA-045). Selectors use name, instance, component and, for `web` and `worker`, `trove/pool`,
+  (R-HA-045). Selectors use name, instance, component and, for the serving roles, `trove/pool`,
   from the MVP on, because selector labels are immutable: adding a pool later then never overlaps
-  the main Deployment's or the client Service's selector and never changes an immutable one.
+  the main Deployment's or the role Service's selector and never changes an immutable one. The cut adds Deployments
+  under new names with new component values, so no immutable selector of the releases before it changes (R-HA-064).
 - **Ports (HA-021).** Containers listen on 8080 (`http`, the default endpoint's client listener),
   8081 (`ops`) and the port of each further endpoint they serve ([endpoints.md](endpoints.md)
   R-EP-002, R-EP-008), and nothing else (INV-6). Every port is unprivileged, so no capability is
@@ -2989,11 +3109,11 @@ The chart MUST refuse to render, naming the offending value, before anything is 
 | `config.storage.s3.bucket` empty | the value |
 | `config.storage.s3.credentials.source: static` without `secrets.s3.existingSecret` | both |
 | `secrets.encryption.existingSecret` or `secrets.encryption.keys` empty | the value, and the key-creation command of R-HA-027 |
-| `highAvailability.enforce` and fewer than 2 replicas (`replicaCount`, or `autoscaling.minReplicas`) for `web`, `worker` or a pool, a disabled PDB, or a missing host spread constraint, one that is not `DoNotSchedule`, or one without `nodeTaintsPolicy: Honor` (R-HA-059 rule 3) | the Deployment and the value |
-| `worker.replicaCount` (or `worker.autoscaling.minReplicas`) < 1 | `worker.replicaCount` |
-| `config.storage.upload.max_size` > the spool budget derived from the `web` spool size (R-HA-035) | both |
+| `highAvailability.enforce` and fewer than 2 replicas (`replicaCount`, or `autoscaling.minReplicas`) for `api`, `packages`, `worker`, `web` with `web.enabled`, or a pool, a disabled PDB, or a missing host spread constraint, one that is not `DoNotSchedule`, or one without `nodeTaintsPolicy: Honor` (R-HA-059 rule 3) | the Deployment and the value |
+| `worker.replicaCount`, `api.replicaCount` or `packages.replicaCount` (or its `autoscaling.minReplicas`) < 1 | the value |
+| `config.storage.upload.max_size` > the spool budget derived from the `packages` spool size (and the `web` spool size with `web.enabled`); the upload limit of the UI's content route (`config.ui.deploy.max_upload_bytes`, or `config.storage.upload.max_size` when it is 0) > the spool budget of `api` (R-HA-035, Q-UI-106) | both |
 | `terminationGracePeriodSeconds` of a role < `config.health.shutdown_drain_delay` + 15 s | both |
-| `web` or an endpoint pool without `resources.limits.memory`, or with one that admits fewer than 64 requests: ⌊0.8 × `config.runtime.memory_limit_ratio` × the limit ÷ the request bytes of R-ARCH-005⌋, from `config.storage.download.buffer_size`, `hold_back` and `config.storage.s3.http.receive_window` (R-HA-036, Q-HA-70) | the limit, the Deployment or the slot count and the values it comes from |
+| `api`, `packages`, `web` with `web.enabled`, a path pool or an endpoint pool without `resources.limits.memory`, or with one that admits fewer than 64 requests: ⌊0.8 × `config.runtime.memory_limit_ratio` × the limit ÷ the request bytes of R-ARCH-005⌋, from `config.storage.download.buffer_size`, `hold_back` and `config.storage.s3.http.receive_window` (R-HA-036, Q-HA-70) | the limit, the Deployment or the slot count and the values it comes from |
 | `config.valkey.mode: sentinel` with `config.valkey.sentinel.addresses` or `config.valkey.sentinel.primary_name` empty | the value |
 | `highAvailability.enforce` and `config.valkey.mode` other than `sentinel`, or fewer than 3 Sentinel addresses | `config.valkey.mode` or `config.valkey.sentinel.addresses` |
 | `secrets.valkey.existingSecret` empty | the value |
@@ -3005,9 +3125,10 @@ The chart MUST refuse to render, naming the offending value, before anything is 
 | The backup target on the blob store's endpoint and bucket without `config.backup.target.allow_same_bucket: true`, or with one prefix containing the other (R-HA-060; `trove backup create` exits `2` on the same rule, R-BAK-002) | both locations |
 | `config.backup.target.credentials.source: static` without `secrets.backupTarget.existingSecret` | both |
 | `restore.enabled` without `restore.backupId` | `restore.backupId` |
-| `restore.enabled` with a `web` or `worker` replica count above 0 or autoscaling enabled | `restore.enabled` and the value |
-| Two pools with the same name, path prefix or queue (P1, R-HA-062), or a path pool whose name starts with `ep-` | the pools |
-| An endpoint whose `port` equals 8080, 8081 or another endpoint's port; an invalid endpoint name or one for which `<fullname>-ep-<name>` exceeds 63 characters; a missing `baseUrl`; a host in two endpoints; `extraSecrets` or `clientCaSecret` with `tls.enabled: false`; an endpoint pool below two replicas with `highAvailability.enforce` ([endpoints.md](endpoints.md) R-EP-008) | the endpoint and the value |
+| `restore.enabled` with a replica count above 0 or autoscaling enabled for any role or pool | `restore.enabled` and the value |
+| Two pools of a role with the same name, two pools with the same path prefix or queue, a pool path outside the families of its role or equal to one of the role's own prefixes of R-HA-037, a worker pool queue that does not exist, or a pool whose name starts with `ep-` (R-HA-062) | the pools |
+| `web.enabled: false` while the namespace holds `<fullname>-web` and `<fullname>-api` or `<fullname>-packages` is missing or not fully ready, read through `lookup` where the chart can read the cluster (R-HA-064) | `web.enabled` and the two steps |
+| An endpoint whose `port` equals 8080, 8081 or another endpoint's port; an invalid endpoint name or one for which `<fullname>-ep-<name>-api` (a surface with families of both roles) or `<fullname>-packages-ep-<name>` (a pool) exceeds 63 characters; a missing `baseUrl`; a host in two endpoints; `extraSecrets` or `clientCaSecret` with `tls.enabled: false`; an endpoint pool below two replicas with `highAvailability.enforce` ([endpoints.md](endpoints.md) R-EP-008) | the endpoint and the value |
 | `gateway.enabled` without `gateway.parentRefs` and without `gateway.create.enabled` | `gateway.parentRefs` |
 | `gateway.enabled` and `.Capabilities.APIVersions` lacks `gateway.networking.k8s.io/v1/HTTPRoute` | the missing API |
 | `metrics.serviceMonitor.enabled` (or `prometheusRule`) and the `monitoring.coreos.com/v1` API missing | the missing API |
@@ -3053,15 +3174,18 @@ Priority: **MVP** · Covers: HA-033, HA-035, HA-036, HA-037, HA-053
   with `_`, e.g. `TROVE_DATABASE_POOL_MAX_CONNS`) > file > built-in default. `extraEnv` can
   therefore override any file value. The chart itself sets only:
   - `TROVE_RUNTIME_MEMORY_LIMIT_BYTES` and `TROVE_RUNTIME_TERMINATION_GRACE_PERIOD` per
-    Deployment, and `TROVE_DATABASE_PREFLIGHT_EXPECTED_WEB_REPLICAS` and
+    Deployment, and `TROVE_DATABASE_PREFLIGHT_EXPECTED_SERVING_REPLICAS` (`..._WEB_REPLICAS` before phase 6a) and
     `TROVE_DATABASE_PREFLIGHT_EXPECTED_WORKER_REPLICAS` for the migration Job, the variables of the
     schema keys `runtime.memory_limit_bytes`, `runtime.termination_grace_period`,
-    `database.preflight.expected_web_replicas` and `database.preflight.expected_worker_replicas`
-    (R-OPS-028 mapping; the chart is their only source);
+    `database.preflight.expected_serving_replicas` and `database.preflight.expected_worker_replicas`
+    (R-OPS-028 mapping; the chart is their only source; R-HA-016);
+  - `TROVE_POOL_NAME` on the Deployment of each pool (R-HA-062, R-OPS-003), and on worker Deployments
+    `TROVE_JOBS_QUEUES` (a pool) or `TROVE_JOBS_EXCLUDE_QUEUES` (the main `worker` beside pools), the variables of
+    `jobs.queues` and `jobs.exclude_queues` ([architecture.md](architecture.md) R-ARCH-016);
   - `TROVE_STORAGE_SPOOL_MAX_BYTES` per Deployment, derived from the role's spool size when
     `config.storage.spool.max_bytes` is unset (R-HA-035);
   - `GOMAXPROCS` (R-HA-036);
-  - in every trove pod (`web`, `worker`, backup, restore, migration and post-restore), from the
+  - in every trove pod (`api`, `packages`, `worker`, `web`, backup, restore, migration and post-restore), from the
     downward API: `TROVE_POD_NAME` (`fieldRef: metadata.name`), `TROVE_POD_NAMESPACE`
     (`metadata.namespace`) and `TROVE_NODE_NAME` (`spec.nodeName`). R-OPS-028 reserves these
     names. They feed the replica registry, including its `node` column that the status screen
@@ -3097,13 +3221,13 @@ changes, that default follows.
 | `secrets.databaseCA` | `ca.crt` | `/var/run/secrets/trove/database-ca/` | `database.ssl_root_cert_file` |
 | `secrets.databaseClientCert` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/database-client/` | `database.ssl_cert_file`, `database.ssl_key_file` |
 | `secrets.s3` (only with `source: static`) | `access-key-id`, `secret-access-key` | `/var/run/secrets/trove/s3/` | `storage.s3.credentials.access_key_id_file`, `…secret_access_key_file` |
-| `secrets.valkey` (`web`, `worker` only; not in backup, restore, migration or post-restore pods, R-BAK-012, R-BAK-022) | `username` (optional), `password` | `/var/run/secrets/trove/valkey/` | `valkey.username_file`, `valkey.password_file` |
+| `secrets.valkey` (`api`, `packages`, `worker`, `web` only; not in backup, restore, migration or post-restore pods, R-BAK-012, R-BAK-022) | `username` (optional), `password` | `/var/run/secrets/trove/valkey/` | `valkey.username_file`, `valkey.password_file` |
 | `secrets.valkeySentinel` (same pods) | `username` (optional), `password` | `/var/run/secrets/trove/valkey-sentinel/` | `valkey.sentinel.username_file`, `valkey.sentinel.password_file` |
 | `secrets.valkeyCA` (same pods) | `ca.crt` | `/var/run/secrets/trove/valkey-ca/` | `valkey.tls.ca_file` |
 | `secrets.valkeyClientCert` (same pods) | `tls.crt`, `tls.key` | `/var/run/secrets/trove/valkey-client/` | `valkey.tls.cert_file`, `valkey.tls.key_file` |
 | `secrets.backupTarget` (backup and restore pods; only with `source: static`) | `access-key-id`, `secret-access-key` | `/var/run/secrets/trove/backup-target/` | `backup.target.credentials.access_key_id_file`, `…secret_access_key_file` |
-| `secrets.oidc[]` (one entry per provider ID; `web` pods only, not worker, backup, migration or restore pods, R-AUTH-042) | `client-secret` | `/var/run/secrets/trove/oidc-<id>/` | `client_secret_file` of the provider with that `id` in `config.auth.oidc.providers` |
-| `secrets.breakGlass` (`web` pods only, as `secrets.oidc[]`, R-AUTH-014, R-AUTH-042) | `password` | `/var/run/secrets/trove/break-glass/` | `auth.break_glass.password_file`; empty value → `auth.break_glass.enabled: false` |
+| `secrets.oidc[]` (one entry per provider ID; only the pods of role `api` (its main Deployment, its pools and its endpoint pools) and `web` with `web.enabled`; never a pod of `packages`, worker, backup, migration or restore pods, R-AUTH-042, Q-HA-79) | `client-secret` | `/var/run/secrets/trove/oidc-<id>/` | `client_secret_file` of the provider with that `id` in `config.auth.oidc.providers` |
+| `secrets.breakGlass` (the same pods as `secrets.oidc[]`, R-AUTH-014, R-AUTH-042) | `password` | `/var/run/secrets/trove/break-glass/` | `auth.break_glass.password_file`; empty value → `auth.break_glass.enabled: false` |
 | `secrets.encryption` | `secrets.encryption.keys` | `/var/run/secrets/trove/encryption/` | `secrets.encryption_key_files` (ordered) and `secrets.active_key_id` (the first entry) |
 | `secrets.metricsToken` | `token` | `/var/run/secrets/trove/metrics/` | `metrics.bearer_token_file` (R-OPS-006) |
 | `trustedCA.*` (Secret or ConfigMap) | listed keys | `/etc/trove/ca/` | `proxy.outbound.tls.ca_files` (R-REPO-035); optionally `storage.s3.ca_file` |
@@ -3121,7 +3245,8 @@ changes, that default follows.
   ([EKS Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html)).
   Static keys use `secrets.s3`.
 - **Bootstrap (HA-037).** The break-glass administrator is the first-start credential (R-AUTH-014).
-  Further bootstrapping is `kubectl exec deploy/trove-web -- trove admin …` (R-AUTH-015). The chart
+  Further bootstrapping is `kubectl exec deploy/trove-api -- trove admin …` (R-AUTH-015), in the role that mounts the
+  break-glass secret (`deploy/trove-web` before phase 6a). The chart
   renders no Job that writes tokens into Secrets: such a Job would need `create` on Secrets in the
   namespace, a permission the chart otherwise never needs. Operators store the printed token with
   their own secret tooling.
@@ -3138,8 +3263,8 @@ Priority: **MVP** · Covers: HA-029
 
 The complete `values.yaml`. Every value carries `# default (proposed)` or `# example`. Keys under
 `config` belong to the pages named in the comments; this page only fixes how the chart wires them.
-Keys marked P1 (`gateway.create`, `contentOrigin`, `bootstrap`, `web.pools`, `worker.pools`) enter
-the chart with the release that implements them: the `config` subtree is validated against the
+Keys marked P1 (`gateway.create`, `contentOrigin`, `bootstrap`) enter the chart with the release that implements them, and
+the keys of phase 6a (`api`, `packages`, `web.enabled`, the pools of R-HA-062) with phase 6a: the `config` subtree is validated against the
 schema the binary emits (R-HA-029), so a key the binary does not know yet would fail
 `helm install`. The keys under `config.backup` are [backup-and-restore.md](backup-and-restore.md)
 R-BAK-011's, shown here with every key and default.
@@ -3168,8 +3293,145 @@ image:
 highAvailability:
   enforce: true                         # default (proposed): ≥ 2 replicas, a PDB and DoNotSchedule host spreading per role; Sentinel mode with ≥ 3 Sentinels (R-HA-029)
 
-# ── web Deployment: trove serve --role web (R-HA-002) ───────────────────────
+# ── api Deployment: trove serve --role api (R-HA-002; phase 6a) ─────────────
+# The UI, the management API, the sign-in and the CI exchange; the login secrets mount here only (R-HA-030).
+api:
+  replicaCount: 2                       # default (proposed) (Q-HA-75); ignored when autoscaling.enabled
+  minReadySeconds: 10                   # default (proposed)
+  revisionHistoryLimit: 5               # default (proposed)
+  strategy:
+    type: RollingUpdate                 # default (proposed)
+    rollingUpdate:
+      maxSurge: 1                       # default (proposed)
+      maxUnavailable: 0                 # default (proposed)
+  terminationGracePeriodSeconds: 120    # default (proposed) (R-HA-011): the UI's uploads and the audit exports
+  spool:
+    sizeLimit: 5Gi                      # default (proposed) (Q-HA-75): holds the UI's uploads through the content route, up to config.ui.deploy.max_upload_bytes (R-HA-029)
+  resources:
+    requests:
+      cpu: 500m                         # default (proposed) (Q-HA-75)
+      memory: 512Mi                     # default (proposed)
+      ephemeral-storage: 1Gi            # default (proposed)
+    limits:
+      memory: 1Gi                       # default (proposed); no CPU limit by default (R-HA-036)
+  autoscaling:
+    enabled: false                      # default (proposed)
+    minReplicas: 2                      # default (proposed) (Q-HA-75, R-HA-059)
+    maxReplicas: 4                      # default (proposed)
+    targetCPUUtilizationPercentage: 70  # default (proposed)
+    targetMemoryUtilizationPercentage: 0  # default (proposed): 0 = no memory metric
+    metrics: []                         # default (proposed); additional autoscaling/v2 metric specs
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 0   # default (proposed)
+        policies:
+          - type: Pods                  # default (proposed)
+            value: 2                    # default (proposed)
+            periodSeconds: 60           # default (proposed)
+      scaleDown:
+        stabilizationWindowSeconds: 300 # default (proposed)
+        policies:
+          - type: Pods                  # default (proposed)
+            value: 1                    # default (proposed)
+            periodSeconds: 120          # default (proposed)
+  podDisruptionBudget:
+    enabled: true                       # default (proposed)
+    maxUnavailable: 1                   # default (proposed)
+    minAvailable: null                  # default (proposed); mutually exclusive with maxUnavailable
+    unhealthyPodEvictionPolicy: AlwaysAllow  # default (proposed) (R-HA-008)
+  topologySpread:
+    enabled: true                       # default (proposed): render the two constraints below
+    nodeTaintsPolicy: Honor             # default (proposed): cordoned nodes do not count as domains (R-HA-059)
+    zone:
+      maxSkew: 1                        # default (proposed)
+      whenUnsatisfiable: ScheduleAnyway # default (proposed)
+    host:
+      maxSkew: 1                        # default (proposed)
+      whenUnsatisfiable: DoNotSchedule  # default (proposed); required with highAvailability.enforce
+  topologySpreadConstraints: []         # default (proposed); non-empty replaces the generated constraints
+  nodeFailureTolerationSeconds: 60      # default (proposed); not-ready/unreachable tolerations (R-HA-032)
+  affinity: {}                          # default (proposed)
+  nodeSelector: {}                      # default (proposed); example: {kubernetes.io/arch: arm64}
+  tolerations: []                       # default (proposed)
+  priorityClassName: ""                 # default (proposed); example: business-critical
+  schedulerName: ""                     # default (proposed)
+  podAnnotations: {}                    # default (proposed)
+  podLabels: {}                         # default (proposed)
+  extraEnv: []                          # default (proposed); appended after the shared extraEnv
+  pools: []                             # default (proposed) (R-HA-062); example: [{name: admin, paths: [/api/v1/repositories], replicaCount: 2}]
+
+# ── packages Deployment: trove serve --role packages (R-HA-002; phase 6a) ───
+# The package protocols and the raw file transfer, tokens only; no login secret mounts here (R-HA-030).
+packages:
+  replicaCount: 3                       # default (proposed) (Q-HA-16, Q-HA-75); ignored when autoscaling.enabled
+  minReadySeconds: 10                   # default (proposed)
+  revisionHistoryLimit: 5               # default (proposed)
+  strategy:
+    type: RollingUpdate                 # default (proposed)
+    rollingUpdate:
+      maxSurge: 1                       # default (proposed)
+      maxUnavailable: 0                 # default (proposed)
+  terminationGracePeriodSeconds: 120    # default (proposed) (R-HA-011)
+  spool:
+    sizeLimit: ""                       # default (proposed): empty = spool.sizeLimit (R-HA-035)
+  resources:
+    requests:
+      cpu: "1"                          # default (proposed)
+      memory: 1Gi                       # default (proposed)
+      ephemeral-storage: 2Gi            # default (proposed)
+    limits:
+      memory: 2Gi                       # default (proposed); no CPU limit by default (R-HA-036)
+  autoscaling:
+    enabled: false                      # default (proposed)
+    minReplicas: 3                      # default (proposed) (Q-HA-16, Q-HA-75, R-HA-059)
+    maxReplicas: 8                      # default (proposed)
+    targetCPUUtilizationPercentage: 70  # default (proposed)
+    targetMemoryUtilizationPercentage: 0  # default (proposed): 0 = no memory metric
+    metrics: []                         # default (proposed); additional autoscaling/v2 metric specs
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 0   # default (proposed)
+        policies:
+          - type: Pods                  # default (proposed)
+            value: 2                    # default (proposed)
+            periodSeconds: 60           # default (proposed)
+      scaleDown:
+        stabilizationWindowSeconds: 300 # default (proposed)
+        policies:
+          - type: Pods                  # default (proposed)
+            value: 1                    # default (proposed)
+            periodSeconds: 120          # default (proposed)
+  podDisruptionBudget:
+    enabled: true                       # default (proposed)
+    maxUnavailable: 1                   # default (proposed)
+    minAvailable: null                  # default (proposed); mutually exclusive with maxUnavailable
+    unhealthyPodEvictionPolicy: AlwaysAllow  # default (proposed) (R-HA-008)
+  topologySpread:
+    enabled: true                       # default (proposed): render the two constraints below
+    nodeTaintsPolicy: Honor             # default (proposed): cordoned nodes do not count as domains (R-HA-059)
+    zone:
+      maxSkew: 1                        # default (proposed)
+      whenUnsatisfiable: ScheduleAnyway # default (proposed)
+    host:
+      maxSkew: 1                        # default (proposed)
+      whenUnsatisfiable: DoNotSchedule  # default (proposed); required with highAvailability.enforce
+  topologySpreadConstraints: []         # default (proposed); non-empty replaces the generated constraints
+  nodeFailureTolerationSeconds: 60      # default (proposed); not-ready/unreachable tolerations (R-HA-032)
+  affinity: {}                          # default (proposed)
+  nodeSelector: {}                      # default (proposed); example: {kubernetes.io/arch: arm64}
+  tolerations: []                       # default (proposed)
+  priorityClassName: ""                 # default (proposed); example: business-critical
+  schedulerName: ""                     # default (proposed)
+  podAnnotations: {}                    # default (proposed)
+  podLabels: {}                         # default (proposed)
+  extraEnv: []                          # default (proposed); appended after the shared extraEnv
+  pools: []                             # default (proposed) (R-HA-062); example: [{name: npm, paths: [/api/npm], replicaCount: 4}]
+
+# ── web Deployment: the bridge of the upgrade across the cut (R-HA-064) ─────
+# Rendered only with web.enabled: trove serve --role web, the Service <fullname> and the edge of the releases
+# before the cut. Every other key keeps its meaning and default of those releases; a fresh installation never sets it.
 web:
+  enabled: false                        # default (proposed) (Q-ARCH-295, Q-HA-73): true for the first step only
   replicaCount: 3                       # default (proposed) (Q-HA-16); ignored when autoscaling.enabled
   minReadySeconds: 10                   # default (proposed)
   revisionHistoryLimit: 5               # default (proposed)
@@ -3232,7 +3494,7 @@ web:
   podAnnotations: {}                    # default (proposed)
   podLabels: {}                         # default (proposed)
   extraEnv: []                          # default (proposed); appended after the shared extraEnv
-  pools: []                             # P1 (R-HA-062); example: [{name: packages, paths: [/api/npm/, /api/nuget/], replicaCount: 4}]
+  pools: []                             # default (proposed): kept for the releases before the cut; ignored, the bridge renders no path pool
 
 # ── worker Deployment: trove serve --role worker (R-HA-002) ─────────────────
 worker:
@@ -3286,7 +3548,7 @@ worker:
   podAnnotations: {}                    # default (proposed)
   podLabels: {}                         # default (proposed)
   extraEnv: []                          # default (proposed)
-  pools: []                             # P1 (R-HA-062); example: [{name: indexing, queues: [index], replicaCount: 2}]
+  pools: []                             # default (proposed) (R-HA-062); example: [{name: vuln, queues: [vuln], replicaCount: 2}]; the main worker claims every queue no pool lists
 
 # ── trove configuration (rendered to /etc/trove/trove.yaml) ───────────
 # Chart-managed keys (secret file paths, storage.spool.dir, server.content_base_url) must not be set here (R-HA-029).
@@ -3614,7 +3876,8 @@ ingress:
   annotations: {}                       # default (proposed); controller-specific settings (R-HA-039); never cookie affinity (R-HA-037)
   labels: {}                            # default (proposed)
   hosts: []                             # default (proposed): empty = host of config.server.base_url
-  # No path value: every host is routed whole, path / with pathType Prefix (R-HA-037).
+  # No path value: every host gets the fixed path rules of R-HA-037 (Prefix rules per route family onto <fullname>-api and
+  # <fullname>-packages; / onto <fullname> with web.enabled).
   tls: []                               # default (proposed); example: [{secretName: trove-tls, hosts: [trove.example.com]}]
 
 gateway:
@@ -3626,7 +3889,7 @@ gateway:
   timeouts:
     request: 3600s                      # default (proposed) (R-HA-039)
     backendRequest: 3600s               # default (proposed)
-  filters: []                           # default (proposed); HTTPRoute filters on the main rule
+  filters: []                           # default (proposed); HTTPRoute filters on every path rule of R-HA-037
   extraRules: []                        # default (proposed)
   create:                               # P1 (R-HA-053)
     enabled: false                      # default (proposed): attach to an existing Gateway
@@ -3652,34 +3915,7 @@ networkPolicy:
             matchLabels:
               kubernetes.io/metadata.name: monitoring  # default (proposed)
     probeCIDRs: []                      # default (proposed); node CIDRs, for CNIs that apply policy to kubelet probes
-  egress:
-    enabled: false                      # default (proposed): no egress restriction rendered
-    dns:
-      to:                               # default (proposed)
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system  # default (proposed)
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns         # default (proposed)
-    database:
-      to: []                            # default (proposed); example: [{podSelector: {matchLabels: {cnpg.io/cluster: trove-db}}}]
-      ports: [5432]                     # default (proposed)
-    valkey:
-      to: []                            # default (proposed); example: [{podSelector: {matchLabels: {app.kubernetes.io/name: trove-valkey}}}]
-      ports: [6379, 26379]              # default (proposed): data nodes and Sentinels
-    objectStorage:
-      to: []                            # default (proposed); example: [{ipBlock: {cidr: 0.0.0.0/0}}] or a MinIO podSelector
-      ports: [443]                      # default (proposed)
-    backupTarget:
-      to: []                            # default (proposed); backup and restore pods only; example: [{ipBlock: {cidr: 0.0.0.0/0}}]
-      ports: [443]                      # default (proposed)
-    podIdentityAgent: false             # default (proposed); true allows 169.254.170.23:80 (EKS Pod Identity)
-    internet:
-      enabled: true                     # default (proposed): upstreams, OIDC issuers, STS
-      ports: [443, 80]                  # default (proposed)
-      exceptCIDRs: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]  # default (proposed)
-    extra: []                           # default (proposed); additional egress rules
+  # No egress value: the chart renders ingress rules only, each with its port (R-HA-042, ADR-154).
 
 # ── Monitoring (R-HA-045) ──────────────────────────────────────────────────
 metrics:
@@ -3796,16 +4032,16 @@ Acceptance criteria:
 ### R-HA-032 · Replicas, disruption budget, spreading and autoscaling
 Priority: **MVP** · Covers: HA-009, HA-032, HA-043, HA-044
 
-- **Replicas.** Defaults: 3 for `web` and 2 for `worker` (Q-HA-16); at least 2 per role with
-  `highAvailability.enforce` (INV-12). The drain rule of R-HA-059 sets the real minimum: the
+- **Replicas.** Defaults: 2 for `api`, 3 for `packages` and 2 for `worker` (Q-HA-16, Q-HA-75; before phase 6a 3 for
+  `web`); at least 2 per role and pool with `highAvailability.enforce` (INV-12). The drain rule of R-HA-059 sets the real minimum: the
   replicas that carry the peak plus the PDB's `maxUnavailable`. When autoscaling is enabled, the
   Deployment's `replicas` field is omitted, so `helm upgrade` does not reset the autoscaler's
   choice, and `minReplicas` follows the drain rule.
-- **Disruption budget.** One `policy/v1` PodDisruptionBudget per Deployment with
+- **Disruption budget.** One `policy/v1` PodDisruptionBudget per Deployment (every role, every pool) with
   `maxUnavailable: 1` and `unhealthyPodEvictionPolicy: AlwaysAllow` (R-HA-008). `maxUnavailable`
   scales with the replica count, whereas `minAvailable: 1` with one replica would block every
   drain. Backup and restore pods have none (R-HA-060).
-- **Spreading.** Two topology spread constraints per Deployment, rendered unless replaced
+- **Spreading.** Two topology spread constraints per Deployment (every role, every pool), rendered unless replaced
   ([topology spread](https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/)):
   - `topology.kubernetes.io/zone`, `maxSkew: 1`, `ScheduleAnyway`;
   - `kubernetes.io/hostname`, `maxSkew: 1`, `DoNotSchedule`, for both roles, so that a role's
@@ -3823,8 +4059,9 @@ Priority: **MVP** · Covers: HA-009, HA-032, HA-043, HA-044
   of 300 s
   ([taint-based evictions](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/#taint-based-evictions)).
   Replicas are stateless, so recreating them early costs nothing.
-- **Autoscaling.** `autoscaling/v2` per Deployment: `web` on CPU (default target 70 %), `worker` on
-  CPU (80 %), optional memory and custom metrics. Scale-down is slow (one pod per 2 minutes after a
+- **Autoscaling.** `autoscaling/v2` per Deployment: `api` and `packages` on CPU (default target 70 %; `minReplicas` 2 and
+  3, `maxReplicas` 4 and 8), `worker` and each worker pool on CPU (80 %), optional memory and custom metrics. A pool has
+  an autoscaler of its own from its overrides. Scale-down is slow (one pod per 2 minutes after a
   5-minute stabilization window), because every removed pod drains its uploads, as in a node drain.
   Scaling raises the database connection demand: the budget (R-HA-016) uses `maxReplicas`, so it
   must be raised before `maxReplicas` is, unless the transaction-mode pooler carries the main pool
@@ -3834,13 +4071,13 @@ Priority: **MVP** · Covers: HA-009, HA-032, HA-043, HA-044
 
 Acceptance criteria:
 
-- On a three-node kind cluster with three zones labeled, three `web` replicas land on three nodes
-  and two `worker` replicas on two. `kubectl drain` of one node keeps at least two `web` replicas
-  serving at all times, and the replacement of every evicted pod becomes ready on the remaining
-  nodes. The same drain with `nodeTaintsPolicy: Ignore` leaves the `web` replacement `Pending`,
+- On a three-node kind cluster with three zones labeled, three `packages` replicas land on three nodes
+  and two `api` and two `worker` replicas on two each. `kubectl drain` of one node keeps at least two `packages` replicas
+  and one `api` replica serving at all times, and the replacement of every evicted pod becomes ready on the remaining
+  nodes. The same drain with `nodeTaintsPolicy: Ignore` leaves the `packages` replacement `Pending`,
   which documents why the value is set.
-- With autoscaling enabled, a CPU load test raises the `web` replica count to `maxReplicas`, and a
-  following `helm upgrade` with unchanged values does not reset it.
+- With autoscaling enabled, a CPU load test of package downloads raises the `packages` replica count to `maxReplicas` while
+  the `api` replica count stays at its minimum, and a following `helm upgrade` with unchanged values resets neither.
 
 ### R-HA-033 · Pod and container security
 Priority: **MVP** · Covers: HA-045
@@ -3897,8 +4134,8 @@ Acceptance criteria: the probe settings render as in the table. R-HA-008's tests
 Priority: **MVP** · Covers: HA-005
 
 - The spool (R-STOR-004) is an `emptyDir` at `/var/lib/trove/spool` with `sizeLimit` from the
-  role's `spool.sizeLimit` (`web.spool.sizeLimit`, `worker.spool.sizeLimit`, falling back to
-  `spool.sizeLimit`). With `spool.type: ephemeral` it is a generic ephemeral volume (a per-pod
+  role's or pool's `spool.sizeLimit` (`api.spool.sizeLimit`, `packages.spool.sizeLimit`, `worker.spool.sizeLimit`,
+  `web.spool.sizeLimit` with `web.enabled`, falling back to `spool.sizeLimit`). With `spool.type: ephemeral` it is a generic ephemeral volume (a per-pod
   PersistentVolumeClaim deleted with the pod) of `spool.ephemeral.size`
   ([ephemeral volumes](https://kubernetes.io/docs/concepts/storage/ephemeral-volumes/)), for nodes
   whose local disk is too small. Its access mode is `ReadWriteOnce` or `ReadWriteOncePod`, never
@@ -3913,13 +4150,15 @@ Priority: **MVP** · Covers: HA-005
   unless `config.storage.spool.max_bytes` is set. R-STOR-004's admission keeps the spool below its
   budget, so eviction never happens through uploads.
 - Sizing: `spool.sizeLimit ≥ concurrent spooled uploads per pod × p95 upload size + headroom`, and
-  at least `storage.upload.max_size + headroom` (validated, R-HA-029). Remote-cache fills use the
+  at least `storage.upload.max_size + headroom` for `packages` (validated, R-HA-029). An `api` pod spools only the UI's
+  uploads through the content route of [api-and-ui.md](api-and-ui.md) R-API-025, bounded by
+  `ui.deploy.max_upload_bytes` (Q-UI-106), so its spool needs that bound plus headroom. Remote-cache fills use the
   spool too (R-STOR-004). Example: 20 concurrent uploads of 500 MB, plus 2 GiB, needs about 12 GiB.
   A `worker` pod spools only the cache fills of jobs and, from P1, the `nuget-symbol-index` job,
   which spools one extracted PDB at a time ([formats/nuget.md](formats/nuget.md) R-NUGET-021), so
   its default is smaller.
 - A `worker` spool also holds one advisory archive while a sync runs ([vulnerability-scanning.md](vulnerability-scanning.md)
-  R-VULN-025): the chart refuses a worker spool budget (size minus `spool.headroom`) below
+  R-VULN-025), and so does the spool of a worker pool that claims the queue `vuln`: the chart refuses such a spool budget (size minus `spool.headroom`) below
   `config.vulnerabilities.sources.osv.max_archive_size` while the scanning is enabled and the OSV source is `online` or
   `repository`, and the failure names both values.
 - `resources.requests.ephemeral-storage` should cover the expected steady use, not the limit, so
@@ -4017,41 +4256,67 @@ Acceptance criteria:
 ### R-HA-037 · Service, Ingress and TLS at the edge
 Priority: **MVP** · Covers: HA-012, HA-022, HA-038, HA-039, HA-042
 
-- **One entry point per endpoint (HA-012).** All client traffic of the default endpoint (UI, API,
-  package protocols, raw files, login) uses one port and one Service (`<fullname>:8080`), which
-  selects the `web` pods. The Ingress has one rule per host, path `/`, `pathType: Prefix`, to that
-  Service; web pools of R-HA-062 (P1) add more specific prefixes of the same host. Each further
-  endpoint has its own port, Service `<fullname>-ep-<name>` and its own Ingress or HTTPRoute, with
-  its own class, hosts, optional wildcard host and TLS Secret ([endpoints.md](endpoints.md)
-  R-EP-008); its rules follow this requirement in the same way. There is no second route that
-  bypasses anything, because no internal component sits behind the replica. The operations port is
-  never routed by the Ingress or the Gateway.
+**Status.** The path split below is specified for phase 6a and not built yet: the chart renders one rule per host, path `/`,
+to the Service `<fullname>` of the `web` pods ([deploy/helm/trove/templates/ingress.yaml](../../deploy/helm/trove/templates/ingress.yaml)),
+which is the shape the bridge of R-HA-064 keeps for one step.
+
+- **One host, split by path prefix (HA-012, Q-HA-71).** All client traffic of the default endpoint (UI, API, package
+  protocols, raw files, login) uses one host, one port 8080 and one certificate. The edge splits each host by path prefix
+  between the Services of the roles that serve the route families ([endpoints.md](endpoints.md) R-EP-005,
+  [architecture.md](architecture.md) R-ARCH-001). The rules are fixed, not values, and every one has `pathType: Prefix`,
+  which Kubernetes and the Gateway API match by whole path elements (`/api` matches `/api` and `/api/npm/…`, never
+  `/apix`), and the longest matching prefix wins:
+
+  | Path prefix | Families | Service |
+  |---|---|---|
+  | `/` | `ui` (`GET /`, `/ui/…`, `/auth/…`), the npm exchange at the host root (`/-/npm/v1/oidc/…`, `ci_exchange`, P1), and every path no other rule matches | `<fullname>-api` |
+  | `/api/v1` | `api`, and `ci_exchange`'s `POST /api/v1/auth/oidc/token` | `<fullname>-api` |
+  | `/api` | `packages`: `/api/<format>/<repoKey>/…` | `<fullname>-packages` |
+  | `/files` | `files` | `<fullname>-packages` |
+  | `/v2`, `/.well-known` | `packages`: the host-root routes reserved by INV-6 and the host-root bindings of [endpoints.md](endpoints.md) R-EP-006 | `<fullname>-packages` |
+
+  The path pools of R-HA-062 add their more specific prefixes onto their own Services. A path the edge matches against a
+  rule of the other role (an encoded segment that the router decodes into another family, for example) reaches a role that
+  does not register its family and answers the `404` of an unknown path: the edge shares load, each role's router decides
+  what it serves. One family is nested inside another's prefix: the npm trusted-publishing exchange below a registry URL
+  (`/api/npm/<repoKey>/-/npm/v1/oidc/token/exchange/package/<name>`, [formats/npm.md](formats/npm.md) R-NPM-022, P1) belongs
+  to `ci_exchange` but matches `/api`. The chart renders a rule of its own for it when R-NPM-022 is built (Q-HA-72); until
+  then the route does not exist, and its path answers `404` on either role.
+- **Further endpoints.** Each further endpoint has its own port, its own Ingress or HTTPRoute with its own class, hosts,
+  optional wildcard host and TLS Secret, and Services by role: `<fullname>-ep-<name>` and, when its surface holds families
+  of both roles, `<fullname>-ep-<name>-api` ([endpoints.md](endpoints.md) R-EP-008, Q-EP-71). Its rules are the rows of the
+  table above whose families its surface holds, each to the Service of the role that serves it; an endpoint whose surface
+  lies within one role is routed whole (`/`) to that Service. `ui` is never on a further endpoint.
+- There is no second route that bypasses anything, because no internal component sits behind the replicas. The operations
+  port is never routed by the Ingress or the Gateway.
 - **No session affinity anywhere (INV-12, INV-18, [architecture.md](architecture.md) R-ARCH-032).**
-  Every Service the chart renders, the client Service and the Services of web pools, keeps
+  Every Service the chart renders, the role Services, the Services of pools and of endpoints, keeps
   `sessionAffinity: None`, fixed and not a value, and the edge route sets no affinity cookie. The
   chart renders no cookie or client-IP affinity on the Ingress or the HTTPRoute, and its examples
   (R-HA-039) contain none; an operator who adds
-  one through annotations or `extraObjects` gains nothing, because any `web` replica can answer any
-  request (R-HA-001). The edge proxy balances requests over the ready `web` endpoints.
+  one through annotations or `extraObjects` gains nothing, because any replica of a role can answer any
+  request of its families (R-HA-001). The edge proxy balances requests over the ready endpoints of each Service.
 - **The whole host, never a sub-path.** trove owns the root of every host it is served on.
   Clients fix some routes at the host root (npm's `/-/npm/v1/` exchange prefix,
   [formats/npm.md](formats/npm.md) Q-NPM-1; `/v2/` for OCI, Q-HA-4), which INV-6 reserves next to
   `/auth/` and `/ui/`; the session cookie carries the `__Host-` prefix with `Path=/`; and
   `server.base_url` is an origin without a path
-  ([operations-and-observability.md](operations-and-observability.md) R-OPS-005). The Ingress path
-  and the HTTPRoute match (`PathPrefix /`, R-HA-038) are therefore fixed and not values.
-  `values.schema.json` declares `ingress` and `gateway` with `additionalProperties: false`, so
+  ([operations-and-observability.md](operations-and-observability.md) R-OPS-005). The split by prefix happens inside
+  the host and never rewrites a path, so the rules of the table and the HTTPRoute matches (R-HA-038) are fixed and not
+  values. `values.schema.json` declares `ingress` and `gateway` with `additionalProperties: false`, so
   `--set ingress.path=/trove` fails schema validation before anything renders (R-HA-029).
 - **Load balancer (HA-022).** An Ingress controller or a Gateway API implementation (R-HA-038) is
-  the load balancer. The Service is `ClusterIP` by default. `service.type: LoadBalancer` is allowed
-  for clusters without either, with TLS terminated at the cloud load balancer through its
-  annotations. Plain HTTP to the internet is not a supported production setup.
+  the load balancer. The Services are `ClusterIP` by default. `service.type: LoadBalancer` is allowed only together with the
+  bridge of R-HA-064 or for a further endpoint whose surface lies within one role, because a cloud load balancer in front of
+  one Service cannot split a host by path; clusters without an Ingress controller or Gateway route through one of the two.
+  Plain HTTP to the internet is not a supported production setup.
 - **TLS (HA-042).** TLS terminates at the edge: an Ingress TLS Secret, cert-manager through an
   annotation (`cert-manager.io/cluster-issuer`, [cert-manager Ingress](https://cert-manager.io/docs/usage/ingress/)),
   a Gateway listener, or a cloud load balancer. Traffic from the edge to the pods is HTTPS when
-  `tls.enabled` is `true` (R-HA-063): the edge verifies the trove certificate against the chart's CA. With
-  `tls.enabled: false` it is plain HTTP inside the cluster (H-38). A service mesh with mutual TLS (Istio, Linkerd) or CNI encryption works transparently
-  and closes H-38 at the platform level.
+  `tls.enabled` is `true` (R-HA-063): the edge verifies the trove certificate against the chart's CA under the name
+  `<fullname>.<namespace>.svc` for both role Services, the name the listener certificate carries (and that no Service
+  needs to have). With `tls.enabled: false` it is plain HTTP inside the cluster (H-38). A service mesh with mutual TLS
+  (Istio, Linkerd) or CNI encryption works transparently and closes H-38 at the platform level.
 - `ingress.hosts` defaults to the host of `config.server.base_url`, so the URL clients use and the
   URL trove writes into metadata cannot diverge. A further endpoint's Ingress takes its hosts from
   that endpoint's `baseUrl`, `hosts` and `wildcardHost` the same way; a wildcard host needs a
@@ -4060,25 +4325,33 @@ Priority: **MVP** · Covers: HA-012, HA-022, HA-038, HA-039, HA-042
 - ingress-nginx, the most common controller, was retired by the Kubernetes project in March 2026
   and receives no further fixes
   ([retirement announcement](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/)).
-  The chart's Ingress is controller-neutral. The chart renders an HTTPRoute from the MVP on
-  (R-HA-038, Q-HA-7), and new installations should prefer it.
+  The chart's Ingress is controller-neutral: it uses only `pathType: Prefix`, which every conformant controller supports.
+  The chart renders an HTTPRoute from the MVP on (R-HA-038, Q-HA-7), and new installations should prefer it.
 
 Acceptance criteria:
 
-- With `ingress.enabled: true`, `className: traefik` and a cert-manager issuer, `curl -sI https://trove.example.com/api/v1/system/ping`
-  returns `200` with a certificate for the host.
+- With `ingress.enabled: true`, `className: haproxy` and a cert-manager issuer, `curl -sI https://trove.example.com/api/v1/system/ping`
+  returns `200` with a certificate for the host and an `X-Trove-Replica` of an `api` pod, and
+  `curl -sI -H "Authorization: Bearer $T" https://trove.example.com/api/npm/npm-all/lodash` one of a `packages` pod.
 - `curl -s https://trove.example.com:8081/metrics` and any Ingress path to the operations port
   fail. The Ingress manifest contains no rule for port 8081.
 - `helm template … --set ingress.enabled=true --set ingress.path=/trove` fails schema validation
-  and names `path`. Every rendered Ingress rule has path `/` and `pathType: Prefix`.
+  and names `path`. Every rendered Ingress rule has `pathType: Prefix`, the rules of each host are exactly the rows of the
+  table (plus the prefixes of the path pools), and each names the Service of its row; the chart test asserts the same for
+  the HTTPRoute.
+- During the e2e set with every role deployed, the access log of no `api` pod records a request below `/api/<format>/` or
+  `/files/`, and the access log of no `packages` pod records one below `/ui/`, `/auth/` or `/api/v1/`.
 
 ### R-HA-038 · Gateway API exposure
 Priority: **MVP** · Covers: HA-040
 
 - With `gateway.enabled: true` the chart renders an `HTTPRoute` (`gateway.networking.k8s.io/v1`).
   It attaches to `gateway.parentRefs`, with `hostnames` defaulting to the base URL's host (plus the
-  content host of R-HA-055 when set), one rule with `PathPrefix /` to the Service (fixed, not a
-  value, R-HA-037), and `timeouts.request` / `timeouts.backendRequest` from the values. HTTPRoute timeouts are part of the Standard channel since Gateway API v1.2
+  content host of R-HA-055 when set), one rule per row of R-HA-037's prefix table with a `PathPrefix` match to the Service
+  of its role (fixed, not values; one rule `PathPrefix /` to `<fullname>` with the bridge of R-HA-064), the path pools'
+  rules of R-HA-062, and on every rule `timeouts.request` / `timeouts.backendRequest` and `gateway.filters` from the values.
+  The Gateway API orders `PathPrefix` matches by length, so the more specific prefix wins as in an Ingress. With
+  `tls.backendTLSPolicy.enabled`, one BackendTLSPolicy per Service the HTTPRoute names. HTTPRoute timeouts are part of the Standard channel since Gateway API v1.2
   ([GEP-1742](https://gateway-api.sigs.k8s.io/geps/gep-1742/)), so v1.2 CRDs are the minimum.
   `backendRequest` MUST NOT exceed `request`.
 - The HTTPRoute is MVP (Q-HA-7). It attaches to an existing, platform-owned Gateway. A Gateway
@@ -4092,7 +4365,8 @@ Priority: **MVP** · Covers: HA-040
 Acceptance criteria:
 
 - With Envoy Gateway in kind and the policies of R-HA-039, `npm publish` of a 200 MB package and
-  `npm view @acme/ui` (scoped name, encoded slash) work through the HTTPRoute.
+  `npm view @acme/ui` (scoped name, encoded slash) work through the HTTPRoute, reaching `packages` pods, and the UI loads
+  from `api` pods.
 - Rendering with `gateway.enabled: true` and no Gateway API in the cluster fails before anything is
   created (R-HA-029).
 
@@ -4234,10 +4508,10 @@ session cookie (Q-ARCH-10). This requirement is the chart side.
   - renders `server.content_base_url: https://<contentOrigin.host>` into `trove.yaml`, a
     chart-managed key (R-HA-030), so the published host and the URLs trove generates cannot
     diverge, as for `base_url` (R-HA-040);
-  - adds a rule for that host to the Ingress (path `/`, `pathType: Prefix`, R-HA-037) and adds the
-    host to the HTTPRoute's `hostnames` (R-HA-038). Both route to the same Service
-    `<fullname>:8080`. There is no second Service, port or Deployment: the replica tells the hosts
-    apart (R-ARCH-029, with the host resolved by R-ARCH-006);
+  - adds a rule for that host to the Ingress (path `/`, `pathType: Prefix`, R-HA-037) and an HTTPRoute rule for the
+    host (R-HA-038), both to `<fullname>-packages:8080`, because the content host serves only the families `packages` and
+    `files` (`<fullname>:8080` with the bridge of R-HA-064). There is no further Service, port or Deployment: the replica
+    tells the hosts apart (R-ARCH-029, with the host resolved by R-ARCH-006);
   - with `contentOrigin.tls.secretName`, adds a TLS entry of its own to the Ingress
     (`{secretName: <contentOrigin.tls.secretName>, hosts: [<contentOrigin.host>]}`), so the content
     host has its own certificate; with cert-manager's Ingress annotation (R-HA-037), cert-manager
@@ -4262,7 +4536,8 @@ session cookie (Q-ARCH-10). This requirement is the chart side.
 Acceptance criteria:
 
 - `helm template … --set ingress.enabled=true --set contentOrigin.host=trove-content.example.net --set contentOrigin.tls.secretName=trove-content-tls`
-  renders one Ingress with two rules, both to `<fullname>:8080`, a TLS entry with
+  renders one Ingress with the path rules of R-HA-037 for the main host and one rule `/` to `<fullname>-packages:8080` for
+  the content host, a TLS entry with
   `trove-content-tls` for the content host, and `server.content_base_url: https://trove-content.example.net`
   in `trove.yaml`. With `gateway.enabled: true`, the HTTPRoute lists both host names.
 - With `config.server.base_url: https://trove.example.com`, `--set contentOrigin.host=trove.example.com`
@@ -4306,47 +4581,51 @@ the chart's Ingress succeeds without any Ingress annotation beyond R-HA-039's.
 ### R-HA-042 · Network policies
 Priority: **MVP** · Covers: HA-054
 
-**Status.** The ingress policy is shipped and enabled by default: the `web` pods admit port 8080 from `http.from`
-(anywhere when empty), port 8081 from `ops.from` (the monitoring namespace by default) and `probeCIDRs`; the `worker`
-pods admit 8081 only; the migration Job admits nothing. The egress policy is not implemented, which is H-41. Enforcement
-on the cluster's CNI is not verified in this build. The egress policy, when it is built, must admit `worker` pods to 443 on the
-configured advisory source hosts ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-025: `vulnerabilities.sources.osv.base_url`,
-`kev.url`).
+**Status.** Built: ingress policies for the `web` and `worker` pods and the migration Job, and one per further endpoint
+([networkpolicy.yaml](../../deploy/helm/trove/templates/networkpolicy.yaml),
+[endpoint-networkpolicy.yaml](../../deploy/helm/trove/templates/endpoint-networkpolicy.yaml)). Specified for phase 6a, not
+built yet: one policy per Deployment of the cut, below. Enforcement on the cluster's CNI is verified on the kind profile's
+CNI only (H-41).
 
-With `networkPolicy.enabled: true` (default) the chart renders, for the `web` and `worker` pods:
+The owner's rule ([ADR-154](../decisions.md#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port),
+2026-11-04): trove writes only ingress rules, only for the pods the chart deploys and between them, and every rule names its
+specific port. The chart renders no egress rule and no policy for pods it does not deploy.
 
-- **Ingress.**
-  - Port 8080 from `networkPolicy.ingress.http.from`; empty means from anywhere, so the ingress
-    controller works wherever it runs. `worker` pods do not listen on 8080 (R-HA-001).
-  - The port of each further endpoint, on the pods that serve it, only from that endpoint's
-    `networkPolicy.from` (policy `<fullname>-ep-<name>`, [endpoints.md](endpoints.md) R-EP-008), so
-    each port admits only its own edge. Pods of an endpoint pool admit neither 8080 nor another
-    endpoint's port.
-  - Port 8081 only from `networkPolicy.ingress.ops.from` (default: namespace `monitoring`) and
-    `probeCIDRs`.
-  - Nothing else; replicas do not talk to each other.
-- **Egress** (only with `networkPolicy.egress.enabled: true`):
-  - DNS;
-  - PostgreSQL (`database.to`, port 5432), which includes a pooler (R-HA-058);
-  - Valkey data nodes and Sentinels (`valkey.to`, ports 6379 and 26379);
-  - object storage (`objectStorage.to`);
-  - optionally the EKS Pod Identity agent (`169.254.170.23:80`);
-  - optionally the internet on 443/80 except private and link-local ranges (upstream registries,
-    OIDC issuers, STS);
-  - `extra` rules.
+With `networkPolicy.enabled: true` (default) the chart renders one NetworkPolicy per Deployment, named as the Deployment and
+selecting its pods by the selector labels of R-HA-028, with `policyTypes: [Ingress]` and one rule per port the pods open:
 
-  This is the second layer behind the egress address policy of R-REPO-038.
-- The migration Job gets the policy `<fullname>-migrate`, the restore Job `<fullname>-restore` and
-  the backup pods `<fullname>-backup`. None of them accepts any ingress. Their egress, with egress
-  enabled: the migration Job to DNS and PostgreSQL only; the backup pods to DNS, PostgreSQL, object
-  storage and the backup target (`backupTarget.to`); the restore Job to DNS, PostgreSQL, object
-  storage, the backup target, and the source blob bucket for the revocation journal
-  ([backup-and-restore.md](backup-and-restore.md) R-BAK-024), which `objectStorage.to` covers when
-  both buckets are on the same store. None of the three reaches Valkey: the backup does not use it
-  and the restore never touches it (R-BAK-022, R-HA-057 rule 7).
+| Policy | Port 8080 | Port of a further endpoint | Port 8081 |
+|---|---|---|---|
+| `<fullname>-api`, `<fullname>-packages`, each of their path pools | from `networkPolicy.ingress.http.from` (empty means from anywhere, so the edge works wherever it runs) | from that endpoint's `networkPolicy.from`, for each further endpoint without a pool whose surface holds a family of the role | from `networkPolicy.ingress.ops.from` and `networkPolicy.probeCIDRs` |
+| each endpoint pool (`<fullname>-packages-ep-<name>`, `<fullname>-api-ep-<name>`) | none: an endpoint pool opens no 8080 (R-EP-002) | from the endpoint's `networkPolicy.from` | as above |
+| `<fullname>-worker`, each worker pool | none: a worker listens on no client port (R-HA-001) | none | as above |
+| `<fullname>-web` and `<fullname>-web-ep-<name>` (bridge of R-HA-064) | as `api` and `packages` | as `api` and `packages` | as above |
+| `<fullname>-migrate`, `<fullname>-backup`, `<fullname>-restore` | none | none | none: `ingress: []` |
+
+- Every rule names its port, and every rule with a port carries the `from` of its row. A row whose `from` list is empty
+  for 8081 (neither an `ops.from` peer nor a `probeCIDRs` entry) leaves the 8081 rule out rather than rendering an empty
+  `from`, which Kubernetes reads as "from anywhere". `networkPolicy.ingress.http.from` and an endpoint's
+  `networkPolicy.from` keep their meaning: empty admits the port from anywhere, so the edge works without a value.
+- No rule admits one trove pod from another: replicas never open connections to each other (Topology), and the cut adds no
+  seam between the roles ([ADR-153](../decisions.md#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries)).
+  A seam that a later decision adds is a rule of the receiving role's policy that admits the sending role on the seam's
+  port (ADR-154).
+- In-cluster callers that address a role's Service directly (R-HA-002), such as a Bastion in another namespace, reach
+  port 8080 only when `networkPolicy.ingress.http.from` admits them; with a restricted list, their namespace or pods are
+  added to it.
+- **Egress.** None. The chart renders no egress rule, has no `networkPolicy.egress` values and no example file for one. What
+  separates trove's outbound connections is the address policy of
+  [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-038, which every role applies in code, and beyond it the
+  cluster operator's own policy; the gap is [H-516](../security/egress.md#h-516--the-chart-restricts-no-egress-of-its-pods).
+  An operator who restricts egress at the cluster lets each role reach what it uses: every serving role and the migration
+  Job DNS and PostgreSQL (`database.host`, `session_host`, the pooler of R-HA-058); every serving role Valkey and its
+  Sentinels and the object store; `packages` the upstreams of its remote repositories and the shadowing probes; `api` the
+  OIDC issuers and the upstreams it tests (R-REPO-024); `worker` the upstreams of mirrored remotes, the advisory sources of
+  [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-025 and the CI issuers' key endpoints; backup and restore
+  the backup target.
 - **Valkey and the Sentinels admit only trove's pods** ([architecture.md](architecture.md) H-49).
   Whoever can write under trove's key prefix can deny service, so the Valkey data nodes and the
-  Sentinels MUST be reachable only from trove's `web` and `worker` pods, from each other and from
+  Sentinels MUST be reachable only from trove's serving pods (`api`, `packages`, `worker`, `web`), from each other and from
   their own operator. The chart renders no Valkey (R-HA-028), so this ingress policy belongs to
   whoever runs Valkey; with Valkey in the release namespace it selects trove's pods by their
   labels:
@@ -4367,7 +4646,7 @@ With `networkPolicy.enabled: true` (default) the chart renders, for the `web` an
               matchExpressions:
                 - {key: app.kubernetes.io/name, operator: In, values: [trove]}
                 - {key: app.kubernetes.io/instance, operator: In, values: [trove]}   # example: the release
-                - {key: app.kubernetes.io/component, operator: In, values: [web, worker]}
+                - {key: app.kubernetes.io/component, operator: In, values: [api, packages, worker, web]}
           - podSelector:
               matchLabels:
                 app.kubernetes.io/name: trove-valkey  # example: replication and Sentinel traffic
@@ -4376,30 +4655,24 @@ With `networkPolicy.enabled: true` (default) the chart renders, for the `web` an
           - {port: 26379}
   ```
 
-  The local profile applies this policy to its Valkey (R-HA-051), and the egress policy above
-  limits trove's side to `valkey.to`.
+  The local profile applies this policy to its Valkey (R-HA-051).
 - Kubelet probes: most CNIs exempt node-to-pod probe traffic from policies. Where one does not,
   `probeCIDRs` adds the node CIDRs to the 8081 rule.
 
-Egress stays off by default (Q-HA-10). A wrong guess about where PostgreSQL and S3 live breaks the
-installation, while a missing egress policy only removes the second layer. To keep the choice
-visible:
-
-- `NOTES.txt` states, when `networkPolicy.egress.enabled` is false, that egress from the pods is
-  unrestricted, and points to the production example.
-- `deploy/helm/trove/examples/egress.yaml` is a values file with an egress block for a typical
-  production setup (CloudNativePG in the namespace, AWS S3, internet upstreams). Every value in it is
-  marked `# example`, and a CI value set renders it.
-
 Acceptance criteria:
 
-- From a pod in namespace `default`, `curl http://trove-ops.trove:8081/metrics` times out, and
-  `curl http://trove.trove:8080/api/v1/system/ping` succeeds.
-- With egress enabled and configured for the local profile, all R-HA-052 scenarios pass, and
-  a connection from a trove pod's network namespace to `169.254.169.254:80` (`kubectl debug -it <pod>
-  --image=<pinned curl image> --target=trove -- curl -m 5 http://169.254.169.254/`) times out.
+- The chart test renders, for the default values, exactly the policies `trove-api`, `trove-packages`, `trove-worker` and
+  `trove-migrate`; `trove-api` and `trove-packages` have one rule for TCP 8080 without `from` and one for TCP 8081 from the
+  namespace `monitoring`; `trove-worker` only the 8081 rule; `trove-migrate` `ingress: []`; no policy has
+  `policyTypes: [Egress]` or an `egress` key, and every rule names a port. With the `customers` endpoint of R-EP-008
+  (surface `[packages, files, api]`, no pool), `trove-packages` and `trove-api` each gain a rule for 8443 from
+  `endpoints.customers.networkPolicy.from`; with its pool enabled, `trove-packages-ep-customers` and `trove-api-ep-customers`
+  carry the 8443 and 8081 rules and no 8080 rule. With a worker pool `vuln`, `trove-worker-vuln` carries the 8081 rule only.
+- From a pod in namespace `default`, `curl https://trove-ops.trove:8081/metrics` times out, and
+  `curl https://trove-api.trove:8080/api/v1/system/ping` succeeds; a connection to a `worker` pod's 8080 is refused or times
+  out.
 - In the local profile, a connection to the Valkey and Sentinel ports from a pod in namespace
-  `default`, and from the restore Job's pod, times out, while every `web` and `worker` pod connects.
+  `default`, and from the restore Job's pod, times out, while every `api`, `packages` and `worker` pod connects.
 
 ### R-HA-043 · Trusted CA bundles
 Priority: **MVP** · Covers: HA-019
@@ -4465,10 +4738,11 @@ templates over metrics the MVP already exports, so the change adds no backend wo
   `secrets.metricsToken`. Its endpoint always renders two relabelings that set the target labels
   `role` and `pool` from the pod's labels
   ([operations-and-observability.md](operations-and-observability.md) R-OPS-006, Q-OPS-13):
-  `role` from `app.kubernetes.io/component` (`web` or `worker`), and `pool` from the label
-  `trove/pool` (R-HA-028), which carries the pool's name on the pods of each entry of `web.pools`
-  and `worker.pools` (R-HA-062) and is empty on the main Deployments, so their series carry no
-  `pool`. `metrics.serviceMonitor.relabelings` is appended after these two:
+  `role` from `app.kubernetes.io/component` (`api`, `packages` or `worker`, and `web` in the bridge of R-HA-064;
+  Q-OPS-161), and `pool` from the label
+  `trove/pool` (R-HA-028), which carries the pool's name on the pods of each entry of `api.pools`, `packages.pools`
+  and `worker.pools` (R-HA-062), `ep-<name>` on the pods of an endpoint pool, and is empty on the main Deployments, so their
+  series carry no `pool`. `metrics.serviceMonitor.relabelings` is appended after these two:
 
   ```yaml
   relabelings:
@@ -4535,8 +4809,9 @@ Acceptance criteria:
   `TroveBackupStale` fires 90 minutes (1.5 × `expected_interval`) after the last success.
 - A backup run that ends `interrupted` by a drain, followed by a successful retry, never makes
   `TroveBackupFailed` fire; a run that ends `failed` makes it fire until the next success.
-- Every series scraped from a pod of a web pool carries `role="web"` and `pool="<name>"`; series of
-  the main `web` Deployment carry `role="web"` and no `pool`.
+- Every series scraped from a pod of a `packages` pool carries `role="packages"` and `pool="<name>"`; series of
+  the main `packages` Deployment carry `role="packages"` and no `pool`; series of the main `api` Deployment carry
+  `role="api"`, and of a worker pool `role="worker"` and its `pool`.
 
 ### R-HA-046 · Extension points
 Priority: **P1** · Covers: HA-048, HA-049, HA-050, HA-051
@@ -4699,13 +4974,18 @@ release.
 | medium | ≤ 300 concurrent clients, CI-heavy | 4 (4–8) | 2 (2–4) | 1 / 1Gi | 2Gi | 20 | 20Gi | 4 vCPU, 16 GiB, 3 instances | none | 400 | 512 MiB |
 | large | ≤ 1,000 concurrent clients, several TB | 6 (6–16) | 3 (3–6) | 2 / 2Gi | 4Gi | 30 | 50Gi (`ephemeral`) | 8 vCPU, 32 GiB, 3 instances | transaction mode: request and control poolers, 2 instances each, 100 server connections in total | 200 | 1 GiB |
 
+- **After the cut into roles** (phase 6a, Q-HA-75) the `web` columns are those of the `packages` Deployment, and every
+  profile adds `api` with 2 replicas (HPA 2–4 in medium and large), 500m / 512Mi requests, a 1Gi memory limit and a 5Gi
+  spool; `worker` keeps its column, and a worker pool for the queue `vuln` (R-HA-062) is recommended from medium on.
 - `max_connections` follows the R-HA-016 formula with `maxReplicas`, `maxSurge: 1`, the default
   lease pool, a backup Job of 4 connections (R-BAK-005) and 15 more (2 migration, 10 reserved, 3
-  superuser). Small: 7 × 10 + 3 × 4 + 19 = 101 → 150. Medium: 14 × 20 + 5 × 4 + 19 = 319 → 400.
-  Large, through the pooler: 100 + 7 × 4 + 19 = 147 → 200; without it the same profile would need
-  767.
+  superuser). Before the cut: small 7 × 10 + 3 × 4 + 19 = 101 → 150; medium 14 × 20 + 5 × 4 + 19 = 319 → 400; large,
+  through the pooler, 100 + 7 × 4 + 19 = 147 → 200, without it 767. With `api` (phase 6a): small (4 + 3 + 3) × 10 + 12 + 19
+  = 131 → 150; medium (9 + 5 + 5) × 20 + 20 + 19 = 419 → **500**; large through the pooler unchanged at 147 → 200, without it
+  917.
 - The minimum replica counts follow the drain rule of R-HA-059: each profile's peak is assumed to
-  fit into one `web` replica fewer than its minimum. The reference load test replaces that
+  fit into one `packages` (before the cut: `web`) replica fewer than its minimum, and the UI and management load into one
+  `api` replica. The reference load test replaces that
   assumption with the measured capacity of one replica.
 - Valkey: memory holds fetch locks, negative-cache entries of remote repositories and rate-limit
   counters, each under 1 KiB ([architecture.md](architecture.md) R-ARCH-030); CPU is negligible at
@@ -4745,7 +5025,8 @@ Traefik route of its own for that host and a certificate from the dev CA, so E0.
 the host with `curl --resolve`, because the resolution of `*.localhost` differs between developer machines.
 
 A developer brings up an HA-shaped installation on a laptop with one command: the real chart with
-two `web` and two `worker` replicas, PostgreSQL with a standby, Valkey with a replica and three
+two `api`, two `packages` and two `worker` replicas (before phase 6a: two `web` and two `worker`), PostgreSQL with a
+standby, Valkey with a replica and three
 Sentinels, an S3 store and the backup CronJob. Failover of every dependency can therefore be tested
 locally and in CI with the same files. Files live in `deploy/dev/`. Tool versions (kind, kubectl,
 Helm, openssl, CloudNativePG operator chart, PostgreSQL image, Valkey image, SeaweedFS image) are
@@ -4759,7 +5040,7 @@ pinned by digest.
 | `deploy/dev/pooler.yaml` | Optional pooler overlay (`dev-up POOLER=1`): CloudNativePG `Pooler` resources `trove-db-pooler-rw` and `trove-db-pooler-control` in transaction mode with 2 instances each, as in R-HA-058, and the values that point `database.host`, `database.control_host` and `database.session_host` at them |
 | `deploy/dev/valkey.yaml` | Valkey with Sentinel (Q-HA-15), from the official `valkey/valkey` image: StatefulSet `trove-valkey` with 2 pods (pod 0 starts as primary, pod 1 as its replica) and StatefulSet `trove-valkey-sentinel` with 3 pods, both behind headless Services and spread over the three nodes, each with an `emptyDir` and no claim. Sentinels monitor the primary as `trove` with quorum 2, `down-after-milliseconds 5000`, `failover-timeout 60000`, `resolve-hostnames yes` and `announce-hostnames yes`, so stable pod host names survive restarts. An init container asks the running Sentinels for the current primary before a Sentinel or Valkey pod starts, so a restarted pod does not announce pod 0 as primary after a failover. TLS only (`port 0`, `tls-port 6379`, Sentinel `tls-port 26379`, `tls-replication yes`, `tls-auth-clients optional`), the ACL user `trove` with the example rule of [architecture.md](architecture.md) R-ARCH-031, a Sentinel password, `maxmemory 256mb`, `maxmemory-policy allkeys-lru`, `save ""`, `appendonly no`, a PDB with `maxUnavailable: 1` for each StatefulSet, and the ingress NetworkPolicy of R-HA-042 that admits only trove's `web` and `worker` pods and the Valkey pods themselves (H-49) |
 | `deploy/dev/s3.yaml` | Single-process SeaweedFS Deployment (master, volume server, filer and S3 gateway in one `weed` process) with an `emptyDir`, Service `trove-s3` on port 9000 mapped to the S3 gateway, plus a Job that creates bucket `trove-blobs` with versioning enabled, bucket `trove-pg-archive` for the WAL archive (Q-HA-3) and bucket `trove-backups` as backup target (R-HA-060) |
-| `deploy/dev/values-dev.yaml` | Chart values: `web` and `worker` 2 replicas each, `highAvailability.enforce: true`, `spool.sizeLimit: 4Gi`, `forcePathStyle: true`, static S3 credentials, `base_url: http://localhost:8080`, the CloudNativePG Secrets, the three Sentinel addresses with `primary_name: trove`, the Valkey Secrets, and the backup target `trove-backups` on the same SeaweedFS endpoint with a schedule every 6 hours |
+| `deploy/dev/values-dev.yaml` | Chart values: `web` and `worker` 2 replicas each (phase 6a: `api`, `packages` and `worker` 2 each), `highAvailability.enforce: true`, `spool.sizeLimit: 4Gi`, `forcePathStyle: true`, static S3 credentials, `base_url: http://localhost:8080`, the CloudNativePG Secrets, the three Sentinel addresses with `primary_name: trove`, the Valkey Secrets, and the backup target `trove-backups` on the same SeaweedFS endpoint with a schedule every 6 hours |
 
 Steps behind the task-runner target `dev-up` (GNU Make, the root `Makefile`; Q-HA-21):
 
@@ -4784,7 +5065,7 @@ kubectl -n trove create secret generic trove-encryption-keys \
 kubectl -n trove create secret generic trove-break-glass \
   --from-literal=password="$(head -c 24 /dev/urandom | base64)"
 helm upgrade --install trove deploy/helm/trove -n trove -f deploy/dev/values-dev.yaml --wait --timeout 10m
-kubectl -n trove port-forward svc/trove 8080:8080
+kubectl -n trove port-forward svc/trove-api 8080:8080   # phase 6a; svc/trove before it; package clients use the edge or svc/trove-packages
 ```
 
 - The CloudNativePG application Secret `trove-db-app` and the CA Secret of the cluster are used
@@ -4858,7 +5139,7 @@ against the local profile (R-HA-051) in CI. Load comes from real clients in para
 | Scenario | Injection | Pass condition |
 |---|---|---|
 | Pod crash | `kubectl delete pod --grace-period=0 --force` of a random `web` or `worker` replica every 2 min: 10 times (20 min) nightly and in the closing run, 3 times in `make e2e SET=npm-ha-crash` | No client iteration fails after its own retries; no item row without a durable object (`trove admin storage verify`; until that command exists, every version the scenario's publishes left is downloaded against its integrity, [Q-HA-69](#q-ha-69--the-storage-check-of-the-pod-crash-before-trove-admin-storage-verify-exists)) |
-| Rolling restart | `kubectl rollout restart` of `deploy/trove-web`, then of `deploy/trove-worker` | Zero failed iterations |
+| Rolling restart | `kubectl rollout restart` of `deploy/trove-api`, `deploy/trove-packages`, then of `deploy/trove-worker` (before phase 6a: `deploy/trove-web`) | Zero failed iterations |
 | Rolling upgrade | Previous minor → current with the migration Job | Zero failed iterations; R-HA-020 verification passes |
 | Rollback | `helm rollback` after the upgrade | Zero failed iterations |
 | PostgreSQL switchover | `kubectl cnpg promote` | Zero failed iterations |
@@ -4974,9 +5255,9 @@ management).
   rate-limit budgets, early cache evictions), never access or integrity
   ([architecture.md](architecture.md) R-ARCH-030, Q-ARCH-16). A dedicated ACL user limited to
   trove's key and channel prefix and to the commands of R-ARCH-031 keeps a leaked trove credential
-  away from other applications' data, and the egress policy lists the Valkey pods (R-HA-042). An
-  ingress NetworkPolicy on the Valkey data nodes and Sentinels that admits only trove's `web` and
-  `worker` pods, which whoever runs Valkey adds, keeps other workloads from writing under the
+  away from other applications' data. An
+  ingress NetworkPolicy on the Valkey data nodes and Sentinels that admits only trove's `api`, `packages` and
+  `worker` pods (`web` in the bridge), which whoever runs Valkey adds, keeps other workloads from writing under the
   prefix ([architecture.md](architecture.md) H-49, R-HA-042); backup, restore and migration pods
   hold no Valkey credential and reach no Valkey port.
 - **Operations listener.** Port 8081 serves unauthenticated probes and, by default,
@@ -4997,11 +5278,15 @@ management).
   through the journal, never grant any. A restore also moves the installation to a new Valkey
   keyspace, so no lock, negative-cache entry or rate-limit counter of the lost state is read again
   (R-HA-057, rule 7).
-- **Egress is unrestricted by default.** Without `networkPolicy.egress.enabled`, a compromised
+- **The chart restricts no egress.** By the owner's rule (ADR-154) it renders ingress rules only, so a compromised
   trove process can reach every address the pod network reaches, including cloud metadata
-  endpoints and in-cluster services. trove's own outbound connections are checked by the address
-  policy of R-REPO-038 either way. The egress policy is the second layer for the case where the
-  process itself is no longer trustworthy (R-HA-042, Q-HA-10).
+  endpoints and in-cluster services, unless the cluster operator's own policy restricts it. trove's own outbound
+  connections are checked by the address policy of R-REPO-038 in every role either way (R-HA-042,
+  [H-516](../security/egress.md#h-516--the-chart-restricts-no-egress-of-its-pods)).
+- **The cut into roles keeps the login secrets out of `packages`** (phase 6a, specified): the OIDC client secrets and the
+  break-glass password mount only into `api` pods (R-HA-030), and `packages` evaluates no session cookie. It does not
+  narrow the database, object-store or Valkey credentials or the key ring, which every role holds
+  ([architecture.md](architecture.md) H-517).
 
 ## Decisions
 
@@ -5352,29 +5637,15 @@ replays the journal; the roadmap moves the journal from M11 to M5.
 
 ### Q-HA-10 · Default of the egress NetworkPolicy
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Superseded** by the owner's rule of 2026-11-04 ([ADR-154](../decisions.md#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port)):
+the chart renders ingress rules only and no egress policy at all, so there is no default to choose. The development agent had
+weighed four defaults for an optional egress policy (off; on with a generic allow-list; on with explicit targets required; on
+with everything but the metadata address) and chosen (a), off by default with a `NOTES.txt` warning and an example values file
+`deploy/helm/trove/examples/egress.yaml`; neither was built. What remains is recorded as
+[H-516](../security/egress.md#h-516--the-chart-restricts-no-egress-of-its-pods): the address policy of R-REPO-038 in code and the
+cluster operator's own policy.
 
-| Option | What it means | For | Against |
-|---|---|---|---|
-| (a) Off by default | Ingress policy on; egress opt-in, with a warning in `NOTES.txt` and an example values file | An installation never breaks because the chart guessed the network wrong; R-REPO-038 already checks trove's own outbound addresses | A compromised process can reach everything the pod network reaches until the operator enables egress |
-| (b) On with a generic allow-list | DNS, port 5432 and port 443 to anywhere except link-local ranges | Blocks cloud metadata endpoints by default | Breaks NodeLocal DNSCache (link-local address), GKE workload identity (metadata server on 169.254.169.254), EKS Pod Identity (169.254.170.23), S3 stores and upstreams on other ports; for AWS S3 the rule cannot be narrower than "any address on 443", because NetworkPolicy has no DNS names or prefix lists |
-| (c) On, explicit targets required | Rendering fails unless database and object-storage targets are given | No guessing; forces a deliberate egress design | Breaks the minimal install of R-HA-031; managed databases and AWS S3 have no stable pod selectors or narrow CIDRs to give |
-| (d) On, everything except the metadata address | One rule: egress to `0.0.0.0/0` and `::/0` except `169.254.169.254/32` (and `fd00:ec2::254/128`) | Blocks the classic credential theft through the cloud metadata service and nothing else | GKE workload identity serves tokens from that very address, so S3 credentials break there; on CNIs whose `ipBlock` rules do not match cluster pod addresses (Cilium, for example), in-cluster PostgreSQL and S3 become unreachable |
-
-**Choice:** (a) — egress stays off by default; `NOTES.txt` says so and points to
-`deploy/helm/trove/examples/egress.yaml`.
-
-**Rationale:** Of the four, only (a) cannot break a working cluster at first start. (b)'s
-protection reduces to blocking link-local addresses, which is exactly what breaks common platform
-features, and (d), the narrowest default that still blocks something, breaks GKE identity and
-in-cluster dependencies on common CNIs. The real protection against outbound misuse by trove's own code is R-REPO-038, which
-applies regardless. The egress policy matters when the process is compromised, so it is made
-visible (NOTES, example file, Security notes) rather than silently absent. The development agent
-revisits this if the chart gains a reliable way to detect the cluster's DNS and identity endpoints.
-
-**Applied in the spec:** R-HA-042: the default is stated as decided, `NOTES.txt` warns while egress
-is off, and an example values file rendered in CI is added. Security notes: new bullet on
-unrestricted egress.
+**Applied in the spec:** R-HA-042 (no egress part, no `networkPolicy.egress` values), R-HA-031, Security notes.
 
 ### Q-HA-11 · Publishing location of images and chart
 
@@ -6212,6 +6483,217 @@ floor when the sizing profiles of R-HA-050 exist and say what a small pod is exp
 **Applied in the spec:** R-HA-029 (the row), R-HA-036 (admission follows the memory). Code:
 [_validate.tpl](../../deploy/helm/trove/templates/_validate.tpl), `trove.quantityBytes` and `trove.requestBytes` in
 [_helpers.tpl](../../deploy/helm/trove/templates/_helpers.tpl).
+
+### Q-HA-71 · How the edge splits one host between `api` and `packages`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: ADR-155 splits one host by path prefix between the two roles; R-HA-037 routed a host whole. The route families map
+onto path prefixes ([internal/httpserver/surface.go](../../internal/httpserver/surface.go), `familyOfPath`): `ui` is `/ui`,
+`/auth` and `GET /`; `api` is `/api/v1`; `ci_exchange` is `POST /api/v1/auth/oidc/token` and the npm exchange (P1);
+`packages` is the rest of `/api` and the host-root prefixes `/v2` and `/.well-known`; `files` is `/files`. Both Kubernetes
+`Prefix` and the Gateway API's `PathPrefix` match whole path elements and prefer the longest match.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Six fixed `Prefix` rules per host, `/` and `/api/v1` to `api`, `/api`, `/files`, `/v2`, `/.well-known` to `packages` (chosen) | Every path no rule names, scanners' paths and the UI's deep links included, reaches `api` | Portable to every conformant controller and to the Gateway API; the UI and the sign-in need no rule of their own; a path the edge sends to the wrong role is a `404`, never another family's answer | Unknown paths cost `api` a `404` each |
+| (b) The catch-all `/` to `packages` and explicit rules for `/ui`, `/auth` and `GET /` | Unknown paths reach `packages` | The bulk role absorbs scanners | `GET /` exactly needs an `Exact` rule; a UI path added later needs a chart change |
+| (c) Regular-expression rules per family | One rule per family | Mirrors `familyOfPath` | Not portable (implementation-specific in the Gateway API, an annotation in HAProxy Ingress) and ordered differently by each controller |
+| (d) A host per role (`api.trove.example.com`) | No path split | Simplest edge | Breaks the one-origin model of R-ARCH-007 and the `__Host-` cookie on the base URL; every client URL changes |
+
+**Choice:** (a).
+
+**Rationale:** prefix rules are the one routing feature every Ingress controller and Gateway implementation agrees on, and the
+families are prefixes, with one P1 exception (Q-HA-72). Sending what no rule names to `api` keeps the UI's paths free of chart
+rules. The edge is load sharing, not a trust boundary: each role's own router registers only its families (Q-ARCH-298), so a
+decoded or unusual path never reaches a handler of the other role. The development agent would revisit this if scanner traffic
+measurably loads `api`; then (b) with an `Exact` rule for `/`.
+
+**Applied in the spec:** R-HA-037 (the prefix table and its criteria), R-HA-038 (the HTTPRoute rules), R-HA-055 (the content
+host to `packages`), R-HA-062 (path pools inside their role's prefixes).
+
+### Q-HA-72 · How the npm exchange below a registry URL reaches `api`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NPM-022 (P1, not built: the path is one of npm's deferred routes in
+[internal/formats/npm/routes.go](../../internal/formats/npm/routes.go)) serves the trusted-publishing exchange at the host root
+(npm) and below every registry URL (pnpm from 11.28.7 and 12.15.0, Yarn 4): `/api/npm/<repoKey>/-/npm/v1/oidc/token/exchange/package/<name>`.
+It belongs to `ci_exchange`, so to `api` (ADR-155), but matches the `/api` prefix of `packages`, and a repository key in the
+middle of the path cannot be named by a prefix rule.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A rule of its own when R-NPM-022 is built: a regular-expression path `^/api/npm/[^/]+/-/npm/v1/oidc/` to `<fullname>-api` where the edge supports it (an HTTPRoute `RegularExpression` match; HAProxy Ingress's regular-expression path type on an Ingress of its own), with a chart test per supported edge; until then nothing (chosen) | The family table holds; the edge carries one exception | ADR-155's family assignment is kept; no secret or area moves | Regular-expression matches are implementation-specific, and their precedence over a prefix differs between controllers; on an edge that ranks them below prefixes the exchange keeps reaching `packages` |
+| (b) `packages` serves npm's exchange routes as an exception to the family table | The exchange is built on `packages` | No edge rule; works on every edge | `packages` would build the CI exchange area and issue tokens against identity-provider tokens, which ADR-155 put in `api`; an owner decision to change |
+| (c) Only the host-root form | Registry-URL clients use the host root | No nested rule | pnpm since 11.28.7 and Yarn 4 post below the registry URL and cannot be configured otherwise |
+
+**Choice:** (a), scheduled with R-NPM-022 (P1).
+
+**Rationale:** the owner put the exchange in `api`; the edge is where a nested path can be told apart without moving an area.
+The development agent would revisit this when R-NPM-022 is built and a supported edge cannot rank the rule above `/api`: then
+(b), for the owner to decide, since it changes ADR-155's table.
+
+**Applied in the spec:** R-HA-037 (the nested family), [formats/npm.md](formats/npm.md) R-NPM-022 (a note on the edge rule).
+
+### Q-HA-73 · How an installation upgrades across the cut into roles
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-020 promises a zero-downtime upgrade from the previous minor; Q-ARCH-295 keeps the role `web` as the bridge.
+Helm applies a release in one pass and does not wait for a new pod before it repoints the edge and deletes a removed
+Deployment. A Service's selector can change in place; a Deployment's cannot.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Two steps joined by `web.enabled`: step 1 keeps the old Service and edge in front of `<fullname>-web` while `api` and `packages` start; step 2 switches the edge and removes `web`; a `lookup` guard refuses step 2 while the new Deployments are not ready (chosen) | R-HA-064 | Zero downtime with plain Helm; the guard catches a one-step upgrade wherever the chart can read the cluster | Two `helm upgrade` runs; renderers without cluster access (`helm template`, some GitOps tools) get no guard and rely on the release notes |
+| (b) Automatic: the chart decides the shape from `lookup` (the bridge while `<fullname>-web` exists and the new roles are not ready) | One value-free command, run twice | No value to set | The rendered output depends on the cluster, so `helm template` and GitOps renderers produce the target shape at once and cause the gap; a reviewer cannot read the shape from the values |
+| (c) One step, accepting the gap | Release notes warn | Nothing to build | Breaks R-HA-020 for this upgrade: every family answers `503` for the start time of the new pods |
+| (d) A pre-upgrade hook that creates and waits for `api` and `packages` | Hook-managed Deployments | One command | Hook resources are not release resources: they escape `helm rollback` and `helm uninstall` and duplicate the Deployment template outside the release |
+
+**Choice:** (a).
+
+**Rationale:** only (a) and (d) keep the edge on ready pods, and (a) does it with release resources and an explicit value whose
+effect a reviewer can see. The guard is validation only: it never changes what renders. The way back from step 2 is a rollback
+and has the start-time gap; R-ARCH-025 promises a working rollback, not a gap-free one. The development agent would revisit
+this if Helm gains a wait between applying and deleting resources, which would make one step safe.
+
+**Applied in the spec:** R-HA-064 (new), R-HA-020 (order), R-HA-021 (the row of the upgrade path), R-HA-029 (the guard),
+R-HA-031 (`web.enabled`).
+
+### Q-HA-74 · Which client Services exist after the cut, and how in-cluster callers reach trove
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: before the cut one Service `<fullname>` served every family, and callers inside the cluster use it: the dev profile's
+Bastions call `https://trove.trove.svc:8080` for their interface (`/api/v1/bastion/…`, `api`) and their forwards (`packages`,
+`files`) ([deploy/dev/bastion-chart-common.yaml](../../deploy/dev/bastion-chart-common.yaml)). A Service cannot split by path.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One Service per role, `<fullname>-api` and `<fullname>-packages`; `<fullname>` only in the bridge; an in-cluster caller uses the Service of the family it calls, and the Bastion gains an optional `bastion.main.packages_url` for its forwards (chosen) | Names say what they serve | Each Service answers every request it receives; a caller that addresses the wrong one gets a `404`, not a silent partial service | In-cluster callers and certificates (SANs) change once; the Bastion's configuration gains a key |
+| (b) Keep `<fullname>` as the `packages` Service | The most common in-cluster callers (package clients) keep their URL | Fewer changes for package clients | The name hides that the management API, the CI exchange and the Bastion interface are gone from it; a caller of both families breaks silently |
+| (c) Keep `<fullname>` selecting both roles' pods | One name for everything | No caller changes | A request lands on a pod of the other role half of the time and answers `404`: random failures |
+
+**Choice:** (a). The edge keeps verifying the listener certificate under `<fullname>.<namespace>.svc` for both role Services
+(R-HA-037), so the certificate needs that name and, for in-cluster callers, the names of the role Services.
+
+**Rationale:** with path routing only at the edge, the only Services that answer every request they receive are role
+Services. The Bastion is the one in-cluster caller that needs both families; one optional key (default: `bastion.main.url`)
+keeps a Bastion behind the edge unchanged and lets one that calls Services name both. The development agent would revisit
+this if a common client fixes a single in-cluster URL for both families; then an edge inside the cluster is the answer, not a
+Service.
+
+**Applied in the spec:** R-HA-002 (Services and in-cluster callers), R-HA-028 (the resources), R-HA-037 (the verification
+name), R-HA-064 (`<fullname>` in the bridge); [bastion.md](bastion.md) (the key `bastion.main.packages_url`).
+
+### Q-HA-75 · Default replica counts, resources and drain capacity per role
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: [ADR-105](../decisions.md#adr-105--drain-capacity-one-replica-more-than-the-peak-needs-per-role) and Q-HA-16 set
+three `web` and two `worker` replicas by the N + 1 rule of R-HA-059: a peak that two `web` replicas carry, plus one for the
+drain. The cut divides the `web` load: the package protocols and raw files carry almost all of it (the npm load of phase 7: 57 %
+of a `web` pod's CPU in the virtual tarball path), the UI and the management API little.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `api` 2, `packages` 3, `worker` 2; `api` with half the requests of `web` (500m, 512Mi, a 1Gi limit) and a 5Gi spool; `packages` with the values of `web` (chosen) | `packages` carries the old peak; `api` a peak of one replica plus one | The default installation survives a drain at the load the owner expects; the package path keeps its sizing | Seven pods instead of five; the PostgreSQL budget grows from 171 to 231 |
+| (b) Two of each | INV-12's minimum | Six pods | A drain of one of two `packages` replicas leaves less capacity than the peak needs |
+| (c) `api` 3, `packages` 3 | Symmetric | One rule for both | A third `api` pod for a load that fits one |
+
+**Choice:** (a). Autoscaling: `api` 2–4 and `packages` 3–8 on CPU (70 %), `worker` as before.
+
+**Rationale:** the rule of ADR-105 applies per role, and the peak of each role is what it carries after the cut. The development
+agent would revisit the numbers when the reference load test (R-HA-050) publishes the capacity of one replica of each role.
+
+**Applied in the spec:** R-HA-031 (the `api` and `packages` blocks), R-HA-032, R-HA-016 (the examples), R-HA-050, R-HA-059 rule
+1; [ADR-105](../decisions.md#adr-105--drain-capacity-one-replica-more-than-the-peak-needs-per-role) (a "Changed on" paragraph).
+
+### Q-HA-76 · How the network policies are cut after the cut into roles
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: ADR-154 asks for ingress rules only, between the chart's pods, each with its port, and "one policy per role (and per
+pool)". Built today: one policy each for `web` and `worker`, and one per further endpoint that admits its port on the pods that
+serve it ([endpoint-networkpolicy.yaml](../../deploy/helm/trove/templates/endpoint-networkpolicy.yaml)), whose pool policy
+also admits 8081.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One policy per Deployment, named as the Deployment, with a rule per port its pods open: 8080, each further endpoint's port, 8081 (chosen) | The endpoint policies fold into the policy of the Deployment that serves the port | One place per pod type shows everything it admits; an endpoint's port follows the pods that open it, whichever role they are | A further endpoint without a pool appears in two policies when its surface spans both roles |
+| (b) Per role, plus one per endpoint as today | The endpoint policies stay | Smaller change | A pod type's admissions are spread over several policies; an endpoint policy must select the pods of two roles |
+
+**Choice:** (a).
+
+**Rationale:** ADR-154 asks for a policy per role and pool; a Deployment is exactly a role or a pool, and naming the policy as
+the Deployment makes the chart test a table. The development agent would revisit this if a seam between roles is ever added,
+which then is one more rule in the receiving Deployment's policy.
+
+**Applied in the spec:** R-HA-042, R-HA-028; [endpoints.md](endpoints.md) R-EP-008 (the NetworkPolicy row).
+
+### Q-HA-77 · The connection-budget key of the serving roles
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the migration Job compares the budget of R-HA-016 with `max_connections` from two counts it gets from the chart,
+`database.preflight.expected_web_replicas` and `expected_worker_replicas` ([internal/config/schema.json](../../internal/config/schema.json)).
+The formula distinguishes only processes with a lease pool from those without.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Rename to `expected_serving_replicas`, the old key a deprecated alias with a start-up warning (chosen) | One count for every Deployment without a lease pool | The name says what it counts; R-ARCH-025's alias rule is kept | A key to rename in the binary and the chart |
+| (b) Keep `expected_web_replicas` with the new meaning | No rename | No change | The name names a role that no longer counts alone |
+| (c) One key per role | `expected_api_replicas`, `expected_packages_replicas` | Mirrors the values | The formula does not tell them apart; more keys for one sum |
+
+**Choice:** (a). The chart renders only the new name.
+
+**Rationale:** the budget needs exactly two numbers, and naming them by what they count keeps them right for pools and the
+bridge. The development agent would revisit this if the roles get different pool sizes (`database.pool.max_conns` per role),
+which would make (c) a formula input.
+
+**Applied in the spec:** R-HA-016, R-HA-030.
+
+### Q-HA-78 · Whether the path pools of `api` and `packages` come with phase 6a
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-062 had web and worker pools at P1; ADR-155 says variants by path prefix or queue are pools of a role,
+"available as values under this decision", and BETA.md's phase 6a lists the worker pools by queue.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Both path pools and worker pools in phase 6a (chosen) | `api.pools`, `packages.pools` and `worker.pools` | The path rules of R-HA-037 are generated from data anyway, and a pool is one more row with its own Service; the owner's decision offers both | More chart tests and an e2e criterion in phase 6a |
+| (b) Worker pools in phase 6a, path pools at P1 | As BETA.md lists | A smaller phase | The values of ADR-155 stay unavailable for formats until after the beta |
+
+**Choice:** (a).
+
+**Rationale:** once the edge rules are rendered per role from a table, a path pool adds rows and a Deployment the template
+already renders; leaving it out saves little. The development agent would revisit this if the chart work of WP6a.3 runs late, in
+which case the path pools move to P1 without changing any other part.
+
+**Applied in the spec:** R-HA-062 (priority and values), R-HA-028, R-HA-029, R-HA-031.
+
+### Q-HA-79 · Which pods mount the login secrets
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: today `secrets.oidc[]` and `secrets.breakGlass` mount into every pod of role `web`, endpoint pools included
+([_secrets.tpl](../../deploy/helm/trove/templates/_secrets.tpl)). After the cut, `api` builds the login area on every one of
+its pods; the configuration file, shared by every pod, names the secret files.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every pod of role `api` (main, pools, endpoint pools) and `web` in the bridge; never `packages` (chosen) | The role holds its secrets | A role is one set of areas and secrets (ADR-155); the login area finds its files wherever it is built | An `api` endpoint pool, which serves no `ui`, holds the OIDC client secrets |
+| (b) Only the pods that serve `ui` (the main `api` Deployment) | The smallest set | Endpoint pools of `api` hold no login secret | The login area would have to start without its files on some pods of the same role: two behaviours of one role |
+
+**Choice:** (a).
+
+**Rationale:** the trust line ADR-155 draws runs between `api` and `packages`, and (a) keeps it a line between roles. An
+endpoint with only `api` families is rare and token-only. The development agent would revisit this if such endpoints become
+common: then a login area that is built only where the surface holds `ui`.
+
+**Applied in the spec:** R-HA-030 (the secret rows); [endpoints.md](endpoints.md) H-57.
 
 ## What this does not cover
 

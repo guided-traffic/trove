@@ -3088,8 +3088,9 @@ load exceeds one replica (INV-12), so no mechanism on this page may depend on th
   replica itself: the spool budget, the S3 connection pool and part concurrency, and the circuit
   breaker (R-STOR-004, R-STOR-033).
 - **Splitting the service.** Because every replica of a role can do everything this table assigns
-  to the role, a web pool that serves only package paths, or a worker pool that claims only the
-  `maintenance` queue ([ha-and-helm.md](ha-and-helm.md) R-HA-062, P1), needs no storage change.
+  to the role, the cut into `api` and `packages` (phase 6a), a `packages` pool that serves only some package paths, or
+  a worker pool that claims only the `maintenance` queue ([ha-and-helm.md](ha-and-helm.md) R-HA-062), needs no storage
+  change.
 - **Drain.** A node drain costs no acknowledged data and fails no storage operation that its client
   retries:
   - on `web`: an upload cut before its commit leaves nothing (R-STOR-004); a cut download resumes

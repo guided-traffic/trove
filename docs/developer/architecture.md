@@ -71,6 +71,27 @@ process in a pool no endpoint names opens those without a pool, `all` opens ever
 endpoint has its own `http.Server`, router (built from its surface), chain instance and TLS block; the sections
 below describe the chain once, [endpoints.md](endpoints.md) says what differs per endpoint.
 
+### The roles of phase 6a (specified, not built yet)
+
+Everything above describes the code as it is: `web`, `worker` and `all`. Phase 6a cuts the serving role in two
+([R-ARCH-001](../spec/architecture.md#r-arch-001--one-binary-identical-replicas-process-roles), ADR-153 to ADR-155, the work
+packages in the [roadmap](../coverage/roadmap.md#phase-6a--task-areas)). What changes here once it is built:
+
+| Role | Route families | Listener areas it builds | Listener areas it does not build |
+|---|---|---|---|
+| `api` | `ui`, `api`, `ci_exchange` | `limits`, `virtual-engine` (explanation only, over a read-only view of the remote members), `packages-api`, `vuln-api`, `sessions`, `login`, `auth` (with sessions), `endpoints`, `api`, `ci_exchange` | `proxy-engine`, `formathost` |
+| `packages` | `packages`, `files` | `limits`, `proxy-engine`, `virtual-engine`, `formathost`, `auth` (tokens only), `endpoints`, `api` | `sessions`, `login`, `ci_exchange`, `packages-api`, `vuln-api` |
+| `web` | all | the union, as today | — |
+
+- `steps.go` gets a role set per role (today `withListener` = `web` | `all`), and the role-table test compares
+  `SubsystemsFor` with the table of R-ARCH-001.
+- The router of an endpoint registers the families of its surface intersected with the role's families (Q-ARCH-298); a
+  process opens an endpoint's listener only when that intersection is not empty.
+- A `worker` claims the queues of `jobs.queues`, or all but `jobs.exclude_queues` (R-ARCH-016); the advisory sync moves to the
+  queue `vuln`.
+- The UI's downloads and uploads go to session-only content routes of `api`, `/api/v1/repositories/{repoKey}/content/{path}`
+  (R-API-025, Q-UI-106), because `packages` evaluates no session cookie.
+
 ## Request path (client listener)
 
 ```text

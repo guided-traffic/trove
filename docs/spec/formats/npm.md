@@ -1129,8 +1129,9 @@ The flow, its data model and its settings are
 - Yarn 2+ uses web login only with `--web-login` for registries other than the public ones; the
   same endpoints serve it.
 - The start, the approval page's requests and every poll are separate requests that the Service
-  spreads over the `web` replicas, and with web pools ([ha-and-helm.md](../ha-and-helm.md)
-  R-HA-062) over several Deployments: the start lies below the registry URL, the poll under
+  spreads over the `web` replicas, and after the cut into roles over two roles (the start on `packages`, the approval
+  page and the poll on `api`; phase 6a) and their pools ([ha-and-helm.md](../ha-and-helm.md)
+  R-HA-062): the start lies below the registry URL, the poll under
   `/auth/cli/`. Their only shared state is the `cli_login` row in PostgreSQL (INV-18, R-AUTH-034),
   so each request may reach a different replica. The start is limited cluster-wide (R-AUTH-038,
   [architecture.md](../architecture.md) R-ARCH-034).
@@ -1198,6 +1199,10 @@ the published packages:
   pnpm and Yarn set the header themselves. Like `POST /api/v1/auth/oidc/token`, both routes are
   exchange endpoints: the ID token is their input, not a credential of the authentication stage
   ([identity-and-authentication.md](../identity-and-authentication.md) R-AUTH-001 exempts them).
+- Both routes belong to the family `ci_exchange`, which the role `api` serves after the cut into roles (phase 6a,
+  [ha-and-helm.md](../ha-and-helm.md) R-HA-037). The host-root route reaches `api` through the edge's catch-all; the route
+  below a registry URL lies inside the `/api` prefix of `packages`, so the chart renders a rule of its own for it with this
+  requirement ([ha-and-helm.md](../ha-and-helm.md) Q-HA-72), and the acceptance criteria below run through the chart's edge.
 - trove owns the host root of `server.base_url`, which is an origin without a path
   ([operations-and-observability.md](../operations-and-observability.md) R-OPS-005, INV-6). The
   exchange URL npm derives from a registry URL on that host therefore always reaches trove. npm

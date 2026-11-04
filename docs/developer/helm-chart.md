@@ -16,9 +16,9 @@ of being silently ignored.
 
 | In the chart | Not in the chart yet |
 |---|---|
-| `web` and `worker` Deployments, always both (R-HA-002); a pool Deployment per endpoint with `pool.enabled` (R-EP-008) | autoscaling (HPA, also for endpoint pools), `web.pools`, `worker.pools` (R-HA-062) |
+| `web` and `worker` Deployments, always both (R-HA-002); a pool Deployment per endpoint with `pool.enabled` (R-EP-008) | autoscaling (HPA, also for endpoint pools); the roles `api` and `packages`, their path pools and the worker pools by queue (phase 6a, R-HA-002, R-HA-062, see [The cut into roles of phase 6a](#the-cut-into-roles-of-phase-6a-specified-not-built-yet)) |
 | client Service `<fullname>` and ops Service `<fullname>-ops`, `sessionAffinity: None` (R-HA-037) | Gateway API HTTPRoute (R-HA-038), `contentOrigin` |
-| PodDisruptionBudget per Deployment, topology spread with `nodeTaintsPolicy: Honor` (R-HA-032) | NetworkPolicy egress and the egress example (R-HA-042), ServiceMonitor, and every alert of the PrometheusRule but the three of the vulnerability scanning (R-HA-045, see [The PrometheusRule](#the-prometheusrule)) |
+| PodDisruptionBudget per Deployment, topology spread with `nodeTaintsPolicy: Honor` (R-HA-032) | ServiceMonitor, and every alert of the PrometheusRule but the three of the vulnerability scanning (R-HA-045, see [The PrometheusRule](#the-prometheusrule)) |
 | NetworkPolicy ingress for `web`, `worker` and the migration Job (R-HA-042) | |
 | PrometheusRule with the three alerts of the vulnerability scanning (R-HA-045, R-VULN-024), `metrics.prometheusRule.*` | |
 | migration Job as `pre-install,pre-upgrade` hook, with hook ConfigMap and ServiceAccount (R-HA-019) | backup CronJob, restore Job, post-restore Job (R-HA-060) |
@@ -37,6 +37,23 @@ Gaps in what is there:
 - **The container is started with `args: [serve, --role, <role>]` and no `command`.** It relies on
   the image's `ENTRYPOINT` being the trove binary.
 - **No kubeconform run** over the rendered output yet; the tool is not pinned.
+
+## The cut into roles of phase 6a (specified, not built yet)
+
+The rest of this page describes the chart as it is: `<fullname>-web` and `<fullname>-worker`, the Service `<fullname>`, one
+Ingress rule `/` per host, ingress policies for `web`, `worker`, the migration Job and each further endpoint. Phase 6a
+([roadmap](../coverage/roadmap.md#phase-6a--task-areas), WP6a.3) changes it to:
+
+| Object | Phase 6a | Spec |
+|---|---|---|
+| Deployments | `<fullname>-api`, `<fullname>-packages`, `<fullname>-worker`; pools `<fullname>-<role>-<pool>`; endpoint pools `<fullname>-packages-ep-<name>` and `<fullname>-api-ep-<name>` | R-HA-002, R-HA-062, R-EP-008 |
+| Services | `<fullname>-api` and `<fullname>-packages` on 8080; `<fullname>-ops`; per further endpoint `<fullname>-ep-<name>` and, for a surface of both roles, `<fullname>-ep-<name>-api` | R-HA-002, R-HA-028, Q-EP-71 |
+| Edge | per host the `Prefix` rules `/` and `/api/v1` to `api`, `/api`, `/files`, `/v2`, `/.well-known` to `packages` | R-HA-037, Q-HA-71 |
+| PDB, HPA | one per Deployment (the HPA is not rendered today at all) | R-HA-032 |
+| NetworkPolicy | one per Deployment, named as it, a rule per port its pods open; none for egress | R-HA-042, Q-HA-76 |
+| Login secrets | `secrets.oidc[]` and `secrets.breakGlass` in `api` pods only | R-HA-030, Q-HA-79 |
+| Environment | `TROVE_JOBS_QUEUES` on a worker pool, `TROVE_JOBS_EXCLUDE_QUEUES` on the main worker; `TROVE_DATABASE_PREFLIGHT_EXPECTED_SERVING_REPLICAS` on the migration Job | R-HA-030, R-HA-016 |
+| Upgrade bridge | `web.enabled: true` keeps `<fullname>-web`, the Service `<fullname>` and the edge `/` for the first of two steps; a `lookup` guard refuses the one-step upgrade | R-HA-064, Q-HA-73 |
 
 ## Layout
 
@@ -328,9 +345,9 @@ read these variables (it uses no object store).
 ## Network policy
 
 `networkPolicy.enabled` (default `true`, R-HA-042) renders three policies that select the pods by their
-component labels. They restrict **ingress only**; the `egress` block of R-HA-042 (DNS, PostgreSQL, Valkey,
-object storage, the `NOTES.txt` hint and `examples/egress.yaml`) is not implemented, so the pods' egress is
-unrestricted. `values.schema.json` has no `networkPolicy.egress` key yet.
+component labels. They restrict **ingress only**, and by the owner's rule (ADR-154) the chart renders no egress rule
+at all: the pods' egress is the cluster's, and `values.schema.json` has no `networkPolicy.egress` key
+([H-516](../security/egress.md#h-516--the-chart-restricts-no-egress-of-its-pods)).
 
 | Policy | Admits |
 |---|---|

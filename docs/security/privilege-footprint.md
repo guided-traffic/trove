@@ -105,7 +105,7 @@ The chart renders one `NetworkPolicy` per role when `networkPolicy.enabled` is `
 | migration Job | nothing | not rendered |
 
 No egress policy is rendered, so a compromised replica can reach any address the pod network reaches
-([H-41](../spec/operations-and-observability.md#h-41--egress-is-unrestricted-and-ingress-enforcement-is-verified-on-one-cni-only)).
+([H-516](egress.md#h-516--the-chart-restricts-no-egress-of-its-pods)).
 The ingress policy is enforced on the kind profile's CNI, which is verified in the end-to-end suite; other CNIs are not verified.
 
 Each further endpoint adds a listener on its own port and a Service, and its pods run with the credentials of a `web` pod
