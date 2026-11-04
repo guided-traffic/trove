@@ -1263,7 +1263,7 @@ Semantics, payloads and status codes: [repositories-and-proxy.md](repositories-a
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| GET | `/api/v1/formats` | Format descriptors with classes (generated from `Descriptor().Classes`), clients (`clients`: `{id, displayName}` from `Descriptor().Clients`, empty for generic; Q-API-177) and settings schema (`settingsSchema`, a JSON Schema 2020-12 or `null`; R-ARCH-008, R-ARCH-010, Q-ARCH-229), and `baseUrl`: the configured base URL of the endpoint the request arrived on, or `null` (Q-UI-75) | authenticated; anonymous where anonymous access is on |
+| GET | `/api/v1/formats` | Format descriptors with classes (generated from `Descriptor().Classes`), clients (`clients`: `{id, displayName}` from `Descriptor().Clients`, empty for generic; Q-API-177), settings schema (`settingsSchema`, a JSON Schema 2020-12 or `null`; R-ARCH-008, R-ARCH-010, Q-ARCH-229) and `mirror` (the format's remote can be a mirror, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-050), and `baseUrl`: the configured base URL of the endpoint the request arrived on, or `null` (Q-UI-75) | authenticated; anonymous where anonymous access is on |
 | GET | `/api/v1/repositories` | List; filters `class`, `format`, `q`, `state`, `project`; `view` | readable repositories; configuration fields only with `repositories:read-config` or `manage` |
 | POST | `/api/v1/repositories` | Create | `admin` or `repository-admin` role; project administrators per R-AUTHZ-026 |
 | GET | `/api/v1/repositories/{key}` | Read; full configuration for `manage` and `repositories:read-config` | `read` |
@@ -1272,6 +1272,8 @@ Semantics, payloads and status codes: [repositories-and-proxy.md](repositories-a
 | POST | `/api/v1/repositories/{key}/upstream-test` | Probe the saved upstream configuration | as update |
 | POST | `/api/v1/upstream-tests` | Probe an unsaved remote configuration | as create |
 | GET | `/api/v1/repositories/{key}/resolution?path=` | Explain how a virtual repository resolves a client path | `read` |
+| GET | `/api/v1/repositories/{key}/mirror` | The status of a remote repository's mirror ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-056) | as the full configuration read |
+| POST | `/api/v1/repositories/{key}/mirror/run` | Request a pass of the mirror now; 202 with the job, 409 while one is queued or running (R-REPO-056) | as update |
 
 Mapping of catalog operations: API-058 (format-filtered configuration) is the regular read, which
 contains only fields that apply to the class and format; API-059 (configurations by key) and
@@ -3357,6 +3359,16 @@ Priority: **MVP** · Covers: UI-031
   periods, offline switch (INV-11), and "Test connection" (`POST /api/v1/upstream-tests`) with the
   result inline.
 - Virtual: member editor (R-UI-022) and default deployment target.
+- From phase 6b, on remote repositories of a format whose upstream can be discovered (`mirror: true` in
+  `GET /api/v1/formats`, from the format's registration; the UI holds no list of such formats): a **Mirror**
+  section with the mode (`pullThrough` or `mirror`) and the members of `remote.mirror`
+  ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-050), the warning or refusal `mirror_unbounded` at the
+  mode with the sentence of R-REPO-052, and for a project administrator the section read-only except **Pause** and
+  **Turn off** (Q-REPO-142). On the edit form of a remote in mode `mirror`, a **Mirror** tab shows the status of
+  `GET /api/v1/repositories/{key}/mirror`: the state, the pass in progress with its counts, the last complete pass, the next
+  pass, the last error, the rate-limit waits and the bound; with **Pause** and **Resume**, which `PATCH`
+  `remote.mirror.paused` with `If-Match`, and **Run a pass now** (`POST …/mirror/run`, and a full pass from its menu), which
+  opens the job (Q-UI-104, Q-UI-105).
 - From M4b, on local and remote repositories of a format with the vulnerability adapter: the
   `vulnerabilities` member ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-002), and
   on the edit form a link to the repository's view of the vulnerability report (R-VULN-022).
@@ -6048,6 +6060,40 @@ the tester should edit nested claims (a `path` leaf) in rows of their own.
 
 **Applied in the spec:** R-UI-036 (already names the form view); [web-ui.md](../developer/web-ui.md#ci-identity).
 
+### Q-UI-104 · The mirror is a section of the remote's form and a tab of its edit form
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A **Mirror** section among the remote settings, and a **Mirror** tab with the status on the edit form (chosen) | Configuration where the remote is configured, status where its other tabs are | One place for one repository; the status sits beside the settings that explain it | A list of every mirror needs the repository list's filter |
+| (b) A separate screen for all mirrors | An overview | Comparable at a glance | A second place to configure the same repository |
+| (c) Status in the system jobs screen only | No new screen | Nothing to build | The jobs say how passes ended, not what the mirror holds or waits for |
+
+**Choice:** (a). The repository list shows a badge "mirror" on remotes in that mode, with the state as its tooltip; the badge uses
+the primary colour, and green only for the positive state `scheduled` after a complete pass (the owner's colour rule).
+
+**Rationale:** an operator who wonders why a remote holds a package looks at that remote. The development agent would revisit
+(b) when installations run more than a handful of mirrors.
+
+**Applied in the spec:** R-UI-021 (the bullet); [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-056.
+
+### Q-UI-105 · Pause and resume are a patch of the document; a pass on request opens its job
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) **Pause** and **Resume** `PATCH` `remote.mirror.paused` with `If-Match`; **Run a pass now** posts the run and opens the job; a 412 opens the conflict dialog (chosen) | The operations of R-REPO-056 as they are | INV-17: the buttons do what a script does; a conflict with another administrator's edit is caught | Pausing reloads the document's revision first |
+| (b) Toggle without `If-Match` | Blind write | One click less | Could overwrite another administrator's change of the same document (R-API-012) |
+
+**Choice:** (a). A 409 `mirror_pass_running` shows the running job instead of an error.
+
+**Rationale:** the document's revision is what protects concurrent edits; a pause is an edit. The development agent would revisit
+it if pausing many mirrors at once becomes a need (API-087, deferred).
+
+**Applied in the spec:** R-UI-021 (the bullet).
+
 ### Q-API-16 · A `limit` above the maximum is clamped
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -6972,6 +7018,44 @@ Context: Q-API-189 gave the setup templates the languages `powershell` and `cmd`
 **Rationale:** the field only chooses how a screen shows a snippet, and a screen shows every command line the same way. The development agent revisits this at the next breaking version of the API, when the enum may list the values.
 
 **Applied in the spec:** R-API-030 (the languages of a template). Code: `internal/api/v1/packages_api.go`, `internal/api/v1/snippet_languages_test.go`.
+
+### Q-API-192 · The mirror's operations are sub-resources of the repository
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `GET /api/v1/repositories/{key}/mirror` and `POST /api/v1/repositories/{key}/mirror/run` (chosen) | R-API-004's sub-path verbs, beside `upstream-test` and `reindex` | The repository's permissions apply; one key addresses everything of the repository | Two paths |
+| (b) A collection `/api/v1/mirrors` | Mirrors as resources | A list of all mirrors | A mirror is no resource of its own; its identity is the repository |
+| (c) The catalog's replication paths | Familiar | — | White-label: the catalog's shapes are not copied; and replication's push half does not exist |
+
+**Choice:** (a). The status is allowed as the full configuration read and decided in the handler (the declaration form of
+Q-OPS-155); the run as an update. Pause and resume are the document (Q-REPO-141).
+
+**Rationale:** everything else a remote does is addressed under its key. The development agent would revisit (b) with the
+overview of Q-UI-104 (b).
+
+**Applied in the spec:** R-API-022 (the rows); [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-056.
+
+### Q-API-193 · The mirror members are added to the remote section, and the status is a schema of its own
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-ARCH-025's compatibility check refuses an added enum value in an existing response schema (Q-API-191, Q-VULN-74).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) New members `mode` and `mirror` in `RemoteSettings`, new schemas `MirrorSettings`, `MirrorStatus`, `MirrorPass`, `MirrorCompletePass` and `MirrorRunRequest` (chosen) | Additions only | Passes the check: no existing enum widens; a client of the previous release that ignores unknown members reads every document | A strict client that refuses unknown members sees two new ones in every remote document |
+| (b) A new value of an existing enum (a class `mirror`) | Q-REPO-130 (c) | — | Fails the check and contradicts INV-5 |
+
+**Choice:** (a). The run answers with the existing `JobReferenceEnvelope`. The contract wave lays the members of `RemoteSettings`
+and the schema `MirrorSettings`, which the configuration needs; the status schemas, the operations and the format descriptor's
+`mirror` come with the API's work package (Q-ARCH-288), so that nothing of the API is published before it answers.
+
+**Rationale:** members are how the document grows compatibly (R-ARCH-025). The development agent would revisit it never: a new
+enum value in an existing response is what the check exists to stop.
+
+**Applied in the spec:** `api/openapi.yaml` (`RemoteSettings.mode`, `RemoteSettings.mirror`, `MirrorSettings`); R-API-022.
 
 ## What this does not cover
 

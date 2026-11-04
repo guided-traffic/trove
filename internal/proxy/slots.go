@@ -13,6 +13,9 @@ import (
 // replica, and limits.maxConcurrentFetches is a budget for the whole installation
 // that each replica takes ceil(budget / n) of, n being the live replicas that serve
 // client traffic (Q-REPO-97).
+//
+// Background fetches of a mirror (R-REPO-055) count in the same replica limit and repository share, and in a counter
+// of their own per repository, which acquireBackground holds at the background share.
 type slots struct {
 	max      int
 	replicas func() int
@@ -20,6 +23,7 @@ type slots struct {
 	mu    sync.Mutex
 	inUse int
 	repo  map[int64]int
+	bg    map[int64]int
 	wake  chan struct{}
 }
 
@@ -27,7 +31,7 @@ func newSlots(max int, replicas func() int) *slots {
 	if replicas == nil {
 		replicas = func() int { return 1 }
 	}
-	return &slots{max: max, replicas: replicas, repo: map[int64]int{}, wake: make(chan struct{})}
+	return &slots{max: max, replicas: replicas, repo: map[int64]int{}, bg: map[int64]int{}, wake: make(chan struct{})}
 }
 
 // repoLimit is this replica's share of a repository's budget.
@@ -65,6 +69,56 @@ func (s *slots) acquire(ctx context.Context, repoID int64, budget int, timeout t
 				"All upstream fetch slots stayed busy; retry shortly.", errs.WithRetryAfter(5*time.Second))
 		}
 	}
+}
+
+// acquireBackground takes a background slot for a fetch of a mirror's pass (R-REPO-055): at most ceiling background
+// fetches of repository repoID at a time on this replica, within the replica limit and the repository's per-replica
+// share. It never joins the clients' queue and has no queue timeout: it waits outside the slots until one is free or ctx
+// ends. The returned context is ctx, cancelled when a client fetch pre-empts this one; the fetch runs under it, and
+// release gives the slot back.
+//
+// Contract wave: the slot accounting is in place and the client path is unchanged; the pre-emption of R-REPO-055 (a
+// client that finds no free slot cancels the youngest background fetch) and the cross-replica yield are work package C
+// of the mirror (Q-ARCH-288), so the returned context is never cancelled by a client yet.
+func (s *slots) acquireBackground(ctx context.Context, repoID int64, budget, ceiling int) (context.Context, func(), error) {
+	ceiling = max(1, ceiling)
+	tick := time.NewTicker(250 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		s.mu.Lock()
+		if s.inUse < s.max && s.repo[repoID] < s.repoLimit(budget) && s.bg[repoID] < ceiling {
+			s.inUse++
+			s.repo[repoID]++
+			s.bg[repoID]++
+			s.mu.Unlock()
+			bctx, cancel := context.WithCancel(ctx)
+			return bctx, func() { cancel(); s.releaseBackground(repoID) }, nil
+		}
+		ch := s.wake
+		s.mu.Unlock()
+		select {
+		case <-ch:
+		case <-tick.C:
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		}
+	}
+}
+
+func (s *slots) releaseBackground(repoID int64) {
+	s.mu.Lock()
+	if s.bg[repoID]--; s.bg[repoID] <= 0 {
+		delete(s.bg, repoID)
+	}
+	s.mu.Unlock()
+	s.release(repoID)
+}
+
+// background returns the background slots in use for a repository, for tests and the status of a pass.
+func (s *slots) background(repoID int64) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bg[repoID]
 }
 
 func (s *slots) release(repoID int64) {

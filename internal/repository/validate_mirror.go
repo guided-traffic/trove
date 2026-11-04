@@ -1,0 +1,121 @@
+package repository
+
+import (
+	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/mirror/discover"
+)
+
+// The mirror mode of a remote repository (repositories-and-proxy.md R-REPO-050 to R-REPO-052): remote.mode and the
+// members of remote.mirror, validated in the pass that validates the rest of the remote section and stored canonical.
+
+// The bounds of remote.mirror (R-REPO-050).
+const (
+	minMirrorInterval     = 300
+	maxMirrorInterval     = 604800
+	minFullPassInterval   = 86400
+	maxFullPassInterval   = 7776000
+	maxMirrorConcurrency  = 64
+	maxVersionsPerPackage = 10000
+	minMirrorMaxBytes     = 1 << 20
+	maxMirrorMaxBytes     = 1 << 62
+)
+
+// WarnMirrorUnbounded is the warning of a mirror of an upstream that is not the format's well-known one, without a
+// bounding include list and without maxBytes (R-REPO-052, Q-REPO-132).
+const WarnMirrorUnbounded = errs.CodeMirrorUnbounded
+
+// mirror resolves remote.mode and remote.mirror.
+func (r *remoteResolver) mirror(s *RemoteSettings, in remoteInput) {
+	s.Mode = stringOr(in.Mode, ModePullThrough)
+	r.oneOf("/remote/mode", s.Mode, ModePullThrough, ModeMirror)
+	var m mirrorInput
+	if in.Mirror != nil {
+		m = *in.Mirror
+	}
+	d := DefaultMirrorSettings()
+	s.Mirror = MirrorSettings{
+		Paused:                  boolOr(m.Paused, d.Paused),
+		IntervalSeconds:         intOr(m.IntervalSeconds, d.IntervalSeconds),
+		FullPassIntervalSeconds: intOr(m.FullPassIntervalSeconds, d.FullPassIntervalSeconds),
+		Discovery:               stringOr(m.Discovery, d.Discovery),
+		Concurrency:             intOr(m.Concurrency, d.Concurrency),
+		MaxVersionsPerPackage:   intOr(m.MaxVersionsPerPackage, d.MaxVersionsPerPackage),
+		IncludePrereleases:      boolOr(m.IncludePrereleases, d.IncludePrereleases),
+		MaxBytes:                m.MaxBytes,
+	}
+	r.mirrorRanges(s.Mirror)
+	if s.Mode != ModeMirror {
+		return
+	}
+	if !r.info.Mirror {
+		r.notApplicable("/remote/mode", "the "+string(r.info.ID)+" format cannot discover the packages of its upstream, so a remote repository of it cannot be a mirror")
+		return
+	}
+	r.checkMirrorBound(s)
+}
+
+func (r *remoteResolver) mirrorRanges(m MirrorSettings) {
+	r.rng("/remote/mirror/intervalSeconds", m.IntervalSeconds, minMirrorInterval, maxMirrorInterval)
+	if f := m.FullPassIntervalSeconds; f != 0 {
+		r.rng("/remote/mirror/fullPassIntervalSeconds", f, minFullPassInterval, maxFullPassInterval)
+	}
+	r.oneOf("/remote/mirror/discovery", m.Discovery, DiscoveryAuto, DiscoveryFeed, DiscoveryListing, DiscoveryNames)
+	r.rng("/remote/mirror/concurrency", m.Concurrency, 1, maxMirrorConcurrency)
+	r.rng("/remote/mirror/maxVersionsPerPackage", m.MaxVersionsPerPackage, 0, maxVersionsPerPackage)
+	if b := m.MaxBytes; b != nil && (*b < minMirrorMaxBytes || *b > maxMirrorMaxBytes) {
+		r.v.add("/remote/mirror/maxBytes", codeOutOfRange, "must be at least 1 MiB (1048576), at most 2^62, or null for no bound of its own")
+	}
+}
+
+// checkMirrorBound applies R-REPO-052: a mirror of the format's well-known upstream needs include patterns that each
+// bound it, or maxBytes; any other upstream without either is saved with a warning.
+func (r *remoteResolver) checkMirrorBound(s *RemoteSettings) {
+	if s.Mirror.MaxBytes != nil || boundingIncludes(r.include) {
+		return
+	}
+	known, _ := normalizeUpstreamURL(r.info.DefaultUpstreamURL)
+	if known != "" && s.URL == known {
+		r.v.add("/remote/mode", errs.CodeMirrorUnbounded,
+			"a mirror of "+known+" needs a bound: include patterns that each have a literal prefix (such as @types/* or Microsoft.Extensions.*), or remote.mirror.maxBytes")
+		return
+	}
+	r.warn(WarnMirrorUnbounded, "/remote/mode",
+		"the mirror has neither include patterns with a literal prefix nor remote.mirror.maxBytes: it stores everything the upstream offers")
+}
+
+// boundingIncludes reports whether a non-empty include list bounds a mirror: every pattern has a literal prefix
+// (discover.Bounding).
+func boundingIncludes(include []string) bool {
+	if len(include) == 0 {
+		return false
+	}
+	for _, p := range include {
+		if !discover.Bounding(p) {
+			return false
+		}
+	}
+	return true
+}
+
+// checkDelegatedMirror applies Q-REPO-142 to a project administrator's write: the mode and the mirror members stay as
+// stored (the defaults on a create), except that paused may change and the mode may go back to pullThrough.
+func checkDelegatedMirror(v *validation, stored, next *RemoteSettings) {
+	base := RemoteSettings{Mode: ModePullThrough, Mirror: DefaultMirrorSettings()}
+	if stored != nil {
+		base = *stored
+	}
+	if next.Mode != base.Mode && next.Mode != ModePullThrough {
+		v.add("/remote/mode", errs.CodeMirrorRestricted,
+			"only a holder of repositories:write-config makes a remote repository a mirror; a project administrator may turn it back to pullThrough")
+	}
+	if !sameMirrorButPause(base.Mirror, next.Mirror) {
+		v.add("/remote/mirror", errs.CodeMirrorRestricted,
+			"a project administrator keeps the mirror settings an administrator of trove chose; it may change paused only")
+	}
+}
+
+func sameMirrorButPause(a, b MirrorSettings) bool {
+	sameBytes := (a.MaxBytes == nil) == (b.MaxBytes == nil) && (a.MaxBytes == nil || *a.MaxBytes == *b.MaxBytes)
+	a.Paused, b.Paused, a.MaxBytes, b.MaxBytes = false, false, nil, nil
+	return sameBytes && a == b
+}

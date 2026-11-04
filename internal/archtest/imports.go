@@ -135,7 +135,8 @@ func CheckModuleBans(module string, pkgs []Package) []Violation {
 // formatAllowed is what a format package may import from this module (R-ARCH-008,
 // R-ARCH-009): the format contract (internal/formats itself), its own tree, the
 // format catalog (the name rule and the exposure versioning it declares), the
-// untrusted-content limits and readers (R-ARCH-028), the error kinds, the
+// untrusted-content limits and readers (R-ARCH-028), the leaf types of the
+// vulnerability scanning (ADR-150) and of the mirror's discovery (ADR-152), the error kinds, the
 // configuration types it reads, and the observability primitives. Everything else
 // a format needs comes through Host. The match is the exact package, so a sibling
 // format, the object store, the job queue, the cache registry, the SQL
@@ -147,7 +148,7 @@ func CheckModuleBans(module string, pkgs []Package) []Violation {
 func formatAllowed() []string {
 	return []string{
 		"internal/formats", "internal/formats/catalog", "internal/formats/untrusted",
-		"internal/vuln/advisory", "internal/vuln/match",
+		"internal/vuln/advisory", "internal/vuln/match", "internal/mirror/discover",
 		"internal/errs", "internal/config", "internal/observability",
 	}
 }

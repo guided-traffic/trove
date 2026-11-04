@@ -405,6 +405,7 @@ connection through an edge proxy that balances per request.
 | Signal coalescer queue (R-ARCH-018) | At most one coalescing window | Best-effort wake-ups that no request depends on. |
 | Fallback rate-limit buckets (R-ARCH-034) | While Valkey is unavailable | The degraded mode INV-12 names. While Valkey is available, the counters are cluster-wide. |
 | In-flight request counter (`server.max_in_flight`, R-ARCH-005); the memory slots and the heap gate of R-ARCH-005's memory guard, sized from the replica's own memory limit (Q-ARCH-240); upstream fetch slots, which only fetching requests take ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-040); Argon2id verification slots ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-014) | Concurrent requests | Protect the replica itself: its connections, its upstream share and its memory. A refused request succeeds on retry elsewhere. |
+| The window, waits and in-flight background fetches of a mirror's pass, and the background slot counters of a repository ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-054, R-REPO-055, R-REPO-058) | One pass attempt, in the process that runs it | The pass's durable state (cursor, pending names, fence) is in PostgreSQL; a pass continued in another process starts its window at 1, and no request reads any of it. |
 | Circuit breakers for the object store and for Valkey | Seconds | They describe this replica's own network path ([storage.md](storage.md) R-STOR-033, R-ARCH-031). |
 
 - A protocol that spans requests keeps its state in PostgreSQL and its data in S3. Valkey may hold
@@ -504,6 +505,8 @@ trove/
 │   │   ├── match/               # the matcher over a format's version order (leaf layer)
 │   │   ├── osv/                 # the OSV and KEV decoders (leaf layer)
 │   │   └── store/ sync/ evaluate/ triage/ report/   # the tables' wrappers, the sync jobs, evaluation and lifecycle, status changes, the report
+│   ├── mirror/                  # the mirror mode of remote repositories: dispatch, passes, throttling, status (R-REPO-050 to R-REPO-059)
+│   │   └── discover/            # the discovery contract a format's remote adapter implements (leaf layer, ADR-152)
 │   ├── formatdata/              # store ports of the formats, implemented over the generated queries (Q-ARCH-193)
 │   │   └── npm/
 │   ├── blob/                    # BlobStore interface, spool, digests
@@ -1258,8 +1261,8 @@ type RemoteAdapter interface {
 	UpstreamQuery(ctx context.Context, rc RemoteContext, q Query) (*http.Request, error)
 }
 
-// Two optional interfaces of a RemoteAdapter, read off the adapter once, when the format registers (Q-ARCH-267,
-// Q-ARCH-268). A capability only some formats have is an optional interface and not a method with a default
+// Three optional interfaces of a RemoteAdapter, read off the adapter once, when the format registers (Q-ARCH-267,
+// Q-ARCH-268, Q-ARCH-284). A capability only some formats have is an optional interface and not a method with a default
 // (Q-ARCH-254), so a format that does not need it changes nothing.
 
 // Discoverer: the format's upstream addressing follows a discovery document (R-NUGET-014). The engine resolves it
@@ -1280,11 +1283,19 @@ type FillInspector interface {
 	InspectFill(ctx context.Context, rc RemoteContext, p Path, sp Spooled) (*Inspection, error)
 }
 
+// MirrorLister: the packages of the format's upstream can be discovered, so a remote repository of the format can run in
+// mode mirror (repositories-and-proxy.md R-REPO-050 to R-REPO-055, ADR-152). It is the leaf internal/mirror/discover's
+// Lister, which the mirror engine, below the contract, takes by its type: MirrorMethods (what the upstream offers),
+// MirrorNames (a page of names of a pass, from a cursor), MirrorPlan (fills a package's documents through the engine and
+// returns its artifacts newest first) and MirrorHosts (discovery hosts besides the upstream's, without credentials).
+type MirrorLister = discover.Lister
+
 // RemoteCaps are the optional interfaces Register found on a format's remote adapter; a field is nil for one the
 // adapter lacks. They are the Remote field of Capabilities, and RemoteCapabilities returns them by format ID.
 type RemoteCaps struct {
 	Discovery Discoverer
 	Fill      FillInspector
+	Mirror    MirrorLister
 }
 
 func RemoteCapabilities(id ID) RemoteCaps
@@ -1552,9 +1563,12 @@ R-ARCH-025 says which changes keep the version (Q-ARCH-280).
 **Optional behaviour.** `Format` holds what every format answers. A behaviour that only some formats have, or that
 the core cannot call yet, is an optional interface of this package, found by `CapabilitiesOf` when the format registers
 and recorded in the registry (`CapabilitiesFor`); the core never asks the format value (the architecture test allows
-that assertion in `CapabilitiesOf` alone). Today there are four: `ItemsRestorer` on the format, `Discoverer` and
-`FillInspector` on its remote adapter (`Capabilities.Remote`, Q-ARCH-267, Q-ARCH-268), and `VulnerabilityAdapter` on the
-format (`Capabilities.Vulnerability`, R-VULN-009, [ADR-150](../decisions.md#adr-150--the-format-contract-gains-the-optional-vulnerability-adapter)). A behaviour that every format
+that assertion in `CapabilitiesOf` alone). Today there are five: `ItemsRestorer` on the format, `Discoverer`,
+`FillInspector` and `MirrorLister` on its remote adapter (`Capabilities.Remote`, Q-ARCH-267, Q-ARCH-268, Q-ARCH-284), and
+`VulnerabilityAdapter` on the format (`Capabilities.Vulnerability`, R-VULN-009,
+[ADR-150](../decisions.md#adr-150--the-format-contract-gains-the-optional-vulnerability-adapter)). `MirrorLister` also
+derives the catalog fact `Entry.Mirror`, as the vulnerability adapter derives `Entry.Ecosystem`
+([ADR-152](../decisions.md#adr-152--the-format-contract-gains-the-optional-mirror-lister)). A behaviour that every format
 answers, and whose default is a correct answer for a format without it, is a method with that default in `Base` or
 `RemoteBase` instead (`ExpectsType`, `BeforeArtifact`, `UpstreamQuery`). The rule for adding to the contract is in
 R-ARCH-025.
@@ -2452,6 +2466,8 @@ Normative rules:
 | `vuln-evaluate` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-011 (from M4b) | Queue `default`. Dedup key `vuln-evaluate`, `coalesce`. Its work is read from tables, never from `args`: the advisories queued in `vuln_pending_evaluation` and the full evaluations requested in `vuln_source_state`, so an enqueue that a waiting job absorbs loses nothing (Q-VULN-18). Checkpoints after each batch. |
 | `vuln-rescan` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-011 (from M4b) | Dedup key `vuln-rescan:<repository id>`, `exclusive`; its manual trigger answers `409` with the running job. A run that finds other scanning inputs of its repository at its end than at its start runs again before it ends (Q-VULN-18). |
 | `vuln-findings-retention` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-014 (from M4b) | `exclusive` under its name; deletes in batches |
+| `mirror-dispatch` | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-053 (phase 6b) | Queue `mirror`, `exclusive` under its name, every minute. Ensures a `mirror_state` row per remote in mode `mirror` and enqueues the due passes. |
+| `mirror-pass` | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-053 (phase 6b) | Queue `mirror`, which any process that claims jobs, or a pool of its own ([ha-and-helm.md](ha-and-helm.md) R-HA-062), claims. Dedup key `mirror-pass:<repository id>`, `exclusive`; `MaxAttempts: 1`, no timeout. The pass's state lives in `mirror_state` and `mirror_pending`, not in the job's checkpoint, so that a pass outlives its jobs: a release continues it in another process that claims the queue, and a lost lease, a failure or a long rate-limit wait end the job and the next dispatch continues it under the fence of Q-ARCH-287. |
 
 Tasks of other pages, such as those in R-OPS-019's table, register their kinds by the same rule.
 None of the storage kinds above takes an advisory-lock lease: their exclusion is the job key, and
@@ -2470,6 +2486,7 @@ jobs:
     maintenance: 1                 # default (proposed)
     index: 2                       # default (proposed)
     delivery: 8                    # default (proposed), webhooks (P1)
+    mirror: 2                      # default (proposed), the passes of mirrored remotes and their dispatch (R-REPO-053)
   poll_interval: 2s                # default (proposed)
   lease_duration: 60s              # default (proposed)
   heartbeat_interval: 15s          # default (proposed)
@@ -2722,7 +2739,8 @@ leaves:
   query and the cache rebuild, whether Valkey is available or not. With Valkey it is typically in
   force within milliseconds.
 - **Signal areas** carry wake-ups and early evictions that client traffic produces: job enqueues,
-  remote metadata refreshes, the outbox wake-up and the delivery-log wake-up. They write nothing to
+  remote metadata refreshes, the outbox wake-up, the delivery-log wake-up and the yield of a mirror's background fetches to
+  clients (`mirror_yield`, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-055). They write nothing to
   PostgreSQL.
   - After commit, the signal goes to the replica's coalescer; a rollback drops it. The coalescer
     publishes at most one message per area per `cluster.signal_coalesce_window` on
@@ -4149,7 +4167,11 @@ Database budget per request, used to size P-1 to P-8:
 - computed local document: 1 query (`rev_seq`) when the rendition is cached;
 - virtual merge: 1 query for local `rev_seq` values, plus 1 per remote member;
 - token and policy checks: 0 queries while their caches are valid;
-- per replica, not per request: one change-log poll per `cluster.epoch_poll_interval`.
+- per replica, not per request: one change-log poll per `cluster.epoch_poll_interval`;
+- a mirror's pass, not a request: per package one transaction that deletes its pending row and adds to the counters, per
+  artifact the fill of a remote miss and one primary-key read of the usage counter, and per discovered page one
+  transaction ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-052, R-REPO-053); its fills meet the budget
+  of a remote miss and run in the process that claims the queue `mirror`, outside the client path.
 
 Valkey budget per request: local download and remote hit 0 round trips; remote miss up to 3
 (negative-cache lookup, lock acquire, release with the outcome); a route with a cluster-scoped rate
@@ -7686,6 +7708,132 @@ the same file is not covered; an entry that names no edit of `main` fails the ch
 **Revisit condition:** the beta plan is complete (reliability of installed data becomes priority 1, and a database-level guard may
 then be asked for), or the history of `main` is rewritten, or a migration must change after it reached a database, which the rule
 does not allow.
+
+### Q-ARCH-284 · The mirror's discovery meets the formats through a leaf contract
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the mirror engine of [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-053 is a domain package whose
+passes run as jobs on the queue `mirror`; the formats are edge packages, and the format contract is frozen at version 1 (ADR-141). The engine needs, per
+format, the names an upstream offers and the artifacts of a package.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An optional interface of the remote adapter whose types live in the leaf `internal/mirror/discover`; `formats.MirrorLister` is an alias of it; `CapabilitiesOf` records it, `CatalogEntry` derives `Entry.Mirror` (chosen) | ADR-150's form | The engine takes a format's lister without importing the contract; no format that cannot discover changes; the repository model refuses the mode from a catalog fact | The leaf joins the formats' allow-list and the contract's surface file |
+| (b) A port declared in `internal/mirror` and an adapter in `internal/formathost` | The proxy's form (`proxy.Adapter`) | No new leaf | Every type twice, one copy per side, and a host adapter for four methods |
+| (c) A method of `RemoteAdapter` with a default in `RemoteBase` | Every format has it | No assertion | A changed method set of a frozen interface raises the contract version (Q-ARCH-254) |
+
+**Choice:** (a). The engine lends the format a `discover.Upstream` (its `Get` and `Document` go through the repository's client
+and the remote engine with the background priority), so a format sends nothing that bypasses the egress rules, the slots or the
+throttling; a rate-limit answer reaches it as an error that `discover.AsRateLimited` finds and that it returns unchanged.
+
+**Rationale:** the vulnerability adapter showed that a leaf contract keeps the layers and the frozen contract intact for a
+capability only some formats have. The development agent would revisit (b) if the leaf grows types that only the engine needs.
+
+**Applied in the spec:** R-ARCH-008 (the `MirrorLister` and `RemoteCaps` block, the optional behaviour), R-ARCH-003 (the
+layout); [ADR-152](../decisions.md#adr-152--the-format-contract-gains-the-optional-mirror-lister). Code:
+`internal/mirror/discover`, `internal/formats/remote.go`, `internal/formats/formats.go`, `internal/formats/catalog/catalog.go`,
+`internal/archtest/layers.go`, `internal/archtest/imports.go`, `internal/formats/testdata/contract.txt`.
+
+### Q-ARCH-285 · The mirror's jobs run in a queue of their own
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the process topology may still change (more than the two Deployments `web` and `worker`). The mirror's passes must
+not depend on which process runs them.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The queue `maintenance` | Beside garbage collection and the advisory sync | No configuration | One slot per process by default: a pass of hours blocks collection, and collection blocks the dispatch |
+| (b) The queue `default` | Beside the evaluation and the rescans | Four slots | Several long passes take every slot of the evaluation |
+| (c) A queue `mirror` with `jobs.workers.mirror: 2` (chosen) | Passes and their dispatch apart; whatever process claims the queue runs them | Long passes never delay other work; the dispatch is never behind a pass of another queue; a pool of its own can claim the queue alone (R-HA-062), whatever the topology becomes | One more queue to size |
+
+**Choice:** (c). The specification binds the passes to the queue, not to a Deployment.
+
+**Rationale:** a mirror pass is the longest-running work trove has, its throughput is bounded by the upstream, not by the process,
+and a named queue is the unit that a split of the service can assign. The development agent would revisit the default of 2
+when installations run more mirrors than claiming processes times two.
+
+**Applied in the spec:** R-ARCH-016 (the kinds and the `jobs.workers` block); [repositories-and-proxy.md](repositories-and-proxy.md)
+R-REPO-053. Code: `internal/config/jobs.go` (`JobsWorkers.Mirror`), `internal/mirror/mirror.go` (the names),
+`internal/app/wire_mirror.go` (the kinds with handlers that do nothing until the engine's work package).
+
+### Q-ARCH-286 · Clients pre-empt the background across replicas through a signal area
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A signal area `mirror_yield`; a client-serving replica raises it when a client fetch of a repository waits for a slot, at most once per second and repository (chosen) | Valkey Pub/Sub, at most once | Milliseconds with Valkey; nothing written to PostgreSQL; correct without it, because the background keeps within its share, which the bound counts | Lost while Valkey is unavailable |
+| (b) A change area | Through the change log | Survives Valkey outages | A PostgreSQL write per second of client pressure, for a hint |
+| (c) The replica registry's heartbeat carries the queue lengths | No new mechanism | Durable | Seconds of lag, and the heartbeat is not per repository |
+
+**Choice:** (a).
+
+**Rationale:** the signal is a wake-up that client traffic produces, which is what signal areas are for (R-ARCH-018); losing it
+costs performance, never correctness. The development agent would revisit (c) if clients queue measurably behind mirrors while
+Valkey is unavailable.
+
+**Applied in the spec:** R-ARCH-018 (the signal areas); [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-055,
+R-REPO-058. The area is registered by the engine's work package (Q-ARCH-288).
+
+### Q-ARCH-287 · A pass is fenced by its job and the process that claimed it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a pass outlives its jobs (Q-REPO-135); a process that lost its lease may still be running when the next job takes the
+pass over.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The job's lease alone (`SaveCheckpoint`'s check) | The framework's fence | No column | The pass's state is in its own tables, which the lease does not guard |
+| (b) `pass_job_id` and `pass_holder` (the claiming process's instance id) in `mirror_state`; every write of the pass is conditional on both (chosen) | A fence on the row | A late write of a dead process or of a released attempt matches no row; one comparison per statement | Two columns |
+| (c) A session advisory lease per repository | R-ARCH-017's form | Exclusive while held | A session connection per pass for days, and leases carry registered numbers only |
+
+**Choice:** (b). The claim sets both in one statement; a job released at shutdown and claimed again by another process writes its
+new holder, so the first process, which has returned, can write nothing more.
+
+**Rationale:** the fence belongs next to the state it guards. The development agent would revisit it if the jobs framework
+exposes a fencing token of its own.
+
+**Applied in the spec:** [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-053 (step 1, the data model). The tables
+are added by the engine's work package (Q-ARCH-288).
+
+### Q-ARCH-288 · The seams of the mirror
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the contract wave of phase 6b lays only the shared pieces that bind no process topology and are cheap to change: the
+format's discovery interface, the typed rate-limit outcome, the fetch-slot priority, the configuration members with their
+validation, and the names of the job kinds and their queue. The tables, the operations and the events are specified and laid by
+the work packages that build them, once the owner has settled the topology (2026-11-04). [docs/developer/mirror.md](../developer/mirror.md)
+holds the details and the test plan.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Four work packages along the layers: npm discovery, NuGet discovery, the engine, the API and UI, meeting at the contract wave's types (chosen) | Each owns its directories | No two packages edit one file; each tests against fakes of the others' side | The engine's integration tests need a fake lister until the formats land |
+| (b) One work package per requirement | R-REPO-050 to R-REPO-059 | Traceable | Every requirement touches the engine; the packages would collide |
+
+**Choice:** (a):
+
+| Work package | Owns | Implements | Consumes | Tests it writes |
+|---|---|---|---|---|
+| A · npm discovery | `internal/formats/npm/mirror*.go` (replaces the stub `mirror.go`) | `discover.Lister` on npm's remote adapter: the methods, `_all_docs` key ranges and `_changes` of the replication host, exact names, the plan from the full document with `latest` pinned, `MirrorHosts` | `discover.Upstream`, `discover.AsRateLimited`; no import of `internal/mirror` or `internal/proxy` (the architecture test) | Unit tests over a fake `Upstream`; the npm stub of R-REPO-059 and the npm criteria of [formats/npm.md](formats/npm.md#mirror-discovery) in `test/integration/mirror` |
+| B · NuGet discovery | `internal/formats/nuget/mirror*.go` | `discover.Lister` on NuGet's remote adapter: catalog, search listing with its truncation, exact IDs, the plan from the version list and the registration | as A | Unit tests over a fake `Upstream`; the NuGet stub with and without `Catalog/3.0.0` and the criteria of [formats/nuget.md](formats/nuget.md#mirror-discovery) |
+| C · engine | `internal/mirror` (the engine beside the names of `mirror.go`, which it may extend), the migration of `mirror_state` and `mirror_pending` with their export classes, `internal/proxy` (pre-emption in `slots.go`, the background rules in `fetch.go`: no circuit move, no probe, `upstream.RateLimitOf` and `*upstream.RateLimitError`, `flight_role: mirror`), `internal/formathost` (the `discover.Upstream` of a pass and the artifact fill through the format's gate), `internal/app/wire_mirror.go`, the engine's queries, the metrics, the signal area `mirror_yield`, the pass events | dispatch, passes, fence, throttling and window, bounds, pre-emption, gauges | `formats.RemoteCapabilities(id).Mirror` through the composition root, `proxy.PriorityBackground`, `proxy.BackgroundShare` | Unit tests with a fake clock (window, back-off, long wait) and a fake lister; `test/integration/mirror`: counting stubs answering `429` with `Retry-After` in seconds and as a date, `503` with and without `SlowDown`, `403` with `X-RateLimit-Remaining: 0`, release and resume, lease loss and the fence, the bound, pre-emption in one process and across a client-serving process and one that claims the queue; e2e set `mirror`: a pass while `npm ci` and `dotnet restore` run (clients first), the drain of the process that runs a pass |
+| D · API and UI | `internal/api/v1/mirror_api.go`, the operations and the status schemas in `api/openapi.yaml`, the format descriptor's `mirror`, the API's queries, `web/` (the mirror section of the edit form, the status tab with pause, resume and run), the manual's pages, `mirror.pass_requested` | `GET …/mirror`, `POST …/mirror/run` with their permissions | `mirror.KindPass`, `mirror.PassKey`, `mirror.PassArgs`, the tables of C | Handler tests with permission-narrowed callers and a project administrator; `test/integration/mirrorapi` over a seeded `mirror_state`; the browser journey with axe in the e2e set `mirror` |
+
+The contract wave's shared pieces change only with a note to the other packages: the leaf `internal/mirror/discover` (part of the
+frozen format contract, ADR-152), the typed rate-limit outcome, the fetch priority, the members `remote.mode` and `remote.mirror`
+with their validation and the error codes `mirror_unbounded` and `mirror_restricted`, the OpenAPI schemas `RemoteSettings` and
+`MirrorSettings`, and the names of the kinds and the queue `mirror`.
+
+**Rationale:** the layers already separate the four concerns, and the contract wave puts every type two packages share in one
+place without fixing what the topology may still move. The development agent would revisit the cut if the engine needs a format
+fact the leaf does not carry.
+
+**Applied in the spec:** [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-050 to R-REPO-059;
+[coverage/roadmap.md](../coverage/roadmap.md#phase-6b--remote-full-mirror) (WP6b.1 to WP6b.6).
 
 ## What this does not cover
 

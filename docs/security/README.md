@@ -93,7 +93,13 @@ Spec pages hold the gaps of their mechanisms, among them [H-41](../spec/operatio
 the gaps of the replica's load protection [H-322](../spec/architecture.md#h-322--slow-requests-of-one-client-take-the-memory-slots-of-every-client),
 [H-323](../spec/architecture.md#h-323--a-replica-that-retains-memory-above-the-high-water-mark-refuses-every-request) and
 [H-324](../spec/architecture.md#h-324--connections-that-send-no-request-are-outside-the-memory-guard), and
-[H-6](../spec/repositories-and-proxy.md#h-6--remote-repositories-reach-private-networks). The perspective pages link them where
+[H-6](../spec/repositories-and-proxy.md#h-6--remote-repositories-reach-private-networks), and the gaps of the mirror mode of remote
+repositories (phase 6b, specified, the engine not built)
+[H-503](../spec/repositories-and-proxy.md#h-503--a-mirror-stores-a-malicious-version-before-anyone-asked-for-it),
+[H-504](../spec/repositories-and-proxy.md#h-504--npms-replication-host-is-contacted-although-it-is-not-an-extrahosts-entry),
+[H-505](../spec/repositories-and-proxy.md#h-505--the-byte-bound-of-a-mirror-can-be-passed-by-the-artifacts-in-flight-and-the-fold-lag),
+[H-506](../spec/repositories-and-proxy.md#h-506--until-quotas-are-built-only-maxbytes-bounds-a-mirror-of-an-upstream-that-is-not-well-known) and
+[H-507](../spec/repositories-and-proxy.md#h-507--a-hostile-upstream-can-make-a-mirror-send-as-many-requests-as-its-feed-lists-names). The perspective pages link them where
 they apply and do not repeat them. The guides of the formats (R-UI-049) record theirs on
 [api-and-ui.md](../spec/api-and-ui.md#what-this-does-not-cover):
 [H-319](../spec/api-and-ui.md#h-319--a-configuration-file-that-holds-a-token-can-be-committed),

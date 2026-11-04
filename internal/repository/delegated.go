@@ -22,7 +22,10 @@ import (
 //     credentials or turns forwardAuthOnRedirect on gives the value again;
 //   - outboundProxy.mode direct and a sourceNetwork are an administrator's: a project
 //     administrator sets the defaults, or keeps the stored values while the url and
-//     the extra hosts stay.
+//     the extra hosts stay;
+//   - the mirror mode is an administrator's: a project administrator keeps remote.mode
+//     and remote.mirror as stored, changes paused, or turns the mode back to
+//     pullThrough (Q-REPO-142, validate_mirror.go).
 //
 // The unsaved upstream test of a project administrator has the rules of a create.
 
@@ -44,6 +47,7 @@ func delegatedRemote(v *validation, w Write, cur, nd *Document) {
 		stored, _ = parseStoredRemote(cur.Remote)
 	}
 	checkDelegatedRemote(v, stored, next, nd.pending)
+	checkDelegatedMirror(v, stored, next)
 }
 
 // checkDelegatedRemote adds the violations of a project administrator's remote

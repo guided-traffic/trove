@@ -7,9 +7,9 @@ import (
 )
 
 func TestJobsWorkersQueues(t *testing.T) {
-	w := JobsWorkers{Default: 4, Maintenance: 1, Index: 2, Delivery: 8}
+	w := JobsWorkers{Default: 4, Maintenance: 1, Index: 2, Delivery: 8, Mirror: 2}
 	t.Run("R-ARCH-016 every queue has its worker slots", func(t *testing.T) {
-		want := map[string]int{"default": 4, "maintenance": 1, "index": 2, "delivery": 8}
+		want := map[string]int{"default": 4, "maintenance": 1, "index": 2, "delivery": 8, "mirror": 2}
 		for _, q := range w.Queues() {
 			n, ok := w.Count(q)
 			if !ok || n != want[q] {

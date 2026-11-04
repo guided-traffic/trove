@@ -1463,7 +1463,7 @@ feature is described in [replication-and-federation.md](replication-and-federati
 privilege follows only from the 403 description ("not an administrator"), the entries say so.
 
 ### API-082 · Replication configuration document
-Priority: **P2**
+Priority: **MVP**
 
 The document that the replication configuration operations exchange; one per target.
 
@@ -1495,7 +1495,7 @@ Behavior: the repository key and the replication key are returned in responses a
 required on input.
 
 ### API-083 · Get, set, update and delete a repository's replication
-Priority: **P2**
+Priority: **MVP**
 
 | Operation | Inputs | Output | Errors |
 |---|---|---|---|
@@ -1513,7 +1513,7 @@ Behavior:
   the first element apply to all.
 
 ### API-084 · Replication status of a path
-Priority: **P2**
+Priority: **MVP**
 
 | Aspect | Detail |
 |---|---|
@@ -1526,7 +1526,7 @@ Behavior: derived from replication properties written on the items. Supported fo
 repositories, remote caches and remote repositories.
 
 ### API-085 · Run replication now
-Priority: **P2**
+Priority: **MVP**
 
 Schedules an immediate replication run.
 
@@ -1611,7 +1611,10 @@ window exists for migrations.
 Errors: 400 (configure); 401; 403. Privilege: system administrator. Self-managed installations
 only.
 
-Priority rationale: replication is P2 by the rubric. The case it serves exists for trove as
+Priority rationale: replication is P2 by the rubric. The pull half of API-082 to API-085 is MVP since the owner asked for a
+full mirror of remote repositories in the beta (2026-11-02); trove builds it as the mirror mode of a remote repository
+(repositories-and-proxy.md R-REPO-050 to R-REPO-056, Q-REPO-143), and push, bulk switches, peer channels, the global block
+and this entry stay P2. The case it serves exists for trove as
 well: two sites on S3 buckets linked by the object store's own cross-region replication receive
 the binaries that way, so only metadata has to travel between the instances.
 

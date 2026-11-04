@@ -73,6 +73,7 @@ end-to-end wave's. No backup exists yet (phase 7: only the export classes of the
 | [bastion.md](bastion.md) | The trove Bastion (phase 5b): the contracts of the eight work packages: package tree, the seams and who implements each, the interface guard, the request flows (hit, check, miss, write probe), the schema and configuration it added, how to run the role locally; status: contracts laid, work packages pending |
 | [ci-oidc.md](ci-oidc.md) | GitLab CI OIDC federation: the contracts laid for beta phase 5 (schema, the `internal/ci` packages and interfaces, the token and evaluation seam, the gate, API, configuration, events, tasks), the project tier, the work packages W1 to W7 and their files; status: contracts laid, work packages pending |
 | [vulnerabilities.md](vulnerabilities.md) | Vulnerability scanning (phase 6, M4b): the contracts of the work packages and a section per package A to G (the packages and layers, the ports `States`, `Evaluator` and `Advisories`, the download policy and verdict, the format contract's optional vulnerability adapter, the schema, the API operations, configuration, coordination, audit, metrics and errors), the work packages S and A to H with the files each owns, the contract files; status: built and integrated |
+| [mirror.md](mirror.md) | The mirror mode of remote repositories (phase 6b): what the contract wave laid and who changes it, the four work packages A to D with the directories each owns, the tests each writes, the rules every package keeps; status: specified, not scheduled; role-neutral contracts laid |
 | [files.md](files.md) | Raw transfer under `/files/`: the generic layer over the item store, deploy, download with Range, folders, the items API, deletes, activity and download statistics |
 | [items.md](items.md) | The item store: the one commit and its order, the storage hooks, spool, read, listing rows, subtree delete and the `items-delete` job |
 | [formats.md](formats.md) | The format contract: `formats.Format`, the registry and its start-up checks, the `Host`, the storage hooks, the dispatcher for `/api/<format>/<repoKey>/`, content headers and error shapes, the wiring, how to add a format |
@@ -178,6 +179,7 @@ trove/
 │   │                         # untrusted content), generic/ (raw files), all/ registers every format
 │   ├── secrets/              # key ring and sealed-column registry
 │   ├── vuln/                 # vulnerability scanning (contracts laid, vulnerabilities.md): the domain vocabulary and ports; advisory/, match/, osv/, metrics/ are leaves; store/, sync/, evaluate/, triage/, report/ are the work packages'
+│   ├── mirror/               # the mirror mode of remote repositories (role-neutral contracts laid, mirror.md): the names of its job kinds and queue; discover/ is the leaf contract a format's remote adapter implements
 │   ├── tools/coverage/       # the requirement coverage generator (docs/coverage)
 │   └── webui/                # go:embed of the Angular build; dist/index.html is the committed placeholder
 ├── web/                      # Angular workspace: angular.json, src/, scripts/ (build-embed, check-budget), .nvmrc

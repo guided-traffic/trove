@@ -199,6 +199,10 @@ type Entry struct {
 	// does not apply (R-VULN-002), and the scanning derives the ecosystems it syncs from the entries that have one
 	// (R-VULN-003).
 	Ecosystem string
+	// Mirror is true for a format whose remote adapter can discover the packages of its upstream (the optional mirror
+	// interface, repositories-and-proxy.md R-REPO-050, ADR-152). formats.Register derives it; the repository model reads
+	// it to refuse remote.mode mirror where it is false.
+	Mirror bool
 
 	// settings is the compiled SettingsSchema, filled by Register.
 	settings *settingsSchema

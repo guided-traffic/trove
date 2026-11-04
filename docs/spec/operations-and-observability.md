@@ -1041,6 +1041,16 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 | `trove_vuln_downloads_blocked_total` (M4b) | counter | `format`, `reason` (`malicious`, `triage`, `missing_data`), `mode` (`enforce`, `report`) | Downloads refused, or counted only in report mode (R-VULN-015) |
 | `trove_vuln_audit_requests_total` (M4b) | counter | `format`, `mode`, `outcome` | Client audits answered (R-VULN-017, R-VULN-018) |
 | `trove_vuln_claimed_name_matches` (M4b) | gauge | `ecosystem`, `kind` | Public advisories for claimed names; read from PostgreSQL (R-VULN-010) |
+| `trove_mirror_passes_total` (6b) | counter | `repo`, `kind` (`full`, `incremental`), `outcome` (`complete`, `partial`, `bound_reached`, `offline`, `stopped`, `failed`, `deferred`) | Pass attempts of mirrored remotes by how they ended ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-057); exported by the process that runs the pass |
+| `trove_mirror_items_total` (6b) | counter | `repo`, `result` (`stored`, `present`, `bounded`, `failed`, `preempted`) | Artifacts of the passes' plans (R-REPO-057) |
+| `trove_mirror_bytes_total` (6b) | counter | `repo` | Bytes the passes stored (R-REPO-057) |
+| `trove_mirror_rate_limited_total` (6b) | counter | `repo`, `reason` (`too_many_requests`, `slow_down`, `retry_after`, `quota_header`) | Rate-limit answers to the passes (R-REPO-054) |
+| `trove_mirror_rate_limit_wait_seconds_total` (6b) | counter | `repo` | Seconds the passes waited for rate limits (R-REPO-054) |
+| `trove_mirror_concurrency` (6b) | gauge | `repo` | The running pass's window in the process that runs it (R-REPO-054) |
+| `trove_mirror_preempted_total` (6b) | counter | `repo` | Background fetches pre-empted by clients (R-REPO-055) |
+| `trove_mirror_pending_packages` (6b) | gauge | `repo` | Pending names of the pass in progress; read from PostgreSQL (R-REPO-057) |
+| `trove_mirror_last_complete_pass_timestamp_seconds` (6b) | gauge | `repo` | End of the last complete pass; read from PostgreSQL (R-REPO-057) |
+| `trove_mirror_interval_seconds` (6b) | gauge | `repo` | The configured `remote.mirror.intervalSeconds`; read from the repository snapshot (R-REPO-057) |
 
 </details>
 
@@ -1160,6 +1170,8 @@ backup alerts' expressions.
 | Backup job | Platform protection missing | `trove_backup_check_ok` | `TroveBackupCheckFailed` |
 | Backup job | A backup is complete but not whole: its snapshot references blobs that were missing or corrupt in the source | `trove_backup_source_blobs_damaged` | `TroveBackupSourceDamage` (R-BAK-014) |
 | Backup job | A stored backup no longer matches its manifest | `trove_backup_last_verify_findings` | `TroveBackupVerifyFindings` (R-BAK-014) |
+| Mirror mode (phase 6b) | A mirror's passes fail again and again ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-053) | `trove_mirror_passes_total{outcome="failed"}` | `TroveMirrorFailing` (new, Q-OPS-160): `sum by (repo) (increase(trove_mirror_passes_total{outcome="failed"}[6h])) >= 3 and sum by (repo) (increase(trove_mirror_passes_total{outcome=~"complete\|partial"}[6h])) == 0` |
+| Mirror mode (phase 6b) | No complete pass for three intervals (no process claims the queue `mirror`, a pass stuck behind rate limits) | `trove_mirror_last_complete_pass_timestamp_seconds`, `trove_mirror_interval_seconds` | `TroveMirrorStale` (new, Q-OPS-160): `time() - max by (repo) (trove_mirror_last_complete_pass_timestamp_seconds) > 3 * max by (repo) (trove_mirror_interval_seconds) + 3600` for 30 minutes |
 
 - **Metrics only.** Every alert reads families of R-OPS-008, families of the owning pages (the
   object-store circuit `trove_storage_s3_circuit_open` of [storage.md](storage.md)), or
@@ -1338,8 +1350,9 @@ completes or fails. The same conventions as R-OPS-010 apply.
 
 [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-047 adds the fields `flight_role`
 and `cache_status` to records with `purpose: remote`. `flight_role` is `leader`, `follower` or
-`waiter` for pull-through fetches, and `probe` for the upstream request of a shadowing check
-(R-REPO-048), which stores nothing. The role says how the request that sends the upstream request
+`waiter` for pull-through fetches, `probe` for the upstream request of a shadowing check
+(R-REPO-048), which stores nothing, and `mirror` for a background request of a mirror's pass (R-REPO-057), whose
+`on_behalf_of` is `system` and whose record names the pass's job. The role says how the request that sends the upstream request
 came to send it: a `leader` fetches without having joined or waited first (it holds the flight
 lock, or no lock exists), a `follower` first joined a flight of its replica that ended with
 nothing to read and then fetched itself, a `waiter` first waited for another replica's flight
@@ -1778,6 +1791,11 @@ asynchronous. "Hook" marks events that webhooks may select (R-OPS-037).
 | `repository.cache_invalidated` | T | — | R-OPS-021 | `path`, `scope`, `count` |
 | `repository.remote_package_shadowed` | T | — | Security event: a caller holding `manage` (or `content:bypass`) gave a local repository its first version of a name that a remote member of a containing virtual repository serves ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-048); written in the commit transaction. The local repository is the `repository` column | `package`, `exposure` (the pairs `{virtual, remote}`) |
 | `proxy.upstream_gone` | T | — | The upstream answered 404 or 410 for a stored document; the first such answer marks it ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-029); written in the marking transaction | `path`, `variant` |
+| `mirror.pass_requested` | T | — | A pass of a mirror was requested through the API ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-056); written in the transaction that records it, the caller as actor | `full`, `job` |
+| `mirror.pass_completed` | A | — | A pass attempt of a mirror ended `complete`, `partial`, `bound_reached`, `offline` or `stopped` (R-REPO-053); the system as actor | `kind`, `method`, `outcome`, `packages`, `packagesFailed`, `itemsStored`, `bytesStored`, `discoveryComplete`, `job` |
+| `mirror.pass_failed` | A | — | A pass attempt failed; the next one follows after the back-off (R-REPO-053) | `code`, `failures`, `nextPassAt`, `job` |
+| `mirror.bound_reached` | A | — | A mirror reached its byte bound, quota or the capacity guard, once per transition (R-REPO-052) | `bound`, `usedBytes`, `limitBytes` |
+| `mirror.rate_limited` | A | — | The upstream answered a pass with a rate limit; at most once per pass and hour (R-REPO-054) | `status`, `reason`, `waitSeconds`, `hinted`, `host` |
 | `proxy.upstream_digest_changed` | A | — | Security event: an artifact is cached and the upstream's metadata now announces another digest, or two fetches of one artifact returned different bytes; the cached artifact is kept (R-REPO-041, R-REPO-026); at most once an hour per path and announced digest | `path`, `cachedSha256`, `announced`, `fetchedSha256` |
 | `proxy.integrity_mismatch` | A | — | Security event: a fetched artifact does not match the digest the upstream announced; nothing is stored (R-REPO-041) | `path`, `announced`, `computedSha256` |
 | `proxy.tls_untrusted` | A | — | Security event: the upstream's certificate is not trusted; at most once a minute per repository and host (R-REPO-047) | `host` |
@@ -5479,6 +5497,59 @@ revisit this if the first manual request showed up in latency reports, then with
 
 **Applied in the spec:** this decision (step 9 of R-ARCH-024 binds the listener without rendering the manual; the text of that step needs no change). Code: `startClient` and `apiDocument` in `internal/app/app.go`,
 `Server.manual` in `internal/api/v1/manual_api.go`. Test: `TestR_API_054_TheManualIsLoadedByTheFirstRequestThatNeedsIt`.
+
+### Q-OPS-158 · The mirror's metric families carry the repository and no package
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Families per repository (`repo`) with closed enumerations for outcome, result and reason; gauges of the state read from PostgreSQL (chosen) | Ten families of R-REPO-057 | Bounded cardinality: one series per mirrored repository and label value; every worker reports the same state | No per-package view in metrics; that is the status and the audit trail |
+| (b) Also a `package` label | Per package | Fine-grained | Unbounded cardinality (R-OPS-007) |
+| (c) Only the status API | No metrics | Nothing to keep | Alerts would have to poll the API |
+
+**Choice:** (a). The counters are exported by the process that runs the pass, the gauges marked "read from PostgreSQL" by every
+process that claims the queue `mirror`, read at most once per 30 s.
+
+**Rationale:** R-OPS-007's cardinality rule; the repository is the unit an operator acts on. The development agent would revisit
+it if mirrors per installation grow into the hundreds.
+
+**Applied in the spec:** R-OPS-008 (the families); [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-057.
+
+### Q-OPS-159 · The mirror writes pass events, and its fills are populate events
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Five `mirror.*` types for requests, ends, failures, bounds and rate limits; the fills as the populate event of a cache fill (chosen) | R-OPS-016's rows | The trail says who asked for a pass, how each ended and why it stopped, and how every file entered the cache; the rate-limit event is bounded to one per pass and hour | Many populate events for a large pass (Q-REPO-145) |
+| (b) One event per pass only | Few rows | Cheap | The trail does not say how a file entered the cache |
+
+**Choice:** (a). `mirror.pass_requested` is transactional; the pass's events are asynchronous, written by the system in the
+process that runs the pass; none is a webhook hook in the MVP.
+
+**Rationale:** the owner asked for the mirror's fills to be audited like cache fills; the pass events make the trail readable.
+The development agent would revisit the hook column when webhooks (R-OPS-037, P1) are built.
+
+**Applied in the spec:** R-OPS-016 (the rows); [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-057. The types are
+registered by the work packages that write them (Q-ARCH-288).
+
+### Q-OPS-160 · Two alerts for mirrors: failing and stale
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `TroveMirrorFailing` (three failed attempts in 6 h and no complete pass) and `TroveMirrorStale` (no complete pass for three intervals plus an hour) (chosen) | From the counters and two gauges | Catches a broken upstream and a mirror that never finishes (no process claims its queue, endless rate limits) without firing on one bad night | A bound that holds a mirror does not alert; the status shows it |
+| (b) Also an alert on every rate-limit wait | Loud | Visible | Throttling is the designed path; it would fire on every busy upstream |
+| (c) No alerts | The status only | Quiet | A dead mirror goes unnoticed until a build needs it with the upstream down |
+
+**Choice:** (a), both severity `warning`, rendered with the others by [ha-and-helm.md](ha-and-helm.md) R-HA-045.
+
+**Rationale:** a mirror exists for the day the upstream is down, so a mirror that silently stopped is the failure worth an alert.
+The development agent would revisit the thresholds after the first installations run mirrors.
+
+**Applied in the spec:** R-OPS-046 (the rows).
 
 ## What this does not cover
 

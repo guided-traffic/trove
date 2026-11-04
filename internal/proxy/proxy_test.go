@@ -306,6 +306,55 @@ func TestSlots(t *testing.T) {
 		a()
 		b()
 	})
+	t.Run("R-REPO-055 the background share is min(concurrency, max(1, budget / 4))", func(t *testing.T) {
+		for _, tc := range []struct{ budget, concurrency, want int }{
+			{64, 4, 4}, {64, 32, 16}, {8, 4, 2}, {2, 4, 1}, {1, 1, 1}, {4096, 64, 64}, {64, 0, 1},
+		} {
+			if got := BackgroundShare(tc.budget, tc.concurrency); got != tc.want {
+				t.Errorf("BackgroundShare(%d, %d) = %d, want %d", tc.budget, tc.concurrency, got, tc.want)
+			}
+		}
+	})
+	t.Run("R-REPO-055 background slots stop at their ceiling, count in the replica and repository limits and never queue", func(t *testing.T) {
+		s := newSlots(10, nil)
+		ctx := context.Background()
+		_, r1, err := s.acquireBackground(ctx, 1, 8, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, r2, err := s.acquireBackground(ctx, 1, 8, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		short, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+		defer cancel()
+		if _, _, err := s.acquireBackground(short, 1, 8, 2); err == nil {
+			t.Fatal("a third background fetch got a slot above the ceiling")
+		}
+		if s.background(1) != 2 || s.held() != 2 {
+			t.Fatalf("background %d, held %d", s.background(1), s.held())
+		}
+		// The client path is the one of R-REPO-040: the repository's share (8 on one replica) has six slots left.
+		var rels []func()
+		for range 6 {
+			rel, _, err := s.acquire(ctx, 1, 8, 50*time.Millisecond)
+			if err != nil {
+				t.Fatalf("a client fetch found no slot: %v", err)
+			}
+			rels = append(rels, rel)
+		}
+		if _, _, err := s.acquire(ctx, 1, 8, 50*time.Millisecond); err == nil {
+			t.Fatal("a client fetch got a slot above the repository's share")
+		}
+		r1()
+		r2()
+		for _, r := range rels {
+			r()
+		}
+		if s.background(1) != 0 || s.held() != 0 {
+			t.Fatalf("after release: background %d, held %d", s.background(1), s.held())
+		}
+	})
 }
 
 func TestClassification(t *testing.T) {

@@ -1514,6 +1514,59 @@ Acceptance criteria:
 - `pnpm install` with `trustPolicy: no-downgrade` succeeds through `npm-all` for a tree that passes
   the policy against the public registry.
 
+## Mirror discovery
+
+What an npm remote in mode `mirror` discovers and stores ([repositories-and-proxy.md](../repositories-and-proxy.md)
+R-REPO-050 to R-REPO-052; tests name R-REPO-051). The engine, the bounds and the throttling are the core's; this section is
+what the npm format contributes through the mirror interface of [architecture.md](../architecture.md) R-ARCH-008
+(Q-ARCH-284).
+
+- **What an upstream offers.** The public registry has a replication service at `https://replicate.npmjs.com/`, separate from
+  the registry host, since its change of 2025 (the
+  [migration notes](https://github.com/orgs/community/discussions/152515) of the
+  [deprecation notice](https://github.blog/changelog/2025-02-27-changes-and-deprecation-notice-for-npm-replication-apis/)):
+  the root answers `update_seq`; `registry/_changes` answers the changed document ids after `since`, with `limit` at most
+  10,000 (default 1,000) and without `include_docs`; `registry/_all_docs` answers the ids sorted, from `startkey` to `endkey`
+  with `limit`, without `include_docs` and without `skip`; package documents are not served there but by the registry. Other
+  npm registries (a private registry, another trove) offer no feed and no complete listing.
+- **Methods** (Q-NPM-69):
+  - `feed`, offered when `remote.url` is the public registry (`https://registry.npmjs.org/`): a full pass first reads the
+    root's `update_seq` and keeps it as the cursor of the next incremental pass, then lists names with `_all_docs`, one key
+    range per include pattern's literal prefix (`startkey` the prefix, `endkey` the prefix followed by `￰`), or the
+    whole key space without include patterns, paged by `startkey` after the last id and `limit: 10000`. An incremental pass
+    reads `_changes` from the stored sequence with `limit: 10000` and takes the ids of the changes; a change marked
+    `deleted` makes the pass refresh that package's document (R-NPM-026) and store nothing. The ids are package names; each
+    is checked against the patterns, the claims and the name rule of R-NPM-002.
+  - `listing`: not offered by any npm upstream; `auto` skips it. npm's search (`-/v1/search`) is a ranked text search with
+    a capped window, not a listing, and is not used (Q-NPM-70).
+  - `names`: the include patterns without a wildcard, read as package names, and the npm packages the repository holds.
+- **The plan of a package.** The format fills the full package document (`<name>`, variant `full`, R-NPM-024) through the
+  remote engine and returns its versions newest first by semver precedence, each with its tarball path (R-NPM-025), the
+  announced size where the document has one (`dist.unpackedSize` is not the tarball's size and is not used) and whether it is
+  a prerelease (semver: a version with a pre-release part). The version of the `latest` dist-tag always counts, whatever
+  `maxVersionsPerPackage` and `includePrereleases` say (Q-NPM-71). Versions marked removed upstream (R-NPM-026) are not in the
+  plan. Tarballs are fetched through the format's artifact gate (`BeforeArtifact`), so the document's `integrity` is verified
+  as for a client (R-NPM-025).
+- **Hosts** (Q-NPM-72). The feed requests go to `replicate.npmjs.com`, a discovery host that the format declares for its
+  well-known upstream: they pass the egress address rules, TLS verification and the redirect rules of the remote's client, and
+  carry no credential and no `Authorization` header. Every other request of a pass goes to the upstream origin or an
+  `extraHosts` entry, as a client's does (H-504).
+- **Cursor.** `{"seq": "<update_seq or the last change's seq>"}` for the feed, `{"after": "<last id>", "range": n}` within a
+  full pass; at most 4 KiB, opaque to the core.
+
+Acceptance criteria (integration, the npm stub of R-REPO-059 serving the replication paths under a second host name):
+
+- A mirror of the stub as public registry with `includePatterns: ["@acme/*"]`: the full pass sends `GET /` and
+  `registry/_all_docs?startkey="@acme/"&endkey="@acme/￰"&limit=10000` to the replication host, documents and tarballs of the
+  `@acme` packages to the registry host, and nothing else; the replication host never receives an `Authorization` header.
+- After the stub's feed adds a change for `@acme/a` and one marked `deleted` for `@acme/b`, the incremental pass sends
+  `registry/_changes?since=<stored>&limit=10000`, stores the new tarball of `@acme/a`, refreshes the document of `@acme/b`, which
+  the stub now answers with 404, and `npm view @acme/b` through the remote answers `E404`.
+- A mirror of a private npm stub with `includePatterns: ["@acme/a", "@acme/*"]` and `discovery: auto` takes the method `names`:
+  it stores `@acme/a` and the packages the repository already holds, and sends no request to a replication host.
+- With `maxVersionsPerPackage: 1` and `latest` on `1.1.0` while `1.2.0` is the highest version, the pass stores `1.2.0` and
+  `1.1.0`.
+
 ## Virtual repositories
 
 ### R-NPM-028 · npm capabilities of the virtual and priority mechanisms
@@ -4575,6 +4628,78 @@ records no revisit condition beyond the M6 item; the scope is the owner's.
 **Applied in the spec:** R-NPM-017 (the pnpm bullet), R-NPM-041 (the `npm.maintain` row), Q-NPM-49 (the open sentence);
 [FULL.md](../../projektplan/FULL.md) M6; [e2e.md](../../developer/e2e.md#findings-of-the-npm-tests). The guide text needed no
 change.
+
+### Q-NPM-69 · An npm mirror discovers through the public registry's replication service, and by exact names elsewhere
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `_all_docs` key ranges for a full pass and `_changes` for incremental ones on the public registry; exact names and held packages elsewhere (chosen) | What the replication service offers since 2025 | A prefix-bounded mirror lists only its prefixes; an incremental pass costs one request per 10,000 changes; nothing undocumented is used | Upstreams other than the public registry discover only the names an operator gives and the packages clients pulled |
+| (b) `_changes` from sequence 0 for the first pass | One method | Simple | Reads the history of every package of the registry for a mirror of `@types/*` |
+| (c) The registry's search for listings | `-/v1/search` paging | Works on more registries | A ranked text search with a capped window; never complete; results change between pages |
+
+**Choice:** (a). The full pass's cursor is the root's `update_seq` read before the listing, so the changes during a long listing are
+read by the next incremental pass.
+
+**Rationale:** a key range is the exact form of a name prefix, and the feed's sequence is the npm ecosystem's own cursor. The
+development agent would revisit it if npm registries other than the public one gain a documented feed (a configurable feed URL
+would then be added to the `npm` member).
+
+**Applied in the spec:** the section "Mirror discovery".
+
+### Q-NPM-70 · What of npm's upstream services an npm mirror does not use
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Not used: the search, packuments from the replication host, streaming feeds, `include_docs` (chosen) | Documents from the registry, names from the replication service | Every document is fetched and verified like a client's; nothing removed in 2025 is relied on | One document request per package |
+| (b) Documents from the replication service | Fewer hosts | One host | The service no longer serves them (2025) |
+
+**Choice:** (a).
+
+**Rationale:** the plan's document has to be the registry's, which the cache stores and clients receive. The development agent would
+revisit it if the replication service offers documents again.
+
+**Applied in the spec:** the section "Mirror discovery".
+
+### Q-NPM-71 · An npm mirror always keeps the version of the latest dist-tag
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The `latest` version always counts, besides the newest n (chosen) | One pinned version per package | `npm install <name>` resolves `latest`, which is often not the highest version (a prerelease or a backport line above it) | One version more than the bound |
+| (b) Every dist-tag counts | `next`, `beta`, … | Tags resolve | Tags of long-lived packages name many old lines |
+| (c) Only the newest n | The bound as it is | Exact | A mirror bounded to one version may not hold what `npm install` resolves |
+
+**Choice:** (a).
+
+**Rationale:** the mirror's purpose is that clients find what they resolve; `latest` is the one tag every client uses. The development
+agent would revisit (b) if mirrors are used for prerelease channels.
+
+**Applied in the spec:** the section "Mirror discovery"; [repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-051.
+
+### Q-NPM-72 · The replication host is a discovery host of the format, without credentials
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the remote's client sends only to the upstream origin and the `extraHosts` entries (R-REPO-043); npm's replication service is
+`replicate.npmjs.com`, the registry `registry.npmjs.org`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The format declares `replicate.npmjs.com` for its well-known upstream; requests go without credentials, under the egress rules (chosen) | A host per format fact | Works for every mirror of the public registry without editing `extraHosts`; no credential leaves for a second host | A destination that `extraHosts` does not show (H-504) |
+| (b) Add it to the format's proposed `extraHosts` | Visible in the document | Explicit | Changes the canonical document of every new npm remote, mirror or not, and stored remotes would have to be edited by hand |
+| (c) A member `npm.feedUrl` | Configurable | Supports other feeds | No other npm registry offers one today; a destination a project administrator could point anywhere |
+
+**Choice:** (a).
+
+**Rationale:** the host belongs to the upstream the operator chose, and sending nothing secret there keeps the credential rule of
+R-REPO-033 intact. The development agent would revisit (c) together with Q-NPM-69's condition.
+
+**Applied in the spec:** the section "Mirror discovery"; H-504 in [repositories-and-proxy.md](../repositories-and-proxy.md).
 
 ## What this does not cover
 

@@ -382,7 +382,7 @@ acceptance criteria.
 | Page | Requirement prefix | Scope |
 |---|---|---|
 | [architecture.md](architecture.md) | `R-ARCH` | Components, Go and Angular code layout, request paths, format plug-in interface, background jobs, caching |
-| [repositories-and-proxy.md](repositories-and-proxy.md) | `R-REPO` | Repository model and API, virtual resolution, pull-through proxy semantics, proxy state across replicas, without Valkey and during a drain (R-REPO-049) |
+| [repositories-and-proxy.md](repositories-and-proxy.md) | `R-REPO` | Repository model and API, virtual resolution, pull-through proxy semantics, the mirror mode of remote repositories (background passes as jobs on the queue `mirror`, discovery, bounds, throttling, clients first, status; R-REPO-050 to R-REPO-059), proxy state across replicas, without Valkey and during a drain (R-REPO-049) |
 | [storage.md](storage.md) | `R-STOR` | Blob store on S3, metadata schema, upload/download pipeline, garbage collection, quotas, cleanup, storage work per role and across replicas, storage state in backups |
 | [identity-and-authentication.md](identity-and-authentication.md) | `R-AUTH` | OIDC login, sessions, users, groups, service accounts, tokens, client authentication |
 | [authorization.md](authorization.md) | `R-AUTHZ` | Permission model, evaluation, package ownership, administration roles |

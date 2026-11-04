@@ -303,6 +303,8 @@ moves one of its tables states it on its own page.
 | `vuln_advisory`, `vuln_affected`, `vuln_kev` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-026 (from M4b) | `transient` | Public advisory data that the next sync fetches again, hundreds of megabytes in every export otherwise (Q-VULN-13) |
 | `vuln_source_state` | vulnerability-scanning.md R-VULN-026 (from M4b) | `transient` | After a restore every ecosystem is `empty`, so the next sync slot runs a full import, from the restored mirror repository in mode `repository` |
 | `vuln_pending_evaluation`, `vuln_claimed_match` | vulnerability-scanning.md R-VULN-026 (from M4b) | `transient` | Derived from the advisory data; the full evaluation after the first import recomputes them |
+| `mirror_state` | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-058 (from phase 6b) | `data` | The cursor and summary of a mirror's last complete pass describe the cache of the same snapshot; R-BAK-022 clears the pass in progress (Q-REPO-147) |
+| `mirror_pending` | repositories-and-proxy.md R-REPO-058 (from phase 6b) | `transient` | The names an interrupted pass had pending; the first pass after the restore rediscovers them from the restored cursor |
 | `schema_migration`, `schema_state` | [ha-and-helm.md](ha-and-helm.md) R-HA-018 | `schema` | Recreated by the migrations of R-BAK-023 |
 
 `ci_subject_token_uses` ([gitlab-ci-oidc.md](gitlab-ci-oidc.md)) stays `data` on purpose: it
@@ -1496,6 +1498,7 @@ event belong to the finishing transaction of step 9 instead, as the table states
 | `system_state` `installation_id` | Kept: the installation keeps its identity for webhooks, support bundles and the target marker |
 | Revision columns | Every column registered with `meta.RegisterRevisionColumn` grows by 2^32 |
 | Storage usage counters | `storage_usage_recount()` recomputes `repository_usage` and `storage_usage_totals` from `items` and `blobs` and empties `storage_usage_deltas` ([storage.md](storage.md) R-STOR-003, R-STOR-047), because the `blobs` class filter drops rows that the exported physical totals still count |
+| `mirror_state` (from phase 6b) | The pass in progress (`pass_*` columns), `pass_requested_*`, `rate_limited_until` and `bound_reached` are cleared and `next_pass_at` set to the restore time, so the first pass after the restore is due at once and continues from the last complete pass's cursor; a restore without remote caches (R-BAK-008) also clears `feed_cursor`, `last_full_pass_at` and `patterns_fingerprint`, so that pass is full ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-058, Q-REPO-147) |
 | `system_state` `restored_at` | Set in the finishing transaction of R-BAK-021 step 9, not with the step-6 fix-ups, so it records when the restore finished and is in place before any replica starts serving. Readers: single-use CI issuers refuse subject tokens whose `iat` is not later than it plus `clock_skew` ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-018); npm serves a cached remote tarball only after its package document was validated after it ([formats/npm.md](formats/npm.md) R-NPM-025, Q-NPM-13) |
 | Audit | `system.restored` is written when the restore finishes (R-BAK-021 step 9) |
 

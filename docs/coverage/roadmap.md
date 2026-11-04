@@ -140,6 +140,7 @@ release that closes a milestone is recorded once it is published, in [BETA.md](.
 | [M3](#m3--nuget) | NuGet v3; freeze of the format contract | 28 MVP | M2's WP2.1 to WP2.3 | the release that closes it |
 | [M4](#m4--gitlab-ci-oidc) | GitLab CI OIDC token exchange | 28 MVP | M1 for the work, M3 for the exit | the release that closes it |
 | [M4b](#m4b--vulnerability-scanning) | Vulnerability scanning: advisory mirror from OSV, matching by package identity, findings and the vulnerability report, blocking of malicious versions, npm and NuGet audits from trove's data | 29 MVP | M3 for the exit; the advisory and npm work from M2 (Q-ROAD-8) | the release that closes it |
+| [6b](#phase-6b--remote-full-mirror) | Remote full mirror: background passes of a remote repository within its bounds, throttling, clients first, status; specified, not scheduled | 10 MVP | M4b and the owner's process topology | not scheduled |
 | [M5](#m5--ha-hardening-and-helm-ga) | HA hardening under drains and failovers, backup and restore with the revocation journal, Helm GA | 64 MVP | M3, M4 and M4b; the backup lane from M1 (Q-ROAD-2) | the release that closes it: the **beta candidate** |
 | [Walkthrough](#owner-walkthrough) | The owner reviews the prototype; objections are worked off | — | M5 | the **beta** release: the release cut from the commits that close phase 8 |
 | Beta phase | Beta feedback worked off, upgrade path from the beta, import tooling, user documentation ([FULL.md](../projektplan/FULL.md) block A) | — | Beta | further `v0` releases; 1.0 only on the owner's explicit decision |
@@ -1001,6 +1002,71 @@ R-BAK-004, and the package-page tab of R-UI-007. The npm audit endpoint's reques
 **Not in M4b:** EPSS (an operator option, off by default, whose terms of use the operator decides, Q-VULN-21), time-limited
 dismissals and vulnerabilities in NuGet registrations (P1, M6); curation policies with fallback, and with them any
 policy-based severity threshold (M12, Q-VULN-20); container images (F4); licenses, SBOMs and content analyses (Later).
+
+## Phase 6b · Remote full mirror
+
+**Status:** specified, not scheduled. The owner is reconsidering the process topology (2026-11-04); the specification is
+role-neutral (the passes are jobs on their own queue `mirror`), and the contract wave laid only the pieces that bind no
+topology (Q-ARCH-288).
+
+**Goal.** A remote repository can be set to mirror its upstream: background passes, jobs on their own queue `mirror`, store what the upstream offers
+within the remote's patterns and bounds before a client asks, honour the upstream's rate limits, and give way to clients. Pull-through
+stays the default (owner, 2026-11-02; [ADR-151](../decisions.md#adr-151--a-remote-repository-can-mirror-its-upstream-in-the-background)).
+The phase comes before M5, so that the failure suite covers the passes too.
+
+**Scope.**
+
+| Area | Requirements |
+|---|---|
+| Mode, discovery and bounds | R-REPO-050, R-REPO-051, R-REPO-052; the sections "Mirror discovery" of [formats/npm.md](../spec/formats/npm.md#mirror-discovery) and [formats/nuget.md](../spec/formats/nuget.md#mirror-discovery) |
+| Passes, throttling, clients first | R-REPO-053, R-REPO-054, R-REPO-055 |
+| Status, observability, replicas and backups | R-REPO-056, R-REPO-057, R-REPO-058 |
+| Test suites | R-REPO-059 |
+
+The cross-page changes are on [repositories-and-proxy.md](../spec/repositories-and-proxy.md) (Q-REPO-130 to Q-REPO-148): the
+optional mirror interface of R-ARCH-008 (ADR-152), the kinds and the queue of R-ARCH-016, the signal area of R-ARCH-018, the
+per-replica state of R-ARCH-032, the metrics, audit events and alerts of R-OPS-008, R-OPS-016 and R-OPS-046, the operations of
+R-API-022, the form and tab of R-UI-021, the export classes of R-BAK-004 and R-BAK-022, the quota rule of R-STOR-029 and the
+populate rule of R-AUTHZ-008 and R-AUTHZ-026. The catalog entries API-082 to API-085 move to MVP (Q-REPO-143).
+
+**Exit criteria.**
+
+- **E6b.1** The contracts (WP6b.1) build and their tests pass: the members and their validation, the read-back of an earlier
+  stored section, the delegate rule, the typed rate-limit outcome, the background slots, the lister capability, the names of the
+  job kinds and the queue; `make compat-check` passes.
+- **E6b.2** npm discovery (R-REPO-051, [formats/npm.md](../spec/formats/npm.md#mirror-discovery)): against the npm stub,
+  `_all_docs` key ranges for the include patterns' prefixes, an incremental pass from `_changes`, a deleted change refreshing the
+  document, exact names on a private upstream, `latest` pinned; the replication host never receives a credential.
+- **E6b.3** NuGet discovery ([formats/nuget.md](../spec/formats/nuget.md#mirror-discovery)): the catalog read in full and after the
+  cursor, a `PackageDelete` refreshing the version list, the search listing and its truncation, exact IDs; `dotnet restore` of a
+  mirrored version succeeds with the stub stopped.
+- **E6b.4** The engine (R-REPO-052 to R-REPO-055, R-REPO-058): every integration criterion of those requirements passes against the
+  counting stubs: `429` with `Retry-After` in seconds and as a date, `503` with `SlowDown` and without a hint, `403` with
+  `X-RateLimit-Remaining: 0`, the long wait that ends the job, the window that halves, the circuit untouched; release and resume,
+  lease loss and the fence, the back-off; the byte bound; pre-emption in one process and across a client-serving process and
+  one that claims the queue `mirror`.
+- **E6b.5** Status and operations (R-REPO-056, R-REPO-057): the status and the run with permission-narrowed callers and a project
+  administrator, the metrics and the audit events, the browser journey of the mirror tab with axe.
+- **E6b.6** e2e set `mirror` (R-REPO-059): npm and NuGet mirrors of the stubs while `npm ci` and `dotnet restore` run through the
+  same remotes on three client-serving replicas, the install within 120 % of its time without the pass and the stub's
+  connections within the bound of R-REPO-055; `kubectl drain` of the node of the process that runs a pass, the pass ending in
+  another process that claims the queue; the set once with Valkey stopped.
+- **E6b.7** Every requirement R-REPO-050 to R-REPO-059 has a passing test that names it (Q-ROAD-4).
+
+**Work packages** ([architecture.md](../spec/architecture.md) Q-ARCH-288, [developer/mirror.md](../developer/mirror.md)).
+
+| WP | Content | Can start |
+|---|---|---|
+| WP6b.1 | Contracts (laid 2026-11-04): the spec, the leaf `internal/mirror/discover`, the members and validation, the typed rate-limit outcome, the background slots, the names of the kinds and the queue | phase 6 |
+| WP6b.2 | A · npm discovery in `internal/formats/npm` | WP6b.1 |
+| WP6b.3 | B · NuGet discovery in `internal/formats/nuget` | WP6b.1 |
+| WP6b.4 | C · the engine: `internal/mirror`, the migration of its tables, the background rules and pre-emption in `internal/proxy`, the pass's upstream in `internal/formathost`, the wiring, the signal area, metrics, pass events, the integration suite | WP6b.1 and the owner's process topology (a fake lister until WP6b.2 and WP6b.3) |
+| WP6b.5 | D · the status and run operations and their schemas, the format descriptor's `mirror`, the mirror section and tab of the admin UI, the manual | WP6b.1; the operations with WP6b.4's tables |
+| WP6b.6 | The e2e set `mirror` and the evidence of E6b.6 and E6b.7 | WP6b.2 to WP6b.5 |
+
+**Not in phase 6b:** push replication, bulk switches, peer event channels, a global block and checksum replication (API-086 to
+API-090, P2, Q-REPO-143); a configurable feed URL for npm registries other than the public one (Q-NPM-69); the system capacity
+guard, which comes with the quotas of R-STOR-029 (P1, H-506); the failure suite's drains and failovers of the passes (M5).
 
 ## M5 · HA hardening and Helm GA
 

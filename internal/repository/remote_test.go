@@ -64,6 +64,8 @@ func TestRemoteDefaults(t *testing.T) {
 			Integrity:    RemoteIntegrity{ChecksumPolicy: "verify-if-available", BlockUnexpectedContentTypes: true, AllowedContentTypes: []string{}},
 			Availability: Availability{Mode: "online", FailureThreshold: 5, CircuitOpenSeconds: 300},
 			Limits:       RemoteLimits{MaxConcurrentFetches: 64},
+			Mode:         "pullThrough",
+			Mirror:       MirrorSettings{IntervalSeconds: 3600, FullPassIntervalSeconds: 604800, Discovery: "auto", Concurrency: 4, IncludePrereleases: true},
 		}
 		if got := settingsOf(t, d); !reflect.DeepEqual(got, want) {
 			t.Fatalf("settings =\n%+v\nwant\n%+v", got, want)
@@ -76,7 +78,7 @@ func TestRemoteDefaults(t *testing.T) {
 		for _, m := range []string{
 			"url", "extraHosts", "authMode", "username", "password", "clientCertificate", "headers",
 			"forwardAuthOnRedirect", "outboundProxy", "connectTimeoutMs", "readTimeoutMs", "sourceNetwork", "cacheFillAction",
-			"cache", "integrity", "availability", "limits",
+			"cache", "integrity", "availability", "limits", "mode", "mirror",
 		} {
 			if _, ok := raw[m]; !ok {
 				t.Errorf("member %s is missing from %s", m, d.Remote)

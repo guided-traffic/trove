@@ -20,6 +20,7 @@ type JobsWorkers struct {
 	Maintenance int `yaml:"maintenance" default:"1" validate:"min=0"`
 	Index       int `yaml:"index" default:"2" validate:"min=0"`
 	Delivery    int `yaml:"delivery" default:"8" validate:"min=0" doc:"Webhook deliveries (P1)."`
+	Mirror      int `yaml:"mirror" default:"2" validate:"min=0" doc:"The passes of mirrored remote repositories and their dispatch (R-REPO-053)."`
 }
 
 // JobsBackgroundMigrations paces data migrations that run as jobs (R-ARCH-026).
@@ -39,7 +40,7 @@ func (j *Jobs) Validate(r *Report) {
 // order. A kind registered in another queue is a programming error that the
 // jobs package reports at start-up.
 func (w JobsWorkers) Queues() []string {
-	return []string{"default", "maintenance", "index", "delivery"}
+	return []string{"default", "maintenance", "index", "delivery", "mirror"}
 }
 
 // Count returns the concurrent jobs of a queue and whether the queue exists.
@@ -53,6 +54,8 @@ func (w JobsWorkers) Count(queue string) (int, bool) {
 		return w.Index, true
 	case "delivery":
 		return w.Delivery, true
+	case "mirror":
+		return w.Mirror, true
 	}
 	return 0, false
 }

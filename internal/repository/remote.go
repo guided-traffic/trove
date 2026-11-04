@@ -44,6 +44,17 @@ const (
 	ProxyDefault = "default"
 	ProxyDirect  = "direct"
 	ProxyNamed   = "named"
+
+	// ModePullThrough and ModeMirror are the values of remote.mode (R-REPO-050): pull-through is the default; a
+	// mirror adds the background passes of R-REPO-053.
+	ModePullThrough = "pullThrough"
+	ModeMirror      = "mirror"
+
+	// The values of remote.mirror.discovery (R-REPO-051): auto tries feed, listing and names in that order.
+	DiscoveryAuto    = "auto"
+	DiscoveryFeed    = "feed"
+	DiscoveryListing = "listing"
+	DiscoveryNames   = "names"
 )
 
 // RemoteSettings is the effective `remote` section of a remote repository: what
@@ -72,7 +83,46 @@ type RemoteSettings struct {
 	Integrity             RemoteIntegrity `json:"integrity"`
 	Availability          Availability    `json:"availability"`
 	Limits                RemoteLimits    `json:"limits"`
+	// Mode is pullThrough or mirror (R-REPO-050). A stored section written before the member existed reads as
+	// pullThrough (parseStoredRemote, Q-REPO-130).
+	Mode string `json:"mode"`
+	// Mirror holds the settings of the mirror mode; present in both modes, in effect in mode mirror only.
+	Mirror MirrorSettings `json:"mirror"`
 }
+
+// MirrorSettings is remote.mirror (R-REPO-050 to R-REPO-055). The members are present in the canonical section of every
+// remote repository, with the defaults of [DefaultMirrorSettings] where a request omitted them.
+type MirrorSettings struct {
+	// Paused: no pass starts, and a running pass stops before its next package (R-REPO-053, Q-REPO-141).
+	Paused bool `json:"paused"`
+	// IntervalSeconds is the time from the start of one pass to the start of the next (R-REPO-053).
+	IntervalSeconds int `json:"intervalSeconds"`
+	// FullPassIntervalSeconds is the age of the last full pass after which the next pass is full; 0: only when an
+	// incremental pass cannot run (R-REPO-051).
+	FullPassIntervalSeconds int `json:"fullPassIntervalSeconds"`
+	// Discovery is auto, feed, listing or names (R-REPO-051).
+	Discovery string `json:"discovery"`
+	// Concurrency is the ceiling of the pass's concurrent background fetches (R-REPO-054, R-REPO-055).
+	Concurrency int `json:"concurrency"`
+	// MaxVersionsPerPackage is the number of newest versions a pass stores per package; 0: all (R-REPO-051).
+	MaxVersionsPerPackage int `json:"maxVersionsPerPackage"`
+	// IncludePrereleases: whether a pass stores prerelease versions (R-REPO-051).
+	IncludePrereleases bool `json:"includePrereleases"`
+	// MaxBytes is the byte bound of the repository's stored content beyond which a pass adds nothing; nil: no bound of
+	// its own (R-REPO-052).
+	MaxBytes *int64 `json:"maxBytes"`
+}
+
+// DefaultMirrorSettings are the defaults of remote.mirror (R-REPO-050).
+func DefaultMirrorSettings() MirrorSettings {
+	return MirrorSettings{
+		IntervalSeconds: 3600, FullPassIntervalSeconds: 604800, Discovery: DiscoveryAuto, Concurrency: 4,
+		IncludePrereleases: true,
+	}
+}
+
+// Mirrored reports whether the remote runs in mode mirror (R-REPO-050).
+func (s RemoteSettings) Mirrored() bool { return s.Mode == ModeMirror }
 
 // ExtraHost is an entry of remote.extraHosts: a host name pattern (path.Match
 // syntax over the lower-case host, for example "*.nuget.org") that upstream
@@ -242,6 +292,19 @@ type remoteInput struct {
 	Integrity             *remoteIntegrityInput `json:"integrity"`
 	Availability          *availabilityInput    `json:"availability"`
 	Limits                *remoteLimitsInput    `json:"limits"`
+	Mode                  *string               `json:"mode"`
+	Mirror                *mirrorInput          `json:"mirror"`
+}
+
+type mirrorInput struct {
+	Paused                  *bool   `json:"paused"`
+	IntervalSeconds         *int    `json:"intervalSeconds"`
+	FullPassIntervalSeconds *int    `json:"fullPassIntervalSeconds"`
+	Discovery               *string `json:"discovery"`
+	Concurrency             *int    `json:"concurrency"`
+	MaxVersionsPerPackage   *int    `json:"maxVersionsPerPackage"`
+	IncludePrereleases      *bool   `json:"includePrereleases"`
+	MaxBytes                *int64  `json:"maxBytes"`
 }
 
 type outboundProxyInput struct {
@@ -309,9 +372,11 @@ func (r Repository) Remote() (RemoteSettings, bool) {
 	return *r.remote, true
 }
 
-// parseStoredRemote reads the canonical section of a stored document.
+// parseStoredRemote reads the canonical section of a stored document. The members of the mirror mode take their
+// defaults first, so that a section stored before they existed reads back with them (R-REPO-050, Q-REPO-130); a
+// member the stored section holds overwrites its default.
 func parseStoredRemote(raw json.RawMessage) (*RemoteSettings, error) {
-	var s RemoteSettings
+	s := RemoteSettings{Mode: ModePullThrough, Mirror: DefaultMirrorSettings()}
 	if err := json.Unmarshal(raw, &s); err != nil {
 		return nil, err
 	}

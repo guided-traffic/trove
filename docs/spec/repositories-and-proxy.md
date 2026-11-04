@@ -11,7 +11,9 @@ state in PostgreSQL, collapsing of concurrent misses within a replica and across
 Valkey lock, metadata freshness, negative caching in Valkey, upstream failure handling and offline
 modes, upstream authentication and stored secrets, client certificates, outbound HTTP proxies and
 CA bundles, egress address rules, redirects, size limits, integrity verification, metadata URL
-rewriting, cache invalidation and the settings that drive cache cleanup. It states how all of this
+rewriting, cache invalidation and the settings that drive cache cleanup. It specifies the mirror mode of a remote
+repository, in which background passes, jobs on a queue of their own, store what the upstream offers within the remote's
+bounds, with throttling, a lower priority than clients, and status (R-REPO-050 to R-REPO-059). It states how all of this
 behaves on n interchangeable replicas behind a Service without session affinity, while Valkey is
 unavailable, and while a replica drains (R-REPO-049). Bytes, items and the operations on stored
 items (delete, copy, move, properties, trash can) are specified in [storage.md](storage.md); who
@@ -21,7 +23,8 @@ may do what in [authorization.md](authorization.md); format-specific metadata in
 Covers: [repositories.md](../features/repositories.md) (`REPO-*`),
 [remote-repositories.md](../features/remote-repositories.md) (`RMT-*`), the cache-invalidation
 entry ART-050 of [artifacts.md](../features/artifacts.md), the repository operation entries of
-[api-content-operations.md](../features/api-content-operations.md) (`API-*`), BEYOND-028 of
+[api-content-operations.md](../features/api-content-operations.md) (`API-*`; of the replication entries API-082 to API-085,
+pulled forward by the mirror mode, Q-REPO-143), BEYOND-028 of
 [beyond-baseline.md](../features/beyond-baseline.md) and IAM-045 of
 [identity-and-access.md](../features/identity-and-access.md).
 
@@ -1389,8 +1392,9 @@ plays no part):
 ### R-REPO-024 · Remote repository settings
 Priority: **MVP** · Covers: RMT-001, RMT-002, RMT-004, RMT-015
 
-A remote repository proxies exactly one upstream and caches what clients ask for; nothing is fetched
-ahead of time (INV-11). Clients cannot deploy into it. Every setting below is a member of the
+A remote repository proxies exactly one upstream and caches what clients ask for. In the default mode `pullThrough`
+nothing is fetched ahead of time (INV-11); in the mode `mirror` background passes also store what the upstream offers
+within the remote's patterns and bounds, before a client asks (R-REPO-050 to R-REPO-059). Clients cannot deploy into it. Every setting below is a member of the
 `remote` section; omitted members take the default, format defaults come from the format catalog
 (R-REPO-003).
 
@@ -1427,6 +1431,15 @@ ahead of time (INV-11). Clients cannot deploy into it. Every setting below is a 
 | `limits.maxArtifactBytes` | Per-artifact limit, `null` = system default | `null` | | — | R-REPO-040 |
 | `limits.maxMetadataBytes` | Per-document limit, `null` = system default | `null` | | — | R-REPO-040 |
 | `limits.maxConcurrentFetches` | Upstream fetches of this repository in flight across all replicas, shared out per replica (Q-REPO-8) | `64` | 1–4096 | — | R-REPO-040 |
+| `mode` | `pullThrough` or `mirror` | `pullThrough` | | API-082 | R-REPO-050 |
+| `mirror.paused` | No pass starts; a running one stops before its next package | `false` | | API-082 | R-REPO-050, R-REPO-053 |
+| `mirror.intervalSeconds` | From the start of one pass to the start of the next | `3600` | 300–604800 | API-082 | R-REPO-053 |
+| `mirror.fullPassIntervalSeconds` | Age of the last full pass that makes the next one full; `0` = only when needed | `604800` | `0`, 86400–7776000 | — | R-REPO-051 |
+| `mirror.discovery` | `auto`, `feed`, `listing`, `names` | `auto` | | — | R-REPO-051 |
+| `mirror.concurrency` | Ceiling of the pass's concurrent background fetches | `4` | 1–64 | — | R-REPO-054, R-REPO-055 |
+| `mirror.maxVersionsPerPackage` | Newest versions per package the pass stores, `0` = all | `0` | 0–10000 | — | R-REPO-051 |
+| `mirror.includePrereleases` | Whether the pass stores prerelease versions | `true` | | — | R-REPO-051 |
+| `mirror.maxBytes` | Byte bound of the repository's stored content for the pass, `null` = none of its own | `null` | 1048576–2^62 | — | R-REPO-052 |
 
 </details>
 
@@ -2018,6 +2031,8 @@ Outcome classification:
     `circuitOpenSeconds: 0` disables the circuit.
 - Any success resets the counter, so a flaky link cannot keep a repository offline. The catalog's ten
   background retries with growing pauses are replaced by this threshold and probe.
+- The background requests of a mirror (R-REPO-053) neither count toward the circuit nor reset it, and never probe; they
+  only read it and wait while it is open (R-REPO-054, Q-REPO-139). The table above classifies client requests.
 
 Data model:
 
@@ -2555,6 +2570,8 @@ Priority: **MVP** · Covers: trove-only
   `proxy.queue_timeout_seconds`, then answers 503 with `Retry-After: 5` and releases its flight with
   `failed`. This bounds the burst a large invalidation can send to the upstream.
 - Spool admission and its failure answer are those of [R-STOR-004](storage.md).
+- The background fetches of a mirror take a lower-priority share of the same budget, which client fetches pre-empt
+  (R-REPO-055); the shares of client-serving replicas above are not reduced by it.
 
 Configuration:
 
@@ -2842,6 +2859,551 @@ Acceptance criteria:
   removed by a cleanup run and fetched from the upstream again on the next install; a tarball
   installed ten minutes ago stays.
 
+## Mirror mode
+
+A remote repository runs in one of two modes. `pullThrough`, the default, is everything above: the remote fetches what
+clients ask for and nothing else. `mirror` keeps all of that and adds background passes, jobs of the job framework
+([architecture.md](architecture.md) R-ARCH-016) on their own queue `mirror`, that discover the packages the upstream offers
+within the remote's bounds and store them before a client asks (owner, 2026-11-02;
+[ADR-151](../decisions.md#adr-151--a-remote-repository-can-mirror-its-upstream-in-the-background)). Clients are served by
+R-REPO-025 in both modes; the mirror only fills the same cache earlier. This section specifies the mode and its settings
+(R-REPO-050), what a mirror discovers (R-REPO-051), its storage bounds (R-REPO-052), the passes (R-REPO-053), upstream
+throttling (R-REPO-054), the priority of clients (R-REPO-055), status and operations (R-REPO-056), observability
+(R-REPO-057), replicas, Valkey, drains and backups (R-REPO-058) and the test suites (R-REPO-059). What "discoverable" means
+for each format is on the format pages: [formats/npm.md](formats/npm.md#mirror-discovery) and
+[formats/nuget.md](formats/nuget.md#mirror-discovery).
+
+### R-REPO-050 · The mirror mode and its settings
+Priority: **MVP** · Covers: API-082, API-083
+
+- `remote.mode` is `pullThrough` (the default) or `mirror`. Every other remote setting of R-REPO-024 applies in both
+  modes: the upstream, its credentials and egress rules, the patterns, the cache periods, the circuit, offline mode and the
+  limits.
+- The mirror's settings are the members of `remote.mirror`. They are present in the canonical section in both modes, with
+  their defaults where the request omitted them, and take effect only in mode `mirror`:
+
+  | Member (`remote.mirror.…`) | Meaning | Default (proposed) | Range |
+  |---|---|---|---|
+  | `paused` | No pass starts; a running pass stops before its next package (R-REPO-053) | `false` | |
+  | `intervalSeconds` | From the start of one pass to the start of the next | `3600` | 300–604800 |
+  | `fullPassIntervalSeconds` | Age of the last full pass after which the next pass is full although an incremental one could run; `0`: only when an incremental pass cannot run (R-REPO-051) | `604800` | `0`, or 86400–7776000 |
+  | `discovery` | `auto`, `feed`, `listing` or `names` (R-REPO-051) | `auto` | |
+  | `concurrency` | Ceiling of the pass's concurrent background fetches (R-REPO-054, R-REPO-055) | `4` | 1–64 |
+  | `maxVersionsPerPackage` | Newest versions of a package the pass stores, by the format's version order; `0`: all | `0` | 0–10000 |
+  | `includePrereleases` | Whether prerelease versions are stored | `true` | |
+  | `maxBytes` | Byte bound of the repository's stored content beyond which the pass adds nothing; `null`: no bound of its own (R-REPO-052) | `null` | 1048576–2^62 |
+
+- A stored section written before these members existed reads back with them at their defaults: the read fills them, and
+  no migration rewrites stored documents (Q-REPO-130). A document read and sent back therefore saves unchanged.
+- `mode: mirror` on a format whose remote adapter cannot discover packages (the catalog fact `Mirror`,
+  [architecture.md](architecture.md) R-ARCH-008) answers 422 `not_applicable` at `/remote/mode`. npm and NuGet can,
+  once their discovery and the engine of R-REPO-053 are built: until then neither format's remote adapter implements the
+  lister, so `mode: mirror` answers 422 `not_applicable` for every format, as R-REPO-024 refuses every setting that
+  would be accepted and not enforced. A
+  `discovery` that the upstream does not offer is not refused at save, because only the upstream can answer it (as for
+  NuGet's resources, [formats/nuget.md](formats/nuget.md) Q-NUGET-14): the pass reports `discovery_unavailable`
+  (R-REPO-056).
+- Turning the mode to `mirror` makes the next dispatch (at most 60 s later, R-REPO-053) start a full pass. Turning it back
+  to `pullThrough` stops a running pass before its next package; stored content, the cursor of the last complete pass and
+  the status stay (Q-REPO-148), so turning it on again continues incrementally.
+- The members of `remote.mirror` and `remote.mode` are not part of the upstream identity of R-REPO-011: changing them
+  invalidates nothing.
+- Who may set them: a holder of `repositories:write-config`; a project administrator only keeps what is stored, pauses,
+  resumes or turns the mode back to `pullThrough` (Q-REPO-142; 422 `mirror_restricted` otherwise).
+- The well-known upstream of a format needs a bound before a mirror of it is accepted (R-REPO-052, 422 `mirror_unbounded`).
+
+Configuration (example):
+
+```yaml
+key: npm-types                        # example
+class: remote
+format: npm
+includePatterns: ["@types/*"]         # example: the bound that R-REPO-052 asks for
+remote:
+  url: https://registry.npmjs.org/
+  mode: mirror                        # default (proposed): pullThrough
+  mirror:
+    paused: false                     # default (proposed)
+    intervalSeconds: 3600             # default (proposed)
+    fullPassIntervalSeconds: 604800   # default (proposed)
+    discovery: auto                   # default (proposed)
+    concurrency: 4                    # default (proposed)
+    maxVersionsPerPackage: 5          # example; default (proposed) 0, all
+    includePrereleases: false         # example; default (proposed) true
+    maxBytes: 107374182400            # example, 100 GiB; default (proposed) null
+```
+
+Acceptance criteria:
+
+- A remote created with only `url` reads back `"mode": "pullThrough"` and every member of `remote.mirror` with its default.
+- A row whose stored `remote` section lacks `mode` and `mirror` (written by a test as an earlier release stored it) reads
+  back with both at their defaults, and a `PUT` of that document with its `ETag` answers 200 and changes nothing else.
+- `"mirror": {"concurrency": 0}` answers 422 `out_of_range` at `/remote/mirror/concurrency`; `"discovery": "crawl"` 422
+  `invalid_value` at `/remote/mirror/discovery`.
+- A remote of the conformance kit's test format, whose adapter does not discover, answers 422 `not_applicable` at
+  `/remote/mode` for `mode: mirror`.
+- A remote in mode `pullThrough` never has a `mirror-pass` job, and the counting stub upstream records no request while
+  no client asks, over two dispatch intervals.
+
+### R-REPO-051 · What a mirror discovers, and what bounds it
+Priority: **MVP** · Covers: trove-only
+
+- **Discovery** yields package names; for each name the format's **plan** yields the documents a client of that package
+  needs and the artifacts of its versions, newest first by the format's version order ([architecture.md](architecture.md)
+  R-ARCH-008, the optional mirror interface). The mirror stores the artifacts and keeps the documents current through the
+  ordinary metadata path of R-REPO-025 and R-REPO-027: a stored document that is fresh is used as it is, an expired one is
+  revalidated, so a pass also refreshes the metadata of the packages it holds.
+- **Methods**, in the order `auto` tries them:
+
+  | Method | What it reads | Passes |
+  |---|---|---|
+  | `feed` | An append-only change feed or catalog of the upstream with a position (cursor) | A full pass reads it from its beginning; an incremental pass reads what changed after the cursor of the last complete pass |
+  | `listing` | A paged listing of every package of the upstream | Every pass is full |
+  | `names` | The include patterns without a wildcard, read as exact names | Every pass is full |
+
+  Whatever the method, every full pass also takes the exact names of the include patterns and the names of the packages
+  the repository already holds (its package rows, [storage.md](storage.md) R-STOR-003), so that a package that clients
+  pulled is kept current and a name a feed missed is caught. `auto` takes the first method the upstream offers; a method
+  set explicitly that the upstream does not offer ends the pass with `discovery_unavailable`. What each upstream offers, and
+  what of it trove uses, is on the format pages.
+- **A pass is full** when the repository has no cursor of a complete feed pass; when the method differs from the one of
+  that cursor; when `fullPassIntervalSeconds` is not `0` and the last full pass is older; when the include or exclude
+  patterns changed since the last complete pass (the state keeps a fingerprint of both lists); and when it is requested
+  (R-REPO-056). Otherwise a `feed` pass is incremental.
+- **Patterns bound everything** (R-REPO-005). A name that the include and exclude patterns do not admit, or that a claim
+  refuses (R-REPO-023, R-REPO-025 step 2), is never asked for, not even its document. A format may use the literal prefix of
+  an include pattern to narrow a listing request it sends (npm's key ranges); it still checks every name it returns.
+- **Versions.** `maxVersionsPerPackage` keeps the newest n versions of the plan, after `includePrereleases: false` has
+  removed the prerelease ones. A format may name versions that always count (npm: the version of the `latest` dist-tag,
+  [formats/npm.md](formats/npm.md) Q-NPM-71). A version outside the bound is not stored by the pass and stays available to
+  clients by pull-through.
+- **Removed upstream.** The mirror deletes nothing (Q-REPO-144). A version or package the upstream withdrew is handled by the
+  refreshed document as for every remote: gone packages of R-REPO-029, npm's removal marks of R-NPM-026. A feed's deletion
+  record makes the pass refresh that package's document and store nothing.
+- **Completeness.** A listing the upstream truncates (nuget.org's search caps `skip`) completes the pass with
+  `discoveryComplete: false` and the reason (R-REPO-056); the pass is complete for everything it could see.
+
+Acceptance criteria (integration, counting stub upstreams of R-REPO-059):
+
+- An npm stub whose feed lists `@acme/a`, `@acme/b`, `@acme/c`, `left-pad` and `@other/x`, and a mirror with
+  `includePatterns: ["@acme/*"]`: the first pass stores every tarball of the three `@acme` packages; the stub records no
+  request for a path of `left-pad` or `@other/x`.
+- With `maxVersionsPerPackage: 2` and `includePrereleases: false`, a package with versions `1.0.0`, `1.1.0`, `2.0.0-rc.1`
+  and `1.2.0` (the `latest` tag on `1.1.0`): the pass stores `1.2.0` and `1.1.0`, and `npm install @acme/a@1.0.0` through the
+  remote still succeeds by pull-through.
+- After a complete feed pass, the stub publishes `@acme/a@1.3.0`: the next pass is incremental, asks the feed after the
+  stored cursor, fetches only the document of `@acme/a` and the new tarball, and stores it.
+- Adding `@acme2/*` to the include patterns makes the next pass full.
+- A package that a client pulled through the remote before the mode was switched, and that the feed does not list, is
+  refreshed by the next full pass.
+
+### R-REPO-052 · Storage bounds of a mirror
+Priority: **MVP** · Covers: trove-only
+
+A mirror of a public registry would be terabytes. The bounds below keep it to what the operator chose; client pull-through is
+never bounded by them.
+
+- **A bound is required for a well-known upstream.** A mirror whose `url` is the format's well-known upstream (the catalog's
+  default upstream: `https://registry.npmjs.org/`, `https://api.nuget.org/v3/index.json`) is refused with 422
+  `mirror_unbounded` at `/remote/mode` unless the repository has a non-empty include list in which every pattern has a literal
+  part before its first wildcard (`@types/*`, `Microsoft.Extensions.*`, `lodash`; not `*`, `**`, `@*/*` or `?x`), or a
+  `maxBytes` (Q-REPO-132). A mirror of any other upstream without either is saved with the warning `mirror_unbounded`.
+- **`maxBytes`** bounds the repository's logical bytes: the folded counter `repository_usage.logical_bytes` of
+  [storage.md](storage.md) R-STOR-003, the number the repository quota of R-STOR-029 reads, which counts what clients filled
+  as well. Before each artifact the pass reads the counter (one primary-key read) and adds the bytes it stored since the
+  counter's last fold; it fetches no artifact whose announced size would cross the bound, and an artifact without an
+  announced size is fetched and counted afterwards. The bound can therefore be passed by at most `concurrency` artifacts in
+  flight and one fold interval (H-505).
+- **When a bound is reached**, the pass adds no further artifact: it stops, keeps its pending names, ends with the outcome
+  `bound_reached`, writes the audit event `mirror.bound_reached` once per transition and shows the bound in the status. Later
+  passes check the counter first and end at once with the same outcome, without an upstream request, while the bound holds.
+  Raising `maxBytes`, or content deleted below it, lets the next pass continue with the pending names. Client requests to the
+  repository are unaffected: they fetch and store as in mode `pullThrough`.
+- **Quotas and capacity** ([storage.md](storage.md) R-STOR-029, P1). When quotas are built, a repository quota
+  (`storage.quota`) bounds a mirror like `maxBytes` (the lower one wins; the bound is `quota`), and the pass adds no artifact
+  while the system's used capacity is at or above `warnPercent` (the bound is `capacity`), so that a mirror never pushes the
+  installation to the limit at which client uploads are refused. Until then `maxBytes` is the mirror's only bound (H-506).
+- **Spool.** Background fills spool like every fill (R-STOR-004). A refused spool admission is a wait of the item, not a
+  failure: the pass retries it after 5 s.
+
+Acceptance criteria:
+
+- An npm mirror of `https://registry.npmjs.org/` without include patterns and without `maxBytes` answers 422
+  `mirror_unbounded`; with `includePatterns: ["@types/*"]` it is created; with `["**"]` it is refused again; with only
+  `"maxBytes": 10737418240` it is created. A mirror of a stub upstream with neither is created with the warning
+  `mirror_unbounded`.
+- A mirror of a stub with 30 MiB of tarballs and `maxBytes: 10485760` ends its pass with `bound_reached`, stores at most
+  10 MiB plus `concurrency` times the largest tarball, and writes one `mirror.bound_reached` event; `npm install` of a version
+  it did not store succeeds through the same remote; after `maxBytes` is raised to 64 MiB, the next pass stores the rest.
+
+### R-REPO-053 · Mirror passes as jobs on the queue `mirror`
+Priority: **MVP** · Covers: trove-only
+
+- **Where passes run.** The dispatch and the passes are jobs of the job framework ([architecture.md](architecture.md)
+  R-ARCH-016) on their own queue `mirror`. Whatever process claims that queue runs them: every process that claims jobs, or
+  a pool of its own that claims only this queue ([ha-and-helm.md](ha-and-helm.md) R-HA-062). A process that serves clients
+  and claims no jobs only enqueues and reads the state. Nothing below depends on which process that is.
+- **Dispatch.** The periodic task `mirror-dispatch` (every minute, queue `mirror`, `exclusive`;
+  [architecture.md](architecture.md) R-ARCH-016) ensures a `mirror_state` row for every remote repository in mode `mirror`
+  of the repository snapshot and enqueues a `mirror-pass` job under the dedup key `mirror-pass:<repository id>`
+  (`exclusive`) for every row that is due: not paused, `next_pass_at` passed or a pass requested (R-REPO-056), and
+  `rate_limited_until` passed. One pass per repository runs at a time; an enqueue while one is queued or running returns it.
+- **A pass** (job `mirror-pass`, queue `mirror`, `MaxAttempts: 1`, no timeout) runs these steps:
+  1. **Claim.** One statement makes the job the owner of the repository's pass: it writes the job id and the claiming
+     process's instance id into `mirror_state` (the fence), starting a new pass when none is in progress and taking over the
+     one in progress otherwise. Every later write of the pass is conditional on the fence; a write that matches no row
+     means another job owns the pass, and the job stops at once without writing (Q-ARCH-287).
+  2. **Discover.** While fewer than 10,000 names are pending, the pass asks the format for the next page of names (R-REPO-051)
+     and, in one transaction, inserts them into `mirror_pending` (a name already pending is kept once) and stores the
+     format's cursor of the pass.
+  3. **Fill.** It takes pending names in name order; for each package it asks the format's plan, fills the documents and the
+     artifacts through the remote engine (R-REPO-025 steps 4 to 10, with the fetch priority of R-REPO-055: an artifact that
+     is already stored costs no upstream request), and then, in one transaction, deletes the pending row and adds to the
+     pass's counters. A package that fails (other than by throttling, R-REPO-054) keeps its row with one more attempt and
+     `not_before` one minute later per attempt; after three attempts it is left to the next pass and counted as failed.
+  4. **End.** When discovery has ended and every pending row is done or left, one transaction writes the summary of the pass,
+     the format's cursor for the next incremental pass, the time of the last full pass, the fingerprint of the patterns,
+     clears the pass, resets the failure count and sets `next_pass_at` to the pass's start plus `intervalSeconds`, or now when
+     that has passed. The outcome is `complete`, or `partial` when packages were left; the audit event
+     `mirror.pass_completed` is written.
+- **Stops.** A pass checks the repository snapshot before each package: a repository deleted, disabled, paused or no longer
+  in mode `mirror` ends the pass with the outcome `stopped`; a pause keeps the pass in progress for the resume, a mode change
+  or a deletion clears it. Offline mode and the global offline switch (R-REPO-030, R-REPO-031) end it with `offline`, without
+  counting a failure.
+- **Drain and restart** ([architecture.md](architecture.md) R-ARCH-024). A process that shuts down while it runs a pass
+  cancels the pass's in-flight fetches (nothing partial is stored) and releases the job with its attempt unchanged; another
+  process that claims the queue claims it,
+  takes over the fence and continues with the pending names and the stored cursor. The package that was in progress is
+  filled again; what it had stored is skipped.
+- **Crash and failover.** A process that dies loses its lease; the reaper ends the job (`MaxAttempts: 1`), the next dispatch
+  enqueues a new job for the pass in progress, which takes over the fence and continues; a write of the dead process that
+  still arrives matches no row. A PostgreSQL failover is ridden out by the statements' retry (R-HA-009); a lost commit of a
+  deleted pending row fills that package again, which stores nothing twice (content addressing, R-REPO-026).
+- **Errors.** A failure of the pass itself (discovery fails other than by throttling, a database error) ends the job with
+  the error: the state records it, counts one more consecutive failure, writes `mirror.pass_failed`, and sets `next_pass_at`
+  to now plus `min(60 s × 2^(failures − 1), 6 h)` with a jitter of ±20 % (Q-REPO-136). The pass in progress stays and is
+  continued by the next job. A complete pass resets the count.
+- **Data model.** The tables below are the design; the work package that builds the engine adds them in a migration of its
+  own, when the process topology is settled (a migration on `main` is immutable, [ADR-148](../decisions.md#adr-148--migrations-on-main-are-immutable-and-a-defect-is-fixed-forward)):
+
+```sql
+CREATE TABLE mirror_state (
+  repo_id                 bigint PRIMARY KEY REFERENCES repositories (id) ON DELETE CASCADE,
+  next_pass_at            timestamptz,             -- NULL: due at the next dispatch
+  pass_requested_at       timestamptz,             -- a request of R-REPO-056 not yet taken
+  pass_requested_by       uuid,
+  pass_requested_full     boolean NOT NULL DEFAULT false,
+  -- the pass in progress; pass_started_at NULL: none
+  pass_started_at         timestamptz,
+  pass_kind               text CHECK (pass_kind IN ('full', 'incremental')),
+  pass_method             text CHECK (pass_method IN ('feed', 'listing', 'names')),
+  pass_job_id             uuid,                    -- the fence: the owning job and the process that claimed it
+  pass_holder             uuid,
+  pass_cursor             jsonb CHECK (pass_cursor IS NULL OR octet_length(pass_cursor::text) <= 4096),
+  pass_discovery_done     boolean NOT NULL DEFAULT false,
+  pass_names              bigint NOT NULL DEFAULT 0,
+  pass_packages_done      bigint NOT NULL DEFAULT 0,
+  pass_packages_failed    bigint NOT NULL DEFAULT 0,
+  pass_items_stored       bigint NOT NULL DEFAULT 0,
+  pass_bytes_stored       bigint NOT NULL DEFAULT 0,
+  pass_discovery_complete boolean NOT NULL DEFAULT true,
+  pass_discovery_note     text CHECK (length(pass_discovery_note) <= 256),
+  -- the last complete pass
+  feed_cursor             jsonb CHECK (feed_cursor IS NULL OR octet_length(feed_cursor::text) <= 4096),
+  feed_method             text CHECK (feed_method IN ('feed', 'listing', 'names')),
+  patterns_fingerprint    bytea,
+  last_full_pass_at       timestamptz,
+  last_pass               jsonb,                   -- the summary R-REPO-056 shows
+  -- failures, throttling and bounds
+  consecutive_failures    integer NOT NULL DEFAULT 0 CHECK (consecutive_failures >= 0),
+  last_error_at           timestamptz,
+  last_error_code         text CHECK (length(last_error_code) <= 64),
+  last_error              text CHECK (length(last_error) <= 1024),
+  rate_limited_until      timestamptz,
+  rate_limit_waits        bigint NOT NULL DEFAULT 0,
+  rate_limit_wait_seconds bigint NOT NULL DEFAULT 0,
+  last_rate_limit_at      timestamptz,
+  last_rate_limit_status  integer,
+  bound_reached           text CHECK (bound_reached IN ('bytes', 'quota', 'capacity')),
+  bound_reached_at        timestamptz,
+  updated_at              timestamptz NOT NULL DEFAULT now(),
+  CHECK ((pass_started_at IS NULL) = (pass_kind IS NULL))
+);
+CREATE INDEX mirror_state_due ON mirror_state (next_pass_at);
+
+CREATE TABLE mirror_pending (
+  repo_id     bigint NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,
+  name        text COLLATE "C" NOT NULL CHECK (length(name) <= 1024),
+  queued_at   timestamptz NOT NULL DEFAULT now(),
+  attempts    integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  not_before  timestamptz,
+  last_error  text CHECK (length(last_error) <= 1024),
+  PRIMARY KEY (repo_id, name)
+);
+```
+
+Acceptance criteria (integration):
+
+- A pass of a stub with 200 packages is released by a shutdown of the process that runs it after 50 packages: the job is
+  queued again with its attempt unchanged, a second process ends the pass, and the stub records every tarball once, apart from those of the
+  package in progress at the shutdown.
+- The process that runs a pass loses its lease (the test stops its heartbeat): the next dispatch after the lease expiry
+  enqueues a new job that ends the pass from the pending names; a pending-row delete sent afterwards under the old fence
+  changes no row.
+- The stub answers 500 to every discovery request: the failure count grows to 3 and `next_pass_at` lies 60 s, 120 s and
+  240 s (±20 %) after each failure; after the stub recovers, the next pass completes and the count is 0.
+- Pausing the mirror during a pass ends it with `stopped` before its next package; resuming continues it from the pending
+  names; switching the mode to `pullThrough` clears it.
+
+### R-REPO-054 · Upstream throttling of a mirror
+Priority: **MVP** · Covers: trove-only
+
+- **Rate-limit answers** (Q-REPO-137). The mirror treats as a rate-limit answer to any of its requests, discovery or fill:
+  - `429 Too Many Requests` ([RFC 6585, section 4](https://www.rfc-editor.org/rfc/rfc6585#section-4));
+  - `503` with a `Retry-After` header, and `503` whose body, read up to 4 KiB, is an S3 error with the code `SlowDown`
+    ([Amazon S3 error responses](https://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html));
+  - `403`, `429` or `503` with `RateLimit-Remaining: 0` or `X-RateLimit-Remaining: 0`; the reset then comes from
+    `RateLimit-Reset` (seconds) or `X-RateLimit-Reset` (seconds since the epoch) when `Retry-After` is absent.
+
+  Other `5xx` answers, timeouts and connection failures are failures of the item (R-REPO-053) with the same back-off as an
+  answer without a hint, but they do not halve the window.
+- **How long it waits.** `Retry-After` as delta seconds or as an HTTP date
+  ([RFC 9110, section 10.2.3](https://www.rfc-editor.org/rfc/rfc9110#section-10.2.3)), capped at 6 h; a date in the past or
+  an unreadable value counts as absent. Without a hint the wait is exponential with jitter: after the k-th rate-limit answer
+  in a row it is drawn uniformly from `[d/2, d]` with `d = min(300 s, 1 s × 2^(k−1))`. A success resets k.
+- **While it waits** the pass sends nothing to the upstream: no discovery request and no new fill; fetches already in flight
+  finish. After the wait it continues by itself.
+- **A long wait ends the attempt.** A wait longer than 300 s writes `rate_limited_until`, keeps the pass in progress, and ends
+  the job with the result `{"deferred": "rate_limited", "until": …}`; the dispatch enqueues the next job at that time, which
+  continues the pass. No job slot is held through a long wait.
+- **Fewer concurrent fetches** (Q-REPO-138). The pass's window `w` starts at 1 in every attempt. It doubles after `w`
+  successful fetches in a row until it reaches its ceiling or a rate-limit answer arrives (slow start), and afterwards grows
+  by one after `w` successes in a row. A rate-limit answer halves it, rounded down and at least 1, once per wait: answers of
+  fetches that were in flight when the wait began do not halve it again. The ceiling is `concurrency`, held below the
+  background share of R-REPO-055.
+- **The circuit is the clients'** (Q-REPO-139). No outcome of a background request moves or resets the circuit of R-REPO-029:
+  a rate limit the mirror provokes never turns clients away. The mirror reads the circuit: while it is open, the pass sends
+  nothing and waits for it to close; it never probes. A client request keeps R-REPO-029's classification: for a client, a
+  `503` with `SlowDown` is still `upstream_error`.
+- Every rate-limit answer is counted and its wait added (R-REPO-057); the state keeps the number of waits, their total
+  seconds, the time and status of the last one and `rate_limited_until` (R-REPO-056); `mirror.rate_limited` is written at
+  most once per pass and hour.
+
+Acceptance criteria (integration, stub modes of R-REPO-059):
+
+- The stub answers the eleventh tarball request with `429` and `Retry-After: 7`: it records no request of the pass for 7 s,
+  then the pass continues and completes; `trove_mirror_concurrency{repo}` is at most half of its value before the answer.
+- `Retry-After` as an HTTP date 5 s ahead pauses the pass for 5 s (±1 s).
+- `503` with the body `<Error><Code>SlowDown</Code><Message>Please reduce your request rate.</Message></Error>` and no
+  `Retry-After`, three times in a row: the pauses lie within [0.5 s, 1 s], [1 s, 2 s] and [2 s, 4 s]; the pass then
+  completes and every tarball is stored once.
+- `403` with `X-RateLimit-Remaining: 0` and `X-RateLimit-Reset` 4 s ahead pauses the pass for about 4 s.
+- `Retry-After: 3600`: the job ends with the result `deferred`, the status shows `rateLimit.until` an hour ahead, and the stub
+  records no request of the mirror in the next 60 s. A unit test with a fake clock shows the next job continuing the pass at
+  that time.
+- While the stub throttles the pass, `trove_remote_upstream_up{repo}` stays 1 on every replica and a client
+  `npm install` of a stored version through the remote succeeds without an upstream request.
+
+### R-REPO-055 · Client requests first
+Priority: **MVP** · Covers: trove-only
+
+A request from a client is served before the background sync. The mirror uses a lower-priority share of the remote's fetch
+budget (`limits.maxConcurrentFetches`, R-REPO-040, Q-REPO-8, Q-REPO-97), and client fetches pre-empt it (Q-REPO-140).
+
+- **The share.** A pass runs at most `B = min(concurrency, max(1, floor(maxConcurrentFetches ÷ 4)))` background fetches of
+  the repository at a time; its window (R-REPO-054) never exceeds B. The client shares of R-REPO-040 are not reduced: every
+  client-serving replica keeps `ceil(maxConcurrentFetches ÷ n)`. The cluster-wide total therefore stays within
+  `maxConcurrentFetches + n − 1 + B`, and within `maxConcurrentFetches + n − 1` while clients press (below).
+- **Slots.** A background fetch takes a fetch slot of the replica it runs on: the replica's `proxy.max_concurrent_fetches`
+  and a per-repository background counter; it never queues: it waits outside the slots until one is free. It takes the
+  cross-replica flight of R-REPO-026 like any fetch, so a client that asks for the same item joins it as a follower or a
+  waiter instead of fetching twice.
+- **Pre-emption on one replica.** Where client fetches and background fetches run in one process (one that serves clients and claims the queue
+  `mirror`, such as role `all`), a background
+  fetch starts only while no client fetch of the repository waits for a slot, and a client fetch that finds no free slot
+  pre-empts the youngest background fetch of the same repository, or of any repository when the replica's limit is the
+  one exhausted, and takes its slot at once.
+- **Pre-emption across replicas.** A client-serving replica whose client fetch of repository R has to wait for a slot raises the
+  signal `mirror_yield` with R's id, at most once per second per repository ([architecture.md](architecture.md) R-ARCH-018,
+  Q-ARCH-286). The process that runs R's pass pre-empts every running background fetch of R that no client of its own has
+  joined, and starts none for 30 s after the last signal. While Valkey is unavailable the signal is lost and the pass keeps
+  within B, which the bound above counts.
+- **What happens to a pre-empted fetch.** Its upstream request is cancelled and its partial body discarded: no blob, no cache
+  entry, no negative entry; its flight is released with `failed`, so that a waiter fetches for itself at once (R-REPO-026);
+  the item stays in the pass and is fetched again later. A pre-emption is neither a failure of the item nor a rate-limit
+  answer, moves no circuit and is counted in `trove_mirror_preempted_total{repo}`.
+- A background fetch that a follower of its own replica has joined is not pre-empted.
+
+Acceptance criteria:
+
+- Unit (one process that serves clients and claims the queue, `maxConcurrentFetches: 2`, so B = 1): while the background holds one slot, two client
+  fetches of uncached tarballs arrive; the second pre-empts the background fetch and waits less than 50 ms for its slot; the
+  pre-empted tarball is stored once, later, by the pass.
+- Integration (one client-serving replica and one process that claims the queue `mirror`, `maxConcurrentFetches: 8`, so
+  B = 2; the stub delays every tarball by 2 s): the pass runs two background fetches; eight client fetches take the
+  client-serving replica's eight slots without a wait; a ninth waits, the process that runs the pass pre-empts both
+  background fetches, and 1 s later the stub has at most eight open connections.
+- e2e (set `mirror`, R-REPO-059): a pass of 300 packages runs while `npm ci` of the 400-dependency fixture runs through the
+  same remote on three client-serving replicas; `npm ci` succeeds within 120 % of its time without the pass, the stub never has more
+  than `maxConcurrentFetches + n − 1 + B` connections open, and `trove_mirror_preempted_total` grew.
+
+### R-REPO-056 · Mirror status and operations
+Priority: **MVP** · Covers: API-084, API-085
+
+| Method and path | Purpose | Response | Permission |
+|---|---|---|---|
+| `GET /api/v1/repositories/{key}/mirror` | The mirror's status | 200 with the document below | as the full configuration read (R-REPO-010): `repositories:read-config`, `manage` on the repository, or an administrator of its project |
+| `POST /api/v1/repositories/{key}/mirror/run` | Request a pass now; body `{"full": false}` (optional) | 202 with the job reference of R-API-015 | as an update (R-REPO-011): `repositories:write-config`, `manage`, or an administrator of its project with `manageRepositories` |
+
+```json
+{
+  "mode": "mirror",
+  "state": "running",
+  "pass": {
+    "kind": "incremental", "method": "feed", "startedAt": "2026-11-04T10:00:00Z",
+    "namesDiscovered": 120, "packagesDone": 80, "packagesPending": 40, "packagesFailed": 0,
+    "itemsStored": 311, "bytesStored": 52428800, "discoveryDone": false,
+    "job": {"id": "0193f2c4-…", "href": "/api/v1/system/jobs/0193f2c4-…"}
+  },
+  "lastCompletePass": {
+    "kind": "full", "method": "feed", "startedAt": "2026-11-03T10:00:00Z", "finishedAt": "2026-11-03T13:12:09Z",
+    "outcome": "complete", "packages": 1200, "packagesFailed": 0, "itemsStored": 5021, "bytesStored": 9126805504,
+    "discoveryComplete": true, "discoveryNote": null
+  },
+  "nextPassAt": "2026-11-04T11:00:00Z",
+  "lastFullPassAt": "2026-11-03T13:12:09Z",
+  "errors": {"consecutiveFailures": 0, "lastAt": null, "lastCode": null, "lastMessage": null},
+  "rateLimit": {"waits": 12, "waitSeconds": 340, "lastAt": "2026-11-04T10:20:31Z", "lastStatus": 429, "until": null},
+  "bound": {"reached": null, "at": null, "maxBytes": 107374182400, "usedBytes": 9200000000}
+}
+```
+
+- `state` is one of `off` (mode `pullThrough`), `paused`, `scheduled` (no pass in progress), `running`, `waiting` (a pass in
+  progress whose job ended for a long rate-limit wait or a failure and waits for its next job), `bound_reached` and
+  `failing` (three or more failures in a row). The status is read from PostgreSQL by whichever replica answers.
+- `lastCompletePass.outcome` is `complete`, `partial`, `bound_reached`, `offline` or `stopped`; `pass` and
+  `lastCompletePass` are `null` when there is none. `errors.lastMessage` names hosts, never a URL or a credential
+  (R-REPO-024's rule for the upstream test).
+- The run operation records the request and enqueues the pass; a running or queued pass answers 409
+  `mirror_pass_running` naming its job; a remote in mode `pullThrough` answers 409 `mirror_off`, a paused one 409
+  `mirror_paused`; a local or virtual repository 400 `not_applicable`. `{"full": true}` makes the requested pass full. The
+  request writes `mirror.pass_requested`.
+- **Pause and resume** are the member `remote.mirror.paused`, changed with the repository's `PATCH` and its `If-Match`
+  (R-REPO-011, Q-REPO-141); there is no separate operation.
+- The passes are jobs: `GET /api/v1/system/jobs?kind=mirror-pass` lists them (R-OPS-019).
+- The admin UI shows this status on the remote repository's screen ([api-and-ui.md](api-and-ui.md) R-UI-021, Q-UI-104).
+
+Acceptance criteria:
+
+- During a pass the status answers `state: running` with counts that grow; after it, `lastCompletePass.outcome: complete`
+  and `pass: null`; the same answer comes from every replica.
+- A user with `read` on the remote and nothing else gets 403 for the status (404 where the repository is hidden,
+  R-AUTHZ-016); a holder of `repositories:read-config` gets 200.
+- Two `POST …/mirror/run` in a row answer 202 and 409 `mirror_pass_running` with the same job; on a `pullThrough` remote 409
+  `mirror_off`; on a local repository 400 `not_applicable`.
+- `PATCH` with `{"remote": {"mirror": {"paused": true}}}` makes the status `paused` and ends a running pass before its next
+  package.
+
+### R-REPO-057 · Mirror observability
+Priority: **MVP** · Covers: trove-only
+
+- **Metrics** ([operations-and-observability.md](operations-and-observability.md) R-OPS-008, Q-OPS-158; the label `repo` has
+  one value per mirrored repository):
+
+| Metric | Type | Labels | Meaning |
+|---|---|---|---|
+| `trove_mirror_passes_total` | counter | `repo`, `kind` (`full`, `incremental`), `outcome` (`complete`, `partial`, `bound_reached`, `offline`, `stopped`, `failed`, `deferred`) | Pass attempts by how they ended |
+| `trove_mirror_items_total` | counter | `repo`, `result` (`stored`, `present`, `bounded`, `failed`, `preempted`) | Artifacts of plans: fetched and stored, already stored, left by a bound, failed, pre-empted |
+| `trove_mirror_bytes_total` | counter | `repo` | Bytes the passes stored |
+| `trove_mirror_rate_limited_total` | counter | `repo`, `reason` (`too_many_requests`, `slow_down`, `retry_after`, `quota_header`) | Rate-limit answers to the mirror (R-REPO-054) |
+| `trove_mirror_rate_limit_wait_seconds_total` | counter | `repo` | Seconds the passes waited for rate limits |
+| `trove_mirror_concurrency` | gauge | `repo` | The running pass's window in the process that runs it |
+| `trove_mirror_preempted_total` | counter | `repo` | Background fetches pre-empted by clients (R-REPO-055) |
+| `trove_mirror_pending_packages` | gauge | `repo` | Pending names of the pass in progress (from PostgreSQL) |
+| `trove_mirror_last_complete_pass_timestamp_seconds` | gauge | `repo` | End of the last complete pass (from PostgreSQL) |
+| `trove_mirror_interval_seconds` | gauge | `repo` | The configured `intervalSeconds`, for the staleness alert |
+
+  The three gauges marked "from PostgreSQL" are exported by every process that claims the queue `mirror`, from
+  `mirror_state`, read at most once per 30 s, so every such process reports the same values. The alerts `TroveMirrorFailing` and `TroveMirrorStale` are those of
+  [operations-and-observability.md](operations-and-observability.md) R-OPS-046 (Q-OPS-160).
+- **Upstream log** ([operations-and-observability.md](operations-and-observability.md) R-OPS-011): every background request
+  writes a record with `flight_role: mirror` and `on_behalf_of` empty; the record names the pass's job.
+- **Audit** (Q-REPO-145). Every artifact and document a pass stores writes the populate event of a cache fill
+  ([authorization.md](authorization.md) R-AUTHZ-008, `authz.write.allowed` with the action `populate`) in the fill transaction,
+  with the system actor and `reason: mirror`, as a client's fill writes it with the client's. The pass adds
+  `mirror.pass_requested` (transactional, the caller), `mirror.pass_completed`, `mirror.pass_failed`,
+  `mirror.bound_reached` and `mirror.rate_limited` (asynchronous; [operations-and-observability.md](operations-and-observability.md)
+  R-OPS-016, Q-OPS-159). A change of `remote.mode` or `remote.mirror` is a `repository.updated`.
+
+Acceptance criteria:
+
+- After a pass of a stub with 20 tarballs, `trove_mirror_items_total{result="stored"}` grew by 20 and the audit store holds
+  20 `authz.write.allowed` events with the actor `system` and `reason: mirror` for the repository, and one
+  `mirror.pass_completed`.
+- During a throttled pass the upstream log records carry `flight_role: mirror`.
+
+### R-REPO-058 · The mirror on n replicas, without Valkey and during a drain
+Priority: **MVP** · Covers: trove-only
+
+The rows below extend the table of R-REPO-049 and of [architecture.md](architecture.md) R-ARCH-032 for the mirror.
+
+| State | Where | Across replicas | Valkey unavailable | Valkey lost its data | Drain or crash of the replica |
+|---|---|---|---|---|---|
+| Mirror state, pending names, cursors, the fence (R-REPO-053) | PostgreSQL | One copy; the fence names the one writer | Unaffected | Unaffected | Drain: the job is released and continued elsewhere; crash: the next dispatch continues the pass, the fence stops a late write |
+| The pass's window, waits and in-flight fetches (R-REPO-054) | In the process that runs the pass | That process only | Unaffected | Unaffected | Cancelled 5 s before the shutdown deadline; nothing partial stored; the next attempt starts its window at 1 |
+| Background slot counters (R-REPO-055) | Per-replica counters | The ceiling B per pass | Unaffected | Unaffected | End with the process |
+| The signal `mirror_yield` (R-REPO-055) | Valkey Pub/Sub, at most once | Reaches the process that runs the pass | Lost: the pass keeps within B, which the cluster bound counts | As unavailable | — |
+| Mirror gauges (R-REPO-057) | Each process that claims the queue `mirror`, from PostgreSQL | Equal values in each | Unaffected | Unaffected | End with the process |
+
+Rules:
+
+- **One writer.** One pass per repository at a time: the dedup key of the job and the fence. A pass and clients may store the
+  same item at once; content addressing makes the second commit harmless (R-REPO-026).
+- **Passes run where the queue `mirror` is claimed.** A process that serves clients and claims no jobs answers the status
+  and the run operation from PostgreSQL and enqueues; while no process claims the queue, no pass runs and the status shows
+  `scheduled` with an overdue `nextPassAt`.
+- **Valkey grants nothing here either.** Dispatch, passes, the fence, the cursors and the bounds are in PostgreSQL. The only
+  value from Valkey is the yield signal, which can only stop background fetches early.
+- **Backup** ([backup-and-restore.md](backup-and-restore.md) R-BAK-004, Q-REPO-147). `mirror_state` has the export class
+  `data`, `mirror_pending` `transient`. A restore keeps the state of the last complete pass (its cursor matches the restored
+  cache, both being of one snapshot) and clears the pass in progress, `pass_requested_*`, `rate_limited_until` and
+  `bound_reached`, and sets `next_pass_at` to the restore time, so the first pass after a restore rediscovers what the
+  interrupted pass had pending. A restore without remote caches (R-BAK-008) also clears `feed_cursor`, `last_full_pass_at`
+  and `patterns_fingerprint`, so that its first pass is full.
+
+Acceptance criteria (e2e set `mirror` of R-REPO-059):
+
+- `kubectl drain` of the node of the process that runs a pass of 300 packages: the pass ends in another process that claims
+  the queue, and the
+  stub records every tarball once, apart from at most `concurrency` fetches in flight at the drain.
+- With Valkey stopped for a whole pass, the pass completes, and the status is the same on all three client-serving replicas.
+- Two processes that claim the queue `mirror`, whose dispatches tick in the same minute: the job table never holds two
+  unfinished `mirror-pass` jobs for one repository.
+
+### R-REPO-059 · The mirror's test suites
+Priority: **MVP** · Covers: trove-only
+
+- **Counting stub upstreams** (`test/integration/mirror`), one per format, which count every request by path and can be told
+  to throttle: npm with a package document per name, tarballs, a replication feed (`registry/_changes` with `since` and
+  `limit`, `registry/_all_docs` with `startkey`, `endkey` and `limit`, the root with `update_seq`); NuGet with a service index
+  with and without `Catalog/3.0.0`, catalog index, pages and leaves, `SearchQueryService` with `skip` and `take`, and the flat
+  container. Throttling modes: `429` with `Retry-After` in seconds or as a date, `503` with `Retry-After`, `503` with the
+  `SlowDown` body and no `Retry-After`, `403` and `429` with `X-RateLimit-Remaining: 0`, each for the n-th request or for a
+  period; a delay per response.
+- **Integration** (against the stack of [ha-and-helm.md](ha-and-helm.md) R-HA-051): every acceptance criterion of R-REPO-050
+  to R-REPO-058 that names the integration level, the npm and NuGet discovery criteria of the format pages, the fence, the
+  status and run operations with permission-narrowed callers and a project administrator, and the audit events.
+- **e2e** (set `mirror` on kind, three client-serving replicas and two processes that claim the queue `mirror`): npm and
+  NuGet mirrors of the stub upstreams while
+  `npm ci` and `dotnet restore` run through the same remotes, with the clients-first criterion of R-REPO-055; the drain of
+  R-REPO-058; a restore of a stored package with the upstream stub stopped; the browser journey of the mirror panel
+  (status, pause, run a pass) with axe ([api-and-ui.md](api-and-ui.md) Q-UI-104).
+- The failure suite of phase 7 adds the mirror to its drains, failovers and throttling ([ha-and-helm.md](ha-and-helm.md)).
+
+Acceptance criteria:
+
+- The tests of `test/integration/mirror` and the e2e set `mirror` pass, and each names the requirement it checks.
+
 ## Behavior across replicas
 
 ### R-REPO-049 · Repository and proxy state on n replicas, without Valkey and during a drain
@@ -2866,6 +3428,7 @@ it behaves in each of these cases. A new kind needs a row here, and in
 | Fetch slots (R-REPO-040) | Per-replica counters | Shares of a cluster budget, from the replica registry | Unaffected | Unaffected | Ends with the process |
 | Activity and use buffers: `lastActivityAt` (R-REPO-012), metadata `last_used_at` (R-REPO-046) | Per-replica, write-only | No request reads them | Unaffected | Unaffected | Flushed at shutdown; a crash loses at most one batch |
 | Detached fetches and background refreshes (R-REPO-026, R-REPO-027) | In-process | Visible to others only through the committed entry | Unaffected | Unaffected | Cancelled 5 s before the shutdown deadline; nothing partial stored |
+| Mirror state and passes (R-REPO-053 to R-REPO-055) | PostgreSQL; the pass's window and background slots in the process that runs it | The rows of R-REPO-058 | As R-REPO-058 | As R-REPO-058 | As R-REPO-058 |
 
 Rules:
 
@@ -3001,7 +3564,7 @@ Acceptance criteria:
 ## Deferred
 
 <details>
-<summary>Deferred catalog entries (39)</summary>
+<summary>Deferred catalog entries (44)</summary>
 
 | ID | Priority | One line |
 |---|---|---|
@@ -3044,6 +3607,11 @@ Acceptance criteria:
 | RMT-046 | P2 | Parallel ranged download of large files from a chained source. |
 | RMT-047 | P2 | Project-scoped remote repositories. |
 | ART-044 | P2 | Browsing uncached remote content (with RMT-038). |
+| API-086 | P2 | Multi-target push replication from a local repository; the mirror mode pulls only (Q-REPO-143). |
+| API-087 | P2 | Enabling and disabling replications in bulk by target URL; a mirror is paused through its own document, and few repositories are mirrors (Q-REPO-143). |
+| API-088 | P2 | Event channels between instances for event-based pull; a feed is polled by the passes, and peer channels need trove-to-trove chaining (RMT-040) first (Q-REPO-143). |
+| API-089 | P2 | A global block of pull replication; the global offline switch (R-REPO-031) stops every mirror with all upstream traffic, `paused` stops one (Q-REPO-143). |
+| API-090 | P2 | Checksum-only replication for stores linked by storage-level replication; the mirror always transfers the bytes it stores (Q-REPO-143). |
 
 </details>
 
@@ -3081,6 +3649,11 @@ MVP and P1 entries of the covered catalog pages that this page does not specify:
 | Non-package content accepted into format repositories | Refused for npm and NuGet (R-REPO-001) | Unindexed content is invisible to clients |
 | NTLM proxies; proxy credentials reused for redirect target hosts | Basic proxy authentication only; proxy credentials go to the proxy only (R-REPO-037) | Smaller credential exposure |
 | One local IP address for upstream connections | A network prefix; each replica takes its own address from it (R-REPO-024, Q-REPO-9) | Replicas are interchangeable, and every pod has its own address |
+| Pull replication is a document per target with its own get, set, update and delete operations (API-082, API-083) | The mirror's settings are the members `remote.mode` and `remote.mirror` of the repository's document, read and changed with it (R-REPO-050, Q-REPO-130) | A remote has one upstream; one document, one `ETag`, one audit event, one configuration-as-code object |
+| Replication runs on a cron expression | An interval per repository from the start of the last pass (R-REPO-053, Q-REPO-131) | Mirrors do not all start in the same minute, and a long pass is not started again on top of itself |
+| Pull replication lists the source instance's storage | Discovery through the format's protocol: a feed, a listing or exact names (R-REPO-051) | Works against public registries, not only against another instance of the same system |
+| Replication status is derived from properties written on items, per path (API-084) | One status document per repository from the mirror's state (R-REPO-056) | One read; stored items carry no bookkeeping |
+| Deletes at the source can be synchronized | The mirror deletes nothing; a takedown reaches clients through the refreshed document (R-REPO-029, Q-REPO-144) | A deletion upstream must not destroy what builds pinned; an operator deletes on purpose |
 
 ## Security notes
 
@@ -3138,6 +3711,14 @@ MVP and P1 entries of the covered catalog pages that this page does not specify:
   its client before the tail, which every leader withholds until its entry has committed, and a
   security event is written (R-REPO-026, R-REPO-041).
 - **Explanations do not leak member keys** to callers who cannot read those members (R-REPO-019).
+- **A mirror amplifies the cache-fill question** of R-AUTHZ-008: it fills without a client, as the system, for every name its
+  patterns admit. Switching a remote to `mirror` therefore needs `repositories:write-config`; a project administrator keeps,
+  pauses or turns off what an administrator set (Q-REPO-142). Its volume is bounded by its patterns, `maxBytes` and, once
+  built, the quotas (R-REPO-052); a well-known public upstream cannot be mirrored without a bound. A mirror stores content
+  before anyone asked for it, so a malicious version under its patterns is stored sooner (H-503); the download blocking of
+  [vulnerability-scanning.md](vulnerability-scanning.md) applies when it is served. Its requests pass the same egress rules,
+  credentials policy and host checks as client fetches; npm's replication host is the one destination a format adds
+  (H-504). Rate limits the mirror provokes never close the circuit for clients (R-REPO-054).
 
 ## Decisions
 
@@ -4626,6 +5207,372 @@ decides. The development agent revisits it with repository sharing between proje
 **Applied in the spec:** R-REPO-013 (the bullet, an acceptance criterion). Code: `internal/repository/members.go`
 (`detachReferences`, `refuseForeignReferences`).
 
+### Q-REPO-130 · The mirror is a mode of the remote repository, set in its document
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the owner's request of 2026-11-02 keeps pull-through as the default of a remote repository and lets a remote be set
+to full mirror. The catalog's pull replication (API-082, API-083) configures it as a document of its own per target.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The members `remote.mode` and `remote.mirror` of the repository document (chosen) | Read, changed, versioned, audited and declared as code with the rest of the remote | One `ETag`, one audit event, one configuration-as-code object; the upstream, credentials and patterns are the remote's anyway | The document grows by nine members |
+| (b) A replication resource per repository (`/repositories/{key}/replication`) | The catalog's shape | Familiar to users of the catalog's product family | Two documents, two revisions and two audit trails describe one upstream; configuration as code needs a second object kind |
+| (c) A repository class `mirror` | A fourth class | Visible in every list | INV-5 has three classes; a mirror is a remote with background passes, and every remote rule would have to name two classes |
+
+**Choice:** (a). A stored section written before the members existed is read with them at their defaults
+(`parseStoredRemote` applies the defaults before it decodes), so no migration rewrites `repositories.config` and an earlier
+replica, which decodes the stored section without them, reads a document the new release wrote: `json.Unmarshal` ignores the
+members it does not know. Between the contract wave and the engine's work package the mode is accepted and stored; the
+status and run operations of R-REPO-056 do not exist until their work package lands, and the manual says that no pass runs
+yet, so that nobody reads an inert mirror as running.
+
+**Rationale:** the mode changes what a remote does, not which upstream it has; everything a mirror needs to know is already
+in the remote's document. The development agent would revisit it if a remote ever needs several mirror targets (it cannot:
+one upstream per remote, INV-5).
+
+**Applied in the spec:** R-REPO-024 (the opening sentence and the table rows), R-REPO-050; [ADR-151](../decisions.md#adr-151--a-remote-repository-can-mirror-its-upstream-in-the-background).
+Code: `internal/repository/remote.go` (`RemoteSettings.Mode`, `RemoteSettings.Mirror`, `parseStoredRemote`),
+`internal/repository/validate_mirror.go`.
+
+### Q-REPO-131 · Passes follow an interval per repository, enqueued by one dispatch task
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `intervalSeconds` per repository; one task `mirror-dispatch` every minute enqueues the due passes (chosen) | `next_pass_at` = start of the pass plus the interval | Passes spread out by their own start times; a pass that outlives its interval is not started twice; one registered task | Up to a minute between due time and start |
+| (b) A cron expression per repository | The catalog's form | Exact times | The scheduler's tasks are registered at start (R-ARCH-016), so per-repository cron needs a scheduler of its own; mirrors with the same expression start in the same minute |
+| (c) One long-running job per repository that sleeps between passes | No dispatch | Simple loop | Holds a job slot for ever; a drain must release a sleeping job; more mirrors than slots starve |
+
+**Choice:** (a), the task in the queue `mirror` beside the passes, so that a long garbage collection in `maintenance` never
+delays a dispatch.
+
+**Rationale:** the start of the previous pass is the natural anchor for a background sync, and a minute of lag is nothing
+against an hourly default. The development agent would revisit it if operators ask for passes at fixed wall-clock times.
+
+**Applied in the spec:** R-REPO-050 (`intervalSeconds`), R-REPO-053 (dispatch); [architecture.md](architecture.md) R-ARCH-016
+(the kinds and the queue).
+
+### Q-REPO-132 · A mirror of a format's well-known upstream needs a bound
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a mirror of the public npm registry or of nuget.org without a bound would download terabytes before anyone notices.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Accept every mirror; rely on quotas | No rule | Simplest | Quotas are P1 (R-STOR-029); an unbounded mirror fills the object store |
+| (b) Require include patterns for every mirror | Always a name bound | Clear | A mirror of a private upstream ("everything of our partner's feed") needs no name bound |
+| (c) For the format's well-known upstream: an include list whose every pattern has a literal prefix, or `maxBytes`; elsewhere a warning (chosen) | 422 `mirror_unbounded` or the warning `mirror_unbounded` | Stops the expensive mistake where it is likely; leaves private upstreams to the operator; a deterministic rule on stored configuration | An internal proxy of the public registry under another URL is not caught (the warning is) |
+| (d) Require both patterns and `maxBytes` | Double bound | Safest | Forces a byte number on a bounded name set where none is needed |
+
+**Choice:** (c). A pattern counts as a bound when it has a literal part before its first wildcard: `*`, `**`, `@*/*` and `?x`
+do not; one such pattern in the list makes the list unbounded.
+
+**Rationale:** the public registries are the case that is both likely and ruinous; a byte bound or a prefix keeps the mirror
+to what the operator meant. The development agent would revisit it when quotas are built (the system capacity guard of
+R-REPO-052 then bounds every mirror) or if installations mirror public registries under other URLs.
+
+**Applied in the spec:** R-REPO-050, R-REPO-052. Code: `internal/repository/validate_mirror.go` (`checkMirrorBound`).
+
+### Q-REPO-133 · The byte bound counts the repository's logical bytes, and reaching it stops additions, not clients
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The folded `repository_usage.logical_bytes`, the quota's number (chosen) | One primary-key read per artifact; what clients filled counts too | The same number as R-STOR-029; no counter of its own; correct across passes, restores and deletes | Lags by one fold interval |
+| (b) A counter of the bytes the mirror stored | Counted by the pass | Exact for the mirror's own share | Diverges from the repository's real size after deletes, restores and client fills |
+| (c) Physical bytes after deduplication | The object store's view | What the bucket costs | Not per repository; a blob shared with another repository would count twice or never |
+
+**Choice:** (a). Reaching the bound ends the pass with `bound_reached`; later passes end at once while it holds; client
+fills are not bounded by it.
+
+**Rationale:** an operator who sets 100 GiB means the repository's size; refusing clients would turn a background bound into
+an outage. The development agent would revisit it if the fold lag lets mirrors overshoot measurably (H-505).
+
+**Applied in the spec:** R-REPO-052.
+
+### Q-REPO-134 · The versions a mirror stores: the newest n by the format's order, prereleases optional
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) All versions | No member | A full copy | Packages with thousands of versions (nightly builds) dominate the storage |
+| (b) `maxVersionsPerPackage` and `includePrereleases`, with versions the format pins (chosen) | Newest n after the prerelease filter, by the format's version order | Bounded per package; one generic rule; the format keeps `latest` reachable | A build that needs an older version fetches it by pull-through |
+| (c) Version ranges per package | `lodash@^4` | Precise | A configuration language per package; ranges differ per format |
+| (d) Published after a date | `since` | Cuts history | npm's and NuGet's published times differ in meaning (NuGet sets 1900 for unlisted versions) |
+
+**Choice:** (b), with `0` for all versions as the default.
+
+**Rationale:** the newest versions are what builds resolve; older ones remain reachable through the same remote. The
+development agent would revisit (c) if installations need ranges per package.
+
+**Applied in the spec:** R-REPO-050, R-REPO-051; [formats/npm.md](formats/npm.md) Q-NPM-71.
+
+### Q-REPO-135 · A pass keeps its discovered names in a pending table and fills them package by package
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The job checkpoint holds the feed cursor; a page is filled before the cursor moves | The vulnerability sync's form (R-VULN-004) | No table | npm's feed pages hold up to 10,000 changes: a drain repeats hours of work; the checkpoint dies with the job, so a long rate-limit wait cannot end the job |
+| (b) A table `mirror_pending` of discovered names and the pass's state in `mirror_state`, both outside the job (chosen) | Discovery appends names and moves the cursor in one transaction; the fill deletes a name when its package is stored | Resumable per package; the pass outlives a job (rate-limit waits, failures, crashes); bounded by pausing discovery at 10,000 pending names | Two tables; one statement per package |
+| (c) One job per package | The job queue as the work list | Parallel across processes | Millions of jobs for a large mirror; the queue's own tables become the bottleneck; concurrency per upstream is lost |
+
+**Choice:** (b). The pass is a durable object of its repository; jobs only carry it forward.
+
+**Rationale:** a mirror pass can take days, and nothing that takes days may depend on one job living. The development agent
+would revisit it if the pending table ever holds more than the bounded 10,000 rows per repository.
+
+**Applied in the spec:** R-REPO-053 (steps and data model).
+
+### Q-REPO-136 · A failed pass starts again on its own after a bounded back-off; a failing package waits for the next pass
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The job framework's retries (`MaxAttempts` > 1) | Immediate re-runs | No code | The framework retries within seconds; a broken upstream is hit again at once; a lost lease and a failure count alike |
+| (b) `MaxAttempts: 1`; the dispatch re-enqueues after `min(60 s × 2^(f−1), 6 h)` ±20 %; a package three attempts, then the next pass (chosen) | Back-off in `mirror_state` | Bounded, spread, survives restarts; one failing package never blocks the rest | A pass with a permanently broken package always ends `partial` |
+| (c) Stop the mirror after n failures until an operator acts | Fail closed | Loud | The owner asked for a sync that starts again on its own |
+
+**Choice:** (b).
+
+**Rationale:** the upstream decides when it recovers; a capped exponential wait finds that moment without hammering it. The
+development agent would revisit the cap of 6 h if mirrors of flaky upstreams stay behind for a day.
+
+**Applied in the spec:** R-REPO-053 (errors), R-REPO-056 (`state: failing`).
+
+### Q-REPO-137 · What counts as a rate-limit answer, and how long the mirror waits
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `429` only | R-REPO-029's rule | Simple | S3-backed upstreams answer `503 SlowDown`, and some registries answer `403` with an exhausted quota header |
+| (b) `429`; `503` with `Retry-After` or the S3 code `SlowDown`; `403`/`429`/`503` with a remaining count of 0; `Retry-After` in both forms, capped at 6 h; otherwise exponential back-off with jitter in `[d/2, d]` up to 300 s (chosen) | The answers that registries and object stores send | Honours every common signal; the jitter spreads retries; the cap keeps a wrong header from parking a mirror for days | The body of a `503` is read up to 4 KiB |
+| (c) Also every `5xx` | Treat any error as throttling | Gentle | A broken upstream would slow the whole pass instead of failing an item |
+
+**Choice:** (b). A wait longer than 300 s ends the job (`deferred`); the dispatch continues the pass when the wait is over.
+
+**Rationale:** the mirror is the one client of the upstream that can always wait, so it waits as long as it is told. The
+development agent would revisit the classification when an upstream in use signals throttling in another way.
+
+**Applied in the spec:** R-REPO-054. Code: `internal/proxy/upstream/ratelimit.go` (`RateLimitOf`, `RateLimit`).
+
+### Q-REPO-138 · The mirror's concurrency adapts: slow start, additive increase, halving on a rate limit
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A fixed `concurrency` | No adaptation | Predictable | After a rate limit the pass comes back at full width and is limited again |
+| (b) AIMD with slow start: start at 1, double per window of successes up to the ceiling or the first rate limit, then +1 per window, halve once per wait (chosen) | TCP's congestion rule ([RFC 5681](https://www.rfc-editor.org/rfc/rfc5681)) | Converges below the upstream's limit and probes upward slowly; one halving per wait, not per answer in flight | A pass starts slowly after every restart |
+| (c) A token-bucket rate learned from the answers | Requests per second | Matches rate limits that count requests | Needs a rate model per upstream; concurrency is what the budget of R-REPO-040 bounds |
+
+**Choice:** (b), per pass, in the process that runs it; the ceiling is `concurrency` and the background share of R-REPO-055.
+
+**Rationale:** a window that halves on a signal and grows slowly is the well-understood way to share a resource with unknown
+capacity. The development agent would revisit (c) if upstreams in use limit by request rate rather than concurrency.
+
+**Applied in the spec:** R-REPO-054.
+
+### Q-REPO-139 · The mirror's requests neither move nor reset the circuit, and an open circuit pauses the mirror
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-029's circuit is shared by all replicas; a `429` opens it at once for its `Retry-After`. A mirror that
+provokes rate limits would then turn clients away.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Background outcomes count as client outcomes do | One rule | Simple | A throttled mirror closes the upstream for every client: the background starves the foreground |
+| (b) They neither count nor reset; the mirror waits while the circuit is open and never probes (chosen) | The mirror has its own back-off (R-REPO-054) | Clients see only their own failures; a dead upstream that clients found stops the mirror too | A mirror never helps detect an outage |
+| (c) Count failures but not rate limits | Half way | Detects outages sooner | Errors of packages nobody asked for (one broken document) would open the circuit for clients |
+
+**Choice:** (b).
+
+**Rationale:** the circuit protects clients from waiting on an upstream that is down; only client outcomes say that. A
+success of the mirror resetting it would hide a client outage just as badly. The development agent would revisit it if
+mirrors of upstreams without client traffic need outage detection (the status's `failing` covers it today).
+
+**Applied in the spec:** R-REPO-029 (a bullet), R-REPO-054.
+
+### Q-REPO-140 · The background share, and how a client fill pre-empts it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the passes run in whatever process claims the queue `mirror` (R-REPO-053); client fills run in the client-serving
+replicas. The budget `limits.maxConcurrentFetches` is shared among the client-serving replicas without coordination
+(Q-REPO-8); the process that runs a pass need not be one of them.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Reserve a part of the budget for the background and shrink the client shares | `ceil((budget − B) ÷ n)` per `web` replica | Exact budget | Clients get less whenever a mirror exists, the opposite of clients first |
+| (b) A background share B = `min(concurrency, max(1, floor(budget ÷ 4)))` on top of the unchanged client shares; pre-emption in the process, and across replicas through the signal `mirror_yield` (chosen) | Bound `budget + n − 1 + B`, back to `budget + n − 1` while clients press | Clients are never slowed by the mirror; the bound stays fixed and small; without Valkey only the early yield is lost | The upstream may see up to B more connections than the budget while clients are idle |
+| (c) A cluster-wide semaphore in Valkey | Exact sharing | Exact | Q-REPO-8 (c)'s objections: a Valkey round trip per fetch and slots leaked by killed holders |
+| (d) The pass asks a client-serving replica to fetch for it | Background through the client path | One accounting | The background then occupies client slots, which is what has to be avoided |
+
+**Choice:** (b). A pre-empted fetch is cancelled, stores nothing, releases its flight with `failed`, stays in the pass and is
+not a failure; a fetch that a follower joined is not pre-empted.
+
+**Rationale:** "clients first" means the background yields capacity, not that clients pay for it; a quarter of the budget is
+enough for a background sync and small enough for the upstream. The development agent would revisit the quarter if passes
+are too slow at the default budget of 64, or if upstreams complain at `budget + B`.
+
+**Applied in the spec:** R-REPO-040 (a bullet), R-REPO-055; [architecture.md](architecture.md) R-ARCH-018 (the signal area),
+Q-ARCH-286. Code: `internal/proxy/types.go` (`Priority`, `BackgroundShare`), `internal/proxy/slots.go` (`acquireBackground`; the pre-emption is the engine's work package).
+
+### Q-REPO-141 · Pause is a member of the document; a pass on request is an operation
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `remote.mirror.paused` in the document, and `POST …/mirror/run` (chosen) | Pause is configuration; a run is an action | A pause survives restarts and restores, is audited, `If-Match`-guarded and declared as code; a run is a one-off with a job | Pausing needs the document's revision |
+| (b) `POST …/mirror/pause` and `…/resume` with state in `mirror_state` | Actions | No revision needed | State outside the document: lost in a restore of a transient table, invisible to configuration as code |
+| (c) No operations: only the mode | Off is `pullThrough` | Fewest operations | Turning a mirror off and on loses nothing, but a pause during an incident should not look like a change of mode |
+
+**Choice:** (a).
+
+**Rationale:** whether a mirror runs is a decision about the repository and belongs where its other decisions are. The
+development agent would revisit (b) if pausing from scripts without the revision becomes common.
+
+**Applied in the spec:** R-REPO-050, R-REPO-056.
+
+### Q-REPO-142 · Who may switch a remote to mirror
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a cache fill needs the populate right of R-AUTHZ-008, and a mirror fills without a client, for every name its
+patterns admit. A project administrator with `manageRepositories` creates and changes the remote repositories of its
+project (R-AUTHZ-026); Q-REPO-127 and Q-REPO-128 keep installation-level paths from it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Whoever may update the remote | The update right | No rule | A delegate decides how much of a public registry the installation downloads and stores |
+| (b) `repositories:write-config` sets the mode and the mirror members; a project administrator keeps what is stored, changes `paused` and turns the mode back to `pullThrough` (chosen) | 422 `mirror_restricted` for any other change by a project administrator | Volume and egress stay an installation decision; a delegate can still stop or pause what costs | A team that wants a mirror asks an administrator |
+| (c) A per-project allowance with a byte budget | Delegated mirrors within a budget | Self-service | A budget model for one feature; quotas per project do not exist |
+
+**Choice:** (b). The comparison is with the canonical stored section under the row lock, as in Q-REPO-127: a document read and
+sent back saves.
+
+**Rationale:** the populate right decides who may make trove fetch one package; a mirror decides on all of them, so it takes
+the installation's configuration right. The development agent would revisit (c) when projects get quotas.
+
+**Applied in the spec:** R-REPO-050, the security notes; [authorization.md](authorization.md) R-AUTHZ-026 (a bullet). Code:
+`internal/repository/delegated.go` (`checkDelegatedMirror`).
+
+### Q-REPO-143 · Which pull-replication entries of the catalog the mirror pulls forward
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: API-082 to API-090 describe replication between instances: push from local repositories, pull into remote caches,
+event channels, global blocks and checksum-only transfer, all P2.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) None: the mirror is trove-only | Nothing changes in the catalog | No commitment | The mirror does what API-082 to API-085 describe for pull, so it would be specified twice later |
+| (b) Pull forward what a pull mirror is: the configuration document (API-082), its read and change (API-083), the status (API-084) and the run (API-085); leave push, bulk switches, peer channels, the global block and checksum replication (chosen) | Four entries become MVP | The beta's mirror covers the catalog's pull shape; the rest keeps its own design | API-082 and API-083 are covered in the repository document's form, a deliberate deviation |
+| (c) All nine | Replication complete | One topic closed | Push, peer channels and checksum replication need trove-to-trove chaining (RMT-040) and storage-level replication, which the beta does not have |
+
+**Choice:** (b). API-086 (multi-push), API-087 (bulk switches by target URL), API-088 (peer event channels), API-089 (global
+block; the global offline switch stops every mirror, `paused` one) and API-090 (checksum-only) stay P2, in the page's
+Deferred table with their reasons.
+
+**Rationale:** the beta needs pull; everything left needs a second trove instance as a peer. The development agent would
+revisit API-089 if installations run so many mirrors that pausing them one by one is a burden.
+
+**Applied in the spec:** R-REPO-050 and R-REPO-056 (`Covers:`), Deferred, Deliberate deviations; the catalog priorities of
+API-082 to API-085 in [api-content-operations.md](../features/api-content-operations.md).
+
+### Q-REPO-144 · The mirror deletes nothing that the upstream removed
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Delete what the upstream deleted (the catalog's "sync deletes") | A copy that follows deletions | Mirror equals upstream | A takedown upstream destroys what builds pinned; a compromised upstream can wipe the mirror |
+| (b) Keep the items; the removal reaches clients through the refreshed document (chosen) | R-REPO-029's gone packages, npm's removal marks | A withdrawn version stops being served as for any remote; an operator can still copy it to a local repository | Storage of removed versions stays until an operator deletes it |
+
+**Choice:** (b).
+
+**Rationale:** R-REPO-029 already decides what a takedown means for a remote; a mirror must not decide it differently. The
+development agent would revisit it when the remote-cache cleanup of R-STOR-045 is built, which could remove gone content
+after a period.
+
+**Applied in the spec:** R-REPO-051, Deliberate deviations.
+
+### Q-REPO-145 · A mirror's fills are audited as cache fills, with the system as actor
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One populate event per stored file, as for client fills, actor `system`, `reason: mirror` (chosen) | R-AUTHZ-008's event in the fill transaction | The same trail for every byte that entered the cache; a fill without its event does not commit | A full pass of a large mirror writes as many events as files |
+| (b) One summary event per package | Fewer rows | Less audit volume | A stored file without an event of its own; differs from client fills |
+| (c) Only pass events | Least volume | Cheap | The trail no longer says how a file entered the cache |
+
+**Choice:** (a), with the pass events of R-REPO-057 on top.
+
+**Rationale:** the owner asked for the mirror's fills to be audited like cache fills, and the volume is the volume of files a
+pass stores, which the bounds limit. The development agent would revisit (b) if audit retention becomes a cost problem for
+large mirrors.
+
+**Applied in the spec:** R-REPO-057.
+
+### Q-REPO-146 · A pass fills through the remote engine with a system caller
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Through R-REPO-025 steps 4 to 10 and the format's artifact gate, with a populate check that allows and records as the system (chosen) | The mirror is one more caller of the engine | Verification, size limits, content-type rules, URL maps, flights, removal marks and the vulnerability gate apply unchanged; collapsing with clients | Each item pays the engine's statements |
+| (b) A bulk importer that writes entries and items directly | Faster | Fewer statements | A second fill path that has to repeat every rule of the engine and of the formats |
+
+**Choice:** (a). The administrator's decision to mirror is the populate decision; `cacheFillAction` applies to clients.
+
+**Rationale:** one fill path keeps every guarantee of this page true for mirrored content. The development agent would revisit
+it if a pass's statement count dominates PostgreSQL ([architecture.md](architecture.md) R-ARCH-027).
+
+**Applied in the spec:** R-REPO-053 (step 3), R-REPO-057.
+
+### Q-REPO-147 · The mirror's state survives a restore, except the pass in progress
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Both tables transient | Start over after a restore | Nothing to reconcile | Every mirror runs a full pass after a restore, which for a feed means reading it from its beginning |
+| (b) `mirror_state` data, `mirror_pending` transient; the pass in progress cleared; the cursor of the last complete pass kept, or cleared without remote caches (chosen) | The snapshot's cursor and cache belong together | The first pass after a restore is incremental from a consistent point | A restore rule of its own |
+
+**Choice:** (b).
+
+**Rationale:** the backup is transactionally consistent, so the cursor and the cache it describes are restored together; the
+pending names of an interrupted pass are rediscovered from that cursor. The development agent would revisit it if the restore
+job (phase 7) cannot apply a per-table rule.
+
+**Applied in the spec:** R-REPO-058; [backup-and-restore.md](backup-and-restore.md) R-BAK-004 (the classes).
+
+### Q-REPO-148 · Turning a mirror back to pull-through keeps what it stored
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep content, the last complete pass and its cursor; clear the pass in progress (chosen) | A mode switch is cheap both ways | Turning the mode on again continues incrementally; nothing a build uses disappears | Content the mirror stored stays until cleanup or deletion |
+| (b) Delete the mirrored content that no client used | Give the space back | Smaller | Destroys what builds may pin; "what no client used" is not tracked per item before R-STOR-045 |
+
+**Choice:** (a).
+
+**Rationale:** a mode switch must never be a deletion. The development agent would revisit (b) with the remote-cache cleanup of
+R-STOR-045.
+
+**Applied in the spec:** R-REPO-050, R-REPO-053 (stops).
+
 ## What this does not cover
 
 ### H-4 · Malicious content from a legitimate upstream
@@ -4737,3 +5684,45 @@ system (the glibc 2.28 change of how punctuation sorts) changes the order of key
 can then miss a key or admit a duplicate until it is rebuilt. What makes it real: an operating-system upgrade of the database
 server without `REINDEX` on a database created with a libc collation. Mitigation: create the database with the `C` collation
 (`initdb --locale=C`), or reindex after such an upgrade; the fix is an expand migration that declares the column `COLLATE "C"`.
+
+### H-503 · A mirror stores a malicious version before anyone asked for it
+
+Component: the passes of R-REPO-053. Subject: every repository whose clients resolve through a mirrored remote. A pull-through
+remote stores a version when a client first asks for it; a mirror stores every version its patterns and version bounds admit as
+soon as the upstream lists it, so a malicious version published under a mirrored name (H-4) is in the cache within one interval,
+also when no build would have chosen it. The vulnerability scanning evaluates stored versions and blocks a malicious one when it is
+served ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-015); between the store and the advisory a client that resolves
+the version gets it, as with pull-through. Dormant until R-REPO-053 is built. What makes it real: a mirror of a public upstream whose
+patterns cover a name that an attacker publishes to, and a client that resolves `latest` before the advisory arrives.
+
+### H-504 · npm's replication host is contacted although it is not an extraHosts entry
+
+Component: the npm discovery of [formats/npm.md](formats/npm.md#mirror-discovery) (Q-NPM-72). Subject: the outbound traffic of an
+npm mirror of the public registry. The format declares `replicate.npmjs.com` as a discovery host of its well-known upstream, so the
+mirror's feed requests go to a host that the remote's `extraHosts` does not list. The egress address rules apply at connect time and
+no credential is sent there, but an operator who reads `extraHosts` as the complete list of the remote's destinations is wrong for
+this one host. Dormant until the npm discovery is built. What makes it real: an outbound allow list kept from `extraHosts` alone.
+
+### H-505 · The byte bound of a mirror can be passed by the artifacts in flight and the fold lag
+
+Component: `remote.mirror.maxBytes` (R-REPO-052). Subject: the object store's capacity. The bound reads the folded usage counter,
+which lags by up to one fold interval (`storage.usage.fold_interval`, 5 s by default), and the pass checks it before each artifact,
+so up to `concurrency` artifacts in flight and those committed within the lag can pass it, each up to `limits.maxArtifactBytes`.
+Dormant until R-REPO-052 is built. What makes it real: a bound set close to the store's capacity with large artifacts.
+
+### H-506 · Until quotas are built, only maxBytes bounds a mirror of an upstream that is not well known
+
+Component: R-REPO-052 and [storage.md](storage.md) R-STOR-029 (P1). Subject: the installation's object store. A holder of
+`repositories:write-config` can mirror an upstream other than the format's well-known one without include patterns and without
+`maxBytes`; the warning `mirror_unbounded` is the only stop, and the system capacity guard that would stop the pass at `warnPercent`
+exists only with R-STOR-029. Live from the contract wave for the configuration, dormant for the passes until R-REPO-053 is built.
+What makes it real: a large private or proxying upstream mirrored without a bound, filling the store until client publishes fail.
+
+### H-507 · A hostile upstream can make a mirror send as many requests as its feed lists names
+
+Component: the discovery of R-REPO-051. Subject: the outbound request volume of a mirror and the time of the process that runs
+its passes. The patterns bound
+which names are asked for, and the byte bound what is stored, but not how many names a feed or a listing returns under an admitted
+prefix: an upstream that lists millions of names below `@acme/` makes each pass ask for each of their documents. The requests go to
+that upstream only, under the window of R-REPO-054. Dormant until R-REPO-053 is built. What makes it real: a mirror of an upstream
+that an attacker controls or has compromised, with a broad admitted prefix.

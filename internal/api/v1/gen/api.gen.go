@@ -1294,6 +1294,30 @@ func (e ManualHeadingLevel) Valid() bool {
 	}
 }
 
+// Defines values for MirrorSettingsDiscovery.
+const (
+	MirrorSettingsDiscoveryAuto    MirrorSettingsDiscovery = "auto"
+	MirrorSettingsDiscoveryFeed    MirrorSettingsDiscovery = "feed"
+	MirrorSettingsDiscoveryListing MirrorSettingsDiscovery = "listing"
+	MirrorSettingsDiscoveryNames   MirrorSettingsDiscovery = "names"
+)
+
+// Valid indicates whether the value is a known member of the MirrorSettingsDiscovery enum.
+func (e MirrorSettingsDiscovery) Valid() bool {
+	switch e {
+	case MirrorSettingsDiscoveryAuto:
+		return true
+	case MirrorSettingsDiscoveryFeed:
+		return true
+	case MirrorSettingsDiscoveryListing:
+		return true
+	case MirrorSettingsDiscoveryNames:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NpmSettingsAuditMode.
 const (
 	NpmSettingsAuditModeDisabled NpmSettingsAuditMode = "disabled"
@@ -1675,6 +1699,24 @@ func (e RemoteSettingsIntegrityChecksumPolicy) Valid() bool {
 	case Require:
 		return true
 	case VerifyIfAvailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RemoteSettingsMode.
+const (
+	Mirror      RemoteSettingsMode = "mirror"
+	PullThrough RemoteSettingsMode = "pullThrough"
+)
+
+// Valid indicates whether the value is a known member of the RemoteSettingsMode enum.
+func (e RemoteSettingsMode) Valid() bool {
+	switch e {
+	case Mirror:
+		return true
+	case PullThrough:
 		return true
 	default:
 		return false
@@ -5281,6 +5323,40 @@ type MembershipChange struct {
 	Remove *[]string `json:"remove,omitempty"`
 }
 
+// MirrorSettings The settings of the mirror mode (`remote.mirror`, R-REPO-050). Every member is returned, with its default where a
+// request omitted it; they take effect in `mode: mirror` only. A project administrator keeps them as stored and may
+// change `paused` only (Q-REPO-142, `422 mirror_restricted`).
+type MirrorSettings struct {
+	// Concurrency Ceiling of the pass's concurrent background fetches, held below the background share of the fetch budget (R-REPO-054, R-REPO-055).
+	Concurrency *int `json:"concurrency,omitempty"`
+
+	// Discovery How the pass discovers names (R-REPO-051); `auto` tries feed, listing and names in that order.
+	Discovery *MirrorSettingsDiscovery `json:"discovery,omitempty"`
+
+	// FullPassIntervalSeconds Age of the last full pass after which the next pass is full; `0` only when an incremental pass cannot run; otherwise at least 86400 (R-REPO-051).
+	FullPassIntervalSeconds *int `json:"fullPassIntervalSeconds,omitempty"`
+
+	// IncludePrereleases Whether the pass stores prerelease versions (R-REPO-051).
+	IncludePrereleases *bool `json:"includePrereleases,omitempty"`
+
+	// IntervalSeconds From the start of one pass to the start of the next (R-REPO-053).
+	IntervalSeconds *int `json:"intervalSeconds,omitempty"`
+
+	// MaxBytes Byte bound of the repository's stored content beyond which the pass adds nothing; `null` no bound of its own
+	// (R-REPO-052). A mirror of the format's well-known upstream needs it or include patterns that each have a literal
+	// prefix (`422 mirror_unbounded`).
+	MaxBytes *int64 `json:"maxBytes,omitempty"`
+
+	// MaxVersionsPerPackage Newest versions of a package the pass stores by the format's version order; `0` all (R-REPO-051).
+	MaxVersionsPerPackage *int `json:"maxVersionsPerPackage,omitempty"`
+
+	// Paused No pass starts; a running pass stops before its next package (R-REPO-053). Pause and resume are this member.
+	Paused *bool `json:"paused,omitempty"`
+}
+
+// MirrorSettingsDiscovery How the pass discovers names (R-REPO-051); `auto` tries feed, listing and names in that order.
+type MirrorSettingsDiscovery string
+
 // NewBastion defines model for NewBastion.
 type NewBastion struct {
 	Description *string `json:"description,omitempty"`
@@ -5984,6 +6060,17 @@ type RemoteSettings struct {
 		MaxMetadataBytes *int64 `json:"maxMetadataBytes,omitempty"`
 	} `json:"limits,omitempty"`
 
+	// Mirror The settings of the mirror mode (`remote.mirror`, R-REPO-050). Every member is returned, with its default where a
+	// request omitted it; they take effect in `mode: mirror` only. A project administrator keeps them as stored and may
+	// change `paused` only (Q-REPO-142, `422 mirror_restricted`).
+	Mirror *MirrorSettings `json:"mirror,omitempty"`
+
+	// Mode `pullThrough` fetches what clients ask for; `mirror` also stores, in background passes on `worker`, what the
+	// upstream offers within the patterns and bounds (R-REPO-050). A format whose upstream cannot be discovered answers
+	// `422 not_applicable`; a mirror of the format's well-known upstream without a bound `422 mirror_unbounded`, of
+	// another upstream the warning `mirror_unbounded`; a project administrator `422 mirror_restricted` (Q-REPO-142).
+	Mode *RemoteSettingsMode `json:"mode,omitempty"`
+
 	// OutboundProxy `named` is refused with `not_applicable` until named proxies are built (R-REPO-037, P1).
 	OutboundProxy *struct {
 		Mode *RemoteSettingsOutboundProxyMode `json:"mode,omitempty"`
@@ -6021,6 +6108,12 @@ type RemoteSettingsCacheFillAction string
 
 // RemoteSettingsIntegrityChecksumPolicy defines model for RemoteSettings.Integrity.ChecksumPolicy.
 type RemoteSettingsIntegrityChecksumPolicy string
+
+// RemoteSettingsMode `pullThrough` fetches what clients ask for; `mirror` also stores, in background passes on `worker`, what the
+// upstream offers within the patterns and bounds (R-REPO-050). A format whose upstream cannot be discovered answers
+// `422 not_applicable`; a mirror of the format's well-known upstream without a bound `422 mirror_unbounded`, of
+// another upstream the warning `mirror_unbounded`; a project administrator `422 mirror_restricted` (Q-REPO-142).
+type RemoteSettingsMode string
 
 // RemoteSettingsOutboundProxyMode defines model for RemoteSettings.OutboundProxy.Mode.
 type RemoteSettingsOutboundProxyMode string

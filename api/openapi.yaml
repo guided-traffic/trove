@@ -14019,6 +14019,17 @@ components:
               minimum: 1
               maximum: 4096
               default: 64
+        mode:
+          type: string
+          enum: [pullThrough, mirror]
+          default: pullThrough
+          description: |
+            `pullThrough` fetches what clients ask for; `mirror` also stores, in background passes on `worker`, what the
+            upstream offers within the patterns and bounds (R-REPO-050). A format whose upstream cannot be discovered answers
+            `422 not_applicable`; a mirror of the format's well-known upstream without a bound `422 mirror_unbounded`, of
+            another upstream the warning `mirror_unbounded`; a project administrator `422 mirror_restricted` (Q-REPO-142).
+        mirror:
+          $ref: "#/components/schemas/MirrorSettings"
     RemoteExtraHost:
       type: object
       additionalProperties: false
@@ -15225,3 +15236,59 @@ components:
               syncedAt: {type: [string, "null"], format: date-time}
               failures: {type: integer}
     # <<< M4b vulnerabilities
+    #
+    # >>> M6b mirror
+    MirrorSettings:
+      type: object
+      additionalProperties: false
+      description: |
+        The settings of the mirror mode (`remote.mirror`, R-REPO-050). Every member is returned, with its default where a
+        request omitted it; they take effect in `mode: mirror` only. A project administrator keeps them as stored and may
+        change `paused` only (Q-REPO-142, `422 mirror_restricted`).
+      properties:
+        paused:
+          type: boolean
+          default: false
+          description: No pass starts; a running pass stops before its next package (R-REPO-053). Pause and resume are this member.
+        intervalSeconds:
+          type: integer
+          minimum: 300
+          maximum: 604800
+          default: 3600
+          description: From the start of one pass to the start of the next (R-REPO-053).
+        fullPassIntervalSeconds:
+          type: integer
+          minimum: 0
+          maximum: 7776000
+          default: 604800
+          description: Age of the last full pass after which the next pass is full; `0` only when an incremental pass cannot run; otherwise at least 86400 (R-REPO-051).
+        discovery:
+          type: string
+          enum: [auto, feed, listing, names]
+          default: auto
+          description: How the pass discovers names (R-REPO-051); `auto` tries feed, listing and names in that order.
+        concurrency:
+          type: integer
+          minimum: 1
+          maximum: 64
+          default: 4
+          description: Ceiling of the pass's concurrent background fetches, held below the background share of the fetch budget (R-REPO-054, R-REPO-055).
+        maxVersionsPerPackage:
+          type: integer
+          minimum: 0
+          maximum: 10000
+          default: 0
+          description: Newest versions of a package the pass stores by the format's version order; `0` all (R-REPO-051).
+        includePrereleases:
+          type: boolean
+          default: true
+          description: Whether the pass stores prerelease versions (R-REPO-051).
+        maxBytes:
+          type: [integer, "null"]
+          format: int64
+          minimum: 1048576
+          description: |
+            Byte bound of the repository's stored content beyond which the pass adds nothing; `null` no bound of its own
+            (R-REPO-052). A mirror of the format's well-known upstream needs it or include patterns that each have a literal
+            prefix (`422 mirror_unbounded`).
+    # <<< M6b mirror

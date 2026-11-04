@@ -41,6 +41,24 @@ const (
 	OnlyIfCached
 )
 
+// Priority says whose fetch a request is (repositories-and-proxy.md R-REPO-055).
+type Priority uint8
+
+const (
+	// PriorityClient is a client's request, the zero value: the fetch slots of R-REPO-040, the circuit of R-REPO-029.
+	PriorityClient Priority = iota
+	// PriorityBackground is a request of a mirror's pass (R-REPO-053): it takes a background slot of the replica, at
+	// most [BackgroundShare] of the repository at a time, never waits in the clients' queue, and a client fetch
+	// pre-empts it (R-REPO-055). Its outcomes neither move nor reset the circuit (R-REPO-054, Q-REPO-139).
+	PriorityBackground
+)
+
+// BackgroundShare is the background share B of R-REPO-055 for a repository: min(concurrency, max(1, budget / 4)), with
+// budget limits.maxConcurrentFetches and concurrency remote.mirror.concurrency (Q-REPO-140).
+func BackgroundShare(budget, concurrency int) int {
+	return max(1, min(concurrency, max(1, budget/4)))
+}
+
 // Remote is a remote repository as the engine works with it: the snapshot entry and
 // its parsed settings.
 type Remote struct {
@@ -151,6 +169,9 @@ type Request struct {
 	Caller   CallerFacts
 	// Serve serves a stored artifact; required for [Engine.Artifact].
 	Serve ServeFunc
+	// Priority is PriorityClient for a client's request (the zero value) and PriorityBackground for a mirror's pass
+	// (R-REPO-055). The populate check of a background request is the mirror's, which the pass supplies.
+	Priority Priority
 	// Headers sets, on the answer the engine streams to the leader's own client while the
 	// artifact is fetched, the headers of a stored answer that do not depend on the body
 	// (Accept-Ranges, Cache-Control), so that the first answer and the later ones differ only

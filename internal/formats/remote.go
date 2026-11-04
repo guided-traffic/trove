@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/mirror/discover"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -154,11 +155,24 @@ type FillInspector interface {
 	InspectFill(ctx context.Context, rc RemoteContext, p Path, sp Spooled) (*Inspection, error)
 }
 
+// MirrorLister is an optional interface of a [RemoteAdapter]: the packages of the format's upstream can be discovered,
+// so a remote repository of the format can run in mode mirror (repositories-and-proxy.md R-REPO-050 to R-REPO-055,
+// ADR-152). Register reads it off the adapter once ([RemoteCapabilities]) and records the catalog fact Mirror.
+//
+// The interface and the types its methods speak are the leaf internal/mirror/discover, which the contract and the
+// formats import and the mirror engine, below the contract, imports too: the engine takes a format's lister without
+// importing this package. The contract of each method is on discover.Lister; the format's half of discovery is on the
+// format page's section "Mirror discovery".
+type MirrorLister = discover.Lister
+
 // RemoteCaps are the optional interfaces a format's remote adapter implements, as Register found them.
 // A field is nil for a capability the adapter does not have.
 type RemoteCaps struct {
 	Discovery Discoverer
 	Fill      FillInspector
+	// Mirror is the adapter's discovery of upstream packages; nil for a format whose remote repositories cannot be
+	// mirrors (R-REPO-050).
+	Mirror MirrorLister
 }
 
 // RemoteCapabilities returns the capabilities Register recorded for a format; the zero value for an ID that

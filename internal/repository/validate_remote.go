@@ -74,7 +74,7 @@ func validateRemote(v *validation, info catalog.Entry, d *Document) {
 		v.add("/remote", codeInvalidValue, "the section cannot be read")
 		return
 	}
-	r := &remoteResolver{v: v, info: info}
+	r := &remoteResolver{v: v, info: info, include: d.IncludePatterns}
 	s := r.resolve(in)
 	d.pending = r.pending
 	raw, err := json.Marshal(s)
@@ -90,6 +90,8 @@ type remoteResolver struct {
 	v       *validation
 	info    catalog.Entry
 	pending []pendingSecret
+	// include is the document's include list, which bounds a mirror (R-REPO-052).
+	include []string
 }
 
 func (r *remoteResolver) warn(code, pointer, detail string) {
@@ -177,6 +179,7 @@ func (r *remoteResolver) resolve(in remoteInput) RemoteSettings {
 	r.integrity(&s, in)
 	r.availability(&s, in)
 	r.limits(&s, in)
+	r.mirror(&s, in)
 	return s
 }
 

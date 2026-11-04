@@ -2,7 +2,10 @@ package formats
 
 import (
 	"context"
+	"net/url"
 	"testing"
+
+	"github.com/guided-traffic/trove/internal/mirror/discover"
 )
 
 // discoveringRemote has the two optional interfaces of a remote adapter.
@@ -49,5 +52,46 @@ func TestR_ARCH_008_RegisterReadsTheOptionalInterfacesOfARemoteAdapter(t *testin
 		if c := RemoteCapabilities(id); c.Discovery != nil || c.Fill != nil {
 			t.Errorf("%s: capabilities = %+v, want none", id, c)
 		}
+	}
+}
+
+// listingRemote is a remote adapter with the mirror's optional interface (ADR-152).
+type listingRemote struct{ stubRemote }
+
+func (listingRemote) MirrorMethods(context.Context, discover.Upstream) ([]discover.Method, error) {
+	return []discover.Method{discover.MethodNames}, nil
+}
+
+func (listingRemote) MirrorNames(context.Context, discover.Upstream, discover.PageRequest) (discover.Page, error) {
+	return discover.Page{Done: true}, nil
+}
+
+func (listingRemote) MirrorPlan(_ context.Context, _ discover.Upstream, name string) (discover.Plan, error) {
+	return discover.Plan{Name: name}, nil
+}
+
+func (listingRemote) MirrorHosts(*url.URL) []string { return nil }
+
+// TestR_REPO_050_RegisterRecordsTheMirrorLister: the mirror's discovery is an optional interface of the remote adapter,
+// found once at Register; the catalog fact Mirror follows it, so the repository model refuses mode mirror for a format
+// without it (ADR-152).
+func TestR_REPO_050_RegisterRecordsTheMirrorLister(t *testing.T) {
+	remote := func(id string) Descriptor {
+		d := valid(id)
+		d.Classes = []Class{Local, Remote}
+		return d
+	}
+	with := fake{d: remote("probe-mirror"), remote: listingRemote{}}
+	without := fake{d: remote("probe-nomirror"), remote: stubRemote{}}
+	Register(with)
+	Register(without)
+	if RemoteCapabilities("probe-mirror").Mirror == nil {
+		t.Fatal("the lister was not recorded")
+	}
+	if RemoteCapabilities("probe-nomirror").Mirror != nil || RemoteCapabilities("probe-local").Mirror != nil {
+		t.Fatal("a lister was recorded for an adapter without one")
+	}
+	if !CatalogEntry(with).Mirror || CatalogEntry(without).Mirror {
+		t.Fatalf("catalog fact Mirror: with %v, without %v", CatalogEntry(with).Mirror, CatalogEntry(without).Mirror)
 	}
 }

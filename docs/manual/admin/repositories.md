@@ -120,6 +120,13 @@ The `remote` section of an npm remote repository:
 | `integrity.blockUnexpectedContentTypes`, `allowedContentTypes` | `true`, `[]` | Refuse upstream answers of unexpected content types |
 | `limits.maxArtifactBytes`, `maxMetadataBytes` | system value | Largest upstream answer |
 | `limits.maxConcurrentFetches` | `64` | Parallel upstream fetches |
+| `mode` | `pullThrough` | `pullThrough` or `mirror`: a mirror also stores, in background passes, what the upstream offers within the include patterns and the bounds below. A mirror of `https://registry.npmjs.org/` needs include patterns that each start with a literal part (such as `@types/*`) or `mirror.maxBytes`; only a holder of `repositories:write-config` sets the mode, a project administrator may pause a mirror or turn it back to `pullThrough`. **Not built in this release yet**: a save with `mode: mirror` is refused with `not_applicable`, so a remote repository stays a pull-through cache until the background passes exist |
+| `mirror.paused` | `false` | Pause or resume the mirror |
+| `mirror.intervalSeconds`, `fullPassIntervalSeconds` | `3600`, `604800` | Time between passes; age of the last full pass after which a pass reads everything again |
+| `mirror.discovery` | `auto` | `auto`, `feed`, `listing` or `names` |
+| `mirror.concurrency` | `4` | Most background fetches at once; clients always come first |
+| `mirror.maxVersionsPerPackage`, `includePrereleases` | `0` (all), `true` | Which versions of a package the mirror stores; the `latest` version always counts |
+| `mirror.maxBytes` | none | Stop adding content when the repository holds this many bytes; clients are not limited by it |
 
 </details>
 

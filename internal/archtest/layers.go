@@ -11,9 +11,9 @@ import (
 type layer int
 
 const (
-	layerLeaf   layer = iota // config, errs, buildinfo, observability, cache, meta, backup/tables, tlsfiles, formats/catalog, formats/untrusted, formats/nuget/{id,version,nupkg,nuspec}, formats/<id>/rows, auth/scope, ci/{reason,claims,subject}, auth/jws, vuln/{advisory,match,osv,metrics}, docs/manual: usable from every layer
+	layerLeaf   layer = iota // config, errs, buildinfo, observability, cache, meta, backup/tables, tlsfiles, formats/catalog, formats/untrusted, formats/nuget/{id,version,nupkg,nuspec}, formats/<id>/rows, auth/scope, ci/{reason,claims,subject}, auth/jws, vuln/{advisory,match,osv,metrics}, mirror/discover, docs/manual: usable from every layer
 	layerInfra               // meta/postgres, blob, cluster, outbound, secrets
-	layerDomain              // repository, proxy, virtual, formatdata, authz, project, auth, jobs, audit, backup, manual
+	layerDomain              // repository, proxy, virtual, formatdata, authz, project, auth, jobs, audit, backup, manual, mirror
 	layerEdge                // httpserver, api/v1, webui, formats
 	layerApp                 // the composition root
 	layerCmd                 // the binaries
@@ -83,7 +83,10 @@ func layerTable() []layerRule {
 		{"internal/vuln/match", layerLeaf},
 		{"internal/vuln/osv", layerLeaf},
 		{"internal/vuln/metrics", layerLeaf}, // the collectors and names of R-VULN-024: the Prometheus client only
-		{"docs/manual", layerLeaf},           // the embedded files of the manual, nothing but embed (R-API-054)
+		// The mirror's discovery contract (R-REPO-050 to R-REPO-055, ADR-152): the types a format's lister and the mirror
+		// engine share, standard library only, so the contract and the formats speak them and the engine imports no edge.
+		{"internal/mirror/discover", layerLeaf},
+		{"docs/manual", layerLeaf}, // the embedded files of the manual, nothing but embed (R-API-054)
 		// The trove Bastion (R-BAS-001, Q-BAS-51): the wire contract, the answers' validity rules and the metrics are
 		// leaves that the main installation's side and the Bastion's share or read; they import nothing of the module.
 		{"internal/bastion/iface", layerLeaf},
@@ -116,6 +119,8 @@ func layerTable() []layerRule {
 		// The vulnerability scanning (R-VULN-001 to R-VULN-029): the shared domain types and ports at the root, and the
 		// store, sync, evaluate, triage and report packages below it (the pure parts are leaves above).
 		{"internal/vuln", layerDomain},
+		// The mirror engine of remote repositories (R-REPO-053 to R-REPO-058): dispatch, passes, throttling, status.
+		{"internal/mirror", layerDomain},
 		{"internal/auth", layerDomain},
 		{"internal/jobs", layerDomain},
 		{"internal/audit", layerDomain},

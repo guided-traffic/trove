@@ -488,6 +488,9 @@ func TestR_ARCH_025_TheFrozenContractChangesOnlyWithItsSurfaceFile(t *testing.T)
 	// format reads, so it is a change of the contract too.
 	lines = append(lines, leafSurfaceOf("advisory", dirDecls(t, "../vuln/advisory"), true)...)
 	lines = append(lines, leafSurfaceOf("match", dirDecls(t, "../vuln/match"), false)...)
+	// The mirror's discovery contract (ADR-152): MirrorLister is an alias of discover.Lister, and its types are what a
+	// format's lister reads and returns.
+	lines = append(lines, leafSurfaceOf("discover", dirDecls(t, "../mirror/discover"), true)...)
 	got := strings.Join(lines, "\n") + "\n"
 	if *updateContract {
 		if err := os.MkdirAll(filepath.Dir(surfacePath), 0o755); err != nil {

@@ -2464,6 +2464,56 @@ R-BAK-029:
   remote repository, and `dotnet restore` of `Newtonsoft.Json 13.0.3` through `nuget-org` fetches
   it from the stub upstream once.
 
+## Mirror discovery
+
+What a NuGet remote in mode `mirror` discovers and stores ([repositories-and-proxy.md](../repositories-and-proxy.md)
+R-REPO-050 to R-REPO-052; tests name R-REPO-051). The engine, the bounds and the throttling are the core's; this section is
+what the NuGet format contributes through the mirror interface of [architecture.md](../architecture.md) R-ARCH-008
+(Q-ARCH-284).
+
+- **What an upstream offers.** The upstream's service index (R-NUGET-014) may list
+  [`Catalog/3.0.0`](https://learn.microsoft.com/en-us/nuget/api/catalog-resource): an append-only record of every package
+  operation, indexed by time, with an index of pages, pages of items (`@type` `nuget:PackageDetails` or
+  `nuget:PackageDelete`, `nuget:id`, `nuget:version`, `commitTimeStamp`) and leaves. Items of one commit share one
+  `commitTimeStamp` and have no order among themselves; commits only ever get later. The documentation says that not every
+  package source implements it; nuget.org does. The [search resource](https://learn.microsoft.com/en-us/nuget/api/search-query-service-resource)
+  pages with `skip` and `take` (nuget.org limits `skip` to 3,000 and `take` to 1,000), returns no unlisted package and
+  reports `totalHits`. The package content resource (`PackageBaseAddress/3.0.0`) lists the versions of one ID.
+- **Methods** (Q-NUGET-95):
+  - `feed`, offered when the service index lists `Catalog/3.0.0`: a full pass reads the catalog index and every page in
+    `commitTimeStamp` order, an incremental pass the pages and items after the stored cursor (the catalog's own cursor
+    algorithm). Each item gives an ID, checked against the patterns, the claims and the ID rule of R-NUGET-003; an ID is
+    pending once per pass however many of its versions the pages list. A `nuget:PackageDelete` item makes the pass refresh
+    that ID's version list and store nothing. Leaves are not read for discovery; R-NUGET-029 reads them for digests (P1).
+  - `listing`, offered when the service index lists a search resource: pages with an empty `q`, `prerelease=true`,
+    `semVerLevel=2.0.0`, `take=1000` and `skip` growing by the page, until a page is short, `totalHits` is reached or the
+    upstream refuses a larger `skip`; the last case completes the pass with `discoveryComplete: false` and the note
+    `listing truncated at <n> of <totalHits>` (Q-NUGET-98). Unlisted-only IDs are not in a search, so a listing never finds
+    them.
+  - `names`: the include patterns without a wildcard, read as IDs, and the NuGet IDs the repository holds.
+- **The plan of an ID** (Q-NUGET-97). The format fills the ID's version list (`{lower_id}/index.json`, the package document of
+  R-REPO-003) and its registration index (`{lower_id}/.registration/index.json` and the pages it does not inline) through the
+  remote engine, and returns the versions of the version list newest first by NuGet's SemVer 2.0.0 precedence (R-NUGET-004),
+  each with the path of its `.nupkg` and whether it is a prerelease (a release label). Unlisted versions count like listed ones:
+  they stay restorable. The `.nuspec`, icons, READMEs and symbols stay pull-through.
+- **Hosts.** Catalog pages and search requests go to the hosts the service index names, under the host rules of R-NUGET-014
+  (the upstream origin or an `extraHosts` entry; `*.nuget.org` is proposed for nuget.org) and the egress rules; the format adds
+  no host of its own.
+- **Cursor.** `{"commit": "<commitTimeStamp>"}` of the last commit whose items were all queued; within a full pass also the
+  page in progress; `{"skip": n}` for a listing; at most 4 KiB, opaque to the core.
+
+Acceptance criteria (integration, the NuGet stub of R-REPO-059):
+
+- A stub whose service index lists `Catalog/3.0.0` with three pages naming `Acme.A` (two versions), `Acme.B` and `Other.C`,
+  and a mirror with `includePatterns: ["Acme.*"]`: the full pass reads the index and the three pages and stores the three
+  `.nupkg` files of `Acme.A` and `Acme.B`; the stub records no request for a path of `Other.C` and no leaf request.
+- The stub appends a page with `Acme.A` `3.0.0` and a `nuget:PackageDelete` of `Acme.B` `1.0.0`: the next pass is incremental,
+  reads only the new page, stores `acme.a.3.0.0.nupkg` and refreshes the version list of `Acme.B`.
+- A stub without `Catalog/3.0.0` and with a search that refuses `skip` above 2,000 for 2,500 hits: the pass takes the listing,
+  completes with `discoveryComplete: false` and the note naming 2,000 of 2,500.
+- After a pass, with the stub stopped, `dotnet restore` of a project that references a mirrored version through the remote
+  succeeds.
+
 ## Endpoints
 
 ### R-NUGET-034 · NuGet documents on an endpoint with exposure rules
@@ -2544,7 +2594,7 @@ pre-releases):
 | PKG-NUGET-039 | P2 | Companion command-line client wrapping nuget and dotnet; not planned. |
 | PKG-NUGET-040 | Later | Steering clients to the newest version that passes curation policies. |
 | PKG-NUGET-052 | P2 | Repository signatures resource and repository signing (H-36). |
-| PKG-NUGET-053 | P2 | Catalog resource for mirrors and indexers (trove consumes upstream leaves in R-NUGET-029 but offers none). |
+| PKG-NUGET-053 | P2 | Catalog resource for mirrors and indexers: trove reads an upstream's catalog for its own mirrors (section "Mirror discovery") and its leaves for digests (R-NUGET-029), but offers none. |
 | PKG-NUGET-054 | P2 | URI template resources; the README template is pulled into R-NUGET-024 (P1). |
 | PKG-NUGET-056 | Later | Federated NuGet repositories (INV-5). |
 
@@ -4902,6 +4952,73 @@ API), [architecture.md](../architecture.md) Q-ARCH-270 (amended). Code: `changeP
 [change_test.go](../../../internal/repository/change_test.go), `TestCreateReadUpdate` (the payload's version) in
 [crud_test.go](../../../test/integration/repository/crud_test.go), `TestNuGetSearchClaimTiming` in
 [nuget_search_claims_test.go](../../../test/e2e/nuget_search_claims_test.go).
+
+### Q-NUGET-95 · A NuGet mirror discovers through the catalog, else the search, else exact IDs
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Catalog/3.0.0` where the service index lists it, else the search resource, else exact IDs (chosen) | The documented resources in the order of their completeness | The catalog is complete and incremental by design; the search covers private sources without a catalog; exact IDs always work | The first catalog pass of nuget.org reads the whole catalog, whatever the patterns |
+| (b) The search only | One method | Simpler | nuget.org's window ends at `skip` 3,000; never complete for a large source |
+| (c) The autocomplete resource with ID prefixes | Prefix listing | Narrow | Also capped, and documented for typing, not for enumeration |
+
+**Choice:** (a).
+
+**Rationale:** the catalog is the resource the documentation names for mirrors and indexers, with a cursor algorithm of its own. The
+development agent would revisit the first pass's cost if a full read of nuget.org's catalog takes longer than a day at the default
+concurrency.
+
+**Applied in the spec:** the section "Mirror discovery".
+
+### Q-NUGET-96 · The catalog cursor is the commit timestamp of the last commit queued whole
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The `commitTimeStamp` of the last commit whose items were all queued (chosen) | The documentation's cursor, never trove's clock | Items of one commit have no order, so a cursor inside a commit could skip some; a later page never changes an earlier one | A page re-read after a drain queues some IDs twice, which the pending table absorbs |
+| (b) The last page's `@id` | A page cursor | Fewer requests | Page URLs "are not intended to be predictable"; a page grows until a newer one exists |
+
+**Choice:** (a).
+
+**Rationale:** it is the cursor the catalog's authors prescribe, and the pending table makes a repeat harmless. The development agent
+would revisit it if an upstream's catalog commits are larger than one page.
+
+**Applied in the spec:** the section "Mirror discovery".
+
+### Q-NUGET-97 · What a NuGet mirror stores of an ID
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The version list and the registration as documents, the `.nupkg` of every counted version, unlisted ones included (chosen) | What `dotnet restore` reads | A restore succeeds with the upstream down; unlisted versions stay restorable as on nuget.org | The `.nuspec`, icons and READMEs are fetched on first use |
+| (b) Also the `.nuspec` and the embedded files | Everything addressable | Complete | The `.nuspec` is inside the `.nupkg`; doubles the requests for what restores rarely read |
+| (c) Listed versions only | Search's view | Smaller | A lockfile that pins an unlisted version fails with the upstream down |
+
+**Choice:** (a).
+
+**Rationale:** the mirror exists so that restores do not depend on the upstream; the `.nupkg` is what they need. The development agent
+would revisit (b) if clients in use read `.nuspec` files from the flat container during restore.
+
+**Applied in the spec:** the section "Mirror discovery".
+
+### Q-NUGET-98 · A truncated listing completes the pass and says so
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Complete with `discoveryComplete: false` and a note (chosen) | The pass stores what it saw | The mirror is useful within the window; the status says what is missing | An operator has to read the status to learn it |
+| (b) Fail the pass | Fail closed | Loud | A source with a capped search could never be mirrored at all |
+
+**Choice:** (a).
+
+**Rationale:** a truncated listing is a property of the upstream, not an error of the pass. The development agent would revisit it if
+a source's window moves between passes so that different subsets are mirrored each time.
+
+**Applied in the spec:** the section "Mirror discovery"; [repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-051.
 
 ## What this does not cover
 

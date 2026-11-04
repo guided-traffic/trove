@@ -229,6 +229,7 @@ func CapabilitiesOf(f Format) Capabilities {
 	if ra := f.Remote(); ra != nil {
 		c.Remote.Discovery, _ = ra.(Discoverer)
 		c.Remote.Fill, _ = ra.(FillInspector)
+		c.Remote.Mirror, _ = ra.(MirrorLister)
 	}
 	return c
 }
@@ -278,9 +279,11 @@ func CapabilitiesFor(id ID) Capabilities {
 func CatalogEntry(f Format) catalog.Entry {
 	d := f.Descriptor()
 	e := catalog.Entry{Facts: d.Facts, Names: d.Names}
-	if v := CapabilitiesOf(f).Vulnerability; v != nil {
+	caps := CapabilitiesOf(f)
+	if v := caps.Vulnerability; v != nil {
 		e.Ecosystem = v.Ecosystem()
 	}
+	e.Mirror = caps.Remote.Mirror != nil
 	if x := f.Exposure(); x != nil {
 		dim := x.Dimensions()
 		e.Exposure = catalog.Exposure{Exposable: true, Packages: dim.Packages, Versions: dim.Versions, Tags: dim.Tags}

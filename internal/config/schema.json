@@ -1787,6 +1787,13 @@
               "minimum": 0,
               "type": "integer",
               "x-trove-env": "TROVE_JOBS_WORKERS_MAINTENANCE"
+            },
+            "mirror": {
+              "default": 2,
+              "description": "The passes of mirrored remote repositories and their dispatch (R-REPO-053).",
+              "minimum": 0,
+              "type": "integer",
+              "x-trove-env": "TROVE_JOBS_WORKERS_MIRROR"
             }
           },
           "type": "object"

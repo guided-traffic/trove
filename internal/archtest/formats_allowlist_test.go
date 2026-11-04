@@ -36,6 +36,12 @@ func TestFormatAllowlistSplit(t *testing.T) {
 		wantEdge(t, vs, "R-ARCH-008", "internal/formats/npm", "internal/vuln/store")
 		wantEdge(t, vs, "R-ARCH-008", "internal/formats/npm", "internal/vuln/osv")
 	})
+	t.Run("R-REPO-051 a format may import the leaf contract of the mirror's discovery and not the engine", func(t *testing.T) {
+		wantClean(t, CheckModuleImportBans(mod, []Package{pkg("internal/formats/npm", "internal/mirror/discover")}))
+		vs := CheckModuleImportBans(mod, []Package{pkg("internal/formats/nuget", "internal/mirror", "internal/proxy/upstream")})
+		wantEdge(t, vs, "R-ARCH-008", "internal/formats/nuget", "internal/mirror")
+		wantEdge(t, vs, "R-ARCH-008", "internal/formats/nuget", "internal/proxy/upstream")
+	})
 	t.Run("R-ARCH-008 the contract importing the object store is named", func(t *testing.T) {
 		vs := CheckModuleImportBans(mod, []Package{pkg("internal/formats", "internal/blob", "internal/meta/postgres")})
 		wantEdge(t, vs, "R-ARCH-008", "internal/formats", "internal/blob")

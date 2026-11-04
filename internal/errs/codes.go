@@ -291,6 +291,22 @@ const (
 
 // <<< M4b vulnerabilities
 //
+// >>> M6b mirror
+
+// Codes of the mirror mode of remote repositories (repositories-and-proxy.md R-REPO-050 to R-REPO-052): the validation of
+// the configuration members and the stubs of the contract wave. The 422 codes appear as errors[].code of validation_failed
+// with the pointer of the member. The codes of the status and run operations (R-REPO-056) come with their work package.
+const (
+	// CodeMirrorUnbounded: a mirror of the format's well-known upstream without a bounding include list and without
+	// remote.mirror.maxBytes (R-REPO-052, Q-REPO-132); elsewhere the same code is a warning.
+	CodeMirrorUnbounded = "mirror_unbounded"
+	// CodeMirrorRestricted: a project administrator's write changes remote.mode or remote.mirror other than pausing,
+	// resuming or turning the mode back to pullThrough (Q-REPO-142).
+	CodeMirrorRestricted = "mirror_restricted"
+)
+
+// <<< M6b mirror
+//
 // >>> M13 bastion
 
 // Codes of the trove Bastion (R-BAS-004, R-BAS-008, R-BAS-009, R-BAS-014, R-BAS-029). The ones the two sides
@@ -680,6 +696,11 @@ var registry = []CodeInfo{
 	{CodeShrinkRefused, UpstreamFailed, "Advisory data would shrink too much", "A full sync would delete more than max_shrink of the stored records; the previous data stays in force. A manual run with acceptShrink overrides it once."},
 	{CodeMirrorRepositoryInvalid, Conflict, "Mirror repository invalid", "mode repository names a repository that is not a generic local repository; every run fails until the configuration names one."},
 	// <<< M4b vulnerabilities
+	//
+	// >>> M6b mirror
+	{CodeMirrorUnbounded, Invalid, "Mirror unbounded", "A mirror of the format's well-known upstream needs a bound: include patterns that each have a literal prefix, or remote.mirror.maxBytes."},
+	{CodeMirrorRestricted, Invalid, "Mirror restricted", "Only a holder of repositories:write-config sets remote.mode mirror or changes remote.mirror; a project administrator keeps the stored settings, pauses, resumes or turns the mode back to pullThrough."},
+	// <<< M6b mirror
 	//
 	// >>> M13 bastion
 	{CodeBastionTokenInvalid, Unauthenticated, "Bastion token invalid", "The Bastion token of the request is invalid, revoked, expired or its registration is disabled. It concerns the Bastion, not the caller."},

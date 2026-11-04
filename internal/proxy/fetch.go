@@ -86,8 +86,7 @@ func (f *fetcher) run(ctx context.Context) flightResult {
 		return flightResult{err: err}
 	}
 	f.cl = cl
-	release, wait, err := e.slots.acquire(ctx, rem.id, rem.Settings.Limits.MaxConcurrentFetches, e.o.Config.QueueTimeout())
-	e.m.queueWait.WithLabelValues(rem.Repo.Key).Observe(wait.Seconds())
+	ctx, release, err := e.acquireSlot(ctx, rq)
 	if err != nil {
 		return flightResult{err: err}
 	}
@@ -119,6 +118,20 @@ func (f *fetcher) run(ctx context.Context) flightResult {
 	defer rcancel()
 	res := f.respond(ctx, resp, idle)
 	return res
+}
+
+// acquireSlot takes the fetch slot of the request (R-REPO-040, R-REPO-055): a client's from the clients' queue, with the
+// queue wait observed; a mirror's background slot, at most the background share of the repository, under a context that
+// a client's pre-emption cancels. The returned context is the one the fetch runs under.
+func (e *Engine) acquireSlot(ctx context.Context, rq Request) (context.Context, func(), error) {
+	rem := rq.Remote
+	budget := rem.Settings.Limits.MaxConcurrentFetches
+	if rq.Priority == PriorityBackground {
+		return e.slots.acquireBackground(ctx, rem.id, budget, BackgroundShare(budget, rem.Settings.Mirror.Concurrency))
+	}
+	release, wait, err := e.slots.acquire(ctx, rem.id, budget, e.o.Config.QueueTimeout())
+	e.m.queueWait.WithLabelValues(rem.Repo.Key).Observe(wait.Seconds())
+	return ctx, release, err
 }
 
 // systemPopulate is the populate check of a request the engine makes for itself, with no

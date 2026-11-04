@@ -2240,6 +2240,10 @@ measured.
   rate.
 - Deletes, moves within a repository, property changes and downloads are never blocked by a
   quota.
+- The background passes of a mirrored remote ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-052) read the
+  same counters: a repository quota bounds a mirror like `remote.mirror.maxBytes`, and a pass adds no artifact while the
+  system's used capacity is at or above `warnPercent`, so that a mirror never brings the installation to the limit at which
+  uploads are refused. Client fills of a mirrored remote follow the rules above.
 - The spool volume is the only replica-local disk on the upload path; its thresholds are checked
   when an upload is admitted (R-STOR-004).
 

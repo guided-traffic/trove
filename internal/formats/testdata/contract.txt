@@ -214,6 +214,7 @@ formats.Merged: field Bytes []byte
 formats.Merged: field CacheStatus string
 formats.Merged: field MergeFingerprint [32]byte
 formats.Merged: field Partial bool
+formats.MirrorLister: alias discover.Lister
 formats.NewVersion: field Attributes json.RawMessage
 formats.NewVersion: field CreatedBy string
 formats.NewVersion: field DisplayVersion string
@@ -293,6 +294,7 @@ formats.RemoteBase: method ExpectsType(Path, string) bool
 formats.RemoteBase: method UpstreamQuery(context.Context, RemoteContext, Query) (*http.Request, error)
 formats.RemoteCaps: field Discovery Discoverer
 formats.RemoteCaps: field Fill FillInspector
+formats.RemoteCaps: field Mirror MirrorLister
 formats.RemoteContext: field Discovery any
 formats.RemoteContext: field Repo *repository.Repository
 formats.RemoteContext: field Settings json.RawMessage
@@ -558,6 +560,7 @@ catalog.Class: type string
 catalog.Entry: embedded Facts
 catalog.Entry: field Ecosystem string
 catalog.Entry: field Exposure Exposure
+catalog.Entry: field Mirror bool
 catalog.Entry: field Names Names
 catalog.Entry: method HasSettings() bool
 catalog.Entry: method ValidateSettings(Class, json.RawMessage) []SettingViolation
@@ -701,3 +704,50 @@ match.Entry: method Affects(string) Result
 match.Result: field Affected bool
 match.Result: field FixAvailable bool
 match.Result: field Unevaluable int
+discover.Cursor: alias json.RawMessage
+discover.Item: field Path string
+discover.Item: field Pinned bool
+discover.Item: field Prerelease bool
+discover.Item: field Size int64
+discover.Item: field Version string
+discover.Lister: method MirrorHosts(*url.URL) []string
+discover.Lister: method MirrorMethods(context.Context, Upstream) ([]Method, error)
+discover.Lister: method MirrorNames(context.Context, Upstream, PageRequest) (Page, error)
+discover.Lister: method MirrorPlan(context.Context, Upstream, string) (Plan, error)
+discover.Method: method Valid() bool
+discover.Method: type string
+discover.Page: field Cursor Cursor
+discover.Page: field Done bool
+discover.Page: field Names []string
+discover.Page: field Note string
+discover.Page: field Removed []string
+discover.Page: field Truncated bool
+discover.PageRequest: field Cursor Cursor
+discover.PageRequest: field Kind PassKind
+discover.PageRequest: field Limit int
+discover.PageRequest: field Method Method
+discover.PageRequest: field Scope Scope
+discover.PageRequest: field Since Cursor
+discover.PassKind: type string
+discover.Plan: field Items []Item
+discover.Plan: field Name string
+discover.RateLimited: embedded error
+discover.RateLimited: method RateLimitReason() string
+discover.RateLimited: method RetryAfter() (time.Duration, bool)
+discover.Response: field Body []byte
+discover.Response: field Header http.Header
+discover.Response: field Status int
+discover.Scope: field Admits func(string) bool
+discover.Scope: field Exclude []string
+discover.Scope: field Include []string
+discover.Upstream: method Base() *url.URL
+discover.Upstream: method Document(context.Context, string, string) ([]byte, bool, error)
+discover.Upstream: method Get(context.Context, *url.URL, string, int64) (*Response, error)
+discover.Upstream: method Settings() json.RawMessage
+discover.ErrMethodUnavailable: value = errors.New("discover: the upstream does not offer the discovery method")
+discover.MaxCursorBytes: value = 4096
+discover.MethodFeed: value Method = "feed"
+discover.MethodListing: value Method = "listing"
+discover.MethodNames: value Method = "names"
+discover.PassFull: value PassKind = "full"
+discover.PassIncremental: value PassKind = "incremental"
