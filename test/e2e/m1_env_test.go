@@ -504,21 +504,28 @@ func adminToken(t testing.TB) string {
 			return
 		}
 		a := newAPI(t).withToken(adminTok)
-		// The command binds the role in PostgreSQL; every api and packages replica learns of it through
-		// the change log within R-AUTHZ-028's bound. Wait until the binding is in force on
-		// all of them, as an administrator who read the command's result would.
+		// The command binds the role in PostgreSQL; every replica learns of it through the change log
+		// within R-AUTHZ-028's bound. /api/v1/authz/me is of the api family, so wait until the binding is
+		// in force on every api replica, as an administrator who read the command's result would: the edge
+		// balances per connection, so a count of answers does not show that each replica
+		// answered; the replicas are told apart by X-Trove-Replica.
+		replicas, _ := strconv.Atoi(strings.TrimSpace(kn(t, "get", "deployment", "trove-api", "-o", "jsonpath={.spec.replicas}")))
 		deadline := time.Now().Add(15 * time.Second)
-		for inForce := 0; inForce < 6; {
-			var me struct {
-				Roles []string `json:"roles"`
+		for {
+			inForce := map[string]bool{}
+			for range 4 * max(replicas, 1) {
+				var me struct {
+					Capabilities []string `json:"capabilities"`
+				}
+				if r := a.get("/api/v1/authz/me"); r.Status == 200 && json.Unmarshal(r.Body, &me) == nil && slices.Contains(me.Capabilities, "endpoints:write") {
+					inForce[r.Replica()] = true
+				}
 			}
-			if r := a.get("/api/v1/authz/me"); r.Status == 200 && json.Unmarshal(r.Body, &me) == nil && slices.Contains(me.Roles, "admin") {
-				inForce++
-				continue
+			if len(inForce) >= max(replicas, 1) {
+				break
 			}
-			inForce = 0
 			if time.Now().After(deadline) {
-				adminErr = fmt.Errorf("the admin binding of e2e-admin is not in force on every replica after 15 s")
+				adminErr = fmt.Errorf("the admin binding of e2e-admin is in force on %d of %d api replicas after 15 s", len(inForce), replicas)
 				return
 			}
 			time.Sleep(200 * time.Millisecond)

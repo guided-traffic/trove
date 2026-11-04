@@ -444,10 +444,17 @@ type vulnFinding struct {
 // findings lists the findings of a query of the API (status excludes the resolved ones by default).
 func (e *vulnEnv) findings(t testing.TB, query url.Values) []vulnFinding {
 	t.Helper()
+	return e.findingsVia(t, e.adm, query)
+}
+
+// findingsVia is findings through the given client: e.adm reaches any replica through the edge, a client of one pod reaches
+// that replica alone.
+func (e *vulnEnv) findingsVia(t testing.TB, adm *api, query url.Values) []vulnFinding {
+	t.Helper()
 	var all []vulnFinding
 	next := "/api/v1/vulnerabilities/findings?" + query.Encode()
 	for next != "" {
-		r := e.adm.get(next).want(t, "list findings", 200)
+		r := adm.get(next).want(t, "list findings", 200)
 		var page struct {
 			Items []vulnFinding `json:"items"`
 		}
@@ -474,9 +481,17 @@ func (e *vulnEnv) findings(t testing.TB, query url.Values) []vulnFinding {
 // finding returns the one finding of the repository, package and version, waiting for it.
 func (e *vulnEnv) finding(t testing.TB, repo, pkg, version string) vulnFinding {
 	t.Helper()
+	return e.findingVia(t, e.adm, repo, pkg, version)
+}
+
+// findingVia is finding through the given client. The block of a finding is decided with the repository settings of the
+// replica that answers, and a replica learns of a settings change within cluster.epoch_poll_interval when Valkey is down
+// (R-VULN-027): a test that waited for one replica to have the change reads the finding from that replica.
+func (e *vulnEnv) findingVia(t testing.TB, adm *api, repo, pkg, version string) vulnFinding {
+	t.Helper()
 	var got []vulnFinding
 	waitFor(t, "the finding of "+pkg+"@"+version+" in "+repo, 2*time.Minute, time.Second, func() bool {
-		got = e.findings(t, url.Values{"repository": {repo}, "package": {pkg}, "version": {version}})
+		got = e.findingsVia(t, adm, url.Values{"repository": {repo}, "package": {pkg}, "version": {version}})
 		return len(got) >= 1
 	})
 	if len(got) != 1 {

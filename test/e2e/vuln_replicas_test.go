@@ -127,7 +127,8 @@ func TestVuln_R_VULN_027_AcrossReplicasAndWithoutValkey(t *testing.T) {
 		})
 		t.Logf("blockMalicious: false was in force on B after %s", time.Since(start).Round(10*time.Millisecond))
 		etag := r.Header.Get("Etag")
-		f := e.finding(t, npmRemoteKey, name, "1.0.0")
+		// read from B, the replica that was waited for: another replica may still be within its poll of the change log
+		f := e.findingVia(t, rc.admin[b], npmRemoteKey, name, "1.0.0")
 		if f.Kind != "malicious" || f.Blocked {
 			t.Fatalf("the finding of %s = %+v, want malicious and not blocking while blockMalicious is false", name, f)
 		}
