@@ -204,6 +204,17 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
+Found on 2026-11-04 while cutting trove into task areas (phase 6a):
+
+### Tests and tools
+
+- **F-46 · `TestE1_08RateLimits` was red in the `failover` leg of the scheduled nightly run 41804996351** (read, from the
+  log). The bound cases passed, with Valkey stopped included (`e1_08_ratelimit_test.go` up to line 202); the case after
+  `valkey-cli.sh client pause 4000 all` (line 230) saw 15 of 483 requests take 400 ms or more, and the credential-failure
+  burst that follows (line 351) is where the test failed; its assertion is not yet read. The same run was red in `npm-ha`
+  (F-38) and in the performance run of R-VULN-028 (F-43). Done when the failing assertion is read, reproduced with
+  `make e2e SET=failover` and its cause fixed, or shown to be the runner's load (F-37, F-40).
+
 Found on 2026-11-03 while building phase 6:
 
 ### Tests and tools
