@@ -215,21 +215,35 @@ func TestR_VULN_028_PerformanceRun(t *testing.T) {
 		rep.record("V-3", "incremental sync with 500 changed records and their evaluation", time.Since(start).Minutes(), "min", 2, "")
 	})
 
-	// V-4: the evaluation added to a publish. 300 versions are published to npm-local with data present; the p99 is read
-	// from the replica's histogram of the trigger publish, to the bucket (a bound, never below the true value).
+	// V-4: the evaluation added to a publish. 300 versions are published to npm-local with data present. The replica's
+	// histogram of the trigger publish observes each evaluation once, inside the publish; scraped before and after every
+	// publish, its _sum and _count move by that one call's duration, so the p99 is read from 300 exact samples and not from
+	// a bucket (F-43). The histogram stays what production reads; its bucket bound is noted beside the exact value.
 	t.Run("V-4 evaluation on publish", func(t *testing.T) {
+		const metric, series = "trove_vuln_evaluation_duration_seconds", `trigger="publish"`
+		sum, count, _ := histogramTotals(web.Metrics(t), metric, series)
+		var samples []time.Duration
+		repeated := 0
 		for i := range publishes {
 			name := fmt.Sprintf("trove-test-filler-%04d", 100000+i) // not in the dump: the common case of a publish
 			if i%10 == 0 {
 				name = fmt.Sprintf("trove-test-filler-%04d", i) // one in ten has an advisory (version 1.0.0 is affected)
 			}
 			publish(t, in, web, repoNPMLocal, name, fmt.Sprintf("1.%d.0", 20+i))
+			nextSum, nextCount, ok := histogramTotals(web.Metrics(t), metric, series)
+			if !ok || nextCount == count {
+				t.Fatalf("publish %d was not evaluated: %s{%s} did not move", i, metric, series)
+			}
+			if nextCount-count > 1 {
+				repeated++ // a transaction that ran again observed more than once: its sample is the sum of the runs
+			}
+			samples = append(samples, time.Duration((nextSum-sum)*float64(time.Second)))
+			sum, count = nextSum, nextCount
 		}
-		bound := histogramBound(web.Metrics(t), "trove_vuln_evaluation_duration_seconds", `trigger="publish"`, 0.99)
-		if bound < 0 {
-			t.Fatal("trove_vuln_evaluation_duration_seconds{trigger=\"publish\"} has no observation: the publishes were not evaluated")
-		}
-		rep.record("V-4", "evaluation added to a publish commit, p99 (bucket bound)", bound*1000, "ms", 5, fmt.Sprintf("%d publishes", publishes))
+		bound := histogramBound(web.Metrics(t), metric, series, 0.99)
+		rep.record("V-4", "evaluation added to a publish commit, p99 (exact, per call)", ms(percentile(samples, 0.99)), "ms", 5,
+			fmt.Sprintf("%d publishes, median %.2f ms, max %.2f ms, %d evaluated more than once, histogram bucket bound of the p99 %.0f ms",
+				publishes, ms(percentile(samples, 0.5)), ms(percentile(samples, 1)), repeated, bound*1000))
 	})
 
 	// V-5: the block check of a download of a stored item. One replica has the scanning on, one off; the same stored

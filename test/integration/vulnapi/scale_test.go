@@ -9,8 +9,8 @@ import (
 )
 
 // TestR_VULN_020_TheFirstPageAtScale: 100,000 findings; the first page of every sort answers within the V-7 target (300 ms,
-// R-VULN-028) for an administrator. A caller whose grant is narrowed by a package pattern pays the decision point's row-by-row
-// read of the repository's findings (H-488: about 300 ms at this size, which the test records and bounds at one second). The
+// R-VULN-028) for an administrator. A caller whose grant is narrowed by a package pattern pays the read of the repository's
+// finding triples and one decision per triple (H-488, Q-VULN-77), which the test records and bounds at one second. The
 // statement orders by the indexes of 00039 (Q-VULN-68); the median of five requests keeps a slow runner from failing the
 // bound by one outlier.
 func TestR_VULN_020_TheFirstPageAtScale(t *testing.T) {

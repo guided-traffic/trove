@@ -441,6 +441,13 @@ func (st *evalState) anonReadsAllMembers(r *repoInfo, depth int) bool {
 
 // evaluate is `Decide` of R-AUTHZ-015 on a given index.
 func (e *Engine) evaluate(idx *Index, sub Subject, c Coordinate) Decision {
+	return e.evaluateWith(idx, sub, nil, c)
+}
+
+// evaluateWith is evaluate with the state a caller derived from the same index and subject already; nil derives it. A
+// listing that decides many rows for one subject builds the state once (readScope.MayRead): it is immutable, so the answer
+// is the one evaluate gives, row for row.
+func (e *Engine) evaluateWith(idx *Index, sub Subject, st *evalState, c Coordinate) Decision {
 	epoch := idx.label.AuthzEpoch
 	deny := func(o Outcome, reason string, missing Action) Decision {
 		return Decision{Outcome: o, Reason: reason, Missing: missing, Target: targetOf(c), Epoch: epoch}
@@ -465,7 +472,9 @@ func (e *Engine) evaluate(idx *Index, sub Subject, c Coordinate) Decision {
 	if sub.Anonymous && r.requireAuth {
 		return deny(DenyUnauthenticated, ReasonUnauthenticated, "")
 	}
-	st := e.newEvalState(idx, sub)
+	if st == nil {
+		st = e.newEvalState(idx, sub)
+	}
 
 	target := r
 	var sources []string

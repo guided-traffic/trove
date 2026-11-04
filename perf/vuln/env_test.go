@@ -174,6 +174,29 @@ func histogramBound(text, name, selector string, q float64) float64 {
 	return math.Inf(1)
 }
 
+// histogramTotals returns the sum (in the unit of the metric) and the count of the observations of the histogram series
+// whose line holds selector; ok is false when the series has no _count line yet. Scraped before and after one call, the
+// differences are that call's own observation: the count rises by one and the sum by its duration, exactly and not to
+// a bucket.
+func histogramTotals(text, name, selector string) (sum float64, count int64, ok bool) {
+	for _, line := range strings.Split(text, "\n") {
+		if !strings.Contains(line, selector) {
+			continue
+		}
+		v, err := strconv.ParseFloat(strings.TrimSpace(line[strings.LastIndex(line, " ")+1:]), 64)
+		if err != nil {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, name+"_sum{"):
+			sum = v
+		case strings.HasPrefix(line, name+"_count{"):
+			count, ok = int64(v), true
+		}
+	}
+	return sum, count, ok
+}
+
 // publishDoc is the body of an npm publish of name@version: a tarball with a package.json and a README, announced the way
 // libnpmpublish does.
 func publishDoc(t *testing.T, name, version string) []byte {

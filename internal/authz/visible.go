@@ -79,6 +79,12 @@ type readScope struct {
 	// each repository on its own.
 	addressed string
 	shapes    map[string]ReadShape
+	// st is what the decision derives from the subject, once for the scope: a listing decides up to hundreds of thousands
+	// of rows (the findings of R-VULN-019), and deriving the principal set and the capabilities for each would cost more
+	// than the decision. It is immutable, so concurrent MayRead calls share it. Nil when the scope reads nothing.
+	st *evalState
+	// read is the action list of every decision of the scope; evaluate only reads it.
+	read []Action
 }
 
 func (s *readScope) Shape(key string) ReadShape { return s.shapes[key] }
@@ -90,9 +96,9 @@ func (s *readScope) MayRead(repo, pkg, version string) bool {
 	if !s.idx.addressedReaches(s.addressed, repo) {
 		return false
 	}
-	d := s.e.evaluate(s.idx, s.sub, Coordinate{
+	d := s.e.evaluateWith(s.idx, s.sub, s.st, Coordinate{
 		Repository: repo, Package: pkg, Version: version,
-		Kind: KindMetadata, Actions: []Action{Read}, Addressed: s.addressed,
+		Kind: KindMetadata, Actions: s.read, Addressed: s.addressed,
 	})
 	return d.Outcome == Allow
 }
@@ -103,11 +109,12 @@ func (e *Engine) ReadScopeOn(ctx context.Context, idx *Index, sub Subject, addre
 	if refused != nil {
 		return nil, refused.Err()
 	}
-	rs := &readScope{e: e, idx: idx, sub: sub, addressed: addressed, shapes: make(map[string]ReadShape, len(keys))}
+	rs := &readScope{e: e, idx: idx, sub: sub, addressed: addressed, shapes: make(map[string]ReadShape, len(keys)), read: []Action{Read}}
 	if sub.Anonymous && sub.anon != anonOn {
 		return rs, nil
 	}
 	st := e.newEvalState(idx, sub)
+	rs.st = st
 	allEndpoint := e.exposesEverything(sub.Endpoint)
 	for _, k := range keys {
 		if !idx.addressedReaches(addressed, k) {
