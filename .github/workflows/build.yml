@@ -114,6 +114,8 @@ jobs:
           image: guidedtraffic/trove:${{ steps.version.outputs.version }}
           format: spdx-json
           syft-version: ${{ env.SYFT_VERSION }}
+          # Into the workspace, where the next step picks it up; without it the action writes to a temporary directory.
+          output-file: ${{ github.workspace }}/guidedtraffic-trove_${{ steps.version.outputs.version }}.spdx.json
           upload-artifact: true
           upload-release-assets: false
         env:
@@ -124,6 +126,7 @@ jobs:
         with:
           files: |
             ${{ github.workspace }}/guidedtraffic-trove_*.spdx.json
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
