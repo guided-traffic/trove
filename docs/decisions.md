@@ -186,6 +186,8 @@ checked every earlier decision against them:
 | [ADR-122](#adr-122--a-restore-replays-nuget-publishes-and-deletes-into-tombstones) | A restore replays NuGet publishes and deletes into tombstones | Decided by the development agent — owner review at the walkthrough |
 | [ADR-123](#adr-123--nuget-symbol-packages-are-indexed-by-one-job-each-on-the-worker-role) | NuGet symbol packages are indexed by one job each on the worker role | Decided by the development agent — owner review at the walkthrough |
 | [ADR-124](#adr-124--releases-stay-on-major-version-0) | Releases stay on major version 0 | Accepted (owner constraint); changed by the owner on 2026-10-31: no version is expected for the beta |
+| [ADR-153](#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries) | trove is cut into task areas: roles of one binary, network seams only at trust or load boundaries | Accepted (owner decision of 2026-11-04); the exact cut follows |
+| [ADR-154](#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port) | Network policies are ingress rules between the chart's pods, each with its port | Accepted (owner constraint of 2026-11-04) |
 | [ADR-125](#adr-125--gnu-make-and-one-pin-file-for-every-tool) | GNU Make and one pin file for every tool | Decided by the development agent — owner review at the walkthrough |
 | [ADR-126](#adr-126--problem-details-with-a-relative-type-a-requestid-member-and-named-error-codes) | Problem details with a relative type, a requestId member and named error codes | Decided by the development agent — owner review at the walkthrough |
 | [ADR-127](#adr-127--transport-encryption-on-every-connection-troves-listeners-included) | Transport encryption on every connection, trove's listeners included (INV-20) | Accepted (owner constraint) |
@@ -212,6 +214,8 @@ checked every earlier decision against them:
 | [ADR-148](#adr-148--migrations-on-main-are-immutable-and-a-defect-is-fixed-forward) | Migrations on main are immutable, and a defect is fixed forward | Decided by the owner on 2026-11-02 (option (b)) |
 | [ADR-149](#adr-149--the-format-contract-gains-setupdatabastion-under-version-1) | The format contract gains `SetupData.Bastion` under version 1 | Decided by the development agent — owner review at the walkthrough |
 | [ADR-150](#adr-150--the-format-contract-gains-the-optional-vulnerability-adapter) | The format contract gains the optional vulnerability adapter under version 1 | Decided by the development agent — owner review at the walkthrough |
+| [ADR-151](#adr-151--a-remote-repository-can-mirror-its-upstream-in-the-background) | A remote repository can mirror its upstream in the background | Decided by the development agent — owner review at the walkthrough |
+| [ADR-152](#adr-152--the-format-contract-gains-the-optional-mirror-lister) | The format contract gains the optional mirror lister | Decided by the development agent — owner review at the walkthrough |
 
 </details>
 
@@ -587,6 +591,78 @@ the releases after it from `v0.9.0` on. Semantic Release had meanwhile cut `v0.2
 
 **Spec:** [owner constraints](spec/README.md#owner-constraints), [R-ARCH-025](spec/architecture.md#r-arch-025--versioning-and-compatibility-policy),
 [roadmap](coverage/roadmap.md#milestones-at-a-glance).
+
+### ADR-153 · trove is cut into task areas: roles of one binary, network seams only at trust or load boundaries
+
+**Status:** Accepted (owner decision of 2026-11-04); the exact cut is decided next and recorded here
+
+**Context.** Until now trove ran two pod types, `web` and `worker`
+([ADR-013](#adr-013--one-binary-roles-split-from-the-start-identical-replicas-per-role-inv-2),
+[ADR-104](#adr-104--subsystems-per-role-web-serves-worker-owns-background-work-and-leases)). Both were
+decisions of the development agent awaiting the owner's review; the owner's own constraint
+([ADR-093](#adr-093--horizontal-scale-random-distribution-split-roles-drains-without-outage)) allows more
+than one type of worker and a split service, and further splits existed only as pools of the same two
+roles (R-HA-062, P1, not built). On 2026-11-04, before phase 6b would have put the background mirror
+sync on `worker` as well, the owner asked for options to cut trove into microservices so that it scales
+better, and chose among four:
+
+| Option | What it is | Scaling gain | Cost | Risk to existing guarantees |
+|---|---|---|---|---|
+| (a) More roles, one binary | Roles by load profile (UI and management, package protocols, workers per queue), each its own Deployment, autoscaler, disruption budget and network policy; one database | Independent scaling and drains; a package surge cannot starve the UI, the advisory sync cannot starve maintenance | Small: roles are data (`SubsystemsFor`, the wiring areas), the chart and path routing | None |
+| **(b) (a) plus network seams at trust or load boundaries** | As (a), and an internal upstream fetch service, the only pod type that contacts upstream registries | (a), and the egress address rules of R-REPO-038 and the upstream credentials held by one pod type, client-first priority decided in one service, the detached fetch of a draining `web` replica gone | Medium: one internal API over mutual TLS, a further hop on a cache miss | Low |
+| (c) Control and data plane with separate data access | The data plane reads PostgreSQL read replicas, writes go through the control plane's API | Less load on the primary | Large | High: the authentication caches refuse on a stale change log ([ADR-114](#adr-114--authentication-caches-answer-only-while-the-change-log-is-fresh)), a lagging replica serves revoked access or refuses |
+| (d) Domain microservices with their own databases | Identity, authorization, repository configuration, a service per format, blobs, vulnerabilities, audit; APIs and events between them | Independent releases; no throughput gain for the measured bottlenecks | Very large | High: the publish commit holds item, claims and audit event in one transaction; R-ARCH-027's one statement per download becomes several network hops; one image (ADR-012) ends |
+
+**Decision.** Option (b). trove stays one binary and one image; a task area is a role, a set of wiring
+areas enabled as data, and runs as its own Deployment. Where a role needs a further variant of the same
+subsystems (paths, queues) it is a pool of that role (R-HA-062). A network seam between roles is added
+only where a trust or load boundary requires it; the first one is the upstream fetch service, which
+alone contacts upstream registries. The Bastion (M13) is the existing seam of this kind at the exposure
+boundary. The seams are guarded by ingress rules on the receiving pods
+([ADR-154](#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port)), not
+by egress rules: the separation of egress is trove's own address policy (R-REPO-038) in the one role that
+contacts upstreams.
+
+**Consequences.** ADR-013 and ADR-104 are revised by the cut decision that follows this one; R-ARCH-001,
+R-HA-002 and R-HA-062 are rewritten with it. PostgreSQL stays the system of record of every role, and the
+transactions that hold security guarantees stay in one database. The measured bottlenecks (the CPU
+profile of the npm load in [BETA.md](projektplan/BETA.md) phase 7, the statement count of F-41) are work
+per request and stay with the roles that serve them.
+
+**Revisit condition.** The PostgreSQL primary is measured as the bottleneck (write load or connection
+budget), or separate teams own formats: then a cut with data of its own, option (d) for that area, is
+weighed again.
+
+**Alternatives considered.** (a), (c) and (d) above.
+
+**Spec:** [owner constraints](spec/README.md#owner-constraints),
+[R-ARCH-001](spec/architecture.md#r-arch-001--one-binary-identical-replicas-process-roles),
+[R-HA-002](spec/ha-and-helm.md#r-ha-002--role-split-into-web-and-worker-deployments),
+[R-HA-062](spec/ha-and-helm.md#r-ha-062--further-splits-of-a-role-into-several-deployments).
+
+### ADR-154 · Network policies are ingress rules between the chart's pods, each with its port
+
+**Status:** Accepted (owner constraint of 2026-11-04)
+
+**Context.** The chart renders ingress-only policies for `web` and `worker`
+([R-HA-042](spec/ha-and-helm.md#r-ha-042--network-policies)); the specification also planned an optional
+egress policy (off by default, Q-HA-10, gap H-41). With the cut into task areas
+([ADR-153](#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries))
+more pod types talk to each other, so the owner set the rule for every policy.
+
+**Decision.** trove writes only ingress rules, only for the pods the Helm chart deploys and between them,
+and every rule names its specific port. The chart renders no egress rule and no policy for pods it does
+not deploy.
+
+**Consequences.** The egress part of R-HA-042, its values (`networkPolicy.egress`), Q-HA-10 and H-41 are
+rewritten with the specification of the cut; separating egress is trove's address policy (R-REPO-038)
+and, beyond it, the cluster operator's own policy. Each seam between task areas is an ingress rule of
+the receiving role that admits the sending roles on the seam's port.
+
+**Alternatives considered.** None; set by the owner.
+
+**Spec:** [owner constraints](spec/README.md#owner-constraints),
+[R-HA-042](spec/ha-and-helm.md#r-ha-042--network-policies).
 
 ## Design invariants
 
@@ -5600,6 +5676,77 @@ reached a database.
 
 **Spec:** [spec/architecture.md](spec/architecture.md) R-ARCH-026 and Q-ARCH-283; [spec/ha-and-helm.md](spec/ha-and-helm.md) R-HA-018.
 
+## Remote full mirror
+
+### ADR-151 · A remote repository can mirror its upstream in the background
+
+**Status:** Decided by the development agent — owner review at the walkthrough. The request is the owner's (2026-11-02): pull-through
+stays the default of a remote repository, and a remote can also be set to full mirror, in which trove downloads and keeps what it
+can discover at the upstream on its own.
+
+**Context.** A remote repository fetches what clients ask for and nothing ahead of time (INV-11). A build that needs a package
+the cache never saw fails while the upstream is down, and a public registry throttles installations that fetch in bursts. A
+mirror of a public registry would be terabytes, so a mirror needs bounds, and it must never take capacity from clients.
+
+**Decision.** A remote repository has the mode `pullThrough` (the default) or `mirror`, members `remote.mode` and `remote.mirror`
+of its document ([spec/repositories-and-proxy.md](spec/repositories-and-proxy.md) R-REPO-050). In mode `mirror`, passes as jobs
+of the job framework on their own queue `mirror` (one per repository at a time, dispatched every minute, R-REPO-053) discover the upstream's packages through the
+format (a feed, a listing or exact names; R-REPO-051), bounded by the include and exclude patterns, the newest versions per
+package and a byte bound, which a mirror of a format's well-known upstream must have (R-REPO-052). A pass keeps its state in
+PostgreSQL, outside its jobs, fenced by its job and the process that claimed it, and continues after a drain, a restart, a failover, a failure (with
+a bounded back-off) or a long rate-limit wait. Rate-limit answers are honoured (`Retry-After`, back-off with jitter, a window
+that halves) and never move the clients' circuit (R-REPO-054). The background takes a share of the fetch budget on top of the
+clients' unchanged shares, which client fetches pre-empt, in the process and across replicas through a signal (R-REPO-055).
+Its fills go through the ordinary remote path, so every rule of a fill applies, and are audited as cache fills with the system
+as actor; a status operation, a pass on request, metrics and two alerts make it observable (R-REPO-056, R-REPO-057). The
+catalog's pull replication (API-082 to API-085) is pulled forward in this shape; push, bulk switches, peer channels, a global
+block and checksum replication stay P2 (Q-REPO-143).
+
+**Consequences.** A remote in mode `mirror` serves clients as before and holds what its bounds admit before anyone asks; a
+restore keeps the last complete pass and continues from it (R-REPO-058). Who may switch the mode is the installation's decision
+(`repositories:write-config`); a project administrator pauses or turns off (Q-REPO-142). INV-11's "nothing is fetched ahead of
+time" holds for mode `pullThrough`.
+
+**Alternatives considered.** A replication document per repository in the catalog's shape (Q-REPO-130 (b)); a repository class
+`mirror` (against INV-5); a long-running job per mirror (Q-REPO-131 (c)); shrinking the client shares for the background
+(Q-REPO-140 (a)); counting background rate limits toward the circuit (Q-REPO-139 (a)).
+
+**Revisit condition:** a mirror needs more than one upstream, or installations run so many mirrors that per-repository passes
+and operations do not scale.
+
+**Spec:** [spec/repositories-and-proxy.md](spec/repositories-and-proxy.md) R-REPO-050 to R-REPO-059 and Q-REPO-130 to Q-REPO-148;
+[spec/formats/npm.md](spec/formats/npm.md) and [spec/formats/nuget.md](spec/formats/nuget.md), section "Mirror discovery";
+[spec/architecture.md](spec/architecture.md) Q-ARCH-284 to Q-ARCH-288.
+
+### ADR-152 · The format contract gains the optional mirror lister
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** The mirror engine is a domain package; what an upstream offers and what a package consists of are format
+knowledge. The format contract is frozen at version 1 ([ADR-141](#adr-141--the-format-contract-is-frozen-at-version-1)), and
+every change of it is an ADR of its own.
+
+**Decision.** The contract gains, as additions: the alias `formats.MirrorLister` of the leaf interface `discover.Lister`
+(`MirrorMethods`, `MirrorNames`, `MirrorPlan`, `MirrorHosts`), an optional interface of the remote adapter that
+`CapabilitiesOf` records as `RemoteCaps.Mirror`; and the catalog fact `Entry.Mirror`, which `CatalogEntry` derives from it, so
+that the repository model, which cannot import the contract, refuses `remote.mode: mirror` for a format without it. The types
+the methods speak are the leaf `internal/mirror/discover`: the methods and passes, the cursor, the scope, the page request
+and page, the plan and its items, the `Upstream` the engine lends a format (its `Get` and `Document` go through the
+repository's client and the remote engine with the background priority) and the `RateLimited` error that a format returns
+unchanged. The architecture test's allow-list for formats gains exactly that leaf; the surface file records its types and
+constants. `ContractVersion` stays 1: no registered format has to implement the interface. npm and NuGet implement it in the
+work packages of phase 6b (Q-ARCH-288); no remote adapter implements the lister until the engine exists, so `mode: mirror` is refused with `not_applicable` (R-REPO-050).
+
+**Consequences.** A later format joins the mirror mode by implementing four methods; no change of the core. The engine takes a
+format's lister by its type, without importing the contract (Q-ARCH-284).
+
+**Alternatives considered.** A port in the engine and an adapter in `internal/formathost` (every type twice); a method of
+`RemoteAdapter` with a default (a changed method set of a frozen interface).
+
+**Revisit condition:** more optional interfaces accumulate (ADR-150's condition), which would justify a contract version.
+
+**Spec:** [spec/architecture.md](spec/architecture.md) R-ARCH-008 and Q-ARCH-284; [spec/repositories-and-proxy.md](spec/repositories-and-proxy.md) R-REPO-050.
+
 ## Decisions by the development agent
 
 The development agent selected each of these decisions from the options documented in the
@@ -5745,6 +5892,11 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-ARCH-281](spec/architecture.md#q-arch-281--how-does-the-conformance-kit-keep-a-format-from-passing-a-check-it-does-not-run) | How does the conformance kit keep a format from passing a check it does not run? | (a) reasoned `NoContent` and hook `NoRevision` entries, skip guards for checks 6 and 9, the fill hook under the bounds of check 6, a download addresses a canonical path | [ADR-141](#adr-141--the-format-contract-is-frozen-at-version-1) |
 | [Q-ARCH-282](spec/architecture.md#q-arch-282--how-does-the-road-of-a-pass-through-query-resolve-the-discovery-document-of-a-format-that-has-one) | How does the road of a pass-through query resolve the discovery document? | (a) the host's `Build` resolves it through the engine's `Metadata` with the caller's mode and an unaudited populate check, and hands it to `UpstreamQuery` | — |
 | [Q-ARCH-283](spec/architecture.md#q-arch-283--is-a-migration-on-main-immutable-and-what-does-the-check-hold-to) | Is a migration on main immutable, and what does the check hold to? Decided by the owner on 2026-11-02, not by the development agent | (b) immutable once on `main`, checked against the history of `main`, with a named allowlist of the historical edits | [ADR-148](#adr-148--migrations-on-main-are-immutable-and-a-defect-is-fixed-forward) |
+| [Q-ARCH-284](spec/architecture.md#q-arch-284--the-mirrors-discovery-meets-the-formats-through-a-leaf-contract) | How does the mirror engine meet the formats? | (a) an optional interface of the remote adapter with its types in the leaf `internal/mirror/discover` | [ADR-152](#adr-152--the-format-contract-gains-the-optional-mirror-lister) |
+| [Q-ARCH-285](spec/architecture.md#q-arch-285--the-mirrors-jobs-run-in-a-queue-of-their-own) | Which queue do the mirror's jobs use? | (c) a queue `mirror` with `jobs.workers.mirror: 2` | — |
+| [Q-ARCH-286](spec/architecture.md#q-arch-286--clients-pre-empt-the-background-across-replicas-through-a-signal-area) | How does a client fill on a client-serving replica pre-empt the background in another process? | (a) the signal area `mirror_yield`, at most once per second and repository | — |
+| [Q-ARCH-287](spec/architecture.md#q-arch-287--a-pass-is-fenced-by-its-job-and-the-process-that-claimed-it) | How is a stale writer of a pass stopped? | (b) `pass_job_id` and `pass_holder` in `mirror_state`, every write conditional on both | — |
+| [Q-ARCH-288](spec/architecture.md#q-arch-288--the-seams-of-the-mirror) | How is phase 6b cut into work packages? | (a) npm discovery, NuGet discovery, the engine, the API and UI, meeting at the contract wave's types | [ADR-152](#adr-152--the-format-contract-gains-the-optional-mirror-lister) |
 | [Q-REPO-1](spec/repositories-and-proxy.md#q-repo-1--who-specifies-the-stored-secret-mechanism-iam-045) | Which page specifies the stored-secret mechanism? | (b) architecture.md's R-ARCH-021, for every stored secret; repository secrets only use it | [ADR-032](#adr-032--stored-secrets-are-sealed-under-a-key-ring-the-operator-supplies) |
 | [Q-REPO-2](spec/repositories-and-proxy.md#q-repo-2--lower-bound-of-the-metadata-period) | Lower bound of the metadata period? | (a) `0` is allowed and means revalidate on every request; no minimum. Revisited 2026-10-28, choice unchanged | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) |
 | [Q-REPO-3](spec/repositories-and-proxy.md#q-repo-3--generic-default-when-the-upstream-removes-a-cached-document) | Generic default when the upstream removes a cached document? | (b) mark the package gone; its documents and cached artifacts answer 404 until the upstream serves it again | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving), [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default) |
@@ -5813,6 +5965,25 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-REPO-127](spec/repositories-and-proxy.md#q-repo-127--a-project-administrator-gives-an-upstream-secret-as-a-value-and-a-stored-one-stays-with-its-hosts) | May a project administrator name a secret reference, or keep a stored credential while it changes where credentials go? | (a) values only, the stored reference sent back unchanged excepted; a change of url, of a credential host or of forwardAuthOnRedirect needs a new value (422 `secret_value_required`) | (b) an allow list of references per project; (c) document only; (d) no url change with a stored credential |
 | [Q-REPO-128](spec/repositories-and-proxy.md#q-repo-128--a-project-administrators-remote-repository-takes-the-installations-outbound-path) | May a project administrator set `outboundProxy.mode: direct` or a `sourceNetwork`? | (a) the defaults; stored values stay while url and extra hosts stay (422 `outbound_path_restricted`) | (b) allow both; (c) refuse direct only while a proxy is configured |
 | [Q-REPO-129](spec/repositories-and-proxy.md#q-repo-129--a-project-administrators-delete-leaves-virtual-repositories-outside-the-project-alone) | What does a project administrator's delete do with virtual repositories outside the project? | (a) 409 with or without detach, naming only the project's own | (b) detach from the project's only; (c) unchanged |
+| [Q-REPO-130](spec/repositories-and-proxy.md#q-repo-130--the-mirror-is-a-mode-of-the-remote-repository-set-in-its-document) | Where does the mirror mode live? | (a) the members `remote.mode` and `remote.mirror` of the repository document; old sections read with the defaults | [ADR-151](#adr-151--a-remote-repository-can-mirror-its-upstream-in-the-background) |
+| [Q-REPO-131](spec/repositories-and-proxy.md#q-repo-131--passes-follow-an-interval-per-repository-enqueued-by-one-dispatch-task) | How are passes scheduled? | (a) `intervalSeconds` per repository; the task `mirror-dispatch` every minute in the queue `mirror` | [ADR-151](#adr-151--a-remote-repository-can-mirror-its-upstream-in-the-background) |
+| [Q-REPO-132](spec/repositories-and-proxy.md#q-repo-132--a-mirror-of-a-formats-well-known-upstream-needs-a-bound) | What is required before a mirror of a public upstream is accepted? | (c) include patterns that each have a literal prefix, or `maxBytes`; elsewhere a warning | — |
+| [Q-REPO-133](spec/repositories-and-proxy.md#q-repo-133--the-byte-bound-counts-the-repositorys-logical-bytes-and-reaching-it-stops-additions-not-clients) | What does the byte bound count, and what happens when it is reached? | (a) the folded `repository_usage.logical_bytes`; the pass ends `bound_reached`, clients are unaffected | — |
+| [Q-REPO-134](spec/repositories-and-proxy.md#q-repo-134--the-versions-a-mirror-stores-the-newest-n-by-the-formats-order-prereleases-optional) | Can the versions per package be bounded? | (b) `maxVersionsPerPackage` and `includePrereleases`, with versions the format pins | — |
+| [Q-REPO-135](spec/repositories-and-proxy.md#q-repo-135--a-pass-keeps-its-discovered-names-in-a-pending-table-and-fills-them-package-by-package) | Where does a pass keep its work? | (b) `mirror_pending` and the pass state in `mirror_state`, outside the job | — |
+| [Q-REPO-136](spec/repositories-and-proxy.md#q-repo-136--a-failed-pass-starts-again-on-its-own-after-a-bounded-back-off-a-failing-package-waits-for-the-next-pass) | How does a mirror recover from errors? | (b) `MaxAttempts: 1`, the dispatch re-enqueues after `min(60 s × 2^(f−1), 6 h)` ±20 %; a package three attempts | — |
+| [Q-REPO-137](spec/repositories-and-proxy.md#q-repo-137--what-counts-as-a-rate-limit-answer-and-how-long-the-mirror-waits) | Which answers are rate limits, and how long does the mirror wait? | (b) `429`, `503` with `Retry-After` or `SlowDown`, a remaining count of 0; `Retry-After` both forms capped at 6 h, else back-off with jitter up to 300 s | — |
+| [Q-REPO-138](spec/repositories-and-proxy.md#q-repo-138--the-mirrors-concurrency-adapts-slow-start-additive-increase-halving-on-a-rate-limit) | How does the mirror lower its concurrency? | (b) AIMD with slow start, halving once per wait | — |
+| [Q-REPO-139](spec/repositories-and-proxy.md#q-repo-139--the-mirrors-requests-neither-move-nor-reset-the-circuit-and-an-open-circuit-pauses-the-mirror) | Do the mirror's rate limits count toward the circuit? | (b) no: background outcomes neither count nor reset; the mirror waits while it is open | — |
+| [Q-REPO-140](spec/repositories-and-proxy.md#q-repo-140--the-background-share-and-how-a-client-fill-pre-empts-it) | How do clients come first? | (b) a background share on top of the unchanged client shares; pre-emption in the process and through the signal `mirror_yield` | — |
+| [Q-REPO-141](spec/repositories-and-proxy.md#q-repo-141--pause-is-a-member-of-the-document-a-pass-on-request-is-an-operation) | Pause and run-now as operations? | (a) `remote.mirror.paused` in the document and `POST …/mirror/run` | — |
+| [Q-REPO-142](spec/repositories-and-proxy.md#q-repo-142--who-may-switch-a-remote-to-mirror) | Who may switch a remote to mirror? | (b) `repositories:write-config`; a project administrator keeps, pauses or turns off (`mirror_restricted`) | — |
+| [Q-REPO-143](spec/repositories-and-proxy.md#q-repo-143--which-pull-replication-entries-of-the-catalog-the-mirror-pulls-forward) | Which of API-082 to API-090 does the mirror pull forward? | (b) API-082 to API-085; API-086 to API-090 stay P2 | [ADR-151](#adr-151--a-remote-repository-can-mirror-its-upstream-in-the-background) |
+| [Q-REPO-144](spec/repositories-and-proxy.md#q-repo-144--the-mirror-deletes-nothing-that-the-upstream-removed) | Does a mirror follow deletions? | (b) no; removals reach clients through the refreshed document | — |
+| [Q-REPO-145](spec/repositories-and-proxy.md#q-repo-145--a-mirrors-fills-are-audited-as-cache-fills-with-the-system-as-actor) | How are a mirror's fills audited? | (a) one populate event per stored file, actor `system`, `reason: mirror` | — |
+| [Q-REPO-146](spec/repositories-and-proxy.md#q-repo-146--a-pass-fills-through-the-remote-engine-with-a-system-caller) | How does a pass store what it fetches? | (a) through R-REPO-025 steps 4 to 10 and the format's artifact gate | — |
+| [Q-REPO-147](spec/repositories-and-proxy.md#q-repo-147--the-mirrors-state-survives-a-restore-except-the-pass-in-progress) | What does a restore do with the mirror's state? | (b) `mirror_state` data with the pass in progress cleared, `mirror_pending` transient | — |
+| [Q-REPO-148](spec/repositories-and-proxy.md#q-repo-148--turning-a-mirror-back-to-pull-through-keeps-what-it-stored) | What does switching back to pull-through do? | (a) keeps content and the last complete pass, clears the pass in progress | — |
 | [Q-STOR-1](spec/storage.md#q-stor-1--readiness-tied-to-object-storage-reachability-inv-12) | Should object-storage reachability gate readiness? | (d) only the first readiness, through the start-up check; continuous gating as an opt-in; changes INV-12; same choice as Q-OPS-2 and Q-HA-1. Revisited 2026-10-28, unchanged: a drain during an outage costs each role at most one replica; Valkey plays no part | [ADR-023](#adr-023--high-availability-and-horizontal-scale-on-ha-postgresql-ha-valkey-and-s3-inv-12), [ADR-043](#adr-043--object-store-outage-no-local-queue-and-201-means-durable) |
 | [Q-STOR-2](spec/storage.md#q-stor-2--sha-512-for-every-blob-or-only-on-demand) | SHA-512 for every blob or only on demand? | (a) every blob; aligns INV-4's wording | [ADR-015](#adr-015--content-addressed-blob-store-on-s3-inv-4) |
 | [Q-STOR-3](spec/storage.md#q-stor-3--owner-of-build-records) | Which page owns build records? | (a) a new page `builds.md` (`R-BLD`), written before P1 build work starts; same choice as Q-AUTHZ-8 and Q-API-5 | — |
@@ -6111,6 +6282,10 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-NPM-66](spec/formats/npm.md#q-npm-66--what-npms-guide-says-and-how-it-stays-true) | What does npm's guide say, and how does it stay true? | (a) one template per topic for every class and client, only built behaviour, codes, quoted texts and defaults pinned by tests | (b) one text per class and client; (c) describe the specification |
 | [Q-NPM-67](spec/formats/npm.md#q-npm-67--npms-client-display-names-are-the-setup-pages-labels) | Which display names do npm's clients carry? | (a) the setup page's labels, "Yarn Berry (2 and later)" and "Yarn Classic (1.x)" | (b) keep "Yarn" and "Yarn Classic" |
 | [Q-NPM-68](spec/formats/npm.md#q-npm-68--pnpm-11-and-12-unpublish-at-the-deployment-target-not-through-a-virtual-repository) | How do pnpm 11 and 12 unpublish when a virtual repository is configured? | (a) documented as it is: at the deployment target; examined again in M6 (owner, 2026-10-31) | (b) accept the merge's `_rev` for packages only the deployment target holds |
+| [Q-NPM-69](spec/formats/npm.md#q-npm-69--an-npm-mirror-discovers-through-the-public-registrys-replication-service-and-by-exact-names-elsewhere) | How does an npm mirror discover packages? | (a) `_all_docs` key ranges for full passes and `_changes` for incremental ones on the public registry; exact names and held packages elsewhere | [ADR-151](#adr-151--a-remote-repository-can-mirror-its-upstream-in-the-background) |
+| [Q-NPM-70](spec/formats/npm.md#q-npm-70--what-of-npms-upstream-services-an-npm-mirror-does-not-use) | What does an npm mirror not use? | (a) the search, packuments from the replication host, streaming feeds, `include_docs` | — |
+| [Q-NPM-71](spec/formats/npm.md#q-npm-71--an-npm-mirror-always-keeps-the-version-of-the-latest-dist-tag) | Which version always counts? | (a) the version of `latest`, besides the newest n | — |
+| [Q-NPM-72](spec/formats/npm.md#q-npm-72--the-replication-host-is-a-discovery-host-of-the-format-without-credentials) | How does the mirror reach the replication host? | (a) declared by the format for its well-known upstream, without credentials, under the egress rules | — |
 | [Q-NUGET-1](spec/formats/nuget.md#q-nuget-1--default-meaning-of-a-nuget-delete) | Default meaning of a NuGet delete? | (a) the protocol `DELETE` unlists unless the repository sets `deleteMode: delete`; management, UI and raw deletes are hard deletes | [ADR-090](#adr-090--a-nuget-protocol-delete-unlists-by-default) |
 | [Q-NUGET-2](spec/formats/nuget.md#q-nuget-2--metadata-cache-period-of-nuget-remotes) | Metadata cache period of NuGet remotes? | (b) 300 s as the NuGet format default; 1800 s stays for not-found entries. Revisited 2026-10-28, unchanged: refreshes collapse through Valkey, and degrade to one per replica while Valkey is unavailable | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) |
 | [Q-NUGET-3](spec/formats/nuget.md#q-nuget-3--non-ascii-package-ids) | Allow non-ASCII package IDs? | (a) ASCII-restricted IDs for everything entering a local repository; upstream IDs keyed by the client's lowercased path | [ADR-074](#adr-074--nuget-package-ids-ascii-on-push-case-insensitive-first-casing-displayed) |
@@ -6203,6 +6378,10 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-NUGET-92](spec/formats/nuget.md#q-nuget-92--what-the-address-check-of-the-run-against-nugetorg-counts-as-an-address) | What does the address check against nuget.org count as an address? | (a) every absolute URL in the document except `projectUrl`, `licenseUrl`, `iconUrl`, `advisoryUrl` (F-24) and the `@context` | — |
 | [Q-NUGET-93](spec/formats/nuget.md#q-nuget-93--the-versions-stored-before-the-semver-2-classification-counted-dependency-ranges-are-recomputed-once-by-a-background-job-in-go) | How do the rows stored before the SemVer 2 classification counted dependency ranges get the flag the rule gives them (F-30)? | (a) the background data migration `data_migration_nuget_semver2` in Go: queued at worker start while `system_state` lacks `nuget_semver2_recomputed`, waits for replicas of 0.9.0, recomputes with `version.PackageIsSemver2` from the stored rows and raises the package revisions | (b) migration 00019 in SQL; (c) leave the old rows |
 | [Q-NUGET-94](spec/formats/nuget.md#q-nuget-94--a-forwarded-answer-fetched-under-the-remotes-current-configuration-outlives-both-applications-of-a-change) | Which copies of forwarded answers does a change of `repo_config` drop, and may a fill be stored while the area changes? | (a) the payload carries `config_version`; a change drops the copies of older versions only (all on a deletion or a payload without a version); a fill is stored without the epoch check, the key being self-validating | (b) the e2e test waits one poll interval; (c) the poll skips changes Valkey delivered; (d) no area, key and period alone |
+| [Q-NUGET-95](spec/formats/nuget.md#q-nuget-95--a-nuget-mirror-discovers-through-the-catalog-else-the-search-else-exact-ids) | How does a NuGet mirror discover packages? | (a) `Catalog/3.0.0`, else the search resource, else exact IDs | [ADR-151](#adr-151--a-remote-repository-can-mirror-its-upstream-in-the-background) |
+| [Q-NUGET-96](spec/formats/nuget.md#q-nuget-96--the-catalog-cursor-is-the-commit-timestamp-of-the-last-commit-queued-whole) | What is the catalog cursor? | (a) the `commitTimeStamp` of the last commit whose items were all queued | — |
+| [Q-NUGET-97](spec/formats/nuget.md#q-nuget-97--what-a-nuget-mirror-stores-of-an-id) | What does a NuGet mirror store of an ID? | (a) the version list and the registration, the `.nupkg` of every counted version, unlisted ones included | — |
+| [Q-NUGET-98](spec/formats/nuget.md#q-nuget-98--a-truncated-listing-completes-the-pass-and-says-so) | What does a truncated search listing do? | (a) complete with `discoveryComplete: false` and a note | — |
 | [Q-GENERIC-1](spec/formats/generic.md#q-generic-1--the-format-is-generic-flat-paths-and-the-descriptor-lists-only-implemented-classes) | Is the format `generic` with flat paths, and which classes does the descriptor list? | (a) the implemented classes only | — |
 | [Q-GENERIC-2](spec/formats/generic.md#q-generic-2--path-limits-of-the-generic-format) | Path limits of the generic format? | (a) 4096 bytes per path, 255 bytes per segment, valid UTF-8 | — |
 | [Q-GENERIC-3](spec/formats/generic.md#q-generic-3--a-path-is-a-file-or-a-folder-not-both) | May a path be a file and a folder at once? | (a) refuse with 409 `path_conflict` | — |
@@ -6320,6 +6499,9 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-OPS-155](spec/operations-and-observability.md#q-ops-155--the-entry-list-is-open-to-a-holder-of-repositoriesread-config-or-of-manage-decided-in-the-handler) | Who may list the cache entries, given one declaration form per operation? | (c) declared `authenticated`, decided in the handler | — |
 | [Q-OPS-156](spec/operations-and-observability.md#q-ops-156--the-system-status-shows-a-maintenance-mode-only-when-there-is-one) | What does the system status show of a maintenance mode that is not built? | (a) the member stays at `normal` in the contract; the screen shows a row only for another value | — |
 | [Q-OPS-157](spec/operations-and-observability.md#q-ops-157--the-start-up-renders-the-manual-on-the-first-request-and-parses-the-api-document-once) | What does the start-up do before the replica is ready? | (a) no manual rendering (on the first request) and one parse of the API document | — |
+| [Q-OPS-158](spec/operations-and-observability.md#q-ops-158--the-mirrors-metric-families-carry-the-repository-and-no-package) | Which metrics does the mirror export? | (a) ten families per repository with closed enumerations; gauges read from PostgreSQL | — |
+| [Q-OPS-159](spec/operations-and-observability.md#q-ops-159--the-mirror-writes-pass-events-and-its-fills-are-populate-events) | Which audit events does the mirror write? | (a) five `mirror.*` types; the fills as populate events | — |
+| [Q-OPS-160](spec/operations-and-observability.md#q-ops-160--two-alerts-for-mirrors-failing-and-stale) | Which alerts report a mirror? | (a) `TroveMirrorFailing` and `TroveMirrorStale` | — |
 | [Q-API-1](spec/api-and-ui.md#q-api-1--openapi-generation-approach) | How is the OpenAPI document produced? | (a) spec-first: oapi-codegen models and `net/http` server interface, openapi-typescript types, thin hand-written Angular clients | [ADR-083](#adr-083--the-openapi-31-document-is-the-api-contract) |
 | [Q-API-2](spec/api-and-ui.md#q-api-2--is-if-match-mandatory-on-writes) | Is `If-Match` mandatory on writes? | (b) required on PUT and PATCH of revisioned resources; `If-Match: *` is the explicit blind write | [ADR-084](#adr-084--uniform-api-conventions-problem-details-cursors-merge-patch-etags-idempotency-keys) |
 | [Q-API-3](spec/api-and-ui.md#q-api-3--cluster-wide-rate-limiting) | Cluster-wide rate limiting? | (e) cluster-wide sliding-window counters in Valkey (R-ARCH-034) with a per-replica fallback; revisited 2026-10-28; H-43 narrowed; same choice as Q-ARCH-17 | [ADR-102](#adr-102--cluster-wide-rate-limits-in-valkey-with-a-per-replica-fallback) |
@@ -6388,6 +6570,8 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-API-189](spec/api-and-ui.md#q-api-189--setup-templates-may-be-powershell-or-cmd-each-with-its-own-quoting) | How are values quoted in PowerShell and cmd snippets? | (a) languages `powershell` and `cmd` with a quoting function each | — |
 | [Q-API-190](spec/api-and-ui.md#q-api-190--the-nuget-settings-are-a-typed-member-of-the-repository-document-and-the-format-enums-follow-the-registry) | How are the NuGet settings typed in the API? | (a) `NugetSettings` beside `NpmSettings`, compared with the registered schema, the enums follow the registry | — |
 | [Q-API-191](spec/api-and-ui.md#q-api-191--the-command-line-languages-of-the-templates-are-reported-as-shell-because-the-snippet-enum-is-frozen) | How are the powershell and cmd template languages reported while the snippet enum is frozen? | (a) as `shell`; the template keeps its language for quoting | — |
+| [Q-API-192](spec/api-and-ui.md#q-api-192--the-mirrors-operations-are-sub-resources-of-the-repository) | Where are the mirror's operations? | (a) `GET …/repositories/{key}/mirror` and `POST …/mirror/run` | — |
+| [Q-API-193](spec/api-and-ui.md#q-api-193--the-mirror-members-are-added-to-the-remote-section-and-the-status-is-a-schema-of-its-own) | How does the API document grow for the mirror? | (a) new members and new schemas only, no widened enum | — |
 | [Q-UI-1](spec/api-and-ui.md#q-ui-1--component-library) | Which component library? | (a) Angular Material with the CDK and `@angular/aria`; font icons | [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) |
 | [Q-UI-2](spec/api-and-ui.md#q-ui-2--visual-direction-of-the-shell-example-screenshot-requested) | Shell layout and density? | (c) a left side bar, compact density, container queries | [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) |
 | [Q-UI-3](spec/api-and-ui.md#q-ui-3--layout-of-the-package-details-page-example-screenshot-requested) | Layout of the package details page? | (c) two columns with a sticky install panel from 960 CSS px of content width; one column below | [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) |
@@ -6449,6 +6633,8 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-UI-101](spec/api-and-ui.md#q-ui-101--overwrite-of-a-whole-body-replace-re-sends-the-stored-record-with-only-the-users-changed-members) | What does "Overwrite" send for a whole-body replace (`PUT`)? | (a) the stored record as read now with only the members the user changed, so another administrator's narrowing is kept (development agent) | — |
 | [Q-UI-102](spec/api-and-ui.md#q-ui-102--the-bulk-revoke-is-offered-only-for-filters-it-carries-and-the-day-filters-are-the-local-day) | What does the bulk revoke do with filters the revoke request cannot carry? | (a) it is disabled while one is applied and the note names it; the day filters are the local day, `to` exclusive (development agent) | — |
 | [Q-UI-103](spec/api-and-ui.md#q-ui-103--the-claim-testers-form-view-edits-the-top-level-claims-as-rows-and-the-json-text-is-the-one-source) | How does the claim tester's form view work? | (a) a JSON / Form switch; top-level claims as rows, each keeping its JSON type, the JSON text is the one source (development agent) | — |
+| [Q-UI-104](spec/api-and-ui.md#q-ui-104--the-mirror-is-a-section-of-the-remotes-form-and-a-tab-of-its-edit-form) | Where does the mirror show in the UI? | (a) a Mirror section among the remote settings and a Mirror tab with the status | — |
+| [Q-UI-105](spec/api-and-ui.md#q-ui-105--pause-and-resume-are-a-patch-of-the-document-a-pass-on-request-opens-its-job) | How do the UI's pause and run work? | (a) `PATCH` with `If-Match`; the run opens the job | — |
 | [Q-EP-1](spec/endpoints.md#q-ep-1--how-the-endpoint-of-a-request-is-identified) | How is the endpoint of a request identified? | (a) by the listener the connection arrived on; `Host` only selects among the endpoint's own hosts, a foreign host answers `421` | [ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) |
 | [Q-EP-2](spec/endpoints.md#q-ep-2--where-endpoint-configuration-and-exposure-rules-live) | Where do endpoint configuration and exposure rules live? | (c) network binding in the file, exposure rules in PostgreSQL, compiled into the grant index | [ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) |
 | [Q-EP-3](spec/endpoints.md#q-ep-3--separate-pool-or-shared-pods-for-a-further-endpoint) | Separate pool or shared pods for a further endpoint? | (c) an optional pool per endpoint, off by default, recommended for endpoints with exposure rules | [ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) |

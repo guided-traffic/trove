@@ -31,7 +31,8 @@ numbers (owner, 2026-11-02).
 | [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | 🟢 |
 | [5b · trove Bastion](#phase-5b--trove-bastion-m13) | An exposed, read-only cache instance in front of the main installation that serves released content to external parties and takes load off it | 🟢 |
 | [6 · Vulnerability scanning](#phase-6--vulnerability-scanning-m4b) | Own advisory mirror, findings and vulnerability report, malicious versions blocked, npm and NuGet audits from trove's data | 🟢 |
-| [6b · Remote full mirror](#phase-6b--remote-full-mirror) | A remote repository can mirror every discoverable package of its upstream in the background, besides the default pull-through | ⚪ |
+| [6a · Task areas](#phase-6a--task-areas) | trove cut into task areas: roles of one binary as Deployments of their own, an upstream fetch service, ingress rules between the chart's pods | 🟡 |
+| [6b · Remote full mirror](#phase-6b--remote-full-mirror) | A remote repository can mirror every discoverable package of its upstream in the background, besides the default pull-through | 🟡 |
 | [7 · HA, backup, Helm](#phase-7--ha-hardening-backup-and-helm-m5) | Drains and failovers without errors, backup and restore; beta candidate | ⚪ |
 | [8 · Walkthrough and beta](#phase-8--walkthrough-and-beta-release) | Owner review, objections fixed; **beta release** | ⚪ |
 
@@ -837,16 +838,40 @@ applies to the npm and NuGet parts of this phase.
   R-VULN-029 in the end-to-end set `vuln` (journeys and the acceptance suite, which the coverage generator does not read, as for
   R-BAS-049); R-VULN-028 in the nightly run `vuln-perf`
 
+## Phase 6a · Task areas
+
+Decided by the owner on 2026-11-04: trove is cut into task areas, as roles of one binary that run as Deployments of
+their own, with network seams only at trust or load boundaries; the first seam is an upstream fetch service, the only
+role that contacts upstream registries
+([ADR-153](../decisions.md#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries)).
+Network policies are ingress rules between the chart's pods, each with its port
+([ADR-154](../decisions.md#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port)).
+The phase comes before phase 6b, so that the mirror's background passes and its upstream contacts land in their task
+areas.
+
+- 🟢 Principle of the cut (ADR-153) and the network-policy rule (ADR-154)
+- ⚪ The roles of the cut: which task areas, which route families and queues each serves (proposed to the owner)
+- ⚪ The fetch service: which upstream contacts go through it, the internal API over mutual TLS, streaming of a miss,
+  collapse and client-first priority in one place, its drain
+- ⚪ Specification rewritten: INV-2, R-ARCH-001, R-HA-002, R-HA-062 and R-HA-042 (its egress part, Q-HA-10 and H-41
+  removed under ADR-154); ADR-013 and ADR-104 revised
+- ⚪ The roles in the binary (`SubsystemsFor` and the wiring areas) and in the chart: a Deployment, Service, disruption
+  budget, autoscaler and ingress rule per role, path routing, worker pools by queue
+- ⚪ Tests: the role table in the architecture test, chart tests per role, integration tests of the fetch seam, e2e with
+  every role deployed, a drain per role
+
 ## Phase 6b · Remote full mirror
 
-Spec: a mirror mode for remote repositories on [repositories-and-proxy.md](../spec/repositories-and-proxy.md) (to be
-written first)
+Details: [roadmap phase 6b](../coverage/roadmap.md#phase-6b--remote-full-mirror) · spec: [repositories-and-proxy.md, Mirror mode](../spec/repositories-and-proxy.md#mirror-mode)
+(R-REPO-050 to R-REPO-059), [npm](../spec/formats/npm.md#mirror-discovery) and [NuGet](../spec/formats/nuget.md#mirror-discovery) mirror
+discovery
 
 The owner's request of 2026-11-02: pull-through stays the default of a remote repository; a remote can also be set to full
 mirror, in which trove downloads and keeps everything it can discover at the upstream on its own. The phase comes before
-phase 7, so that the failure suite covers the background sync too.
+phase 7, so that the failure suite covers the background sync too. Its engine waits for phase 6a: until then
+`mode: mirror` is refused with `not_applicable` (R-REPO-050).
 
-- ⚪ Spec first: the mode per remote repository (`pullThrough`, the default, or `mirror`); what "discoverable" means per
+- 🟢 Spec first: the mode per remote repository (`pullThrough`, the default, or `mirror`); what "discoverable" means per
   format (NuGet: the upstream's catalog or its package listing; npm: the upstream's package list or change feed, where it
   has one); what the include and exclude patterns of the remote bound; storage and quota bounds, because a mirror of a
   public registry is terabytes; the catalog's pull-replication entries (API-082 to API-090) it pulls forward or leaves
