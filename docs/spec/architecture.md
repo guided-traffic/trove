@@ -7835,6 +7835,43 @@ fact the leaf does not carry.
 **Applied in the spec:** [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-050 to R-REPO-059;
 [coverage/roadmap.md](../coverage/roadmap.md#phase-6b--remote-full-mirror) (WP6b.1 to WP6b.6).
 
+### Q-ARCH-293 · Where a wall-clock target of a functional test is enforced
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: finding F-42. Beside the load of several agents on the shared integration stack, two per-change tests failed on
+wall-clock bounds. `TestR_NPM_010_ThousandVersions` took 403 ms against 200 ms on a miss and 41 ms against 10 ms from the cache;
+under 60 busy goroutines on 20 cores (reproduced) a miss took 0.8 to 3.5 s, a hit median 40 to 175 ms and a `304` up to 240 ms (the transfer of the 1.5 MiB body is most of a hit, so a hit came within 1.5 times a miss), while
+the same miss over the idle stack takes 37 to 62 ms. The case "a holder that dies without releasing" of `TestCollapse` served its
+waiter after 4.6 s against a bound of the lock's life (3 s) plus 1.5 s. Q-ARCH-220 already moved the 10 ms of the hit to the nightly
+run; the 200 ms of the miss and the 50 ms of the `304` were still per change. In the collapse case the protocol is not at fault: the
+waiter polls every 100 ms (`flightLock.Wait`), finds the expired key and fetches the body itself, and that fetch (upstream GET of
+400 kB, object store, database) is CPU work that grows with the load, which the fixed margin did not allow for.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Widen the fixed bounds | 2 s for the miss, a larger margin for the waiter | Smallest change | A number that is only right for one machine; the next loaded run exceeds it |
+| (b) Every target only with `TROVE_PERF_GATE=1`, nothing per change | The functional test checks status and content only | No flake | A rendering or a wake-up that regresses by orders of magnitude passes every change |
+| (c) Targets of the reference environment under the gate; per change a bound relative to the cost of the same work under the same load (chosen) | The 200 ms, 10 ms and 50 ms of R-NPM-010 only with the gate; per change a hit not slower than a miss and a miss under 200 ms plus 100 times the median `304` of the document (medians of 5 misses, each with a `304`); the waiter under the lock's life plus 1 s plus four times a cold fetch measured right after | Follows the load the way F-39 does; still fails on a cache that does not serve, a rendering that grows faster than its input, or a waiter woken by the wait bound | Two numbers (100, 4) that are tuned to measurements |
+| (d) Dedicated quiet runners for the integration tier | The fixed bounds stay | Strictest | The runners are shared (Q-ARCH-220) |
+
+**Choice:** (c). In `TestR_NPM_010_ThousandVersions` the miss (200 ms), the hit (10 ms; under half a miss) and the `304` (50 ms) are
+enforced with `TROVE_PERF_GATE=1`, which `make test-performance` sets; per change the hit may not be slower than the miss and the miss
+must be within `200 ms + 100 x` the median `304`; both sides are medians of 5 (misses on a revision moved each time, a `304` after each). In the "holder dies" case of `TestCollapse` the bound is `ttl + 1 s + 4 x` the time a cold
+fetch of a second path of the same size takes right after the waiter.
+
+**Rationale:** the miss over the idle stack is 17 to 26 times a `304` (both are one authenticated request with the revision lookup;
+only the miss renders), and under load the ratio of the medians stayed between 4 and 28 in 40 runs (single samples ranged from 1 to 290 times, which is why both sides are medians), because the load scales both. A rendering that
+is 4 times slower than today, or one that is quadratic in the versions, exceeds 100 times; a cache that renders on every request
+fails the hit check. The waiter's added work is a fetch, so a multiple of a fetch under the same load is the measure; a waiter woken
+by the wait bound (seconds later) or the lock's TTL still exceeds it. The development agent would revisit the choice when the
+integration tier runs on dedicated runners without a CPU limit (then the fixed bounds return, as Q-ARCH-220 says) or when a
+regression slips through the factors.
+
+**Applied in the spec:** R-NPM-010 (test note under the acceptance criteria); [releasing.md](../developer/releasing.md) (what
+`make test-performance` enforces). Tests: `TestR_NPM_010_ThousandVersions` in `test/integration/npm/documents_test.go`, `TestCollapse`
+in `test/integration/proxy/collapse_test.go`.
+
 ## What this does not cover
 
 

@@ -161,6 +161,8 @@ func TestCollapse(t *testing.T) {
 		e := newEnv(t)
 		up := e.upstream()
 		up.Set("/"+path, proxytest.Route{Body: tarball, Type: "application/octet-stream"})
+		const coldPath = "pkg/big/-/big-1.0.1.tgz"
+		up.Set("/"+coldPath, proxytest.Route{Body: tarball, Type: "application/octet-stream"})
 		rem := e.remote("collapse-kill", up)
 		ttl := 3 * time.Second
 		b := e.newReplica("b", replicaOpts{cluster: func(c *config.Cluster) { c.FlightLockTTL = ttl }})
@@ -179,12 +181,27 @@ func TestCollapse(t *testing.T) {
 		if got.status != 200 || !bytes.Equal(got.body, tarball) {
 			t.Fatalf("%d (%v)", got.status, got.err)
 		}
-		if took < time.Second || took > ttl+time.Second+500*time.Millisecond {
-			t.Fatalf("the waiter was served after %s; the lock lives %s and the poll is 100 ms", took, ttl)
-		}
 		if n := e.number("SELECT count(*) FROM remote_cache_entries"); n != 1 {
 			t.Fatalf("entries = %d, want one for the complete body", n)
 		}
+		// Once the key has expired the waiter's next poll (100 ms) finds it gone, and
+		// the waiter fetches the body itself: an upstream GET of 400 kB, the object
+		// store and the database. That is CPU work, and a fixed margin on it fails on
+		// a loaded machine (4.6 s against a bound of 4.5 s beside seven agents on the
+		// stack). What the test pins is that the waiter is woken by the expiry and
+		// the poll, not by the wait bound. So the bound is the lock's life plus ten
+		// polls (1 s) plus four times what the same fetch costs on a path nobody
+		// holds, measured right after under the same load. A waiter that wakes on
+		// the wait bound exceeds it.
+		coldStart := time.Now()
+		if cold := b.artifact(rem, coldPath); cold.status != 200 || !bytes.Equal(cold.body, tarball) {
+			t.Fatalf("cold fetch: %d (%v)", cold.status, cold.err)
+		}
+		cold := time.Since(coldStart)
+		if limit := ttl + time.Second + 4*cold; took < time.Second || took > limit {
+			t.Fatalf("the waiter was served after %s; the lock lives %s, the poll is 100 ms and a cold fetch takes %s (limit %s)", took, ttl, cold, limit)
+		}
+		t.Logf("waiter served %s after the take, a cold fetch %s", took, cold)
 	})
 
 	t.Run("R-REPO-026 R-ARCH-024 a holder that is cancelled releases with failed and the waiter takes over at once", func(t *testing.T) {

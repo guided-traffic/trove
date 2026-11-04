@@ -777,7 +777,12 @@ Acceptance criteria:
   running and with Valkey stopped.
 - `npm view @acme/ui readme` shows the README of the version tagged `latest`.
 - The full document of a package with 1,000 versions renders in under 200 ms on a miss and is
-  served from cache in under 10 ms *(targets, proposed)*.
+  served from cache in under 10 ms *(targets, proposed)*. Test note: `TestR_NPM_010_ThousandVersions`
+  enforces these two targets, and 50 ms for a `304` of the same document, only with
+  `TROVE_PERF_GATE=1` (`make test-performance`, the nightly performance run on the reference
+  environment, [Q-ARCH-293](../architecture.md#q-arch-293--where-a-wall-clock-target-of-a-functional-test-is-enforced));
+  per change it asserts that the cache serves (the median hit is not slower than the median miss) and that a miss stays
+  within `200 ms` plus 100 times a `304` of the same document under the same load (medians of 5).
 
 ### R-NPM-011 · Abbreviated document and content negotiation
 Priority: **MVP** · Covers: PKG-NPM-026
