@@ -7051,8 +7051,8 @@ but not the party that made the claim.
 ### H-80 · Self-hosted runners build the code of every pull request
 
 [release.yml](../../.github/workflows/release.yml) runs every job with `runs-on: self-hosted`, on every push and
-every pull request to `main`. Its header comment says a repository variable `LINUX_RUNNER` would override that;
-no job reads the variable. The MinIO leg of R-STOR-035 builds MinIO from source on those runners (job `s3-conformance`). R-HA-051
+every pull request to `main`; while the organisation's runners are down the jobs run on GitHub-hosted runners
+(`runs-on: ubuntu-24.04`, owner, 2026-11-04, [releasing.md](../developer/releasing.md#ci)). The MinIO leg of R-STOR-035 builds MinIO from source on those runners (job `s3-conformance`). R-HA-051
 and Q-HA-3 had described that build on isolated runners, so the isolation those pages describe is not in the
 design.
 
@@ -7062,7 +7062,9 @@ design.
   repository's secrets: the jobs `image`, `container-scan`, `integration`, `s3-conformance`, `e2e` and `e2e-npm` log in to
   Docker Hub with `secrets.DOCKERHUB_PAT`. GitHub passes repository secrets to pull requests from the same
   repository, not to pull requests from forks. Whether a fork's pull request reaches these runners at all depends
-  on the repository's Actions settings, which are not in the repository and are not verified here.
+  on the repository's Actions settings, which are not in the repository and are not verified here. While the jobs run
+  on GitHub-hosted runners, the host-and-network part is dormant (each job gets a fresh virtual machine that GitHub
+  discards afterwards); the secret part stays live, because the jobs still log in with `DOCKERHUB_PAT`.
 - **What makes it real:** a pull request can change the workflow file or the Makefile of its own branch, and the
   changed file runs with the secrets. Whoever can push a branch to this repository can therefore read
   `DOCKERHUB_PAT` from a job. The runners are ephemeral pods ([releasing.md](../developer/releasing.md#ci)), which

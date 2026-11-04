@@ -15,7 +15,8 @@
 # integration stack and opens an issue on a miss. What the jobs run and how to reproduce them:
 # docs/developer/releasing.md#ha-and-performance-nightly.
 #
-# Every job runs on the organisation's self-hosted runners (runs-on: self-hosted).
+# Every job runs on GitHub-hosted runners (runs-on: ubuntu-24.04, the OS of the organisation's runner pods) while the
+# organisation's self-hosted runners are down (owner, 2026-11-04); switching back sets runs-on: self-hosted again.
 name: HA and Performance (nightly)
 
 on:
@@ -36,7 +37,7 @@ env:
 jobs:
   latency:
     name: P-13 and P-14 latency (Valkey 9.1)
-    runs-on: self-hosted
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - name: Checkout
@@ -104,7 +105,7 @@ jobs:
   # TROVE_PERF_GATE=1 makes a value above its target fail the job; a failed job opens an issue that lists the misses.
   vuln-perf:
     name: R-VULN-028 vulnerability scanning performance (V-1 to V-9)
-    runs-on: self-hosted
+    runs-on: ubuntu-24.04
     timeout-minutes: 150
     permissions:
       contents: read
@@ -207,7 +208,7 @@ jobs:
   # closing run of Test and Release runs the ten force-deletes too, in its leg npm-ha-closing (Q-HA-67).
   npm-ha-soak:
     name: e2e-npm on kind (npm-ha-soak)
-    runs-on: self-hosted
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
       TROVE_IMAGE: guidedtraffic/trove:dev
@@ -331,7 +332,7 @@ jobs:
   # the steps are those of the e2e job there, unchanged. Its edge port 8081 differs from the others of this file.
   e2e:
     name: e2e on kind (${{ matrix.set }})
-    runs-on: self-hosted
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -525,7 +526,7 @@ jobs:
   # force-deletes over 20 minutes. Edge port 8087 differs from the other ports of this file (8081, 8085) and from the closing leg npm-ha-closing (8084).
   e2e-npm:
     name: e2e-npm on kind (${{ matrix.set }})
-    runs-on: self-hosted
+    runs-on: ubuntu-24.04
     timeout-minutes: ${{ startsWith(matrix.set, 'npm-ha') && 120 || 90 }}
     strategy:
       fail-fast: false
@@ -667,7 +668,7 @@ jobs:
   # this job checks nothing beyond the bring-up of the cluster until one lands. Edge port 8090 is the first free port of both workflows.
   e2e-nuget:
     name: e2e-nuget on kind (${{ matrix.set }})
-    runs-on: self-hosted
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -805,7 +806,7 @@ jobs:
   # the clients images are built by deploy/dev/e2e.sh when the set starts the client pods. Edge port 8092 is the first free one.
   e2e-ci:
     name: e2e-ci on kind (${{ matrix.set }})
-    runs-on: self-hosted
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -943,7 +944,7 @@ jobs:
   # are the first free ones of both workflows.
   e2e-bastion:
     name: e2e-bastion on kind (${{ matrix.set }})
-    runs-on: self-hosted
+    runs-on: ubuntu-24.04
     timeout-minutes: 150
     strategy:
       fail-fast: false
@@ -1104,7 +1105,7 @@ jobs:
   # both workflows.
   e2e-vuln:
     name: e2e-vuln on kind (${{ matrix.set }})
-    runs-on: self-hosted
+    runs-on: ubuntu-24.04
     timeout-minutes: 150
     strategy:
       fail-fast: false

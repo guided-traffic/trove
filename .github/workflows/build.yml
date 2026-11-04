@@ -22,7 +22,7 @@ permissions:
 jobs:
   build:
     name: Build Docker Image
-    runs-on: self-hosted
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -140,7 +140,7 @@ jobs:
   release-helm-gh:
     name: Release Helm Chart to GitHub Pages
     needs: build
-    runs-on: self-hosted
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       pages: write
