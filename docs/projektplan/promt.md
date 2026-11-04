@@ -222,6 +222,9 @@ Found on 2026-11-03 while building phase 6:
   findings for a caller with package-pattern grants, takes 1,168 ms against 300 ms (H-488: the row-by-row read of the decision
   point); V-8, the NuGet page from the replica's cache, 29 ms against 25 ms. Done when V-4 is measured per call, V-7b meets its
   bound or the bound is revised by a decision with the measured cost, and a run on the reference environment reports all nine.
+  The nightly run 41748522448 on the CPU-limited CI runner (2026-11-04): V-1 did not finish within 40 min (the first import of the
+  npm archive; so V-2 was not measured), V-3 2.3 min, V-4 ≤ 10 ms (bucket bound), V-5b 1.94 transactions, V-7b 446 ms, V-8 52 ms
+  missed; V-5a, V-6 (63 ms), V-7a (33 ms) and V-9 (0.33 GiB) met.
 - **F-44 · The drain case of `vuln-long` failed in its cleanup, after its criterion passed** (confirmed from the log of the
   dispatched nightly run 41739280012). `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` drained the node of a full sync after 5
   committed batches; the job was queued again, ran on a second worker from its checkpoint and ended `succeeded`, every assertion of
