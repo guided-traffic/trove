@@ -214,6 +214,22 @@ Found on 2026-11-03 while building phase 6:
   the budget of 1 for each ([architecture.md](../spec/architecture.md) R-ARCH-027). The scanning adds none
   (`test/integration/vulnblock/querycount_test.go`); the overrun is older than phase 6. Done when a download meets the budget,
   or a decision revises the budget with measured numbers, and a test counts the statements per route.
+- **F-43 · Four of the bounds V-1 to V-9 of R-VULN-028 are missed or not measured precisely** (confirmed by the run). The
+  performance run `TestR_VULN_028_PerformanceRun` on the integration stack (not the reference environment, H-491), 2026-11-04:
+  V-1 7.1 min, V-2 2.1 min, V-3 0.16 min, V-6 131 ms, V-7a 37 ms and V-9 0.33 GiB meet their targets; V-4 reports only the bucket
+  bound of its histogram (p99 ≤ 250 ms against 5 ms), too coarse to decide; V-5b counts 2.04 transactions per cached download
+  against the one of R-ARCH-027 (F-41: the overrun is older than the scanning, which adds none); V-7b, the first page of the
+  findings for a caller with package-pattern grants, takes 1,168 ms against 300 ms (H-488: the row-by-row read of the decision
+  point); V-8, the NuGet page from the replica's cache, 29 ms against 25 ms. Done when V-4 is measured per call, V-7b meets its
+  bound or the bound is revised by a decision with the measured cost, and a run on the reference environment reports all nine.
+- **F-44 · The drain case of `vuln-long` failed in its cleanup, after its criterion passed** (confirmed from the log of the
+  dispatched nightly run 41739280012). `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` drained the node of a full sync after 5
+  committed batches; the job was queued again, ran on a second worker from its checkpoint and ended `succeeded`, every assertion of
+  R-VULN-004's drain criterion passed. Its `t.Cleanup` then posted the run's records back to the test advisory source and got
+  `connection reset by peer` from the `kubectl port-forward` the control client keeps for the whole process
+  (`test/e2e/vuln_env_test.go` `osvStub`). Two local runs passed whole. Done when the control client survives a drain (a new
+  forward after a transport error, or a control path that does not go through a long-lived forward) and the leg is green in a
+  nightly run.
 - **F-42 · Two timing tests failed under the load of parallel agents** (read). In a full run of `test/integration/npm` and
   `test/integration/proxy` beside seven agents on the shared stack, `TestR_NPM_010_ThousandVersions` took 403 ms against
   200 ms on a miss and 41 ms against 10 ms from the cache, and one case of `TestCollapse` served a waiter after 4.6 s with a 3 s
@@ -251,9 +267,12 @@ Found on 2026-11-03 while closing phase 5:
   `bastion-long` before any test, on a chart repository unreachable over IPv6 (`dial tcp [2606:50c0:8001::153]:443`) and an
   interrupted pull of `mcr.microsoft.com/dotnet/sdk`; the logs of `npm-ha`, `npm-ha-soak` and `bastion` are not retrievable
   (`BlobNotFound`). The Bastion's long legs have therefore not run in CI yet.
+  The dispatched nightly run 41739280012 (2026-11-04) lost `e2e-bastion (bastion)` the same way, on an interrupted pull of
+  `mcr.microsoft.com/dotnet/sdk:9.0.320` and `getaddrinfo EAI_AGAIN`.
 - **F-38 · `npm-ha` and `npm-ha-soak` were red in the nightly run 41575201390** (read). The npm load under drains and
   failovers is the phase 7 item "npm load in the drain and failover tests reliably green"; `npm-ha` passed in run 41568514247
-  hours before. Done with that item.
+  hours before. The dispatched nightly run 41739280012 (2026-11-04) was red in `npm-ha` again, in the drain variant A and the
+  PostgreSQL switchover case under the npm load. Done with that item.
 - **F-36 · The issuer double's fixtures were recorded on a local GitLab 19.0.1-ee, not on the owner's instance**
   (confirmed). The owner's GitLab (namespace `gitlab` of his cluster) cannot create projects: the web service dials Gitaly
   under a name its certificate does not carry. Machine-level for the owner (his GitOps repository). Done when, after the

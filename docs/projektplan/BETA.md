@@ -1,7 +1,7 @@
 # trove · Project plan to the beta release
 
 **Status:** ⚪ not started · 🟡 in progress or partly done · 🟢 done
-**Last updated:** 2026-11-03
+**Last updated:** 2026-11-04
 
 The way from zero to the beta release. The beta is trove with two package registries, **npm** and
 **NuGet (.NET)**, each with local, remote (pull-through) and virtual repositories, running on the
@@ -30,7 +30,7 @@ numbers (owner, 2026-11-02).
 | [5a · Projects](#phase-5a--projects-and-delegated-administration) | Projects with project administrators who manage their repositories, policies and the technical accounts of external parties | 🟢 |
 | [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | 🟢 |
 | [5b · trove Bastion](#phase-5b--trove-bastion-m13) | An exposed, read-only cache instance in front of the main installation that serves released content to external parties and takes load off it | 🟢 |
-| [6 · Vulnerability scanning](#phase-6--vulnerability-scanning-m4b) | Own advisory mirror, findings and vulnerability report, malicious versions blocked, npm and NuGet audits from trove's data | 🟡 |
+| [6 · Vulnerability scanning](#phase-6--vulnerability-scanning-m4b) | Own advisory mirror, findings and vulnerability report, malicious versions blocked, npm and NuGet audits from trove's data | 🟢 |
 | [6b · Remote full mirror](#phase-6b--remote-full-mirror) | A remote repository can mirror every discoverable package of its upstream in the background, besides the default pull-through | ⚪ |
 | [7 · HA, backup, Helm](#phase-7--ha-hardening-backup-and-helm-m5) | Drains and failovers without errors, backup and restore; beta candidate | ⚪ |
 | [8 · Walkthrough and beta](#phase-8--walkthrough-and-beta-release) | Owner review, objections fixed; **beta release** | ⚪ |
@@ -806,13 +806,14 @@ applies to the npm and NuGet parts of this phase.
 - 🟢 Integration tests against PostgreSQL, Valkey with Sentinel and S3 with a test advisory source: sync paths and faults, the matching corpus per format, the finding lifecycle, blocking on every route, the API with permission-narrowed callers
 - 🟢 E2E tests: npm, pnpm and Yarn audits and a blocked install, `dotnet restore` audit warnings and a blocked restore, through local, remote and virtual repositories on several `web` replicas with random distribution; browser journeys of the report, triage, blocking and export
 - 🟢 E2E: a full sync drained mid-run finishes on another `worker`; the set once with Valkey stopped
-- 🟡 Performance bounds V-1 to V-9 with 100,000 stored versions (the run `vuln-perf` of HA and Performance (nightly) reports them; dispatched on the closing commit)
+- 🟢 Performance bounds V-1 to V-9 with 100,000 stored versions: `TestR_VULN_028_PerformanceRun` reports all nine (the run `vuln-perf` of HA and Performance (nightly)); four bounds are missed or not measured precisely, open as [F-43](promt.md#8--open-findings)
 
 **Exit criteria of M4b and their evidence (2026-11-03)**
 - 🟢 E4b.1: `test/integration/vulnsync` (30 tests: full and incremental sync, `304`, ranges on and off, every fault, the guards and
   `acceptShrink`, the offline import without a network request, release and resume with the attempt unchanged); the node drain of a
-  full sync `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` of the set `vuln-long` (207 s, the job ends on the other worker from its
-  checkpoint)
+  full sync `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` of the set `vuln-long`: green twice locally, and in the nightly run
+  41739280012 every assertion of the criterion passed (queued again, ended on a second worker from its checkpoint after 5
+  batches) before its cleanup failed on the test source's control connection ([F-44](promt.md#8--open-findings))
 - 🟢 E4b.2: the corpus `internal/vuln/match` (22 real records, results equal to osv-scanner v2.7.0's offline mode) and the per-format
   table tests; the claims rule and `TroveVulnerabilityClaimedNameMalicious` in `test/integration/vulnfindings` and the chart's promtool
   tests
@@ -827,8 +828,9 @@ applies to the npm and NuGet parts of this phase.
 - 🟢 E4b.6: the four browser journeys with axe across three `web` replicas (set `vuln`); the `@team-a/*` narrowing of list, counts,
   trend and export in `test/integration/vulnapi`
 - 🟢 E4b.7: `test/integration/vulnrestore` on the state a restore leaves (Q-VULN-58; the restore of the backup job itself is phase 7)
-- 🟡 E4b.8: the set with Valkey stopped (`vulnblock`, the `vuln` set's R-VULN-027 cases, `TestVulnLong_R_VULN_027_ClientsWithValkeyStopped`)
-  passes; V-1 to V-9 are reported by the nightly run of the closing commit
+- 🟢 E4b.8: the set with Valkey stopped (`vulnblock`, the `vuln` set's R-VULN-027 cases, `TestVulnLong_R_VULN_027_ClientsWithValkeyStopped`)
+  passes; the performance run reports V-1 to V-9 (2026-11-04: V-1 7.1 min, V-2 2.1 min, V-3 0.16 min, V-6 131 ms, V-7a 37 ms, V-9
+  0.33 GiB within their targets; V-4, V-5b, V-7b and V-8 not, F-43)
 - 🟢 E4b.9: every MVP requirement of the page has a passing test that names it: R-VULN-001 to R-VULN-021 and R-VULN-024 to
   R-VULN-027 in the unit, integration and chart reports ([implemented.txt](../coverage/implemented.txt)); R-VULN-022, R-VULN-023 and
   R-VULN-029 in the end-to-end set `vuln` (journeys and the acceptance suite, which the coverage generator does not read, as for
@@ -937,6 +939,6 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
 | **NuGet (.NET)** | 🟢 | 🟡 | ⚪ |
 | Projects (delegated administration) | 🟢 | 🟢 | — |
 | GitLab CI OIDC | 🟢 | 🟢 | 🟢 |
-| trove Bastion | 🟢 | 🟢 | 🟡 |
+| trove Bastion | 🟢 | 🟢 | 🟢 |
 | Vulnerability scanning | 🟢 | 🟢 | 🟡 |
 | Backup and restore | ⚪ | ⚪ | — |
