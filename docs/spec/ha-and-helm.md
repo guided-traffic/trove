@@ -6658,7 +6658,7 @@ Status: **Decided by the development agent** — selected from the options below
 
 Context: ADR-154 asks for ingress rules only, between the chart's pods, each with its port, and "one policy per role (and per
 pool)". Built today: one policy each for `web` and `worker`, and one per further endpoint that admits its port on the pods that
-serve it ([endpoint-networkpolicy.yaml](../../deploy/helm/trove/templates/endpoint-networkpolicy.yaml)), whose pool policy
+serve it (`endpoint-networkpolicy.yaml`, since merged into [networkpolicy.yaml](../../deploy/helm/trove/templates/networkpolicy.yaml)), whose pool policy
 also admits 8081.
 
 | Option | What it means | For | Against |

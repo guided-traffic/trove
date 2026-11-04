@@ -184,14 +184,16 @@ func TestE06Lease(t *testing.T) {
 			if n := sql(t, `SELECT count(*) FROM trove.job j JOIN trove.replica r ON r.instance_uid = j.locked_by WHERE r.roles && ARRAY['api','packages','web']`); n != "0" {
 				t.Errorf("%s jobs are locked by an api or packages replica", n)
 			}
-			waitFor(t, "two ready workers", 3*time.Minute, 2*time.Second, func() bool {
+			// selWorker holds the main worker and its pools (the vuln pool of the dev profile): wait until as many are ready
+			// as were before the victim went.
+			waitFor(t, "every worker ready again", 3*time.Minute, 2*time.Second, func() bool {
 				n := 0
 				for _, p := range livePods(t, selWorker) {
 					if p.Ready {
 						n++
 					}
 				}
-				return n == 2
+				return n == len(workers)
 			})
 		})
 	}
