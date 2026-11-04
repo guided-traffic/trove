@@ -1,4 +1,9 @@
+import { provideHttpClient } from '@angular/common/http';
+import { TestBed } from '@angular/core/testing';
+import { SessionStore } from '../core/session-store';
+import { ApiError } from './problem';
 import {
+  HttpFilesApi,
   HASH_LIMIT_BYTES,
   contentPath,
   encodePath,
@@ -38,5 +43,62 @@ describe('files API helpers', () => {
   it('R-EP-017 a client address template of the raw files family is recognised', () => {
     expect(isFilesAddress('/files/{key}/')).toBe(true);
     expect(isFilesAddress('/api/npm/{key}/')).toBe(false);
+  });
+});
+
+describe('The upload during the upgrade across the cut (R-HA-064, R-API-025, Q-UI-111)', () => {
+  type Put = (options: object, url: string, body: Blob, headers: Record<string, string>) => Promise<unknown>;
+
+  function setup(answer: (url: string) => Promise<unknown>) {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        { provide: SessionStore, useValue: { markEnded: () => undefined } },
+      ],
+    });
+    const api = TestBed.runInInjectionContext(() => new HttpFilesApi());
+    const put = vi.fn<Put>((_options, url) => answer(url));
+    (api as unknown as { put: Put }).put = put;
+    return { api, put };
+  }
+
+  const file = new File(['x'], 'app.zip', { type: 'application/zip' });
+  const request = { repository: 'generic-local', path: 'rel/app.zip', file, overwrite: false };
+  const content = '/api/v1/repositories/generic-local/content/rel/app.zip';
+  const legacy = '/files/generic-local/rel/app.zip';
+
+  it('an old web replica answers the unknown-path 404: the PUT is repeated once on /files/ with the same headers', async () => {
+    const { api, put } = setup(async (url) => {
+      if (url === content) throw new ApiError(404, { code: 'not_found' }, null);
+      return { path: 'rel/app.zip' };
+    });
+    await expect(api.upload(request)).resolves.toEqual({ path: 'rel/app.zip' });
+    expect(put.mock.calls.map((c) => c[1])).toEqual([content, legacy]);
+    expect(put.mock.calls[1]![3]).toEqual(put.mock.calls[0]![3]);
+    expect(put.mock.calls[1]![3]['If-None-Match']).toBe('*');
+  });
+
+  it.each([
+    [404, 'repository_not_found'],
+    [403, 'not_admitted'],
+    [401, 'unauthenticated'],
+    [409, 'conflict'],
+    [413, 'payload_too_large'],
+    [404, 'not_found_other'],
+  ])('a %s %s on the content route is the answer: no second request', async (status, code) => {
+    const { api, put } = setup(async () => {
+      throw new ApiError(status, { code }, null);
+    });
+    await expect(api.upload(request)).rejects.toMatchObject({ status, problem: { code } });
+    expect(put).toHaveBeenCalledTimes(1);
+  });
+
+  it('the fallback is tried once: a 404 on /files/ is the answer', async () => {
+    const { api, put } = setup(async () => {
+      throw new ApiError(404, { code: 'not_found' }, null);
+    });
+    await expect(api.upload(request)).rejects.toMatchObject({ status: 404 });
+    expect(put).toHaveBeenCalledTimes(2);
   });
 });

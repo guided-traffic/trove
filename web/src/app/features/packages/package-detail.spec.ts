@@ -133,6 +133,24 @@ describe('Package details', () => {
     await expectAccessible(r.root);
   });
 
+  it('R-HA-064 Q-UI-111 a file of an old replica has no contentUrl: the Download link takes the /files/ downloadUrl', async () => {
+    const r = await open({ tab: 'files' }, (fake) => {
+      const version = fake.version.bind(fake);
+      fake.version = async (id, v) => {
+        const detail = await version(id, v);
+        return {
+          ...detail,
+          files: detail.files.map(({ contentUrl: _dropped, ...file }) => {
+            void _dropped;
+            return file as (typeof detail.files)[number];
+          }),
+        };
+      };
+    });
+    const download = [...r.root.querySelectorAll('a')].find((a) => a.textContent?.trim() === 'Download')!;
+    expect(download.getAttribute('href')).toMatch(/^https:\/\/.*\/api\/npm\/npm-local\//);
+  });
+
   it('R-UI-007 the Repositories tab lists each repository with its class and a link that shows it in the browser', async () => {
     const r = await open({ tab: 'repositories' });
     const rows = [...r.root.querySelectorAll('tbody tr')];

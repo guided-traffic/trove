@@ -72,6 +72,14 @@ export function contentPath(repository: string, path: string): string {
   return `/api/v1/repositories/${encodeURIComponent(repository)}/content/${encodePath(path)}`;
 }
 
+/**
+ * The `/files/` route of a path (R-API-025, R-HA-064): the address of the releases before the cut. Only the fallback of
+ * an upload uses it, while a `web` replica of the old shape still serves the UI during step 1 of the upgrade.
+ */
+export function legacyFilesPath(repository: string, path: string): string {
+  return `/files/${encodeURIComponent(repository)}/${encodePath(path)}`;
+}
+
 /** SHA-256 of the file as the `Repr-Digest` value of RFC 9530, or undefined above the limit. */
 export async function reprDigestOf(file: Blob): Promise<string | undefined> {
   if (file.size > HASH_LIMIT_BYTES || !crypto.subtle) return undefined;
@@ -199,11 +207,46 @@ export class HttpFilesApi extends FilesApi {
     };
     if (request.reprDigest) headers['Repr-Digest'] = request.reprDigest;
     if (!request.overwrite) headers['If-None-Match'] = '*';
-    return this.put(request, contentPath(request.repository, request.path), request.file, headers);
+    return this.putWithFallback(
+      request,
+      contentPath(request.repository, request.path),
+      legacyFilesPath(request.repository, request.path),
+      request.file,
+      headers,
+    );
   }
 
   createFolder(repository: string, path: string): Promise<Item> {
-    return this.put({}, `${contentPath(repository, path)}/`, new Blob([]), {});
+    return this.putWithFallback(
+      {},
+      `${contentPath(repository, path)}/`,
+      `${legacyFilesPath(repository, path)}/`,
+      new Blob([]),
+      {},
+    );
+  }
+
+  /**
+   * A new UI bundle can be served by a new pod while the `web` replica that answers the request is of the old shape
+   * (step 1 of R-HA-064): that replica has no content route and answers the `404` problem of an unknown path
+   * (`not_found`). Only then the PUT is repeated once on `/files/`, with the same headers and CSRF token. A `404` of a
+   * missing repository (`repository_not_found`) and every other status (401, 403, 409, 413) are the answer.
+   */
+  private async putWithFallback(
+    options: Parameters<HttpFilesApi['put']>[0],
+    url: string,
+    legacyUrl: string,
+    body: Blob,
+    headers: Record<string, string>,
+  ): Promise<Item> {
+    try {
+      return await this.put(options, url, body, headers);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404 && err.problem?.code === 'not_found') {
+        return this.put(options, legacyUrl, body, headers);
+      }
+      throw err;
+    }
   }
 
   /**

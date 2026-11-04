@@ -7268,6 +7268,28 @@ exists.
 
 **Applied in the spec:** R-UI-038. Code: `system-status-model.ts` (`roleOf`, `roleGroups`). Tests: `system-status-model.spec.ts`.
 
+### Q-UI-111 · During the upgrade across the cut the UI falls back to `/files/` against a replica of the old shape
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: in the first step of the upgrade across the cut (R-HA-064) a UI bundle from a new pod can reach a `web` replica of the
+previous release, which has no content route (Q-UI-106) and lists no `contentUrl`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Links take `contentUrl`, else `downloadUrl`; an upload or a new folder repeats its PUT once on `/files/` when the content route answers 404 `not_found` (chosen) | The old replica serves `/files/` with the session cookie | No step of the upgrade breaks the browser journey | One more request on that 404 |
+| (b) No fallback | The UI uses the content routes only | Simpler | Uploads fail and Download links vanish until step 2 |
+| (c) Pin the UI to the old routes until step 2 | A value switches the routes | Exact | A setting that exists for one upgrade |
+
+**Choice:** (a). Only the unknown-path code `not_found` triggers the repeat; `repository_not_found`, 401, 403, 409 and 413 are
+answered as they are, so the fallback never turns a refusal into a second attempt.
+
+**Rationale:** the upgrade must keep the UI working in both steps. The development agent would remove the fallback once no supported
+upgrade starts from the shape before the cut (R-ARCH-025).
+
+**Applied in the spec:** R-HA-064 (the browser journey). Code: `web/src/app/api/files-api.ts` (`putWithFallback`), `browse.html`,
+`package-detail.ts` (`fileHref`). Tests: `files-api.spec.ts`, `browse.spec.ts`, `package-detail.spec.ts`.
+
 ## What this does not cover
 
 

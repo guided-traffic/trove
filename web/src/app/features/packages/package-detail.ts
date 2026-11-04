@@ -302,6 +302,14 @@ export class PackageDetail {
   protected readonly externalRel = EXTERNAL_REL;
   protected readonly commands = packageCommands;
   protected readonly size = formatSize;
+
+  /**
+   * The link of a file: its content route, or the downloadUrl when a `web` replica of the releases before the cut
+   * answered and sent no `contentUrl` (step 1 of R-HA-064, Q-UI-111).
+   */
+  protected fileHref(file: { readonly contentUrl?: string; readonly downloadUrl: string }): string {
+    return file.contentUrl ?? file.downloadUrl;
+  }
   protected readonly fileColumns: readonly TableColumn[] = [
     { id: 'path', label: $localize`:@@pkg.file.path:File` },
     { id: 'size', label: $localize`:@@pkg.file.size:Size`, numeric: true },

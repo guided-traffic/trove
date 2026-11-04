@@ -482,6 +482,23 @@ describe('Browser empty states and actions', () => {
     expect(text(npm.root.querySelector('#browse-actions')!)).toContain('Client setup');
   });
 
+  it('R-HA-064 Q-UI-111 a listing of an old replica has no contentUrl: Download links the /files/ downloadUrl', async () => {
+    const old = await open({ repo: 'generic-local', path: 'readme.txt' }, (files) => {
+      const item = files.item.bind(files);
+      files.item = async (repository, path) => {
+        const { contentUrl: _dropped, ...rest } = await item(repository, path);
+        void _dropped;
+        return rest as Awaited<ReturnType<typeof item>>;
+      };
+    });
+    const link = [...old.root.querySelectorAll('#browse-actions a')].find((a) => a.textContent?.includes('Download'))!;
+    expect(link.getAttribute('href')).toBe('https://trove.example.net/files/generic-local/readme.txt');
+
+    const current = await open({ repo: 'generic-local', path: 'readme.txt' });
+    const href = [...current.root.querySelectorAll('#browse-actions a')].find((a) => a.textContent?.includes('Download'))!;
+    expect(href.getAttribute('href')).toBe('/api/v1/repositories/generic-local/content/readme.txt');
+  });
+
   it('R-UI-011 without the delete permission there is no Delete; without deploy no upload', async () => {
     const { root } = await openWith({ repo: 'files', path: 'releases' }, MIXED, {
       allow: (c) => c.action === 'read',
