@@ -234,14 +234,6 @@ Found on 2026-11-03 while building phase 6:
   so the fix is shown by the benchmark and not by the end-to-end time; V-5b waits for F-41; V-4's exact value, V-7b and V-8 are
   to be read on a run on the reference environment (H-491) and on the next nightly run. Done when that run reports all nine
   within their targets, or a decision revises a bound with the measured cost (the next steps for V-7b are named in Q-VULN-77).
-- **F-44 · The drain case of `vuln-long` failed in its cleanup, after its criterion passed** (confirmed from the log of the
-  dispatched nightly run 41739280012). `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` drained the node of a full sync after 5
-  committed batches; the job was queued again, ran on a second worker from its checkpoint and ended `succeeded`, every assertion of
-  R-VULN-004's drain criterion passed. Its `t.Cleanup` then posted the run's records back to the test advisory source and got
-  `connection reset by peer` from the `kubectl port-forward` the control client keeps for the whole process
-  (`test/e2e/vuln_env_test.go` `osvStub`). Two local runs passed whole. Done when the control client survives a drain (a new
-  forward after a transport error, or a control path that does not go through a long-lived forward) and the leg is green in a
-  nightly run.
 
 Found on 2026-11-03 while closing phase 5:
 

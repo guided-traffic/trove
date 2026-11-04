@@ -814,7 +814,7 @@ applies to the npm and NuGet parts of this phase.
   `acceptShrink`, the offline import without a network request, release and resume with the attempt unchanged); the node drain of a
   full sync `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` of the set `vuln-long`: green twice locally, and in the nightly run
   41739280012 every assertion of the criterion passed (queued again, ended on a second worker from its checkpoint after 5
-  batches) before its cleanup failed on the test source's control connection ([F-44](promt.md#8--open-findings))
+  batches) before its cleanup failed on the test source's control connection (the control client now repeats an idempotent call on a new forward, `test/e2e/ctlretry`; to be confirmed in a nightly run)
 - 🟢 E4b.2: the corpus `internal/vuln/match` (22 real records, results equal to osv-scanner v2.7.0's offline mode) and the per-format
   table tests; the claims rule and `TroveVulnerabilityClaimedNameMalicious` in `test/integration/vulnfindings` and the chart's promtool
   tests

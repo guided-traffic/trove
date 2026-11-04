@@ -102,9 +102,11 @@ func osvStub(t testing.TB) *stubControl {
 		t.Fatal("TROVE_E2E_OSVSTUB_HOST is not set; run the vulnerability sets of deploy/dev/e2e.sh")
 	}
 	osvOnce.Do(func() {
-		addr := portForward(t, "svc/osvstub", 443).addr
+		fwd := portForward(t, "svc/osvstub", 443)
+		addr := fwd.addr
 		var d net.Dialer
 		osvVal = &stubControl{
+			fwd:  fwd,
 			base: "https://" + host,
 			tok:  secretValue(t, "trove-osvstub", "control-token"),
 			c: &http.Client{Timeout: 5 * time.Minute, Transport: &http.Transport{

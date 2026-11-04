@@ -44,9 +44,11 @@ func nugetStub(t testing.TB) *stubControl {
 	t.Helper()
 	host, _ := nugetStubHosts(t)
 	nugetStubOnce.Do(func() {
-		addr := portForward(t, "svc/nugetstub", 443).addr
+		fwd := portForward(t, "svc/nugetstub", 443)
+		addr := fwd.addr
 		var d net.Dialer
 		nugetStubVal = &stubControl{
+			fwd:  fwd,
 			base: "https://" + host,
 			tok:  secretValue(t, "trove-nugetstub", "control-token"),
 			c: &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{

@@ -32,6 +32,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/test/e2e/ctlretry"
 	"github.com/guided-traffic/trove/test/npmstub"
 )
 
@@ -169,6 +170,7 @@ type stubControl struct {
 	base string
 	tok  string
 	c    *http.Client
+	fwd  *forward // the supervised port-forward behind c; nil when c reaches the Service another way
 }
 
 var (
@@ -183,9 +185,11 @@ func stub(t testing.TB) *stubControl {
 		t.Fatal("TROVE_E2E_NPMSTUB_HOST is not set; run the npm sets of deploy/dev/e2e.sh")
 	}
 	stubOnce.Do(func() {
-		addr := portForward(t, "svc/npmstub", 443).addr
+		fwd := portForward(t, "svc/npmstub", 443)
+		addr := fwd.addr
 		var d net.Dialer
 		stubVal = &stubControl{
+			fwd:  fwd,
 			base: "https://" + host,
 			tok:  secretValue(t, "trove-npmstub", "control-token"),
 			c: &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{
@@ -202,26 +206,63 @@ func stub(t testing.TB) *stubControl {
 
 func (s *stubControl) send(t testing.TB, method, path string, body any) []byte {
 	t.Helper()
-	var rd io.Reader
+	var payload []byte
 	if body != nil {
-		raw, _ := json.Marshal(body)
-		rd = bytes.NewReader(raw)
+		payload, _ = json.Marshal(body)
 	}
-	req, err := http.NewRequest(method, s.base+path, rd)
-	if err != nil {
-		t.Fatal(err)
+	var status, gen int
+	var raw []byte
+	attempt := func() error {
+		if s.fwd != nil {
+			gen = s.fwd.generation()
+		}
+		var rd io.Reader
+		if payload != nil {
+			rd = bytes.NewReader(payload)
+		}
+		req, err := http.NewRequest(method, s.base+path, rd)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+s.tok)
+		resp, err := s.c.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		status = resp.StatusCode
+		raw, err = io.ReadAll(resp.Body)
+		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+s.tok)
-	resp, err := s.c.Do(req)
+	var err error
+	if s.fwd != nil && idempotentControl(method, path) {
+		// the forward to the Service ends when its stream breaks (a drained node, a busy API server): the call goes
+		// to a new forward, twice at most
+		err = ctlretry.Do(2, attempt, func() error { return s.fwd.renew(gen) })
+	} else {
+		err = attempt()
+	}
 	if err != nil {
 		t.Fatalf("test upstream %s %s: %v", method, path, err)
 	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 300 {
-		t.Fatalf("test upstream %s %s: %d %s", method, path, resp.StatusCode, strings.TrimSpace(string(raw)))
+	if status >= 300 {
+		t.Fatalf("test upstream %s %s: %d %s", method, path, status, strings.TrimSpace(string(raw)))
 	}
 	return raw
+}
+
+// idempotentControl names the calls of the control API that may be repeated after a transport error: reads, PUT and
+// the POSTs that set a state (a repeated publish answers 409, so it is not among them).
+func idempotentControl(method, path string) bool {
+	if method == http.MethodGet || method == http.MethodPut {
+		return true
+	}
+	p, _, _ := strings.Cut(path, "?")
+	switch p {
+	case "/-/stub/reset", "/-/stub/mode", "/-/stub/records":
+		return true
+	}
+	return false
 }
 
 // counts reads the counters.

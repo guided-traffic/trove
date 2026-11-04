@@ -323,6 +323,19 @@ Subtest names carry the requirement IDs and the criterion, as the M0 tests do.
 | `walkRetry` | a list read page by page; a 429 is waited out, because a walk with `limit=1` is more requests than the read class admits in a burst |
 | `withWriteBudget` | a copy of a client whose writes are counted against the write class of its token: it reads `q` and `w` of the member `"write"` of `RateLimit-Policy` from the answers and fails the write that would exceed `q` before it is sent, with a message that names the budget ([Q-AUTH-188](../spec/identity-and-authentication.md#q-auth-188--the-write-cases-of-e111-each-get-a-token-of-their-own-and-a-guard-holds-them-to-the-write-budget)). It counts every write of the token, not those of one window, so it needs a token that no other client uses (`freshAdmin`) |
 
+**The control clients and a broken forward.** The control client of a test upstream (`stubControl` in
+[npm_env_test.go](../../test/e2e/npm_env_test.go): the npm, NuGet and advisory-source stubs) keeps one supervised
+forward for the whole process, so a drain or a busy API server that breaks the forward's stream resets a call that is
+in flight (the cleanup of `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` hit it). `send` therefore repeats a
+call that failed on the transport (a reset, an end of stream, a refused connection; never an HTTP status) against a new
+forward, at most twice per call: `forward.renew` ends a kubectl process that is still the one the call started on, waits
+up to 30 s for the next one to listen on the same port, and the call goes out again. Only idempotent calls are repeated
+(`idempotentControl`: every GET and PUT and the POSTs to `reset`, `mode` and `records`; `publish` is not, a repeat
+answers 409). The rule itself is [test/e2e/ctlretry](../../test/e2e/ctlretry), without the build tag, so
+`go test ./test/e2e/ctlretry/` checks it without a cluster. The forwards that tests open per test (`podForwards`) and
+the one to the test IdP are not repeated: a request through them is not known to be idempotent, and none of them is
+open across a drain.
+
 **Pacing.** The limits are the product's defaults (`api.rate_limits` read 50/s burst 200 and write 10/s burst 50,
 `auth.rate_limit` 300 failures and 30 flow starts per minute and address). The classes of the API are sliding windows per
 token (R-API-016: the read class admits 200 requests per 4 s, the write class 50 per 5 s, and a refused request counts too);

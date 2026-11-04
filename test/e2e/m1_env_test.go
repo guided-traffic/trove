@@ -867,6 +867,41 @@ func (f *forward) restart() {
 	}
 }
 
+// generation counts the kubectl processes started so far.
+func (f *forward) generation() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.ups
+}
+
+// renew returns once a kubectl process newer than generation seen listens. A client that failed on a connection it
+// had already opened may have seen the end of the process before the supervisor did, or a stream of a process that
+// still runs but no longer carries (the call then ended in a reset); in that case the process is ended here and the
+// supervisor starts the next one on the same port.
+func (f *forward) renew(seen int) error {
+	f.mu.Lock()
+	cmd := f.cmd
+	stale := f.ups == seen
+	f.mu.Unlock()
+	if stale && cmd != nil && cmd.Process != nil {
+		_ = cmd.Process.Kill()
+	}
+	deadline := time.Now().Add(forwardRestartWithin)
+	for time.Now().Before(deadline) {
+		if f.generation() > seen {
+			c, err := net.DialTimeout("tcp", f.addr, time.Second)
+			if err == nil {
+				_ = c.Close()
+				return nil
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return fmt.Errorf("the kubectl port-forward to %s (%d starts) did not come back within %s: %s", f.target, f.ups, forwardRestartWithin, f.lastErr)
+}
+
 func (f *forward) stop() {
 	f.mu.Lock()
 	f.stopping = true
