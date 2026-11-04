@@ -509,8 +509,9 @@ and are named by the Playwright version, so they follow the lockfile: after a Pl
 `web/` and `npx playwright install --with-deps chromium` before the dev profile comes up, and uploads
 `.out/playwright/` (HTML report, traces and screenshots of failed journeys) as `e2e-playwright-<set>`. The `--with-deps`
 step uses `sudo apt-get`, which the job already does for the build tools; a self-hosted runner that is not a Debian
-derivative needs the libraries Playwright lists installed by hand. This has not run on a GitHub runner yet; locally the
-same commands ran on macOS (the browser download without `--with-deps`).
+derivative needs the libraries Playwright lists installed by hand. On a GitHub-hosted runner (`ubuntu-24.04`) the install
+and the journeys passed in the `access-long` leg of Test and Release run 41864646902; locally the same commands ran on
+macOS (the browser download without `--with-deps`).
 
 **After a new image** the deployment does not restart on its own (the chart does not change, the tag is `dev`):
 `kubectl -n trove rollout restart deploy/trove-api deploy/trove-packages deploy/trove-worker deploy/trove-worker-vuln`, then wait for the rollout.
