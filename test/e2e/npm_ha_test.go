@@ -366,7 +366,7 @@ func npmDrainVariantA(t *testing.T, h *npmHAFixture) {
 func drainNodeVariantA(t *testing.T) string {
 	t.Helper()
 	for attempt := 0; attempt < 3; attempt++ {
-		hosts := nodesHosting(t, selAPI, selPackages, selWorker)
+		hosts := nodesHosting(t, selAPI, selPackages, selMainWorker)
 		pgNode := strings.TrimSpace(kn(t, "get", "pod", pgPrimary(t), "-o", "jsonpath={.spec.nodeName}"))
 		vkNode := strings.TrimSpace(kn(t, "get", "pod", valkeyPrimaryBySentinel(t), "-o", "jsonpath={.spec.nodeName}"))
 		var both []string

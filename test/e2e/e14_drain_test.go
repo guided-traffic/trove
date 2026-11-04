@@ -173,7 +173,8 @@ func nodesHosting(t testing.TB, selectors ...string) map[string]bool {
 	return out
 }
 
-// drainNode picks the node of variant A (R-HA-059): it hosts an api, a packages and a worker pod and is not the
+// drainNode picks the node of variant A (R-HA-059): it hosts an api, a packages and a main worker pod (not one of a
+// pool, whose queues exclude the probe jobs) and is not the
 // PostgreSQL primary's node, whose PodDisruptionBudget refuses its eviction. When the only node that
 // hosts both is the primary's, the primary is switched over first (variant B).
 func drainNode(t *testing.T) string {
@@ -181,7 +182,7 @@ func drainNode(t *testing.T) string {
 	for attempt := 0; attempt < 2; attempt++ {
 		primary := strings.TrimSpace(kn(t, "get", "pod", pgPrimary(t), "-o", "jsonpath={.spec.nodeName}"))
 		var both []string
-		for n := range nodesHosting(t, selAPI, selPackages, selWorker) {
+		for n := range nodesHosting(t, selAPI, selPackages, selMainWorker) {
 			if n != primary {
 				both = append(both, n)
 			}
@@ -221,14 +222,18 @@ func TestE14Drain(t *testing.T) {
 			}
 		}
 		t.Logf("draining %s, which hosts %v", node, podNames(onNode))
+		mainWorkers := map[string]bool{}
+		for _, p := range livePods(t, selMainWorker) {
+			mainWorkers[p.Name] = true
+		}
 		var drainedWorker string
 		for _, p := range onNode {
-			if strings.Contains(p.Name, "-worker-") {
+			if mainWorkers[p.Name] {
 				drainedWorker = p.Name
 			}
 		}
 		if drainedWorker == "" {
-			t.Fatal("the chosen node has no worker pod")
+			t.Fatal("the chosen node has no main worker pod")
 		}
 		// The shutdown of the drained pods is logged by the pods themselves; the logs are streamed so they outlive the pods.
 		for _, p := range onNode {
