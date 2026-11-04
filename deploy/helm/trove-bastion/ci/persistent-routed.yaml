@@ -1,29 +1,29 @@
 # A persistent cache volume per pod (a StatefulSet) with routing by path, and the edge limit's whitelist.
 config:
   server:
-    base_url: https://packages.example.com            # example
+    base_url: https://packages.example.com
     trusted_proxies: ["10.244.0.0/16"]                # example: the ingress controller's pods
   bastion:
     main:
-      url: https://trove.example.com                  # example
+      url: https://trove.example.com
     blocking:
-      exempt_cidrs: ["198.51.100.0/24", "203.0.113.7/32"]   # example
+      exempt_cidrs: ["198.51.100.0/24", "203.0.113.7/32"]
 secrets:
   mainToken:
-    existingSecret: trove-bastion-token               # example
+    existingSecret: trove-bastion-token
 cacheVolume:
   type: persistent
-  size: 50Gi                                          # example
-  storageClassName: fast                              # example
+  size: 50Gi
+  storageClassName: fast
   routeByPath: true
-replicaCount: 3                                       # example
+replicaCount: 3
 tls:
   certManager:
     issuerRef:
-      name: internal-ca                               # example
+      name: internal-ca
 networkPolicy:
   egress:
     main:
       to:
         - ipBlock:
-            cidr: 198.51.100.10/32                    # example
+            cidr: 198.51.100.10/32

@@ -1,40 +1,40 @@
-# The PrometheusRule of R-HA-045 (the alerts of the vulnerability scanning, R-VULN-024) and the vulnerabilities section
-# the chart reads (R-VULN-025). The rules are rendered into a rule file and tested with promtool
+# The PrometheusRule (the alerts of the vulnerability scanning) and the vulnerabilities section
+# the chart reads. The rules are rendered into a rule file and tested with promtool
 # (deploy/helm/trove/tests/rules_test.yaml, test/chart).
 config:
   server:
-    base_url: https://trove.example.com            # example
+    base_url: https://trove.example.com
   database:
-    host: trove-db-rw.trove.svc                    # example
+    host: trove-db-rw.trove.svc
   storage:
     s3:
-      bucket: trove-blobs                          # example
+      bucket: trove-blobs
   valkey:
     sentinel:
-      addresses:                                   # example
+      addresses:
         - trove-valkey-sentinel-0.trove-valkey-sentinel.trove.svc:26379
         - trove-valkey-sentinel-1.trove-valkey-sentinel.trove.svc:26379
         - trove-valkey-sentinel-2.trove-valkey-sentinel.trove.svc:26379
-      primary_name: trove                          # example
+      primary_name: trove
   vulnerabilities:
-    enabled: true                                  # default (proposed)
-    stale_after: 24h                               # default (proposed)
+    enabled: true
+    stale_after: 24h
     sources:
       osv:
-        mode: online                               # default (proposed)
-        max_archive_size: 1GiB                     # default (proposed)
+        mode: online
+        max_archive_size: 1GiB
 tls:
-  secretName: trove-tls                            # example
+  secretName: trove-tls
 secrets:
   database:
-    existingSecret: trove-db-app                   # example
+    existingSecret: trove-db-app
   valkey:
-    existingSecret: trove-valkey                   # example
+    existingSecret: trove-valkey
   encryption:
-    existingSecret: trove-encryption-keys          # example
-    keys: [2026-10.key]                            # example
+    existingSecret: trove-encryption-keys
+    keys: [2026-10.key]
 metrics:
   prometheusRule:
-    enabled: true                                  # example
+    enabled: true
     labels:
-      release: kube-prometheus-stack               # example
+      release: kube-prometheus-stack

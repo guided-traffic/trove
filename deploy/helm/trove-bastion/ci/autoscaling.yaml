@@ -1,25 +1,25 @@
-# Autoscaling: bastion.replicas is autoscaling.maxReplicas (R-BAS-025), the Deployment has no replicas field.
+# Autoscaling: bastion.replicas is autoscaling.maxReplicas, the Deployment has no replicas field.
 config:
   server:
-    base_url: https://packages.example.com            # example
+    base_url: https://packages.example.com
     trusted_proxies: ["10.244.0.0/16"]                # example: the ingress controller's pods
   bastion:
     main:
-      url: https://trove.example.com                  # example
+      url: https://trove.example.com
 secrets:
   mainToken:
-    existingSecret: trove-bastion-token               # example
+    existingSecret: trove-bastion-token
 autoscaling:
   enabled: true
   minReplicas: 2
-  maxReplicas: 8                                      # example
+  maxReplicas: 8
 tls:
   certManager:
     issuerRef:
-      name: internal-ca                               # example
+      name: internal-ca
 networkPolicy:
   egress:
     main:
       to:
         - ipBlock:
-            cidr: 198.51.100.10/32                    # example
+            cidr: 198.51.100.10/32

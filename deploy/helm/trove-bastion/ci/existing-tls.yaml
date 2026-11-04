@@ -2,33 +2,33 @@
 # Secret, a pull secret and a digest-pinned image.
 global:
   imagePullSecrets:
-    - name: registry-pull                             # example
+    - name: registry-pull
 image:
-  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000   # example
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
 config:
   server:
-    base_url: https://packages.example.com            # example
+    base_url: https://packages.example.com
     trusted_proxies: ["10.244.0.0/16"]                # example: the ingress controller's pods
   bastion:
     main:
-      url: https://trove.example.com                  # example
+      url: https://trove.example.com
 secrets:
   mainToken:
-    existingSecret: trove-bastion-token               # example
-    key: bastion-token                                # example
+    existingSecret: trove-bastion-token
+    key: bastion-token
 trustedCA:
-  existingSecret: corp-ca-bundle                      # example
+  existingSecret: corp-ca-bundle
 tls:
-  existingSecret: trove-bastion-listener              # example
+  existingSecret: trove-bastion-listener
   certManager:
     enabled: false
 cacheVolume:
   type: emptyDir
 networkPolicy:
   ingress:
-    probeCIDRs: ["10.0.0.0/8"]                        # example
+    probeCIDRs: ["10.0.0.0/8"]
   egress:
     main:
       to:
         - ipBlock:
-            cidr: 198.51.100.10/32                    # example
+            cidr: 198.51.100.10/32

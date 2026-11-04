@@ -1,48 +1,48 @@
-# An endpoint with a pool of its own (R-EP-008, Q-EP-3, Q-EP-70): its pods are <fullname>-packages-ep-customers,
+# An endpoint with a pool of its own: its pods are <fullname>-packages-ep-customers,
 # its listener runs only there, and the main packages pods do not open its port.
 config:
   server:
-    base_url: https://trove.example.com            # example
+    base_url: https://trove.example.com
   database:
-    host: trove-db-rw.trove.svc                    # example
+    host: trove-db-rw.trove.svc
   storage:
     s3:
-      bucket: trove-blobs                          # example
+      bucket: trove-blobs
   valkey:
     sentinel:
-      addresses:                                   # example
+      addresses:
         - trove-valkey-sentinel-0.trove-valkey-sentinel.trove.svc:26379
         - trove-valkey-sentinel-1.trove-valkey-sentinel.trove.svc:26379
         - trove-valkey-sentinel-2.trove-valkey-sentinel.trove.svc:26379
-      primary_name: trove                          # example
+      primary_name: trove
 tls:
-  secretName: trove-tls                            # example
+  secretName: trove-tls
 secrets:
   database:
-    existingSecret: trove-db-app                   # example
+    existingSecret: trove-db-app
   valkey:
-    existingSecret: trove-valkey                   # example
+    existingSecret: trove-valkey
   encryption:
-    existingSecret: trove-encryption-keys          # example
-    keys: [2026-10.key]                            # example
+    existingSecret: trove-encryption-keys
+    keys: [2026-10.key]
 endpoints:
   customers:
-    port: 8443                                     # example
-    baseUrl: https://packages.example.com          # example
+    port: 8443
+    baseUrl: https://packages.example.com
     tls:
-      existingSecret: trove-packages-tls           # example
+      existingSecret: trove-packages-tls
     pool:
       enabled: true
-      replicaCount: 3                              # example
+      replicaCount: 3
       resources:
         limits:
-          memory: 1Gi                              # example
+          memory: 1Gi
     ingress:
       enabled: true
-      className: traefik-external                  # example
+      className: traefik-external
       backendTLS:
         controller: traefik
         verify: false
       tls:
-        - secretName: packages-tls                 # example
+        - secretName: packages-tls
           hosts: [packages.example.com]

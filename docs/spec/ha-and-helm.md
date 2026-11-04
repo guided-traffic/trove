@@ -3267,7 +3267,9 @@ Acceptance criteria:
 ### R-HA-031 · Values reference
 Priority: **MVP** · Covers: HA-029
 
-The complete `values.yaml`. Every value carries `# default (proposed)` or `# example`. Keys under
+Every value of the chart with its default. In the block below each value carries `# default (proposed)` or `# example`;
+the chart's `values.yaml` holds the same keys and comments a value only where its name does not say its meaning, unit,
+range or consequence (owner, 2026-11-04: no content-free comments). Keys under
 `config` belong to the pages named in the comments; this page only fixes how the chart wires them.
 Keys marked P1 (`gateway.create`, `contentOrigin`, `bootstrap`) enter the chart with the release that implements them, and
 the keys of phase 6a (`api`, `packages`, `web.enabled`, the pools of R-HA-062) with phase 6a: the `config` subtree is validated against the

@@ -1,37 +1,37 @@
-# The operator runs "trove migrate up" by other means (R-HA-019); a minAvailable budget and
+# The operator runs "trove migrate up" by other means; a minAvailable budget and
 # a fixed digest instead of a tag.
 migrations:
   mode: disabled
 image:
-  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000   # example
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
 packages:
   podDisruptionBudget:
     maxUnavailable: null
     minAvailable: 2
 config:
   server:
-    base_url: https://trove.example.com            # example
+    base_url: https://trove.example.com
   database:
-    host: trove-db-rw.trove.svc                    # example
+    host: trove-db-rw.trove.svc
   storage:
     s3:
-      bucket: trove-blobs                          # example
+      bucket: trove-blobs
     upload:
-      max_size: 10GiB                              # default (proposed)
+      max_size: 10GiB
   valkey:
     sentinel:
-      addresses:                                   # example
+      addresses:
         - trove-valkey-sentinel-0.trove-valkey-sentinel.trove.svc:26379
         - trove-valkey-sentinel-1.trove-valkey-sentinel.trove.svc:26379
         - trove-valkey-sentinel-2.trove-valkey-sentinel.trove.svc:26379
-      primary_name: trove                          # example
+      primary_name: trove
 tls:
-  secretName: trove-tls                            # example
+  secretName: trove-tls
 secrets:
   database:
-    existingSecret: trove-db-app                   # example
+    existingSecret: trove-db-app
   valkey:
-    existingSecret: trove-valkey                   # example
+    existingSecret: trove-valkey
   encryption:
-    existingSecret: trove-encryption-keys          # example
-    keys: [2026-10.key]                            # example
+    existingSecret: trove-encryption-keys
+    keys: [2026-10.key]

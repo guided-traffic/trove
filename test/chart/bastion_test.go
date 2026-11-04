@@ -286,7 +286,7 @@ func TestR_BAS_045_RequiredValuesRenderTheResources(t *testing.T) {
 }
 
 // TestR_BAS_046_ValuesReferenceIsTheSpecBlock (R-BAS-046): helm show values has the key set of the values
-// block of the spec page, and every value line carries `# default` or `# example`.
+// block of the spec page.
 func TestR_BAS_046_ValuesReferenceIsTheSpecBlock(t *testing.T) {
 	spec, err := os.ReadFile(filepath.Join(repoRoot, "docs", "spec", "bastion.md"))
 	if err != nil {
@@ -331,29 +331,6 @@ func TestR_BAS_046_ValuesReferenceIsTheSpecBlock(t *testing.T) {
 				if n < 0 {
 					t.Errorf("the spec block has %s, values.yaml does not", k)
 				}
-			}
-		}
-	})
-	t.Run("every value of values.yaml is marked default or example", func(t *testing.T) {
-		raw, err := os.ReadFile(filepath.Join(bastionDir(), "values.yaml"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for i, l := range strings.Split(string(raw), "\n") {
-			trim := strings.TrimSpace(l)
-			if trim == "" || strings.HasPrefix(trim, "#") || strings.HasPrefix(trim, "-") {
-				continue
-			}
-			key, rest, ok := strings.Cut(trim, ":")
-			if !ok || strings.ContainsAny(key, " ") {
-				continue
-			}
-			rest = strings.TrimSpace(rest)
-			if rest == "" || strings.HasPrefix(rest, "#") {
-				continue // a map header
-			}
-			if !strings.Contains(rest, "# default") && !strings.Contains(rest, "# example") && !strings.Contains(rest, "example:") {
-				t.Errorf("values.yaml:%d %q has neither `# default` nor `# example`", i+1, trim)
 			}
 		}
 	})

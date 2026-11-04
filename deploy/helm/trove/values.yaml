@@ -1,659 +1,659 @@
-# Values of the trove chart. Every value carries "# default (proposed)" or "# example", as in
-# docs/spec/ha-and-helm.md R-HA-031. Values of features the chart does not render yet (Gateway,
-# backup, restore, the ServiceMonitor) are not defined: values.schema.json refuses unknown keys,
-# so a typo or a value of a later feature fails before anything renders.
-# docs/developer/helm-chart.md lists what is in and what is not.
+# Values of the trove chart. A value is commented where its meaning, unit, range or consequence is not evident
+# from its name. Values of features the chart does not render yet (Gateway, backup, restore, the ServiceMonitor)
+# are not defined: values.schema.json refuses unknown keys, so a typo or a value of a later feature fails before
+# anything renders. docs/developer/helm-chart.md lists what is in and what is not; docs/spec/ha-and-helm.md is the
+# reference of every key.
 
 # ── Global ──────────────────────────────────────────────────────────────────
 global:
-  imageRegistry: ""                     # default (proposed): empty = image.registry
-  imagePullSecrets: []                  # default (proposed); example: [{name: registry-pull}]
+  imageRegistry: ""                     # empty = image.registry
+  imagePullSecrets: []                  # example: [{name: registry-pull}]
 
-nameOverride: ""                        # default (proposed)
-fullnameOverride: ""                    # default (proposed)
-commonLabels: {}                        # default (proposed)
-commonAnnotations: {}                   # default (proposed)
+nameOverride: ""
+fullnameOverride: ""
+commonLabels: {}
+commonAnnotations: {}
 
 image:
-  registry: docker.io                   # default: Docker Hub (build.yml publishes there)
-  repository: guidedtraffic/trove       # default: the image of the release pipeline
-  tag: ""                               # default (proposed): empty = chart appVersion
-  digest: ""                            # default (proposed); example: sha256:<64 hex>; wins over tag
-  pullPolicy: IfNotPresent              # default (proposed)
+  registry: docker.io                   # Docker Hub (build.yml publishes there)
+  repository: guidedtraffic/trove       # the image of the release pipeline
+  tag: ""                               # empty = chart appVersion
+  digest: ""                            # example: sha256:<64 hex>; wins over tag
+  pullPolicy: IfNotPresent
 
 highAvailability:
-  enforce: true                         # default (proposed): >= 2 replicas, a PDB and DoNotSchedule host spreading per role; Sentinel mode with >= 3 Sentinels (R-HA-029)
+  enforce: true                         # >= 2 replicas, a PDB and DoNotSchedule host spreading per role; Sentinel mode with >= 3 Sentinels
 
-# ── api Deployment: trove serve --role api (R-HA-002) ───────────────────────
-# The UI, the management API, the sign-in and the CI exchange; the login secrets mount here only (R-HA-030).
+# ── api Deployment: trove serve --role api ───────────────────────
+# The UI, the management API, the sign-in and the CI exchange; the login secrets mount here only.
 api:
-  replicaCount: 2                       # default (proposed) (Q-HA-75); ignored when autoscaling.enabled
-  minReadySeconds: 10                   # default (proposed)
-  revisionHistoryLimit: 5               # default (proposed)
+  replicaCount: 2                       # ignored when autoscaling.enabled
+  minReadySeconds: 10
+  revisionHistoryLimit: 5
   strategy:
-    type: RollingUpdate                 # default (proposed)
+    type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1                       # default (proposed)
-      maxUnavailable: 0                 # default (proposed)
-  terminationGracePeriodSeconds: 120    # default (proposed) (R-HA-011): the UI's uploads and the audit exports
+      maxSurge: 1
+      maxUnavailable: 0
+  terminationGracePeriodSeconds: 120    # the UI's uploads and the audit exports
   spool:
-    sizeLimit: 5Gi                      # default (proposed) (Q-HA-75): holds the UI's uploads through the content route, up to config.ui.deploy.max_upload_bytes (R-HA-029)
+    sizeLimit: 5Gi                      # holds the UI's uploads through the content route, up to config.ui.deploy.max_upload_bytes
   resources:
     requests:
-      cpu: 500m                         # default (proposed) (Q-HA-75)
-      memory: 512Mi                     # default (proposed)
-      ephemeral-storage: 1Gi            # default (proposed)
+      cpu: 500m
+      memory: 512Mi
+      ephemeral-storage: 1Gi
     limits:
-      memory: 1Gi                       # default (proposed); no CPU limit by default (R-HA-036)
+      memory: 1Gi                       # no CPU limit by default
   autoscaling:
-    enabled: false                      # default (proposed)
-    minReplicas: 2                      # default (proposed) (Q-HA-75, R-HA-059)
-    maxReplicas: 4                      # default (proposed)
-    targetCPUUtilizationPercentage: 70  # default (proposed)
-    targetMemoryUtilizationPercentage: 0  # default (proposed): 0 = no memory metric
-    metrics: []                         # default (proposed); additional autoscaling/v2 metric specs
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 0  # 0 = no memory metric
+    metrics: []                         # additional autoscaling/v2 metric specs
     behavior:
       scaleUp:
-        stabilizationWindowSeconds: 0   # default (proposed)
+        stabilizationWindowSeconds: 0
         policies:
-          - type: Pods                  # default (proposed)
-            value: 2                    # default (proposed)
-            periodSeconds: 60           # default (proposed)
+          - type: Pods
+            value: 2
+            periodSeconds: 60
       scaleDown:
-        stabilizationWindowSeconds: 300 # default (proposed)
+        stabilizationWindowSeconds: 300
         policies:
-          - type: Pods                  # default (proposed)
-            value: 1                    # default (proposed)
-            periodSeconds: 120          # default (proposed)
+          - type: Pods
+            value: 1
+            periodSeconds: 120
   podDisruptionBudget:
-    enabled: true                       # default (proposed)
-    maxUnavailable: 1                   # default (proposed)
-    minAvailable: null                  # default (proposed); mutually exclusive with maxUnavailable
-    unhealthyPodEvictionPolicy: AlwaysAllow  # default (proposed) (R-HA-008)
+    enabled: true
+    maxUnavailable: 1
+    minAvailable: null                  # mutually exclusive with maxUnavailable
+    unhealthyPodEvictionPolicy: AlwaysAllow
   topologySpread:
-    enabled: true                       # default (proposed): render the two constraints below
-    nodeTaintsPolicy: Honor             # default (proposed): cordoned nodes do not count as domains (R-HA-059)
+    enabled: true                       # render the two constraints below
+    nodeTaintsPolicy: Honor             # cordoned nodes do not count as domains
     zone:
-      maxSkew: 1                        # default (proposed)
-      whenUnsatisfiable: ScheduleAnyway # default (proposed)
+      maxSkew: 1
+      whenUnsatisfiable: ScheduleAnyway
     host:
-      maxSkew: 1                        # default (proposed)
-      whenUnsatisfiable: DoNotSchedule  # default (proposed); required with highAvailability.enforce
-  topologySpreadConstraints: []         # default (proposed); non-empty replaces the generated constraints
-  nodeFailureTolerationSeconds: 60      # default (proposed); not-ready/unreachable tolerations (R-HA-032)
-  affinity: {}                          # default (proposed)
-  nodeSelector: {}                      # default (proposed); example: {kubernetes.io/arch: arm64}
-  tolerations: []                       # default (proposed)
-  priorityClassName: ""                 # default (proposed); example: business-critical
-  schedulerName: ""                     # default (proposed)
-  podAnnotations: {}                    # default (proposed)
-  podLabels: {}                         # default (proposed)
-  extraEnv: []                          # default (proposed); appended after the shared extraEnv
-  pools: []                             # default (proposed) (R-HA-062); example: [{name: admin, paths: [/api/v1/repositories], replicaCount: 2}]
+      maxSkew: 1
+      whenUnsatisfiable: DoNotSchedule  # required with highAvailability.enforce
+  topologySpreadConstraints: []         # non-empty replaces the generated constraints
+  nodeFailureTolerationSeconds: 60      # not-ready/unreachable tolerations
+  affinity: {}
+  nodeSelector: {}                      # example: {kubernetes.io/arch: arm64}
+  tolerations: []
+  priorityClassName: ""                 # example: business-critical
+  schedulerName: ""
+  podAnnotations: {}
+  podLabels: {}
+  extraEnv: []                          # appended after the shared extraEnv
+  pools: []                             # example: [{name: admin, paths: [/api/v1/repositories], replicaCount: 2}]
 
-# ── packages Deployment: trove serve --role packages (R-HA-002) ─────────────
-# The package protocols and the raw file transfer, tokens only; no login secret mounts here (R-HA-030).
+# ── packages Deployment: trove serve --role packages ─────────────
+# The package protocols and the raw file transfer, tokens only; no login secret mounts here.
 packages:
-  replicaCount: 3                       # default (proposed) (Q-HA-16, Q-HA-75); ignored when autoscaling.enabled
-  minReadySeconds: 10                   # default (proposed)
-  revisionHistoryLimit: 5               # default (proposed)
+  replicaCount: 3                       # ignored when autoscaling.enabled
+  minReadySeconds: 10
+  revisionHistoryLimit: 5
   strategy:
-    type: RollingUpdate                 # default (proposed)
+    type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1                       # default (proposed)
-      maxUnavailable: 0                 # default (proposed)
-  terminationGracePeriodSeconds: 120    # default (proposed) (R-HA-011)
+      maxSurge: 1
+      maxUnavailable: 0
+  terminationGracePeriodSeconds: 120
   spool:
-    sizeLimit: ""                       # default (proposed): empty = spool.sizeLimit (R-HA-035)
+    sizeLimit: ""                       # empty = spool.sizeLimit
   resources:
     requests:
-      cpu: "1"                          # default (proposed)
-      memory: 1Gi                       # default (proposed)
-      ephemeral-storage: 2Gi            # default (proposed)
+      cpu: "1"
+      memory: 1Gi
+      ephemeral-storage: 2Gi
     limits:
-      memory: 2Gi                       # default (proposed); no CPU limit by default (R-HA-036)
+      memory: 2Gi                       # no CPU limit by default
   autoscaling:
-    enabled: false                      # default (proposed)
-    minReplicas: 3                      # default (proposed) (Q-HA-16, Q-HA-75, R-HA-059)
-    maxReplicas: 8                      # default (proposed)
-    targetCPUUtilizationPercentage: 70  # default (proposed)
-    targetMemoryUtilizationPercentage: 0  # default (proposed): 0 = no memory metric
-    metrics: []                         # default (proposed); additional autoscaling/v2 metric specs
+    enabled: false
+    minReplicas: 3
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 0  # 0 = no memory metric
+    metrics: []                         # additional autoscaling/v2 metric specs
     behavior:
       scaleUp:
-        stabilizationWindowSeconds: 0   # default (proposed)
+        stabilizationWindowSeconds: 0
         policies:
-          - type: Pods                  # default (proposed)
-            value: 2                    # default (proposed)
-            periodSeconds: 60           # default (proposed)
+          - type: Pods
+            value: 2
+            periodSeconds: 60
       scaleDown:
-        stabilizationWindowSeconds: 300 # default (proposed)
+        stabilizationWindowSeconds: 300
         policies:
-          - type: Pods                  # default (proposed)
-            value: 1                    # default (proposed)
-            periodSeconds: 120          # default (proposed)
+          - type: Pods
+            value: 1
+            periodSeconds: 120
   podDisruptionBudget:
-    enabled: true                       # default (proposed)
-    maxUnavailable: 1                   # default (proposed)
-    minAvailable: null                  # default (proposed); mutually exclusive with maxUnavailable
-    unhealthyPodEvictionPolicy: AlwaysAllow  # default (proposed) (R-HA-008)
+    enabled: true
+    maxUnavailable: 1
+    minAvailable: null                  # mutually exclusive with maxUnavailable
+    unhealthyPodEvictionPolicy: AlwaysAllow
   topologySpread:
-    enabled: true                       # default (proposed): render the two constraints below
-    nodeTaintsPolicy: Honor             # default (proposed): cordoned nodes do not count as domains (R-HA-059)
+    enabled: true                       # render the two constraints below
+    nodeTaintsPolicy: Honor             # cordoned nodes do not count as domains
     zone:
-      maxSkew: 1                        # default (proposed)
-      whenUnsatisfiable: ScheduleAnyway # default (proposed)
+      maxSkew: 1
+      whenUnsatisfiable: ScheduleAnyway
     host:
-      maxSkew: 1                        # default (proposed)
-      whenUnsatisfiable: DoNotSchedule  # default (proposed); required with highAvailability.enforce
-  topologySpreadConstraints: []         # default (proposed); non-empty replaces the generated constraints
-  nodeFailureTolerationSeconds: 60      # default (proposed); not-ready/unreachable tolerations (R-HA-032)
-  affinity: {}                          # default (proposed)
-  nodeSelector: {}                      # default (proposed); example: {kubernetes.io/arch: arm64}
-  tolerations: []                       # default (proposed)
-  priorityClassName: ""                 # default (proposed); example: business-critical
-  schedulerName: ""                     # default (proposed)
-  podAnnotations: {}                    # default (proposed)
-  podLabels: {}                         # default (proposed)
-  extraEnv: []                          # default (proposed); appended after the shared extraEnv
-  pools: []                             # default (proposed) (R-HA-062); example: [{name: npm, paths: [/api/npm], replicaCount: 4}]
+      maxSkew: 1
+      whenUnsatisfiable: DoNotSchedule  # required with highAvailability.enforce
+  topologySpreadConstraints: []         # non-empty replaces the generated constraints
+  nodeFailureTolerationSeconds: 60      # not-ready/unreachable tolerations
+  affinity: {}
+  nodeSelector: {}                      # example: {kubernetes.io/arch: arm64}
+  tolerations: []
+  priorityClassName: ""                 # example: business-critical
+  schedulerName: ""
+  podAnnotations: {}
+  podLabels: {}
+  extraEnv: []                          # appended after the shared extraEnv
+  pools: []                             # example: [{name: npm, paths: [/api/npm], replicaCount: 4}]
 
-# ── web Deployment: the bridge of the upgrade across the cut (R-HA-064) ─────
+# ── web Deployment: the bridge of the upgrade across the cut ─────
 # Rendered only with web.enabled: trove serve --role web, the Service <fullname> and the edge of the releases
 # before the cut. Every other key keeps its meaning and default of those releases; a fresh installation never sets it.
 web:
-  enabled: false                        # default (proposed) (Q-ARCH-295, Q-HA-73): true for the first step only
-  replicaCount: 3                       # default (proposed) (Q-HA-16); ignored when autoscaling.enabled
-  minReadySeconds: 10                   # default (proposed)
-  revisionHistoryLimit: 5               # default (proposed)
+  enabled: false                        # true for the first step only
+  replicaCount: 3                       # ignored when autoscaling.enabled
+  minReadySeconds: 10
+  revisionHistoryLimit: 5
   strategy:
-    type: RollingUpdate                 # default (proposed)
+    type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1                       # default (proposed)
-      maxUnavailable: 0                 # default (proposed)
-  terminationGracePeriodSeconds: 120    # default (proposed) (R-HA-011)
+      maxSurge: 1
+      maxUnavailable: 0
+  terminationGracePeriodSeconds: 120
   spool:
-    sizeLimit: ""                       # default (proposed): empty = spool.sizeLimit (R-HA-035)
+    sizeLimit: ""                       # empty = spool.sizeLimit
   resources:
     requests:
-      cpu: "1"                          # default (proposed)
-      memory: 1Gi                       # default (proposed)
-      ephemeral-storage: 2Gi            # default (proposed)
+      cpu: "1"
+      memory: 1Gi
+      ephemeral-storage: 2Gi
     limits:
-      memory: 2Gi                       # default (proposed); no CPU limit by default (R-HA-036)
+      memory: 2Gi                       # no CPU limit by default
   autoscaling:
-    enabled: false                      # default (proposed)
-    minReplicas: 3                      # default (proposed) (Q-HA-16, R-HA-059)
-    maxReplicas: 8                      # default (proposed)
-    targetCPUUtilizationPercentage: 70  # default (proposed)
-    targetMemoryUtilizationPercentage: 0  # default (proposed): 0 = no memory metric
-    metrics: []                         # default (proposed); additional autoscaling/v2 metric specs
+    enabled: false
+    minReplicas: 3
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 0  # 0 = no memory metric
+    metrics: []                         # additional autoscaling/v2 metric specs
     behavior:
       scaleUp:
-        stabilizationWindowSeconds: 0   # default (proposed)
+        stabilizationWindowSeconds: 0
         policies:
-          - type: Pods                  # default (proposed)
-            value: 2                    # default (proposed)
-            periodSeconds: 60           # default (proposed)
+          - type: Pods
+            value: 2
+            periodSeconds: 60
       scaleDown:
-        stabilizationWindowSeconds: 300 # default (proposed)
+        stabilizationWindowSeconds: 300
         policies:
-          - type: Pods                  # default (proposed)
-            value: 1                    # default (proposed)
-            periodSeconds: 120          # default (proposed)
+          - type: Pods
+            value: 1
+            periodSeconds: 120
   podDisruptionBudget:
-    enabled: true                       # default (proposed)
-    maxUnavailable: 1                   # default (proposed)
-    minAvailable: null                  # default (proposed); mutually exclusive with maxUnavailable
-    unhealthyPodEvictionPolicy: AlwaysAllow  # default (proposed) (R-HA-008)
+    enabled: true
+    maxUnavailable: 1
+    minAvailable: null                  # mutually exclusive with maxUnavailable
+    unhealthyPodEvictionPolicy: AlwaysAllow
   topologySpread:
-    enabled: true                       # default (proposed): render the two constraints below
-    nodeTaintsPolicy: Honor             # default (proposed): cordoned nodes do not count as domains (R-HA-059)
+    enabled: true                       # render the two constraints below
+    nodeTaintsPolicy: Honor             # cordoned nodes do not count as domains
     zone:
-      maxSkew: 1                        # default (proposed)
-      whenUnsatisfiable: ScheduleAnyway # default (proposed)
+      maxSkew: 1
+      whenUnsatisfiable: ScheduleAnyway
     host:
-      maxSkew: 1                        # default (proposed)
-      whenUnsatisfiable: DoNotSchedule  # default (proposed); required with highAvailability.enforce
-  topologySpreadConstraints: []         # default (proposed); non-empty replaces the generated constraints
-  nodeFailureTolerationSeconds: 60      # default (proposed); not-ready/unreachable tolerations (R-HA-032)
-  affinity: {}                          # default (proposed)
-  nodeSelector: {}                      # default (proposed); example: {kubernetes.io/arch: arm64}
-  tolerations: []                       # default (proposed)
-  priorityClassName: ""                 # default (proposed); example: business-critical
-  schedulerName: ""                     # default (proposed)
-  podAnnotations: {}                    # default (proposed)
-  podLabels: {}                         # default (proposed)
-  extraEnv: []                          # default (proposed); appended after the shared extraEnv
-  pools: []                             # default (proposed): kept for the releases before the cut; ignored, the bridge renders no path pool
+      maxSkew: 1
+      whenUnsatisfiable: DoNotSchedule  # required with highAvailability.enforce
+  topologySpreadConstraints: []         # non-empty replaces the generated constraints
+  nodeFailureTolerationSeconds: 60      # not-ready/unreachable tolerations
+  affinity: {}
+  nodeSelector: {}                      # example: {kubernetes.io/arch: arm64}
+  tolerations: []
+  priorityClassName: ""                 # example: business-critical
+  schedulerName: ""
+  podAnnotations: {}
+  podLabels: {}
+  extraEnv: []                          # appended after the shared extraEnv
+  pools: []                             # kept for the releases before the cut; ignored, the bridge renders no path pool
 
-# ── worker Deployment: trove serve --role worker (R-HA-002) ─────────────────
+# ── worker Deployment: trove serve --role worker ─────────────────
 worker:
-  replicaCount: 2                       # default (proposed) (Q-HA-16)
-  minReadySeconds: 10                   # default (proposed)
-  revisionHistoryLimit: 5               # default (proposed)
+  replicaCount: 2
+  minReadySeconds: 10
+  revisionHistoryLimit: 5
   strategy:
-    type: RollingUpdate                 # default (proposed)
+    type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1                       # default (proposed)
-      maxUnavailable: 0                 # default (proposed)
-  terminationGracePeriodSeconds: 300    # default (proposed): jobs persist their cursor before exit
+      maxSurge: 1
+      maxUnavailable: 0
+  terminationGracePeriodSeconds: 300    # jobs persist their cursor before exit
   spool:
-    sizeLimit: 5Gi                      # default (proposed); workers spool only cache fills of jobs, one advisory archive while a sync runs (config.vulnerabilities.sources.osv.max_archive_size, validated) and, from P1, the nuget-symbol-index job's one extracted PDB at a time (formats/nuget.md R-NUGET-021)
+    sizeLimit: 5Gi                      # workers spool only cache fills of jobs, one advisory archive while a sync runs (config.vulnerabilities.sources.osv.max_archive_size, validated) and, from P1, the nuget-symbol-index job's one extracted PDB at a time (formats/nuget.md )
   resources:
     requests:
-      cpu: 500m                         # default (proposed)
-      memory: 512Mi                     # default (proposed)
-      ephemeral-storage: 1Gi            # default (proposed)
+      cpu: 500m
+      memory: 512Mi
+      ephemeral-storage: 1Gi
     limits:
-      memory: 1Gi                       # default (proposed)
+      memory: 1Gi
   autoscaling:
-    enabled: false                      # default (proposed)
-    minReplicas: 2                      # default (proposed)
-    maxReplicas: 4                      # default (proposed)
-    targetCPUUtilizationPercentage: 80  # default (proposed)
-    targetMemoryUtilizationPercentage: 0  # default (proposed)
-    metrics: []                         # default (proposed)
-    behavior: {}                        # default (proposed): Kubernetes defaults
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 0
+    metrics: []
+    behavior: {}                        # Kubernetes defaults
   podDisruptionBudget:
-    enabled: true                       # default (proposed)
-    maxUnavailable: 1                   # default (proposed)
-    minAvailable: null                  # default (proposed)
-    unhealthyPodEvictionPolicy: AlwaysAllow  # default (proposed)
+    enabled: true
+    maxUnavailable: 1
+    minAvailable: null
+    unhealthyPodEvictionPolicy: AlwaysAllow
   topologySpread:
-    enabled: true                       # default (proposed)
-    nodeTaintsPolicy: Honor             # default (proposed)
+    enabled: true
+    nodeTaintsPolicy: Honor
     zone:
-      maxSkew: 1                        # default (proposed)
-      whenUnsatisfiable: ScheduleAnyway # default (proposed)
+      maxSkew: 1
+      whenUnsatisfiable: ScheduleAnyway
     host:
-      maxSkew: 1                        # default (proposed)
-      whenUnsatisfiable: DoNotSchedule  # default (proposed): workers spread evenly; with nodes ≥ replicas no two share a node (INV-12)
-  topologySpreadConstraints: []         # default (proposed)
-  nodeFailureTolerationSeconds: 60      # default (proposed)
-  affinity: {}                          # default (proposed)
-  nodeSelector: {}                      # default (proposed)
-  tolerations: []                       # default (proposed)
-  priorityClassName: ""                 # default (proposed)
-  schedulerName: ""                     # default (proposed)
-  podAnnotations: {}                    # default (proposed)
-  podLabels: {}                         # default (proposed)
-  extraEnv: []                          # default (proposed)
-  pools: []                             # default (proposed) (R-HA-062); example: [{name: vuln, queues: [vuln], replicaCount: 2}]; the main worker claims every queue no pool lists
+      maxSkew: 1
+      whenUnsatisfiable: DoNotSchedule  # workers spread evenly; with nodes ≥ replicas no two share a node (INV-12)
+  topologySpreadConstraints: []
+  nodeFailureTolerationSeconds: 60
+  affinity: {}
+  nodeSelector: {}
+  tolerations: []
+  priorityClassName: ""
+  schedulerName: ""
+  podAnnotations: {}
+  podLabels: {}
+  extraEnv: []
+  pools: []                             # example: [{name: vuln, queues: [vuln], replicaCount: 2}]; the main worker claims every queue no pool lists
 
 # ── trove configuration (rendered to /etc/trove/trove.yaml) ─────────────────
-# Chart-managed keys (secret file paths, storage.spool.dir) must not be set here (R-HA-029).
-# One file serves every Deployment and Job; the role is the container argument --role (R-HA-002).
+# Chart-managed keys (secret file paths, storage.spool.dir) must not be set here.
+# One file serves every Deployment and Job; the role is the container argument --role.
 # The subtree is free-form until the binary emits its JSON Schema (internal/config/schema.json);
 # the keys below are the ones the chart reads itself or that are required.
 config:
-  server:                               # operations-and-observability.md R-OPS-005
+  server:                               # operations-and-observability.md
     base_url: ""                        # required; example: https://trove.example.com
-    trusted_proxies: []                 # default (proposed): no proxy is trusted, the TCP peer is the client; example: ["10.244.3.17", "10.244.5.9"] (the addresses of the ingress controller pods, never the whole pod CIDR; a prefix of length 0 is refused)
-    forwarded_header: x-forwarded-for   # default: the one header the edge rewrites, x-forwarded-for | forwarded; the other is never read
-  health:                               # operations-and-observability.md R-OPS-001
-    shutdown_drain_delay: 5s            # default (proposed); must exceed the edge's endpoint removal time (R-HA-059)
+    trusted_proxies: []                 # no proxy is trusted, the TCP peer is the client; example: ["10.244.3.17", "10.244.5.9"] (the addresses of the ingress controller pods, never the whole pod CIDR; a prefix of length 0 is refused)
+    forwarded_header: x-forwarded-for   # the one header the edge rewrites, x-forwarded-for | forwarded; the other is never read
+  health:                               # operations-and-observability.md
+    shutdown_drain_delay: 5s            # must exceed the edge's endpoint removal time
   log:
-    level: info                         # default (proposed)
-  database:                             # ha-and-helm.md R-HA-009 to R-HA-016
+    level: info
+  database:                             # ha-and-helm.md to
     host: ""                            # required; example: trove-db-rw.trove.svc
-    port: 5432                          # default (proposed)
-    name: trove                         # example
-    ssl_mode: verify-full               # default (proposed)
-    session_host: ""                    # default (proposed): empty = host (the migration Job connects there, R-HA-019)
-  valkey:                               # ha-and-helm.md R-HA-056
-    mode: sentinel                      # default (proposed): sentinel | standalone (development only)
+    port: 5432
+    name: trove
+    ssl_mode: verify-full
+    session_host: ""                    # empty = host (the migration Job connects there)
+  valkey:                               # ha-and-helm.md
+    mode: sentinel                      # sentinel | standalone (development only)
     sentinel:
       addresses: []                     # required; example: [trove-valkey-sentinel-0.trove-valkey-sentinel.trove.svc:26379, trove-valkey-sentinel-1.trove-valkey-sentinel.trove.svc:26379, trove-valkey-sentinel-2.trove-valkey-sentinel.trove.svc:26379]
       primary_name: ""                  # required; example: trove
-      tls: true                         # default (proposed)
-    address: ""                         # default (proposed); standalone mode only; example: trove-valkey.trove.svc:6379
+      tls: true
+    address: ""                         # standalone mode only; example: trove-valkey.trove.svc:6379
     tls:
-      mode: verify-full                 # default (proposed): verify-full | verify-ca | disable
-    allow_insecure: false               # default (proposed)
-  storage:                              # storage.md R-STOR-024 to R-STOR-036
+      mode: verify-full                 # verify-full | verify-ca | disable
+    allow_insecure: false
+  storage:                              # storage.md to
     s3:
       bucket: ""                        # required; example: trove-blobs
       region: ""                        # example: eu-central-1
-      endpoint: ""                      # default (proposed): AWS resolution; example: http://trove-s3.trove.svc:9000
-      force_path_style: false           # default (proposed); true for SeaweedFS, MinIO and Ceph RGW
+      endpoint: ""                      # AWS resolution; example: http://trove-s3.trove.svc:9000
+      force_path_style: false           # true for SeaweedFS, MinIO and Ceph RGW
       credentials:
-        source: default                 # default (proposed): default | webIdentity | static
+        source: default                 # default | webIdentity | static
     upload:
-      max_size: 10GiB                   # default (proposed) in storage.md; must fit the spool (R-HA-035)
+      max_size: 10GiB                   # must fit the spool
   metrics:
-    auth: none                          # default (proposed): none | static (needs secrets.metricsToken)
-  # The vulnerability scanning (R-VULN-025, docs/spec/vulnerability-scanning.md). Every key has a default in the binary and
+    auth: none                          # none | static (needs secrets.metricsToken)
+  # The vulnerability scanning (docs/spec/vulnerability-scanning.md). Every key has a default in the binary and
   # is rendered only when set here; the chart reads three of them: enabled, sources.osv.mode and sources.osv.max_archive_size
   # (the worker spool must hold one archive, validated), and stale_after (the threshold of TroveVulnerabilityDataStale).
   # vulnerabilities:
-  #   enabled: true                     # default (proposed)
-  #   enforcement: enforce              # default (proposed): enforce | report
-  #   stale_after: 24h                  # default (proposed)
-  #   sources:
-  #     osv:
-  #       mode: online                  # default (proposed): online | repository | off
-  #       max_archive_size: 1GiB        # default (proposed); at most the worker spool budget (worker.spool.sizeLimit - spool.headroom)
-  # The NuGet format (docs/developer/configuration.md, R-NUGET-005, R-NUGET-009, R-NUGET-010, R-NUGET-016). Every key has a default and
+  # enabled: true
+  # enforcement: enforce # enforce | report
+  # stale_after: 24h
+  # sources:
+  # osv:
+  # mode: online # online | repository | off
+  # max_archive_size: 1GiB # at most the worker spool budget (worker.spool.sizeLimit - spool.headroom)
+  # The NuGet format (docs/developer/configuration.md). Every key has a default and
   # is rendered only when set here; the settings of one repository (deleteMode, forwardSearch) are in its document, not in this file.
   # nuget:
-  #   archive:
-  #     max_nuspec_bytes: 1MiB          # default: 1KiB to 1MiB, can only be tightened (R-ARCH-028)
-  #     max_entries: 65535              # default: entries the central directory of a package may declare
-  #     max_uncompressed_bytes: 4GiB    # default: the sum of the declared sizes of a package
-  #     max_compression_ratio: 100      # default: 1 to 100, of an entry read into memory
-  #   registration:
-  #     page_size: 64                   # default: versions per registration page
-  #     inline_below: 128               # default: a package with fewer visible versions has its pages inlined
-  #   search:
-  #     default_take: 20                # default: at most max_take
-  #     max_take: 1000                  # default
-  #     max_skip: 3000                  # default: a larger skip answers 400
-  #     virtual_merge_window: 1000      # default: results per member a virtual repository merges
-  #     remote_result_ttl: 60s          # default: how long a forwarded search answer is kept, at most 1h
-  # System role bindings (R-AUTHZ-010, Q-AUTHZ-170). The migration Job (trove migrate) applies the list on every install
+  # archive:
+  # max_nuspec_bytes: 1MiB # 1KiB to 1MiB, can only be tightened
+  # max_entries: 65535 # entries the central directory of a package may declare
+  # max_uncompressed_bytes: 4GiB # the sum of the declared sizes of a package
+  # max_compression_ratio: 100 # 1 to 100, of an entry read into memory
+  # registration:
+  # page_size: 64 # versions per registration page
+  # inline_below: 128 # a package with fewer visible versions has its pages inlined
+  # search:
+  # default_take: 20 # at most max_take
+  # max_take: 1000
+  # max_skip: 3000 # a larger skip answers 400
+  # virtual_merge_window: 1000 # results per member a virtual repository merges
+  # remote_result_ttl: 60s # how long a forwarded search answer is kept, at most 1h
+  # System role bindings. The migration Job (trove migrate) applies the list on every install
   # and upgrade and removes the bindings taken out of it; the API and the UI show them read-only. A group that does not
   # exist is created, and the login provider's group sync fills it: a rule of config.auth.oidc.providers.<id>.group_sync
   # must map the IdP group to the same name. A user or service account must exist, or the Job fails. Whoever controls the
   # membership of a declared IdP group holds the role. The default is no declaration.
   # authz:
-  #   role_bindings:
-  #     - role: admin                   # example: admin | security-admin | auditor | repository-admin | webhook-admin
-  #       group: gh-wds18-k8s-main-admins   # example; exactly one of group, user, service_account
-  #     - role: auditor                 # example: reads every repository's metadata and the configuration, changes nothing
-  #       group: gh-wds18-k8s-main-auditors # example
+  # role_bindings:
+  # - role: admin # example: admin | security-admin | auditor | repository-admin | webhook-admin
+  # group: gh-wds18-k8s-main-admins # exactly one of group, user, service_account
+  # - role: auditor # example: reads every repository's metadata and the configuration, changes nothing
+  # group: gh-wds18-k8s-main-auditors
   # GitLab CI OIDC federation (docs/spec/gitlab-ci-oidc.md, docs/developer/configuration.md). Every key has a default and is
   # rendered only when set here. ci.issuers declares GitLab instances as trusted CI issuers: the migration Job applies the list
   # on every install and upgrade (an issuer taken out of it is disabled, not deleted), the API and the UI show them read-only
-  # with source "configuration", and their mappings are managed through the API (Q-CI-16).
+  # with source "configuration", and their mappings are managed through the API.
   # ci:
-  #   token:
-  #     default_ttl: 15m                # default (proposed): lifetime of a CI token that asks for none
-  #     max_ttl: 1h                     # default (proposed): at most auth.tokens.cit.max_ttl (6h), or the pod does not start
-  #     min_ttl: 30s                    # default (proposed)
-  #   exchange:
-  #     enabled: true                   # default (proposed)
-  #     expose_reason: true             # default (proposed): false leaves the reason out of the 400 answers
-  #     rate_limit:
-  #       per_client_ip_per_minute: 600 # default (proposed): cluster-wide
-  #       per_client_ip_burst: 100      # default (proposed)
-  #       per_subject_per_minute: 300   # default (proposed): per issuer and project, cluster-wide
-  #       per_subject_burst: 100        # default (proposed)
-  #       exempt_cidrs: []              # default (proposed); example: ["10.20.0.0/16"], a runner network behind NAT
-  #   signing_keys:
-  #     max_stale: 24h                  # default (proposed): older key sets fail closed with 503
-  #   mappings:
-  #     max_per_issuer: 1000            # default (proposed): mappings of one issuer, all tiers
-  #     max_per_project: 100            # default (proposed): of one project's tier on one issuer, at most max_per_issuer
-  #   replay:
-  #     retention_after_expiry: 15m     # default (proposed): at least 1m, the margin for a replica clock behind the database's
-  #   issuers:
-  #     - name: gitlab-main             # example: ^[a-z0-9][a-z0-9._-]{1,63}$
-  #       kind: gitlab                  # the only kind of this release
-  #       issuer: https://gitlab.example.com   # example: https, exactly the iss of the ID tokens
-  #       public_issuer: false          # example: an instance without open sign-up; default true
-  #       allowed_audiences: ["https://packages.example.com"]   # example; without it the base URL and npm:<host name>
-  #       ca_bundle_ref: file:/var/run/secrets/gitlab-ca/ca.crt  # example: an instance behind a private CA
+  # token:
+  # default_ttl: 15m # lifetime of a CI token that asks for none
+  # max_ttl: 1h # at most auth.tokens.cit.max_ttl (6h), or the pod does not start
+  # min_ttl: 30s
+  # exchange:
+  # enabled: true
+  # expose_reason: true # false leaves the reason out of the 400 answers
+  # rate_limit:
+  # per_client_ip_per_minute: 600 # cluster-wide
+  # per_client_ip_burst: 100
+  # per_subject_per_minute: 300 # per issuer and project, cluster-wide
+  # per_subject_burst: 100
+  # exempt_cidrs: [] # example: ["10.20.0.0/16"], a runner network behind NAT
+  # signing_keys:
+  # max_stale: 24h # older key sets fail closed with 503
+  # mappings:
+  # max_per_issuer: 1000 # mappings of one issuer, all tiers
+  # max_per_project: 100 # of one project's tier on one issuer, at most max_per_issuer
+  # replay:
+  # retention_after_expiry: 15m # at least 1m, the margin for a replica clock behind the database's
+  # issuers:
+  # - name: gitlab-main # example: ^[a-z0-9][a-z0-9._-]{1,63}$
+  # kind: gitlab # the only kind of this release
+  # issuer: https://gitlab.example.com # example: https, exactly the iss of the ID tokens
+  # public_issuer: false # example: an instance without open sign-up; default true
+  # allowed_audiences: ["https://packages.example.com"] # without it the base URL and npm:<host name>
+  # ca_bundle_ref: file:/var/run/secrets/gitlab-ca/ca.crt # example: an instance behind a private CA
 
-# ── TLS on trove's own listeners (R-HA-063, R-ARCH-035) ────────────────────
+# ── TLS on trove's own listeners ────────────────────
 # The chart never creates the Secret. It holds the keys of a cert-manager TLS Secret (tls.crt,
 # tls.key and, for the edge and for Prometheus, ca.crt). Mounted as a directory volume without
 # subPath, so a rotated Secret reaches the pod through the kubelet's atomic swap and the process
 # reloads the files (tls.reloadInterval). tls.* configures the default client listener :8080 and
-# the operations listener :8081; each entry of endpoints carries its own tls block (R-EP-004).
+# the operations listener :8081; each entry of endpoints carries its own tls block.
 tls:
-  enabled: true                         # default (proposed) (Q-HA-32); false = plain HTTP inside the cluster (H-38)
+  enabled: true                         # false = plain HTTP inside the cluster
   secretName: ""                        # required with tls.enabled; example: trove-tls (cert-manager Certificate secretName)
-  certKey: tls.crt                      # default (proposed): key of the certificate chain in the Secret
-  keyKey: tls.key                       # default (proposed): key of the private key in the Secret
-  minVersion: "1.2"                     # default: "1.2" | "1.3" (server.tls.min_version)
-  reloadInterval: 10s                   # default: content poll of the mounted files (server.tls.reload_interval)
+  certKey: tls.crt                      # key of the certificate chain in the Secret
+  keyKey: tls.key                       # key of the private key in the Secret
+  minVersion: "1.2"                     # "1.2" | "1.3" (server.tls.min_version)
+  reloadInterval: 10s                   # content poll of the mounted files (server.tls.reload_interval)
   clientCA:                             # optional mutual TLS: the edge must present a client certificate
-    secretName: ""                      # default (proposed): empty = no client certificates requested; example: trove-edge-ca
-    key: ca.crt                         # default (proposed): key of the CA bundle in that Secret
-    auth: require                       # default (proposed): require | verify_if_given (server.tls.client_auth)
-  ops:                                  # optional separate certificate for :8081 (probes, metrics); empty = same material as :8080. Recommended with endpoint pools and workers: only then the listener private key of :8080 stays out of the pods that do not serve it (H-57)
-    secretName: ""                      # default (proposed); example: trove-ops-tls
-    certKey: tls.crt                    # default (proposed)
-    keyKey: tls.key                     # default (proposed)
+    secretName: ""                      # empty = no client certificates requested; example: trove-edge-ca
+    key: ca.crt                         # key of the CA bundle in that Secret
+    auth: require                       # require | verify_if_given (server.tls.client_auth)
+  ops:                                  # optional separate certificate for:8081 (probes, metrics); empty = same material as:8080. Recommended with endpoint pools and workers: only then the listener private key of:8080 stays out of the pods that do not serve it
+    secretName: ""                      # example: trove-ops-tls
+    certKey: tls.crt
+    keyKey: tls.key
   backendTLSPolicy:                     # Gateway API: how the Gateway verifies trove (needs the BackendTLSPolicy CRD)
-    enabled: false                      # default (proposed)
+    enabled: false
     caConfigMapName: ""                 # required when enabled; example: trove-tls-ca (a ConfigMap with ca.crt: Gateway API takes no Secret here)
-    hostname: ""                        # default (proposed): empty = <fullname>.<namespace>.svc; must be a SAN of the certificate
+    hostname: ""                        # empty = <fullname>.<namespace>.svc; must be a SAN of the certificate
 
 # ── Existing Secrets (the chart never creates one) ──────────────────────────
 secrets:
   database:
     existingSecret: ""                  # required; example: trove-db-app (CloudNativePG application Secret)
-    usernameKey: username               # default (proposed)
-    passwordKey: password               # default (proposed)
+    usernameKey: username
+    passwordKey: password
   databaseMigration:
-    existingSecret: ""                  # default (proposed): empty = single-role mode (R-HA-014); example: trove-db-owner
-    usernameKey: username               # default (proposed)
-    passwordKey: password               # default (proposed)
+    existingSecret: ""                  # empty = single-role mode; example: trove-db-owner
+    usernameKey: username
+    passwordKey: password
   databaseCA:
     existingSecret: ""                  # example: trove-db-ca (only ca.crt is projected)
-    key: ca.crt                         # default (proposed)
+    key: ca.crt
   databaseClientCert:
-    existingSecret: ""                  # default (proposed): no client certificate
-    certKey: tls.crt                    # default (proposed)
-    keyKey: tls.key                     # default (proposed)
+    existingSecret: ""                  # no client certificate
+    certKey: tls.crt
+    keyKey: tls.key
   s3:
-    existingSecret: ""                  # default (proposed); required with credentials.source static; also the Secret of an S3 provisioner when a *Key below is set
-    accessKeyIdKey: access-key-id       # default (proposed); example (provisioner Secret): AWS_ACCESS_KEY_ID
-    secretAccessKeyKey: secret-access-key  # default (proposed); example (provisioner Secret): AWS_SECRET_ACCESS_KEY
-    bucketKey: ""                       # default (proposed): the bucket comes from config.storage.s3.bucket; example (provisioner Secret): S3_BUCKET; set = TROVE_STORAGE_S3_BUCKET reads this key of the Secret
-    regionKey: ""                       # default (proposed): config.storage.s3.region; example (provisioner Secret): S3_REGION; set = TROVE_STORAGE_S3_REGION reads this key
-    endpointKey: ""                     # default (proposed): config.storage.s3.endpoint; example (provisioner Secret): S3_ENDPOINT (a host without scheme, which trove reaches over https); set = TROVE_STORAGE_S3_ENDPOINT reads this key
+    existingSecret: ""                  # required with credentials.source static; also the Secret of an S3 provisioner when a *Key below is set
+    accessKeyIdKey: access-key-id       # example (provisioner Secret): AWS_ACCESS_KEY_ID
+    secretAccessKeyKey: secret-access-key  # example (provisioner Secret): AWS_SECRET_ACCESS_KEY
+    bucketKey: ""                       # the bucket comes from config.storage.s3.bucket; example (provisioner Secret): S3_BUCKET; set = TROVE_STORAGE_S3_BUCKET reads this key of the Secret
+    regionKey: ""                       # config.storage.s3.region; example (provisioner Secret): S3_REGION; set = TROVE_STORAGE_S3_REGION reads this key
+    endpointKey: ""                     # config.storage.s3.endpoint; example (provisioner Secret): S3_ENDPOINT (a host without scheme, which trove reaches over https); set = TROVE_STORAGE_S3_ENDPOINT reads this key
   valkey:
-    existingSecret: ""                  # required (R-HA-029); example: trove-valkey
-    usernameKey: username               # default (proposed); empty = the "default" user, the file is not mounted
-    passwordKey: password               # default (proposed)
+    existingSecret: ""                  # required; example: trove-valkey
+    usernameKey: username               # empty = the "default" user, the file is not mounted
+    passwordKey: password
   valkeySentinel:
-    existingSecret: ""                  # default (proposed): Sentinels without authentication; example: trove-valkey-sentinel
-    usernameKey: ""                     # default (proposed): empty = no Sentinel user, the file is not mounted
-    passwordKey: password               # default (proposed)
+    existingSecret: ""                  # Sentinels without authentication; example: trove-valkey-sentinel
+    usernameKey: ""                     # empty = no Sentinel user, the file is not mounted
+    passwordKey: password
   s3CA:
-    existingSecret: ""                  # default (proposed): empty = the outbound trust store (system roots plus config.proxy.outbound.tls.ca_files); example: trove-s3-tls. Renders storage.s3.ca_file
-    key: ca.crt                         # default (proposed)
+    existingSecret: ""                  # empty = the outbound trust store (system roots plus config.proxy.outbound.tls.ca_files); example: trove-s3-tls. Renders storage.s3.ca_file
+    key: ca.crt
   valkeyCA:
-    existingSecret: ""                  # default (proposed): empty = system roots; example: trove-valkey-ca
-    key: ca.crt                         # default (proposed)
+    existingSecret: ""                  # empty = system roots; example: trove-valkey-ca
+    key: ca.crt
   valkeyClientCert:
-    existingSecret: ""                  # default (proposed): no client certificate; needed while Valkey keeps tls-auth-clients yes
-    certKey: tls.crt                    # default (proposed)
-    keyKey: tls.key                     # default (proposed)
-  oidc: []                              # default (proposed): no client secrets; mounted in api pods only (R-AUTH-042, Q-HA-79). Each entry mounts the Secret at /var/run/secrets/trove/oidc-<providerId>/ and renders client_secret_file of that provider; the provider itself is config.auth.oidc.providers.<providerId>
-  #  - providerId: corp                 # example; the ID of a provider in config.auth.oidc.providers ([a-z0-9-], at most 32)
-  #    existingSecret: trove-oidc-corp  # example
-  #    key: client-secret               # default (proposed)
+    existingSecret: ""                  # no client certificate; needed while Valkey keeps tls-auth-clients yes
+    certKey: tls.crt
+    keyKey: tls.key
+  oidc: []                              # no client secrets; mounted in api pods only. Each entry mounts the Secret at /var/run/secrets/trove/oidc-<providerId>/ and renders client_secret_file of that provider; the provider itself is config.auth.oidc.providers.<providerId>
+  # - providerId: corp # the ID of a provider in config.auth.oidc.providers ([a-z0-9-], at most 32)
+  # existingSecret: trove-oidc-corp
+  # key: client-secret
   breakGlass:
-    existingSecret: ""                  # default (proposed): empty = config.auth.break_glass.enabled false; example: trove-break-glass. api pods only (R-AUTH-014, R-AUTH-042, Q-HA-79)
-    key: password                       # default (proposed); plaintext (at least 20 characters) or an Argon2id PHC hash
+    existingSecret: ""                  # empty = config.auth.break_glass.enabled false; example: trove-break-glass. api pods only
+    key: password                       # plaintext (at least 20 characters) or an Argon2id PHC hash
   encryption:
     existingSecret: ""                  # required; example: trove-encryption-keys
     keys: []                            # required; ordered, first = active; example: [2026-10.key, 2026-04.key]
   metricsToken:
-    existingSecret: ""                  # default (proposed); needed with config.metrics.auth static
-    key: token                          # default (proposed)
+    existingSecret: ""                  # needed with config.metrics.auth static
+    key: token
 
-# ── Monitoring (R-HA-045; only the alerts of the vulnerability scanning so far) ─
+# ── Monitoring (; only the alerts of the vulnerability scanning so far) ─
 metrics:
   prometheusRule:
-    enabled: false                      # default (proposed); needs the Prometheus operator's CRDs
-    labels: {}                          # default (proposed); example: {release: kube-prometheus-stack}
-    disabledAlerts: []                  # default (proposed); example: [TroveVulnerabilitySyncFailing]
-    extraRules: []                      # default (proposed); appended after the alerts of the chart
+    enabled: false                      # needs the Prometheus operator's CRDs
+    labels: {}                          # example: {release: kube-prometheus-stack}
+    disabledAlerts: []                  # example: [TroveVulnerabilitySyncFailing]
+    extraRules: []                      # appended after the alerts of the chart
 
-# ── Network policy (R-HA-042, ADR-154): ingress rules only, one policy per Deployment, each rule with its port ─
+# ── Network policy: ingress rules only, one policy per Deployment, each rule with its port ─
 # No egress value exists: the chart renders no egress rule and no policy for pods it does not deploy.
 networkPolicy:
-  enabled: true                         # default (proposed): every Deployment accepts only the ports it opens, from the listed peers; the migration Job accepts nothing
+  enabled: true                         # every Deployment accepts only the ports it opens, from the listed peers; the migration Job accepts nothing
   ingress:
     http:
-      from: []                          # default (proposed): empty = port 8080 from anywhere, so the ingress controller works wherever it runs; example: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: traefik}}}]
+      from: []                          # empty = port 8080 from anywhere, so the ingress controller works wherever it runs; example: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: traefik}}}]
     ops:
-      from:                             # default (proposed): port 8081 (probes, metrics) only from the monitoring namespace and probeCIDRs
+      from:                             # port 8081 (probes, metrics) only from the monitoring namespace and probeCIDRs
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
-  probeCIDRs: []                        # default (proposed): most CNIs exempt kubelet probes; where one does not, list the node CIDRs; example: ["10.0.0.0/16"]
+  probeCIDRs: []                        # most CNIs exempt kubelet probes; where one does not, list the node CIDRs; example: ["10.0.0.0/16"]
 
 # ── Pod identity and security ──────────────────────────────────────────────
 serviceAccount:
-  create: true                          # default (proposed)
-  name: ""                              # default (proposed): <fullname>
-  annotations: {}                       # default (proposed); example (IRSA): {eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/trove-s3"}
-  automountServiceAccountToken: false   # default (proposed): trove never calls the Kubernetes API
+  create: true
+  name: ""                              # <fullname>
+  annotations: {}                       # example (IRSA): {eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/trove-s3"}
+  automountServiceAccountToken: false   # trove never calls the Kubernetes API
 
 podSecurityContext:
-  runAsNonRoot: true                    # default (proposed)
-  runAsUser: 65532                      # default (proposed); null on OpenShift (restricted-v2 assigns the UID)
-  runAsGroup: 65532                     # default (proposed); null on OpenShift
-  fsGroup: 65532                        # default (proposed); null on OpenShift
-  fsGroupChangePolicy: OnRootMismatch   # default (proposed)
+  runAsNonRoot: true
+  runAsUser: 65532                      # null on OpenShift (restricted-v2 assigns the UID)
+  runAsGroup: 65532                     # null on OpenShift
+  fsGroup: 65532                        # null on OpenShift
+  fsGroupChangePolicy: OnRootMismatch
   seccompProfile:
-    type: RuntimeDefault                # default (proposed)
+    type: RuntimeDefault
 
 securityContext:
-  allowPrivilegeEscalation: false       # default (proposed)
-  privileged: false                     # default (proposed)
-  readOnlyRootFilesystem: true          # default (proposed)
-  runAsNonRoot: true                    # default (proposed)
+  allowPrivilegeEscalation: false
+  privileged: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
   capabilities:
-    drop: [ALL]                         # default (proposed)
+    drop: [ALL]
   seccompProfile:
-    type: RuntimeDefault                # default (proposed)
+    type: RuntimeDefault
 
-# ── Volumes (R-HA-035, R-HA-061: nothing ReadWriteMany, nothing persistent) ─
+# ── Volumes (: nothing ReadWriteMany, nothing persistent) ─
 spool:
-  type: emptyDir                        # default (proposed): emptyDir | ephemeral
-  sizeLimit: 20Gi                       # default (proposed) (R-HA-035); web.spool and worker.spool override it
-  headroom: 2GiB                        # default (proposed): sizeLimit - headroom = storage.spool.max_bytes (R-HA-035, R-STOR-004)
-  medium: ""                            # default (proposed): node disk; "Memory" counts against the memory limit
+  type: emptyDir                        # emptyDir | ephemeral
+  sizeLimit: 20Gi                       # web.spool and worker.spool override it
+  headroom: 2GiB                        # sizeLimit - headroom = storage.spool.max_bytes
+  medium: ""                            # node disk; "Memory" counts against the memory limit
   ephemeral:
-    storageClassName: ""                # default (proposed): cluster default
-    size: 50Gi                          # default (proposed); used with type ephemeral
-    accessModes: [ReadWriteOnce]        # default (proposed): ReadWriteOnce | ReadWriteOncePod; nothing else validates
+    storageClassName: ""                # cluster default
+    size: 50Gi                          # used with type ephemeral
+    accessModes: [ReadWriteOnce]        # ReadWriteOnce | ReadWriteOncePod; nothing else validates
 
 tmp:
-  sizeLimit: 1Gi                        # default (proposed); /tmp under readOnlyRootFilesystem
+  sizeLimit: 1Gi                        # /tmp under readOnlyRootFilesystem
 
-# ── Probes (R-HA-034; paths from R-OPS-001) ────────────────────────────────
+# ── Probes ────────────────────────────────
 probes:
   startup:
-    enabled: true                       # default (proposed)
-    path: /healthz                      # default (proposed)
-    periodSeconds: 2                    # default (proposed)
-    timeoutSeconds: 2                   # default (proposed)
-    failureThreshold: 60                # default (proposed): 2 minutes to bind the listeners
-    custom: {}                          # default (proposed); replaces the generated probe
+    enabled: true
+    path: /healthz
+    periodSeconds: 2
+    timeoutSeconds: 2
+    failureThreshold: 60                # 2 minutes to bind the listeners
+    custom: {}                          # replaces the generated probe
   liveness:
-    enabled: true                       # default (proposed)
-    path: /healthz                      # default (proposed)
-    periodSeconds: 10                   # default (proposed)
-    timeoutSeconds: 3                   # default (proposed)
-    failureThreshold: 6                 # default (proposed)
-    custom: {}                          # default (proposed)
+    enabled: true
+    path: /healthz
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 6
+    custom: {}
   readiness:
-    enabled: true                       # default (proposed)
-    path: /readyz                       # default (proposed)
-    periodSeconds: 5                    # default (proposed)
-    timeoutSeconds: 3                   # default (proposed)
-    failureThreshold: 1                 # default (proposed): debouncing happens in the process (health.failure_threshold)
-    successThreshold: 1                 # default (proposed)
-    custom: {}                          # default (proposed)
+    enabled: true
+    path: /readyz
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 1                 # debouncing happens in the process (health.failure_threshold)
+    successThreshold: 1
+    custom: {}
 
 # ── Exposure ───────────────────────────────────────────────────────────────
 service:
-  type: ClusterIP                       # default (proposed): ClusterIP | LoadBalancer | NodePort
-  port: 8080                            # default (proposed)
-  opsPort: 8081                         # default (proposed)
+  type: ClusterIP                       # ClusterIP | LoadBalancer | NodePort
+  port: 8080
+  opsPort: 8081
   # The role Services <fullname>-api and <fullname>-packages, the Services of the path pools and, with web.enabled, <fullname> take type and port from here.
-  # A LoadBalancer or NodePort role Service reaches one role only: a host is split between roles at the Ingress (R-HA-037).
-  # No sessionAffinity value: every Service renders sessionAffinity: None (R-HA-037).
-  annotations: {}                       # default (proposed)
-  labels: {}                            # default (proposed)
+  # A LoadBalancer or NodePort role Service reaches one role only: a host is split between roles at the Ingress.
+  # No sessionAffinity value: every Service renders sessionAffinity: None.
+  annotations: {}
+  labels: {}
 
 ingress:
-  enabled: false                        # default (proposed)
-  className: ""                         # default (proposed): cluster default IngressClass; example: traefik
-  annotations: {}                       # default (proposed); controller-specific settings; never cookie affinity (R-HA-037)
-  labels: {}                            # default (proposed)
-  hosts: []                             # default (proposed): empty = host of config.server.base_url
-  # No path value: every host gets the fixed path rules of R-HA-037 (Prefix rules per route family onto <fullname>-api and
+  enabled: false
+  className: ""                         # cluster default IngressClass; example: traefik
+  annotations: {}                       # controller-specific settings; never cookie affinity
+  labels: {}
+  hosts: []                             # empty = host of config.server.base_url
+  # No path value: every host gets the fixed path rules (Prefix rules per route family onto <fullname>-api and
   # <fullname>-packages, plus the paths of api.pools and packages.pools; / onto <fullname> with web.enabled).
-  tls: []                               # default (proposed); example: [{secretName: trove-tls, hosts: [trove.example.com]}]
-  backendTLS:                           # how the controller reaches trove when tls.enabled (R-HA-063); trove speaks HTTPS, so the controller must too
-    controller: haproxy                 # default (proposed): haproxy (HAProxy Ingress, the primary target) | traefik | ingress-nginx | manual (you set the backend protocol in ingress.annotations / service.annotations)
-    verify: true                        # default (proposed): the controller verifies the trove certificate; needs caSecret (haproxy, ingress-nginx) or serversTransport (traefik); false = encrypted but unverified
+  tls: []                               # example: [{secretName: trove-tls, hosts: [trove.example.com]}]
+  backendTLS:                           # how the controller reaches trove when tls.enabled; trove speaks HTTPS, so the controller must too
+    controller: haproxy                 # haproxy (HAProxy Ingress, the primary target) | traefik | ingress-nginx | manual (you set the backend protocol in ingress.annotations / service.annotations)
+    verify: true                        # the controller verifies the trove certificate; needs caSecret (haproxy, ingress-nginx) or serversTransport (traefik); false = encrypted but unverified
     caSecret: ""                        # required with verify on haproxy and ingress-nginx; Secret in the release namespace with ca.crt; example: trove-tls (a cert-manager Secret carries ca.crt)
     clientCertSecret: ""                # haproxy: Secret with tls.crt and tls.key that HAProxy Ingress presents to trove (required with tls.clientCA); example: trove-edge-client
     serversTransport: ""                # traefik: ServersTransport reference <namespace>-<name>@kubernetescrd that verifies trove; example: trove-trove-tls@kubernetescrd
 
-# ── Endpoints (R-EP-008, docs/spec/endpoints.md) ──────────────────────────
+# ── Endpoints (docs/spec/endpoints.md) ──────────────────────────
 # Further client entry points, each with its own listener port, Service, Ingress, NetworkPolicy,
-# certificates and optionally its own pool of pods per role its surface holds (R-EP-008, Q-EP-70). The default endpoint (:8080, config.server.base_url,
+# certificates and optionally its own pool of pods per role its surface holds. The default endpoint (:8080, config.server.base_url,
 # tls.*, ingress.*) always exists; an entry named default tunes it, with these keys only: hosts,
 # wildcardHost, hostRoots, wildcardRoot, surface, auth, exposure, cacheFill, rateLimitClass, replicaHeader.
 # The chart renders the entries into server.endpoints of trove.yaml; config.server.endpoints is refused.
-# Values of a further endpoint are listed once here and carry their defaults (R-EP-001, Q-EP-5, Q-EP-10).
-endpoints: {}                           # default (proposed): only the default endpoint; example:
-#  default:                             # optional
-#    hosts: []                          # default (proposed): with a further endpoint, the hosts of config.server.base_url and additional_base_urls; add the in-cluster Service name here when clients use it
-#  customers:                           # example: the endpoint name, ^[a-z][a-z0-9-]{0,19}$, <fullname>-ep-<name> at most 63 characters
-#    port: 8443                         # example; required; container port and Service port; not 8080, 8081 or another endpoint's port
-#    baseUrl: https://packages.example.com   # example; required; an origin (scheme, host, optional port)
-#    hosts: []                          # default (proposed); example [pkgs.example.org]
-#    wildcardHost: ""                   # default (proposed); example "*.packages.example.com" (one label, at least two labels in the domain)
-#    hostRoots: {}                      # default (proposed): host -> repository key, reserved for later formats (R-EP-006)
-#    wildcardRoot: none                 # default (proposed): none | label
-#    surface: [packages]                # default (proposed): ui is not allowed on a further endpoint; api, ci_exchange, files are off by default
-#    auth: {tokenTypes: [sat], boundTokensOnly: true, anonymous: false}   # default (proposed); enforced from the identity milestone
-#    exposure: rules                    # default (proposed): rules | all; enforced from the exposure milestone
-#    cacheFill: false                   # default (proposed)
-#    rateLimitClass: external           # default (proposed)
-#    replicaHeader: never               # default (proposed): authenticated | always | never
-#    maxInFlight: 1024                  # default (proposed), per replica and endpoint
-#    trustedProxies: []                 # default (proposed): config.server.trusted_proxies
-#    tls:
-#      existingSecret: ""               # default (proposed): "" = the pair of tls.secretName; example trove-packages-tls (keys tls.crt, tls.key)
-#      extraSecrets: []                 # default (proposed); example [trove-packages-wildcard-tls]: further pairs, chosen by SNI
-#      clientCaSecret: ""               # default (proposed): no client certificates; example trove-customer-ca (key ca.crt)
-#    pool:
-#      enabled: false                   # default (proposed): served by the main Deployments of the roles the surface holds; true renders <fullname>-packages-ep-<name> and, with api families, <fullname>-api-ep-<name> (<fullname>-web-ep-<name> with web.enabled)
-#      replicaCount: 2                  # default (proposed) when enabled; every key of the role's values (api or packages) may be overridden here
-#    service:
-#      type: ClusterIP                  # default (proposed): ClusterIP | LoadBalancer | NodePort
-#      annotations: {}                  # default (proposed)
-#      loadBalancerSourceRanges: []     # default (proposed)
-#    ingress:
-#      enabled: false                   # default (proposed)
-#      className: ""                    # default (proposed): cluster default IngressClass; example traefik-external
-#      annotations: {}                  # default (proposed)
-#      tls: []                          # default (proposed); example [{secretName: packages-tls, hosts: [packages.example.com, "*.packages.example.com"]}]
-#      backendTLS: {}                   # default (proposed): ingress.backendTLS; any key given here wins for this endpoint (controller, verify, caSecret, ...)
-#    networkPolicy:
-#      from: []                         # default (proposed): empty = from anywhere
+# Values of a further endpoint are listed once here and carry their defaults.
+endpoints: {}                           # only the default endpoint; example
+# default: # optional
+# hosts: [] # with a further endpoint, the hosts of config.server.base_url and additional_base_urls; add the in-cluster Service name here when clients use it
+# customers: # example: the endpoint name, ^[a-z][a-z0-9-]{0,19}$, <fullname>-ep-<name> at most 63 characters
+# port: 8443 # required; container port and Service port; not 8080, 8081 or another endpoint's port
+# baseUrl: https://packages.example.com # required; an origin (scheme, host, optional port)
+# hosts: [] # example [pkgs.example.org]
+# wildcardHost: "" # example "*.packages.example.com" (one label, at least two labels in the domain)
+# hostRoots: {} # host -> repository key, reserved for later formats
+# wildcardRoot: none # none | label
+# surface: [packages] # ui is not allowed on a further endpoint; api, ci_exchange, files are off by default
+# auth: {tokenTypes: [sat], boundTokensOnly: true, anonymous: false} # enforced from the identity milestone
+# exposure: rules # rules | all; enforced from the exposure milestone
+# cacheFill: false
+# rateLimitClass: external
+# replicaHeader: never # authenticated | always | never
+# maxInFlight: 1024 # per replica and endpoint
+# trustedProxies: [] # config.server.trusted_proxies
+# tls:
+# existingSecret: "" # "" = the pair of tls.secretName; example trove-packages-tls (keys tls.crt, tls.key)
+# extraSecrets: [] # example [trove-packages-wildcard-tls]: further pairs, chosen by SNI
+# clientCaSecret: "" # no client certificates; example trove-customer-ca (key ca.crt)
+# pool:
+# enabled: false # served by the main Deployments of the roles the surface holds; true renders <fullname>-packages-ep-<name> and, with api families, <fullname>-api-ep-<name> (<fullname>-web-ep-<name> with web.enabled)
+# replicaCount: 2 # every key of the role's values (api or packages) may be overridden here
+# service:
+# type: ClusterIP # ClusterIP | LoadBalancer | NodePort
+# annotations: {}
+# loadBalancerSourceRanges: []
+# ingress:
+# enabled: false
+# className: "" # cluster default IngressClass; example traefik-external
+# annotations: {}
+# tls: [] # example [{secretName: packages-tls, hosts: [packages.example.com, "*.packages.example.com"]}]
+# backendTLS: {} # ingress.backendTLS; any key given here wins for this endpoint (controller, verify, caSecret, ...)
+# networkPolicy:
+# from: [] # empty = from anywhere
 
-# ── Migrations (R-HA-019) ──────────────────────────────────────────────────
+# ── Migrations ──────────────────────────────────────────────────
 migrations:
-  mode: hook                            # default (proposed): hook | disabled
-  backoffLimit: 2                       # default (proposed)
-  activeDeadlineSeconds: 1800           # default (proposed)
-  ttlSecondsAfterFinished: 86400        # default (proposed)
+  mode: hook                            # hook | disabled
+  backoffLimit: 2
+  activeDeadlineSeconds: 1800
+  ttlSecondsAfterFinished: 86400
   resources:
     requests:
-      cpu: 100m                         # default (proposed)
-      memory: 128Mi                     # default (proposed)
+      cpu: 100m
+      memory: 128Mi
     limits:
-      memory: 512Mi                     # default (proposed)
-  podAnnotations: {}                    # default (proposed)
-  extraEnv: []                          # default (proposed)
+      memory: 512Mi
+  podAnnotations: {}
+  extraEnv: []
 
-# ── Extension points (R-HA-046) ────────────────────────────────────────────
-extraEnv: []                            # default (proposed); example: [{name: TROVE_LOG_LEVEL, value: debug}]
-extraEnvFrom: []                        # default (proposed)
-extraVolumes: []                        # default (proposed); the operator's: R-HA-061 cannot see a claim's access mode
-extraVolumeMounts: []                   # default (proposed)
-extraObjects: []                        # default (proposed); extra manifests rendered with tpl
+# ── Extension points ────────────────────────────────────────────
+extraEnv: []                            # example: [{name: TROVE_LOG_LEVEL, value: debug}]
+extraEnvFrom: []
+extraVolumes: []                        # the operator's: cannot see a claim's access mode
+extraVolumeMounts: []
+extraObjects: []                        # extra manifests rendered with tpl

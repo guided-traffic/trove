@@ -1877,7 +1877,8 @@ Acceptance criteria:
 ### R-BAS-046 · Values reference
 Priority: **MVP** · Covers: DIST-024
 
-The complete `values.yaml` of `trove-bastion`. Every value carries `# default (proposed)` or `# example`. Keys under `config`
+Every value of `trove-bastion` with its default; in the block below each value carries `# default (proposed)` or
+`# example`, and the chart's `values.yaml` holds the same keys and comments a value only where its name does not say it. Keys under `config`
 are the Bastion's configuration file (R-BAS-001); the chart-managed keys (`server.tls`, `bastion.main.token_file`,
 `bastion.main.ca_file`, `bastion.signing_key_file`, `bastion.cache.volume.dir`, `bastion.cache.bucket.ca_file`,
 `bastion.cache.bucket.credentials.access_key_id_file` and `secret_access_key_file`, `bastion.replicas`, the Valkey secret files

@@ -47,7 +47,7 @@ type Settings struct {
 	OnMissingData OnMissingData `json:"onMissingData"`
 }
 
-// DefaultSettings returns the member's defaults (R-VULN-002, "default (proposed)").
+// DefaultSettings returns the member's defaults (R-VULN-002).
 func DefaultSettings() Settings {
 	return Settings{Enabled: true, MatchPublicAdvisories: MatchAuto, BlockMalicious: true, OnMissingData: MissingAllow}
 }

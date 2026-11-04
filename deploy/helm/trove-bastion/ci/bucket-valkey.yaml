@@ -1,64 +1,64 @@
 # The bucket backend with Valkey (Sentinel), a trust bundle, tracing and the monitoring objects: the
-# profile of the e2e run with a SeaweedFS bucket (R-BAS-049). Also the set the rule tests render
+# profile of the e2e run with a SeaweedFS bucket. Also the set the rule tests render
 # (test/chart/bastion_rules_test.go), so the Valkey alert is part of the rule file.
 config:
   server:
-    base_url: https://packages.example.com            # example
-    trusted_proxies: ["10.244.0.0/16"]                # example
+    base_url: https://packages.example.com
+    trusted_proxies: ["10.244.0.0/16"]
   bastion:
     main:
-      url: https://trove.example.com                  # example
+      url: https://trove.example.com
     cache:
       backend: bucket
       bucket:
-        endpoint: https://object.storage.eu01.onstackit.cloud   # example
-        region: eu01                                  # example
-        bucket: trove-bastion-partners                # example
+        endpoint: https://object.storage.eu01.onstackit.cloud
+        region: eu01
+        bucket: trove-bastion-partners
     blocking:
-      exempt_cidrs: ["198.51.100.0/24"]               # example
+      exempt_cidrs: ["198.51.100.0/24"]
   valkey:
     mode: sentinel
     sentinel:
-      addresses:                                      # example
+      addresses:
         - trove-bastion-valkey-sentinel-0:26379
         - trove-bastion-valkey-sentinel-1:26379
         - trove-bastion-valkey-sentinel-2:26379
-      primary_name: trove-bastion                     # example
+      primary_name: trove-bastion
   tracing:
     enabled: true
-    endpoint: https://otel-collector.observability:4318   # example
+    endpoint: https://otel-collector.observability:4318
 secrets:
   mainToken:
-    existingSecret: trove-bastion-token               # example
+    existingSecret: trove-bastion-token
   signingKey:
-    existingSecret: trove-bastion-signing             # example
+    existingSecret: trove-bastion-signing
   cacheBucket:
-    existingSecret: trove-bastion-s3                  # example
+    existingSecret: trove-bastion-s3
   valkey:
-    existingSecret: trove-bastion-valkey              # example
+    existingSecret: trove-bastion-valkey
   valkeySentinel:
-    existingSecret: trove-bastion-valkey-sentinel     # example
+    existingSecret: trove-bastion-valkey-sentinel
   valkeyCA:
-    existingSecret: trove-bastion-valkey-ca           # example
+    existingSecret: trove-bastion-valkey-ca
 trustedCA:
-  existingConfigMap: corp-ca-bundle                   # example
+  existingConfigMap: corp-ca-bundle
 tls:
-  existingSecret: trove-bastion-listener              # example
+  existingSecret: trove-bastion-listener
 ingress:
   tls:
-    - secretName: trove-bastion-public-tls            # example
+    - secretName: trove-bastion-public-tls
       hosts: [packages.example.com]
 networkPolicy:
   egress:
     main:
       to:
         - ipBlock:
-            cidr: 198.51.100.10/32                    # example
+            cidr: 198.51.100.10/32
     valkey:
       to:
         - podSelector:
             matchLabels:
-              app.kubernetes.io/name: trove-bastion-valkey   # example
+              app.kubernetes.io/name: trove-bastion-valkey
     cacheBucket:
       to:
         - ipBlock:
@@ -67,13 +67,13 @@ networkPolicy:
       to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: observability     # example
+              kubernetes.io/metadata.name: observability
 metrics:
   serviceMonitor:
     enabled: true
     labels:
-      release: kube-prometheus-stack                  # example
+      release: kube-prometheus-stack
   prometheusRule:
     enabled: true
     labels:
-      release: kube-prometheus-stack                  # example
+      release: kube-prometheus-stack

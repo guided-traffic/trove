@@ -1,114 +1,114 @@
 # Production-shaped: every optional Secret, the Ingress with TLS, a generic ephemeral spool,
 # static S3 credentials, a bearer token for /metrics and a certificate-authenticated Valkey.
 image:
-  tag: 0.0.0-ci                                    # example
+  tag: 0.0.0-ci
 global:
   imagePullSecrets:
-    - name: registry-pull                          # example
+    - name: registry-pull
 config:
   server:
-    base_url: https://trove.example.com            # example
-    trusted_proxies: ["10.244.0.0/16"]             # example
+    base_url: https://trove.example.com
+    trusted_proxies: ["10.244.0.0/16"]
   database:
-    host: trove-db-pooler-rw.trove.svc             # example
-    session_host: trove-db-rw.trove.svc            # example
+    host: trove-db-pooler-rw.trove.svc
+    session_host: trove-db-rw.trove.svc
   storage:
     s3:
-      bucket: trove-blobs                          # example
-      region: eu-central-1                         # example
+      bucket: trove-blobs
+      region: eu-central-1
       credentials:
         source: static
     upload:
-      max_size: 10GiB                              # default (proposed)
+      max_size: 10GiB
   valkey:
     sentinel:
-      addresses:                                   # example
+      addresses:
         - trove-valkey-sentinel-0.trove-valkey-sentinel.trove.svc:26379
         - trove-valkey-sentinel-1.trove-valkey-sentinel.trove.svc:26379
         - trove-valkey-sentinel-2.trove-valkey-sentinel.trove.svc:26379
-      primary_name: trove                          # example
+      primary_name: trove
   metrics:
     auth: static
   authz:
-    role_bindings:                                 # R-AUTHZ-010: applied by the migration Job
-      - role: admin                                # example
-        group: gh-wds18-k8s-main-admins            # example
-      - role: auditor                              # example
-        group: gh-wds18-k8s-main-auditors          # example
-  ci:                                              # R-CI-001, Q-CI-16: the GitLab CI OIDC federation
+    role_bindings:                                 # applied by the migration Job
+      - role: admin
+        group: gh-wds18-k8s-main-admins
+      - role: auditor
+        group: gh-wds18-k8s-main-auditors
+  ci:                                              # the GitLab CI OIDC federation
     token:
-      max_ttl: 30m                                 # example; at most auth.tokens.cit.max_ttl (R-CI-016)
+      max_ttl: 30m                                 # at most auth.tokens.cit.max_ttl
     exchange:
       rate_limit:
-        exempt_cidrs: ["10.20.0.0/16"]             # example: a runner network behind NAT (R-CI-021)
+        exempt_cidrs: ["10.20.0.0/16"]             # example: a runner network behind NAT
     issuers:                                       # applied by the migration Job, read-only in the API and the UI
-      - name: gitlab-main                          # example
+      - name: gitlab-main
         kind: gitlab
-        issuer: https://gitlab.example.com         # example
+        issuer: https://gitlab.example.com
         public_issuer: false                       # example: an instance without open sign-up
-        allowed_audiences: ["https://packages.example.com"]   # example
+        allowed_audiences: ["https://packages.example.com"]
         ca_bundle_ref: file:/var/run/secrets/gitlab-ca/ca.crt # example: an instance behind a private CA
 secrets:
   database:
-    existingSecret: trove-db-app                   # example
+    existingSecret: trove-db-app
   databaseMigration:
-    existingSecret: trove-db-owner                 # example
+    existingSecret: trove-db-owner
   databaseCA:
-    existingSecret: trove-db-ca                    # example
+    existingSecret: trove-db-ca
   databaseClientCert:
-    existingSecret: trove-db-client                # example
+    existingSecret: trove-db-client
   s3:
-    existingSecret: trove-s3                       # example
+    existingSecret: trove-s3
   valkey:
-    existingSecret: trove-valkey                   # example
+    existingSecret: trove-valkey
   valkeySentinel:
-    existingSecret: trove-valkey-sentinel          # example
+    existingSecret: trove-valkey-sentinel
   valkeyCA:
-    existingSecret: trove-valkey-ca                # example
+    existingSecret: trove-valkey-ca
   valkeyClientCert:
-    existingSecret: trove-valkey-client            # example
+    existingSecret: trove-valkey-client
   encryption:
-    existingSecret: trove-encryption-keys          # example
-    keys: [2026-10.key, 2026-04.key]               # example
+    existingSecret: trove-encryption-keys
+    keys: [2026-10.key, 2026-04.key]
   metricsToken:
-    existingSecret: trove-metrics                  # example
+    existingSecret: trove-metrics
 spool:
   type: ephemeral
   sizeLimit: 20Gi
   ephemeral:
-    storageClassName: standard                     # example
+    storageClassName: standard
     size: 50Gi
     accessModes: [ReadWriteOnce]
 tls:
   secretName: trove-tls                            # example: a cert-manager Certificate's secret (tls.crt, tls.key, ca.crt)
-  minVersion: "1.3"                                # example
+  minVersion: "1.3"
   clientCA:
     secretName: trove-edge-ca                      # example: mutual TLS from the edge
   ops:
     secretName: trove-ops-tls                      # example: separate certificate for the operations listener
 ingress:
   enabled: true
-  className: haproxy                               # example
+  className: haproxy
   backendTLS:
     controller: haproxy                            # example: HAProxy Ingress connects with HTTPS and verifies trove
     caSecret: trove-tls                            # example: the cert-manager Secret carries ca.crt
     clientCertSecret: trove-edge-client            # example: client certificate for the mutual TLS of tls.clientCA
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt    # example
+    cert-manager.io/cluster-issuer: letsencrypt
   tls:
-    - secretName: trove-tls                        # example
+    - secretName: trove-tls
       hosts: [trove.example.com]
 api:
   podAnnotations:
-    example.com/note: api                          # example
+    example.com/note: api
   extraEnv:
-    - name: TROVE_LOG_LEVEL                        # example
+    - name: TROVE_LOG_LEVEL
       value: debug
 packages:
   podAnnotations:
-    example.com/note: packages                     # example
+    example.com/note: packages
 worker:
   nodeSelector:
-    kubernetes.io/os: linux                        # example
+    kubernetes.io/os: linux
 commonLabels:
-  team: platform                                   # example
+  team: platform

@@ -80,7 +80,7 @@ The HTTPRoute of R-HA-038 is not rendered (Q-HA-81): it will loop over `trove.ed
 ```text
 deploy/helm/trove/
 ├── Chart.yaml              apiVersion v2; version = appVersion = 0.0.0-dev (the release pipeline, build.yml, rewrites both)
-├── values.yaml             defaults; every value commented "default (proposed)" or "example"
+├── values.yaml             defaults; a value is commented only where its name does not say it
 ├── values.schema.json      draft-07, additionalProperties false for everything the chart owns
 ├── tests/rules_test.yaml   promtool test rules for the PrometheusRule (not packaged)
 ├── ci/                     value sets the tests render (not packaged, see .helmignore)
@@ -527,8 +527,8 @@ profile covers them once the trove image serves ([local-profile.md](local-profil
 
 **Add a value.**
 
-1. Add it to [values.yaml](../../deploy/helm/trove/values.yaml) with `# default (proposed)` or
-   `# example`.
+1. Add it to [values.yaml](../../deploy/helm/trove/values.yaml) with its default; comment it only where its name does not
+   say its meaning, unit, range or consequence, and give an `example:` where the default is empty.
 2. Add it to [values.schema.json](../../deploy/helm/trove/values.schema.json) with its type and
    enum. The schema is `additionalProperties: false`; a value missing there fails every render.
 3. Use it in the template, and add a validation row to `_validate.tpl` if a wrong value must fail.
@@ -561,7 +561,7 @@ validation, restricted pod security, probes on the ops port, `extraObjects` thro
 ```text
 deploy/helm/trove-bastion/
 ├── Chart.yaml              version = appVersion = 0.0.0-dev (build.yml rewrites both with the release version)
-├── values.yaml             the block of R-BAS-046, every value "default (proposed)" or "example"
+├── values.yaml             the keys of the block of R-BAS-046
 ├── values.schema.json      draft-07, additionalProperties false outside config; config = the generated role schema (below)
 ├── chart-managed-keys.yaml generated: the config paths the chart renders and refuses (below)
 ├── ci/                     value sets the tests render (not packaged, see .helmignore)
@@ -687,7 +687,7 @@ other chart tests:
 
 **Extension checklists.**
 
-*Add a value.* Add it to [values.yaml](../../deploy/helm/trove-bastion/values.yaml) with `# default (proposed)` or `# example` and to
+*Add a value.* Add it to [values.yaml](../../deploy/helm/trove-bastion/values.yaml) with its default (commented only where its name does not say it) and to
 the values block of [spec/bastion.md](../spec/bastion.md) R-BAS-046 (the key-set test compares them), to
 [values.schema.json](../../deploy/helm/trove-bastion/values.schema.json), use it in a template, add a validation row if a wrong value
 must fail, and a subtest named with the requirement.

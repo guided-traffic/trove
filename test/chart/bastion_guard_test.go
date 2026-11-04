@@ -91,7 +91,7 @@ func TestR_BAS_047_TheValuesDoNotSuggestAnAnywhereEgress(t *testing.T) {
 			t.Errorf("values.yaml:%d suggests an egress to anywhere: %s", i+1, strings.TrimSpace(l))
 		}
 	}
-	if !strings.Contains(string(raw), "undoes the egress promise of R-BAS-047") {
+	if !strings.Contains(string(raw), "undoes the egress promise") {
 		t.Error("values.yaml does not say that a wide range undoes the egress promise")
 	}
 	sets, _ := filepath.Glob(filepath.Join(bastionDir(), "ci", "*.yaml"))

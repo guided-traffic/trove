@@ -4,26 +4,26 @@
 # variables from the same Secret, and config.storage.s3 needs none of them.
 config:
   server:
-    base_url: https://trove.example.com            # example
+    base_url: https://trove.example.com
   database:
-    host: trove-db-rw.trove.svc                    # example
+    host: trove-db-rw.trove.svc
   storage:
     s3:
-      force_path_style: true                       # example
+      force_path_style: true
       credentials:
         source: static
   valkey:
     sentinel:
-      addresses:                                   # example
+      addresses:
         - trove-valkey-sentinel-0.trove-valkey-sentinel.trove.svc:26379
         - trove-valkey-sentinel-1.trove-valkey-sentinel.trove.svc:26379
         - trove-valkey-sentinel-2.trove-valkey-sentinel.trove.svc:26379
-      primary_name: trove                          # example
+      primary_name: trove
 tls:
-  secretName: trove-tls                            # example
+  secretName: trove-tls
 secrets:
   database:
-    existingSecret: trove-db-app                   # example
+    existingSecret: trove-db-app
   s3:
     existingSecret: trove-s3                       # example: written by the provisioner
     accessKeyIdKey: AWS_ACCESS_KEY_ID
@@ -32,7 +32,7 @@ secrets:
     regionKey: S3_REGION
     endpointKey: S3_ENDPOINT
   valkey:
-    existingSecret: trove-valkey                   # example
+    existingSecret: trove-valkey
   encryption:
-    existingSecret: trove-encryption-keys          # example
-    keys: [2026-10.key]                            # example
+    existingSecret: trove-encryption-keys
+    keys: [2026-10.key]
