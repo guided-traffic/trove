@@ -1794,8 +1794,10 @@ R-ARCH-035):
   listener;
 - the connection to the main installation (`https` required: an `http` `bastion.main.url` or `bastion.main.packages_url`
   stops startup; the trust is the system roots plus `trustedCA`);
-- **after the main installation's cut into roles** (phase 6a, specified, not built yet;
-  [ha-and-helm.md](ha-and-helm.md) R-HA-002, Q-HA-74): the interface of R-BAS-008 (`/api/v1/bastion/…`) is served by the
+- **after the main installation's cut into roles** (phase 6a; the key `bastion.main.packages_url` is built, the chart of the
+  main installation renders the roles with WP6a.3; [ha-and-helm.md](ha-and-helm.md) R-HA-002, Q-HA-74): the forwards and
+  the probes of the client (`mainclient.HTTPClient.Do`) go to `packages_url`, the four interface operations (handshake,
+  check, feed, downloads) to `url`; the same trust (system roots plus `trustedCA`) applies to both; the interface of R-BAS-008 (`/api/v1/bastion/…`) is served by the
   main installation's role `api` and the forwarded package and raw-file requests by `packages`. A `bastion.main.url` that
   names the main installation's edge reaches both, because the edge splits by path. A Bastion that calls the main
   installation's Services directly sets `bastion.main.url` to the Service of `api` and `bastion.main.packages_url` to the

@@ -22,12 +22,17 @@ type endpointRuntime struct {
 }
 
 // servesEndpoint reports whether this process opens the listener of an endpoint
-// (R-EP-002): the development role all opens every one; a web process opens the
-// endpoints of its pool, and a process in a pool that no endpoint names serves
-// the endpoints without a pool, like the main Deployment.
+// (R-EP-002, Q-ARCH-298). The development role all opens every one. A process of another
+// client-serving role opens an endpoint when the endpoint's surface holds at least one
+// family the role serves and the endpoint is one of its pool: the endpoints of its pool,
+// or, for a process in a pool that no endpoint names, the endpoints without a pool, like
+// the main Deployment of its role.
 func servesEndpoint(role, pool string, e config.ResolvedEndpoint, all []config.ResolvedEndpoint) bool {
-	if role == "all" {
+	if role == config.RoleAll {
 		return true
+	}
+	if len(config.IntersectFamilies(e.Surface, config.RoleFamilies(role))) == 0 {
+		return false
 	}
 	if e.Pool == pool {
 		return true
@@ -55,22 +60,23 @@ func (a *App) planEndpoints() error {
 		if !servesEndpoint(a.id.Role, a.id.Pool, r, all) {
 			continue
 		}
-		ep, err := httpserver.NewEndpoint(r, a.cfg.Server.AdditionalBaseURLs)
+		ep, err := httpserver.NewEndpoint(r, a.cfg.Server.AdditionalBaseURLs, httpserver.ForRoleFamilies(a.sub.Families))
 		if err != nil {
 			return err
 		}
 		a.eps = append(a.eps, &endpointRuntime{cfg: r, ep: ep})
-		a.warnEndpoint(r)
+		a.warnEndpoint(r, ep)
 	}
 	if len(a.eps) == 0 {
-		return fmt.Errorf("pool %q serves no endpoint: no server.endpoints entry names it and the endpoints without a pool belong to the main web Deployment", a.id.Pool)
+		return fmt.Errorf("role %s, pool %q serves no endpoint: no server.endpoints entry names the pool with a route family of the role (%s), and the endpoints without a pool belong to the main Deployment of the role",
+			a.id.Role, a.id.Pool, strings.Join(a.sub.Families, ", "))
 	}
 	return nil
 }
 
 // warnEndpoint logs what the configuration validation allows but an operator
 // should know.
-func (a *App) warnEndpoint(r config.ResolvedEndpoint) {
+func (a *App) warnEndpoint(r config.ResolvedEndpoint, ep *httpserver.Endpoint) {
 	if r.Default {
 		return
 	}
@@ -78,7 +84,7 @@ func (a *App) warnEndpoint(r config.ResolvedEndpoint) {
 		a.log.Warn("endpoint base_url uses http on a host that is not a loopback name; clients would send credentials in the clear",
 			"endpoint", r.Name, "base_url", r.BaseURL)
 	}
-	if r.Exposure == config.ExposureRules && (r.Serves(config.SurfaceAPI) || r.Serves(config.SurfaceCIExchange)) {
+	if r.Exposure == config.ExposureRules && (ep.Serves(config.SurfaceAPI) || ep.Serves(config.SurfaceCIExchange)) {
 		a.log.Warn("endpoint serves api or ci_exchange with exposure: rules; the management API's content operations are subject to the exposure rules",
 			"endpoint", r.Name, "surface", r.Surface)
 	}

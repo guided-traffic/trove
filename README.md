@@ -63,7 +63,7 @@ flowchart LR
 
 Built (M0):
 
-- 🧱 **One binary, roles by configuration.** `trove serve --role web|worker|all`, `trove migrate`, `trove admin config validate`. See [R-ARCH-001](docs/spec/architecture.md).
+- 🧱 **One binary, roles by configuration.** `trove serve --role api|packages|worker|web|all`: `api` serves the UI, the management API and the CI exchange and holds the sessions and login secrets, `packages` the package protocols and raw files with tokens only, `worker` the jobs, `web` both halves in one process (the bridge of the upgrade across the cut, the chart still renders it as the only serving Deployment until phase 6a is complete), `all` for development;, `trove migrate`, `trove admin config validate`. See [R-ARCH-001](docs/spec/architecture.md).
 - ⚙️ **One configuration file, environment overrides, strict validation.** `/etc/trove/trove.yaml`, every key overridable with `TROVE_<SECTION>_<KEY>`, secrets only as files, a redacted effective view. See [R-OPS-028](docs/spec/operations-and-observability.md).
 - 🔒 **TLS on every connection trove makes or accepts.** Listeners, endpoints, PostgreSQL, Valkey and Sentinels, the object store and outbound HTTP; certificates picked by SNI and reloaded without a restart. Plain HTTP is an explicit chart setting. See [transport encryption](docs/security/transport-encryption.md) and [INV-20](docs/spec/README.md#design-invariants).
 - 🌐 **Endpoints.** One client listener per endpoint, identified by the listener, not by the `Host` header; a foreign host answers `421`. See [endpoints](docs/developer/endpoints.md) and [ADR-128](docs/decisions.md#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling).
@@ -702,7 +702,7 @@ management API by family, the system API and the ops endpoints, and the Helm val
 
 | Command | Flags | Behaviour |
 |---|---|---|
-| `trove serve` | `--role web\|worker\|all` (overrides `process.role`, which has no default), `--config <file>`, `--log-level <level>` | Runs one replica until `SIGTERM` or `SIGINT`. A second signal ends the process at once. |
+| `trove serve` | `--role api\|packages\|worker\|web\|all` (overrides `process.role`, which has no default), `--config <file>`, `--log-level <level>` | Runs one replica until `SIGTERM` or `SIGINT`. A second signal ends the process at once. |
 | `trove migrate [up\|status]` | `--config <file>`, `--log-level <level>` | `up` (the default) applies the embedded migrations under the migration lock. `status` prints the state as JSON. |
 | `trove admin config validate` | `--format table\|json` (default `table`), `--config <file>`, `--log-level <level>` | Validates the file and the environment and prints the effective configuration with each value's source. Secrets are redacted. A map or a list prints as one JSON value, such as `server.endpoints`. |
 | `trove version`, `trove --version` | none | Version, commit and build date |
@@ -727,7 +727,7 @@ struct tags (for example `database.password_file`) takes a file path only, read 
 
 ```yaml
 process:
-  role: ""                              # no default: web, worker or all; required by serve
+  role: ""                              # no default: api, packages, worker, web or all; required by serve
 server:
   listen: ":8080"                       # default: the default endpoint's listener
   ops_listen: ":8081"                   # default
@@ -858,7 +858,8 @@ database:
     connection_budget: enforce          # default: enforce | warn
     reserved_connections: 10            # default
     allow_superuser: false              # default
-    expected_web_replicas: 0            # default; set by the chart on the migration Job
+    expected_serving_replicas: 0        # default; the replicas of api and packages together, set by the chart on the migration Job
+    expected_web_replicas: 0            # default; deprecated alias of expected_serving_replicas, read while that is 0 (start-up warning)
     expected_worker_replicas: 0         # default; set by the chart on the migration Job
 migrate:
   advisory_lock_wait: 5m                # default

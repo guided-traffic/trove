@@ -253,11 +253,11 @@ func (s *Storage) ValidateFor(cmd Command, r *Report) {
 	if s.S3.Bucket == "" {
 		r.Add("s3.bucket", "is required")
 	}
-	// Only web (and all, which runs both) accepts uploads from clients; a worker
-	// spools reports and remote-cache fills, which R-HA-029 does not size to
-	// upload.max_size. `config validate` runs without a role and checks nothing
-	// here; `serve` always has one.
-	if role := r.Role(); role == "web" || role == "all" {
+	// Every role with a client listener accepts uploads (the protocols on packages,
+	// the UI's content routes on api); a worker spools reports and remote-cache
+	// fills, which R-HA-029 does not size to upload.max_size. `config validate`
+	// runs without a role and checks nothing here; `serve` always has one.
+	if ServesClients(r.Role()) {
 		if s.Upload.MaxSize > s.Spool.MaxBytes {
 			r.Add("upload.max_size", "must not exceed spool.max_bytes (is %s, spool.max_bytes is %s)", s.Upload.MaxSize, s.Spool.MaxBytes)
 		}

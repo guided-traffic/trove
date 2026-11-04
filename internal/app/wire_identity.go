@@ -12,6 +12,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/scope"
+	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/cluster"
@@ -171,8 +172,20 @@ func (c *lastUsedComponent) Sync(ctx context.Context) error { return c.tokens.Fl
 // wireAuth is the auth area: the authentication stage of the client listeners'
 // chains, on the stores of the identity area, the session store and the
 // cluster-wide failure throttle (R-AUTH-001, R-AUTH-038).
-func (a *App) wireAuth(_ context.Context, id identityArea, ss sessionsArea, lim limitsArea) (authArea, error) {
-	if err := requireInputs(AreaAuth, given("token service", id.tokens), given("session store", ss.store), given("failure limiter", lim.failures)); err != nil {
+//
+// The session store is an optional input of the step (withOptional, Q-ARCH-300): a role
+// that enables the sessions area (api, web, all) gets the stage with the session
+// credential; the role packages does not enable it, gets the zero value, and builds a
+// stage over tokens only, which ignores a session cookie as absent (R-EP-010 rule 1,
+// auth.Options.Sessions nil). Whether the store must be there is decided by the role's
+// areas, not by a nil check: a role that enables the area and gets no store stops the
+// start-up.
+func (a *App) wireAuth(_ context.Context, id identityArea, lim limitsArea, ss sessionsArea) (authArea, error) {
+	ins := []input{given("token service", id.tokens), given("failure limiter", lim.failures)}
+	if a.sub.Has(AreaSessions) {
+		ins = append(ins, given("session store", ss.store))
+	}
+	if err := requireInputs(AreaAuth, ins...); err != nil {
 		return authArea{}, err
 	}
 	cfg := a.cfg.Auth
@@ -180,8 +193,13 @@ func (a *App) wireAuth(_ context.Context, id identityArea, ss sessionsArea, lim 
 	if err != nil {
 		return authArea{}, err
 	}
+	// A nil *session.Store must not become a non-nil session.Validator.
+	var sessions session.Validator
+	if ss.store != nil {
+		sessions = ss.store
+	}
 	stage := auth.New(auth.Options{
-		Tokens: id.tokens, Sessions: ss.store, Principals: id.principals, Settings: id.settings, Limiter: lim.failures,
+		Tokens: id.tokens, Sessions: sessions, Principals: id.principals, Settings: id.settings, Limiter: lim.failures,
 		ExemptCIDRs: cfg.RateLimit.ExemptPrefixes(), ClientAddr: clientAddr, BasicEnabled: cfg.Clients.Basic.Enabled,
 		APIKeyHeader: cfg.Clients.NuGetAPIKeyHeader,
 		// The token service validates and records the last use; it is checked above.
@@ -362,6 +380,8 @@ func (a *App) authenticate(rt *endpointRuntime) func(*http.Request) (httpserver.
 func (a *App) credentialStage(rt *endpointRuntime) func(*http.Request) (httpserver.Principal, error) {
 	rules := endpointRules(rt)
 	rules.PublicRoute = a.publicRoute(rt)
+	// A route of a family this process does not serve is not always open: it is decided like an unknown path (Q-ARCH-302).
+	rules.Served = func(r *http.Request) bool { return rt.ep.ServesRequest(r.URL.Path) }
 	rules.APIKeyRoute = a.apiKeyRoute()
 	rules.Refused = a.credentialRefused(rt)
 	stage := a.authStage().stage

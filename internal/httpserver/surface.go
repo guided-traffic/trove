@@ -80,6 +80,21 @@ func (e *Endpoint) servesPath(path string) bool {
 	}
 }
 
+// ServesRequest reports whether the endpoint, as the process's role narrowed it, serves the route family of a request path
+// (R-EP-005, Q-ARCH-298). A path that belongs to no family is served in this sense: the router decides it. Besides the
+// families of [FamilyOf], the bare host root belongs to ui (GET /{$}) and npm's web login start at the host root
+// (/-/v1/login) to packages. The authentication stage asks it so that a route the process does not serve is not treated as
+// one that is always reachable without a credential (Q-ARCH-302).
+func (e *Endpoint) ServesRequest(path string) bool {
+	switch path {
+	case "/":
+		return e.Serves(config.SurfaceUI)
+	case "/-/v1/login":
+		return e.Serves(config.SurfacePackages)
+	}
+	return e.servesPath(path)
+}
+
 // CheckSurface returns the patterns among the registered ones that the
 // endpoint's surface does not allow (R-EP-005). The router drops such patterns
 // itself; the check is the independent proof the route-table test runs over

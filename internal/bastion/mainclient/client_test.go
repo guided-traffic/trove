@@ -782,3 +782,58 @@ func TestR_BAS_039_ADownloadBatchIsOneRequestWithItsBody(t *testing.T) {
 		t.Errorf("received %+v", got)
 	}
 }
+
+// TestR_BAS_044_ForwardsGoToThePackagesURLAndTheInterfaceToTheMainURL: with bastion.main.packages_url set (phase 6a, Q-HA-74),
+// the forwards and the probes go to the main installation's packages Service and the four interface operations to the main
+// URL; without it both go to the main URL; a packages_url that is not https is refused.
+func TestR_BAS_044_ForwardsGoToThePackagesURLAndTheInterfaceToTheMainURL(t *testing.T) {
+	ctx := context.Background()
+	packages := maintest.New(t)
+	packages.Force("forward", http.StatusBadGateway) // the call is what is counted; no token of this fake is needed
+	r := newRig(t, func(o *mainclient.Options) { o.PackagesURL = packages.URL() })
+
+	_, _ = r.c.Do(ctx, forward(http.MethodGet, "/api/npm/npm-all/lodash"))
+	probe := forward(http.MethodGet, "/api/npm/npm-all/lodash")
+	probe.Probe, probe.Kind = true, mainclient.KindProbe
+	_, _ = r.c.Do(ctx, probe)
+	if got := packages.Calls("forward"); got != 2 {
+		t.Errorf("the packages Service received %d forwards and probes, want 2", got)
+	}
+	if got := r.main.Calls("forward"); got != 0 {
+		t.Errorf("the main URL received %d forwards, want 0", got)
+	}
+
+	if _, err := r.c.Handshake(ctx); err != nil {
+		t.Fatalf("handshake: %v", err)
+	}
+	if got, other := r.main.Calls(iface.OperationHandshake), packages.Calls(iface.OperationHandshake); got != 1 || other != 0 {
+		t.Errorf("handshake: main %d, packages %d, want 1 and 0", got, other)
+	}
+
+	t.Run("an empty packages_url means the main URL for both", func(t *testing.T) {
+		r := newRig(t, nil)
+		r.main.Force("forward", http.StatusBadGateway)
+		_, _ = r.c.Do(ctx, forward(http.MethodGet, "/api/npm/npm-all/lodash"))
+		if got := r.main.Calls("forward"); got != 1 {
+			t.Errorf("the main URL received %d forwards, want 1", got)
+		}
+	})
+
+	t.Run("a packages_url that is not https is refused", func(t *testing.T) {
+		m, err := metrics.New(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		main := maintest.New(t)
+		tok, _ := mainclient.ParseToken(main.NewToken())
+		for _, u := range []string{"http://trove-packages.trove.svc:8080", "trove-packages", "https://"} {
+			_, err := mainclient.New(mainclient.Options{
+				URL: main.URL(), PackagesURL: u, BaseURL: baseURL, Tokens: mainclient.NewHolder(tok), Metrics: m,
+				ConnectTimeout: time.Second, ResponseHeaderTimeout: time.Second,
+			})
+			if err == nil || !strings.Contains(err.Error(), "packages_url") {
+				t.Errorf("%q: %v", u, err)
+			}
+		}
+	})
+}

@@ -13,22 +13,35 @@ import (
 	"github.com/guided-traffic/trove/internal/virtual"
 )
 
-// RemotesEngine is the part of the remote engine the virtual engine's seam uses;
-// *proxy.Engine implements it.
-type RemotesEngine interface {
-	Metadata(ctx context.Context, rq proxy.Request) (*proxy.Document, error)
+// RemotesReader is the read-only part of the remote engine the virtual engine's seam uses: what the stored state of a
+// remote member says, without contacting its upstream. *proxy.Engine and *proxy.View implement it.
+type RemotesReader interface {
 	Cached(ctx context.Context, rq proxy.Request) (items.Item, bool, error)
 	EntryState(ctx context.Context, repoID int64, path string) (proxy.EntryState, error)
 	Peek(ctx context.Context, rem proxy.Remote, path, variant string) (proxy.Peek, error)
-	Probe(ctx context.Context, rem proxy.Remote, path string, a proxy.Adapter) (proxy.ProbeResult, error)
 	CachedArtifacts(ctx context.Context, repoID int64, prefix string) ([]string, error)
 }
 
-var _ RemotesEngine = (*proxy.Engine)(nil)
+// RemotesEngine is the part of the remote engine the virtual engine's seam uses to fetch and probe on top of the
+// reads; *proxy.Engine implements it.
+type RemotesEngine interface {
+	RemotesReader
+	Metadata(ctx context.Context, rq proxy.Request) (*proxy.Document, error)
+	Probe(ctx context.Context, rem proxy.Remote, path string, a proxy.Adapter) (proxy.ProbeResult, error)
+}
+
+var (
+	_ RemotesEngine = (*proxy.Engine)(nil)
+	_ RemotesReader = (*proxy.View)(nil)
+)
 
 // VirtualRemotesOptions configure [NewVirtualRemotes].
 type VirtualRemotesOptions struct {
+	// Engine is the remote engine of a replica that fills caches. Exactly one of Engine and View is set.
 	Engine RemotesEngine
+	// View is the read-only view of a replica that fills none (the role api, Q-ARCH-294): Metadata and Probe, which
+	// would contact an upstream, answer Unavailable.
+	View RemotesReader
 	// Repos finds a remote repository by its id (the seam's EntryState names ids).
 	Repos repository.Reader
 	// Decider records the populate event of a fill made for a virtual request.
@@ -41,13 +54,26 @@ type VirtualRemotesOptions struct {
 // request for the member: the format's adapter, the caller's facts and a populate check
 // that answers the MayFill the virtual engine decided with the decision point.
 func NewVirtualRemotes(o VirtualRemotesOptions) (virtual.Remotes, error) {
-	if o.Engine == nil || o.Repos == nil || o.Decider == nil {
-		return nil, errs.E(errs.Internal, errs.CodeInternal, "formathost: the virtual remotes need the remote engine, the repository reader and the decision point")
+	if (o.Engine == nil) == (o.View == nil) || o.Repos == nil || o.Decider == nil {
+		return nil, errs.E(errs.Internal, errs.CodeInternal, "formathost: the virtual remotes need the remote engine or its read-only view, the repository reader and the decision point")
 	}
-	return &vremotes{o: o}, nil
+	v := &vremotes{o: o, rd: o.View}
+	if o.Engine != nil {
+		v.rd = o.Engine
+	}
+	return v, nil
 }
 
-type vremotes struct{ o VirtualRemotesOptions }
+type vremotes struct {
+	o VirtualRemotesOptions
+	// rd reads the stored state: the engine's, or the view's.
+	rd RemotesReader
+}
+
+// errReadOnly is the answer of Metadata and Probe on a replica whose remote engine is the read-only view.
+func errReadOnly() error {
+	return errs.E(errs.Unavailable, errs.CodeUnavailable, "This replica reads the state of the remote members and does not contact their upstreams.")
+}
 
 var _ virtual.Remotes = (*vremotes)(nil)
 
@@ -89,15 +115,18 @@ func (v *vremotes) Cached(ctx context.Context, rc virtual.RemoteCall) (bool, err
 		return false, err
 	}
 	if rq.Kind == proxy.Artifact {
-		_, ok, err := v.o.Engine.Cached(ctx, rq)
+		_, ok, err := v.rd.Cached(ctx, rq)
 		return ok, err
 	}
-	st, err := v.o.Engine.EntryState(ctx, rq.Remote.ID(), rc.Path)
+	st, err := v.rd.EntryState(ctx, rq.Remote.ID(), rc.Path)
 	return st.Stored && st.GoneAt.IsZero(), err
 }
 
 // Metadata implements [virtual.Remotes].
 func (v *vremotes) Metadata(ctx context.Context, rc virtual.RemoteCall) (*virtual.RemoteDoc, error) {
+	if v.o.Engine == nil {
+		return nil, errReadOnly()
+	}
 	rq, err := v.request(rc)
 	if err != nil {
 		return nil, err
@@ -115,7 +144,7 @@ func (v *vremotes) Metadata(ctx context.Context, rc virtual.RemoteCall) (*virtua
 
 // EntryState implements [virtual.Remotes].
 func (v *vremotes) EntryState(ctx context.Context, repoID int64, path string) (virtual.EntryState, error) {
-	st, err := v.o.Engine.EntryState(ctx, repoID, path)
+	st, err := v.rd.EntryState(ctx, repoID, path)
 	if err != nil {
 		return virtual.EntryState{}, err
 	}
@@ -128,7 +157,7 @@ func (v *vremotes) EntryState(ctx context.Context, repoID int64, path string) (v
 	if err != nil {
 		return out, nil //nolint:nilerr // a repository without usable settings has no negative entry or circuit to report
 	}
-	p, err := v.o.Engine.Peek(ctx, rem, path, "")
+	p, err := v.rd.Peek(ctx, rem, path, "")
 	if err != nil {
 		return out, err
 	}
@@ -152,6 +181,9 @@ func (v *vremotes) byID(ctx context.Context, id int64) (repository.Repository, b
 
 // Probe implements [virtual.Remotes].
 func (v *vremotes) Probe(ctx context.Context, rc virtual.RemoteCall) (virtual.ProbeResult, error) {
+	if v.o.Engine == nil {
+		return virtual.ProbeResult{}, errReadOnly()
+	}
 	rq, err := v.request(rc)
 	if err != nil {
 		return virtual.ProbeResult{}, err
@@ -174,7 +206,7 @@ func (v *vremotes) Probe(ctx context.Context, rc virtual.RemoteCall) (virtual.Pr
 
 // CachedArtifacts implements [virtual.Remotes].
 func (v *vremotes) CachedArtifacts(ctx context.Context, repoID int64, prefix string) ([]string, error) {
-	return v.o.Engine.CachedArtifacts(ctx, repoID, prefix)
+	return v.rd.CachedArtifacts(ctx, repoID, prefix)
 }
 
 // callPopulate is the populate check of a call made for a virtual request: the virtual

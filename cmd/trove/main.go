@@ -33,7 +33,7 @@ func (e usageError) Error() string { return e.msg }
 const usageText = `usage: trove <command> [flags]
 
 commands:
-  serve --role web|worker|all|bastion   run one replica of a role (bastion: the read-only cache, deployed by its own chart)
+  serve --role api|packages|worker|web|all|bastion   run one replica of a role (bastion: the read-only cache, deployed by its own chart)
   migrate [up|status]           apply or list the embedded migrations
   admin <command>               bootstrap and recovery commands (trove admin lists them)
   version, --version            print version, commit and build date

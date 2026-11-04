@@ -3,6 +3,8 @@ package app
 import (
 	"fmt"
 	"slices"
+
+	"github.com/guided-traffic/trove/internal/config"
 )
 
 // Area names one unit of wiring: the step in steps.go that builds a typed part
@@ -72,7 +74,9 @@ const (
 // Subsystems is the set a role enables (R-ARCH-001, INV-2). Every replica of a
 // role runs the same set and is interchangeable with any other of that role.
 type Subsystems struct {
-	// ClientListener serves :8080: the UI, the management API, the package protocols.
+	// ClientListener serves :8080 and the listeners of further endpoints, each with the families of its surface that
+	// the role serves (Families): the UI, the management API and the CI exchange on api, the package protocols and
+	// the raw files on packages.
 	ClientListener bool
 	// OpsListener serves :8081: probes and metrics.
 	OpsListener bool
@@ -90,6 +94,9 @@ type Subsystems struct {
 	Registry bool
 	// Areas are the wiring areas the role enables (steps.go).
 	Areas []Area
+	// Families are the route families the role serves on every client endpoint, intersected with the
+	// endpoint's surface (R-EP-005, Q-ARCH-298); empty for a role without a client listener.
+	Families []string
 	// Shell marks the shell profile: the HTTP shell without PostgreSQL, Valkey and
 	// the object store (Options.SkipInfrastructure, the drain fixture). It has the
 	// listeners, the key ring and the authentication stage over an empty token
@@ -105,27 +112,34 @@ func (s Subsystems) Has(a Area) bool { return slices.Contains(s.Areas, a) }
 // build on them. It is an explicit profile, not what is left when a step finds
 // a nil component.
 func (s Subsystems) shell() Subsystems {
-	return Subsystems{ClientListener: s.ClientListener, OpsListener: s.OpsListener, Areas: areasFor(onShell), Shell: true}
+	return Subsystems{ClientListener: s.ClientListener, OpsListener: s.OpsListener, Areas: areasFor(onShell), Families: s.Families, Shell: true}
 }
 
-// SubsystemsFor returns the subsystems of a serving role.
+// SubsystemsFor returns the subsystems of a serving role (R-ARCH-001).
 func SubsystemsFor(role string) (Subsystems, error) {
+	listener := Subsystems{
+		ClientListener: true, OpsListener: true, MainPool: true, Valkey: true, ChangePoll: true, Registry: true,
+		Families: config.RoleFamilies(role),
+	}
 	switch role {
-	case "web":
-		return Subsystems{
-			ClientListener: true, OpsListener: true, MainPool: true, Valkey: true, ChangePoll: true, Registry: true,
-			Areas: areasFor(onWeb),
-		}, nil
-	case "worker":
+	case config.RoleAPI:
+		listener.Areas = areasFor(onAPI)
+		return listener, nil
+	case config.RolePackages:
+		listener.Areas = areasFor(onPackages)
+		return listener, nil
+	case config.RoleWeb:
+		listener.Areas = areasFor(onWeb)
+		return listener, nil
+	case config.RoleWorker:
 		return Subsystems{
 			OpsListener: true, MainPool: true, LeasePool: true, JobLoops: true, Valkey: true, ChangePoll: true, Registry: true,
 			Areas: areasFor(onWorker),
 		}, nil
-	case "all":
-		return Subsystems{
-			ClientListener: true, OpsListener: true, MainPool: true, LeasePool: true, JobLoops: true, Valkey: true, ChangePoll: true, Registry: true,
-			Areas: areasFor(onAll),
-		}, nil
+	case config.RoleAll:
+		listener.LeasePool, listener.JobLoops = true, true
+		listener.Areas = areasFor(onAll)
+		return listener, nil
 	}
-	return Subsystems{}, fmt.Errorf("process.role must be web, worker or all (got %q)", role)
+	return Subsystems{}, fmt.Errorf("%s (got %q)", config.RoleError, role)
 }

@@ -1465,9 +1465,16 @@
               "type": "string",
               "x-trove-env": "TROVE_DATABASE_PREFLIGHT_CONNECTION_BUDGET"
             },
+            "expected_serving_replicas": {
+              "default": 0,
+              "description": "The replicas of every Deployment without a lease pool (api, packages and their pools) together. Set by the chart on the migration Job.",
+              "minimum": 0,
+              "type": "integer",
+              "x-trove-env": "TROVE_DATABASE_PREFLIGHT_EXPECTED_SERVING_REPLICAS"
+            },
             "expected_web_replicas": {
               "default": 0,
-              "description": "Set by the chart on the migration Job.",
+              "description": "Deprecated alias of expected_serving_replicas, read while that key is 0 (R-ARCH-025).",
               "minimum": 0,
               "type": "integer",
               "x-trove-env": "TROVE_DATABASE_PREFLIGHT_EXPECTED_WEB_REPLICAS"
@@ -2280,10 +2287,12 @@
       "additionalProperties": false,
       "properties": {
         "role": {
-          "description": "Role of this replica: web, worker or all (local development only). No default.",
+          "description": "Role of this replica: api, packages, worker, web (the bridge of the upgrade across the cut) or all (local development only). No default.",
           "enum": [
-            "web",
+            "api",
+            "packages",
             "worker",
+            "web",
             "all"
           ],
           "type": "string",

@@ -73,6 +73,12 @@ type EndpointRules struct {
 	// Anonymous is true when the endpoint allows anonymous requests
 	// (auth.anonymous), subject to R-AUTH-037.
 	Anonymous bool
+	// Served reports whether the process serves the route family of the request on this
+	// endpoint (R-EP-005, Q-ARCH-298, Q-ARCH-302). A request of a family it does not serve
+	// is never "always open" and never public: without a credential it is decided like an
+	// unknown path, so that the 401 or the anonymous pass that the chain gives does not tell
+	// an outside audience which routes the process serves. Nil: every family is served.
+	Served func(*http.Request) bool
 	// PublicRoute reports whether the request matches a management API operation
 	// that is declared public (or public by a switch): such a request without a
 	// credential reaches its handler as the anonymous principal whatever the

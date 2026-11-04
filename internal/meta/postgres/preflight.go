@@ -245,9 +245,13 @@ func ConnectionBudget(c config.Database, webMax, workerMax, superuserReserved in
 // checkBudget compares the budget with max_connections. With the replica counts
 // unset (0 and 0) there is nothing to compare and the check says so.
 func checkBudget(c config.Database, maxConnections, superuserReserved int, log *slog.Logger) error {
-	web, worker := c.Preflight.ExpectedWebReplicas, c.Preflight.ExpectedWorkerReplicas
+	web, viaAlias := c.Preflight.Serving()
+	worker := c.Preflight.ExpectedWorkerReplicas
+	if viaAlias {
+		log.Warn("database.preflight.expected_web_replicas is deprecated and read as expected_serving_replicas; set the new key (R-ARCH-025, Q-HA-77)")
+	}
 	if web+worker == 0 {
-		log.Info("connection budget not checked: database.preflight.expected_web_replicas and expected_worker_replicas are not set")
+		log.Info("connection budget not checked: database.preflight.expected_serving_replicas and expected_worker_replicas are not set")
 		return nil
 	}
 	b := ConnectionBudget(c, web, worker, superuserReserved)

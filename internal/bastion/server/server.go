@@ -232,7 +232,7 @@ func (s *Server) buildDeps() (engine.Deps, error) {
 	}
 	s.holder = mainclient.NewHolder(tok)
 	client, err := mainclient.New(mainclient.Options{
-		URL: b.Main.URL, BaseURL: s.cfg.Server.BaseURL, Replica: s.instance, Release: buildinfo.Get().Version, Tokens: s.holder,
+		URL: b.Main.URL, PackagesURL: b.Main.PackagesURL, BaseURL: s.cfg.Server.BaseURL, Replica: s.instance, Release: buildinfo.Get().Version, Tokens: s.holder,
 		Budget: mainclient.NewBudget(mainclient.BudgetOptions{
 			MaxConcurrent: b.Main.MaxConcurrent, Replicas: b.Replicas, AnonymousShare: b.Main.AnonymousShare,
 			QueueTimeout: b.Main.QueueTimeout, Metrics: s.bm,

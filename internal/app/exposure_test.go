@@ -10,6 +10,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/config"
+	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
 func TestR_EP_010_EndpointRulesFromConfiguration(t *testing.T) {
@@ -26,7 +27,11 @@ func TestR_EP_010_EndpointRulesFromConfiguration(t *testing.T) {
 	eps := srv.ResolveEndpoints()
 	rules := map[string]func() bool{}
 	for _, e := range eps {
-		r := endpointRules(&endpointRuntime{cfg: e})
+		ep, err := httpserver.NewEndpoint(e, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := endpointRules(&endpointRuntime{cfg: e, ep: ep})
 		switch e.Name {
 		case "default":
 			rules[e.Name] = func() bool {

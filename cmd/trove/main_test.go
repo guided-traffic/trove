@@ -31,7 +31,7 @@ func TestServe(t *testing.T) {
 	t.Run("R-ARCH-001 serve without --role and without process.role prints the role message", func(t *testing.T) {
 		cfg := writeConfig(t, "log:\n  level: info\n")
 		code, _, stderr := runCmd(t, baseEnv(ephemeral...), "serve", "--config", cfg)
-		if code != 1 || !strings.Contains(stderr, "process.role must be web, worker or all") {
+		if code != 1 || !strings.Contains(stderr, "process.role must be api, packages, worker, web or all") {
 			t.Fatalf("code %d stderr %q", code, stderr)
 		}
 	})

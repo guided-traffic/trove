@@ -139,14 +139,23 @@ type Engine struct {
 // pass-through queries.
 func New(o Options) (*Engine, error) {
 	switch {
-	case o.Runner == nil:
-		return nil, errors.New("proxy: no transaction runner")
-	case o.Items == nil:
-		return nil, errors.New("proxy: no item store")
 	case o.Blobs == nil:
 		return nil, errors.New("proxy: no blob store")
 	case o.Clients == nil:
 		return nil, errors.New("proxy: no upstream clients")
+	}
+	return newEngine(o, false)
+}
+
+// newEngine builds the engine. readOnly is the engine of a [View]: it has no upstream clients and no blob store, so no
+// method that contacts an upstream or stores a body can run, and it keeps neither the metadata bytes nor the answers of
+// pass-through queries.
+func newEngine(o Options, readOnly bool) (*Engine, error) {
+	switch {
+	case o.Runner == nil:
+		return nil, errors.New("proxy: no transaction runner")
+	case o.Items == nil:
+		return nil, errors.New("proxy: no item store")
 	case o.Caches == nil:
 		return nil, errors.New("proxy: no cache registry")
 	}
@@ -185,6 +194,9 @@ func New(o Options) (*Engine, error) {
 			MaxEntries: o.Config.NegativeL1Entries, SafetyTTL: negativeLifetime,
 		}),
 		store: o.Negatives, inv: o.Invalid, counter: o.Lookups, now: o.Now,
+	}
+	if readOnly {
+		return e, nil
 	}
 	if o.Config.MetadataCacheBytes > 0 {
 		e.mdBytes = cache.Register(o.Caches, CacheMetadataBytes, cache.Options[[32]byte, []byte]{

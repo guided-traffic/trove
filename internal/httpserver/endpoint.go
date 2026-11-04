@@ -38,7 +38,9 @@ type Endpoint struct {
 	hostRoots    map[string]string
 	wildcardRoot string
 
+	// surface is the effective surface: the configured one narrowed to the families of the process's role.
 	surface         []string
+	configured      []string
 	tokenTypes      []string
 	boundTokensOnly bool
 	anonymous       bool
@@ -51,9 +53,21 @@ type Endpoint struct {
 	trustedProxies  []string
 }
 
+// EndpointOption changes how [NewEndpoint] builds the snapshot.
+type EndpointOption func(*Endpoint)
+
+// ForRoleFamilies narrows the endpoint's surface to the route families a process's role serves (R-EP-005, Q-ARCH-298):
+// the effective surface is the configured one intersected with families. [Endpoint.Serves], the router, the route-table
+// check, the session rule of R-EP-010 and the dispatcher all read the effective surface, so a family the role does not
+// serve is answered exactly as a family outside the surface. The configured surface stays readable as
+// [Endpoint.ConfiguredSurface].
+func ForRoleFamilies(families []string) EndpointOption {
+	return func(e *Endpoint) { e.surface = config.IntersectFamilies(e.surface, families) }
+}
+
 // NewEndpoint builds the snapshot of a resolved endpoint. additionalBaseURLs are
 // server.additional_base_urls; they matter to the default endpoint only.
-func NewEndpoint(r config.ResolvedEndpoint, additionalBaseURLs []string) (*Endpoint, error) {
+func NewEndpoint(r config.ResolvedEndpoint, additionalBaseURLs []string, opts ...EndpointOption) (*Endpoint, error) {
 	e := &Endpoint{
 		name: r.Name, def: r.Default, listen: r.Listen, hosts: slices.Clone(r.Hosts), hostSet: map[string]struct{}{},
 		wildcard: strings.ToLower(r.WildcardHost), check: r.CheckHost, additional: map[string]string{},
@@ -86,6 +100,10 @@ func NewEndpoint(r config.ResolvedEndpoint, additionalBaseURLs []string) (*Endpo
 	for h, repo := range r.HostRoots {
 		e.hostRoots[strings.ToLower(h)] = repo
 	}
+	e.configured = slices.Clone(e.surface)
+	for _, o := range opts {
+		o(e)
+	}
 	return e, nil
 }
 
@@ -115,7 +133,11 @@ func (e *Endpoint) WildcardHost() string { return e.wildcard }
 // ChecksHost reports whether the endpoint answers 421 for a host outside its set.
 func (e *Endpoint) ChecksHost() bool { return e != nil && e.check }
 
-// Surface returns the route families the endpoint serves.
+// ConfiguredSurface returns the route families of the endpoint's configuration, before the process's role narrowed them.
+func (e *Endpoint) ConfiguredSurface() []string { return slices.Clone(e.configured) }
+
+// Surface returns the route families the endpoint serves on this process: the configured surface intersected with the
+// families of the role ([ForRoleFamilies]).
 func (e *Endpoint) Surface() []string { return slices.Clone(e.surface) }
 
 // Serves reports whether the surface holds the family.

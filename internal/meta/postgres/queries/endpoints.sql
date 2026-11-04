@@ -127,10 +127,12 @@ SELECT endpoint, count(*)::bigint AS rules, (count(*) FILTER (WHERE enabled))::b
  ORDER BY endpoint;
 
 -- name: EndpointsCountServingReplicas :one
--- The n of the fallback share of an endpoint rate-limit class (R-EP-015): the live
--- replicas that serve the endpoints of this replica's pool, which are the web
--- replicas of the same pool and every replica of the development role all.
+-- The n of the fallback share of a client-listener limiter (R-EP-015, R-ARCH-034): the live
+-- replicas of this replica's role in this replica's pool, and every replica of the development
+-- role all, which serves every family (Q-ARCH-147, Q-ARCH-300). A role is a unit of scaling
+-- and of load: an api replica shares the budget with the api replicas of its pool, never with
+-- the packages replicas that other clients reach.
 SELECT count(*)::int AS live
   FROM replica
  WHERE heartbeat_at >= now() - make_interval(secs => sqlc.arg(stale_secs)::float8)
-   AND ('all' = ANY(roles) OR ('web' = ANY(roles) AND COALESCE(pool, '') = sqlc.arg(pool)::text));
+   AND ('all' = ANY(roles) OR (sqlc.arg(role)::text = ANY(roles) AND COALESCE(pool, '') = sqlc.arg(pool)::text));

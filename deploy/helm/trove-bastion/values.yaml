@@ -85,6 +85,7 @@ config:
   bastion:
     main:
       url: ""                           # required; example: https://trove.example.com (the main endpoint)
+      packages_url: ""                  # default (proposed): empty = url; example: https://trove-packages.trove.svc:8080 (the main installation's packages Service, R-BAS-044)
       connect_timeout: 5s               # default (proposed)
       response_header_timeout: 30s      # default (proposed)
       max_concurrent: 64                # default (proposed), across all replicas (R-BAS-025)

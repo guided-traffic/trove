@@ -37,8 +37,10 @@ const (
 
 // HTTPClient is the [Client] over net/http (R-BAS-006, R-BAS-008, R-BAS-017, R-BAS-021, R-BAS-025, R-BAS-044).
 type HTTPClient struct {
-	o         Options
-	base      *url.URL
+	o    Options
+	base *url.URL
+	// packages is the base of the forwards and probes: bastion.main.packages_url, or base (Q-HA-74).
+	packages  *url.URL
 	origin    origin
 	http      *http.Client
 	now       func() time.Time
@@ -61,7 +63,13 @@ func New(o Options) (*HTTPClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &HTTPClient{o: o, base: base, origin: org, now: o.Now, opTimeout: o.ConnectTimeout + o.ResponseHeaderTimeout + bodyAllowance}
+	packages := base
+	if o.PackagesURL != "" {
+		if packages, err = url.Parse(o.PackagesURL); err != nil || packages.Scheme != "https" || packages.Host == "" {
+			return nil, fmt.Errorf("mainclient: bastion.main.packages_url must be an https URL (R-BAS-044)")
+		}
+	}
+	c := &HTTPClient{o: o, base: base, packages: packages, origin: org, now: o.Now, opTimeout: o.ConnectTimeout + o.ResponseHeaderTimeout + bodyAllowance}
 	if c.now == nil {
 		c.now = time.Now
 	}
@@ -527,7 +535,7 @@ func (c *HTTPClient) forwardRequest(ctx context.Context, f Forward) (*http.Reque
 	if !f.Probe && f.Body != nil {
 		body = f.Body
 	}
-	req, err := http.NewRequestWithContext(ctx, src.Method, c.base.String(), body)
+	req, err := http.NewRequestWithContext(ctx, src.Method, c.packages.String(), body)
 	if err != nil {
 		return nil, fmt.Errorf("mainclient: building the forward: %w", err)
 	}

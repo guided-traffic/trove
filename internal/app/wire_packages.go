@@ -26,8 +26,8 @@ type packagesAPIArea struct{ services v1.PackageServices }
 // origins, and the keys of ui.client_setup. A part that cannot be built, such as a README
 // renderer the ui.readme keys do not allow, stops the start-up: the operations are not served
 // as 503 by a replica that says it is ready (Q-ARCH-209).
-func (a *App) wirePackagesAPI(_ context.Context, in infra, az authzArea, repo repositoryArea, fh formatHostArea, fp formatPortsArea) (packagesAPIArea, error) {
-	if err := requireInputs(AreaPackagesAPI, given("format host", fh.host), given("decision point", az.engine),
+func (a *App) wirePackagesAPI(_ context.Context, in infra, az authzArea, repo repositoryArea, fp formatPortsArea) (packagesAPIArea, error) {
+	if err := requireInputs(AreaPackagesAPI, given("decision point", az.engine),
 		given("repository reader", repo.reader), given("format view adapters", fp.views)); err != nil {
 		return packagesAPIArea{}, err
 	}

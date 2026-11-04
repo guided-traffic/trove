@@ -258,8 +258,12 @@ func (a *App) Start(ctx context.Context) error {
 	a.startedAt = time.Now()
 	bi := a.id.Role
 	a.log.Info("starting", "role", bi, "instance", a.id.Instance)
-	if a.id.Role == "all" {
-		a.log.Warn("process.role is all: this role exists for local development only", "role", "all")
+	switch a.id.Role {
+	case config.RoleAll:
+		a.log.Warn("process.role is all: this role exists for local development only", "role", config.RoleAll)
+	case config.RoleWeb:
+		// R-ARCH-001: web is the bridge of the upgrade across the cut, api and packages in one process.
+		a.log.Warn("process.role is web: this role is the bridge of the upgrade to the roles api and packages and is not part of a new installation", "role", config.RoleWeb)
 	}
 	a.standingWarnings()
 
@@ -381,27 +385,45 @@ func (a *App) startGauges(ctx context.Context) {
 // management API without the decision point, never becomes ready and answers 503
 // on those routes; it stops here and names what is missing. The shell profile has
 // none of them by design and serves its stand-ins.
+//
+// What a role must have follows from the areas it enables (R-ARCH-001): the parts
+// every client listener needs are required on every role, the parts of an area
+// only where the role enables the area, so that api is not asked for a format
+// dispatcher it must not build and packages is not asked for a login handler.
 func (a *App) requireServing() error {
 	if a.sub.Shell {
 		return nil
 	}
 	w := a.parts
-	return requireInputs("client listener",
+	ins := []input{
 		given("authentication stage", part[authArea](w).stage),
 		given("decision point", a.decider()),
 		given("repository reader", part[repositoryArea](w).reader),
 		given("files service", part[filesArea](w).service),
-		given("login handler", part[loginArea](w).handler),
 		given("exposure rule service", part[exposureArea](w).rules),
 		given("request limits", part[apiArea](w).rateLimit),
 		given("audit store", a.auditStoreForAPI()),
 		given("invalidation set", part[invalidationArea](w).set),
-		given("format dispatcher", part[formatHostArea](w).disp),
-		given("remote engine", part[proxyEngineArea](w).engine),
 		given("virtual engine", part[virtualEngineArea](w).engine),
-		given("package services", part[packagesAPIArea](w).services.View),
 		given("ownership service", part[ownershipArea](w).service),
-	)
+	}
+	for _, p := range []struct {
+		area Area
+		in   input
+	}{
+		{AreaLogin, given("login handler", part[loginArea](w).handler)},
+		{AreaSessions, given("session store", part[sessionsArea](w).store)},
+		{AreaCIExchange, given("CI exchange", part[ciExchangeArea](w).exchanger)},
+		{AreaPackagesAPI, given("package services", part[packagesAPIArea](w).services.View)},
+		{AreaVulnAPI, given("vulnerability report", part[vulnAPIArea](w).services.Report)},
+		{AreaFormatHost, given("format dispatcher", part[formatHostArea](w).disp)},
+		{AreaProxyEngine, given("remote engine", part[proxyEngineArea](w).engine)},
+	} {
+		if a.sub.Has(p.area) {
+			ins = append(ins, p.in)
+		}
+	}
+	return requireInputs("client listener", ins...)
 }
 
 // freezeRegistries closes every start-up registry before the replica serves:
@@ -490,9 +512,9 @@ func (a *App) startClient() error {
 		// Routes outside /api/v1/ that areas own: /auth/ (login) and /files/ (files).
 		// Register them on router within the endpoint surfaces (CheckSurface); the route table
 		// check below stops start-up for a route that breaks a rule. The shell profile has
-		// no login; its /files/ routes have no service and answer 503, because the
-		// document lists them.
-		if !a.sub.Shell {
+		// no login, and neither has the role packages; its /files/ routes have no service
+		// and answer 503, because the document lists them.
+		if a.sub.Has(AreaLogin) {
 			a.registerLogin(router)
 		}
 		a.registerFiles(router)
@@ -718,6 +740,16 @@ func stopOrder(comps []Component) []Component {
 
 // Blobs returns the blob store; nil in a shell without infrastructure.
 func (a *App) Blobs() *blob.Store { a.mu.Lock(); defer a.mu.Unlock(); return a.blobs }
+
+// Areas returns the wiring areas this replica built, in step order: the planned steps of its role (R-ARCH-001). The
+// integration tests of the roles compare it with the role table.
+func (a *App) Areas() []string {
+	out := make([]string, 0, len(a.plan))
+	for _, s := range a.plan {
+		out = append(out, string(s.area))
+	}
+	return out
+}
 
 // Queue returns the job queue every role enqueues on; nil in a shell without infrastructure.
 func (a *App) Queue() *jobs.Queue { a.mu.Lock(); defer a.mu.Unlock(); return a.queue }

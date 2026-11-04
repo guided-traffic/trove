@@ -104,7 +104,7 @@ func New(o Options) *Stage {
 // Authenticate implements [Authenticator].
 func (s *Stage) Authenticate(r *http.Request, ep EndpointRules) (Result, error) {
 	ctx := r.Context()
-	if isExchangeRoute(r) {
+	if isExchangeRoute(r) && (ep.Served == nil || ep.Served(r)) {
 		// The ID token in the Authorization header of an exchange is not a
 		// credential for this stage (R-AUTH-001).
 		return anonymousResult(), nil
@@ -432,7 +432,7 @@ func (s *Stage) noCredential(ctx context.Context, r *http.Request, ep EndpointRu
 		ep.refused(r, Refusal{Reason: RefusedAnonymous})
 		return s.fail(MethodNone, "no_credential", unauthenticated(r, errs.CodeCredentialsRequired, "This endpoint requires a credential.", false))
 	}
-	if alwaysOpen(r) || (ep.PublicRoute != nil && ep.PublicRoute(r)) {
+	if (ep.Served == nil || ep.Served(r)) && (alwaysOpen(r) || (ep.PublicRoute != nil && ep.PublicRoute(r))) {
 		return anonymousResult(), nil
 	}
 	// Anonymous never passes an unsafe method on /api/v1 (R-AUTH-037 hard limit).

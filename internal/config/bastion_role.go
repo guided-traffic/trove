@@ -70,6 +70,7 @@ type BastionSettings struct {
 // BastionMain is the connection to the main installation (R-BAS-006, R-BAS-021, R-BAS-025, R-BAS-027).
 type BastionMain struct {
 	URL                   string        `yaml:"url" default:"" validate:"required" doc:"The main endpoint of the main installation, for example https://trove.example.com; https only (R-BAS-044)."`
+	PackagesURL           string        `yaml:"packages_url" default:"" doc:"The Service of the main installation's role packages, for example https://trove-packages.trove.svc:8080; the forwarded package and raw-file requests and the probes go there, everything else to url. Empty means url for both; https only (R-BAS-044)."`
 	TokenFile             string        `yaml:"token_file" default:"" secret:"file" chart:"managed" doc:"File with the trv_bst_ token, read again every token_reload_interval (R-BAS-006); required to serve."`
 	CAFile                string        `yaml:"ca_file" default:"" chart:"managed" doc:"CA bundle that verifies the main installation, added to the system roots (trustedCA of the chart)."`
 	ConnectTimeout        time.Duration `yaml:"connect_timeout" default:"5s" validate:"min=100ms,max=2m"`
@@ -290,7 +291,10 @@ func (s *BastionServer) Validate(r *Report) {
 func (b *BastionSettings) Validate(r *Report) {
 	m := b.Main
 	if m.URL != "" {
-		checkMainURL(r, m.URL)
+		checkMainURL(r, "main.url", m.URL)
+	}
+	if m.PackagesURL != "" {
+		checkMainURL(r, "main.packages_url", m.PackagesURL)
 	}
 	if min := 3 * b.Feed.PollInterval; m.UnreachableAfter < min {
 		r.Add("main.unreachable_after", "(%s) must be at least 3 x feed.poll_interval (%s): a feed poll that is merely late must not make the main installation unreachable (R-BAS-027)", m.UnreachableAfter, b.Feed.PollInterval)
@@ -352,13 +356,13 @@ func (c BastionCache) validateBucket(r *Report) {
 }
 
 // checkMainURL requires an https origin (R-BAS-044): a plain http URL stops startup and names the key.
-func checkMainURL(r *Report, raw string) {
+func checkMainURL(r *Report, key, raw string) {
 	u, err := url.Parse(raw)
 	if err == nil && u.Scheme == "http" {
-		r.Add("main.url", "%q is an http URL: the connection to the main installation carries the Bastion token and the callers' credentials and runs over https only (R-BAS-044)", redactUserinfo(raw))
+		r.Add(key, "%q is an http URL: the connection to the main installation carries the Bastion token and the callers' credentials and runs over https only (R-BAS-044)", redactUserinfo(raw))
 		return
 	}
-	checkOrigin(r, "main.url", raw)
+	checkOrigin(r, key, raw)
 	if err == nil && u.Scheme != "https" && u.Scheme != "http" {
 		return // checkOrigin has named the scheme
 	}

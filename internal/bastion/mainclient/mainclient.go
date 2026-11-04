@@ -209,6 +209,9 @@ type Client interface {
 type Options struct {
 	// URL is bastion.main.url; https only (R-BAS-044).
 	URL string
+	// PackagesURL is bastion.main.packages_url: the Service of the main installation's role packages, to which the
+	// forwards and the probes go; https only. Empty means URL (R-BAS-044, Q-HA-74).
+	PackagesURL string
 	// BaseURL is server.base_url: the scheme, host and port the client sends as the forwarded host
 	// (R-BAS-017).
 	BaseURL string

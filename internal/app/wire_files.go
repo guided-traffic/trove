@@ -8,9 +8,11 @@ import (
 	"github.com/guided-traffic/trove/internal/api/rawfiles"
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/files"
+	"github.com/guided-traffic/trove/internal/formathost"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/jobs"
+	"github.com/guided-traffic/trove/internal/packages"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -101,7 +103,36 @@ func (a *App) wireFiles(ctx context.Context, in infra, repo repositoryArea, az a
 		return filesArea{}, err
 	}
 	a.itemStore.set(store)
+	if err := a.wireServeCheckHost(in, repo, az, fm, store); err != nil {
+		return filesArea{}, err
+	}
 	return filesArea{items: store, service: svc, decider: az.engine}, nil
+}
+
+// wireServeCheckHost gives the files seam the Host its serve check reads format state through, on a role that serves
+// the files service but builds no format host (the role api, Q-ARCH-301): the UI's downloads reach the item store
+// through the files service, and the format's ServeCheck reads the stored marks of the item through the data port,
+// FormatData of the Host (R-ARCH-008 "Serve-time check"). It is the Host without a remote engine, a resolver and a
+// dispatcher: none of the calls that fetch, resolve or write for a protocol route is reachable on the role, because
+// no route that makes them is registered, and the Host answers them with the internal error of a Host built without
+// them. A role with the format host sets the Host in wireFormatHost.
+func (a *App) wireServeCheckHost(in infra, repo repositoryArea, az authzArea, fm formatsArea, store *items.Store) error {
+	if !a.sub.ClientListener || a.sub.Has(AreaFormatHost) {
+		return nil
+	}
+	pkgs, err := packages.NewStore(in.db)
+	if err != nil {
+		return err
+	}
+	host, err := formathost.New(formathost.Options{
+		Runner: in.db, Decider: az.engine, Items: store, Packages: pkgs, Deps: fm.deps, Repos: repo.reader,
+		DownloadBuffer: int(a.cfg.Storage.Download.BufferSize), Log: a.log.With("component", "files"),
+	})
+	if err != nil {
+		return err
+	}
+	a.host.set(host)
+	return nil
 }
 
 // registerFiles mounts /files/ on a router. A replica that serves a client

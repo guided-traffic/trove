@@ -1,6 +1,7 @@
 # Roles and trust boundaries
 
-Status: implemented in M0 for the listeners, the client-address rule, the trace trust rule and the Valkey data path. No
+Status: the roles `api` and `packages` are built in the binary (Q-ARCH-294, Q-ARCH-300 to Q-ARCH-303) and tested on the integration stack
+(`test/integration/roles`); the chart still renders `web`. Implemented in M0 for the listeners, the client-address rule, the trace trust rule and the Valkey data path. No
 login, identity provider or repository exists yet, so no principal is authenticated. The sections that would need one say
 what is not there.
 
@@ -11,7 +12,9 @@ value crosses a boundary. The code that implements each rule is linked. Open gap
 
 | Role | Process | Serves | Background work and leases | Chart |
 |---|---|---|---|---|
-| `web` | `trove serve --role web` | the client listener of the default endpoint and of the further endpoints its pool serves; the ops listener | none: no job loop, no lease pool ([roles.go](../../internal/app/roles.go), `SubsystemsFor`) | Deployment `<fullname>-web` and the pools of further endpoints |
+| `api` | `trove serve --role api` | the route families `ui`, `api`, `ci_exchange` on the endpoints whose surface holds them; the ops listener | none: no job loop, no lease pool; holds the session store, the OIDC client secrets and the break-glass password ([roles.go](../../internal/app/roles.go), `SubsystemsFor`) | built in the binary; the chart renders it with phase 6a's chart package |
+| `packages` | `trove serve --role packages` | the route families `packages`, `files`; tokens only, a session cookie counts as absent; the ops listener | none; builds no session store, login or CI exchange and reads no login secret | as `api` |
+| `web` | `trove serve --role web` | every family: `api` and `packages` in one process, the bridge of the upgrade across the cut | none; holds what `api` and `packages` hold ([H-518](#h-518--the-bridge-and-the-development-role-hold-both-halves-of-the-cut)) | Deployment `<fullname>-web` and the pools of further endpoints |
 | `worker` | `trove serve --role worker` | the ops listener only | the job claim loop, scheduler and reaper; the lease pool | Deployment `<fullname>-worker` |
 | `all` | `trove serve --role all` | both listeners | both sets | not rendered by the chart; for a local run outside the chart ([spec INV-2](../spec/README.md#design-invariants)) |
 | migration | `trove migrate up` | nothing: no listener | none; after the schema steps it applies the role bindings of `authz.role_bindings` under the migration lock ([permissions](permissions.md#role-bindings-from-the-configuration)) | Job `<fullname>-migrate` ([migrate.yaml](../../deploy/helm/trove/templates/migrate.yaml)) |
@@ -51,6 +54,20 @@ value crosses a boundary. The code that implements each rule is linked. Open gap
 | Replicas to PostgreSQL, Valkey, object store | the server's certificate, checked by the client | a plaintext connection unless named with `allow_insecure` | `database.ssl_mode`, `valkey.tls`, `storage.s3` | [transport-encryption.md](transport-encryption.md) |
 | Replicas to Valkey data | the value a Valkey read returns | grant access or supply served content (INV-3) | the key families of [valkey.go](../../internal/cluster/valkey_keys.go) | this page, below |
 | Replicas to identity provider, upstream registries | not yet built (M1, M2) | not applicable in M0 | not applicable | [identity-and-authentication.md](../spec/identity-and-authentication.md), [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
+
+## The cut into `api` and `packages`
+
+A role is a unit of trust as well as of load ([architecture.md](../spec/architecture.md) R-ARCH-001, ADR-155). `api` serves humans and holds
+their secrets; `packages` serves machine traffic with tokens. What the binary guarantees, and the test that holds it:
+
+| Property | How | Test |
+|---|---|---|
+| `packages` builds no session store, login or CI exchange, and reads no OIDC or break-glass file | the areas `sessions`, `login`, `ci_exchange` are not in its role set; the chart does not mount the files | `TestR_ARCH_001_RoleTableIsData`, `TestR_ARCH_001_ReplicasBuildTheAreasOfTheirRole` |
+| a session cookie is ignored on `packages` | the authentication stage is built without a session validator (Q-ARCH-300) and the endpoint's surface lacks `ui` | `TestR_EP_010_PackagesIgnoresASessionCookie` |
+| `api` can fill no cache and forward to no upstream | the areas `proxy-engine`, `formathost` are not built; the explanation reads the remote members through `proxy.View`, which has no method that fetches (Q-ARCH-301) | `TestQ_ARCH_294_ApiExplainsAVirtualRepositoryWithoutContactingTheUpstream`, `TestViewReadsWhatTheEngineStored` |
+| a route of the other role's family answers like an unknown path, with or without a credential | the effective surface of the endpoint, and the stage's `Served` rule (Q-ARCH-302) | `TestR_ARCH_001_AFamilyOfTheOtherRoleIsAnUnknownPath` |
+
+The cut does not narrow the data credentials: [H-517](../spec/architecture.md#h-517--the-cut-into-roles-separates-the-login-secrets-not-the-data-credentials).
 
 ## Client address
 
@@ -170,3 +187,18 @@ identity work of M1; Q-AUTHZ-16 removes it together with `bridgeAccess` once the
 What makes it real: the switch set on an installation that is reachable from clients. The dev profile is not, but its edge
 is on `localhost`.
 </content>
+
+### H-518 · The bridge and the development role hold both halves of the cut
+
+Stage: the role table of R-ARCH-001, the roles `web` and `all` ([roles.go](../../internal/app/roles.go)).
+
+Live while a `web` replica runs: the bridge Deployment during the upgrade across the cut (Q-ARCH-295, R-HA-064) and, until the chart renders
+the roles, every installation; dormant on an installation that runs `api` and `packages` only. `all` is live on a developer's machine. Subject:
+the session store, the OIDC client secrets and the break-glass password, together with the package protocols and the fill path.
+
+A `web` or `all` process builds every area of both roles, so the property of the cut does not hold in it: a flaw reachable through a package
+protocol sits in the process that holds the session store and the login secrets, and a session cookie is evaluated on the same replica that
+fills caches.
+
+What makes it real: an exploitable flaw in a code path of the `packages` or `files` family while a `web` replica serves. The mitigation is the
+duration: the bridge exists for one upgrade step, and the chart's guard refuses to leave it on (R-HA-064).

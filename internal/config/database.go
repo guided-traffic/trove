@@ -83,11 +83,25 @@ type DatabaseServerKeepalive struct {
 
 // DatabasePreflight is the connection budget check of the migration Job (R-HA-016).
 type DatabasePreflight struct {
-	ConnectionBudget       string `yaml:"connection_budget" default:"enforce" validate:"oneof=enforce|warn"`
-	ReservedConnections    int    `yaml:"reserved_connections" default:"10" validate:"min=0"`
-	AllowSuperuser         bool   `yaml:"allow_superuser" default:"false"`
-	ExpectedWebReplicas    int    `yaml:"expected_web_replicas" default:"0" validate:"min=0" doc:"Set by the chart on the migration Job."`
-	ExpectedWorkerReplicas int    `yaml:"expected_worker_replicas" default:"0" validate:"min=0" doc:"Set by the chart on the migration Job."`
+	ConnectionBudget    string `yaml:"connection_budget" default:"enforce" validate:"oneof=enforce|warn"`
+	ReservedConnections int    `yaml:"reserved_connections" default:"10" validate:"min=0"`
+	AllowSuperuser      bool   `yaml:"allow_superuser" default:"false"`
+	// ExpectedServingReplicas is the replicas of every Deployment without a lease pool together: the roles api and
+	// packages and their pools (Q-HA-77).
+	ExpectedServingReplicas int `yaml:"expected_serving_replicas" default:"0" validate:"min=0" doc:"The replicas of every Deployment without a lease pool (api, packages and their pools) together. Set by the chart on the migration Job."`
+	// ExpectedWebReplicas is the deprecated name of ExpectedServingReplicas (R-ARCH-025): it is read while the new key is 0.
+	ExpectedWebReplicas    int `yaml:"expected_web_replicas" default:"0" validate:"min=0" doc:"Deprecated alias of expected_serving_replicas, read while that key is 0 (R-ARCH-025)."`
+	ExpectedWorkerReplicas int `yaml:"expected_worker_replicas" default:"0" validate:"min=0" doc:"Set by the chart on the migration Job."`
+}
+
+// Serving returns the expected replicas without a lease pool: expected_serving_replicas, or the deprecated
+// expected_web_replicas while the new key is 0. viaAlias says that the old name supplied the value, which the
+// preflight reports as a warning (Q-HA-77).
+func (p DatabasePreflight) Serving() (n int, viaAlias bool) {
+	if p.ExpectedServingReplicas > 0 {
+		return p.ExpectedServingReplicas, false
+	}
+	return p.ExpectedWebReplicas, p.ExpectedWebReplicas > 0
 }
 
 // TLSProblem names what is unsafe about the TLS settings, or returns "". The

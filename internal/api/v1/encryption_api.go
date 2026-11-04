@@ -53,7 +53,9 @@ func RingsCompatible(rings []ReplicaRing, referenced []string) bool {
 	return true
 }
 
-func opensSecrets(role string) bool { return role == "web" || role == "worker" || role == "all" }
+func opensSecrets(role string) bool {
+	return role == "api" || role == "packages" || role == "web" || role == "worker" || role == "all"
+}
 
 // keyRingPrecondition builds the precondition of the secrets-reencrypt trigger:
 // 409 key_ring_incompatible while RingsCompatible is false (R-OPS-019).

@@ -9,9 +9,10 @@ import (
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
 
-// replicaCount is the number n of live replicas that serve the client endpoints of
-// this replica's pool: the web replicas of the same pool and every replica of the
-// role all. Every limiter of the client listener divides its per-replica share by
+// replicaCount is the number n of live replicas that share this replica's client
+// traffic: the replicas of the same role in the same pool (api with api, packages
+// with packages, web with web) and every replica of the role all, which serves every
+// family (Q-ARCH-147, Q-ARCH-300). Every limiter of the client listener divides its per-replica share by
 // it while Valkey is unavailable (R-ARCH-034, Q-ARCH-45): the failure throttle and
 // the flow starts of the identity area, the request limits of the API and the
 // rate-limit classes of the endpoints. It is one component that counts once per
@@ -44,7 +45,7 @@ func (c *replicaCount) Start(ctx context.Context) error {
 		rctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 		_ = db.Read(rctx, func(d q.DBTX) error {
-			n, err := q.New(d).EndpointsCountServingReplicas(rctx, q.EndpointsCountServingReplicasParams{StaleSecs: stale, Pool: c.a.id.Pool})
+			n, err := q.New(d).EndpointsCountServingReplicas(rctx, q.EndpointsCountServingReplicasParams{StaleSecs: stale, Role: c.a.id.Role, Pool: c.a.id.Pool})
 			if err == nil {
 				c.n.Store(n)
 			}

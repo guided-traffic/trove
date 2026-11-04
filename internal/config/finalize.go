@@ -49,6 +49,10 @@ func (c *Config) Validate(r *Report) {
 		r.Add("health.database_outage_grace", "%s must be below database.retry.max_elapsed (%s): a replica must turn unready before its queries give up (R-OPS-001)",
 			g, c.Database.Retry.MaxElapsed)
 	}
+	if p := c.Database.Preflight; p.ExpectedServingReplicas > 0 && p.ExpectedWebReplicas > 0 && p.ExpectedServingReplicas != p.ExpectedWebReplicas {
+		r.Add("database.preflight.expected_web_replicas", "(%d) is the deprecated name of expected_serving_replicas (%d) and the two differ: set only expected_serving_replicas (Q-HA-77)",
+			p.ExpectedWebReplicas, p.ExpectedServingReplicas)
+	}
 	if grace := c.Runtime.TerminationGracePeriod; grace > 0 {
 		fixed := c.Health.ShutdownDrainDelay + ShutdownMargin
 		switch t := c.Server.ShutdownTimeout; {

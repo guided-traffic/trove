@@ -49,48 +49,59 @@ and it refuses a forward outside `/api/<format>/` and `/files/` before the authe
 
 ## What runs where
 
-`SubsystemsFor` encodes the table of R-ARCH-001. `web`: client and ops listener, main pool, Valkey,
-change poll, registry. `worker`: no client listener, plus the lease pool and the job loops. `all` is both
-and logs a warning. A `worker` has no socket on `:8080`; a test proves it
-(`R-ARCH-001 a worker replica opens no client socket`).
+`SubsystemsFor` ([roles.go](../../internal/app/roles.go)) encodes the table of R-ARCH-001 for the roles `api`, `packages`, `worker`,
+`web` and `all`. `api`, `packages` and `web` have a client and an ops listener, the main pool, Valkey, the change poll and the registry;
+`worker` has no client listener, plus the lease pool and the job loops; `all` is both and logs a warning, `web` (the bridge of the
+upgrade across the cut) logs one too. A `worker` has no socket on `:8080`; a test proves it (`R-ARCH-001 a worker replica opens no
+client socket`). `Subsystems.Families` is the list of route families the role serves (`config.RoleFamilies`).
 
-A role also has wiring **areas** (`Subsystems.Areas`), which are the steps of the list that run in it. Every serving
-role has the infrastructure areas (`keys`, `postgres`, `audit`, `blob`, `valkey`, `coordination`, `infra`) and the domain
-areas of its jobs (`keyring`, `formatports` (the data ports of the formats and the view adapters over them, before `exposure` because the rule service takes the adapters as its source of stored versions, Q-ARCH-253), `exposure`, `repository`, `virtual`, `invalidation`, `proxy`, `identity`, `authz`, `ownership`, `formats`, `files`); a role with a
-client listener (`web`, `all`) has the areas of the listener on top (`limits`, `sessions`, `login`, `auth`, `endpoints`,
-`api`, `formathost`). A `worker` therefore runs the deletion, token and fold jobs on the same services a web replica has, and builds no
-session store, login or limiter. The **shell
-profile** (`Options.SkipInfrastructure`, the `drainfixture` build) is `Subsystems.shell()`: the listeners, the `keys` area and
-the `shell` area (the authentication stage over an empty token store), no PostgreSQL, Valkey or object store. It is a named
-profile, not what is left when a step finds a nil component (Q-ARCH-209). `New` checks the step list against the role (`planSteps`), so a role whose steps cannot be satisfied does
-not start.
-
-A client listener exists per **endpoint** (R-EP-002): the default endpoint on `server.listen` and every entry of
-`server.endpoints` that belongs to the process's pool (`TROVE_POOL_NAME`). `web` opens the endpoints of its pool, a
-process in a pool no endpoint names opens those without a pool, `all` opens every one, a `worker` none. Each
-endpoint has its own `http.Server`, router (built from its surface), chain instance and TLS block; the sections
-below describe the chain once, [endpoints.md](endpoints.md) says what differs per endpoint.
-
-### The roles of phase 6a (specified, not built yet)
-
-Everything above describes the code as it is: `web`, `worker` and `all`. Phase 6a cuts the serving role in two
-([R-ARCH-001](../spec/architecture.md#r-arch-001--one-binary-identical-replicas-process-roles), ADR-153 to ADR-155, the work
-packages in the [roadmap](../coverage/roadmap.md#phase-6a--task-areas)). What changes here once it is built:
+A role also has wiring **areas** (`Subsystems.Areas`), which are the steps of the list that run in it; the step list gives each step a
+role set (`roleSet` in [steps.go](../../internal/app/steps.go): `onAPI`, `onPackages`, `onWeb`, `onAll`, `onWorker`, `onShell` and the unions
+`everyRole`, `withListener`, `onFilling`, `onManagement`). Every serving role has the infrastructure areas (`keys`, `postgres`, `audit`,
+`blob`, `valkey`, `coordination`, `infra`) and the domain areas of its jobs (`keyring`, `formatports` (the data ports of the formats and the
+view adapters over them, before `exposure` because the rule service takes the adapters as its source of stored versions, Q-ARCH-253),
+`exposure`, `repository`, `virtual`, `invalidation`, `proxy`, `identity`, `authz`, `ownership`, `ci`, `vuln`, `formats`, `files`). The areas
+of the client listener are split by route family:
 
 | Role | Route families | Listener areas it builds | Listener areas it does not build |
 |---|---|---|---|
-| `api` | `ui`, `api`, `ci_exchange` | `limits`, `virtual-engine` (explanation only, over a read-only view of the remote members), `packages-api`, `vuln-api`, `sessions`, `login`, `auth` (with sessions), `endpoints`, `api`, `ci_exchange` | `proxy-engine`, `formathost` |
+| `api` | `ui`, `api`, `ci_exchange` | `limits`, `virtual-engine` (the explanation only, over `proxy.View`, a read-only view of the remote members), `packages-api`, `vuln-api`, `sessions`, `login`, `auth` (with sessions), `endpoints`, `api`, `ci_exchange` | `proxy-engine`, `formathost` |
 | `packages` | `packages`, `files` | `limits`, `proxy-engine`, `virtual-engine`, `formathost`, `auth` (tokens only), `endpoints`, `api` | `sessions`, `login`, `ci_exchange`, `packages-api`, `vuln-api` |
-| `web` | all | the union, as today | — |
+| `web`, `all` | all | the union | none |
+| `worker` | none | none | all |
 
-- `steps.go` gets a role set per role (today `withListener` = `web` | `all`), and the role-table test compares
-  `SubsystemsFor` with the table of R-ARCH-001.
-- The router of an endpoint registers the families of its surface intersected with the role's families (Q-ARCH-298); a
-  process opens an endpoint's listener only when that intersection is not empty.
-- A `worker` claims the queues of `jobs.queues`, or all but `jobs.exclude_queues` (R-ARCH-016, built: [coordination.md](coordination.md#queues-and-the-queues-a-process-claims));
-  the advisory sync runs on the queue `vuln`.
-- The UI's downloads and uploads go to session-only content routes of `api`, `/api/v1/repositories/{repoKey}/content/{path}`
-  (R-API-025, Q-UI-106), because `packages` evaluates no session cookie.
+A `worker` therefore runs the deletion, token and fold jobs on the same services an `api` replica has, and builds no session store, login
+or limiter. The test `TestR_ARCH_001_RoleTableIsData` ([roles_table_test.go](../../internal/app/roles_table_test.go)) holds the table as
+data and compares `SubsystemsFor` with it. The **shell profile** (`Options.SkipInfrastructure`, the `drainfixture` build) is
+`Subsystems.shell()`: the listeners, the `keys` area and the `shell` area (the authentication stage over an empty token store), no
+PostgreSQL, Valkey or object store; it keeps the role's families. It is a named profile, not what is left when a step finds a nil component
+(Q-ARCH-209). `New` checks the step list against the role (`planSteps`), so a role whose steps cannot be satisfied does not start.
+
+**Optional inputs** (Q-ARCH-300). A step may mark an input optional with `withOptional(zero)` in the step list. `auth` takes `sessionsArea`
+optionally (`packages` has no `sessions` area: the stage is built over tokens only and ignores a session cookie), `virtual-engine` takes
+`proxyEngineArea` optionally (`api` has no `proxy-engine` area: the engine is built over the read-only view). The step requires the part
+exactly when the role enables its area (`a.sub.Has(...)`), so the role decides, not a nil check; `planSteps` keeps the order check for a
+role that enables both. `requireServing` (step 9) asks for the parts of the areas the role enables, not for every part.
+
+**What `api` has instead of a format host** (Q-ARCH-301). Only the explanation of a resolution reaches an engine on `api`. The `files` area
+builds, on a role with a client listener and without the `formathost` area, a `formathost.Host` without remote engine, resolver and
+dispatcher (`wireServeCheckHost`), which the format's `ServeCheck` reads its stored marks through. **Unserved families** (Q-ARCH-302): the
+authentication stage is given `EndpointRules.Served`, so a route the process does not serve is neither always open nor public without a
+credential and is decided like an unknown path.
+
+A client listener exists per **endpoint** (R-EP-002): the default endpoint on `server.listen` and every entry of
+`server.endpoints` that belongs to the process's pool (`TROVE_POOL_NAME`) and whose surface holds a family of the role
+(`servesEndpoint`, [wire_endpoints.go](../../internal/app/wire_endpoints.go)). A process in a pool no endpoint names opens those without a
+pool, `all` opens every one, a `worker` none. The endpoint's effective surface on the process is its configured surface intersected with
+the role's families (`httpserver.ForRoleFamilies`, Q-ARCH-298). Each endpoint has its own `http.Server`, router (built from its surface),
+chain instance and TLS block; the sections below describe the chain once, [endpoints.md](endpoints.md) says what differs per endpoint.
+
+The limiters' fallback count (`replicaCount`) is the live replicas of the role in the pool plus the `all` replicas (Q-ARCH-303). Still
+to come in phase 6a: the chart (WP6a.3), the fetch share's count of the replicas
+that fill and the content routes of `api` (`/api/v1/repositories/{repoKey}/content/{path}`, R-API-025, Q-UI-106; WP6a.4).
+
+A `worker` claims the queues of `jobs.queues`, or all but `jobs.exclude_queues` (R-ARCH-016, built:
+[coordination.md](coordination.md#queues-and-the-queues-a-process-claims)); the advisory sync runs on the queue `vuln`.
 
 ## Request path (client listener)
 
@@ -330,8 +341,13 @@ One new file and one line in the list.
    area owes another one (the data port of a format, the remote settings of the repository service) is made in the
    step and fails the step when it cannot be made; a missing or wrong binding is a start-up error, never a nil that a
    request finds.
-2. Add `newStep(AreaFoo, everyRole, (*App).wireFoo),` to `wiringSteps` after the steps it needs. `everyRole` runs it on
-   `web`, `worker` and `all`; `withListener` on `web` and `all`. That is the only edit outside the new file.
+2. Add `newStep(AreaFoo, everyRole, (*App).wireFoo),` to `wiringSteps` after the steps it needs. The role set says where
+   it runs: `everyRole` (`api`, `packages`, `worker`, `web`, `all`), `withListener` (all but `worker`), `onFilling` (`packages`,
+   `web`, `all`: the remote engine and the format host), `onManagement` (`api`, `web`, `all`: sessions, login, the CI exchange and
+   the services of the management API). A part of another area that a role may leave out is an optional input:
+   `newStep(..., withOptional(otherArea{}))` (Q-ARCH-300), and the step requires it with `a.sub.Has(AreaOther)`. Add the area to the
+   column of the right roles in `roleTable()` of [roles_table_test.go](../../internal/app/roles_table_test.go) and to the table of
+   R-ARCH-001. That is the only edit outside the new file.
 3. A job kind of the area registers in the job registry before the step runs: keep the service in a `late[*foo.Service]`
    field of `App`, `set` it in the step, and build the handler with `handler(what, fn)`. Registering the kind is a line
    in `jobRegistry` ([wire_jobs.go](../../internal/app/wire_jobs.go)).

@@ -93,12 +93,13 @@ trove MUST build into one statically linked binary, `trove` (`CGO_ENABLED=0`). I
 management API, every package-format protocol, the embedded Angular build, the schema migrations
 and the background workers (INV-1, INV-2).
 
-**Status.** The roles `api` and `packages` are specified for phase 6a
-([ADR-153](../decisions.md#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries),
-[ADR-155](../decisions.md#adr-155--three-roles-api-packages-and-worker-variants-are-pools), Q-ARCH-294 to Q-ARCH-299) and
-not built yet: the binary knows `web`, `worker` and `all` ([internal/app/roles.go](../../internal/app/roles.go)), and
-`web` serves every route family. The tables below are the target of phase 6a's work packages
-([roadmap](../coverage/roadmap.md#phase-6a--task-areas)).
+**Status.** The binary knows the roles `api`, `packages`, `worker`, `web` and `all` (phase 6a, WP6a.1;
+[ADR-153](../decisions.md#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries),
+[ADR-155](../decisions.md#adr-155--three-roles-api-packages-and-worker-variants-are-pools), Q-ARCH-294 to Q-ARCH-303): the
+tables below are the data of [internal/app/roles.go](../../internal/app/roles.go) and
+[steps.go](../../internal/app/steps.go), and a test holds them. What is not built is the rest of phase 6a: the chart still
+renders `web` ([roadmap](../coverage/roadmap.md#phase-6a--task-areas), WP6a.3), the registry and the status screen do not
+yet group by the new roles (WP6a.4), and the queue restriction of R-ARCH-016 (WP6a.2).
 
 | Invocation | Purpose |
 |---|---|
@@ -167,9 +168,17 @@ routes read them. The areas of the client listener are split by route family:
   the negative store and the circuit state answer (`Cached`, `EntryState`); a read-only view gives them and refuses
   `Metadata` and `Probe` with `Unavailable`. The UI's downloads and uploads reach `api` through the session-only content
   routes of [api-and-ui.md](api-and-ui.md) R-API-025 (Q-UI-106), which go through the `files` area, never through the
-  format host.
+  format host. The `files` area of `api` is given a Host without a remote engine, resolver, dispatcher or route, only for
+  the serve check of the item store, which reads a format's stored marks through the data port (Q-ARCH-301). Of the
+  operations of the management API, only the explanation of a resolution reaches an engine (Q-ARCH-301).
 - `web` enables the union of the areas of `api` and `packages`, which is the list of the release before the cut; `all`
   enables every area. A replica started with `web` or `all` logs a warning that names the role.
+- **Two areas take a part of another area as an optional input** (Q-ARCH-300). The `auth` area takes the session store of
+  the `sessions` area, and the `virtual-engine` area the remote engine of the `proxy-engine` area. A role that enables the
+  other area hands the step its result and `planSteps` insists it is listed before; a role that does not (`packages` has no
+  `sessions`, `api` has no `proxy-engine`) hands the step the zero value, and the step builds the variant of its part: the
+  stage over tokens only, the engine over the read-only view. The role's areas decide, not a nil check, so a role that
+  enables the area and gets no result stops the start-up.
 - A role also names the **wiring areas** it enables (R-ARCH-024 step 8, Q-ARCH-209): the units of
   composition that build a typed part of the replica, such as the database, the audit recorder, the
   object store, the Valkey client and the coordination layer, and the domain areas on top of them.
@@ -223,7 +232,11 @@ routes read them. The areas of the client listener are split by route family:
   ([endpoints.md](endpoints.md) R-EP-005), never `403`, `405` or a redirect: the edge splits a host by path prefix
   between the roles ([ha-and-helm.md](ha-and-helm.md) R-HA-037), and a request the edge sends to the wrong role, or one
   that reaches a role's Service directly, finds no route rather than another role's answer. The edge's routing is load
-  sharing, not a trust boundary: each role's own router decides what it serves.
+  sharing, not a trust boundary: each role's own router decides what it serves. The same holds for a request without a
+  credential: a route that is reachable without one only where it is served (the UI shell, the login tree, the CI
+  exchange, the public operations, npm's login start) is decided like an unknown path where the role does not serve it,
+  so the `401` of an endpoint that admits no anonymous request, or the anonymous pass of one that does, is the same
+  answer as for `GET /does-not-exist` (Q-ARCH-302).
 - A `worker` replica serves only the ops listener and is not selected by any client Service.
 - Load is shared by adding replicas of a role (INV-12). No code path depends on the number of
   replicas of a role, and each role scales and drains on its own. A role is split further by path prefix (`api`,
@@ -271,10 +284,10 @@ Acceptance criteria:
   replica started with `--role api` or `--role packages` never appears in `job.locked_by`, and `pg_stat_activity`
   never shows a connection named `trove:<that replica>:lease`.
 - On a `packages` replica, `GET /ui/`, `GET /`, `GET /auth/oidc/corp/start`, `GET /api/v1/system/ping` and
-  `POST /api/v1/auth/oidc/token` answer the `404` problem of `GET /does-not-exist`, and a request with a valid
+  `POST /api/v1/auth/oidc/token` answer the problem of `GET /does-not-exist` (the `404` with a token or with anonymous access on, the same `401` `credentials_required` without a credential while it is off, Q-ARCH-302), and a request with a valid
   `__Host-trv_session` cookie and no token to `GET /api/npm/npm-local/@acme%2fsdk` is treated as one without a
   credential (`401` `credentials_required` while anonymous access is off); on an `api` replica,
-  `GET /api/npm/npm-local/@acme%2fsdk`, `GET /files/generic-local/x` and `GET /v2/` answer that `404`, and a test
+  `GET /api/npm/npm-local/@acme%2fsdk`, `GET /files/generic-local/x` and `GET /v2/` answer that problem, and a test
   double of the upstream records no request from it while the e2e suite runs, except the upstream tests it sends.
 - One of three `packages` pods is deleted with `kubectl delete pod --grace-period=0 --force` during a
   loop of 100 `npm ci` runs through the edge. The loop finishes with npm's default
@@ -3529,7 +3542,7 @@ The owning pages define the limit classes, their bucket keys and their values
   codes; the first and the last use the count-only form.
 - **Fallback.** While Valkey is unavailable, a cluster-scoped limiter answers from an in-memory token
   bucket with rate `rate ÷ n` and burst `max(1, burst ÷ n)`. `n` is the number of live replicas that
-  serve the client endpoints of the replica's pool in the replica registry, at least 1, refreshed
+  share the replica's client traffic in the replica registry (the replicas of its role in its pool, and every `all` replica; Q-ARCH-303), at least 1, refreshed
   with the heartbeat by one component that every limiter of the client listener shares
   ([Q-ARCH-147](#q-arch-147--one-replica-count-per-pool-for-every-limiter-of-the-client-listener));
   a limiter may still count its own set (`LimiterSet.NewLimiterShared`,
@@ -8326,6 +8339,124 @@ chart already renders.
 
 **Applied in the spec:** [coverage/roadmap.md](../coverage/roadmap.md#phase-6a--task-areas) (WP6a.1 to WP6a.5, E6a.1 to E6a.8).
 
+### Q-ARCH-300 · How an area is built with or without a part of another area under typed wiring
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-ARCH-294 has `packages` build the authentication stage without the session store and `api` build the virtual
+engine without the remote engine. Typed wiring (Q-ARCH-209) gives a step exactly the results of the areas it lists, and
+`planSteps` refuses a step whose input comes from an area the role does not enable. Verified in the code:
+`wireAuth` took `sessionsArea` as a required input ([wire_identity.go](../../internal/app/wire_identity.go)), and
+`auth.Options.Sessions` already means "nil: the replica has no session store" and ignores a session cookie then
+([internal/auth/stage.go](../../internal/auth/stage.go)); `wireVirtualEngine` took the remote engine in its input check.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A step marks an input optional (`withOptional`) (chosen) | The role that enables the other area hands the step its result and `planSteps` still checks the order; a role that does not hands it the zero value. The step decides what the absence means and the role's areas decide whether it may be absent | Typed wiring stays: no global lookup, no nil that is not a decision of the role; the step list shows the optional inputs; the role-table test names them | One more option on `newStep` |
+| (b) Two steps per area, one per variant | `auth` and `auth-tokens` with different result types | No optional input | Two areas for one stage, a role table with two names for one column, and every consumer takes one of two types |
+| (c) The step reads the part with `lookup[T]` from the wiring | No signature change | Smallest change | `planSteps` no longer proves the order; the step can run before the area it reads, and a nil becomes a quiet degradation, the thing Q-ARCH-209 removed |
+| (d) The `sessions` area on `packages` with a nil store | Every role builds the area | Both stages from one signature | `packages` builds `sessions`, which R-ARCH-001 forbids, and a test that proves the trust split by construction cannot be written |
+
+**Choice:** (a).
+
+**Rationale:** the cut is a statement about what a role builds, so what a step may leave out has to be a statement about the
+role too. With (a) the stage on `packages` is built from the token service, the failure limiter and no session store, and
+`wireAuth` requires the store exactly when `a.sub.Has(AreaSessions)`; the virtual engine takes the engine when the role has
+the `proxy-engine` area and the read-only view when it does not. The development agent would revisit this if a third step
+needs an optional input in a way the zero value cannot express (a part that has two variants, not one and none).
+
+**Applied in the spec:** R-ARCH-001 (the wiring areas, the optional input); [internal/app/steps.go](../../internal/app/steps.go);
+[developer/architecture.md](../developer/architecture.md) ("How to add a wiring step").
+
+### Q-ARCH-301 · Which operations reach the engines on `api`, and what the files seam reads there
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-ARCH-294 left two facts open. Verified in the code: (1) the remote engine (`proxyEngineArea`) is taken by
+`wireVirtualEngine` and `wireFormatHost` only, and the virtual engine reaches the management API through
+`resolutionExplainer` only, which serves `GET /api/v1/repositories/{repoKey}/resolution`; no other operation takes an engine
+(`wirePackagesAPI` took the format host in its input check only, `cacheAPI` takes the invalidation set, the repository
+operations the snapshot). The explanation asks the remote members `Cached` and `EntryState` (and `Peek` through the seam)
+([internal/virtual/explain.go](../../internal/virtual/explain.go)). (2) The `files` area builds a seam, and the serve check of
+the item store calls the format's `ServeCheck` with the Host, which reads the stored marks through `FormatData` only
+([formathost/hooks.go](../../internal/formathost/hooks.go), [formats/npm/servecheck.go](../../internal/formats/npm/servecheck.go)).
+The seam took the Host from the format host, which `api` does not build; the content routes of R-API-025 (WP6a.4) call it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The read-only view `proxy.View` for the explanation, and a Host without engines for the seam, both on the roles that lack the format host (chosen) | `proxy.NewView` shares the engine's readers and has no method that fetches; the `files` area sets a `formathost.New` without `Engine`, `Resolver` or dispatcher where `formathost` is not enabled | `api` has no fill path by type; the serve check works for every format; nothing changes in the format contract | A second construction site of the Host |
+| (b) Build `proxy-engine` and `formathost` on `api` and register no route that calls them | Smallest change | No new type | The property of Q-ARCH-294 becomes a route list again |
+| (c) Change `ServeCheck` to take the data port instead of the Host | No Host on `api` | No second Host | Changes the format contract (R-ARCH-008, ContractVersion) for a seam that only `api` meets |
+
+**Choice:** (a). The Host of the seam answers a call that fetches, resolves or writes for a protocol with the error of a Host
+built without that part (`unsupportedRemote`, `unsupportedResolver`); no route that makes such a call exists on the role.
+
+**Rationale:** (a) keeps R-ARCH-001's two MUST NOTs true as properties of the wiring and of the types. The development agent
+would revisit it when an operation of the management API other than the explanation needs the remote engine (a bulk
+"warm this package" operation, say): that operation belongs on `packages` or on a `worker`, not on `api`.
+
+**Applied in the spec:** R-ARCH-001 (the MUST NOT list of `api`); [developer/proxy.md](../developer/proxy.md) and
+[developer/virtual.md](../developer/virtual.md) (the view).
+
+### Q-ARCH-302 · A route of a family the process does not serve is not reachable without a credential
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-EP-005 and R-ARCH-001 say a request of a family the role does not serve answers the `404` problem of an unknown
+path, so that nothing tells an outside audience which routes a process serves. Found by the integration test of the roles:
+the authentication stage lets a request without a credential pass as anonymous on the routes that are always open (the UI
+shell, the login tree, the CI exchange, npm's login start, `/`) and on the public operations, before the router. On an
+endpoint that defers to the anonymous switch, with the switch off, `GET /does-not-exist` answers `401` and `GET /ui/` on
+`packages` answered `404`: the pair tells the caller that `packages` has no UI.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The stage asks the endpoint whether the process serves the route's family (`EndpointRules.Served`, `httpserver.Endpoint.ServesRequest`); an unserved route is neither always open nor public (chosen) | The request is decided like an unknown path: the anonymous switch, then `401` or the router's `404` | One rule at the place that makes the exception; the answer is the unknown path's by construction | The stage learns one more input |
+| (b) Answer an unserved family `404` before authentication | The chain short-cuts | No stage change | `GET /does-not-exist` answers `401` and `GET /ui/` `404`: the difference stays, in the other direction |
+| (c) Leave it | — | — | The `404`/`401` pair reveals the role, against R-EP-005 |
+
+**Choice:** (a). The exchange routes (`isExchangeRoute`) are covered too: a `POST` to an exchange path on `packages` carries an
+`Authorization` header that the stage then evaluates as any credential.
+
+**Rationale:** the exception "this route needs no credential" is true only where the route exists. The development agent
+would revisit this if a family ever has to be reachable without a credential on a process that does not serve it, which
+nothing in the family table suggests.
+
+**Applied in the spec:** R-ARCH-001 (the `404` bullet and its acceptance criterion); [endpoints.md](endpoints.md) R-EP-005,
+R-EP-010; [internal/auth/stage.go](../../internal/auth/stage.go), [internal/httpserver/surface.go](../../internal/httpserver/surface.go).
+
+### Q-ARCH-303 · The replica count of the limiters per role and pool, and the Bastion's forward marking on `packages`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: two facts left open by WP6a.1. (1) `replicaCount` divided the fallback share of every limiter by the live `web`
+replicas of the pool and every `all` replica (`EndpointsCountServingReplicas`); with `api` and `packages` in the same pool
+(the main one) that count would add the replicas of the other role, whose clients are different. The same count fed the
+proxy's fetch share (`Replicas: lim.replicas.Get`), while R-REPO-040 shares the budget over every replica that fills
+(Q-ARCH-297). (2) Whether the forward marking of the Bastion (`bastionServices`, `bastionStages`) needs an area that
+`packages` does not build. Verified in the code: the recognition stage needs the token service and the failed-credential
+limiter, the marking stage the decision point and the metrics, the four interface services the database, the settings store
+and the audit recorder; all are areas of `packages`. The interface routes (`/api/v1/bastion/…`) are in the family `api` and
+are dropped from the router of `packages`; the forwards are `packages` and `files` requests.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The limiters divide by the live replicas of their own role in their own pool, plus every `all` replica; the proxy takes a count of its own (chosen) | `EndpointsCountServingReplicas` takes the role | A limiter's denominator is the replicas its clients are balanced over; the fetch share's denominator is the replicas that fill, which is not the same set once there are pools | The proxy's count is a second query, built with the registry (WP6a.4) |
+| (b) One count for every client-serving replica of the pool | Keeps the query | Simple | `api` and `packages` replicas divide each other's budgets: a Valkey outage halves the limits of a role that has nothing to do with the other |
+| (c) One count per limiter | Each limiter counts what it limits | Exact | Many counters for the fallback of a fallback (Q-ARCH-147 removed them) |
+
+**Choice:** (a) for the limiters, built; the Bastion's marking needs no area `packages` lacks, so nothing changes there. The
+count of the replicas that fill (`packages`, `web`, `all`, pools included) for the proxy's fetch share is Q-ARCH-297 and is
+built with the registry in WP6a.4; until then the proxy divides by the limiters' count, which is right for one `packages`
+Deployment without pools ([security/egress.md](../security/egress.md) H-519).
+
+**Rationale:** the denominator of a share has to be the set the share is shared over. The development agent would revisit it
+if a limiter guards a resource that `api` and `packages` replicas both consume (a shared upstream), which then counts both.
+
+**Applied in the spec:** R-ARCH-034 (the fallback bullet reads "live replicas of the role in the replica's pool");
+[operations-and-observability.md](operations-and-observability.md) R-OPS-003 (the count the registry gives);
+[bastion.md](bastion.md) R-BAS-044 (`bastion.main.packages_url`, built).
+
 ## What this does not cover
 
 
@@ -8501,10 +8632,11 @@ limit.
 
 ### H-517 · The cut into roles separates the login secrets, not the data credentials
 
-Stage: the role table of R-ARCH-001 (specified for phase 6a, not built yet; today every `web` replica holds everything below
-and the login secrets as well).
+Stage: the role table of R-ARCH-001 (built in the binary; the chart renders the roles with phase 6a's WP6a.3, and a `web`
+replica holds everything below and the login secrets as well, see
+[H-518](../security/roles-and-trust-boundaries.md#h-518--the-bridge-and-the-development-role-hold-both-halves-of-the-cut)).
 
-Live once phase 6a is built, for every installation. Subject: the database login, the object-store and Valkey credentials, the
+Live for every installation that runs the roles `api` and `packages`. Subject: the database login, the object-store and Valkey credentials, the
 stored-secret key ring, and through it the upstream credentials of every remote repository (R-ARCH-021), all of which a
 `packages` replica holds as an `api` replica does.
 

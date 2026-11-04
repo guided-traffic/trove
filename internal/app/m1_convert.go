@@ -23,7 +23,7 @@ func endpointRules(rt *endpointRuntime) auth.EndpointRules {
 	}
 	return auth.EndpointRules{
 		Name:            rt.cfg.Name,
-		AcceptsSession:  rt.cfg.Serves(config.SurfaceUI),
+		AcceptsSession:  rt.ep.Serves(config.SurfaceUI),
 		TokenTypes:      types,
 		BoundTokensOnly: rt.cfg.BoundTokensOnly,
 		Anonymous:       rt.cfg.Anonymous,

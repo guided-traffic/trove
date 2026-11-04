@@ -82,7 +82,7 @@ func TestR_ARCH_024_AMissingPrerequisiteIsAStartupError(t *testing.T) {
 		needs := map[Area]Area{
 			AreaKeys: AreaBlob, AreaPostgres: AreaAudit, AreaAudit: AreaInfra, AreaBlob: AreaInfra, AreaValkey: AreaCoordination,
 			AreaCoordination: AreaInfra, AreaInfra: AreaKeyRing, AreaFormatPorts: AreaExposure, AreaExposure: AreaRepository, AreaRepository: AreaVirtual, AreaInvalidation: AreaProxy,
-			AreaIdentity: AreaAuthz, AreaAuthz: AreaOwnership, AreaFiles: AreaProxyEngine, AreaLimits: AreaProxyEngine, AreaProxy: AreaProxyEngine, AreaProxyEngine: AreaVirtualEngine, AreaSessions: AreaLogin,
+			AreaIdentity: AreaAuthz, AreaAuthz: AreaOwnership, AreaFiles: AreaProxyEngine, AreaLimits: AreaProxyEngine, AreaProxy: AreaProxyEngine, AreaProxyEngine: AreaFormatHost, AreaSessions: AreaLogin,
 		}
 		base, _ := SubsystemsFor("web")
 		for drop, by := range needs {
@@ -135,7 +135,7 @@ func TestR_ARCH_024_AMissingPrerequisiteIsAStartupError(t *testing.T) {
 	})
 
 	t.Run("R-REPO-048 the virtual engine and the package services are required inputs, not conventions that fall back", func(t *testing.T) {
-		_, err := (&App{}).wireVirtualEngine(t.Context(), infra{}, virtualArea{}, authzArea{}, repositoryArea{}, formatsArea{}, proxyEngineArea{}, filesArea{})
+		_, err := (&App{}).wireVirtualEngine(t.Context(), infra{}, virtualArea{}, authzArea{}, repositoryArea{}, formatsArea{}, invalidationArea{}, vulnArea{}, filesArea{}, proxyEngineArea{})
 		if err == nil || !strings.Contains(err.Error(), "no item store") || !strings.HasPrefix(err.Error(), "virtual-engine: ") {
 			t.Fatalf("virtual engine without its inputs: %v", err)
 		}
@@ -143,8 +143,8 @@ func TestR_ARCH_024_AMissingPrerequisiteIsAStartupError(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "no virtual engine") {
 			t.Fatalf("format host without the virtual engine: %v", err)
 		}
-		_, err = (&App{}).wirePackagesAPI(t.Context(), infra{}, authzArea{}, repositoryArea{}, formatHostArea{}, formatPortsArea{})
-		if err == nil || !strings.HasPrefix(err.Error(), "packages-api: no format host, no decision point, no repository reader, no format view adapters") {
+		_, err = (&App{}).wirePackagesAPI(t.Context(), infra{}, authzArea{}, repositoryArea{}, formatPortsArea{})
+		if err == nil || !strings.HasPrefix(err.Error(), "packages-api: no decision point, no repository reader, no format view adapters") {
 			t.Fatalf("package services without their inputs: %v", err)
 		}
 	})
@@ -264,7 +264,7 @@ func TestR_ARCH_024_AStepRefusesANilInput(t *testing.T) {
 			"infra":        {second(a.wireInfra(ctx, keysArea{}, postgresArea{}, auditArea{}, blobArea{}, coordArea{})), "infra: no database"},
 			"authz":        {second(a.wireAuthz(ctx, infra{}, repositoryArea{}, identityArea{}, exposureArea{})), "authz: no repository reader, no principal store"},
 			"login":        {second(a.wireLogin(ctx, infra{}, identityArea{}, sessionsArea{}, limitsArea{})), "login: no provisioner, no session store, no flow-start limiter"},
-			"auth":         {second(a.wireAuth(ctx, identityArea{}, sessionsArea{}, limitsArea{})), "auth: no token service, no session store, no failure limiter"},
+			"auth":         {second(a.wireAuth(ctx, identityArea{}, limitsArea{}, sessionsArea{})), "auth: no token service, no failure limiter"},
 			"endpoints":    {second(a.wireEndpoints(ctx, exposureArea{}, limitsArea{})), "endpoints: no exposure rule service, no limiter set"},
 			"api":          {second(a.wireAPI(ctx, limitsArea{}, authzArea{})), "api: no limiter set, no authorizer"},
 			"repository":   {second(a.wireRepository(ctx, infra{}, exposureArea{})), "repository: no exposure rule service"},

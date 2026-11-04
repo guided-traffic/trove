@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"sync/atomic"
 
@@ -64,14 +65,22 @@ type roleSet uint8
 
 const (
 	onWorker roleSet = 1 << iota
+	onAPI
+	onPackages
 	onWeb
 	onAll
 	onShell
 
 	// everyRole is a serving role of any kind; withListener is a role that opens a
-	// client listener.
-	everyRole    = onWorker | onWeb | onAll
-	withListener = onWeb | onAll
+	// client listener. web is the union of api and packages, and all enables every
+	// area (R-ARCH-001, Q-ARCH-294, Q-ARCH-295).
+	everyRole    = onWorker | onAPI | onPackages | onWeb | onAll
+	withListener = onAPI | onPackages | onWeb | onAll
+	// onFilling are the roles that fill caches and serve the package protocols: the
+	// remote engine and the format host. onManagement are the roles that serve the
+	// sessions, the login and the management API's own services.
+	onFilling    = onPackages | onWeb | onAll
+	onManagement = onAPI | onWeb | onAll
 )
 
 // areasFor lists the areas the step list enables for a role, in list order.
@@ -90,8 +99,29 @@ type step struct {
 	area  Area
 	roles roleSet
 	needs []reflect.Type
-	gives reflect.Type
-	fn    reflect.Value
+	// optional are the needs whose area a role may leave out: a role that enables the area
+	// hands the step its result, a role that does not hands it the zero value of the type
+	// (Q-ARCH-300). Typed wiring has no nil input otherwise, so this is how an area is built
+	// with or without a part: the authentication area with or without the session store,
+	// the virtual engine over the remote engine or over its read-only view.
+	optional map[reflect.Type]bool
+	gives    reflect.Type
+	fn       reflect.Value
+}
+
+// stepOption changes a step as [newStep] builds it.
+type stepOption func(*step)
+
+// withOptional marks the types of the given zero values as optional needs of the step.
+func withOptional(zeros ...any) stepOption {
+	return func(s *step) {
+		if s.optional == nil {
+			s.optional = map[reflect.Type]bool{}
+		}
+		for _, z := range zeros {
+			s.optional[reflect.TypeOf(z)] = true
+		}
+	}
 }
 
 var (
@@ -104,7 +134,7 @@ var (
 // (*App).wireBlob. The method must be func(*App, context.Context, In...) (Out,
 // error); anything else is a programming error and panics when the list is
 // built, which every test of the package does.
-func newStep(area Area, roles roleSet, fn any) step {
+func newStep(area Area, roles roleSet, fn any, opts ...stepOption) step {
 	v := reflect.ValueOf(fn)
 	t := v.Type()
 	if t.Kind() != reflect.Func || t.NumIn() < 2 || t.In(0) != appType || t.In(1) != ctxType ||
@@ -114,6 +144,14 @@ func newStep(area Area, roles roleSet, fn any) step {
 	s := step{area: area, roles: roles, gives: t.Out(0), fn: v}
 	for i := 2; i < t.NumIn(); i++ {
 		s.needs = append(s.needs, t.In(i))
+	}
+	for _, o := range opts {
+		o(&s)
+	}
+	for t := range s.optional {
+		if !slices.Contains(s.needs, t) {
+			panic(fmt.Sprintf("app: the step of area %s marks %s optional, which it does not take", area, t))
+		}
 	}
 	return s
 }
@@ -127,6 +165,9 @@ func (s step) run(ctx context.Context, a *App, w *wiring) error {
 	args = append(args, reflect.ValueOf(a), reflect.ValueOf(ctx))
 	for _, n := range s.needs {
 		v, ok := w.vals[n]
+		if !ok && s.optional[n] {
+			v, ok = reflect.Zero(n), true
+		}
 		if !ok {
 			return fmt.Errorf("%s: %s is not wired", s.area, n.Name())
 		}
@@ -167,17 +208,17 @@ func wiringSteps() []step {
 		newStep(AreaFormats, everyRole, (*App).wireFormats),
 		newStep(AreaFiles, everyRole, (*App).wireFiles),
 		newStep(AreaLimits, withListener, (*App).wireLimits),
-		newStep(AreaProxyEngine, withListener, (*App).wireProxyEngine),
-		newStep(AreaVirtualEngine, withListener, (*App).wireVirtualEngine),
-		newStep(AreaFormatHost, withListener, (*App).wireFormatHost),
-		newStep(AreaPackagesAPI, withListener, (*App).wirePackagesAPI),
-		newStep(AreaVulnAPI, withListener, (*App).wireVulnAPI),
-		newStep(AreaSessions, withListener, (*App).wireSessions),
-		newStep(AreaLogin, withListener, (*App).wireLogin),
-		newStep(AreaAuth, withListener, (*App).wireAuth),
+		newStep(AreaProxyEngine, onFilling, (*App).wireProxyEngine),
+		newStep(AreaVirtualEngine, withListener, (*App).wireVirtualEngine, withOptional(proxyEngineArea{})),
+		newStep(AreaFormatHost, onFilling, (*App).wireFormatHost),
+		newStep(AreaPackagesAPI, onManagement, (*App).wirePackagesAPI),
+		newStep(AreaVulnAPI, onManagement, (*App).wireVulnAPI),
+		newStep(AreaSessions, onManagement, (*App).wireSessions),
+		newStep(AreaLogin, onManagement, (*App).wireLogin),
+		newStep(AreaAuth, withListener, (*App).wireAuth, withOptional(sessionsArea{})),
 		newStep(AreaEndpoints, withListener, (*App).wireEndpoints),
 		newStep(AreaAPI, withListener, (*App).wireAPI),
-		newStep(AreaCIExchange, withListener, (*App).wireCIExchange),
+		newStep(AreaCIExchange, onManagement, (*App).wireCIExchange),
 		newStep(AreaShell, onShell, (*App).wireShell),
 	}
 }
@@ -214,6 +255,8 @@ func planSteps(list []step, sub Subsystems, role string) ([]step, error) {
 			switch {
 			case !ok:
 				return nil, fmt.Errorf("wiring: area %s needs %s, which no step builds", s.area, n.Name())
+			case !sub.Has(list[j].area) && s.optional[n]:
+				continue // the role leaves the optional part out: the step is handed its zero value
 			case !sub.Has(list[j].area):
 				return nil, fmt.Errorf("wiring: area %s needs %s from area %s, which role %s does not enable", s.area, n.Name(), list[j].area, role)
 			case j > i:

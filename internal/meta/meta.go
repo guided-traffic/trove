@@ -12,10 +12,12 @@ import "context"
 // Roles a replica or a command runs in (R-ARCH-001). The class of a connection
 // follows from the role (R-ARCH-019).
 const (
-	RoleWeb    = "web"
-	RoleWorker = "worker"
-	RoleAll    = "all"
-	RoleBackup = "backup"
+	RoleAPI      = "api"
+	RolePackages = "packages"
+	RoleWeb      = "web"
+	RoleWorker   = "worker"
+	RoleAll      = "all"
+	RoleBackup   = "backup"
 )
 
 // RunsWorkers reports whether a role runs singleton work and therefore holds a

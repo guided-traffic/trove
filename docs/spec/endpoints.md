@@ -235,8 +235,11 @@ Priority: **MVP** · Covers: trove-only
   ([operations-and-observability.md](operations-and-observability.md) R-OPS-028), which is empty for a role's main
   Deployment. A process in a pool that no endpoint names (a path pool of [ha-and-helm.md](ha-and-helm.md) R-HA-062)
   serves the endpoints without a pool, like the main Deployment of its role. A `worker` process opens no client listener.
-  The development role `all` opens every listener. Every process opens the ops listener as before. (The roles `api`
-  and `packages` are specified for phase 6a, not built yet; today the role `web` opens the listeners.)
+  The development role `all` opens every listener. Every process opens the ops listener as before. The rule is `servesEndpoint` in
+  [internal/app/wire_endpoints.go](../../internal/app/wire_endpoints.go): an `api` process opens no endpoint whose surface is
+  `packages` alone, a `packages` process none whose surface is `api` and `ci_exchange` alone. On the endpoint `customers` with
+  the surface `[packages, files, api]` both main Deployments open `:8443`, each with its own families only (`api` serves `api`,
+  `packages` serves `packages` and `files`). `web` is the bridge of the upgrade across the cut and serves every family.
 - **Lifecycle.** A client-serving process binds every listener it opens before it reports ready; a
   listener that cannot bind stops startup and names the endpoint. Shutdown drains every client
   listener with the same readiness flip, drain delay and in-flight completion
@@ -405,12 +408,14 @@ An endpoint serves only the route families of its `surface`:
   `ci_exchange` is enabled on an endpoint with `exposure: rules`.
 - The npm exchange routes belong to `ci_exchange`, not to `packages`, so an endpoint can serve npm
   packages without accepting identity-provider tokens on any route.
-- **The role narrows the surface** (phase 6a, specified, not built yet; [architecture.md](architecture.md) R-ARCH-001,
+- **The role narrows the surface** (phase 6a, built; [architecture.md](architecture.md) R-ARCH-001,
   Q-ARCH-298). A process registers on each endpoint the families of its surface that its role serves: `api` the families
   `ui`, `api` and `ci_exchange`, `packages` the families `packages` and `files`, `web` and `all` every family. A path of a
-  family of the surface that the process's role does not serve answers the same `404` as a family outside the surface. The
-  edge sends each family to the role that serves it ([ha-and-helm.md](ha-and-helm.md) R-HA-037); the route-table test runs
-  per role and endpoint.
+  family of the surface that the process's role does not serve answers the same `404` as a family outside the surface, and
+  without a credential the same answer as an unknown path, also on the routes that are open without one where they are served
+  (Q-ARCH-302). The effective surface is what the endpoint serves on the process: `httpserver.NewEndpoint` with
+  `ForRoleFamilies`, while the configured surface stays the one the configuration view shows. The edge sends each family to
+  the role that serves it ([ha-and-helm.md](ha-and-helm.md) R-HA-037); the route-table test runs per role and endpoint.
 
 Acceptance criteria:
 
@@ -691,8 +696,8 @@ lookup that a rule makes unnecessary:
 1. **Session cookie.** Evaluated only on an endpoint whose surface holds `ui`, which is the default
    endpoint, and only by a process whose role serves `ui` (`api`, and `web` and `all`). Elsewhere it is ignored as if
    absent: browsers do not isolate cookies by port, so a further endpoint on the default endpoint's host name would
-   otherwise receive the session, and a `packages` process has no session store at all (phase 6a,
-   [architecture.md](architecture.md) R-ARCH-001). The UI's own downloads and uploads therefore go to `api` through the
+   otherwise receive the session, and a `packages` process has no session store at all
+   ([architecture.md](architecture.md) R-ARCH-001, Q-ARCH-300). The UI's own downloads and uploads therefore go to `api` through the
    session-only content routes of [api-and-ui.md](api-and-ui.md) R-API-025 (Q-UI-106), never to `/files/` or a package
    URL.
 2. **Token type.** The prefix gives the type (R-AUTH-022). A type outside `auth.token_types` is

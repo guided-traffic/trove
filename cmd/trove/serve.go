@@ -40,7 +40,7 @@ func serveBastion(c *commonFlags, s streams, flags, names map[string]string) err
 // shuts down in the order of R-ARCH-024. A second signal ends the process at once.
 func serveCmd(args []string, s streams) error {
 	c := newFlags("serve", s)
-	c.fs.String("role", "", "web, worker, all or bastion; overrides process.role")
+	c.fs.String("role", "", "api, packages, worker, web, all or bastion; overrides process.role")
 	flags, names, err := c.parse(args, map[string]string{"role": "process.role", "log-level": "log.level"})
 	if err != nil {
 		return err

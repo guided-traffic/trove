@@ -264,6 +264,29 @@ func TestConnectionBudget(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+	t.Run("Q-HA-77 expected_serving_replicas counts like the deprecated expected_web_replicas, and only the old name warns", func(t *testing.T) {
+		var out strings.Builder
+		log := slog.New(slog.NewTextHandler(&out, nil))
+		c := testConfig()
+		c.Preflight.ExpectedServingReplicas, c.Preflight.ExpectedWorkerReplicas = 4, 3
+		err := checkBudget(c, 100, 3, log)
+		if err == nil || !strings.Contains(err.Error(), "171") {
+			t.Fatalf("the new key: err = %v", err)
+		}
+		if strings.Contains(out.String(), "deprecated") {
+			t.Errorf("the new key warned: %s", out.String())
+		}
+		c = testConfig()
+		c.Preflight.ExpectedWebReplicas, c.Preflight.ExpectedWorkerReplicas = 4, 3
+		out.Reset()
+		err = checkBudget(c, 100, 3, log)
+		if err == nil || !strings.Contains(err.Error(), "171") {
+			t.Fatalf("the alias: err = %v", err)
+		}
+		if !strings.Contains(out.String(), "expected_web_replicas is deprecated") || !strings.Contains(out.String(), "level=WARN") {
+			t.Errorf("the alias did not warn: %q", out.String())
+		}
+	})
 	t.Run("R-HA-016 unset replica counts skip the check", func(t *testing.T) {
 		if err := checkBudget(testConfig(), 10, 3, discardLogger()); err != nil {
 			t.Fatal(err)

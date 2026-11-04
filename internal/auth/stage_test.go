@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -358,6 +359,50 @@ func TestR_AUTH_037_AnonymousAccess(t *testing.T) {
 			if err != nil || !res.Anonymous {
 				t.Errorf("%s %s: %+v %v", c.m, c.p, res, err)
 			}
+		}
+	})
+	t.Run("Q-ARCH-302 a route of a family the process does not serve is not always open: it is decided like an unknown path", func(t *testing.T) {
+		packagesOnly := defaultRules()
+		packagesOnly.PublicRoute = func(r *http.Request) bool { return r.URL.Path == "/api/v1/system/ping" }
+		packagesOnly.Served = func(r *http.Request) bool {
+			p := r.URL.Path
+			return p == "/files/x" || p == "/does-not-exist" || strings.HasPrefix(p, "/api/npm/")
+		}
+		unknown := func(s *Stage) error {
+			_, err := s.Authenticate(req("GET", "/does-not-exist"), packagesOnly)
+			return err
+		}
+		for _, c := range []struct{ m, p string }{
+			{"GET", "/"},
+			{"GET", "/ui/"},
+			{"GET", "/auth/oidc/corp/start"},
+			{"POST", "/auth/local/login"},
+			{"GET", "/api/v1/auth/login-options"},
+			{"GET", "/api/v1/system/ping"},
+			{"POST", "/api/v1/auth/oidc/token"},
+			{"POST", "/api/v1/tokens/revoke"},
+		} {
+			_, got := off.Authenticate(req(c.m, c.p), packagesOnly)
+			wantErr(t, got, 401, errs.CodeCredentialsRequired)
+			if want := unknown(off); got.Error() != want.Error() {
+				t.Errorf("%s %s: %v differs from the unknown path's %v", c.m, c.p, got, want)
+			}
+			// With the switch on, an unserved route is anonymous exactly as an unknown path is, never more.
+			res, err := on.Authenticate(req(c.m, c.p), packagesOnly)
+			wantRes, wantE := on.Authenticate(req("GET", "/does-not-exist"), packagesOnly)
+			if (err == nil) != (wantE == nil) || res.Anonymous != wantRes.Anonymous {
+				if c.m == "GET" || !strings.HasPrefix(c.p, "/api/v1/") { // anonymous never passes an unsafe method on /api/v1
+					t.Errorf("%s %s with the switch on: %+v %v; the unknown path: %+v %v", c.m, c.p, res, err, wantRes, wantE)
+				}
+			}
+		}
+		// A route it does serve stays open.
+		if res, err := off.Authenticate(req("GET", "/api/npm/npm-all/-/v1/login"), packagesOnly); err != nil || !res.Anonymous {
+			t.Errorf("the npm login start on packages: %+v %v", res, err)
+		}
+		// Without the rule, every family is served, as before.
+		if res, err := off.Authenticate(req("GET", "/ui/"), defaultRules()); err != nil || !res.Anonymous {
+			t.Errorf("served is nil: %+v %v", res, err)
 		}
 	})
 	t.Run("R-AUTH-037 a public management operation is reachable with the switch off", func(t *testing.T) {

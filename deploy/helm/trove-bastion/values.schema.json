@@ -780,6 +780,12 @@
                   "x-trove-env": "TROVE_BASTION_MAIN_MAX_FORWARDED_BODY",
                   "x-trove-type": "bytes"
                 },
+                "packages_url": {
+                  "default": "",
+                  "description": "The Service of the main installation's role packages, for example https://trove-packages.trove.svc:8080; the forwarded package and raw-file requests and the probes go there, everything else to url. Empty means url for both; https only (R-BAS-044).",
+                  "type": "string",
+                  "x-trove-env": "TROVE_BASTION_MAIN_PACKAGES_URL"
+                },
                 "queue_timeout": {
                   "default": "2s",
                   "description": "How long a request waits for a slot before 503 bastion_busy (R-BAS-025).",

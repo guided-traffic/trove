@@ -48,8 +48,8 @@ type DB struct {
 // endpoint keeps session state (R-ARCH-017).
 //
 // instance is the replica's name (the pod name, or hostname-pid outside
-// Kubernetes); it appears in application_name. role is web, worker, all or
-// backup. A web replica opens no lease pool (R-ARCH-001).
+// Kubernetes); it appears in application_name. role is api, packages, web, worker, all or
+// backup. A replica of a role that claims no jobs opens no lease pool (R-ARCH-001).
 //
 // A configuration error or a failed preflight is a plain error and will not
 // pass by retrying; a database that stays unreachable is IsUnavailable.
@@ -62,7 +62,7 @@ func Open(ctx context.Context, cfg config.Database, instance, role string, log *
 		opt(&o)
 	}
 	switch role {
-	case meta.RoleWeb, meta.RoleWorker, meta.RoleAll, meta.RoleBackup:
+	case meta.RoleAPI, meta.RolePackages, meta.RoleWeb, meta.RoleWorker, meta.RoleAll, meta.RoleBackup:
 	default:
 		return nil, fmt.Errorf("database: unknown role %q", role)
 	}
