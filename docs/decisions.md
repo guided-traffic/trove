@@ -186,9 +186,9 @@ checked every earlier decision against them:
 | [ADR-122](#adr-122--a-restore-replays-nuget-publishes-and-deletes-into-tombstones) | A restore replays NuGet publishes and deletes into tombstones | Decided by the development agent — owner review at the walkthrough |
 | [ADR-123](#adr-123--nuget-symbol-packages-are-indexed-by-one-job-each-on-the-worker-role) | NuGet symbol packages are indexed by one job each on the worker role | Decided by the development agent — owner review at the walkthrough |
 | [ADR-124](#adr-124--releases-stay-on-major-version-0) | Releases stay on major version 0 | Accepted (owner constraint); changed by the owner on 2026-10-31: no version is expected for the beta |
-| [ADR-153](#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries) | trove is cut into task areas: roles of one binary, network seams only at trust or load boundaries | Accepted (owner decision of 2026-11-04); the cut is ADR-155 |
+| [ADR-153](#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries) | trove is cut into task areas: roles of one binary, network seams only at trust or load boundaries | Accepted (owner decision of 2026-11-04); changed the same day: no fetch service; the cut is ADR-155 |
 | [ADR-154](#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port) | Network policies are ingress rules between the chart's pods, each with its port | Accepted (owner constraint of 2026-11-04) |
-| [ADR-155](#adr-155--four-roles-api-packages-fetch-and-worker-variants-are-pools) | Four roles: api, packages, fetch and worker; variants are pools | Accepted (owner decision of 2026-11-04) |
+| [ADR-155](#adr-155--three-roles-api-packages-and-worker-variants-are-pools) | Three roles: api, packages and worker; variants are pools | Accepted (owner decision of 2026-11-04; the fetch role dropped the same day) |
 | [ADR-125](#adr-125--gnu-make-and-one-pin-file-for-every-tool) | GNU Make and one pin file for every tool | Decided by the development agent — owner review at the walkthrough |
 | [ADR-126](#adr-126--problem-details-with-a-relative-type-a-requestid-member-and-named-error-codes) | Problem details with a relative type, a requestId member and named error codes | Decided by the development agent — owner review at the walkthrough |
 | [ADR-127](#adr-127--transport-encryption-on-every-connection-troves-listeners-included) | Transport encryption on every connection, trove's listeners included (INV-20) | Accepted (owner constraint) |
@@ -595,7 +595,7 @@ the releases after it from `v0.9.0` on. Semantic Release had meanwhile cut `v0.2
 
 ### ADR-153 · trove is cut into task areas: roles of one binary, network seams only at trust or load boundaries
 
-**Status:** Accepted (owner decision of 2026-11-04); the cut itself is [ADR-155](#adr-155--four-roles-api-packages-fetch-and-worker-variants-are-pools)
+**Status:** Accepted (owner decision of 2026-11-04); changed by the owner the same day: no fetch service; the cut itself is [ADR-155](#adr-155--three-roles-api-packages-and-worker-variants-are-pools)
 
 **Context.** Until now trove ran two pod types, `web` and `worker`
 ([ADR-013](#adr-013--one-binary-roles-split-from-the-start-identical-replicas-per-role-inv-2),
@@ -610,19 +610,33 @@ better, and chose among four:
 | Option | What it is | Scaling gain | Cost | Risk to existing guarantees |
 |---|---|---|---|---|
 | (a) More roles, one binary | Roles by load profile (UI and management, package protocols, workers per queue), each its own Deployment, autoscaler, disruption budget and network policy; one database | Independent scaling and drains; a package surge cannot starve the UI, the advisory sync cannot starve maintenance | Small: roles are data (`SubsystemsFor`, the wiring areas), the chart and path routing | None |
-| **(b) (a) plus network seams at trust or load boundaries** | As (a), and an internal upstream fetch service, the only pod type that contacts upstream registries | (a), and the egress address rules of R-REPO-038 and the upstream credentials held by one pod type, client-first priority decided in one service, the detached fetch of a draining `web` replica gone | Medium: one internal API over mutual TLS, a further hop on a cache miss | Low |
+| **(b) (a) plus network seams at trust or load boundaries** | As (a), and an internal upstream fetch service, the only pod type that contacts upstream registries (dropped, see below) | (a), and the egress address rules of R-REPO-038 and the upstream credentials held by one pod type, client-first priority decided in one service, the detached fetch of a draining `web` replica gone | Medium: one internal API over mutual TLS, a further hop on a cache miss | Low |
 | (c) Control and data plane with separate data access | The data plane reads PostgreSQL read replicas, writes go through the control plane's API | Less load on the primary | Large | High: the authentication caches refuse on a stale change log ([ADR-114](#adr-114--authentication-caches-answer-only-while-the-change-log-is-fresh)), a lagging replica serves revoked access or refuses |
 | (d) Domain microservices with their own databases | Identity, authorization, repository configuration, a service per format, blobs, vulnerabilities, audit; APIs and events between them | Independent releases; no throughput gain for the measured bottlenecks | Very large | High: the publish commit holds item, claims and audit event in one transaction; R-ARCH-027's one statement per download becomes several network hops; one image (ADR-012) ends |
 
 **Decision.** Option (b). trove stays one binary and one image; a task area is a role, a set of wiring
 areas enabled as data, and runs as its own Deployment. Where a role needs a further variant of the same
 subsystems (paths, queues) it is a pool of that role (R-HA-062). A network seam between roles is added
-only where a trust or load boundary requires it; the first one is the upstream fetch service, which
-alone contacts upstream registries. The Bastion (M13) is the existing seam of this kind at the exposure
-boundary. The seams are guarded by ingress rules on the receiving pods
-([ADR-154](#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port)), not
-by egress rules: the separation of egress is trove's own address policy (R-REPO-038) in the one role that
-contacts upstreams.
+only where a trust or load boundary requires it. The Bastion (M13) is the existing seam of this kind at
+the exposure boundary; no further seam is decided. Seams are guarded by ingress rules on the receiving
+pods ([ADR-154](#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port)).
+
+**Changed on 2026-11-04.** This entry first named an upstream fetch service as the first seam: the only
+role that contacts upstream registries. Checked against the owner's constraints, its gains did not hold,
+and the owner dropped it the same day:
+- egress isolation: under ADR-154 no pod's egress is restricted, and the address policy of R-REPO-038 is
+  code that holds the same in every role;
+- upstream credentials in one role: every role builds the key ring (`AreaKeyRing` in
+  `internal/app/steps.go`) and reads the same database, so a compromised serving pod holds more than the
+  upstream passwords anyway;
+- client-first priority in one place: the fetch service would need several replicas too, and the
+  priority across replicas is the same distributed problem (Q-ARCH-286 solves it without a seam);
+- the detached fetch of a draining replica: it moves to the fetch pod and adds a stream that can break
+  between two roles.
+Its costs stood: a further TLS hop on every miss, an internal API kept compatible across rolling
+upgrades (R-ARCH-025) with mutual TLS identities that rotate without restart, a cut through the proxy
+engine's flight, fill hooks and ingest, and a new path on which every miss fails. One exit to the
+internet, where an operator wants it, is the outbound proxy of R-REPO-037.
 
 **Consequences.** ADR-013 and ADR-104 are revised by the cut decision that follows this one; R-ARCH-001,
 R-HA-002 and R-HA-062 are rewritten with it. PostgreSQL stays the system of record of every role, and the
@@ -632,7 +646,9 @@ per request and stay with the roles that serve them.
 
 **Revisit condition.** The PostgreSQL primary is measured as the bottleneck (write load or connection
 budget), or separate teams own formats: then a cut with data of its own, option (d) for that area, is
-weighed again.
+weighed again. A fetch service is weighed again when a security rule requires the upstream credentials
+to leave the pods that read the database, or a single exit is required that the outbound proxy of
+R-REPO-037 cannot provide.
 
 **Alternatives considered.** (a), (c) and (d) above.
 
@@ -665,12 +681,12 @@ the receiving role that admits the sending roles on the seam's port.
 **Spec:** [owner constraints](spec/README.md#owner-constraints),
 [R-HA-042](spec/ha-and-helm.md#r-ha-042--network-policies).
 
-### ADR-155 · Four roles: api, packages, fetch and worker; variants are pools
+### ADR-155 · Three roles: api, packages and worker; variants are pools
 
-**Status:** Accepted (owner decision of 2026-11-04)
+**Status:** Accepted (owner decision of 2026-11-04); the role `fetch` dropped by the owner the same day
 
 **Context.** [ADR-153](#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries)
-cuts trove into roles of one binary with an upstream fetch service as the first network seam. Which roles exist was
+cuts trove into roles of one binary. Which roles exist was
 the next decision. What the code already has: the route families `ui`, `api`, `ci_exchange`, `packages` and `files`
 ([R-EP-005](spec/endpoints.md#r-ep-005--surface-per-endpoint); `internal/config/endpoints.go`); an endpoint without `ui` evaluates no session cookie
 (R-EP-010); roles are sets of wiring areas chosen as data (`SubsystemsFor` in `internal/app/roles.go`); the job queue
@@ -680,7 +696,7 @@ has named queues with their own slots (`default`, `maintenance`, `index`, `deliv
 | Option | Roles | What it separates | Cost |
 |---|---|---|---|
 | (A) Minimal | `web` as today, `fetch`, `worker` with queue pools | Upstream contact and background queues; UI and package traffic keep sharing pods, load and secrets | Small |
-| **(B) By trust** | `api` (`ui`, `api`, `ci_exchange`), `packages` (`packages`, `files`), `fetch`, `worker` with queue pools | Humans, sessions, the OIDC client secret and break-glass in `api`; machine traffic with tokens only and no session evaluation in `packages`; upstream credentials and R-REPO-038 in `fetch`; the lease pool and session connections in `worker` | Medium |
+| **(B) By trust** | `api` (`ui`, `api`, `ci_exchange`), `packages` (`packages`, `files`), `fetch`, `worker` with queue pools | Humans, sessions, the OIDC client secret and break-glass in `api`; machine traffic with tokens only and no session evaluation in `packages`; the lease pool and session connections in `worker` | Medium |
 | (C) Fine | As (B), and a role per format and per queue | As (B), with more Deployments whose subsystems are identical | Medium to large |
 
 **Decision.** Option (B). A role is a set of subsystems and secrets of its own; a variant of a role by path prefix or
@@ -689,9 +705,8 @@ queue is a pool of that role (R-HA-062), rendered from values without code.
 | Role | Serves | Holds | Admitted by its ingress rules (ADR-154) |
 |---|---|---|---|
 | `api` | route families `ui`, `api`, `ci_exchange` | sessions, the OIDC client secret, the break-glass password | 8080 from the edge, 8081 from monitoring |
-| `packages` | route families `packages`, `files`; tokens only | no session store, no login secret, no upstream credential | 8080 from the edge, 8081 from monitoring |
-| `fetch` | every contact with an upstream registry, for the other roles | upstream credentials, the egress address rules of R-REPO-038 | its seam port from `api`, `packages` and `worker` only; 8081 from monitoring |
-| `worker` | the job queue, leases, the scheduler; pools by queue (`maintenance`, `index`, `vuln`, `mirror`) | the lease pool | 8081 from monitoring |
+| `packages` | route families `packages`, `files`; tokens only; the fills of client misses | no session store, no login secret | 8080 from the edge, 8081 from monitoring |
+| `worker` | the job queue, leases, the scheduler, the mirror's passes and the advisory sync; pools by queue (`maintenance`, `index`, `vuln`, `mirror`) | the lease pool | 8081 from monitoring |
 
 `bastion` and `backup` stay as they are. A pool per format (`/api/npm/`, `/api/nuget/`) or per queue is option (C)'s
 split, available as values under this decision.
@@ -699,10 +714,13 @@ split, available as values under this decision.
 **Consequences.** ADR-013 and ADR-104 are revised by the specification of phase 6a, together with INV-2, R-ARCH-001,
 R-HA-002, R-HA-062 and R-HA-042. Routing splits one host by path prefix between `api` and `packages` (R-HA-037 routes a
 host whole today). Not verified when this was decided, and checked by the specification: that the UI never calls a
-`packages` or `files` route with a session cookie; if it does, that call is served through `api`. Decided next: the
-fetch service's scope (which upstream contacts go through it: remote fills, upstream tests, the shadowing probe of a
-first publish, the advisory download, the identity provider) and its seam (protocol, streaming, collapse, priority,
-drain).
+`packages` or `files` route with a session cookie; if it does, that call is served through `api`. Each role that
+fills or probes an upstream contacts it itself, as before: `packages` for client misses and shadowing probes, `api`
+for upstream tests, `worker` for the mirror's passes and the advisory sync.
+
+**Changed on 2026-11-04.** The owner chose option (B) with a fourth role `fetch`, the only role that contacts upstream
+registries, and dropped it the same day after its gains were checked (ADR-153, "Changed on 2026-11-04"). Options (A)
+and (C) named it as well; without it, (A) is `web` and `worker` with queue pools.
 
 **Revisit condition.** Two formats need different subsystems or secrets (then a format becomes a role), or a queue's
 work needs a secret the others must not hold.
