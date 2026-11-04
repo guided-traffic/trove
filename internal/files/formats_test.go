@@ -12,6 +12,7 @@ import (
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/repository"
+	"github.com/guided-traffic/trove/internal/servefacts"
 )
 
 // packageSeam is the seam of a format with package names and a protocol of its
@@ -40,6 +41,10 @@ func (s *packageSeam) Classify(repo repository.Repository, p repository.Cleaned)
 
 func (s *packageSeam) ServeCheck(context.Context, repository.Repository, items.Item) error {
 	return nil
+}
+
+func (s *packageSeam) ServeFactsKey(repository.Repository, string) servefacts.Key {
+	return servefacts.Key{}
 }
 
 func (s *packageSeam) RawDeploy(repo repository.Repository) error {

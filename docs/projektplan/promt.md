@@ -208,17 +208,11 @@ Found on 2026-11-03 while building phase 6:
 
 ### Tests and tools
 
-- **F-41 · A download spends more statements than the budget of R-ARCH-027** (confirmed). Counted on the PostgreSQL log by the
-  development agent that built the download block of phase 6: a local npm download runs 2 statements (`GetLiveItem`, then the
-  serve-time check `NPMTombstoned`), a remote hit 4 (`ProxyEntryGet`, `GetLiveItem` and `NPMRemoteTarballFacts` twice), against
-  the budget of 1 for each ([architecture.md](../spec/architecture.md) R-ARCH-027). The scanning adds none
-  (`test/integration/vulnblock/querycount_test.go`); the overrun is older than phase 6. Done when a download meets the budget,
-  or a decision revises the budget with measured numbers, and a test counts the statements per route.
 - **F-43 · Two of the bounds V-1 to V-9 of R-VULN-028 are missed on the shared stack, and a run on the reference environment is
   missing** (confirmed by the run, narrowed by the fix of 2026-11-04). The performance run `TestR_VULN_028_PerformanceRun` on the
   integration stack (not the reference environment, H-491), 2026-11-04: V-1 7.1 min, V-2 2.1 min, V-3 0.16 min, V-6 131 ms, V-7a
   37 ms and V-9 0.33 GiB met their targets; V-5b counts 2.04 transactions per cached download against the one of R-ARCH-027 (F-41,
-  fixed apart: the overrun is older than the scanning, which adds none); V-7b took 1,168 ms against 300 ms and V-8 29 ms against
+  fixed since: a cached download costs one statement, `test/integration/querybudget`; V-5b is to be read again); V-7b took 1,168 ms against 300 ms and V-8 29 ms against
   25 ms. The nightly run 41748522448 on the CPU-limited CI runner: V-1 did not finish within 40 min (the first import of the npm
   archive; so V-2 was not measured), V-3 2.3 min, V-4 ≤ 10 ms (bucket bound), V-5b 1.94 transactions, V-7b 446 ms, V-8 52 ms
   missed; V-5a, V-6 (63 ms), V-7a (33 ms) and V-9 (0.33 GiB) met.

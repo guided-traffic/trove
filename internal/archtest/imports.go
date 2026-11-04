@@ -160,7 +160,7 @@ func formatAllowed() []string {
 // that ServeRoute runs every content route through (Q-ARCH-189). A format
 // package sees none of them: it names core types through the contract's aliases.
 func contractAllowed() []string {
-	return append(formatAllowed(), "internal/authz", "internal/repository", "internal/meta", "internal/httpserver/content")
+	return append(formatAllowed(), "internal/authz", "internal/repository", "internal/meta", "internal/httpserver/content", "internal/servefacts")
 }
 
 // kitAllowed is what the conformance kit (internal/formats/formattest) may

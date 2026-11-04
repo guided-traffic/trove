@@ -901,7 +901,8 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   whole runner stalled for 40 s (worker loop silent, every backend timing out at once), the edge had no ready backend, leases
   expired and the reaper counted the attempts (no counting defect). CPU profile of a `web` pod: 57 % in the virtual tarball
   path, 35 % TLS writes, 30 % per-tarball PostgreSQL reads (`TarballFacts`, `items.read`, `proxy.getEntry`, `Tombstoned`).
-  Open: a per-replica cache of the immutable tarball facts, shedding by memory in use instead of a worst case per request
+  The per-tarball reads are one statement per route ([Q-ARCH-291](../spec/architecture.md#q-arch-291--how-does-a-download-read-the-rows-its-serve-check-decides-on-without-a-statement-of-its-own);
+  a per-replica cache of the facts was weighed there and rejected: they are not immutable). Open: shedding by memory in use instead of a worst case per request
   (after measuring a held download), the full settle deadline for the release writes at shutdown, and a load the runner
   can carry
 - ⚪ The drain criterion of the security audit (R-NPM-038, moved from phase 3): the `web` pod that forwards an `npm audit`

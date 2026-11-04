@@ -8,6 +8,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/formats/untrusted"
 	"github.com/guided-traffic/trove/internal/repository"
+	"github.com/guided-traffic/trove/internal/servefacts"
 )
 
 // RepoRef names a repository the way a storage hook meets it.
@@ -24,6 +25,33 @@ type ItemRef struct {
 	ID   int64
 	Repo RepoRef
 	Path string
+	// Facts are the rows the item lookup read for the key of [ServeFactsKeyer], zero when it read none. A [Format.ServeCheck]
+	// that finds its own key in them ([ServeFacts.For]) decides without a query of its own (R-ARCH-027).
+	Facts ServeFacts
+}
+
+// ServeKey and ServeFacts are the rows a serve-time check decides on and the key the item lookup reads them for, in the
+// same statement as the item (R-ARCH-027). The types live in internal/servefacts so that the item store spells the same.
+type (
+	ServeKey            = servefacts.Key
+	ServeFacts          = servefacts.Facts
+	ServeKind           = servefacts.Kind
+	ServeNPMRemoteFacts = servefacts.NPMRemoteFacts
+)
+
+// The kinds of rows the item lookup reads for a [ServeKey].
+const (
+	ServeNPMLocal   = servefacts.NPMLocal
+	ServeNPMRemote  = servefacts.NPMRemote
+	ServeNuGetLocal = servefacts.NuGetLocal
+)
+
+// ServeFactsKeyer is an optional interface of a [Format] whose ServeCheck reads rows besides the item: ServeFactsKey names,
+// for a path of a repository, the rows the check will want, or the zero key when it wants none. The host passes the key to the
+// item lookup, which returns the rows with the item as [ItemRef.Facts]. The check computes the same key itself and uses the
+// facts only when they were read for it, so a route that did not pass the key stays correct and only costs its own query.
+type ServeFactsKeyer interface {
+	ServeFactsKey(repo RepoRef, p Path) ServeKey
 }
 
 // PackageID, VersionID and RevSeq are the ids of the generic package rows and the

@@ -69,8 +69,29 @@ func (r *remote) Artifact(ctx context.Context, rq *formats.Request, p formats.Pa
 		return err
 	}
 	if expected.SHA256 == nil && expected.SHA512 == nil && expected.SHA1 == nil {
-		// The format's marks and the digests its metadata announces (BeforeArtifact).
-		if expected, err = r.gate(ctx, rq, p); err != nil {
+		// The format's marks and the digests its metadata announces (BeforeArtifact). A cached artifact is read first, in one
+		// statement with the rows the gate decides on, so that the hit costs no second one (R-ARCH-027): the gate works on
+		// those rows and the engine serves the item it read.
+		hit, cached, herr := r.e.Cached(ctx, preq)
+		if herr != nil {
+			noteRemote(rq, herr)
+			return herr
+		}
+		if cached {
+			var facts formats.ServeFacts
+			if expected, facts, err = r.gateWith(ctx, rq, p, hit.Facts); err != nil {
+				noteRemote(rq, err)
+				return err
+			}
+			if facts.Refreshed {
+				// The gate asked the upstream after the lookup: the item, its entry and the verdict of the scanning are read
+				// again by the engine before anything is served.
+				preq.Hit = nil
+			} else {
+				hit.Facts = facts
+				preq.Hit = &hit
+			}
+		} else if expected, err = r.gate(ctx, rq, p); err != nil {
 			noteRemote(rq, err)
 			return err
 		}
@@ -107,11 +128,22 @@ func noteRemote(rq *formats.Request, err error) {
 // gate asks the format's remote adapter (BeforeArtifact) whether the request may have the artifact
 // and which digests are announced for it.
 func (r *remote) gate(ctx context.Context, rq *formats.Request, p formats.Path) (formats.Digests, error) {
+	d, _, err := r.gateWith(ctx, rq, p, formats.ServeFacts{})
+	return d, err
+}
+
+// gateWith is gate for a caller that holds the rows the lookup of the cached artifact read (have): an adapter that decides on
+// them ([formats.FactsGate]) asks for nothing, and returns the facts the serve check of the artifact is to use.
+func (r *remote) gateWith(ctx context.Context, rq *formats.Request, p formats.Path, have formats.ServeFacts) (formats.Digests, formats.ServeFacts, error) {
 	f, ok := r.h.o.Formats(rq.Repo.Format)
 	if !ok || f.Remote() == nil {
-		return formats.Digests{}, nil
+		return formats.Digests{}, have, nil
 	}
-	return f.Remote().BeforeArtifact(ctx, r.h, rq, p)
+	if g := formats.RemoteCapabilities(formats.ID(rq.Repo.Format)).Gate; g != nil {
+		return g.BeforeArtifactWith(ctx, r.h, rq, p, have)
+	}
+	d, err := f.Remote().BeforeArtifact(ctx, r.h, rq, p)
+	return d, have, err
 }
 
 // Gate implements [formats.RemoteFetcher]: the format's BeforeArtifact for a request addressed to
@@ -121,6 +153,13 @@ func (r *remote) gate(ctx context.Context, rq *formats.Request, p formats.Path) 
 func (r *remote) Gate(ctx context.Context, rq *formats.Request, p formats.Path) error {
 	_, err := r.gate(ctx, rq, p)
 	return err
+}
+
+// GateWith implements [formats.RemoteFetcher]: Gate for a cached artifact whose item was read with the rows of the format's
+// serve check.
+func (r *remote) GateWith(ctx context.Context, rq *formats.Request, p formats.Path, have formats.ServeFacts) (formats.ServeFacts, error) {
+	_, facts, err := r.gateWith(ctx, rq, p, have)
+	return facts, err
 }
 
 // Cached implements [formats.RemoteFetcher].
@@ -217,6 +256,7 @@ func (r *remote) request(ctx context.Context, rq *formats.Request, p formats.Pat
 	pr := principalOf(ctx)
 	preq := proxy.Request{
 		Remote: rem, Path: p.Path, Variant: variant, Kind: kind, Package: info.Package, Version: info.Version, Mode: modeOf(rq), Addressed: rq.Addressed(),
+		Facts:        serveKeyOf(rq.RepoRef(), p),
 		Adapter:      newAdapter(f, rq.Repo, rq.RepoRef(), r.h.o.Deps),
 		AlwaysVerify: f.Descriptor().VerifyAnnouncedDigests,
 		MaxBytes:     f.Descriptor().MaxDocumentBytes,

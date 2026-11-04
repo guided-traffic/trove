@@ -186,7 +186,30 @@ SELECT i.id, i.repo_id, i.path, i.parent_path, i.kind, i.blob_sha256, i.size, i.
        COALESCE(blk.id::text, '')::text AS block_finding_id,
        COALESCE(blk.advisory_id, '')::text AS block_advisory_id,
        COALESCE(blk.kind, '')::text AS block_kind,
-       COALESCE(blk.status, '')::text AS block_status
+       COALESCE(blk.status, '')::text AS block_status,
+       (CASE WHEN $1::text IN ('npm_local', 'npm_remote', 'nuget_local') THEN $1::text ELSE '' END)::text AS fact_kind,
+       (CASE $1::text
+            WHEN 'npm_local' THEN EXISTS (
+                SELECT 1 FROM npm_tombstones t
+                 WHERE t.repo_id = i.repo_id AND t.name = $2::text AND t.version = $3::text)
+            WHEN 'nuget_local' THEN EXISTS (
+                SELECT 1 FROM nuget_tombstone t
+                 WHERE t.repository_id = i.repo_id AND t.lower_id = $2::text AND t.lower_version = $3::text)
+            ELSE false END)::boolean AS fact_tombstoned,
+       (ngv.listed IS NOT NULL)::boolean AS fact_nuget_stored,
+       COALESCE(ngv.listed, false)::boolean AS fact_nuget_listed,
+       COALESCE(nf.known, false)::boolean AS fact_npm_known,
+       COALESCE(nf.listed, false)::boolean AS fact_npm_listed,
+       COALESCE(nf.integrity, '')::text AS fact_npm_integrity,
+       COALESCE(nf.shasum, '')::text AS fact_npm_shasum,
+       COALESCE(nf.doc_stored, false)::boolean AS fact_npm_doc_stored,
+       COALESCE(nf.doc_current, false)::boolean AS fact_npm_doc_current,
+       COALESCE(nf.gone_us, 0)::bigint AS fact_npm_gone_us,
+       COALESCE(nf.serve_removed, false)::boolean AS fact_npm_serve_removed,
+       (CASE WHEN $4::boolean THEN EXISTS (
+            SELECT 1 FROM remote_cache_entries e JOIN blobs eb ON eb.sha256 = e.blob_sha256
+             WHERE e.repo_id = i.repo_id AND e.path = i.path AND e.variant = $5::text AND e.upstream_gone_at IS NULL)
+            ELSE false END)::boolean AS entry_stored
   FROM items i
   LEFT JOIN blobs b ON b.sha256 = i.blob_sha256
   LEFT JOIN principal cp ON cp.id = i.created_by
@@ -194,15 +217,45 @@ SELECT i.id, i.repo_id, i.path, i.parent_path, i.kind, i.blob_sha256, i.size, i.
   LEFT JOIN LATERAL (
         SELECT f.id, f.advisory_id, f.kind, f.status
           FROM vuln_finding f
-         WHERE $1::boolean AND f.version_id = i.version_id
+         WHERE $6::boolean AND f.version_id = i.version_id
            AND f.status IN ('needs_triage', 'confirmed', 'blocked')
-           AND (f.status = 'blocked' OR (f.kind = 'malicious' AND $2::boolean))
-         ORDER BY (f.kind = 'malicious' AND $2::boolean) DESC, f.severity_rank DESC, f.advisory_id
+           AND (f.status = 'blocked' OR (f.kind = 'malicious' AND $7::boolean))
+         ORDER BY (f.kind = 'malicious' AND $7::boolean) DESC, f.severity_rank DESC, f.advisory_id
          LIMIT 1) AS blk ON true
- WHERE i.repo_id = $3::bigint AND i.path = $4::text AND i.trashed_at IS NULL
+  LEFT JOIN LATERAL (
+        SELECT nv.listed
+          FROM packages p
+          JOIN package_versions pv ON pv.package_id = p.id
+          JOIN nuget_version nv ON nv.version_id = pv.id
+         WHERE $1::text = 'nuget_local' AND p.repo_id = i.repo_id AND p.name = $2::text
+           AND pv.version = $3::text AND pv.trashed_at IS NULL
+         LIMIT 1) AS ngv ON true
+  LEFT JOIN LATERAL (
+        SELECT (v.version IS NOT NULL) AS known,
+               COALESCE(v.listed, false) AS listed,
+               COALESCE(v.integrity, '') AS integrity,
+               COALESCE(v.shasum, '') AS shasum,
+               (e.repo_id IS NOT NULL) AS doc_stored,
+               COALESCE((extract(epoch FROM e.upstream_gone_at) * 1000000)::bigint, 0) AS gone_us,
+               COALESCE(e.expires_at > clock_timestamp()
+                        AND e.validated_at > COALESCE((SELECT (s.value #>> '{}')::timestamptz FROM system_state s WHERE s.key = 'restored_at'), '-infinity'::timestamptz),
+                        false) AS doc_current,
+               COALESCE(r.config #>> '{npm,serveRemovedVersions}', '') = 'true' AS serve_removed
+          FROM repositories r
+          LEFT JOIN remote_cache_entries e
+                 ON e.repo_id = r.id AND e.path = $2::text COLLATE "C" AND e.variant = 'full' AND e.kind = 'metadata'
+          LEFT JOIN npm_remote_versions v
+                 ON v.repo_id = r.id AND v.name = $2::text AND v.version = $3::text
+         WHERE $1::text = 'npm_remote' AND r.id = i.repo_id) AS nf ON true
+ WHERE i.repo_id = $8::bigint AND i.path = $9::text AND i.trashed_at IS NULL
 `
 
 type GetLiveItemParams struct {
+	FactsKind      string
+	FactsPackage   string
+	FactsVersion   string
+	EntryProbe     bool
+	EntryVariant   string
 	Enforce        bool
 	BlockMalicious bool
 	RepoID         int64
@@ -210,36 +263,49 @@ type GetLiveItemParams struct {
 }
 
 type GetLiveItemRow struct {
-	ID               int64
-	RepoID           int64
-	Path             string
-	ParentPath       string
-	Kind             string
-	BlobSha256       []byte
-	Size             pgtype.Int8
-	MediaType        pgtype.Text
-	DeclaredSha256   []byte
-	DeclaredSha512   []byte
-	DeclaredSha1     []byte
-	DeclaredMd5      []byte
-	DeclaredMismatch bool
-	ExplicitFolder   bool
-	Generated        bool
-	UpstreamUrl      pgtype.Text
-	CreatedAt        pgtype.Timestamptz
-	ModifiedAt       pgtype.Timestamptz
-	UpdatedAt        pgtype.Timestamptz
-	CreatedByName    string
-	ModifiedByName   string
-	BlobSha1         []byte
-	BlobMd5          []byte
-	BlobSha512       []byte
-	ContentStatus    pgtype.Text
-	VersionID        int64
-	BlockFindingID   string
-	BlockAdvisoryID  string
-	BlockKind        string
-	BlockStatus      string
+	ID                  int64
+	RepoID              int64
+	Path                string
+	ParentPath          string
+	Kind                string
+	BlobSha256          []byte
+	Size                pgtype.Int8
+	MediaType           pgtype.Text
+	DeclaredSha256      []byte
+	DeclaredSha512      []byte
+	DeclaredSha1        []byte
+	DeclaredMd5         []byte
+	DeclaredMismatch    bool
+	ExplicitFolder      bool
+	Generated           bool
+	UpstreamUrl         pgtype.Text
+	CreatedAt           pgtype.Timestamptz
+	ModifiedAt          pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+	CreatedByName       string
+	ModifiedByName      string
+	BlobSha1            []byte
+	BlobMd5             []byte
+	BlobSha512          []byte
+	ContentStatus       pgtype.Text
+	VersionID           int64
+	BlockFindingID      string
+	BlockAdvisoryID     string
+	BlockKind           string
+	BlockStatus         string
+	FactKind            string
+	FactTombstoned      bool
+	FactNugetStored     bool
+	FactNugetListed     bool
+	FactNpmKnown        bool
+	FactNpmListed       bool
+	FactNpmIntegrity    string
+	FactNpmShasum       string
+	FactNpmDocStored    bool
+	FactNpmDocCurrent   bool
+	FactNpmGoneUs       int64
+	FactNpmServeRemoved bool
+	EntryStored         bool
 }
 
 // The statements of the files transfer and the items API (R-STOR-007, R-STOR-012,
@@ -250,11 +316,23 @@ type GetLiveItemRow struct {
 // Paths are compared in the "C" collation (the column's), so that the range
 // [prefix + "/", prefix + "0") is exactly the subtree of prefix.
 // The item lookup of every download route. version_id names the stored version the item belongs to (0: none) and the
-// lateral join is the block of the vulnerability scanning (R-VULN-015): the finding that blocks the version in this
+// lateral join blk is the block of the vulnerability scanning (R-VULN-015): the finding that blocks the version in this
 // repository, read with the repository's policy as parameters so that a download costs no further query. enforce is false
 // for a repository that is not scanned and for every caller that is no download; the join then reads nothing.
+//
+// A download costs this one statement (R-ARCH-027), so the rows the serve-time check of the format decides on are read here
+// too, for the key the caller names (internal/servefacts): facts_kind is ” for a caller that needs none, and the part of the
+// statement of another kind reads nothing. The tombstone of npm and NuGet, the NuGet version row and the facts of an npm
+// remote version are the statements NPMTombstoned, NuGetServeState and NPMRemoteTarballFacts, which the check still runs
+// itself when the facts were not read for its key. entry_probe asks whether the cache entry of a remote repository's artifact
+// exists at the item's path (variant entry_variant) and is not marked gone: the remote hit is the item and its entry.
 func (q *Queries) GetLiveItem(ctx context.Context, arg GetLiveItemParams) ([]GetLiveItemRow, error) {
 	rows, err := q.db.Query(ctx, getLiveItem,
+		arg.FactsKind,
+		arg.FactsPackage,
+		arg.FactsVersion,
+		arg.EntryProbe,
+		arg.EntryVariant,
 		arg.Enforce,
 		arg.BlockMalicious,
 		arg.RepoID,
@@ -298,6 +376,19 @@ func (q *Queries) GetLiveItem(ctx context.Context, arg GetLiveItemParams) ([]Get
 			&i.BlockAdvisoryID,
 			&i.BlockKind,
 			&i.BlockStatus,
+			&i.FactKind,
+			&i.FactTombstoned,
+			&i.FactNugetStored,
+			&i.FactNugetListed,
+			&i.FactNpmKnown,
+			&i.FactNpmListed,
+			&i.FactNpmIntegrity,
+			&i.FactNpmShasum,
+			&i.FactNpmDocStored,
+			&i.FactNpmDocCurrent,
+			&i.FactNpmGoneUs,
+			&i.FactNpmServeRemoved,
+			&i.EntryStored,
 		); err != nil {
 			return nil, err
 		}

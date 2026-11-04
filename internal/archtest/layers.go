@@ -11,7 +11,7 @@ import (
 type layer int
 
 const (
-	layerLeaf   layer = iota // config, errs, buildinfo, observability, cache, meta, backup/tables, tlsfiles, formats/catalog, formats/untrusted, formats/nuget/{id,version,nupkg,nuspec}, formats/<id>/rows, auth/scope, ci/{reason,claims,subject}, auth/jws, vuln/{advisory,match,osv,metrics}, mirror/discover, docs/manual: usable from every layer
+	layerLeaf   layer = iota // config, errs, buildinfo, observability, cache, meta, backup/tables, tlsfiles, formats/catalog, formats/untrusted, servefacts, formats/nuget/{id,version,nupkg,nuspec}, formats/<id>/rows, auth/scope, ci/{reason,claims,subject}, auth/jws, vuln/{advisory,match,osv,metrics}, mirror/discover, docs/manual: usable from every layer
 	layerInfra               // meta/postgres, blob, cluster, outbound, secrets
 	layerDomain              // repository, proxy, virtual, formatdata, authz, project, auth, jobs, audit, backup, manual, mirror
 	layerEdge                // httpserver, api/v1, webui, formats
@@ -56,6 +56,9 @@ func layerTable() []layerRule {
 		{"internal/backup/tables", layerLeaf},
 		{"internal/tlsfiles", layerLeaf},
 		{"internal/formats/catalog", layerLeaf},
+		// The rows a serve-time check decides on, read by the item lookup (R-ARCH-027): plain types, no imports. A leaf so that
+		// the item store, the format contract and the remote engine spell one type.
+		{"internal/servefacts", layerLeaf},
 		// The untrusted-content limits and bounded readers import only errs and the standard library. They are a leaf since
 		// the vulnerability scanning (Q-VULN-23): the OSV decoder (internal/vuln/osv, a leaf like the other pure parsers)
 		// reads the advisory archives through them, and a leaf may not import an edge package.

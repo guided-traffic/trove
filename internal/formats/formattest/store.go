@@ -823,6 +823,11 @@ func (m *MemRemote) Query(ctx context.Context, rq *formats.Request, q formats.Qu
 // Gate allows every artifact: the fake has no marks.
 func (m *MemRemote) Gate(context.Context, *formats.Request, formats.Path) error { return nil }
 
+// GateWith allows every artifact and keeps the facts it was given.
+func (m *MemRemote) GateWith(_ context.Context, _ *formats.Request, _ formats.Path, have formats.ServeFacts) (formats.ServeFacts, error) {
+	return have, nil
+}
+
 func (m *MemRemote) Exchange(ctx context.Context, rq *formats.Request, x formats.Exchange) (*http.Response, error) {
 	if m.Exchanges == nil {
 		return nil, formats.ErrOffline

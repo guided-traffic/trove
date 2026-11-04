@@ -213,6 +213,9 @@ type Capabilities struct {
 	// Vulnerability is the adapter that lets the core match the format's stored versions against advisories
 	// (R-VULN-009, ADR-150); nil for a format without one, whose repositories are not_covered.
 	Vulnerability VulnerabilityAdapter
+	// ServeFacts names the rows the format's serve check decides on for a path, so that the item lookup of a download reads
+	// them in its own statement (R-ARCH-027, Q-ARCH-291); nil for a format whose check reads nothing besides the item.
+	ServeFacts ServeFactsKeyer
 }
 
 // CapabilitiesOf reads the capabilities off a format. It is the one function of the
@@ -226,10 +229,14 @@ func CapabilitiesOf(f Format) Capabilities {
 	if v, ok := f.(VulnerabilityAdapter); ok {
 		c.Vulnerability = v
 	}
+	if k, ok := f.(ServeFactsKeyer); ok {
+		c.ServeFacts = k
+	}
 	if ra := f.Remote(); ra != nil {
 		c.Remote.Discovery, _ = ra.(Discoverer)
 		c.Remote.Fill, _ = ra.(FillInspector)
 		c.Remote.Mirror, _ = ra.(MirrorLister)
+		c.Remote.Gate, _ = ra.(FactsGate)
 	}
 	return c
 }

@@ -305,12 +305,12 @@ file of the list above); (3) `app.Options.Vuln` (`app.VulnOverride`) replaces th
 integration harness passes it (`testenv.ReplicaOptions.Vuln`); (4) `wireFiles`, `wireProxyEngine` take `vulnArea`, `formathost.Options` gains
 `Enforce` and `Repos`, `files.Options` and `proxy.Options` gain `Enforce`; (5) `wireVuln` builds the enforcer last, over the ports above.
 
-**The query budget.** R-ARCH-027 budgets one query for a local download and one for a remote hit. The code spent more before the scanning
-and spends the same with it: [querycount_test.go](../../test/integration/vulnblock/querycount_test.go) counts the statements a download runs
+**The query budget.** R-ARCH-027 budgets one query for a local download and one for a remote hit, and a download meets it
+([download-statements.md](download-statements.md)). The scanning adds none:
+[querycount_test.go](../../test/integration/vulnblock/querycount_test.go) counts the statements a download runs
 from the PostgreSQL log, on a replica that scans and one that does not, in one database, and requires the same statements per download and
-one `GetLiveItem`. Measured: a local download runs `GetLiveItem` and `NPMTombstoned` (2 statements), the raw view the same, a remote hit
-`ProxyEntryGet`, `GetLiveItem` and `NPMRemoteTarballFacts` twice (4); the scanning adds none. The overrun against the budget is not this
-package's to fix.
+one `GetLiveItem`. Before the serve check's rows joined the item lookup a local download ran `GetLiveItem` and the format's serve check (2 statements) and a remote hit `ProxyEntryGet`,
+`GetLiveItem` and `NPMRemoteTarballFacts` twice (4), with the scanning or without it; the item lookup now reads the serve check's rows and the cache entry too.
 
 **Tests.** Unit: [enforce_test.go](../../internal/vuln/enforce/enforce_test.go) (the verdict, the text, the dedup, the report mode, the miss
 gate). Integration, in [test/integration/vulnblock](../../test/integration/vulnblock/) (`make test-integration`; findings inserted directly, the

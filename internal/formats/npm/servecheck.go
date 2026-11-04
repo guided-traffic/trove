@@ -2,8 +2,10 @@ package npm
 
 import (
 	"context"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/npm/rows"
 )
 
 // ServeCheck runs before the core serves a stored item on any route: the npm tarball
@@ -28,27 +30,85 @@ func (f *Format) ServeCheck(ctx context.Context, h formats.Host, repo formats.Re
 	if repo.Class != formats.Local && repo.Class != formats.Remote {
 		return nil
 	}
-	info := f.Classify(formats.Path{Path: it.Path})
-	if info.Kind != formats.Content || info.Package == "" || info.Version == "" {
+	key := f.ServeFactsKey(repo, formats.Path{Path: it.Path})
+	if key.Zero() {
 		return nil
 	}
-	st, err := storeOf(h.FormatData(ID))
-	if err != nil {
-		return err
-	}
+	// The item lookup of the download read these rows with the item when the route asked for them (R-ARCH-027).
+	have := it.Facts.For(key)
 	if repo.Class == formats.Remote {
-		facts, err := st.TarballFacts(ctx, repo.ID, info.Package, info.Version)
+		if have {
+			return refuseRemoved(tarballFactsOf(it.Facts))
+		}
+		st, err := storeOf(h.FormatData(ID))
+		if err != nil {
+			return err
+		}
+		facts, err := st.TarballFacts(ctx, repo.ID, key.Package, key.Version)
 		if err != nil {
 			return err
 		}
 		return refuseRemoved(facts)
 	}
-	gone, err := st.Tombstoned(ctx, repo.ID, info.Package, info.Version)
-	if err != nil {
-		return err
+	gone := it.Facts.Tombstoned
+	if !have {
+		st, err := storeOf(h.FormatData(ID))
+		if err != nil {
+			return err
+		}
+		if gone, err = st.Tombstoned(ctx, repo.ID, key.Package, key.Version); err != nil {
+			return err
+		}
 	}
 	if gone {
 		return notFound()
 	}
 	return nil
+}
+
+// ServeFactsKey implements [formats.ServeFactsKeyer]: the rows ServeCheck decides on for a path of a repository, which the item
+// lookup of the download reads with the item, so that the check costs no statement of its own (R-ARCH-027). The zero key is a
+// path ServeCheck lets through, and a class it does not check.
+func (f *Format) ServeFactsKey(repo formats.RepoRef, p formats.Path) formats.ServeKey {
+	var kind formats.ServeKind
+	switch repo.Class {
+	case formats.Local:
+		kind = formats.ServeNPMLocal
+	case formats.Remote:
+		kind = formats.ServeNPMRemote
+	default:
+		return formats.ServeKey{}
+	}
+	info := f.Classify(p)
+	if info.Kind != formats.Content || info.Package == "" || info.Version == "" {
+		return formats.ServeKey{}
+	}
+	return formats.ServeKey{Kind: kind, Package: info.Package, Version: info.Version}
+}
+
+var _ formats.ServeFactsKeyer = (*Format)(nil)
+
+// tarballFactsOf is the npm remote part of facts as the rows of the data port spell it.
+func tarballFactsOf(f formats.ServeFacts) rows.TarballFacts {
+	n := f.NPMRemote
+	out := rows.TarballFacts{
+		Known: n.Known, Listed: n.Listed, Integrity: n.Integrity, Shasum: n.Shasum,
+		DocStored: n.DocStored, DocCurrent: n.DocCurrent, ServeRemoved: n.ServeRemoved,
+	}
+	if n.DocGoneUs != 0 {
+		out.DocGone = time.UnixMicro(n.DocGoneUs).UTC()
+	}
+	return out
+}
+
+// serveFactsOf is the facts a read of the data port stands for, under the key it was read for.
+func serveFactsOf(key formats.ServeKey, t rows.TarballFacts) formats.ServeFacts {
+	out := formats.ServeFacts{Key: key, NPMRemote: formats.ServeNPMRemoteFacts{
+		Known: t.Known, Listed: t.Listed, Integrity: t.Integrity, Shasum: t.Shasum,
+		DocStored: t.DocStored, DocCurrent: t.DocCurrent, ServeRemoved: t.ServeRemoved,
+	}}
+	if !t.DocGone.IsZero() {
+		out.NPMRemote.DocGoneUs = t.DocGone.UnixMicro()
+	}
+	return out
 }

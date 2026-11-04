@@ -56,6 +56,10 @@ func (unsupportedRemote) Gate(context.Context, *formats.Request, formats.Path) e
 	return errNoRemote()
 }
 
+func (unsupportedRemote) GateWith(context.Context, *formats.Request, formats.Path, formats.ServeFacts) (formats.ServeFacts, error) {
+	return formats.ServeFacts{}, errNoRemote()
+}
+
 type unsupportedResolver struct{}
 
 func (unsupportedResolver) Plan(context.Context, *formats.Request, formats.Path, formats.PathInfo) (*formats.VirtualPlan, error) {

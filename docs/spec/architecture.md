@@ -1290,12 +1290,22 @@ type FillInspector interface {
 // returns its artifacts newest first) and MirrorHosts (discovery hosts besides the upstream's, without credentials).
 type MirrorLister = discover.Lister
 
+// FactsGate: BeforeArtifact for a caller that holds the rows the item lookup read for the cached artifact (ItemRef.Facts,
+// R-ARCH-027, Q-ARCH-291). The adapter decides on them when they were read for its own key and asks the data port
+// otherwise; it returns the facts the artifact's serve check is to use, which are the ones it read again after a
+// revalidation. RemoteFetcher.GateWith is the host's side of the same call (Gate with the facts), for a remote member of a
+// virtual repository.
+type FactsGate interface {
+	BeforeArtifactWith(ctx context.Context, h Host, rq *Request, p Path, have ServeFacts) (Digests, ServeFacts, error)
+}
+
 // RemoteCaps are the optional interfaces Register found on a format's remote adapter; a field is nil for one the
 // adapter lacks. They are the Remote field of Capabilities, and RemoteCapabilities returns them by format ID.
 type RemoteCaps struct {
 	Discovery Discoverer
 	Fill      FillInspector
 	Mirror    MirrorLister
+	Gate      FactsGate
 }
 
 func RemoteCapabilities(id ID) RemoteCaps
@@ -1349,6 +1359,19 @@ type Capabilities struct {
 	ItemsRestorer ItemsRestorer // nil for a format without a restore hook
 	Remote        RemoteCaps    // the optional interfaces of the remote adapter (WP3.0a, WP3.0b)
 	Vulnerability VulnerabilityAdapter // nil for a format without the vulnerability adapter (R-VULN-009, ADR-150)
+	ServeFacts    ServeFactsKeyer      // nil for a format whose serve check reads nothing besides the item (Q-ARCH-291)
+}
+
+// ServeFactsKeyer names, for a path of a repository, the rows the format's ServeCheck decides on, or the zero key when it
+// wants none (Q-ARCH-291). The item lookup of a download reads them in its own statement and returns them with the item as
+// ItemRef.Facts; ServeCheck computes the same key and decides on the facts only when they were read for it
+// (ServeFacts.For), so a route that did not pass the key stays correct and costs its own query. The types are those of the
+// leaf package internal/servefacts: ServeKey{Kind, Package, Version} with the kinds ServeNPMLocal (the tombstone of a local
+// npm version), ServeNPMRemote (the facts of a remote npm tarball, ServeNPMRemoteFacts) and ServeNuGetLocal (the version row
+// and the tombstone of a local NuGet version); ServeKind is the type of a kind. Every kind is the rows of one statement the
+// check ran before (NPMTombstoned, NPMRemoteTarballFacts, NuGetServeState).
+type ServeFactsKeyer interface {
+	ServeFactsKey(repo RepoRef, p Path) ServeKey
 }
 
 // VulnerabilityAdapter lets the core match stored versions against OSV advisories (vulnerability-scanning.md R-VULN-009).
@@ -4162,8 +4185,15 @@ Latencies are measured at the replica.
 | P-17 | Latency added by a Valkey outage, after the breaker has opened | p99 of P-1 and P-3 within 5 % of the baseline |
 
 Database budget per request, used to size P-1 to P-8:
-- local download: 1 query;
-- remote hit: 1 query;
+- local download: 1 query, the item lookup, which also reads the rows the format's serve-time check decides on (the
+  tombstone of npm and NuGet, the NuGet version row, Q-ARCH-291) and the verdict of the vulnerability scanning
+  ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-015);
+- remote hit: 1 query, the same lookup, which also reads whether the artifact's cache entry exists and, for npm, the facts
+  of the remote version (Q-ARCH-291) that the artifact gate (R-NPM-025, R-NPM-026, Q-NPM-13) and the serve check decide on; a hit
+  of a package whose document is expired or was validated before a restore revalidates the document first and costs the
+  statements of that revalidation besides;
+- file of a virtual repository: 1 query per member the resolution asks until one has the file (R-REPO-019), the last of them
+  being the hit above, so a file of the second member costs 2 (Q-ARCH-290);
 - computed local document: 1 query (`rev_seq`) when the rendition is cached;
 - virtual merge: 1 query for local `rev_seq` values, plus 1 per remote member;
 - token and policy checks: 0 queries while their caches are valid;
@@ -4189,6 +4219,10 @@ Measurement:
 
 Acceptance criteria:
 - The report of that run shows P-1 to P-17. A miss of a target in that run opens a regression issue.
+- The database budget per request is counted on the PostgreSQL log, per route (`test/integration/querybudget`,
+  `TestR_ARCH_027_ADownloadCostsOneStatement`): an npm tarball of a local repository, its raw view, an npm tarball of a
+  remote repository (hit), the same of the local and the remote member of a virtual repository, and the same five for NuGet,
+  each with the statements it ran and the budget above.
 
 ### R-ARCH-028 · Resource limits for untrusted package content
 Priority: **MVP** · Covers: trove-only
@@ -7834,6 +7868,99 @@ fact the leaf does not carry.
 
 **Applied in the spec:** [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-050 to R-REPO-059;
 [coverage/roadmap.md](../coverage/roadmap.md#phase-6b--remote-full-mirror) (WP6b.1 to WP6b.6).
+
+### Q-ARCH-290 · What does a download of a file of a virtual repository cost in statements?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a finding of the phase 6 work was that a download spent more statements than the budget of R-ARCH-027. The budget named a local download and a remote hit
+(1 each) and said nothing of a file of a virtual repository, whose resolution asks the members in order (R-REPO-019): the local members, then the
+caches of the remote members. Counted on the PostgreSQL log with `TestR_ARCH_027_ADownloadCostsOneStatement` (a virtual repository over one local and
+one remote member, the local member first), before the fix: a file of the local member 3 statements (npm: `GetLiveItem`, `NPMTombstoned` x2; NuGet:
+`GetLiveItem`, `NuGetServeState` x2), a file of the remote member 6 for npm (`GetLiveItem` x2, `ProxyEntryGet`, `NPMRemoteTarballFacts` x3) and 3 for NuGet
+(`GetLiveItem` x2, `ProxyEntryGet`). The local member's miss is one of them.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One statement per member the resolution asks (chosen) | Each tier is the one lookup of its member ([Q-ARCH-291](#q-arch-291--how-does-a-download-read-the-rows-its-serve-check-decides-on-without-a-statement-of-its-own)); the member that has the file is the budget's 1, and every member asked before it adds its miss | Holds for every member and every format with no change to the resolution; the number is exact: asked members | A file of the second member costs 2, of the third 3 |
+| (b) One statement for the whole walk | A lookup over the ids of all members, with the eligibility of each (pin rules, claims, exposure, the caller's grant per member) decided before it, and the remote members' entries and facts joined in | A virtual download costs 1 | The walk decides per member (R-REPO-019, R-AUTHZ-008) and a remote member may have to be fetched; a statement over all members moves that decision into SQL or reads rows the caller may not read; a large change of the resolution for the first-member case it does not help |
+| (c) A per-replica memory of "member has no such package" | Skip the miss of a local member from a cache | The miss costs nothing | A publish on any replica must be seen by the next request (read-your-writes, R-ARCH-012): a new kind of per-replica state with an invalidation area per package, for a statement that is an indexed lookup |
+
+**Choice:** (a). The budget of R-ARCH-027 reads: file of a virtual repository, 1 query per member the resolution asks until one has the file.
+Measured after the fix: npm and NuGet, the file in the local member 1, the file in the remote member (local member first) 2.
+
+**Rationale:** the miss at a local member is the answer to the question the resolution asks (does this member hold the file), and (a) asks it once
+per member. The cost that mattered, the same lookup repeated by the serve checks of a member that has the file, is gone: each tier's checks
+decide on the rows its own lookup read. Revisit when a profile of virtual artifact requests shows the misses of many local members, or a
+virtual repository has many members: then (b) for the local members only, whose rows share a table, is the next step.
+
+**Applied in the spec:** R-ARCH-027 (the database budget per request, the acceptance criterion). Code: `internal/formathost/virtual.go` (`tiers.RemoteCached`:
+`GateWith`). Tests: `TestR_ARCH_027_ADownloadCostsOneStatement` (the four virtual routes).
+
+### Q-ARCH-291 · How does a download read the rows its serve check decides on, without a statement of its own?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the serve-time check of a format (R-ARCH-008) decides on rows the item row does not carry: the tombstone of npm and NuGet versions, the
+NuGet version row, the facts of an npm remote version (the record of the version, the state of the package document's cache entry,
+`serveRemovedVersions`). Each was a statement of its own, run after the item lookup: `NPMTombstoned`, `NuGetServeState`, `NPMRemoteTarballFacts`
+(twice for a remote hit: the artifact gate and the serve check each read it). The phase 7 note of BETA.md names a per-replica cache of the immutable
+tarball facts as a way out.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The item lookup reads them (chosen) | `GetLiveItem` takes a `servefacts.Key` (kind, package, version) and returns the rows of that kind with the item; the format names the key (`ServeFactsKeyer`, `Capabilities.ServeFacts`), `ServeCheck` and the artifact gate (`FactsGate`, `RemoteCaps.Gate`) decide on `ItemRef.Facts` when they were read for their own key and ask the data port otherwise | 1 statement, no state between requests (R-ARCH-032), the tombstone is as current as the item; a route that passes no key stays correct | A shared statement carries three kinds of a format's rows; the contract grows by two optional interfaces and a field |
+| (b) A per-replica cache of the facts | A registered cache keyed by repository, package and version | No statement for a repeated download | The facts are not immutable: a tombstone (unpublish, a restore's replay), a removal mark (the upstream document changed), the currency of the package document (expiry, a restore) and `serveRemovedVersions` all change them. Each needs a change area, an invalidation in the write that changes it, and a row in the R-ARCH-032 table; a stale tombstone serves bytes that were withdrawn |
+| (c) One request-scoped memory of the first read | The first of the statements stores its result in the request; the later ones take it | No new statement text | The first statement of the request is still a statement of its own (the gate runs before the engine's lookup); a memory inside a request hides which read a decision rests on |
+
+**Choice:** (a). `internal/servefacts` (a leaf with no imports) holds `Key`, `Kind` (`npm_local`, `npm_remote`, `nuget_local`) and `Facts`; the facts carry the key
+they were read for and `Facts.For(key)` is the only way a check may use them. The kinds are the rows of the statements they replace, with the same
+conditions, so a decision on the facts equals the decision on the statement. The data-port statements stay as the fallback of every route that
+passes no key (fakes, the cache view of a format that does not name one).
+
+**Rationale:** the facts of a version are as mutable as the item they sit beside, and a download already reads the item from PostgreSQL every time
+(R-API-052); reading them in the same statement makes them exactly as current, which a cache of "immutable facts" would not. The key travels with the
+facts so that a route which looked up one version cannot serve on the facts of another. The contract change is additive (an optional interface, a field, a
+host method), so `ContractVersion` stays 1 (R-ARCH-025). Revisit when the statement's plan shows in a profile (the kinds not asked are
+`CASE` branches and laterals with a parameter condition) or when a format needs rows that are not found by repository, package and version.
+
+**Applied in the spec:** R-ARCH-008 (`ServeFactsKeyer`, `FactsGate`, `RemoteCaps.Gate`, `Capabilities.ServeFacts`), R-ARCH-027 (the database budget). Code:
+`internal/servefacts`, `internal/meta/postgres/queries/files.sql` (`GetLiveItem`), `internal/items` (`RepoRef.Facts`, `Item.Facts`),
+`internal/formats` (`ItemRef.Facts`, `RemoteFetcher.GateWith`), `internal/formats/npm/servecheck.go`, `remote.go`, `internal/formats/nuget/servecheck.go`,
+`internal/formathost` (`serveKeyOf`, `itemStore.Stat`, `remote.gateWith`, `FilesSeam.ServeFactsKey`), `internal/files/download.go`. Tests:
+`TestR_ARCH_027_TheServeFactsKeyNamesTheRowsOfTheCheck`, `TestR_ARCH_027_ALocalServeCheckDecidesOnTheFactsOfTheLookup`,
+`TestR_ARCH_027_ARemoteServeCheckDecidesOnTheFactsOfTheLookup`, `TestR_ARCH_027_TheGateDecidesOnTheFactsOfTheLookupAndReturnsThem`,
+`TestR_ARCH_027_TheNuGetServeFactsKeyNamesTheRowsOfTheCheck`, `TestR_ARCH_027_TheNuGetServeCheckDecidesOnTheFactsOfTheLookup`,
+`TestR_ARCH_027_ADownloadCostsOneStatement`.
+
+### Q-ARCH-292 · How does the cache entry of a remote hit join the item lookup?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a remote hit read the artifact's cache entry (`ProxyEntryGet`), then the item (`GetLiveItem`), then the facts of the format (Q-ARCH-291). The
+entry says that the item is a cache entry of this remote repository; the item carries the content.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The item lookup probes the entry (chosen) | `GetLiveItem` takes `entry_probe` and `entry_variant` and returns `entry_stored`: the entry exists at the item's path and is not marked gone. A hit is an item whose entry exists; with no item the engine asks `ProxyEntryGet` once, to tell a miss from an entry whose item is gone (the 404 it answered before) | 1 statement for the hit; the engine's steps and answers are unchanged | A miss costs two more statements (the host's read of the cached artifact before the gate, and the engine's own lookup with its entry check; before: the gate's facts and the entry), in front of an upstream fetch |
+| (b) `ProxyEntryGet` returns the item's columns | The entry statement joins the item and returns its row | The entry stays the first read | A second 30-column row type for the item, kept in step with `GetLiveItem` and the scanning's lateral join |
+| (c) Skip the entry: an item at the path is a hit | The entry is not read | 1 statement, simpler | An item that a local upload put at the path of a remote repository, or an item whose entry was invalidated, would be served as a cache hit; the entry is the cache's record of the item |
+
+**Choice:** (a). The artifact entries are never marked gone (`remote_cache_entries` has `CHECK (kind = 'metadata' OR upstream_gone_at IS NULL)`), so the
+condition on `upstream_gone_at` is a guard, not a rule that changes an answer. `formathost.remote.Artifact` reads the cached artifact first with
+`Engine.Cached`, gives its facts to the format's gate and hands the item to the engine as `Request.Hit`; the gate returns the facts the serve check is to
+use, which are the ones it read again after a revalidation, so a withdrawal that the revalidation brought is not served from facts read before it. A
+hit whose package document is expired, or was validated before a restore, costs the statements of that revalidation besides (one conditional request in one
+flight, Q-NPM-13).
+
+**Rationale:** (a) keeps the engine's decisions where they were and moves only where they are read. The extra statements of a miss are small against the
+upstream request it precedes (R-ARCH-027 P-6 is measured beyond upstream time and transfer). Revisit when a remote repository's miss path shows the
+statement in a profile.
+
+**Applied in the spec:** R-ARCH-027 (remote hit: 1 query). Code: `internal/proxy/artifact.go` (`lookupHit`, `serveItem`, `Cached`), `internal/proxy/types.go`
+(`Request.Facts`, `Request.Hit`), `internal/items` (`RepoRef.Entry`, `Item.EntryStored`), `internal/formathost/remote.go` (`Artifact`, `gateWith`, `GateWith`),
+`internal/formathost/virtual.go` (`tiers.RemoteCached`). Tests: `TestR_ARCH_027_ADownloadCostsOneStatement` (the remote hits), `TestR_ARCH_027_AnEntryWhoseItemIsGoneIsRefusedAndServedAgainWithIt`
+(the 404 of an entry without its item), the existing engine and format suites (the unchanged answers).
 
 ### Q-ARCH-293 · Where a wall-clock target of a functional test is enforced
 

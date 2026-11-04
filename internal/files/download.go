@@ -48,6 +48,9 @@ func (s *Service) Stat(ctx context.Context, c Caller, repoKey string, p reposito
 	}
 	ref := items.RepoOf(repo)
 	ref.Vuln = s.enforce.PolicyOf(repo) // the block of the version is read by the lookup itself (R-VULN-015)
+	if s.formats != nil {
+		ref.Facts = s.formats.ServeFactsKey(repo, p.Path) // and the rows the format's serve check decides on (R-ARCH-027)
+	}
 	it, found, err := s.items.Live(ctx, ref, p.Path)
 	if err != nil {
 		return Resolved{}, err

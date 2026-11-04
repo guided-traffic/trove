@@ -122,6 +122,14 @@ type RemoteAdapter interface {
 	UpstreamQuery(ctx context.Context, rc RemoteContext, q Query) (*http.Request, error)
 }
 
+// FactsGate is an optional interface of a [RemoteAdapter]: [RemoteAdapter.BeforeArtifact] for a caller that already holds the
+// rows the item lookup read for the artifact ([ItemRef.Facts]). The adapter decides on them when they were read for its own key
+// and reads them itself otherwise; it returns the facts the serve check is to use, which are the ones it read again after a
+// revalidation, so that a refusal the revalidation brought is not served from the facts read before it (R-ARCH-027, R-NPM-026).
+type FactsGate interface {
+	BeforeArtifactWith(ctx context.Context, h Host, rq *Request, p Path, have ServeFacts) (Digests, ServeFacts, error)
+}
+
 // Discoverer is an optional interface of a [RemoteAdapter]: the format's upstream addressing follows a
 // discovery document, such as the service index of NuGet (R-NUGET-014). Register reads it off the adapter
 // once ([RemoteCapabilities]).
@@ -173,6 +181,8 @@ type RemoteCaps struct {
 	// Mirror is the adapter's discovery of upstream packages; nil for a format whose remote repositories cannot be
 	// mirrors (R-REPO-050).
 	Mirror MirrorLister
+	// Gate decides on the rows the item lookup read for a cached artifact (R-ARCH-027, Q-ARCH-291).
+	Gate FactsGate
 }
 
 // RemoteCapabilities returns the capabilities Register recorded for a format; the zero value for an ID that
@@ -279,6 +289,10 @@ type RemoteFetcher interface {
 	// stale document may have to be revalidated first, Q-NPM-13, R-NPM-026). It is a method of
 	// the fetcher, so that a wrapper around a fetcher cannot drop the gate unnoticed.
 	Gate(ctx context.Context, rq *Request, p Path) error
+	// GateWith is Gate for a cached artifact whose item the caller read with the rows of [ServeFactsKeyer] (have): the
+	// adapter that implements [FactsGate] decides on them without a query. The facts returned are those the serve check of
+	// the artifact is to use ([ItemRef.Facts]); an adapter without the interface returns have.
+	GateWith(ctx context.Context, rq *Request, p Path, have ServeFacts) (ServeFacts, error)
 }
 
 // Query is one Volatile request a format passes through to an upstream: a package search.

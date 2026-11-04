@@ -174,7 +174,9 @@ flowchart TD
 `Cache-Control: private, max-age=31536000, immutable` on the status line of a 200, 206 or 304 (Q-NPM-28).
 
 `ServeCheck` ([servecheck.go](../../internal/formats/npm/servecheck.go)) runs for every stored item the core serves, `/files/` included. For a local repository it classifies the path and, for a tarball or a
-bundle of a version, asks `Store.Tombstoned`: a tombstoned or withheld version is the 404 of a missing resource. It keeps no state; a tombstone written on any replica refuses the next request on every other.
+bundle of a version, decides on the tombstone: a tombstoned or withheld version is the 404 of a missing resource. The item lookup of the download reads the tombstone in its own statement
+(`ServeFactsKey` names it, `ItemRef.Facts` carries it, [download-statements.md](download-statements.md)); `Store.Tombstoned` is the fallback of a route that passed no key. For a remote repository the same holds for the facts of
+the version (`Store.TarballFacts`), and `BeforeArtifactWith` ([remote.go](../../internal/formats/npm/remote.go)) is the gate on the facts of the lookup. It keeps no state; a tombstone written on any replica refuses the next request on every other.
 
 ## Dist-tags
 
@@ -384,7 +386,7 @@ complete tag map.
 | `LocalDocument`, `LocalVersion` | one statement each (`NPMLocalDocument`, `NPMLocalVersion`): `rev_seq`, `created_at`, `modified_at`, the tags, the versions that are neither trashed nor tombstoned with manifest, deprecation and publish time, the README of the version `latest` points to |
 | `DistTags` | the tags with their revision; found only when the document holds a version |
 | `LiveVersions` | under the row lock: the versions the document holds, in publish order |
-| `Tombstoned` | one lookup, for `ServeCheck` |
+| `Tombstoned` | one lookup, for `ServeCheck` when the item lookup did not read the tombstone with the item (R-ARCH-027) |
 | `ClearTombstone` | a restore: removes the tombstone when the stored version has the integrity it holds |
 | `AuditNames` | one statement (`NPMAuditNames`): per name of an audit body, the record of the forwarding remote, a package row or tombstone of any npm local repository, a claim of an npm local repository, a pin rule of the requesting virtual repository (R-NPM-038) |
 

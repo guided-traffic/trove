@@ -36,6 +36,7 @@ import (
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/repository"
+	"github.com/guided-traffic/trove/internal/servefacts"
 	"github.com/guided-traffic/trove/internal/vuln"
 )
 
@@ -137,7 +138,16 @@ type RepoRef struct {
 	// (Item.Block); the zero value is a repository that is not scanned and a caller that is no download. It never
 	// travels in a job: the job carries the reference it was queued with.
 	Vuln vuln.Policy `json:"-"`
+	// Facts names the rows the serve-time check of the format decides on; Live reads them with the item, in the same
+	// statement (R-ARCH-027, [servefacts]). The zero value reads none. Like Vuln it never travels in a job.
+	Facts servefacts.Key `json:"-"`
+	// Entry asks Live for the cache entry of a remote repository's artifact at the path, in the same statement
+	// (Item.EntryStored). Nil asks for none.
+	Entry *EntryProbe `json:"-"`
 }
+
+// EntryProbe names the cache entry [Store.Live] looks for beside the item: the variant of the entry at the item's path.
+type EntryProbe struct{ Variant string }
 
 // RepoOf converts a repository read model. The id of a repository is the decimal
 // text of its row; one that is not a number yields 0 and matches no item.

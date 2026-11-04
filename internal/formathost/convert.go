@@ -33,9 +33,18 @@ func digestsOf(d blob.Digests) formats.Digests {
 
 // itemOf converts an item row; the row itself rides in Handle so that Serve does
 // not read it again.
+// serveKeyOf is the key of the rows the serve check of a repository's format decides on for a path, the zero key for a format
+// without such rows (Capabilities.ServeFacts): the item lookup reads them in its own statement (R-ARCH-027).
+func serveKeyOf(repo formats.RepoRef, p formats.Path) formats.ServeKey {
+	if k := formats.CapabilitiesFor(repo.Format).ServeFacts; k != nil {
+		return k.ServeFactsKey(repo, p)
+	}
+	return formats.ServeKey{}
+}
+
 func itemOf(repo formats.RepoRef, it items.Item) formats.Item {
 	return formats.Item{
-		Ref:    formats.ItemRef{ID: it.ID, Repo: repo, Path: it.Path},
+		Ref:    formats.ItemRef{ID: it.ID, Repo: repo, Path: it.Path, Facts: it.Facts},
 		Folder: it.Kind == items.KindFolder, Size: it.Size, MediaType: it.MediaType, Modified: it.ModifiedAt,
 		Digests: formats.Digests{
 			SHA256: append([]byte(nil), it.Digest[:]...), SHA512: it.SHA512, SHA1: it.SHA1, MD5: it.MD5,

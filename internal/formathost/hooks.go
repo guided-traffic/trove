@@ -14,6 +14,7 @@ import (
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/packages"
 	"github.com/guided-traffic/trove/internal/repository"
+	"github.com/guided-traffic/trove/internal/servefacts"
 )
 
 // writerFor binds a package writer to tx for a format, and to rq when there is a
@@ -247,5 +248,10 @@ func (s *FilesSeam) ServeCheck(ctx context.Context, repo repository.Repository, 
 		return err
 	}
 	ref := repoRef(repo)
-	return f.ServeCheck(ctx, h, ref, formats.ItemRef{ID: it.ID, Repo: ref, Path: it.Path}, formats.ServeStored)
+	return f.ServeCheck(ctx, h, ref, formats.ItemRef{ID: it.ID, Repo: ref, Path: it.Path, Facts: it.Facts}, formats.ServeStored)
+}
+
+// ServeFactsKey implements [files.Formats]: the rows the format's ServeCheck decides on for a path, read by the item lookup.
+func (s *FilesSeam) ServeFactsKey(repo repository.Repository, path string) servefacts.Key {
+	return serveKeyOf(repoRef(repo), formats.Path{Path: path})
 }

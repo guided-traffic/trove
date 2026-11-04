@@ -23,6 +23,7 @@ formats.CacheStatus: field Stored bool
 formats.CacheStatus: field TTL time.Duration
 formats.Capabilities: field ItemsRestorer ItemsRestorer
 formats.Capabilities: field Remote RemoteCaps
+formats.Capabilities: field ServeFacts ServeFactsKeyer
 formats.Capabilities: field Vulnerability VulnerabilityAdapter
 formats.Class: alias catalog.Class
 formats.Client: field DisplayName string
@@ -96,6 +97,7 @@ formats.ExposureDimensions: field Tags bool
 formats.ExposureDimensions: field Versions bool
 formats.ExposureView: method Package(string) bool
 formats.ExposureView: method Version(string, string) bool
+formats.FactsGate: method BeforeArtifactWith(context.Context, Host, *Request, Path, ServeFacts) (Digests, ServeFacts, error)
 formats.FillDecision: type uint8
 formats.FillEvent: field Data any
 formats.FillEvent: field Digest [32]byte
@@ -183,6 +185,7 @@ formats.Item: field Modified time.Time
 formats.Item: field Ref ItemRef
 formats.Item: field Size int64
 formats.Item: field Version VersionID
+formats.ItemRef: field Facts ServeFacts
 formats.ItemRef: field ID int64
 formats.ItemRef: field Path string
 formats.ItemRef: field Repo RepoRef
@@ -295,6 +298,7 @@ formats.RemoteBase: method UpstreamQuery(context.Context, RemoteContext, Query) 
 formats.RemoteCaps: field Discovery Discoverer
 formats.RemoteCaps: field Fill FillInspector
 formats.RemoteCaps: field Mirror MirrorLister
+formats.RemoteCaps: field Gate FactsGate
 formats.RemoteContext: field Discovery any
 formats.RemoteContext: field Repo *repository.Repository
 formats.RemoteContext: field Settings json.RawMessage
@@ -314,6 +318,7 @@ formats.RemoteFetcher: method EnsureCurrent(context.Context, *Request, Path, str
 formats.RemoteFetcher: method EntryState(context.Context, *Request, Path) (EntryState, error)
 formats.RemoteFetcher: method Exchange(context.Context, *Request, Exchange) (*http.Response, error)
 formats.RemoteFetcher: method Gate(context.Context, *Request, Path) error
+formats.RemoteFetcher: method GateWith(context.Context, *Request, Path, ServeFacts) (ServeFacts, error)
 formats.RemoteFetcher: method Metadata(context.Context, *Request, Path, string) (*RemoteDocument, error)
 formats.RemoteFetcher: method Query(context.Context, *Request, Query) (*QueryResult, error)
 formats.RemovedItem: field Item ItemRef
@@ -379,7 +384,12 @@ formats.RouteKind: method String() string
 formats.RouteKind: method Valid() bool
 formats.RouteKind: method WrapsContent() bool
 formats.RouteKind: type uint8
+formats.ServeFacts: alias servefacts.Facts
+formats.ServeFactsKeyer: method ServeFactsKey(RepoRef, Path) ServeKey
+formats.ServeKey: alias servefacts.Key
+formats.ServeKind: alias servefacts.Kind
 formats.ServeMode: type uint8
+formats.ServeNPMRemoteFacts: alias servefacts.NPMRemoteFacts
 formats.SetupData: field Bastion bool
 formats.SetupData: field Endpoint string
 formats.SetupData: field RegistryURL string
@@ -537,6 +547,9 @@ formats.ReadRows: value = (repeated, place 2 of its group)
 formats.Remote: value = catalog.Remote
 formats.Revalidated: value = (repeated, place 1 of its group)
 formats.ServeMayRevalidate: value = (repeated, place 1 of its group)
+formats.ServeNPMLocal: value = servefacts.NPMLocal
+formats.ServeNPMRemote: value = servefacts.NPMRemote
+formats.ServeNuGetLocal: value = servefacts.NuGetLocal
 formats.ServeStored: value ServeMode = iota + 1 (place 0 of its group)
 formats.SetupPackageRef: value = "<package>"
 formats.SetupTokenRef: value = "${TROVE_TOKEN}"

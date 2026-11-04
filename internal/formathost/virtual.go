@@ -278,8 +278,17 @@ func (t tiers) RemoteCached(ctx context.Context, m virtual.Member, _ virtual.Des
 	}
 	// The format's marks apply to a cached artifact as well: a stale document is
 	// revalidated first and a withdrawn version is refused (Q-NPM-13, R-NPM-026).
-	if err := t.rq.Host.Remote().Gate(ctx, member, t.p); err != nil {
+	facts, err := t.rq.Host.Remote().GateWith(ctx, member, t.p, it.Ref.Facts)
+	if err != nil {
 		return nil, false, err
+	}
+	if facts.Refreshed {
+		// The gate asked the upstream after the lookup: read the artifact again, with its facts, before serving it.
+		if it, ok, err = t.rq.Host.Remote().Cached(ctx, member, t.p); err != nil || !ok {
+			return nil, false, err
+		}
+	} else {
+		it.Ref.Facts = facts // the serve check below decides on the facts the gate used
 	}
 	if ok, err := t.servable(ctx, it); !ok || err != nil {
 		return nil, false, err

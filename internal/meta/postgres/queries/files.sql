@@ -8,9 +8,16 @@
 
 -- name: GetLiveItem :many
 -- The item lookup of every download route. version_id names the stored version the item belongs to (0: none) and the
--- lateral join is the block of the vulnerability scanning (R-VULN-015): the finding that blocks the version in this
+-- lateral join blk is the block of the vulnerability scanning (R-VULN-015): the finding that blocks the version in this
 -- repository, read with the repository's policy as parameters so that a download costs no further query. enforce is false
 -- for a repository that is not scanned and for every caller that is no download; the join then reads nothing.
+--
+-- A download costs this one statement (R-ARCH-027), so the rows the serve-time check of the format decides on are read here
+-- too, for the key the caller names (internal/servefacts): facts_kind is '' for a caller that needs none, and the part of the
+-- statement of another kind reads nothing. The tombstone of npm and NuGet, the NuGet version row and the facts of an npm
+-- remote version are the statements NPMTombstoned, NuGetServeState and NPMRemoteTarballFacts, which the check still runs
+-- itself when the facts were not read for its key. entry_probe asks whether the cache entry of a remote repository's artifact
+-- exists at the item's path (variant entry_variant) and is not marked gone: the remote hit is the item and its entry.
 SELECT i.id, i.repo_id, i.path, i.parent_path, i.kind, i.blob_sha256, i.size, i.media_type,
        i.declared_sha256, i.declared_sha512, i.declared_sha1, i.declared_md5, i.declared_mismatch,
        i.explicit_folder, i.generated, i.upstream_url,
@@ -22,7 +29,30 @@ SELECT i.id, i.repo_id, i.path, i.parent_path, i.kind, i.blob_sha256, i.size, i.
        COALESCE(blk.id::text, '')::text AS block_finding_id,
        COALESCE(blk.advisory_id, '')::text AS block_advisory_id,
        COALESCE(blk.kind, '')::text AS block_kind,
-       COALESCE(blk.status, '')::text AS block_status
+       COALESCE(blk.status, '')::text AS block_status,
+       (CASE WHEN sqlc.arg(facts_kind)::text IN ('npm_local', 'npm_remote', 'nuget_local') THEN sqlc.arg(facts_kind)::text ELSE '' END)::text AS fact_kind,
+       (CASE sqlc.arg(facts_kind)::text
+            WHEN 'npm_local' THEN EXISTS (
+                SELECT 1 FROM npm_tombstones t
+                 WHERE t.repo_id = i.repo_id AND t.name = sqlc.arg(facts_package)::text AND t.version = sqlc.arg(facts_version)::text)
+            WHEN 'nuget_local' THEN EXISTS (
+                SELECT 1 FROM nuget_tombstone t
+                 WHERE t.repository_id = i.repo_id AND t.lower_id = sqlc.arg(facts_package)::text AND t.lower_version = sqlc.arg(facts_version)::text)
+            ELSE false END)::boolean AS fact_tombstoned,
+       (ngv.listed IS NOT NULL)::boolean AS fact_nuget_stored,
+       COALESCE(ngv.listed, false)::boolean AS fact_nuget_listed,
+       COALESCE(nf.known, false)::boolean AS fact_npm_known,
+       COALESCE(nf.listed, false)::boolean AS fact_npm_listed,
+       COALESCE(nf.integrity, '')::text AS fact_npm_integrity,
+       COALESCE(nf.shasum, '')::text AS fact_npm_shasum,
+       COALESCE(nf.doc_stored, false)::boolean AS fact_npm_doc_stored,
+       COALESCE(nf.doc_current, false)::boolean AS fact_npm_doc_current,
+       COALESCE(nf.gone_us, 0)::bigint AS fact_npm_gone_us,
+       COALESCE(nf.serve_removed, false)::boolean AS fact_npm_serve_removed,
+       (CASE WHEN sqlc.arg(entry_probe)::boolean THEN EXISTS (
+            SELECT 1 FROM remote_cache_entries e JOIN blobs eb ON eb.sha256 = e.blob_sha256
+             WHERE e.repo_id = i.repo_id AND e.path = i.path AND e.variant = sqlc.arg(entry_variant)::text AND e.upstream_gone_at IS NULL)
+            ELSE false END)::boolean AS entry_stored
   FROM items i
   LEFT JOIN blobs b ON b.sha256 = i.blob_sha256
   LEFT JOIN principal cp ON cp.id = i.created_by
@@ -35,6 +65,31 @@ SELECT i.id, i.repo_id, i.path, i.parent_path, i.kind, i.blob_sha256, i.size, i.
            AND (f.status = 'blocked' OR (f.kind = 'malicious' AND sqlc.arg(block_malicious)::boolean))
          ORDER BY (f.kind = 'malicious' AND sqlc.arg(block_malicious)::boolean) DESC, f.severity_rank DESC, f.advisory_id
          LIMIT 1) AS blk ON true
+  LEFT JOIN LATERAL (
+        SELECT nv.listed
+          FROM packages p
+          JOIN package_versions pv ON pv.package_id = p.id
+          JOIN nuget_version nv ON nv.version_id = pv.id
+         WHERE sqlc.arg(facts_kind)::text = 'nuget_local' AND p.repo_id = i.repo_id AND p.name = sqlc.arg(facts_package)::text
+           AND pv.version = sqlc.arg(facts_version)::text AND pv.trashed_at IS NULL
+         LIMIT 1) AS ngv ON true
+  LEFT JOIN LATERAL (
+        SELECT (v.version IS NOT NULL) AS known,
+               COALESCE(v.listed, false) AS listed,
+               COALESCE(v.integrity, '') AS integrity,
+               COALESCE(v.shasum, '') AS shasum,
+               (e.repo_id IS NOT NULL) AS doc_stored,
+               COALESCE((extract(epoch FROM e.upstream_gone_at) * 1000000)::bigint, 0) AS gone_us,
+               COALESCE(e.expires_at > clock_timestamp()
+                        AND e.validated_at > COALESCE((SELECT (s.value #>> '{}')::timestamptz FROM system_state s WHERE s.key = 'restored_at'), '-infinity'::timestamptz),
+                        false) AS doc_current,
+               COALESCE(r.config #>> '{npm,serveRemovedVersions}', '') = 'true' AS serve_removed
+          FROM repositories r
+          LEFT JOIN remote_cache_entries e
+                 ON e.repo_id = r.id AND e.path = sqlc.arg(facts_package)::text COLLATE "C" AND e.variant = 'full' AND e.kind = 'metadata'
+          LEFT JOIN npm_remote_versions v
+                 ON v.repo_id = r.id AND v.name = sqlc.arg(facts_package)::text AND v.version = sqlc.arg(facts_version)::text
+         WHERE sqlc.arg(facts_kind)::text = 'npm_remote' AND r.id = i.repo_id) AS nf ON true
  WHERE i.repo_id = sqlc.arg(repo_id)::bigint AND i.path = sqlc.arg(path)::text AND i.trashed_at IS NULL;
 
 -- name: LockLiveItem :many

@@ -15,6 +15,7 @@ import (
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/repository"
+	"github.com/guided-traffic/trove/internal/servefacts"
 )
 
 // Kind says what a request fetches: an immutable artifact or a metadata document
@@ -167,6 +168,12 @@ type Request struct {
 	MaxBytes int64
 	Adapter  Adapter
 	Caller   CallerFacts
+	// Facts names the rows the format's serve-time check decides on for the artifact; the lookup of the stored artifact reads
+	// them with the item, in the same statement (R-ARCH-027), and the item carries them to Serve.
+	Facts servefacts.Key
+	// Hit is the stored artifact of a lookup the caller made already ([Engine.Cached]) and has not changed since: the
+	// request then reads neither the cache entry nor the item again. The caller may replace Hit.Facts by facts it read again.
+	Hit *items.Item
 	// Serve serves a stored artifact; required for [Engine.Artifact].
 	Serve ServeFunc
 	// Priority is PriorityClient for a client's request (the zero value) and PriorityBackground for a mirror's pass

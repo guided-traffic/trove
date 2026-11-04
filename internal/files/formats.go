@@ -7,6 +7,7 @@ import (
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/repository"
+	"github.com/guided-traffic/trove/internal/servefacts"
 )
 
 // PathClass is what a format makes of a path of one of its repositories
@@ -52,6 +53,9 @@ type Formats interface {
 	// because of format state the item row does not carry (R-ARCH-008 "Serve-time
 	// check"). It reads the stored marks only and never contacts an upstream.
 	ServeCheck(ctx context.Context, repo repository.Repository, it items.Item) error
+	// ServeFactsKey names the rows ServeCheck decides on for a path of a repository, the zero key when it wants none: the item
+	// lookup reads them with the item, in the same statement, and ServeCheck finds them in items.Item.Facts (R-ARCH-027).
+	ServeFactsKey(repo repository.Repository, path string) servefacts.Key
 	// RawDeploy says whether /files/ deploys a file or a folder into a repository
 	// of the format: nil for a format whose protocol is /files/ itself (the generic
 	// format), else the refusal, 409 with the format's own way in (R-STOR-007,

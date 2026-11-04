@@ -5,6 +5,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
+	"github.com/guided-traffic/trove/internal/servefacts"
 	"github.com/guided-traffic/trove/internal/vuln"
 	"github.com/guided-traffic/trove/internal/vuln/advisory"
 )
@@ -52,16 +53,32 @@ type Item struct {
 	// decision on a download.
 	Block  vuln.BlockRow
 	Policy vuln.Policy
+	// Facts are the rows the lookup read for RepoRef.Facts (zero key: none). EntryStored is true when RepoRef.Entry was set and
+	// the cache entry of the artifact exists and is not marked gone.
+	Facts       servefacts.Facts
+	EntryStored bool
 }
 
 // itemFrom converts the row of GetLiveItem.
-func itemFrom(repoKey string, r q.GetLiveItemRow) Item {
+func itemFrom(repoKey string, key servefacts.Key, r q.GetLiveItemRow) Item {
 	it := Item{
 		ID: r.ID, RepoID: r.RepoID, Repository: repoKey, Path: r.Path, Kind: r.Kind,
 		DeclaredSHA256: r.DeclaredSha256, DeclaredSHA512: r.DeclaredSha512, DeclaredSHA1: r.DeclaredSha1, DeclaredMD5: r.DeclaredMd5,
 		DeclaredMismatch: r.DeclaredMismatch, Explicit: r.ExplicitFolder, Generated: r.Generated, UpstreamURL: r.UpstreamUrl.String,
 		CreatedAt: r.CreatedAt.Time.UTC(), ModifiedAt: r.ModifiedAt.Time.UTC(), UpdatedAt: r.UpdatedAt.Time.UTC(),
 		CreatedBy: r.CreatedByName, ModifiedBy: r.ModifiedByName, VersionID: r.VersionID,
+	}
+	it.EntryStored = r.EntryStored
+	// The statement says which kind it evaluated; facts for a kind it has no branch for would be all false, so they are not stamped
+	// with the key and the serve check reads the rows itself.
+	if !key.Zero() && string(key.Kind) == r.FactKind {
+		it.Facts = servefacts.Facts{
+			Key: key, Tombstoned: r.FactTombstoned, Stored: r.FactNugetStored, Listed: r.FactNugetListed,
+			NPMRemote: servefacts.NPMRemoteFacts{
+				Known: r.FactNpmKnown, Listed: r.FactNpmListed, Integrity: r.FactNpmIntegrity, Shasum: r.FactNpmShasum,
+				DocStored: r.FactNpmDocStored, DocCurrent: r.FactNpmDocCurrent, DocGoneUs: r.FactNpmGoneUs, ServeRemoved: r.FactNpmServeRemoved,
+			},
+		}
 	}
 	if r.BlockFindingID != "" {
 		it.Block = vuln.BlockRow{

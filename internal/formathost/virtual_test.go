@@ -194,6 +194,11 @@ func (f *fakeRemote) Gate(_ context.Context, rq *formats.Request, _ formats.Path
 	return f.gateErr
 }
 
+func (f *fakeRemote) GateWith(_ context.Context, rq *formats.Request, _ formats.Path, have formats.ServeFacts) (formats.ServeFacts, error) {
+	f.gatedFor = rq.Repo.Key
+	return have, f.gateErr
+}
+
 func (f *fakeRemote) Cached(_ context.Context, rq *formats.Request, p formats.Path) (formats.Item, bool, error) {
 	f.cachedFor = rq.Repo.Key
 	return formats.Item{Ref: formats.ItemRef{Repo: formats.RepoRef{Key: rq.Repo.Key}, Path: p.Path}}, f.cachedErr == nil, f.cachedErr

@@ -17,6 +17,7 @@ import (
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 	"github.com/guided-traffic/trove/internal/repository"
+	"github.com/guided-traffic/trove/internal/servefacts"
 	"github.com/guided-traffic/trove/internal/vuln/enforce"
 )
 
@@ -42,16 +43,17 @@ func (e *Engine) Artifact(ctx context.Context, rq Request, w http.ResponseWriter
 	if blocked, err := e.goneGate(ctx, rq); err != nil || blocked != nil {
 		return firstError(err, blocked)
 	}
-	en, found, err := e.getEntry(ctx, rem.id, rq.Path, rq.Variant)
+	it, state, err := e.lookupHit(ctx, rq, true)
 	if err != nil {
 		return err
 	}
-	if found && en.Gone() {
-		found = false
-	}
-	if found { // step 4: an artifact entry is served
+	switch state {
+	case hitStored: // step 4: an artifact entry is served
 		e.m.lookup(rem.Repo.Key, Artifact, resultHit)
-		return e.serveStored(ctx, rq, w, CacheStatus{Hit: true, TTL: -1}, &en)
+		return e.serveItem(ctx, rq, w, CacheStatus{Hit: true, TTL: -1}, it, true)
+	case hitEntryOnly:
+		e.m.lookup(rem.Repo.Key, Artifact, resultHit)
+		return errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist.")
 	}
 	// Step 5.
 	switch rq.Mode {
@@ -138,28 +140,74 @@ func (e *Engine) artifactAnswer(ctx context.Context, rq Request, st *reqState, w
 		if !st.collapsed {
 			cs = CacheStatus{Forwarded: "uri-miss", FwdStatus: http.StatusOK, Stored: true}
 		}
-		return e.serveStored(ctx, rq, w, cs, nil)
+		return e.serveStored(ctx, rq, w, cs)
 	}
 	return errs.E(errs.Unavailable, errs.CodeObjectStoreUnavail,
 		"The artifact could not be stored and a ranged request cannot be answered from the transfer; retry.", errs.WithRetryAfter(5*time.Second))
 }
 
-// serveStored serves the item of a stored artifact entry with the status header. en
-// is the entry the request read when it served from the cache: the announced digests
-// are then compared with the stored ones (R-REPO-041).
-func (e *Engine) serveStored(ctx context.Context, rq Request, w http.ResponseWriter, cs CacheStatus, en *entry) error {
-	it, found, err := e.o.Items.Live(ctx, e.liveRef(rq.Remote.Repo), rq.Path)
+// serveStored serves the item a fill stored, with the status header.
+func (e *Engine) serveStored(ctx context.Context, rq Request, w http.ResponseWriter, cs CacheStatus) error {
+	it, found, err := e.o.Items.Live(ctx, e.liveRef(rq.Remote.Repo, rq.Facts), rq.Path)
 	if err != nil {
 		return err
 	}
 	if !found {
 		return errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist.")
 	}
-	if en != nil {
+	return e.serveItem(ctx, rq, w, cs, it, false)
+}
+
+// serveItem serves the item of a stored artifact with the status header. cached says the request read the item from the cache:
+// the announced digests are then compared with the stored ones (R-REPO-041).
+func (e *Engine) serveItem(ctx context.Context, rq Request, w http.ResponseWriter, cs CacheStatus, it items.Item, cached bool) error {
+	if cached {
 		e.checkAnnounced(ctx, rq, it)
 	}
 	w.Header().Set("Cache-Status", cs.Header())
 	return rq.Serve(ctx, w, it)
+}
+
+// hitState is what the lookup of a cached artifact found.
+type hitState uint8
+
+const (
+	// hitNone: no cache entry, or no item for it to serve with: the request misses.
+	hitNone hitState = iota
+	// hitStored: the cache entry and its item.
+	hitStored
+	// hitEntryOnly: the entry exists and the item it names does not.
+	hitEntryOnly
+)
+
+// lookupHit reads the cached artifact of a request in one statement (R-ARCH-027): the item, whether its cache entry exists, the
+// verdict of the vulnerability scanning and the rows the format's serve check decides on all come with the item lookup. Only a
+// path that holds no item asks for the entry itself, to tell a miss from an entry whose item is gone (an answer only the request
+// that serves needs: asEntry). A caller that read the artifact already hands it in as rq.Hit.
+func (e *Engine) lookupHit(ctx context.Context, rq Request, asEntry bool) (items.Item, hitState, error) {
+	if rq.Hit != nil {
+		return *rq.Hit, hitStored, nil
+	}
+	ref := e.liveRef(rq.Remote.Repo, rq.Facts)
+	ref.Entry = &items.EntryProbe{Variant: rq.Variant}
+	it, found, err := e.o.Items.Live(ctx, ref, rq.Path)
+	if err != nil {
+		return items.Item{}, hitNone, err
+	}
+	if found {
+		if it.EntryStored {
+			return it, hitStored, nil
+		}
+		return items.Item{}, hitNone, nil
+	}
+	if !asEntry {
+		return items.Item{}, hitNone, nil
+	}
+	en, entryFound, err := e.getEntry(ctx, rq.Remote.id, rq.Path, rq.Variant)
+	if err != nil || !entryFound || en.Gone() {
+		return items.Item{}, hitNone, err
+	}
+	return items.Item{}, hitEntryOnly, nil
 }
 
 // Cached reads the cache tier of an artifact and never contacts the upstream. The
@@ -168,23 +216,21 @@ func (e *Engine) Cached(ctx context.Context, rq Request) (items.Item, bool, erro
 	if err := e.validate(rq, Artifact); err != nil {
 		return items.Item{}, false, err
 	}
-	rem := rq.Remote
 	if gone, err := e.packageGone(ctx, rq); err != nil || gone {
 		return items.Item{}, false, err
 	}
-	en, found, err := e.getEntry(ctx, rem.id, rq.Path, rq.Variant)
-	if err != nil || !found || en.Gone() {
-		return items.Item{}, false, err
-	}
-	return e.o.Items.Live(ctx, e.liveRef(rem.Repo), rq.Path)
+	it, state, err := e.lookupHit(ctx, rq, false)
+	return it, state == hitStored, err
 }
 
 // liveRef is the reference a stored artifact is read with: the repository and its download policy, so that the lookup reads
-// the blocking finding of the artifact's version in the same statement (R-VULN-015). The verdict is applied where the item
-// is served (the host's Serve), for the remote hit, the cache view and the tiers of a virtual repository alike.
-func (e *Engine) liveRef(r repository.Repository) items.RepoRef {
+// the blocking finding of the artifact's version in the same statement (R-VULN-015), and the key of the rows the format's
+// serve check decides on (R-ARCH-027). The verdict is applied where the item is served (the host's Serve), for the remote hit,
+// the cache view and the tiers of a virtual repository alike.
+func (e *Engine) liveRef(r repository.Repository, facts servefacts.Key) items.RepoRef {
 	ref := items.RepoOf(r)
 	ref.Vuln = e.o.Enforce.PolicyOf(r)
+	ref.Facts = facts
 	return ref
 }
 

@@ -170,6 +170,7 @@ func (s itemStore) Stat(ctx context.Context, repo formats.RepoRef, p formats.Pat
 	if err != nil {
 		return formats.Item{}, false, err
 	}
+	ref.Facts = serveKeyOf(repo, p)
 	it, found, err := s.h.o.Items.Live(ctx, ref, p.Path)
 	if err != nil {
 		return formats.Item{}, false, err
@@ -245,6 +246,7 @@ func (s itemStore) row(ctx context.Context, it formats.Item) (items.Item, error)
 	if err != nil {
 		return items.Item{}, err
 	}
+	ref.Facts = serveKeyOf(it.Ref.Repo, formats.Path{Path: it.Ref.Path})
 	row, found, err := s.h.o.Items.Live(ctx, ref, it.Ref.Path)
 	if err != nil {
 		return items.Item{}, err

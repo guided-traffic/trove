@@ -50,13 +50,18 @@ func (s *Store) Live(ctx context.Context, repo RepoRef, path string) (it Item, f
 }
 
 func liveItem(ctx context.Context, qs *q.Queries, repo RepoRef, path string) (Item, bool, error) {
-	rows, err := qs.GetLiveItem(ctx, q.GetLiveItemParams{
+	prm := q.GetLiveItemParams{
 		RepoID: repo.ID, Path: path, Enforce: repo.Vuln.QueryEnforce(), BlockMalicious: repo.Vuln.QueryBlockMalicious(),
-	})
+		FactsKind: string(repo.Facts.Kind), FactsPackage: repo.Facts.Package, FactsVersion: repo.Facts.Version,
+	}
+	if repo.Entry != nil {
+		prm.EntryProbe, prm.EntryVariant = true, repo.Entry.Variant
+	}
+	rows, err := qs.GetLiveItem(ctx, prm)
 	if err != nil || len(rows) == 0 {
 		return Item{}, false, err
 	}
-	it := itemFrom(repo.Key, rows[0])
+	it := itemFrom(repo.Key, repo.Facts, rows[0])
 	it.Policy = repo.Vuln
 	return it, true, nil
 }

@@ -4,8 +4,6 @@ package vulnblock
 
 import (
 	"fmt"
-	"os/exec"
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -13,49 +11,6 @@ import (
 
 	"github.com/guided-traffic/trove/test/integration/testenv"
 )
-
-// The statements of a download, counted from the PostgreSQL log: the test turns log_statement on for its own database (every
-// test has a database of its own, so no other test's statement is in the window) before its replicas connect, and reads the
-// container's log between two instants. A statement is counted by its sqlc name.
-
-var statementLine = regexp.MustCompile(`(?:statement|execute [^:]*): (.*)$`)
-
-// statementsSince returns the statements the database logged since an instant, without the transaction control.
-func statementsSince(t *testing.T, at time.Time) []string {
-	t.Helper()
-	out, err := exec.Command("docker", "logs", "--since", at.UTC().Format(time.RFC3339Nano), "trove-it-postgres").CombinedOutput()
-	if err != nil {
-		t.Fatalf("docker logs: %v\n%s", err, out)
-	}
-	var stmts []string
-	for _, line := range strings.Split(string(out), "\n") {
-		m := statementLine.FindStringSubmatch(line)
-		if m == nil {
-			continue
-		}
-		s := strings.TrimSpace(m[1])
-		switch strings.ToUpper(strings.Fields(s + " x")[0]) {
-		case "BEGIN", "COMMIT", "ROLLBACK", "SET", "RESET", "SHOW", "DISCARD", "DEALLOCATE":
-			continue
-		}
-		stmts = append(stmts, s)
-	}
-	return stmts
-}
-
-// nameOf is the sqlc name of a statement ("-- name: GetLiveItem :many"), or its first words.
-func nameOf(s string) string {
-	if i := strings.Index(s, "-- name: "); i >= 0 {
-		if f := strings.Fields(s[i+len("-- name: "):]); len(f) > 0 {
-			return f[0]
-		}
-	}
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) > 40 {
-		s = s[:40]
-	}
-	return s
-}
 
 // downloadStatements runs n downloads of a path against a replica and returns the statements the window logged, by name.
 func downloadStatements(t *testing.T, e *env, r *testenv.Replica, path string, n int) map[string]int {
@@ -72,8 +27,8 @@ func downloadStatements(t *testing.T, e *env, r *testenv.Replica, path string, n
 	}
 	time.Sleep(300 * time.Millisecond)
 	counts := map[string]int{}
-	for _, s := range statementsSince(t, start.Add(-100*time.Millisecond)) {
-		name := nameOf(s)
+	for _, s := range testenv.StatementsSince(t, start.Add(-100*time.Millisecond)) {
+		name := testenv.StatementName(s)
 		counts[name]++
 		if strings.Contains(s, "vuln_") && name != "GetLiveItem" {
 			t.Errorf("a statement of the scanning's tables runs on a download: %s", name)
@@ -132,22 +87,13 @@ func statementsPerDownload(t *testing.T, e *env, on, off *testenv.Replica, path 
 	t.Logf("statements per download: %.2f with scanning, %.2f without\n%s", float64(sum(withScan))/n, float64(sum(without))/n, describe(withScan))
 }
 
-// logStatements turns the statement log on for the database of a test; replicas started after it log their statements.
-func logStatements(t *testing.T, e *env) {
-	t.Helper()
-	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skip("docker is not available: the statements are counted from the PostgreSQL log")
-	}
-	e.st.Exec("ALTER DATABASE " + e.st.Database() + " SET log_statement = 'all'")
-}
-
 // R-VULN-015 (R-ARCH-027): scanning adds no query to a download. One replica scans (a dismissed and a resolved finding exist,
 // so the lateral join runs and skips them) and one does not (vulnerabilities.enabled false); both serve the same stored
 // versions of one database, and the statements the log shows per download are the same: the verdict is read by the item
 // lookup, not by a query of its own.
 func TestR_VULN_015_ScanningAddsNoQueryToADownload(t *testing.T) {
 	e := newEnv(t, options{})
-	logStatements(t, e)
+	e.st.LogStatements(t)
 	on := e.replica("scan-on")
 	off := e.replica("scan-off", "TROVE_VULNERABILITIES_ENABLED=false")
 	e.publish(on, rNPM, mal, "1.0.0")
@@ -166,7 +112,7 @@ func TestR_VULN_015_ScanningAddsNoQueryToADownload(t *testing.T) {
 // The same for the remote hit, which reads the cache entry, the item and the format's facts: the verdict joins the item lookup.
 func TestR_VULN_015_ScanningAddsNoQueryToARemoteHit(t *testing.T) {
 	e := newEnv(t, options{})
-	logStatements(t, e)
+	e.st.LogStatements(t)
 	on := e.replica("scan-on")
 	off := e.replica("scan-off", "TROVE_VULNERABILITIES_ENABLED=false")
 	if a := e.do(on, "GET", "/api/npm/"+rRemote+"/"+e.pkg, e.tokReader); a.Status != 200 {

@@ -20,18 +20,22 @@ import (
 // of its own (R-ARCH-032): a removal that committed on any replica refuses the next
 // request on every other, and a loss of Valkey's data changes nothing.
 func (f *Format) ServeCheck(ctx context.Context, h formats.Host, repo formats.RepoRef, it formats.ItemRef, _ formats.ServeMode) error {
-	if repo.Class != formats.Local {
+	key := f.ServeFactsKey(repo, formats.Path{Path: it.Path})
+	if key.Zero() {
 		return nil
 	}
-	info := f.Classify(formats.Path{Path: it.Path})
-	if info.Kind != formats.Content || info.Package == "" || info.Version == "" {
+	// The item lookup of the download read these rows with the item when the route asked for them (R-ARCH-027).
+	if it.Facts.For(key) {
+		if it.Facts.Tombstoned || !it.Facts.Stored {
+			return errNoSuchResource()
+		}
 		return nil
 	}
 	st, err := storeOf(h.FormatData(ID))
 	if err != nil {
 		return err
 	}
-	state, err := st.ServeState(ctx, repo.ID, info.Package, info.Version)
+	state, err := st.ServeState(ctx, repo.ID, key.Package, key.Version)
 	if err != nil {
 		return err
 	}
@@ -40,3 +44,19 @@ func (f *Format) ServeCheck(ctx context.Context, h formats.Host, repo formats.Re
 	}
 	return nil
 }
+
+// ServeFactsKey implements [formats.ServeFactsKeyer]: the rows ServeCheck decides on for a path of a local repository, which the
+// item lookup of the download reads with the item, so that the check costs no statement of its own (R-ARCH-027). The zero key
+// is a path ServeCheck lets through, and a class it does not check.
+func (f *Format) ServeFactsKey(repo formats.RepoRef, p formats.Path) formats.ServeKey {
+	if repo.Class != formats.Local {
+		return formats.ServeKey{}
+	}
+	info := f.Classify(p)
+	if info.Kind != formats.Content || info.Package == "" || info.Version == "" {
+		return formats.ServeKey{}
+	}
+	return formats.ServeKey{Kind: formats.ServeNuGetLocal, Package: info.Package, Version: info.Version}
+}
+
+var _ formats.ServeFactsKeyer = (*Format)(nil)

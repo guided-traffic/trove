@@ -220,7 +220,9 @@ consult only the members the caller can read, which is safe, but would not refus
 
 `Artifact(ctx, caller, plan, tiers, w)`: local members in order, then the caches of the remote members, then the upstreams of the
 remote members with `MayFill`. A stored item that the member's format withholds (`ServeCheck` answers not found: a tombstoned
-version) is a miss of its tier in the bridge's tiers ([virtual.go](../../internal/formathost/virtual.go), `tiers.servable`; Q-REPO-117).
+version) is a miss of its tier in the bridge's tiers ([virtual.go](../../internal/formathost/virtual.go), `tiers.servable`; Q-REPO-117). Each tier costs one statement
+(the item lookup of the member, which carries the check's rows; `Cached` and `GateWith` for a remote member), so a file of the second member costs two ([Q-ARCH-290](../spec/architecture.md#q-arch-290--what-does-a-download-of-a-file-of-a-virtual-repository-cost-in-statements),
+[download-statements.md](download-statements.md)).
 The first hit is served with `Trove-Resolved-From: <member>` (never on an endpoint with rules). A member
 the caller may not fill is not consulted in the third tier; when the reason is the endpoint's `cache_fill: false`
 (`Subject.Endpoint != "" && !Subject.CacheFill`), `Options.FillRefused` counts it in `trove_endpoint_cache_fill_refused_total`, the remote

@@ -178,24 +178,39 @@ func (a remoteAdapter) Rewrite(_ context.Context, _ formats.RemoteContext, p for
 // stored marks decide, as stale serving does. The cache view never contacts the
 // upstream.
 func (a remoteAdapter) BeforeArtifact(ctx context.Context, h formats.Host, rq *formats.Request, p formats.Path) (formats.Digests, error) {
+	d, _, err := a.BeforeArtifactWith(ctx, h, rq, p, formats.ServeFacts{})
+	return d, err
+}
+
+var _ formats.FactsGate = remoteAdapter{}
+
+// BeforeArtifactWith is [remoteAdapter.BeforeArtifact] for a caller that holds the rows the item lookup of the cached tarball
+// read (have): they are the facts of the gate when they were read for this tarball, and the data port is asked otherwise. The
+// facts returned are the ones the serve check of the tarball is to use: those after the revalidation, when there was one.
+func (a remoteAdapter) BeforeArtifactWith(ctx context.Context, h formats.Host, rq *formats.Request, p formats.Path, have formats.ServeFacts) (formats.Digests, formats.ServeFacts, error) {
 	n, document, err := a.target(p)
 	if err != nil || document {
-		return formats.Digests{}, err
+		return formats.Digests{}, have, err
 	}
 	version, ok := VersionOfFile(n, lastSegment(p.Path), tarballSuffix)
 	if !ok {
-		return formats.Digests{}, errs.E(errs.NotFound, errs.CodeNotFound, "The resource does not exist.")
+		return formats.Digests{}, have, errs.E(errs.NotFound, errs.CodeNotFound, "The resource does not exist.")
 	}
 	st, err := storeOf(h.FormatData(ID))
 	if err != nil {
-		return formats.Digests{}, err
+		return formats.Digests{}, have, err
 	}
 	repo := rq.RepoRef()
-	facts, err := st.TarballFacts(ctx, repo.ID, n.String(), version)
-	if err != nil {
-		return formats.Digests{}, err
+	key := formats.ServeKey{Kind: formats.ServeNPMRemote, Package: n.String(), Version: version}
+	var facts rows.TarballFacts
+	if have.For(key) {
+		facts = tarballFactsOf(have)
+	} else if facts, err = st.TarballFacts(ctx, repo.ID, key.Package, key.Version); err != nil {
+		return formats.Digests{}, have, err
 	}
+	refreshed := false
 	if !rq.CacheView && (!facts.Known || !facts.DocStored || !facts.DocCurrent) {
+		refreshed = true
 		outcome := "revalidated"
 		_, _, rerr := h.Remote().EnsureCurrent(ctx, rq, formats.Path{Path: n.String()}, documentVariant)
 		switch {
@@ -203,25 +218,27 @@ func (a remoteAdapter) BeforeArtifact(ctx context.Context, h formats.Host, rq *f
 		case facts.Known:
 			outcome = "unreachable"
 		default:
-			return formats.Digests{}, rerr
+			return formats.Digests{}, have, rerr
 		}
 		a.f.replicaOf(h).met.revalidation(repo.Key, outcome)
-		if facts, err = st.TarballFacts(ctx, repo.ID, n.String(), version); err != nil {
-			return formats.Digests{}, err
+		if facts, err = st.TarballFacts(ctx, repo.ID, key.Package, key.Version); err != nil {
+			return formats.Digests{}, have, err
 		}
 	}
+	current := serveFactsOf(key, facts)
+	current.Refreshed = refreshed
 	if err := refuseRemoved(facts); err != nil {
-		return formats.Digests{}, err
+		return formats.Digests{}, current, err
 	}
 	if !facts.Known {
-		return formats.Digests{}, errs.E(errs.NotFound, errs.CodeNotFound, "The resource does not exist.")
+		return formats.Digests{}, current, errs.E(errs.NotFound, errs.CodeNotFound, "The resource does not exist.")
 	}
 	// The sha512 of dist.integrity decides; dist.shasum (SHA-1) only when the document has none
 	// (R-NPM-025). A tarball is not refused for a legacy shasum a stronger digest outvotes.
 	if sum := remote.SHA512(facts.Integrity); sum != nil {
-		return formats.Digests{SHA512: sum}, nil
+		return formats.Digests{SHA512: sum}, current, nil
 	}
-	return formats.Digests{SHA1: remote.SHA1(facts.Shasum)}, nil
+	return formats.Digests{SHA1: remote.SHA1(facts.Shasum)}, current, nil
 }
 
 // refuseRemoved is the rule of R-NPM-026: with serveRemovedVersions off, a version the
