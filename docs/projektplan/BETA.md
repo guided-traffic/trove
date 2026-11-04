@@ -850,7 +850,8 @@ The phase comes before phase 6b, so that the mirror's background passes and its 
 areas.
 
 - 🟢 Principle of the cut (ADR-153) and the network-policy rule (ADR-154)
-- ⚪ The roles of the cut: which task areas, which route families and queues each serves (proposed to the owner)
+- 🟢 The roles of the cut: `api`, `packages`, `fetch` and `worker`, variants as pools
+  ([ADR-155](../decisions.md#adr-155--four-roles-api-packages-fetch-and-worker-variants-are-pools))
 - ⚪ The fetch service: which upstream contacts go through it, the internal API over mutual TLS, streaming of a miss,
   collapse and client-first priority in one place, its drain
 - ⚪ Specification rewritten: INV-2, R-ARCH-001, R-HA-002, R-HA-062 and R-HA-042 (its egress part, Q-HA-10 and H-41
