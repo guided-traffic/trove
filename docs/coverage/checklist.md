@@ -9,13 +9,13 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 432 of 689 spec requirements are implemented: a passing test names them and no
+**Status.** 434 of 689 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 704 specified (334 of them implemented), 1,535 open.
+**Totals.** 2,239 catalog features on 60 pages: 704 specified (335 of them implemented), 1,535 open.
 689 spec requirements: 546 cover catalog features, 143 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
@@ -38,7 +38,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 | 14 |
 | [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 | 14 |
 | [Retention, cleanup and archiving](#retention-cleanup-and-archiving-ret) | `RET` | 42 | – | 26 | 16 | 0 |
-| [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 28 |
+| [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 29 |
 | [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 43 | 57 | 20 |
 | [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 26 | 56 | 2 |
 | [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | 2 of 2 | 2 | 68 | 2 |
@@ -877,7 +877,7 @@ Catalog page: [retention-and-cleanup.md](../features/retention-and-cleanup.md) �
 Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specified by priority: MVP 49 of 49 · P1 11 of 14 · P2 1 of 10 · Later 0 of 3 · Out of scope 0 of 3
 
 <details>
-<summary>79 features: 61 specified, 18 open, 28 implemented</summary>
+<summary>79 features: 61 specified, 18 open, 29 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -895,7 +895,7 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 | HA-012 | Single client entry point with path-based routing | MVP | implemented | [R-ARCH-005](../spec/architecture.md) (implemented), [R-HA-037](../spec/ha-and-helm.md) (implemented) |
 | HA-013 | Internal service registry and health-gated routing | Later | open | – |
 | HA-014 | Availability-zone affinity for internal routing | P2 | open | – |
-| HA-015 | Components deployed as separately scaled workloads | P1 | specified | [R-ARCH-001](../spec/architecture.md) (implemented), [R-HA-002](../spec/ha-and-helm.md) (implemented), [R-HA-062](../spec/ha-and-helm.md) |
+| HA-015 | Components deployed as separately scaled workloads | P1 | implemented | [R-ARCH-001](../spec/architecture.md) (implemented), [R-HA-002](../spec/ha-and-helm.md) (implemented), [R-HA-062](../spec/ha-and-helm.md) (implemented) |
 | HA-016 | Cluster encryption key | MVP | implemented | [R-API-049](../spec/api-and-ui.md) (implemented), [R-ARCH-021](../spec/architecture.md) (implemented), [R-HA-027](../spec/ha-and-helm.md) (implemented) |
 | HA-017 | Service trust key provisioning and rotation | Out of scope | open | – |
 | HA-018 | Internal TLS with a built-in certificate authority | P2 | implemented | [R-ARCH-035](../spec/architecture.md) (implemented), [R-HA-063](../spec/ha-and-helm.md) (implemented) |
@@ -956,7 +956,7 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 | HA-077 | Container installation without Kubernetes | P1 | open | – |
 | HA-078 | Host installation from OS packages, archives and playbooks | P2 | open | – |
 | HA-079 | Single-host evaluation installer | P2 | open | – |
-| HA-069 | Rolling upgrade without downtime | MVP | specified | [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-019](../spec/ha-and-helm.md) (implemented), [R-HA-020](../spec/ha-and-helm.md), [R-HA-064](../spec/ha-and-helm.md) |
+| HA-069 | Rolling upgrade without downtime | MVP | specified | [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-019](../spec/ha-and-helm.md) (implemented), [R-HA-020](../spec/ha-and-helm.md), [R-HA-064](../spec/ha-and-helm.md) (implemented) |
 | HA-070 | Upgrade preparation | MVP | specified | [R-HA-021](../spec/ha-and-helm.md) |
 | HA-071 | Uninstall and data cleanup | MVP | specified | [R-HA-048](../spec/ha-and-helm.md) |
 | HA-072 | License installation and license gating of clustering | Out of scope | open | – |
@@ -1044,7 +1044,7 @@ Catalog page: [operations-and-monitoring.md](../features/operations-and-monitori
 | OPS-070 | Package metadata re-index | P2 | specified | [R-OPS-022](../spec/operations-and-observability.md) |
 | OPS-071 | Maven index calculation | P2 | open | – |
 | OPS-072 | Upgrade compatibility policy | MVP | specified | [R-ARCH-025](../spec/architecture.md) (implemented), [R-HA-021](../spec/ha-and-helm.md) |
-| OPS-073 | Rolling upgrade of a cluster | MVP | specified | [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-020](../spec/ha-and-helm.md), [R-HA-064](../spec/ha-and-helm.md) |
+| OPS-073 | Rolling upgrade of a cluster | MVP | specified | [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-020](../spec/ha-and-helm.md), [R-HA-064](../spec/ha-and-helm.md) (implemented) |
 | OPS-074 | Schema and data migrations on upgrade | MVP | implemented | [R-ARCH-016](../spec/architecture.md) (implemented), [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-018](../spec/ha-and-helm.md) (implemented), [R-HA-022](../spec/ha-and-helm.md) (implemented) |
 | OPS-075 | Migration from another repository manager | P2 | open | – |
 | OPS-076 | Signed release artifacts | P1 | open | – |

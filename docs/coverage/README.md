@@ -17,7 +17,7 @@ regenerated.
 <!-- coverage-gen:begin headline -->
 | Number | Value | Kind |
 |---|---|---|
-| **Implemented** | **14.9%** (334 of 2,239 catalog features) | measured from passing tests that name requirements (Q-ROAD-4) |
+| **Implemented** | **15.0%** (335 of 2,239 catalog features) | measured from passing tests that name requirements (Q-ROAD-4) |
 | **MVP features covered by spec requirements** | **100%** (394 of 394) | measured from `Covers:` lines |
 | P1 features covered by spec requirements | 56.4% (290 of 514) | measured from `Covers:` lines |
 | In-scope features covered (MVP, P1, P2, Later) | 32.5% (704 of 2,167) | measured from `Covers:` lines |
@@ -52,11 +52,11 @@ see [Honesty notes](#honesty-notes).
 | Priority | Features | Specified | Open | Specified share | Covered by an MVP requirement | Implemented |
 |---|---:|---:|---:|---:|---:|---:|
 | **MVP** | 394 | 394 | 0 | 100% | 394 | 268 |
-| **P1** | 514 | 290 | 224 | 56.4% | 68 | 57 |
+| **P1** | 514 | 290 | 224 | 56.4% | 68 | 58 |
 | **P2** | 885 | 20 | 865 | 2.3% | 12 | 9 |
 | **Later** | 374 | 0 | 374 | 0% | 0 | 0 |
 | **Out of scope** | 72 | 0 | 72 | 0% | 0 | 0 |
-| **Total** | 2,239 | 704 | 1,535 | 31.4% | 474 | 334 |
+| **Total** | 2,239 | 704 | 1,535 | 31.4% | 474 | 335 |
 <!-- coverage-gen:end priority -->
 
 The column *Covered by an MVP requirement* shows where the spec pulls work forward: 55 P1 features
@@ -189,7 +189,7 @@ table.
 |---|---|---|---:|---|
 | **npm-only team** | 211 of 211 specified, 0 open (100%) | 322 of 370 specified, 48 open (87.0%) | 185 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
 | **.NET team** | 209 of 209 specified, 0 open (100%) | 312 of 360 specified, 48 open (86.7%) | 184 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
-| **platform/ops team** | 269 of 269 specified, 0 open (100%) | 448 of 468 specified, 20 open (95.7%) | 203 | Repositories 9; Operations, monitoring and configuration 4; High availability and deployment 3 |
+| **platform/ops team** | 269 of 269 specified, 0 open (100%) | 448 of 468 specified, 20 open (95.7%) | 204 | Repositories 9; Operations, monitoring and configuration 4; High availability and deployment 3 |
 
 Pages counted per audience:
 
