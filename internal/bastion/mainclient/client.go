@@ -282,7 +282,13 @@ func (c *HTTPClient) interfaceCall(ctx context.Context, call ifaceCall) error {
 		return err
 	}
 	defer resp.Body.Close()
-	return c.decode(resp, call)
+	err = c.decode(resp, call)
+	// The connection a cancelled caller closes can draw an answer that raced the close (an empty 200 of a server
+	// whose handler saw the close first); judged after the cancellation, it says nothing about the main installation.
+	if cerr := ctx.Err(); err != nil && cerr != nil && !errors.Is(cerr, context.DeadlineExceeded) {
+		return cerr
+	}
+	return err
 }
 
 // commonHeaders sets the headers of every request of the Bastion (R-BAS-008).

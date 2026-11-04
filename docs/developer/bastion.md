@@ -366,7 +366,8 @@ backend's first `Check`; it never depends on the main installation (Q-BAS-44).
   the answer to a call of the interface's own: a `401 bastion_token_invalid` to a forward is an `*AnswerError`, `502 main_failed`, and moves nothing, Q-BAS-121) and
   `ErrInterfaceMismatch` concern the Bastion, are never passed on, and have already made the link unreachable by `Link.Guard` (`503
   main_unreachable` for the caller). Any other error of a forward does not make the link unreachable (R-BAS-027, Q-BAS-44). A context error of the
-  caller's own context is returned as it is.
+  caller's own context is returned as it is, also when a call of the interface's own fails to decode an answer after the caller was
+  cancelled: closing the connection can draw an answer that raced the close, such as an empty `200`.
 
 **The link's contract.**
 
