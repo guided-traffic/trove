@@ -96,7 +96,7 @@ func NewRateLimit(o RateLimitOptions) (func(http.Handler) http.Handler, error) {
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !limitedPath(r.URL.Path) || (o.Config.ExemptAdmins && o.IsAdmin != nil && o.IsAdmin(r)) {
+			if !limitedPath(r.URL.Path) || !familyServed(r) || (o.Config.ExemptAdmins && o.IsAdmin != nil && o.IsAdmin(r)) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -115,6 +115,8 @@ func NewRateLimit(o RateLimitOptions) (func(http.Handler) http.Handler, error) {
 	}, nil
 }
 
+// limitedPath reports whether a path lies in a family the general classes limit. The stage asks [familyServed] as well:
+// a path of a family the endpoint does not serve is limited no more than an unknown path is.
 func limitedPath(p string) bool {
 	if p == ExchangePath {
 		return false
@@ -195,16 +197,31 @@ func EdgeStage(cors func(http.Handler) http.Handler, limit func(http.Handler) ht
 }
 
 // apiHeaders sets the response headers every /api/v1/ answer carries
-// (R-API-017). X-Content-Type-Options and X-Request-Id come from the chain. A
-// handler may replace Cache-Control (the problem catalog is cacheable).
+// (R-API-017) where the endpoint serves the management API. X-Content-Type-Options
+// and X-Request-Id come from the chain. A handler may replace Cache-Control (the
+// problem catalog is cacheable).
 func apiHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if isAPIPath(r.URL.Path) {
+		if apiRequest(r) {
 			setAPIHeaders(w.Header())
 		}
 		next.ServeHTTP(w, r)
 	})
 }
+
+// familyServed reports whether the endpoint whose listener accepted the request serves the route family of its path, as
+// the process's role narrowed it: [httpserver.Endpoint.ServesRequest], the question the authentication stage asks through
+// auth.EndpointRules.Served. Outside a chain bound to an endpoint every family is served. Every path-based rule of this
+// stage and of [Preflight] asks it before it applies (R-EP-005, Q-ARCH-306): a request of a family the endpoint does not
+// serve gets no header of the management API, no CORS answer and no rate-limit class, so before and after authentication
+// its answer is the one of an unknown path.
+func familyServed(r *http.Request) bool {
+	e := httpserver.EndpointFrom(r.Context())
+	return e == nil || e.ServesRequest(r.URL.Path)
+}
+
+// apiRequest reports whether the request is one of the management API on an endpoint that serves it.
+func apiRequest(r *http.Request) bool { return isAPIPath(r.URL.Path) && familyServed(r) }
 
 func setAPIHeaders(h http.Header) {
 	h.Set("Cache-Control", "no-store")

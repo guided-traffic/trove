@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -14,11 +15,27 @@ import (
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
-// answer is what a client sees of one request, without the fields that name the request or the replica.
+// answer is what a client sees of one request, without the fields that name the request or the replica: the header
+// without X-Request-Id and Date, and without Content-Length, which follows the problem's instance member (the request
+// path) that the body is compared without.
 type answer struct {
 	code        int
 	contentType string
+	header      string
 	body        string
+}
+
+func headerOf(h http.Header) string {
+	h = h.Clone()
+	for _, k := range []string{"X-Request-Id", "Date", "Content-Length"} {
+		h.Del(k)
+	}
+	keys := slices.Sorted(maps.Keys(h))
+	var b strings.Builder
+	for _, k := range keys {
+		fmt.Fprintf(&b, "%s: %q\n", k, h[k])
+	}
+	return b.String()
 }
 
 func ask(t *testing.T, addr, method, path string, hdr ...string) answer {
@@ -36,7 +53,7 @@ func ask(t *testing.T, addr, method, path string, hdr ...string) answer {
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
-	a := answer{code: resp.StatusCode, contentType: resp.Header.Get("Content-Type"), body: string(b)}
+	a := answer{code: resp.StatusCode, contentType: resp.Header.Get("Content-Type"), header: headerOf(resp.Header), body: string(b)}
 	var pr map[string]any
 	if json.Unmarshal(b, &pr) == nil {
 		delete(pr, "instance")
@@ -75,7 +92,9 @@ func TestR_ARCH_001_RouteFamiliesPerRole(t *testing.T) {
 				{"POST", "/auth/local/login"},
 				{"GET", "/api/v1/system/ping"},
 				{"GET", "/api/v1/repositories"},
+				{"POST", "/api/v1/repositories"},
 				{"POST", "/api/v1/auth/oidc/token"},
+				{"DELETE", "/api/v1/repositories/generic-local/content/x"},
 			},
 			own: []probe{{"GET", "/files/generic-local/x"}},
 		},
@@ -89,12 +108,10 @@ func TestR_ARCH_001_RouteFamiliesPerRole(t *testing.T) {
 				t.Fatalf("an unknown path: %+v", unknown)
 			}
 			for _, p := range tc.other {
-				// Anonymous never passes an unsafe method on /api/v1 (R-AUTH-037): the reference of such a probe is an unknown path of the same
-				// method below /api/v1.
-				want := unknown
-				if p.method != "GET" && strings.HasPrefix(p.path, "/api/v1/") {
-					want = ask(t, addr, p.method, "/api/v1/does-not-exist")
-				}
+				// The reference is the unknown path of the same method, header included: the hard limit of R-AUTH-037 on an
+				// unsafe anonymous request to /api/v1 is a rule of the served API, and so is every other path rule of the
+				// chain (Q-ARCH-306).
+				want := ask(t, addr, p.method, "/does-not-exist")
 				if got := ask(t, addr, p.method, p.path); got != want {
 					t.Errorf("%s %s on %s:\n got %+v\nwant %+v", p.method, p.path, role, got, want)
 				}

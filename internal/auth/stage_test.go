@@ -387,13 +387,12 @@ func TestR_AUTH_037_AnonymousAccess(t *testing.T) {
 			if want := unknown(off); got.Error() != want.Error() {
 				t.Errorf("%s %s: %v differs from the unknown path's %v", c.m, c.p, got, want)
 			}
-			// With the switch on, an unserved route is anonymous exactly as an unknown path is, never more.
+			// With the switch on, an unserved route is anonymous exactly as an unknown path of the same method is, never more
+			// and never less: the hard limit of /api/v1 is a rule of the served API (Q-ARCH-306).
 			res, err := on.Authenticate(req(c.m, c.p), packagesOnly)
-			wantRes, wantE := on.Authenticate(req("GET", "/does-not-exist"), packagesOnly)
+			wantRes, wantE := on.Authenticate(req(c.m, "/does-not-exist"), packagesOnly)
 			if (err == nil) != (wantE == nil) || res.Anonymous != wantRes.Anonymous {
-				if c.m == "GET" || !strings.HasPrefix(c.p, "/api/v1/") { // anonymous never passes an unsafe method on /api/v1
-					t.Errorf("%s %s with the switch on: %+v %v; the unknown path: %+v %v", c.m, c.p, res, err, wantRes, wantE)
-				}
+				t.Errorf("%s %s with the switch on: %+v %v; the unknown path: %+v %v", c.m, c.p, res, err, wantRes, wantE)
 			}
 		}
 		// A route it does serve stays open.
@@ -424,6 +423,124 @@ func TestR_AUTH_037_AnonymousAccess(t *testing.T) {
 		_, err := off.Authenticate(req("GET", "/api/npm/npm-all/@acme%2Fui", "Authorization", "Bearer eyJhbGciOiJSUzI1NiJ9.e30.c2ln"), defaultRules())
 		wantErr(t, err, 401, errs.CodeInvalidToken)
 	})
+}
+
+// servedBy is the family rule of httpserver.Endpoint.ServesRequest for the default endpoint of a role: api serves ui, api
+// and ci_exchange, packages serves packages and files, and a path of no family is served by both (the router decides it).
+func servedBy(role string) func(*http.Request) bool {
+	return func(r *http.Request) bool {
+		p := r.URL.Path
+		switch {
+		case p == "/", p == "/ui" || strings.HasPrefix(p, "/ui/"), strings.HasPrefix(p, "/auth/"), strings.HasPrefix(p, "/api/v1/"):
+			return role == "api"
+		case strings.HasPrefix(p, "/files/"), strings.HasPrefix(p, "/api/"), strings.HasPrefix(p, "/v2/"), p == "/-/v1/login":
+			return role == "packages"
+		}
+		return true
+	}
+}
+
+// outcome is what a client sees of the stage's verdict.
+type outcome struct {
+	Anonymous                      bool
+	Method                         Method
+	Status                         int
+	Code, Detail, Challenge, Other string
+}
+
+func outcomeOf(res Result, err error) outcome {
+	if err == nil {
+		return outcome{Anonymous: res.Anonymous, Method: res.Credential.Method}
+	}
+	e, ok := errs.As(err)
+	if !ok {
+		return outcome{Other: err.Error()}
+	}
+	return outcome{Status: e.Status(), Code: e.Code, Detail: e.Detail, Challenge: e.Challenge}
+}
+
+// TestQ_ARCH_306_EveryPathRuleOfTheStageAsksWhetherTheFamilyIsServed: on a role that does not serve a route's family, the
+// stage's verdict on the request is the one on GET (or the same method of) /does-not-exist, whatever the request carries:
+// no credential, a rejected token, a valid token, an ended or a live session cookie, from a package client or a browser,
+// with the anonymous switch off and on (R-EP-005, Q-ARCH-302, Q-ARCH-306). The challenge (Basic on /files/ and the
+// package protocols, error="invalid_token" on /api/v1), the cookie's path rule and the hard limit of /api/v1 are rules
+// of the served family.
+func TestQ_ARCH_306_EveryPathRuleOfTheStageAsksWhetherTheFamilyIsServed(t *testing.T) {
+	pat := newToken(t, token.TypePAT)
+	unknownPAT := newToken(t, token.TypePAT)
+	ft := &fakeTokens{known: map[string]token.Info{pat: {ID: "t1", Type: token.TypePAT, Owner: alice, Scope: token.Scope{Inherit: true}}}}
+	live := fakeSessions{info: session.Info{ID: "s1", Principal: alice}}
+	ended := fakeSessions{err: session.ErrInvalid}
+	basic := "Basic " + base64.StdEncoding.EncodeToString([]byte("alice:"+unknownPAT))
+	credentials := map[string][]string{
+		"no credential":    nil,
+		"a valid token":    {"Authorization", "Bearer " + pat},
+		"a rejected token": {"Authorization", "Bearer " + unknownPAT},
+		"a rejected Basic": {"Authorization", basic},
+		"a scheme of none": {"Authorization", "Negotiate abc"},
+		"a session cookie": {"Cookie", SessionCookie + "=sess"},
+		"a browser":        {"Sec-Fetch-Mode", "navigate", "Sec-Fetch-Dest", "document"},
+	}
+	unserved := map[string][]struct{ m, p string }{
+		"api": {
+			{"GET", "/files/generic-local/a.bin"},
+			{"PUT", "/files/generic-local/a.bin"},
+			{"DELETE", "/files/generic-local/a.bin"},
+			{"GET", "/api/npm/npm-all/lodash"},
+			{"HEAD", "/api/npm/npm-all/lodash"},
+			{"GET", "/v2/"},
+			{"GET", "/-/v1/login"},
+		},
+		"packages": {
+			{"GET", "/"},
+			{"GET", "/ui/"},
+			{"GET", "/auth/oidc/corp/start"},
+			{"GET", "/api/v1/system/ping"},
+			{"GET", "/api/v1/repositories"},
+			{"POST", "/api/v1/repositories"},
+			{"PATCH", "/api/v1/settings/auth"},
+			{"POST", "/api/v1/auth/oidc/token"},
+			{"GET", "/api/v1/auth/login-options"},
+		},
+	}
+	for role, probes := range unserved {
+		for anon, settings := range map[string]fakeAnon{"off": {}, "on": {on: true}} {
+			for name, sessions := range map[string]fakeSessions{"live": live, "ended": ended} {
+				s := newStage(ft, Options{Sessions: sessions, Settings: settings})
+				// The default endpoint of api accepts the session; the one of packages does not (R-EP-010), which the
+				// cookie's answer there already shows.
+				ep := defaultRules()
+				ep.AcceptsSession = role == "api"
+				ep.Served = servedBy(role)
+				ep.PublicRoute = func(r *http.Request) bool { return r.URL.Path == "/api/v1/system/ping" }
+				for cred, hdr := range credentials {
+					for _, p := range probes {
+						got := outcomeOf(s.Authenticate(req(p.m, p.p, hdr...), ep))
+						want := outcomeOf(s.Authenticate(req(p.m, "/does-not-exist", hdr...), ep))
+						if got != want {
+							t.Errorf("%s, anonymous %s, %s session, %s: %s %s = %+v\nwant the unknown path's %+v", role, anon, name, cred, p.m, p.p, got, want)
+						}
+					}
+				}
+			}
+		}
+	}
+	// The rules still hold where the family is served: the control that the comparison above compares something.
+	s := newStage(ft, Options{Sessions: ended, Settings: fakeAnon{}})
+	ep := defaultRules()
+	ep.Served = servedBy("packages")
+	if got := outcomeOf(s.Authenticate(req("GET", "/files/generic-local/a.bin"), ep)); got.Challenge != `Basic realm="trove"` {
+		t.Errorf("/files/ on packages: %+v, want the Basic challenge", got)
+	}
+	r := req("GET", "/files/generic-local/a.bin")
+	r.AddCookie(&http.Cookie{Name: SessionCookie, Value: "sess"})
+	if got := outcomeOf(s.Authenticate(r, ep)); got.Code != "session_expired" {
+		t.Errorf("an ended session on a served /files/: %+v, want session_expired", got)
+	}
+	ep.Served = servedBy("api")
+	if got := outcomeOf(s.Authenticate(req("GET", "/api/v1/x", "Authorization", "Bearer "+unknownPAT), ep)); got.Challenge != `Bearer realm="trove", error="invalid_token"` {
+		t.Errorf("a rejected token on a served /api/v1: %+v", got)
+	}
 }
 
 func TestR_EP_010_EndpointRules(t *testing.T) {

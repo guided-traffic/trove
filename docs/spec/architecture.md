@@ -237,7 +237,13 @@ routes read them. The areas of the client listener are split by route family:
   credential: a route that is reachable without one only where it is served (the UI shell, the login tree, the CI
   exchange, the public operations, npm's login start) is decided like an unknown path where the role does not serve it,
   so the `401` of an endpoint that admits no anonymous request, or the anonymous pass of one that does, is the same
-  answer as for `GET /does-not-exist` (Q-ARCH-302).
+  answer as for `GET /does-not-exist` (Q-ARCH-302). And it holds before and after authentication for every rule of a
+  chain stage that a path selects: the headers of the management API ([api-and-ui.md](api-and-ui.md) R-API-017), its CORS
+  answers (R-API-018) and its rate-limit classes (R-API-016), the path rule of the session cookie, the challenge and the
+  hard limit on an unsafe anonymous request to `/api/v1/` ([identity-and-authentication.md](identity-and-authentication.md)
+  R-AUTH-001, R-AUTH-002, R-AUTH-037) apply only to a family the process serves on the endpoint. A request of an unserved
+  family is the request to `/does-not-exist` with the same method and headers, in status, header and body, apart from
+  `X-Request-Id`, `Date`, the problem's `requestId` and `instance` and the `Content-Length` that follows them (Q-ARCH-306).
 - A `worker` replica serves only the ops listener and is not selected by any client Service.
 - Load is shared by adding replicas of a role (INV-12). No code path depends on the number of
   replicas of a role, and each role scales and drains on its own. A role is split further by path prefix (`api`,
@@ -290,6 +296,12 @@ Acceptance criteria:
   credential (`401` `credentials_required` while anonymous access is off); on an `api` replica,
   `GET /api/npm/npm-local/@acme%2fsdk`, `GET /files/generic-local/x` and `GET /v2/` answer that problem, and a test
   double of the upstream records no request from it while the e2e suite runs, except the upstream tests it sends.
+- With `api.cors.allowed_origins` set and the rate limits on, each of these requests and `OPTIONS /api/v1/system/ping` on
+  `packages`, `OPTIONS /files/generic-local/x` on `api`, sent with no credential, a token, a rejected token, a live session
+  cookie with and without its CSRF token, an ended session cookie, the Fetch Metadata headers of a browser or as the CORS
+  preflight of an allowed origin, with anonymous access off and on, answers what the request with the same method and
+  headers to `/does-not-exist` answers: the same status, the same header apart from `X-Request-Id`, `Date` and
+  `Content-Length`, and the same body apart from `requestId` and `instance` (Q-ARCH-306).
 - One of three `packages` pods is deleted with `kubectl delete pod --grace-period=0 --force` during a
   loop of 100 `npm ci` runs through the edge. The loop finishes with npm's default
   `fetch-retries`.
@@ -8426,6 +8438,12 @@ nothing in the family table suggests.
 **Applied in the spec:** R-ARCH-001 (the `404` bullet and its acceptance criterion); [endpoints.md](endpoints.md) R-EP-005,
 R-EP-010; [internal/auth/stage.go](../../internal/auth/stage.go), [internal/httpserver/surface.go](../../internal/httpserver/surface.go).
 
+**Extended by Q-ARCH-306.** The decision covered the routes that are open without a credential. The security review of phase
+6a found the other path rules of the chain that answered an unserved family otherwise than `/does-not-exist`: the headers,
+CORS answers and rate-limit classes of the management API, the session cookie's path rule (an ended session's cookie on
+`/files/x` answered `session_expired` on `api`), the Basic challenge of `/files/` and the package protocols, `error="invalid_token"`
+of `/api/v1/`, and the hard limit on an unsafe anonymous request to `/api/v1/`. Q-ARCH-306 applies the same question to them.
+
 ### Q-ARCH-303 · The replica count of the limiters per role and pool, and the Bastion's forward marking on `packages`
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -8458,6 +8476,72 @@ if a limiter guards a resource that `api` and `packages` replicas both consume (
 **Applied in the spec:** R-ARCH-034 (the fallback bullet reads "live replicas of the role in the replica's pool");
 [operations-and-observability.md](operations-and-observability.md) R-OPS-003 (the count the registry gives);
 [bastion.md](bastion.md) R-BAS-044 (`bastion.main.packages_url`, built).
+
+### Q-ARCH-306 · Every path rule of a chain stage applies only to a family the process serves
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-EP-005 and R-ARCH-001 say a request of a family the process does not serve is an unknown path, and Q-ARCH-302 made
+the routes that are open without a credential ask whether the family is served. The security review of phase 6a found the
+other rules of the chain that a path selects and that never asked: on `packages`, a `404` for `/api/v1/x` carried
+`Cache-Control`, `Content-Security-Policy` and `Referrer-Policy` (R-API-017) and `RateLimit-Policy` and `RateLimit` (R-API-016),
+and with `api.cors.allowed_origins` set, `OPTIONS /api/v1/x` answered the `204` of a preflight (R-API-018); on `api`, `/files/x`
+and `/api/<format>/x` carried the rate-limit headers, answered a package client's missing credential with the Basic challenge
+where `/does-not-exist` answers Bearer, and answered an ended session's cookie with `401 session_expired` where
+`/does-not-exist` ignores the cookie (`credentials_required`, or the anonymous pass and the `404`). A rejected token on
+`/api/v1/x` on `packages` got `error="invalid_token"` in the challenge, and with anonymous access on an unsafe request to
+`/api/v1/x` on `packages` got the `401` of R-AUTH-037's hard limit where `POST /does-not-exist` gets the `404`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One question per request, asked by every path rule: `httpserver.Endpoint.ServesRequest` of the listener's endpoint; the authentication stage reads its rules over the path of `rulePath`, `""` for an unserved family; the preflight and stage 7 ask `familyServed` (chosen) | An unserved family meets no rule of its own family in any stage | The answer is the unknown path's by construction, in every stage; the family table stays in one place (`surface.go`) | Each stage that adds a path rule has to ask; the integration test of R-ARCH-001 is what catches one that does not |
+| (b) Answer an unserved family `404` before every stage | One short-cut at step 1 | No rule needs to know | `GET /does-not-exist` answers `401` without a credential on an endpoint without anonymous access: the difference stays, in the other direction (Q-ARCH-302 (b)) |
+| (c) Rewrite the request path of an unserved family to `/does-not-exist` before the stages | The stages see an unknown path | No stage changes | The request log, the metrics label and `instance` would name a path the client did not send; the router would lose the path it needs for its own `404` |
+
+**Choice:** (a). The stage's rules read the empty path for an unserved family: no exchange route, no always-open route, no
+public operation, no path rule of the session cookie (so an ended session's cookie is ignored as on an unknown path), no hard
+limit of `/api/v1/` (so an anonymous unsafe request passes the stage as on an unknown path and meets the router's `404`, which
+runs no handler), and the challenge of an unknown path. The preflight, the headers of the management API, CORS and the general
+rate-limit classes apply where the endpoint serves the family. The endpoint's own class (R-EP-015) and the in-flight limit apply
+to every path, an unknown one included, and stay. A request of an unserved family is limited no more than an unknown path is;
+the router answers both without a handler.
+
+**Rationale:** a rule of a family is a property of the family where it exists; elsewhere the request belongs to no family the
+process has. The development agent would revisit this if a rule had to hold for a family on a process that does not serve it,
+which nothing in the family table suggests. The rules outside stages 6 and 7 that a path selects are
+[H-521](#h-521--two-path-rules-outside-the-stages-of-authentication-and-rate-limits-do-not-ask-whether-the-family-is-served).
+
+**Applied in the spec:** R-ARCH-001 (the bullet and an acceptance criterion); Q-ARCH-302 (extended);
+[internal/auth/stage.go](../../internal/auth/stage.go) (`rulePath`), [internal/api/v1/ratelimit.go](../../internal/api/v1/ratelimit.go)
+(`familyServed`), [internal/api/v1/cors.go](../../internal/api/v1/cors.go). R-API-016, R-API-017, R-API-018 and R-AUTH-001,
+R-AUTH-002, R-AUTH-037 are read through R-ARCH-001's bullet; their pages are not edited by this change.
+
+### Q-ARCH-307 · The content routes answer a method they do not offer like an unknown path except to the session
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-API-025 says a request to a content route that the session cookie did not authenticate answers the `404` problem
+of an unknown path. The routes register `GET`, `HEAD` and `PUT`; for any other method the router's fallback probes the methods
+of the path (R-ARCH-005, "wrong method → 405 + Allow") and answered a token's `DELETE` or `POST` with
+`405` and `Allow: GET, HEAD, PUT`, so a token caller learned that the path is a route its `GET` had just denied. R-ARCH-005 fixes
+the `405` as the router's answer for a path that exists for another method; it does not decide it for a route that hides
+itself from a caller.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The route tells the router whom it hides from: `Router.HideMethods(prefix, hidden)`; the fallback answers the `404` of an unknown path instead of the `405` when `hidden` reports the request (chosen) | The content routes hide their methods from every caller the session cookie did not authenticate | R-API-025 holds for every method; the session's `DELETE` keeps its `405`; the `405` rule stays the router's | One more table in the router |
+| (b) Correct the promise: a token's `DELETE` is the `405` | Spec edit only | No code | The route answers a token `404` for `GET` and `405` for `DELETE`; R-API-025's sentence becomes "for the methods it offers" |
+| (c) Register every method on the content path and answer the `405` in the handler | The handler decides | No router change | `DELETE` and `POST` become registered routes the document must list (`Document.CheckRoutes`), for operations that do not exist |
+
+**Choice:** (a). The predicate runs in the fallback after the authentication stage and reads the principal's credential method.
+
+**Rationale:** the `404` for a token caller keeps the bulk traffic of token clients on `packages` (Q-UI-106); a `405` that names
+the route's methods tells them where it is. The development agent would revisit this if the routes offered `DELETE`, which
+then answers a token `404` from the handler like the other methods.
+
+**Applied in the spec:** none beyond R-API-025, whose sentence the code now meets for every method;
+[internal/httpserver/router.go](../../internal/httpserver/router.go) (`HideMethods`),
+[internal/api/rawfiles/content.go](../../internal/api/rawfiles/content.go) (`Register`).
 
 ## What this does not cover
 
@@ -8652,3 +8736,28 @@ guarantees in one database.
 
 What makes it real: an exploitable flaw in a code path of the `packages` or `files` family (request parsing, format code, H-1).
 The mitigation is the same as before the cut: the narrow runtime grants of R-HA-014 and the pod security context of R-HA-033.
+
+### H-521 · Two path rules outside the stages of authentication and rate limits do not ask whether the family is served
+
+Stage: step 5b of R-ARCH-005 (the Bastion interface's recognition, [bastion.md](bastion.md) R-BAS-008) and the error shape of a
+format prefix (`Router.HandleErrorShape`, Q-ARCH-214), on the default endpoint of `api` and of `packages`. Q-ARCH-306 made the
+rules of the authentication stage, the preflight and stage 7 ask `Endpoint.ServesRequest`; these two read the path alone.
+
+Live for every installation that runs the roles. Subjects and what each tells apart from `/does-not-exist`:
+
+- **The Bastion recognition, for the holder of a valid Bastion token.** On `packages`, an interface call to `/api/v1/bastion/…`
+  is recognised and answers the router's `404` with `Trove-Bastion-Interface`, where the same token in `Authorization` on
+  `/does-not-exist` is a credential the authentication stage rejects (`401`). On `api`, a forward to `/files/…` or
+  `/api/<format>/…` passes the forward backstop and reaches the authentication stage (`401` without a client credential), where
+  a forward to `/does-not-exist` gets the backstop's `404`. Only a registered Bastion holds such a token, and its configuration
+  names the installation's URLs (R-BAS-044), so the difference tells it nothing about the topology it was not given.
+- **The error shape of a family nested below a served format prefix.** On `packages`, npm's registry-relative trusted-publishing
+  exchange (`/api/npm/<repoKey>/-/npm/v1/oidc/…`, family `ci_exchange`) is answered in npm's error shape (the dispatcher's `404`,
+  the stage's `401` through the shape table of `/api/npm/`), not in the `problem+json` of `/does-not-exist`. Anyone sees it; it
+  tells that the process serves npm's prefix, which every other path below `/api/npm/` on `packages` tells as well.
+
+What makes it real: a caller that compares these answers to locate the role of a replica behind the edge. Neither carries data,
+and the first needs a Bastion's credential. What would close it is the question of Q-ARCH-306 in `bastionmain.Recognize` (an
+interface path or a forwardable family the endpoint does not serve leaves the request ordinary) and in the shape lookup of
+`httpserver.Problem` together with the dispatcher's family check (an unserved family below a format prefix renders
+`problem+json`).

@@ -8,8 +8,9 @@ import (
 
 // Cross-origin access (R-API-018). The UI is same-origin, so CORS is off until
 // api.cors.allowed_origins lists exact origins. It then applies to requests that
-// carry an Authorization header. Access-Control-Allow-Credentials is never sent,
-// so a session cookie is never usable cross-origin.
+// carry an Authorization header, on an endpoint that serves the management API.
+// Access-Control-Allow-Credentials is never sent, so a session cookie is never
+// usable cross-origin.
 
 func corsAllowedHeaders() []string {
 	return []string{"Authorization", "Content-Type", "If-Match", "If-None-Match", "Idempotency-Key", "Trove-Authz-Min-Epoch"}
@@ -48,9 +49,10 @@ func Preflight(origins []string) func(http.Handler) http.Handler {
 }
 
 // isPreflight reports whether r is the preflight of an allowed origin for a path
-// of the management API.
+// of the management API on an endpoint that serves it: elsewhere a preflight is
+// decided as one for an unknown path (R-EP-005, Q-ARCH-306).
 func isPreflight(r *http.Request, origin string, allowed []string) bool {
-	return origin != "" && isAPIPath(r.URL.Path) && slices.Contains(allowed, origin) &&
+	return origin != "" && apiRequest(r) && slices.Contains(allowed, origin) &&
 		r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != ""
 }
 
@@ -79,7 +81,7 @@ func CORS(origins []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
-			if origin == "" || !isAPIPath(r.URL.Path) || !slices.Contains(allowed, origin) {
+			if origin == "" || !apiRequest(r) || !slices.Contains(allowed, origin) {
 				next.ServeHTTP(w, r)
 				return
 			}

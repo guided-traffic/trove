@@ -265,7 +265,7 @@
             },
             "check_interval": {
               "default": "10s",
-              "description": "How often a web replica looks at the password file for a rotation.",
+              "description": "How often a replica of role api (or web, all) looks at the password file for a rotation.",
               "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
               "type": "string",
               "x-trove-env": "TROVE_AUTH_BREAK_GLASS_CHECK_INTERVAL",
@@ -319,7 +319,7 @@
               "x-trove-env": "TROVE_AUTH_BREAK_GLASS_MAX_CONCURRENT_VERIFICATIONS"
             },
             "password_file": {
-              "description": "Argon2id PHC hash or plaintext password; web replicas only (R-AUTH-042).",
+              "description": "Argon2id PHC hash or plaintext password; read by the replicas of role api (and web while the bridge runs, all locally) only (R-AUTH-042).",
               "type": "string",
               "x-trove-env": "TROVE_AUTH_BREAK_GLASS_PASSWORD_FILE",
               "x-trove-secret": "file-only"

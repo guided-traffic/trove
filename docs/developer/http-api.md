@@ -389,7 +389,9 @@ handler sets another, `Content-Security-Policy`, `Referrer-Policy`; `X-Content-T
 chain), then CORS, then the limiter, so a preflight is answered before it counts. The preflight of an allowed origin is
 answered earlier still, by `Chain.Preflight` (`v1.Preflight`, between the address stage and authentication): a browser sends
 it without credentials, and authentication would refuse it (R-API-018, Q-API-138). `CORS` keeps the same answer for a chain
-without that stage.
+without that stage. Each of these rules applies only where the endpoint serves the family of the path (`familyServed`,
+`apiRequest`; Q-ARCH-306): on `packages`, `OPTIONS /api/v1/x` from an allowed origin is decided like `OPTIONS /does-not-exist`,
+and on `api` a request to `/files/` or `/api/<format>/` carries no `RateLimit-Policy`.
 
 The classes are `api_read`, `api_write` and `api_anonymous` for `/api/v1/` and `/files/`, and `api_package_read`,
 `api_package_write` and `api_package_anonymous` for the package protocols under `/api/<format>/`

@@ -310,6 +310,9 @@ registered and the dropped patterns (`checkAPIRoutes`): the ci_exchange route of
 `CheckRouteTable` also fails a pattern of another family that can match a path of the API or of the exchange
 (`/api/{format}/{repoKey}/…` matches `/api/v1/…`; checked by trying the pattern in a ServeMux against probe paths).
 The router's fallback answers a path of a family outside the surface with the plain 404, never a 405 with `Allow`.
+The stages ask the same question per request (`Endpoint.ServesRequest`): the authentication stage through
+`EndpointRules.Served`, the preflight and stage 7 through `familyServed` in [ratelimit.go](../../internal/api/v1/ratelimit.go), so an
+unserved family carries no challenge, cookie rule, API header, CORS answer or rate-limit class that `/does-not-exist` lacks (Q-ARCH-306).
 A wildcard host matches one DNS label (`config.WildcardLabel`), `hostOnly` returns "" for a byte outside printable
 ASCII, and a host-checking endpoint's `base_url` host must be a DNS name (no IP literal, no trailing dot).
 

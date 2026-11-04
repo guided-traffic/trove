@@ -85,9 +85,15 @@ role that enables both. `requireServing` (step 9) asks for the parts of the area
 
 **What `api` has instead of a format host** (Q-ARCH-301). Only the explanation of a resolution reaches an engine on `api`. The `files` area
 builds, on a role with a client listener and without the `formathost` area, a `formathost.Host` without remote engine, resolver and
-dispatcher (`wireServeCheckHost`), which the format's `ServeCheck` reads its stored marks through. **Unserved families** (Q-ARCH-302): the
-authentication stage is given `EndpointRules.Served`, so a route the process does not serve is neither always open nor public without a
-credential and is decided like an unknown path.
+dispatcher (`wireServeCheckHost`), which the format's `ServeCheck` reads its stored marks through. **Unserved families** (Q-ARCH-302,
+Q-ARCH-306): every path rule of a chain stage asks `httpserver.Endpoint.ServesRequest` first, so a request of a family the process does not
+serve is the request to `/does-not-exist`, before and after authentication. The authentication stage is given `EndpointRules.Served` and
+its rules read the path of `rulePath` ([stage.go](../../internal/auth/stage.go)): `""` for an unserved family, which no rule matches (no
+exchange, no always-open route, no public operation, no session-cookie path rule, no hard limit of `/api/v1`, the challenge of an unknown
+path). The preflight and stage 7 ask `familyServed` ([ratelimit.go](../../internal/api/v1/ratelimit.go)): no header of the management API,
+no CORS answer, no rate-limit class. A new path rule in a stage asks the same question; `TestR_ARCH_001_AFamilyOfTheOtherRoleIsAnUnknownPath`
+([roles_test.go](../../test/integration/roles/roles_test.go)) compares status, header and body of every unserved family with
+`/does-not-exist` and fails on a rule that does not.
 
 A client listener exists per **endpoint** (R-EP-002): the default endpoint on `server.listen` and every entry of
 `server.endpoints` that belongs to the process's pool (`TROVE_POOL_NAME`) and whose surface holds a family of the role
@@ -119,6 +125,7 @@ net/http server ── track (stall deadlines, active-request registry for the s
                        └─ 6 authentication principal or anonymous (bearer token or session cookie); invalid credential -> 401; X-Trove-Replica for authenticated callers
                        └─ 7 rate limits: api_read, api_write, api_anonymous classes (cluster-wide in Valkey, per-replica share as fallback; ADR-102)
                           └─ 8 Router (ServeMux): API operations, /ui/, ... ; unmatched -> 404 problem, wrong method -> 405 + Allow
+                                                  (404 where the route hides its methods from the caller, Router.HideMethods)
 ```
 
 [chain.go](../../internal/httpserver/chain.go) builds this in one function; a test records the order

@@ -9,6 +9,8 @@ package roles
 
 import (
 	"encoding/json"
+	"fmt"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,6 +23,7 @@ import (
 	"github.com/guided-traffic/trove/internal/app"
 	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/auth/session"
+	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 	"github.com/guided-traffic/trove/test/npmstub"
 	"github.com/guided-traffic/trove/test/npmstub/corpus"
@@ -127,9 +130,9 @@ func (in *installation) get(r *testenv.Replica, path, token string, hdr ...strin
 
 // probe is a request to the default endpoint that is not validated against the management API's document: a route of the
 // other role answers a 404 that the document does not list for it.
-func (in *installation) probe(r *testenv.Replica, method, path, token string) testenv.Answer {
+func (in *installation) probe(r *testenv.Replica, method, path, token string, hdr ...string) testenv.Answer {
 	in.t.Helper()
-	return in.st.DoAt(r.Addr("default"), "probe."+testenv.DefaultHost, method, path, token, nil)
+	return in.st.DoAt(r.Addr("default"), "probe."+testenv.DefaultHost, method, path, token, nil, hdr...)
 }
 
 // TestR_ARCH_001_ReplicasBuildTheAreasOfTheirRole: a replica of each role starts on the real infrastructure and has exactly
@@ -179,11 +182,74 @@ func TestR_ARCH_001_ReplicasBuildTheAreasOfTheirRole(t *testing.T) {
 	}
 }
 
+// allowedOrigin is the origin the replicas of the family test admit for CORS (api.cors.allowed_origins, R-API-018).
+const allowedOrigin = "https://portal.example.com"
+
+// seen is what a client sees of an answer, without what names the request: the status, the header without X-Request-Id
+// and Date (and Content-Length, which follows the problem's instance member, the request path), and the body without its
+// per-request members.
+func seen(t *testing.T, a testenv.Answer) string {
+	t.Helper()
+	h := a.Header.Clone()
+	for _, k := range []string{"X-Request-Id", "Date", "Content-Length"} {
+		h.Del(k)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d\n", a.Status)
+	for _, k := range slices.Sorted(maps.Keys(h)) {
+		fmt.Fprintf(&b, "%s: %q\n", k, h[k])
+	}
+	if json.Valid(a.Body) {
+		b.WriteString(a.Problem(t))
+	} else {
+		b.Write(a.Body)
+	}
+	return b.String()
+}
+
 // TestR_ARCH_001_AFamilyOfTheOtherRoleIsAnUnknownPath: on the real routes, a request of a family the role does not serve
-// answers the problem of GET /does-not-exist, apart from the request ID (R-ARCH-005, R-EP-005): the 404 for a caller with a
-// token and the 401 of the chain for one without, with anonymous access off.
+// is the request to /does-not-exist with the same method and headers, status, header and body alike apart from the request
+// ID and the date (R-ARCH-005, R-EP-005, Q-ARCH-302, Q-ARCH-306): before authentication (no credential, a preflight of an
+// allowed origin, a browser) and after it (a token, a rejected token, a live session with and without its CSRF token, an
+// ended session), with anonymous access off and on. No path rule of the chain - the headers of the management API, CORS,
+// the rate-limit classes, the session cookie's path rule, the challenge, the routes that are always open, the hard limit
+// on unsafe anonymous requests to /api/v1 - tells the other role's families apart from an unknown path.
 func TestR_ARCH_001_AFamilyOfTheOtherRoleIsAnUnknownPath(t *testing.T) {
 	in := newInstallation(t)
+	// CORS and the general rate limits are on: their headers are what an unserved family must not carry.
+	edge := []string{`TROVE_API_CORS_ALLOWED_ORIGINS=["` + allowedOrigin + `"]`, "TROVE_API_RATE_LIMITS_ENABLED=true"}
+	replicas := map[string]*testenv.Replica{}
+	for _, role := range []string{"api", "packages"} {
+		opts := testenv.ReplicaOptions{Name: role + "-" + testenv.RandHex(2), Role: role, Env: slices.Clone(edge)}
+		if role == "api" {
+			opts.Env = append(opts.Env, "TROVE_AUTH_BREAK_GLASS_ENABLED=true", "TROVE_AUTH_BREAK_GLASS_PASSWORD_FILE="+in.pw)
+		}
+		replicas[role] = in.st.Start(t, opts)
+	}
+	live, csrf := in.signIn(replicas["api"])
+	ended, endedCSRF := in.signIn(replicas["api"])
+	if out := in.st.Do(replicas["api"], http.MethodPost, "/auth/logout", "", nil, "Cookie", ended, "Origin", origin, session.HeaderCSRF, endedCSRF); out.Status != http.StatusOK && out.Status != http.StatusNoContent {
+		t.Fatalf("logout: %d %s", out.Status, out.Body)
+	}
+	if got := in.get(replicas["api"], "/api/v1/users/me/preferences", "", "Cookie", ended); got.Status != http.StatusUnauthorized || got.Code(t) != "session_expired" {
+		t.Fatalf("the ended session on api: %d %s", got.Status, got.Body)
+	}
+	rejected, err := token.Generate(token.TypePAT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callers := map[string][]string{
+		"no credential":                         nil,
+		"a token":                               {"Authorization", "Bearer " + in.admin},
+		"a rejected token":                      {"Authorization", "Bearer " + rejected},
+		"a live session":                        {"Cookie", live},
+		"a live session with its CSRF token":    {"Cookie", live, "Origin", origin, session.HeaderCSRF, csrf},
+		"an ended session":                      {"Cookie", ended},
+		"a browser":                             {"Sec-Fetch-Mode", "navigate", "Sec-Fetch-Dest", "document"},
+		"an allowed origin with a token":        {"Origin", allowedOrigin, "Authorization", "Bearer " + in.admin},
+		"the preflight of an allowed origin":    {"Origin", allowedOrigin, "Access-Control-Request-Method", "GET"},
+		"a preflight with a token in the clear": {"Origin", allowedOrigin, "Access-Control-Request-Method", "GET", "Authorization", "Bearer " + in.admin},
+	}
 	type probe struct{ method, path string }
 	cases := map[string][]probe{
 		"packages": {
@@ -192,35 +258,80 @@ func TestR_ARCH_001_AFamilyOfTheOtherRoleIsAnUnknownPath(t *testing.T) {
 			{"GET", "/auth/oidc/corp/start"},
 			{"GET", "/api/v1/system/ping"},
 			{"GET", "/api/v1/repositories"},
+			{"POST", "/api/v1/repositories"},
 			{"POST", "/api/v1/auth/oidc/token"},
+			{"GET", "/api/v1/auth/login-options"},
 			{"GET", "/api/v1/repositories/gen-local/content/x"},
 			{"PUT", "/api/v1/repositories/gen-local/content/x"},
+			{"OPTIONS", "/api/v1/system/ping"},
+			{"OPTIONS", "/api/v1/repositories"},
 		},
 		"api": {
 			{"GET", "/api/npm/npm-all/" + "left-pad"},
 			{"GET", "/api/npm/npm-local/@acme%2fsdk"},
 			{"GET", "/files/gen-local/x"},
 			{"PUT", "/files/gen-local/x"},
+			{"DELETE", "/files/gen-local/x"},
 			{"GET", "/v2/"},
+			{"GET", "/-/v1/login"},
+			{"OPTIONS", "/files/gen-local/x"},
 		},
 	}
-	for role, probes := range cases {
-		r := in.start(role)
-		for _, token := range []string{"", in.admin} {
-			unknown := in.probe(r, http.MethodGet, "/does-not-exist", token)
-			// With anonymous access off a request without a credential is refused before the router (401), for an unknown
-			// path as for any other: the other role's families must not tell themselves apart from it by that either.
-			if want := map[bool]int{false: http.StatusUnauthorized, true: http.StatusNotFound}[token != ""]; unknown.Status != want {
-				t.Fatalf("%s: an unknown path answers %d %s, want %d", role, unknown.Status, unknown.Body, want)
-			}
-			for _, p := range probes {
-				got := in.probe(r, p.method, p.path, token)
-				if got.Status != unknown.Status || got.Problem(t) != unknown.Problem(t) || got.Header.Get("Content-Type") != unknown.Header.Get("Content-Type") {
-					t.Errorf("%s %s on %s (token %v): %d %s\nwant %d %s", p.method, p.path, role, token != "", got.Status, got.Body, unknown.Status, unknown.Body)
+	compare := func(anonymous string) {
+		t.Helper()
+		for role, probes := range cases {
+			r := replicas[role]
+			for name, hdr := range callers {
+				for _, p := range probes {
+					want := seen(t, in.probe(r, p.method, "/does-not-exist", "", hdr...))
+					if got := seen(t, in.probe(r, p.method, p.path, "", hdr...)); got != want {
+						t.Errorf("anonymous access %s, %s on %s, %s: %s %s\n got %s\nwant %s", anonymous, name, role, p.method, p.path, p.method, got, want)
+					}
 				}
 			}
 		}
 	}
+	// With anonymous access off a request without a credential is refused before the router (401), for an unknown path as
+	// for any other: the other role's families must not tell themselves apart from it by that either.
+	for role, r := range replicas {
+		if got := in.probe(r, http.MethodGet, "/does-not-exist", ""); got.Status != http.StatusUnauthorized {
+			t.Fatalf("%s: an unknown path without a credential answers %d %s", role, got.Status, got.Body)
+		}
+		if got := in.probe(r, http.MethodGet, "/does-not-exist", in.admin); got.Status != http.StatusNotFound {
+			t.Fatalf("%s: an unknown path with a token answers %d %s", role, got.Status, got.Body)
+		}
+	}
+	compare("off")
+
+	// The controls: the rules the comparison is about are on, where the family is served.
+	if got := in.probe(replicas["api"], http.MethodOptions, "/api/v1/system/ping", "", callers["the preflight of an allowed origin"]...); got.Status != http.StatusNoContent || got.Header.Get("Access-Control-Allow-Origin") != allowedOrigin {
+		t.Errorf("the preflight on api: %d %v", got.Status, got.Header)
+	}
+	if got := in.probe(replicas["api"], http.MethodGet, "/api/v1/system/ping", in.admin); got.Header.Get("RateLimit-Policy") == "" || got.Header.Get("Content-Security-Policy") == "" {
+		t.Errorf("the management API on api carries no rate limit or API header: %v", got.Header)
+	}
+	if got := in.probe(replicas["packages"], http.MethodGet, "/files/gen-local/x", ""); got.Header.Get("Www-Authenticate") != `Basic realm="trove"` {
+		t.Errorf("/files/ on packages without a credential: %d %v", got.Status, got.Header)
+	}
+	if got := in.probe(replicas["api"], http.MethodGet, "/api/v1/users/me/preferences", "", "Cookie", ended); got.Code(t) != "session_expired" {
+		t.Errorf("the ended session on the management API of api: %d %s", got.Status, got.Body)
+	}
+
+	// Anonymous access on: an unserved route is anonymous exactly as an unknown path is, never more and never less.
+	if got := in.st.Do(replicas["api"], http.MethodPatch, "/api/v1/settings/auth", in.admin, map[string]any{"anonymousAccess": true},
+		"If-Match", "*", "Content-Type", "application/merge-patch+json"); got.Status != http.StatusOK {
+		t.Fatalf("anonymous access on: %d %s", got.Status, got.Body)
+	}
+	for role, r := range replicas {
+		deadline := time.Now().Add(20 * time.Second)
+		for in.probe(r, http.MethodGet, "/does-not-exist", "").Status != http.StatusNotFound {
+			if time.Now().After(deadline) {
+				t.Fatalf("%s did not see anonymous access on", role)
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+	compare("on")
 }
 
 // TestR_EP_010_PackagesIgnoresASessionCookie: the session of a signed-in user is valid on api and on web and counts for
@@ -364,8 +475,19 @@ func TestQ_UI_106_ContentRoutesAreOfTheApiFamily(t *testing.T) {
 		}
 	}
 	// A token is answered like an unknown path on api, because the content routes are for the session.
-	if got := in.probe(api, http.MethodGet, path, in.admin); got.Status != http.StatusNotFound {
-		t.Errorf("a token on the content route of api: %d %s", got.Status, got.Body)
+	tokenGet := in.probe(api, http.MethodGet, path, in.admin)
+	if tokenGet.Status != http.StatusNotFound {
+		t.Errorf("a token on the content route of api: %d %s", tokenGet.Status, tokenGet.Body)
+	}
+	// So is a method the routes do not offer: no 405 with Allow tells a token caller that the path exists (Q-ARCH-307). The
+	// session's DELETE is the 405, since the UI deletes through the items operation.
+	for _, m := range []string{http.MethodDelete, http.MethodPost, http.MethodPatch} {
+		if got := in.probe(api, m, path, in.admin); got.Status != http.StatusNotFound || got.Header.Get("Allow") != "" || got.Problem(t) != tokenGet.Problem(t) {
+			t.Errorf("%s with a token on the content route of api: %d Allow %q %s", m, got.Status, got.Header.Get("Allow"), got.Body)
+		}
+	}
+	if got := in.probe(api, http.MethodDelete, path, "", "Cookie", cookie, "Origin", origin, session.HeaderCSRF, csrf); got.Status != http.StatusMethodNotAllowed || got.Header.Get("Allow") != "GET, HEAD, PUT" {
+		t.Errorf("DELETE of the session on the content route of api: %d Allow %q %s", got.Status, got.Header.Get("Allow"), got.Body)
 	}
 	// What the content route stored is the file /files/ serves on packages, which has no content route.
 	if got := in.get(packages, "/files/gen-local/ui/a%20b.txt", in.admin); got.Status != http.StatusOK || string(got.Body) != "hello" {

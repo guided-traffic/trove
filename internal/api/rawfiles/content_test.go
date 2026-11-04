@@ -239,10 +239,33 @@ func TestContentRoutes(t *testing.T) {
 		}
 	})
 
-	t.Run("R-API-025 Q-UI-106 DELETE is not a content route", func(t *testing.T) {
-		rec := serveContent(t, handler(t, &decider{}, &store{file: file}), 0, as(httptest.NewRequest(http.MethodDelete, contentDownload, nil), httpserver.MethodSession))
-		if rec.Code != http.StatusMethodNotAllowed && rec.Code != http.StatusNotFound {
-			t.Errorf("status %d", rec.Code)
+	t.Run("R-API-025 Q-ARCH-307 DELETE is not a content route: 405 for the session, the 404 of an unknown path for every other caller", func(t *testing.T) {
+		for _, m := range []string{http.MethodDelete, http.MethodPost, http.MethodPatch} {
+			rec := serveContent(t, handler(t, &decider{}, &store{file: file}), 0, as(httptest.NewRequest(m, contentDownload, nil), httpserver.MethodSession))
+			if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD, PUT" {
+				t.Errorf("%s for the session: %d Allow %q", m, rec.Code, rec.Header().Get("Allow"))
+			}
+		}
+		unknown := httptest.NewRecorder()
+		httpserver.Problem(unknown, httptest.NewRequest(http.MethodDelete, contentDownload, nil), notFoundRoute())
+		for name, method := range map[string]httpserver.AuthMethod{
+			"a bearer token": httpserver.MethodBearer, "a basic credential": httpserver.MethodBasic, "an API key": httpserver.MethodAPIKey, "no credential": httpserver.MethodNone,
+		} {
+			for _, m := range []string{http.MethodDelete, http.MethodPost, http.MethodPatch} {
+				rec := serveContent(t, handler(t, &decider{}, &store{file: file}), 0, as(httptest.NewRequest(m, contentDownload, nil), method))
+				if rec.Code != http.StatusNotFound || rec.Header().Get("Allow") != "" || rec.Body.String() != unknown.Body.String() {
+					t.Errorf("%s with %s: %d Allow %q %s, want the unknown path's %s", m, name, rec.Code, rec.Header().Get("Allow"), rec.Body.String(), unknown.Body.String())
+				}
+			}
+		}
+		// The hiding is the content routes' own: another route of the same router keeps its 405.
+		router := httpserver.NewClientRouter()
+		handler(t, &decider{}, &store{file: file}).Content(0).Register(router)
+		router.HandleFunc("GET /api/v1/repositories/{repoKey}", func(w http.ResponseWriter, _ *http.Request) {})
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, as(httptest.NewRequest(http.MethodDelete, "/api/v1/repositories/generic-local", nil), httpserver.MethodBearer))
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("DELETE of a repository with a token: %d", rec.Code)
 		}
 	})
 }

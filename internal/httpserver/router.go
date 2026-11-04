@@ -55,6 +55,9 @@ type Router struct {
 	uncleaned atomic.Pointer[[]uncleanedRoute]
 	// shapes are the error shapes of path prefixes (HandleErrorShape).
 	shapes shapeTable
+	// hidden holds the predicates of HideMethods; replaced as a whole, so the
+	// request path reads it without a lock.
+	hidden atomic.Pointer[[]hiddenRoute]
 	// custom replaces the answer to a request no route claims (SetFallback).
 	custom atomic.Pointer[http.Handler]
 }
@@ -110,6 +113,45 @@ func (r *Router) HandleErrorShape(prefix string, fn ShapeFunc) {
 type uncleanedRoute struct {
 	prefix string
 	h      http.Handler
+}
+
+type hiddenRoute struct {
+	prefix string
+	hidden func(*http.Request) bool
+}
+
+// HideMethods makes the fallback answer the 404 of an unknown path, never a 405 with Allow, for a request below prefix
+// that hidden reports. A route that answers some callers like an unknown path registers here, so that the 405 of a
+// method it does not offer does not tell those callers that the path exists: the UI's content routes answer every
+// request the session cookie did not authenticate so (R-API-025, Q-UI-106, Q-ARCH-307). hidden runs in the fallback,
+// after the authentication stage, so it may read the principal. The prefix belongs to a route family and is dropped on an
+// endpoint that does not serve it, like a pattern; there the fallback answers the plain 404 anyway (R-EP-005).
+func (r *Router) HideMethods(prefix string, hidden func(*http.Request) bool) {
+	if r.allow != nil && !r.allow(prefix) {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var cur []hiddenRoute
+	if p := r.hidden.Load(); p != nil {
+		cur = *p
+	}
+	next := append(slices.Clone(cur), hiddenRoute{prefix: prefix, hidden: hidden})
+	r.hidden.Store(&next)
+}
+
+// methodsHidden reports whether a predicate of HideMethods hides the methods of the request's path from its caller.
+func (r *Router) methodsHidden(req *http.Request) bool {
+	routes := r.hidden.Load()
+	if routes == nil {
+		return false
+	}
+	for _, rt := range *routes {
+		if strings.HasPrefix(req.URL.Path, rt.prefix) && rt.hidden(req) {
+			return true
+		}
+	}
+	return false
 }
 
 // NewClientRouter returns the router of the client listener with its two fixed
@@ -286,7 +328,7 @@ func (r *Router) fallback(w http.ResponseWriter, req *http.Request) {
 			allow = append(allow, m)
 		}
 	}
-	if len(allow) > 0 {
+	if len(allow) > 0 && !r.methodsHidden(req) {
 		if slices.Contains(allow, http.MethodGet) && !slices.Contains(allow, http.MethodHead) {
 			allow = append(allow, http.MethodHead)
 		}

@@ -104,26 +104,40 @@ func New(o Options) *Stage {
 // Authenticate implements [Authenticator].
 func (s *Stage) Authenticate(r *http.Request, ep EndpointRules) (Result, error) {
 	ctx := r.Context()
-	if isExchangeRoute(r) && (ep.Served == nil || ep.Served(r)) {
+	p := rulePath(r, ep)
+	if isExchangeRoute(r.Method, p) {
 		// The ID token in the Authorization header of an exchange is not a
 		// credential for this stage (R-AUTH-001).
 		return anonymousResult(), nil
 	}
 	route := routeAnswer{ask: ep.APIKeyRoute, r: r}
 	if raw, ok := s.apiKey(r, &route); ok {
-		return s.byToken(r, ep, raw, MethodAPIKey, "")
+		return s.byToken(r, p, ep, raw, MethodAPIKey, "")
 	}
 	if raw, method, user, present := credentialHeader(r); present {
-		return s.byToken(r, ep, raw, method, user)
+		return s.byToken(r, p, ep, raw, method, user)
 	}
-	if ep.AcceptsSession && s.o.Sessions != nil && sessionAllowed(r) {
+	if ep.AcceptsSession && s.o.Sessions != nil && sessionAllowed(r.Method, p) {
 		// The cookie is never a credential on an API-key route, whatever the
 		// method (R-NUGET-012, Q-AUTH-187).
 		if c, err := r.Cookie(SessionCookie); err == nil && c.Value != "" && !route.is() {
-			return s.bySession(r, c.Value)
+			return s.bySession(r, p, c.Value)
 		}
 	}
-	return s.noCredential(ctx, r, ep)
+	return s.noCredential(ctx, r, p, ep)
+}
+
+// rulePath is the path the stage's path rules read: the request path where the process serves the route family of the
+// request on its endpoint ([EndpointRules.Served]), and "" where it does not, which no rule matches. A request of an
+// unserved family is so decided like an unknown path by every rule at once - the exchange routes, the path rule of the
+// session cookie, the routes that are always open, the public operations, the hard limit on an unsafe anonymous request
+// to /api/v1 and the challenge - and its answer, before and after authentication, is the one of GET /does-not-exist
+// (R-EP-005, Q-ARCH-302, Q-ARCH-306).
+func rulePath(r *http.Request, ep EndpointRules) string {
+	if ep.Served != nil && !ep.Served(r) {
+		return ""
+	}
+	return r.URL.Path
 }
 
 // routeAnswer asks [EndpointRules.APIKeyRoute] at most once per request, and only
@@ -200,15 +214,15 @@ func (s *Stage) fail(method Method, reason string, err error) (Result, error) {
 	return Result{}, err
 }
 
-// challenge renders the WWW-Authenticate value of the request (R-AUTH-002). A
-// rejected token adds error="invalid_token" on the management API. Basic is
-// offered only to package clients on the package and raw-file routes, which answer
-// it with configured credentials; a browser, recognised by its Fetch Metadata
-// headers, would answer it with its native login dialog instead of trove's sign-in
-// screen, so it gets the Bearer challenge, as does every other route (Q-AUTH-173).
-func challenge(r *http.Request, tokenRejected bool) string {
-	path := r.URL.Path
-	if path == "/api/v1" || strings.HasPrefix(path, "/api/v1/") {
+// challenge renders the WWW-Authenticate value of the request (R-AUTH-002) for the
+// path of [rulePath]. A rejected token adds error="invalid_token" on the management
+// API. Basic is offered only to package clients on the package and raw-file routes,
+// which answer it with configured credentials; a browser, recognised by its Fetch
+// Metadata headers, would answer it with its native login dialog instead of trove's
+// sign-in screen, so it gets the Bearer challenge, as does every other route
+// (Q-AUTH-173), a route of a family the process does not serve included (Q-ARCH-306).
+func challenge(r *http.Request, path string, tokenRejected bool) string {
+	if isManagementAPI(path) {
 		if tokenRejected {
 			return `Bearer realm="trove", error="invalid_token"`
 		}
@@ -226,8 +240,9 @@ func fromBrowser(r *http.Request) bool {
 	return r.Header.Get("Sec-Fetch-Mode") != "" || r.Header.Get("Sec-Fetch-Dest") != ""
 }
 
-func unauthenticated(r *http.Request, code, detail string, tokenRejected bool) error {
-	return errs.E(errs.Unauthenticated, code, detail, errs.WithChallenge(challenge(r, tokenRejected)))
+// unauthenticated is the 401 of the request whose path rules read path ([rulePath]).
+func unauthenticated(r *http.Request, path, code, detail string, tokenRejected bool) error {
+	return errs.E(errs.Unauthenticated, code, detail, errs.WithChallenge(challenge(r, path, tokenRejected)))
 }
 
 // credentialHeader extracts the token of an Authorization header. present is
@@ -257,10 +272,10 @@ func credentialHeader(r *http.Request) (raw string, method Method, user string, 
 	return "", MethodNone, "", true
 }
 
-func (s *Stage) byToken(r *http.Request, ep EndpointRules, raw string, method Method, user string) (Result, error) {
+func (s *Stage) byToken(r *http.Request, path string, ep EndpointRules, raw string, method Method, user string) (Result, error) {
 	ctx := r.Context()
 	reject := func(reason string) (Result, error) {
-		return s.fail(method, reason, unauthenticated(r, errs.CodeInvalidToken, "The token is not valid.", true))
+		return s.fail(method, reason, unauthenticated(r, path, errs.CodeInvalidToken, "The token is not valid.", true))
 	}
 	if method == MethodNone {
 		return reject("unsupported_scheme") // not a trove token: rejected without a lookup
@@ -279,7 +294,7 @@ func (s *Stage) byToken(r *http.Request, ep EndpointRules, raw string, method Me
 	}
 	info, err := s.validate(ctx, r, raw)
 	if err != nil {
-		return s.mapTokenErr(r, method, err)
+		return s.mapTokenErr(r, path, method, err)
 	}
 	if len(info.Scope.Endpoints) > 0 && !slices.Contains(info.Scope.Endpoints, ep.Name) {
 		ep.refused(r, Refusal{Reason: RefusedTokenBinding, TokenType: typ, TokenID: info.ID})
@@ -343,7 +358,7 @@ func (s *Stage) countFailure(ctx context.Context, r *http.Request) {
 	}
 }
 
-func (s *Stage) mapTokenErr(r *http.Request, method Method, err error) (Result, error) {
+func (s *Stage) mapTokenErr(r *http.Request, path string, method Method, err error) (Result, error) {
 	var throttled *token.ThrottledError
 	switch {
 	case errors.As(err, &throttled):
@@ -354,10 +369,10 @@ func (s *Stage) mapTokenErr(r *http.Request, method Method, err error) (Result, 
 		}
 		return s.fail(method, "throttled", errs.E(errs.RateLimited, errs.CodeRateLimited, "Too many rejected credentials from this address.", errs.WithRetryAfter(retry)))
 	case errors.Is(err, token.ErrOwner):
-		return s.fail(method, "principal_disabled", unauthenticated(r, errs.CodePrincipalDisabled, "The owner of the token is disabled.", false))
+		return s.fail(method, "principal_disabled", unauthenticated(r, path, errs.CodePrincipalDisabled, "The owner of the token is disabled.", false))
 	case errors.Is(err, token.ErrMalformed), errors.Is(err, token.ErrUnknown), errors.Is(err, token.ErrRevoked), errors.Is(err, token.ErrExpired):
 		// The response does not say which; the audit event does (R-AUTH-002).
-		return s.fail(method, rejectionReason(err), unauthenticated(r, errs.CodeInvalidToken, "The token is not valid.", true))
+		return s.fail(method, rejectionReason(err), unauthenticated(r, path, errs.CodeInvalidToken, "The token is not valid.", true))
 	}
 	if _, ok := errs.As(err); ok {
 		return s.fail(method, "unavailable", err)
@@ -395,12 +410,12 @@ func (s *Stage) groups(ctx context.Context, id string) ([]principal.GroupRef, er
 	return g, nil
 }
 
-func (s *Stage) bySession(r *http.Request, cookie string) (Result, error) {
+func (s *Stage) bySession(r *http.Request, path, cookie string) (Result, error) {
 	ctx := r.Context()
 	info, err := s.o.Sessions.Validate(ctx, cookie)
 	if err != nil {
 		if errors.Is(err, session.ErrInvalid) {
-			return s.fail(MethodSession, "invalid", unauthenticated(r, "session_expired", "The session has ended. Sign in again.", false))
+			return s.fail(MethodSession, "invalid", unauthenticated(r, path, "session_expired", "The session has ended. Sign in again.", false))
 		}
 		if _, ok := errs.As(err); ok {
 			return s.fail(MethodSession, "unavailable", err)
@@ -426,17 +441,20 @@ func (s *Stage) bySession(r *http.Request, cookie string) (Result, error) {
 // the route is one that is always reachable without a credential. An endpoint that
 // admits no anonymous request turns every request without a credential into a 401,
 // those routes included (R-EP-010 item 4), so an outside audience learns nothing
-// from the answer about which routes the endpoint serves (R-EP-005).
-func (s *Stage) noCredential(ctx context.Context, r *http.Request, ep EndpointRules) (Result, error) {
+// from the answer about which routes the endpoint serves (R-EP-005). path is the
+// one of [rulePath]: a route of a family the process does not serve is neither
+// always open nor public, and the hard limit of /api/v1 does not apply to it, so
+// it is decided like an unknown path (Q-ARCH-302).
+func (s *Stage) noCredential(ctx context.Context, r *http.Request, path string, ep EndpointRules) (Result, error) {
 	if !ep.Anonymous {
 		ep.refused(r, Refusal{Reason: RefusedAnonymous})
-		return s.fail(MethodNone, "no_credential", unauthenticated(r, errs.CodeCredentialsRequired, "This endpoint requires a credential.", false))
+		return s.fail(MethodNone, "no_credential", unauthenticated(r, path, errs.CodeCredentialsRequired, "This endpoint requires a credential.", false))
 	}
-	if (ep.Served == nil || ep.Served(r)) && (alwaysOpen(r) || (ep.PublicRoute != nil && ep.PublicRoute(r))) {
+	if path != "" && (alwaysOpen(r.Method, path) || (ep.PublicRoute != nil && ep.PublicRoute(r))) {
 		return anonymousResult(), nil
 	}
 	// Anonymous never passes an unsafe method on /api/v1 (R-AUTH-037 hard limit).
-	if s.o.Settings != nil && (!unsafeMethod(r.Method) || !isManagementAPI(r.URL.Path)) {
+	if s.o.Settings != nil && (!unsafeMethod(r.Method) || !isManagementAPI(path)) {
 		eff, err := s.o.Settings.Effective(ctx)
 		if err != nil {
 			if _, ok := errs.As(err); ok {
@@ -448,7 +466,7 @@ func (s *Stage) noCredential(ctx context.Context, r *http.Request, ep EndpointRu
 			return anonymousResult(), nil
 		}
 	}
-	return s.fail(MethodNone, "no_credential", unauthenticated(r, errs.CodeCredentialsRequired, "This endpoint requires a credential.", false))
+	return s.fail(MethodNone, "no_credential", unauthenticated(r, path, errs.CodeCredentialsRequired, "This endpoint requires a credential.", false))
 }
 
 func unsafeMethod(m string) bool {
@@ -465,18 +483,20 @@ func isManagementAPI(p string) bool { return p == "/api/v1" || strings.HasPrefix
 // accepted on /api/v1 for every method, on /files for GET, HEAD, PUT and DELETE,
 // on /api/<format> for GET and HEAD, and ignored everywhere else. The login
 // options ignore it too: an ended session's cookie would make the sign-in screen
-// unreachable, and the browser cannot drop an HttpOnly cookie (Q-AUTH-177).
-func sessionAllowed(r *http.Request) bool {
-	p := r.URL.Path
+// unreachable, and the browser cannot drop an HttpOnly cookie (Q-AUTH-177). p is
+// the path of [rulePath], so a route of a family the process does not serve
+// ignores the cookie as an unknown path does, an ended session's included
+// (Q-ARCH-306).
+func sessionAllowed(method, p string) bool {
 	switch {
 	case p == "/api/v1/auth/login-options":
 		return false
 	case isManagementAPI(p):
 		return true
 	case strings.HasPrefix(p, "/files/"):
-		return slices.Contains([]string{http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete}, r.Method)
+		return slices.Contains([]string{http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete}, method)
 	case strings.HasPrefix(p, "/api/"):
-		return r.Method == http.MethodGet || r.Method == http.MethodHead
+		return method == http.MethodGet || method == http.MethodHead
 	}
 	return false
 }
@@ -488,17 +508,16 @@ func sessionAllowed(r *http.Request) bool {
 // UI shell under /ui/, whose data
 // comes from the management API (Q-AUTH-19). A credential sent to one of them is
 // still evaluated.
-func alwaysOpen(r *http.Request) bool {
-	p := r.URL.Path
+func alwaysOpen(method, p string) bool {
 	switch {
 	case p == "/" || p == "/ui" || strings.HasPrefix(p, "/ui/"):
-		return !unsafeMethod(r.Method)
+		return !unsafeMethod(method)
 	case p == "/api/v1/auth/login-options", p == "/api/v1/auth/oidc/token",
 		strings.HasPrefix(p, "/api/v1/auth/device/"), strings.HasPrefix(p, "/auth/"),
 		npmLoginStart(p):
 		return true
 	case p == "/api/v1/tokens/revoke":
-		return r.Method == http.MethodPost
+		return method == http.MethodPost
 	}
 	return false
 }
@@ -522,12 +541,13 @@ func npmLoginStart(p string) bool {
 // isExchangeRoute reports whether a request is a POST to a route that takes a
 // GitLab ID token as request input: the CI exchange and the npm trusted-publishing
 // exchanges (R-AUTH-001). The stage does not evaluate the Authorization header
-// of these; the handler validates the ID token.
-func isExchangeRoute(r *http.Request) bool {
-	if r.Method != http.MethodPost {
+// of these; the handler validates the ID token. p is the path of [rulePath]: on a
+// process that does not serve the exchange, the header is a credential as on any
+// other path (Q-ARCH-302).
+func isExchangeRoute(method, p string) bool {
+	if method != http.MethodPost {
 		return false
 	}
-	p := r.URL.Path
 	if p == "/api/v1/auth/oidc/token" {
 		return true
 	}

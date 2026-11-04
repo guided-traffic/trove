@@ -20,9 +20,9 @@ import (
 // on the API's own origin. The routes share everything with /files/ through [Handler.serve] (path cleaning, the decision
 // of every request on one index, Range and conditional requests, Repr-Digest, the content headers, the blocking of
 // R-VULN-015, the download statistics), so a caller without read gets the same 404 here as there. They differ in three
-// things only: a request that the session cookie did not authenticate answers the 404 of an unknown path, a PUT above
-// the limit of the UI's uploads is refused with 413 before the body is read, and DELETE is not offered (the UI deletes
-// through the items operation).
+// things only: a request that the session cookie did not authenticate answers the 404 of an unknown path, whatever its
+// method; a PUT above the limit of the UI's uploads is refused with 413 before the body is read; and DELETE is not
+// offered (the UI deletes through the items operation), so the session's DELETE answers 405 (Q-ARCH-307).
 
 const (
 	contentBase   = "/api/v1/repositories/"
@@ -47,11 +47,22 @@ func (h *Handler) Content(maxUpload int64) *Content {
 	return &Content{h: h, maxUpload: max(0, maxUpload)}
 }
 
-// Register mounts GET, HEAD and PUT of the content routes on the router.
+// Register mounts GET, HEAD and PUT of the content routes on the router. Another method is answered by the router's
+// fallback: the 405 with Allow: GET, HEAD, PUT for a request the session cookie authenticated, and for every other
+// request the 404 of an unknown path, as for the three methods it mounts (Q-ARCH-307).
 func (c *Content) Register(r *httpserver.Router) {
 	for _, m := range []string{http.MethodGet, http.MethodHead, http.MethodPut} {
 		r.Handle(ContentPattern(m), c)
 	}
+	r.HideMethods(contentBase, func(req *http.Request) bool {
+		_, _, ok := splitContentPath(req.URL.EscapedPath())
+		return ok && !bySession(req)
+	})
+}
+
+// bySession reports whether the session cookie authenticated the request.
+func bySession(r *http.Request) bool {
+	return httpserver.PrincipalFrom(r.Context()).Credential.Method == httpserver.MethodSession
 }
 
 // ServeHTTP answers a content request.
@@ -59,7 +70,7 @@ func (c *Content) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Token clients keep their bulk traffic on packages: only a request the session cookie authenticated is served, and
 	// every other one is the answer of a path the role does not have (Q-UI-106). The stage has run: a request without a
 	// credential never reaches here unless an anonymous caller is admitted, who is refused alike.
-	if httpserver.PrincipalFrom(r.Context()).Credential.Method != httpserver.MethodSession {
+	if !bySession(r) {
 		httpserver.Problem(w, r, errs.E(errs.NotFound, errs.CodeNotFound, "No route matches the request path."))
 		return
 	}

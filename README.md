@@ -1240,7 +1240,7 @@ auth:
       threshold: 5                      # default; 1 to 1000
       window: 15m                       # default; 1m to 24h
       duration: 15m                     # default; 1m to 24h
-    check_interval: 10s                 # default; 1s to 5m: how often a web replica looks at the password file
+    check_interval: 10s                 # default; 1s to 5m: how often an api replica (web, all) looks at the password file
 authz:
   hide_existence: true                  # default: a refused read answers 404, as for a missing resource
   cache:

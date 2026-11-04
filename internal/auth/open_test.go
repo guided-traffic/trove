@@ -2,7 +2,6 @@ package auth
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"testing"
 )
 
@@ -20,7 +19,7 @@ func TestR_AUTH_037_TheNpmLoginStartIsAnchored(t *testing.T) {
 		{"/api/npm/npm-local/-/v1/login/x", false},
 	} {
 		t.Run("R-AUTH-037 "+c.path, func(t *testing.T) {
-			if got := alwaysOpen(httptest.NewRequest(http.MethodPost, c.path, nil)); got != c.open {
+			if got := alwaysOpen(http.MethodPost, c.path); got != c.open {
 				t.Fatalf("alwaysOpen(%s) = %v, want %v", c.path, got, c.open)
 			}
 		})

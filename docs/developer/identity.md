@@ -92,11 +92,16 @@ request ─► chain stage 6 ─► app.authenticate ─► auth.Stage.Authentic
 - Errors: `invalid_token` for malformed, unknown, revoked, expired and wrongly bound tokens (the response does not say
   which), `principal_disabled` for a disabled owner, `credentials_required` without a credential, `session_expired`,
   `rate_limited` (429 with `Retry-After`) when the address is throttled, 503 when PostgreSQL does not answer.
-- The challenge is `Bearer realm="trove"` (plus `error="invalid_token"` after a rejected token) under `/api/v1/`, otherwise
-  `Basic realm="trove"`.
+- The challenge is `Bearer realm="trove"` (plus `error="invalid_token"` after a rejected token) under `/api/v1/`,
+  `Basic realm="trove"` for a package client on `/files/` and `/api/<format>/`, and `Bearer realm="trove"` everywhere else
+  and for a browser (Q-AUTH-173).
 - The session cookie is accepted on `/api/v1/` for every method, on `/files/` for GET, HEAD, PUT and DELETE, on
   `/api/<format>/` for GET and HEAD, and ignored elsewhere and on `/api/v1/auth/login-options`, so an ended session's cookie
   cannot keep the sign-in screen from loading (Q-AUTH-177).
+- Every path rule above reads the path of `rulePath`: the request path where the process serves the request's family
+  (`EndpointRules.Served`), and `""` where it does not, so a request of an unserved family gets the challenge, the cookie
+  rule and the anonymous verdict of `/does-not-exist` (Q-ARCH-302, Q-ARCH-306). On `api`, an ended session's cookie on
+  `/files/x` is ignored as on an unknown path instead of answering `session_expired`.
 - Anonymous: the endpoint allows it (`EndpointRules.Anonymous`), `anonymousAccess` is on and the ceiling
   `auth.anonymous.allowed` is true (`SettingsStore.Effective`), and the method is safe if the path is under `/api/v1/`.
   Independently of the runtime switch, on an endpoint that allows anonymous requests, a request is anonymous when the
