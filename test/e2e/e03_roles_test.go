@@ -182,11 +182,17 @@ func TestE03Roles(t *testing.T) {
 		}
 		time.Sleep(2 * time.Second) // the logs of the pods reach the API server
 		apiLog, pkgLog := requestLines(t, selAPI, start), requestLines(t, selPackages, start)
+		// A sent path counts once: /ui/<marker> answers a redirect to its locale, which the client follows and the pod logs
+		// as a second request; only the paths this test sent are counted.
+		sent := map[string]bool{}
+		for _, p := range append(append([]string{}, pkgPaths...), apiPaths...) {
+			sent[p] = true
+		}
 		count := func(logs map[string][]string, family []string) (n int, pods []string) {
 			for pod, paths := range logs {
 				hit := false
 				for _, p := range paths {
-					if hasPrefixAny(p, family) && strings.Contains(p, marker) {
+					if hasPrefixAny(p, family) && strings.Contains(p, marker) && sent[p] {
 						n++
 						hit = true
 					}
