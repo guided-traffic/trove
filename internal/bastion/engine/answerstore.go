@@ -259,15 +259,18 @@ func (s *answerStore) dropWhere(drop func(answers.Answer) bool) {
 		key  string
 	}
 	var gone []rec
+	shared := s.e.sharedEnabled()
 	s.mem.retain(func(mk string, v *answerVal) bool {
 		if !drop(v.Answer) {
 			return true
 		}
-		gone = append(gone, rec{sharedKind(v.Kind), hashKey(mk)})
+		if shared { // a SHA-256 and a hex string per deleted answer: only for a record that exists
+			gone = append(gone, rec{sharedKind(v.Kind), hashKey(mk)})
+		}
 		return false
 	})
 	s.e.priv.retain(func(_ string, d *privDoc) bool { return !drop(d.Answer) })
-	if len(gone) == 0 || !s.e.sharedEnabled() {
+	if len(gone) == 0 {
 		return
 	}
 	s.e.background(func() {

@@ -299,6 +299,8 @@ test-performance: ## Latency targets of the per-change tier enforced (P-13, P-14
 	    -json ./internal/authz/ | tee -a .out/test-performance.json | $(TESTLOG) || rc=$$?; \
 	  TROVE_PERF_GATE=1 go test -count=1 -p 1 -run 'TestFlightLockWait' \
 	    -json ./internal/cluster/ | tee -a .out/test-performance.json | $(TESTLOG) || rc=$$?; \
+	  TROVE_PERF_GATE=1 go test -count=1 -p 1 -run 'TestR_BAS_026_AFeedPageOfAThousandEntries' \
+	    -json ./internal/bastion/engine/ | tee -a .out/test-performance.json | $(TESTLOG) || rc=$$?; \
 	  exit $$rc
 
 # S3 conformance against MinIO, the leg that used to run nightly: MinIO is built from source at

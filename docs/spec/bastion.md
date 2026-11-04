@@ -1247,6 +1247,7 @@ Acceptance criteria:
 - Removing `acme-full` from the group that holds its grant refuses its next tarball request within 5 s although the tarball is
   cached and its `full` answer was minutes old.
 - A replica started after the revocation does not accept the revoked token's answer stored in Valkey.
+- The 5 s of a page of 1,000 entries against 200,000 answers is a target of the reference environment: `make test-performance` enforces it with `TROVE_PERF_GATE=1`; per change the test bounds the page by 100 times one matching pass over the same answers ([Q-BAS-140](#q-bas-140--where-the-5-s-of-a-burst-page-is-enforced)).
 
 ### R-BAS-027 · The main installation unreachable: grace period, then nothing
 Priority: **MVP** · Covers: trove-only
@@ -5137,6 +5138,25 @@ fills of objects near `max_object_bytes` are common (the bound would be raised, 
 
 **Applied in the spec:** R-BAS-030, R-BAS-045, R-BAS-046, H-450; code: [cache/spool.go](../../internal/bastion/cache/spool.go), [cache/fill.go](../../internal/bastion/cache/fill.go), [chart helpers](../../deploy/helm/trove-bastion/templates/_helpers.tpl),
 `TestR_BAS_021_R_BAS_030_TheFillsInProgressNeverHoldMoreThanTheSpoolBudget`, `TestR_BAS_030_TheSpoolFitsTheTemporaryVolume`.
+
+### Q-BAS-140 · Where the 5 s of a burst page is enforced
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: finding F-45. `TestR_BAS_026_AFeedPageOfAThousandEntriesIsAppliedAgainstTwoHundredThousandAnswersWithinTheBound` failed in the unit job of Test and Release run 41797860424 (`make test`: `-race -covermode=atomic -coverpkg=./...`, all packages in parallel) with "the page took 5.47 s to apply, the bound is 5 s". Its comment claimed two orders of magnitude of headroom. Measured for one page (1,000 token entries, 200,000 answers, 100,000 deleted): about 0.1 s natively, 0.65 s with `-race -coverpkg=./...`, 1.0 to 1.2 s in the pinned `golang:1.27.3` image on 2 CPUs with `-coverpkg=./...` and 0.57 to 0.67 s without, so 5 to 50 times headroom when the test runs alone. The cost is CPU work that scales with the load: the page is one pass (map iteration, a matcher lookup per answer, the deletion of the half that matches, with the allocation and GC that go with it) and costs 2.0 to 2.4 times one matching pass over the same answers, natively and under the race detector. A pass per entry (the design of Q-BAS-126 replaced) would be 1,000 passes. One real waste was in the pass: `dropWhere` hashed (SHA-256 and hex) the key of every deleted answer for the shared store even when the shared store is off, 100,000 hashes in this test.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Widen the fixed bound | 30 s | Smallest change | A number that is only right for one machine; blind to the regression the test guards |
+| (b) Remove the per-change check | The 5 s only in the nightly run | No flake | A pass per entry (a thousand times the cost) passes every change |
+| (c) The 5 s of the reference environment under `TROVE_PERF_GATE=1`; per change a bound relative to the cost of one matching pass over the same answers, measured right before (chosen) | Follows [Q-ARCH-293](architecture.md#q-arch-293--where-a-wall-clock-target-of-a-functional-test-is-enforced) | The load scales both sides; still fails on a pass per entry (1,000 passes against a bound of 100) | One number (100) tuned to a measurement of 2 to 3 |
+| (d) Dedicated quiet runners | Fixed bound stays | Strictest | The runners are shared ([Q-ARCH-220](architecture.md#q-arch-220--p-13-starts-its-clock-at-the-commit-and-its-p99-is-enforced-in-the-nightly-performance-run)) |
+
+**Choice:** (c), and `dropWhere` computes the shared record keys only when the shared store is enabled. The test runs in `make test-performance` with the gate (the 5 s of R-BAS-026 enforced); per change the page may cost at most 100 times the median of 5 matching passes measured right before it.
+
+**Rationale:** the ratio of the page to a pass was 2.0 to 2.4 in all environments measured, while the absolute time varied by a factor of 50 with the load, so the ratio is the stable measure. A per-entry design exceeds 100 passes by a factor of 10. The development agent would revisit the choice when the unit tier runs on runners without a CPU limit (then the fixed 5 s returns) or when a regression slips through the factor.
+
+**Applied in the spec:** R-BAS-026 (test note); code: `engine.answerStore.dropWhere`; `TestR_BAS_026_AFeedPageOfAThousandEntriesIsAppliedAgainstTwoHundredThousandAnswersWithinTheBound`; [releasing.md](../developer/releasing.md); `make test-performance`.
 
 ## What this does not cover
 
