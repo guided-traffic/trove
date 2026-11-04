@@ -1,0 +1,52 @@
+{{- /*
+One autoscaling/v2 HorizontalPodAutoscaler per Deployment that enables it (R-HA-032): every role,
+every pool, every endpoint pool. The Deployment then leaves out spec.replicas. The CPU and memory
+targets are utilisation of the container's requests; further metrics come from autoscaling.metrics.
+*/ -}}
+{{- range $unit := include "trove.units" . | fromYamlArray }}
+{{- $a := $unit.r.autoscaling }}
+{{- if $a.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "trove.fullname" $ }}-{{ $unit.name }}
+  labels:
+    {{- include "trove.labels" (dict "root" $ "component" $unit.role "pool" $unit.pool) | nindent 4 }}
+  {{- with (include "trove.commonAnnotations" $) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "trove.fullname" $ }}-{{ $unit.name }}
+  minReplicas: {{ $a.minReplicas }}
+  maxReplicas: {{ $a.maxReplicas }}
+  metrics:
+    {{- if $a.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $a.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if $a.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ $a.targetMemoryUtilizationPercentage }}
+    {{- end }}
+    {{- with $a.metrics }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $a.behavior }}
+  behavior:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}

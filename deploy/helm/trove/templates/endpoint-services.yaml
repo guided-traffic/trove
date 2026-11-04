@@ -1,17 +1,27 @@
 {{- /*
-One Service per further endpoint (R-EP-008): <fullname>-ep-<name> with the endpoint's port, selecting
-the pods that serve it (the main web pods, or the endpoint's pool). sessionAffinity is fixed to None
-like the default Service (R-HA-037).
+The Services of a further endpoint (R-EP-008, Q-EP-71): <fullname>-ep-<name> with the endpoint's port,
+selecting the pods of the role that serves the surface's packages and files families (the api pods
+when the surface holds neither), and <fullname>-ep-<name>-api beside it, selecting the api pods, when
+the surface holds families of both roles. With an endpoint pool the selectors name the pool's pods;
+in the bridge of R-HA-064 the one Service selects the web pods that served the endpoint before the
+cut. sessionAffinity is fixed to None like every Service (R-HA-037).
 */ -}}
 {{- range $name := include "trove.endpointNames" . | fromYamlArray }}
 {{- $e := include "trove.endpoint" (dict "root" $ "name" $name) | fromYaml }}
+{{- $roles := include "trove.surfaceRoles" (dict "root" $ "name" $name) | fromYamlArray }}
+{{- $targets := list (dict "suffix" "" "role" (first $roles)) }}
+{{- if and (eq (len $roles) 2) (not $.Values.web.enabled) }}
+{{- $targets = append $targets (dict "suffix" "-api" "role" "api") }}
+{{- end }}
+{{- range $t := $targets }}
+{{- $role := ternary "web" $t.role $.Values.web.enabled }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "trove.fullname" $ }}-ep-{{ $name }}
+  name: {{ include "trove.fullname" $ }}-ep-{{ $name }}{{ $t.suffix }}
   labels:
-    {{- include "trove.labels" (dict "root" $ "component" "web" "pool" $e.pool) | nindent 4 }}
+    {{- include "trove.labels" (dict "root" $ "component" $role "pool" $e.pool) | nindent 4 }}
     trove/endpoint: {{ $name | quote }}
   {{- $bt := include "trove.endpointBackendTLS" (dict "root" $ "name" $name) | fromYaml }}
   {{- $svcAnn := merge (dict) $e.serviceAnnotations $.Values.commonAnnotations }}
@@ -42,5 +52,6 @@ spec:
       appProtocol: https
       {{- end }}
   selector:
-    {{- include "trove.selectorLabels" (dict "root" $ "component" "web" "pool" $e.pool) | nindent 4 }}
+    {{- include "trove.selectorLabels" (dict "root" $ "component" $role "pool" $e.pool) | nindent 4 }}
+{{- end }}
 {{- end }}

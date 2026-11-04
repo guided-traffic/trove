@@ -537,12 +537,13 @@ The chart renders each entry of `endpoints` into `trove.yaml` and into the Kuber
 carry its traffic. The default endpoint keeps the objects of [ha-and-helm.md](ha-and-helm.md)
 R-HA-037 and R-HA-038 (the role Services `<fullname>-api` and `<fullname>-packages`, `ingress.*`, `gateway.*`).
 
-**The role of an endpoint's pods** (phase 6a, specified, not built yet; Q-EP-70, Q-EP-71). An endpoint is served by the
+**The role of an endpoint's pods** (phase 6a, built in the chart; Q-EP-70, Q-EP-71). An endpoint is served by the
 roles whose families its surface holds: `packages` for `packages` and `files`, `api` for `api` and `ci_exchange` (`ui` is
 never on a further endpoint). Without a pool, the endpoint's port opens on the main Deployment of each of those roles; with
 `pool.enabled`, on a pool of each of them. An endpoint whose surface holds families of both roles is split by path at its
-edge like the default endpoint (R-HA-037's table, restricted to its families), onto a Service per role. Today, before
-phase 6a, the main `web` pods or the pool `<fullname>-web-ep-<name>` serve every family of the surface.
+edge like the default endpoint (R-HA-037's table, restricted to its families), onto a Service per role. In the bridge of
+R-HA-064 (`web.enabled`), the main `web` pods or the pool `<fullname>-web-ep-<name>` serve every family of the surface, as they did
+before the cut.
 
 ```yaml
 endpoints: {}                             # default (proposed): only the default endpoint; example:

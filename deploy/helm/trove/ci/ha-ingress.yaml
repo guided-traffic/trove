@@ -98,12 +98,15 @@ ingress:
   tls:
     - secretName: trove-tls                        # example
       hosts: [trove.example.com]
-web:
+api:
   podAnnotations:
-    example.com/note: web                          # example
+    example.com/note: api                          # example
   extraEnv:
     - name: TROVE_LOG_LEVEL                        # example
       value: debug
+packages:
+  podAnnotations:
+    example.com/note: packages                     # example
 worker:
   nodeSelector:
     kubernetes.io/os: linux                        # example

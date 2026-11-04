@@ -1,5 +1,5 @@
 {{/*
-The pod pieces web and worker share. Argument: dict "root" . "role" "web".
+The pod pieces the Deployments of every role share.
 */}}
 
 {{/* Probes (R-HA-034). Argument: the root context. */}}
@@ -33,10 +33,11 @@ Topology spread (R-HA-032): zone (ScheduleAnyway) and host (DoNotSchedule). Both
 taints, so a cordoned node does not count as a domain and the replacement of an evicted pod can
 schedule (R-HA-059), and both compute the skew per ReplicaSet (matchLabelKeys), so a rollout does
 not pile new pods onto the nodes the old ones leave. Non-empty topologySpreadConstraints replace
-the generated ones and carry their own labelSelector.
+the generated ones and carry their own labelSelector. Argument: dict "root" . "role" "r" <the
+Deployment's effective values> "pool" "".
 */}}
 {{- define "trove.topologySpread" -}}
-{{- $r := index .root.Values .role -}}
+{{- $r := .r -}}
 {{- if $r.topologySpreadConstraints }}
 topologySpreadConstraints:
 {{- toYaml $r.topologySpreadConstraints | nindent 2 }}

@@ -43,7 +43,7 @@ func TestEndpoints(t *testing.T) {
 	t.Run("R-EP-008 two endpoints render two Services, two Ingresses, two NetworkPolicies and the configuration block", func(t *testing.T) {
 		_, docs := render(t, endpointsSet())
 
-		// Service per endpoint with its own port, selecting the main web pods.
+		// Service per endpoint with its own port, selecting the main packages pods (Q-EP-70).
 		for name, port := range map[string]int{"customers": 8443, "partners": 8444} {
 			svc := find(docs, "Service", "trove-ep-"+name)
 			if svc == nil {
@@ -57,13 +57,17 @@ func TestEndpoints(t *testing.T) {
 				t.Errorf("Service %s sessionAffinity = %q", name, str(svc, "spec", "sessionAffinity"))
 			}
 			sel, _ := at(svc, "spec", "selector").(map[string]any)
-			if sel["app.kubernetes.io/component"] != "web" || sel["trove/pool"] != "" {
-				t.Errorf("Service %s selector = %v, want the main web pods", name, sel)
+			if sel["app.kubernetes.io/component"] != "packages" || sel["trove/pool"] != "" {
+				t.Errorf("Service %s selector = %v, want the main packages pods", name, sel)
 			}
 		}
-		web := at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec")
-		if got := containerPorts(web); !hasInt(got, 8080) || !hasInt(got, 8443) || !hasInt(got, 8444) || !hasInt(got, 8081) {
-			t.Errorf("web container ports = %v, want 8080, 8081 and both endpoint ports", got)
+		pkgs := at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec")
+		if got := containerPorts(pkgs); !hasInt(got, 8080) || !hasInt(got, 8443) || !hasInt(got, 8444) || !hasInt(got, 8081) {
+			t.Errorf("packages container ports = %v, want 8080, 8081 and both endpoint ports", got)
+		}
+		// both endpoints' surfaces lie within packages, so no api pod opens their ports (R-EP-002)
+		if got := containerPorts(at(find(docs, "Deployment", "trove-api"), "spec", "template", "spec")); hasInt(got, 8443) || hasInt(got, 8444) {
+			t.Errorf("api container ports = %v, want no endpoint port", got)
 		}
 		if got := containerPorts(at(find(docs, "Deployment", "trove-worker"), "spec", "template", "spec")); len(got) != 1 || got[0] != 8081 {
 			t.Errorf("worker container ports = %v, want 8081 only", got)
@@ -103,24 +107,36 @@ func TestEndpoints(t *testing.T) {
 			t.Errorf("default Ingress = %v", def)
 		}
 
-		// NetworkPolicy per endpoint port, from networkPolicy.from only.
-		np := find(docs, "NetworkPolicy", "trove-ep-customers")
-		rules := list(np, "spec", "ingress")
-		if len(rules) != 1 {
-			t.Fatalf("customers policy has %d rules, want 1", len(rules))
+		// The rule of an endpoint port is part of the policy of the Deployment that opens it (Q-HA-76):
+		// from networkPolicy.from only, and no policy of its own.
+		if find(docs, "NetworkPolicy", "trove-ep-customers") != nil {
+			t.Error("a NetworkPolicy of its own is rendered for an endpoint")
 		}
-		ports, from, has := portsOf(rules[0])
-		if len(ports) != 1 || ports[0] != 8443 || !has || len(from) != 1 ||
-			str(from[0], "namespaceSelector", "matchLabels", "kubernetes.io/metadata.name") != "ingress-external" {
-			t.Errorf("customers rule = %v from %v", ports, from)
+		byPort := map[int][]any{}
+		var order []int
+		for _, r := range list(find(docs, "NetworkPolicy", "trove-packages"), "spec", "ingress") {
+			p, from, has := portsOf(r)
+			if len(p) != 1 {
+				t.Fatalf("a packages rule names %d ports", len(p))
+			}
+			order = append(order, p[0])
+			if has {
+				byPort[p[0]] = from
+			}
 		}
-		ports, _, has = portsOf(list(find(docs, "NetworkPolicy", "trove-ep-partners"), "spec", "ingress")[0])
-		if len(ports) != 1 || ports[0] != 8444 || has {
-			t.Errorf("partners rule = ports %v (has from %v), want 8444 from anywhere", ports, has)
+		if len(order) != 4 || order[0] != 8080 || !hasInt(order, 8443) || !hasInt(order, 8444) || order[3] != 8081 {
+			t.Errorf("packages policy ports = %v, want 8080, both endpoint ports and 8081", order)
 		}
-		// the web policy still admits the default ports only
-		if p, _, _ := portsOf(list(find(docs, "NetworkPolicy", "trove-web"), "spec", "ingress")[0]); len(p) != 1 || p[0] != 8080 {
-			t.Errorf("web policy rule 1 = %v", p)
+		if from := byPort[8443]; len(from) != 1 || str(from[0], "namespaceSelector", "matchLabels", "kubernetes.io/metadata.name") != "ingress-external" {
+			t.Errorf("customers rule from %v, want the ingress-external namespace", from)
+		}
+		if _, has := byPort[8444]; has {
+			t.Error("partners rule has a from, want 8444 from anywhere")
+		}
+		for _, r := range list(find(docs, "NetworkPolicy", "trove-api"), "spec", "ingress") {
+			if p, _, _ := portsOf(r); hasInt(p, 8443) || hasInt(p, 8444) {
+				t.Errorf("the api policy admits an endpoint port %v", p)
+			}
 		}
 
 		// trove.yaml: the endpoints block and the default endpoint's hosts.
@@ -169,7 +185,7 @@ func TestEndpoints(t *testing.T) {
 
 	t.Run("R-EP-008 the endpoint's pairs are mounted as directories and rendered as tls.certificates", func(t *testing.T) {
 		_, docs := render(t, endpointsSet())
-		web := at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec")
+		web := at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec")
 		for secret, path := range map[string]string{
 			"trove-packages-tls":          "/var/run/secrets/trove/endpoints/customers/0",
 			"trove-packages-wildcard-tls": "/var/run/secrets/trove/endpoints/customers/1",
@@ -177,7 +193,7 @@ func TestEndpoints(t *testing.T) {
 		} {
 			v := secretVolume(web, secret)
 			if v == nil {
-				t.Errorf("web does not mount Secret %s", secret)
+				t.Errorf("packages does not mount Secret %s", secret)
 				continue
 			}
 			m := mountOf(web, v)
@@ -238,12 +254,15 @@ func TestEndpoints(t *testing.T) {
 
 	t.Run("R-EP-008 an endpoint pool renders its Deployment, disruption budget and a Service that selects only its pods", func(t *testing.T) {
 		_, docs := render(t, poolSet())
-		d := find(docs, "Deployment", "trove-web-ep-customers")
+		d := find(docs, "Deployment", "trove-packages-ep-customers")
 		if d == nil {
-			t.Fatal("Deployment trove-web-ep-customers not rendered")
+			t.Fatal("Deployment trove-packages-ep-customers not rendered")
+		}
+		if find(docs, "Deployment", "trove-api-ep-customers") != nil {
+			t.Error("an api pool is rendered for a surface without api families")
 		}
 		pod := at(d, "spec", "template", "spec")
-		if got := strings.Join(containerArgs(pod), " "); got != "serve --role web" {
+		if got := strings.Join(containerArgs(pod), " "); got != "serve --role packages" {
 			t.Errorf("pool args = %q", got)
 		}
 		if str(envByName(pod)["TROVE_POOL_NAME"], "value") != "ep-customers" {
@@ -256,7 +275,7 @@ func TestEndpoints(t *testing.T) {
 			t.Errorf("pool limits = %v, want the override", at(pod, "containers", "0", "resources", "limits"))
 		}
 		if got := str(at(pod, "containers", "0", "resources", "requests"), "cpu"); got != "1" {
-			t.Errorf("pool requests.cpu = %q, want the web value", got)
+			t.Errorf("pool requests.cpu = %q, want the packages value", got)
 		}
 		if str(d, "spec", "selector", "matchLabels", "trove/pool") != "ep-customers" || str(d, "spec", "template", "metadata", "labels", "trove/pool") != "ep-customers" {
 			t.Errorf("pool labels: selector %v", at(d, "spec", "selector"))
@@ -270,23 +289,23 @@ func TestEndpoints(t *testing.T) {
 				t.Errorf("pool spread selector = %v", at(c, "labelSelector"))
 			}
 		}
-		if pdb := find(docs, "PodDisruptionBudget", "trove-web-ep-customers"); pdb == nil || str(pdb, "spec", "selector", "matchLabels", "trove/pool") != "ep-customers" {
+		if pdb := find(docs, "PodDisruptionBudget", "trove-packages-ep-customers"); pdb == nil || str(pdb, "spec", "selector", "matchLabels", "trove/pool") != "ep-customers" {
 			t.Errorf("pool PDB = %v", pdb)
 		}
 		svc := find(docs, "Service", "trove-ep-customers")
-		if str(svc, "spec", "selector", "trove/pool") != "ep-customers" || str(svc, "spec", "selector", "app.kubernetes.io/component") != "web" {
+		if str(svc, "spec", "selector", "trove/pool") != "ep-customers" || str(svc, "spec", "selector", "app.kubernetes.io/component") != "packages" {
 			t.Errorf("Service selector = %v", at(svc, "spec", "selector"))
 		}
-		// the main web pods carry no container port 8443 and no TROVE_POOL_NAME, and mount no endpoint Secret
-		web := at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec")
+		// the main packages pods carry no container port 8443 and no TROVE_POOL_NAME, and mount no endpoint Secret
+		web := at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec")
 		if hasInt(containerPorts(web), 8443) || envByName(web)["TROVE_POOL_NAME"] != nil || secretVolume(web, "trove-packages-tls") != nil {
-			t.Errorf("main web pods serve the pooled endpoint: ports %v", containerPorts(web))
+			t.Errorf("main packages pods serve the pooled endpoint: ports %v", containerPorts(web))
 		}
 		if secretVolume(pod, "trove-packages-tls") == nil || secretVolume(pod, "trove-tls") == nil {
 			t.Error("the pool does not mount its endpoint's certificate and the listener pair")
 		}
 		// the pool's pods are selected by no other policy, so its policy admits the operations port too
-		np := find(docs, "NetworkPolicy", "trove-ep-customers")
+		np := find(docs, "NetworkPolicy", "trove-packages-ep-customers")
 		var all []int
 		for _, r := range list(np, "spec", "ingress") {
 			p, _, _ := portsOf(r)
@@ -300,13 +319,13 @@ func TestEndpoints(t *testing.T) {
 		}
 	})
 
-	t.Run("R-EP-008 an endpoint pool can switch off what web has on", func(t *testing.T) {
+	t.Run("R-EP-008 an endpoint pool can switch off what packages has on", func(t *testing.T) {
 		_, docs := render(t, poolSet(), "highAvailability.enforce=false", "endpoints.customers.pool.podDisruptionBudget.enabled=false", "endpoints.customers.pool.replicaCount=1")
-		if find(docs, "PodDisruptionBudget", "trove-web-ep-customers") != nil {
+		if find(docs, "PodDisruptionBudget", "trove-packages-ep-customers") != nil {
 			t.Error("the pool's disruption budget is rendered although the pool turned it off")
 		}
-		if find(docs, "PodDisruptionBudget", "trove-web") == nil {
-			t.Error("the web disruption budget disappeared")
+		if find(docs, "PodDisruptionBudget", "trove-packages") == nil {
+			t.Error("the packages disruption budget disappeared")
 		}
 	})
 
@@ -336,7 +355,7 @@ func TestEndpoints(t *testing.T) {
 		got := notes(endpointsSet())
 		for _, want := range []string{
 			"customers   Service trove-ep-customers:8443", "packages.example.com, pkgs.example.org, *.registry.example.com",
-			"partners   Service trove-ep-partners:8444", "endpoint customers has exposure: rules and shares the pods of the default endpoint",
+			"partners   Service trove-ep-partners:8444", "endpoint customers has exposure: rules and shares the pods of the default endpoint", "the main packages Deployment",
 		} {
 			if !strings.Contains(got, want) {
 				t.Errorf("notes lack %q:\n%s", want, got)
@@ -346,7 +365,7 @@ func TestEndpoints(t *testing.T) {
 			t.Error("customers lists networkPolicy.from but is warned about an empty one")
 		}
 		got = notes(poolSet())
-		if !strings.Contains(got, "pool trove-web-ep-customers") || !strings.Contains(got, "endpoint customers has exposure: rules and an empty networkPolicy.from") {
+		if !strings.Contains(got, "pool trove-packages-ep-customers") || !strings.Contains(got, "endpoint customers has exposure: rules and an empty networkPolicy.from") {
 			t.Errorf("pool notes:\n%s", got)
 		}
 	})
@@ -414,7 +433,7 @@ func TestEndpoints(t *testing.T) {
 		if n := len(ofKind(docs, "Ingress")); n != 0 {
 			t.Errorf("%d Ingresses rendered without ingress.enabled", n)
 		}
-		if n := len(ofKind(docs, "Service")); n != 2+16 {
+		if n := len(ofKind(docs, "Service")); n != 3+16 {
 			t.Errorf("%d Services", n)
 		}
 	})
@@ -425,7 +444,7 @@ func TestS3ProvisionerSecret(t *testing.T) {
 
 	t.Run("R-HA-030 bucket, region and endpoint are read from the provisioner's Secret and the credentials are mounted as files", func(t *testing.T) {
 		_, docs := render(t, set)
-		for _, name := range []string{"trove-web", "trove-worker"} {
+		for _, name := range []string{"trove-api", "trove-packages", "trove-worker"} {
 			pod := at(find(docs, "Deployment", name), "spec", "template", "spec")
 			env := envByName(pod)
 			for v, key := range map[string]string{"TROVE_STORAGE_S3_BUCKET": "S3_BUCKET", "TROVE_STORAGE_S3_REGION": "S3_REGION", "TROVE_STORAGE_S3_ENDPOINT": "S3_ENDPOINT"} {
@@ -457,7 +476,7 @@ func TestS3ProvisionerSecret(t *testing.T) {
 	t.Run("R-HA-030 without the *Key values the environment carries no S3 setting", func(t *testing.T) {
 		_, docs := render(t, required())
 		for _, v := range []string{"TROVE_STORAGE_S3_BUCKET", "TROVE_STORAGE_S3_REGION", "TROVE_STORAGE_S3_ENDPOINT"} {
-			if envByName(at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec"))[v] != nil {
+			if envByName(at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec"))[v] != nil {
 				t.Errorf("%s is set without secrets.s3", v)
 			}
 		}

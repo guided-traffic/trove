@@ -74,6 +74,1068 @@
       },
       "additionalProperties": false
     },
+    "api": {
+      "type": "object",
+      "properties": {
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "minReadySeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "revisionHistoryLimit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "strategy": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "RollingUpdate",
+                "Recreate"
+              ]
+            },
+            "rollingUpdate": {
+              "type": "object",
+              "properties": {
+                "maxSurge": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
+                },
+                "maxUnavailable": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "terminationGracePeriodSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "spool": {
+          "type": "object",
+          "properties": {
+            "sizeLimit": {
+              "type": [
+                "string",
+                "integer"
+              ],
+              "description": "Kubernetes quantity"
+            }
+          },
+          "additionalProperties": false
+        },
+        "resources": {
+          "type": "object",
+          "properties": {
+            "requests": {
+              "type": "object",
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "integer"
+                ],
+                "description": "Kubernetes quantity"
+              }
+            },
+            "limits": {
+              "type": "object",
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "integer"
+                ],
+                "description": "Kubernetes quantity"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "podDisruptionBudget": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "maxUnavailable": {
+              "type": [
+                "string",
+                "integer",
+                "null"
+              ]
+            },
+            "minAvailable": {
+              "type": [
+                "string",
+                "integer",
+                "null"
+              ]
+            },
+            "unhealthyPodEvictionPolicy": {
+              "type": "string",
+              "enum": [
+                "AlwaysAllow",
+                "IfHealthyBudget"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "topologySpread": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "nodeTaintsPolicy": {
+              "type": "string",
+              "enum": [
+                "Honor",
+                "Ignore"
+              ]
+            },
+            "zone": {
+              "type": "object",
+              "properties": {
+                "maxSkew": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "whenUnsatisfiable": {
+                  "type": "string",
+                  "enum": [
+                    "DoNotSchedule",
+                    "ScheduleAnyway"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            },
+            "host": {
+              "type": "object",
+              "properties": {
+                "maxSkew": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "whenUnsatisfiable": {
+                  "type": "string",
+                  "enum": [
+                    "DoNotSchedule",
+                    "ScheduleAnyway"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "topologySpreadConstraints": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "nodeFailureTolerationSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "affinity": {
+          "type": "object"
+        },
+        "nodeSelector": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "tolerations": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "priorityClassName": {
+          "type": "string"
+        },
+        "schedulerName": {
+          "type": "string"
+        },
+        "podAnnotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "podLabels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "extraEnv": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "autoscaling": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "minReplicas": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxReplicas": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "targetCPUUtilizationPercentage": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "targetMemoryUtilizationPercentage": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "metrics": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "behavior": {
+              "type": "object"
+            }
+          }
+        },
+        "pools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "replicaCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "minReadySeconds": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "revisionHistoryLimit": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "strategy": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "RollingUpdate",
+                      "Recreate"
+                    ]
+                  },
+                  "rollingUpdate": {
+                    "type": "object",
+                    "properties": {
+                      "maxSurge": {
+                        "type": [
+                          "string",
+                          "integer"
+                        ]
+                      },
+                      "maxUnavailable": {
+                        "type": [
+                          "string",
+                          "integer"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "terminationGracePeriodSeconds": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "spool": {
+                "type": "object",
+                "properties": {
+                  "sizeLimit": {
+                    "type": [
+                      "string",
+                      "integer"
+                    ],
+                    "description": "Kubernetes quantity"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "resources": {
+                "type": "object",
+                "properties": {
+                  "requests": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": [
+                        "string",
+                        "integer"
+                      ],
+                      "description": "Kubernetes quantity"
+                    }
+                  },
+                  "limits": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": [
+                        "string",
+                        "integer"
+                      ],
+                      "description": "Kubernetes quantity"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "podDisruptionBudget": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "maxUnavailable": {
+                    "type": [
+                      "string",
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "minAvailable": {
+                    "type": [
+                      "string",
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "unhealthyPodEvictionPolicy": {
+                    "type": "string",
+                    "enum": [
+                      "AlwaysAllow",
+                      "IfHealthyBudget"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "topologySpread": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "nodeTaintsPolicy": {
+                    "type": "string",
+                    "enum": [
+                      "Honor",
+                      "Ignore"
+                    ]
+                  },
+                  "zone": {
+                    "type": "object",
+                    "properties": {
+                      "maxSkew": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "whenUnsatisfiable": {
+                        "type": "string",
+                        "enum": [
+                          "DoNotSchedule",
+                          "ScheduleAnyway"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "host": {
+                    "type": "object",
+                    "properties": {
+                      "maxSkew": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "whenUnsatisfiable": {
+                        "type": "string",
+                        "enum": [
+                          "DoNotSchedule",
+                          "ScheduleAnyway"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "topologySpreadConstraints": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "nodeFailureTolerationSeconds": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "affinity": {
+                "type": "object"
+              },
+              "nodeSelector": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "tolerations": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "priorityClassName": {
+                "type": "string"
+              },
+              "schedulerName": {
+                "type": "string"
+              },
+              "podAnnotations": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "podLabels": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "extraEnv": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "autoscaling": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "minReplicas": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "maxReplicas": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "targetCPUUtilizationPercentage": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "targetMemoryUtilizationPercentage": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "metrics": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  },
+                  "behavior": {
+                    "type": "object"
+                  }
+                }
+              },
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,19}$",
+                "description": "The pool's name; the Deployment is <fullname>-<role>-<name> and its pods carry trove/pool: <name> (R-HA-062); a name may not start with ep-"
+              },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^/[^\\s]*$"
+                },
+                "minItems": 1,
+                "description": "Path prefixes inside the families of the role (R-HA-062)"
+              }
+            },
+            "required": [
+              "name",
+              "paths"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "packages": {
+      "type": "object",
+      "properties": {
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "minReadySeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "revisionHistoryLimit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "strategy": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "RollingUpdate",
+                "Recreate"
+              ]
+            },
+            "rollingUpdate": {
+              "type": "object",
+              "properties": {
+                "maxSurge": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
+                },
+                "maxUnavailable": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "terminationGracePeriodSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "spool": {
+          "type": "object",
+          "properties": {
+            "sizeLimit": {
+              "type": [
+                "string",
+                "integer"
+              ],
+              "description": "Kubernetes quantity"
+            }
+          },
+          "additionalProperties": false
+        },
+        "resources": {
+          "type": "object",
+          "properties": {
+            "requests": {
+              "type": "object",
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "integer"
+                ],
+                "description": "Kubernetes quantity"
+              }
+            },
+            "limits": {
+              "type": "object",
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "integer"
+                ],
+                "description": "Kubernetes quantity"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "podDisruptionBudget": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "maxUnavailable": {
+              "type": [
+                "string",
+                "integer",
+                "null"
+              ]
+            },
+            "minAvailable": {
+              "type": [
+                "string",
+                "integer",
+                "null"
+              ]
+            },
+            "unhealthyPodEvictionPolicy": {
+              "type": "string",
+              "enum": [
+                "AlwaysAllow",
+                "IfHealthyBudget"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "topologySpread": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "nodeTaintsPolicy": {
+              "type": "string",
+              "enum": [
+                "Honor",
+                "Ignore"
+              ]
+            },
+            "zone": {
+              "type": "object",
+              "properties": {
+                "maxSkew": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "whenUnsatisfiable": {
+                  "type": "string",
+                  "enum": [
+                    "DoNotSchedule",
+                    "ScheduleAnyway"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            },
+            "host": {
+              "type": "object",
+              "properties": {
+                "maxSkew": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "whenUnsatisfiable": {
+                  "type": "string",
+                  "enum": [
+                    "DoNotSchedule",
+                    "ScheduleAnyway"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "topologySpreadConstraints": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "nodeFailureTolerationSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "affinity": {
+          "type": "object"
+        },
+        "nodeSelector": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "tolerations": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "priorityClassName": {
+          "type": "string"
+        },
+        "schedulerName": {
+          "type": "string"
+        },
+        "podAnnotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "podLabels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "extraEnv": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "autoscaling": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "minReplicas": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxReplicas": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "targetCPUUtilizationPercentage": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "targetMemoryUtilizationPercentage": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "metrics": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "behavior": {
+              "type": "object"
+            }
+          }
+        },
+        "pools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "replicaCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "minReadySeconds": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "revisionHistoryLimit": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "strategy": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "RollingUpdate",
+                      "Recreate"
+                    ]
+                  },
+                  "rollingUpdate": {
+                    "type": "object",
+                    "properties": {
+                      "maxSurge": {
+                        "type": [
+                          "string",
+                          "integer"
+                        ]
+                      },
+                      "maxUnavailable": {
+                        "type": [
+                          "string",
+                          "integer"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "terminationGracePeriodSeconds": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "spool": {
+                "type": "object",
+                "properties": {
+                  "sizeLimit": {
+                    "type": [
+                      "string",
+                      "integer"
+                    ],
+                    "description": "Kubernetes quantity"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "resources": {
+                "type": "object",
+                "properties": {
+                  "requests": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": [
+                        "string",
+                        "integer"
+                      ],
+                      "description": "Kubernetes quantity"
+                    }
+                  },
+                  "limits": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": [
+                        "string",
+                        "integer"
+                      ],
+                      "description": "Kubernetes quantity"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "podDisruptionBudget": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "maxUnavailable": {
+                    "type": [
+                      "string",
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "minAvailable": {
+                    "type": [
+                      "string",
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "unhealthyPodEvictionPolicy": {
+                    "type": "string",
+                    "enum": [
+                      "AlwaysAllow",
+                      "IfHealthyBudget"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "topologySpread": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "nodeTaintsPolicy": {
+                    "type": "string",
+                    "enum": [
+                      "Honor",
+                      "Ignore"
+                    ]
+                  },
+                  "zone": {
+                    "type": "object",
+                    "properties": {
+                      "maxSkew": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "whenUnsatisfiable": {
+                        "type": "string",
+                        "enum": [
+                          "DoNotSchedule",
+                          "ScheduleAnyway"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "host": {
+                    "type": "object",
+                    "properties": {
+                      "maxSkew": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "whenUnsatisfiable": {
+                        "type": "string",
+                        "enum": [
+                          "DoNotSchedule",
+                          "ScheduleAnyway"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "topologySpreadConstraints": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "nodeFailureTolerationSeconds": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "affinity": {
+                "type": "object"
+              },
+              "nodeSelector": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "tolerations": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "priorityClassName": {
+                "type": "string"
+              },
+              "schedulerName": {
+                "type": "string"
+              },
+              "podAnnotations": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "podLabels": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "extraEnv": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "autoscaling": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "minReplicas": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "maxReplicas": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "targetCPUUtilizationPercentage": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "targetMemoryUtilizationPercentage": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "metrics": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  },
+                  "behavior": {
+                    "type": "object"
+                  }
+                }
+              },
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,19}$",
+                "description": "The pool's name; the Deployment is <fullname>-<role>-<name> and its pods carry trove/pool: <name> (R-HA-062); a name may not start with ep-"
+              },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^/[^\\s]*$"
+                },
+                "minItems": 1,
+                "description": "Path prefixes inside the families of the role (R-HA-062)"
+              }
+            },
+            "required": [
+              "name",
+              "paths"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "web": {
       "type": "object",
       "properties": {
@@ -291,6 +1353,320 @@
           "items": {
             "type": "object"
           }
+        },
+        "autoscaling": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "minReplicas": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxReplicas": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "targetCPUUtilizationPercentage": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "targetMemoryUtilizationPercentage": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "metrics": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "behavior": {
+              "type": "object"
+            }
+          }
+        },
+        "pools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "replicaCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "minReadySeconds": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "revisionHistoryLimit": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "strategy": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "RollingUpdate",
+                      "Recreate"
+                    ]
+                  },
+                  "rollingUpdate": {
+                    "type": "object",
+                    "properties": {
+                      "maxSurge": {
+                        "type": [
+                          "string",
+                          "integer"
+                        ]
+                      },
+                      "maxUnavailable": {
+                        "type": [
+                          "string",
+                          "integer"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "terminationGracePeriodSeconds": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "spool": {
+                "type": "object",
+                "properties": {
+                  "sizeLimit": {
+                    "type": [
+                      "string",
+                      "integer"
+                    ],
+                    "description": "Kubernetes quantity"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "resources": {
+                "type": "object",
+                "properties": {
+                  "requests": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": [
+                        "string",
+                        "integer"
+                      ],
+                      "description": "Kubernetes quantity"
+                    }
+                  },
+                  "limits": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": [
+                        "string",
+                        "integer"
+                      ],
+                      "description": "Kubernetes quantity"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "podDisruptionBudget": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "maxUnavailable": {
+                    "type": [
+                      "string",
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "minAvailable": {
+                    "type": [
+                      "string",
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "unhealthyPodEvictionPolicy": {
+                    "type": "string",
+                    "enum": [
+                      "AlwaysAllow",
+                      "IfHealthyBudget"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "topologySpread": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "nodeTaintsPolicy": {
+                    "type": "string",
+                    "enum": [
+                      "Honor",
+                      "Ignore"
+                    ]
+                  },
+                  "zone": {
+                    "type": "object",
+                    "properties": {
+                      "maxSkew": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "whenUnsatisfiable": {
+                        "type": "string",
+                        "enum": [
+                          "DoNotSchedule",
+                          "ScheduleAnyway"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "host": {
+                    "type": "object",
+                    "properties": {
+                      "maxSkew": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "whenUnsatisfiable": {
+                        "type": "string",
+                        "enum": [
+                          "DoNotSchedule",
+                          "ScheduleAnyway"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "topologySpreadConstraints": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "nodeFailureTolerationSeconds": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "affinity": {
+                "type": "object"
+              },
+              "nodeSelector": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "tolerations": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "priorityClassName": {
+                "type": "string"
+              },
+              "schedulerName": {
+                "type": "string"
+              },
+              "podAnnotations": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "podLabels": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "extraEnv": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "autoscaling": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "minReplicas": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "maxReplicas": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "targetCPUUtilizationPercentage": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "targetMemoryUtilizationPercentage": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "metrics": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  },
+                  "behavior": {
+                    "type": "object"
+                  }
+                }
+              },
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,19}$",
+                "description": "The pool's name; the Deployment is <fullname>-<role>-<name> and its pods carry trove/pool: <name> (R-HA-062); a name may not start with ep-"
+              },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^/[^\\s]*$"
+                },
+                "minItems": 1,
+                "description": "Path prefixes inside the families of the role (R-HA-062)"
+              }
+            },
+            "required": [
+              "name",
+              "paths"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "The bridge of the upgrade across the cut (R-HA-064)"
         }
       },
       "additionalProperties": false
@@ -511,6 +1887,316 @@
           "type": "array",
           "items": {
             "type": "object"
+          }
+        },
+        "autoscaling": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "minReplicas": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxReplicas": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "targetCPUUtilizationPercentage": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "targetMemoryUtilizationPercentage": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "metrics": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "behavior": {
+              "type": "object"
+            }
+          }
+        },
+        "pools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "replicaCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "minReadySeconds": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "revisionHistoryLimit": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "strategy": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "RollingUpdate",
+                      "Recreate"
+                    ]
+                  },
+                  "rollingUpdate": {
+                    "type": "object",
+                    "properties": {
+                      "maxSurge": {
+                        "type": [
+                          "string",
+                          "integer"
+                        ]
+                      },
+                      "maxUnavailable": {
+                        "type": [
+                          "string",
+                          "integer"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "terminationGracePeriodSeconds": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "spool": {
+                "type": "object",
+                "properties": {
+                  "sizeLimit": {
+                    "type": [
+                      "string",
+                      "integer"
+                    ],
+                    "description": "Kubernetes quantity"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "resources": {
+                "type": "object",
+                "properties": {
+                  "requests": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": [
+                        "string",
+                        "integer"
+                      ],
+                      "description": "Kubernetes quantity"
+                    }
+                  },
+                  "limits": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": [
+                        "string",
+                        "integer"
+                      ],
+                      "description": "Kubernetes quantity"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "podDisruptionBudget": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "maxUnavailable": {
+                    "type": [
+                      "string",
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "minAvailable": {
+                    "type": [
+                      "string",
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "unhealthyPodEvictionPolicy": {
+                    "type": "string",
+                    "enum": [
+                      "AlwaysAllow",
+                      "IfHealthyBudget"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "topologySpread": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "nodeTaintsPolicy": {
+                    "type": "string",
+                    "enum": [
+                      "Honor",
+                      "Ignore"
+                    ]
+                  },
+                  "zone": {
+                    "type": "object",
+                    "properties": {
+                      "maxSkew": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "whenUnsatisfiable": {
+                        "type": "string",
+                        "enum": [
+                          "DoNotSchedule",
+                          "ScheduleAnyway"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "host": {
+                    "type": "object",
+                    "properties": {
+                      "maxSkew": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "whenUnsatisfiable": {
+                        "type": "string",
+                        "enum": [
+                          "DoNotSchedule",
+                          "ScheduleAnyway"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "topologySpreadConstraints": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "nodeFailureTolerationSeconds": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "affinity": {
+                "type": "object"
+              },
+              "nodeSelector": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "tolerations": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "priorityClassName": {
+                "type": "string"
+              },
+              "schedulerName": {
+                "type": "string"
+              },
+              "podAnnotations": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "podLabels": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "extraEnv": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "autoscaling": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "minReplicas": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "maxReplicas": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "targetCPUUtilizationPercentage": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "targetMemoryUtilizationPercentage": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "metrics": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  },
+                  "behavior": {
+                    "type": "object"
+                  }
+                }
+              },
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,19}$",
+                "description": "The pool's name; the Deployment is <fullname>-<role>-<name> and its pods carry trove/pool: <name> (R-HA-062); a name may not start with ep-"
+              },
+              "queues": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1,
+                "description": "Queues the pool claims alone (architecture.md R-ARCH-016)"
+              }
+            },
+            "required": [
+              "name",
+              "queues"
+            ],
+            "additionalProperties": false
           }
         }
       },

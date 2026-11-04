@@ -11,7 +11,7 @@ import (
 )
 
 // The login secrets of the chart: secrets.breakGlass (R-AUTH-014) and secrets.oidc[] (R-AUTH-004),
-// mounted into web pods only (R-AUTH-042), as a directory so that a rotated Secret reaches the pod
+// mounted into api pods only (R-HA-030, R-AUTH-042, Q-HA-79), as a directory so that a rotated Secret reaches the pod
 // (Q-AUTH-14).
 
 // loginSets is the minimum a login render needs: a provider of config.auth.oidc.providers for the
@@ -34,7 +34,7 @@ func volumeNamed(pod any, name string) any {
 }
 
 func TestLoginSecrets(t *testing.T) {
-	t.Run("R-HA-030 R-AUTH-014 secrets.breakGlass mounts the password into web pods as a directory and renders password_file", func(t *testing.T) {
+	t.Run("R-HA-030 R-AUTH-014 secrets.breakGlass mounts the password into api pods as a directory and renders password_file", func(t *testing.T) {
 		_, docs := render(t, required(), "secrets.breakGlass.existingSecret=trove-break-glass")
 		cfg := configOf(t, docs)
 		if got := str(cfg, "auth", "break_glass", "password_file"); got != "/var/run/secrets/trove/break-glass/password" {
@@ -43,10 +43,10 @@ func TestLoginSecrets(t *testing.T) {
 		if at(cfg, "auth", "break_glass", "enabled") != nil {
 			t.Errorf("auth.break_glass.enabled = %v, want the trove default (not set by the chart)", at(cfg, "auth", "break_glass", "enabled"))
 		}
-		pod := at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec")
+		pod := at(find(docs, "Deployment", "trove-api"), "spec", "template", "spec")
 		vol := secretVolume(pod, "trove-break-glass")
 		if vol == nil {
-			t.Fatal("trove-web does not mount trove-break-glass")
+			t.Fatal("trove-api does not mount trove-break-glass")
 		}
 		m := mountOf(pod, vol)
 		if str(m, "mountPath") != "/var/run/secrets/trove/break-glass" || at(m, "readOnly") != true || at(m, "subPath") != nil {
@@ -64,29 +64,41 @@ func TestLoginSecrets(t *testing.T) {
 	t.Run("R-AUTH-042 the break-glass Secret is not mounted into worker pods or the migration Job", func(t *testing.T) {
 		_, docs := render(t, required(), "secrets.breakGlass.existingSecret=trove-break-glass")
 		for _, pod := range []any{
+			at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec"),
 			at(find(docs, "Deployment", "trove-worker"), "spec", "template", "spec"),
 			at(find(docs, "Job", "trove-migrate"), "spec", "template", "spec"),
 		} {
 			if secretVolume(pod, "trove-break-glass") != nil || volumeNamed(pod, "secret-break-glass") != nil {
-				t.Error("a pod that is not web mounts the break-glass Secret")
+				t.Error("a pod that is not api mounts the break-glass Secret")
 			}
 		}
 	})
 
-	t.Run("R-AUTH-042 pool pods serve the login and mount the login secrets", func(t *testing.T) {
-		_, docs := render(t, []string{filepath.Join(chartDir, "ci", "endpoints-pool.yaml")}, "secrets.breakGlass.existingSecret=trove-break-glass")
-		found := 0
+	t.Run("R-HA-030 R-AUTH-042 every pod of role api mounts the login secrets, its pools and endpoint pools included, and no other pod does", func(t *testing.T) {
+		_, docs := render(t, []string{filepath.Join(chartDir, "ci", "roles-pools.yaml")}, "secrets.breakGlass.existingSecret=trove-break-glass")
+		api := 0
 		for _, d := range ofKind(docs, "Deployment") {
 			n := str(d, "metadata", "name")
-			if strings.HasPrefix(n, "trove-web-ep-") {
-				found++
-				if secretVolume(at(d, "spec", "template", "spec"), "trove-break-glass") == nil {
-					t.Errorf("%s does not mount the break-glass Secret", n)
-				}
+			mounted := secretVolume(at(d, "spec", "template", "spec"), "trove-break-glass") != nil
+			isAPI := n == "trove-api" || strings.HasPrefix(n, "trove-api-")
+			if isAPI {
+				api++
+			}
+			if mounted != isAPI {
+				t.Errorf("%s mounts the break-glass Secret = %v, want %v (role api only)", n, mounted, isAPI)
 			}
 		}
-		if found == 0 {
-			t.Fatal("no endpoint pool Deployment in ci/endpoints-pool.yaml")
+		if api != 3 {
+			t.Errorf("%d api Deployments in ci/roles-pools.yaml (main, path pool, endpoint pool), want 3", api)
+		}
+	})
+
+	t.Run("R-HA-030 the bridge's web pods mount the login secrets, the packages pods of the same release do not", func(t *testing.T) {
+		_, docs := render(t, []string{filepath.Join(chartDir, "ci", "bridge.yaml")}, "secrets.breakGlass.existingSecret=trove-break-glass")
+		for name, want := range map[string]bool{"trove-web": true, "trove-web-ep-customers": true, "trove-api": true, "trove-packages": false, "trove-worker": false} {
+			if got := secretVolume(at(find(docs, "Deployment", name), "spec", "template", "spec"), "trove-break-glass") != nil; got != want {
+				t.Errorf("%s mounts the break-glass Secret = %v, want %v", name, got, want)
+			}
 		}
 	})
 
@@ -99,7 +111,7 @@ func TestLoginSecrets(t *testing.T) {
 		if at(cfg, "auth", "break_glass", "password_file") != nil {
 			t.Error("auth.break_glass.password_file rendered without secrets.breakGlass")
 		}
-		for _, role := range []string{"web", "worker"} {
+		for _, role := range []string{"api", "packages", "worker"} {
 			if volumeNamed(at(find(docs, "Deployment", "trove-"+role), "spec", "template", "spec"), "secret-break-glass") != nil {
 				t.Errorf("trove-%s mounts a break-glass volume without secrets.breakGlass", role)
 			}
@@ -108,7 +120,7 @@ func TestLoginSecrets(t *testing.T) {
 
 	t.Run("R-HA-030 a different key of the break-glass Secret is projected as password", func(t *testing.T) {
 		_, docs := render(t, required(), "secrets.breakGlass.existingSecret=bg", "secrets.breakGlass.key=hash")
-		vol := secretVolume(at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec"), "bg")
+		vol := secretVolume(at(find(docs, "Deployment", "trove-api"), "spec", "template", "spec"), "bg")
 		items := list(vol, "secret", "items")
 		if len(items) != 1 || str(items[0], "key") != "hash" || str(items[0], "path") != "password" {
 			t.Errorf("items = %v", items)
@@ -119,7 +131,7 @@ func TestLoginSecrets(t *testing.T) {
 		renderFails(t, required(), []string{"config.auth.break_glass.password_file=/x"}, "config.auth.break_glass.password_file", "managed")
 	})
 
-	t.Run("R-HA-030 R-AUTH-004 secrets.oidc mounts the client secret into web pods and renders client_secret_file of the provider", func(t *testing.T) {
+	t.Run("R-HA-030 R-AUTH-004 secrets.oidc mounts the client secret into api pods and renders client_secret_file of the provider", func(t *testing.T) {
 		_, docs := render(t, required(), loginSets("secrets.oidc[0].providerId=corp", "secrets.oidc[0].existingSecret=trove-oidc-corp")...)
 		cfg := configOf(t, docs)
 		if got := str(cfg, "auth", "oidc", "providers", "corp", "client_secret_file"); got != "/var/run/secrets/trove/oidc-corp/client-secret" {
@@ -128,10 +140,10 @@ func TestLoginSecrets(t *testing.T) {
 		if got := str(cfg, "auth", "oidc", "providers", "corp", "client_id"); got != "trove" {
 			t.Errorf("the provider's own keys were lost: client_id = %q", got)
 		}
-		pod := at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec")
+		pod := at(find(docs, "Deployment", "trove-api"), "spec", "template", "spec")
 		vol := secretVolume(pod, "trove-oidc-corp")
 		if vol == nil {
-			t.Fatal("trove-web does not mount trove-oidc-corp")
+			t.Fatal("trove-api does not mount trove-oidc-corp")
 		}
 		m := mountOf(pod, vol)
 		if str(m, "mountPath") != "/var/run/secrets/trove/oidc-corp" || at(m, "readOnly") != true || at(m, "subPath") != nil {
@@ -142,11 +154,12 @@ func TestLoginSecrets(t *testing.T) {
 			t.Errorf("items = %v", items)
 		}
 		for _, pod := range []any{
+			at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec"),
 			at(find(docs, "Deployment", "trove-worker"), "spec", "template", "spec"),
 			at(find(docs, "Job", "trove-migrate"), "spec", "template", "spec"),
 		} {
 			if secretVolume(pod, "trove-oidc-corp") != nil {
-				t.Error("R-AUTH-042: a pod that is not web mounts the client secret")
+				t.Error("R-AUTH-042: a pod that is not api mounts the client secret")
 			}
 		}
 	})
@@ -164,7 +177,7 @@ func TestLoginSecrets(t *testing.T) {
 				t.Errorf("provider %s client_secret_file = %q", id, got)
 			}
 		}
-		pod := at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec")
+		pod := at(find(docs, "Deployment", "trove-api"), "spec", "template", "spec")
 		if got := str(list(secretVolume(pod, "a"), "secret", "items")[0], "key"); got != "secret" {
 			t.Errorf("key of provider corp = %q", got)
 		}
@@ -194,7 +207,7 @@ func TestLoginSecrets(t *testing.T) {
 		if err := os.WriteFile(cfgPath, []byte(str(find(docs, "ConfigMap", "trove-config"), "data", "trove.yaml")), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		pod := at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec")
+		pod := at(find(docs, "Deployment", "trove-api"), "spec", "template", "spec")
 		cmd := exec.Command(bin, "admin", "config", "validate", "--config", cfgPath, "--format", "json")
 		cmd.Env = podEnviron(pod)
 		if out, err := cmd.CombinedOutput(); err != nil {

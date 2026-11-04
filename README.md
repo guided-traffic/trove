@@ -75,7 +75,7 @@ Built (M0):
 - 🛡️ **Egress address policy.** Outbound clients refuse denied addresses after DNS resolution, zoned IPv6 always, and the NAT64 forms of denied IPv4. See [egress](docs/security/egress.md).
 - 🪣 **S3 blob layer.** Content-addressed keys, a spool, digests, a circuit breaker, and a conformance suite run against SeaweedFS. See [R-STOR-001](docs/spec/storage.md) for the layout.
 - 🩺 **Health, metrics and the system API.** `/healthz`, `/readyz` and `/metrics` on the ops port; ping, version, info and the replica registry on the client port. See [R-OPS-001](docs/spec/operations-and-observability.md) and [R-API-038](docs/spec/api-and-ui.md).
-- ⎈ **Helm chart.** Separate `web` and `worker` Deployments, a migration hook Job, Services, Ingress with backend TLS, NetworkPolicies, PodDisruptionBudgets and a fail-fast values check. See [HA and Helm](docs/spec/ha-and-helm.md).
+- ⎈ **Helm chart.** Separate `api`, `packages` and `worker` Deployments with path and worker pools, the edge split by path prefix, a migration hook Job, Services, Ingress with backend TLS, NetworkPolicies, PodDisruptionBudgets and a fail-fast values check. See [HA and Helm](docs/spec/ha-and-helm.md).
 - 🧪 **Local HA profile on kind.** PostgreSQL with a standby, Valkey with a replica and three Sentinels, SeaweedFS, and failure scripts. See [local profile](docs/developer/local-profile.md).
 
 Built (M1, access core):
@@ -225,7 +225,8 @@ The canonical paths under which a NuGet remote repository stores what it fetched
 | Configuration file | `/etc/trove/trove.yaml`, or `--config`, or `TROVE_CONFIG_FILE` (an explicit path must exist) | yes (`internal/config/load.go`) |
 | Reserved names | `TROVE_CAC_*` and `TROVE_TEST_*` (ignored by the strict check), `TROVE_CONFIG_FILE`, `TROVE_POD_NAME`, `TROVE_POD_NAMESPACE`, `TROVE_NODE_NAME`, `TROVE_POOL_NAME` | yes |
 | Instance name | `TROVE_POD_NAME`, then `POD_NAME`, then `HOSTNAME` inside Kubernetes, otherwise `<hostname>-<pid>` | yes (`internal/app/identity.go`) |
-| Pool name | `TROVE_POOL_NAME`, set by the chart on the pool of an endpoint (empty on the main `web` Deployment) | yes (`deploy/helm/trove/templates/_deployment.tpl`) |
+| Pool name | `TROVE_POOL_NAME`, set by the chart on every pool Deployment (the pool's name, `ep-<name>` for an endpoint pool; unset on the main Deployments) | yes (`deploy/helm/trove/templates/_deployment.tpl`) |
+| Worker queues | `TROVE_JOBS_QUEUES='["vuln"]'` on a worker pool, `TROVE_JOBS_EXCLUDE_QUEUES='["index","vuln"]'` on the main worker beside pools (JSON lists) | yes (`_deployment.tpl`) |
 | Object-store settings from a Secret | `TROVE_STORAGE_S3_BUCKET`, `TROVE_STORAGE_S3_ENDPOINT`, `TROVE_STORAGE_S3_REGION`, each read from a key of `secrets.s3` when that key is set | yes (`deploy/helm/trove/templates/_endpoints.tpl`) |
 | Dev profile | `TROVE_DEV_HTTP_PORT` (edge port, default `8080`), `TROVE_PROFILE` (`default` or `scatter`) | yes (`deploy/dev/`) |
 | M1 settings | `TROVE_<SECTION>_<KEY>` for `auth`, `authz`, `api`, `repositories`, with nested keys joined by `_`: `TROVE_AUTH_BREAK_GLASS_PASSWORD_FILE`, `TROVE_API_RATE_LIMITS_EXEMPT_ADMINS` (the rule of the configuration override above) | yes |
@@ -235,13 +236,13 @@ The canonical paths under which a NuGet remote repository stores what it fetched
 | Name | Value | Built |
 |---|---|---|
 | Listener certificate mount | `/var/run/secrets/trove/tls/` (`tls.crt`, `tls.key`; only in pods that load the pair, see `tls.ops`) | yes (`_secrets.tpl`) |
-| Listener client CA mount | `/var/run/secrets/trove/tls-client-ca/ca.crt` (main `web` pods only) | yes |
+| Listener client CA mount | `/var/run/secrets/trove/tls-client-ca/ca.crt` (the pods that open :8080: `api`, `packages` and their path pools) | yes |
 | Ops listener certificate mount | `/var/run/secrets/trove/tls-ops/` | yes |
 | Endpoint certificate mount | `/var/run/secrets/trove/endpoints/<name>/<n>/` (`tls.crt`, `tls.key`; `n` is the position in `tls.certificates`), client CA at `…/<name>/client-ca/ca.crt` | yes (`_endpoints.tpl`) |
 | PostgreSQL CA and client pair | `/var/run/secrets/trove/database-ca/ca.crt`, `/var/run/secrets/trove/database-client/tls.{crt,key}` | yes |
 | Object-store CA | `/var/run/secrets/trove/s3-ca/ca.crt` (`secrets.s3CA`; renders `storage.s3.ca_file`) | yes |
-| Break-glass password mount | `/var/run/secrets/trove/break-glass/password` (`secrets.breakGlass`; renders `auth.break_glass.password_file`; `web` pods only) | yes (`_secrets.tpl`) |
-| OIDC client secret mount | `/var/run/secrets/trove/oidc-<providerId>/client-secret` (`secrets.oidc[]`; renders `auth.oidc.providers.<providerId>.client_secret_file`; `web` pods only) | yes |
+| Break-glass password mount | `/var/run/secrets/trove/break-glass/password` (`secrets.breakGlass`; renders `auth.break_glass.password_file`; `api` pods only) | yes (`_secrets.tpl`) |
+| OIDC client secret mount | `/var/run/secrets/trove/oidc-<providerId>/client-secret` (`secrets.oidc[]`; renders `auth.oidc.providers.<providerId>.client_secret_file`; `api` pods only) | yes |
 | Valkey CA and client pair | `/var/run/secrets/trove/valkey-ca/ca.crt`, `/var/run/secrets/trove/valkey-client/tls.{crt,key}` | yes |
 | Kubernetes Service port of an endpoint | `<fullname>-ep-<name>`, port from `endpoints.<name>.port` | yes (`endpoint-services.yaml`) |
 | Metric families | `trove_tls_certificate_expiry_timestamp_seconds`, `trove_tls_reloads_total`, `trove_tls_reload_errors_total`, labels `kind`, `listener`, `name` | yes (`internal/tlsfiles/metrics.go`) |
@@ -359,14 +360,18 @@ The label sets of the M1 families are not restated per family in this pass; read
 
 | Name | Value | Built |
 |---|---|---|
-| Chart | `deploy/helm/trove` | yes (skeleton) |
-| Deployments | `<fullname>-web` (`--role web`), `<fullname>-worker` (`--role worker`) | yes |
-| Endpoint pools | `<fullname>-web-ep-<name>`, label `ep-<name>`, for an endpoint with `endpoints.<name>.pool.enabled` | yes (`_endpoints.tpl`) |
-| Endpoint objects | `<fullname>-ep-<name>` for the Service, Ingress and NetworkPolicy of a further endpoint | yes |
+| Chart | `deploy/helm/trove` | yes |
+| Deployments | `<fullname>-api` (`--role api`), `<fullname>-packages` (`--role packages`), `<fullname>-worker` (`--role worker`) | yes |
+| Pools | `<fullname>-api-<pool>`, `<fullname>-packages-<pool>` (path pools, with a Service of the same name), `<fullname>-worker-<pool>` (label `trove/pool: <pool>`) | yes (`_units.tpl`) |
+| Endpoint pools | `<fullname>-packages-ep-<name>` and `<fullname>-api-ep-<name>`, label `trove/pool: ep-<name>`, for an endpoint with `endpoints.<name>.pool.enabled` (one per role its surface holds) | yes (`_units.tpl`) |
+| Upgrade bridge | `<fullname>-web` (`--role web`) and the Service `<fullname>`, only with `web.enabled` | yes |
+| Endpoint objects | `<fullname>-ep-<name>` (and `<fullname>-ep-<name>-api` for a surface over both roles) for the Services and the Ingress of a further endpoint | yes |
+| Disruption budgets, autoscalers | one per Deployment, named as the Deployment | yes |
 | Migration hook Job | `<fullname>-migrate` | yes |
 | ConfigMap | `<fullname>-config`, holding `trove.yaml` | yes |
-| Services | `<fullname>` (client port), `<fullname>-ops` (ops port) | yes |
-| Network policies | `<fullname>-web`, `<fullname>-worker`, `<fullname>-migrate` | yes |
+| Services | `<fullname>-api`, `<fullname>-packages` (client port), `<fullname>-ops` (ops port) | yes |
+| Network policies | one per Deployment, named as it (ingress only, a rule per port), and `<fullname>-migrate` | yes |
+| Edge | per host: `/` and `/api/v1` to `<fullname>-api`; `/api`, `/files`, `/v2`, `/.well-known` to `<fullname>-packages`; the paths of path pools to their Services | yes |
 | PrometheusRule | `<fullname>`, group `<fullname>`, with `metrics.prometheusRule.enabled` (needs the Prometheus operator's CRDs); alerts `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing`, `TroveVulnerabilityClaimedNameMalicious`, every selector scoped to the release namespace | yes (M4b; [prometheusrule.yaml](deploy/helm/trove/templates/prometheusrule.yaml), [_rules.tpl](deploy/helm/trove/templates/_rules.tpl)) |
 | Backup CronJob, restore Job | `<fullname>-backup`, `<fullname>-restore` | planned (M5) |
 | Bastion chart | `deploy/helm/trove-bastion`, released with the chart `trove` at the same version; its own `<fullname>` (release name, or `<release>-trove-bastion`) | yes (phase 5b) |
@@ -1823,24 +1828,42 @@ image:
   digest: ""                            # default; example: sha256:<64 hex>; wins over tag
 highAvailability:
   enforce: true                         # default: at least two replicas per role, a PDB, host spreading; Sentinel mode with three Sentinels
-web:
-  replicaCount: 3                       # default
+api:                                    # the UI, the management API, sign-in, the CI exchange; the login secrets mount here only
+  replicaCount: 2                       # default; ignored when autoscaling.enabled
+  terminationGracePeriodSeconds: 120    # default
+  spool:
+    sizeLimit: 5Gi                      # default; holds the UI's uploads, up to config.ui.deploy.max_upload_bytes (R-HA-029)
+  resources:
+    requests: {cpu: 500m, memory: 512Mi, ephemeral-storage: 1Gi}   # default
+    limits: {memory: 1Gi}               # default; no CPU limit; required, at least 64 admitted requests (R-HA-029)
+  autoscaling: {enabled: false, minReplicas: 2, maxReplicas: 4, targetCPUUtilizationPercentage: 70, targetMemoryUtilizationPercentage: 0, metrics: [], behavior: {}}   # default (behavior: slow scale-down, see values.yaml)
+  podDisruptionBudget: {enabled: true, maxUnavailable: 1, minAvailable: null}   # default
+  topologySpread: {enabled: true, nodeTaintsPolicy: Honor}     # default; zone ScheduleAnyway, host DoNotSchedule
+  pools: []                             # default; example: [{name: admin, paths: [/api/v1/repositories], replicaCount: 2}]; every key of api may be overridden in an entry
+packages:                               # the package protocols and raw files, tokens only
+  replicaCount: 3                       # default; ignored when autoscaling.enabled
   terminationGracePeriodSeconds: 120    # default
   spool:
     sizeLimit: ""                       # default: empty = spool.sizeLimit
   resources:
     requests: {cpu: "1", memory: 1Gi, ephemeral-storage: 2Gi}   # default
     limits: {memory: 2Gi}               # default; no CPU limit; required: sizes the 1,204 requests the pod admits with the default caches, at least 64 (R-HA-029)
+  autoscaling: {enabled: false, minReplicas: 3, maxReplicas: 8, targetCPUUtilizationPercentage: 70}   # default
   podDisruptionBudget: {enabled: true, maxUnavailable: 1, minAvailable: null}   # default
   topologySpread: {enabled: true, nodeTaintsPolicy: Honor}     # default; zone ScheduleAnyway, host DoNotSchedule
+  pools: []                             # default; example: [{name: npm, paths: [/api/npm], replicaCount: 4}]; paths below /api (not /api/v1), /files, /v2 or /.well-known
+web:
+  enabled: false                        # default; true for the first of the two upgrade steps across the cut (R-HA-064); the keys of the releases before the cut stay as they were
 worker:
-  replicaCount: 2                       # default; at least 1
+  replicaCount: 2                       # default; at least 1; ignored when autoscaling.enabled
   terminationGracePeriodSeconds: 300    # default
   spool:
     sizeLimit: 5Gi                      # default
+  autoscaling: {enabled: false, minReplicas: 2, maxReplicas: 4, targetCPUUtilizationPercentage: 80}   # default
+  pools: []                             # default; example: [{name: vuln, queues: [vuln], replicaCount: 2}]; the main worker claims every queue no pool lists (queues: default, maintenance, index, delivery, mirror, vuln)
 spool:
   type: emptyDir                        # default: emptyDir | ephemeral
-  sizeLimit: 20Gi                       # default; web.spool and worker.spool override it
+  sizeLimit: 20Gi                       # default; the spool of a role or pool overrides it
   headroom: 2GiB                        # default; sizeLimit minus headroom is storage.spool.max_bytes
   medium: ""                            # default; "Memory" counts against the memory limit
 tmp:
@@ -1987,8 +2010,8 @@ Security notes on the login secrets:
   ([R-AUTH-014](docs/spec/identity-and-authentication.md)). Whoever can read the Secret, or `get` it through the Kubernetes API,
   is an administrator. Restrict that Secret with RBAC like the database credentials. A hash (Argon2id PHC) keeps the plaintext out of
   the cluster; a plaintext password is hashed in memory by each `web` replica. Without the value the account is off, not open.
-- Both secrets are mounted as a directory of the Secret, read-only, without `subPath`, `defaultMode: 0440`, and only into `web`
-  pods (the main pool and endpoint pools): `worker`, the migration Job and the backup pods never get them. A rotated Secret
+- Both secrets are mounted as a directory of the Secret, read-only, without `subPath`, `defaultMode: 0440`, and only into `api`
+  pods (the main Deployment, its pools and its endpoint pools, and the bridge's `web`): `packages`, `worker`, the migration Job and the backup pods never get them. A rotated Secret
   reaches the pods through the kubelet, trove notices the new file within `auth.break_glass.check_interval` and refuses the local
   login for `auth.break_glass.rotation_hold` (Q-AUTH-14) and ends the break-glass sessions.
 - `config.auth.break_glass.password_file` and `config.auth.oidc.providers.<id>.client_secret_file` are chart-managed
@@ -2049,8 +2072,8 @@ endpoints: {}                           # default: only the default endpoint; th
 #      extraSecrets: []                 # default; further pairs, chosen by SNI; example: [trove-packages-wildcard-tls]
 #      clientCaSecret: ""               # default: no client certificates; example: trove-customer-ca (key ca.crt)
 #    pool:
-#      enabled: false                   # default: true renders <fullname>-web-ep-<name>
-#      replicaCount: 2                  # default when enabled
+#      enabled: false                   # default: true renders <fullname>-packages-ep-<name> and, with api families in the surface, <fullname>-api-ep-<name>
+#      replicaCount: 2                  # default when enabled; every key of the role's values may be overridden here
 #    service:
 #      type: ClusterIP                  # default
 #      loadBalancerSourceRanges: []     # default
@@ -2105,7 +2128,7 @@ config:                                 # rendered to /etc/trove/trove.yaml; cha
 ```yaml
 highAvailability:
   enforce: true                         # default
-web:
+api:                                    # the same keys under packages, worker and web
   affinity: {}                          # default
   nodeSelector: {}                      # default
   tolerations: []                       # default

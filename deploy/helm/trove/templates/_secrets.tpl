@@ -53,8 +53,8 @@ mounted into web pods only.
 {{- if $s.valkeyClientCert.existingSecret -}}
 {{- $out = append $out (dict "name" "valkey-client" "secret" $s.valkeyClientCert.existingSecret "path" "/var/run/secrets/trove/valkey-client" "items" (list (dict "key" $s.valkeyClientCert.certKey "path" "tls.crt") (dict "key" $s.valkeyClientCert.keyKey "path" "tls.key"))) -}}
 {{- end -}}
-{{- /* The login secrets belong to the pods that serve the client listener (R-AUTH-014, R-AUTH-042): web pods and pool pods, never worker or the migration Job. */ -}}
-{{- if eq (.role | default "") "web" -}}
+{{- /* The login secrets belong to the pods of role api (R-HA-030, R-AUTH-014, R-AUTH-042, Q-HA-79): the main Deployment, its pools and its endpoint pools, and the web pods of the bridge; never packages, worker or the migration Job. */ -}}
+{{- if has (.role | default "") (list "api" "web") -}}
 {{- range $s.oidc -}}
 {{- $out = append $out (dict "name" (printf "oidc-%s" .providerId) "secret" .existingSecret "path" (printf "/var/run/secrets/trove/oidc-%s" .providerId) "items" (list (dict "key" (.key | default "client-secret") "path" "client-secret"))) -}}
 {{- end -}}
@@ -68,23 +68,22 @@ mounted into web pods only.
 {{- /*
 TLS material of the listeners (R-HA-063): only the pods whose process loads it; the Job serves no
 listener. The listener pair of tls.secretName is read by the ops listener of every pod unless tls.ops
-gives it its own pair, and by the client listener (web pods of the main pool) and by every further
-endpoint without a certificate of its own (the pods that serve it). The client CA belongs to the
-client listener of the default endpoint only. A pod that loads none of them does not get the private key.
+gives it its own pair, and by the client listener (the pods that open :8080: api, packages, their path
+pools and the bridge's web pods) and by every further endpoint without a certificate of its own (the
+pods that serve it). The client CA belongs to the client listener of the default endpoint only. A pod
+that loads none of them does not get the private key.
 */ -}}
 {{- $t := .root.Values.tls -}}
 {{- if $t.enabled -}}
 {{- $role := .role | default "" -}}
 {{- $pool := .pool | default "" -}}
-{{- $client := and (eq $role "web") (not $pool) -}}
+{{- $client := include "trove.opensDefault" (dict "role" $role "pool" $pool) | eq "true" -}}
 {{- $mainPair := or $client (not $t.ops.secretName) -}}
-{{- if and (eq $role "web") (not $mainPair) -}}
-{{- range $name := include "trove.endpointNames" .root | fromYamlArray -}}
-{{- if eq (include "trove.endpointPool" (dict "root" $.root "name" $name)) $pool -}}
+{{- if and (ne $role "worker") (not $mainPair) -}}
+{{- range $name := include "trove.unitEndpoints" (dict "root" .root "role" $role "pool" $pool) | fromYamlArray -}}
 {{- $e := include "trove.endpoint" (dict "root" $.root "name" $name) | fromYaml -}}
 {{- if not $e.tlsSecret -}}
 {{- $mainPair = true -}}
-{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

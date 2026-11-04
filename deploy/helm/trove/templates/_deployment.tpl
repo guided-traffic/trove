@@ -1,14 +1,14 @@
 {{/*
-One Deployment of a role (R-HA-002) or of an endpoint pool (R-EP-008). Argument: dict "root" .
-"role" "web" "pool" "" "name" "web" "r" <the role's effective values>. The main web and worker
-Deployments pass the values of their role; a pool passes the web values with its own overrides.
+One Deployment: a role (R-HA-002), a pool (R-HA-062) or an endpoint pool (R-EP-008). Argument: dict
+"root" . "unit" <one entry of trove.units>.
 */}}
 {{- define "trove.deployment" -}}
 {{- $ := .root }}
-{{- $role := .role }}
-{{- $pool := .pool }}
-{{- $name := .name }}
-{{- $r := .r }}
+{{- $unit := .unit }}
+{{- $role := $unit.role }}
+{{- $pool := $unit.pool }}
+{{- $name := $unit.name }}
+{{- $r := $unit.r }}
 {{- $ctx := dict "root" $ "role" $role "r" $r "pool" $pool }}
 ---
 apiVersion: apps/v1
@@ -22,7 +22,10 @@ metadata:
     {{- . | nindent 4 }}
   {{- end }}
 spec:
+  {{- /* With an autoscaler the field is left out, so helm upgrade does not reset its choice (R-HA-032). */}}
+  {{- if not (dig "autoscaling" "enabled" false $r) }}
   replicas: {{ $r.replicaCount }}
+  {{- end }}
   minReadySeconds: {{ $r.minReadySeconds }}
   revisionHistoryLimit: {{ $r.revisionHistoryLimit }}
   strategy:
@@ -90,13 +93,13 @@ spec:
           securityContext:
             {{- toYaml $.Values.securityContext | nindent 12 }}
           ports:
-            {{- if and (eq $role "web") (not $pool) }}
+            {{- if include "trove.opensDefault" $ctx }}
             - name: http
               containerPort: 8080
               protocol: TCP
             {{- end }}
             {{- /* The ports of the endpoints this pod serves (R-EP-008); no other pod listens on them. */}}
-            {{- range $port := include "trove.endpointPorts" (dict "root" $ "role" $role "pool" $pool) | fromYamlArray }}
+            {{- range $port := include "trove.unitEndpointPorts" $ctx | fromYamlArray }}
             - containerPort: {{ $port }}
               protocol: TCP
             {{- end }}
@@ -108,6 +111,15 @@ spec:
             {{- if $pool }}
             - name: TROVE_POOL_NAME
               value: {{ $pool | quote }}
+            {{- end }}
+            {{- /* The queues a worker claims (R-HA-062): a pool only its own, the main Deployment all but the pools'. Lists travel as JSON (docs/developer/configuration.md). */}}
+            {{- if $unit.queues }}
+            - name: TROVE_JOBS_QUEUES
+              value: {{ $unit.queues | toJson | quote }}
+            {{- end }}
+            {{- if $unit.excludeQueues }}
+            - name: TROVE_JOBS_EXCLUDE_QUEUES
+              value: {{ $unit.excludeQueues | toJson | quote }}
             {{- end }}
             {{- with (include "trove.s3EnvFromSecret" $) }}
             {{- . | nindent 12 }}

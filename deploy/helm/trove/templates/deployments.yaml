@@ -1,14 +1,11 @@
 {{- /*
-Two Deployments, always (R-HA-002): <fullname>-web runs "trove serve --role web" and
-<fullname>-worker runs "trove serve --role worker". No value renders --role all. An endpoint
-with pool.enabled adds <fullname>-web-ep-<name>, which also runs --role web (R-EP-008).
+Three Deployments, always (R-HA-002): <fullname>-api runs "trove serve --role api", <fullname>-packages
+"--role packages" and <fullname>-worker "--role worker". No value renders --role all. Beside them one
+Deployment per path pool (<fullname>-<role>-<pool>, R-HA-062), per worker pool, per endpoint pool
+(<fullname>-<role>-ep-<name>, R-EP-008) and, with web.enabled, the bridge <fullname>-web (R-HA-064).
+templates/_units.tpl lists them; the PodDisruptionBudget, the autoscaler and the NetworkPolicy of each
+range over the same list.
 */ -}}
-{{- range $role := list "web" "worker" }}
-{{- include "trove.deployment" (dict "root" $ "role" $role "pool" "" "name" $role "r" (index $.Values $role)) | nindent 0 }}
-{{- end }}
-{{- range $name := include "trove.endpointNames" . | fromYamlArray }}
-{{- if include "trove.endpointPool" (dict "root" $ "name" $name) }}
-{{- $r := include "trove.endpointPoolValues" (dict "root" $ "name" $name) | fromYaml }}
-{{- include "trove.deployment" (dict "root" $ "role" "web" "pool" (printf "ep-%s" $name) "name" (printf "web-ep-%s" $name) "r" $r) | nindent 0 }}
-{{- end }}
+{{- range $unit := include "trove.units" . | fromYamlArray }}
+{{- include "trove.deployment" (dict "root" $ "unit" $unit) | nindent 0 }}
 {{- end }}

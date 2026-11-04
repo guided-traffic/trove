@@ -1,0 +1,74 @@
+# The roles with every kind of pool (R-HA-002, R-HA-062, R-EP-008): a path pool of packages for npm and one of
+# api for the management API, a worker pool for the advisory sync, an autoscaler on packages and the endpoint
+# customers over both roles with a pool of its own.
+config:
+  server:
+    base_url: https://trove.example.com            # example
+  database:
+    host: trove-db-rw.trove.svc                    # example
+  storage:
+    s3:
+      bucket: trove-blobs                          # example
+  valkey:
+    sentinel:
+      addresses:                                   # example
+        - trove-valkey-sentinel-0.trove-valkey-sentinel.trove.svc:26379
+        - trove-valkey-sentinel-1.trove-valkey-sentinel.trove.svc:26379
+        - trove-valkey-sentinel-2.trove-valkey-sentinel.trove.svc:26379
+      primary_name: trove                          # example
+tls:
+  secretName: trove-tls                            # example
+secrets:
+  database:
+    existingSecret: trove-db-app                   # example
+  valkey:
+    existingSecret: trove-valkey                   # example
+  encryption:
+    existingSecret: trove-encryption-keys          # example
+    keys: [2026-10.key]                            # example
+ingress:
+  enabled: true
+  className: haproxy                               # example
+  backendTLS:
+    caSecret: trove-tls                            # example
+api:
+  pools:
+    - name: admin                                  # example
+      paths: [/api/v1/repositories]                # example
+      replicaCount: 2
+packages:
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 8
+  pools:
+    - name: npm                                    # example
+      paths: [/api/npm]                            # example
+      replicaCount: 4
+worker:
+  pools:
+    - name: vuln                                   # example
+      queues: [vuln]                               # example
+      replicaCount: 2
+    - name: bulk                                   # example
+      queues: [index, mirror]                      # example
+endpoints:
+  customers:
+    port: 8443                                     # example
+    baseUrl: https://packages.example.com          # example
+    surface: [packages, files, api]                # example
+    tls:
+      existingSecret: trove-packages-tls           # example
+    pool:
+      enabled: true
+      replicaCount: 2
+    ingress:
+      enabled: true
+      className: haproxy                           # example
+      backendTLS:
+        caSecret: trove-packages-tls               # example
+    networkPolicy:
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress # example

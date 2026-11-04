@@ -47,7 +47,7 @@ func configOf(t *testing.T, docs []doc) doc {
 func TestTLS(t *testing.T) {
 	t.Run("R-HA-063 the default render serves HTTPS: probes, mount without subPath, config paths, appProtocol", func(t *testing.T) {
 		_, docs := render(t, required())
-		for _, role := range []string{"web", "worker"} {
+		for _, role := range []string{"api", "packages", "worker"} {
 			pod := at(find(docs, "Deployment", "trove-"+role), "spec", "template", "spec")
 			c := at(pod, "containers", "0")
 			for _, probe := range []string{"startupProbe", "livenessProbe", "readinessProbe"} {
@@ -116,7 +116,7 @@ func TestTLS(t *testing.T) {
 
 	t.Run("R-HA-063 tls.enabled=false renders HTTP probes, plain Service ports and no TLS wiring", func(t *testing.T) {
 		out, docs := render(t, required(), "tls.enabled=false", "tls.secretName=")
-		for _, role := range []string{"web", "worker"} {
+		for _, role := range []string{"api", "packages", "worker"} {
 			pod := at(find(docs, "Deployment", "trove-"+role), "spec", "template", "spec")
 			c := at(pod, "containers", "0")
 			for _, probe := range []string{"startupProbe", "livenessProbe", "readinessProbe"} {
@@ -160,10 +160,10 @@ func TestTLS(t *testing.T) {
 		}
 		// The web pods hold every listener Secret. The worker opens the operations listener only, which has its own pair here:
 		// the listener private key and the client CA of :8080 stay out of it (SA5, H-57).
-		web := at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec")
+		web := at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec")
 		for _, s := range []string{"trove-tls", "trove-edge-ca", "trove-ops-tls"} {
 			if secretVolume(web, s) == nil {
-				t.Errorf("trove-web does not mount %s", s)
+				t.Errorf("trove-packages does not mount %s", s)
 			}
 		}
 		worker := at(find(docs, "Deployment", "trove-worker"), "spec", "template", "spec")
@@ -196,7 +196,7 @@ func TestTLS(t *testing.T) {
 		if at(cfg, "server", "ops_tls", "client_ca_file") != nil || at(cfg, "server", "ops_tls", "client_auth") != nil {
 			t.Error("ops_tls carries a client CA")
 		}
-		pod := at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec")
+		pod := at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec")
 		vol := secretVolume(pod, "trove-edge-ca")
 		if vol == nil || str(mountOf(pod, vol), "mountPath") != "/var/run/secrets/trove/tls-client-ca" {
 			t.Errorf("client CA volume = %v", vol)
@@ -230,7 +230,7 @@ func TestTLS(t *testing.T) {
 		if got := str(cfg, "server", "tls", "certificates", "0", "cert_file"); got != tlsMountPath+"/tls.crt" {
 			t.Errorf("server.tls cert_file = %q, the client listener keeps its own pair", got)
 		}
-		pod := at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec")
+		pod := at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec")
 		if secretVolume(pod, "trove-tls") == nil || secretVolume(pod, "trove-ops-tls") == nil {
 			t.Error("web must mount both the client and the operations Secret")
 		}
@@ -256,7 +256,7 @@ func TestTLS(t *testing.T) {
 		_, a := render(t, required())
 		_, b := render(t, required(), "tls.minVersion=1.3")
 		sum := func(docs []doc) string {
-			return str(find(docs, "Deployment", "trove-web"), "spec", "template", "metadata", "annotations", "checksum/config")
+			return str(find(docs, "Deployment", "trove-packages"), "spec", "template", "metadata", "annotations", "checksum/config")
 		}
 		if sum(a) == sum(b) {
 			t.Error("checksum/config does not follow server.tls")
@@ -323,10 +323,12 @@ func TestTLS(t *testing.T) {
 		t.Run("traefik sets the scheme and transport on the Service", func(t *testing.T) {
 			_, docs := render(t, required(), "ingress.enabled=true", "ingress.backendTLS.controller=traefik",
 				"ingress.backendTLS.serversTransport=trove-trove-tls@kubernetescrd")
-			ann := at(find(docs, "Service", "trove"), "metadata", "annotations")
-			if str(ann, "traefik.ingress.kubernetes.io/service.serversscheme") != "https" ||
-				str(ann, "traefik.ingress.kubernetes.io/service.serverstransport") != "trove-trove-tls@kubernetescrd" {
-				t.Errorf("Service annotations = %v", ann)
+			for _, svc := range []string{"trove-api", "trove-packages"} {
+				ann := at(find(docs, "Service", svc), "metadata", "annotations")
+				if str(ann, "traefik.ingress.kubernetes.io/service.serversscheme") != "https" ||
+					str(ann, "traefik.ingress.kubernetes.io/service.serverstransport") != "trove-trove-tls@kubernetescrd" {
+					t.Errorf("Service %s annotations = %v", svc, ann)
+				}
 			}
 			if a := at(ofKind(docs, "Ingress")[0], "metadata", "annotations"); a != nil && strings.Contains(toStr(a), "nginx") {
 				t.Errorf("an ingress-nginx setting rendered for Traefik: %v", a)
@@ -349,11 +351,13 @@ func TestTLS(t *testing.T) {
 		renderFails(t, required(), []string{"tls.backendTLSPolicy.enabled=true"}, "tls.backendTLSPolicy.caConfigMapName")
 		_, docs = render(t, required(), "tls.backendTLSPolicy.enabled=true", "tls.backendTLSPolicy.caConfigMapName=trove-tls-ca")
 		p := ofKind(docs, "BackendTLSPolicy")
-		if len(p) != 1 {
-			t.Fatalf("%d BackendTLSPolicy objects", len(p))
+		// one policy per Service the default endpoint's edge names (R-HA-038), each verifying <fullname>.<namespace>.svc
+		if len(p) != 2 {
+			t.Fatalf("%d BackendTLSPolicy objects, want one per role Service", len(p))
 		}
-		if str(p[0], "spec", "targetRefs", "0", "name") != "trove" || str(p[0], "spec", "targetRefs", "0", "kind") != "Service" {
-			t.Errorf("targetRefs = %v", at(p[0], "spec", "targetRefs"))
+		if str(p[0], "spec", "targetRefs", "0", "name") != "trove-api" || str(p[1], "spec", "targetRefs", "0", "name") != "trove-packages" ||
+			str(p[0], "spec", "targetRefs", "0", "kind") != "Service" || str(p[0], "metadata", "name") != "trove-api" {
+			t.Errorf("targetRefs = %v, %v", at(p[0], "spec", "targetRefs"), at(p[1], "spec", "targetRefs"))
 		}
 		if str(p[0], "spec", "validation", "hostname") != "trove.default.svc" ||
 			str(p[0], "spec", "validation", "caCertificateRefs", "0", "name") != "trove-tls-ca" ||
@@ -366,7 +370,7 @@ func TestTLS(t *testing.T) {
 		eachSet(t, func(t *testing.T, _ string, _ string, docs []doc) {
 			cfg := configOf(t, docs)
 			on := at(cfg, "server", "tls") != nil
-			pod := at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec")
+			pod := at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec")
 			probe := str(pod, "containers", "0", "readinessProbe", "httpGet", "scheme")
 			if on != (probe == "HTTPS") {
 				t.Errorf("server.tls set = %v but the readiness probe scheme is %q", on, probe)
@@ -384,7 +388,7 @@ func toStr(v any) string {
 func TestTLSMountsFollowTheListeners(t *testing.T) {
 	t.Run("R-HA-030 without tls.ops every runtime pod mounts the listener pair, the operations listener inherits it", func(t *testing.T) {
 		_, docs := render(t, required())
-		for _, role := range []string{"web", "worker"} {
+		for _, role := range []string{"api", "packages", "worker"} {
 			if secretVolume(at(find(docs, "Deployment", "trove-"+role), "spec", "template", "spec"), "trove-tls") == nil {
 				t.Errorf("trove-%s does not mount trove-tls", role)
 			}
@@ -396,8 +400,8 @@ func TestTLSMountsFollowTheListeners(t *testing.T) {
 		if secretVolume(at(find(docs, "Deployment", "trove-worker"), "spec", "template", "spec"), "trove-tls") != nil {
 			t.Error("trove-worker mounts trove-tls")
 		}
-		if secretVolume(at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec"), "trove-tls") == nil {
-			t.Error("trove-web does not mount trove-tls")
+		if secretVolume(at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec"), "trove-tls") == nil {
+			t.Error("trove-packages does not mount trove-tls")
 		}
 	})
 
@@ -405,7 +409,7 @@ func TestTLSMountsFollowTheListeners(t *testing.T) {
 		pool := []string{"tls.ops.secretName=trove-ops-tls", "endpoints.c.port=8443", "endpoints.c.baseUrl=https://p.example.com", "endpoints.c.pool.enabled=true"}
 		_, docs := render(t, required(), pool...)
 		podOf := func(docs []doc) any {
-			return at(find(docs, "Deployment", "trove-web-ep-c"), "spec", "template", "spec")
+			return at(find(docs, "Deployment", "trove-packages-ep-c"), "spec", "template", "spec")
 		}
 		if secretVolume(podOf(docs), "trove-tls") == nil {
 			t.Error("the pool serves an endpoint on the listener pair and does not mount it")
@@ -421,14 +425,14 @@ func TestTLSMountsFollowTheListeners(t *testing.T) {
 			t.Error("the pool does not mount trove-ops-tls")
 		}
 		// The main web pods keep the default endpoint's pair.
-		if secretVolume(at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec"), "trove-tls") == nil {
-			t.Error("trove-web does not mount trove-tls")
+		if secretVolume(at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec"), "trove-tls") == nil {
+			t.Error("trove-packages does not mount trove-tls")
 		}
 	})
 
 	t.Run("R-HA-030 the client CA of :8080 reaches the main web pods only", func(t *testing.T) {
 		_, docs := render(t, required(), "tls.clientCA.secretName=trove-edge-ca", "endpoints.c.port=8443", "endpoints.c.baseUrl=https://p.example.com", "endpoints.c.pool.enabled=true")
-		for name, want := range map[string]bool{"trove-web": true, "trove-worker": false, "trove-web-ep-c": false} {
+		for name, want := range map[string]bool{"trove-packages": true, "trove-worker": false, "trove-packages-ep-c": false} {
 			if got := secretVolume(at(find(docs, "Deployment", name), "spec", "template", "spec"), "trove-edge-ca") != nil; got != want {
 				t.Errorf("%s mounts the client CA: %v, want %v", name, got, want)
 			}
@@ -442,7 +446,7 @@ func TestS3CA(t *testing.T) {
 		if got := str(configOf(t, docs), "storage", "s3", "ca_file"); got != "/var/run/secrets/trove/s3-ca/ca.crt" {
 			t.Errorf("storage.s3.ca_file = %q", got)
 		}
-		for _, role := range []string{"web", "worker"} {
+		for _, role := range []string{"api", "packages", "worker"} {
 			pod := at(find(docs, "Deployment", "trove-"+role), "spec", "template", "spec")
 			vol := secretVolume(pod, "trove-s3-tls")
 			if vol == nil {
@@ -465,7 +469,7 @@ func TestS3CA(t *testing.T) {
 
 	t.Run("R-HA-030 a different key is projected as ca.crt", func(t *testing.T) {
 		_, docs := render(t, required(), "secrets.s3CA.existingSecret=s3-ca", "secrets.s3CA.key=root.pem")
-		vol := secretVolume(at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec"), "s3-ca")
+		vol := secretVolume(at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec"), "s3-ca")
 		if got := str(list(vol, "secret", "items")[0], "key"); got != "root.pem" {
 			t.Errorf("key = %q", got)
 		}

@@ -90,10 +90,12 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           env:
             {{- include "trove.podEnv" . | nindent 12 }}
-            - name: TROVE_DATABASE_PREFLIGHT_EXPECTED_WEB_REPLICAS
-              value: {{ .Values.web.replicaCount | quote }}
+            {{- /* serving_max and worker_max of the connection budget (R-HA-016, Q-HA-77). */}}
+            {{- $counts := include "trove.connectionCounts" . | fromYaml }}
+            - name: TROVE_DATABASE_PREFLIGHT_EXPECTED_SERVING_REPLICAS
+              value: {{ $counts.serving | int | quote }}
             - name: TROVE_DATABASE_PREFLIGHT_EXPECTED_WORKER_REPLICAS
-              value: {{ .Values.worker.replicaCount | quote }}
+              value: {{ $counts.worker | int | quote }}
             - name: TMPDIR
               value: /tmp
             {{- with .Values.migrations.extraEnv }}

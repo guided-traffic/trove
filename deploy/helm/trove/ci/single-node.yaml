@@ -2,7 +2,12 @@
 # standalone Valkey without TLS (R-HA-032, R-HA-056).
 highAvailability:
   enforce: false
-web:
+api:
+  replicaCount: 1
+  topologySpread:
+    host:
+      whenUnsatisfiable: ScheduleAnyway
+packages:
   replicaCount: 1
   topologySpread:
     host:

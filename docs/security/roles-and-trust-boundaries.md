@@ -202,3 +202,9 @@ fills caches.
 
 What makes it real: an exploitable flaw in a code path of the `packages` or `files` family while a `web` replica serves. The mitigation is the
 duration: the bridge exists for one upgrade step, and the chart's guard refuses to leave it on (R-HA-064).
+
+In the chart the bridge is `web.enabled: true` ([_secrets.tpl](../../deploy/helm/trove/templates/_secrets.tpl),
+[_units.tpl](../../deploy/helm/trove/templates/_units.tpl)): its pods mount the login secrets (`secrets.oidc[]`,
+`secrets.breakGlass`) while the edge sends every request to them, and the guard of R-HA-064 refuses the second step only
+while the new Deployments are not ready; how long an installation stays on the first step the chart cannot tell, and
+`NOTES.txt` names the second step.

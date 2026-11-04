@@ -3,29 +3,28 @@
 The chart lives in [deploy/helm/trove](../../deploy/helm/trove). This page covers its layout, what
 it renders, how its values reach the pods, how it is validated and tested, and how to extend it.
 The second chart, `trove-bastion`, has its own section at the end: [The Bastion chart](#the-bastion-chart).
-The requirements are in [ha-and-helm.md](../spec/ha-and-helm.md) (R-HA-002, R-HA-011, R-HA-019,
-R-HA-027 to R-HA-037, R-HA-056, R-HA-061, R-HA-063) and [endpoints.md](../spec/endpoints.md) (R-EP-008); the dev profile that installs it is described in
+The requirements are in [ha-and-helm.md](../spec/ha-and-helm.md) (R-HA-002, R-HA-011, R-HA-016, R-HA-019,
+R-HA-027 to R-HA-037, R-HA-042, R-HA-056, R-HA-061 to R-HA-064) and [endpoints.md](../spec/endpoints.md) (R-EP-008); the dev profile that installs it is described in
 [local-profile.md](local-profile.md).
 
-## Scope: a skeleton
+## Scope
 
-The chart is the M0 skeleton (work package WP0.7). Everything it renders is real and tested. It
-does not render what later phases add, and `values.schema.json` refuses their values
+Everything the chart renders is real and tested. It does not render what later phases add, and `values.schema.json` refuses their values
 (`additionalProperties: false`), so a value of a later phase fails before anything renders instead
 of being silently ignored.
 
 | In the chart | Not in the chart yet |
 |---|---|
-| `web` and `worker` Deployments, always both (R-HA-002); a pool Deployment per endpoint with `pool.enabled` (R-EP-008) | autoscaling (HPA, also for endpoint pools); the roles `api` and `packages`, their path pools and the worker pools by queue (phase 6a, R-HA-002, R-HA-062, see [The cut into roles of phase 6a](#the-cut-into-roles-of-phase-6a-specified-not-built-yet)) |
-| client Service `<fullname>` and ops Service `<fullname>-ops`, `sessionAffinity: None` (R-HA-037) | Gateway API HTTPRoute (R-HA-038), `contentOrigin` |
-| PodDisruptionBudget per Deployment, topology spread with `nodeTaintsPolicy: Honor` (R-HA-032) | ServiceMonitor, and every alert of the PrometheusRule but the three of the vulnerability scanning (R-HA-045, see [The PrometheusRule](#the-prometheusrule)) |
-| NetworkPolicy ingress for `web`, `worker` and the migration Job (R-HA-042) | |
+| `api`, `packages` and `worker` Deployments, always (R-HA-002); path pools, worker pools and endpoint pools per role (R-HA-062, R-EP-008); the bridge `web` with `web.enabled` (R-HA-064); see [The cut into roles](#the-cut-into-roles) | Gateway API HTTPRoute (R-HA-038, Q-HA-81), `contentOrigin` |
+| role Services `<fullname>-api` and `<fullname>-packages`, pool Services, ops Service `<fullname>-ops`, `sessionAffinity: None` (R-HA-037) | ServiceMonitor, and every alert of the PrometheusRule but the three of the vulnerability scanning (R-HA-045, see [The PrometheusRule](#the-prometheusrule)) |
+| PodDisruptionBudget and HorizontalPodAutoscaler per Deployment, topology spread with `nodeTaintsPolicy: Honor` (R-HA-032) | |
+| one NetworkPolicy per Deployment and the migration Job, ingress only (R-HA-042, ADR-154) | |
 | PrometheusRule with the three alerts of the vulnerability scanning (R-HA-045, R-VULN-024), `metrics.prometheusRule.*` | |
 | migration Job as `pre-install,pre-upgrade` hook, with hook ConfigMap and ServiceAccount (R-HA-019) | backup CronJob, restore Job, post-restore Job (R-HA-060) |
 | configuration file `trove.yaml`, Secret wiring including the login secrets `secrets.oidc` and `secrets.breakGlass`, downward-API variables (R-HA-030) | `secrets.backupTarget`, `trustedCA`, `bootstrap` |
 | restricted-PSS security contexts, probes, spool and `/tmp` volumes (R-HA-033 to R-HA-035, R-HA-061) | `initContainers`, `sidecars`, `lifecycle`, Service types beyond the three in the schema |
-| Ingress, path `/` only (R-HA-037); TLS on trove's listeners (R-HA-063) | HTTPRoute for the default endpoint and for endpoints (`gateway.*`, R-HA-038, R-EP-008); profiles `small`, `medium`, `large` (R-HA-050), the complete values reference (R-HA-031) |
-| further endpoints: Service, Ingress, NetworkPolicy, optional pool, certificates (R-EP-008), see [Endpoints](#endpoints) | the validation rows of the features in the right column |
+| Ingress with the path rules of the roles (R-HA-037); TLS on trove's listeners (R-HA-063) | HTTPRoute for the default endpoint and for endpoints (`gateway.*`, R-HA-038, R-EP-008); profiles `small`, `medium`, `large` (R-HA-050), the complete values reference (R-HA-031) |
+| further endpoints: Services, Ingress, optional pool per role, certificates (R-EP-008), see [Endpoints](#endpoints) | the validation rows of the features in the right column |
 
 Gaps in what is there:
 
@@ -38,22 +37,43 @@ Gaps in what is there:
   the image's `ENTRYPOINT` being the trove binary.
 - **No kubeconform run** over the rendered output yet; the tool is not pinned.
 
-## The cut into roles of phase 6a (specified, not built yet)
+## The cut into roles
 
-The rest of this page describes the chart as it is: `<fullname>-web` and `<fullname>-worker`, the Service `<fullname>`, one
-Ingress rule `/` per host, ingress policies for `web`, `worker`, the migration Job and each further endpoint. Phase 6a
-([roadmap](../coverage/roadmap.md#phase-6a--task-areas), WP6a.3) changes it to:
+The chart renders the roles of ADR-153 and ADR-155 ([roadmap](../coverage/roadmap.md#phase-6a--task-areas), WP6a.3). Every template that
+renders something per Deployment ranges over one list, `trove.units` ([_units.tpl](../../deploy/helm/trove/templates/_units.tpl)): a
+map per Deployment with its `name`, `role`, `pool`, `kind` (`main`, `pool`, `endpoint`, `bridge`), effective values `r`, and for a worker
+pool its `queues`. The Deployment, its PodDisruptionBudget, HorizontalPodAutoscaler and NetworkPolicy therefore cannot disagree on
+name, labels or selector.
 
-| Object | Phase 6a | Spec |
+| Object | Rendered | Spec |
 |---|---|---|
-| Deployments | `<fullname>-api`, `<fullname>-packages`, `<fullname>-worker`; pools `<fullname>-<role>-<pool>`; endpoint pools `<fullname>-packages-ep-<name>` and `<fullname>-api-ep-<name>` | R-HA-002, R-HA-062, R-EP-008 |
-| Services | `<fullname>-api` and `<fullname>-packages` on 8080; `<fullname>-ops`; per further endpoint `<fullname>-ep-<name>` and, for a surface of both roles, `<fullname>-ep-<name>-api` | R-HA-002, R-HA-028, Q-EP-71 |
-| Edge | per host the `Prefix` rules `/` and `/api/v1` to `api`, `/api`, `/files`, `/v2`, `/.well-known` to `packages` | R-HA-037, Q-HA-71 |
-| PDB, HPA | one per Deployment (the HPA is not rendered today at all) | R-HA-032 |
+| Deployments | `<fullname>-api`, `<fullname>-packages`, `<fullname>-worker`; path pools `<fullname>-<role>-<pool>`; worker pools `<fullname>-worker-<pool>`; endpoint pools `<fullname>-packages-ep-<name>` and `<fullname>-api-ep-<name>` (one per role the surface holds) | R-HA-002, R-HA-062, R-EP-008 |
+| Services | `<fullname>-api` and `<fullname>-packages` on 8080; one per path pool; `<fullname>-ops`; per further endpoint `<fullname>-ep-<name>` and, for a surface of both roles, `<fullname>-ep-<name>-api`; worker pods have none | R-HA-002, R-HA-028, Q-EP-71 |
+| Edge | per host the `Prefix` rules `/` and `/api/v1` to `api`, `/api`, `/files`, `/v2`, `/.well-known` to `packages`, and the paths of the path pools before them ([_edge.tpl](../../deploy/helm/trove/templates/_edge.tpl), `trove.edgeRules`); a further endpoint over one role is routed whole, one over both by the rows of its families | R-HA-037, Q-HA-71 |
+| PDB, HPA | one per Deployment; the HPA (`autoscaling/v2`, CPU and memory targets, `metrics`, `behavior`) replaces `spec.replicas` | R-HA-032 |
 | NetworkPolicy | one per Deployment, named as it, a rule per port its pods open; none for egress | R-HA-042, Q-HA-76 |
-| Login secrets | `secrets.oidc[]` and `secrets.breakGlass` in `api` pods only | R-HA-030, Q-HA-79 |
-| Environment | `TROVE_JOBS_QUEUES` on a worker pool, `TROVE_JOBS_EXCLUDE_QUEUES` on the main worker; `TROVE_DATABASE_PREFLIGHT_EXPECTED_SERVING_REPLICAS` on the migration Job | R-HA-030, R-HA-016 |
-| Upgrade bridge | `web.enabled: true` keeps `<fullname>-web`, the Service `<fullname>` and the edge `/` for the first of two steps; a `lookup` guard refuses the one-step upgrade | R-HA-064, Q-HA-73 |
+| Login secrets | `secrets.oidc[]` and `secrets.breakGlass` in `api` pods only (main, pools, endpoint pools) and the bridge's `web` pods | R-HA-030, Q-HA-79 |
+| Environment | `TROVE_POOL_NAME` on every pool, `TROVE_JOBS_QUEUES` (a JSON list) on a worker pool, `TROVE_JOBS_EXCLUDE_QUEUES` on the main worker beside pools; the two preflight counts on the migration Job | R-HA-030, R-HA-016, Q-HA-82 |
+| Upgrade bridge | `web.enabled: true` also renders `<fullname>-web`, the Service `<fullname>` and the edge `/` for the first of two steps; a `lookup` guard refuses the second step while `api` or `packages` is not ready | R-HA-064, Q-HA-73 |
+
+A **pool** is the role's values with the entry's keys on top, key by key (`trove.poolValues`, so `false` and `0` override, and
+`autoscaling` is inherited, Q-HA-84). A path pool opens the ports of the endpoints without a pool, like the main Deployment, but
+only the default endpoint's edge routes its `paths` (Q-HA-83). The names of pools match `^[a-z][a-z0-9-]{0,19}$` and may not start
+with `ep-`; `trove.validatePools` checks names, paths inside the role's families, queues and duplicates.
+
+The **connection budget** (R-HA-016): `trove.connectionCounts` sums `maxReplicas` (or `replicaCount`) plus `maxSurge` over every
+Deployment, serving roles and worker apart, and passes `TROVE_DATABASE_PREFLIGHT_EXPECTED_SERVING_REPLICAS` and
+`..._WORKER_REPLICAS` to the migration Job; `NOTES.txt` prints the resulting `max_connections` (231 with the defaults, 311 while the
+bridge runs). The key `expected_serving_replicas` is the binary's (WP6a.1); until it lands, `trove admin config validate` over
+the rendered environment names it as unknown.
+
+The **guard** of the bridge ([_validate_roles.tpl](../../deploy/helm/trove/templates/_validate_roles.tpl)) reads Deployments with
+`lookup`, which returns nothing under `helm template` and in these tests. The chart test checks that the rendering does not
+depend on it; the refusal is verified against a cluster (the upgrade e2e test, `helm upgrade --dry-run=server`), see Q-HA-86. While
+the bridge runs, its `web` pods hold the secrets of both roles
+([H-518](../security/roles-and-trust-boundaries.md#h-518--the-bridge-and-the-development-role-hold-both-halves-of-the-cut)).
+
+The HTTPRoute of R-HA-038 is not rendered (Q-HA-81): it will loop over `trove.edgeRules`.
 
 ## Layout
 
@@ -69,24 +89,29 @@ deploy/helm/trove/
 │   ├── single-node.yaml        no enforcement, one replica per role, standalone Valkey
 │   ├── migrations-disabled.yaml  migrations.mode disabled, minAvailable budget, image digest
 │   ├── monitoring.yaml         the PrometheusRule on, the vulnerabilities section the chart reads (the rule tests render this set)
-│   ├── endpoints.yaml          two further endpoints on the main web pods, own Ingress classes, certificates by SNI
+│   ├── endpoints.yaml          two further endpoints on the main packages pods, own Ingress classes, certificates by SNI
 │   ├── endpoints-pool.yaml     an endpoint with a pool of its own
+│   ├── roles-pools.yaml        a path pool of api and of packages, two worker pools, an autoscaler, a mixed endpoint with pools
+│   ├── bridge.yaml             web.enabled: the first step of the upgrade across the cut
 │   └── s3-provisioner.yaml     bucket, region, endpoint and credentials from one provisioner Secret
 └── templates/
     ├── _helpers.tpl        names, labels, image, byte and duration parsing, spool budget, config
     ├── _secrets.tpl        the Secret mounts of a pod, as one list used for volumes and mounts
     ├── _pod.tpl            probes, topology spread, downward-API variables
     ├── _validate.tpl       fail-fast validation (R-HA-029), endpoint validation (R-EP-008)
-    ├── _deployment.tpl     one Deployment of a role or an endpoint pool
-    ├── _endpoints.tpl      endpoint defaults, trove.yaml block, ports, mounts, pool values, S3 settings from a Secret
+    ├── _units.tpl          the Deployments as data (trove.units), surface roles, endpoints per pod, replica counts
+    ├── _edge.tpl           the edge's path rules (trove.edgeRules), read by the Ingresses and the BackendTLSPolicies
+    ├── _validate_roles.tpl roles, pools, autoscalers, spool and memory budgets, the bridge guard
+    ├── _deployment.tpl     one Deployment of a unit
+    ├── _endpoints.tpl      endpoint defaults, trove.yaml block, mounts, S3 settings from a Secret
     ├── _notes.tpl          the text of NOTES.txt
     ├── validate.yaml       renders nothing; includes the validation
-    ├── deployments.yaml    <fullname>-web, <fullname>-worker and the endpoint pools
-    ├── services.yaml       <fullname> and <fullname>-ops
-    ├── pdb.yaml            one PodDisruptionBudget per Deployment, pools included
-    ├── endpoint-services.yaml, endpoint-ingress.yaml, endpoint-networkpolicy.yaml   per further endpoint
+    ├── deployments.yaml    one Deployment per unit
+    ├── services.yaml       the role and pool Services, <fullname> in the bridge, <fullname>-ops
+    ├── pdb.yaml, hpa.yaml  one PodDisruptionBudget and, with autoscaling.enabled, one HorizontalPodAutoscaler per Deployment
+    ├── endpoint-services.yaml, endpoint-ingress.yaml   per further endpoint
     ├── NOTES.txt           endpoints and warnings
-    ├── networkpolicy.yaml  ingress policies for web, worker and the migration Job
+    ├── networkpolicy.yaml  one ingress policy per Deployment and the migration Job's
     ├── prometheusrule.yaml the PrometheusRule (only with metrics.prometheusRule.enabled); the alerts are _rules.tpl
     ├── _rules.tpl          the alerts as a YAML list (trove.rules.all) and their names (trove.rules.names)
     ├── configmap.yaml      <fullname>-config (trove.yaml)
@@ -99,9 +124,10 @@ deploy/helm/trove/
 | File | Responsibility |
 |---|---|
 | `_helpers.tpl` | `trove.fullname` (release name, or `<release>-trove`, cut at 50 characters so derived names stay DNS labels), `trove.labels` / `trove.selectorLabels`, `trove.image` (digest wins over tag), `trove.bytes` and `trove.seconds` (parse sizes and durations; they fail on anything else, so a typo never becomes a wrong budget), `trove.spoolBudget`, `trove.config` |
-| `_secrets.tpl` | `trove.secretMounts` builds one list per scope (`runtime` for `web` and `worker`, `migrate` for the Job); `trove.secretVolumes` and `trove.secretVolumeMounts` render it |
-| `_validate.tpl` | every `fail` of R-HA-029, each message naming the offending value |
-| `deployments.yaml` | the two Deployments from one loop over `web` and `worker`, so a role cannot drift from the other; the same `trove.deployment` renders an endpoint pool |
+| `_secrets.tpl` | `trove.secretMounts` builds one list per scope (`runtime` for the Deployments, `migrate` for the Job); `trove.secretVolumes` and `trove.secretVolumeMounts` render it |
+| `_units.tpl` | `trove.units`, the one list of Deployments; `trove.unitEndpoints` (which endpoint ports a pod opens, R-EP-002); `trove.poolValues`; `trove.connectionCounts` |
+| `_validate.tpl`, `_validate_roles.tpl` | every `fail` of R-HA-029, each message naming the offending value |
+| `deployments.yaml` | one loop over `trove.units`, so no role can drift from another; the same `trove.deployment` renders a pool |
 | `migrate.yaml` | the Job and its hook resources; renders nothing with `migrations.mode: disabled` |
 
 ## What the chart renders
@@ -111,29 +137,32 @@ deploy/helm/trove/
 
 | Kind | Name | Notes |
 |---|---|---|
-| Deployment | `<fullname>-web` | `trove serve --role web`; ports `http` 8080 and `ops` 8081 |
+| Deployment | `<fullname>-api`, `<fullname>-packages` | `trove serve --role api` / `--role packages`; ports `http` 8080 and `ops` 8081 (and the ports of the further endpoints they serve) |
 | Deployment | `<fullname>-worker` | `trove serve --role worker`; port `ops` 8081 only |
-| Service | `<fullname>` | port `http` 8080, selects `web` pods only, `sessionAffinity: None` |
-| Service | `<fullname>-ops` | port `ops` 8081, selects every pod labelled `trove/serve: "true"` (`web` and `worker`) |
+| Deployment, Service (path pools only) | `<fullname>-api-<pool>`, `<fullname>-packages-<pool>`, `<fullname>-worker-<pool>` | per entry of `api.pools`, `packages.pools`, `worker.pools` |
+| Deployment, Service | `<fullname>-web`, `<fullname>` | `web.enabled` only: `--role web`, the bridge of R-HA-064 |
+| Service | `<fullname>-api`, `<fullname>-packages` | port `http` 8080, select the main pods of their role only, `sessionAffinity: None` |
+| Service | `<fullname>-ops` | port `ops` 8081, selects every pod labelled `trove/serve: "true"` (`api`, `packages`, `worker`, `web`) |
 | ConfigMap | `<fullname>-config` | `trove.yaml`, mounted at `/etc/trove/trove.yaml` |
 | ServiceAccount | `<fullname>` | `automountServiceAccountToken: false` |
-| PodDisruptionBudget | `<fullname>-web`, `<fullname>-worker` | `maxUnavailable: 1`, `unhealthyPodEvictionPolicy: AlwaysAllow` |
-| NetworkPolicy | `<fullname>-web`, `<fullname>-worker`, `<fullname>-migrate` (hook) | `networkPolicy.enabled`, ingress only, see [Network policy](#network-policy) |
+| PodDisruptionBudget | one per Deployment, named as it | `maxUnavailable: 1`, `unhealthyPodEvictionPolicy: AlwaysAllow` |
+| HorizontalPodAutoscaler | one per Deployment, named as it | `autoscaling.enabled` of the role or pool; `autoscaling/v2` |
+| NetworkPolicy | one per Deployment, named as it, and `<fullname>-migrate` (hook) | `networkPolicy.enabled`, ingress only, see [Network policy](#network-policy) |
 | ConfigMap, ServiceAccount (hook, weight -10) | `<fullname>-migrate` | same `trove.yaml` as `<fullname>-config` |
 | Job (hook, weight 0) | `<fullname>-migrate` | `trove migrate up`, which also applies `config.authz.role_bindings` (R-AUTHZ-010; `TestR_AUTHZ_010_DeclaredRoleBindingsReachTheMigrationJob`); `backoffLimit` 2, deadline 1800 s, TTL 86400 s |
-| Service, Ingress, NetworkPolicy; Deployment and PodDisruptionBudget `<fullname>-web-ep-<name>` | `<fullname>-ep-<name>` | per further endpoint, see [Endpoints](#endpoints) |
-| Ingress | `<fullname>` | `ingress.enabled`; one rule per host, path `/`, `Prefix`, backend `<fullname>:http`; backend-over-TLS annotations per controller, see [TLS](#tls) |
-| BackendTLSPolicy | `<fullname>` | `tls.backendTLSPolicy.enabled` only; Gateway API CRD, see [TLS](#tls) |
+| Service, Ingress; pool Deployments, PodDisruptionBudgets, HorizontalPodAutoscalers `<fullname>-<role>-ep-<name>` | `<fullname>-ep-<name>` (and `-api`) | per further endpoint, see [Endpoints](#endpoints) |
+| Ingress | `<fullname>` | `ingress.enabled`; per host the path rules of R-HA-037 (all `Prefix`, port name `http`), `/` to `<fullname>` in the bridge; backend-over-TLS annotations per controller, see [TLS](#tls) |
+| BackendTLSPolicy | one per Service the default Ingress names, named as the Service | `tls.backendTLSPolicy.enabled` only; Gateway API CRD, see [TLS](#tls) |
 | anything | from `extraObjects` | |
 
 The chart renders no Secret, no Role or RoleBinding, no PersistentVolumeClaim, no StatefulSet and
 no CRD (R-HA-028, R-HA-033, R-HA-061); the tests check each.
 
 Labels on every object: `app.kubernetes.io/name`, `instance`, `version`, `managed-by`,
-`component` (`web`, `worker`, `migrate`, `ops`, `config`, `serviceaccount`) and `helm.sh/chart`.
-`web` and `worker` pods also carry `trove/pool: ""` (selector label, empty for the main
-Deployments so that a pool added later never overlaps their selectors; selector labels are
-immutable) and `trove/serve: "true"` (what the ops Service selects).
+`component` (`api`, `packages`, `worker`, `web`, `migrate`, `ops`, `config`, `ingress`, `serviceaccount`) and `helm.sh/chart`.
+The pods of `api`, `packages`, `worker` and `web` also carry `trove/pool` (selector label: the pool's name, `ep-<name>` for an
+endpoint pool, the empty value for the main Deployments, so that a pool never overlaps their selectors or a role Service's;
+selector labels are immutable) and `trove/serve: "true"` (what the ops Service selects).
 
 ### Pod template
 
@@ -159,14 +188,16 @@ The chart sets these variables and no others (R-HA-030):
 | Variable | Value | Pods |
 |---|---|---|
 | `TROVE_POD_NAME`, `TROVE_POD_NAMESPACE`, `TROVE_NODE_NAME` | downward API (`metadata.name`, `metadata.namespace`, `spec.nodeName`) | every trove pod |
-| `TROVE_RUNTIME_MEMORY_LIMIT_BYTES` | `resourceFieldRef limits.memory` | `web`, `worker` |
-| `TROVE_RUNTIME_TERMINATION_GRACE_PERIOD` | `<terminationGracePeriodSeconds>s` | `web`, `worker` |
-| `TROVE_POOL_NAME` | `ep-<name>` | the pods of an endpoint pool (R-EP-002) |
-| `TROVE_STORAGE_S3_BUCKET`, `..._REGION`, `..._ENDPOINT` | `secretKeyRef` into `secrets.s3.existingSecret`, only for the keys named by `secrets.s3.bucketKey`, `regionKey`, `endpointKey` (the settings of an S3 provisioner's Secret; not credentials) | `web`, `worker` |
-| `TROVE_STORAGE_SPOOL_MAX_BYTES` | spool size minus `spool.headroom`, in bytes; not set when `config.storage.spool.max_bytes` is set | `web`, `worker` |
-| `GOMAXPROCS` | `resourceFieldRef requests.cpu`, only when the role has no CPU limit | `web`, `worker` |
+| `TROVE_RUNTIME_MEMORY_LIMIT_BYTES` | `resourceFieldRef limits.memory` | every Deployment |
+| `TROVE_RUNTIME_TERMINATION_GRACE_PERIOD` | `<terminationGracePeriodSeconds>s` | every Deployment |
+| `TROVE_POOL_NAME` | the pool's name, `ep-<name>` for an endpoint pool | the pods of a pool (R-HA-062, R-EP-002) |
+| `TROVE_JOBS_QUEUES` | the pool's `queues` as a JSON list, `["vuln"]` | a worker pool |
+| `TROVE_JOBS_EXCLUDE_QUEUES` | the sorted union of the worker pools' queues as a JSON list | the main `worker` while a pool lists a queue |
+| `TROVE_STORAGE_S3_BUCKET`, `..._REGION`, `..._ENDPOINT` | `secretKeyRef` into `secrets.s3.existingSecret`, only for the keys named by `secrets.s3.bucketKey`, `regionKey`, `endpointKey` (the settings of an S3 provisioner's Secret; not credentials) | every Deployment |
+| `TROVE_STORAGE_SPOOL_MAX_BYTES` | spool size minus `spool.headroom`, in bytes; not set when `config.storage.spool.max_bytes` is set | every Deployment |
+| `GOMAXPROCS` | `resourceFieldRef requests.cpu`, only when the role has no CPU limit | every Deployment |
 | `TMPDIR` | `/tmp` | every trove pod |
-| `TROVE_DATABASE_PREFLIGHT_EXPECTED_WEB_REPLICAS`, `..._WORKER_REPLICAS` | the replica counts | migration Job |
+| `TROVE_DATABASE_PREFLIGHT_EXPECTED_SERVING_REPLICAS`, `..._WORKER_REPLICAS` | `serving_max` and `worker_max` of R-HA-016 | migration Job |
 
 `extraEnv` and `extraEnvFrom` append to this list. The binary's strict validation accepts the
 `TROVE_` names above as schema keys or as reserved variables (R-OPS-028).
@@ -188,20 +219,20 @@ never as an environment variable (the one exception is the non-secret S3 setting
 | `secrets.database` | `username`, `password` | `/var/run/secrets/trove/database/` | `database.username_file`, `database.password_file` | all (the Job uses `secrets.databaseMigration` when set) |
 | `secrets.databaseCA` | `ca.crt` | `/var/run/secrets/trove/database-ca/` | `database.ssl_root_cert_file` | all |
 | `secrets.databaseClientCert` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/database-client/` | `database.ssl_cert_file`, `database.ssl_key_file` | all |
-| `secrets.encryption` | the names in `secrets.encryption.keys` | `/var/run/secrets/trove/encryption/` | `secrets.encryption_key_files` (ordered), `secrets.active_key_id` (first entry without `.key`) | `web`, `worker`, the same Secret (R-HA-027); the migration Job never mounts it (R-HA-030) |
-| `secrets.s3` (`source: static`) | `access-key-id`, `secret-access-key` | `/var/run/secrets/trove/s3/` | `storage.s3.credentials.access_key_id_file`, `..._secret_access_key_file` | `web`, `worker` |
-| `secrets.s3CA` | `ca.crt` (the Secret's `key`) | `/var/run/secrets/trove/s3-ca/` | `storage.s3.ca_file` (also refused inside `config`) | `web`, `worker`; never the Job |
-| `secrets.valkey` | `username` (omit with `usernameKey: ""`), `password` | `/var/run/secrets/trove/valkey/` | `valkey.username_file`, `valkey.password_file` | `web`, `worker` |
-| `secrets.valkeySentinel` | `username` (default: none), `password` | `/var/run/secrets/trove/valkey-sentinel/` | `valkey.sentinel.username_file`, `valkey.sentinel.password_file` | `web`, `worker` |
-| `secrets.valkeyCA` | `ca.crt` | `/var/run/secrets/trove/valkey-ca/` | `valkey.tls.ca_file` | `web`, `worker` |
-| `secrets.valkeyClientCert` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/valkey-client/` | `valkey.tls.cert_file`, `valkey.tls.key_file` | `web`, `worker` |
-| `secrets.breakGlass` | `password` (the Secret's `key`) | `/var/run/secrets/trove/break-glass/` | `auth.break_glass.password_file` (also refused inside `config`); without the Secret `auth.break_glass.enabled: false` | `web` and pool pods; never `worker`, the Job or backup pods (R-AUTH-014, R-AUTH-042) |
-| `secrets.oidc[]` (`providerId`, `existingSecret`, `key`) | `client-secret` (the entry's `key`) | `/var/run/secrets/trove/oidc-<providerId>/` | `auth.oidc.providers.<providerId>.client_secret_file` (refused inside `config` for a listed provider) | `web` and pool pods only (R-AUTH-004, R-AUTH-042) |
-| `secrets.metricsToken` (`config.metrics.auth: static`) | `token` | `/var/run/secrets/trove/metrics/` | `metrics.bearer_token_file` | `web`, `worker` |
+| `secrets.encryption` | the names in `secrets.encryption.keys` | `/var/run/secrets/trove/encryption/` | `secrets.encryption_key_files` (ordered), `secrets.active_key_id` (first entry without `.key`) | every Deployment, the same Secret (R-HA-027); the migration Job never mounts it (R-HA-030) |
+| `secrets.s3` (`source: static`) | `access-key-id`, `secret-access-key` | `/var/run/secrets/trove/s3/` | `storage.s3.credentials.access_key_id_file`, `..._secret_access_key_file` | every Deployment |
+| `secrets.s3CA` | `ca.crt` (the Secret's `key`) | `/var/run/secrets/trove/s3-ca/` | `storage.s3.ca_file` (also refused inside `config`) | every Deployment; never the Job |
+| `secrets.valkey` | `username` (omit with `usernameKey: ""`), `password` | `/var/run/secrets/trove/valkey/` | `valkey.username_file`, `valkey.password_file` | every Deployment |
+| `secrets.valkeySentinel` | `username` (default: none), `password` | `/var/run/secrets/trove/valkey-sentinel/` | `valkey.sentinel.username_file`, `valkey.sentinel.password_file` | every Deployment |
+| `secrets.valkeyCA` | `ca.crt` | `/var/run/secrets/trove/valkey-ca/` | `valkey.tls.ca_file` | every Deployment |
+| `secrets.valkeyClientCert` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/valkey-client/` | `valkey.tls.cert_file`, `valkey.tls.key_file` | every Deployment |
+| `secrets.breakGlass` | `password` (the Secret's `key`) | `/var/run/secrets/trove/break-glass/` | `auth.break_glass.password_file` (also refused inside `config`); without the Secret `auth.break_glass.enabled: false` | `api` pods (main, pools, endpoint pools) and the bridge's `web`; never `packages`, `worker`, the Job or backup pods (R-AUTH-014, R-AUTH-042, Q-HA-79) |
+| `secrets.oidc[]` (`providerId`, `existingSecret`, `key`) | `client-secret` (the entry's `key`) | `/var/run/secrets/trove/oidc-<providerId>/` | `auth.oidc.providers.<providerId>.client_secret_file` (refused inside `config` for a listed provider) | `api` pods and the bridge's `web` only (R-AUTH-004, R-AUTH-042, Q-HA-79) |
+| `secrets.metricsToken` (`config.metrics.auth: static`) | `token` | `/var/run/secrets/trove/metrics/` | `metrics.bearer_token_file` | every Deployment |
 | `tls.secretName` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/tls/` | `server.tls.certificates[0]` | the pods that load the pair, see [Mounts follow the listeners](#mounts-follow-the-listeners); never the Job |
-| `tls.clientCA.secretName` | `ca.crt` | `/var/run/secrets/trove/tls-client-ca/` | `server.tls.client_ca_file`, `server.tls.client_auth` | the main `web` pods |
-| `tls.ops.secretName` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/tls-ops/` | `ops_tls.certificates[0]`, `ops_tls.inherit: false` | every pod that opens the operations listener (`web`, `worker`, pools) |
-| `endpoints.<name>.tls.existingSecret`, each of `extraSecrets` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/endpoints/<name>/<n>/` (`n` = position in `tls.certificates`) | `server.endpoints.<name>.tls.certificates` | the pods that serve the endpoint (`web` or its pool) |
+| `tls.clientCA.secretName` | `ca.crt` | `/var/run/secrets/trove/tls-client-ca/` | `server.tls.client_ca_file`, `server.tls.client_auth` | the pods that open :8080 (`api`, `packages`, their path pools, the bridge's `web`), not an endpoint pool |
+| `tls.ops.secretName` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/tls-ops/` | `ops_tls.certificates[0]`, `ops_tls.inherit: false` | every pod that opens the operations listener (every Deployment) |
+| `endpoints.<name>.tls.existingSecret`, each of `extraSecrets` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/endpoints/<name>/<n>/` (`n` = position in `tls.certificates`) | `server.endpoints.<name>.tls.certificates` | the pods that serve the endpoint (the main Deployments of the roles its surface holds, or its pools) |
 | `endpoints.<name>.tls.clientCaSecret` | `ca.crt` | `/var/run/secrets/trove/endpoints/<name>/client-ca/` | `server.endpoints.<name>.tls.client_ca_file` | the pods that serve the endpoint |
 
 The file *names* inside a mount are fixed (`username`, `password`, `ca.crt`, …); the Secret's key
@@ -246,13 +277,13 @@ What the chart does with them:
   `tls.reloadInterval` and swaps the certificate without a restart. A subPath mount would never
   see the update. Only the pods that load a pair mount it, see below; the migration Job serves no listener (R-HA-030).
 - <a id="mounts-follow-the-listeners"></a>**Mounts follow the listeners.** The private key of `tls.secretName` is mounted
-  into a pod only when its process loads that pair (`trove.secretMounts`, `_secrets.tpl`): the main `web` pods
-  (client listener of the default endpoint), a pod that serves a further endpoint without a pair of its own, and every pod
+  into a pod only when its process loads that pair (`trove.secretMounts`, `_secrets.tpl`): the pods that open :8080
+  (`api`, `packages`, their path pools and the bridge's `web`: the client listener of the default endpoint), a pod that serves a further endpoint without a pair of its own, and every pod
   whose operations listener inherits it, which is every pod while `tls.ops.secretName` is empty. With `tls.ops`, the
   `worker` and an endpoint pool whose endpoints each bring `tls.existingSecret` hold no copy of the client listener's key;
   **set `tls.ops` when you run endpoint pools** (the residual credentials of a pool are H-57 in
   [endpoints.md](../spec/endpoints.md)). The client CA (`tls.clientCA`) mounts into the main `web` pods only, because the
-  operations listener never carries it and a further endpoint has its own `clientCaSecret`.
+  operations listener never carries it and a further endpoint has its own `clientCaSecret`. (A path pool opens :8080 and mounts it too.)
 - **Config.** `server.tls` (and `ops_tls`) are chart-managed keys: setting `config.server.tls` or
   `config.ops_tls` fails while `tls.enabled` is true. `checksum/config` follows `min_version` and
   the paths, not the Secret content, so a certificate rotation does not roll the pods.
@@ -299,11 +330,11 @@ The upstream project retired ingress-nginx in March 2026 (see [ha-and-helm.md](.
 R-HA-037); it stays supported here because installations still run it.
 
 Gateway API: `tls.backendTLSPolicy.enabled: true` renders a `BackendTLSPolicy`
-(`gateway.networking.k8s.io/v1`) that targets the client Service port `http`, with
+(`gateway.networking.k8s.io/v1`) per Service the default Ingress names (`<fullname>-api`, `<fullname>-packages`, the path pools' Services; `<fullname>` in the bridge), named as the Service and targeting its port `http`, with
 `validation.hostname` and a `caCertificateRefs` entry naming a ConfigMap. Gateway API takes a
 ConfigMap there, not a Secret, so the chart cannot reference the Secret's `ca.crt`; you create
-the ConfigMap (a cert-manager `trust-manager` Bundle does it). The chart renders no HTTPRoute yet,
-so the policy applies to routes you create yourself.
+the ConfigMap (a cert-manager `trust-manager` Bundle does it). The chart renders no HTTPRoute yet (Q-HA-81),
+so the policies apply to routes you create yourself.
 
 ## Endpoints
 
@@ -315,21 +346,20 @@ keys, and the keys `default` may not set (`port`, `baseUrl`, `tls`, `pool`, `ing
 | Per further endpoint | Object | Notes |
 |---|---|---|
 | `port`, `baseUrl`, … | `server.endpoints.<name>` in `trove.yaml` | `listen: ":<port>"`; `pool: ep-<name>` when `pool.enabled`; keys that are unset render their defaults (a further endpoint: `surface: [packages]`, `auth` bound SAT only, `exposure: rules`, `cache_fill: false`, `rate_limit_class: external`, `replica_header: never`, `max_in_flight: 1024`) |
-| | Service `<fullname>-ep-<name>` | port `ep-<name>` = `port` (target port numeric), `appProtocol: https` under `tls.enabled`, `sessionAffinity: None`; selects the main web pods, or the pool's; `service.type`, `annotations`, `loadBalancerSourceRanges` |
-| `pool.enabled` | Deployment and PodDisruptionBudget `<fullname>-web-ep-<name>` | `serve --role web`, `TROVE_POOL_NAME=ep-<name>`, label `trove/pool: ep-<name>`, the web values with the keys of `pool` on top (merged key by key, so `false` and `0` do override); only this Deployment opens the port, the main web pods do not |
-| `ingress.enabled` | Ingress `<fullname>-ep-<name>` | `className`, one rule per host (the host of `baseUrl`, `hosts`, then `wildcardHost`), path `/` `Prefix`, backend the endpoint's Service by port number, `ingress.tls` as given; backend-over-TLS annotations from `ingress.backendTLS`, any key of the endpoint's own `ingress.backendTLS` winning; the HAProxy verified name is the endpoint Service's `<name>.<ns>.svc`, which the endpoint's certificate must cover |
-| `networkPolicy.enabled` (global) | NetworkPolicy `<fullname>-ep-<name>` | its port from `networkPolicy.from` (empty = anywhere); for a pool also 8081 from the peers of the web policy, because nothing else selects the pool's pods |
+| | Service `<fullname>-ep-<name>` and, for a surface over both roles, `<fullname>-ep-<name>-api` | port `ep-<name>` = `port` (target port numeric), `appProtocol: https` under `tls.enabled`, `sessionAffinity: None`; the first selects the pods of the role of the surface's `packages` and `files` families (`api` when it holds neither), the second the `api` pods, each the main Deployment or the pool; `service.type`, `annotations`, `loadBalancerSourceRanges` (Q-EP-71, `trove.surfaceRoles`) |
+| `pool.enabled` | Deployment, PodDisruptionBudget, HorizontalPodAutoscaler `<fullname>-packages-ep-<name>` and, with `api` families, `<fullname>-api-ep-<name>` | `serve --role packages` / `--role api`, `TROVE_POOL_NAME=ep-<name>`, label `trove/pool: ep-<name>`, the role's values with the keys of `pool` on top (merged key by key, so `false` and `0` do override); only these Deployments open the port, the main pods do not (Q-EP-70). In the bridge: `<fullname>-web-ep-<name>` with `--role web` |
+| `ingress.enabled` | Ingress `<fullname>-ep-<name>` | `className`, per host (the host of `baseUrl`, `hosts`, then `wildcardHost`) `/` to the one Service when the surface lies within one role, else the rows of R-HA-037's table whose families it holds (`/api/v1` and `/` to the `-api` Service), all `Prefix`, backend by port number, `ingress.tls` as given; backend-over-TLS annotations from `ingress.backendTLS`, any key of the endpoint's own `ingress.backendTLS` winning; the HAProxy verified name is the endpoint Service's `<name>.<ns>.svc`, which the endpoint's certificate must cover |
+| `networkPolicy.enabled` (global) | a rule in the policy of every Deployment that opens the port | its port from `networkPolicy.from` (empty = anywhere); an endpoint pool's policy holds that rule and 8081, no 8080 (Q-HA-76) |
 | `tls.existingSecret`, `extraSecrets`, `clientCaSecret` | mounts and `tls.certificates` | position 0 is `existingSecret`; without it and with `extraSecrets`, position 0 is the listener pair of `tls.secretName`; without any, no block is rendered and the endpoint serves `server.tls` |
 
 The default endpoint's `server.endpoints.default.hosts` is rendered from `config.server.base_url` and
 `config.server.additional_base_urls` as soon as there is a further endpoint (unless `endpoints.default.hosts` is set), so a
 request that reaches `:8080` for another endpoint's host answers `421` (H-59). A client that reaches the default endpoint by
 another name (the in-cluster Service name) needs that name in `endpoints.default.hosts`. NOTES.txt (the template `trove.notes`)
-lists each endpoint with its Service, hosts and pods, and warns about an endpoint with `exposure: rules` on the main web
-pods or with an empty `networkPolicy.from`.
+lists each endpoint with its Services, hosts and pods, and warns about an endpoint with `exposure: rules` on the main
+Deployments or with an empty `networkPolicy.from`.
 
-Not rendered: `gateway.*` (HTTPRoute, BackendTLSPolicy per endpoint; the default endpoint has none either) and an
-HorizontalPodAutoscaler for a pool (no autoscaling values exist yet).
+Not rendered: `gateway.*` (HTTPRoute, BackendTLSPolicy per endpoint; the default endpoint has none either).
 
 ### S3 from a provisioner's Secret
 
@@ -344,20 +374,25 @@ read these variables (it uses no object store).
 
 ## Network policy
 
-`networkPolicy.enabled` (default `true`, R-HA-042) renders three policies that select the pods by their
-component labels. They restrict **ingress only**, and by the owner's rule (ADR-154) the chart renders no egress rule
-at all: the pods' egress is the cluster's, and `values.schema.json` has no `networkPolicy.egress` key
-([H-516](../security/egress.md#h-516--the-chart-restricts-no-egress-of-its-pods)).
+`networkPolicy.enabled` (default `true`, R-HA-042) renders one policy per Deployment, named as the Deployment and selecting its pods by
+the selector labels, plus the migration Job's. They restrict **ingress only**, and by the owner's rule (ADR-154) the chart renders
+no egress rule and no policy for pods it does not deploy: the pods' egress is the cluster's, and `values.schema.json` has no
+`networkPolicy.egress` key ([H-516](../security/egress.md#h-516--the-chart-restricts-no-egress-of-its-pods)). Every rule names
+exactly one port.
 
 | Policy | Admits |
 |---|---|
-| `<fullname>-web` | TCP 8080 from `networkPolicy.ingress.http.from` (empty = from anywhere, so any ingress controller works wherever it runs); TCP 8081 only from `networkPolicy.ingress.ops.from` (default: namespace `monitoring`) and `networkPolicy.probeCIDRs` |
-| `<fullname>-worker` | TCP 8081 as above; a worker listens on no client port |
+| `<fullname>-api`, `<fullname>-packages`, each path pool, the bridge's `<fullname>-web` | TCP 8080 from `networkPolicy.ingress.http.from` (empty = from anywhere, so any ingress controller works wherever it runs); the port of every further endpoint the pods open, from that endpoint's `networkPolicy.from` (empty = from anywhere); TCP 8081 only from `networkPolicy.ingress.ops.from` (default: namespace `monitoring`) and `networkPolicy.probeCIDRs` |
+| each endpoint pool (`<fullname>-packages-ep-<name>`, `<fullname>-api-ep-<name>`, `<fullname>-web-ep-<name>`) | the endpoint's port as above and 8081; no 8080 |
+| `<fullname>-worker`, each worker pool | TCP 8081 as above; a worker listens on no client port |
 | `<fullname>-migrate` | nothing; `ingress: []` |
+
+No rule admits one trove pod from another: replicas never talk to each other and the cut adds no seam between roles. A caller in
+another namespace that addresses a role Service directly (a Bastion) reaches 8080 only when `networkPolicy.ingress.http.from` admits it.
 
 With neither an `ops.from` peer nor a `probeCIDRs` entry, the 8081 rule is left out rather than rendered with an
 empty `from`, which Kubernetes reads as "from anywhere". Most CNIs exempt kubelet probes from policies; where one does
-not, put the node CIDRs in `probeCIDRs`. Verified by render tests only (`TestNetworkPolicy`); that a CNI enforces
+not, put the node CIDRs in `probeCIDRs`. Verified by render tests only (`TestNetworkPolicy`, `TestRolesNetworkPolicy`); that a CNI enforces
 the policy and still passes the probes is not tested here. The policy for the Valkey and Sentinel pods
 belongs to whoever runs Valkey (R-HA-042).
 
@@ -382,11 +417,14 @@ tests in `chart_test.go` assert both, row by row.
 | endpoints: a `port` that is missing, 8080, 8081 or another endpoint's; an invalid name or a Service name over 63 characters; a missing or non-origin `baseUrl`; a host in two endpoints, a wildcard host that covers another endpoint's host or is shared; an invalid wildcard host; `ui` in a further endpoint's `surface`; `wildcardRoot: label` without `wildcardHost`; `extraSecrets`, `clientCaSecret`, `existingSecret` without `tls.enabled`; a pool below two replicas or without a budget under `enforce`; `config.server.endpoints` set (managed) | implemented, each naming `endpoints.<name>.<key>` |
 | `credentials.source: static` without `secrets.s3.existingSecret` | implemented |
 | `secrets.encryption.existingSecret` or `.keys` empty (prints the creation command of R-HA-027) | implemented |
-| `highAvailability.enforce` with fewer than 2 replicas, a disabled PDB, a host spread that is not `DoNotSchedule` or lacks `nodeTaintsPolicy: Honor` | implemented, per role and for custom constraints |
-| `worker.replicaCount` < 1 (names `worker.replicaCount`) | implemented |
-| `config.storage.upload.max_size` larger than the `web` spool budget | implemented |
-| `terminationGracePeriodSeconds` below `config.health.shutdown_drain_delay` + 15 s | implemented, per role |
-| `web` or an endpoint pool without `resources.limits.memory`, or with a limit that admits fewer than 64 requests (Q-HA-70); a limit that is not an integer with an optional binary or decimal unit | implemented, naming the limit and the values the request bytes come from |
+| `highAvailability.enforce` with fewer than 2 replicas (`replicaCount`, or the autoscaler's `minReplicas`), a disabled PDB, a host spread that is not `DoNotSchedule` or lacks `nodeTaintsPolicy: Honor` | implemented, per Deployment (role, pool, endpoint pool, bridge) and for custom constraints |
+| `api`, `packages` or `worker` below 1 replica | implemented, naming `<role>.replicaCount` (`.autoscaling.minReplicas`) |
+| an autoscaler without a metric, or whose `maxReplicas` is below `minReplicas` | implemented |
+| pools: a repeated name or path prefix or queue, a name starting `ep-` or too long, a path outside the families of the role or equal to the role's own prefixes, a queue that does not exist | implemented, naming `<role>.pools[<name>]` and the value |
+| `web.enabled: false` while `<fullname>-web` exists and `<fullname>-api` or `-packages` is not ready | implemented with `lookup`; inert under `helm template` |
+| `config.storage.upload.max_size` larger than the spool budget of a `packages` (or `web`) Deployment; the UI's upload limit (`config.ui.deploy.max_upload_bytes`, `config.storage.upload.max_size` when 0) larger than that of an `api` Deployment | implemented, naming both values |
+| `terminationGracePeriodSeconds` below `config.health.shutdown_drain_delay` + 15 s | implemented, per Deployment |
+| a serving Deployment (`api`, `packages`, `web`, a path pool or an endpoint pool) without `resources.limits.memory`, or with a limit that admits fewer than 64 requests (Q-HA-70); a limit that is not an integer with an optional binary or decimal unit | implemented, naming the limit and the values the request bytes come from |
 | Sentinel mode without addresses or `primary_name`; fewer than 3 addresses under `enforce`; standalone under `enforce` | implemented |
 | `secrets.valkey.existingSecret` empty | implemented |
 | `secrets.oidc[]`: an invalid or repeated `providerId`, an empty `existingSecret`, a `providerId` without a provider of that ID in `config.auth.oidc.providers`, `client_secret_file` set in `config` for it; `config.auth.break_glass.password_file` set | implemented, each naming the value |
@@ -395,10 +433,10 @@ tests in `chart_test.go` assert both, row by row.
 | a chart-managed key set inside `config` | implemented (secret file paths, `storage.spool.dir`) |
 | `config.metrics.auth: static` without `secrets.metricsToken` | implemented |
 | `spool.headroom` not smaller than the spool; sizes that are not quantities | implemented |
-| the worker spool budget below `config.vulnerabilities.sources.osv.max_archive_size` while `config.vulnerabilities.enabled` (default true) and the OSV mode (default `online`) is not `off` (R-VULN-025) | implemented, naming the archive limit and `worker.spool.sizeLimit` |
+| the spool budget of a worker Deployment that claims the queue `vuln` (the main worker unless a pool lists it, or that pool) below `config.vulnerabilities.sources.osv.max_archive_size` while `config.vulnerabilities.enabled` (default true) and the OSV mode (default `online`) is not `off` (R-VULN-025) | implemented, naming the archive limit and `worker.spool.sizeLimit` |
 | a name in `metrics.prometheusRule.disabledAlerts` that is no alert of the chart | implemented, listing the names |
 | `tls.enabled` without `tls.secretName` (names the key and the opt-out); `ingress.enabled` with TLS and verification but no `caSecret` (haproxy, ingress-nginx) or `serversTransport` (traefik); `tls.clientCA` with haproxy and no `clientCertSecret`; the same three rules for the merged `ingress.backendTLS` of each further endpoint with `ingress.enabled` (`endpoints.<name>.ingress.backendTLS.caSecret`, `.serversTransport`, `.clientCertSecret` with the endpoint's `tls.clientCaSecret`); `tls.clientCA`, `tls.ops`, `tls.backendTLSPolicy` without `tls.enabled`; `tls.backendTLSPolicy.enabled` without `caConfigMapName` | implemented |
-| pooler (`session_host`, control endpoint), backup, restore, pools, gateway, ServiceMonitor, `contentOrigin` | with those features |
+| pooler (`session_host`, control endpoint), backup, restore, gateway, ServiceMonitor, `contentOrigin` | with those features |
 | a `ReadWriteMany` spool, `--set ingress.path=…`, any unknown key | schema |
 
 </details>
@@ -445,7 +483,13 @@ is where the coverage generator reads the IDs from.
 | Test (subtest prefix) | Asserts |
 |---|---|
 | `R-HA-028` | lint passes for every set; no Secret, RBAC, CRD or subchart; names follow the fullname rule; standard labels |
-| `R-HA-002` | the two Deployments with `serve --role web` / `serve --role worker`, plus one `<fullname>-web-ep-<name>` (also `--role web`) per endpoint pool, never `all`; `worker.replicaCount=0` fails naming the key; the client Service selects only `web`; the pool label is in the selectors |
+| `R-HA-002` | every Deployment runs the `--role` its name says (`api`, `packages`, `worker`; `web` only with the bridge), never `all`; `api`/`packages`/`worker` replicas below 1 fail naming the key; each role Service selects the main pods of its role; the pool label is in the selectors |
+| `R-HA-002`, `R-HA-028`, `R-HA-062` (`TestRolesDeployments`) | Deployment, PodDisruptionBudget and NetworkPolicy per role, pool and endpoint pool; component and pool labels; every selector selects the pods of its Deployment and no other; the queue variables (JSON lists) on the right Deployments; pool inheritance; the autoscaler leaves out `spec.replicas`; the connection counts and the budget in the notes |
+| `R-HA-002`, `R-HA-028` (`TestRolesServices`) | each Service selects the pods of exactly its Deployment, sessionAffinity None, ports; the container ports of every Deployment |
+| `R-HA-037`, `R-HA-062`, `R-EP-008` (`TestRolesEdge`) | the six fixed `Prefix` rules per host, the pool paths before them, a further endpoint whole or by the rows of its families, a mixed surface opens its port on both main Deployments |
+| `R-HA-042` (`TestRolesNetworkPolicy`) | in every value set: ingress only, no `egress`, every rule one port, no empty `from`; per Deployment the ports it admits and their peers; the default policies |
+| `R-HA-029`, `R-HA-062` (`TestRolesValidation`) | every pool, autoscaler and spool row fails and names the value |
+| `R-HA-064` (`TestRolesBridge`) | `web.enabled` renders `trove-web` (`--role web`), the Service `trove`, the edge `/`, the web endpoint pool, policies; nothing of it without; the rendering does not depend on the guard |
 | `R-HA-061` | no `ReadWriteMany`, `ReadOnlyMany`, PVC, StatefulSet, `volumeClaimTemplates`, hostPath; a `ReadWriteMany` spool fails schema validation; only the spool and `/tmp` are writable |
 | `R-HA-029` | one subtest per implemented row fails and names the value; the schema refuses unknown keys and wrong types |
 | `R-HA-029` and `R-HA-027` | without the encryption Secret the error prints the `kubectl create secret` command |
@@ -454,26 +498,26 @@ is where the coverage generator reads the IDs from.
 | `R-HA-033` | every pod and container of every set satisfies the restricted Pod Security Standard; UID 65532 |
 | `R-HA-034`, `R-ARCH-024` | probes as the table of R-HA-034; ports; no `preStop` |
 | `R-HA-011` (`TestChart`) | the chart half: grace period per role, its environment variable, above the drain delay |
-| `R-HA-011` (`TestShutdownBudgetDerivation`) | builds the binary and runs `trove admin config validate` over the rendered file and environment of `web` and `worker`: `server.shutdown_timeout` equals grace - drain - 5 s and its source is `derived` |
-| `R-HA-042` | the three ingress policies: ports, peers, selectors that match the pods, no `from` meaning "anywhere" on 8081, `enabled: false` renders none |
-| `R-HA-030` (`TestMigrationJobSecrets`) | the migration Job mounts no key ring; `web` and `worker` do |
+| `R-HA-011` (`TestShutdownBudgetDerivation`) | builds the binary and runs `trove admin config validate` over the rendered file and environment of `packages` and `worker`: `server.shutdown_timeout` equals grace - drain - 5 s and its source is `derived` |
+| `R-HA-042` (`TestNetworkPolicy`) | the policies of the roles: ports, peers, selectors that match the pods, no `from` meaning "anywhere" on 8081, `enabled: false` renders none |
+| `R-HA-030` (`TestMigrationJobSecrets`) | the migration Job mounts no key ring; `api`, `packages` and `worker` do |
 | `R-ARCH-006` (`TestTrustedProxiesExample`) | the `trusted_proxies` example is no pod-wide range and the default list is empty |
 | `R-HA-035`, `R-HA-036` | spool `sizeLimit` and budget; `GOMAXPROCS` rule; default resources |
 | `R-VULN-025` (`TestR_VULN_025_SpoolHoldsOneArchive`) | the worker spool must hold one archive: the defaults pass, a larger `max_archive_size` fails naming both values (also in mode `repository`), the headroom counts, mode `off` and a disabled scanning are not checked, the worker's `TROVE_STORAGE_SPOOL_MAX_BYTES` follows its own `sizeLimit` |
 | `R-VULN-025` (`TestR_VULN_025_ConfigurationPassesThrough`) | the `vulnerabilities` section reaches `trove.yaml` as set; `ci/monitoring.yaml` passes `trove admin config validate` with the other sets |
 | `R-VULN-024` (`TestR_VULN_024_PrometheusRuleValues`) | no rule by default; the three alerts and their severities; the `labels`; the threshold follows `stale_after`; every selector is scoped to the namespace; `disabledAlerts` and `extraRules`; a misspelt alert name fails; all alerts disabled renders nothing |
 | `R-VULN-024` (`TestR_VULN_024_PromtoolRules`) | `promtool check rules` and `promtool test rules` over the rendered rules, and one firing and one silent test per alert |
-| `R-HA-029` (memory) | a `web` pod or endpoint pool without a memory limit, or one whose memory slots (`trove.requestBytes` and the three cache budgets, the formula of `internal/app/memory.go`) are fewer than 64, fails; `2G`, `64Mi` and a plain integer render |
+| `R-HA-029` (memory) | a serving pod (`api`, `packages`, a pool) without a memory limit, or one whose memory slots (`trove.requestBytes` and the three cache budgets, the formula of `internal/app/memory.go`) are fewer than 64, fails; `2G`, `64Mi` and a plain integer render |
 | `R-HA-032` | PDB, spread, tolerations, default replica counts and rolling update |
-| `R-HA-037`, `R-ARCH-032` | `sessionAffinity: None` everywhere, no affinity annotations, Ingress path `/` and `Prefix`, `ingress.path` fails naming `path` |
+| `R-HA-037`, `R-ARCH-032` | `sessionAffinity: None` everywhere, no affinity annotations, every Ingress rule `Prefix` and never the operations port, `ingress.path` fails naming `path` |
 | `R-HA-019` | hook annotations and weights, `podFailurePolicy`, same `trove.yaml`, nothing from Valkey or S3; disabled renders no Job |
-| `R-HA-056` | Valkey wiring reaches `web` and `worker` only |
-| `R-EP-008` (`TestEndpoints`) | two endpoints render two Services (own port, selecting the main web pods), two Ingresses (class, hosts incl. the wildcard, TLS entry, backend), a NetworkPolicy per port, the `server.endpoints` block and the default endpoint's hosts; mounts of the pairs without `subPath`; backend TLS per controller; the pool (Deployment, PDB, Service, spread selector, policy with the operations port, no port on the main pods); NOTES; each validation row |
+| `R-HA-056` | Valkey wiring reaches `api`, `packages` and `worker` only |
+| `R-EP-008` (`TestEndpoints`) | two endpoints render two Services (own port, selecting the main packages pods), two Ingresses (class, hosts incl. the wildcard, TLS entry, backend), the port rules in the packages policy, the `server.endpoints` block and the default endpoint's hosts; mounts of the pairs without `subPath`; backend TLS per controller; the pool (Deployment of the role, PDB, Service, spread selector, policy with the operations port, no port on the main pods); NOTES; each validation row |
 | `R-HA-030`, `R-HA-029` (`TestS3ProvisionerSecret`) | bucket, region, endpoint by `secretKeyRef`, credentials as files with only their two keys, the Job reads none, the bucket is required unless the Secret carries it |
-| `R-HA-030` (`TestTLSMountsFollowTheListeners`) | the listener pair is mounted by the pods that load it: everywhere without `tls.ops`; with it, not into the worker, into an endpoint pool only while an endpoint it serves has no pair of its own; the client CA reaches the main `web` pods only |
-| `R-HA-030`, `R-AUTH-014`, `R-AUTH-042` (`TestLoginSecrets`) | `secrets.breakGlass` and `secrets.oidc[]` mount a directory of the Secret read-only without `subPath` into `web` and pool pods only (not `worker`, not the Job), render the config paths, take a different key, leave `enabled` alone with a Secret and render `auth.break_glass.enabled: false` without; the validation rows; the rendered file passes `trove admin config validate` |
+| `R-HA-030` (`TestTLSMountsFollowTheListeners`) | the listener pair is mounted by the pods that load it: everywhere without `tls.ops`; with it, not into the worker, into an endpoint pool only while an endpoint it serves has no pair of its own; the client CA reaches the main `packages` pods and not an endpoint pool |
+| `R-HA-030`, `R-AUTH-014`, `R-AUTH-042` (`TestLoginSecrets`) | `secrets.breakGlass` and `secrets.oidc[]` mount a directory of the Secret read-only without `subPath` into `api` pods only (main, pools, endpoint pools, the bridge's `web`; not `packages`, `worker` or the Job), render the config paths, take a different key, leave `enabled` alone with a Secret and render `auth.break_glass.enabled: false` without; the validation rows; the rendered file passes `trove admin config validate` |
 | `R-HA-030` (`TestS3CA`) | `secrets.s3CA` mounts read-only without `subPath` with the one projected key, renders `storage.s3.ca_file`, stays out of the Job; without it nothing is rendered and `config.storage.s3.ca_file` is refused |
-| `R-HA-063`, `R-HA-030` (`TestTLS`) | HTTPS probes, mount without `subPath` of exactly the certificate and key, config paths, `appProtocol`; missing `tls.secretName` fails; opt-out renders no TLS wiring; no TLS mount in the migration Job; client CA and `ops_tls` separation; per-controller Ingress settings (HAProxy Ingress default, verification and client-certificate rules); `BackendTLSPolicy`; every value set agrees between config and probe scheme |
+| `R-HA-063`, `R-HA-030` (`TestTLS`) | HTTPS probes, mount without `subPath` of exactly the certificate and key, config paths, `appProtocol`; missing `tls.secretName` fails; opt-out renders no TLS wiring; no TLS mount in the migration Job; client CA and `ops_tls` separation; per-controller Ingress settings (HAProxy Ingress default, verification and client-certificate rules); one `BackendTLSPolicy` per role Service; every value set agrees between config and probe scheme |
 
 Not covered by these tests (needs a cluster): that the pods start in a restricted namespace, that
 `kubectl exec … touch /x` fails, that the Job finishes before the Deployments roll. The dev

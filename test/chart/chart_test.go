@@ -319,13 +319,16 @@ func TestChart(t *testing.T) {
 			t.Run(c.release+"->"+c.prefix, func(t *testing.T) {
 				_, docs := renderRelease(t, c.release, required(), c.sets...)
 				for _, want := range []struct{ kind, name string }{
-					{"Deployment", c.prefix + "-web"},
+					{"Deployment", c.prefix + "-api"},
+					{"Deployment", c.prefix + "-packages"},
 					{"Deployment", c.prefix + "-worker"},
-					{"Service", c.prefix},
+					{"Service", c.prefix + "-api"},
+					{"Service", c.prefix + "-packages"},
 					{"Service", c.prefix + "-ops"},
 					{"ConfigMap", c.prefix + "-config"},
 					{"ServiceAccount", c.prefix},
-					{"PodDisruptionBudget", c.prefix + "-web"},
+					{"PodDisruptionBudget", c.prefix + "-api"},
+					{"PodDisruptionBudget", c.prefix + "-packages"},
 					{"PodDisruptionBudget", c.prefix + "-worker"},
 					{"Job", c.prefix + "-migrate"},
 					{"ConfigMap", c.prefix + "-migrate"},
@@ -355,32 +358,29 @@ func TestChart(t *testing.T) {
 		})
 	})
 
-	t.Run("R-HA-002 web and worker Deployments run --role web and --role worker, never all", func(t *testing.T) {
-		eachSet(t, func(t *testing.T, _ string, out string, docs []doc) {
-			deploys := ofKind(docs, "Deployment")
-			// The two role Deployments, plus one pool Deployment per endpoint with pool.enabled
-			// (R-EP-008), which also runs --role web.
-			pools := 0
-			for _, d := range deploys {
-				if name := str(d, "metadata", "name"); strings.HasPrefix(name, "trove-web-ep-") {
-					pools++
-					if got := strings.Join(containerArgs(at(d, "spec", "template", "spec")), " "); got != "serve --role web" {
-						t.Errorf("%s args = %q, want serve --role web", name, got)
-					}
+	t.Run("R-HA-002 api, packages and worker Deployments run --role api, --role packages and --role worker, never all", func(t *testing.T) {
+		eachSet(t, func(t *testing.T, f string, out string, docs []doc) {
+			bridge := base(f) == "bridge.yaml"
+			// The three role Deployments, plus the pools of the value set; every Deployment runs the
+			// role its name says, and --role web only where the bridge is enabled.
+			for _, d := range ofKind(docs, "Deployment") {
+				name := strings.TrimPrefix(str(d, "metadata", "name"), "trove-")
+				role, _, _ := strings.Cut(name, "-")
+				if role == "web" && !bridge {
+					t.Errorf("%s runs --role web without web.enabled", name)
+				}
+				want := "serve --role " + role
+				if got := strings.Join(containerArgs(at(d, "spec", "template", "spec")), " "); got != want {
+					t.Errorf("%s args = %q, want %q", name, got, want)
 				}
 			}
-			if len(deploys) != 2+pools {
-				t.Fatalf("%d Deployments rendered, want <fullname>-web, <fullname>-worker and one <fullname>-web-ep-<name> per endpoint pool (%d)", len(deploys), pools)
+			for _, role := range []string{"api", "packages", "worker"} {
+				if find(docs, "Deployment", "trove-"+role) == nil {
+					t.Errorf("Deployment trove-%s missing", role)
+				}
 			}
-			for _, role := range []string{"web", "worker"} {
-				d := find(docs, "Deployment", "trove-"+role)
-				if d == nil {
-					t.Fatalf("Deployment trove-%s missing", role)
-				}
-				args := containerArgs(at(d, "spec", "template", "spec"))
-				if strings.Join(args, " ") != "serve --role "+role {
-					t.Errorf("trove-%s args = %v, want [serve --role %s]", role, args, role)
-				}
+			if (find(docs, "Deployment", "trove-web") != nil) != bridge {
+				t.Errorf("Deployment trove-web rendered = %v, want %v (only the bridge renders it)", !bridge, bridge)
 			}
 			if strings.Contains(out, "--role\n            - all") || strings.Contains(out, "role=all") {
 				t.Error("a rendered container runs --role all")
@@ -395,32 +395,52 @@ func TestChart(t *testing.T) {
 		})
 	})
 
+	t.Run("R-HA-002 api.replicaCount=0 and packages.replicaCount=0 fail and name the key", func(t *testing.T) {
+		renderFails(t, required(), []string{"packages.replicaCount=0", "highAvailability.enforce=false"}, "packages.replicaCount")
+		renderFails(t, required(), []string{"api.replicaCount=0", "highAvailability.enforce=false"}, "api.replicaCount")
+	})
+
 	t.Run("R-HA-002 worker.replicaCount=0 fails and names the key", func(t *testing.T) {
 		renderFails(t, required(), []string{"worker.replicaCount=0"}, "worker.replicaCount")
 		renderFails(t, required(), []string{"worker.replicaCount=0", "highAvailability.enforce=false"}, "worker.replicaCount")
 	})
 
-	t.Run("R-HA-002 the client Service selects only web pods", func(t *testing.T) {
+	t.Run("R-HA-002 each role Service selects the main pods of its role only, the ops Service every serving pod", func(t *testing.T) {
 		_, docs := render(t, required())
-		svc := find(docs, "Service", "trove")
-		if got := str(svc, "spec", "selector", "app.kubernetes.io/component"); got != "web" {
-			t.Errorf("client Service selects component %q, want web", got)
+		for _, role := range []string{"api", "packages"} {
+			svc := find(docs, "Service", "trove-"+role)
+			sel, _ := at(svc, "spec", "selector").(map[string]any)
+			if sel["app.kubernetes.io/component"] != role || sel["trove/pool"] != "" {
+				t.Errorf("Service trove-%s selector = %v, want component %s and the empty pool", role, sel, role)
+			}
+			if got := str(svc, "spec", "ports", "0", "name"); got != "http" {
+				t.Errorf("Service trove-%s port name = %q, want http", role, got)
+			}
+			if got := at(svc, "spec", "ports", "0", "port"); got != 8080 {
+				t.Errorf("Service trove-%s port = %v, want 8080", role, got)
+			}
+			if got := str(svc, "spec", "sessionAffinity"); got != "None" {
+				t.Errorf("Service trove-%s sessionAffinity = %q, want None", role, got)
+			}
 		}
-		if got := str(svc, "spec", "ports", "0", "name"); got != "http" {
-			t.Errorf("client Service port name = %q, want http", got)
+		if find(docs, "Service", "trove") != nil {
+			t.Error("the Service <fullname> is rendered without web.enabled (Q-HA-74)")
+		}
+		if find(docs, "Service", "trove-worker") != nil {
+			t.Error("a worker Service is rendered, worker pods are reached on the operations port only")
 		}
 		ops := find(docs, "Service", "trove-ops")
 		if at(ops, "spec", "selector", "app.kubernetes.io/component") != nil {
-			t.Error("the ops Service must select web and worker pods, not one component")
+			t.Error("the ops Service must select every serving pod, not one component")
 		}
 		if got := at(ops, "spec", "ports", "0", "port"); got != 8081 {
 			t.Errorf("ops Service port = %v, want 8081", got)
 		}
 	})
 
-	t.Run("R-HA-002 web and worker pods carry the pool label for later selectors", func(t *testing.T) {
+	t.Run("R-HA-002 the pods of every role carry the pool label for their selectors", func(t *testing.T) {
 		_, docs := render(t, required())
-		for _, role := range []string{"web", "worker"} {
+		for _, role := range []string{"api", "packages", "worker"} {
 			d := find(docs, "Deployment", "trove-"+role)
 			sel, ok := at(d, "spec", "selector", "matchLabels").(map[string]any)
 			if !ok {
@@ -428,6 +448,9 @@ func TestChart(t *testing.T) {
 			}
 			if v, ok := sel["trove/pool"]; !ok || v != "" {
 				t.Errorf("trove-%s selector trove/pool = %v (present %v), want the empty value", role, v, ok)
+			}
+			if sel["app.kubernetes.io/component"] != role {
+				t.Errorf("trove-%s selects component %v", role, sel["app.kubernetes.io/component"])
 			}
 		}
 	})
@@ -458,7 +481,7 @@ func TestChart(t *testing.T) {
 		t.Run("generic ephemeral spool", func(t *testing.T) {
 			out, docs := render(t, required(), "spool.type=ephemeral", "spool.ephemeral.accessModes={ReadWriteOncePod}")
 			check(t, out, docs)
-			vol := list(at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec"), "volumes")
+			vol := list(at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec"), "volumes")
 			found := false
 			for _, v := range vol {
 				if str(v, "name") == "spool" && at(v, "ephemeral", "volumeClaimTemplate") != nil {
@@ -488,7 +511,7 @@ func TestChart(t *testing.T) {
 				}
 			}
 			want := map[string]bool{"/tmp": true}
-			if strings.HasSuffix(name, "-web") || strings.HasSuffix(name, "-worker") {
+			if strings.HasSuffix(name, "-api") || strings.HasSuffix(name, "-packages") || strings.HasSuffix(name, "-worker") {
 				want["/var/lib/trove/spool"] = true
 			}
 			for p := range mounts {
@@ -518,17 +541,17 @@ func TestChart(t *testing.T) {
 			{"static s3 without secret", []string{"config.storage.s3.credentials.source=static"}, []string{"config.storage.s3.credentials.source", "secrets.s3.existingSecret"}},
 			{"encryption secret empty", []string{enc + "="}, []string{enc, "secrets.encryption.keys"}},
 			{"encryption keys empty", []string{"secrets.encryption.keys=null"}, []string{enc, "secrets.encryption.keys"}},
-			{"web below two replicas", []string{"web.replicaCount=1"}, []string{"web.replicaCount", "trove-web"}},
+			{"web below two replicas", []string{"packages.replicaCount=1"}, []string{"packages.replicaCount", "trove-packages"}},
 			{"worker below two replicas", []string{"worker.replicaCount=1"}, []string{"worker.replicaCount", "trove-worker"}},
-			{"web pdb disabled", []string{"web.podDisruptionBudget.enabled=false"}, []string{"web.podDisruptionBudget.enabled"}},
+			{"web pdb disabled", []string{"packages.podDisruptionBudget.enabled=false"}, []string{"packages.podDisruptionBudget.enabled"}},
 			{"worker pdb disabled", []string{"worker.podDisruptionBudget.enabled=false"}, []string{"worker.podDisruptionBudget.enabled"}},
-			{"web host spread soft", []string{"web.topologySpread.host.whenUnsatisfiable=ScheduleAnyway"}, []string{"web.topologySpread.host.whenUnsatisfiable", "DoNotSchedule"}},
+			{"web host spread soft", []string{"packages.topologySpread.host.whenUnsatisfiable=ScheduleAnyway"}, []string{"packages.topologySpread.host.whenUnsatisfiable", "DoNotSchedule"}},
 			{"worker host spread soft", []string{"worker.topologySpread.host.whenUnsatisfiable=ScheduleAnyway"}, []string{"worker.topologySpread.host.whenUnsatisfiable"}},
-			{"web spread ignores taints", []string{"web.topologySpread.nodeTaintsPolicy=Ignore"}, []string{"web.topologySpread.nodeTaintsPolicy", "Honor"}},
-			{"web spread disabled", []string{"web.topologySpread.enabled=false"}, []string{"web.topologySpread.host.whenUnsatisfiable"}},
+			{"web spread ignores taints", []string{"packages.topologySpread.nodeTaintsPolicy=Ignore"}, []string{"packages.topologySpread.nodeTaintsPolicy", "Honor"}},
+			{"web spread disabled", []string{"packages.topologySpread.enabled=false"}, []string{"packages.topologySpread.host.whenUnsatisfiable"}},
 			{"worker replicas zero", []string{"worker.replicaCount=0"}, []string{"worker.replicaCount"}},
-			{"upload larger than the web spool", []string{"spool.sizeLimit=5Gi"}, []string{"config.storage.upload.max_size", "web spool budget"}},
-			{"grace period below drain delay", []string{"web.terminationGracePeriodSeconds=10"}, []string{"web.terminationGracePeriodSeconds", "config.health.shutdown_drain_delay"}},
+			{"upload larger than the web spool", []string{"spool.sizeLimit=5Gi"}, []string{"config.storage.upload.max_size", "spool budget", "packages.spool.sizeLimit"}},
+			{"grace period below drain delay", []string{"packages.terminationGracePeriodSeconds=10"}, []string{"packages.terminationGracePeriodSeconds", "config.health.shutdown_drain_delay"}},
 			{"worker grace period below drain delay", []string{"config.health.shutdown_drain_delay=30s", "worker.terminationGracePeriodSeconds=40"}, []string{"worker.terminationGracePeriodSeconds"}},
 			{"sentinel addresses empty", []string{"config.valkey.sentinel.addresses=null", "highAvailability.enforce=false"}, []string{"config.valkey.sentinel.addresses"}},
 			{"sentinel primary name empty", []string{"config.valkey.sentinel.primary_name="}, []string{"config.valkey.sentinel.primary_name"}},
@@ -536,7 +559,7 @@ func TestChart(t *testing.T) {
 			{"standalone valkey with enforce", []string{"config.valkey.mode=standalone", "config.valkey.address=v:6379"}, []string{"config.valkey.mode"}},
 			{"valkey secret empty", []string{"secrets.valkey.existingSecret="}, []string{"secrets.valkey.existingSecret"}},
 			{"valkey tls disabled without allow_insecure", []string{"config.valkey.tls.mode=disable"}, []string{"config.valkey.tls.mode", "config.valkey.allow_insecure"}},
-			{"pdb with both budgets", []string{"web.podDisruptionBudget.minAvailable=2"}, []string{"web.podDisruptionBudget.minAvailable", "web.podDisruptionBudget.maxUnavailable"}},
+			{"pdb with both budgets", []string{"packages.podDisruptionBudget.minAvailable=2"}, []string{"packages.podDisruptionBudget.minAvailable", "packages.podDisruptionBudget.maxUnavailable"}},
 			{"metrics token without secret", []string{"config.metrics.auth=static"}, []string{"config.metrics.auth", "secrets.metricsToken.existingSecret"}},
 			{"managed key: spool dir", []string{"config.storage.spool.dir=/data"}, []string{"config.storage.spool.dir"}},
 			{"managed key: database password file", []string{"config.database.password_file=/x"}, []string{"config.database.password_file"}},
@@ -559,7 +582,7 @@ func TestChart(t *testing.T) {
 		}{
 			{"typo at the top", []string{"webb.replicaCount=3"}, "webb"},
 			{"typo in a role", []string{"web.replicas=3"}, "replicas"},
-			{"type error", []string{"web.replicaCount=many"}, "replicaCount"},
+			{"type error", []string{"packages.replicaCount=many"}, "replicaCount"},
 			{"unknown service value", []string{"service.sessionAffinity=ClientIP"}, "sessionAffinity"},
 			{"unknown image pull policy", []string{"image.pullPolicy=Sometimes"}, "pullPolicy"},
 			{"digest not a digest", []string{"image.digest=latest"}, "digest"},
@@ -632,8 +655,8 @@ func TestChart(t *testing.T) {
 		t.Run("a change of the key list rolls the pods", func(t *testing.T) {
 			_, a := render(t, required(), "secrets.encryption.keys={2026-10.key}")
 			_, b := render(t, required(), "secrets.encryption.keys={2026-10.key,2026-04.key}")
-			ca := str(find(a, "Deployment", "trove-web"), "spec", "template", "metadata", "annotations", "checksum/encryption-keys")
-			cb := str(find(b, "Deployment", "trove-web"), "spec", "template", "metadata", "annotations", "checksum/encryption-keys")
+			ca := str(find(a, "Deployment", "trove-packages"), "spec", "template", "metadata", "annotations", "checksum/encryption-keys")
+			cb := str(find(b, "Deployment", "trove-packages"), "spec", "template", "metadata", "annotations", "checksum/encryption-keys")
 			if ca == "" || ca == cb {
 				t.Errorf("checksum/encryption-keys did not change: %q -> %q", ca, cb)
 			}
@@ -642,7 +665,7 @@ func TestChart(t *testing.T) {
 
 	t.Run("R-HA-030 the configuration file is mounted at /etc/trove/trove.yaml and rolls the pods", func(t *testing.T) {
 		eachSet(t, func(t *testing.T, _ string, _ string, docs []doc) {
-			for _, role := range []string{"web", "worker"} {
+			for _, role := range []string{"api", "packages", "worker"} {
 				pod := at(find(docs, "Deployment", "trove-"+role), "spec", "template", "spec")
 				ok := false
 				for _, m := range list(pod, "containers", "0", "volumeMounts") {
@@ -736,7 +759,7 @@ func TestChart(t *testing.T) {
 		if !job["trove-db-owner"] || job["trove-db-app"] {
 			t.Errorf("the migration Job must use the migration credentials, mounts %v", job)
 		}
-		for _, role := range []string{"web", "worker"} {
+		for _, role := range []string{"api", "packages", "worker"} {
 			m := mounted("trove-" + role)
 			for _, s := range []string{"trove-db-app", "trove-db-ca", "trove-db-client", "trove-s3", "trove-valkey", "trove-valkey-sentinel", "trove-valkey-ca", "trove-valkey-client", "trove-metrics", "trove-encryption-keys"} {
 				if !m[s] {
@@ -793,7 +816,7 @@ func TestChart(t *testing.T) {
 						t.Errorf("%s: %s fieldPath = %q, want %q", name, v, got, field)
 					}
 				}
-				if strings.HasSuffix(name, "-web") || strings.HasSuffix(name, "-worker") || strings.Contains(name, "-web-ep-") {
+				if !strings.HasSuffix(name, "-migrate") {
 					for _, v := range []string{"TROVE_RUNTIME_MEMORY_LIMIT_BYTES", "TROVE_RUNTIME_TERMINATION_GRACE_PERIOD", "TROVE_STORAGE_SPOOL_MAX_BYTES"} {
 						if env[v] == nil {
 							t.Errorf("%s lacks %s", name, v)
@@ -805,10 +828,14 @@ func TestChart(t *testing.T) {
 						switch v {
 						case "TROVE_POD_NAME", "TROVE_POD_NAMESPACE", "TROVE_NODE_NAME", "TROVE_RUNTIME_MEMORY_LIMIT_BYTES",
 							"TROVE_RUNTIME_TERMINATION_GRACE_PERIOD", "TROVE_STORAGE_SPOOL_MAX_BYTES",
-							"TROVE_DATABASE_PREFLIGHT_EXPECTED_WEB_REPLICAS", "TROVE_DATABASE_PREFLIGHT_EXPECTED_WORKER_REPLICAS", "TROVE_LOG_LEVEL":
-						case "TROVE_POOL_NAME": // the pods of an endpoint pool (R-EP-002, R-EP-008)
-							if !strings.Contains(name, "-web-ep-") {
-								t.Errorf("%s sets TROVE_POOL_NAME, which only an endpoint pool does", name)
+							"TROVE_DATABASE_PREFLIGHT_EXPECTED_SERVING_REPLICAS", "TROVE_DATABASE_PREFLIGHT_EXPECTED_WORKER_REPLICAS", "TROVE_LOG_LEVEL":
+						case "TROVE_POOL_NAME": // the pods of a pool (R-HA-062, R-EP-002, R-EP-008)
+							if main := name == "trove-api" || name == "trove-packages" || name == "trove-worker" || name == "trove-web"; main {
+								t.Errorf("%s sets TROVE_POOL_NAME, which only a pool does", name)
+							}
+						case "TROVE_JOBS_QUEUES", "TROVE_JOBS_EXCLUDE_QUEUES": // worker Deployments only (R-HA-062)
+							if !strings.Contains(name, "-worker") {
+								t.Errorf("%s sets %s, which only a worker Deployment does", name, v)
 							}
 						case "TROVE_STORAGE_S3_BUCKET", "TROVE_STORAGE_S3_REGION", "TROVE_STORAGE_S3_ENDPOINT": // from the S3 Secret
 						default:
@@ -897,7 +924,7 @@ func TestChart(t *testing.T) {
 
 	t.Run("R-HA-034 probes render as specified", func(t *testing.T) {
 		_, docs := render(t, required())
-		for _, role := range []string{"web", "worker"} {
+		for _, role := range []string{"api", "packages", "worker"} {
 			c := at(find(docs, "Deployment", "trove-"+role), "spec", "template", "spec", "containers", "0")
 			want := map[string][4]any{ // path, period, timeout, threshold
 				"startupProbe":   {"/healthz", 2, 2, 60},
@@ -913,7 +940,7 @@ func TestChart(t *testing.T) {
 		}
 		t.Run("a probe can be disabled or replaced", func(t *testing.T) {
 			_, docs := render(t, required(), "probes.startup.enabled=false", "probes.liveness.custom.tcpSocket.port=ops")
-			c := at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec", "containers", "0")
+			c := at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec", "containers", "0")
 			if at(c, "startupProbe") != nil {
 				t.Error("startupProbe rendered although disabled")
 			}
@@ -928,7 +955,7 @@ func TestChart(t *testing.T) {
 			if strings.Contains(out, "preStop") {
 				t.Error("a preStop hook is rendered; the drain delay lives in the process (R-HA-011)")
 			}
-			web := at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec", "containers", "0")
+			web := at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec", "containers", "0")
 			var ports []string
 			for _, p := range list(web, "ports") {
 				if str(p, "name") == "" {
@@ -955,7 +982,7 @@ func TestChart(t *testing.T) {
 		for role, want := range map[string]struct {
 			seconds int
 			env     string
-		}{"web": {120, "120s"}, "worker": {300, "300s"}} {
+		}{"api": {120, "120s"}, "packages": {120, "120s"}, "worker": {300, "300s"}} {
 			spec := at(find(docs, "Deployment", "trove-"+role), "spec", "template", "spec")
 			if at(spec, "terminationGracePeriodSeconds") != want.seconds {
 				t.Errorf("trove-%s terminationGracePeriodSeconds = %v, want %d", role, at(spec, "terminationGracePeriodSeconds"), want.seconds)
@@ -964,8 +991,8 @@ func TestChart(t *testing.T) {
 				t.Errorf("trove-%s TROVE_RUNTIME_TERMINATION_GRACE_PERIOD = %q, want %q", role, got, want.env)
 			}
 		}
-		_, docs = render(t, required(), "web.terminationGracePeriodSeconds=45", "config.health.shutdown_drain_delay=30s")
-		if got := str(envByName(at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec"))["TROVE_RUNTIME_TERMINATION_GRACE_PERIOD"], "value"); got != "45s" {
+		_, docs = render(t, required(), "packages.terminationGracePeriodSeconds=45", "config.health.shutdown_drain_delay=30s")
+		if got := str(envByName(at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec"))["TROVE_RUNTIME_TERMINATION_GRACE_PERIOD"], "value"); got != "45s" {
 			t.Errorf("grace period env = %q, want 45s (exactly the drain delay plus 15 s is allowed)", got)
 		}
 	})
@@ -973,8 +1000,9 @@ func TestChart(t *testing.T) {
 	t.Run("R-HA-035 the spool is an emptyDir bounded by its size limit and the budget leaves headroom", func(t *testing.T) {
 		_, docs := render(t, required(), "spool.sizeLimit=12Gi", "spool.headroom=2GiB", "worker.spool.sizeLimit=3Gi", "config.storage.upload.max_size=512MiB")
 		for role, want := range map[string]struct{ limit, max string }{
-			"web":    {"12Gi", "10737418240"},
-			"worker": {"3Gi", "1073741824"},
+			"packages": {"12Gi", "10737418240"},
+			"api":      {"5Gi", "3221225472"},
+			"worker":   {"3Gi", "1073741824"},
 		} {
 			pod := at(find(docs, "Deployment", "trove-"+role), "spec", "template", "spec")
 			found := false
@@ -995,7 +1023,7 @@ func TestChart(t *testing.T) {
 		}
 		t.Run("an explicit storage.spool.max_bytes wins", func(t *testing.T) {
 			_, docs := render(t, required(), "config.storage.spool.max_bytes=1073741824")
-			if envByName(at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec"))["TROVE_STORAGE_SPOOL_MAX_BYTES"] != nil {
+			if envByName(at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec"))["TROVE_STORAGE_SPOOL_MAX_BYTES"] != nil {
 				t.Error("the chart sets TROVE_STORAGE_SPOOL_MAX_BYTES although config.storage.spool.max_bytes is set")
 			}
 		})
@@ -1013,19 +1041,19 @@ func TestChart(t *testing.T) {
 
 	t.Run("R-HA-036 GOMAXPROCS follows the CPU request unless a CPU limit is set", func(t *testing.T) {
 		_, docs := render(t, required())
-		env := envByName(at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec"))
+		env := envByName(at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec"))
 		if got := str(env["GOMAXPROCS"], "valueFrom", "resourceFieldRef", "resource"); got != "requests.cpu" {
 			t.Errorf("GOMAXPROCS resource = %q, want requests.cpu", got)
 		}
 		if got := str(env["TROVE_RUNTIME_MEMORY_LIMIT_BYTES"], "valueFrom", "resourceFieldRef", "resource"); got != "limits.memory" {
 			t.Errorf("TROVE_RUNTIME_MEMORY_LIMIT_BYTES resource = %q, want limits.memory", got)
 		}
-		_, docs = render(t, required(), "web.resources.limits.cpu=3")
-		env = envByName(at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec"))
+		_, docs = render(t, required(), "packages.resources.limits.cpu=3")
+		env = envByName(at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec"))
 		if env["GOMAXPROCS"] != nil {
 			t.Error("GOMAXPROCS is set although a CPU limit is set")
 		}
-		web := at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec", "containers", "0", "resources")
+		web := at(find(docs, "Deployment", "trove-packages"), "spec", "template", "spec", "containers", "0", "resources")
 		worker := at(find(docs, "Deployment", "trove-worker"), "spec", "template", "spec", "containers", "0", "resources")
 		if str(web, "requests", "cpu") != "1" || str(web, "limits", "memory") != "2Gi" ||
 			str(worker, "requests", "cpu") != "500m" || str(worker, "limits", "memory") != "1Gi" {
@@ -1033,7 +1061,7 @@ func TestChart(t *testing.T) {
 		}
 	})
 
-	t.Run("R-HA-029 a web pod needs a memory limit that admits at least 64 requests", func(t *testing.T) {
+	t.Run("R-HA-029 a serving pod needs a memory limit that admits at least 64 requests", func(t *testing.T) {
 		pool := filepath.Join(chartDir, "ci", "endpoints-pool.yaml")
 		noCaches := []string{"config.cache.rendition_bytes=0", "config.proxy.metadata_cache_bytes=0", "config.proxy.merged_metadata_cache_bytes=0", "config.proxy.query_cache_bytes=0"}
 		for _, c := range []struct {
@@ -1042,12 +1070,13 @@ func TestChart(t *testing.T) {
 			sets  []string
 			want  []string
 		}{
-			{"no memory limit", required(), []string{"web.resources.limits=null"}, []string{"web.resources.limits.memory is required", "trove-web"}},
-			{"a limit too small for its requests", required(), []string{"web.resources.limits.memory=48Mi"}, []string{"web.resources.limits.memory (48Mi) admits 52 concurrent requests, fewer than 64"}},
-			{"a buffer too large for the limit", required(), []string{"config.storage.download.buffer_size=32MiB"}, []string{"web.resources.limits.memory (2Gi) admits 43 concurrent requests"}},
-			{"a buffer too large for a pool's limit", []string{pool}, []string{"config.storage.download.buffer_size=16MiB"}, []string{"endpoints.customers.pool.resources.limits.memory (1Gi) admits 42 concurrent requests"}},
-			{"a memory quantity the chart cannot read", required(), []string{"web.resources.limits.memory=1.5Gi"}, []string{"not a memory quantity"}},
-			{"caches whose budgets leave too little for requests", required(), []string{"config.cache.rendition_bytes=1GiB", "config.proxy.merged_metadata_cache_bytes=256MiB"}, []string{"web.resources.limits.memory (2Gi) admits", "fewer than 64", "1484783616 bytes of cache budgets"}},
+			{"no memory limit on api", required(), []string{"api.resources.limits=null"}, []string{"api.resources.limits.memory is required", "trove-api"}},
+			{"no memory limit", required(), []string{"packages.resources.limits=null"}, []string{"packages.resources.limits.memory is required", "trove-packages"}},
+			{"a limit too small for its requests", required(), []string{"packages.resources.limits.memory=48Mi"}, []string{"packages.resources.limits.memory (48Mi) admits 52 concurrent requests, fewer than 64"}},
+			{"a buffer too large for the limit", required(), []string{"api.resources.limits.memory=8Gi", "config.storage.download.buffer_size=32MiB"}, []string{"packages.resources.limits.memory (2Gi) admits 43 concurrent requests"}},
+			{"a buffer too large for a pool's limit", []string{pool}, []string{"api.resources.limits.memory=8Gi", "config.storage.download.buffer_size=16MiB"}, []string{"endpoints.customers.pool.resources.limits.memory (1Gi) admits 42 concurrent requests"}},
+			{"a memory quantity the chart cannot read", required(), []string{"packages.resources.limits.memory=1.5Gi"}, []string{"not a memory quantity"}},
+			{"caches whose budgets leave too little for requests", required(), []string{"api.resources.limits.memory=8Gi", "config.cache.rendition_bytes=1GiB", "config.proxy.merged_metadata_cache_bytes=256MiB"}, []string{"packages.resources.limits.memory (2Gi) admits", "fewer than 64", "1484783616 bytes of cache budgets"}},
 		} {
 			// the cases about the request bytes turn the caches off, so their counts are the requests' alone (Q-ARCH-243)
 			sets := c.sets
@@ -1057,15 +1086,15 @@ func TestChart(t *testing.T) {
 			t.Run(c.name, func(t *testing.T) { renderFails(t, c.files, sets, c.want...) })
 		}
 		for _, mem := range []string{"2G", "64Mi", "2000000000"} {
-			render(t, required(), append([]string{"web.resources.limits.memory=" + mem}, noCaches...)...)
+			render(t, required(), append([]string{"packages.resources.limits.memory=" + mem}, noCaches...)...)
 		}
-		// the defaults: 2Gi for a web pod with the three caches at their default budgets
+		// the defaults: 2Gi for a packages pod and 1Gi for an api pod with the three caches at their default budgets
 		render(t, required())
 	})
 
 	t.Run("R-HA-032 each Deployment has a disruption budget and spreads over zones and hosts", func(t *testing.T) {
 		eachSet(t, func(t *testing.T, f string, _ string, docs []doc) {
-			for _, role := range []string{"web", "worker"} {
+			for _, role := range []string{"api", "packages", "worker"} {
 				pdb := find(docs, "PodDisruptionBudget", "trove-"+role)
 				if pdb == nil {
 					t.Fatalf("no PodDisruptionBudget trove-%s", role)
@@ -1119,9 +1148,9 @@ func TestChart(t *testing.T) {
 		})
 	})
 
-	t.Run("R-HA-032 defaults are three web and two worker replicas with a rolling update that never drops capacity", func(t *testing.T) {
+	t.Run("R-HA-032 defaults are two api, three packages and two worker replicas with a rolling update that never drops capacity", func(t *testing.T) {
 		_, docs := render(t, required())
-		for role, n := range map[string]int{"web": 3, "worker": 2} {
+		for role, n := range map[string]int{"api": 2, "packages": 3, "worker": 2} {
 			d := find(docs, "Deployment", "trove-"+role)
 			if at(d, "spec", "replicas") != n {
 				t.Errorf("trove-%s replicas = %v, want %d", role, at(d, "spec", "replicas"), n)
@@ -1135,19 +1164,9 @@ func TestChart(t *testing.T) {
 		}
 	})
 
-	t.Run("R-HA-037 no Service has session affinity and the Ingress routes the whole host", func(t *testing.T) {
+	t.Run("R-HA-037 no Service has session affinity and the Ingress never routes the operations port", func(t *testing.T) {
 		eachSet(t, func(t *testing.T, _ string, out string, docs []doc) {
-			svcs := ofKind(docs, "Service")
-			own := 0
-			for _, s := range svcs {
-				if str(s, "metadata", "labels", "trove/endpoint") == "" {
-					own++
-				}
-			}
-			if own != 2 {
-				t.Errorf("%d Services rendered besides the endpoints', want the client and the ops Service", own)
-			}
-			for _, s := range svcs {
+			for _, s := range ofKind(docs, "Service") {
 				if got := str(s, "spec", "sessionAffinity"); got != "None" {
 					t.Errorf("Service %s sessionAffinity = %q, want None", str(s, "metadata", "name"), got)
 				}
@@ -1158,22 +1177,15 @@ func TestChart(t *testing.T) {
 				}
 			}
 			for _, ing := range ofKind(docs, "Ingress") {
-				endpoint := str(ing, "metadata", "labels", "trove/endpoint") != ""
 				for _, r := range list(ing, "spec", "rules") {
 					for _, p := range list(r, "http", "paths") {
-						if str(p, "path") != "/" || str(p, "pathType") != "Prefix" {
-							t.Errorf("ingress rule %v is not path / with pathType Prefix", p)
+						if str(p, "pathType") != "Prefix" {
+							t.Errorf("ingress rule %v is not pathType Prefix", p)
 						}
-						if endpoint {
-							continue // an endpoint's Ingress routes to its own Service (TestEndpoints)
-						}
-						if str(p, "backend", "service", "name") != "trove" || str(p, "backend", "service", "port", "name") != "http" {
-							t.Errorf("ingress backend = %v, want Service trove port http", at(p, "backend"))
+						if at(p, "backend", "service", "port", "number") == 8081 || str(p, "backend", "service", "port", "name") == "ops" {
+							t.Errorf("ingress rule %v routes the operations port", p)
 						}
 					}
-				}
-				if strings.Contains(out, "8081") && strings.Contains(strings.SplitN(out, "kind: Ingress", 2)[1], "8081") {
-					t.Error("the Ingress mentions the operations port")
 				}
 			}
 		})
@@ -1244,8 +1256,15 @@ func TestChart(t *testing.T) {
 			t.Errorf("podFailurePolicy = %v", rules)
 		}
 		env := envByName(pod)
-		if env["TROVE_DATABASE_PREFLIGHT_EXPECTED_WEB_REPLICAS"] == nil || env["TROVE_DATABASE_PREFLIGHT_EXPECTED_WORKER_REPLICAS"] == nil {
-			t.Error("the migration Job lacks the expected-replica variables")
+		// serving_max 3 + 4 and worker_max 2 + 1 of the defaults, surge included (R-HA-016, Q-HA-77)
+		if got := str(env["TROVE_DATABASE_PREFLIGHT_EXPECTED_SERVING_REPLICAS"], "value"); got != "7" {
+			t.Errorf("TROVE_DATABASE_PREFLIGHT_EXPECTED_SERVING_REPLICAS = %q, want 7", got)
+		}
+		if got := str(env["TROVE_DATABASE_PREFLIGHT_EXPECTED_WORKER_REPLICAS"], "value"); got != "3" {
+			t.Errorf("TROVE_DATABASE_PREFLIGHT_EXPECTED_WORKER_REPLICAS = %q, want 3", got)
+		}
+		if env["TROVE_DATABASE_PREFLIGHT_EXPECTED_WEB_REPLICAS"] != nil {
+			t.Error("the migration Job renders the deprecated expected_web_replicas name")
 		}
 		mainCfg := str(find(docs, "ConfigMap", "trove-config"), "data", "trove.yaml")
 		if got := str(find(docs, "ConfigMap", "trove-migrate"), "data", "trove.yaml"); got != mainCfg {
@@ -1277,7 +1296,7 @@ func TestChart(t *testing.T) {
 		if str(cfg, "valkey", "tls", "mode") != "verify-full" {
 			t.Errorf("valkey tls mode = %q, want verify-full", str(cfg, "valkey", "tls", "mode"))
 		}
-		for _, name := range []string{"trove-web", "trove-worker"} {
+		for _, name := range []string{"trove-packages", "trove-worker"} {
 			ok := false
 			for _, v := range list(podSpecs(docs)[name], "volumes") {
 				if str(v, "secret", "secretName") == "trove-valkey" {
@@ -1337,14 +1356,9 @@ func TestRenderedConfigurationPassesTheBinary(t *testing.T) {
 				if err := os.WriteFile(cfgPath, []byte(str(find(docs, "ConfigMap", "trove-config"), "data", "trove.yaml")), 0o600); err != nil {
 					t.Fatal(err)
 				}
-				pods := map[string]any{
-					"web":    at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec"),
-					"worker": at(find(docs, "Deployment", "trove-worker"), "spec", "template", "spec"),
-				}
+				pods := map[string]any{}
 				for _, d := range ofKind(docs, "Deployment") {
-					if n := str(d, "metadata", "name"); strings.HasPrefix(n, "trove-web-ep-") {
-						pods[strings.TrimPrefix(n, "trove-")] = at(d, "spec", "template", "spec")
-					}
+					pods[strings.TrimPrefix(str(d, "metadata", "name"), "trove-")] = at(d, "spec", "template", "spec")
 				}
 				if job := find(docs, "Job", "trove-migrate"); job != nil {
 					pods["migrate"] = at(job, "spec", "template", "spec")
@@ -1366,9 +1380,9 @@ func TestRenderedConfigurationPassesTheBinary(t *testing.T) {
 						}
 						if name == "migrate" {
 							// validate checks the rules of a serving replica, which want the bucket; the
-							// Job itself needs no object store, so take the web pod's S3 settings.
+							// Job itself needs no object store, so take the packages pod's S3 settings.
 							for n := range s3SettingEnv {
-								if e := envByName(pods["web"])[n]; e != nil {
+								if e := envByName(pods["packages"])[n]; e != nil {
 									cmd.Env = append(cmd.Env, n+"=test")
 								}
 							}
@@ -1411,9 +1425,9 @@ func TestShutdownBudgetDerivation(t *testing.T) {
 		worker  string
 		sources string
 	}{
-		{"chart defaults: web 120 s / worker 300 s, drain 5 s", nil, "1m50s", "4m50s", "derived"},
+		{"chart defaults: packages 120 s / worker 300 s, drain 5 s", nil, "1m50s", "4m50s", "derived"},
 		{"drain 15 s, worker 300 s", []string{"config.health.shutdown_drain_delay=15s"}, "1m40s", "4m40s", "derived"},
-		{"web 45 s with drain 30 s leaves the 10 s the chart rule guarantees", []string{"web.terminationGracePeriodSeconds=45", "config.health.shutdown_drain_delay=30s"}, "10s", "4m25s", "derived"},
+		{"packages 45 s with drain 30 s leaves the 10 s the chart rule guarantees", []string{"packages.terminationGracePeriodSeconds=45", "config.health.shutdown_drain_delay=30s"}, "10s", "4m25s", "derived"},
 	}
 	bin := trove(t)
 	for _, c := range cases {
@@ -1423,7 +1437,7 @@ func TestShutdownBudgetDerivation(t *testing.T) {
 			if err := os.WriteFile(cfgPath, []byte(str(find(docs, "ConfigMap", "trove-config"), "data", "trove.yaml")), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			for role, want := range map[string]string{"web": c.web, "worker": c.worker} {
+			for role, want := range map[string]string{"packages": c.web, "worker": c.worker} {
 				pod := at(find(docs, "Deployment", "trove-"+role), "spec", "template", "spec")
 				cmd := exec.Command(bin, "admin", "config", "validate", "--config", cfgPath, "--format", "json")
 				cmd.Env = podEnviron(pod)
@@ -1475,29 +1489,40 @@ func portsOf(rule any) (ports []int, from []any, hasFrom bool) {
 }
 
 func TestNetworkPolicy(t *testing.T) {
-	t.Run("R-HA-042 web admits 8080 from anywhere and 8081 only from the monitoring namespace, worker admits 8081 only", func(t *testing.T) {
-		eachSet(t, func(t *testing.T, _ string, _ string, docs []doc) {
-			web := find(docs, "NetworkPolicy", "trove-web")
+	t.Run("R-HA-042 api and packages admit 8080 from anywhere and 8081 only from the monitoring namespace, worker admits 8081 only", func(t *testing.T) {
+		eachSet(t, func(t *testing.T, f string, _ string, docs []doc) {
+			if base(f) == "bridge.yaml" {
+				return // the bridge adds web, covered by TestRoles
+			}
+			for _, role := range []string{"api", "packages"} {
+				pol := find(docs, "NetworkPolicy", "trove-"+role)
+				if pol == nil {
+					t.Fatalf("NetworkPolicy trove-%s not rendered", role)
+				}
+				if got := list(pol, "spec", "policyTypes"); len(got) != 1 || got[0] != "Ingress" {
+					t.Errorf("%s policyTypes = %v, want [Ingress] only (egress is not rendered)", role, got)
+				}
+				rules := list(pol, "spec", "ingress")
+				if len(rules) < 2 {
+					t.Fatalf("%s has %d ingress rules, want at least 8080 and 8081", role, len(rules))
+				}
+				p0, f0, has0 := portsOf(rules[0])
+				if len(p0) != 1 || p0[0] != 8080 || has0 {
+					t.Errorf("%s first rule = ports %v from %v (has from: %v), want 8080 from anywhere", role, p0, f0, has0)
+				}
+				// the rules between are the further endpoints' ports, each with its own port
+				for _, r := range rules[1 : len(rules)-1] {
+					if p, _, _ := portsOf(r); len(p) != 1 || p[0] == 8080 || p[0] == 8081 {
+						t.Errorf("%s middle rule admits %v, want one endpoint port", role, p)
+					}
+				}
+				p1, f1, has1 := portsOf(rules[len(rules)-1])
+				if len(p1) != 1 || p1[0] != 8081 || !has1 || len(f1) != 1 ||
+					str(f1[0], "namespaceSelector", "matchLabels", "kubernetes.io/metadata.name") != "monitoring" {
+					t.Errorf("%s last rule = ports %v from %v, want 8081 from the monitoring namespace only", role, p1, f1)
+				}
+			}
 			worker := find(docs, "NetworkPolicy", "trove-worker")
-			if web == nil || worker == nil {
-				t.Fatal("NetworkPolicy trove-web or trove-worker not rendered")
-			}
-			if got := list(web, "spec", "policyTypes"); len(got) != 1 || got[0] != "Ingress" {
-				t.Errorf("web policyTypes = %v, want [Ingress] only (egress is not rendered)", got)
-			}
-			rules := list(web, "spec", "ingress")
-			if len(rules) != 2 {
-				t.Fatalf("web has %d ingress rules, want 2 (8080 and 8081)", len(rules))
-			}
-			p0, f0, has0 := portsOf(rules[0])
-			if len(p0) != 1 || p0[0] != 8080 || has0 {
-				t.Errorf("web rule 1 = ports %v from %v (has from: %v), want 8080 from anywhere", p0, f0, has0)
-			}
-			p1, f1, has1 := portsOf(rules[1])
-			if len(p1) != 1 || p1[0] != 8081 || !has1 || len(f1) != 1 ||
-				str(f1[0], "namespaceSelector", "matchLabels", "kubernetes.io/metadata.name") != "monitoring" {
-				t.Errorf("web rule 2 = ports %v from %v, want 8081 from the monitoring namespace only", p1, f1)
-			}
 			wr := list(worker, "spec", "ingress")
 			if len(wr) != 1 {
 				t.Fatalf("worker has %d ingress rules, want 1", len(wr))
@@ -1511,7 +1536,8 @@ func TestNetworkPolicy(t *testing.T) {
 	t.Run("R-HA-042 every policy selects the pods of its component and no others", func(t *testing.T) {
 		_, docs := render(t, required())
 		for _, c := range []struct{ policy, kind, workload string }{
-			{"trove-web", "Deployment", "trove-web"},
+			{"trove-api", "Deployment", "trove-api"},
+			{"trove-packages", "Deployment", "trove-packages"},
 			{"trove-worker", "Deployment", "trove-worker"},
 			{"trove-migrate", "Job", "trove-migrate"},
 		} {
@@ -1526,11 +1552,14 @@ func TestNetworkPolicy(t *testing.T) {
 				}
 			}
 		}
-		// web and worker must not select each other's pods.
-		web, _ := at(find(docs, "NetworkPolicy", "trove-web"), "spec", "podSelector", "matchLabels").(map[string]any)
-		worker, _ := at(find(docs, "NetworkPolicy", "trove-worker"), "spec", "podSelector", "matchLabels").(map[string]any)
-		if web["app.kubernetes.io/component"] == worker["app.kubernetes.io/component"] {
-			t.Error("web and worker policies select the same component")
+		// the roles must not select each other's pods.
+		seen := map[any]string{}
+		for _, n := range []string{"trove-api", "trove-packages", "trove-worker"} {
+			sel, _ := at(find(docs, "NetworkPolicy", n), "spec", "podSelector", "matchLabels").(map[string]any)
+			if other, dup := seen[sel["app.kubernetes.io/component"]]; dup {
+				t.Errorf("%s and %s select the same component", n, other)
+			}
+			seen[sel["app.kubernetes.io/component"]] = n
 		}
 	})
 
@@ -1572,7 +1601,7 @@ func TestNetworkPolicy(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, docs := render(t, append(required(), vals))
-		rules := list(find(docs, "NetworkPolicy", "trove-web"), "spec", "ingress")
+		rules := list(find(docs, "NetworkPolicy", "trove-packages"), "spec", "ingress")
 		_, f0, has0 := portsOf(rules[0])
 		if !has0 || len(f0) != 1 || str(f0[0], "namespaceSelector", "matchLabels", "kubernetes.io/metadata.name") != "traefik" {
 			t.Errorf("8080 from = %v, want the traefik namespace", f0)
@@ -1583,7 +1612,7 @@ func TestNetworkPolicy(t *testing.T) {
 		}
 
 		_, docs = render(t, required(), "networkPolicy.ingress.ops.from=null")
-		for _, role := range []string{"web", "worker"} {
+		for _, role := range []string{"api", "packages", "worker"} {
 			for _, r := range list(find(docs, "NetworkPolicy", "trove-"+role), "spec", "ingress") {
 				if p, _, _ := portsOf(r); len(p) == 1 && p[0] == 8081 {
 					t.Errorf("%s still admits 8081 although no peer is listed; an empty from would mean from anywhere", role)
@@ -1618,7 +1647,7 @@ func TestMigrationJobSecrets(t *testing.T) {
 					t.Errorf("the migration Job mounts %s", str(m, "mountPath"))
 				}
 			}
-			for _, role := range []string{"web", "worker"} {
+			for _, role := range []string{"api", "packages", "worker"} {
 				found := false
 				for _, m := range list(at(find(docs, "Deployment", "trove-"+role), "spec", "template", "spec"), "containers", "0", "volumeMounts") {
 					found = found || str(m, "mountPath") == "/var/run/secrets/trove/encryption"

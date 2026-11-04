@@ -1,8 +1,10 @@
 {{- /*
 One Ingress per further endpoint with ingress.enabled (R-EP-008): the class, one rule per host of the
-endpoint (the host of its base URL, every exact host, the wildcard host), path / with pathType
-Prefix, the backend <fullname>-ep-<name> over TLS as R-HA-063 wires it for the default Ingress, and
-the endpoint's own tls entries (one Secret per certificate set, chosen by SNI at the edge).
+endpoint (the host of its base URL, every exact host, the wildcard host) with the path rules of its
+surface (templates/_edge.tpl: path / to the one Service when the surface lies within one role, the
+rows of R-HA-037's table whose families it holds to the Service of their role otherwise), each with
+pathType Prefix, over TLS as R-HA-063 wires it for the default Ingress, and the endpoint's own tls
+entries (one Secret per certificate set, chosen by SNI at the edge).
 */ -}}
 {{- range $name := include "trove.endpointNames" . | fromYamlArray }}
 {{- $e := include "trove.endpoint" (dict "root" $ "name" $name) | fromYaml }}
@@ -16,7 +18,7 @@ kind: Ingress
 metadata:
   name: {{ $svc }}
   labels:
-    {{- include "trove.labels" (dict "root" $ "component" "web" "pool" $e.pool) | nindent 4 }}
+    {{- include "trove.labels" (dict "root" $ "component" "ingress") | nindent 4 }}
     trove/endpoint: {{ $name | quote }}
   {{- $ann := merge (dict) $e.ingressAnnotations $.Values.commonAnnotations }}
   {{- if and $.Values.tls.enabled (eq $bt.controller "haproxy") }}
@@ -52,29 +54,21 @@ spec:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   rules:
-    {{- range $hosts }}
+    {{- $allHosts := $hosts }}
+    {{- with $e.wildcardHost }}{{ $allHosts = append $allHosts . }}{{- end }}
+    {{- range $allHosts }}
     - host: {{ . | quote }}
       http:
         paths:
-          - path: /
+          {{- range $rule := include "trove.edgeRules" (dict "root" $ "endpoint" $name) | fromYamlArray }}
+          - path: {{ $rule.path }}
             pathType: Prefix
             backend:
               service:
-                name: {{ $svc }}
+                name: {{ $rule.service }}
                 port:
                   number: {{ $e.port }}
-    {{- end }}
-    {{- with $e.wildcardHost }}
-    - host: {{ . | quote }}
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ $svc }}
-                port:
-                  number: {{ $e.port }}
+          {{- end }}
     {{- end }}
 {{- end }}
 {{- end }}

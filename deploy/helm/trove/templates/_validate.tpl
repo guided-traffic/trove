@@ -131,99 +131,13 @@ pools) are added with those features.
 {{- end -}}
 {{- end -}}
 
-{{- /* Roles (R-HA-002, R-HA-032, R-HA-011). */ -}}
-{{- if lt (int $v.worker.replicaCount) 1 -}}
-{{- fail "trove: worker.replicaCount must be at least 1; without a worker no scheduled work runs (R-HA-002)" -}}
-{{- end -}}
-{{- $drain := include "trove.seconds" (dig "health" "shutdown_drain_delay" "5s" $cfg) | int64 -}}
-{{- range $role := list "web" "worker" -}}
-{{- $r := index $v $role -}}
-{{- if and $r.podDisruptionBudget.minAvailable $r.podDisruptionBudget.maxUnavailable -}}
-{{- fail (printf "trove: %s.podDisruptionBudget.minAvailable and %s.podDisruptionBudget.maxUnavailable are mutually exclusive; set one and null the other" $role $role) -}}
-{{- end -}}
-{{- if lt (int64 $r.terminationGracePeriodSeconds) (add $drain 15) -}}
-{{- fail (printf "trove: %s.terminationGracePeriodSeconds (%v) must be at least config.health.shutdown_drain_delay + 15 s (%d s)" $role $r.terminationGracePeriodSeconds (add $drain 15) ) -}}
-{{- end -}}
-{{- if $v.highAvailability.enforce -}}
-{{- if lt (int $r.replicaCount) 2 -}}
-{{- fail (printf "trove: highAvailability.enforce needs %s.replicaCount of at least 2 (Deployment %s-%s)" $role (include "trove.fullname" $) $role) -}}
-{{- end -}}
-{{- if not $r.podDisruptionBudget.enabled -}}
-{{- fail (printf "trove: highAvailability.enforce needs %s.podDisruptionBudget.enabled: true (Deployment %s-%s)" $role (include "trove.fullname" $) $role) -}}
-{{- end -}}
-{{- $hostOk := false -}}
-{{- if $r.topologySpreadConstraints -}}
-{{- range $r.topologySpreadConstraints -}}
-{{- if and (eq .topologyKey "kubernetes.io/hostname") (eq .whenUnsatisfiable "DoNotSchedule") (eq (.nodeTaintsPolicy | default "") "Honor") -}}
-{{- $hostOk = true -}}
-{{- end -}}
-{{- end -}}
-{{- else if and $r.topologySpread.enabled (eq $r.topologySpread.host.whenUnsatisfiable "DoNotSchedule") (eq $r.topologySpread.nodeTaintsPolicy "Honor") -}}
-{{- $hostOk = true -}}
-{{- end -}}
-{{- if not $hostOk -}}
-{{- fail (printf "trove: highAvailability.enforce needs a host spread constraint with whenUnsatisfiable DoNotSchedule and nodeTaintsPolicy Honor for Deployment %s-%s (%s.topologySpread.host.whenUnsatisfiable, %s.topologySpread.nodeTaintsPolicy)" (include "trove.fullname" $) $role $role $role) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
+{{- include "trove.validateRoles" . -}}
 
-{{- /*
-Spool budget (R-HA-035): the largest upload must fit the web spool budget (R-HA-029). A worker
-accepts no uploads, so its spool is not checked against storage.upload.max_size, and the binary
-applies that rule to the roles web and all only.
-*/ -}}
-{{- $upload := include "trove.bytes" (dig "storage" "upload" "max_size" "10GiB" $cfg) | int64 -}}
-{{- $budget := include "trove.spoolBudget" (dict "root" $ "role" "web") | int64 -}}
-{{- if gt $upload $budget -}}
-{{- fail (printf "trove: config.storage.upload.max_size (%v) is larger than the web spool budget of %d bytes (spool size minus spool.headroom); raise spool.sizeLimit or web.spool.sizeLimit, or lower config.storage.upload.max_size" (dig "storage" "upload" "max_size" "10GiB" $cfg) $budget) -}}
-{{- end -}}
-
-{{- /*
-The OSV source's archive (R-VULN-025): a worker downloads one archive into its spool, so the worker's spool budget
-(spool size minus spool.headroom) must hold vulnerabilities.sources.osv.max_archive_size while the scanning is enabled
-and the source is online or repository (the binary's defaults: enabled true, mode online, 1GiB).
-*/ -}}
-{{- $vuln := dig "vulnerabilities" (dict) $cfg -}}
-{{- $osv := dig "sources" "osv" (dict) $vuln -}}
-{{- if and (dig "enabled" true $vuln) (ne (dig "mode" "online" $osv) "off") -}}
-{{- $archive := include "trove.bytes" (dig "max_archive_size" "1GiB" $osv) | int64 -}}
-{{- $workerBudget := include "trove.spoolBudget" (dict "root" $ "role" "worker") | int64 -}}
-{{- if gt $archive $workerBudget -}}
-{{- fail (printf "trove: config.vulnerabilities.sources.osv.max_archive_size (%v) is larger than the worker spool budget of %d bytes (spool size minus spool.headroom); raise worker.spool.sizeLimit or spool.sizeLimit, lower the archive limit, or set config.vulnerabilities.sources.osv.mode: off (R-VULN-025)" (dig "max_archive_size" "1GiB" $osv) $workerBudget) -}}
-{{- end -}}
-{{- end -}}
 {{- /* The PrometheusRule (R-HA-045): a name in disabledAlerts that is no alert is a typo. */ -}}
 {{- $alertNames := include "trove.rules.names" . | fromJsonArray -}}
 {{- range $v.metrics.prometheusRule.disabledAlerts -}}
 {{- if not (has . $alertNames) -}}
 {{- fail (printf "trove: metrics.prometheusRule.disabledAlerts names %q, which is no alert of the chart (%s)" . (join ", " $alertNames)) -}}
-{{- end -}}
-{{- end -}}
-
-{{- /*
-Memory (R-HA-036, Q-HA-70, Q-ARCH-243): a web pod sizes what it admits from its memory limit, (0.8 ×
-runtime.memory_limit_ratio × limits.memory − the caches' byte budgets) / the bytes of one request
-(R-ARCH-005 step 4). A pod
-without a limit would size it from the node's memory; one that holds fewer than 64 requests cannot
-serve a handful of clients at once.
-*/ -}}
-{{- $pods := list (dict "key" "web" "deployment" "web" "r" $v.web) -}}
-{{- range $name := include "trove.endpointNames" . | fromYamlArray -}}
-{{- if include "trove.endpointPool" (dict "root" $ "name" $name) -}}
-{{- $pods = append $pods (dict "key" (printf "endpoints.%s.pool" $name) "deployment" (printf "web-ep-%s" $name) "r" (include "trove.endpointPoolValues" (dict "root" $ "name" $name) | fromYaml)) -}}
-{{- end -}}
-{{- end -}}
-{{- $perRequest := include "trove.requestBytes" . | int64 -}}
-{{- $ratio := dig "runtime" "memory_limit_ratio" 0.85 $cfg | float64 -}}
-{{- $reserved := add (include "trove.bytes" (dig "cache" "rendition_bytes" "256MiB" $cfg) | int64) (include "trove.bytes" (dig "proxy" "metadata_cache_bytes" "128MiB" $cfg) | int64) (include "trove.bytes" (dig "proxy" "merged_metadata_cache_bytes" "256MiB" $cfg) | int64) (include "trove.bytes" (dig "proxy" "query_cache_bytes" "8MiB" $cfg) | int64) -}}
-{{- range $p := $pods -}}
-{{- $mem := dig "limits" "memory" "" ($p.r.resources | default dict) -}}
-{{- if not $mem -}}
-{{- fail (printf "trove: %s.resources.limits.memory is required: a web replica sizes what it admits from its memory limit, and without one Deployment %s-%s would read the node's memory (R-HA-036)" $p.key (include "trove.fullname" $) $p.deployment) -}}
-{{- end -}}
-{{- $slots := floor (divf (subf (mulf 0.8 $ratio (include "trove.quantityBytes" $mem | float64)) $reserved) $perRequest) | int64 -}}
-{{- if lt $slots 64 -}}
-{{- fail (printf "trove: %s.resources.limits.memory (%v) admits %d concurrent requests, fewer than 64: (0.8 × config.runtime.memory_limit_ratio (%v) × the limit − %d bytes of cache budgets) / %d bytes per request (config.cache.rendition_bytes, config.proxy.metadata_cache_bytes, merged_metadata_cache_bytes and query_cache_bytes; config.storage.download.buffer_size and hold_back, config.storage.s3.http.receive_window; R-ARCH-005); raise the limit or lower those values" $p.key $mem $slots $ratio $reserved $perRequest) -}}
 {{- end -}}
 {{- end -}}
 
@@ -320,15 +234,13 @@ Endpoints (R-EP-008, R-HA-029): every failure names the value. Argument: the roo
 {{- fail (printf "trove: %s.tls.clientCaSecret requires %s.ingress.backendTLS.clientCertSecret (or ingress.backendTLS.clientCertSecret) with controller haproxy: trove demands a client certificate on this endpoint and HAProxy Ingress needs a Secret with tls.crt and tls.key to present" $key $key) -}}
 {{- end -}}
 {{- end -}}
-{{- /* A pool follows the rules of a web pool (R-HA-062). */ -}}
-{{- if $e.poolEnabled -}}
-{{- $r := include "trove.endpointPoolValues" (dict "root" $ "name" $name) | fromYaml -}}
-{{- if and $v.highAvailability.enforce (lt (int $r.replicaCount) 2) -}}
-{{- fail (printf "trove: highAvailability.enforce needs %s.pool.replicaCount of at least 2 (Deployment %s-web-ep-%s)" $key $fullname $name) -}}
+{{- /* The Service of a surface with families of both roles, and the pool Deployments, must keep a valid name (R-EP-008). The rules of a pool (replicas, budget, spreading, memory) are checked with every Deployment in trove.validateRoles. */ -}}
+{{- $names := include "trove.surfaceRoles" (dict "root" $ "name" $name) | fromYamlArray -}}
+{{- if and (eq (len $names) 2) (gt (add (len $fullname) 8 (len $name)) 63) -}}
+{{- fail (printf "trove: %s: the Service name %s-ep-%s-api has %d characters, at most 63 are allowed; shorten the endpoint name or set fullnameOverride" $key $fullname $name (add (len $fullname) 8 (len $name))) -}}
 {{- end -}}
-{{- if and $v.highAvailability.enforce (not $r.podDisruptionBudget.enabled) -}}
-{{- fail (printf "trove: highAvailability.enforce needs a disruption budget for the pool of %s (%s.pool.podDisruptionBudget.enabled)" $key $key) -}}
-{{- end -}}
+{{- if and $e.poolEnabled (gt (add (len $fullname) 13 (len $name)) 63) -}}
+{{- fail (printf "trove: %s.pool: the Deployment name %s-packages-ep-%s has %d characters, at most 63 are allowed; shorten the endpoint name or set fullnameOverride" $key $fullname $name (add (len $fullname) 13 (len $name))) -}}
 {{- end -}}
 {{- end -}}
 {{- /* An exact host of one endpoint that another endpoint's wildcard host covers. */ -}}

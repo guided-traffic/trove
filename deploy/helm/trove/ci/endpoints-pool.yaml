@@ -1,5 +1,5 @@
-# An endpoint with a pool of its own (R-EP-008, Q-EP-3): its pods are <fullname>-web-ep-customers,
-# its listener runs only there, and the main web pods do not open its port.
+# An endpoint with a pool of its own (R-EP-008, Q-EP-3, Q-EP-70): its pods are <fullname>-packages-ep-customers,
+# its listener runs only there, and the main packages pods do not open its port.
 config:
   server:
     base_url: https://trove.example.com            # example

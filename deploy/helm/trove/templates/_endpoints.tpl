@@ -1,9 +1,11 @@
 {{/*
 Endpoints (R-EP-008). values.endpoints holds one entry per endpoint: the entry "default" tunes the
 default endpoint (hosts, surface and the policy keys only), every other entry is a further
-endpoint with its own listener port, Service, Ingress, NetworkPolicy and, optionally, its own pool
-of web pods. Objects are named <fullname>-ep-<name>; the pool Deployment is
-<fullname>-web-ep-<name> and its pool label is ep-<name>.
+endpoint with its own listener port, Service, Ingress and, optionally, its own pool of pods per
+role its surface holds (Q-EP-70). Objects are named <fullname>-ep-<name>, and
+<fullname>-ep-<name>-api beside it for a surface with families of both roles (Q-EP-71); the pool
+Deployments are <fullname>-packages-ep-<name> and <fullname>-api-ep-<name> (<fullname>-web-ep-<name>
+in the bridge of R-HA-064) and their pool label is ep-<name>. units.tpl lists them.
 */}}
 
 {{/* The names of the further endpoints, sorted, as a YAML list. Argument: the root context. */}}
@@ -85,32 +87,13 @@ Returns YAML.
 {{- end -}}
 
 {{/*
-The values of an endpoint's pool Deployment: the web values with the pool's own keys on top (every
-key of web may be overridden, R-EP-008). Argument: dict "root" . "name" "customers". Returns YAML.
+The values of an endpoint's pool Deployment: the values of the pool's role with the pool's own keys
+on top (every key of the role may be overridden, R-EP-008). Argument: dict "root" . "name"
+"customers" "role" "packages" (web in the bridge of R-HA-064). Returns YAML.
 */}}
 {{- define "trove.endpointPoolValues" -}}
 {{- $pool := dig "pool" (dict) (index .root.Values.endpoints .name) -}}
-{{- $over := omit $pool "enabled" -}}
-{{- include "trove.mergeValues" (dict "base" .root.Values.web "over" $over) -}}
-{{- end -}}
-
-{{/*
-The container ports a pod serves for endpoints, as a YAML list. Argument: dict "root" . "role" "web"
-"pool" "". The main web pods serve the endpoints without a pool, a pool's pods serve their one
-endpoint, worker pods serve none (R-EP-002, R-EP-008).
-*/}}
-{{- define "trove.endpointPorts" -}}
-{{- $ports := list -}}
-{{- if eq .role "web" -}}
-{{- $root := .root -}}
-{{- $pool := .pool -}}
-{{- range $name := include "trove.endpointNames" $root | fromYamlArray -}}
-{{- if eq (include "trove.endpointPool" (dict "root" $root "name" $name)) $pool -}}
-{{- $ports = append $ports (int (dig "port" 0 (index $root.Values.endpoints $name))) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- toYaml $ports -}}
+{{- include "trove.poolValues" (dict "base" (index .root.Values .role) "entry" $pool) -}}
 {{- end -}}
 
 {{/* The host of config.server.base_url. */}}
@@ -210,16 +193,14 @@ Argument: the root context. Returns YAML, "{}" without endpoints.
 
 {{/*
 The Secret mounts of the endpoints a pod serves, as a YAML list in the shape of trove.secretMounts.
-Argument: dict "root" . "role" "web" "pool" "". Only web pods mount them.
+Argument: dict "root" . "role" "packages" "pool" "". Only the pods that open an endpoint's listener
+mount its Secrets (trove.unitEndpoints).
 */}}
 {{- define "trove.endpointSecretMounts" -}}
 {{- $out := list -}}
-{{- $root := . -}}
-{{- if and .root.Values.tls.enabled (eq .role "web") -}}
-{{- $root = .root -}}
-{{- $pool := .pool -}}
-{{- range $name := include "trove.endpointNames" $root | fromYamlArray -}}
-{{- if eq (include "trove.endpointPool" (dict "root" $root "name" $name)) $pool -}}
+{{- if .root.Values.tls.enabled -}}
+{{- $root := .root -}}
+{{- range $name := include "trove.unitEndpoints" . | fromYamlArray -}}
 {{- $e := include "trove.endpoint" (dict "root" $root "name" $name) | fromYaml -}}
 {{- $base := printf "/var/run/secrets/trove/endpoints/%s" $name -}}
 {{- if $e.tlsSecret -}}
@@ -230,7 +211,6 @@ Argument: dict "root" . "role" "web" "pool" "". Only web pods mount them.
 {{- end -}}
 {{- if $e.tlsClientCaSecret -}}
 {{- $out = append $out (dict "name" (printf "ep-%s-client-ca" $name) "secret" $e.tlsClientCaSecret "path" (printf "%s/client-ca" $base) "items" (list (dict "key" "ca.crt" "path" "ca.crt"))) -}}
-{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

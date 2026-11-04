@@ -67,8 +67,8 @@ through workload identity). The storage entries themselves belong to [storage.md
 
 ## Topology
 
-The target of phase 6a (ADR-153, ADR-155; specified, not built yet). Until it is built, one Deployment `<fullname>-web`
-behind the Service `<fullname>` serves every path, which is the shape the upgrade bridge of R-HA-064 keeps for one step.
+The cut of phase 6a (ADR-153, ADR-155; the chart renders it). The releases before it ran one Deployment `<fullname>-web`
+behind the Service `<fullname>` that served every path, which is the shape the upgrade bridge of R-HA-064 keeps for one step.
 
 ```text
              clients: npm, pnpm, Yarn, dotnet, nuget.exe, browsers, GitLab jobs
@@ -176,9 +176,9 @@ The split is no longer optional: it is an owner constraint since 2026-10-28, and
 [ADR-153](../decisions.md#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries),
 [ADR-155](../decisions.md#adr-155--three-roles-api-packages-and-worker-variants-are-pools)).
 
-**Status.** Specified for phase 6a, not built yet: the chart renders `<fullname>-web` (`--role web`) and `<fullname>-worker`
-([deploy/helm/trove/templates/deployments.yaml](../../deploy/helm/trove/templates/deployments.yaml)), which is the shape that
-`web.enabled: true` keeps for the first step of R-HA-064.
+**Status.** Built (phase 6a, WP6a.3): the chart renders `<fullname>-api`, `<fullname>-packages` and `<fullname>-worker`
+from the list of Deployments in [_units.tpl](../../deploy/helm/trove/templates/_units.tpl); `web.enabled: true` renders
+`<fullname>-web` (`--role web`) beside them for the first step of R-HA-064.
 
 - The chart MUST always render three Deployments: `<fullname>-api`, whose container runs `trove serve --role api`,
   `<fullname>-packages`, whose container runs `trove serve --role packages`, and `<fullname>-worker`, whose container runs
@@ -227,7 +227,9 @@ Acceptance criteria:
 ### R-HA-062 · Further splits of a role into several Deployments
 Priority: **MVP** · Covers: HA-015
 
-**Status.** Phase 6a, specified, not built yet; built today: the endpoint pools, as pools of `web`.
+**Status.** Built (phase 6a, WP6a.3): path pools, worker pools and the endpoint pools per role
+([_units.tpl](../../deploy/helm/trove/templates/_units.tpl)). The environment form of the queues is a JSON list (Q-HA-82), what a
+pool inherits is Q-HA-84, and the ports a path pool opens for further endpoints are Q-HA-83.
 
 The owner allows several worker types and a split service (INV-2); a variant of a role by path prefix or by queue is a
 pool of that role, rendered from values without code (ADR-155). Because every replica of a role can serve everything its
@@ -2292,7 +2294,10 @@ Acceptance criteria:
 ### R-HA-064 · Upgrade across the cut into roles
 Priority: **MVP** · Covers: HA-069, OPS-073
 
-**Status.** Phase 6a, specified, not built yet.
+**Status.** Built (phase 6a, WP6a.3): the bridge, its edge and the guard
+([_validate_roles.tpl](../../deploy/helm/trove/templates/_validate_roles.tpl)). The guard's refusal reads the cluster and is
+verified by the upgrade e2e test, not by the chart test (Q-HA-86). While the bridge runs, its `web` pods hold the secrets of both
+roles ([H-518](../security/roles-and-trust-boundaries.md#h-518--the-bridge-and-the-development-role-hold-both-halves-of-the-cut)).
 
 The releases before the cut run `<fullname>-web` behind the Service `<fullname>` and route every host whole to it. A
 Deployment cannot be renamed, and Helm applies a release in one pass: it creates the new Deployments, repoints the edge and
@@ -3044,7 +3049,7 @@ does not contain `trove`, overridable by `fullnameOverride`):
 
 | Kind | Name | Rendered when |
 |---|---|---|
-| Deployment | `<fullname>-api`, `<fullname>-packages`, `<fullname>-worker` | always (R-HA-002; phase 6a, specified, not built yet: today `<fullname>-web` and `<fullname>-worker`) |
+| Deployment | `<fullname>-api`, `<fullname>-packages`, `<fullname>-worker` | always (R-HA-002) |
 | Deployment, Service | `<fullname>-api-<pool>`, `<fullname>-packages-<pool>`, `<fullname>-worker-<pool>` (Deployment only) | per entry of `api.pools`, `packages.pools` and `worker.pools` (R-HA-062) |
 | Service (ClusterIP) | `<fullname>-api` and `<fullname>-packages`, port `http` 8080 → the main Deployment's pods of that role, `sessionAffinity: None` | always |
 | Deployment, Service (ClusterIP) | `<fullname>-web` (`--role web`) and `<fullname>`, port `http` 8080 → `web` pods; `<fullname>-web-ep-<name>` for the endpoint pools of the old shape | `web.enabled`, the bridge of the upgrade across the cut (R-HA-064) |
@@ -4257,9 +4262,9 @@ Acceptance criteria:
 ### R-HA-037 · Service, Ingress and TLS at the edge
 Priority: **MVP** · Covers: HA-012, HA-022, HA-038, HA-039, HA-042
 
-**Status.** The path split below is specified for phase 6a and not built yet: the chart renders one rule per host, path `/`,
-to the Service `<fullname>` of the `web` pods ([deploy/helm/trove/templates/ingress.yaml](../../deploy/helm/trove/templates/ingress.yaml)),
-which is the shape the bridge of R-HA-064 keeps for one step.
+**Status.** Built (phase 6a, WP6a.3) for the Ingress ([ingress.yaml](../../deploy/helm/trove/templates/ingress.yaml) over the table of
+[_edge.tpl](../../deploy/helm/trove/templates/_edge.tpl)); the bridge of R-HA-064 keeps one rule `/` to `<fullname>` for one step.
+The HTTPRoute of R-HA-038 reads the same table and is not rendered yet (Q-HA-81).
 
 - **One host, split by path prefix (HA-012, Q-HA-71).** All client traffic of the default endpoint (UI, API, package
   protocols, raw files, login) uses one host, one port 8080 and one certificate. The edge splits each host by path prefix
@@ -4345,6 +4350,10 @@ Acceptance criteria:
 
 ### R-HA-038 · Gateway API exposure
 Priority: **MVP** · Covers: HA-040
+
+**Status.** Not rendered yet: the chart has no `gateway` values and no HTTPRoute. The path rules it will carry are the table the
+Ingress already reads ([_edge.tpl](../../deploy/helm/trove/templates/_edge.tpl)), and the BackendTLSPolicies of
+`tls.backendTLSPolicy` already name one Service each (Q-HA-81, Q-HA-85).
 
 - With `gateway.enabled: true` the chart renders an `HTTPRoute` (`gateway.networking.k8s.io/v1`).
   It attaches to `gateway.parentRefs`, with `hostnames` defaulting to the base URL's host (plus the
@@ -4582,11 +4591,9 @@ the chart's Ingress succeeds without any Ingress annotation beyond R-HA-039's.
 ### R-HA-042 · Network policies
 Priority: **MVP** · Covers: HA-054
 
-**Status.** Built: ingress policies for the `web` and `worker` pods and the migration Job, and one per further endpoint
-([networkpolicy.yaml](../../deploy/helm/trove/templates/networkpolicy.yaml),
-[endpoint-networkpolicy.yaml](../../deploy/helm/trove/templates/endpoint-networkpolicy.yaml)). Specified for phase 6a, not
-built yet: one policy per Deployment of the cut, below. Enforcement on the cluster's CNI is verified on the kind profile's
-CNI only (H-41).
+**Status.** Built (phase 6a, WP6a.3): one policy per Deployment of the cut and the migration Job
+([networkpolicy.yaml](../../deploy/helm/trove/templates/networkpolicy.yaml)). Enforcement on the cluster's CNI is verified on
+the kind profile's CNI only (H-41).
 
 The owner's rule ([ADR-154](../decisions.md#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port),
 2026-11-04): trove writes only ingress rules, only for the pods the chart deploys and between them, and every rule names its
@@ -6695,6 +6702,124 @@ endpoint with only `api` families is rare and token-only. The development agent 
 common: then a login area that is built only where the surface holds `ui`.
 
 **Applied in the spec:** R-HA-030 (the secret rows); [endpoints.md](endpoints.md) H-57.
+
+### Q-HA-81 · Whether the chart renders the HTTPRoute with the path rules of the cut
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-038 makes the HTTPRoute MVP, but the chart renders none today: there is no `gateway` value, no check of the
+Gateway API in `.Capabilities`, and no timeouts or filters. Work package WP6a.3 builds the edge's path rules, which the
+HTTPRoute would share ([_edge.tpl](../../deploy/helm/trove/templates/_edge.tpl)).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The path rules are one template (`trove.edgeRules`) that the Ingress and the BackendTLSPolicies read; the HTTPRoute with its `gateway.*` values, timeouts, filters and capability check comes with the chart completion of phase 7 (chosen) | The cut does not wait for a feature it does not need | The phase 6a exit criteria (E6a.4) name the Ingress rules; the HTTPRoute adds a template over the same table, not a second table | The R-HA-037 criterion "the chart test asserts the same for the HTTPRoute" is open until phase 7 |
+| (b) Build the HTTPRoute in WP6a.3 | Both edges at the cut | One review of the edge | Adds the values `gateway.*`, the capability check, the timeouts rule (`backendRequest` ≤ `request`) and a Gateway API schema to a package that is already the largest of the phase |
+
+**Choice:** (a).
+
+**Rationale:** the table is data, so the HTTPRoute is a loop over it, and the risk of the cut is in the rules, not in the
+second renderer. The development agent would revisit this if an installation needs the Gateway API before phase 7; then (b)
+as its own package.
+
+**Applied in the spec:** R-HA-038 (a status note), [roadmap](../coverage/roadmap.md) WP6a.3.
+
+### Q-HA-82 · How the chart passes the queues of a worker pool
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-030 names `TROVE_JOBS_QUEUES` and `TROVE_JOBS_EXCLUDE_QUEUES`; the configuration loader reads a list-valued key from
+its environment variable as one JSON (or YAML flow) list and refuses a bare `index` or `index,vuln`
+([architecture.md](architecture.md) R-ARCH-016, Q-ARCH-304).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `toJson` of the pool's `queues`, set on the Deployment after `TROVE_POOL_NAME` and before `extraEnv`, so `extraEnv` can still override (chosen) | `TROVE_JOBS_QUEUES='["vuln"]'` | The form the loader accepts; one value per variable | None |
+| (b) A comma-separated string | `vuln,index` | Readable | The loader refuses it |
+
+**Choice:** (a). The main `worker` gets `TROVE_JOBS_EXCLUDE_QUEUES` set to the sorted union of every pool's queues when at least
+one pool lists one, and no variable otherwise, so a queue a later release adds is claimed by the main Deployment.
+
+**Rationale:** the form is the loader's. The development agent would revisit this if the loader gains a second list form.
+
+**Applied in the spec:** R-HA-062 (the environment form).
+
+### Q-HA-83 · Which Services and ports a path pool takes for the further endpoints
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-EP-002 lets a process in a pool that no endpoint names (a path pool) serve the endpoints without a pool, like the main
+Deployment of its role. R-HA-062 routes a path pool's `paths` inside the host of the default endpoint. A further endpoint is
+routed whole, or by the rows of its families, to its own Services.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A path pool opens the ports of the endpoints without a pool whose surface holds a family of its role, and its NetworkPolicy admits them; the Services and the Ingress of a further endpoint select the main Deployment only, and the pool's paths apply to the default endpoint only (chosen) | The pods do what R-EP-002 says; the edge routes only what R-HA-062 names | Matches both pages; an endpoint's routing needs no pool table | A path pool's pods hold an endpoint's certificate and port without receiving its traffic |
+| (b) A path pool opens no endpoint port | Smaller policies | Fewer open ports | Contradicts R-EP-002: the process opens them anyway |
+| (c) The pool's paths also route inside every endpoint's host | Pools work on every endpoint | Symmetric | Pool Services would need the endpoint's port; unspecified |
+
+**Choice:** (a).
+
+**Rationale:** the policy has to admit what the process listens on. The development agent would revisit this if a pool's paths
+are wanted on an endpoint; then (c) with a per-endpoint pool Service.
+
+**Applied in the spec:** R-HA-062 (a sentence), R-HA-042 (the table rows).
+
+### Q-HA-84 · What a pool inherits from its role
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-062 says a pool takes "the keys of its role as overrides"; R-HA-032 gives a pool "an autoscaler of its own from its overrides".
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every key of the role, `autoscaling` included, merged key by key under the pool's own keys; an enabled autoscaler of the role is therefore the pool's too, with the pool's `replicaCount` ignored, and `autoscaling.enabled: false` in the entry switches it off (chosen) | One rule for every key | Nothing is special; the HA rules see the merged values | A pool that sets `replicaCount` under an inheriting autoscaler is scaled by the autoscaler |
+| (b) `autoscaling` is never inherited | A pool scales only when it says so | No surprise on `replicaCount` | A second rule next to "every key of the role" |
+
+**Choice:** (a). The check of `highAvailability.enforce` and the connection counts read the merged values.
+
+**Rationale:** one merge rule is checkable by a table. The development agent would revisit this if operators set `replicaCount`
+on a pool and are surprised.
+
+**Applied in the spec:** R-HA-062 (a sentence).
+
+### Q-HA-85 · The component label of the Ingress and the policy objects of the edge
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-028 lists the component values of the pods and jobs. The Ingress and the BackendTLSPolicies belong to no role since the cut,
+and a selector label with `trove/pool` belongs to the serving roles only.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `app.kubernetes.io/component: ingress` on the Ingress objects and the BackendTLSPolicies, one BackendTLSPolicy per Service the default endpoint's edge names, named as the Service (chosen) | Honest labels; no pool label | The policy's `targetRefs` name one Service | One more component value |
+| (b) `api` on every edge object | No new value | Fewer values | A selector on `component=api` would select an Ingress |
+
+**Choice:** (a).
+
+**Rationale:** the component label also feeds the `role` target label of the ServiceMonitor (R-HA-045), which pods carry and edge objects do not.
+The development agent would revisit this if the ServiceMonitor selects by Service.
+
+**Applied in the spec:** R-HA-028 (the component list), R-HA-038 (the BackendTLSPolicy per Service).
+
+### Q-HA-86 · Where the connection budget is computed and what the guard can prove offline
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-016 asks the chart to pass `serving_max` and `worker_max` to the migration Job and to print the budget in `NOTES.txt`.
+The guard of R-HA-064 reads the cluster through `lookup`, which returns nothing under `helm template` and under the chart tests.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The chart sums `maxReplicas` (or `replicaCount`) plus `maxSurge` over every Deployment (`trove.connectionCounts`), passes the two counts and prints the budget in the notes; the guard is plain template code whose cluster-dependent half (`lookup`) is verified by the upgrade e2e test and `helm upgrade --dry-run=server`, and whose offline half (inert, same output) by the chart test (chosen) | One source of the counts | The Job and the notes cannot disagree with the Deployments | The refusal itself is not exercised by `make chart-test` |
+| (b) A test seam that fakes `lookup` | The refusal is tested offline | Coverage | A value in the shipped chart whose only use is a test |
+
+**Choice:** (a).
+
+**Rationale:** a seam in the shipped chart that changes what the guard reads is a second code path in the one place that must not
+have one. The development agent would revisit this if Helm offers a way to inject cluster state into `helm template`.
+
+**Applied in the spec:** R-HA-016 (the notes), R-HA-064 (the guard's verification).
 
 ## What this does not cover
 

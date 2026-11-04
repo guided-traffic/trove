@@ -37,15 +37,15 @@ contain the chart name; fullnameOverride wins. Cut at 50 characters so that ever
 
 {{/*
 Selector labels of one component. Argument: dict "root" . "component" "web".
-web and worker pods carry trove/pool (R-HA-028): the empty value for the main Deployments, so a
-pool added later never overlaps their selectors. Selector labels are immutable, which is why the
-label is there from the first release.
+api, packages, worker and web pods carry trove/pool (R-HA-028): the empty value for the main
+Deployments, so a pool never overlaps their selectors or the role Service's. Selector labels are
+immutable, which is why the label has been there from the first release.
 */}}
 {{- define "trove.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "trove.name" .root }}
 app.kubernetes.io/instance: {{ .root.Release.Name }}
 app.kubernetes.io/component: {{ .component }}
-{{- if or (eq .component "web") (eq .component "worker") }}
+{{- if has .component (list "api" "packages" "worker" "web") }}
 trove/pool: {{ .pool | default "" | quote }}
 {{- end }}
 {{- end -}}
@@ -161,8 +161,8 @@ Seconds of a duration made of whole hours, minutes and seconds (1h30m, 90s, 5s).
 {{- add (mul $h 3600) (mul $m 60) $sec -}}
 {{- end -}}
 
-{{/* The size of the spool volume of a role. Argument: dict "root" . "role" "web", optionally "r" with
-the role's effective values (an endpoint pool passes its own). */}}
+{{/* The size of the spool volume of a role. Argument: dict "root" . "role" "packages", optionally "r" with
+the effective values of a Deployment (a pool passes its own). */}}
 {{- define "trove.spoolSize" -}}
 {{- $v := .root.Values -}}
 {{- $r := .r | default (index $v .role) -}}

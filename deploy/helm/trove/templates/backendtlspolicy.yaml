@@ -1,16 +1,21 @@
 {{- if and .Values.tls.enabled .Values.tls.backendTLSPolicy.enabled }}
 {{- /*
-How a Gateway API implementation verifies trove (R-HA-063). The policy targets the client
-Service port http. The CA reference is a ConfigMap: Gateway API takes no Secret here. The chart
+How a Gateway API implementation verifies trove (R-HA-063): one policy per Service the default
+endpoint's edge names (templates/_edge.tpl: <fullname>-api, <fullname>-packages and the Services of
+the path pools; <fullname> with web.enabled), named as the Service. Every policy targets the Service
+port http and verifies the name <fullname>.<namespace>.svc, the name the listener certificate
+carries (R-HA-037). The CA reference is a ConfigMap: Gateway API takes no Secret here. The chart
 creates neither the ConfigMap nor the CRD.
 */ -}}
+{{- range $svc := include "trove.edgeServices" . | fromYamlArray }}
+---
 apiVersion: gateway.networking.k8s.io/v1
 kind: BackendTLSPolicy
 metadata:
-  name: {{ include "trove.fullname" . }}
+  name: {{ $svc }}
   labels:
-    {{- include "trove.labels" (dict "root" . "component" "web") | nindent 4 }}
-  {{- with (include "trove.commonAnnotations" .) }}
+    {{- include "trove.labels" (dict "root" $ "component" "ingress") | nindent 4 }}
+  {{- with (include "trove.commonAnnotations" $) }}
   annotations:
     {{- . | nindent 4 }}
   {{- end }}
@@ -18,12 +23,13 @@ spec:
   targetRefs:
     - group: ""
       kind: Service
-      name: {{ include "trove.fullname" . }}
+      name: {{ $svc }}
       sectionName: http
   validation:
-    hostname: {{ default (printf "%s.%s.svc" (include "trove.fullname" .) .Release.Namespace) .Values.tls.backendTLSPolicy.hostname | quote }}
+    hostname: {{ default (printf "%s.%s.svc" (include "trove.fullname" $) $.Release.Namespace) $.Values.tls.backendTLSPolicy.hostname | quote }}
     caCertificateRefs:
       - group: ""
         kind: ConfigMap
-        name: {{ .Values.tls.backendTLSPolicy.caConfigMapName }}
+        name: {{ $.Values.tls.backendTLSPolicy.caConfigMapName }}
+{{- end }}
 {{- end }}

@@ -1,4 +1,4 @@
-# Two further endpoints beside the default one (R-EP-008): customers, served by the main web
+# Two further endpoints beside the default one (R-EP-008): customers, served by the main packages
 # pods through its own Ingress class, hosts, wildcard host and certificates chosen by SNI; and
 # partners, a minimal one. Neither has a pool of its own (ci/endpoints-pool.yaml has).
 config:

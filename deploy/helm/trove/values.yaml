@@ -1,8 +1,8 @@
-# Skeleton values of the trove chart (M0). Every value carries "# default (proposed)" or
-# "# example", as in docs/spec/ha-and-helm.md R-HA-031. Values of later phases (autoscaling,
-# NetworkPolicy, Gateway, monitoring, backup, restore, pools) are not defined yet:
-# values.schema.json refuses unknown keys, so a typo or a value of a later phase fails
-# before anything renders. docs/developer/helm-chart.md lists what is in and what is not.
+# Values of the trove chart. Every value carries "# default (proposed)" or "# example", as in
+# docs/spec/ha-and-helm.md R-HA-031. Values of features the chart does not render yet (Gateway,
+# backup, restore, the ServiceMonitor) are not defined: values.schema.json refuses unknown keys,
+# so a typo or a value of a later feature fails before anything renders.
+# docs/developer/helm-chart.md lists what is in and what is not.
 
 # ── Global ──────────────────────────────────────────────────────────────────
 global:
@@ -24,9 +24,10 @@ image:
 highAvailability:
   enforce: true                         # default (proposed): >= 2 replicas, a PDB and DoNotSchedule host spreading per role; Sentinel mode with >= 3 Sentinels (R-HA-029)
 
-# ── web Deployment: trove serve --role web (R-HA-002) ───────────────────────
-web:
-  replicaCount: 3                       # default (proposed) (Q-HA-16)
+# ── api Deployment: trove serve --role api (R-HA-002) ───────────────────────
+# The UI, the management API, the sign-in and the CI exchange; the login secrets mount here only (R-HA-030).
+api:
+  replicaCount: 2                       # default (proposed) (Q-HA-75); ignored when autoscaling.enabled
   minReadySeconds: 10                   # default (proposed)
   revisionHistoryLimit: 5               # default (proposed)
   strategy:
@@ -34,16 +35,36 @@ web:
     rollingUpdate:
       maxSurge: 1                       # default (proposed)
       maxUnavailable: 0                 # default (proposed)
-  terminationGracePeriodSeconds: 120    # default (proposed) (R-HA-011)
+  terminationGracePeriodSeconds: 120    # default (proposed) (R-HA-011): the UI's uploads and the audit exports
   spool:
-    sizeLimit: ""                       # default (proposed): empty = spool.sizeLimit (R-HA-035)
+    sizeLimit: 5Gi                      # default (proposed) (Q-HA-75): holds the UI's uploads through the content route, up to config.ui.deploy.max_upload_bytes (R-HA-029)
   resources:
     requests:
-      cpu: "1"                          # default (proposed)
-      memory: 1Gi                       # default (proposed)
-      ephemeral-storage: 2Gi            # default (proposed)
+      cpu: 500m                         # default (proposed) (Q-HA-75)
+      memory: 512Mi                     # default (proposed)
+      ephemeral-storage: 1Gi            # default (proposed)
     limits:
-      memory: 2Gi                       # default (proposed); no CPU limit by default (R-HA-036); required, sizes what a pod admits (R-HA-029)
+      memory: 1Gi                       # default (proposed); no CPU limit by default (R-HA-036)
+  autoscaling:
+    enabled: false                      # default (proposed)
+    minReplicas: 2                      # default (proposed) (Q-HA-75, R-HA-059)
+    maxReplicas: 4                      # default (proposed)
+    targetCPUUtilizationPercentage: 70  # default (proposed)
+    targetMemoryUtilizationPercentage: 0  # default (proposed): 0 = no memory metric
+    metrics: []                         # default (proposed); additional autoscaling/v2 metric specs
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 0   # default (proposed)
+        policies:
+          - type: Pods                  # default (proposed)
+            value: 2                    # default (proposed)
+            periodSeconds: 60           # default (proposed)
+      scaleDown:
+        stabilizationWindowSeconds: 300 # default (proposed)
+        policies:
+          - type: Pods                  # default (proposed)
+            value: 1                    # default (proposed)
+            periodSeconds: 120          # default (proposed)
   podDisruptionBudget:
     enabled: true                       # default (proposed)
     maxUnavailable: 1                   # default (proposed)
@@ -68,10 +89,147 @@ web:
   podAnnotations: {}                    # default (proposed)
   podLabels: {}                         # default (proposed)
   extraEnv: []                          # default (proposed); appended after the shared extraEnv
+  pools: []                             # default (proposed) (R-HA-062); example: [{name: admin, paths: [/api/v1/repositories], replicaCount: 2}]
+
+# ── packages Deployment: trove serve --role packages (R-HA-002) ─────────────
+# The package protocols and the raw file transfer, tokens only; no login secret mounts here (R-HA-030).
+packages:
+  replicaCount: 3                       # default (proposed) (Q-HA-16, Q-HA-75); ignored when autoscaling.enabled
+  minReadySeconds: 10                   # default (proposed)
+  revisionHistoryLimit: 5               # default (proposed)
+  strategy:
+    type: RollingUpdate                 # default (proposed)
+    rollingUpdate:
+      maxSurge: 1                       # default (proposed)
+      maxUnavailable: 0                 # default (proposed)
+  terminationGracePeriodSeconds: 120    # default (proposed) (R-HA-011)
+  spool:
+    sizeLimit: ""                       # default (proposed): empty = spool.sizeLimit (R-HA-035)
+  resources:
+    requests:
+      cpu: "1"                          # default (proposed)
+      memory: 1Gi                       # default (proposed)
+      ephemeral-storage: 2Gi            # default (proposed)
+    limits:
+      memory: 2Gi                       # default (proposed); no CPU limit by default (R-HA-036)
+  autoscaling:
+    enabled: false                      # default (proposed)
+    minReplicas: 3                      # default (proposed) (Q-HA-16, Q-HA-75, R-HA-059)
+    maxReplicas: 8                      # default (proposed)
+    targetCPUUtilizationPercentage: 70  # default (proposed)
+    targetMemoryUtilizationPercentage: 0  # default (proposed): 0 = no memory metric
+    metrics: []                         # default (proposed); additional autoscaling/v2 metric specs
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 0   # default (proposed)
+        policies:
+          - type: Pods                  # default (proposed)
+            value: 2                    # default (proposed)
+            periodSeconds: 60           # default (proposed)
+      scaleDown:
+        stabilizationWindowSeconds: 300 # default (proposed)
+        policies:
+          - type: Pods                  # default (proposed)
+            value: 1                    # default (proposed)
+            periodSeconds: 120          # default (proposed)
+  podDisruptionBudget:
+    enabled: true                       # default (proposed)
+    maxUnavailable: 1                   # default (proposed)
+    minAvailable: null                  # default (proposed); mutually exclusive with maxUnavailable
+    unhealthyPodEvictionPolicy: AlwaysAllow  # default (proposed) (R-HA-008)
+  topologySpread:
+    enabled: true                       # default (proposed): render the two constraints below
+    nodeTaintsPolicy: Honor             # default (proposed): cordoned nodes do not count as domains (R-HA-059)
+    zone:
+      maxSkew: 1                        # default (proposed)
+      whenUnsatisfiable: ScheduleAnyway # default (proposed)
+    host:
+      maxSkew: 1                        # default (proposed)
+      whenUnsatisfiable: DoNotSchedule  # default (proposed); required with highAvailability.enforce
+  topologySpreadConstraints: []         # default (proposed); non-empty replaces the generated constraints
+  nodeFailureTolerationSeconds: 60      # default (proposed); not-ready/unreachable tolerations (R-HA-032)
+  affinity: {}                          # default (proposed)
+  nodeSelector: {}                      # default (proposed); example: {kubernetes.io/arch: arm64}
+  tolerations: []                       # default (proposed)
+  priorityClassName: ""                 # default (proposed); example: business-critical
+  schedulerName: ""                     # default (proposed)
+  podAnnotations: {}                    # default (proposed)
+  podLabels: {}                         # default (proposed)
+  extraEnv: []                          # default (proposed); appended after the shared extraEnv
+  pools: []                             # default (proposed) (R-HA-062); example: [{name: npm, paths: [/api/npm], replicaCount: 4}]
+
+# ── web Deployment: the bridge of the upgrade across the cut (R-HA-064) ─────
+# Rendered only with web.enabled: trove serve --role web, the Service <fullname> and the edge of the releases
+# before the cut. Every other key keeps its meaning and default of those releases; a fresh installation never sets it.
+web:
+  enabled: false                        # default (proposed) (Q-ARCH-295, Q-HA-73): true for the first step only
+  replicaCount: 3                       # default (proposed) (Q-HA-16); ignored when autoscaling.enabled
+  minReadySeconds: 10                   # default (proposed)
+  revisionHistoryLimit: 5               # default (proposed)
+  strategy:
+    type: RollingUpdate                 # default (proposed)
+    rollingUpdate:
+      maxSurge: 1                       # default (proposed)
+      maxUnavailable: 0                 # default (proposed)
+  terminationGracePeriodSeconds: 120    # default (proposed) (R-HA-011)
+  spool:
+    sizeLimit: ""                       # default (proposed): empty = spool.sizeLimit (R-HA-035)
+  resources:
+    requests:
+      cpu: "1"                          # default (proposed)
+      memory: 1Gi                       # default (proposed)
+      ephemeral-storage: 2Gi            # default (proposed)
+    limits:
+      memory: 2Gi                       # default (proposed); no CPU limit by default (R-HA-036)
+  autoscaling:
+    enabled: false                      # default (proposed)
+    minReplicas: 3                      # default (proposed) (Q-HA-16, R-HA-059)
+    maxReplicas: 8                      # default (proposed)
+    targetCPUUtilizationPercentage: 70  # default (proposed)
+    targetMemoryUtilizationPercentage: 0  # default (proposed): 0 = no memory metric
+    metrics: []                         # default (proposed); additional autoscaling/v2 metric specs
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 0   # default (proposed)
+        policies:
+          - type: Pods                  # default (proposed)
+            value: 2                    # default (proposed)
+            periodSeconds: 60           # default (proposed)
+      scaleDown:
+        stabilizationWindowSeconds: 300 # default (proposed)
+        policies:
+          - type: Pods                  # default (proposed)
+            value: 1                    # default (proposed)
+            periodSeconds: 120          # default (proposed)
+  podDisruptionBudget:
+    enabled: true                       # default (proposed)
+    maxUnavailable: 1                   # default (proposed)
+    minAvailable: null                  # default (proposed); mutually exclusive with maxUnavailable
+    unhealthyPodEvictionPolicy: AlwaysAllow  # default (proposed) (R-HA-008)
+  topologySpread:
+    enabled: true                       # default (proposed): render the two constraints below
+    nodeTaintsPolicy: Honor             # default (proposed): cordoned nodes do not count as domains (R-HA-059)
+    zone:
+      maxSkew: 1                        # default (proposed)
+      whenUnsatisfiable: ScheduleAnyway # default (proposed)
+    host:
+      maxSkew: 1                        # default (proposed)
+      whenUnsatisfiable: DoNotSchedule  # default (proposed); required with highAvailability.enforce
+  topologySpreadConstraints: []         # default (proposed); non-empty replaces the generated constraints
+  nodeFailureTolerationSeconds: 60      # default (proposed); not-ready/unreachable tolerations (R-HA-032)
+  affinity: {}                          # default (proposed)
+  nodeSelector: {}                      # default (proposed); example: {kubernetes.io/arch: arm64}
+  tolerations: []                       # default (proposed)
+  priorityClassName: ""                 # default (proposed); example: business-critical
+  schedulerName: ""                     # default (proposed)
+  podAnnotations: {}                    # default (proposed)
+  podLabels: {}                         # default (proposed)
+  extraEnv: []                          # default (proposed); appended after the shared extraEnv
+  pools: []                             # default (proposed): kept for the releases before the cut; ignored, the bridge renders no path pool
 
 # ── worker Deployment: trove serve --role worker (R-HA-002) ─────────────────
 worker:
-  replicaCount: 2                       # default (proposed) (Q-HA-16); at least 1 (R-HA-002)
+  replicaCount: 2                       # default (proposed) (Q-HA-16)
   minReadySeconds: 10                   # default (proposed)
   revisionHistoryLimit: 5               # default (proposed)
   strategy:
@@ -81,7 +239,7 @@ worker:
       maxUnavailable: 0                 # default (proposed)
   terminationGracePeriodSeconds: 300    # default (proposed): jobs persist their cursor before exit
   spool:
-    sizeLimit: 5Gi                      # default (proposed) in storage.md R-HA-035: workers spool only job output (reports, cache fills) and accept no uploads, so config.storage.upload.max_size need not fit (the binary checks that rule on web and all only)
+    sizeLimit: 5Gi                      # default (proposed); workers spool only cache fills of jobs, one advisory archive while a sync runs (config.vulnerabilities.sources.osv.max_archive_size, validated) and, from P1, the nuget-symbol-index job's one extracted PDB at a time (formats/nuget.md R-NUGET-021)
   resources:
     requests:
       cpu: 500m                         # default (proposed)
@@ -89,6 +247,14 @@ worker:
       ephemeral-storage: 1Gi            # default (proposed)
     limits:
       memory: 1Gi                       # default (proposed)
+  autoscaling:
+    enabled: false                      # default (proposed)
+    minReplicas: 2                      # default (proposed)
+    maxReplicas: 4                      # default (proposed)
+    targetCPUUtilizationPercentage: 80  # default (proposed)
+    targetMemoryUtilizationPercentage: 0  # default (proposed)
+    metrics: []                         # default (proposed)
+    behavior: {}                        # default (proposed): Kubernetes defaults
   podDisruptionBudget:
     enabled: true                       # default (proposed)
     maxUnavailable: 1                   # default (proposed)
@@ -102,7 +268,7 @@ worker:
       whenUnsatisfiable: ScheduleAnyway # default (proposed)
     host:
       maxSkew: 1                        # default (proposed)
-      whenUnsatisfiable: DoNotSchedule  # default (proposed): workers spread evenly (INV-12)
+      whenUnsatisfiable: DoNotSchedule  # default (proposed): workers spread evenly; with nodes ≥ replicas no two share a node (INV-12)
   topologySpreadConstraints: []         # default (proposed)
   nodeFailureTolerationSeconds: 60      # default (proposed)
   affinity: {}                          # default (proposed)
@@ -113,6 +279,7 @@ worker:
   podAnnotations: {}                    # default (proposed)
   podLabels: {}                         # default (proposed)
   extraEnv: []                          # default (proposed)
+  pools: []                             # default (proposed) (R-HA-062); example: [{name: vuln, queues: [vuln], replicaCount: 2}]; the main worker claims every queue no pool lists
 
 # ── trove configuration (rendered to /etc/trove/trove.yaml) ─────────────────
 # Chart-managed keys (secret file paths, storage.spool.dir) must not be set here (R-HA-029).
@@ -296,12 +463,12 @@ secrets:
     existingSecret: ""                  # default (proposed): no client certificate; needed while Valkey keeps tls-auth-clients yes
     certKey: tls.crt                    # default (proposed)
     keyKey: tls.key                     # default (proposed)
-  oidc: []                              # default (proposed): no client secrets; web pods only (R-AUTH-042). Each entry mounts the Secret at /var/run/secrets/trove/oidc-<providerId>/ and renders client_secret_file of that provider; the provider itself is config.auth.oidc.providers.<providerId>
+  oidc: []                              # default (proposed): no client secrets; mounted in api pods only (R-AUTH-042, Q-HA-79). Each entry mounts the Secret at /var/run/secrets/trove/oidc-<providerId>/ and renders client_secret_file of that provider; the provider itself is config.auth.oidc.providers.<providerId>
   #  - providerId: corp                 # example; the ID of a provider in config.auth.oidc.providers ([a-z0-9-], at most 32)
   #    existingSecret: trove-oidc-corp  # example
   #    key: client-secret               # default (proposed)
   breakGlass:
-    existingSecret: ""                  # default (proposed): empty = config.auth.break_glass.enabled false; example: trove-break-glass. Web pods only (R-AUTH-014, R-AUTH-042)
+    existingSecret: ""                  # default (proposed): empty = config.auth.break_glass.enabled false; example: trove-break-glass. api pods only (R-AUTH-014, R-AUTH-042, Q-HA-79)
     key: password                       # default (proposed); plaintext (at least 20 characters) or an Argon2id PHC hash
   encryption:
     existingSecret: ""                  # required; example: trove-encryption-keys
@@ -318,9 +485,10 @@ metrics:
     disabledAlerts: []                  # default (proposed); example: [TroveVulnerabilitySyncFailing]
     extraRules: []                      # default (proposed); appended after the alerts of the chart
 
-# ── Network policy (R-HA-042; ingress only, egress is not rendered yet) ─────
+# ── Network policy (R-HA-042, ADR-154): ingress rules only, one policy per Deployment, each rule with its port ─
+# No egress value exists: the chart renders no egress rule and no policy for pods it does not deploy.
 networkPolicy:
-  enabled: true                         # default (proposed): web and worker accept only the listed peers; the migration Job accepts nothing
+  enabled: true                         # default (proposed): every Deployment accepts only the ports it opens, from the listed peers; the migration Job accepts nothing
   ingress:
     http:
       from: []                          # default (proposed): empty = port 8080 from anywhere, so the ingress controller works wherever it runs; example: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: traefik}}}]
@@ -401,6 +569,8 @@ service:
   type: ClusterIP                       # default (proposed): ClusterIP | LoadBalancer | NodePort
   port: 8080                            # default (proposed)
   opsPort: 8081                         # default (proposed)
+  # The role Services <fullname>-api and <fullname>-packages, the Services of the path pools and, with web.enabled, <fullname> take type and port from here.
+  # A LoadBalancer or NodePort role Service reaches one role only: a host is split between roles at the Ingress (R-HA-037).
   # No sessionAffinity value: every Service renders sessionAffinity: None (R-HA-037).
   annotations: {}                       # default (proposed)
   labels: {}                            # default (proposed)
@@ -411,7 +581,8 @@ ingress:
   annotations: {}                       # default (proposed); controller-specific settings; never cookie affinity (R-HA-037)
   labels: {}                            # default (proposed)
   hosts: []                             # default (proposed): empty = host of config.server.base_url
-  # No path value: every host is routed whole, path / with pathType Prefix (R-HA-037).
+  # No path value: every host gets the fixed path rules of R-HA-037 (Prefix rules per route family onto <fullname>-api and
+  # <fullname>-packages, plus the paths of api.pools and packages.pools; / onto <fullname> with web.enabled).
   tls: []                               # default (proposed); example: [{secretName: trove-tls, hosts: [trove.example.com]}]
   backendTLS:                           # how the controller reaches trove when tls.enabled (R-HA-063); trove speaks HTTPS, so the controller must too
     controller: haproxy                 # default (proposed): haproxy (HAProxy Ingress, the primary target) | traefik | ingress-nginx | manual (you set the backend protocol in ingress.annotations / service.annotations)
@@ -422,7 +593,7 @@ ingress:
 
 # ── Endpoints (R-EP-008, docs/spec/endpoints.md) ──────────────────────────
 # Further client entry points, each with its own listener port, Service, Ingress, NetworkPolicy,
-# certificates and optionally its own pool of web pods. The default endpoint (:8080, config.server.base_url,
+# certificates and optionally its own pool of pods per role its surface holds (R-EP-008, Q-EP-70). The default endpoint (:8080, config.server.base_url,
 # tls.*, ingress.*) always exists; an entry named default tunes it, with these keys only: hosts,
 # wildcardHost, hostRoots, wildcardRoot, surface, auth, exposure, cacheFill, rateLimitClass, replicaHeader.
 # The chart renders the entries into server.endpoints of trove.yaml; config.server.endpoints is refused.
@@ -450,8 +621,8 @@ endpoints: {}                           # default (proposed): only the default e
 #      extraSecrets: []                 # default (proposed); example [trove-packages-wildcard-tls]: further pairs, chosen by SNI
 #      clientCaSecret: ""               # default (proposed): no client certificates; example trove-customer-ca (key ca.crt)
 #    pool:
-#      enabled: false                   # default (proposed): served by <fullname>-web; true renders <fullname>-web-ep-<name>
-#      replicaCount: 2                  # default (proposed) when enabled; every key of web may be overridden here
+#      enabled: false                   # default (proposed): served by the main Deployments of the roles the surface holds; true renders <fullname>-packages-ep-<name> and, with api families, <fullname>-api-ep-<name> (<fullname>-web-ep-<name> with web.enabled)
+#      replicaCount: 2                  # default (proposed) when enabled; every key of the role's values (api or packages) may be overridden here
 #    service:
 #      type: ClusterIP                  # default (proposed): ClusterIP | LoadBalancer | NodePort
 #      annotations: {}                  # default (proposed)

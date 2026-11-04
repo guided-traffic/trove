@@ -1,15 +1,15 @@
+{{- /* One policy/v1 PodDisruptionBudget of a Deployment. Argument: dict "root" . "unit" <one entry of trove.units>. */ -}}
 {{- define "trove.pdb" -}}
 {{- $ := .root }}
-{{- $role := .role }}
-{{- $pool := .pool }}
-{{- $r := .r }}
+{{- $unit := .unit }}
+{{- $r := $unit.r }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ include "trove.fullname" $ }}-{{ .name }}
+  name: {{ include "trove.fullname" $ }}-{{ $unit.name }}
   labels:
-    {{- include "trove.labels" (dict "root" $ "component" $role "pool" $pool) | nindent 4 }}
+    {{- include "trove.labels" (dict "root" $ "component" $unit.role "pool" $unit.pool) | nindent 4 }}
   {{- with (include "trove.commonAnnotations" $) }}
   annotations:
     {{- . | nindent 4 }}
@@ -23,20 +23,11 @@ spec:
   unhealthyPodEvictionPolicy: {{ $r.podDisruptionBudget.unhealthyPodEvictionPolicy }}
   selector:
     matchLabels:
-      {{- include "trove.selectorLabels" (dict "root" $ "component" $role "pool" $pool) | nindent 6 }}
+      {{- include "trove.selectorLabels" (dict "root" $ "component" $unit.role "pool" $unit.pool) | nindent 6 }}
 {{- end -}}
-{{- range $role := list "web" "worker" }}
-{{- $r := index $.Values $role }}
-{{- if $r.podDisruptionBudget.enabled }}
-{{- include "trove.pdb" (dict "root" $ "role" $role "pool" "" "name" $role "r" $r) | nindent 0 }}
-{{- end }}
-{{- end }}
-{{- /* The pool of an endpoint gets the disruption budget of the web values it overrides (R-EP-008). */}}
-{{- range $name := include "trove.endpointNames" . | fromYamlArray }}
-{{- if include "trove.endpointPool" (dict "root" $ "name" $name) }}
-{{- $r := include "trove.endpointPoolValues" (dict "root" $ "name" $name) | fromYaml }}
-{{- if $r.podDisruptionBudget.enabled }}
-{{- include "trove.pdb" (dict "root" $ "role" "web" "pool" (printf "ep-%s" $name) "name" (printf "web-ep-%s" $name) "r" $r) | nindent 0 }}
-{{- end }}
+{{- /* One PodDisruptionBudget per Deployment that enables it (R-HA-032): every role, every pool, every endpoint pool. */ -}}
+{{- range $unit := include "trove.units" . | fromYamlArray }}
+{{- if $unit.r.podDisruptionBudget.enabled }}
+{{- include "trove.pdb" (dict "root" $ "unit" $unit) | nindent 0 }}
 {{- end }}
 {{- end }}
