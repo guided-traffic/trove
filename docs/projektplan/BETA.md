@@ -861,10 +861,12 @@ areas.
   and worker pools), R-HA-064 (the upgrade across the cut in two steps through the bridge `web.enabled`), R-EP-008 (endpoint
   pools by role), the UI's content routes on `api` (Q-UI-106); ADR-013, ADR-104 and ADR-105 revised; decisions Q-ARCH-294 to
   Q-ARCH-299, Q-HA-71 to Q-HA-79, Q-EP-70, Q-EP-71, Q-OPS-161, Q-UI-106, Q-UI-107; work packages WP6a.1 to WP6a.5
-- ⚪ The roles in the binary (`SubsystemsFor` and the wiring areas) and in the chart: a Deployment, Service, disruption
-  budget, autoscaler and ingress rule per role, path routing, path and worker pools, the upgrade bridge (WP6a.1 to WP6a.4)
-- ⚪ Tests: the role table in the architecture test, chart tests per role, e2e with every role deployed, a drain per role,
-  the upgrade across the cut (WP6a.5, E6a.1 to E6a.8)
+- 🟢 The roles in the binary (`SubsystemsFor` and the wiring areas) and in the chart: a Deployment, Service, disruption
+  budget, autoscaler and ingress rule per role, path routing, path and worker pools, the upgrade bridge (WP6a.1 to WP6a.4);
+  the findings of the code review and the security audit fixed (Q-HA-90 to Q-HA-93, Q-ARCH-306, Q-ARCH-307, Q-UI-111)
+- 🟡 Tests: the role table in the architecture test, chart tests per role and `TestE03Roles` (every role deployed, routing,
+  access logs, the other family an unknown path at the pod) are green on kind. Open: `TestDrainRoles` (set `drain-roles`,
+  nightly) has not run yet, and the e2e test of the upgrade across the cut (E6a.7) is not built (WP6a.5, E6a.1 to E6a.8)
 
 ## Phase 6b · Remote full mirror
 
