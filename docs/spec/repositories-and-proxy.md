@@ -2557,8 +2557,11 @@ Priority: **MVP** · Covers: trove-only
     replicas that fill client misses in the replica registry
     ([operations-and-observability.md](operations-and-observability.md) R-OPS-003), at least 1,
     refreshed with the registry heartbeat: `packages` and its pools after the cut into roles, `web` before it and in the
-    upgrade bridge, or `all` in the local profile ([architecture.md](architecture.md) Q-ARCH-297, phase 6a). `api`
-    replicas fill nothing and are not counted.
+    upgrade bridge, or `all` in the local profile ([architecture.md](architecture.md) Q-ARCH-297). `api`
+    replicas fill nothing and are not counted, and neither are `worker` replicas. The count is `cluster.FillCount`
+    ([internal/cluster/replica_roles.go](../../internal/cluster/replica_roles.go)), a count of its own that the proxy's
+    slots read (`proxy.Options.Replicas`); the limiters of the client listener count the replicas of their own role and
+    pool instead (R-ARCH-034), so the two numbers differ by design (Q-OPS-165).
   - The cluster-wide total therefore stays within `maxConcurrentFetches + n − 1` whatever the
     replica count, once every replica has read the current n, which after a scale event takes one
     heartbeat. A budget smaller than n admits one fetch per replica. Valkey plays no part, so the

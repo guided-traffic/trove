@@ -390,3 +390,15 @@ type noopExporter struct{}
 
 func (noopExporter) ExportSpans(context.Context, []sdktrace.ReadOnlySpan) error { return nil }
 func (noopExporter) Shutdown(context.Context) error                             { return nil }
+
+// TestBuildInfoRoleValuesOfTheCut: trove_build_info{role} is the name given to --role (Q-OPS-161).
+func TestBuildInfoRoleValuesOfTheCut(t *testing.T) {
+	for _, role := range []string{"api", "packages", "worker", "web", "all"} {
+		t.Run("R-OPS-006 Q-OPS-161 build info of a "+role+" replica", func(t *testing.T) {
+			body := scrapeBody(t, NewMetrics(role), "")
+			if !strings.Contains(grepLines(body, "trove_build_info{"), `role="`+role+`"`) {
+				t.Errorf("build info lacks role=%q:\n%s", role, grepLines(body, "build_info"))
+			}
+		})
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
+	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
@@ -53,9 +54,10 @@ func RingsCompatible(rings []ReplicaRing, referenced []string) bool {
 	return true
 }
 
-func opensSecrets(role string) bool {
-	return role == "api" || role == "packages" || role == "web" || role == "worker" || role == "all"
-}
+// opensSecrets reports whether a replica of the role opens stored secrets, so that its key ring counts in the compatibility
+// rule: every role that registers (Q-OPS-161). packages opens the secrets of the remote repositories it fetches with, api
+// the ones it seals, worker the ones its jobs use.
+func opensSecrets(role string) bool { return config.ValidRole(role) }
 
 // keyRingPrecondition builds the precondition of the secrets-reencrypt trigger:
 // 409 key_ring_incompatible while RingsCompatible is false (R-OPS-019).
@@ -151,7 +153,7 @@ func (s *Server) GetEncryptionStatus(w http.ResponseWriter, r *http.Request) {
 		ids := append([]string{}, rep.KeyIDs...)
 		sort.Strings(ids)
 		out.Replicas = append(out.Replicas, gen.EncryptionReplica{
-			Name: rep.Name, Role: gen.EncryptionReplicaRole(rep.Role), ActiveKeyId: rep.ActiveKeyID, KeyIds: ids,
+			Name: rep.Name, Role: gen.EncryptionReplicaRole(roleClass(rep.Role)), RoleName: rep.Role, ActiveKeyId: rep.ActiveKeyID, KeyIds: ids,
 		})
 	}
 	sort.Slice(out.Replicas, func(i, j int) bool { return out.Replicas[i].Name < out.Replicas[j].Name })

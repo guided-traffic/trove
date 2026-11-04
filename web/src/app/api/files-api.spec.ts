@@ -1,5 +1,6 @@
 import {
   HASH_LIMIT_BYTES,
+  contentPath,
   encodePath,
   hexOfReprDigest,
   isFilesAddress,
@@ -23,6 +24,15 @@ describe('files API helpers', () => {
 
   it('R-GENERIC-002 every path segment is percent-encoded and the slashes stay', () => {
     expect(encodePath('@team-a/ui/-/ui 1.0.0.tgz')).toBe('%40team-a/ui/-/ui%201.0.0.tgz');
+  });
+
+  it('R-API-025 Q-UI-106 the upload goes to the content route of the repository, on the API origin, segment by segment', () => {
+    expect(contentPath('generic-local', 'releases/1.0/app.zip')).toBe(
+      '/api/v1/repositories/generic-local/content/releases/1.0/app.zip',
+    );
+    expect(contentPath('my repo', '@team-a/ui 1.0.tgz')).toBe(
+      '/api/v1/repositories/my%20repo/content/%40team-a/ui%201.0.tgz',
+    );
   });
 
   it('R-EP-017 a client address template of the raw files family is recognised', () => {

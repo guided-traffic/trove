@@ -22,8 +22,10 @@ import {
   failingChecks,
   keyStatus,
   mixedVersions,
+  PoolGroup,
   RingGap,
   ringGaps,
+  RoleGroup,
   roleGroups,
   rotationStep,
   serviceState,
@@ -164,6 +166,10 @@ export class SystemStatus {
     this.paused.update((p) => !p);
   }
 
+  /** The id of the heading of a sub-group: the role's main Deployment, or one of its pools. */
+  protected headingId(g: RoleGroup, p: PoolGroup): string {
+    return p.pool === null ? 'role-' + g.role + '-main' : 'role-' + g.role + '-pool-' + p.pool;
+  }
   protected failing = failingChecks;
   protected degraded = degradedChecks;
   protected keyStatus = keyStatus;

@@ -132,7 +132,7 @@ mux.Handle("/ui/", h) // do not strip the prefix
 | `/admin/endpoints/:endpoint` | [endpoint-detail](../../web/src/app/features/endpoints/endpoint-detail.ts) | `EndpointsApi`, `RepositoriesApi` | Read-only configuration, mode `all` banner, rule table with the enable switch (`PATCH {enabled}`), client addresses |
 | `/admin/endpoints/:endpoint/rules/new`, `…/rules/:name` | [exposure-rule-editor](../../web/src/app/features/endpoints/exposure-rule-editor.ts) | `EndpointsApi`, `RepositoriesApi` | Dimensions by pattern subject; preview through `check-exposure` after 500 ms; diff dialog before `PUT`; create with an idempotency key |
 | `/admin/audit` | [audit-log](../../web/src/app/features/audit/audit-log.ts) | `AuditApi` | Data table (always newest first, no sort control); filter panel; filters and the open event in the query; keyset "Load more"; UTC switch; export links |
-| `/admin/system` | [system-status](../../web/src/app/features/system/system-status.ts) | `SystemApi`, `EncryptionApi`, `JobsApi` | Key card with per-replica rings, scheduled tasks card, recent jobs |
+| `/admin/system` | [system-status](../../web/src/app/features/system/system-status.ts) | `SystemApi`, `EncryptionApi`, `JobsApi` | Replicas by role (`roleGroups` in [system-status-model.ts](../../web/src/app/features/system/system-status-model.ts): the groups `api`, `packages`, `worker`, then `web` and `all` while listed, a sub-group per pool, Q-UI-107, Q-UI-110), key card with per-replica rings, scheduled tasks card, recent jobs |
 | `/admin/system/jobs` | [jobs-page](../../web/src/app/features/system/jobs-page.ts) | `JobsApi` | Filters `kind` and `state`; refresh with a pause control; cancel |
 
 Every screen has a loading, an empty, an error and a filled state, covered by component specs that run axe (no serious or critical violation).
@@ -272,7 +272,8 @@ journey is `09-guides.spec.ts` ([e2e.md](e2e.md#browser-journeys)).
 - **R-UI-001**: no `bypassSecurityTrust` or `addSvgIcon` in `web/src`. Icons are font ligatures
   (`<span class="material-icons" aria-hidden="true">menu</span>`).
 - **R-ARCH-007**: no string literal starting with `/files/` or `/api/<id>/` (other than `/api/vN/`)
-  outside `web/src/app/api/`. Content URLs come from `downloadUrl` fields.
+  outside `web/src/app/api/`. Content URLs come from `downloadUrl` fields (copy buttons, for clients with a token) and from `contentUrl` fields
+  (the Download links, which the session cookie authenticates on `api`, Q-UI-106); the one upload URL is `contentPath` in `api/files-api.ts`.
 - **Missing translation fails the build** (`i18nMissingTranslation: error`): every UI text carries an
   `i18n` attribute or `$localize` with an `@@id`; ids are dotted (`shell.nav`). Add the German
   target in the same change and any new product term to the glossary.

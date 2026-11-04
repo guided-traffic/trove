@@ -11,6 +11,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countFillingReplicas = `-- name: CountFillingReplicas :one
+SELECT count(*)::int AS live
+  FROM replica
+ WHERE heartbeat_at >= now() - make_interval(secs => $1::float8)
+   AND roles && ARRAY['packages', 'web', 'all']::text[]
+`
+
+// The n of the fetch share of a remote repository (R-REPO-040, Q-ARCH-297): the live replicas that fill client misses,
+// which are the replicas of packages and of the bridge role web, their pools included, and of the development role
+// all. A replica of api, which sends the upstream test and nothing else, and of worker holds no share.
+func (q *Queries) CountFillingReplicas(ctx context.Context, staleSecs float64) (int32, error) {
+	row := q.db.QueryRow(ctx, countFillingReplicas, staleSecs)
+	var live int32
+	err := row.Scan(&live)
+	return live, err
+}
+
 const deleteReplica = `-- name: DeleteReplica :exec
 DELETE FROM replica WHERE instance_uid = $1::text::uuid
 `

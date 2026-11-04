@@ -82,6 +82,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpserver.Problem(w, r, errs.E(errs.NotFound, errs.CodeNotFound, "No route matches the request path."))
 		return
 	}
+	h.serve(w, r, key, rest, 0)
+}
+
+// serve answers a request of repository key whose escaped path below the repository is rest: the transfer of /files/
+// and, with maxUpload set by the content routes (content.go), the same transfer behind the limit of the UI's uploads.
+// maxUpload is the largest PUT the route takes; 0 is no limit of its own.
+func (h *Handler) serve(w http.ResponseWriter, r *http.Request, key, rest string, maxUpload int64) {
 	if strings.HasPrefix(rest, "/") {
 		// "/files/<key>//x": CleanPath ignores one leading slash, which here is an
 		// empty first segment (R-GENERIC-002).
@@ -128,7 +135,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case http.MethodGet, http.MethodHead:
 			h.get(w, r, caller, key, p)
 		case http.MethodPut:
-			h.put(w, r, caller, key, p)
+			h.put(w, r, caller, key, p, maxUpload)
 		default:
 			h.delete(w, r, caller, key, p)
 		}
@@ -269,7 +276,7 @@ func queryOf(r *http.Request) string {
 }
 
 // put deploys a file or creates a folder (R-STOR-007).
-func (h *Handler) put(w http.ResponseWriter, r *http.Request, caller files.Caller, key string, p repository.Cleaned) {
+func (h *Handler) put(w http.ResponseWriter, r *http.Request, caller files.Caller, key string, p repository.Cleaned, maxUpload int64) {
 	expect, err := edge.ParseReprDigest(r.Header)
 	if err != nil {
 		httpserver.Problem(w, r, err)
@@ -281,8 +288,12 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request, caller files.Calle
 		return
 	}
 	ctx := r.Context()
+	var body io.Reader = r.Body
+	if maxUpload > 0 {
+		body = &limitBody{r: r.Body, limit: maxUpload, declared: r.ContentLength}
+	}
 	res, err := h.svc.Deploy(ctx, caller, files.DeployRequest{
-		Repo: key, Path: p, Body: r.Body, ContentLength: r.ContentLength, MediaType: mt, Expect: expect,
+		Repo: key, Path: p, Body: body, ContentLength: r.ContentLength, MediaType: mt, Expect: expect,
 		CreateOnly:  strings.TrimSpace(r.Header.Get("If-None-Match")) == "*",
 		BeginCommit: func() { httpserver.BeginCommit(ctx) },
 	})

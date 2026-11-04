@@ -35,7 +35,8 @@ export const HASH_LIMIT_BYTES = 256 * 1024 * 1024;
 
 /**
  * `ui.deploy.max_upload_bytes` (R-UI-012, default 100 MiB). The UI cannot read the configuration
- * (no API member carries it), so the default is a constant; the server's own limit still decides.
+ * (no API member carries it), so the default is a constant; the server's own limit still decides, and answers
+ * 413 on the content route before it spools a larger body (R-API-025, Q-UI-106).
  */
 export const UPLOAD_LIMIT_BYTES = 100 * 1024 * 1024;
 
@@ -60,6 +61,15 @@ export function isFilesAddress(template: string): boolean {
 /** Percent-encodes every segment of a repository path and keeps the slashes. */
 export function encodePath(path: string): string {
   return path.split('/').map(encodeURIComponent).join('/');
+}
+
+/**
+ * The content route of a path in a repository (R-API-025, Q-UI-106): the one place that builds the URL of an upload.
+ * The session cookie authenticates it on the role `api`, on the origin the UI was loaded from; the downloads of the UI use
+ * the `contentUrl` the server sends, never a string assembled here (R-UI-001).
+ */
+export function contentPath(repository: string, path: string): string {
+  return `/api/v1/repositories/${encodeURIComponent(repository)}/content/${encodePath(path)}`;
 }
 
 /** SHA-256 of the file as the `Repr-Digest` value of RFC 9530, or undefined above the limit. */
@@ -189,23 +199,18 @@ export class HttpFilesApi extends FilesApi {
     };
     if (request.reprDigest) headers['Repr-Digest'] = request.reprDigest;
     if (!request.overwrite) headers['If-None-Match'] = '*';
-    return this.put(
-      request,
-      `/files/${encodeURIComponent(request.repository)}/${encodePath(request.path)}`,
-      request.file,
-      headers,
-    );
+    return this.put(request, contentPath(request.repository, request.path), request.file, headers);
   }
 
   createFolder(repository: string, path: string): Promise<Item> {
-    const url = `/files/${encodeURIComponent(repository)}/${encodePath(path)}/`;
-    return this.put({}, url, new Blob([]), {});
+    return this.put({}, `${contentPath(repository, path)}/`, new Blob([]), {});
   }
 
   /**
    * Uploads go through an XHR-based client, because the fetch backend reports no upload progress
-   * (R-UI-012). The client has no trove interceptors (they cover `/api/v1/` only); it keeps the
-   * XSRF protection, maps a failure to `ApiError` and ends the session on a 401.
+   * (R-UI-012). The client has no trove interceptors of its own; it keeps the XSRF protection (the content
+   * route is a session route, so a PUT carries the CSRF token), maps a failure to `ApiError` and ends the
+   * session on a 401.
    */
   private put(
     options: {

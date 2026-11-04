@@ -106,6 +106,7 @@ function version(
         sizeBytes: 48213,
         sha256: sha(0x5be0c1d2),
         downloadUrl: `${BASE}/api/npm/npm-local/${file}`,
+        contentUrl: `/api/v1/repositories/npm-local/content/${file}`,
       },
     ],
     readme: {
@@ -167,6 +168,7 @@ function nugetVersion(v: string, over: Partial<FakeVersion> = {}): FakeVersion {
         sizeBytes: 20480,
         sha256: sha(0x7ac3),
         downloadUrl: `${BASE}/api/nuget/nuget-local/v3/flatcontainer/${file}`,
+        contentUrl: `/api/v1/repositories/nuget-local/content/${file}`,
       },
     ],
     readme: {

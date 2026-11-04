@@ -17,7 +17,7 @@ trove installs with its Helm chart and consumes the services below; the chart de
 | Ingress controller | HAProxy Ingress is the default and tested target. The chart also renders the backend-TLS settings for Traefik and ingress-nginx, which are tested for their rendering only. With `controller: manual` you set the backend protocol yourself. |
 | OpenID Connect provider | A client for trove using the authorization-code flow, with the redirect URI `<base URL>/auth/oidc/<provider ID>/callback`. |
 
-trove's pods need no persistent volume: the spool and `/tmp` are ephemeral. The default resources are 3 `web` pods with 1 CPU and 1 GiB requested and a 2 GiB memory limit, and 2 `worker` pods with 0.5 CPU and 512 MiB requested and a 1 GiB limit.
+trove's pods need no persistent volume: the spool and `/tmp` are ephemeral. The default resources are 2 `api` pods with 0.5 CPU and 512 MiB requested and a 1 GiB memory limit, 3 `packages` pods with 1 CPU and 1 GiB requested and a 2 GiB memory limit, and 2 `worker` pods with 0.5 CPU and 512 MiB requested and a 1 GiB limit.
 
 ## Get the chart and the image
 
@@ -33,7 +33,7 @@ A release `v0.5.0` tags the image `0.5.0`, `0.5` and `0`. To pin the exact image
 
 ## Create the namespace and the Secrets
 
-The chart never creates a Secret. Every Secret it names must exist in the release namespace before `helm install`, or the pods cannot start. The examples use the namespace `trove` and the release name `trove`, so the objects are called `trove-web`, `trove-worker` and so on.
+The chart never creates a Secret. Every Secret it names must exist in the release namespace before `helm install`, or the pods cannot start. The examples use the namespace `trove` and the release name `trove`, so the objects are called `trove-api`, `trove-packages`, `trove-worker` and so on.
 
 ```shell
 kubectl create namespace trove
@@ -66,18 +66,18 @@ Whoever can read the break-glass Secret is an administrator of trove. Restrict a
 | `secrets.databaseMigration` | `username`, `password` | optional: a separate schema owner for the migration Job; empty means the runtime login owns the schema | the migration Job |
 | `secrets.databaseCA` | `ca.crt` | when PostgreSQL's certificate is not signed by a public CA | every pod and the Job |
 | `secrets.databaseClientCert` | `tls.crt`, `tls.key` | optional client certificate | every pod and the Job |
-| `secrets.valkey` | `username`, `password` (`usernameKey: ""` for Valkey's default user) | always | `web`, `worker` |
-| `secrets.valkeySentinel` | `password` (and a user if you name `usernameKey`) | optional; without it trove warns that the Sentinels are unauthenticated | `web`, `worker` |
-| `secrets.valkeyCA` | `ca.crt` | when Valkey's certificate is not signed by a public CA | `web`, `worker` |
-| `secrets.valkeyClientCert` | `tls.crt`, `tls.key` | when Valkey requires client certificates | `web`, `worker` |
-| `secrets.s3` | `access-key-id`, `secret-access-key`; optionally the keys named by `bucketKey`, `regionKey`, `endpointKey` | with `config.storage.s3.credentials.source: static` | `web`, `worker` |
-| `secrets.s3CA` | `ca.crt` | when the object store's certificate is not signed by a public CA | `web`, `worker` |
-| `secrets.encryption` | the files listed in `secrets.encryption.keys`, first one active | always | `web`, `worker`, never the Job |
-| `secrets.breakGlass` | `password` | optional; without it the break-glass account is switched off | `web` pods only, endpoint pools included |
-| `secrets.oidc[]` | `client-secret`, one entry per provider | one per OIDC provider that uses a client secret | `web` pods only, endpoint pools included |
-| `secrets.metricsToken` | `token` | with `config.metrics.auth: static` | `web`, `worker` |
+| `secrets.valkey` | `username`, `password` (`usernameKey: ""` for Valkey's default user) | always | `api`, `packages`, `worker` |
+| `secrets.valkeySentinel` | `password` (and a user if you name `usernameKey`) | optional; without it trove warns that the Sentinels are unauthenticated | `api`, `packages`, `worker` |
+| `secrets.valkeyCA` | `ca.crt` | when Valkey's certificate is not signed by a public CA | `api`, `packages`, `worker` |
+| `secrets.valkeyClientCert` | `tls.crt`, `tls.key` | when Valkey requires client certificates | `api`, `packages`, `worker` |
+| `secrets.s3` | `access-key-id`, `secret-access-key`; optionally the keys named by `bucketKey`, `regionKey`, `endpointKey` | with `config.storage.s3.credentials.source: static` | `api`, `packages`, `worker` |
+| `secrets.s3CA` | `ca.crt` | when the object store's certificate is not signed by a public CA | `api`, `packages`, `worker` |
+| `secrets.encryption` | the files listed in `secrets.encryption.keys`, first one active | always | `api`, `packages`, `worker`, never the Job |
+| `secrets.breakGlass` | `password` | optional; without it the break-glass account is switched off | `api` pods only, `api` pools included; never `packages` |
+| `secrets.oidc[]` | `client-secret`, one entry per provider | one per OIDC provider that uses a client secret | `api` pods only, `api` pools included; never `packages` |
+| `secrets.metricsToken` | `token` | with `config.metrics.auth: static` | `api`, `packages`, `worker` |
 | `tls.secretName` | `tls.crt`, `tls.key` | with `tls.enabled` (the default) | the pods that serve with it |
-| `tls.clientCA.secretName`, `tls.ops.secretName` | `ca.crt`; `tls.crt`, `tls.key` | optional: mutual TLS from the edge; a separate certificate for the ops listener | `web`; every pod |
+| `tls.clientCA.secretName`, `tls.ops.secretName` | `ca.crt`; `tls.crt`, `tls.key` | optional: mutual TLS from the edge; a separate certificate for the ops listener | `api` and `packages`; every pod |
 | `ingress.backendTLS.caSecret` | `ca.crt` | with HAProxy Ingress or ingress-nginx and `verify: true` | read by the ingress controller |
 
 Secrets are mounted as read-only files, never as environment variables, so a rotated Secret reaches the running pods. The settings of an S3 provisioner's Secret (bucket, region, endpoint) are the one exception: they are passed as environment variables because they are not credentials.
@@ -158,7 +158,8 @@ trove reaches your OIDC provider over HTTPS and trusts the system roots. If the 
 ```shell
 helm install trove trove/trove -n trove -f values.yaml --version <version>   # example: a version from helm search
 kubectl -n trove get jobs,pods                                               # the migration Job runs first
-kubectl -n trove rollout status deployment/trove-web
+kubectl -n trove rollout status deployment/trove-api
+kubectl -n trove rollout status deployment/trove-packages
 kubectl -n trove rollout status deployment/trove-worker
 ```
 
@@ -172,14 +173,14 @@ kubectl -n trove rollout status deployment/trove-worker
 4. Open **Administration › Access › System roles** and use **Bind** to give the administrator role to your own user or to a group from your identity provider. [Permissions](permissions.md) describes the roles. To keep this in your GitOps repository instead, declare the group in `config.authz.role_bindings` ([Administrators from the Helm values](sign-in-and-identity.md#administrators-from-the-helm-values)); the binding then exists after the install.
 5. Sign out and sign in again through your provider. [Sign-in and identities](sign-in-and-identity.md) covers provider options and group mapping.
 
-The break-glass account has no role binding; it holds system administration because it is the local administrator. With the default settings it locks for 15 minutes after 5 failed attempts within 15 minutes, its sessions end after 15 minutes idle or one hour in total, and it cannot own tokens. When a rotated Secret reaches the pods, each `web` replica notices the new file within 10 seconds (`auth.break_glass.check_interval`), refuses the local sign-in for 2 minutes (`auth.break_glass.rotation_hold`) and ends the break-glass sessions. To switch the account off, remove `secrets.breakGlass` from your values; the chart then renders `auth.break_glass.enabled: false`.
+The break-glass account has no role binding; it holds system administration because it is the local administrator. With the default settings it locks for 15 minutes after 5 failed attempts within 15 minutes, its sessions end after 15 minutes idle or one hour in total, and it cannot own tokens. When a rotated Secret reaches the pods, each `api` replica notices the new file within 10 seconds (`auth.break_glass.check_interval`), refuses the local sign-in for 2 minutes (`auth.break_glass.rotation_hold`) and ends the break-glass sessions. To switch the account off, remove `secrets.breakGlass` from your values; the chart then renders `auth.break_glass.enabled: false`.
 
 ## Bootstrap and recovery commands
 
 The `trove admin` commands work directly on the database with the pod's own configuration, so they also work while no administrator can sign in. They need no Valkey. Run them in a running pod; the binary is `/usr/local/bin/trove`:
 
 ```shell
-kubectl -n trove exec deploy/trove-web -- /usr/local/bin/trove admin break-glass status
+kubectl -n trove exec deploy/trove-api -- /usr/local/bin/trove admin break-glass status
 ```
 
 | Command | What it does |
@@ -198,18 +199,18 @@ Every command that changes something writes an audit event with the actor `admin
 
 ## Verify the installation
 
-1. The release and the pods: `helm status trove -n trove` shows `deployed`, and every `trove-web` and `trove-worker` pod is `Running` and ready.
+1. The release and the pods: `helm status trove -n trove` shows `deployed`, and every `trove-api`, `trove-packages` and `trove-worker` pod is `Running` and ready.
 2. The edge answers: `curl -s -o /dev/null -w '%{http_code}\n' https://trove.example.com/api/v1/system/ping` prints `200`. This request needs no credential.
 3. The readiness of one replica, through a port forward to its ops listener:
 
    ```shell
-   kubectl -n trove port-forward deploy/trove-web 8081:8081
+   kubectl -n trove port-forward deploy/trove-api 8081:8081
    curl -sk 'https://localhost:8081/readyz?verbose=1'      # -k: the certificate does not name localhost
    ```
 
    A ready replica answers `200` with `"status":"ready"` and lists each check. `degraded` names checks that fail without making the replica unready, `valkey` for example; `failing` names the checks that keep it unready.
 4. In the UI, **Administration › System › System status** shows **All ready** when every replica is ready and none is degraded, and lists the **Installation** version, the **Replicas by role**, the **Database** schema version, the **Valkey** connection and the **Stored-secret keys** each replica holds.
-5. The effective configuration of a pod: `kubectl -n trove exec deploy/trove-web -- /usr/local/bin/trove admin config validate`.
+5. The effective configuration of a pod: `kubectl -n trove exec deploy/trove-api -- /usr/local/bin/trove admin config validate`.
 
 [Monitoring and operations](operations.md) describes the metrics and the day-to-day checks.
 

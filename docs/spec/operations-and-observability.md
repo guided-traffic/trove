@@ -504,7 +504,9 @@ API: `GET /api/v1/system/replicas` → `200`. Requires `system.read`.
       "instanceUid": "8a0b…",
       "version": "0.3.0",
       "revision": "4f1c2a9e0d7b…",
-      "roles": ["packages"],
+      "roles": ["web"],
+      "roleName": "packages",
+      "pool": null,
       "state": "ready",
       "lost": false,
       "startedAt": "2026-10-28T08:01:12.004Z",
@@ -524,6 +526,8 @@ API: `GET /api/v1/system/replicas` → `200`. Requires `system.read`.
       "version": "0.3.0",
       "revision": "4f1c2a9e0d7b…",
       "roles": ["worker"],
+      "roleName": "worker",
+      "pool": null,
       "state": "ready",
       "lost": false,
       "startedAt": "2026-10-28T08:01:14.870Z",
@@ -541,6 +545,11 @@ API: `GET /api/v1/system/replicas` → `200`. Requires `system.read`.
 }
 ```
 
+`roleName` is the role the replica registered with: `api`, `packages`, `worker`, `web` or `all` (Q-OPS-161). `roles` keeps the
+role class of the releases before the cut into task areas, whose enum the compatibility check (R-ARCH-025) closes at `web`,
+`worker` and `all`: `web` for every replica that serves client endpoints, so for `api`, `packages` and the bridge alike
+(Q-API-194). A client that wants the role reads `roleName`; `pool` is the replica's pool or `null`.
+
 *(example values)* The UI shows this list as the service status screen
 ([api-and-ui.md](api-and-ui.md) R-UI-038). Mixed versions during a rolling upgrade, the replicas of
 each role and degraded replicas are visible here.
@@ -553,8 +562,9 @@ system:
 
 **Acceptance criteria:**
 
-- With two `api`, three `packages` and two `worker` replicas, the list shows seven `ready` entries, two with roles
-  `["api"]`, three with `["packages"]` and two with `["worker"]`, each with the node it runs on; only a `worker` entry
+- With two `api`, three `packages` and two `worker` replicas, the list shows seven `ready` entries, two with `roleName`
+  `api`, three with `packages` and two with `worker` (`roles` `["web"]`, `["web"]` and `["worker"]`), each with the node it
+  runs on; only a `worker` entry
   lists a lease; a pod of a pool carries its `pool`. After
   `kubectl delete pod --grace-period=0 --force <replica>`, that entry shows `"lost": true` within
   30 s and is replaced by the new pod's entry.
@@ -580,7 +590,7 @@ replica registry (R-OPS-003) holds the per-replica view of every replica.
 {
   "installationId": "0b7c3f5e-…",
   "incarnation": "5d10e2a4-…",
-  "answeredBy": {"replica": "trove-web-6f9c7d8b5-x2v4q", "role": "web"},
+  "answeredBy": {"replica": "trove-api-6f9c7d8b5-x2v4q", "role": "web", "roleName": "api"},
   "version": {"version": "0.3.0", "revision": "4f1c2a9e0d7b…", "goVersion": "go1.27.3"},
   "baseUrl": "https://trove.example.com",
   "baseUrlSource": "config",
@@ -631,6 +641,10 @@ replica registry (R-OPS-003) holds the per-replica view of every replica.
   "runtime": {"goos": "linux", "goarch": "amd64", "gomaxprocs": 4, "memoryLimitBytes": 2147483648}
 }
 ```
+
+`replicas.roles` has one member per `roleName` of the live replicas (`api`, `packages`, `worker`, `web` while the bridge runs,
+`all`), the pools of a role counting in it. `answeredBy.role` is the role class of `roles` (`web` for `api` and `packages`) and
+`answeredBy.roleName` the exact role (Q-API-194).
 
 `maintenanceMode` is `normal` or the mode of R-OPS-024. Only `normal` exists in this build, because the
 read-only mode is P1: the member is part of the contract so that clients need no change when the mode
@@ -5583,6 +5597,55 @@ renders no dashboard).
 **Applied in the spec:** R-OPS-003 (the `roles` column, the example, the criteria, the counts of the fetch shares), R-OPS-004
 (`replicas.roles`), R-OPS-006 (`trove_build_info{role}`); [ha-and-helm.md](ha-and-helm.md) R-HA-045;
 [api-and-ui.md](api-and-ui.md) R-UI-038.
+
+### Q-OPS-165 · The fetch share's count is a component of its own, over the registry
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the limiters of the client listener divide their per-replica share by the live replicas of the process's own role and pool
+([internal/app/replica_count.go](../../internal/app/replica_count.go)); R-REPO-040 divides `limits.maxConcurrentFetches` by the live
+replicas that fill client misses, whatever their pool (Q-ARCH-297). The open question of the work package was whether the proxy
+takes a count of its own.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `cluster.FillCount`, a component over the control connection that counts `packages`, `web` and `all` rows of every pool, refreshed with the heartbeat (chosen) | The proxy's `Options.Replicas` is its `Get` | The budget is an installation-wide bound, so the count must not depend on the pool of the process; the limiters keep their rule | A second count loop (one query per heartbeat interval) |
+| (b) Widen the limiters' count to the fill roles | One count | One query | The fallback share of an endpoint rate-limit class would count replicas of other pools that do not serve that endpoint, and a share would be too small |
+| (c) Count per pool | Each pool its own budget | Isolation | The budget would multiply with the number of pools |
+
+**Choice:** (a). A failed read keeps the last value and n is at least 1, as for the limiters. The component is
+`NewFillCount(controlConnection, system.heartbeat_stale_after, system.heartbeat_interval)`; the composition root passes its `Get` as
+`proxy.Options.Replicas` and starts it with the other components of the step that builds the proxy engine.
+
+**Rationale:** the two counts answer different questions (a rate share per serving pool, a budget per installation). The
+development agent would revisit this if `api` replicas begin to fetch.
+
+**Applied in the spec:** R-REPO-040 (the count), R-OPS-003 (the counts the registry gives). Code:
+[internal/cluster/replica_roles.go](../../internal/cluster/replica_roles.go), `CountFillingReplicas` in
+`internal/meta/postgres/queries/cluster.sql`. Tests: `TestR_REPO_040_FillCountIsAtLeastOne`, the subtest of `TestSlots`, and the
+integration test `TestReplicaRegistryRoles`.
+
+### Q-OPS-166 · The registry refuses a role outside its vocabulary, and every role's key ring counts
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-OPS-161 fixes five role values. The registry took any non-empty string, and the key-ring rule of R-API-049 counted the
+rings of `web`, `worker` and `all` only, which after the cut would have left `api` and `packages` replicas out of the
+compatibility check although `packages` opens the secrets of the remote repositories it fetches with.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `NewRegistry` accepts the five values and the key-ring rule counts every registered role (chosen) | One vocabulary, checked where it is written | A typo in a role cannot reach the registry, the metrics and the logs | A new role needs one edit in `cluster.ValidRole` |
+| (b) Accept any string | No check | None | A role that no screen or count knows |
+| (c) Count only the roles that hold the login secrets | Narrower rule | Smaller | A `packages` replica with a ring that lacks a key could not open a remote repository's secret and nothing would warn |
+
+**Choice:** (a).
+
+**Rationale:** the role is the identity of the process (Q-OPS-161). The development agent would revisit this if a role that
+never opens secrets is added.
+
+**Applied in the spec:** R-OPS-003 (the roles), R-API-049's rule through `opensSecrets`. Code: `cluster.ValidRole`,
+`internal/api/v1/encryption_api.go`. Tests: `TestR_OPS_003_RegistryRefusesAnUnknownRole`, `TestR_OPS_004_RingsOfEveryRole`.
 
 ## What this does not cover
 

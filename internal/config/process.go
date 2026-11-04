@@ -16,6 +16,17 @@ const (
 	RoleAll = "all"
 )
 
+// ValidRole reports whether role is one of the values a replica registers with, the value of --role, of the replica
+// registry, of trove_build_info{role} and of the `role` of every log record (R-OPS-003, R-OPS-006, Q-OPS-161): one
+// vocabulary for all of them.
+func ValidRole(role string) bool {
+	switch role {
+	case RoleAPI, RolePackages, RoleWorker, RoleWeb, RoleAll:
+		return true
+	}
+	return false
+}
+
 // Process selects what one replica runs (R-ARCH-001).
 type Process struct {
 	// Role has no default: the chart sets it per Deployment and `trove serve

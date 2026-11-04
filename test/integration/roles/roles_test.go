@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/app"
 	"github.com/guided-traffic/trove/internal/auth/scope"
@@ -192,6 +193,8 @@ func TestR_ARCH_001_AFamilyOfTheOtherRoleIsAnUnknownPath(t *testing.T) {
 			{"GET", "/api/v1/system/ping"},
 			{"GET", "/api/v1/repositories"},
 			{"POST", "/api/v1/auth/oidc/token"},
+			{"GET", "/api/v1/repositories/gen-local/content/x"},
+			{"PUT", "/api/v1/repositories/gen-local/content/x"},
 		},
 		"api": {
 			{"GET", "/api/npm/npm-all/" + "left-pad"},
@@ -318,4 +321,103 @@ func TestQ_ARCH_294_ApiExplainsAVirtualRepositoryWithoutContactingTheUpstream(t 
 	if a := in.get(api, "/api/v1/repositories/npm-all", in.admin); a.Status != http.StatusOK {
 		t.Errorf("reading the repository on api: %d %s", a.Status, a.Body)
 	}
+}
+
+// signIn logs the break-glass administrator in on a replica of the api family and returns the cookies and the CSRF token.
+func (in *installation) signIn(r *testenv.Replica) (cookies, csrf string) {
+	in.t.Helper()
+	login := in.st.Do(r, http.MethodPost, "/auth/local/login", "", map[string]string{"username": "admin", "password": password}, "Origin", origin)
+	if login.Status != http.StatusNoContent {
+		in.t.Fatalf("local login on %s: %d %s", r.Role, login.Status, login.Body)
+	}
+	var sess, token string
+	for _, c := range (&http.Response{Header: login.Header}).Cookies() {
+		switch c.Name {
+		case session.CookieSession:
+			sess = c.Name + "=" + c.Value
+		case session.CookieCSRF:
+			token = c.Value
+		}
+	}
+	if sess == "" || token == "" {
+		in.t.Fatalf("the login set no session or CSRF cookie: %v", login.Header.Values("Set-Cookie"))
+	}
+	return sess + "; " + session.CookieCSRF + "=" + token, token
+}
+
+// TestQ_UI_106_ContentRoutesAreOfTheApiFamily: the UI's content routes (R-API-025) are served by the roles of the api family
+// from the files service over the serve-check host of Q-ARCH-301, for the session only, and are an unknown path on packages,
+// which serves /files/ for tokens (R-ARCH-005).
+func TestQ_UI_106_ContentRoutesAreOfTheApiFamily(t *testing.T) {
+	in := newInstallation(t)
+	api, packages, web := in.start("api"), in.start("packages"), in.start("web")
+	cookie, csrf := in.signIn(api)
+	const path = "/api/v1/repositories/gen-local/content/ui/a%20b.txt"
+
+	put := in.st.Do(api, http.MethodPut, path, "", "hello", "Cookie", cookie, "Origin", origin, session.HeaderCSRF, csrf, "Content-Type", "text/plain")
+	if put.Status != http.StatusCreated {
+		t.Fatalf("upload through the content route on api: %d %s", put.Status, put.Body)
+	}
+	for _, r := range []*testenv.Replica{api, web} {
+		if got := in.get(r, path, "", "Cookie", cookie); got.Status != http.StatusOK || string(got.Body) != "hello" {
+			t.Errorf("download through the content route on %s: %d %q", r.Role, got.Status, got.Body)
+		}
+	}
+	// A token is answered like an unknown path on api, because the content routes are for the session.
+	if got := in.probe(api, http.MethodGet, path, in.admin); got.Status != http.StatusNotFound {
+		t.Errorf("a token on the content route of api: %d %s", got.Status, got.Body)
+	}
+	// What the content route stored is the file /files/ serves on packages, which has no content route.
+	if got := in.get(packages, "/files/gen-local/ui/a%20b.txt", in.admin); got.Status != http.StatusOK || string(got.Body) != "hello" {
+		t.Errorf("/files/ on packages: %d %q", got.Status, got.Body)
+	}
+	unknown := in.probe(packages, http.MethodGet, "/does-not-exist", in.admin)
+	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPut} {
+		got := in.probe(packages, method, path, in.admin)
+		if got.Status != http.StatusNotFound || (method != http.MethodHead && got.Problem(t) != unknown.Problem(t)) {
+			t.Errorf("%s on the content route of packages: %d %s, want the unknown path %d %s", method, got.Status, got.Body, unknown.Status, unknown.Body)
+		}
+	}
+}
+
+// TestQ_OPS_165_FetchShareCountsTheReplicasThatFill: the proxy's fetch share divides by the live replicas that fill client
+// misses, whatever their role and pool (R-REPO-040, Q-ARCH-297): a second packages replica and a web replica raise it, an api
+// replica does not.
+func TestQ_OPS_165_FetchShareCountsTheReplicasThatFill(t *testing.T) {
+	in := newInstallation(t)
+	quick := []string{"TROVE_SYSTEM_HEARTBEAT_INTERVAL=1s", "TROVE_SYSTEM_HEARTBEAT_STALE_AFTER=5s"}
+	start := func(role, pool string) *testenv.Replica {
+		opts := testenv.ReplicaOptions{Name: role + "-" + testenv.RandHex(2), Role: role, Env: append([]string{}, quick...)}
+		if pool != "" {
+			opts.Env = append(opts.Env, "TROVE_POOL_NAME="+pool)
+		}
+		if role != "packages" {
+			opts.Env = append(opts.Env, "TROVE_AUTH_BREAK_GLASS_ENABLED=true", "TROVE_AUTH_BREAK_GLASS_PASSWORD_FILE="+in.pw)
+		}
+		return in.st.Start(t, opts)
+	}
+	waitFor := func(r *testenv.Replica, want int) {
+		t.Helper()
+		deadline := time.Now().Add(20 * time.Second)
+		for {
+			got := r.App.FetchShareReplicas()
+			if got == want {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("%s counts %d replicas that fill, want %d", r.Name, got, want)
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+	p1 := start("packages", "")
+	waitFor(p1, 1)
+	if api := start("api", ""); api.App.FetchShareReplicas() != 0 {
+		t.Errorf("api has a fetch share: %d", api.App.FetchShareReplicas())
+	}
+	waitFor(p1, 1) // an api replica does not fill
+	start("packages", "bulk")
+	waitFor(p1, 2) // a pool counts
+	start("web", "")
+	waitFor(p1, 3)
 }

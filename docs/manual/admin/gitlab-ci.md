@@ -144,7 +144,7 @@ Pin claims are IDs because paths are not stable: a GitLab project or group path 
 
 ### An instance behind a private CA
 
-trove connects to the instance over TLS with the system roots plus the issuer's `ca_bundle_ref`. The issuer stores only the reference; the bundle is a file in the `web` and `worker` pods. Mount it with the chart's extension points and name its path:
+trove connects to the instance over TLS with the system roots plus the issuer's `ca_bundle_ref`. The issuer stores only the reference; the bundle is a file in the `api` and `worker` pods. Mount it with the chart's extension points and name its path:
 
 ```yaml
 extraVolumes:

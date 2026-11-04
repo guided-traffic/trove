@@ -154,14 +154,20 @@ export class FakePreferencesApi extends PreferencesApi {
 
 export class FakeEncryptionApi extends EncryptionApi {
   statusResult: EncryptionStatus | ApiError = {
-    answeredBy: 'trove-web-0',
+    answeredBy: 'trove-api-0',
     activeKeyId: '2026-10',
     keys: [
       { id: '2026-10', active: true, sealedValues: 14, canary: 'ok' },
       { id: '2026-04', active: false, sealedValues: 3, canary: 'ok' },
     ],
     replicas: [
-      { name: 'trove-web-0', role: 'web', activeKeyId: '2026-10', keyIds: ['2026-04', '2026-10'] },
+      {
+        name: 'trove-api-0',
+        role: 'web',
+        roleName: 'api',
+        activeKeyId: '2026-10',
+        keyIds: ['2026-04', '2026-10'],
+      },
     ],
     ringsCompatible: true,
     lastReencryption: null,
@@ -181,11 +187,13 @@ export class FakeEncryptionApi extends EncryptionApi {
 
 export function sampleReplica(over: Partial<Replica> = {}): Replica {
   return {
-    name: 'trove-web-0',
+    name: 'trove-api-0',
     instanceUid: 'uid-0',
     version: '0.1.1',
     revision: 'abc',
     roles: ['web'],
+    roleName: 'api',
+    pool: null,
     state: 'ready',
     lost: false,
     startedAt: '2026-10-29T10:00:00Z',
@@ -212,7 +220,7 @@ export function sampleInfo(over: Partial<SystemInfo> = {}): SystemInfo {
   return {
     installationId: null,
     incarnation: null,
-    answeredBy: { replica: 'trove-web-0', role: 'web' },
+    answeredBy: { replica: 'trove-api-0', role: 'web', roleName: 'api' },
     version: { version: '0.1.1', revision: 'abc', goVersion: 'go1.27.3' },
     baseUrl: 'https://trove.example.net',
     baseUrlSource: 'config',
@@ -222,7 +230,8 @@ export function sampleInfo(over: Partial<SystemInfo> = {}): SystemInfo {
       ready: 2,
       versions: { '0.1.1': 2 },
       roles: {
-        web: { live: 2, ready: 2, degraded: 0, nodes: 2 },
+        api: { live: 2, ready: 2, degraded: 0, nodes: 2 },
+        packages: { live: 0, ready: 0, degraded: 0, nodes: 0 },
         worker: { live: 0, ready: 0, degraded: 0, nodes: 0 },
       },
     },
@@ -255,7 +264,7 @@ export class FakeSystemApi extends SystemApi {
   infoResult: SystemInfo = sampleInfo();
   replicasResult: readonly Replica[] = [
     sampleReplica(),
-    sampleReplica({ name: 'trove-web-1', instanceUid: 'uid-1', node: 'node-b' }),
+    sampleReplica({ name: 'trove-api-1', instanceUid: 'uid-1', node: 'node-b' }),
   ];
 
   override async info(): Promise<SystemInfo> {

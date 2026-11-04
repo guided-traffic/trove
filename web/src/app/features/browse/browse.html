@@ -327,10 +327,12 @@
         >
           @if (item(); as it) {
             @if (it.kind === 'file' && it.downloadUrl) {
-              <a mat-flat-button [href]="it.downloadUrl" download>
-                <span class="material-icons" aria-hidden="true">download</span>
-                <ng-container i18n="@@browse.download">Download</ng-container>
-              </a>
+              @if (it.contentUrl) {
+                <a mat-flat-button [href]="it.contentUrl" download>
+                  <span class="material-icons" aria-hidden="true">download</span>
+                  <ng-container i18n="@@browse.download">Download</ng-container>
+                </a>
+              }
               <trove-copy-button [value]="it.downloadUrl" [label]="copyUrl" icon="link" />
             } @else if (it.kind === 'folder' && it.listingUrl) {
               <trove-copy-button [value]="it.listingUrl" [label]="copyListing" icon="link" />

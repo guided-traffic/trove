@@ -37,6 +37,8 @@ Download counts reach the statistics within a minute of a download. If a file's 
 1. Select the file in the tree.
 2. Select **Download**. The browser saves the file under its name.
 
+The button downloads through the web application, with your sign-in: it needs no token and counts like any other download. The address that **Copy download URL** copies is the one for tools, and it needs a token unless the repository is open to anonymous readers.
+
 The link button beside **Download** copies the file's address (**Copy download URL**) below the files path, which curl and other tools can use (see [Transfer files with curl](#transfer-files-with-curl)). **Copy path** copies the path inside the repository.
 
 ## Upload files
@@ -52,7 +54,7 @@ You need the deploy permission on the target path, and the target must be a gene
 
 The files are sent one after another. **Status** shows **waiting**, **computing checksum**, a progress bar, **uploaded**, **cancelled**, or the reason a file failed. **Cancel upload** stops the file that is being sent; **Close** closes the dialog, and the folder in the tree shows the new files.
 
-- The browser uploads files of up to 100 MiB. For a larger file the dialog says to use a native client or curl, which take files up to the installation's limit (10 GiB by default).
+- The browser uploads files of up to 100 MiB (the administrator's limit `ui.deploy.max_upload_bytes`: the dialog refuses a larger file before it starts, and the server answers it with **413** before it reads the body). For a larger file the dialog says to use a native client or curl, which take files up to the installation's limit (10 GiB by default).
 - The browser computes the SHA-256 of each file before sending it, and trove checks it on arrival, so a damaged transfer is not stored.
 - Without the replace option, a file that exists already is kept, and the dialog says **A file already exists at this path.** Uploading the same bytes again with the replace option changes nothing.
 - The repository's include and exclude patterns can refuse a path; ask whoever manages the repository.

@@ -98,7 +98,7 @@ The tables below list the keys an installation most often sets. Every key with i
 | `server.listen`, `server.ops_listen` | `:8080`, `:8081` | The client and ops listeners |
 | `server.max_in_flight` | `4096` | Concurrent requests per replica; beyond it, and beyond what the memory limit admits, a request gets `503` |
 | `server.replica_header` | `authenticated` | When responses carry `X-Trove-Replica`: `authenticated`, `always` or `never` |
-| `health.shutdown_drain_delay` | `5s` | How long a stopping `web` replica keeps serving; must exceed the time your ingress controller needs to drop an endpoint |
+| `health.shutdown_drain_delay` | `5s` | How long a stopping `api` or `packages` replica keeps serving; must exceed the time your ingress controller needs to drop an endpoint |
 
 </details>
 
@@ -150,7 +150,7 @@ The tables below list the keys an installation most often sets. Every key with i
 | `storage.s3.credentials.source` | `default` | `default` (the SDK's chain, which can reach the node's metadata service), `static` (key files) or `webIdentity` |
 | `storage.s3.sse.mode` | `none` | Server-side encryption: `none`, `s3` or `kms` |
 | `storage.s3.startup_check` | `true` | Check the store before the first readiness |
-| `storage.upload.max_size` | `10GiB` | Largest single upload; must fit the spool of a `web` pod |
+| `storage.upload.max_size` | `10GiB` | Largest single upload; must fit the spool of a `packages` pod (the UI's uploads, bounded by `ui.deploy.max_upload_bytes`, use the spool of an `api` pod) |
 | `health.require_object_store` | `false` | `true` makes readiness depend on the object store at all times, not only at start |
 
 </details>
@@ -243,6 +243,7 @@ The scanning of stored packages against public advisory data is being built in t
 |---|---|---|
 | `ui.readme.max_source_bytes` | `512KiB` | Largest README that is rendered; a longer one is cut |
 | `ui.readme.external_image_origins` | `[]` | Exact `https` origins whose images a README may show; every other external image is shown as a link |
+| `ui.deploy.max_upload_bytes` | `100MiB` | Largest file the UI uploads; a larger upload through the UI is answered `413` before its body is read, `0` is unlimited. Package clients and `curl` with a token upload through `/files/` and are bound by `storage.upload.max_size` only |
 | `ui.client_setup.token_env_var` | `TROVE_TOKEN` | The environment variable the client setup snippets read a token from |
 | `ui.client_setup.token_ttl` | `720h` | Lifetime of a token the setup dialog creates; at most the personal-token maximum |
 

@@ -21,6 +21,7 @@ var ifMatchExempt = map[string]string{
 	"addProjectAdmin":         "binds one pair (R-API-012)",
 	"assignProjectRepository": "binds one pair (R-API-012)",
 	"deployFile":              "file content on /files (R-API-012)",
+	"deployContent":           "file content on the content route (R-API-012, Q-UI-106)",
 }
 
 // TestR_API_012_OneMechanismForAMissingIfMatch holds the declaration side of

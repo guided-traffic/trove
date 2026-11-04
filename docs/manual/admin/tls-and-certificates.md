@@ -10,9 +10,9 @@ Every connection trove accepts or makes can be encrypted. The listeners serve pl
 |---|---|---|---|
 | Clients to the client listener (`:8080`) and each endpoint listener | `server.tls`, `server.endpoints.<name>.tls` | plain HTTP until certificates are set; the chart sets them | every `reload_interval` (10 s) |
 | Probes and monitoring to the ops listener (`:8081`) | `server.ops_tls` | the client listener's certificate, no client certificate | with the listener |
-| `web` and `worker` to PostgreSQL | `database.ssl_mode` and the `ssl_*` files | `verify-full` | on each new connection |
-| `web` and `worker` to Valkey and the Sentinels | `valkey.tls`, `valkey.sentinel.tls` | `verify-full`, system roots without a CA file | on each handshake |
-| `web` and `worker` to the object store | `storage.s3.endpoint`, `storage.s3.ca_file` | `https`, the outbound trust store | on use, at most every 10 s |
+| `api`, `packages` and `worker` to PostgreSQL | `database.ssl_mode` and the `ssl_*` files | `verify-full` | on each new connection |
+| `api`, `packages` and `worker` to Valkey and the Sentinels | `valkey.tls`, `valkey.sentinel.tls` | `verify-full`, system roots without a CA file | on each handshake |
+| `api`, `packages` and `worker` to the object store | `storage.s3.endpoint`, `storage.s3.ca_file` | `https`, the outbound trust store | on use, at most every 10 s |
 | Remote repositories to their upstreams | `proxy.outbound.tls` | system roots, TLS 1.2 or later | on use, at most every 10 s |
 | Span export (tracing) | `tracing.ca_file` | off | once, at start |
 
@@ -75,7 +75,7 @@ The ingress controller connects to trove over HTTPS. With HAProxy Ingress the ch
 | Chart value | Keys read | Mounted at | Used for |
 |---|---|---|---|
 | `tls.secretName` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/tls/` | client listener, and the ops listener while it inherits |
-| `tls.clientCA.secretName` | `ca.crt` | `/var/run/secrets/trove/tls-client-ca/ca.crt` | client certificates on `:8080` (main `web` pods only) |
+| `tls.clientCA.secretName` | `ca.crt` | `/var/run/secrets/trove/tls-client-ca/ca.crt` | client certificates on `:8080` (main `api` and `packages` pods only) |
 | `tls.ops.secretName` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/tls-ops/` | ops listener |
 | `endpoints.<name>.tls.existingSecret`, `extraSecrets` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/endpoints/<name>/<n>/` (`n` = position) | endpoint listener |
 | `endpoints.<name>.tls.clientCaSecret` | `ca.crt` | `/var/run/secrets/trove/endpoints/<name>/client-ca/ca.crt` | client certificates on the endpoint |

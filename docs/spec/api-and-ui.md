@@ -1353,7 +1353,7 @@ requirements) and the request paths of R-ARCH-011 and R-ARCH-014 in
 | GET, HEAD | `/files/{repoKey}/{path}` | Download, `Range`, conditional requests, `Repr-Digest` | `read` |
 | PUT | `/files/{repoKey}/{path}` | Raw deploy; `Repr-Digest` verified; trailing `/` with empty body creates a folder | `deploy`; `overwrite` to replace different content |
 | DELETE | `/files/{repoKey}/{path}` | Same as the item DELETE | `delete` |
-| GET, HEAD, PUT | `/api/v1/repositories/{repoKey}/content/{path}` | The UI's content transfer (phase 6a, specified, not built yet; Q-UI-106): the semantics of the `/files/` row with the same method, for a request that the session cookie authenticates; served by the role `api` | as the `/files/` row |
+| GET, HEAD, PUT | `/api/v1/repositories/{repoKey}/content/{path}` | The UI's content transfer (Q-UI-106, Q-API-195): the semantics of the `/files/` row with the same method, for a request that the session cookie authenticates; served by the role `api` | as the `/files/` row |
 
 API conventions that apply on top:
 
@@ -1370,7 +1370,10 @@ API conventions that apply on top:
   that is not stored answers `404` without contacting an upstream, also in a remote repository. A `PUT` needs the
   session's CSRF token as every unsafe request of a session does. Every `Item` of a file and every file of a
   `PackageVersion` carries `contentUrl`, the relative URL of its content route, next to `downloadUrl`, the protocol URL
-  for clients.
+  for clients. The routes offer `GET`, `HEAD` and `PUT` and no `DELETE` (the UI deletes through the items operation);
+  a path that ServeMux would redirect (an empty, `.` or `..` segment) is redirected as on every route of `/api/v1/`,
+  where `/files/` answers `400 invalid_path` (Q-API-195); `ui.deploy.max_upload_bytes` is a configuration key of the
+  `ui` section (default `100MiB`).
 - npm and NuGet repositories refuse raw deploys of files and folders (`409` `conflict` before the body
   is read, with a reason naming the format's protocol address, where `npm publish` or `dotnet nuget push`
   sends), because a raw upload would bypass their metadata generation
@@ -1530,7 +1533,8 @@ remain as their owners define them.)
   pre-release while no stable version is visible. The `downloadUrl` of a file is the protocol URL of the repository
   that holds it where the format has a protocol, else its `/files/` URL, built on the configured base URL of the
   endpoint and never on the `Host` of the request. Its `contentUrl` is the relative URL of the content route of R-API-025
-  for the item that holds the file (Q-UI-106, phase 6a).
+  for the item that holds the file (Q-UI-106): `PackageFile.path` is the path of the file item in the repository that
+  holds it (`PackageFile.contentUrl` is built from the pair, and so is `downloadUrl`).
 - The package summary, the version details and the README carry a strong `ETag` (a hash of the representation sent
   for the details and the summary, so two callers who see different versions never share one) and answer `304`
   for `If-None-Match`. The README tag is computed from its source, the renderer version and the hash of the
@@ -2020,11 +2024,11 @@ their favour.
 
 Acceptance criteria:
 
-- With two `web` and two `worker` replicas running, `GET /api/v1/system/replicas` lists all four
-  with their roles and nodes, and `GET /api/v1/system/info` reports `replicas.roles.web.live` and
+- With two `api` and two `worker` replicas running, `GET /api/v1/system/replicas` lists all four
+  with their `roleName` and nodes, and `GET /api/v1/system/info` reports `replicas.roles.api.live` and
   `replicas.roles.worker.live` as `2`; the system status screen (R-UI-038) renders from these
   answers, the task and job API, R-API-049 and R-API-050 without other endpoints.
-- A replica started with the development role lists `"roles": ["all"]`.
+- A replica started with the development role lists `"roles": ["all"]` and `"roleName": "all"`.
 - With Valkey stopped, every item lists `valkey` under `degraded`, with `valkey.state`
   `degraded` and `valkey.reason` `connection` or `timeout`, within `health.failure_threshold` ×
   `valkey.health_check_interval` plus `system.heartbeat_interval` plus 1 s; every item's `state`
@@ -2465,8 +2469,7 @@ Priority: **MVP** · Covers: UI-058
 - Links to package content (R-ARCH-007, R-ARCH-029 in [architecture.md](architecture.md)):
   - The UI never assembles a `/files/` or `/api/<format>/` URL from strings. "Copy
     download URL" uses the `downloadUrl` of the item or the version file, and the UI's own downloads and file links use
-    its `contentUrl`, which the session cookie authenticates on `api` (R-API-025, R-API-029, Q-UI-106; before phase 6a
-    the downloads use `downloadUrl` too); README images are the URLs the server's renderer generated through
+    its `contentUrl`, which the session cookie authenticates on `api` (R-API-025, R-API-029, Q-UI-106); README images are the URLs the server's renderer generated through
     `LinkBuilder` (R-UI-008); registry and feed URLs come from the client setup answer
     (R-API-030). Moving content to a content origin (P1) therefore changes no UI code.
   - The UI never reads package content with `fetch` or XHR. Package content reaches the browser
@@ -2972,8 +2975,7 @@ Priority: **P1** · Covers: UI-013
   button, so dragging is never required), overwrite (only with `overwrite`).
 - The size limit `ui.deploy.max_upload_bytes` is checked before the upload starts; larger files are
   pointed to native clients or `curl`.
-- Uploads use `PUT /api/v1/repositories/{repoKey}/content/{path}` on the UI's own origin (R-API-025, Q-UI-106; before
-  phase 6a `PUT /files/…`), built by the `files` client of `web/src/app/api/` (R-UI-001), never by the dialog. Because the fetch backend reports no upload
+- Uploads use `PUT /api/v1/repositories/{repoKey}/content/{path}` on the UI's own origin (R-API-025, Q-UI-106), built by the `files` client of `web/src/app/api/` (R-UI-001), never by the dialog. Because the fetch backend reports no upload
   progress, uploads go through an XHR-based `HttpClient` instance (`withXhr()`) to show progress.
   This is the only XHR use for content, and it writes; the UI never reads package content with
   `fetch` or XHR (R-UI-001).
@@ -2992,7 +2994,7 @@ Configuration:
 ```yaml
 ui:
   deploy:
-    max_upload_bytes: 104857600   # default (proposed), 100 MiB; 0 = unlimited
+    max_upload_bytes: 100MiB      # default; 0 = unlimited
 ```
 
 Acceptance criteria:
@@ -3762,8 +3764,8 @@ INV-12 makes roles, drains and Valkey MVP and INV-19 the backup job (Q-UI-7).
   source; the maintenance mode, as a row only while it is not `normal` (Q-OPS-156); database (server version, schema version against the supported ones);
   scheduled tasks (`/system/tasks`: next run, last outcome) with "Run now", which runs on a
   `worker` replica; recent jobs (`/system/jobs`) with cancel.
-- **Replicas by role** (Q-UI-7, Q-UI-107). One group per role in the order `api`, `packages`, `worker` (phase 6a,
-  specified, not built yet; before it `web` and `worker`); a group `web` while a replica of that role is live, during the
+- **Replicas by role** (Q-UI-7, Q-UI-107). One group per role in the order `api`, `packages`, `worker`, taken from the replica's `roleName`
+  (Q-API-194); a group `web` while a replica of that role is live, during the
   upgrade across the cut ([ha-and-helm.md](ha-and-helm.md) R-HA-064); a replica with roles
   `["all"]` of the development role forms a group `all`; within a group, one sub-group per pool of R-HA-062 and per
   endpoint pool, each with its own counts and drain safety,
@@ -3777,7 +3779,7 @@ INV-12 makes roles, drains and Valkey MVP and INV-19 the backup job (Q-UI-7).
   - "All ready replicas on one node": a drain of that node interrupts this role (shown only when
     every replica reports a node);
   - for `worker`, "No live worker replica": jobs and scheduled tasks are queued but nothing runs
-    them (R-API-015); for a worker pool, "No live replica claims the queues `<queues>`", naming the pool's queues;
+    them (R-API-015); for a pool, "No live replica in the pool `<pool>`", shown while every row of the pool is `lost` (Q-UI-108: the registry holds the pool's name and not its queues, and a pool whose rows were pruned is not known);
   - for `packages`, "No live packages replica": package clients and raw downloads get no answer from the edge, while the
     UI keeps working (Q-UI-107);
   - while replicas of two versions are live, an information notice naming both versions, because N
@@ -7130,6 +7132,141 @@ would revisit this if installations run so many pools that the screen needs a fi
 
 **Applied in the spec:** R-UI-038 (the groups and their notices); [operations-and-observability.md](operations-and-observability.md)
 Q-OPS-161 (the role values).
+
+### Q-API-194 · The role members of the replica descriptions are additive, because the role enums are frozen
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-OPS-161 makes the registry's role the `--role` name (`api`, `packages`, `worker`, `web`, `all`). Three enums of the
+released contract list roles: `answeredBy.role` of the system information, `Replica.roles` and `EncryptionReplica.role`, each
+closed at `web`, `worker` and `all`. R-ARCH-025 fails the compatibility check for a value added to a closed response enum
+(oasdiff `response-property-enum-value-added`), and for an enum made extensible (`response-property-became-not-enum`); both were
+run against the last release (`make compat-check`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The three enums keep their meaning as a role class, and the exact role is a new member `roleName` (chosen) | `roles` of an `api` or `packages` replica reads `["web"]`; `roleName` reads `api` or `packages`; `Replica.pool` is new too | Additive, so a client written against the last release keeps working and meets no unknown value; `replicas.roles` is a map and takes the exact names | Two members describe one fact; a reader of the registry's JSON example must know that `roles` is the class |
+| (b) Add `api` and `packages` to the three enums | The document lists the values of Q-OPS-161 | One member | Fails R-ARCH-025 until the next breaking version of the API |
+| (c) Make the enums extensible | `x-extensible-enum` | Future values need no break | The change itself is `response-property-became-not-enum`, which also fails |
+| (d) Report `api` and `packages` as `web` and add nothing | No new member | Smallest change | The status screen cannot group by role, the point of Q-UI-107 |
+
+**Choice:** (a). The class is `web` for every role that serves client endpoints (`api`, `packages`, the bridge `web`), `worker`
+for `worker` and `all` for the development role (`roleClass` in [internal/api/v1/roles.go](../../internal/api/v1/roles.go));
+the handlers set both members when they read the replica source, so the composition root needs no change for the role members.
+`pool` is filled by the source (`internal/app/facts.go`), which holds the registry's value.
+
+**Rationale:** the same precedent as Q-API-191 and Q-VULN-74: keep the closed enum, state the new fact in a new member. The
+development agent would revisit this at the next breaking version of the API, where one member `role` with the five values is
+the cleaner shape.
+
+**Applied in the spec:** R-OPS-003 (the example, the class and `roleName`, the acceptance criterion), R-OPS-004 (`answeredBy`,
+`replicas.roles`), R-UI-038 (the groups read `roleName`), R-API-038's acceptance criteria. Code: `api/openapi.yaml`
+(`roleName` on `answeredBy`, `Replica` and `EncryptionReplica`; `Replica.pool`), `internal/api/v1/roles.go`,
+`internal/api/v1/handlers.go` (`Summarise` keys by `roleName`), `internal/api/v1/encryption_api.go`. Tests:
+`TestQ_API_194_RoleMembersOfTheCut`, `TestR_OPS_004_SummaryPerRoleOfTheCut`, `TestR_OPS_004_RingsOfEveryRole`.
+
+### Q-API-195 · The content routes are the files transfer behind a session check, and the UI's upload limit is a configuration key
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-API-025 and Q-UI-106 add `GET`, `HEAD` and `PUT /api/v1/repositories/{repoKey}/content/{path}` for the session cookie,
+which reaches only `api`. Verified in the code: `PackageFile.path` is the `path` of the live file item of the version
+(`PackageViewFiles`) and `PackageFile`'s repository is the one that holds it, so `contentUrl` is built from the pair like
+`downloadUrl`; the CSRF check of a session (`session.Store.CheckCSRF`) reads the token header and the origin and never the body, so a
+`PUT` that streams its body is checked like one that decodes JSON; `files.Service` reads stored items only and contacts no
+upstream, so a path that is not stored answers `404` also in a remote repository. `ui.deploy.max_upload_bytes` did not exist as
+a configuration key although R-UI-012 names it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One handler: the files handler serves both prefixes through `serve`, and the content routes add the session check and the upload limit (chosen) | `rawfiles.Handler.Content(limit)` registers three routes; the document lists them as operations tagged `files`, kept out of the generated interface because a path of several segments is no generated route | The decision of every request, `Range`, digests, content headers, blocking and statistics are the code of `/files/`, so a caller without `read` gets the same `404`; the document and the route table are compared in both directions | Folder index links and the directory index are those of `/files/` |
+| (b) A second implementation in `internal/api/v1` | Generated routes with a query parameter for the path | Fits the generator | A second transfer path that can drift from the first; the path of an item in a query parameter is not what `contentUrl` promises |
+| (c) Accept tokens on the content routes too | One route family for everything | Simpler for scripts | Token clients would put their bulk traffic on `api`, which Q-UI-106 keeps off it |
+
+**Choice:** (a). A request whose credential is not the session cookie answers the `404` of an unknown path before the repository
+is looked up or an index begun. The routes offer no `DELETE`. A path that ServeMux would redirect (an empty, `.` or `..` segment) is
+redirected like on every route of `/api/v1/`; `/files/` answers it `400 invalid_path` because it registers an uncleaned handler for its
+whole prefix, and the content routes cannot (the prefix is `/api/v1/repositories/`), which the UI never meets because it encodes
+every segment. A `PUT` above `ui.deploy.max_upload_bytes` (default `100MiB`, `0` unlimited) answers `413` through a body reader that
+fails at the first read of a declared length above the limit and when a body of unknown length crosses it; the deploy reads the body
+only after it decided the caller, so a caller who may not deploy is refused first. The key is the new `ui.deploy` section of
+[internal/config/ui.go](../../internal/config/ui.go).
+
+**Rationale:** one transfer path is the property that keeps the two routes equal in authorization. The development agent would
+revisit the redirect if a client of the content routes other than the UI appears, and the limit if installations want a per-repository
+value (the repository's own `storage.maxUploadSize` still applies underneath).
+
+**Applied in the spec:** R-API-025 (the content row and bullet), R-API-029 (`contentUrl`), R-UI-012. Code:
+[internal/api/rawfiles/content.go](../../internal/api/rawfiles/content.go), `internal/api/edge/links.go` (`ContentPath`,
+`ItemView.ContentURL`), `internal/api/v1/document.go` (`ContentOperations`), `internal/api/v1/packages_api.go`. Tests:
+`TestContentRoutes`, `TestContentRoutesAgreeWithTheDocument`, `TestSplitContentPath`, `TestDescribeItem`,
+`TestR_API_029_PackageFileContentURL`.
+
+### Q-UI-108 · A pool without a live replica is named by its pool, because the registry does not say which queues it claims
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-038 asks for "No live replica claims the queues `<queues>`" for a worker pool. The replica registry holds the pool
+name (`pool`) and no queue list, and a pool without any registry row is not known to the screen at all.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The warning names the pool: "No live replica in the pool `<pool>`" (chosen) | Shown while every row of the pool is `lost` | Needs no new data; the operator knows the pool and its queues from the values | Does not repeat the queues; a pool whose rows were pruned (24 h) shows nothing |
+| (b) Add the pool's queues to the registry and the API | A column and a member | The text of the requirement | A migration and a contract change for a message; the registry would hold configuration |
+| (c) No pool warning | Only the role-level warnings | Nothing to build | An empty pool, the case that matters, would go unnoticed for 24 h |
+
+**Choice:** (a). The warning appears on the sub-group of a pool whose replicas are all lost; the role-level notices of `worker`
+and `packages` (no live replica) are unchanged.
+
+**Rationale:** the loss of a pool's last replica is visible for as long as its row exists, which is what the screen can know. The
+development agent would revisit this if the API gets the pool's queues for another reason.
+
+**Applied in the spec:** R-UI-038 (the pool notice). Code: `web/src/app/features/system/system-status-model.ts` (`roleGroups`).
+Tests: the specs `system-status-model.spec.ts` and `system-status.spec.ts`.
+
+### Q-UI-109 · The Download links use `contentUrl`; "Copy download URL" keeps the protocol URL
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-UI-106 lets the session cookie download and upload through the content routes of `api`. The file browser and the
+package screen show a Download link and the browser a copy button for the address.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The link is the `contentUrl` of the item or version file; the copy button copies `downloadUrl` (chosen) | Two addresses, each for who uses it | The link works with the session on `api`; the copied address is what a token client can use on `packages` | None found |
+| (b) Both use `contentUrl` | One address | Simple | A copied relative route that a token cannot use |
+| (c) Both keep `downloadUrl` | No change | None | The link would need the session cookie on `packages`, which ignores it (R-ARCH-001) |
+
+**Choice:** (a). The upload and the folder creation of the deploy dialog build their URL in one place, `contentPath` of
+`web/src/app/api/files-api.ts` (R-UI-001); a file above `ui.deploy.max_upload_bytes` is refused by the dialog before it starts and
+by the server with `413`.
+
+**Rationale:** the UI never assembles a protocol URL (R-UI-001). The development agent would revisit this when a content origin
+(R-ARCH-029) serves the downloads.
+
+**Applied in the spec:** R-UI-012, R-UI-001's links rule, R-API-029. Code: `web/src/app/api/files-api.ts`,
+`features/browse/browse.html`, `features/packages/package-detail.html`. Tests: `files-api.spec.ts`, `browse.spec.ts`,
+`package-detail.spec.ts`.
+
+### Q-UI-110 · The status screen groups by `roleName` and shows a role it does not know after the known ones
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-API-194 keeps `roles` a closed class and adds `roleName`. The role vocabulary is open (`roleName` is a string).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The group of a replica is its `roleName`; a role other than `api`, `packages`, `worker`, `web`, `all` is a group after them (chosen) | The screen hides nothing | A further role, or a registry of a newer release, never disappears from the screen | The screen has no text for such a role beyond its name |
+| (b) Group by the class in `roles` | No new member needed | Works with the old data | `api` and `packages` would be one group `web`, which Q-UI-107 rejects |
+| (c) Drop unknown roles | Only the known groups | Tidy | A running replica would be missing from the screen |
+
+**Choice:** (a). The groups `api`, `packages` and `worker` always exist; `web` and `all` only while a replica reports them. A
+sub-group heading is shown when a role has a pool, or more than one sub-group.
+
+**Rationale:** an operator must see every replica the registry lists. The development agent would revisit this when a fourth role
+exists.
+
+**Applied in the spec:** R-UI-038. Code: `system-status-model.ts` (`roleOf`, `roleGroups`). Tests: `system-status-model.spec.ts`.
 
 ## What this does not cover
 

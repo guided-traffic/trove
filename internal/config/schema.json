@@ -3689,6 +3689,22 @@
           },
           "type": "object"
         },
+        "deploy": {
+          "additionalProperties": false,
+          "properties": {
+            "max_upload_bytes": {
+              "default": "100MiB",
+              "description": "Largest file the UI uploads through the content route of a repository; a larger PUT is answered 413 before the body is read, and the deploy dialog refuses it before it starts. 0 is unlimited. Token clients upload through /files/ and are not bound by it (R-API-025, Q-UI-106).",
+              "type": [
+                "string",
+                "integer"
+              ],
+              "x-trove-env": "TROVE_UI_DEPLOY_MAX_UPLOAD_BYTES",
+              "x-trove-type": "bytes"
+            }
+          },
+          "type": "object"
+        },
         "readme": {
           "additionalProperties": false,
           "properties": {

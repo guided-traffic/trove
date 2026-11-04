@@ -77,8 +77,9 @@ type Options struct {
 	// treats every entry as valid.
 	Invalid invalidation.Matcher
 	Caches  *cache.Registry
-	// Replicas is the number of live replicas that serve client traffic, the n of
-	// R-REPO-040; nil is 1.
+	// Replicas is the number of live replicas that fill client misses, the n of
+	// R-REPO-040: the replicas of packages, web and all, their pools included, and
+	// not those of api or worker (Q-ARCH-297); cluster.FillCount.Get. Nil is 1.
 	Replicas func() int
 	// GlobalOffline says that every remote repository is offline (R-REPO-031); nil
 	// reads proxy.global_offline.

@@ -417,6 +417,7 @@ export class FakeFilesApi extends FilesApi {
             digests: { sha256: 'a'.repeat(64), sha1: 'b'.repeat(40) },
             contentStatus: 'ok' as const,
             downloadUrl: `https://trove.example.net/files/${repository}/${node.path}`,
+            contentUrl: `/api/v1/repositories/${repository}/content/${node.path}`,
           }
         : {
             explicit: true,

@@ -30,12 +30,22 @@ The image `docker.io/guidedtraffic/trove` and the Helm chart carry the same vers
 
    This does not check the keys inside `config`; the new binary checks them when the migration Job starts (see below).
 
+## Upgrade from a release before the split into roles
+
+The releases before the split into `api` and `packages` ran one Deployment, `trove-web`, behind the Service `trove`. A Deployment cannot be renamed, and Helm applies a release in one pass, so one `helm upgrade` from that shape would leave the edge without a ready backend while the new pods start. The upgrade takes two steps, joined by the value `web.enabled`:
+
+1. `helm upgrade … --set web.enabled=true` with your values otherwise unchanged. The chart keeps `trove-web` (rolled to the new release) and the Service `trove`, and the edge keeps sending every host whole to it. The Deployments and Services of `api`, `packages` and `worker` start beside it. Wait until `kubectl -n trove rollout status` reports `trove-api` and `trove-packages` ready, move in-cluster callers from the Service `trove` to `trove-api` and `trove-packages`, and add the `api.*` and `packages.*` sizing you want.
+2. `helm upgrade … --set web.enabled=false` (the default). The edge switches to the path routing onto the role Services, which have been ready since step 1, and Helm deletes `trove-web`, its endpoint pools and the Service `trove`; their pods drain first.
+
+**Administration › System › System status** shows a group `web` between the steps, next to `api`, `packages` and `worker`, and none after step 2. Where the chart can read the cluster (`helm upgrade`, `helm install --dry-run=server`), it refuses `web.enabled: false` while `trove-web` exists and `trove-api` or `trove-packages` is not ready, and names the two steps; under `helm template` there is nothing to read, so follow the steps. Rolling back from step 2 recreates `trove-web` while the edge already points at the Service `trove`, so the host answers `503` while the restored pods start; rolling back step 1 has no gap.
+
 ## Upgrade with Helm
 
 ```shell
 helm upgrade trove trove/trove -n trove -f values.yaml --version <version>     # example: the target version
 kubectl -n trove logs job/trove-migrate
-kubectl -n trove rollout status deployment/trove-web
+kubectl -n trove rollout status deployment/trove-api
+kubectl -n trove rollout status deployment/trove-packages
 kubectl -n trove rollout status deployment/trove-worker
 ```
 
@@ -44,7 +54,7 @@ kubectl -n trove rollout status deployment/trove-worker
 1. Helm validates the values. A value the new chart does not know, or a required value that is missing, stops the upgrade before anything changes.
 2. Helm deletes the previous migration Job and starts a new `trove-migrate` Job with the new image and the new configuration. With `secrets.databaseMigration` set, the Job signs in as that schema owner.
 3. The Job loads the configuration (an invalid key stops it here), checks that the database's `max_connections` covers the connection pools of the configured replica counts, takes the migration lock, waiting up to `migrate.advisory_lock_wait` (5 minutes) for another run to finish, and applies every pending migration in order. It exits successfully when nothing was pending.
-4. Only after the Job has succeeded does Helm update the Deployments. Kubernetes then replaces the `web` and `worker` pods one at a time: a new pod is started before an old one stops, and an old pod drains its requests or jobs before it exits.
+4. Only after the Job has succeeded does Helm update the Deployments. Kubernetes then replaces the `api`, `packages` and `worker` pods one at a time: a new pod is started before an old one stops, and an old pod drains its requests or jobs before it exits.
 
 If the Job fails, `helm upgrade` fails and the Deployments stay as they were: the replicas of the previous version keep serving. The Job retries a failed run twice (`migrations.backoffLimit`) within 30 minutes (`migrations.activeDeadlineSeconds`); a run that a node drain evicts does not count as a failure, and a refusal (exit status 3) fails the Job at once because retrying cannot change it. The log of the Job names the cause.
 
@@ -69,7 +79,7 @@ A new replica that starts before the migration has run stays unready and waits u
 `trove migrate status` shows the state without taking the lock: the applied and pending migrations, the schema version this binary requires and whether it may serve.
 
 ```shell
-kubectl -n trove exec deploy/trove-web -- /usr/local/bin/trove migrate status
+kubectl -n trove exec deploy/trove-api -- /usr/local/bin/trove migrate status
 ```
 
 ## Background data migrations
@@ -84,7 +94,7 @@ A correction of stored data runs after the upgrade as a job on a worker, not in 
 
 1. `helm status trove -n trove` shows `deployed`, and `helm history trove -n trove` lists the new revision.
 2. The Job log ends with a JSON summary: `applied` lists the migrations of this run, `nothingToDo` is `true` when none was pending, and `schemaApplied` is the schema version now.
-3. Every pod of `trove-web` and `trove-worker` is ready and none restarts repeatedly.
+3. Every pod of `trove-api`, `trove-packages` and `trove-worker` is ready and none restarts repeatedly.
 4. **Administration › System › System status** shows **All ready**; every replica in the replica table shows the new **Version**, and the **Database** part shows the new **Schema version**.
 5. Sign in, open a repository and download a file, as a quick check of the full request path.
 

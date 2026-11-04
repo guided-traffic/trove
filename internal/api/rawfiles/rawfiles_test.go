@@ -133,6 +133,9 @@ func TestRoutesAgreeWithTheDocument(t *testing.T) {
 		for p := range doc.Operations() { // the management API is registered elsewhere
 			patterns = append(patterns, p)
 		}
+		for p := range doc.ContentOperations() { // the content routes: content_test.go
+			patterns = append(patterns, strings.Replace(p, "{path}", "{path...}", 1))
+		}
 		if err := doc.CheckRoutes(patterns); err != nil {
 			t.Fatal(err)
 		}
@@ -143,6 +146,9 @@ func TestRoutesAgreeWithTheDocument(t *testing.T) {
 		patterns := r.Patterns()
 		for p := range doc.Operations() {
 			patterns = append(patterns, p)
+		}
+		for p := range doc.ContentOperations() {
+			patterns = append(patterns, strings.Replace(p, "{path}", "{path...}", 1))
 		}
 		if err := doc.CheckRoutes(patterns); err == nil || !strings.Contains(err.Error(), "POST /files/{repoKey}/{path...}") {
 			t.Fatalf("err = %v", err)

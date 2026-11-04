@@ -11,18 +11,31 @@ import { SystemStatus } from './system-status';
 import { ringGaps, rotationStep } from './system-status-model';
 
 const RING: EncryptionStatus = {
-  answeredBy: 'trove-web-0',
+  answeredBy: 'trove-api-0',
   activeKeyId: '2026-10',
   keys: [
     { id: '2026-10', active: true, sealedValues: 14, canary: 'ok' },
     { id: '2026-04', active: false, sealedValues: 3, canary: 'ok' },
   ],
   replicas: [
-    { name: 'trove-web-0', role: 'web', activeKeyId: '2026-10', keyIds: ['2026-04', '2026-10'] },
-    { name: 'trove-web-1', role: 'web', activeKeyId: '2026-04', keyIds: ['2026-04'] },
+    {
+      name: 'trove-api-0',
+      role: 'web',
+      roleName: 'api',
+      activeKeyId: '2026-10',
+      keyIds: ['2026-04', '2026-10'],
+    },
+    {
+      name: 'trove-packages-0',
+      role: 'web',
+      roleName: 'packages',
+      activeKeyId: '2026-04',
+      keyIds: ['2026-04'],
+    },
     {
       name: 'trove-worker-0',
       role: 'worker',
+      roleName: 'worker',
       activeKeyId: '2026-10',
       keyIds: ['2026-04', '2026-10'],
     },
@@ -39,8 +52,8 @@ describe('Stored-secret keys card (E1.9)', () => {
     const card = root.querySelector('section[aria-labelledby="card-keys"]')!;
     const t = text(card);
     expect(t).toContain('Key rings are not compatible');
-    expect(t).toContain('Canary (reported by trove-web-0)');
-    expect(t).toContain('trove-web-1');
+    expect(t).toContain('Canary (reported by trove-api-0)');
+    expect(t).toContain('trove-packages-0');
     expect(t).toContain('lacks 2026-10');
     expect(t).toContain('Next step: give every replica the key files it lacks');
     expect(t).toContain('Last re-encryption');
@@ -50,7 +63,7 @@ describe('Stored-secret keys card (E1.9)', () => {
   });
 
   it('R-UI-038 ringGaps names what each replica lacks, from the active IDs and the IDs that still seal values', () => {
-    expect(ringGaps(RING)).toEqual([{ replica: 'trove-web-1', role: 'web', missing: ['2026-10'] }]);
+    expect(ringGaps(RING)).toEqual([{ replica: 'trove-packages-0', role: 'packages', missing: ['2026-10'] }]);
     expect(
       ringGaps({
         ...RING,

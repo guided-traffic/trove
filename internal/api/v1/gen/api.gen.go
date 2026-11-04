@@ -4676,13 +4676,18 @@ type EncryptionKeyCanary string
 
 // EncryptionReplica defines model for EncryptionReplica.
 type EncryptionReplica struct {
-	ActiveKeyId string                `json:"activeKeyId"`
-	KeyIds      []string              `json:"keyIds"`
-	Name        string                `json:"name"`
-	Role        EncryptionReplicaRole `json:"role"`
+	ActiveKeyId string   `json:"activeKeyId"`
+	KeyIds      []string `json:"keyIds"`
+	Name        string   `json:"name"`
+
+	// Role The role class of the replica as `answeredBy.role` of the system information names it; `roleName` is the exact role.
+	Role EncryptionReplicaRole `json:"role"`
+
+	// RoleName The role the replica runs in (Q-OPS-161).
+	RoleName string `json:"roleName"`
 }
 
-// EncryptionReplicaRole defines model for EncryptionReplica.Role.
+// EncryptionReplicaRole The role class of the replica as `answeredBy.role` of the system information names it; `roleName` is the exact role.
 type EncryptionReplicaRole string
 
 // EncryptionStatus defines model for EncryptionStatus.
@@ -5111,11 +5116,14 @@ type GuideSectionTopic string
 
 // Item The description of a file or folder (R-STOR-016, R-STOR-007).
 type Item struct {
-	ContentStatus    *ItemContentStatus `json:"contentStatus,omitempty"`
-	Created          Stamp              `json:"created"`
-	DeclaredDigests  *Digests           `json:"declaredDigests,omitempty"`
-	DeclaredMismatch *bool              `json:"declaredMismatch,omitempty"`
-	Digests          *Digests           `json:"digests,omitempty"`
+	ContentStatus *ItemContentStatus `json:"contentStatus,omitempty"`
+
+	// ContentUrl Files only. The relative URL of the content route of the file (`/api/v1/repositories/{repoKey}/content/{path}`), which the session cookie authenticates on the role `api`; the UI's downloads use it (R-API-025, Q-UI-106).
+	ContentUrl       *string  `json:"contentUrl,omitempty"`
+	Created          Stamp    `json:"created"`
+	DeclaredDigests  *Digests `json:"declaredDigests,omitempty"`
+	DeclaredMismatch *bool    `json:"declaredMismatch,omitempty"`
+	Digests          *Digests `json:"digests,omitempty"`
 
 	// DownloadUrl Files only.
 	DownloadUrl *string `json:"downloadUrl,omitempty"`
@@ -5525,11 +5533,16 @@ type OwnedPackageList struct {
 
 // PackageFile defines model for PackageFile.
 type PackageFile struct {
+	// ContentUrl The relative URL of the content route of the file item (`/api/v1/repositories/{repoKey}/content/{path}`), which the session cookie authenticates on the role `api`; the UI's downloads use it (R-API-025, R-API-029, Q-UI-106).
+	ContentUrl string `json:"contentUrl"`
+
 	// DownloadUrl Absolute, built on the public base URL.
 	DownloadUrl string `json:"downloadUrl"`
-	Path        string `json:"path"`
-	Sha256      string `json:"sha256"`
-	SizeBytes   int64  `json:"sizeBytes"`
+
+	// Path The path of the file item in the repository that holds it.
+	Path      string `json:"path"`
+	Sha256    string `json:"sha256"`
+	SizeBytes int64  `json:"sizeBytes"`
 }
 
 // PackageList defines model for PackageList.
@@ -6141,8 +6154,18 @@ type Replica struct {
 	Name string `json:"name"`
 
 	// Node The Kubernetes node name (`TROVE_NODE_NAME`); `null` outside Kubernetes.
-	Node      *string        `json:"node"`
-	Revision  string         `json:"revision"`
+	Node *string `json:"node"`
+
+	// Pool The endpoint pool or worker pool the replica belongs to (`TROVE_POOL_NAME`); `null` for the main Deployment of its role.
+	Pool     *string `json:"pool,omitempty"`
+	Revision string  `json:"revision"`
+
+	// RoleName The role the replica registered with (Q-OPS-161): `api`, `packages`, `worker`, `web` (the upgrade bridge and the releases before the cut) or `all` (the development role); open for further roles.
+	RoleName string `json:"roleName"`
+
+	// Roles The role class of the replica, in the vocabulary of the releases before the cut into task areas, which this enum
+	// keeps (R-ARCH-025): `web` for a replica that serves client endpoints, so for `api`, `packages` and the upgrade
+	// bridge `web` alike, `worker`, and `all` for the development role. `roleName` is the exact role.
 	Roles     []ReplicaRoles `json:"roles"`
 	StartedAt time.Time      `json:"startedAt"`
 	State     ReplicaState   `json:"state"`
@@ -6166,7 +6189,7 @@ type ReplicaSummary struct {
 	Live  int `json:"live"`
 	Ready int `json:"ready"`
 
-	// Roles Per role (`web`, `worker`, `all`).
+	// Roles Per role (`api`, `packages`, `worker`, and during an upgrade across the cut `web`; `all` in the development role), keyed by `roleName`; the replicas of a role's pools count in the role.
 	Roles map[string]RoleSummary `json:"roles"`
 
 	// Versions Live replicas per version.
@@ -6562,8 +6585,15 @@ type Stamp struct {
 // SystemInfo defines model for SystemInfo.
 type SystemInfo struct {
 	AnsweredBy struct {
-		Replica string                   `json:"replica"`
-		Role    SystemInfoAnsweredByRole `json:"role"`
+		Replica string `json:"replica"`
+
+		// Role The role class of the replica that answered, in the vocabulary of the releases before the cut into task areas,
+		// which this enum keeps (R-ARCH-025): `web` for a replica that serves client endpoints, so for `api`, `packages`
+		// and the upgrade bridge `web` alike, `worker`, and `all` for the development role. `roleName` is the exact role.
+		Role SystemInfoAnsweredByRole `json:"role"`
+
+		// RoleName The role the replica runs in (`--role`, Q-OPS-161), as the registry, `trove_build_info{role}` and the logs name it; open for further roles.
+		RoleName string `json:"roleName"`
 	} `json:"answeredBy"`
 
 	// Backup Always `null` until the backup runs exist.
@@ -6611,7 +6641,9 @@ type SystemInfo struct {
 	VulnerabilityData *VulnerabilityDataFacts `json:"vulnerabilityData,omitempty"`
 }
 
-// SystemInfoAnsweredByRole defines model for SystemInfo.AnsweredBy.Role.
+// SystemInfoAnsweredByRole The role class of the replica that answered, in the vocabulary of the releases before the cut into task areas,
+// which this enum keeps (R-ARCH-025): `web` for a replica that serves client endpoints, so for `api`, `packages`
+// and the upgrade bridge `web` alike, `worker`, and `all` for the development role. `roleName` is the exact role.
 type SystemInfoAnsweredByRole string
 
 // SystemInfoBaseUrlSource `request` means `server.base_url` is unset and the origin was derived from the request (development only).

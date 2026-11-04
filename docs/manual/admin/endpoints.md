@@ -4,7 +4,7 @@ An endpoint is a separate client listener of trove with its own port, host names
 
 ## What an endpoint is
 
-Every installation has the default endpoint: the client listener on port 8080 with the web UI, the management API, package clients and file transfer. Each further endpoint is another listener in the same `web` processes. A request belongs to the endpoint whose port it arrived on; no header, host name or path can move it to another endpoint.
+Every installation has the default endpoint: the client listener on port 8080 with the web UI, the management API, package clients and file transfer. Each further endpoint is another listener in the same `api` and `packages` processes, each opening it with the route families of its role. A request belongs to the endpoint whose port it arrived on; no header, host name or path can move it to another endpoint.
 
 | Property | What it decides | Default for a further endpoint |
 |---|---|---|
@@ -79,12 +79,12 @@ The keys `hostRoots` and `wildcardRoot` are reserved for later package formats a
 
 | Object | Name | Notes |
 |---|---|---|
-| Service | `<fullname>-ep-<name>` | the endpoint's port; selects the main `web` pods, or the pool's |
-| Deployment and PodDisruptionBudget | `<fullname>-web-ep-<name>` | with `pool.enabled`; only these pods open the endpoint's port |
+| Service | `<fullname>-ep-<name>` | the endpoint's port; selects the main pods of the roles whose families the endpoint serves, or the pool's |
+| Deployment and PodDisruptionBudget | `<fullname>-packages-ep-<name>`, `<fullname>-api-ep-<name>` | with `pool.enabled`; only these pods open the endpoint's port |
 | Ingress | `<fullname>-ep-<name>` | with `ingress.enabled`; one rule per host; HTTPS to trove as for the main Ingress |
 | NetworkPolicy | `<fullname>-ep-<name>` | the endpoint's port from `networkPolicy.from` |
 
-A pool keeps external load off the internal pods, but its pods hold the same database, Valkey and object-store credentials as every `web` pod. The installation notes printed by `helm install` warn about an endpoint in mode `rules` without a pool and about an empty `networkPolicy.from`.
+A pool keeps external load off the internal pods, but its pods hold the same database, Valkey and object-store credentials as every `api` and `packages` pod. The installation notes printed by `helm install` warn about an endpoint in mode `rules` without a pool and about an empty `networkPolicy.from`.
 
 ### The default endpoint
 

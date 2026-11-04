@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sort"
 	"sync"
@@ -33,7 +34,7 @@ type ReplicaIdentity struct {
 	Name     string
 	Version  string
 	Revision string
-	// Role is web, worker or all.
+	// Role is api, packages, worker, web or all (the Role* constants, Q-OPS-161).
 	Role string
 	// Node is the Kubernetes node name; empty outside Kubernetes.
 	Node string
@@ -104,6 +105,8 @@ func NewRegistry(o RegistryOptions) (*Registry, error) {
 		return nil, errors.New("cluster: the replica registry needs the control connection")
 	case o.Identity.UID == "" || o.Identity.Name == "" || o.Identity.Role == "":
 		return nil, errors.New("cluster: the replica identity needs UID, Name and Role")
+	case !config.ValidRole(o.Identity.Role):
+		return nil, fmt.Errorf("cluster: the role %q is not one of api, packages, worker, web and all", o.Identity.Role)
 	}
 	log := o.Log
 	if log == nil {

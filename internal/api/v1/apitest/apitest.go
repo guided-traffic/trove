@@ -105,7 +105,7 @@ func (v *Validator) Check(req *http.Request, status int, header http.Header, bod
 }
 
 // routeRequest maps a request to the template of the document the way the
-// server's router matches it. A path below /files/ holds slashes that a path
+// server's router matches it. A path below /files/ or below a repository's content route holds slashes that a path
 // parameter of the document cannot match, so the router sees a request for
 // /files/<key>/<one segment>. An encoded "/" inside one segment (a package name
 // such as @acme%2Ffrontend, R-AUTHZ-019) stays in its segment: the server matches
@@ -118,6 +118,12 @@ func routeRequest(req *http.Request) *http.Request {
 	case strings.HasPrefix(esc, "/files/"):
 		c := req.Clone(req.Context())
 		c.URL.Path, c.URL.RawPath = "/files/k/p", ""
+		return c
+	case strings.HasPrefix(esc, "/api/v1/repositories/") && strings.Contains(esc, "/content/"):
+		// The content routes of the UI (R-API-025) hold slashes in their path parameter as /files/ does.
+		c := req.Clone(req.Context())
+		head, _, _ := strings.Cut(esc, "/content/")
+		c.URL.Path, c.URL.RawPath = head+"/content/p", ""
 		return c
 	case strings.Contains(esc, "%2F") || strings.Contains(esc, "%2f"):
 		c := req.Clone(req.Context())

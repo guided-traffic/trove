@@ -11,8 +11,9 @@ import (
 // slots are the fetch slots of R-REPO-040: per-replica counters, no coordination
 // with another replica and none with Valkey. proxy.max_concurrent_fetches bounds the
 // replica, and limits.maxConcurrentFetches is a budget for the whole installation
-// that each replica takes ceil(budget / n) of, n being the live replicas that serve
-// client traffic (Q-REPO-97).
+// that each replica takes ceil(budget / n) of, n being the live replicas that fill
+// client misses: packages, web and all, their pools included, and not api or worker
+// (Q-REPO-97, Q-ARCH-297).
 //
 // Background fetches of a mirror (R-REPO-055) count in the same replica limit and repository share, and in a counter
 // of their own per repository, which acquireBackground holds at the background share.

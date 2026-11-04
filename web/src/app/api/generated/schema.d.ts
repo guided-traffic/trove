@@ -2319,6 +2319,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/repositories/{repoKey}/content/{path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repoKey: string;
+                /**
+                 * @description The path in the repository, as for `/files/{repoKey}/{path}`: every segment percent-encoded, decoded exactly
+                 *     once. The server route is `/api/v1/repositories/{repoKey}/content/{path...}`.
+                 */
+                path: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Download a file for the UI
+         * @description The transfer of `GET /files/{repoKey}/{path}` (R-API-025, Q-UI-106) for a request that the session cookie
+         *     authenticates, served by the role `api`: path cleaning, the decision of every request, `Range`,
+         *     conditional requests, `Repr-Digest`, the content headers, the blocking of R-VULN-015 and the download
+         *     statistics are those of `/files/`. A request that the session cookie did not authenticate (a token, a CI
+         *     token, an anonymous caller) answers `404` like an unknown path: token clients keep their bulk traffic on
+         *     `/files/` and the package protocols. A caller without `read` gets the same `404` as there. The path is
+         *     looked up in the stored items only; a path that is not stored answers `404` without contacting an upstream,
+         *     also in a remote repository.
+         */
+        get: operations["downloadContent"];
+        /**
+         * Deploy a file or create a folder for the UI
+         * @description The transfer of `PUT /files/{repoKey}/{path}` (R-API-025, Q-UI-106) for a request that the session cookie
+         *     authenticates, served by the role `api`: the same decision (`deploy`, and `overwrite` to replace different
+         *     content, both decided before the body is read), the same `Repr-Digest` check, the same answers. The request
+         *     needs the session's CSRF token like every unsafe request of a session. A request that the session cookie did
+         *     not authenticate answers `404` like an unknown path. A body larger than `ui.deploy.max_upload_bytes` (when it
+         *     is not 0) answers `413` before it is spooled: at once for a declared `Content-Length` above the limit, when
+         *     the limit is crossed for a body of unknown length.
+         */
+        put: operations["deployContent"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        /**
+         * Read the headers of a file for the UI
+         * @description Answers the headers of `GET` on the content route, from PostgreSQL alone, without a body.
+         */
+        head: operations["headContent"];
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/endpoints": {
         parameters: {
             query?: never;
@@ -3632,8 +3680,18 @@ export interface components {
             incarnation: string | null;
             answeredBy: {
                 replica: string;
-                /** @enum {string} */
+                /**
+                 * @description The role class of the replica that answered, in the vocabulary of the releases before the cut into task areas,
+                 *     which this enum keeps (R-ARCH-025): `web` for a replica that serves client endpoints, so for `api`, `packages`
+                 *     and the upgrade bridge `web` alike, `worker`, and `all` for the development role. `roleName` is the exact role.
+                 * @enum {string}
+                 */
                 role: "web" | "worker" | "all";
+                /**
+                 * @description The role the replica runs in (`--role`, Q-OPS-161), as the registry, `trove_build_info{role}` and the logs name it; open for further roles.
+                 * @example api
+                 */
+                roleName: string;
             };
             version: {
                 version: string;
@@ -3681,7 +3739,7 @@ export interface components {
             versions: {
                 [key: string]: number;
             };
-            /** @description Per role (`web`, `worker`, `all`). */
+            /** @description Per role (`api`, `packages`, `worker`, and during an upgrade across the cut `web`; `all` in the development role), keyed by `roleName`; the replicas of a role's pools count in the role. */
             roles: {
                 [key: string]: components["schemas"]["RoleSummary"];
             };
@@ -3741,7 +3799,19 @@ export interface components {
             instanceUid: string;
             version: string;
             revision: string;
+            /**
+             * @description The role class of the replica, in the vocabulary of the releases before the cut into task areas, which this enum
+             *     keeps (R-ARCH-025): `web` for a replica that serves client endpoints, so for `api`, `packages` and the upgrade
+             *     bridge `web` alike, `worker`, and `all` for the development role. `roleName` is the exact role.
+             */
             roles: ("web" | "worker" | "all")[];
+            /**
+             * @description The role the replica registered with (Q-OPS-161): `api`, `packages`, `worker`, `web` (the upgrade bridge and the releases before the cut) or `all` (the development role); open for further roles.
+             * @example packages
+             */
+            roleName: string;
+            /** @description The endpoint pool or worker pool the replica belongs to (`TROVE_POOL_NAME`); `null` for the main Deployment of its role. */
+            pool?: string | null;
             /** @enum {string} */
             state: "starting" | "ready" | "unready" | "draining";
             /** @description The heartbeat is older than `system.heartbeat_stale_after`. */
@@ -3938,8 +4008,13 @@ export interface components {
         };
         EncryptionReplica: {
             name: string;
-            /** @enum {string} */
+            /**
+             * @description The role class of the replica as `answeredBy.role` of the system information names it; `roleName` is the exact role.
+             * @enum {string}
+             */
             role: "web" | "worker" | "all";
+            /** @description The role the replica runs in (Q-OPS-161). */
+            roleName: string;
             activeKeyId: string;
             keyIds: string[];
         };
@@ -5751,6 +5826,8 @@ export interface components {
             upstreamUrl: null;
             /** @description Files only. */
             downloadUrl?: string;
+            /** @description Files only. The relative URL of the content route of the file (`/api/v1/repositories/{repoKey}/content/{path}`), which the session cookie authenticates on the role `api`; the UI's downloads use it (R-API-025, Q-UI-106). */
+            contentUrl?: string;
             /** @description Folders only. */
             listingUrl?: string;
             itemUrl: string;
@@ -6034,12 +6111,15 @@ export interface components {
             publishedAt: string;
         };
         PackageFile: {
+            /** @description The path of the file item in the repository that holds it. */
             path: string;
             /** Format: int64 */
             sizeBytes: number;
             sha256: string;
             /** @description Absolute, built on the public base URL. */
             downloadUrl: string;
+            /** @description The relative URL of the content route of the file item (`/api/v1/repositories/{repoKey}/content/{path}`), which the session cookie authenticates on the role `api`; the UI's downloads use it (R-API-025, R-API-029, Q-UI-106). */
+            contentUrl: string;
         };
         PackageVersion: {
             packageId: string;
@@ -12136,6 +12216,7 @@ export interface operations {
                      *       "package": null,
                      *       "upstreamUrl": null,
                      *       "downloadUrl": "https://trove.example.com/files/generic-local/tools/widget/2.3/widget-2.3.bin",
+                     *       "contentUrl": "/api/v1/repositories/generic-local/content/tools/widget/2.3/widget-2.3.bin",
                      *       "itemUrl": "https://trove.example.com/api/v1/repositories/generic-local/items?path=tools%2Fwidget%2F2.3%2Fwidget-2.3.bin"
                      *     }
                      */
@@ -12500,6 +12581,198 @@ export interface operations {
                  *     path is decoded exactly once (`400 invalid_path` for an empty, `.` or `..` segment, a NUL,
                  *     a backslash or a control character). A trailing slash names a folder. The server route is
                  *     `/files/{repoKey}/{path...}`.
+                 */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The headers of the file. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    "Accept-Ranges"?: string;
+                    "Repr-Digest"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A folder was addressed without its trailing slash. */
+            301: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            304: components["responses"]["NotModified"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    downloadContent: {
+        parameters: {
+            query?: {
+                /** @description `false` does not count the download. */
+                stats?: boolean;
+            };
+            header?: {
+                /** @description One byte range, `bytes=0-99`; several ranges are ignored. */
+                Range?: string;
+                "If-Range"?: string;
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
+            path: {
+                repoKey: string;
+                /**
+                 * @description The path in the repository, as for `/files/{repoKey}/{path}`: every segment percent-encoded, decoded exactly
+                 *     once. The server route is `/api/v1/repositories/{repoKey}/content/{path...}`.
+                 */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The content of the file, or the directory index of a folder. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    "Content-Disposition"?: string;
+                    "Accept-Ranges"?: string;
+                    "Repr-Digest"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": string;
+                };
+            };
+            /** @description One byte range of the file. */
+            206: {
+                headers: {
+                    "Content-Range"?: string;
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": string;
+                };
+            };
+            /** @description A folder was addressed without its trailing slash. */
+            301: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            304: components["responses"]["NotModified"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            /** @description The range starts beyond the end of the file; `Content-Range` is `bytes *\/<size>`. */
+            416: {
+                headers: {
+                    "Content-Range"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    deployContent: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description `sha-256=:<base64>:` and optionally `sha-512=:<base64>:` (RFC 9530). */
+                "Repr-Digest"?: string;
+                /** @description `*` makes the deploy create-only. */
+                "If-None-Match"?: string;
+            };
+            path: {
+                repoKey: string;
+                /**
+                 * @description The path in the repository, as for `/files/{repoKey}/{path}`: every segment percent-encoded, decoded exactly
+                 *     once. The server route is `/api/v1/repositories/{repoKey}/content/{path...}`.
+                 */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "*/*": string;
+            };
+        };
+        responses: {
+            /** @description An identical re-upload, or an existing folder; nothing changed. */
+            200: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Item"];
+                };
+            };
+            /** @description The file or folder was created, or the file was replaced. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Item"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The repository's class does not accept deploys. */
+            405: {
+                headers: {
+                    Allow?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    headContent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repoKey: string;
+                /**
+                 * @description The path in the repository, as for `/files/{repoKey}/{path}`: every segment percent-encoded, decoded exactly
+                 *     once. The server route is `/api/v1/repositories/{repoKey}/content/{path...}`.
                  */
                 path: string;
             };
@@ -13302,7 +13575,8 @@ export interface operations {
                      *           "path": "@team-a/ui/-/ui-1.4.0.tgz",
                      *           "sizeBytes": 48213,
                      *           "sha256": "5be0c1d2e8f3a4b5c6d7e8f90123456789abcdef0123456789abcdef01234567",
-                     *           "downloadUrl": "https://trove.example.com/api/npm/npm-local/@team-a/ui/-/ui-1.4.0.tgz"
+                     *           "downloadUrl": "https://trove.example.com/api/npm/npm-local/@team-a/ui/-/ui-1.4.0.tgz",
+                     *           "contentUrl": "/api/v1/repositories/npm-local/content/@team-a/ui/-/ui-1.4.0.tgz"
                      *         }
                      *       ]
                      *     }

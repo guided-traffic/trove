@@ -62,6 +62,14 @@ dd {
     font-weight: 400;
     font-size: 0.875rem;
   }
+
+  .pool {
+    margin-block-start: var(--trove-space-3);
+
+    h4 {
+      margin-block: var(--trove-space-2);
+    }
+  }
 }
 
 .scroll {

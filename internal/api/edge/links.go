@@ -37,6 +37,13 @@ func (l Links) File(repo, path string, folder bool) string {
 	return u
 }
 
+// ContentPath is the relative URL of the content route of a file (R-API-025, Q-UI-106): the URL the UI's downloads and
+// uploads use, which the session cookie authenticates on the role api. It is relative, so it follows the origin the UI
+// was loaded from.
+func ContentPath(repo, path string) string {
+	return "/api/v1/repositories/" + url.PathEscape(repo) + "/content/" + escapePath(path)
+}
+
 // Item is the URL of the item description in the management API.
 func (l Links) Item(repo, path string) string {
 	return l.base() + "/api/v1/repositories/" + url.PathEscape(repo) + "/items?path=" + url.QueryEscape(path)
@@ -82,6 +89,7 @@ type ItemView struct {
 	Package          *struct{} `json:"package"`
 	UpstreamURL      *string   `json:"upstreamUrl"`
 	DownloadURL      *string   `json:"downloadUrl,omitempty"`
+	ContentURL       *string   `json:"contentUrl,omitempty"`
 	ListingURL       *string   `json:"listingUrl,omitempty"`
 	ItemURL          string    `json:"itemUrl"`
 }
@@ -121,6 +129,8 @@ func DescribeItem(it items.Item, l Links) ItemView {
 	v.DeclaredMismatch, v.ContentStatus = &mis, &status
 	dl := l.File(it.Repository, it.Path, false)
 	v.DownloadURL = &dl
+	content := ContentPath(it.Repository, it.Path)
+	v.ContentURL = &content
 	return v
 }
 

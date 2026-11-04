@@ -4,7 +4,7 @@ This page is for the people who keep a trove installation running. It covers the
 
 ## The ops listener
 
-Every `web` and `worker` process opens the ops listener on port 8081 (`server.ops_listen`), served over TLS with the chart's defaults. It has three paths and no sign-in of its own; the chart's NetworkPolicy admits port 8081 only from the namespace `monitoring` (`networkPolicy.ingress.ops.from`) and from `networkPolicy.probeCIDRs`.
+Every `api`, `packages` and `worker` process opens the ops listener on port 8081 (`server.ops_listen`), served over TLS with the chart's defaults. It has three paths and no sign-in of its own; the chart's NetworkPolicy admits port 8081 only from the namespace `monitoring` (`networkPolicy.ingress.ops.from`) and from `networkPolicy.probeCIDRs`.
 
 | Path | Answer |
 |---|---|
@@ -52,7 +52,7 @@ spec:
         serverName: trove-ops.trove.svc           # example: a name the ops certificate holds
 ```
 
-The ops Service selects every `web` and `worker` pod, so each replica is scraped. To require a token, set `config.metrics.auth: static` and name a Secret in `secrets.metricsToken`; trove reads the token file on every scrape, so a rotated token applies without a restart.
+The ops Service selects every `api`, `packages`, `worker` and `web` pod, so each replica is scraped. `trove_build_info{role}` and the `role` of every log record name the role of the process (`api`, `packages`, `worker`, `web` or `all`); the ServiceMonitor copies `role` and `pool` onto every other series. To require a token, set `config.metrics.auth: static` and name a Secret in `secrets.metricsToken`; trove reads the token file on every scrape, so a rotated token applies without a restart.
 
 <details>
 <summary>Metric families by area</summary>
@@ -157,10 +157,10 @@ The retention is applied by `trove migrate`, which the chart runs before every u
 
 ## Shutdown and node drains
 
-When a pod receives `SIGTERM`, trove shuts down in a fixed order within the pod's termination grace period (`web.terminationGracePeriodSeconds` 120, `worker.terminationGracePeriodSeconds` 300):
+When a pod receives `SIGTERM`, trove shuts down in a fixed order within the pod's termination grace period (`api.terminationGracePeriodSeconds` and `packages.terminationGracePeriodSeconds` 120, `worker.terminationGracePeriodSeconds` 300):
 
 1. `/readyz` answers `503` at once and the replica is marked draining.
-2. A `web` replica keeps serving for `health.shutdown_drain_delay` (5 s) so the ingress controller can remove it; answers carry `Connection: close`.
+2. An `api` or `packages` replica keeps serving for `health.shutdown_drain_delay` (5 s) so the ingress controller can remove it; answers carry `Connection: close`.
 3. The listeners close and requests in flight finish, until the shutdown timeout (`server.shutdown_timeout`, derived as grace period minus drain delay minus 5 s). An upload that is committing gets up to 3 s more; other requests still running then are cut and counted in `trove_http_transfers_cut_total`.
 4. A `worker` stops claiming jobs at once. Shortly before the timeout, running jobs are cancelled and returned to the queue without counting an attempt; another worker continues them from their last checkpoint.
 5. Buffered audit events are written and the connections closed.
@@ -169,14 +169,15 @@ A second signal ends the process immediately. The chart refuses a grace period s
 
 For a node drain, the chart's PodDisruptionBudgets (`maxUnavailable: 1` per role) and the spreading of replicas across hosts keep at least one replica per role serving, as long as each role has two or more replicas on different nodes. Check **Not drain-safe** on the System status screen before you drain.
 
-## Scaling web and worker
+## Scaling api, packages and worker
 
 | Role | Scale it when | Setting |
 |---|---|---|
-| `web` | requests are shed with `503 server_busy` (`trove_http_requests_shed_total`), or latency grows | `web.replicaCount` (default 3), `web.resources.limits.memory` |
+| `api` | the UI or the management API is slow, or requests are shed with `503 server_busy` (`trove_http_requests_shed_total`) | `api.replicaCount` (default 2), `api.resources.limits.memory` |
+| `packages` | package clients see `503 server_busy`, or latency grows | `packages.replicaCount` (default 3), `packages.resources.limits.memory` |
 | `worker` | `trove_jobs_queued` keeps growing | `worker.replicaCount` (default 2), `config.jobs.workers` (concurrent jobs per queue) |
 
-Any `web` replica can answer any request, and any worker can run any job; scheduled tasks run once for the whole installation. Each `web` pod admits as many concurrent requests as its memory limit allows (`trove_http_memory_slots`), so the chart requires `web.resources.limits.memory`. With `highAvailability.enforce: true` (default) the chart requires at least two replicas per role.
+Any `api` replica can answer any request of its routes, any `packages` replica any package request, and any worker can run any job; scheduled tasks run once for the whole installation. Each `api` and `packages` pod admits as many concurrent requests as its memory limit allows (`trove_http_memory_slots`), so the chart requires `resources.limits.memory` for each. A remote repository's `limits.maxConcurrentFetches` is shared by the `packages` replicas (and the `web` replicas of the bridge, and `all`): the other roles hold no share of it. With `highAvailability.enforce: true` (default) the chart requires at least two replicas per role.
 
 Change replica counts through `helm upgrade` rather than `kubectl scale`: the migration Job then compares the connections all replicas may open with PostgreSQL's `max_connections` (`database.preflight.connection_budget: enforce`) and stops the upgrade if they do not fit.
 

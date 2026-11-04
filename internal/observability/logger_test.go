@@ -393,3 +393,17 @@ func TestRedaction(t *testing.T) {
 		}
 	})
 }
+
+// TestRoleValuesOfTheCut: a log record carries the role as given to --role (Q-OPS-161), the roles of the cut included.
+func TestRoleValuesOfTheCut(t *testing.T) {
+	for _, role := range []string{"api", "packages", "worker", "web", "all"} {
+		t.Run("R-OPS-009 Q-OPS-161 the record of a "+role+" replica says role="+role, func(t *testing.T) {
+			var buf bytes.Buffer
+			NewLogger(testLogCfg(), &buf, WithIdentity("trove-"+role+"-0", role)).Info("hello")
+			ls := lines(&buf)
+			if len(ls) != 1 || decode(t, ls[0])["role"] != role {
+				t.Fatalf("record = %v", ls)
+			}
+		})
+	}
+}

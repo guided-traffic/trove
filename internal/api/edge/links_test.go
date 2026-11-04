@@ -60,6 +60,21 @@ func TestDescribeItem(t *testing.T) {
 		}
 	})
 
+	t.Run("R-API-025 Q-UI-106 a file carries the relative content route, a folder none", func(t *testing.T) {
+		raw, _ := json.Marshal(DescribeItem(file, links))
+		var m map[string]any
+		_ = json.Unmarshal(raw, &m)
+		if m["contentUrl"] != "/api/v1/repositories/generic-local/content/tools/wid%20get/widget%202.3.bin" {
+			t.Errorf("contentUrl = %v", m["contentUrl"])
+		}
+		raw, _ = json.Marshal(DescribeItem(items.Item{Repository: "generic-local", Path: "tools", Kind: items.KindFolder}, links))
+		m = map[string]any{}
+		_ = json.Unmarshal(raw, &m)
+		if _, has := m["contentUrl"]; has {
+			t.Errorf("a folder has contentUrl: %s", raw)
+		}
+	})
+
 	t.Run("R-STOR-016 the upstream url of an item a remote repository cached is carried", func(t *testing.T) {
 		cached := file
 		cached.UpstreamURL = "https://registry.example.org/widget/-/widget-2.3.tgz"

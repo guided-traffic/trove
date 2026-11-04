@@ -81,7 +81,7 @@ tags:
   - name: items
     description: Files and folders of a repository, their listing, statistics and deletion.
   - name: files
-    description: Raw file transfer below `/files/` (PUT, GET, HEAD, DELETE), without a format protocol.
+    description: Raw file transfer below `/files/` (PUT, GET, HEAD, DELETE), without a format protocol, and the same transfer for the UI below `/api/v1/repositories/{repoKey}/content/` (GET, HEAD, PUT), which the session cookie authenticates.
   # <<< M1 files
   #
   # >>> M1 endpoints
@@ -6073,6 +6073,7 @@ paths:
                 package: null
                 upstreamUrl: null
                 downloadUrl: https://trove.example.com/files/generic-local/tools/widget/2.3/widget-2.3.bin
+                contentUrl: /api/v1/repositories/generic-local/content/tools/widget/2.3/widget-2.3.bin
                 itemUrl: https://trove.example.com/api/v1/repositories/generic-local/items?path=tools%2Fwidget%2F2.3%2Fwidget-2.3.bin
         "400":
           $ref: "#/components/responses/BadRequest"
@@ -6566,6 +6567,252 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/repositories/{repoKey}/content/{path}:
+    parameters:
+      - name: repoKey
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: path
+        in: path
+        required: true
+        description: |
+          The path in the repository, as for `/files/{repoKey}/{path}`: every segment percent-encoded, decoded exactly
+          once. The server route is `/api/v1/repositories/{repoKey}/content/{path...}`.
+        schema:
+          type: string
+    get:
+      operationId: downloadContent
+      tags: [files]
+      summary: Download a file for the UI
+      description: |
+        The transfer of `GET /files/{repoKey}/{path}` (R-API-025, Q-UI-106) for a request that the session cookie
+        authenticates, served by the role `api`: path cleaning, the decision of every request, `Range`,
+        conditional requests, `Repr-Digest`, the content headers, the blocking of R-VULN-015 and the download
+        statistics are those of `/files/`. A request that the session cookie did not authenticate (a token, a CI
+        token, an anonymous caller) answers `404` like an unknown path: token clients keep their bulk traffic on
+        `/files/` and the package protocols. A caller without `read` gets the same `404` as there. The path is
+        looked up in the stored items only; a path that is not stored answers `404` without contacting an upstream,
+        also in a remote repository.
+      x-trove-permission:
+        action: read
+        repository: path.repoKey
+        path: path.path
+      parameters:
+        - name: Range
+          in: header
+          description: One byte range, `bytes=0-99`; several ranges are ignored.
+          schema:
+            type: string
+        - name: If-Range
+          in: header
+          schema:
+            type: string
+        - $ref: "#/components/parameters/IfNoneMatch"
+        - name: stats
+          in: query
+          description: "`false` does not count the download."
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: The content of the file, or the directory index of a folder.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Content-Disposition:
+              schema:
+                type: string
+            Accept-Ranges:
+              schema:
+                type: string
+            Repr-Digest:
+              schema:
+                type: string
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: One byte range of the file.
+          headers:
+            Content-Range:
+              schema:
+                type: string
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        "301":
+          description: A folder was addressed without its trailing slash.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "416":
+          description: The range starts beyond the end of the file; `Content-Range` is `bytes */<size>`.
+          headers:
+            Content-Range:
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    head:
+      operationId: headContent
+      tags: [files]
+      summary: Read the headers of a file for the UI
+      description: Answers the headers of `GET` on the content route, from PostgreSQL alone, without a body.
+      x-trove-permission:
+        action: read
+        repository: path.repoKey
+        path: path.path
+      responses:
+        "200":
+          description: The headers of the file.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Accept-Ranges:
+              schema:
+                type: string
+            Repr-Digest:
+              schema:
+                type: string
+        "301":
+          description: A folder was addressed without its trailing slash.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    put:
+      operationId: deployContent
+      tags: [files]
+      summary: Deploy a file or create a folder for the UI
+      description: |
+        The transfer of `PUT /files/{repoKey}/{path}` (R-API-025, Q-UI-106) for a request that the session cookie
+        authenticates, served by the role `api`: the same decision (`deploy`, and `overwrite` to replace different
+        content, both decided before the body is read), the same `Repr-Digest` check, the same answers. The request
+        needs the session's CSRF token like every unsafe request of a session. A request that the session cookie did
+        not authenticate answers `404` like an unknown path. A body larger than `ui.deploy.max_upload_bytes` (when it
+        is not 0) answers `413` before it is spooled: at once for a declared `Content-Length` above the limit, when
+        the limit is crossed for a body of unknown length.
+      x-trove-permission:
+        action: deploy
+        repository: path.repoKey
+        path: path.path
+      parameters:
+        - name: Repr-Digest
+          in: header
+          description: "`sha-256=:<base64>:` and optionally `sha-512=:<base64>:` (RFC 9530)."
+          schema:
+            type: string
+        - name: If-None-Match
+          in: header
+          description: "`*` makes the deploy create-only."
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          "*/*":
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: An identical re-upload, or an existing folder; nothing changed.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "201":
+          description: The file or folder was created, or the file was replaced.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "405":
+          description: The repository's class does not accept deploys.
+          headers:
+            Allow:
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -7496,6 +7743,7 @@ paths:
                     sizeBytes: 48213
                     sha256: 5be0c1d2e8f3a4b5c6d7e8f90123456789abcdef0123456789abcdef01234567
                     downloadUrl: https://trove.example.com/api/npm/npm-local/@team-a/ui/-/ui-1.4.0.tgz
+                    contentUrl: /api/v1/repositories/npm-local/content/@team-a/ui/-/ui-1.4.0.tgz
         "304":
           $ref: "#/components/responses/NotModified"
         "400":
@@ -10073,13 +10321,21 @@ components:
           description: UUID written by a restore; `null` until this replica has read `system_state`.
         answeredBy:
           type: object
-          required: [replica, role]
+          required: [replica, role, roleName]
           properties:
             replica:
               type: string
             role:
               type: string
+              description: |
+                The role class of the replica that answered, in the vocabulary of the releases before the cut into task areas,
+                which this enum keeps (R-ARCH-025): `web` for a replica that serves client endpoints, so for `api`, `packages`
+                and the upgrade bridge `web` alike, `worker`, and `all` for the development role. `roleName` is the exact role.
               enum: [web, worker, all]
+            roleName:
+              type: string
+              description: "The role the replica runs in (`--role`, Q-OPS-161), as the registry, `trove_build_info{role}` and the logs name it; open for further roles."
+              example: api
         version:
           type: object
           required: [version, revision, goVersion]
@@ -10162,7 +10418,7 @@ components:
             type: integer
         roles:
           type: object
-          description: Per role (`web`, `worker`, `all`).
+          description: Per role (`api`, `packages`, `worker`, and during an upgrade across the cut `web`; `all` in the development role), keyed by `roleName`; the replicas of a role's pools count in the role.
           additionalProperties:
             $ref: "#/components/schemas/RoleSummary"
     RoleSummary:
@@ -10261,6 +10517,7 @@ components:
         - version
         - revision
         - roles
+        - roleName
         - state
         - lost
         - startedAt
@@ -10283,9 +10540,20 @@ components:
           type: string
         roles:
           type: array
+          description: |
+            The role class of the replica, in the vocabulary of the releases before the cut into task areas, which this enum
+            keeps (R-ARCH-025): `web` for a replica that serves client endpoints, so for `api`, `packages` and the upgrade
+            bridge `web` alike, `worker`, and `all` for the development role. `roleName` is the exact role.
           items:
             type: string
             enum: [web, worker, all]
+        roleName:
+          type: string
+          description: "The role the replica registered with (Q-OPS-161): `api`, `packages`, `worker`, `web` (the upgrade bridge and the releases before the cut) or `all` (the development role); open for further roles."
+          example: packages
+        pool:
+          type: [string, "null"]
+          description: The endpoint pool or worker pool the replica belongs to (`TROVE_POOL_NAME`); `null` for the main Deployment of its role.
         state:
           type: string
           enum: [starting, ready, unready, draining]
@@ -10631,13 +10899,17 @@ components:
           enum: [ok, failed, absent]
     EncryptionReplica:
       type: object
-      required: [name, role, activeKeyId, keyIds]
+      required: [name, role, roleName, activeKeyId, keyIds]
       properties:
         name:
           type: string
         role:
           type: string
+          description: The role class of the replica as `answeredBy.role` of the system information names it; `roleName` is the exact role.
           enum: [web, worker, all]
+        roleName:
+          type: string
+          description: The role the replica runs in (Q-OPS-161).
         activeKeyId:
           type: string
         keyIds:
@@ -13026,6 +13298,9 @@ components:
         downloadUrl:
           type: string
           description: Files only.
+        contentUrl:
+          type: string
+          description: Files only. The relative URL of the content route of the file (`/api/v1/repositories/{repoKey}/content/{path}`), which the session cookie authenticates on the role `api`; the UI's downloads use it (R-API-025, Q-UI-106).
         listingUrl:
           type: string
           description: Folders only.
@@ -13511,10 +13786,11 @@ components:
           format: date-time
     PackageFile:
       type: object
-      required: [path, sizeBytes, sha256, downloadUrl]
+      required: [path, sizeBytes, sha256, downloadUrl, contentUrl]
       properties:
         path:
           type: string
+          description: The path of the file item in the repository that holds it.
         sizeBytes:
           type: integer
           format: int64
@@ -13524,6 +13800,9 @@ components:
         downloadUrl:
           type: string
           description: Absolute, built on the public base URL.
+        contentUrl:
+          type: string
+          description: The relative URL of the content route of the file item (`/api/v1/repositories/{repoKey}/content/{path}`), which the session cookie authenticates on the role `api`; the UI's downloads use it (R-API-025, R-API-029, Q-UI-106).
     PackageVersion:
       type: object
       required: [packageId, format, name, version, prerelease, publishedAt, licenses, sizeBytes, downloadCount, hasReadme, metadata, repositories, files]

@@ -1,6 +1,6 @@
 # How trove runs
 
-This page explains the moving parts of a trove installation: the process roles, the three services trove depends on and what each of them holds, why any replica can answer any request, which listeners a replica opens, how the schema migration runs, and what the Helm chart deploys. Read it before you install trove or plan its capacity.
+This page explains the moving parts of a trove installation: the process roles, the three services trove depends on and what each of them holds, why any replica of a role can answer any request, which listeners a replica opens, how the schema migration runs, and what the Helm chart deploys. Read it before you install trove or plan its capacity.
 
 ## At a glance
 
@@ -10,13 +10,14 @@ This page explains the moving parts of a trove installation: the process roles, 
        ingress controller (edge)
                  │ HTTPS, requests spread at random
                  ▼
-  web replicas                           worker replicas
-    client listener :8080                  background jobs
-    further endpoints (own ports)          ops listener :8081
-    ops listener :8081
-          │                                      │
-          └───────────────── TLS ────────────────┘
-                              │
+  api replicas            packages replicas            worker replicas
+    UI, management API      package protocols            background jobs
+    sign-in, CI exchange    raw files, tokens only       (queues, pools)
+    client listener :8080   client listener :8080        ops listener :8081
+    ops listener :8081      ops listener :8081
+          │                       │                            │
+          └───────────────────────┴──────────── TLS ───────────┘
+                                  │
        ┌──────────────────────┼──────────────────────┐
        ▼                      ▼                      ▼
   PostgreSQL            Valkey with Sentinel    S3 object storage
@@ -31,9 +32,13 @@ trove is a single binary with the web UI built in. What a process does is set by
 
 | Role | What it runs | Where it runs |
 |---|---|---|
-| `web` | The client listener with the UI, the management API, sign-in, raw file transfer and the package protocols; the ops listener. It puts background work into the job queue but does not run it. | The `web` Deployment and, optionally, a pool Deployment per endpoint |
-| `worker` | The background jobs: garbage collection of stored content, repository and folder deletions, token and session cleanup, audit retention and the other maintenance tasks. It opens the ops listener only, never a client port. | The `worker` Deployment |
-| `all` | Both of the above in one process. It logs a warning at start because it is meant for local development only. | Never rendered by the chart |
+| `api` | The client listener with the UI, the management API, sign-in and the CI token exchange, and the UI's file transfer (the content routes under `/api/v1/repositories/<key>/content/`); the ops listener. It holds the sessions and the sign-in secrets (`secrets.breakGlass`, `secrets.oidc[]`). It puts background work into the job queue but does not run it. | The `api` Deployment and, optionally, a pool Deployment per path prefix or endpoint |
+| `packages` | The client listener with the package protocols (`/api/<format>/<repository>/`) and the raw file transfer (`/files/`), for clients that present a token; the ops listener. It ignores a session cookie, mounts no sign-in secret and fills the cache of remote repositories from their upstreams. | The `packages` Deployment and, optionally, a pool Deployment per path prefix or endpoint |
+| `worker` | The background jobs: garbage collection of stored content, repository and folder deletions, token and session cleanup, audit retention, the sync of the advisory data and the other maintenance tasks. It opens the ops listener only, never a client port. A worker pool claims only the queues you assign to it. | The `worker` Deployment and, optionally, a pool Deployment per queue set |
+| `web` | Everything `api` and `packages` run, in one process: the role of the releases before the split and the bridge of the upgrade across it. A fresh installation never runs it; see [Upgrades](upgrades.md#upgrade-from-a-release-before-the-split-into-roles). | The `web` Deployment, only while `web.enabled` is `true` |
+| `all` | Every role above in one process. It logs a warning at start because it is meant for local development only. | Never rendered by the chart |
+
+The ingress controller sends each request to the Service of the role that serves its path: the UI, sign-in and the management API to `api`, the package protocols and `/files/` to `packages`. Nothing else tells a role from the other: a path that a role does not serve answers like any unknown path, with `404`.
 
 Besides `serve`, the binary has these commands:
 
@@ -58,9 +63,9 @@ Every connection to these services runs TLS by default, and the server certifica
 
 ## Any replica, any request
 
-No `web` replica keeps state that a later request needs. A sign-in is three requests (start, identity provider, callback) and each step is recorded in PostgreSQL, so each of them may reach a different replica. Sessions, tokens and permissions are read from PostgreSQL and cached per replica. Every replica polls the PostgreSQL change log and drops a cached value that a write on another replica made stale; a revoked token or an ended session stops working on every replica within `auth.revocation_bound` (2 s by default).
+No replica of `api` or `packages` keeps state that a later request needs. A sign-in is three requests (start, identity provider, callback) and each step is recorded in PostgreSQL, so each of them may reach a different replica. Sessions, tokens and permissions are read from PostgreSQL and cached per replica. Every replica polls the PostgreSQL change log and drops a cached value that a write on another replica made stale; a revoked token or an ended session stops working on every replica within `auth.revocation_bound` (2 s by default).
 
-The client Service spreads requests over the `web` pods at random and has no session affinity. Do not add cookie or source-address affinity at the ingress controller: trove does not need it, and it would defeat the even spread of load.
+The role Services spread requests over the pods of their role at random and have no session affinity. Do not add cookie or source-address affinity at the ingress controller: trove does not need it, and it would defeat the even spread of load.
 
 Background jobs are claimed by `worker` replicas under leases with heartbeats. A job whose worker disappears is picked up by another one when the lease runs out.
 
@@ -68,9 +73,9 @@ Background jobs are claimed by `worker` replicas under leases with heartbeats. A
 
 | Listener | Port | Serves | Opened by |
 |---|---|---|---|
-| Client listener (the default endpoint) | `8080` (`server.listen`) | The UI under `/ui/`, the management API under `/api/v1/`, sign-in under `/auth/`, raw files under `/files/` and the package protocols under `/api/<format>/<repository>/` | `web` |
-| Further endpoints | One port each, set per endpoint | Only the route families the endpoint is configured for (packages by default), with its own hosts, certificates and accepted credentials | `web`, or the endpoint's own pool |
-| Ops listener | `8081` (`server.ops_listen`) | `GET /healthz` (liveness), `GET /readyz` (readiness, `?verbose=1` lists the checks) and `GET /metrics` (Prometheus) | `web` and `worker` |
+| Client listener (the default endpoint) | `8080` (`server.listen`) | `api`: the UI under `/ui/`, the management API under `/api/v1/` (the UI's file transfer included) and sign-in under `/auth/`. `packages`: raw files under `/files/` and the package protocols under `/api/<format>/<repository>/`. | `api` and `packages`, each its own routes |
+| Further endpoints | One port each, set per endpoint | Only the route families the endpoint is configured for (packages by default) that the role serves, with its own hosts, certificates and accepted credentials | `api` or `packages`, or the endpoint's own pool |
+| Ops listener | `8081` (`server.ops_listen`) | `GET /healthz` (liveness), `GET /readyz` (readiness, `?verbose=1` lists the checks) and `GET /metrics` (Prometheus) | `api`, `packages` and `worker` |
 
 An endpoint is identified by the listener a request arrives on, not by its `Host` header; a host the endpoint does not serve answers `421`. [Endpoints and exposure rules](endpoints.md) describes further endpoints. With the chart, every listener serves HTTPS by default and reloads its certificate without a restart; see [TLS and certificates](tls-and-certificates.md).
 
@@ -80,7 +85,7 @@ The ops listener has no authentication of its own unless `metrics.auth` is set t
 
 A replica opens its ops listener first and answers `/readyz` with `503` until its checks pass: PostgreSQL reachable on the primary, the schema at the version this binary needs, the TLS material loaded, the object store checked once and the client listeners bound. Valkey is reported but holds back only the first readiness, and only when its settings are wrong (a wrong password, an unknown primary name, a rejected certificate). A replica that cannot reach PostgreSQL stays alive and unready and keeps trying.
 
-On `SIGTERM`, a replica turns unready at once. A `web` replica keeps serving for `health.shutdown_drain_delay` (5 s by default) so the ingress controller can drop it, lets in-flight requests finish and closes within the pod's termination grace period (120 s for `web`, 300 s for `worker` in the chart). A `worker` stops claiming jobs and releases what it holds. This is what lets a node drain or a rolling restart pass without failed requests.
+On `SIGTERM`, a replica turns unready at once. An `api` or `packages` replica keeps serving for `health.shutdown_drain_delay` (5 s by default) so the ingress controller can drop it, lets in-flight requests finish and closes within the pod's termination grace period (120 s for `api` and `packages`, 300 s for `worker` in the chart). A `worker` stops claiming jobs and releases what it holds. This is what lets a node drain or a rolling restart pass without failed requests.
 
 ## The migration Job
 
@@ -100,17 +105,20 @@ A replica checks the schema at start (the compatibility gate):
 
 | Object | Name | Purpose |
 |---|---|---|
-| Deployment | `<fullname>-web` | `trove serve --role web`, 3 replicas by default |
+| Deployment | `<fullname>-api` | `trove serve --role api`, 2 replicas by default |
+| Deployment | `<fullname>-packages` | `trove serve --role packages`, 3 replicas by default |
 | Deployment | `<fullname>-worker` | `trove serve --role worker`, 2 replicas by default |
+| Deployment, Service | `<fullname>-api-<pool>`, `<fullname>-packages-<pool>`, `<fullname>-worker-<pool>` | One per entry of `api.pools`, `packages.pools` and `worker.pools`; a worker pool has no Service |
+| Deployment, Service | `<fullname>-web` and `<fullname>` | Only with `web.enabled`, the bridge of the upgrade from a release before the split |
 | Job (Helm hook) | `<fullname>-migrate` | `trove migrate up` before install and upgrade, with its own ConfigMap and ServiceAccount |
-| Service | `<fullname>` | Port 8080 of the `web` pods, no session affinity |
-| Service | `<fullname>-ops` | Port 8081 of every `web` and `worker` pod |
+| Service | `<fullname>-api`, `<fullname>-packages` | Port 8080 of the pods of that role's main Deployment, no session affinity; the Ingress routes by path to them |
+| Service | `<fullname>-ops` | Port 8081 of every `api`, `packages`, `worker` and `web` pod |
 | ConfigMap | `<fullname>-config` | `trove.yaml`, rendered from the `config` value |
 | ServiceAccount | `<fullname>` | Without a Kubernetes API token: trove never calls the Kubernetes API |
 | PodDisruptionBudget | one per Deployment | At most one pod of a role unavailable at a time |
-| NetworkPolicy | `<fullname>-web`, `<fullname>-worker`, `<fullname>-migrate` | Ingress rules only: 8080 from the configured peers (anywhere by default), 8081 from the `monitoring` namespace, nothing to the Job |
+| NetworkPolicy | one per Deployment (`<fullname>-api`, `<fullname>-packages`, `<fullname>-worker`, each pool), `<fullname>-migrate` | Ingress rules only: 8080 from the configured peers (anywhere by default), 8081 from the `monitoring` namespace, nothing to the Job |
 | Ingress | `<fullname>` | Only with `ingress.enabled`; HTTPS to the backend |
-| Service, Ingress, NetworkPolicy, optional Deployment | `<fullname>-ep-<name>`, `<fullname>-web-ep-<name>` | One set per further endpoint |
+| Service, Ingress, NetworkPolicy, optional Deployment | `<fullname>-ep-<name>`, `<fullname>-packages-ep-<name>`, `<fullname>-api-ep-<name>` | One set per further endpoint |
 
 The pods run as a non-root user with a read-only root file system and satisfy the restricted Pod Security Standard. They are spread across nodes and zones.
 

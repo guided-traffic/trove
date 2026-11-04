@@ -1071,6 +1071,42 @@
         <target>Alle bereiten Replikate laufen auf einem Knoten: Ein Drain dieses Knotens unterbricht diese Rolle.</target>
       </segment>
     </unit>
+    <unit id="system.role.no-packages">
+      <notes>
+        <note category="location">src/app/features/system/system-status.html:130,132</note>
+      </notes>
+      <segment>
+        <source>No live packages replica: package clients and raw downloads get no answer from the edge, while the UI keeps working.</source>
+        <target>Kein aktives Packages-Replikat: Paketclients und Rohdatei-Downloads erhalten vom Edge keine Antwort, während die Oberfläche weiter funktioniert.</target>
+      </segment>
+    </unit>
+    <unit id="system.pool.main">
+      <notes>
+        <note category="location">src/app/features/system/system-status.html:143,144</note>
+      </notes>
+      <segment>
+        <source>Main</source>
+        <target>Haupt</target>
+      </segment>
+    </unit>
+    <unit id="system.pool.named">
+      <notes>
+        <note category="location">src/app/features/system/system-status.html:145,146</note>
+      </notes>
+      <segment>
+        <source>Pool</source>
+        <target>Pool</target>
+      </segment>
+    </unit>
+    <unit id="system.pool.no-live">
+      <notes>
+        <note category="location">src/app/features/system/system-status.html:171,172</note>
+      </notes>
+      <segment>
+        <source>No live replica in the pool <ph id="0" equiv="INTERPOLATION" disp="{{ p.pool }}"/>: what it claims or serves waits until one is ready.</source>
+        <target>Kein aktives Replikat im Pool <ph id="0" equiv="INTERPOLATION" disp="{{ p.pool }}"/>: Was er abarbeitet oder ausliefert, wartet, bis eines bereit ist.</target>
+      </segment>
+    </unit>
     <unit id="system.role.no-worker">
       <notes>
         <note category="location">src/app/features/system/system-status.html:137,139</note>

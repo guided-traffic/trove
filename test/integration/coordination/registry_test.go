@@ -178,3 +178,91 @@ func TestReplicaListLostLeases(t *testing.T) {
 		}
 	})
 }
+
+// TestReplicaRegistryRoles is R-OPS-003's role vocabulary after the cut into task areas (Q-OPS-161) and the count of the
+// fetch share (R-REPO-040, Q-ARCH-297): the registry stores the role names api, packages, worker, web and all as given,
+// and only the replicas that fill client misses, pools included, are counted.
+func TestReplicaRegistryRoles(t *testing.T) {
+	e := newEnv(t)
+	sys := defaultSystem()
+	host := e.newReplica("roles-host", replicaOpts{role: "web", sys: sys})
+	register := func(name, role, pool string) *cluster.Registry {
+		t.Helper()
+		reg, err := cluster.NewRegistry(cluster.RegistryOptions{
+			DB: host.db.ControlPool(),
+			Identity: cluster.ReplicaIdentity{
+				UID: uuidV4(), Name: name, Version: "0.1.0", Revision: "it", Role: role, Pool: pool, StartedAt: time.Now(),
+				SecretKeyIDs: []string{"k1"}, ActiveSecretKeyID: "k1",
+			},
+			Config: sys, WatchdogTimeout: 30 * time.Second, Log: quiet,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := reg.Start(context.Background()); err != nil {
+			t.Fatalf("registry.Start(%s): %v", name, err)
+		}
+		t.Cleanup(func() { _ = reg.Stop(context.Background()) })
+		return reg
+	}
+	var pooled *cluster.Registry
+	// The host is a web replica of its own, so it is counted as one that fills.
+	fill, err := cluster.NewFillCount(host.db.ControlPool(), sys.HeartbeatStaleAfter, sys.HeartbeatInterval)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := func() int {
+		if err := fill.Refresh(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		return fill.Get()
+	}
+
+	t.Run("R-OPS-003 Q-OPS-161 every role value of the cut is stored as given, the pool next to it", func(t *testing.T) {
+		register("roles-api", "api", "")
+		register("roles-pk", "packages", "")
+		pooled = register("roles-pk-ep", "packages", "ep-customers")
+		register("roles-wk", "worker", "")
+		register("roles-wk-vuln", "worker", "vuln")
+		register("roles-all", "all", "")
+		got := e.list(host, sys)
+		for name, want := range map[string][2]string{
+			"roles-api": {"api", ""}, "roles-pk": {"packages", ""}, "roles-pk-ep": {"packages", "ep-customers"},
+			"roles-wk": {"worker", ""}, "roles-wk-vuln": {"worker", "vuln"}, "roles-all": {"all", ""}, "roles-host": {"web", ""},
+		} {
+			r, ok := got[name]
+			if !ok || len(r.Roles) != 1 || r.Roles[0] != want[0] || r.Pool != want[1] {
+				t.Errorf("%s = %+v, want role %s pool %q", name, r, want[0], want[1])
+			}
+		}
+	})
+
+	t.Run("R-REPO-040 Q-ARCH-297 the fetch share counts packages, web and all with their pools, never api or worker", func(t *testing.T) {
+		// web (host), packages, packages of a pool and all: four. api, worker and a worker pool hold no share.
+		if n := count(); n != 4 {
+			t.Fatalf("n = %d, want 4", n)
+		}
+	})
+
+	t.Run("R-REPO-040 Q-ARCH-297 a lost replica leaves the count and a new one joins it", func(t *testing.T) {
+		pooled.StopHeartbeat() // as a killed process: the row stays and ages
+		e.exec(`UPDATE replica SET heartbeat_at = now() - interval '1 hour' WHERE name = 'roles-pk-ep'`)
+		if n := count(); n != 3 {
+			t.Fatalf("n = %d after one packages replica was lost, want 3", n)
+		}
+		register("roles-pk-2", "packages", "")
+		if n := count(); n != 4 {
+			t.Fatalf("n = %d after a packages replica joined, want 4", n)
+		}
+	})
+
+	t.Run("R-OPS-003 a role outside the vocabulary does not register", func(t *testing.T) {
+		_, err := cluster.NewRegistry(cluster.RegistryOptions{
+			DB:       host.db.ControlPool(),
+			Identity: cluster.ReplicaIdentity{UID: uuidV4(), Name: "roles-bad", Role: "fetch"},
+		})
+		if err == nil {
+			t.Fatal("the role fetch registered")
+		}
+	})
+}

@@ -73,7 +73,7 @@ Rules for code:
 
 ## Metrics
 
-`observability.NewMetrics(role, WithMetricsConfig(cfg.Metrics), WithEndpointNames(names...))` owns the registry. It exposes the Go runtime
+`observability.NewMetrics(role, WithMetricsConfig(cfg.Metrics), WithEndpointNames(names...))` owns the registry; `role` is the `--role` name (`api`, `packages`, `worker`, `web`, `all`, Q-OPS-161) and is the value of `trove_build_info{role}` and of the `role` of every log record. It exposes the Go runtime
 and process collectors (`go_*`, `process_*`, the only families without the `trove_` prefix),
 `trove_build_info{version,revision,goversion,role}`, the HTTP families, `trove_ready`,
 `trove_metrics_label_overflow_total`, `trove_tracing_spans_dropped_total` and

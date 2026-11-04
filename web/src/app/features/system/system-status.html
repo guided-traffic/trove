@@ -108,132 +108,168 @@
   <section aria-labelledby="replicas-heading">
     <h2 id="replicas-heading" i18n="@@system.replicas.heading">Replicas by role</h2>
     @for (g of groups(); track g.role) {
-      @if (g.replicas.length > 0 || g.role !== 'all') {
-        <section class="role" [attr.aria-labelledby]="'role-' + g.role">
-          <h3 id="role-{{ g.role }}">
-            <span translate="no">{{ g.role }}</span>
-            <span class="counts" i18n="@@system.role.counts"
-              >live {{ g.live }}, ready {{ g.ready }}, degraded {{ g.degraded }}</span
-            >
-          </h3>
-          @for (w of g.warnings; track w) {
-            <p class="warning" role="note">
-              <span class="material-icons warn" aria-hidden="true">warning</span>
-              @switch (w) {
-                @case ('fewer-than-two-ready') {
-                  <span i18n="@@system.role.fewer"
-                    >Fewer than two ready replicas: a node drain or the loss of one pod interrupts
-                    this role.</span
-                  >
-                }
-                @case ('one-node') {
-                  <span i18n="@@system.role.one-node"
-                    >All ready replicas on one node: a drain of that node interrupts this
-                    role.</span
-                  >
-                }
-                @case ('no-live-worker') {
-                  <span i18n="@@system.role.no-worker"
-                    >No live worker replica: jobs and scheduled tasks are queued but nothing runs
-                    them.</span
-                  >
-                }
+      <section class="role" [attr.aria-labelledby]="'role-' + g.role">
+        <h3 id="role-{{ g.role }}">
+          <span translate="no">{{ g.role }}</span>
+          <span class="counts" i18n="@@system.role.counts"
+            >live {{ g.live }}, ready {{ g.ready }}, degraded {{ g.degraded }}</span
+          >
+        </h3>
+        @for (w of g.warnings; track w) {
+          <p class="warning" role="note">
+            <span class="material-icons warn" aria-hidden="true">warning</span>
+            @switch (w) {
+              @case ('no-live-worker') {
+                <span i18n="@@system.role.no-worker"
+                  >No live worker replica: jobs and scheduled tasks are queued but nothing runs
+                  them.</span
+                >
               }
-            </p>
-          }
-          @if (g.replicas.length > 0) {
-            <div
-              class="scroll"
-              tabindex="0"
-              role="region"
-              [attr.aria-labelledby]="'role-' + g.role"
-            >
-              <table>
-                <thead>
-                  <tr>
-                    <th scope="col" i18n="@@system.col.name">Name</th>
-                    <th scope="col" i18n="@@system.col.node">Node</th>
-                    <th scope="col" i18n="@@system.col.version">Version</th>
-                    <th scope="col" i18n="@@system.col.state">State</th>
-                    <th scope="col" i18n="@@system.col.heartbeat">Heartbeat</th>
-                    <th scope="col" i18n="@@system.col.valkey">Valkey</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (r of g.replicas; track r.instanceUid) {
-                    <tr>
-                      <th scope="row" translate="no">{{ r.name }}</th>
-                      <td translate="no">{{ r.node ?? '–' }}</td>
-                      <td translate="no">{{ r.version }}</td>
-                      <td>
-                        @if (r.lost) {
-                          <span class="material-icons bad" aria-hidden="true">error</span>
-                          <span i18n="@@system.state.lost">lost</span>
-                        } @else {
-                          @switch (r.state) {
-                            @case ('ready') {
-                              <span class="material-icons ok" aria-hidden="true">check_circle</span>
-                              <span i18n="@@system.state.ready">ready</span>
-                            }
-                            @case ('starting') {
-                              <span class="material-icons" aria-hidden="true">hourglass_empty</span>
-                              <span i18n="@@system.state.starting">starting</span>
-                            }
-                            @case ('draining') {
-                              <span class="material-icons" aria-hidden="true">hourglass_empty</span>
-                              <span i18n="@@system.state.draining">draining</span>
-                            }
-                            @case ('unready') {
-                              <span class="material-icons bad" aria-hidden="true">error</span>
-                              <span i18n="@@system.state.unready">unready</span>
-                            }
-                          }
-                        }
-                        @if (failing(r).length > 0) {
-                          <div class="check-list">
-                            <span i18n="@@system.checks.failing">Failing checks:</span>
-                            <span translate="no">{{ failing(r).join(', ') }}</span>
-                          </div>
-                        }
-                        @for (c of degraded(r); track c) {
-                          <div class="check-list">
-                            <span class="material-icons warn" aria-hidden="true">warning</span>
-                            <span>{{ checkText(c) }}</span>
-                          </div>
-                        }
-                      </td>
-                      <td>
-                        <time [attr.datetime]="r.heartbeatAt">{{
-                          r.heartbeatAt | date: 'mediumTime'
-                        }}</time>
-                      </td>
-                      <td>
-                        @if (r.valkey; as v) {
-                          @if (v.state === 'available') {
-                            <span class="material-icons ok" aria-hidden="true">check_circle</span>
-                            <span i18n="@@system.valkey.available">available</span>
-                          } @else {
-                            <span class="material-icons warn" aria-hidden="true">warning</span>
-                            <span i18n="@@system.valkey.degraded">degraded</span>
-                            @if (v.reason) {
-                              <span translate="no"> ({{ v.reason }})</span>
-                            }
-                          }
-                          @if (v.circuit === 'open') {
-                            <span i18n="@@system.valkey.circuit-open">, circuit open</span>
-                          }
-                        } @else {
-                          –
-                        }
-                      </td>
-                    </tr>
+              @case ('no-live-packages') {
+                <span i18n="@@system.role.no-packages"
+                  >No live packages replica: package clients and raw downloads get no answer from
+                  the edge, while the UI keeps working.</span
+                >
+              }
+            }
+          </p>
+        }
+        @for (p of g.pools; track p.pool) {
+          @if (p.pool === null || p.replicas.length > 0) {
+            <section class="pool" [attr.aria-labelledby]="headingId(g, p)">
+              @if (p.pool !== null || g.pools.length > 1) {
+                <h4 id="{{ headingId(g, p) }}">
+                  @if (p.pool === null) {
+                    <span i18n="@@system.pool.main">Main</span>
+                  } @else {
+                    <span i18n="@@system.pool.named">Pool</span>
+                    <span translate="no">{{ p.pool }}</span>
                   }
-                </tbody>
-              </table>
-            </div>
+                  <span class="counts" i18n="@@system.role.counts"
+                    >live {{ p.live }}, ready {{ p.ready }}, degraded {{ p.degraded }}</span
+                  >
+                </h4>
+              }
+              @for (w of p.warnings; track w) {
+                <p class="warning" role="note">
+                  <span class="material-icons warn" aria-hidden="true">warning</span>
+                  @switch (w) {
+                    @case ('fewer-than-two-ready') {
+                      <span i18n="@@system.role.fewer"
+                        >Fewer than two ready replicas: a node drain or the loss of one pod
+                        interrupts this role.</span
+                      >
+                    }
+                    @case ('one-node') {
+                      <span i18n="@@system.role.one-node"
+                        >All ready replicas on one node: a drain of that node interrupts this
+                        role.</span
+                      >
+                    }
+                    @case ('no-live-pool') {
+                      <span i18n="@@system.pool.no-live"
+                        >No live replica in the pool {{ p.pool }}: what it claims or serves waits
+                        until one is ready.</span
+                      >
+                    }
+                  }
+                </p>
+              }
+              @if (p.replicas.length > 0) {
+                <div
+                  class="scroll"
+                  tabindex="0"
+                  role="region"
+                  [attr.aria-labelledby]="headingId(g, p)"
+                >
+                  <table>
+                    <thead>
+                      <tr>
+                        <th scope="col" i18n="@@system.col.name">Name</th>
+                        <th scope="col" i18n="@@system.col.node">Node</th>
+                        <th scope="col" i18n="@@system.col.version">Version</th>
+                        <th scope="col" i18n="@@system.col.state">State</th>
+                        <th scope="col" i18n="@@system.col.heartbeat">Heartbeat</th>
+                        <th scope="col" i18n="@@system.col.valkey">Valkey</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (r of p.replicas; track r.instanceUid) {
+                        <tr>
+                          <th scope="row" translate="no">{{ r.name }}</th>
+                          <td translate="no">{{ r.node ?? '–' }}</td>
+                          <td translate="no">{{ r.version }}</td>
+                          <td>
+                            @if (r.lost) {
+                              <span class="material-icons bad" aria-hidden="true">error</span>
+                              <span i18n="@@system.state.lost">lost</span>
+                            } @else {
+                              @switch (r.state) {
+                                @case ('ready') {
+                                  <span class="material-icons ok" aria-hidden="true">check_circle</span>
+                                  <span i18n="@@system.state.ready">ready</span>
+                                }
+                                @case ('starting') {
+                                  <span class="material-icons" aria-hidden="true">hourglass_empty</span>
+                                  <span i18n="@@system.state.starting">starting</span>
+                                }
+                                @case ('draining') {
+                                  <span class="material-icons" aria-hidden="true">hourglass_empty</span>
+                                  <span i18n="@@system.state.draining">draining</span>
+                                }
+                                @case ('unready') {
+                                  <span class="material-icons bad" aria-hidden="true">error</span>
+                                  <span i18n="@@system.state.unready">unready</span>
+                                }
+                              }
+                            }
+                            @if (failing(r).length > 0) {
+                              <div class="check-list">
+                                <span i18n="@@system.checks.failing">Failing checks:</span>
+                                <span translate="no">{{ failing(r).join(', ') }}</span>
+                              </div>
+                            }
+                            @for (c of degraded(r); track c) {
+                              <div class="check-list">
+                                <span class="material-icons warn" aria-hidden="true">warning</span>
+                                <span>{{ checkText(c) }}</span>
+                              </div>
+                            }
+                          </td>
+                          <td>
+                            <time [attr.datetime]="r.heartbeatAt">{{
+                              r.heartbeatAt | date: 'mediumTime'
+                            }}</time>
+                          </td>
+                          <td>
+                            @if (r.valkey; as v) {
+                              @if (v.state === 'available') {
+                                <span class="material-icons ok" aria-hidden="true">check_circle</span>
+                                <span i18n="@@system.valkey.available">available</span>
+                              } @else {
+                                <span class="material-icons warn" aria-hidden="true">warning</span>
+                                <span i18n="@@system.valkey.degraded">degraded</span>
+                                @if (v.reason) {
+                                  <span translate="no"> ({{ v.reason }})</span>
+                                }
+                              }
+                              @if (v.circuit === 'open') {
+                                <span i18n="@@system.valkey.circuit-open">, circuit open</span>
+                              }
+                            } @else {
+                              –
+                            }
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+            </section>
           }
-        </section>
-      }
+        }
+      </section>
     }
     <p class="limits" i18n="@@system.replicas.limits">
       This screen cannot see disruption budgets, free capacity on other nodes, or whether the
@@ -399,7 +435,7 @@
         @for (r of e.replicas; track r.name) {
           <tr>
             <th scope="row" translate="no">{{ r.name }}</th>
-            <td translate="no">{{ r.role }}</td>
+            <td translate="no">{{ r.roleName }}</td>
             <td translate="no">{{ r.activeKeyId }}</td>
             <td translate="no">{{ r.keyIds.join(', ') }}</td>
             <td>

@@ -270,6 +270,29 @@ func TestSlots(t *testing.T) {
 			t.Errorf("n=0 counts as 1: %d", got)
 		}
 	})
+	t.Run("R-REPO-040 Q-ARCH-297 only the replicas that fill share the budget: two api, three packages and two worker replicas give each packages replica 22 of 64", func(t *testing.T) {
+		live := []string{"api", "api", "packages", "packages", "packages", "worker", "worker"}
+		n := 0
+		for _, role := range live {
+			if cluster.FillsClientMisses(role) {
+				n++
+			}
+		}
+		s := newSlots(256, func() int { return n })
+		if got := s.repoLimit(64); n != 3 || got != 22 {
+			t.Fatalf("n = %d, share = %d, want 3 and 22", n, got)
+		}
+		// The bridge and the development role fill too: a bridge replica next to the packages replicas shares the budget.
+		n = 0
+		for _, role := range append(live, "web", "all") {
+			if cluster.FillsClientMisses(role) {
+				n++
+			}
+		}
+		if got := newSlots(256, func() int { return n }).repoLimit(64); n != 5 || got != 13 {
+			t.Fatalf("with web and all: n = %d, share = %d, want 5 and 13", n, got)
+		}
+	})
 	t.Run("R-REPO-040 a fetch waits for a free slot and answers 503 with Retry-After 5 after the queue timeout", func(t *testing.T) {
 		s := newSlots(10, nil)
 		rel, _, err := s.acquire(context.Background(), 1, 1, time.Second)

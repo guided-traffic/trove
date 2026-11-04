@@ -8,50 +8,105 @@ import { EncryptionStatus, Replica, SystemInfo } from '../../api/system-api';
 
 export type ServiceState = 'ready' | 'degraded' | 'unready';
 
-export type RoleWarning = 'fewer-than-two-ready' | 'one-node' | 'no-live-worker';
+export type RoleWarning =
+  | 'fewer-than-two-ready'
+  | 'one-node'
+  | 'no-live-worker'
+  | 'no-live-packages'
+  | 'no-live-pool';
 
-export interface RoleGroup {
-  readonly role: 'web' | 'worker' | 'all';
+/** What a group states about its replicas and about a draining node (INV-12, R-HA-059). */
+export interface GroupHealth {
   readonly replicas: readonly Replica[];
-  /** Live replicas of the role as `/system/info` counts them. */
   readonly live: number;
   readonly ready: number;
   readonly degraded: number;
-  /** Ready replicas that are not lost. */
+  /** Distinct nodes of the ready replicas that are not lost. */
   readonly readyNodes: readonly string[];
   readonly warnings: readonly RoleWarning[];
-  /** Draining any one node leaves a ready replica of this role (INV-12, R-HA-059). */
+  /** Draining any one node leaves a ready replica of this group (INV-12, R-HA-059). */
   readonly drainSafe: boolean;
 }
 
-const ROLES = ['web', 'worker'] as const;
+/** The replicas of one pool of a role (R-HA-062, R-EP-008); `pool` is null for the role's main Deployment. */
+export interface PoolGroup extends GroupHealth {
+  readonly pool: string | null;
+}
 
-/** One group per role; `all` appears only when a replica reports it (the development role). */
+/** One role of the registry: its counts as `/system/info` reports them, and its replicas by pool (Q-UI-107). */
+export interface RoleGroup extends GroupHealth {
+  /** The exact role of the registry (`roleName`): api, packages, worker, web (the upgrade bridge), all. */
+  readonly role: string;
+  /** One sub-group per pool, the role's main Deployment first; the pools of a role count in the role. */
+  readonly pools: readonly PoolGroup[];
+}
+
+/** The roles every installation has after the cut, in the order the screen shows them (R-UI-038, Q-UI-107). */
+const MAIN_ROLES = ['api', 'packages', 'worker'] as const;
+/** Roles that have a group only while a replica reports them: the upgrade bridge and the development role. */
+const OPTIONAL_ROLES = ['web', 'all'] as const;
+
+/** The exact role of a replica; `roles` holds the closed class of the released contract (Q-API-194). */
+export function roleOf(replica: Replica): string {
+  return replica.roleName || replica.roles[0] || '';
+}
+
+interface Counts {
+  readonly live: number;
+  readonly ready: number;
+  readonly degraded: number;
+}
+
+/** Counts, nodes and the two drain warnings of a set of replicas; `counts` replaces the derived ones. */
+function health(members: readonly Replica[], counts?: Counts): GroupHealth {
+  const ready = members.filter((r) => r.state === 'ready' && !r.lost);
+  const nodes = ready.map((r) => r.node);
+  const allReportNode = nodes.every((n) => n !== null);
+  const distinct = new Set(nodes.filter((n): n is string => n !== null));
+  const warnings: RoleWarning[] = [];
+  if (ready.length < 2) warnings.push('fewer-than-two-ready');
+  else if (allReportNode && distinct.size < 2) warnings.push('one-node');
+  return {
+    replicas: members,
+    live: counts?.live ?? members.filter((r) => !r.lost).length,
+    ready: counts?.ready ?? ready.length,
+    degraded: counts?.degraded ?? members.filter((r) => r.degraded.length > 0).length,
+    readyNodes: [...distinct],
+    warnings,
+    drainSafe: warnings.length === 0,
+  };
+}
+
+/**
+ * One group per role in the order api, packages, worker (Q-UI-107), then `web` and `all` while a replica of that
+ * role is listed; within a group one sub-group per pool, the role's main Deployment first, the pools by name. The
+ * header counts of a role are `replicas.roles` of `/system/info`. The drain warnings and the drain safety are
+ * decided per sub-group, and a role is drain-safe when each of its sub-groups is. The group of `worker` warns while no
+ * replica is live, the group of `packages` likewise, and a pool whose replicas are all lost warns by its name: the
+ * registry does not say which queues a pool claims.
+ */
 export function roleGroups(info: SystemInfo, replicas: readonly Replica[]): RoleGroup[] {
-  const roles: ('web' | 'worker' | 'all')[] = [...ROLES];
-  if (replicas.some((r) => r.roles.includes('all'))) roles.push('all');
+  const present = new Set(replicas.map(roleOf));
+  const roles: string[] = [...MAIN_ROLES, ...OPTIONAL_ROLES.filter((r) => present.has(r))];
+  // A role this screen does not know (the role value is open) is shown after the known ones, not hidden.
+  const known = new Set<string>([...MAIN_ROLES, ...OPTIONAL_ROLES]);
+  for (const r of [...present].sort()) if (r && !known.has(r)) roles.push(r);
   return roles.map((role) => {
-    const members = replicas.filter((r) => r.roles.includes(role));
-    const summary = info.replicas.roles[role];
-    const ready = members.filter((r) => r.state === 'ready' && !r.lost);
-    const nodes = ready.map((r) => r.node);
-    const allReportNode = nodes.every((n) => n !== null);
-    const distinct = new Set(nodes.filter((n): n is string => n !== null));
+    const members = replicas.filter((r) => roleOf(r) === role);
+    const names = [...new Set(members.map((r) => r.pool ?? null))]
+      .filter((p): p is string => p !== null)
+      .sort();
+    const pools: PoolGroup[] = [null, ...names].map((pool) => {
+      const own = health(members.filter((r) => (r.pool ?? null) === pool));
+      const warnings = [...own.warnings];
+      if (pool !== null && own.live === 0) warnings.push('no-live-pool');
+      return { ...own, pool, warnings };
+    });
+    const own = health(members, info.replicas.roles[role]);
     const warnings: RoleWarning[] = [];
-    if (ready.length < 2) warnings.push('fewer-than-two-ready');
-    else if (allReportNode && distinct.size < 2) warnings.push('one-node');
-    const live = summary?.live ?? members.filter((r) => !r.lost).length;
-    if (role === 'worker' && live === 0) warnings.push('no-live-worker');
-    return {
-      role,
-      replicas: members,
-      live,
-      ready: summary?.ready ?? ready.length,
-      degraded: summary?.degraded ?? members.filter((r) => r.degraded.length > 0).length,
-      readyNodes: [...distinct],
-      warnings,
-      drainSafe: !warnings.includes('fewer-than-two-ready') && !warnings.includes('one-node'),
-    };
+    if (own.live === 0 && role === 'worker') warnings.push('no-live-worker');
+    if (own.live === 0 && role === 'packages') warnings.push('no-live-packages');
+    return { ...own, role, pools, warnings, drainSafe: pools.every((p) => p.drainSafe) };
   });
 }
 
@@ -159,7 +214,7 @@ export function ringGaps(status: EncryptionStatus): RingGap[] {
   return status.replicas
     .map((r) => ({
       replica: r.name,
-      role: r.role,
+      role: r.roleName,
       missing: [...needed].filter((id) => !r.keyIds.includes(id)).sort(),
     }))
     .filter((g) => g.missing.length > 0);

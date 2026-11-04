@@ -365,6 +365,8 @@ func versionOf(base string, d view.VersionDetail) gen.PackageVersion {
 	for _, f := range d.Files {
 		out.Files = append(out.Files, gen.PackageFile{
 			Path: f.Path, SizeBytes: f.SizeBytes, Sha256: f.SHA256, DownloadUrl: downloadURL(base, d.Format, f.Repo, f.Path),
+			// f.Path is the path of the file item in f.Repo, the repository that holds it (PackageViewFiles).
+			ContentUrl: edge.ContentPath(f.Repo, f.Path),
 		})
 	}
 	return out

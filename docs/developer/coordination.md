@@ -36,6 +36,7 @@ this page covers what is built on it.
 | `internal/cluster/changelog_prune.go` | `PruneChanges` |
 | `internal/cluster/signal_bus.go`, `signal_coalescer.go` | `Bus` (what Valkey must offer), `Signals` (post-commit coalescer, subscriptions) |
 | `internal/cluster/replica_registry.go`, `replica_list.go` | `Registry` (register, heartbeat, drain, delete), `ListReplicas`, `PruneReplicas` |
+| `internal/cluster/replica_roles.go` | the role constants, `ValidRole`, `FillsClientMisses`, `FillCount` |
 | `internal/cache/` | `Registry`, `Register[K,V]`, `Cache[K,V]`: bounded LRU, SafetyTTL, fill rule |
 | `internal/meta/postgres/queries/jobs.sql`, `cluster.sql` | The sqlc queries of the above |
 
@@ -269,12 +270,17 @@ A cache with `MaxBytes` needs `Weigh`. Metrics: `trove_cache_requests_total{cach
 
 ## Replica registry
 
-`cluster.Registry` (one per replica, `web` and `worker`): `Start` upserts the row (retrying until PostgreSQL answers), a loop on the control connection upserts again every
+`cluster.Registry` (one per replica, of the roles `api`, `packages`, `worker`, `web` and `all`, the constants and `ValidRole` of [replica_roles.go](../../internal/cluster/replica_roles.go); `NewRegistry` refuses any other role, Q-OPS-161, Q-OPS-166): `Start` upserts the row (retrying until PostgreSQL answers), a loop on the control connection upserts again every
 `system.heartbeat_interval` with the snapshot from `RegistryOptions.Snapshot` (state, checks, Valkey view) and `RegistryOptions.Leases`. `Drain` writes `draining`; `Stop` deletes the row;
 `StopHeartbeat` leaves it (fault injection). The heartbeat is an upsert, so a row removed by the prune or a restore comes back.
 
 `cluster.ListReplicas(ctx, db, cfg.System)` reads the table on the request pool (`DB.Main`; there is no `Registry.List`); a lost replica lists no leases, so a lease name appears on one live row only. `Lost` is `heartbeat_at < now() - system.heartbeat_stale_after` on PostgreSQL's clock. `PruneReplicas` and `jobs.KindReplicaRegistryPrune`
-delete rows stale for 24 h. The HTTP layer converts `cluster.ReplicaInfo` to its own type; `internal/cluster` imports no edge package.
+delete rows stale for 24 h. The HTTP layer converts `cluster.ReplicaInfo` to its own type; `internal/cluster` imports no edge package. The role of a row is the exact
+`--role` name; the API reports it as `roleName` and keeps the closed role class in `roles` (Q-API-194, [http-api.md](http-api.md)).
+
+`cluster.FillCount` (same file) is the n of the fetch share of a remote repository (R-REPO-040, Q-ARCH-297, Q-OPS-165): the live replicas whose role fills client misses
+(`FillsClientMisses`: `packages`, `web`, `all`, pools included), counted by `CountFillingReplicas` once per heartbeat interval over the control connection. A failed read keeps the
+last value, n is at least 1, and `Get` is the `Replicas` function of `proxy.Options`. It is not the limiters' `replicaCount` of `internal/app`, which counts the replicas of the process's own role and pool.
 
 ## Bounds P-13 and P-14
 
@@ -318,7 +324,7 @@ go test -tags integration -race ./test/integration/coordination/...
 | `changes_test.go` | epoch order, regression, reused epoch, gap, unknown payload, prune, `PollNow`, the fill rule against the log |
 | `heartbeat_test.go` | the heartbeat judges and extends only the runs of its worker: a job claimed while a heartbeat is in flight, a row held without a run |
 | `areas_test.go` | every registered change area has its `cluster_epoch` row after the migrations |
-| `registry_test.go` | registration, heartbeat, lost (no leases listed), replacement, draining, prune; `TestReplicaLostWithDefaults` waits 30 s with the shipped values |
+| `registry_test.go` | registration, heartbeat, lost (no leases listed), replacement, draining, prune; `TestReplicaRegistryRoles`: every role value stored as given with its pool, the fetch share's count; `TestReplicaLostWithDefaults` waits 30 s with the shipped values |
 | `scheduler_test.go` | one scheduler, no duplicate slot across a hand-over, retention exception, postponed slot, drain releases the lease |
 | `drain_test.go` | E0.14 on two replicas: cursor every 100 ms, graceful shutdown, resume with `attempt` unchanged |
 | `watchdog_test.go` | claim held by `pg_sleep` past the watchdog bound |

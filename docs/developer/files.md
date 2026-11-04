@@ -50,9 +50,10 @@ quotas are P1.
 | [api/edge/content.go](../../internal/api/edge/content.go) | `ServeItem`: ETag, `Last-Modified`, the conditional rules, `Range`, `Content-Length`, the content headers, the aborted body |
 | [api/edge/conditional.go](../../internal/api/edge/conditional.go) | `If-Match`, `If-None-Match`, `If-(Un)Modified-Since`, `Range`, `If-Range` of RFC 9110 |
 | [api/edge/digest.go](../../internal/api/edge/digest.go) | `Repr-Digest` in (`ParseReprDigest`), `Repr-Digest` / `Want-Repr-Digest` out (RFC 9530) |
-| [api/edge/links.go](../../internal/api/edge/links.go) | `Links` (the one place that builds content URLs, R-ARCH-007), `ItemView`, `DescribeItem` (the JSON description) |
+| [api/edge/links.go](../../internal/api/edge/links.go) | `Links` (the one place that builds content URLs, R-ARCH-007; `ContentPath` is the relative content route and `ItemView.ContentURL` its member), `ItemView`, `DescribeItem` (the JSON description) |
 | [api/edge/json.go](../../internal/api/edge/json.go), [list.go](../../internal/api/edge/list.go) | `WriteJSON`, `WriteJob` (202 with the job and its `Location`); `ParseList`, `ListQuery`, `InvalidCursor` |
 | [rawfiles/handler.go](../../internal/api/rawfiles/handler.go) | routes, path parsing, `caller` (begins the index), `get` / `put` / `delete` |
+| [rawfiles/content.go](../../internal/api/rawfiles/content.go) | `Content`: the UI's content routes `GET`, `HEAD`, `PUT /api/v1/repositories/{repoKey}/content/{path...}` (R-API-025, Q-UI-106): the session check, `splitContentPath`, the upload limit `limitBody`; everything else is `Handler.serve` |
 | [rawfiles/index.go](../../internal/api/rawfiles/index.go) | the directory index, HTML and JSON |
 | [httpserver/content.go](../../internal/httpserver/content.go) | `ContentWriter`, `ContentWriterFor`: the content headers of R-ARCH-007, `same-origin` for a request the session cookie authenticated (Q-ARCH-86) |
 | [httpserver/router.go](../../internal/httpserver/router.go) | `Router.HandleUncleaned`: paths `ServeMux` would redirect reach the handler |
@@ -60,6 +61,21 @@ quotas are P1.
 | [formathost/hooks.go](../../internal/formathost/hooks.go) | `FilesSeam`, the `Formats` of the composition root: `Classify` over the registry, `ServeCheck`, `RawDeploy` (`/files/` deploys only into a format whose protocol is `/files/`, Q-ARCH-223), `CheckRemoval` (the ownership of the packages a delete removes, Q-AUTHZ-161) |
 | [app/wire_files.go](../../internal/app/wire_files.go) | `wireFiles` (the store, then the service), `filesComponent` (flush loops, `Flusher`), `registerFiles`, `registerFilesJobs`, `filesDecider`, `repositoryAPI` |
 | [audit/events_files.go](../../internal/audit/events_files.go) | `artifact.deployed`, `artifact.deleted` (transactional), `artifact.downloaded` (asynchronous) |
+
+## The content routes
+
+`rawfiles.Handler.Content(maxUpload)` returns the handler of the UI's content routes. `ServeHTTP` of `/files/` and of the content
+routes both end in `Handler.serve(w, r, key, rest, maxUpload)`, so path cleaning, the one index per request, `Range`, digests, the
+content headers, the blocking of R-VULN-015 and the statistics are one code path. The content routes add only three things: a
+request whose credential is not the session cookie (`Principal.Credential.Method`) answers the `404` of an unknown path before an index is begun; a
+`PUT` runs its body through `limitBody`, which fails with `413` at the first read of a declared length above
+`ui.deploy.max_upload_bytes` (`0` is unlimited) or when a body of unknown length crosses it, after the deploy decided the caller; there is no `DELETE`. The
+patterns are of the family `api` ([httpserver/surface.go](../../internal/httpserver/surface.go)), so a role that does not serve `api`
+drops them. A path that `ServeMux` would clean is redirected, because `HandleUncleaned` takes a literal prefix and `/api/v1/repositories/` is
+not one that may be taken whole (Q-API-195). The composition root registers them beside `/files/` in `registerFiles`
+([wire_files.go](../../internal/app/wire_files.go)). Tests: [content_test.go](../../internal/api/rawfiles/content_test.go) (units, with the
+document check in both directions) and [test/integration/files/content_test.go](../../test/integration/files/content_test.go) (the real stores; the
+test authentication presents a session with the header `X-Test-Session`).
 
 ## Request path
 

@@ -13,6 +13,17 @@ A generic repository neither scans nor validates what it stores (H-131 in
 [formats/generic.md](../spec/formats/generic.md)). Everything below is about keeping stored content from becoming a weapon
 against trove's own origin, and about who may write and read it.
 
+## The UI's content routes (R-API-025, Q-UI-106)
+
+The session cookie reaches the role `api` only, so the UI downloads and uploads through `GET`, `HEAD` and `PUT
+/api/v1/repositories/{repoKey}/content/{path}` and not through `/files/`. The routes are the code of `/files/`
+(`rawfiles.Handler.serve`), so every decision in this page applies to them unchanged, and a caller without `read` gets the same `404`.
+Three properties are particular to them. They answer a request that the session cookie did not authenticate with the `404` of an unknown
+path, before any decision, so a token is never accepted on `api` for bulk traffic. A `PUT` carries the session's CSRF token like every
+unsafe request of a session: the check reads the token header and the origin and never the body, so a streamed body is checked like a
+decoded one. A `PUT` above `ui.deploy.max_upload_bytes` is refused with `413` when the deploy has decided the caller and before the body is
+spooled. Their responses carry the content headers below, `same-origin` among them, because the session cookie authenticated the request.
+
 ## Content isolation (R-ARCH-007)
 
 The UI, the management API and `/files/` share one origin. A file such as `evil.svg` is therefore served so that a browser can

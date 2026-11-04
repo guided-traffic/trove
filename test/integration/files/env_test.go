@@ -244,6 +244,9 @@ func (e *env) breakGlass() {
 
 // authenticate is the test stage of the chain: a bearer name is a principal, no
 // header is the anonymous caller, an unknown name is 401.
+// sessionMarker is the request header that makes the test authentication present the credential as a session.
+const sessionMarker = "X-Test-Session"
+
 func (e *env) authenticate(r *http.Request) (httpserver.Principal, error) {
 	h := r.Header.Get("Authorization")
 	if h == "" {
@@ -259,6 +262,10 @@ func (e *env) authenticate(r *http.Request) (httpserver.Principal, error) {
 	out := httpserver.Principal{
 		Kind: httpserver.PrincipalKind(p.Kind), ID: p.ID, Name: p.Name,
 		Credential: httpserver.Credential{Method: httpserver.MethodBearer, TokenID: "test-" + p.Name},
+	}
+	if r.Header.Get(sessionMarker) != "" {
+		// The session cookie of a browser, which the content routes of the UI accept (R-API-025, Q-UI-106).
+		out.Credential = httpserver.Credential{Method: httpserver.MethodSession, SessionID: "test-session-" + p.Name}
 	}
 	for _, g := range p.Groups {
 		out.Groups = append(out.Groups, httpserver.GroupRef{ID: g.ID, Name: g.Name})
@@ -686,7 +693,9 @@ func (r *replica) serve(o replicaOpts) {
 		Cache:        v1.CacheServices{Invalidations: inv, Repositories: r.repos, Authz: r.engine},
 	})
 	api.Register(router)
-	rawfiles.New(rawfiles.Options{Service: r.files, Decider: r.engine, Download: r.e.s3.cfg.Download, API: apiConfig()}).Register(router)
+	raw := rawfiles.New(rawfiles.Options{Service: r.files, Decider: r.engine, Download: r.e.s3.cfg.Download, API: apiConfig()})
+	raw.Register(router)
+	raw.Content(contentLimit).Register(router)
 	if o.routes != nil {
 		o.routes(r, router)
 	}
@@ -872,3 +881,6 @@ func waitFor(t testing.TB, what string, within time.Duration, cond func() bool) 
 	}
 	t.Fatalf("%s did not happen within %s", what, within)
 }
+
+// contentLimit is ui.deploy.max_upload_bytes of the test replicas: small enough to cross in a test.
+const contentLimit = 1 << 20

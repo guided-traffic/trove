@@ -62,6 +62,10 @@ type Document struct {
 	// the files handler decides them (R-ARCH-011), so the authorization step of
 	// the management API does not know them.
 	files map[string]Operation
+	// content are the operations of the UI's content routes below
+	// /api/v1/repositories/{repoKey}/content/ (R-API-025, Q-UI-106): in the document, left out of the generated
+	// interface (a path of several segments is no generated route) and decided by the files handler like /files/.
+	content map[string]Operation
 }
 
 // httpMethods are the operation keys of a path item.
@@ -75,7 +79,7 @@ func httpMethods() []string {
 // operation can run without a declared and enforced permission (R-API-002,
 // R-API-008).
 func LoadDocument(raw []byte) (*Document, error) {
-	d := &Document{ops: map[string]Operation{}, files: map[string]Operation{}}
+	d := &Document{ops: map[string]Operation{}, files: map[string]Operation{}, content: map[string]Operation{}}
 	if err := yaml.Unmarshal(raw, &d.root); err != nil {
 		return nil, fmt.Errorf("openapi document: %w", err)
 	}
@@ -128,6 +132,8 @@ func LoadDocument(raw []byte) (*Document, error) {
 			o := Operation{ID: id, Pattern: pattern, Permission: perm, Requirement: req, RecentAuth: recent, IfMatchRequired: op["x-trove-if-match"] == "required", CIAdmitted: admitted, BastionInterface: bastionVersion}
 			if isFilesPattern(pattern) {
 				d.files[pattern] = o
+			} else if isContentPattern(pattern) {
+				d.content[pattern] = o
 			} else {
 				d.ops[pattern] = o
 			}
@@ -195,6 +201,16 @@ func (d *Document) FileOperations() map[string]Operation {
 	return out
 }
 
+// ContentOperations returns the operations of the UI's content routes
+// (/api/v1/repositories/{repoKey}/content/{path}) keyed by route pattern, with the {path} of the document.
+func (d *Document) ContentOperations() map[string]Operation {
+	out := make(map[string]Operation, len(d.content))
+	for k, v := range d.content {
+		out[k] = v
+	}
+	return out
+}
+
 // Operations returns the table of the management API's operations (below
 // /api/v1/) keyed by route pattern.
 func (d *Document) Operations() map[string]Operation {
@@ -214,6 +230,12 @@ func (d *Document) CheckRoutes(registered []string) error {
 	var problems []error
 	for _, p := range registered {
 		switch {
+		case isContentPattern(p):
+			n := documentedFilesPattern(p)
+			have[n] = true
+			if _, ok := d.content[n]; !ok {
+				problems = append(problems, fmt.Errorf("route %q is registered but not in api/openapi.yaml", p))
+			}
 		case isV1Pattern(p):
 			have[p] = true
 			if _, ok := d.ops[p]; !ok {
@@ -228,7 +250,7 @@ func (d *Document) CheckRoutes(registered []string) error {
 		}
 	}
 	var missing []string
-	for _, ops := range []map[string]Operation{d.ops, d.files} {
+	for _, ops := range []map[string]Operation{d.ops, d.files, d.content} {
 		for p := range ops {
 			if !have[p] {
 				missing = append(missing, p)
@@ -256,6 +278,14 @@ func isFilesPattern(p string) bool {
 		p = strings.TrimSpace(rest)
 	}
 	return strings.HasPrefix(p, "/files/")
+}
+
+// isContentPattern reports whether a ServeMux pattern or a documented path is one of the UI's content routes.
+func isContentPattern(p string) bool {
+	if _, rest, ok := strings.Cut(p, " "); ok {
+		p = strings.TrimSpace(rest)
+	}
+	return strings.HasPrefix(p, "/api/v1/repositories/{repoKey}/content/")
 }
 
 // documentedFilesPattern turns the route of the files handler into the template

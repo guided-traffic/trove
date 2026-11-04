@@ -398,7 +398,8 @@ func TestDocument(t *testing.T) {
 		// this package; its test compares them with the document. The patterns are
 		// added here as that handler registers them.
 		patterns := append(s.router.Patterns(),
-			"GET /files/{repoKey}/{path...}", "HEAD /files/{repoKey}/{path...}", "PUT /files/{repoKey}/{path...}", "DELETE /files/{repoKey}/{path...}")
+			"GET /files/{repoKey}/{path...}", "HEAD /files/{repoKey}/{path...}", "PUT /files/{repoKey}/{path...}", "DELETE /files/{repoKey}/{path...}",
+			"GET /api/v1/repositories/{repoKey}/content/{path...}", "HEAD /api/v1/repositories/{repoKey}/content/{path...}", "PUT /api/v1/repositories/{repoKey}/content/{path...}")
 		if err := s.doc.CheckRoutes(patterns); err != nil {
 			t.Fatal(err)
 		}

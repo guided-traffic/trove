@@ -151,6 +151,9 @@ func replicaOf(i cluster.ReplicaInfo) gen.Replica {
 	if i.Node != "" {
 		r.Node = &i.Node
 	}
+	if i.Pool != "" {
+		r.Pool = &i.Pool
+	}
 	for name, c := range i.Checks {
 		cr := gen.CheckResult{Status: gen.CheckResultStatus(c.Status)}
 		if c.Reason != "" {
@@ -196,9 +199,12 @@ func (l localReplicas) Replicas(context.Context) ([]gen.Replica, error) {
 		}
 		checks[c.Name] = r
 	}
-	var node *string
+	var node, pool *string
 	if a.id.Node != "" {
 		node = &a.id.Node
+	}
+	if a.id.Pool != "" {
+		pool = &a.id.Pool
 	}
 	degraded := snap.Degraded
 	if degraded == nil {
@@ -208,7 +214,7 @@ func (l localReplicas) Replicas(context.Context) ([]gen.Replica, error) {
 		Name: a.id.Instance, InstanceUid: a.id.UID, Version: bi.Version, Revision: bi.Commit,
 		Roles: []gen.ReplicaRoles{gen.ReplicaRoles(a.id.Role)}, State: gen.ReplicaState(snap.State),
 		StartedAt: a.startedAt.UTC(), HeartbeatAt: time.Now().UTC(),
-		Node: node, Checks: checks, Degraded: degraded, Valkey: a.valkeyView(),
+		Node: node, Pool: pool, Checks: checks, Degraded: degraded, Valkey: a.valkeyView(),
 		Leases: []struct {
 			Name  string    `json:"name"`
 			Since time.Time `json:"since"`

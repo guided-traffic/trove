@@ -97,9 +97,10 @@ and the background workers (INV-1, INV-2).
 [ADR-153](../decisions.md#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries),
 [ADR-155](../decisions.md#adr-155--three-roles-api-packages-and-worker-variants-are-pools), Q-ARCH-294 to Q-ARCH-303): the
 tables below are the data of [internal/app/roles.go](../../internal/app/roles.go) and
-[steps.go](../../internal/app/steps.go), and a test holds them. What is not built is the rest of phase 6a: the chart still
-renders `web` ([roadmap](../coverage/roadmap.md#phase-6a--task-areas), WP6a.3), the registry and the status screen do not
-yet group by the new roles (WP6a.4), and the queue restriction of R-ARCH-016 (WP6a.2).
+[steps.go](../../internal/app/steps.go), and a test holds them. The registry, the status screen, the content routes of `api` and the
+fetch share's count of the replicas that fill are built (WP6a.4), as are the queue restriction of R-ARCH-016 (WP6a.2) and the chart's
+Deployment per role (WP6a.3). What is left of phase 6a is its tests and the dev profile
+([roadmap](../coverage/roadmap.md#phase-6a--task-areas), WP6a.5).
 
 | Invocation | Purpose |
 |---|---|
@@ -8380,7 +8381,7 @@ operations the snapshot). The explanation asks the remote members `Cached` and `
 ([internal/virtual/explain.go](../../internal/virtual/explain.go)). (2) The `files` area builds a seam, and the serve check of
 the item store calls the format's `ServeCheck` with the Host, which reads the stored marks through `FormatData` only
 ([formathost/hooks.go](../../internal/formathost/hooks.go), [formats/npm/servecheck.go](../../internal/formats/npm/servecheck.go)).
-The seam took the Host from the format host, which `api` does not build; the content routes of R-API-025 (WP6a.4) call it.
+The seam took the Host from the format host, which `api` does not build; the content routes of R-API-025 (WP6a.4) call it, so `api` gets the serve-check host of `wireServeCheckHost` ([wire_files.go](../../internal/app/wire_files.go)), and the routes answer on `api` and `web` and are an unknown path on `packages`.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
@@ -8447,8 +8448,9 @@ are dropped from the router of `packages`; the forwards are `packages` and `file
 
 **Choice:** (a) for the limiters, built; the Bastion's marking needs no area `packages` lacks, so nothing changes there. The
 count of the replicas that fill (`packages`, `web`, `all`, pools included) for the proxy's fetch share is Q-ARCH-297 and is
-built with the registry in WP6a.4; until then the proxy divides by the limiters' count, which is right for one `packages`
-Deployment without pools ([security/egress.md](../security/egress.md) H-519).
+built with the registry in WP6a.4: `cluster.FillCount` is started as a component of the remote engine and its `Get` is the engine's
+`Replicas` ([wire_proxy_engine.go](../../internal/app/wire_proxy_engine.go), Q-OPS-165), so a deployment with pools spends the budget once.
+The gap this closed is H-519 of [security/egress.md](../security/egress.md), removed there.
 
 **Rationale:** the denominator of a share has to be the set the share is shared over. The development agent would revisit it
 if a limiter guards a resource that `api` and `packages` replicas both consume (a shared upstream), which then counts both.

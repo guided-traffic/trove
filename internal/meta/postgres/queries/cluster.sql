@@ -52,3 +52,12 @@ SELECT r.*, (r.heartbeat_at < now() - make_interval(secs => sqlc.arg(stale_secs)
 -- name: PruneReplicas :execrows
 -- replica-registry-prune (R-OPS-003): rows stale for the given time.
 DELETE FROM replica WHERE heartbeat_at < now() - make_interval(secs => sqlc.arg(stale_secs)::float8);
+
+-- name: CountFillingReplicas :one
+-- The n of the fetch share of a remote repository (R-REPO-040, Q-ARCH-297): the live replicas that fill client misses,
+-- which are the replicas of packages and of the bridge role web, their pools included, and of the development role
+-- all. A replica of api, which sends the upstream test and nothing else, and of worker holds no share.
+SELECT count(*)::int AS live
+  FROM replica
+ WHERE heartbeat_at >= now() - make_interval(secs => sqlc.arg(stale_secs)::float8)
+   AND roles && ARRAY['packages', 'web', 'all']::text[];

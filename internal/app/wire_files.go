@@ -135,12 +135,16 @@ func (a *App) wireServeCheckHost(in infra, repo repositoryArea, az authzArea, fm
 	return nil
 }
 
-// registerFiles mounts /files/ on a router. A replica that serves a client
+// registerFiles mounts /files/ and the content routes on a router. A replica that serves a client
 // listener has the files area (requireServing); only the shell profile mounts the
 // routes without a service, where they answer 503.
 func (a *App) registerFiles(r *httpserver.Router) {
 	fa := part[filesArea](a.parts)
-	rawfiles.New(rawfiles.Options{Service: fa.service, Decider: fa.decider, Download: a.cfg.Storage.Download, API: a.cfg.API}).Register(r)
+	h := rawfiles.New(rawfiles.Options{Service: fa.service, Decider: fa.decider, Download: a.cfg.Storage.Download, API: a.cfg.API})
+	h.Register(r)
+	// The UI's content routes below /api/v1/ (R-API-025, Q-UI-106) are of the family api: the router drops them on a
+	// role or endpoint that does not serve it. They share the service of /files/, so they sit beside it for now.
+	h.Content(int64(a.cfg.UI.Deploy.MaxUploadBytes)).Register(r)
 }
 
 // repositoryAPI returns the services of the repository operations of the

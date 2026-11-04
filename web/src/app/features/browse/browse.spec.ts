@@ -91,7 +91,7 @@ describe('File tree', () => {
       a.textContent?.includes('Download'),
     );
     expect(download?.getAttribute('href')).toBe(
-      'https://trove.example.net/files/generic-local/releases/1.0/app.zip',
+      '/api/v1/repositories/generic-local/content/releases/1.0/app.zip',
     );
     await expectAccessible(root);
   });

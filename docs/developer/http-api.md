@@ -84,7 +84,10 @@ with both (the multi-segment wildcard `{path...}` of the router is the parameter
 coordinate and after the body is read (Q-API-33). `apitest.Validator` looks the route of a `/files/` answer up with a single
 segment path, so the answers of the files handler are validated like every other, and it keeps an encoded `/` inside its
 segment (a package name such as `@acme%2Ffrontend`, R-AUTHZ-019) the way the router matches it, escaped segment by segment
-(`TestR_AUTHZ_019_AnEncodedSlashStaysInItsSegment`). The bridge between the two packages in the
+(`TestR_AUTHZ_019_AnEncodedSlashStaysInItsSegment`). The UI's content routes
+(`/api/v1/repositories/{repoKey}/content/{path}`, R-API-025, Q-UI-106) are tagged `files` as well and kept in a third table,
+`Document.ContentOperations()`, which `CheckRoutes` compares with the registered patterns (`isContentPattern`); `apitest.Validator`
+maps their path like a `/files/` path. The bridge between the two packages in the
 unit tests: `TestRoutesAgreeWithTheDocument` in [internal/api/rawfiles](../../internal/api/rawfiles/rawfiles_test.go).
 
 ## Endpoints
@@ -121,6 +124,7 @@ an endpoint whose host check fails answers `421` `misdirected_request` before ro
 | `createRepository`, `replaceRepository`, `updateRepository`, `deleteRepository` | `POST`, `PUT`, `PATCH`, `DELETE` on `/api/v1/repositories` and `/{key}` | `repositories:write-config` |
 | `getRepositoryClaims`, `putRepositoryClaims` | `/api/v1/repositories/{repoKey}/claims` | `{action: read\|manage, repository: path.repoKey}`; a global claim also needs `repositories:write-config`, asked in the handler ([virtual.md](virtual.md)) |
 | `getItem`, `deleteItem`, `listChildren`, `getItemStats` | `/api/v1/repositories/{repoKey}/items`, `/children`, `/stats` | `{action: read\|delete, repository: path.repoKey, path: query.path}` ([files.md](files.md)) |
+| `downloadContent`, `headContent`, `deployContent` | `GET`, `HEAD`, `PUT /api/v1/repositories/{repoKey}/content/{path}` | as the `/files/` operations with the same method, decided by the files handler; the session cookie only ([files.md](files.md#the-content-routes)) |
 | `downloadFile`, `headFile`, `deployFile`, `deleteFile` | `GET`, `HEAD`, `PUT`, `DELETE /files/{repoKey}/{path}` | `{action: read\|deploy\|delete, …}`, in the document but decided by the files handler |
 | the vulnerability operations (tag `vulnerabilities`) | `/api/v1/vulnerabilities/…`, `/api/v1/packages/{packageId}/…/vulnerabilities`, `POST /api/v1/repositories/{key}/vulnerabilities/rescan` | reads `authenticated`, narrowed in SQL by what the caller can read; status changes `vulnerabilities:triage`; sources `settings:read`; claimed-name matches `repositories:read-config`; rescan `manage` on the repository ([vulnerabilities.md](vulnerabilities.md#e--api-and-triage)) |
 

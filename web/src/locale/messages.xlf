@@ -2425,9 +2425,9 @@
         <note category="location">src/app/features/audit/audit-log.html:183,185</note>
         <note category="location">src/app/features/browse/browse.html:218,219</note>
         <note category="location">src/app/features/browse/browse.html:275,277</note>
-        <note category="location">src/app/features/browse/browse.html:382,383</note>
-        <note category="location">src/app/features/browse/browse.html:419,420</note>
-        <note category="location">src/app/features/browse/browse.html:626,629</note>
+        <note category="location">src/app/features/browse/browse.html:384,385</note>
+        <note category="location">src/app/features/browse/browse.html:421,422</note>
+        <note category="location">src/app/features/browse/browse.html:628,631</note>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:17,18</note>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:192,196</note>
         <note category="location">src/app/features/repositories/repository-detail.html:17,19</note>
@@ -3231,7 +3231,7 @@
       <notes>
         <note category="location">src/app/features/browse/browse.html:109</note>
         <note category="location">src/app/features/browse/browse.html:112</note>
-        <note category="location">src/app/features/browse/browse.html:437,438</note>
+        <note category="location">src/app/features/browse/browse.html:439,440</note>
         <note category="location">src/app/features/browse/browse.ts:183</note>
         <note category="location">src/app/features/repositories/repository-detail.html:31,32</note>
         <note category="location">src/app/features/repositories/repository-detail.html:65,66</note>
@@ -3248,7 +3248,7 @@
       <notes>
         <note category="location">src/app/features/browse/browse.html:133</note>
         <note category="location">src/app/features/browse/browse.html:136</note>
-        <note category="location">src/app/features/browse/browse.html:444,445</note>
+        <note category="location">src/app/features/browse/browse.html:446,447</note>
         <note category="location">src/app/features/browse/browse.ts:191</note>
         <note category="location">src/app/features/repositories/repository-detail.html:33,34</note>
         <note category="location">src/app/features/repositories/repository-detail.html:71,72</note>
@@ -3280,7 +3280,7 @@
     <unit id="repo.badge.disabled">
       <notes>
         <note category="location">src/app/features/browse/browse.html:193,195</note>
-        <note category="location">src/app/features/browse/browse.html:453,454</note>
+        <note category="location">src/app/features/browse/browse.html:455,456</note>
         <note category="location">src/app/features/repositories/repository-list.html:75,77</note>
       </notes>
       <segment>
@@ -3299,7 +3299,7 @@
     <unit id="browse.members-hidden">
       <notes>
         <note category="location">src/app/features/browse/browse.html:223,225</note>
-        <note category="location">src/app/features/browse/browse.html:502,504</note>
+        <note category="location">src/app/features/browse/browse.html:504,506</note>
       </notes>
       <segment>
         <source>The members are shown to repository managers only.</source>
@@ -3350,7 +3350,7 @@
     <unit id="browse.manual-link">
       <notes>
         <note category="location">src/app/features/browse/browse.html:258,260</note>
-        <note category="location">src/app/features/browse/browse.html:585,588</note>
+        <note category="location">src/app/features/browse/browse.html:587,590</note>
       </notes>
       <segment>
         <source>How browsing works</source>
@@ -3406,7 +3406,7 @@
     </unit>
     <unit id="browse.download">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:332,333</note>
+        <note category="location">src/app/features/browse/browse.html:333,334</note>
       </notes>
       <segment>
         <source>Download</source>
@@ -3414,7 +3414,7 @@
     </unit>
     <unit id="browse.client-setup">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:343,345</note>
+        <note category="location">src/app/features/browse/browse.html:345,347</note>
       </notes>
       <segment>
         <source>Client setup</source>
@@ -3422,7 +3422,7 @@
     </unit>
     <unit id="browse.upload">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:349,350</note>
+        <note category="location">src/app/features/browse/browse.html:351,352</note>
       </notes>
       <segment>
         <source>Upload files</source>
@@ -3430,7 +3430,7 @@
     </unit>
     <unit id="browse.new-folder">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:353,354</note>
+        <note category="location">src/app/features/browse/browse.html:355,356</note>
       </notes>
       <segment>
         <source>New folder</source>
@@ -3438,7 +3438,7 @@
     </unit>
     <unit id="browse.delete">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:359,360</note>
+        <note category="location">src/app/features/browse/browse.html:361,362</note>
       </notes>
       <segment>
         <source>Delete</source>
@@ -3446,7 +3446,7 @@
     </unit>
     <unit id="repo.deleting">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:371,372</note>
+        <note category="location">src/app/features/browse/browse.html:373,374</note>
         <note category="location">src/app/features/repositories/repository-detail.html:204,205</note>
         <note category="location">src/app/features/repositories/repository-list.html:132,133</note>
       </notes>
@@ -3456,7 +3456,7 @@
     </unit>
     <unit id="browse.stats.downloads">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:402,403</note>
+        <note category="location">src/app/features/browse/browse.html:404,405</note>
       </notes>
       <segment>
         <source>Downloads</source>
@@ -3464,7 +3464,7 @@
     </unit>
     <unit id="browse.stats.last">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:404,405</note>
+        <note category="location">src/app/features/browse/browse.html:406,407</note>
       </notes>
       <segment>
         <source>Last download</source>
@@ -3472,7 +3472,7 @@
     </unit>
     <unit id="browse.stats.by">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:412,413</note>
+        <note category="location">src/app/features/browse/browse.html:414,415</note>
       </notes>
       <segment>
         <source>Last downloader</source>
@@ -3480,7 +3480,7 @@
     </unit>
     <unit id="browse.stats.hint">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:416,417</note>
+        <note category="location">src/app/features/browse/browse.html:418,419</note>
       </notes>
       <segment>
         <source> Counts reach the database within a minute of a download. </source>
@@ -3488,7 +3488,7 @@
     </unit>
     <unit id="browse.api.json">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:423,424</note>
+        <note category="location">src/app/features/browse/browse.html:425,426</note>
       </notes>
       <segment>
         <source>The item as the API describes it</source>
@@ -3496,7 +3496,7 @@
     </unit>
     <unit id="browse.api.curl">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:426,427</note>
+        <note category="location">src/app/features/browse/browse.html:428,429</note>
       </notes>
       <segment>
         <source>The same request with curl</source>
@@ -3504,7 +3504,7 @@
     </unit>
     <unit id="browse.api.download">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:430,431</note>
+        <note category="location">src/app/features/browse/browse.html:432,433</note>
       </notes>
       <segment>
         <source>Download with curl</source>
@@ -3512,7 +3512,7 @@
     </unit>
     <unit id="browse.remote-hint">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:441,442</note>
+        <note category="location">src/app/features/browse/browse.html:443,444</note>
       </notes>
       <segment>
         <source>Shows the content cached so far.</source>
@@ -3520,7 +3520,7 @@
     </unit>
     <unit id="repo.field.description">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:446,447</note>
+        <note category="location">src/app/features/browse/browse.html:448,449</note>
         <note category="location">src/app/features/repositories/repository-detail.html:35,36</note>
         <note category="location">src/app/features/repositories/repository-fields.ts:18,20</note>
         <note category="location">src/app/features/repositories/repository-wizard.html:174,175</note>
@@ -3532,7 +3532,7 @@
     </unit>
     <unit id="browse.fact.status">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:450,451</note>
+        <note category="location">src/app/features/browse/browse.html:452,453</note>
       </notes>
       <segment>
         <source>Status</source>
@@ -3540,7 +3540,7 @@
     </unit>
     <unit id="browse.fact.upstream">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:457,458</note>
+        <note category="location">src/app/features/browse/browse.html:459,460</note>
       </notes>
       <segment>
         <source>Upstream</source>
@@ -3548,7 +3548,7 @@
     </unit>
     <unit id="browse.fact.project">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:461,462</note>
+        <note category="location">src/app/features/browse/browse.html:463,464</note>
       </notes>
       <segment>
         <source>Project</source>
@@ -3556,8 +3556,8 @@
     </unit>
     <unit id="browse.fact.created">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:465,466</note>
-        <note category="location">src/app/features/browse/browse.html:526,527</note>
+        <note category="location">src/app/features/browse/browse.html:467,468</note>
+        <note category="location">src/app/features/browse/browse.html:528,529</note>
       </notes>
       <segment>
         <source>Created</source>
@@ -3565,7 +3565,7 @@
     </unit>
     <unit id="browse.fact.activity">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:470,471</note>
+        <note category="location">src/app/features/browse/browse.html:472,473</note>
       </notes>
       <segment>
         <source>Last activity</source>
@@ -3573,7 +3573,7 @@
     </unit>
     <unit id="browse.repo-config">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:483,484</note>
+        <note category="location">src/app/features/browse/browse.html:485,486</note>
       </notes>
       <segment>
         <source>Repository configuration</source>
@@ -3581,7 +3581,7 @@
     </unit>
     <unit id="browse.members">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:488,489</note>
+        <note category="location">src/app/features/browse/browse.html:490,491</note>
       </notes>
       <segment>
         <source>Resolves from</source>
@@ -3589,7 +3589,7 @@
     </unit>
     <unit id="browse.members-none">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:499,500</note>
+        <note category="location">src/app/features/browse/browse.html:501,502</note>
       </notes>
       <segment>
         <source>This repository has no members yet.</source>
@@ -3597,7 +3597,7 @@
     </unit>
     <unit id="browse.tab.contents">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:505,506</note>
+        <note category="location">src/app/features/browse/browse.html:507,508</note>
         <note category="location">src/app/features/browse/browse.ts:847</note>
       </notes>
       <segment>
@@ -3606,7 +3606,7 @@
     </unit>
     <unit id="browse.fact.path">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:510,511</note>
+        <note category="location">src/app/features/browse/browse.html:512,513</note>
       </notes>
       <segment>
         <source>Path</source>
@@ -3614,7 +3614,7 @@
     </unit>
     <unit id="browse.fact.kind">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:512,513</note>
+        <note category="location">src/app/features/browse/browse.html:514,515</note>
       </notes>
       <segment>
         <source>Kind</source>
@@ -3622,7 +3622,7 @@
     </unit>
     <unit id="browse.kind.file">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:515,516</note>
+        <note category="location">src/app/features/browse/browse.html:517,518</note>
       </notes>
       <segment>
         <source>File</source>
@@ -3630,7 +3630,7 @@
     </unit>
     <unit id="browse.kind.folder">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:517,518</note>
+        <note category="location">src/app/features/browse/browse.html:519,520</note>
       </notes>
       <segment>
         <source>Folder</source>
@@ -3638,7 +3638,7 @@
     </unit>
     <unit id="browse.fact.size">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:521,522</note>
+        <note category="location">src/app/features/browse/browse.html:523,524</note>
         <note category="location">src/app/features/browse/browse.ts:339</note>
       </notes>
       <segment>
@@ -3647,7 +3647,7 @@
     </unit>
     <unit id="browse.fact.media">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:523,524</note>
+        <note category="location">src/app/features/browse/browse.html:525,526</note>
       </notes>
       <segment>
         <source>Media type</source>
@@ -3655,8 +3655,8 @@
     </unit>
     <unit id="browse.by">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:531</note>
-        <note category="location">src/app/features/browse/browse.html:540</note>
+        <note category="location">src/app/features/browse/browse.html:533</note>
+        <note category="location">src/app/features/browse/browse.html:542</note>
       </notes>
       <segment>
         <source>by</source>
@@ -3664,7 +3664,7 @@
     </unit>
     <unit id="browse.fact.modified">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:535,536</note>
+        <note category="location">src/app/features/browse/browse.html:537,538</note>
         <note category="location">src/app/features/browse/browse.ts:340</note>
       </notes>
       <segment>
@@ -3673,7 +3673,7 @@
     </unit>
     <unit id="browse.fact.content">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:545,546</note>
+        <note category="location">src/app/features/browse/browse.html:547,548</note>
       </notes>
       <segment>
         <source>Content</source>
@@ -3681,7 +3681,7 @@
     </unit>
     <unit id="browse.content.missing">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:550,551</note>
+        <note category="location">src/app/features/browse/browse.html:552,553</note>
       </notes>
       <segment>
         <source>The stored content is missing.</source>
@@ -3689,7 +3689,7 @@
     </unit>
     <unit id="browse.content.corrupt">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:554,555</note>
+        <note category="location">src/app/features/browse/browse.html:556,557</note>
       </notes>
       <segment>
         <source>The stored content failed its checksum.</source>
@@ -3697,7 +3697,7 @@
     </unit>
     <unit id="browse.none-title">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:583,584</note>
+        <note category="location">src/app/features/browse/browse.html:585,586</note>
       </notes>
       <segment>
         <source>Nothing selected</source>
@@ -3705,7 +3705,7 @@
     </unit>
     <unit id="browse.none">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:584,585</note>
+        <note category="location">src/app/features/browse/browse.html:586,587</note>
       </notes>
       <segment>
         <source>Select a repository, folder or file in the tree.</source>
@@ -15587,8 +15587,8 @@
     <unit id="system.loading">
       <notes>
         <note category="location">src/app/features/system/jobs-page.ts:110,114</note>
-        <note category="location">src/app/features/system/system-status.html:482,486</note>
-        <note category="location">src/app/features/system/system-status.html:503,505</note>
+        <note category="location">src/app/features/system/system-status.html:518,522</note>
+        <note category="location">src/app/features/system/system-status.html:539,541</note>
         <note category="location">src/app/features/system/tasks-card.ts:108,111</note>
       </notes>
       <segment>
@@ -15606,7 +15606,7 @@
     <unit id="jobs.cancelling">
       <notes>
         <note category="location">src/app/features/system/jobs-page.ts:197</note>
-        <note category="location">src/app/features/system/system-status.ts:204</note>
+        <note category="location">src/app/features/system/system-status.ts:210</note>
       </notes>
       <segment>
         <source>Job <ph id="0" equiv="kind" disp="job.kind"/> is being cancelled.</source>
@@ -15783,15 +15783,48 @@
     </unit>
     <unit id="system.role.counts">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:116,117</note>
+        <note category="location">src/app/features/system/system-status.html:115,117</note>
+        <note category="location">src/app/features/system/system-status.html:149,150</note>
       </notes>
       <segment>
         <source>live <ph id="0" equiv="INTERPOLATION" disp="{{ g.live }}"/>, ready <ph id="1" equiv="INTERPOLATION_1" disp="{{ g.ready }}"/>, degraded <ph id="2" equiv="INTERPOLATION_2" disp="{{ g.degraded }}"/></source>
       </segment>
     </unit>
+    <unit id="system.role.no-worker">
+      <notes>
+        <note category="location">src/app/features/system/system-status.html:124,126</note>
+      </notes>
+      <segment>
+        <source>No live worker replica: jobs and scheduled tasks are queued but nothing runs them.</source>
+      </segment>
+    </unit>
+    <unit id="system.role.no-packages">
+      <notes>
+        <note category="location">src/app/features/system/system-status.html:130,132</note>
+      </notes>
+      <segment>
+        <source>No live packages replica: package clients and raw downloads get no answer from the edge, while the UI keeps working.</source>
+      </segment>
+    </unit>
+    <unit id="system.pool.main">
+      <notes>
+        <note category="location">src/app/features/system/system-status.html:143,144</note>
+      </notes>
+      <segment>
+        <source>Main</source>
+      </segment>
+    </unit>
+    <unit id="system.pool.named">
+      <notes>
+        <note category="location">src/app/features/system/system-status.html:145,146</note>
+      </notes>
+      <segment>
+        <source>Pool</source>
+      </segment>
+    </unit>
     <unit id="system.role.fewer">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:125,127</note>
+        <note category="location">src/app/features/system/system-status.html:159,161</note>
       </notes>
       <segment>
         <source>Fewer than two ready replicas: a node drain or the loss of one pod interrupts this role.</source>
@@ -15799,24 +15832,24 @@
     </unit>
     <unit id="system.role.one-node">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:131,133</note>
+        <note category="location">src/app/features/system/system-status.html:165,167</note>
       </notes>
       <segment>
         <source>All ready replicas on one node: a drain of that node interrupts this role.</source>
       </segment>
     </unit>
-    <unit id="system.role.no-worker">
+    <unit id="system.pool.no-live">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:137,139</note>
+        <note category="location">src/app/features/system/system-status.html:171,172</note>
       </notes>
       <segment>
-        <source>No live worker replica: jobs and scheduled tasks are queued but nothing runs them.</source>
+        <source>No live replica in the pool <ph id="0" equiv="INTERPOLATION" disp="{{ p.pool }}"/>: what it claims or serves waits until one is ready.</source>
       </segment>
     </unit>
     <unit id="system.col.name">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:154,155</note>
-        <note category="location">src/app/features/system/system-status.html:391,392</note>
+        <note category="location">src/app/features/system/system-status.html:188,189</note>
+        <note category="location">src/app/features/system/system-status.html:427,428</note>
       </notes>
       <segment>
         <source>Name</source>
@@ -15824,7 +15857,7 @@
     </unit>
     <unit id="system.col.node">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:155,156</note>
+        <note category="location">src/app/features/system/system-status.html:189,190</note>
       </notes>
       <segment>
         <source>Node</source>
@@ -15832,7 +15865,7 @@
     </unit>
     <unit id="system.col.version">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:156,157</note>
+        <note category="location">src/app/features/system/system-status.html:190,191</note>
       </notes>
       <segment>
         <source>Version</source>
@@ -15840,8 +15873,8 @@
     </unit>
     <unit id="system.col.state">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:157,158</note>
-        <note category="location">src/app/features/system/system-status.html:395,397</note>
+        <note category="location">src/app/features/system/system-status.html:191,192</note>
+        <note category="location">src/app/features/system/system-status.html:431,433</note>
       </notes>
       <segment>
         <source>State</source>
@@ -15849,7 +15882,7 @@
     </unit>
     <unit id="system.col.heartbeat">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:158,159</note>
+        <note category="location">src/app/features/system/system-status.html:192,193</note>
       </notes>
       <segment>
         <source>Heartbeat</source>
@@ -15857,7 +15890,7 @@
     </unit>
     <unit id="system.col.valkey">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:159,161</note>
+        <note category="location">src/app/features/system/system-status.html:193,194</note>
       </notes>
       <segment>
         <source>Valkey</source>
@@ -15865,7 +15898,7 @@
     </unit>
     <unit id="system.state.lost">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:171,172</note>
+        <note category="location">src/app/features/system/system-status.html:205,206</note>
       </notes>
       <segment>
         <source>lost</source>
@@ -15873,7 +15906,7 @@
     </unit>
     <unit id="system.state.ready">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:176,177</note>
+        <note category="location">src/app/features/system/system-status.html:210,211</note>
       </notes>
       <segment>
         <source>ready</source>
@@ -15881,7 +15914,7 @@
     </unit>
     <unit id="system.state.starting">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:180,181</note>
+        <note category="location">src/app/features/system/system-status.html:214,215</note>
       </notes>
       <segment>
         <source>starting</source>
@@ -15889,7 +15922,7 @@
     </unit>
     <unit id="system.state.draining">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:184,185</note>
+        <note category="location">src/app/features/system/system-status.html:218,219</note>
       </notes>
       <segment>
         <source>draining</source>
@@ -15897,7 +15930,7 @@
     </unit>
     <unit id="system.state.unready">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:188,189</note>
+        <note category="location">src/app/features/system/system-status.html:222,223</note>
       </notes>
       <segment>
         <source>unready</source>
@@ -15905,7 +15938,7 @@
     </unit>
     <unit id="system.checks.failing">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:194,195</note>
+        <note category="location">src/app/features/system/system-status.html:228,229</note>
       </notes>
       <segment>
         <source>Failing checks:</source>
@@ -15913,7 +15946,7 @@
     </unit>
     <unit id="system.valkey.available">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:214,215</note>
+        <note category="location">src/app/features/system/system-status.html:248,249</note>
       </notes>
       <segment>
         <source>available</source>
@@ -15921,7 +15954,7 @@
     </unit>
     <unit id="system.valkey.degraded">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:217,218</note>
+        <note category="location">src/app/features/system/system-status.html:251,252</note>
       </notes>
       <segment>
         <source>degraded</source>
@@ -15929,7 +15962,7 @@
     </unit>
     <unit id="system.valkey.circuit-open">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:223,225</note>
+        <note category="location">src/app/features/system/system-status.html:257,259</note>
       </notes>
       <segment>
         <source>, circuit open</source>
@@ -15937,7 +15970,7 @@
     </unit>
     <unit id="system.replicas.limits">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:239,245</note>
+        <note category="location">src/app/features/system/system-status.html:275,281</note>
       </notes>
       <segment>
         <source> This screen cannot see disruption budgets, free capacity on other nodes, or whether the remaining replicas carry the peak load, because trove holds no Kubernetes permissions. </source>
@@ -15945,7 +15978,7 @@
     </unit>
     <unit id="system.valkey.heading">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:247,248</note>
+        <note category="location">src/app/features/system/system-status.html:283,284</note>
       </notes>
       <segment>
         <source>Valkey</source>
@@ -15953,7 +15986,7 @@
     </unit>
     <unit id="system.valkey.summary.ok">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:251,254</note>
+        <note category="location">src/app/features/system/system-status.html:287,290</note>
       </notes>
       <segment>
         <source>Available on every replica</source>
@@ -15961,7 +15994,7 @@
     </unit>
     <unit id="system.valkey.summary.degraded">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:257,259</note>
+        <note category="location">src/app/features/system/system-status.html:293,295</note>
       </notes>
       <segment>
         <source>Degraded on <ph id="0" equiv="INTERPOLATION" disp="{{ v.degradedReplicas }}"/> of <ph id="1" equiv="INTERPOLATION_1" disp="{{ v.liveReplicas }}"/> replicas</source>
@@ -15969,7 +16002,7 @@
     </unit>
     <unit id="system.valkey.disagree">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:267,270</note>
+        <note category="location">src/app/features/system/system-status.html:303,306</note>
       </notes>
       <segment>
         <source>Replicas disagree about the primary</source>
@@ -15977,7 +16010,7 @@
     </unit>
     <unit id="system.valkey.sentinels">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:274,278</note>
+        <note category="location">src/app/features/system/system-status.html:310,314</note>
       </notes>
       <segment>
         <source>Sentinels unreachable: no failover can happen while this lasts.</source>
@@ -15985,7 +16018,7 @@
     </unit>
     <unit id="system.valkey.mode">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:280,281</note>
+        <note category="location">src/app/features/system/system-status.html:316,317</note>
       </notes>
       <segment>
         <source>Mode</source>
@@ -15993,7 +16026,7 @@
     </unit>
     <unit id="system.valkey.primary-name">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:282,283</note>
+        <note category="location">src/app/features/system/system-status.html:318,319</note>
       </notes>
       <segment>
         <source>Primary name</source>
@@ -16001,7 +16034,7 @@
     </unit>
     <unit id="system.valkey.sentinels-configured">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:284,285</note>
+        <note category="location">src/app/features/system/system-status.html:320,321</note>
       </notes>
       <segment>
         <source>Configured Sentinels</source>
@@ -16009,7 +16042,7 @@
     </unit>
     <unit id="system.valkey.tls">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:286,287</note>
+        <note category="location">src/app/features/system/system-status.html:322,323</note>
       </notes>
       <segment>
         <source>TLS verification</source>
@@ -16017,7 +16050,7 @@
     </unit>
     <unit id="system.valkey.last-change">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:289,291</note>
+        <note category="location">src/app/features/system/system-status.html:325,327</note>
       </notes>
       <segment>
         <source>Last primary change</source>
@@ -16025,7 +16058,7 @@
     </unit>
     <unit id="system.valkey.server-version">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:295,296</note>
+        <note category="location">src/app/features/system/system-status.html:331,332</note>
       </notes>
       <segment>
         <source>Server version</source>
@@ -16033,7 +16066,7 @@
     </unit>
     <unit id="system.keys.heading">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:304,305</note>
+        <note category="location">src/app/features/system/system-status.html:340,341</note>
       </notes>
       <segment>
         <source>Stored-secret keys</source>
@@ -16041,8 +16074,8 @@
     </unit>
     <unit id="system.keys.active">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:309,310</note>
-        <note category="location">src/app/features/system/system-status.html:393,394</note>
+        <note category="location">src/app/features/system/system-status.html:345,346</note>
+        <note category="location">src/app/features/system/system-status.html:429,430</note>
       </notes>
       <segment>
         <source>Active key ID</source>
@@ -16050,7 +16083,7 @@
     </unit>
     <unit id="system.keys.answered-by">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:312,314</note>
+        <note category="location">src/app/features/system/system-status.html:348,350</note>
       </notes>
       <segment>
         <source>(answered by <ph id="0" equiv="INTERPOLATION" disp="{{ e.answeredBy }}"/>)</source>
@@ -16058,7 +16091,7 @@
     </unit>
     <unit id="system.keys.compatible">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:318,320</note>
+        <note category="location">src/app/features/system/system-status.html:354,356</note>
       </notes>
       <segment>
         <source>Key rings are compatible.</source>
@@ -16066,7 +16099,7 @@
     </unit>
     <unit id="system.keys.incompatible">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:322,326</note>
+        <note category="location">src/app/features/system/system-status.html:358,362</note>
       </notes>
       <segment>
         <source>Key rings are not compatible: a value sealed by one replica cannot be opened by another.</source>
@@ -16074,7 +16107,7 @@
     </unit>
     <unit id="system.keys.caption">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:329,331</note>
+        <note category="location">src/app/features/system/system-status.html:365,367</note>
       </notes>
       <segment>
         <source> Key IDs and sealed values </source>
@@ -16082,7 +16115,7 @@
     </unit>
     <unit id="system.keys.col.id">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:333,334</note>
+        <note category="location">src/app/features/system/system-status.html:369,370</note>
       </notes>
       <segment>
         <source>Key ID</source>
@@ -16090,7 +16123,7 @@
     </unit>
     <unit id="system.keys.col.sealed">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:334,335</note>
+        <note category="location">src/app/features/system/system-status.html:370,371</note>
       </notes>
       <segment>
         <source>Sealed values</source>
@@ -16098,7 +16131,7 @@
     </unit>
     <unit id="system.keys.col.canary-by">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:336,338</note>
+        <note category="location">src/app/features/system/system-status.html:372,374</note>
       </notes>
       <segment>
         <source> Canary (reported by <ph id="0" equiv="INTERPOLATION" disp="{{ e.answeredBy }}"/>) </source>
@@ -16106,7 +16139,7 @@
     </unit>
     <unit id="system.keys.col.status">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:338,341</note>
+        <note category="location">src/app/features/system/system-status.html:374,377</note>
       </notes>
       <segment>
         <source>Status</source>
@@ -16114,7 +16147,7 @@
     </unit>
     <unit id="system.keys.canary.ok">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:350,352</note>
+        <note category="location">src/app/features/system/system-status.html:386,388</note>
       </notes>
       <segment>
         <source>ok</source>
@@ -16122,7 +16155,7 @@
     </unit>
     <unit id="system.keys.canary.failed">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:354,356</note>
+        <note category="location">src/app/features/system/system-status.html:390,392</note>
       </notes>
       <segment>
         <source>failed</source>
@@ -16130,7 +16163,7 @@
     </unit>
     <unit id="system.keys.canary.absent">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:358,360</note>
+        <note category="location">src/app/features/system/system-status.html:394,396</note>
       </notes>
       <segment>
         <source>absent</source>
@@ -16138,7 +16171,7 @@
     </unit>
     <unit id="system.keys.status.active">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:366,368</note>
+        <note category="location">src/app/features/system/system-status.html:402,404</note>
       </notes>
       <segment>
         <source>active</source>
@@ -16146,7 +16179,7 @@
     </unit>
     <unit id="system.keys.status.pending">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:370,372</note>
+        <note category="location">src/app/features/system/system-status.html:406,408</note>
       </notes>
       <segment>
         <source>re-encryption pending</source>
@@ -16154,7 +16187,7 @@
     </unit>
     <unit id="system.keys.status.unused">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:374,376</note>
+        <note category="location">src/app/features/system/system-status.html:410,412</note>
       </notes>
       <segment>
         <source>No values left under this key: its key file can be removed.</source>
@@ -16162,7 +16195,7 @@
     </unit>
     <unit id="system.keys.replicas.heading">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:384,386</note>
+        <note category="location">src/app/features/system/system-status.html:420,422</note>
       </notes>
       <segment>
         <source>Key IDs per replica</source>
@@ -16170,7 +16203,7 @@
     </unit>
     <unit id="system.keys.replicas.caption">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:387,390</note>
+        <note category="location">src/app/features/system/system-status.html:423,426</note>
       </notes>
       <segment>
         <source> Key rings of the live replicas </source>
@@ -16178,7 +16211,7 @@
     </unit>
     <unit id="system.keys.replicas.role">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:392,393</note>
+        <note category="location">src/app/features/system/system-status.html:428,429</note>
       </notes>
       <segment>
         <source>Role</source>
@@ -16186,7 +16219,7 @@
     </unit>
     <unit id="system.keys.replicas.ring">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:394,395</note>
+        <note category="location">src/app/features/system/system-status.html:430,431</note>
       </notes>
       <segment>
         <source>Key IDs held</source>
@@ -16194,7 +16227,7 @@
     </unit>
     <unit id="system.keys.replicas.missing">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:408,409</note>
+        <note category="location">src/app/features/system/system-status.html:444,445</note>
       </notes>
       <segment>
         <source>lacks</source>
@@ -16202,7 +16235,7 @@
     </unit>
     <unit id="system.keys.replicas.complete">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:412,415</note>
+        <note category="location">src/app/features/system/system-status.html:448,451</note>
       </notes>
       <segment>
         <source>complete</source>
@@ -16210,7 +16243,7 @@
     </unit>
     <unit id="system.keys.step.incompatible">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:425,429</note>
+        <note category="location">src/app/features/system/system-status.html:461,465</note>
       </notes>
       <segment>
         <source>Next step: give every replica the key files it lacks. Re-encryption stays disabled until all rings hold the same key IDs.</source>
@@ -16218,7 +16251,7 @@
     </unit>
     <unit id="system.keys.step.reencrypt">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:434,438</note>
+        <note category="location">src/app/features/system/system-status.html:470,474</note>
       </notes>
       <segment>
         <source>Next step: re-encrypt the values that are still sealed under an old key ID.</source>
@@ -16226,7 +16259,7 @@
     </unit>
     <unit id="system.keys.step.remove">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:442,445</note>
+        <note category="location">src/app/features/system/system-status.html:478,481</note>
       </notes>
       <segment>
         <source>Next step: no values are left under an old key ID, so its key file can be removed from every replica.</source>
@@ -16234,7 +16267,7 @@
     </unit>
     <unit id="system.keys.last">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:451,452</note>
+        <note category="location">src/app/features/system/system-status.html:487,488</note>
       </notes>
       <segment>
         <source>Last re-encryption</source>
@@ -16242,7 +16275,7 @@
     </unit>
     <unit id="system.keys.reencrypt">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:473,475</note>
+        <note category="location">src/app/features/system/system-status.html:509,511</note>
       </notes>
       <segment>
         <source> Re-encrypt now </source>
@@ -16250,7 +16283,7 @@
     </unit>
     <unit id="system.keys.reencrypt-reason">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:477,481</note>
+        <note category="location">src/app/features/system/system-status.html:513,517</note>
       </notes>
       <segment>
         <source> Disabled while the key rings are not compatible. </source>
@@ -16258,7 +16291,7 @@
     </unit>
     <unit id="system.jobs.heading">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:489,490</note>
+        <note category="location">src/app/features/system/system-status.html:525,526</note>
       </notes>
       <segment>
         <source>Recent jobs</source>
@@ -16266,7 +16299,7 @@
     </unit>
     <unit id="jobs.empty-recent">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:494,496</note>
+        <note category="location">src/app/features/system/system-status.html:530,532</note>
       </notes>
       <segment>
         <source>No job has run yet.</source>
@@ -16274,7 +16307,7 @@
     </unit>
     <unit id="system.jobs.all">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:505,508</note>
+        <note category="location">src/app/features/system/system-status.html:541,544</note>
       </notes>
       <segment>
         <source>All jobs</source>
@@ -16282,7 +16315,7 @@
     </unit>
     <unit id="system.link.jobs">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:510,511</note>
+        <note category="location">src/app/features/system/system-status.html:546,547</note>
       </notes>
       <segment>
         <source>Jobs</source>
@@ -16290,7 +16323,7 @@
     </unit>
     <unit id="system.link.backups">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:511,513</note>
+        <note category="location">src/app/features/system/system-status.html:547,549</note>
       </notes>
       <segment>
         <source>Backups</source>
@@ -16298,7 +16331,7 @@
     </unit>
     <unit id="system.reencrypt.started">
       <notes>
-        <note category="location">src/app/features/system/system-status.ts:177</note>
+        <note category="location">src/app/features/system/system-status.ts:183</note>
       </notes>
       <segment>
         <source>Re-encryption started.</source>
@@ -16306,7 +16339,7 @@
     </unit>
     <unit id="system.reencrypt.failed">
       <notes>
-        <note category="location">src/app/features/system/system-status.ts:183</note>
+        <note category="location">src/app/features/system/system-status.ts:189</note>
       </notes>
       <segment>
         <source>Re-encryption could not be started.</source>
@@ -16314,7 +16347,7 @@
     </unit>
     <unit id="jobs.cancel.failed">
       <notes>
-        <note category="location">src/app/features/system/system-status.ts:209</note>
+        <note category="location">src/app/features/system/system-status.ts:215</note>
       </notes>
       <segment>
         <source>The job could not be cancelled.</source>
@@ -16322,7 +16355,7 @@
     </unit>
     <unit id="system.jobs.caption">
       <notes>
-        <note category="location">src/app/features/system/system-status.ts:216</note>
+        <note category="location">src/app/features/system/system-status.ts:222</note>
       </notes>
       <segment>
         <source>Recent jobs</source>
@@ -16330,7 +16363,7 @@
     </unit>
     <unit id="system.reencrypt.progress">
       <notes>
-        <note category="location">src/app/features/system/system-status.ts:217</note>
+        <note category="location">src/app/features/system/system-status.ts:223</note>
       </notes>
       <segment>
         <source>Re-encryption</source>
@@ -16338,7 +16371,7 @@
     </unit>
     <unit id="system.check.objectStore">
       <notes>
-        <note category="location">src/app/features/system/system-status.ts:223</note>
+        <note category="location">src/app/features/system/system-status.ts:229</note>
       </notes>
       <segment>
         <source>Object store: blob requests on this replica fail with a retryable 503; everything else keeps working.</source>
@@ -16346,7 +16379,7 @@
     </unit>
     <unit id="system.check.valkey">
       <notes>
-        <note category="location">src/app/features/system/system-status.ts:225</note>
+        <note category="location">src/app/features/system/system-status.ts:231</note>
       </notes>
       <segment>
         <source>Valkey: no request fails, but remote fetches are collapsed per replica only, the negative cache is per replica, rate limits fall back to per-replica shares, and changes arrive through the change-log poll.</source>

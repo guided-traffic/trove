@@ -122,13 +122,13 @@ describe('Package details', () => {
     expect(r.root.querySelector('a[href*="javascript"]')).toBeNull();
   });
 
-  it('R-UI-007 the Files tab shows the SHA-256 with a copy button and the download link of the API', async () => {
+  it('R-UI-007 R-API-029 Q-UI-106 the Files tab shows the SHA-256 with a copy button and a Download link on the contentUrl of the file', async () => {
     const r = await open({ tab: 'files' });
     const sha = '0'.repeat(56) + '5be0c1d2';
     expect(text(r.root)).toContain(sha);
     expect(r.root.querySelector('.pkg-tabs trove-copy-button button')?.getAttribute('aria-label')).toBe('Copy SHA-256');
     const download = [...r.root.querySelectorAll('a')].find((a) => a.textContent?.trim() === 'Download')!;
-    expect(download.getAttribute('href')).toBe('https://trove.example.net/api/npm/npm-local/@team-a/ui/-/ui-1.4.0.tgz');
+    expect(download.getAttribute('href')).toBe('/api/v1/repositories/npm-local/content/@team-a/ui/-/ui-1.4.0.tgz');
     expect(download.hasAttribute('download')).toBe(true);
     await expectAccessible(r.root);
   });

@@ -307,7 +307,7 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 		httpserver.Problem(w, r, errs.Wrap(err, "api.systemInfo"))
 		return
 	}
-	replicas, err := s.o.Replicas.Replicas(ctx)
+	replicas, err := s.listedReplicas(ctx)
 	if err != nil {
 		httpserver.Problem(w, r, errs.Wrap(err, "api.systemInfo"))
 		return
@@ -317,7 +317,8 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 
 	var out gen.SystemInfo
 	out.InstallationId, out.Incarnation = facts.InstallationID, facts.Incarnation
-	out.AnsweredBy.Replica, out.AnsweredBy.Role = s.o.Identity.Replica, gen.SystemInfoAnsweredByRole(s.o.Identity.Role)
+	out.AnsweredBy.Replica, out.AnsweredBy.Role = s.o.Identity.Replica, gen.SystemInfoAnsweredByRole(roleClass(s.o.Identity.Role))
+	out.AnsweredBy.RoleName = s.o.Identity.Role
 	out.Version.Version, out.Version.Revision, out.Version.GoVersion = bi.Version, bi.Commit, bi.GoVersion
 	out.BaseUrl, out.BaseUrlSource = info.BaseURL, gen.SystemInfoBaseUrlSource(info.BaseURLSource)
 	// R-OPS-004 fixes the member; the read-only mode of R-OPS-024 is P1 and not built, so
@@ -360,24 +361,30 @@ func Summarise(replicas []gen.Replica) gen.ReplicaSummary {
 			sum.Ready++
 		}
 		sum.Versions[rep.Version]++
-		for _, role := range rep.Roles {
-			rs := sum.Roles[string(role)]
-			rs.Live++
-			if ready {
-				rs.Ready++
-			}
-			if len(rep.Degraded) > 0 {
-				rs.Degraded++
-			}
-			if rep.Node != nil {
-				if nodes[string(role)] == nil {
-					nodes[string(role)] = map[string]bool{}
-				}
-				nodes[string(role)][*rep.Node] = true
-			}
-			rs.Nodes = len(nodes[string(role)])
-			sum.Roles[string(role)] = rs
+		// A replica has one role; the members of the role summary are keyed by its exact name (Q-API-194).
+		role := rep.RoleName
+		if role == "" && len(rep.Roles) > 0 {
+			role = string(rep.Roles[0])
 		}
+		if role == "" {
+			continue
+		}
+		rs := sum.Roles[role]
+		rs.Live++
+		if ready {
+			rs.Ready++
+		}
+		if len(rep.Degraded) > 0 {
+			rs.Degraded++
+		}
+		if rep.Node != nil {
+			if nodes[role] == nil {
+				nodes[role] = map[string]bool{}
+			}
+			nodes[role][*rep.Node] = true
+		}
+		rs.Nodes = len(nodes[role])
+		sum.Roles[role] = rs
 	}
 	return sum
 }
@@ -385,7 +392,7 @@ func Summarise(replicas []gen.Replica) gen.ReplicaSummary {
 // ListReplicas implements GET /api/v1/system/replicas (R-OPS-003);
 // settings:read is enforced before it runs.
 func (s *Server) ListReplicas(w http.ResponseWriter, r *http.Request) {
-	items, err := s.o.Replicas.Replicas(r.Context())
+	items, err := s.listedReplicas(r.Context())
 	if err != nil {
 		httpserver.Problem(w, r, errs.Wrap(err, "api.listReplicas"))
 		return

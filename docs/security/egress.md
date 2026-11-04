@@ -187,15 +187,3 @@ and dropped with the owner's rule; R-HA-042 lists what each role must reach for 
 What makes it real: a flaw that lets an attacker run code in a trove process or steer a connection outside the outbound
 clients of `internal/outbound`, in a cluster without an egress policy.
 
-### H-519 · The fetch budget of a remote repository is divided over the replicas of one pool
-
-Stage: the fetch slots of the remote engine ([wire_proxy_engine.go](../../internal/app/wire_proxy_engine.go), `Replicas: lim.replicas.Get`).
-
-Live when `packages` replicas run in more than one pool (path pools, R-HA-062); dormant with one `packages` Deployment and no pools, which is
-what the chart renders today. Subject: the number of concurrent requests an upstream sees from trove.
-
-R-REPO-040 shares `limits.maxConcurrentFetches` over every replica that fills (Q-ARCH-297). The engine divides it by the count of the limiters,
-which is the live replicas of its role in its own pool (Q-ARCH-303), so each pool of `packages` spends the whole budget and the upstream sees up
-to the budget times the number of pools. The count of the replicas that fill is built with the registry in WP6a.4.
-
-What makes it real: a path pool of `packages` next to the main Deployment, and clients that miss the same remote through both.

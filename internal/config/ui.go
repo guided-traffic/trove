@@ -13,6 +13,12 @@ import (
 type UI struct {
 	Readme      UIReadme      `yaml:"readme"`
 	ClientSetup UIClientSetup `yaml:"client_setup"`
+	Deploy      UIDeploy      `yaml:"deploy"`
+}
+
+// UIDeploy bounds the UI's uploads (R-UI-012, R-API-025).
+type UIDeploy struct {
+	MaxUploadBytes ByteSize `yaml:"max_upload_bytes" default:"100MiB" validate:"min=0" doc:"Largest file the UI uploads through the content route of a repository; a larger PUT is answered 413 before the body is read, and the deploy dialog refuses it before it starts. 0 is unlimited. Token clients upload through /files/ and are not bound by it (R-API-025, Q-UI-106)."`
 }
 
 // UIReadme bounds and shapes the README rendering (R-UI-008).
