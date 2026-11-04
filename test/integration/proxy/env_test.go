@@ -394,6 +394,8 @@ type replicaOpts struct {
 	poll time.Duration
 	// flights wraps the cross-replica lock.
 	flights func(cluster.FlightLock) cluster.FlightLock
+	// items wraps the item store the engine reads and commits through.
+	items func(proxy.ItemStore) proxy.ItemStore
 	// upstreamLog receives the upstream log.
 	upstreamLog io.Writer
 	// ups are further upstreams the replica trusts.
@@ -509,6 +511,9 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 		Runner: r.db, Items: r.items, Blobs: r.blobs, Flights: flights, Negatives: cluster.NewNegativeStore(r.vk),
 		Lookups: r.vk, Changes: r.changes, Clients: clients, Caches: r.caches, Replicas: o.replicas,
 		Audit: r.rec, Config: pcfg, SafetyTTL: time.Minute, Metrics: r.reg, Log: quiet,
+	}
+	if o.items != nil {
+		po.Items = o.items(r.items)
 	}
 	if r.inv != nil {
 		po.Invalid = r.inv

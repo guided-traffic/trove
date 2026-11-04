@@ -7942,7 +7942,7 @@ entry says that the item is a cache entry of this remote repository; the item ca
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) The item lookup probes the entry (chosen) | `GetLiveItem` takes `entry_probe` and `entry_variant` and returns `entry_stored`: the entry exists at the item's path and is not marked gone. A hit is an item whose entry exists; with no item the engine asks `ProxyEntryGet` once, to tell a miss from an entry whose item is gone (the 404 it answered before) | 1 statement for the hit; the engine's steps and answers are unchanged | A miss costs two more statements (the host's read of the cached artifact before the gate, and the engine's own lookup with its entry check; before: the gate's facts and the entry), in front of an upstream fetch |
+| (a) The item lookup probes the entry (chosen) | `GetLiveItem` takes `entry_probe` and `entry_variant` and returns `entry_stored`: the entry exists at the item's path and is not marked gone. A hit is an item whose entry exists; with no item the engine asks `ProxyEntryGet` once, to tell a miss from an entry whose item is gone (the 404 it answered before), and reads the item again when it finds the entry, because a fill can have committed between the two statements (the first version did not, and answered 404 to the clients that raced a fill) | 1 statement for the hit; the engine's steps and answers are unchanged | A miss costs two more statements (the host's read of the cached artifact before the gate, and the engine's own lookup with its entry check; before: the gate's facts and the entry), in front of an upstream fetch |
 | (b) `ProxyEntryGet` returns the item's columns | The entry statement joins the item and returns its row | The entry stays the first read | A second 30-column row type for the item, kept in step with `GetLiveItem` and the scanning's lateral join |
 | (c) Skip the entry: an item at the path is a hit | The entry is not read | 1 statement, simpler | An item that a local upload put at the path of a remote repository, or an item whose entry was invalidated, would be served as a cache hit; the entry is the cache's record of the item |
 
@@ -7960,7 +7960,7 @@ statement in a profile.
 **Applied in the spec:** R-ARCH-027 (remote hit: 1 query). Code: `internal/proxy/artifact.go` (`lookupHit`, `serveItem`, `Cached`), `internal/proxy/types.go`
 (`Request.Facts`, `Request.Hit`), `internal/items` (`RepoRef.Entry`, `Item.EntryStored`), `internal/formathost/remote.go` (`Artifact`, `gateWith`, `GateWith`),
 `internal/formathost/virtual.go` (`tiers.RemoteCached`). Tests: `TestR_ARCH_027_ADownloadCostsOneStatement` (the remote hits), `TestR_ARCH_027_AnEntryWhoseItemIsGoneIsRefusedAndServedAgainWithIt`
-(the 404 of an entry without its item), the existing engine and format suites (the unchanged answers).
+(the 404 of an entry without its item), `TestHitRace_ALookupBeforeACommitAndAnEntryAfterItIsServed` (an item lookup that ran before a fill committed and an entry found after it is served, not refused), `TestR_ARCH_027_ConcurrentColdRequestsThroughAVirtualRepositoryAreAllServed`, the existing engine and format suites (the unchanged answers).
 
 ### Q-ARCH-293 · Where a wall-clock target of a functional test is enforced
 

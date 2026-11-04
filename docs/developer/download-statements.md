@@ -57,7 +57,7 @@ it was read for) and `Item.EntryStored`.
 ### The remote hit
 
 `proxy.Engine.lookupHit` ([artifact.go](../../internal/proxy/artifact.go)) is the hit: `GetLiveItem` with the entry probe and the key. An item whose entry exists is a hit; an item without an entry is a
-miss; with no item the engine asks `ProxyEntryGet` once, to tell a miss from an entry whose item is gone (404, as before). The artifact entries are never marked gone (`remote_cache_entries`
+miss; with no item the engine asks `ProxyEntryGet` once, to tell a miss from an entry whose item is gone (404, as before), and when it finds the entry it reads the item once more: a fill on another replica can have committed between the two statements, and the 404 of an entry without its item is for an item that is still missing after the entry was seen (`TestHitRace_ALookupBeforeACommitAndAnEntryAfterItIsServed`; the first version answered 404 to the clients that raced a fill, which failed the collapse legs of the end-to-end suites). The artifact entries are never marked gone (`remote_cache_entries`
 has the check `kind = 'metadata' OR upstream_gone_at IS NULL`), so `entry_stored` also refuses a gone entry only as a guard.
 
 The format's artifact gate (`BeforeArtifact`) used to run before the engine and read the facts itself. `formathost.remote.Artifact` now calls `Engine.Cached` first, hands the facts of that read to

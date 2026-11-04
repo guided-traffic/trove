@@ -51,6 +51,7 @@ type env struct {
 	t         *testing.T
 	st        *testenv.Stack
 	npmStub   *npmstub.Server
+	nugetStub *nugetstub.Server
 	npmURL    string
 	nugetURL  string
 	tokAdmin  string
@@ -59,7 +60,10 @@ type env struct {
 	pkg, ver string
 }
 
-func newEnv(t *testing.T) *env {
+func newEnv(t *testing.T) *env { return newEnvWith(t, false) }
+
+// newEnvWith is newEnv with Valkey for the replicas, which collapses concurrent fills across them.
+func newEnvWith(t *testing.T, valkey bool) *env {
 	t.Helper()
 	dir := t.TempDir()
 
@@ -98,12 +102,12 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 
-	st := testenv.NewStack(t, testenv.StackOptions{Name: "querybudget", Env: []string{
+	st := testenv.NewStack(t, testenv.StackOptions{Name: "querybudget", Valkey: valkey, Env: []string{
 		"TROVE_PROXY_OUTBOUND_TLS_CA_FILES=[" + strconv.Quote(npmCA) + "," + strconv.Quote(nugetCA) + "]",
 		`TROVE_PROXY_OUTBOUND_ADDRESS_POLICY_ALLOW_CIDRS=["127.0.0.1/32","::1/128"]`,
 		"TROVE_PROXY_LOCK_POLL_INTERVAL_MS=50",
 	}})
-	e := &env{t: t, st: st, npmStub: npmSrv, npmURL: npmRun.URL + "/", nugetURL: nuget.URL + "/v3/index.json"}
+	e := &env{t: t, st: st, npmStub: npmSrv, nugetStub: nugetSrv, npmURL: npmRun.URL + "/", nugetURL: nuget.URL + "/v3/index.json"}
 	for _, p := range corpus.Default().Packages {
 		if !strings.HasPrefix(p.Name, "@") && len(p.Versions) > 0 && len(p.Versions) < 30 {
 			e.pkg, e.ver = p.Name, p.Versions[0].Version

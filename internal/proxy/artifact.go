@@ -207,6 +207,16 @@ func (e *Engine) lookupHit(ctx context.Context, rq Request, asEntry bool) (items
 	if err != nil || !entryFound || en.Gone() {
 		return items.Item{}, hitNone, err
 	}
+	// The entry exists now, and the lookup above ran before it: a fill (on this or another replica) can have committed between
+	// the two statements, and its item and entry become visible together. The item is read again, as the entry was read before
+	// the item when the hit took two statements, so that an entry is never found without the item of the same commit.
+	it, found, err = e.o.Items.Live(ctx, ref, rq.Path)
+	if err != nil {
+		return items.Item{}, hitNone, err
+	}
+	if found {
+		return it, hitStored, nil
+	}
 	return items.Item{}, hitEntryOnly, nil
 }
 
