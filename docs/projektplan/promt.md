@@ -208,6 +208,15 @@ Found on 2026-11-04 while cutting trove into task areas (phase 6a):
 
 ### Tests and tools
 
+- **F-50 · A single request of `TestE1_14Exposure` ended in a transport `EOF` at the edge** (read, from the log of the `push` leg of
+  Test and Release run 41871333853, on a GitHub-hosted runner). With Valkey stopped, `GET
+  https://packages.trove.localhost:8080/files/generic-local/internal/x.bin` returned `EOF` instead of the `404`; the same subtest passed
+  in run 41864646902 on the same code. The e2e clients set `DisableKeepAlives` (`newAPI` in `test/e2e/m1_env_test.go`), so every
+  request is a fresh TLS connection through the kind port mapping and the edge, and Go retries none of them. The burst cases of the same
+  test count such connections as status 0 in green runs too (53 and 68 of 1,000 in run 41864646902), so connections closed without a
+  response are routine under load. Which side closes them (the port mapping, HAProxy or a trove pod) is not known: the cluster-state
+  step keeps the last 500 lines per pod (`--tail=500`), which begin after the failure. Done when a run that keeps the edge's and the
+  pods' logs of the failure window names the closing side and the cause is fixed or shown to lie outside trove.
 - **F-49 · The drain per role (`TestDrainRoles`, set `drain-roles`) runs with a reduced load** (confirmed, by reading the test).
   R-HA-059 "A drain per role" asks for the npm and dotnet client loops, the long-transfer probes and a loop of a browser journey
   beside the ping, transfer and management-call loops; the test has the latter three and the driver's jobs, and the full advisory sync

@@ -803,6 +803,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
+      # nodes, the images and the build caches need; no job uses them, and a self-hosted runner pod has none of them.
+      - name: Free disk space (GitHub-hosted runner)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
       - name: Load the tool pins
         uses: ./.github/actions/load-pins
 
@@ -993,6 +1000,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
+      # nodes, the images and the build caches need; no job uses them, and a self-hosted runner pod has none of them.
+      - name: Free disk space (GitHub-hosted runner)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
       - name: Load the tool pins
         uses: ./.github/actions/load-pins
 
@@ -1134,6 +1148,13 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
+      # nodes, the images and the build caches need; no job uses them, and a self-hosted runner pod has none of them.
+      - name: Free disk space (GitHub-hosted runner)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
 
       - name: Load the tool pins
         uses: ./.github/actions/load-pins
@@ -1279,6 +1300,13 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
+      # nodes, the images and the build caches need; no job uses them, and a self-hosted runner pod has none of them.
+      - name: Free disk space (GitHub-hosted runner)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
 
       - name: Load the tool pins
         uses: ./.github/actions/load-pins
@@ -1434,6 +1462,13 @@ jobs:
 
       # Whether the change touches the Bastion (R-BAS-049): for any other change the job is green after this step, so that
       # Semantic Release, which needs the job, is not held back by a change that cannot affect the Bastion.
+      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
+      # nodes, the images and the build caches need; no job uses them, and a self-hosted runner pod has none of them.
+      - name: Free disk space (GitHub-hosted runner)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
       - name: Does the change touch the Bastion?
         id: scope
         env:
@@ -1650,6 +1685,13 @@ jobs:
 
       # Whether the change touches the scanning (R-VULN-029): for any other change the job is green after this step, so that
       # Semantic Release, which needs the job, is not held back by a change that cannot affect the scanning.
+      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
+      # nodes, the images and the build caches need; no job uses them, and a self-hosted runner pod has none of them.
+      - name: Free disk space (GitHub-hosted runner)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
       - name: Does the change touch the vulnerability scanning?
         id: scope
         env:

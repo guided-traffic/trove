@@ -14,7 +14,8 @@ every pull request to `main` and on demand. A newer push cancels the running run
 check is a job of its own, with its own make target, so it runs the same locally. Every job runs on the
 organisation's self-hosted runners (`runs-on: self-hosted`), which are ephemeral pods (Ubuntu 24.04, Docker) without `make` or a C
 compiler. While those runners are down, every job of the four workflows runs on GitHub-hosted runners instead
-(`runs-on: ubuntu-24.04`, owner, 2026-11-04); switching back sets `runs-on: self-hosted` again. A job therefore installs what it calls: `make` and the C compiler (`build-essential`), `file`
+(`runs-on: ubuntu-24.04`, owner, 2026-11-04), and every kind e2e job first deletes the runner's preinstalled SDKs (Android, .NET,
+Haskell, CodeQL) for disk space; switching back sets `runs-on: self-hosted` again and drops that step. A job therefore installs what it calls: `make` and the C compiler (`build-essential`), `file`
 and `jq` where a step uses them, the Docker Compose plugin for the integration stack, Go from `go.mod`,
 Node.js from `web/.nvmrc`, and the pinned helm, kubectl, kind and Docker Buildx; the chart job also fetches promtool
 at its pin (`make promtool`, below).
