@@ -41,9 +41,12 @@ func TestR_VULN_024_DatabaseGauges(t *testing.T) {
 
 	for _, r := range []*testenv.Replica{a, b} {
 		var text string
+		// The gauges are read one query after the other once per interval, so a refresh that runs between the two inserts
+		// shows the claimed match without the source's state: wait for both rows, not for one gauge.
 		testenv.WaitFor(t, "the gauges on "+r.Name, 20*time.Second, func() bool {
 			text = r.Metrics(t)
-			return testenv.MetricValue(text, `trove_vuln_claimed_name_matches{ecosystem="npm",kind="malicious"}`) == 1
+			return testenv.MetricValue(text, `trove_vuln_claimed_name_matches{ecosystem="npm",kind="malicious"}`) == 1 &&
+				testenv.MetricValue(text, `trove_vuln_source_records{ecosystem="npm",source="osv"}`) == 231000
 		})
 		if v := testenv.MetricValue(text, `trove_vuln_source_consecutive_failures{ecosystem="npm",source="osv"}`); v != 3 {
 			t.Errorf("%s: consecutive failures = %v, want 3", r.Name, v)
