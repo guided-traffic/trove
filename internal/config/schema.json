@@ -1724,6 +1724,15 @@
           },
           "type": "object"
         },
+        "exclude_queues": {
+          "default": [],
+          "description": "Queues this worker does not claim; empty: none. Mutually exclusive with queues. As an environment variable the list is written as JSON, for example TROVE_JOBS_EXCLUDE_QUEUES='[\"index\",\"mirror\"]'.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "x-trove-env": "TROVE_JOBS_EXCLUDE_QUEUES"
+        },
         "heartbeat_interval": {
           "default": "15s",
           "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
@@ -1744,6 +1753,15 @@
           "type": "string",
           "x-trove-env": "TROVE_JOBS_POLL_INTERVAL",
           "x-trove-type": "duration"
+        },
+        "queues": {
+          "default": [],
+          "description": "Queues this worker claims; empty: every queue. Mutually exclusive with exclude_queues. As an environment variable the list is written as JSON, for example TROVE_JOBS_QUEUES='[\"index\"]'.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "x-trove-env": "TROVE_JOBS_QUEUES"
         },
         "retention": {
           "default": "720h",
@@ -1794,6 +1812,13 @@
               "minimum": 0,
               "type": "integer",
               "x-trove-env": "TROVE_JOBS_WORKERS_MIRROR"
+            },
+            "vuln": {
+              "default": 1,
+              "description": "The advisory sync (R-VULN-004, R-VULN-008).",
+              "minimum": 0,
+              "type": "integer",
+              "x-trove-env": "TROVE_JOBS_WORKERS_VULN"
             }
           },
           "type": "object"

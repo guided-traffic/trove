@@ -59,7 +59,7 @@ func TestR_VULN_004_TheSyncKindsAreRegisteredAsTheSpecificationHasThem(t *testin
 		if !ok {
 			t.Fatalf("kind %s is not registered", kind)
 		}
-		if spec.Queue != vuln.QueueMaintenance || spec.DedupMode != jobs.Exclusive || spec.MaxAttempts != 1 {
+		if spec.Queue != vuln.QueueVuln || spec.DedupMode != jobs.Exclusive || spec.MaxAttempts != 1 {
 			t.Errorf("%s: %+v", kind, spec)
 		}
 	}

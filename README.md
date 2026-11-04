@@ -1028,6 +1028,10 @@ jobs:
     maintenance: 1
     index: 2
     delivery: 8                         # webhook deliveries (P1)
+    mirror: 2                           # the passes of mirrored remote repositories
+    vuln: 1                             # the advisory sync (vuln-sync-osv, vuln-sync-osv-full, vuln-sync-kev)
+  queues: []                            # default: every queue; the queues this worker claims, for example ["index"] on a worker pool
+  exclude_queues: []                    # default: none; the queues this worker does not claim; not together with queues. As variables: TROVE_JOBS_QUEUES='["index"]' (one JSON list)
   poll_interval: 2s                     # default; at least 100ms; below health.watchdog_timeout
   lease_duration: 60s                   # default; at least 3 times heartbeat_interval
   heartbeat_interval: 15s               # default

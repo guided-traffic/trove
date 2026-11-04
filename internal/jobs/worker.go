@@ -156,20 +156,14 @@ func (w *Worker) Name() string { return "jobs" }
 func (w *Worker) Start(ctx context.Context) error {
 	for _, k := range w.o.Registry.Kinds() {
 		spec, _ := w.o.Registry.Kind(k)
-		n, known := w.o.Config.Workers.Count(spec.Queue)
-		if !known {
+		if _, known := w.o.Config.Workers.Count(spec.Queue); !known {
 			return fmt.Errorf("jobs: kind %q uses queue %q, which is not one of %v", k, spec.Queue, w.o.Config.Workers.Queues())
 		}
-		if n > 0 {
-			w.kinds = append(w.kinds, k)
-		}
+		// Every registered kind is claimable: which rows a process takes is decided by the queues it claims, so a row
+		// an older release enqueued into the old queue of a kind that moved still runs (R-ARCH-016, Q-ARCH-296).
+		w.kinds = append(w.kinds, k)
 	}
-	for _, name := range w.o.Config.Workers.Queues() {
-		if n, _ := w.o.Config.Workers.Count(name); n > 0 {
-			w.queues = append(w.queues, name)
-			w.slots[name] = n
-		}
-	}
+	w.resolveQueues()
 	sort.Strings(w.queues)
 	tasks, err := w.resolveTasks()
 	if err != nil {
@@ -188,6 +182,18 @@ func (w *Worker) Start(ctx context.Context) error {
 	go w.heartbeatLoop()
 	go w.reaperLoop()
 	return nil
+}
+
+// resolveQueues sets the queues this process claims (jobs.queues, jobs.exclude_queues) that have at least one slot. The
+// slots of a queue the process does not claim are never started.
+func (w *Worker) resolveQueues() {
+	w.queues, w.slots = nil, map[string]int{}
+	for _, name := range w.o.Config.ClaimedQueues() {
+		if n, _ := w.o.Config.Workers.Count(name); n > 0 {
+			w.queues = append(w.queues, name)
+			w.slots[name] = n
+		}
+	}
 }
 
 // trySubscribe subscribes the wake-up signal once. The wake-up is an

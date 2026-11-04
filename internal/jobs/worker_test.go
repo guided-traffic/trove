@@ -5,8 +5,11 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"slices"
 	"testing"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/config"
 )
 
 func TestForgetKeepsTheNewRun(t *testing.T) {
@@ -61,6 +64,44 @@ func TestWriteWithRetry(t *testing.T) {
 		err := w.writeWithRetry(ctx, log, "fail", func() error { calls++; return errors.New("down") })
 		if err == nil || calls >= settleAttempts {
 			t.Fatalf("calls = %d, err = %v", calls, err)
+		}
+	})
+}
+
+func TestWorkerClaimsOnlyItsQueues(t *testing.T) {
+	cfg := func(queues, exclude []string) config.Jobs {
+		return config.Jobs{
+			Workers: config.JobsWorkers{Default: 4, Maintenance: 1, Index: 2, Delivery: 8, Mirror: 2, Vuln: 1},
+			Queues:  queues, ExcludeQueues: exclude,
+		}
+	}
+	queues := func(c config.Jobs) ([]string, map[string]int) {
+		w := &Worker{o: WorkerOptions{Config: c}}
+		w.resolveQueues()
+		return w.queues, w.slots
+	}
+	t.Run("R-ARCH-016 a worker restricted to queues claims only those, with their slots", func(t *testing.T) {
+		got, slots := queues(cfg([]string{"vuln", "index"}, nil))
+		if !slices.Equal(got, []string{"index", "vuln"}) || slots["index"] != 2 || slots["vuln"] != 1 || len(slots) != 2 {
+			t.Fatalf("queues %v, slots %v", got, slots)
+		}
+	})
+	t.Run("R-HA-062 the main worker claims every queue no pool lists", func(t *testing.T) {
+		got, slots := queues(cfg(nil, []string{"vuln", "index"}))
+		if !slices.Equal(got, []string{"default", "maintenance", "delivery", "mirror"}) || slots["vuln"] != 0 || slots["index"] != 0 {
+			t.Fatalf("queues %v, slots %v", got, slots)
+		}
+	})
+	t.Run("R-ARCH-016 without either setting a worker claims every queue", func(t *testing.T) {
+		if got, _ := queues(cfg(nil, nil)); len(got) != 6 {
+			t.Fatalf("queues %v", got)
+		}
+	})
+	t.Run("R-ARCH-016 a queue without slots is not claimed even when listed", func(t *testing.T) {
+		c := cfg([]string{"vuln", "index"}, nil)
+		c.Workers.Vuln = 0
+		if got, _ := queues(c); !slices.Equal(got, []string{"index"}) {
+			t.Fatalf("queues %v", got)
 		}
 	})
 }

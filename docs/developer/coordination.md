@@ -135,11 +135,25 @@ Day matching is POSIX: when neither day field starts with `*`, either may match;
 `*jobs.ScheduleError` (`Code() == "invalid_schedule"`, text states the dialect): six or seven fields, `?`, `L`, `W`, `#`, day of week `7`,
 descending ranges, `a/n` on a single value, `@every`, `@reboot`, `TZ=` and `CRON_TZ=`, and an expression that does not fire within four years.
 
+### Queues and the queues a process claims
+
+The queues are fixed by the release: `default`, `maintenance`, `index`, `delivery`, `mirror` and `vuln` ([JobsWorkers.Queues](../../internal/config/jobs.go)), each with its `jobs.workers.<queue>` slots. A kind names its queue in `KindSpec.Queue`; `Worker.Start` refuses a kind whose queue is not one of them. The three advisory sync kinds are on `vuln` (`vuln.QueueVuln`, registered in [wire_vuln_sync.go](../../internal/app/wire_vuln_sync.go)), so a long sync never holds the single `maintenance` slot.
+
+| Rule | Where |
+|---|---|
+| `jobs.queues` claims only those queues; `jobs.exclude_queues` claims all but those; empty means every queue | [Jobs.ClaimedQueues](../../internal/config/jobs.go) |
+| Both set, an unknown name, or every queue excluded stops start-up and names the key; a name listed twice is read once | [Jobs.Validate](../../internal/config/jobs.go) (`validateQueues`) |
+| The claim's queue list is the claimed queues that have at least one slot; the slots of any other queue are never started | `Worker.resolveQueues` in [worker.go](../../internal/jobs/worker.go) |
+| `$2` of the claim is every registered kind, so a row a release left in the old queue of a kind that moved runs on a process that claims that queue, in the slots of the row's queue (Q-ARCH-305) | `Worker.Start` |
+| The reaper and the scheduler lease are cluster-wide and run on every worker whatever it claims | `Worker.reaperLoop`, `schedulerWork` |
+
+Both settings are lists, so as environment variables they are one JSON list, `TROVE_JOBS_QUEUES='["index"]'` (Q-ARCH-304); a bare name or a comma-separated text is refused, naming the variable. The tests: `TestJobsQueueSettings`, `TestJobsQueuesFromTheEnvironment` ([jobs_test.go](../../internal/config/jobs_test.go)), `TestWorkerClaimsOnlyItsQueues` ([worker_test.go](../../internal/jobs/worker_test.go)) and `TestJobQueues` ([queues_test.go](../../test/integration/coordination/queues_test.go): two workers with disjoint queue sets split 50 + 50 jobs, a held `vuln` job does not delay a `maintenance` job, a row of a moved kind runs).
+
 ### Claim, lease, heartbeat, reaper
 
 | Step | Where | Behaviour |
 |---|---|---|
-| Claim | `Worker.claim`, query `ClaimJobs` | One statement for all queues with a free slot (`jobs.workers.*`), `FOR UPDATE SKIP LOCKED`, only kinds this replica registered and queues with slots, jobs whose dedup key is not held by a running job. Only while `Ready()` and not draining (Q-OPS-12). |
+| Claim | `Worker.claim`, query `ClaimJobs` | One statement for all queues this process claims (`jobs.queues`, `jobs.exclude_queues`) with a free slot (`jobs.workers.*`), `FOR UPDATE SKIP LOCKED`, every kind this replica registered, jobs whose dedup key is not held by a running job. Only while `Ready()` and not draining (Q-OPS-12). |
 | Wake-up | signal area `jobs` | `Enqueue` publishes after commit; the claim loop also waits at most `jobs.poll_interval` |
 | Heartbeat | `Worker.heartbeat`, control connection | One `UPDATE` per `jobs.heartbeat_interval` for the runs in `Worker.running`, snapshotted under `w.mu`: `WHERE locked_by = uid AND id = ANY(ids) AND attempt = the claimed attempt`. Only snapshot runs are judged: one missing from the result gets `ErrLeaseLost`, one in `cancelling` gets `ErrCancelRequested`. A job claimed while the statement is in flight is not in the snapshot, so it is neither extended nor judged by that beat. A row the replica holds without running it (a claim whose answer never arrived) is not extended: it expires and the reaper returns it. A failing heartbeat cancels a handler only when `jobs.lease_duration` since the last confirmed extension is nearly used up, measured as a duration on the replica's monotonic clock. |
 | Reaper | `Worker.Reap`, every `jobs.schedule_tick` on every worker | `locked_until < now()` on the database's clock: `queued` with backoff, `failed` when attempts are used up, `cancelled` for `cancelling` |

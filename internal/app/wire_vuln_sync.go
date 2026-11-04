@@ -96,7 +96,7 @@ func (a *App) VulnStates() vuln.States { return part[vulnArea](a.parts).states }
 // VulnSync returns the advisory sync; nil in the shell profile and on a web replica, which has the states alone. The integration tests of the sync call it the way the jobs do.
 func (a *App) VulnSync() *vsync.Service { return part[vulnArea](a.parts).sync }
 
-// registerVulnSyncJobs registers the three kinds and tasks of the sync (R-VULN-004, R-VULN-008): queue maintenance, exclusive,
+// registerVulnSyncJobs registers the three kinds and tasks of the sync (R-VULN-004, R-VULN-008): queue vuln (Q-ARCH-296), exclusive,
 // MaxAttempts 1, so one OSV sync runs at a time (both OSV kinds share the dedup key of their tasks) and a failed run is not
 // retried within its slot.
 func (a *App) registerVulnSyncJobs(r *jobs.Registry) {
@@ -124,7 +124,7 @@ func (a *App) registerVulnSyncJobs(r *jobs.Registry) {
 		kind    string
 		handler jobs.Handler
 	}{{vuln.KindSyncOSV, osvHandler(false)}, {vuln.KindSyncOSVFull, osvHandler(true)}, {vuln.KindSyncKEV, kev}} {
-		r.RegisterKind(k.kind, jobs.KindSpec{Queue: vuln.QueueMaintenance, DedupMode: jobs.Exclusive, MaxAttempts: 1, Handler: k.handler})
+		r.RegisterKind(k.kind, jobs.KindSpec{Queue: vuln.QueueVuln, DedupMode: jobs.Exclusive, MaxAttempts: 1, Handler: k.handler})
 	}
 	for _, td := range vuln.TaskDefaults() {
 		switch td.Name {

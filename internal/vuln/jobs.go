@@ -7,11 +7,11 @@ import "strconv"
 // internal/app/wire_vuln.go (a kind is never registered without a handler).
 const (
 	// KindSyncOSV is the incremental OSV sync, KindSyncOSVFull the full one (work package A). Both: queue
-	// maintenance, dedup key DedupSyncOSV, exclusive, MaxAttempts 1, so one OSV sync runs at a time and a colliding slot
+	// vuln (Q-ARCH-296), dedup key DedupSyncOSV, exclusive, MaxAttempts 1, so one OSV sync runs at a time and a colliding slot
 	// is postponed, never lost.
 	KindSyncOSV     = "vuln-sync-osv"
 	KindSyncOSVFull = "vuln-sync-osv-full"
-	// KindSyncKEV imports the CISA catalog (work package A): queue maintenance, exclusive, MaxAttempts 1.
+	// KindSyncKEV imports the CISA catalog (work package A): queue vuln, exclusive, MaxAttempts 1.
 	KindSyncKEV = "vuln-sync-kev"
 	// KindEvaluate works off the changed advisories and the requested full evaluations (work package B): queue
 	// default, dedup key DedupEvaluate, coalesce (work is read from tables, Q-VULN-18).
@@ -25,6 +25,7 @@ const (
 // The queues of the kinds.
 const (
 	QueueMaintenance = "maintenance"
+	QueueVuln        = "vuln"
 	QueueDefault     = "default"
 )
 

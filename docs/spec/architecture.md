@@ -2410,8 +2410,9 @@ FROM next WHERE job.id = next.id
 RETURNING job.*;
 ```
 
-**Queues** (Q-ARCH-296; specified for phase 6a, not built yet: the code knows the first five queues and claims every one
-of them on every worker, [internal/config/jobs.go](../../internal/config/jobs.go)). Every kind belongs to one queue, and
+**Queues** (Q-ARCH-296, built in phase 6a's WP6a.2: [internal/config/jobs.go](../../internal/config/jobs.go) holds the queue
+names, the slots and the two settings, [internal/jobs/worker.go](../../internal/jobs/worker.go) the claim over them). Every
+kind belongs to one queue, and
 `jobs.workers.<queue>` is the number of jobs of that queue one replica runs at a time:
 
 | Queue | Kinds (table below) | Slots per replica (default, proposed) |
@@ -2425,16 +2426,20 @@ of them on every worker, [internal/config/jobs.go](../../internal/config/jobs.go
 
 - **Which queues a process claims.** `jobs.queues` lists the queues a worker claims; empty (the default) means every
   queue. `jobs.exclude_queues` lists queues a worker does not claim; empty (the default) excludes none. Setting both, or
-  naming a queue that does not exist, stops start-up and names the key. The claim query's `$1` is the resulting list,
-  and the slots of a queue the process does not claim are never started. The chart sets `jobs.queues` on each worker
+  naming a queue that does not exist, or excluding every queue so that the process would claim nothing, stops start-up and
+  names the key (a name listed twice is read once). The claim query's `$1` is the resulting list, and the slots of a queue
+  the process does not claim are never started. The chart sets `jobs.queues` on each worker
   pool and `jobs.exclude_queues` on the main `worker` Deployment to the union of the pools' queues, so a queue never
   stays unclaimed and a queue added in a later release is claimed by the main Deployment without a value
   ([ha-and-helm.md](ha-and-helm.md) R-HA-062).
+- **As an environment variable** a list-valued key is read the way the configuration loader reads every list (Q-ARCH-304):
+  one JSON (or YAML flow) list, `TROVE_JOBS_QUEUES='["index","vuln"]'` or `TROVE_JOBS_EXCLUDE_QUEUES='["index"]'`; a bare
+  name or a comma-separated text is refused, naming the variable. The chart renders the JSON form.
 - A replica that claims only some queues still runs the reaper (it returns expired jobs of every queue) and may hold
   the `scheduler` lease (the scheduler enqueues into every queue), because both are cluster-wide and need no slot.
 - **A kind that changes its queue** is enqueued into the new queue by the release that moves it, and a row an older
   release enqueued into the old queue is claimed by a process that claims the old queue and runs the kind; the slots it
-  runs in are those of the row's queue. During the mixed-version window of a rolling upgrade
+  runs in are those of the row's queue (Q-ARCH-305). During the mixed-version window of a rolling upgrade
   ([ha-and-helm.md](ha-and-helm.md) R-HA-020), an older worker does not claim a queue it does not know, so a job of a
   new queue waits for a worker of the new release.
 
@@ -2583,8 +2588,8 @@ Normative rules:
 | `nuget-symbol-index` | [formats/nuget.md](formats/nuget.md) R-NUGET-021 (P1) | Queue `index`, dedup key `nuget-symbol-index:<version id>`, `exclusive`: one job per symbol package, enqueued in the symbol push's commit and, for the backfill, by a data migration. The handler re-checks `indexed_at` under the `nuget_symbol_package` row lock, so a released, retried or reindex-started run commits nothing twice; a package that cannot be indexed ends with `index_error` instead of failing the job. |
 | `data_migration_nuget_semver2` | [formats/nuget.md](formats/nuget.md) R-NUGET-004 ([Q-NUGET-93](formats/nuget.md#q-nuget-93--the-versions-stored-before-the-semver-2-classification-counted-dependency-ranges-are-recomputed-once-by-a-background-job-in-go)) | Queue `maintenance`, `coalesce` under its name. Queued by every `worker` and `all` replica at start-up while `system_state` has no key `nuget_semver2_recomputed`; it waits, queuing the next run a minute later, while a live replica runs 0.9.0 or older (R-HA-022), checkpoints its cursor after each batch of `jobs.background_migrations.batch_size` rows, and records the key when it reaches the end. |
 | `cluster-change-prune` | R-ARCH-018 | Scheduled every 10 minutes, `exclusive`. Deletes a `cluster_change` row once the next row of its area is older than `cluster.change_retention`. The newest row of each area is therefore always kept, and a replica that polled within the retention still finds the row at its last applied epoch, which change-area step 5 of R-ARCH-018 checks. Idempotent. |
-| `vuln-sync-osv`, `vuln-sync-osv-full` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-004 (from M4b) | Queue `vuln` (Q-ARCH-296; `maintenance` until phase 6a builds it). Dedup key `vuln-sync-osv`, shared by both kinds, `exclusive`, as for `gc` and `gc-full`. `MaxAttempts: 1`: a failed run waits for the next slot. A full sync checkpoints the index of its last committed batch and the archive's `ETag`. |
-| `vuln-sync-kev` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-008 (from M4b) | Queue `vuln` (Q-ARCH-296; `maintenance` until phase 6a builds it). `exclusive` under its name; `MaxAttempts: 1`, as every sync run of R-VULN-004 |
+| `vuln-sync-osv`, `vuln-sync-osv-full` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-004 (from M4b) | Queue `vuln` (Q-ARCH-296). Dedup key `vuln-sync-osv`, shared by both kinds, `exclusive`, as for `gc` and `gc-full`. `MaxAttempts: 1`: a failed run waits for the next slot. A full sync checkpoints the index of its last committed batch and the archive's `ETag`. |
+| `vuln-sync-kev` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-008 (from M4b) | Queue `vuln` (Q-ARCH-296). `exclusive` under its name; `MaxAttempts: 1`, as every sync run of R-VULN-004 |
 | `vuln-evaluate` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-011 (from M4b) | Queue `default`. Dedup key `vuln-evaluate`, `coalesce`. Its work is read from tables, never from `args`: the advisories queued in `vuln_pending_evaluation` and the full evaluations requested in `vuln_source_state`, so an enqueue that a waiting job absorbs loses nothing (Q-VULN-18). Checkpoints after each batch. |
 | `vuln-rescan` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-011 (from M4b) | Dedup key `vuln-rescan:<repository id>`, `exclusive`; its manual trigger answers `409` with the running job. A run that finds other scanning inputs of its repository at its end than at its start runs again before it ends (Q-VULN-18). |
 | `vuln-findings-retention` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-014 (from M4b) | `exclusive` under its name; deletes in batches |
@@ -8200,6 +8205,54 @@ turns out to need isolation from the API operations as well.
 **Applied in the spec:** R-ARCH-016 (the queue table, `jobs.workers.vuln`, `jobs.queues`, `jobs.exclude_queues`, the kinds,
 the criteria); [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-004 (the queue);
 [ha-and-helm.md](ha-and-helm.md) R-HA-062 (the worker pools).
+
+### Q-ARCH-304 · How a list-valued key reaches the process through its environment variable
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-062 gives a worker pool `TROVE_JOBS_QUEUES` and the main worker `TROVE_JOBS_EXCLUDE_QUEUES`, both lists. Verified
+in the code: [internal/config/value.go](../../internal/config/value.go) (`parseText`) decodes the text of an environment
+variable for a slice or map key as one YAML document into the key's type, so `["index","vuln"]` and `[index, vuln]` are lists
+and a bare `index` or a comma-separated `index,vuln` is refused with "want JSON", naming the key. The same rule holds for every
+list key (for example `vulnerabilities.sources.osv.ecosystems`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the loader's form: one JSON list in the variable (chosen) | `TROVE_JOBS_QUEUES='["index"]'`; the chart renders it with `toJson` | No new rule; one form for every list key, also for lists of structures; a name with a comma cannot be misread | A hand-written variable needs the brackets and quotes |
+| (b) Accept a comma-separated text for lists of strings | `TROVE_JOBS_QUEUES=index,vuln` | Easier to type | A second form that only lists of strings have; the loader has to guess between the two; changes the meaning of text that is a valid YAML scalar today |
+| (c) One variable per element | `TROVE_JOBS_QUEUES_0=index` | Flat | Gaps and order rules; no other key works so |
+
+**Choice:** (a).
+
+**Rationale:** the loader's form is the one every list key already has, the refusal names the variable, and the chart can
+produce it without a rule of its own. The development agent would revisit it if operators set many list-valued keys by hand
+in container environments, which would justify (b) for every list of strings at once.
+
+**Applied in the spec:** R-ARCH-016 (the settings); [ha-and-helm.md](ha-and-helm.md) R-HA-062 (the value of the variables);
+[internal/config/jobs_test.go](../../internal/config/jobs_test.go) (`TestJobsQueuesFromTheEnvironment`).
+
+### Q-ARCH-305 · Which rows a restricted worker claims, and in whose slots a row of a moved kind runs
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the claim query filters by queue (`$1`) and by kind (`$2`). Before this change `$2` held every registered kind whose
+own queue had at least one slot. With `jobs.queues`, a kind's queue may not be among the process's queues, and a kind that
+a release moves to another queue (the sync, from `maintenance` to `vuln`) leaves rows of the old queue behind.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `$1` is the process's queues with a slot; `$2` is every registered kind; a row runs in the slots of its row's queue (chosen) | The queue decides which rows a process takes; the registry decides which it can run | A row of the old queue of a moved kind is run by any process that claims that queue and has the handler, with the slots of that queue; no kind list to keep per process | A kind whose own queue has no slots on this process still runs from a row of a queue that has |
+| (b) `$2` only the kinds whose own queue the process claims | A moved kind's old rows wait for a process that claims the new queue | Rows always run in the queue of their kind | A row of an old release's queue waits for a pool that may not exist (a pool claims `vuln` only when configured), and the housekeeping queue's process never drains it |
+| (c) Rewrite the old rows by a migration | The release that moves a kind updates its queued rows | One queue per kind at all times | A migration per move, immutable on main (R-ARCH-026), and it does not help a mixed-version window |
+
+**Choice:** (a). `Worker.Start` still refuses a kind whose queue is not one of the release's queues.
+
+**Rationale:** the roadmap's open fact, whether a row of a moved kind runs in the slots of its row's queue, is answered by the
+claim itself: `perQueue` counts by the row's `queue` column, so the slot of the queue it waited in is the one it takes. The
+development agent would revisit it if a kind gets a handler that must not run outside its own queue's concurrency limit.
+
+**Applied in the spec:** R-ARCH-016 (the moved kind); [internal/jobs/worker.go](../../internal/jobs/worker.go) (`Worker.Start`,
+`resolveQueues`); `TestJobQueues` in [test/integration/coordination/queues_test.go](../../test/integration/coordination/queues_test.go).
 
 ### Q-ARCH-297 · Which replicas share a remote repository's fetch budget after the cut
 

@@ -87,8 +87,8 @@ packages in the [roadmap](../coverage/roadmap.md#phase-6a--task-areas)). What ch
   `SubsystemsFor` with the table of R-ARCH-001.
 - The router of an endpoint registers the families of its surface intersected with the role's families (Q-ARCH-298); a
   process opens an endpoint's listener only when that intersection is not empty.
-- A `worker` claims the queues of `jobs.queues`, or all but `jobs.exclude_queues` (R-ARCH-016); the advisory sync moves to the
-  queue `vuln`.
+- A `worker` claims the queues of `jobs.queues`, or all but `jobs.exclude_queues` (R-ARCH-016, built: [coordination.md](coordination.md#queues-and-the-queues-a-process-claims));
+  the advisory sync runs on the queue `vuln`.
 - The UI's downloads and uploads go to session-only content routes of `api`, `/api/v1/repositories/{repoKey}/content/{path}`
   (R-API-025, Q-UI-106), because `packages` evaluates no session cookie.
 

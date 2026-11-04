@@ -243,9 +243,10 @@ role serves, a pool is routing and scheduling only.
   of R-HA-037, and two pools MUST NOT list the same prefix. Use: a surge of npm traffic cannot starve NuGet clients; a heavy
   part of the management API on pods of its own.
 - **Worker pools.** Each entry of `worker.pools` renders a Deployment `<fullname>-worker-<name>` with `--role worker` and
-  `TROVE_JOBS_QUEUES` set to the entry's `queues`, so it claims only those queues (the queue names and the setting:
+  `TROVE_JOBS_QUEUES` set to the entry's `queues` as one JSON list (`["vuln"]`, the loader's form for a list-valued variable,
+  [architecture.md](architecture.md) Q-ARCH-304), so it claims only those queues (the queue names and the setting:
   [architecture.md](architecture.md) R-ARCH-016, Q-ARCH-296). The main `worker` Deployment gets `TROVE_JOBS_EXCLUDE_QUEUES`
-  set to the union of every pool's queues and claims every other queue, so a queue never stays unclaimed, a queue a later
+  set, in the same form, to the union of every pool's queues and claims every other queue, so a queue never stays unclaimed, a queue a later
   release adds is claimed by the main Deployment, and no queue is claimed by two pools. Use: the advisory sync (`vuln`),
   the mirror's passes (`mirror`), indexing (`index`) or garbage collection (`maintenance`) on pods of their own. A pool's
   `jobs.workers.<queue>` slots are those of the configuration unless its `extraEnv` sets them.

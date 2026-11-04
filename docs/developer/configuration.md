@@ -40,7 +40,7 @@ until their owner adds the section. The chart must render only keys the tree kno
 
 Supported types: `string`, `bool`, `int`, `int32`, `int64`, `float64`, `time.Duration`, `config.ByteSize`,
 `[]string`, lists of flat structs (`server.tls.certificates`), `map[string]T`, nested structs, and `config.Secret`.
-Lists and maps are one key; their environment value is JSON:
+Lists and maps are one key; their environment value is JSON (a YAML flow list works too; a bare or comma-separated text is refused naming the variable, so `TROVE_JOBS_QUEUES='["index"]'` is the form of the worker pools' queue list, Q-ARCH-304):
 `TROVE_SERVER_TLS_CERTIFICATES='[{"cert_file":"/tls/tls.crt","key_file":"/tls/tls.key"}]'` # example. A list
 element has scalar fields with snake_case `yaml` names only (`Describe` refuses anything else), is decoded strictly
 (an unknown field is an error), and appears in the JSON Schema as `items` with its properties; `validate:"required"`
