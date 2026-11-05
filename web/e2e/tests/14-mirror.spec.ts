@@ -64,7 +64,7 @@ test('R-REPO-059 R-UI-021 Q-UI-104 Q-UI-105 the status of a mirror, pause, resum
     await expect(page.getByText('It is saved with a warning.')).toBeVisible();
     await page.getByRole('textbox', { name: 'Storage limit in bytes' }).fill('104857600');
     await expect(page.getByText('It is saved with a warning.')).toHaveCount(0);
-    await page.getByRole('textbox', { name: 'Pass interval in seconds' }).fill('300');
+    await page.getByRole('textbox', { name: 'Pass interval in seconds', exact: true }).fill('300');
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.getByText('Mirror mode: a background pass stores what the upstream offers.')).toBeVisible();
     await page.getByRole('button', { name: 'Create repository' }).click();

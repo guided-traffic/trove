@@ -257,7 +257,7 @@ test('R-UI-021 R-REPO-050 the Mirror section of a remote npm repository in the w
 }) => {
   await signInLocal(page);
   const mode = (name: RegExp) => page.getByRole('radio', { name });
-  const interval = page.getByRole('textbox', { name: 'Pass interval in seconds' });
+  const interval = page.getByRole('textbox', { name: 'Pass interval in seconds', exact: true });
 
   await test.step('the wizard shows the section for a remote npm repository, in mode pull-through with no members', async () => {
     await page.goto('/ui/en/admin/repositories/new');
