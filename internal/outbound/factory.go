@@ -58,8 +58,20 @@ func WithMetrics(m *observability.Metrics) Option { return func(f *Factory) { f.
 // WithVersion sets the version in the User-Agent; the default is the build version.
 func WithVersion(v string) Option { return func(f *Factory) { f.version = v } }
 
+// WithDialOverride makes every client of the factory connect to another address than the one the URL names: the keys are
+// "host:port" as the dialer is asked for them (the host name of the URL and its port, 443 for https), the values the
+// "host:port" to connect to. It is a test seam: an integration test points a remote whose URL is the public registry at a
+// stub on a loopback port, without binding a privileged port or resolving a real name. Only the destination of the
+// connection changes: the egress address policy is applied to the address that is connected to, so the test has to allow
+// it as any operator would, and the TLS server name, the Host header and every rule that reads the URL stay those of the
+// URL. Production passes no override.
+func WithDialOverride(to map[string]string) Option {
+	return func(f *Factory) { f.dialAs = to }
+}
+
 // Factory builds the outbound clients of the process.
 type Factory struct {
+	dialAs     map[string]string // WithDialOverride
 	cfg        config.Outbound
 	trust      *tlsfiles.Reloader // system roots plus proxy.outbound.tls.ca_files
 	trustEvery time.Duration
@@ -314,6 +326,15 @@ func (f *Factory) transport(purpose string, s clientSettings, roots *x509.CertPo
 	dial := dialer.DialContext
 	if s.local != nil {
 		dial = s.local.dialFunc(dialer)
+	}
+	if len(f.dialAs) > 0 {
+		inner, as := dial, f.dialAs
+		dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			if to, ok := as[addr]; ok {
+				addr = to
+			}
+			return inner(ctx, network, addr)
+		}
 	}
 	tr := &http.Transport{
 		DialContext:           dial,

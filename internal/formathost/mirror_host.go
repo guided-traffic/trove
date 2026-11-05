@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -134,7 +135,7 @@ func (m *MirrorHost) Upstream(repo repository.Repository, pass mirror.Pass) (dis
 	}
 	return &passUpstream{
 		m: m, repo: repo, rem: rem, pass: pass, base: base, hosts: lister.MirrorHosts(base),
-		settings: formatSettings(repo.Config, formats.ID(repo.Format)),
+		settings: formatSettings(repo.Config, formats.ID(repo.Format)), since: time.Now(),
 	}, nil
 }
 
@@ -242,6 +243,9 @@ type passUpstream struct {
 	base     *url.URL
 	hosts    []string
 	settings json.RawMessage
+	// since is when this attempt of the pass began: a stored document that was validated before it is not current for the
+	// pass's discovery, whatever its period says (see Document).
+	since time.Time
 }
 
 var _ discover.Upstream = (*passUpstream)(nil)
@@ -267,11 +271,16 @@ func (u *passUpstream) Get(ctx context.Context, target *url.URL, accept string, 
 // Document implements [discover.Upstream]: the metadata document through the remote engine, as a background request
 // (R-REPO-025 steps 4 to 10). A document the upstream does not have (a negative entry, 404 or 410), one that is gone and a
 // package the repository counts as gone are found=false.
+//
+// A stored document counts as current only if it was validated after the attempt began: the plan of a package that a feed or a
+// listing named has to see what the upstream announced, not a copy that is still fresh by its metadata period but older than the
+// change (a client may have pulled the document minutes before). Such a document is revalidated once per attempt, one conditional
+// request; an artifact that is stored costs none (R-REPO-051).
 func (u *passUpstream) Document(ctx context.Context, path, variant string) ([]byte, bool, error) {
 	ctx = withBackground(ctx, &backgroundFacts{h: u.m.h, jobID: u.pass.JobID, ceiling: u.pass.Ceiling})
 	p := formats.Path{Path: path}
 	rq := u.m.request(ctx, u.repo, p)
-	doc, err := (&remote{h: u.m.h, e: u.m.e}).Metadata(ctx, rq, p, variant)
+	doc, err := (&remote{h: u.m.h, e: u.m.e}).metadataSince(ctx, rq, p, variant, u.since)
 	if err != nil {
 		if ee, ok := errs.As(err); ok && ee.Code == errs.CodeNotFound {
 			return nil, false, nil

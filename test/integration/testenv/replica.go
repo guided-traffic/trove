@@ -54,6 +54,10 @@ type ReplicaOptions struct {
 	Vuln *app.VulnOverride
 	// Mirror replaces the host, the clock and the jitter of the mirror engine (app.Options.Mirror).
 	Mirror *app.MirrorOverride
+	// DialOverride connects the outbound clients to other addresses than the URLs name ("registry.npmjs.org:443" to the
+	// stub's "127.0.0.1:port"), app.Options.DialOverride; the egress policy still applies to the address connected to,
+	// so the stack's allow list has to admit it.
+	DialOverride map[string]string
 }
 
 // Replica is one in-process replica started through app.New.
@@ -92,7 +96,7 @@ func (s *Stack) Start(tb testing.TB, o ReplicaOptions) *Replica {
 		tb.Fatalf("config: %v", err)
 	}
 	logs := &SyncBuffer{}
-	a, err := app.New(app.Options{Loaded: loaded, Role: o.Role, Environ: environ, LogWriter: logs, Extra: o.Extra, Vuln: o.Vuln, Mirror: o.Mirror})
+	a, err := app.New(app.Options{Loaded: loaded, Role: o.Role, Environ: environ, LogWriter: logs, Extra: o.Extra, Vuln: o.Vuln, Mirror: o.Mirror, DialOverride: o.DialOverride})
 	if err != nil {
 		tb.Fatalf("new %s: %v", o.Name, err)
 	}

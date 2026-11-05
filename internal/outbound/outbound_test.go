@@ -686,3 +686,34 @@ func TestNewDialer(t *testing.T) {
 		}
 	})
 }
+
+func TestDialOverride(t *testing.T) {
+	var host atomic.Value
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { host.Store(r.Host); _, _ = io.WriteString(w, "ok") }))
+	defer srv.Close()
+	override := WithDialOverride(map[string]string{"registry.example:80": srv.Listener.Addr().String()})
+
+	t.Run("R-ARCH-022 a name in the map is connected to the mapped address and keeps its Host header", func(t *testing.T) {
+		resp, err := get(t, New(allowLoopback(), override).Client(PurposeRemote), "http://registry.example/")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if h, _ := host.Load().(string); h != "registry.example" {
+			t.Errorf("the server saw the Host %q", h)
+		}
+	})
+
+	t.Run("R-ARCH-022 the egress policy applies to the address that is connected to", func(t *testing.T) {
+		err := getErr(t, New(defaultCfg(), override).Client(PurposeRemote), "http://registry.example/")
+		if !errors.Is(err, ErrEgressDenied) {
+			t.Errorf("err = %v, want the egress denial of the mapped loopback address", err)
+		}
+	})
+
+	t.Run("R-ARCH-022 a name that is not in the map is not touched", func(t *testing.T) {
+		if err := getErr(t, New(allowLoopback(), override).Client(PurposeRemote, WithConnectTimeout(time.Second)), "http://not-mapped.invalid/"); err == nil {
+			t.Error("an unmapped name was reached")
+		}
+	})
+}

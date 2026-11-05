@@ -18,9 +18,15 @@ func (a *App) wireKeys(context.Context) (keysArea, error) {
 	if err != nil {
 		return keysArea{}, err
 	}
-	out := outbound.New(cfg.Proxy.Outbound, outbound.WithTracer(a.tele.tracer), outbound.WithMetrics(a.tele.metrics),
+	opts := []outbound.Option{
+		outbound.WithTracer(a.tele.tracer), outbound.WithMetrics(a.tele.metrics),
 		outbound.WithUpstreamLog(a.log), outbound.WithVersion(a.versionString()),
-		outbound.WithLogger(a.log), outbound.WithTLSMetrics(a.tele.tls))
+		outbound.WithLogger(a.log), outbound.WithTLSMetrics(a.tele.tls),
+	}
+	if len(a.o.DialOverride) > 0 {
+		opts = append(opts, outbound.WithDialOverride(a.o.DialOverride))
+	}
+	out := outbound.New(cfg.Proxy.Outbound, opts...)
 	a.health.AddReadiness("outbound", func(context.Context) error { return out.Err() }, true)
 	return keysArea{ring: ring, out: out}, nil
 }

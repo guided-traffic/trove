@@ -70,8 +70,10 @@ type Server struct {
 	// replication host (replication.go); thr is the state of Mode.Throttle (throttle.go).
 	changes []change
 	removed map[string]bool
-	replog  []ReplicationRequest
-	thr     throttleState
+	// unlisted are packages the replication service does not list (Unlist).
+	unlisted map[string]bool
+	replog   []ReplicationRequest
+	thr      throttleState
 }
 
 // staleLeft is the state of the older copy of one package: the document requests to answer
@@ -119,6 +121,7 @@ func (s *Server) resetLocked() {
 	s.stale = map[string]*staleLeft{}
 	s.audits = nil
 	s.removed = map[string]bool{}
+	s.unlisted = map[string]bool{}
 	s.replog = nil
 	s.thr = throttleState{}
 	s.changes = s.initialChangesLocked()
@@ -231,6 +234,17 @@ var ErrExists = errors.New("version exists")
 // tarball of corpus.Tarball for these dependencies. It becomes `latest` when it is a release above
 // the current one; tags are set in addition.
 func (s *Server) Publish(name, version string, deps map[string]string, tags ...string) error {
+	return s.publish(name, version, deps, 0, tags)
+}
+
+// PublishPadded is Publish for a version whose tarball carries pad more bytes (the byte bound of the mirror's tests,
+// R-REPO-052): the document's integrity is that of the padded tarball, and the document announces no size, as the public
+// registry's documents announce none.
+func (s *Server) PublishPadded(name, version string, pad int, tags ...string) error {
+	return s.publish(name, version, nil, pad, tags)
+}
+
+func (s *Server) publish(name, version string, deps map[string]string, pad int, tags []string) error {
 	if _, ok := s.recorded[name]; ok {
 		return fmt.Errorf("package %s is recorded and cannot change", name)
 	}
@@ -249,7 +263,7 @@ func (s *Server) Publish(name, version string, deps map[string]string, tags ...s
 		}
 	}
 	at := s.cfg.Now().UTC()
-	if !p.Insert(corpus.NewVersion(name, version, deps, at)) {
+	if !p.Insert(corpus.NewPaddedVersion(name, version, deps, at, pad)) {
 		return fmt.Errorf("%s@%s: %w", name, version, ErrExists)
 	}
 	p.Modified = at

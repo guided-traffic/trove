@@ -314,7 +314,7 @@ func (s *Server) tarball(name, file string) ([]byte, bool) {
 	if i < 0 || (dropped[version] && mode.DropTarballs) {
 		return nil, false
 	}
-	return corpus.Tarball(name, version, base.Versions[i].Dependencies), true
+	return corpus.PaddedTarball(name, version, base.Versions[i].Dependencies, base.Versions[i].Pad), true
 }
 
 func (s *Server) baseURL(r *http.Request) string {

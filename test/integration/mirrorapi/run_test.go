@@ -196,15 +196,15 @@ func TestR_REPO_056_RunRefusals(t *testing.T) {
 func TestR_REPO_056_PausingThroughThePatchStopsTheRun(t *testing.T) {
 	e := newEnv(t)
 	// The mirror is created through the API, so that its stored section is the canonical one that a PATCH merges into.
-	create := e.rawDo("rita", "POST", "/api/v1/repositories", map[string]any{
+	create := e.do("rita", "POST", "/api/v1/repositories", map[string]any{
 		"key": "npm-patch", "class": "remote", "format": mirrorFormat, "remote": map[string]any{"url": upstream, "mode": "mirror"},
 	})
 	e.wantStatus(create, http.StatusCreated, "")
 	patch := func(paused bool) {
 		t.Helper()
-		got := e.rawDo("rita", "GET", "/api/v1/repositories/npm-patch", nil)
+		got := e.do("rita", "GET", "/api/v1/repositories/npm-patch", nil)
 		e.wantStatus(got, http.StatusOK, "")
-		a := e.rawDo("rita", "PATCH", "/api/v1/repositories/npm-patch", map[string]any{"remote": map[string]any{"mirror": map[string]any{"paused": paused}}},
+		a := e.do("rita", "PATCH", "/api/v1/repositories/npm-patch", map[string]any{"remote": map[string]any{"mirror": map[string]any{"paused": paused}}},
 			"Content-Type", "application/merge-patch+json", "If-Match", got.Header.Get("ETag"))
 		e.wantStatus(a, http.StatusOK, "")
 	}
@@ -225,8 +225,8 @@ func TestR_REPO_056_PausingThroughThePatchStopsTheRun(t *testing.T) {
 	e.wantStatus(e.do("rita", "POST", runPath("npm-patch"), nil), http.StatusAccepted, "")
 
 	// Turning the mode back to pullThrough: off, and a run is refused (Q-REPO-148 keeps the rest).
-	got := e.rawDo("rita", "GET", "/api/v1/repositories/npm-patch", nil)
-	e.wantStatus(e.rawDo("rita", "PATCH", "/api/v1/repositories/npm-patch", map[string]any{"remote": map[string]any{"mode": "pullThrough"}},
+	got := e.do("rita", "GET", "/api/v1/repositories/npm-patch", nil)
+	e.wantStatus(e.do("rita", "PATCH", "/api/v1/repositories/npm-patch", map[string]any{"remote": map[string]any{"mode": "pullThrough"}},
 		"Content-Type", "application/merge-patch+json", "If-Match", got.Header.Get("ETag")), http.StatusOK, "")
 	if got := state(); got != "off" {
 		t.Errorf("state after the mode change = %s", got)

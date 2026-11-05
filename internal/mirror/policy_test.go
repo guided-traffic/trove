@@ -2,6 +2,7 @@ package mirror
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -74,6 +75,65 @@ func TestR_REPO_054_TheWindowStartsSlowHalvesOncePerWaitAndGrowsByOne(t *testing
 	mustEqual(t, "additive increase after 5 more", th.Window(), 6)
 	if len(seen) == 0 || seen[0] != 1 {
 		t.Fatalf("the observer saw %v", seen)
+	}
+}
+
+// R-REPO-054: the window a wait halved stays halved while the wait lasts: requests that were in flight when it began answer
+// successfully and do not grow it (trove_mirror_concurrency is at most half of its value before the answer).
+func TestR_REPO_054_SuccessesOfRequestsInFlightWhenTheWaitBeganDoNotGrowTheHalvedWindow(t *testing.T) {
+	th := newThrottle(newClock(), fixedJitter(0), 4, nil)
+	ctx := context.Background()
+	for range 3 { // slow start: 1, 2, 4
+		tk, _ := th.acquire(ctx)
+		th.success(tk)
+	}
+	mustEqual(t, "the window before the answer", th.Window(), 4)
+	var tks []ticket
+	for range 4 {
+		tk, err := th.acquire(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tks = append(tks, tk)
+	}
+	if _, started := th.rateLimited(tks[0], 7*time.Second, true); !started {
+		t.Fatal("no wait started")
+	}
+	mustEqual(t, "the window after the answer", th.Window(), 2)
+	for _, tk := range tks[1:] {
+		th.success(tk)
+	}
+	mustEqual(t, "the window after the answers of the requests in flight", th.Window(), 2)
+}
+
+// R-REPO-054: a request that sleeps through a wait when the pass stops taking work (a stop, a bound or an error during the
+// wait) is woken by the halt at once, so that the job does not sit through the rest of the wait. A wait over 300 s halts the
+// throttle itself before a request can sleep through it (Q-ARCH-323), so the wait here is a short one.
+func TestR_REPO_054_AHaltWakesTheRequestsThatSleepThroughAWait(t *testing.T) {
+	th := newThrottle(blockingClock{newClock()}, fixedJitter(0), 4, nil)
+	ctx := context.Background()
+	tk, err := th.acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, started := th.rateLimited(tk, 200*time.Second, true); !started {
+		t.Fatal("no wait started")
+	}
+	got := make(chan error, 1)
+	go func() { _, err := th.acquire(ctx); got <- err }()
+	select {
+	case err := <-got:
+		t.Fatalf("acquire returned %v during the wait", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	th.halt()
+	select {
+	case err := <-got:
+		if !errors.Is(err, errHalted) {
+			t.Fatalf("acquire returned %v, want errHalted", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the halt did not wake the request that sleeps through the wait")
 	}
 }
 

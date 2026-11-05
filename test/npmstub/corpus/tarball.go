@@ -7,6 +7,7 @@ import (
 	"crypto/sha1" //nolint:gosec // the legacy dist.shasum of npm documents is a SHA-1 by definition
 	"crypto/sha512"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -24,7 +25,7 @@ type tarFile struct {
 }
 
 // tarballFiles are the entries of a version's tarball, sorted by name. The manifest carries no scripts.
-func tarballFiles(name, version string, deps map[string]string) []tarFile {
+func tarballFiles(name, version string, deps map[string]string, pad int) []tarFile {
 	manifest := map[string]any{
 		"name":        name,
 		"version":     version,
@@ -39,18 +40,40 @@ func tarballFiles(name, version string, deps map[string]string) []tarFile {
 	if err != nil {
 		panic(err) // a map of strings always marshals
 	}
-	return []tarFile{
+	files := []tarFile{
 		{"package/README.md", []byte("# " + name + "\n\nVersion " + version + " of a synthetic package.\n")},
 		{"package/index.js", indexSource(name, version)},
 		{"package/package.json", append(pkgJSON, '\n')},
 	}
+	if pad > 0 {
+		files = append(files, tarFile{"package/payload.bin", payload(name, version, pad)})
+	}
+	return files
+}
+
+// payload is pad bytes that depend on the version only, so that a padded tarball (the byte bound of the mirror's tests) is
+// as reproducible as every other and as large as its pad.
+func payload(name, version string, pad int) []byte {
+	r := newRNG(fnv64(name + "@" + version + "#pad"))
+	b := make([]byte, pad)
+	var word [8]byte
+	for i := 0; i < pad; i += 8 {
+		binary.LittleEndian.PutUint64(word[:], r.next())
+		copy(b[i:], word[:])
+	}
+	return b
 }
 
 // Tarball returns the package tarball of a version: gzip (stored blocks, so the bytes do not depend
 // on the toolchain's deflate implementation) around a tar with sorted entries, fixed times and
 // owners. The same arguments always give the same bytes.
 func Tarball(name, version string, deps map[string]string) []byte {
-	return pack(tarballFiles(name, version, deps))
+	return PaddedTarball(name, version, deps, 0)
+}
+
+// PaddedTarball is Tarball with an extra file of pad bytes, for a version whose tarball has to be large.
+func PaddedTarball(name, version string, deps map[string]string, pad int) []byte {
+	return pack(tarballFiles(name, version, deps, pad))
 }
 
 func pack(files []tarFile) []byte {
@@ -98,7 +121,12 @@ func indexSource(name, version string) []byte {
 
 // NewVersion builds a version of a package, including the integrity of its tarball.
 func NewVersion(name, version string, deps map[string]string, at time.Time) Version {
-	files := tarballFiles(name, version, deps)
+	return NewPaddedVersion(name, version, deps, at, 0)
+}
+
+// NewPaddedVersion is NewVersion for a version whose tarball carries pad more bytes.
+func NewPaddedVersion(name, version string, deps map[string]string, at time.Time, pad int) Version {
+	files := tarballFiles(name, version, deps, pad)
 	tarball := pack(files)
 	sum512 := sha512.Sum512(tarball)
 	sum1 := sha1.Sum(tarball) //nolint:gosec // see the import
@@ -110,6 +138,7 @@ func NewVersion(name, version string, deps map[string]string, at time.Time) Vers
 		Version:      version,
 		Dependencies: deps,
 		Time:         at,
+		Pad:          pad,
 		Dist: Dist{
 			Integrity:    "sha512-" + base64.StdEncoding.EncodeToString(sum512[:]),
 			Shasum:       hex.EncodeToString(sum1[:]),

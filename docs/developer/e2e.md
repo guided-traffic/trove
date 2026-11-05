@@ -1121,12 +1121,12 @@ are the same code. It reaches no network, and it answers TLS only.
 
 | File | Responsibility |
 |---|---|
-| [stub.go](../../test/npmstub/stub.go) | `Server`: state under one mutex (counters, mode, published and dropped versions), `Publish`, `Drop`, `Restore`, `SetMode`, `Reset`, `ResetAll` |
+| [stub.go](../../test/npmstub/stub.go) | `Server`: state under one mutex (counters, mode, published and dropped versions), `Publish`, `PublishPadded` (a version whose tarball carries a pad of the given size, for the byte bound of R-REPO-052), `Drop`, `Restore`, `SetMode`, `Reset`, `ResetAll` |
 | [serve.go](../../test/npmstub/serve.go) | the registry: documents (full, and `application/vnd.npm.install-v1+json` when the `Accept` header names it), tarballs, `-/ping`, `ETag`/`Last-Modified` and 304, gzip on request, the failure gate in front of every route |
 | [route.go](../../test/npmstub/route.go) | path to package name: `@scope%2fname` and `@scope/name` are one package |
 | [counts.go](../../test/npmstub/counts.go) | the counters and their readers: `Documents`, `ConditionalDocuments`, `Tarballs`, `Tarball`, `Requests`, `Violations(maxDocuments, maxTarballs)` |
 | [mode.go](../../test/npmstub/mode.go) | the failure switches |
-| [replication.go](../../test/npmstub/replication.go) | the replication paths of the public registry under a second host name: `GET /`, `registry/_changes`, `registry/_all_docs`; the change feed (`Change`, `UpdateSeq`), the log of the replication host's requests (`Replications`) |
+| [replication.go](../../test/npmstub/replication.go) | the replication paths of the public registry under a second host name: `GET /`, `registry/_changes`, `registry/_all_docs`; the change feed (`Change`, `UpdateSeq`), a package the listing leaves out although the registry serves it (`Unlist`, a name a feed missed), the log of the replication host's requests (`Replications`) |
 | [throttle.go](../../test/npmstub/throttle.go) | the throttling modes of the mirror's tests (R-REPO-054, R-REPO-059): `Throttle`, set in `Mode`; self-contained |
 | [audit.go](../../test/npmstub/audit.go) | the advisory endpoint: the recorded advisories of [testdata/advisories.json](../../test/npmstub/testdata/advisories.json), the log of the requests (`Audits`, `Asked`) |
 | [control.go](../../test/npmstub/control.go) | the control API below `/-/stub/` |

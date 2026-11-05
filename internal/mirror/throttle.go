@@ -104,7 +104,8 @@ func (t *throttle) acquire(ctx context.Context) (ticket, error) {
 	}
 }
 
-// halt makes every acquire, now and later, return errHalted; requests in flight finish.
+// halt makes every acquire, now and later, return errHalted, and wakes the requests that sleep through a wait; requests in
+// flight finish.
 func (t *throttle) halt() {
 	t.mu.Lock()
 	t.haltLocked()
@@ -144,13 +145,18 @@ func (t *throttle) setWindow(w int) {
 }
 
 // success ends a request that the upstream answered: it counts towards the growth of the window and resets the run of
-// rate-limit answers.
+// rate-limit answers. A request that was in flight when a wait began does not count towards the growth: the window the wait
+// halved stays halved while the wait lasts (trove_mirror_concurrency is at most half of its value before the answer,
+// R-REPO-054), and grows only by what is sent after it.
 func (t *throttle) success(tk ticket) {
-	_ = tk
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.inflight--
 	t.consecutive = 0
+	if tk.gen != t.gen {
+		t.signal()
+		return
+	}
 	t.successes++
 	if t.successes >= t.window && t.window < t.ceiling {
 		t.successes = 0

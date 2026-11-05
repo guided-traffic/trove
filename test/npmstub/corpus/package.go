@@ -25,6 +25,8 @@ type Version struct {
 	Time         time.Time
 	Deprecated   string
 	Dist         Dist
+	// Pad is the size of the extra file in the version's tarball (NewPaddedVersion); 0 for none.
+	Pad int
 }
 
 // Package is a package and everything the registry says about it.

@@ -62,6 +62,17 @@ func (r *remote) Metadata(ctx context.Context, rq *formats.Request, p formats.Pa
 	return r.document(rq, d, err)
 }
 
+// metadataSince is Metadata for the discovery of a pass: a stored document counts as current only if it was validated after
+// since (the engine's restore bound, Q-NPM-13, used for the start of the pass's attempt).
+func (r *remote) metadataSince(ctx context.Context, rq *formats.Request, p formats.Path, variant string, since time.Time) (*formats.RemoteDocument, error) {
+	preq, err := r.request(ctx, rq, p, variant, proxy.Metadata)
+	if err != nil {
+		return nil, err
+	}
+	d, _, err := r.e.EnsureCurrent(ctx, preq, since)
+	return r.document(rq, d, err)
+}
+
 // Artifact implements [formats.RemoteFetcher].
 func (r *remote) Artifact(ctx context.Context, rq *formats.Request, p formats.Path, expected formats.Digests, w http.ResponseWriter) error {
 	preq, err := r.request(ctx, rq, p, "", proxy.Artifact)

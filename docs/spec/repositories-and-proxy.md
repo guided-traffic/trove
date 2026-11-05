@@ -2962,7 +2962,10 @@ Priority: **MVP** · Covers: trove-only
   needs and the artifacts of its versions, newest first by the format's version order ([architecture.md](architecture.md)
   R-ARCH-008, the optional mirror interface). The mirror stores the artifacts and keeps the documents current through the
   ordinary metadata path of R-REPO-025 and R-REPO-027: a stored document that is fresh is used as it is, an expired one is
-  revalidated, so a pass also refreshes the metadata of the packages it holds.
+  revalidated, so a pass also refreshes the metadata of the packages it holds. The plan of a package asks for a stored document
+  that was validated before the pass's attempt began as for an expired one (one conditional request per package and attempt,
+  Q-REPO-167), so that it sees the version a feed announced and not a copy that is fresh by its period but older than the change;
+  an artifact that is stored costs no request.
 - **Methods**, in the order `auto` tries them:
 
   | Method | What it reads | Passes |
@@ -3212,7 +3215,7 @@ Priority: **MVP** · Covers: trove-only
 - **Fewer concurrent fetches** (Q-REPO-138). The pass's window `w` starts at 1 in every attempt. It doubles after `w`
   successful fetches in a row until it reaches its ceiling or a rate-limit answer arrives (slow start), and afterwards grows
   by one after `w` successes in a row. A rate-limit answer halves it, rounded down and at least 1, once per wait: answers of
-  fetches that were in flight when the wait began do not halve it again. The ceiling is `concurrency`, held below the
+  fetches that were in flight when the wait began do not halve it again, and their successes do not grow it (Q-REPO-168). The ceiling is `concurrency`, held below the
   background share of R-REPO-055.
 - **The circuit is the clients'** (Q-REPO-139). No outcome of a background request moves or resets the circuit of R-REPO-029:
   a rate limit the mirror provokes never turns clients away. The mirror reads the circuit: while it is open, the pass sends
@@ -3280,7 +3283,7 @@ Acceptance criteria:
 - Integration (one client-serving replica and one process that claims the queue `mirror`, `maxConcurrentFetches: 8`, so
   B = 2; the stub delays every tarball by 2 s): the pass runs two background fetches; eight client fetches take the
   client-serving replica's eight slots without a wait; a ninth waits, the process that runs the pass pre-empts both
-  background fetches, and 1 s later the stub has at most eight open connections.
+  background fetches, and 1 s later the stub has at most eight tarball fetches in flight (Q-REPO-171).
 - e2e (set `mirror`, R-REPO-059): a pass of 300 packages runs while `npm ci` of the 400-dependency fixture runs through the
   same remote on three client-serving replicas; `npm ci` succeeds within 120 % of its time without the pass, the stub never has more
   than `maxConcurrentFetches + n − 1 + B` connections open, and `trove_mirror_preempted_total` grew.
@@ -3390,8 +3393,8 @@ Priority: **MVP** · Covers: trove-only
 Acceptance criteria:
 
 - After a pass of a stub with 20 tarballs, `trove_mirror_items_total{result="stored"}` grew by 20 and the audit store holds
-  20 `authz.write.allowed` events with the actor `system` and `reason: mirror` for the repository, and one
-  `mirror.pass_completed`.
+  20 `authz.write.allowed` events of tarballs with the actor `system` and `reason: mirror` for the repository (and one more per
+  stored document, Q-REPO-169), and one `mirror.pass_completed`.
 - During a throttled pass the upstream log records carry `flight_role: mirror`.
 
 ### R-REPO-058 · The mirror on n replicas, without Valkey and during a drain
@@ -5994,6 +5997,130 @@ same text into the log and the event of the failure.
 includes a part of an upstream's answer.
 
 **Applied in the spec:** R-REPO-056.
+
+### Q-REPO-167 · A pass revalidates a stored document that was validated before its attempt began
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-051 says the mirror keeps documents current through the ordinary metadata path, "a stored document that is fresh is
+used as it is". The integration suite found what that does to an incremental pass: the feed names `@acme/a` as changed, the plan asks
+for its document, the document is fresh (a client or the previous pass fetched it less than `metadataTtlSeconds` ago) and is used,
+so the plan lacks the new version; the cursor moves past the change, and nothing names the package again until it changes once more or
+a full pass runs. The criteria of R-REPO-051 and of the npm and NuGet pages ("fetches only the document of `@acme/a` and the new
+tarball", "refreshes the document of `@acme/b`") can only hold if the pass sees a document at least as new as its feed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the period: a fresh document is used as it is | The text of R-REPO-051 as it was | One rule; no extra request | A version the feed announced is missed until a full pass or another change; the criteria hold only when the period happens to have expired |
+| (b) The plan's document is current only if it was validated after the attempt began (chosen) | `passUpstream.Document` asks the engine's `EnsureCurrent` with the start of the attempt as the bound, the mechanism of Q-NPM-13 | The plan always sees what the upstream had when the feed was read; one conditional request (304) per package and attempt; artifacts and client requests are unchanged | A full pass of n held packages sends n conditional requests, also for packages that did not change |
+| (c) Force a refresh only for the names an incremental feed returns and for deletion records | The engine marks the name | Fewer requests on a full pass | A second path next to the period; the held names of a full pass can be as stale |
+
+**Choice:** (b), in `formathost.passUpstream.Document` (`metadataSince`).
+
+**Rationale:** the pass is the one place that must not read a document older than its own question. The cost is one conditional request
+per package and attempt, which is what R-REPO-051 already says a pass does for an expired document. The development agent would revisit
+(c) if the conditional requests of a full pass over very many held packages are measured to matter for an upstream's rate limit.
+
+**Applied in the spec:** R-REPO-051. Code: `passUpstream.since`, `remote.metadataSince`. Test: `TestR_REPO_051_NpmPublicRegistryFeed`.
+
+### Q-REPO-168 · A wait keeps the window it halved
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-054 halves the window once per wait and its criterion says `trove_mirror_concurrency` is at most half of its value before
+the answer. The successes of the requests that were in flight when the wait began (up to `window − 1` of them) arrived after the
+halving, counted towards "w successes in a row" and grew the halved window by one while the pass waited (4 to 2 to 3).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Count them | The window grows as soon as w successes arrive, whenever they were sent | Simplest | The gauge during the wait is above half; the pass restarts with more than half of its window |
+| (b) The successes of requests sent before the wait began do not grow the window (chosen) | `throttle.success` compares the request's wait number with the current one, as `rateLimited` does for the answers | Symmetric with the rule that their rate-limit answers change nothing; the criterion holds | The window grows a little later |
+
+**Choice:** (b).
+
+**Rationale:** the answers of requests that were in flight say nothing about the rate after the wait. The development agent would
+revisit it if the window is seen to recover too slowly after a wait.
+
+**Applied in the spec:** R-REPO-054. Code: `throttle.success`. Tests: `TestR_REPO_054_SuccessesOfRequestsInFlightWhenTheWaitBeganDoNotGrowTheHalvedWindow`,
+`TestR_REPO_054_RetryAfterSecondsPausesThePassAndHalvesItsWindow`.
+
+### Q-REPO-169 · A pass writes a populate event per stored document as well as per stored artifact
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the bullet on the audit trail of R-REPO-057 says every artifact and document a pass stores writes the populate event; the
+acceptance criterion counted 20 events for a pass of 20 tarballs. The pass stores the document of each package as well, and writes its
+event, so the audit store holds 40.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The bullet is right, the criterion counts the tarballs' events (chosen) | 20 events of tarballs and one per stored document | One rule, as a client's fill | The criterion needs the words "of tarballs" |
+| (b) Documents write no event | Only artifacts | The count of the criterion | A document stored by the system without a record; unlike a client's fill |
+
+**Choice:** (a).
+
+**Rationale:** the populate event is the record of who put what into the cache. The development agent would revisit (b) if the volume of
+document events of a big mirror proves a burden of the audit store.
+
+**Applied in the spec:** R-REPO-057. Test: `TestR_REPO_056_AStatusFollowsARunningPassAndEveryReplicaAnswersTheSame`.
+
+### Q-REPO-170 · The integration suite reaches a stub as the public registry through a dial override
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: npm's `feed` is offered for `https://registry.npmjs.org/` only and reads `replicate.npmjs.com` (Q-NPM-69, Q-NPM-72); a test
+needs a remote with that URL whose connections reach the stub on a loopback port, with the certificate and the Host header of the names.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A dial override of the outbound factory (chosen) | `outbound.WithDialOverride`, `app.Options.DialOverride`, `testenv.ReplicaOptions.DialOverride`: a map from `host:port` to the address connected to | The URL, the TLS name, the Host header and every rule that reads the URL stay those of the public registry; the egress policy applies to the address connected to, so the stack allows `127.0.0.1/32` as an operator would; production passes nothing | One more seam in the composition root |
+| (b) Bind port 443 on the loopback and resolve the names | A resolver in the test process | No code change | A privileged port, a process-wide resolver, a name clash between parallel tests |
+| (c) Let a repository setting name the replication host | A setting no operator needs | No seam in the root | A setting that exists for tests and widens what a repository can reach |
+
+**Choice:** (a).
+
+**Rationale:** only the destination of the connection changes, and the egress rules still judge the real address. The development agent
+would revisit it if a second consumer wants the override to be a setting.
+
+**Applied in the spec:** none; [developer/mirror.md](../developer/mirror.md). Code: `outbound.WithDialOverride`. Test: `TestDialOverride`.
+
+### Q-REPO-171 · "Open connections" in the pre-emption criterion are the tarball fetches the stub is serving
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-055's integration criterion says the stub has at most eight open connections 1 s after the ninth fetch. The outbound
+clients keep connections alive, so a TCP count includes idle ones that carry no fetch.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Count the tarball requests the stub is serving (chosen) | A counter in front of the stub's handler | It is the bound R-REPO-055 states: fetches against the upstream | Not a socket count |
+| (b) Count TCP connections in the active state | `ConnState` of the stub's server | Closer to the words | A connection that finished its request and is idle is a different state in HTTP/1.1 and HTTP/2; the number depends on the transport |
+
+**Choice:** (a).
+
+**Rationale:** the budget of R-REPO-040 is a number of fetches. The development agent would revisit it if an upstream is found that
+limits connections rather than requests.
+
+**Applied in the spec:** R-REPO-055. Test: `TestR_REPO_055_AClientFetchThatHasToWaitPreemptsThePassOfAnotherProcess`.
+
+### Q-REPO-172 · The 60 s after a long wait are observed through the engine's clock
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the criterion for `Retry-After: 3600` says the stub records no request of the mirror in the next 60 s, and a unit test with a
+fake clock shows the next job continuing the pass at that time.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Wait 60 s in the suite | Real time | Literal | A minute of the suite for one assertion |
+| (b) Watch 6 s, move the engine's clock 59 s on, dispatch again, then move it an hour on and clear the throttle (chosen) | `app.MirrorOverride.Clock` with an offset; the dispatch reads the clock | No request in the real seconds and none after 59 s on the engine's clock, and the continuation at the hour, all against the real stack | The wall time of the 60 s is not elapsed |
+
+**Choice:** (b).
+
+**Rationale:** what holds the pass is `rate_limited_until` and the due check of the dispatch, both of which read the engine's clock.
+The development agent would revisit it if the wait were moved out of the engine's clock.
+
+**Applied in the spec:** none. Test: `TestR_REPO_054_ALongWaitEndsTheJobDeferredAndTheNextJobContinuesAtThatTime`.
 
 ### Q-REPO-179 · A background request takes its slot before it enters a flight
 

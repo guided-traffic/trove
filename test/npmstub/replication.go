@@ -101,7 +101,7 @@ func (s *Server) namesLocked() []string {
 	}
 	out := make([]string, 0, len(set))
 	for n := range set {
-		if !s.removed[n] {
+		if !s.removed[n] && !s.unlisted[n] {
 			out = append(out, n)
 		}
 	}
@@ -131,6 +131,15 @@ func (s *Server) Change(name string, deleted bool) {
 	}
 	s.cache = map[cacheKey]*rendered{}
 	s.appendChangeLocked(name, deleted)
+}
+
+// Unlist makes the replication service leave a package out of _all_docs, as a feed does that missed a name (R-REPO-051: a
+// full pass also takes the packages the repository holds); the registry keeps serving its document and tarballs. Publish
+// and Change do not list it again.
+func (s *Server) Unlist(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.unlisted[name] = true
 }
 
 // UpdateSeq is the sequence of the last change.

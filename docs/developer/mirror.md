@@ -3,8 +3,8 @@
 Status: phase 6b, in progress; the role-neutral contracts are laid, the tables and the seam to the remote engine are added,
 and work packages A (npm discovery), B (NuGet discovery), C (C1, the remote engine's side: background requests, pre-emption, the
 yield signal, `mirror.Host`; C2, the engine: dispatch, pass, fence, window, waits, bounds, metrics, events) and the API half of D
-(the status and the run, [below](#the-status-and-run-operations-work-package-d)) are built; the Mirror tab of D and the integration
-and e2e suites are in progress. Specified on
+(the status and the run, [below](#the-status-and-run-operations-work-package-d)) are built, and so is the integration suite against the
+counting stubs ([below](#the-integration-suite)); the Mirror tab of D and the e2e set are in progress. Specified on
 [repositories-and-proxy.md](../spec/repositories-and-proxy.md#mirror-mode) (R-REPO-050 to R-REPO-059) and the format pages'
 sections "Mirror discovery" ([npm](../spec/formats/npm.md#mirror-discovery), [NuGet](../spec/formats/nuget.md#mirror-discovery));
 the cut into work packages is [Q-ARCH-288](../spec/architecture.md#q-arch-288--the-seams-of-the-mirror).
@@ -131,13 +131,8 @@ written), upserts the request and records `mirror.pass_requested`. The status ne
 project administrator, 202 then 409 with the same job, the three refused modes, the status of a seeded row in each state, the request columns
 and the audit event, the pause through `PATCH` with `If-Match`.
 
-Until the npm and NuGet listers exist, `mode: mirror` is refused for every format (R-REPO-050). The integration suite therefore registers a
-catalog entry of its own before the replica starts, a copy of npm's with the fact `Mirror` set (`registerMirrorFormat` in
-[env_test.go](../../test/integration/mirrorapi/env_test.go)); its repositories are created, patched and read through the management API.
-The entry is a catalog entry only, not a registered format, so the answers of the repository operations about it do not satisfy the
-document's enum of format names, and the suite sends them with `rawDo`, which does not validate. **When the npm lister lands:** set
-`mirrorFormat` to `"npm"`, delete `registerMirrorFormat` and `rawDo` (use `do`), and the suite runs against npm.
-
+The suite creates its mirrors as npm remotes through the management API, like any other repository (`mirrorFormat` in
+[env_test.go](../../test/integration/mirrorapi/env_test.go)); it used a catalog entry of its own for the time npm had no lister, which is gone.
 
 ## The engine (work package C2)
 
@@ -254,6 +249,66 @@ database.
 - **The restore of R-REPO-058** is `PGStore.ClearAfterRestore`; phase 7's restore job calls it (no post-restore hook mechanism exists:
   the vulnerability scanning's restore is tested as the state it leaves, Q-VULN-58). Phase 7 owns that call.
 
+## The integration suite
+
+Built by the integration wave against the real formats and the counting stubs; the exit criteria E6b.2 to E6b.5 at the integration level. The
+engine-level tests with the fake host ([pass_test.go](../../test/integration/mirror/pass_test.go), [lifecycle_test.go](../../test/integration/mirror/lifecycle_test.go))
+stay: they prove the fence, the lost lease, the pause and the mode switch at the statements; the files below add what the real stack adds.
+
+| File | Requirement | What it proves |
+|---|---|---|
+| [rig_test.go](../../test/integration/mirror/rig_test.go) | | the rig: the stack, the stub behind a recorder, the replicas, the waits |
+| [npm_test.go](../../test/integration/mirror/npm_test.go) | R-REPO-051, [npm.md](../spec/formats/npm.md#mirror-discovery) | the public registry's `feed` (the requests to the replication host, no credential there, the key range, the incremental pass from the stored sequence, a deleted change and a read that answers 404), `names` on a private registry with a held package, `latest` pinned under `maxVersionsPerPackage`, the version bounds, a pattern change that makes the next pass full, a held package the feed missed |
+| [nuget_test.go](../../test/integration/mirror/nuget_test.go) | R-REPO-051, [nuget.md](../spec/formats/nuget.md#mirror-discovery) | the catalog read in full and after the cursor, a `PackageDelete` refreshing the version list, the truncated search listing and its note, exact IDs, the mirrored version served with the stub stopped |
+| [throttle_test.go](../../test/integration/mirror/throttle_test.go) | R-REPO-054, R-REPO-057 | `Retry-After` in seconds and as a date, `503` SlowDown three times in a row, `403` with `X-RateLimit-Remaining: 0`, `Retry-After: 3600` ending the job deferred and the continuation an hour on; the window, `trove_remote_upstream_up`, a client read during the wait, `flight_role: mirror` in the upstream log |
+| [bound_test.go](../../test/integration/mirror/bound_test.go) | R-REPO-052, R-REPO-053 | the byte bound with a 30 MiB stub (`bound_reached`, one event, a client fetch of an unstored version, the raise to 64 MiB), the release at shutdown after 50 of 200 packages and a second process that ends the pass |
+| [preempt_test.go](../../test/integration/mirror/preempt_test.go) | R-REPO-055 | a client-serving replica and a process that claims `mirror`, `maxConcurrentFetches: 8`: the pass's two background fetches, eight client fetches without a wait, the ninth waits and the pass's process pre-empts both |
+| [status_test.go](../../test/integration/mirror/status_test.go) | R-REPO-056, R-REPO-057 | the run (202, then 409 with the same job), the status during the pass and after it from two replicas, the metrics, the populate events, `mirror.pass_completed` |
+| [failure_test.go](../../test/integration/mirror/failure_test.go) | R-REPO-053, R-REPO-056 | the stub that is down: the three back-offs, the `failing` status and its message, the recovery |
+
+**The rig** ([rig_test.go](../../test/integration/mirror/rig_test.go)). `newRig` starts the stack, the stub as a TLS server in the test process
+behind a recorder (`traffic`: every request with its time, host, path, query and credential scheme, and the tarball requests in flight), and the
+repository `npm-mirror` (or a NuGet remote, `newNugetRig`). `rig.runner` is a `worker` that claims the queue `mirror` alone
+(`TROVE_JOBS_QUEUES=["mirror"]`), `rig.web` a client-serving replica; neither has a fake host, so the passes run through the real
+`mirror.Host`. The state row of the repository is created with `next_pass_at` an hour ahead, so that the dispatch the scheduler runs when a
+replica starts starts nothing: `rig.pass` makes the pass due and dispatches, and `waitPass` waits for a `mirror-pass` job created after a time to
+end with an outcome (the job's result is the summary; `last_pass.startedAt` has whole seconds only).
+
+**The public registry.** npm's `feed` is offered for `https://registry.npmjs.org/` only. `rigOptions.public` makes the remote's URL that
+address and gives the replicas `app.Options.DialOverride` (`testenv.ReplicaOptions.DialOverride`, [outbound.WithDialOverride](../../internal/outbound/factory.go)):
+`registry.npmjs.org:443` and `replicate.npmjs.com:443` connect to the stub's loopback port. The URL, the certificate name (the stub's
+certificate carries both names), the Host header and every rule that reads the URL stay those of the public registry, and the egress policy applies
+to the address connected to: the stack allows `127.0.0.1/32` as an operator would. The stub tells the replication host by the Host header.
+Production passes no override ([Q-REPO-170](../spec/repositories-and-proxy.md#q-repo-170--the-integration-suite-reaches-a-stub-as-the-public-registry-through-a-dial-override)).
+
+**The clock.** `rigOptions.clock` goes to `app.Options.Mirror.Clock`; `offsetClock` has real sleeps (so that the waits can be measured against the
+stub's own timestamps) and an offset the test advances: the long wait of `Retry-After: 3600` is continued by moving the engine's time an hour on
+([Q-REPO-172](../spec/repositories-and-proxy.md#q-repo-172--the-60-s-after-a-long-wait-are-observed-through-the-engines-clock)).
+
+**The stubs' additions.** [npmstub](../../test/npmstub): `PublishPadded` (a version whose tarball carries a pad, for the byte bound) and `Unlist` (a
+package the replication service leaves out although the registry serves it).
+
+**What the suite found in the product, and fixed.**
+
+- A `worker` could not build the mirror host: the remote engine needs the invalidation set, which only a process with a client listener has, so
+  `Lister` answered false and no pass ever started on a worker (`buildMirrorHost` builds the set now).
+- A stored document that was fresh by its period was used by the plan, so an incremental pass missed the version its feed announced
+  ([Q-REPO-167](../spec/repositories-and-proxy.md#q-repo-167--a-pass-revalidates-a-stored-document-that-was-validated-before-its-attempt-began)).
+- A request that began to sleep through a wait just before a long wait ended the attempt was not woken by the halt: the job stayed `running` for
+  the hour of the wait (R-REPO-054: no job slot is held through a long wait). `throttle.sleep` returns `errHalted` when the pass stops taking
+  work; the race was a third of the runs of the test of `Retry-After: 3600` with a window of 2.
+- The successes of the requests in flight when a wait began grew the halved window
+  ([Q-REPO-168](../spec/repositories-and-proxy.md#q-repo-168--a-wait-keeps-the-window-it-halved)).
+
+**What it does not cover.** The byte bound across passes needs the fold of `repository_usage` ([H-527](../security/mirror.md)); the suite proves the
+bound within a pass. The R-REPO-050 and the first R-REPO-052 criterion (the 422 codes of the mode) are the unit tests of `internal/repository`. The
+real-time 60 s of the long wait are not waited for (Q-REPO-172). Where the kind cluster is needed (three client-serving replicas, the drain) is the e2e
+set.
+
+**Run it.** `make integration-up`, then `make test-integration` (the package is in shard `b`) or alone, with the stack's environment sourced
+(`.dev/integration/env`): `go test -count=1 -p 1 -tags integration ./test/integration/mirror/... ./test/integration/mirrorapi/...`. The
+suite takes about three minutes; the throttling tests wait for the real seconds of the upstream's answers.
+
 ## Tests each package writes
 
 - **A, B:** unit tests over a fake `discover.Upstream` (pages, cursors, ranges, deletions, the plan's order and pins, a rate-limit
@@ -359,8 +414,9 @@ behind it. Specified in R-REPO-054, R-REPO-055 and R-REPO-057; the decisions are
 - **`Upstream(repo, pass)`** needs the format's lister: it fails for a format without one (`Lister` is false). Its `Get` refuses a host
   that is not the upstream's, an `extraHosts` entry or one of `lister.MirrorHosts(base)` with `foreign_host_denied` and sends nothing; a
   lister's host never gets a credential. `Get` with `max` 0 reads up to 32 MiB (`proxy.DiscoveryDocumentMaxBytes`). `Document` is
-  `found=false` for a negative entry (404, 410), a gone document or a package marked gone; a stored document is returned while fresh,
-  and a stale one is revalidated by a background request.
+  `found=false` for a negative entry (404, 410), a gone document or a package marked gone; a stored document is returned
+  only if it was validated after the attempt began (`passUpstream.since`, [Q-REPO-167](../spec/repositories-and-proxy.md#q-repo-167--a-pass-revalidates-a-stored-document-that-was-validated-before-its-attempt-began)),
+  and any other is revalidated by a background request.
 - **A flight is not cancelled with the pass.** A background fetch runs detached from the context of its caller, like a client's: when the
   pass's context ends, `Fill` returns at once and the fetch finishes or is cancelled by a pre-emption, the yield or the shutdown (R-ARCH-024).
   Its slot is held until then.

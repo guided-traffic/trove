@@ -57,6 +57,9 @@ type Options struct {
 	Vuln *VulnOverride
 	// Mirror replaces the host, the clock and the jitter of the mirror engine; tests only. Production passes nil.
 	Mirror *MirrorOverride
+	// DialOverride points the connections of the outbound clients at other addresses (outbound.WithDialOverride): a test
+	// reaches a stub as the public registry's host name. Tests only. Production passes nil.
+	DialOverride map[string]string
 	// SkipInfrastructure starts the HTTP shell without PostgreSQL and Valkey. The
 	// shell tests use it; a production caller never sets it.
 	SkipInfrastructure bool

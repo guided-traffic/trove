@@ -6,43 +6,19 @@
 // mirror_state and the jobs it would write are inserted straight into the database, as the vulnapi suite does for the
 // evaluation.
 //
-// mode mirror is refused by R-REPO-050 for every format until a remote adapter implements the lister, so the suite
-// registers a format of its own in the catalog before the replica starts: a copy of the npm entry with the catalog fact
-// Mirror set. Its repositories are created, patched and read through the management API like any other; the merge of the
-// npm lister replaces the copy by npm (see mirrorFormat).
+// The mirrors are npm remotes (npm's remote adapter implements the lister, R-REPO-050); their repositories are created,
+// patched and read through the management API like any other.
 package mirrorapi
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"io"
-	"net/http"
-	"sync"
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/auth/scope"
-	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 )
 
-// mirrorFormat is the format the suite creates its mirrors of. It is the catalog entry of npm with the fact Mirror set; once
-// npm's remote adapter implements the lister, set it to "npm" and delete registerMirrorFormat.
-const mirrorFormat = "npmmirror"
-
-var registerOnce sync.Once
-
-func registerMirrorFormat(t testing.TB) {
-	t.Helper()
-	registerOnce.Do(func() {
-		e, ok := catalog.Default().Lookup("npm")
-		if !ok {
-			t.Fatal("the npm format is not in the catalog")
-		}
-		e.ID, e.DisplayName, e.Mirror = mirrorFormat, "npm with a lister", true
-		catalog.Default().Register(e)
-	})
-}
+// mirrorFormat is the format the suite creates its mirrors of.
+const mirrorFormat = "npm"
 
 // env is one installation with these callers and repositories:
 //
@@ -77,7 +53,6 @@ func remoteConfig(mode string, mirror string) string {
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
-	registerMirrorFormat(t)
 	st := testenv.NewStack(t, testenv.StackOptions{Name: "mirrorapi"})
 	e := &env{t: t, st: st, tok: map[string]string{}}
 	e.rita, e.olga, e.ravi, e.mona, e.rex, e.dave = st.User("rita"), st.User("olga"), st.User("ravi"), st.User("mona"), st.User("rex"), st.User("dave")
@@ -125,40 +100,6 @@ func newEnv(t *testing.T) *env {
 func (e *env) do(who, method, path string, body any, hdr ...string) testenv.Answer {
 	e.t.Helper()
 	return e.st.Do(e.r, method, path, e.tok[who], body, hdr...)
-}
-
-// rawDo is do without the check of the answer against the document: the document's enum of format names does not know the
-// format of this suite, so the answers of the repository operations about it are not valid by it. Everything else about the
-// request is as in do.
-func (e *env) rawDo(who, method, path string, body any, hdr ...string) testenv.Answer {
-	e.t.Helper()
-	var rd io.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			e.t.Fatal(err)
-		}
-		rd = bytes.NewReader(b)
-	}
-	req, err := http.NewRequestWithContext(context.Background(), method, "http://"+e.r.Addr("default")+path, rd)
-	if err != nil {
-		e.t.Fatal(err)
-	}
-	req.Host = testenv.DefaultHost
-	req.Header.Set("Authorization", "Bearer "+e.tok[who])
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	for i := 0; i+1 < len(hdr); i += 2 {
-		req.Header.Set(hdr[i], hdr[i+1])
-	}
-	res, err := testenv.Client.Do(req)
-	if err != nil {
-		e.t.Fatalf("%s %s: %v", method, path, err)
-	}
-	defer res.Body.Close()
-	b, _ := io.ReadAll(res.Body)
-	return testenv.Answer{Status: res.StatusCode, Header: res.Header, Body: b}
 }
 
 func (e *env) person(who string) testenv.Person {
