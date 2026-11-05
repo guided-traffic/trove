@@ -15,8 +15,10 @@
 # integration stack and opens an issue on a miss. What the jobs run and how to reproduce them:
 # docs/developer/releasing.md#ha-and-performance-nightly.
 #
-# Runners (owner, 2026-11-05): every job runs on the organisation's large runners (runs-on: large), the class for
-# kind, e2e and load tests; one ephemeral pod per job, sized in docs/developer/releasing.md#ci.
+# Runners (owner, 2026-11-05): the jobs run on the organisation's large runners (runs-on: large), the class for kind,
+# e2e and load tests, except the kind legs that load the NuGet clients image (e2e-nuget, e2e-ci, e2e-bastion,
+# e2e-vuln): they need more than a large pod's 30 GiB of Docker storage and run on GitHub-hosted runners
+# (runs-on: ubuntu-24.04). Sizes: docs/developer/releasing.md#ci.
 name: HA and Performance (nightly)
 
 on:
@@ -672,7 +674,7 @@ jobs:
   # this job checks nothing beyond the bring-up of the cluster until one lands. Edge port 8090 is the first free port of both workflows.
   e2e-nuget:
     name: e2e-nuget on kind (${{ matrix.set }})
-    runs-on: large
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -689,6 +691,13 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
+      # nodes, the images and the build caches need; no job here uses them.
+      - name: Free disk space (GitHub-hosted runner)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
 
       - name: Load the tool pins
         uses: ./.github/actions/load-pins
@@ -810,7 +819,7 @@ jobs:
   # the clients images are built by deploy/dev/e2e.sh when the set starts the client pods. Edge port 8092 is the first free one.
   e2e-ci:
     name: e2e-ci on kind (${{ matrix.set }})
-    runs-on: large
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -827,6 +836,13 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
+      # nodes, the images and the build caches need; no job here uses them.
+      - name: Free disk space (GitHub-hosted runner)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
 
       - name: Load the tool pins
         uses: ./.github/actions/load-pins
@@ -948,7 +964,7 @@ jobs:
   # are the first free ones of both workflows.
   e2e-bastion:
     name: e2e-bastion on kind (${{ matrix.set }})
-    runs-on: large
+    runs-on: ubuntu-24.04
     timeout-minutes: 150
     strategy:
       fail-fast: false
@@ -967,6 +983,13 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
+      # nodes, the images and the build caches need; no job here uses them.
+      - name: Free disk space (GitHub-hosted runner)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
 
       - name: Load the tool pins
         uses: ./.github/actions/load-pins
@@ -1109,7 +1132,7 @@ jobs:
   # both workflows.
   e2e-vuln:
     name: e2e-vuln on kind (${{ matrix.set }})
-    runs-on: large
+    runs-on: ubuntu-24.04
     timeout-minutes: 150
     strategy:
       fail-fast: false
@@ -1128,6 +1151,13 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
+      # nodes, the images and the build caches need; no job here uses them.
+      - name: Free disk space (GitHub-hosted runner)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
 
       - name: Load the tool pins
         uses: ./.github/actions/load-pins

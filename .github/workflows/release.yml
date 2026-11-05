@@ -11,9 +11,10 @@
 # hand (make e2e SET=npm-ha-crash).
 # A red long leg is recorded as an open finding and does not hold the release.
 #
-# Runners (owner, 2026-11-05): the kind e2e legs run on the organisation's large runners (runs-on: large), every other
-# job on its standard runners (runs-on: self-hosted); both are one ephemeral pod per job, sized in
-# docs/developer/releasing.md#ci.
+# Runners (owner, 2026-11-05): the kind legs push, access-long and npm run on the organisation's large runners
+# (runs-on: large); the kind legs that load the NuGet clients image (e2e-nuget, e2e-ci, e2e-bastion, e2e-vuln) need
+# more than the 30 GiB of Docker storage a large pod has and run on GitHub-hosted runners (runs-on: ubuntu-24.04);
+# every other job runs on the standard runners (runs-on: self-hosted). Sizes: docs/developer/releasing.md#ci.
 name: Test and Release
 
 on:
@@ -1118,7 +1119,7 @@ jobs:
   # The ports 8088 to 8090 are the first free ones of both workflows (Q-ARCH-277); the legs differ from the others in cluster name and port.
   e2e-nuget:
     name: e2e-nuget on kind (${{ matrix.set }})
-    runs-on: large
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -1135,6 +1136,13 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
+      # nodes, the images and the build caches need; no job here uses them.
+      - name: Free disk space (GitHub-hosted runner)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
 
       - name: Load the tool pins
         uses: ./.github/actions/load-pins
@@ -1259,7 +1267,7 @@ jobs:
   # set ci-ha of job e2e-ci in performance.yml. Edge port 8091 is the first free one of both workflows.
   e2e-ci:
     name: e2e-ci on kind (${{ matrix.set }})
-    runs-on: large
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -1280,6 +1288,13 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
+      # nodes, the images and the build caches need; no job here uses them.
+      - name: Free disk space (GitHub-hosted runner)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
 
       - name: Load the tool pins
         uses: ./.github/actions/load-pins
@@ -1410,7 +1425,7 @@ jobs:
   # (owner, 2026-11-01). Edge port 8093 is the first free one of both workflows.
   e2e-bastion:
     name: e2e-bastion on kind (${{ matrix.set }})
-    runs-on: large
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -1432,6 +1447,13 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0   # the scope step diffs against the base of the push or the pull request
+
+      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
+      # nodes, the images and the build caches need; no job here uses them.
+      - name: Free disk space (GitHub-hosted runner)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
 
       # Whether the change touches the Bastion (R-BAS-049): for any other change the job is green after this step, so that
       # Semantic Release, which needs the job, is not held back by a change that cannot affect the Bastion.
@@ -1626,7 +1648,7 @@ jobs:
   # (owner, 2026-11-01). Edge port 8093 is the first free one of both workflows.
   e2e-vuln:
     name: e2e-vuln on kind (${{ matrix.set }})
-    runs-on: large
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -1648,6 +1670,13 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0   # the scope step diffs against the base of the push or the pull request
+
+      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
+      # nodes, the images and the build caches need; no job here uses them.
+      - name: Free disk space (GitHub-hosted runner)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
 
       # Whether the change touches the scanning (R-VULN-029): for any other change the job is green after this step, so that
       # Semantic Release, which needs the job, is not held back by a change that cannot affect the scanning.
