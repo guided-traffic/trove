@@ -21,6 +21,7 @@ the verifying reader or a range.
 | [download.go](../../internal/blob/download.go) | `Store.Open` and the verifying reader (hold-back, `content_status`) |
 | [guard.go](../../internal/blob/guard.go) | `Guard`: circuit breaker and request metrics around any `ObjectStore` |
 | [gc.go](../../internal/blob/gc.go), [gcjob.go](../../internal/blob/gcjob.go) | `Collector` (per-blob protocol, hand-over, pause, hold, fault hook) and the job adapter |
+| [usagefold.go](../../internal/blob/usagefold.go) | `UsageFolder`: the fold loop of the usage counters (R-STOR-003) and its `Fold` iteration |
 | [conformance.go](../../internal/blob/conformance.go) | startup check, conformance checks, `AwaitStartupCheck` |
 | [sql.go](../../internal/blob/sql.go), [tables.go](../../internal/blob/tables.go), [metrics.go](../../internal/blob/metrics.go), [errors.go](../../internal/blob/errors.go) | the `DB` interface, the `blobRows` seam and its sqlc implementation, export-class registration, metric families, `errs` mapping |
 | [s3/client.go](../../internal/blob/s3/client.go) | `s3.Client` (the `ObjectStore`), `NewFromFactory` |
@@ -210,6 +211,31 @@ domain package `internal/jobs`. The kinds and tasks are registered where both ar
 `jobs.RegisterCoordinationKinds` does for the cluster: the comment at the top of gcjob.go shows the four
 registrations (`gc` and `gc-full`, queue `maintenance`, exclusive, both tasks with dedup key `gc`).
 
+## Usage fold (R-STOR-003)
+
+The statement-level triggers of migration 00003 append to `storage_usage_deltas`; nothing else writes `repository_usage` or
+`storage_usage_totals`. [usagefold.go](../../internal/blob/usagefold.go) is the loop that folds them, built in `wireBlob`
+([wire_blob.go](../../internal/app/wire_blob.go)) on every role that runs job loops (`worker`, `all`) and started as a component:
+
+- `Fold(ctx)` is one iteration and one `InTx` on the main pool: `FoldTakeUsageDeltas` (`DELETE ... WHERE id IN (SELECT ... ORDER BY id
+  LIMIT 10000 FOR UPDATE SKIP LOCKED) RETURNING`, grouped by repository, `ORDER BY repo_id NULLS LAST`), `FoldUpsertRepositoryUsage`
+  (one statement over the groups in that order, joined with `repositories ... FOR KEY SHARE`, so the deltas of a deleted repository
+  are dropped and the repository cannot go before the insert), then `FoldAddPhysicalUsage` for the group without a repository, last.
+  The statements are in [usage.sql](../../internal/meta/postgres/queries/usage.sql). `repository_usage.updated_at` is the transaction's
+  `now()`: the mirror's byte bound compares its own stores with it, and a transaction start is never later than the snapshot that
+  took the rows, so the bound over-counts at worst and never under-counts ([bounds.go](../../internal/mirror/bounds.go)).
+- The loop runs `Fold`, runs it again at once while it took `UsageFoldBatch` (10,000) rows, and otherwise waits
+  `storage.usage.fold_interval`. A failed iteration is logged at warn level and repeated at the next interval. There is no lease and
+  no Valkey lock: concurrent folds of any number of replicas take disjoint rows and lock the counter rows in one order. A deadlock
+  would be retried by `InTx` and not show in the loop, which is why the integration test reads `pg_stat_database.deadlocks`.
+- Drain: `Drain` stops new iterations, `Settle` waits for the one in flight, `Quiesce` (5 s before the deadline) cancels it and its
+  transaction rolls back; its rows are folded by another replica. The loop is watched as `blob.usage_fold`, each iteration has the
+  call deadline of `cluster.CallTimeout`, and the wait beats so a long interval is no stuck loop.
+- No metric: the specification names none. A failure shows in the log; the backlog is `SELECT count(*) FROM storage_usage_deltas`.
+- Readers that must be exact add the unfolded deltas to the folded rows in one statement (`pgEnv.exact` in
+  [usagefold_test.go](../../test/integration/blob/usagefold_test.go) is the pattern); quota admission and the storage summary read
+  the folded rows and lag by one interval plus one iteration. `storage_usage_recount()` of R-STOR-047 is not built.
+
 ## Conformance check (R-STOR-035)
 
 `blob.StartupCheck` writes, reads back, compares and deletes `<prefix>/_probe/<replica>` and lists
@@ -251,7 +277,7 @@ not an error there; the credential test uses a wrong secret key instead.
 | Tier | Where | What it proves |
 |---|---|---|
 | unit | [internal/blob](../../internal/blob/), [s3](../../internal/blob/s3/), [blobtest](../../internal/blob/blobtest/) | key layout, spool admission and cleanup on every error path, single pass digests, the commit protocol and its branches against a fake database, multipart (threshold, parts, concurrency, abort, checksums), the breaker, verification, conformance logic, the SDK adapter against a fake endpoint (retries, error mapping, stall, credentials) |
-| integration | [test/integration/blob](../../test/integration/blob/) | SeaweedFS conformance; the 100-upload race through four replicas; the race with deletes and collection; the collector killed or cancelled at random points; the drain; hand-over; `AS001`; a table added by a newer release; pause, hold, dry run; checkpoint resume; the job handler; verification of a corrupted object |
+| integration | [test/integration/blob](../../test/integration/blob/) | SeaweedFS conformance; the 100-upload race through four replicas; the race with deletes and collection; the collector killed or cancelled at random points; the drain; hand-over; `AS001`; the usage fold (counters after uploads, an overwrite and a delete against a recount; two loops and four callers on 50,000 and 40,000 deltas with the deadlock counter of the database; a deleted repository with unfolded deltas; a backlog of 25,000 under an interval of one hour); a table added by a newer release; pause, hold, dry run; checkpoint resume; the job handler; verification of a corrupted object |
 
 `make test` runs the unit tier, `make test-integration` the integration tier (`TROVE_TEST_BLOB_RACE_SECONDS` stretches the race test from 15 s to a soak run). The
 unit fake (`fakedb_test.go`) simulates only the table operations the commit protocol and the download path use; the real locking

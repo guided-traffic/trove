@@ -9,10 +9,12 @@ package mirror
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
+	pathpkg "path"
 	"sort"
 	"strings"
 	"sync"
@@ -76,6 +78,10 @@ type world struct {
 	stored map[string]int
 	// gate is called before an artifact is stored; it may block until ctx ends.
 	gate func(ctx context.Context, path string) error
+	// persist, when set, writes the stored artifact as a file item with its blob into the repository, as the remote engine's
+	// commit does, so that the usage triggers and the fold count it (R-STOR-003). A test that sets it does so before it starts a
+	// replica.
+	persist func(ctx context.Context, path string, size int64) error
 
 	namesCalls atomic.Int64
 	planCalls  atomic.Int64
@@ -140,6 +146,11 @@ func (w *world) Fill(ctx context.Context, _ repository.Repository, _ mirror.Pass
 	if err := ctx.Err(); err != nil {
 		return mirror.FillResult{}, err
 	}
+	if w.persist != nil {
+		if err := w.persist(ctx, item.Path, w.size); err != nil {
+			return mirror.FillResult{}, err
+		}
+	}
 	w.mu.Lock()
 	w.stored[item.Path]++
 	w.mu.Unlock()
@@ -192,6 +203,22 @@ func newEnv(t *testing.T, w *world, mode string, include []string, s settings) *
 	e := &env{t: t, st: st, w: w, db: db, store: mirror.NewPGStore(db)}
 	e.repoN = st.Number(`SELECT id FROM repositories WHERE key = $1`, repoKey)
 	return e
+}
+
+// persistFiles makes the world write every artifact it stores into the repository as a file item over a live blob.
+func (e *env) persistFiles() {
+	e.w.persist = func(ctx context.Context, path string, size int64) error {
+		sum := sha256.Sum256([]byte(path))
+		return e.db.InPgxTx(ctx, func(tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, `INSERT INTO blobs (sha256, sha1, md5, sha512, size, state) VALUES ($1, $2, $3, $4, $5, 'live') ON CONFLICT DO NOTHING`,
+				sum[:], make([]byte, 20), make([]byte, 16), make([]byte, 64), size); err != nil {
+				return err
+			}
+			_, err := tx.Exec(ctx, `INSERT INTO items (repo_id, path, parent_path, kind, blob_sha256, size) VALUES ($1, $2, $3, 'file', $4, $5)`,
+				e.repoN, path, pathpkg.Dir(path), sum[:], size)
+			return err
+		})
+	}
 }
 
 // start starts a replica of a role whose mirror engine uses the world as its host.

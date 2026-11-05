@@ -359,6 +359,53 @@ func TestR_REPO_052_TheByteBoundEndsThePassOnceAndHoldsUntilItIsRaised(t *testin
 	}
 }
 
+// R-REPO-052 with R-STOR-003: nothing writes the counter but the fold. The fake host stores real file items, the triggers append
+// the deltas and the fold of the replica counts them, so a second and a third pass, each a new attempt with an empty tally of its
+// own, start from the folded counter: the bound holds across passes and the raised bound lets the next pass store the rest.
+func TestR_REPO_052_TheByteBoundHoldsAcrossPassesWhileTheFoldCountsWhatWasStored(t *testing.T) {
+	w := newWorld(5)
+	e := newEnv(t, w, "mirror", nil, settings{"maxBytes": 250})
+	e.persistFiles()
+	rep := e.start("rep-a", "all", "TROVE_STORAGE_USAGE_FOLD_INTERVAL=1s")
+	counter := func() int64 {
+		return e.st.Number(`SELECT COALESCE((SELECT logical_bytes FROM repository_usage WHERE repo_id = $1), 0)`, e.repoN)
+	}
+	if counter() != 0 {
+		t.Fatal("the counter starts above zero")
+	}
+	e.dispatch(rep)
+	e.waitOutcome("bound_reached", 60*time.Second)
+	if w.storedCount() != 2 {
+		t.Fatalf("pass 1 stored %d artifacts, want 2 (200 of 250 bytes, the third would cross the bound)", w.storedCount())
+	}
+	testenv.WaitFor(t, "the fold to count the 200 stored bytes", 30*time.Second, func() bool { return counter() == 200 })
+	if n := e.st.Number(`SELECT count(*) FROM storage_usage_deltas WHERE repo_id = $1`, e.repoN); n != 0 {
+		t.Fatalf("%d deltas of the repository stay after the fold", n)
+	}
+
+	// Pass 2 is a new attempt: without the fold it would start from zero and store two more.
+	e.makeDue()
+	e.dispatch(rep)
+	testWaitJobs(t, e, 2)
+	if w.storedCount() != 2 {
+		t.Fatalf("pass 2 stored %d artifacts in total, want 2: the bound holds across passes", w.storedCount())
+	}
+	if got := e.jobResult("succeeded")["outcome"]; got != "bound_reached" {
+		t.Fatalf("pass 2 outcome %v, want bound_reached", got)
+	}
+
+	// Raise the bound: pass 3 stores the rest, and the fold counts it.
+	e.setDocument(rep, remoteDoc("mirror", nil, settings{"maxBytes": 10485760}))
+	e.waitMaxBytes(rep, 10485760)
+	e.makeDue()
+	e.dispatch(rep)
+	e.waitOutcome("complete", 60*time.Second)
+	if w.storedCount() != 5 {
+		t.Fatalf("%d artifacts stored after the bound was raised, want 5", w.storedCount())
+	}
+	testenv.WaitFor(t, "the fold to count 500 bytes", 30*time.Second, func() bool { return counter() == 500 })
+}
+
 // R-REPO-058: a restore clears the pass in progress, the request, the rate-limit wait and the bound and makes the next pass due
 // at the restore time; without remote caches it also forgets the cursor, the full pass and the fingerprint.
 func TestR_REPO_058_ARestoreClearsThePassAndKeepsOrForgetsTheCursor(t *testing.T) {

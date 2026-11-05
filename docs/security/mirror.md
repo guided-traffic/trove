@@ -79,12 +79,17 @@ tested alone (`TestR_REPO_058_ARestoreClearsThePassAndKeepsOrForgetsTheCursor`).
 
 Component: the byte bound of a mirror (R-REPO-052). Subject: a remote repository with `maxBytes`. Live today.
 
-The pass reads `repository_usage.logical_bytes` and adds the bytes it stored itself after the counter's last fold. The fold loop
-of [storage.md](../spec/storage.md) R-STOR-003 is not built in this release, so nothing writes `repository_usage` outside tests: the
-counter does not move, content that clients filled is not counted, and the pass's own tally lives in the memory of one attempt, so a
-second attempt or pass starts from the counter again. `maxBytes` therefore holds within one attempt and not across attempts or
-passes until the fold exists; with it, the bound can still be passed by the artifacts in flight and one fold interval
-([H-505](../spec/repositories-and-proxy.md)). What makes it real: a mirror with a `maxBytes` that runs several passes.
+The pass reads `repository_usage.logical_bytes` and adds the bytes it stored itself after the counter's last fold (`updated_at` of the
+row). The fold loop of [storage.md](../spec/storage.md) R-STOR-003 writes that counter on every `worker` and `all` replica, so the
+bound holds across attempts and passes, and it counts what clients filled as well. What remains is a lag: the counter trails the
+stores by one `storage.usage.fold_interval` (5 s by default) plus one iteration, and the pass's own tally, which covers that
+time, lives in the memory of one attempt, so a pass that starts, or a process that restarts, inside that interval does not see the
+stores of the attempt before it. The bound can therefore be passed by the artifacts in flight (`concurrency`) and by the stores of
+one fold interval, which is the overshoot [R-REPO-052](../spec/repositories-and-proxy.md) and
+[H-505](../spec/repositories-and-proxy.md) accept. A fold that keeps failing (the database refuses its transaction) freezes the
+counter and with it the bound's base; the failure is logged at warn level every interval and the loop's liveness entry
+`blob.usage_fold` shows it stuck only if the iteration itself hangs. What makes it real: a mirror with a `maxBytes` whose passes
+follow each other within one fold interval, or a fold that fails for a long time.
 
 ### H-528 · A process that lost its lease keeps fetching until its heartbeat notices
 

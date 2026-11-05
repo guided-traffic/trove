@@ -2576,6 +2576,8 @@ Normative rules:
   - the claim loop `jobs.claim` and the reaper `jobs.reaper`, on replicas whose role runs workers;
   - the scheduler tick `jobs.scheduler`, while this replica holds the `scheduler` lease;
   - the lease loop `cluster.leases`, on replicas whose role runs workers (R-ARCH-017);
+  - the usage fold `blob.usage_fold` of [storage.md](storage.md) R-STOR-003, on replicas whose role runs workers; it also beats while
+    it waits for `storage.usage.fold_interval`, so that an interval above the watchdog bound is no stuck loop;
   - the change-log poll `cluster.changes` and the Valkey subscriber `cluster.signals`, on every
     `web` and `worker` replica (R-ARCH-018, R-ARCH-031). The subscriber records progress while
     Valkey is unreachable, so a Valkey outage never fails liveness;

@@ -227,7 +227,7 @@ database.
 | Tier | Where | What |
 |---|---|---|
 | Unit | [policy_test.go](../../internal/mirror/policy_test.go), [engine_test.go](../../internal/mirror/engine_test.go) | the window (slow start, one halving per wait, the ceiling, the floor), the waits and their ranges, the cap of a hint, the failure back-off (60, 120, 240 s, +-20 %), the version bounds with a pinned version, the full or incremental decision, a pass end to end, discovery and its bounds, the long wait and the next job at that time, pre-emption and `*WaitError` not counted as failures, the byte bound and its transitions, a pause, a mode change, offline, the fence, a release, the dispatch, the share B, several workers, the series at 0 |
-| Integration | [test/integration/mirror](../../test/integration/mirror/) | a pass through the job framework, two dispatchers and the dedup key, the claim and the fence at the statements, the lost lease, the release at shutdown, pause and resume, the mode switch, offline, the error back-off against the real table, the byte bound with `repository_usage`, the restore statement, the gauges |
+| Integration | [test/integration/mirror](../../test/integration/mirror/) | a pass through the job framework, two dispatchers and the dedup key, the claim and the fence at the statements, the lost lease, the release at shutdown, pause and resume, the mode switch, offline, the error back-off against the real table, the byte bound with `repository_usage` and, with the real fold of a replica counting real file items, across three passes (`TestR_REPO_052_TheByteBoundHoldsAcrossPassesWhileTheFoldCountsWhatWasStored`), the restore statement, the gauges |
 | Chart | [rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml) (`make chart-test`) | `TroveMirrorFailing`, `TroveMirrorStale` |
 
 ### Not built, and open
@@ -235,7 +235,8 @@ database.
 - The remote engine's side (`Host`): until C1's file replaces [wire_mirror_host.go](../../internal/app/wire_mirror_host.go) the host
   has no lister, so no pass starts.
 - Quota and capacity bounds ([H-506](../spec/repositories-and-proxy.md)): `maxBytes` is the only bound.
-- The fold of `repository_usage` is not built, so the bound holds within an attempt ([H-527](../security/mirror.md)).
+- The byte bound reads the counter that the usage fold writes ([blob-store.md](blob-store.md#usage-fold-r-stor-003)), so it holds across
+  passes; it lags by one fold interval plus the artifacts in flight ([H-527](../security/mirror.md)).
 - **The restore of R-REPO-058** is `PGStore.ClearAfterRestore`; phase 7's restore job calls it (no post-restore hook mechanism exists:
   the vulnerability scanning's restore is tested as the state it leaves, Q-VULN-58). Phase 7 owns that call.
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/blob/s3"
+	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/observability/health"
 )
 
@@ -78,6 +79,19 @@ func (a *App) wireBlob(ctx context.Context, keys keysArea, pg postgresArea) (blo
 	if a.sub.JobLoops {
 		area.gc = blob.NewCollector(cfg.GC, cfg.S3.Prefix, objects, db, blob.WithCollectorLogger(log), blob.WithCollectorMetrics(bm))
 		a.gc.set(area.gc)
+		// The usage fold of every worker replica (R-STOR-003): no lease, the folds of several replicas take disjoint rows.
+		fold, err := blob.NewUsageFolder(blob.UsageFolderOptions{
+			DB: db, Interval: cfg.Usage.FoldInterval, WatchdogTimeout: a.cfg.Health.WatchdogTimeout,
+			Loop:        cluster.WatchLoop(a.health, "blob.usage_fold", a.cfg.Health.WatchdogTimeout),
+			CallTimeout: cluster.CallTimeout(a.cfg.Health.WatchdogTimeout),
+			Log:         a.log.With("component", "usage-fold"),
+		})
+		if err != nil {
+			return blobArea{}, err
+		}
+		if err := a.startComponent(ctx, fold); err != nil {
+			return blobArea{}, err
+		}
 	}
 	return area, nil
 }

@@ -171,7 +171,7 @@ the log says the write was given up and the lease is left to expire, which the r
 A coalesced job that would return to `queued` while another waits ends `cancelled` with `error.code = superseded`.
 
 Liveness: the loops are watched as `jobs.claim`, `jobs.reaper`, `jobs.scheduler` (while the lease is held), `cluster.leases`, `cluster.changes`,
-`cluster.signals` and `cluster.registry`. Each call carries a deadline of `min(health.watchdog_timeout / 2, 10 s)` (`cluster.CallTimeout`), and the claim
+`cluster.signals`, `cluster.registry` and, on `worker` and `all`, `blob.usage_fold` (the usage fold of R-STOR-003, which beats while it waits, so `storage.usage.fold_interval` needs no validation against the bound). Each call carries a deadline of `min(health.watchdog_timeout / 2, 10 s)` (`cluster.CallTimeout`), and the claim
 loop records progress when the replica is unready or every slot is busy. A loop that records progress once per iteration needs its cadence below
 `health.watchdog_timeout`: configuration validation rejects `jobs.poll_interval`, `jobs.schedule_tick`, `cluster.epoch_poll_interval`,
 `database.lease_check_interval` and `system.heartbeat_interval` at or above it, naming both keys (`Config.validateWatchedLoops` in `internal/config/cluster.go`, called
