@@ -26,6 +26,7 @@ import (
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/config"
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
@@ -239,6 +240,8 @@ type Result struct {
 const (
 	outcomeChanged   = vmetrics.RunChanged
 	outcomeUnchanged = vmetrics.RunUnchanged
+	outcomeFailed    = vmetrics.RunFailed
+	outcomeCancelled = vmetrics.RunCancelled
 	kindFull         = vmetrics.RunFull
 	kindIncremental  = vmetrics.RunIncremental
 )
@@ -256,13 +259,15 @@ func (s *Service) countRun(source, eco, kind, outcome string) {
 	}
 }
 
-// problemf builds the error of a failed run: the code is the one of vuln_source_state.last_error.
+// problemf builds the error of a failed run: the code is the one of vuln_source_state.last_error, the kind that of a source
+// that failed (502).
 func problemf(code, detail string, cause error) *failure {
-	return &failure{code: code, detail: detail, cause: cause}
+	return &failure{kind: errs.UpstreamFailed, code: code, detail: detail, cause: cause}
 }
 
 // failure is the error of a failed run.
 type failure struct {
+	kind         errs.Kind
 	code, detail string
 	cause        error
 }

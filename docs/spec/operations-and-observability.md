@@ -1054,7 +1054,7 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 | `trove_vuln_source_last_success_timestamp_seconds` (M4b) | gauge | `source`, `ecosystem` | Last sync run of the advisory source that ended changed or unchanged; read from PostgreSQL ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-024) |
 | `trove_vuln_source_records` (M4b) | gauge | `source`, `ecosystem` | Stored advisory records; read from PostgreSQL (R-VULN-024) |
 | `trove_vuln_source_consecutive_failures` (M4b) | gauge | `source`, `ecosystem` | Consecutive failed sync runs (`vuln_source_state.failures`); read from PostgreSQL (R-VULN-024) |
-| `trove_vuln_sync_runs_total` (M4b) | counter | `source`, `ecosystem`, `kind` (`full`, `incremental`), `outcome` (`changed`, `unchanged`, `failed`) | Advisory sync runs (R-VULN-004) |
+| `trove_vuln_sync_runs_total` (M4b) | counter | `source`, `ecosystem`, `kind` (`full`, `incremental`), `outcome` (`changed`, `unchanged`, `failed`, `cancelled`) | Advisory sync runs (R-VULN-004, Q-VULN-80) |
 | `trove_vuln_sync_records_total` (M4b) | counter | `source`, `ecosystem`, `result` (`written`, `skipped`, `rejected`, `deleted`) | Advisory records per sync result (R-VULN-004) |
 | `trove_vuln_unevaluable_ranges_total` (M4b) | counter | `ecosystem` | Advisory ranges the format's version order cannot evaluate (R-VULN-009) |
 | `trove_vuln_evaluations_total` (M4b) | counter | `trigger` (`publish`, `fill`, `miss`, `advisory`, `full`, `rescan`) | Evaluations of stored versions (R-VULN-011) |

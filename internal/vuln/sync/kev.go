@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"slices"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -25,12 +26,17 @@ func (s *Service) RunKEV(ctx context.Context, run Run, p Params) error {
 	if !cfg.Enabled || cfg.Sources.KEV.Mode == "off" {
 		return run.SetResult(map[string]string{"skipped": "the source is off"})
 	}
-	res, err := s.syncKEV(ctx, p)
+	var at attempt
+	res, err := guarded(ctx, s, store.SourceKEV, "", kindFull, &at, func() (KEVResult, error) { return s.syncKEV(ctx, p, &at) })
 	if err != nil {
-		if released(ctx) || ctx.Err() != nil {
+		if released(ctx) {
 			return context.Cause(ctx)
 		}
-		s.recordFailure(ctx, store.SourceKEV, "", kindFull, err)
+		if ctx.Err() != nil {
+			s.recordEnd(ctx, store.SourceKEV, "", kindFull, at.at, context.Cause(ctx))
+			return context.Cause(ctx)
+		}
+		s.recordFailure(ctx, store.SourceKEV, "", kindFull, at.at, err)
 		return err
 	}
 	return run.SetResult(res)
@@ -45,8 +51,9 @@ type KEVResult struct {
 	Note    string `json:"note,omitempty"`
 }
 
-func (s *Service) syncKEV(ctx context.Context, p Params) (KEVResult, error) {
+func (s *Service) syncKEV(ctx context.Context, p Params, at *attempt) (KEVResult, error) {
 	cfg := s.o.Config.Sources.KEV
+	var mark time.Time
 	if err := s.o.DB.InTx(ctx, func(tx metaTx) error {
 		db, err := store.DBOf(tx)
 		if err != nil {
@@ -55,10 +62,12 @@ func (s *Service) syncKEV(ctx context.Context, p Params) (KEVResult, error) {
 		if err := s.st.Ensure(ctx, db, store.SourceKEV, ""); err != nil {
 			return err
 		}
-		return s.st.Attempt(ctx, db, store.SourceKEV, "")
+		mark, err = s.st.Attempt(ctx, db, store.SourceKEV, "")
+		return err
 	}); err != nil {
 		return KEVResult{}, err
 	}
+	at.at = mark
 	var st store.SyncState
 	if err := s.o.DB.Read(ctx, func(db q.DBTX) (err error) {
 		st, _, err = s.st.Get(ctx, db, store.SourceKEV, "")

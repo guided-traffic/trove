@@ -16,7 +16,9 @@ import (
 // is not retried within its slot (MaxAttempts 1); the next slot tries again.
 //
 // A context that ends with jobs.ErrReleased is a drain: the checkpoint is saved and the cause returned, so that the job is
-// released with its attempt unchanged and another worker resumes it.
+// released with its attempt unchanged and another worker resumes it. A context that ends otherwise (a lost lease, a cancel)
+// stops the run too, and the ecosystem it was syncing records what ended it; so does a panic, which then goes on to the
+// worker (R-VULN-004 "Failure", Q-VULN-80).
 func (s *Service) RunOSV(ctx context.Context, run Run, p Params, full bool) error {
 	cfg := s.o.Config
 	if !cfg.Enabled || cfg.Sources.OSV.Mode == "off" {
@@ -33,12 +35,19 @@ func (s *Service) RunOSV(ctx context.Context, run Run, p Params, full bool) erro
 		if slices.Contains(cp.Done, eco) {
 			continue
 		}
-		res, err := s.syncOne(ctx, run, p, full, eco, adapters[eco], &cp)
+		var at attempt
+		res, err := guarded(ctx, s, store.SourceOSV, eco, kindOf(Result{}, full), &at, func() (Result, error) {
+			return s.syncOne(ctx, run, p, full, eco, adapters[eco], &cp, &at)
+		})
 		if err != nil {
-			if released(ctx) || ctx.Err() != nil {
+			if released(ctx) {
 				return context.Cause(ctx)
 			}
-			s.recordFailure(ctx, store.SourceOSV, eco, kindOf(res, full), err)
+			if ctx.Err() != nil {
+				s.recordEnd(ctx, store.SourceOSV, eco, kindOf(res, full), at.at, context.Cause(ctx))
+				return context.Cause(ctx)
+			}
+			s.recordFailure(ctx, store.SourceOSV, eco, kindOf(res, full), at.at, err)
 			errList = append(errList, err)
 			continue
 		}
@@ -64,8 +73,10 @@ func kindOf(res Result, full bool) string {
 	return kindIncremental
 }
 
-// syncOne runs one ecosystem: the mode picks the source, the state picks full or incremental.
-func (s *Service) syncOne(ctx context.Context, run Run, p Params, forceFull bool, eco string, ad match.Adapter, cp *checkpoint) (Result, error) {
+// syncOne runs one ecosystem: the mode picks the source, the state picks full or incremental. at receives the run's mark on
+// the ecosystem's row once its attempt committed.
+func (s *Service) syncOne(ctx context.Context, run Run, p Params, forceFull bool, eco string, ad match.Adapter, cp *checkpoint, at *attempt) (Result, error) {
+	var mark time.Time
 	if err := s.o.DB.InTx(ctx, func(tx metaTx) error {
 		db, err := store.DBOf(tx)
 		if err != nil {
@@ -74,10 +85,12 @@ func (s *Service) syncOne(ctx context.Context, run Run, p Params, forceFull bool
 		if err := s.st.Ensure(ctx, db, store.SourceOSV, eco); err != nil {
 			return err
 		}
-		return s.st.Attempt(ctx, db, store.SourceOSV, eco)
+		mark, err = s.st.Attempt(ctx, db, store.SourceOSV, eco)
+		return err
 	}); err != nil {
 		return Result{Ecosystem: eco}, err
 	}
+	at.at = mark
 	var st store.SyncState
 	if err := s.o.DB.Read(ctx, func(db q.DBTX) (err error) {
 		st, _, err = s.st.Get(ctx, db, store.SourceOSV, eco)

@@ -287,6 +287,15 @@ const (
 	CodeShrinkRefused = "shrink_refused"
 	// CodeMirrorRepositoryInvalid: mode repository names a repository that is not a generic local one.
 	CodeMirrorRepositoryInvalid = "mirror_repository_invalid"
+	// The codes of a run that ended before its sync did, other than by a drain (Q-VULN-80).
+	// CodeSyncLeaseLost: the worker lost the lease of the run's job and stopped the run.
+	CodeSyncLeaseLost = "sync_lease_lost"
+	// CodeSyncPanicked: the run stopped on a panic of its handler.
+	CodeSyncPanicked = "sync_panicked"
+	// CodeSyncCancelled: an operator cancelled the run's job; the one code that does not count as a failure.
+	CodeSyncCancelled = "sync_cancelled"
+	// CodeSyncInterrupted: the run's context ended for another reason, such as the timeout of its job.
+	CodeSyncInterrupted = "sync_interrupted"
 )
 
 // <<< M4b vulnerabilities
@@ -695,6 +704,10 @@ var registry = []CodeInfo{
 	{CodeTooManyInvalidRecords, UpstreamFailed, "Too many invalid advisory records", "More than 1 % of the records of a full sync failed validation, which indicates a truncated or tampered source; the previous data stays in force."},
 	{CodeShrinkRefused, UpstreamFailed, "Advisory data would shrink too much", "A full sync would delete more than max_shrink of the stored records; the previous data stays in force. A manual run with acceptShrink overrides it once."},
 	{CodeMirrorRepositoryInvalid, Conflict, "Mirror repository invalid", "mode repository names a repository that is not a generic local repository; every run fails until the configuration names one."},
+	{CodeSyncLeaseLost, Unavailable, "Sync lease lost", "The worker that ran the sync lost the lease of its job (it could not renew it in time, or the job was ended without it) and stopped the run. The records written before the stop stay; the next run of the ecosystem finishes their alias groups."},
+	{CodeSyncPanicked, Internal, "Sync run panicked", "The sync run stopped on an internal fault of the worker; the log of the worker holds it. The records written before the stop stay; the next run of the ecosystem finishes their alias groups."},
+	{CodeSyncCancelled, Conflict, "Sync run cancelled", "An operator cancelled the job of the sync run. It is not counted as a failure of the source; the records written before the cancel stay, and the next run of the ecosystem finishes their alias groups."},
+	{CodeSyncInterrupted, Unavailable, "Sync run interrupted", "The sync run stopped before it ended, for a reason other than a drain, a cancel or a lost lease, such as the timeout of its job. The records written before the stop stay; the next run of the ecosystem finishes their alias groups."},
 	// <<< M4b vulnerabilities
 	//
 	// >>> M6b mirror

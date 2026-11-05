@@ -468,8 +468,10 @@ func (q *Queries) VulnPendingAdd(ctx context.Context, arg VulnPendingAddParams) 
 	return err
 }
 
-const vulnStateAttempt = `-- name: VulnStateAttempt :exec
-UPDATE vuln_source_state SET attempted_at = now() WHERE source = $1::text AND ecosystem = $2::text
+const vulnStateAttempt = `-- name: VulnStateAttempt :one
+UPDATE vuln_source_state SET attempted_at = now()
+ WHERE source = $1::text AND ecosystem = $2::text
+RETURNING COALESCE(extract(epoch FROM attempted_at) * 1000000, 0)::bigint AS attempted_us
 `
 
 type VulnStateAttemptParams struct {
@@ -477,9 +479,13 @@ type VulnStateAttemptParams struct {
 	Ecosystem string
 }
 
-func (q *Queries) VulnStateAttempt(ctx context.Context, arg VulnStateAttemptParams) error {
-	_, err := q.db.Exec(ctx, vulnStateAttempt, arg.Source, arg.Ecosystem)
-	return err
+// Records that a run started and returns the attempted_at it wrote, as microseconds: the run's mark on the row, which the
+// write of its failure compares, so that a run that lost its lease never overwrites a newer run's state (Q-VULN-80).
+func (q *Queries) VulnStateAttempt(ctx context.Context, arg VulnStateAttemptParams) (int64, error) {
+	row := q.db.QueryRow(ctx, vulnStateAttempt, arg.Source, arg.Ecosystem)
+	var attempted_us int64
+	err := row.Scan(&attempted_us)
+	return attempted_us, err
 }
 
 const vulnStateBumpEpoch = `-- name: VulnStateBumpEpoch :one
@@ -494,6 +500,25 @@ func (q *Queries) VulnStateBumpEpoch(ctx context.Context, ecosystem string) (int
 	var data_epoch int64
 	err := row.Scan(&data_epoch)
 	return data_epoch, err
+}
+
+const vulnStateCancelled = `-- name: VulnStateCancelled :exec
+UPDATE vuln_source_state
+   SET last_error = $1::jsonb, attempted_at = now()
+ WHERE source = $2::text AND ecosystem = $3::text
+`
+
+type VulnStateCancelledParams struct {
+	LastError []byte
+	Source    string
+	Ecosystem string
+}
+
+// A run whose job an operator cancelled records the problem and leaves the consecutive failures as they are (R-VULN-004,
+// Q-VULN-80): the cancel is neither a failure of the source nor a success.
+func (q *Queries) VulnStateCancelled(ctx context.Context, arg VulnStateCancelledParams) error {
+	_, err := q.db.Exec(ctx, vulnStateCancelled, arg.LastError, arg.Source, arg.Ecosystem)
+	return err
 }
 
 const vulnStateEnsure = `-- name: VulnStateEnsure :exec

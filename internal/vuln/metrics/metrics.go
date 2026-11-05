@@ -37,10 +37,11 @@ const (
 	RunFull        = "full"
 	RunIncremental = "incremental"
 
-	// outcome of trove_vuln_sync_runs_total.
+	// outcome of trove_vuln_sync_runs_total. A run whose job an operator cancelled is cancelled, not failed (Q-VULN-80).
 	RunChanged   = "changed"
 	RunUnchanged = "unchanged"
 	RunFailed    = "failed"
+	RunCancelled = "cancelled"
 
 	// result of trove_vuln_sync_records_total.
 	RecordWritten  = "written"
@@ -71,7 +72,7 @@ func claimedLabels() []string   { return []string{"ecosystem", "kind"} }
 // Metrics are the collectors of the replica: the counters and the histogram of R-VULN-024. A nil *Metrics is a replica that
 // did not build them; the producers check for it.
 type Metrics struct {
-	// SyncRuns counts sync runs by source, ecosystem, kind (full, incremental) and outcome (changed, unchanged, failed).
+	// SyncRuns counts sync runs by source, ecosystem, kind (full, incremental) and outcome (changed, unchanged, failed, cancelled).
 	SyncRuns *prometheus.CounterVec
 	// SyncRecords counts records by source, ecosystem and result (written, skipped, rejected, deleted).
 	SyncRecords *prometheus.CounterVec
@@ -93,7 +94,7 @@ type Metrics struct {
 func New(reg prometheus.Registerer) (*Metrics, error) {
 	m := &Metrics{
 		SyncRuns: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: SyncRuns, Help: "Advisory sync runs by source, ecosystem, kind (full, incremental) and outcome (changed, unchanged, failed) (R-VULN-004).",
+			Name: SyncRuns, Help: "Advisory sync runs by source, ecosystem, kind (full, incremental) and outcome (changed, unchanged, failed, cancelled) (R-VULN-004).",
 		}, runLabels()),
 		SyncRecords: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: SyncRecords, Help: "Advisory records by source, ecosystem and result (written, skipped, rejected, deleted) (R-VULN-004).",

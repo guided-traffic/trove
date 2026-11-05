@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -15,6 +16,7 @@ import (
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/vuln"
 	"github.com/guided-traffic/trove/internal/vuln/store"
 )
@@ -234,5 +236,47 @@ func TestR_VULN_004_ProblemJSON(t *testing.T) {
 	var f *failure
 	if !errors.As(problemf("x", "y", io.EOF), &f) || !errors.Is(f, io.EOF) {
 		t.Error("a failure does not unwrap")
+	}
+}
+
+// R-VULN-004 "Failure", Q-VULN-80: the problem of a run that its context ended, or whose handler panicked, says what ended it;
+// a cancel is the one end that is not a failure, and the value of a panic never reaches a reader.
+func TestR_VULN_004_TheProblemOfARunThatDidNotEndSaysWhatEndedIt(t *testing.T) {
+	at := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	for _, tt := range []struct {
+		name   string
+		err    error
+		code   string
+		status float64
+		cancel bool
+	}{
+		{"lease lost", interrupted(jobs.ErrLeaseLost), errs.CodeSyncLeaseLost, 503, false},
+		{"cancelled", interrupted(jobs.ErrCancelRequested), errs.CodeSyncCancelled, 409, true},
+		{"timeout", interrupted(jobs.ErrTimeout), errs.CodeSyncInterrupted, 503, false},
+		{"no cause", interrupted(context.Canceled), errs.CodeSyncInterrupted, 503, false},
+		{"panic", panicked("secret value of the panic"), errs.CodeSyncPanicked, 500, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			body, code := problemJSON(tt.err, at, time.Time{})
+			var p map[string]any
+			if err := json.Unmarshal(body, &p); err != nil {
+				t.Fatal(err)
+			}
+			if code != tt.code || p["code"] != tt.code || p["status"] != tt.status {
+				t.Errorf("%s: code %q, problem %s", tt.name, code, body)
+			}
+			if _, ok := errs.Lookup(tt.code); !ok {
+				t.Errorf("%s is not in the registry", tt.code)
+			}
+			if strings.Contains(string(body), "secret value") {
+				t.Errorf("the value of a panic reaches the problem: %s", body)
+			}
+			if got := errors.Is(tt.err, jobs.ErrCancelRequested); got != tt.cancel {
+				t.Errorf("counted as a cancel: %v", got)
+			}
+		})
+	}
+	if body, _ := problemJSON(interrupted(jobs.ErrTimeout), at, time.Time{}); !strings.Contains(string(body), jobs.ErrTimeout.Error()) {
+		t.Errorf("an interruption does not name its cause: %s", body)
 	}
 }

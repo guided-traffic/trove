@@ -206,17 +206,6 @@ here; remove a finding in the commit that fixes it.
 
 Found on 2026-11-05 in the scheduled nightly run 42002617340 (GitHub-hosted runners, commit 15a9a576):
 
-### Vulnerability scanning
-
-- **F-52 · A sync run that ends on a cancelled context records no failure** (confirmed, by reading the code; not reproduced).
-  `internal/vuln/sync/run.go:37-40` returns without `recordFailure` (`failure.go:53-99`) for every cancelled context except a
-  drain release: a lost lease (the reaper then fails the job with `attempts_exhausted`), a handler panic (recovered at
-  `internal/jobs/worker.go:400`) and a cancel through the API. The sync kinds run once (`MaxAttempts: 1`,
-  `internal/app/wire_vuln_sync.go:127`), so the job ends `failed` while the source state keeps no `last_error`, `failures` does
-  not rise and `TroveVulnerabilitySyncFailing` never fires; a first import stays `empty` with no visible error, against R-VULN-004
-  "Failure". The run's lost V-1 (F-43) ended in this window or in an error that was recorded; the run's artifacts cannot tell which.
-  Done when every run that ends without success or a drain release leaves its failure on the source state, with tests per path.
-
 ### Tests and tools
 
 - **F-53 · The performance run's NuGet test data is not the documented one** (confirmed, by reading the code and the artifacts

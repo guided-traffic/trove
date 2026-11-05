@@ -158,9 +158,16 @@ func (Sync) Failure(ctx context.Context, db q.DBTX, source, ecosystem string, pr
 	return q.New(db).VulnStateFailure(ctx, q.VulnStateFailureParams{LastError: problem, Source: source, Ecosystem: ecosystem})
 }
 
-// Attempt records that a run started.
-func (Sync) Attempt(ctx context.Context, db q.DBTX, source, ecosystem string) error {
-	return q.New(db).VulnStateAttempt(ctx, q.VulnStateAttemptParams{Source: source, Ecosystem: ecosystem})
+// Cancelled records a run whose job an operator cancelled: the problem object, with the consecutive failures as they are
+// (Q-VULN-80).
+func (Sync) Cancelled(ctx context.Context, db q.DBTX, source, ecosystem string, problem json.RawMessage) error {
+	return q.New(db).VulnStateCancelled(ctx, q.VulnStateCancelledParams{LastError: problem, Source: source, Ecosystem: ecosystem})
+}
+
+// Attempt records that a run started and returns the attempted_at it wrote. The row must exist ([Sync.Ensure]).
+func (Sync) Attempt(ctx context.Context, db q.DBTX, source, ecosystem string) (time.Time, error) {
+	us, err := q.New(db).VulnStateAttempt(ctx, q.VulnStateAttemptParams{Source: source, Ecosystem: ecosystem})
+	return microTime(us), err
 }
 
 // BumpEpoch raises the data epoch of an ecosystem's advisory data and returns the new value.

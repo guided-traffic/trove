@@ -220,7 +220,7 @@ metrics:
 | Alert | Fires when | Severity |
 |---|---|---|
 | `TroveVulnerabilityDataStale` | no sync run of a source and ecosystem has ended successfully for longer than `vulnerabilities.stale_after` (default 24h, read from `config.vulnerabilities.stale_after`) for 15 minutes. A source that never synced counts: its last success is 0 | warning |
-| `TroveVulnerabilitySyncFailing` | three consecutive runs of one source and ecosystem failed. The last error is on the sources page of the vulnerability section | warning |
+| `TroveVulnerabilitySyncFailing` | three consecutive runs of one source and ecosystem failed; a cancelled run does not count. The last error is on the sources page of the vulnerability section | warning |
 | `TroveVulnerabilityClaimedNameMalicious` | a malicious-package advisory names a package name that a local repository claims | critical |
 
 A name in `disabledAlerts` that is no alert of the chart fails the install. If you set `stale_after` only through an environment variable (`extraEnv`), set it in `config.vulnerabilities.stale_after` as well, or the alert keeps the 24-hour default.

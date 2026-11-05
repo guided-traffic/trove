@@ -62,8 +62,19 @@ UPDATE vuln_source_state
    SET failures = failures + 1, last_error = sqlc.arg(last_error)::jsonb, attempted_at = now()
  WHERE source = sqlc.arg(source)::text AND ecosystem = sqlc.arg(ecosystem)::text;
 
--- name: VulnStateAttempt :exec
-UPDATE vuln_source_state SET attempted_at = now() WHERE source = sqlc.arg(source)::text AND ecosystem = sqlc.arg(ecosystem)::text;
+-- name: VulnStateCancelled :exec
+-- A run whose job an operator cancelled records the problem and leaves the consecutive failures as they are (R-VULN-004,
+-- Q-VULN-80): the cancel is neither a failure of the source nor a success.
+UPDATE vuln_source_state
+   SET last_error = sqlc.arg(last_error)::jsonb, attempted_at = now()
+ WHERE source = sqlc.arg(source)::text AND ecosystem = sqlc.arg(ecosystem)::text;
+
+-- name: VulnStateAttempt :one
+-- Records that a run started and returns the attempted_at it wrote, as microseconds: the run's mark on the row, which the
+-- write of its failure compares, so that a run that lost its lease never overwrites a newer run's state (Q-VULN-80).
+UPDATE vuln_source_state SET attempted_at = now()
+ WHERE source = sqlc.arg(source)::text AND ecosystem = sqlc.arg(ecosystem)::text
+RETURNING COALESCE(extract(epoch FROM attempted_at) * 1000000, 0)::bigint AS attempted_us;
 
 -- name: VulnStateBumpEpoch :one
 -- Raises the data epoch of an ecosystem's advisory data, for a change of records that no OSV run made (the known-exploited flags).
