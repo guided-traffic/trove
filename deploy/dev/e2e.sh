@@ -52,6 +52,14 @@
 #                       (a change to the scanning) and the nightly HA and Performance workflow
 #   e2e.sh vuln-long    the long scenarios of R-VULN-029: a full synchronization drained mid-run, and the client tests once more with
 #                       Valkey stopped (nightly, dispatch, locally)
+#   e2e.sh mirror       the short scenarios of R-REPO-059: the chart in the `mirror` profile (three api and three packages replicas, the main worker
+#                       and a pool of two processes that claim the queue `mirror` alone, the scatter edge), npm and NuGet remotes in mode mirror
+#                       over the counting test upstreams (the npm one also under the names of the public registry, through a CoreDNS rewrite
+#                       the tests make and undo), `npm ci` and `dotnet restore` through the same remotes while a pass runs, the status from
+#                       every replica, the dispatch of two processes, a pass with Valkey stopped and a restore with the upstream stopped;
+#                       CI: job e2e-mirror (a change to the mirror)
+#   e2e.sh mirror-long  the long scenario of R-REPO-058: `kubectl drain` of the node of the process that runs a pass of 300 packages
+#                       (nightly, dispatch, locally: a red long leg is a finding, not a blocker, owner 2026-11-01)
 #   e2e.sh <regex>      any other argument is a `go test -run` expression
 #
 # Environment: TROVE_DEV_HTTP_PORT (the port the cluster was created with; read back from the node),
@@ -138,6 +146,14 @@ case "$set_name" in
   vuln) run='^TestVuln_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 TROVE_E2E_OSVSTUB=1 ;;
   vuln-long) run='^TestVulnLong_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 TROVE_E2E_OSVSTUB=1 ;;
   # <<< M4b vuln
+  # >>> M6b mirror
+  # The remote full mirror (R-REPO-059, docs/developer/e2e.md#the-mirror-tests): the `mirror` profile (up.sh, values-mirror.yaml), the two counting
+  # test upstreams and three client pods of each kind. `mirror` is the short scenarios (CI: job e2e-mirror on a change to the mirror);
+  # `mirror-long` the drain of the process that runs a pass (nightly, on dispatch, locally: a red long leg is a finding, not a blocker,
+  # owner 2026-11-01).
+  mirror) run='^TestMirror_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 ;;
+  mirror-long) run='^TestMirrorLong_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
+  # <<< M6b mirror
   *) run="$set_name" ;;
 esac
 

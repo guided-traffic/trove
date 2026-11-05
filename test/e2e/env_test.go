@@ -88,6 +88,7 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	stopForwards()
 	basTeardown()
+	mirrorTeardown()
 	restoreProfile()
 	stop()
 	os.Exit(code)

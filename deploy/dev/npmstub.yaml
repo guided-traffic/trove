@@ -36,6 +36,11 @@ spec:
     - npmstub.${NS}
     - npmstub.${NS}.svc
     - npmstub.${NS}.svc.cluster.local
+    # The names of the public registry and its replication service: the mirror's feed is offered only for the well-known
+    # upstream (R-REPO-051), so the sets `mirror` and `mirror-long` make these names resolve to this Service (a CoreDNS
+    # rewrite, test/e2e/mirror_env_test.go) and the stub answers the replication paths under the second one.
+    - registry.npmjs.org
+    - replicate.npmjs.com
   issuerRef:
     name: trove-dev-ca
     kind: Issuer

@@ -58,6 +58,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		rt = route{kind: KindReplication}
 	}
 	mode := s.record(r, escaped, rt)
+	if rt.kind != KindReplication {
+		defer s.fl.enter()()
+	}
 	s.cfg.Logger.Info("request", "method", r.Method, "path", escaped, "accept", r.Header.Get("Accept"),
 		"conditional", isConditional(r), "auth", authScheme(r.Header.Get("Authorization")))
 

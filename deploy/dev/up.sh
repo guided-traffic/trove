@@ -19,6 +19,9 @@
 #   TROVE_PROFILE=vuln    the `vuln` e2e profile (R-VULN-029): the scatter profile with the scanning reading the test advisory
 #                         source and the hosts of the test upstreams listed as public registries (values-vuln.yaml).
 #                         Run up.sh again without it to switch back.
+#   TROVE_PROFILE=mirror  the `mirror` e2e profile (R-REPO-059): the scatter profile (three api and three packages replicas) with the
+#                         passes of a mirror in a worker pool of two processes that claim the queue `mirror` alone (values-mirror.yaml).
+#                         Run up.sh again without it to switch back.
 #   TROVE_PROFILE=bastion the `bastion` e2e profile (R-BAS-049): the main installation trusts the pod range as a proxy
 #                         and lists the base URLs of the e2e Bastions (values-bastion.yaml, deploy/dev/bastion.sh).
 #                         Run up.sh again without it to switch back.
@@ -36,7 +39,7 @@ set -euo pipefail
 SKIP_RELEASE="${TROVE_SKIP_RELEASE:-0}"
 POOLER="${TROVE_POOLER:-0}"
 PROFILE="${TROVE_PROFILE:-default}"
-case "$PROFILE" in default|scatter|bastion|vuln) ;; *) die "TROVE_PROFILE must be default, scatter, bastion or vuln, not '$PROFILE'" ;; esac
+case "$PROFILE" in default|scatter|bastion|vuln|mirror) ;; *) die "TROVE_PROFILE must be default, scatter, bastion, vuln or mirror, not '$PROFILE'" ;; esac
 IMAGE="${TROVE_IMAGE:-guidedtraffic/trove:dev}"
 LOGS="$STATE_DIR/logs"
 START="$(date +%s)"
@@ -261,6 +264,7 @@ else
   [ "$POOLER" = "1" ] && values+=(-f "$DEV_DIR/values-pooler.yaml")
   [ "$PROFILE" = "scatter" ] && values+=(-f "$DEV_DIR/values-scatter.yaml")
   [ "$PROFILE" = "vuln" ] && values+=(-f "$DEV_DIR/values-scatter.yaml" -f "$DEV_DIR/values-vuln.yaml")
+  [ "$PROFILE" = "mirror" ] && values+=(-f "$DEV_DIR/values-scatter.yaml" -f "$DEV_DIR/values-mirror.yaml")
   # The Bastions' base URLs (deploy/dev/bastion.sh) carry the edge port the cluster was created with.
   [ "$PROFILE" = "bastion" ] && values+=(-f "$DEV_DIR/values-bastion.yaml" \
     --set-json "config.server.additional_base_urls=[\"https://trove-api.trove.svc:8080\",\"https://trove-packages.trove.svc:8080\",\"https://bastion-volume.trove.localhost:$EDGE_PORT\",\"https://bastion-bucket.trove.localhost:$EDGE_PORT\"]")

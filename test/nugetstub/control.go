@@ -11,6 +11,7 @@ import (
 // counted:
 //
 //	GET  /-/stub/counts             the counters (Counts as JSON)
+//	GET  /-/stub/inflight           {"open","max","requests"}: the requests open now and the most open at once since the last reset
 //	POST /-/stub/reset[?all=true]   zero the counters; with all, also modes and changes to packages
 //	GET  /-/stub/mode               the failure switches
 //	POST /-/stub/mode               replace them (a Mode as JSON; {} clears)
@@ -46,6 +47,8 @@ func (s *Server) serveControl(w http.ResponseWriter, r *http.Request) {
 	switch r.Method + " " + r.URL.Path {
 	case "GET /-/stub/counts":
 		writeJSON(w, s.Counts())
+	case "GET /-/stub/inflight":
+		writeJSON(w, s.Inflight())
 	case "POST /-/stub/reset":
 		if r.URL.Query().Get("all") == "true" {
 			s.ResetAll()

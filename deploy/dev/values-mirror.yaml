@@ -1,0 +1,14 @@
+# The `mirror` e2e profile (R-REPO-059, docs/developer/e2e.md#the-mirror-tests), layered after values-dev.yaml and
+# values-scatter.yaml (three api and three packages replicas, every request to another one; the main worker with two
+# replicas from values-dev.yaml) by up.sh when TROVE_PROFILE=mirror: the passes of a mirror run in a worker pool of two
+# processes that claim the queue `mirror` alone (R-HA-062), and the main worker claims every other queue. The three
+# `packages` replicas are the client-serving processes of R-REPO-055; no process that serves clients claims the queue.
+#
+# A list in a values file replaces the one of the file before it, so `worker.pools` here replaces the pool `vuln` of
+# values-dev.yaml: the scanning is off in this profile (values-dev.yaml switches its sources off) and the main worker
+# claims the queue `vuln` as it claims every queue no pool lists.
+worker:
+  pools:
+    - name: mirror
+      queues: [mirror]
+      replicaCount: 2

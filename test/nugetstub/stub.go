@@ -60,6 +60,8 @@ type Server struct {
 	catalog *catalogLog
 	// throttle is the rate-limit switch of throttle.go, with a lock of its own.
 	throttle throttleState
+	// fl counts the requests open at once (inflight.go); it has a lock of its own, so a request is counted while it waits.
+	fl inflightState
 }
 
 type builtPackage struct {
@@ -133,6 +135,7 @@ func (s *Server) Counts() Counts {
 
 // Reset zeroes the request counters; modes and changes to packages stay.
 func (s *Server) Reset() {
+	s.fl.reset()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.counts = map[countKey]*Entry{}
@@ -140,6 +143,7 @@ func (s *Server) Reset() {
 
 // ResetAll returns the stub to its initial state: counters zero, healthy, no change to the corpus.
 func (s *Server) ResetAll() {
+	s.fl.reset()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.resetLocked()

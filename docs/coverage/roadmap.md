@@ -1124,6 +1124,7 @@ populate rule of R-AUTHZ-008 and R-AUTHZ-026. The catalog entries API-082 to API
   same remotes on three client-serving replicas, the install within 120 % of its time without the pass and the stub's
   connections within the bound of R-REPO-055; `kubectl drain` of the node of the process that runs a pass, the pass ending in
   another process that claims the queue; the set once with Valkey stopped.
+  Built: the sets `mirror` and `mirror-long` ([developer/e2e.md](../developer/e2e.md#the-mirror-tests)); the drain is the nightly set `mirror-long`.
 - **E6b.7** Every requirement R-REPO-050 to R-REPO-059 has a passing test that names it (Q-ROAD-4).
 
 **Work packages** ([architecture.md](../spec/architecture.md) Q-ARCH-288, [developer/mirror.md](../developer/mirror.md)).

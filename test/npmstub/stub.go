@@ -74,6 +74,8 @@ type Server struct {
 	unlisted map[string]bool
 	replog   []ReplicationRequest
 	thr      throttleState
+	// fl counts the requests open at once (inflight.go); it has a lock of its own, so a request is counted while it waits.
+	fl inflightState
 }
 
 // staleLeft is the state of the older copy of one package: the document requests to answer
@@ -154,6 +156,7 @@ func (s *Server) Counts() Counts {
 // Reset zeroes the request counters and empties the log of audit requests; modes and
 // published or dropped versions stay.
 func (s *Server) Reset() {
+	s.fl.reset()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.counts = map[countKey]*Entry{}
@@ -163,6 +166,7 @@ func (s *Server) Reset() {
 
 // ResetAll returns the stub to its initial state: counters zero, healthy, no change to the corpus.
 func (s *Server) ResetAll() {
+	s.fl.reset()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.resetLocked()

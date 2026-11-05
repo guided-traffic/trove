@@ -45,7 +45,8 @@ kn get pods -l "$sel" -o wide --field-selector "spec.nodeName=$node"
 # A CloudNativePG standby on this node stays Pending until the uncordon: its volume is local to
 # the node. The synchronous standby is preferred, not required, so writes continue.
 k drain "$node" --ignore-daemonsets --delete-emptydir-data --timeout=5m
-for d in trove-api trove-packages trove-worker trove-worker-vuln; do kn rollout status "deployment/$d" --timeout=5m; done
+# every Deployment of the roles, the worker pools of the profile in use included (vuln in the default profile, mirror in the `mirror` one)
+for d in $(kn get deployments -l "app.kubernetes.io/instance=trove,app.kubernetes.io/component in (api,packages,worker)" -o name); do kn rollout status "$d" --timeout=5m; done
 log "pods after the drain"
 kn get pods -l "$sel" -o wide
 k uncordon "$node"

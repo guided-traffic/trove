@@ -3254,7 +3254,8 @@ budget (`limits.maxConcurrentFetches`, R-REPO-040, Q-REPO-8, Q-REPO-97), and cli
 - **Slots.** A background fetch takes a fetch slot of the replica it runs on: the replica's `proxy.max_concurrent_fetches`
   and a per-repository background counter; it never queues: it waits outside the slots until one is free. It takes the
   cross-replica flight of R-REPO-026 like any fetch, so a client that asks for the same item joins it as a follower or a
-  waiter instead of fetching twice.
+  waiter instead of fetching twice. A background fetch takes its slot before it enters a flight (Q-REPO-179), so that no client waits for a flight whose fetch has not begun;
+  the e2e set `mirror` measured `npm ci` at 41 s against 12 s before that rule ([developer/e2e.md](../developer/e2e.md#the-mirror-tests)).
 - **Who runs what** (phase 6a, [architecture.md](architecture.md) R-ARCH-001). A client-serving replica on this page is one
   that fills client misses: `packages` (and `web` in the upgrade bridge); the process that claims the queue `mirror` is a
   `worker`, or a worker pool that claims `mirror` alone ([ha-and-helm.md](ha-and-helm.md) R-HA-062). The two meet only
@@ -3454,7 +3455,9 @@ Priority: **MVP** · Covers: trove-only
   NuGet mirrors of the stub upstreams while
   `npm ci` and `dotnet restore` run through the same remotes, with the clients-first criterion of R-REPO-055; the drain of
   R-REPO-058; a restore of a stored package with the upstream stub stopped; the browser journey of the mirror panel
-  (status, pause, run a pass) with axe ([api-and-ui.md](api-and-ui.md) Q-UI-104).
+  (status, pause, run a pass) with axe ([api-and-ui.md](api-and-ui.md) Q-UI-104). The drain of R-REPO-058 is the set `mirror-long`, which runs
+  in the nightly workflow (owner, 2026-11-01); the rest is the set `mirror`. The profile, the way the npm mirrors get the feed, the measure of the
+  stub's connections, the baseline of the install time, the size of the passes and the CI wiring are Q-REPO-173 to Q-REPO-178.
 - The failure suite of phase 7 adds the mirror to its drains, failovers and throttling ([ha-and-helm.md](ha-and-helm.md)).
 
 Acceptance criteria:
@@ -6464,6 +6467,113 @@ mode shipped without an engine, so none of them ran a pass.
 revisit (b) when the query of a remote's url is dropped by every format.
 
 **Applied in the spec:** R-REPO-052 (the acceptance criteria). Code: `validate_mirror.go` (`checkMirrorURL`).
+
+### Q-REPO-173 · The e2e set `mirror` runs in a profile of its own: the worker pool `mirror` of two processes, the three `packages` replicas as the client-serving ones
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-059 asks for three client-serving replicas and two processes that claim the queue `mirror`; R-HA-062 expresses a pool that claims one queue as an entry of `worker.pools`, and the main worker then excludes that queue. The dev profile already has a pool `vuln`; a list in a values file replaces the one before it. The status operation of R-REPO-056 is served by `api` pods, not `packages` pods (the roles of R-ARCH-001).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A profile `mirror` (values-scatter.yaml, then [values-mirror.yaml](../../deploy/dev/values-mirror.yaml)) with `worker.pools: [{name: mirror, queues: [mirror], replicaCount: 2}]` and the main worker unchanged (chosen) | Passes run only in the pool; clients are served by the three `packages` pods; the main worker keeps every other queue | The topology of R-ARCH-001 and R-HA-062 as specified: pass and clients meet only through PostgreSQL, Valkey and the signal; the pool's two processes are the two claimants of R-REPO-058 | The pool `vuln` is gone in this profile (the scanning is off in it) |
+| (b) No pool: the main worker (two replicas) claims `mirror` with everything else | The default topology | No new profile | Passes share processes with other jobs; R-HA-062's exclusion is not exercised |
+| (c) Role `all` | Clients and passes in one process | Pre-emption in the process | It is the integration tier's case (R-REPO-055), not the topology of the cut |
+
+**Choice:** (a). The status criteria of R-REPO-058 are read from the three `api` pods, which serve the operation; a `packages` pod answers `404` (logged by the test, not asserted).
+
+**Rationale:** the set has to prove the topology the specification fixes. The development agent would revisit (a) if the chart gives a pool a way to claim a queue in addition to the main worker's.
+
+**Applied in the spec:** R-REPO-059 (the e2e set). Code: `deploy/dev/values-mirror.yaml`, `up.sh` (`TROVE_PROFILE=mirror`), `test/e2e/mirror_env_test.go`.
+
+### Q-REPO-174 · The npm mirrors of the e2e set are remotes of the name `registry.npmjs.org`, which a CoreDNS rewrite makes the npm test upstream
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the method `feed` is offered only for the well-known upstream (`https://registry.npmjs.org/`, R-REPO-051), whose replication service is `replicate.npmjs.com`. The method `names` takes the exact include patterns, at most `MaxPatterns` = 100 per list (R-REPO-005), so it cannot list a pass of 300 packages; the include patterns also bound what a client may pull through the remote.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A CoreDNS `rewrite` of both names to the Service `npmstub`, made and undone by the tests; the stub's certificate carries both names (chosen) | The remote's URL is the real one and the feed runs as against the public registry | The method of the product's main path is exercised end to end; no product change | The cluster's DNS is edited for the run; a run that is killed leaves the rewrite until the next run removes it (marker `# trove-e2e-mirror`) |
+| (b) `names` against the private URL | Up to 100 exact patterns | No DNS change | Not the feed; at most 100 packages, so not the pass of 300 |
+| (c) `hostAliases` on the trove pods | The names resolve in the pod | No cluster DNS edit | The chart has no such value; a value added for a test |
+
+**Choice:** (a) for the load and the drain; (b) for the Valkey and the two-claimant tests, whose passes are small (40 and 3 names). The feed's incremental pass and the replication host's credential rule are the integration tier's.
+
+**Rationale:** R-REPO-059 names the stub upstreams of both formats and a pass of 300 packages. The development agent would revisit (a) when the chart can resolve a name for its pods (`hostAliases`) or a remote can name its replication host.
+
+**Applied in the spec:** R-REPO-059. Code: `ensurePublicNPMNames` in `mirror_env_test.go`, `deploy/dev/npmstub.yaml`.
+
+### Q-REPO-175 · "Connections open" at the test upstream are the requests it is serving at once
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-055 bounds the upstream's concurrent fetches at `maxConcurrentFetches + n − 1 + B`; its e2e criterion speaks of connections open at the stub.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The stub counts requests in flight (from the moment it has counted one, its delay included, to the end of the handler) and keeps the maximum since the last reset: `GET /-/stub/inflight` (chosen) | One number per fetch | It is what a fetch slot is; independent of how the client reuses connections | Not a count of TCP connections |
+| (b) TCP connections (`ConnState`) | Open sockets | The words of the criterion | A client that keeps connections alive, or multiplexes (HTTP/2), makes the number say nothing about concurrent fetches |
+
+**Choice:** (a), in both stubs (`test/npmstub/inflight.go`, `test/nugetstub/inflight.go`; no other behaviour changed).
+
+**Rationale:** a fetch slot is one request. The development agent would revisit (a) if the outbound client ever opens one connection per fetch and a socket bound becomes a requirement.
+
+**Applied in the spec:** R-REPO-055 (e2e criterion). Code: the two stubs, `npmInflight`, `nugetInflight`.
+
+### Q-REPO-176 · The install time without the pass is measured on a second remote of the same settings whose mirror is paused
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `npm ci` through a remote fills the remote's cache; a second `npm ci` through the same remote is warm. "Within 120 % of its time without the pass, measured in the same run" needs two runs that start cold.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Two remotes of one upstream and one set of settings: the baseline through the one with `mirror.paused: true`, the run with the pass through the other (chosen) | Both cold; only the pass differs | A fair comparison with the same code path (mode `mirror`) | Two remotes instead of "the same remote" |
+| (b) The baseline first through the remote under test, then the run with the pass | One remote | The words of the criterion | The second run is warm and would pass for any pass |
+| (c) The baseline through a `pullThrough` remote | The ordinary remote | Simple | Another mode; the difference is not only the pass |
+
+**Choice:** (a). The baseline repeated on three further paused remotes ran 11.98 s, 11.99 s, 12.03 s: the measurement is stable, so 120 % is a tight criterion.
+
+**Rationale:** the criterion is about the pass's cost. The development agent would revisit (a) if a remote's cache can be emptied through the API.
+
+**Applied in the spec:** R-REPO-055 (e2e criterion). Code: `clientsFirstNPM`.
+
+### Q-REPO-177 · The pass of the load lists every package of the test upstream; the drain's pass is exactly 300
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: include patterns bound a remote for clients as well (R-REPO-005), and a pass lists what they admit. `npm ci` of the reference project needs 707 packages of the corpus; the criterion asks for a pass of 300.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Load: no include patterns, `maxBytes` 4 GiB as the bound (R-REPO-052); the test upstream holds the 700 packages of its corpus and 300 more the test publishes, so the pass lists 1,005 names and has 300 packages the install does not touch. Drain: `includePatterns: ["e2e-mirror-<run>-*"]`, exactly the 300 (chosen) | The install set is inside the pass; the drain's pass is the criterion's | The pass has work of its own while the clients are served by the same remote | The load's pass is larger than 300 |
+| (b) Patterns that admit 300 names only | Exactly 300 | The criterion's number | A client could pull no other package through the remote: the install of 707 would be refused |
+| (c) A second remote for the clients | Separate | Exactly 300 for the pass | Not "the same remote" |
+
+**Choice:** (a). The test upstream holds each tarball for 120 ms and each document for 20 ms in the load (so that fetches overlap) and a tarball for 1 s in the drain (so that the pass of 300 outlasts the pool's grace period).
+
+**Rationale:** the criterion is the client-first rule on one remote. The development agent would revisit (a) if the spec's "300" is meant as the size of the whole pass.
+
+**Applied in the spec:** R-REPO-055, R-REPO-058 (e2e criteria). Code: `clientsFirstNPM`, `TestMirrorLong_R_REPO_058_DrainOfTheNodeOfAPass`.
+
+### Q-REPO-178 · The drain is the set `mirror-long` (nightly); the rest is the set `mirror` in a job of Test and Release that runs when the change touches the mirror
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the owner's rule of 2026-11-01 puts drains, failovers and soaks into the nightly workflow, on dispatch and local runs, never in the release path; the per-change legs run on `large` runners, and the legs that load the NuGet clients image on GitHub-hosted runners (commit 7e80aee0).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `mirror` per change in the job `e2e-mirror` of Test and Release, with a scope step like `e2e-vuln`; both sets nightly in the job `e2e-mirror` of HA and Performance (chosen) | The drain is out of the release path; the short set guards the mirror | The rule and the pattern of the vulnerability suite | Two jobs of one name in two workflows (as `e2e-vuln`) |
+| (b) Everything in the nightly workflow | No per-change leg | Cheapest | R-REPO-055's clients-first criterion would run once a day only |
+| (c) Everything per change | Simplest | One set | A drain of 5 minutes and a pass of 150 s in every change |
+
+**Choice:** (a). `mirror` loads the NuGet clients image and runs on a GitHub-hosted runner; `mirror-long` needs the npm clients only and runs on `large`.
+
+**Rationale:** as the owner's rule says. The development agent would revisit it when `mirror` has been seen to take longer than the other per-change legs.
+
+**Applied in the spec:** R-REPO-059. Code: `.github/workflows/release.yml`, `.github/workflows/performance.yml`, `deploy/dev/e2e.sh`.
 
 ## What this does not cover
 

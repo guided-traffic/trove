@@ -3,8 +3,8 @@
 Status: phase 6b, in progress; the role-neutral contracts are laid, the tables and the seam to the remote engine are added,
 and work packages A (npm discovery), B (NuGet discovery), C (C1, the remote engine's side: background requests, pre-emption, the
 yield signal, `mirror.Host`; C2, the engine: dispatch, pass, fence, window, waits, bounds, metrics, events) and the API half of D
-(the status and the run, [below](#the-status-and-run-operations-work-package-d)) are built, and so is the integration suite against the
-counting stubs ([below](#the-integration-suite)); the Mirror tab of D and the e2e set are in progress. Specified on
+(the status and the run, [below](#the-status-and-run-operations-work-package-d)) are built, and so are the integration suite against the
+counting stubs ([below](#the-integration-suite)) and the e2e set ([below](#the-e2e-set)); the Mirror tab of D is built. Specified on
 [repositories-and-proxy.md](../spec/repositories-and-proxy.md#mirror-mode) (R-REPO-050 to R-REPO-059) and the format pages'
 sections "Mirror discovery" ([npm](../spec/formats/npm.md#mirror-discovery), [NuGet](../spec/formats/nuget.md#mirror-discovery));
 the cut into work packages is [Q-ARCH-288](../spec/architecture.md#q-arch-288--the-seams-of-the-mirror).
@@ -458,3 +458,15 @@ A `*mirror.RefusedError` keeps the engine's error as its cause: read it with `er
 - Integration ([test/integration/proxy](../../test/integration/proxy)): `mirror_test.go` (pre-emption on one replica with `maxConcurrentFetches` 2, the joined fetch, the signal across two
   replicas on the real Valkey, the circuit, the credentials of `Get`, the upstream log), `mirror_host_test.go` (the host over the real engine: the populate event, `Present`, the
   mapping of the errors, `Admits`).
+
+## The e2e set
+
+The sets `mirror` and `mirror-long` ([developer/e2e.md](e2e.md#the-mirror-tests), R-REPO-059, E6b.6) run the engine in the process topology of the cut: three `packages` replicas that
+serve clients and a worker pool of two processes that claim the queue `mirror` alone ([values-mirror.yaml](../../deploy/dev/values-mirror.yaml)), against the counting stubs of both
+formats, with the real npm and .NET clients. They are the first tests that start a worker with the queue `mirror` on a cluster. What a colleague adding to the engine has to know:
+
+- A change to the slots, the flights or the pass's fill ([internal/proxy](../../internal/proxy), [internal/mirror](../../internal/mirror)) is measured by
+  `TestMirror_R_REPO_055_ClientsFirst`: `npm ci` of 707 packages takes about 12 s through a remote whose mirror is paused, and the same through a remote whose pass runs must stay within 120 %.
+  The first build of the set measured 41 s (two requests of 31 s: a background fetch that held the flight while it waited for its slot, Q-REPO-179) and 12 s once the slot came first.
+- The pool's processes are the claimants of the queue: a test that needs a pass in a client-serving process is the integration tier's (`test/integration`).
+- The drain is `TestMirrorLong_R_REPO_058_DrainOfTheNodeOfAPass`: the pass of 300 packages outlasts the pool's 60 s grace period, so the release at shutdown is what ends it in the first process.

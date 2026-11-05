@@ -4,7 +4,7 @@ The suite proves the exit criteria of M0 that need Kubernetes: E0.3, E0.4 (chart
 E0.11, E0.12 (dev-profile parts), E0.13, E0.14, E0.15 and E0.16 of the [roadmap](../coverage/roadmap.md), and the
 end-to-end criteria of the access core of M1: E1.1, E1.8, E1.11 (the API part and the browser journeys), E1.13 and E1.14, and of
 npm in M2: E2.1 to E2.12 and E2.11's drain and failovers under npm load, and of the vulnerability scanning in M4b: E4b.1's drain, E4b.4 to E4b.6 and E4b.8
-([the vulnerability tests](#the-vulnerability-tests)). It runs
+([the vulnerability tests](#the-vulnerability-tests)), and of the remote full mirror in phase 6b: E6b.6 ([the mirror tests](#the-mirror-tests)). It runs
 the real release image on the [dev profile](local-profile.md), over TLS on every connection, and injects the failures of
 [R-HA-051 and R-HA-052](../spec/ha-and-helm.md). This is work package WP0.11 (and its TLS part, WP0.12); the M1 tests are
 [described below](#m1-tests), the npm tests [further down](#the-npm-tests), and WP2.8's harness, which runs the drain and the
@@ -37,6 +37,7 @@ failovers under npm load, in [Drain and failover under npm load](#drain-and-fail
 
 ```
 deploy/dev/e2e.sh           what `make e2e` calls: builds the driver, starts its pod, runs go test
+deploy/dev/values-mirror.yaml  the profile `mirror`: the worker pool `mirror` of two processes (up.sh, TROVE_PROFILE=mirror)
 deploy/dev/drain.sh         E0.14 as a script (`make dev-drain`), and the drain alone for the test
 deploy/dev/pg-kill.sh       force-delete the PostgreSQL primary, wait for the recovery
 deploy/dev/pg-stop.sh       stop PostgreSQL for a time by fencing the CloudNativePG cluster
@@ -84,6 +85,13 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
                             outage of the closing run (TestNPMHAClosing)
   npm_perf_test.go          R-ARCH-027: perf/k6/npm.js against one web replica from inside the cluster, reported (TestNPMPerf)
   k6/npm.js                 the k6 npm requests of R-HA-059: documents and 1 to 5 MiB tarballs of npm-all, 120 requests/s
+  mirror_env_test.go        the mirror harness (R-REPO-059): the profile `mirror`, the repositories in mode mirror, the status and the run, the
+                            pool's counters, the CoreDNS rewrite of the public registry's name, the sampler of the job table, the clients
+  mirror_clients_test.go    R-REPO-055: npm ci and dotnet restore while a pass runs (TestMirror_R_REPO_055_ClientsFirst)
+  mirror_ha_test.go         R-REPO-058: the status from every replica, two claimants of the queue, a pass with Valkey stopped
+  mirror_offline_test.go    E6b.3: a restore with the test upstreams stopped
+  mirror_ui_test.go         the browser journey of the Mirror tab in the profile `mirror`
+  mirror_long_test.go       the long set `mirror-long`: the drain of the node of the process that runs a pass
   clients/                  the npm client matrix image (below): package.json + package-lock.json, bin/ wrappers, shim/npm, fwd/ forwarder,
                             Dockerfile, build.sh, check-pins.mjs
 web/e2e/                    the Playwright journeys of R-UI-047 (TypeScript, in the web workspace's lockfile)
@@ -126,6 +134,8 @@ make nuget-clients-smoke     # the image like a pod against the counting NuGet t
 make nuget-reference-check   # perf/nuget/reference against a regeneration (no cluster, no Docker)
 make e2e SET=bastion         # the short scenarios of R-BAS-049 with npm, pnpm, Yarn 4 and dotnet restore (CI job e2e-bastion, when the change touches the Bastion; nightly)
 make e2e SET=bastion-long    # the drain, and the anonymous miss flood (CI: nightly and on dispatch; a red long leg is a finding, not a blocker)
+make e2e SET=mirror          # the mirror (R-REPO-059, E6b.6): npm ci and dotnet restore while a pass runs, the status from every replica, two claimants, Valkey stopped, a restore with the upstream stopped, the browser journey (CI job e2e-mirror, when the change touches the mirror; nightly)
+make e2e SET=mirror-long     # the drain of the node of the process that runs a pass of 300 packages (CI: nightly and on dispatch; a red long leg is a finding, not a blocker)
 make fuzz-npm FUZZ=FuzzMatch FUZZTIME=1m   # npm's fuzz targets (CI: 30 minutes, closing run only)
 ```
 
@@ -1128,6 +1138,7 @@ are the same code. It reaches no network, and it answers TLS only.
 | [mode.go](../../test/npmstub/mode.go) | the failure switches |
 | [replication.go](../../test/npmstub/replication.go) | the replication paths of the public registry under a second host name: `GET /`, `registry/_changes`, `registry/_all_docs`; the change feed (`Change`, `UpdateSeq`), a package the listing leaves out although the registry serves it (`Unlist`, a name a feed missed), the log of the replication host's requests (`Replications`) |
 | [throttle.go](../../test/npmstub/throttle.go) | the throttling modes of the mirror's tests (R-REPO-054, R-REPO-059): `Throttle`, set in `Mode`; self-contained |
+| [inflight.go](../../test/npmstub/inflight.go) | the requests being served at once and their maximum since the last reset (`Inflight`, R-REPO-055): the registry host's requests, the delay included; the control API and the replication host are not counted |
 | [audit.go](../../test/npmstub/audit.go) | the advisory endpoint: the recorded advisories of [testdata/advisories.json](../../test/npmstub/testdata/advisories.json), the log of the requests (`Audits`, `Asked`) |
 | [control.go](../../test/npmstub/control.go) | the control API below `/-/stub/` |
 | [served.go](../../test/npmstub/served.go) | `Served`: a version as the document lists it now (`GET /-/stub/version`), and `ServedVersion.Matches`, whether it is what a publish of a name, version, dependencies and tags makes (the tarball's integrity included) |
@@ -1214,6 +1225,7 @@ Control requests are not counted.
 | Request | Effect |
 |---|---|
 | `GET /-/stub/counts` | `{"entries": [{method, path, conditional, auth, host, kind, name, file, accept, count}]}`; `host` is set for the requests to a replication host (kind `replication`) |
+| `GET /-/stub/inflight` | `{"open","max","requests"}`: the registry requests being served now, the most that were served at once and their number, since the last `reset` (Q-REPO-175) |
 | `GET /-/stub/audits` | `{"requests": [{names, auth, encoding}]}`: the advisory requests, oldest first |
 | `POST /-/stub/reset[?all=true]` | zero the counters and the logs of advisory and replication requests; with `all` also modes, package changes and the change feed |
 | `GET`/`POST /-/stub/mode` | read / replace the failure switches |
@@ -1241,7 +1253,7 @@ write the new digest there and run `make npm-reference`; the same commit carries
 ### In the cluster
 
 [deploy/dev/npmstub.yaml](../../deploy/dev/npmstub.yaml): Service `npmstub` on 443, one replica (the counters are in
-memory), a certificate of the dev CA for `npmstub.<ns>.svc`, the control token in Secret `trove-npmstub` (key
+memory), a certificate of the dev CA for `npmstub.<ns>.svc` and, for the mirror's feed, `registry.npmjs.org` and `replicate.npmjs.com` ([the mirror tests](#the-mirror-tests)), the control token in Secret `trove-npmstub` (key
 `control-token`, generated by the secret operator), TCP probes (an HTTP probe would be counted). `e2e.sh` builds
 (`make npm-stub-image`), loads and applies it when `TROVE_E2E_NPMSTUB=1` and exports `TROVE_E2E_NPMSTUB_HOST`. trove
 trusts the dev CA for upstreams through `proxy.outbound.tls.ca_files` (values-dev.yaml sets it to the `ca.crt` of Secret
@@ -1270,6 +1282,7 @@ nothing of nuget.org is recorded.
 | [corpus.go](../../test/nugetstub/corpus.go) | the package set (`Default`), version order, the closure of a root set, the roots of the reference solution |
 | [catalog.go](../../test/nugetstub/catalog.go) | the catalog (`Catalog/3.0.0`): the log of commits (the corpus's versions, then every `Publish`, `Drop`, `Restore` and `SetListed`), its index, pages and leaves; `NewCorpus`, `Corpus.Add`, `Package.AddVersion` for a test's own package set |
 | [throttle.go](../../test/nugetstub/throttle.go) | the throttling modes of R-REPO-059, self-contained: `Throttle`, `SetThrottle`, `ThrottleState`, the gate in front of every route |
+| [inflight.go](../../test/nugetstub/inflight.go) | the requests being served at once and their maximum since the last reset (`Inflight`, R-REPO-055), on both hosts; the control API is not counted |
 | [nupkg.go](../../test/nugetstub/nupkg.go) | `.nuspec` and `.nupkg` generation: the same inputs give the same bytes; `PackageHash` |
 | [counts.go](../../test/nugetstub/counts.go) | the counters and their readers: `Nupkgs`, `Nupkg`, `VersionLists`, `Registrations`, `ConditionalRequests`, `Searches`, `CatalogIndexes`, `CatalogPages`, `CatalogLeaves`, `Requests`, `Hosts`, `Violations(maxDocuments, maxNupkgs)` |
 | [mode.go](../../test/nugetstub/mode.go) | the failure switches |
@@ -1356,7 +1369,7 @@ latest version of its ID, is deprecated in the same form and carries two advisor
 result carries the deprecation and the advisories of the version it names, as nuget.org's do, so the forwarded search cleans
 them in every run as well.
 
-The control API (`-control-token-file`, bearer token) has `GET /-/stub/counts`, `POST /-/stub/reset[?all=true]`,
+The control API (`-control-token-file`, bearer token) has `GET /-/stub/counts`, `GET /-/stub/inflight` (`{"open","max","requests"}`: the requests being served now and the most at once since the last reset), `POST /-/stub/reset[?all=true]`,
 `GET`/`POST /-/stub/mode`, `GET`/`POST /-/stub/throttle`, `POST /-/stub/publish|drop|restore|unlist|relist` with `{"name","version"}`
 (`dependencies` for publish), and `GET /-/stub/version?name=&version=`: the version as the documents list it now,
 `{"name","version","dependencies","listed","deprecated","vulnerabilities"}` (`404` when they do not list it), which a
@@ -2445,6 +2458,129 @@ the scanning ([releasing.md](releasing.md#ci)), job `e2e-vuln` of HA and Perform
 - `pg_stat_statements` over 10,000 cached downloads (R-VULN-015) and the object-store GET counters of a late advisory (R-VULN-011): the e2e profile has neither.
 - Restore of a backup (E4b.7): phase 7.
 - A Windows row and Visual Studio: the NuGet clients image is Linux.
+
+## The mirror tests
+
+Work package WP6b.6: the e2e tier of [R-REPO-059](../spec/repositories-and-proxy.md#r-repo-059--the-mirrors-test-suites) on the dev cluster with the real clients: exit criterion E6b.6 of the
+[roadmap](../coverage/roadmap.md#phase-6b--remote-full-mirror) and the e2e criteria of R-REPO-055 (clients first) and R-REPO-058 (n replicas, without Valkey, during a drain). The
+mirror is described in [mirror.md](mirror.md). Decisions: Q-REPO-173 to Q-REPO-178 in the
+[specification](../spec/repositories-and-proxy.md#q-repo-173--the-e2e-set-mirror-runs-in-a-profile-of-its-own-the-worker-pool-mirror-of-two-processes-the-three-packages-replicas-as-the-client-serving-ones).
+
+```mermaid
+flowchart LR
+  subgraph trove["namespace trove"]
+    c["client pods x3<br/>npm 11, dotnet 10<br/>(trove-e2e-npm-i, trove-e2e-nuget-i)"]
+    p["packages x3 (scatter)<br/>the client-serving replicas"]
+    w["worker pool mirror x2<br/>claims the queue mirror alone"]
+    pg[("PostgreSQL")]
+    vk[("Valkey: mirror_yield")]
+    ns["npmstub<br/>registry.npmjs.org, replicate.npmjs.com"]
+    gs["nugetstub<br/>catalog on"]
+  end
+  c -- "https, localhost:edge port" --> h["HAProxy Ingress<br/>round robin per request"]
+  h --> p
+  p -- "client fills" --> ns
+  p --> gs
+  w -- "passes: feed, catalog; background fills" --> ns
+  w --> gs
+  p -. "yield signal" .-> vk
+  vk -. " " .-> w
+  p --> pg
+  w --> pg
+```
+
+### What is deployed
+
+`make e2e SET=mirror` (and `mirror-long`) starts the two counting test upstreams (`TROVE_E2E_NPMSTUB=1`, and `TROVE_E2E_NUGETSTUB=1` for `mirror`), three npm and (for `mirror`) three NuGet
+client pods, and the first test calls `mirrorFx` ([mirror_env_test.go](../../test/e2e/mirror_env_test.go)), which does, once per run:
+
+1. `up.sh` with `TROVE_PROFILE=mirror`: the chart with [values-scatter.yaml](../../deploy/dev/values-scatter.yaml) (three `api` and three `packages` replicas, the edge balancing every request on its
+   own) and [values-mirror.yaml](../../deploy/dev/values-mirror.yaml): `worker.pools: [{name: mirror, queues: [mirror], replicaCount: 2}]` (R-HA-062). The two `worker` replicas of
+   [values-dev.yaml](../../deploy/dev/values-dev.yaml) stay and claim every other queue; the pool `vuln` of that file is replaced (the scanning is off in the profile). The three `packages`
+   replicas are the client-serving ones; no process that serves clients claims the queue `mirror`. The profile returns to `default` at the end of the run.
+2. The mirrors of an earlier, killed run are deleted, the two upstreams are reset, and the names of the public registry are made to resolve to the npm test upstream
+   (below). The service account `e2e-mirror` gets one token (`inherit`), and one read policy that grows with the repositories of the run.
+3. 300 extra packages `e2e-mirror-<run>-NNN` (one version, 1.0.0) are published to the npm test upstream, so that the pass has work the install does not do.
+4. A sampler reads the job table every 400 ms for the whole run (below).
+
+Every repository of the run carries the run's six hex digits (`npm-mirror0-<run>`, `nuget-mirror-<run>`, ...); a run removes what it created in `TestMain` (`mirrorTeardown`), where it also
+removes the DNS rewrite and starts a test upstream a test left stopped.
+
+**The public registry's name.** `feed` is offered only for `https://registry.npmjs.org/` (R-REPO-051) and its replication service is `replicate.npmjs.com`, a second host name of the stub
+(`-replication-hosts`). `ensurePublicNPMNames` adds two `rewrite name exact` lines to the Corefile of CoreDNS (each ends with the comment `# trove-e2e-mirror`), restarts CoreDNS, and waits until a
+client pod resolves both names to the ClusterIP of `npmstub`; the stub's certificate ([npmstub.yaml](../../deploy/dev/npmstub.yaml)) carries both names and the dev CA signs it (the test
+also verifies it for each name). The remote's URL is then the real one. `restorePublicNPMNames` removes the lines again at the end of the process; a run that was killed leaves them
+(`kubectl -n kube-system edit configmap coredns`: delete the lines with the marker, restart `coredns`), and the next run finds them and removes them. Nothing else in these sets
+reaches the real registry. The tests that need no feed (`names`: the Valkey and the two-claimant tests) use the private URL `https://npmstub.<ns>.svc/`.
+
+**The stub's open requests.** [test/npmstub/inflight.go](../../test/npmstub/inflight.go) and [test/nugetstub/inflight.go](../../test/nugetstub/inflight.go) count the requests being served at
+once (from the moment the stub has counted one, its delay included, to the end of its handler; the control API and, for npm, the replication host are not counted) and keep the maximum since
+the last reset: `GET /-/stub/inflight` answers `{"open","max","requests"}`, `POST /-/stub/reset` starts the maximum afresh. They count requests, not TCP connections (Q-REPO-175).
+
+### The tests
+
+| Test | Criterion | What it does |
+|---|---|---|
+| `TestMirror_R_REPO_055_ClientsFirst/npm` | R-REPO-055, E6b.6 | the remotes are mirrors of `https://registry.npmjs.org/` (the stub), `limits.maxConcurrentFetches` 8, `mirror.concurrency` 4, `maxVersionsPerPackage` 1, `maxBytes` 4 GiB, so B = 2 and the bound is 8 + 3 − 1 + 2 = 12; the stub holds a document 20 ms and a tarball 120 ms. Three pairs, each on new remotes: `npm ci` of the reference project of [perf/npm/reference](../../perf/npm/reference) (707 packages, its lockfile's addresses pointed at the remote) through a remote whose mirror is paused (the baseline), then the same through a remote whose pass was requested and has filled packages (the pass lists 1,005 names: the 700 of the corpus and the 300 extras). The criterion is the median of the three loaded times within 120 % of the best of the three baselines (the machine's speed without the pass: installs of 20 s and 23 s were measured among the 12 s ones when the host was busy, and a slow baseline must not make the pass look free); `trove_mirror_preempted_total` must grow over the three pairs (a client pre-empts the fetches the pass has in flight when it first has to wait, and one pair of the dozen measured had none in flight then); the pass is in a pod of the pool `mirror`, with the method `feed`. The last pass goes on to its end: `complete`, no failed package, at least 300 packages, each extra tarball served once, and the stub never held more than 12 requests open since that pass began |
+| `TestMirror_R_REPO_055_ClientsFirst/nuget` | R-REPO-055, E6b.6 | the same shape for NuGet: the stub lists `Catalog/3.0.0` (`Mode.Catalog`) and holds a `.nupkg` 100 ms; the pass uses `feed`; `dotnet restore` of the reference solution ([perf/nuget/reference](../../perf/nuget/reference), 174 packages) through the same remote succeeds while it runs, the stub never holds more than 12 requests open; the pass ends `complete` with every package |
+| `TestMirror_R_REPO_058_StatusFromEveryReplica` | R-REPO-058 | after the two complete passes: the status `GET /api/v1/repositories/{key}/mirror` is byte-identical (as JSON) through each of the three `api` pods, which serve the operation; a `packages` pod answers `404` (logged: the management API is the `api` role's, R-ARCH-001) |
+| `TestMirror_R_REPO_058_TwoClaimantsOneJobPerRepository` | R-REPO-058 | six mirrors (private URL, `names`, three packages each) are created at once and asked for a pass by three callers each, in three rounds 62 s apart, so that `mirror-dispatch` ticks (every minute, on either process of the pool) between them; the job table, read throughout, never holds two unfinished `mirror-pass` jobs of one repository; every request answers `202` or `409`; every pass ends `complete`; the task was enqueued at least twice; the metric `trove_jobs_claimed_total{kind="mirror-dispatch"}` of each process is logged |
+| `TestMirror_R_REPO_058_ValkeyStoppedForAWholePass` | R-REPO-058 | Valkey and the Sentinels are stopped before the pass is requested (every `api` and `packages` pod reports `degraded: valkey`) and started after it: the pass of 40 packages ends `complete`, the stub served each tarball once, the status is the same through the three `api` pods, and after the restart too |
+| `TestMirror_R_REPO_059_RestoreWithTheUpstreamStopped` | E6b.3, R-REPO-059 | both stubs are scaled to zero after complete passes: `npm install` of three mirrored versions (`e2e-mirror-<run>-000` to `002`) and `dotnet restore` of `Newtonsoft.Json 13.0.3` through the same remotes succeed with an empty client cache; the stubs are started again and the extras republished. The test is the last that needs a stub |
+| `TestMirror_R_REPO_059_BrowserJourney` | R-REPO-059, R-UI-021 | [web/e2e/tests/14-mirror.spec.ts](../../web/e2e/tests/14-mirror.spec.ts) (the Mirror tab: status, pause, resume, run a pass, run a full pass, with axe in both schemes; the upstream settings of a remote) against the cluster of this profile, where a pool claims the queue. `TestE1_11Journeys` runs the same journey among the others in the scatter profile |
+| `TestMirrorLong_R_REPO_058_DrainOfTheNodeOfAPass` | R-REPO-058, E6b.6 | the set `mirror-long`: a mirror of the registry's name with `includePatterns: ["e2e-mirror-<run>-*"]`, the 300 extras, `mirror.concurrency` 2; the stub holds a tarball 1 s, so the pass lasts 150 s and outlasts the 60 s grace period of the pool. At 40 packages the node of the pool's process that runs the pass is drained (`deploy/dev/drain.sh`; the PostgreSQL primary is moved first when it is on that node). The job is `queued` again (its attempt unchanged: a release at shutdown counts none), the other process of the pool ends the pass `complete` with 300 packages and none failed, the stub served every tarball and at most `concurrency` of them twice (the fetches in flight at the drain), and the pool has two ready pods again |
+
+The environment is built once, so one failed request of the setup fails every test of the set. The tests are ordered by file name (`mirror_clients`, `mirror_ha`, `mirror_offline`,
+`mirror_ui`); the tests after the first take the mirrors the first leaves (`needMirrors` builds them when a test runs alone).
+
+### Running it
+
+```shell
+make image VERSION=dev && make dev-up
+make e2e SET=mirror          # the short set: the profile, the upstreams, the clients and the tests (about 10 minutes, the client images built)
+make e2e SET=mirror-long     # the drain of the node of the process that runs a pass of 300 packages (about 5 minutes)
+TROVE_E2E_REUSE_CLIENTS=1 make e2e SET=mirror TROVE_E2E_RUN='^TestMirror_R_REPO_058_Valkey'   # one test; client pods that are running stay
+```
+
+The journey needs `npm ci` in `web/` and `npx playwright install chromium` (CI: `--with-deps`). `mirror-long` needs the npm clients image only. CI: job `e2e-mirror` of Test and Release runs the set
+`mirror` when the change touches the mirror ([releasing.md](releasing.md#ci)); job `e2e-mirror` of HA and Performance (nightly) runs both sets.
+
+### Measured on the dev cluster
+
+2026-11-05, linux/arm64 kind on a 20-CPU developer machine that other work shared (so a stall of a few seconds happens: two baselines of 19.9 s and 23.2 s were measured among the 11.5 s ones).
+
+| What | Measured |
+|---|---|
+| `npm ci` of 707 packages, mirror paused | 11.4 s to 12.5 s when the host was quiet |
+| the same with a pass running, before the slot came first (Q-REPO-179) | 41 s (308 %), two requests of 31 s each |
+| the same with the pass, after it: with / without, in three pairs | 11.6 s / 11.8 s (98 %), 11.1 s / 12.5 s (89 %), 11.4 s / 11.6 s (98 %) in one run; 11.3 s / 11.9 s (95 %), 11.2 s / 11.6 s (96 %), 11.2 s / 11.7 s (96 %) in another; the criterion is the median of the three against the best baseline: 98 % and 97 % |
+| open requests at the stub (bound 12 = 8 + 3 − 1 + 2) | at most 9 in every run, with and without the pass |
+| `trove_mirror_preempted_total` | 0 to 2 per pass; 5 and 6 over the three pairs of a run |
+| `dotnet restore` of 174 packages with the NuGet pass | 4.5 s to 4.8 s; at most 9 open requests; the pass `complete` with 185 packages |
+| the npm pass of the load | 1,005 packages, 591 items, 3.5 MB, method `feed`, `complete`, each of the 300 extra tarballs served once |
+| a pass with Valkey stopped | 40 packages `complete` in 30 s to 80 s; the status the same through the three `api` pods, before and after Valkey returns |
+| two claimants | 18 accepted and 36 refused (`409`) run requests over 2 min 6 s, `mirror-dispatch` enqueued twice and claimed by both processes of the pool, 977 samples of the job table, never two unfinished `mirror-pass` jobs of one repository |
+| restore with the upstreams stopped | `npm install` 0.3 s and `dotnet restore` of `Newtonsoft.Json 13.0.3` 1.2 s to 1.3 s |
+| the drain (`mirror-long`) | the pass of 300 packages ran in a pool process on the node `trove-worker`; `drain.sh` returned after 37 s; the job went to the other process of the pool with its attempt unchanged; 300 tarballs served, 2 of them twice (`concurrency` is 2) |
+| duration | `mirror` 9.5 to 10 minutes of tests (the first test builds the profile: about 100 s); `mirror-long` 4 minutes 40 s |
+
+### Findings of the mirror tests
+
+| Finding | Cause | Fix |
+|---|---|---|
+| `npm ci` with a pass running took 41 s against 12 s (308 %), two tarball requests of 31 s | a background fetch that led a flight waited for its background slot while it held the cross-replica flight; the yield window of a signal (30 s) keeps the slot away, so every client that asked for that item waited for the flight for the window, and the pass's own fetch was not yet running, so no signal could pre-empt it | the slot comes first: a background request takes it before it enters a flight (Q-REPO-179, [mirror.md](mirror.md#the-remote-engines-side-c1)). The code review of the engine's author found the same cause independently while this set was built; the set measured it (12 s with a pass running, 95 % to 99 % of the time without it) |
+| No pass ever started in the pool: the job failed with `mirror: the npm format has no discovery` | the mirror host of a worker needs the engine's set of invalidation rows, which `wireInvalidation` builds only for a process with a client listener; the host could not be built, and the lazy host answered `Lister` as a format without discovery without saying why | the area `mirror-engine` builds an engine, a set of invalidations and a format host of a worker's own, and `Ready` reports a build error (Q-ARCH-316, Q-ARCH-319); the first run of this set met it, and the engine's reviews had found it independently |
+| `deploy/dev/drain.sh` failed in the profile `mirror`: `deployment "trove-worker-vuln" not found` | the script waited for the Deployments `trove-worker-vuln` by name | it waits for every Deployment of the roles `api`, `packages` and `worker` (the pools of the profile in use) |
+| The set judged `npm ci` on one loaded run, which a host stall of a few seconds can fail; and one pair showed no pre-emption | an install lasts 12 s and the budget is 20 %; the pre-emptions depend on whether the pass has a fetch in flight when the first client waits | the median of three loaded installs against the best of three baselines, and the pre-emption count over the three pairs, numbers fixed in the test (`clientsFirstPairs`) |
+| The browser journeys 08 (the third) and 14 (the first) fail on the form of a remote in the wizard: `getByRole('textbox', { name: 'Pass interval in seconds' })` resolved to 2 elements (`strict mode violation`): `f-remote-mirror-intervalSeconds` and `f-remote-mirror-fullPassIntervalSeconds`, whose name "Full pass interval in seconds" contains the first | a text match of an accessible name is a substring match, and the form has a second field since the Mirror section was extended; [08-packages.spec.ts](../../web/e2e/tests/08-packages.spec.ts) line 286 (`interval`, step "mode mirror shows the members with their defaults…") and [14-mirror.spec.ts](../../web/e2e/tests/14-mirror.spec.ts) line 67 | not fixed here (`web/e2e` is the UI wave's): `{ name: 'Pass interval in seconds', exact: true }`; the journeys 02, 08 (first and second) and 11 pass, and so does the second journey of 14. `TestMirror_R_REPO_059_BrowserJourney` stays red until then |
+
+### Not covered by the mirror tests
+
+- The feed's incremental pass and the replication host's credential rule (E6b.2), the discovery of the catalog after a cursor and a `PackageDelete` (E6b.3), the rate-limit answers and the long wait
+  (E6b.4), and the fence and the lost lease are the integration tier's.
+- A drain of a `packages` replica during a pass, and a crash of the pool's process (a lost lease): phase 7's failure suite adds the mirror to its drains and failovers (R-REPO-059).
+- The status through a `packages` pod: the management API is the `api` role's.
+- `maxBytes`, quota and capacity bounds ([H-506](../spec/repositories-and-proxy.md)) are the integration tier's.
 
 ## Extension checklist
 

@@ -24,6 +24,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	rt := parseRoute(escaped)
 	mode := s.record(r, escaped, rt)
+	defer s.fl.enter()()
 	s.cfg.Logger.Info("request", "method", r.Method, "host", r.Host, "path", escaped,
 		"conditional", isConditional(r), "auth", authScheme(r.Header.Get("Authorization")))
 
