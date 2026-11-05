@@ -32,7 +32,7 @@ numbers (owner, 2026-11-02).
 | [5b · trove Bastion](#phase-5b--trove-bastion-m13) | An exposed, read-only cache instance in front of the main installation that serves released content to external parties and takes load off it | 🟢 |
 | [6 · Vulnerability scanning](#phase-6--vulnerability-scanning-m4b) | Own advisory mirror, findings and vulnerability report, malicious versions blocked, npm and NuGet audits from trove's data | 🟢 |
 | [6a · Task areas](#phase-6a--task-areas) | trove cut into task areas: `api`, `packages` and `worker` as roles of one binary with Deployments of their own, ingress rules between the chart's pods | 🟡 |
-| [6b · Remote full mirror](#phase-6b--remote-full-mirror) | A remote repository can mirror every discoverable package of its upstream in the background, besides the default pull-through | 🟡 |
+| [6b · Remote full mirror](#phase-6b--remote-full-mirror) | A remote repository can mirror every discoverable package of its upstream in the background, besides the default pull-through | 🟢 |
 | [7 · HA, backup, Helm](#phase-7--ha-hardening-backup-and-helm-m5) | Drains and failovers without errors, backup and restore; beta candidate | ⚪ |
 | [8 · Walkthrough and beta](#phase-8--walkthrough-and-beta-release) | Owner review, objections fixed; **beta release** | ⚪ |
 
@@ -906,9 +906,14 @@ phase 7, so that the failure suite covers the background sync too. Its engine wa
   seam, the slot before the flight, the delegate's scope of a mirror, one well-known-upstream predicate, NuGet's bounded catalog
   calls and plans, re-admission and the pending cap, the alerts from PostgreSQL gauges (Q-REPO-179 to Q-REPO-195, Q-NUGET-106 to
   Q-NUGET-110, Q-OPS-171 to Q-OPS-174, Q-ARCH-316 to Q-ARCH-323); the storage usage fold that the byte bound reads (F-55)
-- 🟡 Integration tests against the counting test upstreams answering `429` and `SlowDown`; e2e: a mirror pass while clients
-  install, with the clients' requests served first
-- 🟡 The repository wizard asks for the format first (owner, 2026-11-05): a picker of format tiles with a filter field is the
+- 🟢 Integration tests against the counting test upstreams answering `429` and `SlowDown` (`test/integration/mirror`: npm and NuGet
+  discovery, every throttling mode, the byte bound across passes, the release at shutdown, the back-off, the pre-emption across
+  processes, the status, a pass on a `worker` with its own engine); e2e: the set `mirror` (a pass while `npm ci` of 707 packages runs
+  through the same remote on three client-serving replicas at 97 % and 98 % of its time without the pass, the stub's open requests at
+  most 9 against the bound of 12, `dotnet restore` with a running pass, a pass with Valkey stopped, two claimants, installs and
+  restores with the stubs stopped, the Mirror tab's journey) per change, and the set `mirror-long` (the drain of the node of the
+  process that runs a pass of 300 packages) nightly
+- 🟢 The repository wizard asks for the format first (owner, 2026-11-05): a picker of format tiles with a filter field is the
   first step, and the class step offers only the classes the chosen format has, because some features are technically
   impossible for some formats ([R-UI-021](../spec/api-and-ui.md#r-ui-021--repository-creation-wizard-and-edit-form), Q-UI-112)
 

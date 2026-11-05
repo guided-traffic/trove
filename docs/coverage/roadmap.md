@@ -141,7 +141,7 @@ release that closes a milestone is recorded once it is published, in [BETA.md](.
 | [M4](#m4--gitlab-ci-oidc) | GitLab CI OIDC token exchange | 28 MVP | M1 for the work, M3 for the exit | the release that closes it |
 | [M4b](#m4b--vulnerability-scanning) | Vulnerability scanning: advisory mirror from OSV, matching by package identity, findings and the vulnerability report, blocking of malicious versions, npm and NuGet audits from trove's data | 29 MVP | M3 for the exit; the advisory and npm work from M2 (Q-ROAD-8) | the release that closes it |
 | [6a](#phase-6a--task-areas) | Task areas: the roles `api`, `packages` and `worker` as Deployments of their own, path routing at the edge, worker pools by queue, ingress rules per Deployment, the upgrade across the cut; specified, not built | R-HA-064 added; the requirements of its scope table changed | M4b | the release that closes it |
-| [6b](#phase-6b--remote-full-mirror) | Remote full mirror: background passes of a remote repository within its bounds, throttling, clients first, status; specified, not scheduled | 10 MVP | M4b and 6a (the roles and the queue restriction) | not scheduled |
+| [6b](#phase-6b--remote-full-mirror) | Remote full mirror: background passes of a remote repository within its bounds, throttling, clients first, status; built | 10 MVP | M4b and 6a (the roles and the queue restriction) | the release that closes it |
 | [M5](#m5--ha-hardening-and-helm-ga) | HA hardening under drains and failovers, backup and restore with the revocation journal, Helm GA | 64 MVP | M3, M4 and M4b; the backup lane from M1 (Q-ROAD-2) | the release that closes it: the **beta candidate** |
 | [Walkthrough](#owner-walkthrough) | The owner reviews the prototype; objections are worked off | — | M5 | the **beta** release: the release cut from the commits that close phase 8 |
 | Beta phase | Beta feedback worked off, upgrade path from the beta, import tooling, user documentation ([FULL.md](../projektplan/FULL.md) block A) | — | Beta | further `v0` releases; 1.0 only on the owner's explicit decision |
@@ -1078,7 +1078,7 @@ R-NPM-022 (P1, Q-HA-72); a gap-free way back from the cut (R-HA-064).
 
 ## Phase 6b · Remote full mirror
 
-**Status:** in progress (2026-11-05). The process topology is decided (2026-11-04, [phase 6a](#phase-6a--task-areas)): a pass
+**Status:** built (2026-11-05); the evidence of each exit criterion is below. The process topology is decided (2026-11-04, [phase 6a](#phase-6a--task-areas)): a pass
 runs on a `worker`, or on a worker pool that claims the queue `mirror` alone, and the client fills it gives way to run on
 `packages` (R-REPO-055); the contract wave laid only the pieces that bind no topology (Q-ARCH-288).
 
@@ -1126,6 +1126,37 @@ populate rule of R-AUTHZ-008 and R-AUTHZ-026. The catalog entries API-082 to API
   another process that claims the queue; the set once with Valkey stopped.
   Built: the sets `mirror` and `mirror-long` ([developer/e2e.md](../developer/e2e.md#the-mirror-tests)); the drain is the nightly set `mirror-long`.
 - **E6b.7** Every requirement R-REPO-050 to R-REPO-059 has a passing test that names it (Q-ROAD-4).
+
+**Evidence (2026-11-05).**
+
+- E6b.1: `internal/repository` (the members, the read-back, the delegate rule with the scope of Q-REPO-193, the bound with one
+  well-known-upstream predicate), `internal/proxy/upstream` (the rate-limit outcome), `internal/proxy` (slots and pre-emption),
+  `internal/formats` (the lister capability); `make compat-check` green on the closing commit.
+- E6b.2: `TestR_REPO_051_NpmPublicRegistryFeed`, `TestR_REPO_051_NpmPrivateRegistryTakesNamesAndTheHeldPackages`,
+  `TestR_REPO_051_NpmLatestIsPinnedWithinTheVersionBound`, `TestR_REPO_051_NpmVersionBoundsIncrementalAndPatternChange` of
+  `test/integration/mirror`; the replication host records no `Authorization` header.
+- E6b.3: `TestR_REPO_051_NugetCatalogFeed` (the catalog in full and after the cursor, `PackageDelete`, the package served with the
+  stub stopped), `TestR_REPO_051_NugetSearchListingIsTruncatedAndSaysSo`, `TestR_REPO_051_NugetExactIDsReadNoCatalogAndNoSearch`;
+  `dotnet restore` of a mirrored version with the stubs stopped in the e2e set `mirror` (1.2 s).
+- E6b.4: `TestR_REPO_054_*` (seconds, date, `SlowDown` without a hint, the quota header, the long wait ending the job deferred),
+  `TestR_REPO_052_TheByteBoundEndsThePassNearTenMiBAndTheClientsAreUnaffected` and
+  `TestR_REPO_052_TheByteBoundHoldsAcrossPassesWhileTheFoldCountsWhatWasStored` (with the usage fold of F-55),
+  `TestR_REPO_053_AShutdownReleasesThePassAndASecondProcessFetchesEveryTarballOnce`, the back-off of
+  `TestR_REPO_053_AnUpstreamThatFailsEveryDiscoveryRequestBacksOff…`, the fence and lease tests of `test/integration/mirror`,
+  `TestR_REPO_055_AClientFetchThatHasToWaitPreemptsThePassOfAnotherProcess`, the one-process pre-emption of
+  `test/integration/proxy/mirror_test.go`, and `TestR_REPO_055_AWorkerRunsAPassThroughItsOwnEngineAgainstTheNpmUpstream`.
+- E6b.5: `test/integration/mirrorapi` (the permission table with a project administrator, 202 and 409, the refused modes,
+  `mirror_rate_limited`), `TestR_REPO_056_AStatusFollowsARunningPassAndEveryReplicaAnswersTheSame` (the counters and the 20 populate
+  events), the journey `14-mirror.spec.ts` with axe on kind (`TestMirror_R_REPO_059_BrowserJourney`, and 23 of 23 journeys of
+  `TestE1_11Journeys`).
+- E6b.6: the set `mirror` green three times on kind (571 to 712 s): `npm ci` of 707 packages at 97 % and 98 % of its time without
+  the pass (median of three against the best baseline), the stub's open requests at most 9 against `maxConcurrentFetches + n − 1 + B`
+  = 12, `trove_mirror_preempted_total` grew, `dotnet restore` of 174 packages with a running pass, a pass of 40 packages with Valkey
+  stopped and the same status through every `api` replica, 977 samples of two claimants without two unfinished passes of one
+  repository; the set `mirror-long` green once: the drain of the node of the process that ran a pass of 300 packages, the pass ended
+  in the other process with its attempt unchanged, 2 of 300 tarballs served twice with `concurrency` 2.
+- E6b.7: [implemented.txt](implemented.txt) lists R-REPO-050 to R-REPO-059 from the unit, chart and integration reports of the
+  closing commit.
 
 **Work packages** ([architecture.md](../spec/architecture.md) Q-ARCH-288, [developer/mirror.md](../developer/mirror.md)).
 

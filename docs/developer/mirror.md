@@ -1,10 +1,8 @@
 # Mirror mode of remote repositories
 
-Status: phase 6b, in progress; the role-neutral contracts are laid, the tables and the seam to the remote engine are added,
-and work packages A (npm discovery), B (NuGet discovery), C (C1, the remote engine's side: background requests, pre-emption, the
-yield signal, `mirror.Host`; C2, the engine: dispatch, pass, fence, window, waits, bounds, metrics, events) and the API half of D
-(the status and the run, [below](#the-status-and-run-operations-work-package-d)) are built, and so are the integration suite against the
-counting stubs ([below](#the-integration-suite)) and the e2e set ([below](#the-e2e-set)); the Mirror tab of D is built. Specified on
+Status: phase 6b, built (2026-11-05): the contracts, npm and NuGet discovery (A, B), the remote engine's side (C1) and the engine
+(C2), the status and run operations and the Mirror tab (D), the integration suite against the counting stubs
+([below](#the-integration-suite)) and the e2e sets `mirror` and `mirror-long` ([below](#the-e2e-set)). Specified on
 [repositories-and-proxy.md](../spec/repositories-and-proxy.md#mirror-mode) (R-REPO-050 to R-REPO-059) and the format pages'
 sections "Mirror discovery" ([npm](../spec/formats/npm.md#mirror-discovery), [NuGet](../spec/formats/nuget.md#mirror-discovery));
 the cut into work packages is [Q-ARCH-288](../spec/architecture.md#q-arch-288--the-seams-of-the-mirror).
