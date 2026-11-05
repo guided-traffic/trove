@@ -136,6 +136,10 @@ The scrubber runs before a field is cut to its length, so a secret is never spli
 (`clipField`, [requestlog.go](../../internal/observability/requestlog.go)). The span exporter scrubs its attributes through a
 wrapper ([tracing.go](../../internal/observability/tracing.go), `scrubExporter`).
 
+The status of a mirror (`GET /api/v1/repositories/{key}/mirror`, R-REPO-056) shows `errors.lastMessage`, the failure text the engine
+stored in `mirror_state.last_error`; the status adds no scrubbing of its own, so the rule that the text names hosts and never a URL or
+a credential is the engine's ([H-530](#h-530--the-mirror-status-shows-the-engines-failure-text-as-stored)).
+
 The in-memory ring buffer holds the same lines the log handler writes, bounded by record count and bytes, and a record above
 16 KiB is kept as a stub ([ring.go](../../internal/observability/ring.go)). Standard output is not bounded, which is
 [H-70](#h-70--the-standard-output-log-carries-every-record-in-full).
@@ -296,6 +300,22 @@ What makes it real: lockfiles that were not resolved through trove, and audit ga
 Mitigation: install through trove before auditing (an install fetches every public package of the tree), and watch
 `trove_npm_audit_names_withheld_total{reason="not_proxied"}`, whose sustained growth is the revisit condition of
 [Q-NPM-3](../spec/formats/npm.md#q-npm-3--audit-forwarding-on-by-default).
+
+### H-530 · The mirror status shows the engine's failure text as stored
+
+Stage: the status of a remote repository's mirror ([mirror_api.go](../../internal/api/v1/mirror_api.go), `buildMirrorStatus`) and the
+failure text the engine stores for it (`mirror_state.last_error`, at most 1024 characters). Subject: the upstream URLs and credentials
+that a failure's text could carry, and who can read the status: a holder of `repositories:read-config`, a holder of `manage` on the
+repository and an administrator of its project
+([Q-REPO-166](../spec/repositories-and-proxy.md#q-repo-166--errorslastmessage-is-shown-as-the-engine-stored-it)).
+
+- **Dormant until the engine's text includes more than hosts.** R-REPO-056 and R-REPO-024's rule for the upstream test say the message
+  names hosts and never a URL or a credential; the engine builds it from the outcome of a request, not from the upstream's answer.
+  The status shows it unchanged, so a message that broke the rule would reach every reader of the status, and a `manage` holder or a
+  project administrator is not meant to see an upstream's credential or a path that carries one.
+- What makes it real: an engine message built from a part of an upstream's answer, from a request URL, or from an error of the HTTP
+  client that quotes the URL. The engine's tests of its messages are the guard.
+- Not covered by the status: the log and the failure event of the engine carry the same text.
 
 ### H-325 · A moved action tag runs in a job that holds release secrets
 

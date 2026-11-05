@@ -156,6 +156,12 @@ type Options struct {
 	Repositories RepositoryServices
 	// <<< M1 repository
 
+	// >>> M6b mirror
+	// Mirror holds the services of the mirror's status and run operations (mirror_api.go); the zero value reads
+	// and writes through API.Store.
+	Mirror MirrorServices
+	// <<< M6b mirror
+
 	// >>> M2 packages
 	// Packages are the services of the package operations (packages_api.go); a
 	// zero value answers them with 503.

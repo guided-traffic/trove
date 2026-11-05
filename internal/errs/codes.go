@@ -314,6 +314,16 @@ const (
 	CodeMirrorRestricted = "mirror_restricted"
 )
 
+// Codes of the run operation of the mirror (R-REPO-056); each answers 409.
+const (
+	// CodeMirrorPassRunning: a pass of the repository is queued or running; the problem names its job in the extension job.
+	CodeMirrorPassRunning = "mirror_pass_running"
+	// CodeMirrorOff: the remote runs in mode pullThrough, so no pass can be requested.
+	CodeMirrorOff = "mirror_off"
+	// CodeMirrorPaused: the mirror is paused (remote.mirror.paused), so no pass can be requested.
+	CodeMirrorPaused = "mirror_paused"
+)
+
 // <<< M6b mirror
 //
 // >>> M13 bastion
@@ -713,6 +723,9 @@ var registry = []CodeInfo{
 	// >>> M6b mirror
 	{CodeMirrorUnbounded, Invalid, "Mirror unbounded", "A mirror of the format's well-known upstream needs a bound: include patterns that each have a literal prefix, or remote.mirror.maxBytes."},
 	{CodeMirrorRestricted, Invalid, "Mirror restricted", "Only a holder of repositories:write-config sets remote.mode mirror or changes remote.mirror; a project administrator keeps the stored settings, pauses, resumes or turns the mode back to pullThrough."},
+	{CodeMirrorPassRunning, Conflict, "Mirror pass running", "A pass of the repository's mirror is queued or running; the extension job names it. Wait for it to end, or read its job."},
+	{CodeMirrorOff, Conflict, "Mirror off", "The remote repository runs in mode pullThrough, so it has no mirror to run. Set remote.mode to mirror first."},
+	{CodeMirrorPaused, Conflict, "Mirror paused", "The mirror is paused (remote.mirror.paused); resume it with a PATCH of the repository before requesting a pass."},
 	// <<< M6b mirror
 	//
 	// >>> M13 bastion

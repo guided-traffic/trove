@@ -15,6 +15,7 @@ import (
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -344,6 +345,8 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 		PriorityMembers           bool     `json:"priorityMembers"`
 		PinsAndClaims             bool     `json:"pinsAndClaims"`
 		Caps                      bool     `json:"caps"`
+		// Mirror is the catalog fact Entry.Mirror: a remote of the format can run in mode mirror (R-UI-021).
+		Mirror bool `json:"mirror"`
 		// SettingsSchema is the JSON Schema of the format's settings member; null for
 		// a format without settings.
 		SettingsSchema json.RawMessage `json:"settingsSchema"`
@@ -368,6 +371,7 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 		if len(d.SettingsSchema) > 0 {
 			x.SettingsSchema = d.SettingsSchema
 		}
+		x.Mirror = mirrorFact(catalog.Default(), string(d.ID))
 		if d.DefaultUpstreamURL != "" {
 			u := d.DefaultUpstreamURL
 			x.DefaultUpstreamURL = &u
@@ -381,6 +385,13 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 		out.Formats = append(out.Formats, x)
 	}
 	writeJSON(w, r, http.StatusOK, out)
+}
+
+// mirrorFact is the catalog fact Entry.Mirror of a format: whether a remote repository of it can run in mode mirror
+// (R-REPO-050, R-UI-021). A format the catalog does not know cannot.
+func mirrorFact(reg *catalog.Registry, format string) bool {
+	e, ok := reg.Lookup(format)
+	return ok && e.Mirror
 }
 
 // repositoryListSpec declares what the list accepts.

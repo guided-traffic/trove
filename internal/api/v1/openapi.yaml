@@ -3744,6 +3744,7 @@ paths:
                     priorityMembers: false
                     pinsAndClaims: false
                     caps: false
+                    mirror: false
                     settingsSchema: null
                 baseUrl: https://trove.example.com
         "401":
@@ -9935,6 +9936,154 @@ paths:
           $ref: "#/components/responses/Unavailable"
   # <<< M4b vulnerabilities
   #
+  # >>> M6b mirror
+  /api/v1/repositories/{key}/mirror:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        description: The repository key (R-REPO-002).
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+    get:
+      operationId: getRepositoryMirror
+      tags: [repositories]
+      summary: Read the status of a remote repository's mirror
+      description: |
+        The state of the mirror of a remote repository (R-REPO-056): the pass in progress, the last complete pass, the next
+        pass, failures, rate-limit waits and the storage bound. It is read from PostgreSQL, so every replica answers the same.
+        A remote in mode `pullThrough` answers `state: off`; a remote in mode `mirror` that no pass has touched yet answers
+        `scheduled` with nulls. `errors.lastMessage` names hosts, never a URL or a credential. Needs
+        `repositories:read-config`, `manage` on the repository, or administration of its project; a repository that is hidden
+        from the caller answers `404`. A local or virtual repository answers `400 not_applicable`.
+      x-trove-permission:
+        authenticated: true
+      responses:
+        "200":
+          description: The status of the mirror.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MirrorStatus"
+              example:
+                mode: mirror
+                state: running
+                pass:
+                  kind: incremental
+                  method: feed
+                  startedAt: "2026-11-04T10:00:00Z"
+                  namesDiscovered: 120
+                  packagesDone: 80
+                  packagesPending: 40
+                  packagesFailed: 0
+                  itemsStored: 311
+                  bytesStored: 52428800
+                  discoveryDone: false
+                  job:
+                    id: 0193f2c4-7a7e-7b51-9b1e-2f0d6c9e1a10
+                    kind: mirror-pass
+                    state: running
+                    href: /api/v1/system/jobs/0193f2c4-7a7e-7b51-9b1e-2f0d6c9e1a10
+                lastCompletePass:
+                  kind: full
+                  method: feed
+                  startedAt: "2026-11-03T10:00:00Z"
+                  finishedAt: "2026-11-03T13:12:09Z"
+                  outcome: complete
+                  packages: 1200
+                  packagesFailed: 0
+                  itemsStored: 5021
+                  bytesStored: 9126805504
+                  discoveryComplete: true
+                  discoveryNote: null
+                nextPassAt: "2026-11-04T11:00:00Z"
+                lastFullPassAt: "2026-11-03T13:12:09Z"
+                errors: {consecutiveFailures: 0, lastAt: null, lastCode: null, lastMessage: null}
+                rateLimit: {waits: 12, waitSeconds: 340, lastAt: "2026-11-04T10:20:31Z", lastStatus: 429, until: null}
+                bound: {reached: null, at: null, maxBytes: 107374182400, usedBytes: 9200000000}
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/repositories/{key}/mirror/run:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        description: The repository key (R-REPO-002).
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+    post:
+      operationId: runRepositoryMirror
+      tags: [repositories]
+      summary: Request a pass of a remote repository's mirror now
+      description: |
+        Records the request and enqueues a `mirror-pass` job of the repository on the queue `mirror` (R-REPO-056); the next
+        pass starts when a process that claims the queue takes the job, and is full when the body says `full: true`. The
+        body is optional. Answers `202` with the job. `409 mirror_pass_running` names the job (extension `job`) while a pass is
+        queued or running, `409 mirror_off` for a remote in mode `pullThrough`, `409 mirror_paused` for a paused mirror;
+        a local or virtual repository answers `400 not_applicable`. The request writes the audit event
+        `mirror.pass_requested`. Needs `repositories:write-config`, `manage` on the repository, or administration of its
+        project with `manageRepositories`; a repository that is hidden from the caller answers `404`.
+      x-trove-permission:
+        authenticated: true
+      x-trove-idempotency-key: optional
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MirrorRunRequest"
+            example:
+              full: false
+      responses:
+        "202":
+          description: The pass is requested and its job is queued.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobReferenceEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  # <<< M6b mirror
+  #
 components:
   securitySchemes:
     bearerAuth:
@@ -12892,9 +13041,13 @@ components:
           type: boolean
         caps:
           type: boolean
+        # >>> M6b mirror
         mirror:
           type: boolean
-          description: Whether the format's remote adapter can discover the packages of its upstream, so that a remote repository of the format may run in mode `mirror` (R-REPO-050).
+          description: |
+            Whether a remote repository of this format can run in mode `mirror` (R-REPO-050): its remote adapter can discover the
+            packages of its upstream. `false` for a format that cannot; `mode: mirror` on it answers `422 not_applicable`.
+        # <<< M6b mirror
         settingsSchema:
           type: [object, "null"]
           additionalProperties: true
@@ -15573,4 +15726,198 @@ components:
             Byte bound of the repository's stored content beyond which the pass adds nothing; `null` no bound of its own
             (R-REPO-052). A mirror of the format's well-known upstream needs it or include patterns that each have a literal
             prefix (`422 mirror_unbounded`).
+    MirrorMethod:
+      type: string
+      enum: [feed, listing, names]
+      description: How a pass discovers names (R-REPO-051).
+    MirrorBoundKind:
+      type: string
+      enum: [bytes, quota, capacity]
+      description: The bound that stopped a pass's additions (R-REPO-052).
+    MirrorRunRequest:
+      type: object
+      additionalProperties: false
+      description: The optional body of `POST /api/v1/repositories/{key}/mirror/run` (R-REPO-056).
+      properties:
+        full:
+          type: boolean
+          default: false
+          description: Make the requested pass a full one, which discovers every name again instead of reading the feed from its cursor (R-REPO-051).
+    MirrorStatus:
+      type: object
+      description: |
+        The status of the mirror of a remote repository (R-REPO-056), read from PostgreSQL. `pass` and `lastCompletePass` are
+        `null` when there is none.
+      required: [mode, state, pass, lastCompletePass, nextPassAt, lastFullPassAt, errors, rateLimit, bound]
+      properties:
+        mode:
+          type: string
+          enum: [pullThrough, mirror]
+          description: The repository's `remote.mode` (R-REPO-050).
+        state:
+          type: string
+          enum: [off, paused, scheduled, running, waiting, bound_reached, failing]
+          description: |
+            `off` for mode `pullThrough`; `paused` for `remote.mirror.paused`; `failing` after three or more failures in a row;
+            `bound_reached` while the storage bound stops additions (R-REPO-052); `running` while a pass is in progress and
+            its job runs; `waiting` while a pass is in progress and no job runs it, for a long rate-limit wait, a failure or a
+            release, until the next job; `scheduled` otherwise. The first of these that holds is the state, in this order.
+        pass:
+          oneOf:
+            - $ref: "#/components/schemas/MirrorPass"
+            - type: "null"
+        lastCompletePass:
+          oneOf:
+            - $ref: "#/components/schemas/MirrorPassSummary"
+            - type: "null"
+        nextPassAt:
+          type: [string, "null"]
+          format: date-time
+          description: When the next pass is due; `null` when it is due at the next dispatch (at most 60 s) or no pass has been planned.
+        lastFullPassAt:
+          type: [string, "null"]
+          format: date-time
+        errors:
+          $ref: "#/components/schemas/MirrorErrors"
+        rateLimit:
+          $ref: "#/components/schemas/MirrorRateLimit"
+        bound:
+          $ref: "#/components/schemas/MirrorBound"
+    MirrorPass:
+      type: object
+      description: The pass in progress.
+      required: [kind, method, startedAt, namesDiscovered, packagesDone, packagesPending, packagesFailed, itemsStored, bytesStored, discoveryDone, job]
+      properties:
+        kind:
+          type: string
+          enum: [full, incremental]
+        method:
+          description: The discovery method of the pass (R-REPO-051); `null` until the pass has chosen one.
+          oneOf:
+            - $ref: "#/components/schemas/MirrorMethod"
+            - type: "null"
+        startedAt:
+          type: string
+          format: date-time
+        namesDiscovered:
+          type: integer
+          format: int64
+        packagesDone:
+          type: integer
+          format: int64
+        packagesPending:
+          type: integer
+          format: int64
+          description: The names discovered and not yet filled, counted from `mirror_pending`.
+        packagesFailed:
+          type: integer
+          format: int64
+        itemsStored:
+          type: integer
+          format: int64
+        bytesStored:
+          type: integer
+          format: int64
+        discoveryDone:
+          type: boolean
+        job:
+          description: The job that owns the pass, `href` `/api/v1/system/jobs/<id>`; `null` when the job row has been removed.
+          oneOf:
+            - $ref: "#/components/schemas/JobReference"
+            - type: "null"
+    MirrorPassSummary:
+      type: object
+      description: The last complete pass.
+      required: [kind, method, startedAt, finishedAt, outcome, packages, packagesFailed, itemsStored, bytesStored, discoveryComplete, discoveryNote]
+      properties:
+        kind:
+          type: string
+          enum: [full, incremental]
+        method:
+          oneOf:
+            - $ref: "#/components/schemas/MirrorMethod"
+            - type: "null"
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        outcome:
+          type: string
+          enum: [complete, partial, bound_reached, offline, stopped]
+        packages:
+          type: integer
+          format: int64
+        packagesFailed:
+          type: integer
+          format: int64
+        itemsStored:
+          type: integer
+          format: int64
+        bytesStored:
+          type: integer
+          format: int64
+        discoveryComplete:
+          type: boolean
+          description: "`false` when the upstream's discovery could not see everything; `discoveryNote` says why."
+        discoveryNote:
+          type: [string, "null"]
+    MirrorErrors:
+      type: object
+      required: [consecutiveFailures, lastAt, lastCode, lastMessage]
+      properties:
+        consecutiveFailures:
+          type: integer
+        lastAt:
+          type: [string, "null"]
+          format: date-time
+        lastCode:
+          type: [string, "null"]
+        lastMessage:
+          type: [string, "null"]
+          description: The last failure in words, naming hosts and never a URL or a credential.
+    MirrorRateLimit:
+      type: object
+      required: [waits, waitSeconds, lastAt, lastStatus, until]
+      properties:
+        waits:
+          type: integer
+          format: int64
+          description: The rate-limit answers the passes waited for (R-REPO-054).
+        waitSeconds:
+          type: integer
+          format: int64
+        lastAt:
+          type: [string, "null"]
+          format: date-time
+        lastStatus:
+          type: [integer, "null"]
+          description: The HTTP status of the last rate-limit answer.
+        until:
+          type: [string, "null"]
+          format: date-time
+          description: While set and in the future, the mirror waits for the upstream until then.
+    MirrorBound:
+      type: object
+      required: [reached, at, maxBytes, usedBytes]
+      properties:
+        reached:
+          description: |
+            The bound that stopped the pass's additions (R-REPO-052): `bytes` is `remote.mirror.maxBytes`, `quota` a quota of
+            the repository, `capacity` the storage's; `null` when none.
+          oneOf:
+            - $ref: "#/components/schemas/MirrorBoundKind"
+            - type: "null"
+        at:
+          type: [string, "null"]
+          format: date-time
+        maxBytes:
+          type: [integer, "null"]
+          format: int64
+          description: "`remote.mirror.maxBytes` of the configuration; `null` for no bound of its own."
+        usedBytes:
+          type: integer
+          format: int64
+          description: The repository's logical bytes (R-REPO-052), as the usage counters report them.
     # <<< M6b mirror

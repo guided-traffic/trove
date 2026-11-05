@@ -1294,6 +1294,111 @@ func (e ManualHeadingLevel) Valid() bool {
 	}
 }
 
+// Defines values for MirrorBoundKind.
+const (
+	Bytes    MirrorBoundKind = "bytes"
+	Capacity MirrorBoundKind = "capacity"
+	Quota    MirrorBoundKind = "quota"
+)
+
+// Valid indicates whether the value is a known member of the MirrorBoundKind enum.
+func (e MirrorBoundKind) Valid() bool {
+	switch e {
+	case Bytes:
+		return true
+	case Capacity:
+		return true
+	case Quota:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MirrorMethod.
+const (
+	MirrorMethodFeed    MirrorMethod = "feed"
+	MirrorMethodListing MirrorMethod = "listing"
+	MirrorMethodNames   MirrorMethod = "names"
+)
+
+// Valid indicates whether the value is a known member of the MirrorMethod enum.
+func (e MirrorMethod) Valid() bool {
+	switch e {
+	case MirrorMethodFeed:
+		return true
+	case MirrorMethodListing:
+		return true
+	case MirrorMethodNames:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MirrorPassKind.
+const (
+	MirrorPassKindFull        MirrorPassKind = "full"
+	MirrorPassKindIncremental MirrorPassKind = "incremental"
+)
+
+// Valid indicates whether the value is a known member of the MirrorPassKind enum.
+func (e MirrorPassKind) Valid() bool {
+	switch e {
+	case MirrorPassKindFull:
+		return true
+	case MirrorPassKindIncremental:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MirrorPassSummaryKind.
+const (
+	MirrorPassSummaryKindFull        MirrorPassSummaryKind = "full"
+	MirrorPassSummaryKindIncremental MirrorPassSummaryKind = "incremental"
+)
+
+// Valid indicates whether the value is a known member of the MirrorPassSummaryKind enum.
+func (e MirrorPassSummaryKind) Valid() bool {
+	switch e {
+	case MirrorPassSummaryKindFull:
+		return true
+	case MirrorPassSummaryKindIncremental:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MirrorPassSummaryOutcome.
+const (
+	MirrorPassSummaryOutcomeBoundReached MirrorPassSummaryOutcome = "bound_reached"
+	MirrorPassSummaryOutcomeComplete     MirrorPassSummaryOutcome = "complete"
+	MirrorPassSummaryOutcomeOffline      MirrorPassSummaryOutcome = "offline"
+	MirrorPassSummaryOutcomePartial      MirrorPassSummaryOutcome = "partial"
+	MirrorPassSummaryOutcomeStopped      MirrorPassSummaryOutcome = "stopped"
+)
+
+// Valid indicates whether the value is a known member of the MirrorPassSummaryOutcome enum.
+func (e MirrorPassSummaryOutcome) Valid() bool {
+	switch e {
+	case MirrorPassSummaryOutcomeBoundReached:
+		return true
+	case MirrorPassSummaryOutcomeComplete:
+		return true
+	case MirrorPassSummaryOutcomeOffline:
+		return true
+	case MirrorPassSummaryOutcomePartial:
+		return true
+	case MirrorPassSummaryOutcomeStopped:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MirrorSettingsDiscovery.
 const (
 	MirrorSettingsDiscoveryAuto    MirrorSettingsDiscovery = "auto"
@@ -1312,6 +1417,57 @@ func (e MirrorSettingsDiscovery) Valid() bool {
 	case MirrorSettingsDiscoveryListing:
 		return true
 	case MirrorSettingsDiscoveryNames:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MirrorStatusMode.
+const (
+	MirrorStatusModeMirror      MirrorStatusMode = "mirror"
+	MirrorStatusModePullThrough MirrorStatusMode = "pullThrough"
+)
+
+// Valid indicates whether the value is a known member of the MirrorStatusMode enum.
+func (e MirrorStatusMode) Valid() bool {
+	switch e {
+	case MirrorStatusModeMirror:
+		return true
+	case MirrorStatusModePullThrough:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MirrorStatusState.
+const (
+	MirrorStatusStateBoundReached MirrorStatusState = "bound_reached"
+	MirrorStatusStateFailing      MirrorStatusState = "failing"
+	MirrorStatusStateOff          MirrorStatusState = "off"
+	MirrorStatusStatePaused       MirrorStatusState = "paused"
+	MirrorStatusStateRunning      MirrorStatusState = "running"
+	MirrorStatusStateScheduled    MirrorStatusState = "scheduled"
+	MirrorStatusStateWaiting      MirrorStatusState = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the MirrorStatusState enum.
+func (e MirrorStatusState) Valid() bool {
+	switch e {
+	case MirrorStatusStateBoundReached:
+		return true
+	case MirrorStatusStateFailing:
+		return true
+	case MirrorStatusStateOff:
+		return true
+	case MirrorStatusStatePaused:
+		return true
+	case MirrorStatusStateRunning:
+		return true
+	case MirrorStatusStateScheduled:
+		return true
+	case MirrorStatusStateWaiting:
 		return true
 	default:
 		return false
@@ -1707,16 +1863,16 @@ func (e RemoteSettingsIntegrityChecksumPolicy) Valid() bool {
 
 // Defines values for RemoteSettingsMode.
 const (
-	Mirror      RemoteSettingsMode = "mirror"
-	PullThrough RemoteSettingsMode = "pullThrough"
+	RemoteSettingsModeMirror      RemoteSettingsMode = "mirror"
+	RemoteSettingsModePullThrough RemoteSettingsMode = "pullThrough"
 )
 
 // Valid indicates whether the value is a known member of the RemoteSettingsMode enum.
 func (e RemoteSettingsMode) Valid() bool {
 	switch e {
-	case Mirror:
+	case RemoteSettingsModeMirror:
 		return true
-	case PullThrough:
+	case RemoteSettingsModePullThrough:
 		return true
 	default:
 		return false
@@ -4956,7 +5112,8 @@ type FormatDescriptor struct {
 	DisplayName               *string  `json:"displayName,omitempty"`
 	Layout                    string   `json:"layout"`
 
-	// Mirror Whether the format's remote adapter can discover the packages of its upstream, so that a remote repository of the format may run in mode `mirror` (R-REPO-050).
+	// Mirror Whether a remote repository of this format can run in mode `mirror` (R-REPO-050): its remote adapter can discover the
+	// packages of its upstream. `false` for a format that cannot; `mode: mirror` on it answers `422 not_applicable`.
 	Mirror          bool                           `json:"mirror"`
 	Name            string                         `json:"name"`
 	PatternSubject  FormatDescriptorPatternSubject `json:"patternSubject"`
@@ -5334,6 +5491,105 @@ type MembershipChange struct {
 	Remove *[]string `json:"remove,omitempty"`
 }
 
+// MirrorBound defines model for MirrorBound.
+type MirrorBound struct {
+	At *time.Time `json:"at"`
+
+	// MaxBytes `remote.mirror.maxBytes` of the configuration; `null` for no bound of its own.
+	MaxBytes *int64 `json:"maxBytes"`
+
+	// Reached The bound that stopped the pass's additions (R-REPO-052): `bytes` is `remote.mirror.maxBytes`, `quota` a quota of
+	// the repository, `capacity` the storage's; `null` when none.
+	Reached *MirrorBoundKind `json:"reached"`
+
+	// UsedBytes The repository's logical bytes (R-REPO-052), as the usage counters report them.
+	UsedBytes int64 `json:"usedBytes"`
+}
+
+// MirrorBoundKind The bound that stopped a pass's additions (R-REPO-052).
+type MirrorBoundKind string
+
+// MirrorErrors defines model for MirrorErrors.
+type MirrorErrors struct {
+	ConsecutiveFailures int        `json:"consecutiveFailures"`
+	LastAt              *time.Time `json:"lastAt"`
+	LastCode            *string    `json:"lastCode"`
+
+	// LastMessage The last failure in words, naming hosts and never a URL or a credential.
+	LastMessage *string `json:"lastMessage"`
+}
+
+// MirrorMethod How a pass discovers names (R-REPO-051).
+type MirrorMethod string
+
+// MirrorPass The pass in progress.
+type MirrorPass struct {
+	BytesStored   int64 `json:"bytesStored"`
+	DiscoveryDone bool  `json:"discoveryDone"`
+	ItemsStored   int64 `json:"itemsStored"`
+
+	// Job The job that owns the pass, `href` `/api/v1/system/jobs/<id>`; `null` when the job row has been removed.
+	Job  *JobReference  `json:"job"`
+	Kind MirrorPassKind `json:"kind"`
+
+	// Method The discovery method of the pass (R-REPO-051); `null` until the pass has chosen one.
+	Method          *MirrorMethod `json:"method"`
+	NamesDiscovered int64         `json:"namesDiscovered"`
+	PackagesDone    int64         `json:"packagesDone"`
+	PackagesFailed  int64         `json:"packagesFailed"`
+
+	// PackagesPending The names discovered and not yet filled, counted from `mirror_pending`.
+	PackagesPending int64     `json:"packagesPending"`
+	StartedAt       time.Time `json:"startedAt"`
+}
+
+// MirrorPassKind defines model for MirrorPass.Kind.
+type MirrorPassKind string
+
+// MirrorPassSummary The last complete pass.
+type MirrorPassSummary struct {
+	BytesStored int64 `json:"bytesStored"`
+
+	// DiscoveryComplete `false` when the upstream's discovery could not see everything; `discoveryNote` says why.
+	DiscoveryComplete bool                     `json:"discoveryComplete"`
+	DiscoveryNote     *string                  `json:"discoveryNote"`
+	FinishedAt        time.Time                `json:"finishedAt"`
+	ItemsStored       int64                    `json:"itemsStored"`
+	Kind              MirrorPassSummaryKind    `json:"kind"`
+	Method            *MirrorMethod            `json:"method"`
+	Outcome           MirrorPassSummaryOutcome `json:"outcome"`
+	Packages          int64                    `json:"packages"`
+	PackagesFailed    int64                    `json:"packagesFailed"`
+	StartedAt         time.Time                `json:"startedAt"`
+}
+
+// MirrorPassSummaryKind defines model for MirrorPassSummary.Kind.
+type MirrorPassSummaryKind string
+
+// MirrorPassSummaryOutcome defines model for MirrorPassSummary.Outcome.
+type MirrorPassSummaryOutcome string
+
+// MirrorRateLimit defines model for MirrorRateLimit.
+type MirrorRateLimit struct {
+	LastAt *time.Time `json:"lastAt"`
+
+	// LastStatus The HTTP status of the last rate-limit answer.
+	LastStatus *int `json:"lastStatus"`
+
+	// Until While set and in the future, the mirror waits for the upstream until then.
+	Until       *time.Time `json:"until"`
+	WaitSeconds int64      `json:"waitSeconds"`
+
+	// Waits The rate-limit answers the passes waited for (R-REPO-054).
+	Waits int64 `json:"waits"`
+}
+
+// MirrorRunRequest The optional body of `POST /api/v1/repositories/{key}/mirror/run` (R-REPO-056).
+type MirrorRunRequest struct {
+	// Full Make the requested pass a full one, which discovers every name again instead of reading the feed from its cursor (R-REPO-051).
+	Full *bool `json:"full,omitempty"`
+}
+
 // MirrorSettings The settings of the mirror mode (`remote.mirror`, R-REPO-050). Every member is returned, with its default where a
 // request omitted it; they take effect in `mode: mirror` only. A project administrator keeps them as stored and may
 // change `paused` only (Q-REPO-142, `422 mirror_restricted`).
@@ -5367,6 +5623,38 @@ type MirrorSettings struct {
 
 // MirrorSettingsDiscovery How the pass discovers names (R-REPO-051); `auto` tries feed, listing and names in that order.
 type MirrorSettingsDiscovery string
+
+// MirrorStatus The status of the mirror of a remote repository (R-REPO-056), read from PostgreSQL. `pass` and `lastCompletePass` are
+// `null` when there is none.
+type MirrorStatus struct {
+	Bound            MirrorBound        `json:"bound"`
+	Errors           MirrorErrors       `json:"errors"`
+	LastCompletePass *MirrorPassSummary `json:"lastCompletePass"`
+	LastFullPassAt   *time.Time         `json:"lastFullPassAt"`
+
+	// Mode The repository's `remote.mode` (R-REPO-050).
+	Mode MirrorStatusMode `json:"mode"`
+
+	// NextPassAt When the next pass is due; `null` when it is due at the next dispatch (at most 60 s) or no pass has been planned.
+	NextPassAt *time.Time      `json:"nextPassAt"`
+	Pass       *MirrorPass     `json:"pass"`
+	RateLimit  MirrorRateLimit `json:"rateLimit"`
+
+	// State `off` for mode `pullThrough`; `paused` for `remote.mirror.paused`; `failing` after three or more failures in a row;
+	// `bound_reached` while the storage bound stops additions (R-REPO-052); `running` while a pass is in progress and
+	// its job runs; `waiting` while a pass is in progress and no job runs it, for a long rate-limit wait, a failure or a
+	// release, until the next job; `scheduled` otherwise. The first of these that holds is the state, in this order.
+	State MirrorStatusState `json:"state"`
+}
+
+// MirrorStatusMode The repository's `remote.mode` (R-REPO-050).
+type MirrorStatusMode string
+
+// MirrorStatusState `off` for mode `pullThrough`; `paused` for `remote.mirror.paused`; `failing` after three or more failures in a row;
+// `bound_reached` while the storage bound stops additions (R-REPO-052); `running` while a pass is in progress and
+// its job runs; `waiting` while a pass is in progress and no job runs it, for a long rate-limit wait, a failure or a
+// release, until the next job; `scheduled` otherwise. The first of these that holds is the state, in this order.
+type MirrorStatusState string
 
 // NewBastion defines model for NewBastion.
 type NewBastion struct {
@@ -8156,6 +8444,12 @@ type ReplaceRepositoryParams struct {
 	IfMatch IfMatch `json:"If-Match"`
 }
 
+// RunRepositoryMirrorParams defines parameters for RunRepositoryMirror.
+type RunRepositoryMirrorParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
 // RescanRepositoryVulnerabilitiesParams defines parameters for RescanRepositoryVulnerabilities.
 type RescanRepositoryVulnerabilitiesParams struct {
 	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
@@ -8759,6 +9053,9 @@ type UpdateRepositoryApplicationMergePatchPlusJSONRequestBody UpdateRepositoryAp
 // ReplaceRepositoryJSONRequestBody defines body for ReplaceRepository for application/json ContentType.
 type ReplaceRepositoryJSONRequestBody = Repository
 
+// RunRepositoryMirrorJSONRequestBody defines body for RunRepositoryMirror for application/json ContentType.
+type RunRepositoryMirrorJSONRequestBody = MirrorRunRequest
+
 // InvalidateRepositoryCacheJSONRequestBody defines body for InvalidateRepositoryCache for application/json ContentType.
 type InvalidateRepositoryCacheJSONRequestBody = CacheInvalidateRequest
 
@@ -9248,6 +9545,12 @@ type ServerInterface interface {
 	// ReplaceRepository Replace a repository configuration
 	// (PUT /api/v1/repositories/{key})
 	ReplaceRepository(w http.ResponseWriter, r *http.Request, key string, params ReplaceRepositoryParams)
+	// GetRepositoryMirror Read the status of a remote repository's mirror
+	// (GET /api/v1/repositories/{key}/mirror)
+	GetRepositoryMirror(w http.ResponseWriter, r *http.Request, key string)
+	// RunRepositoryMirror Request a pass of a remote repository's mirror now
+	// (POST /api/v1/repositories/{key}/mirror/run)
+	RunRepositoryMirror(w http.ResponseWriter, r *http.Request, key string, params RunRepositoryMirrorParams)
 	// TestRepositoryUpstream Test the saved upstream of a remote repository
 	// (POST /api/v1/repositories/{key}/upstream-test)
 	TestRepositoryUpstream(w http.ResponseWriter, r *http.Request, key string)
@@ -14424,6 +14727,82 @@ func (siw *ServerInterfaceWrapper) ReplaceRepository(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// GetRepositoryMirror operation middleware
+func (siw *ServerInterfaceWrapper) GetRepositoryMirror(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "key" -------------
+	var key string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRepositoryMirror(w, r, key)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RunRepositoryMirror operation middleware
+func (siw *ServerInterfaceWrapper) RunRepositoryMirror(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "key" -------------
+	var key string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RunRepositoryMirrorParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RunRepositoryMirror(w, r, key, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // TestRepositoryUpstream operation middleware
 func (siw *ServerInterfaceWrapper) TestRepositoryUpstream(w http.ResponseWriter, r *http.Request) {
 
@@ -18398,6 +18777,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/versions/{version}/vulnerabilities", wrapper.GetPackageVersionVulnerabilities)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/vulnerabilities", wrapper.GetPackageVulnerabilities)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{key}/vulnerabilities/rescan", wrapper.RescanRepositoryVulnerabilities)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{key}/mirror", wrapper.GetRepositoryMirror)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{key}/mirror/run", wrapper.RunRepositoryMirror)
 
 	return m
 }

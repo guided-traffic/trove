@@ -3263,8 +3263,8 @@ Priority: **MVP** · Covers: API-084, API-085
 
 | Method and path | Purpose | Response | Permission |
 |---|---|---|---|
-| `GET /api/v1/repositories/{key}/mirror` | The mirror's status | 200 with the document below | as the full configuration read (R-REPO-010): `repositories:read-config`, `manage` on the repository, or an administrator of its project |
-| `POST /api/v1/repositories/{key}/mirror/run` | Request a pass now; body `{"full": false}` (optional) | 202 with the job reference of R-API-015 | as an update (R-REPO-011): `repositories:write-config`, `manage`, or an administrator of its project with `manageRepositories` |
+| `GET /api/v1/repositories/{key}/mirror` | The mirror's status | 200 with the document below | as the full configuration read (R-REPO-010): `repositories:read-config`, `manage` on the repository, or an administrator of its project; 400 `not_applicable` for a local or virtual repository (Q-API-199) |
+| `POST /api/v1/repositories/{key}/mirror/run` | Request a pass now; body `{"full": false}` (optional) | 202 with the job reference of R-API-015 | as an update (R-REPO-011): `repositories:write-config`, `manage`, or an administrator of its project with `manageRepositories`; a project administrator holds `manage` on its project's repositories, so the switch does not refuse a run (Q-API-199) |
 
 ```json
 {
@@ -3274,7 +3274,7 @@ Priority: **MVP** · Covers: API-084, API-085
     "kind": "incremental", "method": "feed", "startedAt": "2026-11-04T10:00:00Z",
     "namesDiscovered": 120, "packagesDone": 80, "packagesPending": 40, "packagesFailed": 0,
     "itemsStored": 311, "bytesStored": 52428800, "discoveryDone": false,
-    "job": {"id": "0193f2c4-…", "href": "/api/v1/system/jobs/0193f2c4-…"}
+    "job": {"id": "0193f2c4-…", "kind": "mirror-pass", "state": "running", "href": "/api/v1/system/jobs/0193f2c4-…"}
   },
   "lastCompletePass": {
     "kind": "full", "method": "feed", "startedAt": "2026-11-03T10:00:00Z", "finishedAt": "2026-11-03T13:12:09Z",
@@ -3289,16 +3289,21 @@ Priority: **MVP** · Covers: API-084, API-085
 }
 ```
 
-- `state` is one of `off` (mode `pullThrough`), `paused`, `scheduled` (no pass in progress), `running`, `waiting` (a pass in
-  progress whose job ended for a long rate-limit wait or a failure and waits for its next job), `bound_reached` and
-  `failing` (three or more failures in a row). The status is read from PostgreSQL by whichever replica answers.
+- `state` is one of `off` (mode `pullThrough`), `paused`, `scheduled` (no pass in progress), `running` (a pass in progress whose
+  job is running), `waiting` (a pass in progress whose job ended for a long rate-limit wait or a failure, or is queued again after
+  a release, and waits for its next run), `bound_reached` and `failing` (three or more failures in a row); the first that holds,
+  in the order `off`, `paused`, `failing`, `bound_reached`, `running`, `waiting`, `scheduled` (Q-API-196). The status is read from
+  PostgreSQL by whichever replica answers; a remote in mode `mirror` that has no `mirror_state` row yet answers `scheduled` with
+  nulls (Q-REPO-165). `pass.job` is a job reference of R-API-015, `null` once the job row is removed; `lastCompletePass` is the
+  stored `last_pass` document and `null` when there is none or it cannot be read (Q-API-197).
 - `lastCompletePass.outcome` is `complete`, `partial`, `bound_reached`, `offline` or `stopped`; `pass` and
   `lastCompletePass` are `null` when there is none. `errors.lastMessage` names hosts, never a URL or a credential
   (R-REPO-024's rule for the upstream test).
 - The run operation records the request and enqueues the pass; a running or queued pass answers 409
   `mirror_pass_running` naming its job; a remote in mode `pullThrough` answers 409 `mirror_off`, a paused one 409
   `mirror_paused`; a local or virtual repository 400 `not_applicable`. `{"full": true}` makes the requested pass full. The
-  request writes `mirror.pass_requested`.
+  request writes `mirror.pass_requested`. It writes only `pass_requested_at`, `pass_requested_by` and `pass_requested_full` of
+  `mirror_state`, in the transaction that enqueues the job and writes the event (Q-API-198, Q-REPO-163); a refusal writes nothing.
 - **Pause and resume** are the member `remote.mirror.paused`, changed with the repository's `PATCH` and its `If-Match`
   (R-REPO-011, Q-REPO-141); there is no separate operation.
 - The passes are jobs: `GET /api/v1/system/jobs?kind=mirror-pass` lists them (R-OPS-019).
@@ -5727,6 +5732,89 @@ development agent would revisit (a) if the stored-artifact check proves to be a 
 **Applied in the spec:** R-REPO-055, R-REPO-057, [operations-and-observability.md](operations-and-observability.md) R-OPS-011. Code:
 [internal/formathost/mirror_host.go](../../internal/formathost/mirror_host.go), [internal/proxy/fill.go](../../internal/proxy/fill.go),
 [internal/outbound/roundtripper.go](../../internal/outbound/roundtripper.go).
+
+### Q-REPO-163 · A request for a pass that the engine has not taken keeps a full flag already asked for
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the run writes `pass_requested_at`, `pass_requested_by` and `pass_requested_full` (R-REPO-053); the engine takes the request when
+a pass starts. A second request can arrive before that, for example after the first one's job ended without a pass starting.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The new request overwrites the time and the caller; the flag is the new one or the old one while the old request is untaken (chosen) | `pass_requested_full = new OR (untaken AND old)` in `MirrorRequestPass` | A plain "run now" cannot take back the full pass that someone else asked for a minute ago | An operator cannot lower a request to plain; it ends when the engine takes it |
+| (b) The new request overwrites all three | Last writer wins | Simple | A plain request loses a full one |
+| (c) A queue of requests | One row each | Exact | A table for a flag; the pass starts once either way |
+
+**Choice:** (a). The engine takes a request by clearing `pass_requested_at` (and the other two); a request that finds it clear starts over.
+The caller recorded is the last requester.
+
+**Rationale:** a full pass is the stronger request and costs more upstream traffic only once; losing it silently would be the
+worse error. The development agent would revisit (a) if operators need to withdraw a request.
+
+**Applied in the spec:** R-REPO-056 (the run), [mirror.md](../developer/mirror.md). Code: [mirror_api.sql](../../internal/meta/postgres/queries/mirror_api.sql).
+
+### Q-REPO-164 · The run and the status read the repository from PostgreSQL, so a PATCH is seen at once on every replica
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the refusals of the run (`mirror_off`, `mirror_paused`, `not_applicable`) depend on `remote.mode` and `remote.mirror.paused`.
+A replica's snapshot of the repositories follows a change through the change log within the epoch poll (R-ARCH-018).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Read the document from PostgreSQL with `repository.Service.Get` in each request (chosen) | One read per request | A resume followed by a run, or a pause followed by a run, answers as the PATCH left it, on whichever replica receives it | One more read per request of two low-volume operations |
+| (b) Read the replica's snapshot | No read | Cheaper | A run right after a resume on another replica can answer 409 `mirror_paused` for one poll |
+
+**Choice:** (a), as `GET /api/v1/repositories/{key}` does.
+
+**Rationale:** the acceptance criterion "a PATCH with `paused: true` makes the status `paused`" is about the operator's next request, not
+about the next poll. The development agent would revisit (b) if either operation became hot, which a pass's cadence makes unlikely.
+
+**Applied in the spec:** R-REPO-056. Code: `serviceTargets.Target`.
+
+### Q-REPO-165 · The status of a mirror that no pass has touched is `scheduled` with nulls, and a read creates no row
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the dispatch creates the `mirror_state` row within a minute of the mode being set (R-REPO-053); until then, and for a remote in
+mode `pullThrough` that was never a mirror, there is none.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Answer from the configuration and the usage with the members of the row at their zero: `scheduled` (or `off`, `paused`), no pass, no last pass, no times, zero counters (chosen) | `has_state` of `MirrorStatusRead`, which joins from the repository, not from the row | The wizard shows a mirror that was just switched on without an error; a read changes nothing, on a replica that may be a reader | The document does not say whether the dispatch has seen the repository |
+| (b) Insert the row on the first read | Row exists | — | A read that writes; a race with the dispatch's insert |
+| (c) 404 until the row exists | Honest | — | The UI would treat a new mirror as missing for up to a minute |
+
+**Choice:** (a). The same read, for a mirror whose mode was turned back to `pullThrough`, answers `off` with what the row holds
+(Q-REPO-148).
+
+**Rationale:** the status describes the mirror the operator configured, and a minute of dispatch latency is not an error. The
+development agent would revisit it if the UI needs to tell "not yet seen by the dispatch"; that would be a new member.
+
+**Applied in the spec:** R-REPO-056. Code: `MirrorStatusRead`, `buildMirrorStatus`.
+
+### Q-REPO-166 · `errors.lastMessage` is shown as the engine stored it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-056 says the message names hosts, never a URL or a credential (R-REPO-024's rule for the upstream test). The engine stores
+`last_error` (at most 1024 characters, [migration 00040](../../internal/meta/postgres/migrations/00040_mirror.sql)) and writes the
+same text into the log and the event of the failure.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Show the stored text unchanged: the engine is the one place that builds the message and keeps it free of URLs and credentials (chosen) | `last_error` as it is | One rule in one place, testable at its source; the API adds no second, different notion of "a URL" | The API relies on the engine; a message that breaks the rule reaches every reader of the status |
+| (b) The API removes what looks like a URL | A filter on read | Defence in depth | A heuristic that changes messages the operator needs (`registry.example.org:8443`), and that the engine's own log and event do not have |
+| (c) Show only `lastCode` | No free text | Safe by construction | The operator loses the host and the status that the message names |
+
+**Choice:** (a). The engine's tests are the guard; the gap is recorded as
+[H-530](../security/data-and-secret-flow.md#h-530--the-mirror-status-shows-the-engines-failure-text-as-stored).
+
+**Rationale:** the rule of R-REPO-024 is kept where the text is made. The development agent would revisit (b) if the engine's text ever
+includes a part of an upstream's answer.
+
+**Applied in the spec:** R-REPO-056.
 
 ## What this does not cover
 

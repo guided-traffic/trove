@@ -1,8 +1,9 @@
 # Mirror mode of remote repositories
 
 Status: phase 6b, in progress; the role-neutral contracts are laid, the tables and the seam to the remote engine are added,
-work packages A (npm discovery) and B (NuGet discovery) and the remote engine's side of C (C1: background requests, pre-emption,
-the yield signal, `mirror.Host`) are built, the engine (C2) and D are in progress. Specified on
+work packages A (npm discovery) and B (NuGet discovery), the remote engine's side of C (C1: background requests, pre-emption,
+the yield signal, `mirror.Host`) and the API half of D (the status and the run, [below](#the-status-and-run-operations-work-package-d))
+are built; the engine (C2) and the Mirror tab of D are in progress. Specified on
 [repositories-and-proxy.md](../spec/repositories-and-proxy.md#mirror-mode) (R-REPO-050 to R-REPO-059) and the format pages'
 sections "Mirror discovery" ([npm](../spec/formats/npm.md#mirror-discovery), [NuGet](../spec/formats/nuget.md#mirror-discovery));
 the cut into work packages is [Q-ARCH-288](../spec/architecture.md#q-arch-288--the-seams-of-the-mirror).
@@ -26,7 +27,7 @@ tables, the operations, the audit types and the signal area are specified and ar
 | The typed rate-limit outcome `RateLimit`, `RateLimitOf`, `RateLimitError` (returned by the background requests of the engine) | [internal/proxy/upstream/ratelimit.go](../../internal/proxy/upstream/ratelimit.go) | C |
 | The fetch priority `proxy.Priority`, `Request.Priority`, `BackgroundShare`, the background slots, pre-emption and the yield (built by C1, see [The remote engine's side](#the-remote-engines-side-c1)) | [internal/proxy/types.go](../../internal/proxy/types.go), [slots.go](../../internal/proxy/slots.go), [fetch.go](../../internal/proxy/fetch.go) (`acquireSlot`) | C |
 | `remote.mode`, `remote.mirror` with defaults, validation, the bound rule, the delegate rule, the read-back of an earlier stored section; the codes `mirror_unbounded`, `mirror_restricted` | [internal/repository/remote.go](../../internal/repository/remote.go), [validate_mirror.go](../../internal/repository/validate_mirror.go), [delegated.go](../../internal/repository/delegated.go), [internal/errs/codes.go](../../internal/errs/codes.go) | shared; C and D read, nobody changes without the spec |
-| OpenAPI: `RemoteSettings.mode`, `RemoteSettings.mirror`, `MirrorSettings` | [api/openapi.yaml](../../api/openapi.yaml), the generated `web/src/app/api/generated/schema.d.ts` | D |
+| OpenAPI: `RemoteSettings.mode`, `RemoteSettings.mirror`, `MirrorSettings`, and from the API half of D the operations `getRepositoryMirror` and `runRepositoryMirror`, the schemas `MirrorStatus`, `MirrorPass`, `MirrorPassSummary`, `MirrorErrors`, `MirrorRateLimit`, `MirrorBound`, `MirrorMethod`, `MirrorBoundKind`, `MirrorRunRequest` and `FormatDescriptor.mirror` | [api/openapi.yaml](../../api/openapi.yaml), the generated `web/src/app/api/generated/schema.d.ts` | D |
 | The names `mirror.KindPass`, `mirror.KindDispatch`, `mirror.QueueMirror`, `mirror.PassKey`, `mirror.PassArgs`; the kinds registered with a handler that does nothing; the queue's slots `jobs.workers.mirror: 2` | [internal/mirror/mirror.go](../../internal/mirror/mirror.go), [internal/app/wire_mirror.go](../../internal/app/wire_mirror.go), [internal/config/jobs.go](../../internal/config/jobs.go) | C (D reads the names) |
 
 ## The work packages
@@ -79,6 +80,56 @@ The counting stub ([e2e.md](e2e.md#the-counting-npm-test-upstream), [test/npmstu
 `Host` header), logs each request with the scheme of its credential (`Replications`, `GET /-/stub/replication`), and takes
 changes (`Change`, `POST /-/stub/change`, `Publish`); `throttle.go` holds the throttling modes of R-REPO-059 on its own (one
 `Throttle` in `Mode`, one `throttleState` in the `Server`, one gate call), so that `test/nugetstub` can take its shape over.
+
+## The status and run operations (work package D)
+
+`GET /api/v1/repositories/{key}/mirror` (`getRepositoryMirror`) and `POST /api/v1/repositories/{key}/mirror/run`
+(`runRepositoryMirror`), R-REPO-056. The decisions are Q-API-196 to Q-API-200 and Q-REPO-163 to Q-REPO-166.
+
+| File | Responsibility |
+|---|---|
+| [internal/api/v1/mirror_api.go](../../internal/api/v1/mirror_api.go) | the two handlers; the permission decisions (`requireMirrorReader`, `requireMirrorWriter`, `hiddenOr`); the state derivation (`mirrorStateOf`); the status document (`buildMirrorStatus`, `decodeLastPass`); the enqueue and the request in one transaction (`enqueueMirrorPass`); `MirrorServices`, `MirrorState` and `MirrorRepositories`, the seams that the handler tests replace, with the PostgreSQL implementation `pgMirrorState` |
+| [internal/meta/postgres/queries/mirror_api.sql](../../internal/meta/postgres/queries/mirror_api.sql) | `MirrorStatusRead` (one row from the repository outwards: the state row if any, the owning job, the count of `mirror_pending`, `repository_usage.logical_bytes`) and `MirrorRequestPass` (the only write) |
+| [internal/audit/events_mirror_api.go](../../internal/audit/events_mirror_api.go) | the type `mirror.pass_requested`; C registers the other `mirror.*` types in its own file |
+| [internal/errs/codes.go](../../internal/errs/codes.go) | `mirror_pass_running`, `mirror_off`, `mirror_paused` (all 409) |
+| [internal/api/v1/repositories_api.go](../../internal/api/v1/repositories_api.go) | `ListFormats` serves `mirror` from the catalog fact (`mirrorFact`) |
+
+The run, in order: the permission (write-config, a project administrator with the switch, or `manage`), the body, the repository from
+PostgreSQL (`not_applicable`, `mirror_off`, `mirror_paused` before anything is written), then one transaction that enqueues
+`mirror.KindPass` under `mirror.PassKey(id)` (an existing queued, running or cancelling job answers 409 `mirror_pass_running` and nothing is
+written), upserts the request and records `mirror.pass_requested`. The status never writes.
+
+**What C must keep to** (the API depends on it; the integration tests of `test/integration/mirrorapi` seed rows in this shape):
+
+- The API writes only `pass_requested_at`, `pass_requested_by` and `pass_requested_full` of `mirror_state`, creating a row with the
+  defaults when the dispatch has not. It does not touch `updated_at`. A request not yet taken keeps `pass_requested_full` true when a
+  later plain request arrives (Q-REPO-163), so the engine **takes a request by clearing `pass_requested_at`, `pass_requested_by` and
+  `pass_requested_full` together**; a request that finds `pass_requested_at` clear starts over.
+- `last_pass` is a JSON object with exactly the members of the schema `MirrorPassSummary`: `kind` (`full`, `incremental`), `method`
+  (`feed`, `listing`, `names`, or `null`), `startedAt` and `finishedAt` (RFC 3339), `outcome` (`complete`, `partial`, `bound_reached`,
+  `offline`, `stopped`), `packages`, `packagesFailed`, `itemsStored`, `bytesStored`, `discoveryComplete` and `discoveryNote` (`null` or text).
+  The status decodes it with `encoding/json` into the generated type and shows `null` for a document that is missing, `null`, not an
+  object or has no `outcome` (Q-API-197); pin the shape in the engine's tests.
+- The pass's job is the one in `pass_job_id`; the status shows its `kind` and `state` from the job table. `running` is the state `running`
+  or `cancelling`; a pass in progress whose job is any other state, or gone, is `waiting` (Q-API-196).
+- `bound_reached` is `bytes`, `quota` or `capacity` (the check of the table), cleared by the engine when the bound no longer holds; the status
+  shows `bound_reached` for as long as the column is set. `consecutive_failures >= 3` shows `failing`, ahead of the bound and the pass.
+- `last_error` is shown unchanged as `errors.lastMessage`: it must name hosts and never a URL or a credential (Q-REPO-166, H-530).
+
+**Tests.** Handler tests with narrowed callers and every error path:
+[internal/api/v1/mirror_api_test.go](../../internal/api/v1/mirror_api_test.go) (the decider `mirrorDecider` answers as the engine does: a refused
+`manage` is 403, only a refused `read` is hidden) and
+[mirror_format_test.go](../../internal/api/v1/mirror_format_test.go). Integration, against the stack:
+[test/integration/mirrorapi](../../test/integration/mirrorapi): the permission table of both operations with the real decision point and a
+project administrator, 202 then 409 with the same job, the three refused modes, the status of a seeded row in each state, the request columns
+and the audit event, the pause through `PATCH` with `If-Match`.
+
+Until the npm and NuGet listers exist, `mode: mirror` is refused for every format (R-REPO-050). The integration suite therefore registers a
+catalog entry of its own before the replica starts, a copy of npm's with the fact `Mirror` set (`registerMirrorFormat` in
+[env_test.go](../../test/integration/mirrorapi/env_test.go)); its repositories are created, patched and read through the management API.
+The entry is a catalog entry only, not a registered format, so the answers of the repository operations about it do not satisfy the
+document's enum of format names, and the suite sends them with `rawDo`, which does not validate. **When the npm lister lands:** set
+`mirrorFormat` to `"npm"`, delete `registerMirrorFormat` and `rawDo` (use `do`), and the suite runs against npm.
 
 ## Tests each package writes
 

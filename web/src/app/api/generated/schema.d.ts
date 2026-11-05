@@ -3620,6 +3620,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/repositories/{key}/mirror": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The repository key (R-REPO-002). */
+                key: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Read the status of a remote repository's mirror
+         * @description The state of the mirror of a remote repository (R-REPO-056): the pass in progress, the last complete pass, the next
+         *     pass, failures, rate-limit waits and the storage bound. It is read from PostgreSQL, so every replica answers the same.
+         *     A remote in mode `pullThrough` answers `state: off`; a remote in mode `mirror` that no pass has touched yet answers
+         *     `scheduled` with nulls. `errors.lastMessage` names hosts, never a URL or a credential. Needs
+         *     `repositories:read-config`, `manage` on the repository, or administration of its project; a repository that is hidden
+         *     from the caller answers `404`. A local or virtual repository answers `400 not_applicable`.
+         */
+        get: operations["getRepositoryMirror"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/repositories/{key}/mirror/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The repository key (R-REPO-002). */
+                key: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request a pass of a remote repository's mirror now
+         * @description Records the request and enqueues a `mirror-pass` job of the repository on the queue `mirror` (R-REPO-056); the next
+         *     pass starts when a process that claims the queue takes the job, and is full when the body says `full: true`. The
+         *     body is optional. Answers `202` with the job. `409 mirror_pass_running` names the job (extension `job`) while a pass is
+         *     queued or running, `409 mirror_off` for a remote in mode `pullThrough`, `409 mirror_paused` for a paused mirror;
+         *     a local or virtual repository answers `400 not_applicable`. The request writes the audit event
+         *     `mirror.pass_requested`. Needs `repositories:write-config`, `manage` on the repository, or administration of its
+         *     project with `manageRepositories`; a repository that is hidden from the caller answers `404`.
+         */
+        post: operations["runRepositoryMirror"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -5538,7 +5595,10 @@ export interface components {
             priorityMembers: boolean;
             pinsAndClaims: boolean;
             caps: boolean;
-            /** @description Whether the format's remote adapter can discover the packages of its upstream, so that a remote repository of the format may run in mode `mirror` (R-REPO-050). */
+            /**
+             * @description Whether a remote repository of this format can run in mode `mirror` (R-REPO-050): its remote adapter can discover the
+             *     packages of its upstream. `false` for a format that cannot; `mode: mirror` on it answers `422 not_applicable`.
+             */
             mirror: boolean;
             /**
              * @description The JSON Schema 2020-12 of the format's settings member of a repository document (the member named
@@ -7307,6 +7367,150 @@ export interface components {
              *     prefix (`422 mirror_unbounded`).
              */
             maxBytes?: number | null;
+        };
+        /**
+         * @description How a pass discovers names (R-REPO-051).
+         * @enum {string}
+         */
+        MirrorMethod: "feed" | "listing" | "names";
+        /**
+         * @description The bound that stopped a pass's additions (R-REPO-052).
+         * @enum {string}
+         */
+        MirrorBoundKind: "bytes" | "quota" | "capacity";
+        /** @description The optional body of `POST /api/v1/repositories/{key}/mirror/run` (R-REPO-056). */
+        MirrorRunRequest: {
+            /**
+             * @description Make the requested pass a full one, which discovers every name again instead of reading the feed from its cursor (R-REPO-051).
+             * @default false
+             */
+            full: boolean;
+        };
+        /**
+         * @description The status of the mirror of a remote repository (R-REPO-056), read from PostgreSQL. `pass` and `lastCompletePass` are
+         *     `null` when there is none.
+         */
+        MirrorStatus: {
+            /**
+             * @description The repository's `remote.mode` (R-REPO-050).
+             * @enum {string}
+             */
+            mode: "pullThrough" | "mirror";
+            /**
+             * @description `off` for mode `pullThrough`; `paused` for `remote.mirror.paused`; `failing` after three or more failures in a row;
+             *     `bound_reached` while the storage bound stops additions (R-REPO-052); `running` while a pass is in progress and
+             *     its job runs; `waiting` while a pass is in progress and no job runs it, for a long rate-limit wait, a failure or a
+             *     release, until the next job; `scheduled` otherwise. The first of these that holds is the state, in this order.
+             * @enum {string}
+             */
+            state: "off" | "paused" | "scheduled" | "running" | "waiting" | "bound_reached" | "failing";
+            pass: components["schemas"]["MirrorPass"] | null;
+            lastCompletePass: components["schemas"]["MirrorPassSummary"] | null;
+            /**
+             * Format: date-time
+             * @description When the next pass is due; `null` when it is due at the next dispatch (at most 60 s) or no pass has been planned.
+             */
+            nextPassAt: string | null;
+            /** Format: date-time */
+            lastFullPassAt: string | null;
+            errors: components["schemas"]["MirrorErrors"];
+            rateLimit: components["schemas"]["MirrorRateLimit"];
+            bound: components["schemas"]["MirrorBound"];
+        };
+        /** @description The pass in progress. */
+        MirrorPass: {
+            /** @enum {string} */
+            kind: "full" | "incremental";
+            /** @description The discovery method of the pass (R-REPO-051); `null` until the pass has chosen one. */
+            method: components["schemas"]["MirrorMethod"] | null;
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: int64 */
+            namesDiscovered: number;
+            /** Format: int64 */
+            packagesDone: number;
+            /**
+             * Format: int64
+             * @description The names discovered and not yet filled, counted from `mirror_pending`.
+             */
+            packagesPending: number;
+            /** Format: int64 */
+            packagesFailed: number;
+            /** Format: int64 */
+            itemsStored: number;
+            /** Format: int64 */
+            bytesStored: number;
+            discoveryDone: boolean;
+            /** @description The job that owns the pass, `href` `/api/v1/system/jobs/<id>`; `null` when the job row has been removed. */
+            job: components["schemas"]["JobReference"] | null;
+        };
+        /** @description The last complete pass. */
+        MirrorPassSummary: {
+            /** @enum {string} */
+            kind: "full" | "incremental";
+            method: components["schemas"]["MirrorMethod"] | null;
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            finishedAt: string;
+            /** @enum {string} */
+            outcome: "complete" | "partial" | "bound_reached" | "offline" | "stopped";
+            /** Format: int64 */
+            packages: number;
+            /** Format: int64 */
+            packagesFailed: number;
+            /** Format: int64 */
+            itemsStored: number;
+            /** Format: int64 */
+            bytesStored: number;
+            /** @description `false` when the upstream's discovery could not see everything; `discoveryNote` says why. */
+            discoveryComplete: boolean;
+            discoveryNote: string | null;
+        };
+        MirrorErrors: {
+            consecutiveFailures: number;
+            /** Format: date-time */
+            lastAt: string | null;
+            lastCode: string | null;
+            /** @description The last failure in words, naming hosts and never a URL or a credential. */
+            lastMessage: string | null;
+        };
+        MirrorRateLimit: {
+            /**
+             * Format: int64
+             * @description The rate-limit answers the passes waited for (R-REPO-054).
+             */
+            waits: number;
+            /** Format: int64 */
+            waitSeconds: number;
+            /** Format: date-time */
+            lastAt: string | null;
+            /** @description The HTTP status of the last rate-limit answer. */
+            lastStatus: number | null;
+            /**
+             * Format: date-time
+             * @description While set and in the future, the mirror waits for the upstream until then.
+             */
+            until: string | null;
+        };
+        MirrorBound: {
+            /**
+             * @description The bound that stopped the pass's additions (R-REPO-052): `bytes` is `remote.mirror.maxBytes`, `quota` a quota of
+             *     the repository, `capacity` the storage's; `null` when none.
+             */
+            reached: components["schemas"]["MirrorBoundKind"] | null;
+            /** Format: date-time */
+            at: string | null;
+            /**
+             * Format: int64
+             * @description `remote.mirror.maxBytes` of the configuration; `null` for no bound of its own.
+             */
+            maxBytes: number | null;
+            /**
+             * Format: int64
+             * @description The repository's logical bytes (R-REPO-052), as the usage counters report them.
+             */
+            usedBytes: number;
         };
     };
     responses: {
@@ -10407,6 +10611,7 @@ export interface operations {
                      *           "priorityMembers": false,
                      *           "pinsAndClaims": false,
                      *           "caps": false,
+                     *           "mirror": false,
                      *           "settingsSchema": null
                      *         }
                      *       ],
@@ -15398,6 +15603,141 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getRepositoryMirror: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The repository key (R-REPO-002). */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The status of the mirror. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "mode": "mirror",
+                     *       "state": "running",
+                     *       "pass": {
+                     *         "kind": "incremental",
+                     *         "method": "feed",
+                     *         "startedAt": "2026-11-04T10:00:00Z",
+                     *         "namesDiscovered": 120,
+                     *         "packagesDone": 80,
+                     *         "packagesPending": 40,
+                     *         "packagesFailed": 0,
+                     *         "itemsStored": 311,
+                     *         "bytesStored": 52428800,
+                     *         "discoveryDone": false,
+                     *         "job": {
+                     *           "id": "0193f2c4-7a7e-7b51-9b1e-2f0d6c9e1a10",
+                     *           "kind": "mirror-pass",
+                     *           "state": "running",
+                     *           "href": "/api/v1/system/jobs/0193f2c4-7a7e-7b51-9b1e-2f0d6c9e1a10"
+                     *         }
+                     *       },
+                     *       "lastCompletePass": {
+                     *         "kind": "full",
+                     *         "method": "feed",
+                     *         "startedAt": "2026-11-03T10:00:00Z",
+                     *         "finishedAt": "2026-11-03T13:12:09Z",
+                     *         "outcome": "complete",
+                     *         "packages": 1200,
+                     *         "packagesFailed": 0,
+                     *         "itemsStored": 5021,
+                     *         "bytesStored": 9126805504,
+                     *         "discoveryComplete": true,
+                     *         "discoveryNote": null
+                     *       },
+                     *       "nextPassAt": "2026-11-04T11:00:00Z",
+                     *       "lastFullPassAt": "2026-11-03T13:12:09Z",
+                     *       "errors": {
+                     *         "consecutiveFailures": 0,
+                     *         "lastAt": null,
+                     *         "lastCode": null,
+                     *         "lastMessage": null
+                     *       },
+                     *       "rateLimit": {
+                     *         "waits": 12,
+                     *         "waitSeconds": 340,
+                     *         "lastAt": "2026-11-04T10:20:31Z",
+                     *         "lastStatus": 429,
+                     *         "until": null
+                     *       },
+                     *       "bound": {
+                     *         "reached": null,
+                     *         "at": null,
+                     *         "maxBytes": 107374182400,
+                     *         "usedBytes": 9200000000
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["MirrorStatus"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    runRepositoryMirror: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description The repository key (R-REPO-002). */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                /**
+                 * @example {
+                 *       "full": false
+                 *     }
+                 */
+                "application/json": components["schemas"]["MirrorRunRequest"];
+            };
+        };
+        responses: {
+            /** @description The pass is requested and its job is queued. */
+            202: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobReferenceEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];

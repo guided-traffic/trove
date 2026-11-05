@@ -82,6 +82,28 @@ while one outside the project lists the repository, the delete answers 409 and n
 The events `repository.created`, `.updated` and `.deleted` of a project's repository carry `project`. A holder of
 `repositories:write-config` is not bound by the rules of the table ([H-281](data-and-secret-flow.md#h-281--a-holder-of-repositorieswrite-config-can-send-any-file-of-secrets_dir-to-an-upstream-of-their-choice)).
 
+## The mirror's status and run
+
+The status (`GET /api/v1/repositories/{key}/mirror`) and the run (`POST …/mirror/run`) are decided in the handler
+([mirror_api.go](../../internal/api/v1/mirror_api.go), `requireMirrorReader`, `requireMirrorWriter`;
+[Q-API-199](../spec/api-and-ui.md#q-api-199--the-two-operations-decide-their-permission-in-the-handler-a-refused-reader-is-hidden-by-the-decision-on-read-and-a-project-administrator-runs-on-the-manage-it-holds)):
+
+| Caller | Status | Run |
+|---|---|---|
+| holder of `repositories:read-config` | 200 | 403 |
+| holder of `repositories:write-config` | 200 | 202 |
+| administrator of the repository's project | 200, whatever the switches | 202, whatever the switches: it holds `manage` on the project's repositories, and a run changes no configuration |
+| holder of `manage` on the repository | 200 | 202 |
+| holder of `read` on the repository only | 403 | 403 |
+| a caller that cannot read the repository, or whose endpoint does not expose it | 404, byte-identical to an unknown repository where the repository hides its existence ([R-AUTHZ-016](../spec/authorization.md)) | 404 |
+| an administrator of another project | as the row above | as the row above |
+
+The switch `manageRepositories` therefore does not gate the run, and a project administrator whose switch is off can still ask for a
+pass (H-531). It can neither start a mirror nor change how hard it pulls: `remote.mode: mirror` and the members of `remote.mirror`
+other than `paused` are refused to it (the table of [Remote repositories of a project](#remote-repositories-of-a-project)). The run
+writes only the three request columns of `mirror_state`, in the transaction of the job and of the audit event
+`mirror.pass_requested`, which names the caller.
+
 ## Names
 
 Repositories, policies and service accounts of a project are named `<key>-…`; no project key is another's dash-prefix; a global
@@ -111,8 +133,8 @@ What a rollout costs is a project's rights absent on old replicas, never a grant
 
 ## What this does not cover
 
-The gaps of these mechanisms are recorded on the spec page that describes them, and only linked here, except H-403, whose mechanism
-only this page describes:
+The gaps of these mechanisms are recorded on the spec page that describes them, and only linked here, except H-403 and H-531, whose
+mechanisms only this page describes, and H-530, which lives on the page of the data flow it belongs to:
 
 - [H-392](../spec/authorization.md#h-392--a-project-administrator-can-enumerate-user-and-group-names) — the lookup of users and
   groups lists the names of every active user and group by prefix;
@@ -130,6 +152,25 @@ only this page describes:
   predates a project keeps the project's prefix;
 - [H-406](../spec/authorization.md#h-406--the-audit-event-of-a-refused-project-administrator-does-not-name-the-project) — the audit
   event of a refused project administrator does not name the project.
+- [H-530](data-and-secret-flow.md#h-530--the-mirror-status-shows-the-engines-failure-text-as-stored) — the status of a mirror shows the
+  engine's failure text as stored, to the same readers.
+
+### H-531 · A run can be requested as often as a pass ends
+
+Stage: the run of a mirror ([mirror_api.go](../../internal/api/v1/mirror_api.go), `enqueueMirrorPass`). Subject: the upstream a mirror
+pulls from, and the installation's egress and storage, which a pass loads.
+
+- **Live, by design of the permission.** One pass per repository runs at a time (the exclusive key), but nothing limits how often a
+  pass is requested: a holder of `manage` on the repository, an administrator of its project whatever its switch says, and a holder of
+  `repositories:write-config` can request a run the moment the last pass ends, and `{"full": true}` makes it a full discovery. Each
+  pass respects the mirror's bounds, window and rate-limit waits (R-REPO-052, R-REPO-054), so the cost is upstream requests and
+  discovery work, not unbounded storage. The management API's request budget (R-API-014) bounds the requests, not the passes.
+- What makes it real: a delegate that is not trusted with the upstream's goodwill, on an upstream that throttles or bills by request.
+  The audit event `mirror.pass_requested` names every request and its caller.
+- Mitigation in place: only a holder of `repositories:write-config` can turn the mode on and change the members; a project
+  administrator's run cannot exceed what the configuration already allows.
+- What would close it: the project's switch as a condition of a project administrator's run (Q-API-199 (c)), or a minimum time between
+  requests per repository.
 
 ### H-403 · What a project administrator still reaches of an upstream an administrator configured
 

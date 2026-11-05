@@ -7087,7 +7087,7 @@ Context: R-ARCH-025's compatibility check refuses an added enum value in an exis
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) New members `mode` and `mirror` in `RemoteSettings`, new schemas `MirrorSettings`, `MirrorStatus`, `MirrorPass`, `MirrorCompletePass` and `MirrorRunRequest` (chosen) | Additions only | Passes the check: no existing enum widens; a client of the previous release that ignores unknown members reads every document | A strict client that refuses unknown members sees two new ones in every remote document |
+| (a) New members `mode` and `mirror` in `RemoteSettings`, new schemas `MirrorSettings`, `MirrorStatus`, `MirrorPass`, `MirrorPassSummary` (named `MirrorCompletePass` here before the API was built, Q-API-197) and `MirrorRunRequest` (chosen) | Additions only | Passes the check: no existing enum widens; a client of the previous release that ignores unknown members reads every document | A strict client that refuses unknown members sees two new ones in every remote document |
 | (b) A new value of an existing enum (a class `mirror`) | Q-REPO-130 (c) | — | Fails the check and contradicts INV-5 |
 
 **Choice:** (a). The run answers with the existing `JobReferenceEnvelope`. The contract wave lays the members of `RemoteSettings`
@@ -7221,6 +7221,130 @@ value (the repository's own `storage.maxUploadSize` still applies underneath).
 `ItemView.ContentURL`), `internal/api/v1/document.go` (`ContentOperations`), `internal/api/v1/packages_api.go`. Tests:
 `TestContentRoutes`, `TestContentRoutesAgreeWithTheDocument`, `TestSplitContentPath`, `TestDescribeItem`,
 `TestR_API_029_PackageFileContentURL`.
+
+### Q-API-196 · The mirror's state is the first of seven that holds, and a pass whose job waits in the queue is waiting
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-056 names seven states and says what the three of a pass in progress mean, but a row can satisfy several at once (a
+paused mirror whose pass is in progress, a failing mirror whose bound is reached). Verified in the code: a job is `queued`,
+`running`, `cancelling` or ended ([internal/jobs](../../internal/jobs/job.go)); a pass that a drain released is the same job
+`queued` again with its attempt unchanged (R-REPO-053), and an exclusive enqueue finds a `cancelling` job as active.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Derive the state from the row, the configuration and the job in this order: `off`, `paused`, `failing`, `bound_reached`, `running`, `waiting`, `scheduled`; `running` is a job that is `running` or `cancelling`, any other job or none is `waiting` (chosen) | `mirrorStateOf` in [mirror_api.go](../../internal/api/v1/mirror_api.go) | One answer per row on every replica, no column the engine must keep in step; what an operator must act on (off, paused, failing, the bound) hides nothing behind a pass that is only running | A paused mirror with a running pass shows `paused` while the pass finishes its package |
+| (b) `paused` and `failing` only when no pass is in progress | The pass shows first | The UI shows progress while a pause takes effect | A failing mirror that still has a pass in progress shows `running`: the alarm hides |
+| (c) The engine writes the state into a column | One source | Cheap to read | A second state that the configuration (mode, pause) changes without the engine knowing; a stale value after a PATCH until the next dispatch |
+
+**Choice:** (a). The pass and its counts are in the document whatever the state is, so a client that wants the progress of a paused
+mirror reads `pass`.
+
+**Rationale:** the state is the question "what does this mirror need from me", and the operator-facing conditions come before the
+progress. The development agent would revisit the order if the Mirror tab needs "pausing" as a state of its own, which would be a
+new member and not a new value of the closed enum (Q-API-191).
+
+**Applied in the spec:** R-REPO-056 (the states). Code: `mirrorStateOf`.
+
+### Q-API-197 · The pass names its job as a job reference, the summary of the last pass has one schema with the stored one, and a summary that cannot be read is none
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-056 shows `pass.job` as `{id, href}` and the last complete pass as a document of eleven members; Q-API-193
+named the schemas `MirrorPass` and `MirrorCompletePass`. The engine stores the summary as `mirror_state.last_pass`, a JSON
+document ([migration 00040](../../internal/meta/postgres/migrations/00040_mirror.sql)); the migration does not say its members.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `pass.job` is the existing `JobReference` (`id`, `kind`, `state`, `href`), `null` once the job row is removed; the schema of the last pass is `MirrorPassSummary`, its members are the eleven of the example and the engine stores exactly them in `last_pass`; a summary that is missing, `null` or not a document with an `outcome` shows as `null` (chosen) | One schema for what the job API already returns; the UI links the job and reads its state without a second request | The client sees `kind` and `state` too: two members more than the example | The status never fails for a stored document it only shows |
+| (b) A schema of two members | Exactly the example | A second job-reference schema | The UI cannot tell a running job from a queued one without reading it |
+| (c) The id only | Smallest | — | The `href` is the contract of R-API-015 |
+| (d) Answer 500 for a summary that cannot be read | Loud | The engine's mistake is seen | A status that cannot be read hides the failing mirror that the operator opens it for |
+
+**Choice:** (a). The name of the schema is `MirrorPassSummary`, which replaces the name `MirrorCompletePass` of Q-API-193; nothing
+was published under it. `docs/developer/mirror.md` states the members of `last_pass` for the engine.
+
+**Rationale:** the job reference is the one way the API names a job (R-API-015), and the Mirror tab needs the state of the job to
+tell a pass that runs from one that waits. The development agent would revisit (d) if the engine's tests do not pin the stored
+shape; a decoder that falls silent is only as good as that test.
+
+**Applied in the spec:** R-REPO-056 (the example), Q-API-193 (the name). Code: `buildMirrorStatus`, `decodeLastPass`.
+
+### Q-API-198 · The run enqueues first, so that the exclusive key answers whether a pass is queued or running, and writes the request after it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the run must answer 409 `mirror_pass_running` naming the job, record the request in `mirror_state.pass_requested_*`, enqueue
+the pass and write `mirror.pass_requested`, atomically. Verified in the code: `jobs.Queue.Enqueue` inserts under the dedup key and,
+when an exclusive job of the key is queued, running or cancelling, returns that job with `Created: false`; the refusal outcomes below
+500 of an operation behind an `Idempotency-Key` are stored and replayed, so their transaction commits.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) In one transaction: enqueue; when the job exists, answer 409 with it and write nothing; else record the request and the event (chosen) | `enqueueMirrorPass` | The key decides, so two concurrent requests cannot both create a job; a refusal that commits under an idempotency key has written nothing | The job exists before its request is recorded (both commit or neither) |
+| (b) Look for a queued or running job first, then enqueue | A query of the job table | Reads like the spec | A race between the look and the insert; a second statement that repeats the key's logic |
+| (c) Record the request first, then enqueue | Spec order | — | A 409 behind an idempotency key commits the request of a pass that was not started |
+
+**Choice:** (a). The other refusals (class, mode, pause) are answered before the transaction from the repository read of PostgreSQL
+(Q-REPO-164), so they write nothing either.
+
+**Rationale:** the exclusive dedup key is already the definition of "one pass per repository at a time" (R-REPO-053), and the API
+asks it instead of reimplementing it. The development agent would revisit (b) only if the job queue stopped returning the existing job.
+
+**Applied in the spec:** R-REPO-056 (the run). Code: `enqueueMirrorPass`.
+
+### Q-API-199 · The two operations decide their permission in the handler, a refused reader is hidden by the decision on read, and a project administrator runs on the manage it holds
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-056 admits for the status `repositories:read-config`, `manage` or an administrator of the repository's project, and for the
+run `repositories:write-config`, `manage` or an administrator of the project with `manageRepositories`. The declaration forms
+(R-API-008) express one capability, or one repository action; Q-OPS-155 decides such a disjunction in the handler under the
+declaration `authenticated`. Verified in the code: the decision point answers a refused `manage` with 403 whatever else the caller
+holds, and 404 only for a refused `read` ([internal/authz/decide.go](../../internal/authz/decide.go), `refusal`, R-AUTHZ-016); a
+project administrator holds `manage` on every repository of its project, whatever the project's switches say (Q-AUTHZ-183,
+`grantedBy`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Decide in the handler: the capability, the project right, then `manage`; a caller refused on `manage` who cannot read the repository and is not a configuration reader is answered by the decision on `read`, 404 when the repository hides its existence; a configuration reader is answered 403 (chosen) | `requireMirrorReader`, `requireMirrorWriter` | Every row of the table is one branch; a `manage` holder without `read` is no stranger; the answer for a hidden repository is the bytes of a missing one | A caller refused on `manage` costs two decisions, which the denial dedup window of R-OPS-015 keeps from doubling the events |
+| (b) Declare `repositories:write-config` with `projectAdmin: manageRepositories`, as the upstream test does | The shared step decides | Nothing to write | The table's `manage` is lost: a team lead with `manage` on one remote could not run its pass |
+| (c) Require the project's switch from a project administrator even though it holds `manage` | A second check on top of the decision | The switch means the same for a run as for a write | The decision point already gave `manage`; to ask the grant's source (`project:<key>`) would couple the API to how a grant came about, and the run changes no configuration |
+
+**Choice:** (a). A project administrator with `manageRepositories` off may therefore run a pass; the 403 `project_switch_off` of an
+update does not occur on the run. The switch gates what changes a configuration (R-AUTHZ-026), and the run changes none: it asks the
+engine for what the settings already allow.
+
+**Rationale:** the table of R-REPO-056 is the union of three rights, and the engine already makes the third include the second for
+project administrators. The development agent would revisit (c) if the owner wants a run, which causes background download volume,
+to need the project's switch (gap [H-531](../security/delegated-administration.md#h-531--a-run-can-be-requested-as-often-as-a-pass-ends)).
+The cache entry list (R-REPO-032) decides the same disjunction with the decision on `manage` alone and so answers 403, not 404, where
+the caller cannot read the repository; it is not changed here.
+
+**Applied in the spec:** R-REPO-056 (the permissions), R-API-022. Code: `requireMirrorReader`, `requireMirrorWriter`, `hiddenOr`;
+[delegated-administration.md](../security/delegated-administration.md).
+
+### Q-API-200 · The format descriptor's `mirror` is a required boolean read from the catalog
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-021 lets the wizard offer the mirror only for a format whose remote can discover; the catalog fact is `Entry.Mirror`
+(set by `formats.Register` from the optional lister interface, ADR-152). The descriptor of `GET /api/v1/formats` is built from
+`formats.Descriptor`, which does not carry the fact.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A required boolean `mirror` in `FormatDescriptor`, read from `catalog.Default()` by the format's name; false for a format the catalog does not know (chosen) | `mirrorFact` | One source for the repository model and the UI: the model refuses `mode: mirror` by the same fact, so the wizard offers exactly what the save accepts; an addition to a response, which the compatibility check allows (R-ARCH-025) | A client that validates strictly and has no `mirror` member in its copy of the schema |
+| (b) An optional member, absent when false | Smaller document | — | Every other member of the descriptor is required; the UI would test for presence |
+| (c) A new member of `Descriptor` | The format declares it | — | A second statement of a fact that the registration derives, which can drift from it |
+
+**Choice:** (a).
+
+**Rationale:** the UI must not hold a list of mirrorable formats (R-UI-021), and a fact that the model enforces is the one to offer.
+The development agent would revisit (c) never: the fact is derived from the adapter's interface so that it cannot be declared
+without being implemented.
+
+**Applied in the spec:** R-UI-021, R-API-022. Code: `ListFormats`, `mirrorFact`.
 
 ### Q-UI-108 · A pool without a live replica is named by its pool, because the registry does not say which queues it claims
 
