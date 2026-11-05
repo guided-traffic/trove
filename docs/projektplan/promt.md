@@ -204,6 +204,35 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
+Found on 2026-11-05 in the scheduled nightly run 42002617340 (GitHub-hosted runners, commit 15a9a576):
+
+### Vulnerability scanning
+
+- **F-52 · A sync run that ends on a cancelled context records no failure** (confirmed, by reading the code; not reproduced).
+  `internal/vuln/sync/run.go:37-40` returns without `recordFailure` (`failure.go:53-99`) for every cancelled context except a
+  drain release: a lost lease (the reaper then fails the job with `attempts_exhausted`), a handler panic (recovered at
+  `internal/jobs/worker.go:400`) and a cancel through the API. The sync kinds run once (`MaxAttempts: 1`,
+  `internal/app/wire_vuln_sync.go:127`), so the job ends `failed` while the source state keeps no `last_error`, `failures` does
+  not rise and `TroveVulnerabilitySyncFailing` never fires; a first import stays `empty` with no visible error, against R-VULN-004
+  "Failure". The run's lost V-1 (F-43) ended in this window or in an error that was recorded; the run's artifacts cannot tell which.
+  Done when every run that ends without success or a drain release leaves its failure on the source state, with tests per path.
+
+### Tests and tools
+
+- **F-53 · The performance run's NuGet test data is not the documented one** (confirmed, by reading the code and the artifacts
+  of runs 41902592855 and 42002617340). `test/osvstub/stub.go:294,310-315` deletes only filler IDs of exactly four digits, so the
+  NuGet dump holds 228,403 records instead of about 7,400 (V-9 counts 459,415 advisories against 231,012 npm records). Its import
+  runs inside V-1's clock, before npm, and the NuGet vulnerability page of V-8 is built from it (profiled at 777 KB, Q-VULN-78).
+  `perf/vuln/perf_test.go:120,126` seeds NuGet names in mixed case while the adapter lower-cases advisory names
+  (`internal/formats/nuget/vuln.go:20-28`); both runs report 9,000 findings, not 10,000. Done when the dump and the seed match
+  R-VULN-028's description and V-1 and V-8 are read again on them.
+- **F-51 · The setup of the `vuln` leg lost a request to the npm test upstream** (read, from the log). `POST
+  https://npmstub.trove.svc/-/stub/publish` answered `EOF` (`vuln_env_test.go:214`); the environment is built once, so the 12 tests
+  that need it failed at once with "the environment did not finish". The same leg passed in 41902592855 on the same code. Same class
+  as F-50 (a fresh connection closed without an answer) on another path: to the stub's Service, not through the edge. Done when a
+  run that keeps the stub's log and the test's transport error names the closing side, or the setup's requests to the stub are shown
+  to be retry-safe and retried.
+
 Found on 2026-11-04 while cutting trove into task areas (phase 6a):
 
 ### Tests and tools
@@ -256,7 +285,11 @@ Found on 2026-11-03 while building phase 6:
   so the fix is shown by the benchmark and not by the end-to-end time. The dispatched nightly run 41902592855 on a GitHub-hosted
   runner (no CPU limit): V-1 3.5 min, V-2 0.02 min, V-3 0.10 min, V-5a, V-5b 0.83 transactions, V-6 83 ms, V-7a 24 ms and V-9 0.33 GiB
   met; V-4 7.7 ms (the exact p99 of 300 publishes, median 2.2 ms) against 5 ms, V-7b 329 ms against 300 ms and V-8 52 ms against
-  25 ms missed. V-4, V-7b and V-8 are to be read on a run on the reference environment (H-491). Done when that run reports all nine
+  25 ms missed. The scheduled nightly run 42002617340 on the same code: V-4 2.98 ms (median 1.22 ms) and V-7b 205 ms met, so their
+  misses of 41902592855 were the hosted runner's spread; V-8 32.8 ms missed again; V-1 did not finish within 40 min (the npm import
+  never reached `complete`, the second time after 41748522448; F-52, F-53), and the gate reported only V-8 because a scenario that did
+  not finish left no row (fixed: Q-VULN-79, a scenario that does not finish is reported as missed and what needs it as not measured).
+  V-8 is to be read again on the documented NuGet data (F-53). V-4, V-7b and V-8 are to be read on a run on the reference environment (H-491). Done when that run reports all nine
   within their targets, or a decision revises a bound with the measured cost (the next steps for V-7b are named in Q-VULN-77).
 
 Found on 2026-11-03 while closing phase 5:
@@ -290,13 +323,21 @@ Found on 2026-11-03 while closing phase 5:
   (`BlobNotFound`). The Bastion's long legs have therefore not run in CI yet.
   The dispatched nightly run 41739280012 (2026-11-04) lost `e2e-bastion (bastion)` the same way, on an interrupted pull of
   `mcr.microsoft.com/dotnet/sdk:9.0.320` and `getaddrinfo EAI_AGAIN`.
+  The scheduled nightly run 42002617340 (2026-11-05, GitHub-hosted runner) lost `e2e-bastion (bastion)` after 11 minutes inside the
+  step `make e2e SET=bastion`: no step after it has a conclusion and the job's log is not retrievable (`BlobNotFound`), so the
+  runner was lost, not a test; `bastion-long` passed in the same run.
 - **F-38 · `npm-ha` and `npm-ha-soak` were red in the nightly run 41575201390** (read). The npm load under drains and
   failovers is the phase 7 item "npm load in the drain and failover tests reliably green"; `npm-ha` passed in run 41568514247
   hours before. The dispatched nightly run 41739280012 (2026-11-04) was red in `npm-ha` again, in the drain variant A and the
   PostgreSQL switchover case under the npm load. In the dispatched nightly run 41902592855 (GitHub-hosted runner, no CPU limit) the
   drain variant A passed (no failed `npm ci` or publish, k6 only 2xx and 304) and the switchover case failed: k6 saw 205 answers `503`
   and 135 connections without an answer during the 16 s of the fault, and sent 16,145 requests in 153 s against at least 17,474;
-  `npm ci` and publish had no failure. Done with that item.
+  `npm ci` and publish had no failure. In the scheduled nightly run 42002617340 on the same code all three cases failed: in the drain
+  variant A 24 of 24 `npm ci` failed, k6 saw 6,103 answers `503` and 458 without an answer, and the driver reported
+  `database_unavailable`; in the switchover 2,096 of 17,395 k6 requests were `503`; in the Valkey failover 8 of 16 `npm ci` failed.
+  `events-trove.txt` of the cluster-state artifact shows the pattern of F-37 on a GitHub-hosted runner: the probes of both PostgreSQL
+  pods time out, the liveness probe kills both, and CloudNativePG fails over; the events carry relative times, so which case they fall
+  into is not established. Done with that item.
 - **F-36 · The issuer double's fixtures were recorded on a local GitLab 19.0.1-ee, not on the owner's instance**
   (confirmed). The owner's GitLab (namespace `gitlab` of his cluster) cannot create projects: the web service dials Gitaly
   under a name its certificate does not carry. Machine-level for the owner (his GitOps repository). Done when, after the
