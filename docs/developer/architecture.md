@@ -70,7 +70,7 @@ of the client listener are split by route family:
 | `web`, `all` | all | the union | none |
 | `worker` | none | none | all |
 
-The area `mirror` (the mirror's counters and gauges and, at the first job of a process that claims one, the engine, [mirror.md](mirror.md)) is on every role: its gauges are what the alerts read (Q-OPS-171).
+The area `mirror` (the mirror's counters and gauges and, at the first job of a process that claims one, the engine, [mirror.md](mirror.md)) is on every role: its gauges are what the alerts read (Q-OPS-171). The area `mirror-engine` (the remote engine and the format host behind `mirror.Host`: the client path's in `all`, an engine of its own in `worker`) is built on `worker` and `all` only, the roles with job loops (Q-ARCH-316).
 
 A `worker` therefore runs the deletion, token and fold jobs on the same services an `api` replica has, and builds no session store, login
 or limiter. The test `TestR_ARCH_001_RoleTableIsData` ([roles_table_test.go](../../internal/app/roles_table_test.go)) holds the table as

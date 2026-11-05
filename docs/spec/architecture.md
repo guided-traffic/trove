@@ -158,6 +158,7 @@ routes read them. The areas of the client listener are split by route family:
 | `api` | stage 7 of the chain: CORS and the request limits of R-API-016, applied on every endpoint chain despite the name | yes | yes | no | yes |
 | `ci_exchange` | the CI token exchange (`POST /api/v1/auth/oidc/token`, the npm exchange of R-NPM-022 at P1) | yes | **no** | no | yes |
 | `mirror` | the counters and the gauge source of R-REPO-057 (every role), the engine built at the first job of a process that claims one (R-REPO-053, Q-ARCH-312) | yes | yes | yes | yes |
+| `mirror-engine` | the remote engine and the format host behind `mirror.Host`: in `all` the engine and host of the client path, in `worker` an engine of its own for background requests (Q-ARCH-316, Q-ARCH-317) | **no** | **no** | yes | `all` only |
 
 - A `packages` replica MUST NOT build the areas `sessions`, `login`, `ci_exchange`, `packages-api` and `vuln-api`, MUST NOT
   read the OIDC client-secret or break-glass files (the chart does not mount them, [ha-and-helm.md](ha-and-helm.md) R-HA-030),
@@ -8557,7 +8558,7 @@ role table is a decision of its own (Q-ARCH-294) that this work package does not
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) `App.mirrorHost()` returns a host that resolves on its first call: the engine and the format host of the process when it has them, else an engine and a format host of its own, built from the areas every role has and started as components (chosen) | A pass in a client-serving process shares its replica's slots with its clients; one in a worker has its own slots | No change of the role table; the job registry, which is frozen before the areas are wired, can hold the handlers | A worker runs an engine whose slots no client uses, and which counts as one of the replicas that fill client misses until the fill count (R-REPO-040) is changed |
+| (a) `App.mirrorHost()` returns a host that resolves on its first call: the engine and the format host of the process when it has them, else an engine and a format host of its own, built from the areas every role has and started as components (chosen) | A pass in a client-serving process shares its replica's slots with its clients; one in a worker has its own slots | No change of the role table; the job registry, which is frozen before the areas are wired, can hold the handlers | A worker runs an engine whose slots no client uses; it is not one of the replicas that fill client misses (`cluster.FillsClientMisses` excludes it), so its share of a repository is not divided by them (Q-ARCH-317). Superseded in its wiring by Q-ARCH-316 |
 | (b) Add the remote engine and the format host to the worker's areas | The worker has them at start | Plain wiring | Changes R-ARCH-001's table, which the owner is reconsidering |
 | (c) The pass asks a client-serving replica to fetch for it | No engine in the worker | None to build | Q-REPO-140 (d): the background would take client slots |
 
@@ -8698,6 +8699,94 @@ R-REPO-053 asks for the claim as one statement and for the delete of a pending r
 **Rationale:** the integration tests exist to keep the two stores equal. The development agent would revisit it if the statements need rows the port cannot give.
 
 **Applied in the spec:** R-REPO-053 (the steps and the data model). Code: [store.go](../../internal/mirror/store.go), [store_pg.go](../../internal/mirror/store_pg.go), [mirror.sql](../../internal/meta/postgres/queries/mirror.sql).
+
+### Q-ARCH-316 · The remote engine of a worker is an area of the role table
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-ARCH-308 let a `worker` build an engine and a format host of its own at the first job, outside the area table (R-ARCH-001),
+so that `App.Areas`, the role table test and the docs did not show it. The build also needed an invalidation set, which a worker does
+not have, and failed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The area `mirror-engine` on `worker` and `all`: a builder prepared when the area is wired and run at the first call of the host; in role `all` it hands out the engine and the host the role has, in role `worker` it builds its own, including a set of cache invalidations (chosen) | The engine is in the table and its inputs are explicit | The worker's engine honours R-REPO-045 | The area table has one more row |
+| (b) Add `proxy-engine` and `formathost` to `worker` | The areas of the client path | No new area | Serving areas on a role that serves nothing, and the sizes of a client engine |
+| (c) Keep it outside the table | Nothing changes | None | The thing the review found |
+
+**Choice:** (a). The step cannot fail; building can, and the first job that needs the host reports it.
+
+**Rationale:** what a process runs must be in the table that says what a process runs. The development agent would revisit it with the
+owner's decision on the topology.
+
+**Applied in the spec:** R-ARCH-001 (the area table), [docs/developer/architecture.md](../developer/architecture.md). Code:
+[internal/app/wire_mirror_host.go](../../internal/app/wire_mirror_host.go), `steps.go`. Test: `TestR_ARCH_001_RoleTableIsData`,
+`TestMirrorEngineArea`, and the worker pass of `test/integration/mirror/worker_role_test.go`.
+
+### Q-ARCH-317 · The worker's background engine has small caches and a slot limit that does not divide
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the engine of a client replica has a 128 MiB metadata cache and 100,000 negative entries, and divides the repository's budget
+by the replicas that fill client misses (R-REPO-040). A worker is not one of them, and its limit is 1 GiB.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 16 MiB of metadata bytes, 10,000 negative entries, no query cache, as upper bounds on the configured values; no division of the budget (`Replicas` is one): the repository's share on the worker is the budget, the background share B is the ceiling (chosen) | Fits in the worker's limit; B is reachable whatever n is | Constants, no new keys | A mirror of very large documents misses the cache more |
+| (b) New configuration keys for the worker's engine | Tunable | Operators decide | Keys for a mechanism that is not asked for yet |
+| (c) The client-sized defaults | Nothing to decide | None | 128 MiB and 100,000 entries per worker for a process that serves nobody |
+
+**Choice:** (a). The replica limit `proxy.max_concurrent_fetches` still applies.
+
+**Rationale:** a pass reads each document about once; the caches are for repeated hits. The development agent would revisit it if
+the pass's documents show hit rates that a larger cache would raise.
+
+**Applied in the spec:** R-REPO-055. Code: [internal/app/wire_mirror_host.go](../../internal/app/wire_mirror_host.go) (`backgroundProxyConfig`),
+[deploy/helm/trove/values.yaml](../../deploy/helm/trove/values.yaml) (the comment of the worker's resources). Test: `TestMirrorEngineArea`.
+
+### Q-ARCH-318 · The job worker is quiesced before the engines, and a request the shutdown cancelled stops the pass
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the shutdown quiesces the components in reverse start order (R-ARCH-024 step 4). The remote engine starts after the job
+worker, so it was cancelled first: every fill returned `shutting_down` while the job's context was live, and the pass recorded
+failures.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A component that marks itself `QuiescesFirst` (the job worker) is quiesced first and waited for; the others keep the reverse order; the host also maps the engine's cancelled request to `mirror.ErrShuttingDown` (chosen) | The engines are cancelled after the work that uses them is released; a straggler is still not a failure | Two layers | A marker interface |
+| (b) Start the engines before the worker | The reverse order does it | No new interface | The start order is constrained by this one rule |
+| (c) Only the mapping | The engine stops the pass on `ErrShuttingDown` | Smallest | Every other job that runs on the engines still races |
+
+**Choice:** (a). `Ready` answers `ErrShuttingDown` while the engine drains, so no pass starts in a process that shuts down.
+
+**Rationale:** a release and a cancel are different outcomes for a job, and the first must come first. The development agent would
+revisit it if another component needs the same.
+
+**Applied in the spec:** R-ARCH-024 (step 4). Code: [internal/app/app.go](../../internal/app/app.go) (`quiesceOrder`),
+[component.go](../../internal/app/component.go) (`QuiescesFirst`), [internal/jobs/worker.go](../../internal/jobs/worker.go). Test:
+`TestQuiesceOrder`.
+
+### Q-ARCH-319 · The host is built in stages that are kept, and a build error is retried
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-ARCH-312 says that a failing host fails that job and the next one tries again. The first build kept its error behind a
+`sync.Once`, and a second attempt would have registered the engine's caches twice (a panic).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The builder keeps what succeeded: the flight lock, the invalidation set, the engine, its start, the format host; an error is returned by `Ready` and the next call continues with what is missing (chosen) | A retry never builds a stage twice | `Ready` is the cause the dispatch and the pass report | A mutex and four fields |
+| (b) Keep the error forever | Simple | None | Q-ARCH-312's retry is gone until a restart |
+| (c) Rebuild everything on each attempt | Simple | None | The caches and the metrics register once per registry |
+
+**Choice:** (a).
+
+**Rationale:** the stages that register things cannot be repeated, so they are remembered. The development agent would revisit it if a
+stage is found that cannot be completed after a partial failure.
+
+**Applied in the spec:** R-REPO-053. Code: [internal/app/wire_mirror_host.go](../../internal/app/wire_mirror_host.go) (`mirrorHostBuilder`).
+Test: `TestMirrorEngineArea`.
 
 ### Q-ARCH-320 · A request that the shutdown cancelled stops the pass without a write, and a host that is not ready fails the job
 

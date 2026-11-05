@@ -160,7 +160,7 @@ PostgreSQL through `mirror.Store`.
 | [store.go](../../internal/mirror/store.go), [store_pg.go](../../internal/mirror/store_pg.go) | the port `Store` and its PostgreSQL implementation `PGStore` over [mirror.sql](../../internal/meta/postgres/queries/mirror.sql); `ClearAfterRestore` |
 | [metrics.go](../../internal/mirror/metrics.go) | the twelve families of R-REPO-057 and the database gauge source (every role) |
 | [events_mirror.go](../../internal/audit/events_mirror.go) | the four asynchronous event types (`mirror.pass_requested` is the run operation's) |
-| [wire_mirror.go](../../internal/app/wire_mirror.go), [wire_mirror_host.go](../../internal/app/wire_mirror_host.go) | the area `mirror` (roles `worker`, `all`), the kinds and the task, `MirrorOverride`; the host placeholder that C1's file replaces |
+| [wire_mirror.go](../../internal/app/wire_mirror.go), [wire_mirror_host.go](../../internal/app/wire_mirror_host.go) | the area `mirror` (roles `worker`, `all`), the kinds and the task, `MirrorOverride`; the area `mirror-engine` (`worker`, `all`) and the host's builder, which builds in stages and keeps what succeeded (Q-ARCH-316, Q-ARCH-319) |
 
 ### How a pass runs
 
@@ -248,8 +248,6 @@ database.
 
 ### Not built, and open
 
-- The remote engine's side (`Host`): until C1's file replaces [wire_mirror_host.go](../../internal/app/wire_mirror_host.go) the host
-  has no lister, so no pass starts.
 - Quota and capacity bounds ([H-506](../spec/repositories-and-proxy.md)): `maxBytes` is the only bound.
 - The byte bound reads the counter that the usage fold writes ([blob-store.md](blob-store.md#usage-fold-r-stor-003)), so it holds across
   passes; it lags by one fold interval plus the artifacts in flight ([H-527](../security/mirror.md)).
@@ -367,8 +365,33 @@ behind it. Specified in R-REPO-054, R-REPO-055 and R-REPO-057; the decisions are
   pass's context ends, `Fill` returns at once and the fetch finishes or is cancelled by a pre-emption, the yield or the shutdown (R-ARCH-024).
   Its slot is held until then.
 - **Where it runs.** In a client-serving process the host shares the replica's engine, so a client fetch pre-empts the pass in the process;
-  in a `worker` the host builds an engine and a format host of its own on first use (Q-ARCH-308), which subscribes to `mirror_yield`. The
-  worker's engine has not been exercised by a test that starts a worker with the queue `mirror`: that needs the engine's handlers.
+  in a `worker` the area `mirror-engine` builds an engine and a format host of its own on the first call of the host (Q-ARCH-316): caches
+  of 16 MiB of metadata bytes and 10,000 negative entries, no query cache, a set of cache invalidations of its own, and no division of the
+  repository's budget by the replicas that fill client misses, so the share B is reachable (Q-ARCH-317). The engine subscribes to
+  `mirror_yield`. A build error is the error of `Ready`; the next call builds what is missing (Q-ARCH-319).
+  [worker_role_test.go](../../test/integration/mirror/worker_role_test.go) runs a pass on a `worker` with no host override against the npm stub.
+- **The slot comes first.** A background request takes its slot before it enters a flight, so a request that may not run holds neither the
+  flight nor the cross-replica lock, and a client never waits under background rules (Q-REPO-179). A request that joins a client's flight and
+  sees it fail reads the circuit: open is a wait, closed is one fetch of its own (Q-REPO-180).
+- **The shutdown.** The job worker is quiesced before the engines (Q-ARCH-318); a request the engine cancelled is an error wrapping
+  `mirror.ErrShuttingDown`, and `Ready` answers it while the engine drains.
+
+### What the host maps
+
+| The engine's error | The host returns | The engine does |
+|---|---|---|
+| a negative entry, 404, 410, a package marked gone (`not_found`) | `*mirror.RefusedError{not_found}` | counts it, next item |
+| `vulnerability_blocked`, `vulnerability_data_missing` | `*mirror.RefusedError{blocked}` | counts it, next item |
+| `populate_not_permitted` | `*mirror.RefusedError{populate_denied}` | counts it, next item |
+| a not-found or forbidden answer of the format's `BeforeArtifact` | `*mirror.RefusedError{gate_refused}` | counts it, next item |
+| `not_cached_offline` (the repository is offline) | the error as it is: a failure of the item with its own code | stops the pass as offline |
+| `shutting_down` (the shutdown cancelled the request) | wraps `mirror.ErrShuttingDown` | stops, writes nothing |
+| a pre-emption | wraps `mirror.ErrPreempted` | fetches the item later |
+| an open circuit, a refused spool admission | `*mirror.WaitError` | waits `After`, repeats |
+| a rate-limit answer (`RateLimitError`, with `HTTPStatus()`) | the error as it is | waits, halves the window |
+| anything else | the error as it is | a failure of the item |
+
+A `*mirror.RefusedError` keeps the engine's error as its cause: read it with `errors.As`, not a type assertion.
 
 ### Tests
 

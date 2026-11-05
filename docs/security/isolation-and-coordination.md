@@ -141,6 +141,11 @@ of that repository cancels them, and starts none for 30 seconds after the last m
 window open, so the pass makes no progress while it lasts. Subject: the progress of a mirror (R-REPO-053), not its content and not
 the clients: they are served as before.
 
+A yield used to make a pass record a failure when the signal cancelled one of its discovery requests; the engine now reads a pre-emption of
+a discovery request like one of a fill (the item or the call is repeated, never counted as a failure, Q-REPO-181). The windows the signal
+opens are purged when they have passed and capped at 4096 per replica, so a flood of forged ids no longer grows the memory of every
+replica (Q-REPO-182); it can still hide a real window for 30 s while 4096 forged ones are live.
+
 What makes it real: write access to the Valkey Pub/Sub of the installation. Such an account can already delay jobs with a forged
 `jobs` signal and flush caches' early evictions, and it can read the keys of the flight locks; the mirror's loss is a delay that the
 next pass makes up. An operator sees it in `trove_mirror_preempted_total{repo}` growing while no client fetch waits.

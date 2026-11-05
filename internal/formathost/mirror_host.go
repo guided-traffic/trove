@@ -34,8 +34,9 @@ var _ MirrorEngine = (*proxy.Engine)(nil)
 // background slot within the pass's ceiling, a client fetch can pre-empt it, its outcomes neither move nor reset the circuit,
 // and its upstream log record carries flight_role mirror and the pass's job (R-REPO-053 to R-REPO-057).
 //
-// A format's own requests during a pass (its gate revalidating a package document, its lister reading a document) run through
-// the same fetcher: the Host a format's gate is handed is one whose Remote() is the pass's background fetcher.
+// A format's own requests during a pass (its gate revalidating a package document, its lister reading a document) are background
+// requests too: the context of the pass carries the pass, and the client path's wrapper over the engine builds a background request
+// from it (Q-ARCH-311). The Host a format is handed is the format host itself.
 type MirrorHost struct {
 	h *Host
 	e MirrorEngine
@@ -61,8 +62,14 @@ var (
 )
 
 // Lister implements [mirror.Host]: the discovery of the format's remote adapter, found through the capabilities Register read.
-// Ready implements [mirror.Host]: a built host serves passes.
-func (m *MirrorHost) Ready(context.Context) error { return nil }
+// Ready implements [mirror.Host]: a built host serves passes until its engine drains; a process that is shutting down starts no
+// pass (an error wrapping mirror.ErrShuttingDown).
+func (m *MirrorHost) Ready(context.Context) error {
+	if d, ok := m.e.(interface{ Draining() bool }); ok && d.Draining() {
+		return fmt.Errorf("%w: the remote engine is draining", mirror.ErrShuttingDown)
+	}
+	return nil
+}
 
 func (m *MirrorHost) Lister(format string) (discover.Lister, bool) {
 	f, ok := m.h.o.Formats(format)
@@ -149,12 +156,12 @@ func (m *MirrorHost) Fill(ctx context.Context, repo repository.Repository, pass 
 	}
 	expected, err := fetch.gate(ctx, rq, p)
 	if err != nil {
-		return mirror.FillResult{}, mapBackground(err)
+		return mirror.FillResult{}, mapGate(err)
 	}
 	preq.Expected = proxy.Digests{SHA256: expected.SHA256, SHA512: expected.SHA512, SHA1: expected.SHA1}
 	out, err := m.e.Fill(ctx, preq)
 	if err != nil {
-		return mirror.FillResult{}, mapBackground(err)
+		return mirror.FillResult{}, mapFill(err)
 	}
 	return mirror.FillResult{Present: out.Present, Bytes: out.Bytes}, nil
 }
@@ -282,8 +289,9 @@ func (u *passUpstream) Document(ctx context.Context, path, variant string) ([]by
 }
 
 // mapBackground turns the outcomes of a background request into the errors the mirror engine reads (mirror.Host): a
-// pre-emption wraps mirror.ErrPreempted, an open circuit and a refused spool admission are a *mirror.WaitError, and a rate-limit
-// answer is left as it is (discover.AsRateLimited finds it). Any other error is a failure of the item.
+// pre-emption wraps mirror.ErrPreempted, a request the shutdown cancelled wraps mirror.ErrShuttingDown, an open circuit and a
+// refused spool admission are a *mirror.WaitError, and a rate-limit answer is left as it is (discover.AsRateLimited finds it). Any
+// other error is a failure of the item.
 func mapBackground(err error) error {
 	var w *proxy.BackgroundWait
 	switch {
@@ -294,5 +302,58 @@ func mapBackground(err error) error {
 	case errors.As(err, &w):
 		return &mirror.WaitError{After: w.After, Reason: w.Reason}
 	}
+	if ee, ok := errs.As(err); ok && ee.Code == errs.CodeShuttingDown {
+		return fmt.Errorf("%w: %w", mirror.ErrShuttingDown, err)
+	}
 	return err
 }
+
+// mapFill is mapBackground for the error of the engine's fill, with the refusals that no retry of the pass changes
+// (*mirror.RefusedError, docs/developer/mirror.md "What the host maps"): the upstream does not have the artifact (a negative
+// entry, 404, 410, a package marked gone), the vulnerability scanning blocks the version, the populate check refuses.
+// A repository that is offline (code not_cached_offline) is none of them: the engine reads the code and stops the pass.
+func mapFill(err error) error {
+	if m := mapBackground(err); m != err { //nolint:errorlint // identity: mapBackground returns err itself when it maps nothing
+		return m
+	}
+	ee, ok := errs.As(err)
+	if !ok {
+		return err
+	}
+	switch ee.Code {
+	case errs.CodeNotFound:
+		return refused(mirror.RefusedNotFound, err)
+	case errs.CodeVulnerabilityBlocked, errs.CodeVulnerabilityDataMissing:
+		return refused(mirror.RefusedBlocked, err)
+	case errs.CodePopulateNotPermitted:
+		return refused(mirror.RefusedPopulate, err)
+	}
+	return err
+}
+
+// mapGate is mapBackground for the error of the format's artifact gate: a refusal of the format (not found, forbidden: a removed
+// version, a mark) is permanent; the gate's own request failing is the failure of the item that it is.
+func mapGate(err error) error {
+	if m := mapBackground(err); m != err { //nolint:errorlint // identity, as in mapFill
+		return m
+	}
+	if k := errs.KindOf(err); k == errs.NotFound || k == errs.Forbidden {
+		if ee, ok := errs.As(err); !ok || ee.Code != errs.CodeNotCachedOffline {
+			return refused(mirror.RefusedGate, err)
+		}
+	}
+	return err
+}
+
+// refused is a *mirror.RefusedError that keeps the engine's error as its cause.
+func refused(reason string, cause error) error {
+	return &refusedError{RefusedError: mirror.RefusedError{Reason: reason}, cause: cause}
+}
+
+// refusedError carries the cause for errors.Is and errors.As; the engine reads the type *mirror.RefusedError through errors.As.
+type refusedError struct {
+	mirror.RefusedError
+	cause error
+}
+
+func (e *refusedError) Unwrap() []error { return []error{&e.RefusedError, e.cause} }

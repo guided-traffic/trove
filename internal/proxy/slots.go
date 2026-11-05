@@ -208,8 +208,27 @@ func (s *slots) forget(r *bgRun) {
 func (s *slots) yield(repoID int64) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.yielding[repoID] = s.now().Add(yieldFor)
+	now := s.now()
+	s.purgeYield(now)
+	// A message names any id: the map keeps the windows of the last 30 s and at most maxYielding of them, so a forged flood
+	// costs a bounded amount of memory (Q-REPO-182). A window beyond the bound is not opened; the running fetches are still
+	// pre-empted.
+	if _, known := s.yielding[repoID]; known || len(s.yielding) < maxYielding {
+		s.yielding[repoID] = now.Add(yieldFor)
+	}
 	return s.yieldRuns(repoID)
+}
+
+// maxYielding bounds the yield windows kept at a time.
+const maxYielding = 4096
+
+// purgeYield drops the windows that have passed. The caller holds mu.
+func (s *slots) purgeYield(now time.Time) {
+	for id, until := range s.yielding {
+		if !now.Before(until) {
+			delete(s.yielding, id)
+		}
+	}
 }
 
 // yieldAll is the signal of a batch that named no repository: it counts for every repository.

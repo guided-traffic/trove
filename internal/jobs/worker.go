@@ -249,6 +249,9 @@ func (w *Worker) Settle(ctx context.Context) error {
 	}
 }
 
+// QuiescesFirst says that the shutdown quiesces the worker before the engines its handlers use (Q-ARCH-318).
+func (w *Worker) QuiescesFirst() {}
+
 // Quiesce cancels the handlers still running (5 s before the shutdown deadline,
 // R-ARCH-024 step 4). Each persists its checkpoint and returns, and its job is
 // released without counting the attempt (R-ARCH-016).

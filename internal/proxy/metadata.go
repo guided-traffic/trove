@@ -119,7 +119,15 @@ func (e *Engine) metadata(ctx context.Context, rq Request, restoredAt time.Time)
 	if found && !rq.background() { // a pass waits for the refresh: it has no client to answer with the stored copy
 		st.refresh = time.Duration(rem.Settings.Cache.MetadataRefreshTimeoutSeconds) * time.Second
 	}
-	res, end := e.collapse(ctx, rq, st)
+	rq, sctx, release, err := e.holdBackground(ctx, rq)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	res, end := e.collapse(sctx, rq, st)
+	if end == endGone && rq.background() && errors.Is(context.Cause(sctx), ErrPreempted) {
+		return nil, ErrPreempted
+	}
 	return e.metadataAnswer(ctx, rq, st, en, found, res, end)
 }
 

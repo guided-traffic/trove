@@ -76,10 +76,6 @@ func RateLimitOf(status int, h http.Header, body []byte, now time.Time) (RateLim
 	if rl.Wait > MaxRateLimitWait {
 		rl.Wait = MaxRateLimitWait
 	}
-	if status == http.StatusServiceUnavailable && rl.Reason == ReasonRetryAfter && !rl.Hinted {
-		// A Retry-After that does not parse is no hint, and a 503 without one is an ordinary failure.
-		return RateLimit{}, false
-	}
 	return rl, true
 }
 
@@ -101,8 +97,11 @@ func slowDown(body []byte) bool {
 	return bytes.Contains(body, []byte("<Code>SlowDown</Code>"))
 }
 
-// retryAfter reads a Retry-After value: delta seconds or an HTTP date. A date in the past counts as absent.
-func retryAfter(v string, now time.Time) (time.Duration, bool) {
+// ParseRetryAfter reads a Retry-After value (RFC 9110 section 10.2.3): delta seconds, or an HTTP date as the time left until it,
+// which is not above zero for a date that has passed. ok is false for an empty or unreadable value and for a negative delta. It
+// caps nothing and decides nothing about "absent": the client classification (R-REPO-029) and RateLimitOf (R-REPO-054) each apply
+// their own rule to what it returns.
+func ParseRetryAfter(v string, now time.Time) (d time.Duration, ok bool) {
 	v = strings.TrimSpace(v)
 	if v == "" {
 		return 0, false
@@ -111,15 +110,32 @@ func retryAfter(v string, now time.Time) (time.Duration, bool) {
 		if n < 0 {
 			return 0, false
 		}
-		if n > int64(MaxRateLimitWait/time.Second) {
-			return MaxRateLimitWait, true
-		}
-		return time.Duration(n) * time.Second, true
+		return time.Duration(min(n, maxRetryAfterSeconds)) * time.Second, true
 	}
-	if t, err := http.ParseTime(v); err == nil && t.After(now) {
+	if t, err := http.ParseTime(v); err == nil {
 		return t.Sub(now), true
 	}
 	return 0, false
+}
+
+// maxRetryAfterSeconds keeps a delta from overflowing a Duration.
+const maxRetryAfterSeconds = 1 << 31
+
+// retryAfter reads the hint of a rate-limit answer: a delta, or a date that lies ahead; a date in the past counts as absent.
+func retryAfter(v string, now time.Time) (time.Duration, bool) {
+	d, ok := ParseRetryAfter(v, now)
+	if !ok || (d <= 0 && !isDelta(v)) {
+		return 0, false
+	}
+	if d > MaxRateLimitWait {
+		d = MaxRateLimitWait
+	}
+	return d, true
+}
+
+func isDelta(v string) bool {
+	_, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+	return err == nil
 }
 
 // resetOf reads RateLimit-Reset (delta seconds) and X-RateLimit-Reset (seconds since the epoch).
@@ -158,6 +174,9 @@ func (e *RateLimitError) Error() string {
 
 // RetryAfter is the wait the upstream asked for and whether it named one.
 func (e *RateLimitError) RetryAfter() (time.Duration, bool) { return e.Wait, e.Hinted }
+
+// HTTPStatus is the status of the answer; the engine of the mirror reads it through an interface of its own.
+func (e *RateLimitError) HTTPStatus() int { return e.Status }
 
 // RateLimitReason is the reason label of the answer.
 func (e *RateLimitError) RateLimitReason() string { return e.Reason }

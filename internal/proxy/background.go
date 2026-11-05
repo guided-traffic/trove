@@ -5,7 +5,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/cluster"
@@ -156,4 +158,71 @@ func (e *Engine) listenYield() {
 		return
 	}
 	e.stopYield = cancel
+}
+
+// bgSlot is the background slot a pass's request holds while it goes through the flights of R-REPO-026 (Q-REPO-179). It is taken
+// before the request enters collapse, so that a request that may not run yet (the share is full, a client waits, the yield window of
+// the signal is open) holds no cross-replica lock and no flight a client could join. The fetch that the request leads runs under the
+// slot's fate: a pre-emption cancels it; the end of the pass's context cancels it unless a follower of this replica joined its flight
+// (a client then waits for it, and it finishes).
+type bgSlot struct {
+	ctx context.Context
+	mu  sync.Mutex
+	fls []*flight
+}
+
+// joined reports whether a follower of this replica joined a flight the slot's request leads.
+func (b *bgSlot) joined() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, fl := range b.fls {
+		if fl.joined.Load() > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// link returns the context a fetch under the slot runs under, and the function that ends the link.
+func (b *bgSlot) link(ctx context.Context, fl *flight) (context.Context, func()) {
+	c, cancel := context.WithCancelCause(ctx)
+	b.mu.Lock()
+	b.fls = append(b.fls, fl)
+	b.mu.Unlock()
+	stop := context.AfterFunc(b.ctx, func() {
+		cause := context.Cause(b.ctx)
+		if errors.Is(cause, ErrPreempted) || fl.joined.Load() == 0 {
+			cancel(cause)
+		}
+	})
+	return c, func() {
+		stop()
+		b.mu.Lock()
+		b.fls = slices.DeleteFunc(b.fls, func(x *flight) bool { return x == fl })
+		b.mu.Unlock()
+		cancel(nil)
+	}
+}
+
+// holdBackground takes the background slot of a background request before it enters the flights; a request that holds one
+// already (the discovery document a fetch resolves) and every client request pass through. The returned context is the one the
+// request waits under: a pre-emption ends it with the cause ErrPreempted.
+func (e *Engine) holdBackground(ctx context.Context, rq Request) (Request, context.Context, func(), error) {
+	if !rq.background() || rq.slot != nil {
+		return rq, ctx, func() {}, nil
+	}
+	rem := rq.Remote
+	budget := rem.Settings.Limits.MaxConcurrentFetches
+	ceiling := rq.Ceiling
+	if ceiling <= 0 {
+		ceiling = BackgroundShare(budget, rem.Settings.Mirror.Concurrency)
+	}
+	b := &bgSlot{}
+	sctx, release, err := e.slots.acquireBackgroundJoined(ctx, rem.id, budget, ceiling, b.joined)
+	if err != nil {
+		return rq, ctx, nil, err
+	}
+	b.ctx = sctx
+	rq.slot = b
+	return rq, sctx, release, nil
 }

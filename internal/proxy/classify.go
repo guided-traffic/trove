@@ -58,12 +58,9 @@ func classifyStatus(rem Remote, resp *http.Response) failure {
 // or unreadable value is max, so the circuit does not reopen faster than the
 // operator configured.
 func retryAfterOf(h http.Header, max time.Duration) time.Duration {
-	v := h.Get("Retry-After")
-	d := max
-	if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-		d = time.Duration(n) * time.Second
-	} else if t, err := http.ParseTime(v); err == nil {
-		d = time.Until(t)
+	d, ok := upstream.ParseRetryAfter(h.Get("Retry-After"), time.Now())
+	if !ok {
+		d = max
 	}
 	if max > 0 && d > max {
 		d = max

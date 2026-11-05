@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
@@ -69,9 +70,27 @@ func (e *Engine) Fill(ctx context.Context, rq Request) (FillOutcome, error) {
 	}); err != nil {
 		return FillOutcome{}, err
 	}
+	// The slot comes first: a background request that may not run yet holds neither the flight nor a client's wait (Q-REPO-179).
+	rq, sctx, release, err := e.holdBackground(ctx, rq)
+	if err != nil {
+		return FillOutcome{}, err
+	}
+	defer release()
 	st := &reqState{role: roleLeader}
-	res, end := e.collapse(ctx, rq, st)
+	res, end := e.collapse(sctx, rq, st)
+	if st.collapsed && end == endDone && res.err != nil && !res.negative {
+		// The flight was a client's and failed with the client's classification (R-REPO-029): a 429 would be an item failure
+		// here, with no wait and no halving. The circuit says what happened to the upstream; when it is closed the pass fetches
+		// once for itself (Q-REPO-180).
+		if open, retry, perr := e.circuitPeek(ctx, rem); perr == nil && open {
+			return FillOutcome{}, circuitWait(retry)
+		}
+		st = &reqState{role: roleLeader}
+		res, end = e.collapse(sctx, rq, st)
+	}
 	switch {
+	case end == endGone && errors.Is(context.Cause(sctx), ErrPreempted):
+		return FillOutcome{}, ErrPreempted
 	case end == endGone:
 		return FillOutcome{}, ctx.Err()
 	case res.own != nil:

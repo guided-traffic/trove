@@ -629,10 +629,8 @@ func (a *App) Shutdown(ctx context.Context) error {
 	sctx, cancel := context.WithDeadline(ctx, plan.ServerBy)
 	defer cancel()
 	quiesce := time.AfterFunc(time.Until(plan.QuiesceAt), func() {
-		for i := len(comps) - 1; i >= 0; i-- {
-			if q, ok := comps[i].(Quiescer); ok {
-				q.Quiesce(sctx)
-			}
+		for _, q := range quiesceOrder(comps) {
+			q.Quiesce(sctx)
 		}
 	})
 	defer quiesce.Stop()
@@ -699,6 +697,22 @@ func (a *App) Shutdown(ctx context.Context) error {
 	a.tele.shutdown(octx)
 	a.log.Info("stopped", "took", time.Since(start).Round(time.Millisecond).String())
 	return errors.Join(errsOut...)
+}
+
+// quiesceOrder is the order in which the components that quiesce are asked to (R-ARCH-024 step 4): the job worker first, because its
+// handlers run the passes of a mirror through the remote engine and a pass whose engine was cancelled under it would record failures
+// while its context is live; then the others in reverse start order (Q-ARCH-318).
+func quiesceOrder(comps []Component) []Quiescer {
+	var first, rest []Quiescer
+	for i := len(comps) - 1; i >= 0; i-- {
+		switch q := comps[i].(type) {
+		case QuiescesFirst:
+			first = append(first, q)
+		case Quiescer:
+			rest = append(rest, q)
+		}
+	}
+	return append(first, rest...)
 }
 
 // closeComponents flushes, then stops, every component. Signals stop first: the

@@ -79,6 +79,12 @@ func (f *fetcher) run(ctx context.Context) flightResult {
 		return flightResult{err: errs.E(errs.UpstreamFailed, errs.CodeUpstreamDigestMissing,
 			"The upstream announces no SHA-256 or stronger digest for the item, which "+rem.Repo.Key+" requires.")}
 	}
+	if rq.slot != nil {
+		// The pass's request holds its background slot already (Q-REPO-179): the fetch runs under the slot's fate.
+		var done func()
+		ctx, done = rq.slot.link(ctx, f.fl)
+		defer done()
+	}
 	if err := f.discover(ctx); err != nil {
 		return resultOf(err)
 	}
@@ -95,11 +101,14 @@ func (f *fetcher) run(ctx context.Context) flightResult {
 			return flightResult{own: circuitWait(retry)}
 		}
 	}
-	ctx, release, err := e.acquireSlot(ctx, rq, f.fl)
-	if err != nil {
-		return resultOf(err)
+	if rq.slot == nil {
+		var release func()
+		var err error
+		if ctx, release, err = e.acquireSlot(ctx, rq, f.fl); err != nil {
+			return resultOf(err)
+		}
+		defer release()
 	}
-	defer release()
 	res := f.inSlot(ctx)
 	if rq.background() && errors.Is(context.Cause(ctx), ErrPreempted) && !res.stored && res.doc == nil && !res.negative {
 		// A client fetch (or the yield of another process) took the slot: the upstream request was cancelled with ctx, the
@@ -201,7 +210,7 @@ func (f *fetcher) discover(ctx context.Context) error {
 	}
 	doc, err := f.e.Metadata(ctx, Request{
 		Remote: rq.Remote, Path: path, Variant: variant, Kind: Metadata, Mode: rq.Mode, Populate: pop,
-		MaxBytes: rq.MaxBytes, Adapter: rq.Adapter, Caller: rq.Caller, Priority: rq.Priority, Ceiling: rq.Ceiling, JobID: rq.JobID,
+		MaxBytes: rq.MaxBytes, Adapter: rq.Adapter, Caller: rq.Caller, Priority: rq.Priority, Ceiling: rq.Ceiling, JobID: rq.JobID, slot: rq.slot,
 	})
 	if err != nil {
 		return err

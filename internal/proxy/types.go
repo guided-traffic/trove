@@ -185,6 +185,9 @@ type Request struct {
 	// JobID is the id of the job that runs the pass a background request belongs to: the upstream log record names it
 	// (R-REPO-057).
 	JobID string
+	// slot is the background slot the request holds before it enters the flights (holdBackground): a background request
+	// never holds a flight while it may not run.
+	slot *bgSlot
 	// Headers sets, on the answer the engine streams to the leader's own client while the
 	// artifact is fetched, the headers of a stored answer that do not depend on the body
 	// (Accept-Ranges, Cache-Control), so that the first answer and the later ones differ only

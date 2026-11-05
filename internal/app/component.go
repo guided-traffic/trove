@@ -36,6 +36,14 @@ type Settler interface {
 // attempt, remote fetches are cancelled and their flight locks released.
 type Quiescer interface{ Quiesce(ctx context.Context) }
 
+// QuiescesFirst marks a Quiescer whose work stands on other components' work: the job worker, whose handlers run passes through
+// the remote engines. The shutdown quiesces these before the others, and waits for them, so that the engines are cancelled after
+// the work that uses them has been released and not under it (R-ARCH-024 step 4, Q-ARCH-318).
+type QuiescesFirst interface {
+	Quiescer
+	QuiescesFirst()
+}
+
 // Flusher writes the write-only buffers after the last request (step 6):
 // statistics, activity, audit. It runs before the pools close.
 type Flusher interface {

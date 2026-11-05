@@ -3188,7 +3188,8 @@ Priority: **MVP** · Covers: trove-only
 
 - **Rate-limit answers** (Q-REPO-137). The mirror treats as a rate-limit answer to any of its requests, discovery or fill:
   - `429 Too Many Requests` ([RFC 6585, section 4](https://www.rfc-editor.org/rfc/rfc6585#section-4));
-  - `503` with a `Retry-After` header, and `503` whose body, read up to 4 KiB, is an S3 error with the code `SlowDown`
+  - `503` with a `Retry-After` header (a rate limit even when its value is a date in the past or does not parse: it is then a
+    rate limit with no hint, Q-REPO-183), and `503` whose body, read up to 4 KiB, is an S3 error with the code `SlowDown`
     ([Amazon S3 error responses](https://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html));
   - `403`, `429` or `503` with `RateLimit-Remaining: 0` or `X-RateLimit-Remaining: 0`; the reset then comes from
     `RateLimit-Reset` (seconds) or `X-RateLimit-Reset` (seconds since the epoch) when `Retry-After` is absent.
@@ -5519,72 +5520,6 @@ the installation's configuration right. The development agent would revisit (c) 
 **Applied in the spec:** R-REPO-050, the security notes; [authorization.md](authorization.md) R-AUTHZ-026 (a bullet). Code:
 `internal/repository/delegated.go` (`checkDelegatedMirror`).
 
-### Q-REPO-193 · A project administrator keeps the scope of a mirror, not only its settings
-
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
-
-Context: Q-REPO-142 froze `remote.mode` and `remote.mirror` for a project administrator. The bound of R-REPO-052 is checked on each
-write by itself, so a delegate could change the include list of an administrator's `@acme/*` mirror to some seventy patterns with a
-literal prefix each (`a*` to `z*`, `0*` to `9*`, `@a*` to `@z*`, `@0*` to `@9*`; each passes the bound rule, together they cover
-every npm name), or point `remote.url` at another upstream, and the next pass would be a full one over what the administrator never
-chose.
-
-| Option | What it means | For | Against |
-|---|---|---|---|
-| (a) The stored include list, exclude list, url and extra hosts are frozen while the stored mode is mirror and the write keeps it (chosen) | 422 `mirror_restricted` at the pointer of the changed member; a write that also sets `pullThrough` may change them | Closes the widening and the redirect with the rule that already freezes the settings; the lists are compared as sets, so a document sent back in another order saves | A project administrator cannot narrow a mirror's patterns; it turns the mode back to `pullThrough` first |
-| (b) A bound on the number or shape of patterns | At most n patterns, none a single character | No freeze | Any number is a choice; two-letter prefixes still cover a registry |
-| (c) A byte bound a delegate cannot change | `maxBytes` becomes mandatory | Bounds the volume | The scope and the upstream stay a delegate's; volume is only one of the harms |
-
-**Choice:** (a). The comparison is with the canonical stored section and document under the row lock, as in Q-REPO-127. A create by a
-project administrator cannot be a mirror (Q-REPO-142), so the rule applies to updates, patches included (they build the next
-document and take the same path).
-
-**Rationale:** what a mirror covers and where it reads from are the same decision as its settings. The development agent would revisit
-it with Q-REPO-142's condition, a per-project allowance.
-
-**Applied in the spec:** R-REPO-050; [authorization.md](authorization.md) R-AUTHZ-026; [security/delegated-administration.md](../security/delegated-administration.md). Code:
-`internal/repository/validate_mirror.go` (`checkDelegatedMirrorScope`), `delegated.go`.
-
-### Q-REPO-194 · One predicate decides whether a url is a format's well-known upstream
-
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
-
-Context: the bound rule of R-REPO-052 compared the saved `remote.url` with the catalog's default upstream as strings, and the saved url
-keeps a query; npm's lister ignored it and npm's document requests drop it. `https://registry.npmjs.org/?` was therefore saved with a
-warning only and read the replication feed of the public registry unbounded.
-
-| Option | What it means | For | Against |
-|---|---|---|---|
-| (a) `discover.SameUpstream(url, known)`, used by the bound rule and by the lister (chosen) | Scheme, host, effective port and path equal, no user information, query or fragment | One answer in one place; the discovery contract gains one function (an addition) | A url with a query is never "the well-known upstream", which is why a mirror refuses a query (Q-REPO-195) |
-| (b) An optional interface of the format's remote adapter, called by the repository model | The format decides | A format may know more | The repository model reads the catalog, not adapters; two implementations to keep equal |
-| (c) Normalize the query away on save | `remote.url` loses it | The two agree | Silently changes a stored upstream address that a partner's registry may need |
-
-**Choice:** (a). NuGet's lister does not decide on the url (it reads the service index), so NuGet only shares the bound rule; the
-same predicate covers `https://api.nuget.org/v3/index.json?` there.
-
-**Rationale:** a decision that two places make with different rules is a way around the bound. The development agent would revisit
-(b) if a format's well-known upstream needs more than the url (two hosts).
-
-**Applied in the spec:** R-REPO-052. Code: `internal/mirror/discover/discover.go` (`SameUpstream`), `internal/repository/validate_mirror.go`,
-`internal/formats/npm/mirror.go`.
-
-### Q-REPO-195 · A mirror's url carries no query; a pull-through remote keeps what it stored
-
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
-
-| Option | What it means | For | Against |
-|---|---|---|---|
-| (a) Refuse a query (and `?` alone) in `remote.url` for mode mirror, 422 `invalid_value` at `/remote/url` (chosen) | Fragments and user information are refused for every remote already (R-REPO-024) | The formats' requests drop the query, so a mirror's url with one is the upstream without it, and no stored document that predates the mode can be broken | A mirror of an upstream that needs a query token on every request is not possible; none of the formats' upstreams does |
-| (b) Refuse it for every remote | One rule | Simple | A stored pull-through remote with a query would no longer be sent back and saved (Q-REPO-130's read-back rule) |
-
-**Choice:** (a). A mirror saved before this rule with a query in its url is refused on its next write until the query is removed; the
-mode shipped without an engine, so none of them ran a pass.
-
-**Rationale:** the refusal costs nothing where the query was harmless and closes the case where it was not. The development agent would
-revisit (b) when the query of a remote's url is dropped by every format.
-
-**Applied in the spec:** R-REPO-052 (the acceptance criteria). Code: `validate_mirror.go` (`checkMirrorURL`).
-
 ### Q-REPO-143 · Which pull-replication entries of the catalog the mirror pulls forward
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -6060,6 +5995,121 @@ includes a part of an upstream's answer.
 
 **Applied in the spec:** R-REPO-056.
 
+### Q-REPO-179 · A background request takes its slot before it enters a flight
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-REPO-149 left the pass's fetch to lead a flight of R-REPO-026 and to wait for its slot inside it. The leader held the
+cross-replica flight lock while it waited (no timeout, blocked while a client waits for the repository and during the 30 s of the
+yield window), so a client that joined waited on the flight without a deadline, clients of other replicas waited up to
+`fetch_wait_timeout_seconds`, and after the pass's context ended the detached flight went on waiting and fetching.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The slot is taken before `collapse`; the fetch the request then leads runs under the slot's fate (chosen) | A request that may not run holds no lock and no flight; a pre-emption or the end of the pass's context cancels the fetch unless a follower of the replica joined it | No client waits under background rules; the lock is held only while a fetch runs | The slot is held while the request joins another request's flight |
+| (b) A leader whose flight a client joined behaves like a client (client queue, its timeout, ignores waiting and the yield window) | The slot is taken inside the flight as before | Smaller change | The lock is still held while a background request that nobody joined may not run: clients of other replicas wait for it |
+| (c) A background request never leads a flight | It fetches outside any flight | No sharing | A client that asks for the item the pass is fetching fetches a second time (R-REPO-055) |
+
+**Choice:** (a). A request that joins another request's flight keeps its slot until the flight ends, bounded by the share B. When the
+pass's context ends and a follower of the replica joined the flight, the fetch finishes (the client waits for it) without a slot; a
+fetch nobody joined is cancelled.
+
+**Rationale:** "a background request never holds the lock while it may not run" is the property clients need; (b) fixes the replica
+and not the cluster. The development agent would revisit it if holding a slot while following a client's flight costs passes
+measurable throughput.
+
+**Applied in the spec:** R-REPO-055. Code: [internal/proxy/background.go](../../internal/proxy/background.go) (`bgSlot`, `holdBackground`),
+[fill.go](../../internal/proxy/fill.go), [metadata.go](../../internal/proxy/metadata.go), [fetch.go](../../internal/proxy/fetch.go) (`run`).
+Test: `TestR_REPO_055_AClientNeverWaitsUnderTheBackgroundRulesOfAFlightItJoined`.
+
+### Q-REPO-180 · A background request that joined a client's flight reads a failure through the circuit and fetches once itself
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a pass's fill that joins a client's flight gets the flight's result, which carries the client classification (R-REPO-029): a
+`429` was an item failure there, with no wait and no halving (R-REPO-054).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) When the joined flight ended with an error, the request reads the circuit: open is a wait (`circuit_open`); closed, it fetches once as the leader of a flight of its own, so that its own answer is classified as a pass's (chosen) | The client's `429` opened the circuit at once, so the pass waits; any other failure is repeated by the pass's own request | No new data on the flight; the rate-limit rule stays in one place | One more upstream request after a failure the client already met |
+| (b) The flight carries the status, headers and body prefix for the pass | `RateLimitOf` on the client's answer | Exact | The flight's result grows for a rare case |
+| (c) Leave it an item failure | Nothing to do | No code | The pass loses the wait and the halving exactly when the upstream throttles |
+
+**Choice:** (a).
+
+**Rationale:** the circuit is the shared memory of what the upstream just did. The development agent would revisit (b) if the second
+request is seen to hit throttled upstreams that the circuit does not cover (`failureThreshold` above 1 for a `5xx`).
+
+**Applied in the spec:** R-REPO-054. Code: [internal/proxy/fill.go](../../internal/proxy/fill.go). Test:
+`TestR_REPO_054_ABackgroundRequestThatJoinedAClientsFlightReadsAThrottlingAnswerAsAWait`.
+
+### Q-REPO-181 · The host maps the permanent refusals of a fill to `*mirror.RefusedError`, and the shutdown to `mirror.ErrShuttingDown`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the seam (`mirror.Host`) names a permanent refusal, which the engine counts and goes on from, and a request cancelled by
+the shutdown, which stops the pass without a failure. The proxy's errors carry codes.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The host reads the codes of the engine's error: `not_found` for a negative entry, 404, 410 and a package marked gone (`CodeNotFound`); `blocked` for `vulnerability_blocked` and `vulnerability_data_missing`; `populate_denied` for `populate_not_permitted`; `gate_refused` for a not-found or forbidden answer of the format's gate; `shutting_down` for the code of the engine's cancelled request; the cause stays in the chain (chosen) | One table, in the host, tested | The engine stays free of the seam | A new refusal code of the engine needs a line |
+| (b) The engine returns the seam's types | No mapping | Proxy imports `mirror` | A layer cycle in spirit (the engine is below the mirror) |
+| (c) The mirror engine reads codes | Nothing in the host | The host stays thin | The mirror engine would know the proxy's codes |
+
+**Choice:** (a). Offline (`not_cached_offline`) is none of them: it stays an error with its own code, which the engine reads and
+stops the pass on (R-REPO-053). An integrity mismatch and an upstream error are failures of the item. `Ready` answers an error
+wrapping `ErrShuttingDown` while the engine drains.
+
+**Rationale:** a refusal that no retry changes must not be counted as a failure that makes the pass fail. The development agent would
+revisit it if a code is found that fits two rows.
+
+**Applied in the spec:** R-REPO-053 ([docs/developer/mirror.md](../developer/mirror.md) "What the host maps"). Code:
+[internal/formathost/mirror_host.go](../../internal/formathost/mirror_host.go) (`mapFill`, `mapGate`, `mapBackground`). Test:
+`TestMapFill`, `TestMapGate`, `TestMapShuttingDown`.
+
+### Q-REPO-182 · The yield windows a replica keeps are purged when they pass and capped at 4096
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the signal `mirror_yield` names a repository by id, and any process that can publish names any id (H-526). A window was
+removed only when a background request of that repository looked at it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every signal first drops the windows that have passed, and a new one is opened only while fewer than 4096 are held (chosen) | Bounded memory, no knowledge of the repositories needed | A forged flood costs at most 4096 entries; a legitimate window beyond the cap is not opened (the running fetches are still pre-empted) | A flood of 4096 live forged ids can hide a real window for 30 s |
+| (b) Ignore the ids of unknown repositories | Exact | No forged entry at all | The engine does not know the repositories of other replicas' passes; a cache of ids would be one more thing to keep current |
+
+**Choice:** (a).
+
+**Rationale:** a delay of a pass by 30 s is within what H-526 already says a forged signal can do; the memory bound is what had to
+be fixed. The development agent would revisit (b) if the engine gains a snapshot of the repositories it runs passes for.
+
+**Applied in the spec:** R-REPO-055, [security/isolation-and-coordination.md](../security/isolation-and-coordination.md) (H-526). Code:
+[internal/proxy/slots.go](../../internal/proxy/slots.go) (`yield`, `purgeYield`). Test: `TestYieldWindowsAreBounded`.
+
+### Q-REPO-183 · One reader of Retry-After, and a `503` with an unusable one is a rate limit with no hint
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-054 names `503` with a `Retry-After` header as a rate-limit answer, and says that a date in the past or an unreadable
+value counts as absent, that is, as no hint. `RateLimitOf` classified such a `503` as an ordinary failure, and the client
+classification (R-REPO-029) read the header with a second parser.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `upstream.ParseRetryAfter(v, now)` is the one reader; the client classification applies its cap and its floor of a second, `RateLimitOf` its hint rule (a date in the past is absent); a `503` with the header and no usable value is a rate limit with no hint (chosen) | The spec's sentence holds for the `503` | One parser | The hint rule of the pass and the cap of the client stay two small rules |
+| (b) Keep the classification and edit the spec | A `503` with a bad header is a failure | No code | The pass backs off with the failure rule for an upstream that said "slow down" |
+
+**Choice:** (a). `*upstream.RateLimitError` has `HTTPStatus()`, so the engine of the mirror reads the status through an interface
+without importing the package.
+
+**Rationale:** the header says the upstream wants the caller to slow down; whether its value is usable decides only the wait. The
+development agent would revisit it if an upstream is found that sends `503` with a junk `Retry-After` as an ordinary failure.
+
+**Applied in the spec:** R-REPO-054. Code: [internal/proxy/upstream/ratelimit.go](../../internal/proxy/upstream/ratelimit.go),
+[internal/proxy/classify.go](../../internal/proxy/classify.go). Test: `TestRateLimitOf` (the two cases that stated the old rule were
+changed), `TestParseRetryAfter`.
+
 ### Q-REPO-184 · A pre-empted discovery request is waited out and sent again, never a failure of the pass
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -6221,6 +6271,72 @@ The held names were paged with `COLLATE "C"`, which the index of `packages (repo
 **Rationale:** the page only needs an order that is the same on both sides of the comparison. The development agent would revisit it if a statement filters `mirror_state` by `next_pass_at`.
 
 **Applied in the spec:** R-REPO-053 (data model, the index line). Code: `queries/mirror.sql`, `migrations/00040_mirror.sql`. Test: integration `TestR_REPO_057_TheStateKeepsTheLastCompletePassAndHasNoUnusedIndex`, `TestR_REPO_053_ThePendingCountTakesEveryRowAndDropsRefusedNamesUnderTheFence`.
+
+### Q-REPO-193 · A project administrator keeps the scope of a mirror, not only its settings
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-REPO-142 froze `remote.mode` and `remote.mirror` for a project administrator. The bound of R-REPO-052 is checked on each
+write by itself, so a delegate could change the include list of an administrator's `@acme/*` mirror to some seventy patterns with a
+literal prefix each (`a*` to `z*`, `0*` to `9*`, `@a*` to `@z*`, `@0*` to `@9*`; each passes the bound rule, together they cover
+every npm name), or point `remote.url` at another upstream, and the next pass would be a full one over what the administrator never
+chose.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The stored include list, exclude list, url and extra hosts are frozen while the stored mode is mirror and the write keeps it (chosen) | 422 `mirror_restricted` at the pointer of the changed member; a write that also sets `pullThrough` may change them | Closes the widening and the redirect with the rule that already freezes the settings; the lists are compared as sets, so a document sent back in another order saves | A project administrator cannot narrow a mirror's patterns; it turns the mode back to `pullThrough` first |
+| (b) A bound on the number or shape of patterns | At most n patterns, none a single character | No freeze | Any number is a choice; two-letter prefixes still cover a registry |
+| (c) A byte bound a delegate cannot change | `maxBytes` becomes mandatory | Bounds the volume | The scope and the upstream stay a delegate's; volume is only one of the harms |
+
+**Choice:** (a). The comparison is with the canonical stored section and document under the row lock, as in Q-REPO-127. A create by a
+project administrator cannot be a mirror (Q-REPO-142), so the rule applies to updates, patches included (they build the next
+document and take the same path).
+
+**Rationale:** what a mirror covers and where it reads from are the same decision as its settings. The development agent would revisit
+it with Q-REPO-142's condition, a per-project allowance.
+
+**Applied in the spec:** R-REPO-050; [authorization.md](authorization.md) R-AUTHZ-026; [security/delegated-administration.md](../security/delegated-administration.md). Code:
+`internal/repository/validate_mirror.go` (`checkDelegatedMirrorScope`), `delegated.go`.
+
+### Q-REPO-194 · One predicate decides whether a url is a format's well-known upstream
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the bound rule of R-REPO-052 compared the saved `remote.url` with the catalog's default upstream as strings, and the saved url
+keeps a query; npm's lister ignored it and npm's document requests drop it. `https://registry.npmjs.org/?` was therefore saved with a
+warning only and read the replication feed of the public registry unbounded.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `discover.SameUpstream(url, known)`, used by the bound rule and by the lister (chosen) | Scheme, host, effective port and path equal, no user information, query or fragment | One answer in one place; the discovery contract gains one function (an addition) | A url with a query is never "the well-known upstream", which is why a mirror refuses a query (Q-REPO-195) |
+| (b) An optional interface of the format's remote adapter, called by the repository model | The format decides | A format may know more | The repository model reads the catalog, not adapters; two implementations to keep equal |
+| (c) Normalize the query away on save | `remote.url` loses it | The two agree | Silently changes a stored upstream address that a partner's registry may need |
+
+**Choice:** (a). NuGet's lister does not decide on the url (it reads the service index), so NuGet only shares the bound rule; the
+same predicate covers `https://api.nuget.org/v3/index.json?` there.
+
+**Rationale:** a decision that two places make with different rules is a way around the bound. The development agent would revisit
+(b) if a format's well-known upstream needs more than the url (two hosts).
+
+**Applied in the spec:** R-REPO-052. Code: `internal/mirror/discover/discover.go` (`SameUpstream`), `internal/repository/validate_mirror.go`,
+`internal/formats/npm/mirror.go`.
+
+### Q-REPO-195 · A mirror's url carries no query; a pull-through remote keeps what it stored
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse a query (and `?` alone) in `remote.url` for mode mirror, 422 `invalid_value` at `/remote/url` (chosen) | Fragments and user information are refused for every remote already (R-REPO-024) | The formats' requests drop the query, so a mirror's url with one is the upstream without it, and no stored document that predates the mode can be broken | A mirror of an upstream that needs a query token on every request is not possible; none of the formats' upstreams does |
+| (b) Refuse it for every remote | One rule | Simple | A stored pull-through remote with a query would no longer be sent back and saved (Q-REPO-130's read-back rule) |
+
+**Choice:** (a). A mirror saved before this rule with a query in its url is refused on its next write until the query is removed; the
+mode shipped without an engine, so none of them ran a pass.
+
+**Rationale:** the refusal costs nothing where the query was harmless and closes the case where it was not. The development agent would
+revisit (b) when the query of a remote's url is dropped by every format.
+
+**Applied in the spec:** R-REPO-052 (the acceptance criteria). Code: `validate_mirror.go` (`checkMirrorURL`).
 
 ## What this does not cover
 
