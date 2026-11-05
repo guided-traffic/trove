@@ -265,6 +265,9 @@ Found on 2026-11-03 while building phase 6:
   The runs above also found 9,000 findings, not 10,000: the NuGet packages were seeded under mixed-case names, which the lower-cased
   advisory names never match (fixed 2026-11-05, the seed stores the lower-cased ID as a push does); the same run found 10,000 and
   measured V-2 at 0.69 min and V-7b at 213 ms.
+  The dispatched nightly run 42126196109 (2026-11-05, phase 6b's closing commit, GitHub-hosted runner, the fixed dump): V-1 1.5 min, V-2
+  0.72 min, V-3 0.10 min, V-5a, V-5b 0.92 transactions, V-6 62 ms, V-7a 20 ms, V-8 3.3 ms and V-9 0.19 GiB met; V-4 9.7 ms (median
+  2.5 ms) against 5 ms and V-7b 340 ms against 300 ms missed, as in 41902592855.
 
 Found on 2026-11-03 while closing phase 5:
 

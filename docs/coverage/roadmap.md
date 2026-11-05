@@ -1155,6 +1155,9 @@ populate rule of R-AUTHZ-008 and R-AUTHZ-026. The catalog entries API-082 to API
   stopped and the same status through every `api` replica, 977 samples of two claimants without two unfinished passes of one
   repository; the set `mirror-long` green once: the drain of the node of the process that ran a pass of 300 packages, the pass ended
   in the other process with its attempt unchanged, 2 of 300 tarballs served twice with `concurrency` 2.
+  In CI: the set `mirror` green per change in Test and Release run 42116230650 (the time ratio logged, Q-REPO-197); the dispatched
+  nightly run 42126196109 green in `mirror` with `TROVE_PERF_GATE=1` (99 % of the best install without the pass) and in
+  `mirror-long` (the drain).
 - E6b.7: [implemented.txt](implemented.txt) lists R-REPO-050 to R-REPO-059 from the unit, chart and integration reports of the
   closing commit.
 
