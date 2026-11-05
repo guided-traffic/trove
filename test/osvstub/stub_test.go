@@ -613,6 +613,37 @@ func TestFiller(t *testing.T) {
 	}
 }
 
+// The dumps of the performance run are a filler of 231,000 records for every ecosystem, lowered to 7,400 for NuGet
+// (R-VULN-028, R-VULN-029). A filler number above 9,999 has five digits or more; lowering the count removes those records
+// too, so the ecosystem holds exactly the lowered count besides its fixture.
+func TestFillerLoweredFromAboveTenThousand(t *testing.T) {
+	base := len(New(Config{}).IDs("NuGet"))
+	s := New(Config{Filler: 12345})
+	if n := len(s.IDs("NuGet")); n != base+12345 {
+		t.Fatalf("%d records with a filler of 12,345", n)
+	}
+	if _, ok := s.Record("NuGet", "GHSA-fill-12344-0000"); !ok {
+		t.Fatal("the filler record 12,344 is missing")
+	}
+	if err := s.SetFiller("NuGet", 7400); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(s.IDs("NuGet")); n != base+7400 {
+		t.Errorf("%d records after lowering the filler to 7,400, want %d", n, base+7400)
+	}
+	for _, id := range []string{"GHSA-fill-10000-0000", "GHSA-fill-12344-0000"} {
+		if _, ok := s.Record("NuGet", id); ok {
+			t.Errorf("%s survived the lowering", id)
+		}
+	}
+	if _, ok := s.Record("NuGet", "GHSA-fill-7399-0000"); !ok {
+		t.Error("the filler record 7,399 is missing")
+	}
+	if n := len(s.IDs("npm")); n != len(New(Config{}).IDs("npm"))+12345 {
+		t.Errorf("npm holds %d records; lowering NuGet's filler changed it", n)
+	}
+}
+
 func TestKEV(t *testing.T) { // R-VULN-008
 	f := newServer(t, Config{})
 	type catalog struct {

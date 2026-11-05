@@ -71,6 +71,11 @@ The regression issue lists every row that does not meet its target with its outc
 `jobs`, or requests to the advisory source. Each replica's whole log up to that moment, and again at the end of a failed run, is in
 `.out/perf-vuln-logs/<replica>.log`, which the workflow uploads with the report.
 
+Runs before 2026-11-05 do not compare with later ones on V-1, V-8 and V-9: the test source then kept every filler record numbered
+10,000 or above when the NuGet filler was lowered from 231,000 to 7,400, so NuGet held 228,403 records instead of 7,403. V-1 included
+their import (NuGet runs before npm), V-8 served a page of the 228,403 (28,569,143 bytes, computed with the page's renderer; the page
+of 7,403 is 903,143 bytes), and V-9 counted 459,415 advisories. `TestR_VULN_028_TheSeededInstallation` checks the sizes of the dumps.
+
 ## The npm load scripts
 
 [k6/npm.js](k6/npm.js) runs five k6 scenarios one after the other against one `web` pod's listener, from inside the cluster: P-1 (time

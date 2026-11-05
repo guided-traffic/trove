@@ -274,6 +274,10 @@ Found on 2026-11-03 while building phase 6:
   not finish left no row (fixed: Q-VULN-79, a scenario that does not finish is reported as missed and what needs it as not measured).
   V-8 is to be read again on the documented NuGet data (F-53). V-4, V-7b and V-8 are to be read on a run on the reference environment (H-491). Done when that run reports all nine
   within their targets, or a decision revises a bound with the measured cost (the next steps for V-7b are named in Q-VULN-77).
+  Every run above had a NuGet dump of 228,403 records instead of 7,403 (the test source kept the filler records numbered 10,000 and
+  above when the NuGet filler was lowered; fixed 2026-11-05): V-1 included their import, V-8 served a page of 28,569,143 bytes
+  (computed) instead of 903,143, and V-9 counted 459,415 advisories. The first run with the fixed dump (integration stack, 2026-11-05,
+  load average about 12): V-1 2.25 min, V-8 1.6 ms, V-9 0.19 GiB for 238,415 advisories, all met; V-4 15.5 ms missed under that load.
 
 Found on 2026-11-03 while closing phase 5:
 

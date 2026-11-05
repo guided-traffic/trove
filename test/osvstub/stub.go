@@ -291,11 +291,14 @@ func (s *Stub) Toggles() map[string]bool {
 	return out
 }
 
-var fillerID = regexp.MustCompile(`^GHSA-fill-[0-9]{4}-0000$`)
+// fillerID matches every filler identifier: the number has four digits or more, as %04d writes it (GHSA-fill-12345-0000
+// for the filler number 12,345).
+var fillerID = regexp.MustCompile(`^GHSA-fill-[0-9]{4,}-0000$`)
 
 // SetFiller makes the ecosystem hold exactly n synthetic filler records (GHSA-fill-NNNN-0000, for the packages
-// trove-test-filler-NNNN or Trove.Test.FillerNNNN) besides its other records, so a test that needs "30 % fewer"
-// or "2 % invalid" has records to take them from.
+// trove-test-filler-NNNN or Trove.Test.FillerNNNN, the number at least four digits) besides its other records, so a test
+// that needs "30 % fewer" or "2 % invalid" has records to take them from. Every filler record held before is removed
+// first, whatever its number, so lowering the count of a large filler leaves exactly n.
 func (s *Stub) SetFiller(ecosystem string, n int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
