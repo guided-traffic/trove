@@ -393,15 +393,39 @@ Subtest names carry the requirement IDs and the criterion, as the M0 tests do.
 **The control clients and a broken forward.** The control client of a test upstream (`stubControl` in
 [npm_env_test.go](../../test/e2e/npm_env_test.go): the npm, NuGet and advisory-source stubs) keeps one supervised
 forward for the whole process, so a drain or a busy API server that breaks the forward's stream resets a call that is
-in flight (the cleanup of `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` hit it). `send` therefore repeats a
-call that failed on the transport (a reset, an end of stream, a refused connection; never an HTTP status) against a new
-forward, at most twice per call: `forward.renew` ends a kubectl process that is still the one the call started on, waits
-up to 30 s for the next one to listen on the same port, and the call goes out again. Only idempotent calls are repeated
-(`idempotentControl`: every GET and PUT and the POSTs to `reset`, `mode` and `records`; `publish` is not, a repeat
-answers 409). The rule itself is [test/e2e/ctlretry](../../test/e2e/ctlretry), without the build tag, so
-`go test ./test/e2e/ctlretry/` checks it without a cluster. The forwards that tests open per test (`podForwards`) and
-the one to the test IdP are not repeated: a request through them is not known to be idempotent, and none of them is
-open across a drain.
+in flight (the cleanup of `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` hit it), and a single connection through a
+forward can end without an answer on a quiet cluster too (the setup of the `vuln` set lost a publish to the npm stub with
+`EOF` in the nightly run 42002617340, and a readiness ping through a packages pod's forward with `connection reset by peer`
+in run 42035411725, each failing every test of the set). A call that failed on the transport (a reset, an end of
+stream, a refused connection; never an HTTP status) therefore goes to a new forward, at most twice per call
+(`overForward` in [m1_env_test.go](../../test/e2e/m1_env_test.go)): `forward.renew` ends a kubectl process that is
+still the one the call started on, waits up to 30 s for the next one to listen on the same port, and the call goes out
+again. Every repeat is logged (`t.Logf`) with the transport error and the start of the kubectl process it failed on, so
+a run's log shows how often a forward broke. What is repeated:
+
+- the idempotent control calls (`idempotentControl`: every GET and PUT and the POSTs to `reset`, `mode` and
+  `records`);
+- a publish to the npm or NuGet stub (`publish`, `nugetPublish`, through `publishVersion`). It is not idempotent: once
+  the stub has the version, a repeat answers 409. A 409 of a repeat is a success only when the stub then lists exactly
+  the version that was sent (`GET /-/stub/version`, uncounted; npm: name, version, dependencies, the integrity of the
+  tarball the stub builds for them and every tag sent; NuGet: ID in its case, version, dependencies, listed, no
+  deprecation or advisory), which means the attempt that broke had reached the stub. A 409 of the first attempt, or of
+  a repeat when the stub lists other content, fails;
+- the readiness waits of new repositories on every packages replica (`awaitReadableOnEveryReplica`,
+  `nugetReadableOnEveryReplica`), whose GETs go through a forward per pod (`getOverForward`); the clock of the
+  R-AUTHZ-028 bound keeps running across a repeat.
+
+The rule itself is [test/e2e/ctlretry](../../test/e2e/ctlretry), without the build tag, so
+`go test ./test/e2e/ctlretry/` checks it without a cluster; the read-back and its comparison are unit-tested with the stubs
+(`TestServedVersionReadsBackAPublish`, `TestR_NUGET_027_ServedVersionReadsBackAPublish`), and
+`TestVuln_SetupSurvivesABrokenForward` of the `vuln` set ([vuln_harness_test.go](../../test/e2e/vuln_harness_test.go))
+kills the kubectl process of forwards of its own: after the connection to it was accepted (a control call, a publish and
+a ping through a packages pod's forward are repeated on the new forward) and after the stub answered a publish (the 409
+of the repeat is accepted with the npm and the NuGet stub, and refused when the stub lists other dependencies). Nothing
+else through a forward is repeated: the requests of the tests themselves (an assertion or a measured load) and the one
+to the test IdP are not known to be idempotent. The requests of the setup through the edge (repository creation,
+policies, tokens, the task API) are not either: the edge is the kind port mapping, not a kubectl port-forward, and has
+no forward to renew.
 
 **Pacing.** The limits are the product's defaults (`api.rate_limits` read 50/s burst 200 and write 10/s burst 50,
 `auth.rate_limit` 300 failures and 30 flow starts per minute and address). The classes of the API are sliding windows per
@@ -1103,6 +1127,7 @@ are the same code. It reaches no network, and it answers TLS only.
 | [mode.go](../../test/npmstub/mode.go) | the failure switches |
 | [audit.go](../../test/npmstub/audit.go) | the advisory endpoint: the recorded advisories of [testdata/advisories.json](../../test/npmstub/testdata/advisories.json), the log of the requests (`Audits`, `Asked`) |
 | [control.go](../../test/npmstub/control.go) | the control API below `/-/stub/` |
+| [served.go](../../test/npmstub/served.go) | `Served`: a version as the document lists it now (`GET /-/stub/version`), and `ServedVersion.Matches`, whether it is what a publish of a name, version, dependencies and tags makes (the tarball's integrity included) |
 | [tls.go](../../test/npmstub/tls.go) | `Start` (TLS or nothing), a throwaway CA and certificate, a certificate reloaded when its files change |
 | [recorded.go](../../test/npmstub/recorded.go) | the recorded set, embedded from `testdata/recorded` |
 | [corpus/](../../test/npmstub/corpus) | the synthetic corpus: generator, documents, tarballs, SemVer order, the reference project |
@@ -1185,6 +1210,7 @@ Control requests are not counted.
 | `POST /-/stub/reset[?all=true]` | zero the counters and the log of advisory requests; with `all` also modes and package changes |
 | `GET`/`POST /-/stub/mode` | read / replace the failure switches |
 | `POST /-/stub/publish` | `{"name","version","dependencies","tags"}` (409 if the version exists) |
+| `GET /-/stub/version?name=&version=` | the version as the document lists it now: `{"name","version","dependencies","integrity","tags"}` (`tags` are the dist-tags that point at it); `404` when the document does not list it (unknown, dropped). A client that lost the answer of a publish reads it back ([the control clients and a broken forward](#m1-tests)) |
 | `POST /-/stub/drop`, `POST /-/stub/restore` | `{"name","version"}` |
 
 ### The corpus
@@ -1236,6 +1262,7 @@ nothing of nuget.org is recorded.
 | [counts.go](../../test/nugetstub/counts.go) | the counters and their readers: `Nupkgs`, `Nupkg`, `VersionLists`, `Registrations`, `ConditionalRequests`, `Searches`, `Requests`, `Hosts`, `Violations(maxDocuments, maxNupkgs)` |
 | [mode.go](../../test/nugetstub/mode.go) | the failure switches |
 | [control.go](../../test/nugetstub/control.go) | the control API below `/-/stub/` |
+| [served.go](../../test/nugetstub/served.go) | `Served`: a version as the documents list it now (`GET /-/stub/version`), and `ServedVersion.Matches`, whether it is what a publish of an ID, version and dependencies makes |
 | [tls.go](../../test/nugetstub/tls.go) | `Start` (TLS or nothing), a throwaway CA, a certificate reloaded when its files change |
 | [reference.go](../../test/nugetstub/reference.go) | the files of the reference solution of [perf/nuget](../../perf/README.md) |
 | [cmd/nugetstub](../../test/nugetstub/cmd/nugetstub) | `serve` (default) and `reference` (`-out` writes, `-check` compares) |
@@ -1290,8 +1317,11 @@ result carries the deprecation and the advisories of the version it names, as nu
 them in every run as well.
 
 The control API (`-control-token-file`, bearer token) has `GET /-/stub/counts`, `POST /-/stub/reset[?all=true]`,
-`GET`/`POST /-/stub/mode`, and `POST /-/stub/publish|drop|restore|unlist|relist` with `{"name","version"}`
-(`dependencies` for publish).
+`GET`/`POST /-/stub/mode`, `POST /-/stub/publish|drop|restore|unlist|relist` with `{"name","version"}`
+(`dependencies` for publish), and `GET /-/stub/version?name=&version=`: the version as the documents list it now,
+`{"name","version","dependencies","listed","deprecated","vulnerabilities"}` (`404` when they do not list it), which a
+client that lost the answer of a publish reads back ([the control clients and a broken forward](#m1-tests)). Control
+requests are not counted.
 
 ### Use in a Go test
 
@@ -2304,6 +2334,10 @@ test calls `vulnFx` ([vuln_env_test.go](../../test/e2e/vuln_env_test.go)), which
 5. A full synchronization (`vuln-sync-osv-full` with `acceptShrink`: a drain run of the long set leaves 100,000 records behind) through the task API, waited for with the job table and the
    evaluation (`vuln_pending_evaluation` empty, no `vuln-evaluate` queued or running).
 
+The environment is built once, so one failed request of the setup fails every test of the set. The setup's requests to the three upstreams and its readiness pings on every packages
+replica go through kubectl port-forwards, and each is repeated on a new forward after a transport error ([the control clients and a broken forward](#m1-tests): the publishes to the
+upstreams with the read-back of a 409, the rest because it is idempotent); its requests through the edge are sent once.
+
 The npm client of a row is the one of the [matrix](#the-npm-client-matrix) (`npmClient`), the NuGet client the one of [The NuGet tests](#the-nuget-tests) (`nugetClient`), so the clients are
 configured by the snippets of the setup API and the counting is the upstreams'.
 
@@ -2317,6 +2351,7 @@ Every test runs against the one environment; the npm rows and the SDKs run side 
 
 | Test | Criterion | What it does |
 |---|---|---|
+| `TestVuln_SetupSurvivesABrokenForward` | R-VULN-029 (the harness) | runs first and needs no environment: kills the kubectl process of forwards of its own to the npm and NuGet upstreams and a packages pod. After the connection to it was accepted, a control call, a publish and a ping are repeated once on the new forward and answered; after the stub answered a publish (the answer dropped, the client sees `EOF`), the repeat's 409 is accepted when the stub lists the version that was sent (npm and NuGet) and refused when it lists other dependencies; a 409 without a transport error fails |
 | `TestVuln_R_VULN_017_NPMAuditThroughEveryRepository` | R-VULN-017, E4b.5 | each row installs `trove-test-vuln@1.0.0` (through `npm-all`, cached in `npm-remote`) and `trove-test-alias@2.0.0` (`npm-local`), then `npm audit`, `pnpm audit` or `yarn npm audit` through `npm-local`, `npm-remote` and `npm-all`: exit non-zero, both advisories reported (Yarn 4 audits a tree per repository, below); pnpm 10 and Yarn 1 are `not applicable` with the reasons of Q-NPM-65; the npm upstream and the source saw no request during the audits |
 | `TestVuln_R_VULN_017_NPMAuditBody` | R-VULN-017 | the wire: a tree with `@acme/ui` (claimed), `trove-test-mal`, `trove-test-vuln`, `trove-test-alias`, through every repository and two replicas: the malicious advisory is `critical` with `CWE-506`, `@acme/ui` is withheld and the `npm-notice` says `1 internal name`, both replicas answer the same bytes, the legacy endpoints answer `501`, no request upstream |
 | `TestVuln_R_VULN_015_NPMBlockedInstallMalicious` | R-VULN-015, R-VULN-016, E4b.4 | every row: `install trove-test-mal@1.0.0` through `npm-all` fails with `403` (npm: `E403` and the text `trove blocked … malicious package (MAL-2026-1234)`), nothing in `node_modules`; then on the wire `403`, `no-store`, `vulnerability_blocked` and the text, no tarball request at the npm upstream, no item stored |

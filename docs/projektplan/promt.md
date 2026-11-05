@@ -204,17 +204,6 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
-Found on 2026-11-05 in the scheduled nightly run 42002617340 (GitHub-hosted runners, commit 15a9a576):
-
-### Tests and tools
-
-- **F-51 · The setup of the `vuln` leg lost a request to the npm test upstream** (read, from the log). `POST
-  https://npmstub.trove.svc/-/stub/publish` answered `EOF` (`vuln_env_test.go:214`); the environment is built once, so the 12 tests
-  that need it failed at once with "the environment did not finish". The same leg passed in 41902592855 on the same code. Same class
-  as F-50 (a fresh connection closed without an answer) on another path: to the stub's Service, not through the edge. Done when a
-  run that keeps the stub's log and the test's transport error names the closing side, or the setup's requests to the stub are shown
-  to be retry-safe and retried.
-
 Found on 2026-11-04 while cutting trove into task areas (phase 6a):
 
 ### Tests and tools

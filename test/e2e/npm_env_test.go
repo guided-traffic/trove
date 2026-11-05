@@ -21,6 +21,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,7 +33,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/guided-traffic/trove/test/e2e/ctlretry"
 	"github.com/guided-traffic/trove/test/npmstub"
 )
 
@@ -184,38 +184,57 @@ func stub(t testing.TB) *stubControl {
 	if host == "" {
 		t.Fatal("TROVE_E2E_NPMSTUB_HOST is not set; run the npm sets of deploy/dev/e2e.sh")
 	}
-	stubOnce.Do(func() {
-		fwd := portForward(t, "svc/npmstub", 443)
-		addr := fwd.addr
-		var d net.Dialer
-		stubVal = &stubControl{
-			fwd:  fwd,
-			base: "https://" + host,
-			tok:  secretValue(t, "trove-npmstub", "control-token"),
-			c: &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{
-				DisableKeepAlives: true,
-				DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
-					return dialForward(ctx, &d, network, addr)
-				},
-				TLSClientConfig: &tls.Config{RootCAs: caPool(t), MinVersion: tls.VersionTLS12, ServerName: host},
-			}},
-		}
-	})
+	stubOnce.Do(func() { stubVal = newStubControl(t, "svc/npmstub", host, "trove-npmstub", 30*time.Second) })
 	return stubVal
 }
 
+// newStubControl opens a supervised port-forward to port 443 of a test upstream's Service and returns its control
+// client: the token of the Secret, the certificate verified for host, one connection per call.
+func newStubControl(t testing.TB, target, host, secret string, timeout time.Duration) *stubControl {
+	t.Helper()
+	fwd := portForward(t, target, 443)
+	addr := fwd.addr
+	var d net.Dialer
+	return &stubControl{
+		fwd:  fwd,
+		base: "https://" + host,
+		tok:  secretValue(t, secret, "control-token"),
+		c: &http.Client{Timeout: timeout, Transport: &http.Transport{
+			DisableKeepAlives: true,
+			DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				return dialForward(ctx, &d, network, addr)
+			},
+			TLSClientConfig: &tls.Config{RootCAs: caPool(t), MinVersion: tls.VersionTLS12, ServerName: host},
+		}},
+	}
+}
+
+// send makes a control call and fails t unless it is answered below 300. The forward to the Service ends when its
+// stream breaks (a drained node, a busy API server): a call that is safe to repeat (idempotentControl) goes to a new
+// forward after a transport error, twice at most, each repeat logged (overForward).
 func (s *stubControl) send(t testing.TB, method, path string, body any) []byte {
+	t.Helper()
+	status, raw, _, err := s.call(t, method, path, body, idempotentControl(method, path))
+	if err != nil {
+		t.Fatalf("test upstream %s %s: %v", method, path, err)
+	}
+	if status >= 300 {
+		t.Fatalf("test upstream %s %s: %d %s", method, path, status, strings.TrimSpace(string(raw)))
+	}
+	return raw
+}
+
+// call makes a control call and returns its answer; err is a failure of the transport. With repeat, a call that failed
+// on the transport goes to a new forward (overForward), and repeated says that the answer is the one of a repeat.
+func (s *stubControl) call(t testing.TB, method, path string, body any, repeat bool) (status int, raw []byte, repeated bool, err error) {
 	t.Helper()
 	var payload []byte
 	if body != nil {
 		payload, _ = json.Marshal(body)
 	}
-	var status, gen int
-	var raw []byte
+	attempts := 0
 	attempt := func() error {
-		if s.fwd != nil {
-			gen = s.fwd.generation()
-		}
+		attempts++
 		var rd io.Reader
 		if payload != nil {
 			rd = bytes.NewReader(payload)
@@ -234,25 +253,56 @@ func (s *stubControl) send(t testing.TB, method, path string, body any) []byte {
 		raw, err = io.ReadAll(resp.Body)
 		return err
 	}
-	var err error
-	if s.fwd != nil && idempotentControl(method, path) {
-		// the forward to the Service ends when its stream breaks (a drained node, a busy API server): the call goes
-		// to a new forward, twice at most
-		err = ctlretry.Do(2, attempt, func() error { return s.fwd.renew(gen) })
+	if s.fwd != nil && repeat {
+		err = overForward(t, s.fwd, "test upstream "+method+" "+path, attempt)
 	} else {
 		err = attempt()
 	}
-	if err != nil {
-		t.Fatalf("test upstream %s %s: %v", method, path, err)
+	return status, raw, attempts > 1, err
+}
+
+// publishVersion offers a version at the test upstream (POST /-/stub/publish) and fails t unless it is published.
+// A publish is not idempotent: once the stub has the version, a repeat answers 409. After a transport error the
+// publish goes to a new forward all the same (overForward), and a 409 of the repeat is a success only when the stub
+// then lists exactly the version that was sent (GET /-/stub/version, read by matches): the attempt that broke had
+// reached the stub. A 409 of the first attempt fails, and so does a 409 of a repeat when the stub lists other content.
+func (s *stubControl) publishVersion(t testing.TB, name, version string, body map[string]any, matches func(served []byte) error) {
+	t.Helper()
+	if err := s.tryPublish(t, name, version, body, matches); err != nil {
+		t.Fatal(err)
 	}
-	if status >= 300 {
-		t.Fatalf("test upstream %s %s: %d %s", method, path, status, strings.TrimSpace(string(raw)))
+}
+
+// tryPublish is publishVersion that returns the failure instead of failing t.
+func (s *stubControl) tryPublish(t testing.TB, name, version string, body map[string]any, matches func(served []byte) error) error {
+	t.Helper()
+	what := "test upstream POST /-/stub/publish of " + name + " " + version
+	status, raw, repeated, err := s.call(t, http.MethodPost, "/-/stub/publish", body, true)
+	switch {
+	case err != nil:
+		return fmt.Errorf("%s: %w", what, err)
+	case status == http.StatusConflict && repeated:
+		st, served, _, err := s.call(t, http.MethodGet, "/-/stub/version?"+url.Values{"name": {name}, "version": {version}}.Encode(), nil, true)
+		switch {
+		case err != nil:
+		case st != http.StatusOK:
+			err = fmt.Errorf("%d %s", st, strings.TrimSpace(string(served)))
+		default:
+			err = matches(served)
+		}
+		if err != nil {
+			return fmt.Errorf("%s: the repeat after a transport error answered 409, and the stub does not list the version that was sent: %w", what, err)
+		}
+		t.Logf("%s: the repeat after a transport error answered 409 and the stub lists exactly the version that was sent; the attempt that broke had published it", what)
+		return nil
+	case status >= 300:
+		return fmt.Errorf("%s: %d %s", what, status, strings.TrimSpace(string(raw)))
 	}
-	return raw
+	return nil
 }
 
 // idempotentControl names the calls of the control API that may be repeated after a transport error: reads, PUT and
-// the POSTs that set a state (a repeated publish answers 409, so it is not among them).
+// the POSTs that set a state. A repeated publish answers 409, so a publish goes through publishVersion instead.
 func idempotentControl(method, path string) bool {
 	if method == http.MethodGet || method == http.MethodPut {
 		return true
@@ -299,9 +349,26 @@ func (s *stubControl) setMode(t testing.TB, m npmstub.Mode) {
 	s.send(t, http.MethodPost, "/-/stub/mode", m)
 }
 
+// publish offers a version at the npm test upstream; a 409 of a repeat after a transport error is a success when the
+// stub lists the version with these dependencies, the tarball the stub builds for them and these tags (publishVersion).
 func (s *stubControl) publish(t testing.TB, name, version string, deps map[string]string, tags ...string) {
 	t.Helper()
-	s.send(t, http.MethodPost, "/-/stub/publish", map[string]any{"name": name, "version": version, "dependencies": deps, "tags": tags})
+	s.publishVersion(t, name, version, npmPublishBody(name, version, deps, tags), npmPublished(name, version, deps, tags))
+}
+
+func npmPublishBody(name, version string, deps map[string]string, tags []string) map[string]any {
+	return map[string]any{"name": name, "version": version, "dependencies": deps, "tags": tags}
+}
+
+// npmPublished compares the answer of GET /-/stub/version of the npm test upstream with a publish.
+func npmPublished(name, version string, deps map[string]string, tags []string) func([]byte) error {
+	return func(served []byte) error {
+		var v npmstub.ServedVersion
+		if err := json.Unmarshal(served, &v); err != nil {
+			return fmt.Errorf("the answer of GET /-/stub/version is no version (%w): %s", err, served)
+		}
+		return v.Matches(name, version, deps, tags)
+	}
 }
 
 // ── the clients ──────────────────────────────────────────────────────────────

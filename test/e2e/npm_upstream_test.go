@@ -59,7 +59,8 @@ func (fx *npmFixture) upstreamRepos(t testing.TB, purpose string, settings map[s
 // awaitReadableOnEveryReplica waits until each packages replica lets the token read the new repositories: a repository and
 // the policy that grants it reach the other replicas within the bound of R-AUTHZ-028 (1 s with Valkey,
 // epoch_poll_interval of 1 s plus 1 s without), and a replica that has not seen them yet answers 404. The tests allow one
-// more second for the poll and the request, as E1.14 does; a replica that takes longer fails the test.
+// more second for the poll and the request, as E1.14 does; a replica that takes longer fails the test. A request that
+// failed on the transport of the pod's forward goes to a new forward (getOverForward); the clock of the bound keeps running.
 func awaitReadableOnEveryReplica(t testing.TB, token string, keys ...string) {
 	t.Helper()
 	addrs, stop := packagesForwards(t)
@@ -70,7 +71,7 @@ func awaitReadableOnEveryReplica(t testing.TB, token string, keys ...string) {
 		for _, key := range keys {
 			start := time.Now()
 			for {
-				r := a.get("/api/npm/" + key + "/-/ping") // action read: the repository and the grant on that replica
+				r := a.getOverForward("/api/npm/" + key + "/-/ping") // action read: the repository and the grant on that replica
 				if r.Status == 200 {
 					break
 				}

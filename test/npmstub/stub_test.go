@@ -828,6 +828,70 @@ func TestControlAPI(t *testing.T) {
 	}
 }
 
+// A client that lost the answer of a publish reads the version back: GET /-/stub/version lists it as the document does, and
+// Matches tells a version made by exactly that publish from one with other content.
+func TestServedVersionReadsBackAPublish(t *testing.T) {
+	const token = "control-secret"
+	f := newFixture(t, Config{ControlToken: token})
+	_, name := names(t)
+	auth := map[string]string{"Authorization": "Bearer " + token}
+	ctl := func(method, path, body string) reply {
+		t.Helper()
+		return f.do(method, path, auth, strings.NewReader(body))
+	}
+	served := func(version string) (ServedVersion, int) {
+		t.Helper()
+		r := ctl(http.MethodGet, "/-/stub/version?"+url.Values{"name": {name}, "version": {version}}.Encode(), "")
+		var v ServedVersion
+		if r.status == 200 {
+			if err := json.Unmarshal(r.body, &v); err != nil {
+				t.Fatalf("version: %v: %s", err, r.body)
+			}
+		}
+		return v, r.status
+	}
+
+	deps := map[string]string{"left-pad": "^1.3.0"}
+	if r := ctl(http.MethodPost, "/-/stub/publish", `{"name":"`+name+`","version":"98.0.0","dependencies":{"left-pad":"^1.3.0"},"tags":["canary"]}`); r.status != 204 {
+		t.Fatalf("publish: %d %s", r.status, r.body)
+	}
+	v, status := served("98.0.0")
+	if status != 200 {
+		t.Fatalf("the published version is not served: %d", status)
+	}
+	if err := v.Matches(name, "98.0.0", deps, []string{"canary"}); err != nil {
+		t.Fatalf("the version of the publish does not match it: %v", err)
+	}
+	if !strings.Contains(string(f.get(docPath(name)).body), v.Integrity) {
+		t.Fatal("the integrity read back is not the one of the document")
+	}
+	if err := v.Matches(name, "98.0.0", nil, []string{"canary"}); err == nil || !strings.Contains(err.Error(), "dependencies") || !strings.Contains(err.Error(), "integrity") {
+		t.Fatalf("a publish with other dependencies matches: %v", err)
+	}
+	if err := v.Matches(name, "98.0.0", deps, []string{"beta"}); err == nil || !strings.Contains(err.Error(), "dist-tag beta") {
+		t.Fatalf("a publish with another tag matches: %v", err)
+	}
+	if err := v.Matches(name, "98.0.1", deps, nil); err == nil {
+		t.Fatal("another version matches")
+	}
+
+	if r := ctl(http.MethodPost, "/-/stub/drop", `{"name":"`+name+`","version":"98.0.0"}`); r.status != 204 {
+		t.Fatalf("drop: %d", r.status)
+	}
+	if _, status := served("98.0.0"); status != 404 {
+		t.Fatalf("a dropped version is served: %d", status)
+	}
+	if _, status := served("97.0.0"); status != 404 {
+		t.Fatalf("an unknown version: %d", status)
+	}
+	if r := ctl(http.MethodGet, "/-/stub/version?name="+url.QueryEscape(name), ""); r.status != 400 {
+		t.Fatalf("version without a version: %d", r.status)
+	}
+	if got := f.stub.Counts(); got.Total() != 1 {
+		t.Fatalf("the reads of a version were counted: %s", got.Summary())
+	}
+}
+
 func TestConcurrentRequestsAreCountedExactly(t *testing.T) {
 	f := newFixture(t, Config{})
 	_, name := names(t)

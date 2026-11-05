@@ -7,12 +7,9 @@ package e2e
 // The scenarios are in nuget_remote_test.go, nuget_virtual_test.go and nuget_collapse_test.go.
 
 import (
-	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"maps"
-	"net"
 	"net/http"
 	"os"
 	"sync"
@@ -39,28 +36,30 @@ func nugetStubHosts(t testing.TB) (api, content string) {
 }
 
 // nugetStub is the control client of the counting NuGet test upstream; the methods reset and resetAll of the npm stub's
-// client work on it as well (the control API has the same shape), nugetCounts and nugetMode are the NuGet ones.
+// client work on it as well (the control API has the same shape), nugetCounts, nugetMode and nugetPublish are the NuGet ones.
 func nugetStub(t testing.TB) *stubControl {
 	t.Helper()
 	host, _ := nugetStubHosts(t)
-	nugetStubOnce.Do(func() {
-		fwd := portForward(t, "svc/nugetstub", 443)
-		addr := fwd.addr
-		var d net.Dialer
-		nugetStubVal = &stubControl{
-			fwd:  fwd,
-			base: "https://" + host,
-			tok:  secretValue(t, "trove-nugetstub", "control-token"),
-			c: &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{
-				DisableKeepAlives: true,
-				DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
-					return dialForward(ctx, &d, network, addr)
-				},
-				TLSClientConfig: &tls.Config{RootCAs: caPool(t), MinVersion: tls.VersionTLS12, ServerName: host},
-			}},
-		}
-	})
+	nugetStubOnce.Do(func() { nugetStubVal = newStubControl(t, "svc/nugetstub", host, "trove-nugetstub", 30*time.Second) })
 	return nugetStubVal
+}
+
+// nugetPublish offers a version of a package ID at the NuGet test upstream, without dependencies; a 409 of a repeat after
+// a transport error is a success when the stub lists exactly that version, listed (publishVersion).
+func (s *stubControl) nugetPublish(t testing.TB, id, version string) {
+	t.Helper()
+	s.publishVersion(t, id, version, map[string]any{"name": id, "version": version}, nugetPublished(id, version))
+}
+
+// nugetPublished compares the answer of GET /-/stub/version of the NuGet test upstream with a publish without dependencies.
+func nugetPublished(id, version string) func([]byte) error {
+	return func(served []byte) error {
+		var v nugetstub.ServedVersion
+		if err := json.Unmarshal(served, &v); err != nil {
+			return fmt.Errorf("the answer of GET /-/stub/version is no version (%w): %s", err, served)
+		}
+		return v.Matches(id, version, nil)
+	}
 }
 
 // restoreResult is the outcome of one command run on a goroutine of its own.
@@ -138,7 +137,9 @@ func (fx *nugetFixture) upstreamRepos(t testing.TB, purpose string, settings map
 }
 
 // nugetReadableOnEveryReplica waits until each packages replica lets the token read the new repositories (the bound of
-// R-AUTHZ-028 plus one second for the poll and the request, as awaitReadableOnEveryReplica does for npm).
+// R-AUTHZ-028 plus one second for the poll and the request, as awaitReadableOnEveryReplica does for npm). A request that
+// failed on the transport of the pod's forward (a forward to a pod that has just become ready may drop its first
+// connection) goes to a new forward (getOverForward); the clock of the bound keeps running.
 func nugetReadableOnEveryReplica(t testing.TB, token string, keys ...string) {
 	t.Helper()
 	addrs, stop := packagesForwards(t)
@@ -149,14 +150,7 @@ func nugetReadableOnEveryReplica(t testing.TB, token string, keys ...string) {
 		for _, key := range keys {
 			start := time.Now()
 			for {
-				r, err := a.send(http.MethodGet, "/api/nuget/"+key+"/v3/index.json", nil)
-				if err != nil && time.Since(start) < 20*time.Second { // a forward to a pod that has just become ready may drop its first connection
-					time.Sleep(200 * time.Millisecond)
-					continue
-				}
-				if err != nil {
-					t.Fatalf("replica %d: repository %s: %v", i, key, err)
-				}
+				r := a.getOverForward("/api/nuget/" + key + "/v3/index.json")
 				if r.Status == 200 {
 					break
 				}

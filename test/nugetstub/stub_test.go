@@ -639,6 +639,67 @@ func TestR_NUGET_027_ControlRequestsAreNotCounted(t *testing.T) {
 	}
 }
 
+// A client that lost the answer of a publish reads the version back: GET /-/stub/version lists it as the documents do, and
+// Matches tells a version made by exactly that publish from one with other content.
+func TestR_NUGET_027_ServedVersionReadsBackAPublish(t *testing.T) {
+	f := newFixture(t, Config{ControlToken: "s3cret"})
+	auth := map[string]string{"Authorization": "Bearer s3cret"}
+	served := func(id, version string) (ServedVersion, int) {
+		t.Helper()
+		r := f.do(http.MethodGet, f.api+"/-/stub/version?"+url.Values{"name": {id}, "version": {version}}.Encode(), auth, nil)
+		var v ServedVersion
+		if r.status == http.StatusOK {
+			if err := json.Unmarshal(r.body, &v); err != nil {
+				t.Fatalf("version: %v: %s", err, r.body)
+			}
+		}
+		return v, r.status
+	}
+	post := func(path, body string) {
+		t.Helper()
+		if r := f.do(http.MethodPost, f.api+"/-/stub/"+path, auth, strings.NewReader(body)); r.status != http.StatusNoContent {
+			t.Fatalf("%s %s: %d %s", path, body, r.status, r.body)
+		}
+	}
+
+	post("publish", `{"name":"Contoso.Fresh","version":"1.0.0","dependencies":{"Newtonsoft.Json":"13.0.1"}}`)
+	v, status := served("Contoso.Fresh", "1.0.0")
+	if status != http.StatusOK {
+		t.Fatalf("the published version is not served: %d", status)
+	}
+	deps := map[string]string{"Newtonsoft.Json": "13.0.1"}
+	if err := v.Matches("Contoso.Fresh", "1.0.0", deps); err != nil {
+		t.Fatalf("the version of the publish does not match it: %v", err)
+	}
+	if err := v.Matches("Contoso.Fresh", "1.0.0", nil); err == nil || !strings.Contains(err.Error(), "dependencies") {
+		t.Fatalf("a publish without dependencies matches: %v", err)
+	}
+	if err := v.Matches("contoso.fresh", "1.0.0", deps); err == nil {
+		t.Fatal("an ID in another case matches")
+	}
+	post("unlist", `{"name":"Contoso.Fresh","version":"1.0.0"}`)
+	if v, _ := served("Contoso.Fresh", "1.0.0"); v.Matches("Contoso.Fresh", "1.0.0", deps) == nil {
+		t.Fatal("an unlisted version matches a publish")
+	}
+	// a version of the corpus with a deprecation and an advisory is not what a publish makes
+	if v, status := served(NewtonsoftID, DeprecatedVersion); status != http.StatusOK || v.Matches(NewtonsoftID, DeprecatedVersion, v.Dependencies) == nil {
+		t.Fatalf("the deprecated corpus version: %d, %+v matches a publish", status, v)
+	}
+	post("drop", `{"name":"Contoso.Fresh","version":"1.0.0"}`)
+	if _, status := served("Contoso.Fresh", "1.0.0"); status != http.StatusNotFound {
+		t.Fatalf("a dropped version is served: %d", status)
+	}
+	if _, status := served("Contoso.Unknown", "1.0.0"); status != http.StatusNotFound {
+		t.Fatalf("an unknown ID: %d", status)
+	}
+	if r := f.do(http.MethodGet, f.api+"/-/stub/version?name=Contoso.Fresh", auth, nil); r.status != http.StatusBadRequest {
+		t.Fatalf("version without a version: %d", r.status)
+	}
+	if got := f.counts().Total(); got != 0 {
+		t.Fatalf("the reads of a version were counted: %d", got)
+	}
+}
+
 func TestR_NUGET_027_ModeDown(t *testing.T) {
 	f := newFixture(t, Config{})
 	f.setMode(Mode{Down: DownUnavailable})

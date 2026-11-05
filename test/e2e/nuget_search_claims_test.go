@@ -35,7 +35,7 @@ func newClaimTiming(t *testing.T, purpose string) *claimTiming {
 	stem, word := "Partner"+fx.run, purpose+fx.run
 	c := &claimTiming{t: t, fx: fx, stub: nugetStub(t), id: stem + "." + word, pattern: stem + ".*"}
 	c.path = "/api/nuget/" + repos.all + "/v3/search?take=20&q=" + strings.ToLower(word)
-	c.stub.send(t, http.MethodPost, "/-/stub/publish", map[string]any{"name": c.id, "version": "1.0.0"})
+	c.stub.nugetPublish(t, c.id, "1.0.0")
 	addrs, stop := packagesForwards(t)
 	t.Cleanup(stop)
 	for _, a := range addrs {

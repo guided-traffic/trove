@@ -15,6 +15,7 @@ import (
 //	GET  /-/stub/mode               the failure switches
 //	POST /-/stub/mode               replace them (a Mode as JSON; {} clears)
 //	POST /-/stub/publish            {"name","version","dependencies"}: offer a version (name is the package ID)
+//	GET  /-/stub/version?name=&version=  the version as the documents list it now (ServedVersion; 404 when they do not)
 //	POST /-/stub/drop               {"name","version"}: remove a version from its documents
 //	POST /-/stub/restore            {"name","version"}: list it again
 //	POST /-/stub/unlist             {"name","version"}: mark it unlisted
@@ -64,6 +65,18 @@ func (s *Server) serveControl(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, s.Mode())
 	case "POST /-/stub/publish":
 		s.controlVersion(w, r, func(v versionRequest) error { return s.Publish(v.Name, v.Version, v.Dependencies) })
+	case "GET /-/stub/version":
+		name, version := r.URL.Query().Get("name"), r.URL.Query().Get("version")
+		if name == "" || version == "" {
+			writeError(w, http.StatusBadRequest, "name and version are required")
+			return
+		}
+		v, ok := s.Served(name, version)
+		if !ok {
+			writeError(w, http.StatusNotFound, name+" "+version+" is not listed")
+			return
+		}
+		writeJSON(w, v)
 	case "POST /-/stub/drop":
 		s.controlVersion(w, r, func(v versionRequest) error { return s.Drop(v.Name, v.Version) })
 	case "POST /-/stub/restore":

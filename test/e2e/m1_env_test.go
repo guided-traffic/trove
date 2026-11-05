@@ -34,6 +34,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/test/e2e/ctlretry"
 	"github.com/guided-traffic/trove/test/e2e/rotationhold"
 )
 
@@ -447,6 +448,39 @@ func (a *api) do(method, path string, body any, h ...string) reply {
 func (a *api) get(path string, h ...string) reply {
 	a.t.Helper()
 	return a.do(http.MethodGet, path, nil, h...)
+}
+
+// getOverForward is get for a request of a setup through a client whose every connection goes to one supervised
+// port-forward (apiAtPod): a transport error renews the forward and repeats the request, twice at most, each repeat
+// logged (overForward). A GET is safe to repeat; an HTTP status is an answer and is returned as get returns it. A
+// client of the edge or of several forwards has no one forward to renew and sends once, as get does.
+func (a *api) getOverForward(path string) reply {
+	a.t.Helper()
+	f := a.forward()
+	if f == nil {
+		return a.get(path)
+	}
+	var r reply
+	err := overForward(a.t, f, "GET "+path, func() error {
+		var err error
+		r, err = a.send(http.MethodGet, path, nil)
+		return err
+	})
+	if err != nil {
+		a.t.Fatalf("GET %s: %v", path, err)
+	}
+	return r
+}
+
+// forward is the supervised forward every connection of the client goes to, or nil when the client dials the edge,
+// several forwards in turn or a pinned name.
+func (a *api) forward() *forward {
+	a.rt.mu.Lock()
+	defer a.rt.mu.Unlock()
+	if len(a.rt.rr) != 1 || len(a.rt.pins) != 0 {
+		return nil
+	}
+	return forwardAt(a.rt.rr[0])
 }
 
 // cookie returns a cookie of the jar for the default endpoint.
@@ -949,6 +983,31 @@ func stopForward(f *forward) {
 	fwdMu.Lock()
 	delete(fwdAddrs, f.addr)
 	fwdMu.Unlock()
+}
+
+// forwardAt is the supervised forward that listens on addr, or nil (the edge's published port is none).
+func forwardAt(addr string) *forward {
+	fwdMu.Lock()
+	defer fwdMu.Unlock()
+	return fwdAddrs[addr]
+}
+
+// overForward runs attempt, a request through the supervised forward f, and repeats it on a new forward when it failed
+// on the transport (a reset, an end of stream, a refused connection; never an HTTP status), twice at most
+// (ctlretry.Do). Each repeat is logged with the transport error and the start of the kubectl process the attempt went
+// through, so a run shows how often a forward broke. Only a request that is safe to repeat, or one whose repeat the
+// caller checks (publishVersion), may be passed.
+func overForward(t testing.TB, f *forward, what string, attempt func() error) error {
+	var gen int
+	var last error
+	return ctlretry.Do(2, func() error {
+		gen = f.generation()
+		last = attempt()
+		return last
+	}, func() error {
+		t.Logf("%s: %v on the port-forward to %s (kubectl start %d); repeating it on a new forward", what, last, f.target, gen)
+		return f.renew(gen)
+	})
 }
 
 // dialForward dials addr. When addr is a forward whose kubectl process has ended, a refused connection waits for the

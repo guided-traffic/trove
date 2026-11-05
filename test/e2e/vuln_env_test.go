@@ -9,13 +9,10 @@ package e2e
 // the advisory data and what the findings API says. The tests are in vuln_*_test.go.
 
 import (
-	"context"
 	"crypto/rand"
-	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -101,23 +98,7 @@ func osvStub(t testing.TB) *stubControl {
 	if host == "" {
 		t.Fatal("TROVE_E2E_OSVSTUB_HOST is not set; run the vulnerability sets of deploy/dev/e2e.sh")
 	}
-	osvOnce.Do(func() {
-		fwd := portForward(t, "svc/osvstub", 443)
-		addr := fwd.addr
-		var d net.Dialer
-		osvVal = &stubControl{
-			fwd:  fwd,
-			base: "https://" + host,
-			tok:  secretValue(t, "trove-osvstub", "control-token"),
-			c: &http.Client{Timeout: 5 * time.Minute, Transport: &http.Transport{
-				DisableKeepAlives: true,
-				DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
-					return dialForward(ctx, &d, network, addr)
-				},
-				TLSClientConfig: &tls.Config{RootCAs: caPool(t), MinVersion: tls.VersionTLS12, ServerName: host},
-			}},
-		}
-	})
+	osvOnce.Do(func() { osvVal = newStubControl(t, "svc/osvstub", host, "trove-osvstub", 5*time.Minute) })
 	return osvVal
 }
 
@@ -323,7 +304,7 @@ func (e *vulnEnv) addNuGetTriage(t testing.TB, label string) {
 	t.Helper()
 	name := fmt.Sprintf("E2e.Vtri%s.L%s", e.run, label)
 	id := fmt.Sprintf("GHSA-e2e-%s-n%s", e.run, label)
-	nugetStub(t).send(t, http.MethodPost, "/-/stub/publish", map[string]any{"name": name, "version": "1.0.0"})
+	nugetStub(t).nugetPublish(t, name, "1.0.0")
 	e.addRecord(t, "NuGet", triageRecord(id, "NuGet", name))
 	e.nugetTri[label] = name
 	e.advisoryOf[name] = id

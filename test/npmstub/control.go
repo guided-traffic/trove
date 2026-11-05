@@ -16,6 +16,7 @@ import (
 //	GET  /-/stub/mode               the failure switches
 //	POST /-/stub/mode               replace them (a Mode as JSON; {} clears)
 //	POST /-/stub/publish            {"name","version","dependencies","tags"}: offer a version
+//	GET  /-/stub/version?name=&version=  the version as the document lists it now (ServedVersion; 404 when it does not)
 //	POST /-/stub/drop               {"name","version"}: remove a version from its document
 //	POST /-/stub/restore            {"name","version"}: list it again
 const maxControlBody = 1 << 20
@@ -70,6 +71,18 @@ func (s *Server) serveControl(w http.ResponseWriter, r *http.Request) {
 		s.controlVersion(w, r, func(v versionRequest) error {
 			return s.Publish(v.Name, v.Version, v.Dependencies, v.Tags...)
 		})
+	case "GET /-/stub/version":
+		name, version := r.URL.Query().Get("name"), r.URL.Query().Get("version")
+		if name == "" || version == "" {
+			writeError(w, http.StatusBadRequest, "name and version are required")
+			return
+		}
+		v, ok := s.Served(name, version)
+		if !ok {
+			writeError(w, http.StatusNotFound, name+"@"+version+" is not listed")
+			return
+		}
+		writeJSON(w, v)
 	case "POST /-/stub/drop":
 		s.controlVersion(w, r, func(v versionRequest) error { return s.Drop(v.Name, v.Version) })
 	case "POST /-/stub/restore":
