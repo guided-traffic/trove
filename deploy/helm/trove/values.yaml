@@ -239,7 +239,7 @@ worker:
       maxUnavailable: 0
   terminationGracePeriodSeconds: 300    # jobs persist their cursor before exit
   spool:
-    sizeLimit: 5Gi                      # workers spool only cache fills of jobs, one advisory archive while a sync runs (config.vulnerabilities.sources.osv.max_archive_size, validated) and, from P1, the nuget-symbol-index job's one extracted PDB at a time (formats/nuget.md )
+    sizeLimit: 5Gi                      # workers spool only cache fills of jobs, one advisory archive while a sync runs (config.vulnerabilities.sources.osv.max_archive_size, validated) and, from P1, the nuget-symbol-index job's one extracted PDB at a time (formats/nuget.md)
   resources:
     requests:
       cpu: 500m
@@ -295,7 +295,7 @@ config:
     shutdown_drain_delay: 5s            # must exceed the edge's endpoint removal time
   log:
     level: info
-  database:                             # ha-and-helm.md to
+  database:                             # ha-and-helm.md
     host: ""                            # required; example: trove-db-rw.trove.svc
     port: 5432
     name: trove
@@ -311,7 +311,7 @@ config:
     tls:
       mode: verify-full                 # verify-full | verify-ca | disable
     allow_insecure: false
-  storage:                              # storage.md to
+  storage:                              # storage.md
     s3:
       bucket: ""                        # required; example: trove-blobs
       region: ""                        # example: eu-central-1
@@ -327,73 +327,73 @@ config:
   # is rendered only when set here; the chart reads three of them: enabled, sources.osv.mode and sources.osv.max_archive_size
   # (the worker spool must hold one archive, validated), and stale_after (the threshold of TroveVulnerabilityDataStale).
   # vulnerabilities:
-  # enabled: true
-  # enforcement: enforce # enforce | report
-  # stale_after: 24h
-  # sources:
-  # osv:
-  # mode: online # online | repository | off
-  # max_archive_size: 1GiB # at most the worker spool budget (worker.spool.sizeLimit - spool.headroom)
+  #   enabled: true
+  #   enforcement: enforce              # enforce | report
+  #   stale_after: 24h
+  #   sources:
+  #     osv:
+  #       mode: online                  # online | repository | off
+  #       max_archive_size: 1GiB        # at most the worker spool budget (worker.spool.sizeLimit - spool.headroom)
   # The NuGet format (docs/developer/configuration.md). Every key has a default and
   # is rendered only when set here; the settings of one repository (deleteMode, forwardSearch) are in its document, not in this file.
   # nuget:
-  # archive:
-  # max_nuspec_bytes: 1MiB # 1KiB to 1MiB, can only be tightened
-  # max_entries: 65535 # entries the central directory of a package may declare
-  # max_uncompressed_bytes: 4GiB # the sum of the declared sizes of a package
-  # max_compression_ratio: 100 # 1 to 100, of an entry read into memory
-  # registration:
-  # page_size: 64 # versions per registration page
-  # inline_below: 128 # a package with fewer visible versions has its pages inlined
-  # search:
-  # default_take: 20 # at most max_take
-  # max_take: 1000
-  # max_skip: 3000 # a larger skip answers 400
-  # virtual_merge_window: 1000 # results per member a virtual repository merges
-  # remote_result_ttl: 60s # how long a forwarded search answer is kept, at most 1h
+  #   archive:
+  #     max_nuspec_bytes: 1MiB          # 1KiB to 1MiB, can only be tightened
+  #     max_entries: 65535              # entries the central directory of a package may declare
+  #     max_uncompressed_bytes: 4GiB    # the sum of the declared sizes of a package
+  #     max_compression_ratio: 100      # 1 to 100, of an entry read into memory
+  #   registration:
+  #     page_size: 64                   # versions per registration page
+  #     inline_below: 128               # a package with fewer visible versions has its pages inlined
+  #   search:
+  #     default_take: 20                # at most max_take
+  #     max_take: 1000
+  #     max_skip: 3000                  # a larger skip answers 400
+  #     virtual_merge_window: 1000      # results per member a virtual repository merges
+  #     remote_result_ttl: 60s          # how long a forwarded search answer is kept, at most 1h
   # System role bindings. The migration Job (trove migrate) applies the list on every install
   # and upgrade and removes the bindings taken out of it; the API and the UI show them read-only. A group that does not
   # exist is created, and the login provider's group sync fills it: a rule of config.auth.oidc.providers.<id>.group_sync
   # must map the IdP group to the same name. A user or service account must exist, or the Job fails. Whoever controls the
   # membership of a declared IdP group holds the role. The default is no declaration.
   # authz:
-  # role_bindings:
-  # - role: admin # example: admin | security-admin | auditor | repository-admin | webhook-admin
-  # group: gh-wds18-k8s-main-admins # exactly one of group, user, service_account
-  # - role: auditor # example: reads every repository's metadata and the configuration, changes nothing
-  # group: gh-wds18-k8s-main-auditors
+  #   role_bindings:
+  #     - role: admin                   # example: admin | security-admin | auditor | repository-admin | webhook-admin
+  #       group: gh-wds18-k8s-main-admins   # exactly one of group, user, service_account
+  #     - role: auditor                 # example: reads every repository's metadata and the configuration, changes nothing
+  #       group: gh-wds18-k8s-main-auditors
   # GitLab CI OIDC federation (docs/spec/gitlab-ci-oidc.md, docs/developer/configuration.md). Every key has a default and is
   # rendered only when set here. ci.issuers declares GitLab instances as trusted CI issuers: the migration Job applies the list
   # on every install and upgrade (an issuer taken out of it is disabled, not deleted), the API and the UI show them read-only
   # with source "configuration", and their mappings are managed through the API.
   # ci:
-  # token:
-  # default_ttl: 15m # lifetime of a CI token that asks for none
-  # max_ttl: 1h # at most auth.tokens.cit.max_ttl (6h), or the pod does not start
-  # min_ttl: 30s
-  # exchange:
-  # enabled: true
-  # expose_reason: true # false leaves the reason out of the 400 answers
-  # rate_limit:
-  # per_client_ip_per_minute: 600 # cluster-wide
-  # per_client_ip_burst: 100
-  # per_subject_per_minute: 300 # per issuer and project, cluster-wide
-  # per_subject_burst: 100
-  # exempt_cidrs: [] # example: ["10.20.0.0/16"], a runner network behind NAT
-  # signing_keys:
-  # max_stale: 24h # older key sets fail closed with 503
-  # mappings:
-  # max_per_issuer: 1000 # mappings of one issuer, all tiers
-  # max_per_project: 100 # of one project's tier on one issuer, at most max_per_issuer
-  # replay:
-  # retention_after_expiry: 15m # at least 1m, the margin for a replica clock behind the database's
-  # issuers:
-  # - name: gitlab-main # example: ^[a-z0-9][a-z0-9._-]{1,63}$
-  # kind: gitlab # the only kind of this release
-  # issuer: https://gitlab.example.com # example: https, exactly the iss of the ID tokens
-  # public_issuer: false # example: an instance without open sign-up; default true
-  # allowed_audiences: ["https://packages.example.com"] # without it the base URL and npm:<host name>
-  # ca_bundle_ref: file:/var/run/secrets/gitlab-ca/ca.crt # example: an instance behind a private CA
+  #   token:
+  #     default_ttl: 15m                # lifetime of a CI token that asks for none
+  #     max_ttl: 1h                     # at most auth.tokens.cit.max_ttl (6h), or the pod does not start
+  #     min_ttl: 30s
+  #   exchange:
+  #   enabled: true
+  #     expose_reason: true             # false leaves the reason out of the 400 answers
+  #     rate_limit:
+  #       per_client_ip_per_minute: 600 # cluster-wide
+  #       per_client_ip_burst: 100
+  #       per_subject_per_minute: 300   # per issuer and project, cluster-wide
+  #       per_subject_burst: 100
+  #       exempt_cidrs: []              # example: ["10.20.0.0/16"], a runner network behind NAT
+  #   signing_keys:
+  #     max_stale: 24h                  # older key sets fail closed with 503
+  #   mappings:
+  #     max_per_issuer: 1000            # mappings of one issuer, all tiers
+  #     max_per_project: 100            # of one project's tier on one issuer, at most max_per_issuer
+  #   replay:
+  #     retention_after_expiry: 15m     # at least 1m, the margin for a replica clock behind the database's
+  #   issuers:
+  #     - name: gitlab-main             # example: ^[a-z0-9][a-z0-9._-]{1,63}$
+  #       kind: gitlab                  # the only kind of this release
+  #       issuer: https://gitlab.example.com   # example: https, exactly the iss of the ID tokens
+  #       public_issuer: false          # example: an instance without open sign-up; default true
+  #       allowed_audiences: ["https://packages.example.com"]   # without it the base URL and npm:<host name>
+  #       ca_bundle_ref: file:/var/run/secrets/gitlab-ca/ca.crt  # example: an instance behind a private CA
 
 # ── TLS on trove's own listeners ────────────────────
 # The chart never creates the Secret. It holds the keys of a cert-manager TLS Secret (tls.crt,
@@ -464,9 +464,9 @@ secrets:
     certKey: tls.crt
     keyKey: tls.key
   oidc: []                              # no client secrets; mounted in api pods only. Each entry mounts the Secret at /var/run/secrets/trove/oidc-<providerId>/ and renders client_secret_file of that provider; the provider itself is config.auth.oidc.providers.<providerId>
-  # - providerId: corp # the ID of a provider in config.auth.oidc.providers ([a-z0-9-], at most 32)
-  # existingSecret: trove-oidc-corp
-  # key: client-secret
+  #  - providerId: corp                 # the ID of a provider in config.auth.oidc.providers ([a-z0-9-], at most 32)
+  #    existingSecret: trove-oidc-corp
+  #    key: client-secret
   breakGlass:
     existingSecret: ""                  # empty = config.auth.break_glass.enabled false; example: trove-break-glass. api pods only
     key: password                       # plaintext (at least 20 characters) or an Argon2id PHC hash
@@ -477,7 +477,7 @@ secrets:
     existingSecret: ""                  # needed with config.metrics.auth static
     key: token
 
-# ── Monitoring (; only the alerts of the vulnerability scanning so far) ─
+# ── Monitoring (only the alerts of the vulnerability scanning so far) ─
 metrics:
   prometheusRule:
     enabled: false                      # needs the Prometheus operator's CRDs
@@ -525,7 +525,7 @@ securityContext:
   seccompProfile:
     type: RuntimeDefault
 
-# ── Volumes (: nothing ReadWriteMany, nothing persistent) ─
+# ── Volumes (nothing ReadWriteMany, nothing persistent) ─
 spool:
   type: emptyDir                        # emptyDir | ephemeral
   sizeLimit: 20Gi                       # web.spool and worker.spool override it
@@ -598,43 +598,43 @@ ingress:
 # wildcardHost, hostRoots, wildcardRoot, surface, auth, exposure, cacheFill, rateLimitClass, replicaHeader.
 # The chart renders the entries into server.endpoints of trove.yaml; config.server.endpoints is refused.
 # Values of a further endpoint are listed once here and carry their defaults.
-endpoints: {}                           # only the default endpoint; example
-# default: # optional
-# hosts: [] # with a further endpoint, the hosts of config.server.base_url and additional_base_urls; add the in-cluster Service name here when clients use it
-# customers: # example: the endpoint name, ^[a-z][a-z0-9-]{0,19}$, <fullname>-ep-<name> at most 63 characters
-# port: 8443 # required; container port and Service port; not 8080, 8081 or another endpoint's port
-# baseUrl: https://packages.example.com # required; an origin (scheme, host, optional port)
-# hosts: [] # example [pkgs.example.org]
-# wildcardHost: "" # example "*.packages.example.com" (one label, at least two labels in the domain)
-# hostRoots: {} # host -> repository key, reserved for later formats
-# wildcardRoot: none # none | label
-# surface: [packages] # ui is not allowed on a further endpoint; api, ci_exchange, files are off by default
-# auth: {tokenTypes: [sat], boundTokensOnly: true, anonymous: false} # enforced from the identity milestone
-# exposure: rules # rules | all; enforced from the exposure milestone
-# cacheFill: false
-# rateLimitClass: external
-# replicaHeader: never # authenticated | always | never
-# maxInFlight: 1024 # per replica and endpoint
-# trustedProxies: [] # config.server.trusted_proxies
-# tls:
-# existingSecret: "" # "" = the pair of tls.secretName; example trove-packages-tls (keys tls.crt, tls.key)
-# extraSecrets: [] # example [trove-packages-wildcard-tls]: further pairs, chosen by SNI
-# clientCaSecret: "" # no client certificates; example trove-customer-ca (key ca.crt)
-# pool:
-# enabled: false # served by the main Deployments of the roles the surface holds; true renders <fullname>-packages-ep-<name> and, with api families, <fullname>-api-ep-<name> (<fullname>-web-ep-<name> with web.enabled)
-# replicaCount: 2 # every key of the role's values (api or packages) may be overridden here
-# service:
-# type: ClusterIP # ClusterIP | LoadBalancer | NodePort
-# annotations: {}
-# loadBalancerSourceRanges: []
-# ingress:
-# enabled: false
-# className: "" # cluster default IngressClass; example traefik-external
-# annotations: {}
-# tls: [] # example [{secretName: packages-tls, hosts: [packages.example.com, "*.packages.example.com"]}]
-# backendTLS: {} # ingress.backendTLS; any key given here wins for this endpoint (controller, verify, caSecret, ...)
-# networkPolicy:
-# from: [] # empty = from anywhere
+endpoints: {}                           # only the default endpoint; example:
+#  default:                             # optional
+#    hosts: []                          # with a further endpoint, the hosts of config.server.base_url and additional_base_urls; add the in-cluster Service name here when clients use it
+#  customers:                           # example: the endpoint name, ^[a-z][a-z0-9-]{0,19}$, <fullname>-ep-<name> at most 63 characters
+#    port: 8443                         # required; container port and Service port; not 8080, 8081 or another endpoint's port
+#    baseUrl: https://packages.example.com   # required; an origin (scheme, host, optional port)
+#    hosts: []                          # example [pkgs.example.org]
+#    wildcardHost: ""                   # example "*.packages.example.com" (one label, at least two labels in the domain)
+#    hostRoots: {}                      # host -> repository key, reserved for later formats
+#    wildcardRoot: none                 # none | label
+#    surface: [packages]                # ui is not allowed on a further endpoint; api, ci_exchange, files are off by default
+#    auth: {tokenTypes: [sat], boundTokensOnly: true, anonymous: false}   # enforced from the identity milestone
+#    exposure: rules                    # rules | all; enforced from the exposure milestone
+#    cacheFill: false
+#    rateLimitClass: external
+#    replicaHeader: never               # authenticated | always | never
+#    maxInFlight: 1024                  # per replica and endpoint
+#    trustedProxies: []                 # config.server.trusted_proxies
+#    tls:
+#      existingSecret: ""               # "" = the pair of tls.secretName; example trove-packages-tls (keys tls.crt, tls.key)
+#      extraSecrets: []                 # example [trove-packages-wildcard-tls]: further pairs, chosen by SNI
+#      clientCaSecret: ""               # no client certificates; example trove-customer-ca (key ca.crt)
+#    pool:
+#      enabled: false                   # served by the main Deployments of the roles the surface holds; true renders <fullname>-packages-ep-<name> and, with api families, <fullname>-api-ep-<name> (<fullname>-web-ep-<name> with web.enabled)
+#      replicaCount: 2                  # every key of the role's values (api or packages) may be overridden here
+#    service:
+#      type: ClusterIP                  # ClusterIP | LoadBalancer | NodePort
+#      annotations: {}
+#      loadBalancerSourceRanges: []
+#    ingress:
+#      enabled: false
+#      className: ""                    # cluster default IngressClass; example traefik-external
+#      annotations: {}
+#      tls: []                          # example [{secretName: packages-tls, hosts: [packages.example.com, "*.packages.example.com"]}]
+#      backendTLS: {}                   # ingress.backendTLS; any key given here wins for this endpoint (controller, verify, caSecret, ...)
+#    networkPolicy:
+#      from: []                         # empty = from anywhere
 
 # ── Migrations ──────────────────────────────────────────────────
 migrations:
@@ -654,6 +654,6 @@ migrations:
 # ── Extension points ────────────────────────────────────────────
 extraEnv: []                            # example: [{name: TROVE_LOG_LEVEL, value: debug}]
 extraEnvFrom: []
-extraVolumes: []                        # the operator's: cannot see a claim's access mode
+extraVolumes: []                        # the operator's; the chart's volume check cannot see a claim's access mode
 extraVolumeMounts: []
 extraObjects: []                        # extra manifests rendered with tpl

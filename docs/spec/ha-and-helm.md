@@ -4049,7 +4049,7 @@ restore:
 # ── Extension points ────────────────────────────────────────────
 extraEnv: []                            # example: [{name: TROVE_LOG_LEVEL, value: debug}]
 extraEnvFrom: []
-extraVolumes: []                        # the operator's: the chart's volume check cannot see a claim's access mode
+extraVolumes: []                        # the operator's; the chart's volume check cannot see a claim's access mode
 extraVolumeMounts: []
 initContainers: []                      # run before trove starts
 sidecars: []                            # native sidecars (restartPolicy: Always) allowed

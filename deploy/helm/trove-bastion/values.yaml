@@ -220,7 +220,7 @@ serviceAccount:
   create: true
   name: ""                              # <fullname>
   annotations: {}                       # the IRSA role annotation of the cache bucket goes here
-  # eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/trove-bastion
+  #  eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/trove-bastion
   automountServiceAccountToken: false   # the Bastion never calls the Kubernetes API
 
 podSecurityContext:
