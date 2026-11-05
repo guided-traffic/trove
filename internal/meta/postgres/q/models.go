@@ -443,6 +443,54 @@ type Job struct {
 	RanBy         pgtype.UUID
 }
 
+type MirrorPending struct {
+	RepoID    int64
+	Name      string
+	QueuedAt  pgtype.Timestamptz
+	Attempts  int32
+	NotBefore pgtype.Timestamptz
+	LastError pgtype.Text
+}
+
+type MirrorState struct {
+	RepoID                int64
+	NextPassAt            pgtype.Timestamptz
+	PassRequestedAt       pgtype.Timestamptz
+	PassRequestedBy       pgtype.UUID
+	PassRequestedFull     bool
+	PassStartedAt         pgtype.Timestamptz
+	PassKind              pgtype.Text
+	PassMethod            pgtype.Text
+	PassJobID             pgtype.UUID
+	PassHolder            pgtype.UUID
+	PassCursor            []byte
+	PassDiscoveryDone     bool
+	PassNames             int64
+	PassPackagesDone      int64
+	PassPackagesFailed    int64
+	PassItemsStored       int64
+	PassBytesStored       int64
+	PassDiscoveryComplete bool
+	PassDiscoveryNote     pgtype.Text
+	FeedCursor            []byte
+	FeedMethod            pgtype.Text
+	PatternsFingerprint   []byte
+	LastFullPassAt        pgtype.Timestamptz
+	LastPass              []byte
+	ConsecutiveFailures   int32
+	LastErrorAt           pgtype.Timestamptz
+	LastErrorCode         pgtype.Text
+	LastError             pgtype.Text
+	RateLimitedUntil      pgtype.Timestamptz
+	RateLimitWaits        int64
+	RateLimitWaitSeconds  int64
+	LastRateLimitAt       pgtype.Timestamptz
+	LastRateLimitStatus   pgtype.Int4
+	BoundReached          pgtype.Text
+	BoundReachedAt        pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+}
+
 type NamespaceClaim struct {
 	RepoID    int64
 	Pattern   string
