@@ -41,3 +41,14 @@ controller:
     # HAProxy Ingress keys of the global ConfigMap carry no prefix. A client that reaches the plain port
     # is sent to HTTPS (the default for an Ingress with TLS); nothing maps that port to the host.
     ssl-redirect: "true"
+    # One access line per request on the controller's stdout (HAProxy's http log format, raw): the client, the frontend,
+    # backend and server, the timers, the status, the termination state (the two flags that say which side ended the
+    # connection, 'C' client and 'S' server, and in which phase) and the connection counts. A request that ends without a
+    # response is a line with status -1 and a flag pair like CD or SD. Without it HAProxy logs nothing, and a connection
+    # closed without an answer has no witness at the edge (F-50). The cluster-state artifact keeps these lines.
+    syslog-endpoint: stdout
+    syslog-format: raw
+    # HAProxy Ingress sets `option dontlognull`, which drops the log line of a connection that ended before a request arrived
+    # (a client that closed during or right after the handshake, a reset). Those are the connections F-50 asks about, so
+    # the dev edge logs them too, as a line with status -1.
+    config-defaults: "no option dontlognull"

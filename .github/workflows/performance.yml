@@ -309,9 +309,7 @@ jobs:
             kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
             kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
           done
-          for p in $(kubectl --context "$ctx" -n trove get pods -o name 2>/dev/null); do
-            kubectl --context "$ctx" -n trove logs "$p" --all-containers --tail=500 > ".out/cluster-state/log-${p#pod/}.txt" 2>&1 || true
-          done
+          deploy/dev/cluster-logs.sh .out/cluster-state
           kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
           helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
           docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
@@ -504,9 +502,7 @@ jobs:
             kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
             kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
           done
-          for p in $(kubectl --context "$ctx" -n trove get pods -o name 2>/dev/null); do
-            kubectl --context "$ctx" -n trove logs "$p" --all-containers --tail=500 > ".out/cluster-state/log-${p#pod/}.txt" 2>&1 || true
-          done
+          deploy/dev/cluster-logs.sh .out/cluster-state
           kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
           helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
           docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
@@ -646,9 +642,7 @@ jobs:
             kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
             kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
           done
-          for p in $(kubectl --context "$ctx" -n trove get pods -o name 2>/dev/null); do
-            kubectl --context "$ctx" -n trove logs "$p" --all-containers --tail=500 > ".out/cluster-state/log-${p#pod/}.txt" 2>&1 || true
-          done
+          deploy/dev/cluster-logs.sh .out/cluster-state
           kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
           helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
           docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
@@ -792,9 +786,7 @@ jobs:
             kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
             kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
           done
-          for p in $(kubectl --context "$ctx" -n trove get pods -o name 2>/dev/null); do
-            kubectl --context "$ctx" -n trove logs "$p" --all-containers --tail=500 > ".out/cluster-state/log-${p#pod/}.txt" 2>&1 || true
-          done
+          deploy/dev/cluster-logs.sh .out/cluster-state
           kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
           helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
           docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
@@ -937,9 +929,7 @@ jobs:
             kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
             kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
           done
-          for p in $(kubectl --context "$ctx" -n trove get pods -o name 2>/dev/null); do
-            kubectl --context "$ctx" -n trove logs "$p" --all-containers --tail=500 > ".out/cluster-state/log-${p#pod/}.txt" 2>&1 || true
-          done
+          deploy/dev/cluster-logs.sh .out/cluster-state
           kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
           helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
           docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
@@ -1105,9 +1095,7 @@ jobs:
             kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
             kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
           done
-          for p in $(kubectl --context "$ctx" -n trove get pods -o name 2>/dev/null); do
-            kubectl --context "$ctx" -n trove logs "$p" --all-containers --tail=500 > ".out/cluster-state/log-${p#pod/}.txt" 2>&1 || true
-          done
+          deploy/dev/cluster-logs.sh .out/cluster-state
           kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
           helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
           docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
@@ -1273,9 +1261,7 @@ jobs:
             kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
             kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
           done
-          for p in $(kubectl --context "$ctx" -n trove get pods -o name 2>/dev/null); do
-            kubectl --context "$ctx" -n trove logs "$p" --all-containers --tail=500 > ".out/cluster-state/log-${p#pod/}.txt" 2>&1 || true
-          done
+          deploy/dev/cluster-logs.sh .out/cluster-state
           kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
           helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
           docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true

@@ -353,6 +353,13 @@ func TestE1_08RateLimits(t *testing.T) {
 				}
 			}
 		}
+		// The failure counter is a sliding window over fixed one-minute windows (previous x (1 - elapsed) + current, Q-AUTH-20).
+		// A burst that crosses a window boundary leaves the previous window's weight, which decays by up to five failures a
+		// second, so the address is throttled for only a fraction of a second after its last 429 and on a loaded runner the
+		// checks below came after that (F-46: 306 of 400 validated, then an unknown token answered 401). The burst starts at
+		// the beginning of a window, where the whole count is in the current window and the throttle holds until the window
+		// ends.
+		waitForWindowStart(t, time.Minute, 2*time.Second)
 		diag("before the burst:")
 		valid, limited, kinds := burst(t, "Valkey up")
 		diag("after the burst:")
@@ -467,4 +474,17 @@ func TestE1_08RateLimits(t *testing.T) {
 			}
 		})
 	})
+}
+
+// waitForWindowStart waits until the wall clock is within the first maxInto of a window of the given length, the
+// fixed windows of cluster.Limiter (unix milliseconds divided by the window). The replicas run on the host's clock.
+func waitForWindowStart(t *testing.T, window, maxInto time.Duration) {
+	t.Helper()
+	into := time.Duration(time.Now().UnixMilli()%window.Milliseconds()) * time.Millisecond
+	if into <= maxInto {
+		return
+	}
+	wait := window - into
+	t.Logf("waiting %s for the start of the next %s window", wait.Round(time.Second), window)
+	time.Sleep(wait + 50*time.Millisecond)
 }

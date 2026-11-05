@@ -389,6 +389,29 @@ func TestLimiterCountOnly(t *testing.T) {
 		}
 	})
 
+	t.Run("R-AUTH-038 a burst that crosses a window boundary stays exceeded only while the previous window's weight holds the count at the burst", func(t *testing.T) {
+		// F-46: the e2e check that an unknown token is throttled right after a burst ran a few hundred milliseconds
+		// after the window changed and found a free slot. The count is previous x (1 - elapsed) + current (Q-AUTH-20):
+		// with the whole burst in the previous window the slot frees after 1/burst of the window.
+		st, clk := newMemWindows(), newLimClock()
+		l := replica(t, st, clk, 1, nil).NewLimiter("auth.credential_failures", ScopeCluster, 300.0/60, 300)
+		clk.advance(55 * time.Second)
+		for range 300 {
+			l.Count(t.Context(), "alice")
+		}
+		if !l.Exceeded(t.Context(), "alice") {
+			t.Fatal("not exceeded after the burst")
+		}
+		clk.advance(5 * time.Second)
+		if !l.Exceeded(t.Context(), "alice") {
+			t.Fatal("not exceeded at the start of the next window, where the previous count weighs fully")
+		}
+		clk.advance(250 * time.Millisecond)
+		if l.Exceeded(t.Context(), "alice") {
+			t.Fatal("still exceeded 250 ms into the next window: 300 x (1 - 250ms/60s) is below the burst")
+		}
+	})
+
 	t.Run("R-ARCH-034 count-only form falls back to a local share", func(t *testing.T) {
 		st, clk := newMemWindows(), newLimClock()
 		st.down = true

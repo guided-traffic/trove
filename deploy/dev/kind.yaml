@@ -7,6 +7,13 @@ apiVersion: kind.x-k8s.io/v1alpha4
 name: trove
 networking:
   podSubnet: 10.244.0.0/16        # config.server.trusted_proxies in values-dev.yaml names this range
+# The kubelet rotates a container's log at 10Mi by default and `kubectl logs` reads only the current file, so the logs of
+# a long e2e run would begin after a failure. The CI artifact of a failed run (cluster-logs.sh) wants the whole window of the
+# edge and of every pod, so the limit is raised on every node.
+kubeadmConfigPatches:
+  - |
+    kind: KubeletConfiguration
+    containerLogMaxSize: 200Mi
 nodes:
   - role: control-plane
     extraPortMappings:

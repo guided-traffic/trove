@@ -220,22 +220,23 @@ Found on 2026-11-04 while cutting trove into task areas (phase 6a):
 ### Tests and tools
 
 - **F-50 · A single request of `TestE1_14Exposure` ended in a transport `EOF` at the edge** (read, from the log of the `push` leg of
-  Test and Release run 41871333853, on a GitHub-hosted runner). With Valkey stopped, `GET
+  Test and Release run 41871333853, on a GitHub-hosted runner; not reproduced locally). With Valkey stopped, `GET
   https://packages.trove.localhost:8080/files/generic-local/internal/x.bin` returned `EOF` instead of the `404`; the same subtest passed
   in run 41864646902 on the same code. The e2e clients set `DisableKeepAlives` (`newAPI` in `test/e2e/m1_env_test.go`), so every
-  request is a fresh TLS connection through the kind port mapping and the edge, and Go retries none of them. The burst cases of the same
-  test count such connections as status 0 in green runs too (53 and 68 of 1,000 in run 41864646902), so connections closed without a
-  response are routine under load. Which side closes them (the port mapping, HAProxy or a trove pod) is not known: the cluster-state
-  step keeps the last 500 lines per pod (`--tail=500`), which begin after the failure. Done when a run that keeps the edge's and the
-  pods' logs of the failure window names the closing side and the cause is fixed or shown to lie outside trove.
-
-- **F-46 · `TestE1_08RateLimits` was red in the `failover` leg of the scheduled nightly run 41804996351** (read, from the
-  log). The bound cases passed, with Valkey stopped included (`e1_08_ratelimit_test.go` up to line 202); the case after
-  `valkey-cli.sh client pause 4000 all` (line 230) saw 15 of 483 requests take 400 ms or more, and the credential-failure
-  burst that follows (line 351) is where the test failed; its assertion is not yet read. The same run was red in `npm-ha`
-  (F-38) and in the performance run of R-VULN-028 (F-43). The `failover` leg passed in the dispatched nightly run 41902592855 on a
-  GitHub-hosted runner. Done when the failing assertion is read, reproduced with
-  `make e2e SET=failover` and its cause fixed, or shown to be the runner's load (F-37, F-40).
+  request is a fresh TLS connection through the kind port mapping and the edge, and Go retries none of them. Burst cases count
+  status 0 in green runs too (53 and 68 of 1,000 in run 41864646902); locally the zeros of a burst came from the port-forwards to
+  single replicas (18 of 1,000 in `TestE1_08RateLimits` "one replica"), not from the edge. Read on the configuration: the edge
+  (HAProxy Ingress, `deploy/dev/haproxy-values.yaml`) closes an idle connection after 50 s (`timeout server`, `timeout client`) and
+  runs `option http-server-close` toward trove, whose `server.idle_timeout` is 120 s, so the edge closes first and reuses no backend
+  connection: no keep-alive mismatch that closes a connection without a response. `timeout http-request 5s` and `maxconn 2000` are
+  the other limits a loaded runner could meet. Not known: which side closed the connection (the port mapping, HAProxy or a trove pod).
+  Built for the next failure (2026-11-05): the edge writes an access line per request, also for a connection that ends before a
+  request (`syslog-endpoint: stdout`, `no option dontlognull`; before, HAProxy logged nothing), with the termination state that names the
+  side; the kind nodes keep 200Mi of log per container instead of 10Mi, and `deploy/dev/cluster-logs.sh` (every cluster-state step)
+  keeps the logs of every `trove` pod and of the edge whole, timestamped, compressed, with the previous instance of a restarted
+  container, instead of the last 500 lines. Six local runs of `TestE1_14Exposure` (three with the edge logging, 17,891 access lines
+  in the three, every one with the clean state `----`) and three of `TestE1_08RateLimits` showed no `EOF` at the edge. Done when a
+  failed run's artifact names the closing side and the cause is fixed or shown to lie outside trove; remove the entry then.
 
 Found on 2026-11-03 while building phase 6:
 
