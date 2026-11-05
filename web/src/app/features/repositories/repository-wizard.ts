@@ -3,12 +3,14 @@ import {
   DestroyRef,
   computed,
   effect,
+  linkedSignal,
   inject,
   input,
   resource,
   signal,
   untracked,
 } from '@angular/core';
+import { Listbox, Option } from '@angular/aria/listbox';
 import { MatButtonModule } from '@angular/material/button';
 import { Router, RouterLink } from '@angular/router';
 import { newIdempotencyKey } from '../../api/client';
@@ -25,9 +27,11 @@ import { SessionStore } from '../../core/session-store';
 import { ErrorNotice } from '../../shared/error-notice';
 import { ErrorSummary, SummaryItem, fieldMessage, problemsAt } from '../../shared/field-errors';
 import { DraftStore } from '../../shared/drafts';
+import { formatIcon } from '../../shared/format-icon';
 import { asApiError, valueOf } from '../../shared/paged-resource';
 import { HasUnsavedChanges } from '../../shared/unsaved-guard';
 import { FormatSettings } from './format-settings';
+import { MirrorSettings, mirrorPointerLabel, mirrorTarget } from './mirror-settings';
 import { RepositoryFields } from './repository-fields';
 import {
   EMPTY_FORM,
@@ -39,19 +43,30 @@ import {
   curlOf,
   documentOf,
   lines,
+  mirrorOf,
+  sameMirror,
   settingsOf,
 } from './repository-model';
 import { SettingSchema, errorTarget, settingEntries, settingNodes } from './settings-schema';
 
 type KeyCheck = 'idle' | 'checking' | 'free' | 'taken' | 'unknown';
 
+/** The steps of the wizard (R-UI-021, Q-UI-112): the format comes first, because it limits everything after it. */
+const STEP_FORMAT = 0;
+const STEP_CLASS = 1;
+const STEP_BASIC = 2;
+const STEP_SPECIFIC = 3;
+
+/** The classes of the repository document (`Repository.class` of the API), in the order they are offered. */
+const CLASSES: readonly RepositoryClass[] = ['local', 'remote', 'virtual'];
+
 /** The pointer prefixes that belong to each step, to bring the user to the field a server error names. */
 const STEP_OF_POINTER: readonly (readonly [prefix: string, step: number])[] = [
-  ['/class', 0],
-  ['/format', 1],
-  ['/key', 2],
-  ['/description', 2],
-  ['/adminNotes', 2],
+  ['/format', STEP_FORMAT],
+  ['/class', STEP_CLASS],
+  ['/key', STEP_BASIC],
+  ['/description', STEP_BASIC],
+  ['/adminNotes', STEP_BASIC],
 ];
 
 export function classLabel(cls: string): string {
@@ -81,9 +96,11 @@ export function classHelp(cls: string): string {
 }
 
 /**
- * Repository creation wizard (R-UI-021): class, format, basic settings, class-specific settings,
- * review. The classes and the formats come only from `GET /api/v1/formats`; the UI holds no list of
- * its own. The `Idempotency-Key` is generated when the wizard opens, so a double click or a retry
+ * Repository creation wizard (R-UI-021, Q-UI-112): format, class, basic settings, class-specific
+ * settings, review. The format is the first choice because some features are impossible for some
+ * formats; the class step then offers the classes of the chosen format and shows the others as
+ * unavailable, with the reason (Q-UI-113). The formats and their classes come only from
+ * `GET /api/v1/formats`; the UI holds no list of formats of its own. The `Idempotency-Key` is generated when the wizard opens, so a double click or a retry
  * after a lost answer creates one repository (R-UI-042). Server field errors appear at their
  * fields, in a summary, and the wizard returns to the step that holds the field.
  */
@@ -96,6 +113,9 @@ export function classHelp(cls: string): string {
     ErrorSummary,
     FormatSettings,
     RepositoryFields,
+    MirrorSettings,
+    Listbox,
+    Option,
   ],
   templateUrl: './repository-wizard.html',
   styleUrl: './repository-wizard.scss',
@@ -130,25 +150,52 @@ export class RepositoryWizard implements HasUnsavedChanges {
   private initialForm: RepositoryForm = EMPTY_FORM;
   private keyTimer: ReturnType<typeof setTimeout> | undefined;
 
+  /** The filter text of the format step (Q-UI-115). */
+  protected readonly formatFilter = signal('');
+
   protected readonly steps = computed(() => [
-    $localize`:@@repo.wizard.step.class:Class`,
     $localize`:@@repo.wizard.step.format:Format`,
+    $localize`:@@repo.wizard.step.class:Class`,
     $localize`:@@repo.wizard.step.basic:Basic settings`,
-    this.settingNodes().length > 0
-      ? $localize`:@@repo.wizard.step.access-format:Access and ${this.formatLabel()}:format: settings`
-      : $localize`:@@repo.wizard.step.access:Access settings`,
+    this.specificStepLabel(),
     $localize`:@@repo.wizard.step.review:Review`,
   ]);
 
-  protected readonly classes = computed<readonly RepositoryClass[]>(() => {
-    const all = new Set<RepositoryClass>();
-    for (const f of valueOf(this.formats) ?? []) for (const c of f.classes) all.add(c);
-    return (['local', 'remote', 'virtual'] as const).filter((c) => all.has(c));
+  private specificStepLabel(): string {
+    const nodes = this.settingNodes().length > 0;
+    if (this.mirrorSection()) {
+      return nodes
+        ? $localize`:@@repo.wizard.step.access-format-mirror:Access, ${this.formatLabel()}:format: and mirror settings`
+        : $localize`:@@repo.wizard.step.access-mirror:Access and mirror settings`;
+    }
+    return nodes
+      ? $localize`:@@repo.wizard.step.access-format:Access and ${this.formatLabel()}:format: settings`
+      : $localize`:@@repo.wizard.step.access:Access settings`;
+  }
+
+  /** Every class of the document; one the chosen format does not implement is shown unavailable (Q-UI-113). */
+  protected readonly classes = CLASSES;
+  /** The installed formats that match the filter, by display name or name, case-insensitive (Q-UI-115). */
+  protected readonly shownFormats = computed<readonly FormatDescriptor[]>(() => {
+    const q = this.formatFilter().trim().toLowerCase();
+    return (valueOf(this.formats) ?? []).filter(
+      (f) => q === '' || (f.displayName ?? f.name).toLowerCase().includes(q) || f.name.includes(q),
+    );
   });
-  protected readonly formatsOfClass = computed<readonly FormatDescriptor[]>(() => {
-    const cls = this.cls();
-    return cls ? (valueOf(this.formats) ?? []).filter((f) => f.classes.includes(cls)) : [];
+  protected readonly formatCount = computed(() => (valueOf(this.formats) ?? []).length);
+  /** The value of the tile listbox: follows the chosen format, and is set again when a click clears it. */
+  protected readonly chosenFormat = linkedSignal<string[]>(() => {
+    const name = this.formatName();
+    return name ? [name] : [];
   });
+  /** The Mirror section applies to a remote repository of a format that can mirror (R-UI-021). */
+  protected readonly mirrorSection = computed(
+    () => this.cls() === 'remote' && this.format()?.mirror === true,
+  );
+  /** Without `repositories:write-config` (a project administrator) the section is read-only (Q-REPO-142). */
+  protected readonly mirrorRestricted = computed(
+    () => !this.session.has('repositories:write-config'),
+  );
   protected readonly format = computed(
     () => (valueOf(this.formats) ?? []).find((f) => f.name === this.formatName()) ?? null,
   );
@@ -159,7 +206,11 @@ export class RepositoryWizard implements HasUnsavedChanges {
   private readonly member = computed<FormatMemberOf | null>(() => {
     const name = this.formatName();
     return name
-      ? { name, schema: this.format()?.settingsSchema as SettingSchema | null | undefined }
+      ? {
+          name,
+          schema: this.format()?.settingsSchema as SettingSchema | null | undefined,
+          ...(this.mirrorSection() ? { remote: 'sparse' as const } : {}),
+        }
       : null;
   });
   protected readonly memberPointer = computed(() => `/${this.formatName() ?? ''}`);
@@ -174,6 +225,8 @@ export class RepositoryWizard implements HasUnsavedChanges {
     const written = m ? settingsOf(this.form(), m)[m.name] : undefined;
     return written ? settingEntries(written as Record<string, unknown>) : [];
   });
+  /** The mirror members the create writes, for the review. */
+  protected readonly mirrorEntries = computed(() => settingEntries(mirrorOf(this.form())));
   protected readonly loadFailure = computed(() => {
     const e = this.formats.error();
     return e ? asApiError(e) : null;
@@ -263,21 +316,56 @@ export class RepositoryWizard implements HasUnsavedChanges {
   }
 
   hasUnsavedChanges(): boolean {
-    return !this.created && (this.cls() !== null || this.form() !== this.initialForm);
+    return !this.created && (this.formatName() !== null || this.form() !== this.initialForm);
+  }
+
+  /** Whether the chosen format implements the class (`classes` of the format descriptor). */
+  protected supports(cls: RepositoryClass): boolean {
+    return this.format()?.classes.includes(cls) ?? false;
+  }
+
+  /** The sentence at a class the chosen format does not implement (Q-UI-113). */
+  protected unsupportedReason(cls: RepositoryClass): string {
+    return $localize`:@@repo.class.unsupported:${this.formatLabel()}:format: does not implement the class ${classLabel(cls)}:class:.`;
   }
 
   protected chooseClass(cls: RepositoryClass): void {
-    if (this.cls() !== cls) {
+    if (this.cls() !== cls && this.supports(cls)) {
       this.cls.set(cls);
-      this.formatName.set(null);
-      this.resetFormatMember();
+      this.resetDependent();
     }
   }
 
+  /**
+   * Another format keeps the class only when the new format implements it, and always starts the
+   * format settings and the mirror section afresh (R-UI-021).
+   */
   protected chooseFormat(name: string): void {
-    if (this.formatName() !== name) {
-      this.formatName.set(name);
-      this.resetFormatMember();
+    if (this.formatName() === name) return;
+    this.formatName.set(name);
+    const next = (valueOf(this.formats) ?? []).find((f) => f.name === name);
+    const cls = this.cls();
+    if (cls !== null && !(next?.classes.includes(cls) ?? false)) this.cls.set(null);
+    this.resetDependent();
+  }
+
+  /** The tile the listbox selected; a click on the chosen tile does not clear the choice. */
+  protected onFormatSelected(values: readonly string[]): void {
+    const name = values[0];
+    if (name !== undefined) this.chooseFormat(name);
+    else this.chosenFormat.set(this.formatName() ? [this.formatName()!] : []);
+  }
+
+  protected setFormatFilter(text: string): void {
+    this.formatFilter.set(text);
+  }
+
+  /** Enter in the filter field chooses the one format that is left. */
+  protected chooseOnlyMatch(event: Event): void {
+    const only = this.shownFormats();
+    if (only.length === 1) {
+      event.preventDefault();
+      this.chooseFormat(only[0]!.name);
     }
   }
 
@@ -285,18 +373,23 @@ export class RepositoryWizard implements HasUnsavedChanges {
     this.form.update((f) => ({ ...f, formatMember }));
   }
 
-  /** The format settings belong to one class and one format: another choice starts them afresh. */
-  private resetFormatMember(): void {
-    if (Object.keys(this.form().formatMember).length > 0) this.setFormatMember({});
+  /**
+   * The format settings and the mirror section belong to one format and one class: another choice
+   * starts them afresh. A form that holds none of them keeps its identity.
+   */
+  private resetDependent(): void {
+    const f = this.form();
+    if (Object.keys(f.formatMember).length === 0 && sameMirror(f)) return;
+    this.form.set({ ...f, formatMember: {}, remoteMode: 'pullThrough', mirror: {} });
   }
 
   protected canNext(): boolean {
     switch (this.step()) {
-      case 0:
-        return this.cls() !== null;
-      case 1:
+      case STEP_FORMAT:
         return this.formatName() !== null;
-      case 2:
+      case STEP_CLASS:
+        return this.cls() !== null;
+      case STEP_BASIC:
         return this.keyValid() && this.keyCheck() !== 'taken';
       default:
         return true;
@@ -304,7 +397,7 @@ export class RepositoryWizard implements HasUnsavedChanges {
   }
 
   protected next(): void {
-    if (this.step() === 2) this.showErrors.set(true);
+    if (this.step() === STEP_BASIC) this.showErrors.set(true);
     if (this.canNext() && this.step() < this.steps().length - 1) this.step.update((s) => s + 1);
   }
 
@@ -346,11 +439,13 @@ export class RepositoryWizard implements HasUnsavedChanges {
     return (
       STEP_OF_POINTER.find(
         ([prefix]) => pointer === prefix || pointer.startsWith(`${prefix}/`),
-      )?.[1] ?? 3
+      )?.[1] ?? STEP_SPECIFIC
     );
   }
 
   protected pointerLabel(pointer: string): string {
+    const mirror = mirrorPointerLabel(pointer);
+    if (mirror) return mirror;
     const name = pointer.split('/')[1] ?? pointer;
     switch (name) {
       case 'key':
@@ -371,6 +466,10 @@ export class RepositoryWizard implements HasUnsavedChanges {
   }
 
   protected pointerTarget(pointer: string): string {
+    if (this.mirrorSection()) {
+      const target = mirrorTarget(pointer);
+      if (target) return target;
+    }
     return errorTarget(pointer, this.settingNodes(), this.memberPointer());
   }
 
@@ -384,6 +483,7 @@ export class RepositoryWizard implements HasUnsavedChanges {
 
   protected classText = classLabel;
   protected classHelpText = classHelp;
+  protected formatIcon = formatIcon;
 
   private scheduleKeyCheck(key: string, valid: boolean): void {
     clearTimeout(this.keyTimer);

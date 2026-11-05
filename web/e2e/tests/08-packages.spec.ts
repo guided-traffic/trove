@@ -10,6 +10,7 @@ import { expect, expectAccessible, openFilter, signInLocal, signOut, test, uniqu
 
 const repoKey = unique('ui-npm');
 const wizardKey = unique('ui-npm-wizard');
+const mirrorKey = unique('ui-npm-mirror');
 const pkgName = unique('ui-readme');
 const version = '1.0.0';
 
@@ -129,6 +130,7 @@ test.beforeAll(async ({ admin }) => {
 test.afterAll(async ({ admin }) => {
   await admin.delete(`/api/v1/repositories/${repoKey}`);
   await admin.delete(`/api/v1/repositories/${wizardKey}`);
+  await admin.delete(`/api/v1/repositories/${mirrorKey}`);
 });
 
 test('E2.8 R-UI-006 R-UI-008 R-UI-016 the published version in the list, its sanitized README and the setup snippets of the npm matrix', async ({
@@ -210,9 +212,9 @@ test('R-UI-021 R-ARCH-004 the npm settings in the wizard and on the edit form, r
 
   await test.step('the wizard offers the settings of a local npm repository and writes the one that differs from the default', async () => {
     await page.goto('/ui/en/admin/repositories/new');
-    await page.getByRole('radio', { name: /^Local/ }).check();
+    await page.getByRole('option', { name: 'npm' }).click();
     await page.getByRole('button', { name: 'Next' }).click();
-    await page.getByRole('radio', { name: /^npm/ }).check();
+    await page.getByRole('radio', { name: /^Local/ }).check();
     await page.getByRole('button', { name: 'Next' }).click();
     await page.locator('#f-key').fill(wizardKey);
     await expect(page.getByText('The key is available.')).toBeVisible();
@@ -238,6 +240,86 @@ test('R-UI-021 R-ARCH-004 the npm settings in the wizard and on the edit form, r
     await page.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.getByText('Repository saved.')).toBeVisible();
     await expect.poll(npmMember).toBeUndefined();
+  });
+
+  await signOut(page);
+  expect(replicas.size, `replicas that answered: ${[...replicas]}`).toBeGreaterThanOrEqual(2);
+});
+
+// R-UI-021 R-REPO-050 R-REPO-052 Q-UI-117: a remote repository of a format with `mirror: true` (npm) has the Mirror section in
+// the wizard and on a tab of the edit form. The mirror mode itself is refused by the server until the npm lister is built, so
+// the journey asserts what the section renders and its defaults, and creates the remote in the default mode `pullThrough`; a
+// later wave asserts saving `mode: mirror`.
+test('R-UI-021 R-REPO-050 the Mirror section of a remote npm repository in the wizard and on the edit form', async ({
+  page,
+  replicas,
+  admin,
+}) => {
+  await signInLocal(page);
+  const mode = (name: RegExp) => page.getByRole('radio', { name });
+  const interval = page.getByRole('textbox', { name: 'Pass interval in seconds' });
+
+  await test.step('the wizard shows the section for a remote npm repository, in mode pull-through with no members', async () => {
+    await page.goto('/ui/en/admin/repositories/new');
+    await page.getByRole('option', { name: 'npm' }).click();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('radio', { name: /^Virtual/ })).toBeEnabled();
+    await page.getByRole('radio', { name: /^Remote/ }).check();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await page.locator('#f-key').fill(mirrorKey);
+    await expect(page.getByText('The key is available.')).toBeVisible();
+    await page.getByRole('button', { name: 'Next' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Mirror', level: 2 })).toBeVisible();
+    await expect(page.getByRole('navigation').getByText('4. Access, npm and mirror settings')).toBeVisible();
+    await expect(mode(/^Pull-through/)).toBeChecked();
+    await expect(mode(/^Mirror/)).not.toBeChecked();
+    await expect(interval).toHaveCount(0);
+    for (const scheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expectAccessible(page, `repository wizard, Mirror section, pull-through (${scheme})`);
+    }
+  });
+
+  await test.step('mode mirror shows the members with their defaults and the bound notice of the well-known upstream', async () => {
+    await mode(/^Mirror/).check();
+    await expect(interval).toBeVisible();
+    await expect(interval).toHaveValue('');
+    await expect(page.getByText('300 to 604800. Default: 3600.')).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Concurrent fetches' })).toHaveValue('');
+    await expect(page.getByRole('checkbox', { name: 'Include prerelease versions' })).toBeChecked();
+    await expect(page.getByRole('checkbox', { name: 'Paused' })).not.toBeChecked();
+    await expect(page.getByRole('combobox', { name: 'Discovery' })).toHaveValue('auto');
+    await expect(page.getByText("A mirror of the format's well-known upstream needs a bound.")).toBeVisible();
+    for (const scheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expectAccessible(page, `repository wizard, Mirror section, mirror (${scheme})`);
+    }
+    // The pattern the server asks for removes the notice; it is typed here, not sent.
+    await page.getByLabel('Include patterns').fill('@types/*');
+    await expect(page.getByText("A mirror of the format's well-known upstream needs a bound.")).toHaveCount(0);
+    await page.getByLabel('Include patterns').fill('');
+    await mode(/^Pull-through/).check();
+    await expect(interval).toHaveCount(0);
+  });
+
+  await test.step('the create writes no mirror member of its own; the server fills the defaults', async () => {
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByText('Pull-through (no mirror).')).toBeVisible();
+    await page.getByRole('button', { name: 'Create repository' }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/repositories/${mirrorKey}$`));
+    const res = await admin.get(`/api/v1/repositories/${mirrorKey}`);
+    expect(res.status()).toBe(200);
+    const remote = ((await res.json()) as { remote?: { mode?: string; mirror?: Record<string, unknown> } }).remote;
+    expect(remote?.mode).toBe('pullThrough');
+    expect(remote?.mirror).toMatchObject({ paused: false, intervalSeconds: 3600, concurrency: 4, discovery: 'auto' });
+  });
+
+  await test.step('the edit form has a Mirror tab with the mode read back and nothing to save', async () => {
+    await page.getByRole('tab', { name: 'Mirror' }).click();
+    await expect(mode(/^Pull-through/)).toBeChecked();
+    await expect(page.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+    await expectAccessible(page, 'repository detail, Mirror tab');
   });
 
   await signOut(page);

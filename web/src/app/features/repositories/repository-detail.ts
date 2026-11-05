@@ -38,6 +38,7 @@ import { asApiError, valueOf } from '../../shared/paged-resource';
 import { HasUnsavedChanges } from '../../shared/unsaved-guard';
 import { FormatClient } from '../../api/guides-api';
 import { FormatSettings } from './format-settings';
+import { MirrorSettings, mirrorTarget } from './mirror-settings';
 import { RecentRepositories } from './recent-repositories';
 import { RepositoryFields } from './repository-fields';
 import { RepositoryGuide } from './repository-guide';
@@ -73,6 +74,7 @@ import { SettingSchema, errorTarget, settingNodes } from './settings-schema';
     FormatSettings,
     RepositoryFields,
     RepositoryGuide,
+    MirrorSettings,
   ],
   templateUrl: './repository-detail.html',
   styleUrl: './repository-detail.scss',
@@ -132,7 +134,17 @@ export class RepositoryDetail implements HasUnsavedChanges {
   private readonly member = computed<FormatMemberOf>(() => ({
     name: this.stored()?.format ?? '',
     schema: this.format()?.settingsSchema as SettingSchema | null | undefined,
+    ...(this.mirrorSection() ? { remote: 'structural' as const } : {}),
   }));
+  /** The Mirror section: a remote repository of a format that can mirror (R-UI-021, Q-UI-104). */
+  protected readonly mirrorSection = computed(
+    () => this.stored()?.class === 'remote' && this.format()?.mirror === true,
+  );
+  /** A project administrator keeps what is stored, pauses and turns the mirror off (Q-REPO-142). */
+  protected readonly mirrorRestricted = computed(
+    () => !this.session.has('repositories:write-config'),
+  );
+  protected readonly upstreamUrl = computed(() => this.stored()?.remote?.url ?? null);
   protected readonly memberPointer = computed(() => `/${this.member().name}`);
   protected readonly settingNodes = computed(() => {
     const repo = this.stored();
@@ -187,6 +199,10 @@ export class RepositoryDetail implements HasUnsavedChanges {
   }
 
   private pointerTarget(pointer: string): string {
+    if (this.mirrorSection()) {
+      const target = mirrorTarget(pointer);
+      if (target) return target;
+    }
     return errorTarget(pointer, this.settingNodes(), this.memberPointer());
   }
 
@@ -324,6 +340,7 @@ export class RepositoryDetail implements HasUnsavedChanges {
     () =>
       $localize`:@@repo.tab.format:${this.format()?.displayName ?? this.member().name}:format: settings`,
   );
+  protected readonly tabMirror = $localize`:@@repo.tab.mirror:Mirror`;
   protected readonly tabApi = $localize`:@@repo.tab.api:API`;
   protected readonly tabGuide = $localize`:@@repo.tab.guide:How to use`;
 

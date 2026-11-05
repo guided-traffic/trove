@@ -62,6 +62,7 @@ export const GENERIC_FORMAT: FormatDescriptor = {
   priorityMembers: false,
   pinsAndClaims: false,
   caps: false,
+  mirror: false,
   settingsSchema: null,
 };
 
@@ -148,6 +149,7 @@ export const PACKAGE_FORMAT: FormatDescriptor = {
   ],
   protocolBasePath: '/api/npm/{key}/',
   patternSubject: 'name',
+  mirror: true,
   settingsSchema: NPM_SETTINGS_SCHEMA,
 };
 

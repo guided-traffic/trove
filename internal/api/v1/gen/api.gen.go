@@ -4949,16 +4949,19 @@ type FormatDescriptor struct {
 	Clients []FormatClient `json:"clients"`
 
 	// DefaultExtraHosts The further hosts a remote repository of the format may fetch from by default (R-REPO-024); empty for a format without any.
-	DefaultExtraHosts         []string                       `json:"defaultExtraHosts"`
-	DefaultMetadataTtlSeconds *int                           `json:"defaultMetadataTtlSeconds"`
-	DefaultNotFoundTtlSeconds *int                           `json:"defaultNotFoundTtlSeconds"`
-	DefaultUpstreamUrl        *string                        `json:"defaultUpstreamUrl"`
-	DisplayName               *string                        `json:"displayName,omitempty"`
-	Layout                    string                         `json:"layout"`
-	Name                      string                         `json:"name"`
-	PatternSubject            FormatDescriptorPatternSubject `json:"patternSubject"`
-	PinsAndClaims             bool                           `json:"pinsAndClaims"`
-	PriorityMembers           bool                           `json:"priorityMembers"`
+	DefaultExtraHosts         []string `json:"defaultExtraHosts"`
+	DefaultMetadataTtlSeconds *int     `json:"defaultMetadataTtlSeconds"`
+	DefaultNotFoundTtlSeconds *int     `json:"defaultNotFoundTtlSeconds"`
+	DefaultUpstreamUrl        *string  `json:"defaultUpstreamUrl"`
+	DisplayName               *string  `json:"displayName,omitempty"`
+	Layout                    string   `json:"layout"`
+
+	// Mirror Whether the format's remote adapter can discover the packages of its upstream, so that a remote repository of the format may run in mode `mirror` (R-REPO-050).
+	Mirror          bool                           `json:"mirror"`
+	Name            string                         `json:"name"`
+	PatternSubject  FormatDescriptorPatternSubject `json:"patternSubject"`
+	PinsAndClaims   bool                           `json:"pinsAndClaims"`
+	PriorityMembers bool                           `json:"priorityMembers"`
 
 	// ProtocolBasePath The client address template; `{key}` is the repository key.
 	ProtocolBasePath string `json:"protocolBasePath"`

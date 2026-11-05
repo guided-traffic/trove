@@ -12844,7 +12844,7 @@ components:
     # >>> M1 repository
     FormatDescriptor:
       type: object
-      required: [name, classes, clients, layout, protocolBasePath, defaultUpstreamUrl, defaultExtraHosts, defaultMetadataTtlSeconds, defaultNotFoundTtlSeconds, patternSubject, priorityMembers, pinsAndClaims, caps, settingsSchema]
+      required: [name, classes, clients, layout, protocolBasePath, defaultUpstreamUrl, defaultExtraHosts, defaultMetadataTtlSeconds, defaultNotFoundTtlSeconds, patternSubject, priorityMembers, pinsAndClaims, caps, mirror, settingsSchema]
       properties:
         name:
           type: string
@@ -12892,6 +12892,9 @@ components:
           type: boolean
         caps:
           type: boolean
+        mirror:
+          type: boolean
+          description: Whether the format's remote adapter can discover the packages of its upstream, so that a remote repository of the format may run in mode `mirror` (R-REPO-050).
         settingsSchema:
           type: [object, "null"]
           additionalProperties: true

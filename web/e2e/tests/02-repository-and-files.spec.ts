@@ -21,11 +21,21 @@ test('R-UI-010 R-UI-011 R-UI-012 wizard, upload, browse and download', async ({ 
     await expectAccessible(page, 'repository list');
     await page.getByRole('link', { name: 'Create repository' }).click();
     await expect(page.getByRole('heading', { name: 'New repository', level: 1 })).toBeVisible();
-    await expectAccessible(page, 'repository wizard, step class');
-
-    await page.getByRole('radio', { name: /^Local/ }).check();
+    // The format is the first step (R-UI-021, Q-UI-112): a grid of tiles under a search field.
+    await expect(page.getByRole('heading', { name: 'Choose the repository format', level: 2 })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await expectAccessible(page, 'repository wizard, step format');
+    await page.getByRole('searchbox', { name: 'Search by package type' }).fill('gener');
+    await expect(page.getByRole('option')).toHaveCount(1);
+    await page.getByRole('option', { name: 'Generic' }).click();
     await page.getByRole('button', { name: 'Next' }).click();
-    await page.getByRole('radio', { name: /Generic/i }).check();
+
+    // The class step offers the classes of the format; generic has only local, the others are shown unavailable.
+    await expect(page.getByRole('radio', { name: /^Local/ })).toBeEnabled();
+    await expect(page.getByRole('radio', { name: /^Remote/ })).toBeDisabled();
+    await expect(page.getByText('Generic does not implement the class Virtual.')).toBeVisible();
+    await expectAccessible(page, 'repository wizard, step class');
+    await page.getByRole('radio', { name: /^Local/ }).check();
     await page.getByRole('button', { name: 'Next' }).click();
     await page.locator('#f-key').fill(repoKey);
     await expect(page.getByText('The key is available.')).toBeVisible();

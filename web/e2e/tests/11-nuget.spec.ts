@@ -132,9 +132,9 @@ test('R-UI-021 R-ARCH-004 the NuGet settings in the wizard and on the edit form,
 
   await test.step('the wizard offers deleteMode for a local repository only and writes the value that differs from the default', async () => {
     await page.goto('/ui/en/admin/repositories/new');
-    await page.getByRole('radio', { name: /^Local/ }).check();
+    await page.getByRole('option', { name: 'NuGet' }).click();
     await page.getByRole('button', { name: 'Next' }).click();
-    await page.getByRole('radio', { name: /^NuGet/ }).check();
+    await page.getByRole('radio', { name: /^Local/ }).check();
     await page.getByRole('button', { name: 'Next' }).click();
     await page.locator('#f-key').fill(wizardKey);
     await expect(page.getByText('The key is available.')).toBeVisible();

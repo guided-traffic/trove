@@ -45,13 +45,81 @@
   border-radius: var(--mat-sys-corner-medium);
 
   input {
-    grid-row: 1 / span 2;
+    grid-row: 1 / span 3;
   }
 
   .hint {
     grid-column: 2;
     margin: 0;
   }
+
+  // A class the chosen format does not implement: dashed, and its reason stays at full contrast.
+  &.unavailable {
+    border-style: dashed;
+
+    .choice-title {
+      font-weight: 400;
+    }
+  }
+}
+
+.format-picker {
+  max-inline-size: 48rem;
+
+  h2 {
+    margin-block-end: var(--trove-space-1);
+  }
+}
+
+.format-filter {
+  max-inline-size: 24rem;
+}
+
+// The format tiles: a grid of icon and name, one tab stop, the selected tile in the selection fill.
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: var(--trove-space-3);
+  margin-block: var(--trove-space-3);
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--trove-space-2);
+  padding: var(--trove-space-4) var(--trove-space-2);
+  border: 1px solid var(--mat-sys-outline);
+  border-radius: var(--mat-sys-corner-medium);
+  background: var(--trove-surface-raised);
+  color: var(--mat-sys-on-surface);
+  text-align: center;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--trove-row-hover);
+  }
+
+  &:focus-visible {
+    outline: var(--trove-focus-ring);
+    outline-offset: 2px;
+  }
+
+  &[aria-selected='true'] {
+    border: 2px solid var(--mat-sys-primary);
+    padding: calc(var(--trove-space-4) - 1px) calc(var(--trove-space-2) - 1px);
+    background: var(--mat-sys-primary-container);
+    color: var(--mat-sys-on-primary-container);
+  }
+}
+
+.tile-icon {
+  font-size: 2rem;
+}
+
+.tile-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .choice-title {

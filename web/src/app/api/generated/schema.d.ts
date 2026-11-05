@@ -5538,6 +5538,8 @@ export interface components {
             priorityMembers: boolean;
             pinsAndClaims: boolean;
             caps: boolean;
+            /** @description Whether the format's remote adapter can discover the packages of its upstream, so that a remote repository of the format may run in mode `mirror` (R-REPO-050). */
+            mirror: boolean;
             /**
              * @description The JSON Schema 2020-12 of the format's settings member of a repository document (the member named
              *     after the format, R-REPO-004), which the create form renders and the service validates a document

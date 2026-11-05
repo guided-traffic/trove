@@ -20,11 +20,10 @@ const NO_VIRTUAL: FormatDescriptor = {
   classes: ['local', 'remote'],
 };
 
-async function pick(
-  rendered: Awaited<ReturnType<typeof renderScreen<RepositoryWizard>>>,
-  kind: 'class' | 'format',
-  value: string,
-) {
+type Rendered = Awaited<ReturnType<typeof renderScreen<RepositoryWizard>>>;
+
+/** Chooses a class card of the class step (a native radio). */
+async function pick(rendered: Rendered, kind: 'class', value: string) {
   const radio = rendered.root.querySelector<HTMLInputElement>(
     `input[name="${kind}"][value="${value}"]`,
   );
@@ -34,22 +33,32 @@ async function pick(
   await settle(rendered.fixture);
 }
 
+/** The format tiles of the first step (options of the listbox), by their names. */
+function tiles(rendered: Rendered): HTMLElement[] {
+  return [...rendered.root.querySelectorAll<HTMLElement>('[role="option"]')];
+}
+
+const tileNames = (rendered: Rendered) =>
+  tiles(rendered).map((t) => t.querySelector('.tile-name')?.textContent?.trim());
+
+/** Chooses a format tile with one click, as a pointer user does. */
+async function pickFormat(rendered: Rendered, name: string) {
+  const tile = tiles(rendered).find((t) => t.querySelector('.tile-name')?.textContent?.trim().toLowerCase() === name.toLowerCase());
+  if (!tile) throw new Error(`no format tile ${name}`);
+  tile.click();
+  await settle(rendered.fixture);
+}
+
+const classInput = (rendered: Rendered, cls: string) =>
+  rendered.root.querySelector<HTMLInputElement>(`input[name="class"][value="${cls}"]`)!;
+
 async function next(rendered: Awaited<ReturnType<typeof renderScreen<RepositoryWizard>>>) {
   button(rendered.root, 'Next').click();
   await settle(rendered.fixture);
 }
 
 describe('Repository creation wizard', () => {
-  it('R-UI-021 the class step offers only classes that a format implements, with no list of its own', async () => {
-    const r = await renderScreen(RepositoryWizard);
-    const classes = [...r.root.querySelectorAll<HTMLInputElement>('input[name="class"]')].map(
-      (i) => i.value,
-    );
-    expect(classes).toEqual(['local']);
-    await expectAccessible(r.root);
-  });
-
-  it('R-UI-021 the format step offers only formats whose classes contain the chosen class (a format without Virtual is not offered for virtual)', async () => {
+  it('R-UI-021 Q-UI-112 the first step is the format, as a grid of tiles with icon and name, for the installed formats only', async () => {
     const r = await renderScreen(RepositoryWizard, {
       setup: (get) =>
         ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [
@@ -58,14 +67,19 @@ describe('Repository creation wizard', () => {
           NO_VIRTUAL,
         ]),
     });
-    await pick(r, 'class', 'virtual');
-    await next(r);
-    expect(
-      [...r.root.querySelectorAll<HTMLInputElement>('input[name="format"]')].map((i) => i.value),
-    ).toEqual(['npm']);
+    expect(text(r.root.querySelector('nav')!)).toMatch(/1\. Format.*2\. Class.*3\. Basic settings/);
+    expect(r.root.querySelector('nav [aria-current="step"]')?.textContent).toContain('1. Format');
+    expect(tileNames(r)).toEqual(['Generic', 'npm', 'NuGet']);
+    for (const t of tiles(r)) {
+      expect(t.querySelector('.material-icons')?.getAttribute('aria-hidden')).toBe('true');
+    }
+    expect(button(r.root, 'Next').disabled).toBe(true);
+    expect(r.root.querySelector('input[name="class"]')).toBeNull();
     await expectAccessible(r.root);
+  });
 
-    const local = await renderScreen(RepositoryWizard, {
+  it('R-UI-021 Q-UI-115 the search field filters the tiles by name, case-insensitively, and says what is left', async () => {
+    const r = await renderScreen(RepositoryWizard, {
       setup: (get) =>
         ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [
           GENERIC_FORMAT,
@@ -73,13 +87,124 @@ describe('Repository creation wizard', () => {
           NO_VIRTUAL,
         ]),
     });
-    await pick(local, 'class', 'local');
-    await next(local);
+    const search = r.root.querySelector<HTMLInputElement>('#f-format-filter')!;
+    expect(r.root.querySelector(`label[for="f-format-filter"]`)?.textContent).toContain('Search by package type');
+    type(search, 'NU');
+    await settle(r.fixture);
+    expect(tileNames(r)).toEqual(['NuGet']);
+    expect(text(r.root.querySelector('#format-count')!)).toContain('1 of 3 formats');
+    type(search, 'zzz');
+    await settle(r.fixture);
+    expect(tileNames(r)).toEqual([]);
+    expect(text(r.root.querySelector('#format-count')!)).toContain('No format matches the search.');
+    await expectAccessible(r.root);
+
+    // Enter chooses the one tile that is left.
+    type(search, 'gener');
+    await settle(r.fixture);
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await settle(r.fixture);
+    expect(tiles(r)[0]!.getAttribute('aria-selected')).toBe('true');
+    expect(button(r.root, 'Next').disabled).toBe(false);
+  });
+
+  it('R-UI-021 Q-UI-114 the tiles are one listbox of @angular/aria: a single tab stop, the chosen tile is selected, a click on it again keeps it', async () => {
+    const r = await renderScreen(RepositoryWizard, {
+      setup: (get) =>
+        ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [GENERIC_FORMAT, FAKE_NPM]),
+    });
+    const box = r.root.querySelector('[role="listbox"]')!;
+    expect(box.getAttribute('aria-labelledby')).toBe('format-heading');
+    const stops = [box, ...box.querySelectorAll('[role="option"]')].filter((e) => e.getAttribute('tabindex') === '0');
+    expect(stops.length).toBe(1);
+    await pickFormat(r, 'npm');
+    expect(tiles(r).map((t) => t.getAttribute('aria-selected'))).toEqual(['false', 'true']);
+    await pickFormat(r, 'npm');
+    expect(tiles(r).map((t) => t.getAttribute('aria-selected'))).toEqual(['false', 'true']);
+    expect(text(r.root)).toContain('Chosen: npm');
+  });
+
+  it('R-UI-021 R-UI-044 the tiles are operable by keyboard alone: arrows move, Enter chooses, and a visible focus style exists', async () => {
+    const r = await renderScreen(RepositoryWizard, {
+      setup: (get) =>
+        ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [GENERIC_FORMAT, FAKE_NPM]),
+    });
+    const box = r.root.querySelector<HTMLElement>('[role="listbox"]')!;
+    const key = async (k: string) => {
+      (document.activeElement ?? box).dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+      await settle(r.fixture);
+    };
+    box.focus();
+    await key('ArrowRight');
+    await key('Enter');
+    expect(tiles(r).map((t) => t.getAttribute('aria-selected'))).toEqual(['false', 'true']);
+    expect(text(r.root)).toContain('Chosen: npm');
+  });
+
+  it('R-UI-021 Q-UI-113 the class step offers the classes of the chosen format and shows the others disabled with the reason', async () => {
+    const r = await renderScreen(RepositoryWizard, {
+      setup: (get) =>
+        ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [
+          GENERIC_FORMAT,
+          FAKE_NPM,
+          NO_VIRTUAL,
+        ]),
+    });
+    await pickFormat(r, 'NuGet');
+    await next(r);
+    expect(r.root.querySelectorAll('input[name="class"]').length).toBe(3);
+    expect(classInput(r, 'local').disabled).toBe(false);
+    expect(classInput(r, 'remote').disabled).toBe(false);
+    expect(classInput(r, 'virtual').disabled).toBe(true);
+    const reason = r.root.querySelector('#class-reason-virtual')!;
+    expect(text(reason)).toContain('NuGet does not implement the class Virtual.');
+    expect(classInput(r, 'virtual').getAttribute('aria-describedby')).toBe('class-reason-virtual');
+    expect(r.root.querySelector('#class-reason-local')).toBeNull();
+    // A disabled class cannot be chosen, even by a forged change event.
+    classInput(r, 'virtual').disabled = false;
+    await pick(r, 'class', 'virtual');
+    expect(button(r.root, 'Next').disabled).toBe(true);
+    await expectAccessible(r.root);
+
+    const generic = await renderScreen(RepositoryWizard, {
+      setup: (get) =>
+        ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [GENERIC_FORMAT, FAKE_NPM]),
+    });
+    await pickFormat(generic, 'Generic');
+    await next(generic);
     expect(
-      [...local.root.querySelectorAll<HTMLInputElement>('input[name="format"]')].map(
-        (i) => i.value,
+      [...generic.root.querySelectorAll<HTMLInputElement>('input[name="class"]')].map(
+        (i) => `${i.value}:${i.disabled}`,
       ),
-    ).toEqual(['generic', 'npm', 'nuget']);
+    ).toEqual(['local:false', 'remote:true', 'virtual:true']);
+  });
+
+  it('R-UI-021 Q-UI-112 going back and choosing a format that lacks the chosen class clears the class; one that has it keeps it', async () => {
+    const r = await renderScreen(RepositoryWizard, {
+      setup: (get) =>
+        ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [
+          GENERIC_FORMAT,
+          FAKE_NPM,
+          NO_VIRTUAL,
+        ]),
+    });
+    await pickFormat(r, 'npm');
+    await next(r);
+    await pick(r, 'class', 'virtual');
+    await next(r);
+    button(r.root, /1\. Format/).click();
+    await settle(r.fixture);
+    await pickFormat(r, 'NuGet');
+    await next(r);
+    expect(classInput(r, 'virtual').checked).toBe(false);
+    expect(button(r.root, 'Next').disabled).toBe(true);
+    await pick(r, 'class', 'remote');
+    button(r.root, /1\. Format/).click();
+    await settle(r.fixture);
+    await pickFormat(r, 'npm');
+    await next(r);
+    expect(classInput(r, 'remote').checked).toBe(true);
+    expect(button(r.root, 'Next').disabled).toBe(false);
   });
 
   it('R-UI-021 walks all five steps, shows the review with the API request, and a double click creates one repository with the key generated when the wizard opened (R-UI-042)', async () => {
@@ -87,9 +212,9 @@ describe('Repository creation wizard', () => {
     const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
-    await pick(r, 'class', 'local');
+    await pickFormat(r, 'generic');
     await next(r);
-    await pick(r, 'format', 'generic');
+    await pick(r, 'class', 'local');
     await next(r);
     type(r.root.querySelector<HTMLInputElement>('#f-key')!, 'build-output');
     await settle(r.fixture);
@@ -128,9 +253,9 @@ describe('Repository creation wizard', () => {
     });
     // The page is served from jsdom's origin; the installation's base URL is another one.
     expect(location.origin).not.toBe('https://trove.example.net');
-    await pick(r, 'class', 'local');
+    await pickFormat(r, 'npm');
     await next(r);
-    await pick(r, 'format', 'npm');
+    await pick(r, 'class', 'local');
     await next(r);
     type(r.root.querySelector<HTMLInputElement>('#f-key')!, 'web-libs');
     await settle(r.fixture);
@@ -158,9 +283,9 @@ describe('Repository creation wizard', () => {
         });
       },
     });
-    await pick(r, 'class', 'local');
+    await pickFormat(r, 'npm');
     await next(r);
-    await pick(r, 'format', 'npm');
+    await pick(r, 'class', 'local');
     await next(r);
     type(r.root.querySelector<HTMLInputElement>('#f-key')!, 'web-libs');
     await settle(r.fixture);
@@ -176,9 +301,9 @@ describe('Repository creation wizard', () => {
     });
     const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
     vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
-    await pick(r, 'class', 'virtual');
+    await pickFormat(r, 'npm');
     await next(r);
-    await pick(r, 'format', 'npm');
+    await pick(r, 'class', 'virtual');
     await next(r);
     type(r.root.querySelector<HTMLInputElement>('#f-key')!, 'npm-all');
     await settle(r.fixture);
@@ -218,13 +343,13 @@ describe('Repository creation wizard', () => {
         ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [GENERIC_FORMAT, FAKE_NPM]),
     });
     const toFormatStep = async () => {
-      button(r.root, /2\. Format/).click();
+      button(r.root, /1\. Format/).click();
       await settle(r.fixture);
     };
     const guard = () => r.root.querySelector<HTMLInputElement>('#f-npm-latestGuard');
-    await pick(r, 'class', 'local');
+    await pickFormat(r, 'npm');
     await next(r);
-    await pick(r, 'format', 'npm');
+    await pick(r, 'class', 'local');
     await next(r);
     type(r.root.querySelector<HTMLInputElement>('#f-key')!, 'npm-local');
     await settle(r.fixture);
@@ -235,14 +360,16 @@ describe('Repository creation wizard', () => {
     await settle(r.fixture);
 
     await toFormatStep();
-    await pick(r, 'format', 'generic');
+    await pickFormat(r, 'Generic');
+    await next(r);
     await next(r);
     await next(r);
     expect(r.root.querySelector('trove-format-settings')).toBeNull();
     expect(text(r.root.querySelector('nav')!)).toContain('4. Access settings');
 
     await toFormatStep();
-    await pick(r, 'format', 'npm');
+    await pickFormat(r, 'npm');
+    await next(r);
     await next(r);
     await next(r);
     expect(guard()?.checked).toBe(true);
@@ -270,9 +397,9 @@ describe('Repository creation wizard', () => {
         };
       },
     });
-    await pick(r, 'class', 'local');
+    await pickFormat(r, 'npm');
     await next(r);
-    await pick(r, 'format', 'npm');
+    await pick(r, 'class', 'local');
     await next(r);
     type(r.root.querySelector<HTMLInputElement>('#f-key')!, 'npm-local');
     await settle(r.fixture);
@@ -295,9 +422,9 @@ describe('Repository creation wizard', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       const r = await renderScreen(RepositoryWizard);
-      await pick(r, 'class', 'local');
+      await pickFormat(r, 'generic');
       await next(r);
-      await pick(r, 'format', 'generic');
+      await pick(r, 'class', 'local');
       await next(r);
       type(r.root.querySelector<HTMLInputElement>('#f-key')!, 'generic-local');
       await settle(r.fixture);
@@ -334,9 +461,9 @@ describe('Repository creation wizard', () => {
         null,
       );
     };
-    await pick(r, 'class', 'local');
+    await pickFormat(r, 'generic');
     await next(r);
-    await pick(r, 'format', 'generic');
+    await pick(r, 'class', 'local');
     await next(r);
     type(r.root.querySelector<HTMLInputElement>('#f-key')!, 'batch-create');
     await settle(r.fixture);
@@ -369,7 +496,7 @@ describe('Repository creation wizard', () => {
   it('R-UI-021 leaving with entered data counts as unsaved changes, a pristine wizard does not', async () => {
     const r = await renderScreen(RepositoryWizard);
     expect(r.fixture.componentInstance.hasUnsavedChanges()).toBe(false);
-    await pick(r, 'class', 'local');
+    await pickFormat(r, 'Generic');
     expect(r.fixture.componentInstance.hasUnsavedChanges()).toBe(true);
   });
 });

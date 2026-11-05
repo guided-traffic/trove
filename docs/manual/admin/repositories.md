@@ -24,10 +24,10 @@ A repository can belong to a [project](projects.md). The page of such a reposito
 ## Create a repository
 
 1. Select **Create repository**.
-2. **Class**: choose **Local**, **Remote** or **Virtual**. Only classes that an installed format implements are offered.
-3. **Format**: choose **Generic** or **npm**; each choice shows its client address.
+2. **Format**: choose the format of the repository from the tiles, for example **Generic**, **npm** or **NuGet**. **Search by package type** narrows the tiles by name. The format comes first because it decides what the rest of the wizard can offer. With the keyboard, move to the tiles with Tab, move over them with the arrow keys and choose one with Enter or Space.
+3. **Class**: choose **Local**, **Remote** or **Virtual**. A class that the chosen format does not implement is shown unavailable, with the reason, and cannot be chosen. Going back and choosing another format keeps the class when the new format has it and starts the format settings and the mirror section afresh.
 4. **Basic settings**: enter the **Key**, a **Description** and **Administrator notes**. The wizard checks the key as you type and reports **The key is available.** or **A repository with this key already exists.**
-5. **Access settings** (or **Access and npm settings**): set the patterns and switches described below, and the format settings.
+5. **Access settings** (or **Access and npm settings**, or **Access, npm and mirror settings** for a remote repository of a format that can mirror): set the patterns and switches described below, the format settings and, for a remote, the [mirror](#mirror).
 6. **Review**: check the summary. **Show as API request** shows the same request as a JSON body and as a curl command.
 7. Select **Create repository**. The repository is usable on every replica as soon as the wizard confirms, and its page opens.
 
@@ -73,9 +73,30 @@ The settings of a format are drawn from the schema the format publishes, so the 
 | npm virtual | **latestStrategy** | `highest-member-latest` | How `latest` is merged: the highest `latest` of the members, or `newest-published` |
 | npm virtual | **distTagStrategy** | `member-order` | How other dist-tags are merged: the first member in order, `highest-semver` or `newest-published` |
 
+## Mirror
+
+A remote repository of a format whose upstream trove can list, for example npm, has a **Mirror** section in the access settings step of the wizard (the fourth step) and a **Mirror** tab on its page. It is shown only for such formats; a format that cannot list its upstream has none.
+
+**Mode** is **Pull-through** (the default: fetch and store what clients ask for) or **Mirror** (also store, in background passes, every package of the upstream that the include patterns and the bounds admit). The other members show in mode **Mirror** only:
+
+| UI label | Document key | Default | Range |
+|---|---|---|---|
+| **Paused** | `remote.mirror.paused` | off | No pass starts; a running pass stops before its next package |
+| **Pass interval in seconds** | `remote.mirror.intervalSeconds` | `3600` | 300 to 604800 |
+| **Full pass interval in seconds** | `remote.mirror.fullPassIntervalSeconds` | `604800` | `0`, or 86400 to 7776000 |
+| **Discovery** | `remote.mirror.discovery` | **Automatic** | **Automatic**, **Change feed**, **Listing**, **Names list** |
+| **Concurrent fetches** | `remote.mirror.concurrency` | `4` | 1 to 64 |
+| **Versions per package** | `remote.mirror.maxVersionsPerPackage` | `0` (all) | 0 to 10000 |
+| **Include prerelease versions** | `remote.mirror.includePrereleases` | on | |
+| **Storage limit in bytes** | `remote.mirror.maxBytes` | empty (no limit of its own) | at least 1048576 |
+
+A member left empty or at its default is not written. Under the mode, a notice says when the mirror has no bound: for the format's well-known upstream (the one the wizard uses, `https://registry.npmjs.org/` for npm) the server refuses to save the mirror unless the include patterns each start with a literal part (such as `@types/*`; not `*`, `**` or `@*/*`) or a storage limit is set; for any other upstream it saves the mirror with a warning. The server decides, and its answer appears at the mode or at the member it names.
+
+Only a holder of `repositories:write-config` sets the mode and the members. An administrator of a project sees the section read-only, can switch **Paused** and select **Turn off** (back to pull-through), and cannot turn a remote repository into a mirror. **Not built in this release yet**: the server still answers `not_applicable` at the mode for a save with **Mirror** until the background passes exist, so the form shows the settings and a repository stays a pull-through cache.
+
 ## Settings that are set through the API
 
-The UI edits the shared settings and the format settings. The upstream of a remote repository, the members of a virtual one, package ownership and namespace claims are set through the management API. The **API** tab of a repository shows the **Stored document** and, after a change in the form, **Your change as a request**.
+The UI edits the shared settings, the format settings and the [mirror](#mirror) of a remote repository. The upstream of a remote repository, the members of a virtual one, package ownership and namespace claims are set through the management API. The **API** tab of a repository shows the **Stored document** and, after a change in the form, **Your change as a request**.
 
 Read the repository to get its `ETag`, then send a merge patch with `If-Match`:
 

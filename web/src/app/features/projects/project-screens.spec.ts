@@ -213,11 +213,11 @@ describe('The repository wizard in a project (R-UI-041, R-AUTHZ-026)', () => {
       el.checked = true;
       el.dispatchEvent(new Event('change', { bubbles: true }));
     };
-    radio('class', 'local');
+    root.querySelector<HTMLElement>('[role="option"]')!.click();
     await settle(fixture);
     button(root, 'Next').click();
     await settle(fixture);
-    radio('format', PACKAGE_FORMAT.name);
+    radio('class', 'local');
     await settle(fixture);
     button(root, 'Next').click();
     await settle(fixture);

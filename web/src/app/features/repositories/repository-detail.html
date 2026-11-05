@@ -143,6 +143,20 @@
             </div>
           </mat-tab>
         }
+        @if (mirrorSection() && format(); as mirrorFormat) {
+          <mat-tab [label]="tabMirror">
+            <div class="tab">
+              <trove-mirror-settings
+                [form]="current"
+                (formChange)="setForm($event)"
+                [format]="mirrorFormat"
+                [upstreamUrl]="upstreamUrl()"
+                [restricted]="mirrorRestricted()"
+                [fieldErrors]="fieldErrors()"
+              />
+            </div>
+          </mat-tab>
+        }
         @if (clientsOf(repo.format).length > 0) {
           <mat-tab [label]="tabGuide">
             <ng-template matTabContent>

@@ -5532,33 +5532,6 @@
         <target>Welche Art von Repository?</target>
       </segment>
     </unit>
-    <unit id="repo.wizard.no-classes">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:54,57</note>
-      </notes>
-      <segment>
-        <source> This installation offers no format to create repositories of. </source>
-        <target>Diese Installation bietet kein Format an, für das sich Repositories anlegen lassen.</target>
-      </segment>
-    </unit>
-    <unit id="repo.wizard.class.hint">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:58,60</note>
-      </notes>
-      <segment>
-        <source> Only the classes that at least one installed format implements are offered. </source>
-        <target>Angeboten werden nur die Klassen, die mindestens ein installiertes Format umsetzt.</target>
-      </segment>
-    </unit>
-    <unit id="repo.wizard.format.legend">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:64,65</note>
-      </notes>
-      <segment>
-        <source>Which format?</source>
-        <target>Welches Format?</target>
-      </segment>
-    </unit>
     <unit id="repo.field.key">
       <notes>
         <note category="location">src/app/features/repositories/repository-wizard.html:91,93</note>
@@ -23456,6 +23429,435 @@
       <segment>
         <source>The run is queued. Reload the page to see its result.</source>
         <target>Der Lauf ist eingereiht. Laden Sie die Seite neu, um sein Ergebnis zu sehen.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.field.mode">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:29</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:117,118</note>
+      </notes>
+      <segment>
+        <source>Mode</source>
+        <target>Modus</target>
+      </segment>
+    </unit>
+    <unit id="mirror.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:32</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:98,99</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:251,253</note>
+      </notes>
+      <segment>
+        <source>Mirror</source>
+        <target>Mirror</target>
+      </segment>
+    </unit>
+    <unit id="mirror.paused">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:37</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:201,202</note>
+      </notes>
+      <segment>
+        <source>Paused</source>
+        <target>Pausiert</target>
+      </segment>
+    </unit>
+    <unit id="mirror.interval">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:38</note>
+      </notes>
+      <segment>
+        <source>Pass interval in seconds</source>
+        <target>Durchlauf-Intervall in Sekunden</target>
+      </segment>
+    </unit>
+    <unit id="mirror.full-interval">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:39</note>
+      </notes>
+      <segment>
+        <source>Full pass interval in seconds</source>
+        <target>Intervall des vollständigen Durchlaufs in Sekunden</target>
+      </segment>
+    </unit>
+    <unit id="mirror.discovery">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:40</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:236,238</note>
+      </notes>
+      <segment>
+        <source>Discovery</source>
+        <target>Erkennung</target>
+      </segment>
+    </unit>
+    <unit id="mirror.concurrency">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:41</note>
+      </notes>
+      <segment>
+        <source>Concurrent fetches</source>
+        <target>Gleichzeitige Abrufe</target>
+      </segment>
+    </unit>
+    <unit id="mirror.max-versions">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:42</note>
+      </notes>
+      <segment>
+        <source>Versions per package</source>
+        <target>Versionen je Paket</target>
+      </segment>
+    </unit>
+    <unit id="mirror.prereleases">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:43</note>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:270,272</note>
+      </notes>
+      <segment>
+        <source>Include prerelease versions</source>
+        <target>Vorabversionen einbeziehen</target>
+      </segment>
+    </unit>
+    <unit id="mirror.max-bytes">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:44</note>
+      </notes>
+      <segment>
+        <source>Storage limit in bytes</source>
+        <target>Speichergrenze in Bytes</target>
+      </segment>
+    </unit>
+    <unit id="mirror.intro">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:100,103</note>
+      </notes>
+      <segment>
+        <source> A remote repository fetches and stores what clients ask for. In mode mirror it also stores, in background passes, what the upstream offers within the include patterns and bounds below. </source>
+        <target>Ein Remote-Repository holt und speichert, was Clients anfragen. Im Modus Mirror speichert es zusätzlich in Hintergrund-Durchläufen, was der Upstream innerhalb der Include-Muster und der folgenden Grenzen anbietet.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.restricted">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:110,112</note>
+      </notes>
+      <segment>
+        <source>Only an administrator of the installation can switch a remote repository to mirror or change these settings. You can pause a mirror and turn it off.</source>
+        <target>Nur ein Administrator der Installation kann ein Remote-Repository auf Mirror umstellen oder diese Einstellungen ändern. Sie können einen Mirror pausieren und ausschalten.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.mode.pull-through">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:130,131</note>
+      </notes>
+      <segment>
+        <source>Pull-through</source>
+        <target>Pull-through</target>
+      </segment>
+    </unit>
+    <unit id="mirror.mode.pull-through.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:132,135</note>
+      </notes>
+      <segment>
+        <source>Fetches and stores what clients ask for. This is the default.</source>
+        <target>Holt und speichert, was Clients anfragen. Das ist die Voreinstellung.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.mode.mirror">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:144,145</note>
+      </notes>
+      <segment>
+        <source>Mirror</source>
+        <target>Mirror</target>
+      </segment>
+    </unit>
+    <unit id="mirror.mode.mirror.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:146,149</note>
+      </notes>
+      <segment>
+        <source>Also stores, in background passes, every package of the upstream that the include patterns and bounds admit.</source>
+        <target>Speichert zusätzlich in Hintergrund-Durchläufen jedes Paket des Upstreams, das die Include-Muster und Grenzen zulassen.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.turn-off">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:161,162</note>
+      </notes>
+      <segment>
+        <source>Turn off</source>
+        <target>Ausschalten</target>
+      </segment>
+    </unit>
+    <unit id="mirror.turn-off.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:164,167</note>
+      </notes>
+      <segment>
+        <source>Back to pull-through. A running pass stops before its next package; stored content stays.</source>
+        <target>Zurück zu Pull-through. Ein laufender Durchlauf stoppt vor dem nächsten Paket; gespeicherte Inhalte bleiben.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.unbounded.refused">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:175,177</note>
+      </notes>
+      <segment>
+        <source>A mirror of the format&apos;s well-known upstream needs a bound. Give include patterns that each start with a literal part (such as <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;">@types/*</pc>), or a storage limit. Without either the server refuses to save it.</source>
+        <target>Ein Mirror des bekannten Upstreams des Formats braucht eine Grenze. Geben Sie Include-Muster an, die jeweils mit einem festen Teil beginnen (etwa <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;">@types/*</pc>), oder eine Speichergrenze. Ohne eines von beiden lehnt der Server das Speichern ab.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.unbounded.warned">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:184,187</note>
+      </notes>
+      <segment>
+        <source>The mirror has neither include patterns that start with a literal part nor a storage limit: it stores everything the upstream offers. It is saved with a warning.</source>
+        <target>Der Mirror hat weder Include-Muster, die mit einem festen Teil beginnen, noch eine Speichergrenze: Er speichert alles, was der Upstream anbietet. Er wird mit einer Warnung gespeichert.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.paused.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:204,206</note>
+      </notes>
+      <segment>
+        <source> No pass starts, and a running pass stops before its next package. </source>
+        <target>Kein Durchlauf startet, und ein laufender Durchlauf stoppt vor dem nächsten Paket.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.discovery.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:251,253</note>
+      </notes>
+      <segment>
+        <source> How a pass finds the names of the upstream. Automatic tries the feed, then the listing, then the names list. Default: automatic. </source>
+        <target>Wie ein Durchlauf die Namen des Upstreams findet. Automatisch versucht den Feed, dann die Auflistung, dann die Namensliste. Voreinstellung: automatisch.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.prereleases.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:273,275</note>
+      </notes>
+      <segment>
+        <source> Whether a pass stores prerelease versions. Default: on. </source>
+        <target>Ob ein Durchlauf Vorabversionen speichert. Voreinstellung: an.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.interval.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:361</note>
+      </notes>
+      <segment>
+        <source>From the start of one pass to the start of the next. 300 to 604800. Default: 3600.</source>
+        <target>Vom Start eines Durchlaufs bis zum Start des nächsten. 300 bis 604800. Voreinstellung: 3600.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.full-interval.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:366</note>
+      </notes>
+      <segment>
+        <source>Age of the last full pass after which the next pass is full. 0 means only when an incremental pass cannot run; otherwise 86400 to 7776000. Default: 604800.</source>
+        <target>Alter des letzten vollständigen Durchlaufs, nach dem der nächste Durchlauf vollständig ist. 0 heißt nur, wenn ein inkrementeller Durchlauf nicht laufen kann; sonst 86400 bis 7776000. Voreinstellung: 604800.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.concurrency.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:371</note>
+      </notes>
+      <segment>
+        <source>The most background fetches one pass runs at once. 1 to 64. Default: 4.</source>
+        <target>Die meisten Hintergrund-Abrufe, die ein Durchlauf gleichzeitig ausführt. 1 bis 64. Voreinstellung: 4.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.max-versions.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:376</note>
+      </notes>
+      <segment>
+        <source>The newest versions of a package that a pass stores. 0 means all. 0 to 10000. Default: 0.</source>
+        <target>Die neuesten Versionen eines Pakets, die ein Durchlauf speichert. 0 heißt alle. 0 bis 10000. Voreinstellung: 0.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.max-bytes.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:381</note>
+      </notes>
+      <segment>
+        <source>Bytes of stored content beyond which a pass adds nothing. At least 1048576. Empty means no limit of its own.</source>
+        <target>Byte an gespeichertem Inhalt, ab dem ein Durchlauf nichts mehr hinzufügt. Mindestens 1048576. Leer heißt keine eigene Grenze.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.discovery.feed">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:426</note>
+      </notes>
+      <segment>
+        <source>Change feed</source>
+        <target>Änderungsfeed</target>
+      </segment>
+    </unit>
+    <unit id="mirror.discovery.listing">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:428</note>
+      </notes>
+      <segment>
+        <source>Listing</source>
+        <target>Auflistung</target>
+      </segment>
+    </unit>
+    <unit id="mirror.discovery.names">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:430</note>
+      </notes>
+      <segment>
+        <source>Names list</source>
+        <target>Namensliste</target>
+      </segment>
+    </unit>
+    <unit id="mirror.discovery.auto">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-settings.ts:432</note>
+      </notes>
+      <segment>
+        <source>Automatic</source>
+        <target>Automatisch</target>
+      </segment>
+    </unit>
+    <unit id="repo.tab.mirror">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:343</note>
+      </notes>
+      <segment>
+        <source>Mirror</source>
+        <target>Mirror</target>
+      </segment>
+    </unit>
+    <unit id="repo.wizard.format.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.html:38,39</note>
+      </notes>
+      <segment>
+        <source>Choose the repository format</source>
+        <target>Repository-Format wählen</target>
+      </segment>
+    </unit>
+    <unit id="repo.wizard.format.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.html:40,42</note>
+      </notes>
+      <segment>
+        <source> The format decides which classes and settings the repository can have. </source>
+        <target>Das Format bestimmt, welche Klassen und Einstellungen das Repository haben kann.</target>
+      </segment>
+    </unit>
+    <unit id="repo.wizard.format.filter">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.html:44,47</note>
+      </notes>
+      <segment>
+        <source>Search by package type</source>
+        <target>Nach Pakettyp suchen</target>
+      </segment>
+    </unit>
+    <unit id="repo.wizard.no-formats">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.html:61,63</note>
+      </notes>
+      <segment>
+        <source>This installation offers no format to create repositories of.</source>
+        <target>Diese Installation bietet kein Format an, für das sich Repositories anlegen lassen.</target>
+      </segment>
+    </unit>
+    <unit id="repo.wizard.format.none">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.html:64,66</note>
+      </notes>
+      <segment>
+        <source>No format matches the search.</source>
+        <target>Kein Format passt zur Suche.</target>
+      </segment>
+    </unit>
+    <unit id="repo.wizard.format.count">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.html:67,68</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="INTERPOLATION" disp="{{ shownFormats().length }}"/> of <ph id="1" equiv="INTERPOLATION_1" disp="{{ formatCount() }}"/> formats</source>
+        <target><ph id="0" equiv="INTERPOLATION" disp="{{ shownFormats().length }}"/> von <ph id="1" equiv="INTERPOLATION_1" disp="{{ formatCount() }}"/> Formaten</target>
+      </segment>
+    </unit>
+    <unit id="repo.wizard.format.chosen">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.html:91,92</note>
+      </notes>
+      <segment>
+        <source>Chosen:</source>
+        <target>Gewählt:</target>
+      </segment>
+    </unit>
+    <unit id="repo.wizard.class.format-hint">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.html:122,125</note>
+      </notes>
+      <segment>
+        <source> A class that the chosen format does not implement is shown as unavailable, with the reason. </source>
+        <target>Eine Klasse, die das gewählte Format nicht umsetzt, wird als nicht verfügbar angezeigt, mit dem Grund.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.review.on">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.html:254,255</note>
+      </notes>
+      <segment>
+        <source>Mirror mode: a background pass stores what the upstream offers.</source>
+        <target>Mirror-Modus: Ein Hintergrund-Durchlauf speichert, was der Upstream anbietet.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.review.defaults">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.html:258,260</note>
+      </notes>
+      <segment>
+        <source>The defaults of the mirror</source>
+        <target>Die Voreinstellungen des Mirrors</target>
+      </segment>
+    </unit>
+    <unit id="mirror.review.off">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.html:261,263</note>
+      </notes>
+      <segment>
+        <source>Pull-through (no mirror).</source>
+        <target>Pull-through (kein Mirror).</target>
+      </segment>
+    </unit>
+    <unit id="repo.wizard.step.access-format-mirror">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:168</note>
+      </notes>
+      <segment>
+        <source>Access, <ph id="0" equiv="format" disp="this.formatLabel()"/> and mirror settings</source>
+        <target>Zugriffs-, <ph id="0" equiv="format" disp="this.formatLabel()"/>- und Mirror-Einstellungen</target>
+      </segment>
+    </unit>
+    <unit id="repo.wizard.step.access-mirror">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:169</note>
+      </notes>
+      <segment>
+        <source>Access and mirror settings</source>
+        <target>Zugriffs- und Mirror-Einstellungen</target>
+      </segment>
+    </unit>
+    <unit id="repo.class.unsupported">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:329</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="format" disp="this.formatLabel()"/> does not implement the class <ph id="1" equiv="class" disp="classLabel(cls)"/>.</source>
+        <target><ph id="0" equiv="format" disp="this.formatLabel()"/> setzt die Klasse <ph id="1" equiv="class" disp="classLabel(cls)"/> nicht um.</target>
       </segment>
     </unit>
 </file>

@@ -3351,13 +3351,22 @@ Acceptance criteria:
 ### R-UI-021 · Repository creation wizard and edit form
 Priority: **MVP** · Covers: UI-031
 
-- Steps: class, format (cards from `GET /api/v1/formats`), basic settings, class-specific settings,
-  review.
-- The format step offers only the formats whose `classes` in `GET /api/v1/formats` contain the
-  class chosen in the first step. Those `classes` are generated from each format's
-  `Descriptor().Classes` (R-ARCH-008, R-ARCH-010 in [architecture.md](architecture.md)); the UI
-  holds no list of formats per class of its own (FMT-001). A create that names another class still
-  fails on the server with 422.
+- Steps: format, class, basic settings, class-specific settings, review. The format comes first
+  because some features are technically impossible for some formats (Q-UI-112).
+- The format step is a grid of tiles from `GET /api/v1/formats`, each with the format's icon and its
+  name, under a search field ("Search by package type") that filters the tiles by name, a title and
+  a one-line hint. Only the formats the installation has appear. The grid is a single-choice listbox
+  of `@angular/aria` (R-UI-001, Q-UI-1): one tab stop, arrow keys, Home and End, Enter or Space to
+  choose, one click to choose, a visible focus ring (Q-UI-114, Q-UI-115). Next is disabled until a
+  format is chosen.
+- The class step offers only the classes in the chosen format's `classes` in
+  `GET /api/v1/formats`. Those `classes` are generated from each format's `Descriptor().Classes`
+  (R-ARCH-008, R-ARCH-010 in [architecture.md](architecture.md)); the UI holds no list of classes
+  per format of its own (FMT-001). A class the format lacks is shown disabled with one sentence of
+  reason, and cannot be chosen (Q-UI-113). Going back to the format step and choosing another format
+  keeps the class when the new format has it, clears it when not, and starts the format settings and
+  the mirror section afresh (Q-UI-116). A create that names a class the format lacks still fails on
+  the server with 422.
 - Settings forms render from the format's settings JSON Schema (R-ARCH-004, R-ARCH-008) into the
   format member of the repository document that is named after the format (`npm`, `nuget`;
   [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-004), never into a generic
@@ -3381,7 +3390,10 @@ Priority: **MVP** · Covers: UI-031
   section with the mode (`pullThrough` or `mirror`) and the members of `remote.mirror`
   ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-050), the warning or refusal `mirror_unbounded` at the
   mode with the sentence of R-REPO-052, and for a project administrator the section read-only except **Pause** and
-  **Turn off** (Q-REPO-142). On the edit form of a remote in mode `mirror`, a **Mirror** tab shows the status of
+  **Turn off** (Q-REPO-142). The section is in the wizard's class-specific step and on the edit form's tab **Mirror**
+  (Q-UI-117); the members show in mode `mirror` and are written only where they differ from their defaults, and a create in
+  mode `pullThrough` writes no `remote` member; the early notice at the mode applies the server's bound rule and the server
+  decides (Q-UI-118). On the edit form of a remote in mode `mirror`, a **Mirror** tab shows the status of
   `GET /api/v1/repositories/{key}/mirror`: the state, the pass in progress with its counts, the last complete pass, the next
   pass, the last error, the rate-limit waits and the bound; with **Pause** and **Resume**, which `PATCH`
   `remote.mirror.paused` with `If-Match`, and **Run a pass now** (`POST …/mirror/run`, and a full pass from its menu), which
@@ -3402,8 +3414,16 @@ Acceptance criteria:
 - Creating `npm-remote` with the npm preset and "Test connection" succeeds; double-clicking "Create"
   creates one repository.
 - Saving an edit after another administrator saved first opens the conflict dialog.
-- With a test build that registers a format whose `Classes` lack `Virtual`, choosing the class
-  `virtual` does not offer that format, and choosing `local` does.
+- With a test build that registers a format whose `Classes` lack `Virtual`, choosing that format
+  does not offer the class `virtual`, or shows it disabled with the reason, and `local` can be
+  chosen. Choosing the class `virtual` for npm, going back and choosing that format leaves no
+  class chosen.
+- The format step lists the installed formats as tiles, typing `nu` in the search field leaves the
+  NuGet tile, and the tiles can be reached, moved over and chosen with the keyboard alone.
+- A remote npm repository in the wizard shows the Mirror section in mode pull-through; choosing
+  mirror shows its members with their defaults, and a create with only `intervalSeconds` changed
+  sends `remote: {mode: "mirror", mirror: {intervalSeconds: …}}` and nothing else of `remote`.
+  A project administrator sees the section read-only except Pause and Turn off.
 - The edit form of `nuget-local` without a `nuget.deleteMode` shows "unlist"; after
   `PATCH /api/v1/repositories/nuget-local` with `If-Match` and `{"nuget": {"deleteMode": "delete"}}`
   it shows "delete".
@@ -7289,6 +7309,140 @@ upgrade starts from the shape before the cut (R-ARCH-025).
 
 **Applied in the spec:** R-HA-064 (the browser journey). Code: `web/src/app/api/files-api.ts` (`putWithFallback`), `browse.html`,
 `package-detail.ts` (`fileHref`). Tests: `files-api.spec.ts`, `browse.spec.ts`, `package-detail.spec.ts`.
+
+### Q-UI-112 · The repository wizard asks for the format first
+
+Status: Decided by the owner on 2026-11-05.
+
+Context: the wizard started with the class (local, remote, virtual) and offered the formats of that class second. Some features
+are technically impossible for some formats (a format may lack a class, may have no settings for a class, and only some formats
+can mirror a remote), so what the later steps offer depends on the format, not the other way round.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Class first, then the formats that implement it (as before) | The first question is what kind of repository | Familiar from the first prototype | The format decides what is possible afterwards, so the first answer limits nothing and the second is limited by it |
+| (b) Format first, then the classes of that format (chosen) | The first question is which package type the repository serves | The choice that limits everything after it is the first one; the class step can say what the format cannot do | A user who thought in classes first answers a different first question |
+
+**Choice:** (b), by the owner.
+
+**Rationale:** some features are technically impossible for some formats, so the format is the first choice.
+
+**Applied in the spec:** R-UI-021 (the steps, the class step's rule and its acceptance criteria). Code:
+`web/src/app/features/repositories/repository-wizard.ts` and `.html`. R-UI-023 (quick setup) is unaffected.
+
+### Q-UI-113 · A class the chosen format does not implement is shown disabled, with the reason
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Hide it | The class step lists only the format's classes | Nothing to explain | A user who looks for a virtual repository of a format without it cannot tell whether trove lacks the feature or the format does |
+| (b) Show it disabled with one sentence (chosen) | The card stays, cannot be chosen, and says "NuGet does not implement the class Virtual." | It teaches what the format cannot do, which is the reason the format comes first; the sentence is the description of the disabled radio, so assistive technology reads it | Three cards where one would do |
+| (c) Show it enabled and refuse at the end | The server's 422 decides | No client logic | The user finds out at the last step |
+
+**Choice:** (b). The reason names the format and the class and is the same sentence for every format; the descriptor says which
+classes exist, not why one is missing, so the UI does not invent a cause.
+
+**Rationale:** (a) removes the one piece of information the reordered wizard is able to give. The development agent would revisit
+this when a descriptor carries a reason per missing class; the sentence then uses it.
+
+**Applied in the spec:** R-UI-021. Code: `repository-wizard.html` (the class step), `repository-wizard.ts` (`supports`,
+`unsupportedReason`). Test: `repository-wizard.spec.ts`.
+
+### Q-UI-114 · The format tiles are a listbox of `@angular/aria`; the icon is the one of the package list
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Native radio inputs in cards, as the class step | `input type=radio` in a label | Native arrow keys in every direction, no library | The grid is a picker of one of many with a filter; a radio group announces every tile as a group member even while filtered |
+| (b) A single-choice listbox of `@angular/aria` (chosen) | `ngListbox` with `ngOption` per tile, explicit selection, horizontal orientation, one tab stop | The WAI-ARIA pattern for choosing one of many, filtered; R-UI-001 names the listbox for such widgets; a tile is not a form control | Arrow keys move along the row (Left and Right, on to the next row), not up and down; typeahead, Home and End work |
+| (c) Buttons with `aria-pressed` | A toggle per tile | Simplest markup | One tab stop per tile (a long tab path), no arrow navigation |
+
+**Choice:** (b), with `selectionMode="explicit"` so that moving over a tile does not change the format (a change resets
+settings, Q-UI-116), and a click on the chosen tile keeps the choice. The icon is `formatIcon` (`shared/format-icon.ts`), the one the
+package list shows in its type column: `extension` for NuGet and the neutral `inventory_2` for every other format; the UI holds no
+list of formats (FMT-001). The name is the descriptor's `displayName`.
+
+**Rationale:** the wizard now has a picker of one of many that a filter shortens, which is the listbox pattern. Keyboard users move
+with Left and Right, Home, End and typeahead, and the filter shortens the path. The development agent would revisit (a) if the
+owner or a screen-reader user finds the missing Up and Down arrows a loss; the tiles then become radios in a CSS grid.
+
+**Applied in the spec:** R-UI-021. Code: `repository-wizard.html`, `repository-wizard.scss`, `shared/format-icon.ts`. Tests:
+`repository-wizard.spec.ts` (the keyboard and selection specs).
+
+### Q-UI-115 · The search field filters the tiles by name, in the browser
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Case-insensitive substring of the display name or the name, in the browser, with a live count (chosen) | `GET /api/v1/formats` is loaded once | The catalog is a few formats; instant; no request per key | None for the size |
+| (b) A query parameter on the API | The server filters | Scales | The catalog has no such parameter and does not need one |
+
+**Choice:** (a). Enter in the field chooses the tile when exactly one is left; the count and "No format matches the search." are in
+a status region. A chosen format that the filter hides stays chosen and is named under the grid ("Chosen: npm").
+
+**Rationale:** the field narrows a short list; the one-match Enter keeps a keyboard user from tabbing into the grid. The
+development agent would revisit (b) when an installation lists enough formats for the response to matter.
+
+**Applied in the spec:** R-UI-021. Code: `repository-wizard.ts` (`shownFormats`, `chooseOnlyMatch`). Test: `repository-wizard.spec.ts`.
+
+### Q-UI-116 · Changing the format resets what no longer applies
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Reset everything after the format | Class, key and settings are cleared | Nothing stale | Typing the key and the description again for a format change |
+| (b) Keep what still applies: the class if the new format has it, the key, description and access settings; clear the format settings and the mirror section (chosen) | The shared members of the document stay | Settings of one format are meaningless for another; the generic members are the same | A user who changed the format may not notice the cleared settings |
+| (c) Keep everything | Settings travel along | Least work | A `latestGuard` of npm would be sent for NuGet |
+
+**Choice:** (b). The class is cleared only when the new format lacks it, so the class step reopens empty.
+
+**Rationale:** the format member and the mirror section are defined by the format's schema and flag; every other member of the
+document is format-independent. The development agent would revisit (a) if the owner finds the partial keep surprising.
+
+**Applied in the spec:** R-UI-021. Code: `repository-wizard.ts` (`chooseFormat`, `resetDependent`). Tests: `repository-wizard.spec.ts`,
+`mirror-settings.spec.ts`.
+
+### Q-UI-117 · The Mirror section: where it sits, what it writes, who may change it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Question | Options | Choice |
+|---|---|---|
+| Where | The class-specific step and a tab of the edit form; a step of its own | The class-specific step of the wizard (under the access settings and the format's settings), and a tab **Mirror** on the edit form of a remote of a format with `mirror: true`. The status of Q-UI-104 is a later addition to the same tab |
+| What shows | Always every member; the members in mode `mirror` only | The mode always; the members in mode `mirror` only, so the default view is two cards |
+| What a create writes | Every member; what differs from the default | Nothing in mode `pullThrough`; in mode `mirror` the mode and the members that differ from their defaults (R-REPO-050) |
+| What an edit patches | A diff that may drop `remote`; a structural diff | The mode and the mirror object are always part of the compared document, so a merge patch carries only the changed members and a member set back to its default is cleared with `null`; the rest of `remote` (the URL, the credentials) is never part of the patch |
+| Project administrator | Hide; read-only | The caller without `repositories:write-config` sees the section read-only except **Paused** and **Turn off** (the mode back to `pullThrough`), and cannot choose mode `mirror` (Q-REPO-142; the server answers `422 mirror_restricted` for anything else) |
+
+**Rationale:** a member written only where it differs follows Q-UI-80 and keeps a stored document equal to what the user decided;
+the structural diff is what makes a patch of one member safe on a document whose other `remote` members the form does not edit. The
+development agent would revisit the "members in mode `mirror` only" view if operators ask to prepare the settings before turning the
+mode on.
+
+**Applied in the spec:** R-UI-021. Code: `mirror-settings.ts`, `repository-model.ts` (`remoteOf`, `mirrorOf`), `repository-wizard.*`,
+`repository-detail.*`. Tests: `mirror-settings.spec.ts`.
+
+### Q-UI-118 · The unbounded-mirror notice is an early warning with the server's rule
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No client check; show the server's `mirror_unbounded` after the save | Only the server speaks | One rule in one place | The user learns after the last step |
+| (b) A notice under the mode that applies the bound rule of R-REPO-052 to the entered include patterns and the storage limit, while the server still decides (chosen) | `refused` (the format's well-known upstream) or `warned` (any other), in the words of the server | The user sees the refusal before it happens and what removes it | The rule is written twice (`Bounding` in `internal/mirror/discover`, `boundsMirror` in `mirror-settings.ts`) |
+
+**Choice:** (b). The wizard has no upstream field, so a create takes the format's default upstream and the notice treats it as the
+well-known one; the edit form compares the stored URL with the format's `defaultUpstreamUrl`. The server's answer at `/remote/mode`
+is shown at the mode as well.
+
+**Rationale:** an operator who chooses mirror for the public npm registry should not discover the bound requirement from a 422. The
+development agent would revisit the duplicate rule if the catalog serves the rule's inputs.
+
+**Applied in the spec:** R-UI-021. Code: `mirror-settings.ts` (`boundsMirror`, `unbounded`). Test: `mirror-settings.spec.ts`.
 
 ## What this does not cover
 

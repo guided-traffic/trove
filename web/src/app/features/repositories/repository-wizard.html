@@ -34,47 +34,94 @@
 
   @switch (step()) {
     @case (0) {
+      <section class="format-picker" aria-labelledby="format-heading">
+        <h2 id="format-heading" i18n="@@repo.wizard.format.heading">Choose the repository format</h2>
+        <p class="hint" id="format-hint" i18n="@@repo.wizard.format.hint">
+          The format decides which classes and settings the repository can have.
+        </p>
+        <div class="field format-filter">
+          <label class="field-label" for="f-format-filter" i18n="@@repo.wizard.format.filter"
+            >Search by package type</label
+          >
+          <input
+            id="f-format-filter"
+            class="text-input"
+            type="search"
+            autocomplete="off"
+            spellcheck="false"
+            aria-describedby="format-count"
+            [value]="formatFilter()"
+            (input)="setFormatFilter($any($event.target).value)"
+            (keydown.enter)="chooseOnlyMatch($event)"
+          />
+        </div>
+        <p class="hint" role="status" id="format-count">
+          @if (formatCount() === 0) {
+            <ng-container i18n="@@repo.wizard.no-formats"
+              >This installation offers no format to create repositories of.</ng-container
+            >
+          } @else if (shownFormats().length === 0) {
+            <ng-container i18n="@@repo.wizard.format.none">No format matches the search.</ng-container>
+          } @else {
+            <ng-container i18n="@@repo.wizard.format.count"
+              >{{ shownFormats().length }} of {{ formatCount() }} formats</ng-container
+            >
+          }
+        </p>
+        <div
+          ngListbox
+          class="tiles"
+          orientation="horizontal"
+          selectionMode="explicit"
+          aria-labelledby="format-heading"
+          aria-describedby="format-hint"
+          [value]="chosenFormat()"
+          (valueChange)="onFormatSelected($event)"
+        >
+          @for (f of shownFormats(); track f.name) {
+            <div ngOption class="tile" [value]="f.name" [label]="f.displayName ?? f.name">
+              <span class="material-icons tile-icon" aria-hidden="true">{{ formatIcon(f.name) }}</span>
+              <span class="tile-name" translate="no">{{ f.displayName ?? f.name }}</span>
+            </div>
+          }
+        </div>
+        @if (formatName()) {
+          <p class="hint" role="status">
+            <span class="material-icons inline" aria-hidden="true">check</span>
+            <ng-container i18n="@@repo.wizard.format.chosen">Chosen:</ng-container>&ngsp;
+            <strong translate="no">{{ formatLabel() }}</strong>
+          </p>
+        }
+      </section>
+    }
+    @case (1) {
       <fieldset class="choices">
         <legend i18n="@@repo.wizard.class.legend">What kind of repository?</legend>
-        @for (c of classes(); track c) {
-          <label class="choice">
+        @for (c of classes; track c) {
+          <label class="choice" [class.unavailable]="!supports(c)">
             <input
               type="radio"
               name="class"
               [value]="c"
               [checked]="cls() === c"
+              [disabled]="!supports(c)"
+              [attr.aria-describedby]="supports(c) ? null : 'class-reason-' + c"
               (change)="chooseClass(c)"
             />
             <span class="choice-title">{{ classText(c) }}</span>
             <span class="hint">{{ classHelpText(c) }}</span>
+            @if (!supports(c)) {
+              <span class="hint reason" [id]="'class-reason-' + c">
+                <span class="material-icons inline" aria-hidden="true">block</span>
+                {{ unsupportedReason(c) }}
+              </span>
+            }
           </label>
         }
-        @if (classes().length === 0) {
-          <p class="empty" i18n="@@repo.wizard.no-classes">
-            This installation offers no format to create repositories of.
-          </p>
-        }
-        <p class="hint" i18n="@@repo.wizard.class.hint">
-          Only the classes that at least one installed format implements are offered.
+        <p class="hint" i18n="@@repo.wizard.class.format-hint">
+          A class that the chosen format does not implement is shown as unavailable, with the
+          reason.
         </p>
-      </fieldset>
-    }
-    @case (1) {
-      <fieldset class="choices">
-        <legend i18n="@@repo.wizard.format.legend">Which format?</legend>
-        @for (f of formatsOfClass(); track f.name) {
-          <label class="choice">
-            <input
-              type="radio"
-              name="format"
-              [value]="f.name"
-              [checked]="formatName() === f.name"
-              (change)="chooseFormat(f.name)"
-            />
-            <span class="choice-title" translate="no">{{ f.displayName ?? f.name }}</span>
-            <span class="hint" translate="no">{{ f.protocolBasePath }}</span>
-          </label>
-        }
       </fieldset>
     }
     @case (2) {
@@ -161,6 +208,14 @@
           [fieldErrors]="fieldErrors()"
         />
       }
+      @if (mirrorSection() && format(); as mirrorFormat) {
+        <trove-mirror-settings
+          [(form)]="form"
+          [format]="mirrorFormat"
+          [restricted]="mirrorRestricted()"
+          [fieldErrors]="fieldErrors()"
+        />
+      }
     }
     @case (4) {
       <h2 i18n="@@repo.wizard.review.heading">Review</h2>
@@ -189,6 +244,21 @@
               >&ngsp;
             } @empty {
               <span i18n="@@repo.review.format-defaults">The defaults of the format</span>
+            }
+          </dd>
+        }
+        @if (mirrorSection()) {
+          <dt i18n="@@mirror.heading">Mirror</dt>
+          <dd>
+            @if (form().remoteMode === 'mirror') {
+              <span i18n="@@mirror.review.on">Mirror mode: a background pass stores what the upstream offers.</span>&ngsp;
+              @for (e of mirrorEntries(); track e[0]) {
+                <code translate="no">{{ e[0] }}: {{ e[1] }}</code>&ngsp;
+              } @empty {
+                <span i18n="@@mirror.review.defaults">The defaults of the mirror</span>
+              }
+            } @else {
+              <span i18n="@@mirror.review.off">Pull-through (no mirror).</span>
             }
           </dd>
         }

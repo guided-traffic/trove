@@ -76,3 +76,4 @@ before using a new term in a German text.
 | known exploited (CISA list) | bekannt ausgenutzt |
 | resolved (finding) | behoben |
 | advisory source, mirror repository | Advisory-Quelle, Spiegel-Repository |
+| mirror (mode of a remote repository), pull-through, pass (of a mirror) | Mirror, Pull-through, Durchlauf |

@@ -15,6 +15,7 @@ import { Router, RouterLink } from '@angular/router';
 import { PackageFilters, PackageSort, PackageSummary, PackagesApi } from '../../api/packages-api';
 import { RepositoriesApi } from '../../api/repositories-api';
 import { PagedResource, valueOf } from '../../shared/paged-resource';
+import { formatIcon } from '../../shared/format-icon';
 import { DataTable, TableColumn, TableSort } from '../../shared/ui/data-table';
 import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
 import { relativeTime } from './format-time';
@@ -264,9 +265,7 @@ export class PackageList {
     return (valueOf(this.formats) ?? []).find((f) => f.name === name)?.displayName ?? name;
   }
 
-  protected formatIcon(name: string): string {
-    return name === 'nuget' ? 'extension' : 'inventory_2';
-  }
+  protected readonly formatIcon = formatIcon;
 
   private createdRange(): { from: string | undefined; to: string | undefined } {
     const p = this.period();
