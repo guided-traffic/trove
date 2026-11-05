@@ -263,9 +263,10 @@ integration-up: ## Start PostgreSQL, PgBouncer, Valkey with Sentinel (TLS) and S
 integration-down: ## Stop the integration stack and remove its volumes
 	test/integration/down.sh
 
-# SHARD=a|b splits the packages over the two CI jobs, each with its own stack: a holds four of the slowest
-# packages (about half the time), b everything else, so a new package lands in b. Unset runs all.
-INTEGRATION_SHARD_A := $(addprefix $(MODULE)/test/integration/,coordination npm repository proxy)
+# SHARD=a|b splits the packages over the two CI jobs, each with its own stack: a holds seven of the slowest
+# packages (about half the time: 1,110 s of 2,315 s in a full local run of 2026-11-05), b everything else, so a new
+# package lands in b. Unset runs all.
+INTEGRATION_SHARD_A := $(addprefix $(MODULE)/test/integration/,ci coordination mirror npm nuget repository proxy)
 ifeq ($(SHARD),)
 INTEGRATION_PKGS = ./test/integration/...
 else ifeq ($(SHARD),a)
