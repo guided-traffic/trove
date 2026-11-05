@@ -204,6 +204,17 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
+Found on 2026-11-05 while building phase 6b:
+
+### UI
+
+- **F-54 · The repository wizard has no upstream settings for a remote** (confirmed, in the code). R-UI-021 asks the wizard of a
+  remote repository for the upstream URL with the presets per format, write-only credentials, the metadata and negative cache
+  periods, the offline switch and "Test connection" (`POST /api/v1/upstream-tests`); `repository-wizard.html` of
+  `web/src/app/features/repositories` has none of them, so a remote created in the UI always takes the format's default
+  upstream. A mirror of a private upstream cannot be set up in the UI. Done when the wizard and the edit form carry the remote
+  settings of R-UI-021 and a browser journey creates a remote of a non-default upstream with "Test connection".
+
 Found on 2026-11-04 while cutting trove into task areas (phase 6a):
 
 ### Tests and tools
