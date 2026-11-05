@@ -890,18 +890,22 @@ phase 7, so that the failure suite covers the background sync too. Its engine wa
   format (NuGet: the upstream's catalog or its package listing; npm: the upstream's package list or change feed, where it
   has one); what the include and exclude patterns of the remote bound; storage and quota bounds, because a mirror of a
   public registry is terabytes; the catalog's pull-replication entries (API-082 to API-090) it pulls forward or leaves
-- 🟡 Contracts of the engine: the tables `mirror_state` and `mirror_pending` (migration 00040, export classes of Q-REPO-147)
-  and the seam `mirror.Host` between the engine and the remote engine (Q-ARCH-288)
-- 🟡 npm discovery (WP6b.2) and NuGet discovery (WP6b.3): the formats' listers, the counting stubs' feeds, listings and
-  throttling modes
-- 🟡 Background synchronisation on `worker`: a job per mirrored remote, resumable from a checkpoint, continued after a
+- 🟢 Contracts of the engine: the tables `mirror_state` and `mirror_pending` (migration 00040, export classes of Q-REPO-147)
+  and the seam `mirror.Host` between the engine and the remote engine (Q-ARCH-288), with its error kinds and `Ready`
+- 🟢 npm discovery (WP6b.2) and NuGet discovery (WP6b.3): the formats' listers, the counting stubs' feeds, listings and
+  throttling modes; `TestR_REPO_051_Npm*` and `TestR_REPO_051_Nuget*` of `test/integration/mirror`
+- 🟢 Background synchronisation on `worker`: a job per mirrored remote, resumable from a checkpoint, continued after a
   drain, a restart or a failover, and started again on its own after an error
-- 🟡 Upstream throttling: `429`, `503` with `SlowDown` and every other rate-limit answer are honoured (`Retry-After`, back-off
+- 🟢 Upstream throttling: `429`, `503` with `SlowDown` and every other rate-limit answer are honoured (`Retry-After`, back-off
   with jitter, fewer concurrent fetches), and the sync resumes by itself when the upstream allows it again
-- 🟡 Client requests first: a request from a client is served before the background sync; the sync uses a lower-priority
+- 🟢 Client requests first: a request from a client is served before the background sync; the sync uses a lower-priority
   share of the remote's fetch budget that client fills pre-empt
-- 🟡 Status: progress, last complete pass, errors and rate-limit waits per mirrored remote in the API and the admin UI, and
+- 🟢 Status: progress, last complete pass, errors and rate-limit waits per mirrored remote in the API and the admin UI, and
   as metrics; the mirror's fills audited like cache fills
+- 🟢 Reviews of the phase (code, security, architecture) and their findings fixed: refused items, shutdown and readiness in the
+  seam, the slot before the flight, the delegate's scope of a mirror, one well-known-upstream predicate, NuGet's bounded catalog
+  calls and plans, re-admission and the pending cap, the alerts from PostgreSQL gauges (Q-REPO-179 to Q-REPO-195, Q-NUGET-106 to
+  Q-NUGET-110, Q-OPS-171 to Q-OPS-174, Q-ARCH-316 to Q-ARCH-323); the storage usage fold that the byte bound reads (F-55)
 - 🟡 Integration tests against the counting test upstreams answering `429` and `SlowDown`; e2e: a mirror pass while clients
   install, with the clients' requests served first
 - 🟡 The repository wizard asks for the format first (owner, 2026-11-05): a picker of format tiles with a filter field is the
