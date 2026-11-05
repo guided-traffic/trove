@@ -237,6 +237,26 @@ func TestR_REPO_056_MirrorStatusPermissions(t *testing.T) {
 	t.Run("R-REPO-056 an administrator of another project is a caller with nothing", func(t *testing.T) {
 		problem(t, get(shopAdmin, mirrorDecider{read: true}).do("GET", mirrorPath, "", nil), 403, "forbidden")
 	})
+	t.Run("R-REPO-054 a run during the upstream's wait answers 409 mirror_rate_limited naming until, and a wait that is over does not", func(t *testing.T) {
+		until := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+		e := newMirrorEnv(t, val, writeConfigCall, mirrorDecider{read: true}, func(f *fakeMirror) {
+			f.row = MirrorRow{HasState: true, RateLimitedUntil: &until}
+		})
+		m := problem(t, e.do("POST", runPath, "", nil), 409, "mirror_rate_limited")
+		if m["until"] != until.Format(time.RFC3339) {
+			t.Errorf("until = %v, want %s", m["until"], until.Format(time.RFC3339))
+		}
+		if len(e.queue.specs) != 0 || e.store.commits != 0 {
+			t.Errorf("the refused run wrote: %+v commits %d", e.queue.specs, e.store.commits)
+		}
+		past := time.Now().UTC().Add(-time.Minute)
+		e2 := newMirrorEnv(t, val, writeConfigCall, mirrorDecider{read: true}, func(f *fakeMirror) {
+			f.row = MirrorRow{HasState: true, RateLimitedUntil: &past}
+		})
+		if w := e2.do("POST", runPath, "", nil); w.Code != 202 {
+			t.Fatalf("a wait that is over refused the run: %d %s", w.Code, w.Body)
+		}
+	})
 	t.Run("R-REPO-056 a local and a virtual repository answer 400 not_applicable, an unknown one 404", func(t *testing.T) {
 		e := get(readConfigCaller, mirrorDecider{})
 		problem(t, e.do("GET", "/api/v1/repositories/npm-local/mirror", "", nil), 400, "not_applicable")
@@ -611,7 +631,7 @@ func TestR_REPO_056_MirrorRun(t *testing.T) {
 }
 
 func TestR_REPO_056_ErrorCodesAreCataloged(t *testing.T) {
-	for _, c := range []string{errs.CodeMirrorPassRunning, errs.CodeMirrorOff, errs.CodeMirrorPaused} {
+	for _, c := range []string{errs.CodeMirrorPassRunning, errs.CodeMirrorOff, errs.CodeMirrorPaused, errs.CodeMirrorRateLimited} {
 		if _, ok := errs.Lookup(c); !ok {
 			t.Errorf("%s is not in the catalog", c)
 		}

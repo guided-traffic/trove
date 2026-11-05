@@ -16,6 +16,13 @@ import (
 // ErrFenceLost says that another job owns the pass (or the row is gone): the job stops at once without writing more.
 var ErrFenceLost = errors.New("mirror: the pass is owned by another job")
 
+// ErrCursorTooLarge says that a cursor is longer than the column holds, measured as PostgreSQL prints the jsonb value.
+var ErrCursorTooLarge = errors.New("mirror: the cursor is longer than the column holds")
+
+// FailingFailures is the number of failures in a row from which a mirror is failing: the status shows state failing and
+// TroveMirrorFailing fires (R-REPO-056, R-OPS-046). The status of the API reads it from here, so that the engine owns the meaning.
+const FailingFailures = 3
+
 // The limits of a package's attempts in one pass (R-REPO-053 step 3).
 const (
 	// MaxPackageAttempts is the number of attempts after which a failing package is left to the next pass.
@@ -122,6 +129,8 @@ type End struct {
 	KeepPass bool
 	// ClearPending deletes the pending names (a mode change).
 	ClearPending bool
+	// Completed records the end as the last complete pass (outcomes complete, partial and bound_reached).
+	Completed bool
 	// Advance moves the pass's cursor to the cursor of the last complete pass and records the time of the last full pass
 	// and the fingerprint of the patterns.
 	Advance       bool
@@ -148,6 +157,10 @@ type GaugeRow struct {
 	Pending int64
 	// LastComplete is the end of the last pass that ended complete, partial or at its bound; zero when none did.
 	LastComplete time.Time
+	// ConsecutiveFailures is the failures in a row (FailingFailures and more: the mirror is failing).
+	ConsecutiveFailures int
+	// NextPass is when the mirror next acts: a due pass's time, or for a pass in progress the later of that and its last write.
+	NextPass time.Time
 }
 
 // Failure is what RecordFailure wrote.
@@ -173,11 +186,14 @@ type Store interface {
 	// SetMethod stores the method and the kind of the pass.
 	SetMethod(ctx context.Context, f Fence, method discover.Method, kind discover.PassKind) error
 
-	// PendingCount counts the pending names a pass still takes.
+	// PendingCount counts every pending row of the repository, the ones left after their attempts included: the bound of
+	// MaxPending counts the table.
 	PendingCount(ctx context.Context, repoID int64) (int64, error)
 	// AddNames inserts names and, with SetProgress, stores the cursor and the flags in one transaction; it returns the
 	// number of names that were new.
 	AddNames(ctx context.Context, f Fence, n Names) (added int64, err error)
+	// DropPending deletes pending rows by name, the counters unmoved: the names the current admission refuses.
+	DropPending(ctx context.Context, f Fence, names []string) error
 	// HeldNames returns up to limit names of the packages the repository holds after one name, in name order.
 	HeldNames(ctx context.Context, repoID int64, after string, limit int) ([]string, error)
 	// NextPending returns up to limit pending names after one name in name order that a pass takes at now.

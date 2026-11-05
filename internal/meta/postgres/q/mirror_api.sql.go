@@ -46,13 +46,18 @@ SELECT (s.repo_id IS NOT NULL)::boolean AS has_state,
        s.rate_limited_until, s.rate_limit_waits, s.rate_limit_wait_seconds, s.last_rate_limit_at, s.last_rate_limit_status,
        s.bound_reached, s.bound_reached_at,
        j.kind AS job_kind, COALESCE(j.state::text, '')::text AS job_state,
-       (SELECT count(*) FROM mirror_pending p WHERE p.repo_id = $1::bigint)::bigint AS pending,
+       (SELECT count(*) FROM mirror_pending p WHERE p.repo_id = $1::bigint AND p.attempts < $2::int)::bigint AS pending,
        COALESCE(u.logical_bytes, 0)::bigint AS used_bytes
   FROM (SELECT $1::bigint AS id) r
   LEFT JOIN mirror_state s ON s.repo_id = r.id
   LEFT JOIN job j ON j.id = s.pass_job_id
   LEFT JOIN repository_usage u ON u.repo_id = r.id
 `
+
+type MirrorStatusReadParams struct {
+	RepoID      int64
+	MaxAttempts int32
+}
 
 type MirrorStatusReadRow struct {
 	HasState             bool
@@ -93,8 +98,8 @@ type MirrorStatusReadRow struct {
 // One row for the repository, whether or not the dispatch has created its mirror_state row yet: has_state says which. The
 // pending count, the usage counters and the owning job are joined here so that the answer is one statement of one
 // snapshot, whichever replica serves it.
-func (q *Queries) MirrorStatusRead(ctx context.Context, repoID int64) ([]MirrorStatusReadRow, error) {
-	rows, err := q.db.Query(ctx, mirrorStatusRead, repoID)
+func (q *Queries) MirrorStatusRead(ctx context.Context, arg MirrorStatusReadParams) ([]MirrorStatusReadRow, error) {
+	rows, err := q.db.Query(ctx, mirrorStatusRead, arg.RepoID, arg.MaxAttempts)
 	if err != nil {
 		return nil, err
 	}

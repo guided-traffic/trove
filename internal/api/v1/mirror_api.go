@@ -34,9 +34,6 @@ import (
 // for the run the project's switch manageRepositories), so both declare only that the caller is authenticated and decide
 // here, as the cache entry list does (Q-OPS-155, Q-API-199).
 
-// The consecutive failures from which the status is failing (R-REPO-056).
-const mirrorFailingFailures = 3
-
 // MirrorServices are the services of the mirror operations; the zero value reads and writes through Services.Store.
 type MirrorServices struct {
 	// State reads the status row and records a request. Nil: the PostgreSQL implementation over Services.Store.
@@ -150,7 +147,7 @@ func timeOf(valid bool, t time.Time) *time.Time {
 func (p pgMirrorState) Status(ctx context.Context, repoID int64) (MirrorRow, error) {
 	var r q.MirrorStatusReadRow
 	err := p.store.Read(ctx, func(db q.DBTX) error {
-		rows, err := q.New(db).MirrorStatusRead(ctx, repoID)
+		rows, err := q.New(db).MirrorStatusRead(ctx, q.MirrorStatusReadParams{RepoID: repoID, MaxAttempts: mirror.MaxPackageAttempts})
 		if err != nil {
 			return err
 		}
@@ -368,7 +365,7 @@ func buildMirrorStatus(rs repository.RemoteSettings, row MirrorRow) gen.MirrorSt
 		},
 		RateLimit: gen.MirrorRateLimit{
 			Waits: row.RateLimitWaits, WaitSeconds: row.RateLimitWaitSecs, LastAt: row.LastRateLimitAt,
-			LastStatus: row.LastRateLimitStatus, Until: row.RateLimitedUntil,
+			LastStatus: row.LastRateLimitStatus, Until: aheadOf(row.RateLimitedUntil, time.Now()),
 		},
 		Bound: gen.MirrorBound{At: row.BoundReachedAt, MaxBytes: rs.Mirror.MaxBytes, UsedBytes: row.UsedBytes},
 	}
@@ -403,6 +400,14 @@ func modeOf(rs repository.RemoteSettings) string {
 	return repository.ModePullThrough
 }
 
+// aheadOf returns t only while it lies ahead of now: a wait that is over is no rate limit of the status (R-REPO-056).
+func aheadOf(t *time.Time, now time.Time) *time.Time {
+	if t == nil || !t.After(now) {
+		return nil
+	}
+	return t
+}
+
 func strPtr(s string) *string {
 	if s == "" {
 		return nil
@@ -419,7 +424,7 @@ func mirrorStateOf(rs repository.RemoteSettings, row MirrorRow) gen.MirrorStatus
 		return gen.MirrorStatusStateOff
 	case rs.Mirror.Paused:
 		return gen.MirrorStatusStatePaused
-	case row.ConsecutiveFailures >= mirrorFailingFailures:
+	case row.ConsecutiveFailures >= mirror.FailingFailures:
 		return gen.MirrorStatusStateFailing
 	case row.BoundReached != "":
 		return gen.MirrorStatusStateBoundReached
@@ -476,6 +481,8 @@ func (s *Server) RunRepositoryMirror(w http.ResponseWriter, r *http.Request, key
 		err = errs.E(errs.Conflict, errs.CodeMirrorOff, "The repository "+strconv.Quote(key)+" runs in mode pullThrough and has no mirror; set remote.mode to mirror first.")
 	case t.Settings.Mirror.Paused:
 		err = errs.E(errs.Conflict, errs.CodeMirrorPaused, "The mirror of "+strconv.Quote(key)+" is paused; set remote.mirror.paused to false first.")
+	default:
+		err = mirrorRateLimitRefusal(ctx, state, t, time.Now())
 	}
 	if err != nil {
 		httpserver.Problem(w, r, errs.Wrap(err, "api.runRepositoryMirror"))
@@ -521,4 +528,20 @@ func (s *Server) enqueueMirrorPass(ctx context.Context, r *http.Request, tx meta
 		Header: map[string]string{"Location": jobLocation(r, res.Job.ID)},
 		Body:   gen.JobReferenceEnvelope{Job: ref},
 	}, nil
+}
+
+// mirrorRateLimitRefusal answers 409 mirror_rate_limited while the upstream's wait lies ahead: a pass that is started now would
+// be skipped until it is over (R-REPO-054, Q-REPO-187).
+func mirrorRateLimitRefusal(ctx context.Context, state MirrorState, t MirrorTarget, now time.Time) error {
+	row, err := state.Status(ctx, t.ID)
+	if err != nil {
+		return err
+	}
+	until := aheadOf(row.RateLimitedUntil, now)
+	if until == nil {
+		return nil
+	}
+	return errs.E(errs.Conflict, errs.CodeMirrorRateLimited,
+		"The upstream of "+strconv.Quote(t.Key)+" asked the mirror to wait until "+until.UTC().Format(time.RFC3339)+"; request the pass again after it.",
+		errs.WithExtension("until", until.UTC().Format(time.RFC3339)))
 }

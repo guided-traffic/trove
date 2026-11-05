@@ -3,8 +3,10 @@
 package mirrorapi
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 )
@@ -92,6 +94,8 @@ func TestR_REPO_056_StatusOfEachState(t *testing.T) {
 		job := e.seedJob("running")
 		e.seedState("npm-state", pass+`, pass_job_id = '`+job+`'`)
 		e.st.Exec(`INSERT INTO mirror_pending (repo_id, name) SELECT id, n FROM repositories, unnest(ARRAY['a','b','c']) AS n WHERE key = 'npm-state'`)
+		// A name left after three attempts is no pending name of the pass: the status counts what the engine still takes (Q-OPS-173).
+		e.st.Exec(`INSERT INTO mirror_pending (repo_id, name, attempts) SELECT id, 'left', 3 FROM repositories WHERE key = 'npm-state'`)
 		e.st.Exec(`INSERT INTO repository_usage (repo_id, logical_bytes) SELECT id, 9200000000 FROM repositories WHERE key = 'npm-state' ON CONFLICT (repo_id) DO UPDATE SET logical_bytes = EXCLUDED.logical_bytes`)
 		a := e.status("rita", "npm-state").JSON(t)
 		if a["state"] != "running" {
@@ -149,11 +153,18 @@ func TestR_REPO_056_StatusOfEachState(t *testing.T) {
 	})
 	t.Run("R-REPO-056 the rate-limit wait of the passes", func(t *testing.T) {
 		e.seedState("npm-state", `rate_limit_waits = 12, rate_limit_wait_seconds = 340, last_rate_limit_at = '2026-11-04T10:20:31Z', last_rate_limit_status = 429,
-			rate_limited_until = '2026-11-04T10:25:00Z'`)
+			rate_limited_until = now() + interval '1 hour'`)
 		a := e.status("rita", "npm-state").JSON(t)
 		rl := a["rateLimit"].(map[string]any)
-		if rl["waits"] != float64(12) || rl["waitSeconds"] != float64(340) || rl["lastAt"] != "2026-11-04T10:20:31Z" || rl["lastStatus"] != float64(429) || rl["until"] != "2026-11-04T10:25:00Z" {
+		until, _ := time.Parse(time.RFC3339, fmt.Sprint(rl["until"]))
+		if rl["waits"] != float64(12) || rl["waitSeconds"] != float64(340) || rl["lastAt"] != "2026-11-04T10:20:31Z" || rl["lastStatus"] != float64(429) ||
+			time.Until(until) < 55*time.Minute || time.Until(until) > 65*time.Minute {
 			t.Errorf("rateLimit = %v", rl)
+		}
+		// A wait that is over is no rate limit of the status (Q-REPO-187).
+		e.seedState("npm-state", `rate_limited_until = '2026-11-04T10:25:00Z'`)
+		if rl := e.status("rita", "npm-state").JSON(t)["rateLimit"].(map[string]any); rl["until"] != nil {
+			t.Errorf("a wait that is over is shown: %v", rl)
 		}
 	})
 	t.Run("R-REPO-056 a local and a virtual repository are 400 not_applicable, an unknown one 404", func(t *testing.T) {

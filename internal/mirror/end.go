@@ -20,6 +20,7 @@ type endOpts struct {
 	keep         bool
 	clearPending bool
 	advance      bool
+	completed    bool
 	resetFails   bool
 	bound        string
 	clearBound   bool
@@ -42,6 +43,8 @@ func (p *pass) finish(ctx context.Context, execErr error) error {
 	}
 	now := p.e.o.Clock.Now()
 	switch h {
+	case haltShutdown:
+		return p.shutdownEnd(ctx)
 	case haltDeferred:
 		return p.deferredEnd()
 	case haltPause:
@@ -52,15 +55,15 @@ func (p *pass) finish(ctx context.Context, execErr error) error {
 		recheck := min(time.Duration(p.settings.Mirror.IntervalSeconds)*time.Second, OfflineRecheck)
 		return p.end(ctx, OutcomeOffline, endOpts{keep: true, next: now.Add(recheck)})
 	case haltBound:
-		return p.end(ctx, OutcomeBoundReached, endOpts{next: p.nextPass(now), advance: p.done, resetFails: true, bound: BoundBytes})
+		return p.end(ctx, OutcomeBoundReached, endOpts{next: p.nextPass(now), advance: p.done, completed: true, resetFails: true, bound: BoundBytes})
 	}
 	outcome := OutcomeComplete
 	p.mu.Lock()
-	if p.c.failed > 0 {
+	if p.c.failed > 0 || p.incomplete {
 		outcome = OutcomePartial
 	}
 	p.mu.Unlock()
-	return p.end(ctx, outcome, endOpts{next: p.nextPass(now), advance: true, resetFails: true, clearBound: true})
+	return p.end(ctx, outcome, endOpts{next: p.nextPass(now), advance: p.done, completed: true, resetFails: true, clearBound: true})
 }
 
 // nextPass is when the pass after this one is due: its start plus the interval, or now when that has passed (R-REPO-053).
@@ -100,7 +103,7 @@ func (p *pass) end(ctx context.Context, outcome string, o endOpts) error {
 	sum := p.summary(outcome, now)
 	boundNew, err := p.e.o.Store.EndPass(ctx, p.fence, End{
 		Outcome: outcome, LastPass: sum.json(), Now: now, NextPassAt: o.next, KeepPass: o.keep, ClearPending: o.clearPending,
-		Advance: o.advance, Fingerprint: p.fingerprint, ResetFailures: o.resetFails, Bound: o.bound, ClearBound: o.clearBound,
+		Advance: o.advance, Completed: o.completed, Fingerprint: p.fingerprint, ResetFailures: o.resetFails, Bound: o.bound, ClearBound: o.clearBound,
 	})
 	if errors.Is(err, ErrFenceLost) {
 		return p.fenceLost()
@@ -127,6 +130,17 @@ func (p *pass) end(ctx context.Context, outcome string, o endOpts) error {
 		"outcome": outcome, "kind": sum.Kind, "method": method, "packages": sum.Packages, "packagesFailed": sum.PackagesFailed,
 		"itemsStored": sum.ItemsStored, "bytesStored": sum.BytesStored, "discoveryComplete": sum.DiscoveryComplete,
 	})
+}
+
+// shutdownEnd ends the attempt of a pass whose requests the process's shutdown cancelled: nothing is written, and the job is
+// released with its attempt unchanged, as if its own context had ended (R-REPO-053 drain, Q-ARCH-313). The framework cancels the
+// job's context a few seconds before the deadline; the attempt waits for that, for a minute at most, and returns the cause.
+func (p *pass) shutdownEnd(ctx context.Context) error {
+	_ = p.e.o.Clock.Sleep(ctx, time.Minute)
+	if ctx.Err() != nil {
+		return context.Cause(ctx)
+	}
+	return ErrShuttingDown
 }
 
 // deferredEnd ends the job of an attempt that met a long rate-limit wait: the state was written when the wait began, the

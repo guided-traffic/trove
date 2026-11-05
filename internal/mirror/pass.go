@@ -30,6 +30,7 @@ const (
 	haltBound         // the byte bound was reached: the pending names stay
 	haltDeferred      // a rate-limit wait longer than LongWait: the job ends, the dispatch continues the pass
 	haltFatal         // an error of the pass itself or a lost fence
+	haltShutdown      // the host says the process is shutting down: the job is released, nothing is written
 )
 
 // counters are the counters of the pass in progress as the row holds them.
@@ -73,6 +74,10 @@ type pass struct {
 	deferred   map[string]time.Time
 	rlEvent    bool
 	usedBytes  int64
+	// admitVersion is the config version of the repository document the admission was built from; a newer snapshot rebuilds it.
+	admitVersion int64
+	// incomplete says that discovery stopped before its end, with the reason in the state's discovery note.
+	incomplete bool
 }
 
 // RunPass is the handler of the job mirror-pass: one attempt of the pass of the repository the arguments name. A pass
@@ -96,6 +101,10 @@ func (e *Engine) RunPass(ctx context.Context, jobID string, args json.RawMessage
 
 // begin reads the repository, checks that a pass may start and claims it. skipped names why no pass started.
 func (e *Engine) begin(ctx context.Context, jobID string, a PassArgs, res ResultSetter) (p *pass, skipped string, err error) {
+	if err := e.o.Host.Ready(ctx); err != nil {
+		// The host cannot serve passes: the job fails with the cause and the dispatch tries again (Q-ARCH-312).
+		return nil, "", fmt.Errorf("mirror: the host is not ready: %w", err)
+	}
 	repo, err := e.o.Repos.ByKey(ctx, a.Repository)
 	switch {
 	case err != nil && notFound(err):
@@ -108,6 +117,10 @@ func (e *Engine) begin(ctx context.Context, jobID string, a PassArgs, res Result
 	rs, ok := mirrored(repo)
 	switch {
 	case !ok:
+		if _, loaded := repo.Remote(); !loaded {
+			// The stored document does not load (the snapshot disabled the repository): a pause, not a mode change (Q-REPO-191).
+			return nil, "invalid_document", nil
+		}
 		return nil, "not_mirror", nil
 	case repo.Disabled || rs.Mirror.Paused:
 		return nil, "paused", nil
@@ -127,6 +140,11 @@ func (e *Engine) begin(ctx context.Context, jobID string, a PassArgs, res Result
 	st, ok, err := e.o.Store.State(ctx, fence.RepoID)
 	if err != nil || !ok {
 		return nil, "", errors.Join(err, errors.New("mirror: the repository has no state row"))
+	}
+	if st.RateLimitedUntil.After(now) {
+		// A wait of an earlier attempt still lies ahead: nothing is sent before it is over; the dispatch continues the pass then
+		// (R-REPO-054, Q-REPO-187).
+		return nil, "rate_limited", nil
 	}
 	fp := Fingerprint(include, exclude)
 	kind := DecideKind(st, fp, time.Duration(rs.Mirror.FullPassIntervalSeconds)*time.Second, now, a.Full)
@@ -187,7 +205,7 @@ func (p *pass) prepare(ctx context.Context) error {
 	if p.admits, err = p.e.o.Host.Admits(ctx, p.repo); err != nil {
 		return &passError{code: CodeInternal, err: err}
 	}
-	p.ceiling = background(p.settings)
+	p.ceiling = p.e.background(p.settings)
 	if p.up, err = p.e.o.Host.Upstream(p.repo, Pass{JobID: p.fence.JobID, Ceiling: p.ceiling}); err != nil {
 		return &passError{code: CodeUpstream, err: err}
 	}
@@ -195,7 +213,67 @@ func (p *pass) prepare(ctx context.Context) error {
 	if p.settings.Mirror.MaxBytes != nil {
 		p.bound = newByteBound(p.e.o.Store, p.e.o.Clock, p.id, *p.settings.Mirror.MaxBytes)
 	}
+	p.admitVersion = p.repo.Version
 	return nil
+}
+
+// admitFn returns the current admission check (patterns, claims, name rule).
+func (p *pass) admitFn() func(string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.admits
+}
+
+// admitNow reports whether the current admission lets a name through (R-REPO-051: a name that is refused is never asked for).
+func (p *pass) admitNow(name string) bool { return p.admitFn()(name) }
+
+// isShutdown reports whether the host said the process is shutting down.
+func (p *pass) isShutdown() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.halted == haltShutdown
+}
+
+// rebuildAdmits builds the admission again from a newer document of the repository (R-REPO-051, Q-REPO-188).
+func (p *pass) rebuildAdmits(ctx context.Context, repo repository.Repository) {
+	admits, err := p.e.o.Host.Admits(ctx, repo)
+	if err != nil {
+		if ctx.Err() == nil {
+			p.fatal(&passError{code: CodeInternal, err: err})
+		}
+		return
+	}
+	p.mu.Lock()
+	p.admits = admits
+	p.mu.Unlock()
+}
+
+// dropRefused deletes the pending rows that the current admission refuses, so that a name discovered under earlier patterns is
+// never asked for (R-REPO-051, Q-REPO-188).
+func (p *pass) dropRefused(ctx context.Context) error {
+	admits, after := p.admitFn(), ""
+	for {
+		rows, err := p.e.o.Store.NextPending(ctx, p.id, p.e.o.Clock.Now(), after, pageSize)
+		if err != nil {
+			return &passError{code: CodeInternal, err: err}
+		}
+		if len(rows) == 0 {
+			return nil
+		}
+		var refused []string
+		for _, r := range rows {
+			after = r.Name
+			if !admits(r.Name) {
+				refused = append(refused, r.Name)
+			}
+		}
+		if err := p.e.o.Store.DropPending(ctx, p.fence, refused); err != nil {
+			if errors.Is(err, ErrFenceLost) {
+				return err
+			}
+			return &passError{code: CodeInternal, err: err}
+		}
+	}
 }
 
 // execute runs the steps after the claim: the offline and bound checks, then discovery and fill until the pass is done or
@@ -207,6 +285,9 @@ func (p *pass) execute(ctx context.Context) error {
 	if p.offline() {
 		p.setHalt(haltOffline, nil)
 		return nil
+	}
+	if err := p.dropRefused(ctx); err != nil {
+		return err
 	}
 	if p.state.BoundReached != "" {
 		holds, err := p.boundHolds(ctx)
@@ -227,14 +308,33 @@ func (p *pass) execute(ctx context.Context) error {
 		if p.isHalted() {
 			break
 		}
-		if err := p.fill(ctx); err != nil {
+		handled, err := p.fill(ctx)
+		if err != nil {
 			return err
 		}
-		if p.done {
+		if p.done || p.isHalted() {
+			break
+		}
+		if handled == 0 && p.pendingFull(ctx) {
 			break
 		}
 	}
 	return nil
+}
+
+// pendingFull reports whether the pending table is at its bound with nothing a pass can take from it: names that failed three
+// times stay and count, so discovery cannot go on. The attempt ends partial, with the reason in the discovery note.
+func (p *pass) pendingFull(ctx context.Context) bool {
+	n, err := p.e.o.Store.PendingCount(ctx, p.id)
+	if err != nil || n < MaxPending {
+		return false
+	}
+	p.mu.Lock()
+	p.incomplete = true
+	p.state.PassDiscoveryComplete = false
+	p.state.PassDiscoveryNote = "discovery stopped: the pending names are at their bound of 10,000 and none can be taken"
+	p.mu.Unlock()
+	return true
 }
 
 // offline reports whether the repository or the installation is offline (R-REPO-030, R-REPO-031).
@@ -305,16 +405,20 @@ func (p *pass) checkStop(ctx context.Context) bool {
 	case repo.ID != strconv.FormatInt(p.id, 10):
 		p.setHalt(haltMode, nil)
 	default:
-		p.applySnapshot(repo)
+		p.applySnapshot(ctx, repo)
 	}
 	return p.isHalted()
 }
 
-func (p *pass) applySnapshot(repo repository.Repository) {
+func (p *pass) applySnapshot(ctx context.Context, repo repository.Repository) {
 	rs, ok := mirrored(repo)
 	switch {
 	case !ok:
-		p.setHalt(haltMode, nil)
+		if _, loaded := repo.Remote(); !loaded {
+			p.setHalt(haltPause, nil)
+		} else {
+			p.setHalt(haltMode, nil)
+		}
 		return
 	case repo.Disabled || rs.Mirror.Paused:
 		p.setHalt(haltPause, nil)
@@ -324,8 +428,15 @@ func (p *pass) applySnapshot(repo repository.Repository) {
 		return
 	}
 	p.mu.Lock()
+	rebuild := repo.Version != p.admitVersion
 	p.repo, p.settings = repo, rs
+	if rebuild {
+		p.admitVersion = repo.Version
+	}
 	p.mu.Unlock()
+	if rebuild {
+		p.rebuildAdmits(ctx, repo)
+	}
 	if p.bound != nil && rs.Mirror.MaxBytes != nil {
 		p.bound.setMax(*rs.Mirror.MaxBytes)
 	}

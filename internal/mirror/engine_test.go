@@ -603,7 +603,7 @@ func TestR_REPO_053_OfflineEndsThePassWithoutAFailure(t *testing.T) {
 	g.plan("a", "1.0.0")
 	off := true
 	e, err := New(Options{
-		Store: g.store, Repos: g.repos, Host: g.host, Queue: g.queue, Audit: g.rec, Metrics: g.met, Holder: "holder-a",
+		Share: testShare, Store: g.store, Repos: g.repos, Host: g.host, Queue: g.queue, Audit: g.rec, Metrics: g.met, Holder: "holder-a",
 		Clock: g.clock, Jitter: fixedJitter(0.5), GlobalOffline: func() bool { return off },
 	})
 	if err != nil {
@@ -932,7 +932,7 @@ func TestR_REPO_057_TheSeriesExistAtZeroFromTheFirstAttempt(t *testing.T) {
 		}
 	}
 	want := map[string]int{
-		MetricPasses: 14, MetricItems: 5, MetricBytes: 1, MetricRateLimited: 4, MetricRateLimitWait: 1, MetricConcurrency: 1, MetricPreempted: 1,
+		MetricPasses: 14, MetricItems: 6, MetricBytes: 1, MetricRateLimited: 4, MetricRateLimitWait: 1, MetricConcurrency: 1, MetricPreempted: 1,
 	}
 	for name, n := range want {
 		if got[name] != n {

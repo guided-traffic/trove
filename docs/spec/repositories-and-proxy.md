@@ -3055,24 +3055,35 @@ Priority: **MVP** · Covers: trove-only
   R-ARCH-016) on their own queue `mirror`. Whatever process claims that queue runs them: every process that claims jobs, or
   a pool of its own that claims only this queue ([ha-and-helm.md](ha-and-helm.md) R-HA-062). A process that serves clients
   and claims no jobs only enqueues and reads the state. Nothing below depends on which process that is.
-- **Dispatch.** The periodic task `mirror-dispatch` (every minute, queue `mirror`, `exclusive`;
-  [architecture.md](architecture.md) R-ARCH-016) ensures a `mirror_state` row for every remote repository in mode `mirror`
+- **Dispatch.** The periodic task `mirror-dispatch` (every minute, queue `maintenance` so that passes that hold the slots of
+  the queue `mirror` for hours cannot starve it, Q-ARCH-321, `exclusive`; [architecture.md](architecture.md) R-ARCH-016) ensures a `mirror_state` row for every remote repository in mode `mirror`
   of the repository snapshot and enqueues a `mirror-pass` job under the dedup key `mirror-pass:<repository id>`
   (`exclusive`) for every row that is due: not paused, `next_pass_at` passed or a pass requested (R-REPO-056), and
-  `rate_limited_until` passed. One pass per repository runs at a time; an enqueue while one is queued or running returns it.
+  `rate_limited_until` passed. One pass per repository runs at a time; an enqueue while one is queued or running returns it. A
+  host that is not ready (`Host.Ready`, Q-ARCH-312) fails the dispatch with the cause instead of skipping every repository, and
+  a repository whose stored document does not load is a pause: its pass and its pending names stay (Q-REPO-191).
 - **A pass** (job `mirror-pass`, queue `mirror`, `MaxAttempts: 1`, no timeout) runs these steps:
   1. **Claim.** One statement makes the job the owner of the repository's pass: it writes the job id and the claiming
      process's instance id into `mirror_state` (the fence), starting a new pass when none is in progress (a pass whose kind the caller decided from the row, Q-REPO-156) and taking over the
-     one in progress otherwise; a new pass also gives the pending names their attempts back. Every later write of the pass is conditional on the fence; a write that matches no row
+     one in progress otherwise; a new pass also gives the pending names their attempts back and consumes a request for a pass
+     (R-REPO-056), while a pass that is taken over leaves it for the pass after it, so that a request for a full pass is not lost
+     (Q-REPO-189). The claim leaves the upstream's wait alone (Q-REPO-187). Every later write of the pass is conditional on the fence; a write that matches no row
      means another job owns the pass, and the job stops at once without writing (Q-ARCH-287).
-  2. **Discover.** While fewer than 10,000 names are pending, the pass asks the format for the next page of names (R-REPO-051)
+  2. **Discover.** While fewer than 10,000 rows are pending (every row of the repository counts, the ones left after three
+     attempts included, Q-REPO-190), the pass asks the format for the next page of names (R-REPO-051)
      and, in one transaction, inserts them into `mirror_pending` (a name already pending is kept once) and stores the
-     format's cursor of the pass.
+     format's cursor of the pass. The repository is read from the snapshot before each page (the stops below); a request that a
+     client pre-empted is sent again after five seconds and is no failure of the pass (Q-REPO-184); a name the current patterns
+     or claims refuse is never inserted, and one that was inserted under earlier patterns is dropped when a pass is claimed and
+     before its package is taken (Q-REPO-188).
   3. **Fill.** It takes pending names in name order; for each package it asks the format's plan, fills the documents and the
      artifacts through the remote engine (R-REPO-025 steps 4 to 10, with the fetch priority of R-REPO-055: an artifact that
      is already stored costs no upstream request), and then, in one transaction, deletes the pending row and adds to the
-     pass's counters. A package that fails (other than by throttling, R-REPO-054) keeps its row with one more attempt and
-     `not_before` one minute later per attempt; after three attempts it is left to the next pass and counted as failed.
+      pass's counters. An artifact that the host refuses (`*RefusedError`: the upstream does not have it, the scanning blocks it,
+     the format's gate or the populate check refuses it) is counted `refused` and the next artifact goes on; a transient failure
+     of an artifact does not keep the others of the package from being stored, and the package then fails once
+     (Q-REPO-185): it keeps its row with one more attempt and `not_before` one minute later per attempt (other than by
+     throttling, R-REPO-054); after three attempts it is left to the next pass and counted as failed.
   4. **End.** When discovery has ended and every pending row is done or left, one transaction writes the summary of the pass,
      the format's cursor for the next incremental pass, the time of the last full pass, the fingerprint of the patterns,
      clears the pass, resets the failure count and sets `next_pass_at` to the pass's start plus `intervalSeconds`, or now when
@@ -3083,9 +3094,12 @@ Priority: **MVP** · Covers: trove-only
   in mode `mirror` ends the pass with the outcome `stopped`; a pause keeps the pass in progress for the resume, a mode change
   or a deletion clears it (Q-REPO-155, Q-REPO-162); a disabled repository is a pause. Offline mode and the global offline switch
   (R-REPO-030, R-REPO-031) end the attempt with `offline`, without counting a failure; the pass stays and the next attempt is
-  due after `min(intervalSeconds, 300 s)` (Q-REPO-161).
+  due after `min(intervalSeconds, 300 s)` (Q-REPO-161). The snapshot is also read before each page of discovery, so that a
+  pause or offline mode that arrives during a long discovery takes effect at once. A stored document that does not load is a pause
+  (Q-REPO-191).
 - **Drain and restart** ([architecture.md](architecture.md) R-ARCH-024). A process that shuts down while it runs a pass
-  cancels the pass's in-flight fetches (nothing partial is stored) and releases the job with its attempt unchanged; another
+  cancels the pass's in-flight fetches (nothing partial is stored; the host answers such a request with `ErrShuttingDown`, which
+  stops the pass like the end of its own context and writes nothing, Q-ARCH-320) and releases the job with its attempt unchanged; another
   process that claims the queue claims it,
   takes over the fence and continues with the pending names and the stored cursor. The package that was in progress is
   filled again; what it had stored is skipped.
@@ -3184,12 +3198,16 @@ Priority: **MVP** · Covers: trove-only
 - **How long it waits.** `Retry-After` as delta seconds or as an HTTP date
   ([RFC 9110, section 10.2.3](https://www.rfc-editor.org/rfc/rfc9110#section-10.2.3)), capped at 6 h; a date in the past or
   an unreadable value counts as absent. Without a hint the wait is exponential with jitter: after the k-th rate-limit answer
-  in a row it is drawn uniformly from `[d/2, d]` with `d = min(300 s, 1 s × 2^(k−1))`. A success resets k. A wait is at least one second, and only the answer that begins a wait counts as one (Q-REPO-160).
+  in a row it is drawn uniformly from `[d/2, d]` with `d = min(300 s, 1 s × 2^(k−1))`. A success resets k. A wait is at least one second, and only the answer that begins a wait counts as one (Q-REPO-160). The
+  end of every wait is stored in `rate_limited_until` while it lasts, whatever its length, so that a job that is released in the
+  middle of it does not resume at once in another process; a job that starts while it lies ahead sends nothing and ends with the
+  result `{"skipped": "rate_limited"}`, and the run operation answers 409 `mirror_rate_limited` (Q-REPO-187).
 - **While it waits** the pass sends nothing to the upstream: no discovery request and no new fill; fetches already in flight
   finish. After the wait it continues by itself.
 - **A long wait ends the attempt.** A wait longer than 300 s writes `rate_limited_until`, keeps the pass in progress, and ends
   the job with the result `{"deferred": "rate_limited", "until": …}`; the dispatch enqueues the next job at that time, which
-  continues the pass. No job slot is held through a long wait.
+  continues the pass. No job slot is held through a long wait: every worker of the pass, the ones that are blocked behind the
+  wait included, is released when it begins (Q-ARCH-323).
 - **Fewer concurrent fetches** (Q-REPO-138). The pass's window `w` starts at 1 in every attempt. It doubles after `w`
   successful fetches in a row until it reaches its ceiling or a rate-limit answer arrives (slow start), and afterwards grows
   by one after `w` successes in a row. A rate-limit answer halves it, rounded down and at least 1, once per wait: answers of
@@ -3304,13 +3322,15 @@ Priority: **MVP** · Covers: API-084, API-085
   PostgreSQL by whichever replica answers; a remote in mode `mirror` that has no `mirror_state` row yet answers `scheduled` with
   nulls (Q-REPO-165). `pass.job` is a job reference of R-API-015, `null` once the job row is removed; `lastCompletePass` is the
   stored `last_pass` document and `null` when there is none or it cannot be read (Q-API-197).
-- `lastCompletePass` is the summary of the last pass attempt that ended with one of five outcomes (`complete`, `partial`,
+- `packagesPending` is the number of pending names a pass still takes (attempts below three), the figure of the gauge
+  (Q-OPS-173); `failing` is three failures in a row (`mirror.FailingFailures`), the threshold of the alert; `rateLimit.until` is
+  null once the wait is over; `lastCompletePass` is the summary of the last pass attempt that ended with one of five outcomes (`complete`, `partial`,
   `bound_reached`, `offline`, `stopped`; Q-REPO-155); `lastCompletePass.outcome` is one of them; `pass` and
   `lastCompletePass` are `null` when there is none. `errors.lastMessage` names hosts, never a URL or a credential
   (R-REPO-024's rule for the upstream test).
 - The run operation records the request and enqueues the pass; a running or queued pass answers 409
   `mirror_pass_running` naming its job; a remote in mode `pullThrough` answers 409 `mirror_off`, a paused one 409
-  `mirror_paused`; a local or virtual repository 400 `not_applicable`. `{"full": true}` makes the requested pass full. The
+  `mirror_paused`; 409 `mirror_rate_limited` with the extension `until` while the upstream's wait lies ahead (Q-REPO-187); a local or virtual repository 400 `not_applicable`. `{"full": true}` makes the requested pass full. The
   request writes `mirror.pass_requested`. It writes only `pass_requested_at`, `pass_requested_by` and `pass_requested_full` of
   `mirror_state`, in the transaction that enqueues the job and writes the event (Q-API-198, Q-REPO-163); a refusal writes nothing.
 - **Pause and resume** are the member `remote.mirror.paused`, changed with the repository's `PATCH` and its `If-Match`
@@ -3338,19 +3358,24 @@ Priority: **MVP** · Covers: trove-only
 | Metric | Type | Labels | Meaning |
 |---|---|---|---|
 | `trove_mirror_passes_total` | counter | `repo`, `kind` (`full`, `incremental`), `outcome` (`complete`, `partial`, `bound_reached`, `offline`, `stopped`, `failed`, `deferred`) | Pass attempts by how they ended |
-| `trove_mirror_items_total` | counter | `repo`, `result` (`stored`, `present`, `bounded`, `failed`, `preempted`) | Artifacts of plans: fetched and stored, already stored, left by a bound, failed, pre-empted |
+| `trove_mirror_items_total` | counter | `repo`, `result` (`stored`, `present`, `bounded`, `failed`, `preempted`, `refused`) | Artifacts of plans: fetched and stored, already stored, left by a bound, failed, pre-empted, refused by the host (Q-REPO-185) |
 | `trove_mirror_bytes_total` | counter | `repo` | Bytes the passes stored |
 | `trove_mirror_rate_limited_total` | counter | `repo`, `reason` (`too_many_requests`, `slow_down`, `retry_after`, `quota_header`) | Rate-limit answers to the mirror (R-REPO-054) |
 | `trove_mirror_rate_limit_wait_seconds_total` | counter | `repo` | Seconds the passes waited for rate limits |
 | `trove_mirror_concurrency` | gauge | `repo` | The running pass's window in the process that runs it |
 | `trove_mirror_preempted_total` | counter | `repo` | Background fetches pre-empted by clients (R-REPO-055) |
-| `trove_mirror_pending_packages` | gauge | `repo` | Pending names of the pass in progress (from PostgreSQL) |
-| `trove_mirror_last_complete_pass_timestamp_seconds` | gauge | `repo` | End of the last complete pass (from PostgreSQL) |
-| `trove_mirror_interval_seconds` | gauge | `repo` | The configured `intervalSeconds`, for the staleness alert |
+| `trove_mirror_pending_packages` | gauge | `repo` | Pending names of the pass in progress that a pass still takes, 0 without a pass (from PostgreSQL) |
+| `trove_mirror_last_complete_pass_timestamp_seconds` | gauge | `repo` | End of the last pass that ended `complete`, `partial` or `bound_reached` (`mirror_state.last_complete_pass_at`, Q-OPS-172); no series before the first |
+| `trove_mirror_interval_seconds` | gauge | `repo` | The configured `intervalSeconds` |
+| `trove_mirror_consecutive_failures` | gauge | `repo` | Failed pass attempts in a row (from PostgreSQL); only for a mirror that is not paused |
+| `trove_mirror_next_pass_timestamp_seconds` | gauge | `repo` | When the mirror next acts: the time a due pass is due, or for a pass in progress the later of that and its last write (from PostgreSQL); only for a mirror that is not paused |
 
-  The three gauges marked "from PostgreSQL" are exported by every process that claims the queue `mirror`, from
-  `mirror_state`, read at most once per 30 s, so every such process reports the same values. The alerts `TroveMirrorFailing` and `TroveMirrorStale` are those of
-  [operations-and-observability.md](operations-and-observability.md) R-OPS-046 (Q-OPS-160).
+  The five gauges that are not counters are exported by every process, whatever its role (the area `mirror` is on every role),
+  from `mirror_state` and the repository snapshot through the database gauge source, read at most once per 30 s, so every
+  process reports the same values and an installation without a process that claims the queue `mirror` still shows a mirror
+  that nobody runs (Q-OPS-171). Only a remote repository in mode `mirror` has series. The alerts `TroveMirrorFailing` and
+  `TroveMirrorStale` read the last two gauges ([operations-and-observability.md](operations-and-observability.md) R-OPS-046,
+  Q-OPS-160, Q-OPS-171).
 - **Upstream log** ([operations-and-observability.md](operations-and-observability.md) R-OPS-011): every background request
   writes a record with `flight_role: mirror` and `on_behalf_of` empty (`system` in the log, as for every job); the record names
   the pass's job in the field `job_id` (Q-REPO-154).
@@ -6034,6 +6059,168 @@ same text into the log and the event of the failure.
 includes a part of an upstream's answer.
 
 **Applied in the spec:** R-REPO-056.
+
+### Q-REPO-184 · A pre-empted discovery request is waited out and sent again, never a failure of the pass
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-055 lets a client fetch pre-empt a background request. The items of a fill handle it (the package comes back later); the discovery requests (the methods, a page of names, the document of a deleted package) had no rule and a pre-emption there failed the attempt.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `callDiscovery` waits `PreemptRetry` (5 s) and sends the same request again, counts `trove_mirror_preempted_total`, and ends only with the pass (chosen) | A client that presses cannot fail a mirror; the pass yields as R-REPO-055 says | One loop for every discovery request | A pass can wait as long as clients press |
+| (b) A failure of the attempt | The merged behaviour | No code | Every busy hour of a repository would back the mirror off for minutes to hours |
+| (c) Never pre-empt discovery | No rule in the host | Simple for the engine | A discovery request would hold a slot clients need; the contract of the seam says every background request may be pre-empted |
+
+**Choice:** (a).
+
+**Rationale:** the mirror is the guest of the upstream and of the clients. The development agent would revisit it if discovery requests were exempt from pre-emption in the host.
+
+**Applied in the spec:** R-REPO-053 (step 2), R-REPO-055. Code: `request.go` (`callDiscovery`). Test: `TestR_REPO_055_APreEmptedDiscoveryRequestIsRetriedAndNeverFailsThePass`.
+
+### Q-REPO-185 · A refused artifact is counted and skipped, and a transient failure finishes the other artifacts before the package fails once
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The seam names `*RefusedError` for an artifact that a background fill cannot store until something outside the pass changes. The engine treated every error of an item as a failure of the package at once, so one removed version failed the package three times and kept the later versions from being stored.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `refused` is a new value of the label `result` of `trove_mirror_items_total`; the item is skipped and the package goes on and is done; a transient failure of an item is counted `failed`, the remaining items are tried, and the package records one failed attempt after them (chosen) | A refused version never blocks the others; a flaky item costs one attempt of the package per round, not one per item | The attempts and the retry are the package's, as R-REPO-053 step 3 says | A package with a refused item is done and is not retried by this pass |
+| (b) Every error fails the package at once | The merged behaviour | Simple | A removed or blocked version keeps every later version of the package out of the mirror |
+| (c) A refused artifact is a failure with no retry | Counts as failed | Visible in `failed` | The status shows packages failed for a decision the operator or the upstream made |
+
+**Choice:** (a). The refusal reasons are the host's (`not_found`, `blocked`, `gate_refused`, `populate_denied`); they are not metric labels.
+
+**Rationale:** a mirror stores what it may. The development agent would revisit the missing reason label if operators need to tell the refusals apart in metrics.
+
+**Applied in the spec:** R-REPO-053 (step 3), R-REPO-057 (`items_total`). Code: `fill.go` (`fillPackage`, `failPackage`). Tests: `TestR_REPO_057_ARefusedItemIsCountedAndTheOthersGoOn`, `TestR_REPO_053_AFailingItemFinishesTheOthersAndTheFailureIsOneAttempt`.
+
+### Q-REPO-186 · The end of the held-names phase is recorded in the pass cursor as its own value, and the engine's cursors are told by their structure
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Q-REPO-158 stores the position of the phase that adds the held names in `pass_cursor`; the end of the phase stored the same NULL as "not begun", so a repository with E exact include names and H held names, E + H between 10,000 and 10,000 + one page, ran the phase again after every fill and never reached the format's pages.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `{"mirrorHeldAfter": <name>}` while paging, `{"mirrorHeldDone": true}` from the end of the phase until the format's first page replaces it; a cursor is the engine's when it is an object with exactly that one member (chosen) | The phase ends once; a format's cursor that contains the words is not mistaken | No new column | The column holds the engine's value for the length of the phase |
+| (b) A column `pass_held_done` | Explicit | Obvious | A migration for a flag that lives for one phase |
+| (c) Look for the substring in the stored text | The merged check | No parse | A format cursor that holds the words is taken for the engine's |
+
+**Choice:** (a).
+
+**Rationale:** one small value, parsed by structure. The development agent would revisit it if the held names move into the format's plan.
+
+**Applied in the spec:** R-REPO-051 (methods). Code: `discovery.go` (`parseEngineCursor`, `heldStep`). Tests: `TestR_REPO_051_TheEndOfTheHeldNamesPhaseIsRecordedAndTheFormatsPagesFollow`, `TestR_REPO_051_AnEngineCursorIsRecognizedByItsStructure`.
+
+### Q-REPO-187 · The upstream's wait is stored whatever its length, a job that starts during it is skipped, and the run operation refuses with its end
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Only a wait over 300 s was written (`rate_limited_until`), and the claim cleared it; a job released in the middle of a short wait resumed at once in another process, and a run during a deferral sent requests the upstream had asked the mirror not to send.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `rate_limited_until` is written with every wait (a statement the wait counters already need), the claim does not touch it and the end clears it; `begin` skips a job while it lies ahead (`{"skipped": "rate_limited"}`); the run operation answers 409 `mirror_rate_limited` with the extension `until`; the status shows `rateLimit.until` only while it lies ahead (chosen) | No request during a wait, in this process or another; the operator is told when to ask again | One write per wait, as before | A new error code and a response description |
+| (b) Keep only the long wait | The merged behaviour | No change | A release mid-wait resumes against an upstream that just said stop |
+| (c) Let the run operation enqueue and the job skip | No new code | Smaller API | A 202 for a pass that cannot run; the operator waits for a job that does nothing |
+
+**Choice:** (a). The dispatch already waits for `rate_limited_until`; the job's own check is for a pass enqueued by a request or a release.
+
+**Rationale:** a wait is the upstream's decision. The development agent would revisit the code if the UI should offer a countdown.
+
+**Applied in the spec:** R-REPO-054, R-REPO-056 (run, status). Code: `pass.go` (`begin`), `queries/mirror.sql`, `internal/api/v1/mirror_api.go`, `errs.CodeMirrorRateLimited`. Tests: `TestR_REPO_054_AJobDuringADeferralIsSkippedAndTheClaimKeepsTheWait`, `TestR_REPO_054_AShortWaitIsPersistedWhileItLastsAndTheEndClearsIt`, `TestR_REPO_056_ATakeoverKeepsTheRequestAndTheWaitAndANewPassConsumesTheRequest`, the run test of `internal/api/v1/mirror_api_test.go`.
+
+### Q-REPO-188 · The current admission is checked before a name is asked for, and the pending names are dropped when a pass is claimed
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A name is admitted when it is discovered. The patterns, the claims and the name rule can change before the pass reaches it, and a pending name was never admitted again: a mirror whose patterns were narrowed fetched what the operator had excluded.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Admits` is built again when the snapshot's config version changes; `fillPackage` checks it first and deletes a refused row as done; a claim drops the pending rows the current admission refuses; a deleted name the admission refuses is not refreshed (chosen) | R-REPO-051's promise (never asked for, not even its document) holds for names already pending | One extra check per package; a pass start pages the pending names once | A change of the claims alone (not the document) applies at the next claim or document version |
+| (b) Only at discovery | The merged behaviour | Nothing to do | Excluded names are fetched after a change of the patterns |
+| (c) Delete the pending table when the patterns change | Simple | Nothing to check | The fingerprint already makes the next pass full; the names of a running pass are lost and rediscovered |
+
+**Choice:** (a).
+
+**Rationale:** the patterns are the bound of everything the mirror does (R-REPO-005). The development agent would revisit it if the claims version were part of the snapshot entry.
+
+**Applied in the spec:** R-REPO-051 (patterns bound everything). Code: `pass.go` (`rebuildAdmits`, `dropRefused`), `fill.go`. Tests: `TestR_REPO_051_APendingNameIsReAdmittedAndARefusedOneIsNeverAskedFor`, `TestR_REPO_051_ANewDocumentDuringThePassRebuildsTheAdmissionBeforeTheNextPackage`, `TestR_REPO_051_ARemovedNameThePatternsRefuseIsNotRefreshed`.
+
+### Q-REPO-189 · A request for a pass is consumed by a new pass, not by the takeover of one in progress
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The claim cleared `pass_requested_*` whenever it ran; a request for a full pass that arrived while a pass was in progress was taken by the job that took that pass over, which was not full.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The claim clears the request only when a fresh pass starts; the row stays due while a request is set (chosen) | A full request is never lost; the pass after the one in progress is full | The request outlives a pass it did not start | A takeover leaves the row due, which an active job's dedup key absorbs |
+| (b) Clear at every claim | The merged behaviour | No change | The full request is silently dropped |
+| (c) Make the pass in progress full | Honours the request at once | Immediate | A pass cannot change kind half way (its cursor is the other kind's) |
+
+**Choice:** (a).
+
+**Rationale:** the operator asked for a full pass. The development agent would revisit it if a request should end a pass in progress.
+
+**Applied in the spec:** R-REPO-053 (claim), R-REPO-056 (run). Code: `queries/mirror.sql` (`MirrorClaim`). Tests: `TestR_REPO_056_AFullRequestSurvivesTheTakeoverOfAPassInProgress`, integration `TestR_REPO_056_ATakeoverKeepsTheRequestAndTheWaitAndANewPassConsumesTheRequest`.
+
+### Q-REPO-190 · The bound of 10,000 pending names counts every row, and a pass whose table is full of names that failed ends partial
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The count read the rows with fewer than three attempts; a name left after three attempts stays and is given its attempts back at the next claim, so a table of failed names was not bounded by the cap and discovery went on above it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `PendingCount` counts every row of the repository; a pass that finds the table at its bound with nothing it can take ends `partial` with `discoveryComplete: false` and a note, and does not advance the cursor (chosen) | The table cannot grow past its bound whatever fails | The failed names that do not clear count against discovery until a pass takes them | A mirror of an upstream that fails 10,000 names makes no discovery progress until they succeed or the patterns narrow |
+| (b) Delete the row at its final attempt and keep a count | The table is only live names | More room | A failed name is forgotten until a full pass rediscovers it, and `partial` loses its list |
+| (c) The merged count | No change | No change | The bound is not a bound |
+
+**Choice:** (a).
+
+**Rationale:** the bound exists so that the table stays small (Q-REPO-135). The development agent would revisit (b) if failed names pile up in practice.
+
+**Applied in the spec:** R-REPO-053 (step 2). Code: `pass.go` (`pendingFull`), `queries/mirror.sql`. Tests: `TestR_REPO_053_TheBoundCountsTheRowsThatFailedAndEndsThePassPartial`, integration `TestR_REPO_053_ThePendingCountTakesEveryRowAndDropsRefusedNamesUnderTheFence`. [docs/security/mirror.md](../security/mirror.md).
+
+### Q-REPO-191 · A document that does not load is a pause, and a cursor is measured as the column holds it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A remote whose stored document fails to load is loaded disabled with no remote section; the engine took that for a repository that left mode mirror and cleared its pass and pending names. And the cursor check measured the compact JSON while the column's check measures the text PostgreSQL prints (a space after every comma), so a cursor between the two failed the statement as an internal error.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A repository of class remote whose remote section did not load is neither mirrored nor left: its row, pass and pending names stay, the dispatch enqueues nothing for it and a job that starts for it does nothing (`invalid_document`); the store measures a cursor with `octet_length(jsonb::text)` before the write and answers `ErrCursorTooLarge`, which the pass records as `cursor_too_large` (chosen) | A broken document costs no pass; the error code is the true one | One extra read per page with a cursor | A mirror with a broken document waits for its fix without a status line of its own |
+| (b) Treat it as a mode change | The merged behaviour | No code | A transient storage fault deletes a pass of hours |
+| (c) Measure the cursor with a margin | No read | Cheaper | Wrong in both directions |
+
+**Choice:** (a).
+
+**Rationale:** a mode change is the owner's decision (Q-REPO-162), a document that does not load is not. The development agent would revisit the cursor read if the format's cursors are bounded to a size that cannot differ.
+
+**Applied in the spec:** R-REPO-053 (stops, step 2). Code: `engine.go` (`Dispatch`), `pass.go`, `store_pg.go` (`AddNames`). Tests: `TestR_REPO_053_ADocumentThatDoesNotLoadIsAPauseNotAModeChange`, integration `TestR_REPO_053_ACursorIsMeasuredAsTheColumnHoldsIt`.
+
+### Q-REPO-192 · The held names are paged in the default collation, and the unused index of the state is dropped
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The held names were paged with `COLLATE "C"`, which the index of `packages (repo_id, name)` cannot serve, and migration 00040 created an index on `next_pass_at` that no statement filters by (the dispatch reads the table's few rows by `repo_id = ANY`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The page reads `name > $after ORDER BY name` in the column's collation, which the unique index serves; the index `mirror_state_due` is not created (migration 00040, changed in place before it is pushed) (chosen) | A page of held names is an index range, and the table has no write cost for an index nobody reads | The order is the database's, not bytewise | None: paging only needs a consistent order |
+| (b) Keep both | No change | No migration edit | A sequential sort per page of a large repository; a write cost for nothing |
+| (c) An index with `COLLATE "C"` on packages | Bytewise order | Matches pending | A second index on the busiest table |
+
+**Choice:** (a).
+
+**Rationale:** the page only needs an order that is the same on both sides of the comparison. The development agent would revisit it if a statement filters `mirror_state` by `next_pass_at`.
+
+**Applied in the spec:** R-REPO-053 (data model, the index line). Code: `queries/mirror.sql`, `migrations/00040_mirror.sql`. Test: integration `TestR_REPO_057_TheStateKeepsTheLastCompletePassAndHasNoUnusedIndex`, `TestR_REPO_053_ThePendingCountTakesEveryRowAndDropsRefusedNamesUnderTheFence`.
 
 ## What this does not cover
 

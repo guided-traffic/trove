@@ -322,6 +322,9 @@ const (
 	CodeMirrorOff = "mirror_off"
 	// CodeMirrorPaused: the mirror is paused (remote.mirror.paused), so no pass can be requested.
 	CodeMirrorPaused = "mirror_paused"
+	// CodeMirrorRateLimited: the upstream asked the mirror to wait and the wait lies ahead (R-REPO-054); the extension until
+	// names its end. A pass requested now would only be skipped until then.
+	CodeMirrorRateLimited = "mirror_rate_limited"
 )
 
 // <<< M6b mirror
@@ -726,6 +729,7 @@ var registry = []CodeInfo{
 	{CodeMirrorPassRunning, Conflict, "Mirror pass running", "A pass of the repository's mirror is queued or running; the extension job names it. Wait for it to end, or read its job."},
 	{CodeMirrorOff, Conflict, "Mirror off", "The remote repository runs in mode pullThrough, so it has no mirror to run. Set remote.mode to mirror first."},
 	{CodeMirrorPaused, Conflict, "Mirror paused", "The mirror is paused (remote.mirror.paused); resume it with a PATCH of the repository before requesting a pass."},
+	{CodeMirrorRateLimited, Conflict, "Mirror rate limited", "The upstream asked the mirror to wait and the wait is not over; the extension until names its end. Request the pass again after it."},
 	// <<< M6b mirror
 	//
 	// >>> M13 bastion

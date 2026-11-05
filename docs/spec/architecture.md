@@ -157,7 +157,7 @@ routes read them. The areas of the client listener are split by route family:
 | `endpoints` | the rate-limit classes of the endpoints (R-EP-015) | yes | yes | no | yes |
 | `api` | stage 7 of the chain: CORS and the request limits of R-API-016, applied on every endpoint chain despite the name | yes | yes | no | yes |
 | `ci_exchange` | the CI token exchange (`POST /api/v1/auth/oidc/token`, the npm exchange of R-NPM-022 at P1) | yes | **no** | no | yes |
-| `mirror` | the mirror engine: the counters and the gauge source of R-REPO-057, the engine built at its first job (R-REPO-053, Q-ARCH-312) | **no** | **no** | yes | `all` only: `web` claims no job |
+| `mirror` | the counters and the gauge source of R-REPO-057 (every role), the engine built at the first job of a process that claims one (R-REPO-053, Q-ARCH-312) | yes | yes | yes | yes |
 
 - A `packages` replica MUST NOT build the areas `sessions`, `login`, `ci_exchange`, `packages-api` and `vuln-api`, MUST NOT
   read the OIDC client-secret or break-glass files (the chart does not mount them, [ha-and-helm.md](ha-and-helm.md) R-HA-030),
@@ -2448,7 +2448,7 @@ kind belongs to one queue, and
 | `maintenance` | the scheduled housekeeping: `gc`, `gc-full`, sweeps, cleanups, prunes, `data_migration_*`, `secrets-reencrypt`, `vuln-findings-retention` | 1 |
 | `index` | `nuget-symbol-index` and later index builds | 2 |
 | `delivery` | webhook deliveries (P1) | 8 |
-| `mirror` | `mirror-dispatch`, `mirror-pass` (phase 6b) | 2 |
+| `mirror` | `mirror-pass` (phase 6b); `mirror-dispatch` runs on `maintenance` (Q-ARCH-321) | 2 |
 | `vuln` | the advisory sync: `vuln-sync-osv`, `vuln-sync-osv-full`, `vuln-sync-kev` | 1 |
 
 - **Which queues a process claims.** `jobs.queues` lists the queues a worker claims; empty (the default) means every
@@ -2622,7 +2622,7 @@ Normative rules:
 | `vuln-evaluate` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-011 (from M4b) | Queue `default`. Dedup key `vuln-evaluate`, `coalesce`. Its work is read from tables, never from `args`: the advisories queued in `vuln_pending_evaluation` and the full evaluations requested in `vuln_source_state`, so an enqueue that a waiting job absorbs loses nothing (Q-VULN-18). Checkpoints after each batch. |
 | `vuln-rescan` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-011 (from M4b) | Dedup key `vuln-rescan:<repository id>`, `exclusive`; its manual trigger answers `409` with the running job. A run that finds other scanning inputs of its repository at its end than at its start runs again before it ends (Q-VULN-18). |
 | `vuln-findings-retention` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-014 (from M4b) | `exclusive` under its name; deletes in batches |
-| `mirror-dispatch` | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-053 (phase 6b) | Queue `mirror`, `exclusive` under its name, every minute. Ensures a `mirror_state` row per remote in mode `mirror` and enqueues the due passes. |
+| `mirror-dispatch` | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-053 (phase 6b) | Queue `maintenance` (Q-ARCH-321), `exclusive` under its name, every minute. Ensures a `mirror_state` row per remote in mode `mirror` and enqueues the due passes. |
 | `mirror-pass` | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-053 (phase 6b) | Queue `mirror`, which any process that claims jobs, or a pool of its own ([ha-and-helm.md](ha-and-helm.md) R-HA-062), claims. Dedup key `mirror-pass:<repository id>`, `exclusive`; `MaxAttempts: 1`, no timeout. The pass's state lives in `mirror_state` and `mirror_pending`, not in the job's checkpoint, so that a pass outlives its jobs: a release continues it in another process that claims the queue, and a lost lease, a failure or a long rate-limit wait end the job and the next dispatch continues it under the fence of Q-ARCH-287. |
 
 Tasks of other pages, such as those in R-OPS-019's table, register their kinds by the same rule.
@@ -8635,11 +8635,11 @@ Q-ARCH-285 puts the passes in a queue of their own run by whatever process claim
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) The area `mirror` runs on `worker` and `all` (the roles with job loops), registers the counters and the gauge source when it is wired and builds the engine when the first job of the queue runs, so that the host sees every part the composition root has built (chosen) | Counters and gauges exist exactly where the queue is claimed; the host's needs can change without moving the area | A first job pays the construction; a failing host fails that job, and the next one tries again | The area table of R-ARCH-001 has one more row |
+| (a) The area `mirror` runs on every role, registers the counters and the gauge source when it is wired (the gauges must reach the alerts whatever claims the queue, Q-OPS-171) and builds the engine when the first job of a process that claims one runs, so that the host sees every part the composition root has built; the host's `Ready` is asked at every dispatch and pass, and an error fails the job with its cause (chosen) | Counters and gauges exist exactly where the queue is claimed; the host's needs can change without moving the area | A first job pays the construction; a failing host fails that job, and the next one tries again | The area table of R-ARCH-001 has one more row |
 | (b) Build the engine when the area is wired | Fail at start-up | Early errors | The host's inputs would have to precede the area in the step list, and the owner is still reconsidering the topology |
 | (c) On every role | Uniform | Simple table | A `web` or `api` replica would hold an engine that nothing runs, and its counters would never move |
 
-**Choice:** (a). The handlers of both kinds are registered by every role, because a client-serving process enqueues; a role without the area answers a job it somehow claims with an error.
+**Choice:** (a). The handlers of both kinds are registered by every role, because a client-serving process enqueues; a process that claims no job never builds the engine. A host that is not ready (`Host.Ready` returns the cause, for example the remote engine is not built in a role) fails the dispatch and the pass with that cause, visibly, instead of skipping the repositories (Q-ARCH-320).
 
 **Rationale:** the queue, not the Deployment, decides where passes run. The development agent would revisit it if the pass moves to a pool that has no area of its own.
 
@@ -8698,6 +8698,78 @@ R-REPO-053 asks for the claim as one statement and for the delete of a pending r
 **Rationale:** the integration tests exist to keep the two stores equal. The development agent would revisit it if the statements need rows the port cannot give.
 
 **Applied in the spec:** R-REPO-053 (the steps and the data model). Code: [store.go](../../internal/mirror/store.go), [store_pg.go](../../internal/mirror/store_pg.go), [mirror.sql](../../internal/meta/postgres/queries/mirror.sql).
+
+### Q-ARCH-320 · A request that the shutdown cancelled stops the pass without a write, and a host that is not ready fails the job
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The seam of the engine now names `ErrShuttingDown` (a request the process's shutdown cancelled) and `Host.Ready` (whether the host can serve passes in this process). The engine counted the first as a failed item and skipped every repository on the second.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `ErrShuttingDown` halts the pass as if the job's context had ended: nothing is written, no item counts, the attempt waits for the framework's release (a minute at most) and returns its cause, so that the job is released with its attempt unchanged; `Ready` is asked at every dispatch and pass and an error fails the job with the cause and is logged (chosen) | A drain loses no attempt and no counter; a role that cannot serve passes says so at the job | The attempt waits for the framework's release (the cancel comes 5 s before the deadline) | A dispatch that cannot serve is a failed job once a minute |
+| (b) A failed item | The merged behaviour | No change | A shutdown writes failures and burns attempts of packages that were fine |
+| (c) Skip repositories while the host is not ready | Quiet | No failed jobs | A role that never serves passes looks healthy and nothing runs |
+
+**Choice:** (a).
+
+**Rationale:** the fence belongs to the job that holds the lease (Q-ARCH-287, Q-ARCH-313). The development agent would revisit the minute if the framework released handlers itself on a signal.
+
+**Applied in the spec:** R-REPO-053 (drain), Q-ARCH-312, Q-ARCH-313. Code: `request.go`, `end.go` (`shutdownEnd`), `engine.go`, `pass.go`. Tests: `TestR_REPO_053_AShutdownErrorWritesNothingAndFailsNoItem`, `TestR_REPO_053_AHostThatIsNotReadyFailsTheDispatchAndThePass`.
+
+### Q-ARCH-321 · The dispatch runs on the maintenance queue
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The dispatch and the passes shared the two slots of the queue `mirror`; two passes of hours held both, and the one-minute task that enqueues the next passes (and so a pass after a failure, a deferral or a crash) waited behind them.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `mirror-dispatch` is registered on `maintenance` (`mirror.QueueDispatch`), `mirror-pass` stays on `mirror` (chosen) | The dispatch always has a slot; Q-ARCH-305 lets a kind move | A process that claims `mirror` alone does not run the dispatch; the main worker does | The dispatch shares `maintenance` with the collector and the retention tasks (a minute's task) |
+| (b) A third slot on `mirror` reserved for it | Same queue | No move | A reserved slot is a framework feature that does not exist |
+| (c) Leave it | No change | None | A busy mirror stops scheduling its own passes |
+
+**Choice:** (a).
+
+**Rationale:** the scheduler must not wait for the work it schedules. The development agent would revisit it if the framework reserved slots.
+
+**Applied in the spec:** R-REPO-053 (dispatch), R-ARCH-016 (the queue table and the task row). Code: [mirror.go](../../internal/mirror/mirror.go), [wire_mirror.go](../../internal/app/wire_mirror.go). Test: `TestR_REPO_053_TheDispatchRunsOnTheMaintenanceQueue`.
+
+### Q-ARCH-322 · The engine imports no proxy package: the background share comes through its options and the status of a rate limit through an interface
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The engine imported `internal/proxy` for `BackgroundShare` and `internal/proxy/upstream` for the status of a rate-limit error, which tied the engine to the remote engine's package although the seam (`mirror.Host`) exists to prevent that.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Options.Share func(budget, concurrency int) int`, bound by the composition root to `proxy.BackgroundShare`, which keeps the one definition; the status is read through `interface{ HTTPStatus() int }` on the error; an architecture rule bans `internal/mirror` from `internal/proxy` (chosen) | One formula; the engine and the remote engine meet only at the seam | A required option; a status of 0 until the error implements the method | A test double of the formula in the unit tests |
+| (b) Copy the formula into the engine | No option | Simple | Two definitions that must stay equal |
+| (c) Move the formula to the leaf `discover` | Both import it | No option | The frozen contract grows by a function that is not about discovery |
+
+**Choice:** (a).
+
+**Rationale:** a boundary kept by a rule is kept. The development agent would revisit it if the share became a property of the host.
+
+**Applied in the spec:** R-REPO-055 (the share), R-ARCH-002. Code: `engine.go`, `internal/archtest/imports.go`. Tests: `TestR_REPO_054_TheStatusOfARateLimitComesFromTheErrorsHTTPStatus`, the module-ban test of `internal/archtest`.
+
+### Q-ARCH-323 · A wait that ends the attempt halts the window before it is visible, and a sleeping worker wakes with the halt
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A rate-limit answer with a wait over 300 s ends the attempt. The workers that were blocked behind the window woke after the answer, saw the new wait and slept it on the clock, past the halt that came after the state write: the job kept its slot, held by sleeping workers, for the length of the wait.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The throttle halts itself, under its lock, in the call that starts a wait over `LongWait`, before any worker can see the wait; a worker that sleeps a wait sleeps it with a context that the halt cancels (chosen) | No worker can sleep a long wait; a halt for any reason wakes the sleepers | A goroutine per sleep | None |
+| (b) Only the pass-level halt | The merged behaviour | No change | A race between the answer and the write that holds the slot for hours |
+| (c) Sleep in short slices and look | No goroutine | Simple | Polling, and a slice of lag |
+
+**Choice:** (a).
+
+**Rationale:** R-REPO-054 promises that no job slot is held through a long wait. The development agent would revisit it if the clock offered a wake-up channel.
+
+**Applied in the spec:** R-REPO-054 (a long wait ends the attempt). Code: `throttle.go`. Test: `TestR_REPO_054_ALongWaitReleasesEveryWorkerAtOnce`.
 
 ## What this does not cover
 

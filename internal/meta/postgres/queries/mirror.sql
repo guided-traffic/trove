@@ -68,8 +68,9 @@ SELECT repo_id,
 -- name: MirrorClaim :one
 -- R-REPO-053 step 1: one statement makes the job the owner of the repository's pass. It starts a new pass when none is in
 -- progress (the kind is the caller's decision, 'full' where a request asked for it) and takes over the one in progress
--- otherwise; the pending rows of a new pass get their attempts back; the request is consumed. claimed is 0 for a repository
--- without a row.
+-- otherwise; the pending rows of a new pass get their attempts back; a new pass consumes the request, a pass that is taken
+-- over leaves it for the pass after it (a full request survives). The rate-limit wait is not touched: a wait that lies ahead
+-- is the end's to clear. claimed is 0 for a repository without a row.
 WITH old AS (
     SELECT repo_id, pass_started_at IS NULL AS fresh
       FROM mirror_state
@@ -93,8 +94,10 @@ WITH old AS (
            pass_bytes_stored = CASE WHEN old.fresh THEN 0 ELSE s.pass_bytes_stored END,
            pass_discovery_complete = CASE WHEN old.fresh THEN true ELSE s.pass_discovery_complete END,
            pass_discovery_note = CASE WHEN old.fresh THEN NULL ELSE s.pass_discovery_note END,
-           pass_requested_at = NULL, pass_requested_by = NULL, pass_requested_full = false,
-           rate_limited_until = NULL, updated_at = now()
+           pass_requested_at = CASE WHEN old.fresh THEN NULL ELSE s.pass_requested_at END,
+           pass_requested_by = CASE WHEN old.fresh THEN NULL ELSE s.pass_requested_by END,
+           pass_requested_full = CASE WHEN old.fresh THEN false ELSE s.pass_requested_full END,
+           updated_at = now()
       FROM old
      WHERE s.repo_id = old.repo_id
  RETURNING 1
@@ -115,10 +118,31 @@ UPDATE mirror_state
    AND pass_job_id = sqlc.arg(job_id)::text::uuid AND pass_holder = sqlc.arg(holder)::text::uuid;
 
 -- name: MirrorPendingCount :one
--- The pending names that a pass still takes: the ones left after the attempts do not count (R-REPO-053 step 3).
+-- Every row of the repository, the ones left after their attempts included: the bound of 10,000 counts the table (R-REPO-053
+-- step 2).
 SELECT count(*)::bigint AS n
   FROM mirror_pending
- WHERE repo_id = sqlc.arg(repo_id)::bigint AND attempts < sqlc.arg(max_attempts)::int;
+ WHERE repo_id = sqlc.arg(repo_id)::bigint;
+
+-- name: MirrorDropPending :one
+-- Deletes pending rows by name, fenced: the names that the current patterns or claims refuse (R-REPO-051). The counters do not
+-- move.
+WITH f AS (
+    SELECT repo_id FROM mirror_state
+     WHERE repo_id = sqlc.arg(repo_id)::bigint
+       AND pass_job_id = sqlc.arg(job_id)::text::uuid AND pass_holder = sqlc.arg(holder)::text::uuid
+       FOR UPDATE
+), d AS (
+    DELETE FROM mirror_pending p USING f
+     WHERE p.repo_id = f.repo_id AND p.name = ANY(sqlc.arg(names)::text[])
+ RETURNING 1
+)
+SELECT (SELECT count(*) FROM f)::bigint AS fenced, (SELECT count(*) FROM d)::bigint AS dropped;
+
+-- name: MirrorCursorLength :one
+-- The length of a cursor as the column holds it: the text of the jsonb value, which PostgreSQL prints with a space after
+-- every colon and comma, so it is longer than the compact JSON the format wrote (the CHECK of the columns, R-REPO-053).
+SELECT octet_length(sqlc.arg(cursor_json)::text::jsonb::text)::int AS n;
 
 -- name: MirrorPendingNext :many
 -- The next pending names in name order after one name: not yet left, and not waiting for a retry (R-REPO-053 step 3).
@@ -143,8 +167,8 @@ SELECT COALESCE(extract(epoch FROM min(not_before)) * 1000000, 0)::bigint AS wak
 -- The names of the packages the repository holds (R-REPO-051: a full pass keeps them current), in name order.
 SELECT name
   FROM packages
- WHERE repo_id = sqlc.arg(repo_id)::bigint AND name COLLATE "C" > sqlc.arg(after)::text COLLATE "C"
- ORDER BY name COLLATE "C"
+ WHERE repo_id = sqlc.arg(repo_id)::bigint AND name > sqlc.arg(after)::text
+ ORDER BY name
  LIMIT sqlc.arg(row_limit)::int;
 
 -- name: MirrorAddNames :one
@@ -236,9 +260,11 @@ UPDATE mirror_state
    AND pass_job_id = sqlc.arg(job_id)::text::uuid AND pass_holder = sqlc.arg(holder)::text::uuid;
 
 -- name: MirrorRecordRateLimit :execrows
--- One wait of the pass (R-REPO-054, R-REPO-056).
+-- One wait of the pass (R-REPO-054, R-REPO-056); its end is kept whatever its length, so that a job that is released in the
+-- middle of it does not resume at once in another process.
 UPDATE mirror_state
-   SET rate_limit_waits = rate_limit_waits + 1,
+   SET rate_limited_until = to_timestamp(sqlc.arg(until_us)::bigint / 1000000.0),
+       rate_limit_waits = rate_limit_waits + 1,
        rate_limit_wait_seconds = rate_limit_wait_seconds + sqlc.arg(wait_seconds)::bigint,
        last_rate_limit_at = to_timestamp(sqlc.arg(now_us)::bigint / 1000000.0),
        last_rate_limit_status = sqlc.arg(status)::int,
@@ -274,6 +300,8 @@ WITH f AS (
            feed_method = CASE WHEN sqlc.arg(advance)::boolean THEN s.pass_method ELSE s.feed_method END,
            last_full_pass_at = CASE WHEN sqlc.arg(advance)::boolean AND s.pass_kind = 'full'
                                     THEN to_timestamp(sqlc.arg(now_us)::bigint / 1000000.0) ELSE s.last_full_pass_at END,
+           last_complete_pass_at = CASE WHEN sqlc.arg(completed)::boolean
+                                        THEN to_timestamp(sqlc.arg(now_us)::bigint / 1000000.0) ELSE s.last_complete_pass_at END,
            patterns_fingerprint = CASE WHEN sqlc.arg(advance)::boolean THEN sqlc.arg(fingerprint)::bytea ELSE s.patterns_fingerprint END,
            pass_started_at = CASE WHEN sqlc.arg(keep_pass)::boolean THEN s.pass_started_at ELSE NULL END,
            pass_kind = CASE WHEN sqlc.arg(keep_pass)::boolean THEN s.pass_kind ELSE NULL END,
@@ -333,12 +361,18 @@ SELECT COALESCE(u.logical_bytes, 0)::bigint AS logical_bytes,
   LEFT JOIN repository_usage u ON u.repo_id = sqlc.arg(repo_id)::bigint;
 
 -- name: MirrorGauges :many
--- The three gauges that every process claiming the queue mirror exports (R-REPO-057): the pending names, and the end of the
--- last pass that ended complete, partial or at its bound (0 when there is none).
+-- The gauges that every process exports (R-REPO-057): the pending names of the pass in progress (the names a pass still takes,
+-- attempts below the limit), the end of the last pass that ended complete, partial or at its bound (0 when none did), the
+-- failures in a row, and when the mirror next acts: the time a due pass is due, or for a pass in progress the later of that and
+-- its last write (a pass that is worked on moves it forward, one that nobody runs does not).
 SELECT r.key,
-       (SELECT count(*) FROM mirror_pending p WHERE p.repo_id = s.repo_id)::bigint AS pending,
-       CASE WHEN s.last_pass->>'outcome' IN ('complete', 'partial', 'bound_reached')
-            THEN COALESCE(extract(epoch FROM (s.last_pass->>'finishedAt')::timestamptz), 0) ELSE 0 END::float8 AS last_complete_s
+       CASE WHEN s.pass_started_at IS NULL THEN 0
+            ELSE (SELECT count(*) FROM mirror_pending p WHERE p.repo_id = s.repo_id AND p.attempts < sqlc.arg(max_attempts)::int)
+       END::bigint AS pending,
+       COALESCE(extract(epoch FROM s.last_complete_pass_at), 0)::float8 AS last_complete_s,
+       s.consecutive_failures::int AS consecutive_failures,
+       extract(epoch FROM CASE WHEN s.pass_started_at IS NULL THEN COALESCE(s.next_pass_at, s.updated_at)
+                               ELSE greatest(COALESCE(s.next_pass_at, s.updated_at), s.updated_at) END)::float8 AS next_pass_s
   FROM mirror_state s
   JOIN repositories r ON r.id = s.repo_id
  ORDER BY r.key;

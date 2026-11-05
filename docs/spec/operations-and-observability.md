@@ -1064,7 +1064,7 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 | `trove_vuln_audit_requests_total` (M4b) | counter | `format`, `mode`, `outcome` | Client audits answered (R-VULN-017, R-VULN-018) |
 | `trove_vuln_claimed_name_matches` (M4b) | gauge | `ecosystem`, `kind` | Public advisories for claimed names; read from PostgreSQL (R-VULN-010) |
 | `trove_mirror_passes_total` (6b) | counter | `repo`, `kind` (`full`, `incremental`), `outcome` (`complete`, `partial`, `bound_reached`, `offline`, `stopped`, `failed`, `deferred`) | Pass attempts of mirrored remotes by how they ended ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-057); exported by the process that runs the pass |
-| `trove_mirror_items_total` (6b) | counter | `repo`, `result` (`stored`, `present`, `bounded`, `failed`, `preempted`) | Artifacts of the passes' plans (R-REPO-057) |
+| `trove_mirror_items_total` (6b) | counter | `repo`, `result` (`stored`, `present`, `bounded`, `failed`, `preempted`, `refused`) | Artifacts of the passes' plans (R-REPO-057) |
 | `trove_mirror_bytes_total` (6b) | counter | `repo` | Bytes the passes stored (R-REPO-057) |
 | `trove_mirror_rate_limited_total` (6b) | counter | `repo`, `reason` (`too_many_requests`, `slow_down`, `retry_after`, `quota_header`) | Rate-limit answers to the passes (R-REPO-054) |
 | `trove_mirror_rate_limit_wait_seconds_total` (6b) | counter | `repo` | Seconds the passes waited for rate limits (R-REPO-054) |
@@ -1073,6 +1073,8 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 | `trove_mirror_pending_packages` (6b) | gauge | `repo` | Pending names of the pass in progress; read from PostgreSQL (R-REPO-057) |
 | `trove_mirror_last_complete_pass_timestamp_seconds` (6b) | gauge | `repo` | End of the last complete pass; read from PostgreSQL (R-REPO-057) |
 | `trove_mirror_interval_seconds` (6b) | gauge | `repo` | The configured `remote.mirror.intervalSeconds`; read from the repository snapshot (R-REPO-057) |
+| `trove_mirror_consecutive_failures` (6b) | gauge | `repo` | Failed pass attempts in a row; read from PostgreSQL; none for a paused mirror (R-REPO-057, Q-OPS-171) |
+| `trove_mirror_next_pass_timestamp_seconds` (6b) | gauge | `repo` | When the mirror next acts (a due pass, or the last write of the pass in progress); read from PostgreSQL; none for a paused mirror (R-REPO-057, Q-OPS-171) |
 
 </details>
 
@@ -1192,8 +1194,8 @@ backup alerts' expressions.
 | Backup job | Platform protection missing | `trove_backup_check_ok` | `TroveBackupCheckFailed` |
 | Backup job | A backup is complete but not whole: its snapshot references blobs that were missing or corrupt in the source | `trove_backup_source_blobs_damaged` | `TroveBackupSourceDamage` (R-BAK-014) |
 | Backup job | A stored backup no longer matches its manifest | `trove_backup_last_verify_findings` | `TroveBackupVerifyFindings` (R-BAK-014) |
-| Mirror mode (phase 6b) | A mirror's passes fail again and again ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-053) | `trove_mirror_passes_total{outcome="failed"}` | `TroveMirrorFailing` (new, Q-OPS-160, Q-OPS-167): `(sum by (repo) (increase(trove_mirror_passes_total{outcome="failed"}[6h])) >= 3) unless on (repo) (sum by (repo) (increase(trove_mirror_passes_total{outcome=~"complete\|partial"}[6h])) > 0)` |
-| Mirror mode (phase 6b) | No complete pass for three intervals (no process claims the queue `mirror`, a pass stuck behind rate limits) | `trove_mirror_last_complete_pass_timestamp_seconds`, `trove_mirror_interval_seconds` | `TroveMirrorStale` (new, Q-OPS-160): `time() - max by (repo) (trove_mirror_last_complete_pass_timestamp_seconds) > 3 * max by (repo) (trove_mirror_interval_seconds) + 3600` for 30 minutes |
+| Mirror mode (phase 6b) | A mirror's passes fail again and again ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-053) | `trove_mirror_consecutive_failures` | `TroveMirrorFailing` (new, Q-OPS-160, Q-OPS-171): `max by (repo) (trove_mirror_consecutive_failures) >= 3`, the threshold of the status's `failing` |
+| Mirror mode (phase 6b) | A mirror is behind its schedule (no process claims the queue `mirror`, a pass stuck behind rate limits, a lost job, a mirror that never completed a pass) | `trove_mirror_next_pass_timestamp_seconds` | `TroveMirrorStale` (new, Q-OPS-160, Q-OPS-171): `time() - max by (repo) (trove_mirror_next_pass_timestamp_seconds) > 3600` for 30 minutes |
 
 - **Metrics only.** Every alert reads families of R-OPS-008, families of the owning pages (the
   object-store circuit `trove_storage_s3_circuit_open` of [storage.md](storage.md)), or
@@ -5655,11 +5657,11 @@ The rule of R-OPS-046 is `increase(failed) >= 3 and increase(complete|partial) =
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) `(failed >= 3) unless on (repo) (complete|partial > 0)` (chosen) | Fires for a mirror that never completed; silent when a pass completed in the window | The same intent, a form that works with absent series | The expression differs from the first wording |
+| (a) `(failed >= 3) unless on (repo) (complete|partial > 0)`; superseded by Q-OPS-171: the alert reads the failures in a row (chosen then) | Fires for a mirror that never completed; silent when a pass completed in the window | The same intent, a form that works with absent series | The expression differs from the first wording |
 | (b) The wording of R-OPS-046 | Verbatim | No change | Silent for a mirror without a completed pass, unless the series exist at 0 |
 | (c) Create the complete series at 0 and keep `== 0` | Verbatim | No change to the rule | Depends on every process having created the series before the failure |
 
-**Choice:** (a), together with Q-OPS-168.
+**Choice:** (a), together with Q-OPS-168; Q-OPS-171 replaces the expression because a window of 6 h loses a mirror whose back-off spaces the failures 6 h apart.
 
 **Rationale:** the alert is for a mirror that does not work. The development agent would revisit it if the families change.
 
@@ -5718,6 +5720,78 @@ Q-OPS-159 fixes the four asynchronous types; what their details and their actor 
 **Rationale:** R-REPO-056 says `errors.lastMessage` names hosts, never a URL; the trail follows the same rule. The development agent would revisit it if operators ask for the message in the trail.
 
 **Applied in the spec:** R-REPO-057, R-OPS-016 (the rows). Code: [events_mirror.go](../../internal/audit/events_mirror.go), `end.go`. Tests: `TestR_REPO_056_AMessageKeepsTheHostOfAnURLAndNothingElse`, integration `TestR_REPO_053_AFailingUpstreamBacksOffAndARecoveryResetsTheCount`.
+
+### Q-OPS-171 · The alerts read two gauges that every process exports: the failures in a row and when the mirror next acts
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Two reviews showed that the alerts of Q-OPS-160 do not fire where they should: `TroveMirrorFailing` cleared after about seven hours while a mirror kept failing, because the back-off spaces the attempts six hours apart and the window was six hours; `TroveMirrorStale` read a series that does not exist for a mirror that never completed a pass, for a queue that nobody claims (only the processes that claim it exported the gauges), for a deferral that lasts hours, and after a stopped or offline end overwrote the summary.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `trove_mirror_consecutive_failures` and `trove_mirror_next_pass_timestamp_seconds` from `mirror_state` through the database gauge source, exported by every role; Failing is `max(consecutive failures) >= 3`, the status's rule; Stale is `time() - next pass > 3600` for 30 minutes; no series for a paused or disabled mirror (chosen) | The same figure in the status and the alert; present from the first dispatch; independent of who claims the queue; a pass worked on moves its time forward | Two more families; a deferral longer than an hour is not stale because its next pass lies ahead | The time of a pass in progress is "its last write", a definition to learn |
+| (b) A longer window and a gauge for the last complete pass only | Smaller change | Few new families | Never fires for a mirror that never completed, nor for an unclaimed queue |
+| (c) Alerts from the job table | Sees a dead queue | No gauge | The job table is not in the metric families of R-OPS-008 |
+
+**Choice:** (a). `trove_mirror_last_complete_pass_timestamp_seconds` stays, from `last_complete_pass_at` (Q-OPS-172), and `trove_mirror_interval_seconds` stays; neither is read by an alert any more.
+
+**Rationale:** an alert must read what the status reads. The development agent would revisit the hour if mirrors with a very short interval are in use.
+
+**Applied in the spec:** R-REPO-057 (the table), R-OPS-008, R-OPS-046 (the two rows), Q-OPS-160, Q-OPS-167 (superseded). Chart: [_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl), [rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml). Code: `metrics.go` (`GaugeSource`), `queries/mirror.sql` (`MirrorGauges`). Test: `TestR_REPO_057_TheGaugesCarryFailuresAndTheNextPassOfAMirrorInService`, integration `TestR_REPO_057_TheGaugeRowsCarryWhatTheAlertsRead`.
+
+### Q-OPS-172 · The last complete pass is a column of its own, set by the outcomes complete, partial and bound_reached
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The gauge of the last complete pass was derived from `last_pass`, which every end overwrites; a stopped or offline end replaced the time of the last complete pass with a summary that has none.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `mirror_state.last_complete_pass_at`, set by an end whose outcome is `complete`, `partial` or `bound_reached` and by nothing else; the gauge reads it (chosen) | A pause or an hour of offline mode does not erase the last complete pass; a mirror held by its bound is current | One column in migration 00040, changed in place before it is pushed | `bound_reached` counts as complete although artifacts were left |
+| (b) Keep reading `last_pass` | No column | No change | The value is lost at the next stopped end |
+| (c) Only `complete` and `partial` | Stricter | The name is literal | A mirror at its bound would look unmaintained |
+
+**Choice:** (a).
+
+**Rationale:** the pass ended within its bounds. The development agent would revisit `bound_reached` if the status wants the two apart.
+
+**Applied in the spec:** R-REPO-053 (data model), R-REPO-057. Code: `queries/mirror.sql` (`MirrorEndPass`), `end.go`. Test: integration `TestR_REPO_056_ATakeoverKeepsTheRequestAndTheWaitAndANewPassConsumesTheRequest`.
+
+### Q-OPS-173 · The engine owns the meaning of pending names and of failing; the status and the gauge read them from it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The status counted every row of `mirror_pending` as pending packages, the gauge counted them regardless of a pass, and the engine counted the names with fewer than three attempts; "failing" was a constant of the API.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Pending is the names a pass still takes (attempts below `mirror.MaxPackageAttempts`) in the status and the gauge, the gauge only while a pass is in progress; failing is `mirror.FailingFailures`, which the API imports (chosen) | One definition per meaning, in the package that acts on it | The status's count drops names that failed three times; they are in `packagesFailed` | The API imports the engine's constants |
+| (b) Copy the numbers | No import | Independent | The three drift, as they did |
+| (c) Count every row everywhere | Simple | One query | The engine and the alert disagree with the status |
+
+**Choice:** (a).
+
+**Rationale:** the engine is the one place that knows what a pass takes. The development agent would revisit it if the API moves behind a port of its own.
+
+**Applied in the spec:** R-REPO-056 (the status), R-REPO-057. Code: `store.go` (`FailingFailures`, `MaxPackageAttempts`), `queries/mirror_api.sql`, `internal/api/v1/mirror_api.go`. Test: integration `TestR_REPO_056_StatusOfEachState` (a name left after three attempts is not pending).
+
+### Q-OPS-174 · The metrics label result of the items has a sixth value, refused
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Q-REPO-185 counts the artifacts a host refuses; Q-OPS-158 fixes closed label sets, so a new value is a decision.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `result="refused"` joins `stored`, `present`, `bounded`, `failed`, `preempted`; the reasons stay out of the labels (chosen) | Bounded cardinality; the refusals are visible apart from failures | The reason is in the log only | A sixth series per repository |
+| (b) Count refusals as `failed` | No new value | Nothing to add | A removed version looks like a broken upstream |
+| (c) A `reason` label | Detailed | Operators see why | Four more series per repository for a value that rarely changes |
+
+**Choice:** (a).
+
+**Rationale:** Q-OPS-158's rule is one series per repository and label value. The development agent would revisit it if operators ask for the reasons.
+
+**Applied in the spec:** R-REPO-057, R-OPS-008 (the table). Code: `metrics.go`. Test: `TestR_REPO_057_TheSeriesExistAtZeroFromTheFirstAttempt`.
 
 ## What this does not cover
 

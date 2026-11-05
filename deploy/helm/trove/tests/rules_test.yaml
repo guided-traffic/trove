@@ -117,56 +117,68 @@ tests:
       - {eval_time: 3m, alertname: TroveVulnerabilityClaimedNameMalicious, exp_alerts: []}
 
   # --- TroveMirrorFailing ---------------------------------------------------------------------------------
-  # Three failed attempts in 6 hours and no complete or partial pass in that time (R-OPS-046, Q-OPS-160). The failed counter
-  # grows by one a minute for 20 minutes; the first sample of a series that exists from the start of the pass is 0.
-  - name: TroveMirrorFailing fires on three failed attempts and no complete pass, and not when a pass completed in the window
+  # Three failed pass attempts in a row, read from the gauge of the failures in a row (R-OPS-046, Q-OPS-171): it stays while the
+  # mirror keeps failing, however far apart the back-off puts the attempts, and it resets with a complete pass.
+  - name: TroveMirrorFailing fires from the third failure in a row and stays while they last, and not for a mirror below three
     interval: 1m
     input_series:
-      - {series: 'trove_mirror_passes_total{namespace="default",repo="npm-types",kind="full",outcome="failed",pod="w1"}', values: '0+1x20 20x500'}
-      - {series: 'trove_mirror_passes_total{namespace="default",repo="nuget-ms",kind="full",outcome="failed",pod="w1"}', values: '0+1x20 20x500'}
-      - {series: 'trove_mirror_passes_total{namespace="default",repo="nuget-ms",kind="full",outcome="complete",pod="w1"}', values: '0x5 1x500'}
-      - {series: 'trove_mirror_passes_total{namespace="default",repo="quiet",kind="full",outcome="failed",pod="w1"}', values: '0 1 2 2x500'}
-      - {series: 'trove_mirror_passes_total{namespace="other",repo="elsewhere",kind="full",outcome="failed",pod="w1"}', values: '0+1x20 20x500'}
+      - {series: 'trove_mirror_consecutive_failures{namespace="default",repo="npm-types",pod="w1"}', values: '0 1 2 3x2000'}
+      - {series: 'trove_mirror_consecutive_failures{namespace="default",repo="npm-types",pod="w2"}', values: '0 1 2 3x2000'}
+      - {series: 'trove_mirror_consecutive_failures{namespace="default",repo="quiet",pod="w1"}', values: '0 1 2x2000'}
+      - {series: 'trove_mirror_consecutive_failures{namespace="other",repo="elsewhere",pod="w1"}', values: '9x2000'}
     alert_rule_test:
       - {eval_time: 1m, alertname: TroveMirrorFailing, exp_alerts: []}
-      - eval_time: 60m
+      - eval_time: 10m
         alertname: TroveMirrorFailing
         exp_alerts:
           - exp_labels: {severity: warning, repo: npm-types}
             exp_annotations:
-              summary: The mirror npm-types had three failed pass attempts in 6 hours and no complete pass.
-              description: The last error is in GET /api/v1/repositories/{key}/mirror and in the audit event mirror.pass_failed (R-REPO-053, R-REPO-057). The pass in progress stays, and the dispatch continues it after the back-off.
-      # Once the failures are older than 6 hours the alert resolves.
-      - {eval_time: 500m, alertname: TroveMirrorFailing, exp_alerts: []}
-
-  # --- TroveMirrorStale -----------------------------------------------------------------------------------
-  # The last complete pass is at 1000 s and the interval is 3600 s: stale from 3 * 3600 + 3600 = 14400 s after it, that is
-  # from 15401 s (257 min) on, and the alert holds for 30 minutes first (fires from 287 min).
-  - name: TroveMirrorStale fires when no pass completed for three intervals and an hour, for 30 minutes
-    interval: 1m
-    input_series:
-      - {series: 'trove_mirror_last_complete_pass_timestamp_seconds{namespace="default",repo="npm-types",pod="w1"}', values: '1000x600'}
-      - {series: 'trove_mirror_last_complete_pass_timestamp_seconds{namespace="default",repo="npm-types",pod="w2"}', values: '1000x600'}
-      - {series: 'trove_mirror_interval_seconds{namespace="default",repo="npm-types",pod="w1"}', values: '3600x600'}
-      - {series: 'trove_mirror_last_complete_pass_timestamp_seconds{namespace="default",repo="fresh",pod="w1"}', values: '1000+60x600'}
-      - {series: 'trove_mirror_interval_seconds{namespace="default",repo="fresh",pod="w1"}', values: '3600x600'}
-    alert_rule_test:
-      - {eval_time: 250m, alertname: TroveMirrorStale, exp_alerts: []}
-      - {eval_time: 280m, alertname: TroveMirrorStale, exp_alerts: []}
-      - eval_time: 300m
-        alertname: TroveMirrorStale
+              summary: The mirror npm-types has failed three pass attempts in a row.
+              description: The last error is in GET /api/v1/repositories/{key}/mirror and in the audit event mirror.pass_failed (R-REPO-053, R-REPO-057). The pass in progress stays, and the dispatch continues it after the back-off; a complete pass resets the count. A paused mirror is not reported.
+      # Ten hours later, with the back-off spacing the attempts six hours apart, it still fires.
+      - eval_time: 600m
+        alertname: TroveMirrorFailing
         exp_alerts:
           - exp_labels: {severity: warning, repo: npm-types}
             exp_annotations:
-              summary: The mirror npm-types has had no complete pass for three intervals and an hour.
-              description: No process claims the queue mirror, or the passes are held back by rate limits (R-REPO-053, R-REPO-054). Check the pods that claim the queue, the status of the repository and trove_mirror_pending_packages. A mirror held by its byte bound does not alert.
+              summary: The mirror npm-types has failed three pass attempts in a row.
+              description: The last error is in GET /api/v1/repositories/{key}/mirror and in the audit event mirror.pass_failed (R-REPO-053, R-REPO-057). The pass in progress stays, and the dispatch continues it after the back-off; a complete pass resets the count. A paused mirror is not reported.
 
-  - name: TroveMirrorStale stays quiet for a mirror that has not completed a pass yet and for another namespace
+  - name: TroveMirrorFailing resolves when a complete pass resets the count
     interval: 1m
     input_series:
-      - {series: 'trove_mirror_interval_seconds{namespace="default",repo="new",pod="w1"}', values: '3600x600'}
-      - {series: 'trove_mirror_last_complete_pass_timestamp_seconds{namespace="other",repo="elsewhere",pod="w1"}', values: '1000x600'}
-      - {series: 'trove_mirror_interval_seconds{namespace="other",repo="elsewhere",pod="w1"}', values: '3600x600'}
+      - {series: 'trove_mirror_consecutive_failures{namespace="default",repo="npm-types",pod="w1"}', values: '3x30 0x100'}
+    alert_rule_test:
+      - {eval_time: 20m, alertname: TroveMirrorFailing, exp_alerts: [{exp_labels: {severity: warning, repo: npm-types}, exp_annotations: {summary: The mirror npm-types has failed three pass attempts in a row., description: 'The last error is in GET /api/v1/repositories/{key}/mirror and in the audit event mirror.pass_failed (R-REPO-053, R-REPO-057). The pass in progress stays, and the dispatch continues it after the back-off; a complete pass resets the count. A paused mirror is not reported.'}}]}
+      - {eval_time: 60m, alertname: TroveMirrorFailing, exp_alerts: []}
+
+  # --- TroveMirrorStale -----------------------------------------------------------------------------------
+  # The time the mirror next acts (a due pass, or the last write of the pass in progress) is an hour in the past: from 3600 s
+  # after it, and the alert holds for 30 minutes first. A mirror with no pass yet has a series too, because the row exists from the
+  # first dispatch; a deferral to a time ahead, or a paused mirror (no series), does not fire.
+  - name: TroveMirrorStale fires when the next pass is an hour overdue for 30 minutes, also for a mirror that never completed one
+    interval: 1m
+    input_series:
+      - {series: 'trove_mirror_next_pass_timestamp_seconds{namespace="default",repo="never",pod="w1"}', values: '1000x600'}
+      - {series: 'trove_mirror_next_pass_timestamp_seconds{namespace="default",repo="never",pod="w2"}', values: '1000x600'}
+      - {series: 'trove_mirror_next_pass_timestamp_seconds{namespace="default",repo="on-schedule",pod="w1"}', values: '1000+60x600'}
+      - {series: 'trove_mirror_next_pass_timestamp_seconds{namespace="default",repo="deferred",pod="w1"}', values: '40000x600'}
+      - {series: 'trove_mirror_next_pass_timestamp_seconds{namespace="other",repo="elsewhere",pod="w1"}', values: '1000x600'}
+    alert_rule_test:
+      - {eval_time: 70m, alertname: TroveMirrorStale, exp_alerts: []}
+      - {eval_time: 85m, alertname: TroveMirrorStale, exp_alerts: []}
+      - eval_time: 120m
+        alertname: TroveMirrorStale
+        exp_alerts:
+          - exp_labels: {severity: warning, repo: never}
+            exp_annotations:
+              summary: The mirror never is more than an hour behind its schedule.
+              description: Its next pass was due an hour ago and nothing started it, or the pass in progress has not written for an hour. No process claims the queue mirror, the passes are held back by a rate limit that lasts hours, or the job is lost (R-REPO-053, R-REPO-054). Check the pods that claim the queue, the status of the repository and trove_mirror_pending_packages. A paused mirror is not reported.
+
+  - name: TroveMirrorStale stays quiet for a mirror without series
+    interval: 1m
+    input_series:
+      - {series: 'trove_mirror_interval_seconds{namespace="default",repo="paused",pod="w1"}', values: '3600x600'}
     alert_rule_test:
       - {eval_time: 400m, alertname: TroveMirrorStale, exp_alerts: []}
 

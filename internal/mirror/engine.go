@@ -14,7 +14,6 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/jobs"
-	"github.com/guided-traffic/trove/internal/proxy"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -47,6 +46,9 @@ type Options struct {
 	// Clock and Jitter are the seams of the engine's tests; nil is the system's.
 	Clock  Clock
 	Jitter Jitter
+	// Share is the background share B of R-REPO-055 for a repository's fetch budget (limits.maxConcurrentFetches) and its
+	// concurrency; the composition root hands in proxy.BackgroundShare, which owns the formula (Q-ARCH-322).
+	Share func(budget, concurrency int) int
 	// GlobalOffline reports the global offline switch (R-REPO-031); nil is never.
 	GlobalOffline func() bool
 	// NormalizeName normalizes a package name with a format's rule; nil is the catalog's.
@@ -75,6 +77,8 @@ func New(o Options) (*Engine, error) {
 		return nil, errors.New("mirror: no host")
 	case o.Holder == "":
 		return nil, errors.New("mirror: no instance id")
+	case o.Share == nil:
+		return nil, errors.New("mirror: no background share")
 	}
 	if o.Clock == nil {
 		o.Clock = SystemClock{}
@@ -127,6 +131,11 @@ type DispatchResult struct {
 // for every repository that is due: not paused, next_pass_at passed or a pass requested, no rate-limit wait pending. The
 // exclusive dedup key keeps one pass per repository, whichever process dispatches.
 func (e *Engine) Dispatch(ctx context.Context) (DispatchResult, error) {
+	if err := e.o.Host.Ready(ctx); err != nil {
+		// The host cannot serve passes: the dispatch fails with the cause, visibly, instead of enqueuing nothing (Q-ARCH-312).
+		e.o.Log.Error("the mirror's host is not ready; no pass is dispatched", "error", err)
+		return DispatchResult{}, fmt.Errorf("mirror: the host is not ready: %w", err)
+	}
 	list, err := e.o.Repos.List(ctx)
 	if err != nil {
 		return DispatchResult{}, err
@@ -143,7 +152,10 @@ func (e *Engine) Dispatch(ctx context.Context) (DispatchResult, error) {
 			continue
 		}
 		if _, ok := mirrored(r); !ok {
-			left = append(left, id)
+			if _, loaded := r.Remote(); loaded {
+				left = append(left, id)
+			}
+			// A document that does not load is a pause: its pass and its pending names stay (Q-REPO-191).
 			continue
 		}
 		byID[id] = r
@@ -198,8 +210,8 @@ func (e *Engine) rateLimitEvent(repoID int64, now time.Time) bool {
 }
 
 // background is the background share B of R-REPO-055 for a repository's settings.
-func background(s repository.RemoteSettings) int {
-	return proxy.BackgroundShare(s.Limits.MaxConcurrentFetches, s.Mirror.Concurrency)
+func (e *Engine) background(s repository.RemoteSettings) int {
+	return e.o.Share(s.Limits.MaxConcurrentFetches, s.Mirror.Concurrency)
 }
 
 // notFound reports whether err says that the repository does not exist.

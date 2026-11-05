@@ -10,9 +10,9 @@ engine does with the answers.
 
 ## Who writes, and as whom
 
-The passes run in whatever process claims the queue `mirror`: the roles `worker` and `all` build the area `mirror`
-([wire_mirror.go](../../internal/app/wire_mirror.go)); `web`, `api` and `packages` replicas only enqueue a pass on request and read
-the state. The engine holds no upstream credential and sends no request itself: discovery goes through the `discover.Upstream` that
+The passes run in whatever process claims the queue `mirror`: every role has the area `mirror` ([wire_mirror.go](../../internal/app/wire_mirror.go)) for its counters and its gauges, and a process
+builds the engine at the first job it claims (the roles `worker` and `all`); `web`, `api` and `packages` replicas only enqueue a pass
+on request and read the state. The engine holds no upstream credential and sends no request itself: discovery goes through the `discover.Upstream` that
 the host lends the pass, and every fill through `Host.Fill`, so the egress rules, the credential policy and the integrity checks
 of a client's fill apply to a pass's (R-REPO-053 step 3, Q-REPO-146). The events a pass writes have the actor `system` named
 `mirror`, the repository as subject and as event column ([events_mirror.go](../../internal/audit/events_mirror.go)); they are
@@ -46,9 +46,10 @@ A hostile or broken upstream decides which names it lists. What bounds them:
 | Bound | Where | Effect |
 |---|---|---|
 | The include and exclude patterns, the claims, the format's name rule | `Host.Admits`, applied by the format to every name it returns and again by the engine to the held and the exact names | a name outside them is never inserted, never asked for, not even its document |
-| At most 10,000 pending names | `MaxPending`, checked by `PendingCount` before every page; the held names are paged under the same bound | discovery pauses until the fill has worked the batch off |
+| At most 10,000 pending rows | `MaxPending`, checked by `PendingCount` before every page; the count takes every row of the repository, the ones left after three attempts included (Q-REPO-190); the held names are paged under the same bound | discovery pauses until the fill has worked the batch off; a pass whose table is full of names that failed ends `partial` instead of growing it |
+| The current admission | `Host.Admits`, built again when the repository's config version changes; checked before a package is asked for and when a pass is claimed (Q-REPO-188) | a name that was discovered under earlier patterns and is refused now is deleted unasked |
 | A name of at most 1024 characters, valid UTF-8 | `fitNames` | longer or invalid names are dropped before the insert, so one name cannot fail the statement of a page |
-| A cursor of at most 4096 bytes | `discover.MaxCursorBytes`, the `CHECK` of the columns | a longer cursor fails the attempt with `cursor_too_large` |
+| A cursor of at most 4096 bytes | `discover.MaxCursorBytes` and the length of the text PostgreSQL prints for the jsonb value (`MirrorCursorLength`), the `CHECK` of the columns | a longer cursor fails the attempt with `cursor_too_large`, not with a database error |
 | One feed call reads at most 50 catalog pages (NuGet) | `maxCatalogPagesPerCall` | a narrow scope on a large catalog stores progress every 50 pages; a failure repeats at most 50 (Q-NUGET-106) |
 | A discovery body of at most 32 MiB, inflated within the same bound; at most 32,768 versions of one ID, and a registration within one budget (NuGet) | `maxDiscoveryBytes`, `VersionListBounded`, `remote.Budget` in `announcedSizes` | a body or version list of millions of entries is refused in a bounded allocation (Q-NUGET-107 to Q-NUGET-109) |
 | A page that makes no progress | `pageStep` | the attempt fails with `discovery_stalled` instead of asking for the same page forever |
@@ -79,7 +80,7 @@ tested alone (`TestR_REPO_058_ARestoreClearsThePassAndKeepsOrForgetsTheCursor`).
 
 ### H-527 · The bound's base is a lagging counter and a per-process tally
 
-Component: the byte bound of a mirror (R-REPO-052). Subject: a remote repository with `maxBytes`. Live today.
+Component: the byte bound of a mirror (R-REPO-052). Subject: a remote repository with `maxBytes`. Live, bounded by one fold interval.
 
 The pass reads `repository_usage.logical_bytes` and adds the bytes it stored itself after the counter's last fold (`updated_at` of the
 row). The fold loop of [storage.md](../spec/storage.md) R-STOR-003 writes that counter on every `worker` and `all` replica, so the

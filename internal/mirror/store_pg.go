@@ -158,7 +158,7 @@ const maxAttempts = int32(MaxPackageAttempts)
 // PendingCount counts the names a pass still takes.
 func (s *PGStore) PendingCount(ctx context.Context, repoID int64) (n int64, err error) {
 	err = s.read(ctx, func(qs *q.Queries) (e error) {
-		n, e = qs.MirrorPendingCount(ctx, q.MirrorPendingCountParams{RepoID: repoID, MaxAttempts: maxAttempts})
+		n, e = qs.MirrorPendingCount(ctx, repoID)
 		return e
 	})
 	return n, err
@@ -169,6 +169,19 @@ func (s *PGStore) AddNames(ctx context.Context, f Fence, n Names) (added int64, 
 	names := n.Names
 	if names == nil {
 		names = []string{}
+	}
+	if n.SetProgress && len(n.Cursor) > 0 {
+		// The column checks the text PostgreSQL prints for the jsonb value, which is longer than the compact JSON.
+		var length int32
+		if err = s.read(ctx, func(qs *q.Queries) (e error) {
+			length, e = qs.MirrorCursorLength(ctx, string(n.Cursor))
+			return e
+		}); err != nil {
+			return 0, err
+		}
+		if length > discover.MaxCursorBytes {
+			return 0, ErrCursorTooLarge
+		}
 	}
 	err = s.write(ctx, func(qs *q.Queries) error {
 		r, e := qs.MirrorAddNames(ctx, q.MirrorAddNamesParams{
@@ -182,6 +195,20 @@ func (s *PGStore) AddNames(ctx context.Context, f Fence, n Names) (added int64, 
 		return fenced(r.Fenced)
 	})
 	return added, err
+}
+
+// DropPending deletes pending rows by name.
+func (s *PGStore) DropPending(ctx context.Context, f Fence, names []string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	return s.write(ctx, func(qs *q.Queries) error {
+		r, err := qs.MirrorDropPending(ctx, q.MirrorDropPendingParams{RepoID: f.RepoID, JobID: f.JobID, Holder: f.Holder, Names: names})
+		if err != nil {
+			return err
+		}
+		return fenced(r.Fenced)
+	})
 }
 
 // HeldNames returns names of the packages the repository holds.
@@ -259,7 +286,7 @@ func (s *PGStore) PackageKept(ctx context.Context, f Fence, r PackageResult) err
 func (s *PGStore) RecordRateLimit(ctx context.Context, f Fence, now time.Time, wait time.Duration, status int) error {
 	return s.write(ctx, func(qs *q.Queries) error {
 		n, err := qs.MirrorRecordRateLimit(ctx, q.MirrorRecordRateLimitParams{
-			WaitSeconds: int64(wait.Seconds()), NowUs: now.UnixMicro(), Status: int32(status), //nolint:gosec // an HTTP status
+			UntilUs: now.Add(wait).UnixMicro(), WaitSeconds: int64(wait.Seconds()), NowUs: now.UnixMicro(), Status: int32(status), //nolint:gosec // an HTTP status
 			RepoID: f.RepoID, JobID: f.JobID, Holder: f.Holder,
 		})
 		if err != nil {
@@ -285,7 +312,7 @@ func (s *PGStore) EndPass(ctx context.Context, f Fence, e End) (boundNew bool, e
 	err = s.write(ctx, func(qs *q.Queries) error {
 		r, err := qs.MirrorEndPass(ctx, q.MirrorEndPassParams{
 			RepoID: f.RepoID, JobID: f.JobID, Holder: f.Holder, ClearPending: e.ClearPending, LastPass: string(e.LastPass), Advance: e.Advance,
-			NowUs: e.Now.UnixMicro(), Fingerprint: e.Fingerprint, KeepPass: e.KeepPass, ResetFailures: e.ResetFailures,
+			NowUs: e.Now.UnixMicro(), Completed: e.Completed, Fingerprint: e.Fingerprint, KeepPass: e.KeepPass, ResetFailures: e.ResetFailures,
 			NextPassUs: e.NextPassAt.UnixMicro(), Bound: e.Bound, ClearBound: e.ClearBound,
 		})
 		if err != nil {
@@ -335,9 +362,9 @@ func (s *PGStore) Usage(ctx context.Context, repoID int64) (u Usage, err error) 
 // Gauges reads the values of the gauges that come from PostgreSQL.
 func (s *PGStore) Gauges(ctx context.Context) (out []GaugeRow, err error) {
 	err = s.read(ctx, func(qs *q.Queries) error {
-		rows, e := qs.MirrorGauges(ctx)
+		rows, e := qs.MirrorGauges(ctx, maxAttempts)
 		for _, r := range rows {
-			g := GaugeRow{Key: r.Key, Pending: r.Pending}
+			g := GaugeRow{Key: r.Key, Pending: r.Pending, ConsecutiveFailures: int(r.ConsecutiveFailures), NextPass: time.UnixMicro(int64(r.NextPassS * 1e6)).UTC()}
 			if r.LastCompleteS > 0 {
 				g.LastComplete = time.UnixMicro(int64(r.LastCompleteS * 1e6)).UTC()
 			}

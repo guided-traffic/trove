@@ -476,6 +476,7 @@ type MirrorState struct {
 	FeedMethod            pgtype.Text
 	PatternsFingerprint   []byte
 	LastFullPassAt        pgtype.Timestamptz
+	LastCompletePassAt    pgtype.Timestamptz
 	LastPass              []byte
 	ConsecutiveFailures   int32
 	LastErrorAt           pgtype.Timestamptz

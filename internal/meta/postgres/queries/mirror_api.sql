@@ -15,7 +15,7 @@ SELECT (s.repo_id IS NOT NULL)::boolean AS has_state,
        s.rate_limited_until, s.rate_limit_waits, s.rate_limit_wait_seconds, s.last_rate_limit_at, s.last_rate_limit_status,
        s.bound_reached, s.bound_reached_at,
        j.kind AS job_kind, COALESCE(j.state::text, '')::text AS job_state,
-       (SELECT count(*) FROM mirror_pending p WHERE p.repo_id = sqlc.arg(repo_id)::bigint)::bigint AS pending,
+       (SELECT count(*) FROM mirror_pending p WHERE p.repo_id = sqlc.arg(repo_id)::bigint AND p.attempts < sqlc.arg(max_attempts)::int)::bigint AS pending,
        COALESCE(u.logical_bytes, 0)::bigint AS used_bytes
   FROM (SELECT sqlc.arg(repo_id)::bigint AS id) r
   LEFT JOIN mirror_state s ON s.repo_id = r.id

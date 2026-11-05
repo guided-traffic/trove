@@ -11,7 +11,6 @@ import (
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/mirror/discover"
-	"github.com/guided-traffic/trove/internal/proxy/upstream"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -46,21 +45,33 @@ func (e *passError) Unwrap() error { return e.err }
 // pageSize is the number of names a step of the held-names phase reads.
 const pageSize = 1000
 
-// heldCursor is the cursor of the phase that adds the names of the packages the repository holds (R-REPO-051): the engine's
-// own, stored in pass_cursor before the format's first page, never handed to a format.
-type heldCursor struct {
-	After string `json:"mirrorHeldAfter"`
-}
+// The engine's own cursors of the phase that adds the names of the packages the repository holds (R-REPO-051), stored in
+// pass_cursor before the format's first page and never handed to a format: {"mirrorHeldAfter": <last name>} while the held
+// names are paged, {"mirrorHeldDone": true} once they are, until the first page of the format replaces it (Q-REPO-186). An
+// empty cursor is a phase that has not begun.
+const (
+	heldAfterKey = "mirrorHeldAfter"
+	heldDoneKey  = "mirrorHeldDone"
+)
 
-func parseHeld(c json.RawMessage) (heldCursor, bool) {
-	var h heldCursor
-	if len(c) == 0 || json.Unmarshal(c, &h) != nil || !bytes.Contains(c, []byte("mirrorHeldAfter")) {
-		return heldCursor{}, false
+// parseEngineCursor reads an engine cursor by its structure: an object with exactly one member, one of the two keys above with
+// a value of its type. Anything else is a cursor of the format.
+func parseEngineCursor(c json.RawMessage) (after string, done, ok bool) {
+	var m map[string]json.RawMessage
+	if len(c) == 0 || json.Unmarshal(c, &m) != nil || len(m) != 1 {
+		return "", false, false
 	}
-	return h, true
+	if v, has := m[heldAfterKey]; has && json.Unmarshal(v, &after) == nil {
+		return after, false, true
+	}
+	if v, has := m[heldDoneKey]; has && json.Unmarshal(v, &done) == nil && done {
+		return "", true, true
+	}
+	return "", false, false
 }
 
-// discover adds names to the pending table until 10,000 are pending or the discovery has ended (R-REPO-053 step 2).
+// discover adds names to the pending table until 10,000 rows are pending or the discovery has ended (R-REPO-053 step 2). A
+// full pass first adds the exact include names and pages the held names, then asks the format for its pages.
 func (p *pass) discover(ctx context.Context) error {
 	if p.method == "" {
 		if err := p.chooseMethod(ctx); err != nil || p.isHalted() {
@@ -72,15 +83,23 @@ func (p *pass) discover(ctx context.Context) error {
 		return &passError{code: CodeInternal, err: err}
 	}
 	cursor := p.state.PassCursor
-	held, inHeld := parseHeld(cursor)
-	heldPhase := p.kind == discover.PassFull && (len(cursor) == 0 || inHeld)
+	after, heldDone, engine := parseEngineCursor(cursor)
+	held := p.kind == discover.PassFull && (len(cursor) == 0 || (engine && !heldDone))
+	first := len(cursor) == 0
+	if engine {
+		cursor = nil
+	}
 	for pending < MaxPending && !p.done && !p.isHalted() {
+		// The repository may have been paused, switched or taken offline since the last page (R-REPO-053 stops).
+		if p.checkStop(ctx) {
+			break
+		}
 		var added int64
-		if heldPhase {
-			added, heldPhase, held, err = p.heldStep(ctx, held, len(cursor) == 0)
-			cursor = nil
-			if heldPhase {
-				cursor = mustJSON(held)
+		if held {
+			added, held, after, err = p.heldStep(ctx, after, first)
+			first = false
+			if !held {
+				cursor = nil
 			}
 		} else {
 			added, cursor, err = p.pageStep(ctx, pending, cursor)
@@ -94,31 +113,34 @@ func (p *pass) discover(ctx context.Context) error {
 }
 
 // heldStep adds the next names of the packages the repository holds to the pending table, after the exact names of the
-// include patterns on the first step. more is false when the held names are done. The step's position is stored in
-// pass_cursor in the same statement.
-func (p *pass) heldStep(ctx context.Context, after heldCursor, first bool) (added int64, more bool, next heldCursor, err error) {
+// include patterns on the first step. more is false when the held names are done. The position, or the end of the phase, is
+// stored in pass_cursor in the same statement.
+func (p *pass) heldStep(ctx context.Context, after string, first bool) (added int64, more bool, next string, err error) {
 	repo, _ := p.current()
 	var names []string
 	if first {
 		names = p.exactIncludes(repo)
 	}
-	rows, err := p.e.o.Store.HeldNames(ctx, p.id, after.After, pageSize)
+	rows, err := p.e.o.Store.HeldNames(ctx, p.id, after, pageSize)
 	if err != nil {
 		return 0, false, after, &passError{code: CodeInternal, err: err}
 	}
 	next = after
 	if len(rows) > 0 {
-		next = heldCursor{After: rows[len(rows)-1]}
+		next = rows[len(rows)-1]
 	}
 	more = len(rows) == pageSize
+	admits := p.admitFn()
 	for _, n := range rows {
-		if p.admits(n) {
+		if admits(n) {
 			names = append(names, n)
 		}
 	}
 	progress := Names{Names: fitNames(names), SetProgress: true, Done: false}
 	if more {
-		progress.Cursor = mustJSON(next)
+		progress.Cursor = mustJSON(map[string]string{heldAfterKey: next})
+	} else {
+		progress.Cursor = mustJSON(map[string]bool{heldDoneKey: true})
 	}
 	added, err = p.e.o.Store.AddNames(ctx, p.fence, progress)
 	if err != nil {
@@ -139,12 +161,13 @@ func (p *pass) exactIncludes(repo repository.Repository) []string {
 		return nil
 	}
 	var out []string
+	admits := p.admitFn()
 	for _, pat := range include {
 		prefix, wildcard := discover.LiteralPrefix(pat)
 		if wildcard || prefix == "" {
 			continue
 		}
-		if n, ok := p.e.o.NormalizeName(repo.Format, prefix); ok && p.admits(n) {
+		if n, ok := p.e.o.NormalizeName(repo.Format, prefix); ok && admits(n) {
 			out = append(out, n)
 		}
 	}
@@ -158,18 +181,19 @@ func (p *pass) pageStep(ctx context.Context, pending int64, cursor json.RawMessa
 	if perr != nil {
 		return 0, cursor, &passError{code: CodeInternal, err: perr}
 	}
-	if _, inHeld := parseHeld(cursor); inHeld {
+	if _, _, engine := parseEngineCursor(cursor); engine {
 		cursor = nil
 	}
+	admits := p.admitFn()
 	rq := discover.PageRequest{
 		Method: p.method, Kind: p.kind, Cursor: cursor, Limit: int(MaxPending - pending),
-		Scope: discover.Scope{Include: include, Exclude: exclude, Admits: p.admits},
+		Scope: discover.Scope{Include: include, Exclude: exclude, Admits: admits},
 	}
 	if p.kind == discover.PassIncremental {
 		rq.Since = p.state.FeedCursor
 	}
 	var page discover.Page
-	err = p.call(ctx, func(c context.Context) (e error) {
+	err = p.callDiscovery(ctx, func(c context.Context) (e error) {
 		page, e = p.lister.MirrorNames(c, p.up, rq)
 		return e
 	})
@@ -183,11 +207,13 @@ func (p *pass) pageStep(ctx context.Context, pending int64, cursor json.RawMessa
 		return 0, cursor, &passError{code: CodeDiscoveryStalled, err: fmt.Errorf("the %s method returned a page without names or progress", p.method)}
 	}
 	for _, name := range page.Removed {
-		p.refresh(ctx, name)
+		if admits(name) {
+			p.refresh(ctx, name)
+		}
 	}
 	names := make([]string, 0, len(page.Names))
 	for _, n := range page.Names {
-		if p.admits(n) {
+		if admits(n) {
 			names = append(names, n)
 		}
 	}
@@ -196,6 +222,9 @@ func (p *pass) pageStep(ctx context.Context, pending int64, cursor json.RawMessa
 		Truncated: page.Truncated, Note: trimNote(page.Note),
 	}
 	if added, err = p.e.o.Store.AddNames(ctx, p.fence, n); err != nil {
+		if errors.Is(err, ErrCursorTooLarge) {
+			return 0, cursor, &passError{code: CodeCursorTooLarge, err: err}
+		}
 		p.fatal(err)
 		return 0, cursor, nil
 	}
@@ -229,7 +258,7 @@ func (p *pass) discoveryError(err error) error {
 // offered for `auto` (R-REPO-051); the pass is full unless its method is the feed of the last complete pass.
 func (p *pass) chooseMethod(ctx context.Context) error {
 	var offered []discover.Method
-	err := p.call(ctx, func(c context.Context) (e error) {
+	err := p.callDiscovery(ctx, func(c context.Context) (e error) {
 		offered, e = p.lister.MirrorMethods(c, p.up)
 		return e
 	})
@@ -263,7 +292,7 @@ func (p *pass) chooseMethod(ctx context.Context) error {
 
 // refresh refreshes the documents of a package the upstream reports as deleted and stores nothing (R-REPO-051, Q-REPO-144).
 func (p *pass) refresh(ctx context.Context, name string) {
-	err := p.call(ctx, func(c context.Context) error {
+	err := p.callDiscovery(ctx, func(c context.Context) error {
 		_, e := p.lister.MirrorPlan(c, p.up, name)
 		return e
 	})
@@ -297,11 +326,11 @@ func mustJSON(v any) json.RawMessage {
 	return b
 }
 
-// rateLimitStatus returns the HTTP status of a rate-limit error, 0 when it does not say.
+// rateLimitStatus returns the HTTP status of a rate-limit error that says it (HTTPStatus), 0 when it does not.
 func rateLimitStatus(rl discover.RateLimited) int {
-	var e *upstream.RateLimitError
-	if errors.As(rl, &e) {
-		return e.Status
+	var s interface{ HTTPStatus() int }
+	if errors.As(rl, &s) {
+		return s.HTTPStatus()
 	}
 	return 0
 }

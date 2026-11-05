@@ -302,6 +302,9 @@ func TestModuleBans(t *testing.T) {
 	})
 	t.Run("R-ARCH-002 the generic layer reaches storage only through the item store", func(t *testing.T) {
 		wantEdge(t, CheckModuleBans(mod, []Package{pkg("internal/files", "internal/blob")}), "R-ARCH-002", "internal/files", "internal/blob")
+		wantEdge(t, CheckModuleBans(mod, []Package{pkg("internal/mirror", "internal/proxy")}), "R-ARCH-002", "internal/mirror", "internal/proxy")
+		wantEdge(t, CheckModuleBans(mod, []Package{pkg("internal/mirror", "internal/proxy/upstream")}), "R-ARCH-002", "internal/mirror", "internal/proxy/upstream")
+		wantClean(t, CheckModuleBans(mod, []Package{pkg("internal/mirror", "internal/repository", "internal/jobs", "internal/mirror/discover")}))
 		wantEdge(t, CheckModuleBans(mod, []Package{pkg("internal/files", "internal/meta/postgres/q")}), "R-ARCH-002", "internal/files", "internal/meta/postgres/q")
 		wantClean(t, CheckModuleBans(mod, []Package{pkg("internal/files", "internal/items", "internal/meta", "internal/authz", "internal/repository")}))
 	})

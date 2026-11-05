@@ -23,11 +23,14 @@ const (
 	// KindPass is one attempt of a pass of one repository: queue QueueMirror, dedup key PassKey (exclusive), MaxAttempts
 	// 1 (a failed attempt is continued by the dispatch after the back-off, R-REPO-053), no timeout.
 	KindPass = "mirror-pass"
-	// KindDispatch is the periodic task that enqueues the due passes: queue QueueMirror, exclusive under its name, every
+	// KindDispatch is the periodic task that enqueues the due passes: queue QueueDispatch, exclusive under its name, every
 	// minute.
 	KindDispatch = "mirror-dispatch"
-	// QueueMirror is the queue of both kinds; its slots per claiming process are jobs.workers.mirror, and a pool of its
-	// own can claim it alone (ha-and-helm.md R-HA-062).
+	// QueueDispatch is the queue of the dispatch: the maintenance queue, so that hours-long passes holding the slots of the
+	// queue mirror cannot starve the one-minute task that enqueues the next passes (Q-ARCH-321).
+	QueueDispatch = "maintenance"
+	// QueueMirror is the queue of the passes; its slots per claiming process are jobs.workers.mirror, and a pool of its own can
+	// claim it alone (ha-and-helm.md R-HA-062).
 	QueueMirror = "mirror"
 )
 

@@ -97,8 +97,10 @@ WITH old AS (
            pass_bytes_stored = CASE WHEN old.fresh THEN 0 ELSE s.pass_bytes_stored END,
            pass_discovery_complete = CASE WHEN old.fresh THEN true ELSE s.pass_discovery_complete END,
            pass_discovery_note = CASE WHEN old.fresh THEN NULL ELSE s.pass_discovery_note END,
-           pass_requested_at = NULL, pass_requested_by = NULL, pass_requested_full = false,
-           rate_limited_until = NULL, updated_at = now()
+           pass_requested_at = CASE WHEN old.fresh THEN NULL ELSE s.pass_requested_at END,
+           pass_requested_by = CASE WHEN old.fresh THEN NULL ELSE s.pass_requested_by END,
+           pass_requested_full = CASE WHEN old.fresh THEN false ELSE s.pass_requested_full END,
+           updated_at = now()
       FROM old
      WHERE s.repo_id = old.repo_id
  RETURNING 1
@@ -123,8 +125,9 @@ type MirrorClaimParams struct {
 
 // R-REPO-053 step 1: one statement makes the job the owner of the repository's pass. It starts a new pass when none is in
 // progress (the kind is the caller's decision, 'full' where a request asked for it) and takes over the one in progress
-// otherwise; the pending rows of a new pass get their attempts back; the request is consumed. claimed is 0 for a repository
-// without a row.
+// otherwise; the pending rows of a new pass get their attempts back; a new pass consumes the request, a pass that is taken
+// over leaves it for the pass after it (a full request survives). The rate-limit wait is not touched: a wait that lies ahead
+// is the end's to clear. claimed is 0 for a repository without a row.
 func (q *Queries) MirrorClaim(ctx context.Context, arg MirrorClaimParams) (int64, error) {
 	row := q.db.QueryRow(ctx, mirrorClaim,
 		arg.RepoID,
@@ -156,6 +159,19 @@ func (q *Queries) MirrorClearInactivePasses(ctx context.Context, leftIds []int64
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const mirrorCursorLength = `-- name: MirrorCursorLength :one
+SELECT octet_length($1::text::jsonb::text)::int AS n
+`
+
+// The length of a cursor as the column holds it: the text of the jsonb value, which PostgreSQL prints with a space after
+// every colon and comma, so it is longer than the compact JSON the format wrote (the CHECK of the columns, R-REPO-053).
+func (q *Queries) MirrorCursorLength(ctx context.Context, cursorJson string) (int32, error) {
+	row := q.db.QueryRow(ctx, mirrorCursorLength, cursorJson)
+	var n int32
+	err := row.Scan(&n)
+	return n, err
 }
 
 const mirrorDefer = `-- name: MirrorDefer :execrows
@@ -215,6 +231,46 @@ func (q *Queries) MirrorDeleteInactivePending(ctx context.Context, leftIds []int
 	return result.RowsAffected(), nil
 }
 
+const mirrorDropPending = `-- name: MirrorDropPending :one
+WITH f AS (
+    SELECT repo_id FROM mirror_state
+     WHERE repo_id = $1::bigint
+       AND pass_job_id = $2::text::uuid AND pass_holder = $3::text::uuid
+       FOR UPDATE
+), d AS (
+    DELETE FROM mirror_pending p USING f
+     WHERE p.repo_id = f.repo_id AND p.name = ANY($4::text[])
+ RETURNING 1
+)
+SELECT (SELECT count(*) FROM f)::bigint AS fenced, (SELECT count(*) FROM d)::bigint AS dropped
+`
+
+type MirrorDropPendingParams struct {
+	RepoID int64
+	JobID  string
+	Holder string
+	Names  []string
+}
+
+type MirrorDropPendingRow struct {
+	Fenced  int64
+	Dropped int64
+}
+
+// Deletes pending rows by name, fenced: the names that the current patterns or claims refuse (R-REPO-051). The counters do not
+// move.
+func (q *Queries) MirrorDropPending(ctx context.Context, arg MirrorDropPendingParams) (MirrorDropPendingRow, error) {
+	row := q.db.QueryRow(ctx, mirrorDropPending,
+		arg.RepoID,
+		arg.JobID,
+		arg.Holder,
+		arg.Names,
+	)
+	var i MirrorDropPendingRow
+	err := row.Scan(&i.Fenced, &i.Dropped)
+	return i, err
+}
+
 const mirrorDue = `-- name: MirrorDue :many
 SELECT repo_id
   FROM mirror_state
@@ -266,28 +322,30 @@ WITH f AS (
            feed_method = CASE WHEN $6::boolean THEN s.pass_method ELSE s.feed_method END,
            last_full_pass_at = CASE WHEN $6::boolean AND s.pass_kind = 'full'
                                     THEN to_timestamp($7::bigint / 1000000.0) ELSE s.last_full_pass_at END,
-           patterns_fingerprint = CASE WHEN $6::boolean THEN $8::bytea ELSE s.patterns_fingerprint END,
-           pass_started_at = CASE WHEN $9::boolean THEN s.pass_started_at ELSE NULL END,
-           pass_kind = CASE WHEN $9::boolean THEN s.pass_kind ELSE NULL END,
-           pass_method = CASE WHEN $9::boolean THEN s.pass_method ELSE NULL END,
-           pass_job_id = CASE WHEN $9::boolean THEN s.pass_job_id ELSE NULL END,
-           pass_holder = CASE WHEN $9::boolean THEN s.pass_holder ELSE NULL END,
-           pass_cursor = CASE WHEN $9::boolean THEN s.pass_cursor ELSE NULL END,
-           pass_discovery_done = CASE WHEN $9::boolean THEN s.pass_discovery_done ELSE false END,
-           pass_names = CASE WHEN $9::boolean THEN s.pass_names ELSE 0 END,
-           pass_packages_done = CASE WHEN $9::boolean THEN s.pass_packages_done ELSE 0 END,
-           pass_packages_failed = CASE WHEN $9::boolean THEN s.pass_packages_failed ELSE 0 END,
-           pass_items_stored = CASE WHEN $9::boolean THEN s.pass_items_stored ELSE 0 END,
-           pass_bytes_stored = CASE WHEN $9::boolean THEN s.pass_bytes_stored ELSE 0 END,
-           pass_discovery_complete = CASE WHEN $9::boolean THEN s.pass_discovery_complete ELSE true END,
-           pass_discovery_note = CASE WHEN $9::boolean THEN s.pass_discovery_note ELSE NULL END,
-           consecutive_failures = CASE WHEN $10::boolean THEN 0 ELSE s.consecutive_failures END,
+           last_complete_pass_at = CASE WHEN $8::boolean
+                                        THEN to_timestamp($7::bigint / 1000000.0) ELSE s.last_complete_pass_at END,
+           patterns_fingerprint = CASE WHEN $6::boolean THEN $9::bytea ELSE s.patterns_fingerprint END,
+           pass_started_at = CASE WHEN $10::boolean THEN s.pass_started_at ELSE NULL END,
+           pass_kind = CASE WHEN $10::boolean THEN s.pass_kind ELSE NULL END,
+           pass_method = CASE WHEN $10::boolean THEN s.pass_method ELSE NULL END,
+           pass_job_id = CASE WHEN $10::boolean THEN s.pass_job_id ELSE NULL END,
+           pass_holder = CASE WHEN $10::boolean THEN s.pass_holder ELSE NULL END,
+           pass_cursor = CASE WHEN $10::boolean THEN s.pass_cursor ELSE NULL END,
+           pass_discovery_done = CASE WHEN $10::boolean THEN s.pass_discovery_done ELSE false END,
+           pass_names = CASE WHEN $10::boolean THEN s.pass_names ELSE 0 END,
+           pass_packages_done = CASE WHEN $10::boolean THEN s.pass_packages_done ELSE 0 END,
+           pass_packages_failed = CASE WHEN $10::boolean THEN s.pass_packages_failed ELSE 0 END,
+           pass_items_stored = CASE WHEN $10::boolean THEN s.pass_items_stored ELSE 0 END,
+           pass_bytes_stored = CASE WHEN $10::boolean THEN s.pass_bytes_stored ELSE 0 END,
+           pass_discovery_complete = CASE WHEN $10::boolean THEN s.pass_discovery_complete ELSE true END,
+           pass_discovery_note = CASE WHEN $10::boolean THEN s.pass_discovery_note ELSE NULL END,
+           consecutive_failures = CASE WHEN $11::boolean THEN 0 ELSE s.consecutive_failures END,
            rate_limited_until = NULL,
-           next_pass_at = to_timestamp($11::bigint / 1000000.0),
-           bound_reached = CASE WHEN $12::text <> '' THEN $12::text
-                                WHEN $13::boolean THEN NULL ELSE s.bound_reached END,
-           bound_reached_at = CASE WHEN $12::text <> '' THEN COALESCE(s.bound_reached_at, to_timestamp($7::bigint / 1000000.0))
-                                   WHEN $13::boolean THEN NULL ELSE s.bound_reached_at END,
+           next_pass_at = to_timestamp($12::bigint / 1000000.0),
+           bound_reached = CASE WHEN $13::text <> '' THEN $13::text
+                                WHEN $14::boolean THEN NULL ELSE s.bound_reached END,
+           bound_reached_at = CASE WHEN $13::text <> '' THEN COALESCE(s.bound_reached_at, to_timestamp($7::bigint / 1000000.0))
+                                   WHEN $14::boolean THEN NULL ELSE s.bound_reached_at END,
            updated_at = now()
       FROM f
      WHERE s.repo_id = f.repo_id
@@ -304,6 +362,7 @@ type MirrorEndPassParams struct {
 	LastPass      string
 	Advance       bool
 	NowUs         int64
+	Completed     bool
 	Fingerprint   []byte
 	KeepPass      bool
 	ResetFailures bool
@@ -329,6 +388,7 @@ func (q *Queries) MirrorEndPass(ctx context.Context, arg MirrorEndPassParams) (M
 		arg.LastPass,
 		arg.Advance,
 		arg.NowUs,
+		arg.Completed,
 		arg.Fingerprint,
 		arg.KeepPass,
 		arg.ResetFailures,
@@ -426,24 +486,32 @@ func (q *Queries) MirrorFailureWrite(ctx context.Context, arg MirrorFailureWrite
 
 const mirrorGauges = `-- name: MirrorGauges :many
 SELECT r.key,
-       (SELECT count(*) FROM mirror_pending p WHERE p.repo_id = s.repo_id)::bigint AS pending,
-       CASE WHEN s.last_pass->>'outcome' IN ('complete', 'partial', 'bound_reached')
-            THEN COALESCE(extract(epoch FROM (s.last_pass->>'finishedAt')::timestamptz), 0) ELSE 0 END::float8 AS last_complete_s
+       CASE WHEN s.pass_started_at IS NULL THEN 0
+            ELSE (SELECT count(*) FROM mirror_pending p WHERE p.repo_id = s.repo_id AND p.attempts < $1::int)
+       END::bigint AS pending,
+       COALESCE(extract(epoch FROM s.last_complete_pass_at), 0)::float8 AS last_complete_s,
+       s.consecutive_failures::int AS consecutive_failures,
+       extract(epoch FROM CASE WHEN s.pass_started_at IS NULL THEN COALESCE(s.next_pass_at, s.updated_at)
+                               ELSE greatest(COALESCE(s.next_pass_at, s.updated_at), s.updated_at) END)::float8 AS next_pass_s
   FROM mirror_state s
   JOIN repositories r ON r.id = s.repo_id
  ORDER BY r.key
 `
 
 type MirrorGaugesRow struct {
-	Key           string
-	Pending       int64
-	LastCompleteS float64
+	Key                 string
+	Pending             int64
+	LastCompleteS       float64
+	ConsecutiveFailures int32
+	NextPassS           float64
 }
 
-// The three gauges that every process claiming the queue mirror exports (R-REPO-057): the pending names, and the end of the
-// last pass that ended complete, partial or at its bound (0 when there is none).
-func (q *Queries) MirrorGauges(ctx context.Context) ([]MirrorGaugesRow, error) {
-	rows, err := q.db.Query(ctx, mirrorGauges)
+// The gauges that every process exports (R-REPO-057): the pending names of the pass in progress (the names a pass still takes,
+// attempts below the limit), the end of the last pass that ended complete, partial or at its bound (0 when none did), the
+// failures in a row, and when the mirror next acts: the time a due pass is due, or for a pass in progress the later of that and
+// its last write (a pass that is worked on moves it forward, one that nobody runs does not).
+func (q *Queries) MirrorGauges(ctx context.Context, maxAttempts int32) ([]MirrorGaugesRow, error) {
+	rows, err := q.db.Query(ctx, mirrorGauges, maxAttempts)
 	if err != nil {
 		return nil, err
 	}
@@ -451,7 +519,13 @@ func (q *Queries) MirrorGauges(ctx context.Context) ([]MirrorGaugesRow, error) {
 	items := []MirrorGaugesRow{}
 	for rows.Next() {
 		var i MirrorGaugesRow
-		if err := rows.Scan(&i.Key, &i.Pending, &i.LastCompleteS); err != nil {
+		if err := rows.Scan(
+			&i.Key,
+			&i.Pending,
+			&i.LastCompleteS,
+			&i.ConsecutiveFailures,
+			&i.NextPassS,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -465,8 +539,8 @@ func (q *Queries) MirrorGauges(ctx context.Context) ([]MirrorGaugesRow, error) {
 const mirrorHeldNames = `-- name: MirrorHeldNames :many
 SELECT name
   FROM packages
- WHERE repo_id = $1::bigint AND name COLLATE "C" > $2::text COLLATE "C"
- ORDER BY name COLLATE "C"
+ WHERE repo_id = $1::bigint AND name > $2::text
+ ORDER BY name
  LIMIT $3::int
 `
 
@@ -643,17 +717,13 @@ func (q *Queries) MirrorPackageKept(ctx context.Context, arg MirrorPackageKeptPa
 const mirrorPendingCount = `-- name: MirrorPendingCount :one
 SELECT count(*)::bigint AS n
   FROM mirror_pending
- WHERE repo_id = $1::bigint AND attempts < $2::int
+ WHERE repo_id = $1::bigint
 `
 
-type MirrorPendingCountParams struct {
-	RepoID      int64
-	MaxAttempts int32
-}
-
-// The pending names that a pass still takes: the ones left after the attempts do not count (R-REPO-053 step 3).
-func (q *Queries) MirrorPendingCount(ctx context.Context, arg MirrorPendingCountParams) (int64, error) {
-	row := q.db.QueryRow(ctx, mirrorPendingCount, arg.RepoID, arg.MaxAttempts)
+// Every row of the repository, the ones left after their attempts included: the bound of 10,000 counts the table (R-REPO-053
+// step 2).
+func (q *Queries) MirrorPendingCount(ctx context.Context, repoID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, mirrorPendingCount, repoID)
 	var n int64
 	err := row.Scan(&n)
 	return n, err
@@ -734,16 +804,18 @@ func (q *Queries) MirrorPendingNextWake(ctx context.Context, arg MirrorPendingNe
 
 const mirrorRecordRateLimit = `-- name: MirrorRecordRateLimit :execrows
 UPDATE mirror_state
-   SET rate_limit_waits = rate_limit_waits + 1,
-       rate_limit_wait_seconds = rate_limit_wait_seconds + $1::bigint,
-       last_rate_limit_at = to_timestamp($2::bigint / 1000000.0),
-       last_rate_limit_status = $3::int,
+   SET rate_limited_until = to_timestamp($1::bigint / 1000000.0),
+       rate_limit_waits = rate_limit_waits + 1,
+       rate_limit_wait_seconds = rate_limit_wait_seconds + $2::bigint,
+       last_rate_limit_at = to_timestamp($3::bigint / 1000000.0),
+       last_rate_limit_status = $4::int,
        updated_at = now()
- WHERE repo_id = $4::bigint
-   AND pass_job_id = $5::text::uuid AND pass_holder = $6::text::uuid
+ WHERE repo_id = $5::bigint
+   AND pass_job_id = $6::text::uuid AND pass_holder = $7::text::uuid
 `
 
 type MirrorRecordRateLimitParams struct {
+	UntilUs     int64
 	WaitSeconds int64
 	NowUs       int64
 	Status      int32
@@ -752,9 +824,11 @@ type MirrorRecordRateLimitParams struct {
 	Holder      string
 }
 
-// One wait of the pass (R-REPO-054, R-REPO-056).
+// One wait of the pass (R-REPO-054, R-REPO-056); its end is kept whatever its length, so that a job that is released in the
+// middle of it does not resume at once in another process.
 func (q *Queries) MirrorRecordRateLimit(ctx context.Context, arg MirrorRecordRateLimitParams) (int64, error) {
 	result, err := q.db.Exec(ctx, mirrorRecordRateLimit,
+		arg.UntilUs,
 		arg.WaitSeconds,
 		arg.NowUs,
 		arg.Status,

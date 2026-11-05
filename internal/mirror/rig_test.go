@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -191,7 +192,8 @@ func (s *memStore) Claim(_ context.Context, c Claim) (bool, error) {
 	if st == nil {
 		return false, nil
 	}
-	if !st.InProgress() {
+	fresh := !st.InProgress()
+	if fresh {
 		kind := c.KindIfNew
 		if st.PassRequestedFull || c.Full {
 			kind = discover.PassFull
@@ -203,7 +205,9 @@ func (s *memStore) Claim(_ context.Context, c Claim) (bool, error) {
 		}
 	}
 	st.PassJobID, st.PassHolder = c.JobID, c.Holder
-	st.PassRequestedAt, st.PassRequestedFull, st.RateLimitedUntil = time.Time{}, false, time.Time{}
+	if fresh {
+		st.PassRequestedAt, st.PassRequestedFull = time.Time{}, false
+	}
 	return true, nil
 }
 
@@ -218,20 +222,22 @@ func (s *memStore) SetMethod(_ context.Context, f Fence, m discover.Method, k di
 	return nil
 }
 
-func (s *memStore) countPending(id int64) int64 {
-	var n int64
-	for _, p := range s.pending[id] {
-		if p.attempts < MaxPackageAttempts {
-			n++
-		}
-	}
-	return n
-}
-
 func (s *memStore) PendingCount(_ context.Context, id int64) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.countPending(id), nil
+	return int64(len(s.pending[id])), nil
+}
+
+func (s *memStore) DropPending(_ context.Context, f Fence, names []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.fence(f, "drop"); err != nil {
+		return err
+	}
+	for _, n := range names {
+		delete(s.pending[f.RepoID], n)
+	}
+	return nil
 }
 
 func (s *memStore) AddNames(_ context.Context, f Fence, n Names) (int64, error) {
@@ -346,11 +352,15 @@ func (s *memStore) PackageKept(_ context.Context, f Fence, r PackageResult) erro
 	return nil
 }
 
-func (s *memStore) RecordRateLimit(_ context.Context, f Fence, _ time.Time, _ time.Duration, _ int) error {
+func (s *memStore) RecordRateLimit(_ context.Context, f Fence, now time.Time, wait time.Duration, _ int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.fence(f, "ratelimit")
-	return err
+	st, err := s.fence(f, "ratelimit")
+	if err != nil {
+		return err
+	}
+	st.RateLimitedUntil = now.Add(wait)
+	return nil
 }
 
 func (s *memStore) Defer(_ context.Context, f Fence, until time.Time) error {
@@ -521,6 +531,9 @@ type fakeLister struct {
 	namesErr func(call int) error
 	planErr  func(name string, call int) error
 	methodsE error
+	// methodsFn returns the error of the n-th call of MirrorMethods.
+	methodsFn    func(call int) error
+	methodsCalls int
 
 	namesCalls int
 	requests   []discover.PageRequest
@@ -531,6 +544,12 @@ type fakeLister struct {
 func (l *fakeLister) MirrorMethods(context.Context, discover.Upstream) ([]discover.Method, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.methodsCalls++
+	if l.methodsFn != nil {
+		if err := l.methodsFn(l.methodsCalls); err != nil {
+			return nil, err
+		}
+	}
 	return l.methods, l.methodsE
 }
 
@@ -583,9 +602,10 @@ func (l *fakeLister) MirrorHosts(*url.URL) []string { return nil }
 
 // fakeHost is a scripted Host.
 type fakeHost struct {
-	lister  *fakeLister
-	noLists bool
-	admit   func(string) bool
+	lister   *fakeLister
+	noLists  bool
+	readyErr error
+	admit    func(string) bool
 	// fill returns the result of the n-th fill of a path (from 1); nil stores the item with its size.
 	fill func(item discover.Item, call int) (FillResult, error)
 
@@ -597,7 +617,7 @@ type fakeHost struct {
 	ceilings []int
 }
 
-func (h *fakeHost) Ready(context.Context) error { return nil }
+func (h *fakeHost) Ready(context.Context) error { return h.readyErr }
 
 func (h *fakeHost) Lister(string) (discover.Lister, bool) {
 	if h.noLists {
@@ -747,6 +767,9 @@ type rig struct {
 
 const rigRepoID = 7
 
+// rigVersion gives every built repository its own config version, as every write of a document does.
+var rigVersion atomic.Int64
+
 // mirrorDoc is the document of a mirrored remote of format npm; extra members of remote.mirror and of the document are
 // merged in by the test.
 func mirrorDoc(t *testing.T, include []string, mirrorSettings string) []byte {
@@ -762,7 +785,7 @@ func mirrorDoc(t *testing.T, include []string, mirrorSettings string) []byte {
 
 func buildRepo(t *testing.T, key string, id int64, doc []byte) repository.Repository {
 	t.Helper()
-	r, err := repository.Build(id, key, repository.Remote, "npm", doc, nil)
+	r, err := repository.Build(id, rigVersion.Add(1), key, repository.Remote, "npm", doc, nil)
 	if err != nil {
 		t.Fatalf("repository: %v", err)
 	}
@@ -794,8 +817,13 @@ func newRig(t *testing.T, include []string, mirrorSettings string) *rig {
 	return g
 }
 
+// testShare is the background share of R-REPO-055 for the tests: min(concurrency, max(1, budget / 4)). The composition root hands
+// the engine proxy.BackgroundShare, which owns the formula; the engine imports no proxy package (Q-ARCH-322).
+func testShare(budget, concurrency int) int { return max(1, min(concurrency, max(1, budget/4))) }
+
 func (g *rig) newEngine(holder string) *Engine {
 	e, err := New(Options{
+		Share: testShare,
 		Store: g.store, Repos: g.repos, Host: g.host, Queue: g.queue, Audit: g.rec, Metrics: g.met, Holder: holder, Clock: g.clock, Jitter: fixedJitter(0.5),
 		NormalizeName: func(_, n string) (string, bool) { return strings.ToLower(n), true },
 	})

@@ -106,6 +106,10 @@ func moduleBans() []moduleBan {
 			why: "the host of the format contract bridges to the domain and shares conversions through internal/api/edge; it never imports the management API (Q-ARCH-205)",
 		},
 		{
+			rule: "R-ARCH-002", from: "internal/mirror", forbidden: []string{"internal/proxy"},
+			why: "the mirror engine reaches the remote engine only through mirror.Host and takes the background share from its options; the composition root binds proxy.BackgroundShare (Q-ARCH-322)",
+		},
+		{
 			rule: "R-ARCH-002", from: "internal/formathost", forbidden: []string{"internal/formatdata"},
 			why: "the data port of a format is bound by the composition root; the host reaches it only through Host.FormatData (Q-ARCH-193)",
 		},

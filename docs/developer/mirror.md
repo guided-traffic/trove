@@ -148,7 +148,7 @@ PostgreSQL through `mirror.Store`.
 | File | Responsibility |
 |---|---|
 | [mirror.go](../../internal/mirror/mirror.go), [host.go](../../internal/mirror/host.go) | the names of the kinds and the queue, `PassKey`, `PassArgs`; the seam `Host`, `Pass`, `FillResult`, `ErrPreempted`, `*WaitError` (the contract, C1 implements it) |
-| [engine.go](../../internal/mirror/engine.go) | `Options`, `New`, `Dispatch` (the task `mirror-dispatch`), the summary shape, `background` (the share B of R-REPO-055 through `proxy.BackgroundShare`) |
+| [engine.go](../../internal/mirror/engine.go) | `Options`, `New`, `Dispatch` (the task `mirror-dispatch`), the summary shape, `background` (the share B of R-REPO-055 through `Options.Share`, which the composition root binds to `proxy.BackgroundShare`; the engine imports no proxy package, Q-ARCH-322) |
 | [pass.go](../../internal/mirror/pass.go) | `RunPass` (the job `mirror-pass`): `begin` (the checks before a claim, the claim), `run`, `prepare`, `execute`, the halts (`setHalt`, `checkStop`, `applySnapshot`) |
 | [discovery.go](../../internal/mirror/discovery.go) | the discovery step: the method, the held and exact names of a full pass, a page of names and its cursor, the codes of a failed attempt |
 | [fill.go](../../internal/mirror/fill.go) | the fill step: the feeder, the package workers, the plan and the artifacts of a package, what an error of a request means |
@@ -158,42 +158,48 @@ PostgreSQL through `mirror.Store`.
 | [end.go](../../internal/mirror/end.go) | the ends of an attempt: complete, partial, bound reached, offline, stopped, deferred, fence lost, failed; the summary; `sanitize` |
 | [policy.go](../../internal/mirror/policy.go) | the pure rules: `Clock`, `Jitter`, the back-offs, `DecideKind`, `FinalKind`, `SelectItems`, `Fingerprint` |
 | [store.go](../../internal/mirror/store.go), [store_pg.go](../../internal/mirror/store_pg.go) | the port `Store` and its PostgreSQL implementation `PGStore` over [mirror.sql](../../internal/meta/postgres/queries/mirror.sql); `ClearAfterRestore` |
-| [metrics.go](../../internal/mirror/metrics.go) | the ten families of R-REPO-057 and the database gauge source |
+| [metrics.go](../../internal/mirror/metrics.go) | the twelve families of R-REPO-057 and the database gauge source (every role) |
 | [events_mirror.go](../../internal/audit/events_mirror.go) | the four asynchronous event types (`mirror.pass_requested` is the run operation's) |
 | [wire_mirror.go](../../internal/app/wire_mirror.go), [wire_mirror_host.go](../../internal/app/wire_mirror_host.go) | the area `mirror` (roles `worker`, `all`), the kinds and the task, `MirrorOverride`; the host placeholder that C1's file replaces |
 
 ### How a pass runs
 
-1. **The dispatch** (every minute, exclusive): lists the snapshot, ensures a `mirror_state` row for every remote in mode mirror,
+1. **The dispatch** (every minute, exclusive, on the queue `maintenance`, Q-ARCH-321; it fails with the cause when `Host.Ready` errs, Q-ARCH-320): lists the snapshot, ensures a `mirror_state` row for every remote in mode mirror,
    clears the pass and the pending names of every remote repository of the snapshot that left the mode (Q-REPO-162; an empty snapshot clears nothing), reads the rows that are due
    (`next_pass_at` passed or null, or a request, and no `rate_limited_until` ahead) and enqueues `mirror-pass` under `PassKey` for
    each that is in service, not paused and has a lister (`Host.Lister`).
-2. **The claim** (`begin`): a job that finds the repository gone, no longer a mirror, paused or disabled does nothing (its result
-   says `skipped`); otherwise one statement makes it the owner of the pass (the fence, [the security page](../security/mirror.md)).
+2. **The claim** (`begin`): a job fails with the cause when `Host.Ready` errs; one that finds the repository gone, no longer a mirror,
+   paused or disabled, its document not loading (`invalid_document`) or the upstream's wait ahead (`rate_limited`, Q-REPO-187) does
+   nothing (its result says `skipped`); otherwise one statement makes it the owner of the pass (the fence, [the security page](../security/mirror.md)).
    The kind of a new pass is `DecideKind`; the method may raise it to full (`FinalKind`, Q-REPO-156).
 3. **The checks**: offline mode or the global switch end the attempt `offline`; a bound that was set and still holds (the counter at
    `maxBytes`) ends it `bound_reached` without any request.
-4. **Discovery**: while fewer than 10,000 names are pending, one page: a full pass first adds the exact include names and pages the held
-   names (Q-REPO-158), then the format's pages; a page's names and its cursor are one statement; a deleted name refreshes its document
+4. **Discovery**: while fewer than 10,000 rows are pending (every row counts, Q-REPO-190), one page, after a read of the snapshot (a pause
+   or offline mode takes effect before the next page); a request that a client pre-empted is sent again after five seconds
+   (Q-REPO-184); the pending names the current admission refuses are dropped at the claim (Q-REPO-188); a full pass first adds the exact include names and pages the held
+   names (Q-REPO-158, the end of the phase is the cursor `{"mirrorHeldDone": true}`, Q-REPO-186), then the format's pages; a page's names and its cursor are one statement; a deleted name refreshes its document
    through the plan and stores nothing.
-5. **Fill**: the pending names in name order go to as many workers as the ceiling; a package asks its plan, applies the version bounds
-   (`SelectItems`), checks the byte bound and fills each artifact through `Host.Fill`; a finished package deletes its row and raises
-   the counters in one statement. The snapshot is read before each package: a deleted, disabled, paused, offline or switched
+5. **Fill**: the pending names in name order go to as many workers as the ceiling; a package is checked against the current admission,
+   asks its plan, applies the version bounds
+   (`SelectItems`), checks the byte bound and fills each artifact through `Host.Fill` (a `*RefusedError` is counted `refused` and skipped; a transient failure lets the other
+   artifacts go on and the package fails once, Q-REPO-185; `ErrShuttingDown` stops the pass without a write, Q-ARCH-320); a finished
+   package deletes its row and raises the counters in one statement. The snapshot is read before each package: a deleted, disabled, paused, offline or switched
    repository halts the attempt.
 6. **The end** (`finish`): one of the ends in the table below; the summary, the cursor of the last complete pass, the next pass and
    the event are written in one statement.
 
 | Ends with | When | Pass | `next_pass_at` | Event | Metric outcome |
 |---|---|---|---|---|---|
-| `complete`, `partial` | discovery ended and no name is left to take (`partial`: a package was left after three attempts) | cleared; the cursor, `last_full_pass_at` and the fingerprint advance; failures reset; the bound clears | start + `intervalSeconds`, or now | `mirror.pass_completed` | `complete`, `partial` |
+| `complete`, `partial` | discovery ended and no name is left to take (`partial`: a package was left after three attempts, or the pending table was full of such names) | cleared; `last_complete_pass_at` is set; the cursor (only if discovery ended), `last_full_pass_at` and the fingerprint advance; failures reset; the bound clears | start + `intervalSeconds`, or now | `mirror.pass_completed` | `complete`, `partial` |
 | `bound_reached` | an artifact would cross `maxBytes`, or the bound still holds at the start | cleared; the pending names stay; the cursor advances only if discovery had ended | as above | `mirror.pass_completed`, `mirror.bound_reached` once per transition | `bound_reached` |
 | `stopped` (pause, disabled) | before a package | kept | now | `mirror.pass_completed` | `stopped` |
 | `stopped` (mode change) | before a package | cleared, the pending names deleted | now | `mirror.pass_completed` | `stopped` |
 | `offline` | offline mode or the global switch | kept | now + `min(intervalSeconds, 5 min)` | `mirror.pass_completed` | `offline` |
 | deferred | a rate-limit wait over 300 s | kept; `rate_limited_until` | the end of the wait | (`mirror.rate_limited`) | `deferred` |
 | failed | a failure of the pass itself | kept; `consecutive_failures` + 1, the error recorded | now + `min(60 s x 2^(failures-1), 6 h)` +-20 % | `mirror.pass_failed` | `failed` |
+| released, shutting down | the job's context ended, or the host said `ErrShuttingDown` | not touched; the job is released | not touched | none | none |
 | fence lost | a write matched no row | not touched | not touched | none | `stopped` |
-| released, lease lost | the job's context ended | not touched | not touched | none | none |
+| lease lost | the job's context ended | not touched | not touched | none | none |
 
 ### What D and the integration wave read
 
@@ -202,8 +208,10 @@ PostgreSQL through `mirror.Store`.
   of the last attempt that ended with one of the five outcomes (Q-REPO-155); `packages` is the number of packages done.
 - **The pass in progress** is `pass_started_at IS NOT NULL`; `pass_names` counts the names inserted, `pass_packages_done`,
   `pass_packages_failed`, `pass_items_stored` and `pass_bytes_stored` what the attempts did. Pending names are the rows of
-  `mirror_pending` (`attempts < 3` are the ones a pass still takes). `pass_job_id` is the job to name in `pass.job`.
-- **`rate_limited_until`** is set by a deferred attempt and cleared by the next claim and by an end; `rate_limit_waits`,
+  `mirror_pending` (`attempts < 3` are the ones a pass still takes, `mirror.MaxPackageAttempts`: the status and the gauge count those, Q-OPS-173). `pass_job_id` is the job to name in `pass.job`.
+- **`rate_limited_until`** is set by every wait of a pass (the end of the wait), also a short one, and cleared by an end; the claim leaves it;
+  a job that starts while it lies ahead is skipped, and the run operation answers 409 `mirror_rate_limited` with `until` while it lies
+  ahead; the status shows it only then; `rate_limit_waits`,
   `rate_limit_wait_seconds`, `last_rate_limit_at` and `last_rate_limit_status` count the waits of all passes.
 - **`bound_reached`** (`bytes`) and `bound_reached_at` are set when a pass ends at the bound and cleared when a pass ends complete
   or partial.
@@ -212,11 +220,13 @@ PostgreSQL through `mirror.Store`.
 - **The job results**: `{"outcome", "kind", "method", "packages", "packagesFailed", "itemsStored", "bytesStored",
   "discoveryComplete"}` for an end, `{"deferred": "rate_limited", "until": <RFC 3339>}` for a long wait,
   `{"outcome": "stopped", "reason": "fence_lost"}`, `{"skipped": "repository_gone" | "not_mirror" | "paused"}` for a job that
-  started nothing; the dispatch's `{"repositories", "enqueued"}`. A failed attempt ends the job with the error
+  started nothing (`invalid_document` and `rate_limited` are new); the dispatch's `{"repositories", "enqueued"}`. A failed attempt ends the job with the error
   `mirror pass failed (<code>): <message>`.
 - **The codes of a failure** (`last_error_code`): `discovery_unavailable`, `discovery_failed`, `discovery_stalled`,
   `cursor_too_large`, `not_applicable`, `upstream_unavailable`, `internal`.
-- **A run request** (`pass_requested_*`) is consumed by the claim; D writes only these columns and enqueues `KindPass` under
+- **`last_complete_pass_at`** is the end of the last pass that ended `complete`, `partial` or `bound_reached` (Q-OPS-172); the gauge reads it.
+- **`failing`** is `consecutive_failures >= mirror.FailingFailures` (3), which the API and the alert share (Q-OPS-173).
+- **A run request** (`pass_requested_*`) is consumed by the claim of a fresh pass, not by the takeover of one in progress (Q-REPO-189); D writes only these columns and enqueues `KindPass` under
   `PassKey` with the repository and its numeric id.
 
 ### The seams of the engine's tests

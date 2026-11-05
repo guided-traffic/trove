@@ -16,13 +16,11 @@ func roleTable() map[string][]Area {
 	common := []Area{
 		AreaKeys, AreaPostgres, AreaAudit, AreaBlob, AreaValkey, AreaCoordination, AreaInfra,
 		AreaKeyRing, AreaFormatPorts, AreaExposure, AreaRepository, AreaVirtual, AreaInvalidation, AreaProxy,
-		AreaIdentity, AreaAuthz, AreaOwnership, AreaCI, AreaVuln, AreaFormats, AreaFiles,
+		AreaIdentity, AreaAuthz, AreaOwnership, AreaCI, AreaVuln, AreaMirror, AreaFormats, AreaFiles,
 	}
 	listener := []Area{AreaLimits, AreaVirtualEngine, AreaAuth, AreaEndpoints, AreaAPI}
 	filling := []Area{AreaProxyEngine, AreaFormatHost}
 	management := []Area{AreaPackagesAPI, AreaVulnAPI, AreaSessions, AreaLogin, AreaCIExchange}
-	// The mirror engine runs where jobs are claimed (R-REPO-053): worker and all.
-	jobs := []Area{AreaMirror}
 	join := func(parts ...[]Area) []Area {
 		var out []Area
 		for _, p := range parts {
@@ -33,9 +31,9 @@ func roleTable() map[string][]Area {
 	return map[string][]Area{
 		"api":      join(common, listener, management),
 		"packages": join(common, listener, filling),
-		"worker":   join(common, jobs),
+		"worker":   common,
 		"web":      join(common, listener, filling, management),
-		"all":      join(common, jobs, listener, filling, management),
+		"all":      join(common, listener, filling, management),
 	}
 }
 

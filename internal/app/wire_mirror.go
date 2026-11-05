@@ -7,6 +7,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/mirror"
+	"github.com/guided-traffic/trove/internal/proxy"
 )
 
 // The wiring of the mirror engine (repositories-and-proxy.md R-REPO-053 to R-REPO-058, docs/developer/mirror.md). Every
@@ -14,7 +15,9 @@ import (
 // whatever process claims the queue mirror runs them, and only those processes build the engine, register the counters and
 // export the gauges read from PostgreSQL (R-REPO-057).
 
-// AreaMirror is the mirror engine of a process that claims jobs: the roles worker and all.
+// AreaMirror is the mirror's part of every process: the counters and the gauges read from PostgreSQL, which every role exports
+// so that the alerts see a mirror whatever claims its queue (Q-OPS-171), and the engine, which is built at the first job of a
+// process that claims one (the roles worker and all).
 const AreaMirror Area = "mirror"
 
 // mirrorArea is the engine of the process. The engine is built when the first job of the queue mirror runs, not when the
@@ -62,6 +65,7 @@ func (a *App) wireMirror(_ context.Context, in infra, repo repositoryArea) (mirr
 	build := func() (*mirror.Engine, error) {
 		o := mirror.Options{
 			Store: store, Repos: repo.reader, Host: a.mirrorHost(), Queue: in.queue, Audit: in.rec, Metrics: m, Holder: a.id.UID,
+			Share:         proxy.BackgroundShare,
 			GlobalOffline: func() bool { return a.cfg.Proxy.GlobalOffline }, Log: a.log,
 		}
 		if ov := a.o.Mirror; ov != nil {
@@ -106,7 +110,7 @@ func (a *App) registerMirrorJobs(r *jobs.Registry) {
 		return e.RunPass(ctx, run.ID, run.Args, run)
 	}
 	r.RegisterKind(mirror.KindPass, jobs.KindSpec{Queue: mirror.QueueMirror, DedupMode: jobs.Exclusive, MaxAttempts: 1, Handler: pass})
-	r.RegisterKind(mirror.KindDispatch, jobs.KindSpec{Queue: mirror.QueueMirror, DedupMode: jobs.Exclusive, MaxAttempts: 1, Handler: dispatch})
+	r.RegisterKind(mirror.KindDispatch, jobs.KindSpec{Queue: mirror.QueueDispatch, DedupMode: jobs.Exclusive, MaxAttempts: 1, Handler: dispatch})
 	spec := jobs.TaskSpec{Schedule: defaultMirrorDispatchSchedule}
 	if c, ok := a.cfg.Maintenance.Tasks[mirror.KindDispatch]; ok && c.Schedule != "" {
 		spec.Schedule, spec.Disabled = c.Schedule, !c.Enabled

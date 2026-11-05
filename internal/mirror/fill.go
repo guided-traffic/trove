@@ -17,25 +17,26 @@ const batch = 100
 
 // fill works off the pending names until none is left to take or the attempt is halted. A name that failed waits for its
 // retry in the table, one that was pre-empted in memory; the pass waits for the earliest of them before it ends.
-func (p *pass) fill(ctx context.Context) error {
+func (p *pass) fill(ctx context.Context) (handled int, err error) {
 	for {
 		n, err := p.fillRound(ctx)
+		handled += n
 		if err != nil {
-			return err
+			return handled, err
 		}
 		if p.isHalted() {
-			return nil
+			return handled, nil
 		}
 		wake, err := p.nextWake(ctx)
 		if err != nil {
-			return &passError{code: CodeInternal, err: err}
+			return handled, &passError{code: CodeInternal, err: err}
 		}
 		if n == 0 && wake.IsZero() {
-			return nil
+			return handled, nil
 		}
 		if d := wake.Sub(p.e.o.Clock.Now()); !wake.IsZero() && d > 0 {
 			if err := p.e.o.Clock.Sleep(ctx, d); err != nil {
-				return err
+				return handled, err
 			}
 		}
 	}
@@ -146,12 +147,19 @@ func (p *pass) fillPackage(ctx context.Context, name string) {
 		return
 	}
 	repo, rs := p.current()
+	if !p.admitNow(name) {
+		// The patterns or the claims changed after the name was discovered: it is not asked for, not even its document
+		// (R-REPO-051); the row is done.
+		p.finishPackage(ctx, name, pkgState{})
+		return
+	}
 	var st pkgState
 	plan, err := p.plan(ctx, name)
 	if err != nil {
 		p.afterError(ctx, name, st, err)
 		return
 	}
+	var failure error
 	for _, item := range SelectItems(plan.Items, rs.Mirror.IncludePrereleases, rs.Mirror.MaxVersionsPerPackage) {
 		if p.isHalted() {
 			p.keep(ctx, name, st)
@@ -171,17 +179,39 @@ func (p *pass) fillPackage(ctx context.Context, name string) {
 			res, e = p.e.o.Host.Fill(c, repo, Pass{JobID: p.fence.JobID, Ceiling: p.ceiling}, item)
 			return e
 		})
-		if err != nil {
+		var refused *RefusedError
+		switch {
+		case err == nil:
+			p.count(&st, res)
+		case errors.As(err, &refused):
+			// Nothing outside the pass changed, so the artifact is not stored: counted, and the next item goes on (R-REPO-057).
+			p.m.item(ResultRefused)
+		case errors.Is(err, errHalted), errors.Is(err, ErrPreempted), ctx.Err() != nil:
 			p.afterError(ctx, name, st, err)
 			return
+		default:
+			// A transient failure of one item does not keep the others from being stored: the package fails once, after them.
+			p.m.item(ResultFailed)
+			if failure == nil {
+				failure = err
+			}
 		}
-		p.count(&st, res)
 	}
 	if ctx.Err() != nil {
 		return
 	}
-	p.wrote(p.e.o.Store.PackageDone(ctx, p.fence, PackageResult{Name: name, Items: st.items, Bytes: st.bytes, Now: p.e.o.Clock.Now()}))
-	p.add(func(c *counters) { c.done++; c.items += st.items; c.bytes += st.bytes })
+	if failure != nil {
+		p.failPackage(ctx, name, st, failure)
+		return
+	}
+	p.finishPackage(ctx, name, st)
+}
+
+// finishPackage deletes the package's pending row and raises the counters.
+func (p *pass) finishPackage(ctx context.Context, name string, st pkgState) {
+	if p.wrote(p.e.o.Store.PackageDone(ctx, p.fence, PackageResult{Name: name, Items: st.items, Bytes: st.bytes, Now: p.e.o.Clock.Now()})) {
+		p.add(func(c *counters) { c.done++; c.items += st.items; c.bytes += st.bytes })
+	}
 }
 
 // plan asks the format for the package's plan under the window.
@@ -224,7 +254,7 @@ func (p *pass) count(st *pkgState, res FillResult) {
 
 // keep leaves the package pending without a failure and adds what the attempt stored to the counters.
 func (p *pass) keep(ctx context.Context, name string, st pkgState) {
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || p.isShutdown() {
 		return
 	}
 	if p.wrote(p.e.o.Store.PackageKept(ctx, p.fence, PackageResult{Name: name, Items: st.items, Bytes: st.bytes, Now: p.e.o.Clock.Now()})) {
@@ -249,19 +279,25 @@ func (p *pass) afterError(ctx context.Context, name string, st pkgState, err err
 		p.keep(ctx, name, st)
 	default:
 		p.m.item(ResultFailed)
-		attempts, ferr := p.e.o.Store.PackageFailed(ctx, p.fence, PackageResult{
-			Name: name, Items: st.items, Bytes: st.bytes, Now: p.e.o.Clock.Now(), Error: sanitize(err.Error()),
-		})
-		if !p.wrote(ferr) {
-			return
-		}
-		p.add(func(c *counters) {
-			c.items += st.items
-			c.bytes += st.bytes
-			if attempts >= MaxPackageAttempts {
-				c.failed++
-			}
-		})
-		p.log.Warn("a package could not be filled", "attempts", attempts, "error", sanitize(err.Error()))
+		p.failPackage(ctx, name, st, err)
 	}
+}
+
+// failPackage records one failed attempt of a package: one more attempt and a retry a minute later per attempt; the attempt
+// that reaches the limit leaves it to the next pass and counts it failed (R-REPO-053 step 3).
+func (p *pass) failPackage(ctx context.Context, name string, st pkgState, err error) {
+	attempts, ferr := p.e.o.Store.PackageFailed(ctx, p.fence, PackageResult{
+		Name: name, Items: st.items, Bytes: st.bytes, Now: p.e.o.Clock.Now(), Error: sanitize(err.Error()),
+	})
+	if !p.wrote(ferr) {
+		return
+	}
+	p.add(func(c *counters) {
+		c.items += st.items
+		c.bytes += st.bytes
+		if attempts >= MaxPackageAttempts {
+			c.failed++
+		}
+	})
+	p.log.Warn("a package could not be filled", "attempts", attempts, "error", sanitize(err.Error()))
 }

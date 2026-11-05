@@ -25,6 +25,12 @@ func (p *pass) call(ctx context.Context, fn func(context.Context) error) error {
 			p.th.success(tk)
 			return nil
 		}
+		if errors.Is(err, ErrShuttingDown) {
+			// The process is shutting down: the pass stops as if its job's context had ended and writes nothing (R-REPO-053).
+			p.th.abandoned(tk)
+			p.setHalt(haltShutdown, nil)
+			return errHalted
+		}
 		if ctx.Err() != nil {
 			p.th.abandoned(tk)
 			return ctx.Err()
@@ -49,6 +55,21 @@ func (p *pass) call(ctx context.Context, fn func(context.Context) error) error {
 		}
 		p.th.failed(tk)
 		return err
+	}
+}
+
+// callDiscovery is call for a request of discovery (the methods, a page, a deleted package's document): a client that
+// pre-empted it makes the pass wait PreemptRetry and send it again, and never fails the pass (R-REPO-055, Q-REPO-184).
+func (p *pass) callDiscovery(ctx context.Context, fn func(context.Context) error) error {
+	for {
+		err := p.call(ctx, fn)
+		if !errors.Is(err, ErrPreempted) {
+			return err
+		}
+		p.m.preempted()
+		if serr := p.e.o.Clock.Sleep(ctx, PreemptRetry); serr != nil {
+			return serr
+		}
 	}
 }
 

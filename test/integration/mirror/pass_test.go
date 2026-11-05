@@ -14,6 +14,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/mirror"
 	"github.com/guided-traffic/trove/internal/mirror/discover"
+	"github.com/guided-traffic/trove/internal/proxy"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 )
 
@@ -84,14 +85,18 @@ func TestR_REPO_058_TwoDispatchersNeverYieldTwoUnfinishedPasses(t *testing.T) {
 	w := newWorld(3)
 	e := newEnv(t, w, "mirror", nil, nil)
 	rep := e.start("rep-web", "web")
+	// The area is on every role (its gauges are exported by all of them, Q-OPS-171); the engine is built at the first job only, and a
+	// replica that claims no job never has one.
+	hasArea := false
 	for _, a := range rep.App.Areas() {
-		if a == "mirror" {
-			t.Fatal("a web replica built the mirror engine")
-		}
+		hasArea = hasArea || a == "mirror"
+	}
+	if !hasArea {
+		t.Fatal("a web replica has no mirror area, so it exports none of the gauges")
 	}
 	engine := func() *mirror.Engine {
 		eng, err := mirror.New(mirror.Options{
-			Store: e.store, Repos: rep.App.Repositories(), Host: w, Queue: rep.App.Queue(),
+			Share: proxy.BackgroundShare, Store: e.store, Repos: rep.App.Repositories(), Host: w, Queue: rep.App.Queue(),
 			Holder: e.st.Text(`SELECT gen_random_uuid()::text`),
 		})
 		if err != nil {
@@ -458,6 +463,7 @@ func TestR_REPO_057_TheGaugesReadFromPostgreSQL(t *testing.T) {
 	e.dispatch(rep)
 	e.waitOutcome("complete", 60*time.Second)
 	e.st.Exec(`INSERT INTO mirror_pending (repo_id, name) VALUES ($1, 'left-1'), ($1, 'left-2')`, e.repoN)
+	e.st.Exec(`UPDATE mirror_state SET pass_started_at = now(), pass_kind = 'full' WHERE repo_id = $1`, e.repoN)
 	src := mirror.GaugeSource(e.store.Gauges, rep.App.Repositories())
 	ms, err := src.Collect(context.Background())
 	if err != nil {
@@ -484,7 +490,7 @@ func TestR_REPO_057_TheGaugesReadFromPostgreSQL(t *testing.T) {
 	if pending != 2 || interval != 1800 {
 		t.Errorf("pending %v, interval %v", pending, interval)
 	}
-	if d := float64(time.Now().Unix()) - last; d < 0 || d > 120 {
+	if d := float64(time.Now().UnixMicro())/1e6 - last; d < -1 || d > 120 {
 		t.Errorf("the last complete pass ended %v s ago", d)
 	}
 }

@@ -31,6 +31,7 @@ type throttle struct {
 	until       time.Time
 	consecutive int // rate-limit waits in a row, reset by a success
 	halted      bool
+	haltCh      chan struct{} // closed with halted: a sleeping acquire wakes at once
 	wake        chan struct{}
 }
 
@@ -38,7 +39,7 @@ type throttle struct {
 type ticket struct{ gen uint64 }
 
 func newThrottle(c Clock, j Jitter, ceiling int, onWindow func(int)) *throttle {
-	t := &throttle{clock: c, jitter: j, ceiling: max(1, ceiling), window: 1, slowStart: true, wake: make(chan struct{}), onWindow: onWindow}
+	t := &throttle{clock: c, jitter: j, ceiling: max(1, ceiling), window: 1, slowStart: true, wake: make(chan struct{}), haltCh: make(chan struct{}), onWindow: onWindow}
 	if onWindow != nil {
 		onWindow(1)
 	}
@@ -63,8 +64,26 @@ func (t *throttle) acquire(ctx context.Context) (ticket, error) {
 		}
 		if now := t.clock.Now(); now.Before(t.until) {
 			d := t.until.Sub(now)
+			halted := t.haltCh
 			t.mu.Unlock()
-			if err := t.clock.Sleep(ctx, d); err != nil {
+			// The wait is slept on the clock but ends with the halt: a pass that stopped taking requests must not hold a worker
+			// through a wait of hours (R-REPO-054).
+			sctx, cancel := context.WithCancel(ctx)
+			stop := make(chan struct{})
+			go func() {
+				select {
+				case <-halted:
+					cancel()
+				case <-stop:
+				}
+			}()
+			err := t.clock.Sleep(sctx, d)
+			close(stop)
+			cancel()
+			if t.isHalted() {
+				return ticket{}, errHalted
+			}
+			if err != nil {
 				return ticket{}, err
 			}
 			continue
@@ -88,9 +107,23 @@ func (t *throttle) acquire(ctx context.Context) (ticket, error) {
 // halt makes every acquire, now and later, return errHalted; requests in flight finish.
 func (t *throttle) halt() {
 	t.mu.Lock()
-	t.halted = true
+	t.haltLocked()
 	t.signal()
 	t.mu.Unlock()
+}
+
+// haltLocked marks the throttle halted and wakes the sleepers; the caller holds the lock.
+func (t *throttle) haltLocked() {
+	if !t.halted {
+		t.halted = true
+		close(t.haltCh)
+	}
+}
+
+func (t *throttle) isHalted() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.halted
 }
 
 // signal wakes the waiters of acquire; the caller holds the lock.
@@ -174,5 +207,9 @@ func (t *throttle) rateLimited(tk ticket, hint time.Duration, hinted bool) (wait
 	// A wait of nothing would send the request again at once and loop on an upstream that keeps asking for it.
 	wait = max(wait, time.Second)
 	t.until = t.clock.Now().Add(wait)
+	if wait > LongWait {
+		// A wait that ends the attempt halts the throttle before the end of the wait is visible to a worker: nobody sleeps it.
+		t.haltLocked()
+	}
 	return wait, true
 }
