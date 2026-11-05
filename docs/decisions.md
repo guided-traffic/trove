@@ -187,7 +187,7 @@ checked every earlier decision against them:
 | [ADR-123](#adr-123--nuget-symbol-packages-are-indexed-by-one-job-each-on-the-worker-role) | NuGet symbol packages are indexed by one job each on the worker role | Decided by the development agent — owner review at the walkthrough |
 | [ADR-124](#adr-124--releases-stay-on-major-version-0) | Releases stay on major version 0 | Accepted (owner constraint); changed by the owner on 2026-10-31: no version is expected for the beta |
 | [ADR-153](#adr-153--trove-is-cut-into-task-areas-roles-of-one-binary-network-seams-only-at-trust-or-load-boundaries) | trove is cut into task areas: roles of one binary, network seams only at trust or load boundaries | Accepted (owner decision of 2026-11-04); changed the same day: no fetch service; the cut is ADR-155 |
-| [ADR-154](#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port) | Network policies are ingress rules between the chart's pods, each with its port | Accepted (owner constraint of 2026-11-04) |
+| [ADR-154](#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port) | Network policies are ingress rules between the chart's pods, each with its port | Accepted (owner constraint of 2026-11-04; both charts, owner decision of 2026-11-05) |
 | [ADR-155](#adr-155--three-roles-api-packages-and-worker-variants-are-pools) | Three roles: api, packages and worker; variants are pools | Accepted (owner decision of 2026-11-04; the fetch role dropped the same day) |
 | [ADR-125](#adr-125--gnu-make-and-one-pin-file-for-every-tool) | GNU Make and one pin file for every tool | Decided by the development agent — owner review at the walkthrough |
 | [ADR-126](#adr-126--problem-details-with-a-relative-type-a-requestid-member-and-named-error-codes) | Problem details with a relative type, a requestId member and named error codes | Decided by the development agent — owner review at the walkthrough |
@@ -659,7 +659,8 @@ R-REPO-037 cannot provide.
 
 ### ADR-154 · Network policies are ingress rules between the chart's pods, each with its port
 
-**Status:** Accepted (owner constraint of 2026-11-04)
+**Status:** Accepted (owner constraint of 2026-11-04); governs both charts, `trove` and `trove-bastion`, by the owner's
+decision of 2026-11-05
 
 **Context.** The chart renders ingress-only policies for `web` and `worker`
 ([R-HA-042](spec/ha-and-helm.md#r-ha-042--network-policies)); the specification also planned an optional
@@ -669,17 +670,27 @@ more pod types talk to each other, so the owner set the rule for every policy.
 
 **Decision.** trove writes only ingress rules, only for the pods the Helm chart deploys and between them,
 and every rule names its specific port. The chart renders no egress rule and no policy for pods it does
-not deploy.
+not deploy. The rule governs both charts, `trove` and `trove-bastion` (owner, 2026-11-05).
 
 **Consequences.** The egress part of R-HA-042, its values (`networkPolicy.egress`), Q-HA-10 and H-41 are
 rewritten with the specification of the cut; separating egress is trove's address policy (R-REPO-038)
 and, beyond it, the cluster operator's own policy. Each seam between task areas is an ingress rule of
 the receiving role that admits the sending roles on the seam's port.
 
-**Alternatives considered.** None; set by the owner.
+**Changed on 2026-11-05.** The chart `trove-bastion` rendered an egress policy, on by default (R-BAS-047
+before 2026-11-05: DNS, the main installation's address, Valkey, the cache bucket and the span collector,
+nothing else). The owner extended the rule to both charts and removed it: R-BAS-047 is ingress rules only,
+the values `networkPolicy.egress` and their render guards are gone, and Q-BAS-55 is superseded in part.
+Containing the outbound connections of a taken-over Bastion pod is the cluster operator's own policy, recorded
+as the gap [H-522](security/bastion.md#h-522--the-chart-restricts-no-egress-of-the-bastion-pods); the Bastion
+still holds no credential for PostgreSQL, the object store or upstream registries (R-BAS-030).
+
+**Alternatives considered.** None; set by the owner. For the chart `trove-bastion` the owner weighed and
+rejected keeping its egress policy as an exception, and keeping it off by default as an opt-in.
 
 **Spec:** [owner constraints](spec/README.md#owner-constraints),
-[R-HA-042](spec/ha-and-helm.md#r-ha-042--network-policies).
+[R-HA-042](spec/ha-and-helm.md#r-ha-042--network-policies),
+[R-BAS-047](spec/bastion.md#r-bas-047--network-policy).
 
 ### ADR-155 · Three roles: api, packages and worker; variants are pools
 

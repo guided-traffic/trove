@@ -48,26 +48,6 @@ ingress:
   tls:
     - secretName: trove-bastion-public-tls
       hosts: [packages.example.com]
-networkPolicy:
-  egress:
-    main:
-      to:
-        - ipBlock:
-            cidr: 198.51.100.10/32
-    valkey:
-      to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: trove-bastion-valkey
-    cacheBucket:
-      to:
-        - ipBlock:
-            cidr: 203.0.113.0/24                      # example: the object store's addresses
-    tracing:
-      to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: observability
 metrics:
   serviceMonitor:
     enabled: true

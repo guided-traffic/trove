@@ -2,12 +2,7 @@
 
 package chart_test
 
-import (
-	"os"
-	"path/filepath"
-	"strings"
-	"testing"
-)
+import "testing"
 
 // TestR_BAS_045_TheClientAddressNeedsTheTrustedProxiesBehindTheIngress (Q-BAS-130): with the Ingress on, every
 // request reaches the Bastion from the ingress controller's pods, so without config.server.trusted_proxies all
@@ -77,28 +72,4 @@ func TestR_BAS_030_TheSpoolFitsTheTemporaryVolume(t *testing.T) {
 	t.Run("a size that is no size fails", func(t *testing.T) {
 		bstFails(t, bucket, []string{"tmp.sizeLimit=lots"}, "not a size")
 	})
-}
-
-// TestR_BAS_047_TheValuesDoNotSuggestAnAnywhereEgress: the example of the cache bucket's egress is a narrow
-// range, and says why (Q-BAS-130 sibling of R-BAS-047: a wide range undoes the egress promise).
-func TestR_BAS_047_TheValuesDoNotSuggestAnAnywhereEgress(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join(bastionDir(), "values.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i, l := range strings.Split(string(raw), "\n") {
-		if strings.Contains(l, "cidr: 0.0.0.0/0}") {
-			t.Errorf("values.yaml:%d suggests an egress to anywhere: %s", i+1, strings.TrimSpace(l))
-		}
-	}
-	if !strings.Contains(string(raw), "undoes the egress promise") {
-		t.Error("values.yaml does not say that a wide range undoes the egress promise")
-	}
-	sets, _ := filepath.Glob(filepath.Join(bastionDir(), "ci", "*.yaml"))
-	for _, f := range sets {
-		b, _ := os.ReadFile(f)
-		if strings.Contains(string(b), "cidr: 0.0.0.0/0") {
-			t.Errorf("%s carries an egress to anywhere", filepath.Base(f))
-		}
-	}
 }

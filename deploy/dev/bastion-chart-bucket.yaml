@@ -44,21 +44,3 @@ ingress:
   tls:
     - secretName: bastion-bucket-edge-tls
       hosts: [bastion-bucket.trove.localhost]
-networkPolicy:
-  egress:
-    valkey:
-      to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/instance: bastion-valkey
-              app.kubernetes.io/managed-by: vko.gtrfc.com
-      ports: [16379, 36379]      # the Valkey operator's TLS ports (the chart's defaults are the stock ports)
-    cacheBucket:
-      to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: trove
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: trove-s3
-      ports: [9000]

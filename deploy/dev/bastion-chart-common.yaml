@@ -67,18 +67,6 @@ networkPolicy:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: ingress-controller
-  egress:
-    main:
-      to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: trove
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/instance: trove
-            matchExpressions:
-              - {key: app.kubernetes.io/component, operator: In, values: [api, packages]}
-      ports: [8080]
 
 ingress:
   className: haproxy

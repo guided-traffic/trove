@@ -182,7 +182,7 @@ Acceptance criteria:
   `bastion`; with the keys above, `bastion.main.url` and the token file it starts, and `ss -ltn` in its pod shows `:8443` and
   `:8081` only.
 - A Bastion pod opens no connection to any PostgreSQL port and makes no request to the main installation's bucket during the
-  whole e2e suite (NetworkPolicy log and the object store's access log). The role started with a trap listening where a
+  whole e2e suite (the object store's access log). The role started with a trap listening where a
   PostgreSQL client of the process would look sees no connection and exports no database metric
   (`TestR_BAS_001_TheRoleOpensNoConnectionToPostgreSQL`).
 - The import rule names every package of the main installation in the role's dependency closure, with the platform package that
@@ -1827,7 +1827,7 @@ A second Helm chart for this instance type (owner, [Q-BAS-5](#q-bas-5--a-second-
 | Service | `<fullname>` (`https`, no session affinity), `<fullname>-ops` | — |
 | Ingress | `<fullname>` | host of `config.server.base_url`; `ingress.tls`; the annotations of `edgeLimit`, `cacheVolume.routeByPath` and `ingress.backendTLS` |
 | Certificate (cert-manager), optional | `<fullname>-tls` | with `tls.certManager.enabled` |
-| NetworkPolicy | `<fullname>` | R-BAS-047 |
+| NetworkPolicy | `<fullname>` | R-BAS-047: ingress rules only |
 | PodDisruptionBudget, HorizontalPodAutoscaler | `<fullname>` | — |
 | ServiceAccount | `<fullname>` | `automountServiceAccountToken: false`; no Role, no RoleBinding |
 | ServiceMonitor, PrometheusRule | `<fullname>` | R-BAS-041 |
@@ -1844,9 +1844,8 @@ A second Helm chart for this instance type (owner, [Q-BAS-5](#q-bas-5--a-second-
   `cacheVolume.size` (volume backend) that holds it ([Q-BAS-131](#q-bas-131--the-bytes-of-the-fills-in-progress-are-bounded-and-the-chart-sizes-the-volumes-from-the-bound));
   with `highAvailability.enforce` at least two replicas, a PDB and
   host spreading; a value under `config` that is chart-managed or not in the role's schema; a certificate source for the
-  listener while `tls.enabled` (`tls.existingSecret`, or `tls.certManager.issuerRef.name`); an egress target
-  (`networkPolicy.egress.main.to`, and `valkey`, `cacheBucket` or `tracing` while they are used) and an ingress peer for the
-  https port, because an empty peer list would mean "anywhere"; exactly one key in `trustedCA.keys`; an entry of
+  listener while `tls.enabled` (`tls.existingSecret`, or `tls.certManager.issuerRef.name`); an ingress peer for the https
+  port, because an empty peer list would mean "anywhere"; exactly one key in `trustedCA.keys`; an entry of
   `ingress.annotations` that the chart renders itself; a name in `metrics.prometheusRule.disabledAlerts` that is no alert
   ([Q-BAS-55](#q-bas-55--what-a-render-needs-and-what-the-values-file-left-open)).
 - **HAProxy Ingress annotations** *(verified against HAProxy Ingress v0.16.3, the controller of the local profile,
@@ -1866,8 +1865,8 @@ A second Helm chart for this instance type (owner, [Q-BAS-5](#q-bas-5--a-second-
 Acceptance criteria:
 
 - `helm template` with only the required values (`config.server.base_url`, `config.server.trusted_proxies`,
-  `config.bastion.main.url`, `secrets.mainToken.existingSecret`, a certificate source `tls.certManager.issuerRef.name` and the
-  egress target `networkPolicy.egress.main.to`, [Q-BAS-55](#q-bas-55--what-a-render-needs-and-what-the-values-file-left-open)) renders a
+  `config.bastion.main.url`, `secrets.mainToken.existingSecret` and a certificate source `tls.certManager.issuerRef.name`,
+  [Q-BAS-55](#q-bas-55--what-a-render-needs-and-what-the-values-file-left-open)) renders a
   Deployment with two replicas, a PDB, the Ingress with the edge-limit annotations, a NetworkPolicy, and no Secret, no Role and no
   PersistentVolumeClaim.
 - The chart test pins the annotation names to the controller version of the local profile: a change of
@@ -2186,7 +2185,8 @@ edgeLimit:                              # stage 1 of the blocking (R-BAS-038)
   requestsPerSecond: 100                # default (proposed), per address; above config.bastion.limits.authenticated.requests_per_second
   connections: 50                       # default (proposed), per address
 
-# ── Network policy (R-BAS-047) ──────────────────────────────────────────────
+# ── Network policy (R-BAS-047): ingress rules only, each rule with its port ─
+# No egress value exists: the chart renders no egress rule (ADR-154).
 networkPolicy:
   enabled: true                         # default (proposed)
   ingress:
@@ -2201,29 +2201,6 @@ networkPolicy:
             matchLabels:
               kubernetes.io/metadata.name: monitoring  # default (proposed)
     probeCIDRs: []                      # default (proposed)
-  egress:
-    enabled: true                       # default (proposed): the Bastion reaches nothing but the targets below
-    dns:
-      to:                               # default (proposed)
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system  # default (proposed)
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns         # default (proposed)
-    main:
-      to: []                            # required with egress.enabled; example: [{ipBlock: {cidr: 198.51.100.10/32}}]
-      ports: [443]                      # default (proposed)
-    valkey:
-      to: []                            # default (proposed); example: [{podSelector: {matchLabels: {app.kubernetes.io/name: trove-bastion-valkey}}}]
-      ports: [6379, 26379]              # default (proposed)
-    cacheBucket:
-      to: []                            # default (proposed); required with the bucket backend; example: [{ipBlock: {cidr: 203.0.113.0/24}}] (the object store's addresses; a wide range such as 0.0.0.0/0 undoes the egress promise of R-BAS-047)
-      ports: [443]                      # default (proposed)
-    tracing:
-      to: []                            # default (proposed)
-      ports: [4318]                     # default (proposed)
-    extra: []                           # default (proposed)
 
 # ── Monitoring (R-BAS-040, R-BAS-041) ──────────────────────────────────────
 metrics:
@@ -2262,16 +2239,32 @@ Acceptance criteria:
 ### R-BAS-047 · Network policy
 Priority: **MVP** · Covers: trove-only
 
-- Ingress: the `https` port only from the ingress controller's namespace (the Bastion is reached through its Ingress, never
-  directly), the ops port only from monitoring, the probe CIDRs.
-- Egress on by default, unlike the chart `trove`: DNS, the main installation's address (`networkPolicy.egress.main`), Valkey, the
-  cache bucket and the span collector, nothing else. The Bastion contacts no upstream registry, no OIDC issuer and no
-  PostgreSQL, so an attacker who takes over a Bastion pod reaches only what it already reaches.
+The owner's rule ([ADR-154](../decisions.md#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port),
+2026-11-04, for this chart since 2026-11-05): the chart writes only ingress rules, only for the pods it deploys, and every rule
+names its specific port. With `networkPolicy.enabled: true` (default) it renders one NetworkPolicy `<fullname>` that selects the
+Bastion pods, with `policyTypes: [Ingress]`:
+
+- the `https` port only from `networkPolicy.ingress.https.from`, the ingress controller's namespace: the Bastion is reached
+  through its Ingress, never directly. An empty list is refused at render time, because Kubernetes reads it as "from anywhere";
+- the ops port only from `networkPolicy.ingress.ops.from` (the monitoring namespace) and `networkPolicy.ingress.probeCIDRs`;
+  with neither, the rule is left out and no pod reaches the port.
+- **Egress.** None. The chart renders no egress rule and has no `networkPolicy.egress` values. Until 2026-11-05 it rendered an
+  egress policy, on by default; the owner removed it under ADR-154 and rejected keeping it as an exception of this chart or as
+  an opt-in. Containing the outbound connections of a taken-over Bastion pod is the cluster operator's own policy; the gap is
+  [H-522](../security/bastion.md#h-522--the-chart-restricts-no-egress-of-the-bastion-pods). An operator who restricts egress lets
+  the Bastion pods reach DNS; the main installation's addresses (`bastion.main.url`, and `bastion.main.packages_url` where set)
+  on their ports; Valkey and its Sentinels while `valkey.mode` is not `none`; the cache bucket with the bucket backend, and its
+  credential endpoint with `credentials.source` `webIdentity` or `default`; and the span collector while tracing is enabled. The
+  Bastion contacts no upstream registry, no OIDC issuer and no PostgreSQL (R-BAS-001).
 
 Acceptance criteria:
 
-- From a Bastion pod, a connection to the main installation's PostgreSQL Service and to `registry.npmjs.org:443` is refused by
-  the policy on the CNI of the local profile, while the e2e suite passes.
+- In every value set of `deploy/helm/trove-bastion/ci`, the chart renders the policy with `policyTypes: [Ingress]`, no `egress`
+  key, exactly one port per rule and no empty peer list; a value under `networkPolicy.egress` fails the render
+  (`TestR_BAS_047_NetworkPolicy`).
+- On the CNI of the kind profile, a pod of a namespace the https rule does not admit is refused at a Bastion pod's https and
+  ops ports; a pod of the admitted namespace (the ingress controller's) completes a TLS handshake at the https port and is
+  refused at the ops port; the Bastion serves through its Ingress meanwhile (`TestBastion_R_BAS_049_NetworkPolicy`).
 
 ## Tests
 
@@ -2365,7 +2358,9 @@ Acceptance criteria:
   (R-BAS-005). Its holder's remaining powers are H-386.
 - **What a compromised Bastion pod reaches.** Its own cache and Valkey, the main installation's interface with the Bastion token,
   and, through forwarded requests, only what the credentials of callers passing through it can read; it sees those credentials
-  in transit. It cannot reach PostgreSQL, the main installation's object store or upstream registries (R-BAS-047).
+  in transit. It holds no credential for PostgreSQL, the main installation's object store or upstream registries (R-BAS-030).
+  Whether it can open a connection to them is the cluster operator's egress policy: the chart renders none (R-BAS-047,
+  [H-522](../security/bastion.md#h-522--the-chart-restricts-no-egress-of-the-bastion-pods)).
 - **Where abuse stops.** At the network provider for bandwidth (H-382), at HAProxy Ingress for coarse rates (R-BAS-038), at the
   Bastion for credentials, misses and blocks (R-BAS-035 to R-BAS-037), and at the concurrency budget for what reaches the main
   installation (R-BAS-025); the main installation's own limits still apply to the real client (R-BAS-017).
@@ -3423,6 +3418,11 @@ config validate` when the first operator asks for an offline check of a Bastion 
 ### Q-BAS-55 · What a render needs, and what the values file left open
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+**Superseded in part by the owner's decision of 2026-11-05**
+([ADR-154](../decisions.md#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port) governs this
+chart too): the chart renders no egress rule, so `networkPolicy.egress.main.to` is no longer a required value and the egress
+targets of the rationale are no values at all. The refusal of an empty `networkPolicy.ingress.https.from`, the certificate
+source and the rest of (b) stand.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
@@ -4550,6 +4550,10 @@ share the main installation of the `bastion` profile (`deploy/dev/values-bastion
 **Rationale:** the scenarios that need shared state (the flood blocked on both replicas, the token refused on both, the warm run after the cut) can only be shown with the bucket
 and Valkey; the scenarios that show the cache as a volume only with the volume. The development agent would revisit the choice if a runner cannot hold the pods.
 
+Since the owner's decision of 2026-11-05 (ADR-154 for this chart, R-BAS-047) the chart renders no egress rule, so the egress arguments in the table lapsed: (a) no longer exercises an
+egress policy of the chart, and in (b) nothing of the chart would keep a Bastion from the main installation's Valkey; the ingress policy of that Valkey still admits only the
+main installation's pods. The choice stands for its other reasons. The unreachable scenario cuts the main installation off with an egress policy of the test's own.
+
 **Applied in the spec:** R-BAS-049 (the deployment), R-BAS-046 (`secrets.valkeySentinel`, found when the Sentinels of the profile's Valkey required a password); code:
 `deploy/dev/bastion.sh`, `bastion.yaml`, `bastion-chart-*.yaml`, `values-bastion.yaml`.
 
@@ -5300,16 +5304,6 @@ nobody. Callers behind one NAT share a budget as well. The limit has no burst al
 connections behind a balancer without the real address, which the chart cannot detect (NOTES.txt says so); the Bastion's own stage 2
 reads the forwarded address through `server.trusted_proxies` and is not affected. `edgeLimit.enabled: false` closes it.
 
-### H-433 · The egress policy names the main installation by address
-
-Stage: R-BAS-047, `networkPolicy.egress.main.to`. Subject: the availability of the Bastion towards the main installation.
-
-Dormant until a Bastion runs with the egress policy (on by default); then live on every one. A NetworkPolicy selects by pod, namespace
-or address, never by name, so `networkPolicy.egress.main.to` holds the address of the main installation's ingress. When that address
-changes, the Bastion is cut off until the value is changed and rolled out, and then serves from answers for the grace period
-(R-BAS-027) and refuses afterwards. What makes it real: a main installation behind a load balancer or an ingress whose address
-is not fixed; a CNI with FQDN policies (an `extra` rule in `networkPolicy.egress.extra`) closes it.
-
 ### H-434 · A controller that ignores the annotations turns the edge limit and routing off silently
 
 Stage: R-BAS-038 and R-BAS-033, the Ingress annotations. Subject: the coarse limit in front of the Bastion, and the placement of artifacts
@@ -5442,7 +5436,9 @@ configuration, as the object store endpoint is, and a main installation in a pri
 policy that keeps an upstream registry from pointing into the cluster's own services does not apply; what protects the token and the
 credentials is the verification of the main installation's certificate against the system roots and `ca_file`. What makes it real: a
 DNS record for the main installation's host name that an attacker can change, together with a certificate for that name that the
-roots or the bundle accept; the chart's egress policy (R-BAS-047) limits the connection to the main installation's address as well.
+roots or the bundle accept. The chart renders no egress rule that would limit the connection to the main installation's address
+(R-BAS-047, [H-522](../security/bastion.md#h-522--the-chart-restricts-no-egress-of-the-bastion-pods)); a cluster operator's egress
+policy can.
 
 ### H-447 · A background refresh keeps the token string beyond its request
 

@@ -21,9 +21,3 @@ tls:
   certManager:
     issuerRef:
       name: internal-ca
-networkPolicy:
-  egress:
-    main:
-      to:
-        - ipBlock:
-            cidr: 198.51.100.10/32

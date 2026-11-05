@@ -2,57 +2,79 @@
 
 package e2e
 
-// The main installation unreachable (R-BAS-027, R-BAS-049): a NetworkPolicy cut between the Bastion and the main
+// The main installation unreachable (R-BAS-027, R-BAS-049): a NetworkPolicy of the test cuts the Bastion off from the main
 // installation, with the short periods of deploy/dev/bastion-chart-common.yaml (answers.period 30 s, grace_period 90 s).
 
 import (
+	"bytes"
 	"encoding/json"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
 )
 
-// basCutMain removes the egress rule of the Bastion's NetworkPolicy that allows the main installation (port 8080) and returns
-// the function that puts it back. The rule is the one the chart renders from networkPolicy.egress.main.
+// basCutMain cuts the Bastion of site s off from the main installation and returns the function that ends the cut. The chart
+// renders no egress rule (R-BAS-047, ADR-154), so the cut is an egress policy of the test's own on the release's pods: it admits
+// what the Bastion uses besides the main installation - DNS, the Bastion's Valkey in its namespace (deploy/dev/bastion.yaml, the
+// Valkey operator's TLS ports) and the bucket in the SeaweedFS of the main namespace - and nothing else. Ending the cut deletes it.
 func basCutMain(t testing.TB, s *basSite) func() {
 	t.Helper()
-	var np struct {
-		Spec struct {
-			Egress []json.RawMessage `json:"egress"`
-		} `json:"spec"`
+	name := "e2e-cut-main-" + s.variant
+	tcp := func(ports ...int) []any {
+		out := make([]any, 0, len(ports))
+		for _, p := range ports {
+			out = append(out, map[string]any{"protocol": "TCP", "port": p})
+		}
+		return out
 	}
-	if err := json.Unmarshal([]byte(kb(t, "get", "networkpolicy", s.release, "-o", "json")), &np); err != nil {
+	labels := func(kv ...string) map[string]any {
+		m := map[string]any{}
+		for i := 0; i+1 < len(kv); i += 2 {
+			m[kv[i]] = kv[i+1]
+		}
+		return map[string]any{"matchLabels": m}
+	}
+	manifest, err := json.Marshal(map[string]any{
+		"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+		"metadata": map[string]any{"name": name, "namespace": basNS(), "labels": map[string]string{"app.kubernetes.io/part-of": "trove-e2e"}},
+		"spec": map[string]any{
+			"podSelector": labels("app.kubernetes.io/instance", s.release, "app.kubernetes.io/component", "bastion"),
+			"policyTypes": []string{"Egress"},
+			"egress": []any{
+				map[string]any{
+					"to":    []any{map[string]any{"namespaceSelector": labels("kubernetes.io/metadata.name", "kube-system"), "podSelector": labels("k8s-app", "kube-dns")}},
+					"ports": append(tcp(53), map[string]any{"protocol": "UDP", "port": 53}),
+				},
+				map[string]any{
+					"to":    []any{map[string]any{"podSelector": labels("app.kubernetes.io/instance", "bastion-valkey")}},
+					"ports": tcp(16379, 36379),
+				},
+				map[string]any{
+					"to":    []any{map[string]any{"namespaceSelector": labels("kubernetes.io/metadata.name", cfg.namespace), "podSelector": labels("app.kubernetes.io/name", "trove-s3")}},
+					"ports": tcp(9000),
+				},
+			},
+		},
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
-	idx := -1
-	for i, raw := range np.Spec.Egress {
-		var rule struct {
-			Ports []struct {
-				Port int `json:"port"`
-			} `json:"ports"`
-		}
-		_ = json.Unmarshal(raw, &rule)
-		for _, p := range rule.Ports {
-			if p.Port == 8080 {
-				idx = i
-			}
-		}
+	cmd := exec.Command("kubectl", "--context", cfg.kubeContext, "apply", "-f", "-")
+	cmd.Stdin = bytes.NewReader(manifest)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("apply the NetworkPolicy %s: %v: %s", name, err, out)
 	}
-	if idx < 0 {
-		t.Fatalf("the NetworkPolicy %s has no egress rule for the main installation (port 8080)", s.release)
-	}
-	rule := string(np.Spec.Egress[idx])
-	kb(t, "patch", "networkpolicy", s.release, "--type=json", "-p", `[{"op":"remove","path":"/spec/egress/`+itoa(idx)+`"}]`)
-	restored := false
-	restore := func() {
-		if restored {
+	ended := false
+	end := func() {
+		if ended {
 			return
 		}
-		restored = true
-		kb(t, "patch", "networkpolicy", s.release, "--type=json", "-p", `[{"op":"add","path":"/spec/egress/-","value":`+rule+`}]`)
+		ended = true
+		kb(t, "delete", "networkpolicy", name, "--ignore-not-found")
 	}
-	t.Cleanup(restore)
-	return restore
+	t.Cleanup(end)
+	return end
 }
 
 func itoa(i int) string { b, _ := json.Marshal(i); return string(b) }
@@ -78,7 +100,7 @@ func allEqual(v []float64, want float64) bool {
 
 // TestBastion_R_BAS_049_MainUnreachable: the cut; warm runs succeed for the grace period, a cold package and an unseen token
 // get 503, everything 503 after period + grace_period; the gauges the alert TroveBastionMainUnreachable reads stay 0 for its
-// `for: 2m` (there is no Prometheus in the profile, Q-BAS-112); after the policy is back both replicas return to reachable.
+// `for: 2m` (there is no Prometheus in the profile, Q-BAS-112); after the cut ends both replicas return to reachable.
 func TestBastion_R_BAS_049_MainUnreachable(t *testing.T) {
 	env := basFx(t)
 	site := env.bkt
@@ -99,7 +121,7 @@ func TestBastion_R_BAS_049_MainUnreachable(t *testing.T) {
 	setD.restore(t, nc, project)
 	obtained := time.Now()
 
-	restore := basCutMain(t, site)
+	endCut := basCutMain(t, site)
 	cutAt := time.Now()
 	// A NetworkPolicy stops new connections only: the replicas keep the connection to the main installation they hold. The api
 	// and packages pods of the main installation are deleted, which ends those connections, and the connections the replicas then open are
@@ -153,7 +175,7 @@ func TestBastion_R_BAS_049_MainUnreachable(t *testing.T) {
 	// TroveBastionMainUnreachable: max(trove_bastion_main_reachable) == 0 for 2 minutes
 	for time.Since(cutAt) < 2*time.Minute+10*time.Second {
 		if !allEqual(basReachable(t, site), 0) {
-			t.Fatalf("a replica was reachable again before the policy was restored: %v", basReachable(t, site))
+			t.Fatalf("a replica was reachable again before the cut ended: %v", basReachable(t, site))
 		}
 		time.Sleep(5 * time.Second)
 	}
@@ -165,11 +187,11 @@ func TestBastion_R_BAS_049_MainUnreachable(t *testing.T) {
 		}
 	}
 
-	restore()
+	endCut()
 	waitServingSettled(t)
 	back := time.Now()
 	waitFor(t, "both replicas reachable again", 40*time.Second, time.Second, func() bool { return allEqual(basReachable(t, site), 1) })
-	t.Logf("both replicas reachable %s after the policy was restored", time.Since(back).Round(time.Second))
+	t.Logf("both replicas reachable %s after the cut ended", time.Since(back).Round(time.Second))
 	t.Run("after the policy is removed the Bastion serves and reports its buffered download events", func(t *testing.T) {
 		c.basInstall(t, dir, setN)
 		setD.restore(t, nc, project)

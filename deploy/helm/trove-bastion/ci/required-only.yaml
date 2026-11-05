@@ -1,6 +1,6 @@
-# The values a render needs: the Bastion's own URL, the main installation's URL, the
-# Secret of the Bastion token, a certificate source for the listener and the address of the main installation
-# for the network policy. Everything else is the chart's default.
+# The values a render needs: the Bastion's own URL, the pods of its ingress controller, the main installation's
+# URL, the Secret of the Bastion token and a certificate source for the listener. Everything else is the chart's
+# default.
 config:
   server:
     base_url: https://packages.example.com
@@ -15,9 +15,3 @@ tls:
   certManager:
     issuerRef:
       name: internal-ca
-networkPolicy:
-  egress:
-    main:
-      to:
-        - ipBlock:
-            cidr: 198.51.100.10/32

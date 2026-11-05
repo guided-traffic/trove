@@ -187,3 +187,6 @@ and dropped with the owner's rule; R-HA-042 lists what each role must reach for 
 What makes it real: a flaw that lets an attacker run code in a trove process or steer a connection outside the outbound
 clients of `internal/outbound`, in a cluster without an egress policy.
 
+The chart `trove-bastion` follows the same rule since the owner's decision of 2026-11-05; the gap of its pods, which are built
+to face the internet, is [H-522](bastion.md#h-522--the-chart-restricts-no-egress-of-the-bastion-pods).
+

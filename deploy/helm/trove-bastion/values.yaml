@@ -293,7 +293,8 @@ edgeLimit:                              # stage 1 of the blocking
   requestsPerSecond: 100                # per address; above config.bastion.limits.authenticated.requests_per_second
   connections: 50                       # per address
 
-# ── Network policy ──────────────────────────────────────────────
+# ── Network policy: ingress rules only, each rule with its port ─────────────
+# No egress value exists: the chart renders no egress rule; the Bastion pods' egress is the cluster's own policy.
 networkPolicy:
   enabled: true
   ingress:
@@ -308,29 +309,6 @@ networkPolicy:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
     probeCIDRs: []
-  egress:
-    enabled: true                       # the Bastion reaches nothing but the targets below
-    dns:
-      to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-    main:
-      to: []                            # required with egress.enabled; example: [{ipBlock: {cidr: 198.51.100.10/32}}]
-      ports: [443]
-    valkey:
-      to: []                            # example: [{podSelector: {matchLabels: {app.kubernetes.io/name: trove-bastion-valkey}}}]
-      ports: [6379, 26379]
-    cacheBucket:
-      to: []                            # required with the bucket backend; example: [{ipBlock: {cidr: 203.0.113.0/24}}] (the object store's addresses; a wide range such as 0.0.0.0/0 undoes the egress promise of the Bastion)
-      ports: [443]
-    tracing:
-      to: []
-      ports: [4318]
-    extra: []
 
 # ── Monitoring ──────────────────────────────────────
 metrics:

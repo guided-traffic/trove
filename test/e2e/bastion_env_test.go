@@ -725,5 +725,3 @@ func basTeardown() {
 		fmt.Fprintln(os.Stderr, "e2e: removing the Bastions:", err, tail(out, 600))
 	}
 }
-
-func writeFile(path, content string) error { return os.WriteFile(path, []byte(content), 0o644) }

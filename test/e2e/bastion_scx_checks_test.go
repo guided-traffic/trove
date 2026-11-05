@@ -26,7 +26,6 @@ func TestBastion_R_BAS_049_ChartRender(t *testing.T) {
 		"--set", "config.bastion.main.url=https://trove.example.com",
 		"--set", "secrets.mainToken.existingSecret=trove-bastion-token",
 		"--set", "tls.certManager.issuerRef.name=internal-ca",
-		"--set", "networkPolicy.egress.main.to[0].ipBlock.cidr=198.51.100.10/32",
 		"--set", "config.server.trusted_proxies[0]=10.244.0.0/16", // required behind an Ingress (Q-BAS-130)
 	}
 	render := func(extra ...string) (string, error) {

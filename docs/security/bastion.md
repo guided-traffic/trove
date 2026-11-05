@@ -29,7 +29,7 @@ and its permissions in [permissions.md](permissions.md); the rules are in the sp
 |---|---|
 | The Bastion token (`trv_bst_`), read from a mounted Secret and re-read on change (R-BAS-006) | Any user, group, policy, token hash or session of the main installation (R-BAS-020) |
 | The main installation's answers about callers, keyed by the SHA-256 of the presented token, for at most `bastion.answers.period` (plus the grace period while the main installation is unreachable) | A caller's token beyond the request: never on disk, never in Valkey (R-BAS-019) |
-| Cached artifacts under their SHA-256, shared documents, negative entries, and per-caller documents in memory only (R-BAS-022 to R-BAS-024) | Any credential for the main installation's object store, PostgreSQL or upstream registries (R-BAS-030, R-BAS-047) |
+| Cached artifacts under their SHA-256, shared documents, negative entries, and per-caller documents in memory only (R-BAS-022 to R-BAS-024) | Any credential for the main installation's object store, PostgreSQL or upstream registries (R-BAS-030); the chart does not limit where its pods connect ([H-522](#h-522--the-chart-restricts-no-egress-of-the-bastion-pods)) |
 | The signing key for its records in Valkey and the bucket (R-BAS-032) | A right to write Kubernetes Secrets or to issue tokens (R-BAS-006, R-BAS-045) |
 
 Every decision about a caller is the main installation's. A miss is forwarded with the caller's own credential and decided by
@@ -271,7 +271,9 @@ gaps that remain are the H-items in [What this does not cover](#what-this-does-n
 
 ## What this does not cover
 
-The gaps of the Bastion's mechanisms are recorded on the spec page, where the mechanisms are, and only linked here:
+The gaps of the Bastion's mechanisms are recorded on the spec page, where the mechanisms are, and only linked here. The one gap
+that no mechanism of the Bastion holds, because the chart leaves it to the cluster operator, is recorded on this page:
+[H-522](#h-522--the-chart-restricts-no-egress-of-the-bastion-pods).
 
 - [H-382](../spec/bastion.md#h-382--a-volumetric-attack-on-bandwidth-is-not-absorbed-by-the-bastion) — volumetric attacks on
   bandwidth;
@@ -297,8 +299,6 @@ The gaps of the Bastion's mechanisms are recorded on the spec page, where the me
   metrics carry no authentication;
 - [H-432](../spec/bastion.md#h-432--the-edge-limit-counts-per-tcp-peer-address-and-has-no-burst) — the edge limit keys on the TCP
   peer address and has no burst;
-- [H-433](../spec/bastion.md#h-433--the-egress-policy-names-the-main-installation-by-address) — the egress policy names the main
-  installation by address;
 - [H-434](../spec/bastion.md#h-434--a-controller-that-ignores-the-annotations-turns-the-edge-limit-and-routing-off-silently) — a
   controller that ignores the Ingress annotations turns the edge limit and routing off silently;
 - [H-436](../spec/bastion.md#h-436--deleting-a-registration-deletes-its-token-rows-so-a-later-use-of-a-deleted-token-is-unknown-and-not-logged) —
@@ -367,4 +367,42 @@ The gaps of the Bastion's mechanisms are recorded on the spec page, where the me
   `Accept-Encoding: gzip` was asked about at the main installation on every artifact read, cause not found.
 
 This page does not describe the main installation's own mechanisms that the Bastion relies on (the decision point, token
-validation, the revocation journal); their pages and gaps are linked above. It records no gap of its own.
+validation, the revocation journal); their pages and gaps are linked above.
+
+### H-522 · The chart restricts no egress of the Bastion pods
+
+Stage: the pod network of the Bastion pods. The chart's NetworkPolicy holds ingress rules only
+([networkpolicy.yaml](../../deploy/helm/trove-bastion/templates/networkpolicy.yaml),
+[R-BAS-047](../spec/bastion.md#r-bas-047--network-policy)), by the owner's decision of 2026-11-05 that
+[ADR-154](../decisions.md#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port) governs this
+chart as well. Until then the chart rendered an egress policy, on by default, that let the pods reach DNS, the main installation,
+Valkey, the cache bucket and the span collector and nothing else.
+
+Live wherever a Bastion shares a cluster or a routed network with the main installation and the cluster operator sets no egress
+policy of their own; dormant where the Bastion's network reaches nothing but the main installation's public address. Subject:
+every address the pod network reaches from a Bastion pod, reached by a process that took over a Bastion pod, the component of
+trove built to face the internet. Per case, in the kind profile, where the Bastions run in the namespace `trove-bastion` next to the
+main installation in `trove`:
+
+- the main installation's PostgreSQL Service `trove-db-rw:5432` and `registry.npmjs.org:443`. Until 2026-11-05
+  `TestBastion_R_BAS_049_NetworkPolicy` ([bastion_scenarios_test.go](../../test/e2e/bastion_scenarios_test.go)) asserted that the
+  chart's former egress policy refused a Bastion pod's connections to both, and that a client pod of `trove`, which no egress
+  policy restricts, reached both. No NetworkPolicy of the profile selects the PostgreSQL pods, so without the chart's policy a
+  Bastion pod reaches them as well;
+- the profile's Keycloak (`trove-keycloak:8443`), to which the same test found a Bastion pod's connection refused while that
+  policy was in force; no NetworkPolicy of the profile selects Keycloak either;
+- not the main installation's Valkey: its own ingress policy `trove-valkey-clients` admits only trove's serving pods of `trove`
+  ([deploy/dev/valkey.yaml](../../deploy/dev/valkey.yaml)). A target that fences itself with an ingress policy stays fenced.
+
+What does not change: the Bastion holds no credential for PostgreSQL, the main installation's object store or upstream registries
+(R-BAS-030), so a connection to them is a network path, not access; the Bastion token and the callers' credentials in transit are
+what a taken-over pod holds (H-386). Beyond the targets that fence themselves, the in-cluster services, on a cloud node its
+metadata endpoint (`169.254.169.254`), and the internet are reachable, so the taken-over pod is a foothold for scanning and for
+attacking services that trust the pod network.
+
+What makes it real: a flaw that lets an attacker run code in a Bastion process, in a cluster or network without an egress policy
+for the Bastion pods. What closes it is the cluster operator's own egress policy for the Bastion pods, admitting what R-BAS-047
+lists: DNS; the main installation's addresses (`bastion.main.url`, and `bastion.main.packages_url` where set) on their ports;
+Valkey and its Sentinels while Valkey is configured; the cache bucket with the bucket backend, and its credential endpoint with
+`credentials.source` `webIdentity` or `default`; the span collector while tracing is enabled. The chart's counterpart for the
+main installation's pods is [H-516](egress.md#h-516--the-chart-restricts-no-egress-of-its-pods).

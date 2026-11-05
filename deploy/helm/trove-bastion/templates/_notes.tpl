@@ -26,9 +26,6 @@ Warning: tls.enabled is false. The Bastion's listeners, its probes and its scrap
 {{- end }}
 {{- if not .Values.networkPolicy.enabled }}
 
-Warning: networkPolicy.enabled is false. Nothing restricts what an attacker who takes over a Bastion pod can reach (R-BAS-047).
-{{- else if not .Values.networkPolicy.egress.enabled }}
-
-Warning: networkPolicy.egress.enabled is false. The Bastion pods may reach any address.
+Warning: networkPolicy.enabled is false. Every pod reaches the Bastion pods' https and ops ports directly, not only through the Ingress.
 {{- end }}
 {{- end -}}

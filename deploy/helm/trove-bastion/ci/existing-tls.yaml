@@ -27,8 +27,3 @@ cacheVolume:
 networkPolicy:
   ingress:
     probeCIDRs: ["10.0.0.0/8"]
-  egress:
-    main:
-      to:
-        - ipBlock:
-            cidr: 198.51.100.10/32

@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -262,7 +261,7 @@ func TestR_BAS_045_RequiredValuesRenderTheResources(t *testing.T) {
 			{"main url http", []string{"config.bastion.main.url=http://trove.example.com"}, []string{"config.bastion.main.url", "https"}},
 			{"token Secret missing", []string{"secrets.mainToken.existingSecret="}, []string{"secrets.mainToken.existingSecret"}},
 			{"bucket backend without a signing key", []string{"config.bastion.cache.backend=bucket", "config.bastion.cache.bucket.bucket=b", "secrets.cacheBucket.existingSecret=s"}, []string{"secrets.signingKey.existingSecret"}},
-			{"Valkey without a signing key", []string{"config.valkey.mode=standalone", "config.valkey.address=v:6379", "highAvailability.enforce=false", "networkPolicy.egress.valkey.to[0].podSelector.matchLabels.a=b"}, []string{"secrets.signingKey.existingSecret"}},
+			{"Valkey without a signing key", []string{"config.valkey.mode=standalone", "config.valkey.address=v:6379", "highAvailability.enforce=false"}, []string{"secrets.signingKey.existingSecret"}},
 			{"bucket backend without a bucket", []string{"config.bastion.cache.backend=bucket", "secrets.signingKey.existingSecret=k"}, []string{"config.bastion.cache.bucket.bucket"}},
 			{"bucket credentials without a Secret", []string{"config.bastion.cache.backend=bucket", "config.bastion.cache.bucket.bucket=b", "secrets.signingKey.existingSecret=k"}, []string{"secrets.cacheBucket.existingSecret"}},
 			{"persistent volume with the bucket backend", []string{"config.bastion.cache.backend=bucket", "config.bastion.cache.bucket.bucket=b", "secrets.signingKey.existingSecret=k", "secrets.cacheBucket.existingSecret=s", "cacheVolume.type=persistent"}, []string{"cacheVolume.type", "config.bastion.cache.backend"}},
@@ -270,9 +269,7 @@ func TestR_BAS_045_RequiredValuesRenderTheResources(t *testing.T) {
 			{"cert-manager without an issuer", []string{"tls.certManager.issuerRef.name="}, []string{"tls.certManager.issuerRef.name"}},
 			{"two trust bundle sources", []string{"trustedCA.existingSecret=a", "trustedCA.existingConfigMap=b"}, []string{"trustedCA.existingSecret", "trustedCA.existingConfigMap"}},
 			{"two trust bundle keys", []string{"trustedCA.existingSecret=a", "trustedCA.keys={a.crt,b.crt}"}, []string{"trustedCA.keys"}},
-			{"no egress target for the main installation", []string{"networkPolicy.egress.main.to=null"}, []string{"networkPolicy.egress.main.to"}},
 			{"no ingress peer for the https port", []string{"networkPolicy.ingress.https.from=null"}, []string{"networkPolicy.ingress.https.from"}},
-			{"Valkey without an egress target", []string{"config.valkey.mode=sentinel", "config.valkey.sentinel.addresses={a:1,b:1,c:1}", "config.valkey.sentinel.primary_name=p", "secrets.signingKey.existingSecret=k"}, []string{"networkPolicy.egress.valkey.to"}},
 			{"Sentinel without addresses", []string{"config.valkey.mode=sentinel"}, []string{"config.valkey.sentinel.addresses"}},
 			{"a typo in disabledAlerts", []string{"metrics.prometheusRule.disabledAlerts={TroveBastionNope}"}, []string{"metrics.prometheusRule.disabledAlerts", "TroveBastionNope"}},
 			{"autoscaling without a metric", []string{"autoscaling.enabled=true", "autoscaling.targetCPUUtilizationPercentage=0"}, []string{"autoscaling.targetCPUUtilizationPercentage"}},
@@ -636,8 +633,8 @@ func TestR_BAS_033_RouteByPath(t *testing.T) {
 	})
 }
 
-// TestR_BAS_047_NetworkPolicy (R-BAS-047): ingress from the ingress controller's namespace and monitoring,
-// egress on by default to DNS, the main installation, Valkey, the cache bucket and the span collector only.
+// TestR_BAS_047_NetworkPolicy (R-BAS-047, ADR-154): ingress rules only, each with its port: https from the ingress controller's
+// namespace, ops from monitoring and the probe CIDRs; no egress rule and no networkPolicy.egress value.
 func TestR_BAS_047_NetworkPolicy(t *testing.T) {
 	policy := func(t *testing.T, files []string, sets ...string) doc {
 		t.Helper()
@@ -671,38 +668,43 @@ func TestR_BAS_047_NetworkPolicy(t *testing.T) {
 			t.Errorf("ops rule = %v", in[1])
 		}
 	})
-	t.Run("egress is on by default: DNS and the main installation, nothing else", func(t *testing.T) {
-		np := policy(t, bstRequired())
-		types := list(np, "spec", "policyTypes")
-		if len(types) != 2 || types[0] != "Ingress" || types[1] != "Egress" {
-			t.Errorf("policyTypes = %v", types)
+	t.Run("ingress only in every value set: policyTypes [Ingress], no egress key, one port per rule, no empty peer list", func(t *testing.T) {
+		sets, _ := filepath.Glob(filepath.Join(bastionDir(), "ci", "*.yaml"))
+		if len(sets) < 5 {
+			t.Fatalf("found %d value sets under deploy/helm/trove-bastion/ci", len(sets))
 		}
-		eg := list(np, "spec", "egress")
-		if len(eg) != 2 {
-			t.Fatalf("egress rules = %v", eg)
-		}
-		if p := ports(eg[0]); len(p) != 2 || p[0] != 53 || p[1] != 53 {
-			t.Errorf("DNS ports = %v", p)
-		}
-		if str(eg[1], "to", "0", "ipBlock", "cidr") != "198.51.100.10/32" || len(ports(eg[1])) != 1 || ports(eg[1])[0] != 443 {
-			t.Errorf("main rule = %v", eg[1])
+		for _, f := range sets {
+			np := policy(t, []string{f})
+			if types := list(np, "spec", "policyTypes"); len(types) != 1 || types[0] != "Ingress" {
+				t.Errorf("%s: policyTypes = %v, want [Ingress] only", base(f), types)
+			}
+			if spec, _ := at(np, "spec").(map[string]any); spec != nil {
+				if _, has := spec["egress"]; has {
+					t.Errorf("%s: the policy has an egress key: %v", base(f), spec["egress"])
+				}
+			}
+			for i, r := range list(np, "spec", "ingress") {
+				if p := ports(r); len(p) != 1 {
+					t.Errorf("%s: ingress rule %d ports = %v, want exactly one", base(f), i, p)
+				}
+				if len(list(r, "from")) == 0 {
+					t.Errorf("%s: ingress rule %d has no peer, which means from anywhere", base(f), i)
+				}
+			}
 		}
 	})
-	t.Run("Valkey, the cache bucket and the span collector are added while used", func(t *testing.T) {
-		np := policy(t, []string{bastionSet("bucket-valkey")})
-		got := map[string]bool{}
-		for _, r := range list(np, "spec", "egress") {
-			for _, p := range ports(r) {
-				got["p"+strconv.Itoa(p)] = true
-			}
+	t.Run("networkPolicy.egress is not a value", func(t *testing.T) {
+		bstFails(t, bstRequired(), []string{"networkPolicy.egress.enabled=true"}, "egress")
+		raw, err := os.ReadFile(filepath.Join(bastionDir(), "values.yaml"))
+		if err != nil {
+			t.Fatal(err)
 		}
-		for _, p := range []string{"p53", "p443", "p6379", "p26379", "p4318"} {
-			if !got[p] {
-				t.Errorf("no egress rule for %s: %v", p, got)
-			}
+		var vals map[string]any
+		if err := yaml.Unmarshal(raw, &vals); err != nil {
+			t.Fatal(err)
 		}
-		if n := len(list(np, "spec", "egress")); n != 5 {
-			t.Errorf("egress rules = %d, want 5 (DNS, main, Valkey, bucket, tracing)", n)
+		if np, _ := vals["networkPolicy"].(map[string]any); np == nil || np["egress"] != nil {
+			t.Errorf("values.yaml networkPolicy = %v, want ingress values only", vals["networkPolicy"])
 		}
 	})
 	t.Run("probe CIDRs join the ops rule", func(t *testing.T) {
@@ -716,13 +718,10 @@ func TestR_BAS_047_NetworkPolicy(t *testing.T) {
 			t.Errorf("ops rule = %v", in[1])
 		}
 	})
-	t.Run("egress.enabled: false renders an ingress-only policy", func(t *testing.T) {
-		np := policy(t, bstRequired(), "networkPolicy.egress.enabled=false")
-		if types := list(np, "spec", "policyTypes"); len(types) != 1 || types[0] != "Ingress" {
-			t.Errorf("policyTypes = %v", types)
-		}
-		if at(np, "spec", "egress") != nil {
-			t.Error("egress rules with egress.enabled: false")
+	t.Run("no peer for the ops port leaves its rule out", func(t *testing.T) {
+		in := list(policy(t, bstRequired(), "networkPolicy.ingress.ops.from=null"), "spec", "ingress")
+		if len(in) != 1 || ports(in[0])[0] != 8443 {
+			t.Errorf("ingress rules = %v, want the https rule only", in)
 		}
 	})
 	t.Run("networkPolicy.enabled: false renders no policy", func(t *testing.T) {
@@ -730,11 +729,6 @@ func TestR_BAS_047_NetworkPolicy(t *testing.T) {
 		if len(ofKind(docs, "NetworkPolicy")) != 0 {
 			t.Error("a NetworkPolicy is rendered")
 		}
-	})
-	t.Run("a target without a peer is refused, not rendered as anywhere", func(t *testing.T) {
-		bstFails(t, []string{bastionSet("bucket-valkey")}, []string{"networkPolicy.egress.cacheBucket.to=null"}, "networkPolicy.egress.cacheBucket.to")
-		bstFails(t, []string{bastionSet("bucket-valkey")}, []string{"networkPolicy.egress.tracing.to=null"}, "networkPolicy.egress.tracing.to")
-		bstFails(t, bstRequired(), []string{"networkPolicy.egress.dns.to=null"}, "networkPolicy.egress.dns.to")
 	})
 }
 

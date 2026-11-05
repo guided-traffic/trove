@@ -572,7 +572,7 @@ deploy/helm/trove-bastion/
 │   ├── persistent-routed.yaml  StatefulSet with a claim template, routing by path, edge-limit whitelist
 │   ├── autoscaling.yaml        HPA, bastion.replicas = autoscaling.maxReplicas
 │   ├── existing-tls.yaml       tls.existingSecret, no Certificate, emptyDir cache, CA bundle from a Secret
-│   └── plaintext.yaml          tls.enabled: false, no egress policy, no Ingress
+│   └── plaintext.yaml          tls.enabled: false, no edge limit, no Ingress, one replica
 ├── tests/rules_test.yaml   promtool test rules for the PrometheusRule (not packaged)
 └── templates/
     ├── _helpers.tpl        names, labels, image, config merge, secret and ConfigMap mounts, probes, topology spread
@@ -588,7 +588,10 @@ deploy/helm/trove-bastion/
 a Deployment, or a StatefulSet with `cacheVolume.type: persistent`, whose claim template gives every pod a volume of its own; the
 cache volume of the default `ephemeral` type is a generic ephemeral volume of the pod, `emptyDir` an `emptyDir`, and the bucket
 backend mounts none (the spool of fills is `/tmp`). `replicas` is `replicaCount`, and absent with `autoscaling.enabled`, where the
-HPA owns it.
+HPA owns it. The NetworkPolicy holds ingress rules only, as the chart `trove`'s (R-BAS-047, ADR-154): the https port from
+`networkPolicy.ingress.https.from`, the ops port from `networkPolicy.ingress.ops.from` and `probeCIDRs`. There is no
+`networkPolicy.egress` value; the Bastion pods' egress is the cluster operator's
+([H-522](../security/bastion.md#h-522--the-chart-restricts-no-egress-of-the-bastion-pods)).
 
 **Configuration (R-BAS-002).** `trove-bastion.config` merges `config` with the keys the chart manages (managed wins):
 `bastion.main.token_file`, `bastion.main.ca_file` and `bastion.cache.bucket.ca_file` (the one key of `trustedCA`),
@@ -621,7 +624,7 @@ with the bucket backend or Valkey, the bucket and its credentials Secret, `cache
 `config.bastion.limits.authenticated.requests_per_second`, `config.server.trusted_proxies` while `ingress.enabled` (behind the Ingress every
 request comes from the controller's pods, so without it all callers count as one address, [Q-BAS-130](../spec/bastion.md#q-bas-130--behind-the-ingress-the-chart-requires-the-trusted-proxies);
 the message names the value and says to list the controller's pod CIDRs), the spool and the volumes it lives in (below), a certificate source, the
-egress targets and the https ingress peer (an empty list means "anywhere"), one trust bundle key, an `ingress.annotations` key the chart renders, a name in `disabledAlerts` that
+https ingress peer (an empty list means "anywhere"), one trust bundle key, an `ingress.annotations` key the chart renders, a name in `disabledAlerts` that
 is no alert, autoscaling bounds and metric, `highAvailability.enforce` (two replicas, a PDB, host spreading `DoNotSchedule` with
 `nodeTaintsPolicy: Honor`, no standalone Valkey, three Sentinels), and the managed keys.
 
@@ -679,10 +682,9 @@ other chart tests:
 | `TestR_BAS_025_ReplicasAreRenderedIntoTheConfiguration` | `bastion.replicas` is `replicaCount`, or `autoscaling.maxReplicas` with an HPA and no `replicas` field |
 | `TestR_BAS_045_TheClientAddressNeedsTheTrustedProxiesBehindTheIngress` | the render fails without `config.server.trusted_proxies` while the Ingress is on, names the value, passes with the Ingress off and with a list |
 | `TestR_BAS_030_TheSpoolFitsTheTemporaryVolume` | the derived `tmp.sizeLimit` (`2304Mi`), a set one used as written, a volume too small for the spool or the cache refused, a spool below `max_object_bytes` refused |
-| `TestR_BAS_047_TheValuesDoNotSuggestAnAnywhereEgress` | no `0.0.0.0/0` example for the cache bucket's egress in the values or the CI sets, and the comment saying why |
 | `TestR_BAS_030_CacheVolumeKinds` | persistent gives a StatefulSet with a claim template, ephemeral and `emptyDir`, the bucket backend no volume |
 | `TestR_BAS_033_RouteByPath`, `TestR_BAS_038_EdgeLimitIsWiderThanTheBastionsOwn` | the annotations, the refusals naming both values, a user annotation that collides |
-| `TestR_BAS_047_NetworkPolicy` | ingress peers and ports, egress on by default, the targets added while used, no empty peer list |
+| `TestR_BAS_047_NetworkPolicy` | ingress peers and ports; in every set `policyTypes: [Ingress]`, no `egress` key, one port per rule, no empty peer list; `networkPolicy.egress` refused by the schema; the ops rule left out without a peer; `enabled: false` renders none |
 | `TestR_BAS_043_PodDisruptionBudgetAndSpreading` | PDB, spread, `highAvailability.enforce`, probes |
 | `TestR_BAS_044_TLS`, `TestR_BAS_040_ServiceMonitor` | Certificate or existing Secret, backend TLS annotations, trust bundles, the plaintext switch, the ServiceMonitor |
 | `TestR_BAS_041_PrometheusRuleAlerts`, `TestR_BAS_041_PromtoolRules` | the alert names, `disabledAlerts`, scoping; promtool |

@@ -1,16 +1,13 @@
 {{- /*
-Network policy (R-BAS-047), ingress and egress, one policy for the Bastion pods.
+Network policy (R-BAS-047, ADR-154): ingress rules only, one policy for the Bastion pods, and every rule
+names its port. The chart renders no egress rule: the Bastion pods' egress is the cluster operator's own
+policy (docs/security/bastion.md, H-522).
 
-Ingress: the https port only from networkPolicy.ingress.https.from (the ingress controller's namespace;
-the Bastion is reached through its Ingress, never directly), the ops port only from
+The https port only from networkPolicy.ingress.https.from (the ingress controller's namespace; the
+Bastion is reached through its Ingress, never directly), the ops port only from
 networkPolicy.ingress.ops.from and networkPolicy.ingress.probeCIDRs. No peer for the ops port closes it
-for everyone: an empty "from" would mean from anywhere.
-
-Egress (on by default, unlike the chart trove): DNS, the main installation, Valkey while configured, the
-cache bucket with the bucket backend, the span collector while tracing is enabled, and
-networkPolicy.egress.extra; nothing else. The Bastion contacts no upstream registry, no OIDC issuer and
-no PostgreSQL. A target without a "to" is refused at render time (trove-bastion.validate): an empty "to"
-would mean to anywhere.
+for everyone: an empty "from" would mean from anywhere. An empty https.from is refused at render time
+(trove-bastion.validate) for the same reason.
 */ -}}
 {{- if .Values.networkPolicy.enabled }}
 {{- $np := .Values.networkPolicy }}
@@ -35,9 +32,6 @@ spec:
       {{- include "trove-bastion.selectorLabels" . | nindent 6 }}
   policyTypes:
     - Ingress
-    {{- if $np.egress.enabled }}
-    - Egress
-    {{- end }}
   ingress:
     - ports:
         - protocol: TCP
@@ -51,52 +45,4 @@ spec:
       from:
         {{- toYaml $ops | nindent 8 }}
     {{- end }}
-  {{- if $np.egress.enabled }}
-  {{- $e := $np.egress }}
-  egress:
-    - to:
-        {{- toYaml $e.dns.to | nindent 8 }}
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
-    - to:
-        {{- toYaml $e.main.to | nindent 8 }}
-      ports:
-        {{- range $e.main.ports }}
-        - protocol: TCP
-          port: {{ . }}
-        {{- end }}
-    {{- if include "trove-bastion.valkeyOn" . }}
-    - to:
-        {{- toYaml $e.valkey.to | nindent 8 }}
-      ports:
-        {{- range $e.valkey.ports }}
-        - protocol: TCP
-          port: {{ . }}
-        {{- end }}
-    {{- end }}
-    {{- if include "trove-bastion.bucketOn" . }}
-    - to:
-        {{- toYaml $e.cacheBucket.to | nindent 8 }}
-      ports:
-        {{- range $e.cacheBucket.ports }}
-        - protocol: TCP
-          port: {{ . }}
-        {{- end }}
-    {{- end }}
-    {{- if (dig "tracing" "enabled" false .Values.config) }}
-    - to:
-        {{- toYaml $e.tracing.to | nindent 8 }}
-      ports:
-        {{- range $e.tracing.ports }}
-        - protocol: TCP
-          port: {{ . }}
-        {{- end }}
-    {{- end }}
-    {{- with $e.extra }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
-  {{- end }}
 {{- end }}

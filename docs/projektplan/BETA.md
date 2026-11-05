@@ -853,6 +853,11 @@ The phase comes before phase 6b, so that the mirror's background passes and its 
 areas.
 
 - 🟢 Principle of the cut (ADR-153) and the network-policy rule (ADR-154)
+- 🟡 The network-policy rule for the chart `trove-bastion` too (owner, 2026-11-05): its egress policy removed, R-BAS-047 is ingress
+  rules only, Q-BAS-55 superseded in part, the egress gap
+  [H-522](../security/bastion.md#h-522--the-chart-restricts-no-egress-of-the-bastion-pods); chart tests green. Open: the rewritten
+  `TestBastion_R_BAS_049_NetworkPolicy` (ingress refused from another namespace, admitted from the ingress controller's) and the
+  cut of `TestBastion_R_BAS_049_MainUnreachable`, now an egress policy of the test, have not run on kind yet
 - 🟢 The roles of the cut: `api`, `packages` and `worker`, variants as pools; no fetch service
   ([ADR-155](../decisions.md#adr-155--three-roles-api-packages-and-worker-variants-are-pools))
 - 🟢 Specification rewritten: INV-2, R-ARCH-001, R-ARCH-016 (the queue `vuln`, `jobs.queues`, `jobs.exclude_queues`),

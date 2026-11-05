@@ -72,7 +72,7 @@ The chart `trove-bastion` is published with the chart `trove`, with the same ver
 
 ### A minimal install
 
-The values a render needs: the Bastion's own URL, the pods of its ingress controller, the main installation's URL, the Secret of the token, a certificate source for the listener, and the address of the main installation for the network policy.
+The values a render needs: the Bastion's own URL, the pods of its ingress controller, the main installation's URL, the Secret of the token and a certificate source for the listener.
 
 ```yaml
 config:
@@ -89,21 +89,17 @@ tls:
   certManager:
     issuerRef:
       name: internal-ca                             # example: a ClusterIssuer; or set tls.existingSecret
-networkPolicy:
-  egress:
-    main:
-      to:
-        - ipBlock:
-            cidr: 198.51.100.10/32                  # example: the address of the main installation
 ```
 
 ```shell
 helm install trove-bastion trove/trove-bastion -n trove-bastion -f values.yaml --version <version>   # example: the version of the main installation
 ```
 
-This gives two replicas (the default, and the minimum while `highAvailability.enforce` is on) that spread across nodes behind a PodDisruptionBudget, a cache on an ephemeral volume of each pod, no Valkey, an Ingress for HAProxy Ingress and a NetworkPolicy that lets the pods reach the main installation, DNS and nothing else. Each replica fills its own cache, so a package is fetched once per replica, and the cache is empty after a restart. The rate limits, counters and blocked addresses work per replica, at the configured value divided by the number of replicas.
+This gives two replicas (the default, and the minimum while `highAvailability.enforce` is on) that spread across nodes behind a PodDisruptionBudget, a cache on an ephemeral volume of each pod, no Valkey, an Ingress for HAProxy Ingress and a NetworkPolicy that admits the Bastion's port only from the namespace of the ingress controller (`networkPolicy.ingress.https.from`, default `haproxy-ingress`) and its metrics port only from the namespace `monitoring`. Each replica fills its own cache, so a package is fetched once per replica, and the cache is empty after a restart. The rate limits, counters and blocked addresses work per replica, at the configured value divided by the number of replicas.
 
 `config.server.trusted_proxies` is required while `ingress.enabled` is on (it is by default), and the render fails without it. Behind the Ingress every request reaches the Bastion from a pod of the ingress controller; the Bastion takes the client's address from `X-Forwarded-For` only when the peer is in this list. Without it every caller has the controller's address, so one client's wrong tokens put every unverified credential of every partner into the timeout, a flood blocks the Bastion for everyone, and the anonymous limits apply to the whole internet together. List the address range of the controller's pods as narrowly as you can; the Bastion refuses a list entry that covers every address. With `ingress.enabled: false`, list the addresses of whatever sits in front instead. This setting is the Bastion's own and is not the main installation's `server.trusted_proxies` of the section above.
+
+The chart does not restrict where the Bastion pods connect: its network policy holds rules for incoming connections only, as the policies of the main installation's chart do. Because the Bastion faces the internet, restrict its outgoing connections with a policy of your own. A Bastion needs DNS; the main installation's address on its port (`config.bastion.main.url`, and `config.bastion.main.packages_url` where set); Valkey and its Sentinels if you configure them; the bucket with the bucket backend, and its credential endpoint if the credentials come from a workload identity or the default chain; and the span collector if tracing is on. It needs no upstream registry, no identity provider and no PostgreSQL. Earlier releases of the chart rendered such a policy from the values `networkPolicy.egress`; the chart now refuses those values, so remove the block from your values file before you upgrade and carry what it allowed into a policy of your own.
 
 Both URLs must be `https`. The Bastion refuses to start with a plain `http` URL for the main installation. If the main installation's certificate comes from a private CA, give the Bastion the bundle with `trustedCA.existingConfigMap` or `trustedCA.existingSecret` (one key holding the whole bundle).
 
@@ -152,21 +148,6 @@ metrics:
     enabled: true                                   # default: false
   prometheusRule:
     enabled: true                                   # default: false
-networkPolicy:
-  egress:
-    main:
-      to:
-        - ipBlock:
-            cidr: 198.51.100.10/32                  # example
-    valkey:
-      to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: trove-bastion-valkey   # example
-    cacheBucket:
-      to:
-        - ipBlock:
-            cidr: 203.0.113.0/24                    # example: the addresses of the object store; a wide range such as 0.0.0.0/0 would let a compromised pod reach anything
 ```
 
 | Choice | What it changes |
@@ -217,7 +198,7 @@ When the main installation is unreachable for a replica, the replica serves what
 | Alert | Severity | Fires when | What it means and what to do |
 |---|---|---|---|
 | `TroveBastionInterfaceMismatch` | critical | A replica reports a different interface version than the main installation, for 1 minute | One side was upgraded without the other. The replica treats the main installation as unreachable. Upgrade the other side to the same release; the alert clears at the next handshake with equal versions. The Bastions screen shows the version each replica reports |
-| `TroveBastionMainUnreachable` | critical | Every replica treats the main installation as unreachable, for 2 minutes | The Bastion cannot reach the main installation, or it refuses the Bastion. Check the main installation, the network policy and the egress address, the trust bundle, and whether `TroveBastionTokenRefused` or `TroveBastionBaseURLMismatch` fire too. Clients get cached content for the grace period, then `503` |
+| `TroveBastionMainUnreachable` | critical | Every replica treats the main installation as unreachable, for 2 minutes | The Bastion cannot reach the main installation, or it refuses the Bastion. Check the main installation, your own egress policy for the Bastion pods if you set one, the egress address, the trust bundle, and whether `TroveBastionTokenRefused` or `TroveBastionBaseURLMismatch` fire too. Clients get cached content for the grace period, then `503` |
 | `TroveBastionMainUnreachableSingleReplica` | warning | Some, but not all, replicas treat it as unreachable, for 5 minutes | The fault is in one pod or its node: look at that pod's log and network |
 | `TroveBastionGraceExhausted` | critical | A replica has been unreachable for longer than `answers.period` plus `grace_period` | The replica serves nothing: every read answers `503`. Restore the connection to the main installation |
 | `TroveBastionBaseURLMismatch` | critical | The main installation does not render URLs for the Bastion's host, for 1 minute | The Bastion's base URL is missing from `server.additional_base_urls` of the main installation, or the address the Bastion connects from is not in `bastions.trusted_proxies`, so the main installation ignores the forwarded host. The Bastion refuses to serve rather than hand out the main installation's URLs |

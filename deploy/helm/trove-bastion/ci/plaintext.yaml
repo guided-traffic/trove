@@ -1,5 +1,5 @@
-# The explicit plaintext switch (INV-20): no TLS on the listeners, plain probes, no Certificate. Egress and
-# edge limit off, a single replica without the HA enforcement: the smallest render the chart allows.
+# The explicit plaintext switch: no TLS on the listeners, plain probes, no Certificate. Edge limit and Ingress
+# off, a single replica without the HA enforcement: the smallest render the chart allows.
 highAvailability:
   enforce: false
 replicaCount: 1
@@ -19,6 +19,3 @@ edgeLimit:
   enabled: false
 ingress:
   enabled: false
-networkPolicy:
-  egress:
-    enabled: false

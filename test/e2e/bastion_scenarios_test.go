@@ -7,7 +7,10 @@ package e2e
 // installation, the interface mismatch and the floods, which block this machine's address at the Bastions.
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -497,66 +500,87 @@ func TestBastion_R_BAS_049_FailedAuthenticationTimeout(t *testing.T) {
 
 // ── network policy and chart ─────────────────────────────────────────────────
 
-// TestBastion_R_BAS_049_NetworkPolicy (R-BAS-047): from a Bastion pod, the connection to the PostgreSQL Service of the main
-// installation and to an external registry is refused by the policy, while the Bastion works.
+// TestBastion_R_BAS_049_NetworkPolicy (R-BAS-047): the chart's policy holds ingress rules only, and the CNI of the profile enforces
+// them per port. A probe pod in another namespace is refused at a Bastion pod's https and ops ports; the same probe in the namespace
+// the https rule admits (the ingress controller's) completes a TLS handshake and reads an HTTP status line at the https port and is
+// refused at the ops port, so each refusal is the policy's; and the Bastion serves through its Ingress meanwhile.
 func TestBastion_R_BAS_049_NetworkPolicy(t *testing.T) {
 	env := basFx(t)
+	image := os.Getenv("TROVE_E2E_OPENSSL_IMAGE")
+	if image == "" {
+		t.Fatal("TROVE_E2E_OPENSSL_IMAGE is not set; run the suite through deploy/dev/e2e.sh")
+	}
 	site := env.bkt
-	pod := basReadyPods(t, site)[0]
-	probe := basDebugContainer(t, pod.Name)
-	check := func(host string, port string, wantOpen bool, what string) {
-		t.Helper()
-		out, _ := kbTry("exec", pod.Name, "-c", probe, "--", "node", "-e",
-			`const s=require('net').connect({host:process.argv[1],port:+process.argv[2],timeout:4000});
-s.on('connect',()=>{console.log('open');process.exit(0)});
-s.on('timeout',()=>{console.log('timeout');process.exit(0)});
-s.on('error',e=>{console.log('error '+e.code);process.exit(0)});`, host, port)
-		got := strings.TrimSpace(out)
-		if (got == "open") != wantOpen {
-			t.Errorf("%s: connection to %s:%s from the Bastion pod: %q, want open=%v", what, host, port, got, wantOpen)
-		}
+	type rule struct {
+		Ports []struct {
+			Port int `json:"port"`
+		} `json:"ports"`
+		From []struct {
+			NamespaceSelector struct {
+				MatchLabels map[string]string `json:"matchLabels"`
+			} `json:"namespaceSelector"`
+		} `json:"from"`
 	}
-	check("trove-api.trove.svc", "8080", true, "the main installation's api Service is allowed")
-	check("trove-packages.trove.svc", "8080", true, "the main installation's packages Service is allowed")
-	check("trove-db-rw.trove.svc", "5432", false, "the PostgreSQL Service of the main installation")
-	check("trove-db-rw.trove.svc", "5432", false, "the PostgreSQL Service of the main installation, again")
-	check("trove-s3.trove.svc", "9000", true, "the cache bucket is allowed with the bucket backend")
-	check("trove-keycloak.trove.svc", "8443", false, "another service of the main namespace")
-	check("registry.npmjs.org", "443", false, "an external registry")
-	// the same two targets are reachable from outside the policy (a client pod), so the refusal is the policy's
-	out := npmClientExec(t, 0, "node", "-e", `const s=require('net').connect({host:process.argv[1],port:+process.argv[2],timeout:6000});
-s.on('connect',()=>{console.log('open');process.exit(0)});s.on('timeout',()=>{console.log('timeout');process.exit(0)});s.on('error',e=>{console.log('error '+e.code);process.exit(0)});`, "trove-db-rw.trove.svc", "5432")
-	if strings.TrimSpace(out) != "open" {
-		t.Errorf("the PostgreSQL Service is not reachable from a client pod either (%q): the check proves nothing", strings.TrimSpace(out))
+	var np struct {
+		Spec struct {
+			PolicyTypes []string          `json:"policyTypes"`
+			Ingress     []rule            `json:"ingress"`
+			Egress      []json.RawMessage `json:"egress"`
+		} `json:"spec"`
 	}
-	out = npmClientExec(t, 0, "node", "-e", `const s=require('net').connect({host:process.argv[1],port:+process.argv[2],timeout:6000});
-s.on('connect',()=>{console.log('open');process.exit(0)});s.on('timeout',()=>{console.log('timeout');process.exit(0)});s.on('error',e=>{console.log('error '+e.code);process.exit(0)});`, "registry.npmjs.org", "443")
-	if strings.TrimSpace(out) != "open" {
-		t.Errorf("registry.npmjs.org:443 is not reachable from a client pod (%q): the cluster has no internet access, so the policy's refusal cannot be told from it", strings.TrimSpace(out))
-	}
-	// and the Bastion itself keeps working
-	site.get(t, env.full.Token, npmDocPath(env.open)).want(t, "the Bastion serves while the policy is in force", 200)
-}
-
-// basDebugContainer adds an ephemeral container with a shell-less Node.js (the clients image) to the pod, so a connection can
-// be made from inside the pod's network identity, and returns its name.
-func basDebugContainer(t testing.TB, podName string) string {
-	t.Helper()
-	const name = "e2e-probe"
-	if out, err := kbTry("get", "pod", podName, "-o", "jsonpath={.spec.ephemeralContainers[*].name}"); err == nil && strings.Contains(out, name) {
-		return name
-	}
-	custom := `{"imagePullPolicy":"IfNotPresent","securityContext":{"runAsNonRoot":true,"runAsUser":1000,"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"seccompProfile":{"type":"RuntimeDefault"}}}`
-	path := t.TempDir() + "/custom.json"
-	if err := writeFile(path, custom); err != nil {
+	if err := json.Unmarshal([]byte(kb(t, "get", "networkpolicy", site.release, "-o", "json")), &np); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := kbTry("debug", podName, "--image=trove-e2e-clients:dev", "-c", name, "--profile=restricted", "--custom="+path, "--", "sleep", "3600"); err != nil {
-		t.Fatalf("kubectl debug: %v\n%s", err, out)
+	if len(np.Spec.PolicyTypes) != 1 || np.Spec.PolicyTypes[0] != "Ingress" || np.Spec.Egress != nil {
+		t.Errorf("the NetworkPolicy %s: policyTypes %v, egress %d rules; want [Ingress] and no egress", site.release, np.Spec.PolicyTypes, len(np.Spec.Egress))
 	}
-	waitFor(t, "the probe container", 90*time.Second, 2*time.Second, func() bool {
-		out, _ := kbTry("get", "pod", podName, "-o", "jsonpath={.status.ephemeralContainerStatuses[?(@.name=='"+name+"')].state.running.startedAt}")
-		return strings.TrimSpace(out) != ""
+	if len(np.Spec.Ingress) != 2 || len(np.Spec.Ingress[0].Ports) != 1 || len(np.Spec.Ingress[1].Ports) != 1 || len(np.Spec.Ingress[0].From) != 1 {
+		t.Fatalf("the NetworkPolicy %s has not the https rule and the ops rule of R-BAS-047: %+v", site.release, np.Spec.Ingress)
+	}
+	httpsPort, opsPort := np.Spec.Ingress[0].Ports[0].Port, np.Spec.Ingress[1].Ports[0].Port
+	admitted := np.Spec.Ingress[0].From[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"]
+	if httpsPort != 8443 || opsPort != 8081 || admitted == "" {
+		t.Fatalf("the NetworkPolicy %s admits %d from namespace %q and %d, want 8443 from the ingress controller's namespace and 8081", site.release, httpsPort, admitted, opsPort)
+	}
+	target := basReadyPods(t, site)[0]
+	// The probe completes a TLS handshake and reads the status line: REACHED is an HTTP answer of the Bastion, BLOCKED a connection
+	// the policy dropped (no answer within the timeout). The ops port answers /readyz with 200 while the replica is ready.
+	probe := func(ns string) string {
+		t.Helper()
+		name := "e2e-bas-netpol-probe"
+		_, _ = kubectl("-n", ns, "delete", "pod", name, "--ignore-not-found", "--wait=true")
+		t.Cleanup(func() { _, _ = kubectl("-n", ns, "delete", "pod", name, "--ignore-not-found", "--wait=false") })
+		script := fmt.Sprintf(`get() { printf 'GET %%s HTTP/1.1\r\nHost: %[2]s\r\nConnection: close\r\n\r\n' "$2" | timeout 6 openssl s_client -quiet -connect %[1]s:"$1" 2>/dev/null | head -1; }; `+
+			`case "$(get %[3]d /)" in HTTP/*) echo HTTPS_REACHED ;; *) echo HTTPS_BLOCKED ;; esac; `+
+			`case "$(get %[4]d /readyz)" in HTTP/*) echo OPS_REACHED ;; *) echo OPS_BLOCKED ;; esac`, target.IP, site.host, httpsPort, opsPort)
+		if _, err := kubectl("-n", ns, "run", name, "--image="+image, "--restart=Never", "--command", "--", "sh", "-c", script); err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, "the probe pod in "+ns+" to finish", 3*time.Minute, 2*time.Second, func() bool {
+			ph, _ := kubectl("-n", ns, "get", "pod", name, "-o", "jsonpath={.status.phase}")
+			return ph == "Succeeded" || ph == "Failed"
+		})
+		out, _ := kubectl("-n", ns, "logs", name)
+		t.Logf("from namespace %s to %s (%s): %s", ns, target.Name, target.IP, strings.ReplaceAll(strings.TrimSpace(out), "\n", " "))
+		return out
+	}
+	t.Run("a pod of another namespace is refused at both ports", func(t *testing.T) {
+		out := probe("default")
+		if !strings.Contains(out, "HTTPS_BLOCKED") {
+			t.Errorf("the https port of a Bastion pod is reachable from the namespace default, outside %s: %q", admitted, out)
+		}
+		if !strings.Contains(out, "OPS_BLOCKED") {
+			t.Errorf("the ops port of a Bastion pod is reachable from the namespace default: %q", out)
+		}
 	})
-	return name
+	t.Run("a pod of the admitted namespace reaches the https port and not the ops port", func(t *testing.T) {
+		out := probe(admitted)
+		if !strings.Contains(out, "HTTPS_REACHED") {
+			t.Errorf("the https port of a Bastion pod is not reachable from %s, which the policy admits, so the refusal above proves nothing: %q", admitted, out)
+		}
+		if !strings.Contains(out, "OPS_BLOCKED") {
+			t.Errorf("the ops port of a Bastion pod is reachable from %s, which the policy admits to the https port only: %q", admitted, out)
+		}
+	})
+	site.get(t, env.full.Token, npmDocPath(env.open)).want(t, "the Bastion serves through its Ingress while the policy is in force", 200)
 }

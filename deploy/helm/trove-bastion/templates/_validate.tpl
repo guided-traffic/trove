@@ -203,27 +203,10 @@ generated schema of the role bastion (docs/developer/helm-chart.md, Bastion char
 {{- end -}}
 {{- end -}}
 
-{{- /* Network policy (R-BAS-047): an empty "to" or "from" would mean anywhere. */ -}}
+{{- /* Network policy (R-BAS-047): an empty "from" would mean from anywhere. */ -}}
 {{- if $v.networkPolicy.enabled -}}
 {{- if not $v.networkPolicy.ingress.https.from -}}
 {{- fail "trove-bastion: networkPolicy.ingress.https.from must not be empty: the Bastion is reached through its Ingress, never directly; name the ingress controller's namespace (an ipBlock of 0.0.0.0/0 is the explicit way to admit everyone)" -}}
-{{- end -}}
-{{- if $v.networkPolicy.egress.enabled -}}
-{{- if not $v.networkPolicy.egress.dns.to -}}
-{{- fail "trove-bastion: networkPolicy.egress.dns.to is required with networkPolicy.egress.enabled" -}}
-{{- end -}}
-{{- if not $v.networkPolicy.egress.main.to -}}
-{{- fail "trove-bastion: networkPolicy.egress.main.to is required with networkPolicy.egress.enabled: the address of the main installation (example: [{ipBlock: {cidr: 198.51.100.10/32}}])" -}}
-{{- end -}}
-{{- if and (ne $valkey "none") (not $v.networkPolicy.egress.valkey.to) -}}
-{{- fail "trove-bastion: networkPolicy.egress.valkey.to is required while config.valkey.mode is not none (example: [{podSelector: {matchLabels: {app.kubernetes.io/name: trove-bastion-valkey}}}])" -}}
-{{- end -}}
-{{- if and (eq $backend "bucket") (not $v.networkPolicy.egress.cacheBucket.to) -}}
-{{- fail "trove-bastion: networkPolicy.egress.cacheBucket.to is required with config.bastion.cache.backend: bucket (example: [{ipBlock: {cidr: 203.0.113.0/24}}], the object store's addresses; a wide range such as 0.0.0.0/0 undoes the egress promise of R-BAS-047)" -}}
-{{- end -}}
-{{- if and (dig "tracing" "enabled" false $cfg) (not $v.networkPolicy.egress.tracing.to) -}}
-{{- fail "trove-bastion: networkPolicy.egress.tracing.to is required while config.tracing.enabled is true" -}}
-{{- end -}}
 {{- end -}}
 {{- end -}}
 
