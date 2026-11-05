@@ -1081,16 +1081,45 @@ Variants, with the same load and pass conditions:
 
 **A drain per role** (phase 6a). For each of `api`, `packages` and `worker` (and a worker pool of the queue `vuln` when the
 run configures one), the pods of that role alone are evicted one after the other through the eviction API, each after the
-previous replacement is ready, under the load above plus a loop of a browser journey of the UI (sign-in, repository list,
-package page, a download through the UI) and a loop of management API calls with a token. The pass conditions above hold,
-the pods of the other roles keep their names and restart counts, and for `worker` a full advisory sync started before the
-first eviction ends on another worker from its checkpoint.
+previous replacement is ready. What it adds to a node drain, which takes one pod per role, is that every replica of a role is
+replaced: per-replica state such as the rendition cache ([architecture.md](architecture.md) R-ARCH-012) is cold on every
+`packages` replica afterwards. Its load ([Q-HA-94](#q-ha-94--the-load-of-the-drain-per-role)) is the npm part of the table
+above, as the npm tests run it
+([Q-HA-65](#q-ha-65--the-npm-part-of-r-ha-059s-load-before-nuget-exists-and-how-its-commands-are-counted)), beside a load of
+its own:
+
+| Load | Rate |
+|---|---|
+| `npm ci --cache "$(mktemp -d)"` of a fixture with at least 400 locked dependencies through `npm-all` (remote and local members, cache warm) | 8 parallel loops |
+| `npm publish` of a new version to `npm-local` | one every 10 s |
+| k6 `constant-arrival-rate` against the edge: npm package documents and npm tarballs of 1–5 MB, five to three | 120 requests/s |
+| k6 against the edge: `GET /api/v1/system/ping` and `GET /api/v1/system/replicas` | 100 requests/s |
+| k6 against the edge: an upload of a file to `generic-local`, its download and a comparison of its SHA-256 | 4 iterations/s |
+| A management API call with a token (`GET /api/v1/auth/whoami`) | one every 250 ms |
+| A change written and a job enqueued by the test's driver; before the first eviction of the main `worker`, four probe jobs that run for 400 s | one each per second |
+
+The load starts 2 minutes before the first eviction and runs until 3 minutes after the last replacement is ready. Pass conditions:
+
+- every `npm` command exits `0` with npm's default retries;
+- k6 records no response other than `2xx` or `304` for the npm requests and `200` for the ping and replica requests, and no
+  connection error;
+- the p99 latency of k6's npm requests from the first eviction until 2 minutes after the last replacement is ready is at most
+  twice the p99 of the warm-up;
+- every acknowledged publish installs afterwards;
+- no transfer and no management call fails, and no download returns other bytes than were uploaded;
+- the pods of the other roles keep their names and restart counts while a role is drained;
+- the kubelet events show no `SIGKILL` of a trove container, and no trove pod stays `Pending` for longer than 60 s;
+- every probe job finishes with `attempt` unchanged, and one that ran on an evicted `worker` pod resumes from its checkpoint on
+  another one (R-HA-011).
+
+Not part of it (Q-HA-94): the `dotnet` loops, `dotnet nuget push` and the NuGet share of k6, which join with the drain under
+NuGet load; the long-transfer probes; a loop of a browser journey; and a full advisory sync per pod of the pool `vuln`, whose resume
+from its checkpoint after `SIGTERM` the node drain of `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` covers.
 
 The leg that runs it is the set `drain-roles` of the nightly workflow, on dispatch and locally ([Q-HA-88](#q-ha-88--which-legs-run-the-drain-per-role));
-`TestE14Drain` (variant A, one node) stays in the set `push`. The test of the set evicts with the eviction API and runs the ping load
-through the edge, the upload and download loop on `generic-local`, a loop of management calls with a token and the driver's changes and
-jobs. Not part of it yet: the npm and dotnet client loops and the browser journey of the table above (finding F-49), and the full
-advisory sync, which `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` drains with a node.
+`TestE14Drain` (variant A, one node) stays in the set `push`. The set runs on the scatter profile of the npm tests (three `api`, three
+`packages`, two `worker` and two pods of the pool `vuln`, an edge that balances every request on its own without a kept-alive
+connection to the pods), with the npm client pods and the counting test upstream.
 
 On the local profile of R-HA-051, whose three worker nodes each host a Sentinel and most a Valkey pod or a PostgreSQL instance,
 variant A drains a node that hosts neither the PostgreSQL primary nor the Valkey primary; a Sentinel, a Valkey replica or the
@@ -6880,7 +6909,9 @@ replica count or `database.pool.max_conns` of the profile changes.
 
 ### Q-HA-88 · Which legs run the drain per role
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. The load
+of the leg is the owner's decision of 2026-11-05, [Q-HA-94](#q-ha-94--the-load-of-the-drain-per-role): the npm load of `TestNPMHA`
+runs beside the load named in (a).
 
 Context: R-HA-059 "A drain per role" evicts every pod of `api`, `packages`, the main `worker` and the pool `vuln` one after the other,
 and the owner moved the drain, the failovers and the soak out of the release path on 2026-11-01 (Q-HA-67). The test of variant
@@ -6989,6 +7020,46 @@ Context: the login secrets belong to the api pods and, in the bridge, the web po
 **Rationale:** The chart cannot tell a deliberate global mount from an omission, and the cost of the refusal is one list entry. The development agent would revisit this if per-role extra mounts are added, because the global lists would then no longer reach every Deployment.
 
 **Applied in the spec:** [_validate.tpl](../../deploy/helm/trove/templates/_validate.tpl) (the login secrets), [_secrets.tpl](../../deploy/helm/trove/templates/_secrets.tpl) (the comment on who mounts them), R-HA-030.
+
+### Q-HA-94 · The load of the drain per role
+
+Status: **Decided by the owner on 2026-11-05** — option (c), on finding F-49.
+
+Context: R-HA-059 "A drain per role" asked for the load of the acceptance test's table plus a loop of a browser journey, and for
+a full advisory sync started before the first eviction of the pool `vuln` that ends on another worker from its checkpoint. The
+test of the set `drain-roles` (`TestDrainRoles`, [Q-HA-88](#q-ha-88--which-legs-run-the-drain-per-role)) ran the ping load through
+the edge, the upload and download loop on `generic-local`, a loop of management calls with a token and the driver's changes and jobs,
+and passed so in the nightly run 41902592855 (513 s). The npm load of R-HA-059 is built and runs in `TestNPMHA`
+([Q-HA-65](#q-ha-65--the-npm-part-of-r-ha-059s-load-before-nuget-exists-and-how-its-commands-are-counted)); its k6 mix is
+npm's share of the table (documents and tarballs, 120 requests/s), without the NuGet requests.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The full load of R-HA-059 | The npm and `dotnet` client loops, an npm and a NuGet publish every 10 s, k6 with its NuGet share, the long-transfer probes of 1 GiB, a loop of a browser journey, and a full advisory sync started before the first eviction of the pool `vuln` | The criterion as written | No browser journey loop exists as a test; the `dotnet` loops and the NuGet share of k6 run in no drain test yet (the drain part of E3.6 is phase 7's since 2026-11-01, [nuget_closing_test.go](../../test/e2e/nuget_closing_test.go)); a sync per pod repeats the `SIGTERM` and checkpoint path that the node drain of `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` covers |
+| (b) Narrow the criterion to the load the test ran | Ping, the transfer loop, management calls, the driver's jobs | Nothing to build; green | No package document is requested, so the per-replica state the drain per role takes away is never measured; no client command runs |
+| (c) Add the npm load of `TestNPMHA` and narrow the rest (chosen) | Eight `npm ci` loops, a publish every 10 s and k6's npm documents and tarballs at 120 requests/s beside the test's own load, with R-HA-059's pass conditions for them: every `npm` command exits `0` with npm's default retries; k6 only `2xx` and `304` and no connection error; the p99 of k6's requests from the first eviction until 2 minutes after the last is at most twice the warm-up's; every acknowledged publish installs afterwards. Not part of it: the `dotnet` loops and the NuGet rows, the long-transfer probes, the browser journey loop and the advisory sync per pod | Document load across the drain of every `packages` replica; the load and its checks are built and were green in `TestNPMHA`'s drain variant A (nightly run 41902592855) | NuGet registrations are not requested until the drain under NuGet load exists; the set runs on the npm tests' scatter profile, whose edge keeps no connection to a pod alive |
+
+**Choice:** (c).
+
+**Rationale:** the drain per role replaces every pod of a role one after the other; what it adds over the node drain, which takes one
+pod per role, is per-replica state. trove keeps rendered documents (packuments, NuGet registrations) in a per-replica cache
+(`RenditionCache` in [internal/formats/host.go](../../internal/formats/host.go), `cache.rendition_bytes`), so after the drain of
+`packages` every replica's cache is cold, while in the node drain two of three stay warm. Only document load shows whether the p99
+stays within twice the warm-up's; the `generic-local` loop has no renditions. The npm load is already built and was green in
+`TestNPMHA`'s drain variant A. The `dotnet` loops stay with phase 7, where the owner moved the drain part of E3.6 on 2026-11-01; the
+browser journey loop has no test; the advisory sync's resume from its checkpoint after `SIGTERM` is covered by the node drain of
+`TestVulnLong_R_VULN_004_FullSyncDrainedMidRun`, the same `SIGTERM` and checkpoint path. The long-transfer probes are no part of
+`TestNPMHA`'s load and stay with the acceptance test's full load.
+
+What follows: the set `drain-roles` starts the npm client pods and the counting npm test upstream, and the test switches to the scatter
+profile of the npm tests (three `api` replicas instead of two); the load runs 2 minutes before the first eviction and 3 minutes after
+the last replacement is ready, as `TestNPMHA`'s variant A does around its drain. The edge with kept-alive connections to the pods stays
+drained by `TestE14Drain` in the set `push`. The set passed on kind locally on 2026-11-05
+([e2e.md](../developer/e2e.md#the-cut-into-roles-phase-6a) has the numbers). Revisited when the drain under NuGet load exists: its
+`dotnet` loops and k6's NuGet share then join the drain per role.
+
+**Applied in the spec:** R-HA-059 ("A drain per role"); [e14_drain_roles_test.go](../../test/e2e/e14_drain_roles_test.go),
+[deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) (the set `drain-roles`), [docs/developer/e2e.md](../developer/e2e.md).
 
 ## What this does not cover
 

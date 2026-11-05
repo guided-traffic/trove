@@ -1052,7 +1052,10 @@ autoscaler and ingress policy; an installation of the previous shape upgrades wi
   a package or raw-file request and no `packages` pod's a UI, sign-in or management request (R-HA-037); the UI's download and
   upload journeys go through the content routes (R-API-025, Q-UI-106).
 - **E6a.6** A drain per role (R-HA-059, "A drain per role"): `api`, `packages`, `worker` and the `vuln` pool, each evicted pod by
-  pod under the load, with every pass condition, the full advisory sync ending on another worker from its checkpoint.
+  pod under its load (the npm load of E2.11 beside the ping, transfer, management and job load), with every pass condition. The
+  `dotnet` loops, the long-transfer probes, the browser journey loop and the advisory sync per pod are not part of it; the sync's
+  resume from its checkpoint stays with the node drain of `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` (owner, 2026-11-05,
+  [Q-HA-94](../spec/ha-and-helm.md#q-ha-94--the-load-of-the-drain-per-role)).
 - **E6a.7** The upgrade across the cut (R-HA-064): from the latest release before the cut through both steps with no failed
   iteration of the client loops and the UI journey; the guard refuses a one-step upgrade.
 - **E6a.8** Every requirement of the scope table has a passing test that names it (Q-ROAD-4); BETA.md's phase 6a items are 🟢.

@@ -2,11 +2,15 @@
 
 package e2e
 
-// A drain per role (R-HA-059 "A drain per role", E6a.6): for each of api, packages, the main worker and the worker pool vuln, the
-// pods of that Deployment alone are evicted one after the other through the eviction API, each after the previous replacement
-// is ready, under the ping load through the edge, the upload and download loop on generic-local, a loop of management API
-// calls with a token and the driver's changes and jobs. A long leg: the set drain-roles of the nightly workflow, on dispatch and
-// locally (owner, 2026-11-01), not of a change.
+// A drain per role (R-HA-059 "A drain per role", E6a.6, Q-HA-94): for each of api, packages, the main worker and the worker pool
+// vuln, the pods of that Deployment alone are evicted one after the other through the eviction API, each after the previous
+// replacement is ready, under the ping load through the edge, the upload and download loop on generic-local, a loop of
+// management API calls with a token, the driver's changes and jobs, and the npm load of TestNPMHA (npm_load_test.go: eight npm
+// ci loops, a publish loop and k6's package documents and tarballs, with its pass conditions). The npm load runs in the scatter
+// profile of the npm tests: three api, three packages, two worker and two vuln pods. The drain of packages replaces every
+// replica, so every replica's rendition cache is cold afterwards while k6 keeps asking for package documents; the p99 condition
+// covers k6's npm requests across it. A long leg: the set drain-roles of the nightly workflow, on dispatch and locally (owner,
+// 2026-11-01), not of a change.
 
 import (
 	"fmt"
@@ -52,10 +56,16 @@ func evict(t testing.TB, name string) {
 }
 
 func TestDrainRoles(t *testing.T) {
-	t.Run("R-HA-059 R-HA-011 E6a.6 each role evicted pod by pod under load: only 200, no failed transfer or management call, the pods of the other roles keep their names and restarts, no SIGKILL, nothing Pending for 60 s, the probe jobs of the worker resume from their cursor", func(t *testing.T) {
+	h := npmHAFx(t)
+	t.Run("R-HA-059 R-HA-011 R-NPM-046 R-ARCH-024 E6a.6 each role evicted pod by pod under load: only 200 for the ping load, no failed transfer or management call, every npm command exits 0, k6 only 2xx and 304 for npm, its p99 at most twice the warm-up's, every acknowledged publish installs, the pods of the other roles keep their names and restarts, no SIGKILL, nothing Pending for 60 s, the probe jobs of the worker resume from their cursor", func(t *testing.T) {
 		const steps = 400
+		// R-HA-059's load starts 5 minutes before the drain and runs until 10 minutes after; as in TestNPMHA's variant A the
+		// nightly leg runs 2 minutes before the first eviction and 3 minutes after the last replacement is ready.
+		const warmUp, after = 2 * time.Minute, 3 * time.Minute
+		troveSettled(t, 3, 3, 4)
 		adm := adminAPI(t)
 		watch := startPodWatch(t, selTrove)
+		npm := startNPMLoad(t, h, "drain-roles", haFullLoad())
 		drv := startDriverLoad(t, "drain-roles", 90*time.Minute)
 		k := startK6(t, "drain-roles", 90*time.Minute)
 		kx := startK6Script(t, "drain-roles-xfer", "transfer.js", 90*time.Minute, k6Opts{rate: 4, prefix: "T ", token: transferToken(t)})
@@ -82,9 +92,11 @@ func TestDrainRoles(t *testing.T) {
 				}
 			}
 		}()
+		time.Sleep(time.Until(npm.started.Add(warmUp)))
 
 		var ids []string
 		var evicted []pod
+		var firstEviction time.Time
 		for _, role := range drainRoles {
 			before := map[string]pod{}
 			for _, p := range livePods(t, selTrove) {
@@ -103,6 +115,9 @@ func TestDrainRoles(t *testing.T) {
 			t.Logf("%s: evicting %v one after the other", role.name, names(victims))
 			for _, v := range victims {
 				evict(t, v.Name)
+				if firstEviction.IsZero() {
+					firstEviction = time.Now()
+				}
 				evicted = append(evicted, v)
 				waitFor(t, v.Name+" to be gone", 4*time.Minute, 2*time.Second, func() bool {
 					for _, p := range podsOf(t, role.selector) {
@@ -139,6 +154,8 @@ func TestDrainRoles(t *testing.T) {
 				}
 			}
 		}
+		drainEnd := time.Now()
+		t.Logf("%d evictions from %s to %s (%s)", len(evicted), firstEviction.Format("15:04:05"), drainEnd.Format("15:04:05"), drainEnd.Sub(firstEviction).Round(time.Second))
 
 		finished := map[string]probeJob{}
 		waitFor(t, "every probe job to end", 8*time.Minute, 5*time.Second, func() bool {
@@ -177,7 +194,7 @@ func TestDrainRoles(t *testing.T) {
 			t.Errorf("no probe job moved to another worker although both main workers were evicted")
 		}
 
-		time.Sleep(10 * time.Second)
+		time.Sleep(max(10*time.Second, time.Until(drainEnd.Add(after))))
 		close(stopCalls)
 		callsDone.Wait()
 		watch.stop()
@@ -185,7 +202,17 @@ func TestDrainRoles(t *testing.T) {
 		ds := drv.wait(t)
 		res := k.stop(t)
 		xres := kx.stopTransfer(t)
-		noteResult(t, "e14-drain-roles", map[string]any{"k6_status": res.Status, "driver": ds, "pending_pods": watch.pendFor, "moved_jobs": moved, "transfers": xres.Status, "api_calls": calls.Load(), "api_calls_failed": bad.Load()})
+		nres := npm.stop(t)
+		nk := nres.K6
+		warm, nWarm := nk.p99(nk.First, firstEviction)
+		during, nDuring := nk.p99(firstEviction, drainEnd.Add(2*time.Minute))
+		t.Logf("npm k6 p99: warm-up %s over %d requests, from the first eviction until 2 minutes after the last replacement was ready %s over %d", warm, nWarm, during, nDuring)
+		noteResult(t, "e14-drain-roles", map[string]any{
+			"k6_status": res.Status, "driver": ds, "pending_pods": watch.pendFor, "moved_jobs": moved, "transfers": xres.Status, "api_calls": calls.Load(), "api_calls_failed": bad.Load(),
+			"evictions": len(evicted), "first_eviction": firstEviction, "drain_seconds": drainEnd.Sub(firstEviction).Seconds(),
+			"npm_k6": k6Summary(nk), "npm_p99_warmup_ms": warm.Milliseconds(), "npm_p99_drain_ms": during.Milliseconds(),
+			"npm_commands": len(nres.Commands), "npm_published": len(nres.Published),
+		})
 
 		res.only200(t)
 		if len(xres.Failures) != 0 || xres.Bad != 0 || xres.Dropped != 0 {
@@ -197,6 +224,19 @@ func TestDrainRoles(t *testing.T) {
 		if bad.Load() != 0 {
 			t.Errorf("%d of %d management API calls with a token failed during the drains; first: %v", bad.Load(), calls.Load(), firstBad.Load())
 		}
+
+		// the pass conditions of R-HA-059 for the npm load, as TestNPMHA's variant A applies them
+		nres.allExitZero(t)
+		nres.loopsSpan(t, firstEviction, drainEnd)
+		nk.only2xx304(t)
+		if nWarm < 1000 || nDuring < 1000 {
+			t.Errorf("too few npm k6 requests for the latency condition: %d in the warm-up, %d in the drain window", nWarm, nDuring)
+		}
+		if during > 2*warm {
+			t.Errorf("R-HA-059: the p99 of k6's npm requests from the first eviction until 2 minutes after the last replacement was ready is %s, more than twice the warm-up's %s", during, warm)
+		}
+		nres.installPublished(t, h)
+
 		if len(watch.killed) != 0 {
 			t.Errorf("containers were killed: %v", watch.killed)
 		}
@@ -204,7 +244,7 @@ func TestDrainRoles(t *testing.T) {
 			t.Errorf("trove pod %s was Pending for %s", name, d.Round(time.Second))
 		}
 		checkEvents(t, evicted)
-		checkReleaseServes(t, 2, 3, 4)
+		checkReleaseServes(t, 3, 3, 4)
 	})
 }
 

@@ -172,9 +172,11 @@ the arm64 note of [local-profile.md](local-profile.md).
 
 The long tests run here and not on every change (owner, 2026-11-01), so a slow leg no longer holds the release. Per change,
 Test and Release runs `push` and `access-long` (job `e2e`), `npm` (job `e2e-npm`) and `nuget` (job `e2e-nuget`). This workflow runs the
-`failover` set (job `e2e`, E0.13 and E1.8), the `npm-ha` leg (job `e2e-npm`, E2.11), `npm-ha-soak` and the `nuget-ha` leg (job
-`e2e-nuget`, Q-ARCH-277), beside the latency job. Dispatch it with `gh workflow run "HA and Performance (nightly)" --ref main`.
-Locally, from the repository root, after `make image VERSION=dev` and `make dev-up`: `make e2e SET=failover`, `make e2e SET=npm-ha`,
+`failover` set (job `e2e`, E0.13 and E1.8), the drain per role (job `e2e`, set `drain-roles`, E6a.6, edge port 8097: the evictions run
+under the npm load of `npm-ha` too, so the set starts the npm client pods and the counting test upstream,
+[Q-HA-94](../spec/ha-and-helm.md#q-ha-94--the-load-of-the-drain-per-role)), the `npm-ha` leg (job `e2e-npm`, E2.11), `npm-ha-soak` and
+the `nuget-ha` leg (job `e2e-nuget`, Q-ARCH-277), beside the latency job. Dispatch it with `gh workflow run "HA and Performance (nightly)" --ref main`.
+Locally, from the repository root, after `make image VERSION=dev` and `make dev-up`: `make e2e SET=failover`, `make e2e SET=drain-roles`, `make e2e SET=npm-ha`,
 `make e2e SET=npm-ha-crash` (the three-force-delete crash, which has no CI job), `make e2e SET=npm-ha-soak` or `make e2e SET=nuget-ha`,
 then `make dev-down`; the latency tests need `make integration-up && make test-performance`.
 A red long leg does not hold the release: it is recorded as an open finding instead (owner, 2026-11-01).

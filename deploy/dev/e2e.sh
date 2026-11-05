@@ -19,7 +19,8 @@
 #   e2e.sh access-long  the sign-in of E1.1, the replica scatter of E1.11, the 500 MB transfers of E1.13 (CI, every change)
 #   e2e.sh access       the M1 tests alone: E1.1, E1.8, E1.11, E1.13, E1.14 (they switch to the scatter profile and back)
 #   e2e.sh drain        E0.14 only (this is `make dev-drain`)
-#   e2e.sh drain-roles  the drain per role of R-HA-059 (E6a.6): api, packages, the worker and the pool vuln evicted pod by pod under load
+#   e2e.sh drain-roles  the drain per role of R-HA-059 (E6a.6): api, packages, the worker and the pool vuln evicted pod by pod under load,
+#                       the npm load of npm-ha among it (three client pods, the counting test upstream, the scatter profile; Q-HA-94)
 #                       (CI: job e2e of the nightly HA and Performance workflow; a long leg)
 #   e2e.sh clients      the smoke test of the npm client pods (R-NPM-045: every gate row runs --version, the base URL
 #                       reaches the cluster); builds the clients image and starts the pods, which stay up
@@ -78,7 +79,8 @@ case "$set_name" in
   access-long) run='^TestE1_(01|11|13)'; export TROVE_E2E_OIDCSTUB=1 ;;
   access) run='^TestE1_'; export TROVE_E2E_OIDCSTUB=1 ;;
   drain) run='^TestE14' ;;
-  drain-roles) run='^TestDrainRoles$' ;;
+  # The drain per role runs the npm load of npm-ha beside its own (Q-HA-94): the client pods and the test upstream of the npm sets.
+  drain-roles) run='^TestDrainRoles$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
   # >>> M2 npm-clients
   clients) run='^TestNPMClients$'; NPM_CLIENTS=1 ;;
   clients-down) NPM_CLIENTS=down ;;

@@ -105,7 +105,7 @@ make e2e SET=access-long     # E1.1, E1.11 with the browser journeys, E1.13 (CI,
 make e2e SET=access          # the M1 tests alone: E1.1, E1.8, E1.11, E1.13, E1.14
 make e2e SET=full            # everything, in the order of the milestone
 make e2e SET=drain           # E0.14 only (with the transfer loop of E1.13)
-make e2e SET=drain-roles     # the drain per role of R-HA-059 (E6a.6): api, packages, the worker and the pool vuln pod by pod under load (CI: nightly and on dispatch)
+make e2e SET=drain-roles     # the drain per role of R-HA-059 (E6a.6): api, packages, the worker and the pool vuln pod by pod under load, the npm load of npm-ha among it; three client pods, the scatter profile (CI: nightly and on dispatch)
 make e2e SET='^TestE06'      # any go test -run expression
 make e2e SET=clients         # build the npm clients image, start the client pods, run the smoke test (the pods stay up)
 make e2e SET=clients-down    # remove the client pods
@@ -338,7 +338,18 @@ client to one `packages` pod.
 |---|---|---|
 | `TestE03Roles` (in the sets `default`, `push` and `full`) | E6a.5, R-HA-002, R-HA-037, R-ARCH-001 | every Deployment has its replicas ready and none named `trove-web` exists; the registry lists each pod with its `roleName` and the vuln pods with `pool` `vuln`; each role Service's EndpointSlices name the pods of its role alone and `sessionAffinity` is `None`; 90 requests of each family through the edge reach every pod of the role that serves the family and no other; with markers in the paths, package and raw-file requests appear in the access logs of the packages pods only and UI, sign-in and management requests in those of the api pods only (the logs are read since the start of the test, so a probe of another test does not count); at every pod, with an administrator token, a route of the other role's family answers the `404` of `/does-not-exist` with the same problem body |
 | `TestE14Drain` (set `push`, `drain`) | R-HA-059 variant A | the node hosts an `api`, a `packages` and a `worker` pod; the E0.14 steps below |
-| `TestDrainRoles` (set `drain-roles`, nightly) | E6a.6, R-HA-059 "A drain per role" | each of `api`, `packages`, the main worker and the pool `vuln` is evicted pod by pod through the eviction API (repeated while the PodDisruptionBudget answers `429`), each after the replacement is ready, under k6 ping, the upload and download loop, a management call with a token every 250 ms and the driver's jobs; k6 only `200`, no failed transfer or call, the pods of the other roles keep names, UIDs and restart counts, no SIGKILL, nothing `Pending` for 60 s, four probe jobs of the main worker finish with `attempt` 1 and at least one resumed from its cursor on another worker. Not part of it: [F-49](../projektplan/promt.md#8--open-findings) |
+| `TestDrainRoles` (set `drain-roles`, nightly) | E6a.6, R-HA-059 "A drain per role", [Q-HA-94](../spec/ha-and-helm.md#q-ha-94--the-load-of-the-drain-per-role) | in the scatter profile of the npm tests (three `api`, three `packages`, two `worker`, two of the pool `vuln`), each of `api`, `packages`, the main worker and the pool `vuln` is evicted pod by pod through the eviction API (repeated while the PodDisruptionBudget answers `429`), each after the replacement is ready, under k6 ping, the upload and download loop, a management call with a token every 250 ms, the driver's jobs and the npm load of `TestNPMHA` ([below](#drain-and-failover-under-npm-load): eight `npm ci` loops, a publish every 10 s, k6 at 120 requests/s of npm documents and tarballs, `npmHAFx` and `startNPMLoad` reused); the load runs 2 minutes before the first eviction and 3 minutes after the last replacement is ready. k6 ping only `200`, no failed transfer or call; every `npm` command exits `0`, k6's npm requests only `2xx` and `304`, their p99 from the first eviction until 2 minutes after the last replacement is ready at most twice the warm-up's, every acknowledged publish installs; the pods of the other roles keep names, UIDs and restart counts, no SIGKILL, nothing `Pending` for 60 s, four probe jobs of the main worker finish with `attempt` 1 and at least one resumed from its cursor on another worker. Not part of it: the `dotnet` loops and NuGet's share of k6, the long-transfer probes, a browser journey loop and an advisory sync per pod (Q-HA-94). Artifacts: `e14-drain-roles.json` (the numbers of the conditions), `npm-load-drain-roles.json`, `k6-npm-drain-roles/`, `k6-drain-roles/`, `k6-drain-roles-xfer/` |
+
+**`TestDrainRoles` measured** (2026-11-05, `make e2e SET=drain-roles` on a kind cluster of an Apple-silicon laptop, arm64, 20 CPUs and
+15.8 GiB for Docker, the release image built from the tree of the change): the test 709 s, the set 13 minutes with the Docker build
+cache warm; ten evictions in 3 min 23 s; 1,056 `npm ci` and 64 publishes, all exit `0`, the slowest 6.7 s, every loop ran 39 to 42
+commands during the evictions, the 64 publishes installed; k6's npm requests 76,949 (`document 200` 36,470, `document 304` 11,628,
+`tarball 200` 28,851, nothing else, none dropped), p99 834 ms in the warm-up (14,239 requests) and 838 ms from the first eviction
+until 2 minutes after the last replacement was ready (38,707); by kind, documents 402 and 400 ms, tarballs 1,063 and 1,108 ms, so the
+tarballs of 1 to 5 MiB set the p99 of the mix; k6 ping 63,673 requests, all `200`; 2,537 uploads and downloads, no failure; 1,862
+management calls, none failed; the four probe jobs all moved and resumed (at steps 45 to 84) with `attempt` 1; the longest `Pending`
+0.9 s; no SIGKILL. k6 asks for 22 documents, so a cold rendition cache costs a `packages` replica at most 22 renders: the run shows
+no rise of the documents' p99 after the drain of `packages`, and it does not show what a cold cache costs with many more documents.
 
 The measured values further down this page were taken on the profile before the cut (one `web` Deployment) and are not re-measured; a
 line that says `web` there names that profile.
@@ -908,7 +919,8 @@ Found while building the matrix and running it through `npm-all`, in the order t
 E2.11 of the [roadmap](../coverage/roadmap.md) and the M2 part of work package WP2.8: variant A of
 [R-HA-059](../spec/ha-and-helm.md#r-ha-059--node-drain-without-outage)'s drain test and the PostgreSQL-switchover and Valkey-failover
 scenarios of [R-HA-052](../spec/ha-and-helm.md#r-ha-052--failure-injection-test-suite) in the first leg, its pod crash with three
-force-deletes in the second, each under the npm part of R-HA-059's load. `SET=npm-ha-soak` (job `npm-ha-soak` of the nightly Performance
+force-deletes in the second, each under the npm part of R-HA-059's load. The drain per role (`TestDrainRoles`, set `drain-roles`, [above](#the-cut-into-roles-phase-6a)) runs the same load
+beside its own ([Q-HA-94](../spec/ha-and-helm.md#q-ha-94--the-load-of-the-drain-per-role)). `SET=npm-ha-soak` (job `npm-ha-soak` of the nightly Performance
 workflow) runs the pod crash with ten force-deletes over 20 minutes and then the npm load scripts of R-ARCH-027 as a report.
 `SET=npm-ha-closing`, the one leg a closing dispatch runs instead, runs all of it and adds the 5-minute Valkey outage, which R-HA-052 keeps
 for the full suite ([Q-HA-67](../spec/ha-and-helm.md#q-ha-67--where-and-how-often-the-scenarios-under-npm-load-run)). The harness of the npm tests is the base

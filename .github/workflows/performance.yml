@@ -5,7 +5,7 @@
 # (change propagation) and P-14 (job pick-up) with Valkey available, against the integration stack (R-ARCH-027,
 # Q-ARCH-220): the per-change integration tier asserts delivery and the p50 only, because the runner pods keep a CPU
 # limit and a throttled process stalls for 100 ms or more at a time. On kind clusters, job e2e runs the failover set
-# (E0.13, E1.8) and the drain per role (set drain-roles, E6a.6), job e2e-npm runs leg npm-ha (drain variant A and the PostgreSQL switchover and Valkey failover under the
+# (E0.13, E1.8) and the drain per role (set drain-roles, E6a.6, under the npm load of npm-ha as well, Q-HA-94), job e2e-npm runs leg npm-ha (drain variant A and the PostgreSQL switchover and Valkey failover under the
 # npm load, E2.11), job npm-ha-soak runs the 20-minute pod crash of R-HA-052 under the npm load and the npm load
 # scripts of R-ARCH-027 (Q-HA-67), job e2e-nuget runs leg nuget-ha (the drain and failover under the NuGet load, Q-ARCH-277;
 # no test of that name exists yet, so the set passes with a notice, Q-ARCH-276) and job e2e-ci runs leg ci-ha (the long legs of the GitLab CI OIDC
@@ -338,6 +338,9 @@ jobs:
   # The failover set of the failure suite (E0.13: PostgreSQL switchover, kill and stop, Valkey failover, kill and outage
   # under k6 load; the E1.8 limits) on a kind cluster. It left Test and Release for this workflow (owner, 2026-11-01);
   # the steps are those of the e2e job there, unchanged. Its edge port 8081 differs from the others of this file.
+  # The leg drain-roles (E6a.6, port 8097) evicts every role pod by pod under its own load and the npm load of npm-ha
+  # (Q-HA-94): deploy/dev/e2e.sh builds the npm clients image and the counting test upstream and starts three client pods,
+  # whose Node.js is the image's own, so the leg needs no Node.js on the runner.
   e2e:
     name: e2e on kind (${{ matrix.set }})
     runs-on: ubuntu-24.04

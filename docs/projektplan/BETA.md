@@ -871,8 +871,9 @@ areas.
   the findings of the code review and the security audit fixed (Q-HA-90 to Q-HA-93, Q-ARCH-306, Q-ARCH-307, Q-UI-111)
 - 🟡 Tests: the role table in the architecture test, chart tests per role and `TestE03Roles` (every role deployed, routing,
   access logs, the other family an unknown path at the pod) are green on kind, and `TestDrainRoles` (set `drain-roles`, nightly)
-  passed in nightly run 41902592855, with the reduced load of F-49. Open: the e2e test of the upgrade across the cut (E6a.7) is
-  not built (WP6a.5, E6a.1 to E6a.8)
+  passed in nightly run 41902592855 with its own load and on kind locally on 2026-11-05 with the npm load of `TestNPMHA` beside
+  it, the load the owner decided ([Q-HA-94](../spec/ha-and-helm.md#q-ha-94--the-load-of-the-drain-per-role)). Open: the e2e test
+  of the upgrade across the cut (E6a.7) is not built (WP6a.5, E6a.1 to E6a.8)
 
 ## Phase 6b · Remote full mirror
 
