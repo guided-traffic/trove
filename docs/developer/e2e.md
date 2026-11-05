@@ -1267,8 +1267,10 @@ nothing of nuget.org is recorded.
 | [docs.go](../../test/nugetstub/docs.go) | the documents: the two hosts of a request (`bases`), service index, version list, registration index, page and leaf, search |
 | [route.go](../../test/nugetstub/route.go) | path to resource kind, package ID and version |
 | [corpus.go](../../test/nugetstub/corpus.go) | the package set (`Default`), version order, the closure of a root set, the roots of the reference solution |
+| [catalog.go](../../test/nugetstub/catalog.go) | the catalog (`Catalog/3.0.0`): the log of commits (the corpus's versions, then every `Publish`, `Drop`, `Restore` and `SetListed`), its index, pages and leaves; `NewCorpus`, `Corpus.Add`, `Package.AddVersion` for a test's own package set |
+| [throttle.go](../../test/nugetstub/throttle.go) | the throttling modes of R-REPO-059, self-contained: `Throttle`, `SetThrottle`, `ThrottleState`, the gate in front of every route |
 | [nupkg.go](../../test/nugetstub/nupkg.go) | `.nuspec` and `.nupkg` generation: the same inputs give the same bytes; `PackageHash` |
-| [counts.go](../../test/nugetstub/counts.go) | the counters and their readers: `Nupkgs`, `Nupkg`, `VersionLists`, `Registrations`, `ConditionalRequests`, `Searches`, `Requests`, `Hosts`, `Violations(maxDocuments, maxNupkgs)` |
+| [counts.go](../../test/nugetstub/counts.go) | the counters and their readers: `Nupkgs`, `Nupkg`, `VersionLists`, `Registrations`, `ConditionalRequests`, `Searches`, `CatalogIndexes`, `CatalogPages`, `CatalogLeaves`, `Requests`, `Hosts`, `Violations(maxDocuments, maxNupkgs)` |
 | [mode.go](../../test/nugetstub/mode.go) | the failure switches |
 | [control.go](../../test/nugetstub/control.go) | the control API below `/-/stub/` |
 | [served.go](../../test/nugetstub/served.go) | `Served`: a version as the documents list it now (`GET /-/stub/version`), and `ServedVersion.Matches`, whether it is what a publish of an ID, version and dependencies makes |
@@ -1289,6 +1291,7 @@ port (two hosts without a resolver; a test certificate needs both names), and an
 | Registrations, identity | `/v3/registration/{id}/…` | API | `RegistrationsBaseUrl` and the `3.0.0-beta`/`3.0.0-rc` aliases |
 | Registrations, gzip | `/v3/registration-gz/{id}/…` | API | `RegistrationsBaseUrl/3.4.0` and `/3.6.0`; compressed when `Accept-Encoding` allows; the weak `ETag` is the same with and without coding |
 | Package content | `/v3-flatcontainer/{id}/index.json`, `/{version}/{id}.{version}.nupkg`, `/{version}/{id}.nuspec` | content | `PackageBaseAddress/3.0.0`; a dropped version keeps its files |
+| Catalog | `/v3/catalog/index.json`, `/v3/catalog/page{n}.json`, `/v3/catalog/data/{commit}/{id}.{version}.json` | API | `Catalog/3.0.0`, listed and served only while `Mode.Catalog` is set (404 otherwise). See below |
 | Search | `/query?q=&skip=&take=&prerelease=` | content | `SearchQueryService` and aliases; `q=packageid:x` is an exact ID; unlisted versions are left out; every result names the owner `SearchOwner` and is `verified`, version i (from 0, unlisted ones included) has `VersionDownloads(i)` downloads and `totalDownloads` sums every version, so a test sees whether a forwarded search keeps the upstream's members (R-NUGET-016) |
 
 A registration index has pages of 64 leaves. Below 128 versions the pages are inlined (`items`, `@id` `…/index.json#page/lo/hi`);
@@ -1297,6 +1300,15 @@ from 128 they are listed without `items` and fetched at `…/page/{lower}/{upper
 dependency graph (each depends on two or three earlier ones, with minimum-version ranges of `1.0.0`; every version of a
 package has the same dependencies), `Newtonsoft.Json` 13.0.1 and 13.0.3, `Contoso.Util` 2.0.0 and 2.1.0, `Other.Pkg` 1.0.0 and `Fabrikam.Legacy` 1.0.0.
 Catalog entries carry `packageHash` (SHA-512, base64), `packageHashAlgorithm` and `packageSize`.
+
+The **catalog** is a log of commits. It starts with one `nuget:PackageDetails` record per version of the corpus at the time the
+version was published (versions published at the same time are one commit), cut into pages of `Config.CatalogPageSize`
+records (`DefaultCatalogPageSize`, 550) at commit boundaries, so that a commit never spans two pages. Every runtime change adds a
+commit on a page of its own: `Publish`, `Restore` and `SetListed` a `PackageDetails`, `Drop` a `nuget:PackageDelete`. A commit's
+`commitTimeStamp` is the time of the change, and always later than the last commit's. The index lists the pages with the stamp of their
+last commit; a page lists items with `@type`, `commitTimeStamp`, `nuget:id` and `nuget:version`; a leaf has the `@type`s of
+nuget.org's (`PackageDetails` with `packageContent`, `packageSize` and `listed`, or `PackageDelete`). A leaf request counts under the ID
+and version of its record. A test that needs a catalog of its own builds a corpus with `NewCorpus`, `Corpus.Add` and `Package.AddVersion`.
 
 ### Counting and switches
 
@@ -1309,7 +1321,7 @@ path more than twice and no `.nupkg` path more than once, over every host.
 | Field | Effect |
 |---|---|
 | `down` | `503`, `reset` (connection cut) or `hang` (held until the client gives up, at most two minutes) |
-| `delay_ms` | by class `index`, `registration`, `flat`, `nupkg`, `search`, `other`, and `all` (added to the class's): `{"all": 2000}` is the upstream that delays every response by 2 s |
+| `delay_ms` | by class `index`, `registration`, `flat`, `nupkg`, `search`, `catalog`, `other`, and `all` (added to the class's): `{"all": 2000}` is the upstream that delays every response by 2 s |
 | `not_found`, `gone` | package IDs whose version list, registrations, `.nuspec` and `.nupkg` answer 404 / 410 |
 | `bad_digest` | IDs whose catalog entries announce a `packageHash` the bytes do not have |
 | `wrong_content` | IDs whose `.nupkg` URLs serve `Other.Pkg` instead |
@@ -1317,6 +1329,24 @@ path more than twice and no `.nupkg` path more than once, over every host.
 | `strict_hosts` | a resource asked from the wrong host answers 404 (only with two distinct hosts) |
 | `require_authorization` | 401 unless `Authorization` equals this value |
 | `gzip_always` | the version lists and the documents of both registration hives answer gzip-coded whatever `Accept-Encoding` asks, as nuget.org's gzip hive does (Q-NUGET-82) |
+| `catalog` | the service index lists `Catalog/3.0.0` and the catalog is served; off (the default) the index does not list it and every catalog path answers 404 |
+| `search_skip_cap` | the search answers 400 to a `skip` of this many rows or more, the hit count staying the real one (`2000` with 2,500 packages is the capped upstream of Q-NUGET-98) |
+
+`Throttle` is a switch of its own, replaced as a whole (`{}` clears it, `ResetAll` too), that makes the stub an upstream that limits the
+request rate (R-REPO-059, R-REPO-054). Its `mode` is the answer of a throttled request:
+
+| `mode` | Answer |
+|---|---|
+| `429` | 429, `Retry-After` in seconds (`retry_after_seconds`) |
+| `429-date` | 429, `Retry-After` as an HTTP date that far from now |
+| `503` | 503, `Retry-After` in seconds |
+| `503-slowdown` | 503 with the body `<Error><Code>SlowDown</Code><Message>Please reduce your request rate.</Message></Error>` and no `Retry-After` |
+| `403-quota`, `429-quota` | 403 / 429 with `X-RateLimit-Remaining: 0` and `X-RateLimit-Reset` (epoch seconds, that far from now; left out for 0) and no `Retry-After` |
+
+Which requests are throttled: `nth` (the n-th request counted from the moment the switch was set; `count` of them in a row, a
+negative `count` from there on) or `for_ms` (every request for a period from that moment), not both; with neither, every request until it is
+cleared. `delay_ms` holds every response, throttled or not, while the switch is set. A throttled request is counted like any other;
+`GET /-/stub/throttle` reads the switch with the requests it saw and throttled.
 
 The corpus marks `Newtonsoft.Json` 13.0.1 deprecated (reasons, message, `Newtonsoft.Json` `[13.0.3, )` as the alternate)
 and records an advisory against it (`advisoryUrl` on github.com, severity 2), in the JSON-LD form nuget.org writes, with
@@ -1326,7 +1356,7 @@ result carries the deprecation and the advisories of the version it names, as nu
 them in every run as well.
 
 The control API (`-control-token-file`, bearer token) has `GET /-/stub/counts`, `POST /-/stub/reset[?all=true]`,
-`GET`/`POST /-/stub/mode`, `POST /-/stub/publish|drop|restore|unlist|relist` with `{"name","version"}`
+`GET`/`POST /-/stub/mode`, `GET`/`POST /-/stub/throttle`, `POST /-/stub/publish|drop|restore|unlist|relist` with `{"name","version"}`
 (`dependencies` for publish), and `GET /-/stub/version?name=&version=`: the version as the documents list it now,
 `{"name","version","dependencies","listed","deprecated","vulnerabilities"}` (`404` when they do not list it), which a
 client that lost the answer of a publish reads back ([the control clients and a broken forward](#m1-tests)). Control

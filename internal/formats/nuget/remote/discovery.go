@@ -26,7 +26,8 @@ func typesContent() []string { return []string{"PackageBaseAddress/3.0.0"} }
 func typesRegistration() []string {
 	return []string{"RegistrationsBaseUrl/3.6.0", "RegistrationsBaseUrl/3.4.0", "RegistrationsBaseUrl"}
 }
-func typesSearch() []string { return []string{"SearchQueryService/3.5.0", "SearchQueryService"} }
+func typesSearch() []string  { return []string{"SearchQueryService/3.5.0", "SearchQueryService"} }
+func typesCatalog() []string { return []string{"Catalog/3.0.0"} }
 func typesAutocomplete() []string {
 	return []string{"SearchAutocompleteService/3.5.0", "SearchAutocompleteService"}
 }
@@ -45,6 +46,9 @@ type Discovery struct {
 	RegistrationType string
 	// Search and Autocomplete are nil when the upstream announces none.
 	Search, Autocomplete *url.URL
+	// Catalog is the base of Catalog/3.0.0, the index of the catalog; nil when the upstream does
+	// not list it. Only a mirror reads it (R-REPO-051).
+	Catalog *url.URL
 }
 
 type indexDoc struct {
@@ -113,6 +117,11 @@ func ParseDiscovery(doc []byte) (*Discovery, error) {
 	}
 	if _, d.Autocomplete, err = pick(typesAutocomplete()); err != nil {
 		return nil, err
+	}
+	// The catalog matters to a mirror only: an address that cannot be used leaves it out and
+	// never fails the service index that clients restore through.
+	if _, c, err := pick(typesCatalog()); err == nil {
+		d.Catalog = c
 	}
 	return d, nil
 }
@@ -183,6 +192,16 @@ func (d *Discovery) SearchURL(params url.Values) (u *url.URL, ok bool) {
 	c.Path, c.RawPath = strings.TrimSuffix(c.Path, "/"), strings.TrimSuffix(c.RawPath, "/")
 	c.RawQuery = params.Encode() // sorted by key
 	return &c, true
+}
+
+// CatalogURL returns the address of the catalog index, nil when the upstream announced none.
+func (d *Discovery) CatalogURL() *url.URL {
+	if d == nil || d.Catalog == nil {
+		return nil
+	}
+	c := *d.Catalog
+	c.Path, c.RawPath = strings.TrimSuffix(c.Path, "/"), strings.TrimSuffix(c.RawPath, "/")
+	return &c
 }
 
 // upstream is the error of an upstream document trove cannot use.

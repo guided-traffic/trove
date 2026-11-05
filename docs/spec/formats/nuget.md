@@ -2484,23 +2484,31 @@ what the NuGet format contributes through the mirror interface of [architecture.
     `commitTimeStamp` order, an incremental pass the pages and items after the stored cursor (the catalog's own cursor
     algorithm). Each item gives an ID, checked against the patterns, the claims and the ID rule of R-NUGET-003; an ID is
     pending once per pass however many of its versions the pages list. A `nuget:PackageDelete` item makes the pass refresh
-    that ID's version list and store nothing. Leaves are not read for discovery; R-NUGET-029 reads them for digests (P1).
+    that ID's version list and store nothing (an ID that a `nuget:PackageDetails` item names as well, in the same call, is
+    a name and not a removal, Q-NUGET-102). A call returns whole commits, or a part of one commit that has more IDs than the
+    engine takes at once (Q-NUGET-100). Leaves are not read for discovery; R-NUGET-029 reads them for digests (P1).
   - `listing`, offered when the service index lists a search resource: pages with an empty `q`, `prerelease=true`,
     `semVerLevel=2.0.0`, `take=1000` and `skip` growing by the page, until a page is short, `totalHits` is reached or the
     upstream refuses a larger `skip`; the last case completes the pass with `discoveryComplete: false` and the note
-    `listing truncated at <n> of <totalHits>` (Q-NUGET-98). Unlisted-only IDs are not in a search, so a listing never finds
-    them.
+    `listing truncated at <n> of <totalHits>` (Q-NUGET-98). The upstream refuses a larger `skip` when it answers a 4xx to a
+    request whose `skip` is above 0, and a window ends early when it answers a page that is empty or short before `totalHits`
+    (Q-NUGET-101). Unlisted-only IDs are not in a search, so a listing never finds them.
   - `names`: the include patterns without a wildcard, read as IDs, and the NuGet IDs the repository holds.
 - **The plan of an ID** (Q-NUGET-97). The format fills the ID's version list (`{lower_id}/index.json`, the package document of
   R-REPO-003) and its registration index (`{lower_id}/.registration/index.json` and the pages it does not inline) through the
   remote engine, and returns the versions of the version list newest first by NuGet's SemVer 2.0.0 precedence (R-NUGET-004),
   each with the path of its `.nupkg` and whether it is a prerelease (a release label). Unlisted versions count like listed ones:
-  they stay restorable. The `.nuspec`, icons, READMEs and symbols stay pull-through.
+  they stay restorable. The size of a version is the `packageSize` its registration entry announces where there is a positive
+  one, else unknown; a registration the upstream does not have leaves the plan standing on the version list (Q-NUGET-103). The
+  `.nuspec`, icons, READMEs and symbols stay pull-through.
 - **Hosts.** Catalog pages and search requests go to the hosts the service index names, under the host rules of R-NUGET-014
   (the upstream origin or an `extraHosts` entry; `*.nuget.org` is proposed for nuget.org) and the egress rules; the format adds
-  no host of its own.
-- **Cursor.** `{"commit": "<commitTimeStamp>"}` of the last commit whose items were all queued; within a full pass also the
-  page in progress; `{"skip": n}` for a listing; at most 4 KiB, opaque to the core.
+  no host of its own, so its mirror hosts are none, and a catalog page or search request on another host fails the pass with
+  `foreign_host_denied` (Q-NUGET-99).
+- **Cursor.** `{"commit": "<commitTimeStamp>"}` of the last commit whose items were all queued, as the upstream wrote it; within a
+  pass also `"page"`, the address of the page in progress, and `"skip"`, the number of IDs of the next commit that are queued
+  already (a commit with more IDs than one call takes); `{"skip": n, "total": t}` for a listing; at most 4 KiB, opaque to the core
+  (Q-NUGET-100).
 
 Acceptance criteria (integration, the NuGet stub of R-REPO-059):
 
@@ -2509,8 +2517,9 @@ Acceptance criteria (integration, the NuGet stub of R-REPO-059):
   `.nupkg` files of `Acme.A` and `Acme.B`; the stub records no request for a path of `Other.C` and no leaf request.
 - The stub appends a page with `Acme.A` `3.0.0` and a `nuget:PackageDelete` of `Acme.B` `1.0.0`: the next pass is incremental,
   reads only the new page, stores `acme.a.3.0.0.nupkg` and refreshes the version list of `Acme.B`.
-- A stub without `Catalog/3.0.0` and with a search that refuses `skip` above 2,000 for 2,500 hits: the pass takes the listing,
-  completes with `discoveryComplete: false` and the note naming 2,000 of 2,500.
+- A stub without `Catalog/3.0.0` and with a search that refuses a `skip` of 2,000 or more for 2,500 hits (with `take=1000` the
+  pass reads the rows 0 to 1,999): the pass takes the listing, completes with `discoveryComplete: false` and the note naming
+  2,000 of 2,500.
 - After a pass, with the stub stopped, `dotnet restore` of a project that references a mirrored version through the remote
   succeeds.
 
@@ -5019,6 +5028,129 @@ Status: **Decided by the development agent** — selected from the options below
 a source's window moves between passes so that different subsets are mirrored each time.
 
 **Applied in the spec:** the section "Mirror discovery"; [repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-051.
+
+### Q-NUGET-99 · A NuGet mirror adds no host of its own, and a page on a foreign host fails the pass
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No mirror host: the catalog and the search are reached under the host rules of R-NUGET-014, a page on another host fails the pass (chosen) | `MirrorHosts` is empty | The resources are the ones the service index names, so the operator's `extraHosts` list is the one place that widens the hosts; no credential question arises | nuget.org's search and catalog hosts have to be on `extraHosts` (or `*.nuget.org`, as R-NUGET-014 proposes) for a mirror to run |
+| (b) A fixed host list for nuget.org | The format names the catalog and search hosts of nuget.org | Works out of the box | A second source of truth beside the service index and `extraHosts`; the lister would send requests to hosts no operator allowed |
+| (c) Skip a catalog page on a foreign host | Read what is reachable | The pass goes on | A silent gap in a mirror that promises completeness |
+
+**Choice:** (a).
+
+**Rationale:** the service index is the upstream's own statement of where its resources are, and the host rules decide which of those hosts
+a trove contacts; the mirror reads nothing that a client's restore could not read. The development agent would revisit it if a
+real upstream's service index names a catalog on a host that no rule of R-NUGET-014 admits for its own restores.
+
+**Applied in the spec:** the section "Mirror discovery" (Hosts).
+
+### Q-NUGET-100 · The catalog cursor carries the page in progress and a position inside a commit that is too large for a call
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `{"commit","page","skip"}`: the last commit queued whole, the page in progress, the IDs of the next commit already queued (chosen) | A call returns whole commits; a commit larger than the call's limit is returned in parts, in the order of the ID | The cursor is still the catalog's own (Q-NUGET-96) and never inside a commit except when a commit alone is too large; the page in progress spares the index of one call; a repeated call gives the same page | A commit is assumed to lie on one page of the catalog, as the documentation's append rule has it |
+| (b) The commit only | A commit larger than the limit is returned whole | Simplest | Breaks the contract's `Limit` for such a commit |
+| (c) Read the whole catalog in the first call | One call per pass | No cursor inside a pass | A day-long call that cannot be resumed after a drain |
+
+**Choice:** (a).
+
+**Rationale:** the engine's page size is its own; a format that returns more than `Limit` breaks the contract, and one that cannot resume
+inside a commit breaks the repeat after a crash. The development agent would revisit the assumption that a commit lies on one page if an
+upstream is found whose catalog spreads one commit over pages.
+
+**Applied in the spec:** the section "Mirror discovery" (Methods, Cursor). Code: `mirrorFeed` in [mirror_feed.go](../../../internal/formats/nuget/mirror_feed.go).
+
+### Q-NUGET-101 · A listing that ends before its hit count is truncated, whichever way the upstream ends it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A 4xx at a `skip` above 0, an empty page, or a short page before `totalHits` end the pass as truncated with the note (chosen) | Every end before the hit count is flagged | A capped window cannot pass for a complete listing, whether the upstream answers an error or just stops | A search whose `totalHits` is approximate flags a complete listing as truncated |
+| (b) Only the 4xx | The refusal of Q-NUGET-98 | No false flag | An upstream that answers empty pages above its cap gives a silent gap |
+| (c) Every 4xx, also at `skip` 0 | Any refusal ends the pass | One rule | A refusal of the first request is a failure of the upstream, not a window |
+
+**Choice:** (a).
+
+**Rationale:** a mirror that says it is complete when it is not is worse than a flag that says too much; the note names the numbers, so an operator
+can tell. The development agent would revisit it if a source's `totalHits` is found to be an estimate that differs from the rows it serves.
+
+**Applied in the spec:** the section "Mirror discovery" (Methods, `listing`). Code: `mirrorListing` in [mirror_listing.go](../../../internal/formats/nuget/mirror_listing.go).
+
+### Q-NUGET-102 · A delete and a details record of one ID in a call make a name, and a commit of records the format does not read still moves the cursor
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An ID is removed only when every record of it in the call is a `PackageDelete`; every commit with any item moves the cursor (chosen) | `Page.Names` wins over `Page.Removed` | A version published in the commit that deletes another, or after a delete, must be mirrored; a commit of record types a later catalog version adds does not stall the cursor | A removed ID that was only deleted is refreshed, not dropped, which is all a mirror does (Q-REPO-144) |
+| (b) Last record wins | Order decides | Mirrors the catalog's log | Items of one commit have no order, so the result would depend on the page's serialization |
+| (c) Both lists | The ID in both | Complete | The contract says the engine refreshes a removed name through the plan: a name is enough |
+
+**Choice:** (a).
+
+**Rationale:** the plan of an ID reads the version list as it is now, so the engine needs only to know that the ID changed; "removed" is the weaker
+statement. The development agent would revisit it if the engine learns to treat a removed name differently from a pending one (for example by
+skipping the artifact fill).
+
+**Applied in the spec:** the section "Mirror discovery" (Methods, `feed`).
+
+### Q-NUGET-103 · The plan reads the registration for sizes only and does not fail without it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The version list decides the versions, the registration gives the sizes, a missing registration gives none (chosen) | The registration index and the pages it does not inline are filled and read; a size is a positive `packageSize` of an entry | Every restore document is stored and the engine can plan its bytes (R-REPO-052); a version list is what the flat container's restore reads | A version in the list but not in the registration has no size |
+| (b) The registration decides the versions | Leaves are the plan | One document less to trust | The registration drops unlisted versions on some sources; the list keeps them (Q-NUGET-97) |
+| (c) Fail the plan without a registration | Fail closed | A mirror never holds a package that a restore cannot resolve | A source with a flat container and no registration (a misconfigured one) could never be mirrored, and the restore would 502 anyway |
+
+**Choice:** (a).
+
+**Rationale:** the plan's job is the artifacts and the documents a restore reads; the version list names the artifacts, and the registration is
+filled because a restore reads it. The development agent would revisit it if sources are found whose registration lists versions that the
+flat container does not.
+
+**Applied in the spec:** the section "Mirror discovery" (The plan of an ID). Code: `MirrorPlan` in [mirror_plan.go](../../../internal/formats/nuget/mirror_plan.go).
+
+### Q-NUGET-104 · The test upstream offers the catalog by a switch, and a runtime change is a page of its own
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Mode.Catalog` lists and serves the catalog, off by default; every runtime change is a commit on a new page; the search cap refuses a `skip` of the cap or more (chosen) | The stub as the criteria of nuget.md need it | Every existing run sees the service index it saw (the reference corpus is unchanged); a test tells the page a pass has read from the new one; "refuses `skip` above 2,000 for 2,500 hits" gives 2,000 rows with `take=1000` | A runtime commit never shares a page, unlike nuget.org's append rule |
+| (b) The catalog always on | One index | Nothing to switch | Changes the service index of every test and the reference corpus; no stub without `Catalog/3.0.0` |
+| (c) Runtime changes append to the last page | nuget.org's rule | Faithful | "A new page" in the criterion would depend on the page size |
+
+**Choice:** (a).
+
+**Rationale:** the criteria need both indexes and a new page after a change; the switch keeps every earlier test as it was. The development
+agent would revisit the page rule if a test needs a page that grows.
+
+**Applied in the spec:** [R-REPO-059](../repositories-and-proxy.md) (the NuGet stub); the stub's description is [e2e.md](../../developer/e2e.md#the-counting-nuget-test-upstream).
+
+### Q-NUGET-105 · The test upstream's throttling is a switch of its own
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A `Throttle` beside `Mode`, with its own control endpoint, counter and file: the answer by `mode`, the schedule by `nth` and `count` or `for_ms`, a delay per response (chosen) | `POST /-/stub/throttle` | Self-contained, and the same shape can be built for the npm stub; setting it restarts the count, so "the n-th request" is relative to the test's start; `Mode` is replaced as a whole and would drop a throttle set before it | A second switch beside `Mode` |
+| (b) Fields of `Mode` | One switch | One endpoint | Every `SetMode` would clear the throttle and the counter of the n-th request would have no anchor |
+| (c) Per-path rules | Throttle by resource | Finer | No mirror criterion needs it; a rule engine in a stub |
+
+**Choice:** (a).
+
+**Rationale:** the throttling criteria (R-REPO-054, R-REPO-059) need the answer, the n-th request and a period, and a delay; nothing more. The
+development agent would revisit it if a criterion needs to throttle one class of request only.
+
+**Applied in the spec:** [R-REPO-059](../repositories-and-proxy.md) (throttling modes); [e2e.md](../../developer/e2e.md#the-counting-nuget-test-upstream).
 
 ## What this does not cover
 

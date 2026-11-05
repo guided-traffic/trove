@@ -2903,11 +2903,9 @@ Priority: **MVP** · Covers: API-082, API-083
 - A stored section written before these members existed reads back with them at their defaults: the read fills them, and
   no migration rewrites stored documents (Q-REPO-130). A document read and sent back therefore saves unchanged.
 - `mode: mirror` on a format whose remote adapter cannot discover packages (the catalog fact `Mirror`,
-  [architecture.md](architecture.md) R-ARCH-008) answers 422 `not_applicable` at `/remote/mode`. npm and NuGet can, once their
-  discovery is built: npm's remote adapter implements the lister ([formats/npm.md](formats/npm.md#mirror-discovery)), so
-  npm accepts `mode: mirror`; NuGet's does not yet, so its `mode: mirror` still answers 422 `not_applicable`, as R-REPO-024
-  refuses every setting that would be accepted and not enforced. Until the engine of R-REPO-053 is built no pass runs for
-  an accepted mirror: the mode is saved and shown, and the remote behaves as a pull-through cache. A
+  [architecture.md](architecture.md) R-ARCH-008) answers 422 `not_applicable` at `/remote/mode`, as R-REPO-024 refuses every
+  setting that would be accepted and not enforced. npm and NuGet can: both remote adapters implement the lister
+  ([formats/npm.md](formats/npm.md#mirror-discovery), [formats/nuget.md](formats/nuget.md#mirror-discovery)). A
   `discovery` that the upstream does not offer is not refused at save, because only the upstream can answer it (as for
   NuGet's resources, [formats/nuget.md](formats/nuget.md) Q-NUGET-14): the pass reports `discovery_unavailable`
   (R-REPO-056).
@@ -3401,7 +3399,9 @@ Priority: **MVP** · Covers: trove-only
   with and without `Catalog/3.0.0`, catalog index, pages and leaves, `SearchQueryService` with `skip` and `take`, and the flat
   container. Throttling modes: `429` with `Retry-After` in seconds or as a date, `503` with `Retry-After`, `503` with the
   `SlowDown` body and no `Retry-After`, `403` and `429` with `X-RateLimit-Remaining: 0`, each for the n-th request or for a
-  period; a delay per response.
+  period; a delay per response. The NuGet stub lists `Catalog/3.0.0` by a switch (off by default), refuses a search `skip` from a
+  configurable cap, and keeps its throttling as a switch of its own that counts from the moment it is set
+  ([formats/nuget.md](formats/nuget.md) Q-NUGET-104, Q-NUGET-105).
 - **Integration** (against the stack of [ha-and-helm.md](ha-and-helm.md) R-HA-051): every acceptance criterion of R-REPO-050
   to R-REPO-058 that names the integration level, the npm and NuGet discovery criteria of the format pages, the fence, the
   status and run operations with permission-narrowed callers and a project administrator, and the audit events.

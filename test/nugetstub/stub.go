@@ -38,6 +38,8 @@ type Config struct {
 	// ControlToken enables the control API under /-/stub/ for requests with this bearer token.
 	// Empty: the API does not exist (the in-process Go methods are always available).
 	ControlToken string
+	// CatalogPageSize is the number of records of a catalog page of the corpus; 0 means DefaultCatalogPageSize.
+	CatalogPageSize int
 	// Now is the clock for publish times; nil means time.Now.
 	Now func() time.Time
 	// Logger receives one line per request; nil discards.
@@ -55,6 +57,9 @@ type Server struct {
 	dropped map[string]map[string]bool
 	touched map[string]time.Time // when a package last changed
 	built   map[string]*builtPackage
+	catalog *catalogLog
+	// throttle is the rate-limit switch of throttle.go, with a lock of its own.
+	throttle throttleState
 }
 
 type builtPackage struct {
@@ -90,6 +95,15 @@ func (s *Server) resetLocked() {
 	s.overlay = map[string]*Package{}
 	s.dropped = map[string]map[string]bool{}
 	s.touched = map[string]time.Time{}
+	s.catalog = initialCatalog(s.cfg.Corpus, positiveOr(s.cfg.CatalogPageSize, DefaultCatalogPageSize))
+	s.clearThrottle()
+}
+
+func positiveOr(n, def int) int {
+	if n > 0 {
+		return n
+	}
+	return def
 }
 
 // Counts returns a snapshot of the request counters.
@@ -184,6 +198,7 @@ func (s *Server) Publish(id, version string, deps map[string]string) error {
 	s.overlay[p.Lower()] = p
 	delete(s.dropped[p.Lower()], version)
 	s.touched[p.Lower()] = now
+	s.appendCommitLocked(now, catalogRecord{id: p.ID, version: version})
 	return nil
 }
 
@@ -202,6 +217,7 @@ func (s *Server) Drop(id, version string) error {
 	}
 	s.dropped[k][version] = true
 	s.touched[k] = s.cfg.Now().UTC()
+	s.appendCommitLocked(s.touched[k], catalogRecord{id: base.ID, version: version, deleted: true})
 	return nil
 }
 
@@ -215,6 +231,9 @@ func (s *Server) Restore(id, version string) error {
 	}
 	delete(s.dropped[k], version)
 	s.touched[k] = s.cfg.Now().UTC()
+	if base, ok := s.baseLocked(id); ok {
+		s.appendCommitLocked(s.touched[k], catalogRecord{id: base.ID, version: version})
+	}
 	return nil
 }
 
@@ -230,6 +249,7 @@ func (s *Server) SetListed(id, version string, listed bool) error {
 	p.Versions[p.find(version)].Listed = listed
 	s.overlay[p.Lower()] = p
 	s.touched[p.Lower()] = s.cfg.Now().UTC()
+	s.appendCommitLocked(s.touched[p.Lower()], catalogRecord{id: p.ID, version: version})
 	return nil
 }
 

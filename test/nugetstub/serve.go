@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -44,7 +45,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveFile(w, r, rt, mode)
 	case KindRegIndex, KindRegPage, KindRegLeaf:
 		s.serveRegistration(w, r, rt, mode, b)
+	case KindCatalogIndex, KindCatalogPage, KindCatalogLeaf:
+		s.serveCatalog(w, r, rt, mode, b)
 	case KindSearch:
+		if skip, _ := strconv.Atoi(r.URL.Query().Get("skip")); mode.SearchSkipCap > 0 && skip >= mode.SearchSkipCap {
+			writeError(w, http.StatusBadRequest, "skip must be less than "+strconv.Itoa(mode.SearchSkipCap))
+			return
+		}
 		s.writeDocument(w, r, s.searchDoc(b, r.URL.Query()), s.indexTime(), false, false)
 	default:
 		writeError(w, http.StatusNotFound, "not found")
@@ -76,6 +83,11 @@ func (s *Server) record(r *http.Request, escaped string, rt route) Mode {
 		if rt.kind == KindNupkg || rt.kind == KindNuspec || rt.kind == KindRegLeaf {
 			e.Version = rt.version
 		}
+		if rt.kind == KindCatalogLeaf {
+			if rec, ok := s.leafOfLocked(rt.version); ok {
+				e.ID, e.Version = strings.ToLower(rec.id), rec.version
+			}
+		}
 		s.counts[key] = e
 	}
 	e.Count++
@@ -85,6 +97,9 @@ func (s *Server) record(r *http.Request, escaped string, rt route) Mode {
 // gate applies the failure switches in front of every route and reports whether the request
 // goes on.
 func (s *Server) gate(w http.ResponseWriter, r *http.Request, rt route, m Mode, b bases) bool {
+	if s.throttleGate(w, r) {
+		return false
+	}
 	switch m.Down {
 	case DownUnavailable:
 		writeError(w, http.StatusServiceUnavailable, "the test upstream is down")

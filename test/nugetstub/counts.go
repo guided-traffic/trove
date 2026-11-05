@@ -17,6 +17,10 @@ const (
 	KindNupkg    = "nupkg"     // flat container .nupkg
 	KindSearch   = "search"
 	KindOther    = "other"
+
+	KindCatalogIndex = "catalog-index" // /v3/catalog/index.json
+	KindCatalogPage  = "catalog-page"  // /v3/catalog/page<N>.json
+	KindCatalogLeaf  = "catalog-leaf"  // /v3/catalog/data/<commit>/<id>.<version>.json
 )
 
 // Entry is the number of requests that had the same method, host, path, conditionality and
@@ -158,4 +162,19 @@ func authScheme(header string) string {
 		return "basic"
 	}
 	return "other"
+}
+
+// CatalogIndexes is the number of requests for the catalog index.
+func (c Counts) CatalogIndexes() int {
+	return c.sum(func(e Entry) bool { return e.Kind == KindCatalogIndex })
+}
+
+// CatalogPages is the number of requests for catalog pages.
+func (c Counts) CatalogPages() int {
+	return c.sum(func(e Entry) bool { return e.Kind == KindCatalogPage })
+}
+
+// CatalogLeaves is the number of requests for catalog leaves; a mirror's discovery sends none.
+func (c Counts) CatalogLeaves() int {
+	return c.sum(func(e Entry) bool { return e.Kind == KindCatalogLeaf })
 }

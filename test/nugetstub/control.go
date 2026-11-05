@@ -14,6 +14,8 @@ import (
 //	POST /-/stub/reset[?all=true]   zero the counters; with all, also modes and changes to packages
 //	GET  /-/stub/mode               the failure switches
 //	POST /-/stub/mode               replace them (a Mode as JSON; {} clears)
+//	GET  /-/stub/throttle           the rate-limit switch with the requests it counted and throttled (ThrottleState)
+//	POST /-/stub/throttle           replace it (a Throttle as JSON; {} clears)
 //	POST /-/stub/publish            {"name","version","dependencies"}: offer a version (name is the package ID)
 //	GET  /-/stub/version?name=&version=  the version as the documents list it now (ServedVersion; 404 when they do not)
 //	POST /-/stub/drop               {"name","version"}: remove a version from its documents
@@ -63,6 +65,18 @@ func (s *Server) serveControl(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, s.Mode())
+	case "GET /-/stub/throttle":
+		writeJSON(w, s.ThrottleState())
+	case "POST /-/stub/throttle":
+		var t Throttle
+		if !decodeStrict(w, r, &t) {
+			return
+		}
+		if err := s.SetThrottle(t); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, s.ThrottleState())
 	case "POST /-/stub/publish":
 		s.controlVersion(w, r, func(v versionRequest) error { return s.Publish(v.Name, v.Version, v.Dependencies) })
 	case "GET /-/stub/version":

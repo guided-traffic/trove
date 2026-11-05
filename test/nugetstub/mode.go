@@ -25,6 +25,7 @@ const (
 	ClassFlat         = "flat"         // version lists and .nuspec files
 	ClassNupkg        = "nupkg"        // .nupkg files
 	ClassSearch       = "search"       // the search resource
+	ClassCatalog      = "catalog"      // the catalog index, pages and leaves
 	ClassOther        = "other"        // everything else
 	ClassAll          = "all"          // added to the delay of the request's own class
 )
@@ -64,6 +65,12 @@ type Mode struct {
 	// blobs carry the coding themselves (nuget.org's gzip hive answers gzip to a client that asks
 	// for identity). The service index and the search are not affected.
 	GzipAlways bool `json:"gzip_always,omitempty"`
+	// Catalog lists Catalog/3.0.0 in the service index and serves the catalog (catalog.go); without it the service index
+	// does not list it and every catalog path answers 404, like an upstream that does not implement it.
+	Catalog bool `json:"catalog,omitempty"`
+	// SearchSkipCap makes the search refuse a skip of this many rows or more with 400, as an upstream does that limits how deep
+	// a listing may page; 0: no limit. The hit count stays the real one.
+	SearchSkipCap int `json:"search_skip_cap,omitempty"`
 }
 
 // Validate rejects a mode the stub does not implement.
@@ -73,9 +80,12 @@ func (m Mode) Validate() error {
 	default:
 		return fmt.Errorf("down %q: want %q, %q or %q", m.Down, DownUnavailable, DownReset, DownHang)
 	}
+	if m.SearchSkipCap < 0 {
+		return fmt.Errorf("search_skip_cap %d: not negative", m.SearchSkipCap)
+	}
 	for class, ms := range m.DelayMS {
-		if !slices.Contains([]string{ClassIndex, ClassRegistration, ClassFlat, ClassNupkg, ClassSearch, ClassOther, ClassAll}, class) {
-			return fmt.Errorf("delay_ms class %q: want index, registration, flat, nupkg, search, other or all", class)
+		if !slices.Contains([]string{ClassIndex, ClassRegistration, ClassFlat, ClassNupkg, ClassSearch, ClassCatalog, ClassOther, ClassAll}, class) {
+			return fmt.Errorf("delay_ms class %q: want index, registration, flat, nupkg, search, catalog, other or all", class)
 		}
 		if ms < 0 || ms > int(MaxHang/time.Millisecond) {
 			return fmt.Errorf("delay_ms %q: %d out of range", class, ms)
@@ -98,6 +108,8 @@ func (m Mode) delay(kind string) time.Duration {
 		class = ClassNupkg
 	case KindSearch:
 		class = ClassSearch
+	case KindCatalogIndex, KindCatalogPage, KindCatalogLeaf:
+		class = ClassCatalog
 	}
 	return time.Duration(m.DelayMS[class]+m.DelayMS[ClassAll]) * time.Millisecond
 }

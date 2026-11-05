@@ -2,6 +2,7 @@ package nugetstub
 
 import (
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -20,6 +21,7 @@ type route struct {
 	id      string
 	version string // a version, or "lower/upper" for a registration page
 	hive    string // registration hive prefix, for the registration kinds
+	page    int    // the number of a catalog page
 }
 
 // parseRoute classifies an escaped request path.
@@ -39,6 +41,9 @@ func parseRoute(escapedPath string) route {
 	}
 	if rest, ok := strings.CutPrefix(escapedPath, flatPath); ok {
 		return parseFlat(rest)
+	}
+	if rest, ok := strings.CutPrefix(escapedPath, catalogPath); ok {
+		return parseCatalog(rest)
 	}
 	return route{kind: KindOther}
 }
@@ -87,4 +92,25 @@ func parseFlat(rest string) route {
 		return route{kind: KindNuspec, id: id, version: s[1]}
 	}
 	return route{kind: KindOther, id: id}
+}
+
+// parseCatalog classifies a path below the catalog root: the index, a page by its number, or a leaf, whose version member
+// holds the path below data/ (the record it names is looked up in the log, because an ID may hold dots and digits).
+func parseCatalog(rest string) route {
+	switch {
+	case rest == "index.json":
+		return route{kind: KindCatalogIndex}
+	case strings.HasPrefix(rest, "page") && strings.HasSuffix(rest, ".json"):
+		n, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(rest, "page"), ".json"))
+		if err != nil || n < 0 {
+			return route{kind: KindOther}
+		}
+		return route{kind: KindCatalogPage, page: n}
+	}
+	if leaf, ok := strings.CutPrefix(rest, "data/"); ok {
+		if d, err := url.PathUnescape(leaf); err == nil {
+			return route{kind: KindCatalogLeaf, version: d}
+		}
+	}
+	return route{kind: KindOther}
 }

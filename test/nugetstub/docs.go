@@ -85,6 +85,7 @@ var (
 	registrationGzTypes    = []string{"RegistrationsBaseUrl/3.4.0", "RegistrationsBaseUrl/3.6.0"}
 	searchTypes            = []string{"SearchQueryService", "SearchQueryService/3.0.0-beta", "SearchQueryService/3.0.0-rc", "SearchQueryService/3.5.0"}
 	flatTypes              = []string{"PackageBaseAddress/3.0.0"}
+	catalogTypes           = []string{"Catalog/3.0.0"}
 )
 
 func (s *Server) indexDoc(b bases, m Mode) []byte {
@@ -111,6 +112,9 @@ func (s *Server) indexDoc(b bases, m Mode) []byte {
 	add(b.api, registrationPath, "registrations, identity", registrationPlainTypes)
 	add(b.content, flatPath, "package content", flatTypes)
 	add(b.content, searchPath, "search", searchTypes)
+	if m.Catalog {
+		add(b.api, catalogIndexPath, "catalog", catalogTypes)
+	}
 	out, _ := json.Marshal(map[string]any{"version": "3.0.0", "resources": res})
 	return out
 }
