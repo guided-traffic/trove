@@ -125,8 +125,8 @@ mux.Handle("/ui/", h) // do not strip the prefix
 | Route | Component | Services | Notes |
 |---|---|---|---|
 | `/admin/repositories` | [repository-list](../../web/src/app/features/repositories/repository-list.ts) | `RepositoriesApi`, `JobsApi` (progress) | Data table (no sort control: the API takes no `sort`); filter panel with `q`, `class`, `format`, `state`, applied into the query; cursor "Load more"; delete with typed key and job progress; "recently viewed" in browser storage |
-| `/admin/repositories/new` | [repository-wizard](../../web/src/app/features/repositories/repository-wizard.ts) | `RepositoriesApi` | Five steps, the format first ([Q-UI-112](../spec/api-and-ui.md#q-ui-112--the-repository-wizard-asks-for-the-format-first)): a searchable grid of format tiles (a single-choice `@angular/aria` listbox, [Q-UI-114](../spec/api-and-ui.md#q-ui-114--the-format-tiles-are-a-listbox-of-angulararia-the-icon-is-the-one-of-the-package-list)), then the class (a class the format lacks is shown disabled with the reason, [Q-UI-113](../spec/api-and-ui.md#q-ui-113--a-class-the-chosen-format-does-not-implement-is-shown-disabled-with-the-reason)); formats and classes only from `GET /api/v1/formats`; live key check; the format's settings in the fourth step ("Access and npm settings") and in the review; `Idempotency-Key` from the moment the wizard opens; field errors mapped by pointer |
-| `/admin/repositories/:key` | [repository-detail](../../web/src/app/features/repositories/repository-detail.ts) | `RepositoriesApi`, `GuidesApi` | Tabs General, Access, the format's settings ("npm settings", only when its schema has a member for the class), How to use (only for a format with clients, rendered when opened), API; merge patch with `If-Match`; 412 conflict dialog; consumer view without a form, with the guide below its facts; delete |
+| `/admin/repositories/new` | [repository-wizard](../../web/src/app/features/repositories/repository-wizard.ts) | `RepositoriesApi` | Five steps, the format first ([Q-UI-112](../spec/api-and-ui.md#q-ui-112--the-repository-wizard-asks-for-the-format-first)): a searchable grid of format tiles (a single-choice `@angular/aria` listbox, [Q-UI-114](../spec/api-and-ui.md#q-ui-114--the-format-tiles-are-a-listbox-of-angulararia-the-icon-is-the-one-of-the-package-list)), then the class (a class the format lacks is shown disabled with the reason, [Q-UI-113](../spec/api-and-ui.md#q-ui-113--a-class-the-chosen-format-does-not-implement-is-shown-disabled-with-the-reason)); formats and classes only from `GET /api/v1/formats`; live key check; the format's settings, and for a remote repository the [Upstream](#the-upstream-section-of-a-remote-repository) and the Mirror section, in the fourth step ("Access and npm settings", "Access, upstream and npm settings", ...) and in the review; `Idempotency-Key` from the moment the wizard opens; field errors mapped by pointer |
+| `/admin/repositories/:key` | [repository-detail](../../web/src/app/features/repositories/repository-detail.ts) | `RepositoriesApi`, `GuidesApi` | Tabs General, Access, Upstream (a remote), the format's settings ("npm settings", only when its schema has a member for the class), Mirror (a remote of a format that can mirror, with the [status panel](#the-mirror-status-panel) when it is stored in mode mirror, rendered when opened), How to use (only for a format with clients, rendered when opened), API; merge patch with `If-Match`; 412 conflict dialog; consumer view without a form, with the guide below its facts; delete |
 | `/browse`, `/browse/{repo}/{path…}` | [browse](../../web/src/app/features/browse/browse.ts) | `RepositoriesApi`, `FilesApi`, `SessionStore.check` | Two bordered panes of full height ([Q-UI-98](../spec/api-and-ui.md#q-ui-98--the-file-browser-is-two-panes-with-a-toolbar-and-a-details-header), [_browse.scss](../../web/src/styles/_browse.scss)): a tree pane (filter field that sets `q` 250 ms after the last keystroke, the shared filter panel for `class` and `format` inside the pane with chips, a sort menu, a count) with the `@angular/aria` tree and lazy pages, a virtual repository's members from `virtual.members` as `member` nodes (`tree-node.ts`, id `<virtual>><member>`); a details pane with a breadcrumb, the action toolbar `#browse-actions`, and tabs by kind (repository: General, API; folder: Contents, General, API; file: General, Statistics, API). The folder table is the shared data table over the children of the selected node, so the tree and the table share one load. A node keeps the promise of its load in flight (`TreeNode.pending`): a second request for the same folder, such as the reveal of a deep link past the first page while "Load more" runs, awaits it instead of looping (`findChild`). A node read again takes the new size, time and class (`nodeFor` with `refresh`), a node whose kind changed is replaced, and the `nodes` map drops the children that left a folder with their subtrees (`setChildren`, `forget`) Upload and New folder need `deploy`, a local repository and a format whose `protocolBasePath` is a files address; upload and folder dialogs, delete (204 or job) |
 | `/admin/endpoints` | [endpoint-list](../../web/src/app/features/endpoints/endpoint-list.ts) | `EndpointsApi` | Data table; name and rule count sort in the browser because the API answers the whole list; inert names flagged |
 | `/admin/endpoints/:endpoint` | [endpoint-detail](../../web/src/app/features/endpoints/endpoint-detail.ts) | `EndpointsApi`, `RepositoriesApi` | Read-only configuration, mode `all` banner, rule table with the enable switch (`PATCH {enabled}`), client addresses |
@@ -190,7 +190,7 @@ offers controls ([Q-UI-78](../spec/api-and-ui.md#q-ui-78--the-repository-setting
 
 [mirror-settings.ts](../../web/src/app/features/repositories/mirror-settings.ts) (`trove-mirror-settings`) renders `remote.mode` and the members of `remote.mirror`
 for a remote repository of a format whose descriptor has `mirror: true` (R-UI-021, R-REPO-050; [Q-UI-117](../spec/api-and-ui.md#q-ui-117--the-mirror-section-where-it-sits-what-it-writes-who-may-change-it)).
-The wizard shows it in the class-specific step, the edit form on a tab **Mirror**; the status tab of Q-UI-104 is not built yet and will sit in the same tab.
+The wizard shows it in the class-specific step, the edit form on a tab **Mirror**, which also holds the status panel ([below](#the-mirror-status-panel)).
 
 - *The form holds* `remoteMode` and `mirror` (the members that were set) in `RepositoryForm`. `FormatMemberOf.remote` says how `settingsOf` writes them:
   `sparse` for a create (nothing in mode `pullThrough`; in mode `mirror` the mode and the members that differ from `MIRROR_DEFAULTS`) and `structural` for
@@ -200,10 +200,48 @@ The wizard shows it in the class-specific step, the edit form on a tab **Mirror*
   mode `mirror`, and has a **Turn off** button (Q-REPO-142; the server's `422 mirror_restricted` is the check).
 - *The bound notice* (`unbounded`, `boundsMirror`) repeats the rule of `discover.Bounding` in `internal/mirror/discover/discover.go` and the sentences of
   `checkMirrorBound` in `internal/repository/validate_mirror.go`; the server decides ([Q-UI-118](../spec/api-and-ui.md#q-ui-118--the-unbounded-mirror-notice-is-an-early-warning-with-the-servers-rule)).
-  The wizard has no upstream field, so the notice takes the format's `defaultUpstreamUrl` as the upstream; the edit form compares the stored `remote.url`.
+  The notice follows the URL of the upstream form (`upstreamUrl` input, Q-UI-122): the URL entered, or the format's `defaultUpstreamUrl` while it is empty.
 - *Field errors.* `/remote/mode` is `f-remote-mode`, `/remote/mirror/<member>` is `f-remote-mirror-<member>`, anything else under `/remote` the section (`f-remote-mirror`);
   `mirrorTarget` and `mirrorPointerLabel` serve the error summaries of both screens.
 - *Tests.* [mirror-settings.spec.ts](../../web/src/app/features/repositories/mirror-settings.spec.ts) (the rules, the wizard, the edit form, axe).
+
+### The Upstream section of a remote repository
+
+[upstream-settings.ts](../../web/src/app/features/repositories/upstream-settings.ts) (`trove-upstream-settings`) edits `form.upstream` (`UpstreamForm` of
+[repository-model.ts](../../web/src/app/features/repositories/repository-model.ts)) of every remote repository: the URL, the authentication, a write-only password, the two
+cache periods, the offline switch and **Test connection** (F-54, R-UI-021, R-REPO-024, R-REPO-033; Q-UI-122 to Q-UI-124). The wizard shows it in the class-specific step above the format's settings
+and the Mirror section; the edit form on a tab **Upstream**.
+
+- *What is written.* `upstreamOf(form, defaults, write)` returns only what differs from the defaults of `upstreamDefaultsOf(format)` (`defaultUpstreamUrl`, `defaultMetadataTtlSeconds`,
+  `defaultNotFoundTtlSeconds`); `remoteOf(form, write, {mirror, upstream})` merges it with the mirror part. `FormatMemberOf` carries `remote` (`sparse` or `structural`), `mirror` (the
+  format has the mirror section; default true) and `upstream` (the defaults, present when the form edits the upstream). `structural` writes the URL as entered and `cache` and `availability` as
+  objects even when empty, so the merge patch clears a member inside them with `null` and never nulls an object that holds members the form does not edit.
+- *The wizard's start.* `resetDependent` gives a new remote `initialUpstream(format)` (the preset URL) when the class or the format changes; a draft restored after a sign-in is merged over `EMPTY_FORM`.
+- *The password.* `UpstreamForm.password` is what was typed; `passwordStored` (`none`, `sealed`, `reference`) is read from `password: {set: true}` or `{secretRef}`; `clearPassword` writes `null`.
+  `maskSecrets` replaces `password.value` in the request shown on the review and on the **API** tab; both screens blank the password in what they hand to `DraftStore.keep`
+  (R-UI-043). `FakeRepositoriesApi` seals a given value into `{set: true}` the way the server does.
+- *Test connection.* `RepositoriesApi.testUpstream` posts `upstreamTestBody(form.upstream, format)`: the format and the section with the URL the repository would use, without a stored password. The
+  result is a verdict sentence plus the facts of `UpstreamTestResult`; any change of the form clears it.
+- *Field errors.* `/remote/url` is `f-remote-url`, `/remote/password/...` is `f-remote-password`, the cache periods `f-remote-cache-<member>`, `/remote/availability/mode` `f-remote-availability-mode`, any
+  other member under `/remote` that is not the mode or the mirror the section (`f-remote-upstream`); `upstreamTarget` and `upstreamPointerLabel` are consulted before the mirror's.
+- *Tests.* [upstream-settings.spec.ts](../../web/src/app/features/repositories/upstream-settings.spec.ts) (the rules, the wizard, the edit form, axe) and the journey `14-mirror.spec.ts`
+  ([e2e.md](e2e.md#browser-journeys)).
+
+### The Mirror status panel
+
+[mirror-status.ts](../../web/src/app/features/repositories/mirror-status.ts) (`trove-mirror-status`) is the top of the Mirror tab of a remote repository that is stored in mode `mirror`
+(R-UI-021, R-REPO-056; Q-UI-104, Q-UI-105, Q-UI-119 to Q-UI-121). The tab content is a `matTabContent` template, so the panel exists, and polls, only while the tab is open.
+
+- *Reading.* `RepositoriesApi.mirrorStatus` (`GET …/mirror`). `mirrorActive(state)` (`running`, `waiting`) keeps a `setTimeout` loop at `intervalMs` (`MIRROR_POLL_INTERVAL_MS`, 5 s, the value of the jobs screen);
+  `DestroyRef` and every new load end the old loop. The `refresh` input is a counter the parent bumps when the document changed (a save, a pause); the panel reads again at once.
+- *The words.* `stateInfo(status)` gives the label, icon, tone and sentence of each of the seven states; only `scheduled` after a complete pass is `ok` (green), `failing` is `bad`, `bound_reached` is `warn`, `running` uses the primary colour.
+- *Buttons.* `canChange` is `canWrite() && lifecycle !== 'deleting'` of the edit form, the permission of Save (Q-UI-120). **Pause** and **Resume** emit `setPaused`; `RepositoryDetail.setMirrorPaused`
+  patches `{remote: {mirror: {paused}}}` with the loaded `ETag`, takes the answer as the new baseline with `takeStored` (the form keeps its other edits) and settles a 412 in `handlePauseError`: a stored
+  document that already says it is a success, otherwise `ConflictResolver.resolve` with the two sides of the settings. **Run a pass now** and **Run a full pass** call `RepositoriesApi.runMirror`
+  (`POST …/mirror/run`, `{full}`, a fresh `Idempotency-Key`); `runError` turns `mirror_pass_running` (with its `job` extension), `mirror_off`, `mirror_paused` and `not_applicable` into the sentences under the buttons and
+  leaves every other error to `trove-error-notice`. The jobs screen has no route per job, so the job is shown with its id and state and a link to `/admin/system/jobs?kind=mirror-pass`.
+- *Tests.* [mirror-status.spec.ts](../../web/src/app/features/repositories/mirror-status.spec.ts) (the panel alone: every state, the facts, polling, buttons, run, axe) and
+  [mirror-tab.spec.ts](../../web/src/app/features/repositories/mirror-tab.spec.ts) (the tab in the edit form: who sees what, pause and resume with `If-Match`, the 412 paths).
 
 **A format that needs more.** A setting the subset cannot express (a list of strings, a choice between shapes) is first a case for extending
 `settingNodes` and the component with one more kind; a panel under `features/formats/<id>/` is for an interaction a schema cannot express at all
@@ -737,8 +775,7 @@ user; what a caller may read is narrowed by the API, so a caller without a reada
   formats with tags in the descriptor.
 - The tree does not label the members of a virtual repository ("resolves from") or the cache of a remote one: the generic format has neither class (npm has both). Copy, move, properties and the trash can are P1.
 - The repository settings forms cover the generic members and the format member rendered from the format's schema
-  ([above](#the-repository-settings-form-rendered-from-the-formats-schema)). The wizard has no fields for the upstream of a remote repository (an npm remote
-  is created with the format's default upstream; the Mirror section edits the mode and the mirror members only) or for the members of a virtual one; NuGet's `deleteMode` view, upstream presets, "Test connection", the
+  ([above](#the-repository-settings-form-rendered-from-the-formats-schema)). The wizard and the edit form have fields for the upstream of a remote repository (the URL, the authentication, the two cache periods, the offline switch, "Test connection"; the extra hosts, the limits, the integrity members and the source network are set through the API), and none for the members of a virtual repository; the
   member editor and the other format panels arrive with those formats. A schema construct outside the rendered subset is shown, not edited.
 - The session expiry warning of R-UI-002 (WCAG 2.2.1) is not built: it needs the session deadlines in an answer the UI can read (`whoami` shows `type: session` without an
   expiry; the timeouts are in `settings/auth`, which needs `settings:read`). The `reauthentication_required` dialog leads to `/login?...&reauth=1`; the identity, token,

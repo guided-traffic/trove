@@ -23835,20 +23835,20 @@
     </unit>
     <unit id="repo.wizard.step.access-format-mirror">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:168</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:175</note>
       </notes>
       <segment>
-        <source>Access, <ph id="0" equiv="format" disp="this.formatLabel()"/> and mirror settings</source>
-        <target>Zugriffs-, <ph id="0" equiv="format" disp="this.formatLabel()"/>- und Mirror-Einstellungen</target>
+        <source>Access, upstream, <ph id="0" equiv="format" disp="this.formatLabel()"/> and mirror settings</source>
+        <target>Zugriffs-, Upstream-, <ph id="0" equiv="format" disp="this.formatLabel()"/>- und Mirror-Einstellungen</target>
       </segment>
     </unit>
     <unit id="repo.wizard.step.access-mirror">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:169</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:176</note>
       </notes>
       <segment>
-        <source>Access and mirror settings</source>
-        <target>Zugriffs- und Mirror-Einstellungen</target>
+        <source>Access, upstream and mirror settings</source>
+        <target>Zugriffs-, Upstream- und Mirror-Einstellungen</target>
       </segment>
     </unit>
     <unit id="repo.class.unsupported">
@@ -23858,6 +23858,1227 @@
       <segment>
         <source><ph id="0" equiv="format" disp="this.formatLabel()"/> does not implement the class <ph id="1" equiv="class" disp="classLabel(cls)"/>.</source>
         <target><ph id="0" equiv="format" disp="this.formatLabel()"/> setzt die Klasse <ph id="1" equiv="class" disp="classLabel(cls)"/> nicht um.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.state.off">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:48</note>
+      </notes>
+      <segment>
+        <source>Off</source>
+        <target>Aus</target>
+      </segment>
+    </unit>
+    <unit id="mirror.state.off.text">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:51</note>
+      </notes>
+      <segment>
+        <source>The repository is in pull-through mode: no pass runs.</source>
+        <target>Das Repository läuft im Pull-through-Modus: Es läuft kein Durchlauf.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.state.paused">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:55</note>
+      </notes>
+      <segment>
+        <source>Paused</source>
+        <target>Pausiert</target>
+      </segment>
+    </unit>
+    <unit id="mirror.state.paused.text">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:58</note>
+      </notes>
+      <segment>
+        <source>No pass starts. Resume the mirror to continue.</source>
+        <target>Kein Durchlauf startet. Setzen Sie den Mirror fort, um weiterzumachen.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.state.running">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:62</note>
+      </notes>
+      <segment>
+        <source>Running</source>
+        <target>Läuft</target>
+      </segment>
+    </unit>
+    <unit id="mirror.state.running.text">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:65</note>
+      </notes>
+      <segment>
+        <source>A pass is in progress.</source>
+        <target>Ein Durchlauf ist in Arbeit.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.state.waiting">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:69</note>
+      </notes>
+      <segment>
+        <source>Waiting</source>
+        <target>Wartet</target>
+      </segment>
+    </unit>
+    <unit id="mirror.state.waiting.text">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:72</note>
+      </notes>
+      <segment>
+        <source>A pass is in progress and waits for its next run, after a long rate-limit wait, a failure or a release.</source>
+        <target>Ein Durchlauf ist in Arbeit und wartet auf seinen nächsten Lauf, nach einer langen Rate-Limit-Wartezeit, einem Fehler oder einer Freigabe.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.state.bound">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:76</note>
+      </notes>
+      <segment>
+        <source>Bound reached</source>
+        <target>Grenze erreicht</target>
+      </segment>
+    </unit>
+    <unit id="mirror.state.bound.text">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:79</note>
+      </notes>
+      <segment>
+        <source>A storage bound stops the additions of the mirror. Raise the bound or make room.</source>
+        <target>Eine Speichergrenze stoppt das Hinzufügen des Mirrors. Erhöhen Sie die Grenze oder schaffen Sie Platz.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.state.failing">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:83</note>
+      </notes>
+      <segment>
+        <source>Failing</source>
+        <target>Fehlerhaft</target>
+      </segment>
+    </unit>
+    <unit id="mirror.state.failing.text">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:86</note>
+      </notes>
+      <segment>
+        <source>The last passes failed <ph id="0" equiv="count" disp="status.errors.consecutiveFailures"/> times in a row.</source>
+        <target>Die letzten Durchläufe sind <ph id="0" equiv="count" disp="status.errors.consecutiveFailures"/>-mal hintereinander fehlgeschlagen.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.state.scheduled">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:90</note>
+      </notes>
+      <segment>
+        <source>Scheduled</source>
+        <target>Geplant</target>
+      </segment>
+    </unit>
+    <unit id="mirror.state.scheduled.text">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:93</note>
+      </notes>
+      <segment>
+        <source>No pass is in progress; the next one starts when it is due.</source>
+        <target>Kein Durchlauf ist in Arbeit; der nächste startet, wenn er fällig ist.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.outcome.complete">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:106</note>
+      </notes>
+      <segment>
+        <source>Complete</source>
+        <target>Vollständig</target>
+      </segment>
+    </unit>
+    <unit id="mirror.outcome.partial">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:108</note>
+      </notes>
+      <segment>
+        <source>Partial: some packages failed</source>
+        <target>Teilweise: einige Pakete sind fehlgeschlagen</target>
+      </segment>
+    </unit>
+    <unit id="mirror.outcome.bound">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:110</note>
+      </notes>
+      <segment>
+        <source>Stopped at a storage bound</source>
+        <target>An einer Speichergrenze gestoppt</target>
+      </segment>
+    </unit>
+    <unit id="mirror.outcome.offline">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:112</note>
+      </notes>
+      <segment>
+        <source>Not run: the repository is offline</source>
+        <target>Nicht gelaufen: Das Repository ist offline</target>
+      </segment>
+    </unit>
+    <unit id="mirror.outcome.stopped">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:114</note>
+      </notes>
+      <segment>
+        <source>Stopped before the end</source>
+        <target>Vor dem Ende gestoppt</target>
+      </segment>
+    </unit>
+    <unit id="mirror.kind.full">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:122</note>
+      </notes>
+      <segment>
+        <source>Full</source>
+        <target>Vollständig</target>
+      </segment>
+    </unit>
+    <unit id="mirror.kind.incremental">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:123</note>
+      </notes>
+      <segment>
+        <source>Incremental</source>
+        <target>Inkrementell</target>
+      </segment>
+    </unit>
+    <unit id="mirror.bound.bytes">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:142</note>
+      </notes>
+      <segment>
+        <source>the storage limit of the mirror</source>
+        <target>die Speichergrenze des Mirrors</target>
+      </segment>
+    </unit>
+    <unit id="mirror.bound.quota">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:144</note>
+      </notes>
+      <segment>
+        <source>a quota of the repository</source>
+        <target>eine Quota des Repositorys</target>
+      </segment>
+    </unit>
+    <unit id="mirror.bound.capacity">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:146</note>
+      </notes>
+      <segment>
+        <source>the capacity of the storage</source>
+        <target>die Kapazität des Speichers</target>
+      </segment>
+    </unit>
+    <unit id="mirror.status.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:163,165</note>
+      </notes>
+      <segment>
+        <source>Mirror status</source>
+        <target>Status des Mirrors</target>
+      </segment>
+    </unit>
+    <unit id="mirror.resume">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:182,183</note>
+      </notes>
+      <segment>
+        <source>Resume</source>
+        <target>Fortsetzen</target>
+      </segment>
+    </unit>
+    <unit id="mirror.pause">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:186,187</note>
+      </notes>
+      <segment>
+        <source>Pause</source>
+        <target>Pausieren</target>
+      </segment>
+    </unit>
+    <unit id="mirror.run">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:191,192</note>
+      </notes>
+      <segment>
+        <source>Run a pass now</source>
+        <target>Durchlauf jetzt starten</target>
+      </segment>
+    </unit>
+    <unit id="mirror.run.more">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:199,200</note>
+      </notes>
+      <segment>
+        <source>More ways to run a pass</source>
+        <target>Weitere Arten, einen Durchlauf zu starten</target>
+      </segment>
+    </unit>
+    <unit id="mirror.run.full">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:206,207</note>
+      </notes>
+      <segment>
+        <source>Run a full pass</source>
+        <target>Vollständigen Durchlauf starten</target>
+      </segment>
+    </unit>
+    <unit id="mirror.run.started-full">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:220,221</note>
+      </notes>
+      <segment>
+        <source>A full pass is queued.</source>
+        <target>Ein vollständiger Durchlauf ist eingereiht.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.run.started">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:222,223</note>
+      </notes>
+      <segment>
+        <source>A pass is queued.</source>
+        <target>Ein Durchlauf ist eingereiht.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.run.running">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:230,231</note>
+      </notes>
+      <segment>
+        <source>A pass is already queued or running.</source>
+        <target>Ein Durchlauf ist bereits eingereiht oder läuft.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.run.off">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:239,240</note>
+      </notes>
+      <segment>
+        <source>The repository is in pull-through mode; there is no mirror to run. Choose mode mirror and save first.</source>
+        <target>Das Repository läuft im Pull-through-Modus; es gibt keinen Mirror, der laufen könnte. Wählen Sie zuerst den Modus Mirror und speichern Sie.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.run.paused">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:245,246</note>
+      </notes>
+      <segment>
+        <source>The mirror is paused. Resume it to run a pass.</source>
+        <target>Der Mirror ist pausiert. Setzen Sie ihn fort, um einen Durchlauf zu starten.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.run.not-applicable">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:251,253</note>
+      </notes>
+      <segment>
+        <source>Only a remote repository has a mirror.</source>
+        <target>Nur ein Remote-Repository hat einen Mirror.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.pass.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:262,263</note>
+      </notes>
+      <segment>
+        <source>Pass in progress</source>
+        <target>Laufender Durchlauf</target>
+      </segment>
+    </unit>
+    <unit id="mirror.pass.kind">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:264,265</note>
+        <note category="location">src/app/features/repositories/mirror-status.ts:306,307</note>
+      </notes>
+      <segment>
+        <source>Kind</source>
+        <target>Art</target>
+      </segment>
+    </unit>
+    <unit id="mirror.pass.method">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:266,267</note>
+        <note category="location">src/app/features/repositories/mirror-status.ts:308,309</note>
+      </notes>
+      <segment>
+        <source>Discovery</source>
+        <target>Ermittlung</target>
+      </segment>
+    </unit>
+    <unit id="mirror.pass.started">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:268,269</note>
+      </notes>
+      <segment>
+        <source>Started</source>
+        <target>Gestartet</target>
+      </segment>
+    </unit>
+    <unit id="mirror.pass.names">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:270,271</note>
+      </notes>
+      <segment>
+        <source>Names discovered</source>
+        <target>Ermittelte Namen</target>
+      </segment>
+    </unit>
+    <unit id="mirror.pass.done">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:272,273</note>
+      </notes>
+      <segment>
+        <source>Packages done</source>
+        <target>Fertige Pakete</target>
+      </segment>
+    </unit>
+    <unit id="mirror.pass.pending">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:274,275</note>
+      </notes>
+      <segment>
+        <source>Packages pending</source>
+        <target>Ausstehende Pakete</target>
+      </segment>
+    </unit>
+    <unit id="mirror.pass.failed">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:276,277</note>
+        <note category="location">src/app/features/repositories/mirror-status.ts:316,317</note>
+      </notes>
+      <segment>
+        <source>Packages failed</source>
+        <target>Fehlgeschlagene Pakete</target>
+      </segment>
+    </unit>
+    <unit id="mirror.pass.items">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:278,279</note>
+        <note category="location">src/app/features/repositories/mirror-status.ts:318,319</note>
+      </notes>
+      <segment>
+        <source>Items stored</source>
+        <target>Gespeicherte Einträge</target>
+      </segment>
+    </unit>
+    <unit id="mirror.pass.bytes">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:280,281</note>
+        <note category="location">src/app/features/repositories/mirror-status.ts:320,321</note>
+      </notes>
+      <segment>
+        <source>Bytes stored</source>
+        <target>Gespeicherte Bytes</target>
+      </segment>
+    </unit>
+    <unit id="mirror.pass.discovery-done">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:282,284</note>
+      </notes>
+      <segment>
+        <source>Discovery</source>
+        <target>Ermittlung</target>
+      </segment>
+    </unit>
+    <unit id="mirror.pass.discovery-finished">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:285,287</note>
+      </notes>
+      <segment>
+        <source>finished</source>
+        <target>abgeschlossen</target>
+      </segment>
+    </unit>
+    <unit id="mirror.pass.discovery-running">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:287,289</note>
+      </notes>
+      <segment>
+        <source>still running</source>
+        <target>läuft noch</target>
+      </segment>
+    </unit>
+    <unit id="mirror.pass.job">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:291,292</note>
+      </notes>
+      <segment>
+        <source>Job</source>
+        <target>Job</target>
+      </segment>
+    </unit>
+    <unit id="mirror.pass.no-job">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:295,297</note>
+      </notes>
+      <segment>
+        <source>The job has been removed.</source>
+        <target>Der Job wurde entfernt.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.last.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:301,302</note>
+      </notes>
+      <segment>
+        <source>Last complete pass</source>
+        <target>Letzter vollständiger Durchlauf</target>
+      </segment>
+    </unit>
+    <unit id="mirror.last.outcome">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:304,305</note>
+      </notes>
+      <segment>
+        <source>Outcome</source>
+        <target>Ergebnis</target>
+      </segment>
+    </unit>
+    <unit id="mirror.last.started">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:310,311</note>
+      </notes>
+      <segment>
+        <source>Started</source>
+        <target>Gestartet</target>
+      </segment>
+    </unit>
+    <unit id="mirror.last.finished">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:312,313</note>
+      </notes>
+      <segment>
+        <source>Finished</source>
+        <target>Beendet</target>
+      </segment>
+    </unit>
+    <unit id="mirror.last.packages">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:314,315</note>
+      </notes>
+      <segment>
+        <source>Packages</source>
+        <target>Pakete</target>
+      </segment>
+    </unit>
+    <unit id="mirror.last.discovery">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:322,324</note>
+      </notes>
+      <segment>
+        <source>Discovery saw everything</source>
+        <target>Ermittlung hat alles gesehen</target>
+      </segment>
+    </unit>
+    <unit id="mirror.last.yes">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:325,326</note>
+      </notes>
+      <segment>
+        <source>Yes</source>
+        <target>Ja</target>
+      </segment>
+    </unit>
+    <unit id="mirror.last.no">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:329,330</note>
+      </notes>
+      <segment>
+        <source>No</source>
+        <target>Nein</target>
+      </segment>
+    </unit>
+    <unit id="mirror.last.none">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:338,341</note>
+      </notes>
+      <segment>
+        <source>No pass has completed yet.</source>
+        <target>Noch kein Durchlauf wurde abgeschlossen.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.next.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:341,342</note>
+      </notes>
+      <segment>
+        <source>Next pass</source>
+        <target>Nächster Durchlauf</target>
+      </segment>
+    </unit>
+    <unit id="mirror.next.at">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:344,345</note>
+      </notes>
+      <segment>
+        <source>Due</source>
+        <target>Fällig</target>
+      </segment>
+    </unit>
+    <unit id="mirror.next.none">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:346,347</note>
+      </notes>
+      <segment>
+        <source>No pass is planned.</source>
+        <target>Es ist kein Durchlauf geplant.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.next.dispatch">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:350,352</note>
+      </notes>
+      <segment>
+        <source>At the next dispatch, within a minute.</source>
+        <target>Bei der nächsten Verteilung, innerhalb einer Minute.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.next.full">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:353,355</note>
+      </notes>
+      <segment>
+        <source>Last full pass</source>
+        <target>Letzter vollständiger Durchlauf</target>
+      </segment>
+    </unit>
+    <unit id="mirror.error.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:363,364</note>
+      </notes>
+      <segment>
+        <source>Last error</source>
+        <target>Letzter Fehler</target>
+      </segment>
+    </unit>
+    <unit id="mirror.error.code">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:366,367</note>
+      </notes>
+      <segment>
+        <source>Code</source>
+        <target>Code</target>
+      </segment>
+    </unit>
+    <unit id="mirror.error.message">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:368,369</note>
+      </notes>
+      <segment>
+        <source>Message</source>
+        <target>Meldung</target>
+      </segment>
+    </unit>
+    <unit id="mirror.error.at">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:370,372</note>
+      </notes>
+      <segment>
+        <source>Time</source>
+        <target>Zeit</target>
+      </segment>
+    </unit>
+    <unit id="mirror.error.failures">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:378,379</note>
+      </notes>
+      <segment>
+        <source>Failures in a row</source>
+        <target>Fehler in Folge</target>
+      </segment>
+    </unit>
+    <unit id="mirror.error.none">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:382,385</note>
+      </notes>
+      <segment>
+        <source>No error.</source>
+        <target>Kein Fehler.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.rate.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:385,386</note>
+      </notes>
+      <segment>
+        <source>Rate-limit waits</source>
+        <target>Rate-Limit-Wartezeiten</target>
+      </segment>
+    </unit>
+    <unit id="mirror.rate.waits">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:387,388</note>
+      </notes>
+      <segment>
+        <source>Waits</source>
+        <target>Wartezeiten</target>
+      </segment>
+    </unit>
+    <unit id="mirror.rate.seconds">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:389,390</note>
+      </notes>
+      <segment>
+        <source>Seconds waited</source>
+        <target>Gewartete Sekunden</target>
+      </segment>
+    </unit>
+    <unit id="mirror.rate.last">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:391,393</note>
+      </notes>
+      <segment>
+        <source>Last answer</source>
+        <target>Letzte Antwort</target>
+      </segment>
+    </unit>
+    <unit id="mirror.rate.at">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:396</note>
+        <note category="location">src/app/features/repositories/mirror-status.ts:428</note>
+      </notes>
+      <segment>
+        <source>at</source>
+        <target>um</target>
+      </segment>
+    </unit>
+    <unit id="mirror.rate.until">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:403,404</note>
+      </notes>
+      <segment>
+        <source>Waiting until</source>
+        <target>Wartet bis</target>
+      </segment>
+    </unit>
+    <unit id="mirror.bound.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:408,409</note>
+      </notes>
+      <segment>
+        <source>Bound</source>
+        <target>Grenze</target>
+      </segment>
+    </unit>
+    <unit id="mirror.bound.max">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:410,412</note>
+      </notes>
+      <segment>
+        <source>Storage limit</source>
+        <target>Speichergrenze</target>
+      </segment>
+    </unit>
+    <unit id="mirror.bound.unlimited">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:415,417</note>
+      </notes>
+      <segment>
+        <source>No limit of its own</source>
+        <target>Keine eigene Grenze</target>
+      </segment>
+    </unit>
+    <unit id="mirror.bound.used">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:418,419</note>
+      </notes>
+      <segment>
+        <source>Stored</source>
+        <target>Gespeichert</target>
+      </segment>
+    </unit>
+    <unit id="mirror.bound.reached">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:420,422</note>
+      </notes>
+      <segment>
+        <source>Reached</source>
+        <target>Erreicht</target>
+      </segment>
+    </unit>
+    <unit id="mirror.bound.reached-by">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:425</note>
+      </notes>
+      <segment>
+        <source>Yes, by</source>
+        <target>Ja, durch</target>
+      </segment>
+    </unit>
+    <unit id="mirror.bound.no">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:431,433</note>
+      </notes>
+      <segment>
+        <source>No</source>
+        <target>Nein</target>
+      </segment>
+    </unit>
+    <unit id="mirror.status.loading">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:436,440</note>
+      </notes>
+      <segment>
+        <source>Loading the status.</source>
+        <target>Der Status wird geladen.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.job.link">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:442,444</note>
+      </notes>
+      <segment>
+        <source>Open the mirror jobs</source>
+        <target>Mirror-Jobs öffnen</target>
+      </segment>
+    </unit>
+    <unit id="mirror.job.is">
+      <notes>
+        <note category="location">src/app/features/repositories/mirror-status.ts:444</note>
+      </notes>
+      <segment>
+        <source>job</source>
+        <target>Job</target>
+      </segment>
+    </unit>
+    <unit id="mirror.status.unsaved">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:172,173</note>
+      </notes>
+      <segment>
+        <source> The status appears once the repository is saved in mode mirror. </source>
+        <target>Der Status erscheint, sobald das Repository im Modus Mirror gespeichert ist.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.paused-notice">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:305</note>
+      </notes>
+      <segment>
+        <source>Mirror paused.</source>
+        <target>Mirror pausiert.</target>
+      </segment>
+    </unit>
+    <unit id="mirror.resumed-notice">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:306</note>
+      </notes>
+      <segment>
+        <source>Mirror resumed.</source>
+        <target>Mirror fortgesetzt.</target>
+      </segment>
+    </unit>
+    <unit id="repo.tab.upstream">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:451</note>
+      </notes>
+      <segment>
+        <source>Upstream</source>
+        <target>Upstream</target>
+      </segment>
+    </unit>
+    <unit id="upstream.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.html:259,261</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:62</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:77,78</note>
+      </notes>
+      <segment>
+        <source>Upstream</source>
+        <target>Upstream</target>
+      </segment>
+    </unit>
+    <unit id="upstream.review.default">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.html:264,267</note>
+      </notes>
+      <segment>
+        <source>The format&apos;s well-known upstream</source>
+        <target>Der bekannte Upstream des Formats</target>
+      </segment>
+    </unit>
+    <unit id="repo.wizard.step.access-upstream-format">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:180</note>
+      </notes>
+      <segment>
+        <source>Access, upstream and <ph id="0" equiv="format" disp="this.formatLabel()"/> settings</source>
+        <target>Zugriffs-, Upstream- und <ph id="0" equiv="format" disp="this.formatLabel()"/>-Einstellungen</target>
+      </segment>
+    </unit>
+    <unit id="repo.wizard.step.access-upstream">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:181</note>
+      </notes>
+      <segment>
+        <source>Access and upstream settings</source>
+        <target>Zugriffs- und Upstream-Einstellungen</target>
+      </segment>
+    </unit>
+    <unit id="upstream.url">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:51</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:85,87</note>
+      </notes>
+      <segment>
+        <source>Upstream URL</source>
+        <target>Upstream-URL</target>
+      </segment>
+    </unit>
+    <unit id="upstream.auth">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:52</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:118,120</note>
+      </notes>
+      <segment>
+        <source>Authentication</source>
+        <target>Authentifizierung</target>
+      </segment>
+    </unit>
+    <unit id="upstream.username">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:53</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:136,138</note>
+      </notes>
+      <segment>
+        <source>Username</source>
+        <target>Benutzername</target>
+      </segment>
+    </unit>
+    <unit id="upstream.password">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:54</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:156,158</note>
+      </notes>
+      <segment>
+        <source>Password or token</source>
+        <target>Passwort oder Token</target>
+      </segment>
+    </unit>
+    <unit id="upstream.metadata-ttl">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:56</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:207,209</note>
+      </notes>
+      <segment>
+        <source>Metadata cache period in seconds</source>
+        <target>Cache-Dauer der Metadaten in Sekunden</target>
+      </segment>
+    </unit>
+    <unit id="upstream.notfound-ttl">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:59</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:229,231</note>
+      </notes>
+      <segment>
+        <source>Negative cache period in seconds</source>
+        <target>Dauer des negativen Caches in Sekunden</target>
+      </segment>
+    </unit>
+    <unit id="upstream.offline">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:61</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:259,261</note>
+      </notes>
+      <segment>
+        <source>Offline</source>
+        <target>Offline</target>
+      </segment>
+    </unit>
+    <unit id="upstream.intro">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:79,83</note>
+      </notes>
+      <segment>
+        <source> The registry this repository fetches from. Credentials go to this host only and are never shown again once saved. </source>
+        <target>Die Registry, aus der dieses Repository abruft. Zugangsdaten gehen nur an diesen Host und werden nach dem Speichern nie wieder angezeigt.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.url.hint-preset">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:100</note>
+      </notes>
+      <segment>
+        <source>The format&apos;s well-known upstream is</source>
+        <target>Der bekannte Upstream des Formats ist</target>
+      </segment>
+    </unit>
+    <unit id="upstream.url.hint-empty">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:100,102</note>
+      </notes>
+      <segment>
+        <source>Empty means that upstream.</source>
+        <target>Leer bedeutet dieser Upstream.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.url.hint-required">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:103,105</note>
+      </notes>
+      <segment>
+        <source>This format has no well-known upstream: enter the address of the registry.</source>
+        <target>Dieses Format hat keinen bekannten Upstream: Geben Sie die Adresse der Registry an.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.url.use-preset">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:109,111</note>
+      </notes>
+      <segment>
+        <source>Use the well-known upstream</source>
+        <target>Bekannten Upstream verwenden</target>
+      </segment>
+    </unit>
+    <unit id="upstream.password.stored">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:173,175</note>
+      </notes>
+      <segment>
+        <source>A password is stored and is not shown. Leave the field empty to keep it; type one to replace it.</source>
+        <target>Ein Passwort ist gespeichert und wird nicht angezeigt. Lassen Sie das Feld leer, um es zu behalten; geben Sie eines ein, um es zu ersetzen.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.password.reference">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:178,180</note>
+      </notes>
+      <segment>
+        <source>A reference to a secret file or variable is stored. Leave the field empty to keep it; type a password to replace it.</source>
+        <target>Ein Verweis auf eine Secret-Datei oder -Variable ist gespeichert. Lassen Sie das Feld leer, um ihn zu behalten; geben Sie ein Passwort ein, um ihn zu ersetzen.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.password.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:183,185</note>
+      </notes>
+      <segment>
+        <source>Sealed when you save, then never shown again. With bearer authentication this is the token.</source>
+        <target>Wird beim Speichern versiegelt und danach nie wieder angezeigt. Bei Bearer-Authentifizierung ist dies das Token.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.password.clear">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:196,198</note>
+      </notes>
+      <segment>
+        <source>Remove the stored password</source>
+        <target>Gespeichertes Passwort entfernen</target>
+      </segment>
+    </unit>
+    <unit id="upstream.offline.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:262,264</note>
+      </notes>
+      <segment>
+        <source> The upstream is not contacted: clients get what is already stored. </source>
+        <target>Der Upstream wird nicht kontaktiert: Clients erhalten, was bereits gespeichert ist.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.test">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:272,273</note>
+      </notes>
+      <segment>
+        <source>Test connection</source>
+        <target>Verbindung testen</target>
+      </segment>
+    </unit>
+    <unit id="upstream.test.stored">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:276,279</note>
+      </notes>
+      <segment>
+        <source>The test does not use the stored password; type it to test with it.</source>
+        <target>Der Test verwendet das gespeicherte Passwort nicht; geben Sie es ein, um damit zu testen.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.test.running">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:282,284</note>
+      </notes>
+      <segment>
+        <source>Testing the connection.</source>
+        <target>Die Verbindung wird getestet.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.test.status">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:294,295</note>
+      </notes>
+      <segment>
+        <source>HTTP status</source>
+        <target>HTTP-Status</target>
+      </segment>
+    </unit>
+    <unit id="upstream.test.credentials">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:298,299</note>
+      </notes>
+      <segment>
+        <source>Credentials</source>
+        <target>Zugangsdaten</target>
+      </segment>
+    </unit>
+    <unit id="upstream.test.duration">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:301,302</note>
+      </notes>
+      <segment>
+        <source>Duration</source>
+        <target>Dauer</target>
+      </segment>
+    </unit>
+    <unit id="upstream.test.tls">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:304,306</note>
+      </notes>
+      <segment>
+        <source>Certificate</source>
+        <target>Zertifikat</target>
+      </segment>
+    </unit>
+    <unit id="upstream.test.valid-until">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:306</note>
+      </notes>
+      <segment>
+        <source>valid until</source>
+        <target>gültig bis</target>
+      </segment>
+    </unit>
+    <unit id="upstream.test.error">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:310,312</note>
+      </notes>
+      <segment>
+        <source>Reason</source>
+        <target>Grund</target>
+      </segment>
+    </unit>
+    <unit id="upstream.test.accepted">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:347</note>
+      </notes>
+      <segment>
+        <source>accepted</source>
+        <target>akzeptiert</target>
+      </segment>
+    </unit>
+    <unit id="upstream.test.refused">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:348</note>
+      </notes>
+      <segment>
+        <source>refused</source>
+        <target>abgelehnt</target>
+      </segment>
+    </unit>
+    <unit id="upstream.test.unreachable">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:371</note>
+      </notes>
+      <segment>
+        <source>The upstream could not be reached.</source>
+        <target>Der Upstream war nicht erreichbar.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.test.denied">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:373</note>
+      </notes>
+      <segment>
+        <source>The upstream answered and refused the credentials.</source>
+        <target>Der Upstream hat geantwortet und die Zugangsdaten abgelehnt.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.test.ok">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:375</note>
+      </notes>
+      <segment>
+        <source>The upstream answered.</source>
+        <target>Der Upstream hat geantwortet.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.test.answered-error">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:376</note>
+      </notes>
+      <segment>
+        <source>The upstream answered with an error.</source>
+        <target>Der Upstream hat mit einem Fehler geantwortet.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.metadata-ttl.hint-none">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:383</note>
+      </notes>
+      <segment>
+        <source>How long fetched metadata is served without asking the upstream again. Empty: the format&apos;s default.</source>
+        <target>Wie lange abgerufene Metadaten ausgeliefert werden, ohne den Upstream erneut zu fragen. Leer: die Voreinstellung des Formats.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.metadata-ttl.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:384</note>
+      </notes>
+      <segment>
+        <source>How long fetched metadata is served without asking the upstream again. Default: <ph id="0" equiv="seconds" disp="d"/>.</source>
+        <target>Wie lange abgerufene Metadaten ausgeliefert werden, ohne den Upstream erneut zu fragen. Voreinstellung: <ph id="0" equiv="seconds" disp="d"/>.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.notfound-ttl.hint-none">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:389</note>
+      </notes>
+      <segment>
+        <source>How long &quot;not found&quot; answers are remembered. Empty: the format&apos;s default.</source>
+        <target>Wie lange „nicht gefunden“-Antworten gemerkt werden. Leer: die Voreinstellung des Formats.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.notfound-ttl.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:390</note>
+      </notes>
+      <segment>
+        <source>How long &quot;not found&quot; answers are remembered. Default: <ph id="0" equiv="seconds" disp="d"/>.</source>
+        <target>Wie lange „nicht gefunden“-Antworten gemerkt werden. Voreinstellung: <ph id="0" equiv="seconds" disp="d"/>.</target>
+      </segment>
+    </unit>
+    <unit id="upstream.auth.basic">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:396</note>
+      </notes>
+      <segment>
+        <source>Username and password</source>
+        <target>Benutzername und Passwort</target>
+      </segment>
+    </unit>
+    <unit id="upstream.auth.bearer">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:398</note>
+      </notes>
+      <segment>
+        <source>Bearer token</source>
+        <target>Bearer-Token</target>
+      </segment>
+    </unit>
+    <unit id="upstream.auth.none">
+      <notes>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:400</note>
+      </notes>
+      <segment>
+        <source>None</source>
+        <target>Keine</target>
       </segment>
     </unit>
 </file>

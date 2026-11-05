@@ -26,6 +26,156 @@ export const MIRROR_DEFAULTS: Readonly<Record<string, unknown>> = {
   maxBytes: null,
 };
 
+export type UpstreamAuthMode = 'none' | 'basic' | 'bearer';
+
+/**
+ * The upstream settings of a remote repository, in the shape the form controls hold them (R-UI-021,
+ * R-REPO-024, R-REPO-033). The password is write-only: a document never returns it, so `password` holds
+ * only what the user typed in this session and `passwordStored` only that the document holds one.
+ */
+export interface UpstreamForm {
+  /** The upstream URL; empty means the format's well-known upstream. */
+  readonly url: string;
+  readonly authMode: UpstreamAuthMode;
+  readonly username: string;
+  /** What the user typed; sent as `{"value": ...}` and never read back (R-REPO-033). */
+  readonly password: string;
+  /** The document holds a sealed value (`{"set": true}`) or a reference. */
+  readonly passwordStored: 'none' | 'sealed' | 'reference';
+  /** Remove the stored password (`"password": null`). */
+  readonly clearPassword: boolean;
+  /** `remote.cache.metadataTtlSeconds`; `null` follows the format's default. A text that is no number stays text for the server to reject. */
+  readonly metadataTtl: number | string | null;
+  readonly notFoundTtl: number | string | null;
+  /** `remote.availability.mode: offline` (INV-11, R-REPO-030). */
+  readonly offline: boolean;
+}
+
+export const EMPTY_UPSTREAM: UpstreamForm = {
+  url: '',
+  authMode: 'none',
+  username: '',
+  password: '',
+  passwordStored: 'none',
+  clearPassword: false,
+  metadataTtl: null,
+  notFoundTtl: null,
+  offline: false,
+};
+
+/** What a format proposes for its remote repositories (`FormatDescriptor`): the values a form leaves unwritten. */
+export interface UpstreamDefaults {
+  readonly url: string | null;
+  readonly metadataTtlSeconds: number | null;
+  readonly notFoundTtlSeconds: number | null;
+}
+
+export function upstreamDefaultsOf(format: FormatDescriptor | null | undefined): UpstreamDefaults {
+  return {
+    url: format?.defaultUpstreamUrl ?? null,
+    metadataTtlSeconds: format?.defaultMetadataTtlSeconds ?? null,
+    notFoundTtlSeconds: format?.defaultNotFoundTtlSeconds ?? null,
+  };
+}
+
+/** The upstream a new remote repository of the format starts with: its preset URL, nothing else. */
+export function initialUpstream(format: FormatDescriptor | null | undefined): UpstreamForm {
+  const url = format?.defaultUpstreamUrl;
+  return url ? { ...EMPTY_UPSTREAM, url } : EMPTY_UPSTREAM;
+}
+
+/** `https://Host:443/path` and `https://host/path` name the same upstream: compare as the server stores it. */
+export function normalizedUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}${u.pathname === '' ? '/' : u.pathname}${u.search}`;
+  } catch {
+    return url;
+  }
+}
+
+/** The URL the repository would use: the entered one, else the format's well-known upstream, else none. */
+export function effectiveUrl(upstream: UpstreamForm, defaults: UpstreamDefaults): string | null {
+  const entered = upstream.url.trim();
+  return entered !== '' ? entered : defaults.url;
+}
+
+function sameNumber(value: number | string | null, fallback: number | null): boolean {
+  return value === null || value === '' || value === fallback;
+}
+
+/**
+ * The members of `remote` that the upstream settings write (R-UI-021): only what differs from its
+ * default (Q-UI-80). The URL is always written when entered on the edit form (`structural`), so a
+ * patch never relies on how the server reads a removed URL. A secret is written only when typed, or
+ * removed on request; an unchanged stored password is not part of any request (R-REPO-033).
+ */
+export function upstreamOf(
+  form: UpstreamForm,
+  defaults: UpstreamDefaults,
+  write: RemoteWrite,
+): JsonObject {
+  const out: JsonObject = {};
+  const url = form.url.trim();
+  if (
+    url !== '' &&
+    (write === 'structural' || defaults.url === null || normalizedUrl(url) !== normalizedUrl(defaults.url))
+  ) {
+    out['url'] = url;
+  }
+  if (form.authMode !== 'none') {
+    out['authMode'] = form.authMode;
+    if (form.authMode === 'basic' && form.username.trim() !== '') out['username'] = form.username.trim();
+    if (form.password !== '') out['password'] = { value: form.password };
+    else if (form.clearPassword && form.passwordStored !== 'none') out['password'] = null;
+  }
+  const cache: JsonObject = {};
+  if (!sameNumber(form.metadataTtl, defaults.metadataTtlSeconds)) cache['metadataTtlSeconds'] = form.metadataTtl;
+  if (!sameNumber(form.notFoundTtl, defaults.notFoundTtlSeconds)) cache['notFoundTtlSeconds'] = form.notFoundTtl;
+  // The edit form names both objects even when empty, so that a member set back to its default is
+  // cleared with `null` inside them and the patch never nulls the whole object, which holds members
+  // the form does not edit (`storeArtifacts`, `failureThreshold`, ...).
+  if (write === 'structural' || Object.keys(cache).length > 0) out['cache'] = cache;
+  if (form.offline) out['availability'] = { mode: 'offline' };
+  else if (write === 'structural') out['availability'] = {};
+  return out;
+}
+
+/**
+ * The body of `POST /api/v1/upstream-tests` for the form: the format and the unsaved `remote` section,
+ * with the URL the repository would use. The password is the typed one; a stored one is not part of an
+ * unsaved test (R-REPO-024).
+ */
+export function upstreamTestBody(
+  form: UpstreamForm,
+  format: FormatDescriptor,
+): { format: string; remote: JsonObject } {
+  const defaults = upstreamDefaultsOf(format);
+  const remote = upstreamOf(form, defaults, 'structural');
+  const url = effectiveUrl(form, defaults);
+  if (url !== null) remote['url'] = url;
+  if (remote['password'] === null) delete remote['password'];
+  for (const name of ['cache', 'availability']) {
+    const member = remote[name] as JsonObject | undefined;
+    if (member && Object.keys(member).length === 0) delete remote[name];
+  }
+  return { format: format.name, remote };
+}
+
+/** The request as shown on screen: a typed password is replaced, never displayed (R-UI-043). */
+export function maskSecrets<T>(value: T): T {
+  if (Array.isArray(value)) return value.map((v) => maskSecrets(v)) as T;
+  if (typeof value !== 'object' || value === null) return value;
+  const out: Record<string, unknown> = {};
+  for (const [name, v] of Object.entries(value)) {
+    out[name] =
+      name === 'password' && typeof v === 'object' && v !== null && 'value' in v
+        ? { value: '<the password>' }
+        : maskSecrets(v);
+  }
+  return out as T;
+}
+
 /** The editable members of a repository document, in the shape the form controls hold them. */
 export interface RepositoryForm {
   readonly key: string;
@@ -43,6 +193,8 @@ export interface RepositoryForm {
   readonly remoteMode: RemoteMode;
   /** The members of `remote.mirror` that were set (R-REPO-050); an unset member follows its default. */
   readonly mirror: JsonObject;
+  /** The upstream settings of a remote repository (R-UI-021). */
+  readonly upstream: UpstreamForm;
 }
 
 /**
@@ -57,8 +209,12 @@ export type RemoteWrite = 'sparse' | 'structural';
 export interface FormatMemberOf {
   readonly name: string;
   readonly schema: SettingSchema | null | undefined;
-  /** Set when the form edits `remote.mode` and `remote.mirror` (a remote of a format with `mirror: true`). */
+  /** Set when the form edits the `remote` section (a remote repository). */
   readonly remote?: RemoteWrite;
+  /** Whether the form edits `remote.mode` and `remote.mirror` (a format with `mirror: true`); true when `remote` is set and this is not. */
+  readonly mirror?: boolean;
+  /** Set when the form edits the upstream settings; the defaults say which values are not written. */
+  readonly upstream?: UpstreamDefaults;
 }
 
 /** Defaults of R-REPO-004. */
@@ -74,6 +230,7 @@ export const EMPTY_FORM: RepositoryForm = {
   formatMember: {},
   remoteMode: 'pullThrough',
   mirror: {},
+  upstream: EMPTY_UPSTREAM,
 };
 
 export function lines(text: string): string[] {
@@ -96,6 +253,24 @@ export function formOf(repo: Repository): RepositoryForm {
     formatMember: memberOf(repo),
     remoteMode: repo.remote?.mode === 'mirror' ? 'mirror' : 'pullThrough',
     mirror: { ...(repo.remote?.mirror ?? {}) } as JsonObject,
+    upstream: upstreamFormOf(repo),
+  };
+}
+
+function upstreamFormOf(repo: Repository): UpstreamForm {
+  const r = repo.remote;
+  if (!r) return EMPTY_UPSTREAM;
+  const password = r.password as { set?: boolean; secretRef?: unknown } | null | undefined;
+  return {
+    url: r.url ?? '',
+    authMode: r.authMode ?? 'none',
+    username: r.username ?? '',
+    password: '',
+    passwordStored: password?.secretRef ? 'reference' : password?.set ? 'sealed' : 'none',
+    clearPassword: false,
+    metadataTtl: r.cache?.metadataTtlSeconds ?? null,
+    notFoundTtl: r.cache?.notFoundTtlSeconds ?? null,
+    offline: r.availability?.mode === 'offline',
   };
 }
 
@@ -115,15 +290,30 @@ export function sameMirror(form: RepositoryForm): boolean {
   return form.remoteMode === 'pullThrough' && Object.keys(form.mirror).length === 0;
 }
 
-/** The `remote` member the mirror section writes, or undefined when a create has nothing to write. */
-export function remoteOf(form: RepositoryForm, write: RemoteWrite): JsonObject | undefined {
-  if (write === 'structural') return { mode: form.remoteMode, mirror: mirrorOf(form) };
-  if (form.remoteMode !== 'mirror') return undefined;
-  const mirror = mirrorOf(form);
-  return {
-    mode: 'mirror',
-    ...(Object.keys(mirror).length > 0 ? { mirror } : {}),
-  };
+/** What of `remote` a form edits: the mirror section (default) and the upstream settings (when given). */
+export interface RemoteParts {
+  readonly mirror?: boolean;
+  readonly upstream?: UpstreamDefaults;
+}
+
+/** The `remote` member the form writes, or undefined when a create has nothing to write. */
+export function remoteOf(
+  form: RepositoryForm,
+  write: RemoteWrite,
+  parts: RemoteParts = {},
+): JsonObject | undefined {
+  const out: JsonObject = parts.upstream ? upstreamOf(form.upstream, parts.upstream, write) : {};
+  if (parts.mirror ?? true) {
+    if (write === 'structural') {
+      out['mode'] = form.remoteMode;
+      out['mirror'] = mirrorOf(form);
+    } else if (form.remoteMode === 'mirror') {
+      out['mode'] = 'mirror';
+      const mirror = mirrorOf(form);
+      if (Object.keys(mirror).length > 0) out['mirror'] = mirror;
+    }
+  }
+  return write === 'structural' || Object.keys(out).length > 0 ? out : undefined;
 }
 
 function memberOf(repo: Repository): JsonObject {
@@ -137,7 +327,12 @@ function memberOf(repo: Repository): JsonObject {
  */
 export function settingsOf(form: RepositoryForm, format?: FormatMemberOf): Record<string, unknown> {
   const member = format ? pruneDefaults(format.schema, form.formatMember) : {};
-  const remote = format?.remote ? remoteOf(form, format.remote) : undefined;
+  const remote = format?.remote
+    ? remoteOf(form, format.remote, {
+        mirror: format.mirror ?? true,
+        ...(format.upstream ? { upstream: format.upstream } : {}),
+      })
+    : undefined;
   return {
     description: form.description,
     adminNotes: form.adminNotes,

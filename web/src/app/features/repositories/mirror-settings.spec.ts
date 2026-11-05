@@ -135,7 +135,7 @@ describe('Mirror settings of a remote repository', () => {
       vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
       expect(r.root.querySelector('trove-mirror-settings')).not.toBeNull();
-      expect(text(r.root.querySelector('nav')!)).toContain('4. Access, npm and mirror settings');
+      expect(text(r.root.querySelector('nav')!)).toContain('4. Access, upstream, npm and mirror settings');
       expect(control(r.root, 'f-remote-mode').checked).toBe(true);
       expect(r.root.querySelector('#f-remote-mirror-intervalSeconds')).toBeNull();
       await expectAccessible(r.root);

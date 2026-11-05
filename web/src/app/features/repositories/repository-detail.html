@@ -130,6 +130,18 @@
             />
           </div>
         </mat-tab>
+        @if (upstreamSection() && format(); as upstreamFormat) {
+          <mat-tab [label]="tabUpstream">
+            <div class="tab">
+              <trove-upstream-settings
+                [form]="current"
+                (formChange)="setForm($event)"
+                [format]="upstreamFormat"
+                [fieldErrors]="fieldErrors()"
+              />
+            </div>
+          </mat-tab>
+        }
         @if (settingNodes().length > 0) {
           <mat-tab [label]="tabFormat()">
             <div class="tab">
@@ -145,16 +157,31 @@
         }
         @if (mirrorSection() && format(); as mirrorFormat) {
           <mat-tab [label]="tabMirror">
-            <div class="tab">
-              <trove-mirror-settings
-                [form]="current"
-                (formChange)="setForm($event)"
-                [format]="mirrorFormat"
-                [upstreamUrl]="upstreamUrl()"
-                [restricted]="mirrorRestricted()"
-                [fieldErrors]="fieldErrors()"
-              />
-            </div>
+            <ng-template matTabContent>
+              <div class="tab">
+                @if (mirrorStatusShown()) {
+                  <trove-mirror-status
+                    [key]="key()"
+                    [canChange]="canWrite() && repo.lifecycle !== 'deleting'"
+                    [busy]="pausing()"
+                    [refresh]="mirrorRefresh()"
+                    (setPaused)="setMirrorPaused($event)"
+                  />
+                } @else if (current.remoteMode === 'mirror') {
+                  <p class="hint" role="note" i18n="@@mirror.status.unsaved">
+                    The status appears once the repository is saved in mode mirror.
+                  </p>
+                }
+                <trove-mirror-settings
+                  [form]="current"
+                  (formChange)="setForm($event)"
+                  [format]="mirrorFormat"
+                  [upstreamUrl]="current.upstream.url"
+                  [restricted]="mirrorRestricted()"
+                  [fieldErrors]="fieldErrors()"
+                />
+              </div>
+            </ng-template>
           </mat-tab>
         }
         @if (clientsOf(repo.format).length > 0) {

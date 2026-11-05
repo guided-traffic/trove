@@ -17,11 +17,14 @@ import { ApiError } from '../problem';
 import {
   DeleteOutcome,
   FormatDescriptor,
+  MirrorStatus,
   Repository,
   RepositoriesApi,
   RepositoryConsumerView,
   RepositoryFilters,
   RepositorySummary,
+  UpstreamTestBody,
+  UpstreamTestResult,
   Versioned,
 } from '../repositories-api';
 
@@ -30,6 +33,14 @@ import {
  * component tier (R-UI-047). They keep the behaviour the screens depend on: cursor paging, ETag
  * checks that answer 412, and the field errors of the real validation.
  */
+
+/** A document as a read shows it: a password given as a value is sealed and reads as `{"set": true}` (R-REPO-033). */
+function sealed(doc: JsonObject): JsonObject {
+  const remote = doc['remote'] as JsonObject | undefined;
+  const password = remote?.['password'] as JsonObject | undefined;
+  if (password && typeof password['value'] === 'string') remote!['password'] = { set: true };
+  return doc;
+}
 
 function paged<T>(all: readonly T[]): PageFetcher<T> {
   return async (cursor, limit): Promise<Page<T>> => {
@@ -326,9 +337,10 @@ export class FakeRepositoriesApi extends RepositoriesApi {
     if (this.repositories.some((r) => r.key === doc.key)) {
       throw new ApiError(409, { code: 'repository_exists', detail: 'exists' }, null);
     }
-    this.repositories.push(structuredClone(doc));
+    const stored = sealed(structuredClone(doc) as unknown as JsonObject) as unknown as Repository;
+    this.repositories.push(stored);
     this.versions.set(doc.key, 1);
-    return { value: structuredClone(doc), etag: '"1"' };
+    return { value: structuredClone(stored), etag: '"1"' };
   }
 
   override async patch(
@@ -348,9 +360,8 @@ export class FakeRepositoriesApi extends RepositoriesApi {
         null,
       );
     }
-    const next = applyMergePatch(
-      current as unknown as JsonObject,
-      patch as JsonObject,
+    const next = sealed(
+      applyMergePatch(current as unknown as JsonObject, patch as JsonObject),
     ) as unknown as Repository;
     this.repositories[index] = next;
     this.versions.set(key, this.version(key) + 1);
@@ -368,6 +379,85 @@ export class FakeRepositoriesApi extends RepositoriesApi {
     if (this.deleteResult.done) this.repositories = this.repositories.filter((r) => r.key !== key);
     return this.deleteResult;
   }
+
+  /** The answers of `GET …/mirror`: the next ones are taken in order, the last one stays. */
+  mirrorStatuses: MirrorStatus[] = [sampleMirrorStatus()];
+  mirrorStatusError: ApiError | null = null;
+  mirrorStatusCalls = 0;
+  /** Set to make the next `runMirror` fail (a 409 with its code, for example). */
+  runMirrorError: ApiError | null = null;
+  runMirrorResult: JobReference = {
+    id: '0193f2c4-7a7e-7b51-9b1e-2f0d6c9e1a10',
+    kind: 'mirror-pass',
+    state: 'queued',
+    href: '/api/v1/system/jobs/0193f2c4-7a7e-7b51-9b1e-2f0d6c9e1a10',
+  };
+  mirrorRuns: { key: string; full: boolean; idempotencyKey: string }[] = [];
+  upstreamTests: UpstreamTestBody[] = [];
+  upstreamTestResult: UpstreamTestResult = sampleUpstreamTestResult();
+  upstreamTestError: ApiError | null = null;
+
+  override async mirrorStatus(key: string): Promise<MirrorStatus> {
+    this.mirrorStatusCalls++;
+    if (this.mirrorStatusError) throw this.mirrorStatusError;
+    if (!this.repositories.some((r) => r.key === key)) throw notFound();
+    const index = Math.min(this.mirrorStatusCalls - 1, this.mirrorStatuses.length - 1);
+    return structuredClone(this.mirrorStatuses[index]!);
+  }
+
+  override async runMirror(key: string, full: boolean, idempotencyKey: string): Promise<JobReference> {
+    this.mirrorRuns.push({ key, full, idempotencyKey });
+    if (this.runMirrorError) throw this.runMirrorError;
+    return this.runMirrorResult;
+  }
+
+  override async testUpstream(body: UpstreamTestBody): Promise<UpstreamTestResult> {
+    this.upstreamTests.push(body);
+    if (this.upstreamTestError) throw this.upstreamTestError;
+    return structuredClone(this.upstreamTestResult);
+  }
+}
+
+/** A mirror status of the API's example: a scheduled mirror after a complete pass. */
+export function sampleMirrorStatus(over: Partial<MirrorStatus> = {}): MirrorStatus {
+  return {
+    mode: 'mirror',
+    state: 'scheduled',
+    pass: null,
+    lastCompletePass: {
+      kind: 'full',
+      method: 'feed',
+      startedAt: '2026-11-03T10:00:00Z',
+      finishedAt: '2026-11-03T13:12:09Z',
+      outcome: 'complete',
+      packages: 1200,
+      packagesFailed: 0,
+      itemsStored: 5021,
+      bytesStored: 9126805504,
+      discoveryComplete: true,
+      discoveryNote: null,
+    },
+    nextPassAt: '2026-11-04T11:00:00Z',
+    lastFullPassAt: '2026-11-03T13:12:09Z',
+    errors: { consecutiveFailures: 0, lastAt: null, lastCode: null, lastMessage: null },
+    rateLimit: { waits: 0, waitSeconds: 0, lastAt: null, lastStatus: null, until: null },
+    bound: { reached: null, at: null, maxBytes: null, usedBytes: 9200000000 },
+    ...over,
+  };
+}
+
+export function sampleUpstreamTestResult(over: Partial<UpstreamTestResult> = {}): UpstreamTestResult {
+  return {
+    reachable: true,
+    httpStatus: 200,
+    authenticated: true,
+    durationMs: 184,
+    tls: { peerSubject: 'CN=registry.npmjs.org', notAfter: '2027-03-01T00:00:00Z' },
+    outboundProxy: null,
+    sourceAddress: null,
+    error: null,
+    ...over,
+  };
 }
 
 export interface FakeNode {

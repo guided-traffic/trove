@@ -3380,10 +3380,14 @@ Priority: **MVP** · Covers: UI-031
   for good with a tombstone ([formats/nuget.md](formats/nuget.md) R-NUGET-007). Deletes through
   the UI and the management API are hard deletes whatever the mode (R-NUGET-007).
 - Key: live check of the INV-5 pattern and of availability (a `GET` of the key answering 404).
-- Remote: upstream presets per format (`https://registry.npmjs.org/`,
-  `https://api.nuget.org/v3/index.json`), write-only credentials, metadata and negative cache
-  periods, offline switch (INV-11), and "Test connection" (`POST /api/v1/upstream-tests`) with the
-  result inline.
+- Remote: an **Upstream** section, in the class-specific step of the wizard above the format's settings and on a tab
+  **Upstream** of the edit form (Q-UI-122): the upstream URL with the format's preset (`defaultUpstreamUrl`:
+  `https://registry.npmjs.org/`, `https://api.nuget.org/v3/index.json`; the wizard starts with it, an empty field means it, and a
+  format without one needs the URL), the authentication (none, username and password, bearer token) with a write-only password
+  (Q-UI-123), the metadata and negative cache periods with the format's defaults (`defaultMetadataTtlSeconds`,
+  `defaultNotFoundTtlSeconds`), the offline switch (INV-11), and "Test connection" (`POST /api/v1/upstream-tests`) with the
+  result inline, in words (Q-UI-124). A member is written only where it differs from its default (Q-UI-80); the rest of the
+  `remote` section (extra hosts, limits, integrity, `sourceNetwork`, the other cache members) is set through the API.
 - Virtual: member editor (R-UI-022) and default deployment target.
 - From phase 6b, on remote repositories of a format whose upstream can be discovered (`mirror: true` in
   `GET /api/v1/formats`, from the format's registration; the UI holds no list of such formats): a **Mirror**
@@ -3392,12 +3396,17 @@ Priority: **MVP** · Covers: UI-031
   mode with the sentence of R-REPO-052, and for a project administrator the section read-only except **Pause** and
   **Turn off** (Q-REPO-142). The section is in the wizard's class-specific step and on the edit form's tab **Mirror**
   (Q-UI-117); the members show in mode `mirror` and are written only where they differ from their defaults, and a create in
-  mode `pullThrough` writes no `remote` member; the early notice at the mode applies the server's bound rule and the server
-  decides (Q-UI-118). On the edit form of a remote in mode `mirror`, a **Mirror** tab shows the status of
-  `GET /api/v1/repositories/{key}/mirror`: the state, the pass in progress with its counts, the last complete pass, the next
-  pass, the last error, the rate-limit waits and the bound; with **Pause** and **Resume**, which `PATCH`
-  `remote.mirror.paused` with `If-Match`, and **Run a pass now** (`POST …/mirror/run`, and a full pass from its menu), which
-  opens the job (Q-UI-104, Q-UI-105).
+  mode `pullThrough` writes no `remote` member; the early notice at the mode applies the server's bound rule to the upstream
+  URL entered and the server decides (Q-UI-118, Q-UI-122). On the edit form of a remote stored in mode `mirror`, the **Mirror**
+  tab shows, above the settings (Q-UI-119), the status of `GET /api/v1/repositories/{key}/mirror`: the state in words (off,
+  paused, scheduled, running, waiting, bound reached, failing; green only for a scheduled mirror after a complete pass), the pass
+  in progress with its counts and its job, the last complete pass, the next pass, the last error, the rate-limit waits and the
+  bound. While a pass is in progress (`running`, `waiting`) the status is read again every 5 s, and no longer once the tab is
+  left. A caller who may change the repository (the permission of Save, Q-UI-120) has **Pause** and **Resume**, which `PATCH`
+  `remote.mirror.paused` with `If-Match` and nothing else of the form (a 412 opens the conflict dialog of R-UI-042), and **Run a
+  pass now** (`POST …/mirror/run`, and **Run a full pass** from its menu), which shows the queued job with a link to the jobs of
+  the kind `mirror-pass`; `409 mirror_pass_running` shows the running job instead of an error, and `mirror_off` and
+  `mirror_paused` are shown in words (Q-UI-104, Q-UI-105, Q-UI-121).
 - From M4b, on local and remote repositories of a format with the vulnerability adapter: the
   `vulnerabilities` member ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-002), and
   on the edit form a link to the repository's view of the vulnerability report (R-VULN-022).
@@ -3420,10 +3429,23 @@ Acceptance criteria:
   class chosen.
 - The format step lists the installed formats as tiles, typing `nu` in the search field leaves the
   NuGet tile, and the tiles can be reached, moved over and chosen with the keyboard alone.
+- A remote npm repository in the wizard shows the Upstream section with the preset URL, authentication none, empty periods
+  (their defaults in the hints) and the offline switch off, and a create that changes none of them sends no `remote` member.
+  A create with another URL, username and password and a metadata period sends
+  `remote: {url, authMode: "basic", username, password: {value}, cache: {metadataTtlSeconds}}` and nothing else of `remote`;
+  the value of the password is nowhere on the page, in the request shown in the review, in browser storage or in a read of the
+  repository, which shows `password: {set: true}`. On the edit form its field is empty and says that one is stored, and a save of
+  another member does not touch it. "Test connection" posts the unsaved section and shows the answer: reachable and the credentials
+  accepted, or the reason of an upstream that could not be reached.
 - A remote npm repository in the wizard shows the Mirror section in mode pull-through; choosing
   mirror shows its members with their defaults, and a create with only `intervalSeconds` changed
   sends `remote: {mode: "mirror", mirror: {intervalSeconds: …}}` and nothing else of `remote`.
   A project administrator sees the section read-only except Pause and Turn off.
+- The Mirror tab of a remote stored in mode `mirror` shows the state and the facts of `GET …/mirror`; **Pause** sends
+  `{"remote": {"mirror": {"paused": true}}}` with the loaded `If-Match` and the state reads Paused, **Resume** reverts it, a
+  caller without `repositories:write-config` or the project's `manageRepositories` sees the status and no button, and **Run a
+  pass now** answers with the job of its 202 or, after a 409 `mirror_pass_running`, with the running job. While the state is
+  running or waiting the status is read every 5 s, and no read follows once another tab is open.
 - The edit form of `nuget-local` without a `nuget.deleteMode` shows "unlist"; after
   `PATCH /api/v1/repositories/nuget-local` with `If-Match` and `{"nuget": {"deleteMode": "delete"}}`
   it shows "delete".
@@ -7567,6 +7589,121 @@ is shown at the mode as well.
 development agent would revisit the duplicate rule if the catalog serves the rule's inputs.
 
 **Applied in the spec:** R-UI-021. Code: `mirror-settings.ts` (`boundsMirror`, `unbounded`). Test: `mirror-settings.spec.ts`.
+
+### Q-UI-119 · The status sits above the settings on the Mirror tab and is read only while the tab is open
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One tab: the status above the settings; the panel exists while the tab is open and reads the status every 5 s while a pass is in progress (chosen) | `GET …/mirror` when the tab opens, again every 5 s in the states `running` and `waiting`, after a pause, a resume, a run and a save, and never in the other tabs | What is going on comes first, the settings that explain it follow; no request for a tab nobody looks at; a finished pass stops the polling | A status that changes more slowly than 5 s is up to 5 s old |
+| (b) The status below the settings | The same on one tab | The settings stay at the top where an administrator who edits expects them | The state, the one thing an operator comes for, is under a screen of fields |
+| (c) A tab of its own for the status | Two tabs | Each tab is short | Two tabs for one repository's mirror, and the form's tab and the status's tab say different things about one state |
+| (d) No polling; a **Refresh** button | The status is read when asked | No requests | An operator who watches a pass reloads by hand |
+
+**Choice:** (a). The panel shows when the repository is stored in mode `mirror`; a form that has only just chosen the mode says that the status comes after the save.
+The interval is the 5 s of the jobs screen (`JOBS_REFRESH_MS`); the polling stops with the panel because the panel is created by the tab (`matTabContent`).
+
+**Rationale:** the status answers "is it working", the settings answer "why". The development agent would revisit (b) if administrators report
+that they scroll past the status to reach the settings, and the interval if the status read becomes expensive on installations with many open tabs.
+
+**Applied in the spec:** R-UI-021 (the bullet and the acceptance criterion). Code: `mirror-status.ts`, `repository-detail.html`. Tests: `mirror-status.spec.ts` (polling start, stop, refresh), `mirror-tab.spec.ts`.
+
+### Q-UI-120 · Pause, resume and run follow the permission of Save; the status follows the one of the form
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The buttons show for whoever may save the repository (`repositories:write-config`, or `manageRepositories` of its project, R-AUTHZ-026); the status shows for whoever sees the form (chosen) | `SessionStore.canWriteRepositories(project)` decides Pause, Resume and the run buttons | It is the permission of the API for a patch and for the run ("as an update", R-REPO-056); the UI already knows it, and a project administrator, who holds `manage` on the project's repositories, gets the buttons (Q-API-199) | A grant of `manage` on one repository through a policy, without the capability, is not known to the UI: such a caller sees no button and uses the API |
+| (b) Show the buttons to everyone and let the server answer 403 | No decision in the UI | Never wrong about a grant the UI cannot see | A button that fails for most readers |
+| (c) Ask the server first (a probe) | An extra request per screen | Exact | A request to learn what a refusal teaches |
+
+**Choice:** (a). The status needs `repositories:read-config`, `manage` or the administration of the project, and the edit form shows the document to exactly those callers, so a
+caller who sees the tab may read the status; a 403 or 400 of the status is shown in the panel as the error it is.
+A project administrator pauses and resumes (the server's `mirror_restricted` lets `paused` through, Q-REPO-142), and the Mirror section stays read-only for them except **Paused** and **Turn off** (Q-UI-117).
+
+**Rationale:** the same rule as every other write on the form keeps the screen consistent. The development agent would revisit it when the session
+carries the per-repository grants of the caller (R-AUTHZ-010), which would let (a) see a `manage` grant.
+
+**Applied in the spec:** R-UI-021. Code: `repository-detail.html` (`canChange`). Tests: `mirror-tab.spec.ts` (three callers), `mirror-status.spec.ts`.
+
+### Q-UI-121 · Pause is a patch of its member alone; a run answers with the job or with the reason
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) **Pause** and **Resume** patch `remote.mirror.paused` with the loaded `If-Match` and keep the other unsaved edits; a 412 settles like a save; **Run** shows the job and treats its 409s as answers (chosen) | The document's revision protects the pause (Q-UI-105); the form keeps its draft | The button does what a script does (INV-17); an edit in progress is not lost, nor saved by accident | The form's own **Paused** checkbox and the button are two ways to one member; both read the same stored value after the button |
+| (b) Pause saves the whole form | One save | One code path | A click on Pause saves unfinished edits |
+| (c) Pause as the form's checkbox only | No button | One way | The status panel shows the state but cannot act on it |
+
+**Choice:** (a). After the patch the stored document is the new baseline and only the `paused` member of the form follows it. A 412 reads the stored
+document: when it already says what the user asked (another administrator paused, or a retried write committed) nothing more happens; otherwise the conflict dialog of
+R-UI-042 shows the difference and **Overwrite** sends the pause with the new `ETag`, **Reload** takes the stored document. **Run a pass now** posts `{"full": false}`
+with a fresh `Idempotency-Key` and **Run a full pass** `{"full": true}`. The 202's job and the `job` of a `409 mirror_pass_running` are shown the same way: the sentence
+("A pass is queued." or "A pass is already queued or running.") with its id and state and a link to the jobs screen filtered by the kind `mirror-pass`, because that screen has
+no route per job. `mirror_off`, `mirror_paused` and `not_applicable` are shown in words at the buttons; every other failure is an error notice. The panel reads the status again after each.
+
+**Rationale:** a refusal that the server's own state explains is information, not a failure. The development agent would revisit the link when the jobs screen gets a route per job (it would
+open that job) and the double path for pause if the checkbox is dropped from the section.
+
+**Applied in the spec:** R-UI-021, R-REPO-056 (the UI line). Code: `repository-detail.ts` (`setMirrorPaused`, `takeStored`, `handlePauseError`), `mirror-status.ts` (`run`, `runError`). Tests: `mirror-tab.spec.ts` (pause, resume, 412 three ways), `mirror-status.spec.ts` (202, each 409, 400).
+
+### Q-UI-122 · The upstream settings: where they sit, what the URL field holds, what is written
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Question | Options | Choice |
+|---|---|---|
+| Where | In the access step with the format's settings; a step of its own; the General tab | The class-specific step of the wizard, above the format's settings (so the Mirror section, which depends on the URL, follows it), and a tab **Upstream** on the edit form, for every remote repository whether its format can mirror or not |
+| What the URL field holds | Empty with the preset as a placeholder; the preset as the value | The wizard starts with the preset as the value, so "Test connection" and the review show what is used; an empty field means the preset; a format without a preset starts empty and needs the address (the server answers `422` at `/remote/url` otherwise) |
+| What a create writes | Everything; what differs from the preset and the defaults | The URL only when it names another upstream than the preset (compared as the server normalizes it), the authentication members only for an authentication other than none, a period only when it differs from the format's default, `availability` only when offline; nothing at all of `remote` when none applies (Q-UI-80) |
+| What an edit patches | Whole objects; members | The URL always as entered, so a patch never depends on how the server reads a removed URL; `cache` and `availability` are always present as objects on both sides of the merge patch, so a member set back to its default is `null` inside the object and the members the form does not edit (`storeArtifacts`, `failureThreshold`, ...) are never nulled |
+| The mirror's bound notice | The format's well-known upstream; the URL entered | The URL entered, or the preset while it is empty (Q-UI-118 compared the stored URL or assumed the preset) |
+
+**Rationale:** a remote of a private registry, the case that needs a URL and a credential, is what a mirror is most used for; the form shows what the repository will do. The development agent would revisit the
+split of the wizard's step if it grows past what one page carries once the extra hosts, the limits and the integrity members get fields.
+
+**Applied in the spec:** R-UI-021. Code: `upstream-settings.ts`, `repository-model.ts` (`upstreamOf`, `initialUpstream`, `remoteOf`), `repository-wizard.*`, `repository-detail.*`, `mirror-settings.ts` (`upstreamUrl`). Tests: `upstream-settings.spec.ts`.
+
+### Q-UI-123 · The password is write-only: typed, sealed by the server, never read into a field or shown
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The field starts empty; typing sends `{"value": ...}`; an empty field keeps what is stored; **Remove the stored password** sends `null`; the request shown on screen carries a placeholder; no draft stores it (chosen) | R-REPO-033 as the API states it: a read shows `{"set": true}` or the reference, never the value | A secret exists in the page only while it is typed; a save of another member cannot blank it | An administrator cannot see what is stored, which is the point |
+| (b) Send `{"set": true}` back with every save | The document as read, sent back | Symmetric with the API's wording | The form would carry a member that is not a setting of the user's |
+| (c) Show a masked placeholder in the field | Dots for the stored value | The user sees that there is one | A placeholder that looks like a value can be saved as a new password |
+
+**Choice:** (a). A stored `secretRef` reads as a reference: the hint says so and the field replaces it only when a password is typed. The request body and the `curl` of the review and of the **API** tab show
+`<the password>` instead of the value; the drafts kept across a sign-in (R-UI-042) never hold it; and **Test connection** uses only a typed password, because an unsaved test cannot refer to a stored one
+(`{"set": true}` is `422 invalid_secret` there), which the page says.
+
+**Rationale:** R-UI-043 keeps secrets out of storage and logs; the API already gives the shape. The development agent would revisit the removal
+checkbox if the API grows an operation to rotate the stored secret.
+
+**Applied in the spec:** R-UI-021 (the criterion). Code: `repository-model.ts` (`upstreamOf`, `maskSecrets`), `upstream-settings.ts`, the draft handling of `repository-detail.ts` and `repository-wizard.ts`. Tests: `upstream-settings.spec.ts`.
+
+### Q-UI-124 · Test connection probes the unsaved section and shows the answer in words
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `POST /api/v1/upstream-tests` with the format and the section as the form would write it, with the URL it would use; the result inline, in words, and gone when a setting changes (chosen) | What the repository would do, before it exists | Works in the wizard, where nothing is saved; the same call on the edit form shows the unsaved state | The edit form's test cannot use the stored password |
+| (b) The saved repository's test (`POST …/upstream-test`) on the edit form | The stored section, with the stored secret | Uses the stored password | Cannot test a change before it is saved; a second code path |
+| (c) A test only after the create | One path | Simple | The wizard cannot tell the user that the URL is wrong |
+
+**Choice:** (a). The verdict is a sentence ("The upstream answered.", "The upstream answered and refused the credentials.", "The upstream could not be reached.", "The upstream answered with an error.")
+with an icon, and green only for an answer with an accepted or no credential and a status below 400; the facts follow: the HTTP status, whether the credentials were accepted, the duration, the certificate
+(subject, valid until) and the reason with its code (`dns_error`, `tls_untrusted`, `egress_denied`, `offline`, ...). The offline switch is part of what is tested, so an offline repository's test says `offline`, as the server does.
+A refused test (403, 422) is an error notice.
+
+**Rationale:** the section is what the user is about to save; the test of the saved one is the API's. The development agent would revisit (b) for the edit form when the API's unsaved test accepts `{"set": true}` of a stored repository.
+
+**Applied in the spec:** R-UI-021. Code: `upstream-settings.ts` (`test`, `outcome`), `repository-model.ts` (`upstreamTestBody`). Tests: `upstream-settings.spec.ts`, journey `14-mirror.spec.ts` (F-54).
 
 ## What this does not cover
 

@@ -196,6 +196,13 @@
         Which paths the repository admits and who may see it.
       </p>
       <trove-repository-fields section="access" [(form)]="form" [fieldErrors]="fieldErrors()" />
+      @if (cls() === 'remote' && format(); as upstreamFormat) {
+        <trove-upstream-settings
+          [(form)]="form"
+          [format]="upstreamFormat"
+          [fieldErrors]="fieldErrors()"
+        />
+      }
       @if (settingNodes().length > 0) {
         <h2 i18n="@@repo.format.heading">
           <span translate="no">{{ formatLabel() }}</span> settings
@@ -212,6 +219,7 @@
         <trove-mirror-settings
           [(form)]="form"
           [format]="mirrorFormat"
+          [upstreamUrl]="form().upstream.url"
           [restricted]="mirrorRestricted()"
           [fieldErrors]="fieldErrors()"
         />
@@ -244,6 +252,16 @@
               >&ngsp;
             } @empty {
               <span i18n="@@repo.review.format-defaults">The defaults of the format</span>
+            }
+          </dd>
+        }
+        @if (cls() === 'remote') {
+          <dt i18n="@@upstream.heading">Upstream</dt>
+          <dd>
+            @for (e of upstreamEntries(); track e[0]) {
+              <code translate="no">{{ e[0] }}: {{ e[1] }}</code>&ngsp;
+            } @empty {
+              <span i18n="@@upstream.review.default">The format's well-known upstream</span>
             }
           </dd>
         }

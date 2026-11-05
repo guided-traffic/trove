@@ -9,6 +9,19 @@ export type RepositorySummary = Schema<'RepositorySummary'>;
 export type FormatDescriptor = Schema<'FormatDescriptor'>;
 export type JobReference = Schema<'JobReference'>;
 export type RepositoryClass = Repository['class'];
+export type MirrorStatus = Schema<'MirrorStatus'>;
+export type MirrorState = MirrorStatus['state'];
+export type UpstreamTestResult = Schema<'UpstreamTestResult'>;
+
+/**
+ * The body of `POST /api/v1/upstream-tests`: the format and an unsaved `remote` section. Secret values in
+ * it are used once and stored nowhere (R-REPO-024, R-REPO-033). The section is typed loosely because the
+ * form writes only the members that differ from their defaults.
+ */
+export interface UpstreamTestBody {
+  readonly format: string;
+  readonly remote: Readonly<Record<string, unknown>>;
+}
 
 /** A resource together with the `ETag` it was read with (R-API-012). */
 export interface Versioned<T> {
@@ -67,6 +80,12 @@ export abstract class RepositoriesApi {
   ): Promise<Versioned<Repository>>;
   /** `detach` also removes the repository from the virtual repositories that include it. */
   abstract delete(key: string, idempotencyKey: string, detach?: boolean): Promise<DeleteOutcome>;
+  /** `GET /api/v1/repositories/{key}/mirror`: the status of a remote repository's mirror (R-REPO-056). */
+  abstract mirrorStatus(key: string): Promise<MirrorStatus>;
+  /** `POST /api/v1/repositories/{key}/mirror/run`: requests a pass now; the job that was queued (R-REPO-056). */
+  abstract runMirror(key: string, full: boolean, idempotencyKey: string): Promise<JobReference>;
+  /** `POST /api/v1/upstream-tests`: probes an unsaved `remote` section (R-REPO-024). */
+  abstract testUpstream(body: UpstreamTestBody): Promise<UpstreamTestResult>;
 }
 
 @Injectable()
@@ -121,5 +140,22 @@ export class HttpRepositoriesApi extends RepositoriesApi {
       params: detach ? { detach: true } : undefined,
     });
     return r.status === 202 && r.body ? { done: false, job: r.body.job } : { done: true };
+  }
+
+  async mirrorStatus(key: string): Promise<MirrorStatus> {
+    return (await this.client.getJson<MirrorStatus>(`${repositoryUrl(key)}/mirror`)).body;
+  }
+
+  async runMirror(key: string, full: boolean, idempotencyKey: string): Promise<JobReference> {
+    const r = await this.client.post<{ job: JobReference }>(
+      `${repositoryUrl(key)}/mirror/run`,
+      { full },
+      { idempotencyKey },
+    );
+    return r.body.job;
+  }
+
+  async testUpstream(body: UpstreamTestBody): Promise<UpstreamTestResult> {
+    return (await this.client.post<UpstreamTestResult>('/api/v1/upstream-tests', body)).body;
   }
 }

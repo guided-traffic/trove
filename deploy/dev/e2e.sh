@@ -73,11 +73,11 @@ set_name="${1:-default}"
 case "$set_name" in
   default) run='^Test(E03|E04|E06|E07|E12|E13|E14|E15|E16)' ;;
   push) run='^Test(E03|E04|E06|E07|E12|E14|E15|E16|E1_14|E99)' ;;
-  full) run='^Test(E03|E04|E06|E07|E12|E13|E14|E15|E16|E1_|E99)'; export TROVE_E2E_OIDCSTUB=1 ;;
+  full) run='^Test(E03|E04|E06|E07|E12|E13|E14|E15|E16|E1_|E99)'; export TROVE_E2E_OIDCSTUB=1 TROVE_E2E_NPMSTUB=1 ;;
   failover) run='^Test(E13|E1_08)' ;;
-  # the journeys include 13-ci, which registers the issuer double and exchanges an ID token (docs/developer/e2e.md#the-ci-tests)
-  access-long) run='^TestE1_(01|11|13)'; export TROVE_E2E_OIDCSTUB=1 ;;
-  access) run='^TestE1_'; export TROVE_E2E_OIDCSTUB=1 ;;
+  # the journeys include 13-ci, which registers the issuer double and exchanges an ID token (docs/developer/e2e.md#the-ci-tests), and 14-mirror, which types the address of the npm test upstream into the wizard (TROVE_E2E_NPMSTUB_HOST)
+  access-long) run='^TestE1_(01|11|13)'; export TROVE_E2E_OIDCSTUB=1 TROVE_E2E_NPMSTUB=1 ;;
+  access) run='^TestE1_'; export TROVE_E2E_OIDCSTUB=1 TROVE_E2E_NPMSTUB=1 ;;
   drain) run='^TestE14' ;;
   # The drain per role runs the npm load of npm-ha beside its own (Q-HA-94): the client pods and the test upstream of the npm sets.
   drain-roles) run='^TestDrainRoles$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;

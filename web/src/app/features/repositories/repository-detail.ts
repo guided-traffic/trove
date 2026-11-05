@@ -39,6 +39,7 @@ import { HasUnsavedChanges } from '../../shared/unsaved-guard';
 import { FormatClient } from '../../api/guides-api';
 import { FormatSettings } from './format-settings';
 import { MirrorSettings, mirrorTarget } from './mirror-settings';
+import { MirrorStatusPanel } from './mirror-status';
 import { RecentRepositories } from './recent-repositories';
 import { RepositoryFields } from './repository-fields';
 import { RepositoryGuide } from './repository-guide';
@@ -49,10 +50,13 @@ import {
   clientAddress,
   curlOf,
   formOf,
+  maskSecrets,
   settingsOf,
+  upstreamDefaultsOf,
 } from './repository-model';
 import { classLabel } from './repository-wizard';
 import { SettingSchema, errorTarget, settingNodes } from './settings-schema';
+import { UpstreamSettings, upstreamTarget } from './upstream-settings';
 
 /**
  * The edit form of a repository (R-UI-021): key, class and format are read-only; the settings are
@@ -75,6 +79,8 @@ import { SettingSchema, errorTarget, settingNodes } from './settings-schema';
     RepositoryFields,
     RepositoryGuide,
     MirrorSettings,
+    MirrorStatusPanel,
+    UpstreamSettings,
   ],
   templateUrl: './repository-detail.html',
   styleUrl: './repository-detail.scss',
@@ -134,8 +140,24 @@ export class RepositoryDetail implements HasUnsavedChanges {
   private readonly member = computed<FormatMemberOf>(() => ({
     name: this.stored()?.format ?? '',
     schema: this.format()?.settingsSchema as SettingSchema | null | undefined,
-    ...(this.mirrorSection() ? { remote: 'structural' as const } : {}),
+    ...(this.upstreamSection()
+      ? {
+          remote: 'structural' as const,
+          mirror: this.mirrorSection(),
+          upstream: upstreamDefaultsOf(this.format()),
+        }
+      : {}),
   }));
+  /** The upstream settings: a remote repository (R-UI-021, F-54). */
+  protected readonly upstreamSection = computed(() => this.stored()?.class === 'remote');
+  /** The status panel: a remote repository that is stored in mode `mirror` (Q-UI-104, Q-UI-119). */
+  protected readonly mirrorStatusShown = computed(
+    () => this.mirrorSection() && this.stored()?.remote?.mode === 'mirror',
+  );
+  /** Changes when the document changed, so the status panel reads the status again. */
+  protected readonly mirrorRefresh = signal(0);
+  /** A pause or a resume is being written. */
+  protected readonly pausing = signal(false);
   /** The Mirror section: a remote repository of a format that can mirror (R-UI-021, Q-UI-104). */
   protected readonly mirrorSection = computed(
     () => this.stored()?.class === 'remote' && this.format()?.mirror === true,
@@ -144,7 +166,6 @@ export class RepositoryDetail implements HasUnsavedChanges {
   protected readonly mirrorRestricted = computed(
     () => !this.session.has('repositories:write-config'),
   );
-  protected readonly upstreamUrl = computed(() => this.stored()?.remote?.url ?? null);
   protected readonly memberPointer = computed(() => `/${this.member().name}`);
   protected readonly settingNodes = computed(() => {
     const repo = this.stored();
@@ -166,7 +187,7 @@ export class RepositoryDetail implements HasUnsavedChanges {
     curlOf(
       'PATCH',
       apiAddress(valueOf(this.baseUrl), repositoryUrl(this.key())),
-      this.patch(),
+      maskSecrets(this.patch()),
       [`If-Match: ${this.etag}`],
     ),
   );
@@ -180,7 +201,8 @@ export class RepositoryDetail implements HasUnsavedChanges {
     effect(() => {
       if (!this.session.reauthRequired()) return;
       const form = untracked(() => this.form());
-      if (form) this.drafts.keep(form);
+      // The password is a secret: it never goes to storage (R-UI-043).
+      if (form) this.drafts.keep({ ...form, upstream: { ...form.upstream, password: '' } });
     });
   }
 
@@ -199,6 +221,10 @@ export class RepositoryDetail implements HasUnsavedChanges {
   }
 
   private pointerTarget(pointer: string): string {
+    if (this.upstreamSection()) {
+      const target = upstreamTarget(pointer);
+      if (target) return target;
+    }
     if (this.mirrorSection()) {
       const target = mirrorTarget(pointer);
       if (target) return target;
@@ -248,7 +274,89 @@ export class RepositoryDetail implements HasUnsavedChanges {
     this.baseline.set(stored);
     this.form.set(stored);
     this.warnings.set((saved.value.warnings ?? []).map((w) => w.detail));
+    this.mirrorRefresh.update((n) => n + 1);
     this.notifier.status($localize`:@@repo.edit.saved:Repository saved.`);
+  }
+
+  /**
+   * Pause and resume are the member `remote.mirror.paused`, patched with the loaded `ETag` (R-REPO-056,
+   * Q-UI-105). The patch carries that member only: other unsaved edits stay in the form. A 412 is
+   * settled like a save: a stored document that already says so is a success, anything else opens
+   * the conflict dialog (R-UI-042).
+   */
+  protected async setMirrorPaused(paused: boolean): Promise<void> {
+    if (this.pausing() || !this.stored()) return;
+    this.pausing.set(true);
+    this.failure.set(null);
+    try {
+      await this.sendPause(paused, this.etag);
+    } catch (e) {
+      await this.handlePauseError(asApiError(e), paused);
+    } finally {
+      this.pausing.set(false);
+    }
+  }
+
+  private async sendPause(paused: boolean, etag: string): Promise<void> {
+    const saved = await this.api.patch(this.key(), { remote: { mirror: { paused } } }, etag);
+    this.takeStored(saved.value, saved.etag);
+    this.notifier.status(
+      paused
+        ? $localize`:@@mirror.paused-notice:Mirror paused.`
+        : $localize`:@@mirror.resumed-notice:Mirror resumed.`,
+    );
+  }
+
+  /** The stored document is the new baseline; the user's other unsaved edits stay, and the paused member follows the store. */
+  private takeStored(value: Repository, etag: string): void {
+    this.etag = etag;
+    this.stored.set(value);
+    const stored = formOf(value);
+    this.baseline.set(stored);
+    this.form.update((f) => {
+      if (!f) return stored;
+      const mirror: JsonObject = { ...f.mirror };
+      if (stored.mirror['paused'] === undefined) delete mirror['paused'];
+      else mirror['paused'] = stored.mirror['paused'];
+      return { ...f, mirror };
+    });
+    this.mirrorRefresh.update((n) => n + 1);
+  }
+
+  private async handlePauseError(error: ApiError, paused: boolean): Promise<void> {
+    if (error.status !== 412) {
+      this.failure.set(error);
+      return;
+    }
+    let theirs: Versioned<Repository | RepositoryConsumerView>;
+    try {
+      theirs = await this.api.get(this.key());
+    } catch (e) {
+      this.failure.set(asApiError(e));
+      return;
+    }
+    if (isConsumerView(theirs.value)) {
+      this.failure.set(error);
+      return;
+    }
+    const theirForm = formOf(theirs.value);
+    const m = this.member();
+    const wanted = settingsOf({ ...theirForm, mirror: { ...theirForm.mirror, paused } }, m);
+    if (JSON.stringify(settingsOf(theirForm, m)) === JSON.stringify(wanted)) {
+      // The stored document says so already (another administrator, or a retried write that did commit).
+      this.takeStored(theirs.value, theirs.etag);
+      return;
+    }
+    const decision = await this.conflicts.resolve({ mine: wanted, theirs: settingsOf(theirForm, m) });
+    if (decision === 'reload') {
+      this.adopt(theirs);
+    } else if (decision === 'overwrite') {
+      try {
+        await this.sendPause(paused, theirs.etag);
+      } catch (e) {
+        this.failure.set(asApiError(e));
+      }
+    }
   }
 
   private async handleSaveError(error: ApiError, mine: RepositoryForm): Promise<void> {
@@ -340,6 +448,7 @@ export class RepositoryDetail implements HasUnsavedChanges {
     () =>
       $localize`:@@repo.tab.format:${this.format()?.displayName ?? this.member().name}:format: settings`,
   );
+  protected readonly tabUpstream = $localize`:@@repo.tab.upstream:Upstream`;
   protected readonly tabMirror = $localize`:@@repo.tab.mirror:Mirror`;
   protected readonly tabApi = $localize`:@@repo.tab.api:API`;
   protected readonly tabGuide = $localize`:@@repo.tab.guide:How to use`;

@@ -4,7 +4,13 @@ import { FieldProblem } from '../../api/problem';
 import { FormatDescriptor } from '../../api/repositories-api';
 import { fieldMessage, problemsAt } from '../../shared/field-errors';
 import { JsonObject } from '../../shared/merge-patch';
-import { MIRROR_DEFAULTS, RemoteMode, RepositoryForm, lines } from './repository-model';
+import {
+  MIRROR_DEFAULTS,
+  RemoteMode,
+  RepositoryForm,
+  lines,
+  normalizedUrl,
+} from './repository-model';
 import { controlIdOf, numberOrText } from './settings-schema';
 
 /** The id of the section; a server error at a pointer the section does not render lands here. */
@@ -64,16 +70,6 @@ export function boundsMirror(pattern: string): boolean {
     }
   }
   return prefix.replace(/^[@/]+|[@/]+$/g, '') !== '';
-}
-
-/** `https://Host:443/path` and `https://host/path` name the same upstream: compare as the server stores it. */
-function normalizedUrl(url: string): string {
-  try {
-    const u = new URL(url);
-    return `${u.protocol}//${u.host}${u.pathname === '' ? '/' : u.pathname}${u.search}`;
-  } catch {
-    return url;
-  }
 }
 
 interface NumberMember {
@@ -331,8 +327,8 @@ export class MirrorSettings {
   readonly form = model.required<RepositoryForm>();
   readonly format = input.required<FormatDescriptor>();
   /**
-   * The upstream URL the repository is stored with, when the screen knows it (the edit form). The
-   * wizard does not set one, and a create without a URL takes the format's well-known upstream.
+   * The upstream URL the user entered or the repository is stored with (Q-UI-122); empty or null means
+   * the format's well-known upstream, which is what a create without a URL takes.
    */
   readonly upstreamUrl = input<string | null>(null);
   /** A project administrator: read-only except Pause and Turn off (Q-REPO-142). */
@@ -395,7 +391,8 @@ export class MirrorSettings {
     const includes = lines(f.includePatterns);
     if (includes.length > 0 && includes.every(boundsMirror)) return null;
     const known = this.format().defaultUpstreamUrl;
-    const url = this.upstreamUrl() ?? known;
+    const entered = this.upstreamUrl()?.trim();
+    const url = entered ? entered : known;
     return known && url && normalizedUrl(url) === normalizedUrl(known) ? 'refused' : 'warned';
   });
 

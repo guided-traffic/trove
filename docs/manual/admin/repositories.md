@@ -27,7 +27,7 @@ A repository can belong to a [project](projects.md). The page of such a reposito
 2. **Format**: choose the format of the repository from the tiles, for example **Generic**, **npm** or **NuGet**. **Search by package type** narrows the tiles by name. The format comes first because it decides what the rest of the wizard can offer. With the keyboard, move to the tiles with Tab, move over them with the arrow keys and choose one with Enter or Space.
 3. **Class**: choose **Local**, **Remote** or **Virtual**. A class that the chosen format does not implement is shown unavailable, with the reason, and cannot be chosen. Going back and choosing another format keeps the class when the new format has it and starts the format settings and the mirror section afresh.
 4. **Basic settings**: enter the **Key**, a **Description** and **Administrator notes**. The wizard checks the key as you type and reports **The key is available.** or **A repository with this key already exists.**
-5. **Access settings** (or **Access and npm settings**, or **Access, npm and mirror settings** for a remote repository of a format that can mirror): set the patterns and switches described below, the format settings and, for a remote, the [mirror](#mirror).
+5. **Access settings** (or **Access and npm settings** for a format with settings of its own): set the patterns and switches described below and the format settings. For a remote repository the step is **Access and upstream settings**, **Access, upstream and npm settings**, or, for a format that can mirror, **Access, upstream and mirror settings** or **Access, upstream, npm and mirror settings**; it adds the [upstream](#the-upstream-of-a-remote-repository) and the [mirror](#mirror).
 6. **Review**: check the summary. **Show as API request** shows the same request as a JSON body and as a curl command.
 7. Select **Create repository**. The repository is usable on every replica as soon as the wizard confirms, and its page opens.
 
@@ -73,9 +73,29 @@ The settings of a format are drawn from the schema the format publishes, so the 
 | npm virtual | **latestStrategy** | `highest-member-latest` | How `latest` is merged: the highest `latest` of the members, or `newest-published` |
 | npm virtual | **distTagStrategy** | `member-order` | How other dist-tags are merged: the first member in order, `highest-semver` or `newest-published` |
 
+## The upstream of a remote repository
+
+A remote repository has an **Upstream** section in the access settings step of the wizard (the fourth step, below the access settings) and a tab **Upstream** on its page. It sets where the repository fetches from:
+
+| UI label | Document key | Default | Meaning |
+|---|---|---|---|
+| **Upstream URL** | `remote.url` | the format's well-known upstream (`https://registry.npmjs.org/` for npm, `https://api.nuget.org/v3/index.json` for NuGet) | The wizard starts with it filled in; an empty field means it. A format without a well-known upstream needs an address. `http` or `https`, no user information |
+| **Authentication** | `remote.authMode` | **None** | **None**, **Username and password** (`basic`) or **Bearer token** (`bearer`) |
+| **Username** | `remote.username` | empty | With **Username and password** only |
+| **Password or token** | `remote.password` | none | Write-only, see below |
+| **Metadata cache period in seconds** | `remote.cache.metadataTtlSeconds` | the format's (npm `7200`, NuGet `300`), shown in the hint | How long fetched metadata is served without asking the upstream again; empty is the default |
+| **Negative cache period in seconds** | `remote.cache.notFoundTtlSeconds` | the format's (`1800`), shown in the hint | How long an upstream "not found" is remembered; empty is the default |
+| **Offline** | `remote.availability.mode` | off (`online`) | The upstream is not contacted; clients get what is already stored |
+
+A member left empty or at its default is not written. The other members of `remote` (extra hosts, limits, integrity, the source network, the remaining cache members) are not in the form; the [API](#npm-remote-the-upstream) sets them, and a save from the form leaves them as they are.
+
+**The password is write-only.** It is sealed when you save and never shown again, anywhere: the field is empty when you open the page, a read of the repository shows `{"set": true}`, and the request that **Show as API request** and the **API** tab display carries `<the password>` in its place. When one is stored, the page says so; leave the field empty to keep it, type one to replace it, or tick **Remove the stored password**. A reference to a secret file or variable that was set through the API shows as such and stays until you type a password. The password is not kept in the browser's storage either: a sign-in that interrupts the form restores everything but the password.
+
+**Test connection** sends the section as it stands in the form, saved or not, to `POST /api/v1/upstream-tests` and shows the answer under the button, in words: **The upstream answered.**, **The upstream answered and refused the credentials.**, **The upstream answered with an error.** or **The upstream could not be reached.**, then the HTTP status, whether the credentials were **accepted** or **refused**, the duration, the certificate (subject and expiry) and, when the upstream could not be reached, the reason with its code (`dns_error`, `tls_untrusted`, `egress_denied`, `offline`, ...). The result goes when you change a setting. The test uses a password you typed; it does not use the stored one, and the page says so. With **Offline** on the answer is `offline`, because the upstream is not contacted. The permission is the one of saving the repository.
+
 ## Mirror
 
-A remote repository of a format whose upstream trove can list, for example npm, has a **Mirror** section in the access settings step of the wizard (the fourth step) and a **Mirror** tab on its page. It is shown only for such formats; a format that cannot list its upstream has none.
+A remote repository of a format whose upstream trove can list, for example npm, has a **Mirror** section in the access settings step of the wizard (the fourth step, below the upstream) and a **Mirror** tab on its page. It is shown only for such formats; a format that cannot list its upstream has none.
 
 **Mode** is **Pull-through** (the default: fetch and store what clients ask for) or **Mirror** (also store, in background passes, every package of the upstream that the include patterns and the bounds admit). The other members show in mode **Mirror** only:
 
@@ -90,13 +110,42 @@ A remote repository of a format whose upstream trove can list, for example npm, 
 | **Include prerelease versions** | `remote.mirror.includePrereleases` | on | |
 | **Storage limit in bytes** | `remote.mirror.maxBytes` | empty (no limit of its own) | at least 1048576 |
 
-A member left empty or at its default is not written. Under the mode, a notice says when the mirror has no bound: for the format's well-known upstream (the one the wizard uses, `https://registry.npmjs.org/` for npm) the server refuses to save the mirror unless the include patterns each start with a literal part (such as `@types/*`; not `*`, `**` or `@*/*`) or a storage limit is set; for any other upstream it saves the mirror with a warning. The server decides, and its answer appears at the mode or at the member it names.
+A member left empty or at its default is not written. Under the mode, a notice says when the mirror has no bound; it follows the **Upstream URL** you entered: for the format's well-known upstream (`https://registry.npmjs.org/` for npm, which an empty URL also means) the server refuses to save the mirror unless the include patterns each start with a literal part (such as `@types/*`; not `*`, `**` or `@*/*`) or a storage limit is set; for any other upstream it saves the mirror with a warning. The server decides, and its answer appears at the mode or at the member it names.
 
 Only a holder of `repositories:write-config` sets the mode and the members. An administrator of a project sees the section read-only, can switch **Paused** and select **Turn off** (back to pull-through), and cannot turn a remote repository into a mirror. **Not built in this release yet**: the server still answers `not_applicable` at the mode for a save with **Mirror** until the background passes exist, so the form shows the settings and a repository stays a pull-through cache.
 
+### The status of a mirror
+
+On the page of a remote repository that is stored in mode **Mirror**, the tab **Mirror** starts with **Mirror status**, above the settings. It shows what the server records (`GET /api/v1/repositories/<key>/mirror`), for everyone who can see the repository's configuration:
+
+| State | Meaning |
+|---|---|
+| **Off** | The repository is in pull-through mode; no pass runs |
+| **Paused** | **Paused** is on: no pass starts |
+| **Scheduled** | No pass is in progress; the next one starts when it is due. Green only when the last complete pass was **Complete** |
+| **Running** | A pass is in progress |
+| **Waiting** | A pass is in progress and waits for its next run, after a long rate-limit wait, a failure or a release |
+| **Bound reached** | A storage bound stops the additions: the mirror's own **Storage limit in bytes**, a quota of the repository or the capacity of the storage |
+| **Failing** | Three or more passes in a row failed |
+
+The state is a word with an icon; the colour only adds to it. Under it:
+
+- **Pass in progress**: the kind (full or incremental), the discovery method, when it started, the names discovered, the packages done, pending and failed, the items and bytes stored, whether the discovery has finished, and its job. While a pass is in progress (**Running** or **Waiting**) the status is read again every 5 seconds; leaving the tab stops that.
+- **Last complete pass**: the outcome (**Complete**, **Partial**, stopped at a storage bound, not run because the repository is offline, or stopped before the end), kind, method, start and end, the counts, and whether the discovery saw everything with the upstream's note when it did not.
+- **Next pass**: when it is due, or that it starts at the next dispatch (within a minute), or that none is planned (**Off**, **Paused**); and when the last full pass was.
+- **Last error**: the code, the message (it names hosts, never a URL or a credential), the time and the failures in a row.
+- **Rate-limit waits**: how many times the passes waited for the upstream, for how many seconds, the status and time of the last answer and, while it waits, until when.
+- **Bound**: the storage limit, the bytes stored, and which bound was reached.
+
+With `repositories:write-config`, or as an administrator of the repository's project with **Manage repositories**, the status has buttons; a caller who may only read the configuration sees the status without them:
+
+- **Pause** and **Resume** change **Paused** at once, with the version of the repository you loaded; they do not save the other edits in the form, which stay as they are. If someone else changed the repository since you opened it, the conflict dialog opens (**Overwrite** pauses anyway, **Reload** takes the stored version); if they already paused it, nothing more happens.
+- **Run a pass now** asks for a pass (`POST /api/v1/repositories/<key>/mirror/run`) and shows its job: **A pass is queued.** with the job's id, its state and a link **Open the mirror jobs**, which opens the Jobs screen ([System status, Jobs and Audit log](operations.md)) filtered by the kind `mirror-pass`. The arrow next to the button opens **Run a full pass**, which discovers every name again instead of reading the feed from its cursor.
+- While a pass is already queued or running the answer is **A pass is already queued or running.** with that job. A paused mirror answers **The mirror is paused. Resume it to run a pass.**, and a repository in pull-through mode says that there is no mirror to run.
+
 ## Settings that are set through the API
 
-The UI edits the shared settings, the format settings and the [mirror](#mirror) of a remote repository. The upstream of a remote repository, the members of a virtual one, package ownership and namespace claims are set through the management API. The **API** tab of a repository shows the **Stored document** and, after a change in the form, **Your change as a request**.
+The UI edits the shared settings, the format settings, the [upstream](#the-upstream-of-a-remote-repository) and the [mirror](#mirror) of a remote repository. The other members of a remote repository (extra hosts, limits, integrity, the source network), the members of a virtual one, package ownership and namespace claims are set through the management API. The **API** tab of a repository shows the **Stored document** and, after a change in the form, **Your change as a request**.
 
 Read the repository to get its `ETag`, then send a merge patch with `If-Match`:
 

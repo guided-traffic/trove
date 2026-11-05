@@ -271,7 +271,7 @@ test('R-UI-021 R-REPO-050 the Mirror section of a remote npm repository in the w
     await page.getByRole('button', { name: 'Next' }).click();
 
     await expect(page.getByRole('heading', { name: 'Mirror', level: 2 })).toBeVisible();
-    await expect(page.getByRole('navigation').getByText('4. Access, npm and mirror settings')).toBeVisible();
+    await expect(page.getByRole('navigation').getByText('4. Access, upstream, npm and mirror settings')).toBeVisible();
     await expect(mode(/^Pull-through/)).toBeChecked();
     await expect(mode(/^Mirror/)).not.toBeChecked();
     await expect(interval).toHaveCount(0);

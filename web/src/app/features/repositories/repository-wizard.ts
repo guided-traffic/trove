@@ -42,12 +42,18 @@ import {
   clientAddress,
   curlOf,
   documentOf,
+  effectiveUrl,
+  initialUpstream,
   lines,
+  maskSecrets,
   mirrorOf,
   sameMirror,
   settingsOf,
+  upstreamDefaultsOf,
+  upstreamOf,
 } from './repository-model';
 import { SettingSchema, errorTarget, settingEntries, settingNodes } from './settings-schema';
+import { UpstreamSettings, upstreamPointerLabel, upstreamTarget } from './upstream-settings';
 
 type KeyCheck = 'idle' | 'checking' | 'free' | 'taken' | 'unknown';
 
@@ -114,6 +120,7 @@ export function classHelp(cls: string): string {
     FormatSettings,
     RepositoryFields,
     MirrorSettings,
+    UpstreamSettings,
     Listbox,
     Option,
   ],
@@ -165,8 +172,13 @@ export class RepositoryWizard implements HasUnsavedChanges {
     const nodes = this.settingNodes().length > 0;
     if (this.mirrorSection()) {
       return nodes
-        ? $localize`:@@repo.wizard.step.access-format-mirror:Access, ${this.formatLabel()}:format: and mirror settings`
-        : $localize`:@@repo.wizard.step.access-mirror:Access and mirror settings`;
+        ? $localize`:@@repo.wizard.step.access-format-mirror:Access, upstream, ${this.formatLabel()}:format: and mirror settings`
+        : $localize`:@@repo.wizard.step.access-mirror:Access, upstream and mirror settings`;
+    }
+    if (this.cls() === 'remote') {
+      return nodes
+        ? $localize`:@@repo.wizard.step.access-upstream-format:Access, upstream and ${this.formatLabel()}:format: settings`
+        : $localize`:@@repo.wizard.step.access-upstream:Access and upstream settings`;
     }
     return nodes
       ? $localize`:@@repo.wizard.step.access-format:Access and ${this.formatLabel()}:format: settings`
@@ -209,9 +221,24 @@ export class RepositoryWizard implements HasUnsavedChanges {
       ? {
           name,
           schema: this.format()?.settingsSchema as SettingSchema | null | undefined,
-          ...(this.mirrorSection() ? { remote: 'sparse' as const } : {}),
+          ...(this.cls() === 'remote'
+            ? {
+                remote: 'sparse' as const,
+                mirror: this.mirrorSection(),
+                upstream: upstreamDefaultsOf(this.format()),
+              }
+            : {}),
         }
       : null;
+  });
+  /** The upstream settings the create writes, for the review; a password is not shown. */
+  protected readonly upstreamEntries = computed(() => {
+    const defaults = upstreamDefaultsOf(this.format());
+    const upstream = this.form().upstream;
+    const url = effectiveUrl(upstream, defaults);
+    return settingEntries(
+      maskSecrets({ ...(url ? { url } : {}), ...upstreamOf(upstream, defaults, 'sparse') }),
+    );
   });
   protected readonly memberPointer = computed(() => `/${this.formatName() ?? ''}`);
   protected readonly settingNodes = computed(() => {
@@ -256,11 +283,12 @@ export class RepositoryWizard implements HasUnsavedChanges {
     const member = this.member();
     return cls && member ? documentOf(cls, member, this.form(), this.project()) : null;
   });
-  protected readonly requestJson = computed(() => JSON.stringify(this.body(), null, 2));
+  /** The request as shown: a typed password is never displayed (R-UI-043). */
+  protected readonly requestJson = computed(() => JSON.stringify(maskSecrets(this.body()), null, 2));
   protected readonly curl = computed(() => {
     const doc = this.body();
     return doc
-      ? curlOf('POST', apiAddress(valueOf(this.baseUrl), '/api/v1/repositories'), doc, [
+      ? curlOf('POST', apiAddress(valueOf(this.baseUrl), '/api/v1/repositories'), maskSecrets(doc), [
           'Idempotency-Key: <a fresh UUID>',
         ])
       : '';
@@ -282,7 +310,7 @@ export class RepositoryWizard implements HasUnsavedChanges {
     if (draft) {
       this.cls.set(draft.cls);
       this.formatName.set(draft.format);
-      this.form.set(draft.form);
+      this.form.set({ ...EMPTY_FORM, ...draft.form });
       this.step.set(draft.step);
     }
     // A form that asks for a recent sign-in keeps its non-secret draft across the redirect.
@@ -292,7 +320,8 @@ export class RepositoryWizard implements HasUnsavedChanges {
         this.drafts.keep({
           cls: this.cls(),
           format: this.formatName(),
-          form: this.form(),
+          // The password is a secret: it never goes to storage (R-UI-043).
+          form: { ...this.form(), upstream: { ...this.form().upstream, password: '' } },
           step: this.step(),
         }),
       );
@@ -374,13 +403,21 @@ export class RepositoryWizard implements HasUnsavedChanges {
   }
 
   /**
-   * The format settings and the mirror section belong to one format and one class: another choice
-   * starts them afresh. A form that holds none of them keeps its identity.
+   * The format settings, the upstream settings and the mirror section belong to one format and one
+   * class: another choice starts them afresh (a remote with the format's preset URL). A form that
+   * holds none of them keeps its identity.
    */
   private resetDependent(): void {
     const f = this.form();
-    if (Object.keys(f.formatMember).length === 0 && sameMirror(f)) return;
-    this.form.set({ ...f, formatMember: {}, remoteMode: 'pullThrough', mirror: {} });
+    const upstream = this.cls() === 'remote' ? initialUpstream(this.format()) : initialUpstream(null);
+    if (
+      Object.keys(f.formatMember).length === 0 &&
+      sameMirror(f) &&
+      JSON.stringify(f.upstream) === JSON.stringify(upstream)
+    ) {
+      return;
+    }
+    this.form.set({ ...f, formatMember: {}, remoteMode: 'pullThrough', mirror: {}, upstream });
   }
 
   protected canNext(): boolean {
@@ -444,6 +481,8 @@ export class RepositoryWizard implements HasUnsavedChanges {
   }
 
   protected pointerLabel(pointer: string): string {
+    const upstream = this.cls() === 'remote' ? upstreamPointerLabel(pointer) : null;
+    if (upstream) return upstream;
     const mirror = mirrorPointerLabel(pointer);
     if (mirror) return mirror;
     const name = pointer.split('/')[1] ?? pointer;
@@ -466,6 +505,10 @@ export class RepositoryWizard implements HasUnsavedChanges {
   }
 
   protected pointerTarget(pointer: string): string {
+    if (this.cls() === 'remote') {
+      const target = upstreamTarget(pointer);
+      if (target) return target;
+    }
     if (this.mirrorSection()) {
       const target = mirrorTarget(pointer);
       if (target) return target;

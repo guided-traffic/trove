@@ -77,3 +77,7 @@ before using a new term in a German text.
 | resolved (finding) | behoben |
 | advisory source, mirror repository | Advisory-Quelle, Spiegel-Repository |
 | mirror (mode of a remote repository), pull-through, pass (of a mirror) | Mirror, Pull-through, Durchlauf |
+| mirror state (off, paused, scheduled, running, waiting, bound reached, failing) | Aus, Pausiert, Geplant, Läuft, Wartet, Grenze erreicht, Fehlerhaft |
+| pause, resume (a mirror); run a pass now, run a full pass | pausieren, fortsetzen; Durchlauf jetzt starten, Vollständigen Durchlauf starten |
+| rate-limit wait, bound (of a mirror), discovery (of names) | Rate-Limit-Wartezeit, Grenze, Ermittlung |
+| test connection, upstream URL, negative cache | Verbindung testen, Upstream-URL, negativer Cache |
