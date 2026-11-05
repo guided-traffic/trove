@@ -76,8 +76,9 @@ for redesign ([spec/README.md](spec/README.md#owner-constraints)):
 
 - English only. Every stated fact is checked against its source; anything unverified is marked as
   such.
-- Values carry `# default (proposed)` or `# example`. The catalog says *unspecified* when no value is
-  known.
+- Values carry `# default (proposed)` or `# example`, except in the spec's copies of the charts' values files, which
+  comment a value only where its name does not say it, as the values files do. The catalog says *unspecified* when no
+  value is known.
 - Capabilities have descriptive, product-neutral names. Links go to open standards and to the
   documentation of the ecosystems trove speaks (npm, NuGet, GitLab, Helm, PostgreSQL, Valkey, S3,
   OIDC).

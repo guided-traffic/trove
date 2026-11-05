@@ -1876,8 +1876,9 @@ Acceptance criteria:
 ### R-BAS-046 · Values reference
 Priority: **MVP** · Covers: DIST-024
 
-Every value of `trove-bastion` with its default; in the block below each value carries `# default (proposed)` or
-`# example`, and the chart's `values.yaml` holds the same keys and comments a value only where its name does not say it. Keys under `config`
+Every value of `trove-bastion` with its default. The block below is the chart's `values.yaml`: every value is its default, and
+a value is commented only where its name does not say its meaning, unit, range or consequence, with an `example:` where the
+default is empty (owner, 2026-11-04: no content-free comments). Keys under `config`
 are the Bastion's configuration file (R-BAS-001); the chart-managed keys (`server.tls`, `bastion.main.token_file`,
 `bastion.main.ca_file`, `bastion.signing_key_file`, `bastion.cache.volume.dir`, `bastion.cache.bucket.ca_file`,
 `bastion.cache.bucket.credentials.access_key_id_file` and `secret_access_key_file`, `bastion.replicas`, the Valkey secret files
@@ -1892,340 +1893,340 @@ validates `config` against is `internal/config/bastion.schema.json`. The role ha
 ```yaml
 # ── Global ──────────────────────────────────────────────────────────────────
 global:
-  imageRegistry: ""                     # default (proposed): empty = image.registry
-  imagePullSecrets: []                  # default (proposed); example: [{name: registry-pull}]
+  imageRegistry: ""                     # empty = image.registry
+  imagePullSecrets: []                  # example: [{name: registry-pull}]
 
-nameOverride: ""                        # default (proposed)
-fullnameOverride: ""                    # default (proposed)
-commonLabels: {}                        # default (proposed)
-commonAnnotations: {}                   # default (proposed)
+nameOverride: ""
+fullnameOverride: ""
+commonLabels: {}
+commonAnnotations: {}
 
 image:
-  registry: docker.io                   # default: Docker Hub, as the chart trove
-  repository: guidedtraffic/trove       # default: the one trove image (R-BAS-001)
-  tag: ""                               # default (proposed): empty = chart appVersion
-  digest: ""                            # default (proposed); example: sha256:<64 hex>; wins over tag
-  pullPolicy: IfNotPresent              # default (proposed)
+  registry: docker.io                   # Docker Hub, as the chart trove
+  repository: guidedtraffic/trove       # the one trove image
+  tag: ""                               # empty = chart appVersion
+  digest: ""                            # example: sha256:<64 hex>; wins over tag
+  pullPolicy: IfNotPresent
 
 highAvailability:
-  enforce: true                         # default (proposed): ≥ 2 replicas, a PDB, DoNotSchedule host spreading (R-BAS-043)
+  enforce: true                         # ≥ 2 replicas, a PDB, DoNotSchedule host spreading
 
 # ── Bastion pods: trove serve --role bastion ─────────────────────────────────
-replicaCount: 2                         # default (proposed); ignored when autoscaling.enabled; rendered into bastion.replicas
-minReadySeconds: 10                     # default (proposed)
-revisionHistoryLimit: 5                 # default (proposed)
+replicaCount: 2                         # ignored when autoscaling.enabled; rendered into bastion.replicas
+minReadySeconds: 10
+revisionHistoryLimit: 5
 strategy:
-  type: RollingUpdate                   # default (proposed)
+  type: RollingUpdate
   rollingUpdate:
-    maxSurge: 1                         # default (proposed)
-    maxUnavailable: 0                   # default (proposed)
-terminationGracePeriodSeconds: 120      # default (proposed): long transfers finish or are cut (R-BAS-043)
+    maxSurge: 1
+    maxUnavailable: 0
+terminationGracePeriodSeconds: 120      # long transfers finish or are cut
 resources:
   requests:
-    cpu: 500m                           # default (proposed)
-    memory: 1Gi                         # default (proposed): answers and private copies live in memory
-    ephemeral-storage: 1Gi              # default (proposed)
+    cpu: 500m
+    memory: 1Gi                         # answers and private copies live in memory
+    ephemeral-storage: 1Gi
   limits:
-    memory: 2Gi                         # default (proposed); no CPU limit by default
+    memory: 2Gi                         # no CPU limit by default
 autoscaling:
-  enabled: false                        # default (proposed)
-  minReplicas: 2                        # default (proposed)
-  maxReplicas: 6                        # default (proposed); rendered into bastion.replicas (R-BAS-025)
-  targetCPUUtilizationPercentage: 70    # default (proposed)
-  targetMemoryUtilizationPercentage: 0  # default (proposed): 0 = no memory metric
-  metrics: []                           # default (proposed)
-  behavior: {}                          # default (proposed): Kubernetes defaults
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6                        # rendered into bastion.replicas
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 0  # 0 = no memory metric
+  metrics: []
+  behavior: {}                          # Kubernetes defaults
 podDisruptionBudget:
-  enabled: true                         # default (proposed)
-  maxUnavailable: 1                     # default (proposed)
-  minAvailable: null                    # default (proposed); mutually exclusive with maxUnavailable
-  unhealthyPodEvictionPolicy: AlwaysAllow  # default (proposed)
+  enabled: true
+  maxUnavailable: 1
+  minAvailable: null                    # mutually exclusive with maxUnavailable
+  unhealthyPodEvictionPolicy: AlwaysAllow
 topologySpread:
-  enabled: true                         # default (proposed)
-  nodeTaintsPolicy: Honor               # default (proposed)
+  enabled: true
+  nodeTaintsPolicy: Honor
   zone:
-    maxSkew: 1                          # default (proposed)
-    whenUnsatisfiable: ScheduleAnyway   # default (proposed)
+    maxSkew: 1
+    whenUnsatisfiable: ScheduleAnyway
   host:
-    maxSkew: 1                          # default (proposed)
-    whenUnsatisfiable: DoNotSchedule    # default (proposed); required with highAvailability.enforce
-topologySpreadConstraints: []           # default (proposed); non-empty replaces the generated constraints
-affinity: {}                            # default (proposed)
-nodeSelector: {}                        # default (proposed)
-tolerations: []                         # default (proposed)
-priorityClassName: ""                   # default (proposed)
-podAnnotations: {}                      # default (proposed)
-podLabels: {}                           # default (proposed)
+    maxSkew: 1
+    whenUnsatisfiable: DoNotSchedule    # required with highAvailability.enforce
+topologySpreadConstraints: []           # non-empty replaces the generated constraints
+affinity: {}
+nodeSelector: {}
+tolerations: []
+priorityClassName: ""
+podAnnotations: {}
+podLabels: {}
 
-# ── Cache volume (R-BAS-030, R-BAS-033) ─────────────────────────────────────
+# ── Cache volume ─────────────────────────────────────
 cacheVolume:
-  type: ephemeral                       # default (proposed): ephemeral | persistent | emptyDir; used with config.bastion.cache.backend volume
-  storageClassName: ""                  # default (proposed): cluster default
-  size: 25Gi                            # default (proposed); above config.bastion.cache.max_bytes
-  accessModes: [ReadWriteOnce]          # default (proposed): ReadWriteOnce | ReadWriteOncePod
-  routeByPath: false                    # default (proposed): URI hashing at HAProxy Ingress (R-BAS-033)
+  type: ephemeral                       # ephemeral | persistent | emptyDir; used with config.bastion.cache.backend volume
+  storageClassName: ""                  # cluster default
+  size: 25Gi                            # above config.bastion.cache.max_bytes
+  accessModes: [ReadWriteOnce]          # ReadWriteOnce | ReadWriteOncePod
+  routeByPath: false                    # URI hashing at HAProxy Ingress
 
 # ── Bastion configuration (rendered to /etc/trove/trove.yaml) ───────────────
 config:
   server:
-    listen: ":8443"                     # default (proposed)
-    ops_listen: ":8081"                 # default (proposed)
+    listen: ":8443"
+    ops_listen: ":8081"
     base_url: ""                        # required; example: https://packages.example.com
-    trusted_proxies: []                 # default (proposed); REQUIRED while ingress.enabled: the CIDRs of the ingress controller's pods, example: ["10.244.0.0/16"] (Q-BAS-130)
-    forwarded_header: x-forwarded-for   # default (proposed): x-forwarded-for | forwarded
-    max_in_flight: 1024                 # default (proposed), per replica
+    trusted_proxies: []                 # REQUIRED while ingress.enabled: the CIDRs of the ingress controller's pods, example: ["10.244.0.0/16"]
+    forwarded_header: x-forwarded-for   # x-forwarded-for | forwarded
+    max_in_flight: 1024                 # per replica
   bastion:
     main:
       url: ""                           # required; example: https://trove.example.com (the main endpoint)
-      packages_url: ""                  # default (proposed): empty = url; example: https://trove-packages.trove.svc:8080 (the main installation's packages Service, R-BAS-044)
-      connect_timeout: 5s               # default (proposed)
-      response_header_timeout: 30s      # default (proposed)
-      max_concurrent: 64                # default (proposed), across all replicas (R-BAS-025)
-      anonymous_share: 0.25             # default (proposed)
-      queue_timeout: 2s                 # default (proposed)
-      max_forwarded_body: 8MiB          # default (proposed): bodies of read routes such as npm's bulk audit (R-BAS-014)
-      handshake_interval: 1m            # default (proposed)
-      unreachable_after: 10s            # default (proposed); at least 3 × feed.poll_interval
-      token_reload_interval: 10s        # default (proposed)
+      packages_url: ""                  # empty = url; example: https://trove-packages.trove.svc:8080 (the main installation's packages Service)
+      connect_timeout: 5s
+      response_header_timeout: 30s
+      max_concurrent: 64                # across all replicas
+      anonymous_share: 0.25
+      queue_timeout: 2s
+      max_forwarded_body: 8MiB          # bodies of read routes such as npm's bulk audit
+      handshake_interval: 1m
+      unreachable_after: 10s            # at least 3 × feed.poll_interval
+      token_reload_interval: 10s
     answers:
-      period: 5m                        # default (proposed); 30s to 1h
+      period: 5m                        # 30s to 1h
       grace_period: 15m                 # default (proposed; the owner's proposal); 0 to 24h
-      max_entries: 200000               # default (proposed), per replica
+      max_entries: 200000               # per replica
     feed:
-      poll_interval: 2s                 # default (proposed); 1s to 10s
+      poll_interval: 2s                 # 1s to 10s
     cache:
-      backend: volume                   # default (proposed): volume | bucket
-      max_bytes: 20GiB                  # default (proposed)
-      max_object_bytes: 2GiB            # default (proposed)
-      spool_max_bytes: 2GiB             # default (proposed): the fills in progress of a replica hold at most this in temporary storage; at least max_object_bytes (Q-BAS-131)
-      documents_max_bytes: 2GiB         # default (proposed)
-      private_documents_max_bytes: 256MiB  # default (proposed), per replica, memory
-      metadata_revalidate_after: 1m     # default (proposed)
-      artifact_revalidate_after: 10m    # default (proposed)
-      negative_period: 1m               # default (proposed)
-      negative_max_entries: 100000      # default (proposed), per replica
-      sweep_interval: 5m                # default (proposed)
-      access_resolution: 1h             # default (proposed)
+      backend: volume                   # volume | bucket
+      max_bytes: 20GiB
+      max_object_bytes: 2GiB
+      spool_max_bytes: 2GiB             # the fills in progress of a replica hold at most this in temporary storage; at least max_object_bytes
+      documents_max_bytes: 2GiB
+      private_documents_max_bytes: 256MiB  # per replica, memory
+      metadata_revalidate_after: 1m
+      artifact_revalidate_after: 10m
+      negative_period: 1m
+      negative_max_entries: 100000      # per replica
+      sweep_interval: 5m
+      access_resolution: 1h
       bucket:
-        endpoint: ""                    # default (proposed): AWS resolution; example: https://object.storage.eu01.onstackit.cloud
+        endpoint: ""                    # AWS resolution; example: https://object.storage.eu01.onstackit.cloud
         region: ""                      # example: eu01
         bucket: ""                      # required with backend bucket; example: trove-bastion-partners
-        prefix: trove-bastion           # default (proposed)
-        force_path_style: false         # default (proposed)
+        prefix: trove-bastion
+        force_path_style: false
         credentials:
-          source: static                # default (proposed): static (secrets.cacheBucket) | webIdentity | default
-          role_arn: ""                  # default (proposed); example: arn:aws:iam::123456789012:role/trove-bastion
+          source: static                # static (secrets.cacheBucket) | webIdentity | default
+          role_arn: ""                  # example: arn:aws:iam::123456789012:role/trove-bastion
     limits:
       authenticated:
-        requests_per_second: 50         # default (proposed), per address
-        burst: 200                      # default (proposed)
+        requests_per_second: 50         # per address
+        burst: 200
       anonymous:
-        requests_per_second: 10         # default (proposed), per address
-        burst: 40                       # default (proposed)
+        requests_per_second: 10         # per address
+        burst: 40
       misses:
-        authenticated_per_minute: 300   # default (proposed), per address
-        anonymous_per_minute: 30        # default (proposed), per address
+        authenticated_per_minute: 300   # per address
+        anonymous_per_minute: 30        # per address
     failed_auth:
-      max_failures: 20                  # default (proposed)
-      window: 10m                       # default (proposed)
-      timeout: 15m                      # default (proposed)
+      max_failures: 20
+      window: 10m
+      timeout: 15m
     blocking:
-      threshold: 300                    # default (proposed): refusals per window
-      window: 1m                        # default (proposed)
-      duration: 15m                     # default (proposed)
-      max_duration: 24h                 # default (proposed)
-      exempt_cidrs: []                  # default (proposed); example: ["198.51.100.0/24"]
+      threshold: 300                    # refusals per window
+      window: 1m
+      duration: 15m
+      max_duration: 24h
+      exempt_cidrs: []                  # example: ["198.51.100.0/24"]
     audit:
-      buffer_events: 100000             # default (proposed), per replica
-      batch_size: 500                   # default (proposed)
-      flush_interval: 1s                # default (proposed)
-      spool_max_events: 1000000         # default (proposed)
+      buffer_events: 100000             # per replica
+      batch_size: 500
+      flush_interval: 1s
+      spool_max_events: 1000000
     token:
-      warn_before: 720h                 # default (proposed): 30 days (the owner's proposal)
-  valkey:                               # optional (R-BAS-034); the keys of the chart trove (R-HA-056), plus mode none
-    mode: none                          # default (proposed): none | sentinel | standalone (development only)
+      warn_before: 720h                 # 30 days (the owner's proposal)
+  valkey:                               # optional; the keys of the chart trove, plus mode none
+    mode: none                          # none | sentinel | standalone (development only)
     sentinel:
       addresses: []                     # required with mode sentinel; example: [trove-bastion-valkey-sentinel:26379]
       primary_name: ""                  # required with mode sentinel; example: trove-bastion
-      tls: true                         # default (proposed)
-      refresh_interval: 5s              # default (proposed)
-    address: ""                         # default (proposed); standalone mode only
-    database: 0                         # default (proposed)
-    key_prefix: ""                      # default (proposed): empty = the host of config.server.base_url
+      tls: true
+      refresh_interval: 5s
+    address: ""                         # standalone mode only
+    database: 0
+    key_prefix: ""                      # empty = the host of config.server.base_url
     tls:
-      mode: verify-full                 # default (proposed): verify-full | verify-ca | disable
-      server_name: ""                   # default (proposed): host name of each address
-    connect_timeout: 2s                 # default (proposed)
-    command_timeout: 500ms              # default (proposed)
+      mode: verify-full                 # verify-full | verify-ca | disable
+      server_name: ""                   # host name of each address
+    connect_timeout: 2s
+    command_timeout: 500ms
   log:
-    level: info                         # default (proposed); operations-and-observability.md
-  tracing:                              # operations-and-observability.md R-OPS-018
-    enabled: false                      # default (proposed)
+    level: info                         # operations-and-observability.md
+  tracing:                              # operations-and-observability.md
+    enabled: false
     endpoint: ""                        # example: https://otel-collector.observability:4318
-    sample_ratio: 0.1                   # default (proposed)
+    sample_ratio: 0.1
   runtime:
-    memory_limit_ratio: 0.85            # default (proposed)
+    memory_limit_ratio: 0.85
 
 # ── Existing Secrets (the chart never creates one) ──────────────────────────
 secrets:
   mainToken:
-    existingSecret: ""                  # required; example: trove-bastion-token (the trv_bst_ token, R-BAS-006)
-    key: token                          # default (proposed)
+    existingSecret: ""                  # required; example: trove-bastion-token (the trv_bst_ token)
+    key: token
   signingKey:
     existingSecret: ""                  # required with the bucket backend or Valkey; example: trove-bastion-signing (32 random bytes)
-    key: key                            # default (proposed)
+    key: key
   cacheBucket:
     existingSecret: ""                  # required with credentials.source static; example: trove-bastion-s3 (stackit-s3-provisioner)
-    accessKeyIdKey: access-key-id       # default (proposed)
-    secretAccessKeyKey: secret-access-key  # default (proposed)
+    accessKeyIdKey: access-key-id
+    secretAccessKeyKey: secret-access-key
   valkey:
-    existingSecret: ""                  # default (proposed): no authentication; example: trove-bastion-valkey
-    usernameKey: username               # default (proposed)
-    passwordKey: password               # default (proposed)
+    existingSecret: ""                  # no authentication; example: trove-bastion-valkey
+    usernameKey: username
+    passwordKey: password
   valkeySentinel:
-    existingSecret: ""                  # default (proposed): no authentication at the Sentinels; example: trove-bastion-valkey-sentinel
-    usernameKey: username               # default (proposed): empty = the default user
-    passwordKey: password               # default (proposed)
+    existingSecret: ""                  # no authentication at the Sentinels; example: trove-bastion-valkey-sentinel
+    usernameKey: username               # empty = the default user
+    passwordKey: password
   valkeyCA:
-    existingSecret: ""                  # default (proposed): system roots plus trustedCA
-    key: ca.crt                         # default (proposed)
+    existingSecret: ""                  # system roots plus trustedCA
+    key: ca.crt
 
 trustedCA:
-  existingSecret: ""                    # default (proposed); example: corp-ca-bundle; trust for the main installation, Valkey and the bucket
-  existingConfigMap: ""                 # default (proposed); example: corp-ca-bundle (trust-manager target)
-  keys: [ca-bundle.crt]                 # default (proposed); exactly one key: the bundle is one file (bastion.main.ca_file)
+  existingSecret: ""                    # example: corp-ca-bundle; trust for the main installation, Valkey and the bucket
+  existingConfigMap: ""                 # example: corp-ca-bundle (trust-manager target)
+  keys: [ca-bundle.crt]                 # exactly one key: the bundle is one file (bastion.main.ca_file)
 
-# ── TLS of the Bastion's own listener (R-BAS-044) ───────────────────────────
+# ── TLS of the Bastion's own listener ───────────────────────────
 tls:
-  enabled: true                         # default (proposed); false only with the explicit plaintext switch of INV-20
-  existingSecret: ""                    # default (proposed): empty = the cert-manager Certificate below
+  enabled: true                         # false only with the explicit plaintext switch of INV-20
+  existingSecret: ""                    # empty = the cert-manager Certificate below
   certManager:
-    enabled: true                       # default (proposed)
+    enabled: true
     issuerRef:
-      kind: ClusterIssuer               # default (proposed)
+      kind: ClusterIssuer
       name: ""                          # required with certManager.enabled; example: internal-ca
-    duration: 2160h                     # default (proposed)
-    renewBefore: 720h                   # default (proposed)
+    duration: 2160h
+    renewBefore: 720h
 
 # ── Pod identity and security ──────────────────────────────────────────────
 serviceAccount:
-  create: true                          # default (proposed)
-  name: ""                              # default (proposed): <fullname>
-  annotations: {}                       # default (proposed); example (IRSA for the cache bucket):
-  #  eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/trove-bastion  # example
-  automountServiceAccountToken: false   # default (proposed): the Bastion never calls the Kubernetes API
+  create: true
+  name: ""                              # <fullname>
+  annotations: {}                       # the IRSA role annotation of the cache bucket goes here
+  # eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/trove-bastion
+  automountServiceAccountToken: false   # the Bastion never calls the Kubernetes API
 
 podSecurityContext:
-  runAsNonRoot: true                    # default (proposed)
-  runAsUser: 65532                      # default (proposed)
-  runAsGroup: 65532                     # default (proposed)
-  fsGroup: 65532                        # default (proposed)
-  fsGroupChangePolicy: OnRootMismatch   # default (proposed)
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  fsGroupChangePolicy: OnRootMismatch
   seccompProfile:
-    type: RuntimeDefault                # default (proposed)
+    type: RuntimeDefault
 
 securityContext:
-  allowPrivilegeEscalation: false       # default (proposed)
-  privileged: false                     # default (proposed)
-  readOnlyRootFilesystem: true          # default (proposed)
-  runAsNonRoot: true                    # default (proposed)
+  allowPrivilegeEscalation: false
+  privileged: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
   capabilities:
-    drop: [ALL]                         # default (proposed)
+    drop: [ALL]
   seccompProfile:
-    type: RuntimeDefault                # default (proposed)
+    type: RuntimeDefault
 
 tmp:
-  sizeLimit: ""                         # default (proposed): empty = 1Gi with the volume backend; with the bucket backend (whose fills are spooled here) config.bastion.cache.spool_max_bytes plus 256Mi; example: 3Gi
+  sizeLimit: ""                         # empty = 1Gi with the volume backend; with the bucket backend (whose fills are spooled here) config.bastion.cache.spool_max_bytes plus 256Mi; example: 3Gi
 
-# ── Probes (paths from R-OPS-001) ──────────────────────────────────────────
+# ── Probes ──────────────────────────────────────────
 probes:
   startup:
-    enabled: true                       # default (proposed)
-    path: /healthz                      # default (proposed)
-    periodSeconds: 2                    # default (proposed)
-    timeoutSeconds: 2                   # default (proposed)
-    failureThreshold: 60                # default (proposed)
+    enabled: true
+    path: /healthz
+    periodSeconds: 2
+    timeoutSeconds: 2
+    failureThreshold: 60
   liveness:
-    enabled: true                       # default (proposed)
-    path: /healthz                      # default (proposed)
-    periodSeconds: 10                   # default (proposed)
-    timeoutSeconds: 3                   # default (proposed)
-    failureThreshold: 6                 # default (proposed)
+    enabled: true
+    path: /healthz
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 6
   readiness:
-    enabled: true                       # default (proposed)
-    path: /readyz                       # default (proposed)
-    periodSeconds: 5                    # default (proposed)
-    timeoutSeconds: 3                   # default (proposed)
-    failureThreshold: 1                 # default (proposed)
-    successThreshold: 1                 # default (proposed)
+    enabled: true
+    path: /readyz
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 1
+    successThreshold: 1
 
 # ── Exposure ───────────────────────────────────────────────────────────────
 service:
-  type: ClusterIP                       # default (proposed)
-  port: 8443                            # default (proposed)
-  opsPort: 8081                         # default (proposed)
-  annotations: {}                       # default (proposed)
-  labels: {}                            # default (proposed)
-  ipFamilyPolicy: ""                    # default (proposed); example: PreferDualStack
-  ipFamilies: []                        # default (proposed)
+  type: ClusterIP
+  port: 8443
+  opsPort: 8081
+  annotations: {}
+  labels: {}
+  ipFamilyPolicy: ""                    # example: PreferDualStack
+  ipFamilies: []
 
 ingress:
-  enabled: true                         # default (proposed): the Bastion is reached through its own Ingress
-  className: haproxy                    # default (proposed): HAProxy Ingress, the owner's edge
-  annotations: {}                       # default (proposed); appended to the generated ones
-  labels: {}                            # default (proposed)
-  hosts: []                             # default (proposed): empty = host of config.server.base_url
-  tls: []                               # default (proposed); example: [{secretName: trove-bastion-public-tls, hosts: [packages.example.com]}]
-  backendTLS:                           # TLS from the Ingress to the pods while tls.enabled (R-BAS-044, Q-BAS-55); HAProxy Ingress keys
-    verify: true                        # default (proposed): the controller verifies the pods' certificate against caSecret
-    caSecret: ""                        # default (proposed): empty = the listener's Secret (tls.existingSecret or <fullname>-tls), which must carry ca.crt
+  enabled: true                         # the Bastion is reached through its own Ingress
+  className: haproxy                    # HAProxy Ingress, the owner's edge
+  annotations: {}                       # appended to the generated ones
+  labels: {}
+  hosts: []                             # empty = host of config.server.base_url
+  tls: []                               # example: [{secretName: trove-bastion-public-tls, hosts: [packages.example.com]}]
+  backendTLS:                           # TLS from the Ingress to the pods while tls.enabled; HAProxy Ingress keys
+    verify: true                        # the controller verifies the pods' certificate against caSecret
+    caSecret: ""                        # empty = the listener's Secret (tls.existingSecret or <fullname>-tls), which must carry ca.crt
 
-edgeLimit:                              # stage 1 of the blocking (R-BAS-038)
-  enabled: true                         # default (proposed)
-  requestsPerSecond: 100                # default (proposed), per address; above config.bastion.limits.authenticated.requests_per_second
-  connections: 50                       # default (proposed), per address
+edgeLimit:                              # stage 1 of the blocking
+  enabled: true
+  requestsPerSecond: 100                # per address; above config.bastion.limits.authenticated.requests_per_second
+  connections: 50                       # per address
 
-# ── Network policy (R-BAS-047): ingress rules only, each rule with its port ─
-# No egress value exists: the chart renders no egress rule (ADR-154).
+# ── Network policy: ingress rules only, each rule with its port ─────────────
+# No egress value exists: the chart renders no egress rule; the Bastion pods' egress is the cluster's own policy.
 networkPolicy:
-  enabled: true                         # default (proposed)
+  enabled: true
   ingress:
     https:
-      from:                             # default (proposed): the ingress controller's namespace
+      from:                             # the ingress controller's namespace
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: haproxy-ingress  # default (proposed)
+              kubernetes.io/metadata.name: haproxy-ingress
     ops:
-      from:                             # default (proposed)
+      from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: monitoring  # default (proposed)
-    probeCIDRs: []                      # default (proposed)
+              kubernetes.io/metadata.name: monitoring
+    probeCIDRs: []
 
-# ── Monitoring (R-BAS-040, R-BAS-041) ──────────────────────────────────────
+# ── Monitoring ──────────────────────────────────────
 metrics:
   serviceMonitor:
-    enabled: false                      # default (proposed)
-    namespace: ""                       # default (proposed): release namespace
-    interval: 30s                       # default (proposed)
-    scrapeTimeout: 10s                  # default (proposed)
-    labels: {}                          # default (proposed); example: {release: kube-prometheus-stack}
-    relabelings: []                     # default (proposed); appended after the fixed role relabeling (role="bastion")
-    metricRelabelings: []               # default (proposed)
+    enabled: false
+    namespace: ""                       # release namespace
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}                          # example: {release: kube-prometheus-stack}
+    relabelings: []                     # appended after the fixed role relabeling (role="bastion")
+    metricRelabelings: []
   prometheusRule:
-    enabled: false                      # default (proposed)
-    labels: {}                          # default (proposed)
-    disabledAlerts: []                  # default (proposed); example: [TroveBastionCacheCorrupt]
-    extraRules: []                      # default (proposed)
+    enabled: false
+    labels: {}
+    disabledAlerts: []                  # example: [TroveBastionCacheCorrupt]
+    extraRules: []
 
 # ── Extension points ───────────────────────────────────────────────────────
-extraEnv: []                            # default (proposed)
-extraEnvFrom: []                        # default (proposed)
-extraVolumes: []                        # default (proposed)
-extraVolumeMounts: []                   # default (proposed)
-initContainers: []                      # default (proposed)
-sidecars: []                            # default (proposed)
-extraObjects: []                        # default (proposed)
+extraEnv: []
+extraEnvFrom: []
+extraVolumes: []
+extraVolumeMounts: []
+initContainers: []
+sidecars: []
+extraObjects: []
 ```
 
 </details>

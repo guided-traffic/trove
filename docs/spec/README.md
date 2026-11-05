@@ -358,7 +358,9 @@ acceptance criteria.
 
 - The heading and the `Priority:` line are machine-read; `Covers:` lists catalog IDs or says
   `trove-only`.
-- Configuration values are marked `# default (proposed)` or `# example`.
+- Configuration values are marked `# default (proposed)` or `# example`. The copies of the charts' values files
+  (R-HA-031, R-BAS-046) follow the values files instead: every value there is its default, and a comment says only what
+  the name does not (owner, 2026-11-04).
 - Every page ends with `## Decisions` followed by `## What this does not cover`.
 - `## Decisions` opens with one sentence: each question below was decided by the development agent
   from the listed options, and the owner reviews the choices at the walkthrough. Each question is a

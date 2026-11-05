@@ -563,7 +563,7 @@ validation, restricted pod security, probes on the ops port, `extraObjects` thro
 ```text
 deploy/helm/trove-bastion/
 ├── Chart.yaml              version = appVersion = 0.0.0-dev (build.yml rewrites both with the release version)
-├── values.yaml             the keys of the block of R-BAS-046
+├── values.yaml             the block of R-BAS-046, copied there verbatim
 ├── values.schema.json      draft-07, additionalProperties false outside config; config = the generated role schema (below)
 ├── chart-managed-keys.yaml generated: the config paths the chart renders and refuses (below)
 ├── ci/                     value sets the tests render (not packaged, see .helmignore)
@@ -677,7 +677,7 @@ other chart tests:
 |---|---|
 | `TestR_BAS_045_RequiredValuesRenderTheResources` | the required values give a Deployment with two replicas, PDB, Ingress with the edge-limit annotations, NetworkPolicy and no Secret, Role, RoleBinding or PVC (in every set); the names; every validation row names its values |
 | `TestR_BAS_045_HAProxyAnnotationsArePinnedToTheLocalControllerVersion` | the annotation names against the controller version of the local profile |
-| `TestR_BAS_046_ValuesReferenceIsTheSpecBlock` | the key set of `helm show values` equals the block parsed from `docs/spec/bastion.md`; every value is marked `default` or `example` |
+| `TestR_BAS_046_ValuesReferenceIsTheSpecBlock` | the key set of `helm show values` equals the block parsed from `docs/spec/bastion.md` (the block is a copy of `values.yaml`) |
 | `TestR_BAS_002_ConfigurationOnlyThroughTheChart` | the ConfigMap and its mount, every `config` value in the file, the managed keys, Secret mounts without `subPath`, no Secret in the environment, managed keys refused, the checksum changes with a `config` value and not with the token Secret |
 | `TestR_BAS_025_ReplicasAreRenderedIntoTheConfiguration` | `bastion.replicas` is `replicaCount`, or `autoscaling.maxReplicas` with an HPA and no `replicas` field |
 | `TestR_BAS_045_TheClientAddressNeedsTheTrustedProxiesBehindTheIngress` | the render fails without `config.server.trusted_proxies` while the Ingress is on, names the value, passes with the Ingress off and with a list |
@@ -692,7 +692,8 @@ other chart tests:
 **Extension checklists.**
 
 *Add a value.* Add it to [values.yaml](../../deploy/helm/trove-bastion/values.yaml) with its default (commented only where its name does not say it) and to
-the values block of [spec/bastion.md](../spec/bastion.md) R-BAS-046 (the key-set test compares them), to
+the values block of [spec/bastion.md](../spec/bastion.md) R-BAS-046 as the same line (the block is a verbatim copy; the key-set test
+compares the keys), to
 [values.schema.json](../../deploy/helm/trove-bastion/values.schema.json), use it in a template, add a validation row if a wrong value
 must fail, and a subtest named with the requirement.
 
