@@ -9,13 +9,13 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 434 of 689 spec requirements are implemented: a passing test names them and no
+**Status.** 445 of 689 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 704 specified (335 of them implemented), 1,535 open.
+**Totals.** 2,239 catalog features on 60 pages: 704 specified (340 of them implemented), 1,535 open.
 689 spec requirements: 546 cover catalog features, 143 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
@@ -43,8 +43,8 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 26 | 56 | 2 |
 | [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | 2 of 2 | 2 | 68 | 2 |
 | [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | 18 of 18 | 18 | 80 | 15 |
-| [UI inventory](#ui-inventory-ui) | `UI` | 61 | 33 of 33 | 47 | 14 | 1 |
-| [Content API operation catalog](#content-api-operation-catalog-api) | `API` | 166 | 15 of 15 | 71 | 95 | 14 |
+| [UI inventory](#ui-inventory-ui) | `UI` | 61 | 33 of 33 | 47 | 14 | 2 |
+| [Content API operation catalog](#content-api-operation-catalog-api) | `API` | 166 | 15 of 15 | 71 | 95 | 18 |
 | [Operation catalog: administration API](#operation-catalog-administration-api-admapi) | `ADMAPI` | 114 | 34 of 34 | 54 | 60 | 11 |
 | [Package formats: matrix and cross-format behavior](#package-formats-matrix-and-cross-format-behavior-fmt) | `FMT` | 14 | 8 of 8 | 9 | 5 | 6 |
 | [npm package format](#npm-package-format-pkg-npm) | `PKG-NPM` | 62 | 37 of 37 | 52 | 10 | 36 |
@@ -1366,7 +1366,7 @@ Catalog page: [security-scanning-and-curation.md](../features/security-scanning-
 Catalog page: [ui-inventory.md](../features/ui-inventory.md) · specified by priority: MVP 33 of 33 · P1 14 of 14 · P2 0 of 8 · Later 0 of 3 · Out of scope 0 of 3
 
 <details>
-<summary>61 features: 47 specified, 14 open, 1 implemented</summary>
+<summary>61 features: 47 specified, 14 open, 2 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1401,7 +1401,7 @@ Catalog page: [ui-inventory.md](../features/ui-inventory.md) · specified by pri
 | UI-028 | Builds list | P1 | specified | [R-UI-040](../spec/api-and-ui.md) |
 | UI-029 | Build run details | P1 | specified | [R-UI-040](../spec/api-and-ui.md) |
 | UI-030 | Repositories screen | MVP | specified | [R-UI-020](../spec/api-and-ui.md) |
-| UI-031 | Create and edit repository form | MVP | specified | [R-UI-021](../spec/api-and-ui.md) |
+| UI-031 | Create and edit repository form | MVP | implemented | [R-UI-021](../spec/api-and-ui.md) (implemented) |
 | UI-032 | Virtual repository member selector | MVP | specified | [R-UI-022](../spec/api-and-ui.md) |
 | UI-033 | Quick repository setup wizard | P1 | specified | [R-UI-023](../spec/api-and-ui.md) |
 | UI-034 | Property sets screen | P2 | open | – |
@@ -1439,7 +1439,7 @@ Catalog page: [ui-inventory.md](../features/ui-inventory.md) · specified by pri
 Catalog page: [api-content-operations.md](../features/api-content-operations.md) · specified by priority: MVP 15 of 15 · P1 56 of 56 · P2 0 of 44 · Later 0 of 48 · Out of scope 0 of 3
 
 <details>
-<summary>166 features: 71 specified, 95 open, 14 implemented</summary>
+<summary>166 features: 71 specified, 95 open, 18 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1524,10 +1524,10 @@ Catalog page: [api-content-operations.md](../features/api-content-operations.md)
 | API-079 | Legacy federation status (built-in synchronization) | Later | open | – |
 | API-080 | Failed binary transfer tasks | Later | open | – |
 | API-081 | Instance trust pairing | Later | open | – |
-| API-082 | Replication configuration document | MVP | specified | [R-REPO-050](../spec/repositories-and-proxy.md) |
-| API-083 | Get, set, update and delete a repository's replication | MVP | specified | [R-REPO-050](../spec/repositories-and-proxy.md) |
-| API-084 | Replication status of a path | MVP | specified | [R-REPO-056](../spec/repositories-and-proxy.md) |
-| API-085 | Run replication now | MVP | specified | [R-REPO-056](../spec/repositories-and-proxy.md) |
+| API-082 | Replication configuration document | MVP | implemented | [R-REPO-050](../spec/repositories-and-proxy.md) (implemented) |
+| API-083 | Get, set, update and delete a repository's replication | MVP | implemented | [R-REPO-050](../spec/repositories-and-proxy.md) (implemented) |
+| API-084 | Replication status of a path | MVP | implemented | [R-REPO-056](../spec/repositories-and-proxy.md) (implemented) |
+| API-085 | Run replication now | MVP | implemented | [R-REPO-056](../spec/repositories-and-proxy.md) (implemented) |
 | API-086 | Create, replace or update multi-push replication | P2 | open | – |
 | API-087 | Enable or disable replications in bulk | P2 | open | – |
 | API-088 | Event-based pull replication channels | P2 | open | – |
@@ -3093,14 +3093,14 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-REPO-038 (implemented) | Egress address rules for remote repositories | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
 | R-REPO-040 (implemented) | Size and concurrency limits | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
 | R-REPO-043 (implemented) | Metadata URL rewriting | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
-| R-REPO-051 | What a mirror discovers, and what bounds it | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
-| R-REPO-052 | Storage bounds of a mirror | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
-| R-REPO-053 | Mirror passes as jobs on the queue `mirror` | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
-| R-REPO-054 | Upstream throttling of a mirror | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
-| R-REPO-055 | Client requests first | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
-| R-REPO-057 | Mirror observability | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
-| R-REPO-058 | The mirror on n replicas, without Valkey and during a drain | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
-| R-REPO-059 | The mirror's test suites | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
+| R-REPO-051 (implemented) | What a mirror discovers, and what bounds it | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
+| R-REPO-052 (implemented) | Storage bounds of a mirror | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
+| R-REPO-053 (implemented) | Mirror passes as jobs on the queue `mirror` | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
+| R-REPO-054 (implemented) | Upstream throttling of a mirror | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
+| R-REPO-055 (implemented) | Client requests first | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
+| R-REPO-057 (implemented) | Mirror observability | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
+| R-REPO-058 (implemented) | The mirror on n replicas, without Valkey and during a drain | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
+| R-REPO-059 (implemented) | The mirror's test suites | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
 | R-REPO-049 (implemented) | Repository and proxy state on n replicas, without Valkey and during a drain | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
 | R-REPO-047 (implemented) | Proxy and resolution observability | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
 | R-STOR-011 | Multi-request upload sessions | P1 | [storage.md](../spec/storage.md) |
