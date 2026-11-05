@@ -61,6 +61,10 @@ type npmHAFixture struct {
 	locked  int
 	locals  []string
 	k6Input []byte
+	// k6InputAll is k6Input with the document of every package the lockfile locks, the blob's and the local
+	// packages' (npmLoadOpts.allDocuments, the drain per role, Q-HA-94); allDocuments is their number.
+	k6InputAll   []byte
+	allDocuments int
 	// for the load scripts of R-ARCH-027 (npm_perf_test.go): a 1 MiB and a 50 KiB tarball and the package names
 	blob1MiB, small50KiB string
 	blobPkg, smallPkg    string
@@ -203,10 +207,13 @@ func buildNPMHAFixture(t *testing.T, fx *npmFixture) *npmHAFixture {
 		t.Fatalf("the fixture's lockfile: %v", err)
 	}
 	locals := 0
+	lockedNames := map[string]bool{}
 	for path, p := range lock.Packages {
 		if path == "" {
 			continue
 		}
+		// node_modules/<name> or node_modules/<parent>/node_modules/<name>, <name> scoped or not
+		lockedNames[path[strings.LastIndex(path, "node_modules/")+len("node_modules/"):]] = true
 		h.locked++
 		if strings.Contains(p.Resolved, "/@e2e/ha-"+fx.run+"-lib") {
 			locals++
@@ -227,8 +234,14 @@ func buildNPMHAFixture(t *testing.T, fx *npmFixture) *npmHAFixture {
 		docs = append(docs, "/api/npm/"+npmAllKey+"/"+url.PathEscape(name))
 	}
 	h.k6Input, _ = json.Marshal(map[string]any{"documents": docs, "tarballs": tarballs})
-	t.Logf("npm HA fixture: %d locked packages (%d local), %d k6 documents, tarballs of %d to %d bytes, %d tokens, built in %s",
-		h.locked, locals, len(docs), tarballs[0].Size, tarballs[8].Size, len(h.tokens), time.Since(start).Round(time.Second))
+	all := []string{"/api/npm/" + npmAllKey + "/" + url.PathEscape(blob)}
+	for _, name := range sortedKeys(lockedNames) {
+		all = append(all, "/api/npm/"+npmAllKey+"/"+url.PathEscape(name))
+	}
+	h.allDocuments = len(all)
+	h.k6InputAll, _ = json.Marshal(map[string]any{"documents": all, "tarballs": tarballs})
+	t.Logf("npm HA fixture: %d locked packages (%d local, %d names), %d k6 documents (%d with every locked package's), tarballs of %d to %d bytes, %d tokens, built in %s",
+		h.locked, locals, len(lockedNames), len(docs), h.allDocuments, tarballs[0].Size, tarballs[8].Size, len(h.tokens), time.Since(start).Round(time.Second))
 	return h
 }
 
@@ -321,6 +334,9 @@ type npmLoadOpts struct {
 	ciLoops int  // npm ci loops; R-HA-059: eight
 	publish bool // a publish of a new version to npm-local every 10 s
 	k6      bool // the k6 npm requests at haK6Rate
+	// allDocuments makes k6 ask for the document of every package the lockfile locks instead of the local packages and
+	// twenty corpus roots, so a replaced packages replica renders hundreds of documents again (the drain per role, Q-HA-94).
+	allDocuments bool
 }
 
 // haFullLoad is the npm part of R-HA-059's load; the pod-crash scenario of R-HA-052 runs without k6.
@@ -379,7 +395,11 @@ func startNPMLoad(t *testing.T, h *npmHAFixture, name string, o npmLoadOpts) *np
 		}
 	}
 	if o.k6 {
-		l.k6 = startK6Script(t, "npm-"+name, "npm.js", time.Hour, k6Opts{rate: haK6Rate, prefix: "N ", token: strings.Join(h.k6Tokens(), "\n"), files: map[string][]byte{"npm-fixture.json": h.k6Input}})
+		input := h.k6Input
+		if o.allDocuments {
+			input = h.k6InputAll
+		}
+		l.k6 = startK6Script(t, "npm-"+name, "npm.js", time.Hour, k6Opts{rate: haK6Rate, prefix: "N ", token: strings.Join(h.k6Tokens(), "\n"), files: map[string][]byte{"npm-fixture.json": input}})
 	}
 	t.Cleanup(func() {
 		// a test that fails before stop leaves no loop running into the next scenario
@@ -387,7 +407,7 @@ func startNPMLoad(t *testing.T, h *npmHAFixture, name string, o npmLoadOpts) *np
 			_, _ = kubectl("-n", cfg.namespace, "exec", npmClientPod(t, lp.c.pod), "--", "touch", lp.dir+"/stop")
 		}
 	})
-	t.Logf("npm load %s: %d npm ci loops, publish %v, k6 %v", name, o.ciLoops, o.publish, o.k6)
+	t.Logf("npm load %s: %d npm ci loops, publish %v, k6 %v, every locked package's document %v", name, o.ciLoops, o.publish, o.k6, o.allDocuments)
 	return l
 }
 
@@ -706,10 +726,13 @@ func (r npmK6Result) only2xx304(t *testing.T) {
 }
 
 // p99 is the 99th percentile of the duration of the requests started in [from, to), and their number.
-func (r npmK6Result) p99(from, to time.Time) (time.Duration, int) {
+func (r npmK6Result) p99(from, to time.Time) (time.Duration, int) { return r.p99Of("", from, to) }
+
+// p99Of is p99 over the requests of one kind (document or tarball); "" is every kind.
+func (r npmK6Result) p99Of(kind string, from, to time.Time) (time.Duration, int) {
 	var d []time.Duration
 	for _, l := range r.Lines {
-		if !l.At.Before(from) && l.At.Before(to) {
+		if (kind == "" || l.Kind == kind) && !l.At.Before(from) && l.At.Before(to) {
 			d = append(d, time.Duration(l.MS)*time.Millisecond)
 		}
 	}
@@ -717,6 +740,37 @@ func (r npmK6Result) p99(from, to time.Time) (time.Duration, int) {
 		return 0, 0
 	}
 	return percentile(d, 0.99), len(d)
+}
+
+// documentsServed counts, per replica, the distinct documents it answered with 200 to requests started at or after from:
+// the first 200 of a document on a replica that was not warm is a rendering.
+func (r npmK6Result) documentsServed(from time.Time) map[string]int {
+	seen := map[string]map[string]bool{}
+	for _, l := range r.Lines {
+		if l.Kind != "document" || l.Status != 200 || l.At.Before(from) {
+			continue
+		}
+		if seen[l.Replica] == nil {
+			seen[l.Replica] = map[string]bool{}
+		}
+		seen[l.Replica][l.Path] = true
+	}
+	out := map[string]int{}
+	for replica, paths := range seen {
+		out[replica] = len(paths)
+	}
+	return out
+}
+
+// distinctDocuments is the number of distinct document paths k6 asked for.
+func (r npmK6Result) distinctDocuments() int {
+	paths := map[string]bool{}
+	for _, l := range r.Lines {
+		if l.Kind == "document" {
+			paths[l.Path] = true
+		}
+	}
+	return len(paths)
 }
 
 // ── misc ─────────────────────────────────────────────────────────────────────

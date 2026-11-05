@@ -1092,19 +1092,22 @@ its own:
 |---|---|
 | `npm ci --cache "$(mktemp -d)"` of a fixture with at least 400 locked dependencies through `npm-all` (remote and local members, cache warm) | 8 parallel loops |
 | `npm publish` of a new version to `npm-local` | one every 10 s |
-| k6 `constant-arrival-rate` against the edge: npm package documents and npm tarballs of 1–5 MB, five to three | 120 requests/s |
+| k6 `constant-arrival-rate` against the edge: the npm package document of every package the fixture locks, in the form `npm install` asks for, and npm tarballs of 1–5 MB, five to three | 120 requests/s |
 | k6 against the edge: `GET /api/v1/system/ping` and `GET /api/v1/system/replicas` | 100 requests/s |
 | k6 against the edge: an upload of a file to `generic-local`, its download and a comparison of its SHA-256 | 4 iterations/s |
 | A management API call with a token (`GET /api/v1/auth/whoami`) | one every 250 ms |
 | A change written and a job enqueued by the test's driver; before the first eviction of the main `worker`, four probe jobs that run for 400 s | one each per second |
 
-The load starts 2 minutes before the first eviction and runs until 3 minutes after the last replacement is ready. Pass conditions:
+`npm ci` of a lockfile asks for tarballs only ([formats/npm.md](formats/npm.md) R-NPM-046), so the documents are k6's. The load
+starts 3.5 minutes before the first eviction: its first 90 s fill the replicas' caches with k6's documents, and the warm-up is the
+2 minutes after them. It runs until 3 minutes after the last replacement is ready. Pass conditions:
 
 - every `npm` command exits `0` with npm's default retries;
 - k6 records no response other than `2xx` or `304` for the npm requests and `200` for the ping and replica requests, and no
   connection error;
 - the p99 latency of k6's npm requests from the first eviction until 2 minutes after the last replacement is ready is at most
-  twice the p99 of the warm-up;
+  twice the p99 of the warm-up, and so is the p99 of k6's document requests on their own against the warm-up's documents (the
+  tarballs of 1–5 MB set the p99 of the mix);
 - every acknowledged publish installs afterwards;
 - no transfer and no management call fails, and no download returns other bytes than were uploaded;
 - the pods of the other roles keep their names and restart counts while a role is drained;
@@ -7037,7 +7040,7 @@ npm's share of the table (documents and tarballs, 120 requests/s), without the N
 |---|---|---|---|
 | (a) The full load of R-HA-059 | The npm and `dotnet` client loops, an npm and a NuGet publish every 10 s, k6 with its NuGet share, the long-transfer probes of 1 GiB, a loop of a browser journey, and a full advisory sync started before the first eviction of the pool `vuln` | The criterion as written | No browser journey loop exists as a test; the `dotnet` loops and the NuGet share of k6 run in no drain test yet (the drain part of E3.6 is phase 7's since 2026-11-01, [nuget_closing_test.go](../../test/e2e/nuget_closing_test.go)); a sync per pod repeats the `SIGTERM` and checkpoint path that the node drain of `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` covers |
 | (b) Narrow the criterion to the load the test ran | Ping, the transfer loop, management calls, the driver's jobs | Nothing to build; green | No package document is requested, so the per-replica state the drain per role takes away is never measured; no client command runs |
-| (c) Add the npm load of `TestNPMHA` and narrow the rest (chosen) | Eight `npm ci` loops, a publish every 10 s and k6's npm documents and tarballs at 120 requests/s beside the test's own load, with R-HA-059's pass conditions for them: every `npm` command exits `0` with npm's default retries; k6 only `2xx` and `304` and no connection error; the p99 of k6's requests from the first eviction until 2 minutes after the last is at most twice the warm-up's; every acknowledged publish installs afterwards. Not part of it: the `dotnet` loops and the NuGet rows, the long-transfer probes, the browser journey loop and the advisory sync per pod | Document load across the drain of every `packages` replica; the load and its checks are built and were green in `TestNPMHA`'s drain variant A (nightly run 41902592855) | NuGet registrations are not requested until the drain under NuGet load exists; the set runs on the npm tests' scatter profile, whose edge keeps no connection to a pod alive |
+| (c) Add the npm load of `TestNPMHA` and narrow the rest (chosen) | Eight `npm ci` loops, a publish every 10 s and k6's npm documents and tarballs at 120 requests/s beside the test's own load, with R-HA-059's pass conditions for them: every `npm` command exits `0` with npm's default retries; k6 only `2xx` and `304` and no connection error; the p99 of k6's requests from the first eviction until 2 minutes after the last is at most twice the warm-up's; every acknowledged publish installs afterwards. How it is applied is below the rationale. Not part of it: the `dotnet` loops and the NuGet rows, the long-transfer probes, the browser journey loop and the advisory sync per pod | Document load across the drain of every `packages` replica; the load and its checks are built and were green in `TestNPMHA`'s drain variant A (nightly run 41902592855) | NuGet registrations are not requested until the drain under NuGet load exists; the set runs on the npm tests' scatter profile, whose edge keeps no connection to a pod alive |
 
 **Choice:** (c).
 
@@ -7051,12 +7054,31 @@ browser journey loop has no test; the advisory sync's resume from its checkpoint
 `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun`, the same `SIGTERM` and checkpoint path. The long-transfer probes are no part of
 `TestNPMHA`'s load and stay with the acceptance test's full load.
 
+How (c) is applied (the development agent, 2026-11-05, after the first local run):
+
+- Which documents a replaced replica has to render again: the npm document of a local repository goes through the rendition cache
+  in `serveRendering` of [handlers_document.go](../../internal/formats/npm/handlers_document.go), the documents of a remote and of a
+  virtual repository, full, abbreviated and per version, in `serveFull` of
+  [handlers_remote.go](../../internal/formats/npm/handlers_remote.go); NuGet's registration index, pages and leaves and its
+  flat-container version lists go through it for local, remote and virtual repositories. A document of `npm-all` on a replaced
+  replica also misses the merged documents of the virtual repository (`proxy.merged_metadata_cache_bytes`) and the remote's stored
+  documents (`proxy.metadata_cache_bytes`), both per replica.
+- `npm ci` asks for tarballs only (R-NPM-046), so the documents of the load are k6's. With `TestNPMHA`'s set of 22 documents a
+  replaced replica rendered 22 documents again, and the tarballs set the p99 of the mix: in the first local run the documents' p99
+  was 402 ms in the warm-up and 400 ms in the drain window, the tarballs' 1,063 and 1,108 ms, the mix's 834 and 838 ms. The drain
+  per role therefore asks for the document of every package the fixture locks (`npmLoadOpts.allDocuments`; `TestNPMHA` keeps its
+  set), holds the documents' p99 to twice the warm-up's on its own, and checks that every replacement `packages` replica answered
+  at least half of them with `200`, which shows that the cold caches were exercised.
+- k6 cycles through its 406 documents in order at 75 documents/s, so the warm-up starts after 90 s of load, 16 cycles in which a
+  replica has missed a given document with a chance of about (2/3)^16 (0.15 %): a warm-up that still rendered every document once
+  would raise the bound.
+
 What follows: the set `drain-roles` starts the npm client pods and the counting npm test upstream, and the test switches to the scatter
-profile of the npm tests (three `api` replicas instead of two); the load runs 2 minutes before the first eviction and 3 minutes after
-the last replacement is ready, as `TestNPMHA`'s variant A does around its drain. The edge with kept-alive connections to the pods stays
-drained by `TestE14Drain` in the set `push`. The set passed on kind locally on 2026-11-05
-([e2e.md](../developer/e2e.md#the-cut-into-roles-phase-6a) has the numbers). Revisited when the drain under NuGet load exists: its
-`dotnet` loops and k6's NuGet share then join the drain per role.
+profile of the npm tests (three `api` replicas instead of two); the load runs 3.5 minutes before the first eviction (90 s to fill the
+caches, 2 minutes of warm-up) and 3 minutes after the last replacement is ready. The edge with kept-alive connections to the pods stays
+drained by `TestE14Drain` in the set `push`. The numbers of the local runs are in
+[e2e.md](../developer/e2e.md#the-cut-into-roles-phase-6a). Revisited when the drain under NuGet load exists: its `dotnet` loops and
+k6's NuGet share then join the drain per role.
 
 **Applied in the spec:** R-HA-059 ("A drain per role"); [e14_drain_roles_test.go](../../test/e2e/e14_drain_roles_test.go),
 [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) (the set `drain-roles`), [docs/developer/e2e.md](../developer/e2e.md).
