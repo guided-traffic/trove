@@ -215,6 +215,17 @@ Found on 2026-11-05 while building phase 6b:
   upstream. A mirror of a private upstream cannot be set up in the UI. Done when the wizard and the edit form carry the remote
   settings of R-UI-021 and a browser journey creates a remote of a non-default upstream with "Test connection".
 
+### Storage
+
+- **F-55 · No process folds `storage_usage_deltas`, so the table grows without bound and `repository_usage` stays at zero**
+  (confirmed, in the code). The statement-level triggers of migration 00003 append a row to `storage_usage_deltas` for every
+  write of `items` and `blobs`; the fold loop of R-STOR-003 ("every `worker` replica runs the fold loop every
+  `storage.usage.fold_interval`") is not built: `storage.usage.fold_interval` is read by no code, and no statement deletes from
+  the table or writes `repository_usage` or `storage_usage_totals`. The mirror's byte bound reads `repository_usage.logical_bytes`
+  (R-REPO-052) and therefore holds only within one pass attempt ([H-527](../security/mirror.md)); the storage summary and the quotas
+  of R-STOR-028 and R-STOR-029 would read zeros. Done when the fold loop runs on `worker` as R-STOR-003 specifies, an integration
+  test shows the counters following uploads and deletes with concurrent folds, and the mirror's bound holds across passes.
+
 Found on 2026-11-04 while cutting trove into task areas (phase 6a):
 
 ### Tests and tools
