@@ -40,6 +40,12 @@ func (l *lazyMirrorHost) resolve() (*formathost.MirrorHost, error) {
 	return l.host, l.err
 }
 
+// Ready implements [mirror.Host]: the error of building the host, if it failed.
+func (l *lazyMirrorHost) Ready(context.Context) error {
+	_, err := l.resolve()
+	return err
+}
+
 // Lister implements [mirror.Host].
 func (l *lazyMirrorHost) Lister(format string) (discover.Lister, bool) {
 	h, err := l.resolve()

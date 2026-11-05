@@ -61,6 +61,9 @@ var (
 )
 
 // Lister implements [mirror.Host]: the discovery of the format's remote adapter, found through the capabilities Register read.
+// Ready implements [mirror.Host]: a built host serves passes.
+func (m *MirrorHost) Ready(context.Context) error { return nil }
+
 func (m *MirrorHost) Lister(format string) (discover.Lister, bool) {
 	f, ok := m.h.o.Formats(format)
 	if !ok || f.Remote() == nil {

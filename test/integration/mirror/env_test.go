@@ -93,6 +93,8 @@ func newWorld(n int) *world {
 
 func pathOf(name string) string { return name + "/-/1.0.0.tgz" }
 
+func (w *world) Ready(context.Context) error { return nil }
+
 func (w *world) Lister(string) (discover.Lister, bool) { return w, true }
 
 func (w *world) Admits(context.Context, repository.Repository) (func(string) bool, error) {

@@ -24,8 +24,16 @@ import (
 //     failure nor a rate limit;
 //   - a *WaitError: the request was not sent (the circuit is open, the spool refused admission); the engine waits After
 //     and repeats it without counting a failure;
+//   - a *RefusedError: the artifact cannot be stored by a background fill until something outside the pass changes (the
+//     upstream does not have it, the vulnerability scanning blocks the version, the format's gate or the populate check
+//     refuses it); the engine counts it and goes on with the next item, and the package is not a failure;
+//   - an error wrapping ErrShuttingDown: the process is shutting down and cancelled the request; the pass stops as if its
+//     own context had ended and writes nothing (R-REPO-053, drain);
 //   - any other error: a failure of the item (R-REPO-053).
 type Host interface {
+	// Ready reports whether the host can serve passes in this process. An error is the cause the dispatch and the pass
+	// report (logged, the job's error) instead of skipping the repositories; a later call tries again.
+	Ready(ctx context.Context) error
 	// Lister returns the lister of a format's remote adapter, false when the format does not discover (the catalog fact
 	// Mirror, R-REPO-050).
 	Lister(format string) (discover.Lister, bool)
@@ -81,3 +89,28 @@ const (
 	WaitCircuitOpen = "circuit_open"
 	WaitSpoolBusy   = "spool_busy"
 )
+
+// RefusedError says that a background fill cannot store the artifact, and will not until something outside the pass
+// changes: the engine counts it in trove_mirror_items_total{result="refused"} and goes on with the next item of the plan.
+type RefusedError struct {
+	// Reason is one of the Refused constants.
+	Reason string
+}
+
+func (e *RefusedError) Error() string { return "mirror: background fill refused: " + e.Reason }
+
+// The reasons of a RefusedError.
+const (
+	// RefusedNotFound: the upstream does not have the artifact (404, 410, a negative entry, gone).
+	RefusedNotFound = "not_found"
+	// RefusedBlocked: the vulnerability scanning blocks the version (R-VULN-015).
+	RefusedBlocked = "blocked"
+	// RefusedGate: the format's artifact gate refuses it (a removed version, an integrity mismatch it announces).
+	RefusedGate = "gate_refused"
+	// RefusedPopulate: the populate check refuses the fill (R-AUTHZ-008).
+	RefusedPopulate = "populate_denied"
+)
+
+// ErrShuttingDown is wrapped by the error of a background request that the process's shutdown cancelled: the pass stops
+// and writes nothing, so that the job is released with its attempt unchanged (R-REPO-053, R-ARCH-024).
+var ErrShuttingDown = errors.New("mirror: the process is shutting down")

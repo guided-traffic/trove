@@ -597,6 +597,8 @@ type fakeHost struct {
 	ceilings []int
 }
 
+func (h *fakeHost) Ready(context.Context) error { return nil }
+
 func (h *fakeHost) Lister(string) (discover.Lister, bool) {
 	if h.noLists {
 		return nil, false
