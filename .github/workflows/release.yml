@@ -11,8 +11,9 @@
 # hand (make e2e SET=npm-ha-crash).
 # A red long leg is recorded as an open finding and does not hold the release.
 #
-# Every job runs on GitHub-hosted runners (runs-on: ubuntu-24.04, the OS of the organisation's runner pods) while the
-# organisation's self-hosted runners are down (owner, 2026-11-04); switching back sets runs-on: self-hosted again.
+# Runners (owner, 2026-11-05): the kind e2e legs run on the organisation's large runners (runs-on: large), every other
+# job on its standard runners (runs-on: self-hosted); both are one ephemeral pod per job, sized in
+# docs/developer/releasing.md#ci.
 name: Test and Release
 
 on:
@@ -51,7 +52,7 @@ jobs:
   # ones first, so that the check looks at those.
   versions:
     name: versions (E0.2)
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -121,7 +122,7 @@ jobs:
 
   lint:
     name: Code Linting
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 25
     steps:
       - name: Checkout
@@ -158,7 +159,7 @@ jobs:
 
   gosec:
     name: GoSec Security Scan
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -181,7 +182,7 @@ jobs:
 
   govulncheck:
     name: Vulnerability Check
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -204,7 +205,7 @@ jobs:
 
   cyclomatic-complexity:
     name: Cyclomatic Complexity
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -241,7 +242,7 @@ jobs:
   # The generated code (sqlc, oapi-codegen, the config schema) regenerated and compared with the tree.
   generate:
     name: generate (E0.1)
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -271,7 +272,7 @@ jobs:
   # .NET SDK image (tools/nugetvectors, R-NUGET-003) and compared with the committed file.
   nuget-vectors:
     name: nuget vectors (R-NUGET-003)
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -289,7 +290,7 @@ jobs:
 
   build-no-node:
     name: build without Node.js (E0.1)
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -351,7 +352,7 @@ jobs:
 
   unit:
     name: unit tests
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -392,7 +393,7 @@ jobs:
 
   web:
     name: web (Angular)
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -440,7 +441,7 @@ jobs:
 
   malware-scan:
     name: Malware Scan (source code)
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -477,7 +478,7 @@ jobs:
 
   chart:
     name: chart (E0.7)
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -533,7 +534,7 @@ jobs:
   # non-root UID of R-HA-033.
   image:
     name: image (host architecture, no push)
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 45
     steps:
       - name: Checkout
@@ -580,7 +581,7 @@ jobs:
   # fails the job.
   container-scan:
     name: Container Scan (Trivy, built image)
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 45
     steps:
       - name: Checkout
@@ -650,7 +651,7 @@ jobs:
     # Valkey 9.1 only: trove is in development and guarantees no older line (owner, 2026-10-29). The packages run in two
     # shards with a stack each (make test-integration SHARD=a|b), about half the time each.
     name: integration (Valkey 9.1, shard ${{ matrix.shard }})
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -726,7 +727,7 @@ jobs:
   # (INV-20). This is the leg that ran nightly; it runs on every change now.
   s3-conformance:
     name: S3 conformance (MinIO at the pinned commit)
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -780,7 +781,7 @@ jobs:
   # and edge port, so legs can share a Docker host.
   e2e:
     name: e2e on kind (${{ matrix.set }})
-    runs-on: ubuntu-24.04
+    runs-on: large
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -802,13 +803,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-
-      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
-      # nodes, the images and the build caches need; no job uses them, and a self-hosted runner pod has none of them.
-      - name: Free disk space (GitHub-hosted runner)
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
-          df -h /
 
       - name: Load the tool pins
         uses: ./.github/actions/load-pins
@@ -984,7 +978,7 @@ jobs:
   # The ports differ from the e2e job's (8080, 8086) so that the jobs can share a runner host.
   e2e-npm:
     name: e2e-npm on kind (${{ matrix.set }})
-    runs-on: ubuntu-24.04
+    runs-on: large
     timeout-minutes: ${{ startsWith(matrix.set, 'npm-ha') && 120 || 90 }}
     strategy:
       fail-fast: false
@@ -999,13 +993,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-
-      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
-      # nodes, the images and the build caches need; no job uses them, and a self-hosted runner pod has none of them.
-      - name: Free disk space (GitHub-hosted runner)
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
-          df -h /
 
       - name: Load the tool pins
         uses: ./.github/actions/load-pins
@@ -1131,7 +1118,7 @@ jobs:
   # The ports 8088 to 8090 are the first free ones of both workflows (Q-ARCH-277); the legs differ from the others in cluster name and port.
   e2e-nuget:
     name: e2e-nuget on kind (${{ matrix.set }})
-    runs-on: ubuntu-24.04
+    runs-on: large
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -1148,13 +1135,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-
-      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
-      # nodes, the images and the build caches need; no job uses them, and a self-hosted runner pod has none of them.
-      - name: Free disk space (GitHub-hosted runner)
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
-          df -h /
 
       - name: Load the tool pins
         uses: ./.github/actions/load-pins
@@ -1279,7 +1259,7 @@ jobs:
   # set ci-ha of job e2e-ci in performance.yml. Edge port 8091 is the first free one of both workflows.
   e2e-ci:
     name: e2e-ci on kind (${{ matrix.set }})
-    runs-on: ubuntu-24.04
+    runs-on: large
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -1300,13 +1280,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-
-      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
-      # nodes, the images and the build caches need; no job uses them, and a self-hosted runner pod has none of them.
-      - name: Free disk space (GitHub-hosted runner)
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
-          df -h /
 
       - name: Load the tool pins
         uses: ./.github/actions/load-pins
@@ -1437,7 +1410,7 @@ jobs:
   # (owner, 2026-11-01). Edge port 8093 is the first free one of both workflows.
   e2e-bastion:
     name: e2e-bastion on kind (${{ matrix.set }})
-    runs-on: ubuntu-24.04
+    runs-on: large
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -1462,13 +1435,6 @@ jobs:
 
       # Whether the change touches the Bastion (R-BAS-049): for any other change the job is green after this step, so that
       # Semantic Release, which needs the job, is not held back by a change that cannot affect the Bastion.
-      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
-      # nodes, the images and the build caches need; no job uses them, and a self-hosted runner pod has none of them.
-      - name: Free disk space (GitHub-hosted runner)
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
-          df -h /
-
       - name: Does the change touch the Bastion?
         id: scope
         env:
@@ -1660,7 +1626,7 @@ jobs:
   # (owner, 2026-11-01). Edge port 8093 is the first free one of both workflows.
   e2e-vuln:
     name: e2e-vuln on kind (${{ matrix.set }})
-    runs-on: ubuntu-24.04
+    runs-on: large
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -1685,13 +1651,6 @@ jobs:
 
       # Whether the change touches the scanning (R-VULN-029): for any other change the job is green after this step, so that
       # Semantic Release, which needs the job, is not held back by a change that cannot affect the scanning.
-      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
-      # nodes, the images and the build caches need; no job uses them, and a self-hosted runner pod has none of them.
-      - name: Free disk space (GitHub-hosted runner)
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
-          df -h /
-
       - name: Does the change touch the vulnerability scanning?
         id: scope
         env:
@@ -1880,7 +1839,7 @@ jobs:
   fuzz-npm:
     name: fuzz npm ${{ matrix.target }} (30 min)
     if: github.event_name == 'workflow_dispatch' && inputs.closing
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 50
     strategy:
       fail-fast: false
@@ -1920,7 +1879,7 @@ jobs:
   fuzz-nuget:
     name: fuzz nuget ${{ matrix.fuzz }} (30 min)
     if: github.event_name == 'workflow_dispatch' && inputs.closing
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 50
     strategy:
       fail-fast: false
@@ -1968,7 +1927,7 @@ jobs:
 
   workflows:
     name: workflow files (actionlint)
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -2003,7 +1962,7 @@ jobs:
   # `make compat-check` (docs/developer/releasing.md#compatibility).
   compat:
     name: compatibility with the latest release (R-ARCH-025, R-ARCH-026)
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -2032,7 +1991,7 @@ jobs:
   # The requirement rules and the committed pages: the generator's -check, and every relative link and anchor.
   coverage:
     name: coverage generator (links and rules)
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -2057,7 +2016,7 @@ jobs:
   coverage-evidence:
     name: coverage evidence (implemented.txt)
     needs: [unit, integration, chart]
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -2096,7 +2055,7 @@ jobs:
   coverage-report:
     name: Combined Coverage Report
     needs: [unit, integration]
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -2150,7 +2109,7 @@ jobs:
   # that breaks the release fails the pull request, not main.
   release-tooling:
     name: Release Tooling
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -2189,7 +2148,7 @@ jobs:
     name: Semantic Release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [versions, lint, gosec, govulncheck, cyclomatic-complexity, generate, nuget-vectors, build-no-node, unit, web, malware-scan, chart, image, container-scan, integration, s3-conformance, e2e, e2e-npm, e2e-nuget, e2e-ci, e2e-bastion, e2e-vuln, workflows, compat, coverage, coverage-evidence, coverage-report, release-tooling]
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 30
     steps:
       # The GitHub App of the organisation, scoped to this repository; the token expires after an hour

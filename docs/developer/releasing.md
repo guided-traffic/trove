@@ -11,11 +11,23 @@ built: [`Containerfile`](../../Containerfile).
 
 [`release.yml`](../../.github/workflows/release.yml) ("Test and Release") runs on every push to `main`,
 every pull request to `main` and on demand. A newer push cancels the running run of its ref. Every
-check is a job of its own, with its own make target, so it runs the same locally. Every job runs on the
-organisation's self-hosted runners (`runs-on: self-hosted`), which are ephemeral pods (Ubuntu 24.04, Docker) without `make` or a C
-compiler. While those runners are down, every job of the four workflows runs on GitHub-hosted runners instead
-(`runs-on: ubuntu-24.04`, owner, 2026-11-04), and every kind e2e job first deletes the runner's preinstalled SDKs (Android, .NET,
-Haskell, CodeQL) for disk space; switching back sets `runs-on: self-hosted` again and drops that step. A job therefore installs what it calls: `make` and the C compiler (`build-essential`), `file`
+check is a job of its own, with its own make target, so it runs the same locally. Every job runs on one of the
+organisation's two self-hosted runner classes (owner, 2026-11-05). Both start one ephemeral pod per job and discard it
+afterwards: the runner (actions-runner 2.338.2, Ubuntu 24.04) and a privileged Docker-in-Docker sidecar (docker 29.9.2-dind)
+share the pod's budget, without `make` or a C compiler.
+
+| Class | Label | Pods | CPU request / limit | RAM request / limit (runner and dind together) | Disk: `_work` / Docker | Jobs |
+|---|---|---|---|---|---|---|
+| wds18-small | `runs-on: self-hosted` | 0–24 | 1 / 6 | 4 GiB / 10 GiB | 10 GiB / 15 GiB | every job of Test and Release except the kind legs, Release Docker & Helm, Renovate |
+| wds18-large | `runs-on: large` | 0–6 | 2 / 16 | 8 GiB / 20 GiB | 20 GiB / 30 GiB | the kind legs of Test and Release (`e2e`, `e2e-npm`, `e2e-nuget`, `e2e-ci`, `e2e-bastion`, `e2e-vuln`) and every job of HA and Performance |
+
+What the assignment rests on, measured on 2026-11-05 on a developer machine (linux/arm64 containers with 6 CPUs, a cold
+start, the cgroup's `memory.peak`, page cache included): `lint` 4.7 GiB, `unit` 4.6 GiB, `generate` 3.9 GiB, `web` 3.2 GiB,
+`chart` 2.3 GiB, `govulncheck` 2.3 GiB, `build-no-node` 2.1 GiB, `malware-scan` 1.3 GiB; the set `drain-roles` under the npm load
+held 9.9 GiB in Docker (kind nodes 7.8 GiB, k6 2.2 GiB) and about 13 GiB of images in the kind nodes. The RAM is
+overbooked: the scheduler places a pod by its request, and a job above it (the kind legs, `lint`, `unit`) can be evicted by
+the kubelet when several jobs on one node peak at once; such a red job is the node's capacity, not a test. The integration
+shards, `compat`, the image builds and the performance jobs were not measured. A job therefore installs what it calls: `make` and the C compiler (`build-essential`), `file`
 and `jq` where a step uses them, the Docker Compose plugin for the integration stack, Go from `go.mod`,
 Node.js from `web/.nvmrc`, and the pinned helm, kubectl, kind and Docker Buildx; the chart job also fetches promtool
 at its pin (`make promtool`, below).
@@ -182,7 +194,7 @@ then `make dev-down`; the latency tests need `make integration-up && make test-p
 A red long leg does not hold the release: it is recorded as an open finding instead (owner, 2026-11-01).
 
 [`performance.yml`](../../.github/workflows/performance.yml) ("HA and Performance (nightly)") runs every night at 02:17 UTC and on demand
-(`workflow_dispatch`), on the runners of Test and Release ([CI](#ci)). It brings up the integration stack (`make integration-up`), runs
+(`workflow_dispatch`), every job on the large runners (`runs-on: large`, [CI](#ci)). It brings up the integration stack (`make integration-up`), runs
 `make test-performance` and stops the stack. That target runs `TestChangePropagation`, `TestJobPickup`, `TestR_NPM_010_ThousandVersions` and
 `TestIdempotentCreate` with `TROVE_PERF_GATE=1`, which enforces the p99 bounds of P-13 (100 ms) and P-14 (1 s) with Valkey available, R-NPM-010's
 200 ms for a miss, 10 ms for a cached hit and 50 ms for a `304` of a document of 1,000 versions ([Q-ARCH-293](../spec/architecture.md#q-arch-293--where-a-wall-clock-target-of-a-functional-test-is-enforced)) and R-API-014's 1.5 s for a concurrent duplicate; it then runs `TestR_BAS_026_AFeedPageOfAThousandEntriesIsAppliedAgainstTwoHundredThousandAnswersWithinTheBound` of `internal/bastion/engine` with the gate (the 5 s of a burst page, R-BAS-026; per change the page is bounded by 100 matching passes over the same answers, [Q-BAS-140](../spec/bastion.md#q-bas-140--where-the-5-s-of-a-burst-page-is-enforced)) and `TestR_EP_013_CeilingPerformance` of `internal/authz` the same way
@@ -225,7 +237,7 @@ a finding and holds nothing ([e2e.md](e2e.md#the-vulnerability-tests)). By hand:
 Berlin time, with an installation token of the organisation's GitHub App (secrets `APP_CLIENT_ID` and
 `APP_PRIVATE_KEY`). The configuration is [renovate.json](../../renovate.json).
 
-Every Renovate branch runs the whole Test and Release pipeline on the organisation's nine shared runners (GitHub-hosted runners while those are down, [CI](#ci)), so the
+Every Renovate branch runs the whole Test and Release pipeline on the organisation's shared runners ([CI](#ci)), so the
 number of branches is bounded (owner, 2026-10-31):
 
 - Branches are created and updated only before 6:00 on Mondays (`schedule`, `updateNotScheduled: false`); the daily
@@ -310,7 +322,7 @@ job checks out the tag.
 
 | Job | Runner | What it does |
 |---|---|---|
-| Build Docker Image | as Test and Release ([CI](#ci)) | [docker/build-push-action](https://github.com/docker/build-push-action) builds [Containerfile](../../Containerfile) for `linux/amd64,linux/arm64` and pushes `guidedtraffic/trove` to Docker Hub with the tags of [docker/metadata-action](https://github.com/docker/metadata-action); provenance and SBOM attestations; the build arguments are the pins (`NODE_VERSION` from [web/.nvmrc](../../web/.nvmrc), `GO_VERSION` from [go.mod](../../go.mod), `RUNTIME_BASE_IMAGE` from [tools/versions.env](../../tools/versions.env)) and the version, the commit and the commit's date for the binary's version line |
+| Build Docker Image | `self-hosted` ([CI](#ci)) | [docker/build-push-action](https://github.com/docker/build-push-action) builds [Containerfile](../../Containerfile) for `linux/amd64,linux/arm64` and pushes `guidedtraffic/trove` to Docker Hub with the tags of [docker/metadata-action](https://github.com/docker/metadata-action); provenance and SBOM attestations; the build arguments are the pins (`NODE_VERSION` from [web/.nvmrc](../../web/.nvmrc), `GO_VERSION` from [go.mod](../../go.mod), `RUNTIME_BASE_IMAGE` from [tools/versions.env](../../tools/versions.env)) and the version, the commit and the commit's date for the binary's version line |
 | Scan and attach the SBOM | same | the SPDX SBOM by anchore/sbom-action with `SYFT_VERSION`, uploaded to the release; a Docker Scout CVE report |
 | Release Helm Chart to GitHub Pages | same | `deploy/helm/trove` and `deploy/helm/trove-bastion` with `version` and `appVersion` set to the release (and the image tag in the `values.yaml` of `trove`), packaged together with one `helm package`, added to the chart repository's `index.yaml` on the `gh-pages` branch in one push, and `trove-<version>.tgz`, `trove-bastion-<version>.tgz` and `index.yaml` attached to the release |
 

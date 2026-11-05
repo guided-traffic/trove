@@ -5,6 +5,11 @@
 # know client-id, which the action's own action.yml (v3.3.0) takes; app-id is deprecated there. The
 # App token steps of the workflows pass client-id and private-key, as the organisation's apps do.
 # Only these two messages are ignored, and only in the two files that mint the App token.
+#
+# large is the label of the organisation's runner class for kind, e2e and load tests (docs/developer/releasing.md#ci).
+self-hosted-runner:
+  labels:
+    - large
 paths:
   .github/workflows/release.yml:
     ignore:
