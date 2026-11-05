@@ -21,8 +21,8 @@ import (
 // `names` method; mirror_feed.go reads the replication service, mirror_plan.go plans a package.
 
 const (
-	// publicRegistryHost is the host of the public registry, the one upstream whose replication service is known.
-	publicRegistryHost = "registry.npmjs.org"
+	// publicRegistryUpstream is the public registry, the one upstream whose replication service is known.
+	publicRegistryUpstream = "https://registry.npmjs.org/"
 	// replicationHost is the replication service of the public registry (Q-NPM-72), a discovery host of the format:
 	// requests to it carry no credential.
 	replicationHost = "replicate.npmjs.com"
@@ -32,15 +32,10 @@ const (
 
 var _ discover.Lister = remoteAdapter{}
 
-// isPublicRegistry reports whether base is https://registry.npmjs.org/, the catalog's default upstream.
+// isPublicRegistry reports whether base is https://registry.npmjs.org/, the catalog's default upstream: the predicate
+// the bound rule of the repository model uses as well (discover.SameUpstream, Q-REPO-194, Q-NPM-75).
 func isPublicRegistry(base *url.URL) bool {
-	if base == nil || !strings.EqualFold(base.Scheme, "https") || !strings.EqualFold(base.Hostname(), publicRegistryHost) {
-		return false
-	}
-	if port := base.Port(); port != "" && port != "443" {
-		return false
-	}
-	return base.User == nil && strings.Trim(base.Path, "/") == ""
+	return discover.SameUpstream(base, publicRegistryUpstream)
 }
 
 // MirrorHosts is `replicate.npmjs.com` for the public registry and nothing for any other upstream (Q-NPM-72).

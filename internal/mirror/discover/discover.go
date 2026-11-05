@@ -233,3 +233,28 @@ func Bounding(pattern string) bool {
 	prefix, _ := LiteralPrefix(pattern)
 	return strings.Trim(prefix, "@/") != ""
 }
+
+// SameUpstream reports whether base is the format's well-known upstream, the catalog's default upstream URL known
+// (R-REPO-052, Q-REPO-194): the same scheme, host, effective port and path, and no user information, query or fragment.
+// The bound rule of the repository model and a format's lister decide "is this the well-known upstream" with this one
+// predicate, so that a URL that differs only in a part the format's requests ignore is not a way around the bound.
+func SameUpstream(base *url.URL, known string) bool {
+	k, err := url.Parse(known)
+	if err != nil || base == nil {
+		return false
+	}
+	if base.User != nil || base.RawQuery != "" || base.ForceQuery || base.Fragment != "" {
+		return false
+	}
+	port := func(u *url.URL) string {
+		if p := u.Port(); p != "" {
+			return p
+		}
+		if strings.EqualFold(u.Scheme, "https") {
+			return "443"
+		}
+		return "80"
+	}
+	return strings.EqualFold(base.Scheme, k.Scheme) && strings.EqualFold(base.Hostname(), k.Hostname()) &&
+		port(base) == port(k) && strings.Trim(base.Path, "/") == strings.Trim(k.Path, "/")
+}

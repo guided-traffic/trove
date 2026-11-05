@@ -1,6 +1,10 @@
 package repository
 
 import (
+	"net/url"
+	"reflect"
+	"slices"
+
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/mirror/discover"
 )
@@ -51,7 +55,16 @@ func (r *remoteResolver) mirror(s *RemoteSettings, in remoteInput) {
 		r.notApplicable("/remote/mode", "the "+string(r.info.ID)+" format cannot discover the packages of its upstream, so a remote repository of it cannot be a mirror")
 		return
 	}
+	r.checkMirrorURL(s)
 	r.checkMirrorBound(s)
+}
+
+// checkMirrorURL refuses a query in the url of a mirror (Q-REPO-194): the formats' requests drop it, so a url that
+// differs from the well-known upstream by a query would be that upstream without the bound of R-REPO-052.
+func (r *remoteResolver) checkMirrorURL(s *RemoteSettings) {
+	if u, err := url.Parse(s.URL); err == nil && (u.RawQuery != "" || u.ForceQuery) {
+		r.v.add("/remote/url", codeInvalidValue, "a mirror's url carries no query: the format's requests do not send it")
+	}
 }
 
 func (r *remoteResolver) mirrorRanges(m MirrorSettings) {
@@ -74,7 +87,7 @@ func (r *remoteResolver) checkMirrorBound(s *RemoteSettings) {
 		return
 	}
 	known, _ := normalizeUpstreamURL(r.info.DefaultUpstreamURL)
-	if known != "" && s.URL == known {
+	if u, err := url.Parse(s.URL); known != "" && err == nil && discover.SameUpstream(u, known) {
 		r.v.add("/remote/mode", errs.CodeMirrorUnbounded,
 			"a mirror of "+known+" needs a bound: include patterns that each have a literal prefix (such as @types/* or Microsoft.Extensions.*), or remote.mirror.maxBytes")
 		return
@@ -112,6 +125,35 @@ func checkDelegatedMirror(v *validation, stored, next *RemoteSettings) {
 		v.add("/remote/mirror", errs.CodeMirrorRestricted,
 			"a project administrator keeps the mirror settings an administrator of trove chose; it may change paused only")
 	}
+}
+
+// checkDelegatedMirrorScope applies Q-REPO-193 to a project administrator's update of a repository that is a mirror
+// and stays one: what the mirror covers (includePatterns, excludePatterns) and where it reads from (remote.url,
+// remote.extraHosts) are the administrator's. A write that turns the mode back to pullThrough may change them.
+func checkDelegatedMirrorScope(v *validation, stored, next *RemoteSettings, cur, nd *Document) {
+	if stored == nil || stored.Mode != ModeMirror || next.Mode != ModeMirror {
+		return
+	}
+	const why = "a project administrator keeps what an administrator of trove chose for a mirror; turn the mode back to pullThrough to change it"
+	if !sameStrings(cur.IncludePatterns, nd.IncludePatterns) {
+		v.add("/includePatterns", errs.CodeMirrorRestricted, why)
+	}
+	if !sameStrings(cur.ExcludePatterns, nd.ExcludePatterns) {
+		v.add("/excludePatterns", errs.CodeMirrorRestricted, why)
+	}
+	if stored.URL != next.URL {
+		v.add("/remote/url", errs.CodeMirrorRestricted, why)
+	}
+	if !reflect.DeepEqual(stored.ExtraHosts, next.ExtraHosts) {
+		v.add("/remote/extraHosts", errs.CodeMirrorRestricted, why)
+	}
+}
+
+func sameStrings(a, b []string) bool {
+	a, b = slices.Clone(a), slices.Clone(b)
+	slices.Sort(a)
+	slices.Sort(b)
+	return slices.Equal(a, b)
 }
 
 func sameMirrorButPause(a, b MirrorSettings) bool {

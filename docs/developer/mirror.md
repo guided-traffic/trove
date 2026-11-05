@@ -58,6 +58,12 @@ planned versions) in [npm.md](../spec/formats/npm.md).
 | [mirror_plan.go](../../internal/formats/npm/mirror_plan.go) | `MirrorPlan`: the full document through `Upstream.Document`, versions newest first, tarball paths, `Prerelease`, `Pinned` for `latest`, the size from `_attachments` only |
 | [mirror_test.go](../../internal/formats/npm/mirror_test.go) | the fake upstream and the tests: the exact query strings, paging, cursors, ranges, deletions, `names`, plan order and pins, a rate-limit error returned unchanged, admitted names only |
 
+Two rules of the validation changed after the audit: a project administrator's update of a mirror that stays a mirror keeps the include and
+exclude lists, `remote.url` and `remote.extraHosts` as stored (Q-REPO-193, `checkDelegatedMirrorScope`), and "is this the well-known upstream" is
+`discover.SameUpstream` for the bound rule and for npm's lister (Q-REPO-194, Q-NPM-75), with a query in a mirror's url refused (Q-REPO-195). A
+format's lister that must know its well-known upstream calls `discover.SameUpstream` with the catalog's default upstream and does not compare
+strings.
+
 What a colleague needs to know:
 
 - **The cursor of a full pass is `{"seq", "after", "range"}`** and the last page's is `{"seq"}`: `Page.Cursor` of the page with

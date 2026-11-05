@@ -224,14 +224,18 @@ to face the internet, is [H-522](bastion.md#h-522--the-chart-restricts-no-egress
 Stage: the requests of a mirror's pass to a host the format's lister names ([Client.AllowedMirror](../../internal/proxy/upstream/client.go);
 [Requests of a mirror's discovery](#requests-of-a-mirrors-discovery)).
 
-Live for every mirror of an upstream whose lister names such a host (npm's replication host of the public registry, once the lister
-exists). The request carries no credential, no custom header and no client certificate, but it carries the path and query, the
+Live for every mirror of an upstream whose lister names such a host: npm's replication host `replicate.npmjs.com`, for a mirror whose
+`remote.url` is the public registry (the lister is built). The request carries no credential, no custom header and no client certificate, but it carries the path and query, the
 `Accept` header, trove's `User-Agent` and the source address of the pod. Subject: the discovery host sees which key ranges and
 change sequences the mirror reads and when, so it learns that this installation mirrors the upstream, the include patterns' literal
 prefixes (a lister narrows its ranges by them) and the pace of the passes.
 
 What makes it real: an operator of the discovery host who correlates source addresses with an installation. The names a mirror asks
-for are names of the public upstream, never of the installation's own packages.
+for are names of the public upstream. The include patterns' literal prefixes are the exception: the replication host receives each as
+`startkey` and `endkey`, so a prefix that is an internal scope or package name (`@acme/*` of a company that publishes `@acme/*` privately) tells
+it that the name exists in that organisation's configuration, though not whether any package is published. The mirror never sends the
+names of the installation's own packages (the engine's held names are not asked of the replication host), and a mirror of any other
+upstream sends nothing to it.
 
 ### H-525 · A redirect of a discovery request is followed to any host the egress policy admits
 

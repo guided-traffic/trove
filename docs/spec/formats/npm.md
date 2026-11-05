@@ -1540,7 +1540,7 @@ what the npm format contributes through the mirror interface of [architecture.md
   with `limit`, without `include_docs` and without `skip`; package documents are not served there but by the registry. Other
   npm registries (a private registry, another trove) offer no feed and no complete listing.
 - **Methods** (Q-NPM-69):
-  - `feed`, offered when `remote.url` is the public registry (`https://registry.npmjs.org/`): a full pass first reads the
+  - `feed`, offered when `remote.url` is the public registry (`https://registry.npmjs.org/`, without query, fragment or user information: `discover.SameUpstream`, Q-NPM-75): a full pass first reads the
     root's `update_seq` and keeps it as the cursor of the next incremental pass, then lists names with `_all_docs`, one key
     range per include pattern's literal prefix (`startkey` the prefix, `endkey` the prefix followed by `￰`), or the
     whole key space without include patterns, paged by `startkey` after the last id and `limit: 10000`. An incremental pass
@@ -4763,6 +4763,25 @@ not verify that any registry still emits `_attachments` in the documents the ful
 where it is absent. It would revisit (b) with the owner if a mirror of the public registry must be cut before its fetches.
 
 **Applied in the spec:** the section "Mirror discovery" (the plan bullet).
+
+### Q-NPM-75 · npm's well-known upstream is decided by the shared predicate
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: npm's lister offered `feed` for a `remote.url` that its own check took for the public registry, while the repository model's bound
+rule (R-REPO-052) compared strings; `https://registry.npmjs.org/?` passed the first and escaped the second (Q-REPO-194).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `isPublicRegistry` is `discover.SameUpstream(base, "https://registry.npmjs.org/")` (chosen) | The format keeps no rule of its own | The bound rule and the lister cannot disagree; a url with a query or user information offers `names` only and no replication host | A url with a query is no longer the public registry for the feed, which a mirror refuses anyway (Q-REPO-195) |
+| (b) Keep the format's own check and tighten it | Two implementations | None | They drift again |
+
+**Choice:** (a). `MirrorHosts` follows it, so a request to `replicate.npmjs.com` is never declared for any other url.
+
+**Rationale:** one predicate, one place. The development agent would revisit it if the catalog's default upstream and the feed's host stop
+being the same upstream.
+
+**Applied in the spec:** the section "Mirror discovery" (the methods bullet and the hosts bullet read "the public registry" as this predicate).
 
 ## What this does not cover
 

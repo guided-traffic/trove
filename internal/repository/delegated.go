@@ -25,7 +25,10 @@ import (
 //     the extra hosts stay;
 //   - the mirror mode is an administrator's: a project administrator keeps remote.mode
 //     and remote.mirror as stored, changes paused, or turns the mode back to
-//     pullThrough (Q-REPO-142, validate_mirror.go).
+//     pullThrough (Q-REPO-142, validate_mirror.go); while the stored mode is mirror and
+//     the write keeps it, the include and exclude patterns, the url and the extra hosts
+//     stay as stored as well, because they decide what the mirror stores and from where
+//     (Q-REPO-193).
 //
 // The unsaved upstream test of a project administrator has the rules of a create.
 
@@ -48,6 +51,9 @@ func delegatedRemote(v *validation, w Write, cur, nd *Document) {
 	}
 	checkDelegatedRemote(v, stored, next, nd.pending)
 	checkDelegatedMirror(v, stored, next)
+	if cur != nil {
+		checkDelegatedMirrorScope(v, stored, next, cur, nd)
+	}
 }
 
 // checkDelegatedRemote adds the violations of a project administrator's remote

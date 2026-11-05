@@ -152,6 +152,8 @@ func TestMirrorMethodsAndHosts(t *testing.T) {
 		"https://registry.npmjs.org:443/": {"replicate.npmjs.com"},
 		"http://registry.npmjs.org/":      nil,
 		"https://registry.npmjs.org/sub/": nil,
+		"https://registry.npmjs.org/?":    nil, // Q-NPM-75: a query is not the well-known upstream
+		"https://registry.npmjs.org/?x=1": nil,
 		"https://registry.npmjs.org:8443": nil,
 		"https://npm.partner.example/":    nil,
 		"https://replicate.npmjs.com/":    nil,

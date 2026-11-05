@@ -2915,8 +2915,12 @@ Priority: **MVP** · Covers: API-082, API-083
 - The members of `remote.mirror` and `remote.mode` are not part of the upstream identity of R-REPO-011: changing them
   invalidates nothing.
 - Who may set them: a holder of `repositories:write-config`; a project administrator only keeps what is stored, pauses,
-  resumes or turns the mode back to `pullThrough` (Q-REPO-142; 422 `mirror_restricted` otherwise).
-- The well-known upstream of a format needs a bound before a mirror of it is accepted (R-REPO-052, 422 `mirror_unbounded`).
+  resumes or turns the mode back to `pullThrough` (Q-REPO-142; 422 `mirror_restricted` otherwise). While a mirror stays a
+  mirror it also keeps the `includePatterns`, `excludePatterns`, `remote.url` and `remote.extraHosts` as stored: they decide what
+  the mirror covers and where it reads from, so a write that changes one answers 422 `mirror_restricted` at its pointer
+  (Q-REPO-193); a write that turns the mode back to `pullThrough` may change them.
+- The well-known upstream of a format needs a bound before a mirror of it is accepted (R-REPO-052, 422 `mirror_unbounded`). The
+  url of a mirror carries no query (422 `invalid_value` at `/remote/url`, Q-REPO-195).
 
 Configuration (example):
 
@@ -5489,6 +5493,72 @@ the installation's configuration right. The development agent would revisit (c) 
 
 **Applied in the spec:** R-REPO-050, the security notes; [authorization.md](authorization.md) R-AUTHZ-026 (a bullet). Code:
 `internal/repository/delegated.go` (`checkDelegatedMirror`).
+
+### Q-REPO-193 · A project administrator keeps the scope of a mirror, not only its settings
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-REPO-142 froze `remote.mode` and `remote.mirror` for a project administrator. The bound of R-REPO-052 is checked on each
+write by itself, so a delegate could change the include list of an administrator's `@acme/*` mirror to some seventy patterns with a
+literal prefix each (`a*` to `z*`, `0*` to `9*`, `@a*` to `@z*`, `@0*` to `@9*`; each passes the bound rule, together they cover
+every npm name), or point `remote.url` at another upstream, and the next pass would be a full one over what the administrator never
+chose.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The stored include list, exclude list, url and extra hosts are frozen while the stored mode is mirror and the write keeps it (chosen) | 422 `mirror_restricted` at the pointer of the changed member; a write that also sets `pullThrough` may change them | Closes the widening and the redirect with the rule that already freezes the settings; the lists are compared as sets, so a document sent back in another order saves | A project administrator cannot narrow a mirror's patterns; it turns the mode back to `pullThrough` first |
+| (b) A bound on the number or shape of patterns | At most n patterns, none a single character | No freeze | Any number is a choice; two-letter prefixes still cover a registry |
+| (c) A byte bound a delegate cannot change | `maxBytes` becomes mandatory | Bounds the volume | The scope and the upstream stay a delegate's; volume is only one of the harms |
+
+**Choice:** (a). The comparison is with the canonical stored section and document under the row lock, as in Q-REPO-127. A create by a
+project administrator cannot be a mirror (Q-REPO-142), so the rule applies to updates, patches included (they build the next
+document and take the same path).
+
+**Rationale:** what a mirror covers and where it reads from are the same decision as its settings. The development agent would revisit
+it with Q-REPO-142's condition, a per-project allowance.
+
+**Applied in the spec:** R-REPO-050; [authorization.md](authorization.md) R-AUTHZ-026; [security/delegated-administration.md](../security/delegated-administration.md). Code:
+`internal/repository/validate_mirror.go` (`checkDelegatedMirrorScope`), `delegated.go`.
+
+### Q-REPO-194 · One predicate decides whether a url is a format's well-known upstream
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the bound rule of R-REPO-052 compared the saved `remote.url` with the catalog's default upstream as strings, and the saved url
+keeps a query; npm's lister ignored it and npm's document requests drop it. `https://registry.npmjs.org/?` was therefore saved with a
+warning only and read the replication feed of the public registry unbounded.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `discover.SameUpstream(url, known)`, used by the bound rule and by the lister (chosen) | Scheme, host, effective port and path equal, no user information, query or fragment | One answer in one place; the discovery contract gains one function (an addition) | A url with a query is never "the well-known upstream", which is why a mirror refuses a query (Q-REPO-195) |
+| (b) An optional interface of the format's remote adapter, called by the repository model | The format decides | A format may know more | The repository model reads the catalog, not adapters; two implementations to keep equal |
+| (c) Normalize the query away on save | `remote.url` loses it | The two agree | Silently changes a stored upstream address that a partner's registry may need |
+
+**Choice:** (a). NuGet's lister does not decide on the url (it reads the service index), so NuGet only shares the bound rule; the
+same predicate covers `https://api.nuget.org/v3/index.json?` there.
+
+**Rationale:** a decision that two places make with different rules is a way around the bound. The development agent would revisit
+(b) if a format's well-known upstream needs more than the url (two hosts).
+
+**Applied in the spec:** R-REPO-052. Code: `internal/mirror/discover/discover.go` (`SameUpstream`), `internal/repository/validate_mirror.go`,
+`internal/formats/npm/mirror.go`.
+
+### Q-REPO-195 · A mirror's url carries no query; a pull-through remote keeps what it stored
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse a query (and `?` alone) in `remote.url` for mode mirror, 422 `invalid_value` at `/remote/url` (chosen) | Fragments and user information are refused for every remote already (R-REPO-024) | The formats' requests drop the query, so a mirror's url with one is the upstream without it, and no stored document that predates the mode can be broken | A mirror of an upstream that needs a query token on every request is not possible; none of the formats' upstreams does |
+| (b) Refuse it for every remote | One rule | Simple | A stored pull-through remote with a query would no longer be sent back and saved (Q-REPO-130's read-back rule) |
+
+**Choice:** (a). A mirror saved before this rule with a query in its url is refused on its next write until the query is removed; the
+mode shipped without an engine, so none of them ran a pass.
+
+**Rationale:** the refusal costs nothing where the query was harmless and closes the case where it was not. The development agent would
+revisit (b) when the query of a remote's url is dropped by every format.
+
+**Applied in the spec:** R-REPO-052 (the acceptance criteria). Code: `validate_mirror.go` (`checkMirrorURL`).
 
 ### Q-REPO-143 · Which pull-replication entries of the catalog the mirror pulls forward
 

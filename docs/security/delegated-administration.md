@@ -73,7 +73,7 @@ the repository service, in the transaction of the write, against the stored sect
 | a `secretRef` (a file of `secrets_dir`, a `TROVE_CAC_` variable) | 422 `secret_value_required`, except the reference the repository holds, sent back unchanged | the references are the installation's and visible in the documents of the project; one would send a partner's token to the project administrator's host ([Q-REPO-127](../spec/repositories-and-proxy.md#q-repo-127--a-project-administrator-gives-an-upstream-secret-as-a-value-and-a-stored-one-stays-with-its-hosts)) |
 | a stored credential, sealed or referenced, kept while `url` changes, a `sendCredentials` host is added or `forwardAuthOnRedirect` turns on | 422 `secret_value_required` at `/remote/password`: a new value, or none | the credential an administrator of trove stored goes to the hosts it was stored for and nowhere else |
 | `outboundProxy.mode` other than `default`, a `sourceNetwork` | 422 `outbound_path_restricted`, except the stored values kept while `url` and the extra hosts stay | the outbound proxy sees every delegate's traffic, and a source address a partner trusts is used only for the upstream an administrator chose ([Q-REPO-128](../spec/repositories-and-proxy.md#q-repo-128--a-project-administrators-remote-repository-takes-the-installations-outbound-path)) |
-| `remote.mode: mirror`, or a change of `remote.mirror` other than `paused` | 422 `mirror_restricted`, except the stored values sent back unchanged; `paused` and the mode back to `pullThrough` are accepted ([validate_mirror.go](../../internal/repository/validate_mirror.go), `checkDelegatedMirror`) | a mirror downloads and stores everything its patterns admit without a client asking: how much of an upstream the installation stores, and how hard it pulls, is an administrator's decision ([Q-REPO-142](../spec/repositories-and-proxy.md#q-repo-142--who-may-switch-a-remote-to-mirror)) |
+| `remote.mode: mirror`, or a change of `remote.mirror` other than `paused`; while the stored mode is mirror and the write keeps it, a change of `includePatterns`, `excludePatterns`, `remote.url` or `remote.extraHosts` | 422 `mirror_restricted`, except the stored values sent back unchanged; `paused` and the mode back to `pullThrough` (which may change the rest) are accepted ([validate_mirror.go](../../internal/repository/validate_mirror.go), `checkDelegatedMirror`, `checkDelegatedMirrorScope`) | a mirror downloads and stores everything its patterns admit without a client asking: what it covers, where it reads from, how much of an upstream the installation stores and how hard it pulls are an administrator's decisions; a delegate that could widen the patterns (some seventy prefixes cover every npm name, each passes the bound rule) or repoint the url would make a bounded mirror an unbounded one ([Q-REPO-142](../spec/repositories-and-proxy.md#q-repo-142--who-may-switch-a-remote-to-mirror), [Q-REPO-193](../spec/repositories-and-proxy.md#q-repo-193--a-project-administrator-keeps-the-scope-of-a-mirror-not-only-its-settings)) |
 
 The saved upstream test reads the repository's project again in the service, as a replace, a patch and a delete do, so a repository that
 left the project after the handler decided is not contacted (404). A delete with `detach=true` edits the project's virtual repositories only:
@@ -99,8 +99,8 @@ The status (`GET /api/v1/repositories/{key}/mirror`) and the run (`POST …/mirr
 | an administrator of another project | as the row above | as the row above |
 
 The switch `manageRepositories` therefore does not gate the run, and a project administrator whose switch is off can still ask for a
-pass (H-531). It can neither start a mirror nor change how hard it pulls: `remote.mode: mirror` and the members of `remote.mirror`
-other than `paused` are refused to it (the table of [Remote repositories of a project](#remote-repositories-of-a-project)). The run
+pass (H-531). It can neither start a mirror, nor change how hard it pulls, nor change what a running mirror covers: `remote.mode: mirror`, the members of `remote.mirror`
+other than `paused`, and for a mirror its patterns, url and extra hosts are refused to it (the table of [Remote repositories of a project](#remote-repositories-of-a-project)). The run
 writes only the three request columns of `mirror_state`, in the transaction of the job and of the audit event
 `mirror.pass_requested`, which names the caller.
 
@@ -167,8 +167,8 @@ pulls from, and the installation's egress and storage, which a pass loads.
   discovery work, not unbounded storage. The management API's request budget (R-API-014) bounds the requests, not the passes.
 - What makes it real: a delegate that is not trusted with the upstream's goodwill, on an upstream that throttles or bills by request.
   The audit event `mirror.pass_requested` names every request and its caller.
-- Mitigation in place: only a holder of `repositories:write-config` can turn the mode on and change the members; a project
-  administrator's run cannot exceed what the configuration already allows.
+- Mitigation in place: only a holder of `repositories:write-config` can turn the mode on and change the members, the patterns, the url and
+  the extra hosts of a mirror; a project administrator's run cannot exceed what the configuration already allows.
 - What would close it: the project's switch as a condition of a project administrator's run (Q-API-199 (c)), or a minimum time between
   requests per repository.
 
