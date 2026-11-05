@@ -2998,6 +2998,7 @@ The owning page may move one of its areas to the other class. Until it does, thi
 | `repo_config`, `claims`, `cache_invalidation` | [repositories-and-proxy.md](repositories-and-proxy.md) | change | Repository snapshot, claims and pin rules, cache invalidation (RMT-026). `claims` is also written by the auto claim of a first publish and by the repository-delete job, `cache_invalidation` by the fold job (change-area step 1 above). |
 | `upstream_state` | [repositories-and-proxy.md](repositories-and-proxy.md) | change | Circuit state, the global offline switch (R-REPO-031) and the reload of one repository's gone packages (R-REPO-029). Moved from the hot-path class: its transitions are rare, and R-REPO-029's 2 s bound then holds without Valkey. |
 | `metadata_changed` | [repositories-and-proxy.md](repositories-and-proxy.md) | signal | Early merged-metadata eviction after a remote refresh; R-ARCH-015's `rev_seq` check keeps local members exact without it |
+| `mirror_yield` | [repositories-and-proxy.md](repositories-and-proxy.md) (R-REPO-055) | signal | A client fetch of a remote repository waits for a fetch slot: every process that runs background fetches of it (a mirror's pass) pre-empts those no follower of its own joined and starts none for 30 s. The payload is the repository's numeric id; a replica raises it at most once a second per repository. A lost signal costs only the early yield: the pass keeps within its share (Q-ARCH-286, Q-ARCH-309). |
 | `system_state`, `support`, `webhooks` | [operations-and-observability.md](operations-and-observability.md) | change | Read-only mode, support bundles, webhook configuration |
 | `events` | [operations-and-observability.md](operations-and-observability.md) | signal | Outbox dispatch wake-up (R-OPS-035, P1); outbox rows are written in publish and cache-fill transactions, and a five-second poll covers lost signals |
 | `deliveries` | [operations-and-observability.md](operations-and-observability.md) | signal | Wakes the delivery-log follow stream (R-OPS-044, P1); the payload carries delivery record IDs. The stream's own poll covers lost signals ([api-and-ui.md](api-and-ui.md) R-API-051). |
@@ -7949,7 +7950,7 @@ costs performance, never correctness. The development agent would revisit (c) if
 Valkey is unavailable.
 
 **Applied in the spec:** R-ARCH-018 (the signal areas); [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-055,
-R-REPO-058. The area is registered by the engine's work package (Q-ARCH-288).
+R-REPO-058. The area is registered in [internal/cluster/areas.go](../../internal/cluster/areas.go) (`AreaMirrorYield`, Q-ARCH-309).
 
 ### Q-ARCH-287 · A pass is fenced by its job and the process that claimed it
 
@@ -8542,6 +8543,86 @@ then answers a token `404` from the handler like the other methods.
 **Applied in the spec:** none beyond R-API-025, whose sentence the code now meets for every method;
 [internal/httpserver/router.go](../../internal/httpserver/router.go) (`HideMethods`),
 [internal/api/rawfiles/content.go](../../internal/api/rawfiles/content.go) (`Register`).
+
+### Q-ARCH-308 · The mirror's host is built on first use; a process without the remote engine builds its own
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the passes run in whatever process claims the queue `mirror` (Q-ARCH-285), and `mirror.Host` (Q-ARCH-288) needs the remote
+engine and the format host. A client-serving process (`packages`, `web`, `all`) has both (R-ARCH-001); a `worker` has neither, and the
+role table is a decision of its own (Q-ARCH-294) that this work package does not change.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `App.mirrorHost()` returns a host that resolves on its first call: the engine and the format host of the process when it has them, else an engine and a format host of its own, built from the areas every role has and started as components (chosen) | A pass in a client-serving process shares its replica's slots with its clients; one in a worker has its own slots | No change of the role table; the job registry, which is frozen before the areas are wired, can hold the handlers | A worker runs an engine whose slots no client uses, and which counts as one of the replicas that fill client misses until the fill count (R-REPO-040) is changed |
+| (b) Add the remote engine and the format host to the worker's areas | The worker has them at start | Plain wiring | Changes R-ARCH-001's table, which the owner is reconsidering |
+| (c) The pass asks a client-serving replica to fetch for it | No engine in the worker | None to build | Q-REPO-140 (d): the background would take client slots |
+
+**Choice:** (a). A process that cannot build the host fails every call with the same error.
+
+**Rationale:** the host is the seam; where the engine behind it runs is the topology, which stays open. The development agent would
+revisit (b) once the owner has settled the topology.
+
+**Applied in the spec:** [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-055 ("Who runs what"). Code:
+[internal/app/wire_mirror_host.go](../../internal/app/wire_mirror_host.go).
+
+### Q-ARCH-309 · Every process that runs background fetches handles `mirror_yield`, the sender included
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The engine subscribes to `mirror_yield` in `Start` and handles every message; the payload is the repository's numeric id, a coarse batch counts for every repository, and a replica raises the signal at most once a second per repository; the area is registered in `internal/cluster/areas.go` (chosen) | One handler for local and remote signals; the signal path delivers a replica's own signal to its local subscribers directly | Nothing to special-case; a process that serves clients and claims the queue also yields through the same step | A client fetch that waits also closes the repository to the process's own background for 30 s |
+| (b) The raiser pre-empts in its own process only and publishes for the others | Two paths | The sender's window stays open for the pre-emption it did itself | Two paths to keep equal; in role `all` the local wait is also pressure |
+| (c) A change area | Through the change log | Survives Valkey outages | A PostgreSQL write per second of client pressure (Q-ARCH-286 (b)) |
+
+**Choice:** (a). The subscription failing, or no signal path, leaves the engine yielding to the clients of its own process only.
+
+**Rationale:** a client that waits for a slot is pressure on the repository wherever the pass runs. The development agent would
+revisit the sender's own 30 s if role `all` shows passes that stall for long on a busy installation.
+
+**Applied in the spec:** R-ARCH-018 (the signal areas); [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-055, R-REPO-058.
+Code: [internal/cluster/areas.go](../../internal/cluster/areas.go) (`AreaMirrorYield`),
+[internal/proxy/background.go](../../internal/proxy/background.go) (`raiseYield`, `onYield`, `listenYield`).
+
+### Q-ARCH-310 · The yield window is 30 s from the last signal, read on the engine's clock and polled
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Each signal sets the end of the repository's window to now + 30 s; a background fetch that wants to start checks it on every wake-up and at least every 250 ms; the clock is the engine's (`Options.Now`) (chosen) | Plain state under the slots' lock; a test with a fake clock moves it | No timers to cancel; the window moves with every signal | A waiting background fetch notices the end of the window within 250 ms |
+| (b) A timer per repository that releases the waiters | Exact end | No polling | Timers to stop on every signal and at shutdown |
+
+**Choice:** (a). A coarse signal opens a window for every repository.
+
+**Rationale:** the wait is 30 s; 250 ms is noise. The development agent would revisit it if the background waiters of very many
+repositories cost measurable wake-ups.
+
+**Applied in the spec:** [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-055. Code:
+[internal/proxy/slots.go](../../internal/proxy/slots.go) (`yield`, `yieldOpen`).
+
+### Q-ARCH-311 · A format's own requests during a pass are background requests because the context carries the pass
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a format's gate (`BeforeArtifact`) revalidates the package document through `Host.Remote()`, and the formats find their
+per-replica state by the identity of the `Host` they are handed (npm's `replicaOf`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The host's context carries the pass under an unexported key; the client path's wrapper over the engine reads it and builds a background request (chosen) | The format is handed the real `Host`; a request through `Host.Remote()` is the pass's | A format sees no difference and cannot set the key; its per-replica state is found | The key is read in the wrapper of the client path |
+| (b) A `Host` whose `Remote()` is the pass's fetcher | An explicit object | No context value | A different `Host` identity: the format's per-replica state (metrics, settings) would be found by neither |
+| (c) The format calls a `Remote().Background(...)` method | Explicit in the contract | Visible | A change of the frozen format contract for every format |
+
+**Choice:** (a).
+
+**Rationale:** the contract stays as it is and the rule cannot be forgotten by a format, because it never sees it. The development
+agent would revisit (c) if a format needs to know that it works for a pass.
+
+**Applied in the spec:** [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-055. Code:
+[internal/formathost/mirror_host.go](../../internal/formathost/mirror_host.go) (`withBackground`),
+[internal/formathost/remote.go](../../internal/formathost/remote.go) (`request`).
 
 ## What this does not cover
 

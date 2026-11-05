@@ -113,6 +113,34 @@ The advisory provider of an npm audit forward is reached through the same client
 `sendCredentials` host, gets the credential, and one on any other host gets none
 ([data-and-secret-flow.md](data-and-secret-flow.md#the-audit-forward)).
 
+## Requests of a mirror's discovery
+
+A remote repository in mode `mirror` discovers the packages of its upstream through requests that the format's lister names
+([R-REPO-051](../spec/repositories-and-proxy.md), [Q-REPO-151](../spec/repositories-and-proxy.md#q-repo-151--a-discovery-request-reaches-the-upstream-the-extrahosts-entries-and-the-hosts-the-lister-names-and-the-last-never-get-a-credential)).
+The lister sends none itself: every request goes through `Upstream.Get`, which is [Engine.Get](../../internal/proxy/get.go) behind the
+host of [internal/formathost/mirror_host.go](../../internal/formathost/mirror_host.go). Besides the rules of the client above it
+applies these:
+
+| Request | Allowed host | Credentials, custom headers, client certificate |
+|---|---|---|
+| to the upstream origin | yes | as for a client: sent, presented |
+| to a host of `extraHosts` | yes | as for a client: sent only with `sendCredentials` |
+| to a host the lister names for this upstream (`MirrorHosts`, for example npm's replication host of the public registry) | yes, by host name, and never over `http` while the upstream is `https` | **never**: not even when an `extraHosts` entry with `sendCredentials` matches the host |
+| to any other host | no: `502 foreign_host_denied`, nothing is sent | n/a |
+
+The check of the host is [Client.AllowedMirror](../../internal/proxy/upstream/client.go), before the request takes its slot. The
+refusal of the credential for a discovery host is a mark on the request's context
+([outbound.WithoutCredentials](../../internal/outbound/hop.go)): the credential policy removes every credential and custom header and
+withholds the client certificate on every hop of a marked request, so a redirect from the discovery host keeps the mark. A format
+sets the `Accept` header and nothing else (`Upstream.Get` takes no other header), and the policy removes any `Authorization` header on
+every hop, as for every request of a remote.
+
+The other rules of a background request, which are security relevant because they decide what a pass can do to clients: its outcomes
+never move or reset the circuit that turns clients away ([R-REPO-054](../spec/repositories-and-proxy.md)), so an upstream that
+throttles the pass cannot make clients see `upstream_assumed_offline`; the populate event of what it stores names the system as actor
+and `mirror` as reason ([R-REPO-057](../spec/repositories-and-proxy.md)); and the body of a request that names no bound is read up to
+32 MiB ([Q-REPO-152](../spec/repositories-and-proxy.md#q-repo-152--the-body-of-a-discovery-request-that-names-no-bound-is-read-up-to-32-mib)).
+
 ## The upstream test
 
 `POST /api/v1/repositories/{key}/upstream-test` and `POST /api/v1/upstream-tests` send one request through a remote repository's client
@@ -190,3 +218,33 @@ clients of `internal/outbound`, in a cluster without an egress policy.
 The chart `trove-bastion` follows the same rule since the owner's decision of 2026-11-05; the gap of its pods, which are built
 to face the internet, is [H-522](bastion.md#h-522--the-chart-restricts-no-egress-of-the-bastion-pods).
 
+
+### H-524 · A discovery host learns what a mirror asks it
+
+Stage: the requests of a mirror's pass to a host the format's lister names ([Client.AllowedMirror](../../internal/proxy/upstream/client.go);
+[Requests of a mirror's discovery](#requests-of-a-mirrors-discovery)).
+
+Live for every mirror of an upstream whose lister names such a host (npm's replication host of the public registry, once the lister
+exists). The request carries no credential, no custom header and no client certificate, but it carries the path and query, the
+`Accept` header, trove's `User-Agent` and the source address of the pod. Subject: the discovery host sees which key ranges and
+change sequences the mirror reads and when, so it learns that this installation mirrors the upstream, the include patterns' literal
+prefixes (a lister narrows its ranges by them) and the pace of the passes.
+
+What makes it real: an operator of the discovery host who correlates source addresses with an installation. The names a mirror asks
+for are names of the public upstream, never of the installation's own packages.
+
+### H-525 · A redirect of a discovery request is followed to any host the egress policy admits
+
+Stage: the redirect rules of the client a discovery request goes through ([hop.go](../../internal/outbound/hop.go),
+`WithMaxRedirects` in [clients.go](../../internal/proxy/upstream/clients.go)).
+
+Live: the host check of a discovery request ([Client.AllowedMirror](../../internal/proxy/upstream/client.go)) is made on the URL the
+format passes, and a redirect is followed under the rules of R-REPO-039 as for a client: at most `proxy.max_redirects` hops, never
+from `https` to `http`, and each address through the egress policy, but to any host. The redirected request carries no credential
+(the mark of [outbound.WithoutCredentials](../../internal/outbound/hop.go) holds on every hop for a discovery host, and the policy of
+the client holds for the upstream and `extraHosts` hosts). Subject: what a discovery host that redirects can make a pod request, a
+GET without a body to an address the policy admits, and whose answer a format reads as a discovery document up to 32 MiB.
+
+What makes it real: an upstream or discovery host that is hostile or compromised, and private ranges that the address policy admits
+([H-6](../spec/repositories-and-proxy.md#h-6--remote-repositories-reach-private-networks)). The answer is parsed by the format and
+returned to nobody.

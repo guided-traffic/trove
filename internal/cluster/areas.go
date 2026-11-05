@@ -134,6 +134,11 @@ func init() {
 	// >>> M4b vulnerabilities
 	RegisterArea(Area{Name: AreaVulnData, Owner: "R-VULN-027", Class: ChangeArea, PayloadVersion: 1})
 	// <<< M4b vulnerabilities
+	//
+	// The signal area of the mirror's yield to client fetches (repositories-and-proxy.md, R-REPO-055).
+	// >>> M6b mirror
+	RegisterArea(Area{Name: AreaMirrorYield, Owner: "R-REPO-055", Class: SignalArea})
+	// <<< M6b mirror
 }
 
 // Names of the areas of this package.
@@ -225,3 +230,14 @@ const AreaCIIssuerKeys = "ci_issuer_keys"
 const AreaVulnData = "vuln_data"
 
 // <<< M4b vulnerabilities
+
+// >>> M6b mirror
+
+// AreaMirrorYield is the signal a client-serving replica raises when a client fetch of a remote repository has to wait for a
+// fetch slot (R-REPO-055, Q-ARCH-286): at most once per second and repository, the payload is the repository's numeric id.
+// Every process that runs background fetches of the repository pre-empts those no client of its own joined and starts none
+// for 30 s. It is a signal area: nothing is written to PostgreSQL, delivery is at most once, and the background stays correct
+// without it because it keeps within its share.
+const AreaMirrorYield = "mirror_yield"
+
+// <<< M6b mirror

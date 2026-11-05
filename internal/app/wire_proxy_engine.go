@@ -59,6 +59,9 @@ func (a *App) wireProxyEngine(ctx context.Context, in infra, px proxyArea, inv i
 	if in.vk != nil { // a nil *cluster.Valkey in the interface would not be nil
 		opts.Lookups = in.vk
 	}
+	if in.signals != nil { // the signal mirror_yield: raised by a client fetch that waits, heard by a pass's background fetches
+		opts.Signals = in.signals
+	}
 	engine, err := proxy.New(opts)
 	if err != nil {
 		return proxyEngineArea{}, err

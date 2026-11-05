@@ -118,6 +118,9 @@ func (r *record) finish(status int, respBytes int64, err error) {
 			attrs = append(attrs,
 				nullable("flight_role", r.call.FlightRole != "", func() any { return r.call.FlightRole }),
 				nullable("cache_status", r.call.CacheStatus != nil && r.call.CacheStatus() != "", func() any { return r.call.CacheStatus() }))
+			if r.call.JobID != "" {
+				attrs = append(attrs, slog.String("job_id", r.call.JobID))
+			}
 		}
 		for _, k := range []string{"repo", "subscription"} {
 			if !have[k] {

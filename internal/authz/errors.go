@@ -27,6 +27,9 @@ const (
 	// (R-AUTHZ-018).
 	ReasonPopulate  = "deny.populate"
 	ReasonOwnership = "deny.ownership"
+	// ReasonMirror is the reason of the populate event of a fill that a mirror's pass made: the system filled the cache and
+	// no request asked for it (R-REPO-057, Q-REPO-145).
+	ReasonMirror = "mirror"
 )
 
 // codeEndpointReadOnly is registered by the endpoints area (R-EP-013); authz

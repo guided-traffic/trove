@@ -213,6 +213,7 @@ All outbound HTTP goes through [internal/outbound](../../internal/outbound). Its
 `log: upstream` record (R-OPS-011: `purpose`, `repo`, `subscription`, scrubbed `url`, `status`, `error`,
 `request_bytes`, `response_bytes`, `duration_ms` including the body, `attempt`, `on_behalf_of`, `collapsed_waiters`;
 pass `on_behalf_of`, `attempt`, `repo`, `collapsed_waiters` and, for `purpose=remote`, `flight_role` and `cache_status`
+(and `job_id`, the id of a mirror's pass, for a background request, R-REPO-057)
 with `outbound.WithCall` (`CollapsedWaiters` and `CacheStatus` are functions read when the request completes, because
 waiters join while the body streams), extra fields with `outbound.WithLogAttrs`) and the families
 `trove_outbound_requests_total{kind,code}`, `trove_outbound_request_duration_seconds{kind}` and

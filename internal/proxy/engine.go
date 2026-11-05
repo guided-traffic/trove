@@ -72,6 +72,10 @@ type Options struct {
 	// Lookups counts a negative entry the reader refused; *cluster.Valkey. Optional.
 	Lookups LookupCounter
 	Changes Notifier
+	// Signals carries the signal mirror_yield (R-REPO-055): the engine raises it when a client fetch waits for a slot and
+	// pre-empts its background fetches when it receives it. Nil is a replica without the signal path: it raises none and
+	// yields to client fetches of its own process only.
+	Signals Signals
 	Clients Clients
 	// Invalid answers whether an invalidation covers an entry (R-REPO-045); nil
 	// treats every entry as valid.
@@ -116,6 +120,8 @@ type Engine struct {
 	base   context.Context
 	cancel context.CancelFunc
 	bg     sync.WaitGroup
+	// stopYield ends the subscription to mirror_yield; nil when there is none.
+	stopYield func()
 
 	draining atomic.Bool
 
@@ -185,6 +191,8 @@ func newEngine(o Options, readOnly bool) (*Engine, error) {
 		flights: map[string]*flight{}, probes: map[int64]*atomic.Bool{}, ensured: map[int64]bool{},
 		throttled: map[string]time.Time{}, qcalls: map[queryKey]*queryCall{},
 	}
+	e.slots.now = o.Now
+	e.slots.onWait = e.raiseYield
 	e.base, e.cancel = context.WithCancel(context.Background())
 	e.state = cache.Register(o.Caches, CacheState, cache.Options[int64, *repoState]{
 		MaxEntries: 4096, SafetyTTL: o.SafetyTTL, Areas: []string{cluster.AreaUpstreamState},
@@ -241,11 +249,17 @@ func (e *Engine) Quiesce(ctx context.Context) {
 // Name, Start and Stop make the engine a component of the composition root.
 func (e *Engine) Name() string { return "proxy" }
 
-// Start does nothing: the engine's state is filled by its first requests.
-func (e *Engine) Start(context.Context) error { return nil }
+// Start subscribes to the signal mirror_yield (R-REPO-055); the engine's state is filled by its first requests.
+func (e *Engine) Start(context.Context) error {
+	e.listenYield()
+	return nil
+}
 
-// Stop ends the background reloads.
+// Stop ends the subscription and the background reloads.
 func (e *Engine) Stop(ctx context.Context) error {
+	if e.stopYield != nil {
+		e.stopYield()
+	}
 	e.cancel()
 	done := make(chan struct{})
 	go func() { e.bg.Wait(); close(done) }()
@@ -424,6 +438,9 @@ func (e *Engine) goneGate(ctx context.Context, rq Request) (*errs.Error, error) 
 	doc.Path, doc.Variant, doc.Kind, doc.Mode = docPath, variant, Metadata, Normal
 	doc.Expected, doc.Serve = Digests{}, nil
 	d, err := e.metadata(ctx, doc, time.Time{})
+	if err != nil && backgroundOutcome(err) {
+		return nil, err // a pass that has to wait or yield is not told the package is gone
+	}
 	if err != nil || d == nil || d.Status.Negative || !d.GoneAt.IsZero() {
 		return notFound, nil
 	}

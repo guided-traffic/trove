@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -79,26 +80,59 @@ func (f *fetcher) run(ctx context.Context) flightResult {
 			"The upstream announces no SHA-256 or stronger digest for the item, which "+rem.Repo.Key+" requires.")}
 	}
 	if err := f.discover(ctx); err != nil {
-		return flightResult{err: err}
+		return resultOf(err)
 	}
 	cl, err := e.o.Clients.For(ctx, rem.Repo, rem.Settings)
 	if err != nil {
 		return flightResult{err: err}
 	}
 	f.cl = cl
-	ctx, release, err := e.acquireSlot(ctx, rq)
+	if rq.background() {
+		// A pass reads the circuit and waits while it is open; it takes no slot for that (R-REPO-054).
+		if open, retry, err := e.circuitPeek(ctx, rem); err != nil {
+			return flightResult{err: err}
+		} else if open {
+			return flightResult{own: circuitWait(retry)}
+		}
+	}
+	ctx, release, err := e.acquireSlot(ctx, rq, f.fl)
 	if err != nil {
-		return flightResult{err: err}
+		return resultOf(err)
 	}
 	defer release()
-	adm, err := e.circuitAdmit(ctx, rem)
-	if err != nil {
-		return flightResult{err: err}
+	res := f.inSlot(ctx)
+	if rq.background() && errors.Is(context.Cause(ctx), ErrPreempted) && !res.stored && res.doc == nil && !res.negative {
+		// A client fetch (or the yield of another process) took the slot: the upstream request was cancelled with ctx, the
+		// partial body is gone with the spool, and no entry of any kind was written. The flight is released with failed, so
+		// whoever waits for it fetches for itself at once (R-REPO-055).
+		return flightResult{own: ErrPreempted}
 	}
-	if adm.open {
-		return flightResult{err: assumedOffline(adm.retryAfter)}
+	return res
+}
+
+// inSlot is the fetch from the moment it holds its slot: the circuit, the request, the classification and the storage.
+func (f *fetcher) inSlot(ctx context.Context) flightResult {
+	e, rq := f.e, f.rq
+	rem := rq.Remote
+	if rq.background() {
+		// No probe and no claim on the half-open circuit: the request reads the circuit and waits (R-REPO-054, Q-REPO-139).
+		open, retry, err := e.circuitPeek(ctx, rem)
+		if err != nil {
+			return flightResult{err: err}
+		}
+		if open {
+			return flightResult{own: circuitWait(retry)}
+		}
+	} else {
+		adm, err := e.circuitAdmit(ctx, rem)
+		if err != nil {
+			return flightResult{err: err}
+		}
+		if adm.open {
+			return flightResult{err: assumedOffline(adm.retryAfter)}
+		}
+		defer adm.release()
 	}
-	defer adm.release()
 
 	if rq.Kind == Metadata {
 		if en, found, err := e.getEntry(ctx, rem.id, rq.Path, rq.Variant); err != nil {
@@ -123,11 +157,16 @@ func (f *fetcher) run(ctx context.Context) flightResult {
 // acquireSlot takes the fetch slot of the request (R-REPO-040, R-REPO-055): a client's from the clients' queue, with the
 // queue wait observed; a mirror's background slot, at most the background share of the repository, under a context that
 // a client's pre-emption cancels. The returned context is the one the fetch runs under.
-func (e *Engine) acquireSlot(ctx context.Context, rq Request) (context.Context, func(), error) {
+func (e *Engine) acquireSlot(ctx context.Context, rq Request, fl *flight) (context.Context, func(), error) {
 	rem := rq.Remote
 	budget := rem.Settings.Limits.MaxConcurrentFetches
-	if rq.Priority == PriorityBackground {
-		return e.slots.acquireBackground(ctx, rem.id, budget, BackgroundShare(budget, rem.Settings.Mirror.Concurrency))
+	if rq.background() {
+		ceiling := rq.Ceiling
+		if ceiling <= 0 {
+			ceiling = BackgroundShare(budget, rem.Settings.Mirror.Concurrency)
+		}
+		// A follower of this replica that joins the fetch's flight keeps it from being pre-empted (R-REPO-055).
+		return e.slots.acquireBackgroundJoined(ctx, rem.id, budget, ceiling, func() bool { return fl.joined.Load() > 0 })
 	}
 	release, wait, err := e.slots.acquire(ctx, rem.id, budget, e.o.Config.QueueTimeout())
 	e.m.queueWait.WithLabelValues(rem.Repo.Key).Observe(wait.Seconds())
@@ -162,7 +201,7 @@ func (f *fetcher) discover(ctx context.Context) error {
 	}
 	doc, err := f.e.Metadata(ctx, Request{
 		Remote: rq.Remote, Path: path, Variant: variant, Kind: Metadata, Mode: rq.Mode, Populate: pop,
-		MaxBytes: rq.MaxBytes, Adapter: rq.Adapter, Caller: rq.Caller,
+		MaxBytes: rq.MaxBytes, Adapter: rq.Adapter, Caller: rq.Caller, Priority: rq.Priority, Ceiling: rq.Ceiling, JobID: rq.JobID,
 	})
 	if err != nil {
 		return err
@@ -236,10 +275,15 @@ func (f *fetcher) send(ctx context.Context, req *http.Request) (resp *http.Respo
 		var wrote atomic.Bool
 		trace := &httptrace.ClientTrace{WroteHeaderField: func(string, []string) { wrote.Store(true) }}
 		rctx = httptrace.WithClientTrace(rctx, trace)
-		rctx = outbound.WithCall(rctx, outbound.Call{
+		call := outbound.Call{
 			OnBehalfOf: rq.Caller.Principal, Repo: rem.Repo.Key, Attempt: attempt, FlightRole: f.st.role,
 			CollapsedWaiters: func() int { return int(f.fl.joined.Load()) }, CacheStatus: f.box.get,
-		})
+		}
+		if rq.background() {
+			// The record of a pass's request names the pass's job and no caller (R-REPO-057).
+			call.FlightRole, call.OnBehalfOf, call.JobID = roleMirror, "", rq.JobID
+		}
+		rctx = outbound.WithCall(rctx, call)
 		start := time.Now()
 		resp, err = f.cl.HTTP().Do(req.Clone(rctx))
 		if err == nil {
@@ -281,7 +325,8 @@ func (f *fetcher) target0() *url.URL {
 func (f *fetcher) failed(ctx context.Context, fail failure) flightResult {
 	e, rq := f.e, f.rq
 	rem := rq.Remote
-	if fail.count {
+	// A background request counts toward the circuit nowhere: the circuit is the clients' (R-REPO-054, Q-REPO-139).
+	if fail.count && !rq.background() {
 		why := ""
 		if fail.err != nil {
 			why = fail.err.Code
@@ -318,7 +363,21 @@ func (f *fetcher) respond(ctx context.Context, resp *http.Response, idle *atomic
 	case s == http.StatusNotFound || s == http.StatusGone:
 		return f.notFound(ctx, resp)
 	}
+	if f.rq.background() {
+		// The mirror's own classification of a throttling answer (R-REPO-054); a client keeps R-REPO-029's.
+		if res, ok := f.rateLimited(resp); ok {
+			return res
+		}
+	}
 	return f.failed(ctx, classifyStatus(f.rq.Remote, resp))
+}
+
+// success records a 2xx or a 304 for the circuit: a client's request does, a background request never does, whatever the
+// upstream answered (R-REPO-054, Q-REPO-139).
+func (f *fetcher) success(ctx context.Context) {
+	if !f.rq.background() {
+		f.e.circuitSuccess(ctx, f.rq.Remote)
+	}
 }
 
 // notFound records the upstream's 404 or 410: a negative entry before the flight is

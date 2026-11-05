@@ -50,11 +50,15 @@ type flightResult struct {
 	err error
 	// status is the upstream status of a failed fetch, for Cache-Status.
 	status int
+	// own is an outcome only the background request that led the flight understands: it was pre-empted, the circuit is
+	// open, the spool refused admission, or the upstream rate-limited it. It answers nobody else, so a client that joined
+	// the flight finds the result empty and fetches for itself with the classification of R-REPO-029 (R-REPO-055).
+	own error
 }
 
 // usable reports whether the result answers the requests that waited for it. An
 // empty result (an artifact streamed to its leader's client only, a refresh that
-// could not be stored) leaves the followers to fetch themselves.
+// could not be stored, an outcome of a background request that is its own) leaves the followers to fetch themselves.
 func (r flightResult) usable() bool { return r.err != nil || r.doc != nil || r.negative || r.stored }
 
 // flight is the fetch of one cache entry on this replica: one request leads, the
@@ -347,6 +351,9 @@ func (e *Engine) recheck(ctx context.Context, rq Request, st *reqState) (res fli
 		return flightResult{}, false, err
 	}
 	if open {
+		if rq.background() {
+			return flightResult{own: circuitWait(retry)}, true, nil
+		}
 		return flightResult{err: assumedOffline(retry)}, true, nil
 	}
 	if _, hit := e.neg.lookup(ctx, rem, rq.Path, rq.Variant); hit {

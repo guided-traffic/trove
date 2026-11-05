@@ -398,6 +398,9 @@ type replicaOpts struct {
 	items func(proxy.ItemStore) proxy.ItemStore
 	// upstreamLog receives the upstream log.
 	upstreamLog io.Writer
+	// signals gives the engine the signal path of the replica (cluster.Signals on its Valkey client) and starts it, so that it
+	// raises and hears mirror_yield (R-REPO-055).
+	signals bool
 	// ups are further upstreams the replica trusts.
 	ups []*proxytest.Upstream
 	// hooks are the storage hooks of the item store; nil runs none.
@@ -425,6 +428,7 @@ type replica struct {
 	inv     *invalidation.Set
 	invSvc  *invalidation.Service
 	engine  *proxy.Engine
+	signals *cluster.Signals
 	rec     *recorder
 }
 
@@ -518,8 +522,19 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	if r.inv != nil {
 		po.Invalid = r.inv
 	}
+	if o.signals {
+		if r.signals, err = cluster.NewSignals(cluster.SignalsOptions{Bus: r.vk, Config: clu, Log: quiet, Metrics: r.reg}); err != nil {
+			t.Fatal(err)
+		}
+		po.Signals = r.signals
+	}
 	if r.engine, err = proxy.New(po); err != nil {
 		t.Fatal(err)
+	}
+	if o.signals {
+		if err := r.engine.Start(ctx); err != nil {
+			t.Fatalf("engine.Start: %v", err)
+		}
 	}
 	return r
 }
@@ -529,6 +544,9 @@ func (r *replica) stop() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = r.engine.Stop(ctx)
 		cancel()
+	}
+	if r.signals != nil {
+		r.signals.Close()
 	}
 	if r.inv != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

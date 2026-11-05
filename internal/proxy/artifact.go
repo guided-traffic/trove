@@ -71,7 +71,7 @@ func (e *Engine) Artifact(ctx context.Context, rq Request, w http.ResponseWriter
 		return err
 	}
 	if open {
-		return assumedOffline(retry)
+		return circuitOpenError(rq, retry)
 	}
 	// Step 8.
 	if _, hit := e.neg.lookup(ctx, rem, rq.Path, rq.Variant); hit {
@@ -359,7 +359,7 @@ func (f *fetcher) artifact(ctx context.Context, resp *http.Response, idle *atomi
 		return f.bodyFailure(ctx, err, idle)
 	}
 	defer func() { _ = sp.Close() }()
-	e.circuitSuccess(ctx, rem)
+	f.success(ctx)
 
 	if verify(rq, sp.Digests) != verdictOK {
 		return f.integrityMismatch(ctx, sp)

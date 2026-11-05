@@ -1,7 +1,8 @@
 # Mirror mode of remote repositories
 
 Status: phase 6b, in progress; the role-neutral contracts are laid, the tables and the seam to the remote engine are added,
-work packages A (npm discovery) and B (NuGet discovery) are built, C and D are pending. Specified on
+work packages A (npm discovery) and B (NuGet discovery) and the remote engine's side of C (C1: background requests, pre-emption,
+the yield signal, `mirror.Host`) are built, the engine (C2) and D are in progress. Specified on
 [repositories-and-proxy.md](../spec/repositories-and-proxy.md#mirror-mode) (R-REPO-050 to R-REPO-059) and the format pages'
 sections "Mirror discovery" ([npm](../spec/formats/npm.md#mirror-discovery), [NuGet](../spec/formats/nuget.md#mirror-discovery));
 the cut into work packages is [Q-ARCH-288](../spec/architecture.md#q-arch-288--the-seams-of-the-mirror).
@@ -22,8 +23,8 @@ tables, the operations, the audit types and the signal area are specified and ar
 | The discovery contract: `Lister` (`MirrorMethods`, `MirrorNames`, `MirrorPlan`, `MirrorHosts`), `Upstream` (`Get`, `Document`), `PageRequest`, `Page`, `Plan`, `Item`, `Cursor`, `Scope`, `RateLimited`, `AsRateLimited`, `ErrMethodUnavailable`, `LiteralPrefix`, `Bounding` | [internal/mirror/discover](../../internal/mirror/discover/discover.go) (leaf) | shared; a change is an addition to the frozen contract (ADR-152) and a note to A, B and C |
 | The format contract's alias `formats.MirrorLister`, `RemoteCaps.Mirror`, the catalog fact `Entry.Mirror` | [internal/formats/remote.go](../../internal/formats/remote.go), [formats.go](../../internal/formats/formats.go), [catalog.go](../../internal/formats/catalog/catalog.go), [testdata/contract.txt](../../internal/formats/testdata/contract.txt) | shared (ADR-152) |
 | The listers: npm's and NuGet's remote adapters implement `discover.Lister`, so the catalog fact `Mirror` is true for both and `mode: mirror` is accepted (R-REPO-050) | [internal/formats/npm/mirror.go](../../internal/formats/npm/mirror.go) (A, built), [internal/formats/nuget/mirror.go](../../internal/formats/nuget/mirror.go) and its siblings (B, built) | A and B own their formats; C builds the engine |
-| The typed rate-limit outcome `RateLimit`, `RateLimitOf`, `RateLimitError` | [internal/proxy/upstream/ratelimit.go](../../internal/proxy/upstream/ratelimit.go) | C |
-| The fetch priority `proxy.Priority`, `Request.Priority`, `BackgroundShare`, the background slots (`acquireBackground`, no pre-emption yet) | [internal/proxy/types.go](../../internal/proxy/types.go), [slots.go](../../internal/proxy/slots.go), [fetch.go](../../internal/proxy/fetch.go) (`acquireSlot`) | C |
+| The typed rate-limit outcome `RateLimit`, `RateLimitOf`, `RateLimitError` (returned by the background requests of the engine) | [internal/proxy/upstream/ratelimit.go](../../internal/proxy/upstream/ratelimit.go) | C |
+| The fetch priority `proxy.Priority`, `Request.Priority`, `BackgroundShare`, the background slots, pre-emption and the yield (built by C1, see [The remote engine's side](#the-remote-engines-side-c1)) | [internal/proxy/types.go](../../internal/proxy/types.go), [slots.go](../../internal/proxy/slots.go), [fetch.go](../../internal/proxy/fetch.go) (`acquireSlot`) | C |
 | `remote.mode`, `remote.mirror` with defaults, validation, the bound rule, the delegate rule, the read-back of an earlier stored section; the codes `mirror_unbounded`, `mirror_restricted` | [internal/repository/remote.go](../../internal/repository/remote.go), [validate_mirror.go](../../internal/repository/validate_mirror.go), [delegated.go](../../internal/repository/delegated.go), [internal/errs/codes.go](../../internal/errs/codes.go) | shared; C and D read, nobody changes without the spec |
 | OpenAPI: `RemoteSettings.mode`, `RemoteSettings.mirror`, `MirrorSettings` | [api/openapi.yaml](../../api/openapi.yaml), the generated `web/src/app/api/generated/schema.d.ts` | D |
 | The names `mirror.KindPass`, `mirror.KindDispatch`, `mirror.QueueMirror`, `mirror.PassKey`, `mirror.PassArgs`; the kinds registered with a handler that does nothing; the queue's slots `jobs.workers.mirror: 2` | [internal/mirror/mirror.go](../../internal/mirror/mirror.go), [internal/app/wire_mirror.go](../../internal/app/wire_mirror.go), [internal/config/jobs.go](../../internal/config/jobs.go) | C (D reads the names) |
@@ -139,3 +140,62 @@ What the engine builder must know of NuGet's lister:
 - **`Item.Version` is the URL form** of the version (`1.0.0`, lower-case, no build metadata), the same as in `Item.Path`.
 - **`MirrorHosts` is empty**: a catalog page or a search request on a host that is neither the upstream's nor an `extraHosts` entry
   fails the pass with `foreign_host_denied` from `Upstream.Get`.
+
+## The remote engine's side (C1)
+
+What the engine does with a background request (`proxy.Request.Priority == PriorityBackground`), and the implementation of `mirror.Host`
+behind it. Specified in R-REPO-054, R-REPO-055 and R-REPO-057; the decisions are Q-REPO-149 to Q-REPO-154 and Q-ARCH-308 to Q-ARCH-311.
+
+| File | Responsibility |
+|---|---|
+| [internal/proxy/slots.go](../../internal/proxy/slots.go) | The slots of R-REPO-040 with the background counter per repository, the running background fetches (`bgRun`), pre-emption by a client fetch (`acquire`, `preempt`, `take`), the yield window (`yield`, `yieldAll`, `yieldOpen`), `onWait` (a client has to queue) |
+| [internal/proxy/background.go](../../internal/proxy/background.go) | `ErrPreempted`, `*BackgroundWait` (`WaitCircuitOpen`, `WaitSpoolBusy`), `resultOf` and `backgroundOutcome` (the outcomes that only the leading background request sees), `rateLimited` (`upstream.RateLimitOf` on a background answer), the signal: `Signals`, `raiseYield`, `onYield`, `listenYield` |
+| [internal/proxy/fetch.go](../../internal/proxy/fetch.go), [flight.go](../../internal/proxy/flight.go), [metadata.go](../../internal/proxy/metadata.go), [artifact.go](../../internal/proxy/artifact.go) | The fetch path with the background rules: the circuit is read (`circuitPeek`), never claimed or changed (`fetcher.success`, `fetcher.failed`); the slot is the background one; the upstream log call carries `flight_role: mirror` and `JobID`; `flightResult.own`; a pre-empted fetch returns `ErrPreempted` and releases its flight with `failed` |
+| [internal/proxy/fill.go](../../internal/proxy/fill.go) | `Engine.Fill`: steps 4 to 10 of R-REPO-025 for a background artifact request without a client: `FillOutcome{Present, Bytes}` |
+| [internal/proxy/get.go](../../internal/proxy/get.go) | `Engine.Get`: one discovery GET through the repository's client (`proxy.Get`, `GetResult`, `DiscoveryDocumentMaxBytes`) |
+| [internal/proxy/upstream/client.go](../../internal/proxy/upstream/client.go), [internal/outbound/hop.go](../../internal/outbound/hop.go) | `Client.AllowedMirror` (the hosts of a discovery request), `outbound.WithoutCredentials` (no credential to a discovery host) |
+| [internal/formathost/mirror_host.go](../../internal/formathost/mirror_host.go) | `MirrorHost`, the implementation of `mirror.Host`: `Lister`, `Admits`, `Upstream` (the pass's `discover.Upstream`), `Fill`; `mirrorPopulate` (the populate event with the system as actor and reason `mirror`); `mapBackground`; the context mark of the pass (`withBackground`) |
+| [internal/app/wire_mirror_host.go](../../internal/app/wire_mirror_host.go) | `App.mirrorHost()`: the host, built on first use |
+| [internal/cluster/areas.go](../../internal/cluster/areas.go) | The signal area `mirror_yield` (`AreaMirrorYield`) |
+
+### What the host does, for the engine (C2)
+
+- **Every request is a background request** of the pass: `Pass.Ceiling` is the share B the request keeps within (`proxy.BackgroundShare`),
+  `Pass.JobID` is written to the upstream log as `job_id` with `flight_role: mirror`; nothing the host sends moves or resets the circuit,
+  and nothing probes.
+- **Errors**, as `mirror/host.go` says: a rate-limit answer is a `*upstream.RateLimitError` (`discover.AsRateLimited` is true; a
+  status of 403, 429 or 503 only, per `upstream.RateLimitOf`); a pre-emption wraps `mirror.ErrPreempted` (a client fetch took the slot, or
+  the signal `mirror_yield` arrived); an open circuit is `*mirror.WaitError{circuit_open}` with `After` between 1 s and 5 s, a refused
+  spool admission `*mirror.WaitError{spool_busy}` with `After` 5 s; anything else is a failure of the item. A request that waits for a
+  slot (the pass's window is above what the replica can give, or a client waits) is not an error: it blocks until it has one or the
+  context ends.
+- **The engine counts what it sees.** The host counts nothing: `trove_mirror_preempted_total` and `trove_mirror_items_total{result=preempted}`
+  are the engine's, on `mirror.ErrPreempted`, and so are the rate-limit metrics, on `discover.AsRateLimited`.
+- **`Fill`** answers `Present` for an artifact that is stored (no upstream request, no gate, no event). Otherwise it runs the format's
+  `BeforeArtifact` (its document requests are background requests of the pass), then the engine's fill. Offline, a negative entry, a
+  refused populate check, a version blocked by the vulnerability scanning and a version the format's gate refuses are errors that
+  are failures of the item (not a wait); the host does not check the repository's `mode` or `pausedAt`: that is the engine's.
+- **`Admits`** applies the include and exclude patterns on the name (a format whose patterns match names), the format's name rule
+  (`PackageDocumentPath`, `catalog.NormalizeName`), and the claims of R-REPO-023 through `Deps.Refusal`; a failure to read the claims
+  is answered by `Admits` itself, and later by a name that is not admitted. It is cheap: the claim index is the routing's snapshot.
+- **`Upstream(repo, pass)`** needs the format's lister: it fails for a format without one (`Lister` is false). Its `Get` refuses a host
+  that is not the upstream's, an `extraHosts` entry or one of `lister.MirrorHosts(base)` with `foreign_host_denied` and sends nothing; a
+  lister's host never gets a credential. `Get` with `max` 0 reads up to 32 MiB (`proxy.DiscoveryDocumentMaxBytes`). `Document` is
+  `found=false` for a negative entry (404, 410), a gone document or a package marked gone; a stored document is returned while fresh,
+  and a stale one is revalidated by a background request.
+- **A flight is not cancelled with the pass.** A background fetch runs detached from the context of its caller, like a client's: when the
+  pass's context ends, `Fill` returns at once and the fetch finishes or is cancelled by a pre-emption, the yield or the shutdown (R-ARCH-024).
+  Its slot is held until then.
+- **Where it runs.** In a client-serving process the host shares the replica's engine, so a client fetch pre-empts the pass in the process;
+  in a `worker` the host builds an engine and a format host of its own on first use (Q-ARCH-308), which subscribes to `mirror_yield`. The
+  worker's engine has not been exercised by a test that starts a worker with the queue `mirror`: that needs the engine's handlers.
+
+### Tests
+
+- Unit: [preempt_test.go](../../internal/proxy/preempt_test.go) (pre-emption, the joined fetch, the replica limit, a waiting client, the yield with a fake clock, the signal, the
+  classification of a background answer), [allowed_mirror_test.go](../../internal/proxy/upstream/allowed_mirror_test.go),
+  [without_credentials_test.go](../../internal/outbound/without_credentials_test.go), [mirror_host_test.go](../../internal/formathost/mirror_host_test.go),
+  [wire_mirror_host_test.go](../../internal/app/wire_mirror_host_test.go).
+- Integration ([test/integration/proxy](../../test/integration/proxy)): `mirror_test.go` (pre-emption on one replica with `maxConcurrentFetches` 2, the joined fetch, the signal across two
+  replicas on the real Valkey, the circuit, the credentials of `Get`, the upstream log), `mirror_host_test.go` (the host over the real engine: the populate event, `Present`, the
+  mapping of the errors, `Admits`).

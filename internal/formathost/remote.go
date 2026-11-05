@@ -265,6 +265,11 @@ func (r *remote) request(ctx context.Context, rq *formats.Request, p formats.Pat
 			Principal: pr.ID, Actor: edge.ActorFrom(pr), Source: httpserver.SourceFrom(ctx), Endpoint: rq.Subject.Endpoint,
 		},
 	}
+	if bg, ok := backgroundFrom(ctx); ok {
+		// A pass's request, or a request a format makes through Host.Remote() while it works for the pass (its gate
+		// revalidating a package document): a background request of the pass (mirror_host.go).
+		bg.apply(&preq, rq, info, p)
+	}
 	return preq, nil
 }
 

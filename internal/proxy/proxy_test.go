@@ -342,12 +342,13 @@ func TestSlots(t *testing.T) {
 	})
 	t.Run("background slots stop at their ceiling, count in the replica and repository limits and never queue", func(t *testing.T) {
 		s := newSlots(10, nil)
+		joined := func() bool { return true } // a joined fetch is not pre-empted (R-REPO-055): the client share below is the R-REPO-040 one
 		ctx := context.Background()
-		_, r1, err := s.acquireBackground(ctx, 1, 8, 2)
+		_, r1, err := s.acquireBackgroundJoined(ctx, 1, 8, 2, joined)
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, r2, err := s.acquireBackground(ctx, 1, 8, 2)
+		_, r2, err := s.acquireBackgroundJoined(ctx, 1, 8, 2, joined)
 		if err != nil {
 			t.Fatal(err)
 		}

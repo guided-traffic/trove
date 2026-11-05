@@ -362,6 +362,7 @@ flowchart TD
 | [state.go](../../internal/proxy/state.go) | the per-repository state cache (circuit, gone documents), the probe slot, `markGone` |
 | [negative.go](../../internal/proxy/negative.go) | the negative L1 and its readers' validation (R-REPO-028) |
 | [integrity.go](../../internal/proxy/integrity.go), [body.go](../../internal/proxy/body.go) | digests, the withheld tail (`stream`), the size limit, the idle timeout of a body |
+| [background.go](../../internal/proxy/background.go), [fill.go](../../internal/proxy/fill.go), [get.go](../../internal/proxy/get.go) | the background request of a mirror's pass (`Priority == PriorityBackground`): its outcomes (`ErrPreempted`, `*BackgroundWait`, `*upstream.RateLimitError`), `Engine.Fill`, `Engine.Get`, the signal `mirror_yield`; read [mirror.md](mirror.md#the-remote-engines-side-c1) |
 | [slots.go](../../internal/proxy/slots.go), [probe.go](../../internal/proxy/probe.go), [cachestatus.go](../../internal/proxy/cachestatus.go), [metrics.go](../../internal/proxy/metrics.go), [store.go](../../internal/proxy/store.go) | fetch slots, `Probe`, the `Cache-Status` header, metrics, the reads of the sqlc queries |
 | [proxy.sql](../../internal/meta/postgres/queries/proxy.sql) | every statement of the engine |
 | [proxytest/](../../internal/proxy/proxytest/) | a counting adapter, a counting TLS upstream and a counting `Populate`, for tests that need no format |
@@ -390,7 +391,7 @@ lets through. The stream is the request's, not the flight's: `detach` ends its s
 | negative L1 | cache `proxy_negative_l1` (`proxy.negative_l1_entries`) | nothing: readers validate window and invalidations |
 | bytes of metadata by digest | cache `proxy_metadata_bytes` (`proxy.metadata_cache_bytes`) | nothing: content-addressed |
 | answers of pass-through queries | cache `proxy_query_results` (`proxy.query_cache_bytes`, 8 MiB; entries live at most the period of the call and one hour), area `repo_config` | the key carries `config_version`, so a change of the repository drops its entries of older versions only (`repository.ChangeEviction`), a deletion or a payload without a version all of them, and the poll's second application of a change keeps what was fetched after the first; a fetched answer is stored with `Cache.Set`, without the fill rule's epoch check ([Q-NUGET-94](../spec/formats/nuget.md#q-nuget-94--a-forwarded-answer-fetched-under-the-remotes-current-configuration-outlives-both-applications-of-a-change)) |
-| flights, query calls, probe slots, fetch slots | plain fields of the engine | end with the process |
+| flights, query calls, probe slots, fetch slots, the running background fetches and the yield windows of `mirror_yield` | plain fields of the engine | end with the process |
 
 ### The fill
 
@@ -423,6 +424,8 @@ virtual request records its allowed populate event with the grant reason of the 
 |---|---|---|
 | unit | [proxy_test.go](../../internal/proxy/proxy_test.go) | the URL builder (`%2e%2e`, `a b`), the `Cache-Status` forms, digest policies, the withheld tail, the size limit, the idle timeout, slot shares, the classification table, the negative readers, `withStatus` |
 | unit | [remote_test.go](../../internal/formathost/remote_test.go) | mode, settings member, currency of the bridge |
+| unit | [preempt_test.go](../../internal/proxy/preempt_test.go) | R-REPO-055: a client fetch pre-empts the youngest background fetch and takes its slot at once, a joined fetch and a fetch of another repository are left, a waiting client keeps the background from starting, the yield with a fake clock, the signal, the throttling of the raise; R-REPO-054: the classification of a background answer as a rate limit, a client's staying as it is, the outcomes that are the leader's own, the wait for an open circuit |
+| integration | [mirror_test.go](../../test/integration/proxy/mirror_test.go), [mirror_host_test.go](../../test/integration/proxy/mirror_host_test.go) | R-REPO-054, R-REPO-055, R-REPO-057 against the real engine, the object store and Valkey: see [mirror.md](mirror.md#tests) |
 | unit | [fillrefused_test.go](../../internal/proxy/fillrefused_test.go) | `FillRefused` counts per endpoint (R-EP-019) |
 | unit | [change_test.go](../../internal/repository/change_test.go) | `ChangeEviction`: which configuration versions a `repo_config` payload drops, shared by `proxy_query_results` and `proxy_upstream_clients` (Q-NUGET-94) |
 | unit | [remote_caps_test.go](../../internal/formathost/remote_caps_test.go), [remote_caps_test.go](../../internal/formats/remote_caps_test.go) | the adapter binds the parsed discovery data without changing the adapter it was called on; the hook is declared per path, reads the spooled body and its inspection travels as the commit payload; `Register` records the optional interfaces |

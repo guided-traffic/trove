@@ -1374,7 +1374,7 @@ completes or fails. The same conventions as R-OPS-010 apply.
 and `cache_status` to records with `purpose: remote`. `flight_role` is `leader`, `follower` or
 `waiter` for pull-through fetches, `probe` for the upstream request of a shadowing check
 (R-REPO-048), which stores nothing, and `mirror` for a background request of a mirror's pass (R-REPO-057), whose
-`on_behalf_of` is `system` and whose record names the pass's job. The role says how the request that sends the upstream request
+`on_behalf_of` is `system` and whose record names the pass's job in the field `job_id`, which no other record has (Q-REPO-154). The role says how the request that sends the upstream request
 came to send it: a `leader` fetches without having joined or waited first (it holds the flight
 lock, or no lock exists), a `follower` first joined a flight of its replica that ended with
 nothing to read and then fetched itself, a `waiter` first waited for another replica's flight

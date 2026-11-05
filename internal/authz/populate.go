@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -151,3 +152,10 @@ func (e *Engine) MemberUsableOn(ctx context.Context, idx *Index, sub Subject, me
 	d, _ := e.populate(idx, sub, mc)
 	return true, d.Outcome == Allow
 }
+
+// MirrorActor is the actor of what a mirror's pass stores: system:mirror (R-REPO-057, Q-REPO-145).
+func MirrorActor() audit.Actor { return audit.Actor{Kind: "system", Name: "mirror"} }
+
+// MirrorSubject is the subject of the populate event of a pass's fill: the same system:mirror as [MirrorActor]. It asks no
+// question of the decision point; it names who the allowed fill is recorded for. Only this package builds a Subject (R-EP-013).
+func MirrorSubject() Subject { return Subject{Kind: "system", Name: "mirror"} }

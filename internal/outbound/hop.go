@@ -115,7 +115,7 @@ func (p *CredentialPolicy) Decorate(req *http.Request, hop int) {
 	for k := range creds {
 		req.Header.Del(k)
 	}
-	if !p.allowed(req.URL, hop) {
+	if withoutCredentials(req) || !p.allowed(req.URL, hop) {
 		return
 	}
 	for k, vs := range creds {
@@ -127,7 +127,7 @@ func (p *CredentialPolicy) Decorate(req *http.Request, hop int) {
 
 // AllowClientCertificate implements ClientCertPolicy.
 func (p *CredentialPolicy) AllowClientCertificate(req *http.Request, hop int) bool {
-	return p.allowed(req.URL, hop)
+	return !withoutCredentials(req) && p.allowed(req.URL, hop)
 }
 
 func isHTTPS(u *url.URL) bool { return strings.EqualFold(u.Scheme, "https") }
@@ -144,4 +144,20 @@ func portOf(u *url.URL) string {
 		return "443"
 	}
 	return "80"
+}
+
+type noCredentialsKey struct{}
+
+// WithoutCredentials marks the requests made with the returned context as ones that carry no credential, no custom header and no
+// client certificate on any hop, whatever the hop policy would allow the host: a mirror's discovery request to a host that is
+// neither the upstream nor an extraHosts entry (R-REPO-051, Q-REPO-151). A redirect keeps the context, so the mark holds for
+// every hop of the request.
+func WithoutCredentials(ctx context.Context) context.Context {
+	return context.WithValue(ctx, noCredentialsKey{}, true)
+}
+
+// withoutCredentials reports whether the request was marked by [WithoutCredentials].
+func withoutCredentials(req *http.Request) bool {
+	v, _ := req.Context().Value(noCredentialsKey{}).(bool)
+	return v
 }

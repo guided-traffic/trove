@@ -89,6 +89,18 @@ database, not to a schema ([lease_manager.go](../../internal/cluster/lease_manag
 Two installations in one database with different schemas therefore compete for the same lock numbers. See
 [H-76](#h-76--advisory-locks-are-per-database-not-per-schema).
 
+## The signal that makes a mirror yield
+
+The signal area `mirror_yield` ([R-REPO-055](../spec/repositories-and-proxy.md), Q-ARCH-286, Q-ARCH-309) tells every process that runs
+background fetches of a remote repository that a client fetch of it waits for a slot: the process cancels those background fetches no
+follower of its own joined and starts none of that repository for 30 seconds. It is a signal area like `jobs`: a message on Valkey
+Pub/Sub, at most once, nothing written to PostgreSQL. The payload is the repository's numeric id and nothing else; a payload that is
+not a number is ignored, and one that names a repository the process runs nothing for does nothing. A client reaches it only by
+making a fetch wait, which the fetch slots of R-REPO-040 bound per replica, and a replica raises it at most once a second per
+repository ([internal/proxy/background.go](../../internal/proxy/background.go), `raiseYield`). What a yield can change is when a pass
+fetches, never what it stores: a cancelled fetch leaves no blob, no entry and no negative entry, so a forged or repeated signal costs
+the mirror time and an upstream request, not integrity.
+
 ## What this does not cover
 
 ### H-76 · Advisory locks are per database, not per schema
@@ -116,3 +128,19 @@ yet. Subject: the content of a write, which a repeated upload or a repeated mana
 What makes it real: a failover or a connection drop that coincides with a `COMMIT`, and a client that retries without checking
 the state first. Content addressing makes a repeated blob upload harmless; a repeated metadata change is not.
 </content>
+
+### H-526 · Whoever can publish on the Valkey signal channel can hold a mirror back
+
+Stage: the signal area `mirror_yield` ([internal/proxy/background.go](../../internal/proxy/background.go), `onYield`;
+[The signal that makes a mirror yield](#the-signal-that-makes-a-mirror-yield)).
+
+Live in every installation with Valkey and a mirror. A message is not authenticated beyond the Valkey credentials of the
+installation, like every signal ([R-ARCH-018](../spec/architecture.md)). A holder of a Valkey account that may publish on the
+`sig` channels, or a compromised replica, publishes `mirror_yield` with a repository id: every process running background fetches
+of that repository cancels them, and starts none for 30 seconds after the last message. Repeating the message at any rate keeps the
+window open, so the pass makes no progress while it lasts. Subject: the progress of a mirror (R-REPO-053), not its content and not
+the clients: they are served as before.
+
+What makes it real: write access to the Valkey Pub/Sub of the installation. Such an account can already delay jobs with a forged
+`jobs` signal and flush caches' early evictions, and it can read the keys of the flight locks; the mirror's loss is a delay that the
+next pass makes up. An operator sees it in `trove_mirror_preempted_total{repo}` growing while no client fetch waits.

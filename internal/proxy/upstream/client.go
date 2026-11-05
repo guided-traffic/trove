@@ -116,3 +116,24 @@ func (g *guard) CloseIdleConnections() {
 		c.CloseIdleConnections()
 	}
 }
+
+// AllowedMirror is [Client.Allowed] for a request of a mirror's discovery (Q-REPO-151): besides the upstream's host and the
+// extraHosts entries, the host may be one of mirrorHosts, the hosts a format's lister names for this upstream (npm's replication
+// host). viaMirrorHost is true for such a host; the request to it must carry no credential, no custom header and no client
+// certificate (outbound.WithoutCredentials), also when an extraHosts entry with sendCredentials matches the host. The upstream's own
+// host is never a mirror host. A host that is none of the three is 502 foreign_host_denied, and an https upstream is never left
+// for cleartext, as for every other host.
+func (c *Client) AllowedMirror(u *url.URL, mirrorHosts []string) (viaMirrorHost bool, err error) {
+	if !sameHost(c.origin, u) {
+		host := strings.ToLower(u.Hostname())
+		for _, h := range mirrorHosts {
+			if strings.EqualFold(h, host) {
+				if strings.EqualFold(c.origin.Scheme, "https") && !strings.EqualFold(u.Scheme, "https") {
+					return false, c.Allowed(u) // the insecure-redirect refusal
+				}
+				return true, nil
+			}
+		}
+	}
+	return false, c.Allowed(u)
+}

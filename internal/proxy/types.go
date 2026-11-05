@@ -179,6 +179,12 @@ type Request struct {
 	// Priority is PriorityClient for a client's request (the zero value) and PriorityBackground for a mirror's pass
 	// (R-REPO-055). The populate check of a background request is the mirror's, which the pass supplies.
 	Priority Priority
+	// Ceiling is the background share B of the repository ([BackgroundShare]) that the pass's request keeps within; it
+	// counts for PriorityBackground only, and 0 takes the share the repository's settings give.
+	Ceiling int
+	// JobID is the id of the job that runs the pass a background request belongs to: the upstream log record names it
+	// (R-REPO-057).
+	JobID string
 	// Headers sets, on the answer the engine streams to the leader's own client while the
 	// artifact is fetched, the headers of a stored answer that do not depend on the body
 	// (Accept-Ranges, Cache-Control), so that the first answer and the later ones differ only

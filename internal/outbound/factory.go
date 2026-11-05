@@ -406,6 +406,9 @@ type Call struct {
 	// read when the request completes; logged for purpose remote only, nil or ""
 	// logs null.
 	CacheStatus func() string
+	// JobID is the id of the job whose pass sent a background request of a mirror (R-REPO-057); it is logged as job_id for
+	// purpose remote when set and left out otherwise.
+	JobID string
 }
 
 type callKey struct{}

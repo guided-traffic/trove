@@ -3189,8 +3189,9 @@ Priority: **MVP** · Covers: trove-only
   background share of R-REPO-055.
 - **The circuit is the clients'** (Q-REPO-139). No outcome of a background request moves or resets the circuit of R-REPO-029:
   a rate limit the mirror provokes never turns clients away. The mirror reads the circuit: while it is open, the pass sends
-  nothing and waits for it to close; it never probes. A client request keeps R-REPO-029's classification: for a client, a
-  `503` with `SlowDown` is still `upstream_error`.
+  nothing and waits for it to close; it never probes. Open means open: after the open period the circuit is half-open, the
+  pass goes on without claiming the probe and without resetting anything (Q-REPO-150). A client request keeps R-REPO-029's
+  classification: for a client, a `503` with `SlowDown` is still `upstream_error`.
 - Every rate-limit answer is counted and its wait added (R-REPO-057); the state keeps the number of waits, their total
   seconds, the time and status of the last one and `rate_limited_until` (R-REPO-056); `mirror.rate_limited` is written at
   most once per pass and hour.
@@ -3235,8 +3236,8 @@ budget (`limits.maxConcurrentFetches`, R-REPO-040, Q-REPO-8, Q-REPO-97), and cli
   one exhausted, and takes its slot at once.
 - **Pre-emption across replicas.** A client-serving replica whose client fetch of repository R has to wait for a slot raises the
   signal `mirror_yield` with R's id, at most once per second per repository ([architecture.md](architecture.md) R-ARCH-018,
-  Q-ARCH-286). The process that runs R's pass pre-empts every running background fetch of R that no client of its own has
-  joined, and starts none for 30 s after the last signal. While Valkey is unavailable the signal is lost and the pass keeps
+  Q-ARCH-286). Every process that runs background fetches of R, the sender included, pre-empts those that no client of its own
+  has joined, and starts none of R for 30 s after the last signal (Q-ARCH-309, Q-ARCH-310). While Valkey is unavailable the signal is lost and the pass keeps
   within B, which the bound above counts.
 - **What happens to a pre-empted fetch.** Its upstream request is cancelled and its partial body discarded: no blob, no cache
   entry, no negative entry; its flight is released with `failed`, so that a waiter fetches for itself at once (R-REPO-026);
@@ -3337,7 +3338,8 @@ Priority: **MVP** · Covers: trove-only
   `mirror_state`, read at most once per 30 s, so every such process reports the same values. The alerts `TroveMirrorFailing` and `TroveMirrorStale` are those of
   [operations-and-observability.md](operations-and-observability.md) R-OPS-046 (Q-OPS-160).
 - **Upstream log** ([operations-and-observability.md](operations-and-observability.md) R-OPS-011): every background request
-  writes a record with `flight_role: mirror` and `on_behalf_of` empty; the record names the pass's job.
+  writes a record with `flight_role: mirror` and `on_behalf_of` empty (`system` in the log, as for every job); the record names
+  the pass's job in the field `job_id` (Q-REPO-154).
 - **Audit** (Q-REPO-145). Every artifact and document a pass stores writes the populate event of a cache fill
   ([authorization.md](authorization.md) R-AUTHZ-008, `authz.write.allowed` with the action `populate`) in the fill transaction,
   with the system actor and `reason: mirror`, as a client's fill writes it with the client's. The pass adds
@@ -5584,6 +5586,147 @@ Status: **Decided by the development agent** — selected from the options below
 R-STOR-045.
 
 **Applied in the spec:** R-REPO-050, R-REPO-053 (stops).
+
+### Q-REPO-149 · A background request's own outcomes stay with the request that led the flight
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a background request (R-REPO-055) shares the flights of R-REPO-026 with clients: a client that asks for an item a pass is
+fetching joins the pass's flight as a follower, and the result of a flight is what every follower answers with. The outcomes only a
+pass understands (pre-empted, the circuit is open, the spool refused admission, the upstream rate-limited it) must not reach a
+client as its answer.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The outcomes travel in a field of the flight's result that only the leading background request reads (`flightResult.own`); to everybody else the result is empty and they fetch for themselves (chosen) | A pre-empted or throttled flight releases with `failed`, and a follower looks again and fetches with its own classification | A client is never handed a rate-limit or a pre-emption it did not cause; the existing rule for an empty result applies unchanged | One more field of the result |
+| (b) The outcomes are errors of the flight like any other | Followers answer with them | No new field | A client gets a `*BackgroundWait` or `*upstream.RateLimitError` that is no problem answer: `500` for a pre-emption it only waited behind |
+| (c) A background request never leads a flight | The pass joins or fetches outside any flight | No sharing problem | A client that asks for the item the pass is fetching fetches a second time (R-REPO-055: it joins as a follower) |
+
+**Choice:** (a). A background request that joins a client's flight gets that flight's result as it is, with the client
+classification of R-REPO-029; the pass treats it as a failure of the item.
+
+**Rationale:** the flight is the cluster's one fetch of an item (R-REPO-026); keeping the pass's private outcomes out of it is what
+lets a pre-emption release the flight with `failed` at once so that a waiter fetches for itself. The development agent would
+revisit the joined case if passes are seen to lose rate-limit hints that way: a client's flight that met a `429` opens the circuit
+at once, and the pass then waits on the open circuit instead.
+
+**Applied in the spec:** R-REPO-054, R-REPO-055. Code: [internal/proxy/background.go](../../internal/proxy/background.go) (`resultOf`,
+`backgroundOutcome`), [flight.go](../../internal/proxy/flight.go) (`flightResult.own`), [fetch.go](../../internal/proxy/fetch.go).
+
+### Q-REPO-150 · An open circuit pauses a pass; a half-open one does not
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-054 says the pass sends nothing while the circuit is open and never probes. R-REPO-029 has a third state: after the
+open period the circuit is half-open, and the next client request is the probe.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A background request waits while the circuit is open (`open_until` in the future, or another request of the replica holds the probe) and goes on when the period has passed, without claiming the probe and without resetting anything (chosen) | The wait is `*proxy.BackgroundWait{circuit_open}`, until the circuit's next state change, at least 1 s and at most 5 s | A pass resumes by itself on an installation with no client traffic; it never takes the clients' probe | While the upstream is still down, one background request per item fails after the period (a failure of the item, not counted) |
+| (b) It waits until a client's request has closed the circuit | Half-open counts as open | The pass never sends to an upstream a client has not found alive | A mirror of an installation without client traffic never resumes after one outage |
+| (c) It probes like a client | Its success closes the circuit | Self-healing | It moves the circuit: R-REPO-054 forbids it |
+
+**Choice:** (a). The cap of 5 s keeps the pass looking again often enough to notice a client's success that closed the circuit early.
+
+**Rationale:** the circuit belongs to the clients and the pass only reads it; a pass that waited for a probe nobody sends would
+stall for good. The development agent would revisit it if mirrors of idle installations hammer a dead upstream: the item failures
+back off with the pass's attempts (R-REPO-053).
+
+**Applied in the spec:** R-REPO-054. Code: [internal/proxy/background.go](../../internal/proxy/background.go) (`circuitWait`),
+[fetch.go](../../internal/proxy/fetch.go) (`run`, `inSlot`), [fill.go](../../internal/proxy/fill.go), [get.go](../../internal/proxy/get.go).
+
+### Q-REPO-151 · A discovery request reaches the upstream, the extraHosts entries and the hosts the lister names, and the last never get a credential
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `discover.Upstream.Get` may reach a host that is neither the upstream nor an `extraHosts` entry: npm's replication host of
+the public registry (Q-NPM-72). The credential of a repository goes only where it goes for clients (R-REPO-033), and a host the
+lister names is not one of them.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The host check is `Client.AllowedMirror`; a request to a lister's host carries a mark in its context that makes the credential policy send no credential, no custom header and no client certificate on any hop, also where an `extraHosts` entry with `sendCredentials` matches the host (chosen) | The rule is the policy's, once per hop | Holds for redirects; independent of the settings of the repository | A small addition to the hop policy |
+| (b) The client sends what the policy says; the lister's hosts must not match `sendCredentials` | Configuration decides | No code | An operator's `*.npmjs.com` entry with `sendCredentials` would send the registry's token to the replication host |
+| (c) A second client without a credential for the lister's hosts | A pool of its own per repository | Isolated | Another pool and cache per remote, and the egress and redirect rules to keep equal |
+
+**Choice:** (a). A host of the lister is matched by host name, any port, case-insensitively; the upstream's own host is never one;
+a lister's host over `http` while the upstream is `https` is refused like any other hop of that kind.
+
+**Rationale:** "never" is a property of the request, not of a setting somebody can change later. The development agent would revisit
+(c) if a format needs headers of its own toward its discovery host.
+
+**Applied in the spec:** R-REPO-051 (the `Upstream` contract is unchanged), [security/egress.md](../security/egress.md). Code:
+[internal/proxy/upstream/client.go](../../internal/proxy/upstream/client.go) (`AllowedMirror`),
+[internal/outbound/hop.go](../../internal/outbound/hop.go) (`WithoutCredentials`), [internal/proxy/get.go](../../internal/proxy/get.go).
+
+### Q-REPO-152 · The body of a discovery request that names no bound is read up to 32 MiB
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `Upstream.Get(ctx, u, accept, max)` has `max` 0 for "the engine's bound for discovery documents" (R-REPO-051). The
+largest page a format reads is an npm key range of 10,000 names or a NuGet search of 1,000 packages with their versions.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 32 MiB, `proxy.DiscoveryDocumentMaxBytes`, a constant (chosen) | A body above it is `502 upstream_item_too_large` | Room for the largest page seen and a stop for an endless stream | Not tunable |
+| (b) The repository's `limits.maxMetadataBytes` | The bound of a metadata document | One knob | A repository tuned for package documents (a few MiB) would refuse a search page |
+| (c) 8 MiB | Smaller | Less memory per call | A NuGet search of 1,000 packages with many versions can pass it |
+
+**Choice:** (a). A caller that knows better passes its own `max`.
+
+**Rationale:** the bound only has to stop an upstream that never ends; the format bounds what it keeps. The development agent would
+make it a key if a real upstream's page passes 32 MiB.
+
+**Applied in the spec:** R-REPO-051. Code: [internal/proxy/get.go](../../internal/proxy/get.go) (`DiscoveryDocumentMaxBytes`).
+
+### Q-REPO-153 · A pre-emption moves the slot at once, and a waiting client keeps the background from starting
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-055 says a client fetch that finds no free slot pre-empts the youngest background fetch and "takes its slot at once",
+and that a background fetch starts only while no client fetch of the repository waits.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The slot is given up at the moment of the pre-emption: the counters move under the slots' lock, the client takes the slot in the same step, and the cancelled request unwinds afterwards; the youngest is the one started last, a fetch that a follower of the replica joined is skipped, and a client that has to queue counts as waiting for its repository (chosen) | The client's wait is the lock, not the unwinding | The unit criterion (less than 50 ms) holds whatever the upstream does with the cancelled connection | For a moment one connection more than the limit is open |
+| (b) The client waits until the cancelled request has released its slot | The counters follow the connections | Exact | The wait is as long as the unwinding of a transfer that is being cancelled |
+| (c) Pre-empt only a fetch that has not sent its request | Cheap | No wasted transfer | Useless: the background fetches that matter are the long ones |
+
+**Choice:** (a). The yield of another process (Q-ARCH-309) uses the same step for every background fetch of the repository that no
+follower joined. A pre-emption is not counted here: the engine of the pass counts `ErrPreempted` (R-REPO-057), because it is the one
+that knows the item.
+
+**Rationale:** R-REPO-055's bound `maxConcurrentFetches + n − 1 + B` counts connections the replica opens, and an unwinding
+connection is a few milliseconds long; the wait of a client is not. The development agent would revisit (a) if an upstream counts
+connections strictly and the overshoot shows.
+
+**Applied in the spec:** R-REPO-055. Code: [internal/proxy/slots.go](../../internal/proxy/slots.go) (`acquire`, `preempt`, `take`,
+`acquireBackgroundJoined`).
+
+### Q-REPO-154 · A pass's fill is Present when stored, runs the format's gate only when it fetches, and names its job in the upstream log
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `mirror.Host.Fill` stores one artifact of a plan "through the format's artifact gate and the remote engine": the gate
+(`BeforeArtifact`) may revalidate the format's package document, and R-REPO-057 asks for the pass's job in the upstream log.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The host asks the engine whether the artifact is stored first and answers `Present` with no gate and no request; otherwise it runs the gate (its requests, too, are background requests), then the engine's background fill; the upstream log record carries `flight_role: mirror`, `on_behalf_of: system` and `job_id` (chosen) | A pass over stored packages is a read of PostgreSQL | No upstream request for what exists; the gate's document request is the pass's | The gate's mark checks (a removed version) are not applied to what is stored: they are applied at serve time, as for every stored artifact |
+| (b) Always run the gate | The marks decide first | One path | A pass over a million stored versions revalidates documents that were fresh |
+| (c) Fill without the gate | The engine alone | Simple | A removed or blocked version would be stored; the digest the format announces would not be verified (R-REPO-041) |
+
+**Choice:** (a). Offline, a negative entry, a refused populate check and a version blocked by the vulnerability scanning
+(R-VULN-015) are failures of the item, not a wait: every rule of a client's fill applies, and the item is tried again by the next
+pass. The populate event of the fill is written by the pass's populate check, with the system as actor and `mirror` as reason
+(Q-REPO-145); `job_id` is a field of the upstream log for `purpose: remote` records of background requests only.
+
+**Rationale:** the mirror is a client that has no client: everything it stores goes through the road a client's fill takes. The
+development agent would revisit (a) if the stored-artifact check proves to be a cost of a pass over very large repositories.
+
+**Applied in the spec:** R-REPO-055, R-REPO-057, [operations-and-observability.md](operations-and-observability.md) R-OPS-011. Code:
+[internal/formathost/mirror_host.go](../../internal/formathost/mirror_host.go), [internal/proxy/fill.go](../../internal/proxy/fill.go),
+[internal/outbound/roundtripper.go](../../internal/outbound/roundtripper.go).
 
 ## What this does not cover
 

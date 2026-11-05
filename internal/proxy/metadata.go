@@ -99,7 +99,7 @@ func (e *Engine) metadata(ctx context.Context, rq Request, restoredAt time.Time)
 			e.m.lookup(rem.Repo.Key, Metadata, resultStale)
 			return e.document(en, servedStale()), nil
 		}
-		return nil, withStatus(assumedOffline(retry), CacheStatus{})
+		return nil, withStatus(circuitOpenError(rq, retry), CacheStatus{})
 	}
 	// Step 8: the negative entry, the replica's L1 first and then Valkey.
 	if _, hit := e.neg.lookup(ctx, rem, rq.Path, rq.Variant); hit {
@@ -116,7 +116,7 @@ func (e *Engine) metadata(ctx context.Context, rq Request, restoredAt time.Time)
 	}
 	// Step 10: the collapsing protocol and the fetch.
 	e.m.lookup(rem.Repo.Key, Metadata, resultMiss)
-	if found {
+	if found && !rq.background() { // a pass waits for the refresh: it has no client to answer with the stored copy
 		st.refresh = time.Duration(rem.Settings.Cache.MetadataRefreshTimeoutSeconds) * time.Second
 	}
 	res, end := e.collapse(ctx, rq, st)
@@ -147,6 +147,8 @@ func (e *Engine) metadataAnswer(ctx context.Context, rq Request, st *reqState, e
 		e.m.collapsed.WithLabelValues(rem.Repo.Key).Inc()
 	}
 	switch {
+	case res.own != nil:
+		return nil, res.own // a background request's own outcome: pre-empted, the circuit is open, the spool is busy, rate-limited
 	case res.err != nil:
 		if found && e.withinMaxStale(rem, en) {
 			e.m.lookup(rem.Repo.Key, Metadata, resultStale)
@@ -243,7 +245,7 @@ func (e *Engine) keepBytes(d [32]byte, b []byte) {
 func (f *fetcher) notModified(ctx context.Context, resp *http.Response) flightResult {
 	e, rq := f.e, f.rq
 	rem := rq.Remote
-	e.circuitSuccess(ctx, rem)
+	f.success(ctx)
 	ttl := int64(rem.Settings.Cache.MetadataTTLSeconds)
 	var renewed bool
 	err := e.o.Runner.InTx(ctx, func(tx meta.Tx) error {
@@ -309,7 +311,7 @@ func (f *fetcher) metadata(ctx context.Context, resp *http.Response, idle *atomi
 		return f.bodyFailure(ctx, err, idle)
 	}
 	defer func() { _ = sp.Close() }()
-	e.circuitSuccess(ctx, rem)
+	f.success(ctx)
 
 	size := sp.Size
 	ra, ok := sp.Section(0, size).(io.ReaderAt)
@@ -364,6 +366,9 @@ func (f *fetcher) bodyFailure(ctx context.Context, err error, idle *atomic.Bool)
 	switch {
 	case errors.Is(err, errTooLargeBody):
 		return flightResult{err: tooLarge(rem)}
+	case f.rq.background() && errors.Is(err, blob.ErrSpoolFull):
+		// The spool refused admission (R-STOR-004): the pass repeats the item after 5 s (R-REPO-052).
+		return flightResult{own: &BackgroundWait{Reason: WaitSpoolBusy, After: spoolBusyWait}}
 	case idle.Load():
 		return f.transportFailure(ctx, err, true)
 	}
