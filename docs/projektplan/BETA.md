@@ -1,7 +1,7 @@
 # trove · Project plan to the beta release
 
 **Status:** ⚪ not started · 🟡 in progress or partly done · 🟢 done
-**Last updated:** 2026-11-04
+**Last updated:** 2026-11-05
 
 The way from zero to the beta release. The beta is trove with two package registries, **npm** and
 **NuGet (.NET)**, each with local, remote (pull-through) and virtual repositories, running on the
@@ -890,16 +890,23 @@ phase 7, so that the failure suite covers the background sync too. Its engine wa
   format (NuGet: the upstream's catalog or its package listing; npm: the upstream's package list or change feed, where it
   has one); what the include and exclude patterns of the remote bound; storage and quota bounds, because a mirror of a
   public registry is terabytes; the catalog's pull-replication entries (API-082 to API-090) it pulls forward or leaves
-- ⚪ Background synchronisation on `worker`: a job per mirrored remote, resumable from a checkpoint, continued after a
+- 🟡 Contracts of the engine: the tables `mirror_state` and `mirror_pending` (migration 00040, export classes of Q-REPO-147)
+  and the seam `mirror.Host` between the engine and the remote engine (Q-ARCH-288)
+- 🟡 npm discovery (WP6b.2) and NuGet discovery (WP6b.3): the formats' listers, the counting stubs' feeds, listings and
+  throttling modes
+- 🟡 Background synchronisation on `worker`: a job per mirrored remote, resumable from a checkpoint, continued after a
   drain, a restart or a failover, and started again on its own after an error
-- ⚪ Upstream throttling: `429`, `503` with `SlowDown` and every other rate-limit answer are honoured (`Retry-After`, back-off
+- 🟡 Upstream throttling: `429`, `503` with `SlowDown` and every other rate-limit answer are honoured (`Retry-After`, back-off
   with jitter, fewer concurrent fetches), and the sync resumes by itself when the upstream allows it again
-- ⚪ Client requests first: a request from a client is served before the background sync; the sync uses a lower-priority
+- 🟡 Client requests first: a request from a client is served before the background sync; the sync uses a lower-priority
   share of the remote's fetch budget that client fills pre-empt
-- ⚪ Status: progress, last complete pass, errors and rate-limit waits per mirrored remote in the API and the admin UI, and
+- 🟡 Status: progress, last complete pass, errors and rate-limit waits per mirrored remote in the API and the admin UI, and
   as metrics; the mirror's fills audited like cache fills
-- ⚪ Integration tests against the counting test upstreams answering `429` and `SlowDown`; e2e: a mirror pass while clients
+- 🟡 Integration tests against the counting test upstreams answering `429` and `SlowDown`; e2e: a mirror pass while clients
   install, with the clients' requests served first
+- 🟡 The repository wizard asks for the format first (owner, 2026-11-05): a picker of format tiles with a filter field is the
+  first step, and the class step offers only the classes the chosen format has, because some features are technically
+  impossible for some formats ([R-UI-021](../spec/api-and-ui.md#r-ui-021--repository-creation-wizard-and-edit-form), Q-UI-112)
 
 ## Phase 7 · HA hardening, backup and Helm (M5)
 

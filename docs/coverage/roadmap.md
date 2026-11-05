@@ -1078,7 +1078,7 @@ R-NPM-022 (P1, Q-HA-72); a gap-free way back from the cut (R-HA-064).
 
 ## Phase 6b · Remote full mirror
 
-**Status:** specified, not scheduled. The process topology is decided (2026-11-04, [phase 6a](#phase-6a--task-areas)): a pass
+**Status:** in progress (2026-11-05). The process topology is decided (2026-11-04, [phase 6a](#phase-6a--task-areas)): a pass
 runs on a `worker`, or on a worker pool that claims the queue `mirror` alone, and the client fills it gives way to run on
 `packages` (R-REPO-055); the contract wave laid only the pieces that bind no topology (Q-ARCH-288).
 
