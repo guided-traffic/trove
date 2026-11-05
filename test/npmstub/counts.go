@@ -23,11 +23,13 @@ type Entry struct {
 	Path        string `json:"path"`
 	Conditional bool   `json:"conditional"`
 	Auth        string `json:"auth"` // none, bearer, basic or other
-	Kind        string `json:"kind"`
-	Name        string `json:"name,omitempty"`
-	File        string `json:"file,omitempty"`
-	Accept      string `json:"accept,omitempty"` // the Accept header of the last request of the entry
-	Count       int    `json:"count"`
+	// Host is the replication host the requests went to; empty for the registry host's.
+	Host   string `json:"host,omitempty"`
+	Kind   string `json:"kind"`
+	Name   string `json:"name,omitempty"`
+	File   string `json:"file,omitempty"`
+	Accept string `json:"accept,omitempty"` // the Accept header of the last request of the entry
+	Count  int    `json:"count"`
 }
 
 // Counts is a snapshot of the counters. Control requests are not counted.
@@ -129,8 +131,8 @@ func (c Counts) Summary() string {
 }
 
 type countKey struct {
-	method, path, auth string
-	conditional        bool
+	method, path, auth, host string
+	conditional              bool
 }
 
 // authScheme classifies an Authorization header without keeping the credential.

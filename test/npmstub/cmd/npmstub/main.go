@@ -1,7 +1,7 @@
 // Command npmstub runs the counting test upstream (package npmstub) as a process or container, and
 // carries the two tools around it:
 //
-//	npmstub [serve] -listen :8443 -tls-cert f -tls-key f [-control-token-file f] [-public-url u]
+//	npmstub [serve] -listen :8443 -tls-cert f -tls-key f [-control-token-file f] [-public-url u] [-replication-hosts h,...]
 //	npmstub serve -self-signed localhost,npmstub -ca-out ca.crt     (a throwaway CA, for local runs)
 //	npmstub reference -out dir          write the reference project's package.json (perf/npm/reference)
 //	npmstub record ...                  by hand: record trimmed documents and tarballs from a live registry
@@ -58,11 +58,17 @@ func serve(args []string) error {
 	caOut := fs.String("ca-out", "", "with -self-signed: write the CA certificate here")
 	publicURL := fs.String("public-url", "", "base of the tarball addresses in documents (default: https:// and the request's Host)")
 	tokenFile := fs.String("control-token-file", "", "file with the bearer token of the control API (/-/stub/); without it the API is off")
+	replication := fs.String("replication-hosts", npmstub.DefaultReplicationHost, "comma-separated host names under which the replication paths of the public registry are served (the certificate has to carry them); empty: none")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	cfg := npmstub.Config{PublicURL: *publicURL, Logger: slog.New(slog.NewJSONHandler(os.Stderr, nil))}
+	cfg := npmstub.Config{PublicURL: *publicURL, Logger: slog.New(slog.NewJSONHandler(os.Stderr, nil)), ReplicationHosts: []string{}}
+	for _, h := range strings.Split(*replication, ",") {
+		if h = strings.TrimSpace(h); h != "" {
+			cfg.ReplicationHosts = append(cfg.ReplicationHosts, h)
+		}
+	}
 	if *tokenFile != "" {
 		raw, err := os.ReadFile(*tokenFile)
 		if err != nil {

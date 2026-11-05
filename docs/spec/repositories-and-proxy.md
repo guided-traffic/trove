@@ -2903,10 +2903,11 @@ Priority: **MVP** · Covers: API-082, API-083
 - A stored section written before these members existed reads back with them at their defaults: the read fills them, and
   no migration rewrites stored documents (Q-REPO-130). A document read and sent back therefore saves unchanged.
 - `mode: mirror` on a format whose remote adapter cannot discover packages (the catalog fact `Mirror`,
-  [architecture.md](architecture.md) R-ARCH-008) answers 422 `not_applicable` at `/remote/mode`. npm and NuGet can,
-  once their discovery and the engine of R-REPO-053 are built: until then neither format's remote adapter implements the
-  lister, so `mode: mirror` answers 422 `not_applicable` for every format, as R-REPO-024 refuses every setting that
-  would be accepted and not enforced. A
+  [architecture.md](architecture.md) R-ARCH-008) answers 422 `not_applicable` at `/remote/mode`. npm and NuGet can, once their
+  discovery is built: npm's remote adapter implements the lister ([formats/npm.md](formats/npm.md#mirror-discovery)), so
+  npm accepts `mode: mirror`; NuGet's does not yet, so its `mode: mirror` still answers 422 `not_applicable`, as R-REPO-024
+  refuses every setting that would be accepted and not enforced. Until the engine of R-REPO-053 is built no pass runs for
+  an accepted mirror: the mode is saved and shown, and the remote behaves as a pull-through cache. A
   `discovery` that the upstream does not offer is not refused at save, because only the upstream can answer it (as for
   NuGet's resources, [formats/nuget.md](formats/nuget.md) Q-NUGET-14): the pass reports `discovery_unavailable`
   (R-REPO-056).

@@ -1125,6 +1125,8 @@ are the same code. It reaches no network, and it answers TLS only.
 | [route.go](../../test/npmstub/route.go) | path to package name: `@scope%2fname` and `@scope/name` are one package |
 | [counts.go](../../test/npmstub/counts.go) | the counters and their readers: `Documents`, `ConditionalDocuments`, `Tarballs`, `Tarball`, `Requests`, `Violations(maxDocuments, maxTarballs)` |
 | [mode.go](../../test/npmstub/mode.go) | the failure switches |
+| [replication.go](../../test/npmstub/replication.go) | the replication paths of the public registry under a second host name: `GET /`, `registry/_changes`, `registry/_all_docs`; the change feed (`Change`, `UpdateSeq`), the log of the replication host's requests (`Replications`) |
+| [throttle.go](../../test/npmstub/throttle.go) | the throttling modes of the mirror's tests (R-REPO-054, R-REPO-059): `Throttle`, set in `Mode`; self-contained |
 | [audit.go](../../test/npmstub/audit.go) | the advisory endpoint: the recorded advisories of [testdata/advisories.json](../../test/npmstub/testdata/advisories.json), the log of the requests (`Audits`, `Asked`) |
 | [control.go](../../test/npmstub/control.go) | the control API below `/-/stub/` |
 | [served.go](../../test/npmstub/served.go) | `Served`: a version as the document lists it now (`GET /-/stub/version`), and `ServedVersion.Matches`, whether it is what a publish of a name, version, dependencies and tags makes (the tarball's integrity included) |
@@ -1156,6 +1158,7 @@ stub.Publish("@acme/ui", "99.0.0", nil)                         // E2.5: a highe
 | `GET /{name}`, `GET /@scope%2fname`, `GET /@scope/name` | the package document; the install document when `Accept` contains `application/vnd.npm.install-v1+json`; `Vary: Accept, Accept-Encoding`; a weak `ETag` over the body and `Last-Modified`; 304 for a matching `If-None-Match`, else for an `If-Modified-Since` at or after the modification time (only when no `If-None-Match` is present); gzip when asked |
 | `GET /{name}/-/{file}.tgz` | the tarball; `ETag` and 304 |
 | `GET /-/ping` | `{}` |
+| `GET /`, `GET /registry/_changes?since=&limit=`, `GET /registry/_all_docs?startkey=&endkey=&limit=` **with the `Host` of a replication host** (`Config.ReplicationHosts`, flag `-replication-hosts`, default `replicate.npmjs.com`; the certificate has to carry the name) | the replication service (R-REPO-059): `{"db_name","doc_count","update_seq"}`; the changes after `since` (one entry per id, the last change; `deleted: true` for a deleted package) with `last_seq`; the ids in byte order from `startkey` to `endkey` inclusive (both JSON strings); `limit` 1 to 10,000 (default 1,000); `include_docs` and `skip` answer 400. The registry host answers none of these paths |
 | `POST /-/npm/v1/security/advisories/bulk` | the bulk advisory request (plain or gzip): every recorded advisory of every name it was asked about, in the public registry's shape (`id`, `url`, `title`, `severity`, `vulnerable_versions`, `cwe`, `cvss`); the clients match the versions. The names, the credential scheme and the coding go to the log of `GET /-/stub/audits`. The advisories are synthetic (ids from 1900001, addresses on `advisories.example.org`): `left-pad` `<=1.3.0`, `lodash` `<4.17.21`, `@cobalt/dusky-gauge` `>=1.0.0 <3.0.0` |
 | any other method on a package | 405 (counted) |
 | anything else | 404 |
@@ -1182,7 +1185,8 @@ than once and every tarball file requested more than once.
 | Field | Effect |
 |---|---|
 | `down` | `503`: every request answers 503; `reset`: the connection is cut without an answer; `hang`: the request is held until the client gives up (at most two minutes) |
-| `delay_ms` | `{"document": 200}` delays by class: `document`, `tarball`, `audit`, `other` |
+| `delay_ms` | `{"document": 200}` delays by class: `document`, `tarball`, `replication`, `audit`, `other` |
+| `throttle` | answers as a registry that rate-limits (R-REPO-054): `{"kind": "429", "class": "tarball", "from": 11, "count": 1, "period_ms": 0, "retry_after_seconds": 7, "delay_ms": 0}`. `kind`: `429` (`Retry-After` in seconds), `429_date` (`Retry-After` as an HTTP date), `503` (`Retry-After`), `503_slowdown` (the S3 `SlowDown` body, no `Retry-After`), `403_quota` and `429_quota` (`X-RateLimit-Remaining: 0` and `X-RateLimit-Reset`, seconds since the epoch, no `Retry-After`); an empty `kind` with `delay_ms` holds every response of the class and refuses none. `class` limits it to one kind of request (`document`, `tarball`, `replication`, ...), empty is every request; throttled from the `from`-th matching request for `count` requests (default 1) or for `period_ms` from the first throttled one. Setting a mode starts the counters afresh; `Server.Throttled()` is the number of throttled answers |
 | `not_found`, `gone` | names whose documents and tarballs answer 404 / 410 |
 | `bad_integrity` | names whose documents promise an integrity the tarballs do not have |
 | `wrong_name` | names whose documents carry another `name` than the one requested |
@@ -1196,7 +1200,10 @@ than once and every tarball file requested more than once.
 Changes to the packages are separate from modes: `Publish(name, version, deps, tags...)` offers a version (creating the
 package if the stub does not know the name; it becomes `latest` when it is a release above the current one),
 `Drop(name, version)` removes it from the document, `Restore` lists it again, `ResetAll` undoes all of it. Each changes the
-document and therefore its `ETag`.
+document and therefore its `ETag`. The change feed of the replication host starts with one change per package of the corpus
+and the recorded set; `Publish` adds a change for its package, `Change(name, deleted)` adds one without touching a version, and
+with `deleted` the package's document and tarballs answer 404 and `_all_docs` no longer lists it (a later `Publish` brings it
+back).
 
 ### Control API
 
@@ -1205,13 +1212,15 @@ Control requests are not counted.
 
 | Request | Effect |
 |---|---|
-| `GET /-/stub/counts` | `{"entries": [{method, path, conditional, auth, kind, name, file, accept, count}]}` |
+| `GET /-/stub/counts` | `{"entries": [{method, path, conditional, auth, host, kind, name, file, accept, count}]}`; `host` is set for the requests to a replication host (kind `replication`) |
 | `GET /-/stub/audits` | `{"requests": [{names, auth, encoding}]}`: the advisory requests, oldest first |
-| `POST /-/stub/reset[?all=true]` | zero the counters and the log of advisory requests; with `all` also modes and package changes |
+| `POST /-/stub/reset[?all=true]` | zero the counters and the logs of advisory and replication requests; with `all` also modes, package changes and the change feed |
 | `GET`/`POST /-/stub/mode` | read / replace the failure switches |
 | `POST /-/stub/publish` | `{"name","version","dependencies","tags"}` (409 if the version exists) |
 | `GET /-/stub/version?name=&version=` | the version as the document lists it now: `{"name","version","dependencies","integrity","tags"}` (`tags` are the dist-tags that point at it); `404` when the document does not list it (unknown, dropped). A client that lost the answer of a publish reads it back ([the control clients and a broken forward](#m1-tests)) |
 | `POST /-/stub/drop`, `POST /-/stub/restore` | `{"name","version"}` |
+| `POST /-/stub/change` | `{"name","deleted"}`: a change of the replication feed for the package; `deleted` removes the package |
+| `GET /-/stub/replication` | `{"update_seq","requests":[{host, method, path, query, auth}]}`: what the replication host received, oldest first; `auth` is the credential scheme, so anything but `none` means an `Authorization` header arrived |
 
 ### The corpus
 

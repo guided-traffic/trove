@@ -255,6 +255,7 @@ internal/formats/npm/
 ├── remote.go          Format.Remote(): the RemoteAdapter (UpstreamRequest, PrepareFill, OnFill, Rewrite, TracksVersionRemoval, ExpectsType, BeforeArtifact)
 ├── virtual.go         Format.Virtual(): Strategy (Merge for a package document), LocalDocument (neutral tarball address), Merge
 ├── settings.go        the npm member of the repository document (settings.schema.json): latestGuard, serveRemovedVersions, latestStrategy, distTagStrategy
+├── mirror.go          the mirror's Lister on the remote adapter: methods, hosts, `names`, the cursor (R-REPO-051; mirror_feed.go, mirror_plan.go; see mirror.md)
 ├── handlers_remote.go serveFull (validator, rendition cache, derivation of the forms), remote documents and tarballs, exposedDocument
 ├── handlers_virtual.go the merged document, the tarball through the tiers, ?write=true from the deployment target
 ├── remote/            the checks of R-NPM-024 (Check, a stream), Parse, Full / Abbreviated / Version, Rewrite, URL; a leaf

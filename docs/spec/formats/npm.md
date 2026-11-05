@@ -1552,17 +1552,23 @@ what the npm format contributes through the mirror interface of [architecture.md
   - `names`: the include patterns without a wildcard, read as package names, and the npm packages the repository holds.
 - **The plan of a package.** The format fills the full package document (`<name>`, variant `full`, R-NPM-024) through the
   remote engine and returns its versions newest first by semver precedence, each with its tarball path (R-NPM-025), the
-  announced size where the document has one (`dist.unpackedSize` is not the tarball's size and is not used) and whether it is
+  announced size where the document has one (`dist.unpackedSize` is not the tarball's size and is not used; Q-NPM-74) and whether it is
   a prerelease (semver: a version with a pre-release part). The version of the `latest` dist-tag always counts, whatever
   `maxVersionsPerPackage` and `includePrereleases` say (Q-NPM-71). Versions marked removed upstream (R-NPM-026) are not in the
-  plan. Tarballs are fetched through the format's artifact gate (`BeforeArtifact`), so the document's `integrity` is verified
+  plan (the stored document lists the versions the upstream lists; a package without versions, unpublished or not found
+  is an empty plan), and neither is a version whose text is not the canonical form of R-NPM-015, whose tarball no client can
+  request under a canonical path (Q-NPM-74). Tarballs are fetched through the format's artifact gate (`BeforeArtifact`), so the document's `integrity` is verified
   as for a client (R-NPM-025).
 - **Hosts** (Q-NPM-72). The feed requests go to `replicate.npmjs.com`, a discovery host that the format declares for its
   well-known upstream: they pass the egress address rules, TLS verification and the redirect rules of the remote's client, and
   carry no credential and no `Authorization` header. Every other request of a pass goes to the upstream origin or an
   `extraHosts` entry, as a client's does (H-504).
-- **Cursor.** `{"seq": "<update_seq or the last change's seq>"}` for the feed, `{"after": "<last id>", "range": n}` within a
-  full pass; at most 4 KiB, opaque to the core.
+- **Cursor.** `{"seq": "<update_seq or the last change's seq>"}` for the feed, `{"seq": "<update_seq>", "after": "<last id>",
+  "range": n}` within a full pass, so that the sequence read before the listing reaches its last page (Q-NPM-73); at most
+  4 KiB, opaque to the core. A sequence is stored and sent back as the service gave it (a number or a string). A page
+  holds at most the `limit` the core asked for; a pass that has more continues from the cursor of its last used id or change.
+  A replication answer of 404, 410 or 501 ends the method with `discovery_unavailable`; any other failure is a failure of the
+  call.
 
 Acceptance criteria (integration, the npm stub of R-REPO-059 serving the replication paths under a second host name):
 
@@ -4710,6 +4716,53 @@ Context: the remote's client sends only to the upstream origin and the `extraHos
 R-REPO-033 intact. The development agent would revisit (c) together with Q-NPM-69's condition.
 
 **Applied in the spec:** the section "Mirror discovery"; H-504 in [repositories-and-proxy.md](../repositories-and-proxy.md).
+
+### Q-NPM-73 · The cursor of a full feed pass carries the sequence beside the position in the key ranges
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the section "Mirror discovery" named `{"seq"}` for the feed and `{"after", "range"}` within a full pass. The core hands a
+format only the cursor of the page before ([discover.PageRequest](../../../internal/mirror/discover/discover.go)); the cursor of the
+last complete pass is `Since`, set for incremental passes only. The `update_seq` read before the listing (Q-NPM-69) therefore has
+to travel from the first page to the last.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The full pass's cursor is `{"seq", "after", "range"}`, the final one `{"seq"}` (chosen) | The sequence rides along | No state outside the cursor; a repeated call after a crash reads the same position; the cursor stays far below 4 KiB (a name is at most 214 bytes for a new package, 512 for a lookup) | The cursor of a full pass is a union of the two documented forms |
+| (b) Read `update_seq` again at the last page | The sequence is that of the pass's end | Cursor stays `{"after", "range"}` | Changes made during the listing are missed by the next incremental pass |
+| (c) A first page that only reads `update_seq` | An empty page, then the listing | The sequence is a page of its own | A page without names for every pass; the same cursor problem for the pages after it |
+
+**Choice:** (a).
+
+**Rationale:** the sequence read before the listing is what makes the next incremental pass lose no change (Q-NPM-69); only the
+cursor can carry it. The development agent would revisit it if the core hands the format a second, pass-wide state.
+
+**Applied in the spec:** the section "Mirror discovery" (the cursor bullet).
+
+### Q-NPM-74 · What the plan announces for size and which versions it plans
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the plan's `Size` lets the engine refuse an artifact that would cross `maxBytes` before it fetches it (R-REPO-052); 0
+means unknown and the artifact is fetched and counted afterwards. A version entry of the public registry's documents has no
+tarball size: `dist` has `unpackedSize` (the unpacked files, not the tarball) and `fileCount`. The registry's database form of a
+document, which some registries still serve, has `_attachments["<file>"].length`, the byte size of the tarball.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The size is `_attachments["<basename>-<version>.tgz"].length` where the document has it, else 0; versions in the canonical form only (chosen) | A real tarball size or none | Never a wrong size, so `maxBytes` is never crossed on a figure that is not the tarball's | The public registry's documents announce none today: its mirror counts after each fetch, as R-REPO-052 provides |
+| (b) `dist.unpackedSize` as an estimate | A size for every version | The bound can be checked before every fetch | Not the tarball's size: a bound that refuses or admits on a figure several times too large |
+| (c) A `HEAD` of each tarball | The real size | Exact | A request of the format's own, which the contract forbids (the format sends nothing through any road but `Upstream`) and one more request per version |
+
+**Choice:** (a). A version key that is no SemVer, or whose text differs from its canonical form (build metadata, a leading `v`), is
+not planned: `GET {name}/-/{basename}-{version}.tgz` with such a version answers 404 (R-NPM-015), so no client could request the
+artifact the plan would name.
+
+**Rationale:** the contract says the size is what the upstream announced; an estimate is not that. The development agent could
+not verify that any registry still emits `_attachments` in the documents the full variant stores; the field costs nothing
+where it is absent. It would revisit (b) with the owner if a mirror of the public registry must be cut before its fetches.
+
+**Applied in the spec:** the section "Mirror discovery" (the plan bullet).
 
 ## What this does not cover
 

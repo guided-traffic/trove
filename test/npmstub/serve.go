@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io/fs"
+	"net"
 	"net/http"
 	"path"
 	"strings"
@@ -53,6 +54,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rt := parseRoute(escaped)
+	if s.isReplicationHost(r.Host) {
+		rt = route{kind: KindReplication}
+	}
 	mode := s.record(r, escaped, rt)
 	s.cfg.Logger.Info("request", "method", r.Method, "path", escaped, "accept", r.Header.Get("Accept"),
 		"conditional", isConditional(r), "auth", authScheme(r.Header.Get("Authorization")))
@@ -60,7 +64,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !s.gate(w, r, rt, mode) {
 		return
 	}
-	if rt.kind == KindAudit {
+	switch rt.kind {
+	case KindReplication:
+		s.serveReplication(w, r)
+		return
+	case KindAudit:
 		s.serveAudit(w, r)
 		return
 	}
@@ -87,9 +95,13 @@ func (s *Server) record(r *http.Request, escaped string, rt route) Mode {
 	key := countKey{method: r.Method, path: escaped, auth: authScheme(r.Header.Get("Authorization")), conditional: isConditional(r)}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if rt.kind == KindReplication {
+		key.host = hostName(r.Host)
+		s.replog = append(s.replog, ReplicationRequest{Host: key.host, Method: r.Method, Path: escaped, Query: r.URL.RawQuery, Auth: key.auth})
+	}
 	e := s.counts[key]
 	if e == nil {
-		e = &Entry{Method: key.method, Path: key.path, Conditional: key.conditional, Auth: key.auth, Kind: rt.kind, Name: rt.name, File: rt.file}
+		e = &Entry{Method: key.method, Path: key.path, Conditional: key.conditional, Auth: key.auth, Host: key.host, Kind: rt.kind, Name: rt.name, File: rt.file}
 		s.counts[key] = e
 	}
 	e.Count++
@@ -118,6 +130,9 @@ func (s *Server) gate(w http.ResponseWriter, r *http.Request, rt route, m Mode) 
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return false
 	}
+	if s.throttleGate(w, r, rt.kind, m.Throttle) {
+		return false
+	}
 	if d := m.delay(rt.kind); d > 0 {
 		select {
 		case <-time.After(d):
@@ -144,6 +159,10 @@ func (s *Server) gate(w http.ResponseWriter, r *http.Request, rt route, m Mode) 
 }
 
 func (s *Server) serveDocument(w http.ResponseWriter, r *http.Request, name string) {
+	if s.isDeleted(name) {
+		writeError(w, http.StatusNotFound, "Not found")
+		return
+	}
 	abbreviated := strings.Contains(r.Header.Get("Accept"), corpus.AbbreviatedType)
 	if delay, stale := s.takeStale(name); stale {
 		if doc, ok := s.olderCopy(name, s.baseURL(r), abbreviated); ok {
@@ -250,6 +269,10 @@ func withName(doc []byte, name string) []byte {
 }
 
 func (s *Server) serveTarball(w http.ResponseWriter, r *http.Request, rt route) {
+	if s.isDeleted(rt.name) {
+		writeError(w, http.StatusNotFound, "Not found")
+		return
+	}
 	data, ok := s.tarball(rt.name, rt.file)
 	if !ok {
 		writeError(w, http.StatusNotFound, "Not found")
@@ -335,4 +358,12 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	w.WriteHeader(status)
 	body, _ := json.Marshal(map[string]string{"error": msg})
 	_, _ = w.Write(body)
+}
+
+// hostName is the host of a Host header without its port, lower case.
+func hostName(host string) string {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return strings.ToLower(host)
 }

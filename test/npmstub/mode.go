@@ -58,6 +58,8 @@ type Mode struct {
 	// the stub's own: a document that points to a host the remote repository was not given
 	// (foreign_host_denied, R-REPO-043).
 	ForeignTarballHost string `json:"foreign_tarball_host,omitempty"`
+	// Throttle makes the registry answer as one that rate-limits a client (throttle.go, R-REPO-054, R-REPO-059).
+	Throttle *Throttle `json:"throttle,omitempty"`
 }
 
 // Validate rejects a mode the stub does not implement.
@@ -78,9 +80,14 @@ func (m Mode) Validate() error {
 			return fmt.Errorf("%q is no absolute http or https URL", u)
 		}
 	}
+	if m.Throttle != nil {
+		if err := m.Throttle.validate(); err != nil {
+			return err
+		}
+	}
 	for class, ms := range m.DelayMS {
-		if !slices.Contains([]string{KindDocument, KindTarball, KindAudit, KindOther, KindPing}, class) {
-			return fmt.Errorf("delay_ms class %q: want document, tarball, audit or other", class)
+		if !slices.Contains([]string{KindDocument, KindTarball, KindAudit, KindOther, KindPing, KindReplication}, class) {
+			return fmt.Errorf("delay_ms class %q: want document, tarball, replication, audit or other", class)
 		}
 		if ms < 0 || ms > int(MaxHang/time.Millisecond) {
 			return fmt.Errorf("delay_ms %q: %d out of range", class, ms)

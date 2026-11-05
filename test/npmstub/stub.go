@@ -6,7 +6,9 @@
 // Use it in a Go test through Start, or as a container (cmd/npmstub, Containerfile). A test reads
 // what the upstream saw through Counts, and drives the failure cases of R-NPM-024 to R-NPM-026
 // and R-NPM-033 through SetMode, Publish and Drop, or over the control API (/-/stub/) when the
-// stub runs in a container.
+// stub runs in a container. Under a second host name it also serves the replication paths of the
+// public registry (replication.go) and, as a mode, throttles like a registry that rate-limits a
+// client (throttle.go), for the mirror's tests (R-REPO-059).
 package npmstub
 
 import (
@@ -40,6 +42,11 @@ type Config struct {
 	Now func() time.Time
 	// Logger receives one line per request; nil discards.
 	Logger *slog.Logger
+	// ReplicationHosts are the host names (without port) under which the stub serves the replication paths of the public
+	// registry (replication.go): a request whose Host header names one of them is a replication request, every other is a
+	// registry request. nil: DefaultReplicationHost; an empty slice: none. The certificate of the listener has to carry
+	// the names.
+	ReplicationHosts []string
 }
 
 // Server is the stub registry. It is safe for concurrent use.
@@ -59,6 +66,12 @@ type Server struct {
 	stale map[string]*staleLeft
 	// audits is the log of the advisory requests (audit.go).
 	audits []AuditRequest
+	// changes is the change feed, removed the packages a deleted change took away, replog the log of the requests to a
+	// replication host (replication.go); thr is the state of Mode.Throttle (throttle.go).
+	changes []change
+	removed map[string]bool
+	replog  []ReplicationRequest
+	thr     throttleState
 }
 
 // staleLeft is the state of the older copy of one package: the document requests to answer
@@ -105,6 +118,10 @@ func (s *Server) resetLocked() {
 	s.cache = map[cacheKey]*rendered{}
 	s.stale = map[string]*staleLeft{}
 	s.audits = nil
+	s.removed = map[string]bool{}
+	s.replog = nil
+	s.thr = throttleState{}
+	s.changes = s.initialChangesLocked()
 }
 
 // Counts returns a snapshot of the request counters.
@@ -138,6 +155,7 @@ func (s *Server) Reset() {
 	defer s.mu.Unlock()
 	s.counts = map[countKey]*Entry{}
 	s.audits = nil
+	s.replog = nil
 }
 
 // ResetAll returns the stub to its initial state: counters zero, healthy, no change to the corpus.
@@ -155,6 +173,7 @@ func (s *Server) SetMode(m Mode) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.mode = m
+	s.thr = throttleState{}
 	s.cache = map[cacheKey]*rendered{}
 	s.stale = map[string]*staleLeft{}
 	for _, name := range m.StaleCopy {
@@ -243,6 +262,8 @@ func (s *Server) Publish(name, version string, deps map[string]string, tags ...s
 	p.Retag()
 	s.overlay[name] = p
 	delete(s.dropped[name], version)
+	delete(s.removed, name)
+	s.appendChangeLocked(name, false) // the change feed names the package (replication.go)
 	s.cache = map[cacheKey]*rendered{}
 	return nil
 }

@@ -19,6 +19,8 @@ import (
 //	GET  /-/stub/version?name=&version=  the version as the document lists it now (ServedVersion; 404 when it does not)
 //	POST /-/stub/drop               {"name","version"}: remove a version from its document
 //	POST /-/stub/restore            {"name","version"}: list it again
+//	POST /-/stub/change             {"name","deleted"}: add a change to the replication feed; deleted removes the package
+//	GET  /-/stub/replication        {"update_seq","requests":[ReplicationRequest]}: what the replication host received
 const maxControlBody = 1 << 20
 
 type versionRequest struct {
@@ -85,6 +87,25 @@ func (s *Server) serveControl(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, v)
 	case "POST /-/stub/drop":
 		s.controlVersion(w, r, func(v versionRequest) error { return s.Drop(v.Name, v.Version) })
+	case "POST /-/stub/change":
+		var c struct {
+			Name    string `json:"name"`
+			Deleted bool   `json:"deleted"`
+		}
+		if !decodeStrict(w, r, &c) {
+			return
+		}
+		if c.Name == "" {
+			writeError(w, http.StatusBadRequest, "name is required")
+			return
+		}
+		s.Change(c.Name, c.Deleted)
+		w.WriteHeader(http.StatusNoContent)
+	case "GET /-/stub/replication":
+		writeJSON(w, struct {
+			UpdateSeq int                  `json:"update_seq"`
+			Requests  []ReplicationRequest `json:"requests"`
+		}{s.UpdateSeq(), s.Replications()})
 	case "POST /-/stub/restore":
 		s.controlVersion(w, r, func(v versionRequest) error { return s.Restore(v.Name, v.Version) })
 	default:
