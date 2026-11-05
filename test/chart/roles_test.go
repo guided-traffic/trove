@@ -69,8 +69,10 @@ func equalStrings(a, b []string) bool {
 func TestRolesDeployments(t *testing.T) {
 	t.Run("R-HA-002 R-HA-062 a Deployment, PodDisruptionBudget and NetworkPolicy per role, pool and endpoint pool, named alike", func(t *testing.T) {
 		_, docs := render(t, rolesSet())
-		want := []string{"trove-api", "trove-api-admin", "trove-api-ep-customers", "trove-packages", "trove-packages-ep-customers",
-			"trove-packages-npm", "trove-worker", "trove-worker-bulk", "trove-worker-vuln"}
+		want := []string{
+			"trove-api", "trove-api-admin", "trove-api-ep-customers", "trove-packages", "trove-packages-ep-customers",
+			"trove-packages-npm", "trove-worker", "trove-worker-bulk", "trove-worker-vuln",
+		}
 		if got := deploymentNames(docs); !equalStrings(got, want) {
 			t.Fatalf("Deployments = %v, want %v", got, want)
 		}

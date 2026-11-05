@@ -31,7 +31,7 @@ with their pins and fails on a difference; a tool that is not installed is not a
 | `build` | `CGO_ENABLED=0 go build -trimpath` into `bin/trove`, with version, commit and date set through `-ldflags` in [internal/buildinfo](../../internal/buildinfo) |
 | `generate` | `go generate` over every package: the configuration schema today, sqlc and oapi-codegen as their packages arrive |
 | `generate-check` | `generate`, then `git diff --exit-code` and a check for untracked generated files (E0.1) |
-| `lint` | pinned golangci-lint over `./...` (configuration in [.golangci.yml](../../.golangci.yml)), then `go vet` |
+| `lint` | pinned golangci-lint over `./...` with the build tags `integration`, `e2e`, `compat` and `chart`, so every test tier is linted (configuration in [.golangci.yml](../../.golangci.yml)), then `go vet` |
 | `gosec` | the same golangci-lint with only gosec enabled (CI: GoSec Security Scan) |
 | `vuln` | pinned govulncheck over `./...` |
 | `cyclo`, `cyclo-report` | pinned gocyclo: fails above `CYCLO_THRESHOLD`; the report lists the most complex functions, tests included |

@@ -8,6 +8,7 @@ run:
     - integration
     - e2e
     - compat
+    - chart
 
 linters:
   default: none
