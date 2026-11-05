@@ -121,7 +121,7 @@ test('R-REPO-059 R-UI-021 Q-UI-104 Q-UI-105 the status of a mirror, pause, resum
   await test.step('Run a pass now and Run a full pass answer with the queued job or the one that is running, with a link to the jobs', async () => {
     const queuedOrRunning = /A pass is queued\.|A full pass is queued\.|A pass is already queued or running\./;
     await page.getByRole('button', { name: 'Run a pass now' }).click();
-    const notice = page.locator('.notices');
+    const notice = page.getByRole('region', { name: 'Mirror status' }).getByRole('status');
     await expect(notice).toContainText(queuedOrRunning);
     await expect(notice.getByRole('link', { name: 'Open the mirror jobs' })).toHaveAttribute('href', /\/admin\/system\/jobs\?kind=mirror-pass$/);
 
