@@ -30,6 +30,11 @@ const (
 	mirrorDefaultLimit = 1000
 	// searchTake is the take of a listing request: the most nuget.org's search answers (Q-NUGET-98).
 	searchTake = 1000
+	// maxDiscoveryBytes bounds a discovery body, asked of Upstream.Get and inflated within the same bound: the engine's bound for a
+	// discovery document (proxy.DiscoveryDocumentMaxBytes, Q-REPO-152), which this package may not import (archtest). Naming it makes
+	// the request independent of the engine's default, and the inflation of a gzip body, which the stored-document bound of the client
+	// path would let reach 128 MiB, stops here (Q-NUGET-108). It is also the byte budget of a plan's registration (Q-NUGET-109).
+	maxDiscoveryBytes = 32 << 20
 	// maxNote is the longest note of a truncated page (discover.Page.Note).
 	maxNote = 256
 )
@@ -100,7 +105,7 @@ func limitOf(rq discover.PageRequest) int {
 // fetchJSON reads one document of the upstream through Upstream.Get. A rate-limit answer is the error of Get, returned
 // as it is.
 func fetchJSON(ctx context.Context, u discover.Upstream, target *url.URL, what string) ([]byte, error) {
-	resp, err := u.Get(ctx, target, "application/json", 0)
+	resp, err := u.Get(ctx, target, "application/json", maxDiscoveryBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +117,7 @@ func fetchResponse(resp *discover.Response, what string) ([]byte, error) {
 	if resp.Status != 200 {
 		return nil, errs.E(errs.UpstreamFailed, errs.CodeUpstreamError, fmt.Sprintf("The upstream answered %d for its %s.", resp.Status, what))
 	}
-	return remote.Decode(resp.Body, MaxDocumentBytes)
+	return remote.Decode(resp.Body, maxDiscoveryBytes)
 }
 
 // invalidDocument is the error of a discovery document that is not what the resource promises.

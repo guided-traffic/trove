@@ -39,7 +39,7 @@ func mirrorListing(ctx context.Context, u discover.Upstream, rq discover.PageReq
 		"q": {""}, "prerelease": {"true"}, "semVerLevel": {"2.0.0"},
 		"take": {strconv.Itoa(searchTake)}, "skip": {strconv.Itoa(cur.Skip)},
 	})
-	resp, err := u.Get(ctx, target, "application/json", 0)
+	resp, err := u.Get(ctx, target, "application/json", maxDiscoveryBytes)
 	if err != nil {
 		return discover.Page{}, err
 	}

@@ -17,6 +17,13 @@ import (
 // version and the commitTimeStamp of its commit. Commits only ever get later, and the items of one commit have no order.
 // Leaves are not read for discovery.
 
+// maxCatalogPagesPerCall bounds the catalog pages one call reads (Q-NUGET-106). The engine stores the cursor only when a call
+// returns, so a call that walked the catalog to its end, which a narrow scope on a large catalog does, would repeat all of it after a
+// failure, a rate limit or a pre-emption. A call that stops at the bound returns the commit it reached and the next page, and
+// possibly no name: the cursor has moved, which is what the engine's check for a stalled method asks for. The index is read once
+// per call, so the bound also spreads its cost over this many pages.
+const maxCatalogPagesPerCall = 50
+
 // feedCursor is the position of a catalog pass.
 type feedCursor struct {
 	// Commit is the commitTimeStamp, as the upstream wrote it, of the last commit whose names were all queued: the Since of
@@ -100,7 +107,11 @@ type catalogPage struct {
 }
 
 func (w *feedWalk) run() (discover.Page, error) {
-	for {
+	for read := 0; ; read++ {
+		if read >= maxCatalogPagesPerCall && w.loaded && len(w.pending) > 0 {
+			// The call's page budget is spent: hand back the progress, with the next page for the next call.
+			return w.finish(false, w.pending[0].id), nil
+		}
 		pageURL, ok, err := w.nextPage()
 		if err != nil {
 			return discover.Page{}, err

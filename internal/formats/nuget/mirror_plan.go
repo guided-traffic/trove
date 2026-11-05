@@ -26,7 +26,7 @@ func (remoteAdapter) MirrorPlan(ctx context.Context, u discover.Upstream, name s
 	if err != nil || !found {
 		return plan, err
 	}
-	list, err := remote.VersionList(doc, MaxDocumentBytes)
+	list, err := remote.VersionListBounded(doc, maxDiscoveryBytes, remote.MaxLeaves)
 	if err != nil {
 		return discover.Plan{}, err
 	}
@@ -69,7 +69,8 @@ func announcedSizes(ctx context.Context, u discover.Upstream, lower string) (map
 	if err != nil || !found {
 		return sizes, err
 	}
-	idx, err := remote.ParseIndex(doc, MaxDocumentBytes)
+	budget := remote.NewBudget(maxDiscoveryBytes) // one budget for the index and its pages, as a rendering has (Q-NUGET-83)
+	idx, err := budget.Index(doc)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +89,7 @@ func announcedSizes(ctx context.Context, u discover.Upstream, lower string) (map
 			if !found {
 				continue
 			}
-			if leaves, err = remote.ParsePage(pageDoc, MaxDocumentBytes); err != nil {
+			if leaves, err = budget.Page(pageDoc); err != nil {
 				return nil, err
 			}
 		}

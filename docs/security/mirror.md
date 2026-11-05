@@ -49,6 +49,8 @@ A hostile or broken upstream decides which names it lists. What bounds them:
 | At most 10,000 pending names | `MaxPending`, checked by `PendingCount` before every page; the held names are paged under the same bound | discovery pauses until the fill has worked the batch off |
 | A name of at most 1024 characters, valid UTF-8 | `fitNames` | longer or invalid names are dropped before the insert, so one name cannot fail the statement of a page |
 | A cursor of at most 4096 bytes | `discover.MaxCursorBytes`, the `CHECK` of the columns | a longer cursor fails the attempt with `cursor_too_large` |
+| One feed call reads at most 50 catalog pages (NuGet) | `maxCatalogPagesPerCall` | a narrow scope on a large catalog stores progress every 50 pages; a failure repeats at most 50 (Q-NUGET-106) |
+| A discovery body of at most 32 MiB, inflated within the same bound; at most 32,768 versions of one ID, and a registration within one budget (NuGet) | `maxDiscoveryBytes`, `VersionListBounded`, `remote.Budget` in `announcedSizes` | a body or version list of millions of entries is refused in a bounded allocation (Q-NUGET-107 to Q-NUGET-109) |
 | A page that makes no progress | `pageStep` | the attempt fails with `discovery_stalled` instead of asking for the same page forever |
 | Three attempts per package, a minute more each | `MaxPackageAttempts`, `PackageRetryStep` | a package that fails is left to the next pass and counted failed |
 | The window and the ceiling | `throttle.go` | never more requests in flight than the background share of R-REPO-055 |

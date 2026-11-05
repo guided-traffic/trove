@@ -274,7 +274,7 @@ The files of NuGet's discovery, all in [internal/formats/nuget](../../internal/f
 | [mirror.go](../../internal/formats/nuget/mirror.go) | the `discover.Lister` methods on the remote adapter: `MirrorMethods` (what the service index offers, read through `Upstream.Document`), `MirrorNames` (dispatch by method), the exact IDs of `names`, `MirrorHosts` (none), the helpers (`admitted`: normalize and `Scope.Admits`, `fetchJSON`) |
 | [mirror_feed.go](../../internal/formats/nuget/mirror_feed.go) | `feed`: the catalog index and pages in `commitTimeStamp` order, whole commits queued, the cursor `{"commit","page","skip"}`, `PackageDelete` as `Removed` |
 | [mirror_listing.go](../../internal/formats/nuget/mirror_listing.go) | `listing`: the search with `take=1000` and `skip`, the cursor `{"skip","total"}`, the truncation note |
-| [mirror_plan.go](../../internal/formats/nuget/mirror_plan.go) | `MirrorPlan`: the version list and the registration through `Upstream.Document`, the `.nupkg` per version newest first, the sizes the registration announces |
+| [mirror_plan.go](../../internal/formats/nuget/mirror_plan.go) | `MirrorPlan`: the version list (at most 32,768 entries, `remote.VersionListBounded`) and the registration (one `remote.Budget`) through `Upstream.Document`, the `.nupkg` per version newest first, the sizes the registration announces |
 | [mirror_test.go](../../internal/formats/nuget/mirror_test.go) | the unit tests over a fake `discover.Upstream` |
 | [remote/discovery.go](../../internal/formats/nuget/remote/discovery.go) | `Discovery.Catalog`, `CatalogURL`: the catalog resource of the service index (a bad address leaves it out and never fails the index) |
 
@@ -285,6 +285,10 @@ runs the format's discovery against it over HTTP with the criteria of nuget.md.
 
 What the engine builder must know of NuGet's lister:
 
+- **A `feed` call reads at most 50 catalog pages** (`maxCatalogPagesPerCall`, Q-NUGET-106) and may return no name with `Done: false`
+  and a moved cursor; `pageStep` accepts that, because it stalls only on an unchanged cursor. Discovery bodies are requested with
+  `Get(..., max = 32 MiB)` and inflated within it (Q-NUGET-108); a plan fails on a version list or a registration over the bounds of a
+  client's rendering (Q-NUGET-107, Q-NUGET-109).
 - **Calls are stateless.** `feed` reads the catalog index in every call that has no page in its cursor, and the page in progress
   first when it has one; the engine passes the `Cursor` of the last page back as `PageRequest.Cursor`, and the `Cursor` of the last
   page of a complete pass as `Since` of the next incremental one. The cursor of the end of a pass is `{"commit": "<stamp>"}` (`{}` for

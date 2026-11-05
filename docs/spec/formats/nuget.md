@@ -2486,7 +2486,8 @@ what the NuGet format contributes through the mirror interface of [architecture.
     pending once per pass however many of its versions the pages list. A `nuget:PackageDelete` item makes the pass refresh
     that ID's version list and store nothing (an ID that a `nuget:PackageDetails` item names as well, in the same call, is
     a name and not a removal, Q-NUGET-102). A call returns whole commits, or a part of one commit that has more IDs than the
-    engine takes at once (Q-NUGET-100). Leaves are not read for discovery; R-NUGET-029 reads them for digests (P1).
+    engine takes at once (Q-NUGET-100). One call reads at most 50 catalog pages and then returns the commit it reached with the
+    next page in its cursor, possibly with no ID at all (Q-NUGET-106). Leaves are not read for discovery; R-NUGET-029 reads them for digests (P1).
   - `listing`, offered when the service index lists a search resource: pages with an empty `q`, `prerelease=true`,
     `semVerLevel=2.0.0`, `take=1000` and `skip` growing by the page, until a page is short, `totalHits` is reached or the
     upstream refuses a larger `skip`; the last case completes the pass with `discoveryComplete: false` and the note
@@ -2500,7 +2501,11 @@ what the NuGet format contributes through the mirror interface of [architecture.
   each with the path of its `.nupkg` and whether it is a prerelease (a release label). Unlisted versions count like listed ones:
   they stay restorable. The size of a version is the `packageSize` its registration entry announces where there is a positive
   one, else unknown; a registration the upstream does not have leaves the plan standing on the version list (Q-NUGET-103). The
-  `.nuspec`, icons, READMEs and symbols stay pull-through.
+  `.nuspec`, icons, READMEs and symbols stay pull-through. The plan reads what an upstream sends within the bounds of a client's
+  rendering (Q-NUGET-107 to Q-NUGET-109): a version list of more than 32,768 versions, or a registration of more leaves than that
+  over its index and pages together or of more than 32 MiB inflated, is an upstream document trove does not read, and the plan fails.
+- **Bodies.** Every discovery body is requested within 32 MiB and inflated within the same bound, whatever coding it arrives in
+  (Q-NUGET-108).
 - **Hosts.** Catalog pages and search requests go to the hosts the service index names, under the host rules of R-NUGET-014
   (the upstream origin or an `extraHosts` entry; `*.nuget.org` is proposed for nuget.org) and the egress rules; the format adds
   no host of its own, so its mirror hosts are none, and a catalog page or search request on another host fails the pass with
@@ -5151,6 +5156,91 @@ Status: **Decided by the development agent** — selected from the options below
 development agent would revisit it if a criterion needs to throttle one class of request only.
 
 **Applied in the spec:** [R-REPO-059](../repositories-and-proxy.md) (throttling modes); [e2e.md](../../developer/e2e.md#the-counting-nuget-test-upstream).
+
+### Q-NUGET-106 · One feed call reads at most 50 catalog pages and may return no name
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 50 pages a call, then the commit reached and the next page in the cursor, possibly with no name (chosen) | The engine stores progress every 50 pages; a failure, a rate limit or a pre-emption repeats at most 50 pages | A narrow scope on a catalog of about 10,000 pages is about 200 calls that each make progress, not one call that repeats everything; the index, read once per call, is spread over 50 pages; the engine's check for a stalled method asks for an unmoved cursor with no name, and the cursor has moved | A page of a catalog is read in a call even if no name of it is admitted |
+| (b) One page a call | Finest progress | Least repeated work | The catalog index, of megabytes on nuget.org, would be read per page, or the next page must be known without it, and page addresses are "not intended to be predictable" |
+| (c) The whole catalog in a call | The first version | Fewest calls | One failure repeats the whole pass; a day-long call with no progress stored |
+
+**Choice:** (a).
+
+**Rationale:** the bound rule forces a narrow scope on nuget.org, and then a call finds few names in many pages; the progress, not the names, is what a call
+must hand back. The development agent would revisit the 50 if the index of a real catalog is small enough to read per page, or the pages large enough that 50 of
+them take longer than the engine's lease heartbeat tolerates.
+
+**Applied in the spec:** the section "Mirror discovery" (Methods, `feed`). Code: `maxCatalogPagesPerCall` in [mirror_feed.go](../../../internal/formats/nuget/mirror_feed.go).
+
+### Q-NUGET-107 · A plan reads at most 32,768 versions of an ID, before it builds them
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The entries of the version list are decoded one at a time and a list of more than `MaxLeaves` (32,768) fails the plan (chosen) | The leaf limit of Q-NUGET-83 | Allocation is bounded by the limit whatever the document holds; the same number as the registration's, so what a client can render, a mirror can plan | An ID with more versions than that is not mirrored, as it is not served from a registration |
+| (b) Decode the list whole, cut it afterwards | `VersionList` as the client path | One reader | A document of 32 MiB holds millions of entries, and `maxVersionsPerPackage` applies after they are built |
+| (c) Truncate to the newest 32,768 | Plan a part | The package is mirrored in part | A silent gap; the order to cut by needs every entry parsed |
+
+**Choice:** (a).
+
+**Rationale:** the plan is the one place that read a document of up to 128 MiB into a slice of strings before any bound applied. The development agent would
+revisit the number if a real ID is found with more versions than a registration can list.
+
+**Applied in the spec:** the section "Mirror discovery" (The plan of an ID). Code: `VersionListBounded` in [remote/versionlist.go](../../../internal/formats/nuget/remote/versionlist.go).
+
+### Q-NUGET-108 · A discovery body is requested and inflated within 32 MiB
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A constant of the format, 32 MiB, named in every `Upstream.Get` and used to inflate the body (chosen) | `maxDiscoveryBytes` equals the engine's bound for a discovery document (Q-REPO-152) | The format may not import `internal/proxy` (archtest), and a bound it names itself does not move with the engine's default; a gzip body that the transport did not decode stops at the same number | Two places hold 32 MiB; a comment names the engine's constant |
+| (b) Pass 0 and inflate within the stored-document bound | The first version | One constant | A body that starts with the gzip magic is inflated to 128 MiB whatever the request's coding said |
+| (c) A bound read from the `Upstream` | Engine owns it | One place | The contract has no such member; a change to a frozen contract (ADR-152) for one number |
+
+**Choice:** (a).
+
+**Rationale:** the bound has to hold in the format, where the body is inflated, and the format can neither import the engine nor ask it. The development agent would
+revisit it by adding the bound to `discover.Upstream` if a second format needs the same number.
+
+**Applied in the spec:** the section "Mirror discovery" (Bodies). Code: `maxDiscoveryBytes` in [mirror.go](../../../internal/formats/nuget/mirror.go).
+
+### Q-NUGET-109 · A plan reads the registration within one budget
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One `remote.Budget` of 32 MiB inflated and 32,768 leaves over the index and every page (chosen) | As the rendering of a client has (Q-NUGET-83) | The sizes map cannot hold more than 32,768 leaves, not 512 pages of 32,768 each; a plan is refused where a client's rendering would be | A registration over the bound fails the plan, and its sizes are not known |
+| (b) Each document within its own limits | The first version | Nothing new | 512 pages times 32,768 leaves into one map |
+| (c) Skip the sizes of an oversize registration | Plan without sizes | The plan stands | A hostile upstream decides that a package has no size, which the byte bound of R-REPO-052 counts on |
+
+**Choice:** (a).
+
+**Rationale:** the budget exists to hold a whole registration to one bound, and the plan reads the same documents. The development agent would revisit the 32 MiB if a registration
+of a real ID inflates to more.
+
+**Applied in the spec:** the section "Mirror discovery" (The plan of an ID). Code: `announcedSizes` in [mirror_plan.go](../../../internal/formats/nuget/mirror_plan.go).
+
+### Q-NUGET-110 · A feed page without a name is a page, and its cursor is the progress
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A call that read pages and found no admitted name returns `Done: false`, no name and the moved cursor (chosen) | `internal/mirror/discovery.go` fails a page without names only when its cursor equals the one it was asked with | The progress is stored with the page (`AddNames` with `SetProgress`); the cursor moves with every page read, because the commit reached or the next page address changes | The engine stores a page of no names |
+| (b) Keep reading until a name is found | The first version | Fewer pages stored | The unbounded call of the finding this decision closes |
+
+**Choice:** (a).
+
+**Rationale:** checked in the engine: `pageStep` compares the returned cursor with the one it sent and stalls only on equality. The development agent would revisit it if the engine
+adds a limit on consecutive empty pages.
+
+**Applied in the spec:** the section "Mirror discovery" (Methods, `feed`).
 
 ## What this does not cover
 

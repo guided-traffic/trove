@@ -35,6 +35,7 @@ type fakeUpstream struct {
 	docErr  map[string]error
 	getErr  error
 	gets    []string
+	maxes   []int64 // the body bound of each Get
 	docReqs []string
 }
 
@@ -55,7 +56,8 @@ func (f *fakeUpstream) Base() *url.URL { u, _ := url.Parse(fakeBase + "/index.js
 
 func (f *fakeUpstream) Settings() json.RawMessage { return nil }
 
-func (f *fakeUpstream) Get(_ context.Context, u *url.URL, _ string, _ int64) (*discover.Response, error) {
+func (f *fakeUpstream) Get(_ context.Context, u *url.URL, _ string, max int64) (*discover.Response, error) {
+	f.maxes = append(f.maxes, max)
 	f.gets = append(f.gets, u.String())
 	if f.getErr != nil {
 		return nil, f.getErr
@@ -631,5 +633,83 @@ func TestR_REPO_051_ABadCatalogAddressNeverFailsTheServiceIndex(t *testing.T) {
 	d, err = remote.ParseDiscovery([]byte(head + `{"@id":"https://x.test/catalog/index.json?x=1","@type":["Catalog/3.0.0"]}]}`))
 	if err != nil || d.CatalogURL() == nil || d.CatalogURL().String() != "https://x.test/catalog/index.json" {
 		t.Fatalf("%+v, %v", d, err)
+	}
+}
+
+// stampAt is the commitTimeStamp of the i-th hour of a test catalog.
+func stampAt(i int) string {
+	return time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(i) * time.Hour).Format("2006-01-02T15:04:05.0000000Z")
+}
+
+// One call of the feed reads a bounded number of catalog pages and returns the progress it made, so that a failure, a rate limit or
+// a pre-emption repeats a bounded amount of work, and a narrow scope on a large catalog does not read it whole in one call
+// (R-REPO-051, Q-NUGET-106).
+func TestR_REPO_051_AFeedCallReadsABoundedNumberOfCatalogPagesAndReturnsItsProgress(t *testing.T) {
+	const pages = 3*maxCatalogPagesPerCall + 7
+	f := newFakeUpstream(true, false)
+	var catalog [][]catalogItem
+	for i := range pages {
+		id := "Other.P" + strconv.Itoa(i) // refused by the narrow scope, except the last
+		if i == pages-1 {
+			id = "Acme.Last"
+		}
+		catalog = append(catalog, []catalogItem{{id, "1.0.0", stampAt(i), false}})
+	}
+	f.setCatalog(catalog...)
+	l := lister(t)
+	rq := discover.PageRequest{Method: discover.MethodFeed, Kind: discover.PassFull, Scope: admit("acme."), Limit: 100}
+
+	var names []string
+	var calls int
+	prev := ""
+	for {
+		before := f.catalogRequests()
+		p, err := l.MirrorNames(context.Background(), f, rq)
+		if err != nil {
+			t.Fatal(err)
+		}
+		calls++
+		if read := f.catalogRequests() - before; read > maxCatalogPagesPerCall+1 {
+			t.Fatalf("call %d sent %d catalog requests, at most the index and %d pages", calls, read, maxCatalogPagesPerCall)
+		}
+		names = append(names, p.Names...)
+		if p.Done {
+			break
+		}
+		if string(p.Cursor) == prev {
+			t.Fatalf("call %d: the cursor did not move: %s", calls, p.Cursor)
+		}
+		prev, rq.Cursor = string(p.Cursor), p.Cursor
+		if calls > pages {
+			t.Fatal("the pass does not end")
+		}
+	}
+	if !slices.Equal(names, []string{"acme.last"}) || calls < 4 {
+		t.Errorf("names %v in %d calls", names, calls)
+	}
+}
+
+// A call that fails after the cursor of an earlier call repeats only the pages of its own.
+func TestR_REPO_051_AFeedPassResumesFromTheCursorOfTheLastCallThatReturned(t *testing.T) {
+	f := newFakeUpstream(true, false)
+	var catalog [][]catalogItem
+	for i := range 2*maxCatalogPagesPerCall + 1 {
+		catalog = append(catalog, []catalogItem{{"Acme.P" + strconv.Itoa(i), "1.0.0", stampAt(i), false}})
+	}
+	f.setCatalog(catalog...)
+	l := lister(t)
+	rq := discover.PageRequest{Method: discover.MethodFeed, Kind: discover.PassFull, Scope: admit("acme."), Limit: 10000}
+	first, err := l.MirrorNames(context.Background(), f, rq)
+	if err != nil || first.Done || len(first.Names) != maxCatalogPagesPerCall {
+		t.Fatalf("%d names, done %v, %v", len(first.Names), first.Done, err)
+	}
+	rq.Cursor = first.Cursor
+	f.gets = nil
+	f.getErr = &rateLimit{}
+	if _, err := l.MirrorNames(context.Background(), f, rq); err == nil {
+		t.Fatal("no error")
+	}
+	if len(f.gets) != 1 {
+		t.Errorf("requests of the failed call: %v", f.gets)
 	}
 }
