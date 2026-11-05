@@ -617,6 +617,13 @@ jobs:
       - name: make image (for the scan)
         run: make image IMAGE=trove:scan
 
+      # Trivy at its pin from tools/versions.env, checked against its digest; trivy-action then installs nothing
+      # (skip-setup-trivy), so the scan does not depend on setup-trivy's cache or its silent download.
+      - name: Install the pinned Trivy
+        run: |
+          make trivy
+          echo "$PWD/.bin/trivy-${TRIVY_VERSION}" >> "$GITHUB_PATH"
+
       - name: Run Trivy vulnerability scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -627,7 +634,7 @@ jobs:
           vuln-type: os,library
           severity: CRITICAL,HIGH
           scanners: vuln,secret,misconfig
-          version: ${{ env.TRIVY_VERSION }}
+          skip-setup-trivy: true
 
       - name: Run Trivy scan (SARIF output)
         if: always()
@@ -637,7 +644,7 @@ jobs:
           format: sarif
           output: trivy-results.sarif
           scanners: vuln,secret,misconfig
-          version: ${{ env.TRIVY_VERSION }}
+          skip-setup-trivy: true
 
       - name: Upload Trivy scan results
         if: always()

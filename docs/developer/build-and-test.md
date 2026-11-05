@@ -60,6 +60,7 @@ with their pins and fails on a difference; a tool that is not installed is not a
 | `fuzz-nuget` | runs each NuGet fuzz target (`NUGET_FUZZ_TARGETS`, `package:Target` pairs) for `NUGET_FUZZTIME` (default 5m); a failing input stays in the package's `testdata/fuzz`. CI runs one target per leg for 30 minutes, on the closing run only ([releasing.md](releasing.md#ci)) |
 | `coverage` | `go run ./internal/tools/coverage`, see [coverage.md](coverage.md) |
 | `chart-lint`, `chart-test` | call `test/chart/lint.sh` and `test/chart/test.sh`; provided by the chart work package |
+| `trivy` | downloads Trivy at `TRIVY_VERSION` into `.bin/trivy-<version>/` and checks the archive against `TRIVY_SHA256_<OS>_<ARCH>` of [tools/versions.env](../../tools/versions.env); the container scan job puts that directory on `PATH` |
 | `dev-up`, `dev-down`, `dev-failover`, `dev-valkey-failover`, `dev-valkey-kill`, `dev-valkey-outage` (`DURATION=60s`), `dev-drain`, `dev-valkey-stop`, `dev-valkey-start`, `e2e` | call `deploy/dev/<name>.sh` (`up`, `down`, `failover`, `valkey-failover`, `valkey-kill`, `valkey-outage`, `valkey-stop`, `valkey-start`, `drain`, `e2e`); the Valkey scripts are in [deploy/dev/](../../deploy/dev/); the other scripts of the list were not checked in this pass |
 
 Go commands exclude `web/` from `./...` through the `PKGS` variable: npm packages in
