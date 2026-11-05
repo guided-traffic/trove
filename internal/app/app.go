@@ -55,6 +55,8 @@ type Options struct {
 	// Vuln replaces ports of the vulnerability scanning with fakes; tests only (the integration tests of the download
 	// block name the data state and the verdict of a remote miss without the sync and the evaluation). Production passes nil.
 	Vuln *VulnOverride
+	// Mirror replaces the host, the clock and the jitter of the mirror engine; tests only. Production passes nil.
+	Mirror *MirrorOverride
 	// SkipInfrastructure starts the HTTP shell without PostgreSQL and Valkey. The
 	// shell tests use it; a production caller never sets it.
 	SkipInfrastructure bool

@@ -52,6 +52,8 @@ type ReplicaOptions struct {
 	Extra func(*httpserver.Router)
 	// Vuln replaces ports of the vulnerability scanning (app.Options.Vuln).
 	Vuln *app.VulnOverride
+	// Mirror replaces the host, the clock and the jitter of the mirror engine (app.Options.Mirror).
+	Mirror *app.MirrorOverride
 }
 
 // Replica is one in-process replica started through app.New.
@@ -90,7 +92,7 @@ func (s *Stack) Start(tb testing.TB, o ReplicaOptions) *Replica {
 		tb.Fatalf("config: %v", err)
 	}
 	logs := &SyncBuffer{}
-	a, err := app.New(app.Options{Loaded: loaded, Role: o.Role, Environ: environ, LogWriter: logs, Extra: o.Extra, Vuln: o.Vuln})
+	a, err := app.New(app.Options{Loaded: loaded, Role: o.Role, Environ: environ, LogWriter: logs, Extra: o.Extra, Vuln: o.Vuln, Mirror: o.Mirror})
 	if err != nil {
 		tb.Fatalf("new %s: %v", o.Name, err)
 	}

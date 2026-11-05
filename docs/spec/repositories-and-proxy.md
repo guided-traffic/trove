@@ -2968,7 +2968,8 @@ Priority: **MVP** · Covers: trove-only
   | `names` | The include patterns without a wildcard, read as exact names | Every pass is full |
 
   Whatever the method, every full pass also takes the exact names of the include patterns and the names of the packages
-  the repository already holds (its package rows, [storage.md](storage.md) R-STOR-003), so that a package that clients
+  the repository already holds (its package rows, [storage.md](storage.md) R-STOR-003; paged under the bound of 10,000 pending
+  names, Q-REPO-158), so that a package that clients
   pulled is kept current and a name a feed missed is caught. `auto` takes the first method the upstream offers; a method
   set explicitly that the upstream does not offer ends the pass with `discovery_unavailable`. What each upstream offers, and
   what of it trove uses, is on the format pages.
@@ -3023,7 +3024,8 @@ never bounded by them.
 - **When a bound is reached**, the pass adds no further artifact: it stops, keeps its pending names, ends with the outcome
   `bound_reached`, writes the audit event `mirror.bound_reached` once per transition and shows the bound in the status. Later
   passes check the counter first and end at once with the same outcome, without an upstream request, while the bound holds.
-  Raising `maxBytes`, or content deleted below it, lets the next pass continue with the pending names. Client requests to the
+  Raising `maxBytes`, or content deleted below it, lets the next pass continue with the pending names; the bound is cleared when a
+  pass ends `complete` or `partial` (Q-REPO-159, [H-527](../security/mirror.md#h-527--the-bounds-base-is-a-lagging-counter-and-a-per-process-tally)). Client requests to the
   repository are unaffected: they fetch and store as in mode `pullThrough`.
 - **Quotas and capacity** ([storage.md](storage.md) R-STOR-029, P1). When quotas are built, a repository quota
   (`storage.quota`) bounds a mirror like `maxBytes` (the lower one wins; the bound is `quota`), and the pass adds no artifact
@@ -3056,8 +3058,8 @@ Priority: **MVP** · Covers: trove-only
   `rate_limited_until` passed. One pass per repository runs at a time; an enqueue while one is queued or running returns it.
 - **A pass** (job `mirror-pass`, queue `mirror`, `MaxAttempts: 1`, no timeout) runs these steps:
   1. **Claim.** One statement makes the job the owner of the repository's pass: it writes the job id and the claiming
-     process's instance id into `mirror_state` (the fence), starting a new pass when none is in progress and taking over the
-     one in progress otherwise. Every later write of the pass is conditional on the fence; a write that matches no row
+     process's instance id into `mirror_state` (the fence), starting a new pass when none is in progress (a pass whose kind the caller decided from the row, Q-REPO-156) and taking over the
+     one in progress otherwise; a new pass also gives the pending names their attempts back. Every later write of the pass is conditional on the fence; a write that matches no row
      means another job owns the pass, and the job stops at once without writing (Q-ARCH-287).
   2. **Discover.** While fewer than 10,000 names are pending, the pass asks the format for the next page of names (R-REPO-051)
      and, in one transaction, inserts them into `mirror_pending` (a name already pending is kept once) and stores the
@@ -3071,11 +3073,13 @@ Priority: **MVP** · Covers: trove-only
      the format's cursor for the next incremental pass, the time of the last full pass, the fingerprint of the patterns,
      clears the pass, resets the failure count and sets `next_pass_at` to the pass's start plus `intervalSeconds`, or now when
      that has passed. The outcome is `complete`, or `partial` when packages were left; the audit event
-     `mirror.pass_completed` is written.
+     `mirror.pass_completed` is written. A pass that ends `bound_reached` advances the cursor only when its discovery had ended
+     (Q-REPO-155).
 - **Stops.** A pass checks the repository snapshot before each package: a repository deleted, disabled, paused or no longer
   in mode `mirror` ends the pass with the outcome `stopped`; a pause keeps the pass in progress for the resume, a mode change
-  or a deletion clears it. Offline mode and the global offline switch (R-REPO-030, R-REPO-031) end it with `offline`, without
-  counting a failure.
+  or a deletion clears it (Q-REPO-155, Q-REPO-162); a disabled repository is a pause. Offline mode and the global offline switch
+  (R-REPO-030, R-REPO-031) end the attempt with `offline`, without counting a failure; the pass stays and the next attempt is
+  due after `min(intervalSeconds, 300 s)` (Q-REPO-161).
 - **Drain and restart** ([architecture.md](architecture.md) R-ARCH-024). A process that shuts down while it runs a pass
   cancels the pass's in-flight fetches (nothing partial is stored) and releases the job with its attempt unchanged; another
   process that claims the queue claims it,
@@ -3176,7 +3180,7 @@ Priority: **MVP** · Covers: trove-only
 - **How long it waits.** `Retry-After` as delta seconds or as an HTTP date
   ([RFC 9110, section 10.2.3](https://www.rfc-editor.org/rfc/rfc9110#section-10.2.3)), capped at 6 h; a date in the past or
   an unreadable value counts as absent. Without a hint the wait is exponential with jitter: after the k-th rate-limit answer
-  in a row it is drawn uniformly from `[d/2, d]` with `d = min(300 s, 1 s × 2^(k−1))`. A success resets k.
+  in a row it is drawn uniformly from `[d/2, d]` with `d = min(300 s, 1 s × 2^(k−1))`. A success resets k. A wait is at least one second, and only the answer that begins a wait counts as one (Q-REPO-160).
 - **While it waits** the pass sends nothing to the upstream: no discovery request and no new fill; fetches already in flight
   finish. After the wait it continues by itself.
 - **A long wait ends the attempt.** A wait longer than 300 s writes `rate_limited_until`, keeps the pass in progress, and ends
@@ -3296,7 +3300,8 @@ Priority: **MVP** · Covers: API-084, API-085
   PostgreSQL by whichever replica answers; a remote in mode `mirror` that has no `mirror_state` row yet answers `scheduled` with
   nulls (Q-REPO-165). `pass.job` is a job reference of R-API-015, `null` once the job row is removed; `lastCompletePass` is the
   stored `last_pass` document and `null` when there is none or it cannot be read (Q-API-197).
-- `lastCompletePass.outcome` is `complete`, `partial`, `bound_reached`, `offline` or `stopped`; `pass` and
+- `lastCompletePass` is the summary of the last pass attempt that ended with one of five outcomes (`complete`, `partial`,
+  `bound_reached`, `offline`, `stopped`; Q-REPO-155); `lastCompletePass.outcome` is one of them; `pass` and
   `lastCompletePass` are `null` when there is none. `errors.lastMessage` names hosts, never a URL or a credential
   (R-REPO-024's rule for the upstream test).
 - The run operation records the request and enqueues the pass; a running or queued pass answers 409
@@ -5732,6 +5737,150 @@ development agent would revisit (a) if the stored-artifact check proves to be a 
 **Applied in the spec:** R-REPO-055, R-REPO-057, [operations-and-observability.md](operations-and-observability.md) R-OPS-011. Code:
 [internal/formathost/mirror_host.go](../../internal/formathost/mirror_host.go), [internal/proxy/fill.go](../../internal/proxy/fill.go),
 [internal/outbound/roundtripper.go](../../internal/outbound/roundtripper.go).
+
+### Q-REPO-155 · The summary of a pass is written whenever a pass attempt ends it or stops at a decision, and a pause, offline mode and a bound end the attempt differently
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The status of R-REPO-056 names five outcomes of `lastCompletePass` (`complete`, `partial`, `bound_reached`, `offline`, `stopped`), while R-REPO-053 says a pause keeps the pass and a mode change clears it. What the engine writes at each of them is not in either place.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `last_pass` is the summary of the last attempt that ended with one of the five outcomes; `complete`, `partial` and `bound_reached` clear the pass; a pause, a disabled repository and offline keep it; a mode change clears it and the pending names (chosen) | One summary shape for every end; the pass in progress survives exactly what is reversible | The status shows why the last attempt ended, a resume and a restored network continue where the pass was, a pass of hours is not thrown away by a night of offline mode | `lastCompletePass` is the last pass that *ended*, not only one that completed; a reader that wants completion reads `outcome` |
+| (b) Write `last_pass` only for `complete` and `partial` | The name read literally | The summary is always a complete pass | The other three outcomes of R-REPO-056 could never be shown, and a stopped pass left no trace |
+| (c) Clear the pass at every stop | No state survives a stop | Simple | A pause or an hour of offline mode would restart discovery from the beginning of the feed |
+
+**Choice:** (a). The next pass after a pause or offline mode is due at once (`next_pass_at` = the stop) or after at most five minutes (offline, `min(intervalSeconds, 300 s)`, Q-REPO-161), and takes the fence over like after a crash. `bound_reached` advances the feed cursor only when discovery had ended; the pending names stay either way.
+
+**Rationale:** the summary is what R-REPO-056 shows; a mode change is the one stop that deletes the pending names, because the pass is not coming back. The development agent would revisit it if D's status wants the last *complete* pass beside the last ended one.
+
+**Applied in the spec:** R-REPO-053 (stops), R-REPO-056 (`lastCompletePass`). Code: `end.go` (`finish`, `end`). Tests: `TestR_REPO_053_APauseKeepsThePassAndAModeChangeClearsIt`, `TestR_REPO_053_OfflineEndsThePassWithoutAFailure`.
+
+### Q-REPO-156 · The kind of a pass is decided before the claim and raised to full once the method is known
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-051 makes a pass full when the method differs from the one of the stored cursor, and R-REPO-053 makes the claim one statement. The method is known only after the upstream was asked, after the claim.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The caller decides the kind from the row (no cursor, fingerprint, interval, request) and hands it to the claim, which also reads `pass_requested_full` itself; the method raises an incremental pass to full when it is not the feed of the cursor (chosen) | The claim stays one statement; a request that arrives between the read and the claim is still honoured | No lock across an upstream request; the rule is a pure function with a table test | The kind of a pass can change once, at the start of its discovery |
+| (b) Ask the upstream before the claim | The kind is final at the claim | One decision | An upstream request outside the fence; a failure then has no pass to record on |
+| (c) Decide in SQL | No second step | One statement decides everything | The fingerprint, the interval and the method rule twice, in SQL and in a test double |
+
+**Choice:** (a). `DecideKind` and `FinalKind` ([policy.go](../../internal/mirror/policy.go)) hold the rules; `SetMethod` stores the final kind, fenced.
+
+**Rationale:** the order of the steps is the constraint. The development agent would revisit it if a method were known without a request.
+
+**Applied in the spec:** R-REPO-051 (a pass is full), R-REPO-053 (claim). Tests: `TestR_REPO_051_APassIsFullOrIncrementalByTheRules`, `TestR_REPO_051_TheNextPassIsIncrementalAndAPatternChangeMakesItFull`, `TestR_REPO_051_AListingPassIsAlwaysFull`.
+
+### Q-REPO-157 · A pass works with as many package workers as its ceiling, and the window counts requests
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-054 defines a window of concurrent fetches and R-REPO-053 fills package by package; a package has a plan request and one fetch per version.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `B` workers take packages in name order, each asks for its plan and fetches its versions one after the other; every request takes a slot of the window, which is at most `B` (chosen) | Parallel across packages, where upstream latency is; a package with one version still uses the window; one rule for plans, documents and tarballs | The window and the ceiling are enforced in one place (`throttle`), the workers only wait for a slot | A package with many versions is sequential |
+| (b) One worker, concurrency inside a package | Fewer goroutines | Simple | The window stays below `B` for the many packages with one or two versions |
+| (c) A worker per window slot, the window resizing the pool | No semaphore | Fewer idle goroutines | Resizing a pool that waits on I/O is the semaphore again, with more states |
+
+**Choice:** (a). A name that a client pre-empted waits five seconds in memory and is retried in the same pass; a name that failed waits in its row (R-REPO-053 step 3). The pass does not end while a name waits for its retry.
+
+**Rationale:** a package worker holds no request while it waits, so a long wait costs a goroutine and no slot. The development agent would revisit it if packages with thousands of versions dominate a pass.
+
+**Applied in the spec:** R-REPO-053 (step 3), R-REPO-054 (the window). Code: `fill.go`, `throttle.go`. Tests: `TestR_REPO_054_SeveralWorkersStoreEveryItemOnceWithinTheCeiling`, `TestR_REPO_054_TheWindowStartsSlowHalvesOncePerWaitAndGrowsByOne`.
+
+### Q-REPO-158 · The held package names and the exact include names of a full pass are paged through the pass cursor
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-051 adds both to every full pass; a repository may hold more packages than the pending table takes (10,000, R-REPO-053 step 2), and the engine has no table of its own for the position.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The phase runs before the format's first page of a full pass; its position `{"mirrorHeldAfter": <last name>}` is stored in `pass_cursor` with the names, and the format's first request carries no cursor (chosen) | Bounded by the pending cap, resumable after a takeover, no new column | The column holds the engine's own value for the length of the phase and the format's afterwards | A takeover before the first format page repeats the phase from its last position |
+| (b) Insert every held name at once | One step | Simple | A repository that holds a million packages breaks the 10,000 bound of the pending table |
+| (c) After the format's last page | The cursor stays the format's | No wrapper | A name the feed missed is refreshed last, and the phase has no position either |
+
+**Choice:** (a). The names go through the `Admits` check of the host; the exact include names are normalized by the format's name rule.
+
+**Rationale:** one resumable mechanism for names the engine finds itself. The development agent would revisit it if the held names move into the format's plan.
+
+**Applied in the spec:** R-REPO-051 (methods). Code: `discovery.go` (`heldStep`, `exactIncludes`). Test: `TestR_REPO_051_AFullPassAddsTheExactIncludeNamesAndTheHeldPackages`.
+
+### Q-REPO-159 · The byte bound counts the folded counter and the pass's own stores since the counter's last fold, and a bound holds until a pass completes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-052 reads `repository_usage.logical_bytes` and adds what the pass stored since its last fold. The fold loop of R-STOR-003 is not built in this release (nothing writes `repository_usage` yet), and a bound that is cleared at the start of every pass would write `mirror.bound_reached` again whenever the counter sits just below the bound.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The pass keeps a list of (time, bytes) of its stores, adds those after `repository_usage.updated_at` (compared with the database's clock at the read), and clears `bound_reached` only when a pass ends `complete` or `partial`; a pass that finds the bound set and the counter at or above `maxBytes` ends at once (chosen) | One primary-key read per artifact; no double count after a fold; one event per transition; works before the fold exists | The tally is per process, so a restart forgets the stores of one fold interval (H-527) | The clock offset is measured, not guaranteed |
+| (b) Count the unfolded deltas of `storage_usage_deltas` | Exact | No tally | The statement grows with the cluster's write rate, which R-STOR-003 refuses |
+| (c) Clear the bound at the start of every pass | No stale bound | Simple | An event per pass while the repository sits at the bound |
+
+**Choice:** (a). An artifact without an announced size is fetched and counted afterwards; an announced size that would cross the bound is left and ends the pass.
+
+**Rationale:** R-REPO-052 asks for exactly this read. The development agent would revisit it when the fold exists and a pass can read the unfolded deltas of its own repository cheaply.
+
+**Applied in the spec:** R-REPO-052. Code: `bounds.go`. Tests: `TestR_REPO_052_TheByteBoundStopsThePassAndHoldsUntilItIsRaised`, `TestR_REPO_052_TheBoundAddsWhatThePassStoredSinceTheLastFold`, `TestR_REPO_052_TheByteBoundEndsThePassOnceAndHoldsUntilItIsRaised`. Gap: [H-527](../security/mirror.md#h-527--the-bounds-base-is-a-lagging-counter-and-a-per-process-tally).
+
+### Q-REPO-160 · A rate-limit wait is at least a second, only the answer that begins it counts as a wait, and a long wait is written when it begins
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-054 defines the waits, the halving once per wait and the long wait. Three points are open: an upstream that answers `Retry-After: 0`, the counters of an answer of a request that was in flight, and when `rate_limited_until` is written.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A wait is at least one second; a late answer is counted in `trove_mirror_rate_limited_total` and changes neither the wait nor the window; a wait over 300 s is written (`rate_limited_until`, `next_pass_at`) at once and stops new requests, the requests in flight finish, and the job ends with `deferred` (chosen) | No hot loop; one halving and one state write per wait; the next job is due even if this process dies at once | The in-flight requests of a deferred pass may still store content | A late answer cannot lengthen a wait |
+| (b) Wait exactly what the upstream says | Literal | No floor | An upstream that keeps answering `429` with `Retry-After: 0` is asked in a tight loop |
+| (c) Write the long wait when the job ends | One write at the end | Fewer writes | A process that dies between the answer and its end forgets the wait |
+
+**Choice:** (a). `mirror.rate_limited` is written at most once per pass and hour; the hour is kept per process.
+
+**Rationale:** the pass is the upstream's guest. The development agent would revisit the floor if an upstream asks for shorter waits legitimately.
+
+**Applied in the spec:** R-REPO-054. Code: `throttle.go` (`rateLimited`), `request.go`. Tests: `TestR_REPO_054_ARetryAfterIsCappedAndNeverZero`, `TestR_REPO_054_ALongWaitEndsTheJobAndTheNextJobContinuesAtThatTime`.
+
+### Q-REPO-161 · Offline mode keeps the pass and looks again after at most five minutes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-053 ends a pass offline without a failure but does not say whether the pass stays or when the next one is due.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The pass stays, the outcome is `offline`, `next_pass_at` is `min(intervalSeconds, 300 s)` away (chosen) | The end of an outage is noticed within minutes; nothing already discovered is lost | A dispatch every five minutes while offline | The status shows `outcome: offline` for the length of the outage |
+| (b) The pass is cleared and the next one is due at the interval | Like a complete pass | Quiet | A feed pass of hours restarts from its beginning after a short outage |
+| (c) A failure | Visible as an error | The alert fires | Offline mode is the operator's decision; it is no failure of the mirror |
+
+**Choice:** (a). The checks of the offline mode and the global switch run when the attempt starts and before each package.
+
+**Rationale:** offline mode is a state, not an error. The development agent would revisit the five minutes if clusters run offline for days.
+
+**Applied in the spec:** R-REPO-053 (stops). Test: `TestR_REPO_053_OfflineEndsThePassWithoutAFailure`; integration `TestR_REPO_053_AnOfflineRepositoryEndsThePassWithoutAFailure`.
+
+### Q-REPO-162 · The dispatch clears what a mode change left, and a restore clears through one function
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-058 says what a restore does to the state; Q-REPO-148 says a mode change clears the pass in progress. Neither names the process that does it when no pass is running, and phase 7's restore job does not exist.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every dispatch clears the pass in progress, its fence and the pending names of every remote repository of the snapshot that is not in mode mirror (a snapshot that lists nothing clears nothing); `PGStore.ClearAfterRestore(now, withoutRemoteCaches)` is the one statement of R-REPO-058, to be called by the restore job (chosen) | No pass survives a mode change whatever happened to its job; the restore rule is code with an integration test, not prose | Phase 7 has to call the function | A row of a repository that left the mode is touched once a minute until its pass is gone |
+| (b) Only a running pass clears itself | Nothing in the dispatch | Simpler | A failed pass of a repository switched to pull-through would keep a stale pass until the mode is turned on again |
+| (c) A restore hook in the framework | Generic | One mechanism for the vulnerability scanning too | No such mechanism exists (the restore is tested as the state it leaves, Q-VULN-58) |
+
+**Choice:** (a). The fence is cleared with the pass, so a write of a pass that still runs matches no row.
+
+**Rationale:** a mode change is the owner's decision and must be final. The development agent would revisit (c) when the restore job of phase 7 offers hooks.
+
+**Applied in the spec:** R-REPO-053 (stops), R-REPO-058 (backup). Code: `store_pg.go` (`ClearInactive`, `ClearAfterRestore`). Tests: `TestR_REPO_053_TheDispatchClearsThePassOfARepositoryThatLeftTheMode`, integration `TestR_REPO_058_ARestoreClearsThePassAndKeepsOrForgetsTheCursor`.
 
 ### Q-REPO-163 · A request for a pass that the engine has not taken keeps a full flag already asked for
 

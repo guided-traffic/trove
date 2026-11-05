@@ -70,6 +70,8 @@ of the client listener are split by route family:
 | `web`, `all` | all | the union | none |
 | `worker` | none | none | all |
 
+The area `mirror` (the mirror engine, [mirror.md](mirror.md)) is built on `worker` and `all` only, the roles with job loops.
+
 A `worker` therefore runs the deletion, token and fold jobs on the same services an `api` replica has, and builds no session store, login
 or limiter. The test `TestR_ARCH_001_RoleTableIsData` ([roles_table_test.go](../../internal/app/roles_table_test.go)) holds the table as
 data and compares `SubsystemsFor` with it. The **shell profile** (`Options.SkipInfrastructure`, the `drainfixture` build) is

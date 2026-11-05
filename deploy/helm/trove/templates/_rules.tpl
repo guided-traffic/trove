@@ -1,7 +1,7 @@
 {{/*
 The alerts of the PrometheusRule (R-HA-045) as a YAML list, before disabledAlerts is applied. Names are
-stable. Only the alerts of the vulnerability scanning (R-VULN-024) and the alert of a bridge left on (R-HA-064,
-Q-HA-92) are rendered so far: the other rows of R-HA-045 are not implemented in this chart (docs/developer/helm-chart.md lists them).
+stable. Only the alerts of the vulnerability scanning (R-VULN-024), the two alerts of the mirror mode (R-OPS-046,
+Q-OPS-160) and the alert of a bridge left on (R-HA-064, Q-HA-92) are rendered so far: the other rows of R-HA-045 are not implemented in this chart (docs/developer/helm-chart.md lists them).
 
 Every selector is scoped to the namespace of the release, because one Prometheus can scrape several
 installations and a max() over all of them would blend their states. A scrape through the Prometheus
@@ -36,6 +36,21 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
   annotations:
     summary: A malicious-package advisory names a package name that this installation treats as internal.
     description: Look at GET /api/v1/vulnerabilities/claimed-name-matches. A public package of that name exists, which is how a dependency-confusion attempt looks (R-VULN-010, R-VULN-024).
+- alert: TroveMirrorFailing
+  expr: (sum by (repo) (increase(trove_mirror_passes_total{ {{ $ns }},outcome="failed" }[6h])) >= 3) unless on (repo) (sum by (repo) (increase(trove_mirror_passes_total{ {{ $ns }},outcome=~"complete|partial" }[6h])) > 0)
+  labels:
+    severity: warning
+  annotations:
+    summary: The mirror {{ "{{ $labels.repo }}" }} had three failed pass attempts in 6 hours and no complete pass.
+    description: The last error is in GET /api/v1/repositories/{key}/mirror and in the audit event mirror.pass_failed (R-REPO-053, R-REPO-057). The pass in progress stays, and the dispatch continues it after the back-off.
+- alert: TroveMirrorStale
+  expr: time() - max by (repo) (trove_mirror_last_complete_pass_timestamp_seconds{ {{ $ns }} }) > 3 * max by (repo) (trove_mirror_interval_seconds{ {{ $ns }} }) + 3600
+  for: 30m
+  labels:
+    severity: warning
+  annotations:
+    summary: The mirror {{ "{{ $labels.repo }}" }} has had no complete pass for three intervals and an hour.
+    description: No process claims the queue mirror, or the passes are held back by rate limits (R-REPO-053, R-REPO-054). Check the pods that claim the queue, the status of the repository and trove_mirror_pending_packages. A mirror held by its byte bound does not alert.
 - alert: TroveBridgeLeftOn
   expr: count(trove_build_info{ {{ $ns }},role="web" }) > 0
   for: 24h
@@ -48,5 +63,5 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
 
 {{/* The names of every alert the chart can render, for the check of disabledAlerts. */}}
 {{- define "trove.rules.names" -}}
-{{- toJson (list "TroveVulnerabilityDataStale" "TroveVulnerabilitySyncFailing" "TroveVulnerabilityClaimedNameMalicious" "TroveBridgeLeftOn") -}}
+{{- toJson (list "TroveVulnerabilityDataStale" "TroveVulnerabilitySyncFailing" "TroveVulnerabilityClaimedNameMalicious" "TroveMirrorFailing" "TroveMirrorStale" "TroveBridgeLeftOn") -}}
 {{- end -}}

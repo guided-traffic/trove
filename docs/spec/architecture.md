@@ -157,6 +157,7 @@ routes read them. The areas of the client listener are split by route family:
 | `endpoints` | the rate-limit classes of the endpoints (R-EP-015) | yes | yes | no | yes |
 | `api` | stage 7 of the chain: CORS and the request limits of R-API-016, applied on every endpoint chain despite the name | yes | yes | no | yes |
 | `ci_exchange` | the CI token exchange (`POST /api/v1/auth/oidc/token`, the npm exchange of R-NPM-022 at P1) | yes | **no** | no | yes |
+| `mirror` | the mirror engine: the counters and the gauge source of R-REPO-057, the engine built at its first job (R-REPO-053, Q-ARCH-312) | **no** | **no** | yes | `all` only: `web` claims no job |
 
 - A `packages` replica MUST NOT build the areas `sessions`, `login`, `ci_exchange`, `packages-api` and `vuln-api`, MUST NOT
   read the OIDC client-secret or break-glass files (the chart does not mount them, [ha-and-helm.md](ha-and-helm.md) R-HA-030),
@@ -8623,6 +8624,78 @@ agent would revisit (c) if a format needs to know that it works for a pass.
 **Applied in the spec:** [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-055. Code:
 [internal/formathost/mirror_host.go](../../internal/formathost/mirror_host.go) (`withBackground`),
 [internal/formathost/remote.go](../../internal/formathost/remote.go) (`request`).
+
+### Q-ARCH-312 · The mirror engine is an area of the roles worker and all, built lazily at the first job
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Q-ARCH-285 puts the passes in a queue of their own run by whatever process claims it. The engine needs the repository snapshot and the database, which every role has, and a host, which needs the remote engine, which `worker` does not build today.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The area `mirror` runs on `worker` and `all` (the roles with job loops), registers the counters and the gauge source when it is wired and builds the engine when the first job of the queue runs, so that the host sees every part the composition root has built (chosen) | Counters and gauges exist exactly where the queue is claimed; the host's needs can change without moving the area | A first job pays the construction; a failing host fails that job, and the next one tries again | The area table of R-ARCH-001 has one more row |
+| (b) Build the engine when the area is wired | Fail at start-up | Early errors | The host's inputs would have to precede the area in the step list, and the owner is still reconsidering the topology |
+| (c) On every role | Uniform | Simple table | A `web` or `api` replica would hold an engine that nothing runs, and its counters would never move |
+
+**Choice:** (a). The handlers of both kinds are registered by every role, because a client-serving process enqueues; a role without the area answers a job it somehow claims with an error.
+
+**Rationale:** the queue, not the Deployment, decides where passes run. The development agent would revisit it if the pass moves to a pool that has no area of its own.
+
+**Applied in the spec:** R-ARCH-001 (the area table below), [docs/developer/architecture.md](../developer/architecture.md). Code: [wire_mirror.go](../../internal/app/wire_mirror.go), `steps.go`. Test: `TestR_ARCH_001_RoleTableIsData`.
+
+### Q-ARCH-313 · A pass attempt that is released or whose lease is lost writes nothing, and the fence compares uuids
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-ARCH-024 cancels the handlers of the jobs 5 s before the shutdown deadline and releases them; a lost lease cancels the handler with its own cause. A handler that wrote on its way out would write under a fence it may no longer hold.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) When the job's context ends, the attempt returns the context's cause at once and writes nothing; the in-flight fetches are cancelled with it, nothing partial is stored by the engine; the next job takes the fence over. The fence columns are compared as uuids, because the instance id of a process is its 16 random bytes in hex without hyphens (chosen) | The framework's release and the fence agree; a late write cannot happen from this process | A written summary of the interrupted attempt is lost (the pending names and the counters are the state) | None for the comparison |
+| (b) Write the attempt's summary on the way out | A trace of the attempt | More state | A release writes under the fence at the moment it is least certain |
+| (c) Compare the text of the columns | No cast | Index-friendly on a uuid cast | The hyphen-less holder never matches its own row |
+
+**Choice:** (a).
+
+**Rationale:** the fence belongs to the job that holds the lease (Q-ARCH-287). The development agent would revisit it if the framework gave handlers a token to write under.
+
+**Applied in the spec:** R-REPO-053 (drain and restart, crash and failover), R-ARCH-024. Code: `pass.go` (`run`), `queries/mirror.sql`. Tests: `TestR_REPO_053_AReleasedAttemptLeavesThePassForAnotherProcess`, integration `TestR_REPO_053_AShutdownReleasesTheJobAndASecondEngineEndsThePass`, `TestR_REPO_053_ALostLeaseIsContinuedByTheNextDispatchAndTheOldFenceWritesNothing`.
+
+### Q-ARCH-314 · The engine's time and randomness are interfaces of its options, and a test replaces the host through the composition root
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The back-offs, the waits and the window are specified in seconds and minutes; a test that runs them in real time would run for hours.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `mirror.Clock` (`Now`, `Sleep`) and `mirror.Jitter` (`Float64`) in `mirror.Options`; `app.Options.Mirror` (`MirrorOverride`: host, clock, jitter) for the integration tests that start replicas (chosen) | A pass of hours runs in milliseconds in a unit test; the integration tests use the real job framework with a counting host | Two interfaces | A test double of the host stands where the remote engine will |
+| (b) Real time, short settings | No seam | Nothing to inject | The settings have ranges (an interval of at least 300 s) |
+| (c) A global clock | One switch | No option | Parallel tests share it |
+
+**Choice:** (a).
+
+**Rationale:** the same seam the vulnerability scanning uses for its sync. The development agent would revisit it if a clock moves into the job framework.
+
+**Applied in the spec:** none in the spec pages beyond the test plan of R-REPO-059. Code: `policy.go`, `internal/app/wire_mirror.go`, `test/integration/testenv/replica.go` (`ReplicaOptions.Mirror`).
+
+### Q-ARCH-315 · The engine reaches PostgreSQL through a store port with one statement per step
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-053 asks for the claim as one statement and for the delete of a pending row and the counters in one transaction; the unit tests need the semantics of the fence without a database.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `mirror.Store` with a PostgreSQL implementation (every write of a pass one statement carrying the fence, the claim and the package results as statements with data-modifying CTEs) and an in-memory one in the unit tests (chosen) | The fence and the transaction boundaries are the statements'; the engine reads as a flow; the in-memory store is checked by the integration tests against the real one | Two implementations to keep in step | The statements are long |
+| (b) The engine runs SQL itself | Fewer layers | No port | No unit test without a database, and the 10,000-name and the fence cases are the ones that need many runs |
+| (c) A transaction per step in Go | Plain statements | Short SQL | A round trip per statement of the claim and the package result; the fence check is separate from the write |
+
+**Choice:** (a).
+
+**Rationale:** the integration tests exist to keep the two stores equal. The development agent would revisit it if the statements need rows the port cannot give.
+
+**Applied in the spec:** R-REPO-053 (the steps and the data model). Code: [store.go](../../internal/mirror/store.go), [store_pg.go](../../internal/mirror/store_pg.go), [mirror.sql](../../internal/meta/postgres/queries/mirror.sql).
 
 ## What this does not cover
 

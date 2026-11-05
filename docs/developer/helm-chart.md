@@ -19,7 +19,7 @@ of being silently ignored.
 | role Services `<fullname>-api` and `<fullname>-packages`, pool Services, ops Service `<fullname>-ops`, `sessionAffinity: None` (R-HA-037) | ServiceMonitor, and every alert of the PrometheusRule but the three of the vulnerability scanning (R-HA-045, see [The PrometheusRule](#the-prometheusrule)) |
 | PodDisruptionBudget and HorizontalPodAutoscaler per Deployment, topology spread with `nodeTaintsPolicy: Honor` (R-HA-032) | |
 | one NetworkPolicy per Deployment and the migration Job, ingress only (R-HA-042, ADR-154) | |
-| PrometheusRule with the three alerts of the vulnerability scanning and `TroveBridgeLeftOn` (R-HA-045, R-VULN-024, Q-HA-92), `metrics.prometheusRule.*` | |
+| PrometheusRule with the three alerts of the vulnerability scanning, `TroveMirrorFailing` and `TroveMirrorStale` (R-OPS-046, Q-OPS-160) and `TroveBridgeLeftOn` (R-HA-045, R-VULN-024, Q-HA-92), `metrics.prometheusRule.*` | |
 | migration Job as `pre-install,pre-upgrade` hook, with hook ConfigMap and ServiceAccount (R-HA-019) | backup CronJob, restore Job, post-restore Job (R-HA-060) |
 | configuration file `trove.yaml`, Secret wiring including the login secrets `secrets.oidc` and `secrets.breakGlass`, downward-API variables (R-HA-030) | `secrets.backupTarget`, `trustedCA`, `bootstrap` |
 | restricted-PSS security contexts, probes, spool and `/tmp` volumes (R-HA-033 to R-HA-035, R-HA-061) | `initContainers`, `sidecars`, `lifecycle`, Service types beyond the three in the schema |
@@ -447,8 +447,8 @@ tests in `chart_test.go` assert both, row by row.
 
 `metrics.prometheusRule.enabled` renders one PrometheusRule `<fullname>`, group `<fullname>`: every alert of
 [_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl) except `disabledAlerts`, then `extraRules`, with `labels` on the object. Only
-the three alerts of the vulnerability scanning (R-VULN-024) and `TroveBridgeLeftOn` (a `web` replica registered for 24 hours, Q-HA-92) are written: `TroveVulnerabilityDataStale`,
-`TroveVulnerabilitySyncFailing`, `TroveVulnerabilityClaimedNameMalicious` and `TroveBridgeLeftOn`. The other rows of R-HA-045's table are not implemented
+the three alerts of the vulnerability scanning (R-VULN-024), the two of the mirror mode (R-OPS-046, Q-OPS-160, Q-OPS-167) and `TroveBridgeLeftOn` (a `web` replica registered for 24 hours, Q-HA-92) are written: `TroveVulnerabilityDataStale`,
+`TroveVulnerabilitySyncFailing`, `TroveVulnerabilityClaimedNameMalicious`, `TroveMirrorFailing`, `TroveMirrorStale` and `TroveBridgeLeftOn`. The other rows of R-HA-045's table are not implemented
 (the list is in the spec's status paragraph of R-HA-045), and neither is the ServiceMonitor with its `role` and `pool` relabelings: the
 scrape is the operator's.
 
@@ -507,7 +507,7 @@ is where the coverage generator reads the IDs from.
 | `R-HA-035`, `R-HA-036` | spool `sizeLimit` and budget; `GOMAXPROCS` rule; default resources |
 | `R-VULN-025` (`TestR_VULN_025_SpoolHoldsOneArchive`) | the worker spool must hold one archive: the defaults pass, a larger `max_archive_size` fails naming both values (also in mode `repository`), the headroom counts, mode `off` and a disabled scanning are not checked, the worker's `TROVE_STORAGE_SPOOL_MAX_BYTES` follows its own `sizeLimit` |
 | `R-VULN-025` (`TestR_VULN_025_ConfigurationPassesThrough`) | the `vulnerabilities` section reaches `trove.yaml` as set; `ci/monitoring.yaml` passes `trove admin config validate` with the other sets |
-| `R-VULN-024` (`TestR_VULN_024_PrometheusRuleValues`) | no rule by default; the three alerts and their severities; the `labels`; the threshold follows `stale_after`; every selector is scoped to the namespace; `disabledAlerts` and `extraRules`; a misspelt alert name fails; all alerts disabled renders nothing |
+| `R-VULN-024` (`TestR_VULN_024_PrometheusRuleValues`) | no rule by default; the alerts (the three of the vulnerability scanning, the two of the mirror, `TroveBridgeLeftOn`) and their severities; the `labels`; the threshold follows `stale_after`; every selector is scoped to the namespace; `disabledAlerts` and `extraRules`; a misspelt alert name fails; all alerts disabled renders nothing |
 | `R-VULN-024` (`TestR_VULN_024_PromtoolRules`) | `promtool check rules` and `promtool test rules` over the rendered rules, and one firing and one silent test per alert |
 | `R-HA-029` (memory) | a serving pod (`api`, `packages`, a pool) without a memory limit, or one whose memory slots (`trove.requestBytes` and the three cache budgets, the formula of `internal/app/memory.go`) are fewer than 64, fails; `2G`, `64Mi` and a plain integer render |
 | `R-HA-032` | PDB, spread, tolerations, default replica counts and rolling update |
