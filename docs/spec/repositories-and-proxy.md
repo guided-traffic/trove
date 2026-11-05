@@ -3287,7 +3287,8 @@ Acceptance criteria:
   background fetches, and 1 s later the stub has at most eight tarball fetches in flight (Q-REPO-171).
 - e2e (set `mirror`, R-REPO-059): a pass of 300 packages runs while `npm ci` of the 400-dependency fixture runs through the
   same remote on three client-serving replicas; `npm ci` succeeds within 120 % of its time without the pass, the stub never has more
-  than `maxConcurrentFetches + n − 1 + B` connections open, and `trove_mirror_preempted_total` grew.
+  than `maxConcurrentFetches + n − 1 + B` connections open, and `trove_mirror_preempted_total` grew. The time ratio is enforced
+  by the nightly run, the other two in every run (Q-REPO-197).
 
 ### R-REPO-056 · Mirror status and operations
 Priority: **MVP** · Covers: API-084, API-085
@@ -6467,6 +6468,33 @@ mode shipped without an engine, so none of them ran a pass.
 revisit (b) when the query of a remote's url is dropped by every format.
 
 **Applied in the spec:** R-REPO-052 (the acceptance criteria). Code: `validate_mirror.go` (`checkMirrorURL`).
+
+### Q-REPO-197 · The install-time bound of clients first is enforced nightly; the open requests and the pre-emptions per change
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-055's e2e criterion asks that `npm ci` through a remote whose pass runs takes at most 120 % of its time without
+the pass, that the upstream never holds more than `maxConcurrentFetches + n − 1 + B` requests open, and that pre-emptions happen.
+On a 17-CPU host the set `mirror` measured 97 % and 98 %; on the GitHub-hosted runner of Test and Release run 42111093693 (four
+CPUs for the kind cluster, the stubs and the clients) the three pairs measured 82 %, 139 % and 128 %, a median of 136 %, while the
+open requests stayed at 9 against the bound of 12 and the pre-emptions grew by 6. What clients first gives the clients is the
+upstream's fetch slots; the CPU a pass spends on hashing, storing and verifying is shared with the installs on such a runner.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Per change: the open-request bound, the pre-emptions and the installs are enforced, the time ratio is logged; the nightly run enforces the ratio with `TROVE_PERF_GATE=1` (chosen) | The rule of Q-ARCH-220 for timing bounds on the CI runners (the owner's option B of 2026-10-30) | The per-change leg tests what the mechanism controls; a time miss is still seen every night and becomes a finding | A regression of the ratio shows a day later |
+| (b) Enforce the ratio per change | As specified | Immediate | Fails on the runner's CPU, not on trove: the slots held |
+| (c) Raise the bound to 150 % | One number | Green on the runner | Hides a real regression on a fast host; the number is the runner's, not the requirement's |
+
+**Choice:** (a). The nightly job `e2e-mirror` sets `TROVE_PERF_GATE=1` for the set `mirror`.
+
+**Rationale:** the bound on the upstream's open requests is what R-REPO-055 controls and what a defect would break (the stall of a
+client behind a background flight, Q-REPO-179, broke the ratio and is caught by it on any host). The development agent would
+revisit (a) when the e2e legs run on runners whose CPU the installs do not share, or if the nightly ratio stays above the bound,
+which then is a finding of its own.
+
+**Applied in the spec:** R-REPO-055 (the e2e criterion's ratio enforced nightly). Code: `test/e2e/mirror_clients_test.go`,
+`.github/workflows/performance.yml` (`e2e-mirror`).
 
 ### Q-REPO-173 · The e2e set `mirror` runs in a profile of its own: the worker pool `mirror` of two processes, the three `packages` replicas as the client-serving ones
 

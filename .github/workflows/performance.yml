@@ -1303,6 +1303,8 @@ jobs:
       TROVE_IMAGE: guidedtraffic/trove:dev
       TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}
       TROVE_DEV_HTTP_PORT: ${{ matrix.port }}
+      # The install-time bound of R-REPO-055's clients first is enforced here, not per change (Q-REPO-197).
+      TROVE_PERF_GATE: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v7
