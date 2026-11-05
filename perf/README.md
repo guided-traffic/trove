@@ -24,7 +24,9 @@ perf/
 stored versions in SQL (90,000 npm in 9,000 packages across `npm-local` and `npm-remote`, 10,000 NuGet in `nuget-local`), starts the
 test advisory source ([test/osvstub](../test/osvstub)) with 231,000 npm and 7,400 NuGet records, which are the frozen dumps (the
 generator is deterministic), and runs one `web` and one `worker` replica of the composition root against the integration stack. The
-package names are those of the filler records, so version 1.0.0 of every package has one finding.
+package names are those of the filler records, a NuGet package's name its lower-cased ID and its display name the declared ID, as
+a push stores them, so version 1.0.0 of every package has one finding: 10,000 findings, 9,000 npm and 1,000 NuGet. Runs before
+2026-11-05 seeded the NuGet names in mixed case, which no advisory name matches, and found 9,000.
 
 | File | What it is |
 |---|---|

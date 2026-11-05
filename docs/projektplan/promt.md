@@ -208,13 +208,6 @@ Found on 2026-11-05 in the scheduled nightly run 42002617340 (GitHub-hosted runn
 
 ### Tests and tools
 
-- **F-53 · The performance run's NuGet test data is not the documented one** (confirmed, by reading the code and the artifacts
-  of runs 41902592855 and 42002617340). `test/osvstub/stub.go:294,310-315` deletes only filler IDs of exactly four digits, so the
-  NuGet dump holds 228,403 records instead of about 7,400 (V-9 counts 459,415 advisories against 231,012 npm records). Its import
-  runs inside V-1's clock, before npm, and the NuGet vulnerability page of V-8 is built from it (profiled at 777 KB, Q-VULN-78).
-  `perf/vuln/perf_test.go:120,126` seeds NuGet names in mixed case while the adapter lower-cases advisory names
-  (`internal/formats/nuget/vuln.go:20-28`); both runs report 9,000 findings, not 10,000. Done when the dump and the seed match
-  R-VULN-028's description and V-1 and V-8 are read again on them.
 - **F-51 · The setup of the `vuln` leg lost a request to the npm test upstream** (read, from the log). `POST
   https://npmstub.trove.svc/-/stub/publish` answered `EOF` (`vuln_env_test.go:214`); the environment is built once, so the 12 tests
   that need it failed at once with "the environment did not finish". The same leg passed in 41902592855 on the same code. Same class
@@ -248,7 +241,7 @@ Found on 2026-11-03 while building phase 6:
 
 ### Tests and tools
 
-- **F-43 · Three of the bounds V-1 to V-9 of R-VULN-028 (V-4, V-7b, V-8) are missed on CI runners, and a run on the reference environment is
+- **F-43 · The bounds V-4 and V-7b of R-VULN-028 are missed on loaded runners, and a run on the reference environment is
   missing** (confirmed by the run, narrowed by the fix of 2026-11-04). The performance run `TestR_VULN_028_PerformanceRun` on the
   integration stack (not the reference environment, H-491), 2026-11-04: V-1 7.1 min, V-2 2.1 min, V-3 0.16 min, V-6 131 ms, V-7a
   37 ms and V-9 0.33 GiB met their targets; V-5b counts 2.04 transactions per cached download against the one of R-ARCH-027 (F-41,
@@ -270,14 +263,18 @@ Found on 2026-11-03 while building phase 6:
   met; V-4 7.7 ms (the exact p99 of 300 publishes, median 2.2 ms) against 5 ms, V-7b 329 ms against 300 ms and V-8 52 ms against
   25 ms missed. The scheduled nightly run 42002617340 on the same code: V-4 2.98 ms (median 1.22 ms) and V-7b 205 ms met, so their
   misses of 41902592855 were the hosted runner's spread; V-8 32.8 ms missed again; V-1 did not finish within 40 min (the npm import
-  never reached `complete`, the second time after 41748522448; F-52, F-53), and the gate reported only V-8 because a scenario that did
+  never reached `complete`, the second time after 41748522448; a run that ended on a lost lease, a panic or a cancel recorded nothing,
+  fixed with Q-VULN-80), and the gate reported only V-8 because a scenario that did
   not finish left no row (fixed: Q-VULN-79, a scenario that does not finish is reported as missed and what needs it as not measured).
-  V-8 is to be read again on the documented NuGet data (F-53). V-4, V-7b and V-8 are to be read on a run on the reference environment (H-491). Done when that run reports all nine
+  V-4 and V-7b are to be read on a run on the reference environment (H-491). Done when that run reports all nine
   within their targets, or a decision revises a bound with the measured cost (the next steps for V-7b are named in Q-VULN-77).
   Every run above had a NuGet dump of 228,403 records instead of 7,403 (the test source kept the filler records numbered 10,000 and
   above when the NuGet filler was lowered; fixed 2026-11-05): V-1 included their import, V-8 served a page of 28,569,143 bytes
   (computed) instead of 903,143, and V-9 counted 459,415 advisories. The first run with the fixed dump (integration stack, 2026-11-05,
   load average about 12): V-1 2.25 min, V-8 1.6 ms, V-9 0.19 GiB for 238,415 advisories, all met; V-4 15.5 ms missed under that load.
+  The runs above also found 9,000 findings, not 10,000: the NuGet packages were seeded under mixed-case names, which the lower-cased
+  advisory names never match (fixed 2026-11-05, the seed stores the lower-cased ID as a push does); the same run found 10,000 and
+  measured V-2 at 0.69 min and V-7b at 213 ms.
 
 Found on 2026-11-03 while closing phase 5:
 

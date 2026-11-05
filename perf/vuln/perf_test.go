@@ -41,8 +41,9 @@ const (
 
 // newInstallation starts the advisory source with the dumps of the size of the real ones, creates the stack and seeds the
 // 100,000 stored versions in SQL: a version is a package row and a version row, which is all the scanning reads (R-VULN-001).
-// The packages are named like the stub's filler records (trove-test-filler-NNNN, Trove.Test.FillerNNNN), so that the
-// version 1.0.0 of every package is affected by one record and the others by none: 10 % of the stored versions get a finding.
+// The packages are named like the stub's filler records (trove-test-filler-NNNN; trove.test.fillerNNNN, displayed as
+// Trove.Test.FillerNNNN), so that the version 1.0.0 of every package is affected by one record and the others by none: 10 % of
+// the stored versions get a finding, 10,000.
 func newInstallation(t *testing.T) *installation {
 	t.Helper()
 	stub := osvstub.New(osvstub.Config{Filler: npmFiller})
@@ -113,12 +114,15 @@ func remoteConfig() string {
 }
 
 // seed inserts the packages and versions: npm-local gets the filler names 0 to 4,499, npm-remote 4,500 to 8,999, nuget-local
-// the NuGet filler names 0 to 999.
+// the NuGet filler names 0 to 999. A package row is what a push writes: the name is the format's canonical name, which for
+// NuGet is the lower-cased ID (R-NUGET-003, as the push's EnsureLocked(lowerID, declaredID) stores it), and the display name
+// is the name as declared. The NuGet adapter lower-cases an advisory's name the same way, so the 1,000 NuGet packages match.
 func (in *installation) seed() {
 	st := in.st
 	pkgs := func(repo, prefix string, from, to int) {
 		st.Exec(`INSERT INTO packages (repo_id, name, display_name)
-			SELECT r.id, $2::text || lpad(g::text, 4, '0'), $2::text || lpad(g::text, 4, '0')
+			SELECT r.id, CASE WHEN r.format = 'nuget' THEN lower($2::text || lpad(g::text, 4, '0')) ELSE $2::text || lpad(g::text, 4, '0') END,
+			       $2::text || lpad(g::text, 4, '0')
 			  FROM repositories r, generate_series($3::int, $4::int) g WHERE r.key = $1`, repo, prefix, from, to-1)
 	}
 	pkgs(repoNPMLocal, "trove-test-filler-", 0, npmPackages/2)
