@@ -195,8 +195,10 @@ notification, except the job `vuln-perf` (below): look at the Actions list. The 
 
 Job `vuln-perf` runs the performance run of the vulnerability scanning (R-VULN-028, scenarios V-1 to V-9, [perf/vuln](../../perf/vuln)) against the
 integration stack with `TROVE_PERF_GATE=1`: it seeds 100,000 stored versions in SQL, imports the 231,000-record npm dump of the test advisory source,
-evaluates, and measures; it uploads `perf-vuln.json` and the `go test -json` stream as `vuln-perf` (30 days) and, when a scenario is above its target
-or the run fails, opens an issue that lists the misses (the job has `issues: write`, no other job has). It is the only job of the workflow that
+evaluates, and measures; it uploads `perf-vuln.json`, the `go test -json` stream and, when the run failed, the replicas' whole logs
+(`perf-vuln-logs/`) as `vuln-perf` (30 days) and, when a scenario is above its target or the run fails, opens an issue that lists the misses
+(the job has `issues: write`, no other job has). A scenario that did not finish is listed as `not finished`, and a scenario that needs it
+as `not measured` (V-2 and V-9 need V-1, V-3 to V-8 need V-1 and V-2; [perf/README.md](../../perf/README.md#reading-a-run)). It is the only job of the workflow that
 opens an issue ([Q-VULN-57](../spec/vulnerability-scanning.md#q-vuln-57--the-performance-run-is-a-test-package-on-the-integration-stack-gated-and-reported-by-the-nightly-workflow)).
 
 Job `e2e-nuget` runs `make e2e SET=nuget-ha` on a kind cluster (edge port 8090, cluster `trove-nuget-ha-<run id>`, reports

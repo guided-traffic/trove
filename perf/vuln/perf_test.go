@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/auth/scope"
+	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 	"github.com/guided-traffic/trove/test/osvstub"
 )
@@ -27,6 +29,8 @@ type installation struct {
 
 	admin, grantee       testenv.Person
 	tokAdmin, tokGrantee string
+	// active are the states of a job that has not ended (activeStates).
+	active []string
 }
 
 const (
@@ -68,7 +72,7 @@ func newInstallation(t *testing.T) *installation {
 		// run of V-1 answer 409 (one OSV sync at a time, R-VULN-004): the test decides when the sync runs.
 		`TROVE_MAINTENANCE_TASKS={"vuln-sync-osv":{"enabled":false,"schedule":"*/15 * * * *"},"vuln-sync-osv-full":{"enabled":false,"schedule":"17 3 * * 0"},"vuln-sync-kev":{"enabled":false,"schedule":"41 */6 * * *"}}`,
 	}})
-	in := &installation{t: t, st: st, stub: stub}
+	in := &installation{t: t, st: st, stub: stub, active: activeStates(t, st)}
 	in.admin, in.grantee = st.User("rita"), st.User("grace")
 	st.Bind("admin", in.admin)
 	in.tokAdmin = st.Token(in.admin, scope.Scope{Inherit: true, Admin: true})
@@ -142,16 +146,128 @@ func (in *installation) runTask(r *testenv.Replica, task string) {
 	}
 }
 
-// settled reports whether the scanning has nothing left to do: no sync or evaluation job queued or running and no advisory
-// waiting for evaluation.
+// activeStates are the states of a job that has not ended: every value of the schema's type job_state that the job package
+// does not count as terminal (jobs.Job.Terminal). Read from the type, so that a state added to it later counts as not ended
+// instead of as settled.
+func activeStates(t *testing.T, st *testenv.Stack) []string {
+	t.Helper()
+	var active []string
+	for _, s := range strings.Split(st.Text(`SELECT string_agg(s::text, ',' ORDER BY s) FROM unnest(enum_range(NULL::job_state)) AS s`), ",") {
+		if !(jobs.Job{State: s}).Terminal() {
+			active = append(active, s)
+		}
+	}
+	if !slices.Contains(active, jobs.StateQueued) || !slices.Contains(active, jobs.StateRunning) {
+		t.Fatalf("the states of a job that has not ended are %v; queued and running must be among them", active)
+	}
+	return active
+}
+
+// settled reports whether the scanning has nothing left to do: no sync or evaluation job that has not ended (queued, also
+// while it waits for a retry, running, or being cancelled) and no advisory or ecosystem waiting for evaluation.
 func (in *installation) settled() bool {
-	return in.st.Number(`SELECT count(*) FROM job WHERE kind LIKE 'vuln-%' AND state IN ('queued', 'running')`) == 0 &&
+	return in.st.Number(`SELECT count(*) FROM job WHERE kind LIKE 'vuln-%' AND state::text = ANY($1::text[])`, in.active) == 0 &&
 		in.st.Number(`SELECT count(*) FROM vuln_pending_evaluation`) == 0 &&
 		in.st.Number(`SELECT count(*) FROM vuln_source_state WHERE full_evaluation_requested_at IS NOT NULL`) == 0
 }
 
+// jobEnded returns a check for wait: once the newest job of the kind has ended in a state that is not one of fine, it names
+// the job and that state; it is empty while the job has not ended, when it ended in one of fine, and while there is none.
+func (in *installation) jobEnded(kind string, fine ...string) func() string {
+	return func() string {
+		s := in.st.Text(`SELECT COALESCE((SELECT state::text FROM job WHERE kind = $1 ORDER BY created_at DESC LIMIT 1), '')`, kind)
+		if s == "" || slices.Contains(in.active, s) || slices.Contains(fine, s) {
+			return ""
+		}
+		return "the job " + kind + " ended " + s
+	}
+}
+
+// wait polls done every 20 ms and returns how long it took to hold. It gives up when within has passed, or earlier when ended
+// (nil: never) names what the scenario waits for as ended without done; ended is asked once a second, so that the polling
+// adds little to the database's load. When it gives up it logs what the scanning's tables and the replicas' logs say,
+// records the row id as not finished with the time it waited, and ends the subtest.
+func (in *installation) wait(t *testing.T, rep *report, id, what string, within time.Duration, done func() bool, ended func() string) time.Duration {
+	t.Helper()
+	start, asked := time.Now(), time.Now()
+	for {
+		if done() {
+			return time.Since(start)
+		}
+		took := time.Since(start)
+		note := ""
+		switch {
+		case took >= within:
+			note = fmt.Sprintf("its wait ran out after %s", within)
+		case ended != nil && time.Since(asked) >= time.Second:
+			asked = time.Now()
+			if why := ended(); why != "" {
+				if done() { // what ended wrote the result before it ended
+					return time.Since(start)
+				}
+				note = fmt.Sprintf("%s after %s", why, took.Round(time.Second))
+			}
+		}
+		if note == "" {
+			time.Sleep(20 * time.Millisecond)
+			continue
+		}
+		in.diagnose(t, id)
+		rep.notFinished(id, &took, note)
+		t.Fatalf("%s: %s did not happen: %s", id, what, note)
+	}
+}
+
+// diagnose logs what the run needs to explain a wait that gave up: the advisory source state of each ecosystem, every job of
+// the scanning with its attempt, its next run, its lease, its checkpoint and its error, the rows queued for evaluation and
+// touched by an unfinished sync, and the lines of the replicas' logs that say why a sync or a job ended. It writes every
+// replica's whole log so far to .out/perf-vuln-logs, which the workflow uploads, so that the window of the failure is kept and
+// not only the tail a replica prints when it stops.
+func (in *installation) diagnose(t *testing.T, id string) {
+	t.Helper()
+	t.Logf("%s: the advisory source state:\n%s", id, in.st.Text(`SELECT COALESCE(string_agg(format(
+		'%s %s: state %s, failures %s, last_error %s, attempted_at %s, synced_at %s, full_synced_at %s, records %s, data_epoch %s, full evaluation requested at %s',
+		source, COALESCE(NULLIF(ecosystem, ''), '-'), state, failures, COALESCE(last_error::text, '-'), COALESCE(attempted_at::text, '-'),
+		COALESCE(synced_at::text, '-'), COALESCE(full_synced_at::text, '-'), records, data_epoch, COALESCE(full_evaluation_requested_at::text, '-')),
+		E'\n' ORDER BY source, ecosystem), '(no row)') FROM vuln_source_state`))
+	t.Logf("%s: the jobs of the scanning (the database's clock is %s):\n%s", id, in.st.Text(`SELECT now()::text`), in.st.Text(`SELECT COALESCE(string_agg(format(
+		'%s %s: state %s, attempt %s of %s, run_at %s, locked_until %s, started_at %s, finished_at %s, progress %s of %s %s, checkpoint %s, error %s',
+		kind, id, state, attempt, max_attempts, run_at, COALESCE(locked_until::text, '-'), COALESCE(started_at::text, '-'),
+		COALESCE(finished_at::text, '-'), COALESCE(progress_done::text, '-'), COALESCE(progress_total::text, '-'), COALESCE(progress_unit, ''),
+		COALESCE(checkpoint::text, '-'), COALESCE(error::text, '-')), E'\n' ORDER BY created_at), '(no job)') FROM job WHERE kind LIKE 'vuln-%'`))
+	t.Logf("%s: per ecosystem, advisories %s; queued for evaluation %s; names touched by an unfinished sync %s", id,
+		in.st.Text(`SELECT COALESCE(string_agg(ecosystem || ' ' || n, ', ' ORDER BY ecosystem), 'none') FROM (SELECT ecosystem, count(*) AS n FROM vuln_advisory GROUP BY ecosystem) c`),
+		in.st.Text(`SELECT COALESCE(string_agg(ecosystem || ' ' || n, ', ' ORDER BY ecosystem), 'none') FROM (SELECT ecosystem, count(*) AS n FROM vuln_pending_evaluation GROUP BY ecosystem) c`),
+		in.st.Text(`SELECT COALESCE(string_agg(ecosystem || ' ' || n, ', ' ORDER BY ecosystem), 'none') FROM (SELECT ecosystem, count(*) AS n FROM vuln_sync_touched GROUP BY ecosystem) c`))
+	dir := in.saveLogs(t)
+	for _, r := range in.st.Replicas() {
+		t.Logf("%s: the log of %s, WARN and ERROR lines and those of the sync and the jobs, the last 80 (the whole log is %s):\n%s",
+			id, r.Name, filepath.Join(dir, r.Name+".log"), logExcerpt(r.Logs.String(), 80))
+	}
+}
+
+// saveLogs writes every replica's log so far to .out/perf-vuln-logs/<replica>.log and returns the directory. A later call
+// writes a log again with everything the replica wrote since, so the last call holds the most.
+func (in *installation) saveLogs(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(repoRoot(), ".out", "perf-vuln-logs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Errorf("the replicas' logs: %v", err)
+		return dir
+	}
+	for _, r := range in.st.Replicas() {
+		if err := os.WriteFile(filepath.Join(dir, r.Name+".log"), []byte(r.Logs.String()), 0o644); err != nil { //nolint:gosec // the log of a test replica, not a secret
+			t.Errorf("the log of %s: %v", r.Name, err)
+		}
+	}
+	return dir
+}
+
 // TestR_VULN_028_PerformanceRun is the run of R-VULN-028: V-1 to V-9 in order, each recorded in .out/perf-vuln.json.
-// Without TROVE_PERF_GATE=1 it reports; with it a value above its target fails the test (the nightly workflow sets it).
+// Without TROVE_PERF_GATE=1 it reports; with it a value above its target fails the test (the nightly workflow sets it). A
+// scenario that does not finish fails the test either way and is recorded as not finished. V-2 and V-9 need V-1's import;
+// every later scenario needs V-1 and V-2, because it measures an installation that is imported and evaluated: a scenario
+// whose need did not finish is recorded as not measured and does not run.
 func TestR_VULN_028_PerformanceRun(t *testing.T) {
 	in := newInstallation(t)
 	rep := &report{t: t}
@@ -159,38 +275,44 @@ func TestR_VULN_028_PerformanceRun(t *testing.T) {
 
 	web := in.web("web-1")
 	in.worker("worker-1")
+	t.Cleanup(func() {
+		if t.Failed() {
+			in.saveLogs(t)
+		}
+	})
+	imported, evaluated := []string{"V-1"}, []string{"V-1", "V-2"}
 
 	// V-1: the full import of the npm archive into empty tables. The clock starts at the task's request and stops when
-	// the ecosystem's state is complete.
-	t.Run("V-1 full import of the npm archive", func(t *testing.T) {
+	// the ecosystem's state is complete. The job imports NuGet first (the ecosystems run in sorted order) and ends with npm;
+	// when it ends without npm complete, nothing else will complete it (the scheduled tasks are off), and the wait gives up.
+	rep.scenario(t, "V-1 full import of the npm archive", []string{"V-1"}, nil, func(t *testing.T) {
 		start := time.Now()
 		in.runTask(web, "vuln-sync-osv-full")
-		testenv.WaitFor(t, "the first import of npm", 40*time.Minute, func() bool {
+		in.wait(t, rep, "V-1", "the first import of npm", 40*time.Minute, func() bool {
 			return in.st.Text(`SELECT COALESCE((SELECT state FROM vuln_source_state WHERE source = 'osv' AND ecosystem = 'npm'), 'none')`) == "complete"
-		})
+		}, in.jobEnded("vuln-sync-osv-full"))
 		d := time.Since(start)
-		rep.record("V-1", "full import of the npm archive into empty tables", d.Minutes(), "min", 15,
-			fmt.Sprintf("%d records", in.st.Number(`SELECT count(*) FROM vuln_advisory WHERE ecosystem = 'npm'`)))
+		rep.record("V-1", d.Minutes(), fmt.Sprintf("%d records", in.st.Number(`SELECT count(*) FROM vuln_advisory WHERE ecosystem = 'npm'`)))
 	})
 
 	// V-2: the full evaluation of the 100,000 versions, which the first complete import requests (Q-VULN-18). The clock
 	// starts when the import has completed.
-	t.Run("V-2 full evaluation of 100,000 versions", func(t *testing.T) {
+	rep.scenario(t, "V-2 full evaluation of 100,000 versions", []string{"V-2"}, imported, func(t *testing.T) {
 		start := time.Now()
-		testenv.WaitFor(t, "the full evaluation", 30*time.Minute, in.settled)
-		rep.record("V-2", "full evaluation of the 100,000 versions", time.Since(start).Minutes(), "min", 5,
-			fmt.Sprintf("%d findings", in.st.Number(`SELECT count(*) FROM vuln_finding`)))
+		in.wait(t, rep, "V-2", "the full evaluation", 30*time.Minute, in.settled, nil)
+		rep.record("V-2", time.Since(start).Minutes(), fmt.Sprintf("%d findings", in.st.Number(`SELECT count(*) FROM vuln_finding`)))
 	})
 
 	// V-9: the advisory tables with their indexes, npm and NuGet.
-	t.Run("V-9 size of the advisory tables", func(t *testing.T) {
+	rep.scenario(t, "V-9 size of the advisory tables", []string{"V-9"}, imported, func(t *testing.T) {
 		b := in.st.Number(`SELECT pg_total_relation_size('vuln_advisory') + pg_total_relation_size('vuln_affected')`)
-		rep.record("V-9", "size of the advisory tables with indexes", float64(b)/(1<<30), "GiB", 2,
+		rep.record("V-9", float64(b)/(1<<30),
 			fmt.Sprintf("%d advisories, %d affected entries", in.st.Number(`SELECT count(*) FROM vuln_advisory`), in.st.Number(`SELECT count(*) FROM vuln_affected`)))
 	})
 
-	// V-3: an incremental sync of 500 changed records, then their evaluation. The clock starts at the task's start.
-	t.Run("V-3 incremental sync of 500 changed records", func(t *testing.T) {
+	// V-3: an incremental sync of 500 changed records, then their evaluation. The clock starts at the task's start. The sync
+	// is incremental only on a complete ecosystem; after an import that did not finish it would be a full one.
+	rep.scenario(t, "V-3 incremental sync of 500 changed records", []string{"V-3"}, evaluated, func(t *testing.T) {
 		for i := range changedRecords {
 			id := fmt.Sprintf("GHSA-fill-%04d-0000", i)
 			raw, ok := in.stub.Record("npm", id)
@@ -209,17 +331,17 @@ func TestR_VULN_028_PerformanceRun(t *testing.T) {
 		}
 		start := time.Now()
 		in.runTask(web, "vuln-sync-osv")
-		testenv.WaitFor(t, "the incremental sync and its evaluation", 15*time.Minute, func() bool {
+		in.wait(t, rep, "V-3", "the incremental sync and its evaluation", 15*time.Minute, func() bool {
 			return in.st.Number(`SELECT count(*) FROM job WHERE kind = 'vuln-sync-osv' AND state = 'succeeded'`) >= 1 && in.settled()
-		})
-		rep.record("V-3", "incremental sync with 500 changed records and their evaluation", time.Since(start).Minutes(), "min", 2, "")
+		}, in.jobEnded("vuln-sync-osv", jobs.StateSucceeded))
+		rep.record("V-3", time.Since(start).Minutes(), "")
 	})
 
 	// V-4: the evaluation added to a publish. 300 versions are published to npm-local with data present. The replica's
 	// histogram of the trigger publish observes each evaluation once, inside the publish; scraped before and after every
 	// publish, its _sum and _count move by that one call's duration, so the p99 is read from 300 exact samples and not from
 	// a bucket (F-43). The histogram stays what production reads; its bucket bound is noted beside the exact value.
-	t.Run("V-4 evaluation on publish", func(t *testing.T) {
+	rep.scenario(t, "V-4 evaluation on publish", []string{"V-4"}, evaluated, func(t *testing.T) {
 		const metric, series = "trove_vuln_evaluation_duration_seconds", `trigger="publish"`
 		sum, count, _ := histogramTotals(web.Metrics(t), metric, series)
 		var samples []time.Duration
@@ -241,7 +363,7 @@ func TestR_VULN_028_PerformanceRun(t *testing.T) {
 			sum, count = nextSum, nextCount
 		}
 		bound := histogramBound(web.Metrics(t), metric, series, 0.99)
-		rep.record("V-4", "evaluation added to a publish commit, p99 (exact, per call)", ms(percentile(samples, 0.99)), "ms", 5,
+		rep.record("V-4", ms(percentile(samples, 0.99)),
 			fmt.Sprintf("%d publishes, median %.2f ms, max %.2f ms, %d evaluated more than once, histogram bucket bound of the p99 %.0f ms",
 				publishes, ms(percentile(samples, 0.5)), ms(percentile(samples, 1)), repeated, bound*1000))
 	})
@@ -249,7 +371,7 @@ func TestR_VULN_028_PerformanceRun(t *testing.T) {
 	// V-5: the block check of a download of a stored item. One replica has the scanning on, one off; the same stored
 	// item is requested alternately from both, so that the difference is the block check. The queries are the commits
 	// and rollbacks of the database over the run, minus the idle rate of the same time on the same stack.
-	t.Run("V-5 block check on a cached download", func(t *testing.T) {
+	rep.scenario(t, "V-5 block check on a cached download", []string{"V-5a", "V-5b"}, evaluated, func(t *testing.T) {
 		off := in.web("web-off", "TROVE_VULNERABILITIES_ENABLED=false")
 		name := "perf-cached"
 		publish(t, in, web, repoNPMLocal, name, "1.0.0")
@@ -280,14 +402,14 @@ func TestR_VULN_028_PerformanceRun(t *testing.T) {
 		time.Sleep(loaded)
 		idle1 := xacts()
 		queries := float64((x1-x0)-(idle1-idle0)) / float64(2*cachedDownloads)
-		rep.record("V-5a", "latency added by the block check on a cached download, p99", ms(percentile(on, 0.99))-ms(percentile(offS, 0.99)), "ms", 1,
+		rep.record("V-5a", ms(percentile(on, 0.99))-ms(percentile(offS, 0.99)),
 			fmt.Sprintf("p99 on %.2f ms, off %.2f ms", ms(percentile(on, 0.99)), ms(percentile(offS, 0.99))))
-		rep.record("V-5b", "database transactions per cached download (both replicas)", max(queries, 0), "tx", 1.0,
+		rep.record("V-5b", max(queries, 0),
 			"the target is 0 added queries; the bound allows one background transaction per request of noise on a shared stack, read the value")
 	})
 
 	// V-6: the local audit of a lockfile of 1,000 packages: 1,000 names with one version each, half of them with an advisory.
-	t.Run("V-6 npm local audit of a 1,000-package lockfile", func(t *testing.T) {
+	rep.scenario(t, "V-6 npm local audit of a 1,000-package lockfile", []string{"V-6"}, evaluated, func(t *testing.T) {
 		body := map[string][]string{}
 		for i := range auditPackages {
 			body[fmt.Sprintf("trove-test-filler-%04d", i)] = []string{"1.0.0"}
@@ -302,11 +424,11 @@ func TestR_VULN_028_PerformanceRun(t *testing.T) {
 			}
 			samples = append(samples, time.Since(start))
 		}
-		rep.record("V-6", "npm local audit of a 1,000-package lockfile, p99", ms(percentile(samples, 0.99)), "ms", 500, "")
+		rep.record("V-6", ms(percentile(samples, 0.99)), "")
 	})
 
 	// V-7 and V-8 need the findings of a completed installation at their size, and the NuGet cache.
-	t.Run("V-7 first page of the findings list with 100,000 findings", func(t *testing.T) {
+	rep.scenario(t, "V-7 first page of the findings list with 100,000 findings", []string{"V-7a", "V-7b"}, evaluated, func(t *testing.T) {
 		in.fillFindings()
 		list := func(tok string) []time.Duration {
 			var samples []time.Duration
@@ -320,12 +442,11 @@ func TestR_VULN_028_PerformanceRun(t *testing.T) {
 			}
 			return samples
 		}
-		rep.record("V-7a", "first page of the findings list for an admin, p99", ms(percentile(list(in.tokAdmin), 0.99)), "ms", 300,
-			fmt.Sprintf("%d findings", in.st.Number(`SELECT count(*) FROM vuln_finding`)))
-		rep.record("V-7b", "first page of the findings list for a caller with package-pattern grants, p99", ms(percentile(list(in.tokGrantee), 0.99)), "ms", 300, "")
+		rep.record("V-7a", ms(percentile(list(in.tokAdmin), 0.99)), fmt.Sprintf("%d findings", in.st.Number(`SELECT count(*) FROM vuln_finding`)))
+		rep.record("V-7b", ms(percentile(list(in.tokGrantee), 0.99)), "")
 	})
 
-	t.Run("V-8 NuGet vulnerability page from the replica's cache", func(t *testing.T) {
+	rep.scenario(t, "V-8 NuGet vulnerability page from the replica's cache", []string{"V-8"}, evaluated, func(t *testing.T) {
 		index := in.st.Do(web, "GET", "/api/nuget/"+repoNuGet+"/v3/vulnerabilities/index.json", in.tokAdmin, nil)
 		if index.Status != 200 {
 			t.Fatalf("the vulnerability index: %d %s", index.Status, index.Body)
@@ -349,7 +470,7 @@ func TestR_VULN_028_PerformanceRun(t *testing.T) {
 			}
 			samples = append(samples, time.Since(start))
 		}
-		rep.record("V-8", "NuGet vulnerability page from the replica's cache, p99", ms(percentile(samples, 0.99)), "ms", 25, "")
+		rep.record("V-8", ms(percentile(samples, 0.99)), "")
 	})
 }
 

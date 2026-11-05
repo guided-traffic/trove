@@ -439,7 +439,7 @@ findings gauge, `ExpectedSources`) and [app/vuln_facts_test.go](../../internal/a
 
 **Performance.** `perf/vuln` seeds in SQL and measures V-1 to V-9 against the scanning; its setup is
 tested (`TestR_VULN_028_TheSeededInstallation`, 100,000 versions in about 2 s) and the scenarios run in the nightly workflow. How to read
-a run: [perf/README.md](../../perf/README.md#the-vulnerability-scanning-run).
+a run: [perf/README.md](../../perf/README.md#reading-a-run).
 
 | [queries/vuln_audits.sql](../../internal/meta/postgres/queries/vuln_audits.sql) | `AuditAdvisoriesForNames` (one query for a body of names, over `vuln_affected_name`) and `AuditAllAdvisories`; one row per affected entry, times as epoch microseconds, so that no driver type leaves the store |
 | [vuln/store/audits.go](../../internal/vuln/store/audits.go) | `Audits` implements `vuln.Advisories`: `ForNames` (per name, the advisories with that name's entries), `All`, `InternalNames` over an `InternalNameRule` |

@@ -44,6 +44,33 @@ Test and Release. Every value of a run is in `perf-vuln.json` (artifact `vuln-pe
 environment is the integration stack with the replicas in the test process, not the reference environment of R-ARCH-027
 ([H-491](../docs/security/vulnerability-scanning.md#h-491--the-performance-run-is-not-the-reference-environment)).
 
+### Reading a run
+
+Each row of `perf-vuln.json` has an `outcome`. Only a `measured` value is compared with its target (`met`); the gate fails the run on a
+measured value above its target, and a scenario that does not finish fails it with or without the gate.
+
+| Outcome | When | `value` |
+|---|---|---|
+| `measured` | the scenario ran to its end | the measurement |
+| `not finished` | its wait ran out, or the job it waits for ended without the result (V-1: the full sync ended and npm is not `complete`; V-3: the incremental sync ended other than `succeeded`) | the time it waited, in minutes |
+| `not finished` | it failed before it measured (a request answered otherwise than expected) | `null` |
+| `not measured` | a scenario it needs did not finish; it did not run | `null` |
+
+| Scenario | Needs | Why |
+|---|---|---|
+| V-1 | nothing | the import into empty tables |
+| V-2 | V-1 | its clock starts when the import completed, and the full evaluation is the one that completion requests |
+| V-9 | V-1 | the size of the tables after the import |
+| V-3 to V-8 | V-1 and V-2 | each measures an installation that is imported and evaluated; V-3 is an incremental sync only on a complete ecosystem, a full one otherwise |
+
+The regression issue lists every row that does not meet its target with its outcome and the note (`its wait ran out after 40m0s`,
+`V-1 did not finish`). A wait that gives up logs, in the test output: the advisory source state of each ecosystem (`state`,
+`failures`, `last_error`, `attempted_at`, `synced_at`, `records`), every job of the scanning (state, attempt of max attempts, `run_at`,
+`locked_until`, progress, checkpoint, error), the rows queued for evaluation and the names an unfinished sync left in
+`vuln_sync_touched`, and the last 80 lines of each replica's log that are WARN or ERROR, from the components `vulnerabilities` and
+`jobs`, or requests to the advisory source. Each replica's whole log up to that moment, and again at the end of a failed run, is in
+`.out/perf-vuln-logs/<replica>.log`, which the workflow uploads with the report.
+
 ## The npm load scripts
 
 [k6/npm.js](k6/npm.js) runs five k6 scenarios one after the other against one `web` pod's listener, from inside the cluster: P-1 (time

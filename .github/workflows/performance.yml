@@ -155,7 +155,7 @@ jobs:
           set +a
           TROVE_PERF_GATE=1 go test -count=1 -p 1 -tags integration -timeout 115m -run 'TestR_VULN_028' -json ./perf/vuln/... | tee .out/test-vuln-perf.json
 
-      - name: Upload the report (perf-vuln.json) and the go test -json stream
+      - name: Upload the report (perf-vuln.json), the go test -json stream and the replicas' logs of a failed run
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -163,6 +163,7 @@ jobs:
           path: |
             .out/perf-vuln.json
             .out/test-vuln-perf.json
+            .out/perf-vuln-logs/
           if-no-files-found: warn
           retention-days: 30
 
@@ -177,11 +178,11 @@ jobs:
             echo "The nightly performance run of the vulnerability scanning (R-VULN-028) failed: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo
             if [ -f .out/perf-vuln.json ]; then
-              echo "Scenarios above their target (value, target):"
+              echo "Scenarios above their target, scenarios that did not finish, and scenarios not measured because one they need did not finish:"
               echo
-              jq -r '.results[] | select(.met | not) | "- \(.id) \(.scenario): \(.value) \(.unit), target \(.target) \(.unit)"' .out/perf-vuln.json
+              jq -r '.results[] | select(.met | not) | if .outcome == "measured" then "- \(.id) \(.scenario): \(.value) \(.unit), target \(.target) \(.unit)" else "- \(.id) \(.scenario): \(.outcome), \(.note); target \(.target) \(.unit)" end' .out/perf-vuln.json
               echo
-              echo "Every value of the run is in the artifact vuln-perf (perf-vuln.json)."
+              echo "Every value of the run is in the artifact vuln-perf (perf-vuln.json), and the replicas' logs of the failed run beside it (perf-vuln-logs)."
             else
               echo "The run ended before it wrote its report (perf-vuln.json is missing); see the job log."
             fi

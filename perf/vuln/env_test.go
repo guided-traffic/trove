@@ -4,7 +4,7 @@
 // versions seeded in SQL, the npm and NuGet dumps of the test advisory source at the size of the real ones, one web and one
 // worker replica of the composition root against the integration stack. It runs in the nightly workflow only
 // (.github/workflows/performance.yml, job vuln-perf); Test and Release never starts it (owner, 2026-11-01: long tests out of
-// the release path). perf/vuln/README.md says how to run it by hand.
+// the release path). perf/README.md says how to run it by hand and how to read a run.
 package vulnperf
 
 import (
@@ -46,37 +46,155 @@ const (
 	nugetPageRepeats = 200
 )
 
-// result is one scenario's recorded value.
+// row is one value of R-VULN-028: what it measures, its unit and its target. Every target is an upper bound.
+type row struct {
+	name   string
+	unit   string
+	target float64
+}
+
+// rows are the values of the run by ID. A scenario records one row, V-5 and V-7 two each.
+var rows = map[string]row{
+	"V-1":  {"full import of the npm archive into empty tables", "min", 15},
+	"V-2":  {"full evaluation of the 100,000 versions", "min", 5},
+	"V-3":  {"incremental sync with 500 changed records and their evaluation", "min", 2},
+	"V-4":  {"evaluation added to a publish commit, p99 (exact, per call)", "ms", 5},
+	"V-5a": {"latency added by the block check on a cached download, p99", "ms", 1},
+	"V-5b": {"database transactions per cached download (both replicas)", "tx", 1.0},
+	"V-6":  {"npm local audit of a 1,000-package lockfile, p99", "ms", 500},
+	"V-7a": {"first page of the findings list for an admin, p99", "ms", 300},
+	"V-7b": {"first page of the findings list for a caller with package-pattern grants, p99", "ms", 300},
+	"V-8":  {"NuGet vulnerability page from the replica's cache, p99", "ms", 25},
+	"V-9":  {"size of the advisory tables with indexes", "GiB", 2},
+}
+
+// The outcomes of a row. Only a measured value is compared with its target; a row that did not finish or was not measured
+// misses it.
+const (
+	// outcomeMeasured: the value is the scenario's measurement.
+	outcomeMeasured = "measured"
+	// outcomeNotFinished: the scenario did not finish. Its wait ran out, or what it waited for ended without the result (the
+	// value is the time it waited), or it failed before it measured (no value).
+	outcomeNotFinished = "not finished"
+	// outcomeNotMeasured: a scenario it needs did not finish, so it did not run (no value).
+	outcomeNotMeasured = "not measured"
+)
+
+// result is one recorded row.
 type result struct {
-	ID     string  `json:"id"`
-	Name   string  `json:"scenario"`
-	Value  float64 `json:"value"`
-	Unit   string  `json:"unit"`
-	Target float64 `json:"target"`
-	// Met is whether the value is within the target (every target of R-VULN-028 is an upper bound).
+	ID      string `json:"id"`
+	Name    string `json:"scenario"`
+	Outcome string `json:"outcome"`
+	// Value is null when the row has none: a scenario that failed before it measured, or one that did not run.
+	Value  *float64 `json:"value"`
+	Unit   string   `json:"unit"`
+	Target float64  `json:"target"`
+	// Met is whether a measured value is within the target; a row that is not measured never meets it.
 	Met  bool   `json:"met"`
 	Note string `json:"note,omitempty"`
 }
 
 // report collects the results of a run and writes them to .out/perf-vuln.json, which the workflow uploads. With
-// TROVE_PERF_GATE=1 a miss fails the test (the workflow sets it); without it the run reports only, which is how a run on
-// a developer machine is read.
+// TROVE_PERF_GATE=1 a measured value above its target fails the test (the workflow sets it); without it the run reports only,
+// which is how a run on a developer machine is read. A scenario that does not finish fails the test either way.
 type report struct {
 	t    *testing.T
 	mu   sync.Mutex
 	rows []result
 }
 
-func (r *report) record(id, name string, value float64, unit string, target float64, note string) {
-	r.t.Helper()
-	met := value <= target
-	r.mu.Lock()
-	r.rows = append(r.rows, result{ID: id, Name: name, Value: round(value), Unit: unit, Target: target, Met: met, Note: note})
-	r.mu.Unlock()
-	r.t.Logf("%s %s: %.3f %s (target %.3f %s) met=%t %s", id, name, value, unit, target, unit, met, note)
-	if !met && os.Getenv("TROVE_PERF_GATE") == "1" {
-		r.t.Errorf("%s %s: %.3f %s misses the target of %.3f %s", id, name, value, unit, target, unit)
+// rowOf returns the row of an ID; an ID that is not in rows is a mistake of the run, found by its first run.
+func (r *report) rowOf(id string) row {
+	w, ok := rows[id]
+	if !ok {
+		panic("perf/vuln: no row " + id)
 	}
+	return w
+}
+
+func (r *report) add(res result) {
+	r.mu.Lock()
+	r.rows = append(r.rows, res)
+	r.mu.Unlock()
+}
+
+// lookup returns the recorded row of an ID.
+func (r *report) lookup(id string) (result, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, res := range r.rows {
+		if res.ID == id {
+			return res, true
+		}
+	}
+	return result{}, false
+}
+
+// record records a measured value.
+func (r *report) record(id string, value float64, note string) {
+	r.t.Helper()
+	w := r.rowOf(id)
+	met := value <= w.target
+	v := round(value)
+	r.add(result{ID: id, Name: w.name, Outcome: outcomeMeasured, Value: &v, Unit: w.unit, Target: w.target, Met: met, Note: note})
+	r.t.Logf("%s %s: %.3f %s (target %.3f %s) met=%t %s", id, w.name, value, w.unit, w.target, w.unit, met, note)
+	if !met && os.Getenv("TROVE_PERF_GATE") == "1" {
+		r.t.Errorf("%s %s: %.3f %s misses the target of %.3f %s", id, w.name, value, w.unit, w.target, w.unit)
+	}
+}
+
+// notFinished records a row whose scenario did not finish; waited is the time it waited, nil when it has none to report. The
+// note says why in words of the run, never with data of the installation, because the regression issue prints it.
+func (r *report) notFinished(id string, waited *time.Duration, note string) {
+	r.t.Helper()
+	w := r.rowOf(id)
+	var v *float64
+	if waited != nil && w.unit == "min" {
+		m := round(waited.Minutes())
+		v = &m
+	}
+	r.add(result{ID: id, Name: w.name, Outcome: outcomeNotFinished, Value: v, Unit: w.unit, Target: w.target, Note: note})
+	r.t.Logf("%s %s: not finished (target %.3f %s): %s", id, w.name, w.target, w.unit, note)
+}
+
+// notMeasured records a row whose scenario did not run because the scenario of the row it needs did not finish.
+func (r *report) notMeasured(id, note string) {
+	r.t.Helper()
+	w := r.rowOf(id)
+	r.add(result{ID: id, Name: w.name, Outcome: outcomeNotMeasured, Unit: w.unit, Target: w.target, Note: note})
+	r.t.Logf("%s %s: not measured (target %.3f %s): %s", id, w.name, w.target, w.unit, note)
+}
+
+// scenario runs one scenario as a subtest that records the rows ids. It does not run when a row it needs was not measured:
+// its rows are recorded as not measured, naming the first such row, and the subtest is skipped (the scenario that did not
+// finish has failed the test already). A row the scenario leaves unrecorded, because it failed before it measured, is recorded
+// as not finished, so that the report and the regression issue list every row of the run.
+func (r *report) scenario(t *testing.T, title string, ids, needs []string, fn func(t *testing.T)) {
+	t.Helper()
+	t.Run(title, func(t *testing.T) {
+		for _, n := range needs {
+			res, ok := r.lookup(n)
+			if ok && res.Outcome == outcomeMeasured {
+				continue
+			}
+			why := n + " did not finish"
+			if ok && res.Outcome == outcomeNotMeasured {
+				why = n + " was not measured"
+			}
+			for _, id := range ids {
+				r.notMeasured(id, why)
+			}
+			t.Skipf("not measured: %s", why)
+		}
+		defer func() {
+			for _, id := range ids {
+				if _, ok := r.lookup(id); !ok {
+					r.notFinished(id, nil, "the scenario failed before it measured; the test log says why")
+				}
+			}
+		}()
+		fn(t)
+	})
 }
 
 func (r *report) write() {
@@ -133,6 +251,25 @@ func percentile(samples []time.Duration, p float64) time.Duration {
 }
 
 func ms(d time.Duration) float64 { return float64(d) / float64(time.Millisecond) }
+
+// logExcerpt returns the last n lines of a replica's JSON log that say why a sync or a job ended: every WARN and ERROR line,
+// the lines of the components vulnerabilities and jobs, and the requests to the advisory source. The rest, mostly the probes
+// of the object store every 300 ms, is left out; the whole log is in .out/perf-vuln-logs.
+func logExcerpt(log string, n int) string {
+	var keep []string
+	for _, line := range strings.Split(strings.TrimRight(log, "\n"), "\n") {
+		for _, mark := range []string{`"level":"WARN"`, `"level":"ERROR"`, `"component":"vulnerabilities"`, `"component":"jobs"`, `"purpose":"vuln_source"`} {
+			if strings.Contains(line, mark) {
+				keep = append(keep, line)
+				break
+			}
+		}
+	}
+	if len(keep) > n {
+		keep = keep[len(keep)-n:]
+	}
+	return strings.Join(keep, "\n")
+}
 
 // histogramBound returns the smallest bucket bound, in seconds, at or below which at least the share q of the observations
 // of the histogram series fall: an upper bound of the q-quantile that is exact to the bucket. -1 when the series has no
