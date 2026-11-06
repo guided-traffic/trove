@@ -235,7 +235,7 @@ func (f *flow) findings(r *testenv.Replica) []finding {
 func (f *flow) find(r *testenv.Replica, repo, name string) (finding, bool) {
 	f.t.Helper()
 	for _, x := range f.findings(r) {
-		if x.Repository == repo && x.Package == name && x.Version == version {
+		if x.Repository == testenv.DefaultProject+"/"+repo && x.Package == name && x.Version == version {
 			return x, true
 		}
 	}
