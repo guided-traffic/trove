@@ -246,15 +246,6 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
   three times in a row; `TestE13Failover` passed with the new `failover.sh` (k6 only `200`, the switchover 17 s); `TestHASuite_NodeLoss`
   cleared a node of the Valkey operator and failed afterwards on a timeout of the kind API server under a host load average of 36, and
   passed in the run after it (its node then hosted none of the dependencies). Done when the set passes in a nightly run.
-- **F-58 · A browser page loaded during a rolling upgrade can fail on a UI asset of the other release** (confirmed by
-  `TestUpgrade_R_HA_064_AcrossTheCut` on the dev cluster, 2026-11-06: 2 of 25 journey iterations in step 1). Angular names every asset
-  after its content; `index.html` came from a pod of one release and `main-<hash>.js`, `polyfills-<hash>.js` and `chunk-<hash>.js` went
-  to pods of both and answered `404` on the other release's pods, so the login page stayed blank. R-HA-020 asks that anything a client
-  carries between requests is understood by both releases; the asset URLs are such a thing. For the cut from v0.16.0 the old pods cannot
-  be changed and the test counts the skew as a finding (Q-HA-99); every other upgrade test is strict, so the rolling upgrade's leg turns
-  red with the first release that changes the bundle. Fix (option (c) of Q-HA-99, to be designed): the image carries the previous
-  release's bundle and a replica that misses a hashed asset serves or fetches it, or the edge keeps a page on one release. Done when the
-  rolling upgrade passes across two releases with different bundles.
 
 Found on 2026-11-04 while cutting trove into task areas (phase 6a):
 

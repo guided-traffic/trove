@@ -3101,7 +3101,9 @@ tag `guidedtraffic/trove:dev`) and `make image-marked` (the tag `guidedtraffic/t
 | slowest iteration | 23.3 s (a blank page that waited out the journey's 15 s) | 14.4 s (an `npm ci`) |
 | test duration | 515 s | 721 s |
 
-The set took 20 min 36 s with both tests, the return to the dev release after each included. Before the fix of Q-HA-98 the first run ended at step 1 after 5 minutes; the guard
+The set took 20 min 36 s with both tests, the return to the dev release after each included.
+
+`TestUpgrade_R_HA_020_AcrossTwoBundles`, the same machine, 2026-11-06 (`guidedtraffic/trove:dev-marked` to `guidedtraffic/trove:dev`, both of the working tree): the upgrade took 42 s; during it the index named the main script of the first bundle 42 times and of the second 29 times, and the 213 requests for the main scripts the indexes named all answered `200`, 81 of them by a replica whose own index names the other bundle; 180 `npm ci`, 14 publishes, 204 `dotnet restore` and 25 browser journeys, none failed and none met the asset skew (8 journeys ran during the upgrade). The first `api` replica of the second bundle published 244 new files of 270 in 1.2 s, the next one found them all in 7 ms. The test took 257 s, the return to the dev release included. With the store in the image under test, the other two tests passed in the same session: the rolling test from v0.19.5 (the migration 00043 applied, the rollback to v0.19.5 on it) with 271 `npm ci`, 29 publishes, 333 `dotnet restore` and 44 journeys, none failed and none met the skew, since the bundle did not change; the cut test with 2 of 24 journeys counted against v0.16.0 (Q-HA-99), whose files the store cannot have. Before the fix of Q-HA-98 the first run ended at step 1 after 5 minutes; the guard
 subtest passed in 0.9 s in every run.
 
 ### Findings of the upgrade tests
