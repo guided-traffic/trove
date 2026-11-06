@@ -23,8 +23,10 @@ import (
 // other and the second is refused.
 
 // parseMemberRef reads the reference of a member, "user:<name>" or "group:<name>". A reference that does
-// not parse is 422 validation_failed; a kind that is never a member (a service account, a CI mapping, a
-// Bastion registration, anonymous, authenticated) is 422 principal_not_allowed (R-AUTHZ-026, Q-AUTHZ-215).
+// not parse is 422 validation_failed with invalid_principal; a kind that is never a member (a service
+// account, a CI mapping, a Bastion registration, anonymous, authenticated) is 422 validation_failed with
+// principal_not_allowed at /principalRef (R-AUTHZ-026, Q-AUTHZ-215, R-BAS-004; the code of a violation lives in
+// errors[], Q-API-136).
 func parseMemberRef(ref string) (PrincipalKind, string, error) {
 	r, err := authz.ParseRef(ref)
 	if err != nil {
@@ -38,13 +40,16 @@ func parseMemberRef(ref string) (PrincipalKind, string, error) {
 	case principal.KindGroup:
 		return KindGroup, r.Name, nil
 	case principal.KindBastion:
-		return "", "", principal.BastionNotAllowed("a member of a project") // R-BAS-004
+		return "", "", principalNotAllowed(ref, "a Bastion registration holds no grant, role, ownership or membership") // R-BAS-004
 	}
 	return "", "", principalNotAllowed(ref, "only users and groups are members of a project; a service account or a CI mapping reaches it through its policies")
 }
 
 func principalNotAllowed(ref, why string) error {
-	return errs.E(errs.Unprocessable, errs.CodePrincipalNotAllowed, fmt.Sprintf("%s cannot be a member of a project: %s.", ref, why))
+	detail := fmt.Sprintf("%s cannot be a member of a project: %s.", ref, why)
+	return errs.E(errs.Invalid, errs.CodeValidation, detail, errs.WithFields(errs.FieldError{
+		Pointer: "/principalRef", Code: errs.CodePrincipalNotAllowed, Detail: detail,
+	}))
 }
 
 // memberPrincipal reads the user or group a member reference names, in the writer's transaction: 404 for a

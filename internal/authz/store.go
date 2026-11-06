@@ -40,6 +40,10 @@ const stateAccountOutsideProject = "AI005"
 // pgForeignKeyViolation is the SQLSTATE of a row that names a row that is not there.
 const pgForeignKeyViolation = "23503"
 
+// stateNameOfProject is the SQLSTATE of the guard of 00019 that compares the stored name of a project's policy
+// with its project (AI003); the validation matched them, so it meets only a project that is gone.
+const stateNameOfProject = "AI003"
+
 func notFoundPolicy(name string) error {
 	return errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The permission policy %q does not exist.", name))
 }
@@ -128,8 +132,9 @@ func (s *Service) CreateIn(ctx context.Context, tx meta.Tx, actor Subject, in Po
 		ID: id, Name: in.Name, Description: in.Description, ResourceType: rp.in.ResourceType, ProjectID: rp.project, Actor: actorID(actor),
 	})
 	if err != nil {
-		if rp.project != "" && postgres.IsState(err, pgForeignKeyViolation) {
-			// The project was deleted between the lookup and the insert.
+		if rp.project != "" && (postgres.IsState(err, pgForeignKeyViolation) || postgres.IsState(err, stateNameOfProject)) {
+			// The project was deleted between the lookup and the insert: the guard of the stored name
+			// finds no project key (AI003), or the foreign key no project.
 			return Policy{}, problemError([]ProblemField{field("/project", errs.CodeUnknownProject, fmt.Sprintf("No project %q exists.", *in.Project))})
 		}
 		return Policy{}, err

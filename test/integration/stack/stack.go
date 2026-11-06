@@ -239,10 +239,33 @@ func (e *Env) Admin(p Person) {
 	e.Exec("INSERT INTO authz_role_binding (role, principal_id) VALUES ('admin', $1::uuid)", p.ID)
 }
 
-// Repo inserts a repository; do it before the replicas start.
+// Repo inserts a repository into the project "it" (testenv.DefaultProject); do it before the replicas start.
+// Every repository belongs to a project (Q-AUTHZ-206).
 func (e *Env) Repo(key, class, format string) {
 	e.T.Helper()
-	e.Exec("INSERT INTO repositories (key, class, format, config) VALUES ($1, $2, $3, '{}'::jsonb)", key, class, format)
+	e.RepoIn(testenv.DefaultProject, key, class, format)
+}
+
+// RepoIn inserts a repository into the project with the key, which it creates when it does not exist yet.
+func (e *Env) RepoIn(project, key, class, format string) {
+	e.T.Helper()
+	e.Project(project)
+	e.Exec(`INSERT INTO repositories (key, class, format, config, project_id)
+	        SELECT $1, $2, $3, '{}'::jsonb, id FROM project WHERE key = $4`, key, class, format, project)
+}
+
+// Project creates the project with the key and returns its ID; a project that exists is returned as it is.
+func (e *Env) Project(key string) string {
+	e.T.Helper()
+	e.Exec("INSERT INTO project (id, key, display_name) VALUES (gen_random_uuid(), $1, $1) ON CONFLICT (key) DO NOTHING", key)
+	return e.Text("SELECT id::text FROM project WHERE key = $1", key)
+}
+
+// Member makes a person (a user or a group) a member of the project with the role, straight in the table.
+func (e *Env) Member(project string, p Person, role string) {
+	e.T.Helper()
+	e.Exec(`INSERT INTO project_member (project_id, principal_id, role) SELECT id, $2::uuid, $3 FROM project WHERE key = $1
+	        ON CONFLICT (project_id, principal_id) DO UPDATE SET role = EXCLUDED.role`, project, p.ID, role)
 }
 
 // AuthzEpoch is the authorization epoch in the database.
@@ -556,6 +579,7 @@ func (r *Replica) serve(o Options, rec audit.Recorder) {
 			o.AuditStore = r.Store
 			o.Authz = v1.AuthzServices{Policies: r.Service, Engine: r.Engine, Projects: r.Projects}
 			o.API = v1.Services{Config: cfg, Store: r.DB, Audit: rec}
+			o.Repositories = v1.RepositoryServices{Service: r.Repos, Authz: r.Engine, Reader: repositories{r.E}}
 		},
 	})
 	r.Server = httptest.NewServer(h)

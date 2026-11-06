@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -195,12 +196,20 @@ func (e *env) ciMapping(name string) person {
 	return person{ID: e.principalRow("ci_mapping", name), Name: name, Kind: principal.KindCI}
 }
 
-func (e *env) repo(key, class, format, cfg string) {
+// repo inserts a repository into the project "it", or into the project a name "<project>/<key>" names, which
+// it creates when it does not exist yet: every repository belongs to a project (Q-AUTHZ-206). The members and
+// the deploy target of a virtual repository are keys of its own project.
+func (e *env) repo(name, class, format, cfg string) {
 	e.t.Helper()
+	project, key := "it", name
+	if p, k, ok := strings.Cut(name, "/"); ok {
+		project, key = p, k
+	}
 	if cfg == "" {
 		cfg = "{}"
 	}
-	e.exec("INSERT INTO repositories (key, class, format, config) VALUES ($1, $2, $3, $4::jsonb)", key, class, format, cfg)
+	pid := e.project(project)
+	e.exec("INSERT INTO repositories (key, class, format, config, project_id) VALUES ($1, $2, $3, $4::jsonb, $5::uuid)", key, class, format, cfg, pid)
 	// The members and the deploy target of a virtual repository are rows of
 	// their own (R-REPO-017): a test writes them in the document and they are
 	// split off here, as the repository service does.
@@ -215,12 +224,29 @@ func (e *env) repo(key, class, format, cfg string) {
 	}
 	for i, m := range doc.Virtual.Members {
 		e.exec(`INSERT INTO virtual_members (virtual_id, position, member_id)
-		        SELECT v.id, $2, m.id FROM repositories v, repositories m WHERE v.key = $1 AND m.key = $3`, key, i, m)
+		        SELECT v.id, $2, m.id FROM repositories v, repositories m
+		         WHERE v.key = $1 AND m.key = $3 AND v.project_id = $4::uuid AND m.project_id = $4::uuid`, key, i, m, pid)
 	}
 	if t := doc.Virtual.DeployTarget; t != "" {
 		e.exec(`INSERT INTO virtual_deploy_targets (virtual_id, target_id)
-		        SELECT v.id, m.id FROM repositories v, repositories m WHERE v.key = $1 AND m.key = $2`, key, t)
+		        SELECT v.id, m.id FROM repositories v, repositories m
+		         WHERE v.key = $1 AND m.key = $2 AND v.project_id = $3::uuid AND m.project_id = $3::uuid`, key, t, pid)
 	}
+}
+
+// project creates the project with the key once and returns its ID.
+func (e *env) project(key string) string {
+	e.t.Helper()
+	e.exec("INSERT INTO project (id, key, display_name) VALUES (gen_random_uuid(), $1, $1) ON CONFLICT (key) DO NOTHING", key)
+	return e.text("SELECT id::text FROM project WHERE key = $1", key)
+}
+
+// member makes a user or a group a member of the project with the role, straight in the table; the caller
+// notifies the change.
+func (e *env) member(project string, p person, role string) {
+	e.t.Helper()
+	e.exec(`INSERT INTO project_member (project_id, principal_id, role) VALUES ($1::uuid, $2::uuid, $3)
+	        ON CONFLICT (project_id, principal_id) DO UPDATE SET role = EXCLUDED.role`, e.project(project), p.ID, role)
 }
 
 // sub builds the subject the authentication stage would hand over.

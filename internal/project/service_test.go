@@ -100,7 +100,7 @@ func TestR_AUTHZ_026_MemberReferences(t *testing.T) {
 	}
 	for _, ref := range []string{"sa:web/partner", "sa:ci-bot", "ci:gitlab/main", "ci:gitlab/web/release", "anonymous", "authenticated", "bastion:partners"} {
 		_, _, err := parseMemberRef(ref)
-		if e, ok := errs.As(err); !ok || e.Status() != 422 || e.Code != errs.CodePrincipalNotAllowed {
+		if got := fieldsOf(t, err); got["/principalRef"] != errs.CodePrincipalNotAllowed {
 			t.Errorf("%s is no member kind: %v", ref, err)
 		}
 	}
@@ -365,8 +365,7 @@ func TestR_AUTHZ_026_EmptyProject(t *testing.T) {
 // Bastion registration holds a role, a grant or a membership.
 func TestR_BAS_004_ABastionIsNoProjectMember(t *testing.T) {
 	_, _, err := parseMemberRef("bastion:partners")
-	e, ok := errs.As(err)
-	if !ok || e.Status() != 422 || e.Code != errs.CodePrincipalNotAllowed {
+	if got := fieldsOf(t, err); got["/principalRef"] != errs.CodePrincipalNotAllowed {
 		t.Fatalf("parseMemberRef = %v, want 422 principal_not_allowed", err)
 	}
 }

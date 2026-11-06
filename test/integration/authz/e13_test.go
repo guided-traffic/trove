@@ -97,7 +97,7 @@ func TestE1_3_AuthorizationAgainstPostgreSQL(t *testing.T) {
 
 	t.Run("R-AUTHZ-021 a policy is written with expanded presets", func(t *testing.T) {
 		p, ep, err := a.svc.Create(t.Context(), sub(alice), authz.PolicyInput{
-			Name: "files-writers", Resources: authz.Resources{Repositories: []string{"files-internal"}},
+			Name: "files-writers", Resources: authz.Resources{Repositories: []string{"it/files-internal"}},
 			Entries: []authz.Entry{{Principal: "group:team-web", Actions: []string{"write"}}, {Principal: "sa:ci-bot", Actions: []string{"read", "deploy"}}},
 		})
 		if err != nil {
@@ -132,17 +132,17 @@ func TestE1_3_AuthorizationAgainstPostgreSQL(t *testing.T) {
 		})
 		create(authz.PolicyInput{
 			Name: "team-web-publish", Resources: authz.Resources{
-				Repositories: []string{"npm-internal"},
+				Repositories: []string{"it/npm-internal"},
 				Packages:     authz.PatternLists{Include: []string{"@web/*"}, Exclude: []string{"@web/internal-*"}},
 			},
 			Entries: []authz.Entry{{Principal: "group:team-web", Actions: []string{"write"}}},
 		})
 		create(authz.PolicyInput{
-			Name: "nuget-acme", Resources: authz.Resources{Repositories: []string{"nuget-internal"}, Packages: authz.PatternLists{Include: []string{"Acme.*"}}},
+			Name: "nuget-acme", Resources: authz.Resources{Repositories: []string{"it/nuget-internal"}, Packages: authz.PatternLists{Include: []string{"Acme.*"}}},
 			Entries: []authz.Entry{{Principal: "group:developers", Actions: []string{"read"}}},
 		})
 		create(authz.PolicyInput{
-			Name: "releases", Resources: authz.Resources{Repositories: []string{"generic-local"}, Paths: authz.PatternLists{Include: []string{"releases/**"}, Exclude: []string{"releases/secret/**"}}},
+			Name: "releases", Resources: authz.Resources{Repositories: []string{"it/generic-local"}, Paths: authz.PatternLists{Include: []string{"releases/**"}, Exclude: []string{"releases/secret/**"}}},
 			Entries: []authz.Entry{{Principal: "group:developers", Actions: []string{"read"}}},
 		})
 		run([]itCase{
@@ -163,8 +163,8 @@ func TestE1_3_AuthorizationAgainstPostgreSQL(t *testing.T) {
 	})
 
 	t.Run("R-AUTHZ-013 a token scope is a ceiling", func(t *testing.T) {
-		readOnly := token.Scope{Repositories: []token.ScopeGrant{{Repositories: []string{"npm-all", "@any-local:npm", "@any-remote:npm"}, Actions: []string{"read"}}}}
-		narrow := token.Scope{Repositories: []token.ScopeGrant{{Repositories: []string{"npm-internal"}, Packages: token.Patterns{Include: []string{"@web/*"}}, Actions: []string{"read"}}}}
+		readOnly := token.Scope{Repositories: []token.ScopeGrant{{Repositories: []string{"it/npm-all", "@any-local:npm", "@any-remote:npm"}, Actions: []string{"read"}}}}
+		narrow := token.Scope{Repositories: []token.ScopeGrant{{Repositories: []string{"it/npm-internal"}, Packages: token.Patterns{Include: []string{"@web/*"}}, Actions: []string{"read"}}}}
 		scoped := func(s authz.Subject, sc token.Scope) authz.Subject { s.Scope = &sc; return s }
 		run([]itCase{
 			{"inherit keeps the rights", scoped(aliceSub, token.Scope{Inherit: true}), write("npm-internal", "@web/x", "", authz.Deploy), authz.Allow, "", ""},
@@ -197,7 +197,7 @@ func TestE1_3_AuthorizationAgainstPostgreSQL(t *testing.T) {
 
 	t.Run("R-AUTHZ-030 the authenticated principal", func(t *testing.T) {
 		_, _, err := a.svc.Create(t.Context(), sub(alice), authz.PolicyInput{
-			Name: "bad", Resources: authz.Resources{Repositories: []string{"generic-local"}},
+			Name: "bad", Resources: authz.Resources{Repositories: []string{"it/generic-local"}},
 			Entries: []authz.Entry{{Principal: "authenticated", Actions: []string{"read", "deploy"}}},
 		})
 		problem(t, err, 422, errs.CodeAuthenticatedWriteAction)
@@ -216,7 +216,7 @@ func TestE1_3_AuthorizationAgainstPostgreSQL(t *testing.T) {
 
 	t.Run("R-AUTHZ-003 anonymous access", func(t *testing.T) {
 		create(authz.PolicyInput{
-			Name: "public", Resources: authz.Resources{Repositories: []string{"npm-internal", "strict"}},
+			Name: "public", Resources: authz.Resources{Repositories: []string{"it/npm-internal", "it/strict"}},
 			Entries: []authz.Entry{{Principal: "anonymous", Actions: []string{"read"}}},
 		})
 		_, _, err := a.svc.Create(t.Context(), sub(alice), authz.PolicyInput{
@@ -225,7 +225,7 @@ func TestE1_3_AuthorizationAgainstPostgreSQL(t *testing.T) {
 		})
 		problem(t, err, 422, errs.CodeAnonymousDynamicSelector)
 		_, _, err = a.svc.Create(t.Context(), sub(alice), authz.PolicyInput{
-			Name: "public-write", Resources: authz.Resources{Repositories: []string{"npm-internal"}},
+			Name: "public-write", Resources: authz.Resources{Repositories: []string{"it/npm-internal"}},
 			Entries: []authz.Entry{{Principal: "anonymous", Actions: []string{"read", "deploy"}}},
 		})
 		problem(t, err, 422, errs.CodeAnonymousWriteAction)
