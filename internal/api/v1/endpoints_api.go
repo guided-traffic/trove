@@ -619,8 +619,8 @@ func (s *Server) checkReadFilter(ctx context.Context, acc *edge.Access, repo str
 	if s.o.Endpoints.Scoper == nil {
 		return nil, nil
 	}
-	name, err := qname.ParseRepo(repo)
-	if err != nil {
+	name, ok := repoNameOf(repo)
+	if !ok {
 		return nil, nil // a text that is no repository name lists nothing
 	}
 	rs, err := s.o.Endpoints.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, qname.Repo{}, []qname.Repo{name})
@@ -668,4 +668,10 @@ func checkResultOf(res authz.ExposureCheckResult) exposureCheckResult {
 		out.Paths = append(out.Paths, checkPath{Path: p.Value, Exposed: p.Exposed, Rule: optString(p.Rule), Reason: p.Reason})
 	}
 	return out
+}
+
+// repoNameOf reads a qualified repository name; ok is false for a text that is none.
+func repoNameOf(text string) (qname.Repo, bool) {
+	name, err := qname.ParseRepo(text)
+	return name, err == nil
 }

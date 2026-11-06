@@ -85,8 +85,10 @@ type repoInfo struct {
 	// ownership is the packageOwnership of a local repository, "" when the
 	// document has none (R-AUTHZ-018).
 	ownership string
-	// projectID and project are the ID and the key of the project the repository
-	// is assigned to, empty for none (R-AUTHZ-026).
+	// proj is the project the repository belongs to (Q-AUTHZ-206); projectID and project
+	// are its ID and key. Every repository has one; a row whose project the snapshot does
+	// not hold (which the foreign key rules out) keeps proj nil and takes no role.
+	proj      *projectInfo
 	projectID string
 	project   string
 }
@@ -96,6 +98,24 @@ type repoInfo struct {
 type projectInfo struct {
 	id, key string
 	members map[string]ProjectRole
+	// sources are the sources a role names in a decision, "role:<projectKey>:<role>" per role
+	// (R-AUTHZ-015, R-AUTHZ-029), built once so that a decision allocates none.
+	sources [ProjectRoleOwner + 1]string
+}
+
+// source is the decision source of a role in the project.
+func (p *projectInfo) source(r ProjectRole) string {
+	if !r.Valid() {
+		return ""
+	}
+	return p.sources[r]
+}
+
+// membership is one membership row as the index keeps it by principal: the project and the
+// role (Q-AUTHZ-207).
+type membership struct {
+	p    *projectInfo
+	role ProjectRole
 }
 
 // grant is one entry of a policy seen from the evaluator: the actions the
@@ -138,6 +158,10 @@ type Index struct {
 	exposure map[string]*endpointExposure
 	// projects maps a project key to the project (R-AUTHZ-026).
 	projects map[string]*projectInfo
+	// memberships maps the principal ID of a user or a group to its memberships, so that the roles
+	// of a subject are derived from its user ID and group IDs alone, whatever the number of projects
+	// (R-AUTHZ-015 performance target, R-ARCH-033).
+	memberships map[string][]membership
 	// policies and entries count what went in, for metrics and diagnostics.
 	policies int
 }
@@ -201,13 +225,14 @@ func BuildIndex(s *Snapshot, reg *catalog.Registry, log *slog.Logger) *Index {
 	b := &builder{
 		x: &Index{
 			label: s.Label, started: s.Started,
-			repos:    make(map[qname.Repo]*repoInfo, len(s.Repositories)),
-			grants:   map[int64]map[string][]grant{},
-			bindings: map[string]roleSet{},
-			ci:       map[string]string{},
-			groups:   map[string]string{},
-			ciTexts:  map[string][]textGrant{},
-			projects: map[string]*projectInfo{},
+			repos:       make(map[qname.Repo]*repoInfo, len(s.Repositories)),
+			grants:      map[int64]map[string][]grant{},
+			bindings:    map[string]roleSet{},
+			ci:          map[string]string{},
+			groups:      map[string]string{},
+			ciTexts:     map[string][]textGrant{},
+			projects:    map[string]*projectInfo{},
+			memberships: map[string][]membership{},
 		},
 		log: log, reg: catalog.Or(reg), byID: make(map[int64]*repoInfo, len(s.Repositories)),
 		selectors:  map[string][]q.AuthzBuildSelectorsRow{},
@@ -268,16 +293,36 @@ func BuildIndex(s *Snapshot, reg *catalog.Registry, log *slog.Logger) *Index {
 func (b *builder) addProjects(rows []q.AuthzBuildProjectsRow, members []q.AuthzBuildProjectMembersRow) {
 	for _, r := range rows {
 		pi := &projectInfo{id: r.ID, key: r.Key, members: map[string]ProjectRole{}}
+		for role := ProjectRoleReader; role <= ProjectRoleOwner; role++ {
+			pi.sources[role] = "role:" + r.Key + ":" + role.String()
+		}
 		b.x.projects[r.Key] = pi
 		b.projectByID[r.ID] = pi
 	}
 	for _, m := range members {
 		pi := b.projectByID[m.ProjectID]
 		role, ok := ParseProjectRole(m.Role)
-		if pi == nil || !ok {
+		if pi == nil || !ok || m.PrincipalID == "" {
 			continue
 		}
+		if m.PrincipalKind != dbUser && m.PrincipalKind != dbGroup {
+			// The table admits users and groups only (a trigger of 00019); a row of another kind
+			// came in some other way and grants nothing (fail closed, Q-AUTHZ-215).
+			b.log.Error("authz: membership skipped, its principal is neither a user nor a group", "project", pi.key, "principal", m.PrincipalID)
+			continue
+		}
+		if m.PrincipalAutoJoin {
+			// Every user is in an auto-join group, so its role would reach every user, which
+			// authenticated in a global policy says (R-AUTHZ-026, Q-AUTHZ-200); the member write
+			// refuses one, so this group became auto-join later. Fail closed.
+			b.log.Error("authz: membership skipped, its group is an auto-join group", "project", pi.key, "principal", m.PrincipalID)
+			continue
+		}
+		if _, dup := pi.members[m.PrincipalID]; dup {
+			continue // the primary key holds one row per principal and project
+		}
 		pi.members[m.PrincipalID] = role
+		b.x.memberships[m.PrincipalID] = append(b.x.memberships[m.PrincipalID], membership{p: pi, role: role})
 	}
 }
 
@@ -308,7 +353,7 @@ func (b *builder) addRepositories(rows []q.AuthzBuildRepositoriesRow, members []
 			cacheFill: cfg.Remote.CacheFillAction, ownership: cfg.Local.PackageOwnership,
 		}
 		if pi := b.projectByID[r.ProjectID]; pi != nil {
-			info.projectID, info.project = pi.id, pi.key
+			info.proj, info.projectID, info.project = pi, pi.id, pi.key
 		}
 		if info.hide == "" {
 			info.hide = "inherit"
@@ -325,8 +370,8 @@ func (b *builder) addRepositories(rows []q.AuthzBuildRepositoriesRow, members []
 // covered lists the repositories a selector covers. A project policy's selector
 // covers only repositories of that project (project is its ID, "" for a global
 // policy): a key selector whose repository is not in the project covers nothing
-// (Q-AUTHZ-179), a pattern or class selector is matched against the project's
-// repositories only.
+// (a move refuses to take a repository out while one names it, R-REPO-060), a
+// pattern or class selector is matched against the project's repositories only.
 func (b *builder) covered(sel selector, project string) []*repoInfo {
 	if sel.kind == selKey {
 		if r := b.byID[sel.repoID]; r != nil && (project == "" || r.projectID == project) {
@@ -463,18 +508,30 @@ func (b *builder) addTexts(p q.AuthzBuildPoliciesRow, effective map[string]Actio
 	if len(effective) == 0 {
 		return
 	}
+	nameOf := func(id int64) qname.Repo {
+		if info := b.byID[id]; info != nil {
+			return info.Name
+		}
+		return qname.Repo{}
+	}
 	var sels []string
 	for _, r := range b.selectors[p.ID] {
 		sel, err := selectorOfRow(r, b.contextOf(p.ProjectID))
 		if err != nil {
 			return
 		}
-		sels = append(sels, sel.text(func(id int64) string {
-			if info := b.byID[id]; info != nil {
-				return info.Name.Key
+		// The exchange answers its items in the grammar of its scope, an instance context
+		// (R-CI-007): a project policy's selector gains its project, and its class, which an
+		// instance context cannot spell, is named by the repositories it covers on this index.
+		if t, ok := sel.instanceText(nameOf); ok {
+			sels = append(sels, t)
+			continue
+		}
+		if sel.kind == selClass {
+			for _, info := range b.covered(sel, p.ProjectID) {
+				sels = append(sels, info.Name.String())
 			}
-			return ""
-		}))
+		}
 	}
 	for _, e := range b.entries[p.ID] {
 		if acts := effective[e.PrincipalID]; acts != 0 {

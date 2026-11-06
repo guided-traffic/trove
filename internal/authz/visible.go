@@ -178,8 +178,8 @@ func (e *Engine) exposesEverything(endpoint string) bool {
 }
 
 // readShape is the classification of one repository. It follows evaluate for a
-// package-level read: the grants of the subject's principal set, content:bypass,
-// the token scope and the ceiling. It never answers ReadAll where evaluate would
+// package-level read: the grants of the subject's principal set, its project role,
+// content:bypass, the token scope and the ceiling. It never answers ReadAll where evaluate would
 // refuse some row, and never ReadNone where it would allow one.
 func (e *Engine) readShape(st *evalState, sub Subject, r *repoInfo, allEndpoint bool) ReadShape {
 	if r == nil || r.Class == repository.Virtual {
@@ -212,6 +212,10 @@ func (e *Engine) readShape(st *evalState, sub Subject, r *repoInfo, allEndpoint 
 				unrestricted = true
 			}
 		}
+	}
+	if !st.isCI && roleActions(st.roles.in(r.proj), r).Has(Read) {
+		// A project role reads every package of every repository of its project (R-AUTHZ-026).
+		any, unrestricted = true, true
 	}
 	switch {
 	case !any:

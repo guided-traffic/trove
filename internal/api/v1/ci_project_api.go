@@ -24,13 +24,13 @@ import (
 //   - listProjectCiIssuances: Issuances.ListForProject (W5).
 
 // projectMappings narrows the caller to the project and returns the mapping service.
-func (s *Server) projectMappings(r *http.Request, capability, project string) (ci.Mappings, error) {
+func (s *Server) projectMappings(_ *http.Request, _, _ string) (ci.Mappings, error) {
 	return s.ciMappingService()
 }
 
 // ListProjectCiIssuers implements GET /api/v1/projects/{key}/ci/issuers: the issuers read-only, name,
 // kind, issuer URL and public_issuer, for a project administrator who chooses one (Q-CI-26).
-func (s *Server) ListProjectCiIssuers(w http.ResponseWriter, r *http.Request, key string) {
+func (s *Server) ListProjectCiIssuers(w http.ResponseWriter, r *http.Request, _ string) {
 	svc, err := s.ciIssuerService()
 	var choices []ci.IssuerChoice
 	if err == nil {

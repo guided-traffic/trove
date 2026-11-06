@@ -279,7 +279,7 @@ func TestR_REPO_056_MirrorStatusDocument(t *testing.T) {
 	status := func(t *testing.T, key string, mutate func(*fakeMirror)) map[string]any {
 		t.Helper()
 		e := newMirrorEnv(t, val, readConfigCaller, mirrorDecider{}, mutate)
-		w := e.do("GET", "/api/v1/repositories/"+key+"/mirror", "", nil)
+		w := e.do("GET", "/api/v1/projects/it/repositories/"+key+"/mirror", "", nil)
 		if w.Code != 200 {
 			t.Fatalf("%d %s", w.Code, w.Body)
 		}
@@ -532,7 +532,7 @@ func TestR_REPO_056_MirrorRun(t *testing.T) {
 		}
 		ev := e.audit.events[0]
 		if ev.Type != "mirror.pass_requested" || ev.Outcome != audit.Success ||
-			ev.Repository != "npm-mirror" || ev.Subject.Kind != "repository" || ev.Subject.ID != "7" || ev.Subject.Name != "npm-mirror" {
+			ev.Repository != "it/npm-mirror" || ev.Subject.Kind != "repository" || ev.Subject.ID != "7" || ev.Subject.Name != "it/npm-mirror" {
 			t.Errorf("event = %+v", ev)
 		}
 		if ev.Actor.ID != callerUUID {
@@ -583,7 +583,7 @@ func TestR_REPO_056_MirrorRun(t *testing.T) {
 	})
 	t.Run("R-REPO-056 a local and a virtual repository answer 400 not_applicable, an unknown one 404", func(t *testing.T) {
 		for _, key := range []string{"npm-local", "npm-virtual"} {
-			e, w := run(t, writeConfigCall, mirrorDecider{read: true}, "/api/v1/repositories/"+key+"/mirror/run", "", nil)
+			e, w := run(t, writeConfigCall, mirrorDecider{read: true}, "/api/v1/projects/it/repositories/"+key+"/mirror/run", "", nil)
 			problem(t, w, 400, "not_applicable")
 			if len(e.queue.specs) != 0 {
 				t.Errorf("%s: enqueued", key)

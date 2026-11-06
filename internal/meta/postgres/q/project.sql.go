@@ -9,25 +9,39 @@ import (
 	"context"
 )
 
-const projectCountMembers = `-- name: ProjectCountMembers :one
-SELECT (SELECT count(*) FROM repositories WHERE project_id = $1::text::uuid)::bigint AS repositories,
-       (SELECT count(*) FROM service_account WHERE project_id = $1::text::uuid)::bigint AS service_accounts,
-       (SELECT count(*) FROM ci_mappings WHERE project_id = $1::text::uuid)::bigint AS ci_mappings
+const projectCIMappingGrants = `-- name: ProjectCIMappingGrants :many
+SELECT name, grants::text AS grants
+  FROM ci_mappings
+ WHERE project_id = $1::text::uuid
+ ORDER BY name
 `
 
-type ProjectCountMembersRow struct {
-	Repositories    int64
-	ServiceAccounts int64
-	CiMappings      int64
+type ProjectCIMappingGrantsRow struct {
+	Name   string
+	Grants string
 }
 
-// What keeps a project from being deleted: repositories in every lifecycle state, service accounts
-// (Q-AUTHZ-169) and CI mappings of the project's tier (Q-CI-26).
-func (q *Queries) ProjectCountMembers(ctx context.Context, id string) (ProjectCountMembersRow, error) {
-	row := q.db.QueryRow(ctx, projectCountMembers, id)
-	var i ProjectCountMembersRow
-	err := row.Scan(&i.Repositories, &i.ServiceAccounts, &i.CiMappings)
-	return i, err
+// The grant documents of the CI mappings of a project's tier, for the move, which
+// refuses a repository that an inline grant names by key (R-REPO-060). name is the
+// mapping's name as stored.
+func (q *Queries) ProjectCIMappingGrants(ctx context.Context, projectID string) ([]ProjectCIMappingGrantsRow, error) {
+	rows, err := q.db.Query(ctx, projectCIMappingGrants, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectCIMappingGrantsRow{}
+	for rows.Next() {
+		var i ProjectCIMappingGrantsRow
+		if err := rows.Scan(&i.Name, &i.Grants); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const projectDelete = `-- name: ProjectDelete :many
@@ -273,17 +287,33 @@ func (q *Queries) ProjectList(ctx context.Context) ([]ProjectListRow, error) {
 	return items, nil
 }
 
-const projectLock = `-- name: ProjectLock :exec
-SELECT 1 FROM project WHERE key = $1::text FOR UPDATE
+const projectLock = `-- name: ProjectLock :many
+SELECT id::text AS id FROM project WHERE key = $1::text FOR UPDATE
 `
 
 // Serialises the writers of one project and of its members: a delete counts
-// repositories and accounts under this lock; a repository create, a move into the
-// project, a project service account create and every change of the members take it
-// before they write (the last-owner rule counts under it).
-func (q *Queries) ProjectLock(ctx context.Context, key string) error {
-	_, err := q.db.Exec(ctx, projectLock, key)
-	return err
+// repositories and accounts under this lock; a move into or out of the project and
+// every change of the members take it before they write (the last-Owner rule counts
+// under it, Q-AUTHZ-217). A repository create takes it FOR SHARE. No row: no
+// project.
+func (q *Queries) ProjectLock(ctx context.Context, key string) ([]string, error) {
+	rows, err := q.db.Query(ctx, projectLock, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const projectLookupPrincipals = `-- name: ProjectLookupPrincipals :many
@@ -332,20 +362,21 @@ func (q *Queries) ProjectLookupPrincipals(ctx context.Context, arg ProjectLookup
 
 const projectMemberAdd = `-- name: ProjectMemberAdd :execrows
 INSERT INTO project_member (project_id, principal_id, role)
-SELECT pr.id, $1::text::uuid, $2::text FROM project pr WHERE pr.key = $3::text
+VALUES ($1::text::uuid, $2::text::uuid, $3::text)
 ON CONFLICT DO NOTHING
 `
 
 type ProjectMemberAddParams struct {
+	ProjectID   string
 	PrincipalID string
 	Role        string
-	Key         string
 }
 
-// 0 rows: the principal is a member already (409 already_exists); the caller holds
-// ProjectLock.
+// Adds a user or a group (the trigger of 00019 refuses every other kind) as a
+// member with the role (Q-AUTHZ-207). The caller holds ProjectLock and read
+// ProjectMemberRole before, so 0 rows does not happen.
 func (q *Queries) ProjectMemberAdd(ctx context.Context, arg ProjectMemberAddParams) (int64, error) {
-	result, err := q.db.Exec(ctx, projectMemberAdd, arg.PrincipalID, arg.Role, arg.Key)
+	result, err := q.db.Exec(ctx, projectMemberAdd, arg.ProjectID, arg.PrincipalID, arg.Role)
 	if err != nil {
 		return 0, err
 	}
@@ -354,17 +385,18 @@ func (q *Queries) ProjectMemberAdd(ctx context.Context, arg ProjectMemberAddPara
 
 const projectMemberRemove = `-- name: ProjectMemberRemove :execrows
 DELETE FROM project_member
- WHERE project_id = (SELECT id FROM project WHERE key = $1::text)
+ WHERE project_id = $1::text::uuid
    AND principal_id = $2::text::uuid
 `
 
 type ProjectMemberRemoveParams struct {
-	Key         string
+	ProjectID   string
 	PrincipalID string
 }
 
+// 0 rows: the principal is no member.
 func (q *Queries) ProjectMemberRemove(ctx context.Context, arg ProjectMemberRemoveParams) (int64, error) {
-	result, err := q.db.Exec(ctx, projectMemberRemove, arg.Key, arg.PrincipalID)
+	result, err := q.db.Exec(ctx, projectMemberRemove, arg.ProjectID, arg.PrincipalID)
 	if err != nil {
 		return 0, err
 	}
@@ -372,20 +404,19 @@ func (q *Queries) ProjectMemberRemove(ctx context.Context, arg ProjectMemberRemo
 }
 
 const projectMemberRole = `-- name: ProjectMemberRole :many
-SELECT m.role
-  FROM project_member m
-  JOIN project pr ON pr.id = m.project_id
- WHERE pr.key = $1::text AND m.principal_id = $2::text::uuid
+SELECT role
+  FROM project_member
+ WHERE project_id = $1::text::uuid AND principal_id = $2::text::uuid
 `
 
 type ProjectMemberRoleParams struct {
-	Key         string
+	ProjectID   string
 	PrincipalID string
 }
 
 // The role of one principal in one project; no row: no member.
 func (q *Queries) ProjectMemberRole(ctx context.Context, arg ProjectMemberRoleParams) ([]string, error) {
-	rows, err := q.db.Query(ctx, projectMemberRole, arg.Key, arg.PrincipalID)
+	rows, err := q.db.Query(ctx, projectMemberRole, arg.ProjectID, arg.PrincipalID)
 	if err != nil {
 		return nil, err
 	}
@@ -407,19 +438,19 @@ func (q *Queries) ProjectMemberRole(ctx context.Context, arg ProjectMemberRolePa
 const projectMemberSetRole = `-- name: ProjectMemberSetRole :execrows
 UPDATE project_member
    SET role = $1::text
- WHERE project_id = (SELECT id FROM project WHERE key = $2::text)
+ WHERE project_id = $2::text::uuid
    AND principal_id = $3::text::uuid
 `
 
 type ProjectMemberSetRoleParams struct {
 	Role        string
-	Key         string
+	ProjectID   string
 	PrincipalID string
 }
 
 // 0 rows: the principal is no member.
 func (q *Queries) ProjectMemberSetRole(ctx context.Context, arg ProjectMemberSetRoleParams) (int64, error) {
-	result, err := q.db.Exec(ctx, projectMemberSetRole, arg.Role, arg.Key, arg.PrincipalID)
+	result, err := q.db.Exec(ctx, projectMemberSetRole, arg.Role, arg.ProjectID, arg.PrincipalID)
 	if err != nil {
 		return 0, err
 	}
@@ -511,59 +542,18 @@ func (q *Queries) ProjectMembersOfAll(ctx context.Context) ([]ProjectMembersOfAl
 	return items, nil
 }
 
-const projectMemberships = `-- name: ProjectMemberships :many
-SELECT pr.key AS project_key, pr.display_name, m.principal_id::text AS principal_id, m.role
-  FROM project_member m
-  JOIN project pr ON pr.id = m.project_id
- WHERE m.principal_id = ANY($1::text[]::uuid[])
- ORDER BY pr.key
-`
-
-type ProjectMembershipsRow struct {
-	ProjectKey  string
-	DisplayName string
-	PrincipalID string
-	Role        string
-}
-
-// The projects a set of principals (a user and its groups) is a member of, with the
-// role, for /authz/me and the project list. One row per principal and project.
-func (q *Queries) ProjectMemberships(ctx context.Context, principalIds []string) ([]ProjectMembershipsRow, error) {
-	rows, err := q.db.Query(ctx, projectMemberships, principalIds)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ProjectMembershipsRow{}
-	for rows.Next() {
-		var i ProjectMembershipsRow
-		if err := rows.Scan(
-			&i.ProjectKey,
-			&i.DisplayName,
-			&i.PrincipalID,
-			&i.Role,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const projectOwnerCount = `-- name: ProjectOwnerCount :one
 SELECT count(*)::bigint
-  FROM project_member m
-  JOIN project pr ON pr.id = m.project_id
- WHERE pr.key = $1::text AND m.role = 'owner'
+  FROM project_member
+ WHERE project_id = $1::text::uuid AND role = 'owner'
 `
 
-// The owners of a project: the last one is neither removed nor demoted (409
-// last_owner), counted under ProjectLock.
-func (q *Queries) ProjectOwnerCount(ctx context.Context, key string) (int64, error) {
-	row := q.db.QueryRow(ctx, projectOwnerCount, key)
+// The membership rows of a project with the role owner, a group among them
+// whatever its members (Q-AUTHZ-217): the last one is neither removed nor demoted
+// (409 last_owner) unless the caller holds projects:write. Counted under
+// ProjectLock, so two Owners who remove each other run one after the other.
+func (q *Queries) ProjectOwnerCount(ctx context.Context, projectID string) (int64, error) {
+	row := q.db.QueryRow(ctx, projectOwnerCount, projectID)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -578,10 +568,11 @@ type ProjectPolicyNamesRow struct {
 	Version int64
 }
 
-// The policies of a project, for the delete that removes them through the policy
-// store so that each deletion is audited and journaled.
-// The version comes with the name: the delete passes it as If-Match, so a policy that
-// changed or was replaced under the same name since this read is not removed (Q-AUTHZ-202).
+// The policies of a project by their stored name (<project key>/<name>,
+// Q-AUTHZ-209), for the delete that removes them through the policy store so that
+// each deletion is audited and journaled. The version comes with the name: the
+// delete passes it as If-Match, so a policy that changed since this read is not
+// removed (Q-AUTHZ-204).
 func (q *Queries) ProjectPolicyNames(ctx context.Context, id string) ([]ProjectPolicyNamesRow, error) {
 	rows, err := q.db.Query(ctx, projectPolicyNames, id)
 	if err != nil {
@@ -603,9 +594,10 @@ func (q *Queries) ProjectPolicyNames(ctx context.Context, id string) ([]ProjectP
 }
 
 const projectPrincipalByRef = `-- name: ProjectPrincipalByRef :many
-SELECT id::text AS id, kind, name, status
-  FROM principal
- WHERE kind = $1::text AND name = $2::text
+SELECT p.id::text AS id, p.kind, p.name, p.status, COALESCE(g.auto_join, false)::boolean AS auto_join
+  FROM principal p
+  LEFT JOIN user_group g ON g.principal_id = p.id
+ WHERE p.kind = $1::text AND p.name = $2::text
 `
 
 type ProjectPrincipalByRefParams struct {
@@ -614,14 +606,18 @@ type ProjectPrincipalByRefParams struct {
 }
 
 type ProjectPrincipalByRefRow struct {
-	ID     string
-	Kind   string
-	Name   string
-	Status string
+	ID       string
+	Kind     string
+	Name     string
+	Status   string
+	AutoJoin bool
 }
 
 // The user or group a member reference names, read in the writer's
 // transaction (the cached principal store may lag a user created a moment ago).
+// auto_join is true for an auto-join group, which is never a member: every user is
+// in one, so it would make every user a member (R-AUTHZ-026, 422
+// principal_not_allowed).
 func (q *Queries) ProjectPrincipalByRef(ctx context.Context, arg ProjectPrincipalByRefParams) ([]ProjectPrincipalByRefRow, error) {
 	rows, err := q.db.Query(ctx, projectPrincipalByRef, arg.Kind, arg.Name)
 	if err != nil {
@@ -636,6 +632,7 @@ func (q *Queries) ProjectPrincipalByRef(ctx context.Context, arg ProjectPrincipa
 			&i.Kind,
 			&i.Name,
 			&i.Status,
+			&i.AutoJoin,
 		); err != nil {
 			return nil, err
 		}
@@ -647,36 +644,67 @@ func (q *Queries) ProjectPrincipalByRef(ctx context.Context, arg ProjectPrincipa
 	return items, nil
 }
 
-const projectRepositoryKeys = `-- name: ProjectRepositoryKeys :many
-SELECT r.key, r.class, r.format, r.lifecycle
-  FROM repositories r
-  JOIN project p ON p.id = r.project_id
- WHERE p.key = $1::text
- ORDER BY r.key
+const projectRepositoryKeyTaken = `-- name: ProjectRepositoryKeyTaken :one
+SELECT EXISTS (SELECT 1 FROM repositories WHERE project_id = $1::text::uuid AND key = $2::text)
 `
 
-type ProjectRepositoryKeysRow struct {
+type ProjectRepositoryKeyTakenParams struct {
+	ProjectID string
 	Key       string
-	Class     string
-	Format    string
-	Lifecycle string
 }
 
-// The repositories of a project, every lifecycle state, by key.
-func (q *Queries) ProjectRepositoryKeys(ctx context.Context, key string) ([]ProjectRepositoryKeysRow, error) {
-	rows, err := q.db.Query(ctx, projectRepositoryKeys, key)
+// Whether the project holds a repository with the key in any lifecycle state: a move
+// into it answers 409 already_exists (R-REPO-060). The caller holds ProjectLock of
+// the project, which a create in it takes FOR SHARE, so the answer holds until the
+// move commits.
+func (q *Queries) ProjectRepositoryKeyTaken(ctx context.Context, arg ProjectRepositoryKeyTakenParams) (bool, error) {
+	row := q.db.QueryRow(ctx, projectRepositoryKeyTaken, arg.ProjectID, arg.Key)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const projectRepositoryLock = `-- name: ProjectRepositoryLock :many
+SELECT r.id, r.key, r.class, r.format, r.lifecycle, r.config_version
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE p.key = $1::text AND r.key = $2::text
+   FOR UPDATE OF r
+`
+
+type ProjectRepositoryLockParams struct {
+	Project string
+	Key     string
+}
+
+type ProjectRepositoryLockRow struct {
+	ID            int64
+	Key           string
+	Class         string
+	Format        string
+	Lifecycle     string
+	ConfigVersion int64
+}
+
+// The repository a move takes (R-REPO-060), by its project and key, under its row
+// lock: the move changes its project_id in the same transaction. Every lifecycle
+// state is returned; the caller answers a repository being deleted as missing.
+func (q *Queries) ProjectRepositoryLock(ctx context.Context, arg ProjectRepositoryLockParams) ([]ProjectRepositoryLockRow, error) {
+	rows, err := q.db.Query(ctx, projectRepositoryLock, arg.Project, arg.Key)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ProjectRepositoryKeysRow{}
+	items := []ProjectRepositoryLockRow{}
 	for rows.Next() {
-		var i ProjectRepositoryKeysRow
+		var i ProjectRepositoryLockRow
 		if err := rows.Scan(
+			&i.ID,
 			&i.Key,
 			&i.Class,
 			&i.Format,
 			&i.Lifecycle,
+			&i.ConfigVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -688,28 +716,112 @@ func (q *Queries) ProjectRepositoryKeys(ctx context.Context, key string) ([]Proj
 	return items, nil
 }
 
-const projectServiceAccountNames = `-- name: ProjectServiceAccountNames :many
-SELECT pr.name -- the stored name, <project key>/<name>
-  FROM service_account s
-  JOIN principal pr ON pr.id = s.principal_id
-  JOIN project p ON p.id = s.project_id
- WHERE p.key = $1::text
- ORDER BY pr.name
+const projectRepositoryMove = `-- name: ProjectRepositoryMove :many
+UPDATE repositories
+   SET project_id = $1::text::uuid,
+       config_version = config_version + 1,
+       updated_at = now(),
+       updated_by = NULLIF($2::text, '')::uuid
+ WHERE id = $3::bigint AND project_id = $4::text::uuid AND lifecycle = 'active'
+RETURNING config_version
 `
 
-func (q *Queries) ProjectServiceAccountNames(ctx context.Context, key string) ([]string, error) {
-	rows, err := q.db.Query(ctx, projectServiceAccountNames, key)
+type ProjectRepositoryMoveParams struct {
+	ToProjectID   string
+	Actor         string
+	ID            int64
+	FromProjectID string
+}
+
+// Moves a repository to another project (R-REPO-060, Q-REPO-217): its project_id
+// changes, its id and its content do not, and config_version moves on, because the
+// addresses its documents carry change. The condition names the source project and
+// an active repository, so two concurrent moves cannot both win; the callers hold
+// ProjectLock of both projects and ProjectRepositoryLock. A target that holds the
+// key answers SQLSTATE 23505 on repositories_project_key.
+func (q *Queries) ProjectRepositoryMove(ctx context.Context, arg ProjectRepositoryMoveParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, projectRepositoryMove,
+		arg.ToProjectID,
+		arg.Actor,
+		arg.ID,
+		arg.FromProjectID,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []string{}
+	items := []int64{}
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var config_version int64
+		if err := rows.Scan(&config_version); err != nil {
 			return nil, err
 		}
-		items = append(items, name)
+		items = append(items, config_version)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const projectRepositoryReferences = `-- name: ProjectRepositoryReferences :many
+SELECT 'virtual_member'::text AS kind, v.key::text AS name
+  FROM virtual_members m JOIN repositories v ON v.id = m.virtual_id
+ WHERE m.member_id = $1::bigint
+UNION
+SELECT 'pin_rule', v.key
+  FROM virtual_pin_members m JOIN repositories v ON v.id = m.virtual_id
+ WHERE m.member_id = $1::bigint
+UNION
+SELECT 'virtual_deployment_target', v.key
+  FROM virtual_deploy_targets t JOIN repositories v ON v.id = t.virtual_id
+ WHERE t.target_id = $1::bigint
+UNION
+SELECT 'policy', a.name
+  FROM authz_policy_selector s JOIN authz_policy a ON a.id = s.policy_id
+ WHERE s.repository_id = $1::bigint AND a.project_id = $2::text::uuid
+UNION
+SELECT 'member', r.key
+  FROM virtual_members m JOIN repositories r ON r.id = m.member_id
+ WHERE m.virtual_id = $1::bigint
+UNION
+SELECT 'deployment_target', r.key
+  FROM virtual_deploy_targets t JOIN repositories r ON r.id = t.target_id
+ WHERE t.virtual_id = $1::bigint
+ORDER BY 1, 2
+`
+
+type ProjectRepositoryReferencesParams struct {
+	ID        int64
+	ProjectID string
+}
+
+type ProjectRepositoryReferencesRow struct {
+	Kind string
+	Name string
+}
+
+// What of the repository's own project names it, and keeps it from moving (R-REPO-060,
+// 409 repository_in_use): the virtual repositories that list it as a member, pin a
+// rule to it or deploy into it, and the policies of the project with a key selector
+// on it (by stored name). A virtual repository moves only without members and
+// deployment target, which are repositories of the project: they are listed as
+// `member` and `deployment_target`. Every virtual repository is of the same project
+// (trigger AI006 of 00024). The inline grants of the project's CI mappings are a
+// JSON document; ProjectCIMappingGrants reads them for the caller.
+func (q *Queries) ProjectRepositoryReferences(ctx context.Context, arg ProjectRepositoryReferencesParams) ([]ProjectRepositoryReferencesRow, error) {
+	rows, err := q.db.Query(ctx, projectRepositoryReferences, arg.ID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectRepositoryReferencesRow{}
+	for rows.Next() {
+		var i ProjectRepositoryReferencesRow
+		if err := rows.Scan(&i.Kind, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

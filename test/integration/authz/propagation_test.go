@@ -31,7 +31,7 @@ func TestR_AUTHZ_028_RemovedGrantIsRefusedOnEveryReplica(t *testing.T) {
 	for trial := 0; trial < 6; trial++ {
 		name := fmt.Sprintf("readers-%d", trial)
 		_, epoch, err := a.svc.Create(ctx, admin, authz.PolicyInput{
-			Name: name, Resources: authz.Resources{Repositories: []string{"npm-internal"}},
+			Name: name, Resources: authz.Resources{Repositories: []string{"it/npm-internal"}},
 			Entries: []authz.Entry{{Principal: "group:developers", Actions: []string{"read"}}},
 		})
 		if err != nil {
@@ -79,14 +79,14 @@ func TestR_AUTHZ_028_ReusedEpoch(t *testing.T) {
 	aliceSub, carolSub := sub(alice, devs), sub(carol, web)
 
 	if _, _, err := a.svc.Create(ctx, admin, authz.PolicyInput{
-		Name: "alice-reads", Resources: authz.Resources{Repositories: []string{"npm-internal"}},
+		Name: "alice-reads", Resources: authz.Resources{Repositories: []string{"it/npm-internal"}},
 		Entries: []authz.Entry{{Principal: "group:developers", Actions: []string{"read"}}},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	// The grant to Carol commits through A as epoch e, and B builds from it.
 	_, eEpoch, err := a.svc.Create(ctx, admin, authz.PolicyInput{
-		Name: "carol-reads", Resources: authz.Resources{Repositories: []string{"npm-internal"}},
+		Name: "carol-reads", Resources: authz.Resources{Repositories: []string{"it/npm-internal"}},
 		Entries: []authz.Entry{{Principal: "group:team-web", Actions: []string{"read"}}},
 	})
 	if err != nil {
@@ -138,8 +138,8 @@ func TestR_AUTHZ_028_ConsistentBuild(t *testing.T) {
 	e.repo("repo-b", "local", "generic", "")
 	ctx := t.Context()
 	states := []authz.PolicyInput{
-		{Name: "flip", Resources: authz.Resources{Repositories: []string{"repo-a"}}, Entries: []authz.Entry{{Principal: "user:x", Actions: []string{"read"}}}},
-		{Name: "flip", Resources: authz.Resources{Repositories: []string{"repo-b"}}, Entries: []authz.Entry{{Principal: "user:y", Actions: []string{"read"}}}},
+		{Name: "flip", Resources: authz.Resources{Repositories: []string{"it/repo-a"}}, Entries: []authz.Entry{{Principal: "user:x", Actions: []string{"read"}}}},
+		{Name: "flip", Resources: authz.Resources{Repositories: []string{"it/repo-b"}}, Entries: []authz.Entry{{Principal: "user:y", Actions: []string{"read"}}}},
 	}
 	if _, _, err := a.svc.Create(ctx, admin, states[0]); err != nil {
 		t.Fatal(err)
@@ -249,7 +249,7 @@ func TestE1_12_OwnPermissionChangeOnEveryReplica(t *testing.T) {
 	}
 
 	_, n, err := a.svc.Create(ctx, admin, authz.PolicyInput{
-		Name: "mobile-deploy", Resources: authz.Resources{Repositories: []string{"files-internal"}},
+		Name: "mobile-deploy", Resources: authz.Resources{Repositories: []string{"it/files-internal"}},
 		Entries: []authz.Entry{{Principal: "group:team-mobile", Actions: []string{"deploy"}}},
 	})
 	if err != nil {

@@ -102,8 +102,8 @@ func TestR_AUTHZ_207_TheDeclarationOfAProjectRole(t *testing.T) {
 		if got := call(projectCaller{members: map[string]authz.ProjectRole{"web": authz.ProjectRoleMaintainer}}, path); got != 403 {
 			t.Errorf("maintainer: %d", got)
 		}
-		if got := call(projectCaller{members: map[string]authz.ProjectRole{"shop": authz.ProjectRoleOwner}, owns: map[string]bool{"shop": true}}, path); got != 403 {
-			t.Errorf("owner of another project: %d", got)
+		if got := call(projectCaller{members: map[string]authz.ProjectRole{"shop": authz.ProjectRoleOwner}, owns: map[string]bool{"shop": true}}, path); got != 404 {
+			t.Errorf("owner of another project: %d, want 404: a project the caller is no member of answers like a missing one", got)
 		}
 	})
 	t.Run("R-AUTHZ-026 an anonymous caller gets 401", func(t *testing.T) {

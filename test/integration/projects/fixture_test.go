@@ -105,30 +105,47 @@ func (f *fixture) journal(event string) int64 {
 	return f.e.Number("SELECT count(*) FROM revocation_outbox WHERE event = $1", event)
 }
 
-// seedRepo inserts a repository the way the harness of the other areas does.
-func (f *fixture) seedRepo(key, lifecycle string) {
+// seedRepo inserts a repository into the project, which must exist, the way the harness of the other areas does.
+func (f *fixture) seedRepo(project, key, lifecycle string) {
 	f.t.Helper()
-	f.e.Exec("INSERT INTO repositories (key, class, format, config, lifecycle) VALUES ($1, 'local', 'npm', '{}'::jsonb, $2)", key, lifecycle)
+	f.e.Exec(`INSERT INTO repositories (key, class, format, config, lifecycle, project_id)
+	          SELECT $1, 'local', 'npm', '{}'::jsonb, $2, id FROM project WHERE key = $3`, key, lifecycle, project)
+	if f.e.Number("SELECT count(*) FROM repositories r JOIN project p ON p.id = r.project_id WHERE p.key = $1 AND r.key = $2", project, key) != 1 {
+		f.t.Fatalf("the repository %s/%s was not seeded", project, key)
+	}
 }
 
-func (f *fixture) projectOf(repo string) string {
-	return f.e.Text("SELECT coalesce((SELECT p.key FROM repositories r JOIN project p ON p.id = r.project_id WHERE r.key = $1), '')", repo)
+// configVersion is the config_version of the repository with the ID.
+func (f *fixture) configVersion(id int64) int64 {
+	return f.e.Number("SELECT config_version FROM repositories WHERE id = $1", id)
 }
 
-func (f *fixture) configVersion(repo string) int64 {
-	return f.e.Number("SELECT config_version FROM repositories WHERE key = $1", repo)
+// repoID is the ID of the repository of the project with the key.
+func (f *fixture) repoID(project, key string) int64 {
+	return f.e.Number("SELECT r.id FROM repositories r JOIN project p ON p.id = r.project_id WHERE p.key = $1 AND r.key = $2", project, key)
 }
 
-// seedProjectServiceAccount inserts a service account of the project (its name
-// starts with the key, the guard of the migration).
+// projectOfRepo is the key of the project of the repository with the ID.
+func (f *fixture) projectOfRepo(id int64) string {
+	return f.e.Text("SELECT p.key FROM repositories r JOIN project p ON p.id = r.project_id WHERE r.id = $1", id)
+}
+
+// seedProjectServiceAccount inserts a service account of the project: its stored name is <project>/<name>
+// (Q-AUTHZ-209, the guard of the migration).
 func (f *fixture) seedProjectServiceAccount(project, name string) {
 	f.t.Helper()
-	id := f.e.Text("INSERT INTO principal (id, kind, name) VALUES (gen_random_uuid(), 'service_account', $1) RETURNING id::text", name)
+	id := f.e.Text("INSERT INTO principal (id, kind, name) VALUES (gen_random_uuid(), 'service_account', $1) RETURNING id::text", project+"/"+name)
 	f.e.Exec("INSERT INTO service_account (principal_id, project_id) SELECT $1::uuid, id FROM project WHERE key = $2", id, project)
 }
 
-// seedProjectPolicy inserts a policy of the project without entries.
+// seedProjectPolicy inserts a policy of the project without entries, stored as <project>/<name>.
 func (f *fixture) seedProjectPolicy(project, name string) {
 	f.t.Helper()
-	f.e.Exec("INSERT INTO authz_policy (id, name, project_id) SELECT gen_random_uuid(), $1, id FROM project WHERE key = $2", name, project)
+	f.e.Exec("INSERT INTO authz_policy (id, name, project_id) SELECT gen_random_uuid(), $1, id FROM project WHERE key = $2", project+"/"+name, project)
+}
+
+// member makes the principal a member of the project with the role, as the admin, and returns the answer.
+func (f *fixture) member(project, ref, role string) stack.Response {
+	f.t.Helper()
+	return f.do(f.admin, "PUT", base+"/"+project+"/members/"+ref, map[string]any{"role": role})
 }

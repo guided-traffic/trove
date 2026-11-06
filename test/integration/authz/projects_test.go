@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -21,23 +22,24 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
+	"github.com/guided-traffic/trove/internal/project"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/test/integration/stack"
+	"github.com/guided-traffic/trove/test/integration/testenv"
 )
 
-// Projects and delegated administration in the engine and over HTTP
-// (R-AUTHZ-026, R-AUTHZ-028, Q-AUTHZ-174, Q-AUTHZ-179, Q-AUTHZ-183). The project
-// rows are written with SQL here: the project service is another package's work,
-// and what these tests pin is what the grant index and the policy writes do with
-// them.
+// Projects in the engine and over HTTP (R-AUTHZ-026, R-AUTHZ-028, Q-AUTHZ-207 to Q-AUTHZ-209, Q-AUTHZ-215 to
+// Q-AUTHZ-217, R-REPO-060): the roles of members decide on every replica, project policies are named within their
+// project and name its repositories by bare key, and a move takes a repository out of its project's roles.
 
-// projectFixture is the setting of the acceptance criterion: project web, administered
-// by the group web-leads (alice is a member), with web-npm in it and npm-internal not;
-// project shop, administered by bob, with shop-npm.
+// projectFixture is the setting of the acceptance criteria of R-AUTHZ-026 over HTTP: project web with the Owner
+// group web-leads (alice is a member) and the Developer group web-devs (dave), repositories web/npm and web/extra;
+// project mobile with its Owner bob and mobile/npm-internal; it/npm-internal in the project the stack seeds.
 type projectFixture struct {
 	*apiFixture
-	leads  stack.Person
-	webID  string
-	shopID string
+	leads, devs stack.Person
+	dave        stack.Person
+	webID       string
 }
 
 func newProjectAPI(t *testing.T) *projectFixture {
@@ -50,40 +52,27 @@ func newProjectAPI(t *testing.T) *projectFixture {
 	f.web = e.Group("team-web")
 	e.Join(f.web, f.alice)
 	f.bot = e.ServiceAccount("ci-bot")
-	pf := &projectFixture{apiFixture: f, leads: e.Group("web-leads")}
+	pf := &projectFixture{apiFixture: f, leads: e.Group("web-leads"), devs: e.Group("web-devs"), dave: e.User("dave")}
 	e.Join(pf.leads, f.alice)
-	e.Repo("web-npm", "local", "npm")
-	e.Repo("web-files", "local", "generic")
+	e.Join(pf.devs, pf.dave)
+	e.RepoIn("web", "npm", "local", "npm")
+	e.RepoIn("web", "extra", "local", "npm")
+	e.RepoIn("mobile", "npm-internal", "local", "npm")
 	e.Repo("npm-internal", "local", "npm")
-	e.Repo("shop-npm", "local", "npm")
-	pf.webID = e.Text("INSERT INTO project (id, key, display_name) VALUES (gen_random_uuid(), 'web', 'Web platform') RETURNING id::text")
-	pf.shopID = e.Text("INSERT INTO project (id, key, display_name, manage_policies) VALUES (gen_random_uuid(), 'shop', 'Shop', true) RETURNING id::text")
-	e.Exec("INSERT INTO project_admin (project_id, principal_id) VALUES ($1::uuid, $2::uuid)", pf.webID, pf.leads.ID)
-	e.Exec("INSERT INTO project_admin (project_id, principal_id) VALUES ($1::uuid, $2::uuid)", pf.shopID, f.bob.ID)
-	e.Exec("UPDATE repositories SET project_id = $1::uuid WHERE key IN ('web-npm', 'web-files')", pf.webID)
-	e.Exec("UPDATE repositories SET project_id = $1::uuid WHERE key = 'shop-npm'", pf.shopID)
+	pf.webID = e.Project("web")
+	e.Member("web", pf.leads, "owner")
+	e.Member("web", pf.devs, "developer")
+	e.Member("mobile", f.bob, "owner")
 	o := stack.Options{Validator: f.val}
 	f.a, f.b, f.c = e.NewReplica("web-a", o), e.NewReplica("web-b", o), e.NewReplica("web-c", o)
 	f.cl = stack.NewCluster(f.a, f.b, f.c)
 	return pf
 }
 
-// changed notifies the authz area as the project service does in the transaction of
-// a project write, and returns the header that makes the next request see it.
-func (f *projectFixture) changed(t *testing.T) []string {
-	t.Helper()
-	err := f.a.DB.InTx(context.Background(), func(tx meta.Tx) error {
-		return f.a.Changes.Notify(tx, authz.AreaAuthz, 1, map[string]string{"type": "project", "id": "test"})
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return f.current()
-}
-
-func projectPolicyBody(name, project string, repositories []string, entries ...map[string]any) map[string]any {
+// projectPolicyBody is a policy body of the project routes: the name within the project, the selectors bare keys of
+// the project (R-AUTHZ-004).
+func projectPolicyBody(name string, repositories []string, entries ...map[string]any) map[string]any {
 	b := policyBody(name, entries...)
-	b["project"] = project
 	b["resources"] = map[string]any{"repositories": repositories}
 	return b
 }
@@ -97,181 +86,82 @@ func listNames(t *testing.T, r stack.Response) []string {
 	return out
 }
 
-// The acceptance criteria of R-AUTHZ-026 for project policies, over HTTP on three
-// replicas: a member of the administrator group writes policies for the project's
-// repositories and nowhere else.
-func TestR_AUTHZ_026_ProjectAdministratorWritesPolicies(t *testing.T) {
+// TestR_AUTHZ_026_AnOwnerWritesThePoliciesOfItsProject: the acceptance criteria of R-AUTHZ-026 for project policies,
+// over HTTP on three replicas.
+func TestR_AUTHZ_026_AnOwnerWritesThePoliciesOfItsProject(t *testing.T) {
 	f := newProjectAPI(t)
 	alice, admin := f.alice.Name, f.admin.Name
+	const web = "/api/v1/projects/web/policies"
 
-	t.Run("a member of the administrator group creates a policy with project web on web-npm", func(t *testing.T) {
-		r := f.cl.Do(alice, "POST", policies, projectPolicyBody("web-publish", "web", []string{"web-npm"}, entry("group:team-web", "read", "deploy")))
+	t.Run("R-AUTHZ-026 an Owner creates npm-read on the selector npm", func(t *testing.T) {
+		r := f.cl.Do(alice, "POST", web, projectPolicyBody("npm-read", []string{"npm"}, entry("group:web-devs", "read")))
 		wantStatus(t, r, 201, "")
-		if r.Epoch() == 0 || r.Header.Get("ETag") != `"1"` {
-			t.Fatalf("epoch %d, ETag %q", r.Epoch(), r.Header.Get("ETag"))
+		if body := r.JSON(t); body["name"] != "npm-read" || body["project"] != "web" || r.Epoch() == 0 {
+			t.Fatalf("%v, epoch %d", body, r.Epoch())
 		}
-		if got := r.JSON(t)["project"]; got != "web" {
-			t.Fatalf("project = %v", got)
+		if n := f.e.Number("SELECT count(*) FROM authz_policy WHERE name = 'web/npm-read'"); n != 1 {
+			t.Fatalf("the stored name is not <project>/<name>: %d rows", n)
 		}
-		if n := f.e.Number("SELECT count(*) FROM audit_event WHERE action = 'authz.policy.created' AND resource_type = 'permission_policy' AND details->>'project' = 'web'"); n != 1 {
-			t.Fatalf("%d audit events with the project", n)
-		}
-	})
-	t.Run("the policy's entries are stored in authz_project_policy_entry, never in authz_policy_entry", func(t *testing.T) {
-		if n := f.e.Number("SELECT count(*) FROM authz_policy_entry e JOIN authz_policy p ON p.id = e.policy_id WHERE p.name = 'web-publish'"); n != 0 {
-			t.Fatalf("%d rows in authz_policy_entry", n)
-		}
-		if n := f.e.Number("SELECT count(*) FROM authz_project_policy_entry e JOIN authz_policy p ON p.id = e.policy_id WHERE p.name = 'web-publish'"); n != 1 {
+		if n := f.e.Number("SELECT count(*) FROM authz_project_policy_entry e JOIN authz_policy p ON p.id = e.policy_id WHERE p.name = 'web/npm-read'"); n != 1 {
 			t.Fatalf("%d rows in authz_project_policy_entry", n)
 		}
-	})
-	t.Run("a policy on npm-internal is refused: repository_outside_project", func(t *testing.T) {
-		wantStatus(t, f.cl.Do(alice, "POST", policies, projectPolicyBody("web-out", "web", []string{"npm-internal"}, entry("group:team-web", "read"))), 422, "repository_outside_project")
-	})
-	t.Run("another project's repository and an unknown key answer the same", func(t *testing.T) {
-		wantStatus(t, f.cl.Do(alice, "POST", policies, projectPolicyBody("web-shop", "web", []string{"shop-npm"})), 422, "repository_outside_project")
-		wantStatus(t, f.cl.Do(alice, "POST", policies, projectPolicyBody("web-none", "web", []string{"no-such-repository"})), 422, "repository_outside_project")
-	})
-	t.Run("the name starts with the project key", func(t *testing.T) {
-		wantStatus(t, f.cl.Do(alice, "POST", policies, projectPolicyBody("publish", "web", []string{"web-npm"})), 422, "project_prefix_required")
-	})
-	t.Run("a project the caller does not administer or that does not exist is unknown_project", func(t *testing.T) {
-		wantStatus(t, f.cl.Do(alice, "POST", policies, projectPolicyBody("shop-read", "shop", []string{"shop-npm"})), 422, "unknown_project")
-		wantStatus(t, f.cl.Do(alice, "POST", policies, projectPolicyBody("nope-read", "nope", []string{"web-npm"})), 422, "unknown_project")
-		wantStatus(t, f.cl.Do(admin, "POST", policies, projectPolicyBody("nope-read", "nope", []string{"web-npm"})), 422, "unknown_project")
-	})
-	t.Run("a global policy needs policies:write", func(t *testing.T) {
-		wantStatus(t, f.cl.Do(alice, "POST", policies, policyBody("global-one", entry("group:team-web", "read"))), 403, "forbidden")
-	})
-	t.Run("a project policy grants to no anonymous and no authenticated, and no CI mapping manage", func(t *testing.T) {
-		wantStatus(t, f.cl.Do(alice, "POST", policies, projectPolicyBody("web-anon", "web", []string{"web-npm"}, entry("anonymous", "read"))), 422, "principal_outside_project")
-		wantStatus(t, f.cl.Do(alice, "POST", policies, projectPolicyBody("web-auth", "web", []string{"web-npm"}, entry("authenticated", "read"))), 422, "principal_outside_project")
-	})
-	t.Run("a pattern selector * of a project policy covers only the project's repositories", func(t *testing.T) {
-		r := f.cl.Do(alice, "POST", policies, projectPolicyBody("web-all", "web", []string{"*"}, entry("group:team-web", "read")))
-		wantStatus(t, r, 201, "")
-		v := f.cl.Do(alice, "POST", "/api/v1/authz/validate-policy", projectPolicyBody("web-all", "web", []string{"*"}, entry("group:team-web", "read")))
-		wantStatus(t, v, 200, "")
-		covers, _ := v.JSON(t)["covers"].([]any)
-		if fmt.Sprint(covers) != "[web-files web-npm]" {
-			t.Fatalf("covers %v", covers)
+		if n := f.e.Number("SELECT count(*) FROM audit_event WHERE action = 'authz.policy.created' AND project = 'web'"); n != 1 {
+			t.Fatalf("%d audit events naming the project", n)
 		}
 	})
-	t.Run("a project administrator cannot bind a system role or read the bindings", func(t *testing.T) {
-		wantStatus(t, f.cl.Do(alice, "PUT", "/api/v1/role-bindings/auditor/user:carol", nil), 403, "forbidden")
-		wantStatus(t, f.cl.Do(alice, "GET", "/api/v1/role-bindings", nil), 403, "forbidden")
+	t.Run("R-AUTHZ-004 a key of no repository of the project is unknown_repository, a selector with a slash invalid_pattern", func(t *testing.T) {
+		wantStatus(t, f.cl.Do(alice, "POST", web, projectPolicyBody("x", []string{"npm-internal"})), 422, "unknown_repository")
+		wantStatus(t, f.cl.Do(alice, "POST", web, projectPolicyBody("x", []string{"mobile/npm-internal"})), 422, "invalid_pattern")
 	})
-
-	// A global policy, and a policy of the other project, that alice must not see.
-	wantStatus(t, f.cl.Do(admin, "POST", policies, policyBody("global-readers", entry("group:team-web", "read"))), 201, "")
-	wantStatus(t, f.cl.Do(admin, "POST", policies, projectPolicyBody("shop-publish", "shop", []string{"shop-npm"}, entry("user:bob", "deploy"))), 201, "")
-
-	t.Run("the list of a project administrator needs project=<key> and shows only that project's policies", func(t *testing.T) {
-		wantStatus(t, f.cl.Do(alice, "GET", policies, nil), 403, "forbidden")
-		r := f.cl.Do(alice, "GET", policies+"?project=web", nil)
+	t.Run("Q-AUTHZ-209 npm-read of mobile and a global npm-read exist beside it", func(t *testing.T) {
+		wantStatus(t, f.cl.Do(admin, "POST", "/api/v1/projects/mobile/policies", projectPolicyBody("npm-read", []string{"npm-internal"}, entry("user:bob", "read"))), 201, "")
+		global := policyBody("npm-read", entry("user:carol", "read"))
+		global["resources"] = map[string]any{"repositories": []string{"it/npm-internal"}}
+		wantStatus(t, f.cl.Do(admin, "POST", policies, global), 201, "")
+		if n := f.e.Number("SELECT count(*) FROM authz_policy WHERE name IN ('npm-read', 'web/npm-read', 'mobile/npm-read')"); n != 3 {
+			t.Fatalf("%d policies", n)
+		}
+	})
+	t.Run("Q-AUTHZ-216 a bare key in a global policy is invalid_pattern", func(t *testing.T) {
+		bare := policyBody("bare")
+		bare["resources"] = map[string]any{"repositories": []string{"npm-internal"}}
+		wantStatus(t, f.cl.Do(admin, "POST", policies, bare), 422, "invalid_pattern")
+	})
+	t.Run("R-AUTHZ-026 a Developer is refused with 403, a caller that is no member with 404", func(t *testing.T) {
+		wantStatus(t, f.cl.Do(f.dave.Name, "POST", web, projectPolicyBody("y", []string{"npm"})), 403, "forbidden")
+		wantStatus(t, f.cl.Do(f.carol.Name, "POST", web, projectPolicyBody("y", []string{"npm"})), 404, "")
+	})
+	t.Run("R-AUTHZ-021 the Owner reads, replaces, patches and deletes the policy of its project, each with the epoch", func(t *testing.T) {
+		list := f.cl.Do(alice, "GET", web, nil)
+		wantStatus(t, list, 200, "")
+		if got := listNames(t, list); !slices.Equal(got, []string{"npm-read"}) {
+			t.Fatalf("list %v", got)
+		}
+		g := f.cl.Do(alice, "GET", web+"/npm-read", nil)
+		wantStatus(t, g, 200, "")
+		r := f.cl.Do(alice, "PUT", web+"/npm-read", projectPolicyBody("npm-read", []string{"npm", "extra"}, entry("group:web-devs", "read")), "If-Match", g.Header.Get("ETag"))
 		wantStatus(t, r, 200, "")
-		if got := strings.Join(listNames(t, r), ","); got != "web-all,web-publish" {
-			t.Fatalf("policies %s", got)
-		}
-		// A project the caller does not administer answers as one that does not exist.
-		wantStatus(t, f.cl.Do(alice, "GET", policies+"?project=shop", nil), 403, "forbidden")
-		wantStatus(t, f.cl.Do(alice, "GET", policies+"?project=nope", nil), 403, "forbidden")
-	})
-	t.Run("a holder of policies:read sees every policy and may filter by project", func(t *testing.T) {
-		all := listNames(t, f.cl.Do(admin, "GET", policies, nil))
-		if got := strings.Join(all, ","); got != "global-readers,shop-publish,web-all,web-publish" {
-			t.Fatalf("policies %s", got)
-		}
-		r := f.cl.Do(admin, "GET", policies+"?project=shop", nil)
-		wantStatus(t, r, 200, "")
-		if got := strings.Join(listNames(t, r), ","); got != "shop-publish" {
-			t.Fatalf("policies %s", got)
-		}
-		wantStatus(t, f.cl.Do(admin, "GET", policies+"?project=nope", nil), 422, "unknown_project")
-	})
-	t.Run("get: a project policy of its project, 404 for a global one and another project's", func(t *testing.T) {
-		wantStatus(t, f.cl.Do(alice, "GET", policies+"/web-publish", nil), 200, "")
-		wantStatus(t, f.cl.Do(alice, "GET", policies+"/global-readers", nil), 404, "not_found")
-		wantStatus(t, f.cl.Do(alice, "GET", policies+"/shop-publish", nil), 404, "not_found")
-	})
-	t.Run("writes of a global policy are 403, of another project's policy 404", func(t *testing.T) {
-		wantStatus(t, f.cl.Do(alice, "PUT", policies+"/global-readers", policyBody("global-readers"), "If-Match", "*"), 403, "forbidden")
-		wantStatus(t, f.cl.Do(alice, "DELETE", policies+"/global-readers", nil), 403, "forbidden")
-		wantStatus(t, f.cl.Do(alice, "PUT", policies+"/shop-publish", projectPolicyBody("shop-publish", "shop", []string{"shop-npm"}), "If-Match", "*"), 404, "not_found")
-		wantStatus(t, f.cl.Do(alice, "DELETE", policies+"/shop-publish", nil), 404, "not_found")
-		wantStatus(t, f.cl.Do(alice, "DELETE", policies+"/no-such-policy", nil), 404, "not_found")
-	})
-	t.Run("the project of a policy is fixed at creation", func(t *testing.T) {
-		g := f.cl.Do(admin, "GET", policies+"/web-publish", nil)
-		put := projectPolicyBody("web-publish", "shop", []string{"shop-npm"}, entry("group:team-web", "read"))
-		wantStatus(t, f.cl.Do(admin, "PUT", policies+"/web-publish", put, "If-Match", g.Header.Get("ETag")), 422, "immutable")
-		global := policyBody("web-publish", entry("group:team-web", "read"))
-		wantStatus(t, f.cl.Do(admin, "PUT", policies+"/web-publish", global, "If-Match", g.Header.Get("ETag")), 422, "immutable")
-		wantStatus(t, f.cl.Do(admin, "PATCH", policies+"/web-publish", map[string]any{"project": "shop"}, "If-Match", g.Header.Get("ETag"), "Content-Type", "application/merge-patch+json"), 422, "immutable")
-	})
-	t.Run("replace, patch and delete of a project policy by its administrator, each with the epoch", func(t *testing.T) {
-		g := f.cl.Do(alice, "GET", policies+"/web-publish", nil)
-		put := projectPolicyBody("web-publish", "web", []string{"web-npm"}, entry("group:team-web", "read"), entry("user:bob", "read"))
-		r := f.cl.Do(alice, "PUT", policies+"/web-publish", put, "If-Match", g.Header.Get("ETag"))
-		wantStatus(t, r, 200, "")
-		if r.Epoch() == 0 {
-			t.Fatal("no epoch")
-		}
-		p := f.cl.Do(alice, "PATCH", policies+"/web-publish", map[string]any{"description": "web"}, "If-Match", r.Header.Get("ETag"), "Content-Type", "application/merge-patch+json")
+		p := f.cl.Do(alice, "PATCH", web+"/npm-read", map[string]any{"description": "web"}, "If-Match", r.Header.Get("ETag"), "Content-Type", "application/merge-patch+json")
 		wantStatus(t, p, 200, "")
-		d := f.cl.Do(alice, "DELETE", policies+"/web-publish", nil)
+		d := f.cl.Do(alice, "DELETE", web+"/npm-read", nil)
 		wantStatus(t, d, 204, "")
 		if d.Epoch() == 0 {
 			t.Fatal("no epoch")
 		}
-		if n := f.e.Number("SELECT count(*) FROM authz_project_policy_entry e WHERE NOT EXISTS (SELECT 1 FROM authz_policy p WHERE p.id = e.policy_id)"); n != 0 {
-			t.Fatalf("%d orphaned entries", n)
+		if n := f.e.Number("SELECT count(*) FROM authz_policy WHERE name IN ('npm-read', 'mobile/npm-read')"); n != 2 {
+			t.Fatalf("the delete reached another policy of the name: %d left", n)
 		}
 	})
-	t.Run("a caller that administers nothing is refused at the declaration", func(t *testing.T) {
-		wantStatus(t, f.cl.Do(f.carol.Name, "GET", policies+"?project=web", nil), 403, "forbidden")
-		wantStatus(t, f.cl.Do(f.carol.Name, "POST", policies, projectPolicyBody("web-x", "web", []string{"web-npm"})), 403, "forbidden")
-	})
 }
 
-// The switch managePolicies: off, a project administrator still reads and removes
-// nothing it could not, but writes no policy (R-AUTHZ-026, Q-AUTHZ-180).
-func TestR_AUTHZ_026_ProjectSwitchOffRefusesPolicyWrites(t *testing.T) {
-	f := newProjectAPI(t)
-	alice := f.alice.Name
-	wantStatus(t, f.cl.Do(alice, "POST", policies, projectPolicyBody("web-publish", "web", []string{"web-npm"}, entry("group:team-web", "read"))), 201, "")
-
-	f.e.Exec("UPDATE project SET manage_policies = false WHERE key = 'web'")
-	hdr := f.changed(t)
-	// The shared step admits a caller that administers any project; the handler names
-	// the switch, whatever other projects the caller administers (Q-AUTHZ-180).
-	wantStatus(t, f.cl.Do(alice, "POST", policies, projectPolicyBody("web-two", "web", []string{"web-npm"}), hdr...), 403, "project_switch_off")
-	wantStatus(t, f.cl.Do(alice, "GET", policies+"/web-publish", nil, hdr...), 200, "")
-	wantStatus(t, f.cl.Do(alice, "GET", policies+"?project=web", nil, hdr...), 200, "")
-
-	// With a second project whose switch is on the answer for web does not change.
-	f.e.Exec("INSERT INTO project_admin (project_id, principal_id) VALUES ($1::uuid, $2::uuid)", f.shopID, f.alice.ID)
-	hdr = f.changed(t)
-	wantStatus(t, f.cl.Do(alice, "POST", policies, projectPolicyBody("web-two", "web", []string{"web-npm"}), hdr...), 403, "project_switch_off")
-	wantStatus(t, f.cl.Do(alice, "POST", "/api/v1/authz/validate-policy", projectPolicyBody("web-two", "web", []string{"web-npm"}), hdr...), 403, "project_switch_off")
-	wantStatus(t, f.cl.Do(alice, "DELETE", policies+"/web-publish", nil, hdr...), 403, "project_switch_off")
-	wantStatus(t, f.cl.Do(alice, "POST", policies, projectPolicyBody("shop-two", "shop", []string{"shop-npm"}), hdr...), 201, "")
-
-	me := f.cl.Do(alice, "GET", "/api/v1/authz/me", nil, hdr...)
-	wantStatus(t, me, 200, "")
-	projects := me.JSON(t)["projects"].([]any)
-	if len(projects) != 2 || projects[1].(map[string]any)["managePolicies"] != false {
-		t.Fatalf("projects %v", projects)
-	}
-}
-
-// GET /authz/me names the projects the caller administers with their switches,
-// from the index that answers (Q-AUTHZ-181).
-func TestR_AUTHZ_026_AuthzMeListsAdministeredProjects(t *testing.T) {
+// TestR_AUTHZ_022_AuthzMeListsTheMemberships: GET /api/v1/authz/me lists the caller's memberships with their roles,
+// a group's role through the group (R-AUTHZ-022, Q-AUTHZ-207); an administrator of trove is no member.
+func TestR_AUTHZ_022_AuthzMeListsTheMemberships(t *testing.T) {
 	f := newProjectAPI(t)
 	for name, want := range map[string]string{
-		f.alice.Name: `[{"key":"web","managePolicies":true,"manageRepositories":false}]`,
-		f.bob.Name:   `[{"key":"shop","managePolicies":true,"manageRepositories":false}]`,
+		f.alice.Name: `[{"key":"web","role":"owner"}]`,
+		f.dave.Name:  `[{"key":"web","role":"developer"}]`,
+		f.bob.Name:   `[{"key":"mobile","role":"owner"}]`,
 		f.carol.Name: `[]`,
 		f.admin.Name: `[]`,
 	} {
@@ -282,22 +172,39 @@ func TestR_AUTHZ_026_AuthzMeListsAdministeredProjects(t *testing.T) {
 			t.Errorf("%s: projects %s, want %s", name, raw, want)
 		}
 	}
-	// A project administrator holds no capability through the project.
 	if caps := f.cl.Do(f.alice.Name, "GET", "/api/v1/authz/me", nil).JSON(t)["capabilities"].([]any); len(caps) != 0 {
-		t.Fatalf("capabilities %v", caps)
+		t.Fatalf("a role is no capability: %v", caps)
 	}
 }
 
-// projectEnv is the engine-level setting: two replicas on one database.
+// A system role of a project service account is refused by the declaration of authz.role_bindings, like by the API
+// (Q-AUTHZ-175).
+func TestR_AUTHZ_026_ADeclaredRoleOfAProjectServiceAccountIsRefused(t *testing.T) {
+	f := newProjectAPI(t)
+	id := f.e.Text("INSERT INTO principal (id, kind, name) VALUES (gen_random_uuid(), 'service_account', 'web/bot') RETURNING id::text")
+	f.e.Exec("INSERT INTO service_account (principal_id, project_id) VALUES ($1::uuid, $2::uuid)", id, f.webID)
+	err := testenv.DeclareRoleBindings(f.e.Cfg, declared("auditor", "service_account", "web/bot"))
+	if err == nil || !strings.Contains(err.Error(), "role_not_allowed") {
+		t.Fatalf("the declaration was applied or refused for another reason: %v", err)
+	}
+	if n := f.e.Number("SELECT count(*) FROM authz_role_binding b JOIN principal p ON p.id = b.principal_id WHERE p.name = 'web/bot'"); n != 0 {
+		t.Fatalf("%d bindings of the project account", n)
+	}
+}
+
+// projectEnv is the engine-level setting: two replicas on one database, project web (web-npm, web-files, npm-web)
+// whose Owner is the group web-leads (dave is in it) and whose Developer is the user alice; project shop (shop-npm)
+// with its Owner bob; it/npm-internal.
 type projectEnv struct {
 	*env
-	a, b           *replica
-	webID, shopID  string
-	alice, bob     person
-	leads, devs    person
-	bot, dave      person
-	root           authz.Subject
-	notifyReplicas []*replica
+	a, b          *replica
+	webID, shopID string
+	alice, bob    person
+	leads, devs   person
+	bot, dave     person
+	carol, erin   person
+	root          authz.Subject
+	projects      project.Service
 }
 
 func newProjectEnv(t *testing.T) *projectEnv {
@@ -306,25 +213,26 @@ func newProjectEnv(t *testing.T) *projectEnv {
 	p := &projectEnv{env: e}
 	p.root = sub(e.user("sec-alice"))
 	p.alice, p.bob, p.dave = e.user("alice"), e.user("bob"), e.user("dave")
+	p.carol, p.erin = e.user("carol"), e.user("erin")
 	p.leads, p.devs = e.group("web-leads", false), e.group("developers", false)
 	p.bot = e.serviceAccount("ci-bot")
-	e.repo("web-npm", "local", "npm", "")
-	e.repo("web-files", "local", "generic", "")
+	e.repo("web/web-npm", "local", "npm", "")
+	e.repo("web/web-files", "local", "generic", "")
+	e.repo("web/npm-web", "local", "npm", "")
+	e.repo("shop/shop-npm", "local", "npm", "")
 	e.repo("npm-internal", "local", "npm", "")
-	e.repo("npm-web", "local", "npm", "")
-	p.webID = e.text("INSERT INTO project (id, key, display_name) VALUES (gen_random_uuid(), 'web', 'Web') RETURNING id::text")
-	p.shopID = e.text("INSERT INTO project (id, key, display_name) VALUES (gen_random_uuid(), 'shop', 'Shop') RETURNING id::text")
-	e.exec("UPDATE repositories SET project_id = $1::uuid WHERE key IN ('web-npm', 'web-files', 'npm-web')", p.webID)
-	e.exec("INSERT INTO project_admin (project_id, principal_id) VALUES ($1::uuid, $2::uuid)", p.webID, p.alice.ID)
-	e.exec("INSERT INTO project_admin (project_id, principal_id) VALUES ($1::uuid, $2::uuid)", p.webID, p.leads.ID)
+	p.webID, p.shopID = e.project("web"), e.project("shop")
+	e.member("web", p.leads, "owner")
+	e.member("web", p.alice, "developer")
+	e.member("shop", p.bob, "owner")
 	const poll = 500 * time.Millisecond
 	p.a, p.b = e.newReplica("a", replicaOpts{poll: poll}), e.newReplica("b", replicaOpts{poll: poll})
-	p.notifyReplicas = []*replica{p.a, p.b}
+	p.projects = project.New(project.Options{DB: p.a.db, Changes: p.a.changes, Recorder: p.a.rec, Policies: p.a.svc})
 	return p
 }
 
-// changed notifies the authz area as the project service does in the transaction
-// of a project write.
+// changed notifies the authz area as the project service does in the transaction of a project write, for the rows
+// a test writes with SQL.
 func (p *projectEnv) changed() {
 	p.t.Helper()
 	err := p.a.db.InTx(context.Background(), func(tx meta.Tx) error {
@@ -335,283 +243,360 @@ func (p *projectEnv) changed() {
 	}
 }
 
-func (p *projectEnv) manages(r *replica, s authz.Subject, repo string) bool {
-	return r.engine.Decide(context.Background(), s, write(repo, "x", "", authz.Manage)).Outcome == authz.Allow
+// may decides one action on a repository of the setting ("<project>/<key>" or a key of it) on a replica.
+func (p *projectEnv) may(r *replica, s authz.Subject, repo string, a authz.Action) bool {
+	return r.engine.Decide(context.Background(), s, write(repo, "x", "", a)).Outcome == authz.Allow
 }
 
-// A project administrator holds manage on every repository of the project and
-// nothing outside it; a group administrator holds it through its members; a
-// service account and a token without admin: true never administer.
-func TestR_AUTHZ_026_ProjectAdministratorsHoldManageOnTheProject(t *testing.T) {
+// TestR_AUTHZ_026_RolesDecideOnEveryReplica: a member's role grants its actions on every repository of the project
+// and nothing outside it, through the user's own membership and through its groups, on every replica (R-AUTHZ-015,
+// R-AUTHZ-028); a token's scope bounds it and only a session or an admin token administers (Q-AUTHZ-215); a service
+// account is no member, also in a member group.
+func TestR_AUTHZ_026_RolesDecideOnEveryReplica(t *testing.T) {
 	p := newProjectEnv(t)
-	aliceSub := sub(p.alice)
-	daveSub := sub(p.dave, p.leads)
-	bobSub := sub(p.bob)
+	owner := sub(p.dave, p.leads)
+	dev := sub(p.alice)
 	for _, r := range []*replica{p.a, p.b} {
-		for repo, want := range map[string]bool{"web-npm": true, "web-files": true, "npm-web": true, "npm-internal": false} {
-			if got := p.manages(r, aliceSub, repo); got != want {
-				t.Errorf("replica %s: alice manage on %s = %v, want %v", r.name, repo, got, want)
-			}
-			if got := p.manages(r, daveSub, repo); got != want {
-				t.Errorf("replica %s: group member manage on %s = %v, want %v", r.name, repo, got, want)
-			}
-			if p.manages(r, bobSub, repo) {
-				t.Errorf("replica %s: bob holds manage on %s", r.name, repo)
+		for _, repo := range []string{"web/web-npm", "web/web-files", "web/npm-web"} {
+			for _, a := range []authz.Action{authz.Read, authz.Annotate, authz.Deploy, authz.Overwrite, authz.Delete, authz.Manage} {
+				if !p.may(r, owner, repo, a) {
+					t.Errorf("replica %s: the Owner group's member lacks %s on %s", r.name, a, repo)
+				}
+				if got, want := p.may(r, dev, repo, a), authz.ProjectRoleDeveloper.Actions().Has(a); got != want {
+					t.Errorf("replica %s: the Developer %s on %s = %v", r.name, a, repo, got)
+				}
 			}
 		}
+		for _, repo := range []string{"shop/shop-npm", "npm-internal"} {
+			if p.may(r, owner, repo, authz.Read) || p.may(r, dev, repo, authz.Read) {
+				t.Errorf("replica %s: a role of web reads %s", r.name, repo)
+			}
+		}
+		if p.may(r, sub(p.bob), "web/web-npm", authz.Read) {
+			t.Errorf("replica %s: bob reads web", r.name)
+		}
 	}
-	t.Run("a token without admin: true and a service account never administer", func(t *testing.T) {
-		inherit := aliceSub
-		inherit.Scope = &scope.Scope{Inherit: true}
-		admin := aliceSub
-		admin.Scope = &scope.Scope{Inherit: true, Admin: true}
-		bot := sub(p.bot)
-		bot.Scope = &scope.Scope{Inherit: true, Admin: true}
-		idx, err := p.a.engine.Begin(context.Background(), aliceSub)
+	t.Run("Q-AUTHZ-215 the credentials of a member", func(t *testing.T) {
+		idx, err := p.a.engine.Begin(context.Background(), owner)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for name, tc := range map[string]struct {
-			s    authz.Subject
-			want int
-		}{"session": {aliceSub, 1}, "admin token": {admin, 1}, "inherit token": {inherit, 0}, "service account": {bot, 0}} {
-			if got := len(p.a.engine.MembershipsOn(idx, tc.s)); got != tc.want {
-				t.Errorf("%s administers %d projects, want %d", name, got, tc.want)
-			}
+		readOnly := owner
+		readOnly.Scope = &scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"web/web-npm"}, Actions: []string{"read"}}}}
+		if !p.may(p.a, readOnly, "web/web-npm", authz.Read) || p.may(p.a, readOnly, "web/web-npm", authz.Deploy) {
+			t.Error("the token's scope does not bound the role")
 		}
-		if !p.manages(p.a, admin, "web-npm") || p.manages(p.a, bot, "web-npm") {
-			t.Error("manage through an admin token or a service account")
+		inherit := owner
+		inherit.Scope = &scope.Scope{Inherit: true}
+		admin := owner
+		admin.Scope = &scope.Scope{Inherit: true, Admin: true}
+		if !p.may(p.a, inherit, "web/web-npm", authz.Delete) || p.a.engine.OwnsOn(idx, inherit, "web") || !p.a.engine.OwnsOn(idx, admin, "web") || !p.a.engine.OwnsOn(idx, owner, "web") {
+			t.Error("the administration of an Owner follows the credential")
 		}
-		// manage on the strength of the project's grant needs the credential's repository scope too.
-		if p.manages(p.a, inherit, "npm-internal") {
-			t.Error("manage outside the project")
-		}
-	})
-	t.Run("a project policy covers only its project (the two builders agree on every replica)", func(t *testing.T) {
-		g := sub(p.dave)
-		if _, _, err := p.a.svc.Create(context.Background(), p.root, authz.PolicyInput{
-			Name: "a-global", Resources: authz.Resources{Repositories: []string{"npm-*"}},
-			Entries: []authz.Entry{{Principal: "user:dave", Actions: []string{"read"}}},
-		}); err != nil {
-			t.Fatal(err)
-		}
-		web := "web"
-		if _, _, err := p.a.svc.Create(context.Background(), p.root, authz.PolicyInput{
-			Name: "web-npm-readers", Project: &web, Resources: authz.Resources{Repositories: []string{"npm-*"}},
-			Entries: []authz.Entry{{Principal: "user:bob", Actions: []string{"read"}}},
-		}); err != nil {
-			t.Fatal(err)
-		}
-		for _, r := range []*replica{p.a, p.b} {
-			waitFor(t, "replica "+r.name+" building both", 3*time.Second, func() bool {
-				return r.engine.Decide(context.Background(), g, read("npm-internal", "x", "")).Outcome == authz.Allow &&
-					r.engine.Decide(context.Background(), bobSub, read("npm-web", "x", "")).Outcome == authz.Allow
-			})
-			if r.engine.Decide(context.Background(), g, read("npm-web", "x", "")).Outcome != authz.Allow {
-				t.Errorf("replica %s: the global policy lost npm-web", r.name)
-			}
-			if r.engine.Decide(context.Background(), bobSub, read("npm-internal", "x", "")).Outcome == authz.Allow {
-				t.Errorf("replica %s: the project policy covers npm-internal", r.name)
-			}
-			if r.engine.Decide(context.Background(), bobSub, read("npm-web", "x", "")).Outcome != authz.Allow {
-				t.Errorf("replica %s: the project policy does not cover npm-web", r.name)
-			}
+		bot := sub(p.bot, p.leads)
+		bot.Scope = &scope.Scope{Inherit: true, Admin: true}
+		if p.may(p.a, bot, "web/web-npm", authz.Read) || len(p.a.engine.MembershipsOn(idx, bot)) != 0 {
+			t.Error("a service account in the Owner group holds the role")
 		}
 	})
 }
 
-// Removing an administrator removes manage within the bound of R-AUTHZ-028 on a
-// replica that did not write, and adding one grants it there.
-func TestR_AUTHZ_028_ProjectAdministratorRemovalIsRefusedOnAnotherReplica(t *testing.T) {
+// TestR_AUTHZ_028_AMemberChangeReachesAnotherReplica: the project service adds, demotes and removes a member and the
+// replica that did not write follows within the bound of R-AUTHZ-028; a removed Owner group takes the role from its
+// members (R-AUTHZ-026, Q-AUTHZ-207).
+func TestR_AUTHZ_028_AMemberChangeReachesAnotherReplica(t *testing.T) {
 	p := newProjectEnv(t)
+	ctx := context.Background()
 	const poll = 500 * time.Millisecond
 	bound := poll + time.Second
-	ctx := context.Background()
-	carol := p.user("carol")
-	carolSub := sub(carol)
-	member := sub(p.dave, p.leads)
+	carolSub := sub(p.carol)
 	for trial := range 3 {
-		p.exec("INSERT INTO project_admin (project_id, principal_id) VALUES ($1::uuid, $2::uuid) ON CONFLICT DO NOTHING", p.webID, carol.ID)
-		p.changed()
-		waitFor(t, fmt.Sprintf("trial %d: replica b granting manage", trial), bound, func() bool { return p.manages(p.b, carolSub, "web-npm") })
-		p.exec("DELETE FROM project_admin WHERE project_id = $1::uuid AND principal_id = $2::uuid", p.webID, carol.ID)
-		p.changed()
+		if _, created, _, err := p.projects.AddMember(ctx, p.root, "web", "user:carol", project.RoleMaintainer, true); err != nil || !created {
+			t.Fatalf("trial %d: add %v %v", trial, created, err)
+		}
+		waitFor(t, fmt.Sprintf("trial %d: replica b granting delete", trial), bound, func() bool { return p.may(p.b, carolSub, "web/web-npm", authz.Delete) })
+		if _, _, err := p.projects.SetRole(ctx, p.root, "web", "user:carol", project.RoleReader, true); err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, fmt.Sprintf("trial %d: replica b refusing delete after the demotion", trial), bound, func() bool {
+			return !p.may(p.b, carolSub, "web/web-npm", authz.Delete) && p.may(p.b, carolSub, "web/web-npm", authz.Read)
+		})
+		if _, err := p.projects.RemoveMember(ctx, p.root, "web", "user:carol", true); err != nil {
+			t.Fatal(err)
+		}
 		start := time.Now()
-		waitFor(t, fmt.Sprintf("trial %d: replica b refusing manage", trial), bound, func() bool { return !p.manages(p.b, carolSub, "web-npm") })
+		waitFor(t, fmt.Sprintf("trial %d: replica b refusing the read", trial), bound, func() bool { return !p.may(p.b, carolSub, "web/web-npm", authz.Read) })
 		if took := time.Since(start); took > bound {
 			t.Errorf("trial %d: refused after %s, bound %s", trial, took, bound)
 		}
 	}
-	t.Run("removing the administrator group takes manage from its members", func(t *testing.T) {
-		if !p.manages(p.b, member, "web-files") {
-			t.Fatal("the group member does not manage first")
+	t.Run("R-AUTHZ-031 the narrowing writes carry their journal entries", func(t *testing.T) {
+		for _, name := range []string{"authz.project.member_changed", "authz.project.member_removed"} {
+			evs := p.a.rec.ofType(name)
+			if len(evs) != 3 {
+				t.Errorf("%s: %d events, want 3", name, len(evs))
+			}
+			for _, ev := range evs {
+				if len(ev.Journal) == 0 || ev.Project != "web" {
+					t.Errorf("%s: journal %s, project %q", name, ev.Journal, ev.Project)
+				}
+			}
 		}
-		p.exec("DELETE FROM project_admin WHERE project_id = $1::uuid AND principal_id = $2::uuid", p.webID, p.leads.ID)
-		p.changed()
-		waitFor(t, "replica b refusing the group member", bound, func() bool { return !p.manages(p.b, member, "web-files") })
+		if evs := p.a.rec.ofType("authz.project.member_added"); len(evs) != 3 || evs[0].Journal != nil {
+			t.Errorf("member_added: %d events", len(evs))
+		}
 	})
-	t.Run("a repository that leaves the project takes the project's manage with it", func(t *testing.T) {
-		aliceSub := sub(p.alice)
-		if !p.manages(p.b, aliceSub, "web-files") {
-			t.Fatal("alice does not manage first")
+	t.Run("removing the Owner group takes the role from its members", func(t *testing.T) {
+		member := sub(p.dave, p.leads)
+		if !p.may(p.b, member, "web/web-files", authz.Manage) {
+			t.Fatal("the group member holds no role first")
 		}
-		p.exec("UPDATE repositories SET project_id = NULL WHERE key = 'web-files'")
-		if err := p.a.db.InTx(ctx, func(tx meta.Tx) error {
-			return p.a.changes.Notify(tx, authz.AreaRepoConfig, 1, map[string]string{"type": "repository", "id": "web-files"})
-		}); err != nil {
+		if _, err := p.projects.RemoveMember(ctx, p.root, "web", "group:web-leads", true); err != nil {
 			t.Fatal(err)
 		}
-		waitFor(t, "replica b refusing web-files", bound, func() bool { return !p.manages(p.b, aliceSub, "web-files") })
-		if !p.manages(p.b, aliceSub, "web-npm") {
-			t.Error("the project's other repository lost the grant")
-		}
+		waitFor(t, "replica b refusing the group member", bound, func() bool { return !p.may(p.b, member, "web/web-files", authz.Read) })
 	})
 }
 
-// Q-AUTHZ-174: the grants of a project policy are stored where the previous
-// release does not read them, so that release builds an index in which a project
-// policy grants nobody.
-func TestR_AUTHZ_026_ProjectPolicyIsInvisibleToTheOldBuild(t *testing.T) {
+// TestR_REPO_060_AMoveTakesTheRepositoryOutOfItsProjectsRoles: a move refused while a policy of the source project
+// names the repository, then done; the source project's roles stop reaching it on the other replica, the target's
+// reach it, and a global key selector follows it (R-AUTHZ-004).
+func TestR_REPO_060_AMoveTakesTheRepositoryOutOfItsProjectsRoles(t *testing.T) {
 	p := newProjectEnv(t)
 	ctx := context.Background()
 	web := "web"
 	if _, _, err := p.a.svc.Create(ctx, p.root, authz.PolicyInput{
-		Name: "web-readers", Project: &web, Resources: authz.Resources{Repositories: []string{"*"}},
+		Name: "web/files-read", Project: &web, Resources: authz.Resources{Repositories: []string{"web-files"}},
+		Entries: []authz.Entry{{Principal: "user:carol", Actions: []string{"read"}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := p.a.svc.Create(ctx, p.root, authz.PolicyInput{
+		Name: "files-global", Resources: authz.Resources{Repositories: []string{"web/web-files"}},
+		Entries: []authz.Entry{{Principal: "user:carol", Actions: []string{"annotate"}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	from := qname.Repo{Project: "web", Key: "web-files"}
+	_, _, err := p.projects.MoveRepository(ctx, p.root, from, "shop")
+	problem(t, err, 409, errs.CodeRepositoryInUse)
+	if e, _ := errs.As(err); fmt.Sprint(e.Extensions["references"]) != fmt.Sprint([]project.Reference{{Kind: project.RefPolicy, Name: "files-read"}}) {
+		t.Fatalf("references %v", e.Extensions["references"])
+	}
+	if _, err := p.a.svc.Delete(ctx, p.root, "web/files-read", errs.AnyRevision); err != nil {
+		t.Fatal(err)
+	}
+	owner := sub(p.dave, p.leads)
+	waitFor(t, "replica b granting the web Owner", 3*time.Second, func() bool { return p.may(p.b, owner, "web/web-files", authz.Read) })
+	to, epoch, err := p.projects.MoveRepository(ctx, p.root, from, "shop")
+	if err != nil || to != (qname.Repo{Project: "shop", Key: "web-files"}) || epoch == 0 {
+		t.Fatalf("%v %d %v", to, epoch, err)
+	}
+	waitFor(t, "replica b following the move", 3*time.Second, func() bool {
+		return !p.may(p.b, owner, "web/web-files", authz.Read) && !p.may(p.b, owner, "shop/web-files", authz.Read) &&
+			p.may(p.b, sub(p.bob), "shop/web-files", authz.Delete)
+	})
+	if !p.may(p.b, sub(p.carol), "shop/web-files", authz.Annotate) {
+		t.Error("the global key selector does not follow the repository")
+	}
+	got, err := p.a.svc.Get(ctx, "files-global")
+	if err != nil || !slices.Equal(got.Resources.Repositories, []string{"shop/web-files"}) {
+		t.Fatalf("the global policy reads back %v (%v)", got.Resources.Repositories, err)
+	}
+}
+
+// Q-AUTHZ-174: the grants of a project policy are stored in their own table, so a build that reads the table of
+// global grants only finds none of them, and the trigger AI004 refuses a row of a project policy there.
+func TestR_AUTHZ_026_ProjectPolicyGrantsHaveTheirOwnTable(t *testing.T) {
+	p := newProjectEnv(t)
+	ctx := context.Background()
+	web := "web"
+	if _, _, err := p.a.svc.Create(ctx, p.root, authz.PolicyInput{
+		Name: "web/readers", Project: &web, Resources: authz.Resources{Repositories: []string{"*"}},
 		Entries: []authz.Entry{{Principal: "group:developers", Actions: []string{"read", "deploy"}}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	id := p.text("SELECT id::text FROM authz_policy WHERE name = 'web-readers'")
-
-	t.Run("the entries are in the project table only", func(t *testing.T) {
-		if n := p.number("SELECT count(*) FROM authz_policy_entry WHERE policy_id = $1::uuid", id); n != 0 {
-			t.Fatalf("%d rows in authz_policy_entry", n)
+	id := p.text("SELECT id::text FROM authz_policy WHERE name = 'web/readers'")
+	if n := p.number("SELECT count(*) FROM authz_policy_entry WHERE policy_id = $1::uuid", id); n != 0 {
+		t.Fatalf("%d rows in authz_policy_entry", n)
+	}
+	if n := p.number("SELECT count(*) FROM authz_project_policy_entry WHERE policy_id = $1::uuid", id); n != 1 {
+		t.Fatalf("%d rows in authz_project_policy_entry", n)
+	}
+	p.mu.Lock()
+	_, err := p.admin.Exec(ctx, "INSERT INTO authz_policy_entry (policy_id, principal_id, actions) VALUES ($1::uuid, $2::uuid, ARRAY['read'])", id, p.devs.ID)
+	p.mu.Unlock()
+	var pe *pgconn.PgError
+	if !errors.As(err, &pe) || pe.Code != "AI004" {
+		t.Fatalf("err = %v, want SQLSTATE AI004", err)
+	}
+	src := authz.NewPostgresSource(p.a.db, 10*time.Second)
+	snap, err := src.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	devs := sub(p.erin, p.devs)
+	if !p.decides(authz.BuildIndex(snap, nil, quiet), devs, "web/web-npm") {
+		t.Fatal("the build does not grant the project policy")
+	}
+	var global []q.AuthzBuildEntriesRow
+	for _, e := range snap.Entries {
+		if e.PolicyID != id {
+			global = append(global, e)
 		}
-		if n := p.number("SELECT count(*) FROM authz_project_policy_entry WHERE policy_id = $1::uuid", id); n != 1 {
-			t.Fatalf("%d rows in authz_project_policy_entry", n)
-		}
-	})
-	t.Run("the trigger AI004 refuses a row of authz_policy_entry for a project policy", func(t *testing.T) {
-		p.mu.Lock()
-		_, err := p.admin.Exec(ctx, "INSERT INTO authz_policy_entry (policy_id, principal_id, actions) VALUES ($1::uuid, $2::uuid, ARRAY['read'])", id, p.devs.ID)
-		p.mu.Unlock()
-		var pe *pgconn.PgError
-		if !errors.As(err, &pe) || pe.Code != "AI004" {
-			t.Fatalf("err = %v, want SQLSTATE AI004", err)
-		}
-	})
-	t.Run("an index built from authz_policy_entry only grants nothing for the project policy", func(t *testing.T) {
-		src := authz.NewPostgresSource(p.a.db, 10*time.Second)
-		snap, err := src.Snapshot(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		devs := sub(p.dave, p.devs)
-		current := authz.BuildIndex(snap, nil, quiet)
-		if !p.decides(current, devs, "web-npm") {
-			t.Fatal("the current build does not grant the project policy")
-		}
-		// What a 0.9.x replica reads: the rows of authz_policy_entry, none of which
-		// belongs to the project policy, and no project.
-		var old []q.AuthzBuildEntriesRow
-		for _, e := range snap.Entries {
-			if e.PolicyID != id {
-				old = append(old, e)
-			}
-		}
-		snap.Entries, snap.Projects, snap.ProjectMembers = old, nil, nil
-		if p.decides(authz.BuildIndex(snap, nil, quiet), devs, "web-npm") {
-			t.Fatal("a build that reads authz_policy_entry only grants the project policy")
-		}
-	})
+	}
+	snap.Entries = global
+	if p.decides(authz.BuildIndex(snap, nil, quiet), devs, "web/web-npm") {
+		t.Fatal("the table of global grants holds the project policy")
+	}
 }
 
 func (p *projectEnv) decides(idx *authz.Index, s authz.Subject, repo string) bool {
 	return p.a.engine.DecideOn(context.Background(), idx, s, read(repo, "x", "")).Outcome == authz.Allow
 }
 
-// A global policy cannot name a project service account, and a role cannot be bound
-// to one; the owner of a package in a repository outside its project is refused
-// (Q-AUTHZ-175).
+// A global policy cannot name a project service account, nor another project's policy, and a role cannot be bound to
+// one; its own project's policy names it as sa:<project>/<name> (Q-AUTHZ-175, Q-AUTHZ-209).
 func TestR_AUTHZ_026_ProjectServiceAccountIsGrantedByItsProjectOnly(t *testing.T) {
 	p := newProjectEnv(t)
 	ctx := context.Background()
-	// The project of a service account is fixed when the row is written (AI003).
-	acct := person{ID: p.principalRow("service_account", "web-bot"), Name: "web-bot", Kind: principal.KindServiceAccount}
+	acct := person{ID: p.principalRow("service_account", "web/bot"), Name: "web/bot", Kind: principal.KindServiceAccount}
 	p.exec("INSERT INTO service_account (principal_id, project_id) VALUES ($1::uuid, $2::uuid)", acct.ID, p.webID)
 	web, shop := "web", "shop"
 	t.Run("a global policy naming it is refused", func(t *testing.T) {
 		_, _, err := p.a.svc.Create(ctx, p.root, authz.PolicyInput{
-			Name: "g", Resources: authz.Resources{Repositories: []string{"npm-internal"}},
-			Entries: []authz.Entry{{Principal: "sa:web-bot", Actions: []string{"read"}}},
+			Name: "g", Resources: authz.Resources{Repositories: []string{"it/npm-internal"}},
+			Entries: []authz.Entry{{Principal: "sa:web/bot", Actions: []string{"read"}}},
 		})
 		problem(t, err, 422, errs.CodePrincipalOutsideProject)
 	})
 	t.Run("another project's policy naming it is refused", func(t *testing.T) {
 		_, _, err := p.a.svc.Create(ctx, p.root, authz.PolicyInput{
-			Name: "shop-g", Project: &shop, Resources: authz.Resources{},
-			Entries: []authz.Entry{{Principal: "sa:web-bot", Actions: []string{"read"}}},
+			Name: "shop/g", Project: &shop, Entries: []authz.Entry{{Principal: "sa:web/bot", Actions: []string{"read"}}},
 		})
 		problem(t, err, 422, errs.CodePrincipalOutsideProject)
 	})
-	t.Run("its own project's policy may name it", func(t *testing.T) {
+	t.Run("its own project's policy may name it, and its token reads that repository and nothing else", func(t *testing.T) {
 		pol, _, err := p.a.svc.Create(ctx, p.root, authz.PolicyInput{
-			Name: "web-bot-deploy", Project: &web, Resources: authz.Resources{Repositories: []string{"web-npm"}},
-			Entries: []authz.Entry{{Principal: "sa:web-bot", Actions: []string{"deploy"}}},
+			Name: "web/bot-read", Project: &web, Resources: authz.Resources{Repositories: []string{"web-npm"}},
+			Entries: []authz.Entry{{Principal: "sa:web/bot", Actions: []string{"read"}}},
 		})
-		if err != nil || pol.Project == nil || *pol.Project != "web" {
+		if err != nil || pol.Project == nil || *pol.Project != "web" || pol.Name != "web/bot-read" {
 			t.Fatalf("%+v %v", pol, err)
+		}
+		bot := sub(acct)
+		waitFor(t, "the policy is built", 3*time.Second, func() bool { return p.may(p.a, bot, "web/web-npm", authz.Read) })
+		if p.may(p.a, bot, "web/web-files", authz.Read) || p.may(p.a, bot, "npm-internal", authz.Read) {
+			t.Error("the account reads beyond its policy")
 		}
 	})
 	t.Run("a system role is not bound to it", func(t *testing.T) {
-		_, _, err := p.a.svc.BindRole(ctx, p.root, authz.RoleAuditor, "sa:web-bot")
+		_, _, err := p.a.svc.BindRole(ctx, p.root, authz.RoleAuditor, "sa:web/bot")
 		problem(t, err, 422, errs.CodeRoleNotAllowed)
 	})
 }
 
-// The list of a policy carries the warning of Q-AUTHZ-179 when a key selector's
-// repository left the project, and the policy stays.
-func TestR_AUTHZ_026_PolicyOfARepositoryThatLeftTheProjectWarns(t *testing.T) {
+// An Owner's policy write is judged under the policy lock, on the project it writes for (Q-AUTHZ-199).
+func TestR_AUTHZ_026_AnOwnersWriteChecksTheProjectUnderTheLock(t *testing.T) {
 	p := newProjectEnv(t)
 	ctx := context.Background()
-	web := "web"
+	shop := "shop"
 	if _, _, err := p.a.svc.Create(ctx, p.root, authz.PolicyInput{
-		Name: "web-files-read", Project: &web, Resources: authz.Resources{Repositories: []string{"web-files"}},
+		Name: "ops-readers", Resources: authz.Resources{Repositories: []string{"it/npm-internal"}},
+		Entries: []authz.Entry{{Principal: "user:bob", Actions: []string{"read"}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := p.a.svc.Create(ctx, p.root, authz.PolicyInput{Name: "shop/readers", Project: &shop}); err != nil {
+		t.Fatal(err)
+	}
+	owner := authz.AsProjectOwner("web")
+	webKey := "web"
+	t.Run("a global policy is 403", func(t *testing.T) {
+		_, _, err := p.a.svc.Update(ctx, sub(p.dave), "ops-readers", errs.AnyRevision, authz.PolicyInput{Description: "x", Resources: authz.Resources{Repositories: []string{"it/npm-internal"}}}, owner)
+		problem(t, err, 403, errs.CodeForbidden)
+		_, err = p.a.svc.Delete(ctx, sub(p.dave), "ops-readers", errs.AnyRevision, owner)
+		problem(t, err, 403, errs.CodeForbidden)
+	})
+	t.Run("another project's policy is 404", func(t *testing.T) {
+		_, _, err := p.a.svc.Update(ctx, sub(p.dave), "shop/readers", errs.AnyRevision, authz.PolicyInput{Project: &shop}, owner)
+		problem(t, err, 404, errs.CodeNotFound)
+		_, err = p.a.svc.Delete(ctx, sub(p.dave), "shop/readers", errs.AnyRevision, owner)
+		problem(t, err, 404, errs.CodeNotFound)
+	})
+	t.Run("ExpectProject refuses a policy of another project or a global one", func(t *testing.T) {
+		_, err := p.a.svc.Delete(ctx, p.root, "ops-readers", errs.AnyRevision, authz.ExpectProject(&webKey))
+		problem(t, err, 404, errs.CodeNotFound)
+		_, err = p.a.svc.Delete(ctx, p.root, "shop/readers", errs.AnyRevision, authz.ExpectProject(nil))
+		problem(t, err, 404, errs.CodeNotFound)
+		if n := p.number("SELECT count(*) FROM authz_policy WHERE name IN ('ops-readers', 'shop/readers')"); n != 2 {
+			t.Fatalf("%d policies left", n)
+		}
+	})
+	t.Run("the Owner's own project's policy is written and deleted", func(t *testing.T) {
+		if _, _, err := p.a.svc.Create(ctx, sub(p.dave), authz.PolicyInput{Name: "web/readers", Project: &webKey, Resources: authz.Resources{Repositories: []string{"web-npm"}}}, owner); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := p.a.svc.Update(ctx, sub(p.dave), "web/readers", errs.AnyRevision, authz.PolicyInput{Project: &webKey, Description: "d", Resources: authz.Resources{Repositories: []string{"web-npm"}}}, owner); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.a.svc.Delete(ctx, sub(p.dave), "web/readers", errs.AnyRevision, owner); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+// ghostProjects finds a project that a concurrent delete has just removed: the lookup answers an ID the table no
+// longer holds.
+type ghostProjects struct{ authz.ProjectLookup }
+
+func (ghostProjects) ProjectID(context.Context, string) (string, error) {
+	return "00000000-0000-4000-8000-00000000dead", nil
+}
+
+// A create that races a project delete is the field error unknown_project, not a foreign key violation (Q-AUTHZ-199).
+func TestR_AUTHZ_026_ACreateRacingAProjectDeleteIsUnknownProject(t *testing.T) {
+	p := newProjectEnv(t)
+	ghost := "gone"
+	svc := authz.NewService(authz.ServiceOptions{
+		DB: p.a.db, Changes: p.a.changes, Principals: sqlPrincipals{p.env}, Repositories: sqlRepositories{p.env},
+		Formats: integrationFormats(), Projects: ghostProjects{},
+	})
+	_, _, err := svc.Create(context.Background(), p.root, authz.PolicyInput{Name: "gone/readers", Project: &ghost})
+	problem(t, err, 422, errs.CodeUnknownProject)
+}
+
+// An auto-join group is refused in a project policy, and a group that becomes one afterwards grants nothing through a
+// project policy or a membership, against the tables (Q-AUTHZ-200, R-AUTHZ-026).
+func TestR_AUTHZ_026_AnAutoJoinGroupGrantsNothingInAProject(t *testing.T) {
+	p := newProjectEnv(t)
+	ctx := context.Background()
+	p.group("everyone", true)
+	web := "web"
+	_, _, err := p.a.svc.Create(ctx, p.root, authz.PolicyInput{
+		Name: "web/everyone", Project: &web, Resources: authz.Resources{Repositories: []string{"web-npm"}},
+		Entries: []authz.Entry{{Principal: "group:everyone", Actions: []string{"read"}}},
+	})
+	problem(t, err, 422, errs.CodePrincipalOutsideProject)
+	_, _, _, err = p.projects.AddMember(ctx, p.root, "web", "group:everyone", project.RoleReader, true)
+	problem(t, err, 422, errs.CodePrincipalNotAllowed)
+	if _, _, err := p.a.svc.Create(ctx, p.root, authz.PolicyInput{
+		Name: "web/devs", Project: &web, Resources: authz.Resources{Repositories: []string{"web-npm"}},
 		Entries: []authz.Entry{{Principal: "group:developers", Actions: []string{"read"}}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	devs := sub(p.dave, p.devs)
-	waitFor(t, "replica b granting", 3*time.Second, func() bool {
-		return p.b.engine.Decide(ctx, devs, read("web-files", "x", "")).Outcome == authz.Allow
+	if _, _, _, err := p.projects.AddMember(ctx, p.root, "shop", "group:developers", project.RoleReader, true); err != nil {
+		t.Fatal(err)
+	}
+	member := sub(p.erin, p.devs)
+	waitFor(t, "the policy and the membership are built", 3*time.Second, func() bool {
+		return p.may(p.a, member, "web/web-npm", authz.Read) && p.may(p.a, member, "shop/shop-npm", authz.Read)
 	})
-	p.exec("UPDATE repositories SET project_id = NULL WHERE key = 'web-files'")
-	if err := p.a.db.InTx(ctx, func(tx meta.Tx) error {
-		return p.a.changes.Notify(tx, authz.AreaRepoConfig, 1, map[string]string{"type": "repository", "id": "web-files"})
-	}); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, "replica b refusing the grant", 3*time.Second, func() bool {
-		return p.b.engine.Decide(ctx, devs, read("web-files", "x", "")).Outcome != authz.Allow
-	})
-	got, err := p.a.svc.Get(ctx, "web-files-read")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got.Warnings) != 1 || got.Warnings[0] != authz.WarnSelectorOutsideProject {
-		t.Fatalf("warnings %v", got.Warnings)
-	}
-	if got.Project == nil || *got.Project != "web" || len(got.Resources.Repositories) != 1 {
-		t.Fatalf("the policy changed: %+v", got)
-	}
-	// Back in the project, the grant returns.
-	p.exec("UPDATE repositories SET project_id = $1::uuid WHERE key = 'web-files'", p.webID)
-	if err := p.a.db.InTx(ctx, func(tx meta.Tx) error {
-		return p.a.changes.Notify(tx, authz.AreaRepoConfig, 1, map[string]string{"type": "repository", "id": "web-files"})
-	}); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, "replica b granting again", 3*time.Second, func() bool {
-		return p.b.engine.Decide(ctx, devs, read("web-files", "x", "")).Outcome == authz.Allow
+	p.exec("UPDATE user_group SET auto_join = true WHERE principal_id = $1::uuid", p.devs.ID)
+	p.changed()
+	waitFor(t, "the new auto-join group is skipped", 3*time.Second, func() bool {
+		return !p.may(p.a, member, "web/web-npm", authz.Read) && !p.may(p.a, member, "shop/shop-npm", authz.Read)
 	})
 }

@@ -47,12 +47,17 @@ SELECT e.policy_id::text, e.principal_id::text, p.kind, p.name, e.actions, COALE
 SELECT id::text AS id, key FROM project ORDER BY key;
 
 -- name: AuthzBuildProjectMembers :many
--- The members of every project with their role, users and groups (Q-AUTHZ-183,
--- Q-AUTHZ-207). The snapshot expands a group through its memberships.
+-- The members of every project with their role, users and groups (Q-AUTHZ-207).
+-- A request's subject carries its groups, so a group's role reaches its members
+-- without expanding it here. principal_auto_join is true for an auto-join group,
+-- which the build skips: every user is in it, so it would give every user the
+-- role (R-AUTHZ-026); the member write refuses one, this guards a group that
+-- became auto-join later.
 SELECT m.project_id::text AS project_id, m.principal_id::text AS principal_id, p.kind AS principal_kind,
-       p.name AS principal_name, m.role
+       p.name AS principal_name, m.role, COALESCE(ug.auto_join, false)::boolean AS principal_auto_join
   FROM project_member m
   JOIN principal p ON p.id = m.principal_id
+  LEFT JOIN user_group ug ON ug.principal_id = m.principal_id
  ORDER BY m.project_id, m.principal_id;
 
 -- name: AuthzProjectByKey :many

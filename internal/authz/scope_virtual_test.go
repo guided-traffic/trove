@@ -18,7 +18,7 @@ func TestR_AUTHZ_013_AScopeOnAVirtualRepositoryCoversItsMembersWhenReadThroughIt
 	tok := func(sub Subject, g ...scope.Grant) Subject {
 		return tokenScop(bearer(sub), scope.Scope{Repositories: g})
 	}
-	viaAll := scope.Grant{Repositories: []string{"npm-all"}, Actions: []string{"read"}}
+	viaAll := scope.Grant{Repositories: []string{"it/npm-all"}, Actions: []string{"read"}}
 	cases := []struct {
 		name    string
 		sub     Subject
@@ -31,12 +31,12 @@ func TestR_AUTHZ_013_AScopeOnAVirtualRepositoryCoversItsMembersWhenReadThroughIt
 		{"the same member addressed directly is not covered", tok(bobSub, viaAll), "npm-internal", "npm-internal", false},
 		{"a member read through no virtual repository is not covered", tok(bobSub, viaAll), "npm-internal", "", false},
 		{"a repository that is no member is not covered", tok(bobSub, viaAll), "npm-odd", "npm-all", false},
-		{"a scope on another repository covers nothing here", tok(bobSub, scope.Grant{Repositories: []string{"npm-other"}, Actions: []string{"read"}}), "npm-internal", "npm-all", false},
-		{"a scope on the virtual repository with another action covers nothing", tok(bobSub, scope.Grant{Repositories: []string{"npm-all"}, Actions: []string{"deploy"}}), "npm-internal", "npm-all", false},
+		{"a scope on another repository covers nothing here", tok(bobSub, scope.Grant{Repositories: []string{"it/npm-other"}, Actions: []string{"read"}}), "npm-internal", "npm-all", false},
+		{"a scope on the virtual repository with another action covers nothing", tok(bobSub, scope.Grant{Repositories: []string{"it/npm-all"}, Actions: []string{"deploy"}}), "npm-internal", "npm-all", false},
 		{"the class selector of virtual repositories does not lift (Q-AUTHZ-164)", tok(bobSub, scope.Grant{Repositories: []string{"@any-virtual"}, Actions: []string{"read"}}), "npm-internal", "npm-all", false},
-		{"a key glob does not lift either", tok(bobSub, scope.Grant{Repositories: []string{"npm-a*"}, Actions: []string{"read"}}), "npm-internal", "npm-all", false},
-		{"an element that lists the key among others lifts", tok(bobSub, scope.Grant{Repositories: []string{"npm-x", "npm-all"}, Actions: []string{"read"}}), "npm-internal", "npm-all", true},
-		{"the packages of the scope element still narrow", tok(bobSub, scope.Grant{Repositories: []string{"npm-all"}, Packages: scope.Patterns{Include: []string{"@web/*"}}, Actions: []string{"read"}}), "npm-internal", "npm-all", false},
+		{"a key glob does not lift either", tok(bobSub, scope.Grant{Repositories: []string{"*/npm-a*"}, Actions: []string{"read"}}), "npm-internal", "npm-all", false},
+		{"an element that lists the key among others lifts", tok(bobSub, scope.Grant{Repositories: []string{"it/npm-x", "it/npm-all"}, Actions: []string{"read"}}), "npm-internal", "npm-all", true},
+		{"the packages of the scope element still narrow", tok(bobSub, scope.Grant{Repositories: []string{"it/npm-all"}, Packages: scope.Patterns{Include: []string{"@web/*"}}, Actions: []string{"read"}}), "npm-internal", "npm-all", false},
 		{"a scope never grants what the subject lacks", tok(carolSub, viaAll), "npm-internal", "npm-all", false},
 	}
 	for _, tc := range cases {
@@ -58,7 +58,7 @@ func TestR_AUTHZ_013_ThePopulateCheckOfARemoteMemberFollowsTheAddressedVirtualRe
 	if err != nil {
 		t.Fatal(err)
 	}
-	sub := tokenScop(bearer(bobSub), scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-all"}, Actions: []string{"read"}}}})
+	sub := tokenScop(bearer(bobSub), scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-all"}, Actions: []string{"read"}}}})
 	through := read("npmjs", "left-pad", "")
 	through.Addressed = qr("npm-all")
 	if d := e.MayPopulateOn(t.Context(), idx, sub, through); !d.Allowed() {

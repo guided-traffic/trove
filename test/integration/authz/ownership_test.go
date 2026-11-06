@@ -71,27 +71,27 @@ func newOwnWorld(t *testing.T) *ownWorld {
 	}
 	pkgs := authz.PatternLists{Include: []string{"@web/*", "@acme/*"}}
 	create(authz.PolicyInput{
-		Name: "team-web-publish", Resources: authz.Resources{Repositories: []string{"npm-internal", "npm-loose"}, Packages: pkgs},
+		Name: "team-web-publish", Resources: authz.Resources{Repositories: []string{"it/npm-internal", "it/npm-loose"}, Packages: pkgs},
 		Entries: []authz.Entry{{Principal: "group:team-web", Actions: []string{"read", "deploy"}}},
 	})
 	create(authz.PolicyInput{
-		Name: "team-mobile-publish", Resources: authz.Resources{Repositories: []string{"npm-internal", "npm-loose"}, Packages: pkgs},
+		Name: "team-mobile-publish", Resources: authz.Resources{Repositories: []string{"it/npm-internal", "it/npm-loose"}, Packages: pkgs},
 		Entries: []authz.Entry{{Principal: "group:team-mobile", Actions: []string{"read", "deploy"}}},
 	})
 	create(authz.PolicyInput{
-		Name: "lead", Resources: authz.Resources{Repositories: []string{"npm-internal"}},
+		Name: "lead", Resources: authz.Resources{Repositories: []string{"it/npm-internal"}},
 		Entries: []authz.Entry{{Principal: "user:lead", Actions: []string{"read", "deploy", "manage"}}},
 	})
 	create(authz.PolicyInput{
-		Name: "gate", Resources: authz.Resources{Repositories: []string{"npm-all"}},
+		Name: "gate", Resources: authz.Resources{Repositories: []string{"it/npm-all"}},
 		Entries: []authz.Entry{{Principal: "group:team-web", Actions: []string{"read"}}, {Principal: "group:team-mobile", Actions: []string{"read"}}},
 	})
 	create(authz.PolicyInput{
-		Name: "bot", Resources: authz.Resources{Repositories: []string{"npm-internal"}, Packages: authz.PatternLists{Include: []string{"@acme/*"}}},
+		Name: "bot", Resources: authz.Resources{Repositories: []string{"it/npm-internal"}, Packages: authz.PatternLists{Include: []string{"@acme/*"}}},
 		Entries: []authz.Entry{{Principal: "sa:ci-bot", Actions: []string{"read", "deploy"}}},
 	})
 	create(authz.PolicyInput{
-		Name: "carol-frozen", Resources: authz.Resources{Repositories: []string{"npm-frozen"}},
+		Name: "carol-frozen", Resources: authz.Resources{Repositories: []string{"it/npm-frozen"}},
 		Entries: []authz.Entry{{Principal: "user:carol", Actions: []string{"read", "deploy"}}},
 	})
 	_, ep, err := w.a.svc.BindRole(ctx, w.root, authz.RoleAdmin, "user:root")
@@ -343,14 +343,14 @@ func TestR_AUTHZ_018_GroupOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := w.owners(t, "npm-internal", "@web/new-lib")
-	if got.State != authz.StateClaimed || got.Domain != "npm-internal" || got.Format != "npm" || len(got.Owners) != 1 {
+	if got.State != authz.StateClaimed || got.Domain != "it/npm-internal" || got.Format != "npm" || len(got.Owners) != 1 {
 		t.Fatalf("owners %+v", got)
 	}
 	if o := got.Owners[0]; o.Owner != "group:team-web" || o.Display != "team-web" || o.Reason != authz.OwnerFirstPublish || o.AddedBy != "" || o.AddedAt.IsZero() {
 		t.Fatalf("owner %+v", o)
 	}
 	claimed := w.a.rec.ofType(authz.EventOwnershipClaimed)
-	if len(claimed) != 1 || claimed[0].Repository != "npm-internal" || claimed[0].Path != "@web/new-lib" {
+	if len(claimed) != 1 || claimed[0].Repository != "it/npm-internal" || claimed[0].Path != "@web/new-lib" {
 		t.Fatalf("claim events %+v", claimed)
 	}
 	claim := w.e.text("SELECT claim_event::text FROM package_ownership WHERE package_name = '@web/new-lib'")
@@ -819,7 +819,7 @@ func TestR_AUTHZ_008_PopulateCheckOnPostgreSQL(t *testing.T) {
 			warn bool
 		}{{"npmjs", true}, {"npm-frozen", false}} {
 			p, _, err := w.a.svc.Create(ctx, w.root, authz.PolicyInput{
-				Name: fmt.Sprintf("anon-%s-%d", tc.repo, i), Resources: authz.Resources{Repositories: []string{tc.repo}},
+				Name: fmt.Sprintf("anon-%s-%d", tc.repo, i), Resources: authz.Resources{Repositories: []string{"it/" + tc.repo}},
 				Entries: []authz.Entry{{Principal: "anonymous", Actions: []string{"read"}}},
 			})
 			if err != nil {

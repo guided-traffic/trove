@@ -427,7 +427,11 @@ func (s *ExposureService) resolve(ctx context.Context, qs *q.Queries, in Exposur
 		if err != nil {
 			return rr, err
 		}
-		if len(rows) == 0 {
+		if _, ok := repoName(in.Repository); !ok {
+			// A rule names its repository in an instance context: a bare key is refused, never
+			// read as a name that matches nothing (R-AUTHZ-004, Q-AUTHZ-216).
+			ps = append(ps, ProblemField{Pointer: prefix + "/repository", Code: SelectorProblemCode, Detail: fmt.Sprintf("%q is no repository name <project>/<key>", in.Repository)})
+		} else if len(rows) == 0 {
 			ps = append(ps, ProblemField{Pointer: prefix + "/repository", Code: errs.CodeUnknownRepository, Detail: fmt.Sprintf("no repository %q exists", in.Repository)})
 		} else {
 			rr.repoID, rr.format = rows[0].ID, rows[0].Format
@@ -1019,9 +1023,15 @@ func (s *ExposureService) withDraft(ctx context.Context, qs *q.Queries, stored [
 // repositoryByName resolves the repository of a rule: a rule names it by <project>/<key> (an instance
 // context, Q-AUTHZ-206); a text that is no name resolves to none.
 func repositoryByName(ctx context.Context, qs *q.Queries, text string) ([]q.EndpointsRepositoryByNameRow, error) {
-	name, err := qname.ParseRepo(text)
-	if err != nil {
+	name, ok := repoName(text)
+	if !ok {
 		return nil, nil
 	}
 	return qs.EndpointsRepositoryByName(ctx, q.EndpointsRepositoryByNameParams{Project: name.Project, Key: name.Key})
+}
+
+// repoName reads the name of a rule's repository, "<project>/<key>"; ok is false for a text that is no name.
+func repoName(text string) (qname.Repo, bool) {
+	name, err := qname.ParseRepo(text)
+	return name, err == nil
 }

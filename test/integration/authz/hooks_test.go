@@ -42,7 +42,7 @@ func TestR_AUTHZ_028_IdentityAndRepositoryWritesAdvanceTheEpoch(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, _, err := a.svc.Create(ctx, actor, authz.PolicyInput{
-		Name: "p", Resources: authz.Resources{Repositories: []string{"virt-a"}},
+		Name: "p", Resources: authz.Resources{Repositories: []string{"it/virt-a"}},
 		Entries: []authz.Entry{
 			{Principal: "user:alice", Actions: []string{"read"}},
 			{Principal: "group:team-web", Actions: []string{"read"}},
@@ -117,7 +117,7 @@ func TestR_AUTHZ_028_OwnWriteIsInForceWithoutWaitingForThePoll(t *testing.T) {
 	for trial := 0; trial < 3; trial++ {
 		name := fmt.Sprintf("readers-%d", trial)
 		if _, _, err := a.svc.Create(ctx, admin, authz.PolicyInput{
-			Name: name, Resources: authz.Resources{Repositories: []string{"npm-internal"}},
+			Name: name, Resources: authz.Resources{Repositories: []string{"it/npm-internal"}},
 			Entries: []authz.Entry{{Principal: "group:developers", Actions: []string{"read"}}},
 		}); err != nil {
 			t.Fatal(err)

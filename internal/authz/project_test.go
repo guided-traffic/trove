@@ -16,8 +16,8 @@ import (
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
-// The tests of projects in the engine (R-AUTHZ-026, R-AUTHZ-028, Q-AUTHZ-179,
-// Q-AUTHZ-183).
+// The tests of projects in the engine (R-AUTHZ-026, R-AUTHZ-028, Q-AUTHZ-207 to
+// Q-AUTHZ-209, Q-AUTHZ-215, Q-AUTHZ-216).
 
 const (
 	pWeb  = "project-web"
@@ -52,9 +52,15 @@ func (f fakeProjects) AccountProject(_ context.Context, id string) (string, erro
 	return f.accounts[id], nil
 }
 
-// project adds a project and its Owners (users and groups) to the snapshot.
+// project adds a project (once) and its Owners (users and groups) to the snapshot.
 func (f *fixture) project(id, key string, owners ...string) *fixture {
-	f.s.Projects = append(f.s.Projects, q.AuthzBuildProjectsRow{ID: id, Key: key})
+	known := false
+	for _, p := range f.s.Projects {
+		known = known || p.ID == id
+	}
+	if !known {
+		f.s.Projects = append(f.s.Projects, q.AuthzBuildProjectsRow{ID: id, Key: key})
+	}
 	for _, o := range owners {
 		f.member(id, o, "owner")
 	}
@@ -89,7 +95,7 @@ func (f *fixture) assign(repo, project string) *fixture {
 }
 
 // projectFixture is the acceptance setting: project web with web-npm and web-files,
-// project shop with shop-npm, and npm-internal in none.
+// project shop with shop-npm, and npm-internal in the project it (testProject).
 func projectFixture() *fixture {
 	return newFixture().
 		repo("web-npm", "local", "npm", "").
@@ -212,7 +218,7 @@ func TestR_AUTHZ_026_ProjectPolicyIsScopedToItsProject(t *testing.T) {
 			t.Fatal("class selector escaped the project")
 		}
 	})
-	t.Run("a key selector outside the project covers nothing (Q-AUTHZ-179)", func(t *testing.T) {
+	t.Run("a stored key selector of another project's repository covers nothing (fail closed)", func(t *testing.T) {
 		f := projectFixture().policy(proj("web-out", []string{"npm-internal", "shop-npm", "web-npm"}, map[string][]string{idCarol: {"read"}}))
 		e := newTestEngine(t, f, nil)
 		if allows(e, carolSub, "npm-internal", Read) || allows(e, carolSub, "shop-npm", Read) {
@@ -222,16 +228,16 @@ func TestR_AUTHZ_026_ProjectPolicyIsScopedToItsProject(t *testing.T) {
 			t.Fatal("the key selector inside the project does not grant")
 		}
 	})
-	t.Run("a repository that leaves the project leaves the policy inert, and returns with it", func(t *testing.T) {
+	t.Run("R-REPO-060 a repository in another project is no longer covered by the source project's policies", func(t *testing.T) {
 		f := projectFixture().policy(proj("web-npm-read", []string{"web-npm"}, map[string][]string{idCarol: {"read"}}))
 		e := newTestEngine(t, f, nil)
 		if !allows(e, carolSub, "web-npm", Read) {
 			t.Fatal("not granted in the project")
 		}
-		moved := projectFixture().policy(proj("web-npm-read", []string{"web-npm"}, map[string][]string{idCarol: {"read"}})).assign("web-npm", "")
+		moved := projectFixture().policy(proj("web-npm-read", []string{"web-npm"}, map[string][]string{idCarol: {"read"}})).assign("web-npm", pShop)
 		e2 := newTestEngine(t, moved, nil)
-		if allows(e2, carolSub, "web-npm", Read) {
-			t.Fatal("granted after the repository left the project")
+		if e2.Decide(t.Context(), carolSub, Coordinate{Repository: qname.Repo{Project: "shop", Key: "web-npm"}, Actions: []Action{Read}}).Outcome == Allow {
+			t.Fatal("granted after the repository moved to another project")
 		}
 	})
 	t.Run("a policy of a project the snapshot does not hold covers nothing", func(t *testing.T) {
@@ -300,8 +306,7 @@ func projectService() *Service {
 		{Name: qr("web-npm"), Class: repository.Local, Format: "npm", ProjectID: pWeb},
 		{Name: qr("web-files"), Class: repository.Local, Format: "generic", ProjectID: pWeb},
 		{Name: qr("shop-npm"), Class: repository.Local, Format: "npm", ProjectID: pShop},
-		{Name: qr("npm-internal"), Class: repository.Local, Format: "npm"},
-		{Name: qr("web-moved"), Class: repository.Local, Format: "npm"},
+		{Name: qr("npm-internal"), Class: repository.Local, Format: "npm", ProjectID: "project-it"},
 	} {
 		r.ID = strconv.Itoa(i + 1)
 		repos.list = append(repos.list, r)
@@ -309,20 +314,26 @@ func projectService() *Service {
 	return NewService(ServiceOptions{
 		Principals: p, Repositories: repos, Formats: testRegistry(),
 		Projects: fakeProjects{
-			ids:      map[string]string{"web": pWeb, "shop": pShop},
+			ids:      map[string]string{"web": pWeb, "shop": pShop, "it": "project-it"},
 			accounts: map[string]string{"id-web-bot": "web", "id-shop-bot": "shop"},
 			autoJoin: map[string]bool{"id-everyone": true},
 		},
 	})
 }
 
+// projectPolicy is a policy of the project: its name within the project is stored as <project>/<name>
+// (StoredPolicyName); global() turns it into a global policy named name.
 func projectPolicy(name, project string, selector string, entries ...Entry) PolicyInput {
-	return PolicyInput{Name: name, Project: &project, Resources: Resources{Repositories: []string{selector}}, Entries: entries}
+	return PolicyInput{Name: project + "/" + name, Project: &project, Resources: Resources{Repositories: []string{selector}}, Entries: entries}
 }
 
 func TestR_AUTHZ_026_ProjectPolicyValidation(t *testing.T) {
 	s := projectService()
-	global := func(in PolicyInput) PolicyInput { in.Project = nil; return in }
+	global := func(in PolicyInput) PolicyInput {
+		_, in.Name = splitPolicyName(in.Name)
+		in.Project = nil
+		return in
+	}
 	for _, tc := range []struct {
 		name string
 		in   PolicyInput
@@ -332,9 +343,12 @@ func TestR_AUTHZ_026_ProjectPolicyValidation(t *testing.T) {
 		{"a project policy on a project repository", projectPolicy("web-read", "web", "web-npm", Entry{"group:web-leads", []string{"write"}}), "", ""},
 		{"a pattern selector is valid", projectPolicy("web-all", "web", "*", Entry{"user:alice", []string{"manage"}}), "", ""},
 		{"a project that does not exist", projectPolicy("nope-read", "nope", "web-npm"), errs.CodeUnknownProject, "/project"},
-		{"a key selector of a repository outside the project", projectPolicy("web-out", "web", "npm-internal"), errs.CodeRepositoryOutsideProject, "/resources/repositories/0"},
-		{"a key selector of another project's repository", projectPolicy("web-shop", "web", "shop-npm"), errs.CodeRepositoryOutsideProject, "/resources/repositories/0"},
-		{"an unknown key answers like one outside the project", projectPolicy("web-none", "web", "no-such-repo"), errs.CodeRepositoryOutsideProject, "/resources/repositories/0"},
+		{"R-AUTHZ-004 a key of no repository of the project", projectPolicy("web-out", "web", "npm-internal"), errs.CodeUnknownRepository, "/resources/repositories/0"},
+		{"R-AUTHZ-004 a key another project has", projectPolicy("web-shop", "web", "shop-npm"), errs.CodeUnknownRepository, "/resources/repositories/0"},
+		{"R-AUTHZ-004 a key that exists nowhere", projectPolicy("web-none", "web", "no-such-repo"), errs.CodeUnknownRepository, "/resources/repositories/0"},
+		{"R-AUTHZ-004 Q-AUTHZ-216 a selector with a slash names another project and is refused", projectPolicy("web-q", "web", "shop/shop-npm"), errs.CodeInvalidPattern, "/resources/repositories/0"},
+		{"R-AUTHZ-004 Q-AUTHZ-216 its own project qualified is refused too", projectPolicy("web-q", "web", "web/web-npm"), errs.CodeInvalidPattern, "/resources/repositories/0"},
+		{"R-AUTHZ-004 a class of the project", projectPolicy("web-c", "web", "@any-local:npm"), "", ""},
 		{"anonymous is refused", projectPolicy("web-anon", "web", "web-npm", Entry{"anonymous", []string{"read"}}), errs.CodePrincipalOutsideProject, "/entries/0/principal"},
 		{"authenticated is refused", projectPolicy("web-auth", "web", "web-npm", Entry{"authenticated", []string{"read"}}), errs.CodePrincipalOutsideProject, "/entries/0/principal"},
 		{"a CI mapping never holds manage", projectPolicy("web-ci", "web", "web-npm", Entry{"ci:gitlab-internal/acme-publish", []string{"manage"}}), errs.CodeActionNotAllowed, "/entries/0/actions"},
@@ -342,8 +356,11 @@ func TestR_AUTHZ_026_ProjectPolicyValidation(t *testing.T) {
 		{"a service account of the project", projectPolicy("web-bot", "web", "web-npm", Entry{"sa:web-bot", []string{"deploy"}}), "", ""},
 		{"a global service account", projectPolicy("web-ci-bot", "web", "web-npm", Entry{"sa:ci-bot", []string{"deploy"}}), "", ""},
 		{"a service account of another project", projectPolicy("web-shopbot", "web", "web-npm", Entry{"sa:shop-bot", []string{"deploy"}}), errs.CodePrincipalOutsideProject, "/entries/0/principal"},
-		{"a global policy naming a project service account", global(projectPolicy("p", "web", "npm-internal", Entry{"sa:web-bot", []string{"read"}})), errs.CodePrincipalOutsideProject, "/entries/0/principal"},
-		{"a global policy may name a global service account", global(projectPolicy("p", "web", "npm-internal", Entry{"sa:ci-bot", []string{"read"}})), "", ""},
+		{"a global policy naming a project service account", global(projectPolicy("p", "web", "it/npm-internal", Entry{"sa:web-bot", []string{"read"}})), errs.CodePrincipalOutsideProject, "/entries/0/principal"},
+		{"a global policy may name a global service account", global(projectPolicy("p", "web", "it/npm-internal", Entry{"sa:ci-bot", []string{"read"}})), "", ""},
+		{"Q-AUTHZ-209 the stored name of a project policy carries its project", PolicyInput{Name: "read", Project: ptr("web"), Resources: Resources{Repositories: []string{"web-npm"}}}, "invalid_name", "/name"},
+		{"Q-AUTHZ-209 and no other project", PolicyInput{Name: "shop/read", Project: ptr("web"), Resources: Resources{Repositories: []string{"web-npm"}}}, "invalid_name", "/name"},
+		{"Q-AUTHZ-209 the name within the project follows the name rule", projectPolicy("Read", "web", "web-npm"), "invalid_name", "/name"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p, _ := firstProblem(t, s, tc.in)
@@ -357,7 +374,7 @@ func TestR_AUTHZ_026_ProjectPolicyValidation(t *testing.T) {
 		if err != nil || len(r.Errors) != 0 {
 			t.Fatal(err, r.Errors)
 		}
-		if got := strings.Join(r.Covers, ","); got != "web-files,web-npm" {
+		if got := strings.Join(r.Covers, ","); got != "web/web-files,web/web-npm" {
 			t.Fatalf("covers %s", got)
 		}
 		if len(r.Warnings) != 0 {
@@ -373,17 +390,19 @@ func TestR_AUTHZ_026_ProjectPolicyValidation(t *testing.T) {
 			t.Fatalf("%v %v", r.Warnings, r.Covers)
 		}
 	})
-	t.Run("a stored policy whose repository left the project keeps the selector and warns (Q-AUTHZ-179)", func(t *testing.T) {
-		in := projectPolicy("web-read", "web", "web-moved")
-		if _, n := firstProblem(t, s, in); n == 0 {
-			t.Fatal("a write must refuse the selector")
+	t.Run("Q-AUTHZ-209 the same name in two projects and once instance-wide are three policies", func(t *testing.T) {
+		web, mobile := "web", "mobile"
+		names := map[string]bool{}
+		for _, project := range []*string{&web, &mobile, nil} {
+			stored := StoredPolicyName(project, "npm-read")
+			names[stored] = true
+			p, name := splitPolicyName(stored)
+			if name != "npm-read" || !sameProject(p, project) {
+				t.Errorf("%s reads back as %v %q", stored, p, name)
+			}
 		}
-		rp, problems, err := s.resolve(t.Context(), in, true)
-		if err != nil || len(problems) != 0 {
-			t.Fatal(err, problems)
-		}
-		if !slices.Equal(rp.warnings, []string{WarnSelectorOutsideProject}) || len(rp.covers) != 0 {
-			t.Fatalf("%v %v", rp.warnings, rp.covers)
+		if len(names) != 3 || !names["web/npm-read"] || !names["npm-read"] {
+			t.Fatalf("%v", names)
 		}
 	})
 }
@@ -413,22 +432,25 @@ func TestR_AUTHZ_026_ListFilterByProject(t *testing.T) {
 	web, shop := "web", "shop"
 	all := []Policy{
 		{PolicyInput: PolicyInput{Name: "global"}},
-		{PolicyInput: PolicyInput{Name: "web-a", Project: &web, Resources: Resources{Repositories: []string{"*"}}}},
-		{PolicyInput: PolicyInput{Name: "shop-a", Project: &shop, Resources: Resources{Repositories: []string{"*"}}}},
+		{PolicyInput: PolicyInput{Name: "web/a", Project: &web, Resources: Resources{Repositories: []string{"*"}}}},
+		{PolicyInput: PolicyInput{Name: "shop/a", Project: &shop, Resources: Resources{Repositories: []string{"*"}}}},
 	}
 	got, err := s.Select(t.Context(), all, ListFilter{Project: "web"})
-	if err != nil || len(got) != 1 || got[0].Name != "web-a" {
+	if err != nil || len(got) != 1 || got[0].Name != "web/a" {
 		t.Fatalf("%v %v", got, err)
 	}
 	if _, err := s.Select(t.Context(), all, ListFilter{Project: "nope"}); err == nil {
 		t.Fatal("an unknown project is 422")
 	}
-	got, err = s.Select(t.Context(), all, ListFilter{Repository: "web-npm"})
+	got, err = s.Select(t.Context(), all, ListFilter{Repository: "web/web-npm"})
 	// The global policy has no selector, so only the web policy covers web-npm.
-	if err != nil || len(got) != 1 || got[0].Name != "web-a" {
+	if err != nil || len(got) != 1 || got[0].Name != "web/a" {
 		t.Fatalf("a repository filter must keep a project policy only for its project's repositories: %v %v", got, err)
 	}
-	got, err = s.Select(t.Context(), all, ListFilter{Repository: "npm-internal"})
+	if _, err := s.Select(t.Context(), all, ListFilter{Repository: "web-npm"}); err == nil {
+		t.Fatal("a repository filter names the project (422 unknown_repository)")
+	}
+	got, err = s.Select(t.Context(), all, ListFilter{Repository: "it/npm-internal"})
 	if err != nil || len(got) != 0 {
 		t.Fatalf("the project policies cover nothing outside their projects: %v %v", got, err)
 	}

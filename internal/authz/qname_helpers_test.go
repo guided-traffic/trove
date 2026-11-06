@@ -8,14 +8,23 @@ func testProject(key string) string {
 	switch key {
 	case "web-npm", "web-files", "npm-web":
 		return "web"
-	case "shop-npm":
+	case "shop-npm", "npm-shop":
 		return "shop"
 	}
 	return "it"
 }
 
-// qr is the name of a repository key of the fixtures.
-func qr(key string) qname.Repo { return qname.Repo{Project: testProject(key), Key: key} }
+// qr is the name of a repository key of the fixtures; "" is the zero name (no repository).
+func qr(key string) qname.Repo {
+	if key == "" {
+		return qname.Repo{}
+	}
+	return qname.Repo{Project: testProject(key), Key: key}
+}
+
+// inst is the instance-context text of a fixture key, "<project>/<key>", as token scopes and global policies
+// name a repository (Q-AUTHZ-216).
+func inst(key string) string { return qr(key).String() }
 
 // qrs is qr for a list.
 func qrs(keys []string) []qname.Repo {

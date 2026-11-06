@@ -69,7 +69,7 @@ func TestQ_AUTHZ_172_AuditorReadsMetadataNeverArtifacts(t *testing.T) {
 		withScope := func(sc scope.Scope) Subject { return tokenScop(direct, sc) }
 		npmOnly := scope.Scope{
 			System:       []string{string(ContentMetadataRead)},
-			Repositories: []scope.Grant{{Repositories: []string{"npm-internal"}, Actions: []string{"read"}}},
+			Repositories: []scope.Grant{{Repositories: []string{"it/npm-internal"}, Actions: []string{"read"}}},
 		}
 		runAuthzCases(t, e, []authzCase{
 			{"Q-AUTHZ-172 the default scope exercises no role", withScope(scope.Scope{Inherit: true}), metadata("npm-internal"), DenyHidden, ReasonNoGrant, Read},

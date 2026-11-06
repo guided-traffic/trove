@@ -30,18 +30,15 @@ type authzChange struct {
 }
 
 // repoChange is the payload of a repo_config change, the shape the repository
-// package writes (internal/repository changePayload): the repository id and the
-// config_version the write left (R-REPO-008).
+// package writes (internal/repository changePayload): the repository id, its
+// qualified name and the config_version the write left (R-REPO-008); a move
+// writes it (move.go).
 type repoChange struct {
 	ID      string `json:"id"`
 	Key     string `json:"key"`
 	Op      string `json:"op"`
 	Version int64  `json:"version"`
 }
-
-// opUpdated is the repo_config op of an assignment: the repository's document
-// changed (its project member), which is what an "updated" says.
-const opUpdated = "updated"
 
 var errNoEpochRow = errors.New("project: the authz epoch row is missing")
 
@@ -228,19 +225,18 @@ func memberOf(project, kind, name, id, role string) (Member, bool) {
 func subjectOf(p Project) audit.Subject { return audit.Subject{Kind: "project", ID: p.ID, Name: p.Key} }
 
 // projectEvent builds the event of a write to the project itself. The journal
-// entry of an update or a delete carries the ID and key (R-AUTHZ-031).
+// entry of a delete carries the ID and key (R-AUTHZ-031); an update changes the
+// display name and the description, which are not access-bearing and are not
+// journaled. Every event names the project (Q-AUTHZ-209).
 func projectEvent(name string, actor authz.Subject, p Project, before, after *state, epoch int64, policies []string) audit.Event {
 	details := map[string]any{"epoch": epoch, "project": p.Key, "projectId": p.ID, "version": p.Version, "before": before, "after": after}
 	if len(policies) > 0 {
 		details["policiesDeleted"] = policies
 	}
 	ev := audit.Event{
-		Type: name, Actor: actorOf(actor), Outcome: audit.Success, Subject: subjectOf(p), Details: mustJSON(details),
+		Type: name, Actor: actorOf(actor), Outcome: audit.Success, Subject: subjectOf(p), Project: p.Key, Details: mustJSON(details),
 	}
-	switch name {
-	case audit.EventProjectUpdated:
-		ev.Journal = mustJSON(map[string]any{"projectId": p.ID, "project": p.Key})
-	case audit.EventProjectDeleted:
+	if name == audit.EventProjectDeleted {
 		ev.Journal = mustJSON(map[string]any{"projectId": p.ID, "project": p.Key})
 	}
 	return ev

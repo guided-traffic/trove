@@ -141,7 +141,7 @@ func decodeCheck(t *testing.T, w *httptest.ResponseRecorder) iface.CheckAnswer {
 func TestR_BAS_011_ACheckRunsTheCallersCredentialThroughTheAuthenticationStage(t *testing.T) {
 	exp := time.Date(2027, 1, 31, 0, 0, 0, 0, time.UTC)
 	cs := newCheckSetup(t, checkedCaller(&exp))
-	cs.shapes.shapes["npm-missing"] = bastionmain.Shape{Read: iface.ReadNone, Status: http.StatusNotFound}
+	cs.shapes.shapes["it/npm-missing"] = bastionmain.Shape{Read: iface.ReadNone, Status: http.StatusNotFound}
 	w := cs.post(iface.PathCheck, `{"credential":"trv_sat_3kQ9","clientAddress":"203.0.113.7","repositories":["it/npm-all","it/npm-partner","it/npm-local","it/npm-missing"]}`)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("four repositories with max_repositories 3: %d %s", w.Code, w.Body)
@@ -220,9 +220,9 @@ func TestR_BAS_011_ASubjectIsInvalidAnonymousRefusedOrThrottled(t *testing.T) {
 
 	t.Run("an anonymous caller is checked like any other and a none names 401", func(t *testing.T) {
 		cs := newCheckSetup(t, func(*http.Request) (httpserver.Principal, error) { return httpserver.AnonymousPrincipal(), nil })
-		cs.shapes.shapes["npm-secret"] = bastionmain.Shape{Read: iface.ReadNone}
+		cs.shapes.shapes["it/npm-secret"] = bastionmain.Shape{Read: iface.ReadNone}
 		ans := decodeCheck(t, cs.post(iface.PathCheck, `{"credential":null,"clientAddress":"203.0.113.7","repositories":["it/npm-all","it/npm-secret"]}`))
-		if ans.Subject.Kind != iface.SubjectAnonymous || ans.Repositories["npm-secret"] != (iface.RepositoryRead{Read: iface.ReadNone, Status: 401}) {
+		if ans.Subject.Kind != iface.SubjectAnonymous || ans.Repositories["it/npm-secret"] != (iface.RepositoryRead{Read: iface.ReadNone, Status: 401}) {
 			t.Errorf("answer = %+v", ans)
 		}
 		if cs.asked.Header.Get("Authorization") != "" {
@@ -264,14 +264,15 @@ func TestR_BAS_011_ACheckBodyIsValidated(t *testing.T) {
 		body   string
 		status int
 	}{
-		"an address that is none":        {`{"credential":null,"clientAddress":"not-an-address","repositories":["it/a"]}`, http.StatusUnprocessableEntity},
+		"an address that is none":        {`{"credential":null,"clientAddress":"not-an-address","repositories":["it/npm-a"]}`, http.StatusUnprocessableEntity},
 		"no repositories":                {`{"credential":null,"clientAddress":"203.0.113.7","repositories":[]}`, http.StatusUnprocessableEntity},
-		"too many repositories":          {`{"credential":null,"clientAddress":"203.0.113.7","repositories":["it/a","it/b","it/c","it/d"]}`, http.StatusUnprocessableEntity},
+		"too many repositories":          {`{"credential":null,"clientAddress":"203.0.113.7","repositories":["it/npm-a","it/npm-b","it/npm-c","it/npm-d"]}`, http.StatusUnprocessableEntity},
+		"a name without a project":       {`{"credential":null,"clientAddress":"203.0.113.7","repositories":["npm-all"]}`, http.StatusBadRequest},
 		"an empty key":                   {`{"credential":null,"clientAddress":"203.0.113.7","repositories":[]}`, http.StatusUnprocessableEntity},
-		"an unknown member":              {`{"credential":null,"clientAddress":"203.0.113.7","repositories":["it/a"],"extra":1}`, http.StatusBadRequest},
-		"trailing data":                  {`{"credential":null,"clientAddress":"203.0.113.7","repositories":["it/a"]} {}`, http.StatusBadRequest},
-		"a credential of the wrong type": {`{"credential":5,"clientAddress":"203.0.113.7","repositories":["it/a"]}`, http.StatusBadRequest},
-		"a credential longer than any":   {`{"credential":"` + strings.Repeat("x", 9000) + `","clientAddress":"203.0.113.7","repositories":["it/a"]}`, http.StatusUnprocessableEntity},
+		"an unknown member":              {`{"credential":null,"clientAddress":"203.0.113.7","repositories":["it/npm-a"],"extra":1}`, http.StatusBadRequest},
+		"trailing data":                  {`{"credential":null,"clientAddress":"203.0.113.7","repositories":["it/npm-a"]} {}`, http.StatusBadRequest},
+		"a credential of the wrong type": {`{"credential":5,"clientAddress":"203.0.113.7","repositories":["it/npm-a"]}`, http.StatusBadRequest},
+		"a credential longer than any":   {`{"credential":"` + strings.Repeat("x", 9000) + `","clientAddress":"203.0.113.7","repositories":["it/npm-a"]}`, http.StatusUnprocessableEntity},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if w := cs.post(iface.PathCheck, c.body); w.Code != c.status {

@@ -70,7 +70,7 @@ func TestR_AUTHZ_031_SettingsChangedIsRecordedByTheRepositoryUpdate(t *testing.T
 				t.Fatalf("%d events", len(evs))
 			}
 			ev := evs[0]
-			if ev.Type != EventSettingsChanged || ev.Repository != "r" || ev.Actor.Name != "sec-alice" || ev.Source.ClientAddr != "10.0.0.1" || ev.Outcome != audit.Success {
+			if ev.Type != EventSettingsChanged || ev.Repository != "it/r" || ev.Actor.Name != "sec-alice" || ev.Source.ClientAddr != "10.0.0.1" || ev.Outcome != audit.Success {
 				t.Fatalf("%+v", ev)
 			}
 			// The journal entry names the repository by ID and carries only the changed settings.

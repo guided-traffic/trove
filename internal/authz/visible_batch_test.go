@@ -22,7 +22,7 @@ func TestR_VULN_019_ReadScopeSharedStateDecidesLikeTheDecisionPoint(t *testing.T
 		"carol":    onEP(carolSub, "default"),
 		"anon":     onEP(anonSub, "default"),
 		"admin":    onEP(adminSub, "customers"),
-		"scoped":   onEP(tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-a"}, Actions: []string{"read"}}}}), "default"),
+		"scoped":   onEP(tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-a"}, Actions: []string{"read"}}}}), "default"),
 		"alice-nt": aliceSub,
 	}
 	var rows []Coordinate
@@ -89,7 +89,7 @@ func TestR_VULN_028_ReadScopeVersionIndependence(t *testing.T) {
 	ciE, _ := ciEngine(t)
 	versions := []string{"0.1.0", "1.0.0", "1.9.0", "2.1.0", "3.0.0-beta", "10.0.0"}
 	readA := func(inc ...string) scope.Scope {
-		return scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-a", "npm-b"}, Packages: scope.Patterns{Include: inc}, Actions: []string{"read"}}}}
+		return scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-a", "it/npm-b"}, Packages: scope.Patterns{Include: inc}, Actions: []string{"read"}}}}
 	}
 	names := func(prefixes ...string) []string {
 		var out []string
@@ -115,7 +115,7 @@ func TestR_VULN_028_ReadScopeVersionIndependence(t *testing.T) {
 		{"a user without a grant reads nothing", e, onEP(carolSub, "default"), []string{"npm-a", "npm-b"}, std, true, false},
 		{"an administrator on an endpoint that exposes everything", e, onEP(adminSub, "default"), []string{"npm-a", "npm-b"}, std, true, false},
 		{"a subject without an endpoint", e, aliceSub, []string{"npm-a", "npm-b"}, std, true, true},
-		{"a token scope with a repository list", e, onEP(tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-a"}, Actions: []string{"read"}}}}), "default"), []string{"npm-a", "npm-b"}, std, true, true},
+		{"a token scope with a repository list", e, onEP(tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-a"}, Actions: []string{"read"}}}}), "default"), []string{"npm-a", "npm-b"}, std, true, true},
 		{"a token scope with package patterns", e, onEP(tokenScop(botSub, readA("@a/*", "plain-*")), "default"), []string{"npm-a", "npm-b"}, std, true, true},
 		{
 			"a CI identity with an inline grant with package patterns and no policy", ciE, ciInlineOnly(),
@@ -124,7 +124,7 @@ func TestR_VULN_028_ReadScopeVersionIndependence(t *testing.T) {
 		},
 		{"the holder of content:metadata-read under a token scope with package patterns", meta, tokenScop(userSub(idAuditorDirect, "auditor"), scope.Scope{
 			System:       []string{string(ContentMetadataRead)},
-			Repositories: []scope.Grant{{Repositories: []string{"npm-internal"}, Packages: scope.Patterns{Include: []string{"left-*"}}, Actions: []string{"read"}}},
+			Repositories: []scope.Grant{{Repositories: []string{"it/npm-internal"}, Packages: scope.Patterns{Include: []string{"left-*"}}, Actions: []string{"read"}}},
 		}), []string{"npm-internal"}, names("left-", "right-"), true, true},
 		{"anonymous on an endpoint that exposes everything", e, onEP(anonSub, "default"), []string{"npm-a", "npm-b"}, std, true, false},
 		{"a service account on an endpoint with exposure rules", e, onEP(botSub, "customers"), []string{"npm-a", "npm-b"}, std, false, true},
@@ -211,7 +211,7 @@ func BenchmarkReadScopeMayRead(b *testing.B) {
 // names its mapping.
 func ciInlineOnly() Subject {
 	sub := ciSubject(frozenOf("101", systemTier("gitlab-internal/solo", nil,
-		inline([]string{"npm-internal"}, []string{"@acme-billing/*"}, "", claims.Read))))
+		inline([]string{"it/npm-internal"}, []string{"@acme-billing/*"}, "", claims.Read))))
 	sub.ID = "solo-mapping"
 	return sub
 }

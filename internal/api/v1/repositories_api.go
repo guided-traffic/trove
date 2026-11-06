@@ -3,6 +3,7 @@ package v1
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"net/url"
@@ -862,19 +863,35 @@ func (s *Server) DeleteRepository(w http.ResponseWriter, r *http.Request, projec
 	}
 }
 
-// MoveRepository implements POST /api/v1/projects/{projectKey}/repositories/{repoKey}/move (Q-REPO-212): the
-// address of the repository changes, its content does not. The project service answers 501 until the move is
-// built.
-func (s *Server) MoveRepository(w http.ResponseWriter, r *http.Request, projectKey, repoKey string, _ gen.MoveRepositoryParams) {
+// MoveRepository implements POST /api/v1/projects/{projectKey}/repositories/{repoKey}/move (R-REPO-060, Q-REPO-217):
+// the address of the repository changes, its content does not. The declaration admits the holder of
+// repositories:write-config and an Owner of the source project; the second must own the target as well
+// (checkMoveTarget). The answer is the document at the new address.
+func (s *Server) MoveRepository(w http.ResponseWriter, r *http.Request, projectKey, repoKey string) {
 	svc, err := s.projects()
+	var rs *repository.Service
+	if err == nil {
+		rs, err = s.repositoryService()
+	}
 	var in gen.MoveRepositoryRequest
 	if err == nil {
 		err = DecodeJSON(w, r, &in, s.bodyLimit())
+	}
+	if err == nil && !qname.ValidProjectKey(in.Project) {
+		err = errs.E(errs.Invalid, errs.CodeValidation, "The target project is not a project key.",
+			errs.WithFields(errs.FieldError{Pointer: "/project", Code: "invalid_key", Detail: "must be a project key"}))
+	}
+	if err == nil {
+		err = s.checkMoveTarget(r, in.Project)
 	}
 	var to qname.Repo
 	var epoch int64
 	if err == nil {
 		to, epoch, err = svc.MoveRepository(r.Context(), caller(r), qname.Repo{Project: projectKey, Key: repoKey}, in.Project)
+	}
+	var st repository.Stored
+	if err == nil {
+		st, err = rs.Get(r.Context(), to)
 	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
@@ -882,5 +899,36 @@ func (s *Server) MoveRepository(w http.ResponseWriter, r *http.Request, projectK
 	}
 	setEpoch(w, epoch)
 	w.Header().Set("Location", repositoryURL(r, to))
-	w.WriteHeader(http.StatusNoContent)
+	w.Header().Set("ETag", repositoryETag(st, ""))
+	writeJSON(w, r, http.StatusOK, toRep(st, true, false))
+}
+
+// checkMoveTarget is the second half of the move's permission: the holder of repositories:write-config moves to
+// any project; an Owner of the source project must own the target as well. A target project the caller is no
+// member of answers like a missing one (404), a member whose role is below Owner 403 (R-REPO-060).
+func (s *Server) checkMoveTarget(r *http.Request, target string) error {
+	ctx := r.Context()
+	held, err := s.holds(ctx, "repositories:write-config")
+	if err != nil || held {
+		return err
+	}
+	refused := errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
+	pa, ok := s.o.Access.(ProjectAccess)
+	if !ok {
+		return refused
+	}
+	owns, err := pa.Owns(ctx, target)
+	if err != nil || owns {
+		return err
+	}
+	members, err := pa.Memberships(ctx)
+	if err != nil {
+		return err
+	}
+	for _, m := range members {
+		if m.Key == target {
+			return refused
+		}
+	}
+	return errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The project %q does not exist.", target))
 }

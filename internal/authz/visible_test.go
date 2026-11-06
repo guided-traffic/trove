@@ -69,7 +69,7 @@ func TestR_API_029_ReadScopeShapes(t *testing.T) {
 		{"no grant reads nothing", onEP(carolSub, "default"), map[string]ReadShape{"npm-a": ReadNone, "npm-b": ReadNone, "npm-v": ReadNone, "ghost": ReadNone}},
 		{"content:bypass reads every package", onEP(adminOnly, "default"), map[string]ReadShape{"npm-a": ReadAll, "npm-b": ReadAll, "npm-v": ReadNone, "ghost": ReadNone}},
 		{"content:bypass is bound by the ceiling of an endpoint with rules", onEP(adminOnly, "customers"), map[string]ReadShape{"npm-a": ReadRows, "npm-b": ReadRows, "npm-v": ReadNone, "ghost": ReadNone}},
-		{"a token scope that lists elements decides row by row", onEP(tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-a"}, Actions: []string{"read"}}}}), "default"), map[string]ReadShape{"npm-a": ReadRows, "npm-b": ReadRows, "npm-v": ReadNone, "ghost": ReadNone}},
+		{"a token scope that lists elements decides row by row", onEP(tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-a"}, Actions: []string{"read"}}}}), "default"), map[string]ReadShape{"npm-a": ReadRows, "npm-b": ReadRows, "npm-v": ReadNone, "ghost": ReadNone}},
 		{"a token scope that inherits does not narrow", onEP(tokenScop(botSub, scope.Scope{Inherit: true}), "default"), map[string]ReadShape{"npm-a": ReadAll, "npm-b": ReadAll, "npm-v": ReadNone, "ghost": ReadNone}},
 		{"an anonymous subject reads nothing while the switch is off", onEP(anonSub, "default"), map[string]ReadShape{"npm-a": ReadNone, "npm-b": ReadNone, "npm-v": ReadNone, "ghost": ReadNone}},
 	}
@@ -94,7 +94,7 @@ func TestR_API_029_ReadScopeAgreesWithTheDecisionPoint(t *testing.T) {
 	keys := []string{"npm-a", "npm-b", "npm-v"}
 	subjects := map[string]Subject{
 		"bot": botSub, "alice": aliceSub, "bob": bobSub, "carol": carolSub, "admin": adminSub,
-		"scoped bot": tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-a"}, Actions: []string{"read"}}}}),
+		"scoped bot": tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-a"}, Actions: []string{"read"}}}}),
 	}
 	pkgs := []string{"@a/x", "@acme/sdk", "@b/y", "plain"}
 	versions := []string{"", "1.0.0", "2.1.0", "3.0.0-beta"}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/ci/claims"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -33,8 +34,8 @@ import (
 //     (Q-CI-26), and a bundle that names some for one is not trusted with them;
 //   - the inline grants of m are matched like the elements of a token scope (one matcher for policies, scopes
 //     and CI grants, R-AUTHZ-014); for a project tier only against the repositories of m.Project, so `@any`
-//     means "every repository of the project" and a repository that leaves the project leaves the grant inert
-//     (Q-AUTHZ-179);
+//     means "every repository of the project"; they name the project's repositories by bare key (R-AUTHZ-004),
+//     and a repository is not moved out of the project while one of them names it (R-REPO-060);
 //   - the cap `read` of m removes every other action of m's policy, group and inline grants and of no other
 //     contribution's (R-CI-012).
 //
@@ -72,8 +73,11 @@ type ciContribution struct {
 	name, pid string
 	// groups are the IDs of the listed groups that a policy entry names, groupNames their names.
 	groups, groupNames []string
-	// project is the trove project ID of a project tier, "" for the system tier.
+	// project is the trove project ID of a project tier, "" for the system tier; in is the context
+	// its inline grants are read in: the project of the tier, whose repositories they name by bare key,
+	// or the instance (R-AUTHZ-004, Q-AUTHZ-216).
 	project string
+	in      qname.Context
 	// readOnly is the cap read (R-CI-012).
 	readOnly bool
 }
@@ -127,7 +131,7 @@ func (x *Index) ciGrantsAt(sub Subject, now time.Time) CIGrantSet {
 		name := strings.TrimPrefix(m.Ref, "ci:")
 		c := ciContribution{m: m, name: name, pid: x.ci[name], readOnly: m.HasCap(claims.CapRead)}
 		if m.Project != nil {
-			c.project = m.Project.ID
+			c.project, c.in = m.Project.ID, projectContext(m.Project.Key)
 		} else {
 			for _, g := range m.Groups {
 				if id := x.groups[g]; id != "" {
@@ -163,7 +167,7 @@ func (e *Engine) ciGrantedBy(g CIGrantSet, idx *Index, a Action, r *repoInfo, re
 		}
 		out = append(out, c.principalGrants(idx, a, r, repoLevel, pkg, path, nil)...)
 		for n, ig := range c.inlineFor(r) {
-			if e.inlineAllows(ig, a, r, repoLevel, pkg, path) {
+			if e.inlineAllows(c.in, ig, a, r, repoLevel, pkg, path) {
 				out = append(out, ciInlineSource(c.name, n))
 			}
 		}
@@ -196,7 +200,7 @@ func (c *ciContribution) principalGrants(idx *Index, a Action, r *repoInfo, repo
 }
 
 // inlineFor returns the inline grants of the contribution that may cover the repository: all of them for the
-// system tier, none for a repository outside the project of a project tier (Q-AUTHZ-179). The index is the
+// system tier, none for a repository outside the project of a project tier (R-AUTHZ-026). The index is the
 // ordinal of the grant in the bundle.
 func (c *ciContribution) inlineFor(r *repoInfo) []claims.InlineGrant {
 	if c.project != "" && r.projectID != c.project {
@@ -209,14 +213,14 @@ func (c *ciContribution) inlineFor(r *repoInfo) []claims.InlineGrant {
 // the repository selectors, the package and path patterns with the name rule of the repository's format. A
 // pattern that does not compile matches nothing. On a virtual repository only read has an effect, as for
 // policy grants.
-func (e *Engine) inlineAllows(g claims.InlineGrant, a Action, r *repoInfo, repoLevel bool, pkg, path string) bool {
+func (e *Engine) inlineAllows(in qname.Context, g claims.InlineGrant, a Action, r *repoInfo, repoLevel bool, pkg, path string) bool {
 	if !slices.Contains(g.Actions, claims.Action(a)) {
 		return false
 	}
 	if r.Class == repository.Virtual && a != Read {
 		return false
 	}
-	if !e.compile.selectorsMatch(g.Repositories, r.repoView) {
+	if !e.compile.selectorsMatch(g.Repositories, in, r.repoView) {
 		return false
 	}
 	var pInc, pExc, fInc, fExc []string
@@ -254,7 +258,7 @@ func (e *Engine) ciReadShape(g CIGrantSet, idx *Index, r *repoInfo) (anyRead, un
 			}
 		}
 		for _, ig := range c.inlineFor(r) {
-			if !slices.Contains(ig.Actions, claims.Read) || !e.compile.selectorsMatch(ig.Repositories, r.repoView) {
+			if !slices.Contains(ig.Actions, claims.Read) || !e.compile.selectorsMatch(ig.Repositories, c.in, r.repoView) {
 				continue
 			}
 			anyRead = true
@@ -297,11 +301,11 @@ func (e *Engine) ciWriteOf(g CIGrantSet, idx *Index, r *repoInfo, c Coordinate) 
 				continue
 			}
 			for _, a := range writes {
-				if a != Read && cb.admits(a) && e.inlineAllows(ig, a, r, repoLevel, c.Package, c.Path) {
+				if a != Read && cb.admits(a) && e.inlineAllows(cb.in, ig, a, r, repoLevel, c.Package, c.Path) {
 					w.binds = true
 				}
 			}
-			if cb.admits(Deploy) && e.inlineAllows(ig, Deploy, r, repoLevel, c.Package, c.Path) {
+			if cb.admits(Deploy) && e.inlineAllows(cb.in, ig, Deploy, r, repoLevel, c.Package, c.Path) {
 				w.bindsDeploy = true
 			}
 		}
@@ -320,7 +324,7 @@ func (e *Engine) ciWriteOf(g CIGrantSet, idx *Index, r *repoInfo, c Coordinate) 
 			}
 		})
 		for _, ig := range cb.inlineFor(r) {
-			if ig.ResolvedOwnership() != claims.OwnershipNone || !e.inlineAllows(ig, Deploy, r, repoLevel, c.Package, c.Path) {
+			if ig.ResolvedOwnership() != claims.OwnershipNone || !e.inlineAllows(cb.in, ig, Deploy, r, repoLevel, c.Package, c.Path) {
 				continue
 			}
 			switch {

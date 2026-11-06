@@ -100,7 +100,10 @@ func (s *service) Get(ctx context.Context, key string) (Project, error) {
 	return p, err
 }
 
-// CreateIn creates a project on the caller's transaction (R-AUTHZ-026).
+// CreateIn creates a project on the caller's transaction (R-AUTHZ-026). The users and groups of
+// in.Owners become its first Owners in the same transaction, each recorded as
+// authz.project.member_added, so that a project an administrator creates for a team is administered
+// by it from the first epoch on (Q-AUTHZ-208).
 func (s *service) CreateIn(ctx context.Context, tx meta.Tx, actor authz.Subject, in Input, epoch *int64) (Project, error) {
 	if err := problems(in, true); err != nil {
 		return Project{}, err
@@ -119,6 +122,10 @@ func (s *service) CreateIn(ctx context.Context, tx meta.Tx, actor authz.Subject,
 	if len(rows) == 0 {
 		return Project{}, errs.E(errs.Conflict, errs.CodeAlreadyExists, fmt.Sprintf("A project with the key %q exists.", in.Key))
 	}
+	owners, err := firstOwners(ctx, qs, id, in.Owners)
+	if err != nil {
+		return Project{}, err
+	}
 	if err := s.notifyAuthz(tx, "project", id); err != nil {
 		return Project{}, err
 	}
@@ -127,8 +134,40 @@ func (s *service) CreateIn(ctx context.Context, tx meta.Tx, actor authz.Subject,
 		return Project{}, err
 	}
 	afterEpoch(tx, epoch, func(ctx context.Context, tx meta.Tx, epoch int64) error {
-		return s.o.Recorder.RecordTx(ctx, tx, projectEvent(audit.EventProjectCreated, actor, out, nil, stateOf(out), epoch, nil))
+		if err := s.o.Recorder.RecordTx(ctx, tx, projectEvent(audit.EventProjectCreated, actor, out, nil, stateOf(out), epoch, nil)); err != nil {
+			return err
+		}
+		for _, pr := range owners {
+			ev := memberEvent(audit.EventProjectMemberAdded, actor, out.Key, id, pr, epoch, authz.ProjectRoleNone, RoleOwner)
+			if err := s.o.Recorder.RecordTx(ctx, tx, ev); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
+	return out, nil
+}
+
+// firstOwners adds the users and groups of a create's owners as members with the role owner. A reference
+// that names no member kind, an auto-join group or a principal that does not exist refuses the create, as
+// it refuses the PUT of a member; a reference given twice is added once.
+func firstOwners(ctx context.Context, qs *q.Queries, projectID string, refs []string) ([]PrincipalRef, error) {
+	var out []PrincipalRef
+	seen := map[string]bool{}
+	for _, ref := range refs {
+		pr, err := memberPrincipal(ctx, qs, ref)
+		if err != nil {
+			return nil, err
+		}
+		if seen[pr.ID] {
+			continue
+		}
+		seen[pr.ID] = true
+		if _, err := qs.ProjectMemberAdd(ctx, q.ProjectMemberAddParams{ProjectID: projectID, PrincipalID: pr.ID, Role: RoleOwner.String()}); err != nil {
+			return nil, err
+		}
+		out = append(out, pr)
+	}
 	return out, nil
 }
 
@@ -141,7 +180,7 @@ func (s *service) Replace(ctx context.Context, actor authz.Subject, key string, 
 	var out Project
 	var epoch int64
 	err := s.inTx(ctx, func(tx meta.Tx, qs *q.Queries) error {
-		if err := qs.ProjectLock(ctx, key); err != nil {
+		if _, err := lockProject(ctx, qs, key); err != nil {
 			return err
 		}
 		before, err := load(ctx, qs, key)
@@ -183,12 +222,13 @@ const maxDeleteRounds = 3
 const maxJournaledPolicies = 1000
 
 // Delete deletes an empty project (Q-AUTHZ-185): a first read refuses a project
-// with a repository (in any lifecycle) or a service account, the policies go one by
-// one through the policy store (each audited and journaled in its own transaction
-// as any policy deletion), then one transaction takes the project's lock, counts
-// again and deletes the project with its administrators. A policy created in the
-// meantime sends the delete round again; the foreign keys of repositories and
-// service accounts are the safety net behind the count.
+// with a repository (in any lifecycle), a service account or a CI mapping of its
+// tier, the policies go one by one through the policy store (each audited and
+// journaled in its own transaction as any policy deletion), then one transaction
+// takes the project's lock, counts again and deletes the project with its member
+// entries. A policy created in the meantime sends the delete round again; the
+// foreign keys of repositories, service accounts and CI mappings are the safety
+// net behind the count.
 func (s *service) Delete(ctx context.Context, actor authz.Subject, key string, expected int64) (int64, error) {
 	var deleted []string
 	for range maxDeleteRounds {
@@ -263,7 +303,7 @@ func checkDeletable(p Project, expected int64) error {
 // of the project exist after all: the caller deletes them and comes back.
 func (s *service) deleteEmpty(ctx context.Context, actor authz.Subject, key string, expected int64, policies []string) (epoch int64, again bool, err error) {
 	err = s.inTx(ctx, func(tx meta.Tx, qs *q.Queries) error {
-		if err := qs.ProjectLock(ctx, key); err != nil {
+		if _, err := lockProject(ctx, qs, key); err != nil {
 			return err
 		}
 		p, err := load(ctx, qs, key)

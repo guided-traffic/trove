@@ -2058,7 +2058,7 @@ API:
 | Method and path | Purpose | Status | Required |
 |---|---|---|---|
 | `GET /api/v1/projects` | List with the caller's role and counts | 200 | `projects:read` (all) or a member (its own) |
-| `POST /api/v1/projects` | Create | 201; 409 `already_exists`; 422 | `projects:write` |
+| `POST /api/v1/projects` | Create; `owners` names the users and groups that become its first Owners in the same transaction ([Q-AUTHZ-229](#q-authz-229--a-project-create-names-its-first-owners)) | 201; 409 `already_exists`; 404 for an owner that does not exist; 422 (`principal_not_allowed` for an owner that is no user or group) | `projects:write` |
 | `GET /api/v1/projects/{projectKey}` | Read; `If-None-Match` is ignored, the body is never answered with 304 ([Q-AUTHZ-202](#q-authz-202--a-read-of-a-project-is-never-answered-with-304)) | 200 with `ETag: "<version>"`; 404 | `projects:read` or a member |
 | `PUT /api/v1/projects/{projectKey}` | Replace display name and description; `If-Match` required | 200 with the new `ETag`; 404; 412 `precondition_failed`; 422; 428 `precondition_required` | `projects:write` or an Owner |
 | `DELETE /api/v1/projects/{projectKey}` | Delete (`If-Match` optional) | 204; 404; 409 `project_not_empty` (repositories, service accounts or CI mappings); 412 | `projects:write` |
@@ -5241,6 +5241,33 @@ would revisit this if projects end up unadministered that way in practice; then 
 
 **Applied in the spec:** R-AUTHZ-026 (members and roles, the API table); [api-and-ui.md](api-and-ui.md) R-API-047,
 R-UI-041.
+
+### Q-AUTHZ-229 · A project create names its first Owners
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: an administrator of trove creates a project and names the first Owner
+([Q-AUTHZ-208](#q-authz-208--four-project-roles-reader-developer-maintainer-owner)); the member operation adds members to a project
+that exists. Between a create and the first member write a project exists that no team administers, and a client that fails between
+the two leaves it so; the administrator of trove is no member of the teams it creates projects for.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `owners` on the create (chosen) | The create body names users and groups; they become Owners in the transaction of the create, each recorded as `authz.project.member_added` | One request, one transaction: the project is administered from its first epoch; the same checks as the member write | The create has one more member |
+| (b) Only the member operation | Create, then `PUT …/members/{ref}` | No new member | A project without an Owner between two requests; two epochs, two audit transactions for one intent |
+| (c) The creator becomes Owner | The administrator of trove is the first Owner | No input | The administrator is no member of the team; removing itself later meets the last-Owner rule it does not need |
+
+**Choice:** (a). A reference that is no user or group, an auto-join group or a principal that does not exist refuses the whole create,
+with the answers of the member write (422 `principal_not_allowed`, 404). An empty or absent `owners` creates a project without
+members, as before.
+
+**Rationale:** the delegation exists so that a team administers its project; a create that hands it over atomically leaves no window in
+which only the administrators of trove can act. The development agent would revisit this if creates came from automation that names
+owners by an identity-provider attribute, then the owners might be resolved at the first sign-in instead.
+
+**Applied in the spec:** R-AUTHZ-026 (the API table). Code: `project.Input.Owners`, `firstOwners` in
+[crud.go](../../internal/project/crud.go). The management API reads the member from the create body once the document declares it
+writable on create.
 
 ## What this does not cover
 

@@ -32,7 +32,7 @@ func (s *Server) TestRepositoryUpstream(w http.ResponseWriter, r *http.Request, 
 }
 
 // TestUpstream implements POST /api/v1/projects/{projectKey}/upstream-tests.
-func (s *Server) TestUpstream(w http.ResponseWriter, r *http.Request, projectKey string) {
+func (s *Server) TestUpstream(w http.ResponseWriter, r *http.Request, _ string) {
 	svc, err := s.repositoryService()
 	var body []byte
 	if err == nil {

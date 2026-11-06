@@ -58,9 +58,10 @@ type ProjectLookup interface {
 type WriteOption func(*writeOpts)
 
 type writeOpts struct {
-	// delegate is the key of the project a project administrator writes for, "" for a
-	// caller that holds the capability (Q-AUTHZ-197, Q-AUTHZ-199).
-	delegate string
+	// owner is the key of the project whose Owner writes without the capability
+	// policies:read or policies:write, "" for a caller that holds it (Q-AUTHZ-197,
+	// Q-AUTHZ-199).
+	owner string
 	// projects answers the lookups of the write; the writer sets the queries of its
 	// own transaction here, so the checks and the insert see one state (Q-AUTHZ-199).
 	projects ProjectLookup
@@ -68,16 +69,14 @@ type writeOpts struct {
 	// belong to, nil for a global policy ([ExpectProject]).
 	expectProject *string
 	expectSet     bool
-	// create is set for a new policy, whose name is checked against the reserved
-	// prefixes of the projects (Q-AUTHZ-200); a stored global policy keeps its name.
-	create bool
 }
 
-// AsDelegate marks the write as that of a project administrator of the project:
-// the policy under change must be the project's (checked under the policy lock)
-// and the answers of the validation do not tell what lies outside the project
-// (Q-AUTHZ-197, Q-AUTHZ-199).
-func AsDelegate(project string) WriteOption { return func(o *writeOpts) { o.delegate = project } }
+// AsProjectOwner marks the write as that of an Owner of the project who holds no
+// policies capability (R-AUTHZ-026): the policy under change must be the project's
+// (checked under the policy lock) and the answers of the validation do not tell what
+// lies outside the project, so a service account of another project answers as one
+// that does not exist (Q-AUTHZ-197, Q-AUTHZ-199).
+func AsProjectOwner(project string) WriteOption { return func(o *writeOpts) { o.owner = project } }
 
 // ExpectProject makes an update or a delete refuse, under the policy lock, a policy
 // that does not belong to the project: a key names a project, nil a global policy. A
@@ -162,9 +161,6 @@ type resolvedPolicy struct {
 	project string
 	// o is the options of the write that asked for the resolution.
 	o writeOpts
-	// outside counts the key selectors of a stored project policy whose repository
-	// left the project (Q-AUTHZ-179): they stay and cover nothing.
-	outside int
 }
 
 func field(pointer, code, detail string) ProblemField {
@@ -190,9 +186,10 @@ func problemError(ps []ProblemField) error {
 }
 
 // Validate checks a policy without storing it and reports what it would cover
-// (POST /api/v1/authz/validate-policy).
+// (POST /api/v1/authz/validate-policy). A policy of a project (in.Project) is
+// validated in the project's context: bare keys of that project only (R-AUTHZ-026).
 func (s *Service) Validate(ctx context.Context, in PolicyInput, opts ...WriteOption) (Report, error) {
-	rp, problems, err := s.resolve(ctx, in, false, append(opts, func(o *writeOpts) { o.create = true })...)
+	rp, problems, err := s.resolve(ctx, in, opts...)
 	if err != nil {
 		return Report{}, err
 	}
@@ -279,28 +276,20 @@ func (s *Service) accountProject(ctx context.Context, principalID string) (strin
 	return s.o.Projects.AccountProject(ctx, principalID)
 }
 
-// resolveProject applies the project rules of R-AUTHZ-026 to the policy: the
-// project exists and a new policy's name starts with its key (Q-AUTHZ-176). A
-// stored policy (stored is true) was valid when it was written, so only the
-// existence is read.
-func (s *Service) resolveProject(ctx context.Context, rp *resolvedPolicy, stored bool) ([]ProblemField, error) {
-	pl := rp.o.lookup(s)
+// resolveProject applies the project rule of R-AUTHZ-026 to the policy: the project of a project policy
+// exists. Its name is the policy's name within the project; the stored name carries the key
+// ([StoredPolicyName]), so no prefix or overlap rule applies (Q-AUTHZ-209).
+func (s *Service) resolveProject(ctx context.Context, rp *resolvedPolicy) ([]ProblemField, error) {
 	if rp.in.Project == nil {
-		if !rp.o.create || stored {
-			return nil, nil
-		}
-		// A global policy never takes the name of a project's policies, so a project
-		// administrator's create never meets a global policy of the same name
-		// (Q-AUTHZ-176, Q-AUTHZ-200).
 		return nil, nil
 	}
 	key := *rp.in.Project
-	id, err := pl.ProjectID(ctx, key)
+	id, err := rp.o.lookup(s).ProjectID(ctx, key)
 	if err != nil {
 		return nil, err
 	}
 	if id == "" {
-		return []ProblemField{field("/project", errs.CodeUnknownProject, fmt.Sprintf("No project %q exists or it is not administered by the caller.", key))}, nil
+		return []ProblemField{field("/project", errs.CodeUnknownProject, fmt.Sprintf("No project %q exists.", key))}, nil
 	}
 	rp.project = id
 	return nil, nil
@@ -308,22 +297,25 @@ func (s *Service) resolveProject(ctx context.Context, rp *resolvedPolicy, stored
 
 // resolve validates the input against R-AUTHZ-021 and R-AUTHZ-026 and resolves
 // selectors and principals. Problems of the input are returned as fields; an
-// error is a failure of a dependency. stored is true for a policy that was read
-// from the store to compute its warnings: a key selector whose repository left the
-// project is then kept and warned about (Q-AUTHZ-179), where a write refuses it.
-func (s *Service) resolve(ctx context.Context, in PolicyInput, stored bool, opts ...WriteOption) (*resolvedPolicy, []ProblemField, error) {
+// error is a failure of a dependency. A stored policy is resolved the same way to
+// compute its warnings.
+func (s *Service) resolve(ctx context.Context, in PolicyInput, opts ...WriteOption) (*resolvedPolicy, []ProblemField, error) {
 	var ps []ProblemField
 	rp := &resolvedPolicy{in: in, o: collectOptions(opts)}
 	if in.ResourceType == "" {
 		rp.in.ResourceType = "repository"
 	}
-	if !policyNameRE.MatchString(in.Name) {
+	if project, name := splitPolicyName(in.Name); !policyNameRE.MatchString(name) {
 		ps = append(ps, field("/name", "invalid_name", "The name matches ^[a-z0-9][a-z0-9._-]{0,127}$."))
+	} else if !sameProject(project, in.Project) {
+		// The stored name of a project's policy carries the key of its project and that of a
+		// global policy none (Q-AUTHZ-209, StoredPolicyName).
+		ps = append(ps, field("/name", "invalid_name", "The stored name of a project's policy is <projectKey>/<name> of its project; a global policy has no project in its name."))
 	}
 	if utf8.RuneCountInString(in.Description) > 1024 {
 		ps = append(ps, field("/description", "invalid_description", "The description has at most 1024 characters."))
 	}
-	pps, err := s.resolveProject(ctx, rp, stored)
+	pps, err := s.resolveProject(ctx, rp)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -349,7 +341,7 @@ func (s *Service) resolve(ctx context.Context, in PolicyInput, stored bool, opts
 		return repos, nil
 	}
 
-	ps = append(ps, s.resolveSelectors(ctx, rp, stored)...)
+	ps = append(ps, s.resolveSelectors(ctx, rp)...)
 	for _, e := range []struct {
 		pointer string
 		dim     dimension
@@ -470,9 +462,9 @@ func (s *Service) projectRule(ctx context.Context, ptr string, ref Ref, id strin
 	case rp.in.Project == nil:
 		p := field(ptr+"/principal", errs.CodePrincipalOutsideProject, fmt.Sprintf("%s belongs to the project %q and is granted by its policies only.", ref, project))
 		return &p, nil
-	case project != *rp.in.Project && rp.o.delegate != "":
-		// A project administrator learns nothing about the accounts of other
-		// projects: the answer is the one of a name that does not exist (Q-AUTHZ-197).
+	case project != *rp.in.Project && rp.o.owner != "":
+		// An Owner without a policies capability learns nothing about the accounts of
+		// other projects: the answer is the one of a name that does not exist (Q-AUTHZ-197).
 		p := field(ptr+"/principal", errs.CodeUnknownPrincipal, fmt.Sprintf("No principal %s exists.", ref))
 		return &p, nil
 	case project != *rp.in.Project:
@@ -498,19 +490,23 @@ func (s *Service) principalID(ctx context.Context, ref Ref) (string, error) {
 	return p.ID, nil
 }
 
-// resolveSelectors parses the repository selectors and resolves key selectors
-// by repository ID.
-func (s *Service) resolveSelectors(ctx context.Context, rp *resolvedPolicy, stored bool) []ProblemField {
+// resolveSelectors parses the repository selectors in the context of the policy (R-AUTHZ-004,
+// Q-AUTHZ-216) and resolves key selectors by repository ID. A global policy names repositories as
+// <project>/<key> or by a pattern or class across projects, a project policy by bare keys of its
+// own project; a selector of the other context is 422 invalid_pattern, never a selector that matches
+// nothing. A key that names no repository is 422 unknown_repository; in a project context the key
+// is looked up in the project only, so a repository of another project cannot be named at all.
+func (s *Service) resolveSelectors(ctx context.Context, rp *resolvedPolicy) []ProblemField {
 	var ps []ProblemField
+	in := instanceContext
+	if rp.in.Project != nil {
+		in = projectContext(*rp.in.Project)
+	}
 	for i, text := range rp.in.Resources.Repositories {
 		ptr := "/resources/repositories/" + strconv.Itoa(i)
-		in := instanceContext
-		if rp.in.Project != nil {
-			in = projectContext(*rp.in.Project)
-		}
 		sel, err := parseSelector(text, in)
 		if err != nil {
-			ps = append(ps, field(ptr, errs.CodeInvalidPattern, err.Error()))
+			ps = append(ps, field(ptr, SelectorProblemCode, err.Error()))
 			continue
 		}
 		if sel.format != "" && !s.known(sel.format) {
@@ -518,17 +514,12 @@ func (s *Service) resolveSelectors(ctx context.Context, rp *resolvedPolicy, stor
 			continue
 		}
 		if sel.kind == selKey {
-			r, err := s.o.Repositories.ByName(ctx, qname.Repo{Project: sel.project, Key: sel.key})
+			name := qname.Repo{Project: sel.project, Key: sel.key}
+			r, err := s.o.Repositories.ByName(ctx, name)
 			if err != nil {
 				var ee *errs.Error
 				if errors.As(err, &ee) && ee.Kind == errs.NotFound {
-					if rp.in.Project != nil {
-						// An unknown key answers as one outside the project does, so the
-						// answer never tells whether such a repository exists.
-						ps = append(ps, field(ptr, errs.CodeRepositoryOutsideProject, fmt.Sprintf("The repository %q is not a repository of the project %q.", sel.key, *rp.in.Project)))
-						continue
-					}
-					ps = append(ps, field(ptr, errs.CodeUnknownRepository, fmt.Sprintf("No repository %q exists.", sel.key)))
+					ps = append(ps, field(ptr, errs.CodeUnknownRepository, fmt.Sprintf("No repository %q exists.", text)))
 					continue
 				}
 				ps = append(ps, field(ptr, errs.CodeUnknownRepository, "The repository could not be read."))
@@ -541,13 +532,6 @@ func (s *Service) resolveSelectors(ctx context.Context, rp *resolvedPolicy, stor
 			}
 			sel.repoID = id
 			sel.class = string(r.Class)
-			if rp.project != "" && r.ProjectID != rp.project {
-				if !stored {
-					ps = append(ps, field(ptr, errs.CodeRepositoryOutsideProject, fmt.Sprintf("The repository %q is not a repository of the project %q.", sel.key, *rp.in.Project)))
-					continue
-				}
-				rp.outside++
-			}
 		}
 		rp.selectors = append(rp.selectors, sel)
 	}
@@ -596,12 +580,9 @@ func (s *Service) entryRules(ptr string, ref Ref, acts ActionSet, rp *resolvedPo
 func warningsFor(rp *resolvedPolicy, all []repository.Repository, reg *catalog.Registry) (warnings, covers []string) {
 	coveredBy := make([]int, len(rp.selectors))
 	var covered []repository.Repository
-	if rp.outside > 0 {
-		warnings = append(warnings, WarnSelectorOutsideProject)
-	}
 	for _, r := range all {
 		if rp.project != "" && r.ProjectID != rp.project {
-			continue // a project policy covers only the repositories of its project (Q-AUTHZ-179)
+			continue // a project policy covers only the repositories of its project (R-AUTHZ-026)
 		}
 		id, _ := strconv.ParseInt(r.ID, 10, 64)
 		v := repoView{ID: id, Name: r.Name, Class: r.Class, Format: r.Format}

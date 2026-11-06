@@ -9,7 +9,6 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/ci/claims"
-	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
 
 // The CI evaluator (R-AUTHZ-014, R-CI-012, R-CI-013, R-CI-015) on the grant index, without PostgreSQL: the
@@ -84,15 +83,7 @@ func ciFixture() *fixture {
 		repo("npm-web", "local", "npm", `{"local":{"packageOwnership":"enforce"}}`).
 		repo("npm-shop", "local", "npm", `{"local":{"packageOwnership":"enforce"}}`).
 		repo("npm-all", "virtual", "npm", `{"virtual":{"members":["npm-internal","npm-web"],"deployTarget":"npm-internal"}}`)
-	f.s.Projects = append(f.s.Projects, projectRow(idProjWeb, "web"), projectRow(idProjShop, "shop"))
-	for i := range f.s.Repositories {
-		switch f.s.Repositories[i].Key {
-		case "npm-web":
-			f.s.Repositories[i].ProjectID = idProjWeb
-		case "npm-shop":
-			f.s.Repositories[i].ProjectID = idProjShop
-		}
-	}
+	f.project(idProjWeb, "web").project(idProjShop, "shop")
 	f.policy(policyDef{name: "ci-read-internal", selectors: []string{"npm-all", "npm-internal", "npm-web"}, entries: map[string][]string{idMapAcm: {"read"}}})
 	f.policy(policyDef{name: "ci-readers-loose", selectors: []string{"npm-loose"}, entries: map[string][]string{idWeb: {"read"}}})
 	f.policy(policyDef{name: "ci-manage", selectors: []string{"npm-loose"}, entries: map[string][]string{idMapAcm: {"read", "manage"}}})
@@ -123,7 +114,7 @@ func npmRead(repo, pkg string) Coordinate {
 func TestR_AUTHZ_014_TheRightsOfACITokenAreTheUnionOfItsThreeKinds(t *testing.T) {
 	e, idx := ciEngine(t)
 	sub := ciSubject(frozenOf("101", systemTier("gitlab-internal/acme", []string{"team-web"},
-		inline([]string{"npm-internal"}, []string{"@acme-billing/*"}, "", claims.Read, claims.Deploy))))
+		inline([]string{"it/npm-internal"}, []string{"@acme-billing/*"}, "", claims.Read, claims.Deploy))))
 	for _, tc := range []struct {
 		name string
 		c    Coordinate
@@ -165,7 +156,7 @@ func TestR_AUTHZ_014_TheRightsOfACITokenAreTheUnionOfItsThreeKinds(t *testing.T)
 func TestR_AUTHZ_014_AnEscapedRenderingMatchesOnlyTheLiteralName(t *testing.T) {
 	e, idx := ciEngine(t)
 	spec := claims.Spec{Inline: []claims.InlineGrant{{
-		Repositories: []string{"npm-internal"}, Packages: &claims.PatternSet{Include: []string{"@acme/{{ project_path | segment -1 }}"}},
+		Repositories: []string{"it/npm-internal"}, Packages: &claims.PatternSet{Include: []string{"@acme/{{ project_path | segment -1 }}"}},
 		Actions: []claims.Action{claims.Read, claims.Deploy},
 	}}}
 	r, err := spec.Render(claims.Claims{"project_path": "team/ui*"})
@@ -187,7 +178,7 @@ func TestR_AUTHZ_014_AnEscapedRenderingMatchesOnlyTheLiteralName(t *testing.T) {
 // R-CI-012: the cap read of a mapping bounds its own grants only.
 func TestR_CI_012_TheCapBoundsOnlyItsOwnMappingsGrants(t *testing.T) {
 	e, idx := ciEngine(t)
-	writer := systemTier("gitlab-internal/writer", nil, inline([]string{"npm-internal"}, []string{"@acme/*"}, "", claims.Read, claims.Deploy))
+	writer := systemTier("gitlab-internal/writer", nil, inline([]string{"it/npm-internal"}, []string{"@acme/*"}, "", claims.Read, claims.Deploy))
 	reader := capped(projectTier("gitlab-internal/web-read", "web", idProjWeb, inline([]string{"@any"}, nil, "", claims.Read, claims.Deploy)))
 	sub := ciSubject(frozenOf("900", writer, reader))
 	if !ciAllows(e, idx, sub, publish("npm-internal", "@acme/x")) {
@@ -200,7 +191,7 @@ func TestR_CI_012_TheCapBoundsOnlyItsOwnMappingsGrants(t *testing.T) {
 		t.Error("the capped mapping's read was removed")
 	}
 	only := ciSubject(frozenOf("900", capped(systemTier("gitlab-internal/acme", []string{"team-web"},
-		inline([]string{"npm-internal"}, nil, "", claims.Read, claims.Deploy)))))
+		inline([]string{"it/npm-internal"}, nil, "", claims.Read, claims.Deploy)))))
 	if ciAllows(e, idx, only, publish("npm-internal", "x")) || !ciAllows(e, idx, only, npmRead("npm-loose", "x")) {
 		t.Error("the cap of the only mapping does not cap its inline grants or keeps its group's read from it")
 	}
@@ -249,7 +240,7 @@ func TestQ_CI_47_AContributionEndsWithoutTheOthers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sys := systemTier("gitlab-internal/acme", nil, inline([]string{"npm-internal"}, []string{"@acme/*"}, "", claims.Read))
+	sys := systemTier("gitlab-internal/acme", nil, inline([]string{"it/npm-internal"}, []string{"@acme/*"}, "", claims.Read))
 	reader := projectTier("gitlab-internal/shop-reader", "shop", idProjShop, inline([]string{"@any"}, []string{"*"}, "", claims.Read))
 	gone := projectTier("gitlab-internal/shop-gone", "shop", idProjShop, inline([]string{"@any"}, []string{"*"}, "", claims.Read))
 	atIndex := func(ms ...claims.FrozenMapping) Subject {
@@ -302,8 +293,8 @@ func TestQ_CI_47_AContributionEndsWithoutTheOthers(t *testing.T) {
 // R-AUTHZ-013, R-CI-007: the token's scope is the ceiling of its CI grants.
 func TestR_AUTHZ_013_TheScopeIsTheCeilingOfACIToken(t *testing.T) {
 	e, idx := ciEngine(t)
-	sub := ciSubject(frozenOf("101", systemTier("gitlab-internal/acme", nil, inline([]string{"npm-internal"}, []string{"@acme/*"}, "", claims.Read, claims.Deploy))))
-	sub.Scope = &scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-internal"}, Packages: scope.Patterns{Include: []string{"@acme/*"}}, Actions: []string{"read"}}}}
+	sub := ciSubject(frozenOf("101", systemTier("gitlab-internal/acme", nil, inline([]string{"it/npm-internal"}, []string{"@acme/*"}, "", claims.Read, claims.Deploy))))
+	sub.Scope = &scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-internal"}, Packages: scope.Patterns{Include: []string{"@acme/*"}}, Actions: []string{"read"}}}}
 	if ciAllows(e, idx, sub, publish("npm-internal", "@acme/x")) {
 		t.Error("the scope did not bound the inline deploy")
 	}
@@ -315,7 +306,7 @@ func TestR_AUTHZ_013_TheScopeIsTheCeilingOfACIToken(t *testing.T) {
 // R-AUTHZ-016: a listing of a CI token shows what its inline grants read.
 func TestR_AUTHZ_014_AListingFollowsTheInlineGrants(t *testing.T) {
 	e, idx := ciEngine(t)
-	sub := ciSubject(frozenOf("101", systemTier("gitlab-internal/none", nil, inline([]string{"npm-loose"}, []string{"@acme/*"}, "", claims.Read))))
+	sub := ciSubject(frozenOf("101", systemTier("gitlab-internal/none", nil, inline([]string{"it/npm-loose"}, []string{"@acme/*"}, "", claims.Read))))
 	st := e.newEvalState(idx, sub)
 	if got := e.readShape(st, sub, idx.repo(qr("npm-loose")), true); got != ReadRows {
 		t.Fatalf("shape %v, want rows", got)
@@ -332,8 +323,8 @@ func TestR_CI_015_TheClaimOfACIPublish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bind := ciSubject(frozenOf("101", systemTier("gitlab-internal/acme", nil, inline([]string{"npm-internal", "npm-loose"}, []string{"@acme/*"}, "", claims.Read, claims.Deploy))))
-	none := ciSubject(frozenOf("101", systemTier("gitlab-internal/acme", nil, inline([]string{"npm-internal"}, []string{"@acme/*"}, claims.OwnershipNone, claims.Read, claims.Deploy))))
+	bind := ciSubject(frozenOf("101", systemTier("gitlab-internal/acme", nil, inline([]string{"it/npm-internal", "it/npm-loose"}, []string{"@acme/*"}, "", claims.Read, claims.Deploy))))
+	none := ciSubject(frozenOf("101", systemTier("gitlab-internal/acme", nil, inline([]string{"it/npm-internal"}, []string{"@acme/*"}, claims.OwnershipNone, claims.Read, claims.Deploy))))
 	policy := ciSubject(frozenOf("101", projectTier("gitlab-internal/acme", "web", idProjWeb)))
 	claimers := func(sub Subject, c Coordinate) []string {
 		k, applies, err := o.keyFor(idx, sub, c)
@@ -396,9 +387,4 @@ func TestR_CI_015_TheClaimOfACIPublish(t *testing.T) {
 			t.Error("an unclaimed name with versions was allowed without manage")
 		}
 	})
-}
-
-func projectRow(id, key string) (r q.AuthzBuildProjectsRow) {
-	r.ID, r.Key = id, key
-	return r
 }
