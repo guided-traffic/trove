@@ -123,7 +123,7 @@ func TestVuln_R_VULN_017_NPMAuditThroughEveryRepository(t *testing.T) {
 		a := apiAtPod(t, addr, e.npm.token)
 		for _, key := range repos {
 			for _, name := range []string{vulnNPMVuln, vulnNPMAlias} {
-				a.get("/api/npm/" + key + "/" + name)
+				a.getOverForward("/api/npm/" + key + "/" + name)
 			}
 		}
 	}

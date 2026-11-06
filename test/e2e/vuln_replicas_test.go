@@ -78,7 +78,7 @@ func wantRefused(t testing.TB, a *api, path, etag string) {
 		{"conditional GET", http.MethodGet, []string{"If-None-Match", etag}},
 		{"Range GET", http.MethodGet, []string{"Range", "bytes=0-99"}},
 	} {
-		r := a.do(rq.method, path, nil, rq.h...)
+		r := a.safeOverForward(rq.method, path, rq.h...)
 		if r.Status != 403 {
 			t.Fatalf("%s of a blocked version: %s, want 403", rq.what, r)
 		}

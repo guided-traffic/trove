@@ -814,6 +814,13 @@ profile after the fixes (`SET=push` and `SET=failover`, above): the measurements
    handshake timeout` in `livePods`, once before the first eviction and once during it). The listing is a read of the kind API
    server, not of trove, so `podsOfIn` ([env_test.go](../../test/e2e/env_test.go)) repeats a call whose error says it never reached
    the server up to three times, 2 s apart; any other error, and a fourth unreachable answer, still fail the test.
+12. **Fixed in the harness: two requests through a broken `kubectl port-forward` failed the set `vuln`** (Test and Release run
+   42160309458: `EOF` in the warm-up of `TestVuln_R_VULN_017_NPMAuditThroughEveryRepository` and in a refusal check of
+   `TestVuln_R_VULN_027_AcrossReplicasAndWithoutValkey`, both through `apiAtPod`; neither edge pod logged them, and the edge logs
+   every connection, empty ones included, so they never reached it). A setup request through one replica's forward already renews
+   the forward and repeats itself (`getOverForward`, `overForward`); the warm-up now uses it, and the refusal checks of
+   `wantRefused` send their GET, HEAD, conditional and Range requests through `safeOverForward`, which does the same for a request
+   that is safe to repeat. An HTTP status is still an answer, and every repeat is logged with the transport error.
 
 ## TLS in the suite
 

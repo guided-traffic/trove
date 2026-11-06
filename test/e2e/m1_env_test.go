@@ -454,20 +454,31 @@ func (a *api) get(path string, h ...string) reply {
 // port-forward (apiAtPod): a transport error renews the forward and repeats the request, twice at most, each repeat
 // logged (overForward). A GET is safe to repeat; an HTTP status is an answer and is returned as get returns it. A
 // client of the edge or of several forwards has no one forward to renew and sends once, as get does.
-func (a *api) getOverForward(path string) reply {
+func (a *api) getOverForward(path string, h ...string) reply {
 	a.t.Helper()
+	return a.safeOverForward(http.MethodGet, path, h...)
+}
+
+// safeOverForward is getOverForward for any request that is safe to repeat (GET, HEAD, a conditional or a Range GET): the
+// checks of a refusal through one replica's forward (wantRefused) send their requests this way, so a broken forward is
+// renewed and the request repeated instead of failing the test on a transport error that never reached trove.
+func (a *api) safeOverForward(method, path string, h ...string) reply {
+	a.t.Helper()
+	if method != http.MethodGet && method != http.MethodHead {
+		a.t.Fatalf("%s %s: only GET and HEAD are repeated over a forward", method, path)
+	}
 	f := a.forward()
 	if f == nil {
-		return a.get(path)
+		return a.do(method, path, nil, h...)
 	}
 	var r reply
-	err := overForward(a.t, f, "GET "+path, func() error {
+	err := overForward(a.t, f, method+" "+path, func() error {
 		var err error
-		r, err = a.send(http.MethodGet, path, nil)
+		r, err = a.send(method, path, nil, h...)
 		return err
 	})
 	if err != nil {
-		a.t.Fatalf("GET %s: %v", path, err)
+		a.t.Fatalf("%s %s: %v", method, path, err)
 	}
 	return r
 }
