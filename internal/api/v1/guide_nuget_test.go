@@ -34,7 +34,7 @@ func snippetContent(s gen.ClientSetup, id string) (string, bool) {
 // token reference in the syntax of each snippet's language, quotes the address and the package, and attaches the
 // version the way each client takes it.
 func TestR_NUGET_026_TheSetupSnippetsOfEveryClient(t *testing.T) {
-	const feed = "https://trove.example.com/api/nuget/nuget-local/v3/index.json"
+	const feed = "https://trove.example.com/api/nuget/it/nuget-local/v3/index.json"
 	dotnet := setupOf(t, "/api/v1/projects/it/repositories/nuget-local/client-setup?client=dotnet&credentials=env&package=Acme.Widgets&version=1.2.3-rc.1")
 	for id, want := range map[string]string{
 		"dotnet.configure.shell":      "dotnet nuget add source " + feed + " --name trove \\\n  --username trove --password \"${MY_TOKEN}\" --store-password-in-clear-text\n",
@@ -89,7 +89,7 @@ func TestR_NUGET_026_TheSetupSnippetsOfEveryClient(t *testing.T) {
 // without any credential part, and a placeholder request gets the browser's placeholder in every spelling.
 func TestR_NUGET_026_TheSetupWithoutACredential(t *testing.T) {
 	none := setupOf(t, "/api/v1/projects/it/repositories/nuget-local/client-setup?client=dotnet&credentials=none")
-	if got, _ := snippetContent(none, "dotnet.configure.shell"); got != "dotnet nuget add source https://trove.example.com/api/nuget/nuget-local/v3/index.json --name trove\n" {
+	if got, _ := snippetContent(none, "dotnet.configure.shell"); got != "dotnet nuget add source https://trove.example.com/api/nuget/it/nuget-local/v3/index.json --name trove\n" {
 		t.Errorf("%q", got)
 	}
 	if cfg, _ := snippetContent(none, "dotnet.configure.nugetconfig"); strings.Contains(cfg, "Password") || strings.Contains(cfg, "packageSourceCredentials") {

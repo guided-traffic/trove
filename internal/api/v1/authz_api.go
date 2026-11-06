@@ -127,6 +127,9 @@ func (s *Server) ListPermissionPolicies(w http.ResponseWriter, r *http.Request, 
 		httpserver.Problem(w, r, errs.Wrap(err, "authz.listPolicies"))
 		return
 	}
+	for i := range page.Items {
+		page.Items[i] = viewPolicy(page.Items[i]) // a project's policy shows its name within the project
+	}
 	WritePage(w, r, page)
 }
 
@@ -350,14 +353,20 @@ type policyProblem struct {
 }
 
 // ValidatePermissionPolicy implements POST /api/v1/authz/validate-policy.
-func (s *Server) ValidatePermissionPolicy(w http.ResponseWriter, r *http.Request, _ gen.ValidatePermissionPolicyParams) {
+func (s *Server) ValidatePermissionPolicy(w http.ResponseWriter, r *http.Request) {
 	svc, err := s.policies()
 	var in authz.Policy
 	if err == nil {
 		err = DecodeJSON(w, r, &in, s.bodyLimit())
 	}
+	if err == nil {
+		err = s.mayValidate(r, in.Project)
+	}
 	var rep authz.Report
 	if err == nil {
+		if in.Project != nil { // a policy of a project names it in the body; the store knows the stored name
+			in = storedPolicy(in, *in.Project)
+		}
 		rep, err = svc.Validate(r.Context(), in.PolicyInput)
 	}
 	if err != nil {
@@ -369,6 +378,29 @@ func (s *Server) ValidatePermissionPolicy(w http.ResponseWriter, r *http.Request
 		out.Errors = append(out.Errors, policyProblem{Pointer: p.Pointer, Code: p.Code, Detail: p.Detail})
 	}
 	writeJSON(w, r, http.StatusOK, out)
+}
+
+// mayValidate decides validate-policy, whose project is a member of the body: policies:read, or for a policy of a
+// project an Owner of it. A project the caller is no member of answers like a missing one (R-AUTHZ-016); a
+// member below Owner gets the 403 of the capability.
+func (s *Server) mayValidate(r *http.Request, projectKey *string) error {
+	ctx := r.Context()
+	if s.o.Access == nil {
+		return errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
+	}
+	refusal := s.o.Access.Require(ctx, capPoliciesRead)
+	if refusal == nil {
+		return nil
+	}
+	if projectKey == nil || errs.KindOf(refusal) != errs.Forbidden {
+		return refusal
+	}
+	if pa, ok := s.o.Access.(ProjectAccess); ok {
+		if owns, err := pa.Owns(ctx, *projectKey); err == nil && owns {
+			return nil
+		}
+	}
+	return s.hideProject(r, *projectKey, refusal)
 }
 
 func nonNil(s []string) []string {

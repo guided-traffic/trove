@@ -362,7 +362,7 @@ func (s *Server) decide(r *http.Request, q Requirement) error {
 		}
 		err := s.o.Access.Require(ctx, q.Permission)
 		if err != nil && q.ProjectRole != "" && q.Project != "" && errs.KindOf(err) == errs.Forbidden {
-			return s.hideProject(r, q, err)
+			return s.hideProject(r, valueOf(r, q.Project), err)
 		}
 		return err
 	case q.Role != "":
@@ -444,7 +444,7 @@ func (s *Server) switchOn(name string) bool {
 // caller is no member of the project (R-AUTHZ-026, R-AUTHZ-016): a project the caller cannot see answers like
 // one that does not exist, and a member whose role is too low keeps its 403. The refusal (and its audit event)
 // was decided by Require; an Access that cannot list memberships leaves it as it is.
-func (s *Server) hideProject(r *http.Request, q Requirement, refusal error) error {
+func (s *Server) hideProject(r *http.Request, key string, refusal error) error {
 	pa, ok := s.o.Access.(ProjectAccess)
 	if !ok {
 		return refusal
@@ -453,7 +453,6 @@ func (s *Server) hideProject(r *http.Request, q Requirement, refusal error) erro
 	if err != nil {
 		return refusal
 	}
-	key := valueOf(r, q.Project)
 	for _, m := range members {
 		if m.Key == key {
 			return refusal

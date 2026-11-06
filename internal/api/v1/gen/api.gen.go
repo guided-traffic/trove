@@ -4992,7 +4992,7 @@ type ClientSetup struct {
 	EndpointPath string `json:"endpointPath"`
 	Format       string `json:"format"`
 
-	// PublishTarget The key of the repository a publish goes to; null when the caller may not publish or a virtual repository has no default deployment target.
+	// PublishTarget The qualified name `<project>/<key>` of the repository a publish goes to; null when the caller may not publish or a virtual repository has no default deployment target.
 	PublishTarget *string `json:"publishTarget"`
 
 	// RegistryUrl The package-manager endpoint URL of INV-6, absolute, with its trailing slash.
@@ -5492,7 +5492,7 @@ type Guide struct {
 	ExposureRules bool   `json:"exposureRules"`
 	Format        string `json:"format"`
 
-	// PublishTarget The repository a publish through this one reaches, when the caller may deploy there; null otherwise.
+	// PublishTarget The qualified name `<project>/<key>` of the repository a publish through this one reaches, when the caller may deploy there; null otherwise.
 	PublishTarget *string `json:"publishTarget"`
 
 	// RegistryUrl The address the snippets use, with its trailing slash; `<repository>` stands for the key in the guide of a format.
@@ -7851,13 +7851,18 @@ type VulnerabilityFinding struct {
 	Id              openapi_types.UUID            `json:"id"`
 
 	// Kind `malicious` for the OpenSSF malicious-packages records (identifier prefix `MAL-`), else `vulnerability`.
-	Kind                  VulnerabilityKind            `json:"kind"`
-	KnownExploited        bool                         `json:"knownExploited"`
-	KnownExploitedAddedAt *openapi_types.Date          `json:"knownExploitedAddedAt,omitempty"`
-	Package               string                       `json:"package"`
-	Repository            string                       `json:"repository"`
-	ResolvedAt            *time.Time                   `json:"resolvedAt"`
-	ResolvedReason        *VulnerabilityResolvedReason `json:"resolvedReason,omitempty"`
+	Kind                  VulnerabilityKind   `json:"kind"`
+	KnownExploited        bool                `json:"knownExploited"`
+	KnownExploitedAddedAt *openapi_types.Date `json:"knownExploitedAddedAt,omitempty"`
+	Package               string              `json:"package"`
+
+	// Project The key of the project of the repository.
+	Project string `json:"project"`
+
+	// Repository The qualified name `<project>/<key>`.
+	Repository     string                       `json:"repository"`
+	ResolvedAt     *time.Time                   `json:"resolvedAt"`
+	ResolvedReason *VulnerabilityResolvedReason `json:"resolvedReason,omitempty"`
 
 	// Severity The level of an advisory (R-VULN-007); `unknown` is a level of its own and sorts last.
 	Severity VulnerabilitySeverity `json:"severity"`
@@ -8314,12 +8319,6 @@ type ExportAuditEventsParams struct {
 
 // ExportAuditEventsParamsFormat defines parameters for ExportAuditEvents.
 type ExportAuditEventsParamsFormat string
-
-// ValidatePermissionPolicyParams defines parameters for ValidatePermissionPolicy.
-type ValidatePermissionPolicyParams struct {
-	// Project A project key; validates the policy as a policy of that project.
-	Project *string `form:"project,omitempty" json:"project,omitempty"`
-}
 
 // BastionCheckParams defines parameters for BastionCheck.
 type BastionCheckParams struct {
@@ -9028,15 +9027,6 @@ type RunRepositoryMirrorParams struct {
 	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
 }
 
-// MoveRepositoryParams defines parameters for MoveRepository.
-type MoveRepositoryParams struct {
-	// IfMatch The ETag loaded with the resource, or `*`. A `DELETE` honours it when sent and answers `412` for a stale one (R-API-012).
-	IfMatch *IfMatchOptional `json:"If-Match,omitempty"`
-
-	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
-	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
-}
-
 // AddPackageOwnerParams defines parameters for AddPackageOwner.
 type AddPackageOwnerParams struct {
 	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
@@ -9358,6 +9348,9 @@ type ListClaimedNameMatchesParams struct {
 
 // ListVulnerabilityFindingsParams defines parameters for ListVulnerabilityFindings.
 type ListVulnerabilityFindingsParams struct {
+	// Project A project key: the findings of the project's repositories. Repeat for several.
+	Project *[]string `form:"project,omitempty" json:"project,omitempty"`
+
 	// Repository A repository name `<project>/<key>`; a virtual repository expands to the members the caller can read. Repeat for several.
 	Repository *[]string `form:"repository,omitempty" json:"repository,omitempty"`
 
@@ -9421,6 +9414,9 @@ type ListVulnerabilityFindingsParamsSort string
 
 // ExportVulnerabilityFindingsParams defines parameters for ExportVulnerabilityFindings.
 type ExportVulnerabilityFindingsParams struct {
+	// Project A project key: the findings of the project's repositories. Repeat for several.
+	Project *[]string `form:"project,omitempty" json:"project,omitempty"`
+
 	// Repository A repository name `<project>/<key>`; a virtual repository expands to the members the caller can read. Repeat for several.
 	Repository *[]string `form:"repository,omitempty" json:"repository,omitempty"`
 
@@ -9496,6 +9492,9 @@ type UpdateVulnerabilityFindingParams struct {
 
 // GetVulnerabilitySummaryParams defines parameters for GetVulnerabilitySummary.
 type GetVulnerabilitySummaryParams struct {
+	// Project A project key: the findings of the project's repositories. Repeat for several.
+	Project *[]string `form:"project,omitempty" json:"project,omitempty"`
+
 	// Repository A repository name `<project>/<key>`. Repeat for several.
 	Repository *[]string `form:"repository,omitempty" json:"repository,omitempty"`
 
@@ -9510,6 +9509,9 @@ type GetVulnerabilityTrendParams struct {
 
 	// To Last day, inclusive (RFC 3339 date); default today.
 	To *openapi_types.Date `form:"to,omitempty" json:"to,omitempty"`
+
+	// Project A project key: the findings of the project's repositories. Repeat for several.
+	Project *[]string `form:"project,omitempty" json:"project,omitempty"`
 
 	// Repository A repository name `<project>/<key>`. Repeat for several.
 	Repository *[]string `form:"repository,omitempty" json:"repository,omitempty"`
@@ -9865,7 +9867,7 @@ type ServerInterface interface {
 	GetAuthzMe(w http.ResponseWriter, r *http.Request)
 	// ValidatePermissionPolicy Validate a permission policy without storing it
 	// (POST /api/v1/authz/validate-policy)
-	ValidatePermissionPolicy(w http.ResponseWriter, r *http.Request, params ValidatePermissionPolicyParams)
+	ValidatePermissionPolicy(w http.ResponseWriter, r *http.Request)
 	// BastionCheck Check a caller's credential and read shape
 	// (POST /api/v1/bastion/check)
 	BastionCheck(w http.ResponseWriter, r *http.Request, params BastionCheckParams)
@@ -10189,7 +10191,7 @@ type ServerInterface interface {
 	RunRepositoryMirror(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, params RunRepositoryMirrorParams)
 	// MoveRepository Move a repository to another project
 	// (POST /api/v1/projects/{projectKey}/repositories/{repoKey}/move)
-	MoveRepository(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey RepoKey, params MoveRepositoryParams)
+	MoveRepository(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey RepoKey)
 	// GetPackageOwners Read the owners of a package name
 	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners)
 	GetPackageOwners(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, packageName string)
@@ -10888,27 +10890,8 @@ func (siw *ServerInterfaceWrapper) GetAuthzMe(w http.ResponseWriter, r *http.Req
 // ValidatePermissionPolicy operation middleware
 func (siw *ServerInterfaceWrapper) ValidatePermissionPolicy(w http.ResponseWriter, r *http.Request) {
 
-	var err error
-	_ = err
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ValidatePermissionPolicyParams
-
-	// ------------- Optional query parameter "project" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
-		}
-		return
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ValidatePermissionPolicy(w, r, params)
+		siw.Handler.ValidatePermissionPolicy(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -16489,51 +16472,8 @@ func (siw *ServerInterfaceWrapper) MoveRepository(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Parameter object where we will unmarshal all parameters from the context
-	var params MoveRepositoryParams
-
-	headers := r.Header
-
-	// ------------- Optional header parameter "If-Match" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
-		var IfMatch IfMatchOptional
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
-			return
-		}
-
-		params.IfMatch = &IfMatch
-
-	}
-
-	// ------------- Optional header parameter "Idempotency-Key" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
-		var IdempotencyKey IdempotencyKey
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
-			return
-		}
-
-		params.IdempotencyKey = &IdempotencyKey
-
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.MoveRepository(w, r, projectKey, repoKey, params)
+		siw.Handler.MoveRepository(w, r, projectKey, repoKey)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -19556,6 +19496,19 @@ func (siw *ServerInterfaceWrapper) ListVulnerabilityFindings(w http.ResponseWrit
 	// Parameter object where we will unmarshal all parameters from the context
 	var params ListVulnerabilityFindingsParams
 
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "repository" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
@@ -19822,6 +19775,19 @@ func (siw *ServerInterfaceWrapper) ExportVulnerabilityFindings(w http.ResponseWr
 
 	// Parameter object where we will unmarshal all parameters from the context
 	var params ExportVulnerabilityFindingsParams
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
 
 	// ------------- Optional query parameter "repository" -------------
 
@@ -20223,6 +20189,19 @@ func (siw *ServerInterfaceWrapper) GetVulnerabilitySummary(w http.ResponseWriter
 	// Parameter object where we will unmarshal all parameters from the context
 	var params GetVulnerabilitySummaryParams
 
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "repository" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
@@ -20291,6 +20270,19 @@ func (siw *ServerInterfaceWrapper) GetVulnerabilityTrend(w http.ResponseWriter, 
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
 		}
 		return
 	}

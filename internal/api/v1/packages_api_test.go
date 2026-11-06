@@ -163,8 +163,8 @@ func TestR_API_030_ClientSetupAnswer(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if out.RegistryUrl != "https://trove.example.com/api/npm/npm-local/" || out.EndpointPath != "//trove.example.com/api/npm/npm-local/" ||
-		out.Username == nil || *out.Username != "alice" || out.PublishTarget == nil || *out.PublishTarget != "npm-local" || out.TokenTtlSeconds != 36*3600 {
+	if out.RegistryUrl != "https://trove.example.com/api/npm/it/npm-local/" || out.EndpointPath != "//trove.example.com/api/npm/it/npm-local/" ||
+		out.Username == nil || *out.Username != "alice" || out.PublishTarget == nil || *out.PublishTarget != "it/npm-local" || out.TokenTtlSeconds != 36*3600 {
 		t.Fatalf("%+v", out)
 	}
 	got := map[string]string{}
@@ -174,7 +174,7 @@ func TestR_API_030_ClientSetupAnswer(t *testing.T) {
 	if got["pnpm.install"] != "pnpm add 'a(b)@1.0.0'\n" {
 		t.Errorf("install %q", got["pnpm.install"])
 	}
-	if got["pnpm.configure.npmrc"] != "registry=https://trove.example.com/api/npm/npm-local/\n//trove.example.com/api/npm/npm-local/:_authToken=${MY_TOKEN}\n" {
+	if got["pnpm.configure.npmrc"] != "registry=https://trove.example.com/api/npm/it/npm-local/\n//trove.example.com/api/npm/it/npm-local/:_authToken=${MY_TOKEN}\n" {
 		t.Errorf("npmrc %q", got["pnpm.configure.npmrc"])
 	}
 	if strings.Contains(w.Body.String(), "TROVE_TOKEN") {
@@ -189,8 +189,8 @@ func TestR_GENERIC_016_TheClientSetupOfCurl(t *testing.T) {
 		return "trove_curl() {\n  curl --silent --show-error --config - \"$@\" <<EOF\n" + header + "EOF\n}\n"
 	}
 	const (
-		install = "trove_curl --fail --remote-name \"https://trove.example.com/files/files/<path>\"\n"
-		publish = "trove_curl --fail --upload-file <file> \"https://trove.example.com/files/files/<path>\"\n"
+		install = "trove_curl --fail --remote-name \"https://trove.example.com/files/it/files/<path>\"\n"
+		publish = "trove_curl --fail --upload-file <file> \"https://trove.example.com/files/it/files/<path>\"\n"
 	)
 	for _, c := range []struct {
 		credentials string
@@ -221,7 +221,7 @@ func TestR_GENERIC_016_TheClientSetupOfCurl(t *testing.T) {
 		if !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s, deploy %v:\n%q\nwant\n%q", c.credentials, c.deploy, got, c.want)
 		}
-		if out.RegistryUrl != "https://trove.example.com/files/files/" || out.Format != "generic" {
+		if out.RegistryUrl != "https://trove.example.com/files/it/files/" || out.Format != "generic" {
 			t.Errorf("%+v", out)
 		}
 	}
@@ -281,7 +281,7 @@ func TestR_API_030_ClientSetupRefusesWhatItCannotAnswer(t *testing.T) {
 		"client=npm":            "files", // the generic format offers curl only
 		"client=curl&package=x": "files", // and has no package names
 	} {
-		w := get(h, "/api/v1/repositories/"+repo+"/client-setup?"+q)
+		w := get(h, "/api/v1/projects/it/repositories/"+repo+"/client-setup?"+q)
 		if w.Code != 400 {
 			t.Errorf("%s: %d %s", q, w.Code, w.Body.String())
 		}
@@ -316,10 +316,10 @@ func TestR_API_029_TaggedAnswers(t *testing.T) {
 
 func TestR_API_029_DownloadURLs(t *testing.T) {
 	for _, tc := range []struct{ format, repo, path, want string }{
-		{"npm", "npm-local", "@team-a/ui/-/ui-1.4.0.tgz", "https://t.example/api/npm/npm-local/@team-a/ui/-/ui-1.4.0.tgz"},
-		{"npm", "npm-local", "left-pad/-/left-pad-1.0.0.tgz", "https://t.example/api/npm/npm-local/left-pad/-/left-pad-1.0.0.tgz"},
-		{"npm", "npm-local", "a b/-/a%b.tgz", "https://t.example/api/npm/npm-local/a%20b/-/a%25b.tgz"},
-		{"generic", "files", "tools/widget 2.3/w.bin", "https://t.example/files/files/tools/widget%202.3/w.bin"},
+		{"npm", "it/npm-local", "@team-a/ui/-/ui-1.4.0.tgz", "https://t.example/api/npm/it/npm-local/@team-a/ui/-/ui-1.4.0.tgz"},
+		{"npm", "it/npm-local", "left-pad/-/left-pad-1.0.0.tgz", "https://t.example/api/npm/it/npm-local/left-pad/-/left-pad-1.0.0.tgz"},
+		{"npm", "it/npm-local", "a b/-/a%b.tgz", "https://t.example/api/npm/it/npm-local/a%20b/-/a%25b.tgz"},
+		{"generic", "it/files", "tools/widget 2.3/w.bin", "https://t.example/files/it/files/tools/widget%202.3/w.bin"},
 	} {
 		if got := downloadURL("https://t.example/", tc.format, tc.repo, tc.path); got != tc.want {
 			t.Errorf("%s: %q, want %q", tc.path, got, tc.want)
@@ -368,10 +368,10 @@ func TestR_API_029_FilterParsing(t *testing.T) {
 // credential the configure snippet binds (Q-API-180). Without the deploy right, for a
 // virtual repository without a target and for a remote one there are none.
 func TestR_API_030_NpmPublishSnippets(t *testing.T) {
-	const local, all = "https://trove.example.com/api/npm/npm-local/", "https://trove.example.com/api/npm/npm-all/"
+	const local, all = "https://trove.example.com/api/npm/it/npm-local/", "https://trove.example.com/api/npm/it/npm-all/"
 	publish := func(deploy bool, repo, client string) (map[string]gen.ClientSnippet, gen.ClientSetup) {
 		t.Helper()
-		w := get(setupServer(t, "https://trove.example.com", deploy), "/api/v1/repositories/"+repo+"/client-setup?client="+client+"&credentials=env")
+		w := get(setupServer(t, "https://trove.example.com", deploy), "/api/v1/projects/it/repositories/"+repo+"/client-setup?client="+client+"&credentials=env")
 		var out gen.ClientSetup
 		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || w.Code != 200 {
 			t.Fatalf("%s %s: %d %s", repo, client, w.Code, w.Body.String())
@@ -405,7 +405,7 @@ func TestR_API_030_NpmPublishSnippets(t *testing.T) {
 		if sn.Content != c.content || sn.Language != c.lang || (sn.FileName == nil) != (c.file == "") || (c.file != "" && *sn.FileName != c.file) {
 			t.Errorf("%s: %+v, want %q", c.id, sn, c.content)
 		}
-		if out.PublishTarget == nil || *out.PublishTarget != "npm-local" {
+		if out.PublishTarget == nil || *out.PublishTarget != "it/npm-local" {
 			t.Errorf("%s: publishTarget %v", c.repo, out.PublishTarget)
 		}
 	}

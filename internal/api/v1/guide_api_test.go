@@ -92,7 +92,7 @@ func TestR_API_053_TheSectionsFollowTheClassInTopicOrder(t *testing.T) {
 	if got := sectionIDs(local); !slices.Equal(got, want) {
 		t.Fatalf("sections %v, want %v", got, want)
 	}
-	if local.PublishTarget == nil || *local.PublishTarget != "npm-local" || local.Repository == nil || *local.Repository != "npm-local" {
+	if local.PublishTarget == nil || *local.PublishTarget != "it/npm-local" || local.Repository == nil || *local.Repository != "it/npm-local" {
 		t.Errorf("%+v", local)
 	}
 	what := sectionOf(t, local, "npm.local.what")
@@ -165,12 +165,12 @@ func TestR_API_053_AnAnonymousReaderGetsNoCredentialSteps(t *testing.T) {
 func TestR_API_053_TheGuideOfAFormat(t *testing.T) {
 	h := setupServer(t, "https://trove.example.com", true)
 	g := guideOf(t, get(h, "/api/v1/formats/npm/guide?class=virtual&client=pnpm"))
-	if g.Repository != nil || g.PublishTarget != nil || g.RegistryUrl != "https://trove.example.com/api/npm/"+formats.GuideRepositoryPlaceholder+"/" ||
+	if g.Repository != nil || g.PublishTarget != nil || g.RegistryUrl != "https://trove.example.com/api/npm/"+formats.GuideProjectPlaceholder+"/"+formats.GuideRepositoryPlaceholder+"/" ||
 		g.Class != gen.GuideClassVirtual || sectionIDs(g)[0] != "npm.virtual.what" {
 		t.Fatalf("%+v", g)
 	}
 	conf := sectionOf(t, g, "npm.configure").Snippets
-	if len(conf) != 1 || !strings.Contains(conf[0].Content, "//trove.example.com/api/npm/<repository>/:_authToken=${MY_TOKEN}") {
+	if len(conf) != 1 || !strings.Contains(conf[0].Content, "//trove.example.com/api/npm/<project>/<repository>/:_authToken=${MY_TOKEN}") {
 		t.Errorf("%+v", conf)
 	}
 	for q, want := range map[string]int{
@@ -241,7 +241,7 @@ func TestR_GENERIC_016_TheGuideShowsTheSnippetsOfTheClientSetup(t *testing.T) {
 			t.Errorf("%s: guide %+v, setup %+v", tab, got, want)
 		}
 	}
-	if g.RegistryUrl != "https://trove.example.com/files/files/" || g.Format != "generic" || g.Class != gen.GuideClassLocal || g.Credentials != gen.GuideCredentialsEnv {
+	if g.RegistryUrl != "https://trove.example.com/files/it/files/" || g.Format != "generic" || g.Class != gen.GuideClassLocal || g.Credentials != gen.GuideCredentialsEnv {
 		t.Errorf("%+v", g)
 	}
 	want := []string{
@@ -272,7 +272,7 @@ func TestR_API_053_AddressesNeverComeFromTheHostOfTheRequest(t *testing.T) {
 func TestR_API_053_NoGuideHoldsAToken(t *testing.T) {
 	shape := regexp.MustCompile(`trv_(pat|sat|cit)_`)
 	for _, h := range []http.Handler{setupServer(t, "https://trove.example.com", true), setupServerAs(t, "https://trove.example.com", false, nil)} {
-		for _, p := range []string{"repositories/npm-local/guide?", "repositories/npm-remote/guide?", "formats/npm/guide?class=virtual&"} {
+		for _, p := range []string{"projects/it/repositories/npm-local/guide?", "projects/it/repositories/npm-remote/guide?", "formats/npm/guide?class=virtual&"} {
 			for _, client := range []string{"npm", "pnpm", "yarn", "yarn-classic"} {
 				w := get(h, "/api/v1/"+p+"client="+client)
 				if w.Code != 200 || shape.Match(w.Body.Bytes()) {
@@ -280,7 +280,7 @@ func TestR_API_053_NoGuideHoldsAToken(t *testing.T) {
 				}
 			}
 		}
-		for _, p := range []string{"repositories/files/guide?client=curl", "formats/generic/guide?class=local&client=curl"} {
+		for _, p := range []string{"projects/it/repositories/files/guide?client=curl", "formats/generic/guide?class=local&client=curl"} {
 			if w := get(h, "/api/v1/"+p); w.Code != 200 || shape.Match(w.Body.Bytes()) {
 				t.Errorf("%s: %d", p, w.Code)
 			}
@@ -298,7 +298,7 @@ func TestR_API_053_TheEndpointNoteIsForEndpointsWithRules(t *testing.T) {
 	f, _ := formats.Lookup("npm")
 	in := guideInput{
 		Format: f, Class: formats.Virtual, Client: "npm", TokenEnvVar: "TROVE_TOKEN",
-		Data: formats.SetupData{RegistryURL: "https://trove.example.com/api/npm/npm-all/", Repository: "npm-all"},
+		Data: formats.SetupData{RegistryURL: "https://trove.example.com/api/npm/it/npm-all/", Repository: "npm-all"},
 	}
 	without, err := renderGuide(rd, in)
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/meta"
@@ -13,8 +14,7 @@ import (
 )
 
 // The service accounts of a project (Q-AUTHZ-169, Q-AUTHZ-209): /projects/{projectKey}/service-accounts. The
-// handlers pass the project and the name within it to the identity manager, which answers 501 not_implemented
-// until the project accounts are built (internal/auth/principal/projectaccounts.go).
+// handlers pass the project and the name within it to the identity manager (internal/auth/principal/projectaccounts.go).
 
 func projectAccountName(project, name string) qname.Object {
 	return qname.Object{Project: project, Name: name}
@@ -187,15 +187,73 @@ func (s *Server) EnableProjectServiceAccount(w http.ResponseWriter, r *http.Requ
 
 // RevokeProjectServiceAccountTokens implements DELETE /api/v1/projects/{projectKey}/service-accounts/{name}/tokens.
 func (s *Server) RevokeProjectServiceAccountTokens(w http.ResponseWriter, r *http.Request, projectKey, name string) {
-	httpserver.Problem(w, r, notImplemented("revokeProjectServiceAccountTokens"))
+	if !s.identityReady(w, r) {
+		return
+	}
+	sa, err := s.o.Auth.Manager.GetProjectServiceAccount(r.Context(), projectAccountName(projectKey, name))
+	if err == nil {
+		_, err = s.o.Auth.Tokens.RevokeAll(r.Context(), s.caller(r), sa.ID, token.ReasonAdmin)
+	}
+	if err != nil {
+		failIdentity(w, r, err)
+		return
+	}
+	noContent(w)
 }
 
-// CreateProjectServiceAccountToken implements POST /api/v1/projects/{projectKey}/service-accounts/{name}/tokens.
+// CreateProjectServiceAccountToken implements POST /api/v1/projects/{projectKey}/service-accounts/{name}/tokens
+// (R-AUTH-027, Q-AUTHZ-177): an administrator of trove, an Owner of the project, or a token of the same account
+// under the derivation rule. An Owner who is no administrator creates a delegated token: never non-expiring,
+// admin false, no system item. The operation decides in the handler; anyone else gets the same 403 whether the
+// account exists or not.
 func (s *Server) CreateProjectServiceAccountToken(w http.ResponseWriter, r *http.Request, projectKey, name string, _ gen.CreateProjectServiceAccountTokenParams) {
-	httpserver.Problem(w, r, notImplemented("createProjectServiceAccountToken"))
-}
-
-// notImplemented is the 501 of an operation whose domain function is not built yet.
-func notImplemented(op string) error {
-	return errs.E(errs.NotImplemented, errs.CodeNotImplemented, "The operation "+op+" is not implemented yet.")
+	if !s.identityReady(w, r) {
+		return
+	}
+	ctx := r.Context()
+	p := httpserver.PrincipalFrom(ctx)
+	body, err := ReadBody(w, r, MediaJSON, s.bodyLimit())
+	var in gen.CreateTokenRequest
+	if err == nil {
+		err = StrictUnmarshal(body, &in)
+	}
+	var scope []byte
+	if err == nil {
+		scope, err = scopeBytes(in.Scope)
+	}
+	if err != nil {
+		failIdentity(w, r, err)
+		return
+	}
+	derived := p.Kind == httpserver.KindServiceAccount && p.Name == projectKey+"/"+name && tokenAuthenticated(p)
+	admin, err := s.holds(ctx, "role:admin")
+	owns := false
+	if err == nil && !admin && !derived {
+		if pa, ok := s.o.Access.(ProjectAccess); ok {
+			owns, err = pa.Owns(ctx, projectKey)
+		}
+	}
+	if err == nil && !admin && !derived && !owns {
+		err = errs.E(errs.Forbidden, errs.CodeForbidden, "Only an administrator, an Owner of the account's project, or a token of the account itself creates its tokens.")
+	}
+	var parent *token.Info
+	if err == nil && derived {
+		parent, err = s.presenting(ctx, p)
+	}
+	var sa principal.ServiceAccount
+	if err == nil {
+		sa, err = s.o.Auth.Manager.GetProjectServiceAccount(ctx, projectAccountName(projectKey, name))
+	}
+	if err != nil {
+		failIdentity(w, r, err)
+		return
+	}
+	req := token.CreateRequest{
+		Caller: s.caller(r), Type: token.TypeSAT, OwnerID: sa.ID, Description: in.Description, Scope: scope, TTL: requestTTL(in),
+		SelfRotatable: in.SelfRotatable != nil && *in.SelfRotatable, Via: via(p), Admin: admin && !derived, Parent: parent,
+		Delegated: owns && !admin && !derived,
+	}
+	s.issue(w, r, body, func(ctx context.Context, tx meta.Tx) (token.Created, error) {
+		return s.o.Auth.Tokens.CreateTx(ctx, tx, req)
+	})
 }

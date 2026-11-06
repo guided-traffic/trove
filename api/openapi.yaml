@@ -4238,19 +4238,12 @@ paths:
       description: |
         Runs the validation of a create (R-AUTHZ-021) and answers every problem, the warnings, and the names of the
         repositories the selectors currently cover. A policy with problems is still a `200` answer with `valid: false`; the
-        editor shows the list. The name need not be unused. With `project=<key>` the policy is validated as a policy of that
-        project (bare keys; the caller is a member of the project with the role Owner, or holds `policies:read`); without,
+        editor shows the list. The name need not be unused. A policy that names a project in the body (`project`) is
+        validated as a policy of that project (bare keys, the name within the project); the caller holds `policies:read` or is
+        an Owner of the project, and a project the caller cannot see answers `404`. Without `project` the policy is validated
         as an instance-wide policy (qualified selectors; `policies:read`).
       x-trove-permission:
-        permission: policies:read
-        project: query.project
-        projectRole: owner
-      parameters:
-        - name: project
-          in: query
-          description: A project key; validates the policy as a policy of that project.
-          schema:
-            type: string
+        authenticated: true
       requestBody:
         required: true
         content:
@@ -5326,13 +5319,13 @@ paths:
         their defaults. The document is validated in one pass and every violation is reported (`422`,
         R-REPO-008); an unknown or duplicate member is `400 malformed_request` with its JSON pointer.
         Create is never an upsert: a key that is taken in the project, also by a repository being deleted,
-        answers `409 repository_exists`. The configuration, the audit event and the change-log row are one
+        answers `409 already_exists`. The configuration, the audit event and the change-log row are one
         transaction, so the repository is usable on every replica as soon as this answers
         (R-API-052). The body of the answer is the stored document plus `warnings`.
 
         The repository is created in the project of the path and stays in it (Q-AUTHZ-206): `project` in the body, if
         present, must equal it (`422`). The key is unique within the project, not in the installation (Q-REPO-212): a
-        key that is taken in the project answers `409 repository_exists`. A caller who holds
+        key that is taken in the project answers `409 already_exists`. A caller who holds
         `repositories:write-config`, or is an Owner of the project, creates it. A virtual repository's members and
         deploy target are repositories of the same project, named by their bare keys (`422
         repository_outside_project`, Q-AUTHZ-178). A project the caller cannot see answers `404`.
@@ -5652,24 +5645,22 @@ paths:
         Moves the repository to the project named in the body (Q-AUTHZ-206, Q-REPO-212). Its content, statistics and
         id stay; its address changes, because the address contains the project: `/api/<format>/<projectKey>/<repoKey>/…`
         and `/files/<projectKey>/<repoKey>/…` answer `404` for the old project from the moment the move commits, on
-        every replica. The caller holds `repositories:write-config`, or is an Owner of both the source and the target
-        project; a target project the caller cannot see answers `404`.
+        every replica.
 
         The move is refused with `409 repository_in_use` while an object of the source project references the
         repository: a virtual repository lists it as a member or pin-rule member or deploys into it, a project policy
         selects it by key, or a CI mapping of the project grants on it. The answer names the references; remove them,
-        then move. It is refused with `409 repository_exists` when the target project has a repository with the key.
-        The move records `repository.moved` with both projects, notifies `authz` and `repo_config`, and moves the
-        repository's `ETag`.
+        then move. It is refused with `409 already_exists` when the target project has a repository with the key,
+        also one being deleted. A target equal to the source changes nothing and answers `200`. The move needs no
+        `If-Match`: the path names the source. It records `repository.moved` with both projects, notifies `authz`
+        and `repo_config`, and moves the repository's `ETag`. The caller holds `repositories:write-config`, or is an
+        Owner of both projects: a target project the caller is no member of answers `404`, one where its role is
+        below Owner `403`.
       x-trove-recent-auth: true
       x-trove-permission:
         permission: repositories:write-config
         project: path.projectKey
         projectRole: owner
-      x-trove-idempotency-key: optional
-      parameters:
-        - $ref: "#/components/parameters/IfMatchOptional"
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -5688,8 +5679,6 @@ paths:
               $ref: "#/components/headers/Location"
             Trove-Authz-Epoch:
               $ref: "#/components/headers/AuthzEpoch"
-            Idempotency-Replayed:
-              $ref: "#/components/headers/IdempotencyReplayed"
           content:
             application/json:
               schema:
@@ -5704,8 +5693,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
         "415":
@@ -5883,8 +5870,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
         "415":
@@ -5931,8 +5916,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -6192,8 +6175,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
         "415":
@@ -6230,8 +6211,6 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -6802,8 +6781,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
         "415":
@@ -6842,8 +6819,6 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -8921,7 +8896,7 @@ paths:
                 registryUrl: https://trove.example.com/api/npm/web/npm-all/
                 endpointPath: //trove.example.com/api/npm/web/npm-all/
                 username: alice
-                publishTarget: npm-local
+                publishTarget: web/npm-local
                 tokenTtlSeconds: 2592000
                 snippets:
                   - id: npm.configure.npmrc
@@ -9003,7 +8978,7 @@ paths:
                 client: npm
                 repository: npm-all
                 registryUrl: https://trove.example.com/api/npm/web/npm-all/
-                publishTarget: npm-local
+                publishTarget: web/npm-local
                 credentials: env
                 exposureRules: false
                 sections:
@@ -10433,6 +10408,7 @@ paths:
       x-trove-permission:
         authenticated: true
       parameters:
+        - {name: project, in: query, description: "A project key: the findings of the project's repositories. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: repository, in: query, description: "A repository name `<project>/<key>`; a virtual repository expands to the members the caller can read. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: format, in: query, description: "A format ID, for example npm or nuget. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: package, in: query, description: "A normalized package name. Repeat for several.", schema: {type: array, items: {type: string}}}
@@ -10492,6 +10468,7 @@ paths:
       x-trove-permission:
         authenticated: true
       parameters:
+        - {name: project, in: query, description: "A project key: the findings of the project's repositories. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: repository, in: query, description: "A repository name `<project>/<key>`; a virtual repository expands to the members the caller can read. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: format, in: query, description: "A format ID, for example npm or nuget. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: package, in: query, description: "A normalized package name. Repeat for several.", schema: {type: array, items: {type: string}}}
@@ -10755,6 +10732,7 @@ paths:
       x-trove-permission:
         authenticated: true
       parameters:
+        - {name: project, in: query, description: "A project key: the findings of the project's repositories. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: repository, in: query, description: "A repository name `<project>/<key>`. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: format, in: query, description: "A format ID. Repeat for several.", schema: {type: array, items: {type: string}}}
       responses:
@@ -10790,6 +10768,7 @@ paths:
       parameters:
         - {name: from, in: query, description: "First day (RFC 3339 date); default 90 days before `to`.", schema: {type: string, format: date}}
         - {name: to, in: query, description: "Last day, inclusive (RFC 3339 date); default today.", schema: {type: string, format: date}}
+        - {name: project, in: query, description: "A project key: the findings of the project's repositories. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: repository, in: query, description: "A repository name `<project>/<key>`. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: format, in: query, description: "A format ID. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: kind, in: query, description: "vulnerability or malicious.", schema: {$ref: "#/components/schemas/VulnerabilityKind"}}
@@ -15434,7 +15413,7 @@ components:
           description: The caller's name; null for an anonymous caller.
         publishTarget:
           type: [string, "null"]
-          description: The key of the repository a publish goes to; null when the caller may not publish or a virtual repository has no default deployment target.
+          description: The qualified name `<project>/<key>` of the repository a publish goes to; null when the caller may not publish or a virtual repository has no default deployment target.
         tokenTtlSeconds:
           type: integer
           format: int64
@@ -15465,7 +15444,7 @@ components:
           description: The address the snippets use, with its trailing slash; `<repository>` stands for the key in the guide of a format.
         publishTarget:
           type: [string, "null"]
-          description: The repository a publish through this one reaches, when the caller may deploy there; null otherwise.
+          description: The qualified name `<project>/<key>` of the repository a publish through this one reaches, when the caller may deploy there; null otherwise.
         credentials:
           type: string
           enum: [env, none]
@@ -16625,14 +16604,15 @@ components:
     VulnerabilityFinding:
       type: object
       additionalProperties: false
-      required: [id, repository, format, package, version, advisory, aliases, kind, summary, severity, cvss, knownExploited, fixAvailable, fixedVersions, status, blocked, blockReason, detectedAt, resolvedAt]
+      required: [id, project, repository, format, package, version, advisory, aliases, kind, summary, severity, cvss, knownExploited, fixAvailable, fixedVersions, status, blocked, blockReason, detectedAt, resolvedAt]
       description: |
         One finding: one canonical advisory affects one stored version in one repository (R-VULN-012). `blocked` and
         `blockReason` are computed with the rule of R-VULN-015 and the repository's current policy, so the API, the report and
         the download agree.
       properties:
         id: {type: string, format: uuid}
-        repository: {type: string}
+        project: {type: string, description: The key of the project of the repository.}
+        repository: {type: string, description: The qualified name `<project>/<key>`.}
         format: {type: string}
         package: {type: string}
         version: {type: string}

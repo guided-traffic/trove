@@ -59,7 +59,7 @@ func setupProblem(t *testing.T, body []byte) errs.Problem {
 func TestR_BAS_007_ClientSetupRendersOnTheBaseURLTheBastionReported(t *testing.T) {
 	h := bastionServer(t, reportedURLs{"partners": "https://packages.example.com"}, "https://packages.example.com")
 	out := setupFrom(t, h, "/api/v1/projects/it/repositories/npm-all/client-setup?client=npm&bastion=partners")
-	if out.RegistryUrl != "https://packages.example.com/api/npm/npm-all/" || out.EndpointPath != "//packages.example.com/api/npm/npm-all/" {
+	if out.RegistryUrl != "https://packages.example.com/api/npm/it/npm-all/" || out.EndpointPath != "//packages.example.com/api/npm/it/npm-all/" {
 		t.Fatalf("%+v", out)
 	}
 	if out.PublishTarget != nil {
@@ -75,8 +75,8 @@ func TestR_BAS_007_ClientSetupRendersOnTheBaseURLTheBastionReported(t *testing.T
 		}
 	}
 	for _, want := range []string{
-		"registry=https://packages.example.com/api/npm/npm-all/\n",
-		"//packages.example.com/api/npm/npm-all/:_authToken={{token}}\n",
+		"registry=https://packages.example.com/api/npm/it/npm-all/\n",
+		"//packages.example.com/api/npm/it/npm-all/:_authToken={{token}}\n",
 		"replace-registry-host=always\n",
 	} {
 		if !strings.Contains(conf, want) {
@@ -100,7 +100,7 @@ func TestR_BAS_007_TheSwitchIsNpmsAndTheBastionsOnly(t *testing.T) {
 			t.Errorf("%s: %s", sn.Id, sn.Content)
 		}
 	}
-	if !hasPublish || direct.RegistryUrl != "https://trove.example.com/api/npm/npm-all/" {
+	if !hasPublish || direct.RegistryUrl != "https://trove.example.com/api/npm/it/npm-all/" {
 		t.Errorf("the direct setup changed: %+v", direct)
 	}
 	for _, client := range []string{"pnpm", "yarn", "yarn-classic"} {
@@ -136,7 +136,7 @@ func TestR_BAS_007_AnAddressThatIsNotListedAnswers409(t *testing.T) {
 	// A listed entry with a trailing slash and another case of the host matches.
 	h = bastionServer(t, reportedURLs{"partners": "https://Packages.Example.com"}, "https://packages.example.com/")
 	out := setupFrom(t, h, "/api/v1/projects/it/repositories/npm-all/client-setup?client=npm&bastion=partners")
-	if out.RegistryUrl != "https://packages.example.com/api/npm/npm-all/" {
+	if out.RegistryUrl != "https://packages.example.com/api/npm/it/npm-all/" {
 		t.Errorf("the registry URL is the listed entry's form: %s", out.RegistryUrl)
 	}
 }
@@ -176,7 +176,7 @@ func TestR_BAS_007_ABastionSetupNeedsNoBaseURLOfTheEndpoint(t *testing.T) {
 		t.Fatalf("the direct setup without a base URL: %d", w.Code)
 	}
 	out := setupFrom(t, h, "/api/v1/projects/it/repositories/npm-all/client-setup?client=npm&bastion=partners")
-	if out.RegistryUrl != "https://packages.example.com/api/npm/npm-all/" {
+	if out.RegistryUrl != "https://packages.example.com/api/npm/it/npm-all/" {
 		t.Errorf("%+v", out)
 	}
 }
