@@ -217,16 +217,11 @@ func (s *Server) CreateProjectServiceAccountToken(w http.ResponseWriter, r *http
 	if err == nil {
 		err = StrictUnmarshal(body, &in)
 	}
-	var scope []byte
-	if err == nil {
-		scope, err = scopeBytes(in.Scope)
-	}
-	if err != nil {
-		failIdentity(w, r, err)
-		return
-	}
 	derived := p.Kind == httpserver.KindServiceAccount && p.Name == projectKey+"/"+name && tokenAuthenticated(p)
-	admin, err := s.holds(ctx, "role:admin")
+	admin, aerr := s.holds(ctx, "role:admin")
+	if err == nil {
+		err = aerr
+	}
 	owns := false
 	if err == nil && !admin && !derived {
 		if pa, ok := s.o.Access.(ProjectAccess); ok {
@@ -235,6 +230,10 @@ func (s *Server) CreateProjectServiceAccountToken(w http.ResponseWriter, r *http
 	}
 	if err == nil && !admin && !derived && !owns {
 		err = errs.E(errs.Forbidden, errs.CodeForbidden, "Only an administrator, an Owner of the account's project, or a token of the account itself creates its tokens.")
+	}
+	var scope []byte
+	if err == nil {
+		scope, err = scopeBytes(in.Scope)
 	}
 	var parent *token.Info
 	if err == nil && derived {

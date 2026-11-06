@@ -106,6 +106,15 @@ func TestR_AUTHZ_207_TheDeclarationOfAProjectRole(t *testing.T) {
 			t.Errorf("owner of another project: %d, want 404: a project the caller is no member of answers like a missing one", got)
 		}
 	})
+	t.Run("R-AUTHZ-026 a holder of projects:read, the auditor, keeps 403 where a non-member gets 404", func(t *testing.T) {
+		const path = "/api/v1/projects/web/service-accounts"
+		if got := call(projectCaller{caps: map[string]bool{"projects:read": true}}, path); got != 403 {
+			t.Errorf("auditor: %d, want 403: it reads every project, so the project is not hidden from it", got)
+		}
+		if got := call(projectCaller{}, path); got != 404 {
+			t.Errorf("non-member: %d, want 404", got)
+		}
+	})
 	t.Run("R-AUTHZ-026 an anonymous caller gets 401", func(t *testing.T) {
 		s := newSetup(t, func(o *Options) { o.Access = projectCaller{} }, nil)
 		if got := s.get("/api/v1/projects").Code; got != 401 && got != 403 {

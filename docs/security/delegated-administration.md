@@ -109,7 +109,16 @@ the target, 404 for a caller that is no member there).
 An Owner creates the remote repositories of its project ([Q-AUTHZ-173](../spec/authorization.md#q-authz-173--a-project-administrator-creates-remote-repositories)).
 The spec bounds what an Owner without `repositories:write-config` may give a remote (a secret as a value, never a reference of the
 installation; the installation's outbound path; a mirror's mode and scope as stored): Q-REPO-127, Q-REPO-128, Q-REPO-142 and
-Q-REPO-193. The checks belong to the repository service's write path; they are not applied there today ([H-564](#h-564--an-owners-remote-repository-is-not-held-to-the-owners-rules)).
+Q-REPO-193. The checks belong to the repository service's write path ([delegated.go](../../internal/repository/delegated.go),
+[validate_mirror.go](../../internal/repository/validate_mirror.go)) and run against the stored section in the transaction of the
+write: the create, the replace and the patch of a repository and the unsaved upstream test. The management API decides who is held
+to them ([repositories_api.go](../../internal/api/v1/repositories_api.go), `writeCaller`): a caller that does not hold
+`repositories:write-config` and is admitted by the role Owner alone is `Restricted`, and `MayWeakenVulnerabilities` is set for a holder of
+`vulnerabilities:triage` ([Q-VULN-69](../spec/vulnerability-scanning.md#q-vuln-69--weakening-the-vulnerabilities-member-needs-the-triage-capability-or-repositoriesWrite-config)). An administrator of trove,
+who holds the capability, is bound by none of the rules; the Owner's answers are 422 `secret_value_required`,
+`outbound_path_restricted` and `mirror_restricted`, and 403 `vulnerability_weakening_refused`. The integration test
+`TestR_AUTHZ_026_AnOwnerWritesRemoteRepositoriesWithinTheRules` ([owner_repositories_test.go](../../test/integration/projects/owner_repositories_test.go))
+drives every rule over HTTP as an Owner and as an administrator.
 
 ## What this does not cover
 
@@ -125,23 +134,6 @@ The gaps of these mechanisms recorded on the spec pages are linked here; the one
   delete that fails after the policy deletions leaves the project with fewer policies.
 - [H-406](../spec/authorization.md#h-406--the-audit-event-of-a-refused-project-administrator-does-not-name-the-project) — the audit
   event of a refused declaration does not name the project.
-
-### H-564 · An Owner's remote repository is not held to the Owner's rules
-
-Stage: the create, replace and patch of a remote repository and the unsaved upstream test, when an Owner of the project without
-`repositories:write-config` calls them. Subject: the installation's secret references (`secrets_dir`, `TROVE_CAC_` variables), its
-outbound proxy and source networks, and the scope and pace of a mirror.
-
-- **Live wherever the management API admits an Owner to the repository writes.** The rules of Q-REPO-127, Q-REPO-128, Q-REPO-142 and
-  Q-REPO-193 (422 `secret_value_required`, `outbound_path_restricted`, `mirror_restricted`) were written for the project administrator
-  of the previous model; the repository service does not call them for an Owner (`checkDelegatedMirror` and
-  `checkDelegatedMirrorScope` in [validate_mirror.go](../../internal/repository/validate_mirror.go) have no caller, and no check of a
-  secret reference or an outbound path exists for a caller without the capability). An Owner can name a reference of the installation
-  and send its content to a host it names, take a source network a partner trusts, or start an unbounded mirror.
-- What makes it real: an Owner who is not trusted with the installation's secrets, network or upstream goodwill, the case delegation
-  exists for.
-- What would close it: the repository service applying the four rules to a writer that is neither a holder of
-  `repositories:write-config` nor the administrator of trove, against the stored section, in the transaction of the write.
 
 ### H-565 · A group that becomes an auto-join group stays a member without a role
 

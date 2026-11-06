@@ -33,7 +33,7 @@ func newAuditorEnv(t *testing.T) *auditorEnv {
 	st.Repository("generic-local", "local", "generic", "{}")
 	st.Policy("writers", []string{"read", "deploy", "delete", "annotate"}, []string{"npm-local", "generic-local"}, e.alice)
 	// A token exercises a role's capabilities only through its system items (R-AUTHZ-013).
-	auditor := scope.Scope{Inherit: true, System: []string{"content:metadata-read", "repositories:read-config", "policies:read"}}
+	auditor := scope.Scope{Inherit: true, System: []string{"content:metadata-read", "repositories:read-config", "policies:read", "projects:read"}}
 	e.tokA = st.Token(e.alice, scope.Default())
 	e.tokAud, e.tokMem = st.Token(aud, auditor), st.Token(mem, auditor)
 	e.tokMemDefault, e.tokNobody = st.Token(mem, scope.Default()), st.Token(nobody, scope.Default())

@@ -442,11 +442,15 @@ func (s *Server) switchOn(name string) bool {
 
 // hideProject turns the refusal of an operation on a project into the answer of a missing one when the
 // caller is no member of the project (R-AUTHZ-026, R-AUTHZ-016): a project the caller cannot see answers like
-// one that does not exist, and a member whose role is too low keeps its 403. The refusal (and its audit event)
-// was decided by Require; an Access that cannot list memberships leaves it as it is.
+// one that does not exist, and a member whose role is too low keeps its 403, and so does a holder of
+// projects:read (the auditor reads every project, so the project is not hidden from it). The refusal (and its
+// audit event) was decided by Require; an Access that cannot list memberships leaves it as it is.
 func (s *Server) hideProject(r *http.Request, key string, refusal error) error {
 	pa, ok := s.o.Access.(ProjectAccess)
 	if !ok {
+		return refusal
+	}
+	if sees, err := s.holds(r.Context(), string(authz.ProjectsRead)); err != nil || sees {
 		return refusal
 	}
 	members, err := pa.Memberships(r.Context())
