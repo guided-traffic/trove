@@ -46,6 +46,13 @@ The connection string carries neither.
   `internal/jobs` and `internal/blob` do. `DB.InPgxTx(ctx, func(pgx.Tx) error)` is the hook-less pgx form for this
   package and the retry tests. `DB.Tx` is an old name of `InTx` that stays only until the coordination integration
   tests and the e2e driver use `InTx`. `RequestTx` adds `statement_timeout` via `set_config(..., true)`.
+- `q.Pipeline(ctx, tx, steps...)` ([pipeline.go](../../internal/meta/postgres/q/pipeline.go)) runs the statements of several steps
+  in one round trip (`store.Eval.Pipeline` for the vulnerability store): a step calls the generated `Queries` methods it is given and
+  keeps their results; the statements are recorded in a first pass, sent as one pgx batch on the transaction and answered to a
+  second pass of the same steps. A step is therefore a pure function of its arguments, issues the same statements whatever the
+  answers were, and none of its statements depends on the result of another step of the same pipeline; a step that issues another
+  statement the second time is refused. Use it for independent statements on a path that is measured in round trips (Q-VULN-82); a
+  statement that needs an earlier answer is the next pipeline.
 - The one place SQL text is assembled is [blobrefs.go](../../internal/meta/postgres/blobrefs.go): the collector's
   reference check and full-sweep anti-join are built from the foreign keys to `blobs` read from the catalog
   (R-STOR-024 rule 3), every identifier quoted with `pgx.Identifier`, no value in the text. `postgres.LoadBlobRefs`

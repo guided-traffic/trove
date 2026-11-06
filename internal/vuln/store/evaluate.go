@@ -21,7 +21,10 @@ import (
 // advisories. Every method runs on the transaction it was made for.
 
 // Eval is the evaluation's view of one transaction.
-type Eval struct{ qs *q.Queries }
+type Eval struct {
+	qs *q.Queries
+	tx q.Tx
+}
 
 // EvalOf returns the evaluation's access to a transaction of the PostgreSQL store.
 func EvalOf(tx meta.Tx) (*Eval, error) {
@@ -29,7 +32,18 @@ func EvalOf(tx meta.Tx) (*Eval, error) {
 	if !ok {
 		return nil, errors.New("vuln store: the transaction does not come from the PostgreSQL store")
 	}
-	return &Eval{qs: q.New(ptx)}, nil
+	return &Eval{qs: q.New(ptx), tx: ptx}, nil
+}
+
+// Pipeline runs the reads of several steps in one round trip (Q-VULN-82): each step calls the methods of the Eval it is given
+// and keeps their results. The rules of [q.Pipeline] hold: a step is a pure function of its arguments, issues the same
+// statements whatever the answers, and none of its statements depends on the result of another step of the same pipeline.
+func (e *Eval) Pipeline(ctx context.Context, steps ...func(*Eval) error) error {
+	qsteps := make([]func(*q.Queries) error, len(steps))
+	for i, step := range steps {
+		qsteps[i] = func(qs *q.Queries) error { return step(&Eval{qs: qs, tx: e.tx}) }
+	}
+	return q.Pipeline(ctx, e.tx, qsteps...)
 }
 
 // NewFindingID returns the id of a new finding, a UUIDv7 (RFC 9562).
@@ -82,6 +96,24 @@ func (e *Eval) AffectedForNames(ctx context.Context, ecosystem string, names []s
 	if err != nil {
 		return nil, fmt.Errorf("affected entries: %w", err)
 	}
+	return affectedRows(rows), nil
+}
+
+// AffectedForItem returns the affected entries that name the package of an item's version, withdrawn records included: the
+// commit hook asks before it knows the name (Q-VULN-82). No entry for an item that belongs to no version.
+func (e *Eval) AffectedForItem(ctx context.Context, ecosystem string, itemID int64) ([]AffectedRow, error) {
+	rows, err := e.qs.VulnAffectedForItem(ctx, q.VulnAffectedForItemParams{Ecosystem: ecosystem, ItemID: itemID})
+	if err != nil {
+		return nil, fmt.Errorf("affected entries: %w", err)
+	}
+	named := make([]q.VulnAffectedForNamesRow, len(rows))
+	for i, r := range rows {
+		named[i] = q.VulnAffectedForNamesRow(r)
+	}
+	return affectedRows(named), nil
+}
+
+func affectedRows(rows []q.VulnAffectedForNamesRow) []AffectedRow {
 	out := make([]AffectedRow, len(rows))
 	for i, r := range rows {
 		a := AffectedRow{
@@ -96,7 +128,7 @@ func (e *Eval) AffectedForNames(ctx context.Context, ecosystem string, names []s
 		}
 		out[i] = a
 	}
-	return out, nil
+	return out
 }
 
 // StoredVersion is one stored version: a row of package_versions with its package and repository.
@@ -228,6 +260,20 @@ func (e *Eval) InsertFinding(ctx context.Context, f NewFinding) (bool, error) {
 		FixedVersions: nonNil(f.FixedVersions), AdvisoryModifiedUs: f.AdvisoryModifiedU,
 	})
 	return len(ids) > 0, err
+}
+
+// FindingsOfRepoItem returns the findings of the package of an item's version in one repository, resolved ones too: the commit hook
+// asks before it knows the name (Q-VULN-82).
+func (e *Eval) FindingsOfRepoItem(ctx context.Context, repoID int64, ecosystem string, itemID int64) ([]Finding, error) {
+	rows, err := e.qs.VulnFindingsOfRepoItem(ctx, q.VulnFindingsOfRepoItemParams{RepoID: repoID, Ecosystem: ecosystem, ItemID: itemID})
+	if err != nil {
+		return nil, fmt.Errorf("findings of a repository: %w", err)
+	}
+	out := make([]Finding, len(rows))
+	for i, r := range rows {
+		out[i] = findingOf(q.VulnFindingsOfRepoNamesRow(r))
+	}
+	return out, nil
 }
 
 // FindingByIdentity reads the finding of one identity; false when there is none.
@@ -527,6 +573,20 @@ type ClaimHolder struct {
 // the transaction. The query narrows by the name; the caller matches the patterns.
 func (e *Eval) ClaimHolders(ctx context.Context, format, name string) ([]ClaimHolder, error) {
 	rows, err := e.qs.VulnClaimHolders(ctx, q.VulnClaimHoldersParams{Format: format, Name: name})
+	if err != nil {
+		return nil, fmt.Errorf("claims of %s: %w", format, err)
+	}
+	out := make([]ClaimHolder, len(rows))
+	for i, r := range rows {
+		out[i] = ClaimHolder{RepoID: r.RepoID, Key: r.Key, Config: r.Config, Pattern: r.Pattern, Scope: r.Scope, Source: r.Source}
+	}
+	return out, nil
+}
+
+// ClaimHoldersForItem is [Eval.ClaimHolders] for the name of an item's version: the commit hook asks before it knows the name
+// (Q-VULN-82).
+func (e *Eval) ClaimHoldersForItem(ctx context.Context, format string, itemID int64) ([]ClaimHolder, error) {
+	rows, err := e.qs.VulnClaimHoldersForItem(ctx, q.VulnClaimHoldersForItemParams{Format: format, ItemID: itemID})
 	if err != nil {
 		return nil, fmt.Errorf("claims of %s: %w", format, err)
 	}

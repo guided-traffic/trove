@@ -205,15 +205,23 @@ type run struct {
 	// single is true for the commit hook's evaluation of one version.
 	single bool
 	st     stats
+	// affected are the affected entries of the names when the caller read them with its other reads (the commit hook, one round
+	// trip); nil makes evaluateNames read them.
+	affected *[]store.AffectedRow
 }
 
 // evaluateNames evaluates stored versions against the advisory data in tx: for the versions given (a commit) or every stored
 // version of the names (a job), the findings are upserted and resolved by their identity (R-VULN-012). existing are the
 // findings of those names, resolved ones included; a finding whose version is not among the versions is not touched.
 func (r *run) evaluateNames(ctx context.Context, names []string, versions []store.StoredVersion, existing []store.Finding) error {
-	rows, err := r.ev.AffectedForNames(ctx, r.eco.Name, names)
-	if err != nil {
-		return err
+	var rows []store.AffectedRow
+	if r.affected != nil {
+		rows = *r.affected
+	} else {
+		var err error
+		if rows, err = r.ev.AffectedForNames(ctx, r.eco.Name, names); err != nil {
+			return err
+		}
 	}
 	byName := groupAffected(rows)
 	rekey, err := r.rekeyTargets(ctx, existing, byName)
@@ -673,9 +681,18 @@ func (r *run) reopen(ctx context.Context, rv repoView, v store.StoredVersion, f 
 
 // recordClaimed records the public advisories that name an internal name (R-VULN-010): one row per advisory and name and, when
 // the row is new, the security event `vulnerability.claimed_name_match` after the transaction committed. A name that is no
-// longer internal, or that an advisory no longer names, loses its rows.
+// longer internal, or that an advisory no longer names, loses its rows. The inserts and the prune are independent of each
+// other's answers, so they are sent in one round trip (Q-VULN-82).
 func (r *run) recordClaimed(ctx context.Context, names []string, byName map[string]*nameAdvisories) error {
-	var keepNames, keepIDs []string
+	type match struct {
+		name, id, claimRepo string
+		kind                advisory.Kind
+		isNew               bool
+	}
+	var (
+		keepNames, keepIDs []string
+		matches            []match
+	)
 	anyInternal := false
 	for _, name := range names {
 		var claimRepo string
@@ -704,15 +721,8 @@ func (r *run) recordClaimed(ctx context.Context, names []string, byName map[stri
 		}
 		sort.Strings(ids)
 		for _, id := range ids {
-			kind := na.live[id]
 			keepNames, keepIDs = append(keepNames, name), append(keepIDs, id)
-			isNew, err := r.ev.InsertClaimedMatch(ctx, r.eco.Name, id, name, kind)
-			if err != nil {
-				return err
-			}
-			if isNew {
-				r.claimedEvent(ctx, name, id, kind, claimRepo)
-			}
+			matches = append(matches, match{name: name, id: id, claimRepo: claimRepo, kind: na.live[id]})
 		}
 	}
 	// The commit of one version (a publish, a fill) that names no internal name has nothing to prune and costs no statement; the
@@ -720,7 +730,24 @@ func (r *run) recordClaimed(ctx context.Context, names []string, byName map[stri
 	if !anyInternal && r.single {
 		return nil
 	}
-	return r.ev.PruneClaimedMatches(ctx, r.eco.Name, names, keepNames, keepIDs)
+	steps := make([]func(*store.Eval) error, 0, len(matches)+1)
+	for i := range matches {
+		m := &matches[i]
+		steps = append(steps, func(e *store.Eval) (err error) {
+			m.isNew, err = e.InsertClaimedMatch(ctx, r.eco.Name, m.id, m.name, m.kind)
+			return err
+		})
+	}
+	steps = append(steps, func(e *store.Eval) error { return e.PruneClaimedMatches(ctx, r.eco.Name, names, keepNames, keepIDs) })
+	if err := r.ev.Pipeline(ctx, steps...); err != nil {
+		return err
+	}
+	for _, m := range matches {
+		if m.isNew {
+			r.claimedEvent(ctx, m.name, m.id, m.kind, m.claimRepo)
+		}
+	}
+	return nil
 }
 
 // claimedEvent queues the security event for after the commit: a transaction that rolls back and runs again writes it once.

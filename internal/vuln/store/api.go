@@ -32,10 +32,12 @@ type API struct{ db DB }
 // NewAPI returns the package's access to the database.
 func NewAPI(db DB) *API { return &API{db: db} }
 
-// Scope is what a caller may read, as the statements take it: the repositories whose every finding the caller may read, and
-// the "<repository>\x1f<package>\x1f<version>" entries of the versions it may read in the others.
+// Scope is what a caller may read, as the statements take it: the repositories whose every finding the caller may read, the
+// "<repository>\x1f<package>\x1f<version>" entries of the versions it may read in the others, and the
+// "<repository>\x1f<package>" entries of the packages it may read in the others at every version (the decision does not look at
+// the version, Q-VULN-81).
 type Scope struct {
-	Whole, Rows []string
+	Whole, Rows, Packages []string
 }
 
 // Filter narrows the findings a statement selects. The zero value selects every finding in scope that is not resolved.
@@ -152,6 +154,34 @@ func (a *API) Candidates(ctx context.Context, keys []string, f Filter, max int) 
 	return out, err
 }
 
+// Pair is a (repository, package) pair a scope decides on once for every version.
+type Pair struct{ Repository, Package string }
+
+// CandidatePackages returns the distinct pairs of the findings of the repositories that match the filter, read from at most max
+// findings, and the number of findings read; the caller asks for one more than it accepts and compares the findings, not the pairs,
+// with its limit. The statement does not group (the planner sorts a large number of packages to do it); the repeats are removed
+// here.
+func (a *API) CandidatePackages(ctx context.Context, keys []string, f Filter, max int) (pairs []Pair, findings int, err error) {
+	var rows []q.VulnScopePackagesRow
+	err = a.db.Read(ctx, func(db q.DBTX) (err error) {
+		rows, err = q.New(db).VulnScopePackages(ctx, q.VulnScopePackagesParams{
+			Keys: nn(keys), Formats: nn(f.Formats), Packages: nn(f.Packages), PackagePrefix: f.PackagePrefix,
+			Versions: nn(f.Versions), Ids: nn(f.IDs), Statuses: nn(f.Statuses), MaxRows: rows32(max),
+		})
+		return err
+	})
+	seen := make(map[Pair]struct{}, len(rows)/4)
+	for _, r := range rows {
+		p := Pair{Repository: r.RepoKey, Package: r.Name}
+		if _, dup := seen[p]; dup {
+			continue
+		}
+		seen[p] = struct{}{}
+		pairs = append(pairs, p)
+	}
+	return pairs, len(rows), err
+}
+
 // PackageCandidates returns the triples of one package's stored versions in the repositories; version "" means every one.
 func (a *API) PackageCandidates(ctx context.Context, keys []string, format, name, version string, max int) ([]Candidate, error) {
 	var rows []q.VulnPackageCandidatesRow
@@ -173,7 +203,7 @@ func (f Filter) listParams(sc Scope) q.VulnFindingsListParams {
 	hasFix, fix := tri(f.FixAvailable)
 	hasBl, bl := tri(f.Blocked)
 	return q.VulnFindingsListParams{
-		Whole: nn(sc.Whole), Rows: nn(sc.Rows), HasRepos: f.HasRepos, Repos: nn(f.Repos), Formats: nn(f.Formats),
+		Whole: nn(sc.Whole), Rows: nn(sc.Rows), PackageRows: nn(sc.Packages), HasRepos: f.HasRepos, Repos: nn(f.Repos), Formats: nn(f.Formats),
 		Packages: nn(f.Packages), PackagePrefix: f.PackagePrefix, Versions: nn(f.Versions), Ecosystem: f.Ecosystem,
 		Advisory: f.Advisory, Severities: nn(f.Severities), Statuses: nn(f.Statuses), Kind: f.Kind,
 		HasKnownExploited: hasKE, KnownExploited: ke, HasFixAvailable: hasFix, FixAvailable: fix, HasBlocked: hasBl, Blocked: bl,
@@ -246,7 +276,7 @@ func rowOf(r q.VulnFindingsListRow) Row {
 func (a *API) Count(ctx context.Context, sc Scope, f Filter, limit int) (int64, error) {
 	lp := f.listParams(sc)
 	p := q.VulnFindingsCountParams{
-		Whole: lp.Whole, Rows: lp.Rows, HasRepos: lp.HasRepos, Repos: lp.Repos, Formats: lp.Formats, Packages: lp.Packages,
+		Whole: lp.Whole, Rows: lp.Rows, PackageRows: lp.PackageRows, HasRepos: lp.HasRepos, Repos: lp.Repos, Formats: lp.Formats, Packages: lp.Packages,
 		PackagePrefix: lp.PackagePrefix, Versions: lp.Versions, Ecosystem: lp.Ecosystem, Advisory: lp.Advisory,
 		Severities: lp.Severities, Statuses: lp.Statuses, Kind: lp.Kind, HasKnownExploited: lp.HasKnownExploited,
 		KnownExploited: lp.KnownExploited, HasFixAvailable: lp.HasFixAvailable, FixAvailable: lp.FixAvailable,
@@ -356,7 +386,7 @@ type VersionCount struct {
 func (a *API) PackageCounts(ctx context.Context, sc Scope, format, name string) ([]VersionCount, error) {
 	var rows []q.VulnPackageCountsRow
 	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
-		rows, err = q.New(db).VulnPackageCounts(ctx, q.VulnPackageCountsParams{Whole: nn(sc.Whole), Rows: nn(sc.Rows), Format: format, Name: name})
+		rows, err = q.New(db).VulnPackageCounts(ctx, q.VulnPackageCountsParams{Whole: nn(sc.Whole), Rows: nn(sc.Rows), PackageRows: nn(sc.Packages), Format: format, Name: name})
 		return err
 	})
 	out := make([]VersionCount, 0, len(rows))
@@ -378,7 +408,7 @@ func (a *API) SummaryCounts(ctx context.Context, sc Scope, f Filter) ([]SummaryR
 	var rows []q.VulnSummaryCountsRow
 	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
 		rows, err = q.New(db).VulnSummaryCounts(ctx, q.VulnSummaryCountsParams{
-			Whole: nn(sc.Whole), Rows: nn(sc.Rows), HasRepos: f.HasRepos, Repos: nn(f.Repos), Formats: nn(f.Formats),
+			Whole: nn(sc.Whole), Rows: nn(sc.Rows), PackageRows: nn(sc.Packages), HasRepos: f.HasRepos, Repos: nn(f.Repos), Formats: nn(f.Formats),
 		})
 		return err
 	})
@@ -397,7 +427,7 @@ func (a *API) BlockedVersions(ctx context.Context, sc Scope, f Filter) (int64, e
 	var n int64
 	err := a.db.Read(ctx, func(db q.DBTX) (err error) {
 		n, err = q.New(db).VulnSummaryBlocked(ctx, q.VulnSummaryBlockedParams{
-			EnabledRepos: nn(f.EnabledRepos), MaliciousRepos: nn(f.MaliciousRepos), Whole: nn(sc.Whole), Rows: nn(sc.Rows),
+			EnabledRepos: nn(f.EnabledRepos), MaliciousRepos: nn(f.MaliciousRepos), Whole: nn(sc.Whole), Rows: nn(sc.Rows), PackageRows: nn(sc.Packages),
 			HasRepos: f.HasRepos, Repos: nn(f.Repos), Formats: nn(f.Formats),
 		})
 		return err
@@ -418,7 +448,7 @@ func (a *API) Trend(ctx context.Context, sc Scope, f Filter, from, to string) (d
 	err = a.db.Read(ctx, func(db q.DBTX) error {
 		qs := q.New(db)
 		d, err := qs.VulnTrendDetected(ctx, q.VulnTrendDetectedParams{
-			FromDay: from, ToDay: to, Whole: nn(sc.Whole), Rows: nn(sc.Rows),
+			FromDay: from, ToDay: to, Whole: nn(sc.Whole), Rows: nn(sc.Rows), PackageRows: nn(sc.Packages),
 			HasRepos: f.HasRepos, Repos: nn(f.Repos), Formats: nn(f.Formats), Kind: f.Kind,
 		})
 		if err != nil {
@@ -428,7 +458,7 @@ func (a *API) Trend(ctx context.Context, sc Scope, f Filter, from, to string) (d
 			detected = append(detected, DayCount{Day: r.Day, Severity: advisory.Severity(r.Severity), N: r.N})
 		}
 		rs, err := qs.VulnTrendResolved(ctx, q.VulnTrendResolvedParams{
-			FromDay: from, ToDay: to, Whole: nn(sc.Whole), Rows: nn(sc.Rows),
+			FromDay: from, ToDay: to, Whole: nn(sc.Whole), Rows: nn(sc.Rows), PackageRows: nn(sc.Packages),
 			HasRepos: f.HasRepos, Repos: nn(f.Repos), Formats: nn(f.Formats), Kind: f.Kind,
 		})
 		if err != nil {
@@ -556,7 +586,7 @@ func (a *API) Lock(ctx context.Context, tx meta.Tx, sc Scope, ids []string) ([]L
 	if err != nil {
 		return nil, err
 	}
-	rows, err := qs.VulnFindingsLock(ctx, q.VulnFindingsLockParams{Ids: uuidTexts(ids), Whole: nn(sc.Whole), Rows: nn(sc.Rows)})
+	rows, err := qs.VulnFindingsLock(ctx, q.VulnFindingsLockParams{Ids: uuidTexts(ids), Whole: nn(sc.Whole), Rows: nn(sc.Rows), PackageRows: nn(sc.Packages)})
 	if err != nil {
 		return nil, err
 	}

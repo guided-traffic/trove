@@ -26,16 +26,49 @@ import (
 // one alias group, the re-key of resolved findings, the races of the writes, the history's growth, the queue of an ecosystem the
 // build cannot evaluate, the resume of a rescan, the cost of a fill and the backfill of cached tarballs.
 
-// stmtCounter counts the statements of the pool it traces, apart from the transaction's own.
+// stmtCounter counts the statements of the pool it traces, apart from the transaction's own, and the round trips they cost: a
+// statement of a batch (q.Pipeline) is counted with the batch it was sent in, so that a batch is one round trip.
 type stmtCounter struct {
-	mu  sync.Mutex
-	sql []string
+	mu      sync.Mutex
+	sql     []string
+	singles int
+	batches int
+}
+
+var _ pgx.BatchTracer = (*stmtCounter)(nil)
+
+func (c *stmtCounter) TraceBatchStart(ctx context.Context, _ *pgx.Conn, _ pgx.TraceBatchStartData) context.Context {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.batches++
+	return ctx
+}
+
+func (c *stmtCounter) TraceBatchQuery(_ context.Context, _ *pgx.Conn, d pgx.TraceBatchQueryData) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.sql = append(c.sql, d.SQL)
+}
+
+func (*stmtCounter) TraceBatchEnd(context.Context, *pgx.Conn, pgx.TraceBatchEndData) {}
+
+// roundTrips is the number of times the traced pool went to the server: the statements sent alone and the batches, without
+// BEGIN, COMMIT and ROLLBACK.
+func (c *stmtCounter) roundTrips() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.singles + c.batches
 }
 
 func (c *stmtCounter) TraceQueryStart(ctx context.Context, _ *pgx.Conn, d pgx.TraceQueryStartData) context.Context {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.sql = append(c.sql, d.SQL)
+	switch strings.ToLower(strings.TrimSpace(d.SQL)) {
+	case "begin", "commit", "rollback", "begin read write", "begin isolation level read committed":
+	default:
+		c.singles++
+	}
 	return ctx
 }
 
@@ -44,7 +77,7 @@ func (*stmtCounter) TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndD
 func (c *stmtCounter) reset() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.sql = nil
+	c.sql, c.singles, c.batches = nil, 0, 0
 }
 
 // statements are the traced statements, without BEGIN, COMMIT and ROLLBACK.
@@ -453,8 +486,9 @@ func TestR_VULN_012_TheHistoryDoesNotGrowByModificationsOrByAFlappingCache(t *te
 // R-VULN-011, Q-VULN-66 (A4): the statements of the commit hook's evaluation of one version. A version of a name that is no
 // internal name costs six: the repository row, the version of the item, the findings of the name in the repository, the data state,
 // the affected entries and the claims that can cover the name (the repository row and the claims are read in the transaction, so
-// that the commit takes no second pool connection); a claimed name adds the prune of its matches. The claim of npm-local is the
-// auto claim of the first publish.
+// that the commit takes no second pool connection); a claimed name adds the prune of its matches. The six are read in one round
+// trip (Q-VULN-82), the package named by the item inside the statements that need the name; the prune (and the insert of each
+// claimed-name match) is a second. The claim of npm-local is the auto claim of the first publish.
 func TestR_VULN_011_TheCommitEvaluationCostsAFixedNumberOfStatements(t *testing.T) {
 	e := newEnv(t)
 	e.setComplete("npm", true)
@@ -478,8 +512,14 @@ func TestR_VULN_011_TheCommitEvaluationCostsAFixedNumberOfStatements(t *testing.
 	if got := count("npm-vendor", "trove-test-count-a"); len(got) != 6 {
 		t.Errorf("%d statements for a public name, want 6:\n%s", len(got), strings.Join(got, "\n---\n"))
 	}
+	if n := tr.roundTrips(); n != 1 {
+		t.Errorf("%d round trips for a public name, want 1", n)
+	}
 	if got := count("npm-local", "trove-test-count-b"); len(got) != 7 {
 		t.Errorf("%d statements for a claimed name, want 7:\n%s", len(got), strings.Join(got, "\n---\n"))
+	}
+	if n := tr.roundTrips(); n != 2 {
+		t.Errorf("%d round trips for a claimed name, want 2", n)
 	}
 }
 

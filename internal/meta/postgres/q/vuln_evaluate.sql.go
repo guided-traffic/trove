@@ -9,6 +9,81 @@ import (
 	"context"
 )
 
+const vulnAffectedForItem = `-- name: VulnAffectedForItem :many
+SELECT a.name::text AS name, v.id::text AS record_id, v.canonical_id::text AS canonical_id,
+       (extract(epoch FROM COALESCE(c.modified, v.modified)) * 1000000)::bigint AS modified_us,
+       (v.withdrawn IS NOT NULL)::boolean AS withdrawn,
+       v.kind::text AS kind,
+       COALESCE(c.severity, v.severity)::text AS severity,
+       COALESCE(c.cvss_score, v.cvss_score, -1)::float8 AS cvss_score,
+       (COALESCE(c.known_exploited, false) OR v.known_exploited)::boolean AS known_exploited,
+       a.ranges AS ranges, a.versions::text[] AS versions, a.every_version::boolean AS every_version, a.fixed::text[] AS fixed
+  FROM vuln_affected a
+  JOIN vuln_advisory v ON v.ecosystem = a.ecosystem AND v.id = a.advisory_id
+  LEFT JOIN vuln_advisory c ON c.ecosystem = v.ecosystem AND c.id = v.canonical_id
+ WHERE a.ecosystem = $1::text
+   AND a.name = (SELECT p.name FROM items i
+                    JOIN package_versions pv ON pv.id = i.version_id
+                    JOIN packages p ON p.id = pv.package_id
+                   WHERE i.id = $2::bigint AND pv.trashed_at IS NULL)
+`
+
+type VulnAffectedForItemParams struct {
+	Ecosystem string
+	ItemID    int64
+}
+
+type VulnAffectedForItemRow struct {
+	Name           string
+	RecordID       string
+	CanonicalID    string
+	ModifiedUs     int64
+	Withdrawn      bool
+	Kind           string
+	Severity       string
+	CvssScore      float64
+	KnownExploited bool
+	Ranges         []byte
+	Versions       []string
+	EveryVersion   bool
+	Fixed          []string
+}
+
+// VulnAffectedForNames for the name of an item (the commit hook, Q-VULN-82): the same columns and the same severity rules.
+func (q *Queries) VulnAffectedForItem(ctx context.Context, arg VulnAffectedForItemParams) ([]VulnAffectedForItemRow, error) {
+	rows, err := q.db.Query(ctx, vulnAffectedForItem, arg.Ecosystem, arg.ItemID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []VulnAffectedForItemRow{}
+	for rows.Next() {
+		var i VulnAffectedForItemRow
+		if err := rows.Scan(
+			&i.Name,
+			&i.RecordID,
+			&i.CanonicalID,
+			&i.ModifiedUs,
+			&i.Withdrawn,
+			&i.Kind,
+			&i.Severity,
+			&i.CvssScore,
+			&i.KnownExploited,
+			&i.Ranges,
+			&i.Versions,
+			&i.EveryVersion,
+			&i.Fixed,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const vulnAffectedForNames = `-- name: VulnAffectedForNames :many
 
 SELECT a.name::text AS name, v.id::text AS record_id, v.canonical_id::text AS canonical_id,
@@ -165,6 +240,64 @@ func (q *Queries) VulnClaimHolders(ctx context.Context, arg VulnClaimHoldersPara
 	items := []VulnClaimHoldersRow{}
 	for rows.Next() {
 		var i VulnClaimHoldersRow
+		if err := rows.Scan(
+			&i.RepoID,
+			&i.Key,
+			&i.Config,
+			&i.Pattern,
+			&i.Scope,
+			&i.Source,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const vulnClaimHoldersForItem = `-- name: VulnClaimHoldersForItem :many
+SELECT c.repo_id::bigint AS repo_id, r.key::text AS key, r.config::text AS config,
+       c.pattern::text AS pattern, c.scope::text AS scope, c.source::text AS source
+  FROM namespace_claims c
+  JOIN repositories r ON r.id = c.repo_id
+  CROSS JOIN (SELECT p.name AS name FROM items i
+                    JOIN package_versions pv ON pv.id = i.version_id
+                    JOIN packages p ON p.id = pv.package_id
+                   WHERE i.id = $1::bigint AND pv.trashed_at IS NULL) AS n
+ WHERE r.format = $2::text
+   AND r.class = 'local'
+   AND (c.pattern = n.name
+        OR position(chr(92) IN c.pattern) > 0
+        OR (right(c.pattern, 1) = '*' AND starts_with(n.name, rtrim(c.pattern, '*'))))
+`
+
+type VulnClaimHoldersForItemParams struct {
+	ItemID int64
+	Format string
+}
+
+type VulnClaimHoldersForItemRow struct {
+	RepoID  int64
+	Key     string
+	Config  string
+	Pattern string
+	Scope   string
+	Source  string
+}
+
+// VulnClaimHolders for the name of an item (the commit hook, Q-VULN-82): the same prefilter, with the name read from the item.
+func (q *Queries) VulnClaimHoldersForItem(ctx context.Context, arg VulnClaimHoldersForItemParams) ([]VulnClaimHoldersForItemRow, error) {
+	rows, err := q.db.Query(ctx, vulnClaimHoldersForItem, arg.ItemID, arg.Format)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []VulnClaimHoldersForItemRow{}
+	for rows.Next() {
+		var i VulnClaimHoldersForItemRow
 		if err := rows.Scan(
 			&i.RepoID,
 			&i.Key,
@@ -546,6 +679,90 @@ func (q *Queries) VulnFindingsForNames(ctx context.Context, arg VulnFindingsForN
 	items := []VulnFindingsForNamesRow{}
 	for rows.Next() {
 		var i VulnFindingsForNamesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepoID,
+			&i.PackageName,
+			&i.Version,
+			&i.AdvisoryID,
+			&i.PackageID,
+			&i.VersionID,
+			&i.Kind,
+			&i.Severity,
+			&i.CvssScore,
+			&i.KnownExploited,
+			&i.FixAvailable,
+			&i.FixedVersions,
+			&i.Status,
+			&i.StatusBeforeResolution,
+			&i.ResolvedReason,
+			&i.AdvisoryModifiedUs,
+			&i.Revision,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const vulnFindingsOfRepoItem = `-- name: VulnFindingsOfRepoItem :many
+SELECT f.id::text AS id, f.repo_id::bigint AS repo_id, f.package_name::text AS package_name, f.version::text AS version,
+       f.advisory_id::text AS advisory_id, COALESCE(f.package_id, 0)::bigint AS package_id, COALESCE(f.version_id, 0)::bigint AS version_id,
+       f.kind::text AS kind, f.severity::text AS severity, COALESCE(f.cvss_score, -1)::float8 AS cvss_score, f.known_exploited::boolean AS known_exploited,
+       f.fix_available::boolean AS fix_available, f.fixed_versions::text[] AS fixed_versions, f.status::text AS status,
+       COALESCE(f.status_before_resolution, '')::text AS status_before_resolution, COALESCE(f.resolved_reason, '')::text AS resolved_reason,
+       (extract(epoch FROM f.advisory_modified) * 1000000)::bigint AS advisory_modified_us, f.revision::bigint AS revision
+  FROM vuln_finding f
+ WHERE f.repo_id = $1::bigint
+   AND f.ecosystem = $2::text
+   AND f.package_name = (SELECT p.name FROM items i
+                    JOIN package_versions pv ON pv.id = i.version_id
+                    JOIN packages p ON p.id = pv.package_id
+                   WHERE i.id = $3::bigint AND pv.trashed_at IS NULL)
+`
+
+type VulnFindingsOfRepoItemParams struct {
+	RepoID    int64
+	Ecosystem string
+	ItemID    int64
+}
+
+type VulnFindingsOfRepoItemRow struct {
+	ID                     string
+	RepoID                 int64
+	PackageName            string
+	Version                string
+	AdvisoryID             string
+	PackageID              int64
+	VersionID              int64
+	Kind                   string
+	Severity               string
+	CvssScore              float64
+	KnownExploited         bool
+	FixAvailable           bool
+	FixedVersions          []string
+	Status                 string
+	StatusBeforeResolution string
+	ResolvedReason         string
+	AdvisoryModifiedUs     int64
+	Revision               int64
+}
+
+// VulnFindingsOfRepoNames for the name of an item: the commit hook reads it in the round trip that reads the item (Q-VULN-82),
+// before it knows the name. No row for an item that belongs to no version.
+func (q *Queries) VulnFindingsOfRepoItem(ctx context.Context, arg VulnFindingsOfRepoItemParams) ([]VulnFindingsOfRepoItemRow, error) {
+	rows, err := q.db.Query(ctx, vulnFindingsOfRepoItem, arg.RepoID, arg.Ecosystem, arg.ItemID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []VulnFindingsOfRepoItemRow{}
+	for rows.Next() {
+		var i VulnFindingsOfRepoItemRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.RepoID,

@@ -37,11 +37,21 @@ func (t *txClaims) ClaimsFor(ctx context.Context, format, name string) ([]reposi
 	if err != nil {
 		return nil, err
 	}
+	if err := t.prime(format, name, rows); err != nil {
+		return nil, err
+	}
+	return t.read[k], nil
+}
+
+// prime stores the holders a caller read together with its other statements (the commit hook's one round trip) as if ClaimsFor
+// had read them.
+func (t *txClaims) prime(format, name string, rows []store.ClaimHolder) error {
+	k := format + "\x00" + name
 	claims := make([]repository.StoredClaim, len(rows))
 	for i, r := range rows {
 		var cfg rowConfig
 		if err := json.Unmarshal([]byte(r.Config), &cfg); err != nil {
-			return nil, fmt.Errorf("the document of repository %d: %w", r.RepoID, err)
+			return fmt.Errorf("the document of repository %d: %w", r.RepoID, err)
 		}
 		h := ClaimHolder{Key: r.Key, Format: format, Class: repository.Local, Settings: vuln.DefaultSettings()}
 		if cfg.Vulnerabilities != nil {
@@ -50,9 +60,8 @@ func (t *txClaims) ClaimsFor(ctx context.Context, format, name string) ([]reposi
 		t.holders[r.Key] = h
 		claims[i] = repository.StoredClaim{RepoID: r.RepoID, Repository: r.Key, Pattern: r.Pattern, Scope: r.Scope, Source: r.Source}
 	}
-	m := repository.MatchClaims(claims, name)
-	t.read[k] = m
-	return m, nil
+	t.read[k] = repository.MatchClaims(claims, name)
+	return nil
 }
 
 // Holder implements [HolderIndex].

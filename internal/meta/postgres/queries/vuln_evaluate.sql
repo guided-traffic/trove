@@ -22,6 +22,25 @@ SELECT a.name::text AS name, v.id::text AS record_id, v.canonical_id::text AS ca
  WHERE a.ecosystem = sqlc.arg(ecosystem)::text
    AND a.name = ANY(sqlc.arg(names)::text[]);
 
+-- name: VulnAffectedForItem :many
+-- VulnAffectedForNames for the name of an item (the commit hook, Q-VULN-82): the same columns and the same severity rules.
+SELECT a.name::text AS name, v.id::text AS record_id, v.canonical_id::text AS canonical_id,
+       (extract(epoch FROM COALESCE(c.modified, v.modified)) * 1000000)::bigint AS modified_us,
+       (v.withdrawn IS NOT NULL)::boolean AS withdrawn,
+       v.kind::text AS kind,
+       COALESCE(c.severity, v.severity)::text AS severity,
+       COALESCE(c.cvss_score, v.cvss_score, -1)::float8 AS cvss_score,
+       (COALESCE(c.known_exploited, false) OR v.known_exploited)::boolean AS known_exploited,
+       a.ranges AS ranges, a.versions::text[] AS versions, a.every_version::boolean AS every_version, a.fixed::text[] AS fixed
+  FROM vuln_affected a
+  JOIN vuln_advisory v ON v.ecosystem = a.ecosystem AND v.id = a.advisory_id
+  LEFT JOIN vuln_advisory c ON c.ecosystem = v.ecosystem AND c.id = v.canonical_id
+ WHERE a.ecosystem = sqlc.arg(ecosystem)::text
+   AND a.name = (SELECT p.name FROM items i
+                    JOIN package_versions pv ON pv.id = i.version_id
+                    JOIN packages p ON p.id = pv.package_id
+                   WHERE i.id = sqlc.arg(item_id)::bigint AND pv.trashed_at IS NULL);
+
 -- name: VulnStoredVersions :many
 -- The stored versions of the names in the repositories of the formats (the lookup of the advisory-driven evaluation by name,
 -- served by packages_name, Q-VULN-24); repo_id restricts it to one repository, 0 is every repository. A repository being
@@ -101,6 +120,23 @@ SELECT f.id::text AS id, f.repo_id::bigint AS repo_id, f.package_name::text AS p
  WHERE f.repo_id = sqlc.arg(repo_id)::bigint
    AND f.ecosystem = sqlc.arg(ecosystem)::text
    AND f.package_name = ANY(sqlc.arg(names)::text[]);
+
+-- name: VulnFindingsOfRepoItem :many
+-- VulnFindingsOfRepoNames for the name of an item: the commit hook reads it in the round trip that reads the item (Q-VULN-82),
+-- before it knows the name. No row for an item that belongs to no version.
+SELECT f.id::text AS id, f.repo_id::bigint AS repo_id, f.package_name::text AS package_name, f.version::text AS version,
+       f.advisory_id::text AS advisory_id, COALESCE(f.package_id, 0)::bigint AS package_id, COALESCE(f.version_id, 0)::bigint AS version_id,
+       f.kind::text AS kind, f.severity::text AS severity, COALESCE(f.cvss_score, -1)::float8 AS cvss_score, f.known_exploited::boolean AS known_exploited,
+       f.fix_available::boolean AS fix_available, f.fixed_versions::text[] AS fixed_versions, f.status::text AS status,
+       COALESCE(f.status_before_resolution, '')::text AS status_before_resolution, COALESCE(f.resolved_reason, '')::text AS resolved_reason,
+       (extract(epoch FROM f.advisory_modified) * 1000000)::bigint AS advisory_modified_us, f.revision::bigint AS revision
+  FROM vuln_finding f
+ WHERE f.repo_id = sqlc.arg(repo_id)::bigint
+   AND f.ecosystem = sqlc.arg(ecosystem)::text
+   AND f.package_name = (SELECT p.name FROM items i
+                    JOIN package_versions pv ON pv.id = i.version_id
+                    JOIN packages p ON p.id = pv.package_id
+                   WHERE i.id = sqlc.arg(item_id)::bigint AND pv.trashed_at IS NULL);
 
 -- name: VulnFindingsByIdentity :many
 -- The finding of one identity, read again after an insert that found it (a concurrent evaluation wrote it first).
@@ -345,6 +381,22 @@ SELECT c.repo_id::bigint AS repo_id, r.key::text AS key, r.config::text AS confi
    AND (c.pattern = sqlc.arg(name)::text
         OR position(chr(92) IN c.pattern) > 0
         OR (right(c.pattern, 1) = '*' AND starts_with(sqlc.arg(name)::text, rtrim(c.pattern, '*'))));
+
+-- name: VulnClaimHoldersForItem :many
+-- VulnClaimHolders for the name of an item (the commit hook, Q-VULN-82): the same prefilter, with the name read from the item.
+SELECT c.repo_id::bigint AS repo_id, r.key::text AS key, r.config::text AS config,
+       c.pattern::text AS pattern, c.scope::text AS scope, c.source::text AS source
+  FROM namespace_claims c
+  JOIN repositories r ON r.id = c.repo_id
+  CROSS JOIN (SELECT p.name AS name FROM items i
+                    JOIN package_versions pv ON pv.id = i.version_id
+                    JOIN packages p ON p.id = pv.package_id
+                   WHERE i.id = sqlc.arg(item_id)::bigint AND pv.trashed_at IS NULL) AS n
+ WHERE r.format = sqlc.arg(format)::text
+   AND r.class = 'local'
+   AND (c.pattern = n.name
+        OR position(chr(92) IN c.pattern) > 0
+        OR (right(c.pattern, 1) = '*' AND starts_with(n.name, rtrim(c.pattern, '*'))));
 
 -- name: VulnRepositoryInputs :many
 -- The scanning inputs of a repository, read from the row and not from a replica's snapshot, so that a rescan sees a change

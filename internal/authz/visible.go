@@ -69,7 +69,20 @@ type ReadScope interface {
 	MayRead(repo, pkg, version string) bool
 }
 
-var _ ReadScoper = (*Engine)(nil)
+// VersionIndependent is the optional property of a [ReadScope] that a listing of findings uses to decide a package once and not
+// once per version (H-488, V-7b of R-VULN-028): when it reports true, MayRead(repo, pkg, v) gives the same answer for every
+// version v of the package, so MayRead(repo, pkg, "") stands for all of them. A scope that does not implement it, or reports
+// false, is decided one version at a time. It is true when no input of the decision looks at the version: the grants, the
+// token scope and the CI contributions match packages and paths only, and the one input that reads a version is the exposure of
+// an endpoint with rules (R-EP-018), which the scope reports as dependent.
+type VersionIndependent interface {
+	VersionIndependent() bool
+}
+
+var (
+	_ ReadScoper         = (*Engine)(nil)
+	_ VersionIndependent = (*readScope)(nil)
+)
 
 type readScope struct {
 	e   *Engine
@@ -85,7 +98,12 @@ type readScope struct {
 	st *evalState
 	// read is the action list of every decision of the scope; evaluate only reads it.
 	read []Action
+	// versionFree is [VersionIndependent]: the endpoint's ceiling admits every coordinate.
+	versionFree bool
 }
+
+// VersionIndependent implements [VersionIndependent].
+func (s *readScope) VersionIndependent() bool { return s.versionFree }
 
 func (s *readScope) Shape(key string) ReadShape { return s.shapes[key] }
 
@@ -109,7 +127,10 @@ func (e *Engine) ReadScopeOn(ctx context.Context, idx *Index, sub Subject, addre
 	if refused != nil {
 		return nil, refused.Err()
 	}
-	rs := &readScope{e: e, idx: idx, sub: sub, addressed: addressed, shapes: make(map[string]ReadShape, len(keys)), read: []Action{Read}}
+	rs := &readScope{
+		e: e, idx: idx, sub: sub, addressed: addressed, shapes: make(map[string]ReadShape, len(keys)), read: []Action{Read},
+		versionFree: e.exposesEverything(sub.Endpoint),
+	}
 	if sub.Anonymous && sub.anon != anonOn {
 		return rs, nil
 	}

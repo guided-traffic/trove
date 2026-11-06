@@ -147,8 +147,14 @@ func tooBroad() error {
 // build classifies the physical repositories and decides the candidates of the ones read in part. load returns the candidate
 // triples of the given repository keys; withWhole asks for the candidates of the repositories read whole too, which a package
 // view needs to know who holds the version.
+//
+// A caller whose decisions do not look at the version (authz.VersionIndependent) gets the packages of the others decided once
+// each, from loadPackages (Q-VULN-81): the statement reads one pair per package and not one triple per version, the decision is
+// made per package, and the statements that narrow by scope compare the pair, so a request costs by the packages the caller
+// reads and not by the versions they have. loadPackages is nil where the versions themselves are needed (the package views).
 func (s *Service) build(sn *Snapshot, c Caller, formats []string, withWhole bool,
 	load func(keys []string, max int) ([]store.Candidate, error),
+	loadPackages func(keys []string, max int) ([]store.Pair, int, error),
 ) (Scope, error) {
 	sc := Scope{snap: sn, virtual: map[string]bool{}}
 	for _, v := range c.VirtualReadable {
@@ -177,6 +183,9 @@ func (s *Service) build(sn *Snapshot, c Caller, formats []string, withWhole bool
 	if load == nil || len(loadKeys) == 0 {
 		return sc, nil
 	}
+	if vi, ok := c.Reads.(authz.VersionIndependent); ok && vi.VersionIndependent() && loadPackages != nil && !withWhole {
+		return s.buildPackages(sn, c, sc, loadKeys, loadPackages)
+	}
 	cands, err := load(loadKeys, s.cfg.MaxScopeRows+1)
 	if err != nil {
 		return Scope{}, err
@@ -204,12 +213,33 @@ func (s *Service) build(sn *Snapshot, c Caller, formats []string, withWhole bool
 	return sc, nil
 }
 
+// buildPackages decides the packages of the repositories read in part once each (the decision does not depend on the version).
+func (s *Service) buildPackages(sn *Snapshot, c Caller, sc Scope, loadKeys []string,
+	loadPackages func(keys []string, max int) ([]store.Pair, int, error),
+) (Scope, error) {
+	pairs, findings, err := loadPackages(loadKeys, s.cfg.MaxScopeRows+1)
+	if err != nil {
+		return Scope{}, err
+	}
+	if findings > s.cfg.MaxScopeRows {
+		return Scope{}, tooBroad()
+	}
+	for _, p := range pairs {
+		if sn.Topo.Admits(p.Repository, p.Package) && (c.Reads.Shape(p.Repository) == authz.ReadAll || c.Reads.MayRead(p.Repository, p.Package, "")) {
+			sc.Packages = append(sc.Packages, p.Repository+"\x1f"+p.Package)
+		}
+	}
+	return sc, nil
+}
+
 // Scope builds what the caller may read of the findings the filter selects: the candidates of the repositories read in part
 // are the versions that have such a finding.
 func (s *Service) Scope(ctx context.Context, sn *Snapshot, c Caller, f store.Filter) (Scope, error) {
 	return s.build(sn, c, f.Formats, false, func(keys []string, max int) ([]store.Candidate, error) {
 		keys = narrowKeys(keys, f)
 		return s.st.Candidates(ctx, keys, f, max)
+	}, func(keys []string, max int) ([]store.Pair, int, error) {
+		return s.st.CandidatePackages(ctx, narrowKeys(keys, f), f, max)
 	})
 }
 
@@ -231,7 +261,7 @@ func narrowKeys(keys []string, f store.Filter) []string {
 func (s *Service) PackageScope(ctx context.Context, sn *Snapshot, c Caller, format, name, version string) (Scope, error) {
 	return s.build(sn, c, []string{format}, true, func(keys []string, max int) ([]store.Candidate, error) {
 		return s.st.PackageCandidates(ctx, keys, format, name, version, max)
-	})
+	}, nil)
 }
 
 // VirtualContaining returns the readable virtual repositories whose effective member list contains the repository, sorted.

@@ -43,12 +43,11 @@ func (s *Service) view(ctx context.Context, key string) (repoView, repository.Re
 	return v, repo, ok, nil
 }
 
-// viewInTx reads the repository row in the transaction and builds the view of a repository the scanning applies to: false for one
-// that is gone, not active, virtual or of a format without the adapter.
-func (s *Service) viewInTx(ctx context.Context, ev *store.Eval, repoID int64) (repoView, Ecosystem, bool, error) {
-	row, ok, err := ev.RepositoryInputs(ctx, repoID)
-	if err != nil || !ok || row.Lifecycle != string(repository.Active) || repository.Class(row.Class) == repository.Virtual {
-		return repoView{}, Ecosystem{}, false, err
+// viewOfInputs builds the view of a repository the scanning applies to from the repository row read in the transaction: false
+// for one that is gone, not active, virtual or of a format without the adapter.
+func (s *Service) viewOfInputs(row store.RepoInputs, found bool) (repoView, Ecosystem, bool, error) {
+	if !found || row.Lifecycle != string(repository.Active) || repository.Class(row.Class) == repository.Virtual {
+		return repoView{}, Ecosystem{}, false, nil
 	}
 	eco, known := s.byFmt[row.Format]
 	if !known {
@@ -59,12 +58,18 @@ func (s *Service) viewInTx(ctx context.Context, ev *store.Eval, repoID int64) (r
 }
 
 // OnVersionCommitted implements [vuln.Evaluator]: it evaluates the version of the item a commit wrote, in the commit's
-// transaction, after the format's OnCommit linked the item to its version (R-VULN-011). The cost is the lookup of the item's
-// version, one indexed query on vuln_affected, the findings of the name in the repository and the state row of the ecosystem; findings are written in the
-// same transaction. A version that is committed again (a re-fill) changes nothing the second time.
+// transaction, after the format's OnCommit linked the item to its version (R-VULN-011). It reads in one round trip and writes in
+// one (Q-VULN-82): the repository row, the item's version, the findings of its package in the repository, the ecosystem's state
+// row, the affected entries of the package and the namespace claims that can cover it are sent as one batch, the package named
+// by the item inside each statement; the claimed-name matches an internal name gets are written in a second. Findings are
+// written in the same transaction. A version that is committed again (a re-fill) changes nothing the second time.
 func (s *Service) OnVersionCommitted(ctx context.Context, tx meta.Tx, c vuln.CommittedVersion) error {
 	if !s.o.Enabled {
 		return nil
+	}
+	eco, known := s.byFmt[c.Format]
+	if !known {
+		return nil // a format without the adapter: nothing to read
 	}
 	ev, err := store.EvalOf(tx)
 	if err != nil {
@@ -73,23 +78,47 @@ func (s *Service) OnVersionCommitted(ctx context.Context, tx meta.Tx, c vuln.Com
 	// Nothing here takes a second pool connection: the commit holds one, and concurrent commits that wait for one row lock hold the
 	// connections a cache load would need. The repository row, the claims and the data state are read in the transaction; the
 	// replica's snapshot, claim index and state cache load through the pool on a miss, so they are not read.
-	rv, eco, ok, err := s.viewInTx(ctx, ev, c.RepoID)
-	if err != nil || !ok || !rv.Settings.Enabled {
+	started := time.Now()
+	var (
+		row      store.RepoInputs
+		rowOK    bool
+		ver      store.StoredVersion
+		verOK    bool
+		existing []store.Finding
+		complete bool
+		affected []store.AffectedRow
+		holders  = make([][]store.ClaimHolder, len(eco.Formats))
+	)
+	steps := []func(*store.Eval) error{
+		func(e *store.Eval) (err error) { row, rowOK, err = e.RepositoryInputs(ctx, c.RepoID); return err },
+		func(e *store.Eval) (err error) { ver, verOK, err = e.ItemVersion(ctx, c.ItemID); return err },
+		func(e *store.Eval) (err error) {
+			existing, err = e.FindingsOfRepoItem(ctx, c.RepoID, eco.Name, c.ItemID)
+			return err
+		},
+		func(e *store.Eval) (err error) { complete, err = e.DataComplete(ctx, eco.Name); return err },
+		func(e *store.Eval) (err error) {
+			affected, err = e.AffectedForItem(ctx, eco.Name, c.ItemID)
+			return err
+		},
+	}
+	for i, f := range eco.Formats {
+		steps = append(steps, func(e *store.Eval) (err error) { holders[i], err = e.ClaimHoldersForItem(ctx, f, c.ItemID); return err })
+	}
+	if err := ev.Pipeline(ctx, steps...); err != nil {
 		return err
 	}
-	started := time.Now()
-	ver, ok, err := ev.ItemVersion(ctx, c.ItemID)
-	if err != nil || !ok {
+	rv, rowEco, ok, err := s.viewOfInputs(row, rowOK)
+	if err != nil || !ok || !rv.Settings.Enabled || !verOK {
 		return err
+	}
+	if rowEco.Name != eco.Name {
+		return errs.E(errs.Internal, errs.CodeInternal, "vuln evaluate: the commit names format "+c.Format+" and the repository row holds another")
 	}
 	if ver.LeadItemID != 0 && ver.LeadItemID != c.ItemID {
 		return nil // a companion file of a version the lead item's commit evaluates
 	}
 	ver.RepoID = rv.ID
-	existing, err := ev.FindingsOfRepoNames(ctx, rv.ID, eco.Name, []string{ver.Name})
-	if err != nil {
-		return err
-	}
 	var ofVersion []store.Finding
 	for _, f := range existing {
 		if f.Version == ver.Version {
@@ -100,13 +129,16 @@ func (s *Service) OnVersionCommitted(ctx context.Context, tx meta.Tx, c vuln.Com
 	if trigger == "" {
 		trigger = vuln.TriggerPublish
 	}
-	complete, err := ev.DataComplete(ctx, eco.Name)
-	if err != nil {
-		return err
+	claims := newTxClaims(ev)
+	for i, f := range eco.Formats {
+		if err := claims.prime(f, ver.Name, holders[i]); err != nil {
+			return err
+		}
 	}
 	r := &run{
-		s: s, tx: tx, ev: ev, eco: eco, trigger: trigger, canResolve: complete, rule: ClaimRule{Claims: newTxClaims(ev)}, single: true,
-		repos: func(id int64) (repoView, bool) { return rv, id == rv.ID },
+		s: s, tx: tx, ev: ev, eco: eco, trigger: trigger, canResolve: complete, rule: ClaimRule{Claims: claims}, single: true,
+		repos:    func(id int64) (repoView, bool) { return rv, id == rv.ID },
+		affected: &affected,
 	}
 	if err := r.evaluateNames(ctx, []string{ver.Name}, []store.StoredVersion{ver}, ofVersion); err != nil {
 		return err
