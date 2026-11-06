@@ -31,7 +31,7 @@ const customersHost = "registry.acme.test"
 const customersEndpoint = `{"customers":{"listen":"127.0.0.1:0","base_url":"https://` + customersHost + `","surface":["packages"]}}`
 
 // acmeRule is the example rule of R-EP-012.
-const acmeRule = `{"name":"acme-sdk","repository":"npm-customers","enabled":true,
+const acmeRule = `{"name":"acme-sdk","repository":"it/npm-customers","enabled":true,
 	"packages":{"include":["@acme/sdk","@acme/sdk-*"],"exclude":["@acme/sdk-internal"]},
 	"versions":{"include":[],"exclude":["2.0.1"],"range":">=2.0.0"},"prereleases":false,
 	"distTags":{"include":["latest","lts"],"exclude":[]}}`

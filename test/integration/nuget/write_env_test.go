@@ -170,7 +170,7 @@ func (e *wenv) listed(repo, id, version string) string {
 
 func (e *wenv) events(typ, repo, path string) int64 {
 	e.t.Helper()
-	return e.st.Number(`SELECT count(*) FROM audit_event WHERE action = $1 AND repository = $2 AND path = $3`, typ, repo, path)
+	return e.st.Number(`SELECT count(*) FROM audit_event WHERE action = $1 AND repository = $2 AND path = $3`, typ, "it/"+repo, path)
 }
 
 func (e *wenv) tombstone(repo, id, version string) (kind, sha512hex string) {

@@ -74,8 +74,9 @@ SELECT nv.version_id
   JOIN package_versions pv ON pv.id = nv.version_id
   JOIN packages p ON p.id = pv.package_id
   JOIN repositories r ON r.id = p.repo_id
+  JOIN project rp ON rp.id = r.project_id
  WHERE pv.trashed_at IS NULL
-   AND r.key = ANY($1::text[])
+   AND (rp.key || '/' || r.key) = ANY($1::text[])
    AND (($2::text <> '' AND position(lower($2::text) in lower(COALESCE(nv.manifest ->> 'description', ''))) > 0)
      OR ($3::text <> '' AND jsonb_typeof(nv.manifest -> 'keywords') = 'array'
          AND (nv.manifest -> 'keywords') @> to_jsonb($3::text)))
@@ -90,7 +91,7 @@ type NPMViewFindParams struct {
 	MaxRows int32
 }
 
-// Versions of the given repositories whose description contains the text
+// Versions of the given repositories (qualified names, <project>/<key>) whose description contains the text
 // (case-insensitively) or whose keywords contain the keyword. One of text and
 // keyword is set. At most max_rows rows; the caller asks for one more than it
 // accepts. The caller intersects the ids with what the subject may read.
@@ -240,9 +241,10 @@ SELECT pv.id
   FROM package_versions pv
   JOIN packages p ON p.id = pv.package_id
   JOIN repositories r ON r.id = p.repo_id
+  JOIN project rp ON rp.id = r.project_id
   JOIN npm_tombstones t ON t.repo_id = p.repo_id AND t.name = p.name AND t.version = pv.version
  WHERE pv.trashed_at IS NULL
-   AND r.key = ANY($1::text[])
+   AND (rp.key || '/' || r.key) = ANY($1::text[])
 `
 
 // Stored versions the format does not serve: tombstoned and not trashed, which a

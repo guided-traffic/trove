@@ -31,7 +31,7 @@ SELECT nv.version_id,
    AND pv.trashed_at IS NULL;
 
 -- name: NuGetViewFind :many
--- Versions of the given repositories whose description (the summary when there is none)
+-- Versions of the given repositories (qualified names, <project>/<key>) whose description (the summary when there is none)
 -- contains the text, case-insensitively, or whose tags contain the keyword. One of text and
 -- keyword is set. At most max_rows rows; the caller asks for one more than it accepts and
 -- intersects the ids with what the subject may read.
@@ -40,8 +40,9 @@ SELECT nv.version_id
   JOIN package_versions pv ON pv.id = nv.version_id
   JOIN packages p ON p.id = pv.package_id
   JOIN repositories r ON r.id = p.repo_id
+  JOIN project rp ON rp.id = r.project_id
  WHERE pv.trashed_at IS NULL
-   AND r.key = ANY(sqlc.arg(repos)::text[])
+   AND (rp.key || '/' || r.key) = ANY(sqlc.arg(repos)::text[])
    AND ((sqlc.arg(text)::text <> ''
          AND position(lower(sqlc.arg(text)::text) in lower(COALESCE(NULLIF(btrim(nv.metadata ->> 'description'), ''), nv.metadata ->> 'summary', ''))) > 0)
      OR (sqlc.arg(keyword)::text <> '' AND jsonb_typeof(nv.metadata -> 'tags') = 'array'

@@ -10,7 +10,8 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 )
 
-// ResolvedFromHeader names the member that served an artifact (R-REPO-019). It is a member the
+// ResolvedFromHeader names the member that served an artifact (R-REPO-019) by its key: a member lives in the project
+// of its virtual repository (Q-REPO-217), so the key names it. It is a member the
 // caller can read, so it discloses nothing new; it is never sent on an endpoint with exposure
 // rules, because members are not exposed there (R-EP-018).
 const ResolvedFromHeader = "Trove-Resolved-From"
@@ -32,7 +33,7 @@ func (r *Resolver) Artifact(ctx context.Context, c Caller, p *Plan, t Tiers, w h
 	}
 	serve := func(m Member, hit Hit, source string) error {
 		if !c.Rules {
-			w.Header().Set(ResolvedFromHeader, m.Repo.Name.String())
+			w.Header().Set(ResolvedFromHeader, m.Repo.Name.Key)
 		}
 		r.m.resolved(repo.String(), source)
 		return hit(w)
@@ -65,7 +66,7 @@ func (r *Resolver) Artifact(ctx context.Context, c Caller, p *Plan, t Tiers, w h
 		}
 		tw := &trackWriter{ResponseWriter: w}
 		if !c.Rules {
-			tw.Header().Set(ResolvedFromHeader, m.Repo.Name.String())
+			tw.Header().Set(ResolvedFromHeader, m.Repo.Name.Key)
 		}
 		herr := hit(tw)
 		if herr == nil || tw.wrote || !contentLost(herr) {
@@ -91,7 +92,7 @@ func (r *Resolver) Artifact(ctx context.Context, c Caller, p *Plan, t Tiers, w h
 		}
 		tw := &trackWriter{ResponseWriter: w}
 		if !c.Rules {
-			tw.Header().Set(ResolvedFromHeader, m.Repo.Name.String())
+			tw.Header().Set(ResolvedFromHeader, m.Repo.Name.Key)
 		}
 		found, err := t.RemoteFetch(ctx, m, d, tw)
 		if found && err == nil {

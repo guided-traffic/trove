@@ -95,7 +95,7 @@ func TestR_NPM_030_ALocalNameThatAClaimCoversNeverMixesWithTheUpstreamAndNeverAs
 	if b := r.publish(rep, rClaimed, r.tokL, p); b.Status != 201 {
 		t.Fatalf("a manage holder: %d %s", b.Status, b.Body)
 	}
-	if n := r.st.Number(`SELECT count(*) FROM audit_event WHERE action = 'repository.remote_package_shadowed' AND repository = $1 AND path = 'acme-internal'`, rClaims); n != 1 {
+	if n := r.st.Number(`SELECT count(*) FROM audit_event WHERE action = 'repository.remote_package_shadowed' AND repository = $1 AND path = 'acme-internal'`, "it/"+rClaims); n != 1 {
 		t.Errorf("%d repository.remote_package_shadowed events", n)
 	}
 	exposure := r.st.Text(`SELECT COALESCE(string_agg(details::text, ' '), '') FROM audit_event WHERE action = 'repository.remote_package_shadowed' AND path = 'acme-internal'`)

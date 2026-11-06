@@ -182,22 +182,22 @@ func TestQ_NUGET_48_TheDataPortReadsTheViewFromPostgreSQL(t *testing.T) {
 			}
 			return got
 		}
-		if got := ids([]string{"nuget-local"}, "CONTOSO", "", 10); !slices.Equal(got, []int64{v1, other}) {
+		if got := ids([]string{"it/nuget-local"}, "CONTOSO", "", 10); !slices.Equal(got, []int64{v1, other}) {
 			t.Errorf("text: %v", got)
 		}
-		if got := ids([]string{"nuget-local"}, "summary", "", 10); !slices.Equal(got, []int64{v2}) {
+		if got := ids([]string{"it/nuget-local"}, "summary", "", 10); !slices.Equal(got, []int64{v2}) {
 			t.Errorf("the summary is searched when there is no description: %v", got)
 		}
-		if got := ids([]string{"nuget-local"}, "", "contoso", 10); !slices.Equal(got, []int64{v1, other}) {
+		if got := ids([]string{"it/nuget-local"}, "", "contoso", 10); !slices.Equal(got, []int64{v1, other}) {
 			t.Errorf("keyword: %v", got)
 		}
-		if got := ids([]string{"nuget-local"}, "", "cont", 10); len(got) != 0 {
+		if got := ids([]string{"it/nuget-local"}, "", "cont", 10); len(got) != 0 {
 			t.Errorf("a keyword is a whole tag: %v", got)
 		}
-		if got := ids([]string{"gen-local"}, "CONTOSO", "", 10); len(got) != 0 {
+		if got := ids([]string{"it/gen-local"}, "CONTOSO", "", 10); len(got) != 0 {
 			t.Errorf("another repository: %v", got)
 		}
-		if got := ids([]string{"nuget-local"}, "contoso", "", 1); len(got) != 1 {
+		if got := ids([]string{"it/nuget-local"}, "contoso", "", 1); len(got) != 1 {
 			t.Errorf("limit: %v", got)
 		}
 		if _, err := st.ViewFind(ctx, []string{"nuget-local"}, "a", "b", 1); err == nil {

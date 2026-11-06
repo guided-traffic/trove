@@ -35,7 +35,7 @@ func TestR_EP_018_ACustomersEndpointOnAVirtualRepositoryWithARemoteMember(t *tes
 	if hidden == "" || other == "" {
 		t.Fatalf("%s has too few releases", p.Name)
 	}
-	rule := `{"name":"upstream-sdk","repository":"` + rCustomers + `","enabled":true,
+	rule := `{"name":"upstream-sdk","repository":"it/` + rCustomers + `","enabled":true,
 		"packages":{"include":["` + p.Name + `"],"exclude":[]},
 		"versions":{"include":[],"exclude":["` + hidden + `"],"range":">=0.0.0"},"prereleases":false,
 		"distTags":{"include":["latest"],"exclude":[]}}`

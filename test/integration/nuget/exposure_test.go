@@ -27,7 +27,7 @@ const customersEndpoint = `{"customers":{"listen":"127.0.0.1:0","base_url":"http
 
 // sdkRule exposes Acme.Sdk (in the spelling of the package, the rule folds names with the rule of
 // NuGet) from 2.0 up; Acme.Sdk.Internal and Acme.Billing match no include.
-const sdkRule = `{"name":"acme-sdk","repository":"nuget-customers","enabled":true,
+const sdkRule = `{"name":"acme-sdk","repository":"it/nuget-customers","enabled":true,
 	"packages":{"include":["Acme.Sdk"],"exclude":[]},
 	"versions":{"include":[],"exclude":[],"range":"2.0"},"prereleases":false}`
 
@@ -324,7 +324,7 @@ func newVirtualExposureEnv(t *testing.T) *exposureEnv {
 	x.devPAT = st.Token(dev, scope.Default())
 	x.acmeSAT = st.Token(acme, scope.Scope{Inherit: true, Endpoints: []string{"customers"}})
 	x.acmeScoped = st.Token(acme, scope.Scope{
-		Repositories: []scope.Grant{{Repositories: []string{"nuget-customers"}, Actions: []string{"read"}}},
+		Repositories: []scope.Grant{{Repositories: []string{"it/nuget-customers"}, Actions: []string{"read"}}},
 		Endpoints:    []string{"customers"},
 	})
 	x.reps = append(x.reps, st.Start(t, testenv.ReplicaOptions{Name: "web-a", Endpoints: customersEndpoint}))

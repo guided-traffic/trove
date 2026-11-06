@@ -356,7 +356,7 @@ func TestR_NPM_025_AGonePackageIs404UnlessRemovedVersionsAreServed(t *testing.T)
 	if a := r.tarball(rep, rRemote, p.Name, v, r.tokA); a.Status != 404 {
 		t.Errorf("the tarball of a gone package: %d", a.Status)
 	}
-	if n := r.st.Number(`SELECT count(*) FROM audit_event WHERE action = 'proxy.upstream_gone' AND repository = $1`, rRemote); n < 1 {
+	if n := r.st.Number(`SELECT count(*) FROM audit_event WHERE action = 'proxy.upstream_gone' AND repository = $1`, "it/"+rRemote); n < 1 {
 		t.Errorf("%d proxy.upstream_gone events", n)
 	}
 }
