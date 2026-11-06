@@ -145,7 +145,7 @@ func TestR_AUTHZ_014_TheOwnershipDefaultsOfAWritingInlineGrant(t *testing.T) {
 	e := newCIEnv(t, false, "acme-tools", "acme-shared")
 	a := e.web("web-a")
 	tools := func(m ciMapping, projectID string, own claims.Ownership, repo string) ciToken {
-		g := grant([]string{repo}, []string{"@acme/tools"}, claims.Read, claims.Deploy)
+		g := grant([]string{"it/" + repo}, []string{"@acme/tools"}, claims.Read, claims.Deploy)
 		g.Ownership = own
 		return e.issue(a, e.bundle(projectID, "acme/p"+projectID, m.contribution(nil, g)), job{"1", projectID}, 10*time.Minute)
 	}

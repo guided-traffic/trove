@@ -107,6 +107,9 @@ func TestR_CI_008_EveryReasonOfTheErrorTable(t *testing.T) {
 		{"a scope key that names no repository", "invalid_scope", "scope_not_granted", 400, func() testenv.Answer {
 			return x.exchange(a, good(), "scope", "read:it/npm-nowhere")
 		}},
+		{"a bare key in the scope names no project (R-CI-007, Q-AUTHZ-216)", "invalid_scope", "scope_malformed", 400, func() testenv.Answer {
+			return x.exchange(a, good(), "scope", "read:npm-internal")
+		}},
 		{"a scope the grants do not hold", "invalid_scope", "scope_not_granted", 400, func() testenv.Answer {
 			return x.exchange(a, good(), "scope", "deploy:it/nuget-internal")
 		}},

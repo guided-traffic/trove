@@ -164,7 +164,7 @@ func TestR_CI_010_TheWarningsOfASave(t *testing.T) {
 	})
 	t.Run("R-CI-010 a condition on a mutable user claim and on sub", func(t *testing.T) {
 		r := e.do(a, "POST", path, readOnlyMapping("users", 4, all(eq("project_id", "4242"), eq("user_login", "mallory"),
-			map[string]any{"claim": "sub", "glob": "project_path:acme/*"}), "npm-internal"))
+			map[string]any{"claim": "sub", "glob": "project_path:acme/*"}), "it/npm-internal"))
 		wantStatus(t, r, 201, "")
 		codes := warningCodes(t, r)
 		if !contains(codes, "mutable_user_claim") || !contains(codes, "sub_pattern") {

@@ -367,7 +367,7 @@ func TestR_AUTHZ_014_RemovingAMappingFromAPolicyFailsTheNextInstall(t *testing.T
 			reps := []*testenv.Replica{e.web("web-a"), e.web("web-b"), e.web("web-c")}
 			mustStatus(t, "seeding", e.publish(reps[0], "npm-internal", opsTok, "@acme/base", "1.0.0"), 201)
 			created := e.do(reps[0], "POST", "/api/v1/permission-policies", map[string]any{
-				"name": "ci-read-internal", "resources": map[string]any{"repositories": []string{"it/npm-all", "npm-internal"}},
+				"name": "ci-read-internal", "resources": map[string]any{"repositories": []string{"it/npm-all", "it/npm-internal"}},
 				"entries": []any{map[string]any{"principal": m.ref(), "actions": []string{"read"}}},
 			})
 			wantStatus(t, created, 201, "")

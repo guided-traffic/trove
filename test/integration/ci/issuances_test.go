@@ -52,7 +52,7 @@ func TestR_CI_020_TheIssuanceRecordsAndTheBulkRevoke(t *testing.T) {
 		if len(got) != 1 || got[0]["tokenId"] != publisher.id || got[0]["active"] != true || got[0]["projectPath"] != "acme/web/frontend" {
 			t.Fatalf("records %v", got)
 		}
-		if n := e.number(`SELECT count(*) FROM audit_event WHERE action = 'npm.publish' AND repository = 'npm-internal' AND token_id = $1::uuid`, publisher.id); n != 1 {
+		if n := e.number(`SELECT count(*) FROM audit_event WHERE action = 'npm.publish' AND repository = 'it/npm-internal' AND token_id = $1::uuid`, publisher.id); n != 1 {
 			t.Errorf("%d publish entries with the token", n)
 		}
 	})
@@ -91,7 +91,7 @@ func TestR_CI_020_TheIssuanceRecordsAndTheBulkRevoke(t *testing.T) {
 		body := r.JSON(t)
 		use := body["usage"].(map[string]any)
 		deployed := use["packagesDeployed"].([]any)
-		if use["requests"].(float64) < 1 || use["lastUsedAt"] == nil || len(deployed) != 1 || deployed[0] != "npm-internal/@acme/frontend@1.0.0" {
+		if use["requests"].(float64) < 1 || use["lastUsedAt"] == nil || len(deployed) != 1 || deployed[0] != "it/npm-internal/@acme/frontend@1.0.0" {
 			t.Fatalf("usage %v", use)
 		}
 		rec := body["issuance"].(map[string]any)
