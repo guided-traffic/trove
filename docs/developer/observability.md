@@ -116,7 +116,10 @@ never emits them outside `trove_build_info`.
    changes first.
 3. Label values must be bounded: enumerations in code, handler names from the route table, `repo` and
    `subscription` through `m.Repos().Value(family, key)` / `m.Subscriptions().Value(...)` (cap, `_other`,
-   overflow counter). Never a user name, token ID, IP, path, package name, version, trace ID or error text.
+   overflow counter). A `repo` value is the repository's qualified name `qname.Repo.String()`
+   (`<projectKey>/<repoKey>`); the entries of `metrics.repository_label_include` are selectors of an instance context
+   (`web/npm-*`), refused at start when one is a bare key, and `CappedLabels` matches them with `path.Match` on the
+   qualified name, so `*` stays within the project or the key. Never a user name, token ID, IP, path, package name, version, trace ID or error text.
 4. Take `*observability.Metrics` (or only a `prometheus.Registerer` from `m.Registry()`) in your constructor.
    A family a role does not run must not be registered on that role ("absent, not zero").
 5. In your package test call `observability.CheckFamilies` over the gathered registry (or `m.Check()`), so a

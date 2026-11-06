@@ -244,8 +244,8 @@ Paths are those the spec pages name; an owner does not rename them. All are unde
 | `identity` | `/users`, `/users/{username}`, `/users/me`, `/users/{username}/tokens`, `/users/me/tokens`, `/groups`, `/groups/{name}`, `/groups/{name}/members`, `/service-accounts`, `/service-accounts/{name}`, `/service-accounts/{name}/tokens`, `/tokens`, `/tokens/{id}`, `/tokens/{id}/rotate`, `/tokens/current`, `/tokens/revoke`, `/settings/auth` |
 | `login` | `/auth/login-options`, `/auth/whoami`, `/users/me/sessions`, `/users/{username}/sessions`, `/users/{breakGlassName}/unlock`; outside `/api/v1/`: `/auth/oidc/{providerId}/start`, `/auth/oidc/{providerId}/callback`, `/auth/logout`, `/auth/local/login` |
 | `authz` | `/permission-policies`, `/roles`, `/role-bindings`, `/authz/me`, `/authz/effective`, `/authz/check`, `/authz/explain`, `/authz/validate-policy` |
-| `repository` | `/repositories`, `/repositories/{key}`, `/repositories/batch-create` and the other reserved sub-paths, `/repositories/quick-setup`, `/repositories/{key}/client-setup`, `/formats` |
-| `files` | `/files/{repoKey}/{path}` (raw transfer, outside `/api/v1/`), `/repositories/{repoKey}/items`, `/repositories/{repoKey}/children`, `/repositories/{repoKey}/stats` |
+| `repository` | `/repositories` (the list over every project), `/projects/{projectKey}/repositories`, `/projects/{projectKey}/repositories/{repoKey}`, `/projects/{projectKey}/repositories/batch-create` and the other reserved sub-paths, `/projects/{projectKey}/repositories/quick-setup`, `/projects/{projectKey}/repositories/{repoKey}/client-setup`, `/formats` |
+| `files` | `/files/{projectKey}/{repoKey}/{path}` (raw transfer, outside `/api/v1/`), `/projects/{projectKey}/repositories/{repoKey}/items`, `…/{repoKey}/children`, `…/{repoKey}/stats` |
 | `endpoints` | `/endpoints`, `/endpoints/{endpoint}`, `/endpoints/{endpoint}/exposure-rules`, `/endpoints/{endpoint}/exposure-rules/{name}`, `/endpoints/{endpoint}/check-exposure` |
 
 Not decided by this page and left to the owner, with the spec as the reference: the settings page of

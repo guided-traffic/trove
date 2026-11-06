@@ -7,7 +7,7 @@ How administrators oversee the tokens of an installation: the Tokens screen, the
 | Type | Prefix | Owner | Created by |
 |---|---|---|---|
 | Personal access token (`pat`) | `trv_pat_` | A user | The user, under **Personal tokens**; nobody creates one for somebody else |
-| Service-account token (`sat`) | `trv_sat_` | A service account | An administrator, on the service account's screen or with the command line |
+| Service-account token (`sat`) | `trv_sat_` | A service account | An administrator, on the service account's screen or with the command line; for a service account of a project, also an Owner of the project |
 | CI token (`cit`) | `trv_cit_` | A CI pipeline | The token exchange of a GitLab CI job (`POST /api/v1/auth/oidc/token`), which lives minutes and is revoked as the job ends. See [GitLab CI federation](gitlab-ci.md) |
 
 A token acts as its owner and its scope can only narrow the owner's permissions. trove stores the SHA-256 of a token, never the value; no event, log line or answer except the one that creates it holds the value. [Personal access tokens](../user/access-tokens.md) is the users' view of the same mechanisms.
@@ -20,7 +20,7 @@ The filter panel narrows the list:
 
 | Filter | Values |
 |---|---|
-| **Owner** | `me`, a user name, or `sa:<name>` for a service account |
+| **Owner** | `me`, a user name, or `sa:<name>` for a service account of no project |
 | **Type** | **Any**, **Personal (pat)**, **Service account (sat)**, **Pipeline (cit)** |
 | **State** | **Active** (the default), **Expired**, **Revoked**, **All** |
 | **Expires before** | A date |
@@ -34,7 +34,7 @@ To revoke, choose **Revoke** on a row, or tick active tokens and choose **Revoke
 
 - **A user's screen** (**Admin area › Identity › Users**) lists the user's tokens in the section **Tokens**, with **Revoke** and **Revoke all tokens**. Nobody creates or rotates a personal token for another user. Disabling a user offers **Also revoke all tokens of this user**; without it the tokens remain but answer `401` `principal_disabled` while the user is disabled. Deleting a user removes the tokens.
 - **A service account's screen** (**Admin area › Identity › Service accounts**) has a section **Tokens** with **Create token**, **Rotate**, **Revoke** and **Revoke all tokens**. The form is the one of personal tokens, plus the lifetime **Never expires** (see [Lifetime limits and defaults](#lifetime-limits-and-defaults)). The section needs the permission to read tokens. Creating and rotating a service-account token needs the administrator role and a recent sign-in, or a token of the account itself; the buttons **Create token** and **Rotate** therefore appear for the administrator role only, not for a holder of the permission to change identities alone (for example a security administrator), whom the server would refuse. Disabling the account offers **Also revoke all tokens of this account**; deleting it removes its tokens.
-- **A project's service account** (the project page, then the account) is managed by the administrators of its project without any system role; see [Projects and delegated administration](projects.md). They see the section **Tokens**, create tokens while the project's switch **Manage policies and service accounts** is on, and revoke them whatever the switches say. They do not rotate tokens. A token they create always expires, at most after the maximum lifetime of **Service account tokens**, so the form does not offer **Never expires** and refuses a longer lifetime (`ttl_exceeds_maximum`); it has no administrator scope and names no system item. They may bind it to endpoints like any service-account token.
+- **A project's service account** (`sa:<projectKey>/<name>`, on the project page) is managed by the Owners of its project without any system role; see [Service accounts of a project](projects.md#service-accounts-of-a-project). They create its tokens with `POST /api/v1/projects/<projectKey>/service-accounts/<name>/tokens` and revoke all of them with `DELETE` on the same path; they do not rotate tokens. A token an Owner creates always expires, at most after the maximum lifetime of **Service account tokens** (a longer lifetime is refused with `ttl_exceeds_maximum`, a non-expiring one is refused too); its scope has no administrator scope and names no system item (`invalid_scope`), and it cannot rotate itself (`selfRotatable: true` is refused). An Owner may bind it to endpoints like any service-account token. An administrator of trove creates the tokens of a project's service account under the rules of every service account.
 
 A rotation creates a new value with the same scope and gives the old one an overlap of **Not at all (revoked now)**, **One hour** or **One day** (the API accepts up to 86,400 seconds). If the token is bound to an endpoint that no longer accepts its type (the endpoint's `auth.token_types` changed, or the token was bound before trove checked this), the rotation is refused with `invalid_scope` naming the endpoint, because the new token would work nowhere; the old token stays as it is and can be revoked.
 
@@ -49,21 +49,21 @@ trove admin token revoke --id 0192f1d2-7c4e-7a51-9b0c-3f2e4d5c6b7a          # ex
 trove admin token revoke --value-stdin < leaked.txt
 ```
 
-`token create` prints only the value, so `T=$(trove admin token create …)` captures it; its lifetime is 15 minutes unless `--ttl` says otherwise, at most the service-account maximum. Without `--scope-file` the token has all repository permissions of the account.
+`token create` prints only the value, so `T=$(trove admin token create …)` captures it; its lifetime is 15 minutes unless `--ttl` says otherwise, at most the service-account maximum. Without `--scope-file` the token has all repository permissions of the account. The commands create and address service accounts of no project only; the service accounts of a project and their tokens are managed through the API and the project's page.
 
 ## Scopes
 
-A scope is a ceiling on the owner's permissions; it never grants anything. Its members in the API (`POST /api/v1/tokens`, `POST /api/v1/service-accounts/<name>/tokens`) and in a scope file:
+A scope is a ceiling on the owner's permissions; it never grants anything. Its members in the API (`POST /api/v1/tokens`, `POST /api/v1/service-accounts/<name>/tokens`, `POST /api/v1/projects/<projectKey>/service-accounts/<name>/tokens`) and in a scope file:
 
 | Member | Meaning |
 |---|---|
 | `inherit` | All repository permissions of the owner; excludes `repositories` |
-| `repositories` | Up to 50 grants, each with `repositories` (keys or patterns), optional `packages` and `paths` (`include` and `exclude` patterns) and `actions` |
-| `admin` | The token exercises the owner's system roles, as long as the owner holds the administrator role when the token is used |
+| `repositories` | Up to 50 grants, each with `repositories`, optional `packages` and `paths` (`include` and `exclude` patterns) and `actions`. A scope is read outside any project, so a repository names its project: `web/npm-internal`, a pattern `web/npm-*` or `*/npm-*` (`*` and `?` never cross the `/`), or a class such as `@any` or `@any-local:npm`, which covers the repositories of every project. A key without its project (`npm-internal`) answers `400` `invalid_scope` |
+| `admin` | The token exercises the owner's system roles, as long as the owner holds the administrator role when the token is used, and the owner's administration of the projects it is an Owner of. Without it, an Owner acts through the token as a Maintainer of the project: every repository action, no administration |
 | `system` | System capabilities the token may exercise, of those the owner's roles grant |
 | `endpoints` | Up to 16 endpoint names the token is valid on; empty means unbound |
 
-A scope document holds at most 16 KiB; an unknown member, action, capability or endpoint answers `400` `invalid_scope`. The form of the UI offers `inherit` (**All permissions of the owner**) or one grant with repositories, package patterns and actions; it sets neither `admin`, `system` nor `paths`, and `endpoints` only through the field **Endpoints** (see [Binding tokens to endpoints](#binding-tokens-to-endpoints)). A token from the form therefore never exercises a system role.
+A scope document holds at most 16 KiB; an unknown member, action, capability or endpoint answers `400` `invalid_scope`. The form of the UI offers `inherit` (**All permissions of the owner**) or one grant with repositories, package patterns and actions; it sets neither `admin`, `system` nor `paths`, and `endpoints` only through the field **Endpoints** (see [Binding tokens to endpoints](#binding-tokens-to-endpoints)). A token from the form therefore never exercises a system role, and never the administration of a project.
 
 A token can create another token of the same type and owner through the API. The new one has a scope no broader, an expiry no later and, if its parent is bound to endpoints, a subset of them (`403` `derivation_exceeds_parent` otherwise); it is revoked with its parent.
 
@@ -118,12 +118,12 @@ Each endpoint decides which credentials it accepts, under `server.endpoints.<nam
 
 A token whose `endpoints` list is not empty works only on the endpoints it names; list `default` too if it should also work on the main address. The names are checked against the configuration when the token is created and kept on rotation. If an endpoint is later removed from the configuration, the token lists show **Bound to an endpoint that is not configured:** with the name; the token is valid on none of them.
 
-The token form shows the field **Endpoints** when you may read endpoints: one checkbox per configured endpoint that accepts the type of the token (personal tokens: the endpoints that list `pat` under `auth.token_types`; service-account tokens: those that list `sat`). Tick the endpoints the token is valid on; tick none and the token is unbound. The binding is part of the scope, so it cannot be changed afterwards and rotation keeps it. Without the permission to read endpoints the field is missing and the token is created unbound. The same binding is possible with the `--scope-file` of `trove admin token create`, or with `POST /api/v1/service-accounts/<name>/tokens` and the scope as its `scope` member. The API caller is an administrator with a recent sign-in or a token of the service account itself under the derivation rule above; an administrator's personal token from the UI form exercises no role and is refused. A binding to an endpoint that does not accept the type of the token answers `400` `invalid_scope` and names the endpoint, in the API and in `trove admin token create` alike: such a token would be refused on that endpoint by its type and on every other by its binding. A scope for a customer endpoint `customers` (example values):
+The token form shows the field **Endpoints** when you may read endpoints: one checkbox per configured endpoint that accepts the type of the token (personal tokens: the endpoints that list `pat` under `auth.token_types`; service-account tokens: those that list `sat`). Tick the endpoints the token is valid on; tick none and the token is unbound. The binding is part of the scope, so it cannot be changed afterwards and rotation keeps it. Without the permission to read endpoints the field is missing and the token is created unbound. The same binding is possible with the `--scope-file` of `trove admin token create`, or with `POST /api/v1/service-accounts/<name>/tokens` (`POST /api/v1/projects/<projectKey>/service-accounts/<name>/tokens` for a project's service account) and the scope as its `scope` member. The API caller is an administrator with a recent sign-in, an Owner of the account's project for a project's service account, or a token of the service account itself under the derivation rule above; an administrator's personal token from the UI form exercises no role and is refused. A binding to an endpoint that does not accept the type of the token answers `400` `invalid_scope` and names the endpoint, in the API and in `trove admin token create` alike: such a token would be refused on that endpoint by its type and on every other by its binding. A scope for a customer endpoint `customers` (example values):
 
 ```json
 {
   "repositories": [
-    {"repositories": ["npm-customers", "npm-internal", "npmjs"], "actions": ["read"]}
+    {"repositories": ["web/npm-customers", "web/npm-internal", "web/npmjs"], "actions": ["read"]}
   ],
   "endpoints": ["customers"]
 }

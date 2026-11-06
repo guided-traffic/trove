@@ -99,7 +99,7 @@ interval. The throttles are per-replica state that can change an answer for at m
 The exchange is anonymous: its caller proves a job identity with a token and nothing else. What that identity receives is decided by
 the mapping set of the issuer alone ([R-CI-009](../spec/gitlab-ci-oidc.md)), so the mappings are the access control of the
 endpoint and the rules on saving them are its configuration checks. A token is evaluated per tier, the first matching mapping of a
-tier decides it, and the tiers add up: the administrators' tier `system` and one tier `project:<key>` per project
+tier decides it, and the tiers add up: the administrators' tier `system` and one tier `project:<projectKey>` per project
 ([select.go](../../internal/ci/select.go)). A disabled mapping is not looked at, so disabling a narrow mapping lets its jobs fall
 through to the next one of the tier, which can grant more; the event of the disable carries a journal entry for that reason
 ([mappings_store.go](../../internal/ci/mappings_store.go)).
@@ -238,13 +238,13 @@ that contribution only:
 
 | Source | What it gives | The bound |
 |---|---|---|
-| policies naming the mapping `ci:<issuer>/<mapping>` | their grants, live: removing the mapping from a policy ends the right on every replica within the bound of R-AUTHZ-028 | a project tier is granted by its project's own policies only |
+| policies naming the mapping (`ci:<issuer>/<mapping>` of the system tier, `ci:<issuer>/<projectKey>/<mapping>` of a project's tier) | their grants, live: removing the mapping from a policy ends the right on every replica within the bound of R-AUTHZ-028 | a project tier is granted by its project's own policies only |
 | groups the mapping lists | the grants of those groups, resolved by name through the index, live | the system tier only; a project tier's groups are ignored ([Q-CI-26](../spec/gitlab-ci-oidc.md)) |
 | inline grants | the grants rendered at the exchange, matched like a token scope's elements | a project tier's grants cover its project's repositories only, so `@any` is the project and a repository that leaves it is inert |
 | the cap `read` | removes every other action of this contribution's three sources, and of no other contribution | [R-CI-012](../spec/gitlab-ci-oidc.md) |
 
 The token's scope is the ceiling of the union, as for every token. A CI token never holds `manage` (not even through a policy or a
-group that grants it), never a system role, no capability, no project administration, no user identity, no `authenticated` and no
+group that grants it), never a system role, no capability, no project role, no user identity, no `authenticated` and no
 auto-join group ([R-AUTHZ-002](../spec/authorization.md)). The management API refuses it except for `GET` and
 `DELETE /api/v1/tokens/current` and the repository-content operations (the gate `ciGate`, [Q-CI-18](../spec/gitlab-ci-oidc.md)), so it
 can neither change an owner nor create a token nor read the issuance records.

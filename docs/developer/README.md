@@ -31,6 +31,11 @@ end-to-end wave's. No backup exists yet (phase 7: only the export classes of the
   never the only copy of anything. Only `internal/cluster` talks to Valkey, and every key expires.
 - **No state between requests** ([R-ARCH-032](../spec/architecture.md)). Consecutive requests of one client
   may land on different replicas.
+- **Every repository is in one project** ([projects.md](projects.md)). Its name is the pair `<projectKey>/<repoKey>`
+  (`qname.Repo`), unique as a pair; every address names both (`/api/<format>/<projectKey>/<repoKey>/…`,
+  `/files/<projectKey>/<repoKey>/…`, `/api/v1/projects/<projectKey>/repositories/<repoKey>`), and a name that is stored or
+  labelled (a job's target, the `repo` label of a metric) is `Repo.String()`. Users and groups reach a project's repositories
+  through their role there.
 - **Tools read the headings.** `### <ID> · <Title>` followed directly by a `Priority:` line is how the coverage
   generator finds catalog entries and requirements. Keep both on one line each.
 - **One version per tool.** Pins live in [tools/versions.env](../../tools/versions.env) (tools and images),
@@ -69,7 +74,7 @@ end-to-end wave's. No backup exists yet (phase 7: only the export classes of the
 | [login.md](login.md) | The OIDC login, the server-side session, CSRF, logout and the break-glass account: files, flows, seams to the identity, api and audit areas, configuration, tests |
 | [identity.md](identity.md) | Principals, groups, service accounts, tokens, the authentication stage, caches and revocation propagation, the failed-credential throttle |
 | [authorization.md](authorization.md) | Permission policies, roles, the evaluation, the compiled grant index and its invalidation, epochs and `Trove-Authz-Min-Epoch`, how an operation declares its permission, the populate check and `MemberUsable`, package ownership |
-| [projects.md](projects.md) | Projects and delegated administration: the contracts (engine questions, project service, API operations and declarations, error codes, audit events, schema), the decisions behind them, who owns which file, and the tests that pass when |
+| [projects.md](projects.md) | Projects, members and roles: the role in the decision path, the two selector contexts, the stored names of a project's policies, the project service (members, the last Owner, the move of a repository), error codes, audit events, the schema and the tests |
 | [bastion.md](bastion.md) | The trove Bastion (phase 5b): the contracts of the eight work packages: package tree, the seams and who implements each, the interface guard, the request flows (hit, check, miss, write probe), the schema and configuration it added, how to run the role locally; status: contracts laid, work packages pending |
 | [ci-oidc.md](ci-oidc.md) | GitLab CI OIDC federation: the contracts laid for beta phase 5 (schema, the `internal/ci` packages and interfaces, the token and evaluation seam, the gate, API, configuration, events, tasks), the project tier, the work packages W1 to W7 and their files; status: contracts laid, work packages pending |
 | [download-statements.md](download-statements.md) | The statements of a download: the budget of R-ARCH-027 per route, measured; `GetLiveItem` reading the rows of the serve check and the cache entry; how a format adds its rows |
@@ -117,10 +122,10 @@ One fact per line; each links to the page that explains it.
   and the action go to `authz`, which denies by default; the request takes the grant index once and asks every question
   of it; the index is per replica and a request may name the epoch it must see with `Trove-Authz-Min-Epoch`
   ([authorization.md](authorization.md)).
-- **Format request:** `/api/<format>/<repoKey>/…` reaches the dispatcher, which splits and cleans the path, asks the format's `Match`, takes the
-  request's index, runs the coarse check, resolves the repository and calls the route through `formats.ServeRoute`; the handler works through
-  `Host`; every error, the chain's refusals included, is rendered by the format ([formats.md](formats.md)).
-- **Raw upload:** `PUT /files/{repoKey}/{path}` is decided before the body is read; the body is spooled and digested, the write
+- **Format request:** `/api/<format>/<projectKey>/<repoKey>/…` reaches the dispatcher, which splits the path with `qname.ParseAddress`
+  and cleans it, asks the format's `Match`, takes the request's index, runs the coarse check, resolves the repository by its project and
+  key and calls the route through `formats.ServeRoute`; the handler works through `Host`; every error, the chain's refusals included, is rendered by the format ([formats.md](formats.md)).
+- **Raw upload:** `PUT /files/{projectKey}/{repoKey}/{path}` is decided before the body is read; the body is spooled and digested, the write
   is decided again on a new index, then `items.Store.Commit` writes the item, the committer's rows, the format's hook and the
   audit row in one transaction ([files.md](files.md), [items.md](items.md)).
 
@@ -141,7 +146,7 @@ trove/
 ├── internal/
 │   ├── app/                  # composition root: components per role, start and stop order
 │   ├── api/edge/             # request-to-domain conversions every entry point shares: SubjectFrom (with the endpoint), Access (the request's index)
-│   ├── api/dispatch/         # the format dispatcher: /api/<format>/<repoKey>/…, the error shape of a format prefix
+│   ├── api/dispatch/         # the format dispatcher: /api/<format>/<projectKey>/<repoKey>/…, the error shape of a format prefix
 │   ├── api/login/            # the browser login routes under /auth/ (edge of internal/auth/oidc): cookies, redirects, the error page
 │   ├── api/rawfiles/         # the /files/ handler (edge of internal/files)
 │   ├── api/v1/               # management API handlers and the conventions (paging, ETag, merge patch, idempotency, CORS,
@@ -173,6 +178,9 @@ trove/
 │   │                         # listq/ (dynamic queries with bound values)
 │   ├── observability/        # logs, metrics, tracing and OTLP export, health checks
 │   ├── outbound/             # the one HTTP client factory and the egress address policy
+│   ├── project/              # projects: create with the first Owners, the members and the last-Owner rule, the move of a repository
+│   ├── qname/                # the name of a repository (project and key) and of a project's objects, the one parser of the protocol and
+│   │                         # raw-file paths (ParseAddress), the selector grammar (ParseSelector); standard library only, a leaf
 │   ├── repository/           # repository model: service, snapshot reader, validation, patterns, deletion job
 │   ├── files/                # the generic layer: decides on the request's index, resolves, admits; over items/
 │   ├── items/                # the item store: spool, the one commit, stat, open, listing, subtree delete, statistics; no authz

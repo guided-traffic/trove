@@ -123,7 +123,7 @@ principal. Group membership is resolved when a request is authenticated, not whe
 The operations are in [tokens_api.go](../../internal/api/v1/tokens_api.go) and [users_api.go](../../internal/api/v1/users_api.go);
 the declarations are in `api/openapi.yaml` (Q-AUTH-43).
 
-- **A token value leaves the server once.** `POST /api/v1/tokens`, `POST /api/v1/service-accounts/{name}/tokens` and the two rotations
+- **A token value leaves the server once.** `POST /api/v1/tokens`, `POST /api/v1/service-accounts/{name}/tokens`, `POST /api/v1/projects/{projectKey}/service-accounts/{name}/tokens` and the two rotations
   answer `201` with `Cache-Control: no-store`. The outcome of such a create carries `Outcome.SecretID`, so the idempotency row stores the
   status and the token ID but no body, and a retry with the same key answers `409 token_already_issued`. No read operation returns the value
   or its hash. [api_flows_test.go](../../test/integration/identity/api_flows_test.go) scans every table and the audit trail for the value

@@ -64,8 +64,8 @@ clients ([Q-REPO-139](../spec/repositories-and-proxy.md#q-repo-139--the-mirrors-
 
 `mirror_state.last_error` and the job's error hold the message of a failed attempt with every URL reduced to its host
 ([sanitize in end.go](../../internal/mirror/end.go)); the status of R-REPO-056 shows the same text to a holder of
-`repositories:read-config`. The codes are closed (`discovery_unavailable`, `discovery_failed`, `discovery_stalled`,
-`cursor_too_large`, `not_applicable`, `upstream_unavailable`, `internal`). The counters and gauges carry the repository key and no
+`repositories:read-config`, to a holder of `manage` on the repository and to an Owner of its project. The codes are closed (`discovery_unavailable`, `discovery_failed`, `discovery_stalled`,
+`cursor_too_large`, `not_applicable`, `upstream_unavailable`, `internal`). The counters and gauges carry the repository's qualified name (`<projectKey>/<repoKey>`) and no
 package name (Q-OPS-158); the label sets are closed.
 
 ## What a restore leaves

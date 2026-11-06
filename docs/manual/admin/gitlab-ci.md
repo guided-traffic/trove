@@ -22,7 +22,7 @@ GitLab instance ── ID token, aud = trove's base URL ──▶ GitLab job
 The words this page uses:
 
 - **CI issuer**: a GitLab instance that trove trusts, with its validation settings. It only serves the token exchange; it is not an identity provider that people sign in with.
-- **Mapping**: an ordered rule of one issuer, made of a condition on the ID token's claims and the grants a matching job receives. Each mapping is a principal of its own, `ci:<issuer>/<mapping>`. A CI token acts as its mappings: it is never a user, never part of `authenticated`, never joins a group automatically, holds no system role and never `manage`.
+- **Mapping**: an ordered rule of one issuer, made of a condition on the ID token's claims and the grants a matching job receives. Each mapping is a principal of its own: `ci:<issuer>/<mapping>` for a mapping of the whole installation, `ci:<issuer>/<projectKey>/<mapping>` for a mapping of a project. A CI token acts as its mappings: it is never a user, never part of `authenticated`, never joins a group automatically, is never a member of a project, holds no system role and no project role, and never `manage`.
 - **Issuance record**: the stored link between a CI token and the verified job it was issued to.
 
 The pipeline author's side, the `id_tokens:` block and the exchange, is in [GitLab CI pipelines](../user/gitlab-ci-pipelines.md).
@@ -33,17 +33,17 @@ The pipeline author's side, the `id_tokens:` block and the exchange, is in [GitL
 |---|---|---|
 | Trust a GitLab instance (a CI issuer) | Your Helm values, or holders of `ci:write` (roles `admin` and `security-admin`) | `config.ci.issuers`; `/api/v1/ci/issuers` |
 | Mappings for the whole installation (tier `system`) | Holders of `ci:write` | `/api/v1/ci/issuers/{issuer}/mappings` |
-| Mappings of a project (tier `project:<key>`) | The project's administrators while its switch **Manage policies and service accounts** is on, and holders of `ci:write` | `/api/v1/projects/{key}/ci/…` |
-| Read issuers, mappings and the dry run | Holders of `ci:read` (`admin`, `security-admin`, `auditor`); a project's administrators for their project, with the issuers read-only | as above |
-| Read issuance records | Holders of `tokens:read` (`admin`, `security-admin`, `auditor`); a project's administrators for the tokens its mappings contributed to | `/api/v1/ci/issuances`; `/api/v1/projects/{key}/ci/issuances` |
-| Revoke CI tokens | Holders of `tokens:revoke` (`admin`, `security-admin`); a project's administrators by disabling or deleting a mapping of the project; the job itself | [Revoke CI tokens](#revoke-ci-tokens) |
+| Mappings of a project (tier `project:<projectKey>`) | The project's Owners, and holders of `ci:write` | `/api/v1/projects/{projectKey}/ci/…` |
+| Read issuers, mappings and the dry run | Holders of `ci:read` (`admin`, `security-admin`, `auditor`); a project's Owners for their project, with the issuers read-only | as above |
+| Read issuance records | Holders of `tokens:read` (`admin`, `security-admin`, `auditor`); a project's Owners for the tokens its mappings contributed to | `/api/v1/ci/issuances`; `/api/v1/projects/{projectKey}/ci/issuances` |
+| Revoke CI tokens | Holders of `tokens:revoke` (`admin`, `security-admin`); a project's Owners by disabling or deleting a mapping of the project; the job itself | [Revoke CI tokens](#revoke-ci-tokens) |
 | Write the pipeline | The developers of the GitLab project | [GitLab CI pipelines](../user/gitlab-ci-pipelines.md) |
 
-To a project administrator, a project it does not administer answers `404` and a switch that is off `403` `project_switch_off`, as for every project operation ([Projects and delegated administration](projects.md)).
+The project operations admit a holder of the capability, or an Owner of the project the path names. To a caller who is no member of that project, the project answers `404` as if it did not exist; a member whose role is below Owner gets `403`. A Reader, Developer or Maintainer of a project has no part in its CI mappings ([Projects and delegated administration](projects.md#members-and-roles)).
 
 ### Calling the operations
 
-The examples call the API with the shell function `trove_curl` from [Personal access tokens](../user/access-tokens.md#with-curl-and-the-management-api), which hands curl the token in `TROVE_TOKEN` on standard input. The token has to exercise your administration, so it needs the administrator scope ([Scopes](tokens.md#scopes)), which the token form of the UI does not set. A browser session works as well; creating, changing and deleting issuers and mappings through it needs a recent sign-in.
+The examples call the API with the shell function `trove_curl` from [Personal access tokens](../user/access-tokens.md#with-curl-and-the-management-api), which hands curl the token in `TROVE_TOKEN` on standard input. The token has to exercise your administration, a system role or the Owner role of a project, so it needs the administrator scope ([Scopes](tokens.md#scopes)), which the token form of the UI does not set; through a token without it, an Owner acts as a Maintainer and is refused. A browser session works as well; creating, changing and deleting issuers and mappings through it needs a recent sign-in.
 
 - Field names on the wire are lowerCamelCase (`allowedAudiences`, `crossProjectSource`, `maxTtlSeconds`). Claim names inside conditions and templates keep GitLab's spelling (`project_id`).
 - `GET` of an issuer or mapping returns an `ETag`. `PUT` replaces the whole record and requires that tag in `If-Match` (`428` `precondition_required` without it, `412` `precondition_failed` with a stale one), so a change is read, modify, write. A member left out of a `PUT` takes its default.
@@ -174,27 +174,29 @@ The job's `aud` must be one of the issuer's `allowedAudiences`, compared exactly
 ## How mappings are evaluated
 
 - Only enabled mappings of the issuer that the token's `iss` selects are considered.
-- Mappings are grouped in **tiers**: `system`, and one tier `project:<key>` per project. Within a tier they are evaluated in ascending `priority`, and the first one whose condition holds is the tier's match; the rest of the tier is not looked at. Across tiers the matches add up: a job that matches a system mapping and a mapping of project `web` carries the grants of both. A project's mapping can therefore neither shadow nor narrow a system mapping or another project's.
+- Mappings are grouped in **tiers**: `system`, and one tier `project:<projectKey>` per project. Within a tier they are evaluated in ascending `priority`, and the first one whose condition holds is the tier's match; the rest of the tier is not looked at. Across tiers the matches add up: a job that matches a system mapping and a mapping of project `web` carries the grants of both. A project's mapping can therefore neither shadow nor narrow a system mapping or another project's.
 - Because the first match decides, a mapping lists everything its jobs need, reading included. Put narrow rules at low numbers and broad ones at high numbers, for example a publish mapping at 100 and a read mapping for the whole group at 900.
 - No match in any tier refuses the exchange with `no_matching_mapping`. A matched mapping whose grants cannot be rendered never falls through to the next mapping of its tier. In the `system` tier it refuses the exchange with `grant_render_failed`; in a project's tier it drops that tier's grants, and the job gets the other tiers' grants (the exchange is refused only when no tier gives anything). The dry run shows the failure of each tier.
 - **The tiers stay apart.** A project's mapping changes what its own tier gives a token and nothing else: its `maxTtlSeconds` ends its own grants early but never shortens the token, and disabling or deleting it ends its grants in tokens of other tiers within seconds without revoking those tokens. The token belongs to the system mapping that matched; when none did, to the project mapping that lives longest, and disabling that mapping revokes the token.
 - A mapping grants in up to three ways: **inline grants** (repositories, package-name or path patterns, actions and ownership), **policies** that list the mapping as a principal, and, in the system tier only, **groups**. Inline grants are frozen into the token at the exchange; policy and group grants are evaluated when the token is used, so changing a policy affects tokens already issued.
-- A policy a mapping lists names the mapping in its principal list, and the list is the one place of that binding. Saving the mapping adds the entry `ci:<issuer>/<mapping>` with the action `read` where the policy has none, and removes the entry of a policy the mapping no longer lists; an entry that stays keeps the actions the policy gives it. To let a mapping write through a policy, widen its entry in the policy; the mapping's rules (`unprotected_write`, `unpinned_write`) count the entry the next time the mapping is saved. Removing the mapping from the policy removes it from the mapping's `grants.policies` as well, and a token already issued loses the policy's grants at once.
+- A policy a mapping lists names the mapping in its principal list, and the list is the one place of that binding. Saving the mapping adds the entry `ci:<issuer>/<mapping>` (`ci:<issuer>/<projectKey>/<mapping>` for a mapping of a project) with the action `read` where the policy has none, and removes the entry of a policy the mapping no longer lists; an entry that stays keeps the actions the policy gives it. To let a mapping write through a policy, widen its entry in the policy; the mapping's rules (`unprotected_write`, `unpinned_write`) count the entry the next time the mapping is saved. Removing the mapping from the policy removes it from the mapping's `grants.policies` as well, and a token already issued loses the policy's grants at once.
 - A token's rights are those grants, narrowed by the `scope` the job asked for. The package ownership of the repository decides every write on top.
 
 ### The bounds of a project mapping
 
-A project's administrators manage the mappings of their project's tier, with every rule below plus these bounds:
+A project's Owners manage the mappings of their project's tier, with every rule below plus these bounds:
 
-- The name starts with the project key and a hyphen (`422` `project_prefix_required`), so the principal `ci:<issuer>/<key>-…` is unique. The prefix is checked before the name is looked up: `409` `already_exists` answers only for a name under the project's own prefix.
+- The name is unique within the project's tier of the issuer, not within the issuer: projects `web` and `mobile` may each have a mapping `release`, and the system tier one more. A name the project's tier already holds answers `409` `already_exists`. The principal carries the project, `ci:<issuer>/<projectKey>/<name>`, and the exchange and the issuance records name the mapping `<projectKey>/<name>`.
 - The project's tier holds at most `ci.mappings.max_per_project` (100) mappings of an issuer (`422` `mapping_limit_reached`), so one project cannot fill the issuer's limit.
 - A project's mapping changes only its own tier's grants in a token ([How mappings are evaluated](#how-mappings-are-evaluated)): its render failure, its `maxTtlSeconds` and its disable or delete never reach what the system tier or another project gives the same job.
-- Inline grants reach the project's repositories only: `@any` means every repository of the project, and a key outside the project is refused (`422` `repository_outside_project`).
-- `policies` name policies of the project only (`422` `policy_outside_project`, also for a name that does not exist, so the answer tells nothing about the policies of others); `groups` are refused (`422` `groups_not_allowed_in_project`); `manage` is never grantable (`422` `action_not_allowed`).
-- They list and dry-run only their project's tier, read the snippet (`GET /api/v1/projects/{key}/ci/issuers/{issuer}/snippets/gitlab-ci?mapping=<name>&format=npm`, or `nuget`) of their own mappings, and see the issuance records of tokens that one of their mappings contributed to, showing their mappings only.
+- Inline grants name the project's repositories by their bare key, such as `npm-internal`, and reach the project's repositories only: `@any` means every repository of the project. A selector with a project in it, such as `web/npm-internal`, is refused (`422` `invalid_pattern`), and a key that names no repository of the project answers `422` `repository_outside_project`, also when no repository of that key exists anywhere.
+- `policies` name policies of the project only, by their name within the project (`422` `policy_outside_project`, also for a name that does not exist, so the answer tells nothing about the policies of others); `groups` are refused (`422` `groups_not_allowed_in_project`); `manage` is never grantable (`422` `action_not_allowed`).
+- They list and dry-run only their project's tier, read the snippet (`GET /api/v1/projects/{projectKey}/ci/issuers/{issuer}/snippets/gitlab-ci?mapping=<name>&format=npm`, or `nuget`) of their own mappings, and see the issuance records of tokens that one of their mappings contributed to, showing their mappings only.
 - A project with CI mappings is not empty and cannot be deleted (`409` `project_not_empty`).
 
-The issuers stay with the system administrators: a project administrator lists them read-only with `GET /api/v1/projects/{key}/ci/issuers` (name, kind, issuer URL, `publicIssuer`).
+The issuers stay with the system administrators: an Owner lists them read-only with `GET /api/v1/projects/{projectKey}/ci/issuers` (name, kind, issuer URL, `publicIssuer`).
+
+A mapping of the `system` tier names repositories as every instance-wide setting does: `<projectKey>/<key>` for one repository, `<projectGlob>/<keyGlob>` for a pattern (`*` and `?` never cross the `/`), or a class such as `@any` or `@any-local:npm`, which covers the repositories of every project. A bare key there is refused (`422` `invalid_pattern`).
 
 ### Rules checked on save
 
@@ -241,13 +243,13 @@ Conditions should use the separate claims (`project_id`, `ref_type`, `ref`, `ref
 
 The `repositories`, `packages` and `paths` patterns of an inline grant may contain templates, rendered once at the exchange from the token's claims: `{{ namespace_path | slug }}` gives `acme-billing` for the namespace `acme/billing`. The filters are `lower`, `slug`, `replace "a" "b"`, `trim_prefix "x"`, `trim_suffix "x"`, `segment n` (0-based `/` segment, negative from the end) and `require "regex"`, which fails the exchange when the value does not fully match.
 
-A substituted value can never widen a pattern: in `packages` and `paths` its glob characters are escaped and it may not contain `/` (packages) or `..` (paths); in `repositories` it must match `^[a-z0-9._-]+$` and the template needs literal text next to it (`{{ project_path | segment 0 }}-releases`). A missing, null, array or object claim fails the exchange with `grant_render_failed`.
+A substituted value can never widen a pattern: in `packages` and `paths` its glob characters are escaped and it may not contain `/` (packages) or `..` (paths); in `repositories` it must match `^[a-z0-9._-]+$` and the template needs literal text next to it (`{{ project_path | segment 0 }}-releases`). The value never holds a `/`, so a template of a system mapping writes its project literally (`web/{{ project_path | segment 0 }}-releases`), and one of a project's mapping renders a bare key of the project; a template of the wrong shape is refused at the save (`invalid_pattern`). A missing, null, array or object claim fails the exchange with `grant_render_failed`.
 
 </details>
 
 ## Let a GitLab project's pipelines publish
 
-The goal: the pipelines of the GitLab project `acme/invoice-api` publish the npm packages `@acme/*` to the local repository `web-npm` and the NuGet package `Acme.InvoiceApi` to `web-nuget`, both repositories of the trove project `web`, and read every repository of the project to install their dependencies. You are an administrator of `web`, and its switch **Manage policies and service accounts** is on. All names, IDs and addresses below are examples.
+The goal: the pipelines of the GitLab project `acme/invoice-api` publish the npm packages `@acme/*` to the local repository `npm-internal` and the NuGet package `Acme.InvoiceApi` to `nuget-internal`, both repositories of the trove project `web`, and read every repository of the project to install their dependencies. You are an Owner of `web`. All names, IDs and addresses below are examples.
 
 1. **Find the issuer.** `trove_curl https://trove.example.com/api/v1/projects/web/ci/issuers` lists the instances you can choose from. Here it is `gitlab-main`, with `publicIssuer: false`.
 2. **Find the GitLab project ID.** GitLab shows the numeric ID on the project's page, and a job sees it as `CI_PROJECT_ID`. Here it is `4242`. Use the ID, never the path.
@@ -257,8 +259,8 @@ The goal: the pipelines of the GitLab project `acme/invoice-api` publish the npm
    ```json
    {
      "issuer": "gitlab-main",
-     "name": "web-invoice-api-publish",
-     "description": "Protected refs of acme/invoice-api publish to web-npm and web-nuget",
+     "name": "invoice-api-publish",
+     "description": "Protected refs of acme/invoice-api publish to npm-internal and nuget-internal",
      "priority": 100,
      "match": {"all": [
        {"claim": "project_id", "equals": "4242"},
@@ -266,9 +268,9 @@ The goal: the pipelines of the GitLab project `acme/invoice-api` publish the npm
        {"claim": "pipeline_source", "in": ["push", "web"]}
      ]},
      "grants": {"inline": [
-       {"repositories": ["web-npm"], "packages": {"include": ["@acme/*"]},
+       {"repositories": ["npm-internal"], "packages": {"include": ["@acme/*"]},
         "actions": ["read", "deploy"], "ownership": "bind_project"},
-       {"repositories": ["web-nuget"], "packages": {"include": ["Acme.InvoiceApi", "Acme.InvoiceApi.*"]},
+       {"repositories": ["nuget-internal"], "packages": {"include": ["Acme.InvoiceApi", "Acme.InvoiceApi.*"]},
         "actions": ["read", "deploy"], "ownership": "bind_project"},
        {"repositories": ["@any"], "packages": {"include": []}, "actions": ["read"]}
      ]},
@@ -280,13 +282,13 @@ The goal: the pipelines of the GitLab project `acme/invoice-api` publish the npm
    trove_curl -X POST -H 'Content-Type: application/json' --data @mapping.json https://trove.example.com/api/v1/projects/web/ci/mappings
    ```
 
-   The answer is `201` with the stored mapping, its resolved defaults and any `warnings`. The mapping is the principal `ci:gitlab-main/web-invoice-api-publish`.
+   The answer is `201` with the stored mapping, its resolved defaults and any `warnings`. The mapping is the principal `ci:gitlab-main/web/invoice-api-publish`, and an exchange it matches names it `web/invoice-api-publish`.
 5. **Test it** with the dry run ([below](#test-a-mapping-with-the-dry-run)): a claim set of a protected tag pipeline selects the mapping, the same claims with `"ref_protected": "false"` show the failing leaf.
 6. **Hand over the pipeline.** Give the developers the issuer's audience (trove's base URL), the repository addresses and [GitLab CI pipelines](../user/gitlab-ci-pipelines.md), whose reference pipeline matches this mapping.
 
 `maxTtlSeconds` (from `ci.token.min_ttl` to `ci.token.max_ttl`) bounds what this mapping gives: when no system mapping matches the job, the token's lifetime; when one does, only this mapping's grants, which end after 30 minutes while the token keeps the system mapping's.
 
-The third inline grant reads every repository of the project, the virtual repositories and their members included; an empty include list leaves package names unrestricted. It is part of this mapping because the first match decides: a protected pipeline of `acme/invoice-api` that matches this mapping does not also get a read mapping further down the tier. If the job installs from repositories outside the project, ask an administrator of trove for a grant there; a project mapping cannot name them.
+The third inline grant reads every repository of the project, the virtual repositories and their members included; an empty include list leaves package names unrestricted. It is part of this mapping because the first match decides: a protected pipeline of `acme/invoice-api` that matches this mapping does not also get a read mapping further down the tier. If the job installs from repositories of another project, a mapping of `web` cannot name them: ask an Owner of that project for a mapping in its own tier, whose grants add to these, or an administrator of trove for a system mapping.
 
 ### Why each condition is there
 
@@ -306,7 +308,7 @@ To publish from tags only, add `{"claim": "ref_type", "equals": "tag"}`. `option
 - **Later publishes.** The owning project publishes new versions. Every other GitLab project gets `403` `package_owned_by_other_owner`, even when its own grant pattern matches the name, so two mappings whose patterns overlap cannot take over each other's packages.
 - **Rename and transfer in GitLab.** Ownership stays, because the project ID does not change; the owner's `display` shows the new path after the project's next publish. A new project that reuses the old path is refused.
 - **A policy that also grants the publish.** When the mapping's policy and its `bind_project` grant both allow a first publish, the project alone owns the name.
-- **A name with versions but no owner** (imported, published before ownership was enforced, or released) is refused with `package_owned_by_other_owner`: a pattern match never takes over an existing package. A holder of `manage` on the repository, which every administrator of the project is, adds the owner `ci:gitlab-main:project:4242` with `POST /api/v1/repositories/<key>/packages/<name>/owners` ([Managing repositories](repositories.md#npm-local-package-ownership)), and the next publish succeeds. The added owner shows the project ID as its `display` until that publish writes the path. `GET /api/v1/package-owners?owner=ci:gitlab-main:project:4242` lists every name the project owns.
+- **A name with versions but no owner** (imported, published before ownership was enforced, or released) is refused with `package_owned_by_other_owner`: a pattern match never takes over an existing package. A holder of `manage` on the repository, which every Maintainer and Owner of its project is, adds the owner `ci:gitlab-main:project:4242` with `POST /api/v1/projects/<projectKey>/repositories/<repoKey>/packages/<name>/owners` ([Managing repositories](repositories.md#npm-local-package-ownership)), and the next publish succeeds. The added owner shows the project ID as its `display` until that publish writes the path. `GET /api/v1/package-owners?owner=ci:gitlab-main:project:4242` lists every name the project owns.
 
 `ownership: none` on a writing grant makes the mapping itself the owner of the names it publishes, so every GitLab project the mapping matches can publish versions of them; the save warns `shared_ownership`. Use it only for a mapping that is meant to be shared by several projects.
 
@@ -317,7 +319,7 @@ The goal: pipelines read the repositories of the project `web`, not only those o
 ```json
 {
   "issuer": "gitlab-main",
-  "name": "web-acme-read",
+  "name": "acme-read",
   "description": "Every pipeline of group acme and its subgroups reads the project's repositories",
   "priority": 900,
   "match": {"all": [
@@ -356,11 +358,11 @@ A GitLab ID token's `namespace_id` is the ID of the project's immediate namespac
 
 | Grant | Reads |
 |---|---|
-| `"repositories": ["@any"]` | Every repository of the project, also those created or assigned later; a repository that leaves the project leaves the grant at once |
+| `"repositories": ["@any"]` | Every repository of the project, also those created or moved into it later; a repository moved to another project leaves the grant at once |
 | `"repositories": ["@any:npm"]` | Every npm repository of the project |
-| `"repositories": ["web-npm-all", "web-npm", "web-npmjs"]` | Exactly these repositories |
+| `"repositories": ["npm-all", "npm-internal", "npmjs"]` | Exactly these repositories of the project |
 
-A client that installs through a virtual repository needs `read` on the virtual repository and on the members it reads from, so name the members next to it, or use `@any`. A system mapping, which holders of `ci:write` create through `/api/v1/ci/issuers/{issuer}/mappings`, can grant over repositories of any project and none; there, `@any` means every repository of the installation.
+A client that installs through a virtual repository needs `read` on the virtual repository and on the members it reads from, so name the members next to it, or use `@any`. A system mapping, which holders of `ci:write` create through `/api/v1/ci/issuers/{issuer}/mappings`, can grant over the repositories of every project and names them with their project (`web/npm-all`, `web/*`); there, `@any` means every repository of the installation.
 
 ### Fork pipelines
 
@@ -372,7 +374,7 @@ The dry run evaluates mappings against a claim set and shows the decision. It ta
 
 | Call | Evaluates | Needs |
 |---|---|---|
-| `POST /api/v1/projects/{key}/ci/issuers/{issuer}/evaluate` | The project's tier only | Administration of the project with **Manage policies and service accounts**, or `ci:read` |
+| `POST /api/v1/projects/{projectKey}/ci/issuers/{issuer}/evaluate` | The project's tier only | An Owner of the project, or `ci:read` |
 | `POST /api/v1/ci/issuers/{issuer}/evaluate` | Every tier of the issuer | `ci:read` |
 
 ```json
@@ -384,7 +386,7 @@ The dry run evaluates mappings against a claim set and shows the decision. It ta
     "ref": "v1.4.0", "ref_type": "tag", "ref_protected": "true",
     "pipeline_source": "push", "pipeline_id": "377", "job_id": "981"
   },
-  "scope": "deploy:web-npm"
+  "scope": "deploy:web/npm-internal"
 }
 ```
 
@@ -392,7 +394,7 @@ The dry run evaluates mappings against a claim set and shows the decision. It ta
 trove_curl -X POST -H 'Content-Type: application/json' --data @claims.json https://trove.example.com/api/v1/projects/web/ci/issuers/gitlab-main/evaluate
 ```
 
-Write the claims as GitLab sends them, IDs and booleans as strings. `scope` is optional and narrows as the exchange's parameter does. `now` (Unix seconds) is optional too: without it no time claim is checked, with it and with `exp` and `iat` in the claims they and `nbf` are checked against that moment, with the issuer's clock skew. The dry run reads the mappings from the database, so a mapping you just saved is in it. The answer:
+Write the claims as GitLab sends them, IDs and booleans as strings. `scope` is optional and narrows as the exchange's parameter does; its selectors name the project (`web/npm-internal`) also in the dry run of a project's tier, and a bare key shows the `failure` `scope_malformed`. `now` (Unix seconds) is optional too: without it no time claim is checked, with it and with `exp` and `iat` in the claims they and `nbf` are checked against that moment, with the issuer's clock skew. The dry run reads the mappings from the database, so a mapping you just saved is in it. The answer:
 
 | Member | Shows |
 |---|---|
@@ -415,7 +417,7 @@ Everything above is also available as screens, under **Admin area › CI identit
 - The **Mappings** tab lists the mappings in evaluation order with **New mapping**. The **mapping editor** has the cards **General** (**Name**, **Description**, **Priority**, **Enabled**), **Condition** (the **Builder** or the **JSON** view of the same condition, with a line that reads it back), **Grants** (**Policies**, **Groups** and **Inline grants** with **Repositories**, **Applies to**, **Include**, **Exclude**, the **Actions** and the **Ownership of package names**) and **Options and lifetime** (**Maximum token lifetime (seconds)**, **Pipelines from other projects** with `deny` or `read_only`, and **Allow unprotected refs to use write grants**). The editor warns before the server does, for a public issuer without a pin, for a writing grant without `ref_protected`, and for an ownership of `none`. **Create mapping** or **Save mapping** saves; the warnings of the save appear under **Saved, with warnings**. **Test with claims** tests the saved mapping, and **CI snippet** prints the `id_tokens:` and exchange lines for the mapping in the shell of a package client.
 - The **claim tester** (**Test with claims**) takes **Claims as JSON, or paste an ID token**. A pasted token is decoded in the browser and discarded; only its claims are sent, and the screen says that the signature was not checked and that the token is still a credential until it expires. **Insert sample GitLab claims** fills in a typical set. **Evaluate** shows whether a mapping matches, every mapping looked at with the first failed leaf and the expected and actual value of each leaf, the resulting grants and the token that would be issued. It is the dry run of [Test a mapping](#test-a-mapping-with-the-dry-run); it issues nothing.
 - **Issued tokens** filters the issuances by issuer, GitLab project ID, project path, pipeline, job, mapping, state and period. **Details** shows one record with its grants, its claims and, for holders of `tokens:read`, its use. **Revoke matching tokens** (holders of `tokens:revoke`) needs one issuer and one of project ID, pipeline ID, job ID or mapping among the filters, counts the active tokens first and asks before it revokes them.
-- A project administrator finds the same under **Admin area › Projects › the project › CI identity**: the issuers they may name, the mappings of the project, the tokens issued through them, **New mapping** and **Test with claims** over the project's tier. The grants offer the repositories of the project and `@any` for all of them.
+- An Owner of a project finds the same under **Admin area › Projects › the project › CI identity**: the issuers they may name, the mappings of the project, the tokens issued through them, **New mapping** and **Test with claims** over the project's tier. The grants offer the repositories of the project by their bare keys and `@any` for all of them.
 
 ## Read the issuance records
 
@@ -425,13 +427,13 @@ Every successful exchange writes an issuance record in the same transaction that
 |---|---|---|
 | `GET /api/v1/ci/issuances` | Records, newest first; filters `issuer`, `projectId`, `projectPath`, `pipelineId`, `jobId`, `mapping`, `active` (`true`: state `active`; `false`: the other states), `from`, `to`; pages with `limit` and `cursor` (`nextCursor`) | `tokens:read` |
 | `GET /api/v1/ci/issuances/{tokenId}` | One record and its use from the audit log: the number of events the token is the credential of (an allowed read counts only while `authz.audit.reads` records reads), the last of them, and the npm and NuGet versions it published | `tokens:read` |
-| `GET /api/v1/projects/{key}/ci/issuances` | The records of tokens one of the project's mappings contributed to, naming the project's mappings only and leaving out the scopes, the person who started the pipeline and the client; filters `issuer`, `jobId`, `active` | Administration of the project with **Manage policies and service accounts**, or `tokens:read` |
+| `GET /api/v1/projects/{projectKey}/ci/issuances` | The records of tokens one of the project's mappings contributed to, naming the project's mappings only and leaving out the scopes, the person who started the pipeline and the client; filters `issuer`, `jobId`, `active` | An Owner of the project, or `tokens:read` |
 
 ```shell
 trove_curl "https://trove.example.com/api/v1/ci/issuances?issuer=gitlab-main&jobId=981"
 ```
 
-A record names `tokenId`, `issuer`, `mappingNames`, `projectId`, `projectPath`, `namespaceId`, `pipelineId`, `jobId`, `ref`, `refType`, `refProtected`, `pipelineSource`, `environment`, `sha`, `userId` and `userLogin` of the job, the allowlisted `claims`, the frozen `grants`, `requestedScope` and `grantedScope`, `crossProject`, `issuedAt`, `expiresAt`, `revokedAt`, `active`, `state`, `clientIp` and `userAgent`. The audit events of package operations carry the same `tokenId`, so a publish leads back to the job that made it. Records are kept for `ci.issuances.retention` (one year by default) after the token expired.
+A record names `tokenId`, `issuer`, `mappingNames` (a mapping of a project as `<projectKey>/<name>`, the form the `mapping` filter and the bulk revocation take as well), `projectId`, `projectPath`, `namespaceId`, `pipelineId`, `jobId`, `ref`, `refType`, `refProtected`, `pipelineSource`, `environment`, `sha`, `userId` and `userLogin` of the job, the allowlisted `claims`, the frozen `grants`, `requestedScope` and `grantedScope`, `crossProject`, `issuedAt`, `expiresAt`, `revokedAt`, `active`, `state`, `clientIp` and `userAgent`. The audit events of package operations carry the same `tokenId`, so a publish leads back to the job that made it. Records are kept for `ci.issuances.retention` (one year by default) after the token expired.
 
 `state` says why a token is or is not usable; `active` is `true` only for the first row:
 
@@ -442,7 +444,7 @@ A record names `tokenId`, `issuer`, `mappingNames`, `projectId`, `projectPath`, 
 | `expired` | The token's lifetime has passed |
 | `removed` | The token's row is gone before its expiry because the mapping it belongs to was deleted. The token does not work; no revocation time is known, and the audit log has the `ci.token.revoked` event of the deletion |
 
-A project administrator's view of a record leaves out `grantedScope`, `requestedScope`, `jti`, `userId`, `userLogin`, `clientIp` and `userAgent`, and `user_id`, `user_login`, `jti`, `runner_id` and `runner_environment` of the claim snapshot: the scopes list the items of every mapping that contributed, and the person and the runner are not a project's business. The job's project, pipeline, job, ref, commit and the state stay.
+An Owner's view of a record through the project leaves out `grantedScope`, `requestedScope`, `jti`, `userId`, `userLogin`, `clientIp` and `userAgent`, and `user_id`, `user_login`, `jti`, `runner_id` and `runner_environment` of the claim snapshot: the scopes list the items of every mapping that contributed, and the person and the runner are not a project's business. The job's project, pipeline, job, ref, commit and the state stay.
 
 The exchange and its consequences are also audit events under **Admin area › System › Audit log**:
 
@@ -465,7 +467,7 @@ The metrics `trove_ci_exchanges_total{issuer,outcome,reason}`, `trove_ci_exchang
 | The token of a running job, at its end | The job's last step calls `DELETE /api/v1/tokens/current` ([GitLab CI pipelines](../user/gitlab-ci-pipelines.md#revoke-the-token-as-the-last-step)) | The job |
 | One token | `DELETE /api/v1/tokens/{tokenId}`, with the `tokenId` of the issuance record | `tokens:revoke` |
 | Every token of a pipeline, job, project or mapping | `POST /api/v1/ci/issuances/revoke` with `issuer` and at least one of `projectId`, `pipelineId`, `jobId`, `mapping`; the answer is `{"revoked": <n>}` | `tokens:revoke` |
-| Every token of a mapping, and stop it matching | Disable the mapping (`enabled: false`) or delete it | `ci:write`; the project's administrators for its mappings |
+| Every token of a mapping, and stop it matching | Disable the mapping (`enabled: false`) or delete it | `ci:write`; the project's Owners for its mappings |
 | Every token of an instance | Disable or delete the issuer; for an issuer of the Helm values, remove it from `config.ci.issuers` | `ci:write`; the Helm values |
 
 ```shell
@@ -474,7 +476,7 @@ trove_curl -X POST -H 'Content-Type: application/json' \
   https://trove.example.com/api/v1/ci/issuances/revoke
 ```
 
-To disable a mapping of a project, read it with `trove_curl -i https://trove.example.com/api/v1/projects/web/ci/mappings/gitlab-main/web-acme-read`, set `"enabled": false` in the body, and send it back with `PUT` and `-H 'If-Match: "<the ETag>"'`. Disabling revokes the unexpired tokens the mapping owns and disables its principal in the same transaction, so a token that escaped the sweep is refused as well. Deleting a mapping revokes those tokens and deletes its principal: a mapping created later under the same name is a new principal and inherits no policy entry or ownership.
+To disable a mapping of a project, read it with `trove_curl -i https://trove.example.com/api/v1/projects/web/ci/mappings/gitlab-main/acme-read`, set `"enabled": false` in the body, and send it back with `PUT` and `-H 'If-Match: "<the ETag>"'`. Disabling revokes the unexpired tokens the mapping owns and disables its principal in the same transaction, so a token that escaped the sweep is refused as well. Deleting a mapping revokes those tokens and deletes its principal: a mapping created later under the same name is a new principal and inherits no policy entry or ownership.
 
 Which tokens a mapping owns depends on its tier:
 
@@ -536,7 +538,7 @@ To work through a refusal: find the event by request ID, time or project; for a 
 | `ttl_below_minimum` | 400 `invalid_request` | The `ttl` the job asked for is below `ci.token.min_ttl`, or the `maxTtlSeconds` of the mapping that owns the token or of the issuer is (after the floor was raised); `error_description` names which. Another tier's bound never refuses the exchange | Ask for a longer `ttl`; raise the bound of the mapping or the issuer |
 | `job_token_rejected`, `job_not_running` | 400 `invalid_request` | Only with the job-token fallback, which this version does not have | — |
 | `grant_type_unsupported` | 400 `unsupported_grant_type` | `grant_type` is not the token-exchange type | `urn:ietf:params:oauth:grant-type:token-exchange` |
-| `scope_malformed` | 400 `invalid_scope` | An unknown action, `manage` or an invalid selector | Correct `scope` |
+| `scope_malformed` | 400 `invalid_scope` | An unknown action, `manage` or an invalid selector; a bare key without its project (`deploy:npm-internal`) is an invalid selector | Correct `scope`; name the project (`deploy:web/npm-internal`) |
 | `scope_not_granted` | 400 `invalid_scope` | A `scope` item asks for an action the matched grants do not hold, or names a repository key that does not exist (answered alike, so the answer tells nothing of which repositories exist); no partial token is issued | Check the key's spelling with the dry run, narrow `scope`, or extend the mapping |
 | `audience_not_this_server` | 400 `invalid_target` | The `audience` or `resource` parameter is not trove's base URL | Leave them out, or send the base URL |
 | `rate_limited` | 429 `slow_down` | A rate limit is spent; `Retry-After` says when to retry | See [Rate limits and runner networks](#rate-limits-and-runner-networks) |
@@ -591,12 +593,12 @@ config:
 
 ## What stays with the system administrators
 
-Project administrators manage the mappings of their project. These stay with holders of the system capabilities and with your Helm values:
+The Owners of a project manage the mappings of their project. These stay with holders of the system capabilities and with your Helm values:
 
 - the issuers: registering, changing, disabling and deleting instances, their audiences, CA bundles and key refreshes;
-- mappings of the `system` tier, mappings that grant through groups, and grants on repositories outside a project;
+- mappings of the `system` tier, mappings that grant through groups, and grants that reach the repositories of more than one project;
 - the issuance records of every mapping, revoking one token, and the bulk revocation;
-- the `ci.*` configuration keys and the package ownership of repositories outside a project.
+- the `ci.*` configuration keys.
 
 ## Configuration keys
 
@@ -637,7 +639,7 @@ Project administrators manage the mappings of their project. These stay with hol
 ## Limits of this version
 
 - GitLab is the only kind of issuer. `CI_JOB_TOKEN` is never accepted; its fallback is not built.
-- Mappings are managed through the API only; there are no configuration documents for them, and mapping management cannot be delegated to a group outside a project.
+- Mappings are managed through the API only; there are no configuration documents for them. Mapping management is delegated only to the Owners of a project, for their project's tier; it cannot be delegated to a group or per issuer.
 - A group with subgroups is pinned by listing IDs ([Groups with subgroups](#groups-with-subgroups)).
 - The ID token and the CI token are bearer credentials: whoever reads them while they are valid can use them, for example on a runner shared between jobs. A GitLab ID token can be exchanged again until it expires; the exchange count in the audit trail shows it.
 - trove trusts every token the instance signs. A GitLab administrator, or anyone who holds the instance's signing key or takes over its domain, can mint ID tokens for any project and ref; mappings cannot detect this. Ownership binding, the short lifetime and the issuance records bound and record the damage.

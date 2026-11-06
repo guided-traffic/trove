@@ -4,7 +4,7 @@ A personal access token lets a tool such as npm, pnpm, Yarn or curl act as you w
 
 ## What a token is
 
-- A token **acts as you**. It never holds more than your own permissions: its scope can only narrow them. When your permissions change, so do the token's, and while your account is disabled, the token does not work.
+- A token **acts as you**. It never holds more than your own permissions, the roles you hold in projects included: its scope can only narrow them. When your permissions or roles change, so do the token's, and while your account is disabled, the token does not work.
 - The **value is shown once**, when the token is created. trove stores only a hash of it, so nobody, administrators included, can show it again.
 - Clients send the token as a **bearer token** (`Authorization: Bearer <token>`) or as the **password of HTTP Basic authentication** with any user name, unless an administrator switched Basic authentication off. A Basic request with your account password instead of a token is refused.
 - The browser session of the UI is not a token; the UI never needs one.
@@ -16,8 +16,8 @@ Every token has 57 characters: a prefix, 43 random letters and digits, and a 6-c
 | Prefix | Type | Owner |
 |---|---|---|
 | `trv_pat_` | Personal access token (`pat`) | A user; created by the user |
-| `trv_sat_` | Service-account token (`sat`) | A service account; created by an administrator |
-| `trv_cit_` | CI token (`cit`) | A GitLab CI job, through the token exchange; this version issues none yet ([GitLab CI pipelines](gitlab-ci-pipelines.md)) |
+| `trv_sat_` | Service-account token (`sat`) | A service account; created by an administrator, or by an Owner of the account's project |
+| `trv_cit_` | CI token (`cit`) | A GitLab CI job, through the token exchange ([GitLab CI pipelines](gitlab-ci-pipelines.md)) |
 
 Lists show a token by its description and its **hint**, the prefix plus the first four random characters, such as `trv_pat_Ab3x`.
 
@@ -34,7 +34,7 @@ Lists show a token by its description and its **hint**, the prefix plus the firs
 | **Lifetime** | **Server default**, **7 days**, **30 days**, **90 days**, **1 year** or **Custom date** |
 | **Expires on (UTC)** | With **Custom date**: the token expires at the end of that day, in UTC |
 | **Scope** | **All permissions of the owner**, or **Only the repositories and actions below** |
-| **Repositories** | With a restricted scope: one repository key or pattern per line, for example `npm-internal` or `npm-team-*` |
+| **Repositories** | With a restricted scope: one repository per line with its project, for example `web/npm-internal`, or a pattern such as `web/npm-team-*`; a key without its project is refused (`invalid_scope`) |
 | **Package patterns (optional)** | One pattern per line, for example `@team-a/*`; empty means every package |
 | **Actions** | With a restricted scope: `read`, `annotate`, `deploy`, `overwrite`, `delete`, `manage` |
 
@@ -57,7 +57,7 @@ Give each tool its own token with only what it needs. The actions a client needs
 
 Through a virtual repository a client reads the members as well, so list the members next to the virtual repository, or use a pattern that covers them. [Permissions](../admin/permissions.md) explains the actions.
 
-A token created in the UI carries your permissions on repositories but none of your system roles, so it cannot perform administrative operations that need a role, even when you hold one. The scope of the API has members for that (`admin`, `system`), which the form does not offer.
+A token created in the UI carries your permissions on repositories, those of your project roles included, but none of your system roles, so it cannot perform administrative operations that need a role, even when you hold one. As an Owner of a project you act through such a token as a Maintainer: every action on the project's repositories, but not the administration of the project (its members, policies, service accounts, CI mappings and repository settings). The scope of the API has members for that (`admin`, `system`), which the form does not offer.
 
 ### Choose the lifetime
 
@@ -141,9 +141,9 @@ An expired token is refused with `401` `invalid_token`, the same answer as for a
 |---|---|---|
 | Prefix | `trv_pat_` | `trv_sat_` |
 | Acts as | You | A service account, independent of any person |
-| Created by | You, under **Personal tokens** | An administrator ([Managing tokens](../admin/tokens.md)) |
+| Created by | You, under **Personal tokens** | An administrator, or an Owner of the account's project ([Managing tokens](../admin/tokens.md)) |
 | Use | Your own machine and tools | CI jobs and other automation |
 | Lifetime | Always expires | Expires; can be non-expiring where the installation allows it |
 | Further endpoints | Refused unless an administrator allows personal tokens there | The token type further endpoints accept by default |
 
-For a CI job, ask an administrator for a service-account token with only the permissions the job needs, and store it as a masked, protected CI/CD variable named `TROVE_TOKEN`. GitLab CI jobs will get a short-lived token without any stored secret once the GitLab CI federation is released; [GitLab CI pipelines](gitlab-ci-pipelines.md) describes it.
+A GitLab CI job needs no stored token: it exchanges the ID token GitLab gives it for a token that lives minutes ([GitLab CI pipelines](gitlab-ci-pipelines.md)). For other automation, ask an administrator or an Owner of your project for a service-account token with only the permissions the job needs, and store it as a masked, protected variable named `TROVE_TOKEN`.

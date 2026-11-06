@@ -140,7 +140,7 @@ The `vulnerabilities` section ([vulnerabilities.go](../../internal/config/vulner
 `sources.kev.*`, `sources.epss.*` (P1: only `off` is accepted), `matching.public_upstreams` (a map of format ID to hosts, replaced as a whole), `findings.resolved_retention` and
 `export.max_rows`, each with the default of R-VULN-025. The four maintenance tasks `vuln-sync-osv`, `vuln-sync-osv-full`, `vuln-sync-kev` and `vuln-findings-retention` are in the default of
 `maintenance.tasks`. `Vulnerabilities.Validate` refuses what R-VULN-025's criterion names, each time with the key: `max_shrink` outside 0 to 1, an `ecosystems` entry of no format of this
-release (the fixed list `npm`, `NuGet`, spelled as OSV spells them), `mode: repository` without `repository`, a source URL that is not an https URL (INV-20), and an `epss` mode other than
+release (the fixed list `npm`, `NuGet`, spelled as OSV spells them), `mode: repository` without `repository` or with a `repository` that is not a qualified name `<projectKey>/<repoKey>`, a source URL that is not an https URL (INV-20), and an `epss` mode other than
 `off`. A source URL is checked also while its source is off, so a typo does not wait for the day the mode changes.
 
 ## Bastion keys

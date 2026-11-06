@@ -4,11 +4,11 @@ How a GitLab CI job gets a short-lived trove token without a stored secret: the 
 
 ## How it works
 
-A job asks GitLab for an ID token addressed to trove, posts it to trove, and gets a `trv_cit_` token back that lives for minutes. trove decides what the token may do from the verified facts about the job: which GitLab project it belongs to, whether it runs on a protected branch or tag, how the pipeline was started. Nothing secret is stored in GitLab, and the token dies with the job. The rules that turn those facts into permissions are the identity mappings, which an administrator of your trove project or of trove writes ([GitLab CI federation](../admin/gitlab-ci.md)).
+A job asks GitLab for an ID token addressed to trove, posts it to trove, and gets a `trv_cit_` token back that lives for minutes. trove decides what the token may do from the verified facts about the job: which GitLab project it belongs to, whether it runs on a protected branch or tag, how the pipeline was started. Nothing secret is stored in GitLab, and the token dies with the job. The rules that turn those facts into permissions are the identity mappings, which an Owner of your trove project or an administrator of trove writes ([GitLab CI federation](../admin/gitlab-ci.md)).
 
 ## Before you start
 
-- **A mapping for your pipelines.** Ask the administrator of your trove project for one. Tell them the numeric ID of your GitLab project (GitLab shows it on the project's page; a job sees it as `CI_PROJECT_ID`), which branches or tags publish, and which repositories the pipeline installs from and publishes to. Publishing needs a protected branch or tag in GitLab, unless the mapping explicitly allows unprotected refs.
+- **A mapping for your pipelines.** Ask an Owner of your trove project for one. Tell them the numeric ID of your GitLab project (GitLab shows it on the project's page; a job sees it as `CI_PROJECT_ID`), which branches or tags publish, and which repositories the pipeline installs from and publishes to. Publishing needs a protected branch or tag in GitLab, unless the mapping explicitly allows unprotected refs.
 - **Three values from them.** trove's base URL, which is the audience of your ID token (for example `https://trove.example.com`); the addresses of the repositories; and which of them you may publish to.
 - **curl and jq in the job's image.** curl 7.55 or later reads a header from standard input (`-H @-`), and from 7.66 on `--retry` waits as the answer's `Retry-After` says.
 
@@ -72,13 +72,13 @@ The answer of a successful exchange (values are examples):
   "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
   "token_type": "Bearer",
   "expires_in": 900,
-  "scope": "read:web-npm deploy:web-npm read:web-nuget deploy:web-nuget read:@any",
+  "scope": "read:npm-internal deploy:npm-internal read:nuget-internal deploy:nuget-internal read:@any",
   "ci_issuer": "gitlab-main",
-  "mappings": ["web-invoice-api-publish"]
+  "mappings": ["web/invoice-api-publish"]
 }
 ```
 
-`scope` lists what the token may do, one item per action and repository selector: first the grants of the permission policies the mappings belong to, with their selectors as the policies write them, then the mappings' own grants. `mappings` names the mappings that granted it. The token value is in this answer only, and there is no refresh token: a job that needs a new token exchanges again. The answer carries `Cache-Control: no-store`, so no proxy keeps it.
+`scope` lists what the token may do, one item per action and repository selector: first the grants of the permission policies the mappings belong to, with the project in each selector (`read:web/npm-all`), then the mappings' own grants as the mappings write them; a mapping of a trove project names the project's repositories by their bare key, and its `@any` means every repository of that project. `mappings` names the mappings that granted it, a mapping of a trove project as `<projectKey>/<name>`. The token value is in this answer only, and there is no refresh token: a job that needs a new token exchanges again. The answer carries `Cache-Control: no-store`, so no proxy keeps it.
 
 ### How long the token lives
 
@@ -89,10 +89,10 @@ The answer of a successful exchange (values are examples):
 Without further parameters the token carries every grant of the matched mappings. Add `scope` to the exchange to ask for less, so that a step that only installs cannot publish:
 
 ```shell
---data-urlencode 'scope=read:@any:npm deploy:web-npm'      # example
+--data-urlencode 'scope=read:@any:npm deploy:web/npm-internal'      # example
 ```
 
-- `scope` is a space-separated list of items `<action>` or `<action>:<repository selector>`. The actions are `read`, `annotate`, `deploy`, `overwrite` and `delete`; the selectors are those of permission policies: a key (`web-npm`), a key pattern (`web-*`), a class (`@any`, `@any-local`) or a class or pattern with a format (`@any:npm`). An item without a selector stands for every repository.
+- `scope` is a space-separated list of items `<action>` or `<action>:<repository selector>`. The actions are `read`, `annotate`, `deploy`, `overwrite` and `delete`; the selectors are those of instance-wide permission policies: a repository with its project (`web/npm-internal`), a pattern of project and key (`web/npm-*`; `*` never crosses the `/`), a class (`@any`, `@any-local`) or a class or pattern with a format (`@any:npm`, `web/*:npm`). A key without its project (`npm-internal`) is refused with `scope_malformed`, also when the mapping names it so. An item without a selector stands for every repository.
 - An item that asks for an action the mappings do not grant refuses the whole exchange with `scope_not_granted`; there is no partial token. A key that names no repository answers the same, so check the spelling of a key when you see it. `manage` or an unknown action answers `scope_malformed`. At most 50 distinct items.
 - `--data-urlencode 'ttl=600'` asks for a shorter lifetime in whole seconds. It can only shorten, and not below 30 seconds (`ttl_below_minimum`).
 - Package-name and path limits are not part of `scope`; the mapping's grants carry them.
@@ -112,13 +112,13 @@ publish-npm:
     # npm expands ${TROVE_TOKEN} at run time; the token is never written to disk.
     - |
       cat > .npmrc <<'EOF'
-      registry=https://trove.example.com/api/npm/web-npm-all/
-      //trove.example.com/api/npm/web-npm-all/:_authToken=${TROVE_TOKEN}
-      //trove.example.com/api/npm/web-npm/:_authToken=${TROVE_TOKEN}
+      registry=https://trove.example.com/api/npm/web/npm-all/
+      //trove.example.com/api/npm/web/npm-all/:_authToken=${TROVE_TOKEN}
+      //trove.example.com/api/npm/web/npm-internal/:_authToken=${TROVE_TOKEN}
       EOF
     - npm ci
     - npm version --no-git-tag-version --allow-same-version "${CI_COMMIT_TAG#v}"
-    - npm publish --registry https://trove.example.com/api/npm/web-npm/
+    - npm publish --registry https://trove.example.com/api/npm/web/npm-internal/
     # Last step: revoke the CI token, so it does not outlive the job.
     - |
       printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
@@ -135,8 +135,8 @@ A `nuget.config` in the repository root reads the token from the environment as 
 <configuration>
   <packageSources>
     <clear />
-    <add key="trove" value="https://trove.example.com/api/nuget/web-nuget-all/v3/index.json" />
-    <add key="trove-internal" value="https://trove.example.com/api/nuget/web-nuget/v3/index.json" />
+    <add key="trove" value="https://trove.example.com/api/nuget/web/nuget-all/v3/index.json" />
+    <add key="trove-internal" value="https://trove.example.com/api/nuget/web/nuget-internal/v3/index.json" />
   </packageSources>
   <packageSourceCredentials>
     <trove>
@@ -159,14 +159,14 @@ push-nuget:
   rules:
     - if: $CI_COMMIT_TAG && $CI_COMMIT_REF_PROTECTED == "true"
   script:
-    # nuget.config reads %TROVE_TOKEN% for restores from web-nuget-all.
+    # nuget.config reads %TROVE_TOKEN% for restores from web/nuget-all.
     - dotnet restore
     - >-
       dotnet pack src/Acme.InvoiceApi/Acme.InvoiceApi.csproj
       -c Release -o out --no-restore -p:PackageVersion="${CI_COMMIT_TAG#v}"
     - >-
       dotnet nuget push "out/*.nupkg"
-      --source "$TROVE_URL/api/nuget/web-nuget/v3/index.json"
+      --source "$TROVE_URL/api/nuget/web/nuget-internal/v3/index.json"
       --api-key "$TROVE_TOKEN"
     - |
       printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
@@ -174,7 +174,7 @@ push-nuget:
 
 - The user name in `nuget.config` is not checked. When `TROVE_TOKEN` is not set, NuGet keeps the literal text `%TROVE_TOKEN%`, so a missing token shows up as `401`, not as anonymous access.
 - `dotnet nuget push --api-key` sends the token as `X-NuGet-ApiKey`. The token stands in `dotnet`'s argument list while the push runs, visible to other processes on the same runner.
-- `web-nuget` is a source of its own because `dotnet nuget push` fetches the service index of its `--source` before it sends the API key, and trove answers that request with `401` unless it carries credentials. NuGet attaches the credentials of `packageSourceCredentials` to a `--source` URL that equals a configured source, so the push command stays as it is.
+- `nuget-internal` is a source of its own because `dotnet nuget push` fetches the service index of its `--source` before it sends the API key, and trove answers that request with `401` unless it carries credentials. NuGet attaches the credentials of `packageSourceCredentials` to a `--source` URL that equals a configured source, so the push command stays as it is.
 - `<clear />` keeps every other source out, so packages resolve through trove only.
 
 ## Revoke the token as the last step
@@ -233,13 +233,13 @@ publish-npm:
   script:
     - |
       cat > .npmrc <<'EOF'
-      registry=https://trove.example.com/api/npm/web-npm-all/
-      //trove.example.com/api/npm/web-npm-all/:_authToken=${TROVE_TOKEN}
-      //trove.example.com/api/npm/web-npm/:_authToken=${TROVE_TOKEN}
+      registry=https://trove.example.com/api/npm/web/npm-all/
+      //trove.example.com/api/npm/web/npm-all/:_authToken=${TROVE_TOKEN}
+      //trove.example.com/api/npm/web/npm-internal/:_authToken=${TROVE_TOKEN}
       EOF
     - npm ci
     - npm version --no-git-tag-version --allow-same-version "${CI_COMMIT_TAG#v}"
-    - npm publish --registry https://trove.example.com/api/npm/web-npm/
+    - npm publish --registry https://trove.example.com/api/npm/web/npm-internal/
     - |
       printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
 
@@ -256,7 +256,7 @@ push-nuget:
       -c Release -o out --no-restore -p:PackageVersion="${CI_COMMIT_TAG#v}"
     - >-
       dotnet nuget push "out/*.nupkg"
-      --source "$TROVE_URL/api/nuget/web-nuget/v3/index.json"
+      --source "$TROVE_URL/api/nuget/web/nuget-internal/v3/index.json"
       --api-key "$TROVE_TOKEN"
     - |
       printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
@@ -264,7 +264,7 @@ push-nuget:
 
 </details>
 
-The first publish of `@acme/invoice-client` and `Acme.InvoiceApi` binds each name to your GitLab project; from then on no other GitLab project can publish versions of them, also after your project is renamed or moved. An administrator of trove can also generate a ready-to-paste snippet of this kind for a mapping.
+The first publish of `@acme/invoice-client` and `Acme.InvoiceApi` binds each name to your GitLab project; from then on no other GitLab project can publish versions of them, also after your project is renamed or moved. An administrator of trove, or an Owner of your trove project for the project's own mappings, can also generate a ready-to-paste snippet of this kind for a mapping.
 
 ## Several exchanges in one job
 
@@ -295,7 +295,7 @@ The job log shows the members `error`, `error_description` and `reason`. The `re
 | `wrong_subject_token_type`, `subject_token_malformed` | The job sent something other than its ID token, such as `CI_JOB_TOKEN`, or a misspelt variable | Send the variable of the `id_tokens:` block |
 | `malformed_request` | A parameter is missing, empty or sent twice; an empty `subject_token` means the variable of the `id_tokens:` block is not set in this job (a job that declares its own `id_tokens` replaces the default's) | Declare `id_tokens:` in the job, or in `default:` without overriding it |
 | `unknown_issuer`, `issuer_disabled` | trove does not trust your GitLab instance, or not any more | Ask an administrator of trove |
-| `no_matching_mapping` | No mapping covers this pipeline: another project, an unprotected branch, a merge request pipeline, a pipeline source the mapping leaves out | Run it on the refs the mapping names, or ask your project administrator |
+| `no_matching_mapping` | No mapping covers this pipeline: another project, an unprotected branch, a merge request pipeline, a pipeline source the mapping leaves out | Run it on the refs the mapping names, or ask an Owner of your trove project |
 | `cross_project_source_denied` | A merge request pipeline from a fork, run in your project | Intended: fork code gets no token by default |
 | `token_expired`, `subject_token_expires_too_soon` | The ID token has expired, or is about to | Exchange at the start of the job; give the job a timeout |
 | `ttl_below_minimum` | The `ttl` you asked for is below 30 seconds, or a bound your administrator set is | Ask for a longer `ttl`, or ask your administrator |
@@ -314,7 +314,7 @@ For anything you cannot fix yourself, give your administrator the time, the GitL
 |---|---|
 | `E403` from `npm publish`, `403` from `dotnet nuget push` | The token may not publish there: the pipeline ran on an unprotected ref and matched a read-only mapping, `scope` left `deploy` out, or the package name is outside the names the mapping allows |
 | `E404` from `npm install`, `404` from a NuGet restore | The token may not read the package or the repository, for example because the mapping no longer is in the policy that gave it the read; trove answers a refused read like a missing package unless the repository shows existence |
-| `403` `package_owned_by_other_owner` | Another GitLab project, or someone else, owns the package name. A name that already has versions is not taken over by a pipeline; an administrator of the repository adds your GitLab project as an owner |
+| `403` `package_owned_by_other_owner` | Another GitLab project, or someone else, owns the package name. A name that already has versions is not taken over by a pipeline; someone who holds `manage` on the repository, such as a Maintainer or Owner of its trove project, adds your GitLab project as an owner |
 | `E401`, `401` `invalid_token` | The token has expired or was revoked, for example a step after the closing revocation still used it |
 | `403` `ci_token_restricted` | The step called a management operation, which a CI token never may |
 

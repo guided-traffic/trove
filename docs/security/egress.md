@@ -105,7 +105,7 @@ table allows, so a header that is not one of the standard sensitive ones does no
 handshake from the decision stored in the request context ([factory.go](../../internal/outbound/factory.go), `certGetter`).
 Pre-signed object-storage redirects therefore receive nothing by default.
 
-A project administrator's write cannot move a stored credential to another host: a change of `url`, a new `sendCredentials` host or
+The write of an Owner of a project without `repositories:write-config` cannot move a stored credential to another host: a change of `url`, a new `sendCredentials` host or
 `forwardAuthOnRedirect` turned on needs a new value in the same write
 ([Q-REPO-127](../spec/repositories-and-proxy.md#q-repo-127--a-project-administrator-gives-an-upstream-secret-as-a-value-and-a-stored-one-stays-with-its-hosts)).
 
@@ -143,13 +143,13 @@ and `mirror` as reason ([R-REPO-057](../spec/repositories-and-proxy.md)); and th
 
 ## The upstream test
 
-`POST /api/v1/repositories/{key}/upstream-test` and `POST /api/v1/upstream-tests` send one request through a remote repository's client
-([proxy/upstream/probe.go](../../internal/proxy/upstream/probe.go)). The client is the one real fetches use, so the address check, the
+`POST /api/v1/projects/{projectKey}/repositories/{repoKey}/upstream-test` and `POST /api/v1/projects/{projectKey}/upstream-tests` send one
+request through a remote repository's client ([proxy/upstream/probe.go](../../internal/proxy/upstream/probe.go)). The client is the one real fetches use, so the address check, the
 trust store, the source network, the redirect limit and the credential policy apply unchanged; a refusal is reported as the result's
 `error.code` `egress_denied` with the address and the rule, and counts in `trove_outbound_egress_denied_total{kind="remote"}`. The
-operation needs `repositories:write-config`, or, for a repository of a project, an administrator of the project with `manageRepositories`;
-the service checks the repository's project again before the probe. A project administrator's unsaved test takes no `secretRef`, no
-`sourceNetwork` and no `outboundProxy.mode` but `default` (Q-REPO-127, [Q-REPO-128](../spec/repositories-and-proxy.md#q-repo-128--a-project-administrators-remote-repository-takes-the-installations-outbound-path)),
+operation needs `repositories:write-config`, or the Owner role in the project the path names; the saved test reads the repository by
+its project and key, so an Owner tests only the repositories of its project. The unsaved test of an Owner without the capability takes no
+`secretRef`, no `sourceNetwork` and no `outboundProxy.mode` but `default` (Q-REPO-127, [Q-REPO-128](../spec/repositories-and-proxy.md#q-repo-128--a-project-administrators-remote-repository-takes-the-installations-outbound-path)),
 so it reaches the network through the installation's path and sends no secret of the installation. A repository in offline mode, and every
 repository while `proxy.global_offline` is on, is not contacted. `Client.Allowed` ([client.go](../../internal/proxy/upstream/client.go)) refuses a URL taken from upstream metadata whose host is
 neither the upstream's nor in `extraHosts` (`502 foreign_host_denied`), and one that leaves an `https` upstream for `http` (`502
