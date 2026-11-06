@@ -431,7 +431,7 @@ describe('Client setup', () => {
     expect(text(r.root)).toContain('no default deployment target');
     expect(snippets(r)).toEqual([]);
     const link = [...r.root.querySelectorAll('a')].find((a) => text(a).includes('see its members'));
-    expect(link?.getAttribute('href')).toBe('/admin/repositories/web/npm-readonly');
+    expect(link?.getAttribute('href')).toBe('/projects/web/repositories/npm-readonly');
 
     const plain = await open({ repository: 'web/npm-readonly' }, { capabilities: [] });
     await tab(plain, 'Publish');

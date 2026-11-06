@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { PackagesApi } from '../../api/packages-api';
 import { FakePackagesApi } from '../../api/testing/fakes-packages';
-import { expectAccessible, renderScreen, settle, text } from '../../testing/screen';
+import { expectAccessible, inProject, renderScreen, settle, text } from '../../testing/screen';
 import { PackageDetail } from './package-detail';
 import { PackageMemory } from './package-memory';
 
@@ -13,10 +13,10 @@ async function open(
   setup?: (fake: FakePackagesApi) => void,
   name = '@team-a/ui',
 ) {
-  const r = await renderScreen(PackageDetail, {
+  const r = await renderScreen(PackageDetail, inProject({
     inputs: { format: 'npm', name, ...inputs },
     setup: (get) => setup?.(get(PackagesApi) as FakePackagesApi),
-  });
+  }));
   return { ...r, fake: r.get(PackagesApi) as FakePackagesApi };
 }
 
@@ -158,7 +158,7 @@ describe('Package details', () => {
       expect.stringContaining('web/npm-localLocal'),
       expect.stringContaining('web/npm-allVirtual'),
     ]);
-    expect(rows[0]?.querySelector('a')?.getAttribute('href')).toBe('/browse/web/npm-local');
+    expect(rows[0]?.querySelector('a')?.getAttribute('href')).toBe('/projects/web/browse/npm-local');
     await expectAccessible(r.root);
   });
 

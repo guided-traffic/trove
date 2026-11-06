@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, effect, inject, input, signal, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { PermissionPolicy, PolicyApi, PolicyFilters } from '../../api/authz-api';
 import { SessionStore } from '../../core/session-store';

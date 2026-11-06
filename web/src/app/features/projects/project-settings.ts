@@ -37,7 +37,7 @@ import { projectRoleLabel } from './project-roles';
       <trove-error-notice [error]="e" />
     }
 
-    @if (project(); as p) {
+    @if (record(); as p) {
       <section class="card" aria-labelledby="project-general">
         <h2 id="project-general" i18n="@@project.general">General</h2>
         <dl class="facts">
@@ -112,7 +112,7 @@ import { projectRoleLabel } from './project-roles';
 })
 export class ProjectSettings {
   /** Route parameter `:project`. */
-  readonly key = input.required<string>({ alias: 'project' });
+  readonly project = input.required<string>();
 
   private readonly api = inject(ProjectsApi);
   private readonly dialog = inject(TroveDialog);
@@ -122,23 +122,23 @@ export class ProjectSettings {
   private readonly context = inject(ProjectContext);
   private readonly session = inject(SessionStore);
 
-  protected readonly project = signal<Project | null>(null);
+  protected readonly record = signal<Project | null>(null);
   protected readonly loadError = signal<ApiError | null>(null);
   protected readonly actionError = signal<ApiError | null>(null);
   protected readonly busy = signal(false);
 
   protected readonly canWrite = computed(() => this.session.has('projects:write'));
   /** Changing the display name and the description: `projects:write`, or the Owner role of the project (R-AUTHZ-026). */
-  protected readonly canEdit = computed(() => this.canWrite() || this.session.isOwnerOf(this.key()));
+  protected readonly canEdit = computed(() => this.canWrite() || this.session.isOwnerOf(this.project()));
   protected readonly roleText = projectRoleLabel;
   protected readonly empty = computed(() => {
-    const p = this.project();
+    const p = this.record();
     return p !== null && p.repositories === 0 && p.serviceAccounts === 0;
   });
 
   constructor() {
     effect(() => {
-      this.key();
+      this.project();
       untracked(() => void this.load());
     });
   }
@@ -146,9 +146,9 @@ export class ProjectSettings {
   protected async load(): Promise<void> {
     this.loadError.set(null);
     try {
-      this.project.set((await this.api.get(this.key())).value);
+      this.record.set((await this.api.get(this.project())).value);
     } catch (e) {
-      this.project.set(null);
+      this.record.set(null);
       this.loadError.set(asApiError(e));
     }
   }
@@ -156,14 +156,14 @@ export class ProjectSettings {
   protected async edit(): Promise<void> {
     this.actionError.set(null);
     try {
-      const loaded: Versioned<Project> = await this.api.get(this.key());
+      const loaded: Versioned<Project> = await this.api.get(this.project());
       const ref = this.dialog.open<ProjectDialog, { project: Versioned<Project> }, Project>(ProjectDialog, {
         data: { project: loaded },
         maxWidth: '40rem',
       });
       const saved = await firstValueFrom(ref.closed);
       if (saved) {
-        this.project.set(saved);
+        this.record.set(saved);
         void this.context.refresh();
         this.notifier.status($localize`:@@project.saved:Project saved.`);
       }
@@ -173,7 +173,7 @@ export class ProjectSettings {
   }
 
   protected async remove(): Promise<void> {
-    const p = this.project();
+    const p = this.record();
     if (!p) return;
     const answer = await this.confirmer.ask({
       title: $localize`:@@project.delete-title:Delete project ${p.key}:key:?`,

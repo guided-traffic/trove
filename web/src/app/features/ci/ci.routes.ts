@@ -54,7 +54,11 @@ export const CI_ROUTES: Routes = [
  * mapping editor (the issuer travels in the query: `?issuer=`) and the dry run over the project's tier.
  */
 export const PROJECT_CI_ROUTES: Routes = [
-  { path: '', loadComponent: () => import('./project-ci').then((m) => m.ProjectCi) },
+  {
+    path: '',
+    title: $localize`:@@route.project-ci.title:CI identity`,
+    loadComponent: () => import('./project-ci').then((m) => m.ProjectCi),
+  },
   {
     path: 'test',
     title: $localize`:@@route.project-ci.test.title:Claim tester`,

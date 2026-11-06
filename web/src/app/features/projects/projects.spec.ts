@@ -2,11 +2,10 @@ import { SessionApi } from '../../api/session-api';
 import { FakeSessionApi } from '../../api/testing/fakes';
 import { FakeProjectsApi, sampleProject } from '../../api/testing/fakes-projects';
 import { ProjectsApi } from '../../api/projects-api';
-import { RepositoriesApi } from '../../api/repositories-api';
-import { FakeRepositoriesApi } from '../../api/testing/fakes-catalog';
 import { seriousViolations } from '../../testing/axe';
 import { buttonByText, renderScreen, settle, sleep, text, type, typeInto } from '../../testing/screen';
-import { ProjectDetail } from './project-detail';
+import { ProjectSettings } from './project-settings';
+import { ProjectPoliciesPage, ProjectServiceAccountsPage } from './project-list-pages';
 import { ProjectList } from './project-list';
 
 const overlay = (): HTMLElement => document.querySelector('.cdk-overlay-container') as HTMLElement;
@@ -107,20 +106,22 @@ describe('Projects overview (R-UI-041)', () => {
   });
 });
 
-describe('Project detail (R-UI-041)', () => {
-  it('R-UI-041 shows the overview and the three sections, and passes axe', async () => {
-    const { root } = await renderScreen(ProjectDetail, { inputs: { key: 'web' } });
+describe('Project settings (R-UI-041, Q-UI-129)', () => {
+  it('R-UI-041 shows the facts of the project and passes axe', async () => {
+    const { root } = await renderScreen(ProjectSettings, { inputs: { project: 'web' } });
     expect(text(root)).toContain('Web platform');
     expect(text(root)).toContain('group:web-leads');
-    for (const heading of ['General', 'Members', 'Repositories', 'Permission policies', 'Service accounts']) {
-      expect([...root.querySelectorAll('h2')].some((h) => text(h) === heading)).toBe(true);
+    expect([...root.querySelectorAll('h2')].some((h) => text(h) === 'General')).toBe(true);
+    // The members, repositories, policies and service accounts have screens of their own (Q-UI-129).
+    for (const heading of ['Members', 'Repositories', 'Permission policies', 'Service accounts']) {
+      expect([...root.querySelectorAll('h2')].some((h) => text(h) === heading)).toBe(false);
     }
     expect(await seriousViolations(root)).toEqual([]);
   });
 
   it('R-UI-041 delete is offered only for an empty project, with the reason otherwise', async () => {
-    const { root } = await renderScreen(ProjectDetail, {
-      inputs: { key: 'web' },
+    const { root } = await renderScreen(ProjectSettings, {
+      inputs: { project: 'web' },
       setup: (g) => {
         (g(ProjectsApi) as FakeProjectsApi).projects = [sampleProject({ serviceAccounts: 1 })];
       },
@@ -130,7 +131,7 @@ describe('Project detail (R-UI-041)', () => {
   });
 
   it('R-UI-041 deletes an empty project after the key is typed', async () => {
-    const { fixture, root, get } = await renderScreen(ProjectDetail, { inputs: { key: 'web' } });
+    const { fixture, root, get } = await renderScreen(ProjectSettings, { inputs: { project: 'web' } });
     buttonByText(root, 'Delete project').click();
     await settle(fixture);
     const confirm = overlay().querySelector('trove-confirm-dialog') as HTMLElement;
@@ -142,7 +143,7 @@ describe('Project detail (R-UI-041)', () => {
   });
 
   it('R-UI-041 explains 409 project_not_empty when something arrived since the page was read', async () => {
-    const { fixture, root, get } = await renderScreen(ProjectDetail, { inputs: { key: 'web' } });
+    const { fixture, root, get } = await renderScreen(ProjectSettings, { inputs: { project: 'web' } });
     const api = get(ProjectsApi) as FakeProjectsApi;
     api.failure = new (await import('../../api/problem')).ApiError(409, { code: 'project_not_empty' }, 'req-1');
     buttonByText(root, 'Delete project').click();
@@ -155,48 +156,62 @@ describe('Project detail (R-UI-041)', () => {
     expect(text(root)).toContain('still has repositories or service accounts');
   });
 
-  it('R-UI-041 R-AUTHZ-026 an Owner reads the project and manages its repositories, policies and service accounts', async () => {
-    const { root } = await renderScreen(ProjectDetail, {
-      inputs: { key: 'web' },
+  it('R-UI-041 R-AUTHZ-026 an Owner edits the project but cannot delete it', async () => {
+    const { root } = await renderScreen(ProjectSettings, {
+      inputs: { project: 'web' },
       capabilities: [],
       setup: asProjectAdministrator(),
     });
     expect(root.textContent).toContain('Edit project');
     expect(root.textContent).not.toContain('Delete project');
-    expect(root.textContent).not.toContain('Switched off for this project');
-    expect(buttonByText(root, 'Create repository').getAttribute('href')).toContain('/admin/repositories/new?project=web');
-    expect(buttonByText(root, 'Create policy').getAttribute('href')).toContain('/admin/permissions/new?project=web');
-    expect((buttonByText(root, 'Create service account') as HTMLButtonElement).disabled).toBe(false);
     expect(await seriousViolations(root)).toEqual([]);
   });
 
-  it('R-UI-041 the auditor reads every project and every create action says what is missing', async () => {
-    const { root } = await renderScreen(ProjectDetail, {
-      inputs: { key: 'web' },
-      capabilities: ['projects:read', 'policies:read', 'identities:read', 'repositories:read-config'],
+  it('R-UI-041 the auditor reads the project and the edit action says what is missing', async () => {
+    const { root } = await renderScreen(ProjectSettings, {
+      inputs: { project: 'web' },
+      capabilities: ['projects:read'],
       setup: (g) => {
-        (g(SessionApi) as FakeSessionApi).meResult = { roles: ['auditor'], capabilities: ['projects:read', 'policies:read', 'identities:read', 'repositories:read-config'] };
+        (g(SessionApi) as FakeSessionApi).meResult = { roles: ['auditor'], capabilities: ['projects:read'] };
       },
     });
     expect(text(root)).toContain('Read only: changing this needs the permission projects:write');
-    expect(text(root)).toContain('Read only: changing this needs the permission policies:write');
-    expect((buttonByText(root, 'Create repository') as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it('R-UI-041 lists the project\'s repositories, policies and service accounts', async () => {
-    const { root } = await renderScreen(ProjectDetail, {
-      inputs: { key: 'web' },
-      setup: (g) => {
-        (g(RepositoriesApi) as FakeRepositoriesApi).repositories[0]!.project = 'web';
-      },
-    });
-    expect(text(root.querySelector('trove-project-repositories')!)).toContain('generic-local');
-    expect(text(root.querySelector('trove-project-policies')!)).toContain('The project has no permission policy yet.');
-    expect(text(root.querySelector('trove-project-service-accounts')!)).toContain('The project has no service account yet.');
+    expect(root.textContent).not.toContain('Edit project');
   });
 
   it('R-UI-041 a project that is not visible answers 404 and says so', async () => {
-    const { root } = await renderScreen(ProjectDetail, { inputs: { key: 'nope' } });
+    const { root } = await renderScreen(ProjectSettings, { inputs: { project: 'nope' } });
     expect(text(root)).toContain('does not exist, or you may not see it');
+  });
+});
+
+describe('The lists of a project (R-UI-041, R-AUTHZ-026, Q-UI-129)', () => {
+  it('Q-UI-129 an Owner creates policies in the project and service accounts', async () => {
+    const { root } = await renderScreen(ProjectPoliciesPage, {
+      inputs: { project: 'web' },
+      capabilities: [],
+      setup: asProjectAdministrator(),
+    });
+    expect(buttonByText(root, 'Create policy').getAttribute('href')).toBe('/projects/web/policies/new');
+    expect(text(root)).toContain('The project has no permission policy yet.');
+    expect(await seriousViolations(root)).toEqual([]);
+    const accounts = await renderScreen(ProjectServiceAccountsPage, {
+      inputs: { project: 'web' },
+      capabilities: [],
+      setup: asProjectAdministrator(),
+    });
+    expect((buttonByText(accounts.root, 'Create service account') as HTMLButtonElement).disabled).toBe(false);
+    expect(text(accounts.root)).toContain('The project has no service account yet.');
+  });
+
+  it('Q-UI-129 the auditor reads and every create action says what is missing', async () => {
+    const { root } = await renderScreen(ProjectPoliciesPage, {
+      inputs: { project: 'web' },
+      capabilities: ['projects:read', 'policies:read'],
+      setup: (g) => {
+        (g(SessionApi) as FakeSessionApi).meResult = { roles: ['auditor'], capabilities: ['projects:read', 'policies:read'] };
+      },
+    });
+    expect(text(root)).toContain('Read only: changing this needs the permission policies:write');
   });
 });

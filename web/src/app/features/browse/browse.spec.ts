@@ -23,13 +23,21 @@ import {
 } from '../../testing/screen';
 import { Browse } from './browse';
 
+/** The inputs the router binds below `/projects/:project/browse`: the project, the repository key and the path (Q-UI-129). */
+function routeInputs(inputs: Record<string, unknown>): Record<string, unknown> {
+  const { repo, ...rest } = inputs;
+  if (typeof repo !== 'string') return { project: 'web', ...rest };
+  const at = repo.indexOf('/');
+  return { project: repo.slice(0, at), key: repo.slice(at + 1), ...rest };
+}
+
 async function open(
   inputs: Record<string, unknown> = {},
   setup?: (files: FakeFilesApi) => void,
   allow?: (check: { action: string }) => boolean,
 ) {
   const rendered = await renderScreen(Browse, {
-    inputs,
+    inputs: routeInputs(inputs),
     setup: (get) => {
       if (allow) (get(SessionApi) as FakeSessionApi).allow = allow;
       vi.spyOn(get(Router), 'navigate').mockResolvedValue(true);
@@ -118,7 +126,7 @@ describe('File tree', () => {
     expect(root.ownerDocument.activeElement?.textContent).toContain('app.zip');
     await press('Enter');
     expect(router.navigate).toHaveBeenCalledWith(
-      ['/browse', 'web', 'generic-local', 'releases', '1.0', 'app.zip'],
+      ['/projects', 'web', 'browse', 'generic-local', 'releases', '1.0', 'app.zip'],
       expect.anything(),
     );
   });
@@ -264,7 +272,7 @@ describe('File tree', () => {
     ).click();
     await settle(fixture);
     expect(files.deleted).toEqual(['web/generic-local/readme.txt']);
-    expect(router.navigate).toHaveBeenCalledWith(['/browse', 'web', 'generic-local'], expect.anything());
+    expect(router.navigate).toHaveBeenCalledWith(['/projects', 'web', 'browse', 'generic-local'], expect.anything());
   });
 
   it('R-UI-010 the statistics tab shows downloads, last download and downloader', async () => {
@@ -325,7 +333,7 @@ async function openWith(
   options: { capabilities?: readonly string[]; allow?: (c: { action: string }) => boolean } = {},
 ) {
   const rendered = await renderScreen(Browse, {
-    inputs,
+    inputs: routeInputs(inputs),
     ...(options.capabilities ? { capabilities: options.capabilities } : {}),
     setup: (get) => {
       if (options.allow) (get(SessionApi) as FakeSessionApi).allow = options.allow;
@@ -446,12 +454,12 @@ describe('Browser empty states and actions', () => {
   it('R-UI-010 with no repository an administrator is offered to create one, others are told to ask for access', async () => {
     const admin = await openWith({}, []);
     expect(text(admin.root)).toContain('There is no repository you may read yet.');
-    expect(admin.root.querySelector('.pane-tree a[href*="/admin/repositories/new"]')).toBeTruthy();
+    expect(admin.root.querySelector('.pane-tree a[href*="/projects/web/repositories/new"]')).toBeTruthy();
     expect(admin.root.querySelector('.pane-tree a[href*="/help/user/files"]')).toBeTruthy();
     await expectAccessible(admin.root);
 
     const user = await openWith({}, [], { capabilities: [] });
-    expect(user.root.querySelector('a[href*="/admin/repositories/new"]')).toBeNull();
+    expect(user.root.querySelector('a[href*="/projects/web/repositories/new"]')).toBeNull();
     expect(text(user.root)).toContain('Ask an administrator for read access');
   });
 
@@ -513,7 +521,7 @@ describe('Browser empty states and actions', () => {
     expect(root.querySelector('.browse')?.classList.contains('has-selection')).toBe(true);
     button(root, /Back to the tree/).click();
     await settle(fixture);
-    expect(router.navigate).toHaveBeenCalledWith(['/browse'], expect.anything());
+    expect(router.navigate).toHaveBeenCalledWith(['/projects', 'web', 'browse'], expect.anything());
   });
 
   it('R-UI-010 a folder is browsed from the right pane: its children link to their own address', async () => {
@@ -521,7 +529,7 @@ describe('Browser empty states and actions', () => {
     const link = [...root.querySelectorAll<HTMLAnchorElement>('trove-data-table a.entry')].find((a) =>
       text(a).includes('1.0'),
     );
-    expect(link?.getAttribute('href')).toContain('/browse/web/files/releases/1.0');
+    expect(link?.getAttribute('href')).toContain('/projects/web/browse/files/releases/1.0');
   });
 });
 

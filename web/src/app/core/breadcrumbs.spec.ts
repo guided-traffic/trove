@@ -25,13 +25,41 @@ describe('Breadcrumbs', () => {
     ]);
   });
 
-  it('R-UI-002 a detail screen shows the parameter value, not the generic route title, and links the list', async () => {
-    expect(await trailAt('/admin/repositories/web/my-repo')).toEqual([
-      { label: 'Admin area', link: null, literal: false },
-      { label: 'Repositories', link: '//admin/repositories', literal: false },
-      { label: 'web', link: '//admin/repositories/web', literal: true },
-      { label: 'my-repo', link: '//admin/repositories/web/my-repo', literal: true },
+  it('R-UI-002 Q-UI-129 a detail screen of a project reads projects, the project, the section, then the parameter value', async () => {
+    expect(await trailAt('/projects/web/repositories/my-repo')).toEqual([
+      { label: 'Projects', link: '//projects', literal: false },
+      { label: 'web', link: '//projects/web', literal: true },
+      { label: 'Repositories', link: '//projects/web/repositories', literal: false },
+      { label: 'my-repo', link: '//projects/web/repositories/my-repo', literal: true },
     ]);
+  });
+
+  it('Q-UI-129 no step of a project screen links to a route that does not exist', async () => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [provideRouter(routes), provideHttpClient(), ...provideFakeApis()] });
+    const router = TestBed.inject(Router);
+    const crumbs = TestBed.inject(Breadcrumbs);
+    // Not the screens that ask before they are left (the repository and the mapping editors): without an outlet they have no component to ask.
+    for (const url of [
+      '/projects/web/browse/npm-local/docs/guide',
+      '/projects/web/packages/npm/@team-a/ui',
+      '/projects/web/policies/team-a',
+      '/projects/web/service-accounts/ci-bot',
+      '/projects/web/vulnerabilities/findings/abc',
+      '/projects/web/vulnerabilities/advisories/npm/GHSA-aaaa-aaaa-0001',
+      '/projects/web/ci/test',
+    ]) {
+      await router.navigateByUrl(url);
+      // The last step is the page itself, shown without a link.
+      for (const crumb of crumbs.trail().slice(0, -1)) {
+        if (!crumb.commands) continue;
+        const target = crumb.commands.join('/').replace(/^\/\//, '/');
+        expect(router.parseUrl(target)).toBeTruthy();
+        expect(await router.navigateByUrl(target), `${url}: ${crumb.label} -> ${target}`).toBe(true);
+        expect(router.url).not.toContain('**');
+        await router.navigateByUrl(url);
+      }
+    }
   });
 
   it('R-UI-002 a literal child route such as "new" uses its title', async () => {
@@ -55,19 +83,19 @@ describe('Breadcrumbs', () => {
   });
 
   it('R-UI-002 the file tree adds one step per path segment, each linking to its folder', async () => {
-    const trail = await trailAt('/browse/generic-local/docs/guide');
-    expect(trail.map((c) => c.label)).toEqual(['Artifacts', 'Browse', 'generic-local', 'docs', 'guide']);
-    expect(trail.at(-1)?.link).toBe('//browse/generic-local/docs/guide');
-    expect(trail.slice(2).every((c) => c.literal)).toBe(true);
-    expect(trail[0]?.link).toBeNull();
-    expect(trail[1]?.link).toBe('//browse');
+    const trail = await trailAt('/projects/web/browse/generic-local/docs/guide');
+    expect(trail.map((c) => c.label)).toEqual(['Projects', 'web', 'Browse', 'generic-local', 'docs', 'guide']);
+    expect(trail.at(-1)?.link).toBe('//projects/web/browse/generic-local/docs/guide');
+    expect(trail.slice(3).every((c) => c.literal)).toBe(true);
+    expect(trail[0]?.link).toBe('//projects');
+    expect(trail[2]?.link).toBe('//projects/web/browse');
   });
 
   it('R-UI-002 R-UI-003 a package adds one step with its whole name, scope slash included, linking the package', async () => {
-    const trail = await trailAt('/packages/npm/@team-a/ui');
-    expect(trail.map((c) => c.label)).toEqual(['Artifacts', 'Packages', '@team-a/ui']);
-    expect(trail[1]?.link).toBe('//packages');
-    expect(trail[2]).toEqual({ label: '@team-a/ui', link: '//packages/npm/@team-a/ui', literal: true });
+    const trail = await trailAt('/projects/web/packages/npm/@team-a/ui');
+    expect(trail.map((c) => c.label)).toEqual(['Projects', 'web', 'Packages', '@team-a/ui']);
+    expect(trail[2]?.link).toBe('//projects/web/packages');
+    expect(trail[3]).toEqual({ label: '@team-a/ui', link: '//projects/web/packages/npm/@team-a/ui', literal: true });
   });
 
   it('R-UI-002 a nested system screen reads area, screen group, screen', async () => {

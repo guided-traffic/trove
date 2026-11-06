@@ -1,5 +1,7 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationCancel, NavigationEnd, NavigationError, Router, RoutesRecognized } from '@angular/router';
+import { filter, map } from 'rxjs';
 import { collectAll } from '../api/pagination';
 import { Project, ProjectsApi } from '../api/projects-api';
 import { SessionStore } from './session-store';
@@ -42,7 +44,19 @@ export class ProjectContext {
    * are created, so a screen that asks for the project in its constructor gets the new one; a navigation that is cancelled
    * or fails puts the old URL back.
    */
-  private readonly url = signal(this.router.url);
+  private readonly url = toSignal(
+    this.router.events.pipe(
+      filter(
+        (e) =>
+          e instanceof RoutesRecognized ||
+          e instanceof NavigationEnd ||
+          e instanceof NavigationCancel ||
+          e instanceof NavigationError,
+      ),
+      map((e) => (e instanceof RoutesRecognized || e instanceof NavigationEnd ? e.urlAfterRedirects : this.router.url)),
+    ),
+    { initialValue: this.router.url },
+  );
 
   /** The key of the project the current URL is in, or null (the start page, the admin area, the profile …). */
   readonly key = computed(() => projectKeyOf(this.url()));
@@ -64,10 +78,6 @@ export class ProjectContext {
   });
 
   constructor() {
-    this.router.events.subscribe((e) => {
-      if (e instanceof RoutesRecognized || e instanceof NavigationEnd) this.url.set(e.urlAfterRedirects);
-      else if (e instanceof NavigationCancel || e instanceof NavigationError) this.url.set(this.router.url);
-    });
     effect(() => {
       const ready = this.session.authenticated();
       untracked(() => {

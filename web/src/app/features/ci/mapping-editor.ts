@@ -77,7 +77,7 @@ export class MappingEditor implements HasUnsavedChanges {
   /** Route parameter `:mapping`; absent when a new mapping is made. */
   readonly mapping = input<string | undefined>();
   /** Route parameter `:project`: the project of a project's mapping. */
-  readonly projectParam = input<string | undefined>(undefined, { alias: 'project' });
+  readonly project = input<string | null>(null);
 
   private readonly api = inject(CiApi);
   private readonly policiesApi = inject(PolicyApi);
@@ -89,7 +89,6 @@ export class MappingEditor implements HasUnsavedChanges {
   private readonly router = inject(Router);
   protected readonly session = inject(SessionStore);
 
-  protected readonly project = computed(() => this.projectParam() ?? null);
   protected readonly issuerChoice = signal('');
   protected readonly issuerName = computed(() => this.issuer() || this.issuerChoice());
   protected readonly isNew = computed(() => this.mapping() === undefined);
@@ -169,7 +168,7 @@ export class MappingEditor implements HasUnsavedChanges {
     effect(() => {
       this.issuer();
       this.mapping();
-      this.projectParam();
+      this.project();
       untracked(() => void this.load());
     });
   }
