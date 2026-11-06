@@ -483,7 +483,12 @@ func TestR_AUTHZ_026_OwnerServiceAccountsAndTokens(t *testing.T) {
 		want(t, s.call(get, "/api/v1/tokens/"+id, wandaTok, nil), 200, "")
 		want(t, s.call(del, "/api/v1/tokens/"+id, wandaTok, nil), 204, "")
 		// Another account's tokens are no business of wanda's.
-		for _, c := range []struct{ owner, path string }{{"ext-bot", "/api/v1/service-accounts/ext-bot"}, {"shop/shop-bot", "/api/v1/projects/shop/service-accounts/shop-bot"}} {
+		// The instance-wide account's token operations are an administrator's (403); a project the caller is no
+		// member of answers like a missing one (404).
+		for _, c := range []struct {
+			owner, path string
+			revoke      int
+		}{{"ext-bot", "/api/v1/service-accounts/ext-bot", 403}, {"shop/shop-bot", "/api/v1/projects/shop/service-accounts/shop-bot", 404}} {
 			sa, err := a.manager.ServiceAccountByRef(context.Background(), c.owner)
 			if err != nil {
 				t.Fatal(err)
@@ -507,7 +512,7 @@ func TestR_AUTHZ_026_OwnerServiceAccountsAndTokens(t *testing.T) {
 			if !seen {
 				t.Fatalf("%s: the administrator does not see the account's token", c.owner)
 			}
-			want(t, s.call(del, c.path+"/tokens", wandaTok, nil), 404, "")
+			want(t, s.call(del, c.path+"/tokens", wandaTok, nil), c.revoke, "")
 			want(t, s.call(post, c.path+"/tokens", wandaTok, map[string]any{"description": "x"}), 403, "forbidden")
 		}
 		want(t, s.call(del, "/api/v1/projects/web/service-accounts/web-ci/tokens", wandaTok, nil), 204, "")
