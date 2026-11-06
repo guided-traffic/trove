@@ -13,10 +13,26 @@ func TestR_REPO_002_ValidKey(t *testing.T) {
 		in   string
 		want bool
 	}{
-		{"npm", true}, {"npm-remote", true}, {"a1", true}, {"0a", true}, {"a.b_c-d", true}, {long, true},
-		{"", false}, {"a", false}, {long + "a", false}, {"-ab", false}, {".ab", false}, {"_ab", false},
-		{"Ab", false}, {"a b", false}, {"a/b", false}, {"a%2Fb", false}, {"a..b", false}, {"ab.", false},
-		{"ab~cache", false}, {"äb", false},
+		{"npm", true},
+		{"npm-remote", true},
+		{"a1", true},
+		{"0a", true},
+		{"a.b_c-d", true},
+		{long, true},
+		{"", false},
+		{"a", false},
+		{long + "a", false},
+		{"-ab", false},
+		{".ab", false},
+		{"_ab", false},
+		{"Ab", false},
+		{"a b", false},
+		{"a/b", false},
+		{"a%2Fb", false},
+		{"a..b", false},
+		{"ab.", false},
+		{"ab~cache", false},
+		{"äb", false},
 	} {
 		if got := ValidKey(tc.in); got != tc.want {
 			t.Errorf("ValidKey(%q) = %v, want %v", tc.in, got, tc.want)
@@ -30,9 +46,20 @@ func TestR_AUTHZ_026_ValidProjectKey(t *testing.T) {
 		in   string
 		want bool
 	}{
-		{"web", true}, {"web-app", true}, {"ab", true}, {"a1", true}, {long, true},
-		{"", false}, {"w", false}, {long + "b", false}, {"1web", false}, {"Web", false}, {"web_x", false},
-		{"web.x", false}, {"web/x", false}, {"-web", false},
+		{"web", true},
+		{"web-app", true},
+		{"ab", true},
+		{"a1", true},
+		{long, true},
+		{"", false},
+		{"w", false},
+		{long + "b", false},
+		{"1web", false},
+		{"Web", false},
+		{"web_x", false},
+		{"web.x", false},
+		{"web/x", false},
+		{"-web", false},
 	} {
 		if got := ValidProjectKey(tc.in); got != tc.want {
 			t.Errorf("ValidProjectKey(%q) = %v, want %v", tc.in, got, tc.want)
@@ -45,8 +72,17 @@ func TestR_REPO_001_ValidFormat(t *testing.T) {
 		in   string
 		want bool
 	}{
-		{"npm", true}, {"nuget", true}, {"generic", true}, {"v1", false}, {"v10", false}, {"v1x", true},
-		{"", false}, {"n", false}, {"Npm", false}, {"npm/x", false}, {"vv", true},
+		{"npm", true},
+		{"nuget", true},
+		{"generic", true},
+		{"v1", false},
+		{"v10", false},
+		{"v1x", true},
+		{"", false},
+		{"n", false},
+		{"Npm", false},
+		{"npm/x", false},
+		{"vv", true},
 	} {
 		if got := ValidFormat(tc.in); got != tc.want {
 			t.Errorf("ValidFormat(%q) = %v, want %v", tc.in, got, tc.want)

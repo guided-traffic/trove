@@ -20,8 +20,8 @@ func TestR_REPO_056_PermissionsOfTheStatus(t *testing.T) {
 		{"rita", "npm-mirror", http.StatusOK, ""},
 		{"olga", "npm-mirror", http.StatusOK, ""}, // repositories:read-config
 		{"ravi", "npm-mirror", http.StatusOK, ""},
-		{"mona", "npm-mirror", http.StatusOK, ""}, // manage on the repository
-		{"pam", "web/web-mirror", http.StatusOK, ""}, // Owner of its project
+		{"mona", "npm-mirror", http.StatusOK, ""},     // manage on the repository
+		{"pam", "web/web-mirror", http.StatusOK, ""},  // Owner of its project
 		{"lena", "lab/lab-mirror", http.StatusOK, ""}, // Maintainer of its project: manage on its repositories
 		{"rex", "npm-mirror", http.StatusForbidden, "forbidden"},
 		{"dave", "npm-mirror", http.StatusNotFound, "not_found"},
