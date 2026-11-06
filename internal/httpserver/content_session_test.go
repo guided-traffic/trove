@@ -8,7 +8,7 @@ import (
 
 func TestR_ARCH_007_SessionContentIsSameOrigin(t *testing.T) {
 	corp := func(p *Principal, kind ContentKind) string {
-		r := httptest.NewRequest(http.MethodGet, "/files/generic-local/a.png", nil)
+		r := httptest.NewRequest(http.MethodGet, "/files/it/generic-local/a.png", nil)
 		if p != nil {
 			r = r.WithContext(WithPrincipal(r.Context(), *p))
 		}

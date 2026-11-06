@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/guided-traffic/trove/internal/config"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // Endpoint is the immutable snapshot of one client endpoint (R-EP-002): its
@@ -35,8 +36,7 @@ type Endpoint struct {
 	// origin (default endpoint only).
 	additional map[string]string
 
-	hostRoots    map[string]string
-	wildcardRoot string
+	hostRoots map[string]qname.Repo
 
 	// surface is the effective surface: the configured one narrowed to the families of the process's role.
 	surface         []string
@@ -71,8 +71,8 @@ func NewEndpoint(r config.ResolvedEndpoint, additionalBaseURLs []string, opts ..
 	e := &Endpoint{
 		name: r.Name, def: r.Default, listen: r.Listen, hosts: slices.Clone(r.Hosts), hostSet: map[string]struct{}{},
 		wildcard: strings.ToLower(r.WildcardHost), check: r.CheckHost, additional: map[string]string{},
-		hostRoots: map[string]string{}, wildcardRoot: r.WildcardRoot,
-		surface: slices.Clone(r.Surface), tokenTypes: slices.Clone(r.TokenTypes), boundTokensOnly: r.BoundTokensOnly,
+		hostRoots: map[string]qname.Repo{},
+		surface:   slices.Clone(r.Surface), tokenTypes: slices.Clone(r.TokenTypes), boundTokensOnly: r.BoundTokensOnly,
 		anonymous: r.Anonymous, exposure: r.Exposure, cacheFill: r.CacheFill, rateClass: r.RateLimitClass,
 		replicaHeader: r.ReplicaHeader, maxInFlight: r.MaxInFlight, pool: r.Pool, trustedProxies: slices.Clone(r.TrustedProxies),
 	}
@@ -97,7 +97,11 @@ func NewEndpoint(r config.ResolvedEndpoint, additionalBaseURLs []string, opts ..
 			}
 		}
 	}
-	for h, repo := range r.HostRoots {
+	for h, root := range r.HostRoots {
+		repo, err := qname.ParseRepo(root)
+		if err != nil {
+			return nil, fmt.Errorf("endpoint %s: host_roots[%s]: %w", r.Name, h, err)
+		}
 		e.hostRoots[strings.ToLower(h)] = repo
 	}
 	e.configured = slices.Clone(e.surface)
@@ -222,29 +226,19 @@ func (e *Endpoint) baseURLFor(host string) string {
 	return ""
 }
 
-// rootFor returns the repository a host's root is bound to (R-EP-006): an exact
-// binding of host_roots, else the host label under wildcard_root: label.
-func (e *Endpoint) rootFor(host, label string) string {
-	if repo, ok := e.hostRoots[host]; ok {
-		return repo
-	}
-	if e.wildcardRoot == config.WildcardRootLabel && label != "" {
-		return label
-	}
-	return ""
-}
+// rootFor returns the repository a host's root is bound to (R-EP-006, Q-EP-76): an exact
+// binding of host_roots. A wildcard host's label binds nothing; it names no project and key.
+func (e *Endpoint) rootFor(host string) qname.Repo { return e.hostRoots[host] }
 
-// HostRoot returns the repository key the host is bound to, "" when unbound. It
-// is the lookup that middleware step 5 stores in the request information
-// (R-EP-006); a key that names no repository behaves as no binding, which the
-// consumer decides per request.
-func (e *Endpoint) HostRoot(host string) string {
+// HostRoot returns the repository (project and key) the host is bound to, the zero value when
+// unbound. It is the lookup that middleware step 5 stores in the request information
+// (R-EP-006); a name that matches no repository behaves as no binding, which the consumer
+// decides per request.
+func (e *Endpoint) HostRoot(host string) qname.Repo {
 	if e == nil {
-		return ""
+		return qname.Repo{}
 	}
-	host = strings.ToLower(host)
-	label, _ := e.matchHost(host)
-	return e.rootFor(host, label)
+	return e.rootFor(strings.ToLower(host))
 }
 
 type ctxEndpoint struct{}
@@ -265,8 +259,8 @@ func EndpointFrom(ctx context.Context) *Endpoint {
 }
 
 // RootRepository returns the repository the effective host's root is bound to,
-// "" when the host is unbound (R-EP-006).
-func RootRepository(ctx context.Context) string { return InfoFrom(ctx).RootRepository }
+// the zero value when the host is unbound (R-EP-006).
+func RootRepository(ctx context.Context) qname.Repo { return InfoFrom(ctx).RootRepository }
 
 // hostOnly lower-cases a Host or forwarded host value and removes its port, the
 // brackets of an IPv6 literal and a trailing dot. It returns "" for a value no

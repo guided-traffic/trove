@@ -41,7 +41,7 @@ func twoEndpoints() config.Server {
 			"customers": {
 				Listen: ":8443", BaseURL: "https://packages.example.com", Hosts: []string{"pkgs.example.org"},
 				WildcardHost: "*.registry.example.com",
-				HostRoots:    map[string]string{"pkgs.example.org": "docker-hub"},
+				HostRoots:    map[string]string{"pkgs.example.org": "web/docker-hub"},
 			},
 		},
 	}
@@ -69,11 +69,11 @@ func endpointChain(t *testing.T, s config.Server, name string, ev EndpointEvents
 		info := InfoFrom(r.Context())
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"endpoint": EndpointFrom(r.Context()).Name(), "base": info.BaseURL, "host": info.Host,
-			"label": info.HostLabel, "root": RootRepository(r.Context()),
+			"label": info.HostLabel, "root": RootRepository(r.Context()).String(),
 		})
 	}
 	for _, p := range []string{
-		"GET /api/v1/system/ping", "GET /api/npm/{repoKey}/{rest...}", "GET /files/{repoKey}/{path...}",
+		"GET /api/v1/system/ping", "GET /api/npm/{projectKey}/{repoKey}/{rest...}", "GET /files/{projectKey}/{repoKey}/{path...}",
 		"/ui/", "POST /api/v1/auth/oidc/token", "GET /test-fixture/x",
 	} {
 		rt.HandleFunc(p, echo)
@@ -116,7 +116,7 @@ func TestEndpointIdentity(t *testing.T) {
 						if fwd != "" {
 							hdr = []string{"X-Forwarded-Host", fwd, "X-Forwarded-Proto", "https"}
 						}
-						w := call(h, "GET", "/api/npm/npm-all/x", host, peer, hdr...)
+						w := call(h, "GET", "/api/npm/web/npm-all/x", host, peer, hdr...)
 						if w.Code != 200 {
 							if w.Code != 421 {
 								t.Fatalf("%s host=%q fwd=%q peer=%s: %d", name, host, fwd, peer, w.Code)
@@ -139,7 +139,7 @@ func TestEndpointIdentity(t *testing.T) {
 	t.Run("R-EP-003 a host outside the set answers 421 with the problem code, before routing", func(t *testing.T) {
 		h := listeners["customers"]
 		for _, host := range []string{"trove.example.com", "10.0.0.5", "", "registry.example.com", "a.b.registry.example.com", "evil.example"} {
-			w := call(h, "GET", "/api/npm/npm-all/", host, "192.0.2.9:1")
+			w := call(h, "GET", "/api/npm/it/npm-all/", host, "192.0.2.9:1")
 			if w.Code != 421 {
 				t.Errorf("Host %q: %d", host, w.Code)
 				continue
@@ -165,7 +165,7 @@ func TestEndpointIdentity(t *testing.T) {
 			{"pkgs.example.org", "https://pkgs.example.org", ""},
 			{"docker-all.registry.example.com", "https://docker-all.registry.example.com", "docker-all"},
 		} {
-			w := call(h, "GET", "/api/npm/npm-all/", tc.host, "192.0.2.9:1")
+			w := call(h, "GET", "/api/npm/it/npm-all/", tc.host, "192.0.2.9:1")
 			if w.Code != 200 {
 				t.Errorf("%s: %d", tc.host, w.Code)
 				continue
@@ -184,13 +184,13 @@ func TestEndpointIdentity(t *testing.T) {
 		c.BaseURL = "https://packages.example.com:8443"
 		s.Endpoints["customers"] = c
 		h := endpointChain(t, s, "customers", nil)
-		w := call(h, "GET", "/api/npm/npm-all/", "pkgs.example.org", "192.0.2.9:1")
+		w := call(h, "GET", "/api/npm/it/npm-all/", "pkgs.example.org", "192.0.2.9:1")
 		var got map[string]string
 		_ = json.Unmarshal(w.Body.Bytes(), &got)
 		if got["base"] != "https://pkgs.example.org:8443" {
 			t.Errorf("base = %q", got["base"])
 		}
-		w = call(h, "GET", "/api/npm/npm-all/", "packages.example.com", "192.0.2.9:1")
+		w = call(h, "GET", "/api/npm/it/npm-all/", "packages.example.com", "192.0.2.9:1")
 		_ = json.Unmarshal(w.Body.Bytes(), &got)
 		if got["base"] != "https://packages.example.com:8443" {
 			t.Errorf("own base = %q", got["base"])
@@ -201,18 +201,18 @@ func TestEndpointIdentity(t *testing.T) {
 		h := listeners["customers"]
 		before := ev.fwdd["customers"]
 		// untrusted peer: the forwarded host is not read, Host is foreign
-		if w := call(h, "GET", "/api/npm/npm-all/", "evil.example", "192.0.2.9:1", "X-Forwarded-Host", "packages.example.com"); w.Code != 421 {
+		if w := call(h, "GET", "/api/npm/it/npm-all/", "evil.example", "192.0.2.9:1", "X-Forwarded-Host", "packages.example.com"); w.Code != 421 {
 			t.Errorf("untrusted peer: %d", w.Code)
 		}
 		// trusted peer: forwarded host within the set wins
-		w := call(h, "GET", "/api/npm/npm-all/", "evil.example", "10.1.2.3:1", "X-Forwarded-Host", "packages.example.com")
+		w := call(h, "GET", "/api/npm/it/npm-all/", "evil.example", "10.1.2.3:1", "X-Forwarded-Host", "packages.example.com")
 		var got map[string]string
 		_ = json.Unmarshal(w.Body.Bytes(), &got)
 		if w.Code != 200 || got["base"] != "https://packages.example.com" {
 			t.Errorf("trusted peer: %d %v", w.Code, got)
 		}
 		// trusted peer, forwarded host outside the set: ignored and counted, Host decides
-		w = call(h, "GET", "/api/npm/npm-all/", "packages.example.com", "10.1.2.3:1", "X-Forwarded-Host", "evil.example")
+		w = call(h, "GET", "/api/npm/it/npm-all/", "packages.example.com", "10.1.2.3:1", "X-Forwarded-Host", "evil.example")
 		_ = json.Unmarshal(w.Body.Bytes(), &got)
 		if w.Code != 200 || got["base"] != "https://packages.example.com" {
 			t.Errorf("ignored forwarded host: %d %v", w.Code, got)
@@ -269,7 +269,7 @@ func TestEndpointIdentity(t *testing.T) {
 		build := func(name string) http.Handler {
 			e := endpointFixture(t, s, name)
 			rt := NewEndpointRouter(e)
-			rt.HandleFunc("GET /api/npm/{repoKey}/{rest...}", func(w http.ResponseWriter, r *http.Request) {
+			rt.HandleFunc("GET /api/npm/{projectKey}/{repoKey}/{rest...}", func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Query().Get("slow") != "" {
 					hold <- struct{}{}
 					<-release
@@ -281,15 +281,15 @@ func TestEndpointIdentity(t *testing.T) {
 		cust, def := build("customers"), build("default")
 		done := make(chan struct{})
 		go func() {
-			call(cust, "GET", "/api/npm/x/y?slow=1", "packages.example.com", "192.0.2.9:1")
+			call(cust, "GET", "/api/npm/it/xx/y?slow=1", "packages.example.com", "192.0.2.9:1")
 			close(done)
 		}()
 		<-hold
-		w := call(cust, "GET", "/api/npm/x/y", "packages.example.com", "192.0.2.9:1")
+		w := call(cust, "GET", "/api/npm/it/xx/y", "packages.example.com", "192.0.2.9:1")
 		if w.Code != 503 || problemOf(t, w).Code != "server_busy" {
 			t.Errorf("second request on customers: %d", w.Code)
 		}
-		if w := call(def, "GET", "/api/npm/x/y", "trove.example.com", "192.0.2.9:1"); w.Code != 200 {
+		if w := call(def, "GET", "/api/npm/it/xx/y", "trove.example.com", "192.0.2.9:1"); w.Code != 200 {
 			t.Errorf("request on default: %d", w.Code)
 		}
 		close(release)
@@ -302,14 +302,14 @@ func TestEndpointIdentity(t *testing.T) {
 		c.ReplicaHeader = "always"
 		s.Endpoints["customers"] = c
 		s.ReplicaHeader = "never"
-		if got := call(endpointChain(t, s, "customers", nil), "GET", "/api/npm/a/b", "packages.example.com", "192.0.2.9:1").Header().Get(HeaderReplica); got != "pod-1" {
+		if got := call(endpointChain(t, s, "customers", nil), "GET", "/api/npm/it/aa/b", "packages.example.com", "192.0.2.9:1").Header().Get(HeaderReplica); got != "pod-1" {
 			t.Errorf("customers: %q", got)
 		}
 		if got := call(endpointChain(t, s, "default", nil), "GET", "/api/v1/system/ping", "trove.example.com", "192.0.2.9:1").Header().Get(HeaderReplica); got != "" {
 			t.Errorf("default: %q", got)
 		}
 		// a further endpoint sends none by default
-		if got := call(endpointChain(t, twoEndpoints(), "customers", nil), "GET", "/api/npm/a/b", "packages.example.com", "192.0.2.9:1").Header().Get(HeaderReplica); got != "" {
+		if got := call(endpointChain(t, twoEndpoints(), "customers", nil), "GET", "/api/npm/it/aa/b", "packages.example.com", "192.0.2.9:1").Header().Get(HeaderReplica); got != "" {
 			t.Errorf("customers default: %q", got)
 		}
 	})
@@ -320,8 +320,8 @@ func TestEndpointSurface(t *testing.T) {
 	noop := func(http.ResponseWriter, *http.Request) {}
 	register := func(r *Router) {
 		for _, p := range []string{
-			"GET /api/v1/system/ping", "GET /api/v1/repositories", "GET /api/npm/{repoKey}/{rest...}", "/ui/", "/auth/",
-			"POST /api/v1/auth/oidc/token", "GET /files/{repoKey}/{path...}", "POST /-/npm/v1/oidc/token/exchange/package/{name...}",
+			"GET /api/v1/system/ping", "GET /api/v1/repositories", "GET /api/npm/{projectKey}/{repoKey}/{rest...}", "/ui/", "/auth/",
+			"POST /api/v1/auth/oidc/token", "GET /files/{projectKey}/{repoKey}/{path...}", "POST /-/npm/v1/oidc/token/exchange/package/{name...}",
 			"GET /test-fixture/x",
 		} {
 			r.HandleFunc(p, noop)
@@ -333,7 +333,7 @@ func TestEndpointSurface(t *testing.T) {
 		r := NewEndpointRouter(e)
 		register(r)
 		got := r.Patterns()
-		want := []string{"/", "GET /api/npm/{repoKey}/{rest...}"}
+		want := []string{"/", "GET /api/npm/{projectKey}/{repoKey}/{rest...}"}
 		if fmt.Sprint(got) != fmt.Sprint(want) {
 			t.Errorf("patterns = %v, want %v", got, want)
 		}
@@ -359,7 +359,7 @@ func TestEndpointSurface(t *testing.T) {
 
 	t.Run("R-EP-005 the surface check fails on a files pattern registered on an endpoint without files", func(t *testing.T) {
 		e := endpointFixture(t, s, "customers")
-		v := CheckSurface([]string{"/", "GET /api/npm/{repoKey}/{rest...}", "GET /files/{repoKey}/{path...}"}, e)
+		v := CheckSurface([]string{"/", "GET /api/npm/{projectKey}/{repoKey}/{rest...}", "GET /files/{projectKey}/{repoKey}/{path...}"}, e)
 		if len(v) != 1 || !strings.Contains(v[0], "files") || !strings.Contains(v[0], "customers") {
 			t.Fatalf("violations: %v", v)
 		}
@@ -395,7 +395,7 @@ func TestEndpointSurface(t *testing.T) {
 			{"GET", "/api/v1/repositories"},
 			{"GET", "/api/v1/system/ping"},
 			{"POST", "/api/v1/auth/oidc/token"},
-			{"GET", "/files/generic-local/x"},
+			{"GET", "/files/it/generic-local/x"},
 			{"PUT", "/api/v1/repositories"},
 			{"GET", "/v2/"},
 			{"GET", "/v2/docker-all/manifests/latest"},
@@ -405,7 +405,7 @@ func TestEndpointSurface(t *testing.T) {
 				t.Errorf("%s %s: %d %s (want 404 %s)", tc[0], tc[1], code, b, wantBody)
 			}
 		}
-		if code, _ := body("GET", "/api/npm/npm-customers/"); code != 200 {
+		if code, _ := body("GET", "/api/npm/it/npm-customers/"); code != 200 {
 			t.Errorf("package route: %d", code)
 		}
 	})
@@ -428,8 +428,8 @@ func TestEndpointSurface(t *testing.T) {
 			"GET /{$}": "ui", "/ui/": "ui", "/auth/": "ui", "GET /auth/oidc/{name}/start": "ui",
 			"/api/v1/": "api", "GET /api/v1/system/ping": "api", "POST /api/v1/auth/oidc/token": "ci_exchange",
 			"POST /-/npm/v1/oidc/token/exchange/package/{name...}": "ci_exchange",
-			"/api/npm/{repoKey}/{rest...}":                         "packages", "/v2/": "packages", "/.well-known/terraform.json": "packages",
-			"/files/{repoKey}/{path...}": "files", "GET /test-fixture/hold": "other",
+			"/api/npm/{projectKey}/{repoKey}/{rest...}":                         "packages", "/v2/": "packages", "/.well-known/terraform.json": "packages",
+			"/files/{projectKey}/{repoKey}/{path...}": "files", "GET /test-fixture/hold": "other",
 		} {
 			if got := FamilyOf(p); got != want {
 				t.Errorf("FamilyOf(%q) = %q, want %q", p, got, want)
@@ -447,7 +447,7 @@ func TestEndpointSurface(t *testing.T) {
 			}
 			bad := NewEndpointRouter(e)
 			bad.HandleFunc("GET /v2/x", noop)
-			bad.HandleFunc("GET /api/npm/{repoKey}/x", noop)
+			bad.HandleFunc("GET /api/npm/{projectKey}/{repoKey}/x", noop)
 			if v := CheckRouteTable(bad.Patterns(), nil); len(v) != 1 {
 				t.Errorf("%s: a /v2/ fixture gives %v", name, v)
 			}
@@ -482,20 +482,20 @@ func TestEndpointSurface(t *testing.T) {
 func TestHostRootBinding(t *testing.T) {
 	s := twoEndpoints()
 	c := s.Endpoints["customers"]
-	c.WildcardRoot = "label"
 	s.Endpoints["customers"] = c
 	e := endpointFixture(t, s, "customers")
 
 	t.Run("R-EP-006 step 5 finds the binding of the effective host", func(t *testing.T) {
 		for host, want := range map[string]string{
-			"pkgs.example.org":                "docker-hub",
-			"PKGS.example.org":                "docker-hub",
-			"packages.example.com":            "",
-			"docker-all.registry.example.com": "docker-all",
+			"pkgs.example.org":     "web/docker-hub",
+			"PKGS.example.org":     "web/docker-hub",
+			"packages.example.com": "",
+			// Q-EP-76: a wildcard host's label binds no repository.
+			"docker-all.registry.example.com": "",
 			"registry.example.com":            "",
 			"unknown.example":                 "",
 		} {
-			if got := e.HostRoot(host); got != want {
+			if got := e.HostRoot(host).String(); got != want {
 				t.Errorf("HostRoot(%q) = %q, want %q", host, got, want)
 			}
 		}
@@ -504,9 +504,9 @@ func TestHostRootBinding(t *testing.T) {
 	t.Run("R-EP-006 the binding reaches the request context and routes like an unbound host", func(t *testing.T) {
 		h := endpointChain(t, s, "customers", nil)
 		var got map[string]string
-		w := call(h, "GET", "/api/npm/npm-all/x", "pkgs.example.org", "192.0.2.9:1")
+		w := call(h, "GET", "/api/npm/web/npm-all/x", "pkgs.example.org", "192.0.2.9:1")
 		_ = json.Unmarshal(w.Body.Bytes(), &got)
-		if w.Code != 200 || got["root"] != "docker-hub" {
+		if w.Code != 200 || got["root"] != "web/docker-hub" {
 			t.Errorf("bound host: %d %v", w.Code, got)
 		}
 		// /v2/ and /.well-known/ on a bound host answer the 404 problem: no format uses them yet.
@@ -515,7 +515,7 @@ func TestHostRootBinding(t *testing.T) {
 				t.Errorf("%s on a bound host: %d", p, w.Code)
 			}
 		}
-		w = call(h, "GET", "/api/npm/npm-all/x", "packages.example.com", "192.0.2.9:1")
+		w = call(h, "GET", "/api/npm/web/npm-all/x", "packages.example.com", "192.0.2.9:1")
 		_ = json.Unmarshal(w.Body.Bytes(), &got)
 		if got["root"] != "" {
 			t.Errorf("unbound host: %v", got)
@@ -523,7 +523,7 @@ func TestHostRootBinding(t *testing.T) {
 	})
 
 	t.Run("R-EP-006 a request outside a chain has no endpoint and no binding", func(t *testing.T) {
-		if EndpointFrom(context.Background()) != nil || RootRepository(context.Background()) != "" {
+		if EndpointFrom(context.Background()) != nil || !RootRepository(context.Background()).IsZero() {
 			t.Error("context without a chain has an endpoint")
 		}
 		if EndpointFrom(context.Background()).Name() != "" {
