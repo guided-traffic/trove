@@ -386,6 +386,9 @@ type Options struct {
 	Reads string
 	// Validator, when set, checks every answer against the document.
 	Validator *apitest.Validator
+	// Remote is the sealing ring and the upstream prober of the repository service; the zero value has neither, so
+	// a secret value and the upstream test answer 503.
+	Remote repository.RemoteDeps
 }
 
 // LogSink collects the records of the audit log stream of a replica.
@@ -520,7 +523,7 @@ func (e *Env) NewReplica(name string, o Options) *Replica {
 		DB: r.DB, Changes: r.Changes, Principals: principals{e}, Repositories: repositories{e}, Policies: r.Service, Recorder: rec,
 	})
 	if r.Repos, err = repository.NewService(repository.Options{
-		Runner: r.DB, Catalog: catalog.Default(), Recorder: rec, Notifier: r.Changes, Hooks: authz.NewSettingsHook(rec), Log: quiet(),
+		Runner: r.DB, Catalog: catalog.Default(), Recorder: rec, Notifier: r.Changes, Hooks: authz.NewSettingsHook(rec), Log: quiet(), Remote: o.Remote,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -568,7 +571,7 @@ func (r *Replica) serve(o Options, rec audit.Recorder) {
 	t := r.E.T
 	cfg := config.API{
 		PageSizeDefault: 50, PageSizeMax: 500, IdempotencyRetention: time.Hour,
-		MaxRequestBodyBytes: config.ByteSize(1 << 20),
+		MaxRequestBodyBytes: config.ByteSize(1 << 20), MaxConfigurationBodyBytes: 4 * config.MiB,
 	}
 	// The handler is the one the identity and login tests use (test/integration/idapi),
 	// with the stand-in authentication and the engine and services of this replica.
