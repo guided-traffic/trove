@@ -13,12 +13,3 @@ func qrs(keys []string) []qname.Repo {
 	}
 	return out
 }
-
-// qkeys is the keys of a list of names.
-func qkeys(names []qname.Repo) []string {
-	out := make([]string, len(names))
-	for i, n := range names {
-		out[i] = n.Key
-	}
-	return out
-}
