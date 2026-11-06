@@ -2,7 +2,6 @@ package v1
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -139,15 +138,6 @@ const (
 	capPoliciesWrite = string(authz.PoliciesWrite)
 )
 
-// problemFields is the 422 validation_failed of the given fields.
-func problemFields(fields ...errs.FieldError) error {
-	detail := fields[0].Detail
-	if len(fields) > 1 {
-		detail = fmt.Sprintf("%d fields are invalid.", len(fields))
-	}
-	return errs.E(errs.Invalid, errs.CodeValidation, detail, errs.WithFields(fields...))
-}
-
 // policyFilter reads the filters of the list: expandGroups is a boolean that
 // defaults to true and only means something with a principal.
 func policyFilter(lq ListQuery) (authz.ListFilter, error) {
@@ -229,10 +219,7 @@ func (s *Server) ReplacePermissionPolicy(w http.ResponseWriter, r *http.Request,
 		httpserver.Problem(w, r, err)
 		return
 	}
-	var pre Precondition
-	if err == nil {
-		pre, err = ParseIfMatch(r)
-	}
+	pre, err := ParseIfMatch(r)
 	var in authz.Policy
 	if err == nil {
 		err = DecodeJSON(w, r, &in, s.bodyLimit())
@@ -270,10 +257,7 @@ func (s *Server) PatchPermissionPolicy(w http.ResponseWriter, r *http.Request, n
 		httpserver.Problem(w, r, err)
 		return
 	}
-	var pre Precondition
-	if err == nil {
-		pre, err = ParseIfMatch(r)
-	}
+	pre, err := ParseIfMatch(r)
 	var raw []byte
 	if err == nil {
 		raw, err = ReadMergePatch(w, r, s.bodyLimit())
@@ -318,10 +302,7 @@ func (s *Server) DeletePermissionPolicy(w http.ResponseWriter, r *http.Request, 
 		httpserver.Problem(w, r, err)
 		return
 	}
-	var pre Precondition
-	if err == nil {
-		pre, err = ParseIfMatch(r)
-	}
+	pre, err := ParseIfMatch(r)
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return

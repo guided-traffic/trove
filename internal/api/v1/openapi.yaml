@@ -10254,7 +10254,9 @@ paths:
         The Bastion interface (R-BAS-011, R-BAS-012). Validates the caller's credential as a direct request would (R-AUTH-023
         including the failed-credential throttle for `clientAddress`, `token.rejected` with that address) and answers the
         subject and, for at most `bastions.check.max_repositories` repository keys, the read shape `full`, `partial` or `none`
-        with the status the caller would receive. It writes no `authz.denied` events.
+        with the status the caller would receive. It writes no `authz.denied` events. A repository name without a project
+        (`npm-all` instead of `web/npm-all`) answers `400 malformed_request`, like a body that does not read; another
+        interface version answers `400 bastion_interface_mismatch`.
       x-trove-bastion-interface: 1
       x-trove-permission:
         bastion: true

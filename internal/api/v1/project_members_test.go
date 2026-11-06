@@ -35,7 +35,7 @@ type memberCall struct {
 }
 
 func (m memberProjects) Members(_ context.Context, key string) ([]project.Member, error) {
-	p, err := m.fakeProjects.Get(context.Background(), key)
+	p, err := m.Get(context.Background(), key)
 	return p.Members, err
 }
 
