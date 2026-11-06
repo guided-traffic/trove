@@ -35,7 +35,7 @@ func (opaqueFormat) Descriptor() formats.Descriptor {
 	return formats.Descriptor{
 		Facts: catalog.Facts{
 			ID: "opaque", DisplayName: "Opaque", Classes: []formats.Class{formats.Local}, Layout: "opaque",
-			ProtocolBasePath: "/api/opaque/{key}/", PatternSubject: formats.SubjectName, PackageNames: true,
+			ProtocolBasePath: "/api/opaque/{project}/{key}/", PatternSubject: formats.SubjectName, PackageNames: true,
 		},
 		ContractVersion: formats.ContractVersion, Names: foldedNames{}, PropertyPrefix: "opaque.",
 	}

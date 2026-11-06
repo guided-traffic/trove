@@ -30,7 +30,7 @@ func (p probe) Descriptor() formats.Descriptor {
 	return formats.Descriptor{
 		Facts: catalog.Facts{
 			ID: "probe", Classes: []formats.Class{formats.Local, formats.Remote}, Layout: "probe",
-			ProtocolBasePath: "/api/probe/{key}/", PatternSubject: formats.SubjectPath,
+			ProtocolBasePath: "/api/probe/{project}/{key}/", PatternSubject: formats.SubjectPath,
 		},
 		ContractVersion: formats.ContractVersion,
 	}

@@ -40,7 +40,7 @@ func (mk) Descriptor() formats.Descriptor {
 	return formats.Descriptor{
 		Facts: catalog.Facts{
 			ID: "mk", Classes: []formats.Class{formats.Local, formats.Remote, formats.Virtual}, Layout: "mk",
-			ProtocolBasePath: "/api/mk/{key}/", PatternSubject: formats.SubjectPath,
+			ProtocolBasePath: "/api/mk/{project}/{key}/", PatternSubject: formats.SubjectPath,
 		},
 		ContractVersion: formats.ContractVersion,
 	}

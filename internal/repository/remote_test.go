@@ -19,7 +19,7 @@ func intp(n int) *int { return &n }
 func remoteCatalog() *catalog.Registry {
 	r := testCatalog()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "npmlike", Classes: []Class{Local, Remote, Virtual}, Layout: "npmlike", ProtocolBasePath: "/api/npmlike/{key}/",
+		ID: "npmlike", Classes: []Class{Local, Remote, Virtual}, Layout: "npmlike", ProtocolBasePath: "/api/npmlike/{project}/{key}/",
 		PatternSubject: SubjectName, PackageNames: true, PriorityMembers: true, PinsAndClaims: true,
 		DefaultUpstreamURL: "https://registry.example.org/", DefaultExtraHosts: []string{"*.cdn.example.org"},
 		DefaultMetadataTTLSeconds: intp(7200), DefaultNotFoundTTLSeconds: intp(1800), ProbePath: "-/ping",

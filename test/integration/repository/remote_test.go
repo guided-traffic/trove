@@ -39,7 +39,7 @@ func remoteTestCatalog() *catalog.Registry {
 	ttl, neg := 7200, 1800
 	r := catalog.NewRegistry()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "npmlike", Classes: []catalog.Class{catalog.Local, catalog.Remote}, Layout: "npmlike", ProtocolBasePath: "/api/npmlike/{key}/",
+		ID: "npmlike", Classes: []catalog.Class{catalog.Local, catalog.Remote}, Layout: "npmlike", ProtocolBasePath: "/api/npmlike/{project}/{key}/",
 		PatternSubject: catalog.SubjectPath, DefaultUpstreamURL: "https://registry.example.org/", DefaultExtraHosts: []string{"*.cdn.example.org"},
 		DefaultMetadataTTLSeconds: &ttl, DefaultNotFoundTTLSeconds: &neg, ProbePath: "-/ping",
 	}})

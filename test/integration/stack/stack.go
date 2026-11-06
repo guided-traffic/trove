@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/guided-traffic/trove/internal/qname"
 	"io"
 	"log/slog"
 	"net/http"
@@ -312,7 +313,7 @@ type repositories struct{ e *Env }
 func (s repositories) list(ctx context.Context, where string, args ...any) ([]repository.Repository, error) {
 	s.e.mu.Lock()
 	defer s.e.mu.Unlock()
-	rows, err := s.e.admin.Query(ctx, "SELECT id, key, class, format, config, COALESCE(project_id::text, '') FROM repositories "+where+" ORDER BY key", args...)
+	rows, err := s.e.admin.Query(ctx, "SELECT r.id, p.key, r.key, r.class, r.format, r.config, r.project_id::text FROM repositories r JOIN project p ON p.id = r.project_id "+where+" ORDER BY p.key, r.key", args...)
 	if err != nil {
 		return nil, err
 	}
@@ -322,7 +323,7 @@ func (s repositories) list(ctx context.Context, where string, args ...any) ([]re
 		var r repository.Repository
 		var id int64
 		var class string
-		if err := rows.Scan(&id, &r.Name, &class, &r.Format, &r.Config, &r.ProjectID); err != nil {
+		if err := rows.Scan(&id, &r.Name.Project, &r.Name.Key, &class, &r.Format, &r.Config, &r.ProjectID); err != nil {
 			return nil, err
 		}
 		r.ID, r.Class = strconv.FormatInt(id, 10), repository.Class(class)
@@ -331,8 +332,8 @@ func (s repositories) list(ctx context.Context, where string, args ...any) ([]re
 	return out, rows.Err()
 }
 
-func (s repositories) ByKey(ctx context.Context, key string) (repository.Repository, error) {
-	rs, err := s.list(ctx, "WHERE key = $1", key)
+func (s repositories) ByName(ctx context.Context, name qname.Repo) (repository.Repository, error) {
+	rs, err := s.list(ctx, "WHERE p.key = $1 AND r.key = $2", name.Project, name.Key)
 	if err != nil {
 		return repository.Repository{}, err
 	}
@@ -344,6 +345,10 @@ func (s repositories) ByKey(ctx context.Context, key string) (repository.Reposit
 
 func (s repositories) List(ctx context.Context) ([]repository.Repository, error) {
 	return s.list(ctx, "")
+}
+
+func (s repositories) ListProject(ctx context.Context, project string) ([]repository.Repository, error) {
+	return s.list(ctx, "WHERE p.key = $1", project)
 }
 
 // Options describe one in-process replica.

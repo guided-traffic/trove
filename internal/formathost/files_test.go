@@ -22,7 +22,7 @@ func (namedFormat) Descriptor() formats.Descriptor {
 	return formats.Descriptor{
 		Facts: catalog.Facts{
 			ID: "named", DisplayName: "Named", Classes: []formats.Class{formats.Local, formats.Remote}, Layout: "named",
-			ProtocolBasePath: "/api/named/{key}/", PatternSubject: formats.SubjectName, PackageNames: true,
+			ProtocolBasePath: "/api/named/{project}/{key}/", PatternSubject: formats.SubjectName, PackageNames: true,
 		},
 		ContractVersion: formats.ContractVersion,
 	}
@@ -51,7 +51,7 @@ func (rawFormat) Descriptor() formats.Descriptor {
 	return formats.Descriptor{
 		Facts: catalog.Facts{
 			ID: "raw", DisplayName: "Raw", Classes: []formats.Class{formats.Local}, Layout: "raw",
-			ProtocolBasePath: "/files/{key}/", PatternSubject: formats.SubjectPath,
+			ProtocolBasePath: "/files/{project}/{key}/", PatternSubject: formats.SubjectPath,
 		},
 		ContractVersion: formats.ContractVersion,
 	}

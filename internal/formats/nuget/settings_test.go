@@ -85,7 +85,7 @@ func TestR_ARCH_008_TheSettingsSchemaIsEnforcedPerClass(t *testing.T) {
 // R-NUGET-001 - the upstream, the periods of Q-NUGET-2, the checksum rule of R-NUGET-015.
 func TestR_NUGET_001_TheDescriptorCarriesTheCatalogFacts(t *testing.T) {
 	d := New().Descriptor()
-	if d.ID != "nuget" || d.Layout != "nuget" || d.ProtocolBasePath != "/api/nuget/{key}/" || d.DisplayName != "NuGet" {
+	if d.ID != "nuget" || d.Layout != "nuget" || d.ProtocolBasePath != "/api/nuget/{project}/{key}/" || d.DisplayName != "NuGet" {
 		t.Errorf("identity = %s %s %s %s", d.ID, d.Layout, d.ProtocolBasePath, d.DisplayName)
 	}
 	if !slices.Contains(d.Classes, formats.Local) || !slices.Contains(d.Classes, formats.Remote) || !slices.Contains(d.Classes, formats.Virtual) {

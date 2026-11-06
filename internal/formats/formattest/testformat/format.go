@@ -205,7 +205,7 @@ func (f Format) Descriptor() formats.Descriptor {
 	return formats.Descriptor{
 		Facts: catalog.Facts{
 			ID: ID, DisplayName: "Test format", Classes: []formats.Class{formats.Local, formats.Remote, formats.Virtual},
-			Layout: "testfmt", ProtocolBasePath: "/api/testfmt/{project}/{key}/", PatternSubject: formats.SubjectName, PackageNames: true,
+			Layout: "testfmt", ProtocolBasePath: "/api/testfmt/{project}/{project}/{key}/", PatternSubject: formats.SubjectName, PackageNames: true,
 			DefaultMetadataTTLSeconds: &ttl, OwnershipDefault: catalog.OwnershipEnforce,
 		},
 		ContractVersion:  formats.ContractVersion,

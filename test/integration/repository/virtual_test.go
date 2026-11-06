@@ -29,16 +29,16 @@ func pkgCatalog() *catalog.Registry {
 	r := catalog.NewRegistry()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
 		ID: "pkgfmt", Classes: []catalog.Class{catalog.Local, catalog.Remote, catalog.Virtual}, Layout: "pkgfmt",
-		ProtocolBasePath: "/api/pkgfmt/{key}/", PatternSubject: catalog.SubjectName,
+		ProtocolBasePath: "/api/pkgfmt/{project}/{key}/", PatternSubject: catalog.SubjectName,
 		PackageNames: true, PriorityMembers: true, PinsAndClaims: true,
 	}, Names: pkgNames{}})
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "nopkg", Classes: []catalog.Class{catalog.Local}, Layout: "nopkg", ProtocolBasePath: "/files/{key}/",
+		ID: "nopkg", Classes: []catalog.Class{catalog.Local}, Layout: "nopkg", ProtocolBasePath: "/files/{project}/{key}/",
 		PatternSubject: catalog.SubjectPath,
 	}})
 	r.Register(catalog.Entry{Facts: catalog.Facts{
 		ID: "otherfmt", Classes: []catalog.Class{catalog.Local, catalog.Remote, catalog.Virtual}, Layout: "otherfmt",
-		ProtocolBasePath: "/api/otherfmt/{key}/", PatternSubject: catalog.SubjectName,
+		ProtocolBasePath: "/api/otherfmt/{project}/{key}/", PatternSubject: catalog.SubjectName,
 		PackageNames: true, PinsAndClaims: true,
 	}, Names: pkgNames{}})
 	return r

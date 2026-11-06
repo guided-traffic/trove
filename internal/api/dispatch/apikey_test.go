@@ -23,7 +23,7 @@ func (keyed) Descriptor() formats.Descriptor {
 	return formats.Descriptor{
 		Facts: catalog.Facts{
 			ID: "keyed", Classes: []formats.Class{formats.Local, formats.Remote, formats.Virtual}, Layout: "keyed",
-			ProtocolBasePath: "/api/keyed/{key}/", PatternSubject: formats.SubjectPath,
+			ProtocolBasePath: "/api/keyed/{project}/{key}/", PatternSubject: formats.SubjectPath,
 		},
 		ContractVersion: formats.ContractVersion,
 	}

@@ -15,7 +15,7 @@ import (
 func mirrorCatalog() *catalog.Registry {
 	r := remoteCatalog()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "mirrorable", Classes: []Class{Local, Remote, Virtual}, Layout: "mirrorable", ProtocolBasePath: "/api/mirrorable/{key}/",
+		ID: "mirrorable", Classes: []Class{Local, Remote, Virtual}, Layout: "mirrorable", ProtocolBasePath: "/api/mirrorable/{project}/{key}/",
 		PatternSubject: SubjectName, PackageNames: true,
 		DefaultUpstreamURL: "https://registry.example.org/", DefaultMetadataTTLSeconds: intp(7200), DefaultNotFoundTTLSeconds: intp(1800),
 	}, Names: lower{}, Mirror: true})

@@ -50,7 +50,7 @@ func TestR_NUGET_001_ARepositoryCanBeCreatedAndItsServiceIndexAnswers(t *testing
 				continue
 			}
 			found = true
-			if f.DefaultUpstreamURL != "https://api.nuget.org/v3/index.json" || f.ProtocolBasePath != "/api/nuget/{key}/" {
+			if f.DefaultUpstreamURL != "https://api.nuget.org/v3/index.json" || f.ProtocolBasePath != "/api/nuget/{project}/{key}/" {
 				t.Errorf("upstream %q, base path %q", f.DefaultUpstreamURL, f.ProtocolBasePath)
 			}
 			if f.DefaultMetadataTTLSeconds == nil || *f.DefaultMetadataTTLSeconds != 300 || f.DefaultNotFoundTTLSeconds == nil || *f.DefaultNotFoundTTLSeconds != 1800 {

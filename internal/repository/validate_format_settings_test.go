@@ -23,7 +23,7 @@ const npmLikeSchema = `{
 func settingsCatalog() *catalog.Registry {
 	r := testCatalog()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "npm", Classes: []Class{Local, Remote, Virtual}, Layout: "npm", ProtocolBasePath: "/api/npm/{key}/",
+		ID: "npm", Classes: []Class{Local, Remote, Virtual}, Layout: "npm", ProtocolBasePath: "/api/npm/{project}/{key}/",
 		PatternSubject: SubjectName, PackageNames: true, PriorityMembers: true, PinsAndClaims: true,
 		SettingsSchema: []byte(npmLikeSchema),
 	}, Names: lower{}})

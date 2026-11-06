@@ -172,7 +172,7 @@ type (
 func TestR_ARCH_010_RegisterChecksTheRoutes(t *testing.T) {
 	withBase := func(id string, routes ...Route) fake {
 		d := valid(id)
-		d.ProtocolBasePath = "/api/" + id + "/{key}/"
+		d.ProtocolBasePath = "/api/" + id + "/{project}/{key}/"
 		return fake{d: d, routes: routes}
 	}
 	t.Run("an ambiguous pair is refused", func(t *testing.T) {
@@ -207,7 +207,7 @@ func TestR_ARCH_010_RegisterChecksTheRoutes(t *testing.T) {
 	})
 	t.Run("routes under another base path", func(t *testing.T) {
 		f := withBase("probe-base", route("a.get", http.MethodGet, "/a", "a"))
-		f.d.ProtocolBasePath = "/files/{key}/"
+		f.d.ProtocolBasePath = "/files/{project}/{key}/"
 		mustPanic(t, f, "protocol base path")
 	})
 	t.Run("an upload route onto a computed path is refused, an admin route is accepted (R-ARCH-012)", func(t *testing.T) {

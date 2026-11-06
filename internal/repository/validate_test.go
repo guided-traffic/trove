@@ -22,11 +22,11 @@ func (lower) Normalize(name string) (string, bool) { return strings.ToLower(name
 func testCatalog() *catalog.Registry {
 	r := catalog.NewRegistry()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "generic", Classes: []Class{Local}, Layout: "generic", ProtocolBasePath: "/files/{key}/",
+		ID: "generic", Classes: []Class{Local}, Layout: "generic", ProtocolBasePath: "/files/{project}/{key}/",
 		PatternSubject: SubjectPath,
 	}})
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "pkgfmt", Classes: []Class{Local, Remote, Virtual}, Layout: "pkgfmt", ProtocolBasePath: "/api/pkgfmt/{key}/",
+		ID: "pkgfmt", Classes: []Class{Local, Remote, Virtual}, Layout: "pkgfmt", ProtocolBasePath: "/api/pkgfmt/{project}/{key}/",
 		PatternSubject: SubjectName, PackageNames: true, PriorityMembers: true, PinsAndClaims: true,
 	}, Names: lower{}})
 	return r

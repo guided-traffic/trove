@@ -259,7 +259,7 @@ func TestR_EP_005_RoleNarrowedEndpoint(t *testing.T) {
 			}
 		}
 		router := httpserver.NewEndpointRouter(ep)
-		for _, pat := range []string{"GET /ui/", "GET /api/v1/system/ping", "POST /api/v1/auth/oidc/token", "GET /files/{key}/{path...}", "GET /api/npm/{key}/{rest...}"} {
+		for _, pat := range []string{"GET /ui/", "GET /api/v1/system/ping", "POST /api/v1/auth/oidc/token", "GET /files/{projectKey}/{repoKey}/{path...}", "GET /api/npm/{projectKey}/{repoKey}/{rest...}"} {
 			router.Handle(pat, http.NotFoundHandler())
 		}
 		if v := httpserver.CheckSurface(router.Patterns(), ep); len(v) != 0 {
@@ -268,7 +268,7 @@ func TestR_EP_005_RoleNarrowedEndpoint(t *testing.T) {
 		registered := fmt.Sprint(router.Patterns())
 		for pat, fam := range map[string]string{
 			"GET /ui/": "ui", "GET /api/v1/system/ping": "api", "POST /api/v1/auth/oidc/token": "ci_exchange",
-			"GET /files/{key}/{path...}": "files", "GET /api/npm/{key}/{rest...}": "packages",
+			"GET /files/{projectKey}/{repoKey}/{path...}": "files", "GET /api/npm/{projectKey}/{repoKey}/{rest...}": "packages",
 		} {
 			if has := strings.Contains(registered, pat); has != slices.Contains(want, fam) {
 				t.Errorf("%s: %q registered = %v", role, pat, has)

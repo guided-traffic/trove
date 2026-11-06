@@ -40,7 +40,7 @@ func (relayFormat) Descriptor() formats.Descriptor {
 	return formats.Descriptor{
 		Facts: catalog.Facts{
 			ID: "relay", DisplayName: "Relay", Classes: []formats.Class{formats.Local, formats.Remote}, Layout: "relay",
-			ProtocolBasePath: "/api/relay/{key}/", PatternSubject: formats.SubjectName, PackageNames: true,
+			ProtocolBasePath: "/api/relay/{project}/{key}/", PatternSubject: formats.SubjectName, PackageNames: true,
 			DefaultMetadataTTLSeconds: &ttl,
 		},
 		ContractVersion: formats.ContractVersion, Names: foldedNames{}, PropertyPrefix: "relay.", MaxDocumentBytes: 1 << 20,

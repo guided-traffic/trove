@@ -13,7 +13,7 @@ import (
 func ownershipCatalog() *catalog.Registry {
 	r := testCatalog()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "ownfmt", Classes: []Class{Local, Remote, Virtual}, Layout: "ownfmt", ProtocolBasePath: "/api/ownfmt/{key}/",
+		ID: "ownfmt", Classes: []Class{Local, Remote, Virtual}, Layout: "ownfmt", ProtocolBasePath: "/api/ownfmt/{project}/{key}/",
 		PatternSubject: SubjectName, PackageNames: true, OwnershipDefault: catalog.OwnershipEnforce,
 	}, Names: lower{}})
 	return r

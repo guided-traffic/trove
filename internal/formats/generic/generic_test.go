@@ -10,7 +10,7 @@ import (
 func TestDescriptor(t *testing.T) {
 	d := Format{}.Descriptor()
 	t.Run("R-GENERIC-001 the descriptor", func(t *testing.T) {
-		if d.ID != "generic" || d.Layout != "generic" || d.ProtocolBasePath != "/files/{key}/" || d.PatternSubject != formats.SubjectPath {
+		if d.ID != "generic" || d.Layout != "generic" || d.ProtocolBasePath != "/files/{project}/{key}/" || d.PatternSubject != formats.SubjectPath {
 			t.Fatalf("descriptor = %+v", d)
 		}
 		if len(d.Classes) != 1 || d.Classes[0] != formats.Local {

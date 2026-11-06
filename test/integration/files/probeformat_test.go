@@ -59,7 +59,7 @@ func (probeFormat) Descriptor() formats.Descriptor {
 	return formats.Descriptor{
 		Facts: catalog.Facts{
 			ID: "probe", DisplayName: "Probe", Classes: []formats.Class{formats.Local}, Layout: "probe",
-			ProtocolBasePath: "/api/probe/{key}/", PatternSubject: formats.SubjectName, PackageNames: true,
+			ProtocolBasePath: "/api/probe/{project}/{key}/", PatternSubject: formats.SubjectName, PackageNames: true,
 		},
 		ContractVersion: formats.ContractVersion, Names: lowerNames{}, PropertyPrefix: "probe.",
 		DataPort: reflect.TypeFor[probeStore](),

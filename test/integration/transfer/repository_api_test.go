@@ -126,7 +126,7 @@ func TestR_REPO_003_Formats(t *testing.T) {
 			}
 		}
 		want := map[string]any{
-			"layout": "generic", "protocolBasePath": "/files/{key}/", "defaultUpstreamUrl": nil, "defaultMetadataTtlSeconds": nil,
+			"layout": "generic", "protocolBasePath": "/files/{project}/{key}/", "defaultUpstreamUrl": nil, "defaultMetadataTtlSeconds": nil,
 			"defaultNotFoundTtlSeconds": float64(1800), "patternSubject": "path", "priorityMembers": false, "pinsAndClaims": false, "caps": false,
 		}
 		for k, v := range want {

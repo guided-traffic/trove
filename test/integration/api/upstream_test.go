@@ -77,7 +77,7 @@ func newUpstreamStub(t *testing.T) *upstreamStub {
 func upstreamCatalog() *catalog.Registry {
 	r := catalog.NewRegistry()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "npmlike", Classes: []catalog.Class{catalog.Local, catalog.Remote}, Layout: "npmlike", ProtocolBasePath: "/api/npmlike/{key}/",
+		ID: "npmlike", Classes: []catalog.Class{catalog.Local, catalog.Remote}, Layout: "npmlike", ProtocolBasePath: "/api/npmlike/{project}/{key}/",
 		PatternSubject: catalog.SubjectPath, ProbePath: "-/ping",
 	}})
 	return r

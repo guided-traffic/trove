@@ -342,7 +342,7 @@ func TestRoutePriorityOrder(t *testing.T) {
 func testCatalogNoPriority() *catalog.Registry {
 	r := catalog.NewRegistry()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "plain", Classes: []Class{Local, Remote, Virtual}, Layout: "plain", ProtocolBasePath: "/api/plain/{key}/",
+		ID: "plain", Classes: []Class{Local, Remote, Virtual}, Layout: "plain", ProtocolBasePath: "/api/plain/{project}/{key}/",
 		PatternSubject: SubjectName, PackageNames: true, PinsAndClaims: true,
 	}, Names: npmNames{}})
 	return r
