@@ -51,13 +51,15 @@ type bundleSampler struct {
 	stop    chan struct{}
 	done    chan struct{}
 	mu      sync.Mutex
-	indexes map[string]int // main script -> index.html answers that named it
-	scripts map[int]int    // status of the script requests
+	indexes map[string]int    // main script -> index.html answers that named it
+	scripts map[int]int       // status of the script requests
+	own     map[string]string // replica -> the main script its own index.html names
+	served  [][2]string       // {main script, replica} of every script answered 200
 	failed  []string
 }
 
 func startBundleSampler() *bundleSampler {
-	s := &bundleSampler{stop: make(chan struct{}), done: make(chan struct{}), indexes: map[string]int{}, scripts: map[int]int{}}
+	s := &bundleSampler{stop: make(chan struct{}), done: make(chan struct{}), indexes: map[string]int{}, scripts: map[int]int{}, own: map[string]string{}}
 	go func() {
 		defer close(s.done)
 		for {
@@ -89,11 +91,17 @@ func (s *bundleSampler) sample() {
 	}
 	s.mu.Lock()
 	s.indexes[m[1]]++
+	if r := replicaOf(hdr); r != "" {
+		s.own[r] = m[1]
+	}
 	s.mu.Unlock()
 	for range 3 {
 		code, h, _, err := edge("/ui/en/" + m[1])
 		s.mu.Lock()
 		s.scripts[code]++
+		if err == nil && code == 200 {
+			s.served = append(s.served, [2]string{m[1], replicaOf(h)})
+		}
 		if err != nil || code != 200 {
 			s.failed = append(s.failed, fmt.Sprintf("%s GET /ui/en/%s (named by the index of %s): %d %v (replica %s)",
 				time.Now().Format("15:04:05.000"), m[1], replicaOf(hdr), code, err, replicaOf(h)))
@@ -116,6 +124,22 @@ func (s *bundleSampler) finish() *bundleSampler {
 	return s
 }
 
+// crossServed counts the main scripts a replica of the other bundle answered: the replica's own index names another main
+// script, so the file came from the shared asset store. unknown counts the answers of replicas whose index the sampler never
+// read.
+func (s *bundleSampler) crossServed() (cross, unknown int) {
+	for _, sv := range s.served {
+		own, ok := s.own[sv[1]]
+		switch {
+		case !ok:
+			unknown++
+		case own != sv[0]:
+			cross++
+		}
+	}
+	return cross, unknown
+}
+
 func (s *bundleSampler) mains() []string {
 	var out []string
 	for k := range s.indexes {
@@ -125,21 +149,30 @@ func (s *bundleSampler) mains() []string {
 	return out
 }
 
-// bundleAtTheEdge is the main script the index.html names on every replica that answers: it reads the index twelve times
-// through the edge and fails when the answers name more than one.
+// bundleAtTheEdge is the main script the index.html names on every replica that answers: twelve answers in a row through
+// the edge that name one main script. After an upgrade a replica of the old release can answer for the edge's update delay
+// while it drains, so the reads go on for up to two minutes until twelve in a row agree.
 func bundleAtTheEdge(t *testing.T) string {
 	t.Helper()
-	seen := map[string]int{}
-	for range 12 {
-		code, _, body, err := edge("/ui/en/")
-		if err != nil || code != 200 {
-			t.Fatalf("GET /ui/en/ through the edge: %d %v", code, err)
+	deadline := time.Now().Add(2 * time.Minute)
+	var seen map[string]int
+	for {
+		seen = map[string]int{}
+		for range 12 {
+			code, _, body, err := edge("/ui/en/")
+			if err != nil || code != 200 {
+				t.Fatalf("GET /ui/en/ through the edge: %d %v", code, err)
+			}
+			m := mainScript.FindStringSubmatch(body)
+			if m == nil {
+				t.Fatalf("the index names no main script:\n%s", tail(body, 600))
+			}
+			seen[m[1]]++
 		}
-		m := mainScript.FindStringSubmatch(body)
-		if m == nil {
-			t.Fatalf("the index names no main script:\n%s", tail(body, 600))
+		if len(seen) == 1 || time.Now().After(deadline) {
+			break
 		}
-		seen[m[1]]++
+		time.Sleep(2 * time.Second)
 	}
 	if len(seen) != 1 {
 		t.Fatalf("the replicas serve more than one bundle outside an upgrade: %v", seen)
@@ -194,6 +227,12 @@ func TestUpgrade_R_HA_020_AcrossTwoBundles(t *testing.T) {
 		}
 		for _, f := range bs.failed {
 			t.Errorf("%s", f)
+		}
+		// the store was used: a replica answered the main script of the other bundle
+		cross, unknown := bs.crossServed()
+		t.Logf("main scripts answered 200 by a replica of the other bundle: %d (of %d; %d by replicas whose index was not read)", cross, len(bs.served), unknown)
+		if cross == 0 {
+			t.Errorf("no replica answered the main script of the other bundle during the upgrade: the shared asset store was not exercised")
 		}
 	})
 	time.Sleep(upgradeHold)

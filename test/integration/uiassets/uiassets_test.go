@@ -229,6 +229,15 @@ func TestR_HA_020_SharedUIAssets(t *testing.T) {
 		_ = rb2
 	})
 
+	t.Run("R-HA-020 R-STOR-013 a file whose blob a read marked damaged is committed again by a replica of its build, which repairs it", func(t *testing.T) {
+		const blobOfMain = `(SELECT blob_sha256 FROM ui_assets WHERE locale = 'en' AND path = 'main-AAAAAAAA.js')`
+		st.Exec(`UPDATE blobs SET content_status = 'missing' WHERE sha256 = ` + blobOfMain)
+		st.Start(t, testenv.ReplicaOptions{Name: "ui-a2", Role: "api", UI: a.tree})
+		if got := st.Text(`SELECT content_status FROM blobs WHERE sha256 = ` + blobOfMain); got != "ok" {
+			t.Errorf("the blob of A's main script is %q after a replica of A started, want ok", got)
+		}
+	})
+
 	t.Run("R-HA-020 a file no replica renewed within the retention is pruned and its blob queued for collection", func(t *testing.T) {
 		st.Exec(`UPDATE ui_assets SET seen_at = now() - interval '8 days' WHERE path LIKE '%lazyA000%'`)
 		digests := st.Number(`SELECT count(DISTINCT blob_sha256) FROM ui_assets WHERE path LIKE '%lazyA000%'`)

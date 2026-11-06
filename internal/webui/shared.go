@@ -96,10 +96,21 @@ func (c *sharedCache) get(ctx context.Context, locale, path string) ([]byte, err
 		}
 	}
 
+	// The flight ends whatever way the read ends, a panic included, so a waiter never waits for a read that is gone.
+	f.err = errSharedRead
+	defer c.land(key, f)
 	// The read does not end with the first request's context: the requests that wait for it would fail with it.
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sharedTimeout)
+	defer cancel()
 	f.data, f.err = c.store.Asset(rctx, locale, path)
-	cancel()
+	return f.data, f.err
+}
+
+// errSharedRead is the answer of a read that ended without one (a panic of the store).
+var errSharedRead = errors.New("webui: the read of the shared asset store ended without an answer")
+
+// land ends a read in flight: it keeps a found file, remembers a name the store did not know, and releases the waiters.
+func (c *sharedCache) land(key string, f *sharedFlight) {
 	c.mu.Lock()
 	delete(c.flight, key)
 	switch {
@@ -113,7 +124,6 @@ func (c *sharedCache) get(ctx context.Context, locale, path string) ([]byte, err
 	}
 	c.mu.Unlock()
 	close(f.done)
-	return f.data, f.err
 }
 
 // keep adds a file and drops the oldest ones over the bound; c.mu is held. A file larger than the bound is served and
@@ -143,8 +153,8 @@ func (h *Handler) serveShared(w http.ResponseWriter, r *http.Request, locale, pa
 		problem(w, http.StatusNotFound, "Not Found")
 		return
 	case err != nil:
-		// a client that went away while it waited for the read is no failure of the store
-		if h.onSharedError != nil && r.Context().Err() == nil {
+		// a client that went away while it waited for another request's read is no failure of the store
+		if gone := r.Context().Err(); h.onSharedError != nil && (gone == nil || !errors.Is(err, gone)) {
 			h.onSharedError(locale, path, err)
 		}
 		w.Header().Set("Cache-Control", "no-store")

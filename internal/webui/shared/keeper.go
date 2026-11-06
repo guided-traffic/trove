@@ -30,7 +30,8 @@ type Keeper struct {
 	retention time.Duration
 
 	mu        sync.Mutex
-	published bool
+	published bool // a cycle has succeeded once
+	current   bool // the last cycle succeeded
 	cancel    context.CancelFunc
 	done      chan struct{}
 }
@@ -51,13 +52,19 @@ func (k *Keeper) Name() string { return "ui-assets" }
 // tries again.
 func (k *Keeper) PublishAtStart(ctx context.Context, wait time.Duration) error {
 	deadline := time.Now().Add(wait)
+	// The bound holds for an attempt too: a store that accepts and then hangs ends the attempt at the deadline.
+	pctx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
 	delay := time.Second
 	for {
-		err := k.cycle(ctx)
+		err := k.cycle(pctx)
 		if err == nil {
 			return nil
 		}
-		if ctx.Err() != nil || time.Now().Add(delay).After(deadline) {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if pctx.Err() != nil || time.Now().Add(delay).After(deadline) {
 			return err
 		}
 		k.log.Warn("the UI's hashed files are not in the shared asset store yet; retrying", "error", err, "retry_in", delay.String())
@@ -74,13 +81,14 @@ func (k *Keeper) PublishAtStart(ctx context.Context, wait time.Duration) error {
 func (k *Keeper) cycle(ctx context.Context) error {
 	start := time.Now()
 	res, err := k.store.Publish(ctx, k.tree, k.files)
+	k.mu.Lock()
+	first := !k.published && err == nil
+	k.published = k.published || err == nil
+	k.current = err == nil
+	k.mu.Unlock()
 	if err != nil {
 		return err
 	}
-	k.mu.Lock()
-	first := !k.published
-	k.published = true
-	k.mu.Unlock()
 	level := slog.LevelDebug
 	if first || res.Inserted > 0 {
 		level = slog.LevelInfo
@@ -101,7 +109,8 @@ func (k *Keeper) cycle(ctx context.Context) error {
 	return nil
 }
 
-// Start runs the loop: every RenewEvery once the build is published, every minute until it is.
+// Start runs the loop: every RenewEvery after a cycle that succeeded, every minute after one that failed, so that a build
+// whose publish failed is put into the store within a minute of the store's return.
 func (k *Keeper) Start(context.Context) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	k.mu.Lock()
@@ -112,7 +121,7 @@ func (k *Keeper) Start(context.Context) error {
 		for {
 			k.mu.Lock()
 			wait := k.every
-			if !k.published {
+			if !k.current {
 				wait = retryEvery
 			}
 			k.mu.Unlock()

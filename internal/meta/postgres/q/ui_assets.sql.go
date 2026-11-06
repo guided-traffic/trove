@@ -118,9 +118,11 @@ const uIAssetsPresent = `-- name: UIAssetsPresent :many
 SELECT (a.locale || '/' || a.path)::text AS name
   FROM unnest($1::text[]) AS n(name)
   JOIN ui_assets a ON a.locale = split_part(n.name, '/', 1) AND a.path = substr(n.name, strpos(n.name, '/') + 1)
+  JOIN blobs b ON b.sha256 = a.blob_sha256 AND b.content_status = 'ok'
 `
 
-// Which of a build's files have a row, whoever published it.
+// Which of a build's files have a row, whoever published it, whose blob is not marked damaged: a file whose object a read
+// found missing or corrupt (R-STOR-013) is committed again, and the commit's repair writes the object anew.
 func (q *Queries) UIAssetsPresent(ctx context.Context, names []string) ([]string, error) {
 	rows, err := q.db.Query(ctx, uIAssetsPresent, names)
 	if err != nil {

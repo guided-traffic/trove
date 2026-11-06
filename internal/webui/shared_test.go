@@ -46,6 +46,19 @@ func (f *fakeShared) Asset(ctx context.Context, locale, path string) ([]byte, er
 	return nil, ErrNotShared
 }
 
+// panicOnce is a store whose first read panics.
+type panicOnce struct {
+	*fakeShared
+	panicked atomic.Bool
+}
+
+func (p *panicOnce) Asset(ctx context.Context, locale, path string) ([]byte, error) {
+	if p.panicked.CompareAndSwap(false, true) {
+		panic("the store failed")
+	}
+	return p.fakeShared.Asset(ctx, locale, path)
+}
+
 func TestIsHashed(t *testing.T) {
 	t.Run("R-UI-001 the names of the production build are hashed", func(t *testing.T) {
 		// the names of a real build of web/ (2026-11-06): esbuild's base32 hashes and the chunk optimizer's base64url ones
@@ -265,6 +278,25 @@ func TestSharedAssets(t *testing.T) {
 		}
 		if n := store.calls.Load(); n != 1 {
 			t.Fatalf("%d reads for eight concurrent requests", n)
+		}
+	})
+
+	t.Run("R-HA-020 a read that panics leaves no read in flight behind", func(t *testing.T) {
+		store := &panicOnce{fakeShared: otherRelease()}
+		h := newHandler(t, builtFS(), func(o *Options) { o.Shared = store })
+		func() {
+			defer func() { _ = recover() }() // the chain's recovery stage does this in a replica
+			do(h, "GET", "/ui/en/main-OTHER123.js")
+		}()
+		done := make(chan int, 1)
+		go func() { done <- do(h, "GET", "/ui/en/main-OTHER123.js").Code }()
+		select {
+		case code := <-done:
+			if code != 200 {
+				t.Fatalf("the read after the panic: code %d", code)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("the request after the panic waits for a read that is gone")
 		}
 	})
 

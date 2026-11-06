@@ -112,6 +112,10 @@ func (s *Store) Asset(ctx context.Context, locale, path string) ([]byte, error) 
 			return nil, fmt.Errorf("read %s/%s: more than the %d bytes of its row", locale, path, row.Size)
 		}
 	}
+	// With storage.download.verify off nothing else catches a short object; a short file must never be served as immutable.
+	if int64(len(data)) != row.Size {
+		return nil, fmt.Errorf("read %s/%s: %d bytes, its row says %d", locale, path, len(data), row.Size)
+	}
 	return data, nil
 }
 
@@ -212,6 +216,14 @@ func (s *Store) commit(ctx context.Context, tree fs.FS, batch []webui.File) (int
 			})
 			if err != nil {
 				return err
+			}
+			if n == 0 {
+				// Another replica's row names the file, maybe with other bytes (another translation): the blob this
+				// commit wrote may have no reference, so the collector is told; it checks the references before it
+				// deletes anything (R-STOR-024).
+				if err := qs.EnqueueBlobForGC(ctx, sps[i].SHA256.Bytes()); err != nil {
+					return err
+				}
 			}
 			inserted += n
 		}
