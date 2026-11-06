@@ -106,7 +106,7 @@ chain instance and TLS block; the sections below describe the chain once, [endpo
 
 The limiters' fallback count (`replicaCount`) is the live replicas of the role in the pool plus the `all` replicas (Q-ARCH-303). The fetch share does not use it: the proxy engine divides by `cluster.FillCount`, the live replicas that fill client misses
 (`packages`, `web`, `all`, pools included; [wire_proxy_engine.go](../../internal/app/wire_proxy_engine.go), Q-ARCH-297, Q-OPS-165).
-The content routes of `api` (`/api/v1/repositories/{repoKey}/content/{path}`, R-API-025, Q-UI-106) are registered with `/files/`
+The content routes of `api` (`/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}`, R-API-025, Q-UI-106) are registered with `/files/`
 in [wire_files.go](../../internal/app/wire_files.go) and dropped by family from the router of `packages`; the files service
 behind them reaches the format's serve check through the host of `wireServeCheckHost`.
 

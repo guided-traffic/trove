@@ -1,7 +1,7 @@
 # The format contract
 
 How a package format plugs into trove: the contract in [internal/formats](../../internal/formats/), the registry, the `Host` a format
-reaches the core through, the storage hooks, the dispatcher that serves `/api/<format>/<repoKey>/…`, and how to add a format.
+reaches the core through, the storage hooks, the dispatcher that serves `/api/<format>/<projectKey>/<repoKey>/…`, and how to add a format.
 Requirements: [R-ARCH-005, R-ARCH-007 to R-ARCH-010, R-ARCH-014](../spec/architecture.md), [R-REPO-003](../spec/repositories-and-proxy.md),
 [R-EP-018](../spec/endpoints.md), the hooks table of [storage.md](../spec/storage.md). Decisions:
 [Q-ARCH-188, Q-ARCH-189, Q-ARCH-193, Q-ARCH-211 to Q-ARCH-217](../spec/architecture.md#decisions), [Q-GENERIC-7](../spec/formats/generic.md).
@@ -105,7 +105,7 @@ for `Lookup` and `List`. It panics on:
 - a `DataPort` that is no interface type;
 - a route set that is not servable: a route without name, method, template, handler, kind, action or example; a name used twice; a route
   that does not match its own example; an example that another route of the same method (and an overlapping class set) also matches; routes under a protocol base
-  path other than `/api/<id>/{key}/`; a route of a class the format does not support;
+  path other than `/api/<id>/{project}/{key}/`; a route of a class the format does not support;
 - every rule of the catalog (class set, layout, pattern subject, name rule, exposure).
 
 `formats.Validate(f)` runs the contract checks without registering. The exposure facts of the catalog come from `Format.Exposure()`: no adapter
@@ -124,13 +124,14 @@ recorded. What the engine does with them is in [proxy.md](proxy.md#what-a-format
 chain 1-7 (recovery, trace, log, in-flight, address and host, authentication, rate limit)
      authentication asks Dispatcher.APIKeyRoute (steps 1-4 below, then Route.APIKey) where the API-key header decides (Q-AUTH-186)
   -> dispatch.Dispatcher.ServeHTTP
-     1  split /api/<id>/<key>/<rest>; key shape; rest stays escaped
+     1  qname.ParseAddress: /api/<id>/<project>/<key>[~cache]/<rest>; one segment, a "%" in a named segment or a project or key of the wrong shape is no address
+        (404 repository_not_found in the format's shape, nothing asked); rest stays escaped
      2  a family of its own below the prefix (npm's exchange) only where the endpoint's surface holds it
      3  repository.CleanPath(rest) -> 400 invalid_path            (before authorization)
      4  Format.Match(method, rest) -> route and params | 404 | 405 with Allow;  the route name labels the request
-     5  edge.Resolve -> the request's holder: subject (with the endpoint), index, key made known
+     5  edge.Resolve -> the request's holder: subject (with the endpoint), index, the qualified name made known
      6  coarse DecideOn: the route's action on the repository, kind from the route; the exposure ceiling first
-     7  Repos.ByKey; deleting or another format -> 404 repository_not_found; disabled -> 404 repository_disabled
+     7  Repos.ByName(project, key); deleting or another format -> 404 repository_not_found; disabled -> 404 repository_disabled
      8  a class the route does not serve -> a virtual write goes to Resolver().DeployTarget, else 405 with Allow
      9  formats.Request built (rq.Endpoint: name, Rules, CacheFill, exposure fingerprint and view, from the listener and the index),
         Host.Begin(rq) (state of the request; its finish function closes the spools); formats.ServeRoute (content headers, recovery, WriteError)
@@ -139,6 +140,13 @@ chain 1-7 (recovery, trace, log, in-flight, address and host, authentication, ra
 `rq.Endpoint` is what a format knows of the endpoint ([endpoints.md](endpoints.md#package-formats-on-an-endpoint-r-ep-018-r-ep-019)):
 `Exposure` is the view a format's own filter takes (`Package`, `Version`; npm reads `Tag` through an interface of its own, Q-ARCH-257), read with `ExposureFingerprint` from the request's index, nil where the endpoint does not
 restrict; `Rules` forbids member names in answers; `CacheFill` is folded into every populate decision by the core.
+
+**A repository is addressed by project and key (Q-REPO-212).** The key is unique within its project, so every comparison and every cache key in this
+path uses the `qname.Repo` (`rq.Repo.Name`, `Request.Addressed()`, `Refusal.Name`), never the bare key. Step 5 and 6 run on the qualified name before the
+lookup of step 7: a project the caller cannot see answers exactly like a repository that does not exist (R-AUTHZ-016). Every URL a format returns to a
+client (tarball URLs, NuGet `@id`s, registration and flat-container bases, the service index) is built by `Links` ([links.go](../../internal/formathost/links.go))
+from the format's `ProtocolBasePath` template (`/api/npm/{project}/{key}/`) through `qname.ProtocolBase`, which escapes each value as one path segment; the
+cache view is the same address with `~cache` on the key only. The metrics label `repo` and the audit `repository` hold `Name.String()`, `web/npm-all`.
 
 Every error of steps 1 to 8 is rendered by the format's `WriteError`. The chain's own refusals (401, 421, 429, 503) on the prefix are rendered by
 it too: [errors.go](../../internal/api/dispatch/errors.go) registers it with `Router.HandleErrorShape`, and `httpserver.Problem` consults the table by path
@@ -183,7 +191,7 @@ refuse there. The sync delete and every batch of the delete job run the removal 
 `files.Formats` ([formats.go](../../internal/files/formats.go)) is the generic layer's seam: `FilesSeam` in [hooks.go](../../internal/formathost/hooks.go) implements it over the
 registry. `Classify` gives `/files/` and the items API the coordinate of a path (package and version, and whether the repository's patterns match names,
 Q-AUTHZ-160); `ServeCheck` makes the `/files/` GET of a tombstoned tarball a 404; `RawDeploy` lets `/files/` deploy only into a format whose
-`ProtocolBasePath` is `/files/{key}/` (409 for every other format, before the body, Q-ARCH-223); `CheckRemoval` asks the ownership of every
+`ProtocolBasePath` is `/files/{project}/{key}/` (409 for every other format, before the body, Q-ARCH-223); `CheckRemoval` asks the ownership of every
 package whose files a delete removes, in the removing transaction (Q-AUTHZ-161). For generic, classification, the check and the raw deploy
 change nothing.
 
