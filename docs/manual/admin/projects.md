@@ -142,7 +142,7 @@ An administrator of trove creates a project with `POST /api/v1/projects`:
 }
 ```
 
-`key` is required; `displayName` and `description` are optional (`description` defaults to the empty string). `owners` names the users and groups that become the first Owners in the same transaction. A key that exists answers `409 already_exists`.
+`key` and `displayName` are required; `description` defaults to the empty string. `owners` names the users and groups that become the first Owners in the same transaction; without it the project has no Owner, and an administrator of trove adds one as a member. A key that exists answers `409 already_exists`.
 
 `GET /api/v1/projects` lists every project to a holder of the permission to read projects, and otherwise the projects the caller is a member of, each with the caller's role. `GET /api/v1/authz/me` lists the caller's memberships under `projects`, with the role in force for the credential.
 
