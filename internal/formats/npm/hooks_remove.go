@@ -59,7 +59,7 @@ func (f *Format) OnItemsRemoved(ctx context.Context, tx formats.Tx, e formats.It
 	sort.Strings(pkgs)
 	rm := removal{
 		source: "unpublish", purge: e.Reason != "trash", by: e.Actor,
-		audit: rows.Audit{RepoKey: e.Repo.Name, Actor: rows.Actor{ID: e.Actor}},
+		audit: rows.Audit{RepoKey: e.Repo.Name.String(), Actor: rows.Actor{ID: e.Actor}},
 	}
 	if e.Reason == "move" {
 		rm.source = "move"
@@ -255,7 +255,7 @@ func (f *Format) OnItemsRestored(ctx context.Context, tx formats.Tx, e formats.I
 		pkgs = append(pkgs, p)
 	}
 	sort.Strings(pkgs)
-	audit := rows.Audit{RepoKey: e.Repo.Name, Actor: rows.Actor{ID: e.Actor}}
+	audit := rows.Audit{RepoKey: e.Repo.Name.String(), Actor: rows.Actor{ID: e.Actor}}
 	for _, p := range pkgs {
 		pkg, _, err := e.Packages.EnsureLocked(ctx, e.Repo, p, p)
 		if err != nil {

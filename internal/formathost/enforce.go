@@ -20,7 +20,7 @@ func (h *Host) liveRef(ctx context.Context, repo formats.RepoRef) (items.RepoRef
 	if h.o.Enforce == nil || h.o.Repos == nil {
 		return ref, nil
 	}
-	r, err := h.o.Repos.ByKey(ctx, repo.Name)
+	r, err := h.o.Repos.ByName(ctx, repo.Name)
 	if err != nil {
 		return items.RepoRef{}, err
 	}
@@ -36,7 +36,7 @@ func (h *Host) refuseBlocked(ctx context.Context, rq *formats.Request, repo form
 		return nil
 	}
 	return h.o.Enforce.Refuse(ctx, enforce.Download{
-		Addressed: rq.Addressed(), Store: repo.Name, RepoID: strconv.FormatInt(repo.ID, 10), Format: string(repo.Format),
+		Addressed: rq.Addressed().String(), Store: repo.Name.String(), RepoID: strconv.FormatInt(repo.ID, 10), Format: string(repo.Format),
 		Path: row.Path, VersionID: row.VersionID, Stored: true, Ecosystem: row.Policy.Ecosystem,
 		Block: h.o.Enforce.Decide(row.Policy, row.Block, row.VersionID),
 		Actor: edge.ActorFrom(httpserver.PrincipalFrom(ctx)), Source: httpserver.SourceFrom(ctx), Endpoint: rq.Subject.Endpoint,

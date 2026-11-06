@@ -74,7 +74,7 @@ func auditModeOf(h formats.Host, class formats.Class, s auditSettings) string {
 // local contacts no upstream.
 func localAuditAllowed(rq *formats.Request) error {
 	if rq.CacheView || rq.Endpoint.Rules {
-		return auditUnavailable(rq.Repo.Name)
+		return auditUnavailable(rq.Repo.Name.String())
 	}
 	return nil
 }
@@ -85,11 +85,11 @@ func (f *Format) handleAuditLocal(ctx context.Context, rq *formats.Request, w ht
 		return err
 	}
 	set := settingsOf(rq.Repo.Config).Audit
-	body, err := readAuditBody(rq.Request, rq.Repo.Name, set.MaxBodySize)
+	body, err := readAuditBody(rq.Request, rq.Repo.Name.String(), set.MaxBodySize)
 	if err != nil {
 		return err
 	}
-	if err := checkLocalBounds(rq.Repo.Name, body); err != nil {
+	if err := checkLocalBounds(rq.Repo.Name.String(), body); err != nil {
 		return err
 	}
 	data := rq.Host.Vulnerabilities()

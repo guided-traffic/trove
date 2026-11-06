@@ -2,6 +2,7 @@ package formathost
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"slices"
 	"sync"
 
@@ -105,7 +106,7 @@ func (h *Host) recheck(ctx context.Context, rq *formats.Request) error {
 	if len(allowed) == 0 {
 		return nil
 	}
-	var keys []string
+	var keys []qname.Repo
 	for _, a := range allowed {
 		if !slices.Contains(keys, a.c.Repository) {
 			keys = append(keys, a.c.Repository)

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"strconv"
 
@@ -110,7 +111,7 @@ func indexETag(rq *formats.Request, base string, publish, vulnerabilities bool) 
 	field("nuget-service-index")
 	field(strconv.Itoa(RenderVersion))
 	field(rq.Repo.ID)
-	field(rq.Addressed() + servingSuffix(rq))
+	field(servingName(rq).String())
 	field(strconv.FormatInt(rq.Repo.Version, 10))
 	field(base)
 	field(strconv.FormatBool(publish))
@@ -134,7 +135,7 @@ const jsonContentType = document.ContentType
 // challenged here first (R-NUGET-012).
 func (f *Format) handleIndex(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
 	links := rq.Host.Links(rq)
-	feed := links.Registry(rq.Addressed()+servingSuffix(rq)) + FeedSegment + "/"
+	feed := links.Registry(servingName(rq)) + FeedSegment + "/"
 	publish, err := takesPushes(ctx, rq)
 	if err != nil {
 		return err
@@ -169,4 +170,12 @@ func servingSuffix(rq *formats.Request) string {
 		return cacheSuffix
 	}
 	return ""
+}
+
+// servingName is the name a document is served under, in the form of an address: the addressed
+// repository, its key followed by the cache-view suffix for the cache view of a remote repository.
+func servingName(rq *formats.Request) qname.Repo {
+	r := rq.Addressed()
+	r.Key += servingSuffix(rq)
+	return r
 }

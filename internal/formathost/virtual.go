@@ -2,6 +2,7 @@ package formathost
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 
 	"github.com/guided-traffic/trove/internal/authz"
@@ -154,7 +155,7 @@ func (r *resolver) KeepsAway(ctx context.Context, rq *formats.Request, member fo
 // row decided as a read through the repository the client addressed (rq.Addressed()). A virtual
 // repository's search reads its members' rows under the virtual repository's exposure and the
 // lift of a token scope that names it, as its documents do (Q-EP-11, Q-AUTHZ-163, Q-AUTHZ-168).
-func (r *resolver) ReadScope(ctx context.Context, rq *formats.Request, repos []string) (formats.ReadScope, error) {
+func (r *resolver) ReadScope(ctx context.Context, rq *formats.Request, repos []qname.Repo) (formats.ReadScope, error) {
 	if r.scoper == nil {
 		return nil, errNoResolver()
 	}
@@ -168,7 +169,7 @@ func (r *resolver) ReadScope(ctx context.Context, rq *formats.Request, repos []s
 // readScope converts the decision point's shapes to the contract's.
 type readScope struct{ rs authz.ReadScope }
 
-func (s readScope) Shape(repo string) formats.ReadShape {
+func (s readScope) Shape(repo qname.Repo) formats.ReadShape {
 	switch s.rs.Shape(repo) {
 	case authz.ReadAll:
 		return formats.ReadAll
@@ -178,7 +179,9 @@ func (s readScope) Shape(repo string) formats.ReadShape {
 	return formats.ReadNone
 }
 
-func (s readScope) MayRead(repo, pkg, version string) bool { return s.rs.MayRead(repo, pkg, version) }
+func (s readScope) MayRead(repo qname.Repo, pkg, version string) bool {
+	return s.rs.MayRead(repo, pkg, version)
+}
 
 // DeployTarget implements [formats.Resolver].
 func (r *resolver) DeployTarget(_ context.Context, rq *formats.Request) (*repository.Repository, error) {
@@ -217,7 +220,7 @@ func (r *resolver) ShadowCheck(ctx context.Context, rq *formats.Request, name st
 		Proceed: out.Proceed, Code: out.Code, RetryAfter: out.RetryAfter, Undetermined: out.Undetermined, Refusal: out.Err(name),
 	}
 	for _, x := range out.Shadowed {
-		res.Shadowed = append(res.Shadowed, formats.ShadowPair{Virtual: x.Virtual.Name, Remote: x.Remote.Name})
+		res.Shadowed = append(res.Shadowed, formats.ShadowPair{Virtual: x.Virtual.Name.String(), Remote: x.Remote.Name.String()})
 	}
 	return res, nil
 }

@@ -3,6 +3,7 @@ package formathost
 import (
 	"context"
 	"fmt"
+	"github.com/guided-traffic/trove/internal/qname"
 	"sort"
 
 	"github.com/guided-traffic/trove/internal/authz"
@@ -62,11 +63,11 @@ func (v *ViewAdapters) Stored(ctx context.Context, repo authz.StoredRepo, pkg st
 		return authz.StoredPackage{}, nil
 	}
 	st, err := b.a.Stored(ctx, b.ports, formats.StoredQuery{
-		Repo:    formats.RepoRef{ID: repo.ID, Name: repo.Key, Class: class, Format: formats.ID(repo.Format)},
+		Repo:    formats.RepoRef{ID: repo.ID, Name: repo.Name, Class: class, Format: formats.ID(repo.Format)},
 		Package: pkg, Limit: limit, Tags: withTags,
 	})
 	if err != nil {
-		return authz.StoredPackage{}, fmt.Errorf("stored versions of %s in %s: %w", pkg, repo.Key, err)
+		return authz.StoredPackage{}, fmt.Errorf("stored versions of %s in %s: %w", pkg, repo.Name, err)
 	}
 	return authz.StoredPackage{Listed: true, Versions: st.Versions, Tags: st.Tags}, nil
 }
@@ -98,7 +99,7 @@ func (b viewBridge) Describe(ctx context.Context, vs []view.Version, want view.F
 	in := make([]formats.ViewVersion, len(vs))
 	for i, v := range vs {
 		in[i] = formats.ViewVersion{
-			ID: formats.VersionID(v.ID), Repo: formats.RepoRef{Name: v.Repo, Format: formats.ID(v.Format)},
+			ID: formats.VersionID(v.ID), Repo: formats.RepoRef{Name: nameOf(v.Repo), Format: formats.ID(v.Format)},
 			Package: v.Package, Version: v.Version,
 		}
 	}
@@ -142,4 +143,11 @@ func toInt64(in []formats.VersionID) []int64 {
 		out[i] = int64(id)
 	}
 	return out
+}
+
+// nameOf reads the qualified name "<project>/<key>" the package views use as the repository key; a string that
+// is none gives the zero name.
+func nameOf(k string) qname.Repo {
+	r, _ := qname.ParseRepo(k)
+	return r
 }

@@ -364,7 +364,7 @@ func checkRoutes(f Format, d Descriptor) error {
 	if len(routes) == 0 {
 		return nil
 	}
-	if want := "/api/" + string(d.ID) + "/{key}/"; d.ProtocolBasePath != want {
+	if want := "/api/" + string(d.ID) + "/{project}/{key}/"; d.ProtocolBasePath != want {
 		return fmt.Errorf("%q has routes and protocol base path %q, not %q", d.ID, d.ProtocolBasePath, want)
 	}
 	names := map[string]bool{}

@@ -135,7 +135,7 @@ func (a remoteAdapter) OnFill(ctx context.Context, tx formats.Tx, ev formats.Fil
 	rep := a.f.replicaOfPort(ev.Data)
 	res, err := st.ApplyFill(ctx, tx, rows.RemoteFill{
 		RepoID: ev.Repo.ID, Name: doc.Name, DocSHA256: ev.Digest, DocModified: doc.Modified, FetchedAt: ev.FetchedAt,
-		Versions: doc.Versions, Audit: rows.Audit{RepoKey: ev.Repo.Name},
+		Versions: doc.Versions, Audit: rows.Audit{RepoKey: ev.Repo.Name.String()},
 	})
 	if err != nil {
 		return formats.FillByFetchTime, err
@@ -144,10 +144,10 @@ func (a remoteAdapter) OnFill(ctx context.Context, tx formats.Tx, ev formats.Fil
 		return formats.FillKeepStored, nil
 	}
 	if res.Stale {
-		rep.met.staleDocument(ev.Repo.Name)
+		rep.met.staleDocument(ev.Repo.Name.String())
 		return formats.FillKeepStored, nil
 	}
-	rep.met.removedVersions(ev.Repo.Name, len(res.Removed))
+	rep.met.removedVersions(ev.Repo.Name.String(), len(res.Removed))
 	// A refresh with new content evicts the merged documents that contain the package
 	// early (R-REPO-020); nothing depends on the signal for correctness.
 	decision := formats.FillByFetchTime
@@ -220,7 +220,7 @@ func (a remoteAdapter) BeforeArtifactWith(ctx context.Context, h formats.Host, r
 		default:
 			return formats.Digests{}, have, rerr
 		}
-		a.f.replicaOf(h).met.revalidation(repo.Name, outcome)
+		a.f.replicaOf(h).met.revalidation(repo.Name.String(), outcome)
 		if facts, err = st.TarballFacts(ctx, repo.ID, key.Package, key.Version); err != nil {
 			return formats.Digests{}, have, err
 		}

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"strconv"
 	"time"
@@ -43,7 +44,7 @@ type fullSource struct {
 	// the same package served by different roads never shares a validator.
 	kind string
 	// servingKey is the key the links name: the repository's, or <key>~cache.
-	servingKey string
+	servingKey qname.Repo
 	repoID     int64
 	// content is hex of what the document is a function of: the digest of the stored
 	// document, or the fingerprint of the merge.
@@ -221,7 +222,8 @@ func (f *Format) remoteSource(ctx context.Context, rq *formats.Request, n name.N
 		content: hex.EncodeToString(doc.Digest[:]), bytes: doc.Bytes, status: doc.Status.Header,
 	}
 	if rq.CacheView {
-		src.kind, src.servingKey = "cache", rq.Repo.Name+"~cache"
+		src.kind, src.servingKey = "cache", rq.Repo.Name
+		src.servingKey.Key += "~cache"
 	}
 	return src, nil
 }

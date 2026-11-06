@@ -2,9 +2,9 @@ package formathost
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"slices"
 	"sort"
-	"strings"
 
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -155,7 +155,7 @@ func (s *FilesSeam) Classify(repo repository.Repository, p repository.Cleaned) f
 
 // rawProtocol is the protocol base path of a format whose protocol is /files/
 // itself (the generic format, R-GENERIC-002).
-const rawProtocol = "/files/{key}/"
+const rawProtocol = "/files/{project}/{key}/"
 
 // RawDeploy implements [files.Formats]: /files/ deploys into a repository whose
 // format has /files/ as its protocol. A format with a protocol of its own builds
@@ -171,10 +171,10 @@ func (s *FilesSeam) RawDeploy(repo repository.Repository) error {
 	way := "the protocol of its format " + repo.Format
 	if ok {
 		d := f.Descriptor()
-		way = "the " + d.DisplayName + " protocol under " + strings.ReplaceAll(d.ProtocolBasePath, "{key}", repo.Name)
+		way = "the " + d.DisplayName + " protocol under " + qname.ProtocolBase(d.ProtocolBasePath, repo.Name)
 	}
 	return errs.E(errs.Conflict, errs.CodeConflict,
-		"The repository "+repo.Name+" takes content only through "+way+"; /files/ does not deploy into it.")
+		"The repository "+repo.Name.String()+" takes content only through "+way+"; /files/ does not deploy into it.")
 }
 
 // CheckRemoval implements [files.Formats]: the ownership of R-AUTHZ-018 for every

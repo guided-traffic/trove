@@ -2,6 +2,7 @@ package formats
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"io"
 	"net/http"
 	"time"
@@ -173,15 +174,15 @@ type PackageStore interface {
 type LinkBuilder interface {
 	// Base is the response base URL: "https://trove.example.com".
 	Base() string
-	// Registry is "<base>/api/<format>/<servingKey>/"; the key may be
+	// Registry is "<base>/api/<format>/<project>/<key>/"; the key may be
 	// "<remote>~cache".
-	Registry(servingKey string) string
+	Registry(serving qname.Repo) string
 	// Repository is Registry(rq.Repo.Key).
 	Repository() string
 	// Path is Repository() + p with every segment escaped once.
 	Path(p string) string
 	// File is the /files/ URL of a stored item (downloadUrl).
-	File(repoKey, p string) string
+	File(repoKey qname.Repo, p string) string
 }
 
 // RenditionKey identifies a rendered document. The cache is keyed by every field of

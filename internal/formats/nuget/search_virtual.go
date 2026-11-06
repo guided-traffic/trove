@@ -3,6 +3,7 @@ package nuget
 import (
 	"context"
 	"fmt"
+	"github.com/guided-traffic/trove/internal/qname"
 	"slices"
 	"sync"
 
@@ -64,7 +65,7 @@ func (f *Format) runVirtualSearch(ctx context.Context, rq *formats.Request, st S
 	if err != nil {
 		return nil, 0, err
 	}
-	var keys []string
+	var keys []qname.Repo
 	for _, m := range plan.Members {
 		if m.Tier == formats.TierLocal {
 			keys = append(keys, m.Member.Name)
@@ -105,11 +106,11 @@ func (f *Format) runVirtualSearch(ctx context.Context, rq *formats.Request, st S
 			defer wg.Done()
 			defer func() { <-sem }()
 			if m.Tier == formats.TierLocal {
-				t := searchTarget{key: m.Member.Name, id: m.Member.ID, admits: admits[m.Member.Name]}
+				t := searchTarget{key: m.Member.Name, id: m.Member.ID, admits: admits[m.Member.Name.String()]}
 				results[i].hits, results[i].total, results[i].err = searchRepo(ctx, st, scope, t, mp, budget)
 				return
 			}
-			results[i].hits, results[i].total, results[i].err = f.searchRemote(ctx, rq, st, m, mp, admits[m.Member.Name], budget)
+			results[i].hits, results[i].total, results[i].err = f.searchRemote(ctx, rq, st, m, mp, admits[m.Member.Name.String()], budget)
 		}()
 	}
 	wg.Wait()
@@ -125,7 +126,7 @@ func (f *Format) runVirtualSearch(ctx context.Context, rq *formats.Request, st S
 		for _, hit := range r.hits {
 			// A local member's hits passed both filters in its scan; these are the filters of
 			// what a remote member contributes, which no read scope decided.
-			if a := admits[r.member.Member.Name]; a != nil && !a(hit.LowerID) {
+			if a := admits[r.member.Member.Name.String()]; a != nil && !a(hit.LowerID) {
 				removed++
 				continue
 			}
@@ -172,7 +173,7 @@ func memberPatterns(rq *formats.Request, plan *formats.VirtualPlan) (map[string]
 		found := false
 		for j := range all {
 			if all[j].Name == m.Member.Name {
-				out[m.Member.Name], found = patternsOf(&all[j], rq.Repo), true
+				out[m.Member.Name.String()], found = patternsOf(&all[j], rq.Repo), true
 				break
 			}
 		}

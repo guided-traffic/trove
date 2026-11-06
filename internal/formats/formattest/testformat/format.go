@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/guided-traffic/trove/internal/qname"
 	"io"
 	"net/http"
 	"net/url"
@@ -204,7 +205,7 @@ func (f Format) Descriptor() formats.Descriptor {
 	return formats.Descriptor{
 		Facts: catalog.Facts{
 			ID: ID, DisplayName: "Test format", Classes: []formats.Class{formats.Local, formats.Remote, formats.Virtual},
-			Layout: "testfmt", ProtocolBasePath: "/api/testfmt/{key}/", PatternSubject: formats.SubjectName, PackageNames: true,
+			Layout: "testfmt", ProtocolBasePath: "/api/testfmt/{project}/{key}/", PatternSubject: formats.SubjectName, PackageNames: true,
 			DefaultMetadataTTLSeconds: &ttl, OwnershipDefault: catalog.OwnershipEnforce,
 		},
 		ContractVersion:  formats.ContractVersion,
@@ -667,7 +668,7 @@ func (f Format) docGet(ctx context.Context, rq *formats.Request, w http.Response
 	}
 	if f.has(string(ReadsOtherRepository)) {
 		other := rq.RepoRef()
-		other.ID, other.Name = other.ID+1000, "other"
+		other.ID, other.Name = other.ID+1000, qname.Repo{Project: other.Name.Project, Key: "other"}
 		if _, _, err := rq.Host.Packages().Package(ctx, other, name); err != nil {
 			return err
 		}

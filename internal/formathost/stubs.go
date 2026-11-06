@@ -2,6 +2,7 @@ package formathost
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 
 	"github.com/guided-traffic/trove/internal/errs"
@@ -70,7 +71,7 @@ func (unsupportedResolver) KeepsAway(context.Context, *formats.Request, formats.
 	return false, errNoResolver()
 }
 
-func (unsupportedResolver) ReadScope(context.Context, *formats.Request, []string) (formats.ReadScope, error) {
+func (unsupportedResolver) ReadScope(context.Context, *formats.Request, []qname.Repo) (formats.ReadScope, error) {
 	return nil, errNoResolver()
 }
 

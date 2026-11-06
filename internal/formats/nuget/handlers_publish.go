@@ -156,7 +156,7 @@ func (f *Format) numberTaken(ctx context.Context, rq *formats.Request, w http.Re
 		if !bytes.Equal(facts.SHA512, sha512) {
 			return false, versionExists(in)
 		}
-		rep.writes.replayed(rq.Repo.Name)
+		rep.writes.replayed(rq.Repo.Name.String())
 		w.WriteHeader(http.StatusCreated)
 		return true, nil
 	}
@@ -224,7 +224,7 @@ func auditOf(rq *formats.Request) rows.Audit {
 		kind = "anonymous"
 	}
 	return rows.Audit{
-		RepoKey: rq.Repo.Name, Endpoint: s.Endpoint,
+		RepoKey: rq.Repo.Name.String(), Endpoint: s.Endpoint,
 		Actor: rows.Actor{Kind: kind, ID: s.ID, Name: s.Name, TokenID: s.TokenID, AuthMethod: s.AuthMethod},
 	}
 }

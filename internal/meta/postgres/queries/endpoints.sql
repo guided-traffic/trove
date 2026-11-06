@@ -69,10 +69,13 @@ SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, p.key AS 
   LEFT JOIN principal ub ON ub.id = r.updated_by
  WHERE r.endpoint = sqlc.arg(endpoint)::text AND r.name = sqlc.arg(name)::text;
 
--- name: EndpointsRepositoryByKey :many
--- The repository a rule names, resolved in the transaction of the write: an
--- active repository only, so a key that is being deleted is unknown.
-SELECT id, key, format, class FROM repositories WHERE key = sqlc.arg(key)::text AND lifecycle = 'active';
+-- name: EndpointsRepositoryByName :many
+-- The repository a rule names by its project key and key, resolved in the transaction
+-- of the write: an active repository only, so a key that is being deleted is unknown.
+SELECT r.id, p.key AS project_key, r.key, r.format, r.class
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE p.key = sqlc.arg(project)::text AND r.key = sqlc.arg(key)::text AND r.lifecycle = 'active';
 
 -- name: EndpointsLockRuleCount :one
 -- Counts the rules of an endpoint and locks them, so that two creates near the

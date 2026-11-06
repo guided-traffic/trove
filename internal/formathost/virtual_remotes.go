@@ -237,7 +237,7 @@ func (p *callPopulate) Record(ctx context.Context, tx meta.Tx) error {
 		Path: p.rc.Path, Package: p.info.Package, Version: p.info.Version, Addressed: p.rc.Addressed.Name,
 		Actions: []formats.Action{formats.ActionRead},
 	}
-	return p.d.RecordAllowed(ctx, tx, p.rc.Subject, c, authz.Decision{Outcome: authz.Allow, Reason: authz.ReasonAllowGrant, Target: p.rc.Remote.Name})
+	return p.d.RecordAllowed(ctx, tx, p.rc.Subject, c, authz.Decision{Outcome: authz.Allow, Reason: authz.ReasonAllowGrant, Target: p.rc.Remote.Name.String()})
 }
 
 func (p *callPopulate) Endpoint() (string, bool) {

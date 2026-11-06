@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/guided-traffic/trove/internal/qname"
 	"io"
 	"reflect"
 	"slices"
@@ -125,16 +126,16 @@ func (d Document) WithoutAdminNotes() Document {
 }
 
 // ConsumerView renders the consumer view. protocolBase is the format's
-// ProtocolBasePath template ("/files/{key}/"); the raw file address is always
+// ProtocolBasePath template ("/files/{project}/{key}/") and name the repository's; the raw file address is always
 // listed (R-REPO-002).
-func (d Document) ConsumerView(protocolBase string) ConsumerView {
+func (d Document) ConsumerView(protocolBase string, name qname.Repo) ConsumerView {
 	v := ConsumerView{Key: d.Key, Class: d.Class, Format: d.Format, Description: d.Description, Layout: d.Layout}
 	seen := map[string]bool{}
-	for _, tmpl := range []string{protocolBase, "/files/{key}/"} {
+	for _, tmpl := range []string{protocolBase, "/files/{project}/{key}/"} {
 		if tmpl == "" {
 			continue
 		}
-		a := strings.ReplaceAll(tmpl, "{key}", d.Key)
+		a := qname.ProtocolBase(tmpl, name)
 		if !seen[a] {
 			seen[a] = true
 			v.Addresses = append(v.Addresses, a)

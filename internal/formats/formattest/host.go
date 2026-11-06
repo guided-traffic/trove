@@ -17,6 +17,7 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"fmt"
+	"github.com/guided-traffic/trove/internal/qname"
 	"io"
 	"log/slog"
 	"net/http"
@@ -42,7 +43,7 @@ type HostOptions struct {
 	// Class is the class of the addressed repository; Local when empty.
 	Class formats.Class
 	// RepoKey is the repository key; "main" when empty.
-	RepoKey string
+	Repo qname.Repo
 	// BaseURL is the response base URL; [DefaultBaseURL] when empty.
 	BaseURL string
 	// Data is the in-memory twin of the format's data port. NewHost refuses it, as
@@ -131,8 +132,8 @@ func NewHost(f formats.Format, o HostOptions) *Host {
 	if o.Class == "" {
 		o.Class = formats.Local
 	}
-	if o.RepoKey == "" {
-		o.RepoKey = "main"
+	if o.Repo.IsZero() {
+		o.Repo = qname.Repo{Project: "it", Key: "main"}
 	}
 	if o.BaseURL == "" {
 		o.BaseURL = DefaultBaseURL
@@ -148,7 +149,7 @@ func NewHost(f formats.Format, o HostOptions) *Host {
 	}
 	h := &Host{
 		f: f, opts: o,
-		repo:    &repository.Repository{ID: "1", Name: o.RepoKey, Class: o.Class, Format: string(d.ID), Lifecycle: repository.Active},
+		repo:    &repository.Repository{ID: "1", Name: o.Repo, Class: o.Class, Format: string(d.ID), Lifecycle: repository.Active},
 		items:   map[string]*itemRec{},
 		byID:    map[int64]*itemRec{},
 		pkgs:    map[string]*pkgRec{},
@@ -157,7 +158,7 @@ func NewHost(f formats.Format, o HostOptions) *Host {
 		props:   map[int64]map[string]string{},
 		renders: map[formats.RenditionKey][]byte{},
 	}
-	h.ref = formats.RepoRef{ID: 1, Name: o.RepoKey, Class: o.Class, Format: d.ID}
+	h.ref = formats.RepoRef{ID: 1, Name: o.Repo, Class: o.Class, Format: d.ID}
 	if m, ok := o.Remote.(*MemRemote); ok {
 		m.note = h.noteRead
 	}
@@ -241,7 +242,7 @@ func (h *Host) Begin(*formats.Request) func() { return func() {} }
 // Authorize implements formats.Host.
 func (h *Host) Authorize(_ context.Context, rq *formats.Request, t formats.Target) error {
 	h.mu.Lock()
-	h.authz = append(h.authz, AuthorizeCall{Route: rq.Route.Name, Target: t, Repo: rq.Repo.Name, Addressed: rq.Addressed()})
+	h.authz = append(h.authz, AuthorizeCall{Route: rq.Route.Name, Target: t, Repo: rq.Repo.Name.String(), Addressed: rq.Addressed().String()})
 	h.mu.Unlock()
 	if h.opts.Allow != nil {
 		return h.opts.Allow(t)
@@ -338,25 +339,25 @@ func (r renditions) Put(k formats.RenditionKey, doc []byte) {
 type links struct {
 	base   string
 	format formats.ID
-	key    string
+	key    qname.Repo
 }
 
 func (l links) Base() string { return strings.TrimSuffix(l.base, "/") }
-func (l links) Registry(servingKey string) string {
-	return l.Base() + "/api/" + string(l.format) + "/" + servingKey + "/"
+func (l links) Registry(serving qname.Repo) string {
+	return l.Base() + qname.ProtocolBase("/api/"+string(l.format)+"/{project}/{key}/", serving)
 }
 func (l links) Repository() string { return l.Registry(l.key) }
 func (l links) Path(p string) string {
 	return l.Repository() + escapePath(p)
 }
 
-func (l links) File(repoKey, p string) string {
-	return l.Base() + "/files/" + repoKey + "/" + escapePath(p)
+func (l links) File(repoKey qname.Repo, p string) string {
+	return l.Base() + qname.FilesBase(repoKey) + escapePath(p)
 }
 
 // Links returns the link builder the Host hands a request for the key; the
 // kit's rewrite check uses it directly.
-func Links(base string, format formats.ID, key string) formats.LinkBuilder {
+func Links(base string, format formats.ID, key qname.Repo) formats.LinkBuilder {
 	if base == "" {
 		base = DefaultBaseURL
 	}
@@ -434,7 +435,7 @@ func (unsupportedResolver) KeepsAway(context.Context, *formats.Request, formats.
 	return false, notSupported()
 }
 
-func (unsupportedResolver) ReadScope(context.Context, *formats.Request, []string) (formats.ReadScope, error) {
+func (unsupportedResolver) ReadScope(context.Context, *formats.Request, []qname.Repo) (formats.ReadScope, error) {
 	return nil, notSupported()
 }
 
@@ -466,7 +467,7 @@ func (h *Host) NewRequest(ctx context.Context, method, escapedPath string, body 
 	if err != nil {
 		return nil, err
 	}
-	u := &url.URL{Scheme: "https", Host: strings.TrimPrefix(h.opts.BaseURL, "https://"), Path: "/api/" + string(h.f.Descriptor().ID) + "/" + h.repo.Name + "/" + clean.Path, RawPath: ""}
+	u := &url.URL{Scheme: "https", Host: strings.TrimPrefix(h.opts.BaseURL, "https://"), Path: qname.ProtocolBase("/api/"+string(h.f.Descriptor().ID)+"/{project}/{key}/", h.repo.Name) + clean.Path, RawPath: ""}
 	hr, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {
 		return nil, err

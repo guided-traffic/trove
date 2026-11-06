@@ -56,7 +56,7 @@ func (f *Format) serveVirtual(ctx context.Context, rq *formats.Request, w http.R
 		return err
 	}
 	if m.Partial {
-		f.replicaOf(rq.Host).virt.skipped(rq.Repo.Name, reasonUnavailable)
+		f.replicaOf(rq.Host).virt.skipped(rq.Repo.Name.String(), reasonUnavailable)
 	}
 	links := rq.Host.Links(rq)
 	serving := rq.Addressed()
@@ -66,13 +66,13 @@ func (f *Format) serveVirtual(ctx context.Context, rq *formats.Request, w http.R
 	// validator names the ID itself, as the remote's does.
 	inputs := document.Inputs{
 		RenderVersion: RenderVersion, Repo: rq.RepoRef().ID, Variant: "virtual/" + lowerID + "/" + spec.variant,
-		Serving: serving, BaseURL: links.Base(), Endpoint: rq.Endpoint.Name, Exposure: rq.Endpoint.ExposureFingerprint, Settings: settings,
+		Serving: serving.String(), BaseURL: links.Base(), Endpoint: rq.Endpoint.Name, Exposure: rq.Endpoint.ExposureFingerprint, Settings: settings,
 	}
 	if m.CacheStatus != "" {
 		w.Header().Set("Cache-Status", m.CacheStatus)
 	}
 	key := formats.RenditionKey{
-		Repo: rq.RepoRef(), Package: lowerID, Variant: spec.variant + "@" + serving + "@" + fingerprint,
+		Repo: rq.RepoRef(), Package: lowerID, Variant: spec.variant + "@" + serving.String() + "@" + fingerprint,
 		Encoding: encodingOf(false), BaseURL: links.Base(), Endpoint: rq.Endpoint.Name, Exposure: rq.Endpoint.ExposureFingerprint,
 		Settings: settings, RenderVersion: RenderVersion,
 	}
@@ -207,7 +207,7 @@ func (f *Format) virtualRegistration(ctx context.Context, rq *formats.Request, w
 	paging := f.replicaOf(rq.Host).cfg.Registration
 	pg := registration.Paging{PageSize: paging.PageSize, InlineBelow: paging.InlineBelow}
 	doc := registration.Doc{
-		Feed:    registration.Feed(rq.Host.Links(rq).Registry(rq.Addressed()+servingSuffix(rq)) + FeedSegment + "/"),
+		Feed:    registration.Feed(rq.Host.Links(rq).Registry(servingName(rq)) + FeedSegment + "/"),
 		Hive:    hive,
 		LowerID: lowerID,
 		Paging:  pg,

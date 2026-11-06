@@ -65,7 +65,7 @@ func (f *Format) Descriptor() formats.Descriptor {
 			DisplayName:      "npm",
 			Classes:          []formats.Class{formats.Local, formats.Remote, formats.Virtual},
 			Layout:           Layout,
-			ProtocolBasePath: "/api/npm/{key}/",
+			ProtocolBasePath: "/api/npm/{project}/{key}/",
 			// The upstream registry the remote class proposes (R-NPM-023); the probe of
 			// the upstream test is its ping endpoint (R-REPO-024).
 			DefaultUpstreamURL:        "https://registry.npmjs.org/",

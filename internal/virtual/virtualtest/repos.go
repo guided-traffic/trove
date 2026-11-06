@@ -25,7 +25,7 @@ func Catalog() *catalog.Registry {
 	r := catalog.NewRegistry()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
 		ID: Format, Classes: []catalog.Class{catalog.Local, catalog.Remote, catalog.Virtual}, Layout: Format,
-		ProtocolBasePath: "/api/" + Format + "/{key}/", PatternSubject: catalog.SubjectName,
+		ProtocolBasePath: "/api/" + Format + "/{project}/{key}/", PatternSubject: catalog.SubjectName,
 		PackageNames: true, PriorityMembers: true, PinsAndClaims: true,
 	}, Names: exactNames{}})
 	return r

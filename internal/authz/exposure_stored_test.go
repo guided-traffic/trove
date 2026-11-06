@@ -28,7 +28,7 @@ func serviceOver(src StoredPackages) *ExposureService {
 	return &ExposureService{o: ExposureServiceOptions{Stored: src}}
 }
 
-var storedRepo = q.EndpointsRepositoryByKeyRow{ID: 1, Key: "npm-local", Format: "npm", Class: "local"}
+var storedRepo = q.EndpointsRepositoryByNameRow{ID: 1, ProjectKey: "it", Key: "npm-local", Format: "npm", Class: "local"}
 
 func TestR_EP_016_StoredOfShowsOnlyWhatTheCallerMayRead(t *testing.T) {
 	src := &fakeStored{sp: StoredPackage{Listed: true, Versions: []string{"3.0.0", "2.0.0", "1.0.0"}, Tags: map[string]string{"latest": "3.0.0", "lts": "1.0.0"}}}

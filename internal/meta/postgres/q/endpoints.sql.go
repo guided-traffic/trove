@@ -490,30 +490,40 @@ func (q *Queries) EndpointsLockRuleCount(ctx context.Context, endpoint string) (
 	return rules, err
 }
 
-const endpointsRepositoryByKey = `-- name: EndpointsRepositoryByKey :many
-SELECT id, key, format, class FROM repositories WHERE key = $1::text AND lifecycle = 'active'
+const endpointsRepositoryByName = `-- name: EndpointsRepositoryByName :many
+SELECT r.id, p.key AS project_key, r.key, r.format, r.class
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE p.key = $1::text AND r.key = $2::text AND r.lifecycle = 'active'
 `
 
-type EndpointsRepositoryByKeyRow struct {
-	ID     int64
-	Key    string
-	Format string
-	Class  string
+type EndpointsRepositoryByNameParams struct {
+	Project string
+	Key     string
 }
 
-// The repository a rule names, resolved in the transaction of the write: an
-// active repository only, so a key that is being deleted is unknown.
-func (q *Queries) EndpointsRepositoryByKey(ctx context.Context, key string) ([]EndpointsRepositoryByKeyRow, error) {
-	rows, err := q.db.Query(ctx, endpointsRepositoryByKey, key)
+type EndpointsRepositoryByNameRow struct {
+	ID         int64
+	ProjectKey string
+	Key        string
+	Format     string
+	Class      string
+}
+
+// The repository a rule names by its project key and key, resolved in the transaction
+// of the write: an active repository only, so a key that is being deleted is unknown.
+func (q *Queries) EndpointsRepositoryByName(ctx context.Context, arg EndpointsRepositoryByNameParams) ([]EndpointsRepositoryByNameRow, error) {
+	rows, err := q.db.Query(ctx, endpointsRepositoryByName, arg.Project, arg.Key)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []EndpointsRepositoryByKeyRow{}
+	items := []EndpointsRepositoryByNameRow{}
 	for rows.Next() {
-		var i EndpointsRepositoryByKeyRow
+		var i EndpointsRepositoryByNameRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.ProjectKey,
 			&i.Key,
 			&i.Format,
 			&i.Class,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/guided-traffic/trove/internal/qname"
 	"log/slog"
 	"math"
 	"net/url"
@@ -82,7 +83,7 @@ func (f *Format) searchRemoteMember(ctx context.Context, rq *formats.Request, st
 // remoteSearch answers a search of one remote: forwarded when it may be, else, and when the
 // upstream cannot be asked, from the remote's cache.
 func (f *Format) remoteSearch(ctx context.Context, s searchSource, st Store, p search.Params) ([]rows.SearchHit, int, error) {
-	scope, err := s.rq.Host.Resolver().ReadScope(ctx, s.rq, []string{s.ref.Name})
+	scope, err := s.rq.Host.Resolver().ReadScope(ctx, s.rq, []qname.Repo{s.ref.Name})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -116,7 +117,7 @@ func (f *Format) mayForward(ctx context.Context, s searchSource, p search.Params
 			return false, err
 		}
 		if away {
-			f.replicaOf(s.rq.Host).search.withheldQuery(s.ref.Name)
+			f.replicaOf(s.rq.Host).search.withheldQuery(s.ref.Name.String())
 			return false, nil
 		}
 	}
@@ -180,7 +181,7 @@ func (f *Format) forwardSearch(ctx context.Context, s searchSource, scope format
 	case isInternalFault(err):
 		return nil, 0, false, err
 	}
-	rep.search.forwardFailed(s.ref.Name)
+	rep.search.forwardFailed(s.ref.Name.String())
 	logOf(s.rq).Info("the forwarded search of a NuGet remote failed; the remote answers from its cache",
 		"repo", s.ref.Name, "error", err)
 	return nil, 0, false, nil

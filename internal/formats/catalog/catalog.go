@@ -79,7 +79,7 @@ type Facts struct {
 	Classes []Class
 	// Layout is the name of the format's one built-in layout (R-REPO-006).
 	Layout string
-	// ProtocolBasePath is the client address template, {key} the repository key.
+	// ProtocolBasePath is the client address template, {project} and {key} the project and repository keys.
 	ProtocolBasePath string
 	// DefaultUpstreamURL is empty for a format without a well-known upstream;
 	// DefaultExtraHosts are the further hosts a remote repository of the format

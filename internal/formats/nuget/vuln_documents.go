@@ -161,7 +161,7 @@ func (f *Format) handleVulnIndex(_ context.Context, rq *formats.Request, w http.
 	if err != nil {
 		return err
 	}
-	feed := rq.Host.Links(rq).Registry(rq.Addressed()+servingSuffix(rq)) + FeedSegment + "/"
+	feed := rq.Host.Links(rq).Registry(servingName(rq)) + FeedSegment + "/"
 	st := d.State(vulnEcosystem)
 	return replyVuln(rq, w, vulnIndexETag(feed, st), func() ([]byte, error) {
 		return document.Marshal([]vulnIndexEntry{{

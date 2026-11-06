@@ -1,6 +1,7 @@
 package formathost
 
 import (
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/url"
 	"strings"
 
@@ -15,7 +16,7 @@ import (
 type linkBuilder struct {
 	base   string
 	format formats.ID
-	key    string
+	key    qname.Repo
 }
 
 var _ formats.LinkBuilder = linkBuilder{}
@@ -29,8 +30,8 @@ func newLinks(rq *formats.Request) linkBuilder {
 
 func (l linkBuilder) Base() string { return l.base }
 
-func (l linkBuilder) Registry(servingKey string) string {
-	return l.base + "/api/" + string(l.format) + "/" + url.PathEscape(servingKey) + "/"
+func (l linkBuilder) Registry(serving qname.Repo) string {
+	return l.base + qname.ProtocolBase("/api/"+string(l.format)+"/{project}/{key}/", serving)
 }
 
 func (l linkBuilder) Repository() string { return l.Registry(l.key) }
@@ -47,6 +48,6 @@ func (l linkBuilder) Path(p string) string {
 	return l.Repository() + strings.Join(segs, "/")
 }
 
-func (l linkBuilder) File(repoKey, p string) string {
+func (l linkBuilder) File(repoKey qname.Repo, p string) string {
 	return edge.Links{Base: l.base}.File(repoKey, p, false)
 }

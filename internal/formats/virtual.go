@@ -2,6 +2,7 @@ package formats
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"time"
 
@@ -152,10 +153,10 @@ const (
 // counts anything.
 type ReadScope interface {
 	// Shape classifies a repository by key; a key that was not asked for is ReadNone.
-	Shape(repo string) ReadShape
+	Shape(repo qname.Repo) ReadShape
 	// MayRead decides the read of one version of one package of a repository; version may be empty
 	// for a question about the package.
-	MayRead(repo, pkg, version string) bool
+	MayRead(repo qname.Repo, pkg, version string) bool
 }
 
 // Resolver is virtual resolution as a format meets it (C-5).
@@ -174,7 +175,7 @@ type Resolver interface {
 	KeepsAway(ctx context.Context, rq *Request, member RepoRef, term string) (bool, error)
 	// ReadScope is the read scope of the request's caller for the repositories by key, for the
 	// rows of a listing.
-	ReadScope(ctx context.Context, rq *Request, repos []string) (ReadScope, error)
+	ReadScope(ctx context.Context, rq *Request, repos []qname.Repo) (ReadScope, error)
 	// Artifact plans (R-REPO-019 steps 1 to 5) and walks the tiers of step 6,
 	// serving the first hit.
 	Artifact(ctx context.Context, rq *Request, p Path, info PathInfo, w http.ResponseWriter) error
