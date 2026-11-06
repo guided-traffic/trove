@@ -103,15 +103,15 @@ task_haproxy() {
   # The chart's image values take a tag; "tag@digest" pins it by digest.
   local ref="${DEV_HAPROXY_INGRESS_IMAGE#quay.io/}"           # jcmoraisjr/haproxy-ingress:v0.16.3@sha256:...
   local repo="${ref%%:*}" tag="${ref#*:}"
-  helm --kube-context "$CTX" upgrade --install haproxy-ingress haproxy-ingress --repo https://haproxy-ingress.github.io/charts \
-    --version "$DEV_HAPROXY_INGRESS_CHART_VERSION" -n ingress-controller --create-namespace -f "$DEV_DIR/haproxy-values.yaml" \
+  helm --kube-context "$CTX" upgrade --install haproxy-ingress \
+    "$(chart_tgz https://haproxy-ingress.github.io/charts haproxy-ingress "$DEV_HAPROXY_INGRESS_CHART_VERSION")" -n ingress-controller --create-namespace -f "$DEV_DIR/haproxy-values.yaml" \
     --set controller.image.registry=quay.io --set controller.image.repository="$repo" --set controller.image.tag="$tag" \
     --wait --timeout 5m
 }
 
 task_pki() {
-  helm --kube-context "$CTX" upgrade --install cert-manager cert-manager --repo https://charts.jetstack.io \
-    --version "$DEV_CERT_MANAGER_CHART_VERSION" -n cert-manager --create-namespace --set crds.enabled=true \
+  helm --kube-context "$CTX" upgrade --install cert-manager \
+    "$(chart_tgz https://charts.jetstack.io cert-manager "$DEV_CERT_MANAGER_CHART_VERSION")" -n cert-manager --create-namespace --set crds.enabled=true \
     --set image.digest="$(digest_of "$DEV_CERT_MANAGER_CONTROLLER_IMAGE")" \
     --set webhook.image.digest="$(digest_of "$DEV_CERT_MANAGER_WEBHOOK_IMAGE")" \
     --set cainjector.image.digest="$(digest_of "$DEV_CERT_MANAGER_CAINJECTOR_IMAGE")" \
@@ -122,8 +122,8 @@ task_pki() {
 }
 
 task_secrets() {
-  helm --kube-context "$CTX" upgrade --install internal-secrets-operator internal-secrets-operator \
-    --repo https://guided-traffic.github.io/internal-secrets-operator --version "$DEV_ISO_CHART_VERSION" \
+  helm --kube-context "$CTX" upgrade --install internal-secrets-operator \
+    "$(chart_tgz https://guided-traffic.github.io/internal-secrets-operator internal-secrets-operator "$DEV_ISO_CHART_VERSION")" \
     -n internal-secrets-operator-system --create-namespace \
     --set image.tag="${DEV_ISO_IMAGE#*:}" --wait --timeout 5m
   kn apply -f "$DEV_DIR/secrets.yaml"
@@ -131,16 +131,16 @@ task_secrets() {
 }
 
 task_vko() {
-  helm --kube-context "$CTX" upgrade --install valkey-operator valkey-operator \
-    --repo https://guided-traffic.github.io/valkey-operator/ --version "$DEV_VALKEY_OPERATOR_CHART_VERSION" \
+  helm --kube-context "$CTX" upgrade --install valkey-operator \
+    "$(chart_tgz https://guided-traffic.github.io/valkey-operator/ valkey-operator "$DEV_VALKEY_OPERATOR_CHART_VERSION")" \
     -n valkey-operator-system --create-namespace --set image.digest="$(digest_of "$DEV_VALKEY_OPERATOR_IMAGE")" \
     --wait --timeout 5m
 }
 
 task_postgres() {
   local image="${DEV_CNPG_OPERATOR_IMAGE#*:}"   # 1.30.1@sha256:...
-  helm --kube-context "$CTX" upgrade --install cnpg cloudnative-pg --repo https://cloudnative-pg.github.io/charts \
-    --version "$CNPG_CHART_VERSION" -n cnpg-system --create-namespace \
+  helm --kube-context "$CTX" upgrade --install cnpg \
+    "$(chart_tgz https://cloudnative-pg.github.io/charts cloudnative-pg "$CNPG_CHART_VERSION")" -n cnpg-system --create-namespace \
     --set image.repository="${DEV_CNPG_OPERATOR_IMAGE%%:*}" --set image.tag="$image" --wait --timeout 5m
   # helm --wait sees the operator pod ready before its admission webhook answers: the first apply
   # of the Cluster then fails with "failed calling webhook mcluster.cnpg.io ... connection refused".

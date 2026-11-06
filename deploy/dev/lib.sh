@@ -29,6 +29,22 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 k() { kubectl --context "$CTX" "$@"; }
 kn() { kubectl --context "$CTX" -n "$NS" "$@"; }
 
+# chart_tgz REPO_URL CHART VERSION prints the path of the chart's archive in $STATE_DIR/charts and fetches it once. Every
+# later install of the same pin, such as the profile switch an e2e test makes with up.sh, reads the file and needs no
+# network (an unreachable chart host failed `e2e on kind (access-long)` mid-run, Test and Release run 42150467806).
+chart_tgz() {
+  local url="$1" chart="$2" version="$3" dir="$STATE_DIR/charts" tmp
+  local file="$dir/$chart-$version.tgz"
+  if [ ! -s "$file" ]; then
+    mkdir -p "$dir"
+    tmp="$(mktemp -d "$dir/.pull.XXXXXX")"
+    helm pull "$chart" --repo "$url" --version "$version" --destination "$tmp" >&2 || { rm -rf "$tmp"; return 1; }
+    mv "$tmp/$chart-$version.tgz" "$file"
+    rm -rf "$tmp"
+  fi
+  printf '%s\n' "$file"
+}
+
 os() { uname -s | tr '[:upper:]' '[:lower:]'; }
 arch() {
   case "$(uname -m)" in

@@ -360,7 +360,9 @@ else (a changed port restarts Keycloak once, which imports the realm again).
 | Docker | none | the daemon must answer; on arm64 it must run amd64 binaries (above) |
 
 `up.sh` fails when kind, kubectl or Helm differs from its pin and prints the install command. The charts come from
-their own repositories (`helm upgrade --install … --repo <url> --version <pin>`), nothing is added with `helm repo add`.
+their own repositories, nothing is added with `helm repo add`: `chart_tgz` in [lib.sh](../../deploy/dev/lib.sh) fetches each pinned
+chart once with `helm pull --repo <url> --version <pin>` into `.dev/charts/` and every install reads that file, so a second `up.sh`
+on the same cluster (the profile switch of an e2e test) needs no network. The cache outlives `make dev-down`; a new pin is a new file.
 No script makes certificates by hand any more; cert-manager does. The scripts run under macOS `/bin/bash` 3.2 as well
 as bash 5.
 
