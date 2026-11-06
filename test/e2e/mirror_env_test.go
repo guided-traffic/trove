@@ -281,7 +281,10 @@ type mirrorStatus struct {
 	State            string          `json:"state"`
 	Pass             *mirrorPassInfo `json:"pass"`
 	LastCompletePass *mirrorSummary  `json:"lastCompletePass"`
-	Errors           struct {
+	Bound            struct {
+		UsedBytes int64 `json:"usedBytes"`
+	} `json:"bound"`
+	Errors struct {
 		ConsecutiveFailures int    `json:"consecutiveFailures"`
 		LastMessage         string `json:"lastMessage"`
 		LastCode            string `json:"lastCode"`
@@ -335,6 +338,19 @@ func (e *mirrorEnv) awaitComplete(t testing.TB, key string, within time.Duration
 			}
 		}
 		return s.Pass == nil && s.LastCompletePass != nil
+	})
+	return s
+}
+
+// awaitFolded waits until the bound's usedBytes counts the bytes the last complete pass stored, and returns that status. The
+// storage usage fold (F-55) folds the stored bytes into the bound after the pass ended, so a status read at the pass's end can
+// still show the bytes of before it; a comparison of two statuses takes its reference after the fold.
+func (e *mirrorEnv) awaitFolded(t testing.TB, key string, within time.Duration) mirrorStatus {
+	t.Helper()
+	var s mirrorStatus
+	waitFor(t, "the storage usage of "+key+" to count its last pass", within, 2*time.Second, func() bool {
+		s = e.status(t, key)
+		return s.LastCompletePass != nil && s.Bound.UsedBytes >= s.LastCompletePass.BytesStored
 	})
 	return s
 }

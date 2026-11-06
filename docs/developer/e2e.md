@@ -825,6 +825,10 @@ profile after the fixes (`SET=push` and `SET=failover`, above): the measurements
    the forward and repeats itself (`getOverForward`, `overForward`); the warm-up now uses it, and the refusal checks of
    `wantRefused` send their GET, HEAD, conditional and Range requests through `safeOverForward`, which does the same for a request
    that is safe to repeat. An HTTP status is still an answer, and every repeat is logged with the transport error.
+13. **Fixed in the harness: `TestMirror_R_REPO_058_ValkeyStoppedForAWholePass` compared a status read at the pass's end with one read
+   later** (Test and Release run 42167251206): the two differed only in `bound.usedBytes` (0, then 209,896), which the storage usage fold
+   (F-55) writes after the pass ended. The test takes its reference after the fold now (`awaitFolded`: `usedBytes` counts the bytes of the
+   last complete pass), so the comparison checks what it means to, that every replica answers the same settled status.
 
 ## TLS in the suite
 

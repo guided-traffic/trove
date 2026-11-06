@@ -177,6 +177,7 @@ func TestMirror_R_REPO_058_ValkeyStoppedForAWholePass(t *testing.T) {
 		if sum.Outcome != "complete" || sum.PackagesFailed != 0 || sum.Packages != int64(len(names)) {
 			t.Errorf("the pass ended %+v, want complete with %d packages", *sum, len(names))
 		}
+		done = e.awaitFolded(t, key, 2*time.Minute)
 		same := sameStatusOnEveryReplica(t, e, key)
 		if canonical(t, same.Raw) != canonical(t, done.Raw) {
 			t.Errorf("the status changed between two reads:\n%s\n%s", done.Raw, same.Raw)
