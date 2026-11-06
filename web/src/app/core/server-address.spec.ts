@@ -61,6 +61,6 @@ describe('ServerAddress', () => {
   });
 
   it('R-REPO-002 the protocol path fills the key, percent-encoded', () => {
-    expect(protocolPath(PACKAGE_FORMAT, 'web-libs')).toBe(API + '/npm/web-libs/');
+    expect(protocolPath(PACKAGE_FORMAT, 'web/web-libs')).toBe(API + '/npm/web/web-libs/');
   });
 });

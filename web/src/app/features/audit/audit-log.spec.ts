@@ -114,9 +114,9 @@ describe('Audit log', () => {
     const panel = root.querySelector('section.detail')!;
     expect(panel.textContent).toContain('artifact.downloaded');
     expect(panel.querySelector('a[href="/admin/users/alice"]')).toBeTruthy();
-    expect(panel.querySelector('a[href="/admin/repositories/generic-local"]')).toBeTruthy();
+    expect(panel.querySelector('a[href="/admin/repositories/web/generic-local"]')).toBeTruthy();
     expect(
-      panel.querySelector('a[href="/browse/generic-local/releases/1.0/app.zip"]'),
+      panel.querySelector('a[href="/browse/web/generic-local/releases/1.0/app.zip"]'),
     ).toBeTruthy();
     await expectAccessible(root);
   });

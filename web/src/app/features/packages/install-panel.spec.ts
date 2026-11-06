@@ -52,23 +52,23 @@ describe('Install command panel', () => {
     const r = await open();
     const pickers = r.root.querySelectorAll('select');
     expect(pickers).toHaveLength(2);
-    expect(pickers[1]?.value).toBe('npm-all');
-    expect(r.fake.calls[0]?.repository).toBe('npm-all');
-    pickers[1]!.value = 'npm-local';
+    expect(pickers[1]?.value).toBe('web/npm-all');
+    expect(r.fake.calls[0]?.repository).toBe('web/npm-all');
+    pickers[1]!.value = 'web/npm-local';
     pickers[1]!.dispatchEvent(new Event('change', { bubbles: true }));
     await settle(r.fixture);
-    expect(r.fake.calls.at(-1)?.repository).toBe('npm-local');
+    expect(r.fake.calls.at(-1)?.repository).toBe('web/npm-local');
   });
 
   it('R-UI-009 without a virtual repository the first local one is the default; with one repository there is no picker', async () => {
     const local = await open({
       repositories: [
-        { key: 'npm-remote', class: 'remote', publishedAt: '2026-10-20T09:12:44.512Z' },
-        { key: 'npm-local', class: 'local', publishedAt: '2026-10-20T09:12:44.512Z' },
+        { key: 'web/npm-remote', class: 'remote', publishedAt: '2026-10-20T09:12:44.512Z' },
+        { key: 'web/npm-local', class: 'local', publishedAt: '2026-10-20T09:12:44.512Z' },
       ],
     });
-    expect(local.fake.calls[0]?.repository).toBe('npm-local');
-    const single = await open({ repositories: [{ key: 'npm-local', class: 'local', publishedAt: '2026-10-20T09:12:44.512Z' }] });
+    expect(local.fake.calls[0]?.repository).toBe('web/npm-local');
+    const single = await open({ repositories: [{ key: 'web/npm-local', class: 'local', publishedAt: '2026-10-20T09:12:44.512Z' }] });
     expect(single.root.querySelectorAll('select')).toHaveLength(1);
   });
 
@@ -116,7 +116,7 @@ describe('Install command panel', () => {
   it('R-UI-009 links to the client setup of the chosen repository and client', async () => {
     const r = await open();
     const link = [...r.root.querySelectorAll('a')].find((a) => a.textContent?.includes('Set up your client'));
-    expect(link?.getAttribute('href')).toBe('/setup?repository=npm-all&client=npm');
+    expect(link?.getAttribute('href')).toBe('/setup?repository=web%2Fnpm-all&client=npm');
   });
 
   it('R-UI-009 a failing setup answer is shown with a retry, not as an empty panel', async () => {

@@ -138,10 +138,10 @@ export class MappingEditor implements HasUnsavedChanges {
     { value: 'read_only', label: $localize`:@@ci.editor.cross.read-only:Read only (such a pipeline can read, never write)` },
   ];
 
-  /** The bounds of the screen: the system administrators', or the project's administrators' with the switch on. */
+  /** The bounds of the screen: the system administrators', or the Owners' of the project. */
   protected readonly state = computed(() => createState(this.session, this.project() ?? '', 'ci:write'));
   protected readonly writable = computed(() => (this.project() ? this.state() === 'enabled' : this.session.has('ci:write')));
-  /** The snippet is read by ci:read or, in a project, by its administrator whose managePolicies switch is on (`getProjectCiSnippet`). */
+  /** The snippet is read by ci:read or, in a project, by its Owner (`getProjectCiSnippet`). */
   protected readonly canSnippet = computed(
     () => !this.isNew() && (this.session.has('ci:read') || (this.project() !== null && this.state() === 'enabled')),
   );

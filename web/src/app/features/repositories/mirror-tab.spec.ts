@@ -40,7 +40,7 @@ async function open(
   } = {},
 ) {
   const r = await renderScreen(RepositoryDetail, {
-    inputs: { key: repo.key },
+    inputs: { project: repo.project ?? 'web', key: repo.key },
     ...(options.capabilities ? { capabilities: options.capabilities } : {}),
     setup: (get) => {
       const fake = get(RepositoriesApi) as FakeRepositoriesApi;
@@ -96,7 +96,7 @@ describe('The Mirror tab of the edit form: status, pause, resume, run (R-UI-021,
 
   it('R-UI-021 the status is not read before the tab is opened, and not again after it is left', async () => {
     const r = await renderScreen(RepositoryDetail, {
-      inputs: { key: 'npm-remote' },
+      inputs: { project: 'web', key: 'npm-remote' },
       setup: (get) => {
         const fake = get(RepositoriesApi) as FakeRepositoriesApi;
         fake.formatsResult = [GENERIC_FORMAT, NPM];
@@ -145,7 +145,7 @@ describe('The Mirror tab of the edit form: status, pause, resume, run (R-UI-021,
       await settle(r.fixture);
       expect(fake.patches).toHaveLength(1);
       expect(fake.patches[0]).toMatchObject({
-        key: 'npm-remote',
+        key: 'web/npm-remote',
         patch: { remote: { mirror: { paused: true } } },
         etag: '"1"',
       });
@@ -186,7 +186,7 @@ describe('The Mirror tab of the edit form: status, pause, resume, run (R-UI-021,
       const { r, fake } = await open();
       fake.beforePatch = () => {
         fake.repositories[0] = stored('mirror', { paused: true });
-        fake.versions.set('npm-remote', 2);
+        fake.versions.set('web/npm-remote', 2);
         fake.beforePatch = null;
       };
       button(r.root, 'Pause').click();
@@ -200,7 +200,7 @@ describe('The Mirror tab of the edit form: status, pause, resume, run (R-UI-021,
       const { r, fake } = await open();
       fake.beforePatch = () => {
         fake.repositories[0] = { ...stored('mirror', { intervalSeconds: 600 }) };
-        fake.versions.set('npm-remote', 2);
+        fake.versions.set('web/npm-remote', 2);
         fake.beforePatch = null;
       };
       button(r.root, 'Pause').click();
@@ -218,7 +218,7 @@ describe('The Mirror tab of the edit form: status, pause, resume, run (R-UI-021,
       const { r, fake } = await open();
       fake.beforePatch = () => {
         fake.repositories[0] = stored('mirror', { intervalSeconds: 600 });
-        fake.versions.set('npm-remote', 2);
+        fake.versions.set('web/npm-remote', 2);
         fake.beforePatch = null;
       };
       button(r.root, 'Pause').click();
@@ -246,7 +246,7 @@ describe('The Mirror tab of the edit form: status, pause, resume, run (R-UI-021,
       const { r, fake } = await open();
       button(r.root, 'Run a pass now').click();
       await settle(r.fixture);
-      expect(fake.mirrorRuns).toMatchObject([{ key: 'npm-remote', full: false }]);
+      expect(fake.mirrorRuns).toMatchObject([{ key: 'web/npm-remote', full: false }]);
       expect(text(r.root.querySelector('trove-mirror-status')!)).toContain('A pass is queued.');
     });
   });

@@ -44,11 +44,11 @@ describe('Projects overview (R-UI-041)', () => {
     expect(await seriousViolations(root)).toEqual([]);
   });
 
-  it('R-UI-041 a project administrator reads the overview: no creating, no editing, with the reason', async () => {
+  it('R-UI-041 an Owner reads the overview and edits its project, but creates none, with the reason', async () => {
     const { root } = await renderScreen(ProjectList, { capabilities: [], setup: asProjectAdministrator() });
     expect((buttonByText(root, 'New project') as HTMLButtonElement).disabled).toBe(true);
     expect(text(root)).toContain('Read only: changing this needs the permission projects:write');
-    expect(root.textContent).not.toContain('Edit web');
+    expect(root.textContent).toContain('Edit web');
   });
 
   it('R-UI-041 R-AUTHZ-026 creates a project with a first Owner group, then opens it', async () => {
@@ -161,7 +161,7 @@ describe('Project detail (R-UI-041)', () => {
       capabilities: [],
       setup: asProjectAdministrator(),
     });
-    expect(root.textContent).not.toContain('Edit project');
+    expect(root.textContent).toContain('Edit project');
     expect(root.textContent).not.toContain('Delete project');
     expect(root.textContent).not.toContain('Switched off for this project');
     expect(buttonByText(root, 'Create repository').getAttribute('href')).toContain('/admin/repositories/new?project=web');

@@ -21,7 +21,7 @@ import { PackageList } from './package-list';
 type Opened = Awaited<ReturnType<typeof open>>;
 
 const API = '/api';
-const NUGET ={ ...PACKAGE_FORMAT, name: 'nuget', displayName: 'NuGet', protocolBasePath: API + '/nuget/{key}/' };
+const NUGET ={ ...PACKAGE_FORMAT, name: 'nuget', displayName: 'NuGet', protocolBasePath: API + '/nuget/{project}/{key}/' };
 
 async function open(
   inputs: Record<string, unknown> = {},
@@ -52,7 +52,7 @@ function many(n: number): PackageSummary[] {
     description: null,
     latestVersion: '1.0.0',
     keywords: [],
-    repositories: ['npm-local'],
+    repositories: ['web/npm-local'],
     createdAt: '2026-10-01T00:00:00.000Z',
     updatedAt: '2026-10-01T00:00:00.000Z',
     versionCount: 1,
@@ -177,10 +177,10 @@ describe('Packages list', () => {
   });
 
   it('R-UI-006 several formats and repositories repeat the parameter (OR within a field)', async () => {
-    const r = await open({ format: ['npm', 'nuget'], repository: ['npm-remote', 'nuget-local'] });
+    const r = await open({ format: ['npm', 'nuget'], repository: ['web/npm-remote', 'web/nuget-local'] });
     const sent = r.fake.listFilters.at(-1)!;
     expect(sent.format).toEqual(['npm', 'nuget']);
-    expect(sent.repository).toEqual(['npm-remote', 'nuget-local']);
+    expect(sent.repository).toEqual(['web/npm-remote', 'web/nuget-local']);
     expect(names(r).sort()).toEqual(['Contoso.Logging', 'left-pad']);
   });
 

@@ -380,7 +380,6 @@ export class FakeCiApi extends CiApi {
   /** The save-time rules of R-CI-009 to R-CI-013 and the bounds of Q-CI-26, as far as the screens depend on them. */
   private check(input: CiMappingInput, project: string | null, own?: string): { warnings: CiWarning[] } {
     const warnings: CiWarning[] = [];
-    if (project && !input.name.startsWith(`${project}-`)) throw invalid('/name', 'project_prefix_required');
     const g = input.grants;
     if (project && (g.groups ?? []).length > 0) throw invalid('/grants/groups', 'groups_not_allowed_in_project');
     const policies = project ? this.projectPolicies[project] ?? [] : this.systemPolicies;

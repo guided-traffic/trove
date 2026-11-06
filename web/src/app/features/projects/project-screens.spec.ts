@@ -253,7 +253,9 @@ describe('The repository wizard in a project (R-REPO-001, R-AUTHZ-026)', () => {
     expect(root.querySelector<HTMLSelectElement>('select[name="project"]')!.value).toBe('');
     type(root.querySelector<HTMLInputElement>('#f-key')!, 'libs');
     await settle(fixture);
-    expect((button(root, 'Next') as HTMLButtonElement).disabled).toBe(true);
+    button(root, 'Next').click();
+    await settle(fixture);
+    expect(root.querySelector('#f-key')).not.toBeNull();
   });
 });
 

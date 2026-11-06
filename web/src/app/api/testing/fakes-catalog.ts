@@ -67,7 +67,7 @@ export const GENERIC_FORMAT: FormatDescriptor = {
   classes: ['local'],
   clients: [{ id: 'curl', displayName: 'curl' }],
   layout: 'generic',
-  protocolBasePath: '/files/{key}/',
+  protocolBasePath: '/files/{project}/{key}/',
   defaultUpstreamUrl: null,
   defaultExtraHosts: [],
   defaultMetadataTtlSeconds: null,
@@ -161,7 +161,7 @@ export const PACKAGE_FORMAT: FormatDescriptor = {
     { id: 'yarn', displayName: 'Yarn Berry (2 and later)' },
     { id: 'yarn-classic', displayName: 'Yarn Classic (1.x)' },
   ],
-  protocolBasePath: '/api/npm/{key}/',
+  protocolBasePath: '/api/npm/{project}/{key}/',
   patternSubject: 'name',
   mirror: true,
   settingsSchema: NPM_SETTINGS_SCHEMA,
@@ -200,7 +200,7 @@ export const NUGET_FORMAT: FormatDescriptor = {
     { id: 'nuget', displayName: 'NuGet CLI (nuget.exe)' },
     { id: 'visual-studio', displayName: 'Visual Studio' },
   ],
-  protocolBasePath: '/api/nuget/{key}/v3/',
+  protocolBasePath: '/api/nuget/{project}/{key}/v3/',
   settingsSchema: NUGET_SETTINGS_SCHEMA,
 };
 
@@ -382,7 +382,7 @@ export class FakeRepositoriesApi extends RepositoriesApi {
     return this.deleteResult;
   }
 
-  override async move(ref: string, targetProject: string, _idempotencyKey: string): Promise<Versioned<Repository>> {
+  override async move(ref: string, targetProject: string): Promise<Versioned<Repository>> {
     this.moves.push({ ref, project: targetProject });
     const index = this.repositories.findIndex((r) => refOf(r) === ref);
     const current = this.repositories[index];
@@ -620,7 +620,7 @@ export function sampleRule(over: Partial<ExposureRule> = {}): ExposureRule {
   return {
     name: 'releases',
     description: 'Release files',
-    repository: 'generic-local',
+    repository: 'web/generic-local',
     enabled: true,
     paths: { include: ['releases/**'], exclude: [] },
     prereleases: false,
@@ -685,7 +685,7 @@ export class FakeEndpointsApi extends EndpointsApi {
   checks: ExposureCheckRequest[] = [];
   checkResult: ExposureCheck | ApiError = {
     endpoint: 'customers',
-    repository: 'generic-local',
+    repository: 'web/generic-local',
     mode: 'rules',
     package: null,
     packageExposed: true,
@@ -832,7 +832,7 @@ export class FakeAuditApi extends AuditApi {
       action: 'artifact.downloaded',
       category: 'content',
       outcome: 'denied',
-      repository: 'generic-local',
+      repository: 'web/generic-local',
       path: 'releases/1.0/app.zip',
       resource: { type: 'item', id: null },
     }),
