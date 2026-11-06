@@ -39,9 +39,12 @@ func EvalOf(tx meta.Tx) (*Eval, error) {
 // and keeps their results. The rules of [q.Pipeline] hold: a step is a pure function of its arguments, issues the same
 // statements whatever the answers, and none of its statements depends on the result of another step of the same pipeline.
 func (e *Eval) Pipeline(ctx context.Context, steps ...func(*Eval) error) error {
+	if e.tx == nil {
+		return errors.New("vuln store: a pipeline cannot start inside a step of a pipeline")
+	}
 	qsteps := make([]func(*q.Queries) error, len(steps))
 	for i, step := range steps {
-		qsteps[i] = func(qs *q.Queries) error { return step(&Eval{qs: qs, tx: e.tx}) }
+		qsteps[i] = func(qs *q.Queries) error { return step(&Eval{qs: qs}) }
 	}
 	return q.Pipeline(ctx, e.tx, qsteps...)
 }

@@ -25,7 +25,7 @@ SELECT a.name::text AS name, v.id::text AS record_id, v.canonical_id::text AS ca
    AND a.name = (SELECT p.name FROM items i
                     JOIN package_versions pv ON pv.id = i.version_id
                     JOIN packages p ON p.id = pv.package_id
-                   WHERE i.id = $2::bigint AND pv.trashed_at IS NULL)
+                   WHERE i.id = $2::bigint)
 `
 
 type VulnAffectedForItemParams struct {
@@ -266,7 +266,7 @@ SELECT c.repo_id::bigint AS repo_id, r.key::text AS key, r.config::text AS confi
   CROSS JOIN (SELECT p.name AS name FROM items i
                     JOIN package_versions pv ON pv.id = i.version_id
                     JOIN packages p ON p.id = pv.package_id
-                   WHERE i.id = $1::bigint AND pv.trashed_at IS NULL) AS n
+                   WHERE i.id = $1::bigint) AS n
  WHERE r.format = $2::text
    AND r.class = 'local'
    AND (c.pattern = n.name
@@ -722,7 +722,7 @@ SELECT f.id::text AS id, f.repo_id::bigint AS repo_id, f.package_name::text AS p
    AND f.package_name = (SELECT p.name FROM items i
                     JOIN package_versions pv ON pv.id = i.version_id
                     JOIN packages p ON p.id = pv.package_id
-                   WHERE i.id = $3::bigint AND pv.trashed_at IS NULL)
+                   WHERE i.id = $3::bigint)
 `
 
 type VulnFindingsOfRepoItemParams struct {
@@ -753,7 +753,8 @@ type VulnFindingsOfRepoItemRow struct {
 }
 
 // VulnFindingsOfRepoNames for the name of an item: the commit hook reads it in the round trip that reads the item (Q-VULN-82),
-// before it knows the name. No row for an item that belongs to no version.
+// before it knows the name. No row for an item that belongs to no version. The statement does not look at the trash: VulnItemVersion
+// is the one liveness check, as the statements by name never had one.
 func (q *Queries) VulnFindingsOfRepoItem(ctx context.Context, arg VulnFindingsOfRepoItemParams) ([]VulnFindingsOfRepoItemRow, error) {
 	rows, err := q.db.Query(ctx, vulnFindingsOfRepoItem, arg.RepoID, arg.Ecosystem, arg.ItemID)
 	if err != nil {

@@ -39,7 +39,7 @@ SELECT a.name::text AS name, v.id::text AS record_id, v.canonical_id::text AS ca
    AND a.name = (SELECT p.name FROM items i
                     JOIN package_versions pv ON pv.id = i.version_id
                     JOIN packages p ON p.id = pv.package_id
-                   WHERE i.id = sqlc.arg(item_id)::bigint AND pv.trashed_at IS NULL);
+                   WHERE i.id = sqlc.arg(item_id)::bigint);
 
 -- name: VulnStoredVersions :many
 -- The stored versions of the names in the repositories of the formats (the lookup of the advisory-driven evaluation by name,
@@ -123,7 +123,8 @@ SELECT f.id::text AS id, f.repo_id::bigint AS repo_id, f.package_name::text AS p
 
 -- name: VulnFindingsOfRepoItem :many
 -- VulnFindingsOfRepoNames for the name of an item: the commit hook reads it in the round trip that reads the item (Q-VULN-82),
--- before it knows the name. No row for an item that belongs to no version.
+-- before it knows the name. No row for an item that belongs to no version. The statement does not look at the trash: VulnItemVersion
+-- is the one liveness check, as the statements by name never had one.
 SELECT f.id::text AS id, f.repo_id::bigint AS repo_id, f.package_name::text AS package_name, f.version::text AS version,
        f.advisory_id::text AS advisory_id, COALESCE(f.package_id, 0)::bigint AS package_id, COALESCE(f.version_id, 0)::bigint AS version_id,
        f.kind::text AS kind, f.severity::text AS severity, COALESCE(f.cvss_score, -1)::float8 AS cvss_score, f.known_exploited::boolean AS known_exploited,
@@ -136,7 +137,7 @@ SELECT f.id::text AS id, f.repo_id::bigint AS repo_id, f.package_name::text AS p
    AND f.package_name = (SELECT p.name FROM items i
                     JOIN package_versions pv ON pv.id = i.version_id
                     JOIN packages p ON p.id = pv.package_id
-                   WHERE i.id = sqlc.arg(item_id)::bigint AND pv.trashed_at IS NULL);
+                   WHERE i.id = sqlc.arg(item_id)::bigint);
 
 -- name: VulnFindingsByIdentity :many
 -- The finding of one identity, read again after an insert that found it (a concurrent evaluation wrote it first).
@@ -391,7 +392,7 @@ SELECT c.repo_id::bigint AS repo_id, r.key::text AS key, r.config::text AS confi
   CROSS JOIN (SELECT p.name AS name FROM items i
                     JOIN package_versions pv ON pv.id = i.version_id
                     JOIN packages p ON p.id = pv.package_id
-                   WHERE i.id = sqlc.arg(item_id)::bigint AND pv.trashed_at IS NULL) AS n
+                   WHERE i.id = sqlc.arg(item_id)::bigint) AS n
  WHERE r.format = sqlc.arg(format)::text
    AND r.class = 'local'
    AND (c.pattern = n.name

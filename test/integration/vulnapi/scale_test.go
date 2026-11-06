@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 )
@@ -73,6 +75,63 @@ func TestR_VULN_028_TheFirstPageOfAPatternGrantAtTheShapeOfTheRun(t *testing.T) 
 	e.st.Exec(`ANALYZE vuln_finding`)
 	// The policy is read when a replica starts: the one of newEnv started before it.
 	web := e.st.Start(t, testenv.ReplicaOptions{Name: "web2", Env: []string{"TROVE_API_RATE_LIMITS_ENABLED=false"}})
+	// The pages of the list hold exactly the findings of the packages the patterns name, every version of them: the pair a
+	// version-independent scope decides once stands for the ten versions of a package (Q-VULN-81).
+	want := map[string]bool{}
+	e.st.Query(`SELECT id::text FROM vuln_finding
+		WHERE (ecosystem = 'npm' AND package_name LIKE 'trove-test-filler-0%') OR (ecosystem = 'NuGet' AND package_name LIKE 'trove.test.filler00%')`,
+		func(r pgx.Rows) error {
+			var id string
+			if err := r.Scan(&id); err != nil {
+				return err
+			}
+			want[id] = true
+			return nil
+		})
+	if len(want) != 11000 {
+		t.Fatalf("the seed has %d readable findings, want 11000", len(want))
+	}
+	got, versionsOf := map[string]bool{}, map[string]map[string]bool{}
+	cursor := ""
+	for {
+		query := q("limit", "500")
+		if cursor != "" {
+			query = q("limit", "500", "cursor", cursor)
+		}
+		p := e.list(web, tok, query)
+		for _, it := range p.Items {
+			if got[it.ID] {
+				t.Fatalf("finding %s listed twice", it.ID)
+			}
+			got[it.ID] = true
+			if versionsOf[it.Package] == nil {
+				versionsOf[it.Package] = map[string]bool{}
+			}
+			versionsOf[it.Package][it.Version] = true
+		}
+		if p.NextCursor == nil {
+			break
+		}
+		cursor = *p.NextCursor
+	}
+	for id := range want {
+		if !got[id] {
+			t.Errorf("finding %s of a readable package is not listed", id)
+			break
+		}
+	}
+	for id := range got {
+		if !want[id] {
+			t.Errorf("finding %s of a package the patterns do not name is listed", id)
+			break
+		}
+	}
+	for pkg, vs := range versionsOf {
+		if len(vs) != 10 {
+			t.Errorf("%s lists %d of its 10 versions", pkg, len(vs))
+			break
+		}
+	}
 	var samples []time.Duration
 	for range 30 {
 		start := time.Now()

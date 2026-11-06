@@ -4,10 +4,14 @@ package vulnfindings
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 	"github.com/guided-traffic/trove/test/integration/testenv"
@@ -129,6 +133,70 @@ func TestR_VULN_011_PipelineAnswersLikeTheStatementsOneByOne(t *testing.T) {
 		none, err := byItem.VulnAffectedForItem(ctx, q.VulnAffectedForItemParams{Ecosystem: "npm", ItemID: 0})
 		if err != nil || len(none) != 0 {
 			t.Errorf("an item that belongs to no version names no package: %v %+v", err, none)
+		}
+	})
+}
+
+// TestR_VULN_011_PipelineRefusesOtherArgumentsAndReportsAFailedStatement: a step that issues the same statement with other
+// arguments the second time is refused and no later call takes a result; a statement that fails in the batch returns its error,
+// and the next statement on the transaction fails with 25P02 (the transaction is aborted as after any failed statement).
+func TestR_VULN_011_PipelineRefusesOtherArgumentsAndReportsAFailedStatement(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, testenv.PgDSN(t, e.st.Database()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(ctx) })
+
+	t.Run("R-VULN-011 Q-VULN-82 other arguments the second time", func(t *testing.T) {
+		tx, err := conn.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		calls := 0
+		var second []q.VulnAffectedForNamesRow
+		err = q.Pipeline(ctx, tx,
+			func(p *q.Queries) error {
+				calls++
+				_, err := p.VulnAffectedForNames(ctx, q.VulnAffectedForNamesParams{Ecosystem: "npm", Names: []string{fmt.Sprint("n", calls)}})
+				return err
+			},
+			func(p *q.Queries) (err error) {
+				second, err = p.VulnAffectedForNames(ctx, q.VulnAffectedForNamesParams{Ecosystem: "npm", Names: []string{"x"}})
+				return err
+			},
+		)
+		if err == nil || !strings.Contains(err.Error(), "pipeline") {
+			t.Fatalf("a step with other arguments was accepted: %v", err)
+		}
+		if second != nil {
+			t.Errorf("a step after the mismatch took a result: %+v", second)
+		}
+	})
+
+	t.Run("R-VULN-011 Q-VULN-82 a failing statement fails the pipeline and aborts the transaction", func(t *testing.T) {
+		tx, err := conn.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		err = q.Pipeline(ctx, tx,
+			func(p *q.Queries) error { _, err := p.VulnDataComplete(ctx, "npm"); return err },
+			func(p *q.Queries) error {
+				_, err := p.VulnInsertFinding(ctx, q.VulnInsertFindingParams{ID: "not-a-uuid", Ecosystem: "npm", PackageName: "x", Version: "1", AdvisoryID: "a", Kind: "vulnerability", Severity: "high"})
+				return err
+			},
+			func(p *q.Queries) error { _, err := p.VulnDataComplete(ctx, "npm"); return err },
+		)
+		var pe *pgconn.PgError
+		if !errors.As(err, &pe) || pe.Code != "22P02" {
+			t.Fatalf("the failing statement's error is not returned: %v", err)
+		}
+		_, err = q.New(tx).VulnDataComplete(ctx, "npm")
+		if !errors.As(err, &pe) || pe.Code != "25P02" {
+			t.Errorf("the next statement on the transaction: %v, want 25P02", err)
 		}
 	})
 }

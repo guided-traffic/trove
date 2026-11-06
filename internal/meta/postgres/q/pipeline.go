@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -25,7 +26,8 @@ type Tx = pgx.Tx
 // returned. A step therefore has to be a pure function of its arguments: the same statements in the same order whatever the
 // answers were, no effect except keeping its results in variables the caller declared, and no statement whose arguments
 // depend on the result of another step of the same pipeline (the caller runs those as the next pipeline). A step that issues
-// a different statement the second time is reported as an error.
+// a different statement or other arguments the second time is reported as an error, and every call after it fails. The Eval a step gets
+// of [store] has no transaction: a step cannot start a nested pipeline or use the transaction while the statements are recorded.
 //
 // The statements run in the order of the steps and in the transaction of tx, so a statement sees what the one before it wrote.
 // The first statement that fails fails the pipeline, and the transaction is aborted as after any failed statement.
@@ -89,37 +91,46 @@ type replayer struct {
 	res   pgx.BatchResults
 	calls []call
 	next  int
+	// failed is set at the first call that does not match the recording: every later call fails without reading a result, so
+	// that a step that went another way cannot take another statement's answer.
+	failed error
 }
 
-// take returns the recorded statement the next call must be, or an error when the step went another way the second time.
-func (p *replayer) take(kind byte, sql string) error {
+// take returns an error when the call is not the recorded statement with the recorded arguments: another kind, other text, other
+// arguments, or more calls than the first pass made. The first mismatch fails every later call.
+func (p *replayer) take(kind byte, sql string, args []any) error {
+	if p.failed != nil {
+		return p.failed
+	}
 	if p.next >= len(p.calls) {
-		return errors.New("pipeline: a step issued a statement the first pass did not record")
+		p.failed = errors.New("pipeline: a step issued a statement the first pass did not record")
+		return p.failed
 	}
 	c := p.calls[p.next]
 	p.next++
-	if c.kind != kind || c.sql != sql {
-		return fmt.Errorf("pipeline: a step issued another statement the second time (statement %d)", p.next)
+	if c.kind != kind || c.sql != sql || !reflect.DeepEqual(c.args, args) {
+		p.failed = fmt.Errorf("pipeline: a step issued another statement or other arguments the second time (statement %d)", p.next)
+		return p.failed
 	}
 	return nil
 }
 
-func (p *replayer) Exec(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
-	if err := p.take('e', sql); err != nil {
+func (p *replayer) Exec(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	if err := p.take('e', sql, args); err != nil {
 		return pgconn.CommandTag{}, err
 	}
 	return p.res.Exec()
 }
 
-func (p *replayer) Query(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
-	if err := p.take('q', sql); err != nil {
+func (p *replayer) Query(_ context.Context, sql string, args ...any) (pgx.Rows, error) {
+	if err := p.take('q', sql, args); err != nil {
 		return nil, err
 	}
 	return p.res.Query()
 }
 
-func (p *replayer) QueryRow(_ context.Context, sql string, _ ...any) pgx.Row {
-	if err := p.take('r', sql); err != nil {
+func (p *replayer) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
+	if err := p.take('r', sql, args); err != nil {
 		return errRow{err}
 	}
 	return p.res.QueryRow()
