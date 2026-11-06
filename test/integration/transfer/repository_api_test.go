@@ -161,8 +161,8 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 	}
 
 	t.Run("R-REPO-009 create answers 201 with Location and ETag, defaults applied, and never an upsert", func(t *testing.T) {
-		res := a.postJSON("admin", "/api/v1/repositories", map[string]any{"key": "gen-one", "class": "local", "format": "generic", "description": "one"})
-		if res.status != 201 || res.header.Get("ETag") != `"1"` || !strings.HasSuffix(res.header.Get("Location"), "/api/v1/repositories/gen-one") {
+		res := a.postJSON("admin", "/api/v1/projects/it/repositories", map[string]any{"key": "gen-one", "class": "local", "format": "generic", "description": "one"})
+		if res.status != 201 || res.header.Get("ETag") != `"1"` || !strings.HasSuffix(res.header.Get("Location"), "/api/v1/projects/it/repositories/gen-one") {
 			t.Fatalf("%d %v\n%s", res.status, res.header, res.body)
 		}
 		m := res.json(t)
@@ -174,46 +174,46 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 				t.Errorf("a generic local repository has no %s member (R-GENERIC-008)", k)
 			}
 		}
-		problemOf(t, a.postJSON("admin", "/api/v1/repositories", map[string]any{"key": "gen-one", "class": "local", "format": "generic"}), 409, "already_exists")
+		problemOf(t, a.postJSON("admin", "/api/v1/projects/it/repositories", map[string]any{"key": "gen-one", "class": "local", "format": "generic"}), 409, "already_exists")
 	})
 
 	t.Run("R-REPO-009 a repository created on A is usable on B at once (R-API-052)", func(t *testing.T) {
-		if res := a.postJSON("admin", "/api/v1/repositories", map[string]any{"key": "gen-two", "class": "local", "format": "generic"}); res.status != 201 {
+		if res := a.postJSON("admin", "/api/v1/projects/it/repositories", map[string]any{"key": "gen-two", "class": "local", "format": "generic"}); res.status != 201 {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
-		if res := b.get("admin", "/api/v1/repositories/gen-two"); res.status != 200 {
+		if res := b.get("admin", "/api/v1/projects/it/repositories/gen-two"); res.status != 200 {
 			t.Fatalf("read on B: %d %s", res.status, res.body)
 		}
-		if res := b.put("admin", "/files/gen-two/x.txt", "x"); res.status != 201 {
+		if res := b.put("admin", "/files/it/gen-two/x.txt", "x"); res.status != 201 {
 			t.Fatalf("deploy on B: %d %s", res.status, res.body)
 		}
 	})
 
 	t.Run("R-API-052 a repository created on A is usable on B through every items operation at once", func(t *testing.T) {
-		if res := a.postJSON("admin", "/api/v1/repositories", map[string]any{"key": "gen-items", "class": "local", "format": "generic"}); res.status != 201 {
+		if res := a.postJSON("admin", "/api/v1/projects/it/repositories", map[string]any{"key": "gen-items", "class": "local", "format": "generic"}); res.status != 201 {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
-		if res := a.put("admin", "/files/gen-items/x.txt", "x"); res.status != 201 {
+		if res := a.put("admin", "/files/it/gen-items/x.txt", "x"); res.status != 201 {
 			t.Fatalf("deploy on A: %d %s", res.status, res.body)
 		}
 		// Nothing else touched gen-items on B: the decision point itself brings
 		// the grant index up to the repository.
 		for _, path := range []string{
-			"/api/v1/repositories/gen-items/items?path=x.txt",
-			"/api/v1/repositories/gen-items/children",
-			"/api/v1/repositories/gen-items/stats?path=x.txt",
+			"/api/v1/projects/it/repositories/gen-items/items?path=x.txt",
+			"/api/v1/projects/it/repositories/gen-items/children",
+			"/api/v1/projects/it/repositories/gen-items/stats?path=x.txt",
 		} {
 			if res := b.get("admin", path); res.status != 200 {
 				t.Errorf("GET %s on B: %d %s", path, res.status, res.body)
 			}
 		}
-		if res := b.do("admin", "DELETE", "/api/v1/repositories/gen-items/items?path=x.txt", nil); res.status != 204 && res.status != 200 && res.status != 202 {
+		if res := b.do("admin", "DELETE", "/api/v1/projects/it/repositories/gen-items/items?path=x.txt", nil); res.status != 204 && res.status != 200 && res.status != 202 {
 			t.Errorf("DELETE on B: %d %s", res.status, res.body)
 		}
 	})
 
 	t.Run("R-REPO-008 the validation reports unknown members, classes, formats, keys and several violations at once", func(t *testing.T) {
-		post := func(body map[string]any) response { return a.postJSON("admin", "/api/v1/repositories", body) }
+		post := func(body map[string]any) response { return a.postJSON("admin", "/api/v1/projects/it/repositories", body) }
 		base := func(extra map[string]any) map[string]any {
 			m := map[string]any{"key": "val-" + randHex(2), "class": "local", "format": "generic"}
 			for k, v := range extra {
@@ -240,8 +240,8 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 	})
 
 	t.Run("R-REPO-009 a caller without repositories:write-config gets 403 and nothing is created; anonymous gets 401", func(t *testing.T) {
-		problemOf(t, a.postJSON("bob", "/api/v1/repositories", map[string]any{"key": "bobs", "class": "local", "format": "generic"}), 403, "forbidden")
-		problemOf(t, a.postJSON("", "/api/v1/repositories", map[string]any{"key": "bobs", "class": "local", "format": "generic"}), 401, "credentials_required")
+		problemOf(t, a.postJSON("bob", "/api/v1/projects/it/repositories", map[string]any{"key": "bobs", "class": "local", "format": "generic"}), 403, "forbidden")
+		problemOf(t, a.postJSON("", "/api/v1/projects/it/repositories", map[string]any{"key": "bobs", "class": "local", "format": "generic"}), 401, "credentials_required")
 		if n := e.number("SELECT count(*) FROM repositories WHERE key = 'bobs'"); n != 0 {
 			t.Fatalf("%d repositories", n)
 		}
@@ -251,13 +251,13 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 		waitFor(t, "the role binding on replica A", 5*time.Second, func() bool {
 			return a.h.App.Authorizer().Require(context.Background(), authz.Subject{Kind: "user", ID: rita.ID, Name: rita.Name}, "repositories:write-config") == nil
 		})
-		if res := a.postJSON("rita", "/api/v1/repositories", map[string]any{"key": "ritas", "class": "local", "format": "generic"}); res.status != 201 {
+		if res := a.postJSON("rita", "/api/v1/projects/it/repositories", map[string]any{"key": "ritas", "class": "local", "format": "generic"}); res.status != 201 {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
-		if res := a.get("rita", "/files/ritas/x"); res.status != 404 {
+		if res := a.get("rita", "/files/it/ritas/x"); res.status != 404 {
 			t.Fatalf("content read: %d %s", res.status, res.body)
 		}
-		if res := a.put("rita", "/files/ritas/x", "x"); res.status != 403 {
+		if res := a.put("rita", "/files/it/ritas/x", "x"); res.status != 403 {
 			t.Fatalf("content write: %d %s", res.status, res.body)
 		}
 		if res := a.get("rita", "/api/v1/repositories?view=full"); res.status != 200 {
@@ -269,14 +269,14 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 		e.user("carol")
 		e.user("dave")
 		e.grant(a, "gen-one-read", []string{"gen-one"}, authz.PatternLists{}, map[string][]string{"user:carol": {"read"}})
-		adminRead := a.get("admin", "/api/v1/repositories/gen-one")
+		adminRead := a.get("admin", "/api/v1/projects/it/repositories/gen-one")
 		if adminRead.status != 200 || adminRead.header.Get("ETag") != `"1"` {
 			t.Fatalf("%d %v", adminRead.status, adminRead.header)
 		}
 		waitFor(t, "carol's grant on both replicas", 5*time.Second, func() bool {
-			return a.get("carol", "/api/v1/repositories/gen-one").status == 200 && b.get("carol", "/api/v1/repositories/gen-one").status == 200
+			return a.get("carol", "/api/v1/projects/it/repositories/gen-one").status == 200 && b.get("carol", "/api/v1/projects/it/repositories/gen-one").status == 200
 		})
-		consumer := a.get("carol", "/api/v1/repositories/gen-one")
+		consumer := a.get("carol", "/api/v1/projects/it/repositories/gen-one")
 		cm := consumer.json(t)
 		if consumer.header.Get("ETag") != `"1-consumer"` || cm["key"] != "gen-one" || cm["layout"] != "generic" {
 			t.Fatalf("%v\n%s", consumer.header, consumer.body)
@@ -286,21 +286,21 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 				t.Errorf("the consumer view has %s", k)
 			}
 		}
-		if addr, _ := cm["addresses"].([]any); len(addr) == 0 || !strings.HasSuffix(addr[0].(string), "/files/gen-one/") {
+		if addr, _ := cm["addresses"].([]any); len(addr) == 0 || !strings.HasSuffix(addr[0].(string), "/files/it/gen-one/") {
 			t.Errorf("addresses = %v", cm["addresses"])
 		}
-		hidden, missing := a.get("dave", "/api/v1/repositories/gen-one"), a.get("dave", "/api/v1/repositories/no-such-repository")
+		hidden, missing := a.get("dave", "/api/v1/projects/it/repositories/gen-one"), a.get("dave", "/api/v1/projects/it/repositories/no-such-repository")
 		if hidden.status != 404 || missing.status != 404 || normalize(hidden.text()) != normalize(missing.text()) {
 			t.Fatalf("hidden %d %s\nmissing %d %s", hidden.status, hidden.body, missing.status, missing.body)
 		}
-		if res := a.get("carol", "/api/v1/repositories/gen-one", "If-None-Match", `"1-consumer"`); res.status != 304 {
+		if res := a.get("carol", "/api/v1/projects/it/repositories/gen-one", "If-None-Match", `"1-consumer"`); res.status != 304 {
 			t.Fatalf("304 expected: %d", res.status)
 		}
 	})
 
 	t.Run("R-REPO-011 two PATCH calls with one If-Match: the first wins, the second is 412 with currentEtag; without If-Match 428; with * 200", func(t *testing.T) {
 		patch := func(rep *webReplica, body string, hdr ...string) response {
-			return rep.do("admin", "PATCH", "/api/v1/repositories/gen-one", strings.NewReader(body),
+			return rep.do("admin", "PATCH", "/api/v1/projects/it/repositories/gen-one", strings.NewReader(body),
 				append([]string{"Content-Type", "application/merge-patch+json"}, hdr...)...)
 		}
 		first := patch(a, `{"description":"first"}`, "If-Match", `"1"`)
@@ -312,7 +312,7 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 			t.Errorf("currentEtag = %v", stale["currentEtag"])
 		}
 		problemOf(t, patch(a, `{"description":"third"}`), 428, "precondition_required")
-		if g := a.get("admin", "/api/v1/repositories/gen-one"); g.header.Get("ETag") != `"2"` {
+		if g := a.get("admin", "/api/v1/projects/it/repositories/gen-one"); g.header.Get("ETag") != `"2"` {
 			t.Errorf("a refused PATCH changed the repository: %v", g.header.Get("ETag"))
 		}
 		if star := patch(a, `{"description":"third"}`, "If-Match", "*"); star.status != 200 || star.header.Get("ETag") != `"3"` {
@@ -328,7 +328,7 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 	})
 
 	t.Run("R-REPO-011 PUT never creates a repository", func(t *testing.T) {
-		problemOf(t, a.do("admin", "PUT", "/api/v1/repositories/no-such-repository", strings.NewReader(`{"key":"no-such-repository","class":"local","format":"generic"}`),
+		problemOf(t, a.do("admin", "PUT", "/api/v1/projects/it/repositories/no-such-repository", strings.NewReader(`{"key":"no-such-repository","class":"local","format":"generic"}`),
 			"Content-Type", "application/json", "If-Match", "*"), 404, "repository_not_found")
 	})
 
@@ -358,7 +358,7 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 		}
 		// A project filter selects the repositories assigned to the project; an unknown key selects none (Q-REPO-22).
 		e.project("acme")
-		if res := a.postJSON("admin", "/api/v1/repositories", map[string]any{"key": "acme-one", "class": "local", "format": "generic", "project": "acme"}); res.status != 201 {
+		if res := a.postJSON("admin", "/api/v1/projects/it/repositories", map[string]any{"key": "acme-one", "class": "local", "format": "generic", "project": "acme"}); res.status != 201 {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
 		if got := items(list("admin", "?project=acme")); fmt.Sprint(got) != "[acme-one]" {
@@ -410,22 +410,22 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 		w := e.newReplica("w", webOpts{worker: true})
 		a.createRepository("to-delete", nil)
 		for i := range 5 {
-			if res := a.put("admin", fmt.Sprintf("/files/to-delete/d/f%d.txt", i), "content "+fmt.Sprint(i)); res.status != 201 {
+			if res := a.put("admin", fmt.Sprintf("/files/it/to-delete/d/f%d.txt", i), "content "+fmt.Sprint(i)); res.status != 201 {
 				t.Fatalf("%d %s", res.status, res.body)
 			}
 		}
-		stale := a.do("admin", "DELETE", "/api/v1/repositories/to-delete", nil, "If-Match", `"99"`)
+		stale := a.do("admin", "DELETE", "/api/v1/projects/it/repositories/to-delete", nil, "If-Match", `"99"`)
 		problemOf(t, stale, 412, "precondition_failed")
-		del := a.do("admin", "DELETE", "/api/v1/repositories/to-delete", nil)
+		del := a.do("admin", "DELETE", "/api/v1/projects/it/repositories/to-delete", nil)
 		if del.status != 202 || !strings.Contains(del.header.Get("Location"), "/api/v1/system/jobs/") {
 			t.Fatalf("%d %v\n%s", del.status, del.header, del.body)
 		}
 		job := del.json(t)["job"].(map[string]any)
-		again := b.do("admin", "DELETE", "/api/v1/repositories/to-delete", nil)
+		again := b.do("admin", "DELETE", "/api/v1/projects/it/repositories/to-delete", nil)
 		if again.status != 202 || again.json(t)["job"].(map[string]any)["id"] != job["id"] {
 			t.Fatalf("repeat: %d %s", again.status, again.body)
 		}
-		if res := b.get("admin", "/files/to-delete/d/f0.txt"); res.status != 404 {
+		if res := b.get("admin", "/files/it/to-delete/d/f0.txt"); res.status != 404 {
 			t.Errorf("a repository being deleted is not addressable: %d", res.status)
 		}
 		waitFor(t, "the key to be free", 30*time.Second, func() bool {
@@ -441,15 +441,15 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 	t.Run("R-REPO-009 R-API-014 an Idempotency-Key on create is replayed through another replica, byte for byte", func(t *testing.T) {
 		body := map[string]any{"key": "idem-" + randHex(2), "class": "local", "format": "generic", "description": "once"}
 		key := "key-" + randHex(4)
-		first := a.postJSON("admin", "/api/v1/repositories", body, "Idempotency-Key", key)
-		replay := b.postJSON("admin", "/api/v1/repositories", body, "Idempotency-Key", key)
+		first := a.postJSON("admin", "/api/v1/projects/it/repositories", body, "Idempotency-Key", key)
+		replay := b.postJSON("admin", "/api/v1/projects/it/repositories", body, "Idempotency-Key", key)
 		if first.status != 201 || replay.status != 201 || replay.header.Get("Idempotency-Replayed") != "true" || string(first.body) != string(replay.body) {
 			t.Fatalf("first %d\n%s\nreplay %d %v\n%s", first.status, first.body, replay.status, replay.header, replay.body)
 		}
 		if n := e.number("SELECT count(*) FROM repositories WHERE key = $1", body["key"]); n != 1 {
 			t.Fatalf("%d repositories", n)
 		}
-		problemOf(t, b.postJSON("admin", "/api/v1/repositories", map[string]any{"key": "other-" + randHex(2), "class": "local", "format": "generic"}, "Idempotency-Key", key),
+		problemOf(t, b.postJSON("admin", "/api/v1/projects/it/repositories", map[string]any{"key": "other-" + randHex(2), "class": "local", "format": "generic"}, "Idempotency-Key", key),
 			422, "idempotency_key_reused")
 	})
 

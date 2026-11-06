@@ -48,10 +48,10 @@ func TestR_API_024_CacheOperations(t *testing.T) {
 		map[string][]string{"user:manager": {"read", "manage"}, "user:reader": {"read"}})
 	for _, r := range []*replica{a, b} {
 		waitFor(t, "the policy on "+r.name, 10*time.Second, func() bool {
-			return r.get("manager", "/api/v1/repositories/npm-remote").status == 200 && r.get("reader", "/api/v1/repositories/npm-virtual").status == 200
+			return r.get("manager", "/api/v1/projects/it/repositories/npm-remote").status == 200 && r.get("reader", "/api/v1/projects/it/repositories/npm-virtual").status == 200
 		})
 	}
-	const invalidate, entries = "/api/v1/repositories/npm-remote/cache/invalidate", "/api/v1/repositories/npm-remote/cache/entries"
+	const invalidate, entries = "/api/v1/projects/it/repositories/npm-remote/cache/invalidate", "/api/v1/projects/it/repositories/npm-remote/cache/entries"
 
 	t.Run("R-API-024 a caller with read only is answered 403 on both operations", func(t *testing.T) {
 		problemOf(t, a.postJSON("reader", invalidate, map[string]any{"path": "pkg"}), 403, "forbidden")
@@ -67,12 +67,12 @@ func TestR_API_024_CacheOperations(t *testing.T) {
 	t.Run("R-API-024 a caller without any grant is answered 403, and a missing repository is decided like a missing grant", func(t *testing.T) {
 		e.user("stranger")
 		problemOf(t, a.postJSON("stranger", invalidate, map[string]any{}), 403, "forbidden")
-		problemOf(t, a.postJSON("manager", "/api/v1/repositories/no-such-repo/cache/invalidate", map[string]any{}), 403, "forbidden")
+		problemOf(t, a.postJSON("manager", "/api/v1/projects/it/repositories/no-such-repo/cache/invalidate", map[string]any{}), 403, "forbidden")
 	})
 	t.Run("R-API-024 a local repository answers 400 not_applicable, for the invalidation and for the list", func(t *testing.T) {
-		problemOf(t, a.postJSON("manager", "/api/v1/repositories/generic-local/cache/invalidate", map[string]any{}), 400, "not_applicable")
-		problemOf(t, a.get("manager", "/api/v1/repositories/generic-local/cache/entries"), 400, "not_applicable")
-		problemOf(t, a.get("manager", "/api/v1/repositories/npm-virtual/cache/entries"), 400, "not_applicable")
+		problemOf(t, a.postJSON("manager", "/api/v1/projects/it/repositories/generic-local/cache/invalidate", map[string]any{}), 400, "not_applicable")
+		problemOf(t, a.get("manager", "/api/v1/projects/it/repositories/generic-local/cache/entries"), 400, "not_applicable")
+		problemOf(t, a.get("manager", "/api/v1/projects/it/repositories/npm-virtual/cache/entries"), 400, "not_applicable")
 	})
 	t.Run("R-API-024 R-OPS-021 a holder of manage invalidates a remote repository and learns the covered entries", func(t *testing.T) {
 		res := a.postJSON("manager", invalidate, map[string]any{"path": "pkg-0", "scope": "metadata"})
@@ -104,7 +104,7 @@ func TestR_API_024_CacheOperations(t *testing.T) {
 		if res.status != 200 || res.json(t)["invalidated"] != float64(0) {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
-		res = b.postJSON("manager", "/api/v1/repositories/npm-virtual/cache/invalidate", map[string]any{"path": "@acme", "scope": "all"})
+		res = b.postJSON("manager", "/api/v1/projects/it/repositories/npm-virtual/cache/invalidate", map[string]any{"path": "@acme", "scope": "all"})
 		if res.status != 200 || res.json(t)["invalidated"] != float64(0) {
 			t.Fatalf("%d %s", res.status, res.body)
 		}

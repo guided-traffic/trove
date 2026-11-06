@@ -28,13 +28,13 @@ const bulkPath = "-/npm/v1/security/advisories/bulk"
 func (r *renv) postAudit(rep *testenv.Replica, repo, token, body string, gz bool) testenv.Answer {
 	r.t.Helper()
 	if !gz {
-		return r.st.Do(rep, http.MethodPost, "/api/npm/"+repo+"/"+bulkPath, token, []byte(body))
+		return r.st.Do(rep, http.MethodPost, "/api/npm/it/"+repo+"/"+bulkPath, token, []byte(body))
 	}
 	var b bytes.Buffer
 	zw := gzip.NewWriter(&b)
 	_, _ = zw.Write([]byte(body))
 	_ = zw.Close()
-	return r.st.Do(rep, http.MethodPost, "/api/npm/"+repo+"/"+bulkPath, token, b.Bytes(), "Content-Encoding", "gzip")
+	return r.st.Do(rep, http.MethodPost, "/api/npm/it/"+repo+"/"+bulkPath, token, b.Bytes(), "Content-Encoding", "gzip")
 }
 
 // askedOf is the sorted names of the i-th request the provider received.
@@ -222,7 +222,7 @@ func TestR_NPM_038_WhereTheAuditAnswers501And413And502(t *testing.T) {
 
 	unavailable := func(t *testing.T, key, path string) {
 		t.Helper()
-		a := r.st.Do(rep, http.MethodPost, "/api/npm/"+key+"/"+path, r.tokA, []byte(`{"lodash":["4.17.20"]}`))
+		a := r.st.Do(rep, http.MethodPost, "/api/npm/it/"+key+"/"+path, r.tokA, []byte(`{"lodash":["4.17.20"]}`))
 		var b map[string]string
 		_ = json.Unmarshal(a.Body, &b)
 		if a.Status != 501 || b["code"] != "npm_audit_unavailable" || b["error"] != text(key) {
@@ -245,7 +245,7 @@ func TestR_NPM_038_WhereTheAuditAnswers501And413And502(t *testing.T) {
 
 	t.Run("no forward from an endpoint that does not fill caches", func(t *testing.T) {
 		// The endpoint's ceiling may refuse the request first (404); either way no provider is asked.
-		a := r.st.DoAt(rep.Addr("customers"), customersHost, http.MethodPost, "/api/npm/"+rCustomers+"/"+bulkPath, r.acmeSAT, []byte(`{"lodash":["4.17.20"]}`))
+		a := r.st.DoAt(rep.Addr("customers"), customersHost, http.MethodPost, "/api/npm/it/"+rCustomers+"/"+bulkPath, r.acmeSAT, []byte(`{"lodash":["4.17.20"]}`))
 		if (a.Status != 501 || code(t, a) != "npm_audit_unavailable") && a.Status != 404 {
 			t.Fatalf("%d %s", a.Status, a.Body)
 		}
@@ -407,7 +407,7 @@ func TestR_NPM_038_TheAuditSettingsThroughTheAPI(t *testing.T) {
 		if class == "remote" {
 			body["remote"] = map[string]any{"url": r.run.URL + "/"}
 		}
-		return r.st.Do(rep, http.MethodPost, "/api/v1/repositories", r.opsPAT, body)
+		return r.st.Do(rep, http.MethodPost, "/api/v1/projects/it/repositories", r.opsPAT, body)
 	}
 
 	t.Run("a remote takes the audit member and reads it back", func(t *testing.T) {

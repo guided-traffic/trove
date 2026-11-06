@@ -150,7 +150,7 @@ func baseName(name string) string {
 }
 
 // path is the request path of a publish.
-func pubPath(repo, name string) string { return "/api/npm/" + repo + "/" + escapeName(name) }
+func pubPath(repo, name string) string { return "/api/npm/it/" + repo + "/" + escapeName(name) }
 
 // escapeName writes a scoped name the way npm does: the slash as %2f.
 func escapeName(name string) string {

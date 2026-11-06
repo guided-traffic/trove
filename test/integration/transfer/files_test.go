@@ -67,11 +67,11 @@ func newWebTransferEnv(t *testing.T, opts ...func(*webOpts)) *webTransferEnv {
 	e.grant(te.a, "maint-all", []string{"generic-local"}, authz.PatternLists{}, map[string][]string{"user:maint": {"read", "deploy", "overwrite", "delete"}})
 	e.grant(te.a, "reader-read", []string{"generic-local"}, authz.PatternLists{}, map[string][]string{"user:reader": {"read"}})
 	te.await("the policies on both replicas", func(r *webReplica) bool {
-		return (r.put("ci", "/files/generic-local/.probe-ci", "x").status/100 == 2) && r.get("reader", "/files/generic-local/.probe-ci").status == 200 &&
-			r.get("maint", "/files/generic-local/.probe-ci").status == 200
+		return (r.put("ci", "/files/it/generic-local/.probe-ci", "x").status/100 == 2) && r.get("reader", "/files/it/generic-local/.probe-ci").status == 200 &&
+			r.get("maint", "/files/it/generic-local/.probe-ci").status == 200
 	})
 	// The probe file served only to wait for the policies.
-	if res := te.a.do("maint", "DELETE", "/files/generic-local/.probe-ci", nil); res.status != 204 {
+	if res := te.a.do("maint", "DELETE", "/files/it/generic-local/.probe-ci", nil); res.status != 204 {
 		t.Fatalf("remove the probe: %d %s", res.status, res.body)
 	}
 	return te
@@ -92,7 +92,7 @@ func TestE1_4_RawTransfer(t *testing.T) {
 	te := newWebTransferEnv(t)
 	a, b := te.a, te.b
 	data := content(48213, 1)
-	path := "/files/generic-local/tools/widget/2.3/widget-2.3.bin"
+	path := "/files/it/generic-local/tools/widget/2.3/widget-2.3.bin"
 
 	t.Run("R-STOR-007 R-GENERIC-004 E1.4 a deploy answers 201 with the item description, a repeat of the same bytes 200", func(t *testing.T) {
 		res := a.put("ci", path, string(data), "Content-Type", "application/x-widget")
@@ -212,27 +212,27 @@ func TestE1_4_RawTransfer(t *testing.T) {
 		blobs := te.number("SELECT count(*) FROM blobs")
 		items := te.number("SELECT count(*) FROM items")
 		wrong := reprDigest([]byte("not the content"))
-		problemOf(t, a.put("ci", "/files/generic-local/bad/digest.bin", string(body), "Repr-Digest", wrong), 409, "conflict")
+		problemOf(t, a.put("ci", "/files/it/generic-local/bad/digest.bin", string(body), "Repr-Digest", wrong), 409, "conflict")
 		if te.number("SELECT count(*) FROM blobs") != blobs || te.number("SELECT count(*) FROM items") != items {
 			t.Fatal("a refused upload left a blob or an item")
 		}
-		if res := a.get("reader", "/files/generic-local/bad/digest.bin"); res.status != 404 {
+		if res := a.get("reader", "/files/it/generic-local/bad/digest.bin"); res.status != 404 {
 			t.Errorf("the refused file is served: %d", res.status)
 		}
-		ok := a.put("ci", "/files/generic-local/good/digest.bin", string(body), "Repr-Digest", reprDigest(body))
+		ok := a.put("ci", "/files/it/generic-local/good/digest.bin", string(body), "Repr-Digest", reprDigest(body))
 		if ok.status != 201 || ok.json(t)["declaredDigests"].(map[string]any)["sha256"] != sum(body) {
 			t.Fatalf("%d %s", ok.status, ok.body)
 		}
-		problemOf(t, a.put("ci", "/files/generic-local/bad/header.bin", "x", "Repr-Digest", "sha-256=nonsense"), 400, "invalid_header")
+		problemOf(t, a.put("ci", "/files/it/generic-local/bad/header.bin", "x", "Repr-Digest", "sha-256=nonsense"), 400, "invalid_header")
 	})
 
 	t.Run("R-ARCH-007 R-GENERIC-005 E1.4 an uploaded evil.svg is served with the four content headers", func(t *testing.T) {
 		svg := `<svg xmlns="http://www.w3.org/2000/svg" onload="alert(document.domain)"><script>alert(1)</script></svg>`
-		if res := a.put("ci", "/files/generic-local/web/evil.svg", svg, "Content-Type", "image/svg+xml"); res.status != 201 {
+		if res := a.put("ci", "/files/it/generic-local/web/evil.svg", svg, "Content-Type", "image/svg+xml"); res.status != 201 {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
 		for _, r := range []*webReplica{a, b} {
-			res := r.get("reader", "/files/generic-local/web/evil.svg")
+			res := r.get("reader", "/files/it/generic-local/web/evil.svg")
 			h := res.header
 			if res.status != 200 || res.text() != svg {
 				t.Fatalf("%s: %d", r.name, res.status)
@@ -255,7 +255,7 @@ func TestE1_4_RawTransfer(t *testing.T) {
 			case 304:
 				hdr = []string{"If-None-Match", `"` + sum([]byte(svg)) + `"`}
 			}
-			res := a.get("reader", "/files/generic-local/web/evil.svg", hdr...)
+			res := a.get("reader", "/files/it/generic-local/web/evil.svg", hdr...)
 			if res.status != status || res.hdr("Content-Security-Policy") != "sandbox; default-src 'none'" || res.hdr("X-Content-Type-Options") != "nosniff" {
 				t.Errorf("status %d: %d %v", status, res.status, res.header)
 			}
@@ -268,20 +268,20 @@ func TestE1_4_RawTransfer(t *testing.T) {
 			if name == "empty.bin" {
 				body = ""
 			}
-			if res := a.put("ci", "/files/generic-local/misc/"+name, body); res.status != 201 {
+			if res := a.put("ci", "/files/it/generic-local/misc/"+name, body); res.status != 201 {
 				t.Errorf("%s: %d %s", name, res.status, res.body)
 			}
-			if res := b.get("reader", "/files/generic-local/misc/"+name); res.status != 200 || res.text() != body {
+			if res := b.get("reader", "/files/it/generic-local/misc/"+name); res.status != 200 || res.text() != body {
 				t.Errorf("%s read: %d %q", name, res.status, res.body)
 			}
 		}
-		if res := a.get("reader", "/files/generic-local/misc/empty.bin", "Range", "bytes=0-0"); res.status != 416 {
+		if res := a.get("reader", "/files/it/generic-local/misc/empty.bin", "Range", "bytes=0-0"); res.status != 416 {
 			t.Errorf("a range of an empty file: %d", res.status)
 		}
 	})
 
 	t.Run("R-API-012 If-None-Match: * makes a deploy create-only", func(t *testing.T) {
-		p := "/files/generic-local/ci/create-only.bin"
+		p := "/files/it/generic-local/ci/create-only.bin"
 		if res := a.put("ci", p, "one", "If-None-Match", "*"); res.status != 201 {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
@@ -299,7 +299,7 @@ func TestE1_4_RawTransfer(t *testing.T) {
 func TestR_AUTHZ_006_OverwriteNeedsItsOwnAction(t *testing.T) {
 	te := newWebTransferEnv(t)
 	a, b := te.a, te.b
-	p := "/files/generic-local/app/1.0/app.tgz"
+	p := "/files/it/generic-local/app/1.0/app.tgz"
 	first, second := content(3000, 3), content(3000, 4)
 
 	if res := a.put("ci", p, string(first)); res.status != 201 {
@@ -349,16 +349,16 @@ func TestR_AUTHZ_006_OverwriteNeedsItsOwnAction(t *testing.T) {
 		}
 	})
 	t.Run("R-AUTHZ-006 a caller who only reads cannot deploy", func(t *testing.T) {
-		problemOf(t, a.put("reader", "/files/generic-local/r/x", "x"), 403, "forbidden")
-		problemOf(t, a.put("nobody", "/files/generic-local/r/x", "x"), 403, "forbidden")
-		problemOf(t, a.put("", "/files/generic-local/r/x", "x"), 401, "credentials_required")
+		problemOf(t, a.put("reader", "/files/it/generic-local/r/x", "x"), 403, "forbidden")
+		problemOf(t, a.put("nobody", "/files/it/generic-local/r/x", "x"), 403, "forbidden")
+		problemOf(t, a.put("", "/files/it/generic-local/r/x", "x"), 401, "credentials_required")
 	})
 }
 
 func TestR_GENERIC_002_Paths(t *testing.T) {
 	te := newWebTransferEnv(t)
 	a := te.a
-	base := "/files/generic-local/"
+	base := "/files/it/generic-local/"
 
 	t.Run("R-GENERIC-002 invalid paths answer 400 invalid_path before authorization", func(t *testing.T) {
 		for _, p := range []string{"a/%2e%2e/x", "a//b", "a%00b", "a%5Cb", "a/./b", "a/../b", "%2e%2e/x", "a%2F%2Fb"} {
@@ -378,7 +378,7 @@ func TestR_GENERIC_002_Paths(t *testing.T) {
 		if res := a.put("ci", base+"a/b/c/d.bin", "d"); res.status != 201 {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
-		m := a.get("reader", "/api/v1/repositories/generic-local/children?path=a&folders=true&recursive=true").json(t)
+		m := a.get("reader", "/api/v1/projects/it/repositories/generic-local/children?path=a&folders=true&recursive=true").json(t)
 		var got []string
 		for _, it := range m["items"].([]any) {
 			x := it.(map[string]any)
@@ -387,7 +387,7 @@ func TestR_GENERIC_002_Paths(t *testing.T) {
 		if fmt.Sprint(got) != "[folder:b folder:b/c file:b/c/d.bin]" {
 			t.Errorf("children = %v", got)
 		}
-		it := a.get("reader", "/api/v1/repositories/generic-local/items?path=a/b").json(t)
+		it := a.get("reader", "/api/v1/projects/it/repositories/generic-local/items?path=a/b").json(t)
 		if it["kind"] != "folder" || it["explicit"] != false {
 			t.Errorf("implicit folder = %v", it)
 		}
@@ -429,7 +429,7 @@ func TestR_GENERIC_002_Paths(t *testing.T) {
 		if list.status != 200 || !strings.Contains(list.text(), `"path":"empty-folder"`) {
 			t.Fatalf("%d %s", list.status, list.body)
 		}
-		m := a.get("reader", "/api/v1/repositories/generic-local/children?path=empty-folder").json(t)
+		m := a.get("reader", "/api/v1/projects/it/repositories/generic-local/children?path=empty-folder").json(t)
 		if len(m["items"].([]any)) != 0 {
 			t.Errorf("children = %v", m["items"])
 		}
@@ -449,12 +449,12 @@ func TestR_STOR_017_DirectoryIndex(t *testing.T) {
 	te := newWebTransferEnv(t)
 	a := te.a
 	for _, n := range []string{"<script>.txt", "javascript:alert(1)", "plain.txt"} {
-		if res := a.put("ci", "/files/generic-local/tools/"+escape(n), "x"); res.status != 201 {
+		if res := a.put("ci", "/files/it/generic-local/tools/"+escape(n), "x"); res.status != 201 {
 			t.Fatalf("%s: %d %s", n, res.status, res.body)
 		}
 	}
 	t.Run("R-STOR-017 an HTML index escapes every name and links each as ./ plus the encoded name", func(t *testing.T) {
-		res := a.get("reader", "/files/generic-local/tools/", "Accept", "text/html")
+		res := a.get("reader", "/files/it/generic-local/tools/", "Accept", "text/html")
 		page := res.text()
 		if res.status != 200 || !strings.HasPrefix(res.hdr("Content-Type"), "text/html") {
 			t.Fatalf("%d %v", res.status, res.header)
@@ -468,22 +468,22 @@ func TestR_STOR_017_DirectoryIndex(t *testing.T) {
 		}
 	})
 	t.Run("R-STOR-017 the JSON index has the same entries; a folder without its slash is redirected", func(t *testing.T) {
-		res := a.get("reader", "/files/generic-local/tools/")
+		res := a.get("reader", "/files/it/generic-local/tools/")
 		if res.status != 200 || len(res.json(t)["items"].([]any)) != 3 {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
-		redirect := a.get("reader", "/files/generic-local/tools")
-		if redirect.status != 301 || redirect.hdr("Location") != "/files/generic-local/tools/" {
+		redirect := a.get("reader", "/files/it/generic-local/tools")
+		if redirect.status != 301 || redirect.hdr("Location") != "/files/it/generic-local/tools/" {
 			t.Fatalf("%d %v", redirect.status, redirect.header)
 		}
-		root := a.get("reader", "/files/generic-local/")
+		root := a.get("reader", "/files/it/generic-local/")
 		if root.status != 200 || !strings.Contains(root.text(), `"path":"tools"`) {
 			t.Fatalf("root: %d %s", root.status, root.body)
 		}
 	})
 	t.Run("R-STOR-017 the index is paged with a cursor", func(t *testing.T) {
 		var names []string
-		url := "/files/generic-local/tools/?limit=1"
+		url := "/files/it/generic-local/tools/?limit=1"
 		for range 10 {
 			m := a.get("reader", url).json(t)
 			for _, it := range m["items"].([]any) {
@@ -493,7 +493,7 @@ func TestR_STOR_017_DirectoryIndex(t *testing.T) {
 			if next == "" {
 				break
 			}
-			url = "/files/generic-local/tools/?limit=1&cursor=" + next
+			url = "/files/it/generic-local/tools/?limit=1&cursor=" + next
 		}
 		if len(names) != 3 {
 			t.Fatalf("walk = %v", names)

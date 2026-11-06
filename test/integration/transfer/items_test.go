@@ -17,28 +17,28 @@ var smallDeletes = []string{"TROVE_STORAGE_DELETE_MAX_SYNC_ITEMS=5", "TROVE_STOR
 func TestR_AUTHZ_016_HiddenExistence(t *testing.T) {
 	te := newWebTransferEnv(t)
 	a, b := te.a, te.b
-	secret := "/files/generic-local/secret/plan.txt"
+	secret := "/files/it/generic-local/secret/plan.txt"
 	if res := a.put("ci", secret, "the plan"); res.status != 201 {
 		t.Fatal(res.status)
 	}
-	missing := "/files/generic-local/secret/missing.txt"
+	missing := "/files/it/generic-local/secret/missing.txt"
 	// A second repository nobody but admin may see: its files and a missing repository answer alike.
 	a.createRepository("private", nil)
-	if res := a.put("admin", "/files/private/x.txt", "x"); res.status != 201 {
+	if res := a.put("admin", "/files/it/private/x.txt", "x"); res.status != 201 {
 		t.Fatal(res.status)
 	}
 
 	t.Run("R-AUTHZ-016 R-GENERIC-005 a caller without read gets a 404 byte-identical to the 404 of a missing file, for GET and HEAD, on both replicas", func(t *testing.T) {
 		for _, r := range []*webReplica{a, b} {
-			hidden, gone := r.get("nobody", "/files/private/x.txt"), r.get("nobody", "/files/private/nothing.txt")
+			hidden, gone := r.get("nobody", "/files/it/private/x.txt"), r.get("nobody", "/files/it/private/nothing.txt")
 			if hidden.status != 404 || gone.status != 404 || normalize(hidden.text()) != normalize(gone.text()) {
 				t.Fatalf("%s hidden %d %s\nmissing %d %s", r.name, hidden.status, hidden.body, gone.status, gone.body)
 			}
-			unknownRepo := r.get("nobody", "/files/no-such-repository/nothing.txt")
+			unknownRepo := r.get("nobody", "/files/it/no-such-repository/nothing.txt")
 			if unknownRepo.status != 404 || normalize(unknownRepo.text()) != normalize(gone.text()) {
 				t.Fatalf("%s unknown repository %d %s", r.name, unknownRepo.status, unknownRepo.body)
 			}
-			if h, g := r.do("nobody", "HEAD", "/files/private/x.txt", nil), r.do("nobody", "HEAD", "/files/private/nothing.txt", nil); h.status != 404 || g.status != 404 {
+			if h, g := r.do("nobody", "HEAD", "/files/it/private/x.txt", nil), r.do("nobody", "HEAD", "/files/it/private/nothing.txt", nil); h.status != 404 || g.status != 404 {
 				t.Errorf("%s HEAD %d %d", r.name, h.status, g.status)
 			}
 			// The headers match too (the replica header and the request ID differ by nature).
@@ -51,9 +51,9 @@ func TestR_AUTHZ_016_HiddenExistence(t *testing.T) {
 		}
 	})
 	t.Run("R-AUTHZ-016 the items operations hide in the same way", func(t *testing.T) {
-		hidden := a.get("nobody", "/api/v1/repositories/private/items?path=x.txt")
-		gone := a.get("nobody", "/api/v1/repositories/private/items?path=nothing.txt")
-		missingRepo := a.get("nobody", "/api/v1/repositories/no-such-repository/items?path=x.txt")
+		hidden := a.get("nobody", "/api/v1/projects/it/repositories/private/items?path=x.txt")
+		gone := a.get("nobody", "/api/v1/projects/it/repositories/private/items?path=nothing.txt")
+		missingRepo := a.get("nobody", "/api/v1/projects/it/repositories/no-such-repository/items?path=x.txt")
 		for _, r := range []response{hidden, gone, missingRepo} {
 			if r.status != 404 {
 				t.Fatalf("%d %s", r.status, r.body)
@@ -63,7 +63,7 @@ func TestR_AUTHZ_016_HiddenExistence(t *testing.T) {
 			t.Fatalf("hidden %s\ngone %s\nmissing repository %s", hidden.body, gone.body, missingRepo.body)
 		}
 		for _, p := range []string{"children?path=", "stats?path=x.txt"} {
-			if res := a.get("nobody", "/api/v1/repositories/private/"+p); res.status != 404 {
+			if res := a.get("nobody", "/api/v1/projects/it/repositories/private/"+p); res.status != 404 {
 				t.Errorf("%s: %d", p, res.status)
 			}
 		}
@@ -77,17 +77,17 @@ func TestR_AUTHZ_016_HiddenExistence(t *testing.T) {
 		}
 	})
 	t.Run("R-AUTHZ-016 a refused write is 403 whether or not the target exists", func(t *testing.T) {
-		for _, p := range []string{"/files/private/x.txt", "/files/private/new.txt", "/files/no-such-repository/new.txt"} {
+		for _, p := range []string{"/files/it/private/x.txt", "/files/it/private/new.txt", "/files/it/no-such-repository/new.txt"} {
 			problemOf(t, a.put("nobody", p, "y"), 403, "forbidden")
 			problemOf(t, a.do("nobody", "DELETE", p, nil), 403, "forbidden")
 		}
 	})
 	t.Run("R-AUTHZ-016 an anonymous caller is answered 401 for reads and writes alike while anonymous access is off", func(t *testing.T) {
-		problemOf(t, a.get("", "/files/private/x.txt"), 401, "credentials_required")
-		problemOf(t, a.get("", "/files/private/nothing.txt"), 401, "credentials_required")
-		problemOf(t, a.put("", "/files/private/x.txt", "y"), 401, "credentials_required")
-		problemOf(t, a.get("", "/api/v1/repositories/private/items?path=x.txt"), 401, "credentials_required")
-		if res := a.get("", "/files/private/x.txt"); res.hdr("WWW-Authenticate") == "" {
+		problemOf(t, a.get("", "/files/it/private/x.txt"), 401, "credentials_required")
+		problemOf(t, a.get("", "/files/it/private/nothing.txt"), 401, "credentials_required")
+		problemOf(t, a.put("", "/files/it/private/x.txt", "y"), 401, "credentials_required")
+		problemOf(t, a.get("", "/api/v1/projects/it/repositories/private/items?path=x.txt"), 401, "credentials_required")
+		if res := a.get("", "/files/it/private/x.txt"); res.hdr("WWW-Authenticate") == "" {
 			t.Error("a 401 carries a challenge")
 		}
 	})
@@ -96,12 +96,12 @@ func TestR_AUTHZ_016_HiddenExistence(t *testing.T) {
 		te.anonymous.Store(true)
 		defer te.anonymous.Store(false)
 		waitFor(t, "the anonymous grant", 10*time.Second, func() bool {
-			return a.get("", "/files/private/x.txt").status == 200 && b.get("", "/files/private/x.txt").status == 200
+			return a.get("", "/files/it/private/x.txt").status == 200 && b.get("", "/files/it/private/x.txt").status == 200
 		})
-		if res := a.get("", "/files/private/x.txt"); res.status != 200 || res.hdr("Cache-Control") != "no-cache" {
+		if res := a.get("", "/files/it/private/x.txt"); res.status != 200 || res.hdr("Cache-Control") != "no-cache" {
 			t.Fatalf("%d %v", res.status, res.header)
 		}
-		problemOf(t, a.put("", "/files/private/y.txt", "y"), 401, "unauthenticated")
+		problemOf(t, a.put("", "/files/it/private/y.txt", "y"), 401, "unauthenticated")
 		if res := a.get("", secret); res.status != 401 {
 			t.Errorf("anonymous without a grant on generic-local: %d", res.status)
 		}
@@ -112,7 +112,7 @@ func TestR_STOR_017_ListingsFilterWhatTheCallerMayRead(t *testing.T) {
 	te := newWebTransferEnv(t)
 	a, b := te.a, te.b
 	for _, p := range []string{"releases/1.0/a.bin", "releases/1.0/b.bin", "releases/secret/k.bin", "tmp/x.bin", "top.txt"} {
-		if res := a.put("maint", "/files/generic-local/"+p, p); res.status/100 != 2 {
+		if res := a.put("maint", "/files/it/generic-local/"+p, p); res.status/100 != 2 {
 			t.Fatalf("%s: %d", p, res.status)
 		}
 	}
@@ -121,11 +121,11 @@ func TestR_STOR_017_ListingsFilterWhatTheCallerMayRead(t *testing.T) {
 		authz.PatternLists{Include: []string{"releases/**"}, Exclude: []string{"releases/secret/**"}},
 		map[string][]string{"user:scoped": {"read"}})
 	waitFor(t, "the scoped grant on both replicas", 10*time.Second, func() bool {
-		return a.get("scoped", "/files/generic-local/releases/1.0/a.bin").status == 200 && b.get("scoped", "/files/generic-local/releases/1.0/a.bin").status == 200
+		return a.get("scoped", "/files/it/generic-local/releases/1.0/a.bin").status == 200 && b.get("scoped", "/files/it/generic-local/releases/1.0/a.bin").status == 200
 	})
 
 	paths := func(user, query string) []string {
-		res := a.get(user, "/api/v1/repositories/generic-local/children?"+query)
+		res := a.get(user, "/api/v1/projects/it/repositories/generic-local/children?"+query)
 		if res.status != 200 {
 			t.Fatalf("%s: %d %s", query, res.status, res.body)
 		}
@@ -147,18 +147,18 @@ func TestR_STOR_017_ListingsFilterWhatTheCallerMayRead(t *testing.T) {
 		if got := paths("scoped", ""); fmt.Sprint(got) != "[releases]" {
 			t.Errorf("scoped root = %v", got)
 		}
-		if res := a.get("scoped", "/api/v1/repositories/generic-local/children?path=tmp"); res.status != 404 {
+		if res := a.get("scoped", "/api/v1/projects/it/repositories/generic-local/children?path=tmp"); res.status != 404 {
 			t.Errorf("tmp: %d", res.status)
 		}
-		if res := a.get("scoped", "/api/v1/repositories/generic-local/children?path=releases/secret"); res.status != 404 {
+		if res := a.get("scoped", "/api/v1/projects/it/repositories/generic-local/children?path=releases/secret"); res.status != 404 {
 			t.Errorf("releases/secret: %d", res.status)
 		}
-		if res := a.get("scoped", "/files/generic-local/tmp/x.bin"); res.status != 404 {
+		if res := a.get("scoped", "/files/it/generic-local/tmp/x.bin"); res.status != 404 {
 			t.Errorf("a file outside the grant: %d", res.status)
 		}
 	})
 	t.Run("R-STOR-017 the directory index of /files/ filters in the same way", func(t *testing.T) {
-		res := a.get("scoped", "/files/generic-local/releases/")
+		res := a.get("scoped", "/files/it/generic-local/releases/")
 		if res.status != 200 || strings.Contains(res.text(), "secret") || !strings.Contains(res.text(), `"path":"1.0"`) {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
@@ -176,7 +176,7 @@ func TestR_STOR_017_ListingsFilterWhatTheCallerMayRead(t *testing.T) {
 		var walked []string
 		url := "recursive=true&folders=false&limit=1"
 		for range 20 {
-			res := a.get("maint", "/api/v1/repositories/generic-local/children?"+url)
+			res := a.get("maint", "/api/v1/projects/it/repositories/generic-local/children?"+url)
 			m := res.json(t)
 			for _, it := range m["items"].([]any) {
 				walked = append(walked, it.(map[string]any)["path"].(string))
@@ -195,7 +195,7 @@ func TestR_STOR_017_ListingsFilterWhatTheCallerMayRead(t *testing.T) {
 		var walked []string
 		url := "recursive=true&folders=false&limit=1"
 		for range 20 {
-			m := b.get("scoped", "/api/v1/repositories/generic-local/children?"+url).json(t)
+			m := b.get("scoped", "/api/v1/projects/it/repositories/generic-local/children?"+url).json(t)
 			for _, it := range m["items"].([]any) {
 				walked = append(walked, it.(map[string]any)["path"].(string))
 			}
@@ -215,24 +215,24 @@ func TestR_STOR_017_ListingsFilterWhatTheCallerMayRead(t *testing.T) {
 		}
 	})
 	t.Run("R-API-010 a cursor of another listing is refused", func(t *testing.T) {
-		m := a.get("maint", "/api/v1/repositories/generic-local/children?recursive=true&limit=1").json(t)
+		m := a.get("maint", "/api/v1/projects/it/repositories/generic-local/children?recursive=true&limit=1").json(t)
 		cursor, _ := m["nextCursor"].(string)
-		problemOf(t, a.get("maint", "/api/v1/repositories/generic-local/children?recursive=false&limit=1&cursor="+cursor), 400, "invalid_cursor")
-		problemOf(t, a.get("maint", "/api/v1/repositories/generic-local/children?bogus=1"), 400, "malformed_request")
-		problemOf(t, a.get("maint", "/api/v1/repositories/generic-local/children?path=../x"), 400, "invalid_path")
+		problemOf(t, a.get("maint", "/api/v1/projects/it/repositories/generic-local/children?recursive=false&limit=1&cursor="+cursor), 400, "invalid_cursor")
+		problemOf(t, a.get("maint", "/api/v1/projects/it/repositories/generic-local/children?bogus=1"), 400, "malformed_request")
+		problemOf(t, a.get("maint", "/api/v1/projects/it/repositories/generic-local/children?path=../x"), 400, "invalid_path")
 	})
 }
 
 func TestR_GENERIC_006_DeleteAndItems(t *testing.T) {
 	te := newWebTransferEnv(t)
 	a, b := te.a, te.b
-	base := "/files/generic-local/"
+	base := "/files/it/generic-local/"
 
 	t.Run("R-GENERIC-006 R-STOR-018 DELETE answers 204 and the next GET answers 404; the item information says package null", func(t *testing.T) {
 		if res := a.put("ci", base+"tools/widget.bin", "w"); res.status != 201 {
 			t.Fatal(res.status)
 		}
-		info := b.get("reader", "/api/v1/repositories/generic-local/items?path=tools/widget.bin")
+		info := b.get("reader", "/api/v1/projects/it/repositories/generic-local/items?path=tools/widget.bin")
 		m := info.json(t)
 		if info.status != 200 || m["package"] != nil || m["upstreamUrl"] != nil || m["kind"] != "file" || m["contentStatus"] != "ok" {
 			t.Fatalf("%d %s", info.status, info.body)
@@ -288,10 +288,10 @@ func TestR_GENERIC_006_DeleteAndItems(t *testing.T) {
 		if res := a.put("maint", base+"api/x.bin", "x"); res.status != 201 {
 			t.Fatal(res.status)
 		}
-		if res := b.do("maint", "DELETE", "/api/v1/repositories/generic-local/items?path=api/x.bin", nil); res.status != 204 {
+		if res := b.do("maint", "DELETE", "/api/v1/projects/it/repositories/generic-local/items?path=api/x.bin", nil); res.status != 204 {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
-		problemOf(t, a.do("admin", "DELETE", "/api/v1/repositories/generic-local/items", nil), 400, "invalid_path")
+		problemOf(t, a.do("admin", "DELETE", "/api/v1/projects/it/repositories/generic-local/items", nil), 400, "invalid_path")
 		problemOf(t, a.do("admin", "DELETE", base, nil), 400, "invalid_path")
 		if missing := te.val.Uncovered("getItem", "deleteItem", "deleteFile"); len(missing) > 0 {
 			t.Fatalf("not reached: %v", missing)
@@ -306,11 +306,11 @@ func TestR_GENERIC_006_DeleteAndItems(t *testing.T) {
 		_ = worker
 		web.createRepository("bulk", nil)
 		for i := range 14 {
-			if res := web.put("admin", fmt.Sprintf("/files/bulk/tree/d%d/f%d.bin", i%3, i), fmt.Sprint(i)); res.status != 201 {
+			if res := web.put("admin", fmt.Sprintf("/files/it/bulk/tree/d%d/f%d.bin", i%3, i), fmt.Sprint(i)); res.status != 201 {
 				t.Fatalf("%d %s", res.status, res.body)
 			}
 		}
-		del := web.do("admin", "DELETE", "/files/bulk/tree", nil)
+		del := web.do("admin", "DELETE", "/files/it/bulk/tree", nil)
 		if del.status != 202 || !strings.Contains(del.hdr("Location"), "/api/v1/system/jobs/") {
 			t.Fatalf("%d %v\n%s", del.status, del.header, del.body)
 		}
@@ -334,11 +334,11 @@ func TestR_GENERIC_006_DeleteAndItems(t *testing.T) {
 func TestR_GENERIC_007_Patterns(t *testing.T) {
 	te := newWebTransferEnv(t)
 	a, b := te.a, te.b
-	base := "/files/generic-local/"
+	base := "/files/it/generic-local/"
 	patch := func(body string) {
 		t.Helper()
-		g := a.get("admin", "/api/v1/repositories/generic-local")
-		res := a.do("admin", "PATCH", "/api/v1/repositories/generic-local", strings.NewReader(body),
+		g := a.get("admin", "/api/v1/projects/it/repositories/generic-local")
+		res := a.do("admin", "PATCH", "/api/v1/projects/it/repositories/generic-local", strings.NewReader(body),
 			"Content-Type", "application/merge-patch+json", "If-Match", g.hdr("ETag"))
 		if res.status != 200 {
 			t.Fatalf("patch: %d %s", res.status, res.body)
@@ -370,7 +370,7 @@ func TestR_GENERIC_007_Patterns(t *testing.T) {
 		if res := a.do("reader", "HEAD", base+"releases/1.0/x.bin", nil); res.status != 404 {
 			t.Errorf("HEAD %d", res.status)
 		}
-		if res := a.get("maint", "/api/v1/repositories/generic-local/items?path=releases/1.0/x.bin"); res.status != 200 {
+		if res := a.get("maint", "/api/v1/projects/it/repositories/generic-local/items?path=releases/1.0/x.bin"); res.status != 200 {
 			t.Fatalf("items API: %d %s", res.status, res.body)
 		}
 		if res := a.do("maint", "DELETE", base+"releases/1.0/x.bin", nil); res.status != 404 {
@@ -378,10 +378,10 @@ func TestR_GENERIC_007_Patterns(t *testing.T) {
 		}
 		// The items API deletes outside the patterns for the administrator's cleanup only
 		// (content:bypass, Q-AUTHZ-162); every other caller deletes as through /files/.
-		if res := a.do("maint", "DELETE", "/api/v1/repositories/generic-local/items?path=releases/1.0/x.bin", nil); res.status != 404 {
+		if res := a.do("maint", "DELETE", "/api/v1/projects/it/repositories/generic-local/items?path=releases/1.0/x.bin", nil); res.status != 404 {
 			t.Errorf("DELETE through the items API without content:bypass: %d", res.status)
 		}
-		if res := a.do("admin", "DELETE", "/api/v1/repositories/generic-local/items?path=releases/1.0/x.bin", nil); res.status != 204 {
+		if res := a.do("admin", "DELETE", "/api/v1/projects/it/repositories/generic-local/items?path=releases/1.0/x.bin", nil); res.status != 204 {
 			t.Errorf("DELETE through the items API with content:bypass: %d", res.status)
 		}
 		if n := te.number("SELECT count(*) FROM items WHERE kind = 'file'"); n != 0 {
@@ -397,7 +397,7 @@ func TestR_GENERIC_007_Patterns(t *testing.T) {
 		waitFor(t, "the repository to be disabled on B", 10*time.Second, func() bool { return b.get("reader", base+"d/x.bin").status == 404 })
 		problemOf(t, a.get("reader", base+"d/x.bin"), 404, "repository_disabled")
 		problemOf(t, a.put("maint", base+"d/y.bin", "y"), 404, "repository_disabled")
-		if res := a.get("maint", "/api/v1/repositories/generic-local/items?path=d/x.bin"); res.status != 200 {
+		if res := a.get("maint", "/api/v1/projects/it/repositories/generic-local/items?path=d/x.bin"); res.status != 200 {
 			t.Errorf("items API on a disabled repository: %d", res.status)
 		}
 		m := a.get("admin", "/api/v1/repositories?state=inactive").json(t)
@@ -410,7 +410,7 @@ func TestR_GENERIC_007_Patterns(t *testing.T) {
 func TestR_STOR_015_StatisticsActivityAndAudit(t *testing.T) {
 	te := newWebTransferEnv(t)
 	a, b := te.a, te.b
-	p := "/files/generic-local/stats/widget.bin"
+	p := "/files/it/generic-local/stats/widget.bin"
 	data := content(2048, 7)
 	if res := a.put("ci", p, string(data)); res.status != 201 {
 		t.Fatal(res.status)
@@ -433,7 +433,7 @@ func TestR_STOR_015_StatisticsActivityAndAudit(t *testing.T) {
 		waitFor(t, "the download count to settle", 10*time.Second, func() bool {
 			a.flush()
 			b.flush()
-			m = a.get("reader", "/api/v1/repositories/generic-local/stats?path=stats/widget.bin").json(t)
+			m = a.get("reader", "/api/v1/projects/it/repositories/generic-local/stats?path=stats/widget.bin").json(t)
 			n, _ := m["downloads"].(float64)
 			if n != last {
 				last, stableSince = n, time.Now()
@@ -443,11 +443,11 @@ func TestR_STOR_015_StatisticsActivityAndAudit(t *testing.T) {
 		if m["downloads"] != float64(4) || m["lastDownloadAt"] == nil || m["lastDownloader"] != "user:reader" {
 			t.Fatalf("stats = %v", m)
 		}
-		problemOf(t, a.get("reader", "/api/v1/repositories/generic-local/stats?path=stats"), 404, "not_found")
-		if res := a.get("reader", "/api/v1/repositories/generic-local/stats?path=nothing"); res.status != 404 {
+		problemOf(t, a.get("reader", "/api/v1/projects/it/repositories/generic-local/stats?path=stats"), 404, "not_found")
+		if res := a.get("reader", "/api/v1/projects/it/repositories/generic-local/stats?path=nothing"); res.status != 404 {
 			t.Errorf("a missing file: %d", res.status)
 		}
-		if res := a.get("reader", "/api/v1/repositories/generic-local/stats"); res.status != 400 {
+		if res := a.get("reader", "/api/v1/projects/it/repositories/generic-local/stats"); res.status != 400 {
 			t.Errorf("without a path: %d", res.status)
 		}
 	})
@@ -459,7 +459,7 @@ func TestR_STOR_015_StatisticsActivityAndAudit(t *testing.T) {
 		if items[0].(map[string]any)["lastActivityAt"] == nil {
 			t.Errorf("list = %v", items[0])
 		}
-		if g := a.get("admin", "/api/v1/repositories/generic-local").json(t); g["lastActivityAt"] == nil {
+		if g := a.get("admin", "/api/v1/projects/it/repositories/generic-local").json(t); g["lastActivityAt"] == nil {
 			t.Errorf("read = %v", g)
 		}
 	})
@@ -475,7 +475,7 @@ func TestR_STOR_015_StatisticsActivityAndAudit(t *testing.T) {
 		}
 	})
 	t.Run("R-AUTHZ-029 a refused write is audited as authz.denied", func(t *testing.T) {
-		a.put("reader", "/files/generic-local/nope", "x")
+		a.put("reader", "/files/it/generic-local/nope", "x")
 		waitFor(t, "the denial event", 5*time.Second, func() bool { return len(a.rec.ofType("authz.denied")) > 0 })
 	})
 }

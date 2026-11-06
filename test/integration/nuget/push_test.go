@@ -145,7 +145,7 @@ func TestR_NUGET_006_ABareBodyIsTakenAsThePackage(t *testing.T) {
 	e := newWriteEnv(t)
 	a := e.replica("web-a")
 	pkg := nupkg(t, pkgSpec{id: "Acme.Scripted", version: "1.0.0"})
-	ans := e.st.Do(a, "PUT", "/api/nuget/nuget-local/v3/package", e.tokDev, pkg, "Content-Type", "application/octet-stream")
+	ans := e.st.Do(a, "PUT", "/api/nuget/it/nuget-local/v3/package", e.tokDev, pkg, "Content-Type", "application/octet-stream")
 	if ans.Status != 201 {
 		t.Fatalf("%d %s", ans.Status, ans.Body)
 	}
@@ -219,7 +219,7 @@ func TestR_NUGET_007_UnlistRelistAndDeleteOverHTTP(t *testing.T) {
 	a := e.replica("web-a")
 	pkg := nupkg(t, pkgSpec{id: "Acme.Widgets", version: "1.2.3"})
 	e.mustPush(a, "nuget-local", e.tokDev, pkg)
-	file := "/files/nuget-local/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg"
+	file := "/files/it/nuget-local/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg"
 
 	t.Run("R-NUGET-007 unlist", func(t *testing.T) {
 		rev := e.rev("nuget-local", "acme.widgets")
@@ -301,7 +301,7 @@ func TestR_NUGET_007_UnlistRelistAndDeleteOverHTTP(t *testing.T) {
 		if e.listed("nuget-hard", "acme.widgets", "1.2.4") != "none" {
 			t.Error("the NuGet row stays")
 		}
-		if ans := e.st.Do(a, "GET", "/files/nuget-hard/acme.widgets/1.2.4/acme.widgets.1.2.4.nupkg", e.tokReader, nil); ans.Status != 404 {
+		if ans := e.st.Do(a, "GET", "/files/it/nuget-hard/acme.widgets/1.2.4/acme.widgets.1.2.4.nupkg", e.tokReader, nil); ans.Status != 404 {
 			t.Errorf("a deleted file is served: %d", ans.Status)
 		}
 		if e.events("package.deleted", "nuget-hard", "acme.widgets/1.2.4") != 1 || e.events("artifact.deleted", "nuget-hard", "acme.widgets/1.2.4/acme.widgets.1.2.4.nupkg") != 1 {
@@ -349,8 +349,8 @@ func TestR_NUGET_005_ARawDeleteOfThePackageIsAHardDelete(t *testing.T) {
 	a := e.replica("web-a")
 	pkg := nupkg(t, pkgSpec{id: "Acme.Widgets", version: "1.2.3"})
 	e.mustPush(a, "nuget-local", e.tokDev, pkg)
-	nuspec := "/files/nuget-local/acme.widgets/1.2.3/acme.widgets.nuspec"
-	file := "/files/nuget-local/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg"
+	nuspec := "/files/it/nuget-local/acme.widgets/1.2.3/acme.widgets.nuspec"
+	file := "/files/it/nuget-local/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg"
 
 	if ans := e.st.Do(a, "DELETE", nuspec, e.tokAdmin, nil); ans.Status != 409 {
 		t.Fatalf("delete of the generated .nuspec: %d %s", ans.Status, ans.Body)

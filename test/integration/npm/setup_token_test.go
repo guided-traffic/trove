@@ -32,7 +32,7 @@ func TestR_AUTHZ_013_ASetupTokenOfAVirtualRepositoryReadsThroughIt(t *testing.T)
 		t.Fatalf("versions %v", vs)
 	}
 	addr := tarballsOf(t, doc)["1.0.0"]
-	if want := "/api/npm/" + rAll + "/" + p.Name + "/-/" + corpus.TarballFile(p.Name, "1.0.0"); !strings.HasSuffix(addr, want) {
+	if want := "/api/npm/it/" + rAll + "/" + p.Name + "/-/" + corpus.TarballFile(p.Name, "1.0.0"); !strings.HasSuffix(addr, want) {
 		t.Fatalf("tarball %q", addr)
 	}
 	if got := r.install(rep, addr, tok); got.Status != 200 {

@@ -36,7 +36,7 @@ func TestR_STOR_017_ADeployHoldsEveryAncestorOfItsPath(t *testing.T) {
 	e.breakGlass()
 	r := e.newReplica("a", replicaOpts{})
 	r.createRepository("generic-up", nil)
-	if res := r.put("admin", "/files/generic-up/a/b/c/old.bin", "old"); res.status != 201 {
+	if res := r.put("admin", "/files/it/generic-up/a/b/c/old.bin", "old"); res.status != 201 {
 		t.Fatalf("%d %s", res.status, res.body)
 	}
 
@@ -60,7 +60,7 @@ func TestR_STOR_017_ADeployHoldsEveryAncestorOfItsPath(t *testing.T) {
 	}
 
 	done := make(chan response, 1)
-	go func() { done <- r.put("admin", "/files/generic-up/a/b/c/new.bin", "new") }()
+	go func() { done <- r.put("admin", "/files/it/generic-up/a/b/c/new.bin", "new") }()
 	waitFor(t, "the deploy waiting for the lock of the ancestor", 10*time.Second, func() bool {
 		select {
 		case res := <-done:
@@ -98,14 +98,14 @@ func TestR_STOR_018_ADeleteJobRemovesOnlyWhatWasAuthorized(t *testing.T) {
 	web := e.newReplica("web", replicaOpts{storage: small})
 	web.createRepository("bulk", nil)
 	for i := range 8 {
-		if res := web.put("admin", fmt.Sprintf("/files/bulk/tree/d%d/f%d.bin", i%2, i), fmt.Sprint(i)); res.status != 201 {
+		if res := web.put("admin", fmt.Sprintf("/files/it/bulk/tree/d%d/f%d.bin", i%2, i), fmt.Sprint(i)); res.status != 201 {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
 	}
-	if del := web.do("admin", "DELETE", "/files/bulk/tree", nil); del.status != 202 {
+	if del := web.do("admin", "DELETE", "/files/it/bulk/tree", nil); del.status != 202 {
 		t.Fatalf("%d %s", del.status, del.body)
 	}
-	if res := web.put("admin", "/files/bulk/tree/d0/late.bin", "late"); res.status != 201 {
+	if res := web.put("admin", "/files/it/bulk/tree/d0/late.bin", "late"); res.status != 201 {
 		t.Fatalf("%d %s", res.status, res.body)
 	}
 	_ = e.newReplica("worker", replicaOpts{worker: true, storage: small})
@@ -167,7 +167,7 @@ func TestR_STOR_004_AnUndecodableUploadLimitRefusesTheUpload(t *testing.T) {
 	r := e.newReplica("a", replicaOpts{})
 	r.createRepository("generic-lim", nil)
 	// The management API refuses the value in the first place.
-	res := r.postJSON("admin", "/api/v1/repositories", json.RawMessage(
+	res := r.postJSON("admin", "/api/v1/projects/it/repositories", json.RawMessage(
 		`{"key":"generic-bad","class":"local","format":"generic","storage":{"maxUploadSize":1e9}}`))
 	if res.status != 422 || !strings.Contains(res.text(), "/storage/maxUploadSize") {
 		t.Fatalf("create with maxUploadSize 1e9: %d %s", res.status, res.body)
@@ -246,13 +246,13 @@ func TestR_STOR_007_NoDecisionWaitsInsideTheCommitTransaction(t *testing.T) {
 		"user:pub": {"read", "deploy"}, "user:pubover": {"read", "deploy", "overwrite"},
 	})
 	waitFor(t, "the grants", 10*time.Second, func() bool {
-		return r.get("pub", "/files/generic-up/").status == 200 && r.get("pubover", "/files/generic-up/").status == 200
+		return r.get("pub", "/files/it/generic-up/").status == 200 && r.get("pubover", "/files/it/generic-up/").status == 200
 	})
 
 	deploy := func(p person, path string) (*commitProbe, error) {
 		probe := &commitProbe{Store: r.blobs}
 		probe.before = func() {
-			if res := r.put("admin", "/files/generic-up/"+path, "somebody else was first"); res.status != 201 {
+			if res := r.put("admin", "/files/it/generic-up/"+path, "somebody else was first"); res.status != 201 {
 				t.Errorf("the concurrent upload: %d %s", res.status, res.body)
 			}
 		}

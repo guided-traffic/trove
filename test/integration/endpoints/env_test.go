@@ -129,7 +129,7 @@ var files = map[string]string{
 func (e *env) seedFiles(r *replica) {
 	e.t.Helper()
 	for path, content := range files {
-		a := e.send(r.def, "trove.test", "PUT", "/files/"+path, e.opsPAT, []byte(content), "Content-Type", "application/octet-stream")
+		a := e.send(r.def, "trove.test", "PUT", "/files/it/"+path, e.opsPAT, []byte(content), "Content-Type", "application/octet-stream")
 		if a.Status != 201 {
 			e.t.Fatalf("seed %s: %d %s", path, a.Status, a.Body)
 		}

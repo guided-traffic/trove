@@ -352,15 +352,15 @@ func TestR_ARCH_008_DeleteRunsOnItemsRemoved(t *testing.T) {
 	web := e.newReplica("web", replicaOpts{storage: small, hooks: hooks})
 	web.createRepository("bulk", nil)
 	for i := range 9 {
-		if res := web.put("admin", fmt.Sprintf("/files/bulk/tree/d%d/f%d.bin", i%3, i), fmt.Sprint(i)); res.status != 201 {
+		if res := web.put("admin", fmt.Sprintf("/files/it/bulk/tree/d%d/f%d.bin", i%3, i), fmt.Sprint(i)); res.status != 201 {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
 	}
-	web.put("admin", "/files/bulk/one/x.bin", "x")
+	web.put("admin", "/files/it/bulk/one/x.bin", "x")
 
 	t.Run("R-STOR-018 a delete that fails in the hook leaves the files", func(t *testing.T) {
 		hooks.failRemoved = errors.New("the format refused the removal")
-		res := web.do("admin", "DELETE", "/files/bulk/one/x.bin", nil)
+		res := web.do("admin", "DELETE", "/files/it/bulk/one/x.bin", nil)
 		hooks.failRemoved = nil
 		if res.status < 500 {
 			t.Fatalf("%d %s", res.status, res.body)
@@ -374,7 +374,7 @@ func TestR_ARCH_008_DeleteRunsOnItemsRemoved(t *testing.T) {
 		hooks.mu.Lock()
 		hooks.removed = nil
 		hooks.mu.Unlock()
-		if res := web.do("admin", "DELETE", "/files/bulk/one/x.bin", nil); res.status != 204 {
+		if res := web.do("admin", "DELETE", "/files/it/bulk/one/x.bin", nil); res.status != 204 {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
 		hooks.mu.Lock()
@@ -392,7 +392,7 @@ func TestR_ARCH_008_DeleteRunsOnItemsRemoved(t *testing.T) {
 		hooks.mu.Lock()
 		hooks.removed = nil
 		hooks.mu.Unlock()
-		if del := web.do("admin", "DELETE", "/files/bulk/tree", nil); del.status != 202 {
+		if del := web.do("admin", "DELETE", "/files/it/bulk/tree", nil); del.status != 202 {
 			t.Fatalf("%d %s", del.status, del.body)
 		}
 		_ = e.newReplica("worker", replicaOpts{worker: true, storage: small, hooks: hooks})

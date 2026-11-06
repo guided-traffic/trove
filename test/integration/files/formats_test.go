@@ -72,9 +72,9 @@ func newFormatsFixture(t *testing.T) *formatsFixture {
 	// Wait for the policies: /files/ deploys into the generic repository only (Q-ARCH-223),
 	// and the reader's grant shows in the listing of the probe repository's root.
 	waitFor(t, "the policies", 10*time.Second, func() bool {
-		return f.r.put("writer", "/files/gen-local/.wait", "x").status/100 == 2 && f.r.get("reader", "/files/probe-local/").status == 200
+		return f.r.put("writer", "/files/it/gen-local/.wait", "x").status/100 == 2 && f.r.get("reader", "/files/it/probe-local/").status == 200
 	})
-	if res := f.r.do("writer", http.MethodDelete, "/files/gen-local/.wait", nil); res.status != 204 {
+	if res := f.r.do("writer", http.MethodDelete, "/files/it/gen-local/.wait", nil); res.status != 204 {
 		t.Fatalf("remove the probe: %d %s", res.status, res.body)
 	}
 	probeReset()
@@ -478,18 +478,18 @@ func TestR_ARCH_008_ServeCheckRunsOnEveryRoute(t *testing.T) {
 		}
 	})
 	t.Run("the /files/ view", func(t *testing.T) {
-		if res := f.r.get("reader", "/files/probe-local/fine/-/fine-1.0.0.tgz"); res.status != 200 {
+		if res := f.r.get("reader", "/files/it/probe-local/fine/-/fine-1.0.0.tgz"); res.status != 200 {
 			t.Fatalf("fine: %d %s", res.status, res.body)
 		}
-		if res := f.r.get("reader", "/files/probe-local/tombstoned/-/tombstoned-1.0.0.tgz"); res.status != 404 {
+		if res := f.r.get("reader", "/files/it/probe-local/tombstoned/-/tombstoned-1.0.0.tgz"); res.status != 404 {
 			t.Fatalf("tombstoned: %d %s", res.status, res.body)
 		}
 	})
 	t.Run("a generic repository is unaffected", func(t *testing.T) {
-		if res := f.r.put("writer", "/files/gen-local/tombstoned/x.bin", "x"); res.status != 201 {
+		if res := f.r.put("writer", "/files/it/gen-local/tombstoned/x.bin", "x"); res.status != 201 {
 			t.Fatalf("put: %d %s", res.status, res.body)
 		}
-		if res := f.r.get("writer", "/files/gen-local/tombstoned/x.bin"); res.status != 200 {
+		if res := f.r.get("writer", "/files/it/gen-local/tombstoned/x.bin"); res.status != 200 {
 			t.Fatalf("get: %d %s", res.status, res.body)
 		}
 	})
@@ -506,7 +506,7 @@ func TestR_ARCH_008_FilesDeleteRunsOnItemsRemoved(t *testing.T) {
 		}
 	}
 	before := f.rev("left-pad")
-	if res := f.r.do("writer", http.MethodDelete, "/files/probe-local/left-pad/-/left-pad-1.0.0.tgz", nil); res.status != 204 && res.status != 200 {
+	if res := f.r.do("writer", http.MethodDelete, "/files/it/probe-local/left-pad/-/left-pad-1.0.0.tgz", nil); res.status != 204 && res.status != 200 {
 		t.Fatalf("delete: %d %s", res.status, res.body)
 	}
 	probeLog.mu.Lock()

@@ -48,10 +48,10 @@ func TestR_EP_018_ACustomersEndpointOnAVirtualRepositoryWithARemoteMember(t *tes
 		epoch = a.Header.Get("Trove-Authz-Epoch")
 	}
 	onCustomers := func(path string) testenv.Answer {
-		return r.st.DoAt(rep.Addr("customers"), customersHost, http.MethodGet, "/api/npm/"+rCustomers+"/"+path, r.acmeSAT, nil, "Trove-Authz-Min-Epoch", epoch)
+		return r.st.DoAt(rep.Addr("customers"), customersHost, http.MethodGet, "/api/npm/it/"+rCustomers+"/"+path, r.acmeSAT, nil, "Trove-Authz-Min-Epoch", epoch)
 	}
 	onDefault := func(path string) testenv.Answer {
-		return r.st.Do(rep, http.MethodGet, "/api/npm/"+rCustomers+"/"+path, r.tokA, nil)
+		return r.st.Do(rep, http.MethodGet, "/api/npm/it/"+rCustomers+"/"+path, r.tokA, nil)
 	}
 	file := func(v string) string { return p.Name + "/-/" + corpus.TarballFile(p.Name, v) }
 
@@ -83,7 +83,7 @@ func TestR_EP_018_ACustomersEndpointOnAVirtualRepositoryWithARemoteMember(t *tes
 	t.Run("R-NPM-048 a document lists what is exposed, latest moves, and URLs are the endpoint's", func(t *testing.T) {
 		r.stub.Reset()
 		for _, accept := range []string{"application/json", abbreviatedAccept} {
-			a := r.st.DoAt(rep.Addr("customers"), customersHost, http.MethodGet, "/api/npm/"+rCustomers+"/"+p.Name, r.acmeSAT, nil, "Trove-Authz-Min-Epoch", epoch, "Accept", accept)
+			a := r.st.DoAt(rep.Addr("customers"), customersHost, http.MethodGet, "/api/npm/it/"+rCustomers+"/"+p.Name, r.acmeSAT, nil, "Trove-Authz-Min-Epoch", epoch, "Accept", accept)
 			if a.Status != 200 {
 				t.Fatalf("%s: %d %.300s %v", accept, a.Status, a.Body, a.Header)
 			}
@@ -101,7 +101,7 @@ func TestR_EP_018_ACustomersEndpointOnAVirtualRepositoryWithARemoteMember(t *tes
 				}
 			}
 			for _, addr := range tarballsOf(t, a) {
-				if !strings.HasPrefix(addr, "https://"+customersHost+"/api/npm/"+rCustomers+"/"+p.Name+"/-/") {
+				if !strings.HasPrefix(addr, "https://"+customersHost+"/api/npm/it/"+rCustomers+"/"+p.Name+"/-/") {
 					t.Fatalf("%s: tarball %s", accept, addr)
 				}
 			}
@@ -143,7 +143,7 @@ func TestR_EP_018_ACustomersEndpointOnAVirtualRepositoryWithARemoteMember(t *tes
 			}
 		}
 		// default caches the hidden-on-customers version; customers still does not serve it.
-		if d := r.install(rep, "http://trove.test/api/npm/"+rCustomers+"/"+file(hidden), r.tokA); d.Status != 200 {
+		if d := r.install(rep, "http://trove.test/api/npm/it/"+rCustomers+"/"+file(hidden), r.tokA); d.Status != 200 {
 			t.Fatalf("default install of the version customers hides: %d", d.Status)
 		}
 		if a := onCustomers(file(hidden)); a.Status != 404 {

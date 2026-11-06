@@ -179,5 +179,5 @@ func lower(s string) string { return strings.ToLower(s) }
 // get sends a GET of a path below the registry URL of a repository.
 func (e *actEnv) get(r *testenv.Replica, repo, path, token string) testenv.Answer {
 	e.t.Helper()
-	return e.st.Do(r, "GET", "/api/nuget/"+repo+"/"+path, token, nil)
+	return e.st.Do(r, "GET", "/api/nuget/it/"+repo+"/"+path, token, nil)
 }

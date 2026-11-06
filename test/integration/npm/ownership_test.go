@@ -188,7 +188,7 @@ func TestR_AUTHZ_018_ANewNPMRepositoryEnforcesOwnership(t *testing.T) {
 	e.st.Bind("admin", root)
 	tok := e.st.Token(root, scope.Scope{Inherit: true, Admin: true})
 	a := e.replica("web-a")
-	ans := e.st.Do(a, "POST", "/api/v1/repositories", tok, map[string]any{"key": "npm-created", "class": "local", "format": "npm"})
+	ans := e.st.Do(a, "POST", "/api/v1/projects/it/repositories", tok, map[string]any{"key": "npm-created", "class": "local", "format": "npm"})
 	if ans.Status != 201 {
 		t.Fatalf("%d %s", ans.Status, ans.Body)
 	}

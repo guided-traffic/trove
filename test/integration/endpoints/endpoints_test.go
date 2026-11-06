@@ -51,7 +51,7 @@ func TestE1_14_CustomerEndpoint(t *testing.T) {
 				e.start(fmt.Sprintf("ep-%s-%d", mode(valkey), i))
 			}
 			ctx := context.Background()
-			file := "/files/generic-local/releases/1.0/app.zip"
+			file := "/files/it/generic-local/releases/1.0/app.zip"
 
 			t.Run("R-EP-010 a PAT on customers is 401 invalid_token without a token-table query", func(t *testing.T) {
 				// The query counter is a lock: while api_token is locked exclusively,
@@ -162,11 +162,11 @@ func TestE1_14_CustomerEndpoint(t *testing.T) {
 
 			t.Run("R-EP-014 R-EP-013 a file outside the rule answers the 404 of a missing file", func(t *testing.T) {
 				r := e.pick()
-				hidden := e.onCustomers(r, "/files/generic-local/internal/x.bin", e.acmeSAT)
+				hidden := e.onCustomers(r, "/files/it/generic-local/internal/x.bin", e.acmeSAT)
 				if hidden.Status != 404 {
 					t.Fatalf("%d %s", hidden.Status, hidden.Body)
 				}
-				for _, p := range []string{"/files/generic-local/releases/9.9/none.zip", "/files/generic-local/internal/none.bin", "/files/ghost/releases/1.0/app.zip", "/files/generic-other/releases/1.0/app.zip"} {
+				for _, p := range []string{"/files/it/generic-local/releases/9.9/none.zip", "/files/it/generic-local/internal/none.bin", "/files/it/ghost/releases/1.0/app.zip", "/files/it/generic-other/releases/1.0/app.zip"} {
 					if a := e.onCustomers(r, p, e.acmeSAT); a.Status != 404 || a.Problem(t) != hidden.Problem(t) {
 						t.Errorf("%s: %d %s, want the bytes of %s", p, a.Status, a.Body, hidden.Body)
 					}
@@ -177,7 +177,7 @@ func TestE1_14_CustomerEndpoint(t *testing.T) {
 				})
 				// Through the default endpoint the same token is refused; an unbound
 				// token of the same account reads the internal file there.
-				if a := e.send(r.def, "trove.test", "GET", "/files/generic-local/internal/x.bin", e.acmeUnbound, nil); a.Status != 200 {
+				if a := e.send(r.def, "trove.test", "GET", "/files/it/generic-local/internal/x.bin", e.acmeUnbound, nil); a.Status != 200 {
 					t.Fatalf("default: %d %s", a.Status, a.Body)
 				}
 			})
@@ -187,13 +187,13 @@ func TestE1_14_CustomerEndpoint(t *testing.T) {
 					if a := e.onCustomers(r, file, e.botAdminSAT); a.Status != 200 {
 						t.Fatalf("%s exposed: %d %s", r.name, a.Status, a.Body)
 					}
-					if a := e.onCustomers(r, "/files/generic-local/internal/x.bin", e.botAdminSAT); a.Status != 404 {
+					if a := e.onCustomers(r, "/files/it/generic-local/internal/x.bin", e.botAdminSAT); a.Status != 404 {
 						t.Fatalf("%s hidden: %d %s", r.name, a.Status, a.Body)
 					}
 					// The listing of the files operation holds what the rules expose
 					// and no more: the folder of the exposed files lists them, the
 					// folder outside the rules is the 404 of a missing one.
-					list := e.onCustomers(r, "/files/generic-local/releases/", e.botAdminSAT)
+					list := e.onCustomers(r, "/files/it/generic-local/releases/", e.botAdminSAT)
 					var page struct {
 						Items []struct {
 							Path string `json:"path"`
@@ -209,11 +209,11 @@ func TestE1_14_CustomerEndpoint(t *testing.T) {
 					if !slices.Equal(got, []string{"1.0", "2.0"}) {
 						t.Fatalf("%s listing: %v, want the two exposed folders: %s", r.name, got, list.Body)
 					}
-					if a := e.onCustomers(r, "/files/generic-local/internal/", e.botAdminSAT); a.Status != 404 {
+					if a := e.onCustomers(r, "/files/it/generic-local/internal/", e.botAdminSAT); a.Status != 404 {
 						t.Fatalf("%s hidden listing: %d %s", r.name, a.Status, a.Body)
 					}
 				}
-				if a := e.send(e.pick().def, "trove.test", "GET", "/files/generic-local/releases/", e.botAdminSAT, nil); a.Status != 401 {
+				if a := e.send(e.pick().def, "trove.test", "GET", "/files/it/generic-local/releases/", e.botAdminSAT, nil); a.Status != 401 {
 					t.Fatalf("the bound administrator token on default: %d", a.Status)
 				}
 				if v := metricValue(metrics(t, e.reps[0]), `trove_exposure_hidden_total{endpoint="customers",kind="request"}`); v < 1 {
@@ -231,7 +231,7 @@ func TestE1_14_CustomerEndpoint(t *testing.T) {
 				}
 				for _, r := range e.reps {
 					waitFor(t, r.name+" hiding releases/2.0", propagation, func() bool {
-						return e.onCustomers(r, "/files/generic-local/releases/2.0/app.zip", e.acmeSAT2).Status == 404
+						return e.onCustomers(r, "/files/it/generic-local/releases/2.0/app.zip", e.acmeSAT2).Status == 404
 					})
 					if a := e.onCustomers(r, file, e.acmeSAT2); a.Status != 200 {
 						t.Fatalf("%s releases/1.0: %d", r.name, a.Status)

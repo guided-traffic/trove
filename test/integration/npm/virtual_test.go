@@ -29,7 +29,7 @@ func TestR_NPM_030_AVirtualRepositoryListsTheUpstreamVersionsAndInstallsThemThro
 	}
 	v := p.Versions[0]
 	addr := tarballsOf(t, a)[v.Version]
-	if want := "http://trove.test/api/npm/npm-all/" + p.Name + "/-/" + corpus.TarballFile(p.Name, v.Version); addr != want {
+	if want := "http://trove.test/api/npm/it/npm-all/" + p.Name + "/-/" + corpus.TarballFile(p.Name, v.Version); addr != want {
 		t.Fatalf("tarball %q, want %q", addr, want)
 	}
 	got := r.install(rep, addr, r.tokA)
@@ -288,7 +288,7 @@ func TestR_NPM_033_AGlobalClaimKeepsAClaimedNameOutOfEveryRemoteRepository(t *te
 			t.Errorf("%s: %d %.200s", repo, a.Status, a.Body)
 		}
 	}
-	tb := r.st.Do(rep, http.MethodGet, "/api/npm/"+rRemote+"/@acme/new-thing/-/new-thing-1.0.0.tgz", r.tokA, nil)
+	tb := r.st.Do(rep, http.MethodGet, "/api/npm/it/"+rRemote+"/@acme/new-thing/-/new-thing-1.0.0.tgz", r.tokA, nil)
 	if tb.Status != 404 {
 		t.Errorf("a tarball of a claimed name through the remote: %d", tb.Status)
 	}
@@ -331,14 +331,14 @@ func TestR_NPM_029_WritesThroughAVirtualRepositoryActOnItsDeploymentTarget(t *te
 		t.Fatalf("%d %v", w.Status, w.Header)
 	}
 	for v, addr := range tarballsOf(t, w) {
-		if want := "http://trove.test/api/npm/npm-all/@acme/ui/-/ui-" + v + ".tgz"; addr != want {
+		if want := "http://trove.test/api/npm/it/npm-all/@acme/ui/-/ui-" + v + ".tgz"; addr != want {
 			t.Errorf("%s: %q, want %q", v, addr, want)
 		}
 	}
 	doc := document(t, w)
 	rev, _ := doc["_rev"].(string)
 	delete(doc["versions"].(map[string]any), "1.2.0")
-	if put := r.st.Do(rep, http.MethodPut, "/api/npm/"+rAll+"/@acme%2fui/-rev/"+rev, r.tokA, doc); put.Status != 200 {
+	if put := r.st.Do(rep, http.MethodPut, "/api/npm/it/"+rAll+"/@acme%2fui/-rev/"+rev, r.tokA, doc); put.Status != 200 {
 		t.Fatalf("unpublish: %d %s", put.Status, put.Body)
 	}
 	if n := r.versions(rLocal, "@acme/ui"); n != 2 {
@@ -432,7 +432,7 @@ func TestR_AUTHZ_008_ACallerWhoMayNotFillSeesOnlyTheCachedVersionsOfARemoteMembe
 		t.Errorf("alice's install of the cached version: %d", got.Status)
 	}
 	// A version nobody cached is a miss for her, and bob's document still lists it.
-	miss := r.st.Do(rep, http.MethodGet, "/api/npm/"+rGatedV+"/"+p.Name+"/-/"+corpus.TarballFile(p.Name, second.Version), r.tokA, nil)
+	miss := r.st.Do(rep, http.MethodGet, "/api/npm/it/"+rGatedV+"/"+p.Name+"/-/"+corpus.TarballFile(p.Name, second.Version), r.tokA, nil)
 	if miss.Status != 404 {
 		t.Errorf("an uncached version for a caller who may not fill: %d", miss.Status)
 	}
@@ -456,7 +456,7 @@ func TestR_REPO_032_TheCacheViewServesStoredEntriesOnlyAndNeverAsksTheUpstream(t
 	if cv.Status != 200 || len(versionsOf(t, cv)) != len(p.Versions) {
 		t.Fatalf("%d %.200s", cv.Status, cv.Body)
 	}
-	if !strings.Contains(string(cv.Body), "/api/npm/npm-remote~cache/"+p.Name+"/-/") {
+	if !strings.Contains(string(cv.Body), "/api/npm/it/npm-remote~cache/"+p.Name+"/-/") {
 		t.Errorf("the cache view's tarball addresses: %.300s", cv.Body)
 	}
 	// An uncached package, an uncached tarball: 404, and still no request.

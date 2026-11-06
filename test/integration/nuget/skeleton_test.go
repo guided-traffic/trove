@@ -22,7 +22,7 @@ func TestR_NUGET_001_ARepositoryCanBeCreatedAndItsServiceIndexAnswers(t *testing
 	a := e.replica("web-a")
 	post := func(body map[string]any) testenv.Answer {
 		t.Helper()
-		return e.st.Do(a, "POST", "/api/v1/repositories", e.tokAdmin, body)
+		return e.st.Do(a, "POST", "/api/v1/projects/it/repositories", e.tokAdmin, body)
 	}
 
 	t.Run("R-NUGET-001 the catalog lists nuget with its default upstream and periods", func(t *testing.T) {
@@ -50,7 +50,7 @@ func TestR_NUGET_001_ARepositoryCanBeCreatedAndItsServiceIndexAnswers(t *testing
 				continue
 			}
 			found = true
-			if f.DefaultUpstreamURL != "https://api.nuget.org/v3/index.json" || f.ProtocolBasePath != "/api/nuget/{project}/{key}/" {
+			if f.DefaultUpstreamURL != "https://api.nuget.org/v3/index.json" || f.ProtocolBasePath != "/api/nuget/it/{project}/{key}/" {
 				t.Errorf("upstream %q, base path %q", f.DefaultUpstreamURL, f.ProtocolBasePath)
 			}
 			if f.DefaultMetadataTTLSeconds == nil || *f.DefaultMetadataTTLSeconds != 300 || f.DefaultNotFoundTTLSeconds == nil || *f.DefaultNotFoundTTLSeconds != 1800 {
@@ -75,7 +75,7 @@ func TestR_NUGET_001_ARepositoryCanBeCreatedAndItsServiceIndexAnswers(t *testing
 		if ans.Status != 201 {
 			t.Fatalf("create %d %s", ans.Status, ans.Body)
 		}
-		read := e.st.Do(a, "GET", "/api/v1/repositories/nuget-created", e.tokAdmin, nil)
+		read := e.st.Do(a, "GET", "/api/v1/projects/it/repositories/nuget-created", e.tokAdmin, nil)
 		doc := read.JSON(t)
 		if got, _ := json.Marshal(doc["nuget"]); string(got) != `{"deleteMode":"delete"}` {
 			t.Fatalf("read back nuget = %s (%s)", got, read.Body)
@@ -136,7 +136,7 @@ func TestR_NUGET_001_ARepositoryCanBeCreatedAndItsServiceIndexAnswers(t *testing
 		types := map[string]bool{}
 		for _, r := range doc.Resources {
 			types[r.Type] = true
-			if !strings.HasPrefix(r.ID, feedBase+"/api/nuget/nuget-created/v3/") {
+			if !strings.HasPrefix(r.ID, feedBase+"/api/nuget/it/nuget-created/v3/") {
 				t.Errorf("@id %q is not below the repository's own feed", r.ID)
 			}
 		}
@@ -153,7 +153,7 @@ func TestR_NUGET_001_ARepositoryCanBeCreatedAndItsServiceIndexAnswers(t *testing
 		if ans.Status != 304 || len(ans.Body) != 0 {
 			t.Fatalf("%d with %d bytes", ans.Status, len(ans.Body))
 		}
-		head := e.st.Do(a, "HEAD", "/api/nuget/nuget-created/v3/index.json", e.tokAdmin, nil)
+		head := e.st.Do(a, "HEAD", "/api/nuget/it/nuget-created/v3/index.json", e.tokAdmin, nil)
 		if head.Status != 200 || len(head.Body) != 0 || head.Header.Get("ETag") != etag {
 			t.Fatalf("HEAD %d, %d bytes, ETag %q", head.Status, len(head.Body), head.Header.Get("ETag"))
 		}
@@ -175,7 +175,7 @@ func TestR_NUGET_012_TheServiceIndexChallengesAndAuthenticates(t *testing.T) {
 	})
 	t.Run("R-NUGET-012 a token as the Basic password with any user name", func(t *testing.T) {
 		basic := "Basic " + base64.StdEncoding.EncodeToString([]byte("anything:"+e.tokReader))
-		ans := e.st.Do(a, "GET", "/api/nuget/nuget-local/v3/index.json", "", nil, "Authorization", basic)
+		ans := e.st.Do(a, "GET", "/api/nuget/it/nuget-local/v3/index.json", "", nil, "Authorization", basic)
 		if ans.Status != 200 {
 			t.Fatalf("%d %s", ans.Status, ans.Body)
 		}
@@ -209,7 +209,7 @@ func TestR_NUGET_012_TheServiceIndexChallengesAndAuthenticates(t *testing.T) {
 func TestR_NUGET_001_PathsThatAreNoV3ResourceAnswer404(t *testing.T) {
 	e := newEnv(t)
 	a := e.replica("web-a")
-	index := feedBase + "/api/nuget/nuget-local/v3/index.json"
+	index := feedBase + "/api/nuget/it/nuget-local/v3/index.json"
 	for _, path := range []string{
 		"FindPackagesById()?id='Acme.Widgets'", "$metadata", "Packages()", "Search()?searchTerm='acme'", "api/v2/package", "", "v3/unknown",
 	} {
@@ -235,7 +235,7 @@ func TestR_NUGET_001_PathsThatAreNoV3ResourceAnswer404(t *testing.T) {
 		line(t, ans)
 	})
 	t.Run("R-NUGET-001 a method the resource does not take answers 405 with Allow", func(t *testing.T) {
-		ans := e.st.Do(a, "DELETE", "/api/nuget/nuget-local/v3/index.json", e.tokAdmin, nil)
+		ans := e.st.Do(a, "DELETE", "/api/nuget/it/nuget-local/v3/index.json", e.tokAdmin, nil)
 		if ans.Status != 405 || ans.Header.Get("Allow") != "GET, HEAD" {
 			t.Fatalf("%d, Allow %q", ans.Status, ans.Header.Get("Allow"))
 		}
@@ -269,9 +269,9 @@ func TestR_NUGET_013_RawDeployIntoANuGetRepositoryAnswers409(t *testing.T) {
 	e := newEnv(t)
 	a := e.replica("web-a")
 	for _, path := range []string{"acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg", "notes.txt", "acme.widgets/9.9.9/acme.widgets.9.9.9.nupkg"} {
-		ans := e.st.Do(a, "PUT", "/files/nuget-local/"+path, e.tokAdmin, []byte("not a package"))
-		if ans.Status != 409 || !strings.Contains(string(ans.Body), "/api/nuget/nuget-local/") {
-			t.Errorf("PUT /files/nuget-local/%s: %d %s", path, ans.Status, ans.Body)
+		ans := e.st.Do(a, "PUT", "/files/it/nuget-local/"+path, e.tokAdmin, []byte("not a package"))
+		if ans.Status != 409 || !strings.Contains(string(ans.Body), "/api/nuget/it/nuget-local/") {
+			t.Errorf("PUT /files/it/nuget-local/%s: %d %s", path, ans.Status, ans.Body)
 		}
 	}
 	if n := e.st.Number(`SELECT count(*) FROM items i JOIN repositories r ON r.id = i.repo_id WHERE r.key = 'nuget-local'`); n != 0 {

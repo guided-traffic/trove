@@ -42,7 +42,7 @@ func TestR_ARCH_008_FormatSettingsThroughTheAPI(t *testing.T) {
 	a := e.replica("web-a")
 	post := func(body map[string]any) testenv.Answer {
 		t.Helper()
-		return e.st.Do(a, "POST", "/api/v1/repositories", tok, body)
+		return e.st.Do(a, "POST", "/api/v1/projects/it/repositories", tok, body)
 	}
 
 	t.Run("R-REPO-004 the service lists the schema of the npm settings", func(t *testing.T) {
@@ -78,7 +78,7 @@ func TestR_ARCH_008_FormatSettingsThroughTheAPI(t *testing.T) {
 		if ans.Status != 201 {
 			t.Fatalf("create %d %s", ans.Status, ans.Body)
 		}
-		read := e.st.Do(a, "GET", "/api/v1/repositories/npm-noguard", tok, nil)
+		read := e.st.Do(a, "GET", "/api/v1/projects/it/repositories/npm-noguard", tok, nil)
 		doc := read.JSON(t)
 		if got, _ := json.Marshal(doc["npm"]); string(got) != `{"latestGuard":false}` {
 			t.Fatalf("read back npm = %s (%s)", got, read.Body)
@@ -86,17 +86,17 @@ func TestR_ARCH_008_FormatSettingsThroughTheAPI(t *testing.T) {
 		if stored := e.st.Text(`SELECT config #>> '{npm,latestGuard}' FROM repositories WHERE key = 'npm-noguard'`); stored != "false" {
 			t.Fatalf("stored latestGuard = %q", stored)
 		}
-		put := e.st.Do(a, "PUT", "/api/v1/repositories/npm-noguard", tok, map[string]any{"key": "npm-noguard", "class": "local", "format": "npm", "npm": map[string]any{"latestGuard": true}}, "If-Match", read.Header.Get("ETag"))
+		put := e.st.Do(a, "PUT", "/api/v1/projects/it/repositories/npm-noguard", tok, map[string]any{"key": "npm-noguard", "class": "local", "format": "npm", "npm": map[string]any{"latestGuard": true}}, "If-Match", read.Header.Get("ETag"))
 		if put.Status != 200 {
 			t.Fatalf("replace %d %s", put.Status, put.Body)
 		}
 		if got, _ := json.Marshal(put.JSON(t)["npm"]); string(got) != `{"latestGuard":true}` {
 			t.Fatalf("replaced npm = %s", got)
 		}
-		if patched := e.st.Do(a, "PATCH", "/api/v1/repositories/npm-noguard", tok, map[string]any{"npm": map[string]any{"latestGuard": false}}, "If-Match", "*", "Content-Type", "application/merge-patch+json"); patched.Status != 200 {
+		if patched := e.st.Do(a, "PATCH", "/api/v1/projects/it/repositories/npm-noguard", tok, map[string]any{"npm": map[string]any{"latestGuard": false}}, "If-Match", "*", "Content-Type", "application/merge-patch+json"); patched.Status != 200 {
 			t.Fatalf("patch %d %s", patched.Status, patched.Body)
 		}
-		cleared := e.st.Do(a, "PATCH", "/api/v1/repositories/npm-noguard", tok, map[string]any{"npm": nil}, "If-Match", "*", "Content-Type", "application/merge-patch+json")
+		cleared := e.st.Do(a, "PATCH", "/api/v1/projects/it/repositories/npm-noguard", tok, map[string]any{"npm": nil}, "If-Match", "*", "Content-Type", "application/merge-patch+json")
 		if cleared.Status != 200 {
 			t.Fatalf("clear %d %s", cleared.Status, cleared.Body)
 		}

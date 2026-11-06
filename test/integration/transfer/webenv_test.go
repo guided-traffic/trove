@@ -236,7 +236,7 @@ func (r *webReplica) createRepository(key string, extra map[string]any) {
 	for k, v := range extra {
 		body[k] = v
 	}
-	if res := r.postJSON("admin", "/api/v1/repositories", body); res.status != 201 {
+	if res := r.postJSON("admin", "/api/v1/projects/it/repositories", body); res.status != 201 {
 		r.t.Fatalf("create %s: %d %s", key, res.status, res.body)
 	}
 }

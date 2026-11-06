@@ -136,7 +136,7 @@ func (r forwardedResult) ids() []string {
 // be 200.
 func (e *fenv) search(t *testing.T, a *testenv.Replica, repo, query string) forwardedResult {
 	t.Helper()
-	ans := e.st.Do(a, http.MethodGet, "/api/nuget/"+repo+"/v3/search?"+query, e.tokAdmin, nil)
+	ans := e.st.Do(a, http.MethodGet, "/api/nuget/it/"+repo+"/v3/search?"+query, e.tokAdmin, nil)
 	if ans.Status != http.StatusOK {
 		t.Fatalf("%s search %s: %d %s", repo, query, ans.Status, ans.Body)
 	}
@@ -197,7 +197,7 @@ func TestR_NUGET_016_ARemoteForwardsItsSearchAndFallsBackToItsCache(t *testing.T
 		if r := e.search(t, a, fNoForward, q("newtonsoft")); len(r.Data) != 0 || r.TotalHits != 0 {
 			t.Fatalf("an empty cache lists %v", r.ids())
 		}
-		if pkg := e.st.Do(a, http.MethodGet, "/api/nuget/"+fNoForward+"/"+nupkgPath(nugetstub.NewtonsoftID, "13.0.3"), e.tokAdmin, nil); pkg.Status != 200 {
+		if pkg := e.st.Do(a, http.MethodGet, "/api/nuget/it/"+fNoForward+"/"+nupkgPath(nugetstub.NewtonsoftID, "13.0.3"), e.tokAdmin, nil); pkg.Status != 200 {
 			t.Fatalf("restore: %d %s", pkg.Status, pkg.Body)
 		}
 		if r := e.search(t, a, fNoForward, q("newtonsoft")); !slices.Equal(r.ids(), []string{"Newtonsoft.Json"}) {
@@ -225,7 +225,7 @@ func TestR_NUGET_016_ARemoteForwardsItsSearchAndFallsBackToItsCache(t *testing.T
 	})
 
 	t.Run("R-NUGET-016 with the upstream down the remote answers 200 from its cache", func(t *testing.T) {
-		if pkg := e.st.Do(a, http.MethodGet, "/api/nuget/"+rRemote+"/"+nupkgPath(nugetstub.NewtonsoftID, "13.0.3"), e.tokAdmin, nil); pkg.Status != 200 {
+		if pkg := e.st.Do(a, http.MethodGet, "/api/nuget/it/"+rRemote+"/"+nupkgPath(nugetstub.NewtonsoftID, "13.0.3"), e.tokAdmin, nil); pkg.Status != 200 {
 			t.Fatalf("restore: %d %s", pkg.Status, pkg.Body)
 		}
 		if err := e.stub.SetMode(nugetstub.Mode{Down: nugetstub.DownUnavailable}); err != nil {
@@ -255,7 +255,7 @@ func TestR_NUGET_018_AVirtualRepositoryForwardsThroughItsRemoteMember(t *testing
 	a := reps[0]
 	for _, p := range []pkgSpec{{id: "Acme.Widgets", version: "1.0.0"}, {id: "Json.Tools", version: "1.0.0"}} {
 		body, ct := form(t, nupkg(t, p))
-		if ans := e.st.Do(a, http.MethodPut, "/api/nuget/"+rLocal+"/v3/package", e.tokAdmin, body, "Content-Type", ct); ans.Status != 201 {
+		if ans := e.st.Do(a, http.MethodPut, "/api/nuget/it/"+rLocal+"/v3/package", e.tokAdmin, body, "Content-Type", ct); ans.Status != 201 {
 			t.Fatalf("push %s: %d %s", p.id, ans.Status, ans.Body)
 		}
 	}
@@ -309,11 +309,11 @@ func TestR_NUGET_018_AVirtualRepositoryForwardsThroughItsRemoteMember(t *testing
 			}
 		}
 		partner, widgets := e.searches.n("partner"), e.searches.n("widgets")
-		cur := e.st.Do(a, http.MethodGet, "/api/v1/repositories/"+rLocal+"/claims", e.tokAdmin, nil)
+		cur := e.st.Do(a, http.MethodGet, "/api/v1/projects/it/repositories/"+rLocal+"/claims", e.tokAdmin, nil)
 		if cur.Status != 200 {
 			t.Fatalf("claims: %d %s", cur.Status, cur.Body)
 		}
-		put := e.st.Do(a, http.MethodPut, "/api/v1/repositories/"+rLocal+"/claims", e.tokAdmin,
+		put := e.st.Do(a, http.MethodPut, "/api/v1/projects/it/repositories/"+rLocal+"/claims", e.tokAdmin,
 			map[string]any{"claims": []any{map[string]any{"pattern": "Acme.*"}, map[string]any{"pattern": "Partner.*"}}},
 			"If-Match", cur.Header.Get("ETag"))
 		if put.Status != 200 {
@@ -358,7 +358,7 @@ func TestR_NUGET_016_AForwardedResultCarriesNoAddressOfTheUpstreamInItsAdvisorie
 	e := newForwardEnv(t)
 	a := e.start(1)[0]
 	for _, repo := range []string{rRemote, fAll} {
-		ans := e.st.Do(a, http.MethodGet, "/api/nuget/"+repo+"/v3/search?"+q("packageid:fabrikam.legacy"), e.tokAdmin, nil)
+		ans := e.st.Do(a, http.MethodGet, "/api/nuget/it/"+repo+"/v3/search?"+q("packageid:fabrikam.legacy"), e.tokAdmin, nil)
 		if ans.Status != http.StatusOK {
 			t.Fatalf("%s: %d %s", repo, ans.Status, ans.Body)
 		}

@@ -320,7 +320,7 @@ func TestR_HA_024_AMissingMarkHealsOnceTheObjectIsBack(t *testing.T) {
 		r.st.PutObject(t, d, data) // the prefix is corrected
 		// Inside the interval the store is not asked: the object is back, and the answer is still the 503 from PostgreSQL.
 		lostAnswer(t, "inside the interval", r.tarball(reps[1], rLocal, pk.Name, pk.Version, r.tokA))
-		lostAnswer(t, "inside the interval, /files/", r.st.Do(reps[1], http.MethodGet, "/files/"+rLocal+"/moved-local/-/moved-local-1.0.0.tgz", r.tokA, nil))
+		lostAnswer(t, "inside the interval, /files/", r.st.Do(reps[1], http.MethodGet, "/files/it/"+rLocal+"/moved-local/-/moved-local-1.0.0.tgz", r.tokA, nil))
 		if got := r.contentStatus(d); got != "missing" {
 			t.Fatalf("content_status %s inside the interval", got)
 		}

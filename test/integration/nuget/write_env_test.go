@@ -129,7 +129,7 @@ func form(t testing.TB, pkg []byte) ([]byte, string) {
 func (e *wenv) push(r *testenv.Replica, repo, token string, pkg []byte) testenv.Answer {
 	e.t.Helper()
 	body, ct := form(e.t, pkg)
-	return e.st.Do(r, "PUT", "/api/nuget/"+repo+"/v3/package", token, body, "Content-Type", ct)
+	return e.st.Do(r, "PUT", "/api/nuget/it/"+repo+"/v3/package", token, body, "Content-Type", ct)
 }
 
 func (e *wenv) mustPush(r *testenv.Replica, repo, token string, pkg []byte) {
@@ -141,7 +141,7 @@ func (e *wenv) mustPush(r *testenv.Replica, repo, token string, pkg []byte) {
 
 func (e *wenv) send(r *testenv.Replica, method, repo, path, token string) testenv.Answer {
 	e.t.Helper()
-	return e.st.Do(r, method, "/api/nuget/"+repo+"/v3/package/"+path, token, nil)
+	return e.st.Do(r, method, "/api/nuget/it/"+repo+"/v3/package/"+path, token, nil)
 }
 
 // code is the code of a native error body.

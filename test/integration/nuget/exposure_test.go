@@ -69,7 +69,7 @@ func newExposureEnv(t *testing.T, replicas int) *exposureEnv {
 		{id: "Acme.Billing", version: "3.0.0"},
 	} {
 		body, ct := form(t, nupkg(t, p))
-		if a := st.Do(x.reps[0], "PUT", "/api/nuget/nuget-customers/v3/package", x.devPAT, body, "Content-Type", ct); a.Status != http.StatusCreated {
+		if a := st.Do(x.reps[0], "PUT", "/api/nuget/it/nuget-customers/v3/package", x.devPAT, body, "Content-Type", ct); a.Status != http.StatusCreated {
 			t.Fatalf("push %s %s: %d %s", p.id, p.version, a.Status, a.Body)
 		}
 	}
@@ -91,13 +91,13 @@ func (x *exposureEnv) api(method, path string, body any, hdr ...string) testenv.
 func (x *exposureEnv) onCustomers(r *testenv.Replica, method, path string, body any, hdr ...string) testenv.Answer {
 	x.t.Helper()
 	hdr = append(hdr, "Trove-Authz-Min-Epoch", x.epoch)
-	return x.st.DoAt(r.Addr("customers"), customersHost, method, "/api/nuget/nuget-customers/"+path, x.acmeSAT, body, hdr...)
+	return x.st.DoAt(r.Addr("customers"), customersHost, method, "/api/nuget/it/nuget-customers/"+path, x.acmeSAT, body, hdr...)
 }
 
 // onDefault sends a request below nuget-customers to the default endpoint as the developer.
 func (x *exposureEnv) onDefault(r *testenv.Replica, method, path string, body any, hdr ...string) testenv.Answer {
 	x.t.Helper()
-	return x.st.Do(r, method, "/api/nuget/nuget-customers/"+path, x.devPAT, body, hdr...)
+	return x.st.Do(r, method, "/api/nuget/it/nuget-customers/"+path, x.devPAT, body, hdr...)
 }
 
 func jsonOf(t *testing.T, a testenv.Answer, into any) {
@@ -212,7 +212,7 @@ func TestR_NUGET_034_DocumentsOnAnEndpointWithRules(t *testing.T) {
 
 	t.Run("R-NUGET-034 R-EP-018 every URL names the endpoint's host and the ETag differs per endpoint", func(t *testing.T) {
 		a := x.onCustomers(r, "GET", "v3/registration-semver2/acme.sdk/index.json", nil)
-		if !strings.Contains(string(a.Body), "https://"+customersHost+"/api/nuget/nuget-customers/v3/") || strings.Contains(string(a.Body), testenv.DefaultHost) {
+		if !strings.Contains(string(a.Body), "https://"+customersHost+"/api/nuget/it/nuget-customers/v3/") || strings.Contains(string(a.Body), testenv.DefaultHost) {
 			t.Fatalf("the URLs of the document: %s", a.Body)
 		}
 		for k, v := range a.Header {
@@ -337,7 +337,7 @@ func newVirtualExposureEnv(t *testing.T) *exposureEnv {
 		{id: "Acme.Billing", version: "3.0.0"},
 	} {
 		body, ct := form(t, nupkg(t, p))
-		if a := st.Do(x.reps[0], "PUT", "/api/nuget/nuget-internal/v3/package", x.devPAT, body, "Content-Type", ct); a.Status != http.StatusCreated {
+		if a := st.Do(x.reps[0], "PUT", "/api/nuget/it/nuget-internal/v3/package", x.devPAT, body, "Content-Type", ct); a.Status != http.StatusCreated {
 			t.Fatalf("push %s %s: %d %s", p.id, p.version, a.Status, a.Body)
 		}
 	}
@@ -372,7 +372,7 @@ func (s searchAnswer) versions(i int) []string {
 // searchOnCustomers searches nuget-customers on the customers listener with a token.
 func (x *exposureEnv) searchOnCustomers(token, query string) (searchAnswer, testenv.Answer) {
 	x.t.Helper()
-	a := x.st.DoAt(x.reps[0].Addr("customers"), customersHost, "GET", "/api/nuget/nuget-customers/v3/search?"+query, token, nil,
+	a := x.st.DoAt(x.reps[0].Addr("customers"), customersHost, "GET", "/api/nuget/it/nuget-customers/v3/search?"+query, token, nil,
 		"Trove-Authz-Min-Epoch", x.epoch)
 	var s searchAnswer
 	jsonOf(x.t, a, &s)
@@ -407,7 +407,7 @@ func TestR_NUGET_034_SearchThroughAVirtualRepositoryOnAnEndpointWithRules(t *tes
 		})
 	}
 	t.Run("R-NUGET-034 Q-AUTHZ-163 the token scoped to the virtual key does not open the member on its own", func(t *testing.T) {
-		a := x.st.DoAt(r.Addr("customers"), customersHost, "GET", "/api/nuget/nuget-internal/v3/search?q=acme", x.acmeScoped, nil, "Trove-Authz-Min-Epoch", x.epoch)
+		a := x.st.DoAt(r.Addr("customers"), customersHost, "GET", "/api/nuget/it/nuget-internal/v3/search?q=acme", x.acmeScoped, nil, "Trove-Authz-Min-Epoch", x.epoch)
 		if a.Status != http.StatusNotFound {
 			t.Fatalf("the member addressed on its own: %d %s", a.Status, a.Body)
 		}
@@ -423,7 +423,7 @@ func TestR_NUGET_034_SearchTermsMeetOnlyExposedVersions(t *testing.T) {
 	x := newExposureEnv(t, 1)
 	r := x.reps[0]
 	body, ct := form(t, nupkg(t, pkgSpec{id: "Acme.Sdk", version: "3.0.0-rc.1", description: "Zebra preview"}))
-	if a := x.st.Do(r, "PUT", "/api/nuget/nuget-customers/v3/package", x.devPAT, body, "Content-Type", ct); a.Status != http.StatusCreated {
+	if a := x.st.Do(r, "PUT", "/api/nuget/it/nuget-customers/v3/package", x.devPAT, body, "Content-Type", ct); a.Status != http.StatusCreated {
 		t.Fatalf("push 3.0.0-rc.1: %d %s", a.Status, a.Body)
 	}
 	const all = "&prerelease=true&semVerLevel=2.0.0"

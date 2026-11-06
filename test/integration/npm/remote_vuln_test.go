@@ -39,7 +39,7 @@ func TestR_VULN_011_ARemoteFillRecordsTheVersionAndTheEvictionRemovesIt(t *testi
 		t.Errorf("a cache hit changed the version rows: %d", got)
 	}
 
-	path := "/files/" + rRemote + "/" + p.Name + "/-/" + tarballFile(p.Name, v)
+	path := "/files/it/" + rRemote + "/" + p.Name + "/-/" + tarballFile(p.Name, v)
 	if a := r.st.Do(rep, http.MethodDelete, path, r.opsPAT, nil); a.Status != 204 {
 		t.Fatalf("evict: %d %s", a.Status, a.Body)
 	}

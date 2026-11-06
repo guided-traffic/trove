@@ -197,7 +197,7 @@ func TestE1_5_EveryProducerIsAuditedAndLogged(t *testing.T) {
 	}
 
 	// 6. A denied deploy: alice may read generic-local and not deploy to it.
-	req, _ := http.NewRequest(http.MethodPut, e.baseURL+"/files/generic-local/e15.bin", strings.NewReader("payload"))
+	req, _ := http.NewRequest(http.MethodPut, e.baseURL+"/files/it/generic-local/e15.bin", strings.NewReader("payload"))
 	req.Header.Set("Authorization", "Bearer "+deploySecret)
 	req.Header.Set("Content-Type", "application/octet-stream")
 	if resp, body := b.do(req); resp.StatusCode != http.StatusForbidden {
