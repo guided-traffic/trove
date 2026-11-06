@@ -213,6 +213,11 @@ func TestNegativeStoreUnavailable(t *testing.T) {
 			fx.v.br.allow()
 			fx.v.br.done(outcomeFailure)
 		}
+		// "At once" means without a round trip: no command for the key reaches the server while the breaker is open, and the
+		// calls return well inside one command timeout (1 s). A wall-clock bound of a few milliseconds measured the runner (72 ms
+		// under -race and coverage in Test and Release run 42250707219), not a round trip.
+		key := negKeyName(7, testNegFlight)
+		before := fx.srv.keyCommands(key)
 		start := time.Now()
 		if _, _, err := fx.store.Lookup(t.Context(), 7, testNegFlight); !errors.Is(err, ErrUnavailable) {
 			t.Fatalf("Lookup = %v", err)
@@ -220,8 +225,11 @@ func TestNegativeStoreUnavailable(t *testing.T) {
 		if err := fx.store.Record(t.Context(), 7, testNegFlight, NegativeEntry{Status: 404, SentAt: time.Now()}, time.Minute); !errors.Is(err, ErrUnavailable) {
 			t.Fatalf("Record = %v", err)
 		}
-		if took := time.Since(start); took > 50*time.Millisecond {
-			t.Fatalf("the calls took %s", took)
+		if took := time.Since(start); took >= 500*time.Millisecond {
+			t.Fatalf("the calls took %s, half the command timeout: they waited for the server", took)
+		}
+		if n := fx.srv.keyCommands(key) - before; n != 0 {
+			t.Fatalf("%d commands for %s reached the server with the breaker open", n, key)
 		}
 		if got := gaugeValue(t, fx.reg, "trove_valkey_degraded_total", MechanismNegativeCache); got != 2 {
 			t.Fatalf("trove_valkey_degraded_total{negative_cache} = %v, want 2", got)
