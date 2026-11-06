@@ -2,7 +2,7 @@
 {{- /*
 Each host is split by path prefix between the role Services (R-HA-037, Q-HA-71): the rules are
 fixed, not values, every one is pathType Prefix, and the paths of the path pools (R-HA-062) are the
-only data that goes in (templates/_edge.tpl). With web.enabled the host is routed whole to
+only data that goes in (templates/_edge.tpl). While the bridge carries the edge (web.enabled, web.routed) the host is routed whole to
 <fullname> (R-HA-064). The operations port is never routed. The chart renders no affinity annotation.
 */ -}}
 {{- $hosts := .Values.ingress.hosts }}

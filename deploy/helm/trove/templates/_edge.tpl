@@ -4,14 +4,18 @@ default endpoint, the Ingress of each further endpoint and the BackendTLSPolicie
 rules are fixed, not values: every one is a Prefix match (whole path elements, the longest match
 wins), and a pool's paths are the only data that goes in.
 
-Argument: dict "root" . "endpoint" "" (the default endpoint) or the name of a further endpoint.
-Returns a YAML list of {path, service}, most specific first. The Service's port is the port named
-http for the default endpoint and the endpoint's port number for a further one.
+Argument: dict "root" . "endpoint" "" (the default endpoint) or the name of a further endpoint, and
+optionally "bridge" false for the rules of the target shape whatever the values say. Returns a YAML list
+of {path, service}, most specific first. The Service's port is the port named http for the default
+endpoint and the endpoint's port number for a further one.
 */}}
 {{- define "trove.edgeRules" -}}
 {{- $root := .root -}}
 {{- $fullname := include "trove.fullname" $root -}}
-{{- $bridge := $root.Values.web.enabled -}}
+{{- $bridge := include "trove.bridgeRouted" $root -}}
+{{- if hasKey . "bridge" -}}
+{{- $bridge = .bridge -}}
+{{- end -}}
 {{- $rules := list -}}
 {{- if not .endpoint -}}
 {{- if $bridge -}}
@@ -69,4 +73,31 @@ http for the default endpoint and the endpoint's port number for a further one.
 {{- $out = append $out $r.service -}}
 {{- end -}}
 {{- toYaml (uniq $out) -}}
+{{- end -}}
+
+{{/*
+The Services an edge of the default endpoint may route to while this release is applied, as a YAML list: those
+of the target shape, and with web.enabled also <fullname>, whether the chart's Ingress routes to it (step 1 of
+R-HA-064) or no longer does (step 2). A route kept outside the chart (a Gateway API HTTPRoute) moves between the
+two sets at a time the chart does not know, so both stay verifiable for the whole bridge. Argument: the root context.
+*/}}
+{{- define "trove.edgeBackendServices" -}}
+{{- $out := list -}}
+{{- if .Values.web.enabled -}}
+{{- $out = append $out (include "trove.fullname" .) -}}
+{{- end -}}
+{{- range $r := include "trove.edgeRules" (dict "root" . "endpoint" "" "bridge" false) | fromYamlArray -}}
+{{- $out = append $out $r.service -}}
+{{- end -}}
+{{- toYaml (uniq $out) -}}
+{{- end -}}
+
+{{/*
+"true" while the edge of the releases before the cut is rendered: the bridge of R-HA-064 runs (web.enabled) and
+still carries the edge (web.routed, default true). Step 2 of the cut sets web.routed false, so the edge moves to
+the target shape while the bridge's pods and the Service <fullname> keep running; step 3 (web.enabled false)
+removes them once no route names them. Empty otherwise. Argument: the root context.
+*/}}
+{{- define "trove.bridgeRouted" -}}
+{{- if and .Values.web.enabled (dig "routed" true .Values.web) -}}true{{- end -}}
 {{- end -}}

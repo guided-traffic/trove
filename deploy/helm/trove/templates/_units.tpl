@@ -78,11 +78,11 @@ Argument: dict "root" . "role" "packages" "pool" "".
 {{- end -}}
 
 {{/*
-The values of a pool: the role's values (without its pools and the bridge flag) with the entry's
+The values of a pool: the role's values (without its pools and the bridge's two flags) with the entry's
 own keys on top, key by key. Argument: dict "base" <role values> "entry" <pool entry>. Returns YAML.
 */}}
 {{- define "trove.poolValues" -}}
-{{- include "trove.mergeValues" (dict "base" (omit .base "pools" "enabled") "over" (omit .entry "name" "paths" "queues" "enabled" "routed")) -}}
+{{- include "trove.mergeValues" (dict "base" (omit .base "pools" "enabled" "routed") "over" (omit .entry "name" "paths" "queues" "enabled" "routed")) -}}
 {{- end -}}
 
 {{/* Every Deployment as a YAML list of units. Argument: the root context. */}}
@@ -114,7 +114,7 @@ own keys on top, key by key. Argument: dict "base" <role values> "entry" <pool e
 {{- $units = append $units (dict "name" (printf "worker-%s" $p.name) "role" "worker" "pool" $p.name "kind" "pool" "key" (printf "worker.pools[%s]" $p.name) "r" (include "trove.poolValues" (dict "base" $v.worker "entry" $p) | fromYaml) "queues" $p.queues) -}}
 {{- end -}}
 {{- if $bridge -}}
-{{- $units = append $units (dict "name" "web" "role" "web" "pool" "" "kind" "bridge" "key" "web" "r" (omit $v.web "pools" "enabled")) -}}
+{{- $units = append $units (dict "name" "web" "role" "web" "pool" "" "kind" "bridge" "key" "web" "r" (omit $v.web "pools" "enabled" "routed")) -}}
 {{- end -}}
 {{- range $name := include "trove.endpointNames" . | fromYamlArray -}}
 {{- if include "trove.endpointPool" (dict "root" $ "name" $name) -}}

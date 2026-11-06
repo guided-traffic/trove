@@ -116,6 +116,9 @@ func (v *vremotes) Cached(ctx context.Context, rc virtual.RemoteCall) (bool, err
 	}
 	if rq.Kind == proxy.Artifact {
 		_, ok, err := v.rd.Cached(ctx, rq)
+		if proxy.IsLost(err) {
+			return false, nil // the explanation: the cache does not serve it (Q-REPO-205)
+		}
 		return ok, err
 	}
 	st, err := v.rd.EntryState(ctx, rq.Remote.ID(), rc.Path)

@@ -16,6 +16,9 @@ import (
 type OpenOptions struct {
 	// Range reads part of the blob. Ranged reads cannot be verified (R-STOR-013).
 	Range *ByteRange
+	// Verify verifies a full read even when storage.download.verify is off: a caller whose bytes reach a browser as
+	// code of trove's origin, the shared asset store of the UI (Q-UI-143), never serves an object it has not checked.
+	Verify bool
 }
 
 // Open opens the content of a blob for reading. size is the blob row's size.
@@ -29,7 +32,9 @@ type OpenOptions struct {
 //
 // Only evidence about the stored object marks the blob corrupt: a Content-Length
 // different from the blob's size, or a body read to its end with another digest.
-// A transport error aborts the same way but changes no status.
+// A transport error aborts the same way but changes no status. A store that answers
+// that the object does not exist marks the blob missing and returns ErrNotFound
+// (R-HA-024, R-STOR-027).
 //
 // The reader is charged to the memory of the request of ctx (WithMemory) from
 // before the object store is asked until it is closed: DownloadCost of the
@@ -46,9 +51,12 @@ func (s *Store) Open(ctx context.Context, d Digest, size int64, o OpenOptions) (
 	body, info, err := s.objects.Get(ctx, s.Key(d), o.Range)
 	if err != nil {
 		undo()
+		if errors.Is(err, ErrNotFound) {
+			s.markMissing(ctx, d)
+		}
 		return nil, mapStoreErr(err)
 	}
-	if o.Range != nil || !s.cfg.Download.Verify {
+	if o.Range != nil || (!s.cfg.Download.Verify && !o.Verify) {
 		return &chargedBody{ReadCloser: body, undo: undo}, nil
 	}
 	if info.Size >= 0 && info.Size != size { // -1: the response did not say; the digest check at the end decides
@@ -88,10 +96,81 @@ func verifyBuffer(bufferSize, hold int, size int64) int {
 	return c
 }
 
+// markMissing records a read the store answered with "no such object": evidence about the object, as the 404 of the
+// scrub's existence check is (R-STOR-027). The row says missing from then on, every reader of the blob sees it in
+// PostgreSQL, and a commit of the same content writes the object again (R-STOR-005, R-HA-024).
+//
+// A commit of the same content may have written the object again between the read and the mark; the mark, which
+// changes only an ok row, would then undo that repair. So the object is looked for once more after a mark, and a row
+// whose object is there again is ok (Q-STOR-151). Whichever order the repair and the mark take, the row ends ok when
+// the object is there: a repair after the look sets ok itself.
+func (s *Store) markMissing(ctx context.Context, d Digest) {
+	if !s.markDamaged(ctx, d, "missing") {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if _, err := s.objects.Head(ctx, s.Key(d)); err != nil {
+		return // gone, or the store cannot say: the mark stays
+	}
+	if err := s.db.InTx(ctx, func(tx meta.Tx) error { return s.rows.MarkOK(ctx, tx, d) }); err != nil {
+		s.log.Error("could not mark a blob ok whose object is there again", "sha256", d.Hex(), "error", err)
+		return
+	}
+	s.log.Info("the object of a blob that a read found missing is there again", "sha256", d.Hex())
+}
+
+// MissingRecheckInterval is how long a blob marked missing is answered from PostgreSQL alone before a read asks the object
+// store again (Q-STOR-153): the Retry-After a client is given for a missing object, so that the client that retries is the one
+// whose read looks. Per blob and across replicas, the store is asked at most once per interval.
+const MissingRecheckInterval = 30 * time.Second
+
+// RecheckMissing looks for the object of a blob marked missing once more, so that a mark does not outlive the loss it
+// records (Q-STOR-153): an object that is back (an operator restored it, or the store answered 404 for objects that exist,
+// as with a wrong storage.s3.prefix that was corrected) turns the row ok, and the caller serves it. At most one read per blob
+// and MissingRecheckInterval asks the store, whichever replica: the read whose statement moves the row's checked_at, the time
+// of its last existence check (R-STOR-027); every other read is refused from PostgreSQL as before (R-STOR-012). It reports
+// whether the row is ok now; a blob that is not marked missing, an object that is still gone, one of another size and a store
+// that cannot answer are false, and the interval starts again.
+func (s *Store) RecheckMissing(ctx context.Context, d Digest, size int64) bool {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	var claimed bool
+	if err := s.db.InTx(ctx, func(tx meta.Tx) error {
+		var err error
+		claimed, err = s.rows.ClaimRecheck(ctx, tx, d, MissingRecheckInterval)
+		return err
+	}); err != nil {
+		s.log.Warn("could not claim the recheck of a blob marked missing", "sha256", d.Hex(), "error", err)
+		return false
+	}
+	if !claimed {
+		return false
+	}
+	info, err := s.objects.Head(ctx, s.Key(d))
+	switch {
+	case errors.Is(err, ErrNotFound):
+		return false
+	case err != nil:
+		s.log.Warn("could not recheck a blob marked missing", "sha256", d.Hex(), "error", err)
+		return false
+	case info.Size >= 0 && info.Size != size:
+		s.log.Error("the object of a blob marked missing is back with another size", "sha256", d.Hex(), "size", info.Size, "want", size)
+		return false
+	}
+	if err := s.db.InTx(ctx, func(tx meta.Tx) error { return s.rows.MarkOK(ctx, tx, d) }); err != nil {
+		s.log.Error("could not mark a blob ok whose object is there again", "sha256", d.Hex(), "error", err)
+		return false
+	}
+	s.log.Info("the object of a blob marked missing is there again", "sha256", d.Hex())
+	return true
+}
+
 // markDamaged records a detection: content_status leaves 'ok', the counter
 // grows and the hook (the audit event) runs. It only ever changes a live row
-// that was ok, so a repair or a concurrent detection is not overwritten.
-func (s *Store) markDamaged(ctx context.Context, d Digest, status string) {
+// that was ok, so a repair or a concurrent detection is not overwritten. It
+// reports whether the row changed.
+func (s *Store) markDamaged(ctx context.Context, d Digest, status string) bool {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	var changed bool
@@ -102,15 +181,20 @@ func (s *Store) markDamaged(ctx context.Context, d Digest, status string) {
 	})
 	if err != nil {
 		s.log.Error("could not mark a blob damaged", "sha256", d.Hex(), "status", status, "error", err)
-		return
+		return false
 	}
 	if changed {
 		s.metrics.damage(status)
-		s.log.Error("stored object failed verification", "sha256", d.Hex(), "status", status)
+		msg := "stored object failed verification"
+		if status == "missing" {
+			msg = "the object of a blob is missing from the object store"
+		}
+		s.log.Error(msg, "sha256", d.Hex(), "status", status)
 		if s.onDamage != nil {
 			s.onDamage(ctx, d, status)
 		}
 	}
+	return changed
 }
 
 // verifyReader hashes what it reads and withholds the last hold bytes. It reads

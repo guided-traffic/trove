@@ -80,3 +80,13 @@ SELECT c.relname::text AS name
         OR pg_catalog.has_table_privilege(c.oid, 'DELETE')
         OR pg_catalog.has_table_privilege(c.oid, 'TRUNCATE'))
  ORDER BY c.relname;
+
+-- name: BackgroundMigrationJob :many
+-- The newest job of a background data migration's kind (R-HA-022, Q-HA-114), with the first start of any of its runs: a
+-- run that resumed from a checkpoint keeps the start of the migration. No row while no job of the kind exists.
+SELECT j.state::text AS state, j.progress_done, j.progress_total,
+       (SELECT min(f.started_at) FROM job f WHERE f.kind = j.kind)::timestamptz AS first_started_at
+  FROM job j
+ WHERE j.kind = sqlc.arg(kind)::text
+ ORDER BY j.created_at DESC, j.id DESC
+ LIMIT 1;

@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"testing/iotest"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/config"
@@ -124,6 +125,107 @@ func TestDownloadVerification(t *testing.T) {
 			t.Fatalf("status %s damaged hook %d", f.db.rows[sp.SHA256].status, damaged.Load())
 		}
 	})
+	t.Run("R-HA-024 R-STOR-027 an object that is gone is ErrNotFound and marks its blob missing once; a commit of the same content writes it again", func(t *testing.T) {
+		f, sp, damaged := setup(t, nil)
+		if err := f.mem.Delete(context.Background(), f.store.Key(sp.SHA256)); err != nil {
+			t.Fatal(err)
+		}
+		for _, o := range []blob.OpenOptions{{}, {Range: &blob.ByteRange{Offset: 0, Length: 10}}} {
+			if _, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, o); !errors.Is(err, blob.ErrNotFound) {
+				t.Fatalf("open %+v: %v, want ErrNotFound", o, err)
+			}
+		}
+		if f.db.rows[sp.SHA256].status != "missing" || damaged.Load() != 1 {
+			t.Fatalf("status %s, damaged hook %d: one detection, whatever the number of reads", f.db.rows[sp.SHA256].status, damaged.Load())
+		}
+		// The repair of R-STOR-027: an upload of identical content is no deduplication while the row is missing.
+		again := f.ingest(t, data)
+		res, err := f.store.Commit(context.Background(), again, noLink)
+		if err != nil || !res.Wrote || res.Deduplicated {
+			t.Fatalf("commit %+v, %v: the object must be written again", res, err)
+		}
+		if f.db.rows[sp.SHA256].status != "ok" {
+			t.Fatalf("status %s after the repair", f.db.rows[sp.SHA256].status)
+		}
+		r, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := readAll(t, r); !bytes.Equal(got, data) {
+			t.Fatal("the repaired object differs")
+		}
+	})
+	t.Run("Q-STOR-151 a read that found no object does not undo a repair that wrote it again before the mark", func(t *testing.T) {
+		f, sp, damaged := setup(t, nil)
+		// The read misses the object, which a commit of the same content writes again before the mark: the store answers
+		// the read "no such object" and the look after the mark finds it.
+		f.mem.SetFault(func(op, _ string) error {
+			if op == "get" {
+				return blob.ErrNotFound
+			}
+			return nil
+		})
+		if _, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{}); !errors.Is(err, blob.ErrNotFound) {
+			t.Fatalf("open: %v", err)
+		}
+		if f.db.rows[sp.SHA256].status != "ok" || damaged.Load() != 1 {
+			t.Fatalf("status %s, damaged hook %d: the detection counts, the row ends ok", f.db.rows[sp.SHA256].status, damaged.Load())
+		}
+	})
+	t.Run("Q-STOR-153 a blob marked missing asks the store again once per interval, and an object that is back makes it ok", func(t *testing.T) {
+		f, sp, _ := setup(t, nil)
+		clock := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+		f.db.now = func() time.Time { return clock }
+		key := f.store.Key(sp.SHA256)
+		_ = f.mem.Delete(context.Background(), key)
+		if _, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{}); !errors.Is(err, blob.ErrNotFound) {
+			t.Fatalf("open: %v", err)
+		}
+		heads := func() int { return f.mem.Count("head") }
+		before := heads()
+		// Still gone, inside the interval: no look at the store.
+		if f.store.RecheckMissing(context.Background(), sp.SHA256, sp.Size) || heads() != before {
+			t.Fatalf("a recheck inside the interval asked the store (%d heads)", heads()-before)
+		}
+		// The object is back, still inside the interval: the mark stands and the store is not asked.
+		f.mem.Set(key, data, f.mem.Now())
+		clock = clock.Add(blob.MissingRecheckInterval - time.Second)
+		if f.store.RecheckMissing(context.Background(), sp.SHA256, sp.Size) || heads() != before {
+			t.Fatal("a recheck inside the interval asked the store")
+		}
+		// Gone again, after the interval: one look, the mark stands and the interval starts again.
+		_ = f.mem.Delete(context.Background(), key)
+		clock = clock.Add(2 * time.Second)
+		if f.store.RecheckMissing(context.Background(), sp.SHA256, sp.Size) || heads() != before+1 || f.db.rows[sp.SHA256].status != "missing" {
+			t.Fatalf("after the interval: %d heads, status %s", heads()-before, f.db.rows[sp.SHA256].status)
+		}
+		if f.store.RecheckMissing(context.Background(), sp.SHA256, sp.Size) || heads() != before+1 {
+			t.Fatal("the interval did not start again")
+		}
+		// Back with another size: not ok.
+		f.mem.Set(key, data[:10], f.mem.Now())
+		clock = clock.Add(blob.MissingRecheckInterval)
+		if f.store.RecheckMissing(context.Background(), sp.SHA256, sp.Size) || f.db.rows[sp.SHA256].status != "missing" {
+			t.Fatal("an object of another size made the row ok")
+		}
+		// Back unchanged, after the interval: ok, and the read serves it.
+		f.mem.Set(key, data, f.mem.Now())
+		clock = clock.Add(blob.MissingRecheckInterval)
+		if !f.store.RecheckMissing(context.Background(), sp.SHA256, sp.Size) || f.db.rows[sp.SHA256].status != "ok" {
+			t.Fatalf("status %s after the object came back", f.db.rows[sp.SHA256].status)
+		}
+		r, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := readAll(t, r); !bytes.Equal(got, data) {
+			t.Fatal("the object that came back differs")
+		}
+		// A row that is ok is never rechecked.
+		if f.store.RecheckMissing(context.Background(), sp.SHA256, sp.Size) {
+			t.Fatal("an ok row was rechecked")
+		}
+	})
 	t.Run("R-STOR-013 an object of the wrong length is refused before any byte and marked corrupt", func(t *testing.T) {
 		f, sp, _ := setup(t, nil)
 		f.mem.Set(f.store.Key(sp.SHA256), data[:len(data)-1], f.mem.Now())
@@ -196,6 +298,27 @@ func TestDownloadVerification(t *testing.T) {
 		}
 		if got := readAll(t, r); !bytes.Equal(got, bad) {
 			t.Fatal("unexpected content")
+		}
+	})
+	t.Run("R-STOR-013 R-HA-020 OpenOptions.Verify checks a swapped object of the same length with verification turned off (Q-UI-143)", func(t *testing.T) {
+		f, sp, damaged := setup(t, func(c *config.Storage) { c.Download.Verify = false })
+		bad := bytes.Clone(data)
+		bad[0] ^= 1
+		f.mem.Set(f.store.Key(sp.SHA256), bad, f.mem.Now())
+		r, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{Verify: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := io.ReadAll(r)
+		_ = r.Close()
+		if !errors.Is(err, blob.ErrCorrupt) {
+			t.Fatalf("read %d bytes, err %v, want ErrCorrupt", len(got), err)
+		}
+		if bytes.Equal(got, bad) {
+			t.Fatal("the swapped object was handed out whole")
+		}
+		if f.db.rows[sp.SHA256].status != "corrupt" || damaged.Load() != 1 {
+			t.Fatalf("status %q, damage hook %d times", f.db.rows[sp.SHA256].status, damaged.Load())
 		}
 	})
 	t.Run("R-STOR-013 a ranged read is returned as stored and is not verified", func(t *testing.T) {

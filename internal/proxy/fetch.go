@@ -258,7 +258,9 @@ func (f *fetcher) request(ctx context.Context) (*http.Request, error) {
 	}
 	req.Header.Del("Authorization") // the client's hop policy alone adds the credential
 	req.Header.Set("Accept-Encoding", "identity")
-	if f.haveStored && rq.Kind == Metadata {
+	// A stored document whose object is missing or damaged is fetched whole: a 304 would renew an entry that has no bytes
+	// to serve (Q-REPO-202).
+	if f.haveStored && rq.Kind == Metadata && !f.stored.Damaged() {
 		switch {
 		case f.stored.ETag != "":
 			req.Header.Set("If-None-Match", f.stored.ETag)

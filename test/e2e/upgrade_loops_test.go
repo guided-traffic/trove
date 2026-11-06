@@ -42,7 +42,8 @@ type upCmd struct {
 	Code  int       `json:"code"`
 	N     int       `json:"n"`
 	Log   string    `json:"log,omitempty"`
-	// Skew marks a browser iteration whose page load met a 404 for a hashed asset of the other release (Q-HA-99).
+	// Skew marks a browser iteration whose page load met a 404 for a hashed asset of the other release (Q-HA-99) and no
+	// answer of 500 or above: an iteration that met a server error fails whatever else it met.
 	Skew bool `json:"skew,omitempty"`
 }
 
@@ -236,7 +237,11 @@ type upBrowserLoop struct {
 	cmds []upCmd
 }
 
-func startBrowserLoop(t *testing.T, fx *upgradeFx) *upBrowserLoop {
+// startBrowserLoop starts the loop of one test (name: cut, rolling). A failed iteration keeps its trace, screenshot and
+// error context in .out/playwright/upgrade/<name>/<n>, which the job uploads; a passed one leaves nothing. Each test owns its
+// directory, so a later test does not remove the traces of an earlier one (F-64: the rolling test's start removed the
+// cut test's trace of its failed iteration before the upload).
+func startBrowserLoop(t *testing.T, name string) *upBrowserLoop {
 	t.Helper()
 	dir := filepath.Join(cfg.repo, "web", "e2e")
 	if _, err := os.Stat(filepath.Join(cfg.repo, "web", "node_modules", ".bin", "playwright")); err != nil {
@@ -252,7 +257,7 @@ func startBrowserLoop(t *testing.T, fx *upgradeFx) *upBrowserLoop {
 		"TROVE_E2E_BREAKGLASS_PASSWORD="+secretValue(t, "trove-break-glass", "password"),
 		"TROVE_E2E_ADMIN_TOKEN="+adminToken(t),
 	)
-	artifacts := filepath.Join(cfg.repo, ".out", "playwright", "upgrade")
+	artifacts := filepath.Join(cfg.repo, ".out", "playwright", "upgrade", name)
 	_ = os.RemoveAll(artifacts)
 	l := &upBrowserLoop{stop: make(chan struct{}), done: make(chan struct{})}
 	go func() {
@@ -278,7 +283,11 @@ func startBrowserLoop(t *testing.T, fx *upgradeFx) *upBrowserLoop {
 					c.Code = ee.ExitCode()
 				}
 				c.Log = tailLines(string(raw), 40)
-				if c.Skew = strings.Contains(string(raw), "ASSET-SKEW "); c.Skew {
+				// the journey names every answer of 500 or above on its standard output (SERVER-ERROR), which keeps the cause
+				// of a failure in the job log when its trace is not at hand
+				if errs := grepLines(string(raw), "SERVER-ERROR"); errs != "" {
+					c.Log = errs + "\n" + c.Log
+				} else if c.Skew = strings.Contains(string(raw), "ASSET-SKEW "); c.Skew {
 					c.Log = grepLines(string(raw), "ASSET-SKEW") + "\n" + c.Log
 				}
 			} else {
@@ -332,7 +341,7 @@ func startUpgradeLoops(t *testing.T, fx *upgradeFx, name string) *upLoops {
 	l := &upLoops{name: name, fx: fx, started: time.Now()}
 	l.npm = startNPMLoad(t, fx.npm, name, npmLoadOpts{ciLoops: upgradeNPMLoops, publish: true})
 	l.nuget = startNuGetLoops(t, fx, upgradeNuGetLoops)
-	l.browser = startBrowserLoop(t, fx)
+	l.browser = startBrowserLoop(t, name)
 	t.Cleanup(func() {
 		// a test that fails before stop leaves no loop running into the next scenario
 		for _, lp := range l.nuget {
@@ -349,11 +358,13 @@ type upResult struct {
 	Name string  `json:"name"`
 	Cmds []upCmd `json:"commands"`
 	npm  npmLoadResult
+	// started and stopped bound the span the loops ran in
+	started, stopped time.Time
 }
 
 func (l *upLoops) stop(t *testing.T) upResult {
 	t.Helper()
-	r := upResult{Name: l.name}
+	r := upResult{Name: l.name, started: l.started, stopped: time.Now()}
 	l.browser.halt()
 	for _, lp := range l.nuget {
 		lp.halt()
@@ -431,6 +442,55 @@ func (r upResult) requireClean(t *testing.T, skewFrom string, windows ...upWindo
 		}
 		t.Logf("iterations per loop during %s (%s, %s): %v", w.Name, w.From.Format("15:04:05"), w.To.Sub(w.From).Round(time.Second), overlap)
 	}
+}
+
+// edgeNamespace is the namespace of the dev profile's edge (HAProxy Ingress, deploy/dev/haproxy-values.yaml), whose pods write
+// one access line per request to their standard output.
+const edgeNamespace = "ingress-controller"
+
+// edgeGapLine matches an access line of the edge for a request it answered 503 because the backend of its route had no
+// server: `<backend>/<NOSRV> Tq/Tw/Tc/Tr/Ta 503 …`. A 503 of trove itself names its server; a request the client gave up
+// on before a server was chosen has the status -1.
+var edgeGapLine = regexp.MustCompile(`\S+/<NOSRV> \S+ 503 `)
+
+// requireEdgeServed is the edge's side of the pass condition: while the loops ran, the edge answered no request with 503 for
+// want of a backend, because an upgrade without downtime never leaves a route without a ready server (R-HA-020, R-HA-064).
+// The loops alone cannot tell: npm repeats an answer of 503 and passes, and a browser iteration meets a gap of a second or
+// two only by chance (F-64: in step 2 of the cut the edge answered 509 requests with 503 within 1.4 s, every npm ci passed,
+// and one journey iteration out of 14 met it).
+func (r upResult) requireEdgeServed(t *testing.T) {
+	t.Helper()
+	pods, err := kubectl("-n", edgeNamespace, "get", "pods", "-o", "name")
+	if err != nil || strings.TrimSpace(pods) == "" {
+		t.Errorf("the edge's pods: %v %q", err, pods)
+		return
+	}
+	var gaps []string
+	read := 0
+	for _, pod := range strings.Fields(pods) {
+		out, err := kubectl("-n", edgeNamespace, "logs", pod, "--all-containers", "--timestamps", "--since-time", r.started.UTC().Format(time.RFC3339))
+		if err != nil {
+			t.Errorf("the access lines of %s: %v", pod, err)
+			continue
+		}
+		for _, line := range strings.Split(out, "\n") {
+			ts, rest, ok := strings.Cut(line, " ")
+			when, perr := time.Parse(time.RFC3339Nano, ts)
+			if !ok || perr != nil || when.Before(r.started) || when.After(r.stopped) {
+				continue
+			}
+			read++
+			if edgeGapLine.MatchString(rest) {
+				gaps = append(gaps, strings.TrimSpace(line))
+			}
+		}
+	}
+	if len(gaps) > 0 {
+		t.Errorf("the edge answered %d requests with 503 for want of a backend while the loops %s ran (%s to %s; R-HA-020, R-HA-064), the first:\n%s",
+			len(gaps), r.Name, r.started.Format("15:04:05"), r.stopped.Format("15:04:05"), strings.Join(gaps[:min(len(gaps), 10)], "\n"))
+		return
+	}
+	t.Logf("the edge answered no request with 503 for want of a backend while the loops %s ran (%d lines of its pods read)", r.Name, read)
 }
 
 // publishedAreReadable is the write path's pass condition: every publish the registry acknowledged during the upgrade

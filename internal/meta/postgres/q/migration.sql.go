@@ -11,6 +11,49 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const backgroundMigrationJob = `-- name: BackgroundMigrationJob :many
+SELECT j.state::text AS state, j.progress_done, j.progress_total,
+       (SELECT min(f.started_at) FROM job f WHERE f.kind = j.kind)::timestamptz AS first_started_at
+  FROM job j
+ WHERE j.kind = $1::text
+ ORDER BY j.created_at DESC, j.id DESC
+ LIMIT 1
+`
+
+type BackgroundMigrationJobRow struct {
+	State          string
+	ProgressDone   pgtype.Int8
+	ProgressTotal  pgtype.Int8
+	FirstStartedAt pgtype.Timestamptz
+}
+
+// The newest job of a background data migration's kind (R-HA-022, Q-HA-114), with the first start of any of its runs: a
+// run that resumed from a checkpoint keeps the start of the migration. No row while no job of the kind exists.
+func (q *Queries) BackgroundMigrationJob(ctx context.Context, kind string) ([]BackgroundMigrationJobRow, error) {
+	rows, err := q.db.Query(ctx, backgroundMigrationJob, kind)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BackgroundMigrationJobRow{}
+	for rows.Next() {
+		var i BackgroundMigrationJobRow
+		if err := rows.Scan(
+			&i.State,
+			&i.ProgressDone,
+			&i.ProgressTotal,
+			&i.FirstStartedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getSchemaState = `-- name: GetSchemaState :one
 SELECT applied, compat_floor FROM schema_state
 `

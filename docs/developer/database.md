@@ -93,7 +93,7 @@ runner compares it with `max_connections` when `database.preflight.expected_*_re
 ## Migrations
 
 Files: `internal/meta/postgres/migrations/NNNNN_<name>.sql`, embedded. Numbers run 1..N without a gap. Until the first
-stable release there is no backward compatibility ([Q-ARCH-332](../spec/architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release), `CLAUDE.md`): a migration file may be edited, a step
+stable release there is no backward compatibility ([Q-ARCH-340](../spec/architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release), `CLAUDE.md`): a migration file may be edited, a step
 may drop, rename or tighten anything, and nothing has to keep the previous release working against the new schema. The
 expand/contract rules of the files are switched off for that (`enforceMigrationPhases = false` in
 [steps.go](../../internal/meta/postgres/steps.go); how to switch them on: [Switched off until the first stable release](releasing.md#switched-off-until-the-first-stable-release)), and so is the
@@ -104,10 +104,12 @@ while the rules are off:
 -- trove:phase contract          (or expand; at most one; a file without it is an expand step)
 -- trove:no-transaction          (one statement, e.g. CREATE INDEX CONCURRENTLY; must be idempotent)
 -- trove:requires-app >= 0.4.0   (contract only, required there)
+-- trove:requires-background <name>   (contract only, optional, once per background migration it depends on)
 ```
 
 `ParseSteps` (unit-tested in [steps_test.go](../../internal/meta/postgres/steps_test.go)) applies the switch. In both modes it
-rejects an unknown or a second phase, a contract step without `requires-app`, `requires-app` without `-- trove:phase contract`,
+rejects an unknown or a second phase, a contract step without `requires-app`, `requires-app` or `requires-background` on a
+step that is not `-- trove:phase contract`, a `requires-background` that names no single migration or names one twice,
 an unknown `trove:` header, a `no-transaction` file with more than one statement and a file without a statement. With the rules
 on it also rejects a file without a phase header and `DROP`, `RENAME` or `SET NOT NULL` in an expand file, and
 `RequiredSchema()` is the newest expand step; with them off, a file without a phase header is an expand step, the statements
@@ -129,6 +131,8 @@ live replica runs a release below its `requires-app` (the contract guard), and o
    ([nuget.md](nuget.md#the-recomputation-of-is_semver2-q-nuget-93)).
 5. A step may drop, rename or tighten what it needs; nothing has to stay for the previous release. Mark it
    `-- trove:phase contract` with `requires-app` only when the runner shall refuse it while older replicas are live.
+   A contract step that removes what a background data migration converts names it with `requires-background <name>`; the
+   guard refuses the step until the migration has succeeded ([Background data migrations](#background-data-migrations), Q-HA-115).
 6. Static queries for the new tables go to `queries/*.sql`, then `make generate`.
    A test that injects a migration of its own names it with `nextStep(n, name)`
    ([env_test.go](../../test/integration/postgres/env_test.go)), which numbers the file after the embedded ones, so
@@ -139,7 +143,7 @@ live replica runs a release below its `requires-app` (the contract guard), and o
 
 ### How to fix a migration that is on `main`
 
-Until the first stable release, fix the file itself ([Q-ARCH-332](../spec/architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)). The CI checks that compare the migration files
+Until the first stable release, fix the file itself ([Q-ARCH-340](../spec/architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release)). The CI checks that compare the migration files
 with a release and with the history of `main` are switched off with the job `compat`; `make compat-check` would still report
 the edit.
 
@@ -157,7 +161,7 @@ the edit.
 From the first stable release on, compatibility comes first again; with the job `compat` switched on, a migration on `main`
 is then fixed forward with a new file, as
 [Q-ARCH-283](../spec/architecture.md#q-arch-283--is-a-migration-on-main-immutable-and-what-does-the-check-hold-to) decided
-before Q-ARCH-332 switched it off.
+before Q-ARCH-340 switched it off.
 
 `sqlc` reads the migration files as its schema. `job_state` is created inside a `DO` block on purpose: sqlc
 then maps it to a Go string instead of generating enum helpers that import `database/sql/driver` (forbidden,
@@ -168,10 +172,52 @@ R-ARCH-026).
 Preflight, schema creation if missing, `pg_try_advisory_lock(3, 0)` polled for up to `migrate.advisory_lock_wait`
 (the timeout names the holder from `pg_stat_activity`), refusal of a half-restored database (exit 3), checksum
 check, plan (out-of-order steps fail), contract guard (exit 3 when a live replica is below `requires-app`;
-live means a `replica.heartbeat_at` within `system.heartbeat_stale_after`), then per step one transaction:
+live means a `replica.heartbeat_at` within `system.heartbeat_stale_after`; also exit 3 while a background migration the step
+names in `requires-background` has not succeeded), then per step one transaction:
 `SET LOCAL lock_timeout`, the file as one argument-less `Exec`, the `schema_migration` row, `schema_state`.
 Lock timeouts (55P03) retry `migrate.ddl_lock_retries` times. Exit codes: 0, 1 error, 2 usage, 3 refusal.
 `trove migrate status` takes no lock. Output: JSON log on stderr, JSON summary on stdout.
+
+### The migration report (`postgres.Report`, `trove migrate status`, `GET /api/v1/system/migrations`)
+
+`postgres.Report(ctx, db, opts)` ([migrate.go](../../internal/meta/postgres/migrate.go)) reads `schema_state`, the applied
+steps, the steps the binary embeds that are not applied (each with `requiresApp` and `requiresBackground`, what the guard
+checks), the background migrations of `MigrateOptions.Background` with their states, and the gate's verdict. It reads only and
+takes no lock, through any `q.DBTX`: `trove migrate status` (`postgres.Status`) runs it on its session connection as the schema
+owner, and the `api` role runs it on its pool as the runtime role for `GET /api/v1/system/migrations` (`migrationReport` in
+[migration_report.go](../../internal/app/migration_report.go); the runtime role reads `schema_migration` and `schema_state`,
+R-HA-018). One code answers both, so the endpoint and the command cannot disagree (R-HA-018, R-HA-020, R-HA-021 step 4).
+The endpoint leaves out `servable` and `verdict`: a replica that answers passed the gate.
+
+### Background data migrations
+
+A backfill runs as the job kind `data_migration_<name>` on a worker (R-HA-022). R-HA-022's table `background_migration` and its
+pause and resume operations are not built; until they are, a migration is declared by the package that runs it as a
+`postgres.BackgroundMigration` ([background.go](../../internal/meta/postgres/background.go)): its name, the release that
+introduced it and the `system_state` key that records its completion (Q-HA-114). `postgres.ReadBackground` derives the state:
+
+| Records | State |
+|---|---|
+| the completion key exists | `succeeded` |
+| the newest job of the kind is `running` or `cancelling` | `running` |
+| the newest job is `failed` | `failed` |
+| no job, a `queued` one, a `cancelled` one, or a run that ended without the key (it waited for older replicas) | `pending` |
+
+`processed` and `estimatedTotal` are the newest job's progress (an estimate of 0 is none); a completed migration's count can come
+from its completion record (`BackgroundMigration.Processed`), which outlives the job rows. `startedAt` is the first start of
+any run of the kind (`BackgroundMigrationJob` in [migration.sql](../../internal/meta/postgres/queries/migration.sql)).
+
+`app.BackgroundMigrations()` ([migration_report.go](../../internal/app/migration_report.go)) lists the declarations of the binary;
+`trove migrate` passes them to the guard and the report, the `api` role to the report. Today it holds one, `nuget_semver2`
+(`nugetdata.Semver2Background`, [nuget.md](nuget.md#the-recomputation-of-is_semver2-q-nuget-93)). How to add one:
+
+1. Run it as a job kind `data_migration_<name>` that records its completion in a `system_state` key (as
+   [semver2.go](../../internal/formatdata/nuget/semver2.go) does), and start it only once every live replica runs its release
+   (`postgres.ReplicasUpTo`).
+2. Declare it next to the job (`Name`, `Release`, `DoneKey`, optionally `Processed`) and add it to `app.BackgroundMigrations()`.
+   `TestBackgroundMigrations` ([migration_report_test.go](../../internal/app/migration_report_test.go)) checks that the
+   declarations are valid and that every `requires-background` of the embedded steps names one of them.
+3. The contract step that removes the old form, one minor later, carries `-- trove:requires-background <name>`.
 
 The runner also writes `audit.retention_days` into `audit_policy` (when it differs) and calls `audit_maintain_partitions()` after the
 steps, also when none was pending (`MigrateOptions.AuditRetentionDays`, [audit.go](../../internal/meta/postgres/audit.go); Q-OPS-39,
@@ -186,7 +232,7 @@ status 1; nil skips it.
 
 Not implemented yet: the `database.backup_role` grants and the grants check (no backup tables), and the restore mode of the runner (M5).
 The CI checks of the migration files, against the latest release and against the history of `main`, are in place and
-switched off until the first stable release with the job `compat` ([Compatibility](releasing.md#compatibility), Q-ARCH-332);
+switched off until the first stable release with the job `compat` ([Compatibility](releasing.md#compatibility), Q-ARCH-340);
 `make compat-check` runs them by hand.
 
 ### Privileges of the runtime role
@@ -476,14 +522,30 @@ Expand steps of beta phase 5 ([ci-oidc.md](ci-oidc.md)): 00026 creates `ci_issue
 `ON DELETE CASCADE`, Q-CI-20), seeds the epoch rows of `ci_mappings` and `ci_issuer_keys`, and adds `package_owner_ci_issuer_id_fkey` `NOT VALID`; 00027 builds its index
 `CONCURRENTLY`; 00028 validates it. 00029 to 00031 add the indexes of the issuance statements (Q-CI-53), each a single `CREATE INDEX CONCURRENTLY` in its own no-transaction step (R-HA-018): `ci_issuances_issued` (the list without a filter), `ci_issuances_issuer_issued` (the list of one issuer) and `ci_issuances_contributions` (a GIN on `grants -> 'contributions'` for a project's list). There is no index on `audit_event.token_id`: the table is partitioned, `CREATE INDEX CONCURRENTLY` is refused on a partitioned table, and the usage summary reads a window of the partitions' primary key. The plans are checked on a seeded table by [ci_issuance_plans_test.go](../../test/integration/postgres/ci_issuance_plans_test.go). These steps add indexes only, so nothing is registered in [tables_ci.go](../../internal/meta/postgres/tables_ci.go) and no export class changes.
 
-## Vulnerability tables (00035, 00036, 00037, 00041)
+## Vulnerability tables (00035, 00036, 00037, 00041, 00042)
 
 Expand steps of beta phase 6 ([vulnerabilities.md](vulnerabilities.md)): 00035 creates the eight tables of the specification's data models (`vuln_source_state`, `vuln_advisory` with
 the added column `cwe_ids`, `vuln_affected`, `vuln_pending_evaluation`, `vuln_kev`, `vuln_claimed_match`, `vuln_finding`, `vuln_finding_event`) and seeds the epoch row of the area
-`vuln_data`; 00036 builds `packages_name` on `packages (name)` `CONCURRENTLY` as a step of its own (Q-VULN-24); 00037 adds the indexes of `vuln_finding` that the foreign keys that are `ON DELETE SET NULL` and the retention task need (`version_id`, `package_id`, a partial `resolved_at`) in one transactional step (Q-VULN-64). 00041 sets `fastupdate = off` on the GIN index `vuln_advisory_aliases` and merges its pending list, so that the closure's lookups during an import do not read the list (Q-VULN-91). `vuln_finding` and `vuln_finding_event` are data in backups, the other six
+`vuln_data`; 00036 builds `packages_name` on `packages (name)` `CONCURRENTLY` as a step of its own (Q-VULN-24); 00037 adds the indexes of `vuln_finding` that the foreign keys that are `ON DELETE SET NULL` and the retention task need (`version_id`, `package_id`, a partial `resolved_at`) in one transactional step (Q-VULN-64). 00041 sets `fastupdate = off` on the GIN index `vuln_advisory_aliases` and merges its pending list, so that the closure's lookups during an import do not read the list (Q-VULN-91). 00042 sets the statistics target of the column `ecosystem` of `vuln_advisory`, `vuln_affected`, `vuln_sync_touched` and `vuln_pending_evaluation` to 0: a sample taken while only NuGet was stored estimated `ecosystem = 'npm'` at one row and made the planner pick a scan of the whole ecosystem per row (Q-VULN-97; F-57). `vuln_finding` and `vuln_finding_event` are data in backups, the other six
 tables transient, and `vuln_finding.revision` is a revision column ([tables_vuln.go](../../internal/meta/postgres/tables_vuln.go)). The queries are in one file per work package
 (`vuln_sync.sql`, `vuln_evaluate.sql`, `vuln_enforce.sql`, `vuln_audits.sql`, `vuln_api.sql`, `vuln_ops.sql`). Tested by
 [vuln_test.go](../../test/integration/postgres/vuln_test.go).
+
+## The UI's shared asset store (00043)
+
+An expand step of F-58 ([web-ui.md](web-ui.md#the-shared-asset-store), R-HA-020, Q-HA-120 to Q-HA-123):
+[00043_ui_assets](../../internal/meta/postgres/migrations/00043_ui_assets.sql) creates `ui_assets`, one row per hashed file of a UI
+build that a replica published: the primary key `(locale, path)`, `blob_sha256` with the reference rule of R-STOR-003 (indexed, guard
+trigger, delete and update release triggers, the surrogate `id` for the update trigger), `size`, `published_by` (the publisher's
+version and commit), `published_at` and `seen_at`. CHECKs keep the locale to the locale-code form and the path to `[A-Za-z0-9_./-]`
+without a dot segment; the hashed pattern itself is the code's (`webui.IsHashed`). The statements compare a row's `blob_sha256` with the
+replica's own digest: `seen_at` is renewed only by a replica whose build has the row's bytes (`TouchUIAssets`, rows renewed in the last
+half hour are left alone), and `InsertUIAsset` replaces a row with other bytes only when its blob is not live and `ok` or it was not
+renewed for 2 hours (Q-UI-142), and `PruneUIAssets` deletes the rows not renewed for 7 days, which queues their blobs for the collector. The table is transient in
+backups ([tables_ui.go](../../internal/meta/postgres/tables_ui.go)): a restore leaves it empty and the replicas publish again. The
+statements are in [ui_assets.sql](../../internal/meta/postgres/queries/ui_assets.sql); a list of files travels as one array of
+`<locale>/<path>` names, because sqlc has no multi-array `unnest`. Tested by
+[uiassets_test.go](../../test/integration/uiassets/uiassets_test.go) and `TestBlobReferenceRules`.
 
 ## Migrations of the Bastion (Q-BAS-48)
 
@@ -551,9 +613,9 @@ Guards that the database enforces whatever the API checked. Together with the ea
 
 Tested in [projects_test.go](../../test/integration/postgres/projects_test.go).
 
-## Replica runtime (00042) and the overview statements (Q-OPS-175)
+## Replica runtime (00044) and the overview statements (Q-OPS-175)
 
-[00042_replica_runtime](../../internal/meta/postgres/migrations/00042_replica_runtime.sql) is an expand step that adds
+[00044_replica_runtime](../../internal/meta/postgres/migrations/00044_replica_runtime.sql) is an expand step that adds
 `replica.runtime jsonb NOT NULL DEFAULT '{}'`: the measurement each heartbeat writes of the period since the previous one
 ([coordination.md](coordination.md#replica-registry)). A column with a constant default changes the catalog only and
 rewrites no row; the step runs under the runner's `lock_timeout` and retries like every step. A binary of the previous

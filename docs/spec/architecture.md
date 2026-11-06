@@ -156,6 +156,7 @@ routes read them. The areas of the client listener are split by route family:
 | `auth` | the authentication stage of the chain | with the session credential | tokens only: no session store, a session cookie is ignored as absent | no | with the session credential |
 | `endpoints` | the rate-limit classes of the endpoints (R-EP-015) | yes | yes | no | yes |
 | `api` | stage 7 of the chain: CORS and the request limits of R-API-016, applied on every endpoint chain despite the name | yes | yes | no | yes |
+| `ui-assets` | the shared asset store of the UI ([ha-and-helm.md](ha-and-helm.md) R-HA-020, Q-HA-120): the build's hashed files published before the replica turns ready and renewed hourly, the files of the other release read from it | yes | **no** | no | yes |
 | `ci_exchange` | the CI token exchange (`POST /api/v1/auth/oidc/token`, the npm exchange of R-NPM-022 at P1) | yes | **no** | no | yes |
 | `mirror` | the counters and the gauge source of R-REPO-057 (every role), the engine built at the first job of a process that claims one (R-REPO-053, Q-ARCH-312) | yes | yes | yes | yes |
 | `mirror-engine` | the remote engine and the format host behind `mirror.Host`: in `all` the engine and host of the client path, in `worker` an engine of its own for background requests (Q-ARCH-316, Q-ARCH-317) | **no** | **no** | yes | `all` only |
@@ -402,7 +403,7 @@ flowchart LR
 | dispatch | `internal/api/dispatch` | The format dispatcher: `/api/<id>/<repoKey>/…` for every format with routes, and the error shape of the prefix | R-ARCH-005, R-ARCH-011, Q-ARCH-214 |
 | formathost | `internal/formathost` | The `Host` of the format contract and the adapters of the item store's hooks and the generic layer's seam; the data ports are bound by the composition root | R-ARCH-009, Q-ARCH-193, Q-ARCH-212 |
 | packages | `internal/packages` | The generic package rows: the package store and the package writer that raises `packages.rev_seq` | R-ARCH-009, Q-ARCH-212 |
-| webui | `internal/webui` | Embedded Angular build | [api-and-ui.md](api-and-ui.md) (R-UI-001), R-ARCH-004 |
+| webui | `internal/webui`, `internal/webui/shared` | Embedded Angular build; the shared asset store of the UI's hashed files on the blob store, which the handler takes as an interface (Q-ARCH-332) | [api-and-ui.md](api-and-ui.md) (R-UI-001), R-ARCH-004, [ha-and-helm.md](ha-and-helm.md) (R-HA-020, Q-HA-120) |
 | formats | `internal/formats`, `internal/formats/<id>` | Package protocols behind the plug-in contract | R-ARCH-008 to R-ARCH-010; [formats/npm.md](formats/npm.md), [formats/nuget.md](formats/nuget.md) |
 | repository | `internal/repository` | Repository model and snapshot, request classification, caller-independent routing of virtual repositories (members, claims, pin rules) | [repositories-and-proxy.md](repositories-and-proxy.md) |
 | proxy | `internal/proxy`, `internal/proxy/{upstream,invalidation}` | Remote fetch engine, per-remote upstream clients, cache invalidation | [repositories-and-proxy.md](repositories-and-proxy.md) |
@@ -3991,7 +3992,9 @@ a step it runs needs: the missing prerequisite stops the start-up with an error 
 missing part and the role, instead of a replica that is ready and answers `503` on the routes of the
 area (Q-ARCH-209). Whether a prerequisite is reachable is a different matter: a database or an object
 store that cannot be reached yet is retried as steps 3 to 7 say; a part that the role's wiring does not
-provide at all is a defect and is refused before anything starts.
+provide at all is a defect and is refused before anything starts. On a role that serves the UI the area `ui-assets` publishes the
+hashed files of the build to the shared asset store in step 8, before the listener opens, and waits for it at most a minute
+([ha-and-helm.md](ha-and-helm.md) Q-HA-123).
 
 Shutdown on `SIGTERM`. Kubernetes removes the pod from the EndpointSlices at the same time as it
 sends the signal, and every proxy in front of trove (kube-proxy, the Ingress or Gateway controller)
@@ -4129,7 +4132,7 @@ Acceptance criteria:
 Priority: **MVP** · Covers: OPS-072, EVT-072
 
 **Before the first stable release the promises of this requirement do not apply** (owner, 2026-11-06, `CLAUDE.md`,
-[Q-ARCH-332](#q-arch-332--no-backward-compatibility-until-the-first-stable-release)). trove is pre-alpha: it has no users and no running installations. The Management API, URLs,
+[Q-ARCH-340](#q-arch-340--no-backward-compatibility-until-the-first-stable-release)). trove is pre-alpha: it has no users and no running installations. The Management API, URLs,
 configuration keys, Helm values, error codes, metric names, the database schema and stored formats change the way that
 is technically best, without a deprecation, an alias, a fallback or a migration path. The CI job that compares a change
 with the latest release is switched off, ready to be switched on at the first stable release ([the switches](../developer/releasing.md#switched-off-until-the-first-stable-release)). A release
@@ -4198,7 +4201,7 @@ Acceptance criteria:
   checker (for example `oasdiff breaking`) and fails on a breaking change within v1. The checker is oasdiff at the pin
   of `tools/versions.env` (Q-ARCH-273), the baseline is the newest `v0.*` tag whose commit is not HEAD's (Q-ARCH-274),
   and the job is the `compat` job of `release.yml`, run by `make compat-check`; the tests are `TestR_ARCH_025_*` in
-  `test/compat`. Until the first stable release the job is switched off (`if: false`, [Q-ARCH-332](#q-arch-332--no-backward-compatibility-until-the-first-stable-release)); the target
+  `test/compat`. Until the first stable release the job is switched off (`if: false`, [Q-ARCH-340](#q-arch-340--no-backward-compatibility-until-the-first-stable-release)); the target
   and the tests stay and run by hand.
 - The upgrade end-to-end test runs `helm upgrade` from N-1 to N and then `helm rollback`. Both
   versions pass the client suite against the same database.
@@ -4210,7 +4213,7 @@ Acceptance criteria:
 Priority: **MVP** · Covers: OPS-073, OPS-074, HA-066, HA-069
 
 **Before the first stable release the compatibility promises of this requirement do not apply** (owner, 2026-11-06,
-`CLAUDE.md`, [Q-ARCH-332](#q-arch-332--no-backward-compatibility-until-the-first-stable-release)): N and N-1 need not run against one schema, a migration file may be edited, renamed or
+`CLAUDE.md`, [Q-ARCH-340](#q-arch-340--no-backward-compatibility-until-the-first-stable-release)): N and N-1 need not run against one schema, a migration file may be edited, renamed or
 removed, and a step may drop, rename or tighten whatever its phase. An upgrade may need a new database, and no rollback
 is supported. Two mechanisms are switched off, ready to be switched on at the first stable release ([the switches](../developer/releasing.md#switched-off-until-the-first-stable-release)): the
 CI checks of the migration files (job `compat`) and the expand/contract rules of the parser (`enforceMigrationPhases` in
@@ -4232,7 +4235,7 @@ Files:
   in a comment or in whitespace (the runner checksums the bytes), and never renamed or removed. A
   defect is fixed forward with a new file of the next number, in one of the classes of R-HA-018
   ([Q-ARCH-283](#q-arch-283--is-a-migration-on-main-immutable-and-what-does-the-check-hold-to)). The compat check reads `main`'s history for this (acceptance criteria below).
-  Until the first stable release this rule and its check are switched off ([Q-ARCH-332](#q-arch-332--no-backward-compatibility-until-the-first-stable-release)): a file may
+  Until the first stable release this rule and its check are switched off ([Q-ARCH-340](#q-arch-340--no-backward-compatibility-until-the-first-stable-release)): a file may
   be edited, renamed or removed, and a database that applied an earlier version of an edited file
   fails step 3 below and is recreated.
 - A file starts with trove's header comments. While the expand/contract rules are switched off
@@ -4241,13 +4244,15 @@ Files:
     on every file has exactly one; with them off, a file without it is an expand step;
   - `-- trove:no-transaction` on a step that cannot run in a transaction block, such as
     `CREATE INDEX CONCURRENTLY`. Such a file holds exactly one statement (R-HA-018);
-  - on a contract step, and required there, `-- trove:requires-app >= <version>`, the oldest release
-    allowed to serve once the step is applied. R-HA-018's `lastUsedBy` is the release before it, and
-    `compat_floor` is the highest `requires-app` of the applied contract steps.
+  - on a contract step, `-- trove:requires-app >= <version>`, the oldest release allowed to serve
+    once the step is applied. R-HA-018's `lastUsedBy` is the release before it, and `compat_floor`
+    is the highest `requires-app` of the applied contract steps;
+  - on a contract step that removes what a background data migration converts, `-- trove:requires-background <name>`,
+    once per migration ([ha-and-helm.md](ha-and-helm.md) R-HA-022, Q-HA-115).
 - Expand steps never break the previous minor: new tables, nullable or defaulted columns, indexes
   built `CONCURRENTLY`, new enum values (R-HA-018 lists the classes in full). Contract steps (drop,
   rename, tighten) ship at the earliest one minor after the release that stopped using the old
-  objects ([ha-and-helm.md](ha-and-helm.md) Q-HA-5). While the rules are switched off (Q-ARCH-332),
+  objects ([ha-and-helm.md](ha-and-helm.md) Q-HA-5). While the rules are switched off (Q-ARCH-340),
   the phase does not restrict a step's statements: `DROP`, `RENAME` and `SET NOT NULL` may stand in
   an expand step.
 
@@ -4281,7 +4286,8 @@ library and no `database/sql` are involved (Q-ARCH-3). `trove migrate up` runs t
      backoff.
 6. Update `schema_state`, release the lock, and print the summary of R-HA-019.
 
-`trove migrate status` lists applied and pending steps without taking the lock.
+`trove migrate status` lists applied and pending steps and the background data migrations without taking the lock;
+`GET /api/v1/system/migrations` answers the same report from the same code ([ha-and-helm.md](ha-and-helm.md) R-HA-018).
 
 Restore mode. The runner offers an internal "migrate up to step N" mode for `trove backup restore`
 alone, which loads a backup into exactly the schema it was exported from and then applies the
@@ -4304,7 +4310,7 @@ From the first stable release on, migration files are not squashed or removed wi
 addition to never being edited once applied (R-HA-018). Every later release of a major can therefore
 restore every earlier backup of it. A major release that drops old steps names, in its release
 notes, the last release that restores older backups (R-BAK-023). While the immutability is switched
-off before the first stable release (Q-ARCH-332), a file may be edited or removed, so a later build
+off before the first stable release (Q-ARCH-340), a file may be edited or removed, so a later build
 restores an earlier backup only while the steps up to the backup's step are unchanged.
 
 Gates:
@@ -4312,7 +4318,9 @@ Gates:
   runner reads the replica registry ([operations-and-observability.md](operations-and-observability.md)).
   If a live replica runs a version below the step's `requires-app`, it exits `3` without applying
   anything. It lists those replicas and the two ways forward of R-HA-021. There is no override flag:
-  the downtime path is to scale the replicas to zero, so that the registry shows none.
+  the downtime path is to scale the replicas to zero, so that the registry shows none. It also exits
+  `3` while a background migration the step names in `-- trove:requires-background` has not succeeded
+  ([ha-and-helm.md](ha-and-helm.md) R-HA-021 step 4, Q-HA-115).
 - **Gate in `trove serve`**, through the `schema` readiness check, with R-HA-018's rule: a binary
   of version V serves only if `schema_state.applied` is at least its `requiredSchema` and
   `compat_floor` is at most V.
@@ -4349,7 +4357,7 @@ Acceptance criteria:
   commit, and an entry that names no edit of `main` fails (Q-ARCH-283). A file that only the checked-out branch
   has is not checked, because main does not hold it yet.
 - The tests are `TestR_ARCH_026_*` in `test/compat`; the history check runs in the same job and target as the release check.
-  Until the first stable release both checks are switched off with the job `compat` ([Q-ARCH-332](#q-arch-332--no-backward-compatibility-until-the-first-stable-release)).
+  Until the first stable release both checks are switched off with the job `compat` ([Q-ARCH-340](#q-arch-340--no-backward-compatibility-until-the-first-stable-release)).
 - A unit test fails on a migration file without a valid `phase` header, on a contract step without
   `requires-app`, and on a contract-class statement (`DROP`, `RENAME`, `SET NOT NULL`) in an expand
   file, with the expand/contract rules on (`TestParseSteps` runs them on while the switch is off). With
@@ -7630,7 +7638,7 @@ Context: `formathost/virtual.go` derived the directory of a package's cached art
 
 ### Q-ARCH-273 · How is the OpenAPI breaking-change checker pinned and run?
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Superseded until the first stable release by [Q-ARCH-332](#q-arch-332--no-backward-compatibility-until-the-first-stable-release): the job that runs the check is switched off; the checker, its pin and its tests stay.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Superseded until the first stable release by [Q-ARCH-340](#q-arch-340--no-backward-compatibility-until-the-first-stable-release): the job that runs the check is switched off; the checker, its pin and its tests stay.
 
 Context: R-ARCH-025 requires an OpenAPI breaking-change check of `api/openapi.yaml` against the latest release, with a pinned tool, one version of it (ADR-125). The repository runs its other Go-built tools (golangci-lint, gocyclo, actionlint) as binaries at a pin in `tools/versions.env`. The product module's `go.mod` must not take on the checker's requirements. A module install of oasdiff reports `main` from `--version`, so the version has to come from the build information.
 
@@ -7649,7 +7657,7 @@ Context: R-ARCH-025 requires an OpenAPI breaking-change check of `api/openapi.ya
 
 ### Q-ARCH-274 · What is the baseline, and what do the checks accept?
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Superseded until the first stable release by [Q-ARCH-332](#q-arch-332--no-backward-compatibility-until-the-first-stable-release): the job that runs both checks is switched off; the checks and their tests stay.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Superseded until the first stable release by [Q-ARCH-340](#q-arch-340--no-backward-compatibility-until-the-first-stable-release): the job that runs both checks is switched off; the checks and their tests stay.
 
 Context: R-ARCH-025 and R-ARCH-026 promise compatibility with what users installed, and what they installed is a release tag. The baseline has to be a release and not a moving commit. The CI check runs on the release commit too, where HEAD carries the tag. R-ARCH-025 promises additive changes only within `/api/v1`, so a breaking change has no exception.
 
@@ -7919,7 +7927,7 @@ Tests: `TestR_NUGET_016_ARemoteForwardsItsSearchAndFallsBackToItsCache`, `TestR_
 Status: **Decided by the owner on 2026-11-02** — option (b). The owner's direction after the first message: the installation is
 pre-alpha, so a database reset before the beta is an accepted cost; from the completion of the beta plan
 ([BETA.md](../projektplan/BETA.md)) on, reliability of installed data is priority 1, and this rule enforces the part of it that
-costs nothing now. Superseded until the first stable release by [Q-ARCH-332](#q-arch-332--no-backward-compatibility-until-the-first-stable-release) (owner, 2026-11-06): a migration file may be
+costs nothing now. Superseded until the first stable release by [Q-ARCH-340](#q-arch-340--no-backward-compatibility-until-the-first-stable-release) (owner, 2026-11-06): a migration file may be
 edited, and the job that runs the history check is switched off; the check and its tests stay.
 
 Context: on 2026-11-02 `00019_projects.sql`, first committed in `007c3dfc` and on `main`, was rewritten in `f5273866` into the
@@ -9095,7 +9103,29 @@ Context: the quiesce runs from a timer (`time.AfterFunc`) that was stopped only 
 
 **Applied in the spec:** R-ARCH-024 (step 4). Code: `Shutdown` in `internal/app/app.go`. Test: `TestShutdownQuiesceTimer`.
 
-### Q-ARCH-332 · No backward compatibility until the first stable release
+### Q-ARCH-332 · Where the shared asset store of the UI sits in the code
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the shared asset store of [ha-and-helm.md](ha-and-helm.md#q-ha-120--how-a-replica-serves-a-hashed-ui-file-of-the-other-release)
+reads and writes PostgreSQL and the blob store, is used by the UI handler of `internal/webui`, and runs a publish at start-up and a loop.
+`internal/webui` imports no other package of the module (its package comment), so that it can be tested over an `fs.FS` alone.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An area `ui-assets` and a package `internal/webui/shared` (chosen) | The step `ui-assets` (`wireUIAssets`) on the roles that serve the UI (`api`, `web`, `all`) builds the store over the `infra` area's database and blob store, publishes, and starts the keeper; `internal/webui` defines the interface `Shared` and the hashed pattern; `internal/webui/shared` (layer edge) implements the store with the sqlc statements and the blob store | `internal/webui` stays free of the database and the blob store; the role table says where the store exists (`packages` serves no UI and builds none); `planSteps` proves the inputs | One more area and package |
+| (b) The store inside `internal/webui` | One package | Fewer files | The handler's package imports the blob store and the database, and its tests need them |
+| (c) The store in `internal/app` | The composition root holds it | No new package | The composition root would hold statements and logic of its own |
+
+**Choice:** (a).
+
+**Rationale:** it keeps each package's dependencies where they were and makes the roles that build the store data of the step list,
+like every other area. Revisit if another role starts serving the UI.
+
+**Applied in the spec:** the area table (`ui-assets`), the component table (webui). Code: [wire_ui_assets.go](../../internal/app/wire_ui_assets.go),
+[steps.go](../../internal/app/steps.go), [internal/webui/shared](../../internal/webui/shared/). Test: `TestR_ARCH_001_RoleTableIsData`.
+
+### Q-ARCH-340 · No backward compatibility until the first stable release
 
 Status: **Decided by the owner on 2026-11-06.** Option (a). Supersedes [Q-ARCH-273](#q-arch-273--how-is-the-openapi-breaking-change-checker-pinned-and-run), [Q-ARCH-274](#q-arch-274--what-is-the-baseline-and-what-do-the-checks-accept) and
 [Q-ARCH-283](#q-arch-283--is-a-migration-on-main-immutable-and-what-does-the-check-hold-to) until the first stable release.
@@ -9138,11 +9168,11 @@ with `sets=upgrade` only), `enforceMigrationPhases` in `internal/meta/postgres/s
 `requiredSchema` take the mode), the message of `verifyApplied` in `internal/meta/postgres/migrate.go`. Tests: `TestParseSteps`
 (the rules on), `TestParseStepsRelaxed` (off), `TestRequiredSchemaBothModes`, `TestEmbeddedSteps`, `TestGate`.
 
-### Q-ARCH-333 · Code shaped only by the compatibility rules is cleaned up, the cluster minimum version stays
+### Q-ARCH-341 · Code shaped only by the compatibility rules is cleaned up, the cluster minimum version stays
 
 Status: **Decided by the owner on 2026-11-06.** Not built yet.
 
-Context: with the compatibility checks switched off (Q-ARCH-332), four places keep a shape that only the rules of R-ARCH-025
+Context: with the compatibility checks switched off (Q-ARCH-340), four places keep a shape that only the rules of R-ARCH-025
 and R-HA-020 gave them: (1) the replica list reports roles through a closed enum and maps every role that serves client
 endpoints to `web` (`roleClass`, `internal/api/v1/roles.go`); (2) a list cursor carries a version that older releases decode
 (`cursorVersion`, `decodableCursorVersions`, `internal/api/edge/list.go`, R-API-010); (3) the npm audit answers from trove's data

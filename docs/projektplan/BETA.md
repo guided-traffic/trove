@@ -187,7 +187,7 @@ Details: [roadmap M3](../coverage/roadmap.md#m3--nuget) · spec: [formats/nuget.
 
 **Carried over**
 - 🟢 Renovate pull request #42 (TypeScript 7, a major update): it cannot merge while `@angular/compiler-cli` 22.2 and typescript-eslint accept only `typescript <6.1`; a Renovate rule holds TypeScript below 6.1 until Angular's peer range admits 7 ([ADR-140](../decisions.md#adr-140--typescript-is-held-below-61-until-angulars-peer-range-admits-7x))
-- 🟢 CI checks against the latest release: `api/openapi.yaml` with a breaking-change checker (R-ARCH-025) and the embedded migration files (R-ARCH-026), job `compat` and `make compat-check`; switched off until the first stable release ([Q-ARCH-332](../spec/architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release), owner 2026-11-06)
+- 🟢 CI checks against the latest release: `api/openapi.yaml` with a breaking-change checker (R-ARCH-025) and the embedded migration files (R-ARCH-026), job `compat` and `make compat-check`; switched off until the first stable release ([Q-ARCH-340](../spec/architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release), owner 2026-11-06)
 
 **NuGet v3**
 - 🟢 Local: service index, package content, registrations, search, push, unlist, relist, delete; search terms meet only the
@@ -408,7 +408,7 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 **The owner's requests during the run (2026-11-02)**
 - 🟢 Migrations are immutable once on `main`, released or not: a committed file is never edited, renamed or removed, and a
   defect is fixed forward with a new migration of the class R-HA-018 gives it. Switched off until the first stable release
-  ([Q-ARCH-332](../spec/architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release), owner 2026-11-06):
+  ([Q-ARCH-340](../spec/architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release), owner 2026-11-06):
   a migration may be edited then, and a changed one needs a fresh database. `make compat-check` (job `compat`) reads the
   history of `main` and fails on a change, with the file, the commit and the rule in the message; its allowlist
   `historicalEdits` names the two commits from before the rule ([Q-ARCH-283](../spec/architecture.md#q-arch-283--is-a-migration-on-main-immutable-and-what-does-the-check-hold-to),
@@ -866,7 +866,7 @@ areas.
 - 🟢 Specification rewritten: INV-2, R-ARCH-001, R-ARCH-016 (the queue `vuln`, `jobs.queues`, `jobs.exclude_queues`),
   R-HA-002, R-HA-037 (one host split by path prefix), R-HA-042 (one ingress policy per Deployment, each rule with its port; the
   egress part removed, Q-HA-10 superseded, the egress gap H-516, H-41 narrowed to the ingress enforcement), R-HA-062 (path
-  and worker pools), R-HA-064 (the upgrade across the cut in two steps through the bridge `web.enabled`), R-EP-008 (endpoint
+  and worker pools), R-HA-064 (the upgrade across the cut through the bridge `web.enabled`, three steps since Q-HA-130), R-EP-008 (endpoint
   pools by role), the UI's content routes on `api` (Q-UI-106); ADR-013, ADR-104 and ADR-105 revised; decisions Q-ARCH-294 to
   Q-ARCH-299, Q-HA-71 to Q-HA-79, Q-EP-70, Q-EP-71, Q-OPS-161, Q-UI-106, Q-UI-107; work packages WP6a.1 to WP6a.5
 - 🟢 The roles in the binary (`SubsystemsFor` and the wiring areas) and in the chart: a Deployment, Service, disruption
@@ -881,10 +881,24 @@ areas.
   restore` (0 failed) and 25 browser journeys; the guard refuses `web.enabled: false` before anything changes; between the steps the
   registry lists `api`, `packages`, `web` and `worker`, after step 2 no `web`. 2 journeys met the UI's hashed assets of the other
   release, which the pods of v0.16.0 cannot serve; for that release alone they are counted as a finding
-  ([Q-HA-99](../spec/ha-and-helm.md#q-ha-99--the-uis-hashed-assets-across-an-upgrade), F-58). The dev PostgreSQL allows 450
-  connections for the bridge (Q-HA-98). Open: E6a.8, a passing test that names R-HA-021, R-HA-031, R-HA-038 and R-HA-045 (the last
-  three are completed with phase 7's chart). The leg `e2e-upgrade (upgrade)` passed both upgrade tests in the dispatched nightly run
-  42177273488
+  ([Q-HA-99](../spec/ha-and-helm.md#q-ha-99--the-uis-hashed-assets-across-an-upgrade); between releases with the shared asset store
+  the skew is fixed, Q-HA-120). The dev PostgreSQL allows 450
+  connections for the bridge (Q-HA-98). Open: E6a.8, a passing test that names R-HA-031, R-HA-038 and R-HA-045 (completed with
+  phase 7's chart). The leg `e2e-upgrade (upgrade)` passed both upgrade tests in the dispatched nightly run 42177273488.
+  R-HA-021 (2026-11-06, finding F-59): `GET /api/v1/system/migrations` is built, the report of `trove migrate status` from the same
+  code with the background migrations and their states (Q-HA-114), and a contract step declares the background migration it
+  depends on, which the guard enforces (Q-HA-115). `TestR_HA_021_UpgradePreparation` names R-HA-021 and passes against the local
+  integration stack (step 4: report and guard agree for each state; the runner's part of both criteria); it passed in Test and Release run 42233888865, and
+  the Helm level of the criteria (a real `helm upgrade` across a contract step) is not tested. The upgrade tests read the endpoint
+  (Q-HA-116, supersedes Q-HA-96); both upgrade tests passed with that read in the dispatched nightly run
+  42230022283.
+  The scheduled nightly run 42194413882 showed a gap of the two-step cut (F-64): the edge answered 509 requests
+  with `503` during step 2, one journey met it. Since 2026-11-06 the cut takes three steps, each changing either the edge or the
+  backends (`web.routed`, [Q-HA-130](../spec/ha-and-helm.md#q-ha-130--the-cut-moves-the-edge-and-removes-the-bridge-in-two-separate-upgrades)),
+  the guard also refuses the last step while the edge still routes to the bridge, and both upgrade tests fail on any answer of the
+  edge without a backend ([Q-HA-131](../spec/ha-and-helm.md#q-ha-131--the-upgrade-tests-read-the-edges-access-lines-for-answers-without-a-backend));
+  verified by the chart test and against an API server for the guard, and the three steps under the loops passed in the dispatched
+  nightly run 42234688882
 
 ## Phase 6b · Remote full mirror
 
@@ -941,10 +955,15 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   `open_duration`, an upload with `Expect: 100-continue` sent its body before the `503`, the audit forward's timeout (Q-STOR-147 to
   Q-STOR-149, Q-HA-103 to Q-HA-105, Q-NPM-77). Node loss met its bounds (replacements ready 65 s after the node was declared lost,
   the lease moved, never two holders); a command running on the lost node may fail with a network error (Q-HA-105). Open: a run of the
-  whole set after the fixes. In the dispatched nightly run 42177273488 the node loss, both primary losses, the audit drain and the 5-minute
+  whole set after the fixes. The set `ha-suite` passed whole in the dispatched nightly run 42211913572. In the dispatched nightly run 42177273488 the node loss, both primary losses, the audit drain and the 5-minute
   outage passed; the 30 s outage failed on two defects of the test (the outage was counted from before the stop script, which takes
   26 s, and two answers that started before the window were judged by their start), fixed (Q-STOR-150). Pod crash, switchover, Valkey
-  failover and outage were green before
+  failover and outage were green before. In the dispatched nightly run 42192042297 both object-store outages, both primary losses and
+  the audit drain passed; node loss failed there (42 s), being analysed. Objects lost from the store (F-62, seen on the dev cluster): a
+  remote's cached document, tarball or package without its object is filled again from the upstream, `503 content_unavailable` while it
+  cannot, never `500` and never `404` (also through a virtual repository for a caller who may not fill); a fill that cannot restore it
+  backs off for 5 minutes; the read marks the blob, `TroveBlobMissing` fires, and the mark heals once the object is back (a read asks the
+  store again once per blob and 30 s) (Q-REPO-202 to Q-REPO-206, Q-STOR-151 to Q-STOR-153, `TestR_STOR_027_*`, `TestR_HA_024_*`)
   (`TestNPMHACrash`, `TestNPMHA`, `TestNPMHAClosing`, `TestE13Failover`)
 - 🟢 Node drain under npm and NuGet load with zero failed requests; the NuGet load (`TestNuGetHA`) and R-ARCH-024's drain
   criterion move here from phase 4 ([Q-NUGET-73](../spec/formats/nuget.md#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs)). `TestNuGetHA` (set `nuget-ha`, nightly leg `e2e-nuget (nuget-ha)`
@@ -954,7 +973,7 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   acknowledged publish and push installed, probe jobs resumed with `attempt` 1, no SIGKILL; the PostgreSQL switchover and the Valkey
   failover under the same load without a failed command. The load took 16 cores of the dev cluster. The leg passed on the large class in
   the dispatched nightly run 42177273488
-- 🟡 npm load in the drain and failover tests reliably green (moved from phase 3, owner 2026-11-01). Diagnosis of
+- 🟢 npm load in the drain and failover tests reliably green (moved from phase 3, owner 2026-11-01). Diagnosis of
   2026-11-01: `make e2e SET=npm-ha` passes on a 17-CPU kind cluster (drain: 40,894 k6 requests, 0 failures, every job at
   attempt 1); with the kind nodes held to 6 CPUs the drain gets 1,062 `503`s, all `memory_slots` shedding of Q-ARCH-240 (no
   OOM, heap 111 MB), and the PostgreSQL switchover fails too. The scenario needs about 12 cores. In CI run 41322837920 the
@@ -971,7 +990,12 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   H-539). The release writes at shutdown get their whole settle deadline
   ([Q-ARCH-329](../spec/architecture.md#q-arch-329--the-job-worker-is-cancelled-early-enough-that-the-release-writes-of-its-jobs-get-their-whole-settle-deadline)):
   the job worker is cancelled 15 s before the close deadline (`TestShutdownReleaseWrites`). The nightly `npm-ha` passed on the class
-  `large` in run 42126196109. Open: green nightly runs in a row on the fix
+  `large` in run 42126196109 (whose commit b8d60cd9 did not carry the fix). On the fix (f99d7105, 64368aea), checked 2026-11-06: every
+  nightly run that ran the legs passed them, two in a row: the dispatched run 42177273488 (all legs, commit 8dbe649b) and the
+  scheduled run 42194413882 (commit 24a29ff5), each `e2e-npm (npm-ha)` (`TestNPMHA`: drain variant A, PostgreSQL switchover and Valkey
+  failover under the npm load), `e2e-npm (npm-ha-soak)` (`TestNPMHACrash` with ten force-deletes, `TestNPMPerf`) and `e2e (failover)`;
+  the dispatched runs 42192042297 and 42211913572 ran other sets only. The failure suite under the npm load (`ha-suite`) is the item
+  "Failure suite" of this phase
 - 🟢 The drain criterion of the security audit (R-NPM-038, moved from phase 3): the `web` pod that forwards an `npm audit`
   to a provider answering after 20 s is deleted 1 s in; `npm audit` succeeds and no pod gets `SIGKILL`. `TestHASuite_R_NPM_038_AuditDrain`
   (set `ha-suite`) passed on kind on 2026-11-06: the audit exited 0 after 20.3 s, the `packages` pod deleted 1,002 ms after the
@@ -988,7 +1012,14 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 - 🟡 The mirror sync of phase 6b under the failure suite: a `worker` drained and lost mid-pass, the upstream throttling. Built
   2026-11-06 in the set `mirror-long` ([Q-REPO-198](../spec/repositories-and-proxy.md#q-repo-198--the-failure-suite-of-the-mirror-a-remote-and-a-range-of-names-per-scenario-the-upstreams-request-log-for-the-waits-the-process-lost-three-ways)):
   the pass's process force-deleted, its node stopped and frozen, a `429` and a `503 SlowDown` across a drain and a kill (witnessed by the
-  counting upstream's new request log), a switchover and a Valkey failover during a pass. Open: their first run (nightly)
+  counting upstream's new request log), a switchover and a Valkey failover during a pass. Their first nightly run (dispatched,
+  42211913572) passed the pod crash, both throttling scenarios, the switchover and the drain, and failed the node loss and the frozen node
+  (F-65): the clearance raced the operator's own switchover off the cordoned node, fixed by moving the primaries before the cordon and
+  making `failover.sh` wait for what it needs ([Q-HA-126](../spec/ha-and-helm.md#q-ha-126--the-node-clearance-moves-the-primaries-before-the-cordon-and-failoversh-waits-for-what-a-switchover-needs));
+  a paused holder of the `scheduler` lease kept it for as long as the pause lasted, fixed by `idle_session_timeout` on the lease sessions
+  ([Q-HA-127](../spec/ha-and-helm.md#q-ha-127--a-lease-session-that-stays-silent-is-ended-by-the-server-within-the-keepalives-bound)).
+  Both fixes passed the whole set on the dev cluster (25 min 51 s), and the frozen node with the lease's holder on it
+  progressed again after 2 min 7 s. Open: a nightly run of the set
 - 🟢 The Bastion under the failure suite: a Bastion replica drained and lost, the main installation unreachable and
   failing over, a rolling upgrade of either side. Built 2026-11-06 in the set `bastion-long` (Q-BAS-141 to Q-BAS-144) and green on the
   dev cluster under `npm ci`, `dotnet restore` and cold-miss loops: a replica force-deleted on either backend (about 100 commands each,
@@ -999,15 +1030,33 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 - 🟡 Vulnerability scanning under the failure suite: sync and evaluation jobs across drains and failovers, blocks and triage after a restore (E5.13).
   Built 2026-11-06 in the set `vuln-long` (Q-VULN-87 to Q-VULN-89): a switchover during an evaluation of 40,000 expected findings (no
   finding twice, none lost), the block of four versions answered on every replica through a node drain, a Valkey failover and a
-  switchover, a worker killed mid-sync (a failed job and a clean next run: the sync kinds have one attempt). Open: their first run
-  (nightly), drain variants B to E, and the restore part, which waits for backup and restore
+  switchover, a worker killed mid-sync (a failed job and a clean next run: the sync kinds have one attempt). The set `vuln-long` passed
+  with them in the dispatched nightly run 42192042297, after two defects of the tests and one of the product were fixed (the alias
+  closure's plan on a table without statistics, Q-VULN-94). Open: drain variants B to E, and the restore part, which waits for backup
+  and restore
 - 🟢 Rolling upgrade from the previous pre-release with mixed versions. `TestUpgrade_R_HA_020_RollingFromThePreviousRelease`
   (set `upgrade`) passed on kind on 2026-11-06: v0.19.0 (resolved from the tags) upgraded with its migration Job and rolled back with
   `helm rollback`, under 447 `npm ci`, 47 publishes, 545 `dotnet restore` and 71 browser journeys, 0 failed; R-HA-020's verification
-  (rollout status, only the new version listed, no pending migration through `trove migrate status`, since the endpoint is F-59). The
-  test is strict on the UI's assets: the first release that changes the bundle makes it red until F-58 is fixed. Passed in the dispatched
-  nightly run 42177273488 as well
-- 🟡 Performance targets met in two nightly runs in a row
+  (rollout status, only the new version listed, no pending migration through `trove migrate status`, since the endpoint was F-59). The
+  test is strict on the UI's assets. Passed in the dispatched nightly run 42177273488 as well. Since 2026-11-06 the verification reads `GET /api/v1/system/migrations` and
+  waits for the background migrations to succeed, with the command as the cross-check (Q-HA-116), passed in nightly run 42230022283. The UI's hashed files across the window
+  (F-58) are served by the shared asset store since 2026-11-06 ([Q-HA-120](../spec/ha-and-helm.md#q-ha-120--how-a-replica-serves-a-hashed-ui-file-of-the-other-release)
+  to [Q-HA-125](../spec/ha-and-helm.md#q-ha-125--the-rolling-upgrade-from-a-release-without-the-store-stays-strict)):
+  `TestUpgrade_R_HA_020_AcrossTwoBundles` (set `upgrade`) passed on kind on 2026-11-06, the working tree with its second UI bundle
+  upgraded to the image under test in 42 s, 213 main scripts named by the indexes of both bundles loaded through the edge (81 of them
+  from a replica of the other bundle), 180 `npm ci`, 14 publishes, 204 `dotnet restore` and 25 journeys, 0 failed. In the same run of
+  the set the rolling test from v0.19.5 (the migration 00043 and the rollback included; 271 `npm ci`, 29 publishes, 333 `dotnet
+  restore`, 44 journeys, 0 failed) and the cut test (2 journeys met the skew against v0.16.0, counted as Q-HA-99 says) passed. The
+  rolling test from the previous release stays strict; it is green with a changed bundle once a release with the store is published
+  (Q-HA-125)
+- 🟡 Performance targets met in two nightly runs in a row. Worked on 2026-11-06 (F-43): the findings page of a pattern grant decides each
+  package once (V-7b), a publish's evaluation makes two round trips instead of eight (V-4), the advisory import's statements reach rows by
+  their primary key and the `ecosystem` columns carry no planner statistics (V-1, F-57), and the perf jobs run after the kind legs
+  (Q-ARCH-325). The dispatched nightly run 42211913572 met ten of the eleven values of R-VULN-028 (V-1 1.01 min, V-4 3.18 ms, V-7b 112 ms);
+  V-5b missed with 1.065 transactions per cached download against 1. P-13 and P-14 were green in every nightly run of the day. V-5b's miss
+  was its measurement: a statement log showed one transaction per cached download, and the database-wide commit count carried the
+  background and the delay of PostgreSQL's counters; V-5b is now counted in the replicas by request, and every download must run exactly
+  one statement after the cache refills R-ARCH-027 exempts (Q-VULN-98, Q-VULN-99), 1 in the local runs. Open: two nightly runs in a row
 
 **Backup and restore**
 - ⚪ Backup job (CronJob): consistent database snapshot, blobs copied incrementally to the backup S3 target
@@ -1044,12 +1093,12 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
     [Q-AUTHZ-207](../spec/authorization.md#q-authz-207--a-user-or-group-is-a-member-of-a-project-with-a-role-and-the-role-grants-the-projects-repositories),
     gap H-542); the project is the context of the content, chosen from your projects
     ([Q-UI-129](../spec/api-and-ui.md#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects), gap
-    H-543); four roles Reader, Developer, Maintainer, Owner
+    H-550); four roles Reader, Developer, Maintainer, Owner
     ([Q-AUTHZ-208](../spec/authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner)), the Owner
     administers the project on its own and the two switches go; `admin` and
     `auditor` see every project, `admin` creates projects and assigns members; the auditor's instance-wide vulnerability
     dashboard in the admin area ([Q-UI-130](../spec/api-and-ui.md#q-ui-130--the-auditor-has-an-instance-wide-vulnerability-dashboard-in-the-admin-area),
-    gap H-544)
+    gap H-551)
 - ⚪ All exit checks green again
 - 🟡 Beta documentation: installation guide, configuration reference, known limitations. The first edition of the
   [manual](../manual/README.md) (7 user and 12 administrator pages, among them installation, configuration and known

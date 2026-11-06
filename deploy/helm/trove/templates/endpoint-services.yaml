@@ -3,18 +3,21 @@ The Services of a further endpoint (R-EP-008, Q-EP-71): <fullname>-ep-<name> wit
 selecting the pods of the role that serves the surface's packages and files families (the api pods
 when the surface holds neither), and <fullname>-api-ep-<name> beside it, selecting the api pods, when
 the surface holds families of both roles. With an endpoint pool the selectors name the pool's pods;
-in the bridge of R-HA-064 the one Service selects the web pods that served the endpoint before the
-cut. sessionAffinity is fixed to None like every Service (R-HA-037).
+while the bridge of R-HA-064 carries the edge (step 1), <fullname>-ep-<name> selects the web pods that
+served the endpoint before the cut, and <fullname>-api-ep-<name> already selects the api pods without
+a route, so that step 2 moves the edge onto a Service whose endpoints exist. sessionAffinity is fixed
+to None like every Service (R-HA-037).
 */ -}}
+{{- $bridge := include "trove.bridgeRouted" . }}
 {{- range $name := include "trove.endpointNames" . | fromYamlArray }}
 {{- $e := include "trove.endpoint" (dict "root" $ "name" $name) | fromYaml }}
 {{- $roles := include "trove.surfaceRoles" (dict "root" $ "name" $name) | fromYamlArray }}
-{{- $targets := list (dict "prefix" "" "role" (first $roles)) }}
-{{- if and (eq (len $roles) 2) (not $.Values.web.enabled) }}
+{{- $targets := list (dict "prefix" "" "role" (ternary "web" (first $roles) (not (empty $bridge)))) }}
+{{- if eq (len $roles) 2 }}
 {{- $targets = append $targets (dict "prefix" "api-" "role" "api") }}
 {{- end }}
 {{- range $t := $targets }}
-{{- $role := ternary "web" $t.role $.Values.web.enabled }}
+{{- $role := $t.role }}
 ---
 apiVersion: v1
 kind: Service

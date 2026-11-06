@@ -144,7 +144,7 @@ database. Schema migrations are embedded in the binary and applied by `trove mig
 pre-install/pre-upgrade Job) under a PostgreSQL advisory lock. From the first stable release on,
 migrations follow expand/contract, so version N and N-1 replicas can run side by side during a
 rolling upgrade; before it there is no backward compatibility, and an upgrade may need a new
-database ([Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)).
+database ([Q-ARCH-340](architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release)).
 Valkey is an owner constraint since 2026-10-28.
 
 **INV-4 · Blob store.** S3-compatible object storage (AWS S3, MinIO, Ceph RGW and similar).

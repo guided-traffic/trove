@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,7 +24,7 @@ const (
 // enforceMigrationPhases switches on the expand/contract rules of R-HA-018 for
 // the migration files: every file carries -- trove:phase, an expand step holds
 // no contract-class statement, and requiredSchema is the newest expand step.
-// Switched off until the first stable release (Q-ARCH-332): a file needs no
+// Switched off until the first stable release (Q-ARCH-340): a file needs no
 // header, any step may drop, rename or tighten, and requiredSchema is the
 // highest number. Set it to true to switch the rules on again; the embedded
 // files must then pass them (TestEmbeddedSteps).
@@ -38,8 +39,11 @@ type Step struct {
 	Phase       string // expand or contract; expand without a header while enforceMigrationPhases is off
 	NoTx        bool   // -- trove:no-transaction
 	RequiresApp string // contract steps: the oldest release allowed to serve afterwards
-	SQL         string
-	Checksum    [sha256.Size]byte
+	// RequiresBackground are the background data migrations a contract step depends on (-- trove:requires-background
+	// <name>, once per migration): the contract guard refuses the step until each has succeeded (R-HA-022, Q-HA-115).
+	RequiresBackground []string
+	SQL                string
+	Checksum           [sha256.Size]byte
 }
 
 var fileName = regexp.MustCompile(`^(\d{5})_([a-z0-9][a-z0-9_]*)\.sql$`)
@@ -131,7 +135,7 @@ var contractStatements = regexp.MustCompile(`(?i)\bdrop\s+(table|column|index|co
 // parseStep reads the header of one file (R-ARCH-026). With strict, the rules of
 // R-HA-018 apply: the phase header is required, and an expand step holds no
 // contract-class statement. Without, a file without -- trove:phase is an expand
-// step and the phase does not restrict the SQL (Q-ARCH-332). Either way a contract
+// step and the phase does not restrict the SQL (Q-ARCH-340). Either way a contract
 // step names the release it requires, because the contract guard and compat_floor
 // read it, and requires-app stands on contract steps only.
 func parseStep(name string, version int, raw []byte, strict bool) (Step, error) {
@@ -172,6 +176,14 @@ func parseStep(name string, version int, raw []byte, strict bool) (Step, error) 
 				return s, fmt.Errorf("trove:requires-app: %q is not a release version", ver)
 			}
 			s.RequiresApp = ver
+		case "requires-background":
+			if !backgroundName.MatchString(arg) {
+				return s, fmt.Errorf("trove:requires-background must name one background migration (lower-case letters, digits and underscores), got %q", arg)
+			}
+			if slices.Contains(s.RequiresBackground, arg) {
+				return s, fmt.Errorf("trove:requires-background %s is named twice", arg)
+			}
+			s.RequiresBackground = append(s.RequiresBackground, arg)
 		default:
 			return s, fmt.Errorf("unknown header trove:%s", key)
 		}
@@ -187,6 +199,9 @@ func parseStep(name string, version int, raw []byte, strict bool) (Step, error) 
 	}
 	if s.Phase == phaseExpand && s.RequiresApp != "" {
 		return s, fmt.Errorf("trove:requires-app belongs to contract steps only")
+	}
+	if s.Phase == phaseExpand && len(s.RequiresBackground) > 0 {
+		return s, fmt.Errorf("trove:requires-background belongs to contract steps only")
 	}
 	body := stripSQLNoise(s.SQL)
 	if strings.TrimSpace(body) == "" {

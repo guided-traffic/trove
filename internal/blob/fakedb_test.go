@@ -3,6 +3,7 @@ package blob_test
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/blob"
 
@@ -28,11 +29,21 @@ type fakeDB struct {
 	exists   int
 	// conflict makes every insert report a concurrent winner whose row is invisible.
 	conflict bool
+	// now is the database clock of checked_at; nil is time.Now.
+	now func() time.Time
 }
 
 type fakeRow struct {
 	state, status string
 	size          int64
+	checked       time.Time // checked_at; zero is NULL
+}
+
+func (f *fakeDB) clock() time.Time {
+	if f.now != nil {
+		return f.now()
+	}
+	return time.Now()
 }
 
 func newFakeDB() *fakeDB {
@@ -141,7 +152,17 @@ func (f *fakeDB) Row(_ context.Context, _ meta.Tx, d blob.Digest) (blob.Row, boo
 func (f *fakeDB) MarkDamaged(_ context.Context, tx meta.Tx, d blob.Digest, status string) (bool, error) {
 	if r := f.rows[d]; r != nil && r.state == "live" && r.status == "ok" {
 		tx.(*fakeTx).statuses[d] = status
+		r.checked = f.clock()
 		return true, nil
 	}
 	return false, nil
+}
+
+func (f *fakeDB) ClaimRecheck(_ context.Context, _ meta.Tx, d blob.Digest, interval time.Duration) (bool, error) {
+	r := f.rows[d]
+	if r == nil || r.state != "live" || r.status != "missing" || (!r.checked.IsZero() && f.clock().Sub(r.checked) < interval) {
+		return false, nil
+	}
+	r.checked = f.clock()
+	return true, nil
 }

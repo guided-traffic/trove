@@ -9,13 +9,13 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 447 of 689 spec requirements are implemented: a passing test names them and no
+**Status.** 451 of 689 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 704 specified (340 of them implemented), 1,535 open.
+**Totals.** 2,239 catalog features on 60 pages: 704 specified (344 of them implemented), 1,535 open.
 689 spec requirements: 546 cover catalog features, 143 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
@@ -38,8 +38,8 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 | 14 |
 | [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 | 14 |
 | [Retention, cleanup and archiving](#retention-cleanup-and-archiving-ret) | `RET` | 42 | – | 26 | 16 | 0 |
-| [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 29 |
-| [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 43 | 57 | 20 |
+| [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 31 |
+| [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 43 | 57 | 22 |
 | [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 26 | 56 | 2 |
 | [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | 2 of 2 | 2 | 68 | 2 |
 | [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | 18 of 18 | 18 | 80 | 15 |
@@ -877,7 +877,7 @@ Catalog page: [retention-and-cleanup.md](../features/retention-and-cleanup.md) �
 Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specified by priority: MVP 49 of 49 · P1 11 of 14 · P2 1 of 10 · Later 0 of 3 · Out of scope 0 of 3
 
 <details>
-<summary>79 features: 61 specified, 18 open, 29 implemented</summary>
+<summary>79 features: 61 specified, 18 open, 31 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -956,8 +956,8 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 | HA-077 | Container installation without Kubernetes | P1 | open | – |
 | HA-078 | Host installation from OS packages, archives and playbooks | P2 | open | – |
 | HA-079 | Single-host evaluation installer | P2 | open | – |
-| HA-069 | Rolling upgrade without downtime | MVP | specified | [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-019](../spec/ha-and-helm.md) (implemented), [R-HA-020](../spec/ha-and-helm.md), [R-HA-064](../spec/ha-and-helm.md) (implemented) |
-| HA-070 | Upgrade preparation | MVP | specified | [R-HA-021](../spec/ha-and-helm.md) |
+| HA-069 | Rolling upgrade without downtime | MVP | implemented | [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-019](../spec/ha-and-helm.md) (implemented), [R-HA-020](../spec/ha-and-helm.md) (implemented), [R-HA-064](../spec/ha-and-helm.md) (implemented) |
+| HA-070 | Upgrade preparation | MVP | implemented | [R-HA-021](../spec/ha-and-helm.md) (implemented) |
 | HA-071 | Uninstall and data cleanup | MVP | specified | [R-HA-048](../spec/ha-and-helm.md) |
 | HA-072 | License installation and license gating of clustering | Out of scope | open | – |
 
@@ -968,7 +968,7 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 Catalog page: [operations-and-monitoring.md](../features/operations-and-monitoring.md) · specified by priority: MVP 17 of 17 · P1 19 of 23 · P2 7 of 34 · Later 0 of 1 · Out of scope 0 of 25
 
 <details>
-<summary>100 features: 43 specified, 57 open, 20 implemented</summary>
+<summary>100 features: 43 specified, 57 open, 22 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1004,7 +1004,7 @@ Catalog page: [operations-and-monitoring.md](../features/operations-and-monitori
 | OPS-030 | Log analytics integrations | P2 | open | – |
 | OPS-031 | Support bundle | P1 | specified | [R-OPS-027](../spec/operations-and-observability.md) |
 | OPS-032 | Scheduled system backups | P2 | specified | [R-API-050](../spec/api-and-ui.md), [R-UI-048](../spec/api-and-ui.md), [R-BAK-001](../spec/backup-and-restore.md), [R-BAK-002](../spec/backup-and-restore.md), [R-BAK-003](../spec/backup-and-restore.md), [R-BAK-006](../spec/backup-and-restore.md), [R-BAK-008](../spec/backup-and-restore.md), [R-BAK-009](../spec/backup-and-restore.md), [R-BAK-010](../spec/backup-and-restore.md), [R-BAK-011](../spec/backup-and-restore.md), [R-BAK-012](../spec/backup-and-restore.md), [R-BAK-013](../spec/backup-and-restore.md), [R-BAK-014](../spec/backup-and-restore.md), [R-BAK-016](../spec/backup-and-restore.md), [R-BAK-017](../spec/backup-and-restore.md), [R-BAK-018](../spec/backup-and-restore.md), [R-BAK-029](../spec/backup-and-restore.md), [R-HA-060](../spec/ha-and-helm.md) |
-| OPS-033 | Component backup and disaster recovery | P1 | specified | [R-BAK-001](../spec/backup-and-restore.md), [R-BAK-005](../spec/backup-and-restore.md), [R-BAK-006](../spec/backup-and-restore.md), [R-BAK-015](../spec/backup-and-restore.md), [R-BAK-019](../spec/backup-and-restore.md), [R-BAK-026](../spec/backup-and-restore.md), [R-BAK-028](../spec/backup-and-restore.md), [R-HA-060](../spec/ha-and-helm.md), [R-HA-023](../spec/ha-and-helm.md), [R-HA-024](../spec/ha-and-helm.md), [R-HA-025](../spec/ha-and-helm.md), [R-HA-026](../spec/ha-and-helm.md) |
+| OPS-033 | Component backup and disaster recovery | P1 | specified | [R-BAK-001](../spec/backup-and-restore.md), [R-BAK-005](../spec/backup-and-restore.md), [R-BAK-006](../spec/backup-and-restore.md), [R-BAK-015](../spec/backup-and-restore.md), [R-BAK-019](../spec/backup-and-restore.md), [R-BAK-026](../spec/backup-and-restore.md), [R-BAK-028](../spec/backup-and-restore.md), [R-HA-060](../spec/ha-and-helm.md), [R-HA-023](../spec/ha-and-helm.md), [R-HA-024](../spec/ha-and-helm.md) (implemented), [R-HA-025](../spec/ha-and-helm.md), [R-HA-026](../spec/ha-and-helm.md) |
 | OPS-034 | System export | P2 | specified | [R-BAK-001](../spec/backup-and-restore.md), [R-BAK-003](../spec/backup-and-restore.md), [R-BAK-005](../spec/backup-and-restore.md) |
 | OPS-035 | System import | P2 | specified | [R-BAK-012](../spec/backup-and-restore.md), [R-BAK-020](../spec/backup-and-restore.md), [R-BAK-021](../spec/backup-and-restore.md), [R-BAK-023](../spec/backup-and-restore.md), [R-BAK-029](../spec/backup-and-restore.md) |
 | OPS-036 | Repository export | P2 | open | – |
@@ -1043,8 +1043,8 @@ Catalog page: [operations-and-monitoring.md](../features/operations-and-monitori
 | OPS-069 | SHA-256 backfill job | P2 | open | – |
 | OPS-070 | Package metadata re-index | P2 | specified | [R-OPS-022](../spec/operations-and-observability.md) |
 | OPS-071 | Maven index calculation | P2 | open | – |
-| OPS-072 | Upgrade compatibility policy | MVP | specified | [R-ARCH-025](../spec/architecture.md) (implemented), [R-HA-021](../spec/ha-and-helm.md) |
-| OPS-073 | Rolling upgrade of a cluster | MVP | specified | [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-020](../spec/ha-and-helm.md), [R-HA-064](../spec/ha-and-helm.md) (implemented) |
+| OPS-072 | Upgrade compatibility policy | MVP | implemented | [R-ARCH-025](../spec/architecture.md) (implemented), [R-HA-021](../spec/ha-and-helm.md) (implemented) |
+| OPS-073 | Rolling upgrade of a cluster | MVP | implemented | [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-020](../spec/ha-and-helm.md) (implemented), [R-HA-064](../spec/ha-and-helm.md) (implemented) |
 | OPS-074 | Schema and data migrations on upgrade | MVP | implemented | [R-ARCH-016](../spec/architecture.md) (implemented), [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-018](../spec/ha-and-helm.md) (implemented), [R-HA-022](../spec/ha-and-helm.md) (implemented) |
 | OPS-075 | Migration from another repository manager | P2 | open | – |
 | OPS-076 | Signed release artifacts | P1 | open | – |
@@ -3105,7 +3105,7 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-REPO-047 (implemented) | Proxy and resolution observability | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
 | R-STOR-011 | Multi-request upload sessions | P1 | [storage.md](../spec/storage.md) |
 | R-STOR-013 (implemented) | Download integrity verification | MVP | [storage.md](../spec/storage.md) |
-| R-STOR-027 | Integrity scrub | P1 | [storage.md](../spec/storage.md) |
+| R-STOR-027 (implemented) | Integrity scrub | P1 | [storage.md](../spec/storage.md) |
 | R-STOR-036 (implemented) | Behavior during an object-store outage | MVP | [storage.md](../spec/storage.md) |
 | R-STOR-046 (implemented) | Storage work per role and across replicas | MVP | [storage.md](../spec/storage.md) |
 | R-STOR-047 | Storage state in backups and restores | MVP | [storage.md](../spec/storage.md) |

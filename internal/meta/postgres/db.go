@@ -86,9 +86,11 @@ func Open(ctx context.Context, cfg config.Database, instance, role string, log *
 		if err != nil {
 			return nil, err
 		}
-		if o.queryTracer != nil && s.kind.class == classMain {
-			pc.ConnConfig.Tracer = o.queryTracer
+		var next pgx.QueryTracer
+		if s.kind.class == classMain {
+			next = o.queryTracer
 		}
+		pc.ConnConfig.Tracer = stmtTracer{next: next}
 		return pgxpool.NewWithConfig(ctx, pc)
 	}
 	common := poolSpec{

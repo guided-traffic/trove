@@ -191,6 +191,19 @@ func TestOpenConnectionClasses(t *testing.T) {
 		check(db.Main(), "main")
 		check(db.ControlPool(), "control")
 		check(db.LeasePool(), "lease")
+		// R-HA-006: only a lease session ends after the keepalive's bound (60 s + 6 x 10 s) without a statement
+		for label, want := range map[string]string{"main": "0", "lease": "2min"} {
+			pool := map[string]interface {
+				QueryRow(context.Context, string, ...any) pgx.Row
+			}{"main": db.Main(), "lease": db.LeasePool()}[label]
+			var got string
+			if err := pool.QueryRow(ctx, "SELECT current_setting('idle_session_timeout')").Scan(&got); err != nil {
+				t.Fatalf("%s idle_session_timeout: %v", label, err)
+			}
+			if got != want {
+				t.Errorf("%s: idle_session_timeout = %q, want %q", label, got, want)
+			}
+		}
 	})
 
 	t.Run("R-HA-013 Ready proves a primary and fails once the pools are closed", func(t *testing.T) {

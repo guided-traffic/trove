@@ -11,7 +11,7 @@ import (
 // replica runs in: api, packages, worker, web, all (Q-OPS-161). The three enums of the released contract that listed
 // roles (`answeredBy.role`, `Replica.roles`, `EncryptionReplica.role`) were closed at web, worker and all, because a
 // value added to a closed response enum fails the OpenAPI breaking-change check of R-ARCH-025, which is switched off
-// until the first stable release (Q-ARCH-332). They keep their meaning of a role class: web is a replica that serves
+// until the first stable release (Q-ARCH-340). They keep their meaning of a role class: web is a replica that serves
 // client endpoints, which is what api, packages and the upgrade bridge are. The exact role is the new member roleName.
 
 // roleClass returns the value of the closed role enums for a role: web for every role that serves client endpoints.

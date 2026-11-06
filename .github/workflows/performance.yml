@@ -5,7 +5,7 @@
 # E1.8) and the drain per role (set drain-roles, E6a.6, under the npm load of npm-ha too, Q-HA-94); job e2e-npm runs the sets npm-ha
 # (drain variant A, the PostgreSQL switchover and the Valkey failover under the npm load, E2.11) and ha-suite (the failure suite under the
 # npm load); job e2e-upgrade runs the set upgrade (published releases upgraded to the commit's image under the npm and NuGet loads, with a
-# browser journey; switched off in the nightly run until the first stable release, Q-ARCH-332, and run by a dispatch with sets=upgrade); job npm-ha-soak runs the 20-minute pod crash of R-HA-052 under the npm load and the npm load scripts of R-ARCH-027
+# browser journey; switched off in the nightly run until the first stable release, Q-ARCH-340, and run by a dispatch with sets=upgrade); job npm-ha-soak runs the 20-minute pod crash of R-HA-052 under the npm load and the npm load scripts of R-ARCH-027
 # (Q-HA-67); job e2e-nuget runs nuget-ha (TestNuGetHA: the drain and failover under the NuGet load and the npm load, on the large class,
 # Q-HA-102); job e2e-ci runs ci-ha (E4.7); job e2e-bastion runs the sets bastion and
 # bastion-long (R-BAS-049); job e2e-vuln runs vuln and vuln-long (R-VULN-029); job e2e-mirror runs mirror and mirror-long (R-REPO-059).
@@ -20,9 +20,10 @@
 # docs/developer/releasing.md#ha-and-performance-nightly.
 #
 # Runners (owner, 2026-11-05; the assignment and its measured basis, Q-ARCH-326): the jobs run on the organisation's large runners (runs-on:
-# large), the class for kind, e2e and load tests, except the kind legs that load the NuGet clients image (e2e-nuget, e2e-ci, e2e-bastion,
-# e2e-vuln, e2e-upgrade, and the set mirror of e2e-mirror): they need more than a large pod's 30 GiB of Docker storage and run on GitHub-hosted
-# runners (runs-on: ubuntu-24.04). Sizes: docs/developer/releasing.md#ci.
+# large), the class for kind, e2e and load tests, except e2e-ci, e2e-bastion, e2e-vuln and e2e-upgrade, which run on GitHub-hosted runners
+# (runs-on: ubuntu-24.04). The legs with a CPU-bound condition that load the NuGet clients image moved to large once that image went into the
+# control-plane node only: nuget-ha (Q-HA-102) and the set mirror, whose install-time ratio is enforced here (Q-REPO-211).
+# Sizes: docs/developer/releasing.md#ci.
 name: HA and Performance (nightly)
 
 on:
@@ -1459,7 +1460,7 @@ jobs:
         include:
           - set: mirror
             port: "8098"
-            runner: ubuntu-24.04    # loads the NuGet clients image: it outgrows a large pod's Docker storage
+            runner: large           # the install-time ratio needs CPU the pass does not take from the installs (Q-REPO-211)
           - set: mirror-long
             port: "8099"
             runner: large
@@ -1639,11 +1640,11 @@ jobs:
         run: make dev-down
 
   # The upgrade leg (set upgrade, deploy/dev/e2e.sh; docs/developer/e2e.md): published releases of the chart (https://guided-traffic.github.io/trove/)
-  # and their images (guidedtraffic/trove:<x.y.z> on Docker Hub) are installed on a kind cluster and upgraded to the image built from the
-  # commit, under the npm and the NuGet client loops and with a browser journey. Both clients images are needed, so the job runs on a
+  # and their images (guidedtraffic/trove:<x.y.z> on Docker Hub), and the commit with its second UI bundle, are installed on a kind cluster
+  # and upgraded to the image built from the commit, under the npm and the NuGet client loops and with a browser journey. Both clients images are needed, so the job runs on a
   # GitHub-hosted runner with the disk space freed, as e2e-vuln does (Q-ARCH-326). Edge port 8101 is the first free one after ha-suite's 8100.
   # A red leg is a finding and holds nothing (owner, 2026-11-01).
-  # Switched off in the nightly run until the first stable release (Q-ARCH-332): it runs only on a dispatch that names it
+  # Switched off in the nightly run until the first stable release (Q-ARCH-340): it runs only on a dispatch that names it
   # (-f sets=upgrade). To switch it on, put `!inputs.sets || ` back in front of the contains() of the condition.
   e2e-upgrade:
     name: e2e-upgrade on kind (upgrade)
@@ -1747,6 +1748,10 @@ jobs:
 
       - name: make image
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      # TestUpgrade_R_HA_020_AcrossTwoBundles installs the commit with its second UI bundle and upgrades to the image above (Q-HA-124).
+      - name: make image-marked
+        run: make image-marked VERSION=dev
 
       - name: make dev-up
         timeout-minutes: 25

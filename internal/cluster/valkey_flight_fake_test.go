@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -211,6 +212,19 @@ func (s *memServer) count(name string) int {
 	var n int
 	for _, c := range s.cmds {
 		if strings.EqualFold(c[0], name) {
+			n++
+		}
+	}
+	return n
+}
+
+// keyCommands is the number of commands seen that name key as an argument.
+func (s *memServer) keyCommands(key string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var n int
+	for _, c := range s.cmds {
+		if slices.Contains(c[1:], key) {
 			n++
 		}
 	}

@@ -16,12 +16,15 @@
 SELECT (extract(epoch FROM clock_timestamp()) * 1000000)::bigint AS now_us;
 
 -- name: ProxyEntryGet :many
--- One cache entry with the size of its blob. ttl_us is the remaining lifetime of a
--- metadata entry on the database clock (negative when expired), 0 for an artifact.
+-- One cache entry with the size and the content status of its blob. ttl_us is the
+-- remaining lifetime of a metadata entry on the database clock (negative when expired),
+-- 0 for an artifact. A blob whose content_status is not ok makes the entry a cache miss
+-- (storage.md R-STOR-027).
 SELECT e.kind,
        COALESCE(e.item_id, 0)::bigint AS item_id,
        e.blob_sha256,
        b.size AS blob_size,
+       b.content_status AS blob_content_status,
        e.upstream_url,
        COALESCE(e.upstream_etag, '')::text AS upstream_etag,
        COALESCE((extract(epoch FROM e.upstream_last_modified) * 1000000)::bigint, 0)::bigint AS last_modified_us,

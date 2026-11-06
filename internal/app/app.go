@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"os"
@@ -60,9 +61,16 @@ type Options struct {
 	// DialOverride points the connections of the outbound clients at other addresses (outbound.WithDialOverride): a test
 	// reaches a stub as the public registry's host name. Tests only. Production passes nil.
 	DialOverride map[string]string
+	// Database adds options to the database pools of the replica (postgres.WithQueryTracer): a test counts the transactions
+	// a request runs in the replica itself (R-ARCH-027, R-VULN-028 V-5). Tests only. Production passes nil.
+	Database []postgres.Option
 	// SkipInfrastructure starts the HTTP shell without PostgreSQL and Valkey. The
 	// shell tests use it; a production caller never sets it.
 	SkipInfrastructure bool
+	// UIAssets replaces the UI build embedded in the binary (webui.Options.Assets): the build the
+	// replica serves and publishes to the shared asset store. Tests only: two replicas of one test
+	// process stand for two releases with different builds (R-HA-020). Production passes nil.
+	UIAssets fs.FS
 }
 
 // App is one running replica.
@@ -471,10 +479,18 @@ func (a *App) startClient() error {
 	if err != nil {
 		return err
 	}
+	uiLog := a.log.With("component", "ui")
 	ui, err := webui.New(webui.Options{
 		Locales: uiLocales(), DefaultLocale: uiDefaultLocale, ImageOrigins: cfg.UI.Readme.ExternalImageOrigins,
 		// The saved language of a signed-in user beats Accept-Language (R-UI-001).
 		Preference: a.uiPreference(),
+		Assets:     a.o.UIAssets,
+		// A hashed file of the other release of a rolling upgrade (R-HA-020, Q-HA-120).
+		Shared: a.uiShared(),
+		OnSharedError: func(locale, path string, err error) {
+			uiLog.Warn("a hashed file of another release could not be read from the shared asset store; the request is answered 503",
+				"file", locale+"/"+path, "error", err)
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("ui: %w", err)

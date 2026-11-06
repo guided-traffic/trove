@@ -54,6 +54,9 @@ type flightResult struct {
 	// open, the spool refused admission, or the upstream rate-limited it. It answers nobody else, so a client that joined
 	// the flight finds the result empty and fetches for itself with the classification of R-REPO-029 (R-REPO-055).
 	own error
+	// unrepaired: the fill committed and left the entry lost (a format kept the stored document, Q-REPO-205); err says so.
+	// The flight is released stored, so that a waiter elsewhere does not fetch the same again.
+	unrepaired bool
 }
 
 // usable reports whether the result answers the requests that waited for it. An
@@ -87,6 +90,9 @@ type reqState struct {
 	// stream is the leader's own client for an artifact; nil when it gets its answer
 	// from the stored entry.
 	stream *stream
+	// lost says that the request found its item lost (its object missing or damaged) before it entered the flight, and
+	// sawLost that a re-check under the flight found it lost still (Q-REPO-205).
+	lost, sawLost bool
 }
 
 type waitEnd uint8
@@ -284,7 +290,7 @@ loop:
 	res := e.fetch(ctx, rq, st, fl)
 	if hold != nil {
 		o := cluster.OutcomeFailed
-		if res.stored || res.doc != nil || res.negative {
+		if res.stored || res.doc != nil || res.negative || res.unrepaired {
 			o = cluster.OutcomeStored
 		}
 		e.release(hold, o)
@@ -301,7 +307,7 @@ func (e *Engine) waitOnce(ctx context.Context, f cluster.FlightKey, rq Request, 
 		return flightResult{}, false, bypassWaitTimeout
 	}
 	wctx, cancel := context.WithTimeout(ctx, remaining)
-	_, err := e.o.Flights.Wait(wctx, f)
+	outcome, err := e.o.Flights.Wait(wctx, f)
 	cancel()
 	switch {
 	case err == nil:
@@ -319,6 +325,12 @@ func (e *Engine) waitOnce(ctx context.Context, f cluster.FlightKey, rq Request, 
 	}
 	if ok {
 		st.collapsed = true
+	}
+	if !ok && outcome == cluster.OutcomeStored && st.lost && st.sawLost {
+		// The holder's fill of an item this request found lost committed, and the item is lost still: the upstream serves
+		// other bytes for it, or the format kept the stored document. Fetching it here would end the same (Q-REPO-205).
+		e.noteUnrepaired(rq)
+		return flightResult{err: unrepairedError(unrepairedBackoff)}, true, ""
 	}
 	return res, ok, ""
 }
@@ -342,7 +354,10 @@ func (e *Engine) recheck(ctx context.Context, rq Request, st *reqState) (res fli
 	if err != nil {
 		return flightResult{}, false, err
 	}
-	if found && !en.Gone() {
+	if found && !en.Gone() && en.Damaged() {
+		st.sawLost = true
+	}
+	if found && !en.Gone() && !en.Damaged() { // a damaged entry is a miss until a fill wrote its object again (Q-REPO-202)
 		if rq.Kind == Artifact {
 			return flightResult{stored: true}, true, nil
 		}

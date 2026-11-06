@@ -80,7 +80,7 @@ Covers: features from [operations-and-monitoring.md](../features/operations-and-
 | Permission (proposed name) | Grants |
 |---|---|
 | system administrator | Every operation on this page |
-| `system.read`: the capability `settings:read` of [authorization.md](authorization.md) R-AUTHZ-010 | Read replicas, system information, tasks, jobs, locks, effective configuration, log levels, backup runs ([backup-and-restore.md](backup-and-restore.md) R-BAK-014) |
+| `system.read`: the capability `settings:read` of [authorization.md](authorization.md) R-AUTHZ-010 | Read replicas, system information, tasks, jobs, locks, effective configuration, log levels, backup runs ([backup-and-restore.md](backup-and-restore.md) R-BAK-014), the migration report ([ha-and-helm.md](ha-and-helm.md) R-HA-018) |
 | `audit.read` | Query and export audit events (the auditor role, IAM-006) |
 | `storage.read` | Read the storage summary (`GET /api/v1/storage/summary`) and the damaged-blob list (`GET /api/v1/storage/damaged-blobs`); both read paths are owned by [storage.md](storage.md) (R-STOR-027, R-STOR-028) |
 | `config.read` | Run configuration diff and export |
@@ -487,7 +487,7 @@ start while they are not.
 ```sql
 CREATE TABLE replica (
   instance_uid  uuid        PRIMARY KEY,          -- random per process start
-  -- runtime    jsonb       NOT NULL DEFAULT '{}' (Q-OPS-175, migration 00042), the runtime snapshot above
+  -- runtime    jsonb       NOT NULL DEFAULT '{}' (Q-OPS-175, migration 00044), the runtime snapshot above
   name          text        NOT NULL,             -- pod name (TROVE_POD_NAME), else host name
   version       text        NOT NULL,
   revision      text        NOT NULL,
@@ -5841,7 +5841,7 @@ R-STOR-003 rather than a sum over the blobs, cached by the answering replica for
 with the metrics of R-OPS-008.
 
 **Applied in the spec:** R-OPS-003 (runtime snapshot, check duration), R-OPS-004 (overview), R-UI-038 (dashboard).
-Code: `replica.runtime` (migration 00042), the heartbeat in `internal/cluster`, the snapshot in `internal/app`, the
+Code: `replica.runtime` (migration 00044), the heartbeat in `internal/cluster`, the snapshot in `internal/app`, the
 overview handler in `internal/api/v1`; `web/src/app/features/system/dashboard.*`. Manual: [Admin dashboard](../manual/admin/dashboard.md).
 
 ## What this does not cover

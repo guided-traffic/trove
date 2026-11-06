@@ -44,6 +44,11 @@ type MigrateOptions struct {
 	// Steps overrides the embedded migrations; tests inject failing or additional
 	// steps through it. Nil means EmbeddedFS.
 	Steps fs.FS
+	// Background are the background data migrations this binary declares
+	// (R-HA-022, Q-HA-114): the report lists their states, and the contract guard
+	// refuses a step that depends on one that has not succeeded (Q-HA-115). The
+	// composition root passes app.BackgroundMigrations; nil declares none.
+	Background []BackgroundMigration
 	// AuditRetentionDays is audit.retention_days. When set, every run writes it
 	// into audit_policy and calls audit_maintain_partitions() once the steps are
 	// applied (R-OPS-015); nil leaves the row alone (tests with their own steps).
@@ -113,7 +118,10 @@ type Refusal struct {
 	Reason   string
 	BackupID string       // a half-restored database: the backup being restored
 	Replicas []ReplicaRef // the contract guard: the live replicas that are too old
-	Step     string       // the contract guard: the step that was refused
+	// Background are, for the contract guard, the background migrations the step
+	// depends on that have not succeeded (Q-HA-115).
+	Background []BackgroundRef
+	Step       string // the contract guard: the step that was refused
 }
 
 // ReplicaRef names a live replica.
@@ -127,7 +135,9 @@ func (r *Refusal) Error() string { return r.Reason }
 // ExitCode is 3.
 func (r *Refusal) ExitCode() int { return ExitRefused }
 
-// StatusReport is what `trove migrate status` prints; it takes no lock.
+// StatusReport is what `trove migrate status` prints and what GET
+// /api/v1/system/migrations answers (R-HA-018, R-HA-020, R-HA-021); it takes no
+// lock. [Report] builds it for both.
 type StatusReport struct {
 	Schema struct {
 		Applied     int    `json:"applied"`
@@ -139,17 +149,23 @@ type StatusReport struct {
 	} `json:"binary"`
 	Pending []StepInfo    `json:"pending"`
 	Applied []AppliedInfo `json:"applied"`
+	// Background are the background data migrations the binary declares, with
+	// their states (R-HA-022, Q-HA-114).
+	Background []BackgroundInfo `json:"background"`
 	// Servable is the verdict of the compatibility gate for this binary.
 	Servable bool   `json:"servable"`
 	Verdict  string `json:"verdict,omitempty"`
 }
 
-// StepInfo is a pending step.
+// StepInfo is a pending step, with what the contract guard checks before a
+// contract step: the oldest release allowed to serve afterwards and the
+// background migrations that must have succeeded (R-HA-018, Q-HA-115).
 type StepInfo struct {
-	Version     int    `json:"version"`
-	Name        string `json:"name"`
-	Class       string `json:"class"`
-	RequiresApp string `json:"requiresApp,omitempty"`
+	Version            int      `json:"version"`
+	Name               string   `json:"name"`
+	Class              string   `json:"class"`
+	RequiresApp        string   `json:"requiresApp,omitempty"`
+	RequiresBackground []string `json:"requiresBackground,omitempty"`
 }
 
 // AppliedInfo is an applied step (the shape of GET /api/v1/system/migrations).
@@ -204,6 +220,9 @@ func Migrate(ctx context.Context, cfg config.Database, opts MigrateOptions) (Res
 	if err != nil {
 		return res, err
 	}
+	if err := CheckBackgroundDependencies(steps, opts.Background); err != nil {
+		return res, err
+	}
 	res.RequiredSchema = requiredSchema(steps, enforceMigrationPhases)
 
 	conn, err := sessionConn(ctx, cfg, opts, classMigrate)
@@ -251,7 +270,7 @@ func Migrate(ctx context.Context, cfg config.Database, opts MigrateOptions) (Res
 	if err != nil {
 		return res, err
 	}
-	if err := contractGuard(ctx, conn, pending, opts.ReplicaStaleAfter); err != nil {
+	if err := contractGuard(ctx, conn, pending, opts.ReplicaStaleAfter, opts.Background); err != nil {
 		return res, err
 	}
 	res.SchemaApplied, res.CompatFloor = st.schemaApplied, st.compatFloor
@@ -440,7 +459,7 @@ func loadState(ctx context.Context, db q.DBTX) (state, error) {
 // verifyApplied compares the checksum of every applied step this binary knows
 // with the embedded file (R-HA-018). Applied steps this binary does not know are
 // newer than it and are not its business. A file may be edited before the first
-// stable release (Q-ARCH-332), and a database that applied its earlier version
+// stable release (Q-ARCH-340), and a database that applied its earlier version
 // is then refused here: it is recreated, not patched.
 func verifyApplied(steps []Step, applied map[int]q.SchemaMigration) error {
 	for _, s := range steps {
@@ -479,8 +498,10 @@ func plan(steps []Step, applied map[int]q.SchemaMigration) ([]Step, error) {
 }
 
 // contractGuard refuses to apply a contract step while a live replica runs a
-// release below the step's requires-app (R-HA-018). No flag overrides it.
-func contractGuard(ctx context.Context, db q.DBTX, pending []Step, stale time.Duration) error {
+// release below the step's requires-app (R-HA-018), or while a background
+// migration the step depends on has not succeeded (R-HA-021 step 4, R-HA-022,
+// Q-HA-115). No flag overrides it.
+func contractGuard(ctx context.Context, db q.DBTX, pending []Step, stale time.Duration, background []BackgroundMigration) error {
 	var contracts []Step
 	for _, s := range pending {
 		if s.Phase == phaseContract {
@@ -508,6 +529,9 @@ func contractGuard(ctx context.Context, db q.DBTX, pending []Step, stale time.Du
 			}
 		}
 		if len(old) == 0 {
+			if err := backgroundGuard(ctx, db, s, background); err != nil {
+				return err
+			}
 			continue
 		}
 		var names []string
@@ -652,57 +676,52 @@ func applyNoTx(ctx context.Context, conn *pgx.Conn, s Step, st *state, opts Migr
 // schemaOf reads the schema a session connection was started with.
 func schemaOf(conn *pgx.Conn) string { return conn.Config().RuntimeParams["search_path"] }
 
-// Status lists applied and pending steps and the gate's verdict for this
-// binary, without taking the lock (R-ARCH-026).
+// Status lists applied and pending steps, the background data migrations and
+// the gate's verdict for this binary, without taking the lock (R-ARCH-026): the
+// report of [Report] on the session connection of `trove migrate status`.
 func Status(ctx context.Context, cfg config.Database, opts MigrateOptions) (StatusReport, error) {
+	opts.fill()
+	conn, err := sessionConn(ctx, cfg, opts, classMigrate)
+	if err != nil {
+		return StatusReport{}, err
+	}
+	defer func() { _ = conn.Close(context.WithoutCancel(ctx)) }()
+	return Report(ctx, conn, opts)
+}
+
+// Report is the migration report of this binary against the database db reads:
+// the schema state, the applied steps, the steps the binary embeds that are not
+// applied with what the contract guard checks for them, the background data
+// migrations of opts.Background with their states, and the gate's verdict
+// (R-HA-018, R-HA-020, R-HA-021, R-HA-022). It reads only and takes no lock.
+// `trove migrate status` runs it on its session connection and GET
+// /api/v1/system/migrations on the replica's pool, so both answer from the same
+// code; a database without the bookkeeping tables reports every step pending.
+func Report(ctx context.Context, db q.DBTX, opts MigrateOptions) (StatusReport, error) {
 	opts.fill()
 	var rep StatusReport
 	steps, err := ParseSteps(opts.Steps)
 	if err != nil {
 		return rep, err
 	}
-	conn, err := sessionConn(ctx, cfg, opts, classMigrate)
+	st, err := loadState(ctx, db)
 	if err != nil {
 		return rep, err
-	}
-	defer func() { _ = conn.Close(context.WithoutCancel(ctx)) }()
-
-	qs := q.New(conn)
-	_, err = qs.SchemaOwnedBy(ctx, cfg.Schema)
-	var st state
-	switch {
-	case isNoRows(err):
-		st = state{applied: map[int]q.SchemaMigration{}, compatFloor: zeroVersion}
-	case err != nil:
-		return rep, err
-	default:
-		if st, err = loadState(ctx, conn); err != nil {
-			return rep, err
-		}
 	}
 	if err := verifyApplied(steps, st.applied); err != nil {
 		return rep, err
 	}
 	rep.Schema.Applied, rep.Schema.CompatFloor = st.schemaApplied, st.compatFloor
 	rep.Binary.Version, rep.Binary.RequiredSchema = opts.Version, requiredSchema(steps, enforceMigrationPhases)
-	rep.Applied = []AppliedInfo{}
-	versions := make([]int, 0, len(st.applied))
-	for v := range st.applied {
-		versions = append(versions, v)
-	}
-	sort.Ints(versions)
-	for _, v := range versions {
-		a := st.applied[v]
-		rep.Applied = append(rep.Applied, AppliedInfo{
-			Version: v, Name: a.Name, Class: a.Class, Release: a.Release,
-			AppliedAt: a.AppliedAt.Time, DurationMs: a.DurationMs,
-		})
-	}
+	rep.Applied = appliedInfos(st.applied)
 	rep.Pending = []StepInfo{}
 	for _, s := range steps {
 		if _, done := st.applied[s.Version]; !done {
-			rep.Pending = append(rep.Pending, StepInfo{Version: s.Version, Name: s.Name, Class: s.Phase, RequiresApp: s.RequiresApp})
+			rep.Pending = append(rep.Pending, StepInfo{Version: s.Version, Name: s.Name, Class: s.Phase, RequiresApp: s.RequiresApp, RequiresBackground: s.RequiresBackground})
 		}
+	}
+	if rep.Background, err = ReadBackground(ctx, db, opts.Background); err != nil {
+		return rep, err
 	}
 	verdict := Gate(SchemaState{Applied: st.schemaApplied, CompatFloor: st.compatFloor}, rep.Binary.RequiredSchema, opts.Version)
 	rep.Servable = verdict == nil
@@ -710,4 +729,23 @@ func Status(ctx context.Context, cfg config.Database, opts MigrateOptions) (Stat
 		rep.Verdict = verdict.Error()
 	}
 	return rep, nil
+}
+
+// appliedInfos lists the applied steps in order, newer steps this binary does
+// not know included.
+func appliedInfos(applied map[int]q.SchemaMigration) []AppliedInfo {
+	versions := make([]int, 0, len(applied))
+	for v := range applied {
+		versions = append(versions, v)
+	}
+	sort.Ints(versions)
+	out := make([]AppliedInfo, 0, len(versions))
+	for _, v := range versions {
+		a := applied[v]
+		out = append(out, AppliedInfo{
+			Version: v, Name: a.Name, Class: a.Class, Release: a.Release,
+			AppliedAt: a.AppliedAt.Time, DurationMs: a.DurationMs,
+		})
+	}
+	return out
 }

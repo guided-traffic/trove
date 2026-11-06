@@ -294,7 +294,20 @@ func runtimeParams(c config.Database, instance string, k connKind) map[string]st
 	p["tcp_keepalives_idle"] = strconv.Itoa(wholeSeconds(c.ServerKeepalive.Idle))
 	p["tcp_keepalives_interval"] = strconv.Itoa(wholeSeconds(c.ServerKeepalive.Interval))
 	p["tcp_keepalives_count"] = strconv.Itoa(c.ServerKeepalive.Count)
+	if k.class == classLease {
+		// A holder whose process stops while its kernel keeps the connection (a paused container, a stopped
+		// process) answers every keepalive probe, so the keepalive never ends its session and its advisory locks
+		// stay. The holder pings its session every lease_check_interval; idle_session_timeout at the keepalive's
+		// bound ends a silent one within the same bound as a vanished one (R-HA-006, Q-HA-127).
+		p["idle_session_timeout"] = strconv.FormatInt(ServerReleaseBound(c.ServerKeepalive).Milliseconds(), 10)
+	}
 	return p
+}
+
+// ServerReleaseBound is the time within which the server ends the session of a lease holder that vanished or fell
+// silent: the server keepalive's idle + interval x count, in the whole seconds the server applies (R-HA-006, R-HA-015).
+func ServerReleaseBound(k config.DatabaseServerKeepalive) time.Duration {
+	return time.Duration(wholeSeconds(k.Idle)+wholeSeconds(k.Interval)*k.Count) * time.Second
 }
 
 func wholeSeconds(d time.Duration) int {

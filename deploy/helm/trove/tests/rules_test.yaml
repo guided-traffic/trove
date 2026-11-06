@@ -26,6 +26,7 @@ tests:
       - {eval_time: 1500m, alertname: TroveVulnerabilityClaimedNameMalicious, exp_alerts: []}
       - {eval_time: 1500m, alertname: TroveMirrorFailing, exp_alerts: []}
       - {eval_time: 1500m, alertname: TroveMirrorStale, exp_alerts: []}
+      - {eval_time: 1500m, alertname: TroveBlobMissing, exp_alerts: []}
 
   # --- TroveVulnerabilityDataStale ------------------------------------------------------------------------
   # The last success is at 1000 s, so the data is older than 86400 s from 87400 s (1457 min) on; the alert holds for 15 minutes first (fires from 1472 min).
@@ -196,7 +197,7 @@ tests:
           - exp_labels: {severity: warning}
             exp_annotations:
               summary: A web replica of the upgrade bridge has been running for 24 hours.
-              description: web.enabled is still true, so the web pods stay registered, hold the login secrets and answer on every host (R-HA-064, H-518). Finish the cut with a second helm upgrade and web.enabled false, once api, packages and their pools are ready.
+              description: web.enabled is still true, so the web pods stay registered and hold the login secrets (R-HA-064, H-518). Finish the cut, once api, packages and their pools are ready; step 2 with web.routed false moves the edge onto them, step 3 with web.enabled false removes the bridge.
 
   - name: TroveBridgeLeftOn stays quiet after the cut
     interval: 1m
@@ -205,3 +206,29 @@ tests:
       - {series: 'trove_build_info{namespace="other",role="web",pod="web-1"}', values: '1x1600'}
     alert_rule_test:
       - {eval_time: 1500m, alertname: TroveBridgeLeftOn, exp_alerts: []}
+
+  # --- TroveBlobMissing -----------------------------------------------------------------------------------
+  # A replica counts a blob it found missing once (R-HA-024): the alert fires at once and clears an hour after the last one.
+  - name: TroveBlobMissing fires when a replica found the object of a blob missing within the last hour, and clears after it
+    interval: 1m
+    input_series:
+      - {series: 'trove_storage_blobs_damaged_total{namespace="default",status="missing",pod="p1"}', values: '0x10 1x200'}
+      - {series: 'trove_storage_blobs_damaged_total{namespace="default",status="missing",pod="p2"}', values: '0x210'}
+    alert_rule_test:
+      - {eval_time: 9m, alertname: TroveBlobMissing, exp_alerts: []}
+      - eval_time: 12m
+        alertname: TroveBlobMissing
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: The object store has lost the object of at least one blob within the last hour.
+              description: A read found no object behind a blob row and marked the blob missing (R-HA-024, R-STOR-027). The replicas log every such blob with its digest ("the object of a blob is missing from the object store") and every cached item of a remote repository with its repository and path. A remote repository fills its items again from the upstream; a file of a local repository answers 503 content_unavailable until its object is restored or the same content is uploaded again. Check the bucket, its lifecycle rules and who else writes to it.
+      - {eval_time: 75m, alertname: TroveBlobMissing, exp_alerts: []}
+
+  - name: TroveBlobMissing stays quiet for a corrupt blob and for another namespace
+    interval: 1m
+    input_series:
+      - {series: 'trove_storage_blobs_damaged_total{namespace="default",status="corrupt",pod="p1"}', values: '0x10 1x200'}
+      - {series: 'trove_storage_blobs_damaged_total{namespace="other",status="missing",pod="p1"}', values: '0x10 1x200'}
+    alert_rule_test:
+      - {eval_time: 12m, alertname: TroveBlobMissing, exp_alerts: []}

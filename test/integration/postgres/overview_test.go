@@ -134,7 +134,7 @@ func TestR_OPS_004_OverviewStatements(t *testing.T) {
 	}
 }
 
-// TestR_OPS_003_ReplicaRuntimeColumn: migration 00042 gives the registry the runtime column (Q-OPS-175); a row
+// TestR_OPS_003_ReplicaRuntimeColumn: migration 00044 gives the registry the runtime column (Q-OPS-175); a row
 // written without it, as a release before it writes, reads as no runtime, and a heartbeat's runtime and check
 // durations read back as written.
 func TestR_OPS_003_ReplicaRuntimeColumn(t *testing.T) {

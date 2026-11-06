@@ -119,3 +119,21 @@ func TestR_HA_022_ThePauseBetweenBatchesEndsWithTheRun(t *testing.T) {
 		t.Errorf("no pause: %v", err)
 	}
 }
+
+// TestR_HA_022_TheRecomputationIsDeclaredAsABackgroundMigration: the declaration the report of GET
+// /api/v1/system/migrations and the contract guard read (Q-HA-114) names the kind's migration, the
+// release after the last one that classified the old way, and the completion record, whose
+// examined rows are the count of a completed run.
+func TestR_HA_022_TheRecomputationIsDeclaredAsABackgroundMigration(t *testing.T) {
+	m := Semver2Background()
+	if m.Name != "nuget_semver2" || m.Kind() != Semver2JobKind || m.Release != "0.10.0" || m.DoneKey != Semver2StateKey {
+		t.Fatalf("declaration = %+v", m)
+	}
+	done, _ := json.Marshal(Semver2Result{State: Semver2Recomputed, Examined: 7403, Changed: 12})
+	if n, ok := m.Processed(done); !ok || n != 7403 {
+		t.Errorf("Processed(%s) = %d, %v; want 7403 (the examined rows)", done, n, ok)
+	}
+	if _, ok := m.Processed([]byte(`"not an object"`)); ok {
+		t.Error("a completion record of another shape gave a count")
+	}
+}

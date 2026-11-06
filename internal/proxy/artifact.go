@@ -47,10 +47,27 @@ func (e *Engine) Artifact(ctx context.Context, rq Request, w http.ResponseWriter
 	if err != nil {
 		return err
 	}
+	if state == hitStored { // step 4: an artifact entry is served
+		served := e.serveItem(ctx, rq, w, CacheStatus{Hit: true, TTL: -1}, it, true)
+		if !items.ContentLost(served) {
+			e.m.lookup(rem.Repo.Key, Artifact, resultHit)
+			return served
+		}
+		// The read found the object missing or damaged and marked its blob (R-STOR-027); nothing was written. The item is
+		// read again: a marked one is a cache miss that is filled again (Q-REPO-202). One that reads ok was filled again by
+		// another request meanwhile, or the mark did not reach its row: it is served once more, and a second loss is the answer.
+		rq.Hit = nil
+		if it, state, err = e.lookupHit(ctx, rq, true); err != nil {
+			return err
+		}
+		if state == hitStored {
+			e.m.lookup(rem.Repo.Key, Artifact, resultHit)
+			return e.serveItem(ctx, rq, w, CacheStatus{Hit: true, TTL: -1}, it, true)
+		}
+	}
 	switch state {
-	case hitStored: // step 4: an artifact entry is served
-		e.m.lookup(rem.Repo.Key, Artifact, resultHit)
-		return e.serveItem(ctx, rq, w, CacheStatus{Hit: true, TTL: -1}, it, true)
+	case hitDamaged:
+		return e.refillArtifact(ctx, rq, w, r, it)
 	case hitEntryOnly:
 		e.m.lookup(rem.Repo.Key, Artifact, resultHit)
 		return errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist.")
@@ -178,7 +195,31 @@ const (
 	hitStored
 	// hitEntryOnly: the entry exists and the item it names does not.
 	hitEntryOnly
+	// hitDamaged: the cache entry and its item, whose blob has no usable object (content_status missing or corrupt): a cache
+	// miss that is filled again (R-STOR-027, Q-REPO-202).
+	hitDamaged
 )
+
+// hitOf classifies a cached item that has its entry.
+func hitOf(it items.Item) hitState {
+	if damagedStatus(it.ContentStatus) {
+		return hitDamaged
+	}
+	return hitStored
+}
+
+// classify is hitOf for a request that may ask the object store: an item marked missing whose object is back, found by the
+// recheck that runs at most once per interval and blob (Q-STOR-153), is a hit again and costs no upstream fetch. The engine of
+// a View asks no store.
+func (e *Engine) classify(ctx context.Context, it items.Item) (items.Item, hitState) {
+	if hitOf(it) == hitStored || e.readOnly {
+		return it, hitOf(it)
+	}
+	if usable, err := e.o.Items.Usable(ctx, it); err == nil {
+		return usable, hitStored
+	}
+	return it, hitDamaged
+}
 
 // lookupHit reads the cached artifact of a request in one statement (R-ARCH-027): the item, whether its cache entry exists, the
 // verdict of the vulnerability scanning and the rows the format's serve check decides on all come with the item lookup. Only a
@@ -186,7 +227,8 @@ const (
 // that serves needs: asEntry). A caller that read the artifact already hands it in as rq.Hit.
 func (e *Engine) lookupHit(ctx context.Context, rq Request, asEntry bool) (items.Item, hitState, error) {
 	if rq.Hit != nil {
-		return *rq.Hit, hitStored, nil
+		it, state := e.classify(ctx, *rq.Hit)
+		return it, state, nil
 	}
 	ref := e.liveRef(rq.Remote.Repo, rq.Facts)
 	ref.Entry = &items.EntryProbe{Variant: rq.Variant}
@@ -196,7 +238,8 @@ func (e *Engine) lookupHit(ctx context.Context, rq Request, asEntry bool) (items
 	}
 	if found {
 		if it.EntryStored {
-			return it, hitStored, nil
+			it, state := e.classify(ctx, it)
+			return it, state, nil
 		}
 		return items.Item{}, hitNone, nil
 	}
@@ -215,13 +258,19 @@ func (e *Engine) lookupHit(ctx context.Context, rq Request, asEntry bool) (items
 		return items.Item{}, hitNone, err
 	}
 	if found {
-		return it, hitStored, nil
+		it, state := e.classify(ctx, it)
+		return it, state, nil
 	}
 	return items.Item{}, hitEntryOnly, nil
 }
 
 // Cached reads the cache tier of an artifact and never contacts the upstream. The
-// item is returned unless the entry is marked gone or the package is gone.
+// item is returned unless the entry is marked gone or the package is gone. An item
+// whose object is missing or damaged, and not back (Q-STOR-153), is not served by the
+// cache tier: the answer is a 503 content_unavailable that [IsLost] recognises. A
+// caller that can fill the item again treats it as a miss, and the request path fills
+// it (R-STOR-027, Q-REPO-202); every other caller answers it, so that a lost item is
+// never the 404 of an item the cache does not hold (Q-REPO-205).
 func (e *Engine) Cached(ctx context.Context, rq Request) (items.Item, bool, error) {
 	if err := e.validate(rq, Artifact); err != nil {
 		return items.Item{}, false, err
@@ -230,7 +279,13 @@ func (e *Engine) Cached(ctx context.Context, rq Request) (items.Item, bool, erro
 		return items.Item{}, false, err
 	}
 	it, state, err := e.lookupHit(ctx, rq, false)
-	return it, state == hitStored, err
+	switch {
+	case err != nil:
+		return items.Item{}, false, err
+	case state == hitDamaged:
+		return items.Item{}, false, lostContent("the cache cannot serve it until its upstream fills it again", errLost)
+	}
+	return it, state == hitStored, nil
 }
 
 // liveRef is the reference a stored artifact is read with: the repository and its download policy, so that the lookup reads
@@ -460,14 +515,21 @@ func (f *fetcher) integrityMismatch(ctx context.Context, sp *items.Spooled) flig
 
 // digestChanged ends a fetch that lost to a duplicate flight: another flight
 // committed different content under the same path, the entry upsert refuses this one
-// and everybody is served the committed entry (R-REPO-026).
+// and everybody is served the committed entry (R-REPO-026). The same ends the refill of
+// a lost item whose upstream serves other bytes now; its recorded digest stays
+// (R-REPO-041, Q-REPO-202). The security event is written once an hour per item and
+// pair of digests on a replica, as the check of announced digests is: the counter
+// counts every fetch (Q-REPO-205).
 func (f *fetcher) digestChanged(ctx context.Context, sp *items.Spooled, cached [32]byte) flightResult {
 	e, rq := f.e, f.rq
 	e.m.integrity.WithLabelValues(rq.Remote.Repo.Key, "digest_changed").Inc()
-	e.o.Audit.Record(ctx, e.event(rq, audit.EventProxyUpstreamDigestChanged, map[string]any{
-		"path": rq.Path, "cachedSha256": hex.EncodeToString(cached[:]), "fetchedSha256": hex.EncodeToString(sp.SHA256[:]),
-		"announced": announcedJSON(rq.Expected),
-	}))
+	key := rq.Remote.Repo.Key + "\x00" + rq.Path + "\x00" + hex.EncodeToString(cached[:]) + hex.EncodeToString(sp.SHA256[:])
+	if e.throttle(key, time.Hour) {
+		e.o.Audit.Record(ctx, e.event(rq, audit.EventProxyUpstreamDigestChanged, map[string]any{
+			"path": rq.Path, "cachedSha256": hex.EncodeToString(cached[:]), "fetchedSha256": hex.EncodeToString(sp.SHA256[:]),
+			"announced": announcedJSON(rq.Expected),
+		}))
+	}
 	return flightResult{stored: true}
 }
 

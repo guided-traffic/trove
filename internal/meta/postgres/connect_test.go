@@ -69,6 +69,21 @@ func TestRuntimeParams(t *testing.T) {
 			t.Fatalf("params = %v", p)
 		}
 	})
+	t.Run("R-HA-006 only the lease sessions end after the keepalive's bound without a statement", func(t *testing.T) {
+		if p := runtimeParams(c, "pod", connKind{class: classLease}); p["idle_session_timeout"] != "120000" {
+			t.Errorf("lease: idle_session_timeout = %q, want 120000 (60 s + 6 x 10 s)", p["idle_session_timeout"])
+		}
+		for _, class := range []string{classMain, classMigrate} {
+			if p := runtimeParams(c, "pod", connKind{class: class}); p["idle_session_timeout"] != "" {
+				t.Errorf("%s: idle_session_timeout = %q, want none", class, p["idle_session_timeout"])
+			}
+		}
+		k := c.ServerKeepalive
+		k.Idle, k.Interval, k.Count = 1500*time.Millisecond, 500*time.Millisecond, 3
+		if got := ServerReleaseBound(k); got != 4*time.Second {
+			t.Errorf("ServerReleaseBound in the server's whole seconds = %s, want 4s (1 + 3 x 1)", got)
+		}
+	})
 	t.Run("R-HA-015 migrations run without a statement timeout", func(t *testing.T) {
 		p := runtimeParams(c, "pod", connKind{class: classMigrate, noLimit: true})
 		if p["statement_timeout"] != "0" || p["application_name"] != "trove:pod:migrate" {

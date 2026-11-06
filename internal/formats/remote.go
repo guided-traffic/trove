@@ -262,7 +262,8 @@ type RemoteFetcher interface {
 	Metadata(ctx context.Context, rq *Request, p Path, variant string) (*RemoteDocument, error)
 	// Artifact serves an artifact with Range, HEAD and the withheld tail.
 	Artifact(ctx context.Context, rq *Request, p Path, expected Digests, w http.ResponseWriter) error
-	// Cached reads the cache tier and never contacts the upstream.
+	// Cached reads the cache tier and never contacts the upstream. An item whose object is lost is a 503
+	// content_unavailable error, not a miss: the cache holds it and cannot serve it (Q-REPO-205).
 	Cached(ctx context.Context, rq *Request, p Path) (Item, bool, error)
 	// EnsureCurrent revalidates a stale document first (Q-NPM-13).
 	EnsureCurrent(ctx context.Context, rq *Request, p Path, variant string) (*RemoteDocument, Currency, error)

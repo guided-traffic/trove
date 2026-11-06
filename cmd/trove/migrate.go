@@ -62,6 +62,10 @@ func migrateCmd(args []string, s streams) error {
 		Migrate:           cfg.Migrate,
 		Version:           buildinfo.Get().Version,
 		ReplicaStaleAfter: cfg.System.HeartbeatStaleAfter,
+		// The background data migrations of the binary: `status` lists their
+		// states, the contract guard of `up` refuses a step that depends on one
+		// that has not succeeded (R-HA-022, Q-HA-115).
+		Background: app.BackgroundMigrations(),
 		// The runner is the schema owner and so the only writer of the retention
 		// in two-role mode (R-OPS-015).
 		AuditRetentionDays: &cfg.Audit.RetentionDays,

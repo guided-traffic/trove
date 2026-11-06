@@ -14,7 +14,7 @@ This page specifies how trove stays available, scales out and is deployed. It co
 - Leader-less scheduling and singleton work under advisory-lock leases.
 - Node drains without outage: the capacity rule, disruption budgets, spreading and the drain
   acceptance test under npm and NuGet load.
-- Rolling upgrades with expand/contract migrations (promised from the first stable release on, [Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)),
+- Rolling upgrades with expand/contract migrations (promised from the first stable release on, [Q-ARCH-340](architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release)),
   and the migration Job.
 - PostgreSQL requirements: version floor, server settings, roles and privileges, TLS, connection
   budget, the optional transaction-mode pooler and credential rotation.
@@ -179,7 +179,7 @@ The split is no longer optional: it is an owner constraint since 2026-10-28, and
 
 **Status.** Built (phase 6a, WP6a.3): the chart renders `<fullname>-api`, `<fullname>-packages` and `<fullname>-worker`
 from the list of Deployments in [_units.tpl](../../deploy/helm/trove/templates/_units.tpl); `web.enabled: true` renders
-`<fullname>-web` (`--role web`) beside them for the first step of R-HA-064.
+`<fullname>-web` (`--role web`) beside them for the first two steps of R-HA-064.
 
 - The chart MUST always render three Deployments: `<fullname>-api`, whose container runs `trove serve --role api`,
   `<fullname>-packages`, whose container runs `trove serve --role packages`, and `<fullname>-worker`, whose container runs
@@ -596,7 +596,13 @@ A lease works as follows:
    session that holds advisory locks (R-HA-015), so the server-side bound holds even where the
    server's own settings are left at the operating-system default. Client-side detection
    (default ≤ 30 s) is shorter than server-side release (default ≤ 120 s), and fencing (2) covers
-   the remaining window.
+   the remaining window. A *silent* holder, whose process stopped while its kernel keeps the
+   connection (a paused container, a stopped process), answers every keepalive probe, so the
+   keepalive never ends its session. The lease sessions therefore also carry
+   `idle_session_timeout` at the same bound (`idle + interval × count` of
+   `database.server_keepalive`, R-HA-015): the server ends a session that sent no statement for that
+   long, and the lock with it. A live holder sends `SELECT 1` every `database.lease_check_interval`
+   (3), and the configuration refuses a bound below three of those (Q-HA-127).
 5. Session-level locks need a session that stays on one server connection, which
    transaction-mode and statement-mode poolers break. Only three things therefore connect to the
    *session host* (`database.session_host`, R-HA-058): the lease pool of `worker` replicas,
@@ -638,6 +644,11 @@ Acceptance criteria:
   `scheduler` lease and a schedule `* * * * *` is due. A commits no `schedule` update and no job
   insert after its session is gone, B takes the lease after the server releases the session, and
   every minute's occurrence is enqueued exactly once.
+- A holder falls silent with its connection open (its traffic relayed through a TCP relay that stops
+  moving bytes and closing sockets): the server ends its session within `idle + interval × count` of
+  `database.server_keepalive`, another worker holds the lease within that bound plus
+  `cluster.lease_retry_interval`, and at no instant do two sessions hold it
+  (`TestLeases_R_HA_006_FrozenHolder`).
 - With three workers and no other singleton work running, a GC run and a retention run in progress
   hold no advisory lock of category 1 (`pg_locks` shows only the `scheduler` lease), and their job
   rows carry an exclusive dedup key (Q-STOR-13).
@@ -655,6 +666,7 @@ trove MUST behave as in this table. Each row is exercised by the failure-injecti
 | Container crash (panic, OOM kill) | kubelet; session end releases locks | In-flight requests of that pod end; nothing half-committed (a `201` means durable, R-STOR-004); its job leases expire; its advisory locks are released immediately; its Valkey locks expire after their TTL | Requests on that pod fail with connection reset or `502` from the proxy; npm (`fetch-retries`) and NuGet clients retry | kubelet restarts the container; the spool directory is emptied at start (R-HA-012) |
 | Pod eviction, node drain, rolling restart, autoscaler scale-down | `SIGTERM` | Drain (R-HA-011): readiness fails at once, in-flight requests finish within the grace period, jobs are released | None for requests shorter than the grace period; longer transfers are cut (tolerance in R-HA-059) | PDB keeps all but one replica per role serving (R-HA-032); the capacity rule of R-HA-059 keeps the rest from overload |
 | Node loss (no `SIGTERM`) | Node controller marks the node not ready | Endpoints of the lost pods are removed when their Ready condition flips; job leases expire; advisory locks are released by the server's TCP keepalive, which trove sets on its lock-holding sessions (R-HA-013, R-HA-015); Valkey locks expire | Requests routed to the lost pods fail until the endpoints are removed (tens of seconds) | Pods are recreated after `nodeFailureTolerationSeconds` of their role (R-HA-032) |
+| Processes stopped with their connections open (a paused node or container, `SIGSTOP`) | Their kernel keeps answering TCP keepalives, so the keepalive sees nothing; the node controller marks a paused node not ready | Job leases expire; the server ends a lock-holding session after `idle + interval × count` of `database.server_keepalive` without a statement (`idle_session_timeout` of the lease sessions, R-HA-006, Q-HA-127), which releases its advisory locks; when the processes run again their lease sessions are gone, so they commit nothing under a lease | As for node loss while the node is marked not ready | Automatic; the pods come back with the node, or are replaced after `nodeFailureTolerationSeconds` |
 | One replica cut off from PostgreSQL | `database` check (R-OPS-001) | That replica answers `503` and turns not ready once the cut has lasted the check threshold and `health.database_outage_grace` (Q-OPS-31); its singleton work stops (R-HA-006) | Traffic moves to the other replicas | Automatic when the network heals |
 | PostgreSQL switchover or failover | Connection errors, SQLSTATE `57P01`, `25006`, class `08` | Retry with backoff within `database.retry.max_elapsed`, pool reset, the change-log poll resumes (an area whose epoch went backwards or was reused is flushed, R-HA-004), singleton work aborts and resumes on the next run (R-HA-009) | Requests stall for up to the retry budget; those that exceed it get `503` with `Retry-After` | Automatic |
 | PostgreSQL unavailable beyond the retry budget | `database` check on every replica | Every replica answers `503` and turns not ready; liveness stays `200`, so nothing restarts; authorization decides nothing on a grant index unconfirmed for longer than `authz.cache.max_staleness` (10 s); such requests wait within the retry budget like database calls, then get `503` `authz_stale` ([authorization.md](authorization.md) R-AUTHZ-028, Q-AUTHZ-13) | `503` for everything (the Service has no ready endpoints) | Readiness returns when PostgreSQL does; no manual step |
@@ -1445,6 +1457,7 @@ is reported as a reload failure.
 | `TimeZone` | `UTC` |
 | `search_path` | `database.schema` |
 | `tcp_keepalives_idle`, `tcp_keepalives_interval`, `tcp_keepalives_count` | `database.server_keepalive.idle`, `.interval` (whole seconds) and `.count` |
+| `idle_session_timeout` (lease sessions only) | `idle + interval × count` of `database.server_keepalive`, in the whole seconds above (120 s with the defaults) |
 
 - The server-side keepalive parameters are user-settable (context `user`), so they need no
   privilege and no server configuration. They make the server end the session of a vanished
@@ -1452,6 +1465,11 @@ is reported as a reload failure.
   2 minutes with the defaults), the bound R-HA-013 recommends for the server setting. They are sent
   on every session that connects to the session host, which includes the lease pool that holds
   session-level locks.
+- `idle_session_timeout` (context `user` as well) ends a lease session that sent no statement for
+  the same bound: a holder whose process stopped while its kernel keeps answering the keepalive
+  probes (R-HA-006 item 4, Q-HA-127). Only the lease pool sends it; a lease holder pings every
+  `database.lease_check_interval`, and a keepalive bound below three of those is refused at
+  startup naming `database.server_keepalive`.
 
 Configuration:
 
@@ -1547,7 +1565,7 @@ Examples:
   (`serving_max` 3 + 4 = 7, `worker_max` 3): 10 × 20 + 3 × 4 + 2 + 4 + 10 + 3 = **231**, with no `serving_max × 1`
   term, because `api` and `packages` replicas hold no session connection. Before the cut, with `web` 3 and `worker` 2, it was
   171. The PostgreSQL default of 100 is too small, so the chart's NOTES print the computed budget.
-- During the first step of the upgrade across the cut (R-HA-064), the `web` Deployment runs beside `api` and `packages`:
+- During the first two steps of the upgrade across the cut (R-HA-064), the `web` Deployment runs beside `api` and `packages`:
   with the defaults `serving_max` is 4 + 3 + 4 = 11, and the budget **311**. The migration Job of that step checks it, so a
   server sized only for the target fails the step before anything changes.
 - Large profile (R-HA-050), `packages` up to 16, `api` up to 4 and `worker` up to 6, `max_conns: 30`: without a pooler
@@ -2048,7 +2066,7 @@ k6 records only `2xx` and `304`:
 Priority: **MVP** · Covers: HA-066, OPS-074
 
 **Before the first stable release the compatibility promises of this requirement do not apply**
-(owner, 2026-11-06, `CLAUDE.md`, [Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)). N and N−1 need not run side by side against
+(owner, 2026-11-06, `CLAUDE.md`, [Q-ARCH-340](architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release)). N and N−1 need not run side by side against
 one schema, and an upgrade may need a new database; no rollback is supported. The rules of the
 migration files are switched off, ready to be switched on at the first stable release
 ([the switches](../developer/releasing.md#switched-off-until-the-first-stable-release)): with `enforceMigrationPhases = false` in
@@ -2056,6 +2074,16 @@ migration files are switched off, ready to be switched on at the first stable re
 its statements, and `requiredSchema` is the highest migration number the binary embeds; with the job
 `compat` switched off, a migration file may be edited. The runner, the checksum check, the gate and
 the contract guard of a step that declares itself a contract step stay on, as described below.
+
+**Status.** `GET /api/v1/system/migrations` is built (`getMigrationStatus`, finding F-59 closed on 2026-11-06): the `api` role
+answers it with the report of `trove migrate status`, from the same code on the replica's pool, and the background migrations of
+[Q-HA-114](#q-ha-114--which-background-migrations-the-migration-report-lists-before-r-ha-022s-table-exists). Tested by
+`TestGetMigrationStatus` ([migrations_api_test.go](../../internal/api/v1/migrations_api_test.go)), `TestMigrationStatus`
+([migrations_test.go](../../test/integration/api/migrations_test.go), an `api` replica against PostgreSQL, the answer against the
+document, `settings:read`) and `TestR_HA_021_UpgradePreparation`
+([upgrade_preparation_test.go](../../test/integration/postgres/upgrade_preparation_test.go)). The runner, the headers and the
+guard are tested by the tests named R-HA-018 in [migrate_test.go](../../test/integration/postgres/migrate_test.go),
+[steps_test.go](../../internal/meta/postgres/steps_test.go) and [gate_test.go](../../internal/meta/postgres/gate_test.go).
 
 From the first stable release on, release N and release N−1 run side by side against one schema
 during every rolling upgrade (INV-3), and every migration step is classified by these rules:
@@ -2077,6 +2105,7 @@ during every rolling upgrade (INV-3), and every migration step is classified by 
   | `-- trove:phase expand` or `-- trove:phase contract` | The step's class (table above); every file has exactly one. While the rules are switched off, at most one, and a file without it is an expand step |
   | `-- trove:no-transaction` | The step cannot run in a transaction block; the file holds exactly one statement |
   | `-- trove:requires-app >= <version>` | Contract steps only, and required there: the oldest release allowed to serve once the step is applied |
+  | `-- trove:requires-background <name>` | Contract steps only, optional, once per migration: a background data migration (R-HA-022) that must have `succeeded` before the guard lets the step run ([Q-HA-115](#q-ha-115--how-a-contract-step-declares-the-background-migration-it-depends-on-and-what-the-guard-does-with-it)) |
 
 - Data changes are not migrations. Backfills run as background data migrations (R-HA-022), never
   inside the migration Job, so the Job's duration does not grow with the data.
@@ -2095,7 +2124,7 @@ during every rolling upgrade (INV-3), and every migration step is classified by 
 **Schema compatibility window.**
 
 - Each binary embeds `requiredSchema`, the number of its newest expand step. While the rules are
-  switched off ([Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)), it is the number of its newest migration, a contract step included.
+  switched off ([Q-ARCH-340](architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release)), it is the number of its newest migration, a contract step included.
 - Each contract step declares `requires-app` in its header: the oldest release allowed to serve
   once the step is applied. The release before it is the step's `lastUsedBy`, the newest release
   whose code still reads or writes the object the step removes. `requires-app` is the declared
@@ -2117,7 +2146,11 @@ during every rolling upgrade (INV-3), and every migration step is classified by 
 Job. The error lists those replicas and the two ways forward: upgrade one minor release at a time,
 or stop all replicas and upgrade with downtime (R-HA-021). There is no override flag. The downtime
 path scales the replicas to zero, so the registry lists none and the guard passes; an override
-while old replicas are live would let the step break them (R-ARCH-026, Q-ARCH-3).
+while old replicas are live would let the step break them (R-ARCH-026, Q-ARCH-3). The guard also
+refuses a contract step, with status `3` and without applying anything, while a background migration
+it names in `-- trove:requires-background` has not `succeeded`; the error names the migration and its
+state (R-HA-021 step 4, R-HA-022, [Q-HA-115](#q-ha-115--how-a-contract-step-declares-the-background-migration-it-depends-on-and-what-the-guard-does-with-it)).
+A step that names a migration its binary does not declare fails the run with status `1`.
 
 ```sql
 CREATE TABLE schema_migration (
@@ -2144,7 +2177,7 @@ CREATE TABLE schema_state (
 - From the first stable release on, a migration file is immutable once it is on `main`
   (R-ARCH-026, Q-ARCH-283), and a defect in a step is fixed forward with a new step of the class
   the change needs: expand for an addition, contract one minor later for a removal (the table
-  above). Until then the check of this rule is switched off ([Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)): a file may be edited,
+  above). Until then the check of this rule is switched off ([Q-ARCH-340](architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release)): a file may be edited,
   and a database that applied the earlier version fails the checksum check above and is recreated.
 - There are no down migrations. From the first stable release on, rolling back one release is
   supported without a database restore (R-HA-019); before it no rollback is supported.
@@ -2171,6 +2204,19 @@ API (permission: `system.read`, [operations-and-observability.md](operations-and
 
 `401` without credentials, `403` without `system.read`.
 
+- Each `pending` entry carries `version`, `name`, `class`, `requiresApp` (`null` for an expand step) and
+  `requiresBackground` (empty unless a contract step names background migrations): what the guard checks
+  before the step.
+- `background` lists the background data migrations the answering replica's binary declares, with
+  `name`, `release`, `state`, `processed`, `estimatedTotal` and `startedAt` (`null` while unknown); until
+  R-HA-022's table exists the state is read from each migration's completion record and newest job
+  ([Q-HA-114](#q-ha-114--which-background-migrations-the-migration-report-lists-before-r-ha-022s-table-exists)).
+- The report is the answering replica's, for its own binary: during a rolling upgrade both releases
+  answer, each with its `binary`. The `api` role serves it ([ADR-155](../decisions.md#adr-155--three-roles-api-packages-and-worker-variants-are-pools)).
+- `trove migrate status` prints the same report from the same code (`postgres.Report`), plus `servable`
+  and `verdict`, the gate's answer for its binary; a replica that answers the endpoint has passed the gate,
+  so the endpoint leaves them out.
+
 Configuration (`trove migrate`):
 
 ```yaml
@@ -2185,7 +2231,7 @@ Acceptance criteria:
 - A CI check fails a change that adds a contract-class statement (`DROP`, `RENAME`, `SET NOT NULL`)
   to a file headed `-- trove:phase expand`, a file without a valid `phase` header, and a contract
   file without `-- trove:requires-app` (R-ARCH-026). While the rules are switched off
-  ([Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)), the unit tests hold both modes: `TestParseSteps` with the rules on,
+  ([Q-ARCH-340](architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release)), the unit tests hold both modes: `TestParseSteps` with the rules on,
   `TestParseStepsRelaxed` with them off, where a file without any header and those statements in any
   step pass.
 - From the first stable release on, an integration test: the previous release's binary passes its
@@ -2264,7 +2310,7 @@ Priority: **MVP** · Covers: HA-066, HA-069
 - `migrations.mode: disabled` renders no Job. The operator runs `trove migrate up` by other
   means, for example `kubectl -n trove run trove-migrate --rm -i --restart=Never --image=… -- trove migrate up`
   with the same mounts. New pods stay not ready until the schema is sufficient (R-HA-008).
-- **Rollback.** Before the first stable release no rollback is supported ([Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)): N's
+- **Rollback.** Before the first stable release no rollback is supported ([Q-ARCH-340](architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release)): N's
   Job may have applied steps that N−1 does not work against, and the way back is the backup taken
   before the upgrade (R-HA-021) or a new database. From the first stable release on, `helm rollback`
   to release N−1 after an upgrade to N is supported. N's Job applied only expand steps that N−1
@@ -2292,7 +2338,7 @@ Acceptance criteria:
 Priority: **MVP** · Covers: HA-069, OPS-073
 
 **Before the first stable release this requirement is not a promise** (owner, 2026-11-06,
-`CLAUDE.md`, [Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)): N and N−1 need not serve side by side, and an upgrade may need
+`CLAUDE.md`, [Q-ARCH-340](architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release)): N and N−1 need not serve side by side, and an upgrade may need
 downtime or a new database. The chart still rolls the Deployments as described below; the rules of
 the mixed-version window are promised from the first stable release on, and the status names the
 test that exists today. The nightly run skips its set `upgrade` until then; a dispatch with
@@ -2302,10 +2348,18 @@ test that exists today. The nightly run skips its set `upgrade` until then; a di
 ([upgrade_test.go](../../test/e2e/upgrade_test.go), the set `upgrade`): the latest release before the working tree is installed
 from the published chart and image and upgraded with `helm upgrade --wait` under `npm ci`, `npm publish`, `dotnet restore` and
 browser loops ([Q-HA-95](#q-ha-95--how-the-upgrade-tests-get-and-install-the-older-release),
-[Q-HA-97](#q-ha-97--the-loops-of-the-upgrade-tests)). `GET /api/v1/system/migrations` of the verification is specified but not
-built; the test reads `trove migrate status`, which prints its document
-([Q-HA-96](#q-ha-96--the-migration-check-of-the-upgrade-tests-until-the-endpoint-exists)). The gate on the cluster minimum version
-(the second acceptance criterion) has no feature to gate yet and is not tested.
+[Q-HA-97](#q-ha-97--the-loops-of-the-upgrade-tests)). The verification reads `GET /api/v1/system/migrations` from a replica of the
+release under test, waits for the background migrations to succeed and checks it against `trove migrate status`
+([Q-HA-116](#q-ha-116--the-upgrade-tests-read-get-apiv1systemmigrations-from-the-release-under-test), which supersedes Q-HA-96); the
+cut test runs the same check after its step 2. Both upgrade tests passed with that read in the dispatched nightly run 42230022283. The gate on the cluster minimum version
+(the second acceptance criterion) has no feature to gate yet and is not tested. The UI's hashed files across the window are
+tested by `TestUpgrade_R_HA_020_AcrossTwoBundles` ([upgrade_bundles_test.go](../../test/e2e/upgrade_bundles_test.go), the set
+`upgrade`): the working tree with its second UI bundle is upgraded to the image under test under the same loops, strict
+([Q-HA-124](#q-ha-124--how-the-upgrade-tests-prove-an-upgrade-between-two-bundles)); and by `TestR_HA_020_SharedUIAssets` and
+`TestR_HA_020_SharedUIAssetsWithoutTheObjectStore` ([test/integration/uiassets](../../test/integration/uiassets/uiassets_test.go)):
+two replicas with different builds on one database and object store, each file of one's `index.html` loaded from the other, an
+unknown name `404`, no unhashed path from the store, the renewal and the retention, and `503` for a file of the other build while
+the object store is away.
 
 - Every Deployment uses `RollingUpdate` with `maxSurge: 1` and `maxUnavailable: 0`, plus
   `minReadySeconds: 10`. Serving capacity never drops below the replica count during an upgrade,
@@ -2314,16 +2368,22 @@ built; the test reads `trove migrate status`, which prints its document
 - **Order.** Helm runs the migration hook first (R-HA-019) and then applies the Deployments of every role and pool
   together; each rolls on its own.
   No order between them is needed, because every role tolerates the other roles in release N−1
-  (below). The upgrade from a release before the cut into roles takes the two steps of R-HA-064 instead, because a
+  (below). The upgrade from a release before the cut into roles takes the three steps of R-HA-064 instead, because a
   Deployment cannot be renamed. The backup CronJob takes the new image for its next run; a run already in progress
   finishes on the old one, which the expand-only window allows.
 - During the mixed-version window, release N and N−1 serve the same clients alternately, and N−1
   workers may run jobs that N web replicas enqueued. Therefore:
   - Anything a client carries between requests MUST be understood by both releases: pagination
     cursors, `ETag` values, session cookies, CSRF tokens, upload session identifiers.
-  - The UI's assets are named after their content (R-ARCH-004), so the pods of release N do not serve those of N−1 and the
-    reverse: a page load that spans the window can meet a `404` for `main-<hash>.js` and stay blank until the user reloads.
-    This limit is open ([Q-HA-99](#q-ha-99--the-uis-hashed-assets-across-an-upgrade)); the upgrade tests count it as a finding.
+  - The UI's hashed files are named after their content (R-ARCH-004, R-UI-001), so a replica of release N lacks those of N−1
+    and the reverse. Every replica that serves the UI publishes the hashed files of its build to the shared asset store before
+    it turns ready, renews them while it runs, and answers a hashed file its own build lacks from the store
+    ([Q-HA-120](#q-ha-120--how-a-replica-serves-a-hashed-ui-file-of-the-other-release) to
+    [Q-HA-123](#q-ha-123--when-a-replica-publishes-its-build)): a page whose `index.html` came from either release loads on the
+    replicas of both, and so do the lazy chunks of a tab that stays open after the upgrade, for 7 days after the last replica of
+    its release stopped. This holds between two releases that both have the store; an upgrade from a release before it can
+    still meet a `404` for a hashed file once ([Q-HA-125](#q-ha-125--the-rolling-upgrade-from-a-release-without-the-store-stays-strict)),
+    and the cut from v0.16.0 counts it as a finding ([Q-HA-99](#q-ha-99--the-uis-hashed-assets-across-an-upgrade)).
   - Job payloads and change-log payloads are versioned. Older workers skip unknown job kinds
     (R-HA-005), and older replicas flush the area on an unknown change-log payload (R-HA-004).
   - Valkey keys and channels are versioned the same way: an incompatible change of an encoding
@@ -2352,14 +2412,27 @@ Acceptance criteria:
 Priority: **MVP** · Covers: OPS-072, HA-070
 
 **Before the first stable release the supported paths of the table do not apply** (owner,
-2026-11-06, `CLAUDE.md`, [Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)): any upgrade may need downtime or a new database, and no
+2026-11-06, `CLAUDE.md`, [Q-ARCH-340](architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release)): any upgrade may need downtime or a new database, and no
 rollback is supported. The preparation below still applies; the backup it takes is the way back.
+
+**Status.** Step 4 of the preparation is built: `GET /api/v1/system/migrations` lists the background migrations with their states
+([Q-HA-114](#q-ha-114--which-background-migrations-the-migration-report-lists-before-r-ha-022s-table-exists)), and the contract guard
+refuses a contract step that names one in `-- trove:requires-background` until it has `succeeded`
+([Q-HA-115](#q-ha-115--how-a-contract-step-declares-the-background-migration-it-depends-on-and-what-the-guard-does-with-it)).
+`TestR_HA_021_UpgradePreparation` ([upgrade_preparation_test.go](../../test/integration/postgres/upgrade_preparation_test.go)) pins
+against PostgreSQL step 4 (for each state of the records the report and the guard agree) and the runner's part of both acceptance
+criteria: the refusal with status `3` and R-HA-018's message while a replica of an older release is live, the success without an
+override once the replicas' heartbeats are stale, and the wait for a backup's database phase and the failure that names the backup
+after `migrate.advisory_lock_wait`. Not tested at the level of the criteria: a real `helm upgrade` across a contract step with
+`kubectl scale` (no pair of published releases has a contract step between them), and the old pods serving through a refusal; the
+chart test checks that exit status `3` fails the Job without a retry (R-HA-019), and `TestE04MigrationFailure` that a Job that
+fails (on its credential) leaves the replicas serving.
 
 | Upgrade | Supported path |
 |---|---|
 | Patch (x.y.z → x.y.z+1) | Rolling, zero downtime; patch releases contain no contract steps |
 | Next minor (x.y → x.y+1) | Rolling, zero downtime (R-HA-020) |
-| From a release before the cut into roles to the first release with `api` and `packages` | Two rolling steps with zero downtime, `web.enabled: true` and then `false` (R-HA-064); the release notes name them |
+| From a release before the cut into roles to the first release with `api` and `packages` | Three rolling steps with zero downtime: `web.enabled: true`, then `web.routed: false`, then `web.enabled: false` (R-HA-064); the release notes name them |
 | Skipping minors (x.y → x.y+2 or later) | Stepwise through each minor with zero downtime, or in one step with downtime: scale every role to zero, wait `system.heartbeat_stale_after`, then `helm upgrade`. The contract guard enforces this (R-HA-018, Q-HA-5) |
 | Major | As stated in the release notes; skipping a major is not supported |
 
@@ -2402,52 +2475,80 @@ Acceptance criteria:
 Priority: **MVP** · Covers: HA-069, OPS-073
 
 **Before the first stable release its promise of no downtime does not apply** (owner, 2026-11-06,
-`CLAUDE.md`, [Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)): it rests on the mixed-version operation of R-HA-020.
+`CLAUDE.md`, [Q-ARCH-340](architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release)): it rests on the mixed-version operation of R-HA-020.
 
-**Status.** Built (phase 6a, WP6a.3): the bridge, its edge and the guard
-([_validate_roles.tpl](../../deploy/helm/trove/templates/_validate_roles.tpl)). The guard's refusal reads the cluster and is
-verified by the upgrade e2e test, not by the chart test (Q-HA-86): `TestUpgrade_R_HA_064_AcrossTheCut`
+**Status.** Built (phase 6a, WP6a.3; the third step since F-64, Q-HA-130): the bridge, its edge, step 2's value `web.routed`
+and the guard ([_validate_roles.tpl](../../deploy/helm/trove/templates/_validate_roles.tpl)). The guard reads the cluster
+(`trove.bridgeFacts`) and decides on what it read (`trove.bridgeGuard`); the chart test `TestRolesBridge` checks the decision
+with given facts (Q-HA-132), and the reads are verified by the upgrade e2e test (Q-HA-86): `TestUpgrade_R_HA_064_AcrossTheCut`
 ([upgrade_test.go](../../test/e2e/upgrade_test.go), the set `upgrade`, [Q-HA-95](#q-ha-95--how-the-upgrade-tests-get-and-install-the-older-release))
-installs v0.16.0, checks the refusal and that `helm template` renders, and runs both steps under client and browser loops. While the bridge runs, its `web` pods hold the secrets of both
+installs v0.16.0, checks both refusals and that `helm template` renders, and runs the three steps under client and browser
+loops, with the edge's access lines read for answers without a backend (Q-HA-131). The chart test `TestRolesBridge` checks
+that each step changes either the edge or the backends. While the bridge runs, its `web` pods hold the secrets of both
 roles ([H-518](../security/roles-and-trust-boundaries.md#h-518--the-bridge-and-the-development-role-hold-both-halves-of-the-cut)).
 
 The releases before the cut run `<fullname>-web` behind the Service `<fullname>` and route every host whole to it. A
 Deployment cannot be renamed, and Helm applies a release in one pass: it creates the new Deployments, repoints the edge and
 deletes `<fullname>-web` before a new pod is ready. One `helm upgrade` from the old shape to the cut would therefore leave the
-edge without a ready backend for the start time of the new pods. The upgrade takes two steps instead, joined by the bridge
-value `web.enabled` (Q-ARCH-295, Q-HA-73).
+edge without a ready backend for the start time of the new pods. An edge also applies a removed backend before a moved route:
+HAProxy Ingress empties the backend of a deleted Service at once and takes a changed Ingress with its next reload, about 1.5 s
+later (F-64), so an apply that both moves a route and removes the backend it pointed at answers `503` in between. The upgrade
+therefore takes three steps, each of which changes either the edge or the set of backends, never both, joined by the bridge
+values `web.enabled` and `web.routed` (Q-ARCH-295, Q-HA-73, Q-HA-130).
 
 - **`web.enabled: true` (the bridge).** The chart renders, besides everything of R-HA-002 and R-HA-062:
   - `<fullname>-web` with `--role web` from the `web` values, which keep every key of the releases before the cut, its
     disruption budget, autoscaler and ingress policy, and the endpoint pools of the old shape (`<fullname>-web-ep-<name>`,
     `--role web`, `TROVE_POOL_NAME=ep-<name>`);
-  - the endpoint pools of the target shape (`<fullname>-packages-ep-<name>`, `<fullname>-api-ep-<name>`) beside them, which no
-    Service selects yet, so that step 2 switches the endpoint's Service onto pods that are ready (Q-HA-90);
+  - the endpoint pools of the target shape (`<fullname>-packages-ep-<name>`, `<fullname>-api-ep-<name>`) beside them, so that
+    step 2 switches the endpoint's Service onto pods that are ready (Q-HA-90); for a surface with families of both roles the
+    Service `<fullname>-api-ep-<name>` already selects the `api` pods, without a route, so that step 2 routes to a Service
+    whose endpoints exist;
   - the Service `<fullname>` (port 8080, selecting the `web` pods of the main Deployment);
-  - the edge of the old shape: every rendered Ingress and HTTPRoute routes each host whole (`/`, `pathType: Prefix`) to
-    `<fullname>`, and each further endpoint's Service selects the `web` pods that served it before (the main `web`
-    Deployment or `<fullname>-web-ep-<name>`).
+  - with `web.routed: true` (the default), the edge of the old shape: every rendered Ingress routes each host whole (`/`,
+    `pathType: Prefix`) to `<fullname>`, and each further endpoint's Service selects the `web` pods that served it before
+    (the main `web` Deployment or `<fullname>-web-ep-<name>`); with `web.routed: false`, the edge of the target shape
+    (R-HA-037, R-EP-008) while everything above keeps running;
+  - one BackendTLSPolicy (R-HA-063) for `<fullname>` and one for each Service of the target shape, for the whole bridge: a
+    route kept outside the chart (a Gateway API HTTPRoute) moves between them at a time the chart does not know.
 
   The Deployments of `api`, `packages` and `worker`, their path pools and endpoint pools, and their Services run beside it;
-  `api` and `packages` receive no edge traffic, so their share of the fetch budget is unused during step 1 (below). `NOTES.txt` states that the cut is not complete and
-  names the second step.
+  until step 2, `api` and `packages` receive no edge traffic, so their share of the fetch budget is unused during step 1
+  (below). `NOTES.txt` names the step the release is at and the next one.
 - **Step 1.** `helm upgrade` with `--set web.enabled=true` and the values otherwise unchanged: `<fullname>-web` rolls to the
   new release by R-HA-020 with no gap, because the edge keeps its Service, and the new Deployments become ready meanwhile.
-  Between the steps, in-cluster callers move to `<fullname>-api` and `<fullname>-packages` (R-HA-002), and the values gain
+  Between steps 1 and 3, in-cluster callers move to `<fullname>-api` and `<fullname>-packages` (R-HA-002), and the values gain
   the `api.*` and `packages.*` sizing the installation wants. Before step 1, policies outside the chart that admit trove's pods by
   `app.kubernetes.io/component` (an ingress policy of PostgreSQL, Valkey or the Sentinels) must admit `api` and `packages` beside
   `web`, and the labels cluster-wide policies key on move from `web.podLabels` to `api.podLabels` and `packages.podLabels`; otherwise
   the new pods cannot reach their dependencies and stay not ready, which the guard of step 2 then reports. The upgrade guide
   ([docs/manual/admin/upgrades.md](../manual/admin/upgrades.md)) lists this as the first check (seen on the owner's cluster on
   2026-11-06, where the policies of the database and Valkey admitted `web`, `worker` and `migrate` only).
-- **Step 2.** `helm upgrade` with `web.enabled: false` (the default): the edge switches to the path routing of R-HA-037 onto
-  Services whose pods have been ready since step 1, and Helm deletes `<fullname>-web`, its endpoint pools and the Service
-  `<fullname>`; their pods drain by R-HA-011, so a request the edge still sends them is served.
-- **Guard.** Where the chart can read the cluster (`helm upgrade`, `helm install --dry-run=server`; Helm's `lookup`), it
-  refuses to render with `web.enabled: false` while the release's namespace holds a Deployment `<fullname>-web` and a serving
-  Deployment of the target shape (`<fullname>-api`, `<fullname>-packages`, their path pools and their endpoint pools) does
-  not exist or has fewer ready replicas than its `spec.replicas`; the message names the Deployment and the two steps. Under `helm template` and other renderers without cluster access the guard has nothing to read, and
-  the release notes carry the two steps.
+- **Step 2.** `helm upgrade` with `--set web.enabled=true --set web.routed=false`: the edge switches to the path routing of
+  R-HA-037 onto Services whose pods have been ready since step 1, and each further endpoint's Service onto the pods of its role.
+  Nothing is deleted: `<fullname>-web`, its endpoint pools and the Service `<fullname>` keep running, so a request the edge
+  still sends by the old route until it has applied the new one is served. An edge outside the chart (an HTTPRoute) is moved to
+  the role Services now.
+- **Step 3.** `helm upgrade` with `web.enabled: false` (the default): Helm deletes `<fullname>-web`, its endpoint pools and the
+  Service `<fullname>`, which no route names any more; their pods drain by R-HA-011. No route changes.
+- **Guard.** Where the chart can read the cluster (`helm upgrade`, `helm install --dry-run=server`; Helm's `lookup`), the
+  release's namespace holds a Deployment `<fullname>-web` and the rendered edge is the target shape's (step 2 or step 3), it
+  reads where the edge points: the edge is still on the bridge while the chart's Ingress `<fullname>` routes a path to the
+  Service `<fullname>`, or a further endpoint's Service `<fullname>-ep-<name>` selects the `web` pods. It refuses to render
+  ([_validate_roles.tpl](../../deploy/helm/trove/templates/_validate_roles.tpl): `trove.bridgeFacts` reads, `trove.bridgeGuard`
+  decides):
+  - the upgrade that moves the edge (the edge is still on the bridge) while a serving Deployment of the target shape
+    (`<fullname>-api`, `<fullname>-packages`, their path pools and their endpoint pools) does not exist or has fewer ready
+    replicas than its `spec.replicas`; the message names what still routes to the bridge, the Deployment and the three steps.
+    Once the edge has moved, an upgrade at step 2 or 3 passes whatever the readiness of the target shape: it moves nothing,
+    and a refusal would leave a crash-looping `api` or a rollout in progress only the way back to step 1 (Q-HA-132);
+  - `web.enabled: false` while the edge is still on the bridge, which is step 3 without step 2; the message names what
+    still routes to the bridge and the three steps;
+  - where it reads no edge at all (no Ingress `<fullname>`, no endpoint Service), the target shape while `<fullname>-api` or
+    `<fullname>-packages` does not exist: step 1 has not run.
+
+  Under `helm template` and other renderers without cluster access the guard has nothing to read, and the release notes carry
+  the three steps. An edge outside the chart is not read: an operator who skips step 2 there meets the gap of F-64.
 - **Mixed versions.** During step 1 the replicas of the release before the cut (role `web`) and the new release (roles
   `web`, `api`, `packages`, `worker`) run side by side, and R-HA-020's rules hold unchanged: the registry and the status
   screen list the `web` replicas of both releases under the role `web`, and the new `api` and `packages` replicas as new rows
@@ -2458,27 +2559,50 @@ value `web.enabled` (Q-ARCH-295, Q-HA-73).
   and the `packages` pods of endpoint pools, which fill nothing when the endpoint has `cacheFill: false`. Each pod that serves
   holds fewer slots than it would without them: the budget is never exceeded, and the throughput of cache fills is lower until
   step 2.
-- **Left on.** The guard acts on step 2 only. An installation that stays at step 1 keeps every host on the `web` pods, which
-  hold the login secrets ([H-518](../security/roles-and-trust-boundaries.md#h-518--the-bridge-and-the-development-role-hold-both-halves-of-the-cut));
-  the alert `TroveBridgeLeftOn` (Q-HA-92) reports a `web` replica registered for 24 hours.
-- **The way back** is a rollback of a release (R-ARCH-025) and is not covered by the zero-downtime promise: rolling back
-  from step 2 recreates `<fullname>-web` while the edge already points at `<fullname>`, so the host answers `503` for the
-  start time of the restored pods. Rolling back step 1 is a rollback of `<fullname>-web` alone and has no gap.
-- A fresh installation never renders `web`: `web.enabled` defaults to `false`, and the chart's `ci/` value sets render the
-  bridge only in the value set that tests it.
+- **Left on.** The guard acts on steps 2 and 3 only. An installation that stays at step 1 keeps every host on the `web` pods,
+  and one that stays at step 2 keeps them running beside the roles; both hold the login secrets
+  ([H-518](../security/roles-and-trust-boundaries.md#h-518--the-bridge-and-the-development-role-hold-both-halves-of-the-cut)),
+  and the alert `TroveBridgeLeftOn` (Q-HA-92) reports a `web` replica registered for 24 hours.
+- **The way back** is a rollback of a release (R-ARCH-025). Each step's rollback is the reverse of a step that changes one
+  kind of thing: rolling back step 3 recreates `<fullname>-web` and the Service `<fullname>` without a route to them, rolling
+  back step 2 moves the edge back onto `<fullname>`, whose pods still run, and rolling back step 1 is a rollback of
+  `<fullname>-web` alone. None of them leaves a route without a ready backend, so a rollback goes one step at a time: from
+  step 3 to step 2, then from step 2 to step 1. `helm rollback` applies a stored release without rendering it, so no guard
+  can refuse a rollback from step 3 straight to a revision of step 1: it recreates `<fullname>-web` and points the Ingress
+  at `<fullname>` in one apply, and the host answers `503` until the restored `web` pods are ready.
+- A fresh installation never renders `web`: `web.enabled` defaults to `false`, `web.routed` has no effect without it, and the
+  chart's `ci/` value sets render the bridge only in the value set that tests it.
 
 Acceptance criteria:
 
 - The upgrade e2e test installs the release before the cut, runs `npm ci` and `dotnet restore` loops and a browser journey of
-  the UI against it, runs step 1 and step 2 with `helm upgrade --wait`, and no iteration fails; between the steps,
-  `GET /api/v1/system/replicas` lists the roles `web`, `api`, `packages` and `worker`, and after step 2 no `web`.
+  the UI against it, runs steps 1, 2 and 3 with `helm upgrade --wait`, and no iteration fails and the edge answers no request
+  with `503` for want of a backend (Q-HA-131); between steps 1 and 3, `GET /api/v1/system/replicas` lists the roles `web`,
+  `api`, `packages` and `worker`, after step 2 the Ingress `trove` routes no path to the Service `trove` while `trove-web` and
+  the Service `trove` still exist, and after step 3 the registry lists no `web`.
 - `helm upgrade` with `web.enabled: false` against a namespace that holds `trove-web` and no ready `trove-api` fails before
-  anything changes, names `web.enabled` and the two steps; the same values under `helm template` render.
+  anything changes, names `web.enabled` and the three steps; the same values under `helm template` render.
+- `helm upgrade` with `web.enabled: false` after step 1, while the Ingress `trove` routes `/` to the Service `trove`, fails
+  before anything changes and names step 2.
+- After step 2, `helm upgrade` with the values of step 2 or 3 renders while a Deployment of the target shape is not ready
+  (Q-HA-132).
 - `helm template … --set web.enabled=true` renders `trove-web` with `--role web`, the Service `trove` selecting its pods, an
-  Ingress whose every rule is `/` to `trove`, and the Deployments and Services of `api`, `packages` and `worker`.
+  Ingress whose every rule is `/` to `trove`, and the Deployments and Services of `api`, `packages` and `worker`; with
+  `--set web.routed=false` the same Deployments and Services and the Ingress of the target shape.
 
 ### R-HA-022 · Background data migrations
 Priority: **MVP** · Covers: OPS-074
+
+**Status.** Partly built. One background migration exists, `data_migration_nuget_semver2`
+([formats/nuget.md](formats/nuget.md) Q-NUGET-93): a job on the queue `maintenance`, a singleton through `coalesce`, in keyset
+batches with a checkpoint, started only once no replica of the release before it is live. The table `background_migration`, the
+pause and resume operations and a shared runner are not built. Until they are, each migration is declared by its package with the
+`system_state` key of its completion, and the report of R-HA-018 and the guard read its state from that record and its newest job
+([Q-HA-114](#q-ha-114--which-background-migrations-the-migration-report-lists-before-r-ha-022s-table-exists)); a contract step
+declares its dependency with `-- trove:requires-background <name>`
+([Q-HA-115](#q-ha-115--how-a-contract-step-declares-the-background-migration-it-depends-on-and-what-the-guard-does-with-it)). The
+acceptance criteria are not tested in their form (a test migration over 1 million rows with three worker restarts); the wait for
+the previous release is tested for the NuGet recomputation ([semver2_test.go](../../test/integration/nuget/semver2_test.go)).
 
 - A data change too large for the migration Job (backfills, re-hashing, re-indexing metadata) is a
   named background migration. It runs as a job of kind `data_migration_<name>` on the job queue
@@ -2768,8 +2892,12 @@ that restores to older points must work.
   out-of-band deletion, disaster-recovery lag), reading it MUST answer `503` with `Retry-After`,
   never `404`. The item exists, and its content may come back through replication or version
   restore. It also counts `trove_storage_blobs_damaged_total{status="missing"}` and marks the blob
-  `content_status = 'missing'` per R-STOR-027. A remote repository treats it as a cache miss and
-  fetches again (R-STOR-027).
+  `content_status = 'missing'` per R-STOR-027 (the read of `blob.Store.Open`, which looks for the object once more after
+  the mark, so that a concurrent repair stays, [storage.md](storage.md) Q-STOR-151; the alert `TroveBlobMissing` of
+  R-HA-045 reads the counter). The mark heals by itself: once it is 30 s old a read asks the store again, and an
+  object that came back is served ([storage.md](storage.md) R-STOR-012, Q-STOR-153). A remote repository treats it as a cache miss and
+  fetches again (R-STOR-027; [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-025 "Lost content",
+  Q-REPO-202), and answers `503 content_unavailable` while it cannot.
 - **Orphans after restore.** Objects written after *t* have no row in the restored database. The
   orphan sweep removes them after `storage.orphans.min_age` (R-STOR-026), unless deletions are paused
   (R-HA-025).
@@ -3261,7 +3389,9 @@ The chart MUST refuse to render, naming the offending value, before anything is 
 | `restore.enabled` without `restore.backupId` | `restore.backupId` |
 | `restore.enabled` with a replica count above 0 or autoscaling enabled for any role or pool | `restore.enabled` and the value |
 | Two pools of a role with the same name, two pools with the same path prefix or queue, a pool path outside the families of its role or equal to one of the role's own prefixes of R-HA-037, a worker pool queue that does not exist, or a pool whose name starts with `ep-` (R-HA-062) | the pools |
-| `web.enabled: false` while the namespace holds `<fullname>-web` and a serving Deployment of the target shape (api, packages, path pools, endpoint pools) is missing or not fully ready, read through `lookup` where the chart can read the cluster (R-HA-064) | `web.enabled` and the two steps |
+| The edge of the target shape (`web.enabled: false`, or `web.routed: false`) while the namespace holds `<fullname>-web`, the edge is still on the bridge (the chart's Ingress `<fullname>` routes a path to the Service `<fullname>`, or a `<fullname>-ep-<name>` selects the `web` pods) and a serving Deployment of the target shape (api, packages, path pools, endpoint pools) is missing or not fully ready, read through `lookup` where the chart can read the cluster (R-HA-064, Q-HA-132) | what still routes to the bridge, the Deployment and the three steps |
+| `web.enabled: false` while the namespace holds `<fullname>-web` and the edge is still on the bridge, read through `lookup` (R-HA-064, Q-HA-130) | what still routes to the bridge and the three steps |
+| The edge of the target shape while the namespace holds `<fullname>-web`, the chart reads no edge (no Ingress `<fullname>`, no endpoint Service) and `<fullname>-api` or `<fullname>-packages` does not exist: step 1 has not run (R-HA-064, Q-HA-132) | the Deployment and the three steps |
 | Worker pools that claim every queue; a worker pool without a replica; an `endpoints.default.surface` without a family of a role that no further endpoint is served by (R-HA-062) | the pool or the surface |
 | A provider of `config.auth.oidc.providers` with a `client_auth_method` other than `none` and no entry in `secrets.oidc` (R-HA-030, Q-HA-93) | the provider |
 | An endpoint whose `port` equals 8080, 8081 or another endpoint's port; an invalid endpoint name or one for which `<fullname>-api-ep-<name>` (a surface with families of both roles) or `<fullname>-packages-ep-<name>` (a pool) exceeds 63 characters; a missing `baseUrl`; a host in two endpoints; `extraSecrets` or `clientCaSecret` with `tls.enabled: false`; an endpoint pool below two replicas with `highAvailability.enforce` ([endpoints.md](endpoints.md) R-EP-008) | the endpoint and the value |
@@ -3569,7 +3699,8 @@ packages:
 # Rendered only with web.enabled: trove serve --role web, the Service <fullname> and the edge of the releases
 # before the cut. Every other key keeps its meaning and default of those releases; a fresh installation never sets it.
 web:
-  enabled: false                        # true for the first step only
+  enabled: false                        # true for steps 1 and 2 of the cut (R-HA-064)
+  routed: true                          # false in step 2: the edge moves to api and packages while the bridge still runs
   replicaCount: 3                       # ignored when autoscaling.enabled
   minReadySeconds: 10
   revisionHistoryLimit: 5
@@ -4858,10 +4989,11 @@ Priority: **MVP** · Covers: HA-055
 (`disabledAlerts` refuses a name that is no alert), tested by `promtool test rules`
 ([deploy/helm/trove/tests/rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml), `make chart-test`). It carries the three alerts
 of the vulnerability scanning ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-024, Q-VULN-55): `TroveVulnerabilityDataStale`,
-`TroveVulnerabilitySyncFailing` and `TroveVulnerabilityClaimedNameMalicious`. The rows of the table below are **not** rendered yet:
+`TroveVulnerabilitySyncFailing` and `TroveVulnerabilityClaimedNameMalicious`, and `TroveBlobMissing` (severity `critical`, summed over the
+replicas, [storage.md](storage.md) Q-STOR-152). The other rows of the table below are **not** rendered yet:
 `TroveReplicasNotReady`, `TroveDatabaseUnreachable`, `TroveObjectStoreUnreachable`, `TroveObjectStoreUnreachableSingleReplica`,
 `TroveDatabasePoolSaturated`, `TroveControlConnectionWaits`, `TroveJobsStuck`, `TroveLeaseLost`, `TroveMixedVersions`,
-`TroveSpoolNearlyFull`, `TroveBlobMissing`, `TroveGCStale`, `TroveBackupCheckFailed`, `TroveRevocationJournalBacklog`,
+`TroveSpoolNearlyFull`, `TroveGCStale`, `TroveBackupCheckFailed`, `TroveRevocationJournalBacklog`,
 `TroveValkeyUnavailable`, `TroveValkeyUnavailableSingleReplica`, `TroveValkeySentinelsDegraded`, `TroveValkeyFailoverFlapping`,
 `TroveValkeyPrimaryDisagreement`, `TroveBackupStale`, `TroveBackupFailed`, `TroveBackupRunningLong`, `TroveBackupGlobalHoldLong`,
 `TroveBackupSourceDamage` and `TroveBackupVerifyFindings`. The ServiceMonitor and its `role` and `pool` relabelings are not rendered
@@ -5219,7 +5351,9 @@ kubectl -n trove port-forward svc/trove-api 8080:8080   # phase 6a; svc/trove be
   Git and recreated by `dev-up`.
 - Further targets:
   - `dev-down` deletes the kind cluster;
-  - `dev-failover` runs `kubectl cnpg promote trove-db <standby>`;
+  - `dev-failover` does what `kubectl cnpg promote trove-db <standby>` does (it sets `status.targetPrimary`), once the operator holds
+    its lease, the cluster is settled and a ready standby runs on a schedulable node, and waits until the new primary serves
+    `trove-db-rw` (Q-HA-126);
   - `dev-valkey-failover` runs `SENTINEL FAILOVER trove` on a Sentinel; `dev-valkey-kill`
     force-deletes the Valkey primary pod; `dev-valkey-outage` scales Valkey and the Sentinels to 0
     for a given duration;
@@ -6704,6 +6838,9 @@ this if Helm gains a wait between applying and deleting resources, which would m
 **Applied in the spec:** R-HA-064 (new), R-HA-020 (order), R-HA-021 (the row of the upgrade path), R-HA-029 (the guard),
 R-HA-031 (`web.enabled`).
 
+**Revised** by [Q-HA-130](#q-ha-130--the-cut-moves-the-edge-and-removes-the-bridge-in-two-separate-upgrades) (2026-11-06): the
+second step left the edge without a backend for about 1.5 s and is split into two.
+
 ### Q-HA-74 · Which client Services exist after the cut, and how in-cluster callers reach trove
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -7185,6 +7322,9 @@ up.sh, shared), [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) (the set `upgrade`)
 ### Q-HA-96 · The migration check of the upgrade tests until the endpoint exists
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+**Superseded** on 2026-11-06 by [Q-HA-116](#q-ha-116--the-upgrade-tests-read-get-apiv1systemmigrations-from-the-release-under-test):
+the endpoint is built, and the tests read it; the CLI stays as the cross-check and for the rollback, as the revisit condition below
+foresaw.
 
 Context: R-HA-020's upgrade verification reads `GET /api/v1/system/migrations`. The endpoint is specified (R-HA-018) and its
 document is the type `StatusReport` of [migrate.go](../../internal/meta/postgres/migrate.go), but no route answers it
@@ -7292,6 +7432,13 @@ red until (c) is built. Revisited when (c) is built: the cut test keeps (b) for 
 **Applied in the spec:** R-HA-020 (the sentence on the UI in the mixed-version list), R-HA-064 and the roadmap's E6a.7. Code:
 `upCmd.Skew` and `requireClean` in [upgrade_loops_test.go](../../test/e2e/upgrade_loops_test.go),
 [web/e2e/upgrade/16-upgrade.spec.ts](../../web/e2e/upgrade/16-upgrade.spec.ts).
+
+**Built (2026-11-06):** option (c) is the shared asset store of
+[Q-HA-120](#q-ha-120--how-a-replica-serves-a-hashed-ui-file-of-the-other-release) to
+[Q-HA-123](#q-ha-123--when-a-replica-publishes-its-build), between releases that both have it. As decided above, the cut test keeps
+(b) for v0.16.0 only, whose pods cannot be changed; every other upgrade test stays strict, the upgrade across two bundles of
+[Q-HA-124](#q-ha-124--how-the-upgrade-tests-prove-an-upgrade-between-two-bundles) and the rolling upgrade from a release without the
+store ([Q-HA-125](#q-ha-125--the-rolling-upgrade-from-a-release-without-the-store-stays-strict)) among them.
 
 ### Q-HA-100 · The NuGet part of R-HA-059's load and how it runs beside npm's
 
@@ -7409,7 +7556,7 @@ with the `503`. That is the loss of a dependency's operator, which the PostgreSQ
 
 **Rationale:** R-HA-052's rows are single failures. The development agent would revisit it if the local profile runs its operators with two replicas.
 
-**Applied in the spec:** R-HA-052, the node-loss row.
+**Applied in the spec:** R-HA-052, the node-loss row. The way the node is found was changed by [Q-HA-106](#q-ha-106--the-node-of-the-node-loss-scenario-is-chosen-first-and-cleared-not-searched-for); the precondition is the same.
 
 ### Q-HA-105 · What the npm loops may see of a lost node
 
@@ -7438,6 +7585,36 @@ chart sets only the toleration (Q-HA-103).
 agent would revisit it if the edge's handling of sessions to a pod that was marked down is configured (`on-marked-down shutdown-sessions` was not tried).
 
 **Applied in the spec:** R-HA-052, the node-loss row.
+
+### Q-HA-106 · The node of the node-loss scenario is chosen first and cleared, not searched for
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `TestHASuite_NodeLoss` failed in the nightly run 42192042297 after 42 s with "no node hosts an api, a packages and a worker pod without the
+PostgreSQL and Valkey primaries and the operators", on the same runner class on which it had passed the run before. Q-HA-104 searched for a clean node and moved the
+blocker it met first (the operators' pods, a Valkey failover or a PostgreSQL switchover), four attempts at most. On the three workers of the kind cluster the
+four blockers (two primaries, two operators) can leave no clean node, and every attempt re-places them: the log shows the Valkey failover, the PostgreSQL switchover, the
+deletion of the operators' pods (the scheduler put them on the same two nodes again) and a second PostgreSQL switchover, and then the fourth attempt was used up.
+Whether a clean node exists after one attempt depends on where the scheduler puts the operators, which the test did not control.
+A clean node is not enough: the first run of the new search chose the node of the standby (three blockers moved), and the survivors' `/readyz` answered non-200
+two or three times each (R-HA-008) and k6 saw 4,771 failures, because the primary's log shows `canceling wait for synchronous replication` for every commit from 10 s after the
+stop, until the operator dropped the standby. The standby is the primary's synchronous partner (`dataDurability: preferred`), so a node with an instance is not a node whose loss
+only costs trove its pods.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) More attempts | Raise the 4 | One line | Still a search whose outcome the scheduler decides; each attempt is a switchover and a rollout of about 30 s |
+| (b) Choose the node first, then clear it (chosen) | The node without a PostgreSQL instance that hosts an `api` and a `packages` pod (three workers, two instances: there is one), else the candidate with the fewest blockers. A `worker` pod is brought there if it has none (the other workers are cordoned, one worker pod is deleted). The node is cordoned; the operators' pods are deleted (the scheduler cannot put them back), the Valkey primary is failed over, the PostgreSQL primary switched over; the node is uncordoned and the result is checked | Terminates in one pass; the pods land where the rest of the cluster is; a node without an instance costs the database nothing | The cordons are a cluster change during the run, undone before the load starts |
+| (c) Run the operators with two replicas in the dev profile | Q-HA-104 (c) | Realistic | The chart under test does not change |
+
+**Choice:** (b). `clearNode` in `test/e2e/node_loss_test.go` serves this scenario and the node-loss subtests of the mirror's failure suite ([Q-REPO-200](repositories-and-proxy.md#q-repo-200--the-node-lost-under-a-pass-is-cleared-of-the-operators-and-the-primaries-first)).
+
+**Rationale:** R-HA-052's rows are single failures, so the precondition has to be made, not hoped for. The development agent would revisit it if the dev profile runs
+its operators with two replicas.
+
+**Applied in the spec:** R-HA-052, the node-loss row (unchanged text: the node still hosts no primary and no operator). The order of
+the clearance was changed by [Q-HA-126](#q-ha-126--the-node-clearance-moves-the-primaries-before-the-cordon-and-failoversh-waits-for-what-a-switchover-needs):
+the primaries are moved before the node is cordoned.
 
 ### Q-HA-110 · How the drain test measures the edge's endpoint-removal time
 
@@ -7549,6 +7726,413 @@ that separates "the edge stopped" from "the listener closed on the last request"
 the load of `TestE14Drain` on `packages` is raised so that every pod gets a sample.
 
 **Applied in the spec:** R-HA-059 rule 4; [drain_measure_test.go](../../test/e2e/drain_measure_test.go) (`drainSilence`).
+
+### Q-HA-114 · Which background migrations the migration report lists before R-HA-022's table exists
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the report of R-HA-018 (`GET /api/v1/system/migrations`, `trove migrate status`) has a member `background`, the rows of
+R-HA-022's table `background_migration`; R-HA-020's verification ("the expected background migrations") and step 4 of R-HA-021 read
+it. Neither the table nor its pause and resume operations are built. One background migration runs: the recomputation of NuGet's
+SemVer 2 flag (`data_migration_nuget_semver2`, Q-NUGET-93), which records its completion in the `system_state` key
+`nuget_semver2_recomputed` and its progress in its job rows. The table needs a migration step and moves the state of a migration
+that installations have already run (finding F-59 is the endpoint, not the table).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An empty list until the table exists | `background: []` always | Nothing to build | The migration that runs is invisible; R-HA-020's "expected background migrations" cannot be checked, and the guard of R-HA-021 step 4 has nothing to read |
+| (b) Each migration declared by its package, its state read from its completion record and its newest job (chosen) | `postgres.BackgroundMigration` (name, release, the `system_state` key of the completion, optionally the count of a completed run from that record); `app.BackgroundMigrations()` lists the binary's; the record makes it `succeeded`, a newest job `running` or `cancelling` makes it `running`, `failed` makes it `failed`, anything else (no job, queued, cancelled, a run that ended waiting for older replicas) is `pending` | The report shows today's migration from records that already exist; no schema change; the report and the guard read one function, so they cannot disagree; the document keeps R-HA-018's shape, so the table can replace the reader later | The state is derived: `paused` cannot occur until the pause operation exists, and once `jobs.retention` has removed the job rows `startedAt` is `null` and `processed` comes from the completion record or is 0 |
+| (c) Build R-HA-022's table now | `background_migration` with its states, the NuGet recomputation moved onto it, pause and resume | The specification as written | A migration step, a move of a completed migration's state and the operations with their own tests and review; more than the finding needs, and Q-NUGET-93 names it as its own revisit condition |
+| (d) The job rows of the kinds `data_migration_*` | Every kind with that prefix, its newest job's state | Nothing to declare | A completed migration vanishes or turns `pending` when `jobs.retention` removes its rows; the release that introduced it is in no job row |
+
+**Choice:** (b).
+
+**Rationale:** the report answers whether the background work an upgrade needs is done; (b) answers it right from the records the
+migration keeps, and it keeps the report and the guard on one reader ([background.go](../../internal/meta/postgres/background.go)).
+What a record cannot say (`paused`) belongs to operations that are not built. Revisited when R-HA-022's table is built (the reader
+then reads its row, the document stays) or when a migration needs a state the records cannot express.
+
+**Applied in the spec:** R-HA-018 (the members of the report), R-HA-021 and R-HA-022 (the status lines). Code:
+[background.go](../../internal/meta/postgres/background.go) (`BackgroundMigration`, `ReadBackground`), `BackgroundMigrationJob` in
+[migration.sql](../../internal/meta/postgres/queries/migration.sql), `Report` in [migrate.go](../../internal/meta/postgres/migrate.go),
+`Semver2Background` in [semver2.go](../../internal/formatdata/nuget/semver2.go), [migration_report.go](../../internal/app/migration_report.go).
+Tests: `TestBackgroundState`, `TestR_HA_022_TheRecomputationIsDeclaredAsABackgroundMigration`, `TestBackgroundMigrations`,
+`TestR_HA_021_UpgradePreparation`, `TestMigrationStatus`.
+
+### Q-HA-115 · How a contract step declares the background migration it depends on, and what the guard does with it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-022 says that a contract step that depends on a background migration's completion declares it and that the guard
+refuses the step before the migration has `succeeded`; step 4 of R-HA-021 says the guard checks it. R-HA-018's header table and
+R-ARCH-026 named no such declaration, and the guard read the replica registry only. No embedded step depends on a background
+migration today; the first contract step that removes what a backfill converts needs the declaration.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A header `-- trove:requires-background <name>`, once per migration, contract steps only; the guard refuses with status `3` while one has not `succeeded` (chosen) | Parsed with the other headers; the guard reads the state with the report's reader (Q-HA-114); a name the binary does not declare fails the run with status `1`, and a unit test over the embedded steps keeps such a step out of a release | The dependency sits in the file whose SQL needs it, is checksummed with it and seen in review; the refusal and the report read one function; status `3` is the refusal that a retry cannot change (`FailJob`, R-HA-019) | One more header in R-ARCH-026's syntax |
+| (b) A table in Go that maps step numbers to migrations | The guard looks the step up | No header | The dependency lives apart from the step; nothing stops a step from shipping without its entry |
+| (c) Leave it to the operator's step 4 | The report shows the state, nothing enforces it | Nothing to build | R-HA-021 and R-HA-022 say the guard checks it; a skipped check removes data a backfill has not converted |
+| (d) Refuse with status `1` | The Job retries | A short backfill may finish during the retries | A backfill runs on the workers of the running release for minutes to hours; three tries within 30 minutes are noise |
+
+**Choice:** (a).
+
+**Rationale:** a contract step that removes an old form is safe only after the backfill converted every row, and the place that
+knows the dependency is the step's own file. Reading the state with the report's reader means an operator who sees `succeeded` in
+step 4 meets no refusal, and one who sees `running` meets it with the same word. Revisited when R-HA-022's table exists (the guard
+reads its row; the header stays).
+
+**Applied in the spec:** R-HA-018 (the header table, the guard), [architecture.md](architecture.md) R-ARCH-026 (the header list,
+the gate), R-HA-021 and R-HA-022 (the status lines). Code: [steps.go](../../internal/meta/postgres/steps.go) (`RequiresBackground`),
+`backgroundGuard` and `CheckBackgroundDependencies` in [background.go](../../internal/meta/postgres/background.go), `contractGuard`
+in [migrate.go](../../internal/meta/postgres/migrate.go), [cmd/trove/migrate.go](../../cmd/trove/migrate.go). Tests: the R-HA-022
+cases of `TestParseSteps`, `TestCheckBackgroundDependencies`, `TestBackgroundMigrations`, `TestR_HA_021_UpgradePreparation`.
+
+### Q-HA-116 · The upgrade tests read GET /api/v1/system/migrations from the release under test
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: [Q-HA-96](#q-ha-96--the-migration-check-of-the-upgrade-tests-until-the-endpoint-exists) had the upgrade tests read `trove
+migrate status` in a worker pod until the endpoint existed, and it exists now. The releases before it do not have the route, so
+their pods answer `404`; right after a rolling upgrade the edge can still reach a pod of the release before while it drains
+(R-HA-011). The rollback test ends on the release before, which has no route at all.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The endpoint with the administrator's token through the edge, after the upgrade, accepted only from a replica of the release under test; a `404` or another `binary.version` is read again for up to 90 s; `trove migrate status` in the worker as the cross-check; the rollback read with the command (chosen) | `upMigrations` and `requireMigrationsDone` | The criterion as written; the route on the `api` role, the edge and `settings:read` are exercised; the cross-check pins that the endpoint and the command agree | A read can take more than one request while the edge drops a pod of the release before |
+| (b) The endpoint, failing on any `404` | One request | Strict | A draining pod of the release before answers `404` for a route its release never had; that is no defect of the release under test |
+| (c) Keep the command alone (Q-HA-96) | No change | Proven | The endpoint is not exercised end to end |
+| (d) A port-forward to one `api` pod of the new ReplicaSet | No edge | One request | Bypasses the edge and the routing by role that an operator's read meets |
+
+**Choice:** (a).
+
+**Rationale:** only an answer that is provably not from the release under test is read again; every answer of that release is
+gated, and every other status fails the test. R-HA-020's "the expected background migrations" is read as every migration the
+binary declares reaching `succeeded` within 3 minutes, a `failed` one failing at once. The cut test runs the same check after
+its step 2. Revisited when every release an upgrade test starts from has the route (the `404` branch then never matches).
+
+**Applied in the spec:** R-HA-020 (the status line), Q-HA-96 (superseded). Code: `upMigrations` and `requireMigrationsDone` in
+[upgrade_env_test.go](../../test/e2e/upgrade_env_test.go), [upgrade_test.go](../../test/e2e/upgrade_test.go),
+
+### Q-HA-120 · How a replica serves a hashed UI file of the other release
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Builds
+option (c) of [Q-HA-99](#q-ha-99--the-uis-hashed-assets-across-an-upgrade).
+
+Context: finding F-58. During a rolling upgrade a page takes its `index.html` from a replica of one release and its scripts,
+stylesheets and fonts, one request each, from replicas of both. Every one of them is named after its content (R-UI-001), so the
+replicas of the other release answer `404` and the page stays blank. R-HA-020 asks that what a client carries between requests is
+understood by both releases; the names an `index.html` hands the browser are such a thing. A tab opened before the upgrade loads the
+lazy chunk of a route it opens later from the replicas that run then.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A shared, content-addressed asset store (chosen) | Every replica that serves the UI (`api`, `web` in the bridge, `all`) publishes the hashed files of its embedded build at start-up; a request for a hashed file its own build lacks is answered from the store with the headers of its own files | Both directions of the window, any number of releases inside the retention, the lazy chunks of a tab left open, independent of the edge | A table, a data path and a write at every start; a read of the store per foreign file; works only between releases that both have it ([Q-HA-125](#q-ha-125--the-rolling-upgrade-from-a-release-without-the-store-stays-strict)) |
+| (b) The image carries the previous release's bundle | The release pipeline adds the last release's build next to its own | No shared state | One direction only: the pods of N serve the files of N−1, the pods of N−1 still answer `404` for N's; a skipped release or a rollback is not covered; the pipeline fetches and embeds an older build |
+| (c) The edge keeps a browser on one release | Cookie affinity at the ingress controller | No change in trove | A feature of some controllers and not of others; a rolling upgrade deletes every pod, so the pinned pod goes away in the middle of a page and the next request lands on the other release anyway |
+| (d) A script that reloads on a failed load | `index.html` reloads once when a module fails to load | Small | A retry, not a fix: the reload can meet the same mix again; an inline script needs its own nonce in `script-src` (R-UI-001 allows `'self'` only); a lazy chunk of an open tab is not covered |
+
+**Choice:** (a).
+
+**Rationale:** it is the only option that removes the failure in both directions of the window and for the open tabs, and it needs
+nothing outside trove. The rest of the design follows in Q-HA-121 to Q-HA-123, the names in
+[Q-UI-140](api-and-ui.md#q-ui-140--which-file-names-of-the-ui-build-are-hashed) and the answers in
+[Q-UI-141](api-and-ui.md#q-ui-141--what-a-replica-answers-for-a-hashed-file-of-another-release). Revisit if the store's cost at start-up
+(Q-HA-123) is found to delay the readiness of an upgrade.
+
+**Applied in the spec:** R-HA-020 (the UI's files in the mixed-version list), R-UI-001 (serving), the area `ui-assets` of
+[architecture.md](architecture.md) (Q-ARCH-332). Code: [internal/webui/shared.go](../../internal/webui/shared.go),
+[internal/webui/shared/](../../internal/webui/shared/), [internal/app/wire_ui_assets.go](../../internal/app/wire_ui_assets.go).
+Tests: `TestSharedAssets` (internal/webui), `TestR_HA_020_SharedUIAssets` and `TestR_HA_020_SharedUIAssetsWithoutTheObjectStore`
+([test/integration/uiassets](../../test/integration/uiassets/uiassets_test.go)), `TestUpgrade_R_HA_020_AcrossTwoBundles`.
+
+### Q-HA-121 · Where the shared UI files live
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: [Q-HA-120](#q-ha-120--how-a-replica-serves-a-hashed-ui-file-of-the-other-release) needs a store that every replica reads and
+writes. A build has 135 hashed files per locale, 2.4 MB per locale, 4.8 MB for the two (a build of 2026-11-06); the scripts of
+the two locales share their names and differ in content where a translation is inlined.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The blob store, named by a table (chosen) | The content is a blob (R-STOR-002, spooled, hashed, committed by the protocol of R-STOR-005); a row of `ui_assets` (locale, path, blob, size, publisher, `seen_at`) names it and holds the reference that keeps the collector away (R-STOR-024); a read verifies the digest (R-STOR-013) | INV-4 holds; the files of both locales and of every release are stored once by content; deleting a row hands the blob to the collector; the replicas keep what they read in memory (Q-UI-141) | A file of the other release costs an object read on the first request a replica gets for it; while the object store is unavailable those files answer `503` |
+| (b) PostgreSQL rows with the content | A `bytea` column | One store, transactional | Contradicts INV-4 ("No binary content is stored in PostgreSQL") |
+| (c) Valkey | Keys with the content | Fast | INV-3: nothing trove serves to a client is read from Valkey, and losing Valkey must cost performance only |
+
+**Choice:** (a).
+
+**Rationale:** the blob store is where trove keeps content, with the deduplication, the collection and the verification it needs
+already; the table adds only the names. The table's export class is transient (R-BAK-004): a restore leaves it empty and the replicas
+publish again (Q-HA-123). Revisit if the object read of a foreign file is measured to slow a page during an upgrade.
+
+**Applied in the spec:** R-HA-020. Code: migration `00043_ui_assets.sql`, [tables_ui.go](../../internal/meta/postgres/tables_ui.go),
+[queries/ui_assets.sql](../../internal/meta/postgres/queries/ui_assets.sql), [shared.go](../../internal/webui/shared/shared.go).
+
+### Q-HA-122 · How long the files of a release stay in the store
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the store must hold the files of every release whose pages may still be open, and must not grow with every build: a build is
+about 5 MB, and the dev profile builds several a day.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Renewed by the replicas that carry a file, removed 7 days after the last renewal (chosen) | Every replica renews the rows that hold its build's own bytes at start-up and every hour (`seen_at`, rows renewed in the last half hour are left alone; a row of the same name with other bytes is not renewed, [Q-UI-142](api-and-ui.md#q-ui-142--which-bytes-the-shared-store-keeps-for-a-name-that-two-builds-fill-differently)); every replica deletes the rows no replica renewed for 7 days, and the delete trigger queues their blobs | A release's files stay while one of its replicas runs and a week after; no build identity or ordering is needed; a file both releases have with the same bytes is kept by either | A file stays up to a week after it is needed; 7 days is a constant |
+| (b) The files of the last N builds | A build table ordered by publish time | A bounded count | Needs a build identity; a build whose replicas still run (a pool that rolls later, a rollback) loses its files once N newer builds were published |
+| (c) The versions of the replica registry | Keep the files of the versions the registry lists | Uses what exists | A version does not name a build (every dev build is `dev`), and a row leaves the registry with its replica, so the open tabs of that release lose their lazy chunks at once |
+| (d) Never removed | Write-once forever | Simple | Grows by a build at every upgrade, without bound |
+
+**Choice:** (a), with the retention of 7 days.
+
+**Rationale:** the renewal ties a file's life to the replicas that carry it, which is what an open page depends on, and a week covers
+a tab left open over a weekend. The constants are `shared.Retention` and `shared.RenewEvery`. Revisit if an operator needs another
+retention (a configuration key) or the store's size is a concern.
+
+**Applied in the spec:** R-HA-020. Code: [keeper.go](../../internal/webui/shared/keeper.go) (`Keeper`), the statements `TouchUIAssets`
+and `PruneUIAssets`. Test: `TestR_HA_020_SharedUIAssets` (renewal, a restore's empty table, the retention and the queued blobs).
+
+### Q-HA-123 · When a replica publishes its build
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a new replica's `index.html` names files that only its own build has. The replicas of the other release can serve them only
+once they are in the store.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Before the replica turns ready, for at most a minute (chosen) | The wiring step `ui-assets` (R-ARCH-024 step 8) publishes before the client listener opens; a store that does not take the build within `shared.PublishWait` (1 minute) is logged and the replica starts without it; the keeper tries again every minute | A page from a new replica finds every file it names on the old replicas from its first answer; a store that refuses writes does not take the UI and the management API down | The first replica of a build commits its files at start-up (on the dev cluster on 2026-11-06: 244 new files of 270 in 1.2 s, the next replica of the build 7 ms); a store that fails delays the readiness by a minute |
+| (b) In the background after the replica is ready | No cost at start-up | Fast start | The first pages of a new replica can meet the `404`, and the old replicas remember the miss for 10 s (Q-UI-141) |
+| (c) Before ready, without a bound | The replica waits until it has published | The skew can never happen | An object store that passes the start-up check and refuses writes keeps every new `api` replica unready: an upgrade pauses, and a restart of all of them (a node drain) loses the UI and the management API for a convenience of the UI |
+| (d) In the migration Job | Once per upgrade | No cost per replica | The Job has no spool or blob store; a restore, a rollback and the role `all` would publish nothing |
+
+**Choice:** (a).
+
+**Rationale:** reliability first: the store serves the UI's pages of the other release; it must not decide whether trove serves at all.
+The object store's start-up check (R-STOR-035) runs before, so a publish that fails after it is the exception. Revisit if the
+publish is measured to take a large part of an upgrade.
+
+**Applied in the spec:** R-HA-020; the area table of [architecture.md](architecture.md) (`ui-assets`). Code: `wireUIAssets`,
+`Keeper.PublishAtStart`.
+
+### Q-HA-124 · How the upgrade tests prove an upgrade between two bundles
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-58 is done when a rolling upgrade passes across two releases with different bundles. The releases that exist do not have
+the store, and the rolling upgrade of R-HA-020 starts from a published release.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A second image of the working tree with another bundle (chosen) | `make image-marked` builds the image with `UI_BUNDLE_MARK=1`: `build:embed` keeps the libraries' licence comments in the scripts (`--extract-licenses=false`), which renames 122 of the 135 hashed files of a locale (a build of 2026-11-06) and changes no behaviour; `TestUpgrade_R_HA_020_AcrossTwoBundles` installs the tree's chart with it and upgrades to the image under test, every loop strict, and a sampler reads the `index.html` through the edge and loads the main script it names | Two bundles with the store on both sides, now; the window and the bundles are measured, not assumed | A second image build in the leg (about 1.5 min); the variant differs in comments, not in code |
+| (b) Wait for the next release that changes the bundle | The rolling test from that release | No extra image | The proof comes a release later, and the test is red until then |
+| (c) A build-time constant or a replaced source file | `define` or `fileReplacements` in `angular.json` | A code change | A constant changes nothing unless `web/src` reads it; a replaced file is a copy that the UI work changes under it |
+| (d) Rename the files after the build | Rewrite the names | No second build | The names are referenced from `index.html` and from every chunk: a second bundler |
+
+**Choice:** (a).
+
+**Rationale:** it tests what F-58 asks with the code under test on both sides of the window, and nothing in the build or the product
+behaves differently. Both images report the version `dev`, so the test reads the bundles, not the registry's versions, to see the
+window. Revisit when the published releases have the store: the rolling test from the previous release then proves the same on
+every release that changes the bundle.
+
+**Applied in the spec:** R-HA-020 (status). Code: [build-embed.mjs](../../web/scripts/build-embed.mjs), the `Containerfile` (`UI_BUNDLE_MARK`),
+`make image-marked`, [upgrade_bundles_test.go](../../test/e2e/upgrade_bundles_test.go), the step `make image-marked` of the leg
+`e2e-upgrade`.
+
+### Q-HA-125 · The rolling upgrade from a release without the store stays strict
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the first release with the store cannot serve the files of a release before it, which never published them, and that release's
+replicas cannot serve the new ones. `TestUpgrade_R_HA_020_RollingFromThePreviousRelease` upgrades from the latest published release,
+which until the next release has no store: a change of the bundle on `main` before this change is released makes it red.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Strict, as it is (chosen) | A `404` for a hashed file fails the test | The test shows what that one upgrade does to a user; it is green with every bundle change once a release with the store is published | A run between a bundle change on `main` and the release of this change is red |
+| (b) Count the skew against a release without the store, as Q-HA-99 does for v0.16.0 | A tolerance keyed on the migration `00043` being newer than the release | Green at once | Widens a pass condition for a case that ends with the next release, and the tolerance has to be taken out again |
+| (c) The first release with the store also carries the previous bundle | [Q-HA-120](#q-ha-120--how-a-replica-serves-a-hashed-ui-file-of-the-other-release) (b) for one release | No skew at all | A pipeline change for one release |
+
+**Choice:** (a).
+
+**Rationale:** the tolerance of Q-HA-99 exists because the pods of v0.16.0 can never be changed; a release without the store is
+followed by one with it at the next release. The order that keeps the leg green: this change is released before, or with, the next
+change of the bundle. Operators read the one-time limit on the manual's upgrade page. Revisit if a release with a bundle change is cut
+without the store.
+
+**Applied in the spec:** R-HA-020; [docs/manual/admin/upgrades.md](../manual/admin/upgrades.md).
+
+### Q-HA-126 · The node clearance moves the primaries before the cordon, and failover.sh waits for what a switchover needs
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: finding F-65. In the dispatched nightly run 42211913572 (leg `mirror-long`) `clearNode` ([Q-HA-106](#q-ha-106--the-node-of-the-node-loss-scenario-is-chosen-first-and-cleared-not-searched-for))
+cordoned the node of the pass's process, which hosted the PostgreSQL primary `trove-db-1` and the CloudNativePG operator, deleted the
+operators' pods, and 14 s after the cordon ran `failover.sh`, which logged `switchover trove-db: trove-db-2 -> trove-db-1` and exited 1
+three minutes later: "switchover did not finish in 3 minutes (primary trove-db-2, ready 2, phase 'Cluster in healthy state')". The
+cluster's event "SwitchingOver: Current primary is running on unschedulable node …, switching over from trove-db-1 to trove-db-2" names
+the cause: CloudNativePG switches a primary off a node that is cordoned (its handling of a drain, `reconcileTargetPrimaryFromPods` of
+the operator 1.30). When the script read the status the primary had already moved, so "the first standby" it picked was `trove-db-1`,
+the old primary on the cordoned node; the operator moved the primary off that node again, and the script's wait for `trove-db-1` as
+primary could not end. The operator was there: its replacement had taken the lease. Reproduced on the dev cluster: the same order on the
+node of the primary and the operator ended with the same error; a watch of the cluster's status shows the operator's switchover 1.3 s
+after the cordon (started by the old operator pod, finished by its replacement), the script's switchover back onto the cordoned node
+13 s later and the operator's second switchover 15 s after that.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Run `failover.sh` again when it fails | A retry | One line | Races the operator again and makes the primary bounce; a blind retry hides what the switchover lacked |
+| (b) Keep the order and wait for the operator's own switchover | After the cordon, wait until the primary is off the node and the cluster is healthy | The path of a real drain | Two actors at once (the operator switches over while its own pod is replaced); the scenario's precondition rests on the operator's internal conditions for that switchover (every instance ready, the candidate streaming) |
+| (c) The primaries first, then the cordon; `failover.sh` waits for its preconditions (chosen) | `clearNode` fails the Valkey primary over and switches the PostgreSQL primary over while the node is schedulable and the operators run, then cordons the node, deletes the operators' pods and waits until each replacement is ready on another node and holds its operator's lease (`replaceOperators`; `rollout status` reads a Deployment status that can still count the deleted pod). `failover.sh`, for every caller: waits up to 180 s until a ready pod that is not being deleted holds the lease `db9c8771.cnpg.io` and the cluster is settled (target primary = current primary, every instance ready, phase "Cluster in healthy state"); takes a ready standby on a schedulable node and refuses one on a cordoned node; asks with a JSON patch that tests the primary it read, so a switchover that started in between refuses the request; ends when the new primary also carries the label `cnpg.io/instanceRole=primary` that `trove-db-rw` selects. Each wait fails with the precondition it did not see met | One actor at a time; every failure names its precondition; no script can ask for a primary on a cordoned node; the operator that drops a lost standby from the synchronous set is in charge before the node goes | The clearance's order differs from a drain, where the cordon comes first and the operator moves the primary itself; the drain is its own scenario (`drain.sh`, R-HA-059) |
+
+**Choice:** (c).
+
+**Rationale:** the clearance makes a precondition of a single-failure scenario, so it must not depend on a race; the hardened script
+also protects the other callers (`avoidPrimary`, the switchover scenarios), which were safe only because nothing else moved the primary
+at the time. The development agent would revisit it if the dev profile runs its operators with two replicas (Q-HA-104 (c)), which makes
+the operators' replacement unnecessary, or if CloudNativePG stops switching a primary off a cordoned node.
+
+**Applied in the spec:** R-HA-051, the target `dev-failover`. Code: [failover.sh](../../deploy/dev/failover.sh),
+[node_loss_test.go](../../test/e2e/node_loss_test.go) (`clearNode`, `replaceOperators`, `operatorProblem`).
+
+### Q-HA-127 · A lease session that stays silent is ended by the server within the keepalive's bound
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the same nightly run 42211913572 failed the frozen-node subtest of the mirror's failure suite: after `docker pause` of the
+node of the pass's process (it hosted the PostgreSQL standby, so the clearance moved nothing), the pass did not continue in another process
+for 15 minutes. The test upstream's log has no request of the pass from the pause (11:55:28) to the unpause of the test's cleanup
+(12:10:36), and the pass went on 0.2 s after it: the paused process itself continued, nobody had taken the pass over. A pass moves after a
+lost process through the reaper (on every worker) and the next `mirror-dispatch`, which only the holder of the `scheduler` lease enqueues
+(R-HA-005). The lease is a session-level advisory lock (R-HA-006); a paused container's processes stop, but its kernel keeps the TCP
+connection and answers every keepalive probe, so the server never ends the session and the lock stays for as long as the pause lasts. The
+run's artifacts cannot name the holder (the worker pods were replaced before the cluster state was taken); the other runs' frozen subtests
+progressed after about a minute. Reproduced in the integration tier: a holder whose lease pool runs through a TCP relay that stops moving
+bytes and closing sockets kept the lock for 34 s against a server keepalive bound of 4 s, and no other replica got the lease
+(`TestLeases_R_HA_006_FrozenHolder` before the fix). Reproduced on the dev cluster: `docker pause` of the node of the worker that held the
+`scheduler` lease left its session in `pg_locks`, idle, for the 172 s of the pause (the keepalive bound is 120 s); the lease moved only
+after the unpause. With the fix the same experiment ended the session between 115 and 120 s of idleness (a sample every 5 s), and another
+worker held the lease in the sample 16 s later (`cluster.lease_retry_interval` is 15 s).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `idle_session_timeout` on the lease sessions at the keepalive's bound (chosen) | A startup parameter of the lease pool only, `idle + interval × count` of `database.server_keepalive` (120 s with the defaults); the configuration refuses a bound below three `database.lease_check_interval` | The silent holder is released within the bound a vanished one already has; no new key; the server decides, whatever the holder's process does; fencing stays "the writes run on the lease's session", so the thawed holder can write nothing | A holder that is alive but sends nothing for 2 minutes (a stall longer than any measured: 40 s on a starved runner) loses its lease and restarts its work from the cursor |
+| (b) A separate, shorter timeout | e.g. three lease checks (15 s) | Faster takeover | A new key; a starved but live holder loses its lease often (stalls of 40 s were measured) |
+| (c) Leases as rows with an expiry, like the job leases | Renewed by the holder, taken over after expiry | No dependence on the session | A redesign of R-HA-006: fencing by the session goes, every singleton write would need a token check |
+| (d) Keep the holder of the `scheduler` lease off the frozen node in the test | `clearNode` moves it too | No product change | Hides the gap: R-REPO-053's criterion names a frozen node, and the scheduler of a production cluster would stop for as long as a stopped holder lasts |
+| (e) `tcp_user_timeout` on the server | A bound on unacknowledged data | Server-side | The paused kernel acknowledges: nothing is ever unacknowledged |
+
+**Choice:** (a).
+
+**Rationale:** a stopped process with a live kernel is the one case of a gone holder the keepalive cannot see; the lease check makes
+"no statement for the keepalive's bound" a reliable sign of it, and the bound is the one the specification already gives for a vanished
+holder. With it, the frozen-node subtest's path is: the lease free after at most 120 s, the next worker holds it within
+`cluster.lease_retry_interval`, the scheduler enqueues the due `mirror-dispatch` at once, inside R-REPO-053's 5 minutes. The
+development agent would revisit it if `trove_lease_lost_total` shows live holders losing their leases under load, or if leases move to rows.
+
+**Applied in the spec:** R-HA-006 item 4 and an acceptance criterion, R-HA-015 (the parameter table). Code: `runtimeParams` and
+`ServerReleaseBound` in `internal/meta/postgres/connect.go`, `Database.Validate` in `internal/config/database.go`;
+[lease_frozen_test.go](../../test/integration/coordination/lease_frozen_test.go).
+
+### Q-HA-130 · The cut moves the edge and removes the bridge in two separate upgrades
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-64. In the scheduled nightly run 42194413882 one browser journey of `TestUpgrade_R_HA_064_AcrossTheCut` failed at
+its first step: `GET /ui/en/login?local=1` at 10:03:15.255 was answered `503` by the edge (`trove_trove_http/<NOSRV>`,
+termination state `SC--`) during step 2 of the two-step cut (Q-HA-73), and the sign-in form never came. The edge's access lines
+of the cluster-state artifact show 509 such answers between 10:03:13.849 and 10:03:15.255, 508 of them to the npm client pods,
+which repeated them, so every `npm ci` passed. The controller's log names the order: Helm deleted the Service `trove` (13.144)
+and updated the Ingress `trove` (13.303) in one apply; HAProxy Ingress applied the empty backend at once as a dynamic update
+(13.85 to 13.90 on its two pods) and the moved routes with its next reload (15.35 and 15.47). An edge applies endpoint changes
+and route changes on separate paths, so an apply that both moves a route and removes the backend it pointed at leaves that route
+without a server until the route moves; draining the deleted pods (R-HA-011) does not help, because the Service went with them.
+The same holds for a new Service that a moved route names in the same apply (`<fullname>-api-ep-<name>` of a two-role endpoint).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Three upgrades: step 2 (`web.enabled: true`, `web.routed: false`) moves the edge while the bridge keeps running, step 3 (`web.enabled: false`) removes the bridge, which no route names; the bridge renders every Service a later step routes to; the guard refuses step 3 while the chart's Ingress still routes to `<fullname>` (chosen) | Each apply changes either the edge or the set of backends | No gap whatever order or delay the edge applies changes in; every step's rollback is gap-free too; deterministic under every renderer; the value follows the pools' `routed` (Q-HA-90) | One more `helm upgrade` (or GitOps commit); an edge outside the chart is not read by the guard |
+| (b) Two upgrades; the bridge's Deployment and Service survive step 2 through `helm.sh/resource-policy: keep` and are deleted by hand | No new value | One command less | Leaves objects outside the release that `helm rollback` and `helm uninstall` do not manage; a manual deletion the guard cannot check |
+| (c) Two upgrades; step 2 keeps rendering the bridge while `lookup` finds the edge on it, and a later upgrade removes it | No new value | The operator runs the same command twice | The rendering depends on the cluster: `helm template` and GitOps renderers produce the gap (the argument of Q-HA-73 (b) and Q-HA-90 (a)) |
+| (d) Two upgrades; the edge keeps terminating endpoints (HAProxy Ingress `drain-support`) or a delay is inserted between the steps' changes | Controller settings | No chart change | Controller-specific (the chart supports HAProxy Ingress, ingress-nginx and Traefik); the deleted Service takes its endpoints with it, terminating or not |
+| (e) Two upgrades, the gap documented | Release notes | Nothing to build | Breaks R-HA-021's "zero downtime" for this path: a browser does not repeat a `503`, and F-64 is the evidence |
+
+**Choice:** (a).
+
+**Rationale:** the gap comes from one apply carrying two kinds of change that an edge applies at different times, so the fix is to
+never put both into one apply: expand (step 1), switch (step 2), contract (step 3). It does not depend on the controller's timing,
+which (d) would have to know for each controller. The value is in the values, so the three applies are three reviewable renders,
+which (c) gives up. The BackendTLSPolicies of both sets render for the whole bridge, because a Gateway API route is the
+operator's and switches whenever the operator moves it. The development agent would revisit this if Helm gains a wait between
+applying and deleting resources and the supported edges apply a Service deletion only after the routes that name it, which
+would make two steps safe.
+
+**Applied in the spec:** R-HA-064 (the steps, the bridge's Services and policies, the guard, the way back, the acceptance
+criteria), R-HA-020 (order), R-HA-021 (the row of the upgrade path), R-HA-029 (the guard's two refusals),
+[values.yaml](../../deploy/helm/trove/values.yaml) and [values.schema.json](../../deploy/helm/trove/values.schema.json)
+(`web.routed`), [_edge.tpl](../../deploy/helm/trove/templates/_edge.tpl) (`trove.bridgeRouted`, `trove.edgeBackendServices`),
+[endpoint-services.yaml](../../deploy/helm/trove/templates/endpoint-services.yaml),
+[_validate_roles.tpl](../../deploy/helm/trove/templates/_validate_roles.tpl), [_notes.tpl](../../deploy/helm/trove/templates/_notes.tpl),
+[_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl) (`TroveBridgeLeftOn`), the upgrade guide
+([docs/manual/admin/upgrades.md](../manual/admin/upgrades.md)), `TestRolesBridge` and `TestUpgrade_R_HA_064_AcrossTheCut`.
+
+### Q-HA-131 · The upgrade tests read the edge's access lines for answers without a backend
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-64's gap of 1.4 s answered 509 requests with `503`; the npm loops repeated every one and passed, and the browser
+journey met the gap in one iteration of 14 by chance. The loops alone detect an edge gap only when a client that does not repeat
+happens to fall into it, so the zero-downtime promise of R-HA-020 and R-HA-064 was checked by chance. Since F-50 the dev
+profile's edge writes one access line per request with its backend, server and termination state.
+
+| Option | For | Against |
+|---|---|---|
+| (a) After the loops stop, read the edge pods' lines of the loops' span and fail on any line `<backend>/<NOSRV> … 503` (chosen) | Counts every request the edge could not route, also those a client repeated; independent of chance; names the backend and the time | Bound to the access line format of the dev profile's edge (HAProxy Ingress) |
+| (b) Count the `503` answers in the clients' logs | Client-side | npm logs a repeated `503` only at verbose levels, the NuGet client not at all |
+| (c) Run the browser journey more often | No new check | Still chance: a journey every 20 s against a gap of 1.5 s |
+
+**Choice:** (a).
+
+**Rationale:** the edge is the one place every request passes, and its line distinguishes an answer without a server from a
+`503` of trove itself (which names its server) and from a request the client gave up on (status `-1`). Both upgrade tests use it
+(`requireEdgeServed` in [upgrade_loops_test.go](../../test/e2e/upgrade_loops_test.go)), the cut and the rolling upgrade with its
+rollback. The development agent would revisit the format if the dev profile changes its edge.
+
+**Applied in the spec:** R-HA-064 (acceptance criteria), [upgrade_test.go](../../test/e2e/upgrade_test.go),
+[docs/developer/e2e.md](../developer/e2e.md#the-upgrade-tests).
+
+### Q-HA-132 · The bridge guard checks readiness only on the upgrade that moves the edge
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a review of Q-HA-130 found that the readiness refusal ran on every upgrade with the values of step 2, because
+`<fullname>-web` exists for the whole of step 2. An `api` that crash-loops at step 2, an autoscaler scaling up or a rollout in
+progress made the upgrade that carries the fix fail, and the only way through was back to step 1, which moves the edge back to
+the `web` pods. The refusal exists for one transition: the apply that moves the edge onto the target shape. Where the edge
+points is in the cluster: the chart's Ingress `<fullname>` routes to the Service `<fullname>`, and each further endpoint's
+Service `<fullname>-ep-<name>` selects the `web` pods, until step 2 has been applied. An installation without the chart's
+Ingress (an edge of its own) and without further endpoints shows the chart no edge.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Read where the edge points (the Ingress and the endpoint Services); check readiness only while it is still on the bridge; with no edge to read, refuse only a missing main `api` or `packages` Deployment, which says step 1 has not run (chosen) | The refusal follows the transition, not the values | An upgrade at step 2 with the edge moved passes whatever the readiness; the endpoint Services give a signal without the chart's Ingress; a one-step upgrade from the old shape is still refused | Without a readable edge, a target that exists but is not ready is not refused when the operator's own route moves |
+| (b) Read the chart's Ingress only; no Ingress, no guard | The review's minimum | Simplest | An installation with `ingress.enabled: false` loses the refusal of the one-step upgrade from the old shape, and an endpoint whose Service moves in step 2 is not read |
+| (c) Keep the readiness check on every upgrade at step 2 or 3 while `<fullname>-web` exists | No change | Strict | The defect of the review: a fix cannot be applied at step 2 while a target Deployment is not ready |
+| (d) A value that skips the guard | `web.skipGuard` | An escape | A switch that turns the safety off is set once and forgotten; the facts are in the cluster |
+
+**Choice:** (a).
+
+**Rationale:** the refusal protects the moment the edge moves, so it reads whether the edge has moved; every other upgrade at
+step 2 or 3 moves nothing and must be able to repair a role. The decision is a template over facts (`trove.bridgeGuard` over
+what `trove.bridgeFacts` reads with `lookup`), so the chart test checks it with given facts and an API server checks the reads
+(the cases of the decision: the edge on the bridge with `api` not ready, step 3 before step 2, the edge moved with `api` not
+ready, no readable edge with and without `api`, an endpoint Service on the `web` pods). The development agent would revisit
+the fallback without a readable edge if an installation with its own edge reports a refusal it needs or a gap it met.
+
+**Applied in the spec:** R-HA-064 (the guard, the way back), R-HA-029 (the rows of the guard),
+[_validate_roles.tpl](../../deploy/helm/trove/templates/_validate_roles.tpl), `TestRolesBridge`, the upgrade guide
+([docs/manual/admin/upgrades.md](../manual/admin/upgrades.md)).
 
 ## What this does not cover
 

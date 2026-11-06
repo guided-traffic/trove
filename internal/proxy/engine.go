@@ -37,6 +37,8 @@ type ItemStore interface {
 	Spool(ctx context.Context, body io.Reader, o items.IngestOptions) (*items.Spooled, error)
 	Commit(ctx context.Context, spec items.CommitSpec) (items.CommitResult, error)
 	Live(ctx context.Context, repo items.RepoRef, path string) (items.Item, bool, error)
+	// Usable looks for the object of an item marked missing again, at most once per interval and blob (Q-STOR-153).
+	Usable(ctx context.Context, it items.Item) (items.Item, error)
 }
 
 // BlobStore is the part of the blob store the engine uses; *blob.Store implements
@@ -45,6 +47,8 @@ type ItemStore interface {
 type BlobStore interface {
 	Commit(ctx context.Context, sp *blob.Spooled, link blob.LinkFunc) (blob.CommitResult, error)
 	Open(ctx context.Context, d blob.Digest, size int64, o blob.OpenOptions) (io.ReadCloser, error)
+	// RecheckMissing looks for the object of a blob marked missing again, at most once per interval and blob (Q-STOR-153).
+	RecheckMissing(ctx context.Context, d blob.Digest, size int64) bool
 }
 
 // Clients returns the HTTP client of a remote repository; *upstream.Clients
@@ -128,6 +132,8 @@ type Engine struct {
 	stopYield func()
 
 	draining atomic.Bool
+	// readOnly is the engine of a [View]: it asks no store, the object store included.
+	readOnly bool
 
 	fmu     sync.Mutex
 	flights map[string]*flight
@@ -143,6 +149,10 @@ type Engine struct {
 
 	tmu       sync.Mutex
 	throttled map[string]time.Time
+
+	// umu guards unrepaired: when a fill of a lost item last left it lost, by item (Q-REPO-205).
+	umu        sync.Mutex
+	unrepaired map[string]time.Time
 }
 
 // New creates the engine and registers its caches (R-ARCH-032): the per-repository
@@ -193,9 +203,10 @@ func newEngine(o Options, readOnly bool) (*Engine, error) {
 		o: o, log: o.Log, m: newMetrics(o.Metrics),
 		slots:   newSlots(o.Config.MaxConcurrentFetches, o.Replicas),
 		flights: map[string]*flight{}, probes: map[int64]*atomic.Bool{}, ensured: map[int64]bool{},
-		throttled: map[string]time.Time{}, qcalls: map[queryKey]*queryCall{},
+		throttled: map[string]time.Time{}, qcalls: map[queryKey]*queryCall{}, unrepaired: map[string]time.Time{},
 	}
 	e.slots.now = o.Now
+	e.readOnly = readOnly
 	e.slots.onWait = e.raiseYield
 	e.base, e.cancel = context.WithCancel(context.Background())
 	e.state = cache.Register(o.Caches, CacheState, cache.Options[int64, *repoState]{

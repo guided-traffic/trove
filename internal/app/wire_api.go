@@ -168,6 +168,7 @@ func (a *App) apiServices() v1.Services {
 	svc.Store = db
 	svc.Sealed = listq.SealedCounter{DB: db.Main()}
 	svc.Rings = ringSource{a: a}
+	svc.Migrations = migrationReport{db: db}
 	if reg, err := a.jobRegistry(); err == nil {
 		svc.Jobs = reg
 	}

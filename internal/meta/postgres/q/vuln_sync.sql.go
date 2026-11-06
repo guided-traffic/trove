@@ -156,10 +156,16 @@ func (q *Queries) VulnAdvisoryIDs(ctx context.Context, ecosystem string) ([]stri
 const vulnAdvisoryOrphans = `-- name: VulnAdvisoryOrphans :many
 SELECT a.id FROM vuln_advisory a
  WHERE a.ecosystem = $1::text
-   AND NOT EXISTS (SELECT 1 FROM vuln_advisory c WHERE c.ecosystem = a.ecosystem AND c.id = a.canonical_id)
+   AND (SELECT count(*) FROM vuln_advisory c WHERE c.ecosystem = $1::text AND c.id = a.canonical_id) = 0
 `
 
 // Records whose canonical record is gone, after a deletion: their group needs a new canonical identifier.
+// One lookup of the primary key per record, whatever is estimated (Q-VULN-95, Q-VULN-97). `NOT EXISTS (... c.ecosystem = a.ecosystem AND c.id = a.canonical_id)`
+// was planned, for a table whose statistics knew NuGet only (the advisory source is synced NuGet first and the autovacuum looks a minute in),
+// as a nested loop anti join whose inner side was an index-only scan of `ecosystem = 'npm'` with `c.id = a.canonical_id` as a join filter:
+// 231,012 records tested against 231,012, hours of work for a statement of 0.3 s, ended by the statement timeout after 30 s. This was the
+// first statement after the last batch of the import and the failure of F-57. A scalar subquery with an aggregate is not pulled up into a
+// join, so the only way to run it is a probe of the primary key per record.
 func (q *Queries) VulnAdvisoryOrphans(ctx context.Context, ecosystem string) ([]string, error) {
 	rows, err := q.db.Query(ctx, vulnAdvisoryOrphans, ecosystem)
 	if err != nil {
@@ -229,14 +235,16 @@ func (q *Queries) VulnAdvisorySetSeverity(ctx context.Context, arg VulnAdvisoryS
 }
 
 const vulnAdvisoryStored = `-- name: VulnAdvisoryStored :many
-SELECT id, (extract(epoch FROM modified) * 1000000)::bigint AS modified_us, record_sha256, canonical_id
-  FROM vuln_advisory
- WHERE ecosystem = $1::text AND id = ANY($2::text[])
+SELECT v.id, (extract(epoch FROM v.modified) * 1000000)::bigint AS modified_us, v.record_sha256, v.canonical_id
+  FROM unnest($1::text[]) AS n(name)
+ CROSS JOIN LATERAL (
+       SELECT x.id, x.modified, x.record_sha256, x.canonical_id FROM vuln_advisory x
+        WHERE x.ecosystem = $2::text AND x.id = n.name OFFSET 0) AS v
 `
 
 type VulnAdvisoryStoredParams struct {
-	Ecosystem string
 	Ids       []string
+	Ecosystem string
 }
 
 type VulnAdvisoryStoredRow struct {
@@ -247,8 +255,13 @@ type VulnAdvisoryStoredRow struct {
 }
 
 // What a batch compares a record with before it writes it: the stored modified time and digest (R-VULN-004 step 4).
+// One lookup of the primary key per identifier (Q-VULN-95). `id = ANY(ids)` left the choice to the estimates, and for a table whose statistics knew
+// NuGet only (Q-VULN-97) `ecosystem = 'npm'` is one row: the plan was a bitmap scan of the ecosystem's index, which returns every stored row of the
+// ecosystem for every batch and filters them by the identifiers (0.5 s a batch at 42,000 stored records, 1.2 s at 100,000, 86 batches, 65 s of an
+// import of 107 s, growing with the table). The LATERAL makes the identifiers the outer side whatever is estimated, and `OFFSET 0` keeps the
+// subquery from being flattened into a join the planner orders by its estimates.
 func (q *Queries) VulnAdvisoryStored(ctx context.Context, arg VulnAdvisoryStoredParams) ([]VulnAdvisoryStoredRow, error) {
-	rows, err := q.db.Query(ctx, vulnAdvisoryStored, arg.Ecosystem, arg.Ids)
+	rows, err := q.db.Query(ctx, vulnAdvisoryStored, arg.Ids, arg.Ecosystem)
 	if err != nil {
 		return nil, err
 	}
@@ -341,21 +354,25 @@ func (q *Queries) VulnAffectedInsert(ctx context.Context, arg VulnAffectedInsert
 }
 
 const vulnKEVApply = `-- name: VulnKEVApply :many
-WITH names AS (
-    SELECT c.id AS cid,
+WITH names AS MATERIALIZED (
+    SELECT c.id AS cid, c.known_exploited, c.kev_date_added,
            ARRAY(SELECT m.id FROM vuln_advisory m WHERE m.ecosystem = c.ecosystem AND m.canonical_id = c.id
                  UNION
                  SELECT unnest(m.aliases) FROM vuln_advisory m WHERE m.ecosystem = c.ecosystem AND m.canonical_id = c.id) AS names
-      FROM vuln_advisory c
-     WHERE c.ecosystem = $1::text AND c.id = ANY($2::text[])
-), hit AS (
-    SELECT n.cid, (SELECT min(k.date_added) FROM vuln_kev k WHERE k.cve_id = ANY(n.names)) AS added FROM names n
+      FROM unnest($2::text[]) AS i(id)
+     CROSS JOIN LATERAL (SELECT x.ecosystem, x.id, x.known_exploited, x.kev_date_added FROM vuln_advisory x
+                          WHERE x.ecosystem = $1::text AND x.id = i.id OFFSET 0) AS c
+), changed AS MATERIALIZED (
+    SELECT h.cid, h.added FROM (
+        SELECT n.cid, n.known_exploited, n.kev_date_added,
+               (SELECT min(k.date_added) FROM vuln_kev k WHERE k.cve_id = ANY(n.names)) AS added
+          FROM names n) h
+     WHERE h.known_exploited IS DISTINCT FROM (h.added IS NOT NULL) OR h.kev_date_added IS DISTINCT FROM h.added
 )
 UPDATE vuln_advisory a
    SET known_exploited = (h.added IS NOT NULL), kev_date_added = h.added
-  FROM hit h
- WHERE a.ecosystem = $1::text AND a.id = h.cid
-   AND (a.known_exploited IS DISTINCT FROM (h.added IS NOT NULL) OR a.kev_date_added IS DISTINCT FROM h.added)
+  FROM changed h
+ WHERE a.ecosystem = $1::text AND a.id = ANY(ARRAY(SELECT cid FROM changed)) AND a.id = h.cid
 RETURNING a.id
 `
 
@@ -367,6 +384,12 @@ type VulnKEVApplyParams struct {
 // Sets the known-exploited flag and the date of the canonical records among ids from the catalog: a record is known exploited
 // when its identifier, or any alias or member of its group, is listed, and the date is the earliest of them. It returns the
 // records whose flag or date changed.
+// By lookups of the primary key, not by estimate (Q-VULN-95). `c.id = ANY(ids)` and the join of the update on `a.id = h.cid` left the choice to the
+// estimates, and the plan read the whole ecosystem twice, a bitmap scan of 231,012 rows for the records and another one as the build side of a hash
+// join, for every chunk of 2,000 records: 116 chunks, 43 s of an import in which the same statements take 4.5 s without that. The records come from
+// the names by a LATERAL lookup (`OFFSET 0` keeps it from being flattened), the groups of the records are read by `(ecosystem, canonical_id)`, and
+// the update reaches only the records whose flag or date differs, `a.id = ANY(ARRAY(...))` being an array of unknown length, which the planner
+// always takes for ten identifiers and probes the primary key for.
 func (q *Queries) VulnKEVApply(ctx context.Context, arg VulnKEVApplyParams) ([]string, error) {
 	rows, err := q.db.Query(ctx, vulnKEVApply, arg.Ecosystem, arg.Ids)
 	if err != nil {
@@ -799,6 +822,19 @@ func (q *Queries) VulnStateSave(ctx context.Context, arg VulnStateSaveParams) er
 		arg.Source,
 		arg.Ecosystem,
 	)
+	return err
+}
+
+const vulnSyncAnalyze = `-- name: VulnSyncAnalyze :exec
+ANALYZE vuln_advisory, vuln_affected, vuln_sync_touched, vuln_pending_evaluation
+`
+
+// The statistics of the tables a large import fills (Q-VULN-96): the autovacuum analyzes a table a minute or more after its first rows, and
+// every statement of the rest of the run, the group recomputation, the known-exploited flags and the evaluation the run requests, is
+// planned before that on the estimates of an empty table. It needs the ownership of the tables (or MAINTAIN, PostgreSQL 17); a role without
+// it gets a warning from the server and no statistics, which the statements of the sync do not depend on (Q-VULN-94, Q-VULN-95).
+func (q *Queries) VulnSyncAnalyze(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, vulnSyncAnalyze)
 	return err
 }
 

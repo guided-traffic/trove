@@ -278,6 +278,37 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
+  /api/v1/system/migrations:
+    get:
+      operationId: getMigrationStatus
+      tags: [system]
+      summary: The schema migrations and the background data migrations
+      description: |
+        The upgrade verification of R-HA-020 and step 4 of the upgrade preparation of R-HA-021: the schema state, the
+        answering replica's binary, the steps that binary embeds and the database has not applied (`pending`, with what the
+        contract guard checks before a contract step), every applied step, and the background data migrations the binary
+        declares with their states (R-HA-022). `trove migrate status` prints the same report from the same code. During a
+        rolling upgrade, replicas of both releases answer, each for its own binary (`binary.version`; the replica is named in
+        `X-Trove-Replica`).
+      x-trove-permission:
+        permission: settings:read
+      responses:
+        "200":
+          description: The migration report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrationStatus"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   /api/v1/system/overview:
     get:
       operationId: getSystemOverview
@@ -10756,6 +10787,126 @@ components:
               type: integer
             failedLast24h:
               type: integer
+    MigrationStatus:
+      type: object
+      description: The migration report of GET /api/v1/system/migrations (R-HA-018, R-HA-020, R-HA-021, R-HA-022).
+      required: [schema, binary, pending, applied, background]
+      properties:
+        schema:
+          type: object
+          required: [applied, compatFloor]
+          properties:
+            applied:
+              type: integer
+              description: The number of the newest applied step; 0 before the first migration.
+            compatFloor:
+              type: string
+              description: |
+                The highest `requires-app` of the applied contract steps, `0.0.0` while none is applied. A binary older than
+                the floor does not serve (R-HA-018).
+              examples: ["0.0.0"]
+        binary:
+          type: object
+          required: [version, requiredSchema]
+          properties:
+            version:
+              type: string
+              description: The release of the answering replica.
+            requiredSchema:
+              type: integer
+              description: The newest expand step the answering replica's binary embeds; a replica serves once `schema.applied` reaches it.
+        pending:
+          type: array
+          description: The steps the answering replica's binary embeds that the database has not applied, in order; empty after a completed upgrade.
+          items:
+            $ref: "#/components/schemas/PendingMigrationStep"
+        applied:
+          type: array
+          description: Every applied step in order, the steps of newer releases than the answering replica's included.
+          items:
+            $ref: "#/components/schemas/AppliedMigrationStep"
+        background:
+          type: array
+          description: The background data migrations the answering replica's binary declares, with their states.
+          items:
+            $ref: "#/components/schemas/BackgroundMigration"
+    PendingMigrationStep:
+      type: object
+      required: [version, name, class, requiresApp, requiresBackground]
+      properties:
+        version:
+          type: integer
+        name:
+          type: string
+          examples: ["00043_example"]
+        class:
+          type: string
+          enum: [expand, contract]
+        requiresApp:
+          type: [string, "null"]
+          description: |
+            A contract step's `-- trove:requires-app`: the oldest release allowed to serve once the step is applied. The
+            contract guard refuses the step while a live replica runs an older release. `null` for an expand step.
+        requiresBackground:
+          type: array
+          description: |
+            A contract step's `-- trove:requires-background`: the background data migrations that must have `succeeded`
+            before the contract guard lets the step run (R-HA-021 step 4). Empty for every other step.
+          items:
+            type: string
+    AppliedMigrationStep:
+      type: object
+      required: [version, name, class, release, appliedAt, durationMs]
+      properties:
+        version:
+          type: integer
+        name:
+          type: string
+          examples: ["00001_core"]
+        class:
+          type: string
+          enum: [expand, contract]
+        release:
+          type: string
+          description: The release whose migration Job applied the step.
+        appliedAt:
+          type: string
+          format: date-time
+        durationMs:
+          type: integer
+    BackgroundMigration:
+      type: object
+      description: |
+        A background data migration (R-HA-022): a data change too large for the migration Job, run as the job kind
+        `data_migration_<name>` on a worker. Its state comes from its completion record and from the newest job of its kind.
+      required: [name, release, state, processed, estimatedTotal, startedAt]
+      properties:
+        name:
+          type: string
+          examples: ["nuget_semver2"]
+        release:
+          type: string
+          description: The release that introduced it; it starts once every live replica runs that release or a newer one.
+        state:
+          type: string
+          enum: [pending, running, paused, succeeded, failed]
+          description: |
+            `pending` until a run starts, also while a run waits for replicas of an older release and after a cancelled run
+            (a worker queues it again when it starts); `running` while a run holds it; `failed` when its newest run failed;
+            `succeeded` once its completion is recorded. `paused` belongs to the pause operation of R-HA-022, which is not
+            built.
+        processed:
+          type: integer
+          format: int64
+          description: The rows converted so far; for a succeeded migration the count of its completion.
+        estimatedTotal:
+          type: [integer, "null"]
+          format: int64
+          description: The migration's own estimate of its rows; `null` while it has none.
+        startedAt:
+          type: [string, "null"]
+          format: date-time
+          description: The start of its first run; `null` before a run started or once the job rows are removed (`jobs.retention`).
     ReplicaList:
       type: object
       required: [items]

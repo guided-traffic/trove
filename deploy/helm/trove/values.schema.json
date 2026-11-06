@@ -1675,6 +1675,10 @@
         "enabled": {
           "type": "boolean",
           "description": "The bridge of the upgrade across the cut (R-HA-064)"
+        },
+        "routed": {
+          "type": "boolean",
+          "description": "With enabled, false moves the edge to the role Services while the bridge still runs: step 2 of the cut (R-HA-064, Q-HA-130)"
         }
       },
       "additionalProperties": false

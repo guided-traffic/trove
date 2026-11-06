@@ -213,6 +213,16 @@ monotonic across an asynchronous failover and nothing consumed it.) The loss of 
 failing statement on a closed connection) cancels `Held.Context()`, counts `trove_lease_lost_total{task}`, and destroys the connection. The holder loop retries
 every `cluster.lease_retry_interval`. `Leases.Release(ctx, id)` unlocks at once and stops retrying (the scheduler lease at drain); `Leases.Stop` unlocks all.
 
+The server's side of a holder that is gone: a vanished one (its node lost, its network cut) is ended by the server keepalive
+(`tcp_keepalives_*`, `database.server_keepalive`); a silent one, whose process stopped while its kernel keeps the connection and answers
+every keepalive probe (a paused container, a stopped process), is ended by `idle_session_timeout`, which only the lease sessions carry,
+at the same bound `idle + interval x count` (`postgres.ServerReleaseBound`, 120 s with the defaults; R-HA-006,
+[Q-HA-127](../spec/ha-and-helm.md#q-ha-127--a-lease-session-that-stays-silent-is-ended-by-the-server-within-the-keepalives-bound)).
+A live holder is never idle that long: its check loop sends `SELECT 1` every `database.lease_check_interval`, and the configuration
+refuses a keepalive bound below three of those (`Database.Validate`). `TestLeases_R_HA_006_FrozenHolder`
+([lease_frozen_test.go](../../test/integration/coordination/lease_frozen_test.go)) relays the holder's lease pool through a TCP relay that
+freezes (no byte, no close, sockets open) and checks that another replica holds the lease within the bound and that two sessions never did.
+
 ## Change areas, signals and caches
 
 ### Two classes
@@ -282,7 +292,7 @@ What a heartbeat writes besides the identity (Q-OPS-175; the snapshot is `App.re
 |---|---|
 | `checks` | every readiness check of R-OPS-001 as `cluster.ReplicaCheck`: `status`, `reason`, `configError` and `durationMs`, the duration of the check's last run (`health.CheckResult.Latency`) in milliseconds to the microsecond. A check without a finished run has no `durationMs`: one that has not run yet, a run skipped because the previous one still hangs (recorded with latency 0), and the synthetic `draining` check. The rows of a release before it have none either. The `valkey` check reads the client's state and takes microseconds, so `App.replicaChecks` takes the round trip of the client's last passed probe instead (`ValkeyStatus.ProbeLatency`, measured in `Valkey.probe` around the write of the probe key or the PING); without a passed probe it has none |
 | `valkey` | the replica's view of Valkey, rendered by the caller |
-| `runtime` (migration 00042, `jsonb NOT NULL DEFAULT '{}'`) | `cluster.ReplicaRuntime`: the requests the client listener finished since the previous heartbeat, their 5xx, the latency percentiles, the requests in flight, CPU and memory, goroutines, `sampledAt` and `windowSeconds`. What is measured where is in [observability.md](observability.md#runtime-snapshot-of-the-replica-registry-q-ops-175). The JSON names are those of the API's `ReplicaRuntime`; rows are read by replicas of other releases, so a field is added, never renamed (`TestR_OPS_003_RuntimeColumnNames`) |
+| `runtime` (migration 00044, `jsonb NOT NULL DEFAULT '{}'`) | `cluster.ReplicaRuntime`: the requests the client listener finished since the previous heartbeat, their 5xx, the latency percentiles, the requests in flight, CPU and memory, goroutines, `sampledAt` and `windowSeconds`. What is measured where is in [observability.md](observability.md#runtime-snapshot-of-the-replica-registry-q-ops-175). The JSON names are those of the API's `ReplicaRuntime`; rows are read by replicas of other releases, so a field is added, never renamed (`TestR_OPS_003_RuntimeColumnNames`) |
 
 A release before the column neither writes nor reads `runtime`: its rows keep `'{}'`, which `ListReplicas` reads as no
 runtime, and so does a value this release cannot decode (the list does not fail for a display figure); the API then

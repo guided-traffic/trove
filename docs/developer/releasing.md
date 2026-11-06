@@ -20,8 +20,8 @@ share the pod's budget, without `make` or a C compiler.
 | Class | Label | Pods | CPU request / limit | RAM request / limit (runner and dind together) | Disk: `_work` / Docker | Jobs |
 |---|---|---|---|---|---|---|
 | wds18-small | `runs-on: self-hosted` | 0–24 | 1 / 6 | 4 GiB / 10 GiB | 10 GiB / 15 GiB | every job of Test and Release except the kind legs, Release Docker & Helm, Renovate |
-| wds18-large | `runs-on: large` | 0–6 | 2 / 16 | 8 GiB / 20 GiB | 20 GiB / 30 GiB | the kind legs `e2e` (push, access-long) and `e2e-npm` of Test and Release; `e2e` (failover, drain-roles), `e2e-npm` (npm-ha, ha-suite), `npm-ha-soak`, `e2e-nuget` (nuget-ha, [Q-HA-102](../spec/ha-and-helm.md#q-ha-102--the-cpu-of-the-nuget-drain-and-where-its-leg-runs)), `e2e-mirror` (the set mirror-long) and, after all of them, `latency` and `vuln-perf` ([Q-ARCH-325](../spec/architecture.md#q-arch-325--where-do-the-perf-jobs-run-relative-to-the-kind-legs)) of HA and Performance |
-| GitHub-hosted | `runs-on: ubuntu-24.04` | GitHub's | 4 vCPU | 16 GB | 108 GB free on `/` after the job deletes the preinstalled SDKs | the kind legs that load the NuGet clients image: `e2e-nuget` of Test and Release, `e2e-ci`, `e2e-bastion`, `e2e-vuln`, and the set `mirror` of `e2e-mirror`, in both workflows; `e2e-upgrade` (HA and Performance only, set `upgrade`, which loads both clients images) |
+| wds18-large | `runs-on: large` | 0–6 | 2 / 16 | 8 GiB / 20 GiB | 20 GiB / 30 GiB | the kind legs `e2e` (push, access-long) and `e2e-npm` of Test and Release; `e2e` (failover, drain-roles), `e2e-npm` (npm-ha, ha-suite), `npm-ha-soak`, `e2e-nuget` (nuget-ha, [Q-HA-102](../spec/ha-and-helm.md#q-ha-102--the-cpu-of-the-nuget-drain-and-where-its-leg-runs)), `e2e-mirror` (the sets mirror-long and mirror, [Q-REPO-211](../spec/repositories-and-proxy.md#q-repo-211--the-nightly-install-time-ratio-of-clients-first-runs-on-the-large-class)) and, after all of them, `latency` and `vuln-perf` ([Q-ARCH-325](../spec/architecture.md#q-arch-325--where-do-the-perf-jobs-run-relative-to-the-kind-legs)) of HA and Performance |
+| GitHub-hosted | `runs-on: ubuntu-24.04` | GitHub's | 4 vCPU | 16 GB | 108 GB free on `/` after the job deletes the preinstalled SDKs | the kind legs that load the NuGet clients image: `e2e-nuget` of Test and Release, `e2e-ci`, `e2e-bastion`, `e2e-vuln`, in both workflows, and the set `mirror` of `e2e-mirror` in Test and Release; `e2e-upgrade` (HA and Performance only, set `upgrade`, which loads both clients images) |
 
 The measured basis of the nightly assignment ([Q-ARCH-326](../spec/architecture.md#q-arch-326--which-runner-class-runs-which-leg-the-runner-review-of-the-nightly-run)):
 the six nightly runs of 2026-11-03 to 2026-11-05 (`gh run view <id> --json jobs`, the `runner_name` and the labels of each job), per leg the class that ran it and the
@@ -154,7 +154,7 @@ annotations, so the repository runs gosec through golangci-lint and has one gose
 
 ### Compatibility
 
-**Switched off until the first stable release** ([Q-ARCH-332](../spec/architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release), `CLAUDE.md`): the job `compat` has `if: false` and is not
+**Switched off until the first stable release** ([Q-ARCH-340](../spec/architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release), `CLAUDE.md`): the job `compat` has `if: false` and is not
 among the needs of Semantic Release, so neither a breaking change of `/api/v1` nor an edited migration fails CI. `make compat-check`
 and [test/compat](../../test/compat) stay: lint and vet build them with the tag `compat`, Renovate keeps `OASDIFF_VERSION` fresh,
 and the target runs by hand. The rest of this section describes the job as it runs once it is switched on
@@ -189,17 +189,17 @@ its acceptance test of a `helm upgrade` from N-1 to N and a `helm rollback`. Not
 
 ### Switched off until the first stable release
 
-trove keeps no backward compatibility until its first stable release ([Q-ARCH-332](../spec/architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release), `CLAUDE.md`). The mechanisms that hold
+trove keeps no backward compatibility until its first stable release ([Q-ARCH-340](../spec/architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release), `CLAUDE.md`). The mechanisms that hold
 compatibility are switched off, not removed, so that each comes back with the edit below. Their code and tests stay built,
 linted and run: `test/compat` under the tag `compat`, the strict migration rules in `TestParseSteps`.
 
 | Switch | Where | Off now | To switch on |
 |---|---|---|---|
-| The job `compat` (R-ARCH-025, R-ARCH-026) | [release.yml](../../.github/workflows/release.yml), job `compat` | `if: false` | Delete the line `if: false` and the comment above it that names Q-ARCH-332 |
-| `compat` among the needs of the release | [release.yml](../../.github/workflows/release.yml), job `semantic-release` | `compat` is missing from `needs:`, because a skipped need would skip the release | Put `compat` back into `needs:` after `workflows`, and delete the comment above the job that names Q-ARCH-332 |
+| The job `compat` (R-ARCH-025, R-ARCH-026) | [release.yml](../../.github/workflows/release.yml), job `compat` | `if: false` | Delete the line `if: false` and the comment above it that names Q-ARCH-340 |
+| `compat` among the needs of the release | [release.yml](../../.github/workflows/release.yml), job `semantic-release` | `compat` is missing from `needs:`, because a skipped need would skip the release | Put `compat` back into `needs:` after `workflows`, and delete the comment above the job that names Q-ARCH-340 |
 | actionlint's acceptance of `if: false` | [.github/actionlint.yaml](../../.github/actionlint.yaml) | the message `constant expression "false" in condition` is ignored in `release.yml` | Delete that ignore line and its comment paragraph |
 | The expand/contract rules of the migration files (R-HA-018) | [steps.go](../../internal/meta/postgres/steps.go), `enforceMigrationPhases` | `false`: every header optional, no statement check by phase, `RequiredSchema()` the highest step | Set it to `true`. Every embedded file must then carry one `-- trove:phase` header and no `DROP`, `RENAME` or `SET NOT NULL` in an expand step, or `TestEmbeddedSteps` fails and `RequiredSchema()` panics; `RequiredSchema()` becomes the newest expand step |
-| The nightly upgrade set (R-HA-020, R-HA-064) | [performance.yml](../../.github/workflows/performance.yml), job `e2e-upgrade` | runs only on a dispatch with `-f sets=upgrade` | Put `!inputs.sets \|\| ` back in front of the `contains(...)` of its `if:`, and delete the comment that names Q-ARCH-332 here and in the header of the file |
+| The nightly upgrade set (R-HA-020, R-HA-064) | [performance.yml](../../.github/workflows/performance.yml), job `e2e-upgrade` | runs only on a dispatch with `-f sets=upgrade` | Put `!inputs.sets \|\| ` back in front of the `contains(...)` of its `if:`, and delete the comment that names Q-ARCH-340 here and in the header of the file |
 
 Before the job `compat` is switched on, three things need a decision, because the checks read what happened while they were off:
 
@@ -324,7 +324,7 @@ The job builds both clients images in its own steps, `make npm-clients-image` an
 client pods too ([Q-ARCH-327](../spec/architecture.md#q-arch-327--how-do-the-legs-that-load-both-client-images-get-them-and-who-builds-them)). The nightly run therefore
 costs a cluster bring-up and proves no NuGet behavior under load until the drain and failover tests land.
 
-Job `e2e-upgrade` runs only on a dispatch with `-f sets=upgrade` until the first stable release ([Q-ARCH-332](../spec/architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)):
+Job `e2e-upgrade` runs only on a dispatch with `-f sets=upgrade` until the first stable release ([Q-ARCH-340](../spec/architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release)):
 the set upgrades the latest release to the commit, which fails once the commit changes a migration the release applied. It runs `make e2e SET=upgrade` on a kind cluster (edge port 8101, cluster `trove-upgrade-<run id>`, reports and artifacts `e2e-upgrade-report-upgrade`,
 `e2e-upgrade-artifacts-upgrade` and `e2e-upgrade-playwright-upgrade`, kept 14 days; on failure `e2e-upgrade-cluster-state-upgrade`). The set installs published releases
 of the chart from <https://guided-traffic.github.io/trove/> and their images from Docker Hub, loads them into the cluster, upgrades to the image built from the commit, and
@@ -350,8 +350,8 @@ again with its attempt unchanged and another `worker` completes it from its chec
 a finding and holds nothing ([e2e.md](e2e.md#the-vulnerability-tests)). By hand: `make dev-up && make e2e SET=vuln-long`.
 
 Job `e2e-mirror` runs the sets `mirror` and `mirror-long` (edge ports 8098 and 8099, clusters `trove-mirror-<run id>` and `trove-mirror-long-<run id>`, reports and
-artifacts `e2e-mirror-report-<set>`, `e2e-mirror-artifacts-<set>`, `e2e-mirror-playwright-<set>`, kept 14 days): the short set as in Test and Release (on a GitHub-hosted runner, because
-it loads the NuGet clients image), and the long set (on a `large` runner; it needs the npm clients image only), R-REPO-058's drain: `kubectl drain` of the node of the process of the
+artifacts `e2e-mirror-report-<set>`, `e2e-mirror-artifacts-<set>`, `e2e-mirror-playwright-<set>`, kept 14 days): the short set as in Test and Release, with the install-time ratio of R-REPO-055 enforced (on a `large` runner since
+Q-REPO-211: on the 4 vCPUs of a GitHub-hosted runner the pass's own work took the installs' CPU), and the long set (on a `large` runner), R-REPO-058's drain: `kubectl drain` of the node of the process of the
 pool `mirror` that runs a pass of 300 packages (the job is `queued` again with its attempt unchanged, the other process of the pool ends the pass, and the test upstream served every
 tarball, `concurrency` of them twice at most), followed by the failure suite of R-HA-052 on passes of 100 packages (the process of the pass force-deleted, its node stopped and frozen, the upstream throttling across a drain and a kill, a PostgreSQL switchover and a Valkey failover; about 40 minutes more). A red long leg is a finding and holds nothing ([e2e.md](e2e.md#the-mirror-tests)). By hand: `make dev-up && make e2e SET=mirror-long`.
 

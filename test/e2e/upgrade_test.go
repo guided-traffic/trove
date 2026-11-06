@@ -5,8 +5,8 @@ package e2e
 // The upgrade tests (docs/developer/e2e.md#the-upgrade-tests):
 //
 //   - TestUpgrade_R_HA_064_AcrossTheCut is the exit criterion E6a.7: the last release before the cut into roles (v0.16.0, which
-//     runs one `web` Deployment) is upgraded to the working tree in the two steps of R-HA-064 while npm ci and dotnet restore
-//     loops and a browser journey run, and the guard of the second step is exercised.
+//     runs one `web` Deployment) is upgraded to the working tree in the three steps of R-HA-064 while npm ci and dotnet restore
+//     loops and a browser journey run, and both refusals of the guard are exercised.
 //   - TestUpgrade_R_HA_020_RollingFromThePreviousRelease is R-HA-020's acceptance criterion and the rows "Rolling upgrade" and
 //     "Rollback" of R-HA-052: the latest release before the working tree is upgraded in one helm upgrade with the migration Job
 //     and rolled back, under the same loops.
@@ -115,13 +115,17 @@ func requireUpgradeSetup(t *testing.T) {
 // TestUpgrade_R_HA_064_AcrossTheCut is E6a.7 (R-HA-064, Q-HA-86). The release before the cut is installed with its own dev
 // values, then:
 //
-//	guard   `helm upgrade` with web.enabled false (the default) is refused before anything changes, naming web.enabled and the two
+//	guard   `helm upgrade` with web.enabled false (the default) is refused before anything changes, naming web.enabled and the three
 //	        steps, and the same values render under `helm template`, which cannot read the cluster;
 //	step 1  `helm upgrade --wait` with --set web.enabled=true: the registry lists the roles web, api, packages and worker;
-//	step 2  `helm upgrade --wait` with web.enabled false: the registry lists no web replica, and trove-web is gone;
+//	guard   `helm upgrade` with web.enabled false while the edge still routes to the Service trove is refused (Q-HA-130);
+//	step 2  `helm upgrade --wait` with --set web.enabled=true --set web.routed=false: the edge routes by role and no path to the
+//	        Service trove, while trove-web and the Service trove still run;
+//	step 3  `helm upgrade --wait` with web.enabled false: the registry lists no web replica, and trove-web and the Service trove
+//	        are gone;
 //
 // with an npm ci loop set, an npm publish loop, dotnet restore loops and a browser journey running through all of it: no
-// iteration of any loop fails.
+// iteration of any loop fails, and the edge answers no request with 503 for want of a backend (F-64).
 func TestUpgrade_R_HA_064_AcrossTheCut(t *testing.T) {
 	requireUpgradeSetup(t)
 	prior := releaseOf(t, upgradeCutRelease)
@@ -141,7 +145,7 @@ func TestUpgrade_R_HA_064_AcrossTheCut(t *testing.T) {
 		if err == nil {
 			t.Fatalf("helm upgrade with web.enabled false succeeded against %s; the guard must refuse it\n%s", prior.tag, tail(out, 1500))
 		}
-		for _, want := range []string{"web.enabled", "--set web.enabled=true", "two upgrades"} {
+		for _, want := range []string{"web.enabled", "--set web.enabled=true", "three upgrades"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("the guard's message does not contain %q:\n%s", want, tail(out, 1500))
 			}
@@ -182,31 +186,71 @@ func TestUpgrade_R_HA_064_AcrossTheCut(t *testing.T) {
 	rs := waitReplicas(t, "step 1: the registry lists the roles web, api, packages and worker of the new version", 3*time.Minute, func(rs []upReplica) bool {
 		return slices.Equal(upRoles(rs), []string{"api", "packages", "web", "worker"}) && slices.Equal(upVersions(rs), []string{version})
 	})
-	t.Logf("between the steps the registry lists: %s", describeReplicas(rs))
+	t.Logf("between steps 1 and 2 the registry lists: %s", describeReplicas(rs))
+
+	t.Run("R-HA-064 Q-HA-130 web.enabled false while the edge still routes to the Service trove is refused before anything changes", func(t *testing.T) {
+		beforeDeps, beforeRev := upDeployments(t), helmRevision(t)
+		_, _, out, err := upgradeToTree(t, "guard-bridge")
+		if err == nil {
+			t.Fatalf("helm upgrade with web.enabled false succeeded while the Ingress trove routes to the Service trove; the guard must refuse it\n%s", tail(out, 1500))
+		}
+		for _, want := range []string{"still routes", "--set web.enabled=true --set web.routed=false", "three upgrades"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("the guard's message does not contain %q:\n%s", want, tail(out, 1500))
+			}
+		}
+		if afterDeps, afterRev := upDeployments(t), helmRevision(t); !deploymentsEqual(beforeDeps, afterDeps) || beforeRev != afterRev {
+			t.Errorf("the refused upgrade changed the installation: Deployments %v -> %v, revision %d -> %d", beforeDeps, afterDeps, beforeRev, afterRev)
+		}
+		t.Logf("refused: %s", firstLines(out, 3))
+	})
 	time.Sleep(upgradeHold)
 
-	// step 2: the cut
+	// step 2: the edge moves to the roles while the bridge keeps running behind the Service trove
 	sampler = startSampler()
-	from2, to2, out, err := upgradeToTree(t, "step2")
+	from2, to2, out, err := upgradeToTree(t, "step2", "--set", "web.enabled=true", "--set", "web.routed=false")
 	s2 := sampler.finish()
 	if err != nil {
-		t.Fatalf("step 2 (helm upgrade, web.enabled false): %v\n%s", err, tail(out, 3000))
+		t.Fatalf("step 2 (helm upgrade --set web.enabled=true --set web.routed=false): %v\n%s", err, tail(out, 3000))
 	}
 	t.Logf("step 2 took %s; role sets seen in the registry %v, registry reads %v", to2.Sub(from2).Round(time.Second), s2.roles, s2.codes)
-	rs = waitReplicas(t, "step 2: the registry lists no web replica", 3*time.Minute, func(rs []upReplica) bool {
+	if got := kn(t, "get", "ingress", "trove", "-o", "jsonpath={.spec.rules[*].http.paths[*].backend.service.name}"); slices.Contains(strings.Fields(got), "trove") || !slices.Contains(strings.Fields(got), "trove-api") {
+		t.Errorf("after step 2 the Ingress trove routes to %q, want the role Services and not the Service trove", got)
+	}
+	if _, ok := upDeployments(t)["trove-web"]; !ok {
+		t.Errorf("trove-web is gone after step 2; the bridge must outlive the step that moves the edge")
+	}
+	if got, err := kubectl("-n", cfg.namespace, "get", "service", "trove", "--ignore-not-found", "-o", "name"); err != nil || strings.TrimSpace(got) == "" {
+		t.Errorf("the Service trove is gone after step 2 (%q, %v); it must outlive the step that moves the edge", strings.TrimSpace(got), err)
+	}
+	time.Sleep(upgradeHold)
+
+	// step 3: the bridge goes, and no route names it
+	sampler = startSampler()
+	from3, to3, out, err := upgradeToTree(t, "step3")
+	s3 := sampler.finish()
+	if err != nil {
+		t.Fatalf("step 3 (helm upgrade, web.enabled false): %v\n%s", err, tail(out, 3000))
+	}
+	t.Logf("step 3 took %s; role sets seen in the registry %v, registry reads %v", to3.Sub(from3).Round(time.Second), s3.roles, s3.codes)
+	rs = waitReplicas(t, "step 3: the registry lists no web replica", 3*time.Minute, func(rs []upReplica) bool {
 		return slices.Equal(upRoles(rs), []string{"api", "packages", "worker"}) && slices.Equal(upVersions(rs), []string{version})
 	})
-	t.Logf("after step 2 the registry lists: %s", describeReplicas(rs))
+	t.Logf("after step 3 the registry lists: %s", describeReplicas(rs))
 	if _, ok := upDeployments(t)["trove-web"]; ok {
-		t.Errorf("trove-web is still there after step 2")
+		t.Errorf("trove-web is still there after step 3")
 	}
 	if got, err := kubectl("-n", cfg.namespace, "get", "service", "trove", "--ignore-not-found", "-o", "name"); err != nil || strings.TrimSpace(got) != "" {
-		t.Errorf("the Service trove of the old shape is still there after step 2 (%q, %v)", strings.TrimSpace(got), err)
+		t.Errorf("the Service trove of the old shape is still there after step 3 (%q, %v)", strings.TrimSpace(got), err)
 	}
+	t.Run("R-HA-020 R-HA-064 after step 2 GET /api/v1/system/migrations shows no pending step and the background migrations succeeded", func(t *testing.T) {
+		requireMigrationsDone(t, version)
+	})
 	time.Sleep(upgradeHold)
 
 	res := loops.stop(t)
-	res.requireClean(t, upgradeCutRelease, upWindow{"step 1", from1, to1}, upWindow{"step 2", from2, to2})
+	res.requireClean(t, upgradeCutRelease, upWindow{"step 1", from1, to1}, upWindow{"step 2", from2, to2}, upWindow{"step 3", from3, to3})
+	res.requireEdgeServed(t)
 	res.publishedAreReadable(t, fx)
 	rolloutComplete(t, deploymentNames(upDeployments(t)))
 }
@@ -251,16 +295,13 @@ func TestUpgrade_R_HA_020_RollingFromThePreviousRelease(t *testing.T) {
 	}
 
 	// R-HA-020's verification
-	t.Run("R-HA-020 verification: rollout status, the replicas list only the new version, no migration is pending", func(t *testing.T) {
+	t.Run("R-HA-020 verification: rollout status, the replicas list only the new version, GET /api/v1/system/migrations shows no pending step and the background migrations succeeded", func(t *testing.T) {
 		rolloutComplete(t, deploymentNames(upDeployments(t)))
 		rs := waitReplicas(t, "the registry lists only the new version", 3*time.Minute, func(rs []upReplica) bool {
 			return slices.Equal(upVersions(rs), []string{version})
 		})
 		t.Logf("the registry lists: %s", describeReplicas(rs))
-		st := upMigrateStatus(t)
-		if len(st.Pending) != 0 || !st.Servable || st.Binary.Version != version || st.Schema.Applied != st.Binary.RequiredSchema {
-			t.Errorf("migrations after the upgrade: pending %v, servable %v (%s), binary %s, applied %d, required %d", st.Pending, st.Servable, st.Verdict, st.Binary.Version, st.Schema.Applied, st.Binary.RequiredSchema)
-		}
+		requireMigrationsDone(t, version)
 	})
 	time.Sleep(upgradeHold)
 
@@ -289,6 +330,7 @@ func TestUpgrade_R_HA_020_RollingFromThePreviousRelease(t *testing.T) {
 
 	res := loops.stop(t)
 	res.requireClean(t, "", upWindow{"the upgrade", from1, to1}, upWindow{"the rollback", fromR, toR})
+	res.requireEdgeServed(t)
 	res.publishedAreReadable(t, fx)
 }
 

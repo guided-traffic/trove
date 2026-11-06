@@ -58,7 +58,7 @@ selects are never touched.
 |---|---|---|
 | `make dev-up` | `up.sh` | creates the cluster and installs everything; idempotent (a second run takes about 40 s). The ID of the loaded trove image is a pod annotation (`trove-dev/image-id`), so a newly built image rolls the `api`, `packages` and `worker` pods (the pool inherits the annotation of `worker`) and an unchanged one rolls nothing |
 | `make dev-down` | `down.sh` | deletes the kind cluster `trove` and `.dev/` |
-| `make dev-failover` | `failover.sh [instance]` | PostgreSQL switchover to the standby, waits until the old primary is a standby again |
+| `make dev-failover` | `failover.sh [instance]` | PostgreSQL switchover to a ready standby on a schedulable node, waits until the old primary is a standby again and the new one serves `trove-db-rw`. Before it asks it waits up to 180 s for the CloudNativePG operator (a ready pod holds its lease) and a settled cluster (no switchover in flight, every instance ready), and fails naming the precondition it did not see ([Q-HA-126](../spec/ha-and-helm.md#q-ha-126--the-node-clearance-moves-the-primaries-before-the-cordon-and-failoversh-waits-for-what-a-switchover-needs)) |
 | `make dev-valkey-failover` | `valkey-failover.sh` | `SENTINEL FAILOVER trove-valkey`, waits until another pod is primary |
 | `make dev-valkey-kill` | `valkey-kill.sh` | force-deletes the Valkey primary pod, waits for a primary and a connected replica |
 | `make dev-s3-outage DURATION=60s` | `s3-outage.sh 60s` | `s3-stop.sh` (the Deployment `trove-s3` to 0 replicas; the objects stay on the volume), the duration, `s3-start.sh` (back to 1, waits for the pod) |
@@ -381,6 +381,8 @@ as bash 5.
 | `curl: (60) SSL certificate problem` | the client does not trust the dev CA: `--cacert .dev/pki/ca.crt` |
 | `trove-db-2` Pending after a drain | its volume is local to the drained node; it starts again after `kubectl uncordon`. `drain.sh` uncordons for you |
 | drain hangs on a CloudNativePG pod | the primary's own PodDisruptionBudget (`trove-db-primary`, `minAvailable: 1`) refuses its eviction. Run `make dev-failover` first, or let `drain.sh` choose the node |
+| `make dev-failover`: "no standby of trove-db can take over: … runs on the cordoned node" | a node is cordoned, and CloudNativePG has already switched the primary off it; a switchover back onto it would be undone. `kubectl uncordon` the node first |
+| `make dev-failover`: "precondition not met within 180s" | the message names it: the operator has no ready pod holding its lease (`kubectl -n cnpg-system get pods,lease`), or the cluster is not settled (`kubectl -n trove get cluster trove-db`: a switchover in flight, an instance not ready) |
 | Valkey kill: no failover although the pod is gone | a failover less than 120 s ago blocks the next automatic one (see above); the script waits up to 4 minutes |
 | helm release stuck `pending-install` | `helm --kube-context kind-trove -n trove uninstall trove`; the hook Job, ConfigMap and ServiceAccount `trove-migrate` outlive an uninstall by design, delete them with `kubectl delete job,cm,sa trove-migrate` |
 | a clean start | `make dev-down && make dev-up` |

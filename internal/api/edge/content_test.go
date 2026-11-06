@@ -13,6 +13,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/items"
 )
 
@@ -68,7 +69,9 @@ func serveItem(t *testing.T, o *opener, served *int, method string, hdr ...strin
 		r.Header.Set(hdr[i], hdr[i+1])
 	}
 	rec := httptest.NewRecorder()
-	ServeItem(rec, r, it, o.open, ServeOptions{Served: func() { *served++ }})
+	if err := ServeItem(rec, r, it, o.open, ServeOptions{Served: func() { *served++ }}); err != nil {
+		httpserver.Problem(rec, r, err)
+	}
 	return rec
 }
 
@@ -205,6 +208,19 @@ func TestServeItem(t *testing.T) {
 		}
 		if served != 0 {
 			t.Error("a failed download was counted")
+		}
+	})
+
+	t.Run("R-STOR-027 the error of open is returned with nothing written, so that a remote repository can fill the item again first", func(t *testing.T) {
+		it, _ := stored()
+		missing := errs.E(errs.Unavailable, errs.CodeContentUnavailable, "missing")
+		rec := httptest.NewRecorder()
+		err := ServeItem(rec, httptest.NewRequest("GET", "/files/generic-local/x", nil), it, (&opener{err: missing}).open, ServeOptions{})
+		if err != missing { //nolint:errorlint // the very error of open, not a wrapped one
+			t.Fatalf("ServeItem returned %v", err)
+		}
+		if rec.Code != http.StatusOK || rec.Body.Len() != 0 || len(rec.Header()) != 0 {
+			t.Fatalf("something was written: %d %v %q", rec.Code, rec.Header(), rec.Body.String())
 		}
 	})
 

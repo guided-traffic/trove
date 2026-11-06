@@ -284,6 +284,8 @@ The canonical paths under which a NuGet remote repository stores what it fetched
 |---|---|---|
 | Schema | `trove` (`database.schema`) | yes |
 | Migration records | `schema_migration`, `schema_state` (the runtime login may only read them) | yes (`internal/meta/postgres/migrations/`) |
+| Migration file headers | `-- trove:phase expand\|contract`, `-- trove:no-transaction`, `-- trove:requires-app >= <version>` and `-- trove:requires-background <name>` (contract steps) | yes (`internal/meta/postgres/steps.go`) |
+| Background data migrations | job kind `data_migration_<name>`, listed as `<name>` by `GET /api/v1/system/migrations`: `nuget_semver2` | yes (`internal/app/migration_report.go`); R-HA-022's table `background_migration` is planned |
 | Job kinds | `gc`, `gc-full`, `repository-delete`, `items-delete` (one job per deletion), `token-cleanup`, `token-expiry-notice`, `session-cleanup`, `audit-retention`, `idempotency-cleanup`, `secrets-reencrypt` (manual only), `nuget-symbol-index` (one job per symbol package), `data_migration_nuget_semver2` (a background data migration, once per installation), `vuln-sync-osv`, `vuln-sync-osv-full`, `vuln-sync-kev`, `vuln-evaluate`, `vuln-rescan` (one job per repository), `vuln-findings-retention`, `cluster-change-prune`, `replica-registry-prune`, `system.probe`. The list of the registrations is in the [job kinds](#job-kinds-and-tasks) reference | yes (`internal/app/wire_*.go`, `internal/jobs`) |
 | `system_state` keys | `installation_id`, `keyspace_id`, `incarnation` (the first migration writes them); `nuget_semver2_recomputed`, the completion of `data_migration_nuget_semver2`. `restore_in_progress`, `restored_at` and `deletions_paused_at` are read; nothing in this build writes them | yes (`internal/meta/postgres/migrations/00001_foundation.sql`, `internal/formatdata/nuget/semver2.go`) |
 | Mirror tables | `mirror_state` (one row per remote in mode `mirror`: the pass in progress with its fence `pass_job_id` and `pass_holder`, the cursor of the last complete pass, failures, rate-limit waits, the bound; export class `data`), `mirror_pending` (the names a pass has discovered and not filled; export class `transient`) | yes (migration 00040) |
@@ -887,7 +889,7 @@ database:
     interval: 5s                        # default
     count: 3                            # default
     user_timeout: 30s                   # default
-  server_keepalive:
+  server_keepalive:                     # idle + interval x count is also the idle_session_timeout of the lease sessions; at least 3 x lease_check_interval
     idle: 60s                           # default
     interval: 10s                       # default
     count: 6                            # default
@@ -1521,6 +1523,7 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 | `GET /api/v1/system/info` | `getSystemInfo` | `settings:read` |
 | `GET /api/v1/system/replicas` | `listReplicas` | `settings:read` |
 | `GET /api/v1/system/encryption` | `getEncryptionStatus` | `settings:read` |
+| `GET /api/v1/system/migrations` | `getMigrationStatus` | `settings:read` |
 
 **meta**
 
@@ -1826,6 +1829,7 @@ The OpenAPI 3.1 document is [api/openapi.yaml](api/openapi.yaml); the binary ser
 | `GET /api/v1/system/version` | Version and revision | public only with `system.public_version: true`, otherwise as declared |
 | `GET /api/v1/system/info` | Installation facts: version, base URL, replicas per role, database and schema versions, Valkey facts, and `vulnerabilityData` (the enforcement mode and the state of each advisory source; never affects readiness) | the capability `settings:read` ([R-AUTHZ-010](docs/spec/authorization.md)); anonymous on the default endpoint only with `system.bootstrap_anonymous_read` |
 | `GET /api/v1/system/replicas` | Replica registry: name, instance, node, version, revision, roles, state, checks, degraded checks, leases and the Valkey view of each replica | the same as `info` |
+| `GET /api/v1/system/migrations` | Migration report: schema version and compatibility floor, the answering replica's binary, pending steps with what the contract guard checks, applied steps, background data migrations with their states; the report of `trove migrate status` | `settings:read`; never anonymous |
 | `GET /api/v1/problems/{code}` | Description of a problem code | as declared |
 
 Errors are `application/problem+json` (RFC 9457): `type` is `/api/v1/problems/<code>`, `code` is the stable identifier,
@@ -1887,7 +1891,8 @@ packages:                               # the package protocols and raw files, t
   topologySpread: {enabled: true, nodeTaintsPolicy: Honor}     # default; zone ScheduleAnyway, host DoNotSchedule
   pools: []                             # default; example: [{name: npm, paths: [/api/npm], replicaCount: 4}]; paths below /api (not /api/v1), /files, /v2 or /.well-known; routed: false as for api.pools
 web:
-  enabled: false                        # default; true for the first of the two upgrade steps across the cut (R-HA-064); the keys of the releases before the cut stay as they were
+  enabled: false                        # default; true for steps 1 and 2 of the three upgrade steps across the cut (R-HA-064); the keys of the releases before the cut stay as they were
+  routed: true                          # default; false in step 2: the edge moves to api and packages while the bridge still runs (Q-HA-130)
 worker:
   replicaCount: 2                       # default; at least 1; ignored when autoscaling.enabled
   terminationGracePeriodSeconds: 300    # default
@@ -2214,7 +2219,7 @@ config:
 | `TroveVulnerabilityClaimedNameMalicious` | `max(trove_vuln_claimed_name_matches{kind="malicious"}) > 0` | critical |
 | `TroveMirrorFailing` | `max by (repo) (trove_mirror_consecutive_failures) >= 3`: three failed pass attempts in a row, the status's `failing`; a complete pass resets it | warning |
 | `TroveMirrorStale` | `time() - max by (repo) (trove_mirror_next_pass_timestamp_seconds) > 3600` for 30m: the next pass was due an hour ago and nothing started it (no process claims the queue, a lost job), or the pass in progress has not written for an hour; a mirror that never completed a pass fires too; a paused mirror has no series | warning |
-| `TroveBridgeLeftOn` | `count(trove_build_info{role="web"}) > 0` for 24h: `web.enabled` stayed true after the first step of the upgrade across the cut | warning |
+| `TroveBridgeLeftOn` | `count(trove_build_info{role="web"}) > 0` for 24h: `web.enabled` stayed true for a day: the third step of the upgrade across the cut has not run | warning |
 
 Every selector carries `namespace="<release namespace>"`, so one Prometheus that scrapes several installations does not blend them.
 The chart renders no ServiceMonitor; the scrape is the operator's.

@@ -12,17 +12,20 @@
 # tools/versions.env. VERSION, COMMIT and DATE set the version line the binary prints.
 # No defaults on purpose: each version is read from its pin by make image and build.yml, so a missing
 # build argument fails the build instead of picking a second copy of the pin.
+# UI_BUNDLE_MARK=1 (make image-marked) builds the second UI bundle of the upgrade test across two bundles
+# (R-HA-020, Q-HA-124): the same code under other hashed names. Release builds leave it empty.
 ARG NODE_VERSION
 ARG GO_VERSION
 ARG RUNTIME_BASE_IMAGE
 
 FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-alpine AS web
+ARG UI_BUNDLE_MARK=
 WORKDIR /src
 # build:embed reads the target directory ../internal/webui/dist, which holds the committed placeholder.
 COPY internal/webui/dist/ internal/webui/dist/
 COPY web/ web/
 WORKDIR /src/web
-RUN npm ci && npm run build:embed
+RUN npm ci && TROVE_UI_BUNDLE_MARK="$UI_BUNDLE_MARK" npm run build:embed
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
 ARG TARGETOS

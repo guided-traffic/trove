@@ -150,7 +150,7 @@ func (m *MirrorHost) Fill(ctx context.Context, repo repository.Repository, pass 
 		return mirror.FillResult{}, err
 	}
 	// A stored artifact costs no upstream request, and no gate: the gate may revalidate the format's document.
-	if _, cached, err := m.e.Cached(ctx, preq); err != nil {
+	if _, cached, err := m.e.Cached(ctx, preq); err != nil && !proxy.IsLost(err) { // a lost item is filled again (Q-REPO-202)
 		return mirror.FillResult{}, mapBackground(err)
 	} else if cached {
 		return mirror.FillResult{Present: true}, nil

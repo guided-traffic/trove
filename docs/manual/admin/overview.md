@@ -45,7 +45,7 @@ Besides `serve`, the binary has these commands:
 | Command | Purpose |
 |---|---|
 | `trove migrate up` | Applies the database migrations. The chart runs it as a Job before every install and upgrade. |
-| `trove migrate status` | Prints the migration state as JSON and changes nothing. |
+| `trove migrate status` | Prints the migration state as JSON and changes nothing; `GET /api/v1/system/migrations` answers the same report ([Upgrades](upgrades.md#how-the-migrations-work)). |
 | `trove admin …` | Bootstrap and recovery: validate the configuration, the break-glass account, service accounts and their tokens, ending sessions, disabling a user. See [Installation](installation.md#bootstrap-and-recovery-commands). |
 | `trove backup` | Reserved. It exits with "not implemented yet": this version has no backup or restore command, no backup role and no backup job. See [Known limitations](limitations.md). |
 

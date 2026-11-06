@@ -97,6 +97,11 @@ func (s *store) Open(context.Context, items.Item, *items.Range) (io.ReadCloser, 
 	return io.NopCloser(bytes.NewReader(s.body)), nil
 }
 
+// Usable never finds a missing object again.
+func (s *store) Usable(_ context.Context, it items.Item) (items.Item, error) {
+	return it, items.ContentError(it)
+}
+
 func (s *store) Children(context.Context, items.RepoRef, items.ChildrenQuery, items.Visibility) (items.ChildrenPage, error) {
 	return items.ChildrenPage{}, nil
 }

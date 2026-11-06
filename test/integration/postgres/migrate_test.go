@@ -130,7 +130,7 @@ func slowFirstStep(t testing.TB) map[string]string {
 	}
 	first := steps[0]
 	// Appended, not inserted after the phase header: step 1 may lose that header while the expand/contract rules are
-	// switched off (Q-ARCH-332), and a replacement that found nothing would drop the delay without a failure.
+	// switched off (Q-ARCH-340), and a replacement that found nothing would drop the delay without a failure.
 	return map[string]string{first.Name + ".sql": first.SQL + "\nSELECT pg_sleep(1.5);\n"}
 }
 

@@ -129,12 +129,20 @@ func upChart() string { return filepath.Join(cfg.repo, "deploy", "helm", "trove"
 // profile, of the working tree (valuesDir "") or of the copy of an older release's files.
 func upReleaseValues(t testing.TB, valuesDir string) []string {
 	t.Helper()
+	return upReleaseValuesOf(t, valuesDir, upImage())
+}
+
+// upReleaseValuesOf is upReleaseValues for another image than the one under test: the pod annotation that rolls the pods
+// when the loaded image changes carries that image's ID.
+func upReleaseValuesOf(t testing.TB, valuesDir, image string) []string {
+	t.Helper()
 	args := []string{"scatter"}
 	if valuesDir != "" {
 		args = append(args, valuesDir)
 	}
 	cmd := exec.Command(filepath.Join(cfg.repo, "deploy", "dev", "release-values.sh"), args...)
 	cmd.Dir = cfg.repo
+	cmd.Env = append(os.Environ(), "TROVE_IMAGE="+image)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
@@ -154,9 +162,15 @@ func upImage() string {
 // upKindLoad puts the image under test onto the kind nodes, as up.sh does before its helm upgrade.
 func upKindLoad(t testing.TB) {
 	t.Helper()
-	out, err := exec.Command("kind", "load", "docker-image", upImage(), "--name", strings.TrimPrefix(cfg.kubeContext, "kind-")).CombinedOutput()
+	upKindLoadImage(t, upImage())
+}
+
+// upKindLoadImage puts an image of the local Docker onto the kind nodes.
+func upKindLoadImage(t testing.TB, image string) {
+	t.Helper()
+	out, err := exec.Command("kind", "load", "docker-image", image, "--name", strings.TrimPrefix(cfg.kubeContext, "kind-")).CombinedOutput()
 	if err != nil {
-		t.Fatalf("kind load docker-image %s: %v\n%s (run `make image` first)", upImage(), err, tail(string(out), 800))
+		t.Fatalf("kind load docker-image %s: %v\n%s (run `make image` first)", image, err, tail(string(out), 800))
 	}
 }
 
@@ -215,7 +229,7 @@ func upgradeToTree(t testing.TB, label string, extra ...string) (from, to time.T
 	from = time.Now()
 	out, err = upHelm(t, label, 20*time.Minute, args...)
 	to = time.Now()
-	if err != nil && label != "guard" { // the guard refuses at render time, before any hook runs
+	if err != nil && !strings.HasPrefix(label, "guard") { // the guard refuses at render time, before any hook runs
 		collectMigrationEvidence(t, label)
 	}
 	return from, to, out, err
@@ -334,8 +348,9 @@ func upVersions(rs []upReplica) []string {
 	return out
 }
 
-// migrateStatus is the report of `trove migrate status`, which stands in for GET /api/v1/system/migrations: that endpoint
-// is specified (R-HA-018) but not built, and the report has the shape the endpoint documents.
+// migrateStatus is the report of `trove migrate status` in a worker pod. The upgrade verification reads GET
+// /api/v1/system/migrations (upMigrations); the command stays for the rollback, whose release has no such route, and as the
+// cross-check of the endpoint, which answers from the same code (Q-HA-116).
 type migrateStatus struct {
 	Schema struct {
 		Applied     int    `json:"applied"`
@@ -362,6 +377,113 @@ func upMigrateStatus(t testing.TB) migrateStatus {
 		t.Fatalf("trove migrate status: %v\n%s", err, tail(out, 600))
 	}
 	return s
+}
+
+// migrationReport is the answer of GET /api/v1/system/migrations (R-HA-018), the members the verification reads.
+type migrationReport struct {
+	Schema struct {
+		Applied     int    `json:"applied"`
+		CompatFloor string `json:"compatFloor"`
+	} `json:"schema"`
+	Binary struct {
+		Version        string `json:"version"`
+		RequiredSchema int    `json:"requiredSchema"`
+	} `json:"binary"`
+	Pending []struct {
+		Version            int      `json:"version"`
+		Name               string   `json:"name"`
+		Class              string   `json:"class"`
+		RequiresBackground []string `json:"requiresBackground"`
+	} `json:"pending"`
+	Applied []struct {
+		Version int    `json:"version"`
+		Name    string `json:"name"`
+	} `json:"applied"`
+	Background []struct {
+		Name    string `json:"name"`
+		Release string `json:"release"`
+		State   string `json:"state"`
+	} `json:"background"`
+}
+
+// unfinished lists the background migrations that have not succeeded, "name (state)".
+func (r migrationReport) unfinished() []string {
+	var out []string
+	for _, b := range r.Background {
+		if b.State != "succeeded" {
+			out = append(out, b.Name+" ("+b.State+")")
+		}
+	}
+	return out
+}
+
+// upMigrations reads GET /api/v1/system/migrations with the administrator's token through the edge, from a replica of the
+// release version (Q-HA-116). The release before the upgrade has no such route: an answer from one of its pods that the edge
+// still reaches while it drains (404), or from a replica of another version, is not the report of the release under test
+// and is read again; the first answer of a replica of version is returned. Any other status fails the test.
+func upMigrations(t testing.TB, version string) migrationReport {
+	t.Helper()
+	a := adminAPI(t)
+	deadline := time.Now().Add(90 * time.Second)
+	var others []string
+	for {
+		r, err := a.send("GET", "/api/v1/system/migrations", nil)
+		if err != nil {
+			t.Fatalf("GET /api/v1/system/migrations: %v", err)
+		}
+		var rep migrationReport
+		switch r.Status {
+		case 200:
+			r.JSON(t, &rep)
+			if rep.Binary.Version == version {
+				t.Logf("GET /api/v1/system/migrations answered by %s (%s)", r.Replica(), version)
+				return rep
+			}
+			others = append(others, r.Replica()+" "+rep.Binary.Version)
+		case 404:
+			others = append(others, r.Replica()+" 404")
+		default:
+			t.Fatalf("GET /api/v1/system/migrations: %s", r)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no replica of %s answered GET /api/v1/system/migrations within 90 s; answers from %v", version, others)
+		}
+		time.Sleep(time.Second)
+	}
+}
+
+// requireMigrationsDone is R-HA-020's third verification step for the release version: GET /api/v1/system/migrations shows
+// no pending step, the schema the binary requires is applied, and the expected background migrations, every one the binary
+// declares, reach `succeeded` (a failed one fails at once). `trove migrate status` in the worker of that release, which runs
+// the same code, must agree on the schema, the binary and the pending steps (Q-HA-116).
+func requireMigrationsDone(t testing.TB, version string) {
+	t.Helper()
+	rep := upMigrations(t, version)
+	if len(rep.Pending) != 0 || rep.Schema.Applied < rep.Binary.RequiredSchema || rep.Binary.RequiredSchema == 0 {
+		t.Errorf("migrations after the upgrade to %s: pending %+v, applied %d, required %d", version, rep.Pending, rep.Schema.Applied, rep.Binary.RequiredSchema)
+	}
+	if len(rep.Background) == 0 {
+		t.Errorf("the report of %s lists no background migration; the binary declares nuget_semver2 (Q-HA-114)", version)
+	}
+	deadline := time.Now().Add(3 * time.Minute)
+	for len(rep.unfinished()) > 0 {
+		for _, b := range rep.Background {
+			if b.State == "failed" {
+				t.Fatalf("the background migration %s failed after the upgrade to %s", b.Name, version)
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("background migrations not succeeded 3 minutes after the upgrade to %s: %v", version, rep.unfinished())
+		}
+		time.Sleep(5 * time.Second)
+		rep = upMigrations(t, version)
+	}
+	t.Logf("migrations of %s: schema %d (floor %s), %d applied, none pending, background %+v", version, rep.Schema.Applied, rep.Schema.CompatFloor, len(rep.Applied), rep.Background)
+	cli := upMigrateStatus(t)
+	if cli.Binary.Version != version || cli.Binary.RequiredSchema != rep.Binary.RequiredSchema || cli.Schema.Applied != rep.Schema.Applied ||
+		cli.Schema.CompatFloor != rep.Schema.CompatFloor || len(cli.Pending) != len(rep.Pending) || !cli.Servable {
+		t.Errorf("`trove migrate status` in the worker disagrees with the endpoint: CLI %+v, endpoint schema %+v binary %+v pending %d", cli, rep.Schema, rep.Binary, len(rep.Pending))
+	}
 }
 
 // deploymentState is the identity of a Deployment: a changed UID is a recreation, a changed generation a changed spec.

@@ -2203,7 +2203,7 @@ jobs:
   # The baseline is a tag and the history check reads main, so the clone needs the whole history and the tags. It
   # runs on a pull request (the merge commit, with main's history) and on a push to main. The job runs
   # `make compat-check` (docs/developer/releasing.md#compatibility).
-  # Switched off until the first stable release (Q-ARCH-332): to switch it on, delete `if: false`, put `compat` back into the needs of
+  # Switched off until the first stable release (Q-ARCH-340): to switch it on, delete `if: false`, put `compat` back into the needs of
   # semantic-release and drop its ignore line in .github/actionlint.yaml (docs/developer/releasing.md#switched-off-until-the-first-stable-release).
   compat:
     name: compatibility with the latest release (R-ARCH-025, R-ARCH-026)
@@ -2390,7 +2390,7 @@ jobs:
 
   # The version from the commits since the last tag, the release notes, the release commit with the
   # badge ([skip ci]), the tag and the GitHub release (.releaserc.json; docs/developer/releasing.md).
-  # `compat` is out of these needs while that job is switched off (Q-ARCH-332): a skipped need would skip the release. It goes back in, after
+  # `compat` is out of these needs while that job is switched off (Q-ARCH-340): a skipped need would skip the release. It goes back in, after
   # `workflows`, when the job is switched on.
   semantic-release:
     name: Semantic Release
