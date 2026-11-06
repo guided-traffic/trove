@@ -4280,7 +4280,7 @@ administrator who writes a mapping needs the pipeline for it).
 revisit (b) if administrators of projects complain about the message, which a detail per case can mend without a second code.
 
 **Applied in the spec:** R-CI-019 (the project bounds: the policy answer, the snippet route), R-AUTHZ-026 (Deleting a project and the
-table row name the CI mappings), R-API-035. Gap: [H-413](../security/ci-federation.md#h-413--a-project-administrator-can-probe-the-mapping-names-of-the-system-tier-below-its-prefix).
+table row name the CI mappings), R-API-035. The gap H-413 no longer exists: a mapping name is bare and unique per issuer and tier.
 Code: `internal/ci/mappings_bind.go`, `internal/ci/mappings_write.go` (`create`, `lockMapping`), `internal/project` (`Project.CIMappings`),
 `internal/api/v1/ci_project_api.go`, `api/openapi.yaml` (`getProjectCiSnippet`).
 
