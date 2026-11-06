@@ -90,7 +90,7 @@ func (r *TokenRevoker) RevokeMappingTx(ctx context.Context, tx meta.Tx, actor Ac
 	for _, row := range rows {
 		vs = append(vs, victim{id: row.ID, hash: row.SecretSha256})
 	}
-	return r.end(ctx, tx, qs, actor, vs, reasonMapping, revocationEvent{issuer: m.Issuer, mapping: m.Name, cause: cause})
+	return r.end(ctx, tx, qs, actor, vs, reasonMapping, revocationEvent{issuer: m.Issuer, mapping: m.ShortName(), cause: cause})
 }
 
 // RevokeIssuerTx revokes every unexpired token issued through an issuer, in the caller's transaction (disable,

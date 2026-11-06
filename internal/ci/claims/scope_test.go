@@ -18,11 +18,11 @@ func TestR_CI_007_TheScopeGrammar(t *testing.T) {
 		scope string
 		want  []claims.ScopeItem
 	}{
-		{"read:npm-all deploy:npm-internal", []claims.ScopeItem{{Action: claims.Read, Selector: "npm-all"}, {Action: claims.Deploy, Selector: "npm-internal"}}},
+		{"read:web/npm-all deploy:web/npm-internal", []claims.ScopeItem{{Action: claims.Read, Selector: "web/npm-all"}, {Action: claims.Deploy, Selector: "web/npm-internal"}}},
 		{"read", []claims.ScopeItem{{Action: claims.Read}}},
 		{"read:@any-local:npm", []claims.ScopeItem{{Action: claims.Read, Selector: "@any-local:npm"}}},
-		{"read:npm-team-* read:npm-team-*", []claims.ScopeItem{{Action: claims.Read, Selector: "npm-team-*"}}},
-		{"annotate:x1 overwrite:x1 delete:x1", []claims.ScopeItem{{Action: claims.Annotate, Selector: "x1"}, {Action: claims.Overwrite, Selector: "x1"}, {Action: claims.Delete, Selector: "x1"}}},
+		{"read:web/npm-team-* read:web/npm-team-*", []claims.ScopeItem{{Action: claims.Read, Selector: "web/npm-team-*"}}},
+		{"annotate:web/x1 overwrite:web/x1 delete:web/x1", []claims.ScopeItem{{Action: claims.Annotate, Selector: "web/x1"}, {Action: claims.Overwrite, Selector: "web/x1"}, {Action: claims.Delete, Selector: "web/x1"}}},
 		{"", nil},
 	}
 	for _, c := range ok {
@@ -43,15 +43,15 @@ func TestR_CI_007_TheScopeGrammar(t *testing.T) {
 	}
 	var fifty, fiftyOne []string
 	for i := range 51 {
-		fiftyOne = append(fiftyOne, "read:repo-"+strconv.Itoa(i))
+		fiftyOne = append(fiftyOne, "read:web/repo-"+strconv.Itoa(i))
 	}
 	fifty = append(append(fifty, fiftyOne[:50]...), fiftyOne[0])
 	if items, err := claims.ParseScope(strings.Join(fifty, " ")); err != nil || len(items) != 50 {
 		t.Fatalf("R-CI-007 50 distinct items and a duplicate: %d %v", len(items), err)
 	}
 	bad := []string{
-		"manage:npm-internal", "manage", "write:npm-internal", "Read:npm-internal", "read:", "read:NPM-internal",
-		"read:npm-internal:npm", "read:@any-thing", "read:@any-local:", "read  deploy", " read", "read ",
+		"manage:web/npm-internal", "manage", "write:web/npm-internal", "Read:web/npm-internal", "read:", "read:NPM-internal",
+		"read:web/npm-internal:npm", "read:@any-thing", "read:@any-local:", "read  deploy", " read", "read ",
 		`read:"x"`, "read:x\\y", "read:é", strings.Join(fiftyOne, " "),
 	}
 	for _, s := range bad {
@@ -68,9 +68,10 @@ func TestR_CI_007_TheScopeGrammar(t *testing.T) {
 // applies it (internal/ci/exchange_scope.go).
 func TestR_CI_007_TheSelectorSyntaxIsTheAuthorizationEngines(t *testing.T) {
 	for _, sel := range []string{
-		"npm-internal", "ab", "a", "npm-team-*", "n?m", "*", "@any", "@any-local", "@any-remote", "@any-virtual",
-		"@any-local:npm", "npm-*:npm", "npm-internal:npm", "@any:", "@anything", "NPM", "-npm", "npm_x", strings.Repeat("a", 64),
-		strings.Repeat("a", 65), "a**b", "@any-local:npm:x",
+		"web/npm-internal", "web/ab", "w/a", "web/npm-team-*", "w*/npm-*", "web/n?m", "*/*", "*/npm-remote", "@any", "@any-local",
+		"@any-remote", "@any-virtual", "@any-local:npm", "web/npm-*:npm", "*/*:nuget", "web/npm-internal:npm", "@any:", "@anything",
+		"web/NPM", "web/-npm", "web/npm_x", "web/" + strings.Repeat("a", 64), "web/" + strings.Repeat("a", 65), "web/a**b",
+		"@any-local:npm:x", "npm-internal", "ab", "a", "npm-team-*", "*", "web/", "/npm", "web/npm/x", "WEB/npm", "-web/npm",
 	} {
 		_, err := claims.ParseScope("read:" + sel)
 		ours := err == nil
@@ -90,7 +91,7 @@ func inline(repos []string, actions ...claims.Action) claims.InlineGrant {
 func TestR_CI_007_NarrowingWithTheMatchedGrants(t *testing.T) {
 	r := claims.Rendered{
 		Policies: []string{"ci-read-internal"},
-		Inline:   []claims.InlineGrant{inline([]string{"npm-internal"}, claims.Read, claims.Deploy), inline([]string{"nuget-internal", "nuget-team-*"}, claims.Read, claims.Deploy)},
+		Inline:   []claims.InlineGrant{inline([]string{"web/npm-internal"}, claims.Read, claims.Deploy), inline([]string{"web/nuget-internal", "web/nuget-team-*"}, claims.Read, claims.Deploy)},
 	}
 	noPolicy := func(claims.Action, string) bool { return false }
 	items := func(s string) []claims.ScopeItem {
@@ -102,30 +103,30 @@ func TestR_CI_007_NarrowingWithTheMatchedGrants(t *testing.T) {
 	}
 	t.Run("an item the grants do not hold is scope_not_granted", func(t *testing.T) {
 		npmOnly := claims.Rendered{Inline: r.Inline[:1]}
-		_, err := claims.Narrow(npmOnly, items("deploy:nuget-internal"), noPolicy)
+		_, err := claims.Narrow(npmOnly, items("deploy:web/nuget-internal"), noPolicy)
 		if rr, _ := reasonOf(t, err); rr != reason.ScopeNotGranted {
 			t.Fatalf("%s", rr)
 		}
-		_, err = claims.Narrow(npmOnly, items("read:npm-internal annotate:npm-internal"), noPolicy)
+		_, err = claims.Narrow(npmOnly, items("read:web/npm-internal annotate:web/npm-internal"), noPolicy)
 		if rr, _ := reasonOf(t, err); rr != reason.ScopeNotGranted {
 			t.Fatalf("no partial token: %s", rr)
 		}
 	})
 	t.Run("deploy is narrowed away by a read scope", func(t *testing.T) { // R-CI-007
-		got, err := claims.Narrow(r, items("read:npm-internal"), noPolicy)
+		got, err := claims.Narrow(r, items("read:web/npm-internal"), noPolicy)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if claims.FormatScope(got, nil) != "read:npm-internal" || got.Policies[0] != "ci-read-internal" {
+		if claims.FormatScope(got, nil) != "read:web/npm-internal" || got.Policies[0] != "ci-read-internal" {
 			t.Fatalf("%q %+v", claims.FormatScope(got, nil), got)
 		}
 	})
 	t.Run("a key pattern grant holds a key item; the narrowed grant keeps only what may overlap", func(t *testing.T) { // R-CI-007
-		got, err := claims.Narrow(r, items("deploy:nuget-team-x"), noPolicy)
+		got, err := claims.Narrow(r, items("deploy:web/nuget-team-x"), noPolicy)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if s := claims.FormatScope(got, nil); s != "deploy:nuget-team-*" {
+		if s := claims.FormatScope(got, nil); s != "deploy:web/nuget-team-*" {
 			t.Fatalf("%q", s)
 		}
 	})
@@ -139,7 +140,7 @@ func TestR_CI_007_NarrowingWithTheMatchedGrants(t *testing.T) {
 		if err != nil || asked != "read:@any-local:npm" {
 			t.Fatalf("%v, asked %q", err, asked)
 		}
-		if s := claims.FormatScope(got, nil); s != "read:npm-internal read:nuget-internal read:nuget-team-*" {
+		if s := claims.FormatScope(got, nil); s != "read:web/npm-internal read:web/nuget-internal read:web/nuget-team-*" {
 			t.Fatalf("every inline grant may overlap a class, only the read survives: %q", s)
 		}
 		if _, err := claims.Narrow(r, items("deploy:@any-local:npm"), held); err == nil {
@@ -148,7 +149,7 @@ func TestR_CI_007_NarrowingWithTheMatchedGrants(t *testing.T) {
 	})
 	t.Run("an item without selector is @any", func(t *testing.T) { // R-CI-007
 		got, err := claims.Narrow(r, items("read"), func(_ claims.Action, sel string) bool { return sel == "@any" })
-		if err != nil || claims.FormatScope(got, nil) != "read:npm-internal read:nuget-internal read:nuget-team-*" {
+		if err != nil || claims.FormatScope(got, nil) != "read:web/npm-internal read:web/nuget-internal read:web/nuget-team-*" {
 			t.Fatalf("%q %v", claims.FormatScope(got, nil), err)
 		}
 	})
@@ -157,7 +158,7 @@ func TestR_CI_007_NarrowingWithTheMatchedGrants(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := "read:npm-internal deploy:npm-internal read:nuget-internal deploy:nuget-internal read:nuget-team-* deploy:nuget-team-*"
+		want := "read:web/npm-internal deploy:web/npm-internal read:web/nuget-internal deploy:web/nuget-internal read:web/nuget-team-* deploy:web/nuget-team-*"
 		if s := claims.FormatScope(got, nil); s != want {
 			t.Fatalf("%q", s)
 		}
@@ -189,9 +190,9 @@ func TestR_CI_012_TheCrossProjectClassification(t *testing.T) {
 		})
 	}
 	t.Run("R-CI-012 a read_only opt-in caps the issued scope to read items", func(t *testing.T) {
-		r := claims.Rendered{Inline: []claims.InlineGrant{inline([]string{"npm-internal"}, claims.Read, claims.Deploy), inline([]string{"npm-x"}, claims.Deploy)}}
+		r := claims.Rendered{Inline: []claims.InlineGrant{inline([]string{"web/npm-internal"}, claims.Read, claims.Deploy), inline([]string{"web/npm-x"}, claims.Deploy)}}
 		got := claims.FormatScope(r, []claims.Cap{claims.CapRead})
-		if got != "read:npm-internal" {
+		if got != "read:web/npm-internal" {
 			t.Fatalf("%q", got)
 		}
 		capped := claims.ApplyCaps(r, []claims.Cap{claims.CapRead})
@@ -212,14 +213,14 @@ func frozenOf(t *testing.T, ms ...claims.FrozenMapping) claims.Frozen {
 
 func TestR_CI_012_ACapBoundsOnlyItsOwnMapping(t *testing.T) {
 	sys := claims.Freeze("ci:gitlab-com/acme-read", "m-1", "system", nil,
-		claims.Rendered{Groups: []string{"readers"}, Inline: []claims.InlineGrant{inline([]string{"npm-all"}, claims.Read)}}, nil)
+		claims.Rendered{Groups: []string{"readers"}, Inline: []claims.InlineGrant{inline([]string{"web/npm-all"}, claims.Read)}}, nil)
 	proj := claims.Freeze("ci:gitlab-com/web-publish", "m-2", "project:web", &claims.FrozenProject{Key: "web", ID: "p-7"},
-		claims.Rendered{Inline: []claims.InlineGrant{inline([]string{"web-npm"}, claims.Read, claims.Deploy)}}, []claims.Cap{claims.CapRead})
+		claims.Rendered{Inline: []claims.InlineGrant{inline([]string{"npm-local"}, claims.Read, claims.Deploy)}}, []claims.Cap{claims.CapRead})
 	f := frozenOf(t, sys, proj)
 	if err := f.Check(); err != nil {
 		t.Fatal(err)
 	}
-	if got := f.InlineScope(); got != "read:npm-all read:web-npm" {
+	if got := f.InlineScope(); got != "read:web/npm-all read:web/npm-local" {
 		t.Fatalf("%q", got)
 	}
 	if f.Contributions[1].HasCap(claims.CapRead) == false || f.Contributions[0].HasCap(claims.CapRead) {
@@ -230,21 +231,21 @@ func TestR_CI_012_ACapBoundsOnlyItsOwnMapping(t *testing.T) {
 	}
 	t.Run("R-CI-012 a deploy item is not granted by a capped mapping", func(t *testing.T) {
 		raw := claims.Freeze("ci:gitlab-com/web-publish", "m-2", "project:web", &claims.FrozenProject{Key: "web", ID: "p-7"},
-			claims.Rendered{Inline: []claims.InlineGrant{inline([]string{"web-npm"}, claims.Read, claims.Deploy)}}, nil)
+			claims.Rendered{Inline: []claims.InlineGrant{inline([]string{"npm-local"}, claims.Read, claims.Deploy)}}, nil)
 		raw.Caps = []claims.Cap{claims.CapRead} // a bundle built without Freeze
-		items, _ := claims.ParseScope("deploy:web-npm")
+		items, _ := claims.ParseScope("deploy:web/npm-local")
 		_, err := claims.NarrowFrozen(frozenOf(t, sys, raw), items, nil)
 		if r, _ := reasonOf(t, err); r != reason.ScopeNotGranted {
 			t.Fatalf("%s", r)
 		}
 	})
 	t.Run("narrowing a bundle narrows every mapping", func(t *testing.T) { // R-CI-007
-		items, _ := claims.ParseScope("read:web-npm")
+		items, _ := claims.ParseScope("read:web/npm-local")
 		got, err := claims.NarrowFrozen(f, items, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got.InlineScope() != "read:web-npm" || len(f.Contributions[0].Inline) != 1 {
+		if got.InlineScope() != "read:web/npm-local" || len(f.Contributions[0].Inline) != 1 {
 			t.Fatalf("%q (the input must stay unchanged)", got.InlineScope())
 		}
 	})
@@ -303,8 +304,8 @@ func TestR_CI_013_TheExampleGrantRenders(t *testing.T) {
 		Policies: []string{"ci-read-internal"},
 		Groups:   []string{"ci-readers"},
 		Inline: []claims.InlineGrant{
-			{Repositories: []string{"npm-internal"}, Packages: &claims.PatternSet{Include: []string{"@{{ namespace_path | slug }}/*"}, Exclude: []string{}}, Actions: []claims.Action{claims.Read, claims.Deploy}, Ownership: claims.OwnershipBindProject},
-			{Repositories: []string{"nuget-internal"}, Packages: &claims.PatternSet{Include: []string{
+			{Repositories: []string{"web/npm-internal"}, Packages: &claims.PatternSet{Include: []string{"@{{ namespace_path | slug }}/*"}, Exclude: []string{}}, Actions: []claims.Action{claims.Read, claims.Deploy}, Ownership: claims.OwnershipBindProject},
+			{Repositories: []string{"web/nuget-internal"}, Packages: &claims.PatternSet{Include: []string{
 				`{{ project_path | replace "/" "." | replace "-" "" }}`, `{{ project_path | replace "/" "." | replace "-" "" }}.*`,
 			}}, Actions: []claims.Action{claims.Read, claims.Deploy}},
 			{Repositories: []string{"generic-local"}, Paths: &claims.PatternSet{Include: []string{"builds/{{ project_path | segment -1 }}/**"}}, Actions: []claims.Action{claims.Read}},

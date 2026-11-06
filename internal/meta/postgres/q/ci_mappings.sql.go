@@ -197,11 +197,12 @@ SELECT m.id::text AS id, m.issuer_id::text AS issuer_id, i.name AS issuer, m.pri
        m.created_by, (extract(epoch FROM m.created_at) * 1000000)::bigint AS created_us,
        (extract(epoch FROM m.updated_at) * 1000000)::bigint AS updated_us
   FROM ci_mappings m JOIN ci_issuers i ON i.id = m.issuer_id
- WHERE i.name = $1::text AND m.name = $2::text
+ WHERE i.name = $1::text AND m.tier = $2::text AND m.name = $3::text
 `
 
 type CiMappingByNameParams struct {
 	Issuer string
+	Tier   string
 	Name   string
 }
 
@@ -228,8 +229,9 @@ type CiMappingByNameRow struct {
 	UpdatedUs    int64
 }
 
+// A name is unique within the issuer's tier (R-CI-009): the same name may be a system mapping and one of each project.
 func (q *Queries) CiMappingByName(ctx context.Context, arg CiMappingByNameParams) ([]CiMappingByNameRow, error) {
-	rows, err := q.db.Query(ctx, ciMappingByName, arg.Issuer, arg.Name)
+	rows, err := q.db.Query(ctx, ciMappingByName, arg.Issuer, arg.Tier, arg.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -660,7 +662,8 @@ type CiMappingPrincipalInsertParams struct {
 	Actor string
 }
 
-// The mapping's principal (R-CI-009, Q-CI-10): kind ci_mapping, name <issuer>/<mapping>.
+// The mapping's principal (R-CI-009, Q-CI-10): kind ci_mapping, name <issuer>/<mapping>, or
+// <issuer>/<project key>/<mapping> for a mapping of a project's tier (Q-AUTHZ-214).
 func (q *Queries) CiMappingPrincipalInsert(ctx context.Context, arg CiMappingPrincipalInsertParams) (string, error) {
 	row := q.db.QueryRow(ctx, ciMappingPrincipalInsert, arg.ID, arg.Name, arg.Actor)
 	var id string
@@ -1145,18 +1148,20 @@ func (q *Queries) CiProjectRepositories(ctx context.Context, arg CiProjectReposi
 }
 
 const ciRepositoryFormats = `-- name: CiRepositoryFormats :many
-SELECT key, format FROM repositories WHERE lifecycle = 'active' AND key = ANY($1::text[])
+SELECT (p.key || '/' || r.key)::text AS name, r.format
+  FROM repositories r JOIN project p ON p.id = r.project_id
+ WHERE r.lifecycle = 'active' AND (p.key || '/' || r.key) = ANY($1::text[])
 `
 
 type CiRepositoryFormatsRow struct {
-	Key    string
+	Name   string
 	Format string
 }
 
-// The format of each of the keys that is an active repository, for the snippet: it configures the repositories
-// of the client's format only.
-func (q *Queries) CiRepositoryFormats(ctx context.Context, keys []string) ([]CiRepositoryFormatsRow, error) {
-	rows, err := q.db.Query(ctx, ciRepositoryFormats, keys)
+// The format of each of the repositories (named <project>/<key>) that is active, for the snippet: it configures
+// the repositories of the client's format only.
+func (q *Queries) CiRepositoryFormats(ctx context.Context, names []string) ([]CiRepositoryFormatsRow, error) {
+	rows, err := q.db.Query(ctx, ciRepositoryFormats, names)
 	if err != nil {
 		return nil, err
 	}
@@ -1164,7 +1169,7 @@ func (q *Queries) CiRepositoryFormats(ctx context.Context, keys []string) ([]CiR
 	items := []CiRepositoryFormatsRow{}
 	for rows.Next() {
 		var i CiRepositoryFormatsRow
-		if err := rows.Scan(&i.Key, &i.Format); err != nil {
+		if err := rows.Scan(&i.Name, &i.Format); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

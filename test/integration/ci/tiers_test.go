@@ -16,7 +16,7 @@ import (
 // changes what its own tier gives a job and nothing of what the system tier or another project's tier gives.
 
 // tierEnv is an exchange installation with the system mapping acme-release-publish and the projects web, data and
-// shop, each with one npm repository of its own (web-npm, data-npm, shop-npm), which bob administers.
+// shop, each with one npm repository of its own (web-npm, data-npm, shop-npm), of which bob is Owner.
 type tierEnv struct {
 	*xenv
 	a, b  *testenv.Replica
@@ -32,11 +32,8 @@ func newTierEnv(t *testing.T) *tierEnv {
 	x.addMapping(e.a, releaseMapping("acme-release-publish", 100))
 	for _, key := range []string{"web", "data", "shop"} {
 		wantStatus(t, x.do(e.a, "POST", "/api/v1/projects", map[string]any{"key": key, "displayName": key}), 201, "")
-		x.stack.Repository(key+"-npm", "local", "npm", "{}")
-		x.exec("UPDATE repositories SET project_id = (SELECT id FROM project WHERE key = $1) WHERE key = $2", key, key+"-npm")
-		added := x.do(e.a, "PUT", "/api/v1/projects/"+key+"/admins/user%3Abob", nil)
-		wantStatus(t, added, 201, "")
-		e.epoch = added.Header.Get("Trove-Authz-Epoch")
+		x.stack.Repository(key+"/"+key+"-npm", "local", "npm", "{}")
+		e.epoch = x.addOwner(key, x.bobID)
 	}
 	return e
 }
@@ -63,7 +60,7 @@ func (e *tierEnv) addProjectMapping(project string, body map[string]any) {
 // reads reports whether the token reads the repository on the replica (whoami answers 404 without a grant).
 func (e *tierEnv) reads(r *testenv.Replica, token, repo string) bool {
 	e.t.Helper()
-	return e.stack.Do(r, "GET", "/api/npm/"+repo+"/-/whoami", token, nil).Status == 200
+	return e.stack.Do(r, "GET", npmBase(repo)+"-/whoami", token, nil).Status == 200
 }
 
 // alive is the status of GET /api/v1/tokens/current with the token: 200 while it is valid, 401 once revoked.
@@ -106,27 +103,27 @@ func TestQ_CI_47_AProjectTierDoesNotChangeWhatAnotherTierGives(t *testing.T) {
 				ExpiresAt *string `json:"expiresAt"`
 			} `json:"contributions"`
 		}
-		raw := e.text("SELECT grants::text FROM ci_token_issuances WHERE mapping_names @> '{data-short}'")
+		raw := e.text("SELECT grants::text FROM ci_token_issuances WHERE mapping_names @> '{data/data-short}'")
 		if err := json.Unmarshal([]byte(raw), &bundle); err != nil {
 			t.Fatal(err)
 		}
 		for _, c := range bundle.Contributions {
-			if (c.Ref == "ci:"+xIssuer+"/data-short") != (c.ExpiresAt != nil) {
+			if (c.Ref == "ci:"+xIssuer+"/data/data-short") != (c.ExpiresAt != nil) {
 				t.Errorf("contribution %s expires at %v", c.Ref, c.ExpiresAt)
 			}
 		}
-		within(t, "the end of data-short's contribution", 5*time.Second, func() bool { return !e.reads(b, g.Token, "data-npm") })
-		for _, repo := range []string{"npm-internal", "web-npm"} {
+		within(t, "the end of data-short's contribution", 5*time.Second, func() bool { return !e.reads(b, g.Token, "data/data-npm") })
+		for _, repo := range []string{"npm-internal", "web/web-npm"} {
 			if !e.reads(b, g.Token, repo) {
 				t.Errorf("after data-short's contribution ended the token no longer reads %s", repo)
 			}
 		}
 	})
 	t.Run("R-CI-009 a project tier whose grants do not render drops only its own contribution", func(t *testing.T) {
-		if want := []string{"acme-release-publish", "data-short", "web-reader"}; !slices.Equal(g.Mappings, want) {
+		if want := []string{"acme-release-publish", "data/data-short", "web/web-reader"}; !slices.Equal(g.Mappings, want) {
 			t.Fatalf("mappings %v, want %v", g.Mappings, want)
 		}
-		if e.reads(a, g.Token, "shop-npm") {
+		if e.reads(a, g.Token, "shop/shop-npm") {
 			t.Error("the dropped tier's repository is readable")
 		}
 	})
@@ -134,7 +131,7 @@ func TestQ_CI_47_AProjectTierDoesNotChangeWhatAnotherTierGives(t *testing.T) {
 		start := time.Now()
 		e.setEnabled("web", "web-reader", false)
 		for _, r := range []*testenv.Replica{a, b} {
-			within(t, r.Name+" dropping web-reader's contribution", 10*time.Second, func() bool { return !e.reads(r, g.Token, "web-npm") })
+			within(t, r.Name+" dropping web-reader's contribution", 10*time.Second, func() bool { return !e.reads(r, g.Token, "web/web-npm") })
 			if s := e.alive(r, g.Token); s != 200 {
 				t.Errorf("%s answered %d: the token of the system tier was revoked", r.Name, s)
 			}
@@ -150,13 +147,13 @@ func TestQ_CI_47_AProjectTierDoesNotChangeWhatAnotherTierGives(t *testing.T) {
 	t.Run("R-CI-017 deleting a project mapping leaves the system tier's token alive and ends the contribution", func(t *testing.T) {
 		e.setEnabled("web", "web-reader", true)
 		g2 := wantToken(t, e.exchange(a, e.mint(noEnvironment)))
-		if !e.reads(b, g2.Token, "web-npm") {
+		if !e.reads(b, g2.Token, "web/web-npm") {
 			t.Fatal("the new token does not read web-npm")
 		}
 		wantStatus(t, e.bob("DELETE", projectMappings("web")+"/"+xIssuer+"/web-reader", nil), 204, "")
 		e.settled()
 		for _, r := range []*testenv.Replica{a, b} {
-			within(t, r.Name+" dropping the deleted mapping's contribution", 10*time.Second, func() bool { return !e.reads(r, g2.Token, "web-npm") })
+			within(t, r.Name+" dropping the deleted mapping's contribution", 10*time.Second, func() bool { return !e.reads(r, g2.Token, "web/web-npm") })
 			if s := e.alive(r, g2.Token); s != 200 || !e.reads(r, g2.Token, "npm-internal") {
 				t.Errorf("%s answered %d: the system tier's token went with the project's mapping", r.Name, s)
 			}
@@ -171,11 +168,11 @@ func TestQ_CI_47_AProjectMappingThatOwnsATokenRevokesIt(t *testing.T) {
 	ce := ciEnvOf(e.env, xIssuer)
 	// An unprotected ref: the system mapping does not match, the project's does.
 	g := wantToken(t, e.exchange(e.a, e.mint(oidcstub.MintOptions{Claims: map[string]any{"ref_protected": "false"}})))
-	if !slices.Equal(g.Mappings, []string{"web-reader"}) {
+	if !slices.Equal(g.Mappings, []string{"web/web-reader"}) {
 		t.Fatalf("mappings %v", g.Mappings)
 	}
-	owner := e.text(`SELECT p.name FROM api_token t JOIN principal p ON p.id = t.principal_id JOIN ci_token_issuances s ON s.token_id = t.id WHERE s.mapping_names = '{web-reader}'`)
-	if owner != xIssuer+"/web-reader" {
+	owner := e.text(`SELECT p.name FROM api_token t JOIN principal p ON p.id = t.principal_id JOIN ci_token_issuances s ON s.token_id = t.id WHERE s.mapping_names = '{web/web-reader}'`)
+	if owner != xIssuer+"/web/web-reader" {
 		t.Fatalf("the token belongs to %s", owner)
 	}
 	path := projectMappings("web") + "/" + xIssuer + "/web-reader"

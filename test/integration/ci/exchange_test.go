@@ -27,7 +27,7 @@ func TestR_CI_007_AnExchangeIssuesACIToken(t *testing.T) {
 			t.Errorf("ci_issuer %q, mappings %v", g.Issuer, g.Mappings)
 		}
 		// The policy's items first, selectors as the policy writes them, then the inline grant's (R-CI-007).
-		if g.Scope != "read:npm-all read:npm-internal deploy:npm-internal" {
+		if g.Scope != "read:it/npm-all read:it/npm-internal deploy:it/npm-internal" {
 			t.Errorf("scope = %q", g.Scope)
 		}
 		// The default 15 minutes, below the mapping's 30 and the token's hour (R-CI-016).
@@ -43,7 +43,7 @@ func TestR_CI_007_AnExchangeIssuesACIToken(t *testing.T) {
 			"subject_token": tok, "ttl": 600,
 		})
 		g := wantToken(t, x.post(a, "application/json", body))
-		if g.Scope != "read:npm-all read:npm-internal deploy:npm-internal" || g.ExpiresIn != 600 || g.Mappings[0] != "acme-release-publish" {
+		if g.Scope != "read:it/npm-all read:it/npm-internal deploy:it/npm-internal" || g.ExpiresIn != 600 || g.Mappings[0] != "acme-release-publish" {
 			t.Errorf("the JSON answer %+v", g)
 		}
 	})

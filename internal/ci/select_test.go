@@ -24,12 +24,13 @@ func readGrant(repo string) claims.Spec {
 
 func mappingOf(tier string, priority int, name string, match claims.Node, g claims.Spec) Mapping {
 	m := Mapping{
-		ID: "id-" + name, Issuer: "gitlab-main", Name: name, Ref: claims.MappingRef("gitlab-main", name), Tier: tier, Priority: priority,
+		ID: "id-" + name, Issuer: "gitlab-main", Name: name, Tier: tier, Priority: priority,
 		Enabled: true, SubjectKinds: []string{SubjectIDToken}, Match: match, Grants: g, Options: claims.Options{CrossProjectSource: claims.CrossProjectDeny},
 	}
 	if key, ok := cutProject(tier); ok {
 		m.Project, m.ProjectID = key, "pid-"+key
 	}
+	m.Ref = claims.MappingRef("gitlab-main", m.Project, name)
 	return m
 }
 
@@ -52,8 +53,8 @@ func names(ms []Mapping) []string {
 // R-CI-009: the first match of a tier decides, in ascending priority, whatever order the set arrives in.
 func TestR_CI_009_SelectTakesTheFirstMatchOfATier(t *testing.T) {
 	set := MappingSet{Mappings: []Mapping{
-		mappingOf(TierSystem, 20, "p20", onClaim("ref_protected", "true"), readGrant("npm-internal")),
-		mappingOf(TierSystem, 10, "p10", onClaim("pipeline_source", "merge_request_event"), readGrant("npm-internal")),
+		mappingOf(TierSystem, 20, "p20", onClaim("ref_protected", "true"), readGrant("web/npm-internal")),
+		mappingOf(TierSystem, 10, "p10", onClaim("pipeline_source", "merge_request_event"), readGrant("web/npm-internal")),
 	}}
 	both := claims.Claims{"ref_protected": "true", "pipeline_source": "merge_request_event"}
 	sel := SelectTraced(set, SubjectIDToken, both)
@@ -75,11 +76,11 @@ func TestR_CI_009_SelectTakesTheFirstMatchOfATier(t *testing.T) {
 
 // R-CI-009: no match, a disabled mapping and another subject kind.
 func TestR_CI_009_SelectSkipsWhatIsNotConsidered(t *testing.T) {
-	off := mappingOf(TierSystem, 10, "off", onClaim("project_id", "1"), readGrant("npm-internal"))
+	off := mappingOf(TierSystem, 10, "off", onClaim("project_id", "1"), readGrant("web/npm-internal"))
 	off.Enabled = false
-	job := mappingOf(TierSystem, 20, "job", onClaim("project_id", "1"), readGrant("npm-internal"))
+	job := mappingOf(TierSystem, 20, "job", onClaim("project_id", "1"), readGrant("web/npm-internal"))
 	job.SubjectKinds = []string{SubjectJobToken}
-	on := mappingOf(TierSystem, 30, "on", onClaim("project_id", "1"), readGrant("npm-internal"))
+	on := mappingOf(TierSystem, 30, "on", onClaim("project_id", "1"), readGrant("web/npm-internal"))
 	sel := SelectTraced(MappingSet{Mappings: []Mapping{off, job, on}}, SubjectIDToken, claims.Claims{"project_id": "1"})
 	if got := names(sel.Mappings()); !slices.Equal(got, []string{"on"}) || len(sel.Trace) != 1 {
 		t.Errorf("selected %v, trace %v", got, sel.Trace)
@@ -95,7 +96,7 @@ func TestR_CI_009_SelectDoesNotFallThroughOnARenderFailure(t *testing.T) {
 	failing := claims.Spec{Inline: []claims.InlineGrant{{Repositories: []string{"npm-internal"}, Packages: &claims.PatternSet{Include: []string{"@{{ namespace_path | slug }}/*"}}, Actions: []claims.Action{claims.Read}}}}
 	set := MappingSet{Mappings: []Mapping{
 		mappingOf(TierSystem, 10, "p10", onClaim("project_id", "1"), failing),
-		mappingOf(TierSystem, 20, "p20", onClaim("project_id", "1"), readGrant("npm-internal")),
+		mappingOf(TierSystem, 20, "p20", onClaim("project_id", "1"), readGrant("web/npm-internal")),
 	}}
 	sel := SelectTraced(set, SubjectIDToken, claims.Claims{"project_id": "1"})
 	if sel.Failure != reason.GrantRenderFailed || len(sel.Contributions) != 0 {
@@ -108,7 +109,7 @@ func TestR_CI_009_SelectDoesNotFallThroughOnARenderFailure(t *testing.T) {
 
 // R-CI-009, Q-CI-26: a match per tier, united; each contribution keeps its own rendering, caps and project.
 func TestR_CI_009_SelectUnitesTheTiersAndKeepsTheContributionsApart(t *testing.T) {
-	system := mappingOf(TierSystem, 10, "sys", onClaim("project_id", "1"), readGrant("npm-internal"))
+	system := mappingOf(TierSystem, 10, "sys", onClaim("project_id", "1"), readGrant("web/npm-internal"))
 	web := mappingOf(ProjectTier("web"), 10, "web-reader", onClaim("project_id", "1"), readGrant("web-npm"))
 	other := mappingOf(ProjectTier("data"), 10, "data-reader", onClaim("project_id", "2"), readGrant("data-npm"))
 	set := MappingSet{Mappings: []Mapping{web, other, system}}
@@ -116,11 +117,14 @@ func TestR_CI_009_SelectUnitesTheTiersAndKeepsTheContributionsApart(t *testing.T
 	if got := names(sel.Mappings()); !slices.Equal(got, []string{"sys", "web-reader"}) {
 		t.Fatalf("selected %v: the system tier first, then the project's", got)
 	}
-	if sel.Contributions[0].Rendered.Inline[0].Repositories[0] != "npm-internal" || sel.Contributions[1].Rendered.Inline[0].Repositories[0] != "web-npm" {
+	if sel.Contributions[0].Rendered.Inline[0].Repositories[0] != "web/npm-internal" || sel.Contributions[1].Rendered.Inline[0].Repositories[0] != "web-npm" {
 		t.Errorf("the contributions do not hold their own grants: %+v", sel.Contributions)
 	}
 	f := sel.Contributions[1].Frozen()
-	if f.Project == nil || f.Project.Key != "web" || f.Project.ID != "pid-web" || f.Tier != "project:web" || f.Ref != "ci:gitlab-main/web-reader" {
+	if got := f.Inline[0].Repositories[0]; got != "web/web-npm" {
+		t.Errorf("a project mapping's bare key is frozen as the instance selector of the token: %q", got)
+	}
+	if f.Project == nil || f.Project.Key != "web" || f.Project.ID != "pid-web" || f.Tier != "project:web" || f.Ref != "ci:gitlab-main/web/web-reader" {
 		t.Errorf("the project's contribution freezes as %+v", f)
 	}
 	if sel.Contributions[0].Frozen().Project != nil {
@@ -143,8 +147,8 @@ func TestR_CI_009_SelectUnitesTheTiersAndKeepsTheContributionsApart(t *testing.T
 // still decides, and a read_only opt-in carries the cap.
 func TestR_CI_012_SelectDecidesTheCrossProjectOptInPerMapping(t *testing.T) {
 	fork := claims.Claims{"project_id": "900", "job_project_id": "42", "pipeline_source": "merge_request_event"}
-	deny := mappingOf(TierSystem, 10, "deny", onClaim("pipeline_source", "merge_request_event"), readGrant("npm-internal"))
-	later := mappingOf(TierSystem, 20, "later", onClaim("pipeline_source", "merge_request_event"), readGrant("npm-internal"))
+	deny := mappingOf(TierSystem, 10, "deny", onClaim("pipeline_source", "merge_request_event"), readGrant("web/npm-internal"))
+	later := mappingOf(TierSystem, 20, "later", onClaim("pipeline_source", "merge_request_event"), readGrant("web/npm-internal"))
 	later.Options.CrossProjectSource = claims.CrossProjectReadOnly
 
 	sel := SelectTraced(MappingSet{Mappings: []Mapping{deny, later}}, SubjectIDToken, fork)
@@ -166,7 +170,7 @@ func TestR_CI_012_SelectDecidesTheCrossProjectOptInPerMapping(t *testing.T) {
 
 	// The opt-in of one mapping covers its own grants only: a system mapping that denies contributes nothing
 	// beside a project mapping that opted in.
-	sys := mappingOf(TierSystem, 10, "sys", onClaim("pipeline_source", "merge_request_event"), readGrant("npm-internal"))
+	sys := mappingOf(TierSystem, 10, "sys", onClaim("pipeline_source", "merge_request_event"), readGrant("web/npm-internal"))
 	web := mappingOf(ProjectTier("web"), 10, "web-fork", onClaim("pipeline_source", "merge_request_event"), readGrant("web-npm"))
 	web.Options.CrossProjectSource = claims.CrossProjectReadOnly
 	sel = Select(MappingSet{Mappings: []Mapping{sys, web}}, SubjectIDToken, fork)
@@ -183,7 +187,7 @@ func renderFailing() claims.Spec {
 // R-CI-009 step 6, Q-CI-47: a project tier's render failure drops that tier's contribution only; the system tier and
 // another project's tier still give what they give, and the trace names the failure.
 func TestR_CI_009_AProjectTiersRenderFailureDropsOnlyItsContribution(t *testing.T) {
-	system := mappingOf(TierSystem, 10, "sys", onClaim("project_id", "1"), readGrant("npm-internal"))
+	system := mappingOf(TierSystem, 10, "sys", onClaim("project_id", "1"), readGrant("web/npm-internal"))
 	web := mappingOf(ProjectTier("web"), 10, "web-broken", onClaim("project_id", "1"), renderFailing())
 	data := mappingOf(ProjectTier("data"), 10, "data-reader", onClaim("project_id", "1"), readGrant("data-npm"))
 	set := MappingSet{Mappings: []Mapping{web, data, system}}
@@ -232,8 +236,8 @@ func TestR_CI_009_AProjectTiersRenderFailureDropsOnlyItsContribution(t *testing.
 // compiled and on a set built by hand without them.
 func TestR_CI_009_TheExchangesSelectionHasNoTraceAndDecidesAsTheDryRun(t *testing.T) {
 	ms := []Mapping{
-		mappingOf(TierSystem, 20, "p20", onClaim("ref_protected", "true"), readGrant("npm-internal")),
-		mappingOf(TierSystem, 10, "p10", onClaim("pipeline_source", "merge_request_event"), readGrant("npm-internal")),
+		mappingOf(TierSystem, 20, "p20", onClaim("ref_protected", "true"), readGrant("web/npm-internal")),
+		mappingOf(TierSystem, 10, "p10", onClaim("pipeline_source", "merge_request_event"), readGrant("web/npm-internal")),
 		mappingOf(ProjectTier("web"), 10, "web-reader", onClaim("ref_protected", "true"), readGrant("web-npm")),
 	}
 	for _, set := range []MappingSet{{Mappings: ms}, newMappingSet("i-1", 1, 2, ms)} {

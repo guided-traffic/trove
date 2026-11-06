@@ -62,9 +62,9 @@ func TestR_CI_005_AnIssuerChangeThatUnpinsMappingsIsRefused(t *testing.T) {
 	e.issuer(t, a, "gitlab-main", false)
 	e.stack.Repository("npm-internal", "local", "npm", "{}")
 	wantStatus(t, e.do(a, "POST", mappingsOf("gitlab-main"), mapping("path-read", 10, all(eq("namespace_path", "acme")),
-		grants(inline("npm-internal", []string{"*"}, "read")))), 201, "")
+		grants(inline("it/npm-internal", []string{"*"}, "read")))), 201, "")
 	wantStatus(t, e.do(a, "POST", mappingsOf("gitlab-main"), mapping("ns-write", 20, all(eq("namespace_id", "4711"), eq("ref_protected", true)),
-		grants(map[string]any{"repositories": []string{"npm-internal"}, "packages": map[string]any{"include": []string{"@a/*"}}, "actions": []string{"deploy"}, "ownership": "none"}))), 201, "")
+		grants(map[string]any{"repositories": []string{"it/npm-internal"}, "packages": map[string]any{"include": []string{"@a/*"}}, "actions": []string{"deploy"}, "ownership": "none"}))), 201, "")
 
 	t.Run("R-CI-005 public_issuer true with an unpinned mapping", func(t *testing.T) {
 		r := e.replaceIssuer(a, "gitlab-main", map[string]any{"publicIssuer": true})

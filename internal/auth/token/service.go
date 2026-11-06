@@ -120,7 +120,8 @@ type Owner struct {
 	Name string
 }
 
-// Ref renders the owner as the API's reference: the username, or sa:<name>.
+// Ref renders the owner as the API's reference: the username, sa:<name> for an instance-wide service
+// account and sa:<project>/<name> for a project's (the principal name is stored qualified, Q-AUTHZ-209).
 func (o Owner) Ref() string {
 	switch o.Kind {
 	case principal.KindServiceAccount:
@@ -162,8 +163,8 @@ type CreateRequest struct {
 	// Parent is the presenting token of a token-authenticated create: the
 	// derivation rule of R-AUTH-027 applies.
 	Parent *Info
-	// Delegated says a project administrator creates the token of a project service
-	// account (Q-AUTHZ-177). The token then names no system item, has admin false and
+	// Delegated says an Owner of the project, who holds no administrator capability, creates the
+	// token of a project service account (Q-AUTHZ-177). The token then names no system item, has admin false and
 	// is never non-expiring, whatever else the request says (422 invalid_scope).
 	Delegated bool
 }
@@ -274,13 +275,13 @@ func (s *Service) maxActive(t Type) int {
 	return s.o.Tokens.MaxActive.PAT
 }
 
-// checkDelegated is the rule of Q-AUTHZ-177 for a token a project administrator
+// checkDelegated is the rule of Q-AUTHZ-177 for a token an Owner of the project
 // issues: it mirrors the derivation rule (a token carries no more than its owner
 // holds, and the account holds repository rights only), so the scope names no
 // system item and does not exercise system roles. A lifetime of "never" is refused
-// by the lifetime rules, because such a request is no administrator's. The token is
+// by the lifetime rules, because such a request is no Owner's. The token is
 // not self-rotatable: each rotation gives the successor the original lifetime, so a
-// token that rotates itself would outlive the cap the project administrator issued
+// token that rotates itself would outlive the cap the Owner issued
 // it under, for as long as its holder keeps rotating (Q-AUTH-192).
 func checkDelegated(sc scope.Scope, selfRotatable bool) error {
 	if sc.Admin || len(sc.System) > 0 {
@@ -290,7 +291,7 @@ func checkDelegated(sc scope.Scope, selfRotatable bool) error {
 	if selfRotatable {
 		return errs.E(errs.Invalid, errs.CodeValidation, "1 field is invalid.", errs.WithFields(errs.FieldError{
 			Pointer: "/selfRotatable", Code: "invalid_value",
-			Detail: "a token a project administrator issues is not self-rotatable: it lives at most as long as it was issued for",
+			Detail: "a token an Owner of the project issues is not self-rotatable: it lives at most as long as it was issued for",
 		}))
 	}
 	return nil

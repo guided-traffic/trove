@@ -7,17 +7,24 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/guided-traffic/trove/internal/ci/claims"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 func snippetFor(format string, g claims.Spec, protected bool) string {
-	m := Mapping{Name: "acme-publish", Grants: g}
+	return snippetOf("", format, g, protected)
+}
+
+func snippetOf(project, format string, g claims.Spec, protected bool) string {
+	m := Mapping{Name: "acme-publish", Project: project, Grants: g}
 	if protected {
 		eq := []byte(`true`)
 		m.Match = claims.Node{All: []claims.Node{{Claim: "ref_protected", Equals: eq}}}
 	}
 	return renderSnippet(snippetInput{
 		BaseURL: "https://packages.example.com", Audience: "https://packages.example.com", Issuer: "gitlab-main", Mapping: m, Format: format,
-		Formats: map[string]string{"npm-internal": "npm", "nuget-internal": "nuget", "npm-other": "npm"},
+		Formats: map[qname.Repo]string{
+			{Project: "web", Key: "npm-internal"}: "npm", {Project: "web", Key: "nuget-internal"}: "nuget", {Project: "web", Key: "npm-other"}: "npm",
+		},
 	})
 }
 
@@ -33,12 +40,12 @@ func TestTheSnippetIsYAML(t *testing.T) {
 		grants    claims.Spec
 		protected bool
 	}{
-		"npm with a writing grant":       {FormatNPM, claims.Spec{Inline: []claims.InlineGrant{grantOn("npm-internal", claims.Read, claims.Deploy)}}, true},
-		"nuget with a writing grant":     {FormatNuGet, claims.Spec{Inline: []claims.InlineGrant{grantOn("nuget-internal", claims.Read, claims.Deploy)}}, true},
-		"npm with a read-only grant":     {FormatNPM, claims.Spec{Inline: []claims.InlineGrant{grantOn("npm-internal", claims.Read)}}, false},
+		"npm with a writing grant":       {FormatNPM, claims.Spec{Inline: []claims.InlineGrant{grantOn("web/npm-internal", claims.Read, claims.Deploy)}}, true},
+		"nuget with a writing grant":     {FormatNuGet, claims.Spec{Inline: []claims.InlineGrant{grantOn("web/nuget-internal", claims.Read, claims.Deploy)}}, true},
+		"npm with a read-only grant":     {FormatNPM, claims.Spec{Inline: []claims.InlineGrant{grantOn("web/npm-internal", claims.Read)}}, false},
 		"nuget without a literal key":    {FormatNuGet, claims.Spec{Inline: []claims.InlineGrant{grantOn("@any", claims.Read)}}, false},
 		"npm with policies only":         {FormatNPM, claims.Spec{Policies: []string{"ci-read"}}, false},
-		"npm with two repositories":      {FormatNPM, claims.Spec{Inline: []claims.InlineGrant{grantOn("npm-other", claims.Read), grantOn("npm-internal", claims.Deploy)}}, true},
+		"npm with two repositories":      {FormatNPM, claims.Spec{Inline: []claims.InlineGrant{grantOn("web/npm-other", claims.Read), grantOn("web/npm-internal", claims.Deploy)}}, true},
 		"a template names no repository": {FormatNPM, claims.Spec{Inline: []claims.InlineGrant{grantOn("{{ project_path | slug }}-npm", claims.Read)}}, false},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -82,8 +89,35 @@ func TestTheSnippetIsYAML(t *testing.T) {
 // R-CI-028: the failure line of the exchange prints the reason and the request ID, so an administrator finds
 // the audit event of the denial (a finding of the run).
 func TestTheExchangeFailurePrintsTheRequestID(t *testing.T) {
-	text := snippetFor(FormatNPM, claims.Spec{Inline: []claims.InlineGrant{grantOn("npm-internal", claims.Read)}}, false)
+	text := snippetFor(FormatNPM, claims.Spec{Inline: []claims.InlineGrant{grantOn("web/npm-internal", claims.Read)}}, false)
 	if !strings.Contains(text, "jq '{error, error_description, reason, requestId}'") {
 		t.Errorf("the failure line of the exchange lacks requestId:\n%s", text)
+	}
+}
+
+// R-CI-009, R-ARCH-005: the snippet addresses the repositories with their project; a system mapping names
+// `<project>/<key>`, a project's mapping the bare key of its project.
+func TestTheSnippetAddressesTheRepositoriesWithTheirProject(t *testing.T) {
+	system := snippetFor(FormatNPM, claims.Spec{Inline: []claims.InlineGrant{grantOn("web/npm-internal", claims.Read, claims.Deploy)}}, false)
+	project := snippetOf("web", FormatNPM, claims.Spec{Inline: []claims.InlineGrant{grantOn("npm-internal", claims.Read, claims.Deploy)}}, false)
+	for name, text := range map[string]string{"system": system, "project": project} {
+		for _, want := range []string{
+			"registry=https://packages.example.com/api/npm/web/npm-internal/",
+			"//packages.example.com/api/npm/web/npm-internal/:_authToken=${TROVE_TOKEN}",
+			"npm publish --registry https://packages.example.com/api/npm/web/npm-internal/",
+		} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s mapping: the snippet lacks %q:\n%s", name, want, text)
+			}
+		}
+	}
+	nuget := snippetOf("web", FormatNuGet, claims.Spec{Inline: []claims.InlineGrant{grantOn("nuget-internal", claims.Read, claims.Deploy)}}, false)
+	if !strings.Contains(nuget, `value="https://packages.example.com/api/nuget/web/nuget-internal/v3/index.json"`) ||
+		!strings.Contains(nuget, `--source "$TROVE_URL/api/nuget/web/nuget-internal/v3/index.json"`) {
+		t.Errorf("the NuGet source lacks the project:\n%s", nuget)
+	}
+	none := snippetFor(FormatNPM, claims.Spec{Policies: []string{"ci-read"}}, false)
+	if !strings.Contains(none, "/api/npm/<project>/<repository>/") {
+		t.Errorf("the placeholder names project and repository:\n%s", none)
 	}
 }

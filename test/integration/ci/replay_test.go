@@ -95,7 +95,7 @@ func TestR_CI_018_SingleUse(t *testing.T) {
 		}
 		// The database rejects the token row: the mapping's principal is disabled behind the mapping's back, which
 		// IssueCITx refuses at the end of the transaction (R-CI-017).
-		x.addMapping(a, mapping("retry-read", 300, all(eq("namespace_id", "8080")), grants(inline("npm-internal", []string{"*"}, "read"))))
+		x.addMapping(a, mapping("retry-read", 300, all(eq("namespace_id", "8080")), grants(inline("it/npm-internal", []string{"*"}, "read"))))
 		x.exec(`UPDATE principal SET status = 'disabled' WHERE kind = 'ci_mapping' AND name = $1`, xIssuer+"/retry-read")
 		wantOAuth(t, x.exchange(a, tok), 500, "server_error", "internal")
 		if n := x.jtiCount(jti); n != 0 {

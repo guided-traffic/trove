@@ -368,7 +368,7 @@ func TestR_AUTH_027_DerivationRule(t *testing.T) {
 	a := e.newReplica("a", replicaOpts{valkey: vkDead})
 	alice := a.user("alice")
 	ctx := context.Background()
-	scope := `{"repositories":[{"repositories":["npm-local"],"actions":["read","deploy"]}]}`
+	scope := `{"repositories":[{"repositories":["it/npm-local"],"actions":["read","deploy"]}]}`
 	secs := int64(7200)
 	parent := a.pat(alice, func(r *token.CreateRequest) { r.Scope = []byte(scope); r.TTL.Seconds = &secs })
 	info, err := a.tokens.Validate(ctx, parent.Secret)
@@ -383,7 +383,7 @@ func TestR_AUTH_027_DerivationRule(t *testing.T) {
 	t.Run("a narrower child with an earlier expiry", func(t *testing.T) {
 		s := int64(3600)
 		c, err := derive(func(r *token.CreateRequest) {
-			r.Scope = []byte(`{"repositories":[{"repositories":["npm-local"],"actions":["read"]}]}`)
+			r.Scope = []byte(`{"repositories":[{"repositories":["it/npm-local"],"actions":["read"]}]}`)
 			r.TTL.Seconds = &s
 		})
 		if err != nil || c.Record.DerivedFrom != info.ID {
@@ -567,7 +567,7 @@ func TestR_AUTH_030_Rotation(t *testing.T) {
 		alice := a.user("alice")
 		full := a.pat(alice)
 		narrow := a.pat(alice, func(r *token.CreateRequest) {
-			r.Scope = []byte(`{"repositories":[{"repositories":["npm-local"],"actions":["read"]}]}`)
+			r.Scope = []byte(`{"repositories":[{"repositories":["it/npm-local"],"actions":["read"]}]}`)
 		})
 		info, _ := a.tokens.Validate(ctx, narrow.Secret)
 		_, err := a.tokens.Rotate(ctx, token.RotateRequest{Caller: admin, ID: full.Record.ID, Parent: &info})

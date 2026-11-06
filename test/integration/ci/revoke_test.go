@@ -129,7 +129,7 @@ func TestR_CI_017_DeleteTokensCurrentEndsTheJobsToken(t *testing.T) {
 	ops := e.stack.User("publisher")
 	e.stack.Policy("publishers", []string{"read", "deploy"}, []string{"npm-internal"}, ops)
 	a, b := e.web("web-a"), e.web("web-b")
-	tok := e.issue(a, e.bundle("4711", "acme/web/frontend", m.contribution(nil, grant([]string{"npm-internal"}, []string{"@acme/*"}, claims.Read, claims.Deploy))), job{"1", "2"}, 10*time.Minute)
+	tok := e.issue(a, e.bundle("4711", "acme/web/frontend", m.contribution(nil, grant([]string{"it/npm-internal"}, []string{"@acme/*"}, claims.Read, claims.Deploy))), job{"1", "2"}, 10*time.Minute)
 	mustStatus(t, "publish", e.publish(a, "npm-internal", tok.secret, "@acme/frontend", "1.0.0"), 201)
 	mustStatus(t, "npm view before", e.install(b, "npm-internal", tok.secret, "@acme/frontend"), 200)
 	current := e.stack.Do(a, "GET", "/api/v1/tokens/current", tok.secret, nil)

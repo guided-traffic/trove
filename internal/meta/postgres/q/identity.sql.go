@@ -1116,6 +1116,69 @@ func (q *Queries) IdentityListGroups(ctx context.Context, arg IdentityListGroups
 	return items, nil
 }
 
+const identityListProjectServiceAccounts = `-- name: IdentityListProjectServiceAccounts :many
+SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision, s.description,
+       pr.key::text AS project
+  FROM principal p JOIN service_account s ON s.principal_id = p.id
+  JOIN project pr ON pr.id = s.project_id
+ WHERE p.kind = 'service_account' AND pr.key = $1::text AND p.name > $2::text
+   AND ($3::text = '' OR substr(p.name, char_length(pr.key) + 2) ILIKE '%' || $3::text || '%')
+ ORDER BY p.name
+ LIMIT $4::int
+`
+
+type IdentityListProjectServiceAccountsParams struct {
+	Project string
+	After   string
+	Query   string
+	MaxRows int32
+}
+
+type IdentityListProjectServiceAccountsRow struct {
+	ID          string
+	Name        string
+	Status      string
+	CreatedAt   pgtype.Timestamptz
+	Revision    int64
+	Description string
+	Project     string
+}
+
+// The accounts of one project by the key of the project, ordered by stored name
+// (<project>/<name>); the text filter matches the name within the project.
+func (q *Queries) IdentityListProjectServiceAccounts(ctx context.Context, arg IdentityListProjectServiceAccountsParams) ([]IdentityListProjectServiceAccountsRow, error) {
+	rows, err := q.db.Query(ctx, identityListProjectServiceAccounts,
+		arg.Project,
+		arg.After,
+		arg.Query,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []IdentityListProjectServiceAccountsRow{}
+	for rows.Next() {
+		var i IdentityListProjectServiceAccountsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Status,
+			&i.CreatedAt,
+			&i.Revision,
+			&i.Description,
+			&i.Project,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const identityListServiceAccounts = `-- name: IdentityListServiceAccounts :many
 SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision, s.description,
        COALESCE(pr.key, '')::text AS project

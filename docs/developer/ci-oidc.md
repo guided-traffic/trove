@@ -33,10 +33,19 @@ test/oidcstub.
   bundle's `AuthzEpoch` no longer holds its mapping as active (`Index.CIGrants`).
 - **The management API refuses CI tokens by default** (Q-CI-18): `ciGate` in [authorize.go](../../internal/api/v1/authorize.go); only public operations,
   the action form and `x-trove-ci: admitted` (`GET` and `DELETE /tokens/current`) admit one. Package protocols and `/files/…` are outside that table.
-- **Tiers.** First match inside a tier, union across tiers (R-CI-009). The tier `system` is the administrators'; a project's administrators manage the tier
+- **Tiers.** First match inside a tier, union across tiers (R-CI-009). The tier `system` is the administrators'; a project's Owners manage the tier
   `project:<key>` (Q-CI-26), bounded like project policies: inline grants over the project's repositories (the contribution's `Project` makes the evaluator
-  compile them against those only), the project's own policies, no groups, never `manage`, a name starting `<key>-`. Issuers are the system administrators' and
-  the Helm values' (`ci.issuers`, Q-CI-16); a project administrator lists them read-only.
+  compile them against those only), the project's own policies, no groups, never `manage`. A mapping is named within its issuer's tier: `ci_mappings.name` is
+  the bare name under `UNIQUE (issuer_id, tier, name)`, the principal is `<issuer>/<name>` for the system tier and `<issuer>/<projectKey>/<name>` for a project's
+  (Q-AUTHZ-214; `Mapping.PrincipalName`, `claims.MappingRef(issuer, project, name)`), and the exchange and the issuance filters write a project's mapping as
+  `<projectKey>/<name>` (`Mapping.ShortName`). Issuers are the system administrators' and the Helm values' (`ci.issuers`, Q-CI-16); a project Owner lists them
+  read-only.
+- **One selector grammar.** `claims` has no grammar of its own: `claims/selector.go` reads every selector with `qname.ParseSelector` in a context
+  (R-CI-007, Q-AUTHZ-216). The scope items of the exchange and the grants of a system mapping are instance selectors (`<projectGlob>/<keyGlob>[:<format>]`,
+  `@any…`); the grants of a project mapping are bare keys of the project. A bare key in an instance context is `scope_malformed` in the exchange and
+  `invalid_pattern` at the save of a mapping, a qualified one in a project's mapping `invalid_pattern`; a template is read with a stand-in for each
+  substitution (`Template.Skeleton`), so a template of the wrong shape is refused at the save. `Freeze` writes the selectors of a project mapping in their instance
+  form (`instanceForm`: `npm-*` becomes `web/npm-*`, `@any` becomes `web/*`), so the token carries one grammar and the engine and `NarrowFrozen` read it alike.
 - **Stored JSON is the wire JSON.** `ci_mappings.match`, `.grants`, `.options` hold the lowerCamelCase forms of the `claims` types.
 - **No attribution, no vendor names** in anything the work packages write; the decider of design questions is "the development agent".
 
@@ -46,7 +55,7 @@ test/oidcstub.
 
 | File | What |
 |---|---|
-| [00026_ci_oidc.sql](../../internal/meta/postgres/migrations/00026_ci_oidc.sql) | `ci_issuers`, `ci_issuer_keys`, `ci_mappings` (with `tier`, `project_id`), `ci_subject_token_uses`, `ci_token_issuances`; the epoch rows of `ci_mappings` and `ci_issuer_keys`; `package_owner.ci_issuer_id → ci_issuers` `NOT VALID` |
+| [00026_ci_oidc.sql](../../internal/meta/postgres/migrations/00026_ci_oidc.sql) | `ci_issuers`, `ci_issuer_keys`, `ci_mappings` (with `tier`, `project_id`, the bare `name` unique per `(issuer_id, tier)`), `ci_subject_token_uses`, `ci_token_issuances`; the epoch rows of `ci_mappings` and `ci_issuer_keys`; `package_owner.ci_issuer_id → ci_issuers` `NOT VALID` |
 | [00027](../../internal/meta/postgres/migrations/00027_ci_oidc_owner_index.sql), [00028](../../internal/meta/postgres/migrations/00028_ci_oidc_validate.sql) | the index `CONCURRENTLY`, the validation (R-HA-018) |
 | [00029](../../internal/meta/postgres/migrations/00029_ci_issuances_issued_index.sql), [00030](../../internal/meta/postgres/migrations/00030_ci_issuances_issuer_index.sql), [00031](../../internal/meta/postgres/migrations/00031_ci_issuances_contributions_index.sql) | the three indexes of the issuance statements, each its own `CONCURRENTLY` step (Q-CI-53): `(issued_at DESC, token_id DESC)`, `(issuer_id, issued_at DESC, token_id DESC)`, a GIN on `grants -> 'contributions'`; none on `audit_event` (it is partitioned) |
 | [tables_ci.go](../../internal/meta/postgres/tables_ci.go) | export classes (`ci_issuer_keys` transient, the rest data) and the revision columns `ci_issuers.version`, `.mappings_version`, `ci_mappings.version` |
@@ -238,7 +247,7 @@ anchors), and the per-mapping bundle (Q-CI-17 as amended).
 | [claims/glob.go](../../internal/ci/claims/glob.go), [regex.go](../../internal/ci/claims/regex.go) | the glob of R-CI-010 (greedy, at most the product of the lengths); RE2 anchored as `^(?:…)$` |
 | [claims/template.go](../../internal/ci/claims/template.go) | the grammar, the filters, the contexts, `Anchored` |
 | [claims/grants.go](../../internal/ci/claims/grants.go) | `Spec.Render`, `ApplyCaps`, `InlineGrant.ResolvedOwnership`, `Frozen`, `FrozenMapping`, `DecodeFrozen` |
-| [claims/scope.go](../../internal/ci/claims/scope.go), [selector.go](../../internal/ci/claims/selector.go) | `ParseScope`, `Narrow`, `NarrowFrozen`, `FormatScope`, `Frozen.InlineScope`, `Freeze`; the selector syntax of R-AUTHZ-004 (a test holds it equal to `authz.ValidateSelector`) |
+| [claims/scope.go](../../internal/ci/claims/scope.go), [selector.go](../../internal/ci/claims/selector.go) | `ParseScope`, `Narrow`, `NarrowFrozen`, `FormatScope`, `Frozen.InlineScope`, `Freeze`; the selector grammar of R-AUTHZ-004 through `qname.ParseSelector` (a test holds the scope grammar equal to `authz.ValidateSelector`); `instanceForm`, `covers`, `disjoint` over instance selectors |
 | [claims/check.go](../../internal/ci/claims/check.go) | `Check` and the warnings |
 
 ### What the other packages rely on
@@ -260,7 +269,7 @@ anchors), and the per-mapping bundle (Q-CI-17 as amended).
   policy and group grants and the selectors the text cannot decide (classes, format filters) from the index (`scope_not_granted`),
   `FormatScope` per mapping or `Frozen.InlineScope`, with the policy and group items in front. No `Detail` holds a claim value or token
   material, except the condition trace's, which quotes the claim values and belongs to the dry run and the audit event only.
-- **The reason leaf.** `claims.ReasonProjectPrefixRequired`, `ReasonInvalidPattern` and `ReasonInvalidValue` have the names of registered
+- **The reason leaf.** `claims.ReasonInvalidPattern` and `ReasonInvalidValue` have the names of registered
   `errs` codes; they move to `internal/ci/reason` with the next change of that file.
 
 ### Contract changes
@@ -326,8 +335,9 @@ One READ COMMITTED transaction: the project row `FOR UPDATE` (a project's create
 (`lockIssuer`), the mapping, the policies named (`CiPoliciesLock`, in name order), then the rules (`check`: the policies and groups,
 `claims.Check` with `SaveInput.PolicyActions` and `IssuerFacts.Project`, the project's repositories), the priority, the principal, the
 row, the bindings, `CiIssuerBumpMappings` and `cluster.Notify` on `ci_mappings`, a create, enable, disable or delete also on `authz`
-(`notifyMappingState`, Q-CI-47), and the event with the journal entry. A project's create checks its prefix before anything is read
-(`claims.CheckProjectName`, Q-CI-51). A name that exists is 409 `already_exists`, a priority held by another mapping of the tier 409
+(`notifyMappingState`, Q-CI-47), and the event with the journal entry. A name is looked up in the issuer's tier only (`mappingByName(issuer, tier, name)`), so the same name may be a system mapping and a mapping of each project and a
+taken name is 409 `already_exists` within its own tier; a project mapping lists the policies of its project by their name within the project (stored as
+`<project>/<name>`, `storedPolicyName`). A name that exists is 409 `already_exists`, a priority held by another mapping of the tier 409
 `priority_taken`, a limit 422 `mapping_limit_reached` (`ci.mappings.max_per_issuer`, or `ci.mappings.max_per_project` for a project's tier,
 `checkProjectQuota`). A disable or delete revokes only when the mapping has a row in `ci_token_issuances` (`CiMappingHasIssuances`, bounded to unexpired records, Q-CI-53) and
 then calls `Revoker.RevokeMappingTx` in the same transaction.
@@ -429,7 +439,7 @@ reach). The gaps are H-418 to H-420 of [ci-federation.md](../security/ci-federat
 - `Exchanger.CheckAddress` takes the `audit.Source` (the address, the user agent and the request ID for the denial event), not an
   address string; `Exchanger.Refused` is new; `ExchangeRequest.RequestID` is `Source.TraceID`.
 - `ComputeTTL` returns the reason and a detail naming the bound (`(ttl, reason, detail)`) and lives in ttl.go; the reason
-  `ttl_below_minimum` is new (Q-CI-41). The reason names `project_prefix_required`, `invalid_pattern` and `invalid_value` moved from
+  `ttl_below_minimum` is new (Q-CI-41). The reason names `invalid_pattern` and `invalid_value` moved from
   `internal/ci/claims` to `internal/ci/reason`.
 - `StubExchanger` is gone, and so are the stubs: stubs.go keeps `NotImplemented`.
 - `v1.CIServices.Exchange` (the `ci.exchange` settings the handler applies) is new; `ciPending` is gone.

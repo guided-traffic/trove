@@ -380,6 +380,23 @@ func (t *Template) unconstrained() bool {
 	return false
 }
 
+// Skeleton is the template with every substitution replaced by stand, the text the save-time check
+// reads as a selector to learn the shape of what the template renders.
+func (t *Template) Skeleton(stand string) string {
+	if t == nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, p := range t.pieces {
+		if p.expr == nil {
+			b.WriteString(p.literal)
+			continue
+		}
+		b.WriteString(stand)
+	}
+	return b.String()
+}
+
 // classLike reports whether a template with a substitution starts with literal text "@": it would
 // render a class selector, which a template never produces (R-AUTHZ-004).
 func (t *Template) classLike() bool {

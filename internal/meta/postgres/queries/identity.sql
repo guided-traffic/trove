@@ -338,6 +338,18 @@ SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision, s.descripti
  ORDER BY p.name
  LIMIT sqlc.arg(max_rows)::int;
 
+-- name: IdentityListProjectServiceAccounts :many
+-- The accounts of one project by the key of the project, ordered by stored name
+-- (<project>/<name>); the text filter matches the name within the project.
+SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision, s.description,
+       pr.key::text AS project
+  FROM principal p JOIN service_account s ON s.principal_id = p.id
+  JOIN project pr ON pr.id = s.project_id
+ WHERE p.kind = 'service_account' AND pr.key = sqlc.arg(project)::text AND p.name > sqlc.arg(after)::text
+   AND (sqlc.arg(query)::text = '' OR substr(p.name, char_length(pr.key) + 2) ILIKE '%' || sqlc.arg(query)::text || '%')
+ ORDER BY p.name
+ LIMIT sqlc.arg(max_rows)::int;
+
 -- name: IdentityUpdateServiceAccount :exec
 UPDATE service_account SET description = sqlc.arg(description)::text WHERE principal_id = sqlc.arg(id)::text::uuid;
 
