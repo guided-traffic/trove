@@ -208,14 +208,6 @@ Found on 2026-11-06 while reviewing the nightly runs for phase 7:
 
 ### Tests and tools
 
-- **F-57 · The statement `VulnAdvisoryGroupRows` takes about 6 s a round and meets the 30 s statement timeout under load, so
-  V-1 of R-VULN-028 fails** (confirmed by the development agent on the integration stack, 2026-11-06, with `log_min_duration_statement`
-  at 5 s; not yet diagnosed). The statement (`internal/meta/postgres/queries/vuln_sync.sql`, about line 145) matches `id = ANY(names) OR
-  aliases && names`; a GIN index on `aliases` exists. In 5 of 14 performance runs at a high load average V-1 failed after about 72 s with
-  `database_timeout` and the progress at 231,012 of 231,012; once V-1 took 11.4 min, otherwise 1.3 to 2.5 min. Probably the V-1 that did
-  not finish in the nightly runs 41748522448 and 42002617340. Done when the statement's plan is known and the round stays far below the
-  timeout under load.
-
 - **F-56 · The set `vuln` of the scheduled nightly run 42002617340 failed in its setup on one `EOF` from the npm test upstream**
   (confirmed in the job log, not reproduced). `vuln_env_test.go:214` seeds the upstream with `POST
   https://npmstub.trove.svc/-/stub/publish` and got `EOF` (09:48:00 UTC, GitHub-hosted runner); `TestVuln_R_VULN_022_Journeys` failed on
@@ -295,7 +287,9 @@ Found on 2026-11-03 while building phase 6:
   integration stack (load 5 to 25). V-4: a publish's evaluation made 8 sequential round trips of 0.42 to 0.70 ms; it makes 2 now
   (`q.Pipeline`): V-4 p99 4.6 ms (median 1.32 ms) in the last whole run at load 8 to 13, 5.8 ms in the run before; the margin is thin. The
   perf jobs of the nightly run after its kind legs since Q-ARCH-325. Done when two nightly runs in a row meet all nine, or a decision
-  revises V-4 with the measured floor (Q-VULN-82 names the next step). V-1's failures are F-57.
+  revises V-4 with the measured floor (Q-VULN-82 names the next step). V-1 met its statement timeout under load: the advisory
+  group statement was planned as a sequential scan and read the aliases index's pending list in full; fixed with Q-VULN-90 and Q-VULN-91
+  (V-1 1.45 min on the integration stack, the whole run passed, V-5b 1.036 transactions against 1).
 
 Found on 2026-11-03 while closing phase 5:
 

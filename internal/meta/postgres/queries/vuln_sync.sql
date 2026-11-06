@@ -146,16 +146,22 @@ DELETE FROM vuln_advisory WHERE ecosystem = sqlc.arg(ecosystem)::text AND id = A
 -- The stored records that are or alias any of the names: one round of the closure that finds an alias group (R-VULN-006).
 -- severity* is the severity decided for the record, own_* the record's own; a row stored before 00038 has no own_* and its
 -- decided columns stand in.
-SELECT id, canonical_id, aliases, kind, (withdrawn IS NOT NULL)::boolean AS is_withdrawn, severity, severity_source,
-       COALESCE(cvss_version, '')::text AS cvss_version, COALESCE(cvss_vector, '')::text AS cvss_vector,
-       COALESCE(cvss_score, 0)::float8 AS cvss_score,
-       (CASE WHEN own_severity IS NULL THEN severity ELSE own_severity END)::text AS own_severity,
-       (CASE WHEN own_severity IS NULL THEN severity_source ELSE own_severity_source END)::text AS own_severity_source,
-       (CASE WHEN own_severity IS NULL THEN COALESCE(cvss_version, '') ELSE COALESCE(own_cvss_version, '') END)::text AS own_cvss_version,
-       (CASE WHEN own_severity IS NULL THEN COALESCE(cvss_vector, '') ELSE COALESCE(own_cvss_vector, '') END)::text AS own_cvss_vector,
-       (CASE WHEN own_severity IS NULL THEN COALESCE(cvss_score, 0) ELSE COALESCE(own_cvss_score, 0) END)::float8 AS own_cvss_score
-  FROM vuln_advisory
- WHERE ecosystem = sqlc.arg(ecosystem)::text AND (id = ANY(sqlc.arg(names)::text[]) OR aliases && sqlc.arg(names)::text[]);
+-- One lookup of the primary key and of the aliases index per name (Q-VULN-90). `id = ANY(names) OR aliases && names` left the
+-- choice to estimates the data misleads: a table whose aliases are mostly empty makes `&&` look like it matches a share of the
+-- table, and the plan was a sequential scan of the whole table for every round; the index lookup of a name costs microseconds,
+-- the sequential scan seconds on a loaded host. The OR in the join condition allows a nested loop only, so every name is
+-- probed through the two indexes; `@> ARRAY[name]` is the one-key form of `&&`. A record two names reach is returned once.
+SELECT DISTINCT ON (v.id) v.id, v.canonical_id, v.aliases, v.kind, (v.withdrawn IS NOT NULL)::boolean AS is_withdrawn, v.severity, v.severity_source,
+       COALESCE(v.cvss_version, '')::text AS cvss_version, COALESCE(v.cvss_vector, '')::text AS cvss_vector,
+       COALESCE(v.cvss_score, 0)::float8 AS cvss_score,
+       (CASE WHEN v.own_severity IS NULL THEN v.severity ELSE v.own_severity END)::text AS own_severity,
+       (CASE WHEN v.own_severity IS NULL THEN v.severity_source ELSE v.own_severity_source END)::text AS own_severity_source,
+       (CASE WHEN v.own_severity IS NULL THEN COALESCE(v.cvss_version, '') ELSE COALESCE(v.own_cvss_version, '') END)::text AS own_cvss_version,
+       (CASE WHEN v.own_severity IS NULL THEN COALESCE(v.cvss_vector, '') ELSE COALESCE(v.own_cvss_vector, '') END)::text AS own_cvss_vector,
+       (CASE WHEN v.own_severity IS NULL THEN COALESCE(v.cvss_score, 0) ELSE COALESCE(v.own_cvss_score, 0) END)::float8 AS own_cvss_score
+  FROM unnest(sqlc.arg(names)::text[]) AS n(name)
+  JOIN vuln_advisory v ON v.ecosystem = sqlc.arg(ecosystem)::text AND (v.id = n.name OR v.aliases @> ARRAY[n.name])
+ ORDER BY v.id;
 
 -- name: VulnAdvisorySetCanonical :exec
 UPDATE vuln_advisory SET canonical_id = sqlc.arg(canonical)::text
