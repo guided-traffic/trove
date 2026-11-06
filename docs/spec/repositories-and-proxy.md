@@ -710,7 +710,7 @@ operation of its own ([Q-REPO-217](#q-repo-217--a-repository-moves-to-another-pr
 |---|---|
 | Request | `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/move`, body `{"project": "<target project key>"}`; no `If-Match`: the path names the source |
 | Success | 200, `Location: /api/v1/projects/<target>/repositories/<repoKey>`, the new `ETag`, `Trove-Authz-Epoch`; body: the document as R-REPO-010 returns it at the new address |
-| Errors | 400 `malformed_request`; 401; 403; 404 for a source repository or a target project the caller cannot see; 409 `repository_in_use` naming the objects of the source project that name the repository; 409 `already_exists` when the target project has the key, also for a repository being deleted there; 409 managed by configuration as code ([R-OPS-029](operations-and-observability.md)) |
+| Errors | 400 `malformed_request`; 401; 403; 404 for a source repository or a target project the caller cannot see; 409 `repository_in_use` naming the objects of the source project that name the repository in the problem member `references`, `[{"kind": "virtual_member", "name": "npm-all"}]`; 409 `already_exists` when the target project has the key, also for a repository being deleted there; 409 managed by configuration as code ([R-OPS-029](operations-and-observability.md)) |
 | Permission | `repositories:write-config`, or the role `owner` in both the source and the target project ([authorization.md](authorization.md) R-AUTHZ-026); recent authentication ([api-and-ui.md](api-and-ui.md) R-API-007) |
 
 - **Only while nothing of the source project names it.** The move is refused with 409 `repository_in_use` while a virtual
@@ -720,7 +720,11 @@ operation of its own ([Q-REPO-217](#q-repo-217--a-repository-moves-to-another-pr
   `ownershipDomain` names a shared ownership domain of the source project ([authorization.md](authorization.md)
   R-AUTHZ-020, P1). A virtual repository moves only without members and deployment target, which are repositories of the
   source project. The answer lists each referencing object by kind and name, as far as the caller may read it; the caller
-  removes the references and moves again. Nothing is rewritten on the caller's behalf.
+  removes the references and moves again. Nothing is rewritten on the caller's behalf. The kinds of `references` are
+  `virtual_member`, `pin_rule` and `virtual_deployment_target` (a virtual repository of the source project names it), `policy`
+  (a key selector of the source project's policy, by its name within the project), `ci_mapping` (an inline grant of a mapping of
+  the source project's tier names its key), and for a virtual repository that moves `member` and `deployment_target` (its own,
+  which keep it from moving).
 - **One transaction.** The move takes the row locks of both projects in key order and of the repository, changes the
   repository's `project_id`, raises its `config_version`, writes the audit event `repository.moved` with the source and the
   target project, and calls `cluster.Notify("authz", …)` and `cluster.Notify("repo_config", …)` with the repository id
