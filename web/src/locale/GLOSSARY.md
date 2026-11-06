@@ -81,3 +81,4 @@ before using a new term in a German text.
 | pause, resume (a mirror); run a pass now, run a full pass | pausieren, fortsetzen; Durchlauf jetzt starten, Vollständigen Durchlauf starten |
 | rate-limit wait, bound (of a mirror), discovery (of names) | Rate-Limit-Wartezeit, Grenze, Ermittlung |
 | test connection, upstream URL, negative cache | Verbindung testen, Upstream-URL, negativer Cache |
+| licence (of the software the build bundles, its notices) | Lizenz (der eingebundenen Software, Hinweise) |

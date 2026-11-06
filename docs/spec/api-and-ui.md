@@ -2451,7 +2451,11 @@ Priority: **MVP** · Covers: UI-058
     links such as `/ui/login?auto_sign_in=false` of [identity-and-authentication.md](identity-and-authentication.md)
     keep working;
   - `index.html` gets a per-response CSP nonce as the `ngCspNonce` attribute of the root element,
-    which Angular applies to the styles it inserts.
+    which Angular applies to the styles it inserts;
+  - the notices of the bundled software, `3rdpartylicenses.txt` in every locale directory
+    (`/ui/<locale>/3rdpartylicenses.txt`, Q-UI-144): an unhashed text file, `text/plain; charset=utf-8`, revalidated like
+    `index.html`. The shared asset store takes only hashed files, so it never holds the notices, and every replica serves the
+    notices of its own build.
 - Headers for UI documents:
   `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'nonce-<n>'; img-src 'self' data:<image origins>; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types angular angular#bundler`,
   `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`,
@@ -3827,7 +3831,8 @@ INV-12 makes roles, drains and Valkey MVP and INV-19 the backup job (Q-UI-7).
   their screens and "New repository" for `repositories:write-config`; and the job queue with the
   active key. It refreshes every 15 seconds with a pause control (WCAG 2.2.2), like the status screen,
   and a failing overview leaves the rest readable with a retry.
-- Cards from `GET /api/v1/system/info` and `/system/replicas`: version and revision; base URL and
+- Cards from `GET /api/v1/system/info` and `/system/replicas`: version and revision, with a link to the notices of the
+  bundled software of the same build (Q-UI-144); base URL and
   source; the maintenance mode, as a row only while it is not `normal` (Q-OPS-156); database (server version, schema version against the supported ones);
   scheduled tasks (`/system/tasks`: next run, last outcome) with "Run now", which runs on a
   `worker` replica; recent jobs (`/system/jobs`) with cancel.
@@ -8055,6 +8060,39 @@ Revisit if a file of the store can exceed `shared.MaxFileSize`.
 `OpenOptions.Verify` in [download.go](../../internal/blob/download.go), `readVerified` in
 [shared.go](../../internal/webui/shared/shared.go). Tests: `TestDownloadVerification` (a swapped object with verification off),
 `TestReadVerified`.
+
+### Q-UI-144 · Where the notices of the bundled software are served
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the font licence of Inter (OFL-1.1) asks that its notice travel with the font, and the icon font is Apache-2.0, which needs
+its licence text with the redistribution. The build of 2026-11-06 writes Angular's `3rdpartylicenses.txt` to `web/dist/web/`, next
+to `browser/`, so it was not in the locale directories the binary embeds. The file names `@fontsource-variable/inter` with OFL-1.1
+and has no entry for `material-icons`: the icon font's stylesheet (`material-icons/iconfont/outlined.css`) has no comment and no
+licence text, so there is nothing for the extraction to collect.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One copy per locale, `/ui/<locale>/3rdpartylicenses.txt` (chosen) | `build:embed` writes Angular's file and the icon font's licence into each locale directory, after the hashed-name check; the handler serves it as any file of the locale | No new code path: the handler's file rule (R-UI-001) serves it; every UI file lives under `/ui/<locale>/`, and the link of a page resolves through its base href | Two identical copies in the binary (about 38 KB each); the address names a locale |
+| (b) One address, `/ui/3rdpartylicenses.txt`, for every locale | A case of `webui.ServeHTTP` before the locale redirect, and an exception to the rule that `/ui/` paths carry a locale | One address for all languages | A new form of path under `/ui/`, and a code path and a test of its own; the text is English in every locale anyway |
+| (c) An endpoint of the management API | A route in the API's surface and the OpenAPI document | The API's conventions | A notice is not an API resource; it adds an operation for a static file |
+
+**Choice:** (a).
+
+**Rationale:** the notices are the same English text in both locales, so the copies cost binary size and nothing else, while the
+handler, the cache rules and the content type (`.txt` is `text/plain; charset=utf-8`) already exist. The notices are not hashed, so
+the shared asset store does not publish them (`Store.Asset` and `Store.Publish` take hashed names only), and a rolling upgrade
+serves each release's own notices from its own replicas. The link sits on the Installation card of the system status (R-UI-038),
+next to the version it belongs to, and the manual names the address for everyone, including people without `settings:read`.
+Revisit if an address that does not depend on the locale must be cited from outside the UI (then (b)), or if the notices grow
+beyond what two copies in the binary cost.
+
+**Applied in the spec:** R-UI-001 (serving), R-UI-038 (the Installation card). Documented in
+[web-ui.md](../developer/web-ui.md#how-the-build-reaches-the-binary), [design-language.md](../developer/design-language.md) and the
+[manual](../manual/admin/overview.md#one-binary-several-roles). Code: [build-embed.mjs](../../web/scripts/build-embed.mjs),
+[system-status.html](../../web/src/app/features/system/system-status.html). Tests: `TestR_UI_001_ThirdPartyNotices`
+([notices_test.go](../../internal/webui/notices_test.go)), and `R-UI-038 Q-UI-144` in
+[system-status.spec.ts](../../web/src/app/features/system/system-status.spec.ts).
 
 ### Q-UI-145 · The logo's wordmark as paths from Inter Bold, and a reduced mark as the favicon
 

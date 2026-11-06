@@ -501,8 +501,6 @@ tasks come before the phase's own work packages (step 2, item 5), in this order;
 - **T-12 · The logo's open point** ([design-language.md](../developer/design-language.md#logo)): `web/public/brand/drafts/` and
   the preview on the sign-in page removed once the owner calls the logo final. The reduced form for the favicon and the
   wordmark as paths are built ([Q-UI-145](../spec/api-and-ui.md#q-ui-145--the-logos-wordmark-as-paths-from-inter-bold-and-a-reduced-mark-as-the-favicon)).
-- **T-13 · Ship the third-party notices with the binary** (design-language.md, "What this does not cover"): the build's
-  `3rdpartylicenses.txt` (Inter's OFL-1.1, the icon font, the bundled libraries) is not embedded; serve it with the UI.
 
 The owner answered every open question of the review on 2026-11-06; a new question during the run is asked one at a time, with
 options and a recommendation, and what depends on it is not built before the answer.

@@ -59,7 +59,7 @@ Run in `web/` after `nvm use` (or any Node matching `.nvmrc`).
 | `npm run generate:api` | `openapi-typescript ../api/openapi.yaml` into `src/app/api/generated/schema.d.ts`, committed. Rerun it whenever `api/openapi.yaml` changes |
 | `npm run build` | Localized production build into `web/dist/web/browser/<locale>/` |
 | `npx playwright install --with-deps chromium` | The browser build of the locked Playwright version, outside the repository (needed for the journeys, not for `npm test`) |
-| `npm run build:embed` | `build`, the compressed-size budget check, the check of the hashed names ([hashed.mjs](../../web/scripts/hashed.mjs)), then copy each locale to `internal/webui/dist/<locale>/`. `TROVE_UI_BUNDLE_MARK=1` builds the second bundle of the upgrade test (`--extract-licenses=false`: the same code under other hashed names, Q-HA-124) |
+| `npm run build:embed` | `build`, the compressed-size budget check, the check of the hashed names ([hashed.mjs](../../web/scripts/hashed.mjs)), then copy each locale to `internal/webui/dist/<locale>/` with its `3rdpartylicenses.txt` (Q-UI-144). `TROVE_UI_BUNDLE_MARK=1` builds the second bundle of the upgrade test (`--extract-licenses=false`: the same code under other hashed names, Q-HA-124) |
 
 `make web` runs `make web-ci` (`npm ci`) and `make web-embed` (`npm run build:embed`); lint and the unit tests are
 `make web-lint` and `make web-test`.
@@ -150,6 +150,15 @@ internal/webui:  //go:embed all:dist
   [internal/webui/hashed.go](../../internal/webui/hashed.go) (Q-UI-140): every file but `index.html` and the copies of
   `web/public` must match it, and no copy of `web/public` may. A change of the builder's names fails here, not in a rolling
   upgrade; `TestHashedPatternOfTheBuild` keeps [hashed.mjs](../../web/scripts/hashed.mjs) equal to the Go pattern.
+- The notices of the bundled software (Q-UI-144). Angular writes its `3rdpartylicenses.txt` to `web/dist/web/`, next to
+  `browser/`, so the locale directories do not hold it. `build:embed` appends the icon font's licence (`material-icons`,
+  Apache-2.0, from `node_modules/material-icons/LICENSE`, which Angular does not collect) and writes the file into every locale
+  directory after the hashed-name check, because it is not a hashed file. The build fails when Inter's OFL-1.1 or the icon
+  font's section is missing. It is served at `/ui/<locale>/3rdpartylicenses.txt` as any file of the locale: `text/plain;
+  charset=utf-8`, `no-cache`. The shared asset store does not hold it, since the store takes hashed names only. With
+  `TROVE_UI_BUNDLE_MARK=1` a second build that only extracts the licences provides the file, so every binary has one.
+  The web job of [release.yml](../../.github/workflows/release.yml) runs `TestR_UI_001_ThirdPartyNotices` on the built tree
+  with `TROVE_UI_BUILT=1`, where the unit job skips it on the placeholder.
 - The Go package does not compress. Compression belongs to the edge or a middleware of the server
   shell.
 
@@ -241,7 +250,8 @@ Rules the code keeps:
   a release can still meet the `404` once (Q-HA-125).
 
 Tests: `TestIsHashed`, `TestHashedFiles`, `TestSharedAssets`, `TestSharedCacheBound`, `TestChunkCaching` and
-`TestHashedPatternOfTheBuild` ([internal/webui](../../internal/webui/shared_test.go)); `TestAssetAsksOnlyForHashedNames`,
+`TestHashedPatternOfTheBuild` ([internal/webui](../../internal/webui/shared_test.go)); `TestR_UI_001_ThirdPartyNotices`
+([notices_test.go](../../internal/webui/notices_test.go)); `TestAssetAsksOnlyForHashedNames`,
 `TestKeeperLifecycle` ([internal/webui/shared](../../internal/webui/shared/shared_test.go)); `TestR_HA_020_SharedUIAssets` and
 `TestR_HA_020_SharedUIAssetsWithoutTheObjectStore` ([test/integration/uiassets](../../test/integration/uiassets/uiassets_test.go)): two
 replicas with different builds on one database and object store, every file of one's `index.html` loaded from the other with its
@@ -482,7 +492,8 @@ journey is `09-guides.spec.ts` ([e2e.md](e2e.md#browser-journeys)).
 
 Go side: [webui_test.go](../../internal/webui/webui_test.go) covers nonces, headers, deep links,
 caching, 404s, locale redirects, placeholder mode and start-up validation; [shared_test.go](../../internal/webui/shared_test.go)
-the hashed pattern and the shared asset store. Subtest names carry the
+the hashed pattern and the shared asset store; [notices_test.go](../../internal/webui/notices_test.go) the notices of the bundled
+software. Subtest names carry the
 requirement ID (`R-ARCH-004`, `R-UI-001`, ...) for the coverage generator.
 
 ## Cross-cutting mechanisms

@@ -193,6 +193,7 @@ parameter, run `node scripts/brand-logo.mjs` in `web/`, and the dev server reloa
 | [web/src/styles/_tokens.scss](../../web/src/styles/_tokens.scss) | trove's own properties: the type (`--trove-font-*`, `--trove-text-*`, `--trove-heading-*`), the radii, the link, the heading colour, the focus ring, the raised surface, the card, the table head, the frame (`--trove-nav-*`, the panel's radius and gap, the breadcrumb bar's height), the search field, the menus, the status colours |
 | [web/src/styles/_controls.scss](../../web/src/styles/_controls.scss) | The controls of the table above, from the `--trove-control-*`, `--trove-accent-fill`, `--trove-btn-*` and `--trove-danger-*` tokens |
 | [web/src/styles/_shell.scss](../../web/src/styles/_shell.scss) | How the frame uses them: the sidebar's entries (28 px, 8 px round, a 16 px icon in a 24 px box), the current entry, the panel, the breadcrumb bar (40 px), the top bar's actions and the avatar, the menus |
+| [web/scripts/build-embed.mjs](../../web/scripts/build-embed.mjs) | The notices of the bundled software: Angular's `3rdpartylicenses.txt` (the Inter font's OFL-1.1 notice among the libraries') plus the icon font's Apache-2.0 licence, which Angular does not collect; written as `<locale>/3rdpartylicenses.txt` into the embedded build, and the build fails when either licence is missing (Q-UI-144) |
 | [web/src/styles/palette.spec.ts](../../web/src/styles/palette.spec.ts) | The contrast of the pairs below, computed from the two stylesheets, and the rule that only `--trove-status-ok` is green |
 
 A scheme is chosen by `color-scheme` on the root element: without a choice the browser's setting decides, the theme button
@@ -349,8 +350,6 @@ on it today.
   links in running text and, in tables and key-value lists, only under the pointer and on focus (Q-UI-128, R-UI-044).
 - The reference's icons are its own line icons; trove's are Material Icons in the outlined variant (owner, 2026-11-06),
   close to them but not the same drawings.
-- The binary embeds Inter's font files, but not the build's `3rdpartylicenses.txt` with the OFL-1.1 notice the font's
-  licence asks to travel with it; the same holds for the icon font and the bundled libraries' licences.
 - The vulnerability trend is the one chart; its series colours are tokens (`--trove-chart-*`). Another chart takes its series from the same family and adds its pairs to `palette.spec.ts`.
 - The dialogs and menus still take Material's components with the system colours above (menus on the card fill, dialogs one
   step lighter) until their turn in the move of Q-UI-126; no screen of the owner has confirmed their look yet.

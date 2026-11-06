@@ -2269,4 +2269,4 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE). The web UI bundles third-party software under its own licences; each installation serves their notices at `/ui/en/3rdpartylicenses.txt` (and `/ui/de/3rdpartylicenses.txt`).

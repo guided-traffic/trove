@@ -440,6 +440,11 @@ jobs:
       - name: make web-embed (build and embed into internal/webui)
         run: make web-embed
 
+      # The notices of the bundled software in the embedded build (R-UI-001, Q-UI-144). Only this job holds a built UI;
+      # the unit job runs the same test on the placeholder, where it is skipped.
+      - name: go test of the embedded notices (R-UI-001)
+        run: TROVE_UI_BUILT=1 go test -count=1 -run 'TestR_UI_001_ThirdPartyNotices' ./internal/webui/
+
   malware-scan:
     name: Malware Scan (source code)
     runs-on: self-hosted

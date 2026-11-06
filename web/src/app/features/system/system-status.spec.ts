@@ -194,4 +194,10 @@ describe('System status screen', () => {
     expect(spy).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
+
+  it('R-UI-038 Q-UI-144 the installation card links the notices of the bundled software next to the version', async () => {
+    const { root } = await render();
+    const link = root.querySelector<HTMLAnchorElement>('section[aria-labelledby="card-install"] a[href="3rdpartylicenses.txt"]');
+    expect(link?.textContent?.trim()).toBe('3rdpartylicenses.txt');
+  });
 });

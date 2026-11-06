@@ -49,6 +49,8 @@ Besides `serve`, the binary has these commands:
 | `trove admin …` | Bootstrap and recovery: validate the configuration, the break-glass account, service accounts and their tokens, ending sessions, disabling a user. See [Installation](installation.md#bootstrap-and-recovery-commands). |
 | `trove backup` | Reserved. It exits with "not implemented yet": this version has no backup or restore command, no backup role and no backup job. See [Known limitations](limitations.md). |
 
+The web UI is built into the binary with the licences of the software it bundles. Every installation serves their notices as plain text at `/ui/<locale>/3rdpartylicenses.txt`, for example `https://trove.example.com/ui/en/3rdpartylicenses.txt`, with the same English text under `/ui/de/`. The Installation card of the system status screen links the file of its build.
+
 ## The dependencies
 
 trove keeps no state on its own disks. Its pods use only an ephemeral spool directory and `/tmp`, and nothing is lost when a pod is replaced. Every piece of state lives in one of three services, none of which the chart installs.
