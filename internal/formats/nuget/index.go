@@ -109,7 +109,7 @@ func indexETag(rq *formats.Request, base string, publish, vulnerabilities bool) 
 	}
 	field("nuget-service-index")
 	field(strconv.Itoa(RenderVersion))
-	field(rq.Repo.ID)
+	field(rq.Repo.Name)
 	field(rq.Addressed() + servingSuffix(rq))
 	field(strconv.FormatInt(rq.Repo.Version, 10))
 	field(base)

@@ -61,7 +61,7 @@ func liveItem(ctx context.Context, qs *q.Queries, repo RepoRef, path string) (It
 	if err != nil || len(rows) == 0 {
 		return Item{}, false, err
 	}
-	it := itemFrom(repo.Key, repo.Facts, rows[0])
+	it := itemFrom(repo.Name, repo.Facts, rows[0])
 	it.Policy = repo.Vuln
 	return it, true, nil
 }

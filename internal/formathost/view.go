@@ -62,7 +62,7 @@ func (v *ViewAdapters) Stored(ctx context.Context, repo authz.StoredRepo, pkg st
 		return authz.StoredPackage{}, nil
 	}
 	st, err := b.a.Stored(ctx, b.ports, formats.StoredQuery{
-		Repo:    formats.RepoRef{ID: repo.ID, Key: repo.Key, Class: class, Format: formats.ID(repo.Format)},
+		Repo:    formats.RepoRef{ID: repo.ID, Name: repo.Key, Class: class, Format: formats.ID(repo.Format)},
 		Package: pkg, Limit: limit, Tags: withTags,
 	})
 	if err != nil {
@@ -98,7 +98,7 @@ func (b viewBridge) Describe(ctx context.Context, vs []view.Version, want view.F
 	in := make([]formats.ViewVersion, len(vs))
 	for i, v := range vs {
 		in[i] = formats.ViewVersion{
-			ID: formats.VersionID(v.ID), Repo: formats.RepoRef{Key: v.Repo, Format: formats.ID(v.Format)},
+			ID: formats.VersionID(v.ID), Repo: formats.RepoRef{Name: v.Repo, Format: formats.ID(v.Format)},
 			Package: v.Package, Version: v.Version,
 		}
 	}

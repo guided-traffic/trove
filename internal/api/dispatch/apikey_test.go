@@ -82,9 +82,9 @@ var keyedRoutes = []string{"keyed.package.put", "keyed.version.delete", "keyed.v
 func TestR_NUGET_012_TheDispatcherNamesTheRoutesThatTakeTheAPIKey(t *testing.T) {
 	var labels []string
 	repos := &fakeRepos{byKey: map[string]repository.Repository{
-		"local":  {ID: "1", Key: "local", Class: repository.Local, Format: "keyed"},
-		"remote": {ID: "2", Key: "remote", Class: repository.Remote, Format: "keyed"},
-		"virt":   {ID: "3", Key: "virt", Class: repository.Virtual, Format: "keyed"},
+		"local":  {Name: "1", Key: "local", Class: repository.Local, Format: "keyed"},
+		"remote": {Name: "2", Key: "remote", Class: repository.Remote, Format: "keyed"},
+		"virt":   {Name: "3", Key: "virt", Class: repository.Virtual, Format: "keyed"},
 	}}
 	d, err := New(Options{
 		Host: fakeHost{}, Decider: &fakeDecider{}, Repos: repos,

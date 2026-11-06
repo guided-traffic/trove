@@ -202,7 +202,7 @@ func TestR_EP_016_NuGetStoredListsWhatTheRepositoryServes(t *testing.T) {
 	}
 	a, ctx, p := New().View(), context.Background(), ports{st}
 	repo := func(c formats.Class) formats.RepoRef {
-		return formats.RepoRef{ID: 7, Key: "nuget-local", Class: c, Format: ID}
+		return formats.RepoRef{ID: 7, Name: "nuget-local", Class: c, Format: ID}
 	}
 	ask := func(c formats.Class, pkg string, limit int) formats.Stored {
 		t.Helper()

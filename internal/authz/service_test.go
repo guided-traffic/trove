@@ -64,7 +64,7 @@ func testService() *Service {
 		{Key: "npm-all", Class: repository.Virtual, Format: "npm"},
 		{Key: "files-internal", Class: repository.Local, Format: "generic"},
 	} {
-		r.ID = strconv.Itoa(i + 1)
+		r.Name = strconv.Itoa(i + 1)
 		repos.list = append(repos.list, r)
 	}
 	return NewService(ServiceOptions{Principals: p, Repositories: repos, Formats: testRegistry(), Projects: fakeProjects{}})

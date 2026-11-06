@@ -120,7 +120,7 @@ func (s *fakeStore) Publish(_ context.Context, _ formats.Tx, in rows.PublishInpu
 func publishEvent(t *testing.T, w *fakeWriter, st Store, pc *publishCommit) formats.CommitEvent {
 	t.Helper()
 	return formats.CommitEvent{
-		Origin: formats.OriginUpload, Repo: formats.RepoRef{ID: 7, Key: "npm-local", Class: formats.Local, Format: "npm"},
+		Origin: formats.OriginUpload, Repo: formats.RepoRef{ID: 7, Name: "npm-local", Class: formats.Local, Format: "npm"},
 		Item: formats.ItemRef{ID: 9, Path: TarballPath(pc.name, pc.version)}, Actor: "11111111-1111-1111-1111-111111111111",
 		Payload: pc, Packages: w, Data: st,
 	}

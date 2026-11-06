@@ -104,8 +104,8 @@ func TestR_STOR_007_FilesSeamRefusesRawDeploysIntoAProtocolOfItsOwn(t *testing.T
 // runs against PostgreSQL in the npm integration tests.
 func TestR_AUTHZ_018_FilesSeamCheckRemovalFailsClosed(t *testing.T) {
 	ctx := context.Background()
-	local := repository.Repository{ID: "3", Key: "named-local", Class: repository.Local, Format: "named"}
-	remote := repository.Repository{ID: "4", Key: "named-remote", Class: repository.Remote, Format: "named"}
+	local := repository.Repository{Name: "3", Key: "named-local", Class: repository.Local, Format: "named"}
+	remote := repository.Repository{Name: "4", Key: "named-remote", Class: repository.Remote, Format: "named"}
 	idx := new(authz.Index)
 	for _, tc := range []struct {
 		name string

@@ -324,7 +324,7 @@ func TestR_VULN_011_HooksOrder(t *testing.T) {
 	log := &recorder{}
 	h := Hooks(innerHooks{log: log}, log)
 	ctx := context.Background()
-	repo := items.RepoRef{ID: 7, Key: "npm-local", Format: "npm"}
+	repo := items.RepoRef{ID: 7, Name: "npm-local", Format: "npm"}
 	if err := h.OnCommit(ctx, nil, items.CommitEvent{Origin: items.OriginUpload, Repo: repo, Item: items.Ref{ID: 3}}); err != nil {
 		t.Fatal(err)
 	}

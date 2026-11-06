@@ -98,7 +98,7 @@ func (v *vremotes) request(rc virtual.RemoteCall) (proxy.Request, error) {
 	if pkg == "" {
 		pkg = info.Package
 	}
-	ref := formats.RepoRef{ID: rem.ID(), Key: repo.Key, Class: formats.Remote, Format: formats.ID(repo.Format)}
+	ref := formats.RepoRef{ID: rem.ID(), Name: repo.Key, Class: formats.Remote, Format: formats.ID(repo.Format)}
 	return proxy.Request{
 		Remote: rem, Path: rc.Path, Variant: rc.Variant, Kind: kind, Package: pkg,
 		Adapter:      newAdapter(f, &repo, ref, v.o.Deps),

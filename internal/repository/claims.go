@@ -657,9 +657,9 @@ func recordClaims(ctx context.Context, tx meta.Tx, rec audit.Recorder, notif Not
 	}
 	if err := rec.RecordTx(ctx, tx, audit.Event{
 		Type: EventClaimsChanged, Actor: c.Actor, Outcome: audit.Success, Source: c.Source,
-		Subject: audit.Subject{Kind: "repository", ID: r.ID, Name: r.Key}, Details: raw,
+		Subject: audit.Subject{Kind: "repository", ID: r.Name, Name: r.Key}, Details: raw,
 	}); err != nil {
 		return err
 	}
-	return notif.Notify(tx, cluster.AreaClaims, 1, claimsPayload{ID: r.ID, Key: r.Key, Op: source})
+	return notif.Notify(tx, cluster.AreaClaims, 1, claimsPayload{ID: r.Name, Key: r.Key, Op: source})
 }

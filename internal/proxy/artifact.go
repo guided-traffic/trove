@@ -566,7 +566,7 @@ func (f *fetcher) artifactEntry(sp *items.Spooled, resp *http.Response, final st
 		}
 		return e.o.Audit.RecordTx(ctx, tx, audit.Event{
 			Type: audit.EventArtifactCached, Actor: auditActor(rq.Caller), Outcome: audit.Success, Source: rq.Caller.Source,
-			Subject:    audit.Subject{Kind: "repository", ID: rem.Repo.ID, Name: rem.Repo.Key},
+			Subject:    audit.Subject{Kind: "repository", ID: rem.Repo.Name, Name: rem.Repo.Key},
 			Repository: rem.Repo.Key, Path: rq.Path, Endpoint: rq.Caller.Endpoint,
 			Details: mustJSON(map[string]any{
 				"path": rq.Path, "name": rq.Package, "sha256": hex.EncodeToString(sp.SHA256[:]), "size": sp.Size, "upstreamUrl": final,

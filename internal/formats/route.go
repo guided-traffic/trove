@@ -330,9 +330,9 @@ type Request struct {
 type Refusal struct {
 	// Format is the ID of the format that owns the prefix.
 	Format ID
-	// Key is the repository segment as addressed: the key, or "<remote>~cache" for the
+	// Name is the repository segment as addressed: the key, or "<remote>~cache" for the
 	// cache view of a remote repository (R-REPO-032). It has the shape of a key.
-	Key string
+	Name string
 	// BaseURL is the response base URL, "https://trove.example.com", without a
 	// trailing slash.
 	BaseURL string
@@ -340,7 +340,7 @@ type Refusal struct {
 
 // Registry is "<base>/api/<format>/<key>/", the URL of the addressed repository.
 func (f Refusal) Registry() string {
-	return f.BaseURL + "/api/" + string(f.Format) + "/" + url.PathEscape(f.Key) + "/"
+	return f.BaseURL + "/api/" + string(f.Format) + "/" + url.PathEscape(f.Name) + "/"
 }
 
 type refusalKey struct{}
@@ -498,12 +498,12 @@ func (rq *Request) WriteTarget(target *repository.Repository) *Request {
 // class and format.
 func (rq *Request) RepoRef() RepoRef {
 	var n int64
-	for i := range len(rq.Repo.ID) {
-		if rq.Repo.ID[i] < '0' || rq.Repo.ID[i] > '9' {
+	for i := range len(rq.Repo.Name) {
+		if rq.Repo.Name[i] < '0' || rq.Repo.Name[i] > '9' {
 			n = 0
 			break
 		}
-		n = n*10 + int64(rq.Repo.ID[i]-'0')
+		n = n*10 + int64(rq.Repo.Name[i]-'0')
 	}
-	return RepoRef{ID: n, Key: rq.Repo.Key, Class: rq.Repo.Class, Format: ID(rq.Repo.Format)}
+	return RepoRef{ID: n, Name: rq.Repo.Key, Class: rq.Repo.Class, Format: ID(rq.Repo.Format)}
 }

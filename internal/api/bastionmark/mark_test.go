@@ -175,9 +175,9 @@ func newRig(t *testing.T, fs ...formats.Format) *rig {
 	d, err := dispatch.New(dispatch.Options{
 		Host: fakeHost{}, Decider: r.decider, Formats: func() []formats.Format { return fs },
 		Repos: &fakeRepos{byKey: map[string]repository.Repository{
-			"mk-local": {ID: "1", Key: "mk-local", Class: repository.Local, Format: "mk"},
-			"npm-all":  {ID: "2", Key: "npm-all", Class: repository.Virtual, Format: "npm"},
-			"nuget-v3": {ID: "3", Key: "nuget-v3", Class: repository.Local, Format: "nuget"},
+			"mk-local": {Name: "1", Key: "mk-local", Class: repository.Local, Format: "mk"},
+			"npm-all":  {Name: "2", Key: "npm-all", Class: repository.Virtual, Format: "npm"},
+			"nuget-v3": {Name: "3", Key: "nuget-v3", Class: repository.Local, Format: "nuget"},
 		}},
 	})
 	if err != nil {
@@ -588,7 +588,7 @@ func TestR_BAS_014_ProbeIsRefusedInTheShapeOfTheFormat(t *testing.T) {
 	})
 	t.Run("without a main URL the detail still says where to publish", func(t *testing.T) {
 		m := New(Options{})
-		err := m.readOnly(bastionmain.RouteMatch{Format: "npm", RepoKey: "npm-all"})
+		err := m.readOnly(bastionmain.RouteMatch{Format: "npm", Repo: "npm-all"})
 		if e, ok := errs.As(err); !ok || e.Code != iface.CodeReadOnly || e.Status() != 403 || !strings.Contains(e.Detail, "main installation") {
 			t.Fatalf("%v", err)
 		}

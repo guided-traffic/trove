@@ -65,7 +65,7 @@ func (r *remoteResolver) ReadScope(context.Context, *formats.Request, []string) 
 }
 
 func (r *remoteResolver) KeepsAway(_ context.Context, rq *formats.Request, member formats.RepoRef, term string) (bool, error) {
-	if member.Key != rq.Repo.Key {
+	if member.Name != rq.Repo.Key {
 		return false, errs.E(errs.Internal, errs.CodeInternal, "not the request's repository")
 	}
 	r.mu.Lock()

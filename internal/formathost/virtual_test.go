@@ -40,7 +40,7 @@ func (a *virtAdapter) Merge(_ context.Context, _ *formats.Request, _ formats.Pat
 
 func (a *virtAdapter) LocalDocument(_ context.Context, _ *formats.Request, m formats.RepoRef, _ formats.Path, variant string) ([]byte, formats.RevSeq, bool, error) {
 	a.gotVar = variant
-	return []byte("doc-of-" + m.Key), 7, true, nil
+	return []byte("doc-of-" + m.Name), 7, true, nil
 }
 
 // virtFormat is a format with package names whose package document is the package name
@@ -53,7 +53,7 @@ type virtFormat struct {
 }
 
 func (f virtFormat) ServeCheck(_ context.Context, _ formats.Host, _ formats.RepoRef, it formats.ItemRef, _ formats.ServeMode) error {
-	return f.refuse[it.Repo.Key]
+	return f.refuse[it.Repo.Name]
 }
 
 func (virtFormat) Descriptor() formats.Descriptor {
@@ -176,7 +176,7 @@ func (f *fakeItems) Stat(_ context.Context, repo formats.RepoRef, p formats.Path
 
 func (f *fakeItems) Serve(_ context.Context, _ *formats.Request, w http.ResponseWriter, it formats.Item, mode formats.ServeMode) error {
 	f.served = mode
-	_, err := io.WriteString(w, "item "+it.Ref.Repo.Key)
+	_, err := io.WriteString(w, "item "+it.Ref.Repo.Name)
 	return err
 }
 
@@ -201,7 +201,7 @@ func (f *fakeRemote) GateWith(_ context.Context, rq *formats.Request, _ formats.
 
 func (f *fakeRemote) Cached(_ context.Context, rq *formats.Request, p formats.Path) (formats.Item, bool, error) {
 	f.cachedFor = rq.Repo.Key
-	return formats.Item{Ref: formats.ItemRef{Repo: formats.RepoRef{Key: rq.Repo.Key}, Path: p.Path}}, f.cachedErr == nil, f.cachedErr
+	return formats.Item{Ref: formats.ItemRef{Repo: formats.RepoRef{Name: rq.Repo.Key}, Path: p.Path}}, f.cachedErr == nil, f.cachedErr
 }
 
 func (f *fakeRemote) Artifact(_ context.Context, rq *formats.Request, _ formats.Path, _ formats.Digests, w http.ResponseWriter) error {
@@ -266,7 +266,7 @@ func TestR_ARCH_015_BridgeArtifact(t *testing.T) {
 	if err := b.r.Artifact(t.Context(), b.rq, p, info, w); err != nil {
 		t.Fatal(err)
 	}
-	if w.Body.String() != "item member-local" || b.host.items.served != formats.ServeStored || b.host.items.statRepo.Key != "member-local" {
+	if w.Body.String() != "item member-local" || b.host.items.served != formats.ServeStored || b.host.items.statRepo.Name != "member-local" {
 		t.Fatalf("body %q mode %v stat %v", w.Body.String(), b.host.items.served, b.host.items.statRepo)
 	}
 	c, d := b.eng.caller, b.eng.plan
@@ -351,7 +351,7 @@ func TestR_ARCH_015_BridgeMetadata(t *testing.T) {
 		t.Fatalf("variant = %q", b.ad.gotVar)
 	}
 	parts := b.ad.gotParts
-	if len(parts) != 2 || parts[0].Member.Key != "member-local" || parts[0].Tier != formats.TierLocal || parts[0].Revision.RevSeq != 7 || string(parts[0].Doc) != "doc-of-member-local" {
+	if len(parts) != 2 || parts[0].Member.Name != "member-local" || parts[0].Tier != formats.TierLocal || parts[0].Revision.RevSeq != 7 || string(parts[0].Doc) != "doc-of-member-local" {
 		t.Fatalf("local part = %+v", parts)
 	}
 	r := parts[1]
@@ -492,11 +492,11 @@ func TestR_NUGET_018_BridgePlan(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []formats.PlannedMember{
-		{Member: formats.RepoRef{Key: "member-local", Class: formats.Local}, Tier: formats.TierLocal, Position: 0},
-		{Member: formats.RepoRef{Key: "member-remote", Class: formats.Remote}, Tier: formats.TierRemote, Position: 1, MayFill: true},
+		{Member: formats.RepoRef{Name: "member-local", Class: formats.Local}, Tier: formats.TierLocal, Position: 0},
+		{Member: formats.RepoRef{Name: "member-remote", Class: formats.Remote}, Tier: formats.TierRemote, Position: 1, MayFill: true},
 	}
 	if !plan.Admitted || !slices.EqualFunc(plan.Members, want, func(a, b formats.PlannedMember) bool {
-		return a.Member.Key == b.Member.Key && a.Member.Class == b.Member.Class && a.Tier == b.Tier && a.Position == b.Position && a.MayFill == b.MayFill
+		return a.Member.Name == b.Member.Name && a.Member.Class == b.Member.Class && a.Tier == b.Tier && a.Position == b.Position && a.MayFill == b.MayFill
 	}) {
 		t.Fatalf("plan = %+v", plan)
 	}
@@ -507,7 +507,7 @@ func TestR_NUGET_018_BridgePlan(t *testing.T) {
 
 func TestR_NUGET_016_BridgeKeepsAway(t *testing.T) {
 	b := newBridge(t)
-	remote := formats.RepoRef{ID: 2, Key: "member-remote", Class: formats.Remote, Format: "virtfmt"}
+	remote := formats.RepoRef{ID: 2, Name: "member-remote", Class: formats.Remote, Format: "virtfmt"}
 	b.eng.away = map[string]bool{"member-remote/acme": true}
 	t.Run("through a virtual repository the question is asked with it and the member", func(t *testing.T) {
 		if away, err := b.r.KeepsAway(t.Context(), b.rq, remote, "acme"); err != nil || !away {
@@ -521,7 +521,7 @@ func TestR_NUGET_016_BridgeKeepsAway(t *testing.T) {
 		}
 	})
 	t.Run("a repository that is no member is refused", func(t *testing.T) {
-		stranger := formats.RepoRef{ID: 9, Key: "stranger", Class: formats.Remote, Format: "virtfmt"}
+		stranger := formats.RepoRef{ID: 9, Name: "stranger", Class: formats.Remote, Format: "virtfmt"}
 		if _, err := b.r.KeepsAway(t.Context(), b.rq, stranger, "acme"); err == nil {
 			t.Fatal("the claims of a repository outside the request were probed")
 		}
@@ -534,7 +534,7 @@ func TestR_NUGET_016_BridgeKeepsAway(t *testing.T) {
 		if away, err := b.r.KeepsAway(t.Context(), &rq, remote, "acme"); err != nil || !away || b.eng.gotAway.via != nil {
 			t.Fatalf("away %v err %v via %v", away, err, b.eng.gotAway.via)
 		}
-		other := formats.RepoRef{Key: "elsewhere", Class: formats.Remote}
+		other := formats.RepoRef{Name: "elsewhere", Class: formats.Remote}
 		if _, err := b.r.KeepsAway(t.Context(), &rq, other, "acme"); err == nil {
 			t.Fatal("a direct request asked about another repository")
 		}

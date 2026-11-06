@@ -66,7 +66,7 @@ func (f *Format) OnItemsRemoved(ctx context.Context, tx formats.Tx, e formats.It
 	if by == "" {
 		by = noActor
 	}
-	audit := rows.Audit{RepoKey: e.Repo.Key, Actor: rows.Actor{ID: e.Actor}}
+	audit := rows.Audit{RepoKey: e.Repo.Name, Actor: rows.Actor{ID: e.Actor}}
 	for _, lowerID := range ids {
 		g := groups[lowerID]
 		pkg, _, err := e.Packages.EnsureLocked(ctx, e.Repo, lowerID, lowerID)

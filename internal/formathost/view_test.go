@@ -95,7 +95,7 @@ func TestR_EP_016_ViewAdaptersListStoredVersionsOfLocalAndRemoteRepositories(t *
 	if err != nil || !got.Listed || !slices.Equal(got.Versions, []string{"2.0.0", "1.0.0"}) || got.Tags["latest"] != "2.0.0" {
 		t.Fatalf("local: %+v %v", got, err)
 	}
-	if q := stub.stored[0]; q.Repo.ID != 7 || q.Repo.Key != "a-local" || q.Repo.Class != formats.Local || q.Package != "p" || q.Limit != 11 || !q.Tags {
+	if q := stub.stored[0]; q.Repo.ID != 7 || q.Repo.Name != "a-local" || q.Repo.Class != formats.Local || q.Package != "p" || q.Limit != 11 || !q.Tags {
 		t.Fatalf("the adapter was asked %+v", q)
 	}
 	if got, err = vs.Stored(ctx, authz.StoredRepo{ID: 8, Key: "a-remote", Format: "alpha", Class: "remote"}, "p", 11, false); err != nil || !got.Listed || len(got.Tags) != 0 {
@@ -136,7 +136,7 @@ func TestR_API_029_ViewAdaptersBridgeTheRegisteredFormats(t *testing.T) {
 	if err != nil || got[5].Description != "d" || !got[5].HasReadme || !slices.Equal(got[5].Keywords, []string{"k"}) {
 		t.Fatalf("%+v %v", got, err)
 	}
-	if stub.want != formats.ViewSummary|formats.ViewReadme || stub.got[0].Repo.Key != "r" || stub.got[0].Package != "p" {
+	if stub.want != formats.ViewSummary|formats.ViewReadme || stub.got[0].Repo.Name != "r" || stub.got[0].Package != "p" {
 		t.Fatalf("%+v", stub)
 	}
 	ids, err := a.Find(context.Background(), view.Find{Repos: []string{"r"}, Text: "x"}, 9)

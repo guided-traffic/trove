@@ -321,7 +321,7 @@ func (e *Enforcer) gate(ctx context.Context, p vuln.Policy, m Miss) error {
 		addressed = m.Repo.Key
 	}
 	return e.Refuse(ctx, Download{
-		Addressed: addressed, Store: m.Repo.Key, RepoID: m.Repo.ID, Format: m.Repo.Format, Path: m.Path,
+		Addressed: addressed, Store: m.Repo.Key, RepoID: m.Repo.Name, Format: m.Repo.Format, Path: m.Path,
 		Package: m.Package, Version: m.Version, Ecosystem: p.Ecosystem, Stored: false, Block: block,
 		Actor: m.Actor, Source: m.Source, Endpoint: m.Endpoint,
 	})

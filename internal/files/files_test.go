@@ -184,8 +184,8 @@ func (r repos) List(context.Context) ([]repository.Repository, error) { return n
 func service(t *testing.T, st *store) *Service {
 	t.Helper()
 	svc, err := New(Options{Items: st, Repos: repos{
-		"generic-local":  {ID: "5", Key: "generic-local", Class: repository.Local, Format: "generic"},
-		"generic-remote": {ID: "6", Key: "generic-remote", Class: repository.Remote, Format: "generic"},
+		"generic-local":  {Name: "5", Key: "generic-local", Class: repository.Local, Format: "generic"},
+		"generic-remote": {Name: "6", Key: "generic-remote", Class: repository.Remote, Format: "generic"},
 	}})
 	if err != nil {
 		t.Fatal(err)

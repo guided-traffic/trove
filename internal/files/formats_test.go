@@ -62,8 +62,8 @@ func (s *packageSeam) CheckRemoval(_ context.Context, _ meta.Tx, rm Removal) err
 func packageService(t *testing.T, st *store, seam *packageSeam) *Service {
 	t.Helper()
 	svc, err := New(Options{Items: st, Formats: seam, Repos: repos{
-		"generic-local": {ID: "5", Key: "generic-local", Class: repository.Local, Format: "generic"},
-		"pkg-local":     {ID: "7", Key: "pkg-local", Class: repository.Local, Format: "pkgfmt"},
+		"generic-local": {Name: "5", Key: "generic-local", Class: repository.Local, Format: "generic"},
+		"pkg-local":     {Name: "7", Key: "pkg-local", Class: repository.Local, Format: "pkgfmt"},
 	}})
 	if err != nil {
 		t.Fatal(err)

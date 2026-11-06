@@ -62,7 +62,7 @@ func (s *Service) Select(ctx context.Context, all []Policy, f ListFilter) ([]Pol
 			}
 			return nil, err
 		}
-		id, _ := strconv.ParseInt(r.ID, 10, 64)
+		id, _ := strconv.ParseInt(r.Name, 10, 64)
 		repo = &repoView{ID: id, Key: r.Key, Class: r.Class, Format: r.Format}
 		repoProject = r.ProjectID
 	}

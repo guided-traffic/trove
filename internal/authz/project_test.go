@@ -340,7 +340,7 @@ func projectService() *Service {
 		{Key: "npm-internal", Class: repository.Local, Format: "npm"},
 		{Key: "web-moved", Class: repository.Local, Format: "npm"},
 	} {
-		r.ID = strconv.Itoa(i + 1)
+		r.Name = strconv.Itoa(i + 1)
 		repos.list = append(repos.list, r)
 	}
 	return NewService(ServiceOptions{

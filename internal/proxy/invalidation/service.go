@@ -80,9 +80,9 @@ func (s *Service) Invalidate(ctx context.Context, c repository.Caller, repo repo
 	if repo.Lifecycle != repository.Active {
 		return 0, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository has the key "+strconv.Quote(repo.Key))
 	}
-	id, err := strconv.ParseInt(repo.ID, 10, 64)
+	id, err := strconv.ParseInt(repo.Name, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("invalidation: repository id %q: %w", repo.ID, err)
+		return 0, fmt.Errorf("invalidation: repository id %q: %w", repo.Name, err)
 	}
 	switch repo.Class {
 	case repository.Remote:
@@ -122,9 +122,9 @@ func (s *Service) InvalidateTx(ctx context.Context, tx meta.Tx, c repository.Cal
 	if repo.Class != repository.Remote || repo.Lifecycle != repository.Active {
 		return 0, fmt.Errorf("invalidation: %q is not an active remote repository", repo.Key)
 	}
-	id, err := strconv.ParseInt(repo.ID, 10, 64)
+	id, err := strconv.ParseInt(repo.Name, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("invalidation: repository id %q: %w", repo.ID, err)
+		return 0, fmt.Errorf("invalidation: repository id %q: %w", repo.Name, err)
 	}
 	return s.add(ctx, tx, c, repo, id, prefix, scope)
 }
@@ -175,7 +175,7 @@ func (s *Service) record(ctx context.Context, tx meta.Tx, c repository.Caller, r
 	}
 	return s.o.Recorder.RecordTx(ctx, tx, audit.Event{
 		Type: audit.EventRepositoryCacheInvalidated, Actor: c.Actor, Outcome: audit.Success, Source: c.Source,
-		Subject:    audit.Subject{Kind: "repository", ID: repo.ID, Name: repo.Key},
+		Subject:    audit.Subject{Kind: "repository", ID: repo.Name, Name: repo.Key},
 		Repository: repo.Key, Path: prefix, Endpoint: c.Endpoint, Details: raw,
 	})
 }

@@ -69,7 +69,7 @@ func resolutionURL(key, path string) string {
 
 func TestResolutionAPI(t *testing.T) {
 	val := apitest.New(t, EmbeddedYAML())
-	virtualRepo := repository.Repository{ID: "4", Key: "all", Class: repository.Virtual, Format: "generic", Lifecycle: repository.Active}
+	virtualRepo := repository.Repository{Name: "4", Key: "all", Class: repository.Virtual, Format: "generic", Lifecycle: repository.Active}
 
 	t.Run("R-REPO-019 the operation declares read on the virtual repository of the path", func(t *testing.T) {
 		acc := &actionAccess{}
@@ -104,7 +104,7 @@ func TestResolutionAPI(t *testing.T) {
 	})
 
 	t.Run("R-REPO-019 a repository that is not virtual answers 400 not_applicable", func(t *testing.T) {
-		local := repository.Repository{ID: "1", Key: "files", Class: repository.Local, Format: "generic", Lifecycle: repository.Active}
+		local := repository.Repository{Name: "1", Key: "files", Class: repository.Local, Format: "generic", Lifecycle: repository.Active}
 		s := resolutionSetup(t, val, &actionAccess{}, &fakeExplainer{}, local)
 		problem(t, s.do("GET", resolutionURL("files", "x"), "", nil), 400, "not_applicable")
 	})

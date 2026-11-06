@@ -59,7 +59,7 @@ func (r *mergeResolver) Metadata(ctx context.Context, rq *formats.Request, p for
 		if r.sameFingerprint {
 			break
 		}
-		h.Write([]byte(d.Member.Key))
+		h.Write([]byte(d.Member.Name))
 		h.Write(d.Doc)
 	}
 	m := &formats.Merged{Bytes: body, Partial: r.partial, CacheStatus: "trove; fwd=miss"}
@@ -75,7 +75,7 @@ func (r *mergeResolver) Plan(context.Context, *formats.Request, formats.Path, fo
 }
 
 func (r *mergeResolver) KeepsAway(_ context.Context, _ *formats.Request, member formats.RepoRef, term string) (bool, error) {
-	return r.keeps != nil && r.keeps(member.Key, term), nil
+	return r.keeps != nil && r.keeps(member.Name, term), nil
 }
 
 func (r *mergeResolver) ReadScope(context.Context, *formats.Request, []string) (formats.ReadScope, error) {
@@ -86,7 +86,7 @@ func (r *mergeResolver) DeployTarget(context.Context, *formats.Request) (*reposi
 	if r.target != nil {
 		return nil, r.target
 	}
-	return &repository.Repository{ID: "2", Key: "target", Class: repository.Local, Format: string(ID)}, nil
+	return &repository.Repository{Name: "2", Key: "target", Class: repository.Local, Format: string(ID)}, nil
 }
 
 func (r *mergeResolver) Artifact(_ context.Context, rq *formats.Request, p formats.Path, _ formats.PathInfo, w http.ResponseWriter) error {
@@ -120,7 +120,7 @@ func localPart(t *testing.T, key string, position int, vs ...rows.RegistrationVe
 	if err != nil {
 		t.Fatal(err)
 	}
-	return formats.MemberDocument{Member: formats.RepoRef{Key: key}, Tier: formats.TierLocal, Position: position, Doc: b}
+	return formats.MemberDocument{Member: formats.RepoRef{Name: key}, Tier: formats.TierLocal, Position: position, Doc: b}
 }
 
 func localFlat(t *testing.T, key string, position int, versions ...string) formats.MemberDocument {
@@ -129,7 +129,7 @@ func localFlat(t *testing.T, key string, position int, versions ...string) forma
 	if err != nil {
 		t.Fatal(err)
 	}
-	return formats.MemberDocument{Member: formats.RepoRef{Key: key}, Tier: formats.TierLocal, Position: position, Doc: b}
+	return formats.MemberDocument{Member: formats.RepoRef{Name: key}, Tier: formats.TierLocal, Position: position, Doc: b}
 }
 
 // remotePart is an inlined upstream registration index of Acme.Widgets with one catalog entry
@@ -140,14 +140,14 @@ func remotePart(key string, position int, extra string, versions ...string) form
 		leaves = append(leaves, `{"@id":"https://up/`+v+`.json","catalogEntry":{"id":"Acme.Widgets","version":"`+v+`","description":"from `+key+`",`+extra+`"listed":true}}`)
 	}
 	return formats.MemberDocument{
-		Member: formats.RepoRef{Key: key}, Tier: formats.TierRemote, Position: position,
+		Member: formats.RepoRef{Name: key}, Tier: formats.TierRemote, Position: position,
 		Doc: []byte(`{"count":1,"items":[{"@id":"https://up/index.json#page","count":` + string(rune('0'+len(versions))) + `,"items":[` + strings.Join(leaves, ",") + `]}]}`),
 	}
 }
 
 func remoteFlat(key string, position int, versions ...string) formats.MemberDocument {
 	b, _ := json.Marshal(map[string][]string{"versions": versions})
-	return formats.MemberDocument{Member: formats.RepoRef{Key: key}, Tier: formats.TierRemote, Position: position, Doc: b}
+	return formats.MemberDocument{Member: formats.RepoRef{Name: key}, Tier: formats.TierRemote, Position: position, Doc: b}
 }
 
 func docsOf(flat, reg []formats.MemberDocument) func(formats.Path) []formats.MemberDocument {

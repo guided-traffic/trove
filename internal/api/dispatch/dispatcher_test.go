@@ -163,7 +163,7 @@ type noDeployResolver struct{ formats.Resolver }
 
 func (noDeployResolver) DeployTarget(_ context.Context, rq *formats.Request) (*repository.Repository, error) {
 	if rq.Repo.Key == "virtual-with-target" {
-		return &repository.Repository{ID: "1", Key: "local", Class: repository.Local, Format: "probe"}, nil
+		return &repository.Repository{Name: "1", Key: "local", Class: repository.Local, Format: "probe"}, nil
 	}
 	return nil, errs.E(errs.MethodNotAllowed, errs.CodeNoDeployTarget, "none")
 }
@@ -184,14 +184,14 @@ type rig struct {
 func newRig(t *testing.T) *rig {
 	t.Helper()
 	r := &rig{t: t, decider: &fakeDecider{}, repos: &fakeRepos{byKey: map[string]repository.Repository{
-		"local":               {ID: "1", Key: "local", Class: repository.Local, Format: "probe"},
-		"remote":              {ID: "2", Key: "remote", Class: repository.Remote, Format: "probe"},
-		"virt":                {ID: "3", Key: "virt", Class: repository.Virtual, Format: "probe"},
-		"other":               {ID: "4", Key: "other", Class: repository.Local, Format: "bare"},
-		"off":                 {ID: "5", Key: "off", Class: repository.Local, Format: "probe", Disabled: true},
-		"dying":               {ID: "6", Key: "dying", Class: repository.Local, Format: "probe", Lifecycle: repository.Deleting},
-		"virtual":             {ID: "7", Key: "virtual", Class: repository.Virtual, Format: "probe"},
-		"virtual-with-target": {ID: "8", Key: "virtual-with-target", Class: repository.Virtual, Format: "probe"},
+		"local":               {Name: "1", Key: "local", Class: repository.Local, Format: "probe"},
+		"remote":              {Name: "2", Key: "remote", Class: repository.Remote, Format: "probe"},
+		"virt":                {Name: "3", Key: "virt", Class: repository.Virtual, Format: "probe"},
+		"other":               {Name: "4", Key: "other", Class: repository.Local, Format: "bare"},
+		"off":                 {Name: "5", Key: "off", Class: repository.Local, Format: "probe", Disabled: true},
+		"dying":               {Name: "6", Key: "dying", Class: repository.Local, Format: "probe", Lifecycle: repository.Deleting},
+		"virtual":             {Name: "7", Key: "virtual", Class: repository.Virtual, Format: "probe"},
+		"virtual-with-target": {Name: "8", Key: "virtual-with-target", Class: repository.Virtual, Format: "probe"},
 	}}}
 	p := probe{handler: func(_ context.Context, rq *formats.Request, w http.ResponseWriter) error {
 		view := ""

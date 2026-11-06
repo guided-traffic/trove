@@ -163,7 +163,7 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// From here on a refusal can build links: it knows the repository and the base
 		// URL (Q-ARCH-263).
 		r = formats.WithRefusal(r, formats.Refusal{
-			Format: f.Descriptor().ID, Key: addressed, BaseURL: strings.TrimSuffix(httpserver.InfoFrom(r.Context()).BaseURL, "/"),
+			Format: f.Descriptor().ID, Name: addressed, BaseURL: strings.TrimSuffix(httpserver.InfoFrom(r.Context()).BaseURL, "/"),
 		})
 	}
 	fail := func(err error) { f.WriteError(w, r, err) }
@@ -203,7 +203,7 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// in the format's shape or answer the request itself, before any decision or body read.
 	obs := bastionmain.ObserverFrom(ctx)
 	match := bastionmain.RouteMatch{
-		Format: id, RepoKey: key, Name: route.Name, Method: r.Method, Kind: route.Kind.String(), Action: route.Action,
+		Format: id, Repo: key, Name: route.Name, Method: r.Method, Kind: route.Kind.String(), Action: route.Action,
 	}
 	if obs != nil {
 		handled, err := obs.Matched(w, r, match)

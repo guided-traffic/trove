@@ -245,7 +245,7 @@ func settings(rawURL, mode string) repository.RemoteSettings {
 }
 
 func repo(id int64, key string, version int64) repository.Repository {
-	return repository.Repository{ID: strconv.FormatInt(id, 10), Key: key, Class: repository.Remote, Format: "npmlike", Version: version}
+	return repository.Repository{Name: strconv.FormatInt(id, 10), Key: key, Class: repository.Remote, Format: "npmlike", Version: version}
 }
 
 func get(t *testing.T, c *Client, rawURL string) (*http.Response, error) {

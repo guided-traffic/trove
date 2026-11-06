@@ -122,7 +122,7 @@ func (repos) ByKey(_ context.Context, key string) (repository.Repository, error)
 	if key != "generic-local" {
 		return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository")
 	}
-	return repository.Repository{ID: "5", Key: key, Class: repository.Local, Format: "generic"}, nil
+	return repository.Repository{Name: "5", Key: key, Class: repository.Local, Format: "generic"}, nil
 }
 
 func (repos) List(context.Context) ([]repository.Repository, error) { return nil, nil }

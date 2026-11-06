@@ -285,7 +285,7 @@ func (s sqlRepositories) list(ctx context.Context, where string, args ...any) ([
 		if err := rows.Scan(&id, &r.Key, &class, &r.Format, &r.Config, &r.ProjectID); err != nil {
 			return nil, err
 		}
-		r.ID, r.Class = strconv.FormatInt(id, 10), repository.Class(class)
+		r.Name, r.Class = strconv.FormatInt(id, 10), repository.Class(class)
 		out = append(out, r)
 	}
 	return out, rows.Err()

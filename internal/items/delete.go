@@ -232,7 +232,7 @@ func (s *Store) removeRows(ctx context.Context, tx meta.Tx, qs *q.Queries, w who
 			}
 		}
 		for _, r := range removed {
-			if err := s.recordDeleted(ctx, tx, w, repo.Key, r.Path, r.BlobSha256, r.Size.Int64); err != nil {
+			if err := s.recordDeleted(ctx, tx, w, repo.Name, r.Path, r.BlobSha256, r.Size.Int64); err != nil {
 				return err
 			}
 		}
@@ -337,8 +337,8 @@ func (s *Store) enqueueDelete(ctx context.Context, repo RepoRef, spec DeleteSpec
 		}
 		job, err := s.jobs.Enqueue(ctx, tx, jobs.EnqueueSpec{
 			Kind: DeleteJobKind, DedupKey: DeleteJobKind + ":" + strconv.FormatInt(repo.ID, 10) + ":" + spec.Path,
-			Args:       DeleteArgs{RepoID: repo.ID, Key: repo.Key, Class: repo.Class, Format: repo.Format, Path: spec.Path, Actor: spec.Actor, MaxID: maxID},
-			TargetKind: "item", TargetKey: repo.Key + "/" + spec.Path, CreatedBy: actorID(spec.Actor),
+			Args:       DeleteArgs{RepoID: repo.ID, Key: repo.Name, Class: repo.Class, Format: repo.Format, Path: spec.Path, Actor: spec.Actor, MaxID: maxID},
+			TargetKind: "item", TargetKey: repo.Name + "/" + spec.Path, CreatedBy: actorID(spec.Actor),
 		})
 		if err != nil {
 			return err
@@ -392,7 +392,7 @@ func (s *Store) RunDeleteJob(ctx context.Context, run *jobs.Run) error {
 
 func (s *Store) deleteFileBatch(ctx context.Context, a DeleteArgs, lo, hi string, batch int) (int64, error) {
 	var n int64
-	repo := RepoRef{ID: a.RepoID, Key: a.Key, Class: a.Class, Format: a.Format}
+	repo := RepoRef{ID: a.RepoID, Name: a.Key, Class: a.Class, Format: a.Format}
 	err := s.run.InTx(ctx, func(tx meta.Tx) error {
 		qs, err := queries(tx)
 		if err != nil {

@@ -41,14 +41,14 @@ func (r *recordRemover) RemoveIn(_ context.Context, _ meta.Tx, spec items.Remove
 // through the item store in its transaction, and the writer of a hook, which has no
 // request, refuses.
 func TestR_STOR_018_DeleteItemsOfThePackageWriter(t *testing.T) {
-	repo := formats.RepoRef{ID: 7, Key: "npm-local", Class: formats.Local, Format: "npm"}
+	repo := formats.RepoRef{ID: 7, Name: "npm-local", Class: formats.Local, Format: "npm"}
 	rq := &formats.Request{Repo: &repository.Repository{Key: "npm-local"}}
 	rm := &recordRemover{}
 	w := &writer{req: rq, d: writerDeps{remove: rm}}
 	if err := w.DeleteItems(t.Context(), repo, "a/-/a-1.0.0.tgz", "a/-/a-1.0.0.sigstore"); err != nil {
 		t.Fatal(err)
 	}
-	if len(rm.got) != 1 || rm.got[0].Repo.ID != 7 || rm.got[0].Repo.Key != "npm-local" || rm.got[0].Repo.Format != "npm" || len(rm.got[0].Paths) != 2 {
+	if len(rm.got) != 1 || rm.got[0].Repo.ID != 7 || rm.got[0].Repo.Name != "npm-local" || rm.got[0].Repo.Format != "npm" || len(rm.got[0].Paths) != 2 {
 		t.Fatalf("%+v", rm.got)
 	}
 	for name, w := range map[string]*writer{

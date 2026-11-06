@@ -148,7 +148,7 @@ func NewHost(f formats.Format, o HostOptions) *Host {
 	}
 	h := &Host{
 		f: f, opts: o,
-		repo:    &repository.Repository{ID: "1", Key: o.RepoKey, Class: o.Class, Format: string(d.ID), Lifecycle: repository.Active},
+		repo:    &repository.Repository{Name: "1", Key: o.RepoKey, Class: o.Class, Format: string(d.ID), Lifecycle: repository.Active},
 		items:   map[string]*itemRec{},
 		byID:    map[int64]*itemRec{},
 		pkgs:    map[string]*pkgRec{},
@@ -157,7 +157,7 @@ func NewHost(f formats.Format, o HostOptions) *Host {
 		props:   map[int64]map[string]string{},
 		renders: map[formats.RenditionKey][]byte{},
 	}
-	h.ref = formats.RepoRef{ID: 1, Key: o.RepoKey, Class: o.Class, Format: d.ID}
+	h.ref = formats.RepoRef{ID: 1, Name: o.RepoKey, Class: o.Class, Format: d.ID}
 	if m, ok := o.Remote.(*MemRemote); ok {
 		m.note = h.noteRead
 	}

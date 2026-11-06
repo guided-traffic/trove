@@ -37,7 +37,7 @@ func withRepositories(ctx context.Context, rq *Request) context.Context {
 const maxScopeDepth = 16
 
 func collect(sc *repositoryScope, r repository.Repository, depth int) {
-	id, err := strconv.ParseInt(r.ID, 10, 64)
+	id, err := strconv.ParseInt(r.Name, 10, 64)
 	if err == nil && !slices.Contains(sc.ids, id) {
 		sc.ids = append(sc.ids, id)
 	}
@@ -61,5 +61,5 @@ func RepositoryAllowed(ctx context.Context, repo RepoRef) error {
 		return nil
 	}
 	return errs.E(errs.Internal, errs.CodeInternal, "A format named a repository that is not the request's or one of its members.",
-		errs.WithCause(fmt.Errorf("repository %q (id %d) is outside the request's repositories", repo.Key, repo.ID)))
+		errs.WithCause(fmt.Errorf("repository %q (id %d) is outside the request's repositories", repo.Name, repo.ID)))
 }

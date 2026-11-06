@@ -38,7 +38,7 @@ func RemoteRepo(id int64, key string) repository.Repository { return repo(id, ke
 
 func repo(id int64, key string, class repository.Class) repository.Repository {
 	return repository.Repository{
-		ID: strconv.FormatInt(id, 10), Key: key, Class: class, Format: Format,
+		Name: strconv.FormatInt(id, 10), Key: key, Class: class, Format: Format,
 		HideExistence: "inherit", Lifecycle: repository.Active,
 	}
 }

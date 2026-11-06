@@ -111,7 +111,7 @@ func (e *Engine) begin(ctx context.Context, jobID string, a PassArgs, res Result
 		return nil, "repository_gone", nil
 	case err != nil:
 		return nil, "", err
-	case repo.ID != strconv.FormatInt(a.RepositoryID, 10):
+	case repo.Name != strconv.FormatInt(a.RepositoryID, 10):
 		return nil, "repository_gone", nil
 	}
 	rs, ok := mirrored(repo)
@@ -402,7 +402,7 @@ func (p *pass) checkStop(ctx context.Context) bool {
 		if ctx.Err() == nil {
 			p.fatal(&passError{code: CodeInternal, err: err})
 		}
-	case repo.ID != strconv.FormatInt(p.id, 10):
+	case repo.Name != strconv.FormatInt(p.id, 10):
 		p.setHalt(haltMode, nil)
 	default:
 		p.applySnapshot(ctx, repo)

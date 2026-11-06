@@ -69,7 +69,7 @@ func (f *fakeCache) Entries(_ context.Context, _ int64, flt invalidation.EntryFi
 }
 
 func storedRepo(id, key string, class repository.Class) repository.Stored {
-	return repository.Stored{Repository: repository.Repository{ID: id, Key: key, Class: class, Format: "npm", Lifecycle: repository.Active}}
+	return repository.Stored{Repository: repository.Repository{Name: id, Key: key, Class: class, Format: "npm", Lifecycle: repository.Active}}
 }
 
 // noRunner is a runner that must not be reached: the refusals under test happen first.
@@ -179,7 +179,7 @@ func testInvalidateRepositoryCache(t *testing.T, val *apitest.Validator) {
 		if got["invalidated"] != 12 {
 			t.Errorf("body = %s", w.Body)
 		}
-		if len(fc.calls) != 1 || fc.calls[0].prefix != "@acme" || fc.calls[0].scope != "all" || fc.calls[0].repo.ID != "7" {
+		if len(fc.calls) != 1 || fc.calls[0].prefix != "@acme" || fc.calls[0].scope != "all" || fc.calls[0].repo.Name != "7" {
 			t.Errorf("calls = %+v", fc.calls)
 		}
 	})

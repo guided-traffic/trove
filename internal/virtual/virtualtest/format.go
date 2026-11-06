@@ -137,7 +137,7 @@ func (r *Rows) HoldsVersion(_ context.Context, m repository.Repository, name str
 
 func idOf(m repository.Repository) int64 {
 	var n int64
-	for _, c := range m.ID {
+	for _, c := range m.Name {
 		n = n*10 + int64(c-'0')
 	}
 	return n

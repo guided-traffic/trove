@@ -36,7 +36,7 @@ func memberAt(id int64, key string, tier formats.Tier, position int) formats.Pla
 	if tier != formats.TierLocal {
 		class = formats.Remote
 	}
-	return formats.PlannedMember{Member: formats.RepoRef{ID: id, Key: key, Class: class, Format: ID}, Tier: tier, Position: position}
+	return formats.PlannedMember{Member: formats.RepoRef{ID: id, Name: key, Class: class, Format: ID}, Tier: tier, Position: position}
 }
 
 // virtualSearchHost is a virtual repository over the members given, each with its own list.
@@ -63,7 +63,7 @@ func virtualSearchHost(t *testing.T, window int, members []formats.PlannedMember
 func withMembers(h *formattest.Host, members []formats.PlannedMember) {
 	var repos []repository.Repository
 	for _, m := range members {
-		repos = append(repos, repository.Repository{ID: strconv.FormatInt(m.Member.ID, 10), Key: m.Member.Key, Class: m.Member.Class, Format: string(ID)})
+		repos = append(repos, repository.Repository{Name: strconv.FormatInt(m.Member.ID, 10), Key: m.Member.Name, Class: m.Member.Class, Format: string(ID)})
 	}
 	*h.Repo() = repository.Assemble(*h.Repo(), repos, nil, 60)
 }

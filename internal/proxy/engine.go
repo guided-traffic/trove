@@ -376,7 +376,7 @@ func (e *Engine) event(rq Request, typ string, details map[string]any) audit.Eve
 	rem := rq.Remote
 	return audit.Event{
 		Type: typ, Actor: auditActor(rq.Caller), Outcome: audit.Failure, Source: rq.Caller.Source,
-		Subject:    audit.Subject{Kind: "repository", ID: rem.Repo.ID, Name: rem.Repo.Key},
+		Subject:    audit.Subject{Kind: "repository", ID: rem.Repo.Name, Name: rem.Repo.Key},
 		Repository: rem.Repo.Key, Path: rq.Path, Endpoint: rq.Caller.Endpoint, Details: mustJSON(details),
 	}
 }

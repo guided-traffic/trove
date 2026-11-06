@@ -1142,9 +1142,9 @@ func (OwnershipHook) OnUpdated(context.Context, meta.Tx, repository.Caller, repo
 
 // OnDelete implements [repository.Hooks].
 func (OwnershipHook) OnDelete(ctx context.Context, tx meta.Tx, _ repository.Caller, r repository.Repository) error {
-	id, err := strconv.ParseInt(r.ID, 10, 64)
+	id, err := strconv.ParseInt(r.Name, 10, 64)
 	if err != nil {
-		return fmt.Errorf("authz: the repository id %q is no number: %w", r.ID, err)
+		return fmt.Errorf("authz: the repository id %q is no number: %w", r.Name, err)
 	}
 	qs, err := queriesOf(tx)
 	if err != nil {

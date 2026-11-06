@@ -149,7 +149,7 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request, key, rest string
 // file is a download, of a folder (a path with a trailing slash, or the root) a listing that is like a
 // document, a PUT an upload and a DELETE a delete. It reports false for a method the handler refuses.
 func routeOf(r *http.Request, key string, p repository.Cleaned) (bastionmain.RouteMatch, bool) {
-	m := bastionmain.RouteMatch{Format: bastionmain.FormatFiles, RepoKey: key, Method: r.Method}
+	m := bastionmain.RouteMatch{Format: bastionmain.FormatFiles, Repo: key, Method: r.Method}
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
 		m.Name, m.Kind, m.Action = "files.get", bastionmain.KindDownload, authz.Read

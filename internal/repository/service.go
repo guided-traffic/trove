@@ -698,11 +698,11 @@ func (s *Service) recordAndNotify(ctx context.Context, tx meta.Tx, c Caller, eve
 	}
 	if err := s.rec.RecordTx(ctx, tx, audit.Event{
 		Type: event, Actor: c.Actor, Outcome: audit.Success, Source: c.Source,
-		Subject: audit.Subject{Kind: "repository", ID: r.ID, Name: r.Key}, Details: raw,
+		Subject: audit.Subject{Kind: "repository", ID: r.Name, Name: r.Key}, Details: raw,
 	}); err != nil {
 		return err
 	}
-	return s.notif.Notify(tx, cluster.AreaRepoConfig, 1, changePayload{ID: r.ID, Key: r.Key, Op: op, Version: r.Version})
+	return s.notif.Notify(tx, cluster.AreaRepoConfig, 1, changePayload{ID: r.Name, Key: r.Key, Op: op, Version: r.Version})
 }
 
 // ListFilter selects repositories (R-REPO-012). Class and format values are

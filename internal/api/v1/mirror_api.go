@@ -64,7 +64,7 @@ func (t serviceTargets) Target(ctx context.Context, key string) (MirrorTarget, e
 	if err != nil {
 		return MirrorTarget{}, err
 	}
-	id, err := parseRepositoryID(st.Repository.ID)
+	id, err := parseRepositoryID(st.Repository.Name)
 	if err != nil {
 		return MirrorTarget{}, err
 	}

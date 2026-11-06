@@ -79,7 +79,7 @@ func (s *Service) Stat(ctx context.Context, c Caller, repoKey string, p reposito
 	// The block of the vulnerability scanning comes last: after authorization and the format's own check, so that a
 	// version the caller may not read stays a 404 and a tombstoned one the format's (R-VULN-015).
 	if err := s.enforce.Refuse(ctx, enforce.Download{
-		Addressed: repoKey, Store: repo.Key, RepoID: repo.ID, Format: repo.Format, Path: it.Path, VersionID: it.VersionID, Stored: true,
+		Addressed: repoKey, Store: repo.Key, RepoID: repo.Name, Format: repo.Format, Path: it.Path, VersionID: it.VersionID, Stored: true,
 		Block: s.enforce.Decide(it.Policy, it.Block, it.VersionID), Actor: c.Actor, Source: c.Source, Endpoint: c.Subject.Endpoint,
 		Ecosystem: it.Policy.Ecosystem,
 	}); err != nil {

@@ -59,11 +59,11 @@ func (e *env) repoRow(key string, class repository.Class) repository.Repository 
 		`INSERT INTO repositories (key, format, class) VALUES ($1, 'npm', $2) RETURNING id`, key, string(class)).Scan(&id); err != nil {
 		e.t.Fatal(err)
 	}
-	return repository.Repository{ID: strconv.FormatInt(id, 10), Key: key, Class: class, Format: "npm", Lifecycle: repository.Active}
+	return repository.Repository{Name: strconv.FormatInt(id, 10), Key: key, Class: class, Format: "npm", Lifecycle: repository.Active}
 }
 
 func repoID(r repository.Repository) int64 {
-	n, _ := strconv.ParseInt(r.ID, 10, 64)
+	n, _ := strconv.ParseInt(r.Name, 10, 64)
 	return n
 }
 

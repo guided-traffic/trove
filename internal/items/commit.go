@@ -349,7 +349,7 @@ func (s *Store) linkFile(ctx context.Context, tx meta.Tx, repo RepoRef, spec Com
 		}); err != nil {
 			return err
 		}
-		if err := s.recordCommitted(ctx, tx, repo.Key, spec, out.overwritten); err != nil {
+		if err := s.recordCommitted(ctx, tx, repo.Name, spec, out.overwritten); err != nil {
 			return err
 		}
 		return readCommitted(ctx, qs, repo, path, out)
@@ -560,7 +560,7 @@ func (s *Store) CreateFolder(ctx context.Context, spec FolderSpec) (FolderResult
 		return FolderResult{}, err
 	}
 	if !found {
-		it = Item{Repository: repo.Key, Path: path, Kind: KindFolder, Explicit: true}
+		it = Item{Repository: repo.Name, Path: path, Kind: KindFolder, Explicit: true}
 	}
 	return FolderResult{Created: created, Item: it}, nil
 }

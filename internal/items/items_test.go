@@ -57,11 +57,11 @@ func TestPathHelpers(t *testing.T) {
 
 func TestRepoOf(t *testing.T) {
 	t.Run("R-STOR-003 the id of a repository read model is the decimal text of its row", func(t *testing.T) {
-		r := RepoOf(repository.Repository{ID: "42", Key: "generic-local", Class: repository.Local, Format: "generic"})
-		if r != (RepoRef{ID: 42, Key: "generic-local", Class: "local", Format: "generic"}) {
+		r := RepoOf(repository.Repository{Name: "42", Key: "generic-local", Class: repository.Local, Format: "generic"})
+		if r != (RepoRef{ID: 42, Name: "generic-local", Class: "local", Format: "generic"}) {
 			t.Errorf("RepoOf = %+v", r)
 		}
-		if got := RepoOf(repository.Repository{ID: "4x2"}).ID; got != 0 {
+		if got := RepoOf(repository.Repository{Name: "4x2"}).ID; got != 0 {
 			t.Errorf("a id that is not a number matches no item: %d", got)
 		}
 	})

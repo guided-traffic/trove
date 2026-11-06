@@ -42,7 +42,7 @@ func (f *Format) remoteMemberEntries(ctx context.Context, rq *formats.Request, d
 	}
 	var pages []*formats.RemoteDocument
 	if len(bounds) > 0 {
-		member, err := memberRequest(rq, d.Member.Key)
+		member, err := memberRequest(rq, d.Member.Name)
 		if err != nil {
 			return nil, err
 		}

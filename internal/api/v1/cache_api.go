@@ -165,7 +165,7 @@ func (s *Server) ListCacheEntries(w http.ResponseWriter, r *http.Request, repoKe
 	}
 	var id int64
 	if err == nil {
-		id, err = strconv.ParseInt(st.Repository.ID, 10, 64)
+		id, err = strconv.ParseInt(st.Repository.Name, 10, 64)
 	}
 	var rows []invalidation.Entry
 	if err == nil {

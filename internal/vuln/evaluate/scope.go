@@ -146,7 +146,7 @@ func viewOf(repo repository.Repository) (repoView, bool) {
 	if eco == "" || repo.Class == repository.Virtual {
 		return repoView{}, false
 	}
-	id, err := strconv.ParseInt(repo.ID, 10, 64)
+	id, err := strconv.ParseInt(repo.Name, 10, 64)
 	if err != nil {
 		return repoView{}, false
 	}

@@ -154,7 +154,7 @@ func fill(t *testing.T, f *Format, twin *npmtest.Store, body []byte, ev formats.
 	if err != nil {
 		t.Fatal(err)
 	}
-	ev.Repo = formats.RepoRef{ID: 9, Key: "npm-remote", Class: formats.Remote, Format: ID}
+	ev.Repo = formats.RepoRef{ID: 9, Name: "npm-remote", Class: formats.Remote, Format: ID}
 	ev.Path, ev.Variant, ev.Prepared, ev.Data = formats.Path{Path: "react"}, "full", prep, twin
 	if ev.Packages == nil {
 		ev.Packages = &fakeWriter{}

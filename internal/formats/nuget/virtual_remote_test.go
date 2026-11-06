@@ -59,7 +59,7 @@ func remoteMemberHost(t *testing.T, res *mergeResolver, fetcher formats.RemoteFe
 	f := New()
 	res.f = f
 	h := formattest.NewHost(f, formattest.HostOptions{Class: formats.Virtual, RepoKey: "all", Data: newDocStore(), Resolver: res, Remote: fetcher})
-	member := repository.Repository{ID: "7", Key: "remote", Class: repository.Remote, Format: string(ID), Lifecycle: repository.Active}
+	member := repository.Repository{Name: "7", Key: "remote", Class: repository.Remote, Format: string(ID), Lifecycle: repository.Active}
 	*h.Repo() = repository.Assemble(*h.Repo(), []repository.Repository{member}, nil, 60)
 	return h
 }
@@ -95,7 +95,7 @@ func TestR_NUGET_017_ARemoteMemberWithPagesByAddressIsMergedWhole(t *testing.T) 
 	index, pages := pagedUpstream(t, 200)
 	res := &mergeResolver{docs: docsOf(nil, []formats.MemberDocument{
 		localPart(t, "local", 0, registrationVersion("Acme.Widgets", "1.5.0", true, `{"description":"local"}`)),
-		{Member: formats.RepoRef{Key: "remote"}, Tier: formats.TierRemote, Position: 1, Doc: index},
+		{Member: formats.RepoRef{Name: "remote"}, Tier: formats.TierRemote, Position: 1, Doc: index},
 	})}
 	h := remoteMemberHost(t, res, &formattest.MemRemote{Docs: pages})
 	r := get(t, h, http.MethodGet, "v3/registration-semver2/acme.widgets/index.json")
@@ -165,7 +165,7 @@ func TestR_AUTHZ_008_ARestrictedRemoteMemberContributesTheCachedVersionsOfTheSto
 	index, pages := pagedUpstream(t, 200)
 	delete(pages, RegistrationPagePath("acme.widgets", "1.64.0", "1.127.0"))
 	member := formats.MemberDocument{
-		Member: formats.RepoRef{Key: "remote"}, Tier: formats.TierRemote, Position: 0, Doc: index,
+		Member: formats.RepoRef{Name: "remote"}, Tier: formats.TierRemote, Position: 0, Doc: index,
 		CachedVersions: map[string]bool{"1.3.0": true, "1.70.0": true, "1.150.0": true}, Restricted: true,
 	}
 	res := &mergeResolver{docs: docsOf(nil, []formats.MemberDocument{member})}
@@ -195,7 +195,7 @@ func TestR_NUGET_017_ARemoteEntryShowsTheSameThroughTheVirtualRepository(t *test
 	doc := `{"count":1,"items":[{"@id":"https://up/index.json#page","count":1,"items":[{"@id":"https://up/1.0.0.json","catalogEntry":` +
 		`{"version":"1.0.0","copyright":"(c) Acme","packageHashAlgorithm":"SHA512","summary":"s"}}]}]}`
 	res := &mergeResolver{docs: docsOf(nil, []formats.MemberDocument{
-		{Member: formats.RepoRef{Key: "remote"}, Tier: formats.TierRemote, Position: 0, Doc: []byte(doc)},
+		{Member: formats.RepoRef{Name: "remote"}, Tier: formats.TierRemote, Position: 0, Doc: []byte(doc)},
 	})}
 	h := virtualHost(t, res, nil)
 	ls := leavesOf(t, get(t, h, http.MethodGet, "v3/registration-semver2/acme.widgets/index.json"))

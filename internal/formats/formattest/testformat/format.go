@@ -667,7 +667,7 @@ func (f Format) docGet(ctx context.Context, rq *formats.Request, w http.Response
 	}
 	if f.has(string(ReadsOtherRepository)) {
 		other := rq.RepoRef()
-		other.ID, other.Key = other.ID+1000, "other"
+		other.ID, other.Name = other.ID+1000, "other"
 		if _, _, err := rq.Host.Packages().Package(ctx, other, name); err != nil {
 			return err
 		}

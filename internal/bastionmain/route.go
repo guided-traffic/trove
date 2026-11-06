@@ -29,7 +29,7 @@ type RouteMatch struct {
 	// Format is the format ID of the prefix ("npm") and RepoKey the addressed repository key as the path
 	// names it, without the "~cache" view suffix.
 	Format  string
-	RepoKey string
+	Repo string
 	// Name is the route's stable label ("npm.tarball.get").
 	Name string
 	// Method is the request method.
