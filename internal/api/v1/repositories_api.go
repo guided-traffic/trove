@@ -92,6 +92,25 @@ func repositoryCaller(r *http.Request) repository.Caller {
 	return repository.Caller{Actor: ActorFrom(httpserver.PrincipalFrom(r.Context())), Source: auditSource(r), Endpoint: SubjectFrom(r.Context()).Endpoint}
 }
 
+// writeCaller is the caller of a write of a repository document (create, replace, patch). The declaration
+// of these operations admits a holder of repositories:write-config and an Owner of the project; a caller that
+// does not hold the capability is allowed by the role owner alone and is Restricted (R-AUTHZ-026: the upstream
+// rules of Q-REPO-127, Q-REPO-128, Q-REPO-142 and Q-REPO-193). It may weaken the member vulnerabilities only
+// with vulnerabilities:triage (Q-VULN-69). The questions are asked without an audit event.
+func (s *Server) writeCaller(r *http.Request) (repository.Caller, error) {
+	c := repositoryCaller(r)
+	ctx := r.Context()
+	cfg, err := s.holds(ctx, capabilityWriteConfig)
+	if err != nil {
+		return repository.Caller{}, err
+	}
+	c.Restricted = !cfg
+	if c.MayWeakenVulnerabilities, err = s.holds(ctx, string(authz.VulnerabilitiesTriage)); err != nil {
+		return repository.Caller{}, err
+	}
+	return c, nil
+}
+
 // repositoryRep is the representation of a repository: the configuration document
 // and the members the server adds. The request type is the response type, so a
 // body obtained by GET can be sent back; the read-only members are ignored on the
@@ -654,11 +673,14 @@ func (s *Server) CreateProjectRepository(w http.ResponseWriter, r *http.Request,
 	if err == nil {
 		cfg, err = s.readsConfig(r.Context(), projectKey)
 	}
+	var caller repository.Caller
+	if err == nil {
+		caller, err = s.writeCaller(r)
+	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
 	}
-	caller := repositoryCaller(r)
 	err = s.idem.Do(w, r, raw, IdempotentOp{Run: func(ctx context.Context, tx meta.Tx) (Outcome, error) {
 		st, err := svc.CreateTx(ctx, tx, caller, projectKey, doc)
 		if err != nil {
@@ -773,7 +795,11 @@ func (s *Server) GetRepository(w http.ResponseWriter, r *http.Request, projectKe
 func (s *Server) ReplaceRepository(w http.ResponseWriter, r *http.Request, projectKey, repoKey string, _ gen.ReplaceRepositoryParams) {
 	name := qname.Repo{Project: projectKey, Key: repoKey}
 	s.writeRepository(w, r, name, func(svc *repository.Service, pre repository.Precondition, doc []byte) (repository.Stored, error) {
-		return svc.Replace(r.Context(), repositoryCaller(r), name, pre, doc)
+		caller, err := s.writeCaller(r)
+		if err != nil {
+			return repository.Stored{}, err
+		}
+		return svc.Replace(r.Context(), caller, name, pre, doc)
 	}, func() ([]byte, *string, error) {
 		_, doc, project, err := s.documentBody(w, r)
 		return doc, project, err
@@ -784,7 +810,11 @@ func (s *Server) ReplaceRepository(w http.ResponseWriter, r *http.Request, proje
 func (s *Server) UpdateRepository(w http.ResponseWriter, r *http.Request, projectKey, repoKey string, _ gen.UpdateRepositoryParams) {
 	name := qname.Repo{Project: projectKey, Key: repoKey}
 	s.writeRepository(w, r, name, func(svc *repository.Service, pre repository.Precondition, patch []byte) (repository.Stored, error) {
-		return svc.Patch(r.Context(), repositoryCaller(r), name, pre, MergePatcher(patch))
+		caller, err := s.writeCaller(r)
+		if err != nil {
+			return repository.Stored{}, err
+		}
+		return svc.Patch(r.Context(), caller, name, pre, MergePatcher(patch))
 	}, func() ([]byte, *string, error) { return s.patchBody(w, r) })
 }
 

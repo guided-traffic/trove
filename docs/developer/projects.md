@@ -8,8 +8,9 @@ the contract of the authorization engine's and the project service's side; the m
 [http-api.md](http-api.md), the security view in [security/delegated-administration.md](../security/delegated-administration.md).
 
 Status: built in the engine and the project service: the members with their roles and the role in the decision path, the selector
-contexts, the stored names of project policies, the member writes with the last-Owner rule, the move of a repository. Not built in this
-part: the rules of an Owner's remote repositories ([H-564](../security/delegated-administration.md#h-564--an-owners-remote-repository-is-not-held-to-the-owners-rules)).
+contexts, the stored names of project policies, the member writes with the last-Owner rule, the move of a repository. The rules of an Owner's
+remote repositories are applied by the repository service to a `Restricted` caller, which the management API sets
+(`writeCaller` in [repositories_api.go](../../internal/api/v1/repositories_api.go)).
 
 ## What has to be in your head
 

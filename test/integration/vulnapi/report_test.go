@@ -32,7 +32,7 @@ func TestR_VULN_020_Export(t *testing.T) {
 	}
 	wantHeader := []string{
 		"findingId", "status", "severity", "cvssScore", "cvssVersion", "kind", "knownExploited", "advisory", "aliases", "summary",
-		"format", "repository", "package", "version", "fixAvailable", "fixedVersions", "blocked", "blockReason", "detectedAt", "resolvedAt", "dismissalReason",
+		"format", "project", "repository", "package", "version", "fixAvailable", "fixedVersions", "blocked", "blockReason", "detectedAt", "resolvedAt", "dismissalReason",
 	}
 	if len(rows) != 3 || !slices.Equal(rows[0], wantHeader) {
 		t.Fatalf("rows = %v", rows)
