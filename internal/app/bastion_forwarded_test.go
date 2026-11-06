@@ -53,7 +53,7 @@ func forwardedChain(t *testing.T, serverProxies, bastionProxies []string) (http.
 	}
 	tokens := &oneBastion{}
 	router := httpserver.NewClientRouter()
-	router.HandleFunc("GET /api/npm/{repoKey}/{rest...}", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("GET /api/npm/{projectKey}/{repoKey}/{rest...}", func(w http.ResponseWriter, r *http.Request) {
 		info := httpserver.InfoFrom(r.Context())
 		_ = json.NewEncoder(w).Encode(map[string]string{"client": info.Client.String(), "base": info.BaseURL})
 	})
@@ -73,7 +73,7 @@ func forwardedChain(t *testing.T, serverProxies, bastionProxies []string) (http.
 
 func through(t *testing.T, h http.Handler, peer, xff, bst string) (client, base string) {
 	t.Helper()
-	r := httptest.NewRequest(http.MethodGet, "/api/npm/npm-all/lodash", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/npm/it/npm-all/lodash", nil)
 	r.RemoteAddr = peer + ":40000"
 	r.Header.Set("X-Forwarded-For", xff)
 	r.Header.Set("X-Forwarded-Proto", "https")

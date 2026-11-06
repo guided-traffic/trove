@@ -76,10 +76,10 @@ func TestR_ARCH_001_RouteFamiliesPerRole(t *testing.T) {
 	}{
 		"api": {
 			other: []probe{
-				{"GET", "/files/generic-local/x"},
-				{"PUT", "/files/generic-local/x"},
+				{"GET", "/files/it/generic-local/x"},
+				{"PUT", "/files/it/generic-local/x"},
 				{"GET", "/api/npm/npm-local/@acme%2fsdk"},
-				{"GET", "/api/nuget/nuget-local/v3/index.json"},
+				{"GET", "/api/nuget/it/nuget-local/v3/index.json"},
 				{"GET", "/v2/"},
 			},
 			own: []probe{{"GET", "/api/v1/system/ping"}, {"GET", "/ui/"}, {"GET", "/"}},
@@ -96,7 +96,7 @@ func TestR_ARCH_001_RouteFamiliesPerRole(t *testing.T) {
 				{"POST", "/api/v1/auth/oidc/token"},
 				{"DELETE", "/api/v1/projects/it/repositories/generic-local/content/x"},
 			},
-			own: []probe{{"GET", "/files/generic-local/x"}},
+			own: []probe{{"GET", "/files/it/generic-local/x"}},
 		},
 	}
 	for role, tc := range cases {
@@ -129,7 +129,7 @@ func TestR_ARCH_001_RouteFamiliesPerRole(t *testing.T) {
 			h := start(t, role, nil)
 			addr := h.app.EndpointAddr("default")
 			unknown := ask(t, addr, "GET", "/does-not-exist")
-			for _, p := range []string{"/api/v1/system/ping", "/ui/", "/files/generic-local/x"} {
+			for _, p := range []string{"/api/v1/system/ping", "/ui/", "/files/it/generic-local/x"} {
 				if got := ask(t, addr, "GET", p); got == unknown {
 					t.Errorf("%s on %s answers like an unknown path", p, role)
 				}

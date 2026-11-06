@@ -20,10 +20,10 @@ import (
 // packageRoutes stands in for the package formats that do not exist yet: one
 // generic route of the packages family.
 func packageRoutes(r *httpserver.Router) {
-	r.HandleFunc("GET /api/npm/{repoKey}/{rest...}", func(w http.ResponseWriter, req *http.Request) {
+	r.HandleFunc("GET /api/npm/{projectKey}/{repoKey}/{rest...}", func(w http.ResponseWriter, req *http.Request) {
 		info := httpserver.InfoFrom(req.Context())
 		_ = json.NewEncoder(w).Encode(map[string]string{
-			"endpoint": httpserver.EndpointFrom(req.Context()).Name(), "base": info.BaseURL, "root": httpserver.RootRepository(req.Context()),
+			"endpoint": httpserver.EndpointFrom(req.Context()).Name(), "base": info.BaseURL, "root": httpserver.RootRepository(req.Context()).String(),
 		})
 	})
 	holdRoutes(r)
@@ -63,7 +63,7 @@ func startEndpoints(t *testing.T, role string, extra map[string]string) *harness
 // refuses them by default (R-EP-010 item 4), which
 // TestEndpointRefusesAnonymousByDefault covers.
 func endpointsJSON(listen string, more string) string {
-	return fmt.Sprintf(`{"customers":{"listen":%q,"base_url":"https://packages.example.com","hosts":["pkgs.example.org"],"wildcard_host":"*.registry.example.com","host_roots":{"pkgs.example.org":"docker-hub"},"auth":{"anonymous":true}%s}}`, listen, more)
+	return fmt.Sprintf(`{"customers":{"listen":%q,"base_url":"https://packages.example.com","hosts":["pkgs.example.org"],"wildcard_host":"*.registry.example.com","host_roots":{"pkgs.example.org":"web/docker-hub"},"auth":{"anonymous":true}%s}}`, listen, more)
 }
 
 func TestEndpointRefusesAnonymousByDefault(t *testing.T) {
@@ -73,7 +73,7 @@ func TestEndpointRefusesAnonymousByDefault(t *testing.T) {
 	cust := h.app.EndpointAddr("customers")
 	t.Run("R-EP-010 R-EP-005 a further endpoint answers every request without a credential with the same 401", func(t *testing.T) {
 		var want string
-		for _, p := range []string{"/does-not-exist", "/ui/", "/auth/oidc/corp/start", "/api/v1/system/ping", "/api/npm/npm-customers/"} {
+		for _, p := range []string{"/does-not-exist", "/ui/", "/auth/oidc/corp/start", "/api/v1/system/ping", "/api/npm/it/npm-customers/"} {
 			code, body := hostGet(t, cust, "packages.example.com", p)
 			var pr map[string]any
 			_ = json.Unmarshal([]byte(body), &pr)
@@ -136,21 +136,21 @@ func TestEndpointsOnOneReplica(t *testing.T) {
 	})
 
 	t.Run("R-EP-003 a request on the second listener with the host of the default endpoint answers 421", func(t *testing.T) {
-		code, body := hostGet(t, cust, "trove.example.com", "/api/npm/npm-all/")
+		code, body := hostGet(t, cust, "trove.example.com", "/api/npm/it/npm-all/")
 		var p map[string]any
 		_ = json.Unmarshal([]byte(body), &p)
 		if code != 421 || p["code"] != "misdirected_request" {
 			t.Fatalf("%d %s", code, body)
 		}
-		if code, _ := hostGet(t, cust, "packages.example.com", "/api/npm/npm-all/"); code != 200 {
+		if code, _ := hostGet(t, cust, "packages.example.com", "/api/npm/it/npm-all/"); code != 200 {
 			t.Fatalf("own host: %d", code)
 		}
 	})
 
 	t.Run("R-EP-002 R-EP-009 the endpoint in the request log and the metrics comes from the listener, not from Host or a forwarded host", func(t *testing.T) {
 		hostGet(t, def, "packages.example.com", "/api/v1/system/ping", "X-Forwarded-Host", "packages.example.com")
-		hostGet(t, cust, "trove.example.com", "/api/npm/x/", "X-Forwarded-Host", "trove.example.com")
-		hostGet(t, cust, "pkgs.example.org", "/api/npm/x/")
+		hostGet(t, cust, "trove.example.com", "/api/npm/it/xx/", "X-Forwarded-Host", "trove.example.com")
+		hostGet(t, cust, "pkgs.example.org", "/api/npm/it/xx/")
 		deadline := time.Now().Add(startGuard)
 		var onDefault, mis, own map[string]any
 		for time.Now().Before(deadline) && (onDefault == nil || mis == nil || own == nil) {
@@ -158,9 +158,9 @@ func TestEndpointsOnOneReplica(t *testing.T) {
 				switch {
 				case r["path"] == "/api/v1/system/ping" && r["endpoint"] == "default":
 					onDefault = r
-				case r["path"] == "/api/npm/x/" && r["status"] == float64(421):
+				case r["path"] == "/api/npm/it/xx/" && r["status"] == float64(421):
 					mis = r
-				case r["path"] == "/api/npm/x/" && r["status"] == float64(200):
+				case r["path"] == "/api/npm/it/xx/" && r["status"] == float64(200):
 					own = r
 				}
 			}
@@ -178,7 +178,7 @@ func TestEndpointsOnOneReplica(t *testing.T) {
 		_, _, metrics := get(t, h.ops+"/metrics")
 		for _, want := range []string{
 			`trove_http_requests_total{code="200",endpoint="default",handler="GET /api/v1/system/ping",listener="client",method="GET"}`,
-			`trove_http_requests_total{code="200",endpoint="customers",handler="GET /api/npm/{repoKey}/{rest...}",listener="client",method="GET"}`,
+			`trove_http_requests_total{code="200",endpoint="customers",handler="GET /api/npm/{projectKey}/{repoKey}/{rest...}",listener="client",method="GET"}`,
 			`trove_endpoint_misdirected_total{endpoint="customers"} 2`,
 			`trove_endpoint_misdirected_total{endpoint="default"} 0`,
 			`trove_endpoint_listener_up{endpoint="customers"} 1`,
@@ -194,14 +194,14 @@ func TestEndpointsOnOneReplica(t *testing.T) {
 	})
 
 	t.Run("R-EP-003 a forwarded host from a peer outside the trusted proxies is not read", func(t *testing.T) {
-		code, _ := hostGet(t, cust, "trove.example.com", "/api/npm/x/", "X-Forwarded-Host", "packages.example.com", "X-Forwarded-Proto", "https")
+		code, _ := hostGet(t, cust, "trove.example.com", "/api/npm/it/xx/", "X-Forwarded-Host", "packages.example.com", "X-Forwarded-Proto", "https")
 		if code != 421 {
 			t.Fatalf("%d", code)
 		}
 	})
 
 	t.Run("R-EP-005 the second endpoint serves packages only: ui, api and the management API answer 404, /v2/ stays reserved", func(t *testing.T) {
-		for _, p := range []string{"/ui/", "/", "/auth/oidc/corp/start", "/api/v1/system/ping", "/api/v1/system/info", "/api/v1/openapi.json", "/files/generic-local/x", "/v2/", "/.well-known/terraform.json", "/does-not-exist"} {
+		for _, p := range []string{"/ui/", "/", "/auth/oidc/corp/start", "/api/v1/system/ping", "/api/v1/system/info", "/api/v1/openapi.json", "/files/it/generic-local/x", "/v2/", "/.well-known/terraform.json", "/does-not-exist"} {
 			code, body := hostGet(t, cust, "packages.example.com", p)
 			var pr map[string]any
 			_ = json.Unmarshal([]byte(body), &pr)
@@ -209,7 +209,7 @@ func TestEndpointsOnOneReplica(t *testing.T) {
 				t.Errorf("%s: %d %s", p, code, body)
 			}
 		}
-		if code, _ := hostGet(t, cust, "packages.example.com", "/api/npm/npm-customers/"); code != 200 {
+		if code, _ := hostGet(t, cust, "packages.example.com", "/api/npm/it/npm-customers/"); code != 200 {
 			t.Errorf("package route: %d", code)
 		}
 		// the default endpoint keeps every family
@@ -222,10 +222,10 @@ func TestEndpointsOnOneReplica(t *testing.T) {
 	})
 
 	t.Run("R-EP-006 a configured host-root binding is accepted and reserved: no route uses it", func(t *testing.T) {
-		code, body := hostGet(t, cust, "pkgs.example.org", "/api/npm/x/")
+		code, body := hostGet(t, cust, "pkgs.example.org", "/api/npm/it/xx/")
 		var got map[string]string
 		_ = json.Unmarshal([]byte(body), &got)
-		if code != 200 || got["root"] != "docker-hub" || got["base"] != "https://pkgs.example.org" {
+		if code != 200 || got["root"] != "web/docker-hub" || got["base"] != "https://pkgs.example.org" {
 			t.Fatalf("bound host: %d %s", code, body)
 		}
 		for _, p := range []string{"/v2/", "/.well-known/terraform.json"} {
@@ -233,7 +233,7 @@ func TestEndpointsOnOneReplica(t *testing.T) {
 				t.Errorf("%s on the bound host: %d", p, code)
 			}
 		}
-		_, body = hostGet(t, cust, "packages.example.com", "/api/npm/x/")
+		_, body = hostGet(t, cust, "packages.example.com", "/api/npm/it/xx/")
 		_ = json.Unmarshal([]byte(body), &got)
 		if got["root"] != "" {
 			t.Errorf("unbound host has a binding: %v", got)
@@ -280,7 +280,7 @@ func TestEndpointProcesses(t *testing.T) {
 		if !listening(custAddr) || listening(defAddr) {
 			t.Fatalf("customers listening %v, default listening %v", listening(custAddr), listening(defAddr))
 		}
-		if code, _ := hostGet(t, custAddr, "packages.example.com", "/api/npm/x/"); code != 200 {
+		if code, _ := hostGet(t, custAddr, "packages.example.com", "/api/npm/it/xx/"); code != 200 {
 			t.Fatalf("pool process: %d", code)
 		}
 	})

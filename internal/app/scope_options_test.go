@@ -15,7 +15,7 @@ func TestR_AUTH_024_ScopePatternsUseTheAuthorizationValidators(t *testing.T) {
 		return `{"repositories":[{"repositories":[` + repo + `],"packages":{"include":[` + pkg + `]},"paths":{"include":[` + path + `]},"actions":["read"]}]}`
 	}
 	ok := map[string]string{
-		"a key, a key pattern and a class selector": grant(`"npm-local","npm-team-*","@any-local:npm"`, `"@acme/*"`, `"releases/**"`),
+		"a key, a key pattern and a class selector": grant(`"web/npm-local","w*/npm-team-*","@any-local:npm"`, `"@acme/*"`, `"releases/**"`),
 		"every capability of R-AUTHZ-010":           `{"system":["content:bypass","endpoints:write","audit:read"]}`,
 		"the triage capability of R-VULN-019":       `{"inherit":false,"system":["vulnerabilities:triage"]}`,
 	}
@@ -27,7 +27,8 @@ func TestR_AUTH_024_ScopePatternsUseTheAuthorizationValidators(t *testing.T) {
 		})
 	}
 	bad := map[string]string{
-		"a repository selector that is no key": grant(`"Not A Key"`, `"a"`, `"b"`),
+		"a bare key outside a project":         grant(`"npm-local"`, `"a"`, `"b"`),
+		"a repository selector that is no key": grant(`"web/Not A Key"`, `"a"`, `"b"`),
 		"a class selector that does not exist": grant(`"@any-local-ish"`, `"a"`, `"b"`),
 		"a path pattern with an empty segment": grant(`"npm"`, `"a"`, `"a//b"`),
 		"a pattern longer than the limit":      grant(`"npm"`, `"`+strings.Repeat("a", 1025)+`"`, `"b"`),
