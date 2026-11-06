@@ -141,7 +141,7 @@ type Engine struct {
 	qmu    sync.Mutex
 	qcalls map[queryKey]*queryCall
 
-	keys sync.Map // repository id -> key, for the gauge of repositories no request touched
+	keys sync.Map // repository id -> qualified name, for the gauge of repositories no request touched
 
 	pmu     sync.Mutex
 	probes  map[int64]*atomic.Bool

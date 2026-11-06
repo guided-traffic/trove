@@ -127,7 +127,7 @@ func TestR_REPO_057_AFillOfTheMirrorWritesThePopulateEventWithTheSystemAsActorAn
 		}
 		waitFor(t, "the populate event to be recorded", 2*time.Second, func() bool { return len(r.rec.ofType(authz.EventWriteAllowed)) == 1 })
 		ev := r.rec.ofType(authz.EventWriteAllowed)[0]
-		if ev.Actor.Kind != "system" || ev.Actor.Name != "mirror" || ev.Reason != "mirror" || ev.Repository != "hosted" || ev.Path != "pkg/a/-/a-1.tgz" {
+		if ev.Actor.Kind != "system" || ev.Actor.Name != "mirror" || ev.Reason != "mirror" || ev.Repository != "it/hosted" || ev.Path != "pkg/a/-/a-1.tgz" {
 			t.Fatalf("%+v", ev)
 		}
 		var d map[string]any
@@ -240,7 +240,7 @@ func TestR_REPO_023_TheNamesAPassMayStoreAreThoseThePatternsTheClaimsAndTheForma
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.exec("INSERT INTO repositories (key, format, class, config) VALUES ('hosted-names', 'proxytest', 'remote', $1::jsonb)", string(raw))
+	e.exec("INSERT INTO repositories (key, format, class, config, project_id) SELECT 'hosted-names', 'proxytest', 'remote', $1::jsonb, id FROM project WHERE key = 'it'", string(raw))
 	rem := e.lookup("hosted-names")
 	r := e.newReplica("a", replicaOpts{})
 	mh := r.mirrorHost(claims{"claimed": true})
