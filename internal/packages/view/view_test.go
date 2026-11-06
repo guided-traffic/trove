@@ -48,7 +48,7 @@ func TestR_API_029_ParseIDRefusesWhatIsNoID(t *testing.T) {
 }
 
 func repoOf(key string, class repository.Class) repository.Repository {
-	return repository.Repository{Name: key, Class: class, Format: "npm"}
+	return repository.Repository{Name: qr(key), Class: class, Format: "npm"}
 }
 
 func TestR_API_029_TopologyExpandsVirtualRepositories(t *testing.T) {

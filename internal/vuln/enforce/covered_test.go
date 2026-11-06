@@ -34,7 +34,7 @@ func TestR_VULN_015_MissingDataAppliesOnlyToACoveredPolicy(t *testing.T) {
 			if b := f.e.Decide(p, vuln.BlockRow{}, 7); b.Active() != tc.want {
 				t.Errorf("Decide = %+v, want active %v", b, tc.want)
 			}
-			m := Miss{Repo: repository.Repository{Name: "npm-remote", Format: "npm"}, Package: "p", Version: "1.0.0"}
+			m := Miss{Repo: repository.Repository{Name: qr("npm-remote"), Format: "npm"}, Package: "p", Version: "1.0.0"}
 			if err := f.e.gate(context.Background(), p, m); (err != nil) != tc.want {
 				t.Errorf("gate = %v, want refusal %v", err, tc.want)
 			}
@@ -54,7 +54,7 @@ func TestR_VULN_015_ANotCoveredPolicyStillBlocksOnAFinding(t *testing.T) {
 
 // Q-VULN-75: PolicyOf fills Covered from the option; without the option every repository is covered (fail-closed).
 func TestR_VULN_015_PolicyOfFillsCovered(t *testing.T) {
-	r := repository.Repository{Name: "npm-remote", Format: "npm"}
+	r := repository.Repository{Name: qr("npm-remote"), Format: "npm"}
 	st := states{"npm": {}}
 	if p := New(Options{Enabled: true, States: st}).PolicyOf(r); !p.Covered {
 		t.Error("an enforcer without the option does not cover")

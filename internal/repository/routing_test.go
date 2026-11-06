@@ -84,7 +84,7 @@ func (f *routeFixture) virtual(key, format string, memberKeys []string, rules []
 func (f *routeFixture) route(v Repository, name string) Route {
 	f.t.Helper()
 	idx := buildClaimIndex(f.rows, slog.New(slog.DiscardHandler))
-	return routeOf(f.cat, idx, func(id int64) string { return f.keys[id] }, v, RouteRequest{Name: name})
+	return routeOf(f.cat, idx, func(id int64) qname.Repo { return rn(f.keys[id]) }, v, RouteRequest{Name: name})
 }
 
 func memberKeys(r Route) []string {
@@ -165,7 +165,7 @@ func TestRoutePathSubject(t *testing.T) {
 	v := f.virtual("all", "pathfmt", []string{"releases", "any"}, nil)
 	idx := buildClaimIndex(nil, slog.New(slog.DiscardHandler))
 	route := func(path string) Route {
-		return routeOf(f.cat, idx, func(int64) string { return "" }, v, RouteRequest{Path: path})
+		return routeOf(f.cat, idx, func(int64) qname.Repo { return qname.Repo{} }, v, RouteRequest{Path: path})
 	}
 	if got := memberKeys(route("releases/1.0/app.zip")); !slices.Equal(got, []string{"releases", "any"}) {
 		t.Fatalf("members = %v", got)
@@ -190,7 +190,7 @@ func TestRouteClaims(t *testing.T) {
 	t.Run("R-REPO-023 a members claim of a member decides: only the claiming local member is consulted", func(t *testing.T) {
 		r := f.route(all, "@acme/util")
 		if !slices.Equal(memberKeys(r), []string{"team-a"}) || r.Decision.Kind != DecidedByClaim ||
-			r.Decision.Pattern != "@acme/*" || !slices.Equal(r.Decision.ClaimedBy, []string{"team-a"}) {
+			r.Decision.Pattern != "@acme/*" || !slices.Equal(r.Decision.ClaimedBy, []qname.Repo{rn("team-a")}) {
 			t.Fatalf("route = %+v", r)
 		}
 		if r.Dropped[rn("team-b")] != DropClaimedElsewhere || r.Dropped[rn("remote")] != DropClaimedElsewhere {
@@ -211,7 +211,7 @@ func TestRouteClaims(t *testing.T) {
 	})
 	t.Run("R-REPO-023 a global claim of a repository outside V is in effect: nothing is consulted, the answer is 404", func(t *testing.T) {
 		r := f.route(all, "@sandbox/tool")
-		if len(r.Members) != 0 || r.Decision.Kind != DecidedByClaim || !slices.Equal(r.Decision.ClaimedBy, []string{"sandbox"}) {
+		if len(r.Members) != 0 || r.Decision.Kind != DecidedByClaim || !slices.Equal(r.Decision.ClaimedBy, []qname.Repo{rn("sandbox")}) {
 			t.Fatalf("route = %+v", r)
 		}
 		for _, k := range []string{"team-a", "team-b", "remote"} {

@@ -379,7 +379,7 @@ func TestYieldSignal(t *testing.T) {
 
 func TestBackgroundClassification(t *testing.T) {
 	f := &fetcher{e: &Engine{o: Options{Now: time.Now}}}
-	f.rq.Remote.Repo.Name = "r"
+	f.rq.Remote.Repo.Name = qr("r")
 	f.rq.Priority = PriorityBackground
 	resp := func(status int, body string, h ...string) *http.Response {
 		r := &http.Response{StatusCode: status, Header: http.Header{}, Body: http.NoBody}

@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
@@ -441,7 +443,8 @@ type memRepos struct {
 	repos map[string]repository.Repository
 }
 
-func (r *memRepos) ByKey(_ context.Context, key string) (repository.Repository, error) {
+func (r *memRepos) ByName(_ context.Context, name qname.Repo) (repository.Repository, error) {
+	key := name.Key
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if repo, ok := r.repos[key]; ok {
@@ -457,14 +460,25 @@ func (r *memRepos) List(context.Context) ([]repository.Repository, error) {
 	for _, repo := range r.repos {
 		out = append(out, repo)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	sort.Slice(out, func(i, j int) bool { return out[i].Name.String() < out[j].Name.String() })
+	return out, nil
+}
+
+func (r *memRepos) ListProject(ctx context.Context, project string) ([]repository.Repository, error) {
+	all, _ := r.List(ctx)
+	var out []repository.Repository
+	for _, repo := range all {
+		if repo.Name.Project == project {
+			out = append(out, repo)
+		}
+	}
 	return out, nil
 }
 
 func (r *memRepos) set(repo repository.Repository) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.repos[repo.Name] = repo
+	r.repos[repo.Name.Key] = repo
 }
 
 func (r *memRepos) remove(key string) {
@@ -785,7 +799,7 @@ func mirrorDoc(t *testing.T, include []string, mirrorSettings string) []byte {
 
 func buildRepo(t *testing.T, key string, id int64, doc []byte) repository.Repository {
 	t.Helper()
-	r, err := repository.Build(id, rigVersion.Add(1), key, repository.Remote, "npm", doc, nil)
+	r, err := repository.Build(id, rigVersion.Add(1), qr(key), repository.Remote, "npm", doc, nil)
 	if err != nil {
 		t.Fatalf("repository: %v", err)
 	}
@@ -847,7 +861,7 @@ func (g *rig) run(args ...PassArgs) (*result, error) {
 func (g *rig) runAs(e *Engine, args ...PassArgs) (*result, error) {
 	g.t.Helper()
 	g.jobs++
-	a := PassArgs{Repository: "npm-mirror", RepositoryID: rigRepoID}
+	a := PassArgs{Repository: qr("npm-mirror"), RepositoryID: rigRepoID}
 	if len(args) > 0 {
 		a.Full = args[0].Full
 	}

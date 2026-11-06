@@ -2,6 +2,7 @@ package repository
 
 import (
 	"encoding/json"
+	"github.com/guided-traffic/trove/internal/qname"
 	"strings"
 	"testing"
 
@@ -288,8 +289,8 @@ func TestConsumerView(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		raw, _ := json.Marshal(d.ConsumerView("/files/{key}/"))
-		want := `{"key":"files","class":"local","format":"generic","description":"d","layout":"generic","addresses":["/files/files/"]}`
+		raw, _ := json.Marshal(d.ConsumerView("/files/{project}/{key}/", qname.Repo{Project: "it", Key: "files"}))
+		want := `{"key":"files","class":"local","format":"generic","description":"d","layout":"generic","addresses":["/files/it/files/"]}`
 		if string(raw) != want {
 			t.Fatalf("view = %s", raw)
 		}

@@ -735,7 +735,7 @@ func TestR_REPO_053_TheDispatchEnqueuesTheDuePassesOnce(t *testing.T) {
 	var a PassArgs
 	b, _ := json.Marshal(g.queue.specs[0].Args)
 	_ = json.Unmarshal(b, &a)
-	mustEqual(t, "args", a, PassArgs{Repository: "npm-mirror", RepositoryID: rigRepoID})
+	mustEqual(t, "args", a, PassArgs{Repository: qr("npm-mirror"), RepositoryID: rigRepoID})
 	for _, id := range []int64{rigRepoID, 8} {
 		if _, ok, _ := g.store.State(t.Context(), id); !ok {
 			t.Errorf("no state row for %d", id)

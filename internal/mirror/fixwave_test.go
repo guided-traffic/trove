@@ -495,7 +495,7 @@ func TestR_REPO_053_ADocumentThatDoesNotLoadIsAPauseNotAModeChange(t *testing.T)
 	if _, err := g.run(); err != nil {
 		t.Fatal(err)
 	}
-	broken, _ := repository.Build(rigRepoID, rigVersion.Add(1), "npm-mirror", repository.Remote, "npm", []byte(`{"remote":"not an object"}`), nil)
+	broken, _ := repository.Build(rigRepoID, rigVersion.Add(1), qr("npm-mirror"), repository.Remote, "npm", []byte(`{"remote":"not an object"}`), nil)
 	if _, ok := broken.Remote(); ok {
 		t.Fatal("the test document loads")
 	}
@@ -518,7 +518,7 @@ func TestR_REPO_053_ADocumentThatDoesNotLoadIsAPauseNotAModeChange(t *testing.T)
 func TestR_REPO_057_TheGaugesCarryFailuresAndTheNextPassOfAMirrorInService(t *testing.T) {
 	repos := &memRepos{repos: map[string]repository.Repository{}}
 	mk := func(key string, id int64, doc string) repository.Repository {
-		r, err := repository.Build(id, 1, key, repository.Remote, "npm", []byte(doc), nil)
+		r, err := repository.Build(id, 1, qr(key), repository.Remote, "npm", []byte(doc), nil)
 		if err != nil {
 			t.Fatal(err)
 		}

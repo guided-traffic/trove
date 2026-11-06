@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/packages/view"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -17,15 +19,15 @@ type fakeScope struct {
 	allow func(pkg, version string) bool
 }
 
-func (f *fakeScope) Shape(key string) authz.ReadShape {
-	if key == "npm-part" {
+func (f *fakeScope) Shape(key qname.Repo) authz.ReadShape {
+	if key.Key == "npm-part" {
 		return authz.ReadRows
 	}
 	return authz.ReadNone
 }
 
-func (f *fakeScope) MayRead(repo, pkg, version string) bool {
-	f.asked = append(f.asked, repo+" "+pkg+" "+version)
+func (f *fakeScope) MayRead(repo qname.Repo, pkg, version string) bool {
+	f.asked = append(f.asked, repo.Key+" "+pkg+" "+version)
 	return f.allow(pkg, version)
 }
 
@@ -38,8 +40,8 @@ type independent struct {
 func (i independent) VersionIndependent() bool { return i.free }
 
 func buildFixture() (*Service, *Snapshot) {
-	repos := []repository.Repository{{Name: "npm-part", Class: repository.Local, Format: "npm"}}
-	sn := &Snapshot{Repos: repos, Topo: view.NewTopology(repos), byKey: map[string]repository.Repository{"npm-part": repos[0]}}
+	repos := []repository.Repository{{Name: qr("npm-part"), Class: repository.Local, Format: "npm"}}
+	sn := &Snapshot{Repos: repos, Topo: view.NewTopology(repos), byKey: map[string]repository.Repository{"it/npm-part": repos[0]}}
 	return &Service{cfg: Config{MaxScopeRows: 1000}}, sn
 }
 
