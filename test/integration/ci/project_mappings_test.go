@@ -239,7 +239,7 @@ func TestQ_CI_26_AProjectOwnerManagesTheMappingsOfItsProject(t *testing.T) {
 	})
 
 	t.Run("Q-AUTHZ-208 only an Owner of the project reaches its CI routes, a lower role does not", func(t *testing.T) {
-		p.epoch = p.addMember("web", p.env.aliceID, "maintainer")
+		p.epoch = p.addMember("web", p.aliceID, "maintainer")
 		for _, op := range []struct{ method, path string }{{"GET", path}, {"POST", path}, {"GET", path + "/gitlab-main/web-publish"}} {
 			r := p.as(a, p.alicePAT, op.method, op.path, webPublish("web-late", 500))
 			if r.Status != 403 && r.Status != 404 {

@@ -2,13 +2,13 @@ package claims
 
 import (
 	"errors"
-	"github.com/guided-traffic/trove/internal/qname"
 	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/guided-traffic/trove/internal/ci/reason"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // Warning is a finding of a save that does not refuse it (R-CI-010, R-CI-011): the save succeeds and
