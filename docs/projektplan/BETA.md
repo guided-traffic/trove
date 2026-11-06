@@ -873,8 +873,15 @@ areas.
 - 🟡 Tests: the role table in the architecture test, chart tests per role and `TestE03Roles` (every role deployed, routing,
   access logs, the other family an unknown path at the pod) are green on kind, and `TestDrainRoles` (set `drain-roles`, nightly)
   passed in nightly run 41902592855 with its own load and on kind locally on 2026-11-05 with the npm load of `TestNPMHA` beside
-  it, the load the owner decided ([Q-HA-94](../spec/ha-and-helm.md#q-ha-94--the-load-of-the-drain-per-role)). Open: the e2e test
-  of the upgrade across the cut (E6a.7) is not built (WP6a.5, E6a.1 to E6a.8)
+  it, the load the owner decided ([Q-HA-94](../spec/ha-and-helm.md#q-ha-94--the-load-of-the-drain-per-role)). E6a.7 built and run
+  on kind on 2026-11-06 (`TestUpgrade_R_HA_064_AcrossTheCut`, set `upgrade`, nightly leg `e2e-upgrade`): v0.16.0 installed from its
+  published chart and image, both steps of R-HA-064 with `helm upgrade --wait` under 141 `npm ci`, 27 publishes and 186 `dotnet
+  restore` (0 failed) and 25 browser journeys; the guard refuses `web.enabled: false` before anything changes; between the steps the
+  registry lists `api`, `packages`, `web` and `worker`, after step 2 no `web`. 2 journeys met the UI's hashed assets of the other
+  release, which the pods of v0.16.0 cannot serve; for that release alone they are counted as a finding
+  ([Q-HA-99](../spec/ha-and-helm.md#q-ha-99--the-uis-hashed-assets-across-an-upgrade), F-58). The dev PostgreSQL allows 450
+  connections for the bridge (Q-HA-98). Open: E6a.8, a passing test that names R-HA-021, R-HA-031, R-HA-038 and R-HA-045 (the last
+  three are completed with phase 7's chart), and the first nightly run of the leg
 
 ## Phase 6b · Remote full mirror
 
@@ -923,7 +930,16 @@ phase 7, so that the failure suite covers the background sync too. Its engine wa
 Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · spec: [ha-and-helm.md](../spec/ha-and-helm.md), [backup-and-restore.md](../spec/backup-and-restore.md)
 
 **High availability**
-- 🟡 Failure suite: pod crash, PostgreSQL switchover and failover, Valkey failover and outage, S3 outage, node loss
+- 🟡 Failure suite: pod crash, PostgreSQL switchover and failover, Valkey failover and outage, S3 outage, node loss.
+  Built 2026-11-06 in the set `ha-suite` (nightly leg `e2e-npm (ha-suite)`), under the npm load: the PostgreSQL primary force-deleted
+  (301 `npm ci`, 0 failed, k6 18,146 requests without a failure) and the Valkey primary force-deleted (`/readyz` 200 throughout)
+  passed on kind; the object-store outage of 30 s and of 5 min with a replica deleted, and node loss (`docker stop` of a kind node)
+  found four defects, fixed: a transport timeout of a download answered `500`, `Retry-After` of an open circuit was 5 s instead of
+  `open_duration`, an upload with `Expect: 100-continue` sent its body before the `503`, the audit forward's timeout (Q-STOR-147 to
+  Q-STOR-149, Q-HA-103 to Q-HA-105, Q-NPM-77). Node loss met its bounds (replacements ready 65 s after the node was declared lost,
+  the lease moved, never two holders); a command running on the lost node may fail with a network error (Q-HA-105). Open: a run of the
+  whole set after the fixes, and the nightly leg. Pod crash, switchover, Valkey failover and outage were green before
+  (`TestNPMHACrash`, `TestNPMHA`, `TestNPMHAClosing`, `TestE13Failover`)
 - 🟡 Node drain under npm and NuGet load with zero failed requests; the NuGet load (`TestNuGetHA`) and R-ARCH-024's drain
   criterion move here from phase 4 ([Q-NUGET-73](../spec/formats/nuget.md#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs))
 - 🟡 npm load in the drain and failover tests reliably green (moved from phase 3, owner 2026-11-01). Diagnosis of
@@ -944,8 +960,11 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   ([Q-ARCH-329](../spec/architecture.md#q-arch-329--the-job-worker-is-cancelled-early-enough-that-the-release-writes-of-its-jobs-get-their-whole-settle-deadline)):
   the job worker is cancelled 15 s before the close deadline (`TestShutdownReleaseWrites`). The nightly `npm-ha` passed on the class
   `large` in run 42126196109. Open: green nightly runs in a row on the fix
-- 🟡 The drain criterion of the security audit (R-NPM-038, moved from phase 3): the `web` pod that forwards an `npm audit`
-  to a provider answering after 20 s is deleted 1 s in; `npm audit` succeeds and no pod gets `SIGKILL`
+- 🟢 The drain criterion of the security audit (R-NPM-038, moved from phase 3): the `web` pod that forwards an `npm audit`
+  to a provider answering after 20 s is deleted 1 s in; `npm audit` succeeds and no pod gets `SIGKILL`. `TestHASuite_R_NPM_038_AuditDrain`
+  (set `ha-suite`) passed on kind on 2026-11-06: the audit exited 0 after 20.3 s, the `packages` pod deleted 1,002 ms after the
+  request arrived, no SIGKILL. It found that the forward gave up after the remote's `readTimeoutMs` (15 s) instead of
+  `npm.audit.timeout` (30 s), fixed (Q-NPM-77)
 - 🟡 The default of `health.shutdown_drain_delay` (5 s, proposed) set from the endpoint-removal time of the target Ingress measured under load; the dev profile needs 15 s on the CI runners (Actions run 41241903588).
   Built 2026-11-06: the drain tests (`TestE14Drain`, `TestDrainRoles`, the drain of `TestNPMHA`) read from each evicted pod's own log the
   time from its readiness flip to the last request the edge sent it, and fail when the delay is not longer
@@ -969,7 +988,11 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   finding twice, none lost), the block of four versions answered on every replica through a node drain, a Valkey failover and a
   switchover, a worker killed mid-sync (a failed job and a clean next run: the sync kinds have one attempt). Open: their first run
   (nightly), drain variants B to E, and the restore part, which waits for backup and restore
-- 🟡 Rolling upgrade from the previous pre-release with mixed versions
+- 🟢 Rolling upgrade from the previous pre-release with mixed versions. `TestUpgrade_R_HA_020_RollingFromThePreviousRelease`
+  (set `upgrade`) passed on kind on 2026-11-06: v0.19.0 (resolved from the tags) upgraded with its migration Job and rolled back with
+  `helm rollback`, under 447 `npm ci`, 47 publishes, 545 `dotnet restore` and 71 browser journeys, 0 failed; R-HA-020's verification
+  (rollout status, only the new version listed, no pending migration through `trove migrate status`, since the endpoint is F-59). The
+  test is strict on the UI's assets: the first release that changes the bundle makes it red until F-58 is fixed
 - 🟡 Performance targets met in two nightly runs in a row
 
 **Backup and restore**
