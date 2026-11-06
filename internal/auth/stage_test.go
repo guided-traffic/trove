@@ -396,7 +396,7 @@ func TestR_AUTH_037_AnonymousAccess(t *testing.T) {
 			}
 		}
 		// A route it does serve stays open.
-		if res, err := off.Authenticate(req("GET", "/api/npm/npm-all/-/v1/login"), packagesOnly); err != nil || !res.Anonymous {
+		if res, err := off.Authenticate(req("GET", "/api/npm/it/npm-all/-/v1/login"), packagesOnly); err != nil || !res.Anonymous {
 			t.Errorf("the npm login start on packages: %+v %v", res, err)
 		}
 		// Without the rule, every family is served, as before.
@@ -414,7 +414,7 @@ func TestR_AUTH_037_AnonymousAccess(t *testing.T) {
 		wantErr(t, err, 401, errs.CodeCredentialsRequired)
 	})
 	t.Run("R-AUTH-001 exchange routes receive the ID token as Authorization without evaluation", func(t *testing.T) {
-		for _, p := range []string{"/api/v1/auth/oidc/token", "/-/npm/v1/oidc/token/exchange/package/@acme%2Fui", "/api/npm/npm-all/-/npm/v1/oidc/token/exchange/package/@acme%2Fui"} {
+		for _, p := range []string{"/api/v1/auth/oidc/token", "/-/npm/v1/oidc/token/exchange/package/@acme%2Fui", "/api/npm/it/npm-all/-/npm/v1/oidc/token/exchange/package/@acme%2Fui"} {
 			res, err := off.Authenticate(req("POST", p, "Authorization", "Bearer eyJhbGciOiJSUzI1NiJ9.e30.c2ln"), defaultRules())
 			if err != nil || !res.Anonymous {
 				t.Errorf("%s: %+v %v", p, res, err)
