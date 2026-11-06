@@ -41,7 +41,7 @@ This page lists what this version of trove does not do, and the known weak spots
 - No search over packages and files from the top bar; it searches repositories only. Use the **Packages** list and **Browse**.
 - No warning before a session ends. Sessions end after 1 hour idle or 12 hours in total by default (`auth.sessions.idle_timeout`, `absolute_timeout`).
 - No trash can: deleted files and packages cannot be restored. The file browser cannot copy or move files or edit properties.
-- The repository wizard has no fields for the upstream of a remote repository or for the members of a virtual one; an npm remote is created with the public npm registry as its upstream. Set them through the management API (`/api/v1/repositories/{key}`).
+- The repository wizard has no fields for the members and the deployment target of a virtual repository. Set them through the management API (`/api/v1/projects/{projectKey}/repositories/{repoKey}`).
 - The token screens cannot bind a token to an endpoint; use the management API or `trove admin token`, see [Endpoints and exposure rules](endpoints.md#bind-a-token-to-an-endpoint).
 - The exposure **Preview** judges only the versions you type, although its label says it lists the stored ones when empty, and it never shows which dist-tags stay visible.
 
@@ -87,5 +87,5 @@ This page lists what this version of trove does not do, and the known weak spots
 
 ## Remote repositories
 
-- A missing upstream secret file, or a stored secret sealed with a key the replica lacks, is noticed at the repository's first request, which answers `502 upstream_secret_unavailable`, not at start-up. Run the repository's upstream test (`POST /api/v1/repositories/{key}/upstream-test`) after rolling out secret files.
+- A missing upstream secret file, or a stored secret sealed with a key the replica lacks, is noticed at the repository's first request, which answers `502 upstream_secret_unavailable`, not at start-up. Run the repository's upstream test (`POST /api/v1/projects/{projectKey}/repositories/{repoKey}/upstream-test`) after rolling out secret files.
 - Whoever may configure remote repositories can point any upstream secret of `config_as_code.secrets_dir` at a host of their choice. Mount only the upstream secrets that those administrators may use.

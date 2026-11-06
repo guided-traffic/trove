@@ -74,8 +74,8 @@ From left to right:
 | Menu button | Opens the side bar when it is collapsed, or on a narrow screen |
 | **trove** | Returns to the start page, **Browse** |
 | **Find a repository** | Searches repositories by key and description and opens the matching list in the admin area's **Repositories**. Shown only if you may read the configuration of repositories |
-| Project filter | Shown when projects exist and you may see them: limits the repository and policy lists to one project |
-| **Admin** | Opens the admin area. Shown only if you hold an administrative permission or administer a project |
+| Project filter | Shown when you are a member of a project or may read every project: limits the repository and policy lists to one project |
+| **Admin** | Opens the admin area. Shown only if you hold an administrative permission or are a member of a project |
 | **Documentation** | Opens this manual. On a screen that has a matching manual page, it opens that page |
 | **Theme** | **Follow the system**, **Light** or **Dark** |
 | User menu | A round badge with your initial. Its menu shows your name and holds **Profile and tokens**, **Client setup**, **Language** and **Sign out** |
@@ -87,7 +87,7 @@ The side bar shows the area you are in:
 | Area | Entries | Who sees it |
 |---|---|---|
 | **Artifacts** | **Packages**, **Browse**, **Guides**, **Vulnerabilities** | Everyone, anonymous readers included |
-| **Admin area** | Projects, repositories, endpoints, Bastions, identity, access and system screens | Only people who hold an administrative permission or administer a project, and only the entries they may use. **Admin** in the top bar leads there, **trove** leads back |
+| **Admin area** | Projects, repositories, endpoints, Bastions, identity, access and system screens | Only people who hold an administrative permission or are a member of a project, and only the entries they may use. **Admin** in the top bar leads there, **trove** leads back |
 
 The side bar is pinned on wide screens. **Collapse sidebar** at its foot hides it, and the menu button in the top bar brings it back; trove remembers the choice in this browser. On a narrow screen it opens over the content and closes with Escape, a click beside it, or when you pick an entry. Groups such as **Identity** fold and unfold with a click on their heading.
 
