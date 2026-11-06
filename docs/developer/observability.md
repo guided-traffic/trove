@@ -116,7 +116,10 @@ never emits them outside `trove_build_info`.
    changes first.
 3. Label values must be bounded: enumerations in code, handler names from the route table, `repo` and
    `subscription` through `m.Repos().Value(family, key)` / `m.Subscriptions().Value(...)` (cap, `_other`,
-   overflow counter). Never a user name, token ID, IP, path, package name, version, trace ID or error text.
+   overflow counter); the `repo` cap follows the repository snapshot: `SnapshotReader` calls `ReaderOptions.OnLoad` with the
+   repositories in creation order on every rebuild, and `App.updateRepoLabels` ([wire_repository.go](../../internal/app/wire_repository.go))
+   hands them to `CappedLabels.UpdateRepositories`, which matches `repository_label_include` (keys, patterns and classes such as
+   `@any-remote`) against them. Never a user name, token ID, IP, path, package name, version, trace ID or error text.
 4. Take `*observability.Metrics` (or only a `prometheus.Registerer` from `m.Registry()`) in your constructor.
    A family a role does not run must not be registered on that role ("absent, not zero").
 5. In your package test call `observability.CheckFamilies` over the gathered registry (or `m.Check()`), so a

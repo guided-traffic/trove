@@ -423,7 +423,6 @@ set -a; . .dev/integration/env; set +a; go test -count=1 -p 1 -tags integration 
 - The restore's replay (`trove admin npm reinstate`, the journal) does not exist yet; the withheld state is written by hand in `TestR_NPM_047_WithheldVersionsAreNotServed`. `OnItemsRestored` is driven through the kit only: the trash can is P1.
 - Compression of documents is tested with gzip only; a client that sends another coding gets the identity form.
 - Publish, `npm view`, `npm unpublish`, `npm dist-tag`, `pnpm` and Yarn against the documents in the unit and integration tiers: the real clients run in the end-to-end client matrix ([e2e.md](e2e.md)).
-- The `repo` metric label is `_other` for every repository until a component feeds `observability.CappedLabels` the repository keys.
 - The audit with real clients is not in the unit and integration tiers: npm 10, 11 and 12, pnpm 10, 11 and 12 and Yarn 4 were run by hand on
   2026-10-31 against an in-process replica with the counting upstream as provider (advisories reported, the notice printed by npm only, the 501
   at `npm-local`, pnpm 10 after 2 min 20 s); the matrix scenario `audit` repeats it in CI. The criterion that compares with the public
