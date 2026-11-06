@@ -217,6 +217,18 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
   red with the first release that changes the bundle. Fix (option (c) of Q-HA-99, to be designed): the image carries the previous
   release's bundle and a replica that misses a hashed asset serves or fetches it, or the edge keeps a page on one release. Done when the
   rolling upgrade passes across two releases with different bundles.
+- **F-60 · A request's memory charge grows with every blob it opens, and a ranged read is charged for the whole object**
+  (read by the code review of 2026-11-06, in Q-ARCH-328's admission, released since v0.19.1; not reproduced yet). `Ticket.Settle`
+  (internal/httpserver/memory.go) adds every later settle to the charge, and `Store.Open` charges `DownloadCost` of the whole blob
+  even for a range. A NuGet package page with its README opens the nupkg once per `ReadAt` (about 215 times for 100 entries), computed
+  at about 107 MiB charged for a few KiB held, so a handful of such views would refuse every download of a 1 GiB replica with
+  `memory_slots`. Also: a settle after the request's release (a proxy flight that outlives its request) leaks for the life of the
+  process. Done when the charge is the overhead plus the readers open now, a range is charged by its length, a released ticket takes
+  no settle, and tests pin all three.
+- **F-61 · The early refusal of an upload during an object-store outage answers every request with `Expect: 100-continue`, before
+  authorization** (read by the code review of 2026-11-06, in Q-STOR-149; not released before this run's push). An API write with
+  `Expect` fails during an outage, and an unauthenticated exchange request learns the store's state from the `503`. Done when only an
+  authorized upload is refused, at its ingest, before its body is read.
 - **F-59 · `GET /api/v1/system/migrations` of R-HA-020's upgrade verification is not built** (confirmed: it answers `404` on the dev
   cluster; only the `StatusReport` type exists). The upgrade tests read `trove migrate status` in a worker pod instead (Q-HA-96). Done
   when the endpoint answers as R-HA-020 and R-HA-021 step 4 describe and the tests read it.
