@@ -148,8 +148,8 @@ type fixedConfig struct {
 	class repository.Class
 }
 
-func (f fixedConfig) ByKey(ctx context.Context, key string) (repository.Repository, error) {
-	repo, err := f.Reader.ByName(ctx, qr(key))
+func (f fixedConfig) ByName(ctx context.Context, name qname.Repo) (repository.Repository, error) {
+	repo, err := f.Reader.ByName(ctx, name)
 	if f.cfg != "" {
 		repo.Config = []byte(f.cfg)
 	}

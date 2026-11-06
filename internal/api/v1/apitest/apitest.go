@@ -117,9 +117,9 @@ func routeRequest(req *http.Request) *http.Request {
 	switch {
 	case strings.HasPrefix(esc, "/files/"):
 		c := req.Clone(req.Context())
-		c.URL.Path, c.URL.RawPath = "/files/k/p", ""
+		c.URL.Path, c.URL.RawPath = "/files/kk/kk/p", ""
 		return c
-	case strings.HasPrefix(esc, "/api/v1/repositories/") && strings.Contains(esc, "/content/"):
+	case strings.HasPrefix(esc, "/api/v1/projects/") && strings.Contains(esc, "/repositories/") && strings.Contains(esc, "/content/"):
 		// The content routes of the UI (R-API-025) hold slashes in their path parameter as /files/ does.
 		c := req.Clone(req.Context())
 		head, _, _ := strings.Cut(esc, "/content/")

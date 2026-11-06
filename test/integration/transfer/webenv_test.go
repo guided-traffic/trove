@@ -122,7 +122,7 @@ func (e *webEnv) actor() authz.Subject {
 // optional path patterns.
 func (e *webEnv) grant(r *webReplica, name string, repos []string, paths authz.PatternLists, entries map[string][]string) {
 	e.t.Helper()
-	in := authz.PolicyInput{Name: name, Resources: authz.Resources{Repositories: repos, Paths: paths}}
+	in := authz.PolicyInput{Name: name, Resources: authz.Resources{Repositories: qualified(repos), Paths: paths}}
 	for who, actions := range entries {
 		in.Entries = append(in.Entries, authz.Entry{Principal: who, Actions: actions})
 	}
@@ -351,3 +351,18 @@ func (o objectStore) count(method string) int {
 
 func (o objectStore) gets() int { return o.count("GET") }
 func (o objectStore) puts() int { return o.count("PUT") }
+
+// qualified puts the selectors of a global policy or a token scope into the project "it": a bare
+// key names a repository of the project of the tests, a class selector (@any…) and a qualified
+// name stay (R-AUTHZ-004).
+func qualified(repos []string) []string {
+	out := make([]string, len(repos))
+	for i, r := range repos {
+		if strings.HasPrefix(r, "@") || strings.Contains(r, "/") {
+			out[i] = r
+		} else {
+			out[i] = "it/" + r
+		}
+	}
+	return out
+}
