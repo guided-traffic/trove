@@ -20,8 +20,8 @@ import (
 // TestMain fails the whole package, before any test runs, when the environment names a
 // plaintext or unverified endpoint (INV-20): the integration stack is TLS-only.
 func TestMain(m *testing.M) {
-	// An assignment notifies the change area repo_config, which the repository area
-	// registers; a build of this tree without that work registers it here.
+	// A move notifies the change area repo_config, which the repository area registers;
+	// a build of this tree without that work registers it here.
 	if _, ok := cluster.LookupArea("repo_config"); !ok {
 		cluster.RegisterArea(cluster.Area{Name: "repo_config", Owner: "R-REPO-008", Class: cluster.ChangeArea, PayloadVersion: 1})
 	}

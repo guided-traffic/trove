@@ -26,8 +26,11 @@ const (
 	dbAuthenticated = "authenticated"
 )
 
-// Ref is a principal reference of the API: user:<name>, group:<name>,
-// sa:<name>, ci:<issuer>/<mapping>, anonymous, authenticated (R-AUTHZ-002).
+// Ref is a principal reference of the API: user:<name>, group:<name>, sa:<name> or
+// sa:<projectKey>/<name> for a project's service account, ci:<issuer>/<mapping> or
+// ci:<issuer>/<projectKey>/<mapping> for a mapping of a project's tier, anonymous,
+// authenticated (R-AUTHZ-002, Q-AUTHZ-209, Q-AUTHZ-214). Name is the principal's
+// stored name, the project key included.
 type Ref struct {
 	Kind principal.Kind
 	Name string
@@ -44,7 +47,7 @@ func ParseRef(s string) (Ref, error) {
 	}
 	prefix, name, ok := strings.Cut(s, ":")
 	if !ok || name == "" {
-		return Ref{}, fmt.Errorf("%q is not a principal reference (user:<name>, group:<name>, sa:<name>, ci:<issuer>/<mapping>, anonymous, authenticated)", s)
+		return Ref{}, fmt.Errorf("%q is not a principal reference (user:<name>, group:<name>, sa:<name>, sa:<project>/<name>, ci:<issuer>/<mapping>, ci:<issuer>/<project>/<name>, anonymous, authenticated)", s)
 	}
 	switch prefix {
 	case "user":

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/guided-traffic/trove/internal/authz"
 )
 
 // TestR_AUTHZ_026_PrincipalLookupBounds covers Q-AUTHZ-182: a prefix of two
@@ -81,9 +83,15 @@ func TestR_AUTHZ_026_PrincipalLookupBounds(t *testing.T) {
 			t.Errorf("%v", got)
 		}
 	})
-	t.Run("R-AUTHZ-026 an unknown project is 404, a caller with neither the capability nor the project is 403", func(t *testing.T) {
+	t.Run("R-AUTHZ-026 an unknown project is 404, as is one the caller is no member of; an Owner looks up, a Reader not", func(t *testing.T) {
 		wantStatus(t, f.do(f.admin, "GET", base+"/nothing/principals?q=al", nil), 404, "")
-		wantStatus(t, f.do(f.alice, "GET", base+"/web/principals?q=al", nil), 403, "")
+		wantStatus(t, f.do(f.alice, "GET", base+"/web/principals?q=al", nil), 404, "")
 		wantStatus(t, f.do(f.auditor, "GET", base+"/web/principals?q=al", nil), 200, "") // the auditor holds identities:read
+		wantStatus(t, f.member("web", "group:web-leads", "owner"), 201, "")
+		r := f.member("web", "user:bob", "reader")
+		wantStatus(t, r, 201, "")
+		e := fmt.Sprint(r.Epoch())
+		wantStatus(t, f.do(f.alice, "GET", base+"/web/principals?q=al", nil, authz.HeaderMinEpoch, e), 200, "")
+		wantStatus(t, f.do(f.bob, "GET", base+"/web/principals?q=al", nil, authz.HeaderMinEpoch, e), 403, "")
 	})
 }
