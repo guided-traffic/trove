@@ -127,8 +127,18 @@ func TestVuln_R_VULN_027_AcrossReplicasAndWithoutValkey(t *testing.T) {
 		})
 		t.Logf("blockMalicious: false was in force on B after %s", time.Since(start).Round(10*time.Millisecond))
 		etag := r.Header.Get("Etag")
-		// read from B, the replica that was waited for: another replica may still be within its poll of the change log
-		f := e.findingVia(t, rc.admin[b], npmRemoteKey, name, "1.0.0")
+		// The finding's block is decided at read time from the policy of the replica's own repository snapshot (R-VULN-027: the
+		// change-log propagation bound of R-ARCH-018). The download above ran on the packages replica B; the finding is read on
+		// the api replica B, a different process with its own poll, so it is waited for within the same 2 s.
+		var f vulnFinding
+		waitFor(t, "the finding of "+name+" not blocking on the api replica B after blockMalicious: false through A", 2*time.Second, 100*time.Millisecond, func() bool {
+			got := e.findingsVia(t, rc.admin[b], url.Values{"repository": {npmRemoteKey}, "package": {name}, "version": {"1.0.0"}})
+			if len(got) != 1 {
+				return false
+			}
+			f = got[0]
+			return !f.Blocked
+		})
 		if f.Kind != "malicious" || f.Blocked {
 			t.Fatalf("the finding of %s = %+v, want malicious and not blocking while blockMalicious is false", name, f)
 		}

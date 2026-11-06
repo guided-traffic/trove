@@ -833,6 +833,19 @@ profile after the fixes (`SET=push` and `SET=failover`, above): the measurements
    later** (Test and Release run 42167251206): the two differed only in `bound.usedBytes` (0, then 209,896), which the storage usage fold
    (F-55) writes after the pass ended. The test takes its reference after the fold now (`awaitFolded`: `usedBytes` counts the bytes of the
    last complete pass), so the comparison checks what it means to, that every replica answers the same settled status.
+14. **Fixed in the harness: a scheduled KEV sync fell into the window of an audit test** (Test and Release run 42173973459,
+   `TestVuln_R_VULN_017_NPMAuditThroughEveryRepository/no_request_to_an_upstream_during_the_audits`: the test advisory source saw 1 request
+   at 06:41 UTC; `vuln-sync-kev` is scheduled `41 */6 * * *`, so it fires at 06:41 UTC, and the OSV sync every 15 minutes is the same hazard).
+   The request is the scheduler's (inferred from the time and the schedule; the run kept only the stub's counts), not an audit path's: the audits are answered from trove's data (the package documents are warmed
+   and the npm test upstream saw none). The test could not tell the two apart, and it did not print the request. The profile
+   [values-vuln.yaml](../../deploy/dev/values-vuln.yaml) switches the three scheduled syncs off (no test relies on one: each
+   starts its sync through the task API), and the two tests that assert on the source print its request log when they fail.
+15. **Fixed in the harness: the finding of `blockMalicious` was read on another process than the one waited for**
+   (run 42173973459, `TestVuln_R_VULN_027_AcrossReplicasAndWithoutValkey/R-VULN-027_with_Valkey_stopped_as_well`: B answered 200 after
+   570 ms, the finding read straight after said `Blocked:true`). The download runs on the `packages` replica B, the finding is read on
+   the `api` replica B; both decide from the policy of their own repository snapshot, which a replica applies at its own change-log
+   poll (`cluster.epoch_poll_interval`, 1 s; R-VULN-027, R-ARCH-018), and with Valkey stopped there is no early eviction. The
+   product follows the spec; the test now waits for the finding to stop blocking on the `api` replica within the same 2 s.
 
 ## TLS in the suite
 
@@ -2674,7 +2687,7 @@ test calls `vulnFx` ([vuln_env_test.go](../../test/e2e/vuln_env_test.go)), which
 
 1. `up.sh` with `TROVE_PROFILE=vuln`: the chart with [values-scatter.yaml](../../deploy/dev/values-scatter.yaml) (three `api` and three `packages` replicas, the edge balancing every request on its own; the profile's worker pool `vuln` runs the queue of the scanning) and
    [values-vuln.yaml](../../deploy/dev/values-vuln.yaml) (`vulnerabilities.sources.osv.base_url` and `kev.url` at the Service `osvstub`, `public_upstreams` with `npmstub.trove.svc` and
-   `nugetstub.trove.svc` next to the public hosts); two `worker` replicas come from [values-dev.yaml](../../deploy/dev/values-dev.yaml), which switches both advisory sources off (`vulnerabilities.sources.osv.mode` and `kev.mode`: no test cluster reaches the public hosts, and the npm audit default is `forward` again, which the npm matrix expects); `values-vuln.yaml` turns them back on at the stub. The profile is returned to `default` at the end of the run.
+   `nugetstub.trove.svc` next to the public hosts); two `worker` replicas come from [values-dev.yaml](../../deploy/dev/values-dev.yaml), which switches both advisory sources off (`vulnerabilities.sources.osv.mode` and `kev.mode`: no test cluster reaches the public hosts, and the npm audit default is `forward` again, which the npm matrix expects); `values-vuln.yaml` turns them back on at the stub and switches the three scheduled syncs (`maintenance.tasks.vuln-sync-osv`, `vuln-sync-osv-full`, `vuln-sync-kev`) off, so that a request the source sees in a test's window is one the test caused (finding 14); the tests start each sync through the task API, which runs a disabled task. The profile is returned to `default` at the end of the run.
 2. The three upstreams are reset (the source's dataset back to its fixture, the counters and modes of the npm and NuGet upstreams).
 3. The repositories (`ensureRepo` creates them or brings them to the settings; keys another suite defines differently, `npm-all` and `nuget-all` of the CI tests, get their members again):
 

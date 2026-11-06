@@ -175,8 +175,8 @@ func TestVuln_R_VULN_017_NPMAuditThroughEveryRepository(t *testing.T) {
 		if got := len(stub(t).audits(t)); got != 0 {
 			t.Errorf("the npm test upstream saw %d advisory requests during the audits", got)
 		}
-		if got := osvStub(t).osvCounts(t).Total; got != 0 {
-			t.Errorf("the test advisory source saw %d requests during the audits", got)
+		if got := osvStub(t).osvCounts(t); got.Total != 0 {
+			t.Errorf("the test advisory source saw %d requests during the audits: %+v", got.Total, got.Log)
 		}
 	})
 	npmRep.flush(t, run)
@@ -253,8 +253,8 @@ func TestVuln_R_VULN_017_NPMAuditBody(t *testing.T) {
 	if got := stub(t).counts(t).Total(); got != 0 {
 		t.Errorf("the npm test upstream saw %d requests", got)
 	}
-	if got := osvStub(t).osvCounts(t).Total; got != 0 {
-		t.Errorf("the test advisory source saw %d requests", got)
+	if got := osvStub(t).osvCounts(t); got.Total != 0 {
+		t.Errorf("the test advisory source saw %d requests: %+v", got.Total, got.Log)
 	}
 }
 

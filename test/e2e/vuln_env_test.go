@@ -102,10 +102,11 @@ func osvStub(t testing.TB) *stubControl {
 	return osvVal
 }
 
+// osvCounts is the request log and the counts of the test advisory source; the log is kept so that a failure names the requests.
 func (s *stubControl) osvCounts(t testing.TB) osvstub.Counts {
 	t.Helper()
 	var c osvstub.Counts
-	if err := json.Unmarshal(s.send(t, http.MethodGet, "/-/stub/requests?log=false", nil), &c); err != nil {
+	if err := json.Unmarshal(s.send(t, http.MethodGet, "/-/stub/requests", nil), &c); err != nil {
 		t.Fatal(err)
 	}
 	return c

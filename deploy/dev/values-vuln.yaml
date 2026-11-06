@@ -19,3 +19,11 @@ config:
       public_upstreams:
         npm: [registry.npmjs.org, npmstub.trove.svc]
         nuget: [api.nuget.org, www.nuget.org, nugetstub.trove.svc]
+  # The three scheduled syncs are off: the tests start every sync through the task API, and a scheduled one that fires inside a
+  # test's window is a request to the test advisory source that no test caused (the KEV sync fires at minute 41 of hours 0, 6, 12
+  # and 18 UTC, the OSV sync every 15 minutes). A disabled task still runs when it is triggered.
+  maintenance:
+    tasks:
+      vuln-sync-osv: {enabled: false, schedule: "*/15 * * * *"}
+      vuln-sync-osv-full: {enabled: false, schedule: "17 3 * * 0"}
+      vuln-sync-kev: {enabled: false, schedule: "41 */6 * * *"}
