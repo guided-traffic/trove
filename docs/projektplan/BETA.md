@@ -942,7 +942,8 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   whole set after the fixes. In the dispatched nightly run 42177273488 the node loss, both primary losses, the audit drain and the 5-minute
   outage passed; the 30 s outage failed on two defects of the test (the outage was counted from before the stop script, which takes
   26 s, and two answers that started before the window were judged by their start), fixed (Q-STOR-150). Pod crash, switchover, Valkey
-  failover and outage were green before
+  failover and outage were green before. In the dispatched nightly run 42192042297 both object-store outages, both primary losses and
+  the audit drain passed; node loss failed there (42 s), being analysed
   (`TestNPMHACrash`, `TestNPMHA`, `TestNPMHAClosing`, `TestE13Failover`)
 - 🟢 Node drain under npm and NuGet load with zero failed requests; the NuGet load (`TestNuGetHA`) and R-ARCH-024's drain
   criterion move here from phase 4 ([Q-NUGET-73](../spec/formats/nuget.md#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs)). `TestNuGetHA` (set `nuget-ha`, nightly leg `e2e-nuget (nuget-ha)`
@@ -997,8 +998,10 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 - 🟡 Vulnerability scanning under the failure suite: sync and evaluation jobs across drains and failovers, blocks and triage after a restore (E5.13).
   Built 2026-11-06 in the set `vuln-long` (Q-VULN-87 to Q-VULN-89): a switchover during an evaluation of 40,000 expected findings (no
   finding twice, none lost), the block of four versions answered on every replica through a node drain, a Valkey failover and a
-  switchover, a worker killed mid-sync (a failed job and a clean next run: the sync kinds have one attempt). Open: their first run
-  (nightly), drain variants B to E, and the restore part, which waits for backup and restore
+  switchover, a worker killed mid-sync (a failed job and a clean next run: the sync kinds have one attempt). The set `vuln-long` passed
+  with them in the dispatched nightly run 42192042297, after two defects of the tests and one of the product were fixed (the alias
+  closure's plan on a table without statistics, Q-VULN-94). Open: drain variants B to E, and the restore part, which waits for backup
+  and restore
 - 🟢 Rolling upgrade from the previous pre-release with mixed versions. `TestUpgrade_R_HA_020_RollingFromThePreviousRelease`
   (set `upgrade`) passed on kind on 2026-11-06: v0.19.0 (resolved from the tags) upgraded with its migration Job and rolled back with
   `helm rollback`, under 447 `npm ci`, 47 publishes, 545 `dotnet restore` and 71 browser journeys, 0 failed; R-HA-020's verification
