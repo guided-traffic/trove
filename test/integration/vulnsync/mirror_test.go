@@ -25,10 +25,10 @@ func mirrorOptions(extra ...string) options {
 	}, extra...)}
 }
 
-// put uploads a file to the mirror repository the way an operator does, with any client that writes to /files/.
+// put uploads a file to the mirror repository the way an operator does, with any client that writes to /files/it/.
 func (e *env) put(path string, body []byte) {
 	e.t.Helper()
-	res := e.st.Do(e.web, "PUT", "/files/"+mirrorRepo+"/"+path, e.admin, body)
+	res := e.st.Do(e.web, "PUT", "/files/it/"+mirrorRepo+"/"+path, e.admin, body)
 	if res.Status != 201 && res.Status != 200 {
 		e.t.Fatalf("PUT %s: %d %s", path, res.Status, res.Body)
 	}

@@ -214,7 +214,7 @@ func (e *env) events(typ string) int64 {
 // patch sends a merge patch to a repository.
 func (e *env) patch(repo, body string) testenv.Answer {
 	e.t.Helper()
-	return e.st.Do(e.rep, "PATCH", "/api/v1/repositories/"+repo, e.adm, body, "Content-Type", "application/merge-patch+json", "If-Match", "*")
+	return e.st.Do(e.rep, "PATCH", "/api/v1/projects/it/repositories/"+repo, e.adm, body, "Content-Type", "application/merge-patch+json", "If-Match", "*")
 }
 
 // publish publishes an npm package version and requires 201.
@@ -226,14 +226,14 @@ func (e *env) publish(repo, name, version string) {
 	}
 }
 
-// unpublish removes the tarball of a version through /files/, which unpublishes the version the same way.
+// unpublish removes the tarball of a version through /files/it/, which unpublishes the version the same way.
 func (e *env) unpublish(repo, name, version string) {
 	e.t.Helper()
 	base := name
 	if i := strings.LastIndexByte(name, '/'); i >= 0 {
 		base = name[i+1:]
 	}
-	path := fmt.Sprintf("/files/%s/%s/-/%s-%s.tgz", repo, name, base, version)
+	path := fmt.Sprintf("/files/it/%s/%s/-/%s-%s.tgz", repo, name, base, version)
 	if a := e.st.Do(e.rep, "DELETE", path, e.adm, nil); a.Status != 204 {
 		e.t.Fatalf("delete %s: %d %s", path, a.Status, a.Body)
 	}

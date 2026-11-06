@@ -173,7 +173,7 @@ func TestR_REPO_057_TheGaugeRowsCarryWhatTheAlertsRead(t *testing.T) {
 		t.Fatalf("rows %+v, %v", rows, err)
 	}
 	g := rows[0]
-	if g.Key != repoKey || g.Pending != 0 || g.ConsecutiveFailures != 4 {
+	if g.Key != repoName || g.Pending != 0 || g.ConsecutiveFailures != 4 {
 		t.Fatalf("a mirror without a pass in progress: %+v", g)
 	}
 	if d := time.Since(g.NextPass); d < 4*time.Hour+50*time.Minute || d > 5*time.Hour+10*time.Minute {

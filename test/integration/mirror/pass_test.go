@@ -475,7 +475,7 @@ func TestR_REPO_057_TheGaugesReadFromPostgreSQL(t *testing.T) {
 		if err := m.Write(&d); err != nil {
 			t.Fatal(err)
 		}
-		if len(d.Label) != 1 || d.Label[0].GetName() != "repo" || d.Label[0].GetValue() != repoKey {
+		if len(d.Label) != 1 || d.Label[0].GetName() != "repo" || d.Label[0].GetValue() != repoName {
 			t.Errorf("labels %v", d.Label)
 		}
 		switch desc := m.Desc().String(); {

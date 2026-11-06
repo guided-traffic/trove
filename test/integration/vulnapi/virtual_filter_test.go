@@ -11,7 +11,7 @@ import (
 )
 
 // TestR_VULN_019_TheRepositoryFilterExpandsOnlyAVirtualRepositoryTheCallerReads (Q-VULN-71): a caller who reads npm-local but not
-// the virtual npm-all gets no finding for repository=npm-all, whose member it reads, so the filter does not tell which members
+// the virtual npm-all gets no finding for repository=it/npm-all, whose member it reads, so the filter does not tell which members
 // a virtual repository has; the member itself, and a virtual repository the caller reads, answer as before.
 func TestR_VULN_019_TheRepositoryFilterExpandsOnlyAVirtualRepositoryTheCallerReads(t *testing.T) {
 	e := newEnv(t)
@@ -32,7 +32,7 @@ func TestR_VULN_019_TheRepositoryFilterExpandsOnlyAVirtualRepositoryTheCallerRea
 		t.Errorf("a virtual repository the caller reads: %v", got)
 	}
 	// the other two operations that take the repository filter.
-	for _, path := range []string{"/api/v1/vulnerabilities/summary?repository=npm-all"} {
+	for _, path := range []string{"/api/v1/vulnerabilities/summary?repository=it/npm-all"} {
 		a := e.get(web2, path, tok)
 		if a.Status != 200 {
 			t.Fatalf("%s: %d %s", path, a.Status, a.Body)

@@ -185,7 +185,7 @@ func TestR_REPO_051_NugetSearchListingIsTruncatedAndSaysSo(t *testing.T) {
 
 	t.Run("R-REPO-056 the status shows the truncation", func(t *testing.T) {
 		web := r.web("web")
-		a := r.api(web, http.MethodGet, "/api/v1/repositories/"+repoKey+"/mirror", nil)
+		a := r.api(web, http.MethodGet, "/api/v1/projects/it/repositories/"+repoKey+"/mirror", nil)
 		if a.Status != http.StatusOK {
 			t.Fatalf("%d %s", a.Status, a.Body)
 		}

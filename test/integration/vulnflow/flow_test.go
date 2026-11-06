@@ -193,13 +193,13 @@ func (f *flow) publish(r *testenv.Replica, repo, name string) {
 			"content_type": "application/octet-stream", "data": base64.StdEncoding.EncodeToString(tgz), "length": len(tgz),
 		}},
 	}
-	if a := f.st.Do(r, "PUT", "/api/npm/"+repo+"/"+name, f.adm, doc); a.Status != http.StatusCreated {
+	if a := f.st.Do(r, "PUT", "/api/npm/it/"+repo+"/"+name, f.adm, doc); a.Status != http.StatusCreated {
 		f.t.Fatalf("publish %s@%s to %s: %d %s", name, version, repo, a.Status, a.Body)
 	}
 }
 
 func tgzPath(repo, name string) string {
-	return "/api/npm/" + repo + "/" + name + "/-/" + name + "-" + version + ".tgz"
+	return "/api/npm/it/" + repo + "/" + name + "/-/" + name + "-" + version + ".tgz"
 }
 
 // finding is one row of the findings list.
@@ -283,7 +283,7 @@ func TestR_VULN_015_E4b3_E4b4_TheFlowFromTheAdvisorySourceToTheBlockedDownload(t
 
 	// Before any advisory data exists: a version published to a local repository and one cached through the remote.
 	f.publish(web1, repoLocal, pkgVuln)
-	if a := f.st.Do(web1, "GET", "/api/npm/"+repoRemote+"/"+pkgVuln, f.read, nil); a.Status != http.StatusOK {
+	if a := f.st.Do(web1, "GET", "/api/npm/it/"+repoRemote+"/"+pkgVuln, f.read, nil); a.Status != http.StatusOK {
 		t.Fatalf("remote document: %d %s", a.Status, a.Body)
 	}
 	if a := f.st.Do(web1, "GET", tgzPath(repoRemote, pkgVuln), f.read, nil); a.Status != http.StatusOK {
@@ -415,7 +415,7 @@ func TestR_VULN_015_E4b3_E4b4_TheFlowFromTheAdvisorySourceToTheBlockedDownload(t
 	t.Run("R-VULN-017 npm's bulk audit endpoint names the advisory from trove's data without an upstream request", func(t *testing.T) {
 		asked := f.npm.Counts().Total()
 		for _, repo := range []string{repoLocal, repoRemote, repoAll} {
-			a := f.st.Do(web2, "POST", "/api/npm/"+repo+"/"+bulk, f.read, []byte(`{"`+pkgVuln+`":["1.0.0","1.0.1"],"`+pkgMal+`":["1.0.0"]}`))
+			a := f.st.Do(web2, "POST", "/api/npm/it/"+repo+"/"+bulk, f.read, []byte(`{"`+pkgVuln+`":["1.0.0","1.0.1"],"`+pkgMal+`":["1.0.0"]}`))
 			if a.Status != http.StatusOK {
 				t.Fatalf("%s: audit %d %s", repo, a.Status, a.Body)
 			}

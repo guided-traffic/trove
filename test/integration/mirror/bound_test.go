@@ -55,7 +55,7 @@ func TestR_REPO_052_TheByteBoundEndsThePassNearTenMiBAndTheClientsAreUnaffected(
 		if n := r.waitAudit("mirror.bound_reached", 1); n != 1 {
 			t.Errorf("%d mirror.bound_reached events, want 1", n)
 		}
-		a := r.api(web, http.MethodGet, "/api/v1/repositories/"+repoKey+"/mirror", nil)
+		a := r.api(web, http.MethodGet, "/api/v1/projects/it/repositories/"+repoKey+"/mirror", nil)
 		doc := a.JSON(t)
 		bound, _ := doc["bound"].(map[string]any)
 		if a.Status != http.StatusOK || doc["state"] != "bound_reached" || bound["reached"] != "bytes" || bound["maxBytes"] != float64(maxBytes10MiB) {

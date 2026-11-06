@@ -40,8 +40,9 @@ SELECT nv.version_id
   JOIN package_versions pv ON pv.id = nv.version_id
   JOIN packages p ON p.id = pv.package_id
   JOIN repositories r ON r.id = p.repo_id
+  JOIN project rp ON rp.id = r.project_id
  WHERE pv.trashed_at IS NULL
-   AND r.key = ANY(sqlc.arg(repos)::text[])
+   AND (rp.key || '/' || r.key) = ANY(sqlc.arg(repos)::text[])
    AND ((sqlc.arg(text)::text <> ''
          AND position(lower(sqlc.arg(text)::text) in lower(COALESCE(NULLIF(btrim(nv.metadata ->> 'description'), ''), nv.metadata ->> 'summary', ''))) > 0)
      OR (sqlc.arg(keyword)::text <> '' AND jsonb_typeof(nv.metadata -> 'tags') = 'array'

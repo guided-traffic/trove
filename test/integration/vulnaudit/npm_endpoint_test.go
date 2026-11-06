@@ -36,7 +36,7 @@ func TestR_VULN_017_AnEndpointWithExposureRulesKeepsThe501(t *testing.T) {
 	if rule.Status != http.StatusCreated {
 		t.Fatalf("create the rule: %d %s", rule.Status, rule.Body)
 	}
-	x := e.st.DoAt(r.Addr("customers"), customersHost, "POST", "/api/npm/"+npmCustomer+"/"+bulk, acmeSAT, []byte(body),
+	x := e.st.DoAt(r.Addr("customers"), customersHost, "POST", "/api/npm/it/"+npmCustomer+"/"+bulk, acmeSAT, []byte(body),
 		"Trove-Authz-Min-Epoch", rule.Header.Get("Trove-Authz-Epoch"))
 	if x.Status != http.StatusNotImplemented || npmCode(t, x) != "npm_audit_unavailable" {
 		t.Errorf("on customers: %d %s", x.Status, x.Body)

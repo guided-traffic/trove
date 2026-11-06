@@ -27,7 +27,7 @@ func snippets(t testing.TB, a testenv.Answer) map[string]string {
 
 func (e *env) setup(token, repo, query string) testenv.Answer {
 	e.t.Helper()
-	return e.get(token, "/api/v1/repositories/"+repo+"/client-setup?"+query)
+	return e.get(token, "/api/v1/projects/it/repositories/"+repo+"/client-setup?"+query)
 }
 
 // TestR_API_030_ClientSetupCredentialModes: the three modes of credentials, with the
@@ -39,12 +39,12 @@ func TestR_API_030_ClientSetupCredentialModes(t *testing.T) {
 		a := e.setup(e.tokA, "npm-local", "client=npm")
 		s := snippets(t, a)
 		v := a.JSON(t)
-		if v["registryUrl"] != "http://trove.test/api/npm/npm-local/" || v["endpointPath"] != "//trove.test/api/npm/npm-local/" ||
-			v["username"] != "alice" || v["publishTarget"] != "npm-local" || num(v["tokenTtlSeconds"]) != 720*3600 ||
-			v["credentials"] != "placeholder" || v["repository"] != "npm-local" || v["format"] != "npm" || v["client"] != "npm" {
+		if v["registryUrl"] != "http://trove.test/api/npm/it/npm-local/" || v["endpointPath"] != "//trove.test/api/npm/it/npm-local/" ||
+			v["username"] != "alice" || v["publishTarget"] != "it/npm-local" || num(v["tokenTtlSeconds"]) != 720*3600 ||
+			v["credentials"] != "placeholder" || v["repository"] != "it/npm-local" || v["format"] != "npm" || v["client"] != "npm" {
 			t.Fatalf("%v", v)
 		}
-		want := "registry=http://trove.test/api/npm/npm-local/\n//trove.test/api/npm/npm-local/:_authToken={{token}}\n"
+		want := "registry=http://trove.test/api/npm/it/npm-local/\n//trove.test/api/npm/it/npm-local/:_authToken={{token}}\n"
 		if s["npm.configure.npmrc"] != want {
 			t.Fatalf("npmrc:\n%q\nwant\n%q", s["npm.configure.npmrc"], want)
 		}
@@ -54,13 +54,13 @@ func TestR_API_030_ClientSetupCredentialModes(t *testing.T) {
 	})
 	t.Run("env holds the reference of the variable, as the acceptance case of the spec has it", func(t *testing.T) {
 		s := snippets(t, e.setup(e.tokA, "npm-local", "client=npm&credentials=env"))
-		if !strings.Contains(s["npm.configure.npmrc"], "//trove.test/api/npm/npm-local/:_authToken=${TROVE_TOKEN}") {
+		if !strings.Contains(s["npm.configure.npmrc"], "//trove.test/api/npm/it/npm-local/:_authToken=${TROVE_TOKEN}") {
 			t.Fatalf("%q", s["npm.configure.npmrc"])
 		}
 	})
 	t.Run("the variable is ui.client_setup.token_env_var", func(t *testing.T) {
 		other := e.st.Start(t, testenv.ReplicaOptions{Name: "web2", Env: []string{"TROVE_UI_CLIENT_SETUP_TOKEN_ENV_VAR=NPM_TOKEN", "TROVE_UI_CLIENT_SETUP_TOKEN_TTL=24h"}})
-		a := e.st.Do(other, "GET", "/api/v1/repositories/npm-local/client-setup?client=yarn&credentials=env", e.tokA, nil)
+		a := e.st.Do(other, "GET", "/api/v1/projects/it/repositories/npm-local/client-setup?client=yarn&credentials=env", e.tokA, nil)
 		s := snippets(t, a)
 		if got := s["yarn.configure.yarnrc"]; !strings.Contains(got, `npmAuthToken: "${NPM_TOKEN}"`) || strings.Contains(got, "TROVE_TOKEN") {
 			t.Fatalf("%q", got)
@@ -78,7 +78,7 @@ func TestR_API_030_ClientSetupCredentialModes(t *testing.T) {
 			}
 		}
 		s := snippets(t, e.setup(e.tokA, "npm-local", "client=npm&credentials=none"))
-		if s["npm.configure.npmrc"] != "registry=http://trove.test/api/npm/npm-local/\n" {
+		if s["npm.configure.npmrc"] != "registry=http://trove.test/api/npm/it/npm-local/\n" {
 			t.Fatalf("%q", s["npm.configure.npmrc"])
 		}
 	})
@@ -98,7 +98,7 @@ func TestR_API_030_ClientSetupCredentialModes(t *testing.T) {
 				t.Errorf("%s: %d %s", q, a.Status, a.Body)
 			}
 		}
-		if a := e.get(e.tokA, "/api/v1/repositories/npm-local/client-setup"); a.Status != 400 {
+		if a := e.get(e.tokA, "/api/v1/projects/it/repositories/npm-local/client-setup"); a.Status != 400 {
 			t.Errorf("no client: %d", a.Status)
 		}
 	})
@@ -170,14 +170,14 @@ func TestR_API_030_ClientSetupScopeAndPermissions(t *testing.T) {
 	e := newEnv(t)
 	t.Run("a scope adds the scoped variant of the registry configuration", func(t *testing.T) {
 		s := snippets(t, e.setup(e.tokA, "npm-local", "client=npm&scope=%40team-a"))
-		if got := s["npm.configure.npmrc-scoped"]; !strings.HasPrefix(got, "@team-a:registry=http://trove.test/api/npm/npm-local/\n") || !strings.Contains(got, ":_authToken={{token}}") {
+		if got := s["npm.configure.npmrc-scoped"]; !strings.HasPrefix(got, "@team-a:registry=http://trove.test/api/npm/it/npm-local/\n") || !strings.Contains(got, ":_authToken={{token}}") {
 			t.Fatalf("%q", got)
 		}
 		if !strings.HasPrefix(s["npm.configure.npmrc"], "registry=") {
 			t.Fatalf("the default variant is missing: %v", s)
 		}
 		y := snippets(t, e.setup(e.tokA, "npm-local", "client=yarn&scope=team-a&credentials=env"))["yarn.configure.yarnrc-scoped"]
-		if !strings.Contains(y, "npmScopes:\n  team-a:\n    npmRegistryServer: \"http://trove.test/api/npm/npm-local/\"") {
+		if !strings.Contains(y, "npmScopes:\n  team-a:\n    npmRegistryServer: \"http://trove.test/api/npm/it/npm-local/\"") {
 			t.Fatalf("%q", y)
 		}
 		if a := e.setup(e.tokA, "npm-local", "client=npm&scope=a%2Fb"); a.Status != 400 {

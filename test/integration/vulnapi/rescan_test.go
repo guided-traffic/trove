@@ -17,7 +17,7 @@ import (
 // (virtual, or of a format without the adapter) is 422 and an unknown key is refused like a repository the caller may not manage.
 func TestR_VULN_011_RescanAnswers202ThenTheRunningJobWith409(t *testing.T) {
 	e := newEnv(t)
-	path := "/api/v1/repositories/npm-local/vulnerabilities/rescan"
+	path := "/api/v1/projects/it/repositories/npm-local/vulnerabilities/rescan"
 
 	first := e.st.Do(e.r, "POST", path, e.tokRita, nil)
 	if first.Status != http.StatusAccepted {
@@ -49,11 +49,11 @@ func TestR_VULN_011_RescanAnswers202ThenTheRunningJobWith409(t *testing.T) {
 	if a := e.st.Do(e.r, "POST", path, e.tokAlice, nil); a.Status != http.StatusForbidden {
 		t.Errorf("a reader: %d %s", a.Status, a.Body)
 	}
-	if a := e.st.Do(e.r, "POST", "/api/v1/repositories/npm-all/vulnerabilities/rescan", e.tokRita, nil); a.Status != http.StatusUnprocessableEntity {
+	if a := e.st.Do(e.r, "POST", "/api/v1/projects/it/repositories/npm-all/vulnerabilities/rescan", e.tokRita, nil); a.Status != http.StatusUnprocessableEntity {
 		t.Errorf("a virtual repository: %d %s", a.Status, a.Body)
 	}
 	// The authorization step runs before the lookup, so an unknown key is as refused as a repository the caller may not manage.
-	if a := e.st.Do(e.r, "POST", "/api/v1/repositories/nope/vulnerabilities/rescan", e.tokRita, nil); a.Status != http.StatusForbidden {
+	if a := e.st.Do(e.r, "POST", "/api/v1/projects/it/repositories/nope/vulnerabilities/rescan", e.tokRita, nil); a.Status != http.StatusForbidden {
 		t.Errorf("an unknown repository: %d %s", a.Status, a.Body)
 	}
 }

@@ -341,7 +341,7 @@ func TestR_REPO_054_ALongWaitEndsTheJobDeferredAndTheNextJobContinuesAtThatTime(
 			t.Fatalf("job result %v", res)
 		}
 		within(t, "the end of the wait", time.Until(until), 59*time.Minute, 61*time.Minute)
-		a := r.api(web, http.MethodGet, "/api/v1/repositories/"+repoKey+"/mirror", nil)
+		a := r.api(web, http.MethodGet, "/api/v1/projects/it/repositories/"+repoKey+"/mirror", nil)
 		doc := a.JSON(t)
 		rl, _ := doc["rateLimit"].(map[string]any)
 		statusUntil, err := time.Parse(time.RFC3339, fmt.Sprint(rl["until"]))

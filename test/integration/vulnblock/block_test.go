@@ -85,7 +85,7 @@ func TestR_VULN_015_ALocalNpmTarballWithAnOpenMaliciousFindingIsRefused(t *testi
 		t.Errorf("1.0.1: %d %s", other.Status, other.Body)
 	}
 	// The package document (metadata) is not changed (H-311).
-	if doc := e.do(r, "GET", "/api/npm/"+rNPM+"/"+mal, e.tokReader); doc.Status != 200 {
+	if doc := e.do(r, "GET", "/api/npm/it/"+rNPM+"/"+mal, e.tokReader); doc.Status != 200 {
 		t.Errorf("document: %d", doc.Status)
 	}
 	// A dismissal lifts the block, and the next request serves; a re-opened finding blocks again.
@@ -187,12 +187,12 @@ func TestR_VULN_016_ANuGetPackageIsRefusedWithOnePlainLine(t *testing.T) {
 	}
 }
 
-// R-VULN-016: /files/ answers problem details with the code, the advisory and the finding.
+// R-VULN-016: /files/it/ answers problem details with the code, the advisory and the finding.
 func TestR_VULN_016_TheRawViewAnswersProblemDetailsWithTheAdvisoryAndTheFinding(t *testing.T) {
 	e := newEnv(t, options{})
 	r := e.replica("web-1")
 	e.publish(r, rNPM, mal, "1.0.0")
-	path := "/files/" + rNPM + "/" + e.itemPath(rNPM, ".tgz")
+	path := "/files/it/" + rNPM + "/" + e.itemPath(rNPM, ".tgz")
 	ok := e.do(r, "GET", path, e.tokAdmin)
 	if ok.Status != 200 {
 		t.Fatalf("before the finding: %d %s", ok.Status, ok.Body)
@@ -320,7 +320,7 @@ func TestR_VULN_015_ABlockInAVirtualRepositoryEndsResolution(t *testing.T) {
 func TestR_VULN_015_ACachedRemoteArtifactIsRefusedOnEveryRouteAndTheDismissalReachesTheOtherReplica(t *testing.T) {
 	e := newEnv(t, options{Valkey: true})
 	r1, r2 := e.replica("web-1"), e.replica("web-2")
-	if a := e.do(r1, "GET", "/api/npm/"+rRemote+"/"+e.pkg, e.tokReader); a.Status != 200 {
+	if a := e.do(r1, "GET", "/api/npm/it/"+rRemote+"/"+e.pkg, e.tokReader); a.Status != 200 {
 		t.Fatalf("document: %d %s", a.Status, a.Body)
 	}
 	path := tgzPath(rRemote, e.pkg, e.ver)
@@ -339,8 +339,8 @@ func TestR_VULN_015_ACachedRemoteArtifactIsRefusedOnEveryRouteAndTheDismissalRea
 	}
 	for name, p := range map[string]string{
 		"the remote hit":      path,
-		"the cache view":      "/api/npm/" + rRemote + "~cache/" + e.pkg + "/-/" + e.pkg + "-" + e.ver + ".tgz",
-		"the raw view":        "/files/" + rRemote + "/" + e.itemPath(rRemote, ".tgz"),
+		"the cache view":      "/api/npm/it/" + rRemote + "~cache/" + e.pkg + "/-/" + e.pkg + "-" + e.ver + ".tgz",
+		"the raw view":        "/files/it/" + rRemote + "/" + e.itemPath(rRemote, ".tgz"),
 		"the virtual tier":    tgzPath(rVirtual, e.pkg, e.ver),
 		"the second replica":  path,
 		"the virtual, second": tgzPath(rVirtual, e.pkg, e.ver),
@@ -349,7 +349,7 @@ func TestR_VULN_015_ACachedRemoteArtifactIsRefusedOnEveryRouteAndTheDismissalRea
 		if strings.HasPrefix(name, "the second") {
 			rep = r2
 		}
-		if strings.HasPrefix(p, "/files/") {
+		if strings.HasPrefix(p, "/files/it/") {
 			tok = e.tokAdmin
 		}
 		t.Run(name, func(t *testing.T) { refusedEverywhere(t, e, rep, p, tok, etag) })
@@ -375,7 +375,7 @@ func TestR_VULN_015_ABlockedRemoteMissIsNeitherFetchedNorStored(t *testing.T) {
 	e := newEnv(t, options{})
 	r := e.replica("web-1")
 	e.eval.block(rRemote, e.pkg, e.ver, vuln.Block{Reason: vuln.BlockMalicious, AdvisoryID: malA})
-	if a := e.do(r, "GET", "/api/npm/"+rRemote+"/"+e.pkg, e.tokReader); a.Status != 200 {
+	if a := e.do(r, "GET", "/api/npm/it/"+rRemote+"/"+e.pkg, e.tokReader); a.Status != 200 {
 		t.Fatalf("document: %d %s", a.Status, a.Body)
 	}
 	for _, p := range []string{tgzPath(rRemote, e.pkg, e.ver), tgzPath(rVirtual, e.pkg, e.ver)} {
@@ -416,7 +416,7 @@ func TestR_VULN_015_ARemoteMissWithMissingDataIsRefusedBeforeTheFetchWhenTheRepo
 	r := e.replica("web-1")
 	e.states.set("npm", advisory.DataState{})
 	for _, repo := range []string{"npm-remote-strict", rRemote} {
-		if a := e.do(r, "GET", "/api/npm/"+repo+"/"+e.pkg, e.tokReader); a.Status != 200 {
+		if a := e.do(r, "GET", "/api/npm/it/"+repo+"/"+e.pkg, e.tokReader); a.Status != 200 {
 			t.Fatalf("document of %s: %d %s", repo, a.Status, a.Body)
 		}
 	}
@@ -440,7 +440,7 @@ func TestR_VULN_015_MissingDataAppliesOnlyToVersionsInScope(t *testing.T) {
 	r := e.replica("web-1")
 	e.states.set("npm", advisory.DataState{})
 	for _, repo := range []string{"npm-remote-strict", rPrivate} {
-		if a := e.do(r, "GET", "/api/npm/"+repo+"/"+e.pkg, e.tokReader); a.Status != 200 {
+		if a := e.do(r, "GET", "/api/npm/it/"+repo+"/"+e.pkg, e.tokReader); a.Status != 200 {
 			t.Fatalf("document of %s: %d %s", repo, a.Status, a.Body)
 		}
 	}

@@ -49,10 +49,10 @@ func TestR_REPO_056_RunAnswers202ThenMirrorPassRunningWithTheSameJob(t *testing.
 		RepositoryID int64
 		Full         bool
 	}
-	if err := json.Unmarshal([]byte(e.st.Text(`SELECT args::text FROM job WHERE id = $1::uuid`, job.ID)), &args); err != nil || args.Repository != "npm-mirror" || args.Full || id != jsonNumber(args.RepositoryID) {
+	if err := json.Unmarshal([]byte(e.st.Text(`SELECT args::text FROM job WHERE id = $1::uuid`, job.ID)), &args); err != nil || args.Repository != "it/npm-mirror" || args.Full || id != jsonNumber(args.RepositoryID) {
 		t.Errorf("args = %+v %v", args, err)
 	}
-	if got := e.st.Text(`SELECT target_kind || ' ' || target_key || ' ' || created_by::text FROM job WHERE id = $1::uuid`, job.ID); got != "repository npm-mirror "+e.rita.ID {
+	if got := e.st.Text(`SELECT target_kind || ' ' || target_key || ' ' || created_by::text FROM job WHERE id = $1::uuid`, job.ID); got != "repository it/npm-mirror "+e.rita.ID {
 		t.Errorf("the job's target and creator are %q", got)
 	}
 
@@ -69,7 +69,7 @@ func TestR_REPO_056_RunAnswers202ThenMirrorPassRunningWithTheSameJob(t *testing.
 	requestedAt := e.st.Text(`SELECT pass_requested_at::text FROM mirror_state WHERE repo_id = $1::bigint`, id)
 
 	// R-REPO-057: the audit event, written in the transaction of the request.
-	if n := e.st.Number(`SELECT count(*) FROM audit_event WHERE action = 'mirror.pass_requested' AND repository = 'npm-mirror'`); n != 1 {
+	if n := e.st.Number(`SELECT count(*) FROM audit_event WHERE action = 'mirror.pass_requested' AND repository = 'it/npm-mirror'`); n != 1 {
 		t.Fatalf("%d mirror.pass_requested events, want 1", n)
 	}
 	if got := e.st.Text(`SELECT actor_id::text || ' ' || (details->>'job') || ' ' || (details->>'full') FROM audit_event WHERE action = 'mirror.pass_requested'`); got != e.rita.ID+" "+job.ID+" false" {
@@ -132,7 +132,7 @@ func TestR_REPO_056_RunWritesOnlyTheRequestColumns(t *testing.T) {
 	if !args.Full {
 		t.Error("the job does not ask for a full pass")
 	}
-	if got := e.st.Text(`SELECT details->>'full' FROM audit_event WHERE action = 'mirror.pass_requested' AND repository = 'npm-state'`); got != "true" {
+	if got := e.st.Text(`SELECT details->>'full' FROM audit_event WHERE action = 'mirror.pass_requested' AND repository = 'it/npm-state'`); got != "true" {
 		t.Errorf("the event says full %s", got)
 	}
 
@@ -196,15 +196,15 @@ func TestR_REPO_056_RunRefusals(t *testing.T) {
 func TestR_REPO_056_PausingThroughThePatchStopsTheRun(t *testing.T) {
 	e := newEnv(t)
 	// The mirror is created through the API, so that its stored section is the canonical one that a PATCH merges into.
-	create := e.do("rita", "POST", "/api/v1/repositories", map[string]any{
+	create := e.do("rita", "POST", "/api/v1/projects/it/repositories", map[string]any{
 		"key": "npm-patch", "class": "remote", "format": mirrorFormat, "remote": map[string]any{"url": upstream, "mode": "mirror"},
 	})
 	e.wantStatus(create, http.StatusCreated, "")
 	patch := func(paused bool) {
 		t.Helper()
-		got := e.do("rita", "GET", "/api/v1/repositories/npm-patch", nil)
+		got := e.do("rita", "GET", "/api/v1/projects/it/repositories/npm-patch", nil)
 		e.wantStatus(got, http.StatusOK, "")
-		a := e.do("rita", "PATCH", "/api/v1/repositories/npm-patch", map[string]any{"remote": map[string]any{"mirror": map[string]any{"paused": paused}}},
+		a := e.do("rita", "PATCH", "/api/v1/projects/it/repositories/npm-patch", map[string]any{"remote": map[string]any{"mirror": map[string]any{"paused": paused}}},
 			"Content-Type", "application/merge-patch+json", "If-Match", got.Header.Get("ETag"))
 		e.wantStatus(a, http.StatusOK, "")
 	}
@@ -225,8 +225,8 @@ func TestR_REPO_056_PausingThroughThePatchStopsTheRun(t *testing.T) {
 	e.wantStatus(e.do("rita", "POST", runPath("npm-patch"), nil), http.StatusAccepted, "")
 
 	// Turning the mode back to pullThrough: off, and a run is refused (Q-REPO-148 keeps the rest).
-	got := e.do("rita", "GET", "/api/v1/repositories/npm-patch", nil)
-	e.wantStatus(e.do("rita", "PATCH", "/api/v1/repositories/npm-patch", map[string]any{"remote": map[string]any{"mode": "pullThrough"}},
+	got := e.do("rita", "GET", "/api/v1/projects/it/repositories/npm-patch", nil)
+	e.wantStatus(e.do("rita", "PATCH", "/api/v1/projects/it/repositories/npm-patch", map[string]any{"remote": map[string]any{"mode": "pullThrough"}},
 		"Content-Type", "application/merge-patch+json", "If-Match", got.Header.Get("ETag")), http.StatusOK, "")
 	if got := state(); got != "off" {
 		t.Errorf("state after the mode change = %s", got)

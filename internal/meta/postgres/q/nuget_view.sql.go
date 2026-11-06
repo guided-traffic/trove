@@ -69,8 +69,9 @@ SELECT nv.version_id
   JOIN package_versions pv ON pv.id = nv.version_id
   JOIN packages p ON p.id = pv.package_id
   JOIN repositories r ON r.id = p.repo_id
+  JOIN project rp ON rp.id = r.project_id
  WHERE pv.trashed_at IS NULL
-   AND r.key = ANY($1::text[])
+   AND (rp.key || '/' || r.key) = ANY($1::text[])
    AND (($2::text <> ''
          AND position(lower($2::text) in lower(COALESCE(NULLIF(btrim(nv.metadata ->> 'description'), ''), nv.metadata ->> 'summary', ''))) > 0)
      OR ($3::text <> '' AND jsonb_typeof(nv.metadata -> 'tags') = 'array'

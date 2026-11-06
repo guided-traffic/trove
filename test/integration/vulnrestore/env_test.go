@@ -122,7 +122,7 @@ func (e *env) publish(r *testenv.Replica, repo, name, version string) {
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	a := e.st.Do(r, "PUT", "/api/npm/"+repo+"/"+strings.ReplaceAll(name, "/", "%2f"), e.tokAdmin, raw)
+	a := e.st.Do(r, "PUT", "/api/npm/it/"+repo+"/"+strings.ReplaceAll(name, "/", "%2f"), e.tokAdmin, raw)
 	if a.Status != 201 {
 		e.t.Fatalf("publish %s@%s to %s: %d %s", name, version, repo, a.Status, a.Body)
 	}
@@ -131,7 +131,7 @@ func (e *env) publish(r *testenv.Replica, repo, name, version string) {
 // download requests the tarball of name@version as the reader and returns the answer.
 func (e *env) download(r *testenv.Replica, repo, name, version string) testenv.Answer {
 	e.t.Helper()
-	return e.st.Do(r, "GET", fmt.Sprintf("/api/npm/%s/%s/-/%s-%s.tgz", repo, name, name, version), e.tokReader, nil)
+	return e.st.Do(r, "GET", fmt.Sprintf("/api/npm/it/%s/%s/-/%s-%s.tgz", repo, name, name, version), e.tokReader, nil)
 }
 
 func tarball(t *testing.T, name, version string) []byte {
