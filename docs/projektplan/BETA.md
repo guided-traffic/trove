@@ -1,7 +1,7 @@
 # trove · Project plan to the beta release
 
 **Status:** ⚪ not started · 🟡 in progress or partly done · 🟢 done
-**Last updated:** 2026-11-05
+**Last updated:** 2026-11-06
 
 The way from zero to the beta release. The beta is trove with two package registries, **npm** and
 **NuGet (.NET)**, each with local, remote (pull-through) and virtual repositories, running on the
@@ -33,7 +33,7 @@ numbers (owner, 2026-11-02).
 | [6 · Vulnerability scanning](#phase-6--vulnerability-scanning-m4b) | Own advisory mirror, findings and vulnerability report, malicious versions blocked, npm and NuGet audits from trove's data | 🟢 |
 | [6a · Task areas](#phase-6a--task-areas) | trove cut into task areas: `api`, `packages` and `worker` as roles of one binary with Deployments of their own, ingress rules between the chart's pods | 🟡 |
 | [6b · Remote full mirror](#phase-6b--remote-full-mirror) | A remote repository can mirror every discoverable package of its upstream in the background, besides the default pull-through | 🟢 |
-| [7 · HA, backup, Helm](#phase-7--ha-hardening-backup-and-helm-m5) | Drains and failovers without errors, backup and restore; beta candidate | ⚪ |
+| [7 · HA, backup, Helm](#phase-7--ha-hardening-backup-and-helm-m5) | Drains and failovers without errors, backup and restore; beta candidate | 🟡 |
 | [8 · Walkthrough and beta](#phase-8--walkthrough-and-beta-release) | Owner review, objections fixed; **beta release** | ⚪ |
 
 ## Testing rule for every registry
@@ -853,11 +853,12 @@ The phase comes before phase 6b, so that the mirror's background passes and its 
 areas.
 
 - 🟢 Principle of the cut (ADR-153) and the network-policy rule (ADR-154)
-- 🟡 The network-policy rule for the chart `trove-bastion` too (owner, 2026-11-05): its egress policy removed, R-BAS-047 is ingress
+- 🟢 The network-policy rule for the chart `trove-bastion` too (owner, 2026-11-05): its egress policy removed, R-BAS-047 is ingress
   rules only, Q-BAS-55 superseded in part, the egress gap
-  [H-522](../security/bastion.md#h-522--the-chart-restricts-no-egress-of-the-bastion-pods); chart tests green. Open: the rewritten
-  `TestBastion_R_BAS_049_NetworkPolicy` (ingress refused from another namespace, admitted from the ingress controller's) and the
-  cut of `TestBastion_R_BAS_049_MainUnreachable`, now an egress policy of the test, have not run on kind yet
+  [H-522](../security/bastion.md#h-522--the-chart-restricts-no-egress-of-the-bastion-pods); chart tests green. The rewritten
+  `TestBastion_R_BAS_049_NetworkPolicy` (ingress refused from another namespace at both ports, admitted from the ingress controller's
+  at the HTTPS port only) and the cut of `TestBastion_R_BAS_049_MainUnreachable`, now an egress policy of the test, passed on kind in
+  the nightly run 42126196109 (leg `e2e-bastion (bastion)`, on commit b8d60cd9, which carries the rewrite of 7181008e)
 - 🟢 The roles of the cut: `api`, `packages` and `worker`, variants as pools; no fetch service
   ([ADR-155](../decisions.md#adr-155--three-roles-api-packages-and-worker-variants-are-pools))
 - 🟢 Specification rewritten: INV-2, R-ARCH-001, R-ARCH-016 (the queue `vuln`, `jobs.queues`, `jobs.exclude_queues`),
@@ -922,8 +923,8 @@ phase 7, so that the failure suite covers the background sync too. Its engine wa
 Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · spec: [ha-and-helm.md](../spec/ha-and-helm.md), [backup-and-restore.md](../spec/backup-and-restore.md)
 
 **High availability**
-- ⚪ Failure suite: pod crash, PostgreSQL switchover and failover, Valkey failover and outage, S3 outage, node loss
-- ⚪ Node drain under npm and NuGet load with zero failed requests; the NuGet load (`TestNuGetHA`) and R-ARCH-024's drain
+- 🟡 Failure suite: pod crash, PostgreSQL switchover and failover, Valkey failover and outage, S3 outage, node loss
+- 🟡 Node drain under npm and NuGet load with zero failed requests; the NuGet load (`TestNuGetHA`) and R-ARCH-024's drain
   criterion move here from phase 4 ([Q-NUGET-73](../spec/formats/nuget.md#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs))
 - 🟡 npm load in the drain and failover tests reliably green (moved from phase 3, owner 2026-11-01). Diagnosis of
   2026-11-01: `make e2e SET=npm-ha` passes on a 17-CPU kind cluster (drain: 40,894 k6 requests, 0 failures, every job at
@@ -936,15 +937,15 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   a per-replica cache of the facts was weighed there and rejected: they are not immutable). Open: shedding by memory in use instead of a worst case per request
   (after measuring a held download), the full settle deadline for the release writes at shutdown, and a load the runner
   can carry
-- ⚪ The drain criterion of the security audit (R-NPM-038, moved from phase 3): the `web` pod that forwards an `npm audit`
+- 🟡 The drain criterion of the security audit (R-NPM-038, moved from phase 3): the `web` pod that forwards an `npm audit`
   to a provider answering after 20 s is deleted 1 s in; `npm audit` succeeds and no pod gets `SIGKILL`
 - ⚪ The default of `health.shutdown_drain_delay` (5 s, proposed) set from the endpoint-removal time of the target Ingress measured under load; the dev profile needs 15 s on the CI runners (Actions run 41241903588)
 - ⚪ The mirror sync of phase 6b under the failure suite: a `worker` drained and lost mid-pass, the upstream throttling
 - ⚪ The Bastion under the failure suite: a Bastion replica drained and lost, the main installation unreachable and
   failing over, a rolling upgrade of either side
 - ⚪ Vulnerability scanning under the failure suite: sync and evaluation jobs across drains and failovers, blocks and triage after a restore (E5.13)
-- ⚪ Rolling upgrade from the previous pre-release with mixed versions
-- ⚪ Performance targets met in two nightly runs in a row
+- 🟡 Rolling upgrade from the previous pre-release with mixed versions
+- 🟡 Performance targets met in two nightly runs in a row
 
 **Backup and restore**
 - ⚪ Backup job (CronJob): consistent database snapshot, blobs copied incrementally to the backup S3 target
