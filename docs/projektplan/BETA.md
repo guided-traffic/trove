@@ -881,7 +881,8 @@ areas.
   release, which the pods of v0.16.0 cannot serve; for that release alone they are counted as a finding
   ([Q-HA-99](../spec/ha-and-helm.md#q-ha-99--the-uis-hashed-assets-across-an-upgrade), F-58). The dev PostgreSQL allows 450
   connections for the bridge (Q-HA-98). Open: E6a.8, a passing test that names R-HA-021, R-HA-031, R-HA-038 and R-HA-045 (the last
-  three are completed with phase 7's chart), and the first nightly run of the leg
+  three are completed with phase 7's chart). The leg `e2e-upgrade (upgrade)` passed both upgrade tests in the dispatched nightly run
+  42177273488
 
 ## Phase 6b · Remote full mirror
 
@@ -938,7 +939,10 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   `open_duration`, an upload with `Expect: 100-continue` sent its body before the `503`, the audit forward's timeout (Q-STOR-147 to
   Q-STOR-149, Q-HA-103 to Q-HA-105, Q-NPM-77). Node loss met its bounds (replacements ready 65 s after the node was declared lost,
   the lease moved, never two holders); a command running on the lost node may fail with a network error (Q-HA-105). Open: a run of the
-  whole set after the fixes, and the nightly leg. Pod crash, switchover, Valkey failover and outage were green before
+  whole set after the fixes. In the dispatched nightly run 42177273488 the node loss, both primary losses, the audit drain and the 5-minute
+  outage passed; the 30 s outage failed on two defects of the test (the outage was counted from before the stop script, which takes
+  26 s, and two answers that started before the window were judged by their start), fixed (Q-STOR-150). Pod crash, switchover, Valkey
+  failover and outage were green before
   (`TestNPMHACrash`, `TestNPMHA`, `TestNPMHAClosing`, `TestE13Failover`)
 - 🟢 Node drain under npm and NuGet load with zero failed requests; the NuGet load (`TestNuGetHA`) and R-ARCH-024's drain
   criterion move here from phase 4 ([Q-NUGET-73](../spec/formats/nuget.md#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs)). `TestNuGetHA` (set `nuget-ha`, nightly leg `e2e-nuget (nuget-ha)`
@@ -946,7 +950,8 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   543 `npm ci`, 34 `npm publish`, 305 `dotnet restore` and 36 `dotnet nuget push`, every command exit 0 (R-ARCH-024's 100, 20, 100 and
   20 met), k6 40,370 npm and 10,765 NuGet requests, only `2xx` and `304`, p99 741 ms warm-up against 789 ms in the drain, every
   acknowledged publish and push installed, probe jobs resumed with `attempt` 1, no SIGKILL; the PostgreSQL switchover and the Valkey
-  failover under the same load without a failed command. The load took 16 cores of the dev cluster
+  failover under the same load without a failed command. The load took 16 cores of the dev cluster. The leg passed on the large class in
+  the dispatched nightly run 42177273488
 - 🟡 npm load in the drain and failover tests reliably green (moved from phase 3, owner 2026-11-01). Diagnosis of
   2026-11-01: `make e2e SET=npm-ha` passes on a 17-CPU kind cluster (drain: 40,894 k6 requests, 0 failures, every job at
   attempt 1); with the kind nodes held to 6 CPUs the drain gets 1,062 `503`s, all `memory_slots` shedding of Q-ARCH-240 (no
@@ -970,24 +975,25 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   (set `ha-suite`) passed on kind on 2026-11-06: the audit exited 0 after 20.3 s, the `packages` pod deleted 1,002 ms after the
   request arrived, no SIGKILL. It found that the forward gave up after the remote's `readTimeoutMs` (15 s) instead of
   `npm.audit.timeout` (30 s), fixed (Q-NPM-77)
-- 🟡 The default of `health.shutdown_drain_delay` (5 s, proposed) set from the endpoint-removal time of the target Ingress measured under load; the dev profile needs 15 s on the CI runners (Actions run 41241903588).
+- 🟢 The default of `health.shutdown_drain_delay` (5 s, proposed) set from the endpoint-removal time of the target Ingress measured under load; the dev profile needs 15 s on the CI runners (Actions run 41241903588).
   Built 2026-11-06: the drain tests (`TestE14Drain`, `TestDrainRoles`, the drain of `TestNPMHA`) read from each evicted pod's own log the
   time from its readiness flip to the last request the edge sent it, and fail when the delay is not longer
   ([Q-HA-110](../spec/ha-and-helm.md#q-ha-110--how-the-drain-test-measures-the-edges-endpoint-removal-time)). Measured: at most 1.79 s
   in four `push` runs and 0.98 s under the npm load of nightly run 42126196109 (read from their kept logs), 0.14 s on an idle dev cluster,
   13.4 s on a CPU-starved one; the default stays 5 s and the dev profile keeps 15 s
   ([Q-HA-111](../spec/ha-and-helm.md#q-ha-111--the-default-of-healthshutdown_drain_delay), Q-HA-112). `TestE14Drain` passed with the
-  measurement on kind. Open: a nightly `drain-roles` and `npm-ha` with the measurement
+  measurement on kind, and the dispatched nightly run 42177273488 passed `drain-roles` and `npm-ha` with it
 - 🟡 The mirror sync of phase 6b under the failure suite: a `worker` drained and lost mid-pass, the upstream throttling. Built
   2026-11-06 in the set `mirror-long` ([Q-REPO-198](../spec/repositories-and-proxy.md#q-repo-198--the-failure-suite-of-the-mirror-a-remote-and-a-range-of-names-per-scenario-the-upstreams-request-log-for-the-waits-the-process-lost-three-ways)):
   the pass's process force-deleted, its node stopped and frozen, a `429` and a `503 SlowDown` across a drain and a kill (witnessed by the
   counting upstream's new request log), a switchover and a Valkey failover during a pass. Open: their first run (nightly)
-- 🟡 The Bastion under the failure suite: a Bastion replica drained and lost, the main installation unreachable and
+- 🟢 The Bastion under the failure suite: a Bastion replica drained and lost, the main installation unreachable and
   failing over, a rolling upgrade of either side. Built 2026-11-06 in the set `bastion-long` (Q-BAS-141 to Q-BAS-144) and green on the
   dev cluster under `npm ci`, `dotnet restore` and cold-miss loops: a replica force-deleted on either backend (about 100 commands each,
   0 failed), a PostgreSQL switchover, a Valkey failover and a crashed main `packages` pod (208 commands, 0 failed), rolling restarts and
   a `helm upgrade` of the main installation (837 commands, 0 failed) and of either Bastion (247 and 224, 0 failed), the mismatch gauge 0
-  throughout. The drain and the unreachable main installation were green before. Open: the nightly leg
+  throughout. The drain and the unreachable main installation were green before. The leg `e2e-bastion (bastion-long)` passed with all of
+  it in the dispatched nightly run 42177273488
 - 🟡 Vulnerability scanning under the failure suite: sync and evaluation jobs across drains and failovers, blocks and triage after a restore (E5.13).
   Built 2026-11-06 in the set `vuln-long` (Q-VULN-87 to Q-VULN-89): a switchover during an evaluation of 40,000 expected findings (no
   finding twice, none lost), the block of four versions answered on every replica through a node drain, a Valkey failover and a
@@ -997,7 +1003,8 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   (set `upgrade`) passed on kind on 2026-11-06: v0.19.0 (resolved from the tags) upgraded with its migration Job and rolled back with
   `helm rollback`, under 447 `npm ci`, 47 publishes, 545 `dotnet restore` and 71 browser journeys, 0 failed; R-HA-020's verification
   (rollout status, only the new version listed, no pending migration through `trove migrate status`, since the endpoint is F-59). The
-  test is strict on the UI's assets: the first release that changes the bundle makes it red until F-58 is fixed
+  test is strict on the UI's assets: the first release that changes the bundle makes it red until F-58 is fixed. Passed in the dispatched
+  nightly run 42177273488 as well
 - 🟡 Performance targets met in two nightly runs in a row
 
 **Backup and restore**
