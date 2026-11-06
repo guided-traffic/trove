@@ -649,7 +649,7 @@ Acceptance criteria:
 
 - With the option on, a backup of an installation whose `npm-remote` cached `lodash@4.17.21` holds
   no pool object for that tarball; after restore, `npm install lodash@4.17.21 --registry
-  …/api/npm/web/npm-remote/` succeeds and the upstream stub records one tarball request.
+  …/api/npm/npm-remote/` succeeds and the upstream stub records one tarball request.
 - A tarball published to `npm-local` and also cached in `npm-remote` is in the pool.
 
 ## The backup job
@@ -1721,7 +1721,7 @@ drill has no run in the pipeline.
 1. **Consistency under load.** A loop publishes npm and NuGet packages, deletes some, empties the
    trash and runs garbage collection with `storage.gc.grace_period: 0s` every 10 s, while
    `trove backup create` runs. The backup is restored into a fresh database and bucket. Then, for
-   every untrashed and trashed file item in the restored database, `GET /files/<projectKey>/<repoKey>/<path>`
+   every untrashed and trashed file item in the restored database, `GET /files/<repo>/<path>`
    (or the trash API) returns bytes whose SHA-256 equals the item's digest; `npm view` lists
    exactly the versions in the restored database; and `trove backup verify --deep` exits `0`.
 2. **Source blobs garbage-collected after the backup.** After backup B, every package is deleted

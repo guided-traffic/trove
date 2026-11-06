@@ -156,14 +156,11 @@ upload is then written to its content address unless that object already exists
 garbage-collection job deletes unreferenced blobs after a grace period. No binary content is
 stored in PostgreSQL.
 
-**INV-5 · Repository model.** Every repository belongs to exactly one project and has a key that is
-unique within its project, exactly one package format and one class: `local` (hosted), `remote` (pull-through proxy and cache of one upstream)
+**INV-5 · Repository model.** Every repository has a globally unique key, exactly one package
+format and one class: `local` (hosted), `remote` (pull-through proxy and cache of one upstream)
 or `virtual` (ordered aggregation of local and remote repositories of the same format, with one
 default deployment target). Federated repositories are not part of the MVP. Repository keys match
-`^[a-z0-9][a-z0-9._-]{1,63}$`, project keys `^[a-z][a-z0-9-]{1,31}$`. No repository is shared: a virtual repository lists
-only repositories of its own project. Outside its project a repository is named `<projectKey>/<repoKey>`. Owner's
-decision of 2026-11-06 ([ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project),
-[authorization.md](authorization.md) R-AUTHZ-026); until then keys were unique in the installation.
+`^[a-z0-9][a-z0-9._-]{1,63}$`.
 
 **INV-6 · URL layout.** One client listener per endpoint and one listener for operations (port
 8081). The default endpoint listens on port 8080 with `server.base_url`; further endpoints each
@@ -179,12 +176,12 @@ its root to one repository, for clients that cannot use a path (R-EP-006, Q-EP-6
 | Path | Purpose |
 |---|---|
 | `/api/v1/…` | Management REST API (JSON). The OpenAPI 3.1 document at `/api/v1/openapi.json` is the source of truth. |
-| `/api/<format>/<projectKey>/<repoKey>/…` | Package-manager protocols, e.g. `/api/npm/web/npm-all/`, `/api/nuget/web/nuget-all/v3/index.json` |
-| `/files/<projectKey>/<repoKey>/<path>` | Raw file access to any repository |
+| `/api/<format>/<repoKey>/…` | Package-manager protocols, e.g. `/api/npm/npm-all/`, `/api/nuget/nuget-all/v3/index.json` |
+| `/files/<repoKey>/<path>` | Raw file access to any repository |
 | `/auth/…` | Browser login flow (OIDC redirect and callback, logout) |
 | `/ui/…` | Angular UI |
 | `/-/npm/v1/oidc/token/exchange/package/…` (host root) | npm trusted-publishing token exchange (P1). npm resolves it against the registry's host root ([formats/npm.md](formats/npm.md) R-NPM-022). |
-| `/v2/…` (host root) | Reserved for the OCI distribution API (OCI format, P1); the project key and the repository key are the first two path segments; no other route may use this prefix; answers `404` until the OCI format exists ([ha-and-helm.md](ha-and-helm.md) Q-HA-4, R-HA-041). On a host whose root is bound to one repository, the repository comes from the binding instead (Docker Engine mirrors, [endpoints.md](endpoints.md) R-EP-007, P1). |
+| `/v2/…` (host root) | Reserved for the OCI distribution API (OCI format, P1); the repository key is the first path segment; no other route may use this prefix; answers `404` until the OCI format exists ([ha-and-helm.md](ha-and-helm.md) Q-HA-4, R-HA-041). On a host whose root is bound to one repository, the repository comes from the binding instead (Docker Engine mirrors, [endpoints.md](endpoints.md) R-EP-007, P1). |
 | `/.well-known/…` (host root) | Reserved for discovery documents that clients fetch at the host root ([RFC 8615](https://www.rfc-editor.org/rfc/rfc8615)), the first being Terraform's `terraform.json` on a bound host (P1); no other route may use this prefix; answers `404` until a format registers one ([endpoints.md](endpoints.md) R-EP-006). |
 | `:8081/healthz`, `:8081/readyz`, `:8081/metrics` | Liveness, readiness, Prometheus metrics |
 

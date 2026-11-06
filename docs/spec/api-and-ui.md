@@ -16,7 +16,7 @@ management and testing. What a resource *means* (a
 repository, a permission policy, an identity mapping, a token scope) and its payload fields are
 owned by the page named in the [ownership table](README.md#pages); this page fixes how resources
 are exposed over HTTP, keeps the surface consistent across those pages, and specifies how the UI
-presents them. Package-manager protocols (`/api/<format>/<projectKey>/<repoKey>/…`) belong to the format pages;
+presents them. Package-manager protocols (`/api/<format>/<repoKey>/…`) belong to the format pages;
 health probes and metrics on the operations listener belong to
 [operations-and-observability.md](operations-and-observability.md).
 
@@ -43,13 +43,7 @@ OPS-032),
 - Every `web` replica answers every request, and the Kubernetes Service picks one at random without
   session affinity (INV-2, INV-12). "A request" on this page therefore never means "the same
   replica as the previous request" (INV-18, R-API-051).
-- Path notation: `{projectKey}`, `{repoKey}` and every other `{…}` is one path segment. A repository is addressed
-  inside its project ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-002,
-  [Q-REPO-212](repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared)):
-  its management routes are `/api/v1/projects/{projectKey}/repositories/{repoKey}…`, its raw files
-  `/files/{projectKey}/{repoKey}/{path}`. Where a repository is named outside its project as one string (a
-  filter value, a JSON member of an instance-wide resource), it is the qualified name `<projectKey>/<repoKey>`
-  (`web/npm-internal`). Every path is relative to the public base URL
+- Path notation: `{key}` is one path segment. Every path is relative to the public base URL
   (R-OPS-005 in [operations-and-observability.md](operations-and-observability.md)).
 - Permission column vocabulary: the repository actions of INV-9 (`read`, `annotate`, `deploy`,
   `overwrite`, `delete`, `manage`) on a repository and optionally a path or package; `admin` is the
@@ -57,9 +51,8 @@ OPS-032),
   system scope item of a token (R-AUTH-025 in
   [identity-and-authentication.md](identity-and-authentication.md), for example `policies:read`);
   `self` means the caller acts on its own resource; `authenticated` is any authenticated principal;
-  `anonymous` means the endpoint answers without credentials. `Owner` and `member` name the project roles of
-  [authorization.md](authorization.md) R-AUTHZ-026 (reader, developer, maintainer, owner) in the project of the path.
-  Delegations defined by the owning pages (project roles, CI issuer delegates, delegated policy managers) extend these
+  `anonymous` means the endpoint answers without credentials. Delegations defined by the owning
+  pages (project administrators, CI issuer delegates, delegated policy managers) extend these
   columns without changing the paths.
 - Payload sketches appear only for resources this page owns. For every other resource the owning
   page holds the normative fields; the OpenAPI document (R-API-002) is where the pages meet, and a
@@ -211,7 +204,7 @@ Priority: **MVP** · Covers: API-001
 
 Acceptance criteria:
 
-- `POST /api/v1/projects/web/repositories` with a body containing `"upsteamUrl"` answers 400, `code`
+- `POST /api/v1/repositories` with a body containing `"upsteamUrl"` answers 400, `code`
   `malformed_request`, `errors[0].pointer` `/remote/upsteamUrl`.
 - For every configuration resource, a test GETs it, PUTs the body back unchanged with `If-Match`,
   and asserts that the stored state, secrets included, is unchanged.
@@ -220,25 +213,17 @@ Acceptance criteria:
 Priority: **MVP** · Covers: API-001, ADMAPI-002
 
 - Collections are plural kebab-case nouns (`/api/v1/permission-policies`, `/api/v1/trash-can/items`).
-- Keyed resources are addressed by the key or name the owning page defines (projects and webhooks and retention
-  policies by key, users by username, groups, CI issuers by name). What a project holds is addressed inside it,
-  below `/api/v1/projects/{projectKey}/`: its repositories by key (`…/repositories/{repoKey}`), its members by
-  principal reference (`…/members/{principalRef}`), its permission policies (`…/policies/{name}`), service accounts
-  (`…/service-accounts/{name}`) and CI mappings (`…/ci/mappings/{issuer}/{name}`) by a name unique within the
-  project ([authorization.md](authorization.md) R-AUTHZ-026,
-  [Q-AUTHZ-209](authorization.md#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones),
-  [Q-AUTHZ-214](authorization.md#q-authz-214--a-projects-ci-mappings-are-named-within-the-project-like-its-policies-and-service-accounts)).
-  Policies and service accounts of no project keep their instance-wide routes (`/api/v1/permission-policies/{name}`,
-  `/api/v1/service-accounts/{name}`), which address only objects of no project. Resources without a natural key
-  (tokens, jobs, trash entries, audit events, packages, support bundles) are addressed by a server-generated
-  identifier that clients treat as opaque.
+- Keyed resources are addressed by the key or name the owning page defines (repositories by key,
+  users by username, groups, service accounts, policies, CI issuers and mappings by name, webhooks
+  and retention policies by key). Resources without a natural key (tokens, jobs, trash entries,
+  audit events, packages, support bundles) are addressed by a server-generated identifier that
+  clients treat as opaque.
 - Item paths inside a repository are passed as the query parameter `path` on `/api/v1/` routes
-  (`/api/v1/projects/{projectKey}/repositories/{repoKey}/items?path=…`, [storage.md](storage.md)) and as the path tail
-  on `/files/{projectKey}/{repoKey}/{path}`. Both forms follow the same rules once decoded (no empty, `.` or
+  (`/api/v1/repositories/{repoKey}/items?path=…`, [storage.md](storage.md)) and as the path tail
+  on `/files/{repoKey}/{path}`. Both forms follow the same rules once decoded (no empty, `.` or
   `..` segment, no NUL, backslash or control character, at most 4096 bytes and 255 bytes per
   segment, [formats/generic.md](formats/generic.md) R-GENERIC-002); an empty segment right after
-  the key (`/files/{projectKey}/{repoKey}//x`) is one too. A `%` in the project or repository segment of
-  `/files/` is refused with 400 `invalid_path`, and `/files/{projectKey}` without a repository segment answers 404.
+  the key (`/files/{repoKey}//x`) is one too.
 - Methods:
 
 | Method | Use | Success |
@@ -250,10 +235,10 @@ Priority: **MVP** · Covers: API-001, ADMAPI-002
 | DELETE on an item | Remove | 204, or 202 with a job (R-API-015) |
 | POST `{collection-or-item}/{verb}` | A non-CRUD action with a kebab-case verb (`/reindex`, `/restorations`, `/test`, `/keys/refresh`) | 200 with a result, or 202 with a job |
 
-- Actions on a whole collection use the same sub-path form (`POST /api/v1/projects/{projectKey}/repositories/batch-create`,
+- Actions on a whole collection use the same sub-path form (`POST /api/v1/repositories/batch-create`,
   `POST /api/v1/trash-can/purge`); colon methods (`repositories:batchCreate`) are not used (Q-API-7).
 - **Reserved names.** A literal segment at the position where a collection's key or name sits
-  (`/users/me`, `/webhooks/test`, `/webhooks/deliveries`, `/projects/{projectKey}/repositories/batch-create`) is a
+  (`/users/me`, `/webhooks/test`, `/webhooks/deliveries`, `/repositories/batch-create`) is a
   reserved name of that collection. Where the literal and the `{key}` route share a method, the
   router prefers the literal and a resource with that name is unreachable (`GET /webhooks/deliveries`);
   where they do not, one URL would still name two things, and the next route added with a shared
@@ -272,8 +257,8 @@ Priority: **MVP** · Covers: API-001, ADMAPI-002
 Acceptance criteria:
 
 - A create answers 201 whose `Location` header equals the URL on which a subsequent GET succeeds.
-- `GET /api/v1/projects/web/repositories/npm-local/items?path=a/../b` answers 400 `invalid_path`.
-- `POST /api/v1/projects/web/repositories` with key `batch-create` answers 422 `reserved_name`.
+- `GET /api/v1/repositories/npm-local/items?path=a/../b` answers 400 `invalid_path`.
+- `POST /api/v1/repositories` with key `batch-create` answers 422 `reserved_name`.
 
 ### R-API-005 · Caller authentication on the management API
 Priority: **MVP** · Covers: API-001, ADMAPI-001
@@ -346,7 +331,7 @@ operations that require it when called with a session; the OpenAPI document mark
 | Tokens | Creating and rotating personal and service-account tokens (R-API-032); issuing a Bastion token ([bastion.md](bastion.md) R-BAS-004, `createBastionToken`) |
 | Command-line login | Approving or denying an `npm login` or a device-code login (P1; R-AUTH-034, R-AUTH-036) |
 | Permissions | Creating, replacing and deleting permission policies; binding and unbinding system roles (R-API-033) |
-| Projects | Replacing and deleting a project, adding a member, changing a member's role and removing a member ([authorization.md](authorization.md) R-AUTHZ-026); moving a repository to another project ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-060) |
+| Projects | Replacing and deleting a project, adding and removing a project administrator, assigning and unassigning a repository ([authorization.md](authorization.md) R-AUTHZ-026) |
 | Package ownership | Adding and removing package owners, releasing a name ([authorization.md](authorization.md) R-AUTHZ-019, Q-AUTHZ-157) |
 | CI identity | Creating, replacing and deleting CI issuers, identity mappings and delegations (R-API-035) |
 | Settings | Changing authentication settings (R-API-037) |
@@ -360,7 +345,7 @@ authorization step enforces the extension after the permission check ([Q-API-40]
 Acceptance criteria:
 
 - With a session whose last interactive authentication is older than the window of R-AUTH-011,
-  `DELETE /api/v1/projects/web/repositories/npm-old` answers 401 `reauthentication_required`; after the
+  `DELETE /api/v1/repositories/npm-old` answers 401 `reauthentication_required`; after the
   re-authentication round trip the same request succeeds.
 
 ### R-API-008 · Authorization declaration and denial responses
@@ -370,17 +355,11 @@ Priority: **MVP** · Covers: ADMAPI-001, ADMAPI-041, IAM-032
   enforced by one shared step that calls the evaluator of [authorization.md](authorization.md)
   before the handler runs. Handlers add checks only where the decision depends on the request body
   (for example the target repository of a copy).
-- An operation below `/api/v1/projects/{projectKey}/` names the project in its declaration: `project: path.projectKey`
-  (beside `repository: path.repoKey` where the operation acts on a repository of the project). An operation that
-  members of the project may call through their role declares `{"permission": "<capability>", "project":
-  "path.projectKey", "projectRole": "<role>"}` with the role `owner` (the Owner's administration) or `reader` (every
-  member) ([authorization.md](authorization.md) R-AUTHZ-026,
-  [Q-AUTHZ-208](authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner)). The shared step
-  admits the holder of the capability, or a member of the path's project whose role is at least the declared one; it
-  narrows to that project itself, because the project is in the path. A project the caller is no member of (and
-  whose capability it does not hold) answers 404, exactly like a project that does not exist; a member whose role is
-  lower answers 403 `forbidden`. The Owner's administration needs a credential that may administer: a UI session or a
-  token with `admin: true` ([Q-AUTHZ-215](authorization.md#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members)).
+- An operation that project administrators may call declares `{"permission": "<capability>", "projectAdmin": "<right>"}`
+  with the right `any`, `managePolicies` or `manageRepositories` ([authorization.md](authorization.md) R-AUTHZ-026,
+  Q-AUTHZ-180). The shared step admits the holder of the capability, or a caller that administers at least one
+  project with the right, and refuses everyone else with the refusal of the capability; the handler then narrows to the
+  addressed project (a project the caller does not administer: 404; a switch that is off: 403 `project_switch_off`).
 - Administrative read operations are reachable by a token carrying the matching system scope item
   instead of the administrator role (`identities:read`, `policies:read`, `settings:read`,
   `audit:read`, `repositories:read-config`, `tokens:read`; R-AUTH-025), so read-only automation
@@ -404,11 +383,8 @@ Priority: **MVP** · Covers: ADMAPI-001, ADMAPI-041, IAM-032
 
 Acceptance criteria:
 
-- A user with `read` on `web/npm-a` only: `GET /api/v1/repositories` lists `web/npm-a` alone;
-  `GET /api/v1/projects/web/repositories/npm-b` answers 404 with hiding on and 403 with it off.
-- A member of project `web` with the role `developer` gets 403 on `PUT /api/v1/projects/web/members/user:dave`; a
-  caller who is no member of `mobile` and holds no `projects:read` gets 404 on `GET /api/v1/projects/mobile/members`, as for a project that does
-  not exist.
+- A user with `read` on `npm-a` only: `GET /api/v1/repositories` lists `npm-a` alone;
+  `GET /api/v1/repositories/npm-b` answers 404 with hiding on and 403 with it off.
 - A token carrying `identities:read` can `GET /api/v1/users` and gets 403 on
   `POST /api/v1/users/{username}/disable`.
 
@@ -447,7 +423,7 @@ R-UI-045); API text stays English.
   "title": "Request validation failed",
   "status": 422,
   "detail": "1 field is invalid.",
-  "instance": "/api/v1/projects/web/repositories",
+  "instance": "/api/v1/repositories",
   "code": "validation_failed",
   "requestId": "4bf92f3577b34da6a3ce929d0e0e4736",
   "errors": [
@@ -473,8 +449,8 @@ R-UI-045); API text stays English.
 | 404 | `not_found` | Target missing, or hidden (R-API-008) |
 | 405 | `method_not_allowed` | Wrong method, or the action does not apply to the repository class |
 | 406 | `not_acceptable` | No acceptable representation |
-| 409 | `already_exists` | Create with a key or name that already exists where it must be unique, for every resource (users, groups, rules in the installation; repositories, policies, service accounts and CI mappings within their project, or among those of no project) |
-| 409 | `conflict` | State conflict; owning pages define specific codes (`project_not_empty`, `last_admin`, `last_owner`, `repository_in_use`, …) |
+| 409 | `already_exists` | Create with an existing key or name, for every resource (users, groups, service accounts, repositories, policies, rules) |
+| 409 | `conflict` | State conflict; owning pages define specific codes (`project_not_empty`, `last_admin`, …) |
 | 409 | `idempotency_in_progress`, `token_already_issued` | R-API-014 |
 | 412 | `precondition_failed` | `If-Match` does not match; extension `currentEtag` |
 | 412 | `authz_epoch_unknown` | `Trove-Authz-Min-Epoch` names an authorization epoch the database has not reached, for example because a PostgreSQL failover lost the commit that returned it (R-API-052, R-AUTHZ-032); the client drops that epoch and re-reads the object it changed |
@@ -604,10 +580,9 @@ Priority: **MVP** · Covers: trove-only
   write is always an explicit choice. The OpenAPI document marks these operations with
   `x-trove-if-match: required` (R-API-002). There is no switch to turn the rule off.
 - Exempt, because they cannot lose another writer's change or carry no revision: DELETE (honors
-  `If-Match` when sent), membership edits that send a delta or bind one pair
-  (`{"add": [...], "remove": [...]}`, role bindings, the members of a project with their role), the move of a
-  repository to another project (it names its target), write-only secret slots, item properties, and file content
-  on `/files`.
+  `If-Match` when sent), membership and assignment edits that send a delta or bind one pair
+  (`{"add": [...], "remove": [...]}`, role bindings, project administrators and repository
+  assignments), write-only secret slots, item properties, and file content on `/files`.
 - The UI sends the ETag it loaded on every write and never sends `If-Match: *` on its own
   (R-UI-042).
 - GET supports `If-None-Match` and answers 304.
@@ -655,7 +630,7 @@ Acceptance criteria:
 - A script over the OpenAPI document asserts that every PUT and PATCH whose resource's GET declares
   an `ETag` response header carries `x-trove-if-match: required`, unless it is in the exempt list
   above.
-- `curl -X PUT -T app.tgz -H 'If-None-Match: *' -u "ci:$TROVE_TOKEN" "$TROVE_URL/files/web/generic-local/app/1.0/app.tgz"`
+- `curl -X PUT -T app.tgz -H 'If-None-Match: *' -u "ci:$TROVE_TOKEN" "$TROVE_URL/files/generic-local/app/1.0/app.tgz"`
   answers 201 the first time and 412 the second time.
 - A repository at `ETag: "4"` is backed up, then patched twice on the old installation
   (`ETag: "6"`). After a restore of that backup into a new installation and two patches there, a
@@ -687,7 +662,7 @@ Priority: **MVP** · Covers: ADMAPI-007, ADMAPI-016, ADMAPI-024
 
 Acceptance criteria:
 
-- `curl -X PATCH -H 'Content-Type: application/merge-patch+json' -H 'If-Match: "3"' -d '{"description": null}' "$TROVE_URL/api/v1/projects/web/repositories/npm-remote"`
+- `curl -X PATCH -H 'Content-Type: application/merge-patch+json' -H 'If-Match: "3"' -d '{"description": null}' "$TROVE_URL/api/v1/repositories/npm-remote"`
   answers 200 with `"description": null` and `ETag: "4"`.
 - `{"class": "local"}` sent with a matching `If-Match` to a remote repository answers 422 with
   pointer `/class`.
@@ -756,7 +731,7 @@ api:
 
 Acceptance criteria:
 
-- Two identical `POST /api/v1/projects/web/repositories` requests with the same `Idempotency-Key` answer 201
+- Two identical `POST /api/v1/repositories` requests with the same `Idempotency-Key` answer 201
   twice with identical bodies; the second carries `Idempotency-Replayed: true`; one repository
   exists.
 - The same key with a different body answers 422 `idempotency_key_reused`.
@@ -794,8 +769,8 @@ Rules this page adds:
 
 Acceptance criteria:
 
-- `DELETE /api/v1/projects/web/repositories/npm-old` on a repository with 10,000 items answers 202; polling
-  `Location` ends in `succeeded`; afterwards `GET /api/v1/projects/web/repositories/npm-old` answers 404.
+- `DELETE /api/v1/repositories/npm-old` on a repository with 10,000 items answers 202; polling
+  `Location` ends in `succeeded`; afterwards `GET /api/v1/repositories/npm-old` answers 404.
 - Deleting the `worker` pod that runs the job, gracefully or with `--grace-period=0 --force`, lets
   another `worker` replica finish it. Deleting the `web` pod that answered 202 right after the
   answer changes nothing: the job still ends in `succeeded`.
@@ -893,7 +868,7 @@ Acceptance criteria:
   and `trove_ratelimit_fallback{limiter="api_read"}` is 1 on every replica.
 - With the defaults, a `200` answer of `GET /api/v1/repositories` carries
   `RateLimit-Policy: "read";q=200;w=4`.
-- A loop of 1,100 `GET /api/npm/<projectKey>/<repoKey>/<name>` with one token receives 429 answers after the
+- A loop of 1,100 `GET /api/npm/<repository>/<name>` with one token receives 429 answers after the
   burst of 1,000, each with `Retry-After` and `RateLimit-Policy: "package_read";q=1000;w=5`;
   `GET /api/v1/repositories` with the same token is still admitted.
 
@@ -967,8 +942,7 @@ Priority: **MVP** · Covers: OPS-023
 
 - Every mutating request under `/api/v1/` and `/files/`, successful or denied, produces an audit
   event (INV-16) with actor, credential kind and token ID (never the secret), action
-  (`operationId` or the owning page's action name), target (with its project where the target belongs to one: the
-  event carries `project`, and a repository is named `<projectKey>/<repoKey>`), outcome, source and `requestId`, and
+  (`operationId` or the owning page's action name), target, outcome, source and `requestId`, and
   for permission policies, role bindings and identity mappings the before and after of the grants.
   Event schema, storage, retention and the log stream are owned by
   [operations-and-observability.md](operations-and-observability.md); this page requires that no
@@ -979,7 +953,7 @@ Priority: **MVP** · Covers: OPS-023
 
 Acceptance criteria:
 
-- `POST /api/v1/projects/web/repositories` produces an audit event whose `requestId` equals the response's
+- `POST /api/v1/repositories` produces an audit event whose `requestId` equals the response's
   `X-Request-Id`.
 - A rejected policy change (403) produces an audit event with outcome `denied`.
 
@@ -1106,13 +1080,13 @@ this requirement states the contract for API clients.
   without Valkey; a replica that cannot prove a fresh change-log poll answers from PostgreSQL or
   with `503`, never from a stale cache (R-AUTH-023 in
   [identity-and-authentication.md](identity-and-authentication.md)).
-- **A new repository is usable at once.** A repository (project and key) that a replica's snapshot does not know
+- **A new repository is usable at once.** A repository key that a replica's snapshot does not know
   is looked up in PostgreSQL before the replica answers `404`; when the key exists, the replica
   runs one change-log poll and waits until the caches it invalidates are rebuilt, the grant index
   of [authorization.md](authorization.md) R-AUTHZ-028 included, so the request is resolved and
   authorized against a state that knows the repository ([architecture.md](architecture.md)
-  R-ARCH-011 step 2, cross-page). A project key or repository key that does not match its pattern (INV-5) answers `404`
-  without a query; concurrent lookups of one repository share one query, and concurrent polls share one
+  R-ARCH-011 step 2, cross-page). A key that does not match the pattern of INV-5 answers `404`
+  without a query; concurrent lookups of one key share one query, and concurrent polls share one
   poll. A script that creates a repository and then publishes to it through the Service
   therefore never meets a `404` from a replica that has not heard of it yet. This matters because
   npm does not retry a `404` (its fetch layer retries `408`, `420`, `429` and `5xx` only), so a
@@ -1132,8 +1106,8 @@ this requirement states the contract for API clients.
   (R-AUTHZ-028), so that a client can see its own grant change on whichever replica answers next,
   without affinity:
   - Response header `Trove-Authz-Epoch: <n>`: sent by the writes that change grants, which are
-    policy writes and role bindings (R-API-033), project writes with their members and roles, and
-    the move of a repository to another project (R-API-047). `n` is the epoch the write's transaction
+    policy writes and role bindings (R-API-033) and, from P1, project writes with their
+    administrators and repository assignments (R-API-047). `n` is the epoch the write's transaction
     produced.
   - Request header `Trove-Authz-Min-Epoch: <n>`: honoured on every authenticated request on the
     client listener, `/api/v1/`, `/files/` and the package protocols alike. It is read only after
@@ -1156,14 +1130,14 @@ this requirement states the contract for API clients.
 Acceptance criteria:
 
 - In the e2e profile `scatter` with Valkey stopped and `cluster.epoch_poll_interval: 10s` (a test
-  setting that makes a stale snapshot visible), 100 runs of `POST /api/v1/projects/web/repositories` creating
-  `npm-new-<n>` followed at once by `npm publish --registry "$TROVE_URL/api/npm/web/npm-new-<n>/"`
+  setting that makes a stale snapshot visible), 100 runs of `POST /api/v1/repositories` creating
+  `npm-new-<n>` followed at once by `npm publish --registry "$TROVE_URL/api/npm/npm-new-<n>/"`
   through the Service all succeed on the first attempt.
 - In the same profile, a `PATCH` of a repository followed at once by a `GET` through another
   replica returns the new `ETag` in 100 of 100 trials.
 - With Valkey running, a policy change made through one replica is enforced by every replica
   within 1 s (p99 over 100 trials), as R-ARCH-018's criterion measures.
-- In the same profile, with an existing policy that grants `deploy` on `web/npm-*` to the publishing
+- In the same profile, with an existing policy that grants `deploy` on `npm-*` to the publishing
   token, the publish of the first criterion succeeds although the replica it reaches learns of the
   new repository only through the lookup. 10,000 requests for random unknown keys on one replica
   cause at most 10,000 repository lookups and no change-log poll beyond the scheduled ones.
@@ -1183,16 +1157,16 @@ Priority: **MVP** · Covers: trove-only
 | Path prefix | Family | Requirement | Semantics and payloads |
 |---|---|---|---|
 | `/api/v1/auth/whoami`, `/api/v1/auth/login-options`, `/api/v1/authz/me`, `/api/v1/authz/check`, `/api/v1/users/me…` | Current caller | R-API-021 | [identity-and-authentication.md](identity-and-authentication.md), [authorization.md](authorization.md) |
-| `/api/v1/formats`, `/api/v1/repositories` (the instance-wide list), `/api/v1/projects/{projectKey}/repositories…`, `/api/v1/projects/{projectKey}/upstream-tests` | Repositories | R-API-022 to R-API-024, R-API-030, R-API-053 | [repositories-and-proxy.md](repositories-and-proxy.md), [architecture.md](architecture.md) |
-| `/api/v1/projects/{projectKey}/repositories/{repoKey}/items`, `/children`, `/stats`, `/properties`, `/content/…`; `/files/{projectKey}/{repoKey}/…` | Items and files | R-API-025, R-API-026 | [storage.md](storage.md) |
+| `/api/v1/formats`, `/api/v1/repositories…`, `/api/v1/upstream-tests` | Repositories | R-API-022 to R-API-024, R-API-030, R-API-053 | [repositories-and-proxy.md](repositories-and-proxy.md), [architecture.md](architecture.md) |
+| `/api/v1/repositories/{repoKey}/items`, `/children`, `/stats`, `/properties`; `/files/…` | Items and files | R-API-025, R-API-026 | [storage.md](storage.md) |
 | `/api/v1/content/…`, `/api/v1/trash-can/…` | Copy, move, trash | R-API-027 | [storage.md](storage.md) |
 | `/api/v1/search/…` | Search | R-API-028 | this page; indexes in [storage.md](storage.md) |
 | `/api/v1/packages…` | Packages across repositories; from M4b also the sub-resources `…/{packageId}/vulnerabilities` and `…/{packageId}/versions/{version}/vulnerabilities` | R-API-029; [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-020 | this page; package metadata in [storage.md](storage.md) and format pages |
 | `/api/v1/vulnerabilities/…` | Vulnerability findings, triage, export, advisories, summary, trend, sources, claimed-name matches (from M4b) | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013, R-VULN-020, R-VULN-021 | [vulnerability-scanning.md](vulnerability-scanning.md) |
-| `/api/v1/users`, `/api/v1/groups`, `/api/v1/service-accounts`, `/api/v1/projects/{projectKey}/service-accounts…`, `/api/v1/tokens` | Identities and tokens | R-API-031, R-API-032 | [identity-and-authentication.md](identity-and-authentication.md) |
-| `/api/v1/permission-policies`, `/api/v1/projects/{projectKey}/policies…`, `/api/v1/roles`, `/api/v1/role-bindings`, `/api/v1/authz/…` | Authorization | R-API-033, R-API-034 | [authorization.md](authorization.md) |
+| `/api/v1/users`, `/api/v1/groups`, `/api/v1/service-accounts`, `/api/v1/tokens` | Identities and tokens | R-API-031, R-API-032 | [identity-and-authentication.md](identity-and-authentication.md) |
+| `/api/v1/permission-policies`, `/api/v1/roles`, `/api/v1/role-bindings`, `/api/v1/authz/…` | Authorization | R-API-033, R-API-034 | [authorization.md](authorization.md) |
 | `/api/v1/auth/cli-logins/…`, `/api/v1/auth/device/…` | Command-line login approval and device flow (P1; screens in R-UI-004) | R-AUTH-034, R-AUTH-036 | [identity-and-authentication.md](identity-and-authentication.md) |
-| `/api/v1/ci/…`, `/api/v1/projects/{projectKey}/ci/…`, `/api/v1/auth/oidc/token` | CI identity | R-API-035 | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) |
+| `/api/v1/ci/…`, `/api/v1/auth/oidc/token` | CI identity | R-API-035 | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) |
 | `/api/v1/settings/…`, `/api/v1/system/banner`, `/api/v1/system/maintenance`, `/api/v1/system/proxy-offline` | Settings | R-API-037 | the page per setting |
 | `/api/v1/system/…` | Version, information, replicas, jobs, tasks, diagnostics, cache flush (P1), stored-secret key ring, backup runs | R-API-038, R-API-024, R-API-045, R-API-049, R-API-050 | [operations-and-observability.md](operations-and-observability.md), [architecture.md](architecture.md), [backup-and-restore.md](backup-and-restore.md) |
 | `/api/v1/audit/…` | Audit events | R-API-039 | [operations-and-observability.md](operations-and-observability.md) |
@@ -1202,7 +1176,7 @@ Priority: **MVP** · Covers: trove-only
 | `/api/v1/retention/…` | Retention and cleanup (P1) | R-API-043 | [storage.md](storage.md) |
 | `/api/v1/config/…` | Configuration as code (P1) | R-API-044 | [operations-and-observability.md](operations-and-observability.md) |
 | `/api/v1/scim/v2/…` | SCIM (P1) | R-API-046 | [identity-and-authentication.md](identity-and-authentication.md) |
-| `/api/v1/projects`, `/api/v1/projects/{projectKey}`, `…/members…`, `…/principals` | Projects and their members; what a project holds is listed in the rows of its family above | R-API-047 | [authorization.md](authorization.md) |
+| `/api/v1/projects…` | Projects (P1) | R-API-047 | [authorization.md](authorization.md) |
 | `/api/v1/endpoints…` | Endpoints (read only) and their exposure rules, `check-exposure` | R-EP-016 | [endpoints.md](endpoints.md) |
 | `/api/v1/problems/{code}`, `/api/v1/openapi.json`, `/api/v1/openapi.yaml` | Contract | R-API-009, R-API-002 | this page |
 
@@ -1218,8 +1192,8 @@ through `POST /api/v1/system/tasks/{name}/run` and stopped only through
 parameters and job result, MAY add a read-only domain view of its runs that references the job,
 and owns the read paths of its results (`GET /api/v1/storage/summary` and
 `GET /api/v1/storage/damaged-blobs` in [storage.md](storage.md)). No page adds a second start,
-stop or refresh path for a task. Per-resource actions (`/projects/{projectKey}/repositories/{repoKey}/reindex`,
-`/storage/damaged-blobs/{sha256}/recheck`, from M4b `/projects/{projectKey}/repositories/{repoKey}/vulnerabilities/rescan`) and the runs of retention policies, which have their own
+stop or refresh path for a task. Per-resource actions (`/repositories/{key}/reindex`,
+`/storage/damaged-blobs/{sha256}/recheck`, from M4b `/repositories/{key}/vulnerabilities/rescan`) and the runs of retention policies, which have their own
 run model with queueing and per-policy runs ([storage.md](storage.md) R-STOR-041), are not
 singleton tasks and keep their resource paths.
 
@@ -1241,7 +1215,7 @@ Priority: **MVP** · Covers: trove-only
 | GET | `/api/v1/auth/login-options` | Providers, auto-redirect, break-glass visibility, anonymous access; the sign-in screen renders only from it | anonymous | [identity-and-authentication.md](identity-and-authentication.md) |
 | GET | `/api/v1/users/me` | Own user record | authenticated user | [identity-and-authentication.md](identity-and-authentication.md) |
 | GET | `/api/v1/users/me/sessions`, DELETE `/api/v1/users/me/sessions…` | Own sessions; end one or all | `self` | R-AUTH-010 in [identity-and-authentication.md](identity-and-authentication.md) |
-| GET | `/api/v1/authz/me` | Effective capabilities, scope summary, principal set and the caller's project memberships with their roles (`projects`: `{key, role}`); drives navigation | authenticated | R-AUTHZ-022, R-AUTHZ-026 in [authorization.md](authorization.md) |
+| GET | `/api/v1/authz/me` | Effective capabilities, scope summary and principal set; drives navigation | authenticated | R-AUTHZ in [authorization.md](authorization.md) |
 | POST | `/api/v1/authz/check` | Up to 100 permission checks for the caller's own credential; drives per-control rendering | authenticated | R-AUTHZ-023 in [authorization.md](authorization.md) |
 | GET, PATCH | `/api/v1/users/me/preferences` | UI preferences | `self` | this page |
 
@@ -1287,21 +1261,16 @@ Semantics, payloads and status codes: [repositories-and-proxy.md](repositories-a
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
 | GET | `/api/v1/formats` | Format descriptors with classes (generated from `Descriptor().Classes`), clients (`clients`: `{id, displayName}` from `Descriptor().Clients`, empty for generic; Q-API-177), settings schema (`settingsSchema`, a JSON Schema 2020-12 or `null`; R-ARCH-008, R-ARCH-010, Q-ARCH-229) and `mirror` (the format's remote can be a mirror, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-050), and `baseUrl`: the configured base URL of the endpoint the request arrived on, or `null` (Q-UI-75) | authenticated; anonymous where anonymous access is on |
-| GET | `/api/v1/repositories` | Instance-wide list over every project; each item carries `project`; filters `class`, `format`, `q`, `state`, `project`; `view`; the cursor orders by project and key | readable repositories; configuration fields only with `repositories:read-config`, or as an Owner of the repository's project |
-| GET | `/api/v1/projects/{projectKey}/repositories` | The repositories of one project; the same filters but `project` | as the instance-wide list, within the project |
-| POST | `/api/v1/projects/{projectKey}/repositories` | Create in the project; the key is unique within the project | `admin` or `repository-admin` role (`repositories:write-config`), or Owner of the project (R-AUTHZ-026) |
-| GET | `/api/v1/projects/{projectKey}/repositories/{repoKey}` | Read; full configuration for `repositories:read-config`, an Owner of the project and `manage` | `read` |
-| PUT, PATCH | `/api/v1/projects/{projectKey}/repositories/{repoKey}` | Replace or merge patch, with `If-Match` | as create, or `manage` |
-| DELETE | `/api/v1/projects/{projectKey}/repositories/{repoKey}?detach=` | Delete configuration and content; 202 with a job | as create; recent authentication |
-| POST | `/api/v1/projects/{projectKey}/repositories/{repoKey}/move` | Move the repository to the project named in the body (`{"project": "<target>"}`); its address changes ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-060, [Q-REPO-217](repositories-and-proxy.md#q-repo-217--a-repository-moves-to-another-project-through-an-operation-of-its-own-and-only-while-nothing-of-its-project-names-it)) | `repositories:write-config`, or Owner of both projects; recent authentication |
-| POST | `/api/v1/projects/{projectKey}/repositories/{repoKey}/upstream-test` | Probe the saved upstream configuration | as update |
-| POST | `/api/v1/projects/{projectKey}/upstream-tests` | Probe an unsaved remote configuration | as create |
-| GET | `/api/v1/projects/{projectKey}/repositories/{repoKey}/resolution?path=` | Explain how a virtual repository resolves a client path | `read` |
-| GET | `/api/v1/projects/{projectKey}/repositories/{repoKey}/mirror` | The status of a remote repository's mirror ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-056) | as the full configuration read |
-| POST | `/api/v1/projects/{projectKey}/repositories/{repoKey}/mirror/run` | Request a pass of the mirror now; 202 with the job, 409 while one is queued or running (R-REPO-056) | as update |
-
-`POST /api/v1/repositories` and the item routes `/api/v1/repositories/{key}…` do not exist: a repository is created
-in its project and addressed inside it ([Q-REPO-212](repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared)).
+| GET | `/api/v1/repositories` | List; filters `class`, `format`, `q`, `state`, `project`; `view` | readable repositories; configuration fields only with `repositories:read-config` or `manage` |
+| POST | `/api/v1/repositories` | Create | `admin` or `repository-admin` role; project administrators per R-AUTHZ-026 |
+| GET | `/api/v1/repositories/{key}` | Read; full configuration for `manage` and `repositories:read-config` | `read` |
+| PUT, PATCH | `/api/v1/repositories/{key}` | Replace or merge patch, with `If-Match` | as create, or `manage` |
+| DELETE | `/api/v1/repositories/{key}?detach=` | Delete configuration and content; 202 with a job | as create; recent authentication |
+| POST | `/api/v1/repositories/{key}/upstream-test` | Probe the saved upstream configuration | as update |
+| POST | `/api/v1/upstream-tests` | Probe an unsaved remote configuration | as create |
+| GET | `/api/v1/repositories/{key}/resolution?path=` | Explain how a virtual repository resolves a client path | `read` |
+| GET | `/api/v1/repositories/{key}/mirror` | The status of a remote repository's mirror ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-056) | as the full configuration read |
+| POST | `/api/v1/repositories/{key}/mirror/run` | Request a pass of the mirror now; 202 with the job, 409 while one is queued or running (R-REPO-056) | as update |
 
 Mapping of catalog operations: API-058 (format-filtered configuration) is the regular read, which
 contains only fields that apply to the class and format; API-059 (configurations by key) and
@@ -1310,12 +1279,10 @@ API-060 (all configurations) are the list with `view` and the batch read of R-AP
 Acceptance criteria:
 
 - Creating an npm remote repository with
-  `curl -s -X POST -H "Authorization: Bearer $TROVE_TOKEN" -H 'Content-Type: application/json' -d @npm-remote.json "$TROVE_URL/api/v1/projects/web/repositories"`
-  answers 201; then `npm view lodash version --registry "$TROVE_URL/api/npm/web/npm-remote/"`, sent
+  `curl -s -X POST -H "Authorization: Bearer $TROVE_TOKEN" -H 'Content-Type: application/json' -d @npm-remote.json "$TROVE_URL/api/v1/repositories"`
+  answers 201; then `npm view lodash version --registry "$TROVE_URL/api/npm/npm-remote/"`, sent
   at once through the Service to whichever replica it reaches, prints a version (R-API-052).
 - A reader without `repositories:read-config` gets no upstream configuration in the answer.
-- Projects `web` and `mobile` each create a repository `npm-remote` (201 twice); a second create of `npm-remote` in
-  `web` answers 409 `already_exists`.
 
 ### R-API-023 · Repository batch operations and quick setup
 Priority: **P1** · Covers: API-053, API-055, API-064
@@ -1324,14 +1291,14 @@ Owned by [repositories-and-proxy.md](repositories-and-proxy.md):
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| POST | `/api/v1/projects/{projectKey}/repositories/batch-create` | Create several repositories of the project, all or nothing | as create |
-| POST | `/api/v1/projects/{projectKey}/repositories/batch-update` | Merge-patch several repositories of the project with per-entry `ifMatch` (required per entry, R-API-012), all or nothing | as update |
-| POST | `/api/v1/projects/{projectKey}/repositories/batch-get` | Read several configurations of the project | as read, per key |
-| POST | `/api/v1/projects/{projectKey}/repositories/batch-delete` | Delete several repositories of the project, best effort; 202 with per-key job references | as delete |
-| POST | `/api/v1/projects/{projectKey}/repositories/quick-setup` | Create local, remote and virtual repositories of the project per format from a prefix (R-UI-023) | as create |
+| POST | `/api/v1/repositories/batch-create` | Create several repositories, all or nothing | as create |
+| POST | `/api/v1/repositories/batch-update` | Merge-patch several repositories with per-entry `ifMatch` (required per entry, R-API-012), all or nothing | as update |
+| POST | `/api/v1/repositories/batch-get` | Read several configurations | as read, per key |
+| POST | `/api/v1/repositories/batch-delete` | Delete several repositories, best effort; 202 with per-key job references | as delete |
+| POST | `/api/v1/repositories/quick-setup` | Create local, remote and virtual repositories per format from a prefix (R-UI-023) | as create |
 
 The sub-path verbs follow R-API-004 (Q-API-7); `batch-create`, `batch-update`, `batch-get`,
-`batch-delete` and `quick-setup` are therefore reserved repository keys in every project. All of them accept
+`batch-delete` and `quick-setup` are therefore reserved repository keys. All of them accept
 `Idempotency-Key` (R-API-014).
 
 Acceptance criteria:
@@ -1351,17 +1318,17 @@ of their owners:
 
 | Method | Path | Purpose | Permission | Priority | Owner |
 |---|---|---|---|---|---|
-| POST | `/api/v1/projects/{projectKey}/repositories/{repoKey}/reindex` | Rebuild the format's index and metadata from stored packages (npm package documents, NuGet indexes; later Maven metadata, PyPI simple index, Helm `index.yaml`); 202 with a job; 409 when the format has no index | `manage` | P1 | R-OPS-022, format pages |
-| POST | `/api/v1/projects/{projectKey}/repositories/{repoKey}/cache/invalidate` | Mark cached metadata (`scope` `metadata`), cached misses (`negative`) or both (`all`) of a remote or virtual repository under a path prefix as stale, on every replica within `cluster.epoch_poll_interval` plus 1 s, with or without Valkey; binaries stay cached (INV-11); `400` on a local repository | `manage`, or `admin` | MVP | R-OPS-021, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-045 |
-| GET | `/api/v1/projects/{projectKey}/repositories/{repoKey}/cache/entries` | Cached metadata entries for diagnosis | `repositories:read-config` or `manage` | MVP | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-032 |
-| POST | `/api/v1/projects/{projectKey}/repositories/{repoKey}/vulnerabilities/rescan` | Re-evaluate every stored version of the repository against the advisory data; 202 with the `vuln-rescan` job, 409 with the running one | `manage`, or `settings:write` | MVP (M4b) | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-011, R-VULN-019 |
+| POST | `/api/v1/repositories/{key}/reindex` | Rebuild the format's index and metadata from stored packages (npm package documents, NuGet indexes; later Maven metadata, PyPI simple index, Helm `index.yaml`); 202 with a job; 409 when the format has no index | `manage` | P1 | R-OPS-022, format pages |
+| POST | `/api/v1/repositories/{key}/cache/invalidate` | Mark cached metadata (`scope` `metadata`), cached misses (`negative`) or both (`all`) of a remote or virtual repository under a path prefix as stale, on every replica within `cluster.epoch_poll_interval` plus 1 s, with or without Valkey; binaries stay cached (INV-11); `400` on a local repository | `manage`, or `admin` | MVP | R-OPS-021, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-045 |
+| GET | `/api/v1/repositories/{key}/cache/entries` | Cached metadata entries for diagnosis | `repositories:read-config` or `manage` | MVP | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-032 |
+| POST | `/api/v1/repositories/{key}/vulnerabilities/rescan` | Re-evaluate every stored version of the repository against the advisory data; 202 with the `vuln-rescan` job, 409 with the running one | `manage`, or `settings:write` | MVP (M4b) | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-011, R-VULN-019 |
 | POST | `/api/v1/system/caches/flush` | Installation-wide: flush every registered in-process cache on every `web` and `worker` replica and invalidate the negative entries of every remote repository; deletes no Valkey key; a synchronous action, not a task of R-OPS-019 | `admin` | P1 | R-OPS-047 |
 
 Acceptance criteria:
 
-- After a test removes a computed npm package document, `POST …/web/repositories/npm-local/reindex` restores it and
+- After a test removes a computed npm package document, `POST …/npm-local/reindex` restores it and
   `npm view @team-a/ui versions` lists every stored version.
-- `POST …/web/repositories/npm-remote/cache/invalidate` followed by `npm view lodash` makes trove fetch the package
+- `POST …/npm-remote/cache/invalidate` followed by `npm view lodash` makes trove fetch the package
   document from the upstream again (visible in the upstream mock's request log). With Valkey
   stopped, the same holds on another replica within `cluster.epoch_poll_interval` plus 1 s.
 - The same invalidation with the token of a user who holds `read` and `delete` but not `manage` on
@@ -1376,20 +1343,20 @@ requirements) and the request paths of R-ARCH-011 and R-ARCH-014 in
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| GET | `/api/v1/projects/{projectKey}/repositories/{repoKey}/items?path=` | Metadata of a file or folder (digests, size, media type, creation, download statistics) | `read` on the path |
-| GET | `/api/v1/projects/{projectKey}/repositories/{repoKey}/children?path=&recursive=&maxDepth=&folders=` | Paginated children | `read` on the path |
-| GET | `/api/v1/projects/{projectKey}/repositories/{repoKey}/stats?path=` | Download statistics | `read` on the path |
-| DELETE | `/api/v1/projects/{projectKey}/repositories/{repoKey}/items?path=` | Delete a file or folder | `delete` on the path |
-| GET, HEAD | `/files/{projectKey}/{repoKey}/{path}` | Download, `Range`, conditional requests, `Repr-Digest` | `read` |
-| PUT | `/files/{projectKey}/{repoKey}/{path}` | Raw deploy; `Repr-Digest` verified; trailing `/` with empty body creates a folder | `deploy`; `overwrite` to replace different content |
-| DELETE | `/files/{projectKey}/{repoKey}/{path}` | Same as the item DELETE | `delete` |
-| GET, HEAD, PUT | `/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}` | The UI's content transfer (Q-UI-106, Q-API-195): the semantics of the `/files/` row with the same method, for a request that the session cookie authenticates; served by the role `api` | as the `/files/` row |
+| GET | `/api/v1/repositories/{repoKey}/items?path=` | Metadata of a file or folder (digests, size, media type, creation, download statistics) | `read` on the path |
+| GET | `/api/v1/repositories/{repoKey}/children?path=&recursive=&maxDepth=&folders=` | Paginated children | `read` on the path |
+| GET | `/api/v1/repositories/{repoKey}/stats?path=` | Download statistics | `read` on the path |
+| DELETE | `/api/v1/repositories/{repoKey}/items?path=` | Delete a file or folder | `delete` on the path |
+| GET, HEAD | `/files/{repoKey}/{path}` | Download, `Range`, conditional requests, `Repr-Digest` | `read` |
+| PUT | `/files/{repoKey}/{path}` | Raw deploy; `Repr-Digest` verified; trailing `/` with empty body creates a folder | `deploy`; `overwrite` to replace different content |
+| DELETE | `/files/{repoKey}/{path}` | Same as the item DELETE | `delete` |
+| GET, HEAD, PUT | `/api/v1/repositories/{repoKey}/content/{path}` | The UI's content transfer (Q-UI-106, Q-API-195): the semantics of the `/files/` row with the same method, for a request that the session cookie authenticates; served by the role `api` | as the `/files/` row |
 
 API conventions that apply on top:
 
 - A remote repository's items answer from the cache only; the metadata routes never trigger an
   upstream fetch.
-- **The content routes** (`/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}`, Q-UI-106) exist because the session cookie
+- **The content routes** (`/api/v1/repositories/{repoKey}/content/{path}`, Q-UI-106) exist because the session cookie
   reaches only the role `api` after the cut into roles ([architecture.md](architecture.md) R-ARCH-001,
   [endpoints.md](endpoints.md) R-EP-010), while `/files/` and the package protocols are served by `packages`. They run
   the files transfer of `/files/` (path cleaning, the decision of every request, `Range`, conditional requests,
@@ -1416,10 +1383,10 @@ API conventions that apply on top:
 Acceptance criteria:
 
 - After `npm publish` of `@team-a/ui@1.4.0` to `npm-local`,
-  `GET /api/v1/projects/web/repositories/npm-local/items?path=@team-a/ui/-/ui-1.4.0.tgz` returns the SHA-256
+  `GET /api/v1/repositories/npm-local/items?path=@team-a/ui/-/ui-1.4.0.tgz` returns the SHA-256
   that `shasum -a 256 ui-1.4.0.tgz` prints.
-- `curl -s -X PUT -T app.tgz -u "ci:$TROVE_TOKEN" -H "Repr-Digest: sha-256=:$(openssl dgst -sha256 -binary app.tgz | base64):" "$TROVE_URL/files/web/generic-local/app/1.0/app.tgz"`
-  answers 201 (generic format, P1); `curl -s -r 0-99 -u "ci:$TROVE_TOKEN" "$TROVE_URL/files/web/generic-local/app/1.0/app.tgz" | wc -c`
+- `curl -s -X PUT -T app.tgz -u "ci:$TROVE_TOKEN" -H "Repr-Digest: sha-256=:$(openssl dgst -sha256 -binary app.tgz | base64):" "$TROVE_URL/files/generic-local/app/1.0/app.tgz"`
+  answers 201 (generic format, P1); `curl -s -r 0-99 -u "ci:$TROVE_TOKEN" "$TROVE_URL/files/generic-local/app/1.0/app.tgz" | wc -c`
   prints `100`.
 - Paging the children of a folder with 1,000 files at `limit=100` returns ten pages.
 
@@ -1430,10 +1397,10 @@ Owned by [storage.md](storage.md):
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| PUT | `/files/{projectKey}/{repoKey}/{path}` with `Trove-Deploy-By-Checksum: ?1` and `Repr-Digest`, empty body | Create a file from content already stored; 404 when the content is unknown **or** not readable by the caller (R-STOR-008) | `deploy` on the target and `read` on an item holding the content |
-| GET | `/api/v1/projects/{projectKey}/repositories/{repoKey}/properties?path=&keys=` | Read properties | `read` |
-| PATCH | `/api/v1/projects/{projectKey}/repositories/{repoKey}/properties?path=&recursive=` | Merge patch of properties | `annotate` |
-| DELETE | `/api/v1/projects/{projectKey}/repositories/{repoKey}/properties?path=&keys=&recursive=` | Remove properties | `annotate` |
+| PUT | `/files/{repoKey}/{path}` with `Trove-Deploy-By-Checksum: ?1` and `Repr-Digest`, empty body | Create a file from content already stored; 404 when the content is unknown **or** not readable by the caller (R-STOR-008) | `deploy` on the target and `read` on an item holding the content |
+| GET | `/api/v1/repositories/{repoKey}/properties?path=&keys=` | Read properties | `read` |
+| PATCH | `/api/v1/repositories/{repoKey}/properties?path=&recursive=` | Merge patch of properties | `annotate` |
+| DELETE | `/api/v1/repositories/{repoKey}/properties?path=&keys=&recursive=` | Remove properties | `annotate` |
 
 `keys` follows the repeated-parameter rule of R-API-011 (`keys=qa.status&keys=build.number`), like
 every other multi-value parameter, so one parser and the generated clients' array form (OpenAPI
@@ -1441,7 +1408,7 @@ every other multi-value parameter, so one parser and the generated clients' arra
 
 Acceptance criteria:
 
-- `curl -X PATCH -H 'Content-Type: application/merge-patch+json' -d '{"qa.status": "passed"}' "$TROVE_URL/api/v1/projects/web/repositories/generic-local/properties?path=app/1.0/app.tgz"`
+- `curl -X PATCH -H 'Content-Type: application/merge-patch+json' -d '{"qa.status": "passed"}' "$TROVE_URL/api/v1/repositories/generic-local/properties?path=app/1.0/app.tgz"`
   answers 200, and `GET /api/v1/search/items?property=qa.status%3Dpassed` finds the file.
 - A user without read on any item holding the content gets 404 for a deploy by checksum, and the
   same answer for a random digest.
@@ -1463,8 +1430,8 @@ Owned by [storage.md](storage.md):
 Acceptance criteria:
 
 - A copy of `@team-a/ui/-/ui-1.4.0.tgz` from `npm-local` to `npm-release` makes
-  `npm view @team-a/ui@1.4.0 --registry "$TROVE_URL/api/npm/web/npm-release/"` succeed.
-- A deleted file appears in `GET /api/v1/trash-can/items?repository=web/generic-local`, and after a
+  `npm view @team-a/ui@1.4.0 --registry "$TROVE_URL/api/npm/npm-release/"` succeed.
+- A deleted file appears in `GET /api/v1/trash-can/items?repository=generic-local`, and after a
   restoration it downloads again with the same SHA-256.
 
 ### R-API-028 · Artifact search
@@ -1479,8 +1446,7 @@ item descriptions as defined in [storage.md](storage.md), with cursor pagination
 | `pathGlob` | Glob over the path: `*` within a segment, `**` across segments, `?` one character |
 | `checksum` | Lowercase hex; the length selects MD5 (32), SHA-1 (40), SHA-256 (64) or SHA-512 (128) |
 | `property` | `key=value`, or `key` alone for any value; repeat for AND |
-| `repository`, `class`, `format` | Restrict the scope; `repository` takes the qualified name `<projectKey>/<repoKey>`; a virtual repository expands to its members |
-| `project` | Restrict the scope to the repositories of one project |
+| `repository`, `class`, `format` | Restrict the scope; a virtual repository expands to its members |
 | `createdFrom`, `createdTo`, `modifiedFrom`, `modifiedTo`, `lastDownloadedFrom`, `lastDownloadedTo` | Date ranges (R-API-011) |
 | `notDownloadedSince` | Never downloaded, or last downloaded before this time |
 | `sort` | `name`, `createdAt`, `modifiedAt` and their descending forms |
@@ -1493,7 +1459,7 @@ predicate form of the permission filter comes from [authorization.md](authorizat
 Acceptance criteria:
 
 - `GET /api/v1/search/items?checksum=<sha256 of app.tgz>` returns every readable copy of the file.
-- `GET /api/v1/search/items?pathGlob=app/**/app.tgz&repository=web/generic-local` returns
+- `GET /api/v1/search/items?pathGlob=app/**/app.tgz&repository=generic-local` returns
   `app/1.0/app.tgz`.
 - A file in a repository the caller cannot read never appears, and the result count does not
   change when such a file is added.
@@ -1503,13 +1469,13 @@ Priority: **MVP** · Covers: ART-048, ART-049, API-094, API-109, API-110
 
 This page owns the cross-repository package view the UI needs; package and version metadata are
 stored as [storage.md](storage.md) and the format pages define. (The npm checksum lookup
-`/api/v1/npm/{projectKey}/{repoKey}/packages/{name}/versions/{version}` of [formats/npm.md](formats/npm.md) and
+`/api/v1/npm/{repoKey}/packages/{name}/versions/{version}` of [formats/npm.md](formats/npm.md) and
 the package-ownership endpoints of [authorization.md](authorization.md) are per repository and
 remain as their owners define them.)
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| GET | `/api/v1/packages` | Packages; filters `format`, `repository` (both repeatable; the qualified name `<projectKey>/<repoKey>`), `project`, `q` (name and description), `namePrefix`, `keyword`, `createdFrom` / `createdTo` (first visible version); `sort` `name`, `createdAt`, `updatedAt` and their descending forms (default `name`) | visible versions (below); anonymous where allowed |
+| GET | `/api/v1/packages` | Packages; filters `format`, `repository` (both repeatable), `q` (name and description), `namePrefix`, `keyword`, `createdFrom` / `createdTo` (first visible version); `sort` `name`, `createdAt`, `updatedAt` and their descending forms (default `name`) | visible versions (below); anonymous where allowed |
 | GET | `/api/v1/packages/lookup?format=npm&name=@team-a/ui` | Resolve a name to the package | as list |
 | GET | `/api/v1/packages/{packageId}` | Package summary | as list |
 | GET | `/api/v1/packages/{packageId}/versions` | Versions; filters `prerelease`, `repository`; `sort` `-publishedAt` (default), `publishedAt`, `-version`, `version` (the format's version precedence) | as list |
@@ -1529,7 +1495,7 @@ remain as their owners define them.)
   (declared SPDX identifiers or expression, `[]` when none), `sizeBytes`, `downloadCount`, `hasReadme` (whether
   the `readme` answer is 200, so the UI chooses its default tab without a probing request), `metadata` (a
   format-specific object whose schema the format page owns), `repositories`
-  (`[{"project", "key", "class", "publishedAt"}]`) and `files` (`[{"path", "sizeBytes", "sha256", "downloadUrl"}]`).
+  (`[{"key", "class", "publishedAt"}]`) and `files` (`[{"path", "sizeBytes", "sha256", "downloadUrl"}]`).
   The members of npm's `metadata` that the UI reads are `distTags`, `dependencies`, `devDependencies`,
   `peerDependencies`, `optionalDependencies`, `engines` (name to string), `authors`, `homepage`,
   `repositoryUrl`, `bugsUrl` and `deprecated`; a member that does not apply is absent (Q-API-159).
@@ -1538,7 +1504,7 @@ remain as their owners define them.)
   `dependencyGroups` (per target framework) and, when true, `requireLicenseAcceptance` and `developmentDependency`; its
   README is the file the `.nuspec` names, read out of the stored package (Q-NUGET-48).
 - The `versions` list entries hold `version`, `prerelease`, `publishedAt`, `sizeBytes`, `repositories`
-  (the qualified names `<projectKey>/<repoKey>` of the repositories the caller may read) and `downloadCount`. The details and the README answer carry a strong `ETag`
+  (keys the caller may read) and `downloadCount`. The details and the README answer carry a strong `ETag`
   and honour `If-None-Match`; the README tag covers the README source, the renderer version and the hash of
   the image origin list.
 - The visibility filter is decided per repository by the decision point and passed into the statements that
@@ -1585,7 +1551,7 @@ remain as their owners define them.)
   "description": "Shared UI components",
   "latestVersion": "1.4.0",
   "keywords": ["ui", "components"],
-  "repositories": ["web/npm-local", "web/npm-all"],
+  "repositories": ["npm-local", "npm-all"],
   "createdAt": "2026-09-02T08:00:12.201Z",
   "updatedAt": "2026-10-20T09:12:44.512Z",
   "versionCount": 3,
@@ -1621,7 +1587,7 @@ Acceptance criteria:
 ### R-API-030 · Client setup snippets
 Priority: **MVP** · Covers: UI-023
 
-`GET /api/v1/projects/{projectKey}/repositories/{repoKey}/client-setup` returns the snippets of a repository (permission `read`;
+`GET /api/v1/repositories/{repoKey}/client-setup` returns the snippets of a repository (permission `read`;
 publish snippets only with `deploy` on the target). Query: `client` (required; the clients a format offers, for
 npm `npm`, `pnpm`, `yarn` for Yarn 2 and later, `yarn-classic`; an unknown value answers `400 malformed_request`
 naming the clients the format serves, Q-UI-77),
@@ -1633,8 +1599,8 @@ them), `scope` (an npm scope; adds the scoped registry variant). The answer hold
 [architecture.md](architecture.md) feeds it, and the format pages contribute the templates. Rules the UI relies
 on:
 
-- The server fills the public base URL, the project key and the repository key, the package-manager endpoint URL of
-  INV-6 (`/api/<format>/<projectKey>/<repoKey>/`), the scheme-less endpoint path (npm's per-registry credential key) and the caller's name.
+- The server fills the public base URL, the repository key, the package-manager endpoint URL of
+  INV-6, the scheme-less endpoint path (npm's per-registry credential key) and the caller's name.
   With `package` and `version` the install snippets are specific to that version.
 - The server never fills a token. With `credentials=placeholder` snippets contain the placeholder
   `{{token}}`, replaced in the browser (R-UI-016); with `credentials=env` they hold the
@@ -1668,7 +1634,7 @@ on:
   a caller without `deploy` on the target gets no publish snippets either.
   A publish snippet names the registry URL of the repository the caller chose (Q-API-180); `publishTarget`
   names the repository that receives the publish.
-- Values substituted into shell commands (package names, versions, project and repository keys) MUST be
+- Values substituted into shell commands (package names, versions, repository keys) MUST be
   single-quoted, with embedded single quotes escaped, unless they match
   `^[A-Za-z0-9@/._+:=][A-Za-z0-9@/._+:=-]*$` (a value that starts with `-` is quoted); values
   substituted into PowerShell commands are single-quoted by the same rule, with an embedded single quote doubled, and
@@ -1688,8 +1654,8 @@ ui:
 
 Acceptance criteria:
 
-- The answer for `npm-all` of project `web`, client `npm`, `credentials=env` contains
-  `//trove.example.com/api/npm/web/npm-all/:_authToken=${TROVE_TOKEN}`.
+- The answer for `npm-all`, client `npm`, `credentials=env` contains
+  `//trove.example.com/api/npm/npm-all/:_authToken=${TROVE_TOKEN}`.
 - No answer of this endpoint, for any format, client and credential mode, matches
   `trv_(pat|sat|cit)_` (R-ARCH-010 kit check 8).
 - The npm install snippet for version `1.0.0` of a legacy remote package named `a(b)` reads
@@ -1704,7 +1670,7 @@ R-ARCH-008, Q-ARCH-235); this page owns the operations (Q-API-175).
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| GET | `/api/v1/projects/{projectKey}/repositories/{repoKey}/guide?client=` | The guide of a repository for one of its format's clients | `read` on the repository (`404` otherwise, like a missing repository) |
+| GET | `/api/v1/repositories/{repoKey}/guide?client=` | The guide of a repository for one of its format's clients | `read` on the repository (`404` otherwise, like a missing repository) |
 | GET | `/api/v1/formats/{format}/guide?class=&client=` | The guide of a class of a format, without a repository | as `GET /api/v1/formats`: authenticated; anonymous where anonymous access is on |
 
 - The answer holds `format`, `class`, `client`, `repository` (`null` for the guide of a format), `registryUrl`,
@@ -1721,8 +1687,7 @@ R-ARCH-008, Q-ARCH-235); this page owns the operations (Q-API-175).
   mode, rendered by the same code, so the guide's configure and install snippets are the client setup's. The credential
   mode is `env` for a signed-in caller and `none` for an anonymous one; the guide never carries a token or the placeholder
   of one, and the reference `${TROVE_TOKEN}` of a section's text is rewritten like a snippet's (Q-API-176).
-- The guide of a format writes `<project>` and `<repository>` where the project key and the repository key go and names
-  no target. The guide of a virtual repository
+- The guide of a format writes `<repository>` where the key goes and names no target. The guide of a virtual repository
   names its deployment target only to a caller who may deploy there and never lists the members, which are configuration
   (Q-API-179). Both operations answer `503` while no base URL is configured for the endpoint, like R-API-030.
 - An unknown format answers `404`; a client or class the format does not have, or a format without clients, `400
@@ -1796,19 +1761,11 @@ username:
 | GET, POST | `/api/v1/groups` | List and create | `admin`; reads also `identities:read` |
 | GET, PATCH, DELETE | `/api/v1/groups/{name}` | Read, change (including rename), delete | as list |
 | GET, PATCH | `/api/v1/groups/{name}/members` | Members with their sources; add and remove manual members | as list |
-| GET | `/api/v1/service-accounts` | Instance-wide list of every service account, each with `project` (`null` for an account of no project); filters `q`, `project` | `admin`, `identities:read` |
-| POST | `/api/v1/service-accounts` | Create a service account of no project | `admin` (`identities:write`); owners from P1 |
-| GET, PATCH, DELETE | `/api/v1/service-accounts/{name}` | Read, change, delete an account of no project | as list; changes `admin` |
-| POST | `/api/v1/service-accounts/{name}/disable`, `/enable` | Disable or enable an account of no project | `admin` |
-| GET, POST | `/api/v1/projects/{projectKey}/service-accounts` | List and create the project's service accounts; a name is unique within the project | `identities:read` (list) or `identities:write`, or Owner of the project; recent authentication for the create |
-| GET, PATCH, DELETE | `/api/v1/projects/{projectKey}/service-accounts/{name}` | Read, change the description, delete | as the project list (`identities:write` or Owner for writes) |
-| POST | `/api/v1/projects/{projectKey}/service-accounts/{name}/disable`, `/enable` | Disable or enable | `identities:write`, or Owner of the project |
+| GET, POST | `/api/v1/service-accounts` | List and create | `admin`; reads also `identities:read`; owners from P1 |
+| GET, PATCH, DELETE | `/api/v1/service-accounts/{name}` | Read, change, delete | as list |
+| POST | `/api/v1/service-accounts/{name}/disable`, `/enable` | Disable or enable | `admin` |
 
-A service account of a project is referenced as `sa:<projectKey>/<name>`, one of no project as `sa:<name>`
-([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-020,
-[Q-AUTHZ-209](authorization.md#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones)).
-`/api/v1/service-accounts/{name}` never addresses an account of a project. System roles of users and groups are role
-bindings (R-API-033), not user fields. There are no user
+System roles of users and groups are role bindings (R-API-033), not user fields. There are no user
 passwords (INV-7); the lockout of ADMAPI-012 exists only for the break-glass account (R-AUTH-038).
 
 Acceptance criteria:
@@ -1827,14 +1784,12 @@ grammar, lifetimes, revocation):
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
 | POST | `/api/v1/tokens` | Create a personal token for the caller | user with session (recent authentication) or a PAT under the derivation rule |
-| POST | `/api/v1/service-accounts/{name}/tokens` | Create a token of a service account of no project | `admin`; owners from P1; recent authentication for sessions |
-| POST | `/api/v1/projects/{projectKey}/service-accounts/{name}/tokens` | Create a token of a project's service account; for an Owner without `identities:write` never non-expiring, `admin: false`, no `system` item ([authorization.md](authorization.md) R-AUTHZ-026, Q-AUTHZ-177) | `admin`, or Owner of the project; recent authentication for sessions |
-| GET | `/api/v1/tokens` | List own tokens; all with `tokens:read`; an Owner also the tokens of its project's service accounts (`project=<key>`) | `self`, `tokens:read`, Owner |
+| POST | `/api/v1/service-accounts/{name}/tokens` | Create a service-account token | `admin`; owners from P1; recent authentication for sessions |
+| GET | `/api/v1/tokens` | List own tokens; all with `tokens:read` | `self`, `tokens:read` |
 | GET | `/api/v1/tokens/{id}`, `/api/v1/tokens/current` | Read one token | `{id}`: owner, `tokens:read`; `current`: the presenting token itself, CI tokens included ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-013) |
-| DELETE | `/api/v1/tokens/{id}`, `/api/v1/tokens/current` | Revoke | `{id}`: owner, owners of the service account (P1), an Owner of the project of the service account, `tokens:revoke`, `admin`; `current`: the presenting token itself, of every type, CI tokens (`trv_cit_`) included (R-AUTH-029; [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-013) |
+| DELETE | `/api/v1/tokens/{id}`, `/api/v1/tokens/current` | Revoke | `{id}`: owner, owners of the service account (P1), `tokens:revoke`, `admin`; `current`: the presenting token itself, of every type, CI tokens (`trv_cit_`) included (R-AUTH-029; [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-013) |
 | DELETE | `/api/v1/users/me/tokens` | Revoke all own tokens | `self` |
-| DELETE | `/api/v1/service-accounts/{name}/tokens` | Revoke all tokens of a service account of no project | `admin` |
-| DELETE | `/api/v1/projects/{projectKey}/service-accounts/{name}/tokens` | Revoke all tokens of a project's service account | `admin`, `tokens:revoke`, or Owner of the project |
+| DELETE | `/api/v1/service-accounts/{name}/tokens` | Revoke all tokens of a service account | `admin` |
 | POST | `/api/v1/tokens/revoke` | Revoke by value | anyone, no authentication |
 | POST | `/api/v1/tokens/{id}/rotate`, `/api/v1/tokens/current/rotate` | Rotate (P1, R-AUTH-030); CI tokens cannot be rotated | PAT: its owner only, through a session with recent authentication or a token of the owner under the derivation rule; SAT: `admin`, owners of the service account from P1, or a SAT of the account under the derivation rule; `current/rotate`: the token itself, only if `selfRotatable`. `tokens:revoke` alone never rotates (R-AUTH-030) |
 
@@ -1861,14 +1816,12 @@ Owned by [authorization.md](authorization.md):
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| GET | `/api/v1/permission-policies` | Instance-wide list of every policy, each with `project` (`null` for a policy of no project); filters `principal` (with `expandGroups`), `repository` (the qualified name `<projectKey>/<repoKey>`), `project` | `policies:read`; delegated managers see their policies |
-| POST | `/api/v1/permission-policies` | Create a policy of no project; its selectors take the instance form `<projectGlob>/<keyGlob>[:<format>]` or a class ([authorization.md](authorization.md) R-AUTHZ-004) | `policies:write`; recent authentication |
-| GET | `/api/v1/permission-policies/{name}` | Read a policy of no project, with `ETag` | as list |
-| PUT, PATCH | `/api/v1/permission-policies/{name}` | Replace or merge patch; `If-Match` required (428) | as create; delegated managers per R-AUTHZ-025 (P1) |
+| GET | `/api/v1/permission-policies` | List; filters `principal` (with `expandGroups`), `repository`, `project` | `policies:read`; delegated managers see their policies |
+| POST | `/api/v1/permission-policies` | Create | `policies:write`; project administrators for project policies (P1); recent authentication |
+| GET | `/api/v1/permission-policies/{name}` | Read with `ETag` | as list |
+| PUT | `/api/v1/permission-policies/{name}` | Replace; `If-Match` required (428) | as create; delegated managers per R-AUTHZ-025 (P1) |
 | DELETE | `/api/v1/permission-policies/{name}` | Delete | as create |
-| GET, POST | `/api/v1/projects/{projectKey}/policies` | List and create the project's policies; a name is unique within the project; selectors are bare keys, key globs and classes of the project | `policies:read` (list) or `policies:write`, or Owner of the project; recent authentication for the create |
-| GET, PUT, PATCH, DELETE | `/api/v1/projects/{projectKey}/policies/{name}` | Read with `ETag`, replace, merge patch, delete | as the project list; delegated managers per R-AUTHZ-025 (P1) |
-| POST | `/api/v1/authz/validate-policy` | Validate without storing; errors, warnings, covered repositories; a policy of a project names it in the body | `policies:read`, or Owner of the named project |
+| POST | `/api/v1/authz/validate-policy` | Validate without storing; errors, warnings, covered repositories | `policies:read` |
 | GET | `/api/v1/roles` | The fixed system roles and their capabilities | authenticated |
 | GET | `/api/v1/role-bindings` | List bindings; filters `role`, `principal` | `roles:read` |
 | PUT, DELETE | `/api/v1/role-bindings/{role}/{principalRef}` | Bind (idempotent) or unbind; 409 `last_admin` | `roles:write`; recent authentication |
@@ -1879,11 +1832,9 @@ R-AUTHZ-032).
 
 Acceptance criteria:
 
-- After creating a policy that grants group `team-a` `read` and `deploy` on `web/npm-team-a` for
+- After creating a policy that grants group `team-a` `read` and `deploy` on `npm-team-a` for
   `@team-a/**`, a member of `team-a` can `npm publish` `@team-a/ui` there and gets 403 for
   `@team-b/x`.
-- A policy of no project with the selector `npm-team-a` (a bare key) answers 422 `invalid_pattern`; the same selector in
-  `POST /api/v1/projects/web/policies` is accepted.
 - Unbinding the last administrator answers 409 `last_admin`.
 
 ### R-API-034 · Effective permissions and decision explanation
@@ -1893,7 +1844,7 @@ Owned by [authorization.md](authorization.md) (R-AUTHZ-024):
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| GET | `/api/v1/authz/effective?repository=&package=` or `&path=` (`repository` is the qualified name `<projectKey>/<repoKey>`) | Every principal holding actions on a coordinate, members of the repository's project by their role included, with the granting policies; CI mappings whose templates could render to it marked `conditional` | `policies:read`, or `manage` on the coordinate |
+| GET | `/api/v1/authz/effective?repository=&package=` or `&path=` | Every principal holding actions on a coordinate, with the granting policies; CI mappings whose templates could render to it marked `conditional` | `policies:read`, or `manage` on the coordinate |
 | POST | `/api/v1/authz/explain` | Decision trace for a principal or token on a coordinate | `policies:read` (plus `tokens:read` for a token) |
 
 The UI explainer (R-UI-028) and the effective-permissions tab (R-UI-010) render these answers.
@@ -1920,11 +1871,11 @@ Owned by [gitlab-ci-oidc.md](gitlab-ci-oidc.md):
 | GET, PUT, DELETE | `/api/v1/ci/issuers/{issuer}/mappings/{name}` | Read, replace, delete | as above |
 | POST | `/api/v1/ci/issuers/{issuer}/evaluate` | Dry run against a claim set (R-UI-036) | as above |
 | GET | `/api/v1/ci/issuers/{issuer}/snippets/{kind}?mapping=&format=` | Ready-to-paste CI snippet, `text/plain` (R-UI-035) | as above |
-| GET | `/api/v1/projects/{projectKey}/ci/issuers`, `…/ci/issuances` | The issuers read-only and the issuances of a project's mappings (Q-CI-26) | `ci:read` or `tokens:read`, or Owner of the project |
-| GET, POST | `/api/v1/projects/{projectKey}/ci/mappings` | List and create the mappings of a project (the body names the issuer); a name is unique within the project and the issuer, without a prefix, and the mapping is referenced as `ci:<issuer>/<projectKey>/<name>` ([Q-AUTHZ-214](authorization.md#q-authz-214--a-projects-ci-mappings-are-named-within-the-project-like-its-policies-and-service-accounts)) | `ci:write` (read: `ci:read`), or Owner of the project; recent authentication for writes |
-| GET, PUT, DELETE | `/api/v1/projects/{projectKey}/ci/mappings/{issuer}/{name}` | Read, replace, delete | as above |
-| POST | `/api/v1/projects/{projectKey}/ci/issuers/{issuer}/evaluate` | Dry run over the project's tier only | as above |
-| GET | `/api/v1/projects/{projectKey}/ci/issuers/{issuer}/snippets/{kind}?mapping=&format=` | The snippet of a mapping of the project's tier (R-UI-035) | `ci:read`, or Owner of the project |
+| GET | `/api/v1/projects/{key}/ci/issuers`, `…/ci/issuances` | The issuers read-only and the issuances of a project's mappings (Q-CI-26) | `ci:read` or `tokens:read`, or administrator of the project with `managePolicies` |
+| GET, POST | `/api/v1/projects/{key}/ci/mappings` | List and create the mappings of a project (the body names the issuer) | `ci:write` (read: `ci:read`), or administrator of the project with `managePolicies`; recent authentication for writes |
+| GET, PUT, DELETE | `/api/v1/projects/{key}/ci/mappings/{issuer}/{name}` | Read, replace, delete | as above |
+| POST | `/api/v1/projects/{key}/ci/issuers/{issuer}/evaluate` | Dry run over the project's tier only | as above |
+| GET | `/api/v1/projects/{key}/ci/issuers/{issuer}/snippets/{kind}?mapping=&format=` | The snippet of a mapping of the project's tier (R-UI-035) | `ci:read`, or administrator of the project with `managePolicies` |
 | POST, DELETE | `/api/v1/ci/issuers/{issuer}/delegations…` | Delegate mapping management for a scope to a group (P1; covers project-scoped mappings, ADMAPI-030) | `admin` |
 | GET | `/api/v1/ci/issuances`, `/api/v1/ci/issuances/{tokenId}` | Issued CI tokens with job context | `admin`, `tokens:read` |
 | POST | `/api/v1/ci/issuances/revoke` | Revoke matching CI tokens | `admin`, `tokens:revoke` |
@@ -1959,10 +1910,10 @@ Acceptance criteria:
 Priority: **P1** · Covers: API-046, API-166
 
 - PyPI JSON project metadata (API-046) is served by the PyPI protocol handler on its protocol path
-  (`/api/pypi/{projectKey}/{repoKey}/…`, INV-6) in the shape of the [PyPI JSON API](https://docs.pypi.org/api/json/),
+  (`/api/pypi/{key}/…`, INV-6) in the shape of the [PyPI JSON API](https://docs.pypi.org/api/json/),
   not under `/api/v1/`; owned by the future PyPI format page.
 - Container image promotion (API-166) is reserved as
-  `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/images/promote` with
+  `POST /api/v1/repositories/{key}/images/promote` with
   `{"image", "tag", "targetRepository", "targetImage", "targetTag", "copy"}` (`tag: null` = all
   tags; permissions as copy and move in R-API-027); owned by the future Docker/OCI format page.
 - Maven metadata calculation (API-043) and Helm index recalculation (API-050) are `reindex`
@@ -2147,7 +2098,7 @@ owning page.
 
 Acceptance criteria:
 
-- A subscription for package-published events on `web/npm-local` delivers one request to a test
+- A subscription for package-published events on `npm-local` delivers one request to a test
   receiver after `npm publish`, and the delivery appears in `/api/v1/webhooks/deliveries`.
 
 ### R-API-042 · Build information
@@ -2242,46 +2193,30 @@ Priority: **MVP** · Covers: ADMAPI-063, ADMAPI-064, ADMAPI-065, ADMAPI-067
 
 Raised from P1 on 2026-11-02 with R-AUTHZ-026 (beta phase 5a).
 
-Owned by [authorization.md](authorization.md) (R-AUTHZ-026; every repository belongs to exactly one project, users
-and groups are members with a role, [Q-AUTHZ-206](authorization.md#q-authz-206--every-repository-belongs-to-exactly-one-project),
-[Q-AUTHZ-207](authorization.md#q-authz-207--a-user-or-group-is-a-member-of-a-project-with-a-role-and-the-role-grants-the-projects-repositories),
-[Q-AUTHZ-208](authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner)):
-
-| Method | Path | Purpose | Permission |
-|---|---|---|---|
-| GET | `/api/v1/projects` | Every project for `projects:read`; otherwise the caller's memberships, each with the caller's role | authenticated |
-| POST | `/api/v1/projects` | Create a project | `projects:write` (`admin`) |
-| GET | `/api/v1/projects/{projectKey}` | Read | `projects:read`, or a member |
-| PUT | `/api/v1/projects/{projectKey}` | Replace display name and description; `If-Match` required | `projects:write`, or Owner; recent authentication |
-| DELETE | `/api/v1/projects/{projectKey}` | Delete when empty (no repository, service account or CI mapping) | `projects:write`; recent authentication |
-| GET | `/api/v1/projects/{projectKey}/members` | The members (users and groups) with their roles | `projects:read`, or a member |
-| PUT | `/api/v1/projects/{projectKey}/members/{principalRef}` | Add a member or change its role, `{"role": "developer"}` (`reader`, `developer`, `maintainer` or `owner`); 409 `last_owner` when it demotes the last Owner ([Q-AUTHZ-217](authorization.md#q-authz-217--the-last-owner-of-a-project-is-removed-or-demoted-only-by-an-administrator-of-trove)) | `projects:write`, or Owner; recent authentication |
-| DELETE | `/api/v1/projects/{projectKey}/members/{principalRef}` | Remove a member; 409 `last_owner` for the last Owner | as `PUT` |
-| GET | `/api/v1/projects/{projectKey}/principals?q=&kind=&limit=` | The users and groups whose name starts with `q`, to name as members and in policies | `identities:read`, or Owner |
-
-The members operations cover the user and group membership operations of ADMAPI-064 and ADMAPI-065. What a project
-holds is addressed below it and listed with its family: repositories, their sub-resources, the move and the upstream
-tests (R-API-022 to R-API-030), service accounts and their tokens (R-API-031, R-API-032), policies (R-API-033) and CI
-mappings (R-API-035). The instance-wide lists of repositories, permission policies and service accounts carry each
-item's `project` and accept `project=` (webhooks and retention policies when they exist). `GET /api/v1/authz/me`
-lists the caller's memberships with their roles (`projects`). Global custom roles and environments are P2 there
-(see Deferred). Project writes, members and the move of a repository included, answer with `Trove-Authz-Epoch`
-(R-API-052, R-AUTHZ-032).
+Owned by [authorization.md](authorization.md) (R-AUTHZ-026, reduced project model):
+`/api/v1/projects` (list, create), `/api/v1/projects/{key}` (read, replace, delete when empty),
+`/api/v1/projects/{key}/admins/{principalRef}` (add and remove project administrators, which
+covers the user and group membership operations of ADMAPI-064 and ADMAPI-065 in the reduced
+model), `/api/v1/projects/{key}/repositories/{repoKey}` (assign with `?move=true`, unassign) and
+`/api/v1/projects/{key}/principals` (the lookup of users and groups for project administrators).
+List endpoints of repositories, permission policies and service accounts accept `project=`
+(webhooks and retention policies when they exist). `GET /api/v1/authz/me` lists the projects
+the caller administers (`projects`). Project roles, global custom roles and environments are P2 there
+(see Deferred). Project writes, administrators and repository assignments included, answer with
+`Trove-Authz-Epoch` (R-API-052, R-AUTHZ-032).
 
 Acceptance criteria:
 
-- An Owner of `team-a` creates a policy in `POST /api/v1/projects/team-a/policies` (201) and gets 403 for
-  `POST /api/v1/permission-policies` (a policy of no project).
-- `GET /api/v1/projects` answers a member its own projects with its role, and the `auditor` every project.
-- An administrator creates project `team-a` and adds `user:alice` as `owner` (201); alice adds `group:team-a-devs` as
-  `developer` (201), and removing herself while she is the only Owner answers 409 `last_owner`.
+- A project administrator of `team-a` with `managePolicies` creates a project policy (201) and
+  gets 403 for a global policy.
+- `GET /api/v1/projects` answers a project administrator its own projects and the `auditor` every project.
 
 ### R-API-048 · Package ownership surface
 Priority: **P1** · Covers: trove-only
 
 Package ownership (who may publish new versions of a package name) is owned by
 [authorization.md](authorization.md):
-`GET`, `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners`,
+`GET`, `POST /api/v1/repositories/{repoKey}/packages/{packageName}/owners`,
 `DELETE …/owners/{owner}` and `GET /api/v1/package-owners`. The package details screen
 (R-UI-007) shows the owners of a package in a repository where the caller holds `read`, and offers
 the owner changes to callers holding `manage`. Package names containing `/` (npm scopes) are
@@ -2289,8 +2224,8 @@ percent-encoded in `{packageName}` (`%40team-a%2Fui`); the router decodes the se
 
 Acceptance criteria:
 
-- `curl -s -H "Authorization: Bearer $TROVE_TOKEN" "$TROVE_URL/api/v1/projects/web/repositories/npm-local/packages/%40team-a%2Fui/owners"`
-  answers 200 for a reader of `web/npm-local`.
+- `curl -s -H "Authorization: Bearer $TROVE_TOKEN" "$TROVE_URL/api/v1/repositories/npm-local/packages/%40team-a%2Fui/owners"`
+  answers 200 for a reader of `npm-local`.
 
 ### R-API-049 · Stored-secret key-ring status
 Priority: **MVP** · Covers: HA-016
@@ -2550,7 +2485,7 @@ Priority: **MVP** · Covers: UI-058
     only as a navigation or an `img` load, so the content origin needs no CORS and `connect-src`
     stays `'self'`.
   - The upload of the deploy dialog (R-UI-012, P1) is not a content link but the API operation
-    `PUT /files/{projectKey}/{repoKey}/{path}` of R-API-025. It always targets the UI's own origin, because the
+    `PUT /files/{repoKey}/{path}` of R-API-025. It always targets the UI's own origin, because the
     content origin serves only `GET` and `HEAD` (R-ARCH-029), and it is built in one place, the
     `files` client in `web/src/app/api/`, like every other API call.
 - Component library (Q-UI-1, replaced by Q-UI-126): trove's own controls, plain HTML elements with the classes of
@@ -2608,7 +2543,7 @@ Priority: **MVP** · Covers: UI-001, UI-004
   M4b also vulnerabilities, shown to every signed-in user,
   [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022) and the
   **Admin area** (`/admin/…`, reached through the Admin button; shown when `/api/v1/authz/me` reports any
-  administrative capability or the role `owner` in a project). The
+  administrative capability or the administration of a project). The
   sections are the routes of R-UI-003. Inside the admin area, the single entries (repositories,
   endpoints) come first and related screens are grouped under folding headings: identity (users,
   groups, service accounts, tokens), access (permission policies, system roles) and system (system
@@ -2674,7 +2609,7 @@ selected tab and selected version live in query parameters.
 | `/packages` | Packages list (start page) | R-UI-006 |
 | `/packages/{format}/{name…}` (`?version=`) | Package details | R-UI-007 |
 | `/vulnerabilities` (`?repository=&severity=&status=&…`), `/vulnerabilities/findings/{id}`, `/vulnerabilities/advisories/{ecosystem}/{id}`, `/vulnerabilities/sources` | Vulnerability report, finding, advisory, sources (from M4b) | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022 |
-| `/browse/{project}/{repo}/{path…}` | File tree with selection | R-UI-010 |
+| `/browse/{repo}/{path…}` | File tree with selection | R-UI-010 |
 | `/search` (`?type=&q=&…`) | Search results (P1) | R-UI-015 |
 | `/trash` | Trash can (P1) | R-UI-014 |
 | `/builds`, `/builds/{build}`, `/builds/{build}/{number}` | Builds (P1) | R-UI-040 |
@@ -2682,12 +2617,12 @@ selected tab and selected version live in query parameters.
 | `/guides` (`?format=&client=&repository=&class=`) | Guides | R-UI-049 |
 | `/profile`, `/profile/tokens`, `/profile/sessions` | Profile, personal tokens, sessions | R-UI-029 |
 | `/integrations/webhooks`, `/integrations/webhooks/{key}` | Webhooks (P1) | R-UI-039 |
-| `/admin/repositories`, `/admin/repositories/new`, `/admin/repositories/{project}/{key}` | Repositories | R-UI-020, R-UI-021 |
+| `/admin/repositories`, `/admin/repositories/new`, `/admin/repositories/{key}` | Repositories | R-UI-020, R-UI-021 |
 | `/admin/repositories/quick-setup` | Quick setup (P1) | R-UI-023 |
 | `/admin/users`, `/admin/users/{username}` | Users | R-UI-024 |
 | `/admin/groups`, `/admin/groups/{name}` | Groups | R-UI-025 |
-| `/admin/service-accounts`, `/admin/service-accounts/{name}` (an account of no project), `/admin/projects/{project}/service-accounts/{name}` | Service accounts | R-UI-026 |
-| `/admin/permissions`, `/admin/permissions/new`, `/admin/permissions/{name}` (a policy of no project), `/admin/projects/{project}/policies/{name}` | Permission policies | R-UI-027 |
+| `/admin/service-accounts`, `/admin/service-accounts/{name}` | Service accounts | R-UI-026 |
+| `/admin/permissions`, `/admin/permissions/new`, `/admin/permissions/{name}` | Permission policies | R-UI-027 |
 | `/admin/permissions/explain` (`?principal=&action=&repository=&path=&package=`) | Explainer (P1) | R-UI-028 |
 | `/admin/roles` | System role bindings | R-UI-024 |
 | `/admin/tokens` | Token administration | R-UI-030 |
@@ -2696,7 +2631,7 @@ selected tab and selected version live in query parameters.
 | `/admin/endpoints`, `/admin/endpoints/{endpoint}`, `/admin/endpoints/{endpoint}/rules/new`, `/admin/endpoints/{endpoint}/rules/{name}` | Endpoints and exposure rules | [endpoints.md](endpoints.md) R-EP-017 |
 | `/admin/system`, `/admin/system/jobs`, `/admin/system/backups` | System status, jobs, backups | R-UI-038, R-UI-048 |
 | `/admin/settings/auth`, `/admin/settings/general`, `/admin/settings/sign-in` (P1), `/admin/settings/storage` (P1) | Settings | R-UI-031 to R-UI-034 |
-| `/admin/projects`, `/admin/projects/{project}` (overview, members, repositories, policies, service accounts, CI mappings) | Projects | R-UI-041 |
+| `/admin/projects…` | Projects (P1) | R-UI-041 |
 | `/login` (`?auto_sign_in=false`), `/logged-out` | Sign-in, signed out | R-UI-004 |
 | `/cli-login/{publicId}` | Command-line login approval of `npm login` (P1; R-AUTH-034) | R-UI-004 |
 | `/device` (`?code=`) | Device-code login approval for other command-line tools (P1; R-AUTH-036) | R-UI-004 |
@@ -2706,9 +2641,6 @@ selected tab and selected version live in query parameters.
 
 - Routes with slash-containing parameters (npm scoped names, file paths) use a router `UrlMatcher`
   that captures the remaining segments.
-- A repository is named in a route by its project and key (`{project}/{repo}`), and in a query parameter (`?repository=`)
-  by the qualified name `<projectKey>/<repoKey>`. Moving the content routes under `/projects/{project}/…` is
-  [Q-UI-129](#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects) (not built yet, H-550).
 - Route guards only shape navigation; the API decides (R-UI-005). When a screen's first API call
   answers 403, the screen shows a "no access" state with the missing permission and, for callers
   with `policies:read`, a link to the explainer.
@@ -2785,15 +2717,13 @@ Acceptance criteria:
 Priority: **MVP** · Covers: UI-005
 
 - Authorization is enforced by the API alone; the UI adapts what it shows for convenience.
-- Data: capabilities and project memberships with their roles from `GET /api/v1/authz/me` for navigation and global
-  actions; per-control
+- Data: capabilities from `GET /api/v1/authz/me` for navigation and global actions; per-control
   decisions from `POST /api/v1/authz/check` (up to 100 checks per call, batched per screen, cached
   for 60 seconds, dropped on any 403 and on sign-out).
 - Primary actions on a screen that the caller lacks are shown disabled with the reason ("Needs
   deploy on npm-local"); menu entries the caller lacks are hidden. Lists show what the API returns.
 - Self-lockout guards are shown before the API refuses them: the last administrator binding cannot
-  be removed, a user cannot disable themselves, the last Owner of a project cannot be removed or demoted except by an
-  administrator (R-UI-041).
+  be removed, a user cannot disable themselves.
 - An authenticated user who can read nothing sees an empty state that names their identity and
   groups, so they can ask for access.
 
@@ -2947,8 +2877,8 @@ Acceptance criteria:
   a link while `external_image_origins` is empty; with that origin listed, the image loads, the
   UI's CSP names exactly that origin in `img-src`, and an image from an unlisted host in the same
   README is still a link.
-- A README containing `![x](/api/npm/web/npm-remote/left-pad)` or
-  `<img src="https://trove.example.com/files/web/generic-local/x.png">` renders without an `img`
+- A README containing `![x](/api/npm/npm-remote/left-pad)` or
+  `<img src="https://trove.example.com/files/generic-local/x.png">` renders without an `img`
   element for either source, and viewing it causes no request to those paths.
 
 ### R-UI-009 · Install command panel
@@ -2979,12 +2909,12 @@ Priority: **MVP** · Covers: UI-011, ART-040, ART-041
 - Two bordered panes that fill the height of the content area, each with its own scroll: the tree on the
   left, the details on the right; one pane at a time with back navigation on narrow screens
   ([Q-UI-98](#q-ui-98--the-file-browser-is-two-panes-with-a-toolbar-and-a-details-header)). The selection is the
-  URL (`/browse/{project}/{repo}/{path…}`); a deep link expands the ancestors.
+  URL (`/browse/{repo}/{path…}`); a deep link expands the ancestors.
 - Tree toolbar: one filter field that narrows the repositories by key text as the user types (no search button; the
   query parameter `q` follows after a short pause), the shared filter panel for class and format with the applied
   filters as removable chips and "Clear all", a sort menu (class, then key; or key), and the number of repositories
-  shown. Tree root: the readable repositories, each labelled with its project (`web/npm-local`). Children load lazily through
-  `/api/v1/projects/{projectKey}/repositories/{repoKey}/children` (R-API-025) in pages of `ui.browser.page_size` with a "Load more" entry.
+  shown. Tree root: the readable repositories. Children load lazily through
+  `/api/v1/repositories/{repoKey}/children` (R-API-025) in pages of `ui.browser.page_size` with a "Load more" entry.
   A row shows an icon by class (folder and file icons below), the key, a badge with the format and, where it applies,
   the labels below.
 - A virtual repository's children are its members in resolution order, labelled "resolves from"; a member leads to
@@ -3062,7 +2992,7 @@ Priority: **P1** · Covers: UI-013
   button, so dragging is never required), overwrite (only with `overwrite`).
 - The size limit `ui.deploy.max_upload_bytes` is checked before the upload starts; larger files are
   pointed to native clients or `curl`.
-- Uploads use `PUT /api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}` on the UI's own origin (R-API-025, Q-UI-106), built by the `files` client of `web/src/app/api/` (R-UI-001), never by the dialog. Because the fetch backend reports no upload
+- Uploads use `PUT /api/v1/repositories/{repoKey}/content/{path}` on the UI's own origin (R-API-025, Q-UI-106), built by the `files` client of `web/src/app/api/` (R-UI-001), never by the dialog. Because the fetch backend reports no upload
   progress, uploads go through an XHR-based `HttpClient` instance (`withXhr()`) to show progress.
   This is the only XHR use for content, and it writes; the UI never reads package content with
   `fetch` or XHR (R-UI-001).
@@ -3149,8 +3079,8 @@ Priority: **MVP** · Covers: UI-021, UI-022, UI-023
      `GET /api/v1/formats`, in its order, the first preselected);
   2. client (curl; npm, pnpm, Yarn Berry, Yarn classic; .NET CLI, NuGet CLI, Visual Studio,
      `nuget.config`);
-  3. repository: readable repositories of that format, each named with its project (`web/npm-all`), virtual
-     repositories marked as recommended, publish availability shown per repository;
+  3. repository: readable repositories of that format, virtual repositories marked as recommended,
+     publish availability shown per repository;
   4. credentials, one of:
      - **Reference an environment variable** (default): snippets reference `TROVE_TOKEN`
        (R-API-030 `credentials=env`); no secret appears on screen; a link leads to creating a token.
@@ -3197,40 +3127,40 @@ expands `${…}` in `.npmrc`. The protocol behind the URLs is owned by
 Project `.npmrc` for npm, pnpm and Yarn classic:
 
 ```ini
-registry=https://trove.example.com/api/npm/web/npm-all/
-//trove.example.com/api/npm/web/npm-all/:_authToken=${TROVE_TOKEN}
+registry=https://trove.example.com/api/npm/npm-all/
+//trove.example.com/api/npm/npm-all/:_authToken=${TROVE_TOKEN}
 ```
 
 Scoped variant (only `@team-a` packages from trove):
 
 ```ini
-@team-a:registry=https://trove.example.com/api/npm/web/npm-all/
-//trove.example.com/api/npm/web/npm-all/:_authToken=${TROVE_TOKEN}
+@team-a:registry=https://trove.example.com/api/npm/npm-all/
+//trove.example.com/api/npm/npm-all/:_authToken=${TROVE_TOKEN}
 ```
 
 User-level configuration through the CLI (the shell expands the variable, so the token is written
 into `~/.npmrc`):
 
 ```shell
-npm config set registry=https://trove.example.com/api/npm/web/npm-all/
-npm config set "//trove.example.com/api/npm/web/npm-all/:_authToken=${TROVE_TOKEN}"
+npm config set registry=https://trove.example.com/api/npm/npm-all/
+npm config set "//trove.example.com/api/npm/npm-all/:_authToken=${TROVE_TOKEN}"
 ```
 
 Yarn Berry `.yarnrc.yml` ([yarnrc](https://yarnpkg.com/configuration/yarnrc); Yarn expands
 `${…}`):
 
 ```yaml
-npmRegistryServer: "https://trove.example.com/api/npm/web/npm-all/"
+npmRegistryServer: "https://trove.example.com/api/npm/npm-all/"
 npmAlwaysAuth: true
 npmAuthToken: "${TROVE_TOKEN}"
 ```
 
 | Client | Install | Publish (local repository, or virtual with default deployment target) |
 |---|---|---|
-| npm | `npm install <package>` | `npm publish --registry https://trove.example.com/api/npm/web/npm-all/`, or `"publishConfig": {"registry": "…/api/npm/web/npm-all/"}` in `package.json` (the guide) |
-| pnpm | `pnpm add <package>` | `pnpm publish --registry https://trove.example.com/api/npm/web/npm-all/` |
-| Yarn Berry | `yarn add <package>` | `npmPublishRegistry: "…/api/npm/web/npm-all/"` in `.yarnrc.yml`, then `yarn npm publish` |
-| Yarn classic | `yarn add <package>` | `yarn publish --registry …/api/npm/web/npm-all/` |
+| npm | `npm install <package>` | `npm publish --registry https://trove.example.com/api/npm/npm-all/`, or `"publishConfig": {"registry": "…/api/npm/npm-all/"}` in `package.json` (the guide) |
+| pnpm | `pnpm add <package>` | `pnpm publish --registry https://trove.example.com/api/npm/npm-all/` |
+| Yarn Berry | `yarn add <package>` | `npmPublishRegistry: "…/api/npm/npm-all/"` in `.yarnrc.yml`, then `yarn npm publish` |
+| Yarn classic | `yarn add <package>` | `yarn publish --registry …/api/npm/npm-all/` |
 
 The registry in the publish column is the repository the snippets are for (`npm-all` here, a virtual repository
 with a deployment target, or a local repository), not the deployment target (Q-API-180).
@@ -3267,7 +3197,7 @@ Priority: **MVP** · Covers: UI-025
 encrypt stored passwords):
 
 ```shell
-dotnet nuget add source "https://trove.example.com/api/nuget/web/nuget-all/v3/index.json" \
+dotnet nuget add source "https://trove.example.com/api/nuget/nuget-all/v3/index.json" \
   --name trove --username trove --password "${TROVE_TOKEN}" --store-password-in-clear-text
 ```
 
@@ -3284,7 +3214,7 @@ nuget.org remote) and a same-named package on a public source cannot slip in
 <configuration>
   <packageSources>
     <clear />
-    <add key="trove" value="https://trove.example.com/api/nuget/web/nuget-all/v3/index.json" />
+    <add key="trove" value="https://trove.example.com/api/nuget/nuget-all/v3/index.json" />
   </packageSources>
   <packageSourceCredentials>
     <trove>
@@ -3295,14 +3225,14 @@ nuget.org remote) and a same-named package on a public source cannot slip in
 </configuration>
 ```
 
-NuGet CLI: `nuget sources add -Name trove -Source "https://trove.example.com/api/nuget/web/nuget-all/v3/index.json" -Username trove -Password "<token>"`.
+NuGet CLI: `nuget sources add -Name trove -Source "https://trove.example.com/api/nuget/nuget-all/v3/index.json" -Username trove -Password "<token>"`.
 Visual Studio: add a package source with name and service-index URL in the NuGet package manager
 options; at the credential prompt enter any user name and the token as password.
 
 | Task | Command |
 |---|---|
 | Install | `dotnet add package <id> --version <version>`; `dotnet restore` |
-| Publish | `dotnet nuget push <id>.<version>.nupkg --source "https://trove.example.com/api/nuget/web/nuget-local/v3/index.json" --api-key "${TROVE_TOKEN}"` (the token travels as `X-NuGet-ApiKey`, INV-8; a `.snupkg` next to the package is pushed with it, [formats/nuget.md](formats/nuget.md)) |
+| Publish | `dotnet nuget push <id>.<version>.nupkg --source "https://trove.example.com/api/nuget/nuget-local/v3/index.json" --api-key "${TROVE_TOKEN}"` (the token travels as `X-NuGet-ApiKey`, INV-8; a `.snupkg` next to the package is pushed with it, [formats/nuget.md](formats/nuget.md)) |
 
 The username is not checked (INV-8); the snippets use the fixed name `trove`.
 
@@ -3354,8 +3284,8 @@ endpoint with exposure rules changes, and what each answer of the protocol means
 - **Choice.** The guides area offers the formats of `GET /api/v1/formats` that list `clients`, in its order and the
   first preselected, their clients, the readable repositories of the format (virtual first), and, without a
   repository, the format's classes (virtual preselected). A repository opens its guide
-  (`GET /api/v1/projects/{projectKey}/repositories/{repoKey}/guide`), a class the guide of the format (`GET /api/v1/formats/{format}/guide`),
-  whose addresses show `<project>` and `<repository>`.
+  (`GET /api/v1/repositories/{key}/guide`), a class the guide of the format (`GET /api/v1/formats/{format}/guide`),
+  whose addresses show `<repository>`.
 - **Content.** A contents list (a `nav` landmark) whose links move focus to the section heading without navigating; one
   region per section with its heading; the section's HTML bound like a README (R-UI-008, the same component and its
   finishing pass); the setup snippets of the section with a copy button each (Q-UI-85). The guide's text is the format's
@@ -3417,20 +3347,18 @@ Acceptance criteria:
 ### R-UI-020 · Repository list
 Priority: **MVP** · Covers: UI-030, REPO-007
 
-- Table: project, key, format, class, description, client URL with copy button, last activity. Filters in
-  the filter panel: project, format, class, text, disabled only. The list is ordered by key; the API takes
+- Table: key, format, class, description, client URL with copy button, last activity. Filters in
+  the filter panel: format, class, text, disabled only. The list is ordered by key; the API takes
   no `sort` parameter yet, so the table has no sort control (sorting by creation arrives with the
   API, and the creation time with the summary, Q-UI-18). "Recently viewed" (browser storage, 20).
 - Row actions: edit, browse, client setup, reindex (P1), invalidate cache (remote and virtual),
   from M4b vulnerabilities (local and remote repositories of a format with the vulnerability
-  adapter: the repository's view of the report, `/vulnerabilities?repository=<projectKey>/<repoKey>`,
+  adapter: the repository's view of the report, `/vulnerabilities?repository=<key>`,
   [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022),
-  move to another project (for a caller who holds `repositories:write-config` or is Owner of both projects; R-REPO-060),
   delete. Delete requires typing the key, offers the `detach` choice of
   [repositories-and-proxy.md](repositories-and-proxy.md) when other repositories reference it, and
   shows that deletion runs as a job.
-- "Create repository" (when the caller may create repositories in a project: `repositories:write-config`, or the role
-  `owner`) opens the wizard.
+- "Create repository" (when the caller may create repositories) opens the wizard.
 
 Acceptance criteria:
 
@@ -3441,10 +3369,7 @@ Acceptance criteria:
 Priority: **MVP** · Covers: UI-031
 
 - Steps: format, class, basic settings, class-specific settings, review. The format comes first
-  because some features are technically impossible for some formats (Q-UI-112). The project is chosen in the basic
-  settings, from the projects in which the caller may create repositories (every project for
-  `repositories:write-config`, the projects it owns otherwise), preset to the project filter; it is read-only on the
-  edit form, where a move to another project is its own action (R-UI-020).
+  because some features are technically impossible for some formats (Q-UI-112).
 - The format step is a grid of tiles from `GET /api/v1/formats`, each with the format's icon and its
   name, under a search field ("Search by package type") that filters the tiles by name, a title and
   a one-line hint. Only the formats the installation has appear. The grid is a single-choice listbox
@@ -3471,14 +3396,13 @@ Priority: **MVP** · Covers: UI-031
   `dotnet nuget delete` and `nuget delete` do in this repository: unlist the version, or delete it
   for good with a tombstone ([formats/nuget.md](formats/nuget.md) R-NUGET-007). Deletes through
   the UI and the management API are hard deletes whatever the mode (R-NUGET-007).
-- Key: live check of the INV-5 pattern and of availability within the chosen project (a `GET` of
-  `/api/v1/projects/{projectKey}/repositories/{repoKey}` answering 404); the same key may exist in another project.
+- Key: live check of the INV-5 pattern and of availability (a `GET` of the key answering 404).
 - Remote: an **Upstream** section, in the class-specific step of the wizard above the format's settings and on a tab
   **Upstream** of the edit form (Q-UI-122): the upstream URL with the format's preset (`defaultUpstreamUrl`:
   `https://registry.npmjs.org/`, `https://api.nuget.org/v3/index.json`; the wizard starts with it, an empty field means it, and a
   format without one needs the URL), the authentication (none, username and password, bearer token) with a write-only password
   (Q-UI-123), the metadata and negative cache periods with the format's defaults (`defaultMetadataTtlSeconds`,
-  `defaultNotFoundTtlSeconds`), the offline switch (INV-11), and "Test connection" (`POST /api/v1/projects/{projectKey}/upstream-tests`) with the
+  `defaultNotFoundTtlSeconds`), the offline switch (INV-11), and "Test connection" (`POST /api/v1/upstream-tests`) with the
   result inline, in words (Q-UI-124). A member is written only where it differs from its default (Q-UI-80); the rest of the
   `remote` section (extra hosts, limits, integrity, `sourceNetwork`, the other cache members) is set through the API.
 - Virtual: member editor (R-UI-022) and default deployment target.
@@ -3486,12 +3410,12 @@ Priority: **MVP** · Covers: UI-031
   `GET /api/v1/formats`, from the format's registration; the UI holds no list of such formats): a **Mirror**
   section with the mode (`pullThrough` or `mirror`) and the members of `remote.mirror`
   ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-050), the warning or refusal `mirror_unbounded` at the
-  mode with the sentence of R-REPO-052, and for an Owner without `repositories:write-config` the section read-only except
-  **Pause** and **Turn off** (Q-REPO-142). The section is in the wizard's class-specific step and on the edit form's tab **Mirror**
+  mode with the sentence of R-REPO-052, and for a project administrator the section read-only except **Pause** and
+  **Turn off** (Q-REPO-142). The section is in the wizard's class-specific step and on the edit form's tab **Mirror**
   (Q-UI-117); the members show in mode `mirror` and are written only where they differ from their defaults, and a create in
   mode `pullThrough` writes no `remote` member; the early notice at the mode applies the server's bound rule to the upstream
   URL entered and the server decides (Q-UI-118, Q-UI-122). On the edit form of a remote stored in mode `mirror`, the **Mirror**
-  tab shows, above the settings (Q-UI-119), the status of `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror`: the state in words (off,
+  tab shows, above the settings (Q-UI-119), the status of `GET /api/v1/repositories/{key}/mirror`: the state in words (off,
   paused, scheduled, running, waiting, bound reached, failing; green only for a scheduled mirror after a complete pass), the pass
   in progress with its counts and its job, the last complete pass, the next pass, the last error, the rate-limit waits and the
   bound. While a pass is in progress (`running`, `waiting`) the status is read again every 5 s, and no longer once the tab is
@@ -3533,14 +3457,14 @@ Acceptance criteria:
 - A remote npm repository in the wizard shows the Mirror section in mode pull-through; choosing
   mirror shows its members with their defaults, and a create with only `intervalSeconds` changed
   sends `remote: {mode: "mirror", mirror: {intervalSeconds: …}}` and nothing else of `remote`.
-  An Owner of the project without `repositories:write-config` sees the section read-only except Pause and Turn off.
+  A project administrator sees the section read-only except Pause and Turn off.
 - The Mirror tab of a remote stored in mode `mirror` shows the state and the facts of `GET …/mirror`; **Pause** sends
   `{"remote": {"mirror": {"paused": true}}}` with the loaded `If-Match` and the state reads Paused, **Resume** reverts it, a
-  caller who neither holds `repositories:write-config` nor is Owner of the project sees the status and no button, and **Run a
+  caller without `repositories:write-config` or the project's `manageRepositories` sees the status and no button, and **Run a
   pass now** answers with the job of its 202 or, after a 409 `mirror_pass_running`, with the running job. While the state is
   running or waiting the status is read every 5 s, and no read follows once another tab is open.
 - The edit form of `nuget-local` without a `nuget.deleteMode` shows "unlist"; after
-  `PATCH /api/v1/projects/web/repositories/nuget-local` with `If-Match` and `{"nuget": {"deleteMode": "delete"}}`
+  `PATCH /api/v1/repositories/nuget-local` with `If-Match` and `{"nuget": {"deleteMode": "delete"}}`
   it shows "delete".
 - Creating a local npm repository in the wizard with `latestGuard` turned off stores
   `{"npm": {"latestGuard": false}}`; turning it on again on the edit form removes the `npm` member,
@@ -3549,10 +3473,8 @@ Acceptance criteria:
 ### R-UI-022 · Virtual repository member editor
 Priority: **MVP** · Covers: UI-032
 
-- Two lists: available (repositories of the virtual repository's own project and the same format, excluding the
-  repository itself and anything that would create a cycle; a virtual repository never lists a repository of another
-  project, [Q-REPO-212](repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared))
-  and selected (ordered). Buttons Add, Remove, Move up, Move down, Move to top work with
+- Two lists: available (same format, excluding the repository itself and anything that would create
+  a cycle) and selected (ordered). Buttons Add, Remove, Move up, Move down, Move to top work with
   keyboard and single pointer (WCAG 2.5.7); drag and drop is an optional extra. Both lists are
   listboxes of `@angular/aria` (R-UI-001, Q-UI-1).
 - An "Effective resolution order" view flattens nested virtual repositories per
@@ -3569,9 +3491,9 @@ Acceptance criteria:
 ### R-UI-023 · Quick repository setup
 Priority: **P1** · Covers: UI-033, REPO-008
 
-Administrators and the project's Owners pick a project, formats and a prefix; the preview shows the keys that
-`POST /api/v1/projects/{projectKey}/repositories/quick-setup` ([repositories-and-proxy.md](repositories-and-proxy.md))
-will create in the project (local, remote with the public upstream preset, virtual over both), then creates them in
+Administrators pick formats and a prefix; the preview shows the keys that
+`POST /api/v1/repositories/quick-setup` ([repositories-and-proxy.md](repositories-and-proxy.md))
+will create (local, remote with the public upstream preset, virtual over both), then creates them in
 one request and offers client setup for the virtual repository.
 
 Acceptance criteria:
@@ -3620,18 +3542,12 @@ Acceptance criteria:
 ### R-UI-026 · Service accounts
 Priority: **MVP** · Covers: trove-only
 
-- List and editor: project (none for an account of no project), name, description, owners (P1), groups (accounts of
-  no project only: a project's account is never a group member), status with disable and enable. The list of the admin
-  area is the instance-wide list with a project column; a project's screen (R-UI-041) lists the project's accounts.
-  A name is unique within its project, or among the accounts of no project, and is shown as `sa:<projectKey>/<name>`
-  or `sa:<name>` ([Q-AUTHZ-209](authorization.md#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones)).
+- List and editor: name, description, owners (P1), groups, status with disable and enable.
 - Tokens tab: issue (scope and expiry as in R-UI-029, one-time display, recent authentication), list,
-  revoke one or all. The server lets the administrator role, and for a project's account the project's Owners, issue
-  and rotate the tokens of a service account ([identity-and-authentication.md](identity-and-authentication.md)
-  R-AUTH-027, R-AUTH-030, [authorization.md](authorization.md) R-AUTHZ-026); the tab offers **Create token** and
-  **Rotate** to those callers only (`authz/me` `roles` and `projects`), not to a holder of `identities:write` alone,
-  who would get 403. An Owner's form offers no non-expiring lifetime, no `admin` and no `system` item. Revoking follows
-  `tokens:revoke` or the role `owner`.
+  revoke one or all. The server lets only the administrator role issue and rotate the tokens of a
+  service account ([authorization.md](authorization.md) R-AUTH-027, R-AUTH-030); the tab offers
+  **Create token** and **Rotate** to that role only (`authz/me` `roles`), not to a holder of
+  `identities:write` alone, who would get 403. Revoking follows `tokens:revoke`.
 - The token form offers the binding to endpoints where the caller may read them (Q-UI-91).
 - A hint explains when to use one: CI systems without OIDC exchange, long-running automation.
 
@@ -3643,9 +3559,8 @@ Acceptance criteria:
 ### R-UI-027 · Permission policy list and editor
 Priority: **MVP** · Covers: UI-039, UI-040
 
-- List: project (none for a policy of no project), name, description, principal summary ("3 groups, 1 CI mapping"),
-  resources summary, actions; filters by principal (picker), repository and project. The list of the admin area is the
-  instance-wide list; a project's screen (R-UI-041) lists the project's policies.
+- List: name, description, principal summary ("3 groups, 1 CI mapping"), resources summary, actions;
+  filters by principal (picker), repository and project.
 - Layout (Q-UI-4): one page for create and edit, no step-by-step wizard. The sections run down the
   left with an in-page table of contents; the preview panel is a sticky right column while the
   content area is at least 960 CSS px wide and a collapsible region above the save bar when it is
@@ -3655,10 +3570,7 @@ Priority: **MVP** · Covers: UI-039, UI-040
 - Editor sections, following the policy model of
   [authorization.md](authorization.md): general (name on create only, description); principals
   (users, groups, service accounts, CI identity mappings, anonymous where allowed) through
-  searchable pickers; resources with a live "covers 4 repositories" preview, whose selectors take the form of the
-  policy's context: `<projectGlob>/<keyGlob>[:<format>]` or a class for a policy of no project, bare keys, key globs
-  and classes of the project for a project's policy ([authorization.md](authorization.md) R-AUTHZ-004,
-  [Q-AUTHZ-216](authorization.md#q-authz-216--repository-selectors-name-the-project-in-instance-contexts-and-a-bare-key-inside-a-project)); include and exclude
+  searchable pickers; resources with a live "covers 4 repositories" preview; include and exclude
   patterns with syntax help and a tester field ("Does `@team-a/ui` match?"); actions with a one-line
   explanation each.
 - Preview panel fed by `POST /api/v1/authz/validate-policy` (debounced 500 ms): covered repositories,
@@ -3839,16 +3751,13 @@ Priority: **MVP** · Covers: UI-049, CIOIDC-024
   `user_login`, …); grants; options; "Test with claims" opens the claim tester prefilled. Warnings
   returned on save are shown.
 - Per mapping, "CI snippet" shows the text of `GET /api/v1/ci/issuers/{issuer}/snippets/gitlab-ci`
-  (for a project's mapping `GET /api/v1/projects/{projectKey}/ci/issuers/{issuer}/snippets/gitlab-ci`, which an Owner of the
-  project may read) for the chosen format (npm or NuGet) with a copy button. This covers the GitLab counterpart of
+  (for a project's mapping `GET /api/v1/projects/{key}/ci/issuers/{issuer}/snippets/gitlab-ci`, which a project administrator
+  with the `managePolicies` switch on may read) for the chosen format (npm or NuGet) with a copy button. This covers the GitLab counterpart of
   CIOIDC-024 ([GitLab ID tokens](https://docs.gitlab.com/ci/secrets/id_token_authentication/)).
 - Delegations (P1) and issuances (R-UI-030) are tabs of the issuer.
-- An Owner of a project reaches the project's CI mappings from the project (the project route family of
+- A project administrator reaches the project's CI mappings from the project (the project route family of
   R-API-035): the mapping list and editor, the claim tester over the project's tier and the issuances of its mappings, with
-  the issuers as a read-only choice (Q-CI-26). A mapping's name is unique within the project and the issuer, without a
-  prefix, and shown as `ci:<issuer>/<projectKey>/<name>`
-  ([Q-AUTHZ-214](authorization.md#q-authz-214--a-projects-ci-mappings-are-named-within-the-project-like-its-policies-and-service-accounts)).
-  The editor offers the project's repositories as bare keys and its policies, and no groups. The
+  the issuers as a read-only choice (Q-CI-26). The editor offers the project's repositories and policies and no groups. The
   screens and routes are those of [Q-UI-99](#q-ui-99--the-ci-screens-sit-under-identity-and-a-projects-ci-screens-are-the-same-components-under-the-project);
   the bulk revoke and the detail of an issuance are Q-UI-100; the bulk revoke is offered only while every applied filter is one
   the request carries, and the day filters are the local day (Q-UI-102).
@@ -3888,7 +3797,7 @@ Acceptance criteria:
 Priority: **MVP** · Covers: OPS-023
 
 - Table from `GET /api/v1/audit/events`: time, actor, action (translated label), target, outcome,
-  source address; filters time range (presets and custom), actor, action, category, project, repository,
+  source address; filters time range (presets and custom), actor, action, category, repository,
   outcome (filter panel); "Load more". The log is always newest first and has no sort control.
 - Detail panel with the full event and links to actor and target.
 - Times in the user's locale with a UTC toggle; export of the current filter as CSV or JSON Lines
@@ -4079,47 +3988,31 @@ starts.
 ### R-UI-041 · Projects
 Priority: **MVP** · Covers: UI-003, UI-050, UI-051
 
-Raised from P1 on 2026-11-02 with R-AUTHZ-026 (beta phase 5a). Follows the project model of R-AUTHZ-026 in
-[authorization.md](authorization.md): every repository belongs to exactly one project, and users and groups are members
-with the role `reader`, `developer`, `maintainer` or `owner`
-([Q-AUTHZ-206](authorization.md#q-authz-206--every-repository-belongs-to-exactly-one-project),
-[Q-AUTHZ-208](authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner)). Where the content
-screens live, inside the chosen project, is [Q-UI-129](#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects)
-(not built yet, H-550); this requirement fixes what the model gives the screens:
+Raised from P1 on 2026-11-02 with R-AUTHZ-026 (beta phase 5a). Follows the reduced project model of R-AUTHZ-026 in
+[authorization.md](authorization.md):
 
-- A project filter in the header appears when the caller is a member of at least one project (the memberships of
-  `authz/me`, `projects`) or holds `projects:read`; it offers the caller's projects, every project to a holder of
-  `projects:read`. The selection is stored as `projectFilter` (R-API-021) and filters the repository, policy, service
-  account, webhook and retention lists through `project=`.
-- Projects overview: key, display name, the caller's role (for a member), the number of members and of repositories.
-  It lists the caller's memberships, every project for a holder of `projects:read` (`GET /api/v1/projects`).
-- Create dialog (administrators, `projects:write`): key (`^[a-z][a-z0-9-]{1,31}$`, immutable), display name,
-  description, and the first Owner; repositories are created in the project afterwards. Edit dialog: display name and
-  description, for administrators and the project's Owners. Delete is offered to administrators only, and only for
-  projects without repositories, service accounts and CI mappings.
-- Members screen: the users and groups of the project with their roles, read for every member; an Owner and an
-  administrator add a member through the principal lookup (Q-AUTHZ-182), change a role and remove a member. The last
-  Owner cannot be removed or demoted except by an administrator: the action is shown disabled with the reason, and a
-  `409 last_owner` from a concurrent change is reported as such
-  ([Q-AUTHZ-217](authorization.md#q-authz-217--the-last-owner-of-a-project-is-removed-or-demoted-only-by-an-administrator-of-trove)).
-- For an Owner of a project, also without any capability, the administration area holds that project's screens (as
-  for the delegates of Q-AUTHZ-181): its repositories (create in the project, edit, delete and move to another project
-  it owns; R-UI-020, R-UI-021), its policies (named within the project; the editor offers the project's repositories as
-  bare keys, key globs and classes, and the principal lookup), its service accounts (named within the project, shown
-  as `sa:<projectKey>/<name>`; create, enable, disable and delete) and their tokens (issue, with the lifetime cap and
-  without a `system` scope, and revoke), and its CI mappings (R-UI-035). A member with another role sees the project's
-  overview and members read-only. An action the caller's role does not allow is not offered.
-- The `auditor` and the other holders of `projects:read` see every project, its members and its screens read-only.
+- A project filter in the header appears when projects exist and the caller administers at least
+  one (or is administrator); the selection is stored as `projectFilter` (R-API-021) and filters the
+  repository, policy, webhook and retention lists through `project=`.
+- Projects overview: key, display name, administrators, number of repositories, switches.
+- Create and edit dialog (administrators): key (`^[a-z][a-z0-9-]{1,31}$`, immutable), display name,
+  description, `managePolicies`, `manageRepositories`, administrators (users and groups), assigned
+  repositories. Delete is offered only for projects without repositories and service accounts.
+- The administration area is shown to a caller whose `authz/me` lists at least one project in `projects`, also without
+  any capability (Q-AUTHZ-181). For such a project administrator it holds the project screens only: the project's overview
+  (read-only switches and administrators), its repositories (create, edit and delete with `manageRepositories`; the
+  assignment itself stays with administrators), its policies (with `managePolicies`; the editor offers the project's
+  repositories and the principal lookup of Q-AUTHZ-182), its service accounts (create, enable, disable and delete) and
+  their tokens (issue, with the lifetime cap and without a `system` scope, and revoke). An action whose switch is off is
+  shown disabled with the reason.
+- The `auditor` and the other holders of `projects:read` see every project and its screens read-only.
 
 Acceptance criteria:
 
-- An administrator creates project `team-a` with `user:alice` as its first Owner; alice adds `group:team-a-devs` as
-  `developer`; a member of that group sees `team-a` in the filter with the role `developer`, and the project's members
-  read-only.
-- alice, without any system role, sees the administration area with the project's screens and none of the global ones;
-  the global policy list is not offered to her; she creates a policy `npm-read` and a service account `partner` in
-  `team-a`, and the account is shown as `sa:team-a/partner`.
-- The remove action of alice's own membership is disabled while she is the only Owner.
+- An administrator creates project `team-a` with one repository and one administrator group; a
+  member of that group sees the project in the filter and can create a project policy.
+- A member of that group, without any system role, sees the administration area with the project's screens and none of
+  the global ones; the global policy list is not offered to it.
 
 ### R-UI-042 · Errors, conflicts and feedback
 Priority: **MVP** · Covers: trove-only
@@ -4131,8 +4024,8 @@ Priority: **MVP** · Covers: trove-only
   showing their version against yours field by field, with "Reload (discard mine)", "Overwrite"
   (re-sends with the new ETag after showing the diff) and "Copy my changes".
 - **Own permission changes** (INV-17, R-API-052, [authorization.md](authorization.md)
-  R-AUTHZ-032). After a write that answers `Trove-Authz-Epoch` (a policy, a role binding, a project, its members, the
-  move of a repository), the session store (R-UI-046) keeps the highest such epoch of the tab, and the
+  R-AUTHZ-032). After a write that answers `Trove-Authz-Epoch` (a policy, a role binding, from P1
+  a project), the session store (R-UI-046) keeps the highest such epoch of the tab, and the
   interceptor sends it as `Trove-Authz-Min-Epoch` on every request that follows, so the next
   screen, the `authz/me` and `authz/check` refresh included, shows the change on whichever replica
   answers. The epoch lives in memory only, never in browser storage, and is cleared on 401 and on
@@ -4183,7 +4076,7 @@ Acceptance criteria:
   re-read the policy, and send no `Trove-Authz-Min-Epoch` on later requests until its next
   permission change; the conflict dialog does not open.
 - An unknown `code` shows the request ID.
-- A test proxy resets the connection of the wizard's `POST /api/v1/projects/{projectKey}/repositories` after the server
+- A test proxy resets the connection of the wizard's `POST /api/v1/repositories` after the server
   has committed it. The UI retries with the same `Idempotency-Key`, reports success, and exactly one
   repository exists. The same with a `PATCH` of the edit form reports success without the conflict
   dialog.
@@ -4420,8 +4313,7 @@ whose owning page defers them. None has a requirement here.
 
 - ADMAPI-019 · Global role operations — custom global roles are P2 per R-AUTHZ-026; the fixed system
   roles are listed by `GET /api/v1/roles` (R-API-033)
-- ADMAPI-066 · Project role operations — custom project roles are P2 per R-AUTHZ-026; the four fixed project roles
-  (reader, developer, maintainer, owner) are assigned through the members operations of R-API-047
+- ADMAPI-066 · Project role operations — P2 per R-AUTHZ-026 (reduced project model)
 - ADMAPI-068 · Environment operations — P2 per R-AUTHZ-026
 
 </details>
@@ -4604,10 +4496,8 @@ whose owning page defers them. None has a requirement here.
 - UI-048 · Webhook troubleshooting tab — P2 (R-UI-039 shows deliveries; filters and grouping later)
 - UI-052 · Project storage quota indicators — P2
 - UI-054 · Federation status dashboard — Later
-- UI-056 · Project members screen — P2 in the catalog's form (several roles per member, custom roles); the members of
-  R-AUTHZ-026 with one fixed role each are shown and edited on the project screens of R-UI-041
-- UI-057 · Global roles and project roles screens — P2 (custom roles; the fixed project roles of R-AUTHZ-026 need no
-  screen of their own)
+- UI-056 · Project members screen — P2
+- UI-057 · Global roles and project roles screens — P2
 - UI-061 · Federation monitoring screens of the older embedded synchronization mode — Later
 - Server name, date format, logo and login notice of UI-044 and UI-006 — P2 on
   [operations-and-observability.md](operations-and-observability.md)
@@ -4649,10 +4539,8 @@ whose owning page defers them. None has a requirement here.
   page's evaluation endpoint takes claims, not tokens (R-API-035).
 - **Information disclosure.** Unreadable repositories, items and packages answer like missing ones
   when hiding is on (R-API-008); `latestVersion` ignores hidden versions (R-API-029); deploy by
-  checksum answers the same for missing and unreadable content (R-API-026). A project the caller is no member of
-  answers its project routes like a missing project (R-API-008), so the address of a repository does not reveal that
-  its project exists. The explainer and effective permissions are limited to `policies:read` and repository managers
-  (R-API-034).
+  checksum answers the same for missing and unreadable content (R-API-026). The explainer and
+  effective permissions are limited to `policies:read` and repository managers (R-API-034).
 - **Error bodies** never carry stack traces, SQL, internal host names, secrets or raw upstream errors
   (R-API-009).
 - **Dependency confusion.** The NuGet snippet clears other package sources (R-UI-018); the scoped npm
@@ -6142,7 +6030,7 @@ Revisit when a key or path in the tree is regularly cut off, or the owner asks f
 
 ### Q-UI-99 · The CI screens sit under Identity, and a project's CI screens are the same components under the project
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-AUTHZ-208](authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner)**: the project's CI screens are shown for `ci:read` and for an Owner of the project; the switches and `403 project_switch_off` are gone, and the routes take the project key (`/admin/projects/:project/ci`).
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 Context: R-UI-035 and Q-CI-26 put the CI mappings with the system administrators and, bounded, with the administrators of a
 project, who have no administration entry of their own besides Projects (R-UI-041). The screens needed a place in the
@@ -7460,7 +7348,7 @@ asks it instead of reimplementing it. The development agent would revisit (b) on
 
 ### Q-API-199 · The two operations decide their permission in the handler, a refused reader is hidden by the decision on read, and a project administrator runs on the manage it holds
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-AUTHZ-208](authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner)**: the project right is the role, not a switch; the Maintainer and the Owner of the repository's project hold `manage` through their role and run a pass, the Owner reads the status, and `project_switch_off` and `projectAdmin: manageRepositories` are gone.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 Context: R-REPO-056 admits for the status `repositories:read-config`, `manage` or an administrator of the repository's project, and for the
 run `repositories:write-config`, `manage` or an administrator of the project with `manageRepositories`. The declaration forms
@@ -7754,7 +7642,7 @@ that they scroll past the status to reach the settings, and the interval if the 
 
 ### Q-UI-120 · Pause, resume and run follow the permission of Save; the status follows the one of the form
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-AUTHZ-208](authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner)**: the buttons show for whoever may save the repository, `repositories:write-config` or the role `owner` in its project; `manageRepositories` is gone, and an Owner without `repositories:write-config` keeps the read-only Mirror section of Q-REPO-142.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
