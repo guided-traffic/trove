@@ -33,6 +33,8 @@ function setup() {
       HttpPolicyApi,
       HttpRolesApi,
       HttpIdentityApi,
+      HttpProjectsApi,
+      HttpRepositoriesApi,
       HttpTokensApi,
       HttpSessionsApi,
       HttpAuthSettingsApi,
