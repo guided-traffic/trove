@@ -3,6 +3,7 @@ package repository
 import (
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
@@ -43,6 +44,8 @@ func validateVirtual(v *validation, cat *catalog.Registry, d *Document) {
 		switch {
 		case k == "":
 			v.add(ptr, errs.CodeInvalidMember, "a member is a repository key")
+		case strings.Contains(k, "/"):
+			v.add(ptr, errs.CodeInvalidMember, "a member is a bare key of the virtual repository's own project; a repository of another project cannot be a member")
 		case k == d.Key:
 			v.add(ptr, errs.CodeInvalidMember, "a virtual repository cannot be its own member")
 		case isMember[k]:
@@ -56,7 +59,10 @@ func validateVirtual(v *validation, cat *catalog.Registry, d *Document) {
 			Detail: "the virtual repository has no members, so it resolves nothing",
 		})
 	}
-	if vs.DeployTarget != nil && !isMember[*vs.DeployTarget] {
+	switch {
+	case vs.DeployTarget != nil && strings.Contains(*vs.DeployTarget, "/"):
+		v.add("/virtual/deployTarget", codeInvalidDeployTarget, "the deploy target is a bare key of the virtual repository's own project")
+	case vs.DeployTarget != nil && !isMember[*vs.DeployTarget]:
 		v.add("/virtual/deployTarget", codeInvalidDeployTarget, "the deploy target must be one of the members")
 	}
 

@@ -227,6 +227,10 @@ func (s *Service) CreateTx(ctx context.Context, tx meta.Tx, c Caller, project st
 		return Stored{}, err
 	}
 	_, v := validate(s.cat, &d, true)
+	if d.Project != "" && d.Project != project {
+		v.add("/project", codeImmutable, "the project is the one of the address; a repository changes it only by a move")
+	}
+	d.Project = project
 	qs, err := queries(tx)
 	if err != nil {
 		return Stored{}, err
@@ -369,7 +373,7 @@ func (s *Service) update(ctx context.Context, c Caller, name qname.Repo, pre Pre
 		if !pre.Any && pre.Version != row.ConfigVersion {
 			return stale(row.ConfigVersion)
 		}
-		cur, curRel, err := s.document(ctx, qs, row)
+		cur, curRel, err := s.document(ctx, qs, row, name.Project)
 		if err != nil {
 			return fmt.Errorf("repository: stored document of %q: %w", name, err)
 		}
@@ -466,15 +470,15 @@ func (s *Service) checkUpdate(cur, nd Document) (Document, *validation) {
 	for _, f := range []struct {
 		ptr       string
 		got, want string
-	}{{"/key", nd.Key, cur.Key}, {"/class", string(nd.Class), string(cur.Class)}, {"/format", nd.Format, cur.Format}} {
+	}{{"/project", nd.Project, cur.Project}, {"/key", nd.Key, cur.Key}, {"/class", string(nd.Class), string(cur.Class)}, {"/format", nd.Format, cur.Format}} {
 		if f.got != "" && f.got != f.want { // an omitted identity member means "unchanged"
 			imm = append(imm, errs.FieldError{
 				Pointer: f.ptr, Code: codeImmutable,
-				Detail: "key, class and format are fixed at creation",
+				Detail: "project, key, class and format are fixed at creation; the project changes only by a move",
 			})
 		}
 	}
-	nd.Key, nd.Class, nd.Format = cur.Key, cur.Class, cur.Format
+	nd.Project, nd.Key, nd.Class, nd.Format = cur.Project, cur.Key, cur.Class, cur.Format
 	_, v := validate(s.cat, &nd, false)
 	v.fields = append(imm, v.fields...)
 	return nd, v
@@ -529,6 +533,7 @@ func (s *Service) storedRel(row q.Repository, project string, rel *virtualRel, w
 	if derr != nil {
 		return Stored{}, fmt.Errorf("repository: stored document of %q: %w", r.Name.String(), derr)
 	}
+	d.Project = project
 	d.renderVirtual(rel)
 	if r.virt != nil && d.Virtual != nil {
 		r.virt.settings = d.Virtual.clone()
@@ -538,7 +543,7 @@ func (s *Service) storedRel(row q.Repository, project string, rel *virtualRel, w
 
 // document reads the stored document of a row with the rows of its virtual
 // section, and those rows as they are (nil for another class).
-func (s *Service) document(ctx context.Context, qs *q.Queries, row q.Repository) (Document, *virtualRel, error) {
+func (s *Service) document(ctx context.Context, qs *q.Queries, row q.Repository, project string) (Document, *virtualRel, error) {
 	var rel *virtualRel
 	if Class(row.Class) == Virtual {
 		rels, err := loadVirtualRels(ctx, qs, []int64{row.ID})
@@ -551,6 +556,7 @@ func (s *Service) document(ctx context.Context, qs *q.Queries, row q.Repository)
 	if err != nil {
 		return Document{}, nil, err
 	}
+	d.Project = project
 	d.renderVirtual(rel)
 	return d, rel, nil
 }

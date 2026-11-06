@@ -63,7 +63,7 @@ func startEndpoints(t *testing.T, role string, extra map[string]string) *harness
 // refuses them by default (R-EP-010 item 4), which
 // TestEndpointRefusesAnonymousByDefault covers.
 func endpointsJSON(listen string, more string) string {
-	return fmt.Sprintf(`{"customers":{"listen":%q,"base_url":"https://packages.example.com","hosts":["pkgs.example.org"],"wildcard_host":"*.registry.example.com","host_roots":{"pkgs.example.org":"docker-hub"},"auth":{"anonymous":true}%s}}`, listen, more)
+	return fmt.Sprintf(`{"customers":{"listen":%q,"base_url":"https://packages.example.com","hosts":["pkgs.example.org"],"wildcard_host":"*.registry.example.com","host_roots":{"pkgs.example.org":"web/docker-hub"},"auth":{"anonymous":true}%s}}`, listen, more)
 }
 
 func TestEndpointRefusesAnonymousByDefault(t *testing.T) {
@@ -225,7 +225,7 @@ func TestEndpointsOnOneReplica(t *testing.T) {
 		code, body := hostGet(t, cust, "pkgs.example.org", "/api/npm/x/")
 		var got map[string]string
 		_ = json.Unmarshal([]byte(body), &got)
-		if code != 200 || got["root"] != "docker-hub" || got["base"] != "https://pkgs.example.org" {
+		if code != 200 || got["root"] != "web/docker-hub" || got["base"] != "https://pkgs.example.org" {
 			t.Fatalf("bound host: %d %s", code, body)
 		}
 		for _, p := range []string{"/v2/", "/.well-known/terraform.json"} {

@@ -32,7 +32,7 @@ func (s *Service) resolveVirtual(ctx context.Context, qs *q.Queries, v *validati
 	vs := d.Virtual
 	var keys []string
 	add := func(k string) {
-		if k != "" && k != d.Key && !slices.Contains(keys, k) {
+		if k != "" && k != d.Key && !strings.Contains(k, "/") && !slices.Contains(keys, k) {
 			keys = append(keys, k)
 		}
 	}
@@ -66,7 +66,7 @@ func (s *Service) resolveVirtual(ctx context.Context, qs *q.Queries, v *validati
 		ptr := "/virtual/members/" + strconv.Itoa(i)
 		row, found := byKey[k]
 		switch {
-		case k == "" || k == d.Key:
+		case k == "" || k == d.Key || strings.Contains(k, "/"):
 			// reported with the document rules
 		case !found:
 			v.add(ptr, errs.CodeInvalidMember, "no repository has the key "+strconv.Quote(k))

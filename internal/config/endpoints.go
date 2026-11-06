@@ -7,6 +7,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // Endpoint names and limits (R-EP-001).
@@ -31,19 +33,14 @@ const (
 	SurfaceFiles      = "files"
 )
 
-// Exposure modes (R-EP-012), token types (R-AUTH-022) and wildcard-root modes
-// (R-EP-006) an endpoint names.
+// Exposure modes (R-EP-012) and token types (R-AUTH-022) an endpoint names.
 const (
 	ExposureAll   = "all"
 	ExposureRules = "rules"
-
-	WildcardRootNone  = "none"
-	WildcardRootLabel = "label"
 )
 
 var (
 	endpointNameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,19}$`)
-	repoKeyRe      = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,63}$`)
 	dnsLabelRe     = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 )
 
@@ -66,7 +63,6 @@ type Endpoint struct {
 	Hosts          []string          `yaml:"hosts" json:"hosts,omitempty"`
 	WildcardHost   string            `yaml:"wildcard_host" json:"wildcard_host,omitempty"`
 	HostRoots      map[string]string `yaml:"host_roots" json:"host_roots,omitempty"`
-	WildcardRoot   string            `yaml:"wildcard_root" json:"wildcard_root,omitempty"`
 	TrustedProxies []string          `yaml:"trusted_proxies" json:"trusted_proxies,omitempty"`
 	Pool           string            `yaml:"pool" json:"pool,omitempty"`
 	MaxInFlight    int               `yaml:"max_in_flight" json:"max_in_flight,omitempty"`
@@ -119,7 +115,6 @@ type ResolvedEndpoint struct {
 	// hosts or wildcard_host is configured (R-EP-003).
 	CheckHost      bool
 	HostRoots      map[string]string
-	WildcardRoot   string
 	TrustedProxies []string
 	Pool           string
 	MaxInFlight    int
@@ -168,7 +163,6 @@ func (s *Server) resolveEndpoint(name string) ResolvedEndpoint {
 	def := name == DefaultEndpoint
 	r := ResolvedEndpoint{
 		Name: name, Default: def, HostRoots: ep.HostRoots, WildcardHost: strings.ToLower(ep.WildcardHost),
-		WildcardRoot: orStr(ep.WildcardRoot, WildcardRootNone),
 	}
 	if r.HostRoots == nil {
 		r.HostRoots = map[string]string{}
@@ -475,22 +469,13 @@ func (s *Server) validateEndpointHosts(r *Report, base string, ep Endpoint, e Re
 	if ep.WildcardHost != "" && !validWildcardHost(e.WildcardHost) {
 		r.Add(base+".wildcard_host", "%q must be *.<domain> with at least two labels in the domain", ep.WildcardHost)
 	}
-	switch e.WildcardRoot {
-	case WildcardRootNone:
-	case WildcardRootLabel:
-		if ep.WildcardHost == "" {
-			r.Add(base+".wildcard_root", "is label, which needs a wildcard_host")
-		}
-	default:
-		r.Add(base+".wildcard_root", "%q is neither none nor label", ep.WildcardRoot)
-	}
 	for host, repo := range ep.HostRoots {
 		k := base + ".host_roots"
 		if !slices.Contains(e.Hosts, strings.ToLower(host)) {
 			r.Add(k, "%q is not an exact host of endpoint %s (its hosts are %v)", host, e.Name, e.Hosts)
 		}
-		if !repoKeyRe.MatchString(repo) {
-			r.Add(k, "host %q names %q, which is not a repository key (%s)", host, repo, repoKeyRe)
+		if _, err := qname.ParseRepo(repo); err != nil {
+			r.Add(k, "host %q names %q, which is not a repository's qualified name <projectKey>/<repoKey> (%v)", host, repo, err)
 		}
 	}
 }
@@ -611,7 +596,6 @@ func (s *Server) fillEndpointDefaults() {
 				ep.Hosts = []string{}
 			}
 		}
-		ep.WildcardRoot = r.WildcardRoot
 		ep.Surface = r.Surface
 		ep.Auth = EndpointAuth{TokenTypes: r.TokenTypes, BoundTokensOnly: boolp(r.BoundTokensOnly), Anonymous: boolp(r.Anonymous)}
 		ep.Exposure = r.Exposure
