@@ -350,6 +350,7 @@ func objectStoreOutage(t *testing.T, h *npmHAFixture, d time.Duration, deleteRep
 		prober = startS3Prober(t, h, uploadFile, transfer)
 		downAt = time.Now() // the store is unreachable from the first second of s3-stop.sh: its pod leaves the Service when it terminates
 		script(t, "s3-stop.sh")
+		stoppedAt := time.Now() // s3-stop.sh returns when the store's pod is gone; it takes about 26 s, and the outage lasts d from here
 		prober.uploads.Store(true)
 		restarted := false
 		defer func() {
@@ -370,7 +371,7 @@ func objectStoreOutage(t *testing.T, h *npmHAFixture, d time.Duration, deleteRep
 				return false
 			})
 		}
-		for time.Now().Before(downAt.Add(d)) {
+		for time.Now().Before(stoppedAt.Add(d)) {
 			if replacement != "" {
 				// R-STOR-035: the startup check retries without exiting, so the replacement is neither ready nor restarted
 				p := podByName(t, replacement)
@@ -494,7 +495,7 @@ func objectStoreOutage(t *testing.T, h *npmHAFixture, d time.Duration, deleteRep
 	window := haWindow{downAt, recoveredBy}
 	var k6Bad []npmK6Line
 	for _, l := range r.res.K6.Failures {
-		if l.Kind != "tarball" || l.Status != 503 || !window.has(l.At) {
+		if l.Kind != "tarball" || l.Status != 503 || !window.overlaps(l.At, l.At.Add(time.Duration(l.MS)*time.Millisecond)) {
 			k6Bad = append(k6Bad, l)
 		}
 	}
@@ -517,6 +518,12 @@ var networkFailure = regexp.MustCompile(`ECONNRESET|ETIMEDOUT|ECONNREFUSED|socke
 type haWindow struct{ from, to time.Time }
 
 func (w haWindow) has(at time.Time) bool { return !at.Before(w.from) && at.Before(w.to) }
+
+// overlaps is whether a request that started at start and ended at end ran inside the window at any time: a k6 line carries
+// the start, and a request that began before the store went down is cut by the transport timeout after it did.
+func (w haWindow) overlaps(start, end time.Time) bool {
+	return start.Before(w.to) && !end.Before(w.from)
+}
 
 // outageCommands is the npm condition of an object-store outage (Q-STOR-148): a command that does not overlap the window
 // exits 0; one that does may fail, and then only with the registry's 503; every npm ci loop completes a command after the

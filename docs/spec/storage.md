@@ -4276,6 +4276,27 @@ The development agent would revisit it if a client without `Expect` shows up tha
 
 **Applied in the spec:** R-HA-010 (first bullet: a write that sends `Expect: 100-continue`).
 
+### Q-STOR-150 · How long the outage test keeps the store stopped, and what a k6 failure inside it is
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the nightly run 42177273488 failed the 30 s case of `TestHASuite_ObjectStoreOutage` twice. (1) `s3-stop.sh` takes 26 s on a CI runner (the store's pod terminates slowly) and the
+test counted the 30 s from before it, so the store was stopped for 4 s after the script returned: the upload prober, which starts then, made one probe where the test requires at least three
+(R-HA-010, three in five refused before the body). (2) A k6 `tarball 503` of 2,043 ms that started 55 ms before the scale-down (the transport timeout of the request that met the store's
+leaving pod) was counted as outside the outage because the k6 line carries the request's start. Neither is a product defect: the `503` was the registry's, with a replica header.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Lower the number of uploads or the share the test requires | Three in five of at least one | Passes | Weakens R-HA-010's criterion; the 5 min case would not need it |
+| (b) The store is held stopped for d from the return of `s3-stop.sh`; a k6 failure counts as inside the window when its request overlapped it (chosen) | `stoppedAt`, `haWindow.overlaps` | The outage is what its name says and the prober has d seconds, about six upload probes in 30 s; the same overlap rule as the `npm` commands | The 30 s case lasts about 56 s from the first second of the scale-down |
+| (c) Shorten `s3-stop.sh` (a grace period of 0 on the store) | Less to wait | Same count | A different termination than the profile has in the other sets; the stop time is not the harness's to hide |
+
+**Choice:** (b), [ha_suite_test.go](../../test/e2e/ha_suite_test.go) (`objectStoreOutage`, `haWindow.overlaps`).
+
+**Rationale:** the spec's "stopped for 30 s" is a statement about the store being unreachable, which `s3-stop.sh` establishes by returning. The development agent would revisit it if the stop script is made fast enough that both counts agree.
+
+**Applied in the spec:** R-HA-052 (the object-store row: the 30 s and 5 min count from the store being stopped).
+
 ## What this does not cover
 
 ### H-11 · Object-store principals bypass trove's authorization and integrity checks
