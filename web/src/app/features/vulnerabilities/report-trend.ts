@@ -159,6 +159,7 @@ export function trendGeometry(trend: VulnerabilityTrend): TrendGeometry {
 export class ReportTrend {
   private readonly api = inject(VulnerabilitiesApi);
 
+  readonly project = input<readonly string[]>([]);
   readonly repository = input<readonly string[]>([]);
   readonly format = input<readonly string[]>([]);
   readonly range = input<TrendRange>('90');
@@ -170,12 +171,12 @@ export class ReportTrend {
   protected readonly asTable = signal(false);
 
   protected readonly trend = resource({
-    params: () => ({ repository: this.repository(), format: this.format(), range: this.range(), refresh: this.refresh() }),
+    params: () => ({ project: this.project(), repository: this.repository(), format: this.format(), range: this.range(), refresh: this.refresh() }),
     loader: ({ params }) => {
       const to = new Date();
       const from = new Date(to.getTime() - (Number(params.range) - 1) * 86_400_000);
       const day = (d: Date): string => d.toISOString().slice(0, 10);
-      return this.api.trend({ from: day(from), to: day(to), repository: params.repository, format: params.format });
+      return this.api.trend({ from: day(from), to: day(to), project: params.project, repository: params.repository, format: params.format });
     },
   });
   protected readonly failure = computed(() => {

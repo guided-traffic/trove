@@ -252,6 +252,7 @@ export class FakeVulnerabilitiesApi extends VulnerabilitiesApi {
     const out = this.rows.filter(
       (x) =>
         (hasStatus ? f.status!.includes(x.status) : x.status !== 'resolved') &&
+        (!f.project?.length || f.project.includes(x.project)) &&
         (!f.repository?.length || f.repository.includes(x.repository)) &&
         (!f.format?.length || f.format.includes(x.format)) &&
         (!f.package?.length || f.package.includes(x.package)) &&
@@ -414,7 +415,7 @@ export class FakeVulnerabilitiesApi extends VulnerabilitiesApi {
 
   private scoped(scope: ScopeFilters): VulnerabilityFinding[] {
     return this.rows.filter(
-      (f) => OPEN.has(f.status) && (!scope.repository?.length || scope.repository.includes(f.repository)) && (!scope.format?.length || scope.format.includes(f.format)),
+      (f) => OPEN.has(f.status) && (!scope.project?.length || scope.project.includes(f.project)) && (!scope.repository?.length || scope.repository.includes(f.repository)) && (!scope.format?.length || scope.format.includes(f.format)),
     );
   }
 

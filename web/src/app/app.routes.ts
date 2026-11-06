@@ -166,6 +166,13 @@ export const routes: Routes = [
             loadChildren: () =>
               import('./features/endpoints/endpoints.routes').then((m) => m.ENDPOINTS_ROUTES),
           },
+          // >>> T-9 security dashboard
+          {
+            path: 'security',
+            data: wrapper($localize`:@@route.security.title:Security dashboard`),
+            loadChildren: () => import('./features/vulnerabilities/security.routes').then((m) => m.SECURITY_ROUTES),
+          },
+          // <<< T-9 security dashboard
           {
             path: 'audit',
             data: wrapper($localize`:@@route.audit.title:Audit log`),

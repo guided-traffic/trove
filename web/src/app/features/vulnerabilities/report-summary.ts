@@ -3,6 +3,7 @@ import { Component, LOCALE_ID, computed, inject, input, resource } from '@angula
 import { RouterLink } from '@angular/router';
 import { OPEN_STATUSES, VulnerabilitiesApi, VulnerabilitySeverity, VulnerabilitySourceState, VulnerabilitySummary } from '../../api/vulnerabilities-api';
 import { SessionStore } from '../../core/session-store';
+import { VULN_CONTEXT } from './vuln-context';
 import { ErrorNotice } from '../../shared/error-notice';
 import { asApiError, valueOf } from '../../shared/paged-resource';
 import { relativeTime } from '../packages/format-time';
@@ -15,7 +16,7 @@ export interface SummaryCount {
   readonly icon: string;
   readonly cls: string;
   readonly count: number;
-  /** The query of the link; the scope (repository, format) is kept, every other filter is replaced. */
+  /** The query of the link; the scope (project, repository, format) is kept, every other filter is replaced. */
   readonly query: Readonly<Record<string, string | readonly string[]>>;
 }
 
@@ -46,7 +47,7 @@ const SEVERITY_COUNTS: readonly VulnerabilitySeverity[] = ['critical', 'high', '
         <span
           >{{ n.text }}
           @if (canSources()) {
-            <a routerLink="/vulnerabilities/sources" i18n="@@vuln.banner.sources">Open the advisory sources</a>
+            <a [routerLink]="[ctx.base, 'sources']" i18n="@@vuln.banner.sources">Open the advisory sources</a>
           }
         </span>
       </p>
@@ -76,7 +77,9 @@ export class ReportSummary {
   private readonly api = inject(VulnerabilitiesApi);
   private readonly session = inject(SessionStore);
   private readonly locale = inject(LOCALE_ID);
+  protected readonly ctx = inject(VULN_CONTEXT);
 
+  readonly project = input<readonly string[]>([]);
   readonly repository = input<readonly string[]>([]);
   readonly format = input<readonly string[]>([]);
   /** Counts up when the screen changed findings, so that the counts are read again. */
@@ -85,8 +88,8 @@ export class ReportSummary {
   protected readonly canSources = computed(() => this.session.has('settings:read'));
 
   protected readonly summary = resource({
-    params: () => ({ repository: this.repository(), format: this.format(), refresh: this.refresh() }),
-    loader: ({ params }) => this.api.summary({ repository: params.repository, format: params.format }),
+    params: () => ({ project: this.project(), repository: this.repository(), format: this.format(), refresh: this.refresh() }),
+    loader: ({ params }) => this.api.summary({ project: params.project, repository: params.repository, format: params.format }),
   });
   protected readonly sources = resource({
     params: () => (this.canSources() ? { refresh: this.refresh() } : undefined),
@@ -100,6 +103,7 @@ export class ReportSummary {
 
   private readonly scope = computed<Record<string, readonly string[]>>(() => {
     const out: Record<string, readonly string[]> = {};
+    if (this.project().length > 0) out['project'] = this.project();
     if (this.repository().length > 0) out['repository'] = this.repository();
     if (this.format().length > 0) out['format'] = this.format();
     return out;
