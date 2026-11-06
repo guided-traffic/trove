@@ -33,6 +33,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -630,13 +632,13 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 // of the returned caller is answered on that one index.
 func (r *replica) caller(sub authz.Subject, keys ...string) files.Caller {
 	r.t.Helper()
-	acc, err := edge.Begin(context.Background(), r.engine, sub, keys...)
+	acc, err := edge.Begin(context.Background(), r.engine, sub, qrs(keys)...)
 	if err != nil {
 		r.t.Fatalf("begin: %v", err)
 	}
 	return files.Caller{
 		Access: acc, Subject: sub,
-		Recheck: func(ctx context.Context, key string) (files.Access, error) {
+		Recheck: func(ctx context.Context, key qname.Repo) (files.Access, error) {
 			fresh, err := edge.Begin(ctx, r.engine, sub, key)
 			if err != nil {
 				return nil, err

@@ -24,6 +24,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -272,7 +274,7 @@ type sqlRepositories struct{ e *env }
 func (s sqlRepositories) list(ctx context.Context, where string, args ...any) ([]repository.Repository, error) {
 	s.e.mu.Lock()
 	defer s.e.mu.Unlock()
-	rows, err := s.e.admin.Query(ctx, "SELECT id, key, class, format, config, COALESCE(project_id::text, '') FROM repositories "+where+" ORDER BY key", args...)
+	rows, err := s.e.admin.Query(ctx, "SELECT r.id, p.key, r.key, r.class, r.format, r.config, r.project_id::text FROM repositories r JOIN project p ON p.id = r.project_id "+where+" ORDER BY p.key, r.key", args...)
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +284,7 @@ func (s sqlRepositories) list(ctx context.Context, where string, args ...any) ([
 		var r repository.Repository
 		var id int64
 		var class string
-		if err := rows.Scan(&id, &r.Name, &class, &r.Format, &r.Config, &r.ProjectID); err != nil {
+		if err := rows.Scan(&id, &r.Name.Project, &r.Name.Key, &class, &r.Format, &r.Config, &r.ProjectID); err != nil {
 			return nil, err
 		}
 		r.ID, r.Class = strconv.FormatInt(id, 10), repository.Class(class)
@@ -291,8 +293,8 @@ func (s sqlRepositories) list(ctx context.Context, where string, args ...any) ([
 	return out, rows.Err()
 }
 
-func (s sqlRepositories) ByKey(ctx context.Context, key string) (repository.Repository, error) {
-	rs, err := s.list(ctx, "WHERE key = $1", key)
+func (s sqlRepositories) ByName(ctx context.Context, name qname.Repo) (repository.Repository, error) {
+	rs, err := s.list(ctx, "WHERE p.key = $1 AND r.key = $2", name.Project, name.Key)
 	if err != nil {
 		return repository.Repository{}, err
 	}
@@ -304,6 +306,10 @@ func (s sqlRepositories) ByKey(ctx context.Context, key string) (repository.Repo
 
 func (s sqlRepositories) List(ctx context.Context) ([]repository.Repository, error) {
 	return s.list(ctx, "")
+}
+
+func (s sqlRepositories) ListProject(ctx context.Context, project string) ([]repository.Repository, error) {
+	return s.list(ctx, "WHERE p.key = $1", project)
 }
 
 // recorder keeps the audit events of a replica.
@@ -447,9 +453,9 @@ func waitFor(t testing.TB, what string, within time.Duration, cond func() bool) 
 }
 
 func read(repo, pkg, path string) authz.Coordinate {
-	return authz.Coordinate{Repository: repo, Package: pkg, Path: path, Kind: authz.KindArtifact, Actions: []authz.Action{authz.Read}}
+	return authz.Coordinate{Repository: qr(repo), Package: pkg, Path: path, Kind: authz.KindArtifact, Actions: []authz.Action{authz.Read}}
 }
 
 func write(repo, pkg, path string, actions ...authz.Action) authz.Coordinate {
-	return authz.Coordinate{Repository: repo, Package: pkg, Path: path, Kind: authz.KindWrite, Actions: actions}
+	return authz.Coordinate{Repository: qr(repo), Package: pkg, Path: path, Kind: authz.KindWrite, Actions: actions}
 }

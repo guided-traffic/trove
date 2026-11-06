@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/jackc/pgx/v5"
 
 	"github.com/guided-traffic/trove/internal/auth/principal"
@@ -131,7 +133,7 @@ func TestR_STOR_018_DeletingInAVirtualRepositoryIsRefused(t *testing.T) {
 	r.createRepository("generic-v", nil)
 	svc := r.filesOn(r.blobs, fixedConfig{Reader: r.reader, class: repository.Virtual})
 	caller := r.caller(authz.Subject{Kind: principal.KindBreakGlass, ID: uuidV4(), Name: "admin"}, "generic-v")
-	_, err := svc.Delete(context.Background(), caller, files.DeleteRequest{Repo: "generic-v", Path: "x/y.bin"})
+	_, err := svc.Delete(context.Background(), caller, files.DeleteRequest{Repo: qr("generic-v"), Path: "x/y.bin"})
 	ee, ok := errs.As(err)
 	if !ok || ee.Kind != errs.MethodNotAllowed {
 		t.Fatalf("err = %v, want 405", err)
@@ -147,7 +149,7 @@ type fixedConfig struct {
 }
 
 func (f fixedConfig) ByKey(ctx context.Context, key string) (repository.Repository, error) {
-	repo, err := f.Reader.ByKey(ctx, key)
+	repo, err := f.Reader.ByName(ctx, qr(key))
 	if f.cfg != "" {
 		repo.Config = []byte(f.cfg)
 	}
@@ -174,7 +176,7 @@ func TestR_STOR_004_AnUndecodableUploadLimitRefusesTheUpload(t *testing.T) {
 		svc := r.filesOn(r.blobs, fixedConfig{Reader: r.reader, cfg: cfg})
 		caller := r.caller(authz.Subject{Kind: principal.KindBreakGlass, ID: uuidV4(), Name: "admin"}, "generic-lim")
 		_, err := svc.Deploy(context.Background(), caller, files.DeployRequest{
-			Repo: "generic-lim", Path: repository.Cleaned{Path: "x.bin"}, Body: strings.NewReader("data"), ContentLength: 4,
+			Repo: qr("generic-lim"), Path: repository.Cleaned{Path: "x.bin"}, Body: strings.NewReader("data"), ContentLength: 4,
 		})
 		if ee, ok := errs.As(err); !ok || ee.Kind != errs.Internal {
 			t.Fatalf("config %s: err = %v, want a refusal", cfg, err)
@@ -258,12 +260,12 @@ func TestR_STOR_007_NoDecisionWaitsInsideTheCommitTransaction(t *testing.T) {
 		caller := r.caller(authz.Subject{Kind: principal.KindUser, ID: p.ID, Name: p.Name}, "generic-up")
 		caller.Access = probeAccess{Access: caller.Access, probe: probe}
 		recheck := caller.Recheck
-		caller.Recheck = func(ctx context.Context, key string) (files.Access, error) {
+		caller.Recheck = func(ctx context.Context, key qname.Repo) (files.Access, error) {
 			a, err := recheck(ctx, key)
 			return probeAccess{Access: a, probe: probe}, err
 		}
 		_, err := svc.Deploy(context.Background(), caller, files.DeployRequest{
-			Repo: "generic-up", Path: repository.Cleaned{Path: path}, Body: strings.NewReader("mine"), ContentLength: 4,
+			Repo: qr("generic-up"), Path: repository.Cleaned{Path: path}, Body: strings.NewReader("mine"), ContentLength: 4,
 		})
 		return probe, err
 	}

@@ -33,7 +33,7 @@ func TestUpstreamChangeInvalidatesTheCache(t *testing.T) {
 	})
 	r.create(t, "npm-inv", fmt.Sprintf(`{"url":%q}`, stub.srv.URL))
 	patch := func(p string) error {
-		_, err := r.svc.Patch(ctx, caller, "npm-inv", repository.MatchAny(), mergePatch(p))
+		_, err := r.svc.Patch(ctx, caller, qr("npm-inv"), repository.MatchAny(), mergePatch(p))
 		return err
 	}
 

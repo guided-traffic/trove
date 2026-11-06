@@ -37,13 +37,13 @@ func TestCreateReadUpdate(t *testing.T) {
 	var v1 repository.Stored
 	t.Run("R-REPO-009 R-REPO-001 create writes the row, the audit event and the change-log row in one transaction", func(t *testing.T) {
 		before := epoch()
-		st, err := svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "generic-local")))
+		st, err := svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, "generic-local")))
 		if err != nil {
 			t.Fatal(err)
 		}
 		v1 = st
 		r := st.Repository
-		if r.Name != "generic-local" || r.Class != repository.Local || r.Format != "generic" || r.Version != 1 || r.Lifecycle != repository.Active {
+		if r.Name != qr("generic-local") || r.Class != repository.Local || r.Format != "generic" || r.Version != 1 || r.Lifecycle != repository.Active {
 			t.Fatalf("repository = %+v", r)
 		}
 		if st.Document.Layout != "generic" || st.Document.HideExistence != "inherit" || st.Document.IncludePatterns == nil {
@@ -68,7 +68,7 @@ func TestCreateReadUpdate(t *testing.T) {
 
 	t.Run("R-REPO-009 a create is never an upsert", func(t *testing.T) {
 		before := epoch()
-		_, err := svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "generic-local")))
+		_, err := svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, "generic-local")))
 		wantCode(t, err, 409, errs.CodeAlreadyExists)
 		if epoch() != before || len(events()) != 1 {
 			t.Fatal("a refused create left an epoch or an event behind")
@@ -77,14 +77,14 @@ func TestCreateReadUpdate(t *testing.T) {
 
 	t.Run("R-REPO-008 a refused create writes nothing and reports every violation", func(t *testing.T) {
 		before := e.scalar(`SELECT count(*) FROM repositories`)
-		_, err := svc.Create(ctx, caller, []byte(`{"key":"Bad Key","class":"remote","format":"generic","includePatterns":["a//b"]}`))
+		_, err := svc.Create(ctx, caller, "it", []byte(`{"key":"Bad Key","class":"remote","format":"generic","includePatterns":["a//b"]}`))
 		ee := wantCode(t, err, 422, errs.CodeValidation)
 		if len(ee.Fields) != 3 {
 			t.Fatalf("fields = %+v", ee.Fields)
 		}
-		_, err = svc.Create(ctx, caller, []byte(`{"key":"x1","class":"local","format":"generic","excludePattern":[]}`))
+		_, err = svc.Create(ctx, caller, "it", []byte(`{"key":"x1","class":"local","format":"generic","excludePattern":[]}`))
 		wantCode(t, err, 400, errs.CodeInvalid)
-		_, err = svc.Create(ctx, caller, []byte(`{"key":"quick-setup","class":"local","format":"generic"}`))
+		_, err = svc.Create(ctx, caller, "it", []byte(`{"key":"quick-setup","class":"local","format":"generic"}`))
 		wantCode(t, err, 422, "reserved_name")
 		if e.scalar(`SELECT count(*) FROM repositories`) != before {
 			t.Fatal("a refused create wrote a row")
@@ -92,20 +92,20 @@ func TestCreateReadUpdate(t *testing.T) {
 	})
 
 	t.Run("R-REPO-010 read returns the stored document from PostgreSQL", func(t *testing.T) {
-		st, err := svc.Get(ctx, "generic-local")
+		st, err := svc.Get(ctx, qr("generic-local"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		if st.Repository.Version != 1 || st.Document.Key != "generic-local" {
 			t.Fatalf("stored = %+v", st)
 		}
-		_, err = svc.Get(ctx, "nope")
+		_, err = svc.Get(ctx, qr("nope"))
 		wantCode(t, err, 404, errs.CodeRepositoryNotFound)
 	})
 
 	t.Run("R-REPO-011 patch changes only that setting, moves the version and records what changed", func(t *testing.T) {
 		before := epoch()
-		st, err := svc.Patch(ctx, caller, "generic-local", repository.MatchVersion(1), mergePatch(`{"description":"installers","includePatterns":["releases/**"]}`))
+		st, err := svc.Patch(ctx, caller, qr("generic-local"), repository.MatchVersion(1), mergePatch(`{"description":"installers","includePatterns":["releases/**"]}`))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -131,31 +131,31 @@ func TestCreateReadUpdate(t *testing.T) {
 		if changedVersion() != 2 {
 			t.Fatalf("the change of the update carries version %d", changedVersion())
 		}
-		again, err := svc.Get(ctx, "generic-local")
+		again, err := svc.Get(ctx, qr("generic-local"))
 		if err != nil || again.Repository.Version != 2 || again.Document.Description != "installers" {
 			t.Fatalf("read back %+v, %v", again, err)
 		}
 	})
 
 	t.Run("R-REPO-011 a stale If-Match is 412 with the current version, If-Match * passes", func(t *testing.T) {
-		_, err := svc.Patch(ctx, caller, "generic-local", repository.MatchVersion(1), mergePatch(`{"description":"stale"}`))
+		_, err := svc.Patch(ctx, caller, qr("generic-local"), repository.MatchVersion(1), mergePatch(`{"description":"stale"}`))
 		wantCode(t, err, 412, errs.CodePreconditionFailed)
 		var sv *errs.StaleRevision
 		if !errors.As(err, &sv) || sv.Current != 2 {
 			t.Fatalf("cause = %v", err)
 		}
-		st, err := svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), mergePatch(`{"description":"blind"}`))
+		st, err := svc.Patch(ctx, caller, qr("generic-local"), repository.MatchAny(), mergePatch(`{"description":"blind"}`))
 		if err != nil || st.Repository.Version != 3 {
 			t.Fatalf("blind write: %+v, %v", st, err)
 		}
-		_, err = svc.Patch(ctx, caller, "nope", repository.MatchAny(), mergePatch(`{}`))
+		_, err = svc.Patch(ctx, caller, qr("nope"), repository.MatchAny(), mergePatch(`{}`))
 		wantCode(t, err, 404, errs.CodeRepositoryNotFound)
 	})
 
 	t.Run("R-REPO-001 R-REPO-011 key, class and format are immutable", func(t *testing.T) {
 		for member, value := range map[string]string{"format": `"npm"`, "class": `"remote"`, "key": `"other"`} {
 			before := epoch()
-			_, err := svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), mergePatch(`{"`+member+`":`+value+`}`))
+			_, err := svc.Patch(ctx, caller, qr("generic-local"), repository.MatchAny(), mergePatch(`{"`+member+`":`+value+`}`))
 			ee := wantCode(t, err, 422, errs.CodeValidation)
 			if len(ee.Fields) != 1 || ee.Fields[0].Pointer != "/"+member {
 				t.Fatalf("%s: fields = %+v", member, ee.Fields)
@@ -165,15 +165,15 @@ func TestCreateReadUpdate(t *testing.T) {
 			}
 		}
 		// The same value is not a change.
-		if _, err := svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), mergePatch(`{"format":"generic","class":"local","key":"generic-local"}`)); err != nil {
+		if _, err := svc.Patch(ctx, caller, qr("generic-local"), repository.MatchAny(), mergePatch(`{"format":"generic","class":"local","key":"generic-local"}`)); err != nil {
 			t.Fatal(err)
 		}
 	})
 
 	t.Run("R-REPO-011 an update that changes nothing writes nothing", func(t *testing.T) {
-		cur, _ := svc.Get(ctx, "generic-local")
+		cur, _ := svc.Get(ctx, qr("generic-local"))
 		nEvents, before := len(events()), epoch()
-		st, err := svc.Patch(ctx, caller, "generic-local", repository.MatchVersion(cur.Repository.Version), mergePatch(`{"description":"blind"}`))
+		st, err := svc.Patch(ctx, caller, qr("generic-local"), repository.MatchVersion(cur.Repository.Version), mergePatch(`{"description":"blind"}`))
 		if err != nil || st.Repository.Version != cur.Repository.Version {
 			t.Fatalf("no-op: %+v, %v", st, err)
 		}
@@ -183,33 +183,33 @@ func TestCreateReadUpdate(t *testing.T) {
 	})
 
 	t.Run("R-REPO-011 null removes a setting, an array is replaced as a whole", func(t *testing.T) {
-		st, err := svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), mergePatch(`{"description":null,"includePatterns":["a/**","b/**"]}`))
+		st, err := svc.Patch(ctx, caller, qr("generic-local"), repository.MatchAny(), mergePatch(`{"description":null,"includePatterns":["a/**","b/**"]}`))
 		if err != nil || st.Document.Description != "" || len(st.Document.IncludePatterns) != 2 {
 			t.Fatalf("stored = %+v, %v", st.Document, err)
 		}
-		st, err = svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), mergePatch(`{"includePatterns":["c/**"]}`))
+		st, err = svc.Patch(ctx, caller, qr("generic-local"), repository.MatchAny(), mergePatch(`{"includePatterns":["c/**"]}`))
 		if err != nil || len(st.Document.IncludePatterns) != 1 || st.Document.IncludePatterns[0] != "c/**" {
 			t.Fatalf("stored = %+v, %v", st.Document, err)
 		}
 	})
 
 	t.Run("R-REPO-011 a patch that makes the document invalid reports 422 and changes nothing", func(t *testing.T) {
-		cur, _ := svc.Get(ctx, "generic-local")
-		_, err := svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), mergePatch(`{"priorityMember":true,"local":{"packageOwnership":"enforce"},"excludePatterns":["a**b"]}`))
+		cur, _ := svc.Get(ctx, qr("generic-local"))
+		_, err := svc.Patch(ctx, caller, qr("generic-local"), repository.MatchAny(), mergePatch(`{"priorityMember":true,"local":{"packageOwnership":"enforce"},"excludePatterns":["a**b"]}`))
 		ee := wantCode(t, err, 422, errs.CodeValidation)
 		if len(ee.Fields) != 3 {
 			t.Fatalf("fields = %+v", ee.Fields)
 		}
-		_, err = svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), mergePatch(`{"unknownSetting":1}`))
+		_, err = svc.Patch(ctx, caller, qr("generic-local"), repository.MatchAny(), mergePatch(`{"unknownSetting":1}`))
 		wantCode(t, err, 400, errs.CodeInvalid)
-		after, _ := svc.Get(ctx, "generic-local")
+		after, _ := svc.Get(ctx, qr("generic-local"))
 		if after.Repository.Version != cur.Repository.Version {
 			t.Fatal("a refused update moved the version")
 		}
 	})
 
 	t.Run("R-REPO-011 PUT replaces the document, omitted settings revert to defaults", func(t *testing.T) {
-		st, err := svc.Replace(ctx, caller, "generic-local", repository.MatchAny(), []byte(`{"description":"only this","disabled":true}`))
+		st, err := svc.Replace(ctx, caller, qr("generic-local"), repository.MatchAny(), []byte(`{"description":"only this","disabled":true}`))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -221,16 +221,16 @@ func TestCreateReadUpdate(t *testing.T) {
 	t.Run("R-OPS-015 a change never exists without its audit record", func(t *testing.T) {
 		defer e.failAudit("")()
 		before := epoch()
-		_, err := svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "audit-fails")))
+		_, err := svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, "audit-fails")))
 		if err == nil {
 			t.Fatal("create succeeded although the audit insert failed")
 		}
-		cur, _ := svc.Get(ctx, "generic-local")
-		_, err = svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), mergePatch(`{"description":"never"}`))
+		cur, _ := svc.Get(ctx, qr("generic-local"))
+		_, err = svc.Patch(ctx, caller, qr("generic-local"), repository.MatchAny(), mergePatch(`{"description":"never"}`))
 		if err == nil {
 			t.Fatal("update succeeded although the audit insert failed")
 		}
-		after, _ := svc.Get(ctx, "generic-local")
+		after, _ := svc.Get(ctx, qr("generic-local"))
 		if e.scalar(`SELECT count(*) FROM repositories WHERE key = 'audit-fails'`) != 0 || after.Repository.Version != cur.Repository.Version || epoch() != before {
 			t.Fatal("a rolled-back write left a row, a version or an epoch behind")
 		}
@@ -248,7 +248,7 @@ func TestList(t *testing.T) {
 		`{"key":"build-outputs","class":"local","format":"generic","description":"CI artifacts"}`,
 		`{"key":"old-stuff","class":"local","format":"generic","disabled":true}`,
 	} {
-		if _, err := rep.svc.Create(ctx, caller, []byte(body)); err != nil {
+		if _, err := rep.svc.Create(ctx, caller, "it", []byte(body)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -259,7 +259,7 @@ func TestList(t *testing.T) {
 		}
 		var out []string
 		for _, it := range res.Items {
-			out = append(out, it.Repository.Name)
+			out = append(out, it.Repository.Name.Key)
 		}
 		return out
 	}
@@ -282,13 +282,13 @@ func TestList(t *testing.T) {
 		var all []string
 		after := ""
 		for range 5 {
-			res, err := rep.svc.List(ctx, repository.ListFilter{After: after, Limit: 2})
+			res, err := rep.svc.List(ctx, repository.ListFilter{After: qr(after), Limit: 2})
 			if err != nil {
 				t.Fatal(err)
 			}
 			for _, it := range res.Items {
-				all = append(all, it.Repository.Name)
-				after = it.Repository.Name
+				all = append(all, it.Repository.Name.Key)
+				after = it.Repository.Name.Key
 			}
 			if !res.HasMore {
 				break

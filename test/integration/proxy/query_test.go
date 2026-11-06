@@ -607,7 +607,7 @@ func TestR_ARCH_013_ACopyOfTheCurrentConfigurationOutlivesTheChange(t *testing.T
 			done <- err
 		}()
 		waitFor(t, "the fill to reach the upstream", 5*time.Second, func() bool { return slow.Load() == 1 })
-		update(other.Repo.Name)
+		update(other.Repo.Name.Key)
 		poll()
 		release()
 		if err := <-done; err != nil {

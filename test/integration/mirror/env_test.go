@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/jackc/pgx/v5"
 
 	"github.com/guided-traffic/trove/internal/app"
@@ -339,7 +341,7 @@ func (e *env) waitMaxBytes(rep *testenv.Replica, want int64) {
 func (e *env) waitMirror(rep *testenv.Replica, what string, cond func(s repository.RemoteSettings) bool) {
 	e.t.Helper()
 	testenv.WaitFor(e.t, "the snapshot to hold "+what, 30*time.Second, func() bool {
-		r, err := rep.App.Repositories().ByKey(context.Background(), repoKey)
+		r, err := rep.App.Repositories().ByName(context.Background(), testenvName(repoKey))
 		if err != nil {
 			return false
 		}
@@ -347,3 +349,6 @@ func (e *env) waitMirror(rep *testenv.Replica, what string, cond func(s reposito
 		return ok && cond(s)
 	})
 }
+
+// testenvName is the name of a repository key in the default project of the stack.
+func testenvName(key string) qname.Repo { return qname.Repo{Project: testenv.DefaultProject, Key: key} }

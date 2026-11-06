@@ -71,7 +71,7 @@ func TestR_AUTHZ_028_IdentityAndRepositoryWritesAdvanceTheEpoch(t *testing.T) {
 		{"delete a group a policy names", func() error { return manager.DeleteGroup(ctx, caller, "team-old") }, true},
 		{"delete a service account a policy names", func() error { return manager.DeleteServiceAccount(ctx, caller, "ci-bot") }, true},
 		{"delete a repository a policy selects by key", func() error {
-			_, err := repos.Delete(ctx, repository.Caller{}, "virt-a", false)
+			_, err := repos.Delete(ctx, repository.Caller{}, qr("virt-a"), false)
 			return err
 		}, true},
 	}

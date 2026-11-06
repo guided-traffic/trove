@@ -359,7 +359,7 @@ func (r *rig) api(rep *testenv.Replica, method, path string, body any, hdr ...st
 func (r *rig) waitAdmits(rep *testenv.Replica, name string) {
 	r.t.Helper()
 	testenv.WaitFor(r.t, "the snapshot to admit "+name, 30*time.Second, func() bool {
-		repo, err := rep.App.Repositories().ByKey(context.Background(), repoKey)
+		repo, err := rep.App.Repositories().ByName(context.Background(), testenvName(repoKey))
 		return err == nil && repo.Admits(name, false)
 	})
 }

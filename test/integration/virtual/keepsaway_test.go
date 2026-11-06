@@ -43,7 +43,7 @@ func TestR_NUGET_016_AClaimWithholdsATermOnEveryReplica(t *testing.T) {
 			t.Fatalf("%s: a term is kept away before any claim exists", r.name)
 		}
 	}
-	if _, err := a.svc.PutClaims(context.Background(), caller, "team-local", repository.MatchAny(),
+	if _, err := a.svc.PutClaims(context.Background(), caller, qr("team-local"), repository.MatchAny(),
 		repository.ClaimInput{Claims: []repository.ClaimEntry{{Pattern: "partner-*"}}}, allowGlobal); err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestR_NUGET_016_AClaimWithholdsATermOnEveryReplica(t *testing.T) {
 		}
 	})
 	t.Run("a global claim does, while the remote refusal is on", func(t *testing.T) {
-		if _, err := a.svc.PutClaims(context.Background(), caller, "team-local", repository.MatchAny(),
+		if _, err := a.svc.PutClaims(context.Background(), caller, qr("team-local"), repository.MatchAny(),
 			repository.ClaimInput{Claims: []repository.ClaimEntry{{Pattern: "partner-*", Scope: repository.ScopeGlobal}}}, allowGlobal); err != nil {
 			t.Fatal(err)
 		}

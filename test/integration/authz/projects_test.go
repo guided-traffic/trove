@@ -375,7 +375,7 @@ func TestR_AUTHZ_026_ProjectAdministratorsHoldManageOnTheProject(t *testing.T) {
 			s    authz.Subject
 			want int
 		}{"session": {aliceSub, 1}, "admin token": {admin, 1}, "inherit token": {inherit, 0}, "service account": {bot, 0}} {
-			if got := len(p.a.engine.ProjectsOn(idx, tc.s)); got != tc.want {
+			if got := len(p.a.engine.MembershipsOn(idx, tc.s)); got != tc.want {
 				t.Errorf("%s administers %d projects, want %d", name, got, tc.want)
 			}
 		}
@@ -519,7 +519,7 @@ func TestR_AUTHZ_026_ProjectPolicyIsInvisibleToTheOldBuild(t *testing.T) {
 				old = append(old, e)
 			}
 		}
-		snap.Entries, snap.Projects, snap.ProjectAdmins = old, nil, nil
+		snap.Entries, snap.Projects, snap.ProjectMembers = old, nil, nil
 		if p.decides(authz.BuildIndex(snap, nil, quiet), devs, "web-npm") {
 			t.Fatal("a build that reads authz_policy_entry only grants the project policy")
 		}

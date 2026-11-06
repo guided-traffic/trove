@@ -38,7 +38,7 @@ func TestR_AUTHZ_026_RepositoryEventsNameTheProject(t *testing.T) {
 	}
 
 	t.Run("R-AUTHZ-026 the create of a repository into a project names the project", func(t *testing.T) {
-		if _, err := rep.svc.CreateIn(ctx, caller, []byte(fmt.Sprintf(genericBody, "acme-files")), repository.Write{Project: &acme}); err != nil {
+		if _, err := rep.svc.Create(ctx, caller, acme, []byte(fmt.Sprintf(genericBody, "acme-files"))); err != nil {
 			t.Fatal(err)
 		}
 		if d := details("acme-files", repository.EventCreated); d["project"] != "acme" {
@@ -46,13 +46,13 @@ func TestR_AUTHZ_026_RepositoryEventsNameTheProject(t *testing.T) {
 		}
 	})
 	t.Run("R-AUTHZ-026 the update and the delete name it as well", func(t *testing.T) {
-		if _, err := rep.svc.Patch(ctx, caller, "acme-files", repository.MatchAny(), mergePatch(`{"description":"files"}`)); err != nil {
+		if _, err := rep.svc.Patch(ctx, caller, qr("acme-files"), repository.MatchAny(), mergePatch(`{"description":"files"}`)); err != nil {
 			t.Fatal(err)
 		}
 		if d := details("acme-files", repository.EventUpdated); d["project"] != "acme" {
 			t.Fatalf("details %v", d)
 		}
-		if _, err := rep.svc.Delete(ctx, caller, "acme-files", false); err != nil {
+		if _, err := rep.svc.Delete(ctx, caller, qr("acme-files"), false); err != nil {
 			t.Fatal(err)
 		}
 		if d := details("acme-files", repository.EventDeleted); d["project"] != "acme" {
@@ -60,7 +60,7 @@ func TestR_AUTHZ_026_RepositoryEventsNameTheProject(t *testing.T) {
 		}
 	})
 	t.Run("R-OPS-016 a repository without a project carries no member project", func(t *testing.T) {
-		if _, err := rep.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "plain-files"))); err != nil {
+		if _, err := rep.svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, "plain-files"))); err != nil {
 			t.Fatal(err)
 		}
 		if d := details("plain-files", repository.EventCreated); d["project"] != nil {

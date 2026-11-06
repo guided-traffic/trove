@@ -142,7 +142,7 @@ func TestUpstreamTestOperations(t *testing.T) {
 	caller := repository.Caller{}
 	create := func(body string) {
 		t.Helper()
-		if _, err := svc.Create(context.Background(), caller, []byte(body)); err != nil {
+		if _, err := svc.Create(context.Background(), caller, "it", []byte(body)); err != nil {
 			t.Fatal(err)
 		}
 	}

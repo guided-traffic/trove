@@ -62,7 +62,7 @@ func (r *replica) mustCreate(key, class, format, extra string) repository.Stored
 			extra = remote + "," + extra
 		}
 	}
-	st, err := r.svc.Create(context.Background(), caller, doc(key, class, format, extra))
+	st, err := r.svc.Create(context.Background(), caller, "it", doc(key, class, format, extra))
 	if err != nil {
 		r.t.Fatalf("create %s: %v", key, err)
 	}
@@ -85,7 +85,7 @@ func fieldPointers(t *testing.T, err error) map[string]string {
 func memberKeysOf(r repository.Repository) []string {
 	var out []string
 	for _, m := range r.Members() {
-		out = append(out, m.Name)
+		out = append(out, m.Name.Key)
 	}
 	return out
 }
@@ -105,7 +105,7 @@ func TestVirtualMembers(t *testing.T) {
 	a.mustCreate("other-local", "local", "otherfmt", "")
 
 	t.Run("R-REPO-008 R-REPO-017 a member of another format and a missing key are two invalid_member entries", func(t *testing.T) {
-		_, err := a.svc.Create(ctx, caller, doc("bad-all", "virtual", "pkgfmt", `"virtual":{"members":["other-local","ghost"]}`))
+		_, err := a.svc.Create(ctx, caller, "it", doc("bad-all", "virtual", "pkgfmt", `"virtual":{"members":["other-local","ghost"]}`))
 		ee := wantCode(t, err, 422, errs.CodeValidation)
 		if len(ee.Fields) != 2 {
 			t.Fatalf("fields = %+v", ee.Fields)
@@ -135,7 +135,7 @@ func TestVirtualMembers(t *testing.T) {
 		if n := e.scalar(`SELECT count(*) FROM virtual_deploy_targets`); n != 1 {
 			t.Fatalf("%d deploy target rows", n)
 		}
-		got, err := a.svc.Get(ctx, "pkg-all")
+		got, err := a.svc.Get(ctx, qr("pkg-all"))
 		if err != nil || !slices.Equal(got.Document.Virtual.Members, v.Members) {
 			t.Fatalf("Get = %+v, %v", got.Document.Virtual, err)
 		}
@@ -146,12 +146,12 @@ func TestVirtualMembers(t *testing.T) {
 
 	t.Run("R-REPO-017 the snapshot carries the members in order and the deploy target", func(t *testing.T) {
 		waitFor(t, "B to know the virtual repository", 3*poll, func() bool {
-			r, err := b.reader.ByKey(ctx, "pkg-all")
+			r, err := b.reader.ByName(ctx, qr("pkg-all"))
 			return err == nil && slices.Equal(memberKeysOf(r), []string{"pkg-local", "pkg-remote"})
 		})
-		r, _ := b.reader.ByKey(ctx, "pkg-all")
+		r, _ := b.reader.ByName(ctx, qr("pkg-all"))
 		tgt, ok := r.DeployTarget()
-		if !ok || tgt.Name != "pkg-local" {
+		if !ok || tgt.Name != qr("pkg-local") {
 			t.Fatalf("deploy target = %v, %v", tgt.Name, ok)
 		}
 		vs, _ := r.Virtual()
@@ -162,13 +162,13 @@ func TestVirtualMembers(t *testing.T) {
 
 	t.Run("R-REPO-017 a change of the member order is visible on both replicas within 2 seconds, without Valkey", func(t *testing.T) {
 		start := time.Now()
-		if _, err := a.svc.Patch(ctx, caller, "pkg-all", repository.MatchAny(),
+		if _, err := a.svc.Patch(ctx, caller, qr("pkg-all"), repository.MatchAny(),
 			mergePatch(`{"virtual":{"members":["pkg-remote","pkg-local"]}}`)); err != nil {
 			t.Fatal(err)
 		}
 		for _, rep := range []*replica{a, b} {
 			waitFor(t, rep.name+" to show the new order", 2*time.Second, func() bool {
-				r, err := rep.reader.ByKey(ctx, "pkg-all")
+				r, err := rep.reader.ByName(ctx, qr("pkg-all"))
 				return err == nil && slices.Equal(memberKeysOf(r), []string{"pkg-remote", "pkg-local"})
 			})
 		}
@@ -176,7 +176,7 @@ func TestVirtualMembers(t *testing.T) {
 			t.Fatalf("the change took %s", d)
 		}
 		// The routing reads the same snapshot: the order is the one a request is resolved in.
-		r, _ := b.reader.ByKey(ctx, "pkg-all")
+		r, _ := b.reader.ByName(ctx, qr("pkg-all"))
 		route, err := b.routing.Route(ctx, r, repository.RouteRequest{Name: "left-pad"})
 		if err != nil {
 			t.Fatal(err)
@@ -187,8 +187,8 @@ func TestVirtualMembers(t *testing.T) {
 	})
 
 	t.Run("R-REPO-011 a patch that changes only the members moves the version and records an update", func(t *testing.T) {
-		before, _ := a.svc.Get(ctx, "pkg-all")
-		st, err := a.svc.Patch(ctx, caller, "pkg-all", repository.MatchVersion(before.Repository.Version),
+		before, _ := a.svc.Get(ctx, qr("pkg-all"))
+		st, err := a.svc.Patch(ctx, caller, qr("pkg-all"), repository.MatchVersion(before.Repository.Version),
 			mergePatch(`{"virtual":{"members":["pkg-local","pkg-remote"]}}`))
 		if err != nil {
 			t.Fatal(err)
@@ -203,28 +203,28 @@ func TestVirtualMembers(t *testing.T) {
 			t.Fatalf("event = %s %s", ev.Type, ev.Details)
 		}
 		// The same document again changes nothing.
-		again, err := a.svc.Patch(ctx, caller, "pkg-all", repository.MatchAny(), mergePatch(`{"virtual":{"members":["pkg-local","pkg-remote"]}}`))
+		again, err := a.svc.Patch(ctx, caller, qr("pkg-all"), repository.MatchAny(), mergePatch(`{"virtual":{"members":["pkg-local","pkg-remote"]}}`))
 		if err != nil || again.Repository.Version != st.Repository.Version {
 			t.Fatalf("version %d, %v", again.Repository.Version, err)
 		}
 	})
 
 	t.Run("R-REPO-021 R-REPO-008 a member list without the deploy target is invalid_deploy_target", func(t *testing.T) {
-		_, err := a.svc.Patch(ctx, caller, "pkg-all", repository.MatchAny(), mergePatch(`{"virtual":{"members":["pkg-remote"]}}`))
+		_, err := a.svc.Patch(ctx, caller, qr("pkg-all"), repository.MatchAny(), mergePatch(`{"virtual":{"members":["pkg-remote"]}}`))
 		wantCode(t, err, 422, errs.CodeValidation)
 		if f := fieldPointers(t, err); f["/virtual/deployTarget"] != "invalid_deploy_target" {
 			t.Fatalf("fields = %v", f)
 		}
 	})
 	t.Run("R-REPO-021 a remote repository cannot be the deploy target", func(t *testing.T) {
-		_, err := a.svc.Patch(ctx, caller, "pkg-all", repository.MatchAny(), mergePatch(`{"virtual":{"deployTarget":"pkg-remote"}}`))
+		_, err := a.svc.Patch(ctx, caller, qr("pkg-all"), repository.MatchAny(), mergePatch(`{"virtual":{"deployTarget":"pkg-remote"}}`))
 		if f := fieldPointers(t, err); f["/virtual/deployTarget"] != "invalid_deploy_target" {
 			t.Fatalf("fields = %v", f)
 		}
 	})
 	t.Run("R-REPO-021 a deploy target is removed with null and the repository becomes read-only", func(t *testing.T) {
 		a.mustCreate("pkg-ro", "virtual", "pkgfmt", `"virtual":{"members":["pkg-local"],"deployTarget":"pkg-local"}`)
-		st, err := a.svc.Patch(ctx, caller, "pkg-ro", repository.MatchAny(), mergePatch(`{"virtual":{"deployTarget":null}}`))
+		st, err := a.svc.Patch(ctx, caller, qr("pkg-ro"), repository.MatchAny(), mergePatch(`{"virtual":{"deployTarget":null}}`))
 		if err != nil || st.Document.Virtual.DeployTarget != nil {
 			t.Fatalf("document = %+v, %v", st.Document.Virtual, err)
 		}
@@ -233,20 +233,20 @@ func TestVirtualMembers(t *testing.T) {
 		}
 	})
 	t.Run("R-REPO-017 a virtual repository takes no virtual member before nesting exists", func(t *testing.T) {
-		_, err := a.svc.Create(ctx, caller, doc("pkg-nest", "virtual", "pkgfmt", `"virtual":{"members":["pkg-all"]}`))
+		_, err := a.svc.Create(ctx, caller, "it", doc("pkg-nest", "virtual", "pkgfmt", `"virtual":{"members":["pkg-all"]}`))
 		if f := fieldPointers(t, err); f["/virtual/members/0"] != errs.CodeInvalidMember {
 			t.Fatalf("fields = %v", f)
 		}
 	})
 	t.Run("R-REPO-017 repositories.max_virtual_members bounds the member list", func(t *testing.T) {
-		_, err := a.svc.Create(ctx, caller, doc("pkg-big", "virtual", "pkgfmt", `"virtual":{"members":["pkg-local","pkg-remote","pkg-team","pkg-ro"]}`))
+		_, err := a.svc.Create(ctx, caller, "it", doc("pkg-big", "virtual", "pkgfmt", `"virtual":{"members":["pkg-local","pkg-remote","pkg-team","pkg-ro"]}`))
 		if f := fieldPointers(t, err); f["/virtual/members"] != "out_of_range" {
 			t.Fatalf("fields = %v", f)
 		}
 	})
 
 	t.Run("R-REPO-013 a repository that a virtual repository lists cannot be deleted without detach", func(t *testing.T) {
-		_, err := a.svc.Delete(ctx, caller, "pkg-local", false)
+		_, err := a.svc.Delete(ctx, caller, qr("pkg-local"), false)
 		ee := wantCode(t, err, 409, errs.CodeRepositoryReferenced)
 		if !strings.Contains(ee.Detail, "pkg-all") || !strings.Contains(ee.Detail, "pkg-ro") {
 			t.Fatalf("detail = %q names neither virtual repository", ee.Detail)
@@ -257,12 +257,12 @@ func TestVirtualMembers(t *testing.T) {
 	})
 	t.Run("R-REPO-013 R-REPO-021 detach removes the references, moves the versions and records updates in one transaction", func(t *testing.T) {
 		w := e.newReplica("virt-w", replicaOpts{role: "worker", poll: poll, catalog: pkgCatalog(), maxMembers: 3})
-		before, _ := a.svc.Get(ctx, "pkg-all")
-		res, err := a.svc.Delete(ctx, caller, "pkg-local", true)
+		before, _ := a.svc.Get(ctx, qr("pkg-all"))
+		res, err := a.svc.Delete(ctx, caller, qr("pkg-local"), true)
 		if err != nil || res.JobID == "" {
 			t.Fatalf("delete = %+v, %v", res, err)
 		}
-		got, _ := a.svc.Get(ctx, "pkg-all")
+		got, _ := a.svc.Get(ctx, qr("pkg-all"))
 		if !slices.Equal(got.Document.Virtual.Members, []string{"pkg-remote"}) || got.Document.Virtual.DeployTarget != nil {
 			t.Fatalf("virtual = %+v", got.Document.Virtual)
 		}
@@ -273,7 +273,7 @@ func TestVirtualMembers(t *testing.T) {
 			t.Fatalf("%d member rows remain", n)
 		}
 		waitFor(t, "B to drop the member", 3*poll, func() bool {
-			r, err := b.reader.ByKey(ctx, "pkg-all")
+			r, err := b.reader.ByName(ctx, qr("pkg-all"))
 			return err == nil && slices.Equal(memberKeysOf(r), []string{"pkg-remote"})
 		})
 		if j := e.waitJob(w.queue, res.JobID); j.State != "succeeded" {
@@ -286,13 +286,13 @@ func TestVirtualMembers(t *testing.T) {
 	t.Run("R-REPO-017 a repository being deleted is not accepted as a member", func(t *testing.T) {
 		a.mustCreate("pkg-dying", "local", "pkgfmt", "")
 		e.exec(`UPDATE repositories SET lifecycle = 'deleting' WHERE key = 'pkg-dying'`)
-		_, err := a.svc.Patch(ctx, caller, "pkg-all", repository.MatchAny(), mergePatch(`{"virtual":{"members":["pkg-remote","pkg-dying"]}}`))
+		_, err := a.svc.Patch(ctx, caller, qr("pkg-all"), repository.MatchAny(), mergePatch(`{"virtual":{"members":["pkg-remote","pkg-dying"]}}`))
 		if f := fieldPointers(t, err); f["/virtual/members/1"] != errs.CodeInvalidMember {
 			t.Fatalf("fields = %v", f)
 		}
 	})
 	t.Run("R-REPO-013 the row of a virtual repository goes with its member rows", func(t *testing.T) {
-		res, err := a.svc.Delete(ctx, caller, "pkg-ro", false)
+		res, err := a.svc.Delete(ctx, caller, qr("pkg-ro"), false)
 		if err != nil || !res.Done {
 			t.Fatalf("delete = %+v, %v", res, err)
 		}
@@ -305,7 +305,7 @@ func TestVirtualMembers(t *testing.T) {
 func keysOf(repos []repository.Repository) []string {
 	var out []string
 	for _, r := range repos {
-		out = append(out, r.Name)
+		out = append(out, r.Name.Key)
 	}
 	return out
 }
@@ -373,7 +373,7 @@ func TestVirtualPinsAndWarnings(t *testing.T) {
 		var r repository.Repository
 		waitFor(t, "B to know the pin rules", 3*poll, func() bool {
 			var err error
-			r, err = b.reader.ByKey(ctx, "v-partner")
+			r, err = b.reader.ByName(ctx, qr("v-partner"))
 			vs, ok := r.Virtual()
 			return err == nil && ok && len(vs.Pinning.Rules) == 2
 		})
@@ -385,11 +385,11 @@ func TestVirtualPinsAndWarnings(t *testing.T) {
 			t.Fatalf("route = %+v", route)
 		}
 		// Editing the rules reaches B as well.
-		if _, err := a.svc.Patch(ctx, caller, "v-partner", repository.MatchAny(), mergePatch(`{"virtual":{"pinning":{"rules":[]}}}`)); err != nil {
+		if _, err := a.svc.Patch(ctx, caller, qr("v-partner"), repository.MatchAny(), mergePatch(`{"virtual":{"pinning":{"rules":[]}}}`)); err != nil {
 			t.Fatal(err)
 		}
 		waitFor(t, "B to drop the pin rules", 3*poll, func() bool {
-			r, err := b.reader.ByKey(ctx, "v-partner")
+			r, err := b.reader.ByName(ctx, qr("v-partner"))
 			vs, _ := r.Virtual()
 			return err == nil && len(vs.Pinning.Rules) == 0
 		})
@@ -400,15 +400,15 @@ func TestVirtualPinsAndWarnings(t *testing.T) {
 	t.Run("R-REPO-023 a pin rule member that is deleted is detached from the rule", func(t *testing.T) {
 		a.mustCreate("rem-gone", "remote", "pkgfmt", "")
 		a.mustCreate("v-gone", "virtual", "pkgfmt", `"virtual":{"members":["loc-auto","rem-gone"],"pinning":{"rules":[{"packages":["x"],"members":["rem-gone"]}]}}`)
-		if _, err := a.svc.Delete(ctx, caller, "rem-gone", false); err == nil {
+		if _, err := a.svc.Delete(ctx, caller, qr("rem-gone"), false); err == nil {
 			t.Fatal("deleted a repository that a pin rule names")
 		}
 		w := e.newReplica("pin-w", replicaOpts{role: "worker", poll: poll, catalog: pkgCatalog()})
-		res, err := a.svc.Delete(ctx, caller, "rem-gone", true)
+		res, err := a.svc.Delete(ctx, caller, qr("rem-gone"), true)
 		if err != nil {
 			t.Fatal(err)
 		}
-		st, _ := a.svc.Get(ctx, "v-gone")
+		st, _ := a.svc.Get(ctx, qr("v-gone"))
 		rules := st.Document.Virtual.Pinning.Rules
 		if len(rules) != 1 || len(rules[0].Members) != 0 || !slices.Equal(st.Document.Virtual.Members, []string{"loc-auto"}) {
 			t.Fatalf("virtual = %+v", st.Document.Virtual)

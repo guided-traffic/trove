@@ -357,7 +357,7 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 			t.Errorf("state=inactive: %v", got)
 		}
 		// A project filter selects the repositories assigned to the project; an unknown key selects none (Q-REPO-22).
-		e.project("acme", true, false)
+		e.project("acme")
 		if res := a.postJSON("admin", "/api/v1/repositories", map[string]any{"key": "acme-one", "class": "local", "format": "generic", "project": "acme"}); res.status != 201 {
 			t.Fatalf("%d %s", res.status, res.body)
 		}

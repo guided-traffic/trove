@@ -27,6 +27,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -306,7 +308,7 @@ func (f *fakeShapes) set(subject, key string, sh bastionmain.Shape) {
 	f.shapes[subject][key] = sh
 }
 
-func (f *fakeShapes) Shapes(_ context.Context, idx *authz.Index, subject authz.Subject, keys []string) (map[string]bastionmain.Shape, error) {
+func (f *fakeShapes) Shapes(_ context.Context, idx *authz.Index, subject authz.Subject, keys []qname.Repo) (map[qname.Repo]bastionmain.Shape, error) {
 	if idx == nil {
 		return nil, errors.New("the check asked for shapes without the request's index")
 	}
@@ -317,9 +319,9 @@ func (f *fakeShapes) Shapes(_ context.Context, idx *authz.Index, subject authz.S
 	if subject.Anonymous {
 		id = ""
 	}
-	out := map[string]bastionmain.Shape{}
+	out := map[qname.Repo]bastionmain.Shape{}
 	for _, k := range keys {
-		if sh, ok := f.shapes[id][k]; ok {
+		if sh, ok := f.shapes[id][k.String()]; ok {
 			out[k] = sh
 		} else {
 			out[k] = bastionmain.Shape{Read: iface.ReadNone, Status: http.StatusNotFound}

@@ -48,5 +48,5 @@ func (e *evaluatorPort) EvaluateMiss(_ context.Context, m vuln.Miss) (vuln.Block
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.calls = append(e.calls, m)
-	return e.blocks[key(m.RepoKey, m.Name, m.Version)], nil
+	return e.blocks[key(m.Repo.Key, m.Name, m.Version)], nil
 }

@@ -62,7 +62,7 @@ func TestR_STOR_017_AListingOfAMostlyHiddenFolder(t *testing.T) {
 
 	t.Run("R-STOR-017 a page that skips 100,000 hidden entries costs a few dozen queries", func(t *testing.T) {
 		run.n.Store(0)
-		page, err := svcFiles.Children(context.Background(), caller, "generic-wide", files.ChildrenQuery{Folders: true, Limit: 1})
+		page, err := svcFiles.Children(context.Background(), caller, qr("generic-wide"), files.ChildrenQuery{Folders: true, Limit: 1})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -77,7 +77,7 @@ func TestR_STOR_017_AListingOfAMostlyHiddenFolder(t *testing.T) {
 				t.Fatalf("the cursor %q names a hidden entry", page.Next)
 			}
 		})
-		next, err := svcFiles.Children(context.Background(), caller, "generic-wide", files.ChildrenQuery{Folders: true, Limit: 1, After: page.Next})
+		next, err := svcFiles.Children(context.Background(), caller, qr("generic-wide"), files.ChildrenQuery{Folders: true, Limit: 1, After: page.Next})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -87,7 +87,7 @@ func TestR_STOR_017_AListingOfAMostlyHiddenFolder(t *testing.T) {
 	})
 	t.Run("R-AUTHZ-016 a position that names no item of the repository is an invalid cursor", func(t *testing.T) {
 		other := e.number("SELECT max(id) + 1000 FROM items")
-		_, err := svcFiles.Children(context.Background(), caller, "generic-wide", files.ChildrenQuery{Folders: true, Limit: 1, After: "\x00" + strconv.FormatInt(other, 10)})
+		_, err := svcFiles.Children(context.Background(), caller, qr("generic-wide"), files.ChildrenQuery{Folders: true, Limit: 1, After: "\x00" + strconv.FormatInt(other, 10)})
 		if err == nil || !strings.Contains(err.Error(), "cursor") {
 			t.Fatalf("%v", err)
 		}

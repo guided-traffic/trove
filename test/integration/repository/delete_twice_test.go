@@ -17,27 +17,27 @@ func TestDeleteTwice(t *testing.T) {
 	e := newStackEnv(t)
 	web := e.newReplica("twice-web", stackOpts{})
 	ctx := context.Background()
-	if _, err := web.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "doomed"))); err != nil {
+	if _, err := web.svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, "doomed"))); err != nil {
 		t.Fatal(err)
 	}
-	first, err := web.svc.Delete(ctx, caller, "doomed", false)
+	first, err := web.svc.Delete(ctx, caller, qr("doomed"), false)
 	if err != nil || first.JobID == "" || first.Done {
 		t.Fatalf("first delete = %+v, %v", first, err)
 	}
 	t.Run("R-REPO-013 from the first transaction on the repository is deleting and its key is taken", func(t *testing.T) {
-		got, err := web.svc.Get(ctx, "doomed")
+		got, err := web.svc.Get(ctx, qr("doomed"))
 		if err != nil || got.Repository.Lifecycle != repository.Deleting || got.Repository.Version != 2 {
 			t.Fatalf("Get = %+v, %v", got.Repository, err)
 		}
-		_, err = web.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "doomed")))
+		_, err = web.svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, "doomed")))
 		wantCode(t, err, 409, errs.CodeAlreadyExists)
-		if r, err := web.reader.ByKey(ctx, "doomed"); err != nil || r.Lifecycle != repository.Deleting {
+		if r, err := web.reader.ByName(ctx, qr("doomed")); err != nil || r.Lifecycle != repository.Deleting {
 			t.Fatalf("ByKey = %+v, %v", r, err)
 		}
 	})
 	t.Run("R-REPO-013 a repeated delete while the job runs answers with the same job", func(t *testing.T) {
 		for _, detach := range []bool{false, true} {
-			again, err := web.svc.Delete(ctx, caller, "doomed", detach)
+			again, err := web.svc.Delete(ctx, caller, qr("doomed"), detach)
 			if err != nil || again.JobID != first.JobID || again.Done {
 				t.Fatalf("again = %+v, %v; first job %s", again, err, first.JobID)
 			}

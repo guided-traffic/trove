@@ -59,7 +59,7 @@ func TestR_AUTH_020_ProjectServiceAccountsOfTheDomain(t *testing.T) {
 	a := e.newReplica("a", replicaOpts{tokens: func(c *config.AuthTokens) { c.SAT.AllowNonExpiring = true }})
 	ctx := context.Background()
 	create := func(name, project string) (principal.ServiceAccount, error) {
-		return a.manager.CreateServiceAccount(ctx, admin, principal.NewServiceAccount{Name: name, Project: project})
+		return a.manager.CreateProjectServiceAccount(ctx, admin, project, principal.NewServiceAccount{Name: name})
 	}
 
 	t.Run("R-AUTH-020 R-AUTHZ-026 a project service account carries its project and its events name it", func(t *testing.T) {
@@ -86,7 +86,7 @@ func TestR_AUTH_020_ProjectServiceAccountsOfTheDomain(t *testing.T) {
 		wantCode(t, err, 422, errs.CodeProjectPrefixRequired)
 		_, err = create("web-x", "nope")
 		wantCode(t, err, 422, errs.CodeUnknownProject)
-		_, err = a.manager.CreateServiceAccount(ctx, admin, principal.NewServiceAccount{Name: "web-adm", Project: "web", Admin: true})
+		_, err = a.manager.CreateProjectServiceAccount(ctx, admin, "web", principal.NewServiceAccount{Name: "web-adm", Admin: true})
 		wantCode(t, err, 400, errs.CodeRoleNotAllowed)
 		// The key and the hyphen alone name nothing: the trigger (AI003) refuses it, and the
 		// code answers before it does (Q-AUTH-193).
@@ -276,10 +276,10 @@ func TestR_AUTHZ_026_ProjectAdministratorServiceAccountsAndTokens(t *testing.T) 
 	e.projectAdmin("lab", lena.ID)
 	// A global account and an account of another project, which wanda must not reach.
 	a.serviceAccount("ext-bot")
-	if _, err := a.manager.CreateServiceAccount(context.Background(), admin, principal.NewServiceAccount{Name: "shop-bot", Project: "shop"}); err != nil {
+	if _, err := a.manager.CreateProjectServiceAccount(context.Background(), admin, "shop", principal.NewServiceAccount{Name: "shop-bot"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.manager.CreateServiceAccount(context.Background(), admin, principal.NewServiceAccount{Name: "lab-bot", Project: "lab"}); err != nil {
+	if _, err := a.manager.CreateProjectServiceAccount(context.Background(), admin, "lab", principal.NewServiceAccount{Name: "lab-bot"}); err != nil {
 		t.Fatal(err)
 	}
 	wandaTok, lenaTok := a.projectAdminToken(wanda), a.projectAdminToken(lena)

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/virtual"
@@ -142,7 +144,7 @@ func TestR_REPO_023_ClaimsReachTheMergedEntriesOfEveryReplica(t *testing.T) {
 	if err != nil || len(vt.Versions(m.Bytes)) != 2 || b.mergedEntries() != 1 {
 		t.Fatalf("before the claim: %s (%v) entries %d", m.Bytes, err, b.mergedEntries())
 	}
-	if _, err := a.svc.PutClaims(context.Background(), caller, "team-local", repository.MatchAny(),
+	if _, err := a.svc.PutClaims(context.Background(), caller, qr("team-local"), repository.MatchAny(),
 		repository.ClaimInput{Claims: []repository.ClaimEntry{{Pattern: "@acme/*"}}}, allowGlobal); err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +175,7 @@ func TestR_REPO_019_ExplanationAgainstTheRealRouting(t *testing.T) {
 	a.publish("team-local", "@acme/util", "1.0.0")
 	upstreamDoc(remote, "@acme/util", "9.9.9")
 	upstreamDoc(remote, "lodash", "4.17.21")
-	if _, err := a.svc.PutClaims(context.Background(), caller, "team-local", repository.MatchAny(),
+	if _, err := a.svc.PutClaims(context.Background(), caller, qr("team-local"), repository.MatchAny(),
 		repository.ClaimInput{Claims: []repository.ClaimEntry{{Pattern: "@acme/*"}}}, allowGlobal); err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +202,7 @@ func TestR_REPO_019_ExplanationAgainstTheRealRouting(t *testing.T) {
 			ex = explain("all", "@acme/util", "alice")
 			return ex.DecidedBy != nil
 		})
-		if ex.DecidedBy.Claim != "@acme/*" || !slices.Equal(ex.DecidedBy.ClaimedBy, []string{"team-local"}) {
+		if ex.DecidedBy.Claim != "@acme/*" || !slices.Equal(ex.DecidedBy.ClaimedBy, []qname.Repo{qr("team-local")}) {
 			t.Fatalf("decidedBy = %+v", ex.DecidedBy)
 		}
 		if d := decisions(ex); d["team-local"] != "hit" || d["upstream"] != "claimed-elsewhere" {
@@ -233,7 +235,7 @@ func TestR_REPO_019_ExplanationAgainstTheRealRouting(t *testing.T) {
 
 	t.Run("R-REPO-021 the deploy target is the member the document names; without one the repository is read-only", func(t *testing.T) {
 		tgt, err := a.engine.DeployTarget(a.repo("all"))
-		if err != nil || tgt.Name != "team-local" {
+		if err != nil || tgt.Name != qr("team-local") {
 			t.Fatalf("target %q err %v", tgt.Name, err)
 		}
 		_, err = a.engine.DeployTarget(a.repo("all2"))
@@ -305,7 +307,7 @@ func TestR_REPO_048_ShadowingCheckAgainstTheRealExposureSet(t *testing.T) {
 	})
 
 	t.Run("R-REPO-048 a manual claim of the local repository that covers the name satisfies the check", func(t *testing.T) {
-		if _, err := a.svc.PutClaims(context.Background(), caller, "team-local", repository.MatchAny(),
+		if _, err := a.svc.PutClaims(context.Background(), caller, qr("team-local"), repository.MatchAny(),
 			repository.ClaimInput{Claims: []repository.ClaimEntry{{Pattern: "left-pad"}}}, allowGlobal); err != nil {
 			t.Fatal(err)
 		}

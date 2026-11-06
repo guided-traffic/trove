@@ -121,7 +121,7 @@ func (w *ownWorld) ownership(r *replica) *authz.Ownership {
 // beginIndex takes the index a request decides on, at the epoch of the last write.
 func (w *ownWorld) beginIndex(t *testing.T, r *replica, s authz.Subject, keys ...string) (*authz.Index, error) {
 	s.MinEpoch = w.epoch
-	return r.engine.Begin(t.Context(), s, keys...)
+	return r.engine.Begin(t.Context(), s, qrs(keys)...)
 }
 
 func (w *ownWorld) begin(t *testing.T, r *replica, s authz.Subject, keys ...string) *authz.Index {
@@ -186,7 +186,7 @@ func statusOf(err error) int {
 // owners reads the owners of a name the way GET …/owners does.
 func (w *ownWorld) owners(t *testing.T, repo, name string) authz.PackageOwners {
 	t.Helper()
-	got, err := w.oa.Owners(t.Context(), w.begin(t, w.a, w.root, repo), w.root, repo, name)
+	got, err := w.oa.Owners(t.Context(), w.begin(t, w.a, w.root, repo), w.root, qr(repo), name)
 	if err != nil {
 		t.Fatalf("owners of %s: %v", name, err)
 	}
@@ -488,10 +488,10 @@ func TestR_AUTHZ_019_OwnerOperations(t *testing.T) {
 	w := newOwnWorld(t)
 	ctx := t.Context()
 	add := func(r *replica, s authz.Subject, repo, name, ref string) (authz.Owner, error) {
-		return w.ownership(r).AddOwner(ctx, w.begin(t, r, s, repo), s, repo, name, ref)
+		return w.ownership(r).AddOwner(ctx, w.begin(t, r, s, repo), s, qr(repo), name, ref)
 	}
 	remove := func(r *replica, s authz.Subject, repo, name, ref string, release bool) error {
-		return w.ownership(r).RemoveOwner(ctx, w.begin(t, r, s, repo), s, repo, name, ref, release)
+		return w.ownership(r).RemoveOwner(ctx, w.begin(t, r, s, repo), s, qr(repo), name, ref, release)
 	}
 
 	t.Run("R-AUTHZ-019 a holder of manage pre-assigns a name nobody has published", func(t *testing.T) {
@@ -654,20 +654,20 @@ func TestR_AUTHZ_019_OwnerOperations(t *testing.T) {
 		}
 	})
 	t.Run("R-AUTHZ-016 reading the owners needs read; a refusal is the 404 of a missing name", func(t *testing.T) {
-		_, refused := w.oa.Owners(ctx, w.begin(t, w.a, w.carol, "npm-internal"), w.carol, "npm-internal", "@web/shared")
+		_, refused := w.oa.Owners(ctx, w.begin(t, w.a, w.carol, "npm-internal"), w.carol, qr("npm-internal"), "@web/shared")
 		if statusOf(refused) != 404 || codeOf(refused) != errs.CodeNotFound {
 			t.Fatalf("refused %v", refused)
 		}
 		if got := w.owners(t, "npm-internal", "@never/published"); got.State != authz.StateUnclaimed || len(got.Owners) != 0 {
 			t.Fatalf("an unclaimed name reads back %+v", got)
 		}
-		if _, err := w.oa.Owners(ctx, w.begin(t, w.a, w.alice, "npm-loose"), w.alice, "npm-loose", "@web/x"); err != nil {
+		if _, err := w.oa.Owners(ctx, w.begin(t, w.a, w.alice, "npm-loose"), w.alice, qr("npm-loose"), "@web/x"); err != nil {
 			t.Fatalf("a repository that does not enforce still has an ownership view: %v", err)
 		}
 	})
 	t.Run("R-AUTHZ-019 the names an identity owns, for its members and for policies:read", func(t *testing.T) {
 		list := func(s authz.Subject, ref string, after authz.OwnedCursor, limit int) ([]authz.OwnedPackage, *authz.OwnedCursor, error) {
-			return w.oa.OwnedBy(ctx, w.begin(t, w.a, s), s, ref, "", after, limit)
+			return w.oa.OwnedBy(ctx, w.begin(t, w.a, s), s, ref, qr(""), after, limit)
 		}
 		if _, err := add(w.a, w.root, "npm-secret", "@web/hidden", "group:team-web"); err != nil {
 			t.Fatal(err)
@@ -680,7 +680,7 @@ func TestR_AUTHZ_019_OwnerOperations(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, p := range page {
-				if p.Repository != "npm-internal" || p.Format != "npm" {
+				if p.Repository != qr("npm-internal") || p.Format != "npm" {
 					t.Fatalf("item %+v", p)
 				}
 				names = append(names, p.Package)
@@ -702,7 +702,7 @@ func TestR_AUTHZ_019_OwnerOperations(t *testing.T) {
 			t.Fatalf("a caller outside the group without policies:read: %v", err)
 		}
 		page, _, err := list(w.root, "group:team-web", authz.OwnedCursor{}, 10)
-		if err != nil || !slices.ContainsFunc(page, func(p authz.OwnedPackage) bool { return p.Package == "@web/hidden" && p.Repository == "npm-secret" }) {
+		if err != nil || !slices.ContainsFunc(page, func(p authz.OwnedPackage) bool { return p.Package == "@web/hidden" && p.Repository == qr("npm-secret") }) {
 			t.Fatalf("policies:read: %+v, %v", page, err)
 		}
 	})
@@ -774,7 +774,7 @@ func TestR_AUTHZ_018_DeletedRepositoryTakesItsOwnershipRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	repos := w.deletionWorker(t)
-	if _, err := repos.Delete(t.Context(), repository.Caller{}, "npm-doomed", false); err != nil {
+	if _, err := repos.Delete(t.Context(), repository.Caller{}, qr("npm-doomed"), false); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "the deletion job removing the repository row", 15*time.Second, func() bool {

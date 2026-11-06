@@ -139,7 +139,7 @@ func (f *commitFixture) extraRow(mark string) func(context.Context, meta.Tx, ite
 func (f *commitFixture) commit(t *testing.T, path, body string, mut func(*items.CommitSpec)) (items.CommitResult, error) {
 	t.Helper()
 	ctx := context.Background()
-	repo, err := f.r.reader.ByKey(ctx, "generic-local")
+	repo, err := f.r.reader.ByName(ctx, qr("generic-local"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestR_ARCH_009_ItemStoreRunsTheStorageHooksInItsTransaction(t *testing.T) {
 		if len(ev) != 1 || ev[0].Origin != items.OriginUpload || ev[0].Item.ID != res.Item.ID || ev[0].Item.Path != "pkg/a.txt" {
 			t.Fatalf("event = %+v", ev)
 		}
-		if ev[0].Repo.Name != "generic-local" || ev[0].Repo.Class != "local" || ev[0].Repo.Format != "generic" || ev[0].Replaced {
+		if ev[0].Repo.Name != qr("generic-local") || ev[0].Repo.Class != "local" || ev[0].Repo.Format != "generic" || ev[0].Replaced {
 			t.Errorf("repository of the event = %+v", ev[0].Repo)
 		}
 		if !f.hooks.rowInTx[0] {
@@ -383,7 +383,7 @@ func TestR_ARCH_008_DeleteRunsOnItemsRemoved(t *testing.T) {
 			t.Fatalf("events = %+v", hooks.removed)
 		}
 		ev := hooks.removed[0]
-		if ev.Items[0].Item.Path != "one/x.bin" || ev.Repo.Name != "bulk" || ev.Repo.Format != "generic" || ev.Reason != "delete" {
+		if ev.Items[0].Item.Path != "one/x.bin" || ev.Repo.Name != qr("bulk") || ev.Repo.Format != "generic" || ev.Reason != "delete" {
 			t.Errorf("event = %+v", ev)
 		}
 	})
@@ -410,7 +410,7 @@ func TestR_ARCH_008_DeleteRunsOnItemsRemoved(t *testing.T) {
 			if len(ev.Items) > 2 {
 				t.Errorf("a batch of %d files, storage.delete.batch_size is 2", len(ev.Items))
 			}
-			if ev.Repo.Name != "bulk" || ev.Repo.Class != "local" || ev.Repo.Format != "generic" || ev.Reason != "delete" {
+			if ev.Repo.Name != qr("bulk") || ev.Repo.Class != "local" || ev.Repo.Format != "generic" || ev.Reason != "delete" {
 				t.Errorf("event = %+v", ev)
 			}
 		}

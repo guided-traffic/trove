@@ -36,7 +36,7 @@ func TestSnapshotAcrossReplicas(t *testing.T) {
 		}
 		before := b.runner.n.Load()
 		for _, key := range []string{"Upper", "a", "-x", "a..b", "x.", "npm~cache", "with space", ""} {
-			_, err := b.reader.ByKey(ctx, key)
+			_, err := b.reader.ByName(ctx, qr(key))
 			wantCode(t, err, 404, errs.CodeRepositoryNotFound)
 		}
 		if b.runner.n.Load() != before {
@@ -51,14 +51,14 @@ func TestSnapshotAcrossReplicas(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				if _, err := b.reader.ByKey(ctx, "unknown-key"); err == nil {
+				if _, err := b.reader.ByName(ctx, qr("unknown-key")); err == nil {
 					t.Error("unknown key found")
 				}
 			}()
 		}
 		wg.Wait()
 		for range 1000 {
-			if _, err := b.reader.ByKey(ctx, "unknown-key"); err == nil {
+			if _, err := b.reader.ByName(ctx, qr("unknown-key")); err == nil {
 				t.Fatal("unknown key found")
 			}
 		}
@@ -71,12 +71,12 @@ func TestSnapshotAcrossReplicas(t *testing.T) {
 		// B has never heard of the key, and its poll interval is far longer than this
 		// test waits: the lookup finds the row in PostgreSQL and polls the change log
 		// itself.
-		if _, err := a.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "fresh-key"))); err != nil {
+		if _, err := a.svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, "fresh-key"))); err != nil {
 			t.Fatal(err)
 		}
 		start := time.Now()
-		r, err := b.reader.ByKey(ctx, "fresh-key")
-		if err != nil || r.Name != "fresh-key" || r.Format != "generic" || r.Lifecycle != repository.Active {
+		r, err := b.reader.ByName(ctx, qr("fresh-key"))
+		if err != nil || r.Name != qr("fresh-key") || r.Format != "generic" || r.Lifecycle != repository.Active {
 			t.Fatalf("ByKey = %+v, %v", r, err)
 		}
 		if d := time.Since(start); d > poll {
@@ -84,7 +84,7 @@ func TestSnapshotAcrossReplicas(t *testing.T) {
 		}
 		// And it is in the snapshot now: no further query.
 		before := b.runner.n.Load()
-		if _, err := b.reader.ByKey(ctx, "fresh-key"); err != nil || b.runner.n.Load() != before {
+		if _, err := b.reader.ByName(ctx, qr("fresh-key")); err != nil || b.runner.n.Load() != before {
 			t.Fatalf("second lookup: %v, %d queries", err, b.runner.n.Load()-before)
 		}
 	})
@@ -92,51 +92,51 @@ func TestSnapshotAcrossReplicas(t *testing.T) {
 	t.Run("R-API-052 a key that missed shortly before its creation appears within the poll bound", func(t *testing.T) {
 		// The documented exception: B answers 404 from the negative entry until the
 		// creation's change evicts it.
-		if _, err := a.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "unknown-key"))); err != nil {
+		if _, err := a.svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, "unknown-key"))); err != nil {
 			t.Fatal(err)
 		}
 		waitFor(t, "B to find the repository", within, func() bool {
-			r, err := b.reader.ByKey(ctx, "unknown-key")
-			return err == nil && r.Name == "unknown-key"
+			r, err := b.reader.ByName(ctx, qr("unknown-key"))
+			return err == nil && r.Name == qr("unknown-key")
 		})
 	})
 
 	t.Run("R-REPO-049 R-ARCH-018 a pattern change on A reaches B within the poll interval", func(t *testing.T) {
-		if _, err := a.svc.Patch(ctx, caller, "unknown-key", repository.MatchAny(), mergePatch(`{"includePatterns":["releases/**"]}`)); err != nil {
+		if _, err := a.svc.Patch(ctx, caller, qr("unknown-key"), repository.MatchAny(), mergePatch(`{"includePatterns":["releases/**"]}`)); err != nil {
 			t.Fatal(err)
 		}
 		waitFor(t, "B to honour the include pattern", within, func() bool {
-			r, err := b.reader.ByKey(ctx, "unknown-key")
+			r, err := b.reader.ByName(ctx, qr("unknown-key"))
 			return err == nil && !r.Admits("tmp/x.bin", false) && r.Admits("releases/1.0/x.bin", false)
 		})
 		waitFor(t, "the second replica to honour the include pattern", within, func() bool {
-			r, err := b2.reader.ByKey(ctx, "unknown-key")
+			r, err := b2.reader.ByName(ctx, qr("unknown-key"))
 			return err == nil && !r.Admits("tmp/x.bin", false) && r.Admits("releases/1.0/x.bin", false)
 		})
 		waitFor(t, "A to honour the include pattern", within, func() bool {
-			r, err := a.reader.ByKey(ctx, "unknown-key")
+			r, err := a.reader.ByName(ctx, qr("unknown-key"))
 			return err == nil && !r.Admits("tmp/x.bin", false)
 		})
 	})
 
 	t.Run("R-REPO-004 disabled and requireAuthentication reach the read model of the other replica", func(t *testing.T) {
-		if _, err := a.svc.Patch(ctx, caller, "unknown-key", repository.MatchAny(), mergePatch(`{"disabled":true,"requireAuthentication":true,"hideExistence":"false"}`)); err != nil {
+		if _, err := a.svc.Patch(ctx, caller, qr("unknown-key"), repository.MatchAny(), mergePatch(`{"disabled":true,"requireAuthentication":true,"hideExistence":"false"}`)); err != nil {
 			t.Fatal(err)
 		}
 		waitFor(t, "B to see the settings", within, func() bool {
-			r, err := b.reader.ByKey(ctx, "unknown-key")
+			r, err := b.reader.ByName(ctx, qr("unknown-key"))
 			return err == nil && r.Disabled && r.RequireAuthentication && r.HideExistence == "false"
 		})
 	})
 
 	t.Run("R-REPO-049 the list is the same on both replicas", func(t *testing.T) {
-		if _, err := a.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "second-one"))); err != nil {
+		if _, err := a.svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, "second-one"))); err != nil {
 			t.Fatal(err)
 		}
 		for name, reader := range map[string]repository.Reader{"B": b.reader, "the second replica": b2.reader} {
 			waitFor(t, name+" to list both repositories", within, func() bool {
 				l, err := reader.List(ctx)
-				return err == nil && len(l) == 3 && l[0].Name == "fresh-key" && l[1].Name == "second-one" && l[2].Name == "unknown-key"
+				return err == nil && len(l) == 3 && l[0].Name == qr("fresh-key") && l[1].Name == qr("second-one") && l[2].Name == qr("unknown-key")
 			})
 		}
 	})
@@ -147,15 +147,15 @@ func TestSnapshotAcrossReplicas(t *testing.T) {
 		if _, err := b.reader.List(ctx); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := a.svc.Patch(ctx, caller, "second-one", repository.MatchAny(), mergePatch(`{"disabled":true}`)); err != nil {
+		if _, err := a.svc.Patch(ctx, caller, qr("second-one"), repository.MatchAny(), mergePatch(`{"disabled":true}`)); err != nil {
 			t.Fatal(err)
 		}
 		waitFor(t, "B to see the change", within, func() bool {
-			r, err := b.reader.ByKey(ctx, "second-one")
+			r, err := b.reader.ByName(ctx, qr("second-one"))
 			return err == nil && r.Disabled
 		})
 		for range 50 {
-			if r, _ := b.reader.ByKey(ctx, "second-one"); !r.Disabled {
+			if r, _ := b.reader.ByName(ctx, qr("second-one")); !r.Disabled {
 				t.Fatal("B served the old snapshot after it applied the change")
 			}
 		}

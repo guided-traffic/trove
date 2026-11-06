@@ -51,12 +51,12 @@ func TestH164_DeletingARepositoryRecordsItsExposureRules(t *testing.T) {
 	}
 
 	t.Run("H-164 the deletion job records the rules of the repository, one event each", func(t *testing.T) {
-		if _, err := web.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "doomed-rules"))); err != nil {
+		if _, err := web.svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, "doomed-rules"))); err != nil {
 			t.Fatal(err)
 		}
 		rule("doomed-rules", "customers", "rel")
 		rule("doomed-rules", "partners", "rel")
-		if _, err := web.svc.Delete(ctx, caller, "doomed-rules", false); err != nil {
+		if _, err := web.svc.Delete(ctx, caller, qr("doomed-rules"), false); err != nil {
 			t.Fatal(err)
 		}
 		waitFor(t, "the rules gone with the repository", 10*time.Second, func() bool {
@@ -73,10 +73,10 @@ func TestH164_DeletingARepositoryRecordsItsExposureRules(t *testing.T) {
 
 	t.Run("H-164 a repository without rules records no exposure event", func(t *testing.T) {
 		before := len(exposureEvents())
-		if _, err := web.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "doomed-plain"))); err != nil {
+		if _, err := web.svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, "doomed-plain"))); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := web.svc.Delete(ctx, caller, "doomed-plain", false); err != nil {
+		if _, err := web.svc.Delete(ctx, caller, qr("doomed-plain"), false); err != nil {
 			t.Fatal(err)
 		}
 		waitFor(t, "the repository gone", 10*time.Second, func() bool {
@@ -88,14 +88,14 @@ func TestH164_DeletingARepositoryRecordsItsExposureRules(t *testing.T) {
 	})
 
 	t.Run("H-164 a failing recorder keeps the repository and its rules (one transaction)", func(t *testing.T) {
-		if _, err := web.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "doomed-atomic"))); err != nil {
+		if _, err := web.svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, "doomed-atomic"))); err != nil {
 			t.Fatal(err)
 		}
 		rule("doomed-atomic", "customers", "atomic")
 		// Only the rule event is refused: the deletion itself is recorded by the web
 		// replica and has to get through.
 		lift := e.failAudit(exposureDeleted)
-		if _, err := web.svc.Delete(ctx, caller, "doomed-atomic", false); err != nil {
+		if _, err := web.svc.Delete(ctx, caller, qr("doomed-atomic"), false); err != nil {
 			t.Fatal(err)
 		}
 		time.Sleep(2 * time.Second) // the job fails and retries while the recorder refuses

@@ -184,18 +184,18 @@ func (g grants) can(sub authz.Subject, key string) bool {
 }
 
 func (g grants) MemberUsableOn(_ context.Context, _ *authz.Index, sub authz.Subject, member qname.Repo, _ authz.Coordinate) (bool, bool) {
-	read := g.can(sub, member)
+	read := g.can(sub, member.Key)
 	return read, read && g.fills[sub.Name]
 }
 
 func (g grants) ReadableOn(_ context.Context, _ *authz.Index, sub authz.Subject, keys []qname.Repo) ([]qname.Repo, error) {
 	var out []string
 	for _, k := range keys {
-		if g.can(sub, k) {
-			out = append(out, k)
+		if g.can(sub, k.Key) {
+			out = append(out, k.Key)
 		}
 	}
-	return out, nil
+	return qrs(out), nil
 }
 
 func (g grants) HoldsOn(*authz.Index, authz.Subject, string) bool { return false }
@@ -333,7 +333,7 @@ func (r *replica) create(key, class, extra string) repository.Repository {
 	if extra != "" {
 		doc += "," + extra
 	}
-	if _, err := r.svc.Create(context.Background(), caller, []byte(doc+"}")); err != nil {
+	if _, err := r.svc.Create(context.Background(), caller, "it", []byte(doc+"}")); err != nil {
 		r.t.Fatalf("create %s: %v", key, err)
 	}
 	return r.repo(key)
@@ -342,9 +342,9 @@ func (r *replica) create(key, class, extra string) repository.Repository {
 // repo reads a repository from this replica's snapshot, waiting for the change log to bring it.
 func (r *replica) repo(key string) repository.Repository {
 	r.t.Helper()
-	v, err := r.reader.ByKey(context.Background(), key)
+	v, err := r.reader.ByName(context.Background(), qr(key))
 	if err != nil {
-		r.t.Fatalf("ByKey(%s) on %s: %v", key, r.name, err)
+		r.t.Fatalf("ByName(%s) on %s: %v", key, r.name, err)
 	}
 	return v
 }

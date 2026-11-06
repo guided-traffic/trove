@@ -27,7 +27,7 @@ func TestR_VULN_015_EvaluateMissAppliesTheRuleOfTheDownloadAndWritesNothing(t *t
 	ctx := context.Background()
 	miss := func(repo, name, version string) vuln.Block {
 		t.Helper()
-		b, err := svc.EvaluateMiss(ctx, vuln.Miss{RepoKey: repo, Format: "npm", Name: name, Version: version})
+		b, err := svc.EvaluateMiss(ctx, vuln.Miss{Repo: qr(repo), Format: "npm", Name: name, Version: version})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -78,7 +78,7 @@ func TestR_VULN_015_EvaluateMissAppliesTheRuleOfTheDownloadAndWritesNothing(t *t
 	e.st.Exec(`UPDATE vuln_finding SET status_before_resolution = 'blocked' WHERE package_name = 'trove-test-vuln'`)
 	e.st.Exec(`DELETE FROM vuln_advisory WHERE id = 'GHSA-aaaa-aaaa-0001'`)
 	noData := e.service(evaluate.Options{})
-	if b, err := noData.EvaluateMiss(ctx, vuln.Miss{RepoKey: "npm-remote", Format: "npm", Name: "trove-test-vuln", Version: "1.0.0"}); err != nil || b.Reason != vuln.BlockTriage {
+	if b, err := noData.EvaluateMiss(ctx, vuln.Miss{Repo: qr("npm-remote"), Format: "npm", Name: "trove-test-vuln", Version: "1.0.0"}); err != nil || b.Reason != vuln.BlockTriage {
 		t.Errorf("without data: %+v, %v", b, err)
 	}
 	if b := miss("npm-remote", "trove-test-vuln", "1.0.0"); b.Active() {
@@ -87,7 +87,7 @@ func TestR_VULN_015_EvaluateMissAppliesTheRuleOfTheDownloadAndWritesNothing(t *t
 
 	// The mode report returns the same condition without refusing.
 	report := e.service(evaluate.Options{States: complete, Enforcement: vuln.EnforceReport})
-	if b, err := report.EvaluateMiss(ctx, vuln.Miss{RepoKey: "npm-remote", Format: "npm", Name: "trove-test-mal", Version: "1.0.0"}); err != nil || !b.Active() || b.Enforced || b.Refused() {
+	if b, err := report.EvaluateMiss(ctx, vuln.Miss{Repo: qr("npm-remote"), Format: "npm", Name: "trove-test-mal", Version: "1.0.0"}); err != nil || !b.Active() || b.Enforced || b.Refused() {
 		t.Errorf("report mode: %+v, %v", b, err)
 	}
 }
@@ -106,7 +106,7 @@ func TestR_VULN_015_EvaluateMissReadsTheRepositoryPolicyAndTheDataState(t *testi
 		t.Fatalf("patch: %d %s", a.Status, a.Body)
 	}
 	waitSnapshot(t, e, func() bool {
-		b, err := svc.EvaluateMiss(ctx, vuln.Miss{RepoKey: "npm-remote", Format: "npm", Name: "trove-test-mal", Version: "1.0.0"})
+		b, err := svc.EvaluateMiss(ctx, vuln.Miss{Repo: qr("npm-remote"), Format: "npm", Name: "trove-test-mal", Version: "1.0.0"})
 		return err == nil && !b.Active()
 	})
 
@@ -114,13 +114,13 @@ func TestR_VULN_015_EvaluateMissReadsTheRepositoryPolicyAndTheDataState(t *testi
 		t.Fatalf("patch: %d %s", a.Status, a.Body)
 	}
 	waitSnapshot(t, e, func() bool {
-		b, err := cold.EvaluateMiss(ctx, vuln.Miss{RepoKey: "npm-remote", Format: "npm", Name: "left-pad", Version: "1.3.0"})
+		b, err := cold.EvaluateMiss(ctx, vuln.Miss{Repo: qr("npm-remote"), Format: "npm", Name: "left-pad", Version: "1.3.0"})
 		return err == nil && b.Reason == vuln.BlockMissingData && b.Code() == "vulnerability_data_missing"
 	})
-	if b, err := svc.EvaluateMiss(ctx, vuln.Miss{RepoKey: "npm-remote", Format: "npm", Name: "left-pad", Version: "1.3.0"}); err != nil || b.Active() {
+	if b, err := svc.EvaluateMiss(ctx, vuln.Miss{Repo: qr("npm-remote"), Format: "npm", Name: "left-pad", Version: "1.3.0"}); err != nil || b.Active() {
 		t.Errorf("with complete data: %+v, %v", b, err)
 	}
-	if b, err := svc.EvaluateMiss(ctx, vuln.Miss{RepoKey: "npm-remote", Format: "npm", Name: "trove-test-mal", Version: "1.0.0"}); err != nil || b.Reason != vuln.BlockMalicious {
+	if b, err := svc.EvaluateMiss(ctx, vuln.Miss{Repo: qr("npm-remote"), Format: "npm", Name: "trove-test-mal", Version: "1.0.0"}); err != nil || b.Reason != vuln.BlockMalicious {
 		t.Errorf("malicious again: %+v, %v", b, err)
 	}
 }

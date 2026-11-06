@@ -71,7 +71,7 @@ func subject(p itstack.Person) authz.Subject {
 }
 
 func deploy(repo, path string) authz.Coordinate {
-	return authz.Coordinate{Repository: repo, Path: path, Kind: authz.KindWrite, Actions: []authz.Action{authz.Deploy}}
+	return authz.Coordinate{Repository: qr(repo), Path: path, Kind: authz.KindWrite, Actions: []authz.Action{authz.Deploy}}
 }
 
 func want(t *testing.T, r itstack.Response, status int, code string) {
@@ -306,7 +306,7 @@ func TestR_OPS_017_DenialSummariesStayCorrect(t *testing.T) {
 	// Another path, another repository and another action are other keys.
 	f.a.Engine.Decide(ctx, bob, deploy("npm-internal", "y.zip"))
 	f.a.Engine.Decide(ctx, bob, deploy("npm-other", "x.zip"))
-	f.a.Engine.Decide(ctx, bob, authz.Coordinate{Repository: "npm-internal", Path: "x.zip", Kind: authz.KindWrite, Actions: []authz.Action{authz.Delete}})
+	f.a.Engine.Decide(ctx, bob, authz.Coordinate{Repository: qr("npm-internal"), Path: "x.zip", Kind: authz.KindWrite, Actions: []authz.Action{authz.Delete}})
 
 	t.Run("R-OPS-015 five refusals of one key are one event and one summary of four", func(t *testing.T) {
 		// first events of four keys, then the summary of the first one
@@ -499,17 +499,17 @@ func TestR_AUTHZ_031_RepositoryUpdateRecordsSettingsChanged(t *testing.T) {
 	f := newAPIFx(t, itstack.Options{})
 	ctx := context.Background()
 	caller := repository.Caller{Actor: audit.Actor{Kind: "user", ID: f.admin.ID, Name: f.admin.Name}}
-	st, err := f.a.Repos.Create(ctx, caller, []byte(`{"key":"generic-hook","class":"local","format":"generic"}`))
+	st, err := f.a.Repos.Create(ctx, caller, "it", []byte(`{"key":"generic-hook","class":"local","format":"generic"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.a.Repos.Patch(ctx, caller, "generic-hook", repository.MatchVersion(st.Repository.Version), v1.MergePatcher([]byte(`{"description":"nothing of authorization"}`))); err != nil {
+	if _, err := f.a.Repos.Patch(ctx, caller, qr("generic-hook"), repository.MatchVersion(st.Repository.Version), v1.MergePatcher([]byte(`{"description":"nothing of authorization"}`))); err != nil {
 		t.Fatal(err)
 	}
 	if n := f.e.Number("SELECT count(*) FROM audit_event WHERE action = 'authz.settings.changed'"); n != 0 {
 		t.Fatalf("%d events for a change of the description", n)
 	}
-	if _, err := f.a.Repos.Patch(ctx, caller, "generic-hook", repository.MatchAny(), v1.MergePatcher([]byte(`{"requireAuthentication":true}`))); err != nil {
+	if _, err := f.a.Repos.Patch(ctx, caller, qr("generic-hook"), repository.MatchAny(), v1.MergePatcher([]byte(`{"requireAuthentication":true}`))); err != nil {
 		t.Fatal(err)
 	}
 	ev := f.find(t, "action=authz.settings.changed", 1)[0]

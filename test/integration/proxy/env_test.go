@@ -34,6 +34,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -284,9 +286,9 @@ func (e *env) remote(key string, up *proxytest.Upstream, mutate ...func(*reposit
 func (e *env) lookup(key string) proxy.Remote {
 	e.t.Helper()
 	r := e.newReader()
-	repo, err := r.ByKey(context.Background(), key)
+	repo, err := r.ByName(context.Background(), qname.Repo{Project: testenv.DefaultProject, Key: key})
 	if err != nil {
-		e.t.Fatalf("ByKey(%s): %v", key, err)
+		e.t.Fatalf("ByName(%s): %v", key, err)
 	}
 	rem, err := proxy.NewRemote(repo)
 	if err != nil {
