@@ -93,6 +93,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/system/migrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The schema migrations and the background data migrations
+         * @description The upgrade verification of R-HA-020 and step 4 of the upgrade preparation of R-HA-021: the schema state, the
+         *     answering replica's binary, the steps that binary embeds and the database has not applied (`pending`, with what the
+         *     contract guard checks before a contract step), every applied step, and the background data migrations the binary
+         *     declares with their states (R-HA-022). `trove migrate status` prints the same report from the same code. During a
+         *     rolling upgrade, replicas of both releases answer, each for its own binary (`binary.version`; the replica is named in
+         *     `X-Trove-Replica`).
+         */
+        get: operations["getMigrationStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/openapi.json": {
         parameters: {
             query?: never;
@@ -3846,6 +3871,93 @@ export interface components {
             prefix: string;
             /** @description Open enum, for example `static` or `workload-identity`. */
             credentialSource: string;
+        };
+        /** @description The migration report of GET /api/v1/system/migrations (R-HA-018, R-HA-020, R-HA-021, R-HA-022). */
+        MigrationStatus: {
+            schema: {
+                /** @description The number of the newest applied step; 0 before the first migration. */
+                applied: number;
+                /**
+                 * @description The highest `requires-app` of the applied contract steps, `0.0.0` while none is applied. A binary older than
+                 *     the floor does not serve (R-HA-018).
+                 * @example 0.0.0
+                 */
+                compatFloor: string;
+            };
+            binary: {
+                /** @description The release of the answering replica. */
+                version: string;
+                /** @description The newest expand step the answering replica's binary embeds; a replica serves once `schema.applied` reaches it. */
+                requiredSchema: number;
+            };
+            /** @description The steps the answering replica's binary embeds that the database has not applied, in order; empty after a completed upgrade. */
+            pending: components["schemas"]["PendingMigrationStep"][];
+            /** @description Every applied step in order, the steps of newer releases than the answering replica's included. */
+            applied: components["schemas"]["AppliedMigrationStep"][];
+            /** @description The background data migrations the answering replica's binary declares, with their states. */
+            background: components["schemas"]["BackgroundMigration"][];
+        };
+        PendingMigrationStep: {
+            version: number;
+            /** @example 00043_example */
+            name: string;
+            /** @enum {string} */
+            class: "expand" | "contract";
+            /**
+             * @description A contract step's `-- trove:requires-app`: the oldest release allowed to serve once the step is applied. The
+             *     contract guard refuses the step while a live replica runs an older release. `null` for an expand step.
+             */
+            requiresApp: string | null;
+            /**
+             * @description A contract step's `-- trove:requires-background`: the background data migrations that must have `succeeded`
+             *     before the contract guard lets the step run (R-HA-021 step 4). Empty for every other step.
+             */
+            requiresBackground: string[];
+        };
+        AppliedMigrationStep: {
+            version: number;
+            /** @example 00001_core */
+            name: string;
+            /** @enum {string} */
+            class: "expand" | "contract";
+            /** @description The release whose migration Job applied the step. */
+            release: string;
+            /** Format: date-time */
+            appliedAt: string;
+            durationMs: number;
+        };
+        /**
+         * @description A background data migration (R-HA-022): a data change too large for the migration Job, run as the job kind
+         *     `data_migration_<name>` on a worker. Its state comes from its completion record and from the newest job of its kind.
+         */
+        BackgroundMigration: {
+            /** @example nuget_semver2 */
+            name: string;
+            /** @description The release that introduced it; it starts once every live replica runs that release or a newer one. */
+            release: string;
+            /**
+             * @description `pending` until a run starts, also while a run waits for replicas of an older release and after a cancelled run
+             *     (a worker queues it again when it starts); `running` while a run holds it; `failed` when its newest run failed;
+             *     `succeeded` once its completion is recorded. `paused` belongs to the pause operation of R-HA-022, which is not
+             *     built.
+             * @enum {string}
+             */
+            state: "pending" | "running" | "paused" | "succeeded" | "failed";
+            /**
+             * Format: int64
+             * @description The rows converted so far; for a succeeded migration the count of its completion.
+             */
+            processed: number;
+            /**
+             * Format: int64
+             * @description The migration's own estimate of its rows; `null` while it has none.
+             */
+            estimatedTotal: number | null;
+            /**
+             * Format: date-time
+             * @description The start of its first run; `null` before a run started or once the job rows are removed (`jobs.retention`).
+             */
+            startedAt: string | null;
         };
         ReplicaList: {
             items: components["schemas"]["Replica"][];
@@ -7843,6 +7955,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReplicaList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getMigrationStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The migration report. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationStatus"];
                 };
             };
             401: components["responses"]["Unauthenticated"];

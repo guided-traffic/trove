@@ -136,6 +136,31 @@ func TestParseSteps(t *testing.T) {
 			map[string]string{"00001_a.sql": "-- trove:phase expand\n-- trove:frobnicate\nSELECT 1;\n"},
 			"unknown header",
 		},
+		{
+			"R-HA-022 a contract step names the background migrations it depends on, one header each",
+			map[string]string{"00001_a.sql": "-- trove:phase contract\n-- trove:requires-app >= 0.2.0\n-- trove:requires-background backfill_a\n-- trove:requires-background backfill_b\nDROP TABLE a;\n"},
+			"",
+		},
+		{
+			"R-HA-022 requires-background on an expand step is refused",
+			map[string]string{"00001_a.sql": "-- trove:phase expand\n-- trove:requires-background backfill_a\nSELECT 1;\n"},
+			"requires-background belongs to contract steps only",
+		},
+		{
+			"R-HA-022 requires-background names one migration by its name",
+			map[string]string{"00001_a.sql": "-- trove:phase contract\n-- trove:requires-app >= 0.2.0\n-- trove:requires-background backfill_a, backfill_b\nDROP TABLE a;\n"},
+			"must name one background migration",
+		},
+		{
+			"R-HA-022 requires-background without a name is refused",
+			map[string]string{"00001_a.sql": "-- trove:phase contract\n-- trove:requires-app >= 0.2.0\n-- trove:requires-background\nDROP TABLE a;\n"},
+			"must name one background migration",
+		},
+		{
+			"R-HA-022 a background migration named twice is refused",
+			map[string]string{"00001_a.sql": "-- trove:phase contract\n-- trove:requires-app >= 0.2.0\n-- trove:requires-background backfill_a\n-- trove:requires-background backfill_a\nDROP TABLE a;\n"},
+			"named twice",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -148,6 +173,15 @@ func TestParseSteps(t *testing.T) {
 			}
 		})
 	}
+	t.Run("R-HA-022 the parsed step carries its background dependencies in header order", func(t *testing.T) {
+		steps, err := ParseSteps(files(map[string]string{"00001_a.sql": "-- trove:phase contract\n-- trove:requires-app >= 0.2.0\n-- trove:requires-background backfill_b\n-- trove:requires-background backfill_a\nDROP TABLE a;\n"}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Join(steps[0].RequiresBackground, ","); got != "backfill_b,backfill_a" {
+			t.Fatalf("RequiresBackground = %q", got)
+		}
+	})
 	t.Run("R-ARCH-026 the checksum covers the file bytes", func(t *testing.T) {
 		a, _ := ParseSteps(files(map[string]string{"00001_a.sql": ok}))
 		b, _ := ParseSteps(files(map[string]string{"00001_a.sql": ok + "-- edited\n"}))

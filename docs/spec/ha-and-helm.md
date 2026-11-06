@@ -2046,6 +2046,16 @@ k6 records only `2xx` and `304`:
 ### R-HA-018 · Expand/contract schema migrations
 Priority: **MVP** · Covers: HA-066, OPS-074
 
+**Status.** `GET /api/v1/system/migrations` is built (`getMigrationStatus`, finding F-59 closed on 2026-11-06): the `api` role
+answers it with the report of `trove migrate status`, from the same code on the replica's pool, and the background migrations of
+[Q-HA-114](#q-ha-114--which-background-migrations-the-migration-report-lists-before-r-ha-022s-table-exists). Tested by
+`TestGetMigrationStatus` ([migrations_api_test.go](../../internal/api/v1/migrations_api_test.go)), `TestMigrationStatus`
+([migrations_test.go](../../test/integration/api/migrations_test.go), an `api` replica against PostgreSQL, the answer against the
+document, `settings:read`) and `TestR_HA_021_UpgradePreparation`
+([upgrade_preparation_test.go](../../test/integration/postgres/upgrade_preparation_test.go)). The runner, the headers and the
+guard are tested by the tests named R-HA-018 in [migrate_test.go](../../test/integration/postgres/migrate_test.go),
+[steps_test.go](../../internal/meta/postgres/steps_test.go) and [gate_test.go](../../internal/meta/postgres/gate_test.go).
+
 Release N and release N−1 run side by side against one schema during every rolling upgrade
 (INV-3). Every migration step is classified, and the classes have rules:
 
@@ -2066,6 +2076,7 @@ Release N and release N−1 run side by side against one schema during every rol
   | `-- trove:phase expand` or `-- trove:phase contract` | The step's class (table above); every file has exactly one |
   | `-- trove:no-transaction` | The step cannot run in a transaction block; the file holds exactly one statement |
   | `-- trove:requires-app >= <version>` | Contract steps only, and required there: the oldest release allowed to serve once the step is applied |
+  | `-- trove:requires-background <name>` | Contract steps only, optional, once per migration: a background data migration (R-HA-022) that must have `succeeded` before the guard lets the step run ([Q-HA-115](#q-ha-115--how-a-contract-step-declares-the-background-migration-it-depends-on-and-what-the-guard-does-with-it)) |
 
 - Data changes are not migrations. Backfills run as background data migrations (R-HA-022), never
   inside the migration Job, so the Job's duration does not grow with the data.
@@ -2104,7 +2115,11 @@ Release N and release N−1 run side by side against one schema during every rol
 Job. The error lists those replicas and the two ways forward: upgrade one minor release at a time,
 or stop all replicas and upgrade with downtime (R-HA-021). There is no override flag. The downtime
 path scales the replicas to zero, so the registry lists none and the guard passes; an override
-while old replicas are live would let the step break them (R-ARCH-026, Q-ARCH-3).
+while old replicas are live would let the step break them (R-ARCH-026, Q-ARCH-3). The guard also
+refuses a contract step, with status `3` and without applying anything, while a background migration
+it names in `-- trove:requires-background` has not `succeeded`; the error names the migration and its
+state (R-HA-021 step 4, R-HA-022, [Q-HA-115](#q-ha-115--how-a-contract-step-declares-the-background-migration-it-depends-on-and-what-the-guard-does-with-it)).
+A step that names a migration its binary does not declare fails the run with status `1`.
 
 ```sql
 CREATE TABLE schema_migration (
@@ -2156,6 +2171,19 @@ API (permission: `system.read`, [operations-and-observability.md](operations-and
 ```
 
 `401` without credentials, `403` without `system.read`.
+
+- Each `pending` entry carries `version`, `name`, `class`, `requiresApp` (`null` for an expand step) and
+  `requiresBackground` (empty unless a contract step names background migrations): what the guard checks
+  before the step.
+- `background` lists the background data migrations the answering replica's binary declares, with
+  `name`, `release`, `state`, `processed`, `estimatedTotal` and `startedAt` (`null` while unknown); until
+  R-HA-022's table exists the state is read from each migration's completion record and newest job
+  ([Q-HA-114](#q-ha-114--which-background-migrations-the-migration-report-lists-before-r-ha-022s-table-exists)).
+- The report is the answering replica's, for its own binary: during a rolling upgrade both releases
+  answer, each with its `binary`. The `api` role serves it ([ADR-155](../decisions.md#adr-155--three-roles-api-packages-and-worker-variants-are-pools)).
+- `trove migrate status` prints the same report from the same code (`postgres.Report`), plus `servable`
+  and `verdict`, the gate's answer for its binary; a replica that answers the endpoint has passed the gate,
+  so the endpoint leaves them out.
 
 Configuration (`trove migrate`):
 
@@ -2275,9 +2303,11 @@ Priority: **MVP** · Covers: HA-069, OPS-073
 ([upgrade_test.go](../../test/e2e/upgrade_test.go), the set `upgrade`): the latest release before the working tree is installed
 from the published chart and image and upgraded with `helm upgrade --wait` under `npm ci`, `npm publish`, `dotnet restore` and
 browser loops ([Q-HA-95](#q-ha-95--how-the-upgrade-tests-get-and-install-the-older-release),
-[Q-HA-97](#q-ha-97--the-loops-of-the-upgrade-tests)). `GET /api/v1/system/migrations` of the verification is specified but not
-built; the test reads `trove migrate status`, which prints its document
-([Q-HA-96](#q-ha-96--the-migration-check-of-the-upgrade-tests-until-the-endpoint-exists)). The gate on the cluster minimum version
+[Q-HA-97](#q-ha-97--the-loops-of-the-upgrade-tests)). The verification reads `GET /api/v1/system/migrations` from a replica of the
+release under test, waits for the background migrations to succeed and checks it against `trove migrate status`
+([Q-HA-116](#q-ha-116--the-upgrade-tests-read-get-apiv1systemmigrations-from-the-release-under-test), which supersedes Q-HA-96); the
+cut test runs the same check after its step 2. That read has not run on kind yet (2026-11-06: the e2e package compiles; the set
+`upgrade` ran last with the CLI read). The gate on the cluster minimum version
 (the second acceptance criterion) has no feature to gate yet and is not tested.
 
 - Every Deployment uses `RollingUpdate` with `maxSurge: 1` and `maxUnavailable: 0`, plus
@@ -2323,6 +2353,19 @@ Acceptance criteria:
 
 ### R-HA-021 · Upgrade policy and preparation
 Priority: **MVP** · Covers: OPS-072, HA-070
+
+**Status.** Step 4 of the preparation is built: `GET /api/v1/system/migrations` lists the background migrations with their states
+([Q-HA-114](#q-ha-114--which-background-migrations-the-migration-report-lists-before-r-ha-022s-table-exists)), and the contract guard
+refuses a contract step that names one in `-- trove:requires-background` until it has `succeeded`
+([Q-HA-115](#q-ha-115--how-a-contract-step-declares-the-background-migration-it-depends-on-and-what-the-guard-does-with-it)).
+`TestR_HA_021_UpgradePreparation` ([upgrade_preparation_test.go](../../test/integration/postgres/upgrade_preparation_test.go)) pins
+against PostgreSQL step 4 (for each state of the records the report and the guard agree) and the runner's part of both acceptance
+criteria: the refusal with status `3` and R-HA-018's message while a replica of an older release is live, the success without an
+override once the replicas' heartbeats are stale, and the wait for a backup's database phase and the failure that names the backup
+after `migrate.advisory_lock_wait`. Not tested at the level of the criteria: a real `helm upgrade` across a contract step with
+`kubectl scale` (no pair of published releases has a contract step between them), and the old pods serving through a refusal; the
+chart test checks that exit status `3` fails the Job without a retry (R-HA-019), and `TestE04MigrationFailure` that a Job that
+fails (on its credential) leaves the replicas serving.
 
 | Upgrade | Supported path |
 |---|---|
@@ -2445,6 +2488,17 @@ Acceptance criteria:
 
 ### R-HA-022 · Background data migrations
 Priority: **MVP** · Covers: OPS-074
+
+**Status.** Partly built. One background migration exists, `data_migration_nuget_semver2`
+([formats/nuget.md](formats/nuget.md) Q-NUGET-93): a job on the queue `maintenance`, a singleton through `coalesce`, in keyset
+batches with a checkpoint, started only once no replica of the release before it is live. The table `background_migration`, the
+pause and resume operations and a shared runner are not built. Until they are, each migration is declared by its package with the
+`system_state` key of its completion, and the report of R-HA-018 and the guard read its state from that record and its newest job
+([Q-HA-114](#q-ha-114--which-background-migrations-the-migration-report-lists-before-r-ha-022s-table-exists)); a contract step
+declares its dependency with `-- trove:requires-background <name>`
+([Q-HA-115](#q-ha-115--how-a-contract-step-declares-the-background-migration-it-depends-on-and-what-the-guard-does-with-it)). The
+acceptance criteria are not tested in their form (a test migration over 1 million rows with three worker restarts); the wait for
+the previous release is tested for the NuGet recomputation ([semver2_test.go](../../test/integration/nuget/semver2_test.go)).
 
 - A data change too large for the migration Job (backfills, re-hashing, re-indexing metadata) is a
   named background migration. It runs as a job of kind `data_migration_<name>` on the job queue
@@ -7151,6 +7205,9 @@ up.sh, shared), [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) (the set `upgrade`)
 ### Q-HA-96 · The migration check of the upgrade tests until the endpoint exists
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+**Superseded** on 2026-11-06 by [Q-HA-116](#q-ha-116--the-upgrade-tests-read-get-apiv1systemmigrations-from-the-release-under-test):
+the endpoint is built, and the tests read it; the CLI stays as the cross-check and for the rollback, as the revisit condition below
+foresaw.
 
 Context: R-HA-020's upgrade verification reads `GET /api/v1/system/migrations`. The endpoint is specified (R-HA-018) and its
 document is the type `StatusReport` of [migrate.go](../../internal/meta/postgres/migrate.go), but no route answers it
@@ -7543,6 +7600,94 @@ that separates "the edge stopped" from "the listener closed on the last request"
 the load of `TestE14Drain` on `packages` is raised so that every pod gets a sample.
 
 **Applied in the spec:** R-HA-059 rule 4; [drain_measure_test.go](../../test/e2e/drain_measure_test.go) (`drainSilence`).
+
+### Q-HA-114 · Which background migrations the migration report lists before R-HA-022's table exists
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the report of R-HA-018 (`GET /api/v1/system/migrations`, `trove migrate status`) has a member `background`, the rows of
+R-HA-022's table `background_migration`; R-HA-020's verification ("the expected background migrations") and step 4 of R-HA-021 read
+it. Neither the table nor its pause and resume operations are built. One background migration runs: the recomputation of NuGet's
+SemVer 2 flag (`data_migration_nuget_semver2`, Q-NUGET-93), which records its completion in the `system_state` key
+`nuget_semver2_recomputed` and its progress in its job rows. The table needs a migration step and moves the state of a migration
+that installations have already run (finding F-59 is the endpoint, not the table).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An empty list until the table exists | `background: []` always | Nothing to build | The migration that runs is invisible; R-HA-020's "expected background migrations" cannot be checked, and the guard of R-HA-021 step 4 has nothing to read |
+| (b) Each migration declared by its package, its state read from its completion record and its newest job (chosen) | `postgres.BackgroundMigration` (name, release, the `system_state` key of the completion, optionally the count of a completed run from that record); `app.BackgroundMigrations()` lists the binary's; the record makes it `succeeded`, a newest job `running` or `cancelling` makes it `running`, `failed` makes it `failed`, anything else (no job, queued, cancelled, a run that ended waiting for older replicas) is `pending` | The report shows today's migration from records that already exist; no schema change; the report and the guard read one function, so they cannot disagree; the document keeps R-HA-018's shape, so the table can replace the reader later | The state is derived: `paused` cannot occur until the pause operation exists, and once `jobs.retention` has removed the job rows `startedAt` is `null` and `processed` comes from the completion record or is 0 |
+| (c) Build R-HA-022's table now | `background_migration` with its states, the NuGet recomputation moved onto it, pause and resume | The specification as written | A migration step, a move of a completed migration's state and the operations with their own tests and review; more than the finding needs, and Q-NUGET-93 names it as its own revisit condition |
+| (d) The job rows of the kinds `data_migration_*` | Every kind with that prefix, its newest job's state | Nothing to declare | A completed migration vanishes or turns `pending` when `jobs.retention` removes its rows; the release that introduced it is in no job row |
+
+**Choice:** (b).
+
+**Rationale:** the report answers whether the background work an upgrade needs is done; (b) answers it right from the records the
+migration keeps, and it keeps the report and the guard on one reader ([background.go](../../internal/meta/postgres/background.go)).
+What a record cannot say (`paused`) belongs to operations that are not built. Revisited when R-HA-022's table is built (the reader
+then reads its row, the document stays) or when a migration needs a state the records cannot express.
+
+**Applied in the spec:** R-HA-018 (the members of the report), R-HA-021 and R-HA-022 (the status lines). Code:
+[background.go](../../internal/meta/postgres/background.go) (`BackgroundMigration`, `ReadBackground`), `BackgroundMigrationJob` in
+[migration.sql](../../internal/meta/postgres/queries/migration.sql), `Report` in [migrate.go](../../internal/meta/postgres/migrate.go),
+`Semver2Background` in [semver2.go](../../internal/formatdata/nuget/semver2.go), [migration_report.go](../../internal/app/migration_report.go).
+Tests: `TestBackgroundState`, `TestR_HA_022_TheRecomputationIsDeclaredAsABackgroundMigration`, `TestBackgroundMigrations`,
+`TestR_HA_021_UpgradePreparation`, `TestMigrationStatus`.
+
+### Q-HA-115 · How a contract step declares the background migration it depends on, and what the guard does with it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-022 says that a contract step that depends on a background migration's completion declares it and that the guard
+refuses the step before the migration has `succeeded`; step 4 of R-HA-021 says the guard checks it. R-HA-018's header table and
+R-ARCH-026 named no such declaration, and the guard read the replica registry only. No embedded step depends on a background
+migration today; the first contract step that removes what a backfill converts needs the declaration.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A header `-- trove:requires-background <name>`, once per migration, contract steps only; the guard refuses with status `3` while one has not `succeeded` (chosen) | Parsed with the other headers; the guard reads the state with the report's reader (Q-HA-114); a name the binary does not declare fails the run with status `1`, and a unit test over the embedded steps keeps such a step out of a release | The dependency sits in the file whose SQL needs it, is checksummed with it and seen in review; the refusal and the report read one function; status `3` is the refusal that a retry cannot change (`FailJob`, R-HA-019) | One more header in R-ARCH-026's syntax |
+| (b) A table in Go that maps step numbers to migrations | The guard looks the step up | No header | The dependency lives apart from the step; nothing stops a step from shipping without its entry |
+| (c) Leave it to the operator's step 4 | The report shows the state, nothing enforces it | Nothing to build | R-HA-021 and R-HA-022 say the guard checks it; a skipped check removes data a backfill has not converted |
+| (d) Refuse with status `1` | The Job retries | A short backfill may finish during the retries | A backfill runs on the workers of the running release for minutes to hours; three tries within 30 minutes are noise |
+
+**Choice:** (a).
+
+**Rationale:** a contract step that removes an old form is safe only after the backfill converted every row, and the place that
+knows the dependency is the step's own file. Reading the state with the report's reader means an operator who sees `succeeded` in
+step 4 meets no refusal, and one who sees `running` meets it with the same word. Revisited when R-HA-022's table exists (the guard
+reads its row; the header stays).
+
+**Applied in the spec:** R-HA-018 (the header table, the guard), [architecture.md](architecture.md) R-ARCH-026 (the header list,
+the gate), R-HA-021 and R-HA-022 (the status lines). Code: [steps.go](../../internal/meta/postgres/steps.go) (`RequiresBackground`),
+`backgroundGuard` and `CheckBackgroundDependencies` in [background.go](../../internal/meta/postgres/background.go), `contractGuard`
+in [migrate.go](../../internal/meta/postgres/migrate.go), [cmd/trove/migrate.go](../../cmd/trove/migrate.go). Tests: the R-HA-022
+cases of `TestParseSteps`, `TestCheckBackgroundDependencies`, `TestBackgroundMigrations`, `TestR_HA_021_UpgradePreparation`.
+
+### Q-HA-116 · The upgrade tests read GET /api/v1/system/migrations from the release under test
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: [Q-HA-96](#q-ha-96--the-migration-check-of-the-upgrade-tests-until-the-endpoint-exists) had the upgrade tests read `trove
+migrate status` in a worker pod until the endpoint existed, and it exists now. The releases before it do not have the route, so
+their pods answer `404`; right after a rolling upgrade the edge can still reach a pod of the release before while it drains
+(R-HA-011). The rollback test ends on the release before, which has no route at all.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The endpoint with the administrator's token through the edge, after the upgrade, accepted only from a replica of the release under test; a `404` or another `binary.version` is read again for up to 90 s; `trove migrate status` in the worker as the cross-check; the rollback read with the command (chosen) | `upMigrations` and `requireMigrationsDone` | The criterion as written; the route on the `api` role, the edge and `settings:read` are exercised; the cross-check pins that the endpoint and the command agree | A read can take more than one request while the edge drops a pod of the release before |
+| (b) The endpoint, failing on any `404` | One request | Strict | A draining pod of the release before answers `404` for a route its release never had; that is no defect of the release under test |
+| (c) Keep the command alone (Q-HA-96) | No change | Proven | The endpoint is not exercised end to end |
+| (d) A port-forward to one `api` pod of the new ReplicaSet | No edge | One request | Bypasses the edge and the routing by role that an operator's read meets |
+
+**Choice:** (a).
+
+**Rationale:** only an answer that is provably not from the release under test is read again; every answer of that release is
+gated, and every other status fails the test. R-HA-020's "the expected background migrations" is read as every migration the
+binary declares reaching `succeeded` within 3 minutes, a `failed` one failing at once. The cut test runs the same check after
+its step 2. Revisited when every release an upgrade test starts from has the route (the `404` branch then never matches).
+
+**Applied in the spec:** R-HA-020 (the status line), Q-HA-96 (superseded). Code: `upMigrations` and `requireMigrationsDone` in
+[upgrade_env_test.go](../../test/e2e/upgrade_env_test.go), [upgrade_test.go](../../test/e2e/upgrade_test.go),
+[docs/developer/e2e.md](../developer/e2e.md#the-upgrade-tests).
 
 ## What this does not cover
 

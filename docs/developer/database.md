@@ -99,10 +99,12 @@ with header comments:
 -- trove:phase expand            (or contract; exactly one)
 -- trove:no-transaction          (one statement, e.g. CREATE INDEX CONCURRENTLY; must be idempotent)
 -- trove:requires-app >= 0.4.0   (contract only, required there)
+-- trove:requires-background <name>   (contract only, optional, once per background migration it depends on)
 ```
 
 `ParseSteps` (unit-tested) rejects a missing or duplicate phase, a contract step without `requires-app`,
-`requires-app` on an expand step, and `DROP`, `RENAME` or `SET NOT NULL` in an expand file.
+`requires-app` or `requires-background` on an expand step, a `requires-background` that names no single migration or
+names one twice, and `DROP`, `RENAME` or `SET NOT NULL` in an expand file.
 
 ### How to add a migration
 
@@ -119,7 +121,9 @@ with header comments:
    delete one. A defect is fixed forward, as the next section describes. Backfills are background data migrations (R-HA-022),
    not migration steps; the first is `data_migration_nuget_semver2`
    ([nuget.md](nuget.md#the-recomputation-of-is_semver2-q-nuget-93)).
-5. Contract steps ship one minor after the release that stopped using the object, with `requires-app`.
+5. Contract steps ship one minor after the release that stopped using the object, with `requires-app`. A contract step
+   that removes what a background data migration converts names it with `requires-background <name>`; the guard refuses
+   the step until the migration has succeeded ([Background data migrations](#background-data-migrations), Q-HA-115).
 6. Static queries for the new tables go to `queries/*.sql`, then `make generate`.
    A test that injects a migration of its own names it with `nextStep(n, name)`
    ([env_test.go](../../test/integration/postgres/env_test.go)), which numbers the file after the embedded ones, so
@@ -154,10 +158,52 @@ R-ARCH-026).
 Preflight, schema creation if missing, `pg_try_advisory_lock(3, 0)` polled for up to `migrate.advisory_lock_wait`
 (the timeout names the holder from `pg_stat_activity`), refusal of a half-restored database (exit 3), checksum
 check, plan (out-of-order steps fail), contract guard (exit 3 when a live replica is below `requires-app`;
-live means a `replica.heartbeat_at` within `system.heartbeat_stale_after`), then per step one transaction:
+live means a `replica.heartbeat_at` within `system.heartbeat_stale_after`; also exit 3 while a background migration the step
+names in `requires-background` has not succeeded), then per step one transaction:
 `SET LOCAL lock_timeout`, the file as one argument-less `Exec`, the `schema_migration` row, `schema_state`.
 Lock timeouts (55P03) retry `migrate.ddl_lock_retries` times. Exit codes: 0, 1 error, 2 usage, 3 refusal.
 `trove migrate status` takes no lock. Output: JSON log on stderr, JSON summary on stdout.
+
+### The migration report (`postgres.Report`, `trove migrate status`, `GET /api/v1/system/migrations`)
+
+`postgres.Report(ctx, db, opts)` ([migrate.go](../../internal/meta/postgres/migrate.go)) reads `schema_state`, the applied
+steps, the steps the binary embeds that are not applied (each with `requiresApp` and `requiresBackground`, what the guard
+checks), the background migrations of `MigrateOptions.Background` with their states, and the gate's verdict. It reads only and
+takes no lock, through any `q.DBTX`: `trove migrate status` (`postgres.Status`) runs it on its session connection as the schema
+owner, and the `api` role runs it on its pool as the runtime role for `GET /api/v1/system/migrations` (`migrationReport` in
+[migration_report.go](../../internal/app/migration_report.go); the runtime role reads `schema_migration` and `schema_state`,
+R-HA-018). One code answers both, so the endpoint and the command cannot disagree (R-HA-018, R-HA-020, R-HA-021 step 4).
+The endpoint leaves out `servable` and `verdict`: a replica that answers passed the gate.
+
+### Background data migrations
+
+A backfill runs as the job kind `data_migration_<name>` on a worker (R-HA-022). R-HA-022's table `background_migration` and its
+pause and resume operations are not built; until they are, a migration is declared by the package that runs it as a
+`postgres.BackgroundMigration` ([background.go](../../internal/meta/postgres/background.go)): its name, the release that
+introduced it and the `system_state` key that records its completion (Q-HA-114). `postgres.ReadBackground` derives the state:
+
+| Records | State |
+|---|---|
+| the completion key exists | `succeeded` |
+| the newest job of the kind is `running` or `cancelling` | `running` |
+| the newest job is `failed` | `failed` |
+| no job, a `queued` one, a `cancelled` one, or a run that ended without the key (it waited for older replicas) | `pending` |
+
+`processed` and `estimatedTotal` are the newest job's progress (an estimate of 0 is none); a completed migration's count can come
+from its completion record (`BackgroundMigration.Processed`), which outlives the job rows. `startedAt` is the first start of
+any run of the kind (`BackgroundMigrationJob` in [migration.sql](../../internal/meta/postgres/queries/migration.sql)).
+
+`app.BackgroundMigrations()` ([migration_report.go](../../internal/app/migration_report.go)) lists the declarations of the binary;
+`trove migrate` passes them to the guard and the report, the `api` role to the report. Today it holds one, `nuget_semver2`
+(`nugetdata.Semver2Background`, [nuget.md](nuget.md#the-recomputation-of-is_semver2-q-nuget-93)). How to add one:
+
+1. Run it as a job kind `data_migration_<name>` that records its completion in a `system_state` key (as
+   [semver2.go](../../internal/formatdata/nuget/semver2.go) does), and start it only once every live replica runs its release
+   (`postgres.ReplicasUpTo`).
+2. Declare it next to the job (`Name`, `Release`, `DoneKey`, optionally `Processed`) and add it to `app.BackgroundMigrations()`.
+   `TestBackgroundMigrations` ([migration_report_test.go](../../internal/app/migration_report_test.go)) checks that the
+   declarations are valid and that every `requires-background` of the embedded steps names one of them.
+3. The contract step that removes the old form, one minor later, carries `-- trove:requires-background <name>`.
 
 The runner also writes `audit.retention_days` into `audit_policy` (when it differs) and calls `audit_maintain_partitions()` after the
 steps, also when none was pending (`MigrateOptions.AuditRetentionDays`, [audit.go](../../internal/meta/postgres/audit.go); Q-OPS-39,

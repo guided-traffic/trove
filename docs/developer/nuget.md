@@ -235,7 +235,7 @@ Release 0.9.0 and older classified a version by its own number alone; since then
 
 | File | Responsibility |
 |---|---|
-| [internal/formatdata/nuget/semver2.go](../../internal/formatdata/nuget/semver2.go) | `Semver2` with `Enqueue` (queue the run unless `system_state` holds `nuget_semver2_recomputed`, in the transaction that reads it) and `Run`, the handler; `Semver2JobSpec` (queue `maintenance`, `coalesce`); `semver2Of`, the classification of a stored row with `version.PackageIsSemver2` |
+| [internal/formatdata/nuget/semver2.go](../../internal/formatdata/nuget/semver2.go) | `Semver2` with `Enqueue` (queue the run unless `system_state` holds `nuget_semver2_recomputed`, in the transaction that reads it) and `Run`, the handler; `Semver2JobSpec` (queue `maintenance`, `coalesce`); `semver2Of`, the classification of a stored row with `version.PackageIsSemver2`; `Semver2Background`, its declaration as the background migration `nuget_semver2` of release 0.10.0, which `GET /api/v1/system/migrations` and `trove migrate status` list with its state ([database.md](database.md#background-data-migrations), Q-HA-114) |
 | [nuget_semver2.sql](../../internal/meta/postgres/queries/nuget_semver2.sql) | the keyset batch of rows that say SemVer 1, the package row lock, the flag under it, the completion key |
 | [gate.go](../../internal/meta/postgres/gate.go) | `ReplicasUpTo`: the live replicas of a release or an older one, which the run waits for |
 | [wire_formats.go](../../internal/app/wire_formats.go) | `startFormatMigrations` builds it and queues it on a `worker` and `all` replica at start-up; `registerFormatJobs` registers the kind |

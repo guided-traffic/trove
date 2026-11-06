@@ -29,6 +29,13 @@ The image `docker.io/guidedtraffic/trove` and the Helm chart carry the same vers
    ```
 
    This does not check the keys inside `config`; the new binary checks them when the migration Job starts (see below).
+4. Check the background data migrations of the running version. A migration of the target that removes stored data can depend on one of them; its release notes name it, and it must show `succeeded`:
+
+   ```shell
+   curl -s -H "Authorization: Bearer $TROVE_TOKEN" https://trove.example.com/api/v1/system/migrations   # example: a token with settings:read and your base URL
+   ```
+
+   The answer lists each background migration under `background` with its `state` (`pending`, `running`, `failed` or `succeeded`), the rows it has `processed` and when it started. The migration Job of the target checks the same: it refuses such a migration while the background migration it depends on has not succeeded (exit status 3, nothing applied), and the previous version keeps serving. No migration of this version depends on a background migration.
 
 ## Upgrade from a release before the split into roles
 
@@ -76,12 +83,14 @@ A new replica that starts before the migration has run stays unready and waits u
 - One run at a time: the migration lock is a PostgreSQL advisory lock, so a second Job or a manual run waits for the first.
 - Additive migrations never drop, rename or tighten anything; the runner rejects such statements in them. A replica of an older version stays ready after them, because it still finds everything it uses.
 - A migration that removes something carries the minimum trove version it needs. The runner refuses it (exit status 3, nothing applied) while a live replica runs an older version, and once it is applied, a replica of an older version exits with `schema requires trove >= <version>`. Every migration of this version is additive.
+- A migration that removes something a background data migration converts also names that background migration. The runner refuses it (exit status 3, nothing applied) until the background migration has succeeded, and names it with its state.
 - A replica checks the schema when it starts and keeps checking it: if the schema is behind the binary, the replica stays or becomes unready until the migration has run.
 
-`trove migrate status` shows the state without taking the lock: the applied and pending migrations, the schema version this binary requires and whether it may serve.
+`GET /api/v1/system/migrations` shows the state without taking the lock, to a caller with `settings:read`: the schema version and its compatibility floor, the version and required schema of the replica that answers, the migrations that replica's binary has and the database has not applied (`pending`, each with what the runner checks before it), every applied migration with its release and time, and the background data migrations with their states. During a rolling upgrade, replicas of both versions answer, each for its own binary. `trove migrate status` prints the same report from the same code and adds whether that binary may serve:
 
 ```shell
-kubectl -n trove exec deploy/trove-api -- /usr/local/bin/trove migrate status
+curl -s -H "Authorization: Bearer $TROVE_TOKEN" https://trove.example.com/api/v1/system/migrations   # example: a token with settings:read
+kubectl -n trove exec deploy/trove-worker -- /usr/local/bin/trove migrate status
 ```
 
 ## Background data migrations
@@ -90,15 +99,17 @@ A correction of stored data runs after the upgrade as a job on a worker, not in 
 
 - The first worker that starts after the upgrade queues it. While a pod of 0.9.0 or older is still live, it waits: the result says `state: waiting` and names those pods, and it tries again a minute later. Once the rollout has finished, it runs.
 - Follow it under **Administration › System › Jobs** with the kind `data_migration_nuget_semver2`. A run that reached the end shows `state: recomputed` with the number of versions it `examined` and `changed` and the `packages` they belong to. A version it could not read is counted as `unreadable` and named in the worker's log.
+- `GET /api/v1/system/migrations` lists it under `background` as `nuget_semver2` (release `0.10.0`): `pending` until a worker runs it and while it waits for older pods, `running` while it runs, `failed` when its last run failed, and `succeeded` once its completion is recorded, with the number of versions it examined.
 - It runs once per installation: trove records the completion in the database, and a worker that starts later queues nothing. A package it changed gets a new revision, so clients and caches see the change.
 
 ## After the upgrade
 
 1. `helm status trove -n trove` shows `deployed`, and `helm history trove -n trove` lists the new revision.
 2. The Job log ends with a JSON summary: `applied` lists the migrations of this run, `nothingToDo` is `true` when none was pending, and `schemaApplied` is the schema version now.
-3. Every pod of `trove-api`, `trove-packages` and `trove-worker` is ready and none restarts repeatedly.
-4. **Administration › System › System status** shows **All ready**; every replica in the replica table shows the new **Version**, and the **Database** part shows the new **Schema version**.
-5. Sign in, open a repository and download a file, as a quick check of the full request path.
+3. `GET /api/v1/system/migrations` (see [How the migrations work](#how-the-migrations-work)) answers with the new version in `binary.version`, an empty `pending`, and every entry of `background` `succeeded`. A background migration that is still `pending` or `running` finishes on its own; one that shows `failed` has a failed job under **Administration › System › Jobs** whose error names the cause.
+4. Every pod of `trove-api`, `trove-packages` and `trove-worker` is ready and none restarts repeatedly.
+5. **Administration › System › System status** shows **All ready**; every replica in the replica table shows the new **Version**, and the **Database** part shows the new **Schema version**.
+6. Sign in, open a repository and download a file, as a quick check of the full request path.
 
 [Monitoring and operations](operations.md) describes the metrics and logs to watch.
 

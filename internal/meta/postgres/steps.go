@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,8 +29,11 @@ type Step struct {
 	Phase       string // expand or contract
 	NoTx        bool   // -- trove:no-transaction
 	RequiresApp string // contract steps: the oldest release allowed to serve afterwards
-	SQL         string
-	Checksum    [sha256.Size]byte
+	// RequiresBackground are the background data migrations a contract step depends on (-- trove:requires-background
+	// <name>, once per migration): the contract guard refuses the step until each has succeeded (R-HA-022, Q-HA-115).
+	RequiresBackground []string
+	SQL                string
+	Checksum           [sha256.Size]byte
 }
 
 var fileName = regexp.MustCompile(`^(\d{5})_([a-z0-9][a-z0-9_]*)\.sql$`)
@@ -147,6 +151,14 @@ func parseStep(name string, version int, raw []byte) (Step, error) {
 				return s, fmt.Errorf("trove:requires-app: %q is not a release version", ver)
 			}
 			s.RequiresApp = ver
+		case "requires-background":
+			if !backgroundName.MatchString(arg) {
+				return s, fmt.Errorf("trove:requires-background must name one background migration (lower-case letters, digits and underscores), got %q", arg)
+			}
+			if slices.Contains(s.RequiresBackground, arg) {
+				return s, fmt.Errorf("trove:requires-background %s is named twice", arg)
+			}
+			s.RequiresBackground = append(s.RequiresBackground, arg)
 		default:
 			return s, fmt.Errorf("unknown header trove:%s", key)
 		}
@@ -159,6 +171,9 @@ func parseStep(name string, version int, raw []byte) (Step, error) {
 	}
 	if s.Phase == phaseExpand && s.RequiresApp != "" {
 		return s, fmt.Errorf("trove:requires-app belongs to contract steps only")
+	}
+	if s.Phase == phaseExpand && len(s.RequiresBackground) > 0 {
+		return s, fmt.Errorf("trove:requires-background belongs to contract steps only")
 	}
 	body := stripSQLNoise(s.SQL)
 	if strings.TrimSpace(body) == "" {

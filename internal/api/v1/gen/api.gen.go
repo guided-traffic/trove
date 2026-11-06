@@ -16,6 +16,24 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AppliedMigrationStepClass.
+const (
+	AppliedMigrationStepClassContract AppliedMigrationStepClass = "contract"
+	AppliedMigrationStepClassExpand   AppliedMigrationStepClass = "expand"
+)
+
+// Valid indicates whether the value is a known member of the AppliedMigrationStepClass enum.
+func (e AppliedMigrationStepClass) Valid() bool {
+	switch e {
+	case AppliedMigrationStepClassContract:
+		return true
+	case AppliedMigrationStepClassExpand:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AuditEventOutcome.
 const (
 	Denied  AuditEventOutcome = "denied"
@@ -55,6 +73,33 @@ func (e AuthSettingsStatusBreakGlassPasswordStatus) Valid() bool {
 	case AuthSettingsStatusBreakGlassPasswordStatusOk:
 		return true
 	case AuthSettingsStatusBreakGlassPasswordStatusUnusable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackgroundMigrationState.
+const (
+	BackgroundMigrationStateFailed    BackgroundMigrationState = "failed"
+	BackgroundMigrationStatePaused    BackgroundMigrationState = "paused"
+	BackgroundMigrationStatePending   BackgroundMigrationState = "pending"
+	BackgroundMigrationStateRunning   BackgroundMigrationState = "running"
+	BackgroundMigrationStateSucceeded BackgroundMigrationState = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the BackgroundMigrationState enum.
+func (e BackgroundMigrationState) Valid() bool {
+	switch e {
+	case BackgroundMigrationStateFailed:
+		return true
+	case BackgroundMigrationStatePaused:
+		return true
+	case BackgroundMigrationStatePending:
+		return true
+	case BackgroundMigrationStateRunning:
+		return true
+	case BackgroundMigrationStateSucceeded:
 		return true
 	default:
 		return false
@@ -1678,6 +1723,24 @@ func (e PackageVersionRepositoryClass) Valid() bool {
 	case PackageVersionRepositoryClassRemote:
 		return true
 	case PackageVersionRepositoryClassVirtual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PendingMigrationStepClass.
+const (
+	PendingMigrationStepClassContract PendingMigrationStepClass = "contract"
+	PendingMigrationStepClassExpand   PendingMigrationStepClass = "expand"
+)
+
+// Valid indicates whether the value is a known member of the PendingMigrationStepClass enum.
+func (e PendingMigrationStepClass) Valid() bool {
+	switch e {
+	case PendingMigrationStepClassContract:
+		return true
+	case PendingMigrationStepClassExpand:
 		return true
 	default:
 		return false
@@ -3698,6 +3761,23 @@ type AdministeredProject struct {
 	ManageRepositories bool   `json:"manageRepositories"`
 }
 
+// AppliedMigrationStep defines model for AppliedMigrationStep.
+type AppliedMigrationStep struct {
+	AppliedAt  time.Time                 `json:"appliedAt"`
+	Class      AppliedMigrationStepClass `json:"class"`
+	DurationMs int                       `json:"durationMs"`
+
+	// Name Examples: 00001_core
+	Name string `json:"name"`
+
+	// Release The release whose migration Job applied the step.
+	Release string `json:"release"`
+	Version int    `json:"version"`
+}
+
+// AppliedMigrationStepClass defines model for AppliedMigrationStep.Class.
+type AppliedMigrationStepClass string
+
 // AuditActor defines model for AuditActor.
 type AuditActor struct {
 	// AuthMethod `bearer`, `basic`, `session`, `api_key`, or null.
@@ -3860,6 +3940,37 @@ type AuthzMe struct {
 	Roles    []RoleName            `json:"roles"`
 	Scope    *ScopeSummary         `json:"scope"`
 }
+
+// BackgroundMigration A background data migration (R-HA-022): a data change too large for the migration Job, run as the job kind
+// `data_migration_<name>` on a worker. Its state comes from its completion record and from the newest job of its kind.
+type BackgroundMigration struct {
+	// EstimatedTotal The migration's own estimate of its rows; `null` while it has none.
+	EstimatedTotal *int64 `json:"estimatedTotal"`
+
+	// Name Examples: nuget_semver2
+	Name string `json:"name"`
+
+	// Processed The rows converted so far; for a succeeded migration the count of its completion.
+	Processed int64 `json:"processed"`
+
+	// Release The release that introduced it; it starts once every live replica runs that release or a newer one.
+	Release string `json:"release"`
+
+	// StartedAt The start of its first run; `null` before a run started or once the job rows are removed (`jobs.retention`).
+	StartedAt *time.Time `json:"startedAt"`
+
+	// State `pending` until a run starts, also while a run waits for replicas of an older release and after a cancelled run
+	// (a worker queues it again when it starts); `running` while a run holds it; `failed` when its newest run failed;
+	// `succeeded` once its completion is recorded. `paused` belongs to the pause operation of R-HA-022, which is not
+	// built.
+	State BackgroundMigrationState `json:"state"`
+}
+
+// BackgroundMigrationState `pending` until a run starts, also while a run waits for replicas of an older release and after a cancelled run
+// (a worker queues it again when it starts); `running` while a run holds it; `failed` when its newest run failed;
+// `succeeded` once its completion is recorded. `paused` belongs to the pause operation of R-HA-022, which is not
+// built.
+type BackgroundMigrationState string
 
 // Bastion A Bastion registration, a principal of the kind `bastion` (R-BAS-004).
 type Bastion struct {
@@ -5491,6 +5602,36 @@ type MembershipChange struct {
 	Remove *[]string `json:"remove,omitempty"`
 }
 
+// MigrationStatus The migration report of GET /api/v1/system/migrations (R-HA-018, R-HA-020, R-HA-021, R-HA-022).
+type MigrationStatus struct {
+	// Applied Every applied step in order, the steps of newer releases than the answering replica's included.
+	Applied []AppliedMigrationStep `json:"applied"`
+
+	// Background The background data migrations the answering replica's binary declares, with their states.
+	Background []BackgroundMigration `json:"background"`
+	Binary     struct {
+		// RequiredSchema The newest expand step the answering replica's binary embeds; a replica serves once `schema.applied` reaches it.
+		RequiredSchema int `json:"requiredSchema"`
+
+		// Version The release of the answering replica.
+		Version string `json:"version"`
+	} `json:"binary"`
+
+	// Pending The steps the answering replica's binary embeds that the database has not applied, in order; empty after a completed upgrade.
+	Pending []PendingMigrationStep `json:"pending"`
+	Schema  struct {
+		// Applied The number of the newest applied step; 0 before the first migration.
+		Applied int `json:"applied"`
+
+		// CompatFloor The highest `requires-app` of the applied contract steps, `0.0.0` while none is applied. A binary older than
+		// the floor does not serve (R-HA-018).
+		//
+		//
+		// Examples: 0.0.0
+		CompatFloor string `json:"compatFloor"`
+	} `json:"schema"`
+}
+
 // MirrorBound defines model for MirrorBound.
 type MirrorBound struct {
 	At *time.Time `json:"at"`
@@ -6005,6 +6146,26 @@ type PendingIdentity struct {
 	// Subject Always `null`: a pending link is completed by the first login (R-AUTH-007).
 	Subject any `json:"subject,omitempty"`
 }
+
+// PendingMigrationStep defines model for PendingMigrationStep.
+type PendingMigrationStep struct {
+	Class PendingMigrationStepClass `json:"class"`
+
+	// Name Examples: 00043_example
+	Name string `json:"name"`
+
+	// RequiresApp A contract step's `-- trove:requires-app`: the oldest release allowed to serve once the step is applied. The
+	// contract guard refuses the step while a live replica runs an older release. `null` for an expand step.
+	RequiresApp *string `json:"requiresApp"`
+
+	// RequiresBackground A contract step's `-- trove:requires-background`: the background data migrations that must have `succeeded`
+	// before the contract guard lets the step run (R-HA-021 step 4). Empty for every other step.
+	RequiresBackground []string `json:"requiresBackground"`
+	Version            int      `json:"version"`
+}
+
+// PendingMigrationStepClass defines model for PendingMigrationStep.Class.
+type PendingMigrationStepClass string
 
 // PermissionCheckItem defines model for PermissionCheckItem.
 type PermissionCheckItem struct {
@@ -9659,6 +9820,9 @@ type ServerInterface interface {
 	// CancelJob Cancel a job
 	// (POST /api/v1/system/jobs/{id}/cancel)
 	CancelJob(w http.ResponseWriter, r *http.Request, id JobId)
+	// GetMigrationStatus The schema migrations and the background data migrations
+	// (GET /api/v1/system/migrations)
+	GetMigrationStatus(w http.ResponseWriter, r *http.Request)
 	// GetPing Check that this replica is ready to take work
 	// (GET /api/v1/system/ping)
 	GetPing(w http.ResponseWriter, r *http.Request)
@@ -16459,6 +16623,20 @@ func (siw *ServerInterfaceWrapper) CancelJob(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// GetMigrationStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetMigrationStatus(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMigrationStatus(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetPing operation middleware
 func (siw *ServerInterfaceWrapper) GetPing(w http.ResponseWriter, r *http.Request) {
 
@@ -18601,6 +18779,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/version", wrapper.GetVersion)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/info", wrapper.GetSystemInfo)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/replicas", wrapper.ListReplicas)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/migrations", wrapper.GetMigrationStatus)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/openapi.json", wrapper.GetOpenApiJson)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/openapi.yaml", wrapper.GetOpenApiYaml)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/problems/{code}", wrapper.GetProblemType)

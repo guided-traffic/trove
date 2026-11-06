@@ -115,6 +115,7 @@ an endpoint whose host check fails answers `421` `misdirected_request` before ro
 | `listTasks` | `GET /api/v1/system/tasks` | `settings:read` |
 | `runTask` | `POST /api/v1/system/tasks/{name}/run` | `settings:write`; optional `Idempotency-Key`; `202` with the job, `409` with the running job |
 | `getEncryptionStatus` | `GET /api/v1/system/encryption` | `settings:read` |
+| `getMigrationStatus` | `GET /api/v1/system/migrations` | `settings:read`; the report of `trove migrate status` from the same code (`postgres.Report` on the replica's pool, [database.md](database.md#the-migration-report-postgresreport-trove-migrate-status-get-apiv1systemmigrations)), for the answering replica's binary; `503` without a database |
 | `listFormats` | `GET /api/v1/formats` | public; 401 for an anonymous caller while anonymous access is off ([repositories.md](repositories.md#http-operations)) |
 | `listRepositories`, `getRepository` | `GET /api/v1/repositories`, `/{key}` | public; the handler decides what the caller sees (R-AUTHZ-016) |
 | `listPackages`, `lookupPackage`, `getPackage`, `listPackageVersions`, `getPackageVersion`, `getPackageVersionReadme` | `GET /api/v1/packages`, `/lookup`, `/{packageId}`, `/{packageId}/versions`, `/{packageId}/versions/{version}`, `…/readme` | public; the read model filters by what the caller may read (Q-API-162, Q-API-165); [packages.md](packages.md) |

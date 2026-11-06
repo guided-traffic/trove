@@ -203,6 +203,9 @@ func TestUpgrade_R_HA_064_AcrossTheCut(t *testing.T) {
 	if got, err := kubectl("-n", cfg.namespace, "get", "service", "trove", "--ignore-not-found", "-o", "name"); err != nil || strings.TrimSpace(got) != "" {
 		t.Errorf("the Service trove of the old shape is still there after step 2 (%q, %v)", strings.TrimSpace(got), err)
 	}
+	t.Run("R-HA-020 R-HA-064 after step 2 GET /api/v1/system/migrations shows no pending step and the background migrations succeeded", func(t *testing.T) {
+		requireMigrationsDone(t, version)
+	})
 	time.Sleep(upgradeHold)
 
 	res := loops.stop(t)
@@ -251,16 +254,13 @@ func TestUpgrade_R_HA_020_RollingFromThePreviousRelease(t *testing.T) {
 	}
 
 	// R-HA-020's verification
-	t.Run("R-HA-020 verification: rollout status, the replicas list only the new version, no migration is pending", func(t *testing.T) {
+	t.Run("R-HA-020 verification: rollout status, the replicas list only the new version, GET /api/v1/system/migrations shows no pending step and the background migrations succeeded", func(t *testing.T) {
 		rolloutComplete(t, deploymentNames(upDeployments(t)))
 		rs := waitReplicas(t, "the registry lists only the new version", 3*time.Minute, func(rs []upReplica) bool {
 			return slices.Equal(upVersions(rs), []string{version})
 		})
 		t.Logf("the registry lists: %s", describeReplicas(rs))
-		st := upMigrateStatus(t)
-		if len(st.Pending) != 0 || !st.Servable || st.Binary.Version != version || st.Schema.Applied != st.Binary.RequiredSchema {
-			t.Errorf("migrations after the upgrade: pending %v, servable %v (%s), binary %s, applied %d, required %d", st.Pending, st.Servable, st.Verdict, st.Binary.Version, st.Schema.Applied, st.Binary.RequiredSchema)
-		}
+		requireMigrationsDone(t, version)
 	})
 	time.Sleep(upgradeHold)
 

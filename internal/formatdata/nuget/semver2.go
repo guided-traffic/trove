@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
@@ -42,6 +43,28 @@ const Semver2StateKey = "nuget_semver2_recomputed"
 // number alone. The recomputation waits while a replica of it or an older one is live, because
 // such a replica can still write a row the old way behind it (R-HA-022).
 const Semver2LastOldRelease = "0.9.0"
+
+// Semver2Release is the release that introduced the recomputation, the one after Semver2LastOldRelease.
+const Semver2Release = "0.10.0"
+
+// Semver2Background declares the recomputation as a background data migration of R-HA-022 (Q-HA-114): GET
+// /api/v1/system/migrations and `trove migrate status` list it with its state, and a contract step may depend on it
+// (Q-HA-115). Its name is its job kind without the prefix data_migration_; a completed run's count is the rows it examined,
+// read from the completion record, which outlives the job rows.
+func Semver2Background() postgres.BackgroundMigration {
+	return postgres.BackgroundMigration{
+		Name:    strings.TrimPrefix(Semver2JobKind, postgres.BackgroundKindPrefix),
+		Release: Semver2Release,
+		DoneKey: Semver2StateKey,
+		Processed: func(done []byte) (int64, bool) {
+			var r Semver2Result
+			if err := json.Unmarshal(done, &r); err != nil {
+				return 0, false
+			}
+			return r.Examined, true
+		},
+	}
+}
 
 // The states a run records.
 const (

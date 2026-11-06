@@ -171,7 +171,8 @@ configuration is outside trove, and trove cannot check it.
 Stage: `GET /api/v1/system/info` and `GET /api/v1/system/replicas` on the default endpoint's client listener, reached
 through the edge ([access.go](../../internal/app/access.go), `bridgeAccess.Require`). These two and no other: the bridge
 matches the request path (`bootstrapPath`), so the other operations of `settings:read` (the scheduled tasks, the encryption
-status with its key IDs, the authentication settings) answer `401` to an anonymous caller with the switch on (Q-AUTHZ-71,
+status with its key IDs, the authentication settings, the migration report with the schema's step names and releases) answer
+`401` to an anonymous caller with the switch on (Q-AUTHZ-71,
 `TestBootstrapAnonymousReadOnlyOnDefaultEndpoint`).
 
 Live in the dev profile today, because [values-dev.yaml](../../deploy/dev/values-dev.yaml) sets

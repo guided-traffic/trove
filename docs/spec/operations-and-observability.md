@@ -80,7 +80,7 @@ Covers: features from [operations-and-monitoring.md](../features/operations-and-
 | Permission (proposed name) | Grants |
 |---|---|
 | system administrator | Every operation on this page |
-| `system.read`: the capability `settings:read` of [authorization.md](authorization.md) R-AUTHZ-010 | Read replicas, system information, tasks, jobs, locks, effective configuration, log levels, backup runs ([backup-and-restore.md](backup-and-restore.md) R-BAK-014) |
+| `system.read`: the capability `settings:read` of [authorization.md](authorization.md) R-AUTHZ-010 | Read replicas, system information, tasks, jobs, locks, effective configuration, log levels, backup runs ([backup-and-restore.md](backup-and-restore.md) R-BAK-014), the migration report ([ha-and-helm.md](ha-and-helm.md) R-HA-018) |
 | `audit.read` | Query and export audit events (the auditor role, IAM-006) |
 | `storage.read` | Read the storage summary (`GET /api/v1/storage/summary`) and the damaged-blob list (`GET /api/v1/storage/damaged-blobs`); both read paths are owned by [storage.md](storage.md) (R-STOR-027, R-STOR-028) |
 | `config.read` | Run configuration diff and export |

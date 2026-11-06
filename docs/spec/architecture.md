@@ -4217,7 +4217,9 @@ Files:
     `CREATE INDEX CONCURRENTLY`. Such a file holds exactly one statement (R-HA-018);
   - on a contract step, `-- trove:requires-app >= <version>`, the oldest release allowed to serve
     once the step is applied. R-HA-018's `lastUsedBy` is the release before it, and `compat_floor`
-    is the highest `requires-app` of the applied contract steps.
+    is the highest `requires-app` of the applied contract steps;
+  - on a contract step that removes what a background data migration converts, `-- trove:requires-background <name>`,
+    once per migration ([ha-and-helm.md](ha-and-helm.md) R-HA-022, Q-HA-115).
 - Expand steps never break the previous minor: new tables, nullable or defaulted columns, indexes
   built `CONCURRENTLY`, new enum values (R-HA-018 lists the classes in full). Contract steps (drop,
   rename, tighten) ship at the earliest one minor after the release that stopped using the old
@@ -4253,7 +4255,8 @@ library and no `database/sql` are involved (Q-ARCH-3). `trove migrate up` runs t
      backoff.
 6. Update `schema_state`, release the lock, and print the summary of R-HA-019.
 
-`trove migrate status` lists applied and pending steps without taking the lock.
+`trove migrate status` lists applied and pending steps and the background data migrations without taking the lock;
+`GET /api/v1/system/migrations` answers the same report from the same code ([ha-and-helm.md](ha-and-helm.md) R-HA-018).
 
 Restore mode. The runner offers an internal "migrate up to step N" mode for `trove backup restore`
 alone, which loads a backup into exactly the schema it was exported from and then applies the
@@ -4282,7 +4285,9 @@ Gates:
   runner reads the replica registry ([operations-and-observability.md](operations-and-observability.md)).
   If a live replica runs a version below the step's `requires-app`, it exits `3` without applying
   anything. It lists those replicas and the two ways forward of R-HA-021. There is no override flag:
-  the downtime path is to scale the replicas to zero, so that the registry shows none.
+  the downtime path is to scale the replicas to zero, so that the registry shows none. It also exits
+  `3` while a background migration the step names in `-- trove:requires-background` has not succeeded
+  ([ha-and-helm.md](ha-and-helm.md) R-HA-021 step 4, Q-HA-115).
 - **Gate in `trove serve`**, through the `schema` readiness check, with R-HA-018's rule: a binary
   of version V serves only if `schema_state.applied` is at least its `requiredSchema` and
   `compat_floor` is at most V.

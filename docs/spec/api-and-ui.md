@@ -1965,6 +1965,7 @@ Owned by [operations-and-observability.md](operations-and-observability.md) and
 | GET | `/api/v1/system/info` | Installation facts: version, base URL and source, maintenance mode, replicas per role (live, ready, degraded, nodes) and per version, database and schema versions, Valkey installation facts (mode, primary name, number of configured Sentinels, TLS mode, key prefix, keyspace, degraded replicas), backup status | `system.read` |
 | GET | `/api/v1/system/replicas` | Replicas with version, roles, node, state, heartbeat, readiness checks and each replica's view of Valkey (state, reason, circuit, primary, Sentinels reachable and configured, server version, last primary change) | `system.read` |
 | GET | `/api/v1/system/tasks`, POST `/api/v1/system/tasks/{name}/run` | Scheduled tasks and manual runs (R-OPS-019) | `system.read`; `admin` to run |
+| GET | `/api/v1/system/migrations` | Schema state, the answering replica's binary, pending and applied schema steps, background data migrations with their states; owned by [ha-and-helm.md](ha-and-helm.md) R-HA-018 (the upgrade verification of R-HA-020, step 4 of R-HA-021) | `system.read` |
 
 **M0 stand-in until authentication ships (M1).** No principal holds `system.read` yet. The configuration
 key `system.bootstrap_anonymous_read` (default `false`; `true` in the development profile) lets anonymous

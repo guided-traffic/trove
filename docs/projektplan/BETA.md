@@ -880,9 +880,14 @@ areas.
   registry lists `api`, `packages`, `web` and `worker`, after step 2 no `web`. 2 journeys met the UI's hashed assets of the other
   release, which the pods of v0.16.0 cannot serve; for that release alone they are counted as a finding
   ([Q-HA-99](../spec/ha-and-helm.md#q-ha-99--the-uis-hashed-assets-across-an-upgrade), F-58). The dev PostgreSQL allows 450
-  connections for the bridge (Q-HA-98). Open: E6a.8, a passing test that names R-HA-021, R-HA-031, R-HA-038 and R-HA-045 (the last
-  three are completed with phase 7's chart). The leg `e2e-upgrade (upgrade)` passed both upgrade tests in the dispatched nightly run
-  42177273488
+  connections for the bridge (Q-HA-98). Open: E6a.8, a passing test that names R-HA-031, R-HA-038 and R-HA-045 (completed with
+  phase 7's chart). The leg `e2e-upgrade (upgrade)` passed both upgrade tests in the dispatched nightly run 42177273488.
+  R-HA-021 (2026-11-06, finding F-59): `GET /api/v1/system/migrations` is built, the report of `trove migrate status` from the same
+  code with the background migrations and their states (Q-HA-114), and a contract step declares the background migration it
+  depends on, which the guard enforces (Q-HA-115). `TestR_HA_021_UpgradePreparation` names R-HA-021 and passes against the local
+  integration stack (step 4: report and guard agree for each state; the runner's part of both criteria); its CI run is pending, and
+  the Helm level of the criteria (a real `helm upgrade` across a contract step) is not tested. The upgrade tests read the endpoint
+  (Q-HA-116, supersedes Q-HA-96); that change compiles and has not run on kind yet
 
 ## Phase 6b · Remote full mirror
 
@@ -1005,9 +1010,10 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 - 🟢 Rolling upgrade from the previous pre-release with mixed versions. `TestUpgrade_R_HA_020_RollingFromThePreviousRelease`
   (set `upgrade`) passed on kind on 2026-11-06: v0.19.0 (resolved from the tags) upgraded with its migration Job and rolled back with
   `helm rollback`, under 447 `npm ci`, 47 publishes, 545 `dotnet restore` and 71 browser journeys, 0 failed; R-HA-020's verification
-  (rollout status, only the new version listed, no pending migration through `trove migrate status`, since the endpoint is F-59). The
+  (rollout status, only the new version listed, no pending migration through `trove migrate status`, since the endpoint was F-59). The
   test is strict on the UI's assets: the first release that changes the bundle makes it red until F-58 is fixed. Passed in the dispatched
-  nightly run 42177273488 as well
+  nightly run 42177273488 as well. Since 2026-11-06 the verification reads `GET /api/v1/system/migrations` and waits for the background
+  migrations to succeed, with the command as the cross-check (Q-HA-116); not run on kind yet
 - 🟡 Performance targets met in two nightly runs in a row. Worked on 2026-11-06 (F-43): the findings page of a pattern grant decides each
   package once (V-7b), a publish's evaluation makes two round trips instead of eight (V-4), the advisory import's statements reach rows by
   their primary key and the `ecosystem` columns carry no planner statistics (V-1, F-57), and the perf jobs run after the kind legs

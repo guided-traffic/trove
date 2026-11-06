@@ -48,6 +48,9 @@ type Services struct {
 	KeyRing *secrets.KeyRing
 	Sealed  secrets.ValueCounter
 	Rings   RingSource
+	// Migrations reads the migration report of GET /api/v1/system/migrations
+	// (R-HA-018, R-HA-020, R-HA-021); nil answers it with 503.
+	Migrations MigrationSource
 }
 
 // Enqueuer enqueues a job in the caller's transaction (*jobs.Queue).
