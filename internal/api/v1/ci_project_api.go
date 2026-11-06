@@ -4,17 +4,14 @@ import (
 	"net/http"
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
-	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/ci"
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
 // The CI operations of a project (Q-CI-26), work packages W1 (the issuer choices), W3 (the mappings, the dry
 // run and the snippet) and W5 (the issuances). The declaration is {permission: ci:read | ci:write | tokens:read,
-// projectAdmin: managePolicies} (ADR-146): the shared step admits the capability holder or any project
-// administrator, and each handler narrows with requireProject, which answers 404 for a project the caller
-// does not administer and 403 project_switch_off while managePolicies is off. The narrowing comes first in
-// every handler, before the body is read or anything is looked up.
+// project: path.projectKey, projectRole: owner}: the shared step admits the capability holder or an Owner of
+// the project of the path.
 //
 // What each handler does beyond the narrowing, with the service of internal/ci:
 //
@@ -28,19 +25,12 @@ import (
 
 // projectMappings narrows the caller to the project and returns the mapping service.
 func (s *Server) projectMappings(r *http.Request, capability, project string) (ci.Mappings, error) {
-	if err := s.requireProject(r.Context(), capability, project, authz.ProjectManagePolicies); err != nil {
-		return nil, err
-	}
 	return s.ciMappingService()
 }
 
 // ListProjectCiIssuers implements GET /api/v1/projects/{key}/ci/issuers: the issuers read-only, name,
 // kind, issuer URL and public_issuer, for a project administrator who chooses one (Q-CI-26).
 func (s *Server) ListProjectCiIssuers(w http.ResponseWriter, r *http.Request, key string) {
-	if err := s.requireProject(r.Context(), "ci:read", key, authz.ProjectManagePolicies); err != nil {
-		httpserver.Problem(w, r, err)
-		return
-	}
 	svc, err := s.ciIssuerService()
 	var choices []ci.IssuerChoice
 	if err == nil {
@@ -203,10 +193,6 @@ func (s *Server) GetProjectCiSnippet(w http.ResponseWriter, r *http.Request, key
 // tokens whose contributing mappings include a mapping of the project's tier, newest first, each showing the
 // project's mappings only. A project the caller does not administer is 404 before anything is read.
 func (s *Server) ListProjectCiIssuances(w http.ResponseWriter, r *http.Request, key string, _ gen.ListProjectCiIssuancesParams) {
-	if err := s.requireProject(r.Context(), "tokens:read", key, authz.ProjectManagePolicies); err != nil {
-		httpserver.Problem(w, r, err)
-		return
-	}
 	svc, err := s.ciIssuanceService()
 	var lq ListQuery
 	var f ci.IssuanceFilter

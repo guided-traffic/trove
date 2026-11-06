@@ -369,7 +369,7 @@ func (s *Server) GetPackageVulnerabilities(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, r, http.StatusOK, out)
 }
 
-// RescanRepositoryVulnerabilities implements POST /api/v1/repositories/{key}/vulnerabilities/rescan (R-VULN-011): it enqueues
+// RescanRepositoryVulnerabilities implements POST /api/v1/projects/{projectKey}/repositories/{repoKey}/vulnerabilities/rescan (R-VULN-011): it enqueues
 // a vuln-rescan job of the repository and answers 202 with the job, 409 with the running one. The caller holds manage on the
 // repository (declared, Q-VULN-27).
 func (s *Server) RescanRepositoryVulnerabilities(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string, _ gen.RescanRepositoryVulnerabilitiesParams) {
@@ -385,7 +385,7 @@ func (s *Server) RescanRepositoryVulnerabilities(w http.ResponseWriter, r *http.
 	sn, err := rep.Snapshot(r.Context())
 	var id int64
 	if err == nil {
-		repo, ok := sn.Repository(key)
+		repo, ok := sn.Repository(key.String())
 		switch {
 		case !ok:
 			err = errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "No repository has the requested key.")
@@ -402,8 +402,8 @@ func (s *Server) RescanRepositoryVulnerabilities(w http.ResponseWriter, r *http.
 	}
 	err = s.idem.Do(w, r, nil, IdempotentOp{Run: func(ctx context.Context, tx meta.Tx) (Outcome, error) {
 		res, err := s.o.API.Queue.Enqueue(ctx, tx, jobs.EnqueueSpec{
-			Kind: vuln.KindRescan, Args: vuln.RescanArgs{Repository: key, RepositoryID: id}, DedupKey: vuln.RescanKey(id),
-			TargetKind: "repository", TargetKey: key, CreatedBy: callerID(ctx),
+			Kind: vuln.KindRescan, Args: vuln.RescanArgs{Repository: key.String(), RepositoryID: id}, DedupKey: vuln.RescanKey(id),
+			TargetKind: "repository", TargetKey: key.String(), CreatedBy: callerID(ctx),
 		})
 		if err != nil {
 			return Outcome{}, err

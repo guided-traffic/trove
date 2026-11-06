@@ -791,6 +791,28 @@ func (s *Service) oneVersion(ctx context.Context, sc Scope, format, name, versio
 	return versionGroup{}, nil, false, nil
 }
 
+// Name reads the qualified name "<project>/<key>" the statements of this package use as the repository key; a
+// string that is none gives the zero name.
+func Name(k string) qname.Repo { return nameOf(k) }
+
+// Names is [Name] for a list.
+func Names(keys []string) []qname.Repo {
+	out := make([]qname.Repo, len(keys))
+	for i, k := range keys {
+		out[i] = nameOf(k)
+	}
+	return out
+}
+
+// Strings is the qualified texts of a list of names.
+func Strings(names []qname.Repo) []string {
+	out := make([]string, len(names))
+	for i, n := range names {
+		out[i] = n.String()
+	}
+	return out
+}
+
 // nameOf reads the qualified name "<project>/<key>" that the package statements and the topology use as the
 // repository key; a string that is none gives the zero name, which no scope admits.
 func nameOf(k string) qname.Repo {

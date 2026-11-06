@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"net/netip"
 	"strconv"
@@ -65,18 +66,22 @@ func (s *Server) BastionCheck(w http.ResponseWriter, r *http.Request, _ gen.Bast
 		return
 	}
 	cctx := httpserver.WithPrincipal(ctx, p)
-	acc, err := begin.Begin(cctx, "", req.Repositories...)
+	names := make([]qname.Repo, len(req.Repositories))
+	for i, text := range req.Repositories {
+		names[i], _ = qname.ParseRepo(text) // checkRequest has validated the text
+	}
+	acc, err := begin.Begin(cctx, "", names...)
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
 	}
-	shapes, err := b.Shapes.Shapes(cctx, acc.Index(), acc.Subject, req.Repositories)
+	shapes, err := b.Shapes.Shapes(cctx, acc.Index(), acc.Subject, names)
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
 	}
-	for _, key := range req.Repositories {
-		ans.Repositories[key] = repositoryRead(shapes[key], subject.Kind == iface.SubjectAnonymous)
+	for i, text := range req.Repositories {
+		ans.Repositories[text] = repositoryRead(shapes[names[i]], subject.Kind == iface.SubjectAnonymous)
 	}
 	writeInterface(w, r, http.StatusOK, ans)
 }
@@ -95,8 +100,8 @@ func (s *Server) checkRequest(req iface.CheckRequest) (netip.Addr, error) {
 		return netip.Addr{}, invalid("/repositories", "count", "must name between 1 and "+strconv.Itoa(s.o.Bastion.Config.Check.MaxRepositories)+" repositories")
 	}
 	for i, key := range req.Repositories {
-		if key == "" || len(key) > 255 {
-			return netip.Addr{}, invalid("/repositories/"+strconv.Itoa(i), "invalid_key", "must be a repository key of at most 255 characters")
+		if _, perr := qname.ParseRepo(key); perr != nil || len(key) > 255 {
+			return netip.Addr{}, invalid("/repositories/"+strconv.Itoa(i), "invalid_key", "must be a repository name <project>/<key> of at most 255 characters")
 		}
 	}
 	if req.Credential != nil && len(*req.Credential) > maxCredentialLen {

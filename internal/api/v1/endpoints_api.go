@@ -3,6 +3,7 @@ package v1
 import (
 	"context"
 	"fmt"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net"
 	"net/http"
 	"slices"
@@ -617,11 +618,15 @@ func (s *Server) checkReadFilter(ctx context.Context, acc *edge.Access, repo str
 	if s.o.Endpoints.Scoper == nil {
 		return nil, nil
 	}
-	rs, err := s.o.Endpoints.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, "", []string{repo})
+	name, err := qname.ParseRepo(repo)
+	if err != nil {
+		return nil, nil // a text that is no repository name lists nothing
+	}
+	rs, err := s.o.Endpoints.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, qname.Repo{}, []qname.Repo{name})
 	if err != nil {
 		return nil, err
 	}
-	return func(pkg, version string) bool { return rs.MayRead(repo, pkg, version) }, nil
+	return func(pkg, version string) bool { return rs.MayRead(name, pkg, version) }, nil
 }
 
 // requireRead decides read on the repository for the caller, under the ceiling of
@@ -633,11 +638,12 @@ func (s *Server) requireRead(ctx context.Context, repo string) (*edge.Access, er
 	if d == nil {
 		return nil, errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
 	}
-	acc, err := edge.Resolve(ctx, d, SubjectFrom(ctx), repo)
+	name, _ := qname.ParseRepo(repo) // a text that is no name stays the zero name, which no repository has
+	acc, err := edge.Resolve(ctx, d, SubjectFrom(ctx), name)
 	if err != nil {
 		return nil, err
 	}
-	c := authz.Coordinate{Repository: repo, Kind: authz.KindMetadata, Actions: []authz.Action{authz.Read}}
+	c := authz.Coordinate{Repository: name, Kind: authz.KindMetadata, Actions: []authz.Action{authz.Read}}
 	if err := acc.Decide(ctx, c).Err(); err != nil {
 		return nil, err
 	}

@@ -26,14 +26,14 @@ import (
 // without it, a holder begun here with the repository key made known; the subject
 // behind it, whose endpoint is the ceiling of every decision (R-EP-013); and the
 // actor and source of the audit events.
-func (s *Server) filesCaller(r *http.Request, repoKey string) (files.Caller, error) {
+func (s *Server) filesCaller(r *http.Request, repoKey qname.Repo) (files.Caller, error) {
 	c, _, err := s.filesAccess(r, repoKey)
 	return c, err
 }
 
 // filesAccess is filesCaller with the holder of the request, for an operation
 // that asks it more than the files service does.
-func (s *Server) filesAccess(r *http.Request, repoKey string) (files.Caller, *edge.Access, error) {
+func (s *Server) filesAccess(r *http.Request, repoKey qname.Repo) (files.Caller, *edge.Access, error) {
 	ctx := r.Context()
 	if _, ok := edge.AccessFrom(ctx); !ok && s.o.FilesDecider == nil {
 		return files.Caller{}, nil, unavailable("The files service")

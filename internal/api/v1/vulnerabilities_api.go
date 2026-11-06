@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"github.com/guided-traffic/trove/internal/packages/view"
+	"github.com/guided-traffic/trove/internal/qname"
 	"html"
 	"net/http"
 	"regexp"
@@ -59,22 +61,22 @@ func (s *Server) vulnRequest(r *http.Request, rep *report.Service) (context.Cont
 	if err != nil {
 		return ctx, nil, report.Caller{}, err
 	}
-	ctx, acc, err := requestHolder(ctx, s.o.Vuln.Decider, sn.Keys()...)
+	ctx, acc, err := requestHolder(ctx, s.o.Vuln.Decider, view.Names(sn.Keys())...)
 	if err != nil {
 		return ctx, nil, report.Caller{}, err
 	}
 	if acc == nil {
 		return ctx, nil, report.Caller{}, unavailable("The decision point")
 	}
-	rs, err := s.o.Vuln.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, "", sn.Topo.Physical())
+	rs, err := s.o.Vuln.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, qname.Repo{}, view.Names(sn.Topo.Physical()))
 	if err != nil {
 		return ctx, nil, report.Caller{}, err
 	}
-	virtuals, err := acc.Readable(ctx, sn.Topo.Virtual())
+	virtuals, err := acc.Readable(ctx, view.Names(sn.Topo.Virtual()))
 	if err != nil {
 		return ctx, nil, report.Caller{}, err
 	}
-	return ctx, sn, report.Caller{Reads: rs, VirtualReadable: virtuals}, nil
+	return ctx, sn, report.Caller{Reads: rs, VirtualReadable: view.Strings(virtuals)}, nil
 }
 
 // findingFilters are the query parameters of the list and of the export (R-VULN-020).

@@ -21,7 +21,7 @@ import (
 // renderer of the client setup, so a snippet of the guide is the one the setup page
 // shows for the same repository, client and credential mode.
 
-// GetRepositoryGuide implements GET /api/v1/repositories/{repoKey}/guide. The
+// GetRepositoryGuide implements GET /api/v1/projects/{projectKey}/repositories/{repoKey}/guide. The
 // operation's declaration (read on the repository) has been enforced by the time
 // the handler runs.
 func (s *Server) GetRepositoryGuide(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string, params gen.GetRepositoryGuideParams) {
@@ -42,8 +42,8 @@ func (s *Server) GetRepositoryGuide(w http.ResponseWriter, r *http.Request, proj
 	writeJSON(w, r, http.StatusOK, out)
 }
 
-func (s *Server) repositoryGuide(ctx context.Context, ps PackageServices, repoKey, client string) (gen.Guide, error) {
-	repo, err := ps.Reader.ByKey(ctx, repoKey)
+func (s *Server) repositoryGuide(ctx context.Context, ps PackageServices, repoKey qname.Repo, client string) (gen.Guide, error) {
+	repo, err := ps.Reader.ByName(ctx, repoKey)
 	if err != nil {
 		return gen.Guide{}, err
 	}
@@ -61,14 +61,14 @@ func (s *Server) repositoryGuide(ctx context.Context, ps PackageServices, repoKe
 	}
 	target, mayPublish := s.publishTarget(acc, repo)
 	requiresAuth := true
-	if keys, err := acc.ReadableAnonymously(ctx, []string{repoKey}); err == nil {
+	if keys, err := acc.ReadableAnonymously(ctx, []qname.Repo{repoKey}); err == nil {
 		requiresAuth = len(keys) == 0
 	}
 	in := guideInput{
 		Format: f, Class: repo.Class, Client: client, Anonymous: acc.Subject.Anonymous, ExposureRules: exposureRules(ctx),
 		TokenEnvVar: ps.TokenEnvVar, MayPublish: mayPublish,
 		Data: formats.SetupData{
-			RegistryURL: registry, Repository: repoKey, Endpoint: acc.Subject.Endpoint, RequiresAuth: requiresAuth,
+			RegistryURL: registry, Repository: repoKey.String(), Endpoint: acc.Subject.Endpoint, RequiresAuth: requiresAuth,
 		},
 	}
 	if target != nil {
@@ -109,7 +109,7 @@ func formatGuide(ctx context.Context, ps PackageServices, format string, class f
 	if !f.Descriptor().Supports(class) {
 		return gen.Guide{}, badParam("class", "is not a class of the format "+format)
 	}
-	registry, _, err := setupAddress(ctx, f, formats.GuideRepositoryPlaceholder, "The guide")
+	registry, _, err := placeholderAddress(ctx, f, "The guide")
 	if err != nil {
 		return gen.Guide{}, err
 	}

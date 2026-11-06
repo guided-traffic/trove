@@ -87,20 +87,20 @@ func (s *Server) packageScope(r *http.Request, ps PackageServices, req view.Scop
 		return ctx, view.Scope{}, err
 	}
 	topo := view.NewTopology(repos)
-	keys := append(topo.Physical(), topo.Virtual()...)
+	keys := view.Names(append(topo.Physical(), topo.Virtual()...))
 	ctx, acc, err := requestHolder(ctx, ps.Decider, keys...)
 	if err != nil {
 		return ctx, view.Scope{}, err
 	}
-	rs, err := ps.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, "", topo.Physical())
+	rs, err := ps.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, qname.Repo{}, view.Names(topo.Physical()))
 	if err != nil {
 		return ctx, view.Scope{}, err
 	}
-	virtuals, err := acc.Readable(ctx, topo.Virtual())
+	virtuals, err := acc.Readable(ctx, view.Names(topo.Virtual()))
 	if err != nil {
 		return ctx, view.Scope{}, err
 	}
-	sc, err := ps.View.Scope(ctx, rs, topo, virtuals, req)
+	sc, err := ps.View.Scope(ctx, rs, topo, view.Strings(virtuals), req)
 	return ctx, sc, err
 }
 
@@ -367,7 +367,7 @@ func versionOf(base string, d view.VersionDetail) gen.PackageVersion {
 		out.Files = append(out.Files, gen.PackageFile{
 			Path: f.Path, SizeBytes: f.SizeBytes, Sha256: f.SHA256, DownloadUrl: downloadURL(base, d.Format, f.Repo, f.Path),
 			// f.Path is the path of the file item in f.Repo, the repository that holds it (PackageViewFiles).
-			ContentUrl: edge.ContentPath(f.Repo, f.Path),
+			ContentUrl: edge.ContentPath(view.Name(f.Repo), f.Path),
 		})
 	}
 	return out
@@ -376,7 +376,8 @@ func versionOf(base string, d view.VersionDetail) gen.PackageVersion {
 // downloadURL is the URL a client downloads a file from: the format's protocol
 // path of the repository when the format has one, else the raw file path. Every
 // segment is escaped once (R-ARCH-007).
-func downloadURL(base, format, repo, path string) string {
+func downloadURL(base, format, repoName, path string) string {
+	repo := view.Name(repoName)
 	segs := strings.Split(path, "/")
 	for i, s := range segs {
 		segs[i] = url.PathEscape(s)
@@ -384,9 +385,9 @@ func downloadURL(base, format, repo, path string) string {
 	escaped := strings.Join(segs, "/")
 	base = strings.TrimSuffix(base, "/")
 	if f, ok := formats.Lookup(format); ok && len(f.Routes()) > 0 {
-		return base + strings.ReplaceAll(f.Descriptor().ProtocolBasePath, "{key}", repo) + escaped
+		return base + qname.ProtocolBase(f.Descriptor().ProtocolBasePath, repo) + escaped
 	}
-	return base + "/files/" + url.PathEscape(repo) + "/" + escaped
+	return base + qname.FilesBase(repo) + escaped
 }
 
 // readmeTag is the strong tag of a README answer: the source, the renderer version
@@ -454,7 +455,7 @@ func (s *Server) GetPackageVersionReadme(w http.ResponseWriter, r *http.Request,
 	_, _ = w.Write(append(b, '\n'))
 }
 
-// GetClientSetup implements GET /api/v1/repositories/{repoKey}/client-setup
+// GetClientSetup implements GET /api/v1/projects/{projectKey}/repositories/{repoKey}/client-setup
 // (R-API-030). The operation's declaration (read on the repository) has been
 // enforced by the time the handler runs.
 func (s *Server) GetClientSetup(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string, params gen.GetClientSetupParams) {
@@ -504,7 +505,7 @@ func setupValues(p gen.GetClientSetupParams) (map[string]string, error) {
 	return values, nil
 }
 
-func (s *Server) clientSetup(r *http.Request, ps PackageServices, repoKey string, p gen.GetClientSetupParams) (gen.ClientSetup, error) {
+func (s *Server) clientSetup(r *http.Request, ps PackageServices, repoKey qname.Repo, p gen.GetClientSetupParams) (gen.ClientSetup, error) {
 	ctx := r.Context()
 	creds := credPlaceholder
 	if p.Credentials != nil {
@@ -525,7 +526,7 @@ func (s *Server) clientSetup(r *http.Request, ps PackageServices, repoKey string
 		}
 	}
 
-	repo, err := ps.Reader.ByKey(ctx, repoKey)
+	repo, err := ps.Reader.ByName(ctx, repoKey)
 	if err != nil {
 		return gen.ClientSetup{}, err
 	}
@@ -578,14 +579,14 @@ func (s *Server) clientSetup(r *http.Request, ps PackageServices, repoKey string
 		target, mayPublish = nil, false
 	}
 	requiresAuth := true
-	if keys, err := acc.ReadableAnonymously(ctx, []string{repoKey}); err == nil {
+	if keys, err := acc.ReadableAnonymously(ctx, []qname.Repo{repoKey}); err == nil {
 		requiresAuth = len(keys) == 0
 	}
 
 	snippets, err := renderSnippets(setupInput{
 		Templates: templates, Client: p.Client, Credentials: creds, TokenEnvVar: ps.TokenEnvVar,
 		Data: formats.SetupData{
-			RegistryURL: registry, Repository: repoKey, Endpoint: acc.Subject.Endpoint, RequiresAuth: requiresAuth,
+			RegistryURL: registry, Repository: repoKey.String(), Endpoint: acc.Subject.Endpoint, RequiresAuth: requiresAuth,
 			Bastion: bastion,
 		},
 		Package: values["package"], Version: values["version"], Scope: scopeName, MayPublish: mayPublish,
@@ -594,7 +595,7 @@ func (s *Server) clientSetup(r *http.Request, ps PackageServices, repoKey string
 		return gen.ClientSetup{}, errs.Wrap(err, "api.clientSetup")
 	}
 	out := gen.ClientSetup{
-		Repository: repoKey, Format: repo.Format, Client: p.Client, Credentials: gen.ClientSetupCredentials(creds),
+		Repository: repoKey.String(), Format: repo.Format, Client: p.Client, Credentials: gen.ClientSetupCredentials(creds),
 		RegistryUrl: registry, EndpointPath: registryKey, PublishTarget: target,
 		TokenTtlSeconds: int64(ps.TokenTTL / time.Second), Snippets: make([]gen.ClientSnippet, 0, len(snippets)),
 	}
@@ -640,18 +641,42 @@ func clientSnippet(sn snippet) gen.ClientSnippet {
 // the key npm binds a credential to. The addresses come from the configured base
 // URL of the endpoint, never from the Host the request carried: the snippets and
 // the guide end up in files users copy. what names the operation in the 503.
-func setupAddress(ctx context.Context, f formats.Format, key, what string) (registry, registryKey string, err error) {
+func setupAddress(ctx context.Context, f formats.Format, key qname.Repo, what string) (registry, registryKey string, err error) {
+	base, err := setupBase(ctx, what)
+	if err != nil {
+		return "", "", err
+	}
+	return registryAt(base, f, key)
+}
+
+// setupBase is the configured base URL the addresses of a setup are built on.
+func setupBase(ctx context.Context, what string) (string, error) {
 	info := httpserver.InfoFrom(ctx)
 	if info.BaseURLSource != "config" || info.BaseURL == "" {
-		return "", "", errs.E(errs.Unavailable, errs.CodeUnavailable,
+		return "", errs.E(errs.Unavailable, errs.CodeUnavailable,
 			what+" needs server.base_url (or the base URL of the endpoint); it is not configured.")
 	}
-	return registryAt(info.BaseURL, f, key)
+	return info.BaseURL, nil
+}
+
+// placeholderAddress is the address of a format with <project> and <repository> in place of the names, for the
+// guide of a format that names no repository.
+func placeholderAddress(ctx context.Context, f formats.Format, what string) (registry, registryKey string, err error) {
+	base, err := setupBase(ctx, what)
+	if err != nil {
+		return "", "", err
+	}
+	registry = strings.TrimSuffix(base, "/") + strings.NewReplacer("{project}", formats.GuideProjectPlaceholder, "{key}", formats.GuideRepositoryPlaceholder).Replace(f.Descriptor().ProtocolBasePath)
+	u, err := url.Parse(registry)
+	if err != nil {
+		return "", "", errs.Wrap(err, "api.setupAddress")
+	}
+	return registry, "//" + u.Host + u.Path, nil
 }
 
 // registryAt is setupAddress over a base URL that is already decided.
-func registryAt(base string, f formats.Format, key string) (registry, registryKey string, err error) {
-	registry = strings.TrimSuffix(base, "/") + strings.ReplaceAll(f.Descriptor().ProtocolBasePath, "{key}", key)
+func registryAt(base string, f formats.Format, key qname.Repo) (registry, registryKey string, err error) {
+	registry = strings.TrimSuffix(base, "/") + qname.ProtocolBase(f.Descriptor().ProtocolBasePath, key)
 	u, err := url.Parse(registry)
 	if err != nil {
 		return "", "", errs.Wrap(err, "api.setupAddress")
@@ -698,7 +723,7 @@ func bastionBase(ctx context.Context, ps PackageServices, name string) (string, 
 // the caller may deploy there: repo itself when it is a local repository, the
 // deployment target of a virtual one, none for a remote one.
 func (s *Server) publishTarget(acc *edge.Access, repo repository.Repository) (*string, bool) {
-	var key string
+	var key qname.Repo
 	switch repo.Class {
 	case repository.Local:
 		key = repo.Name
@@ -718,5 +743,6 @@ func (s *Server) publishTarget(acc *edge.Access, repo repository.Repository) (*s
 	if err != nil || len(ok) != 1 || !ok[0] {
 		return nil, false
 	}
-	return &key, true
+	name := key.String()
+	return &name, true
 }

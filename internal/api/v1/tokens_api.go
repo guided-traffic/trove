@@ -14,7 +14,6 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/auth/token"
-	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/meta"
@@ -310,23 +309,18 @@ func (s *Server) CreateServiceAccountToken(w http.ResponseWriter, r *http.Reques
 		failIdentity(w, r, err)
 		return
 	}
-	// The caller is an administrator, the account itself, or an administrator of the
-	// account's project; anyone else gets the same 403 whether the account exists or
-	// not.
+	// The caller is an administrator or the account itself; anyone else gets the same 403 whether the
+	// account exists or not. The tokens of a project's service account are issued through the project's
+	// route.
 	derived := p.Kind == httpserver.KindServiceAccount && p.Name == name && tokenAuthenticated(p)
 	admin, err := s.holds(ctx, "role:admin")
 	var sa principal.ServiceAccount
-	delegated := false
-	if err == nil && !admin && !derived {
-		sa, err = s.delegatedTokenAccount(ctx, name)
-		delegated = err == nil
-	}
 	var parent *token.Info
 	if err == nil && derived {
 		parent, err = s.presenting(ctx, p)
 	}
-	if err == nil && !delegated {
-		sa, err = s.o.Auth.Manager.GetServiceAccount(ctx, name)
+	if err == nil {
+		sa, err = s.globalAccount(ctx, name)
 	}
 	if err != nil {
 		failIdentity(w, r, err)
@@ -335,38 +329,10 @@ func (s *Server) CreateServiceAccountToken(w http.ResponseWriter, r *http.Reques
 	req := token.CreateRequest{
 		Caller: s.caller(r), Type: token.TypeSAT, OwnerID: sa.ID, Description: in.Description, Scope: scope, TTL: requestTTL(in),
 		SelfRotatable: in.SelfRotatable != nil && *in.SelfRotatable, Via: via(p), Admin: admin && !derived, Parent: parent,
-		Delegated: delegated,
 	}
 	s.issue(w, r, body, func(ctx context.Context, tx meta.Tx) (token.Created, error) {
 		return s.o.Auth.Tokens.CreateTx(ctx, tx, req)
 	})
-}
-
-// delegatedTokenAccount is the account of a token a project administrator issues
-// (Q-AUTHZ-177): an account of a project the caller administers with managePolicies.
-// With the switch off the answer says so (403 project_switch_off); every other
-// caller gets the plain 403 of a caller that may not create tokens, whether the
-// account exists or not.
-func (s *Server) delegatedTokenAccount(ctx context.Context, name string) (principal.ServiceAccount, error) {
-	forbidden := errs.E(errs.Forbidden, errs.CodeForbidden, "Only an administrator, an administrator of the account's project, or a token of the account itself creates its tokens.")
-	d, err := s.delegatedScope(ctx, "role:admin")
-	if err != nil {
-		return principal.ServiceAccount{}, err
-	}
-	if len(d.Projects) == 0 {
-		return principal.ServiceAccount{}, forbidden
-	}
-	sa, err := s.o.Auth.Manager.GetServiceAccount(ctx, name)
-	if err != nil {
-		if isNotFound(err) {
-			return principal.ServiceAccount{}, forbidden
-		}
-		return principal.ServiceAccount{}, err
-	}
-	if sa.Project == "" || !d.Sees(sa.Project) {
-		return principal.ServiceAccount{}, forbidden
-	}
-	return sa, refuseProject(d, sa.Project, authz.ProjectManagePolicies)
 }
 
 // holdsCapability reports whether the caller holds a capability, as the
@@ -432,19 +398,6 @@ func (s *Server) ListTokens(w http.ResponseWriter, r *http.Request, _ gen.ListTo
 // who holds it may name a user or a service account. empty is true for an owner
 // that does not exist.
 func (s *Server) listOwner(ctx context.Context, p httpserver.Principal, all bool, owner string) (id string, empty bool, err error) {
-	if !all && strings.HasPrefix(owner, "sa:") {
-		// An administrator of a project lists the tokens of an account of its project
-		// (Q-AUTHZ-177); for any other account the filter stays forced to the caller.
-		if sa, err := s.o.Auth.Manager.GetServiceAccount(ctx, strings.TrimPrefix(owner, "sa:")); err == nil {
-			if ok, err := s.seesProject(ctx, sa.Project); err != nil {
-				return "", false, err
-			} else if ok {
-				return sa.ID, false, nil
-			}
-		} else if !isNotFound(err) {
-			return "", false, err
-		}
-	}
 	if !all || owner == "me" {
 		return p.ID, false, nil
 	}
@@ -471,50 +424,22 @@ func ignoreNotFound(err error) error {
 	return err
 }
 
-// seesProject reports whether the caller administers the project, with any right:
-// the project of a service account whose tokens it may see and revoke (Q-AUTHZ-177).
-// An account without a project is nobody's to administer.
-func (s *Server) seesProject(ctx context.Context, project string) (bool, error) {
-	if project == "" {
-		return false, nil
-	}
-	d, err := s.delegatedScope(ctx, "role:admin")
-	if err != nil {
-		return false, err
-	}
-	return d.Sees(project), nil
-}
-
-// visible reports whether the caller may see a token: its owner, or a holder of
-// tokens:read, or, with delegated set, an administrator of the project of the
-// service account that owns it. A token it may not see is a 404, so that IDs cannot
-// be enumerated (R-AUTH-028).
-func (s *Server) visible(ctx context.Context, p httpserver.Principal, rec token.Record, capability string, delegated bool) (bool, error) {
+// visible reports whether the caller may see a token: its owner, or a holder of tokens:read. A token it
+// may not see is a 404, so that IDs cannot be enumerated (R-AUTH-028).
+func (s *Server) visible(ctx context.Context, p httpserver.Principal, rec token.Record, capability string) (bool, error) {
 	if rec.Owner.ID == p.ID && p.ID != "" {
 		return true, nil
 	}
-	if held, err := s.holdsCapability(ctx, capability); err != nil || held {
-		return held, err
-	}
-	if !delegated || rec.Owner.Kind != principal.KindServiceAccount {
-		return false, nil
-	}
-	sa, err := s.o.Auth.Manager.GetServiceAccount(ctx, rec.Owner.Name)
-	if err != nil {
-		return false, ignoreNotFound(err)
-	}
-	return s.seesProject(ctx, sa.Project)
+	return s.holdsCapability(ctx, capability)
 }
 
-// loadVisible reads a token and answers 404 when it is missing or hidden. delegated
-// admits the administrators of the project of the owning service account, for the
-// operations of Q-AUTHZ-177 (read and revoke).
-func (s *Server) loadVisible(ctx context.Context, p httpserver.Principal, id, capability string, delegated bool) (token.Record, error) {
+// loadVisible reads a token and answers 404 when it is missing or hidden.
+func (s *Server) loadVisible(ctx context.Context, p httpserver.Principal, id, capability string) (token.Record, error) {
 	rec, err := s.o.Auth.Tokens.Get(ctx, id)
 	if err != nil {
 		return token.Record{}, err
 	}
-	ok, err := s.visible(ctx, p, rec, capability, delegated)
+	ok, err := s.visible(ctx, p, rec, capability)
 	if err != nil {
 		return token.Record{}, err
 	}
@@ -529,7 +454,7 @@ func (s *Server) GetToken(w http.ResponseWriter, r *http.Request, id string) {
 	if !s.identityReady(w, r) {
 		return
 	}
-	rec, err := s.loadVisible(r.Context(), httpserver.PrincipalFrom(r.Context()), id, "tokens:read", true)
+	rec, err := s.loadVisible(r.Context(), httpserver.PrincipalFrom(r.Context()), id, "tokens:read")
 	if err != nil {
 		failIdentity(w, r, err)
 		return
@@ -572,7 +497,7 @@ func (s *Server) RevokeToken(w http.ResponseWriter, r *http.Request, id string) 
 	}
 	ctx := r.Context()
 	p := httpserver.PrincipalFrom(ctx)
-	rec, err := s.loadVisible(ctx, p, id, "tokens:revoke", true)
+	rec, err := s.loadVisible(ctx, p, id, "tokens:revoke")
 	if err != nil {
 		failIdentity(w, r, err)
 		return
@@ -643,7 +568,7 @@ func (s *Server) RevokeServiceAccountTokens(w http.ResponseWriter, r *http.Reque
 	if !s.identityReady(w, r) {
 		return
 	}
-	sa, err := s.delegatedAccount(r.Context(), name, "tokens:revoke", authz.ProjectAny)
+	sa, err := s.globalAccount(r.Context(), name)
 	if err == nil {
 		_, err = s.o.Auth.Tokens.RevokeAll(r.Context(), s.caller(r), sa.ID, token.ReasonAdmin)
 	}
@@ -731,7 +656,7 @@ func (s *Server) RotateToken(w http.ResponseWriter, r *http.Request, id string, 
 		err = refuseBreakGlass(p)
 	}
 	if err == nil {
-		rec, err = s.loadVisible(ctx, p, id, "tokens:read", false)
+		rec, err = s.loadVisible(ctx, p, id, "tokens:read")
 	}
 	var parent *token.Info
 	if err == nil {

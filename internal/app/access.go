@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/api/edge"
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
@@ -110,7 +111,7 @@ func (b bridgeAccess) Require(ctx context.Context, permission string) error {
 // bridge opens is no decision, so it takes none and the operation keeps
 // answering while the index is unconfirmed; without a decision point there is
 // nothing to begin.
-func (b bridgeAccess) Begin(ctx context.Context, permission string, keys ...string) (*edge.Access, error) {
+func (b bridgeAccess) Begin(ctx context.Context, permission string, keys ...qname.Repo) (*edge.Access, error) {
 	if b.bootstrapOpen(ctx, permission) {
 		return nil, nil
 	}

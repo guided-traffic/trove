@@ -50,6 +50,9 @@ func RequiredGuideTopics() []string {
 // guide that names no repository (GET /api/v1/formats/{format}/guide).
 const GuideRepositoryPlaceholder = "<repository>"
 
+// GuideProjectPlaceholder stands for the project key in the same addresses.
+const GuideProjectPlaceholder = "<project>"
+
 // GuideSection is one section of a format's guide (R-UI-049): what a repository of
 // a class is and how a client uses it. The API renders the Markdown with the
 // README renderer and sanitizer of R-UI-008 and attaches the setup snippets the
