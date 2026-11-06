@@ -3,6 +3,7 @@ package authz
 import (
 	"context"
 	"fmt"
+	"github.com/guided-traffic/trove/internal/qname"
 	"slices"
 	"sync"
 	"time"
@@ -61,7 +62,7 @@ func readType(c Coordinate) bool {
 
 // targetOf is the coordinate as the caller sent it, for the text of a 403.
 func targetOf(c Coordinate) string {
-	t := c.Repository
+	t := c.Repository.String()
 	switch {
 	case c.Package != "":
 		t += "/" + c.Package
@@ -95,8 +96,8 @@ func (e *Engine) Decide(ctx context.Context, sub Subject, c Coordinate) Decision
 // the repositories the request is about: a key the index does not hold yet is
 // looked up and the index brought up to it before the index is taken
 // ([Engine.Know]).
-func (e *Engine) Begin(ctx context.Context, sub Subject, keys ...string) (*Index, error) {
-	idx, refused := e.begin(ctx, sub, keys...)
+func (e *Engine) Begin(ctx context.Context, sub Subject, names ...qname.Repo) (*Index, error) {
+	idx, refused := e.begin(ctx, sub, names...)
 	if refused != nil {
 		return nil, refused.Err()
 	}
@@ -105,8 +106,8 @@ func (e *Engine) Begin(ctx context.Context, sub Subject, keys ...string) (*Index
 
 // begin is the start of every decision: the repositories the request names are
 // known to the index (R-ARCH-011 step 2, R-API-052), then the index is taken.
-func (e *Engine) begin(ctx context.Context, sub Subject, keys ...string) (*Index, *Decision) {
-	for _, key := range keys {
+func (e *Engine) begin(ctx context.Context, sub Subject, names ...qname.Repo) (*Index, *Decision) {
+	for _, key := range names {
 		if err := e.know(ctx, key); err != nil {
 			d := Decision{Outcome: DenyStale, Reason: ReasonStale}
 			return nil, &d
@@ -120,7 +121,7 @@ func (e *Engine) begin(ctx context.Context, sub Subject, keys ...string) (*Index
 // brought up to it when the index it decides on does not hold the key, and
 // decides everything after on the index returned. An index that holds the key
 // is returned as it is.
-func (e *Engine) Know(ctx context.Context, idx *Index, sub Subject, key string) (*Index, error) {
+func (e *Engine) Know(ctx context.Context, idx *Index, sub Subject, key qname.Repo) (*Index, error) {
 	if idx != nil && idx.repo(key) != nil {
 		return idx, nil
 	}
@@ -319,15 +320,8 @@ func (st *evalState) grantedBy(a Action, r *repoInfo, repoLevel bool, pkg, path 
 			}
 		}
 	}
-	if a == Manage && st.idx.administersRepo(st.sub, r) {
-		// A project administrator holds manage on every repository of the project,
-		// unrestricted in packages and paths. It is decided from the administration
-		// of the project (a user or a group member, through a session or a token with
-		// admin: true), not from a grant keyed by the principal ID, which a service
-		// account in an administrator group or a token without admin: true would
-		// match as well (R-AUTHZ-026, Q-AUTHZ-183, Q-AUTHZ-196).
-		out = append(out, "project:"+r.project)
-	}
+	// The role of a project member (Q-AUTHZ-207) joins here: a source "role:<project>:<role>" for the
+	// actions ProjectRole.Actions gives. Not built yet; the member holds what the policies grant.
 	return out
 }
 
@@ -371,11 +365,11 @@ func (e *Engine) allowedAction(st *evalState, a Action, r *repoInfo, c Coordinat
 // not open its members to a request that addresses them directly, and the grants of
 // the subject still decide first: this only lifts the ceiling, it grants nothing.
 func (e *Engine) scopeAdmitsThrough(st *evalState, a Action, r *repoInfo, repoLevel bool, c Coordinate) bool {
-	if a != Read || c.Addressed == "" || c.Addressed == r.Key {
+	if a != Read || c.Addressed.IsZero() || c.Addressed == r.Name {
 		return false
 	}
 	v := st.idx.repo(c.Addressed)
-	if v == nil || v.Class != repository.Virtual || !st.idx.reaches(v, r.Key, 0) {
+	if v == nil || v.Class != repository.Virtual || !st.idx.reaches(v, r.Name, 0) {
 		return false
 	}
 	sc := st.sub.Scope
@@ -386,7 +380,7 @@ func (e *Engine) scopeAdmitsThrough(st *evalState, a Action, r *repoInfo, repoLe
 	// selector or a key glob that happens to cover it does not (Q-AUTHZ-164).
 	exact := &scope.Scope{}
 	for _, el := range sc.Repositories {
-		if slices.Contains(el.Repositories, v.Key) {
+		if slices.Contains(el.Repositories, v.Name.Key) {
 			exact.Repositories = append(exact.Repositories, el)
 		}
 	}
@@ -396,7 +390,7 @@ func (e *Engine) scopeAdmitsThrough(st *evalState, a Action, r *repoInfo, repoLe
 // reaches reports whether the virtual repository v resolves through the repository
 // key, as a member or through nested virtual repositories (R-AUTHZ-009 rule 2). The
 // deploy target is a member, so it needs no case of its own.
-func (idx *Index) reaches(v *repoInfo, key string, depth int) bool {
+func (idx *Index) reaches(v *repoInfo, key qname.Repo, depth int) bool {
 	if depth > 16 {
 		return false
 	}
@@ -620,7 +614,7 @@ func dedupStrings(in []string) []string {
 // Readable implements [Authorizer]: the keys the subject may read, in the order
 // given (R-AUTHZ-016: a listing contains only what the subject may read), on the
 // installed index. A refusal to decide (503, 412) is returned as an error.
-func (e *Engine) Readable(ctx context.Context, sub Subject, keys []string) ([]string, error) {
+func (e *Engine) Readable(ctx context.Context, sub Subject, keys []qname.Repo) ([]qname.Repo, error) {
 	idx, refused := e.forRequest(ctx, sub)
 	if refused != nil {
 		return nil, refused.Err()
@@ -633,7 +627,7 @@ func (e *Engine) Readable(ctx context.Context, sub Subject, keys []string) ([]st
 // (the subject's endpoint) a repository without an enabled rule is left out as
 // well (R-EP-014). An anonymous subject while anonymous access is off reads
 // nothing; a switch that cannot be read is a refusal to decide (503).
-func (e *Engine) ReadableOn(ctx context.Context, idx *Index, sub Subject, keys []string) ([]string, error) {
+func (e *Engine) ReadableOn(ctx context.Context, idx *Index, sub Subject, keys []qname.Repo) ([]qname.Repo, error) {
 	sub, refused := e.withAnonymous(ctx, sub)
 	if refused != nil {
 		return nil, refused.Err()
@@ -641,7 +635,7 @@ func (e *Engine) ReadableOn(ctx context.Context, idx *Index, sub Subject, keys [
 	if sub.Anonymous && sub.anon != anonOn {
 		return nil, nil
 	}
-	out := make([]string, 0, len(keys))
+	out := make([]qname.Repo, 0, len(keys))
 	for _, k := range keys {
 		d := e.evaluate(idx, sub, Coordinate{Repository: k, Kind: KindMetadata, Actions: []Action{Read}})
 		switch {
@@ -738,7 +732,7 @@ func (e *Engine) requireOn(idx *Index, sub Subject, permission string) Decision 
 
 // CheckItem is one check of POST /api/v1/authz/check (R-AUTHZ-023).
 type CheckItem struct {
-	Repository string
+	Repository qname.Repo
 	Package    string
 	Path       string
 	Action     Action
@@ -822,7 +816,7 @@ func (e *Engine) Effective(ctx context.Context, sub Subject) (Me, error) {
 		}
 	}
 	me.Capabilities = e.capabilities(idx, sub).list()
-	me.Projects = e.ProjectsOn(idx, sub)
+	me.Memberships = e.MembershipsOn(idx, sub)
 	switch kindOf(sub) {
 	case kindServiceAccount:
 		me.Principals = append(me.Principals, "sa:"+sub.Name)
@@ -872,7 +866,7 @@ func (c *patternCache) selectorsMatch(texts []string, r repoView) bool {
 		}
 		if !ok {
 			var err error
-			s, err = parseSelector(t)
+			s, err = parseSelector(t, instanceContext)
 			c.mu.Lock()
 			if c.full() {
 				c.sels, c.bad, c.res = map[string]selector{}, map[string]bool{}, map[string]*globSet{}

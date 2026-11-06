@@ -2,6 +2,7 @@ package authz
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/scope"
@@ -145,8 +146,8 @@ const (
 
 // Coordinate is the authorization view of the request descriptor (R-REPO-003).
 type Coordinate struct {
-	// Repository is the key addressed by the client.
-	Repository string
+	// Repository is the name addressed by the client.
+	Repository qname.Repo
 	Class      repository.Class
 	Format     string
 	Kind       RequestKind
@@ -163,7 +164,7 @@ type Coordinate struct {
 	// Addressed is the repository the client named when Repository is a member
 	// that resolution consults (R-AUTHZ-015 WithRepo); empty means Repository.
 	// Exposure is decided on the addressed repository (Q-EP-11).
-	Addressed string
+	Addressed qname.Repo
 }
 
 // Outcome is the class of a decision, one per row of R-AUTHZ-016's table.
@@ -223,11 +224,11 @@ type Decider interface {
 	// index or for the epoch of Trove-Authz-Min-Epoch, and first makes the keys
 	// known (R-ARCH-011 step 2, R-API-052). The error is the refusal: 503
 	// authz_stale or 412 authz_epoch_unknown.
-	Begin(ctx context.Context, sub Subject, keys ...string) (*Index, error)
+	Begin(ctx context.Context, sub Subject, names ...qname.Repo) (*Index, error)
 	// Know advances a request to a newer index when it learns a key the index
 	// does not hold (R-ARCH-011 step 2); the request decides every later question
 	// on the index returned. An index that holds the key is returned as it is.
-	Know(ctx context.Context, idx *Index, sub Subject, key string) (*Index, error)
+	Know(ctx context.Context, idx *Index, sub Subject, key qname.Repo) (*Index, error)
 	// DecideOn decides every action of the coordinate (R-AUTHZ-015); the request
 	// proceeds only if it is allowed. The caller turns a refusal into the status
 	// of R-AUTHZ-016.
@@ -235,10 +236,10 @@ type Decider interface {
 	// ReadableOn filters repository keys to those the subject may read, in the
 	// order given, for listings and search (R-AUTHZ-016). An error is a refusal to
 	// decide.
-	ReadableOn(ctx context.Context, idx *Index, sub Subject, keys []string) ([]string, error)
+	ReadableOn(ctx context.Context, idx *Index, sub Subject, keys []qname.Repo) ([]qname.Repo, error)
 	// ExposedOn filters repository keys to those the subject's endpoint exposes
 	// for read, whatever the subject's grants (R-EP-014, Q-EP-12).
-	ExposedOn(idx *Index, sub Subject, keys []string) []string
+	ExposedOn(idx *Index, sub Subject, keys []qname.Repo) []qname.Repo
 	// PathsAllowedOn decides one action for many paths of one repository, the
 	// listing form of DecideOn; it writes no audit event. classify completes the
 	// coordinate of each path with what the repository's format makes of it
@@ -265,21 +266,20 @@ type Decider interface {
 	// serve without a fetch asks it; the allowed populate is recorded with
 	// RecordAllowed in the fill transaction.
 	PopulateOn(ctx context.Context, idx *Index, sub Subject, c Coordinate) Decision
-	// ProjectsOn lists the projects the subject administers with their switches, on
-	// the index the request decides on (R-AUTHZ-026, Q-AUTHZ-183).
-	ProjectsOn(idx *Index, sub Subject) []AdministeredProject
-	// AdministersOn asks whether the subject administers the named project with a
-	// right; it is a question and audits nothing (Q-AUTHZ-180).
-	AdministersOn(idx *Index, sub Subject, project string, right ProjectRight) bool
-	// AdministersRepositoryOn asks the same for the project of a repository and
-	// returns that project's key ("" and false when the repository has none).
-	AdministersRepositoryOn(idx *Index, sub Subject, repository string, right ProjectRight) (string, bool)
+	// MembershipsOn lists the projects the subject is a member of with the role in
+	// force for its credential, on the index the request decides on (Q-AUTHZ-207).
+	MembershipsOn(idx *Index, sub Subject) []Membership
+	// OwnsOn asks whether the subject may administer the named project: an Owner of
+	// it through a session or a token with admin: true (Q-AUTHZ-208); it is a
+	// question and audits nothing. An unknown project is false, as is one the subject
+	// is no Owner of, so the answer does not tell them apart.
+	OwnsOn(idx *Index, sub Subject, project string) bool
 	// MemberUsableOn is MemberUsable of R-AUTHZ-015 for a member of the virtual
 	// repository the coordinate addresses: read says the resolver may consult the
 	// member, fill that it may also populate the member's cache (a remote member
 	// only). Whether the member needs its upstream for the coordinate is the
 	// resolver's to know; a member it may not use is skipped silently.
-	MemberUsableOn(ctx context.Context, idx *Index, sub Subject, member string, c Coordinate) (read, fill bool)
+	MemberUsableOn(ctx context.Context, idx *Index, sub Subject, member qname.Repo, c Coordinate) (read, fill bool)
 	// RecordAllowed records an allowed write or populate in the transaction of the
 	// change (R-AUTHZ-029), with the decision the writer acted on.
 	RecordAllowed(ctx context.Context, tx meta.Tx, sub Subject, c Coordinate, d Decision) error
@@ -297,7 +297,7 @@ type Authorizer interface {
 	// Readable filters repository keys to those the subject may read, for
 	// listings and search (R-AUTHZ-016: listings contain only what the subject
 	// may read).
-	Readable(ctx context.Context, sub Subject, keys []string) ([]string, error)
+	Readable(ctx context.Context, sub Subject, keys []qname.Repo) ([]qname.Repo, error)
 	// Require checks a system capability for a management operation. A refusal
 	// is an *errs.Error: 401 for an anonymous subject, 403 otherwise
 	// (R-API-008). It runs before any lookup, so it does not depend on whether

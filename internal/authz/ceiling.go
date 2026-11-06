@@ -1,5 +1,9 @@
 package authz
 
+import (
+	"github.com/guided-traffic/trove/internal/qname"
+)
+
 import "context"
 
 // Ceiling is the endpoint exposure of R-EP-013 (R-AUTHZ-001 item 3,
@@ -53,12 +57,12 @@ func (NoCeiling) Admits(*Index, string, Coordinate, Action) CeilingVerdict { ret
 // exposure rules no more than the endpoint exposes, as the ceiling binds every
 // subject (R-EP-013, R-EP-014, Q-EP-12). [Engine] implements it.
 type ExposureFilter interface {
-	Exposed(ctx context.Context, sub Subject, keys []string) ([]string, error)
+	Exposed(ctx context.Context, sub Subject, keys []qname.Repo) ([]qname.Repo, error)
 }
 
 // Exposed implements [ExposureFilter] on the installed index. A refusal to
 // decide (503, 412) is returned as an error.
-func (e *Engine) Exposed(ctx context.Context, sub Subject, keys []string) ([]string, error) {
+func (e *Engine) Exposed(ctx context.Context, sub Subject, keys []qname.Repo) ([]qname.Repo, error) {
 	if e.o.Ceiling == nil || sub.Endpoint == "" {
 		return keys, nil
 	}
@@ -72,12 +76,12 @@ func (e *Engine) Exposed(ctx context.Context, sub Subject, keys []string) ([]str
 // ExposedOn implements [Decider]: the keys the subject's endpoint exposes for
 // read on the index the request decides on. A subject without an endpoint (a job,
 // a command) has no ceiling and sees every key.
-func (e *Engine) ExposedOn(idx *Index, sub Subject, keys []string) []string {
+func (e *Engine) ExposedOn(idx *Index, sub Subject, keys []qname.Repo) []qname.Repo {
 	cl := e.o.Ceiling
 	if cl == nil || sub.Endpoint == "" {
 		return keys
 	}
-	out := make([]string, 0, len(keys))
+	out := make([]qname.Repo, 0, len(keys))
 	for _, k := range keys {
 		c := Coordinate{Repository: k, Kind: KindMetadata, Actions: []Action{Read}}
 		if cl.Admits(idx, sub.Endpoint, c, Read) == CeilingAdmits {

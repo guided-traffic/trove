@@ -111,11 +111,11 @@ func TestR_AUTHZ_005_Patterns(t *testing.T) {
 
 func TestR_AUTHZ_004_Selectors(t *testing.T) {
 	repos := []repoView{
-		{ID: 1, Key: "npm-internal", Class: "local", Format: "npm"},
-		{ID: 2, Key: "npm-team-web", Class: "local", Format: "npm"},
-		{ID: 3, Key: "npmjs", Class: "remote", Format: "npm"},
-		{ID: 4, Key: "npm-all", Class: "virtual", Format: "npm"},
-		{ID: 5, Key: "files-internal", Class: "local", Format: "generic"},
+		{ID: 1, Name: "npm-internal", Class: "local", Format: "npm"},
+		{ID: 2, Name: "npm-team-web", Class: "local", Format: "npm"},
+		{ID: 3, Name: "npmjs", Class: "remote", Format: "npm"},
+		{ID: 4, Name: "npm-all", Class: "virtual", Format: "npm"},
+		{ID: 5, Name: "files-internal", Class: "local", Format: "generic"},
 	}
 	cases := []struct {
 		sel  string
@@ -143,7 +143,7 @@ func TestR_AUTHZ_004_Selectors(t *testing.T) {
 			s.repoID = 0
 			if s.kind == selKey {
 				for _, r := range repos {
-					if r.Key == s.key {
+					if r.Name == s.key {
 						s.repoID = r.ID
 					}
 				}
@@ -151,7 +151,7 @@ func TestR_AUTHZ_004_Selectors(t *testing.T) {
 			var got []string
 			for _, r := range repos {
 				if s.matches(r) {
-					got = append(got, r.Key)
+					got = append(got, r.Name)
 				}
 			}
 			if len(got) != len(tc.want) {

@@ -72,7 +72,7 @@ func TestR_AUTHZ_018_WhenOwnershipIsChecked(t *testing.T) {
 			if err != nil || applies != tc.applies {
 				t.Fatalf("applies %v, %v; want %v", applies, err, tc.applies)
 			}
-			if applies && (k.repo.Key != tc.target || k.domain != domainOf(k.repo) || k.format != "npm" || k.name != tc.c.Package) {
+			if applies && (k.repo.Name != tc.target || k.domain != domainOf(k.repo) || k.format != "npm" || k.name != tc.c.Package) {
 				t.Fatalf("key %+v", k)
 			}
 		})

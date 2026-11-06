@@ -2,6 +2,7 @@ package authz
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
@@ -131,13 +132,13 @@ func (e *Engine) PopulateOn(ctx context.Context, idx *Index, sub Subject, c Coor
 // the client addressed (Q-EP-11); fill is the populate check of a remote member
 // and false for any other. A member it may not use is skipped silently: nothing
 // is audited or counted (R-AUTHZ-009 rule 2).
-func (e *Engine) MemberUsableOn(ctx context.Context, idx *Index, sub Subject, member string, c Coordinate) (read, fill bool) {
+func (e *Engine) MemberUsableOn(ctx context.Context, idx *Index, sub Subject, member qname.Repo, c Coordinate) (read, fill bool) {
 	sub, refused := e.withAnonymous(ctx, sub)
 	if refused != nil {
 		return false, false
 	}
 	mc := c
-	if mc.Addressed == "" {
+	if mc.Addressed.IsZero() {
 		mc.Addressed = c.Repository
 	}
 	mc.Repository = member

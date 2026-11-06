@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/guided-traffic/trove/internal/qname"
 	"strconv"
 
 	"github.com/guided-traffic/trove/internal/auth/principal"
@@ -17,7 +18,7 @@ type ListFilter struct {
 	// groups the principal belongs to match as well.
 	Principal    string
 	ExpandGroups bool
-	// Repository is a repository key: the policies whose selectors cover it.
+	// Repository is a repository name <project>/<key>: the policies whose selectors cover it.
 	Repository string
 	// Project is a project key: the policies of that project (R-AUTHZ-026). An
 	// unknown project is 422, like an unknown repository.
@@ -51,7 +52,14 @@ func (s *Service) Select(ctx context.Context, all []Policy, f ListFilter) ([]Pol
 	var repo *repoView
 	repoProject := ""
 	if f.Repository != "" {
-		r, err := s.o.Repositories.ByKey(ctx, f.Repository)
+		name, perr := qname.ParseRepo(f.Repository)
+		if perr != nil {
+			if f.Delegated {
+				return []Policy{}, nil
+			}
+			return nil, unprocessable("repository", errs.CodeUnknownRepository, fmt.Sprintf("No repository %q exists.", f.Repository))
+		}
+		r, err := s.o.Repositories.ByName(ctx, name)
 		if err != nil {
 			var ee *errs.Error
 			if errors.As(err, &ee) && ee.Kind == errs.NotFound {
@@ -63,7 +71,7 @@ func (s *Service) Select(ctx context.Context, all []Policy, f ListFilter) ([]Pol
 			return nil, err
 		}
 		id, _ := strconv.ParseInt(r.ID, 10, 64)
-		repo = &repoView{ID: id, Key: r.Name, Class: r.Class, Format: r.Format}
+		repo = &repoView{ID: id, Name: r.Name, Class: r.Class, Format: r.Format}
 		repoProject = r.ProjectID
 	}
 	projectIDs := map[string]string{} // project key -> ID, for the policies of a project
@@ -156,7 +164,7 @@ func grantsTo(p Policy, refs map[string]bool) bool {
 // covers reports whether a selector of the policy covers the repository.
 func covers(p Policy, r repoView) bool {
 	for _, text := range p.Resources.Repositories {
-		sel, err := parseSelector(text)
+		sel, err := parseSelector(text, contextOfPolicy(p))
 		if err != nil {
 			continue
 		}
@@ -191,4 +199,12 @@ func (s *Service) Annotate(ctx context.Context, ps []Policy) error {
 		}
 		return nil
 	})
+}
+
+// contextOfPolicy is the context a policy's selector texts are read in.
+func contextOfPolicy(p Policy) qname.Context {
+	if p.Project != nil {
+		return projectContext(*p.Project)
+	}
+	return instanceContext
 }

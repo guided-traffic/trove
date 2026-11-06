@@ -3,6 +3,7 @@ package authz
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/guided-traffic/trove/internal/qname"
 	"log/slog"
 	"sort"
 	"strings"
@@ -43,10 +44,10 @@ type Snapshot struct {
 	Entries      []q.AuthzBuildEntriesRow
 	Bindings     []q.AuthzBuildBindingsRow
 	Repositories []q.AuthzBuildRepositoriesRow
-	// Projects and ProjectAdmins are the rows of project and project_admin in the
+	// Projects and ProjectMembers are the rows of project and project_member in the
 	// same snapshot (R-AUTHZ-026); the entries of project policies are in Entries.
-	Projects      []q.AuthzBuildProjectsRow
-	ProjectAdmins []q.AuthzBuildProjectAdminsRow
+	Projects       []q.AuthzBuildProjectsRow
+	ProjectMembers []q.AuthzBuildProjectMembersRow
 	// Exposure are the endpoint exposure rules of the active repositories
 	// (endpoints.md R-EP-012), read in the same snapshot.
 	Exposure []q.EndpointsExposureBuildRow
@@ -76,8 +77,8 @@ type repoInfo struct {
 	hide string
 	// members and deployTarget are the keys of a virtual repository's members and
 	// of its deploy target (R-AUTHZ-009).
-	members      []string
-	deployTarget string
+	members      []qname.Repo
+	deployTarget qname.Repo
 	// cacheFill is the cacheFillAction of a remote repository.
 	cacheFill string
 	// ownership is the packageOwnership of a local repository, "" when the
@@ -89,12 +90,11 @@ type repoInfo struct {
 	project   string
 }
 
-// projectInfo is a project as the index knows it: its switches and the IDs of
-// its administrators, users and groups (Q-AUTHZ-183).
+// projectInfo is a project as the index knows it: its members by principal ID, users and
+// groups, with their role (Q-AUTHZ-207).
 type projectInfo struct {
-	id, key                            string
-	managePolicies, manageRepositories bool
-	admins                             map[string]bool
+	id, key string
+	members map[string]ProjectRole
 }
 
 // grant is one entry of a policy seen from the evaluator: the actions the
@@ -115,8 +115,8 @@ type grant struct {
 type Index struct {
 	label   Label
 	started time.Time
-	// repos by key.
-	repos map[string]*repoInfo
+	// repos by qualified name.
+	repos map[qname.Repo]*repoInfo
 	// grants maps repository ID, then principal ID, to the compiled grants.
 	grants map[int64]map[string][]grant
 	// bindings maps a principal ID to the system roles bound to it.
@@ -200,7 +200,7 @@ func BuildIndex(s *Snapshot, reg *catalog.Registry, log *slog.Logger) *Index {
 	b := &builder{
 		x: &Index{
 			label: s.Label, started: s.Started,
-			repos:    make(map[string]*repoInfo, len(s.Repositories)),
+			repos:    make(map[qname.Repo]*repoInfo, len(s.Repositories)),
 			grants:   map[int64]map[string][]grant{},
 			bindings: map[string]roleSet{},
 			ci:       map[string]string{},
@@ -214,7 +214,7 @@ func BuildIndex(s *Snapshot, reg *catalog.Registry, log *slog.Logger) *Index {
 		entries:    map[string][]q.AuthzBuildEntriesRow{},
 		matchCache: map[string][]*repoInfo{}, projectByID: map[string]*projectInfo{},
 	}
-	b.addProjects(s.Projects, s.ProjectAdmins)
+	b.addProjects(s.Projects, s.ProjectMembers)
 	b.addRepositories(s.Repositories, s.VirtualMembers, s.DeployTargets)
 	b.x.ciActive = activeCIMappings(s.CIMappings)
 	b.x.exposure = buildExposure(s.Exposure, b.byID, b.reg, log)
@@ -260,24 +260,28 @@ func BuildIndex(s *Snapshot, reg *catalog.Registry, log *slog.Logger) *Index {
 	return b.x
 }
 
-// addProjects reads the projects and their administrators. An administrator is
-// kept by principal ID whatever its kind; the table admits users and groups only
-// (Q-AUTHZ-183), and the questions of project.go refuse a subject that is neither.
-func (b *builder) addProjects(rows []q.AuthzBuildProjectsRow, admins []q.AuthzBuildProjectAdminsRow) {
+// addProjects reads the projects and their members. A member is kept by principal ID
+// whatever its kind; the table admits users and groups only (Q-AUTHZ-183), and the
+// questions of project.go refuse a subject that is neither. A role that is none of the
+// four is skipped (fail closed).
+func (b *builder) addProjects(rows []q.AuthzBuildProjectsRow, members []q.AuthzBuildProjectMembersRow) {
 	for _, r := range rows {
-		pi := &projectInfo{id: r.ID, key: r.Key, managePolicies: r.ManagePolicies, manageRepositories: r.ManageRepositories, admins: map[string]bool{}}
+		pi := &projectInfo{id: r.ID, key: r.Key, members: map[string]ProjectRole{}}
 		b.x.projects[r.Key] = pi
 		b.projectByID[r.ID] = pi
 	}
-	for _, a := range admins {
-		if pi := b.projectByID[a.ProjectID]; pi != nil {
-			pi.admins[a.PrincipalID] = true
+	for _, m := range members {
+		pi := b.projectByID[m.ProjectID]
+		role, ok := ParseProjectRole(m.Role)
+		if pi == nil || !ok {
+			continue
 		}
+		pi.members[m.PrincipalID] = role
 	}
 }
 
 func (b *builder) addRepositories(rows []q.AuthzBuildRepositoriesRow, members []q.AuthzBuildVirtualMembersRow, targets []q.AuthzBuildDeployTargetsRow) {
-	memberKeys := map[int64][]string{}
+	memberKeys := map[int64][]string{} // bare keys: a virtual repository holds repositories of its own project
 	for _, m := range members {
 		memberKeys[m.VirtualID] = append(memberKeys[m.VirtualID], m.MemberKey)
 	}
@@ -287,10 +291,19 @@ func (b *builder) addRepositories(rows []q.AuthzBuildRepositoriesRow, members []
 	}
 	for _, r := range rows {
 		cfg, ok := parseRepoConfig(r.Config)
+		project := r.ProjectKey
+		var members []qname.Repo
+		for _, k := range memberKeys[r.ID] {
+			members = append(members, qname.Repo{Project: project, Key: k})
+		}
+		var target qname.Repo
+		if k := targetKey[r.ID]; k != "" {
+			target = qname.Repo{Project: project, Key: k}
+		}
 		info := &repoInfo{
-			repoView:    repoView{ID: r.ID, Key: r.Key, Class: repository.Class(r.Class), Format: r.Format},
+			repoView:    repoView{ID: r.ID, Name: qname.Repo{Project: r.ProjectKey, Key: r.Key}, Class: repository.Class(r.Class), Format: r.Format},
 			requireAuth: cfg.RequireAuthentication || !ok, // an unreadable document fails closed
-			hide:        cfg.HideExistence, members: memberKeys[r.ID], deployTarget: targetKey[r.ID],
+			hide:        cfg.HideExistence, members: members, deployTarget: target,
 			cacheFill: cfg.Remote.CacheFillAction, ownership: cfg.Local.PackageOwnership,
 		}
 		if pi := b.projectByID[r.ProjectID]; pi != nil {
@@ -302,7 +315,7 @@ func (b *builder) addRepositories(rows []q.AuthzBuildRepositoriesRow, members []
 		if !ok {
 			info.ownership = OwnershipEnforce // fails closed like requireAuth
 		}
-		b.x.repos[r.Key] = info
+		b.x.repos[info.Name] = info
 		b.byID[r.ID] = info
 		b.list = append(b.list, info)
 	}
@@ -343,7 +356,7 @@ func (b *builder) covered(sel selector, project string) []*repoInfo {
 func (b *builder) policyRepos(p q.AuthzBuildPoliciesRow) []*repoInfo {
 	var sels []selector
 	for _, r := range b.selectors[p.ID] {
-		sel, err := selectorOfRow(r)
+		sel, err := selectorOfRow(r, b.contextOf(p.ProjectID))
 		if err != nil {
 			b.log.Error("authz: policy skipped, its selector does not compile", "policy", p.Name, "err", err)
 			return nil
@@ -451,13 +464,13 @@ func (b *builder) addTexts(p q.AuthzBuildPoliciesRow, effective map[string]Actio
 	}
 	var sels []string
 	for _, r := range b.selectors[p.ID] {
-		sel, err := selectorOfRow(r)
+		sel, err := selectorOfRow(r, b.contextOf(p.ProjectID))
 		if err != nil {
 			return
 		}
 		sels = append(sels, sel.text(func(id int64) string {
 			if info := b.byID[id]; info != nil {
-				return info.Key
+				return info.Name.Key
 			}
 			return ""
 		}))
@@ -470,12 +483,22 @@ func (b *builder) addTexts(p q.AuthzBuildPoliciesRow, effective map[string]Actio
 	}
 }
 
-func selectorOfRow(r q.AuthzBuildSelectorsRow) (selector, error) {
+// contextOf is the context the selectors of a policy are read in: the instance for a global policy, the
+// project of a project policy (projectID is its ID).
+func (b *builder) contextOf(projectID string) qname.Context {
+	if pi := b.projectByID[projectID]; pi != nil {
+		return projectContext(pi.key)
+	}
+	return instanceContext
+}
+
+// selectorOfRow reads a stored selector in the context of its policy.
+func selectorOfRow(r q.AuthzBuildSelectorsRow, in qname.Context) (selector, error) {
 	switch r.Kind {
 	case selKey:
-		return selector{kind: selKey, repoID: r.RepositoryID}, nil
+		return selector{kind: selKey, repoID: r.RepositoryID, project: in.Project, inProject: !in.Instance()}, nil
 	case selPattern:
-		sel, err := parseSelector(r.KeyPattern + formatSuffix(r.Format))
+		sel, err := parseSelector(r.KeyPattern+formatSuffix(r.Format), in)
 		if err != nil {
 			return selector{}, err
 		}
@@ -484,7 +507,7 @@ func selectorOfRow(r q.AuthzBuildSelectorsRow) (selector, error) {
 		if r.RepoClass == "" {
 			return selector{}, fmt.Errorf("class selector without a class")
 		}
-		return selector{kind: selClass, class: r.RepoClass, format: r.Format}, nil
+		return selector{kind: selClass, class: r.RepoClass, format: r.Format, project: in.Project, inProject: !in.Instance()}, nil
 	}
 	return selector{}, fmt.Errorf("unknown selector kind %q", r.Kind)
 }
@@ -496,21 +519,26 @@ func formatSuffix(f string) string {
 	return ":" + f
 }
 
-// repo returns the repository of a key, nil if the index does not know it.
-func (x *Index) repo(key string) *repoInfo { return x.repos[key] }
+// repo returns the repository of a name, nil if the index does not know it.
+func (x *Index) repo(name qname.Repo) *repoInfo { return x.repos[name] }
 
 // grantsFor lists the grants of a principal on a repository.
 func (x *Index) grantsFor(repoID int64, principalID string) []grant {
 	return x.grants[repoID][principalID]
 }
 
-// RepositoryKeys lists the keys the index knows, sorted.
-func (x *Index) RepositoryKeys() []string {
-	out := make([]string, 0, len(x.repos))
+// RepositoryNames lists the names the index knows, sorted by project key and key.
+func (x *Index) RepositoryNames() []qname.Repo {
+	out := make([]qname.Repo, 0, len(x.repos))
 	for k := range x.repos {
 		out = append(out, k)
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Project != out[j].Project {
+			return out[i].Project < out[j].Project
+		}
+		return out[i].Key < out[j].Key
+	})
 	return out
 }
 

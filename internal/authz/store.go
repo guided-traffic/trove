@@ -432,11 +432,15 @@ func (s *Service) assemble(ctx context.Context, qs *q.Queries, h policyHead) (Po
 		return Policy{}, err
 	}
 	for _, r := range sels {
-		sel, err := selectorOfRow(q.AuthzBuildSelectorsRow{Kind: r.Kind, RepositoryID: r.RepositoryID, KeyPattern: r.KeyPattern, RepoClass: r.RepoClass, Format: r.Format})
+		in := instanceContext
+		if p.Project != nil {
+			in = projectContext(*p.Project)
+		}
+		sel, err := selectorOfRow(q.AuthzBuildSelectorsRow{Kind: r.Kind, RepositoryID: r.RepositoryID, KeyPattern: r.KeyPattern, RepoClass: r.RepoClass, Format: r.Format}, in)
 		if err != nil {
 			return Policy{}, err
 		}
-		sel.key = r.RepositoryKey
+		sel.key, sel.project = r.RepositoryKey, r.RepositoryProjectKey
 		p.Resources.Repositories = append(p.Resources.Repositories, sel.text(nil))
 	}
 	p.Inert = len(sels) == 0

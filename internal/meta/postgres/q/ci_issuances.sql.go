@@ -772,11 +772,12 @@ func (q *Queries) CiOwnershipInsertProjectOwner(ctx context.Context, arg CiOwner
 }
 
 const ciOwnershipOwnedByProject = `-- name: CiOwnershipOwnedByProject :many
-SELECT o.domain, o.format, o.package_name, COALESCE(r.key, '')::text AS repository_key, s.state, o.reason,
+SELECT o.domain, o.format, o.package_name, COALESCE(rp.key, '')::text AS repository_project_key, COALESCE(r.key, '')::text AS repository_key, s.state, o.reason,
        (extract(epoch FROM o.added_at) * 1000000)::bigint AS added_us
   FROM package_owner o
   JOIN package_ownership s ON s.domain = o.domain AND s.format = o.format AND s.package_name = o.package_name
   LEFT JOIN repositories r ON r.id = (CASE WHEN o.domain ~ '^repo:[0-9]+$' THEN substr(o.domain, 6)::bigint END)
+  LEFT JOIN project rp ON rp.id = r.project_id
  WHERE o.owner_kind = 'ci_project' AND o.ci_issuer_id = $1::text::uuid AND o.ci_project_id = $2::text
    AND ($3::text = '' OR o.domain = $3::text)
    AND (o.domain, o.format, o.package_name) > ($4::text, $5::text, $6::text)
@@ -795,13 +796,14 @@ type CiOwnershipOwnedByProjectParams struct {
 }
 
 type CiOwnershipOwnedByProjectRow struct {
-	Domain        string
-	Format        string
-	PackageName   string
-	RepositoryKey string
-	State         string
-	Reason        string
-	AddedUs       int64
+	Domain               string
+	Format               string
+	PackageName          string
+	RepositoryProjectKey string
+	RepositoryKey        string
+	State                string
+	Reason               string
+	AddedUs              int64
 }
 
 // The names a CI project owns, in key order after the cursor (R-AUTHZ-019 GET /package-owners?owner=ci:…:project:…).
@@ -826,6 +828,7 @@ func (q *Queries) CiOwnershipOwnedByProject(ctx context.Context, arg CiOwnership
 			&i.Domain,
 			&i.Format,
 			&i.PackageName,
+			&i.RepositoryProjectKey,
 			&i.RepositoryKey,
 			&i.State,
 			&i.Reason,

@@ -124,7 +124,7 @@ func (s *pgSource) Snapshot(ctx context.Context) (*Snapshot, error) {
 		if snap.Projects, err = qs.AuthzBuildProjects(ctx); err != nil {
 			return err
 		}
-		if snap.ProjectAdmins, err = qs.AuthzBuildProjectAdmins(ctx); err != nil {
+		if snap.ProjectMembers, err = qs.AuthzBuildProjectMembers(ctx); err != nil {
 			return err
 		}
 		if snap.Exposure, err = qs.EndpointsExposureBuild(ctx); err != nil {

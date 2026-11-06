@@ -2,6 +2,7 @@ package authz
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
@@ -18,15 +19,15 @@ import (
 // lookup or a catch-up that cannot finish in time returns an error, 503 with
 // Retry-After. Decide and Begin call it for the keys of the request, and
 // [Engine.Know] for a key a request learns later; no caller repeats it.
-func (e *Engine) know(ctx context.Context, repoKey string) error {
+func (e *Engine) know(ctx context.Context, repoKey qname.Repo) error {
 	rd := e.o.Repositories
-	if rd == nil || repoKey == "" {
+	if rd == nil || repoKey.IsZero() {
 		return nil
 	}
 	if idx := e.cur.Load(); idx != nil && idx.repo(repoKey) != nil {
 		return nil
 	}
-	if _, err := rd.ByKey(ctx, repoKey); err != nil {
+	if _, err := rd.ByName(ctx, repoKey); err != nil {
 		if ee, ok := errs.As(err); ok && ee.Kind == errs.Unavailable {
 			return err
 		}
@@ -51,7 +52,7 @@ func (e *Engine) know(ctx context.Context, repoKey string) error {
 // authz_stale with Retry-After. A key that the index of the database's epochs
 // does not hold either, such as a repository being deleted, is left to the
 // decision, which refuses it.
-func (e *Engine) CatchUp(ctx context.Context, repoKey string) error {
+func (e *Engine) CatchUp(ctx context.Context, repoKey qname.Repo) error {
 	if idx := e.cur.Load(); idx != nil && idx.repo(repoKey) != nil {
 		return nil
 	}

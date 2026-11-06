@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/guided-traffic/trove/internal/qname"
 	"slices"
 	"strconv"
 	"strings"
@@ -212,7 +213,7 @@ func domainOf(r *repoInfo) string { return "repo:" + strconv.FormatInt(r.ID, 10)
 // targetOfWrite is the repository a mutating operation on the coordinate writes
 // to: the deploy target of a virtual repository (R-AUTHZ-009 rule 5), else the
 // repository itself. Ownership is checked there, never on the virtual repository.
-func targetOfWrite(idx *Index, key string) *repoInfo {
+func targetOfWrite(idx *Index, key qname.Repo) *repoInfo {
 	r := idx.repo(key)
 	if r != nil && r.Class == repository.Virtual {
 		r = idx.repo(r.deployTarget)
@@ -256,8 +257,8 @@ func (o *Ownership) factsOf(idx *Index, sub Subject, k ownKey, c Coordinate) own
 	st := e.newEvalState(idx, sub)
 	f := ownFacts{bypass: st.bypass, identities: map[string]bool{}}
 	f.manage = e.evaluate(idx, sub, Coordinate{
-		Repository: k.repo.Key, Class: k.repo.Class, Format: k.repo.Format, Kind: KindWrite,
-		Package: c.Package, Path: c.Path, Actions: []Action{Manage}, Addressed: firstNonEmpty(c.Addressed, c.Repository),
+		Repository: k.repo.Name, Class: k.repo.Class, Format: k.repo.Format, Kind: KindWrite,
+		Package: c.Package, Path: c.Path, Actions: []Action{Manage}, Addressed: firstRepo(c.Addressed, c.Repository),
 	})
 	for _, id := range st.pset {
 		if id != AnonymousID && id != AuthenticatedID {
@@ -600,14 +601,14 @@ func (o *Ownership) EnforceTx(ctx context.Context, tx meta.Tx, idx *Index, sub S
 // ownershipEvent builds an ownership audit event; journal is the entry of
 // R-AUTHZ-031 for the events that take access away.
 func ownershipEvent(name string, actor Subject, k ownKey, extra map[string]any, journal map[string]any) audit.Event {
-	details := map[string]any{"repository": k.repo.Key, "domain": k.domain, "format": k.format, "package": k.name}
+	details := map[string]any{"repository": k.repo.Name.String(), "domain": k.domain, "format": k.format, "package": k.name}
 	for key, v := range extra {
 		details[key] = v
 	}
 	ev := audit.Event{
 		Type: name, Actor: actorOf(actor), Outcome: audit.Success,
-		Subject:    audit.Subject{Kind: "package", Name: k.repo.Key + "/" + k.name},
-		Repository: k.repo.Key, Path: k.name, Endpoint: actor.Endpoint,
+		Subject:    audit.Subject{Kind: "package", Name: k.repo.Name.String() + "/" + k.name},
+		Repository: k.repo.Name.String(), Path: k.name, Endpoint: actor.Endpoint,
 		Details: mustJSON(details),
 	}
 	if journal != nil {
@@ -630,7 +631,7 @@ func errCIRestricted() error {
 // rule. ok is false where ownership does not exist: a repository the index does
 // not hold, a remote or virtual repository, a format without package names, or a
 // string that is no name of the format. norm is the name to decide on either way.
-func (o *Ownership) nameIn(idx *Index, repoKey, name string) (k ownKey, norm string, ok bool) {
+func (o *Ownership) nameIn(idx *Index, repoKey qname.Repo, name string) (k ownKey, norm string, ok bool) {
 	r := idx.repo(repoKey)
 	if r == nil || r.Class != repository.Local {
 		return ownKey{}, name, false
@@ -648,7 +649,7 @@ func (o *Ownership) nameIn(idx *Index, repoKey, name string) (k ownKey, norm str
 // manages reports whether the subject holds manage on the name, content:bypass
 // included, under the ceiling of its endpoint. A repository the index does not
 // hold has no grants.
-func (o *Ownership) manages(idx *Index, sub Subject, repoKey, name string) bool {
+func (o *Ownership) manages(idx *Index, sub Subject, repoKey qname.Repo, name string) bool {
 	c := Coordinate{Repository: repoKey, Package: name, Kind: KindWrite, Actions: []Action{Manage}}
 	return o.e.evaluate(idx, sub, c).Outcome == Allow
 }
@@ -671,7 +672,7 @@ func owns(idx *Index, sub Subject, owners []Owner) bool {
 // refuseChange is the refusal of an owner change: 403 naming manage, counted and
 // audited like a refused write. It is the same for a name that does not exist,
 // so a refused write reveals nothing (R-AUTHZ-016).
-func (o *Ownership) refuseChange(ctx context.Context, idx *Index, sub Subject, repoKey, name string) error {
+func (o *Ownership) refuseChange(ctx context.Context, idx *Index, sub Subject, repoKey qname.Repo, name string) error {
 	c := Coordinate{Repository: repoKey, Package: name, Kind: KindWrite, Actions: []Action{Manage}}
 	d := Decision{Outcome: DenyVisible, Reason: ReasonNoGrant, Missing: Manage, Target: targetOf(c), Epoch: idx.Epoch()}
 	o.e.count(d, sub, c)
@@ -684,7 +685,7 @@ func (o *Ownership) refuseChange(ctx context.Context, idx *Index, sub Subject, r
 // anything is looked up. Where ownership does not exist the answer is 404 for a
 // caller that may manage the repository and the refusal of the change for every
 // other caller, so the status of a write never depends on existence.
-func (o *Ownership) changeTarget(ctx context.Context, idx *Index, sub Subject, repoKey, name string) (ownKey, error) {
+func (o *Ownership) changeTarget(ctx context.Context, idx *Index, sub Subject, repoKey qname.Repo, name string) (ownKey, error) {
 	switch {
 	case sub.Anonymous:
 		return ownKey{}, Unauthenticated()
@@ -702,13 +703,13 @@ func (o *Ownership) changeTarget(ctx context.Context, idx *Index, sub Subject, r
 }
 
 func (o *Ownership) packageOwners(k ownKey, state string, owners []Owner) PackageOwners {
-	return PackageOwners{Repository: k.repo.Key, Domain: k.repo.Key, Format: k.format, Package: k.name, State: state, Owners: owners}
+	return PackageOwners{Repository: k.repo.Name.String(), Domain: k.repo.Name.String(), Format: k.format, Package: k.name, State: state, Owners: owners}
 }
 
 // Owners reads the state and the owners of a name (GET …/owners): read on the
 // coordinate, refused as R-AUTHZ-016 says (404, byte-identical to a missing
 // name). Where ownership does not exist the answer is the same 404.
-func (o *Ownership) Owners(ctx context.Context, idx *Index, sub Subject, repoKey, name string) (PackageOwners, error) {
+func (o *Ownership) Owners(ctx context.Context, idx *Index, sub Subject, repoKey qname.Repo, name string) (PackageOwners, error) {
 	k, norm, ok := o.nameIn(idx, repoKey, name)
 	d := o.e.DecideOn(ctx, idx, sub, Coordinate{Repository: repoKey, Package: norm, Kind: KindMetadata, Actions: []Action{Read}})
 	if d.Outcome != Allow {
@@ -795,15 +796,15 @@ func refuseForeignAccount(ctx context.Context, qs *q.Queries, r Ref, id, repoPro
 // after the last owner was deleted) manage or content:bypass, and so for a
 // release.
 func (o *Ownership) changeAllowed(ctx context.Context, idx *Index, sub Subject, k ownKey, owners []Owner, needManage bool) error {
-	if o.manages(idx, sub, k.repo.Key, k.name) || (!needManage && owns(idx, sub, owners)) {
+	if o.manages(idx, sub, k.repo.Name, k.name) || (!needManage && owns(idx, sub, owners)) {
 		return nil
 	}
-	return o.refuseChange(ctx, idx, sub, k.repo.Key, k.name)
+	return o.refuseChange(ctx, idx, sub, k.repo.Name, k.name)
 }
 
 // AddOwner adds an owner to a name (POST …/owners) in a transaction of its own;
 // see [Ownership.AddOwnerTx].
-func (o *Ownership) AddOwner(ctx context.Context, idx *Index, sub Subject, repoKey, name, ref string) (Owner, error) {
+func (o *Ownership) AddOwner(ctx context.Context, idx *Index, sub Subject, repoKey qname.Repo, name, ref string) (Owner, error) {
 	var out Owner
 	err := o.db.InTx(ctx, func(tx meta.Tx) (err error) {
 		out, err = o.AddOwnerTx(ctx, tx, idx, sub, repoKey, name, ref)
@@ -820,7 +821,7 @@ func (o *Ownership) AddOwner(ctx context.Context, idx *Index, sub Subject, repoK
 // before the owner reference is looked up, so a refused caller learns nothing
 // about principals; an unknown owner is 422 unknown_principal, and a principal
 // that owns the name already is 409 already_exists.
-func (o *Ownership) AddOwnerTx(ctx context.Context, tx meta.Tx, idx *Index, sub Subject, repoKey, name, ref string) (Owner, error) {
+func (o *Ownership) AddOwnerTx(ctx context.Context, tx meta.Tx, idx *Index, sub Subject, repoKey qname.Repo, name, ref string) (Owner, error) {
 	k, err := o.changeTarget(ctx, idx, sub, repoKey, name)
 	if err != nil {
 		return Owner{}, err
@@ -887,7 +888,7 @@ func (o *Ownership) claimForAdd(ctx context.Context, qs *q.Queries, k ownKey, st
 // PackageName is the normalized name the owner operations address, for the
 // Location of an answer: the format's name rule of the repository, the name as
 // given where the index knows no rule for it.
-func (o *Ownership) PackageName(idx *Index, repoKey, name string) string {
+func (o *Ownership) PackageName(idx *Index, repoKey qname.Repo, name string) string {
 	_, norm, _ := o.nameIn(idx, repoKey, name)
 	return norm
 }
@@ -915,7 +916,7 @@ func (o *Ownership) actorRef(sub Subject) string {
 
 // RemoveOwner removes an owner of a name (DELETE …/owners/{owner}) in a
 // transaction of its own; see [Ownership.RemoveOwnerTx].
-func (o *Ownership) RemoveOwner(ctx context.Context, idx *Index, sub Subject, repoKey, name, ref string, release bool) error {
+func (o *Ownership) RemoveOwner(ctx context.Context, idx *Index, sub Subject, repoKey qname.Repo, name, ref string, release bool) error {
 	return o.db.InTx(ctx, func(tx meta.Tx) error {
 		return o.RemoveOwnerTx(ctx, tx, idx, sub, repoKey, name, ref, release)
 	})
@@ -927,7 +928,7 @@ func (o *Ownership) RemoveOwner(ctx context.Context, idx *Index, sub Subject, re
 // or content:bypass. Both events take access away and carry the journal entry
 // of R-AUTHZ-031. The owners are read under the claim row's lock, so two removals
 // of the last two owners run one after the other and the second is 409.
-func (o *Ownership) RemoveOwnerTx(ctx context.Context, tx meta.Tx, idx *Index, sub Subject, repoKey, name, ref string, release bool) error {
+func (o *Ownership) RemoveOwnerTx(ctx context.Context, tx meta.Tx, idx *Index, sub Subject, repoKey qname.Repo, name, ref string, release bool) error {
 	k, err := o.changeTarget(ctx, idx, sub, repoKey, name)
 	if err != nil {
 		return err
@@ -981,8 +982,8 @@ func (o *Ownership) RemoveOwnerTx(ctx context.Context, tx meta.Tx, idx *Index, s
 
 // OwnedPackage is one name an identity owns (R-AUTHZ-019 GET /package-owners).
 type OwnedPackage struct {
-	// Repository is the key of the repository whose domain holds the name.
-	Repository string
+	// Repository is the name of the repository whose domain holds the name.
+	Repository qname.Repo
 	Format     string
 	Package    string
 	State      string
@@ -1002,7 +1003,7 @@ type OwnedCursor struct{ Domain, Format, Package string }
 // domain; limit is at most 1000. One row more than the page is read: the cursor
 // of the next page is returned when it exists, and it is the key of the last row
 // read for the page, shown or not, so a filtered row is never read twice.
-func (o *Ownership) OwnedBy(ctx context.Context, idx *Index, sub Subject, ref, repoKey string, after OwnedCursor, limit int) ([]OwnedPackage, *OwnedCursor, error) {
+func (o *Ownership) OwnedBy(ctx context.Context, idx *Index, sub Subject, ref string, repoKey qname.Repo, after OwnedCursor, limit int) ([]OwnedPackage, *OwnedCursor, error) {
 	full := o.e.HoldsOn(idx, sub, string(PoliciesRead))
 	if !full && !o.ownIdentity(sub, ref) {
 		return nil, nil, o.e.RequireOn(ctx, idx, sub, string(PoliciesRead))
@@ -1011,7 +1012,7 @@ func (o *Ownership) OwnedBy(ctx context.Context, idx *Index, sub Subject, ref, r
 		limit = 1000
 	}
 	domain := ""
-	if repoKey != "" {
+	if !repoKey.IsZero() {
 		r := idx.repo(repoKey)
 		if r == nil {
 			return []OwnedPackage{}, nil, nil
@@ -1037,7 +1038,7 @@ func (o *Ownership) OwnedBy(ctx context.Context, idx *Index, sub Subject, ref, r
 		out = make([]OwnedPackage, 0, len(rows))
 		for _, r := range rows {
 			out = append(out, OwnedPackage{
-				Repository: r.RepositoryKey, Format: r.Format, Package: r.PackageName, State: r.State, Reason: r.Reason,
+				Repository: qname.Repo{Project: r.RepositoryProjectKey, Key: r.RepositoryKey}, Format: r.Format, Package: r.PackageName, State: r.State, Reason: r.Reason,
 				AddedAt: time.UnixMicro(r.AddedUs).UTC(),
 			})
 		}
@@ -1046,9 +1047,9 @@ func (o *Ownership) OwnedBy(ctx context.Context, idx *Index, sub Subject, ref, r
 	if err != nil || full {
 		return out, next, err
 	}
-	keys := make([]string, 0, len(out))
+	keys := make([]qname.Repo, 0, len(out))
 	for _, p := range out {
-		if p.Repository != "" && !slices.Contains(keys, p.Repository) {
+		if !p.Repository.IsZero() && !slices.Contains(keys, p.Repository) {
 			keys = append(keys, p.Repository)
 		}
 	}
@@ -1152,4 +1153,14 @@ func (OwnershipHook) OnDelete(ctx context.Context, tx meta.Tx, _ repository.Call
 	}
 	_, err = qs.OwnershipDeleteDomain(ctx, "repo:"+strconv.FormatInt(id, 10))
 	return err
+}
+
+// firstRepo is the first name that is not the zero name.
+func firstRepo(names ...qname.Repo) qname.Repo {
+	for _, n := range names {
+		if !n.IsZero() {
+			return n
+		}
+	}
+	return qname.Repo{}
 }

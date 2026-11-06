@@ -51,7 +51,7 @@ func (s CIScope) Held(a claims.Action, selector string) bool {
 	if s.idx == nil {
 		return false
 	}
-	sel, err := parseSelector(selector)
+	sel, err := parseSelector(selector, instanceContext)
 	if err != nil {
 		return false
 	}

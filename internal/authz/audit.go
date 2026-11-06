@@ -113,8 +113,8 @@ func (e *Engine) decisionEvent(name string, sub Subject, c Coordinate, d Decisio
 	// (R-OPS-015); a package operation has a package name and no path.
 	out := audit.Event{
 		Type: name, Actor: actorOf(sub), Outcome: audit.Denied, Reason: d.Reason,
-		Subject:    audit.Subject{Kind: "repository", Name: c.Repository},
-		Repository: c.Repository, Path: firstNonEmpty(c.Path, c.Package), Endpoint: sub.Endpoint,
+		Subject:    audit.Subject{Kind: "repository", Name: c.Repository.String()},
+		Repository: c.Repository.String(), Path: firstNonEmpty(c.Path, c.Package), Endpoint: sub.Endpoint,
 		Details: raw,
 	}
 	if d.Outcome == Allow {

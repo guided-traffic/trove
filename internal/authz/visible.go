@@ -2,6 +2,7 @@ package authz
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/repository"
 )
@@ -53,20 +54,20 @@ type ReadScoper interface {
 	// (R-AUTHZ-009 rule 2, Q-EP-11, Q-AUTHZ-163, Q-AUTHZ-168), and a key the addressed
 	// repository does not reach is ReadNone. "" decides each repository on its own, as a
 	// listing across repositories does. An error is a refusal to decide (503, 412).
-	ReadScopeOn(ctx context.Context, idx *Index, sub Subject, addressed string, keys []string) (ReadScope, error)
+	ReadScopeOn(ctx context.Context, idx *Index, sub Subject, addressed qname.Repo, keys []qname.Repo) (ReadScope, error)
 }
 
 // ReadScope answers the two questions of a listing for one subject and one index.
 type ReadScope interface {
 	// Shape is the classification of a repository key; a key that was not asked
 	// for is ReadNone.
-	Shape(key string) ReadShape
+	Shape(key qname.Repo) ReadShape
 	// MayRead decides the read of one version of one package of a repository: the
 	// decision of [Decider.DecideOn] for a read, without the audit event and the
 	// denial counters, because the caller asked about rows it lists and no client
 	// requested a refused resource. version may be empty for a package-level
 	// question.
-	MayRead(repo, pkg, version string) bool
+	MayRead(repo qname.Repo, pkg, version string) bool
 }
 
 // VersionIndependent is the optional property of a [ReadScope] that a listing of findings uses to decide a package once and not
@@ -90,8 +91,8 @@ type readScope struct {
 	sub Subject
 	// addressed is the repository the client named, "" for a listing that decides
 	// each repository on its own.
-	addressed string
-	shapes    map[string]ReadShape
+	addressed qname.Repo
+	shapes    map[qname.Repo]ReadShape
 	// st is what the decision derives from the subject, once for the scope: a listing decides up to hundreds of thousands
 	// of rows (the findings of R-VULN-019), and deriving the principal set and the capabilities for each would cost more
 	// than the decision. It is immutable, so concurrent MayRead calls share it. Nil when the scope reads nothing.
@@ -105,9 +106,9 @@ type readScope struct {
 // VersionIndependent implements [VersionIndependent].
 func (s *readScope) VersionIndependent() bool { return s.versionFree }
 
-func (s *readScope) Shape(key string) ReadShape { return s.shapes[key] }
+func (s *readScope) Shape(key qname.Repo) ReadShape { return s.shapes[key] }
 
-func (s *readScope) MayRead(repo, pkg, version string) bool {
+func (s *readScope) MayRead(repo qname.Repo, pkg, version string) bool {
 	if s.sub.Anonymous && s.sub.anon != anonOn {
 		return false
 	}
@@ -122,13 +123,13 @@ func (s *readScope) MayRead(repo, pkg, version string) bool {
 }
 
 // ReadScopeOn implements [ReadScoper].
-func (e *Engine) ReadScopeOn(ctx context.Context, idx *Index, sub Subject, addressed string, keys []string) (ReadScope, error) {
+func (e *Engine) ReadScopeOn(ctx context.Context, idx *Index, sub Subject, addressed qname.Repo, keys []qname.Repo) (ReadScope, error) {
 	sub, refused := e.withAnonymous(ctx, sub)
 	if refused != nil {
 		return nil, refused.Err()
 	}
 	rs := &readScope{
-		e: e, idx: idx, sub: sub, addressed: addressed, shapes: make(map[string]ReadShape, len(keys)), read: []Action{Read},
+		e: e, idx: idx, sub: sub, addressed: addressed, shapes: make(map[qname.Repo]ReadShape, len(keys)), read: []Action{Read},
 		versionFree: e.exposesEverything(sub.Endpoint),
 	}
 	if sub.Anonymous && sub.anon != anonOn {
@@ -152,8 +153,8 @@ func (e *Engine) ReadScopeOn(ctx context.Context, idx *Index, sub Subject, addre
 // itself, or a virtual repository that resolves through the key (Index.reaches). Any
 // other pair is no read the client asked for, so a listing gets nothing of it
 // (Q-AUTHZ-168).
-func (idx *Index) addressedReaches(addressed, key string) bool {
-	if addressed == "" || addressed == key {
+func (idx *Index) addressedReaches(addressed, key qname.Repo) bool {
+	if addressed.IsZero() || addressed == key {
 		return true
 	}
 	v := idx.repo(addressed)

@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/guided-traffic/trove/internal/qname"
 	"regexp"
 	"sort"
 	"strconv"
-	"strings"
 	"unicode/utf8"
 
 	"github.com/guided-traffic/trove/internal/audit"
@@ -49,9 +49,6 @@ type ProjectLookup interface {
 	// AccountProject returns the key of the project a service account (by
 	// principal ID) belongs to, "" for a global account.
 	AccountProject(ctx context.Context, principalID string) (string, error)
-	// KeyPrefixing returns the key of a project whose key and a hyphen start the
-	// name, "" when none does (Q-AUTHZ-200).
-	KeyPrefixing(ctx context.Context, name string) (string, error)
 	// AutoJoinGroup reports whether the principal is an auto-join group (Q-AUTHZ-200).
 	AutoJoinGroup(ctx context.Context, principalID string) (bool, error)
 }
@@ -232,12 +229,6 @@ func (p pgProjects) AccountProject(ctx context.Context, principalID string) (key
 	return key, err
 }
 
-// KeyPrefixing implements [ProjectLookup].
-func (p pgProjects) KeyPrefixing(ctx context.Context, name string) (key string, err error) {
-	err = p.read(ctx, func(qs *q.Queries) (err error) { key, err = txProjects{qs}.KeyPrefixing(ctx, name); return })
-	return key, err
-}
-
 // AutoJoinGroup implements [ProjectLookup].
 func (p pgProjects) AutoJoinGroup(ctx context.Context, principalID string) (auto bool, err error) {
 	err = p.read(ctx, func(qs *q.Queries) (err error) { auto, err = txProjects{qs}.AutoJoinGroup(ctx, principalID); return })
@@ -261,15 +252,6 @@ func (t txProjects) ProjectID(ctx context.Context, key string) (string, error) {
 // AccountProject implements [ProjectLookup].
 func (t txProjects) AccountProject(ctx context.Context, principalID string) (string, error) {
 	rows, err := t.qs.AuthzServiceAccountProject(ctx, principalID)
-	if len(rows) > 0 {
-		return rows[0], err
-	}
-	return "", err
-}
-
-// KeyPrefixing implements [ProjectLookup].
-func (t txProjects) KeyPrefixing(ctx context.Context, name string) (string, error) {
-	rows, err := t.qs.AuthzProjectKeyPrefixing(ctx, name)
 	if len(rows) > 0 {
 		return rows[0], err
 	}
@@ -309,13 +291,6 @@ func (s *Service) resolveProject(ctx context.Context, rp *resolvedPolicy, stored
 		// A global policy never takes the name of a project's policies, so a project
 		// administrator's create never meets a global policy of the same name
 		// (Q-AUTHZ-176, Q-AUTHZ-200).
-		key, err := pl.KeyPrefixing(ctx, rp.in.Name)
-		if err != nil {
-			return nil, err
-		}
-		if key != "" {
-			return []ProblemField{field("/name", errs.CodeNameReservedByProject, fmt.Sprintf("The names that start with %q belong to the policies of the project %q.", key+"-", key))}, nil
-		}
 		return nil, nil
 	}
 	key := *rp.in.Project
@@ -327,11 +302,6 @@ func (s *Service) resolveProject(ctx context.Context, rp *resolvedPolicy, stored
 		return []ProblemField{field("/project", errs.CodeUnknownProject, fmt.Sprintf("No project %q exists or it is not administered by the caller.", key))}, nil
 	}
 	rp.project = id
-	// The prefix and at least one character after it, as for the project's repositories and
-	// service accounts (Q-AUTH-193).
-	if !stored && (!strings.HasPrefix(rp.in.Name, key+"-") || len(rp.in.Name) == len(key)+1) {
-		return []ProblemField{field("/name", errs.CodeProjectPrefixRequired, fmt.Sprintf("The name of a policy of the project %q starts with %q and goes on after it.", key, key+"-"))}, nil
-	}
 	return nil, nil
 }
 
@@ -533,7 +503,11 @@ func (s *Service) resolveSelectors(ctx context.Context, rp *resolvedPolicy, stor
 	var ps []ProblemField
 	for i, text := range rp.in.Resources.Repositories {
 		ptr := "/resources/repositories/" + strconv.Itoa(i)
-		sel, err := parseSelector(text)
+		in := instanceContext
+		if rp.in.Project != nil {
+			in = projectContext(*rp.in.Project)
+		}
+		sel, err := parseSelector(text, in)
 		if err != nil {
 			ps = append(ps, field(ptr, errs.CodeInvalidPattern, err.Error()))
 			continue
@@ -543,7 +517,7 @@ func (s *Service) resolveSelectors(ctx context.Context, rp *resolvedPolicy, stor
 			continue
 		}
 		if sel.kind == selKey {
-			r, err := s.o.Repositories.ByKey(ctx, sel.key)
+			r, err := s.o.Repositories.ByName(ctx, qname.Repo{Project: sel.project, Key: sel.key})
 			if err != nil {
 				var ee *errs.Error
 				if errors.As(err, &ee) && ee.Kind == errs.NotFound {
@@ -629,7 +603,7 @@ func warningsFor(rp *resolvedPolicy, all []repository.Repository, reg *catalog.R
 			continue // a project policy covers only the repositories of its project (Q-AUTHZ-179)
 		}
 		id, _ := strconv.ParseInt(r.ID, 10, 64)
-		v := repoView{ID: id, Key: r.Name, Class: r.Class, Format: r.Format}
+		v := repoView{ID: id, Name: r.Name, Class: r.Class, Format: r.Format}
 		hit := false
 		for i, sel := range rp.selectors {
 			if sel.matches(v) {
@@ -639,7 +613,7 @@ func warningsFor(rp *resolvedPolicy, all []repository.Repository, reg *catalog.R
 		}
 		if hit {
 			covered = append(covered, r)
-			covers = append(covers, r.Name)
+			covers = append(covers, r.Name.String())
 		}
 	}
 	sort.Strings(covers)

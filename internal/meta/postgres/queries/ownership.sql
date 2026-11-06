@@ -84,11 +84,12 @@ DELETE FROM package_ownership WHERE domain = sqlc.arg(domain)::text;
 -- The names one principal owns, in key order after the cursor (R-AUTHZ-019
 -- GET /package-owners). The repository key is resolved for the domain of a
 -- repository; a shared domain (R-AUTHZ-020) has none.
-SELECT o.domain, o.format, o.package_name, COALESCE(r.key, '')::text AS repository_key, s.state, o.reason,
+SELECT o.domain, o.format, o.package_name, COALESCE(rp.key, '')::text AS repository_project_key, COALESCE(r.key, '')::text AS repository_key, s.state, o.reason,
        (extract(epoch FROM o.added_at) * 1000000)::bigint AS added_us
   FROM package_owner o
   JOIN package_ownership s ON s.domain = o.domain AND s.format = o.format AND s.package_name = o.package_name
   LEFT JOIN repositories r ON r.id = (CASE WHEN o.domain ~ '^repo:[0-9]+$' THEN substr(o.domain, 6)::bigint END)
+  LEFT JOIN project rp ON rp.id = r.project_id
  WHERE o.principal_id = sqlc.arg(principal_id)::text::uuid
    AND (sqlc.arg(domain)::text = '' OR o.domain = sqlc.arg(domain)::text)
    AND (o.domain, o.format, o.package_name) > (sqlc.arg(after_domain)::text, sqlc.arg(after_format)::text, sqlc.arg(after_name)::text)

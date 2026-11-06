@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/guided-traffic/trove/internal/qname"
 	"log/slog"
 	"sort"
 	"strconv"
@@ -406,7 +407,7 @@ func (e *ExposureCeiling) Admits(x *Index, endpoint string, c Coordinate, a Acti
 		return CeilingReadOnly
 	}
 	addressed := c.Addressed
-	if addressed == "" {
+	if addressed.IsZero() {
 		addressed = c.Repository
 	}
 	r := x.repo(addressed)
@@ -429,7 +430,7 @@ func (e *ExposureCeiling) Admits(x *Index, endpoint string, c Coordinate, a Acti
 
 // ExposureFingerprint returns the exposure fingerprint of an endpoint and an
 // addressed repository from the index, without a query (R-EP-018).
-func (e *ExposureCeiling) ExposureFingerprint(x *Index, endpoint, repoKey string) string {
+func (e *ExposureCeiling) ExposureFingerprint(x *Index, endpoint string, repoKey qname.Repo) string {
 	mode := e.Mode(endpoint)
 	if mode == ExposureModeAll {
 		return fingerprint(mode, nil)
@@ -459,7 +460,7 @@ type ExposureView struct {
 // format that is not exposable and one without an enabled rule get a view that
 // exposes nothing (fail closed). The view and ExposureFingerprint read the same
 // index, so a document is never filtered by other rules than its validator names.
-func (e *ExposureCeiling) View(x *Index, endpoint, repoKey string) *ExposureView {
+func (e *ExposureCeiling) View(x *Index, endpoint string, repoKey qname.Repo) *ExposureView {
 	if endpoint == "" || e.Mode(endpoint) == ExposureModeAll {
 		return nil
 	}

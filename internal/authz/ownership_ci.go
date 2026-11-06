@@ -233,7 +233,7 @@ func (o *Ownership) ciConflict(ctx context.Context, chk OwnershipCheck) {
 
 func ciOwnershipEvent(name string, chk OwnershipCheck, p CIProject, owners []string) audit.Event {
 	k := chk.key
-	d := map[string]any{"repository": k.repo.Key, "package": k.name, "tokenId": chk.sub.TokenID, "epoch": chk.epoch}
+	d := map[string]any{"repository": k.repo.Name, "package": k.name, "tokenId": chk.sub.TokenID, "epoch": chk.epoch}
 	if p.ProjectID != "" {
 		d["owner"] = p.Ref()
 	}
@@ -244,7 +244,7 @@ func ciOwnershipEvent(name string, chk OwnershipCheck, p CIProject, owners []str
 	}
 	return audit.Event{
 		Type: name, Actor: actorOf(chk.sub), Outcome: outcome, Reason: chk.Decision.Reason,
-		Subject:    audit.Subject{Kind: "package", Name: k.repo.Key + "/" + k.name},
-		Repository: k.repo.Key, Path: k.name, Endpoint: chk.sub.Endpoint, Details: mustJSON(d),
+		Subject:    audit.Subject{Kind: "package", Name: k.repo.Name.String() + "/" + k.name},
+		Repository: k.repo.Name.String(), Path: k.name, Endpoint: chk.sub.Endpoint, Details: mustJSON(d),
 	}
 }
