@@ -215,7 +215,8 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
   them (storing and answering: 12 to 26 s against 82 s summed over 707 tarballs), the pass's CPU taken from the installs. The overlap with another
   run that was suspected first does not apply to that class (each hosted job has its own VM). Fixed in CI: the nightly row `mirror` runs on
   `large` since [Q-REPO-211](../spec/repositories-and-proxy.md#q-repo-211--the-nightly-install-time-ratio-of-clients-first-runs-on-the-large-class).
-  Done when the nightly leg passes the bound on `large`; a miss there is a product finding (split the phases as Q-REPO-211 did).
+  The dispatched nightly run 42226311597 (2026-11-06, `large`) passed it: 96 % (pairs 90 %, 133 %, 96 %; the open requests within the
+  bound, the pre-emptions grew); one pair of three above the bound on `large` too, so the scheduled nightly run is the second reading. Done when the nightly leg passes the bound on `large`; a miss there is a product finding (split the phases as Q-REPO-211 did).
 - **F-65 · `failover.sh` failed inside the node clearance of the mirror's failure suite in CI** (read from the job log of the dispatched
   nightly run 42211913572, leg `e2e-mirror (mirror-long)`, 2026-11-06). `clearNode` (test/e2e/node_loss_test.go) deleted the operators'
   pods so that they start elsewhere, then switched the PostgreSQL primary off the node with `failover.sh`, which exited 1; the scenario that
