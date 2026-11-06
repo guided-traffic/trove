@@ -37,7 +37,7 @@ func TestDescribeItem(t *testing.T) {
 		if p, present := m["upstreamUrl"]; !present || p != nil {
 			t.Errorf("upstreamUrl = %v", p)
 		}
-		if m["downloadUrl"] != "https://trove.example.com/files/generic-local/tools/wid%20get/widget%202.3.bin" {
+		if m["downloadUrl"] != "https://trove.example.com/files/it/generic-local/tools/wid%20get/widget%202.3.bin" {
 			t.Errorf("downloadUrl = %v", m["downloadUrl"])
 		}
 		if m["itemUrl"] != "https://trove.example.com/api/v1/projects/it/repositories/generic-local/items?path=tools%2Fwid+get%2Fwidget+2.3.bin" {
@@ -103,7 +103,7 @@ func TestDescribeItem(t *testing.T) {
 
 	t.Run("R-ARCH-007 a content link is built from one place, every segment encoded", func(t *testing.T) {
 		got := links.File(qr("r"), "a b/c%d/é", false)
-		if got != "https://trove.example.com/files/r/a%20b/c%25d/%C3%A9" || strings.Contains(got, "//files") {
+		if got != "https://trove.example.com/files/it/r/a%20b/c%25d/%C3%A9" || strings.Contains(got, "//files") {
 			t.Errorf("File = %s", got)
 		}
 		if got := links.File(qr("r"), "dir", true); !strings.HasSuffix(got, "/dir/") {

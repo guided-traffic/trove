@@ -293,12 +293,12 @@ func TestR_ARCH_007_LinksComeFromTheBaseURL(t *testing.T) {
 	l := linkBuilder{base: "https://trove.example.com", format: "npm", key: qr("npm-local")}
 	for got, want := range map[string]string{
 		l.Base():                           "https://trove.example.com",
-		l.Registry(qr("npm-remote~cache")): "https://trove.example.com/api/npm/npm-remote~cache/",
-		l.Repository():                     "https://trove.example.com/api/npm/npm-local/",
-		l.Path("@acme/ui/-/ui-1.0.0.tgz"):  "https://trove.example.com/api/npm/npm-local/@acme/ui/-/ui-1.0.0.tgz",
-		l.Path("a b/c#d"):                  "https://trove.example.com/api/npm/npm-local/a%20b/c%23d",
-		l.Path(""):                         "https://trove.example.com/api/npm/npm-local/",
-		l.File(qr("npm-local"), "@acme/ui/ui-1.0.0.tgz"): "https://trove.example.com/files/npm-local/@acme/ui/ui-1.0.0.tgz",
+		l.Registry(qr("npm-remote~cache")): "https://trove.example.com/api/npm/it/npm-remote~cache/",
+		l.Repository():                     "https://trove.example.com/api/npm/it/npm-local/",
+		l.Path("@acme/ui/-/ui-1.0.0.tgz"):  "https://trove.example.com/api/npm/it/npm-local/@acme/ui/-/ui-1.0.0.tgz",
+		l.Path("a b/c#d"):                  "https://trove.example.com/api/npm/it/npm-local/a%20b/c%23d",
+		l.Path(""):                         "https://trove.example.com/api/npm/it/npm-local/",
+		l.File(qr("npm-local"), "@acme/ui/ui-1.0.0.tgz"): "https://trove.example.com/files/it/npm-local/@acme/ui/ui-1.0.0.tgz",
 	} {
 		if got != want {
 			t.Errorf("got %q, want %q", got, want)

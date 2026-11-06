@@ -215,7 +215,7 @@ func TestGenericLayerDecidesOnTheRequestsAccess(t *testing.T) {
 		if len(acc.decides) != 2 || acc.decides[0].Actions[0] != authz.Deploy || acc.decides[1].Actions[0] != authz.Deploy {
 			t.Errorf("decisions = %+v", acc.decides)
 		}
-		if len(acc.paths) != 1 || acc.paths[0] != "overwrite:generic-local" {
+		if len(acc.paths) != 1 || acc.paths[0] != "overwrite:it/generic-local" {
 			t.Errorf("the overwrite question = %v", acc.paths)
 		}
 	})
@@ -307,7 +307,7 @@ func TestGenericLayerDecidesOnTheRequestsAccess(t *testing.T) {
 		if err != nil || !res.Done {
 			t.Fatalf("%+v, %v", res, err)
 		}
-		if len(acc.paths) != 1 || acc.paths[0] != "delete:generic-local" || len(acc.recorded) != 1 {
+		if len(acc.paths) != 1 || acc.paths[0] != "delete:it/generic-local" || len(acc.recorded) != 1 {
 			t.Errorf("paths %v, recorded %v", acc.paths, acc.recorded)
 		}
 		denied := &denyDelete{access: &access{allow: true}}

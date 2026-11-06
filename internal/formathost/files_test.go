@@ -91,7 +91,7 @@ func TestR_STOR_007_FilesSeamRefusesRawDeploysIntoAProtocolOfItsOwn(t *testing.T
 	}
 	err := s.RawDeploy(repository.Repository{Name: qr("named-local"), Format: "named"})
 	e, ok := errs.As(err)
-	if !ok || e.Kind != errs.Conflict || e.Code != errs.CodeConflict || !strings.Contains(e.Detail, "/api/named/named-local/") {
+	if !ok || e.Kind != errs.Conflict || e.Code != errs.CodeConflict || !strings.Contains(e.Detail, "/api/named/it/named-local/") {
 		t.Fatalf("err = %v", err)
 	}
 	if e, ok := errs.As(s.RawDeploy(repository.Repository{Name: qr("x"), Format: "ghost"})); !ok || e.Kind != errs.Conflict {

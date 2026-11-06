@@ -241,7 +241,7 @@ func TestR_VULN_015_TheMissGateAppliesTheEvaluationAndTheMissingDataRule(t *test
 		t.Fatalf("gate = %v", err)
 	}
 	if !strings.HasSuffix(e.Detail, "Details: https://trove.example.com/ui/vulnerabilities/advisories/npm/MAL-2026-1234") ||
-		!strings.Contains(e.Detail, "trove-test-mal@1.0.0 in npm-remote: malicious package (MAL-2026-1234)") {
+		!strings.Contains(e.Detail, "trove-test-mal@1.0.0 in it/npm-remote: malicious package (MAL-2026-1234)") {
 		t.Errorf("text = %q", e.Detail)
 	}
 	if _, has := e.Extensions["findingId"]; has {

@@ -58,35 +58,35 @@ func TestR_API_029_TopologyExpandsVirtualRepositories(t *testing.T) {
 	empty := repository.Assemble(repoOf("npm-empty", repository.Virtual), nil, nil, 0)
 	topo := NewTopology([]repository.Repository{a, b, c, inner, outer, empty})
 
-	if got, want := topo.Physical(), []string{"npm-a", "npm-b", "npm-remote"}; !slices.Equal(got, want) {
+	if got, want := topo.Physical(), []string{"it/npm-a", "it/npm-b", "it/npm-remote"}; !slices.Equal(got, want) {
 		t.Errorf("Physical %v", got)
 	}
-	if got, want := topo.Virtual(), []string{"npm-empty", "npm-inner", "npm-outer"}; !slices.Equal(got, want) {
+	if got, want := topo.Virtual(), []string{"it/npm-empty", "it/npm-inner", "it/npm-outer"}; !slices.Equal(got, want) {
 		t.Errorf("Virtual %v", got)
 	}
 	for _, tc := range []struct {
 		in   []string
 		want []string
 	}{
-		{[]string{"npm-a"}, []string{"npm-a"}},
-		{[]string{"npm-inner"}, []string{"npm-a", "npm-remote"}},
-		{[]string{"npm-outer"}, []string{"npm-a", "npm-b", "npm-remote"}},
-		{[]string{"npm-outer", "npm-a", "npm-inner"}, []string{"npm-a", "npm-b", "npm-remote"}},
-		{[]string{"npm-empty"}, nil},
-		{[]string{"ghost"}, nil},
+		{[]string{"it/npm-a"}, []string{"it/npm-a"}},
+		{[]string{"it/npm-inner"}, []string{"it/npm-a", "it/npm-remote"}},
+		{[]string{"it/npm-outer"}, []string{"it/npm-a", "it/npm-b", "it/npm-remote"}},
+		{[]string{"it/npm-outer", "it/npm-a", "it/npm-inner"}, []string{"it/npm-a", "it/npm-b", "it/npm-remote"}},
+		{[]string{"it/npm-empty"}, nil},
+		{[]string{"it/ghost"}, nil},
 		{nil, nil},
 	} {
 		if got := topo.Expand(tc.in); !slices.Equal(got, tc.want) {
 			t.Errorf("Expand(%v) = %v, want %v", tc.in, got, tc.want)
 		}
 	}
-	if got := topo.Containers("npm-a"); !slices.Equal(got, []string{"npm-inner", "npm-outer"}) {
+	if got := topo.Containers("it/npm-a"); !slices.Equal(got, []string{"it/npm-inner", "it/npm-outer"}) {
 		t.Errorf("Containers(npm-a) = %v", got)
 	}
-	if got := topo.Containers("npm-b"); !slices.Equal(got, []string{"npm-outer"}) {
+	if got := topo.Containers("it/npm-b"); !slices.Equal(got, []string{"it/npm-outer"}) {
 		t.Errorf("Containers(npm-b) = %v", got)
 	}
-	if c, ok := topo.Class("npm-remote"); !ok || c != repository.Remote {
+	if c, ok := topo.Class("it/npm-remote"); !ok || c != repository.Remote {
 		t.Errorf("Class %v %v", c, ok)
 	}
 }
@@ -95,9 +95,9 @@ func TestR_API_029_TopologyExpandsVirtualRepositories(t *testing.T) {
 // virtual repositories that contain its repository and that the caller may read, local
 // repositories first.
 func TestR_API_029_HoldersShowOnlyReadableVirtualRepositories(t *testing.T) {
-	a, c := repoOf("npm-a", repository.Local), repoOf("npm-remote", repository.Remote)
-	inner := repository.Assemble(repoOf("npm-all", repository.Virtual), []repository.Repository{a, c}, nil, 0)
-	hidden := repository.Assemble(repoOf("npm-secret", repository.Virtual), []repository.Repository{a}, nil, 0)
+	a, c := repoOf("it/npm-a", repository.Local), repoOf("it/npm-remote", repository.Remote)
+	inner := repository.Assemble(repoOf("it/npm-all", repository.Virtual), []repository.Repository{a, c}, nil, 0)
+	hidden := repository.Assemble(repoOf("it/npm-secret", repository.Virtual), []repository.Repository{a}, nil, 0)
 	topo := NewTopology([]repository.Repository{a, c, inner, hidden})
 	sc := Scope{topo: topo, virtualReadable: map[string]bool{"npm-all": true}}
 	if got := sc.holders([]string{"npm-remote", "npm-a"}); !slices.Equal(got, []string{"npm-a", "npm-remote", "npm-all"}) {
