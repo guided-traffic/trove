@@ -17,6 +17,8 @@ export const REPOSITORIES_ROUTES: Routes = [
   {
     path: ':project/:key',
     title: $localize`:@@route.repositories.detail.title:Repository`,
+    // The project step has no page at /admin/repositories/<project>: it links to the list filtered by the project.
+    data: { crumbFilters: { project: '/admin/repositories' } },
     loadComponent: () => import('./repository-detail').then((m) => m.RepositoryDetail),
     canDeactivate: [unsavedChangesGuard],
   },

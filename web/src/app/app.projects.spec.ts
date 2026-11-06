@@ -52,7 +52,7 @@ const PROJECT_ADMIN: Me = {
   projects: [{ key: 'web', role: 'owner' }],
 };
 
-describe('The administration area for project administrators (R-UI-041, Q-AUTHZ-181)', () => {
+describe('The administration area for project Owners (R-UI-041, Q-AUTHZ-181)', () => {
   it('R-UI-041 a caller without any capability that administers a project sees the project screens only', async () => {
     const { root } = await render('/admin', PROJECT_ADMIN);
     expect(root.querySelector('#nav-admin')?.textContent).toContain('Admin area');
@@ -122,7 +122,7 @@ describe('The project filter of the top bar (R-UI-041, R-API-021)', () => {
     expect(root.querySelector('button.project-button')).toBeNull();
   });
 
-  it('R-UI-041 is offered to a project administrator without capabilities', async () => {
+  it('R-UI-041 is offered to a project Owner without capabilities', async () => {
     const { root } = await render('/browse', PROJECT_ADMIN);
     expect(root.querySelector('button.project-button')).toBeTruthy();
   });

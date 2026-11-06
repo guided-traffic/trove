@@ -376,7 +376,7 @@ describe('The mapping editor of a project (Q-CI-26, R-CI-019)', () => {
     expect(text(root)).toContain('cannot carry groups');
   });
 
-  it('R-UI-035 Q-CI-26 a project administrator is offered the CI snippet and reads it through the project route', async () => {
+  it('R-UI-035 Q-CI-26 a project Owner is offered the CI snippet and reads it through the project route', async () => {
     const { root, fixture, get } = await renderScreen(MappingEditor, {
       inputs: { key: 'web', issuer: 'gitlab-com', mapping: 'web-x' },
       capabilities: [],

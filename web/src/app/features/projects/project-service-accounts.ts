@@ -10,9 +10,9 @@ import { ServiceAccountCreateData, ServiceAccountCreateDialog } from '../service
 import { ProjectNeeds, createState } from './project-access';
 
 /**
- * The service accounts of a project (R-UI-041, R-AUTHZ-026, Q-AUTHZ-175): create one named `<key>-…`,
+ * The service accounts of a project (R-UI-041, R-AUTHZ-026, Q-AUTHZ-175): create one named within the project,
  * and open it for its tokens, disabling and deleting. The account's own screen is the one of the
- * identity area; it recognises a project account and offers the project administrator its rights.
+ * identity area; it recognises a project account and offers the project Owner its rights.
  */
 @Component({
   selector: 'trove-project-service-accounts',

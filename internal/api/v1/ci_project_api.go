@@ -17,7 +17,7 @@ import (
 //
 //   - listProjectCiIssuers: Issuers.Choices, read-only (W1).
 //   - list, get, create, replace, delete of a mapping: Mappings.ListIn, GetIn, CreateIn, ReplaceIn,
-//     DeleteIn with the project from the path; the bounds of a project mapping (name prefix, no groups,
+//     DeleteIn with the project from the path; the bounds of a project mapping (a name within the project, no groups,
 //     the project's policies and repositories) are the service's; a mapping of another tier is 404 (W3).
 //   - evaluateProjectCiMappings: Mappings.EvaluateIn, the project's tier only (W3).
 //   - getProjectCiSnippet: the snippet of a mapping of the project's tier, GetIn first (W3).
@@ -29,7 +29,7 @@ func (s *Server) projectMappings(_ *http.Request, _, _ string) (ci.Mappings, err
 }
 
 // ListProjectCiIssuers implements GET /api/v1/projects/{key}/ci/issuers: the issuers read-only, name,
-// kind, issuer URL and public_issuer, for a project administrator who chooses one (Q-CI-26).
+// kind, issuer URL and public_issuer, for a project Owner who chooses one (Q-CI-26).
 func (s *Server) ListProjectCiIssuers(w http.ResponseWriter, r *http.Request, _ string) {
 	svc, err := s.ciIssuerService()
 	var choices []ci.IssuerChoice

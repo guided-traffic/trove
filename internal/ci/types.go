@@ -246,7 +246,7 @@ type MappingResult struct {
 	Warnings []claims.Warning
 }
 
-// IssuerChoice is what a project administrator sees of an issuer (Q-CI-26): enough to choose one.
+// IssuerChoice is what a project Owner sees of an issuer (Q-CI-26): enough to choose one.
 type IssuerChoice struct {
 	Name         string
 	Kind         string

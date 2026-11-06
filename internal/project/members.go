@@ -70,7 +70,7 @@ func memberPrincipal(ctx context.Context, qs *q.Queries, ref string) (PrincipalR
 	autoJoin := rows[0].AutoJoin
 	if kind == KindGroup {
 		// Under the group's row lock, so that turning the flag on, which takes the lock and then looks for
-		// memberships, and this write run one after the other (H-565).
+		// memberships, and this write run one after the other.
 		flags, err := qs.ProjectGroupAutoJoinShare(ctx, rows[0].ID)
 		if err != nil {
 			return PrincipalRef{}, err

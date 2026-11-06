@@ -336,7 +336,7 @@ The wizard shows it in the class-specific step, the edit form on a tab **Mirror*
   `sparse` for a create (nothing in mode `pullThrough`; in mode `mirror` the mode and the members that differ from `MIRROR_DEFAULTS`) and `structural` for
   the edit form (the mode and the mirror object are always present on both sides of the merge patch, so a patch carries only the changed members, clears a member set
   back to its default with `null` and never touches the rest of `remote`).
-- *Who.* `restricted` is `!SessionStore.has('repositories:write-config')`: a project administrator sees every member disabled except **Paused**, cannot choose
+- *Who.* `restricted` is `!SessionStore.has('repositories:write-config')`: an Owner of a project without the capability sees every member disabled except **Paused**, cannot choose
   mode `mirror`, and has a **Turn off** button (Q-REPO-142; the server's `422 mirror_restricted` is the check).
 - *The bound notice* (`unbounded`, `boundsMirror`) repeats the rule of `discover.Bounding` in `internal/mirror/discover/discover.go` and the sentences of
   `checkMirrorBound` in `internal/repository/validate_mirror.go`; the server decides ([Q-UI-118](../spec/api-and-ui.md#q-ui-118--the-unbounded-mirror-notice-is-an-early-warning-with-the-servers-rule)).
@@ -791,16 +791,16 @@ the project routes to it as well). Folder `web/src/app/features/ci/`; the servic
 | `/admin/ci/:issuer/mappings/new`, `/…/mappings/:mapping` | `MappingEditor` | `ci:write` writes, `ci:read` reads |
 | `/admin/ci/:issuer/test` (`?mapping=`) | `ClaimTester` | `ci:read` |
 | `/admin/ci/issuances` | `IssuancesPage` over `IssuanceList` (filters, bulk revoke) | `tokens:read`; revoke `tokens:revoke` |
-| `/admin/projects/:key/ci`, `…/ci/mappings/new?issuer=`, `…/ci/mappings/:mapping?issuer=`, `…/ci/test?issuer=&mapping=` | `ProjectCi`, and the same `MappingEditor`, `ClaimTester` with `key` set | `ci:read` or an administrator of the project (`managePolicies` for writes) |
+| `/admin/projects/:key/ci`, `…/ci/mappings/new?issuer=`, `…/ci/mappings/:mapping?issuer=`, `…/ci/test?issuer=&mapping=` | `ProjectCi`, and the same `MappingEditor`, `ClaimTester` with `key` set | `ci:read` or the role of the project (an Owner writes) |
 
 How the pieces fit:
 
 - **One implementation, two scopes.** `MappingList`, `MappingEditor`, `ClaimTester` and `IssuanceList` take the project key (`key` from the route, `project` as an input of the lists). `CiApi` takes the same
   key and picks the system or the project route; `ciRoutes` in [ci-common.ts](../../web/src/app/features/ci/ci-common.ts) builds the links for both. The project bounds are the editor's:
-  the name starts `<key>-`, the repositories offered are `RepositoriesApi.list({project})` plus `@any`, the policies are `PolicyApi.list({project})`, no groups are shown or sent. The
-  writability is `createState` (the capability, or `managePolicies` on): off shows `<trove-project-needs>`. The snippet is offered to `ci:read` and, in a project, to its administrator with `managePolicies` on; `CiApi.snippet` takes the project key and reads
+  the name is bare (unique within the project), the repositories offered are `RepositoriesApi.list({project})` plus `@any`, the policies are `PolicyApi.list({project})`, no groups are shown or sent. The
+  writability is `createState` (the capability, or the Owner role of the project): otherwise it shows `<trove-project-needs>`. The snippet is offered to `ci:read` and, in a project, to its Owner; `CiApi.snippet` takes the project key and reads
   `GET /api/v1/projects/{key}/ci/issuers/{issuer}/snippets/gitlab-ci` for a project's mapping (`getProjectCiSnippet`), the system route otherwise.
-- **Failures are the shared error notice.** Every CI call shows `<trove-error-notice>`; `ProjectCi` reads the issuers first and, when that fails (for example `403 project_switch_off`), shows that one
+- **Failures are the shared error notice.** Every CI call shows `<trove-error-notice>`; `ProjectCi` reads the issuers first and, when that fails (for example `404` for a project the caller is no member of), shows that one
   message instead of three. There is no "not available yet" state any more: every CI operation is built.
 - **Saves.** The mapping editor and the issuer form replace the whole record (`PUT`) with the loaded `ETag`. A `412` goes through `ConflictResolver.save`; "Overwrite" calls `send(etag, current)` with the
   record read now, and the CI callers build the body with `overwriteBody` ([ci-common.ts](../../web/src/app/features/ci/ci-common.ts)): the stored record plus only the members the user changed, so another

@@ -4,7 +4,7 @@ package ci
 
 // The issuance API (R-CI-020, Q-CI-26): the records newest first with the filters and cursor paging of R-API-010,
 // one record with its usage summary from the audit store, the bulk revoke's rules, who may read and revoke, and a
-// project administrator's view of the tokens its project's mappings contributed to.
+// project Owner's view of the tokens its project's mappings contributed to.
 
 import (
 	"net/url"

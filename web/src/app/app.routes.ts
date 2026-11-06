@@ -93,7 +93,7 @@ export const routes: Routes = [
         path: 'admin',
         data: { crumbs: [area.admin] satisfies CrumbSpec[] },
         children: [
-          // The admin area starts at the dashboard (Q-OPS-175); a project administrator without the repository
+          // The admin area starts at the dashboard (Q-OPS-175); a project Owner without the repository
           // capability starts at the projects (R-UI-041).
           { path: '', pathMatch: 'full', canActivate: [adminHomeGuard], children: [] },
           {

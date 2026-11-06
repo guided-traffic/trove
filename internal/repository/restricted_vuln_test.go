@@ -8,9 +8,9 @@ import (
 	"github.com/guided-traffic/trove/internal/vuln"
 )
 
-// TestR_VULN_002_AProjectAdministratorDoesNotWeakenTheScanning: manageRepositories alone changes no member that lifts a download
+// TestR_VULN_002_AnOwnerDoesNotWeakenTheScanning: the role Owner alone changes no member that lifts a download
 // block (Q-VULN-69); the triage capability, or a holder of repositories:write-config (no delegate), does.
-func TestR_VULN_002_AProjectAdministratorDoesNotWeakenTheScanning(t *testing.T) {
+func TestR_VULN_002_AnOwnerDoesNotWeakenTheScanning(t *testing.T) {
 	def := vuln.DefaultSettings()
 	with := func(f func(*vuln.Settings)) *Document {
 		s := def

@@ -232,7 +232,7 @@ export class RepositoryWizard implements HasUnsavedChanges {
   protected readonly mirrorSection = computed(
     () => this.cls() === 'remote' && this.format()?.mirror === true,
   );
-  /** Without `repositories:write-config` (a project administrator) the section is read-only (Q-REPO-142). */
+  /** Without `repositories:write-config` (a project Owner) the section is read-only (Q-REPO-142). */
   protected readonly mirrorRestricted = computed(
     () => !this.session.has('repositories:write-config'),
   );

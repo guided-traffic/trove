@@ -5,7 +5,7 @@ import { SessionStore } from './session-store';
 
 /**
  * `/admin` itself starts at the first screen the caller may use: the dashboard for a caller who may read the
- * installation's facts (Q-OPS-175), else the repositories, or the projects for a project administrator without the
+ * installation's facts (Q-OPS-175), else the repositories, or the projects for a project Owner without the
  * repository capability (R-UI-041). It runs after `authGuard`, so the session is known; a redirect function of the
  * route would run before it.
  */

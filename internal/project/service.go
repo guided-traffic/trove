@@ -88,7 +88,7 @@ type Service interface {
 }
 
 // MaxLookup is the most results a lookup returns, and MinLookupPrefix the shortest
-// prefix it accepts: a project administrator cannot list every user of the
+// prefix it accepts: a project Owner cannot list every user of the
 // installation in one call (Q-AUTHZ-182).
 const (
 	MaxLookup       = 20

@@ -77,7 +77,7 @@ test('R-UI-041 an administrator creates a project; a member of its Owner group a
       await expect(nav.getByRole('link', { name: global, exact: true })).toHaveCount(0);
     }
     await expect(bob.getByRole('row', { name: new RegExp(key) })).toBeVisible();
-    await expectAccessible(bob, 'project list (project administrator)');
+    await expectAccessible(bob, 'project list (project Owner)');
 
     await bob.getByRole('button', { name: /All projects/ }).click();
     await bob.getByRole('menuitemradio', { name: new RegExp(`\\(${key}\\)`) }).click();

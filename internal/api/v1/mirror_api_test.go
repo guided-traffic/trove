@@ -440,14 +440,14 @@ func TestR_REPO_056_MirrorRun(t *testing.T) {
 		e := newMirrorEnv(t, val, access, dec, mutate)
 		return e, e.do("POST", path, body, nil)
 	}
-	t.Run("R-REPO-056 write-config, manage and a project administrator with manageRepositories each get 202 with the job", func(t *testing.T) {
+	t.Run("R-REPO-056 write-config, manage and a project Owner each get 202 with the job", func(t *testing.T) {
 		for name, c := range map[string]struct {
 			access Access
 			dec    authz.Decider
 		}{
 			"repositories:write-config": {writeConfigCall, mirrorDecider{}},
 			"manage":                    {readOnlyCaller, mirrorDecider{manage: true}},
-			"project administrator":     {webAdmin, mirrorDecider{}},
+			"project Owner":              {webAdmin, mirrorDecider{}},
 		} {
 			e, w := run(t, c.access, c.dec, runPath, "", nil)
 			if w.Code != 202 {

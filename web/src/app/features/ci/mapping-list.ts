@@ -120,7 +120,7 @@ export class MappingList {
 
   protected readonly state = computed(() => createState(this.session, this.project() ?? '', 'ci:write'));
   protected readonly writable = computed(() => (this.project() ? this.state() === 'enabled' : this.session.has('ci:write')));
-  /** The dry run is the `ci:read` operation or the project's; the project administrator holds the latter. */
+  /** The dry run is the `ci:read` operation or the project's; the project Owner holds the latter. */
   protected readonly testable = computed(() => this.issuer() !== '' || this.project() !== null);
 
   protected readonly caption = $localize`:@@ci.mappings.caption:Mappings in evaluation order`;

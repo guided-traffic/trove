@@ -45,7 +45,7 @@ import { NamePicker } from './name-picker';
 /**
  * The mapping editor (R-UI-035, R-CI-009 to R-CI-014): a mapping of the system tier of an issuer, or, with
  * a project key, of that project's tier, bounded as the server bounds it (Q-CI-26): the project's repositories
- * and policies are offered, there are no groups, and the name starts with the key and a hyphen. The
+ * and policies are offered, there are no groups, and the name is bare within the project. The
  * condition is built as a tree (all, any, not and conditions on claims) or edited as JSON; the grants
  * are policies, groups (system tier only) and inline grants; the options carry the visible warning
  * for unprotected refs. The checks here only mirror what the server refuses so that the hint comes
@@ -189,7 +189,7 @@ export class MappingEditor implements HasUnsavedChanges {
   protected nameHint(): string {
     const key = this.project();
     return key
-      ? $localize`:@@ci.editor.name-hint-project:Starts with ${key}:project:- and cannot be changed later. Lower-case letters, digits, dot, underscore and hyphen.`
+      ? $localize`:@@ci.editor.name-hint-project:Unique within the project ${key}:project: and cannot be changed later. Lower-case letters, digits, dot, underscore and hyphen.`
       : $localize`:@@ci.editor.name-hint:It cannot be changed later. Lower-case letters, digits, dot, underscore and hyphen.`;
   }
   protected readonly isWrite = (a: string): boolean => a === 'deploy' || a === 'overwrite' || a === 'delete';

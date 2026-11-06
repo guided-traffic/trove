@@ -595,9 +595,17 @@
         <source>An auto-join group cannot hold the administrator role.</source>
       </segment>
     </unit>
-    <unit id="problem.role_binding_managed_by_configuration">
+    <unit id="problem.auto_join_member_conflict">
       <notes>
         <note category="location">src/app/core/http/problem-messages-access.ts:38</note>
+      </notes>
+      <segment>
+        <source>A group that is a member of a project cannot be an auto-join group. Remove it from the projects first.</source>
+      </segment>
+    </unit>
+    <unit id="problem.role_binding_managed_by_configuration">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:40</note>
       </notes>
       <segment>
         <source>This role binding is declared in the system configuration and can only be removed there.</source>
@@ -605,7 +613,7 @@
     </unit>
     <unit id="problem.role_not_allowed">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:40</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:42</note>
       </notes>
       <segment>
         <source>This role cannot be bound to this kind of principal.</source>
@@ -613,7 +621,7 @@
     </unit>
     <unit id="problem.unknown_role">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:42</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:44</note>
       </notes>
       <segment>
         <source>This role does not exist.</source>
@@ -621,7 +629,7 @@
     </unit>
     <unit id="problem.invalid_member">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:44</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:46</note>
       </notes>
       <segment>
         <source>A member does not exist or cannot be added.</source>
@@ -629,7 +637,7 @@
     </unit>
     <unit id="problem.invalid_ttl">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:46</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:48</note>
       </notes>
       <segment>
         <source>The lifetime is not valid.</source>
@@ -637,7 +645,7 @@
     </unit>
     <unit id="problem.ttl_exceeds_maximum">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:48</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:50</note>
       </notes>
       <segment>
         <source>The lifetime is longer than the maximum for this kind of token.</source>
@@ -645,7 +653,7 @@
     </unit>
     <unit id="problem.default_above_maximum">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:50</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:52</note>
       </notes>
       <segment>
         <source>The default lifetime cannot be longer than the maximum.</source>
@@ -653,7 +661,7 @@
     </unit>
     <unit id="problem.exceeds_ceiling">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:52</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:54</note>
       </notes>
       <segment>
         <source>The value is above the ceiling set in the installation&apos;s configuration.</source>
@@ -661,7 +669,7 @@
     </unit>
     <unit id="problem.non_expiring_not_allowed">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:54</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:56</note>
       </notes>
       <segment>
         <source>A token without an expiry is not allowed here.</source>
@@ -669,7 +677,7 @@
     </unit>
     <unit id="problem.non_expiring_restricted">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:56</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:58</note>
       </notes>
       <segment>
         <source>Only a service-account token can be created without an expiry.</source>
@@ -677,7 +685,7 @@
     </unit>
     <unit id="problem.invalid_scope">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:58</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:60</note>
       </notes>
       <segment>
         <source>The scope is not valid.</source>
@@ -685,7 +693,7 @@
     </unit>
     <unit id="problem.derivation_exceeds_parent">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:60</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:62</note>
       </notes>
       <segment>
         <source>A token cannot grant more than the token that creates it.</source>
@@ -693,7 +701,7 @@
     </unit>
     <unit id="problem.description_required">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:62</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:64</note>
       </notes>
       <segment>
         <source>Enter a description.</source>
@@ -701,7 +709,7 @@
     </unit>
     <unit id="problem.token_limit_reached">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:64</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:66</note>
       </notes>
       <segment>
         <source>The limit of tokens for this owner is reached. Revoke a token first.</source>
@@ -709,7 +717,7 @@
     </unit>
     <unit id="problem.pat_not_allowed">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:66</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:68</note>
       </notes>
       <segment>
         <source>A personal token cannot be created with this credential.</source>
@@ -717,7 +725,7 @@
     </unit>
     <unit id="problem.ci_token_restricted">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:68</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:70</note>
       </notes>
       <segment>
         <source>A token issued to a pipeline cannot do this.</source>
@@ -725,7 +733,7 @@
     </unit>
     <unit id="problem.not_a_token">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:70</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:72</note>
       </notes>
       <segment>
         <source>The current credential is not a token.</source>
@@ -733,7 +741,7 @@
     </unit>
     <unit id="problem.anonymous_not_allowed">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:72</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:74</note>
       </notes>
       <segment>
         <source>Anonymous access is not allowed by the installation&apos;s configuration.</source>
@@ -741,7 +749,7 @@
     </unit>
     <unit id="problem.invalid_action">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:74</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:76</note>
       </notes>
       <segment>
         <source>An action is not valid.</source>
@@ -749,7 +757,7 @@
     </unit>
     <unit id="problem.unknown_principal">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:76</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:78</note>
       </notes>
       <segment>
         <source>A principal does not exist.</source>
@@ -757,7 +765,7 @@
     </unit>
     <unit id="problem.unknown_repository">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:78</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:80</note>
       </notes>
       <segment>
         <source>A repository selector names a repository that does not exist.</source>
@@ -765,7 +773,7 @@
     </unit>
     <unit id="problem.unknown_format">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:80</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:82</note>
       </notes>
       <segment>
         <source>A selector names a format that does not exist.</source>
@@ -773,7 +781,7 @@
     </unit>
     <unit id="problem.duplicate_principal">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:82</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:84</note>
       </notes>
       <segment>
         <source>A principal appears twice in the policy.</source>
@@ -781,7 +789,7 @@
     </unit>
     <unit id="problem.anonymous_write_action">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:84</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:86</note>
       </notes>
       <segment>
         <source>The anonymous principal can only read.</source>
@@ -789,7 +797,7 @@
     </unit>
     <unit id="problem.anonymous_dynamic_selector">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:86</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:88</note>
       </notes>
       <segment>
         <source>The anonymous principal needs named repositories, not patterns or classes.</source>
@@ -797,7 +805,7 @@
     </unit>
     <unit id="problem.authenticated_write_action">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:88</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:90</note>
       </notes>
       <segment>
         <source>The group of all signed-in users can only read.</source>
@@ -805,7 +813,7 @@
     </unit>
     <unit id="problem.action_not_allowed">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:90</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:92</note>
       </notes>
       <segment>
         <source>This principal cannot hold this action.</source>
@@ -813,7 +821,7 @@
     </unit>
     <unit id="problem.virtual_action_not_applicable">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:92</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:94</note>
       </notes>
       <segment>
         <source>A virtual repository accepts only read and manage.</source>
@@ -821,7 +829,7 @@
     </unit>
     <unit id="problem.repository_outside_project">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:94</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:96</note>
       </notes>
       <segment>
         <source>A repository named here does not belong to this project, or does not exist.</source>
@@ -829,7 +837,7 @@
     </unit>
     <unit id="problem.unknown_project">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:96</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:98</note>
       </notes>
       <segment>
         <source>The project does not exist, or you do not administer it.</source>
@@ -837,7 +845,7 @@
     </unit>
     <unit id="problem.principal_outside_project">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:98</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:100</note>
       </notes>
       <segment>
         <source>A service account of a project can only be granted by the policies of its own project.</source>
@@ -845,7 +853,7 @@
     </unit>
     <unit id="problem.project_account_not_groupable">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:100</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:102</note>
       </notes>
       <segment>
         <source>A service account of a project cannot be a member of a group.</source>
@@ -853,7 +861,7 @@
     </unit>
     <unit id="problem.project_not_empty">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:102</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:104</note>
       </notes>
       <segment>
         <source>The project still has repositories or service accounts. Move or delete the repositories and delete the service accounts first.</source>
@@ -861,7 +869,7 @@
     </unit>
     <unit id="problem.principal_not_allowed">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:104</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:106</note>
       </notes>
       <segment>
         <source>Only users and groups can be members of a project. A service account, a CI mapping, anonymous and authenticated cannot.</source>
@@ -869,7 +877,7 @@
     </unit>
     <unit id="problem.secret_value_required">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:106</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:108</note>
       </notes>
       <segment>
         <source>Enter the password or token of this upstream again.</source>
@@ -877,7 +885,7 @@
     </unit>
     <unit id="problem.outbound_path_restricted">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:108</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:110</note>
       </notes>
       <segment>
         <source>The outbound path of this repository is set by an administrator of trove.</source>
@@ -6846,7 +6854,7 @@
         <note category="location">src/app/features/ci/mapping-editor.ts:192</note>
       </notes>
       <segment>
-        <source>Starts with <ph id="0" equiv="project" disp="key"/>- and cannot be changed later. Lower-case letters, digits, dot, underscore and hyphen.</source>
+        <source>Unique within the project <ph id="0" equiv="project" disp="key"/> and cannot be changed later. Lower-case letters, digits, dot, underscore and hyphen.</source>
       </segment>
     </unit>
     <unit id="ci.editor.name-hint">
@@ -11564,14 +11572,6 @@
       </notes>
       <segment>
         <source>Anonymous read on a remote repository lets anyone fill its cache from upstream.</source>
-      </segment>
-    </unit>
-    <unit id="policy.warning.outside-project">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-model.ts:214</note>
-      </notes>
-      <segment>
-        <source>A repository selector names a repository that left the project, so it covers nothing.</source>
       </segment>
     </unit>
     <unit id="profile.nav">

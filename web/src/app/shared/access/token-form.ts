@@ -196,7 +196,7 @@ export class TokenForm {
   readonly allowNonExpiring = input(false);
   /**
    * The lifetime is capped by the installation's maximum for service-account tokens, as for the tokens a
-   * project administrator issues (R-AUTHZ-026): the form says so and the server refuses a longer one.
+   * project Owner issues (R-AUTHZ-026): the form says so and the server refuses a longer one.
    */
   readonly lifetimeCapped = input(false);
   /** The type of the token this form creates; it decides which endpoints can be offered. */

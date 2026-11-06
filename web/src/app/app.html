@@ -285,7 +285,7 @@
                 @if (last || !crumb.commands) {
                   <span [attr.aria-current]="last ? 'page' : null" [attr.translate]="crumb.literal ? 'no' : null">{{ crumb.label }}</span>
                 } @else {
-                  <a [routerLink]="crumb.commands" [attr.translate]="crumb.literal ? 'no' : null">{{ crumb.label }}</a>
+                  <a [routerLink]="crumb.commands" [queryParams]="crumb.queryParams" [attr.translate]="crumb.literal ? 'no' : null">{{ crumb.label }}</a>
                 }
               </li>
             }

@@ -12,7 +12,7 @@ import (
 )
 
 // The bounds of a save (R-CI-009, R-CI-010, R-CI-016, Q-CI-47, Q-CI-49, Q-CI-51): what a mapping may hold so that an
-// exchange stays cheap and a project administrator learns nothing outside its project's names.
+// exchange stays cheap and a project Owner learns nothing outside its project's names.
 
 // boundsEnv is the issuer gitlab-main (private), the project web with web-npm, of which bob is Owner, and the
 // project data; ci.mappings.max_per_project 2 and max_per_issuer 4.

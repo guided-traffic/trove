@@ -3,7 +3,7 @@
 package e2e
 
 // A partner's project service account with NuGet (R-AUTHZ-026, R-AUTH-020, R-NUGET-012; beta phase 5a): the same scenario as
-// TestNPMProjectPartner. The project administrator, with a session and no system role, creates a local, a remote and a
+// TestNPMProjectPartner. The project Owner, with a session and no system role, creates a local, a remote and a
 // virtual NuGet repository, the project's service account, its policies and its token; the partner pushes into the
 // project's local feed with `dotnet nuget push` and restores through the virtual feed, which also serves the remote member;
 // a feed outside the project refuses the restore; revoking the token ends the access with 401.
@@ -99,7 +99,7 @@ func TestNuGetProjectPartner(t *testing.T) {
 		t.Logf("a push into a repository outside the project answers %s", push)
 	})
 
-	t.Run("R-AUTHZ-026 R-AUTH-020 the project administrator revokes the token and the next restore is a 401", func(t *testing.T) {
+	t.Run("R-AUTHZ-026 R-AUTH-020 the project Owner revokes the token and the next restore is a 401", func(t *testing.T) {
 		p.revoke(tok)
 		c := fx.client(t, 1, "proj-revoked")
 		c.token = tok.Token

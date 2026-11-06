@@ -10,7 +10,7 @@ import { ProjectNeeds, createState } from './project-access';
 /**
  * The permission policies of a project (R-UI-041, R-AUTHZ-026): the policies that carry the project's
  * key, with the editor of the permissions area opened in the project's context. Creating one needs
- * `policies:write` or `managePolicies` on the project.
+ * `policies:write` or the role Owner in the project.
  */
 @Component({
   selector: 'trove-project-policies',

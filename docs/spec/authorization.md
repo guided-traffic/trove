@@ -1870,10 +1870,6 @@ users and groups are members of a project with one of four roles
 accounts and CI mappings are named within the project
 ([Q-AUTHZ-209](#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones),
 [Q-AUTHZ-214](#q-authz-214--a-projects-ci-mappings-are-named-within-the-project-like-its-policies-and-service-accounts)).
-Not built yet ([H-540](#h-540--a-repository-can-still-exist-without-a-project),
-[H-541](repositories-and-proxy.md#h-541--repositories-are-addressed-by-a-global-key),
-[H-542](#h-542--a-user-belongs-to-no-project-only-a-project-administrator-does),
-[H-546](#h-546--names-of-a-projects-policies-and-service-accounts-carry-its-prefix)).
 
 A project is the unit in which a team holds and administers its repositories, their policies and the technical accounts
 of its partners without a system administrator. Delegation per policy (`manage`, R-AUTHZ-025) and per CI issuer
@@ -4995,7 +4991,7 @@ the same expectation, or when a client cannot be changed and needs the check mad
 
 ### Q-AUTHZ-206 · Every repository belongs to exactly one project
 
-Status: **Decided by the owner on 2026-11-06.** Not built yet ([H-540](#h-540--a-repository-can-still-exist-without-a-project)).
+Status: **Decided by the owner on 2026-11-06.** Built.
 
 Context: in the review of 2026-11-06 the owner expected repositories always to belong to a project; R-AUTHZ-026 made the
 project optional ("at most one"), a frame for delegated administration beside repositories that belong to none. trove is
@@ -5021,12 +5017,11 @@ is empty; an administrator of trove creates a repository in any project, a proje
 **Applied in the spec:** R-AUTHZ-026 (the project, its repositories, deleting a project), R-AUTHZ-004 (selectors of a
 project), R-AUTHZ-009; [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-001, R-REPO-002, R-REPO-004,
 R-REPO-009, R-REPO-013, R-REPO-017, R-REPO-021, R-REPO-060 (the move, [Q-REPO-217](repositories-and-proxy.md#q-repo-217--a-repository-moves-to-another-project-through-an-operation-of-its-own-and-only-while-nothing-of-its-project-names-it));
-[storage.md](storage.md) R-STOR-003 (`project_id` required); [README.md](README.md) INV-5; [ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project). Nothing built yet
-(H-540).
+[storage.md](storage.md) R-STOR-003 (`project_id` required); [README.md](README.md) INV-5; [ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project).
 
 ### Q-AUTHZ-207 · A user or group is a member of a project with a role, and the role grants the project's repositories
 
-Status: **Decided by the owner on 2026-11-06.** Not built yet ([H-542](#h-542--a-user-belongs-to-no-project-only-a-project-administrator-does)).
+Status: **Decided by the owner on 2026-11-06.** Built.
 
 Context: the owner expects a user to be in few projects and to choose among them. trove has no notion of a user being in a
 project: a project names only its administrators (R-AUTHZ-026), every other caller reaches a project's repositories through
@@ -5045,11 +5040,11 @@ administrators only, so an ordinary user sees no project at all.
 role), R-AUTHZ-013, R-AUTHZ-015 (the role as a source of actions), R-AUTHZ-022 (`/authz/me` lists memberships),
 R-AUTHZ-024; [api-and-ui.md](api-and-ui.md) R-API-047, R-UI-041; the credentials are
 [Q-AUTHZ-215](#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members);
-[ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project). Nothing built yet (H-542).
+[ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project).
 
 ### Q-AUTHZ-208 · Four project roles: Reader, Developer, Maintainer, Owner
 
-Status: **Decided by the owner on 2026-11-06.** Not built yet ([H-542](#h-542--a-user-belongs-to-no-project-only-a-project-administrator-does)).
+Status: **Decided by the owner on 2026-11-06.** Built.
 
 Context: a member of a project has a role ([Q-AUTHZ-207](#q-authz-207--a-user-or-group-is-a-member-of-a-project-with-a-role-and-the-role-grants-the-projects-repositories)).
 The actions on a repository are `read`, `annotate`, `deploy`, `overwrite`, `delete` and `manage` (the action table of
@@ -5085,11 +5080,11 @@ R-AUTHZ-031 (member changes in the journal); [api-and-ui.md](api-and-ui.md) R-AP
 R-UI-041; [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-009 to R-REPO-013, R-REPO-056;
 [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-019; the last Owner is
 [Q-AUTHZ-217](#q-authz-217--the-last-owner-of-a-project-is-removed-or-demoted-only-by-an-administrator-of-trove);
-[ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project). Nothing built yet (H-542).
+[ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project).
 
 ### Q-AUTHZ-209 · A project's policies and service accounts are named within the project; administrators keep instance-wide ones
 
-Status: **Decided by the owner on 2026-11-06.** Not built yet ([H-546](#h-546--names-of-a-projects-policies-and-service-accounts-carry-its-prefix)).
+Status: **Decided by the owner on 2026-11-06.** Built.
 
 Context: a project's permission policies and service accounts carry the project key as a prefix, because their names are unique
 in the installation ([Q-AUTHZ-176](#q-authz-176--names-of-a-project-are-prefixed-with-its-key-and-a-global-name-never-takes-a-project-prefix));
@@ -5110,7 +5105,7 @@ instance-wide. Instance-wide listings show the project, or none, in a column; an
 accounts), R-AUTHZ-002 (the references `sa:<projectKey>/<name>`); [identity-and-authentication.md](identity-and-authentication.md)
 R-AUTH-020; [api-and-ui.md](api-and-ui.md) R-API-031, R-API-033; the CI mappings of a project follow in
 [Q-AUTHZ-214](#q-authz-214--a-projects-ci-mappings-are-named-within-the-project-like-its-policies-and-service-accounts);
-Q-AUTHZ-176 is marked superseded; [ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project). Nothing built yet (H-546).
+Q-AUTHZ-176 is marked superseded; [ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project).
 
 ### Q-AUTHZ-214 · A project's CI mappings are named within the project like its policies and service accounts
 
@@ -5294,28 +5289,28 @@ reconstructed from the audit store unless `reads: all` was set beforehand.
 
 ### H-392 · A project administrator can enumerate user and group names
 
-With `managePolicies`, a project administrator looks up users and groups by a name prefix of two characters or more, 20
-results per call, kind and name only (Q-AUTHZ-182). Repeated calls list every active user and group name of the
+An Owner of a project looks up users and groups by a name prefix of two characters or more, 20
+results per call, kind and name only (Q-AUTHZ-182), to name its members and the principals of its policies. Repeated calls list every active user and group name of the
 installation, which is also what an `unknown_principal` answer on a policy write reveals. The general rate limit
 (R-API-016) bounds the speed, the 2-character minimum and the limit of 20 the width of one call, and nothing but kind and
-name is returned. Names of people stay visible to every project administrator of the installation; a deployment where
-that is unacceptable names few project administrators or keeps `managePolicies` off.
+name is returned. Names of people stay visible to every Owner of the installation; a deployment where
+that is unacceptable names few Owners when it creates a project.
 
 ### H-393 · A project administrator with `manageRepositories` probes the addresses the outbound rules allow
 
-This is [H-282](../security/egress.md#h-282--the-upstream-test-tells-a-holder-of-repositorieswrite-config-what-it-sees-of-an-address) for a second kind of caller. A project administrator creates remote repositories (Q-AUTHZ-173) and tests saved and unsaved upstream configurations
+This is [H-282](../security/egress.md#h-282--the-upstream-test-tells-a-holder-of-repositorieswrite-config-what-it-sees-of-an-address) for a second kind of caller. An Owner of a project creates remote repositories (Q-AUTHZ-173) and tests saved and unsaved upstream configurations
 (`POST /repositories/{key}/upstream-test`, `POST /upstream-tests`). The result names why a probe failed (`dns_error`,
 `connection_refused`, `timeout`, `egress_denied`, …), so the caller learns, one probe at a time, which hosts and ports
 the installation's network reaches among those the address rules allow. The rules ([security/egress.md](../security/egress.md))
 apply to every remote, who created it; they are checked at connect time, and what they allow is reachable and measurable
-by a delegate. An installation that does not want this narrows the allow list or leaves `manageRepositories` off.
+by a delegate. An installation that does not want this narrows the allow list or names few Owners when it creates a project.
 
 ### H-394 · Whoever controls a project administrator group administers the project
 
-A group on a project is filled by the identity provider (R-AUTH-008) or by an administrator of trove. A person who can add
-a member to that group at the provider administers the project with the switches it has, with no event in trove's audit
+A group that is a member of a project is filled by the identity provider (R-AUTH-008) or by an administrator of trove. A person who can add
+a member to that group at the provider holds the group's role in the project, the role Owner included, with no event in trove's audit
 log beyond the membership change that the next login writes (`group.members.changed`). This is the same position as for a
-group bound to a system role (R-AUTHZ-010); the project's switches bound what it can do.
+group bound to a system role (R-AUTHZ-010); the role bounds what it can do.
 
 ### H-395 · During a rollout from 0.9.x the rights of a project are partly absent and its name rules are not enforced
 
@@ -5362,38 +5357,10 @@ is immutable); the remedy is to create the policy again under another name.
 
 ### H-406 · The audit event of a refused project administrator does not name the project
 
-A refusal by the narrowing of a project administrator (a project it does not administer, a switch that is off, a repository of another
+A refusal by the narrowing of a project's role (a project the caller is no member of, a role too low for the operation, a repository of another
 project) is recorded as `authz.denied` of the operation's capability (Q-AUTHZ-201): the event carries the permission, the reason and
 the credential, not the project or the right asked for, so denials of probing across projects can be counted per caller but not
 filtered per project. Two handlers answer a foreign service account on their own before the shared refusal (`groups_api.go`,
 `tokens_api.go`: the account of no project or of one the caller does not see answers 404) and record nothing. Live for every
 delegated refusal of those kinds; what makes it real is a delegate that probes account names across projects.
 
-### H-540 · A repository can still exist without a project
-
-The owner decided that every repository belongs to exactly one project and that no repository is shared
-([Q-AUTHZ-206](#q-authz-206--every-repository-belongs-to-exactly-one-project),
-[Q-REPO-212](repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared)).
-Today `repositories.project_id` may be empty, the repository API creates a repository without a project, an administrator
-can unassign one, and a virtual repository of an administrator of trove may list repositories of several projects. Live in
-the code; what makes it matter is a repository that no project's administrators see, so only a system administrator manages
-it and no project policy can name it.
-
-### H-542 · A user belongs to no project, only a project administrator does
-
-The owner decided that users and groups are members of a project with one of four roles, Reader, Developer, Maintainer and
-Owner, that grants the project's repositories
-([Q-AUTHZ-207](#q-authz-207--a-user-or-group-is-a-member-of-a-project-with-a-role-and-the-role-grants-the-projects-repositories),
-[Q-AUTHZ-208](#q-authz-208--four-project-roles-reader-developer-maintainer-owner)).
-Today a project names only its administrators; every other caller reaches a project's repositories through permission
-policies, and nothing tells which projects a user is in. Live in the code; what makes it matter is the project selection of
-the UI ([Q-UI-129](api-and-ui.md#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects)), which has no set
-of "your projects" to show.
-
-### H-546 · Names of a project's policies and service accounts carry its prefix
-
-The owner decided that a project's policies and service accounts are named within the project, without a prefix, beside the
-instance-wide ones of administrators
-([Q-AUTHZ-209](#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones)).
-Today their names are unique in the installation and start with `<projectKey>-`, with the overlap rules of Q-AUTHZ-176. Live in
-the code.

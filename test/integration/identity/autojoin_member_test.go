@@ -11,7 +11,7 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 )
 
-// H-565, R-AUTH-019, R-AUTHZ-026: a group that is a member of a project is never turned into an auto-join group, because
+// R-AUTH-019, R-AUTHZ-026: a group that is a member of a project is never turned into an auto-join group, because
 // every user is in an auto-join group and the membership would make every user a member of the project. The member write
 // refuses the group that is auto-join already; the identity side refuses the reverse, naming the projects.
 func TestH565_AMemberGroupIsNotMadeAutoJoin(t *testing.T) {

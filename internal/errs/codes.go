@@ -154,9 +154,9 @@ const CodeRoleBindingManagedByConfiguration = "role_binding_managed_by_configura
 // Codes of projects and delegated administration (R-AUTHZ-026, Q-AUTHZ-174 to
 // Q-AUTHZ-185). The 422 codes also appear as errors[].code of validation_failed.
 const (
-	// CodeRepositoryOutsideProject: a project policy selector, a virtual member or the
-	// deploy target of a project administrator's repository names a repository that
-	// is not in the project. An unknown key answers the same, so the answer never
+	// CodeRepositoryOutsideProject: a project policy selector, an inline grant of a project's CI
+	// mapping, a virtual member or the deployment target of a project's repository names a repository
+	// that is not in the project. An unknown key answers the same, so the answer never
 	// tells whether a repository outside the project exists.
 	CodeRepositoryOutsideProject = "repository_outside_project"
 	// CodePrincipalOutsideProject: a project service account named in a global
@@ -173,12 +173,12 @@ const (
 	// CodeUnknownProject: a policy names a project that does not exist, or one the
 	// caller does not administer; the answer does not tell them apart.
 	CodeUnknownProject = "unknown_project"
-	// CodeSecretValueRequired: a project administrator's remote section, or its
+	// CodeSecretValueRequired: a project Owner's remote section, or its
 	// unsaved upstream test, names a secret reference other than the stored one, or
 	// keeps a stored credential while it changes where credentials go (url, an extra
 	// host with sendCredentials, forwardAuthOnRedirect) (Q-REPO-127).
 	CodeSecretValueRequired = "secret_value_required"
-	// CodeOutboundPathRestricted: a project administrator's remote section chooses
+	// CodeOutboundPathRestricted: a project Owner's remote section chooses
 	// outboundProxy.mode direct or a sourceNetwork, or keeps the stored ones while it
 	// changes the url or adds an extra host (Q-REPO-128).
 	CodeOutboundPathRestricted = "outbound_path_restricted"
@@ -225,7 +225,7 @@ const (
 	CodeMappingLimitReached  = "mapping_limit_reached"
 	CodePriorityTaken        = "priority_taken"
 	CodeJobTokenFallbackNone = "job_token_fallback_not_available"
-	// CodeGroupsNotAllowedInProject: a project administrator's mapping lists groups, which are
+	// CodeGroupsNotAllowedInProject: a project Owner's mapping lists groups, which are
 	// global grants (Q-CI-26). CodePolicyOutsideProject: it names a policy that is not the project's.
 	CodeGroupsNotAllowedInProject = "groups_not_allowed_in_project"
 	CodePolicyOutsideProject      = "policy_outside_project"
@@ -249,7 +249,7 @@ const (
 	CodeVulnerabilityDataMissing = "vulnerability_data_missing"
 	// CodeVulnerabilityDataUnavailable: the npm audit before the npm advisory data is complete (503, R-VULN-017).
 	CodeVulnerabilityDataUnavailable = "vulnerability_data_unavailable"
-	// CodeVulnerabilityWeakeningRefused: a project administrator's write of a repository would weaken the member
+	// CodeVulnerabilityWeakeningRefused: a project Owner's write of a repository would weaken the member
 	// `vulnerabilities` and the caller holds neither repositories:write-config nor vulnerabilities:triage (403, R-VULN-002).
 	CodeVulnerabilityWeakeningRefused = "vulnerability_weakening_refused"
 	// CodeFindingNotConfirmed: blocked is set on a finding that is not confirmed (409, R-VULN-012).
@@ -296,7 +296,7 @@ const (
 	// CodeMirrorUnbounded: a mirror of the format's well-known upstream without a bounding include list and without
 	// remote.mirror.maxBytes (R-REPO-052, Q-REPO-132); elsewhere the same code is a warning.
 	CodeMirrorUnbounded = "mirror_unbounded"
-	// CodeMirrorRestricted: a project administrator's write changes remote.mode or remote.mirror other than pausing,
+	// CodeMirrorRestricted: a project Owner's write changes remote.mode or remote.mirror other than pausing,
 	// resuming or turning the mode back to pullThrough (Q-REPO-142).
 	CodeMirrorRestricted = "mirror_restricted"
 )
@@ -648,14 +648,14 @@ var registry = []CodeInfo{
 	// <<< M1 authz
 	//
 	// >>> M5a projects
-	{CodeRepositoryOutsideProject, Invalid, "Repository outside the project", "A project policy, or a virtual repository of a project administrator, names a repository that is not assigned to the project; a key that does not exist answers the same."},
+	{CodeRepositoryOutsideProject, Invalid, "Repository outside the project", "A project policy, a CI mapping of a project or a virtual repository of a project names a repository that is not in the project; a key that does not exist answers the same."},
 	{CodePrincipalOutsideProject, Invalid, "Principal outside the project", "A service account of a project is granted only through the policies of its project and owns packages only in its project's repositories."},
 	{CodeProjectAccountNotGroupable, Invalid, "Project service account cannot join a group", "A service account of a project is no group member: a group's grants would reach the project's account."},
 	{CodeProjectNotEmpty, Conflict, "Project not empty", "The project still has repositories (also ones being deleted), service accounts or CI mappings; unassign the repositories and delete the accounts and the CI mappings first."},
 	{CodeRepositoryInUse, Conflict, "Repository in use", "An object of the project still references the repository: a virtual repository's members, pin rules or deployment target, a project policy, or a CI mapping. Remove the references, then move it."},
 	{CodeUnknownProject, Invalid, "Unknown project", "The project does not exist, or the caller does not administer it; the answer does not tell which."},
-	{CodeSecretValueRequired, Invalid, "Secret value required", "A project administrator gives an upstream secret as a value: a secret reference is the installation's, and a stored credential does not follow a change of url, of an extra host that receives credentials or of forwardAuthOnRedirect."},
-	{CodeOutboundPathRestricted, Invalid, "Outbound path restricted", "A project administrator's remote repository takes the installation's outbound path: outboundProxy.mode direct and a sourceNetwork are an administrator's, and stay only while the url and the extra hosts do."},
+	{CodeSecretValueRequired, Invalid, "Secret value required", "A project Owner gives an upstream secret as a value: a secret reference is the installation's, and a stored credential does not follow a change of url, of an extra host that receives credentials or of forwardAuthOnRedirect."},
+	{CodeOutboundPathRestricted, Invalid, "Outbound path restricted", "A project Owner's remote repository takes the installation's outbound path: outboundProxy.mode direct and a sourceNetwork are an administrator's, and stay only while the url and the extra hosts do."},
 	// <<< M5a projects
 	//
 	// >>> M4 ci
@@ -681,15 +681,15 @@ var registry = []CodeInfo{
 	{CodeMappingLimitReached, Invalid, "Mapping limit reached", "The issuer holds ci.mappings.max_per_issuer mappings, or the project's tier holds ci.mappings.max_per_project mappings of the issuer."},
 	{CodePriorityTaken, Conflict, "Priority taken", "Another mapping of the same tier has this priority; priorities are unique per tier."},
 	{CodeJobTokenFallbackNone, Invalid, "Job-token fallback not available", "The CI_JOB_TOKEN fallback is not built in this release."},
-	{CodeGroupsNotAllowedInProject, Invalid, "Groups not allowed in a project mapping", "A project administrator's mapping grants through the project's own policies and inline grants over its repositories; groups are global grants."},
-	{CodePolicyOutsideProject, Invalid, "Policy outside the project", "A project administrator's mapping may name only policies of its own project."},
+	{CodeGroupsNotAllowedInProject, Invalid, "Groups not allowed in a project mapping", "A project Owner's mapping grants through the project's own policies and inline grants over its repositories; groups are global grants."},
+	{CodePolicyOutsideProject, Invalid, "Policy outside the project", "A project Owner's mapping may name only policies of its own project."},
 	{CodeMappingsUnpinned, Conflict, "Mappings unpinned", "The issuer change would leave mappings that pin none of the issuer's pin_claims where the pin rules require one (pin_required on a public issuer, unpinned_write on a private one); the problem lists them in mappings. Pin them, or delete them, first."},
 	// <<< M4 ci
 	//
 	// >>> M4b vulnerabilities
 	{CodeVulnerabilityBlocked, Forbidden, "Download blocked by a finding", "trove refuses the version: a malicious-package finding is open, or a triager blocked a finding of it in this repository. The problem names the advisory and the finding; a dismissal lifts it. The response is never cached."},
 	{CodeVulnerabilityDataMissing, Forbidden, "Advisory data missing", "The repository sets onMissingData block and the advisory data of the version's ecosystem was never imported completely, so the version cannot be evaluated. The response is never cached."},
-	{CodeVulnerabilityWeakeningRefused, Forbidden, "Vulnerability settings cannot be weakened", "The write would switch the scanning of the repository off, stop it matching public advisories, stop blocking malicious versions or stop blocking on missing data. That needs the capability repositories:write-config or vulnerabilities:triage; a project administrator's manageRepositories does not carry it."},
+	{CodeVulnerabilityWeakeningRefused, Forbidden, "Vulnerability settings cannot be weakened", "The write would switch the scanning of the repository off, stop it matching public advisories, stop blocking malicious versions or stop blocking on missing data. That needs the capability repositories:write-config or vulnerabilities:triage; a project Owner's manageRepositories does not carry it."},
 	{CodeVulnerabilityDataUnavailable, Unavailable, "Advisory data not imported", "trove's advisory data for the ecosystem is not imported yet, so the audit has nothing to answer from; retry after the Retry-After period."},
 	{CodeFindingNotConfirmed, Conflict, "Finding not confirmed", "blocked is set on a confirmed finding only; confirm the finding first."},
 	{CodeFindingResolved, Conflict, "Finding resolved", "The finding is resolved by trove: no stored version is affected any longer. A person cannot change it; it returns to its earlier status when the match returns."},
@@ -709,7 +709,7 @@ var registry = []CodeInfo{
 	//
 	// >>> M6b mirror
 	{CodeMirrorUnbounded, Invalid, "Mirror unbounded", "A mirror of the format's well-known upstream needs a bound: include patterns that each have a literal prefix, or remote.mirror.maxBytes."},
-	{CodeMirrorRestricted, Invalid, "Mirror restricted", "Only a holder of repositories:write-config sets remote.mode mirror or changes remote.mirror; a project administrator keeps the stored settings, pauses, resumes or turns the mode back to pullThrough."},
+	{CodeMirrorRestricted, Invalid, "Mirror restricted", "Only a holder of repositories:write-config sets remote.mode mirror or changes remote.mirror; a project Owner keeps the stored settings, pauses, resumes or turns the mode back to pullThrough."},
 	{CodeMirrorPassRunning, Conflict, "Mirror pass running", "A pass of the repository's mirror is queued or running; the extension job names it. Wait for it to end, or read its job."},
 	{CodeMirrorOff, Conflict, "Mirror off", "The remote repository runs in mode pullThrough, so it has no mirror to run. Set remote.mode to mirror first."},
 	{CodeMirrorPaused, Conflict, "Mirror paused", "The mirror is paused (remote.mirror.paused); resume it with a PATCH of the repository before requesting a pass."},

@@ -29,9 +29,9 @@ type IssuerFacts struct {
 	PinClaims []string
 	// RequiredClaims are the claims every token carries (templates may use them unguarded).
 	RequiredClaims []string
-	// Project is the key of the project a project administrator saves the mapping for, "" for the
+	// Project is the key of the project a project Owner saves the mapping for, "" for the
 	// system tier. In a project every rule applies unchanged, `groups` is refused
-	// (groups_not_allowed_in_project) and the name must start with "<Project>-" (project_prefix_required).
+	// (groups_not_allowed_in_project); the name is bare within the project (R-CI-009).
 	// Whether the policies and repositories are the project's needs the database and is the service's.
 	Project string
 }

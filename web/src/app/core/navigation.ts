@@ -35,7 +35,7 @@ export interface NavArea {
  * (`/admin/…` is the admin area), and the top bar's Admin button leads into it. In the admin area,
  * single entries (repositories, endpoints) and folding groups (identity, access, system). Only the screens that exist in the current milestone are listed;
  * the capabilities are those of R-AUTHZ-010. The router and the API decide access, this only
- * hides entries (R-UI-005). A project administrator without any capability sees the Administration
+ * hides entries (R-UI-005). A project Owner without any capability sees the Administration
  * area with the Projects entry only (R-UI-041). Packages, search and the other later screens are added by their
  * work packages.
  */

@@ -121,7 +121,7 @@ describe('The Mirror tab of the edit form: status, pause, resume, run (R-UI-021,
       expect(button(r.root, 'Run a pass now')).toBeDefined();
     });
 
-    it('R-UI-021 R-REPO-056 a project administrator with manageRepositories sees the status and the buttons', async () => {
+    it('R-UI-021 R-REPO-056 a project Owner sees the status and the buttons', async () => {
       const { r } = await open(stored('mirror'), { projectAdmin: true });
       expect(stateOf(r.root)).toBe('scheduled');
       expect(button(r.root, 'Pause')).toBeDefined();

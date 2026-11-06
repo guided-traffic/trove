@@ -136,7 +136,7 @@ func (r Reason) OAuth() (status int, oauthError string) {
 	return 500, "server_error"
 }
 
-// The codes of a project administrator's mapping (Q-CI-26): groups are global grants, and a policy must
+// The codes of a project Owner's mapping (Q-CI-26): groups are global grants, and a policy must
 // be the project's own.
 const (
 	GroupsNotAllowedInProject Reason = "groups_not_allowed_in_project"

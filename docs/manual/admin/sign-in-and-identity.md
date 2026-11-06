@@ -296,7 +296,7 @@ The `trove admin` commands run against the database with the replica's configura
 | `trove admin break-glass status`, `unlock`, `end-sessions` | Inspect, unlock or sign out the break-glass account |
 | `trove admin sessions end --user <username>` or `--all` | End sessions |
 | `trove admin service-account create <name> [--description <text>] [--admin]` | Create a service account, optionally with the `admin` role |
-| `trove admin token create --service-account <name> [--ttl 15m] [--scope-file <file>]` | Print a token of a service account |
+| `trove admin token create --service-account <name\|project/name> [--ttl 15m] [--scope-file <file>]` | Print a token of a service account; `<project>/<name>` names the account of a project |
 | `trove admin user disable <username> [--keep-tokens]` | Disable a user |
 
 <details><summary>Reasons on the "Sign-in failed" page</summary>

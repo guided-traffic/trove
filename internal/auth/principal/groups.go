@@ -217,7 +217,7 @@ type GroupPatch struct {
 // (R-AUTH-018, R-AUTH-019). A group with origin scim answers 409
 // managed_by_scim; auto-join on a group with an administration role binding
 // answers 409 auto_join_admin_conflict, and on a group that is a member of a
-// project 409 auto_join_member_conflict (H-565).
+// project 409 auto_join_member_conflict (R-AUTHZ-026).
 func (m *Manager) UpdateGroup(ctx context.Context, c Caller, name string, p GroupPatch) (Group, error) {
 	final := name
 	err := m.db.InTx(ctx, func(tx meta.Tx) error {

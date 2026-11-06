@@ -5,7 +5,7 @@
 // database, the project service behind it, the audit events and journal entries of
 // R-AUTHZ-029 and R-AUTHZ-031 and the epochs of R-AUTHZ-032. Authentication is the
 // stand-in of test/integration/stack (a request names its person); the rights a
-// project administrator gets from the grant index are tested with the engine in
+// project Owner gets from the grant index are tested with the engine in
 // test/integration/authz.
 package projects
 

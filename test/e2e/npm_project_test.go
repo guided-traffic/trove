@@ -3,11 +3,11 @@
 package e2e
 
 // A partner's project service account with npm (R-AUTHZ-026, R-AUTHZ-025, R-NPM-043; beta phase 5a): a system administrator
-// creates the project with both switches on and a project administrator; the project administrator, with a session and
+// creates the project with both switches on and a project Owner; the project Owner, with a session and
 // no system role, creates the project's repositories, its service account, its policies and the account's token; the
 // partner publishes with that token into the project's local repository and installs through the project's virtual
 // repository, which also serves the remote member; what lies outside the project is a 404; revoking the token by the
-// project administrator ends the access with 401.
+// project Owner ends the access with 401.
 
 import (
 	"net/http"
@@ -87,7 +87,7 @@ func TestNPMProjectPartner(t *testing.T) {
 		t.Logf("a publish into the project's remote repository answers %s", push)
 	})
 
-	t.Run("R-AUTHZ-026 R-AUTH-020 the project administrator revokes the token and the next install is a 401", func(t *testing.T) {
+	t.Run("R-AUTHZ-026 R-AUTH-020 the project Owner revokes the token and the next install is a 401", func(t *testing.T) {
 		p.revoke(tok)
 		c := fx.clientOn(t, "npm11", 1, virtual, "projrevoked") // a home of its own: nothing cached
 		c.token = tok.Token

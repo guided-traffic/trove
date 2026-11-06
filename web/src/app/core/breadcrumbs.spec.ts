@@ -14,7 +14,12 @@ async function trailAt(url: string) {
   const router = TestBed.inject(Router);
   const crumbs = TestBed.inject(Breadcrumbs);
   await router.navigateByUrl(url);
-  return crumbs.trail().map((c) => ({ label: c.label, link: c.commands?.join('/') ?? null, literal: c.literal }));
+  return crumbs.trail().map((c) => ({
+    label: c.label,
+    link: c.commands?.join('/') ?? null,
+    literal: c.literal,
+    ...(c.queryParams ? { query: c.queryParams } : {}),
+  }));
 }
 
 describe('Breadcrumbs', () => {
@@ -25,11 +30,11 @@ describe('Breadcrumbs', () => {
     ]);
   });
 
-  it('R-UI-002 a detail screen shows the parameter value, not the generic route title, and links the list', async () => {
+  it('R-UI-002 a repository detail shows the project, which links to the list filtered by it, and the key', async () => {
     expect(await trailAt('/admin/repositories/web/my-repo')).toEqual([
       { label: 'Admin area', link: null, literal: false },
       { label: 'Repositories', link: '//admin/repositories', literal: false },
-      { label: 'web', link: '//admin/repositories/web', literal: true },
+      { label: 'web', link: '/admin/repositories', query: { project: 'web' }, literal: true },
       { label: 'my-repo', link: '//admin/repositories/web/my-repo', literal: true },
     ]);
   });

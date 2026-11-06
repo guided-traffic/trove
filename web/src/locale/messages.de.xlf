@@ -7228,6 +7228,15 @@
         <target>Eine Gruppe mit automatischem Beitritt kann die Administratorrolle nicht tragen.</target>
       </segment>
     </unit>
+    <unit id="problem.auto_join_member_conflict">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:38</note>
+      </notes>
+      <segment>
+        <source>A group that is a member of a project cannot be an auto-join group. Remove it from the projects first.</source>
+        <target>Eine Gruppe, die Mitglied eines Projekts ist, kann keine Gruppe mit automatischem Beitritt sein. Entfernen Sie sie zuerst aus den Projekten.</target>
+      </segment>
+    </unit>
     <unit id="problem.role_binding_managed_by_configuration">
       <notes>
         <note category="location">src/app/core/http/problem-messages-access.ts:38</note>
@@ -15524,15 +15533,6 @@
         <target>Ändern Sie das mit dem Projektfilter in der Kopfleiste.</target>
       </segment>
     </unit>
-    <unit id="policy.warning.outside-project">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-model.ts:214</note>
-      </notes>
-      <segment>
-        <source>A repository selector names a repository that left the project, so it covers nothing.</source>
-        <target>Ein Repository-Selektor nennt ein Repository, das das Projekt verlassen hat, und erfasst daher nichts.</target>
-      </segment>
-    </unit>
     <unit id="picker.searching">
       <notes>
         <note category="location">src/app/features/projects/principal-picker.ts:39,40</note>
@@ -19742,8 +19742,8 @@
         <note category="location">src/app/features/ci/mapping-editor.ts:186</note>
       </notes>
       <segment>
-        <source>Starts with <ph id="0" equiv="project" disp="key"/>- and cannot be changed later. Lower-case letters, digits, dot, underscore and hyphen.</source>
-        <target>Beginnt mit <ph id="0" equiv="project" disp="key"/>- und kann später nicht geändert werden. Kleinbuchstaben, Ziffern, Punkt, Unterstrich und Bindestrich.</target>
+        <source>Unique within the project <ph id="0" equiv="project" disp="key"/> and cannot be changed later. Lower-case letters, digits, dot, underscore and hyphen.</source>
+        <target>Eindeutig im Projekt <ph id="0" equiv="project" disp="key"/> und kann später nicht geändert werden. Kleinbuchstaben, Ziffern, Punkt, Unterstrich und Bindestrich.</target>
       </segment>
     </unit>
     <unit id="ci.editor.name-hint">

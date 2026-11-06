@@ -7037,8 +7037,7 @@ without) are unchanged. The development agent would revisit this if the ratio mi
 ### Q-REPO-212 · A repository is addressed inside its project, and no repository is shared
 
 Status: **Decided by the development agent on 2026-11-06**, on the owner's instruction to address repositories the way that is
-technically best, without regard for existing clients ("mach es so wie es technisch am Sinnvollsten ist"). Not built yet
-([H-541](#h-541--repositories-are-addressed-by-a-global-key)).
+technically best, without regard for existing clients ("mach es so wie es technisch am Sinnvollsten ist"). Built.
 
 Context: every repository belongs to exactly one project, and no repository is shared
 ([Q-AUTHZ-206](authorization.md#q-authz-206--every-repository-belongs-to-exactly-one-project)). Today a repository has a key
@@ -7070,7 +7069,7 @@ R-AUTHZ-026; [formats/npm.md](formats/npm.md) R-NPM-001, [formats/nuget.md](form
 [formats/generic.md](formats/generic.md) R-GENERIC-001 with their examples; [architecture.md](architecture.md) R-ARCH-005,
 R-ARCH-008, R-ARCH-011; [api-and-ui.md](api-and-ui.md) R-API-004, R-API-022; [endpoints.md](endpoints.md) R-EP-006
 ([Q-EP-76](endpoints.md#q-ep-76--a-host-root-binds-a-repository-by-project-and-key-and-the-label-binding-goes)),
-R-EP-012; [bastion.md](bastion.md) R-BAS-018; [README.md](README.md) INV-6; [ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project). Nothing built yet (H-541).
+R-EP-012; [bastion.md](bastion.md) R-BAS-018; [README.md](README.md) INV-6; [ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project).
 
 ### Q-REPO-217 · A repository moves to another project through an operation of its own, and only while nothing of its project names it
 
@@ -7262,10 +7261,3 @@ prefix: an upstream that lists millions of names below `@acme/` makes each pass 
 that upstream only, under the window of R-REPO-054. Dormant until R-REPO-053 is built. What makes it real: a mirror of an upstream
 that an attacker controls or has compromised, with a broad admitted prefix.
 
-### H-541 · Repositories are addressed by a global key
-
-A repository is addressed by a key unique in the installation, `/api/<format>/<repoKey>/…`, and a repository a project
-administrator creates carries the project key as a prefix; the decided address contains the project and the key is unique
-within it, and no repository is shared across projects
-([Q-REPO-212](#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared)). Live in every route
-that names a repository.

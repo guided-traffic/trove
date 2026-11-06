@@ -61,7 +61,7 @@ type env struct {
 	alicePAT string // a user without a role
 	aliceID  string
 	bobID    string
-	bobPAT   string // a user who becomes a project administrator (admin scope, no role)
+	bobPAT   string // a user who becomes a project Owner (admin scope, no role)
 }
 
 func newEnv(t *testing.T, o options) *env {

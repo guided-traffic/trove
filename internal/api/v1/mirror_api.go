@@ -32,8 +32,7 @@ import (
 // them, and a pass started by the run reads the request when it claims the repository.
 //
 // Neither operation can be declared as one permission or one repository action, because each allows a disjunction the
-// declaration forms cannot express (repositories:read-config, manage on the repository, or administration of its project;
-// for the run the project's switch manageRepositories), so both declare only that the caller is authenticated and decide
+// declaration forms cannot express (repositories:read-config, manage on the repository, or the role Owner in its project), so both declare only that the caller is authenticated and decide
 // here, as the cache entry list does (Q-OPS-155, Q-API-199).
 
 // MirrorServices are the services of the mirror operations; the zero value reads and writes through Services.Store.
@@ -261,11 +260,10 @@ func hiddenOr(ctx context.Context, acc *edge.Access, key qname.Repo, refusal err
 	return refusal
 }
 
-// requireMirrorWriter decides who requests a pass: a holder of repositories:write-config, an administrator of the
-// repository's project with manageRepositories, or a caller with manage on the repository (R-REPO-056, as an update of
-// R-REPO-011). An administrator of a project holds manage on every repository of the project whatever its switches say
-// (Q-AUTHZ-183), so the third way admits it too: the switch gates the changes of a configuration, and a run changes none
-// (Q-API-199). A caller that none of these fits is answered 403, or 404 where the repository is hidden from it
+// requireMirrorWriter decides who requests a pass: a holder of repositories:write-config, an Owner of the repository's
+// project, or a caller with manage on the repository (R-REPO-056, as an update of R-REPO-011). The role Owner is the
+// project's administration (R-AUTHZ-026); the Owner of a project is admitted by the first of the two ways that fits, a run
+// changes no configuration (Q-API-199). A caller that none of these fits is answered 403, or 404 where the repository is hidden from it
 // (R-AUTHZ-016); a holder of repositories:read-config sees every repository and is answered 403.
 func (s *Server) requireMirrorWriter(ctx context.Context, key qname.Repo) error {
 	ctx, acc, err := requestHolder(ctx, s.o.Repositories.Authz, key)

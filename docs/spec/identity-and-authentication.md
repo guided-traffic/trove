@@ -1192,7 +1192,7 @@ a revocation, a disable or a session end commits through the change log
 | Command | Effect |
 |---|---|
 | `trove admin service-account create <name> [--description …] [--admin]` | Creates a service account. `--admin` binds the system role `admin` ([authorization.md](authorization.md) R-AUTHZ-010) in the transaction that creates the account, and that transaction calls `cluster.Notify("authz", …)` exactly as the role-binding API does (R-AUTHZ-022, R-AUTHZ-028), so every replica rebuilds its grant index. The command is one of the writes of R-AUTHZ-028's completeness test. |
-| `trove admin token create --service-account <name> [--ttl 15m] [--scope-file scope.json]` | Creates a SAT and prints it once to stdout. The TTL defaults to 15 min; the maximum is the SAT maximum (R-AUTH-026). |
+| `trove admin token create --service-account <name\|project/name> [--ttl 15m] [--scope-file scope.json]` | Creates a SAT and prints it once to stdout. A bare name is an instance-wide account, `<project>/<name>` (also `sa:<project>/<name>`) the account of a project (R-AUTHZ-026). The TTL defaults to 15 min; the maximum is the SAT maximum (R-AUTH-026). |
 | `trove admin token revoke --id <uuid>` or `--value-stdin` | Revokes a token (R-AUTH-029). |
 | `trove admin break-glass status` or `unlock` or `end-sessions` | Shows the lockout state, the rotation hold (R-AUTH-014) and the sessions, clears a lockout, or ends every break-glass session (reason `revoked`). |
 | `trove admin user disable <username> [--keep-tokens]` | Disables a user (R-AUTH-016). |
