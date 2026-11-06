@@ -7,6 +7,7 @@ import (
 	"github.com/guided-traffic/trove/internal/api/edge"
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/authz"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // beginAccess is an Access that takes an index of its own, as the access over the
@@ -16,7 +17,7 @@ type beginAccess struct {
 	begun []string
 }
 
-func (b *beginAccess) Begin(_ context.Context, permission string, _ ...string) (*edge.Access, error) {
+func (b *beginAccess) Begin(_ context.Context, permission string, _ ...qname.Repo) (*edge.Access, error) {
 	b.begun = append(b.begun, permission)
 	return &edge.Access{}, nil
 }
@@ -24,7 +25,7 @@ func (b *beginAccess) Begin(_ context.Context, permission string, _ ...string) (
 func TestR_AUTHZ_015_TheBridgeBeginsThroughTheAccessBehindIt(t *testing.T) {
 	t.Run("R-AUTHZ-015 a permission the bridge does not open takes the index of the decision point", func(t *testing.T) {
 		inner := &beginAccess{}
-		a, err := bridgeAccess{inner: inner}.Begin(t.Context(), "settings:read", "generic-local")
+		a, err := bridgeAccess{inner: inner}.Begin(t.Context(), "settings:read", qr("generic-local"))
 		if err != nil || a == nil || len(inner.begun) != 1 || inner.begun[0] != "settings:read" {
 			t.Fatalf("holder %v, begun %v, %v", a, inner.begun, err)
 		}
@@ -49,35 +50,35 @@ func TestR_AUTHZ_015_TheBridgeBeginsThroughTheAccessBehindIt(t *testing.T) {
 // projectInner answers the project questions of the Access behind the bridge.
 type projectInner struct {
 	v1.Access
-	projects []authz.AdministeredProject
+	members []authz.Membership
 }
 
-func (p projectInner) AdministeredProjects(context.Context) ([]authz.AdministeredProject, error) {
-	return p.projects, nil
+func (p projectInner) Memberships(context.Context) ([]authz.Membership, error) {
+	return p.members, nil
 }
 
-func (p projectInner) AdministersRepository(_ context.Context, repository string, _ authz.ProjectRight) (string, bool, error) {
-	return "web", repository == "web-npm", nil
+func (p projectInner) Owns(_ context.Context, project string) (bool, error) {
+	return project == "web", nil
 }
 
 func TestR_AUTHZ_026_TheBridgeForwardsTheProjectQuestions(t *testing.T) {
 	t.Run("R-AUTHZ-026 the bridge answers the project questions of the access behind it", func(t *testing.T) {
-		b := bridgeAccess{inner: projectInner{projects: []authz.AdministeredProject{{Key: "web"}}}}
-		got, err := b.AdministeredProjects(t.Context())
+		b := bridgeAccess{inner: projectInner{members: []authz.Membership{{Key: "web", Role: authz.ProjectRoleOwner}}}}
+		got, err := b.Memberships(t.Context())
 		if err != nil || len(got) != 1 || got[0].Key != "web" {
 			t.Fatalf("%v %v", got, err)
 		}
-		if p, ok, err := b.AdministersRepository(t.Context(), "web-npm", authz.ProjectAny); err != nil || !ok || p != "web" {
-			t.Fatalf("%q %v %v", p, ok, err)
+		if ok, err := b.Owns(t.Context(), "web"); err != nil || !ok {
+			t.Fatalf("%v %v", ok, err)
 		}
 	})
-	t.Run("R-AUTHZ-026 without a decision point the caller administers no project", func(t *testing.T) {
-		got, err := bridgeAccess{}.AdministeredProjects(t.Context())
+	t.Run("R-AUTHZ-026 without a decision point the caller is a member of no project", func(t *testing.T) {
+		got, err := bridgeAccess{}.Memberships(t.Context())
 		if err != nil || len(got) != 0 {
 			t.Fatalf("%v %v", got, err)
 		}
-		if _, ok, _ := (bridgeAccess{}).AdministersRepository(t.Context(), "web-npm", authz.ProjectAny); ok {
-			t.Fatal("administers")
+		if ok, _ := (bridgeAccess{}).Owns(t.Context(), "web"); ok {
+			t.Fatal("owns")
 		}
 	})
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/proxy/invalidation"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -34,10 +35,10 @@ type cacheCall struct {
 	prefix, scope string
 }
 
-func (f *fakeCache) Get(_ context.Context, key string) (repository.Stored, error) {
-	st, ok := f.repos[key]
+func (f *fakeCache) Get(_ context.Context, key qname.Repo) (repository.Stored, error) {
+	st, ok := f.repos[key.Key]
 	if !ok {
-		return repository.Stored{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository has the key "+key)
+		return repository.Stored{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository has the key "+key.String())
 	}
 	return st, nil
 }
@@ -69,7 +70,7 @@ func (f *fakeCache) Entries(_ context.Context, _ int64, flt invalidation.EntryFi
 }
 
 func storedRepo(id, key string, class repository.Class) repository.Stored {
-	return repository.Stored{Repository: repository.Repository{ID: id, Name: key, Class: class, Format: "npm", Lifecycle: repository.Active}}
+	return repository.Stored{Repository: repository.Repository{ID: id, Name: qr(key), Class: class, Format: "npm", Lifecycle: repository.Active}}
 }
 
 // noRunner is a runner that must not be reached: the refusals under test happen first.
@@ -96,15 +97,15 @@ type cacheDecider struct {
 	hidden bool // the repository is hidden from the caller
 }
 
-func (d cacheDecider) Begin(context.Context, authz.Subject, ...string) (*authz.Index, error) {
+func (d cacheDecider) Begin(context.Context, authz.Subject, ...qname.Repo) (*authz.Index, error) {
 	return nil, nil
 }
 
-func (d cacheDecider) Know(_ context.Context, idx *authz.Index, _ authz.Subject, _ string) (*authz.Index, error) {
+func (d cacheDecider) Know(_ context.Context, idx *authz.Index, _ authz.Subject, _ qname.Repo) (*authz.Index, error) {
 	return idx, nil
 }
 
-func (d cacheDecider) ExposedOn(_ *authz.Index, _ authz.Subject, keys []string) []string {
+func (d cacheDecider) ExposedOn(_ *authz.Index, _ authz.Subject, keys []qname.Repo) []qname.Repo {
 	if d.hidden {
 		return nil
 	}
@@ -118,7 +119,7 @@ func (d cacheDecider) DecideOn(_ context.Context, _ *authz.Index, _ authz.Subjec
 	case d.hidden:
 		return authz.Decision{Outcome: authz.DenyHidden}
 	case !d.manage:
-		return authz.Decision{Outcome: authz.DenyVisible, Reason: authz.ReasonNoGrant, Missing: authz.Manage, Target: c.Repository}
+		return authz.Decision{Outcome: authz.DenyVisible, Reason: authz.ReasonNoGrant, Missing: authz.Manage, Target: c.Repository.Key}
 	}
 	return authz.Decision{Outcome: authz.Allow}
 }
@@ -171,7 +172,7 @@ func testInvalidateRepositoryCache(t *testing.T, val *apitest.Validator) {
 			t.Fatalf("%d %s", w.Code, w.Body)
 		}
 		c := acc.coordinate
-		if c.Repository != "npm-remote" || len(c.Actions) != 1 || c.Actions[0] != authz.Manage || c.Kind != authz.KindWrite {
+		if c.Repository != qr("npm-remote") || len(c.Actions) != 1 || c.Actions[0] != authz.Manage || c.Kind != authz.KindWrite {
 			t.Fatalf("coordinate = %+v", c)
 		}
 		var got map[string]int64

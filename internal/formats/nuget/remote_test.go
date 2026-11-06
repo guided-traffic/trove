@@ -708,7 +708,7 @@ func TestR_NUGET_034_ARemoteHidesWhatTheEndpointDoesNotExposeBeforeAnyFetch(t *t
 func TestR_NUGET_015_RewriteRendersTheSemVer2HiveOfTheServingRepository(t *testing.T) {
 	a := New().Remote()
 	docs := registrationUpstream([]string{"1.0.0", "2.0.0-rc.1"}, 64, true)
-	ln := formattest.Links("https://trove.example.com", "nuget", "main")
+	ln := formattest.Links("https://trove.example.com", "nuget", qr("main"))
 	out, err := a.Rewrite(context.Background(), formats.RemoteContext{}, formats.Path{Path: RegistrationIndexPath("acme.widgets")}, docs[RegistrationIndexPath("acme.widgets")], ln)
 	if err != nil {
 		t.Fatal(err)

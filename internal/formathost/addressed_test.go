@@ -15,7 +15,7 @@ import (
 func virtualRequest(t *testing.T, v repository.Repository) *formats.Request {
 	t.Helper()
 	rq := &formats.Request{
-		Request: httptest.NewRequest(http.MethodGet, "/api/probe/"+v.Name+"/x", nil),
+		Request: httptest.NewRequest(http.MethodGet, "/api/probe/"+v.Name.String()+"/x", nil),
 		Repo:    &v,
 		Route:   &formats.Route{Name: "probe.get", Kind: formats.Download},
 		Subject: authz.Subject{Name: "alice", Endpoint: "default"},
@@ -33,24 +33,24 @@ func TestR_AUTHZ_013_AMemberRequestCarriesTheOutermostAddressedKeyIntoBothCoordi
 	v.Format = "probe"
 	rq := virtualRequest(t, v)
 
-	if got := rq.Addressed(); got != "all" {
+	if got := rq.Addressed(); got != qr("all") {
 		t.Fatalf("a request that is not derived addresses its own repository, got %q", got)
 	}
 	mrq, err := rq.Member(&remote)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mrq.Repo.Name != "member-remote" || mrq.Addressed() != "all" {
+	if mrq.Repo.Name != qr("member-remote") || mrq.Addressed() != qr("all") {
 		t.Fatalf("member request on %q addressed %q", mrq.Repo.Name, mrq.Addressed())
 	}
-	if rq.Repo.Name != "all" || rq.Addressed() != "all" {
+	if rq.Repo.Name != qr("all") || rq.Addressed() != qr("all") {
 		t.Fatal("deriving a member request changed the request it came from")
 	}
 
-	if c := coordinate(mrq, formats.Target{Package: "left-pad", Actions: []formats.Action{formats.ActionRead}}); c.Repository != "member-remote" || c.Addressed != "all" {
+	if c := coordinate(mrq, formats.Target{Package: "left-pad", Actions: []formats.Action{formats.ActionRead}}); c.Repository != qr("member-remote") || c.Addressed != qr("all") {
 		t.Fatalf("coordinate() = repository %q addressed %q", c.Repository, c.Addressed)
 	}
-	if c := populateCoordinate(mrq, formats.PathInfo{Package: "left-pad"}, formats.Path{Path: "left-pad"}); c.Repository != "member-remote" || c.Addressed != "all" {
+	if c := populateCoordinate(mrq, formats.PathInfo{Package: "left-pad"}, formats.Path{Path: "left-pad"}); c.Repository != qr("member-remote") || c.Addressed != qr("all") {
 		t.Fatalf("populateCoordinate() = repository %q addressed %q", c.Repository, c.Addressed)
 	}
 
@@ -59,7 +59,7 @@ func TestR_AUTHZ_013_AMemberRequestCarriesTheOutermostAddressedKeyIntoBothCoordi
 	if err := h.Authorize(context.Background(), mrq, formats.Target{Package: "left-pad", Actions: []formats.Action{formats.ActionRead}}); err != nil {
 		t.Fatal(err)
 	}
-	if d.got.Repository != "member-remote" || d.got.Addressed != "all" {
+	if d.got.Repository != qr("member-remote") || d.got.Addressed != qr("all") {
 		t.Fatalf("the decision was made for %+v", d.got)
 	}
 }
@@ -79,7 +79,7 @@ func TestR_AUTHZ_013_TheOutermostAddressedKeyIsKeptOnADerivedRequest(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m2.Repo.Name != "leaf" || m2.Addressed() != "outer" {
+	if m2.Repo.Name != qr("leaf") || m2.Addressed() != qr("outer") {
 		t.Fatalf("leaf request on %q addressed %q, want addressed outer", m2.Repo.Name, m2.Addressed())
 	}
 }
@@ -111,7 +111,7 @@ func TestR_AUTHZ_013_TheDeployTargetReadCarriesNoAddressedKey(t *testing.T) {
 	v.Format = "probe"
 	rq := virtualRequest(t, v)
 	trq := rq.WriteTarget(&target)
-	if trq.Repo.Name != "team-local" || trq.Addressed() != "team-local" {
+	if trq.Repo.Name != qr("team-local") || trq.Addressed() != qr("team-local") {
 		t.Fatalf("target request on %q addressed %q", trq.Repo.Name, trq.Addressed())
 	}
 	// Also when the request it comes from was derived itself.
@@ -119,10 +119,10 @@ func TestR_AUTHZ_013_TheDeployTargetReadCarriesNoAddressedKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := mrq.WriteTarget(&target).Addressed(); got != "team-local" {
+	if got := mrq.WriteTarget(&target).Addressed(); got != qr("team-local") {
 		t.Fatalf("addressed %q after the write re-target of a member request", got)
 	}
-	if c := coordinate(trq, formats.Target{Package: "left-pad", Actions: []formats.Action{formats.ActionRead}}); c.Addressed != "team-local" {
+	if c := coordinate(trq, formats.Target{Package: "left-pad", Actions: []formats.Action{formats.ActionRead}}); c.Addressed != qr("team-local") {
 		t.Fatalf("coordinate() addressed %q", c.Addressed)
 	}
 }

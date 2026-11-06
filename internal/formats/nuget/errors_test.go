@@ -86,7 +86,7 @@ func TestR_NUGET_002_RetryAfterIsAtMost30Seconds(t *testing.T) {
 func TestR_NUGET_001_AV2PathAnswersWithTheServiceIndexOfTheAddressedRepository(t *testing.T) {
 	v2 := errs.E(errs.NotFound, errs.CodeNuGetV2Unsupported, "No NuGet v3 resource has this path.")
 	r := httptest.NewRequest(http.MethodGet, "https://trove.example.com/api/nuget/nuget-local/FindPackagesById()?id='Acme.Widgets'", nil)
-	r = formats.WithRefusal(r, formats.Refusal{Format: ID, Name: "nuget-local", BaseURL: "https://trove.example.com"})
+	r = formats.WithRefusal(r, formats.Refusal{Format: ID, Name: qr("nuget-local"), BaseURL: "https://trove.example.com"})
 	w := render(http.MethodGet, r, v2)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d", w.Code)
@@ -100,7 +100,7 @@ func TestR_NUGET_001_AV2PathAnswersWithTheServiceIndexOfTheAddressedRepository(t
 	}
 
 	t.Run("the cache view of a remote repository", func(t *testing.T) {
-		r := formats.WithRefusal(httptest.NewRequest(http.MethodGet, "/x", nil), formats.Refusal{Format: ID, Name: "nuget-org~cache", BaseURL: "https://trove.example.com"})
+		r := formats.WithRefusal(httptest.NewRequest(http.MethodGet, "/x", nil), formats.Refusal{Format: ID, Name: qr("nuget-org~cache"), BaseURL: "https://trove.example.com"})
 		if body := render(http.MethodGet, r, v2).Body.String(); !strings.Contains(body, "/api/nuget/nuget-org~cache/v3/index.json") {
 			t.Errorf("body = %q", body)
 		}

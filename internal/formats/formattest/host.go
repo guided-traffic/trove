@@ -42,8 +42,8 @@ const DefaultBaseURL = "https://trove.test"
 type HostOptions struct {
 	// Class is the class of the addressed repository; Local when empty.
 	Class formats.Class
-	// RepoKey is the repository key; "main" when empty.
-	Repo qname.Repo
+	// RepoKey is the repository key within the project "it"; "main" when empty.
+	RepoKey string
 	// BaseURL is the response base URL; [DefaultBaseURL] when empty.
 	BaseURL string
 	// Data is the in-memory twin of the format's data port. NewHost refuses it, as
@@ -132,8 +132,8 @@ func NewHost(f formats.Format, o HostOptions) *Host {
 	if o.Class == "" {
 		o.Class = formats.Local
 	}
-	if o.Repo.IsZero() {
-		o.Repo = qname.Repo{Project: "it", Key: "main"}
+	if o.RepoKey == "" {
+		o.RepoKey = "main"
 	}
 	if o.BaseURL == "" {
 		o.BaseURL = DefaultBaseURL
@@ -149,7 +149,7 @@ func NewHost(f formats.Format, o HostOptions) *Host {
 	}
 	h := &Host{
 		f: f, opts: o,
-		repo:    &repository.Repository{ID: "1", Name: o.Repo, Class: o.Class, Format: string(d.ID), Lifecycle: repository.Active},
+		repo:    &repository.Repository{ID: "1", Name: qname.Repo{Project: "it", Key: o.RepoKey}, Class: o.Class, Format: string(d.ID), Lifecycle: repository.Active},
 		items:   map[string]*itemRec{},
 		byID:    map[int64]*itemRec{},
 		pkgs:    map[string]*pkgRec{},
@@ -158,7 +158,7 @@ func NewHost(f formats.Format, o HostOptions) *Host {
 		props:   map[int64]map[string]string{},
 		renders: map[formats.RenditionKey][]byte{},
 	}
-	h.ref = formats.RepoRef{ID: 1, Name: o.Repo, Class: o.Class, Format: d.ID}
+	h.ref = formats.RepoRef{ID: 1, Name: qname.Repo{Project: "it", Key: o.RepoKey}, Class: o.Class, Format: d.ID}
 	if m, ok := o.Remote.(*MemRemote); ok {
 		m.note = h.noteRead
 	}

@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/api/v1/apitest"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -25,7 +27,7 @@ type fakeExplainer struct {
 func (f *fakeExplainer) Explain(_ context.Context, c virtual.Caller, v repository.Repository, d virtual.Descriptor) (virtual.Explanation, error) {
 	f.caller, f.repo, f.d = c, v, d
 	if f.out.Repository == "" {
-		return virtual.Explanation{Repository: v.Name, Descriptor: virtual.ExplainedPath{Path: d.Path, Kind: string(d.Kind)}, Members: []virtual.MemberDecision{}}, f.err
+		return virtual.Explanation{Repository: v.Name.Key, Descriptor: virtual.ExplainedPath{Path: d.Path, Kind: string(d.Kind)}, Members: []virtual.MemberDecision{}}, f.err
 	}
 	return f.out, f.err
 }
@@ -35,7 +37,8 @@ type fakeReader struct {
 	repos map[string]repository.Repository
 }
 
-func (r fakeReader) ByKey(_ context.Context, key string) (repository.Repository, error) {
+func (r fakeReader) ByName(_ context.Context, name qname.Repo) (repository.Repository, error) {
+	key := name.Key
 	v, ok := r.repos[key]
 	if !ok {
 		return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository has the key "+key)
@@ -45,11 +48,15 @@ func (r fakeReader) ByKey(_ context.Context, key string) (repository.Repository,
 
 func (r fakeReader) List(context.Context) ([]repository.Repository, error) { return nil, nil }
 
+func (r fakeReader) ListProject(context.Context, string) ([]repository.Repository, error) {
+	return nil, nil
+}
+
 func resolutionSetup(t *testing.T, val *apitest.Validator, acc Access, ex *fakeExplainer, repos ...repository.Repository) setup {
 	t.Helper()
 	byKey := map[string]repository.Repository{}
 	for _, r := range repos {
-		byKey[r.Name] = r
+		byKey[r.Name.Key] = r
 	}
 	s := newSetup(t, func(o *Options) {
 		o.Access = acc
@@ -69,7 +76,7 @@ func resolutionURL(key, path string) string {
 
 func TestResolutionAPI(t *testing.T) {
 	val := apitest.New(t, EmbeddedYAML())
-	virtualRepo := repository.Repository{ID: "4", Name: "all", Class: repository.Virtual, Format: "generic", Lifecycle: repository.Active}
+	virtualRepo := repository.Repository{ID: "4", Name: qr("all"), Class: repository.Virtual, Format: "generic", Lifecycle: repository.Active}
 
 	t.Run("R-REPO-019 the operation declares read on the virtual repository of the path", func(t *testing.T) {
 		acc := &actionAccess{}
@@ -83,7 +90,7 @@ func TestResolutionAPI(t *testing.T) {
 			t.Fatalf("%d %s", w.Code, w.Body)
 		}
 		c := acc.coordinate
-		if c.Repository != "all" || len(c.Actions) != 1 || c.Actions[0] != authz.Read {
+		if c.Repository != qr("all") || len(c.Actions) != 1 || c.Actions[0] != authz.Read {
 			t.Fatalf("coordinate = %+v", c)
 		}
 		var got virtual.Explanation
@@ -98,13 +105,13 @@ func TestResolutionAPI(t *testing.T) {
 		if w := s.do("GET", resolutionURL("all", "docs/readme.txt"), "", nil); w.Code != 200 {
 			t.Fatalf("%d %s", w.Code, w.Body)
 		}
-		if ex.repo.Name != "all" || ex.d.Path != "docs/readme.txt" || ex.d.Format != "generic" || ex.d.Kind == "" {
+		if ex.repo.Name != qr("all") || ex.d.Path != "docs/readme.txt" || ex.d.Format != "generic" || ex.d.Kind == "" {
 			t.Fatalf("repo %q descriptor %+v", ex.repo.Name, ex.d)
 		}
 	})
 
 	t.Run("R-REPO-019 a repository that is not virtual answers 400 not_applicable", func(t *testing.T) {
-		local := repository.Repository{ID: "1", Name: "files", Class: repository.Local, Format: "generic", Lifecycle: repository.Active}
+		local := repository.Repository{ID: "1", Name: qr("files"), Class: repository.Local, Format: "generic", Lifecycle: repository.Active}
 		s := resolutionSetup(t, val, &actionAccess{}, &fakeExplainer{}, local)
 		problem(t, s.do("GET", resolutionURL("files", "x"), "", nil), 400, "not_applicable")
 	})

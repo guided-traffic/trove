@@ -24,6 +24,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/npm"
 	"github.com/guided-traffic/trove/internal/formats/nuget"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -85,7 +86,7 @@ type fakeDecider struct {
 	outcome authz.Outcome
 }
 
-func (*fakeDecider) Begin(context.Context, authz.Subject, ...string) (*authz.Index, error) {
+func (*fakeDecider) Begin(context.Context, authz.Subject, ...qname.Repo) (*authz.Index, error) {
 	return &authz.Index{}, nil
 }
 
@@ -98,7 +99,8 @@ type fakeRepos struct {
 	byKey map[string]repository.Repository
 }
 
-func (r *fakeRepos) ByKey(_ context.Context, key string) (repository.Repository, error) {
+func (r *fakeRepos) ByName(_ context.Context, name qname.Repo) (repository.Repository, error) {
+	key := name.Key
 	if repo, ok := r.byKey[key]; ok {
 		return repo, nil
 	}
@@ -118,15 +120,17 @@ type shapes struct {
 	subs  []authz.Subject
 }
 
-func (s *shapes) Shapes(_ context.Context, _ *authz.Index, sub authz.Subject, keys []string) (map[string]bastionmain.Shape, error) {
+func (s *shapes) Shapes(_ context.Context, _ *authz.Index, sub authz.Subject, keys []qname.Repo) (map[qname.Repo]bastionmain.Shape, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.asked = append(s.asked, keys...)
+	for _, k := range keys {
+		s.asked = append(s.asked, k.Key)
+	}
 	s.subs = append(s.subs, sub)
 	if s.err != nil {
 		return nil, s.err
 	}
-	out := map[string]bastionmain.Shape{}
+	out := map[qname.Repo]bastionmain.Shape{}
 	for _, k := range keys {
 		out[k] = bastionmain.Shape{Read: s.read}
 	}
@@ -175,9 +179,9 @@ func newRig(t *testing.T, fs ...formats.Format) *rig {
 	d, err := dispatch.New(dispatch.Options{
 		Host: fakeHost{}, Decider: r.decider, Formats: func() []formats.Format { return fs },
 		Repos: &fakeRepos{byKey: map[string]repository.Repository{
-			"mk-local": {ID: "1", Name: "mk-local", Class: repository.Local, Format: "mk"},
-			"npm-all":  {ID: "2", Name: "npm-all", Class: repository.Virtual, Format: "npm"},
-			"nuget-v3": {ID: "3", Name: "nuget-v3", Class: repository.Local, Format: "nuget"},
+			"mk-local": {ID: "1", Name: qr("mk-local"), Class: repository.Local, Format: "mk"},
+			"npm-all":  {ID: "2", Name: qr("npm-all"), Class: repository.Virtual, Format: "npm"},
+			"nuget-v3": {ID: "3", Name: qr("nuget-v3"), Class: repository.Local, Format: "nuget"},
 		}},
 	})
 	if err != nil {
@@ -588,7 +592,7 @@ func TestR_BAS_014_ProbeIsRefusedInTheShapeOfTheFormat(t *testing.T) {
 	})
 	t.Run("without a main URL the detail still says where to publish", func(t *testing.T) {
 		m := New(Options{})
-		err := m.readOnly(bastionmain.RouteMatch{Format: "npm", Repo: "npm-all"})
+		err := m.readOnly(bastionmain.RouteMatch{Format: "npm", Repo: qr("npm-all")})
 		if e, ok := errs.As(err); !ok || e.Code != iface.CodeReadOnly || e.Status() != 403 || !strings.Contains(e.Detail, "main installation") {
 			t.Fatalf("%v", err)
 		}
@@ -668,4 +672,8 @@ func counter(t *testing.T, m *bastionmain.Metrics, class string) float64 {
 		t.Fatal(err)
 	}
 	return out.GetCounter().GetValue()
+}
+
+func (r *fakeRepos) ListProject(context.Context, string) ([]repository.Repository, error) {
+	return nil, nil
 }

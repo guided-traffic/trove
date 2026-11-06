@@ -16,6 +16,7 @@ import (
 	"github.com/guided-traffic/trove/internal/files"
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -33,13 +34,13 @@ type decider struct {
 	recordN int
 }
 
-func (d *decider) Begin(_ context.Context, _ authz.Subject, keys ...string) (*authz.Index, error) {
+func (d *decider) Begin(_ context.Context, _ authz.Subject, keys ...qname.Repo) (*authz.Index, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.begins++
 	idx := new(authz.Index)
 	d.issued = append(d.issued, idx)
-	d.keys = append(d.keys, keys)
+	d.keys = append(d.keys, qkeys(keys))
 	return idx, nil
 }
 
@@ -118,14 +119,17 @@ func (s *store) Served(context.Context, items.ServedEvent) {}
 
 type repos struct{}
 
-func (repos) ByKey(_ context.Context, key string) (repository.Repository, error) {
+func (repos) ByName(_ context.Context, name qname.Repo) (repository.Repository, error) {
+	key := name.Key
 	if key != "generic-local" {
 		return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository")
 	}
-	return repository.Repository{ID: "5", Name: key, Class: repository.Local, Format: "generic"}, nil
+	return repository.Repository{ID: "5", Name: qr(key), Class: repository.Local, Format: "generic"}, nil
 }
 
 func (repos) List(context.Context) ([]repository.Repository, error) { return nil, nil }
+
+func (repos) ListProject(context.Context, string) ([]repository.Repository, error) { return nil, nil }
 
 func handler(t *testing.T, d *decider, st *store) *Handler {
 	t.Helper()
@@ -139,7 +143,7 @@ func handler(t *testing.T, d *decider, st *store) *Handler {
 func TestOneIndexPerRequest(t *testing.T) {
 	var sum blob.Digest
 	sum[0] = 1
-	file := items.Item{ID: 3, RepoID: 5, Repository: "generic-local", Path: "a.bin", Kind: items.KindFile, Size: 3, Digest: sum, SHA512: make([]byte, 64)}
+	file := items.Item{ID: 3, RepoID: 5, Repository: qr("generic-local"), Path: "a.bin", Kind: items.KindFile, Size: 3, Digest: sum, SHA512: make([]byte, 64)}
 
 	t.Run("R-AUTHZ-015 a download begins one index, with the repository key, and decides on it", func(t *testing.T) {
 		d := &decider{}

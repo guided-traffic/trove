@@ -42,7 +42,7 @@ func request(t *testing.T, f *Format, host formats.Host, method, escaped string,
 		r.Header.Set(hdr[i], hdr[i+1])
 	}
 	return &formats.Request{
-		Request: r, Repo: &repository.Repository{ID: "7", Name: "npm-local", Class: formats.Local, Format: "npm"},
+		Request: r, Repo: &repository.Repository{ID: "7", Name: qr("npm-local"), Class: formats.Local, Format: "npm"},
 		Route: route, Params: params, Escaped: escaped, Host: host,
 	}
 }

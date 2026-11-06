@@ -29,9 +29,9 @@ func (failingStore) TarballFacts(context.Context, int64, string, string) (rows.T
 // remote one, and nothing for a path that is not a file of a version or a class the check does not apply to.
 func TestR_ARCH_027_TheServeFactsKeyNamesTheRowsOfTheCheck(t *testing.T) {
 	f := New()
-	local := formats.RepoRef{ID: 3, Name: "l", Class: formats.Local, Format: ID}
-	remote := formats.RepoRef{ID: 4, Name: "r", Class: formats.Remote, Format: ID}
-	virtual := formats.RepoRef{ID: 5, Name: "v", Class: formats.Virtual, Format: ID}
+	local := formats.RepoRef{ID: 3, Name: qr("l"), Class: formats.Local, Format: ID}
+	remote := formats.RepoRef{ID: 4, Name: qr("r"), Class: formats.Remote, Format: ID}
+	virtual := formats.RepoRef{ID: 5, Name: qr("v"), Class: formats.Virtual, Format: ID}
 	for _, c := range []struct {
 		name string
 		repo formats.RepoRef

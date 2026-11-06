@@ -74,7 +74,7 @@ func (r *recordingDecider) RecordAllowed(_ context.Context, _ meta.Tx, sub authz
 func TestMirrorPopulate(t *testing.T) {
 	d := &recordingDecider{}
 	h := newTestHost(t, d)
-	p := &mirrorPopulate{h: h, coord: authz.Coordinate{Repository: "npm-mirror", Kind: authz.KindWrite, Package: "left-pad"}}
+	p := &mirrorPopulate{h: h, coord: authz.Coordinate{Repository: qr("npm-mirror"), Kind: authz.KindWrite, Package: "left-pad"}}
 	t.Run("R-REPO-057 the check asks nobody and admits the pass", func(t *testing.T) {
 		if !p.May(t.Context()) || p.Deny(t.Context()) != nil {
 			t.Fatal("the mirror's populate check refused")

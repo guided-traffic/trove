@@ -102,7 +102,7 @@ func TestR_API_008_DecideActionAndRoleForms(t *testing.T) {
 			t.Fatal(err)
 		}
 		c := acc.coordinate
-		if c.Repository != "npm-internal" || c.Path != "a/b.tgz" || c.Package != "@web/button" || c.Kind != authz.KindWrite ||
+		if c.Repository != qr("npm-internal") || c.Path != "a/b.tgz" || c.Package != "@web/button" || c.Kind != authz.KindWrite ||
 			len(c.Actions) != 1 || c.Actions[0] != authz.Deploy {
 			t.Fatalf("coordinate = %+v", c)
 		}
@@ -113,7 +113,7 @@ func TestR_API_008_DecideActionAndRoleForms(t *testing.T) {
 		if err := s.decide(withUser(req), Requirement{Action: authz.Read, Repository: "path.key"}); err != nil {
 			t.Fatal(err)
 		}
-		if acc.coordinate.Repository != "npm-internal" || acc.coordinate.Kind != authz.KindMetadata {
+		if acc.coordinate.Repository != qr("npm-internal") || acc.coordinate.Kind != authz.KindMetadata {
 			t.Fatalf("coordinate = %+v", acc.coordinate)
 		}
 	})
@@ -121,7 +121,7 @@ func TestR_API_008_DecideActionAndRoleForms(t *testing.T) {
 		acc := &actionAccess{}
 		s := New(Options{Access: acc})
 		_ = s.decide(withUser(req), Requirement{Action: authz.Read, Repository: "query.nothing"})
-		if acc.coordinate.Repository != "" {
+		if acc.coordinate.Repository != qr("") {
 			t.Fatalf("coordinate = %+v", acc.coordinate)
 		}
 	})

@@ -79,7 +79,7 @@ func serveContent(t *testing.T, h *Handler, maxUpload int64, r *http.Request) *h
 func TestContentRoutes(t *testing.T) {
 	var sum blob.Digest
 	sum[0] = 1
-	file := items.Item{ID: 3, RepoID: 5, Repository: "generic-local", Path: "a.bin", Kind: items.KindFile, Size: 3, Digest: sum, SHA512: make([]byte, 64)}
+	file := items.Item{ID: 3, RepoID: 5, Repository: qr("generic-local"), Path: "a.bin", Kind: items.KindFile, Size: 3, Digest: sum, SHA512: make([]byte, 64)}
 
 	t.Run("R-API-025 Q-UI-106 a download for the session answers what /files/ answers", func(t *testing.T) {
 		d := &decider{}
@@ -276,16 +276,19 @@ func TestSplitContentPath(t *testing.T) {
 		key, rest string
 		ok        bool
 	}{
-		{"/api/v1/repositories/r/content/a/b.bin", "r", "a/b.bin", true},
-		{"/api/v1/repositories/r/content/", "r", "", true},
-		{"/api/v1/repositories/my%2Drepo/content/a%2Fb/x", "my-repo", "a%2Fb/x", true},
-		{"/api/v1/repositories/r/content/content/x", "r", "content/x", true},
-		{"/api/v1/repositories//content/x", "", "", false},
-		{"/api/v1/repositories/r/items", "", "", false},
-		{"/api/v1/repositories/a/b/content/x", "", "", false},
-		{"/files/r/x", "", "", false},
+		{"/api/v1/projects/it/repositories/r1/content/a/b.bin", "it/r1", "a/b.bin", true},
+		{"/api/v1/projects/it/repositories/r1/content/", "it/r1", "", true},
+		{"/api/v1/projects/it/repositories/my%2Drepo/content/a%2Fb/x", "", "", false},
+		{"/api/v1/projects/it/repositories/r1/content/content/x", "it/r1", "content/x", true},
+		{"/api/v1/projects/it/repositories//content/x", "", "", false},
+		{"/api/v1/projects//repositories/r1/content/x", "", "", false},
+		{"/api/v1/projects/it/repositories/r1/items", "", "", false},
+		{"/api/v1/projects/it/repositories/a/b/content/x", "", "", false},
+		{"/api/v1/repositories/r1/content/x", "", "", false},
+		{"/files/it/r1/x", "", "", false},
 	} {
-		key, rest, ok := splitContentPath(tc.in)
+		name, rest, ok := splitContentPath(tc.in)
+		key := name.String()
 		if key != tc.key || rest != tc.rest || ok != tc.ok {
 			t.Errorf("splitContentPath(%q) = %q, %q, %v", tc.in, key, rest, ok)
 		}

@@ -14,8 +14,8 @@ import (
 // and nothing for a path that names no version or a class the check does not apply to.
 func TestR_ARCH_027_TheNuGetServeFactsKeyNamesTheRowsOfTheCheck(t *testing.T) {
 	f := New()
-	local := formats.RepoRef{ID: 3, Name: "l", Class: formats.Local, Format: ID}
-	remote := formats.RepoRef{ID: 4, Name: "r", Class: formats.Remote, Format: ID}
+	local := formats.RepoRef{ID: 3, Name: qr("l"), Class: formats.Local, Format: ID}
+	remote := formats.RepoRef{ID: 4, Name: qr("r"), Class: formats.Remote, Format: ID}
 	nupkg := formats.Path{Path: "acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg"}
 	if got, want := f.ServeFactsKey(local, nupkg), (formats.ServeKey{Kind: formats.ServeNuGetLocal, Package: "acme.widgets", Version: "1.2.3"}); got != want {
 		t.Errorf("key = %+v, want %+v", got, want)

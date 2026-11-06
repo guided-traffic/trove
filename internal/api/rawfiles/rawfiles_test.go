@@ -64,15 +64,17 @@ func TestSplitPath(t *testing.T) {
 		key, rest string
 		ok        bool
 	}{
-		{"/files/r/a/b.bin", "r", "a/b.bin", true},
-		{"/files/r/", "r", "", true},
-		{"/files/r/a%2Fb/", "r", "a%2Fb/", true},
-		{"/files/my%2Drepo/x", "my-repo", "x", true},
-		{"/files//x", "", "", false},
+		{"/files/it/r1/a/b.bin", "it/r1", "a/b.bin", true},
+		{"/files/it/r1/", "it/r1", "", true},
+		{"/files/it/r1/a%2Fb/", "it/r1", "a%2Fb/", true},
+		{"/files/it/my%2Drepo/x", "", "", false},
+		{"/files/it//x", "", "", false},
+		{"/files/r1/x", "", "", false},
 		{"/files/", "", "", false},
-		{"/other/r/x", "", "", false},
+		{"/other/it/r1/x", "", "", false},
 	} {
-		key, rest, ok := splitPath(tc.in)
+		name, rest, ok := splitPath(tc.in)
+		key := name.String()
 		if key != tc.key || rest != tc.rest || ok != tc.ok {
 			t.Errorf("splitPath(%q) = %q, %q, %v", tc.in, key, rest, ok)
 		}

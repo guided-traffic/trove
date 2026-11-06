@@ -60,7 +60,7 @@ func TestR_BAS_013_FilesRoutesTellTheObserverTheirKind(t *testing.T) {
 				t.Fatalf("matched %d times (answer %d)", len(o.matched), rec.Code)
 			}
 			m := o.matched[0]
-			if m.Format != bastionmain.FormatFiles || m.Repo != "files-local" || m.Name != tc.name || m.Kind != tc.kind || m.Action != tc.action || m.Method != tc.method {
+			if m.Format != bastionmain.FormatFiles || m.Repo != qr("files-local") || m.Name != tc.name || m.Kind != tc.kind || m.Action != tc.action || m.Method != tc.method {
 				t.Fatalf("match %+v", m)
 			}
 		})

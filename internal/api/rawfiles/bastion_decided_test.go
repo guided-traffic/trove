@@ -66,7 +66,7 @@ func (o *decidedObserver) Decided(*http.Request, bastionmain.RouteDecision) { o.
 func TestR_BAS_013_AFilesReadTellsTheObserverOnlyAnAllowedDecision(t *testing.T) {
 	var sum blob.Digest
 	sum[0] = 1
-	file := items.Item{ID: 3, RepoID: 5, Repository: "generic-local", Path: "a.bin", Kind: items.KindFile, Size: 3, Digest: sum, SHA512: make([]byte, 64)}
+	file := items.Item{ID: 3, RepoID: 5, Repository: qr("generic-local"), Path: "a.bin", Kind: items.KindFile, Size: 3, Digest: sum, SHA512: make([]byte, 64)}
 	serve := func(outcome authz.Outcome, st *store, path string) (*httptest.ResponseRecorder, *sequence) {
 		seq := &sequence{}
 		d := &refusingDecider{outcome: outcome, seq: seq}

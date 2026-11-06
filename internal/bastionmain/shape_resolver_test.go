@@ -6,16 +6,18 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/bastion/iface"
 )
 
 type fakeReacher struct {
-	out map[string]authz.ReachResult
+	out map[qname.Repo]authz.ReachResult
 	err error
 }
 
-func (f fakeReacher) ReachOn(context.Context, *authz.Index, authz.Subject, []string) (map[string]authz.ReachResult, error) {
+func (f fakeReacher) ReachOn(context.Context, *authz.Index, authz.Subject, []qname.Repo) (map[qname.Repo]authz.ReachResult, error) {
 	return f.out, f.err
 }
 
@@ -23,15 +25,15 @@ func (f fakeReacher) ReachOn(context.Context, *authz.Index, authz.Subject, []str
 // refused read has (R-AUTHZ-016): 401 for an anonymous subject, 403 for a visible refusal, 404 for a hidden or
 // missing repository.
 func TestR_BAS_012_ShapeResolverMapsReachToTheWire(t *testing.T) {
-	r := NewShapeResolver(fakeReacher{out: map[string]authz.ReachResult{
-		"a": {Reach: authz.ReachFull},
-		"b": {Reach: authz.ReachPartial},
-		"c": {Reach: authz.ReachNone, Denial: authz.DenyUnauthenticated},
-		"d": {Reach: authz.ReachNone, Denial: authz.DenyVisible},
-		"e": {Reach: authz.ReachNone, Denial: authz.DenyHidden},
-		"f": {Reach: authz.ReachNone},
+	r := NewShapeResolver(fakeReacher{out: map[qname.Repo]authz.ReachResult{
+		qr("a"): {Reach: authz.ReachFull},
+		qr("b"): {Reach: authz.ReachPartial},
+		qr("c"): {Reach: authz.ReachNone, Denial: authz.DenyUnauthenticated},
+		qr("d"): {Reach: authz.ReachNone, Denial: authz.DenyVisible},
+		qr("e"): {Reach: authz.ReachNone, Denial: authz.DenyHidden},
+		qr("f"): {Reach: authz.ReachNone},
 	}})
-	got, err := r.Shapes(t.Context(), nil, authz.Subject{}, []string{"a", "b", "c", "d", "e", "f"})
+	got, err := r.Shapes(t.Context(), nil, authz.Subject{}, []qname.Repo{qr("a"), qr("b"), qr("c"), qr("d"), qr("e"), qr("f")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,13 +46,13 @@ func TestR_BAS_012_ShapeResolverMapsReachToTheWire(t *testing.T) {
 		"f": {Read: iface.ReadNone, Status: http.StatusNotFound},
 	}
 	for k, w := range want {
-		if got[k] != w {
-			t.Errorf("%s: %+v, want %+v", k, got[k], w)
+		if got[qr(k)] != w {
+			t.Errorf("%s: %+v, want %+v", k, got[qr(k)], w)
 		}
 	}
 	t.Run("a refusal to decide is the error of the resolver", func(t *testing.T) {
 		boom := errors.New("stale")
-		if _, err := NewShapeResolver(fakeReacher{err: boom}).Shapes(t.Context(), nil, authz.Subject{}, []string{"a"}); !errors.Is(err, boom) {
+		if _, err := NewShapeResolver(fakeReacher{err: boom}).Shapes(t.Context(), nil, authz.Subject{}, []qname.Repo{qr("a")}); !errors.Is(err, boom) {
 			t.Fatalf("%v", err)
 		}
 	})

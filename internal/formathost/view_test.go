@@ -91,23 +91,23 @@ func TestR_EP_016_ViewAdaptersListStoredVersionsOfLocalAndRemoteRepositories(t *
 	vs := NewViewAdapters([]formats.Format{viewFormat{id: "alpha", a: stub}, viewFormat{id: "plain"}}, noPorts{})
 	ctx := context.Background()
 
-	got, err := vs.Stored(ctx, authz.StoredRepo{ID: 7, Key: "a-local", Format: "alpha", Class: "local"}, "p", 11, true)
+	got, err := vs.Stored(ctx, authz.StoredRepo{ID: 7, Name: qr("a-local"), Format: "alpha", Class: "local"}, "p", 11, true)
 	if err != nil || !got.Listed || !slices.Equal(got.Versions, []string{"2.0.0", "1.0.0"}) || got.Tags["latest"] != "2.0.0" {
 		t.Fatalf("local: %+v %v", got, err)
 	}
-	if q := stub.stored[0]; q.Repo.ID != 7 || q.Repo.Name != "a-local" || q.Repo.Class != formats.Local || q.Package != "p" || q.Limit != 11 || !q.Tags {
+	if q := stub.stored[0]; q.Repo.ID != 7 || q.Repo.Name != qr("a-local") || q.Repo.Class != formats.Local || q.Package != "p" || q.Limit != 11 || !q.Tags {
 		t.Fatalf("the adapter was asked %+v", q)
 	}
-	if got, err = vs.Stored(ctx, authz.StoredRepo{ID: 8, Key: "a-remote", Format: "alpha", Class: "remote"}, "p", 11, false); err != nil || !got.Listed || len(got.Tags) != 0 {
+	if got, err = vs.Stored(ctx, authz.StoredRepo{ID: 8, Name: qr("a-remote"), Format: "alpha", Class: "remote"}, "p", 11, false); err != nil || !got.Listed || len(got.Tags) != 0 {
 		t.Fatalf("remote: %+v %v", got, err)
 	}
 	if stub.stored[1].Tags {
 		t.Fatal("the tags were asked for a format without tags")
 	}
 	for name, repo := range map[string]authz.StoredRepo{
-		"a virtual repository":        {ID: 9, Key: "a-virtual", Format: "alpha", Class: "virtual"},
-		"a format without an adapter": {ID: 10, Key: "p-local", Format: "plain", Class: "local"},
-		"a format that is unknown":    {ID: 11, Key: "x-local", Format: "nope", Class: "local"},
+		"a virtual repository":        {ID: 9, Name: qr("a-virtual"), Format: "alpha", Class: "virtual"},
+		"a format without an adapter": {ID: 10, Name: qr("p-local"), Format: "plain", Class: "local"},
+		"a format that is unknown":    {ID: 11, Name: qr("x-local"), Format: "nope", Class: "local"},
 	} {
 		if got, err := vs.Stored(ctx, repo, "p", 11, true); err != nil || got.Listed || len(got.Versions) != 0 {
 			t.Errorf("%s: %+v %v", name, got, err)
@@ -136,7 +136,7 @@ func TestR_API_029_ViewAdaptersBridgeTheRegisteredFormats(t *testing.T) {
 	if err != nil || got[5].Description != "d" || !got[5].HasReadme || !slices.Equal(got[5].Keywords, []string{"k"}) {
 		t.Fatalf("%+v %v", got, err)
 	}
-	if stub.want != formats.ViewSummary|formats.ViewReadme || stub.got[0].Repo.Name != "r" || stub.got[0].Package != "p" {
+	if stub.want != formats.ViewSummary|formats.ViewReadme || stub.got[0].Repo.Name != qr("r") || stub.got[0].Package != "p" {
 		t.Fatalf("%+v", stub)
 	}
 	ids, err := a.Find(context.Background(), view.Find{Repos: []string{"r"}, Text: "x"}, 9)

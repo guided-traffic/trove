@@ -300,7 +300,7 @@ func TestR_NPM_030_TheMergeAppliesTheStrategiesOfTheVirtualRepositoryAndCountsCo
 	rq.Repo.Config = []byte(`{"npm":{"distTagStrategy":"highest-semver","latestStrategy":"newest-published"}}`)
 	doc := func(member, v, tag string) formats.MemberDocument {
 		return formats.MemberDocument{
-			Member: formats.RepoRef{Name: member}, Tier: formats.TierLocal, Doc: []byte(`{"name":"lodash","dist-tags":{"beta":"` + tag + `"},"versions":{"` + v + `":{"name":"lodash","version":"` + v + `","dist":{"integrity":"sha512-` + member + `"}},"` + tag + `":{"name":"lodash","version":"` + tag + `"}}}`),
+			Member: formats.RepoRef{Name: qr(member)}, Tier: formats.TierLocal, Doc: []byte(`{"name":"lodash","dist-tags":{"beta":"` + tag + `"},"versions":{"` + v + `":{"name":"lodash","version":"` + v + `","dist":{"integrity":"sha512-` + member + `"}},"` + tag + `":{"name":"lodash","version":"` + tag + `"}}}`),
 		}
 	}
 	a, b := doc("a", "1.0.0", "1.0.0"), doc("b", "1.0.0", "2.0.0-beta.1")
@@ -329,7 +329,7 @@ func TestR_AUTHZ_008_AMergeListsOnlyTheCachedVersionsOfAMemberTheCallerMayNotFil
 	merge := func(restricted bool) map[string]json.RawMessage {
 		t.Helper()
 		out, err := f.Virtual().Merge(context.Background(), rq, formats.Path{Path: "lodash"}, []formats.MemberDocument{{
-			Member: formats.RepoRef{Name: "npmjs"}, Tier: formats.TierRemote, Doc: remoteDoc, Restricted: restricted,
+			Member: formats.RepoRef{Name: qr("npmjs")}, Tier: formats.TierRemote, Doc: remoteDoc, Restricted: restricted,
 			CachedVersions: map[string]bool{"1.1.0": true},
 		}})
 		if err != nil {

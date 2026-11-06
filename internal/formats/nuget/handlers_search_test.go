@@ -16,6 +16,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/formattest"
 	"github.com/guided-traffic/trove/internal/formats/nuget/nugettest"
 	"github.com/guided-traffic/trove/internal/formats/nuget/rows"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // searchFake serves the search port from a fixed list of packages in rank order. It does
@@ -95,8 +96,8 @@ type scopeFake struct {
 	may   func(pkg, version string) bool
 }
 
-func (s scopeFake) Shape(string) formats.ReadShape { return s.shape }
-func (s scopeFake) MayRead(_, pkg, version string) bool {
+func (s scopeFake) Shape(qname.Repo) formats.ReadShape { return s.shape }
+func (s scopeFake) MayRead(_ qname.Repo, pkg, version string) bool {
 	return s.may == nil || s.may(pkg, version)
 }
 
@@ -106,7 +107,7 @@ type resolverFake struct {
 	err   error
 }
 
-func (r resolverFake) ReadScope(context.Context, *formats.Request, []string) (formats.ReadScope, error) {
+func (r resolverFake) ReadScope(context.Context, *formats.Request, []qname.Repo) (formats.ReadScope, error) {
 	return r.scope, r.err
 }
 

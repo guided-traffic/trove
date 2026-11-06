@@ -35,6 +35,7 @@ import (
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/packages"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/virtual"
 	vt "github.com/guided-traffic/trove/internal/virtual/virtualtest"
@@ -182,12 +183,12 @@ func (g grants) can(sub authz.Subject, key string) bool {
 	return false
 }
 
-func (g grants) MemberUsableOn(_ context.Context, _ *authz.Index, sub authz.Subject, member string, _ authz.Coordinate) (bool, bool) {
+func (g grants) MemberUsableOn(_ context.Context, _ *authz.Index, sub authz.Subject, member qname.Repo, _ authz.Coordinate) (bool, bool) {
 	read := g.can(sub, member)
 	return read, read && g.fills[sub.Name]
 }
 
-func (g grants) ReadableOn(_ context.Context, _ *authz.Index, sub authz.Subject, keys []string) ([]string, error) {
+func (g grants) ReadableOn(_ context.Context, _ *authz.Index, sub authz.Subject, keys []qname.Repo) ([]qname.Repo, error) {
 	var out []string
 	for _, k := range keys {
 		if g.can(sub, k) {

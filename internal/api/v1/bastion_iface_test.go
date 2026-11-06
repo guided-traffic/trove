@@ -21,6 +21,7 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // The unit tests of the operations of the Bastion interface that need no database: the check (R-BAS-011) with a
@@ -44,15 +45,21 @@ type fakeShapes struct {
 	err    error
 }
 
-func (f *fakeShapes) Shapes(_ context.Context, _ *authz.Index, _ authz.Subject, keys []string) (map[string]bastionmain.Shape, error) {
-	f.asked = append(f.asked, keys...)
-	return f.shapes, f.err
+func (f *fakeShapes) Shapes(_ context.Context, _ *authz.Index, _ authz.Subject, keys []qname.Repo) (map[qname.Repo]bastionmain.Shape, error) {
+	out := map[qname.Repo]bastionmain.Shape{}
+	for _, k := range keys {
+		f.asked = append(f.asked, k.String())
+		if sh, ok := f.shapes[k.String()]; ok {
+			out[k] = sh
+		}
+	}
+	return out, f.err
 }
 
 // beginAccess is an Access that can begin a request's index without a decision point.
 type beginAccess struct{ allowAll }
 
-func (beginAccess) Begin(ctx context.Context, _ string, _ ...string) (*edge.Access, error) {
+func (beginAccess) Begin(ctx context.Context, _ string, _ ...qname.Repo) (*edge.Access, error) {
 	return &edge.Access{Subject: edge.SubjectOf(ctx)}, nil
 }
 

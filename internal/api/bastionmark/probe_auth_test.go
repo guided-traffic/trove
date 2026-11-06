@@ -40,8 +40,8 @@ func realStageChain(t *testing.T) (http.Handler, *rig) {
 	d, err := dispatch.New(dispatch.Options{
 		Host: fakeHost{}, Decider: r.decider, Formats: func() []formats.Format { return fs },
 		Repos: &fakeRepos{byKey: map[string]repository.Repository{
-			"npm-all":  {ID: "2", Name: "npm-all", Class: repository.Virtual, Format: "npm"},
-			"nuget-v3": {ID: "3", Name: "nuget-v3", Class: repository.Local, Format: "nuget"},
+			"npm-all":  {ID: "2", Name: qr("npm-all"), Class: repository.Virtual, Format: "npm"},
+			"nuget-v3": {ID: "3", Name: qr("nuget-v3"), Class: repository.Local, Format: "nuget"},
 		}},
 	})
 	if err != nil {

@@ -20,6 +20,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/formattest"
 	"github.com/guided-traffic/trove/internal/formats/nuget/rows"
 	"github.com/guided-traffic/trove/internal/observability"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // The forwarded search of a remote repository addressed directly (R-NUGET-016) over the in-memory
@@ -60,7 +61,7 @@ type remoteResolver struct {
 	asked []string
 }
 
-func (r *remoteResolver) ReadScope(context.Context, *formats.Request, []string) (formats.ReadScope, error) {
+func (r *remoteResolver) ReadScope(context.Context, *formats.Request, []qname.Repo) (formats.ReadScope, error) {
 	return r.scope, nil
 }
 
@@ -94,7 +95,7 @@ func newForwarding(t *testing.T, subject authz.Subject, cached ...rows.SearchHit
 	m := &formattest.MemRemote{Queries: func(_ context.Context, rq *formats.Request, q formats.Query) (*formats.QueryResult, error) {
 		fw.mu.Lock()
 		defer fw.mu.Unlock()
-		if rq.Repo.Name != "nuget-org" {
+		if rq.Repo.Name != qr("nuget-org") {
 			t.Errorf("the query ran on %q", rq.Repo.Name)
 		}
 		fw.queries = append(fw.queries, q)

@@ -15,6 +15,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/nuget/nugettest"
 	"github.com/guided-traffic/trove/internal/formats/nuget/rows"
 	"github.com/guided-traffic/trove/internal/formats/nuget/version"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // The scope of a search: the terms meet only the versions the caller may read (Q-NUGET-74), the
@@ -29,7 +30,7 @@ type scopeSwitch struct {
 	scope formats.ReadScope
 }
 
-func (s *scopeSwitch) ReadScope(context.Context, *formats.Request, []string) (formats.ReadScope, error) {
+func (s *scopeSwitch) ReadScope(context.Context, *formats.Request, []qname.Repo) (formats.ReadScope, error) {
 	return s.scope, nil
 }
 

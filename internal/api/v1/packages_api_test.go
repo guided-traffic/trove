@@ -17,6 +17,7 @@ import (
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/packages/readme"
 	"github.com/guided-traffic/trove/internal/packages/view"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -46,7 +47,8 @@ type packagesReader struct {
 	repos map[string]repository.Repository
 }
 
-func (f packagesReader) ByKey(_ context.Context, key string) (repository.Repository, error) {
+func (f packagesReader) ByName(_ context.Context, name qname.Repo) (repository.Repository, error) {
+	key := name.Key
 	if r, ok := f.repos[key]; ok {
 		return r, nil
 	}
@@ -68,7 +70,7 @@ type packagesDecider struct {
 	deploy bool
 }
 
-func (packagesDecider) Begin(context.Context, authz.Subject, ...string) (*authz.Index, error) {
+func (packagesDecider) Begin(context.Context, authz.Subject, ...qname.Repo) (*authz.Index, error) {
 	return nil, nil
 }
 
@@ -80,13 +82,13 @@ func (f packagesDecider) CheckOn(_ *authz.Index, _ authz.Subject, items []authz.
 	return out, nil
 }
 
-func (packagesDecider) ReadableOn(context.Context, *authz.Index, authz.Subject, []string) ([]string, error) {
+func (packagesDecider) ReadableOn(context.Context, *authz.Index, authz.Subject, []qname.Repo) ([]qname.Repo, error) {
 	return nil, nil
 }
 
 type packagesScoper struct{}
 
-func (packagesScoper) ReadScopeOn(context.Context, *authz.Index, authz.Subject, string, []string) (authz.ReadScope, error) {
+func (packagesScoper) ReadScopeOn(context.Context, *authz.Index, authz.Subject, qname.Repo, []qname.Repo) (authz.ReadScope, error) {
 	return nil, nil
 }
 
@@ -112,16 +114,16 @@ func setupServerWith(t *testing.T, baseURL string, deploy bool, authn func(*http
 	if err != nil {
 		t.Fatal(err)
 	}
-	local := repository.Repository{Name: "npm-local", Class: repository.Local, Format: "npm"}
-	remote := repository.Repository{Name: "npm-remote", Class: repository.Remote, Format: "npm"}
+	local := repository.Repository{Name: qr("npm-local"), Class: repository.Local, Format: "npm"}
+	remote := repository.Repository{Name: qr("npm-remote"), Class: repository.Remote, Format: "npm"}
 	repos := packagesReader{repos: map[string]repository.Repository{
 		"npm-local":   local,
 		"npm-remote":  remote,
-		"files":       {Name: "files", Class: repository.Local, Format: "generic"},
-		"nuget-local": {Name: "nuget-local", Class: repository.Local, Format: "nuget"},
-		"npm-all": repository.Assemble(repository.Repository{Name: "npm-all", Class: repository.Virtual, Format: "npm"},
+		"files":       {Name: qr("files"), Class: repository.Local, Format: "generic"},
+		"nuget-local": {Name: qr("nuget-local"), Class: repository.Local, Format: "nuget"},
+		"npm-all": repository.Assemble(repository.Repository{Name: qr("npm-all"), Class: repository.Virtual, Format: "npm"},
 			[]repository.Repository{local, remote}, &local, 0),
-		"npm-readonly": repository.Assemble(repository.Repository{Name: "npm-readonly", Class: repository.Virtual, Format: "npm"},
+		"npm-readonly": repository.Assemble(repository.Repository{Name: qr("npm-readonly"), Class: repository.Virtual, Format: "npm"},
 			[]repository.Repository{remote}, nil, 0),
 	}}
 	services := PackageServices{
@@ -415,4 +417,8 @@ func TestR_API_030_NpmPublishSnippets(t *testing.T) {
 			t.Errorf("%s deploy=%v: %v %v", c.repo, c.deploy, got, out.PublishTarget)
 		}
 	}
+}
+
+func (f packagesReader) ListProject(context.Context, string) ([]repository.Repository, error) {
+	return nil, nil
 }

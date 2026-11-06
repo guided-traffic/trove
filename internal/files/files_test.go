@@ -3,10 +3,11 @@ package files
 import (
 	"context"
 	"errors"
-	"github.com/guided-traffic/trove/internal/qname"
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/authz"
@@ -63,7 +64,7 @@ func (a *access) Decide(_ context.Context, c authz.Coordinate) authz.Decision {
 }
 
 func (a *access) PathsAllowed(_ context.Context, base authz.Coordinate, act authz.Action, paths []string, classify authz.Classifier) ([]bool, error) {
-	a.paths = append(a.paths, string(act)+":"+base.Repository)
+	a.paths = append(a.paths, string(act)+":"+base.Repository.String())
 	out := make([]bool, len(paths))
 	for i, p := range paths {
 		out[i] = act != authz.Overwrite || a.overwrite
@@ -173,7 +174,8 @@ func (s *store) Served(context.Context, items.ServedEvent) {}
 
 type repos map[string]repository.Repository
 
-func (r repos) ByKey(_ context.Context, key string) (repository.Repository, error) {
+func (r repos) ByName(_ context.Context, name qname.Repo) (repository.Repository, error) {
+	key := name.Key
 	if repo, ok := r[key]; ok {
 		return repo, nil
 	}
@@ -182,11 +184,13 @@ func (r repos) ByKey(_ context.Context, key string) (repository.Repository, erro
 
 func (r repos) List(context.Context) ([]repository.Repository, error) { return nil, nil }
 
+func (r repos) ListProject(context.Context, string) ([]repository.Repository, error) { return nil, nil }
+
 func service(t *testing.T, st *store) *Service {
 	t.Helper()
 	svc, err := New(Options{Items: st, Repos: repos{
-		"generic-local":  {ID: "5", Name: "generic-local", Class: repository.Local, Format: "generic"},
-		"generic-remote": {ID: "6", Name: "generic-remote", Class: repository.Remote, Format: "generic"},
+		"generic-local":  {ID: "5", Name: qr("generic-local"), Class: repository.Local, Format: "generic"},
+		"generic-remote": {ID: "6", Name: qr("generic-remote"), Class: repository.Remote, Format: "generic"},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -199,7 +203,7 @@ func caller(a *access) Caller {
 }
 
 func upload(path string) DeployRequest {
-	return DeployRequest{Repo: "generic-local", Path: repository.Cleaned{Path: path}, Body: strings.NewReader("x"), ContentLength: 1}
+	return DeployRequest{Repo: qr("generic-local"), Path: repository.Cleaned{Path: path}, Body: strings.NewReader("x"), ContentLength: 1}
 }
 
 func TestGenericLayerDecidesOnTheRequestsAccess(t *testing.T) {
@@ -218,7 +222,7 @@ func TestGenericLayerDecidesOnTheRequestsAccess(t *testing.T) {
 	t.Run("R-AUTHZ-015 the decisions that follow the body are made on a new holder, the one before it on the request's", func(t *testing.T) {
 		first, second, st := &access{allow: true}, &access{allow: true}, &store{}
 		c := caller(first)
-		c.Recheck = func(context.Context, string) (Access, error) { return second, nil }
+		c.Recheck = func(context.Context, qname.Repo) (Access, error) { return second, nil }
 		if _, err := service(t, st).Deploy(context.Background(), c, upload("a/b.bin")); err != nil {
 			t.Fatal(err)
 		}
@@ -279,7 +283,7 @@ func TestGenericLayerDecidesOnTheRequestsAccess(t *testing.T) {
 	t.Run("R-REPO-005 a remote repository does not accept a deploy", func(t *testing.T) {
 		acc, st := &access{allow: true}, &store{}
 		req := upload("a/b.bin")
-		req.Repo = "generic-remote"
+		req.Repo = qr("generic-remote")
 		_, err := service(t, st).Deploy(context.Background(), caller(acc), req)
 		if e, ok := errs.As(err); !ok || e.Kind != errs.MethodNotAllowed {
 			t.Fatalf("err = %v", err)
@@ -289,7 +293,7 @@ func TestGenericLayerDecidesOnTheRequestsAccess(t *testing.T) {
 		acc, st := &access{allow: true}, &store{}
 		svc := service(t, st)
 		acc2 := &readAccess{access: acc, hide: "secret/"}
-		page, err := svc.Children(context.Background(), caller2(acc2), "generic-local", ChildrenQuery{Folders: true, Limit: 10})
+		page, err := svc.Children(context.Background(), caller2(acc2), qr("generic-local"), ChildrenQuery{Folders: true, Limit: 10})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -299,7 +303,7 @@ func TestGenericLayerDecidesOnTheRequestsAccess(t *testing.T) {
 	})
 	t.Run("R-STOR-018 a delete is checked on every path of the subtree before the write is recorded, and one refusal stops it", func(t *testing.T) {
 		acc, st := &access{allow: true, overwrite: true}, &store{found: true, live: items.Item{Kind: items.KindFolder}}
-		res, err := service(t, st).Delete(context.Background(), caller(acc), DeleteRequest{Repo: "generic-local", Path: "d"})
+		res, err := service(t, st).Delete(context.Background(), caller(acc), DeleteRequest{Repo: qr("generic-local"), Path: "d"})
 		if err != nil || !res.Done {
 			t.Fatalf("%+v, %v", res, err)
 		}
@@ -308,7 +312,7 @@ func TestGenericLayerDecidesOnTheRequestsAccess(t *testing.T) {
 		}
 		denied := &denyDelete{access: &access{allow: true}}
 		st2 := &store{found: true, live: items.Item{Kind: items.KindFolder}}
-		_, err = service(t, st2).Delete(context.Background(), caller2(denied), DeleteRequest{Repo: "generic-local", Path: "d"})
+		_, err = service(t, st2).Delete(context.Background(), caller2(denied), DeleteRequest{Repo: qr("generic-local"), Path: "d"})
 		if e, ok := errs.As(err); !ok || e.Kind != errs.Forbidden {
 			t.Fatalf("err = %v", err)
 		}

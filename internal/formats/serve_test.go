@@ -40,7 +40,7 @@ func serveOn(t *testing.T, ep EndpointFacts, kind RouteKind, h HandlerFunc, same
 	rec := httptest.NewRecorder()
 	rq := &Request{
 		Request:  httptest.NewRequest(http.MethodGet, "/api/probe/key/left-pad/-/left-pad-1.0.0.tgz", nil),
-		Repo:     &repository.Repository{Name: "key", Format: "probe"},
+		Repo:     &repository.Repository{Name: qr("key"), Format: "probe"},
 		Route:    &Route{Name: "probe.get", Kind: kind, Handler: h},
 		Path:     Path{Path: "left-pad/-/left-pad-1.0.0.tgz"},
 		Log:      slog.New(slog.DiscardHandler),

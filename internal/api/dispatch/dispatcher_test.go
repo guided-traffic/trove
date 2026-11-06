@@ -16,6 +16,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -111,10 +112,10 @@ type fakeDecider struct {
 	begun    []string
 }
 
-func (d *fakeDecider) Begin(_ context.Context, _ authz.Subject, keys ...string) (*authz.Index, error) {
+func (d *fakeDecider) Begin(_ context.Context, _ authz.Subject, keys ...qname.Repo) (*authz.Index, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.begun = append(d.begun, keys...)
+	d.begun = append(d.begun, qkeys(keys)...)
 	return nil, nil
 }
 
@@ -132,7 +133,8 @@ type fakeRepos struct {
 	lookup []string
 }
 
-func (r *fakeRepos) ByKey(_ context.Context, key string) (repository.Repository, error) {
+func (r *fakeRepos) ByName(_ context.Context, name qname.Repo) (repository.Repository, error) {
+	key := name.Key
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.lookup = append(r.lookup, key)
@@ -162,8 +164,8 @@ func (h fakeHost) Begin(*formats.Request) func() {
 type noDeployResolver struct{ formats.Resolver }
 
 func (noDeployResolver) DeployTarget(_ context.Context, rq *formats.Request) (*repository.Repository, error) {
-	if rq.Repo.Name == "virtual-with-target" {
-		return &repository.Repository{ID: "1", Name: "local", Class: repository.Local, Format: "probe"}, nil
+	if rq.Repo.Name == qr("virtual-with-target") {
+		return &repository.Repository{ID: "1", Name: qr("local"), Class: repository.Local, Format: "probe"}, nil
 	}
 	return nil, errs.E(errs.MethodNotAllowed, errs.CodeNoDeployTarget, "none")
 }
@@ -184,21 +186,21 @@ type rig struct {
 func newRig(t *testing.T) *rig {
 	t.Helper()
 	r := &rig{t: t, decider: &fakeDecider{}, repos: &fakeRepos{byKey: map[string]repository.Repository{
-		"local":               {ID: "1", Name: "local", Class: repository.Local, Format: "probe"},
-		"remote":              {ID: "2", Name: "remote", Class: repository.Remote, Format: "probe"},
-		"virt":                {ID: "3", Name: "virt", Class: repository.Virtual, Format: "probe"},
-		"other":               {ID: "4", Name: "other", Class: repository.Local, Format: "bare"},
-		"off":                 {ID: "5", Name: "off", Class: repository.Local, Format: "probe", Disabled: true},
-		"dying":               {ID: "6", Name: "dying", Class: repository.Local, Format: "probe", Lifecycle: repository.Deleting},
-		"virtual":             {ID: "7", Name: "virtual", Class: repository.Virtual, Format: "probe"},
-		"virtual-with-target": {ID: "8", Name: "virtual-with-target", Class: repository.Virtual, Format: "probe"},
+		"local":               {ID: "1", Name: qr("local"), Class: repository.Local, Format: "probe"},
+		"remote":              {ID: "2", Name: qr("remote"), Class: repository.Remote, Format: "probe"},
+		"virt":                {ID: "3", Name: qr("virt"), Class: repository.Virtual, Format: "probe"},
+		"other":               {ID: "4", Name: qr("other"), Class: repository.Local, Format: "bare"},
+		"off":                 {ID: "5", Name: qr("off"), Class: repository.Local, Format: "probe", Disabled: true},
+		"dying":               {ID: "6", Name: qr("dying"), Class: repository.Local, Format: "probe", Lifecycle: repository.Deleting},
+		"virtual":             {ID: "7", Name: qr("virtual"), Class: repository.Virtual, Format: "probe"},
+		"virtual-with-target": {ID: "8", Name: qr("virtual-with-target"), Class: repository.Virtual, Format: "probe"},
 	}}}
 	p := probe{handler: func(_ context.Context, rq *formats.Request, w http.ResponseWriter) error {
 		view := ""
 		if rq.CacheView {
 			view = " cache-view"
 		}
-		r.reached = append(r.reached, rq.Route.Name+" "+rq.Repo.Name+" "+rq.Params.Get("package")+view)
+		r.reached = append(r.reached, rq.Route.Name+" "+rq.Repo.Name.String()+" "+rq.Params.Get("package")+view)
 		w.WriteHeader(http.StatusNoContent)
 		return nil
 	}}
@@ -251,7 +253,7 @@ func TestR_ARCH_005_TheRequestPathOfTheDispatcher(t *testing.T) {
 		if strings.Join(r.reached, ",") != "probe.doc.get local left-pad" || strings.Join(r.labels, ",") != "probe.doc.get" {
 			t.Fatalf("reached %v, labels %v", r.reached, r.labels)
 		}
-		if got := r.decider.asked[0]; got.Repository != "local" || got.Kind != authz.KindMetadata || len(got.Actions) != 1 || got.Actions[0] != authz.Read || got.Path != "" || got.Package != "" {
+		if got := r.decider.asked[0]; got.Repository != qr("local") || got.Kind != authz.KindMetadata || len(got.Actions) != 1 || got.Actions[0] != authz.Read || got.Path != "" || got.Package != "" {
 			t.Fatalf("the coarse coordinate is the repository level: %+v", got)
 		}
 		if strings.Join(r.decider.begun, ",") != "local" {
@@ -338,7 +340,7 @@ func TestR_REPO_032_TheCacheViewIsTheRemoteRepositoryAddressedWithAMark(t *testi
 	if strings.Join(r.reached, ",") != "probe.doc.get remote left-pad cache-view" {
 		t.Fatalf("reached %v: the request is decided and served on the remote repository, marked as the cache view", r.reached)
 	}
-	if got := r.decider.asked[0].Repository; got != "remote" {
+	if got := r.decider.asked[0].Repository; got != qr("remote") {
 		t.Fatalf("the coarse check asked for %q", got)
 	}
 	r.reached = nil
@@ -433,11 +435,11 @@ func TestNewRefusesADispatcherWithoutItsParts(t *testing.T) {
 // fakeCeiling answers the fingerprint and the view the dispatcher hands a format.
 type fakeCeiling struct{ view *authz.ExposureView }
 
-func (fakeCeiling) ExposureFingerprint(_ *authz.Index, endpoint, repoKey string) string {
-	return "sha256:" + endpoint + "/" + repoKey
+func (fakeCeiling) ExposureFingerprint(_ *authz.Index, endpoint string, repoKey qname.Repo) string {
+	return "sha256:" + endpoint + "/" + repoKey.Key
 }
 
-func (c fakeCeiling) View(*authz.Index, string, string) *authz.ExposureView { return c.view }
+func (c fakeCeiling) View(*authz.Index, string, qname.Repo) *authz.ExposureView { return c.view }
 
 // TestR_EP_018_TheEndpointFactsCarryTheView: the view and the fingerprint a format
 // receives come from the same ceiling and the same index; an endpoint that does not
@@ -446,7 +448,7 @@ func TestR_EP_018_TheEndpointFactsCarryTheView(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/probe/local/x", nil)
 	access := func(t *testing.T, endpoint string) *edge.Access {
 		t.Helper()
-		a, err := edge.Resolve(req.Context(), &fakeDecider{}, authz.Subject{Name: "bot", Endpoint: endpoint}, "local")
+		a, err := edge.Resolve(req.Context(), &fakeDecider{}, authz.Subject{Name: "bot", Endpoint: endpoint}, qr("local"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -455,20 +457,20 @@ func TestR_EP_018_TheEndpointFactsCarryTheView(t *testing.T) {
 	t.Run("R-EP-018 a restricting endpoint: the view and the fingerprint of the addressed repository", func(t *testing.T) {
 		v := &authz.ExposureView{}
 		d := &Dispatcher{o: Options{Ceiling: fakeCeiling{view: v}}}
-		facts := d.endpointFacts(req, access(t, "customers"), "local")
+		facts := d.endpointFacts(req, access(t, "customers"), qr("local"))
 		if facts.Exposure != formats.ExposureView(v) || facts.ExposureFingerprint != "sha256:customers/local" || facts.Name != "customers" {
 			t.Fatalf("facts %+v", facts)
 		}
 	})
 	t.Run("R-EP-018 mode all: no view", func(t *testing.T) {
 		d := &Dispatcher{o: Options{Ceiling: fakeCeiling{}}}
-		if facts := d.endpointFacts(req, access(t, "default"), "local"); facts.Exposure != nil {
+		if facts := d.endpointFacts(req, access(t, "default"), qr("local")); facts.Exposure != nil {
 			t.Fatalf("a view in mode all: %#v", facts.Exposure)
 		}
 	})
 	t.Run("R-EP-018 no endpoint (a job's subject): no view and no fingerprint", func(t *testing.T) {
 		d := &Dispatcher{o: Options{Ceiling: fakeCeiling{view: &authz.ExposureView{}}}}
-		if facts := d.endpointFacts(req, access(t, ""), "local"); facts.Exposure != nil || facts.ExposureFingerprint != "" {
+		if facts := d.endpointFacts(req, access(t, ""), qr("local")); facts.Exposure != nil || facts.ExposureFingerprint != "" {
 			t.Fatalf("facts %+v", facts)
 		}
 	})
@@ -517,4 +519,8 @@ func TestR_NUGET_001_ARepositoryOfAnotherFormatSaysSo(t *testing.T) {
 	if got := r.do("GET", "/api/probe/ghost/left-pad").Header().Get("X-Probe-Detail"); got == "The repository is not a probe repository." {
 		t.Fatal("a missing repository says it is of another format")
 	}
+}
+
+func (r *fakeRepos) ListProject(context.Context, string) ([]repository.Repository, error) {
+	return nil, nil
 }

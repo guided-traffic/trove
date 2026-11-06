@@ -340,13 +340,13 @@ func TestR_ARCH_009_LinksRenditionsEngines(t *testing.T) {
 	}
 	t.Run("R-ARCH-007 links are built once-escaped on the base URL of the host", func(t *testing.T) {
 		ln := h.Links(rq)
-		if ln.Base() != formattest.DefaultBaseURL || ln.Repository() != "https://trove.test/api/testfmt/main/" || ln.Registry("r~cache") != "https://trove.test/api/testfmt/r~cache/" {
+		if ln.Base() != formattest.DefaultBaseURL || ln.Repository() != "https://trove.test/api/testfmt/main/" || ln.Registry(qr("r~cache")) != "https://trove.test/api/testfmt/r~cache/" {
 			t.Fatalf("%s %s", ln.Base(), ln.Repository())
 		}
 		if got := ln.Path("@scope/na me/-/x.tgz"); got != "https://trove.test/api/testfmt/main/@scope/na%20me/-/x.tgz" {
 			t.Fatalf("Path = %s", got)
 		}
-		if got := ln.File("main", "a b/c"); got != "https://trove.test/files/main/a%20b/c" {
+		if got := ln.File(qr("main"), "a b/c"); got != "https://trove.test/files/main/a%20b/c" {
 			t.Fatalf("File = %s", got)
 		}
 		custom := formattest.NewHost(testformat.New(), formattest.HostOptions{Data: &testformat.MemStore{}, BaseURL: "https://x.example/"})

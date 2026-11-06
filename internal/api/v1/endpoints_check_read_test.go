@@ -8,6 +8,7 @@ import (
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // scopeDecider counts the audited decisions: DecideOn writes an audit event and bumps the decision
@@ -26,10 +27,10 @@ func (d *scopeDecider) DecideOn(context.Context, *authz.Index, authz.Subject, au
 type checkScoper struct {
 	err   error
 	asked atomic.Int64
-	keys  []string
+	keys  []qname.Repo
 }
 
-func (s *checkScoper) ReadScopeOn(_ context.Context, _ *authz.Index, _ authz.Subject, _ string, keys []string) (authz.ReadScope, error) {
+func (s *checkScoper) ReadScopeOn(_ context.Context, _ *authz.Index, _ authz.Subject, _ qname.Repo, keys []qname.Repo) (authz.ReadScope, error) {
 	s.keys = keys
 	if s.err != nil {
 		return nil, s.err
@@ -39,11 +40,11 @@ func (s *checkScoper) ReadScopeOn(_ context.Context, _ *authz.Index, _ authz.Sub
 
 type checkScope struct{ asked *atomic.Int64 }
 
-func (checkScope) Shape(string) authz.ReadShape { return authz.ReadRows }
+func (checkScope) Shape(qname.Repo) authz.ReadShape { return authz.ReadRows }
 
-func (s checkScope) MayRead(repo, pkg, version string) bool {
+func (s checkScope) MayRead(repo qname.Repo, pkg, version string) bool {
 	s.asked.Add(1)
-	return repo == "npm-local" && (pkg != "@acme/sdk" || version != "2.0.0")
+	return repo == qr("npm-local") && (pkg != "@acme/sdk" || version != "2.0.0")
 }
 
 func checkServer(sc authz.ReadScoper) *Server {
@@ -67,7 +68,7 @@ func TestR_EP_016_TheExposureCheckKeepsFromTheListingWhatTheReadScopeRefuses(t *
 	if may("@acme/sdk", "2.0.0") {
 		t.Error("a version the scope refuses is listed")
 	}
-	if len(sc.keys) != 1 || sc.keys[0] != "npm-local" {
+	if len(sc.keys) != 1 || sc.keys[0] != qr("npm-local") {
 		t.Errorf("the scope was opened for %v, want the checked repository only", sc.keys)
 	}
 }
