@@ -26,7 +26,7 @@ func TestR_AUTHZ_015_ADeployIsDecidedAgainWhenItCommits(t *testing.T) {
 	grant := func() {
 		e.grant(r, "up-deploy", []string{"generic-up"}, authz.PatternLists{}, map[string][]string{"user:uploader": {"read", "deploy"}})
 		waitFor(t, "the grant taking effect", 10*time.Second, func() bool {
-			return r.get("uploader", "/files/generic-up/").status == 200
+			return r.get("uploader", "/files/it/generic-up/").status == 200
 		})
 	}
 	// upload sends the first part of the body, removes the grant, waits until the
@@ -43,7 +43,7 @@ func TestR_AUTHZ_015_ADeployIsDecidedAgainWhenItCommits(t *testing.T) {
 			t.Fatal(err)
 		}
 		waitFor(t, "the removal reaching the replica's index", 10*time.Second, func() bool {
-			return r.get("uploader", "/files/generic-up/").status == 404
+			return r.get("uploader", "/files/it/generic-up/").status == 404
 		})
 		if _, err := pw.Write([]byte(content[half:])); err != nil {
 			t.Fatal(err)
@@ -55,7 +55,7 @@ func TestR_AUTHZ_015_ADeployIsDecidedAgainWhenItCommits(t *testing.T) {
 
 	t.Run("R-AUTHZ-015 a new file is refused at commit", func(t *testing.T) {
 		grant()
-		res := upload("/files/generic-up/rel/new.bin", content)
+		res := upload("/files/it/generic-up/rel/new.bin", content)
 		if res.status == 201 || res.status/100 != 4 {
 			t.Fatalf("the deploy committed after its grant was removed: %d %s", res.status, res.body)
 		}
@@ -65,10 +65,10 @@ func TestR_AUTHZ_015_ADeployIsDecidedAgainWhenItCommits(t *testing.T) {
 	})
 	t.Run("R-AUTHZ-015 an identical re-upload is refused at commit", func(t *testing.T) {
 		grant()
-		if res := r.put("uploader", "/files/generic-up/rel/same.bin", content); res.status != 201 {
+		if res := r.put("uploader", "/files/it/generic-up/rel/same.bin", content); res.status != 201 {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
-		res := upload("/files/generic-up/rel/same.bin", content)
+		res := upload("/files/it/generic-up/rel/same.bin", content)
 		if res.status/100 != 4 {
 			t.Fatalf("the re-upload was answered %d after its grant was removed", res.status)
 		}

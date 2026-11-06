@@ -161,7 +161,7 @@ func TestR_EP_019_TheCacheFillPolicyOfAnEndpoint(t *testing.T) {
 	}})
 	var epoch string
 	for _, ep := range []string{"customers", "partners"} {
-		a := e.send(h.Addr("default"), "trove.test", "POST", "/api/v1/endpoints/"+ep+"/exposure-rules", e.opsPAT, []byte(`{"name":"relay","repository":"relay-remote"}`))
+		a := e.send(h.Addr("default"), "trove.test", "POST", "/api/v1/endpoints/"+ep+"/exposure-rules", e.opsPAT, []byte(`{"name":"relay","repository":"it/relay-remote"}`))
 		if a.Status != http.StatusCreated {
 			t.Fatalf("rule on %s: %d %s", ep, a.Status, a.Body)
 		}
@@ -169,7 +169,7 @@ func TestR_EP_019_TheCacheFillPolicyOfAnEndpoint(t *testing.T) {
 	}
 	get := func(addr, host, tok, path string) answer {
 		t.Helper()
-		return e.send(addr, host, "GET", "/api/relay/relay-remote/"+path, tok, nil, "Trove-Authz-Min-Epoch", epoch)
+		return e.send(addr, host, "GET", "/api/relay/it/relay-remote/"+path, tok, nil, "Trove-Authz-Min-Epoch", epoch)
 	}
 	refused := func() float64 {
 		return testenv.MetricValue(h.Metrics(t), `trove_endpoint_cache_fill_refused_total{endpoint="customers"}`)

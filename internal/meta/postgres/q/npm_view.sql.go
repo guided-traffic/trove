@@ -91,7 +91,7 @@ type NPMViewFindParams struct {
 	MaxRows int32
 }
 
-// Versions of the given repositories whose description contains the text
+// Versions of the given repositories (qualified names, <project>/<key>) whose description contains the text
 // (case-insensitively) or whose keywords contain the keyword. One of text and
 // keyword is set. At most max_rows rows; the caller asks for one more than it
 // accepts. The caller intersects the ids with what the subject may read.

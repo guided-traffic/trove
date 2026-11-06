@@ -29,7 +29,7 @@ func get(t *testing.T, h *formattest.Host, method, path string, mods ...func(*ht
 	return resp
 }
 
-const feedOfMain = "https://trove.test/api/nuget/main/v3/"
+const feedOfMain = "https://trove.test/api/nuget/it/main/v3/"
 
 // TestR_NUGET_001_TheServiceIndexIsIdenticalAtThreeSpellings: "<feed>/index.json", "<feed>/"
 // and "<feed>" answer with byte-identical bodies and headers, without a redirect.

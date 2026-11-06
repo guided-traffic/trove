@@ -21,7 +21,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/nuget/rows"
 )
 
-const feedURL = "https://trove.example.com/api/nuget/main/v3/"
+const feedURL = "https://trove.example.com/api/nuget/it/main/v3/"
 
 func gunzip(t testing.TB, b []byte) []byte {
 	t.Helper()

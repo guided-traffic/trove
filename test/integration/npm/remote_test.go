@@ -94,7 +94,7 @@ func TestR_NPM_025_TarballAddressesAreOnTheServingRepository(t *testing.T) {
 			t.Fatalf("%s: %d tarballs", c.repo, len(tars))
 		}
 		for v, addr := range tars {
-			want := "http://trove.test/api/npm/" + c.repo + "/" + p.Name + "/-/" + corpus.TarballFile(p.Name, v)
+			want := "http://trove.test/api/npm/it/" + c.repo + "/" + p.Name + "/-/" + corpus.TarballFile(p.Name, v)
 			if addr != want {
 				t.Errorf("%s %s: tarball %q, want %q", c.repo, v, addr, want)
 			}
@@ -105,7 +105,7 @@ func TestR_NPM_025_TarballAddressesAreOnTheServingRepository(t *testing.T) {
 	}
 	// The cache view names itself.
 	cv := r.view(rep, rRemote+"~cache", strings.Replace(p.Name, "/", "%2f", 1), r.tokA)
-	if cv.Status != 200 || !strings.Contains(string(cv.Body), "/api/npm/npm-remote~cache/") {
+	if cv.Status != 200 || !strings.Contains(string(cv.Body), "/api/npm/it/npm-remote~cache/") {
 		t.Errorf("cache view: %d %.300s", cv.Status, cv.Body)
 	}
 }
@@ -135,7 +135,7 @@ func TestR_NPM_024_FiftyConcurrentRequestsOverThreeReplicasCauseOneUpstreamReque
 					if i%2 == 0 {
 						hdr = []string{"Accept", abbreviatedAccept}
 					}
-					a := r.st.Do(reps[i%3], http.MethodGet, "/api/npm/"+rRemote+"/"+p.Name, r.tokA, nil, hdr...)
+					a := r.st.Do(reps[i%3], http.MethodGet, "/api/npm/it/"+rRemote+"/"+p.Name, r.tokA, nil, hdr...)
 					if a.Status != 200 {
 						failures <- string(a.Body)
 					}

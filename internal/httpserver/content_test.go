@@ -98,7 +98,7 @@ func TestHandleUncleaned(t *testing.T) {
 			seen = append(seen, req.URL.EscapedPath())
 			w.WriteHeader(http.StatusTeapot)
 		})
-		r.Handle("GET /files/{repoKey}/{path...}", h)
+		r.Handle("GET /files/{projectKey}/{repoKey}/{path...}", h)
 		r.HandleUncleaned("/files/", h)
 		return r, &seen
 	}
@@ -111,7 +111,7 @@ func TestHandleUncleaned(t *testing.T) {
 	}
 
 	t.Run("R-GENERIC-002 a path with an empty or dot segment reaches the handler instead of a redirect", func(t *testing.T) {
-		for _, p := range []string{"/files/r/a//b", "/files/r/a/./b", "/files/r/a/../b", "/files//a"} {
+		for _, p := range []string{"/files/it/rr/a//b", "/files/it/rr/a/./b", "/files/it/rr/a/../b", "/files//a"} {
 			r, seen := newRouter()
 			if rec := serve(r, p); rec.Code != http.StatusTeapot || len(*seen) != 1 {
 				t.Errorf("%s: %d, %d calls", p, rec.Code, len(*seen))
@@ -120,7 +120,7 @@ func TestHandleUncleaned(t *testing.T) {
 	})
 
 	t.Run("R-ARCH-005 a clean path, with or without a trailing slash, takes the pattern", func(t *testing.T) {
-		for _, p := range []string{"/files/r/a/b", "/files/r/a/b/", "/files/r/", "/files/r/%2e%2e/x"} {
+		for _, p := range []string{"/files/it/rr/a/b", "/files/it/rr/a/b/", "/files/it/rr/", "/files/it/rr/%2e%2e/x"} {
 			r, seen := newRouter()
 			if rec := serve(r, p); rec.Code != http.StatusTeapot || len(*seen) != 1 {
 				t.Errorf("%s: %d, %d calls", p, rec.Code, len(*seen))
@@ -139,12 +139,12 @@ func TestHandleUncleaned(t *testing.T) {
 	t.Run("R-EP-005 the prefix is dropped on an endpoint whose surface leaves the family out", func(t *testing.T) {
 		r := NewEndpointRouter(endpointFixture(t, twoEndpoints(), "customers"))
 		teapot := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
-		r.Handle("GET /files/{repoKey}/{path...}", teapot)
+		r.Handle("GET /files/{projectKey}/{repoKey}/{path...}", teapot)
 		r.HandleUncleaned("/files/", teapot)
 		if len(r.Dropped()) != 1 {
 			t.Fatalf("dropped = %v", r.Dropped())
 		}
-		if rec := serve(r, "/files/r/a//b"); rec.Code == http.StatusTeapot {
+		if rec := serve(r, "/files/it/rr/a//b"); rec.Code == http.StatusTeapot {
 			t.Error("the files handler answered on an endpoint without the files surface")
 		}
 	})
@@ -152,7 +152,7 @@ func TestHandleUncleaned(t *testing.T) {
 	t.Run("R-ARCH-005 the label of an uncleaned request is the prefix, never the path", func(t *testing.T) {
 		r, _ := newRouter()
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		req.URL.Path = "/files/r/a//b"
+		req.URL.Path = "/files/it/rr/a//b"
 		if got := r.Pattern(req); got != "/files/" || strings.Contains(got, "a//b") {
 			t.Errorf("Pattern = %q", got)
 		}

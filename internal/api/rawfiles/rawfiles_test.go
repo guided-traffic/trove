@@ -18,7 +18,7 @@ func TestDirectoryIndex(t *testing.T) {
 		{Path: "a b&c", Kind: items.KindFile},
 		{Path: "sub", Kind: items.KindFolder},
 	}
-	r := httptest.NewRequest("GET", "/files/r/tools/", nil)
+	r := httptest.NewRequest("GET", "/files/it/rr/tools/", nil)
 	page := renderHTML("r", "tools", entries, "", r)
 
 	t.Run("R-STOR-017 every name is HTML-escaped", func(t *testing.T) {
@@ -92,9 +92,9 @@ func TestInvalidPathsAreRefusedBeforeAnything_else(t *testing.T) {
 	// before authorization and before any lookup, and that the paths ServeMux would
 	// redirect reach the handler.
 	for _, path := range []string{
-		"/files/r/a/%2e%2e/x", "/files/r/a//b", "/files/r/a%00b", "/files/r/a%5Cb", "/files/r/a/../x", "/files/r/a/./x",
+		"/files/it/rr/a/%2e%2e/x", "/files/it/rr/a//b", "/files/it/rr/a%00b", "/files/it/rr/a%5Cb", "/files/it/rr/a/../x", "/files/it/rr/a/./x",
 		// An empty first segment right after the key (security finding: it was served as /files/r/x).
-		"/files/r//x", "/files/r//",
+		"/files/it/rr//x", "/files/it/rr//",
 	} {
 		t.Run("R-GENERIC-002 "+path, func(t *testing.T) {
 			for _, method := range []string{"GET", "PUT", "DELETE"} {
@@ -113,7 +113,7 @@ func TestInvalidPathsAreRefusedBeforeAnything_else(t *testing.T) {
 	}
 	t.Run("R-GENERIC-002 a clean path reaches the service, which is not there", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		router().ServeHTTP(rec, httptest.NewRequest("GET", "/files/r/a/b.bin", nil))
+		router().ServeHTTP(rec, httptest.NewRequest("GET", "/files/it/rr/a/b.bin", nil))
 		if rec.Code != 503 {
 			t.Errorf("status %d", rec.Code)
 		}
@@ -144,7 +144,7 @@ func TestRoutesAgreeWithTheDocument(t *testing.T) {
 	})
 	t.Run("R-API-002 a files route that the document lacks is named", func(t *testing.T) {
 		r := router()
-		r.HandleFunc("POST /files/{repoKey}/{path...}", func(http.ResponseWriter, *http.Request) {})
+		r.HandleFunc("POST /files/{projectKey}/{repoKey}/{path...}", func(http.ResponseWriter, *http.Request) {})
 		patterns := r.Patterns()
 		for p := range doc.Operations() {
 			patterns = append(patterns, p)
@@ -152,7 +152,7 @@ func TestRoutesAgreeWithTheDocument(t *testing.T) {
 		for p := range doc.ContentOperations() {
 			patterns = append(patterns, strings.Replace(p, "{path}", "{path...}", 1))
 		}
-		if err := doc.CheckRoutes(patterns); err == nil || !strings.Contains(err.Error(), "POST /files/{repoKey}/{path...}") {
+		if err := doc.CheckRoutes(patterns); err == nil || !strings.Contains(err.Error(), "POST /files/{projectKey}/{repoKey}/{path...}") {
 			t.Fatalf("err = %v", err)
 		}
 	})

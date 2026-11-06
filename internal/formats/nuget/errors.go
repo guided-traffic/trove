@@ -117,7 +117,7 @@ func v2Message(r *http.Request) string {
 	const text = "NuGet v2 is not supported; this repository serves the NuGet v3 protocol"
 	ref, ok := formats.RefusalFrom(r)
 	if !ok {
-		return text + " at the service index of the repository (<base>/api/nuget/<repository>/v3/index.json)."
+		return text + " at the service index of the repository (<base>/api/nuget/<projectKey>/<repoKey>/v3/index.json)."
 	}
 	return text + ". Use its service index as the package source: " + ref.Registry() + FeedSegment + "/" + indexFile
 }

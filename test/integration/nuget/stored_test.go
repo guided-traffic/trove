@@ -70,7 +70,7 @@ func leaves(t testing.TB, idx map[string]any) []map[string]any {
 func TestR_NUGET_008_TheDocumentsOfPushedVersions(t *testing.T) {
 	e := newWriteEnv(t)
 	a, b := e.replica("web-a"), e.replica("web-b")
-	const feed = "/api/nuget/nuget-local/v3/"
+	const feed = "/api/nuget/it/nuget-local/v3/"
 	pkgs := map[string][]byte{}
 	for _, v := range []string{"1.2.3", "1.0.0", "1.1.0-ci.5", "1.3.0-beta.1+sha.abc"} {
 		s := pkgSpec{id: "Acme.Widgets", version: v, title: "Widget Toolkit", tags: "ui toolkit"}
@@ -201,7 +201,7 @@ func TestR_NUGET_008_TheDocumentsOfPushedVersions(t *testing.T) {
 	})
 
 	t.Run("a hard delete takes the version out of every document and leaves a tombstone", func(t *testing.T) {
-		const hard = "/api/nuget/nuget-hard/v3/"
+		const hard = "/api/nuget/it/nuget-hard/v3/"
 		only := nupkg(t, pkgSpec{id: "Acme.Gadgets", version: "1.0.0"})
 		e.mustPush(a, "nuget-hard", e.tokDev, only)
 		if ans := e.st.Do(a, "GET", hard+"flatcontainer/acme.gadgets/index.json", e.tokReader, nil); ans.Status != 200 {
@@ -245,7 +245,7 @@ func TestR_NUGET_010_SearchFindsWhatWasPushed(t *testing.T) {
 	}
 	search := func(r *testenv.Replica, token, query string) searchResult {
 		t.Helper()
-		ans := e.st.Do(r, "GET", "/api/nuget/nuget-local/v3/search?"+query, token, nil)
+		ans := e.st.Do(r, "GET", "/api/nuget/it/nuget-local/v3/search?"+query, token, nil)
 		if ans.Status != 200 {
 			t.Fatalf("search %s: %d %s", query, ans.Status, ans.Body)
 		}
@@ -283,7 +283,7 @@ func TestR_NUGET_010_SearchFindsWhatWasPushed(t *testing.T) {
 	if r := search(a, e.tokReader, "q=widget"); r.TotalHits != 1 || r.Data[0].Version != "1.0.0" {
 		t.Errorf("an unlisted version leaves the result, the older listed one is the latest: %+v", r)
 	}
-	if ans := e.st.Do(a, "GET", "/api/nuget/nuget-local/v3/search?q=widget", e.tokNobody, nil); ans.Status == 200 && func() bool {
+	if ans := e.st.Do(a, "GET", "/api/nuget/it/nuget-local/v3/search?q=widget", e.tokNobody, nil); ans.Status == 200 && func() bool {
 		var r searchResult
 		_ = json.Unmarshal(ans.Body, &r)
 		return r.TotalHits != 0
@@ -304,7 +304,7 @@ func TestR_NUGET_012_PushWithTheAPIKey(t *testing.T) {
 	a := e.replica("web-a")
 	push := func(pkg []byte, hdr ...string) testenv.Answer {
 		body, ct := form(t, pkg)
-		return e.st.Do(a, "PUT", "/api/nuget/nuget-local/v3/package", "", body, append([]string{"Content-Type", ct}, hdr...)...)
+		return e.st.Do(a, "PUT", "/api/nuget/it/nuget-local/v3/package", "", body, append([]string{"Content-Type", ct}, hdr...)...)
 	}
 	if ans := push(nupkg(t, pkgSpec{id: "Key.One", version: "1.0.0"}), "X-NuGet-ApiKey", e.tokDev); ans.Status != 201 {
 		t.Fatalf("the token as key: %d %s", ans.Status, ans.Body)

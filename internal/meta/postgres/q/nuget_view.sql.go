@@ -87,7 +87,7 @@ type NuGetViewFindParams struct {
 	MaxRows int32
 }
 
-// Versions of the given repositories whose description (the summary when there is none)
+// Versions of the given repositories (qualified names, <project>/<key>) whose description (the summary when there is none)
 // contains the text, case-insensitively, or whose tags contain the keyword. One of text and
 // keyword is set. At most max_rows rows; the caller asks for one more than it accepts and
 // intersects the ids with what the subject may read.

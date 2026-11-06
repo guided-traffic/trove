@@ -10,7 +10,8 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 )
 
-// ResolvedFromHeader names the member that served an artifact (R-REPO-019). It is a member the
+// ResolvedFromHeader names the member that served an artifact (R-REPO-019) by its key: a member lives in the project
+// of its virtual repository (Q-REPO-217), so the key names it. It is a member the
 // caller can read, so it discloses nothing new; it is never sent on an endpoint with exposure
 // rules, because members are not exposed there (R-EP-018).
 const ResolvedFromHeader = "Trove-Resolved-From"

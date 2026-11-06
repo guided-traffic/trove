@@ -145,7 +145,7 @@ func TestR_NUGET_007_TheDeleteOfADeleteModeRepositoryRemovesTheVersionForGood(t 
 	if got := h.RevSeq(idPackage); got <= rev {
 		t.Errorf("rev_seq %d -> %d, want it raised", rev, got)
 	}
-	if len(h.st.Tombstones) != 1 || h.st.Tombstones[0].Audit.RepoKey != "main" {
+	if len(h.st.Tombstones) != 1 || h.st.Tombstones[0].Audit.RepoKey != "it/main" {
 		t.Errorf("tombstone writes = %+v", h.st.Tombstones)
 	}
 	if err := h.served(t, acmePath); err == nil {

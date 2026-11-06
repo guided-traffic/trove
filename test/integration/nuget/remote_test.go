@@ -171,7 +171,7 @@ func TestR_NUGET_015_AnIDWithManyVersionsIsRePagedAndCollapsed(t *testing.T) {
 		if len(p.Items) != 0 {
 			t.Errorf("page %s..%s is inlined: trove's paging does not inline 200 versions", p.Lower, p.Upper)
 		}
-		path := strings.TrimPrefix(p.ID, feedBase+"/api/nuget/"+rRemote+"/")
+		path := strings.TrimPrefix(p.ID, feedBase+"/api/nuget/it/"+rRemote+"/")
 		pg := e.get(rep, rRemote, path)
 		if pg.Status != 200 {
 			t.Fatalf("page %s: %d %s", p.ID, pg.Status, pg.Body)
@@ -336,7 +336,7 @@ func TestR_NUGET_015_ARefreshOfAnUnchangedDocumentIsAConditionalRequest(t *testi
 	if cond := e.get(rep, rFast, "v3/flatcontainer/newtonsoft.json/index.json", "If-None-Match", etag); cond.Status != 304 {
 		t.Errorf("conditional request: %d, want 304", cond.Status)
 	}
-	head := e.st.Do(rep, "HEAD", "/api/nuget/"+rFast+"/v3/flatcontainer/newtonsoft.json/index.json", e.tokReader, nil)
+	head := e.st.Do(rep, "HEAD", "/api/nuget/it/"+rFast+"/v3/flatcontainer/newtonsoft.json/index.json", e.tokReader, nil)
 	if head.Status != 200 || len(head.Body) != 0 || head.Header.Get("Content-Length") != fmt.Sprint(len(again.Body)) {
 		t.Errorf("HEAD: %d, %d bytes, Content-Length %q", head.Status, len(head.Body), head.Header.Get("Content-Length"))
 	}
@@ -612,7 +612,7 @@ func TestR_NUGET_015_AGzipHiveIsAnsweredToEveryClientInTheCodingItAccepts(t *tes
 	if len(d.Items) != 4 {
 		t.Fatalf("%d pages", len(d.Items))
 	}
-	path := strings.TrimPrefix(d.Items[1].ID, feedBase+"/api/nuget/"+rRemote+"/")
+	path := strings.TrimPrefix(d.Items[1].ID, feedBase+"/api/nuget/it/"+rRemote+"/")
 	pg := e.get(rep, rRemote, path)
 	if pg.Status != 200 || pg.Header.Get("Content-Encoding") != "" || !json.Valid(pg.Body) {
 		t.Errorf("page: %d %q valid=%v", pg.Status, pg.Header.Get("Content-Encoding"), json.Valid(pg.Body))
@@ -801,7 +801,7 @@ func TestR_NUGET_030_ReplicasRenderTheSameBytesAndTheSameValidator(t *testing.T)
 func TestR_NUGET_015_APushToARemoteIs405(t *testing.T) {
 	e := newRemoteEnv(t, remoteOptions{})
 	rep := e.start(1)[0]
-	a := e.st.Do(rep, "PUT", "/api/nuget/"+rRemote+"/v3/package", e.tokAdmin, []byte("x"))
+	a := e.st.Do(rep, "PUT", "/api/nuget/it/"+rRemote+"/v3/package", e.tokAdmin, []byte("x"))
 	if a.Status != 405 {
 		t.Errorf("push: %d %s", a.Status, a.Body)
 	}
@@ -813,7 +813,7 @@ func TestR_NUGET_015_APushToARemoteIs405(t *testing.T) {
 func TestR_AUTHZ_016_AnIDTheCallerMayNotReadIsNotFetched(t *testing.T) {
 	e := newRemoteEnv(t, remoteOptions{})
 	rep := e.start(1)[0]
-	a := e.st.Do(rep, "GET", "/api/nuget/"+rRemote+"/v3/flatcontainer/newtonsoft.json/index.json", e.tokNobody, nil)
+	a := e.st.Do(rep, "GET", "/api/nuget/it/"+rRemote+"/v3/flatcontainer/newtonsoft.json/index.json", e.tokNobody, nil)
 	if a.Status == 200 {
 		t.Fatalf("%d %s", a.Status, a.Body)
 	}

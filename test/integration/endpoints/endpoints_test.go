@@ -35,7 +35,7 @@ func metrics(t *testing.T, r *replica) string {
 
 func metricValue(text, series string) float64 { return testenv.MetricValue(text, series) }
 
-const releasesRule = `{"name":"releases","description":"Released files for customers","repository":"generic-local","paths":{"include":["releases/**"]}}`
+const releasesRule = `{"name":"releases","description":"Released files for customers","repository":"it/generic-local","paths":{"include":["releases/**"]}}`
 
 // TestE1_14_CustomerEndpoint is exit criterion E1.14 with three replicas behind a
 // dispatcher, once with Valkey running and once with Valkey unreachable: the
@@ -51,7 +51,7 @@ func TestE1_14_CustomerEndpoint(t *testing.T) {
 				e.start(fmt.Sprintf("ep-%s-%d", mode(valkey), i))
 			}
 			ctx := context.Background()
-			file := "/files/generic-local/releases/1.0/app.zip"
+			file := "/files/it/generic-local/releases/1.0/app.zip"
 
 			t.Run("R-EP-010 a PAT on customers is 401 invalid_token without a token-table query", func(t *testing.T) {
 				// The query counter is a lock: while api_token is locked exclusively,
@@ -162,11 +162,11 @@ func TestE1_14_CustomerEndpoint(t *testing.T) {
 
 			t.Run("R-EP-014 R-EP-013 a file outside the rule answers the 404 of a missing file", func(t *testing.T) {
 				r := e.pick()
-				hidden := e.onCustomers(r, "/files/generic-local/internal/x.bin", e.acmeSAT)
+				hidden := e.onCustomers(r, "/files/it/generic-local/internal/x.bin", e.acmeSAT)
 				if hidden.Status != 404 {
 					t.Fatalf("%d %s", hidden.Status, hidden.Body)
 				}
-				for _, p := range []string{"/files/generic-local/releases/9.9/none.zip", "/files/generic-local/internal/none.bin", "/files/ghost/releases/1.0/app.zip", "/files/generic-other/releases/1.0/app.zip"} {
+				for _, p := range []string{"/files/it/generic-local/releases/9.9/none.zip", "/files/it/generic-local/internal/none.bin", "/files/it/ghost/releases/1.0/app.zip", "/files/it/generic-other/releases/1.0/app.zip"} {
 					if a := e.onCustomers(r, p, e.acmeSAT); a.Status != 404 || a.Problem(t) != hidden.Problem(t) {
 						t.Errorf("%s: %d %s, want the bytes of %s", p, a.Status, a.Body, hidden.Body)
 					}
@@ -177,7 +177,7 @@ func TestE1_14_CustomerEndpoint(t *testing.T) {
 				})
 				// Through the default endpoint the same token is refused; an unbound
 				// token of the same account reads the internal file there.
-				if a := e.send(r.def, "trove.test", "GET", "/files/generic-local/internal/x.bin", e.acmeUnbound, nil); a.Status != 200 {
+				if a := e.send(r.def, "trove.test", "GET", "/files/it/generic-local/internal/x.bin", e.acmeUnbound, nil); a.Status != 200 {
 					t.Fatalf("default: %d %s", a.Status, a.Body)
 				}
 			})
@@ -187,13 +187,13 @@ func TestE1_14_CustomerEndpoint(t *testing.T) {
 					if a := e.onCustomers(r, file, e.botAdminSAT); a.Status != 200 {
 						t.Fatalf("%s exposed: %d %s", r.name, a.Status, a.Body)
 					}
-					if a := e.onCustomers(r, "/files/generic-local/internal/x.bin", e.botAdminSAT); a.Status != 404 {
+					if a := e.onCustomers(r, "/files/it/generic-local/internal/x.bin", e.botAdminSAT); a.Status != 404 {
 						t.Fatalf("%s hidden: %d %s", r.name, a.Status, a.Body)
 					}
 					// The listing of the files operation holds what the rules expose
 					// and no more: the folder of the exposed files lists them, the
 					// folder outside the rules is the 404 of a missing one.
-					list := e.onCustomers(r, "/files/generic-local/releases/", e.botAdminSAT)
+					list := e.onCustomers(r, "/files/it/generic-local/releases/", e.botAdminSAT)
 					var page struct {
 						Items []struct {
 							Path string `json:"path"`
@@ -209,11 +209,11 @@ func TestE1_14_CustomerEndpoint(t *testing.T) {
 					if !slices.Equal(got, []string{"1.0", "2.0"}) {
 						t.Fatalf("%s listing: %v, want the two exposed folders: %s", r.name, got, list.Body)
 					}
-					if a := e.onCustomers(r, "/files/generic-local/internal/", e.botAdminSAT); a.Status != 404 {
+					if a := e.onCustomers(r, "/files/it/generic-local/internal/", e.botAdminSAT); a.Status != 404 {
 						t.Fatalf("%s hidden listing: %d %s", r.name, a.Status, a.Body)
 					}
 				}
-				if a := e.send(e.pick().def, "trove.test", "GET", "/files/generic-local/releases/", e.botAdminSAT, nil); a.Status != 401 {
+				if a := e.send(e.pick().def, "trove.test", "GET", "/files/it/generic-local/releases/", e.botAdminSAT, nil); a.Status != 401 {
 					t.Fatalf("the bound administrator token on default: %d", a.Status)
 				}
 				if v := metricValue(metrics(t, e.reps[0]), `trove_exposure_hidden_total{endpoint="customers",kind="request"}`); v < 1 {
@@ -231,7 +231,7 @@ func TestE1_14_CustomerEndpoint(t *testing.T) {
 				}
 				for _, r := range e.reps {
 					waitFor(t, r.name+" hiding releases/2.0", propagation, func() bool {
-						return e.onCustomers(r, "/files/generic-local/releases/2.0/app.zip", e.acmeSAT2).Status == 404
+						return e.onCustomers(r, "/files/it/generic-local/releases/2.0/app.zip", e.acmeSAT2).Status == 404
 					})
 					if a := e.onCustomers(r, file, e.acmeSAT2); a.Status != 200 {
 						t.Fatalf("%s releases/1.0: %d", r.name, a.Status)
@@ -386,8 +386,8 @@ func TestR_EP_016_EndpointAndExposureAPI(t *testing.T) {
 
 	t.Run("R-EP-016 filters of the rule list", func(t *testing.T) {
 		for _, b := range []string{
-			`{"name":"f-one","repository":"generic-local","paths":{"include":["f/**"]}}`,
-			`{"name":"f-two","repository":"generic-other","enabled":false}`,
+			`{"name":"f-one","repository":"it/generic-local","paths":{"include":["f/**"]}}`,
+			`{"name":"f-two","repository":"it/generic-other","enabled":false}`,
 		} {
 			if a := e.api("POST", "/api/v1/endpoints/customers/exposure-rules", []byte(b)); a.Status != 201 {
 				t.Fatalf("%d %s", a.Status, a.Body)
@@ -409,7 +409,7 @@ func TestR_EP_016_EndpointAndExposureAPI(t *testing.T) {
 			}
 			return out
 		}
-		if got := names("repository=generic-other"); !slices.Equal(got, []string{"f-two"}) {
+		if got := names("repository=it%2Fgeneric-other"); !slices.Equal(got, []string{"f-two"}) {
 			t.Errorf("repository: %v", got)
 		}
 		if got := names("enabled=false"); !slices.Equal(got, []string{"f-two"}) {
@@ -424,11 +424,11 @@ func TestR_EP_016_EndpointAndExposureAPI(t *testing.T) {
 		for _, c := range []struct {
 			body, code, pointer string
 		}{
-			{`{"name":"v1","repository":"generic-local","packages":{"include":["x"]}}`, errs.CodeDimensionNotSupported, "/packages"},
-			{`{"name":"v2","repository":"generic-local","versions":{"range":">=1.0.0"}}`, errs.CodeDimensionNotSupported, "/versions"},
-			{`{"name":"v3","repository":"ghost"}`, errs.CodeUnknownRepository, "/repository"},
-			{`{"name":"v4","repository":"generic-local","paths":{"include":["a//b"]}}`, errs.CodeInvalidPattern, "/paths/include/0"},
-			{`{"name":"Bad Name","repository":"generic-local"}`, "pattern", "/name"},
+			{`{"name":"v1","repository":"it/generic-local","packages":{"include":["x"]}}`, errs.CodeDimensionNotSupported, "/packages"},
+			{`{"name":"v2","repository":"it/generic-local","versions":{"range":">=1.0.0"}}`, errs.CodeDimensionNotSupported, "/versions"},
+			{`{"name":"v3","repository":"it/ghost"}`, errs.CodeUnknownRepository, "/repository"},
+			{`{"name":"v4","repository":"it/generic-local","paths":{"include":["a//b"]}}`, errs.CodeInvalidPattern, "/paths/include/0"},
+			{`{"name":"Bad Name","repository":"it/generic-local"}`, "pattern", "/name"},
 		} {
 			a := e.api("POST", "/api/v1/endpoints/customers/exposure-rules", []byte(c.body))
 			m := a.JSON(t)
@@ -437,16 +437,16 @@ func TestR_EP_016_EndpointAndExposureAPI(t *testing.T) {
 				t.Errorf("%s: %d %s", c.body, a.Status, a.Body)
 			}
 		}
-		if a := e.api("POST", "/api/v1/endpoints/customers/exposure-rules", []byte(`{"name":"f-one","repository":"generic-local"}`)); a.Status != 409 || a.JSON(t)["code"] != errs.CodeAlreadyExists {
+		if a := e.api("POST", "/api/v1/endpoints/customers/exposure-rules", []byte(`{"name":"f-one","repository":"it/generic-local"}`)); a.Status != 409 || a.JSON(t)["code"] != errs.CodeAlreadyExists {
 			t.Errorf("a taken name: %d %s", a.Status, a.Body)
 		}
-		if a := e.api("POST", "/api/v1/endpoints/nowhere/exposure-rules", []byte(`{"name":"x","repository":"generic-local"}`)); a.Status != 404 {
+		if a := e.api("POST", "/api/v1/endpoints/nowhere/exposure-rules", []byte(`{"name":"x","repository":"it/generic-local"}`)); a.Status != 404 {
 			t.Errorf("an unknown endpoint: %d %s", a.Status, a.Body)
 		}
-		if a := e.api("POST", "/api/v1/endpoints/retired/exposure-rules", []byte(`{"name":"x","repository":"generic-local"}`)); a.Status != 409 || a.JSON(t)["code"] != errs.CodeEndpointNotConfigured {
+		if a := e.api("POST", "/api/v1/endpoints/retired/exposure-rules", []byte(`{"name":"x","repository":"it/generic-local"}`)); a.Status != 409 || a.JSON(t)["code"] != errs.CodeEndpointNotConfigured {
 			t.Errorf("an inert endpoint: %d %s", a.Status, a.Body)
 		}
-		a := e.api("POST", "/api/v1/endpoints/default/exposure-rules", []byte(`{"name":"on-default","repository":"generic-local"}`))
+		a := e.api("POST", "/api/v1/endpoints/default/exposure-rules", []byte(`{"name":"on-default","repository":"it/generic-local"}`))
 		if w, _ := a.JSON(t)["warnings"].([]any); a.Status != 201 || len(w) != 1 || w[0] != "endpoint_not_in_rules_mode" {
 			t.Errorf("a rule on an endpoint in mode all: %d %s", a.Status, a.Body)
 		}
@@ -456,7 +456,7 @@ func TestR_EP_016_EndpointAndExposureAPI(t *testing.T) {
 		check := func(body string) answer {
 			return e.api("POST", "/api/v1/endpoints/customers/check-exposure", []byte(body))
 		}
-		a := check(`{"repository":"generic-local","paths":["f/x.zip","g/y.zip"]}`)
+		a := check(`{"repository":"it/generic-local","paths":["f/x.zip","g/y.zip"]}`)
 		var res struct {
 			Mode           string `json:"mode"`
 			PackageExposed bool   `json:"packageExposed"`
@@ -474,20 +474,20 @@ func TestR_EP_016_EndpointAndExposureAPI(t *testing.T) {
 		if !res.Paths[0].Exposed || res.Paths[0].Rule == nil || *res.Paths[0].Rule != "f-one" || res.Paths[1].Exposed || res.Paths[1].Reason == "exposed" {
 			t.Fatalf("%s", a.Body)
 		}
-		draft := check(`{"repository":"generic-local","paths":["g/y.zip"],"rule":{"name":"draft","repository":"generic-local","paths":{"include":["g/**"]}}}`)
+		draft := check(`{"repository":"it/generic-local","paths":["g/y.zip"],"rule":{"name":"draft","repository":"it/generic-local","paths":{"include":["g/**"]}}}`)
 		if !strings.Contains(string(draft.Body), `"rule":"draft"`) || draft.JSON(t)["exposureFingerprint"] != res.Fingerprint {
 			t.Fatalf("a draft: %d %s", draft.Status, draft.Body)
 		}
-		if off := check(`{"repository":"generic-other","paths":["a"]}`); !strings.Contains(string(off.Body), `"reason":"rule_disabled"`) {
+		if off := check(`{"repository":"it/generic-other","paths":["a"]}`); !strings.Contains(string(off.Body), `"reason":"rule_disabled"`) {
 			t.Fatalf("a disabled rule: %s", off.Body)
 		}
-		if bad := check(`{"repository":"generic-local","versions":["1.0.0"]}`); bad.Status != 422 || bad.JSON(t)["code"] != errs.CodeValidation || !strings.Contains(string(bad.Body), `"code":"`+errs.CodeDimensionNotSupported+`"`) {
+		if bad := check(`{"repository":"it/generic-local","versions":["1.0.0"]}`); bad.Status != 422 || bad.JSON(t)["code"] != errs.CodeValidation || !strings.Contains(string(bad.Body), `"code":"`+errs.CodeDimensionNotSupported+`"`) {
 			t.Fatalf("versions on generic: %d %s", bad.Status, bad.Body)
 		}
-		if missing := check(`{"repository":"ghost"}`); missing.Status != 404 {
+		if missing := check(`{"repository":"it/ghost"}`); missing.Status != 404 {
 			t.Fatalf("a missing repository: %d %s", missing.Status, missing.Body)
 		}
-		if all := e.api("POST", "/api/v1/endpoints/default/check-exposure", []byte(`{"repository":"generic-local","paths":["anything"]}`)); !strings.Contains(string(all.Body), `"mode":"all"`) || !strings.Contains(string(all.Body), `"exposed":true`) {
+		if all := e.api("POST", "/api/v1/endpoints/default/check-exposure", []byte(`{"repository":"it/generic-local","paths":["anything"]}`)); !strings.Contains(string(all.Body), `"mode":"all"`) || !strings.Contains(string(all.Body), `"exposed":true`) {
 			t.Fatalf("mode all: %s", all.Body)
 		}
 	})
@@ -497,7 +497,7 @@ func TestR_EP_016_EndpointAndExposureAPI(t *testing.T) {
 		if a := e.send(r.def, "trove.test", "GET", "/api/v1/endpoints/customers/exposure-rules", auditorPAT, nil); a.Status != 200 {
 			t.Fatalf("auditor read: %d %s", a.Status, a.Body)
 		}
-		if a := e.send(r.def, "trove.test", "POST", "/api/v1/endpoints/customers/exposure-rules", auditorPAT, []byte(`{"name":"x","repository":"generic-local"}`)); a.Status != 403 {
+		if a := e.send(r.def, "trove.test", "POST", "/api/v1/endpoints/customers/exposure-rules", auditorPAT, []byte(`{"name":"x","repository":"it/generic-local"}`)); a.Status != 403 {
 			t.Fatalf("auditor write: %d %s", a.Status, a.Body)
 		}
 		if a := e.send(r.def, "trove.test", "GET", "/api/v1/endpoints", e.alicePAT, nil); a.Status != 403 {

@@ -258,7 +258,7 @@ func TestR_NPM_017_UnpublishSequence(t *testing.T) {
 		e.mustPublish(c, "npm-local", e.tokA, pkg{Name: "@acme/ui", Version: "1.2.1"})
 	})
 	t.Run("the tarball and the raw item are 404, though the number is tombstoned and not unknown", func(t *testing.T) {
-		for _, path := range []string{"/api/npm/npm-local/@acme%2fui/-/ui-1.2.0.tgz", "/files/npm-local/@acme/ui/-/ui-1.2.0.tgz"} {
+		for _, path := range []string{"/api/npm/it/npm-local/@acme%2fui/-/ui-1.2.0.tgz", "/files/it/npm-local/@acme/ui/-/ui-1.2.0.tgz"} {
 			if ans := e.st.Do(b, "GET", path, e.tokA, nil); ans.Status != 404 {
 				t.Fatalf("%s: %d", path, ans.Status)
 			}
@@ -399,7 +399,7 @@ func TestR_NPM_017_RawDeleteUnpublishes(t *testing.T) {
 	e.mustPublish(a, "npm-local", e.tokA, pkg{Name: "rawdel", Version: "1.0.0"})
 	e.mustPublish(a, "npm-local", e.tokA, pkg{Name: "rawdel", Version: "1.1.0"})
 	seq := e.revSeq("npm-local", "rawdel")
-	if ans := e.st.Do(b, "DELETE", "/files/npm-local/rawdel/-/rawdel-1.1.0.tgz", e.tokA, nil); ans.Status/100 != 2 {
+	if ans := e.st.Do(b, "DELETE", "/files/it/npm-local/rawdel/-/rawdel-1.1.0.tgz", e.tokA, nil); ans.Status/100 != 2 {
 		t.Fatalf("%d %s", ans.Status, ans.Body)
 	}
 	if e.revSeq("npm-local", "rawdel") <= seq {
@@ -420,7 +420,7 @@ func TestR_NPM_017_RawDeleteUnpublishes(t *testing.T) {
 		// the removed files, under the package row lock, before the first row goes (Q-AUTHZ-161).
 		e.mustPublish(a, "npm-local", e.tokA, pkg{Name: "rawdel2", Version: "1.0.0"})
 		e.mustPublish(a, "npm-local", e.tokA, pkg{Name: "rawdel2", Version: "1.1.0"})
-		for _, path := range []string{"/files/npm-local/rawdel2/-/rawdel2-1.1.0.tgz", "/api/v1/repositories/npm-local/items?path=rawdel2/-/rawdel2-1.1.0.tgz"} {
+		for _, path := range []string{"/files/it/npm-local/rawdel2/-/rawdel2-1.1.0.tgz", "/api/v1/projects/it/repositories/npm-local/items?path=rawdel2/-/rawdel2-1.1.0.tgz"} {
 			ans := e.st.Do(b, "DELETE", path, e.tokB, nil)
 			if ans.Status != 403 || problemCode(t, ans) != "package_owned_by_other_owner" {
 				t.Fatalf("%s: %d %s", path, ans.Status, ans.Body)
@@ -429,7 +429,7 @@ func TestR_NPM_017_RawDeleteUnpublishes(t *testing.T) {
 		if e.tombstones("npm-local", "rawdel2") != 0 || e.versions("npm-local", "rawdel2") != 2 || e.itemCount("npm-local", "rawdel2/-/rawdel2-1.1.0.tgz") != 1 {
 			t.Fatal("a refused delete removed something")
 		}
-		if ans := e.st.Do(b, "DELETE", "/api/v1/repositories/npm-local/items?path=rawdel2/-/rawdel2-1.1.0.tgz", e.tokA, nil); ans.Status != 204 {
+		if ans := e.st.Do(b, "DELETE", "/api/v1/projects/it/repositories/npm-local/items?path=rawdel2/-/rawdel2-1.1.0.tgz", e.tokA, nil); ans.Status != 204 {
 			t.Fatalf("the owner through the items API: %d %s", ans.Status, ans.Body)
 		}
 		if e.tombstones("npm-local", "rawdel2") != 1 || e.versions("npm-local", "rawdel2") != 1 {
@@ -469,12 +469,12 @@ func TestR_NPM_047_WithheldVersionsAreNotServed(t *testing.T) {
 		if !slices.Equal(versionNames(d), []string{"1.0.0"}) || tagsOfDoc(d)["latest"] != "1.0.0" {
 			t.Fatalf("%s: %v %v", r.Name, versionNames(d), tagsOfDoc(d))
 		}
-		for _, path := range []string{"/api/npm/npm-local/withheld/-/withheld-1.1.0.tgz", "/files/npm-local/withheld/-/withheld-1.1.0.tgz", "/files/npm-local/withheld/-/withheld-1.1.0.tgz"} {
+		for _, path := range []string{"/api/npm/it/npm-local/withheld/-/withheld-1.1.0.tgz", "/files/it/npm-local/withheld/-/withheld-1.1.0.tgz", "/files/it/npm-local/withheld/-/withheld-1.1.0.tgz"} {
 			if ans := e.st.Do(r, "GET", path, e.tokA, nil); ans.Status != 404 {
 				t.Fatalf("%s %s: %d", r.Name, path, ans.Status)
 			}
 		}
-		if ans := e.st.Do(r, "GET", "/files/npm-local/withheld/-/withheld-1.0.0.tgz", e.tokA, nil); ans.Status != 200 {
+		if ans := e.st.Do(r, "GET", "/files/it/npm-local/withheld/-/withheld-1.0.0.tgz", e.tokA, nil); ans.Status != 200 {
 			t.Fatalf("%s: a live version: %d", r.Name, ans.Status)
 		}
 	}
@@ -486,7 +486,7 @@ func TestR_NPM_047_WithheldVersionsAreNotServed(t *testing.T) {
 	}
 	t.Run("the administrator confirms by deleting the items: the version row goes and the tombstone stays", func(t *testing.T) {
 		before := e.st.Text(`SELECT source FROM npm_tombstones WHERE name = 'withheld'`)
-		if ans := e.st.Do(a, "DELETE", "/files/npm-local/withheld/-/withheld-1.1.0.tgz", e.tokA, nil); ans.Status/100 != 2 {
+		if ans := e.st.Do(a, "DELETE", "/files/it/npm-local/withheld/-/withheld-1.1.0.tgz", e.tokA, nil); ans.Status/100 != 2 {
 			t.Fatalf("%d %s", ans.Status, ans.Body)
 		}
 		if e.versions("npm-local", "withheld") != 1 || e.itemCount("npm-local", "withheld/-/withheld-1.1.0.tgz") != 0 {
@@ -533,14 +533,14 @@ func TestR_NPM_016_ConcurrentTagWritesPublishesAndUnpublishes(t *testing.T) {
 		for i := range 5 {
 			version := fmt.Sprintf("1.0.%d", i)
 			for attempt := 0; ; attempt++ {
-				ans := e.st.Do(reps[1], "GET", "/api/npm/npm-local/mix?write=true", e.tokA, nil)
+				ans := e.st.Do(reps[1], "GET", "/api/npm/it/npm-local/mix?write=true", e.tokA, nil)
 				var doc map[string]any
 				if err := jsonUnmarshal(ans.Body, &doc); err != nil || doc["versions"] == nil {
 					report("read for write: %d %s", ans.Status, ans.Body)
 					return
 				}
 				delete(doc["versions"].(map[string]any), version)
-				put := e.st.Do(reps[1], "PUT", "/api/npm/npm-local/mix/-rev/"+doc["_rev"].(string), e.tokA, doc)
+				put := e.st.Do(reps[1], "PUT", "/api/npm/it/npm-local/mix/-rev/"+doc["_rev"].(string), e.tokA, doc)
 				if put.Status == 200 {
 					break
 				}
@@ -554,17 +554,17 @@ func TestR_NPM_016_ConcurrentTagWritesPublishesAndUnpublishes(t *testing.T) {
 	run(func() { // tags on versions that stay
 		for i := range 10 {
 			tag := fmt.Sprintf("t%d", i)
-			if a := e.st.Do(reps[2], "PUT", "/api/npm/npm-local/-/package/mix/dist-tags/"+tag, e.tokA, fmt.Sprintf(`"1.0.%d"`, 5+i%5)); a.Status != 200 {
+			if a := e.st.Do(reps[2], "PUT", "/api/npm/it/npm-local/-/package/mix/dist-tags/"+tag, e.tokA, fmt.Sprintf(`"1.0.%d"`, 5+i%5)); a.Status != 200 {
 				report("tag %s: %d %s", tag, a.Status, a.Body)
 			}
 			if i%3 == 0 {
-				e.st.Do(reps[2], "DELETE", "/api/npm/npm-local/-/package/mix/dist-tags/"+tag, e.tokA, nil)
+				e.st.Do(reps[2], "DELETE", "/api/npm/it/npm-local/-/package/mix/dist-tags/"+tag, e.tokA, nil)
 			}
 		}
 	})
 	run(func() { // latest moved around
 		for i := range 8 {
-			a := e.st.Do(reps[0], "PUT", "/api/npm/npm-local/-/package/mix/dist-tags/latest", e.tokA, fmt.Sprintf(`"1.0.%d"`, 5+i%5))
+			a := e.st.Do(reps[0], "PUT", "/api/npm/it/npm-local/-/package/mix/dist-tags/latest", e.tokA, fmt.Sprintf(`"1.0.%d"`, 5+i%5))
 			if a.Status != 200 {
 				report("latest: %d %s", a.Status, a.Body)
 			}
@@ -619,7 +619,7 @@ func TestR_NPM_019_WhoamiAndPing(t *testing.T) {
 			}
 		}
 		// Basic with the token as the password and any user name, as npm's _auth sends it
-		basic := e.st.Do(r, "GET", "/api/npm/npm-local/-/whoami", "", nil, "Authorization", "Basic "+basicOf("anything", e.tokA))
+		basic := e.st.Do(r, "GET", "/api/npm/it/npm-local/-/whoami", "", nil, "Authorization", "Basic "+basicOf("anything", e.tokA))
 		if basic.Status != 200 || basic.JSON(t)["username"] != "alice" {
 			t.Fatalf("%s basic: %d %s", r.Name, basic.Status, basic.Body)
 		}

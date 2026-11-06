@@ -55,7 +55,7 @@ func TestR_STOR_017_AListingOfAMostlyHiddenFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "the grant taking effect", 10*time.Second, func() bool {
-		return r.get("reader", "/files/generic-wide/pub-1/").status == 200
+		return r.get("reader", "/files/it/generic-wide/pub-1/").status == 200
 	})
 	// The index of the request is taken once the grant is in effect.
 	caller := r.caller(authz.Subject{Kind: principal.KindUser, ID: reader.ID, Name: reader.Name}, "generic-wide")

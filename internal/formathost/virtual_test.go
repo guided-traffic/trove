@@ -192,22 +192,22 @@ type fakeRemote struct {
 }
 
 func (f *fakeRemote) Gate(_ context.Context, rq *formats.Request, _ formats.Path) error {
-	f.gatedFor = rq.Repo.Name.Key
+	f.gatedFor = rq.Repo.Name.String()
 	return f.gateErr
 }
 
 func (f *fakeRemote) GateWith(_ context.Context, rq *formats.Request, _ formats.Path, have formats.ServeFacts) (formats.ServeFacts, error) {
-	f.gatedFor = rq.Repo.Name.Key
+	f.gatedFor = rq.Repo.Name.String()
 	return have, f.gateErr
 }
 
 func (f *fakeRemote) Cached(_ context.Context, rq *formats.Request, p formats.Path) (formats.Item, bool, error) {
-	f.cachedFor = rq.Repo.Name.Key
+	f.cachedFor = rq.Repo.Name.String()
 	return formats.Item{Ref: formats.ItemRef{Repo: formats.RepoRef{Name: rq.Repo.Name}, Path: p.Path}}, f.cachedErr == nil, f.cachedErr
 }
 
 func (f *fakeRemote) Artifact(_ context.Context, rq *formats.Request, _ formats.Path, _ formats.Digests, w http.ResponseWriter) error {
-	f.fetchedFor = rq.Repo.Name.Key
+	f.fetchedFor = rq.Repo.Name.String()
 	if f.fetchErr == nil {
 		_, _ = io.WriteString(w, "fetched")
 	}
@@ -268,7 +268,7 @@ func TestR_ARCH_015_BridgeArtifact(t *testing.T) {
 	if err := b.r.Artifact(t.Context(), b.rq, p, info, w); err != nil {
 		t.Fatal(err)
 	}
-	if w.Body.String() != "item member-local" || b.host.items.served != formats.ServeStored || b.host.items.statRepo.Name != qr("member-local") {
+	if w.Body.String() != "item it/member-local" || b.host.items.served != formats.ServeStored || b.host.items.statRepo.Name != qr("member-local") {
 		t.Fatalf("body %q mode %v stat %v", w.Body.String(), b.host.items.served, b.host.items.statRepo)
 	}
 	c, d := b.eng.caller, b.eng.plan
@@ -282,16 +282,16 @@ func TestR_ARCH_015_BridgeArtifact(t *testing.T) {
 	t.Run("the tiers of a remote member run on a request addressed to the member", func(t *testing.T) {
 		member := virtual.Member{Repo: vt.RemoteRepo(2, "member-remote"), ID: 2}
 		hit, ok, err := b.eng.tiers.RemoteCached(t.Context(), member, d)
-		if err != nil || !ok || b.host.remote.cachedFor != "member-remote" {
+		if err != nil || !ok || b.host.remote.cachedFor != "it/member-remote" {
 			t.Fatalf("cached for %q ok %v err %v", b.host.remote.cachedFor, ok, err)
 		}
 		rec := httptest.NewRecorder()
-		if err := hit(rec); err != nil || rec.Body.String() != "item member-remote" {
+		if err := hit(rec); err != nil || rec.Body.String() != "item it/member-remote" {
 			t.Fatalf("body %q err %v", rec.Body.String(), err)
 		}
 		rec = httptest.NewRecorder()
 		found, err := b.eng.tiers.RemoteFetch(t.Context(), member, d, rec)
-		if !found || err != nil || b.host.remote.fetchedFor != "member-remote" || rec.Body.String() != "fetched" {
+		if !found || err != nil || b.host.remote.fetchedFor != "it/member-remote" || rec.Body.String() != "fetched" {
 			t.Fatalf("found %v err %v for %q", found, err, b.host.remote.fetchedFor)
 		}
 		b.host.remote.fetchErr = errs.E(errs.NotFound, errs.CodeNotFound, "no")
@@ -353,7 +353,7 @@ func TestR_ARCH_015_BridgeMetadata(t *testing.T) {
 		t.Fatalf("variant = %q", b.ad.gotVar)
 	}
 	parts := b.ad.gotParts
-	if len(parts) != 2 || parts[0].Member.Name != qr("member-local") || parts[0].Tier != formats.TierLocal || parts[0].Revision.RevSeq != 7 || string(parts[0].Doc) != "doc-of-member-local" {
+	if len(parts) != 2 || parts[0].Member.Name != qr("member-local") || parts[0].Tier != formats.TierLocal || parts[0].Revision.RevSeq != 7 || string(parts[0].Doc) != "doc-of-it/member-local" {
 		t.Fatalf("local part = %+v", parts)
 	}
 	r := parts[1]
@@ -429,7 +429,7 @@ func TestR_REPO_048_BridgeShadowCheck(t *testing.T) {
 	if e, ok := errs.As(out.Refusal); !ok || e.Code != errs.CodeShadowsRemotePackage || e.Kind != errs.Forbidden {
 		t.Fatalf("refusal = %v", out.Refusal)
 	}
-	if !slices.Equal(out.Shadowed, []formats.ShadowPair{{Virtual: "all", Remote: "member-remote"}}) {
+	if !slices.Equal(out.Shadowed, []formats.ShadowPair{{Virtual: "it/all", Remote: "it/member-remote"}}) {
 		t.Fatalf("pairs = %+v", out.Shadowed)
 	}
 
@@ -473,7 +473,7 @@ func TestR_NPM_026_ACachedArtifactOfARemoteMemberMeetsTheGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	remote := virtual.Member{Repo: vt.RemoteRepo(2, "member-remote"), ID: 2}
-	if _, ok, err := b.eng.tiers.RemoteCached(t.Context(), remote, b.eng.plan); !ok || err != nil || b.host.remote.gatedFor != "member-remote" {
+	if _, ok, err := b.eng.tiers.RemoteCached(t.Context(), remote, b.eng.plan); !ok || err != nil || b.host.remote.gatedFor != "it/member-remote" {
 		t.Fatalf("ok %v err %v gated for %q", ok, err, b.host.remote.gatedFor)
 	}
 	b.host.remote.gateErr = errs.E(errs.NotFound, errs.CodeNotFound, "The version is withdrawn.")
@@ -510,7 +510,7 @@ func TestR_NUGET_018_BridgePlan(t *testing.T) {
 func TestR_NUGET_016_BridgeKeepsAway(t *testing.T) {
 	b := newBridge(t)
 	remote := formats.RepoRef{ID: 2, Name: qr("member-remote"), Class: formats.Remote, Format: "virtfmt"}
-	b.eng.away = map[string]bool{"member-remote/acme": true}
+	b.eng.away = map[string]bool{"it/member-remote/acme": true}
 	t.Run("through a virtual repository the question is asked with it and the member", func(t *testing.T) {
 		if away, err := b.r.KeepsAway(t.Context(), b.rq, remote, "acme"); err != nil || !away {
 			t.Fatalf("away %v err %v", away, err)

@@ -1,5 +1,5 @@
 // Package npm is the npm registry format (R-NPM-001 to R-NPM-048): the routes
-// below /api/npm/<repoKey>/, the classification of paths, the storage hooks, the
+// below /api/npm/<projectKey>/<repoKey>/, the classification of paths, the storage hooks, the
 // publish of a version and the native error shape, for the three classes. The local
 // repository's protocol and its publish, the documents, the tarball downloads, the
 // dist-tags, unpublish and the identity endpoints are in the handler files that

@@ -56,7 +56,7 @@ func newPatternEnv(t *testing.T) *patternEnv {
 
 func (e *patternEnv) search(repo, token, query string) found {
 	e.t.Helper()
-	a := e.st.Do(e.r, "GET", "/api/nuget/"+repo+"/v3/search?"+query, token, nil)
+	a := e.st.Do(e.r, "GET", "/api/nuget/it/"+repo+"/v3/search?"+query, token, nil)
 	if a.Status != 200 {
 		e.t.Fatalf("%s search?%s: %d %s", repo, query, a.Status, a.Body)
 	}
@@ -87,7 +87,7 @@ func TestR_REPO_005_TheNuGetSearchOfALocalRepositoryAppliesItsPatterns(t *testin
 			if got := e.search("nuget-pat", tok, q("acme")); !slices.Equal(got.ids(), []string{"Acme.Widgets"}) {
 				t.Fatalf("q=acme: %v", got.ids())
 			}
-			if a := e.st.Do(e.r, "GET", "/api/nuget/nuget-pat/v3/flatcontainer/acme.secret.thing/index.json", tok, nil); a.Status != 404 {
+			if a := e.st.Do(e.r, "GET", "/api/nuget/it/nuget-pat/v3/flatcontainer/acme.secret.thing/index.json", tok, nil); a.Status != 404 {
 				t.Fatalf("the documents of the excluded package: %d", a.Status)
 			}
 			if got := e.search("nuget-plain", tok, q("secret")); !slices.Equal(got.ids(), []string{"Acme.Secret.Thing"}) {
@@ -117,7 +117,7 @@ func TestR_REPO_005_TheNuGetSearchOfAVirtualRepositoryAppliesItsAndItsMembersPat
 					t.Fatalf("search?%s through nuget-pv: %v (%d)", query, got.ids(), got.TotalHits)
 				}
 			}
-			body := e.st.Do(e.r, "GET", "/api/nuget/nuget-pv/v3/search?"+q("acme")+"&take=50", tok, nil).Body
+			body := e.st.Do(e.r, "GET", "/api/nuget/it/nuget-pv/v3/search?"+q("acme")+"&take=50", tok, nil).Body
 			if strings.Contains(string(body), "2.0.0") || strings.Contains(string(body), "Hidden") {
 				t.Fatalf("the merged search names what the patterns keep out: %s", body)
 			}

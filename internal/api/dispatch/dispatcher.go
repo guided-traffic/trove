@@ -56,9 +56,6 @@ type Options struct {
 	Label func(ctx context.Context, name string)
 }
 
-// cacheViewSuffix turns a repository key into the address of its cache view (R-REPO-032).
-const cacheViewSuffix = "~cache"
-
 // Dispatcher serves the format prefixes.
 type Dispatcher struct {
 	o       Options

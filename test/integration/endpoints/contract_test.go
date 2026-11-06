@@ -55,7 +55,7 @@ func contract(t *testing.T, e *env) {
 		Collection: "http://trove.test/api/v1/endpoints/customers/exposure-rules",
 		Create: func(n int) map[string]any {
 			return map[string]any{
-				"name": fmt.Sprintf("contract-%d", n), "description": "contract rule", "repository": "generic-local",
+				"name": fmt.Sprintf("contract-%d", n), "description": "contract rule", "repository": "it/generic-local",
 				"paths": map[string]any{"include": []string{fmt.Sprintf("contract/%d/**", n)}},
 			}
 		},

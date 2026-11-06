@@ -24,7 +24,7 @@ func TestR_STOR_018_ARemovalDoesNotWaitForAFolderAnotherTransactionHolds(t *test
 	e.breakGlass()
 	r := e.newReplica("a", replicaOpts{})
 	r.createRepository("generic-sweep", nil)
-	if res := r.put("admin", "/files/generic-sweep/a/b/only.bin", "only"); res.status != 201 {
+	if res := r.put("admin", "/files/it/generic-sweep/a/b/only.bin", "only"); res.status != 201 {
 		t.Fatalf("%d %s", res.status, res.body)
 	}
 
@@ -48,7 +48,7 @@ func TestR_STOR_018_ARemovalDoesNotWaitForAFolderAnotherTransactionHolds(t *test
 	}
 
 	done := make(chan response, 1)
-	go func() { done <- r.do("admin", "DELETE", "/files/generic-sweep/a/b/only.bin", nil) }()
+	go func() { done <- r.do("admin", "DELETE", "/files/it/generic-sweep/a/b/only.bin", nil) }()
 	waitFor(t, "the removal committed while its folder is held", 8*time.Second, func() bool {
 		select {
 		case res := <-done:
@@ -83,7 +83,7 @@ func TestR_STOR_018_TheSweepOfADeletedSubtreeTakesItsExplicitFoldersWhenAHeldOne
 	r := e.newReplica("a", replicaOpts{})
 	r.createRepository("generic-subtree", nil)
 	for _, p := range []string{"a/", "a/b/", "a/b/c/"} {
-		if res := r.put("admin", "/files/generic-subtree/"+p, ""); res.status != 201 {
+		if res := r.put("admin", "/files/it/generic-subtree/"+p, ""); res.status != 201 {
 			t.Fatalf("PUT %s: %d %s", p, res.status, res.body)
 		}
 	}
@@ -112,7 +112,7 @@ func TestR_STOR_018_TheSweepOfADeletedSubtreeTakesItsExplicitFoldersWhenAHeldOne
 	}
 
 	done := make(chan response, 1)
-	go func() { done <- r.do("admin", "DELETE", "/files/generic-subtree/a/", nil) }()
+	go func() { done <- r.do("admin", "DELETE", "/files/it/generic-subtree/a/", nil) }()
 	waitFor(t, "the sweep of the removal waits for the held folder", 8*time.Second, func() bool {
 		select {
 		case res := <-done:

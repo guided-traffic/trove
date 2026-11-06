@@ -16,7 +16,7 @@ against trove's own origin, and about who may write and read it.
 ## The UI's content routes (R-API-025, Q-UI-106)
 
 The session cookie reaches the role `api` only, so the UI downloads and uploads through `GET`, `HEAD` and `PUT
-/api/v1/repositories/{repoKey}/content/{path}` and not through `/files/`. The routes are the code of `/files/`
+/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}` and not through `/files/`. The routes are the code of `/files/`
 (`rawfiles.Handler.serve`), so every decision in this page applies to them unchanged, and a caller without `read` gets the same `404`.
 Three properties are particular to them. They answer a request that the session cookie did not authenticate with the `404` of an unknown
 path, before any decision, so a token is never accepted on `api` for bulk traffic. A `PUT` carries the session's CSRF token like every
@@ -57,7 +57,7 @@ parse is `400 invalid_header`); it is never derived from the content or the name
 The path is canonicalised by `repository.CleanPath` before any authorization (see
 [repository-model.md](repository-model.md)), and the paths that `net/http.ServeMux` would silently rewrite (`a//b`, `a/../b`)
 reach the handler through `Router.HandleUncleaned` and are refused with `400 invalid_path`, not redirected; so is an empty
-segment right after the key (`/files/<key>//x`). The `path` parameter of the items operations follows the same rules once
+segment right after the key (`/files/<project>/<key>//x`). The `path` parameter of the items operations follows the same rules once
 decoded, the backslash and the 4096-byte and 255-byte limits included, and an oversized path is refused by its length before
 anything else looks at it (`CheckItemPath`). The patterns of a
 repository are routing rules for every caller: a deploy outside them is `403 not_admitted` for an administrator too, a read or a
@@ -181,7 +181,7 @@ repository.
 
 ### H-208 · A forged listing cursor tells where a hidden item sorts
 
-Component: the listing of `/files/<key>/<folder>/` and `/api/v1/repositories/{key}/children` (R-STOR-017, Q-STOR-62). Subject: the
+Component: the listing of `/files/<project>/<key>/<folder>/` and `/api/v1/projects/{projectKey}/repositories/{key}/children` (R-STOR-017, Q-STOR-62). Subject: the
 names of entries the caller may not read. Live for every listing. A page that ends at the scan limit carries the id of the last
 row it read, and a cursor is base64 JSON that a client can write itself. A caller who puts the id of another item of the same
 repository below the listed folder into a cursor gets the visible entries that sort after that item, and so learns between which

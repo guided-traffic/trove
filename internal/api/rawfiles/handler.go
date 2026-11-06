@@ -91,7 +91,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // maxUpload is the largest PUT the route takes; 0 is no limit of its own.
 func (h *Handler) serve(w http.ResponseWriter, r *http.Request, key qname.Repo, rest string, maxUpload int64) {
 	if strings.HasPrefix(rest, "/") {
-		// "/files/<key>//x": CleanPath ignores one leading slash, which here is an
+		// "/files/<projectKey>/<repoKey>//x": CleanPath ignores one leading slash, which here is an
 		// empty first segment (R-GENERIC-002).
 		httpserver.Problem(w, r, errs.E(errs.Invalid, errs.CodeInvalidPath, "the path has an empty segment"))
 		return

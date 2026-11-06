@@ -29,7 +29,7 @@ import (
 // (discovery, cache, circuit, populate check) run against a database and a test upstream in
 // test/integration/nuget (forwarded_search_test.go).
 
-const feedOfOrg = "https://trove.test/api/nuget/nuget-org/v3/"
+const feedOfOrg = "https://trove.test/api/nuget/it/nuget-org/v3/"
 
 // upstreamAnswer is an upstream's answer to a search: three results, the first with every member
 // a forwarded search keeps (its deprecation and vulnerabilities in nuget.org's JSON-LD form, one

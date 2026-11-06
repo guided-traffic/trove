@@ -202,7 +202,7 @@ func TestR_NPM_010_FullDocumentIsRenderedFromTheRows(t *testing.T) {
 		}
 		v, _ := vs["1.2.0"].(map[string]any)
 		dist, _ := v["dist"].(map[string]any)
-		if dist["tarball"] != "https://trove.example.com/api/npm/main/@acme/ui/-/ui-1.2.0.tgz" {
+		if dist["tarball"] != "https://trove.example.com/api/npm/it/main/@acme/ui/-/ui-1.2.0.tgz" {
 			t.Fatalf("tarball %v", dist["tarball"])
 		}
 		if dist["integrity"] == nil || dist["shasum"] == nil || v["_id"] != nil && v["_id"] != "@acme/ui@1.2.0" {
@@ -288,7 +288,7 @@ func TestR_NPM_011_AbbreviatedDocument(t *testing.T) {
 	if v["scripts"] != nil || v["main"] != nil || v["description"] != nil {
 		t.Fatalf("fields an installer does not read: %v", v)
 	}
-	if dist["tarball"] != "https://trove.example.com/api/npm/main/lodash/-/lodash-4.17.21.tgz" || dist["integrity"] == nil || dist["shasum"] == nil || dist["fileCount"] == nil {
+	if dist["tarball"] != "https://trove.example.com/api/npm/it/main/lodash/-/lodash-4.17.21.tgz" || dist["integrity"] == nil || dist["shasum"] == nil || dist["fileCount"] == nil {
 		t.Fatalf("dist %v", dist)
 	}
 	t.Run("the other forms of the request get the full document", func(t *testing.T) {

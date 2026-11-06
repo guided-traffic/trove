@@ -37,7 +37,7 @@ func TestR_NUGET_008_AnIDThatHoldsNoVersionIs404(t *testing.T) {
 			if ans.Status != http.StatusNotFound || line(t, ans) != "not_found" {
 				t.Fatalf("GET: %d %s", ans.Status, ans.Body)
 			}
-			head := e.st.Do(a, http.MethodHead, "/api/nuget/nuget-local/"+path, e.tokReader, nil)
+			head := e.st.Do(a, http.MethodHead, "/api/nuget/it/nuget-local/"+path, e.tokReader, nil)
 			if head.Status != http.StatusNotFound || len(head.Body) != 0 {
 				t.Fatalf("HEAD: %d with %d body bytes", head.Status, len(head.Body))
 			}

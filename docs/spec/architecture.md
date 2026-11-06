@@ -1308,11 +1308,12 @@ type Request struct {
 // (Q-ARCH-263). Registry is Base + "/api/" + Format + "/" + Project + "/" + Key + "/".
 type Refusal struct {
 	Format  ID
-	Name    qname.Repo // as addressed: the project key and the key, or "<remote>~cache" as the key
+	Name    qname.Repo // as addressed: the project key and the key (without the "~cache" suffix)
+	CacheView bool     // the key carried the "~cache" suffix: the cache view of the remote repository Name (R-REPO-032)
 	BaseURL string     // the response base URL without a trailing slash
 }
 
-func (f Refusal) Registry() string // BaseURL + "/api/" + Format + "/" + Project + "/" + Key + "/"
+func (f Refusal) Registry() string // BaseURL + "/api/" + Format + "/" + Project + "/" + Key + ("~cache" when CacheView) + "/"
 func WithRefusal(r *http.Request, f Refusal) *http.Request
 func RefusalFrom(r *http.Request) (Refusal, bool)
 
@@ -1711,7 +1712,7 @@ joins the contract without this page knowing it (`TestR_ARCH_008_EveryExportedFu
 descriptors of the registered formats, the body of `GET /api/v1/formats`; `GuideTopics` lists the guide topics in serving
 order (`GuideWhat`, `GuideConfigure`, `GuideAuthenticate`, `GuideInstall`, `GuidePublish`, `GuideMaintain`, `GuideAudit`,
 `GuideLockfiles`, `GuideEndpoint`, `GuideTroubleshooting`) and `RequiredGuideTopics` the ones kit check 8 requires;
-`GuideRepositoryPlaceholder` stands for the key in a guide that names no repository; `SetupTokenRefs` lists the
+`GuideRepositoryPlaceholder` and `GuideProjectPlaceholder` stand for the key and the project key in a guide that names no repository; `SetupTokenRefs` lists the
 spellings of the token reference in the order the API looks for them; `SubjectName` and `SubjectPath` are the catalog's
 pattern subjects and `KindArtifact`, `KindMetadata`, `KindSearch`, `KindWrite` and `KindOther` its request kinds, under
 the names a format spells; `TierLocal`, `TierRemoteCached` and `TierRemote` are the tiers of a merge part; `Current`,

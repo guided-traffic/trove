@@ -21,7 +21,7 @@ func TestR_AUTHZ_013_ASetupTokenOfAVirtualRepositoryReadsThroughIt(t *testing.T)
 	p := pkg{Name: "setup-probe", Version: "1.0.0"}
 	r.publishTo(rep, rLocal, r.tokA, p)
 
-	onlyAll := scope.Scope{Repositories: []scope.Grant{{Repositories: []string{rAll}, Actions: []string{"read"}}}}
+	onlyAll := scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/" + rAll}, Actions: []string{"read"}}}}
 	tok := r.st.Token(r.alice, onlyAll)
 
 	doc := r.view(rep, rAll, p.Name, tok)
@@ -32,7 +32,7 @@ func TestR_AUTHZ_013_ASetupTokenOfAVirtualRepositoryReadsThroughIt(t *testing.T)
 		t.Fatalf("versions %v", vs)
 	}
 	addr := tarballsOf(t, doc)["1.0.0"]
-	if want := "/api/npm/" + rAll + "/" + p.Name + "/-/" + corpus.TarballFile(p.Name, "1.0.0"); !strings.HasSuffix(addr, want) {
+	if want := "/api/npm/it/" + rAll + "/" + p.Name + "/-/" + corpus.TarballFile(p.Name, "1.0.0"); !strings.HasSuffix(addr, want) {
 		t.Fatalf("tarball %q", addr)
 	}
 	if got := r.install(rep, addr, tok); got.Status != 200 {
@@ -60,7 +60,7 @@ func TestR_AUTHZ_013_ASetupTokenFillsAndReadsARemoteMemberThroughTheVirtualRepos
 	r := newRemoteEnv(t, remoteOptions{})
 	rep := r.start(1)[0]
 	p := upstreamPackage(t, 2)
-	tok := r.st.Token(r.alice, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{rAll}, Actions: []string{"read"}}}})
+	tok := r.st.Token(r.alice, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/" + rAll}, Actions: []string{"read"}}}})
 
 	doc := r.view(rep, rAll, p.Name, tok)
 	if doc.Status != 200 || len(versionsOf(t, doc)) != len(p.Versions) {
@@ -90,7 +90,7 @@ func TestR_AUTHZ_013_ASetupTokenRunsTheAuditThroughTheVirtualRepository(t *testi
 		t.Fatalf("fetch lodash: %d %s", a.Status, a.Body)
 	}
 	r.stub.Reset()
-	tok := r.st.Token(r.alice, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{rAll}, Actions: []string{"read"}}}})
+	tok := r.st.Token(r.alice, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/" + rAll}, Actions: []string{"read"}}}})
 
 	a := r.postAudit(rep, rAll, tok, `{"lodash":["4.17.20"]}`, false)
 	if a.Status != 200 {

@@ -85,7 +85,7 @@ func TestContentRoutes(t *testing.T) {
 		d := &decider{}
 		h := handler(t, d, &store{file: file, body: []byte("abc")})
 		viaFiles := httptest.NewRecorder()
-		h.ServeHTTP(viaFiles, httptest.NewRequest(http.MethodGet, "/files/generic-local/a.bin", nil))
+		h.ServeHTTP(viaFiles, httptest.NewRequest(http.MethodGet, "/files/it/generic-local/a.bin", nil))
 		viaContent := serveContent(t, h, 0, as(httptest.NewRequest(http.MethodGet, contentDownload, nil), httpserver.MethodSession))
 		if viaContent.Code != http.StatusOK || viaContent.Body.String() != "abc" {
 			t.Fatalf("status %d, body %q", viaContent.Code, viaContent.Body.String())
@@ -104,7 +104,7 @@ func TestContentRoutes(t *testing.T) {
 		d := &decider{}
 		serveContent(t, handler(t, d, &store{file: file, body: []byte("abc")}), 0,
 			as(httptest.NewRequest(http.MethodGet, contentDownload, nil), httpserver.MethodSession))
-		if d.begins != 1 || len(d.keys[0]) != 1 || d.keys[0][0] != "generic-local" || len(d.asked) == 0 {
+		if d.begins != 1 || len(d.keys[0]) != 1 || d.keys[0][0] != qr("generic-local") || len(d.asked) == 0 {
 			t.Fatalf("begins %d, keys %v, %d asked", d.begins, d.keys, len(d.asked))
 		}
 		for _, idx := range d.asked {
@@ -131,7 +131,7 @@ func TestContentRoutes(t *testing.T) {
 		h := handler(t, &decider{}, &store{})
 		rec := serveContent(t, h, 0, as(httptest.NewRequest(http.MethodGet, "/api/v1/projects/it/repositories/generic-local/content/missing.bin", nil), httpserver.MethodSession))
 		want := httptest.NewRecorder()
-		h.ServeHTTP(want, httptest.NewRequest(http.MethodGet, "/files/generic-local/missing.bin", nil))
+		h.ServeHTTP(want, httptest.NewRequest(http.MethodGet, "/files/it/generic-local/missing.bin", nil))
 		if rec.Code != http.StatusNotFound || rec.Code != want.Code {
 			t.Errorf("content %d, files %d", rec.Code, want.Code)
 		}
@@ -169,7 +169,7 @@ func TestContentRoutes(t *testing.T) {
 			d := &denier{outcome: outcome}
 			h := handlerOver(t, d, &store{file: file, body: []byte("abc")})
 			viaFiles := httptest.NewRecorder()
-			h.ServeHTTP(viaFiles, httptest.NewRequest(http.MethodGet, "/files/generic-local/a.bin", nil))
+			h.ServeHTTP(viaFiles, httptest.NewRequest(http.MethodGet, "/files/it/generic-local/a.bin", nil))
 			viaContent := serveContent(t, h, 0, as(httptest.NewRequest(http.MethodGet, contentDownload, nil), httpserver.MethodSession))
 			if viaContent.Code != viaFiles.Code || viaContent.Code < 400 || strings.Contains(viaContent.Body.String(), "abc") {
 				t.Errorf("outcome %v: content %d %q, files %d", outcome, viaContent.Code, viaContent.Body.String(), viaFiles.Code)
@@ -216,7 +216,7 @@ func TestContentRoutes(t *testing.T) {
 			t.Errorf("content: %d %s", rec.Code, rec.Body.String())
 		}
 		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/files/generic-local/big.bin", strings.NewReader(body)))
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/files/it/generic-local/big.bin", strings.NewReader(body)))
 		if rec.Code != http.StatusCreated {
 			t.Errorf("files: %d %s", rec.Code, rec.Body.String())
 		}
@@ -261,7 +261,7 @@ func TestContentRoutes(t *testing.T) {
 		// The hiding is the content routes' own: another route of the same router keeps its 405.
 		router := httpserver.NewClientRouter()
 		handler(t, &decider{}, &store{file: file}).Content(0).Register(router)
-		router.HandleFunc("GET /api/v1/repositories/{repoKey}", func(w http.ResponseWriter, _ *http.Request) {})
+		router.HandleFunc("GET /api/v1/projects/{projectKey}/repositories/{repoKey}", func(w http.ResponseWriter, _ *http.Request) {})
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, as(httptest.NewRequest(http.MethodDelete, "/api/v1/projects/it/repositories/generic-local", nil), httpserver.MethodBearer))
 		if rec.Code != http.StatusMethodNotAllowed {
@@ -284,7 +284,8 @@ func TestSplitContentPath(t *testing.T) {
 		{"/api/v1/projects//repositories/r1/content/x", "", "", false},
 		{"/api/v1/projects/it/repositories/r1/items", "", "", false},
 		{"/api/v1/projects/it/repositories/a/b/content/x", "", "", false},
-		{"/api/v1/projects/it/repositories/r1/content/x", "", "", false},
+		{"/api/v1/repositories/r1/content/x", "", "", false}, // the route without a project is gone
+		{"/api/v1/projects/it/repositories/r1/content/x/..", "it/r1", "x/..", true},
 		{"/files/it/r1/x", "", "", false},
 	} {
 		name, rest, ok := splitContentPath(tc.in)
@@ -322,11 +323,11 @@ func TestContentRoutesAgreeWithTheDocument(t *testing.T) {
 		}
 		for pattern, op := range got {
 			method, path, _ := strings.Cut(pattern, " ")
-			if path != "/api/v1/repositories/{repoKey}/content/{path}" || string(op.Requirement.Action) != want[method] ||
+			if path != "/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}" || string(op.Requirement.Action) != want[method] ||
 				op.Requirement.Repository != "path.repoKey" || op.Requirement.Path != "path.path" {
 				t.Errorf("%s: %+v", pattern, op.Requirement)
 			}
-			files := doc.FileOperations()[method+" /files/{repoKey}/{path}"]
+			files := doc.FileOperations()[method+" /files/{projectKey}/{repoKey}/{path}"]
 			if files.Requirement != op.Requirement {
 				t.Errorf("%s declares %+v, /files/ declares %+v", pattern, op.Requirement, files.Requirement)
 			}

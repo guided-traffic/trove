@@ -201,9 +201,9 @@ formats.ItemsEvent: field Repo RepoRef
 formats.ItemsRestorer: method OnItemsRestored(context.Context, Tx, ItemsEvent) error
 formats.Limits: alias untrusted.Limits
 formats.LinkBuilder: method Base() string
-formats.LinkBuilder: method File(string, string) string
+formats.LinkBuilder: method File(qname.Repo, string) string
 formats.LinkBuilder: method Path(string) string
-formats.LinkBuilder: method Registry(string) string
+formats.LinkBuilder: method Registry(qname.Repo) string
 formats.LinkBuilder: method Repository() string
 formats.MemberDocument: field CachedVersions map[string]bool
 formats.MemberDocument: field Doc []byte
@@ -276,12 +276,13 @@ formats.QueryResult: field Cached bool
 formats.QueryResult: field Collapsed bool
 formats.QueryResult: field ContentType string
 formats.QueryResult: field FetchedAt time.Time
-formats.ReadScope: method MayRead(string, string, string) bool
-formats.ReadScope: method Shape(string) ReadShape
+formats.ReadScope: method MayRead(qname.Repo, string, string) bool
+formats.ReadScope: method Shape(qname.Repo) ReadShape
 formats.ReadShape: type uint8
 formats.Refusal: field BaseURL string
+formats.Refusal: field CacheView bool
 formats.Refusal: field Format ID
-formats.Refusal: field Key string
+formats.Refusal: field Name qname.Repo
 formats.Refusal: method Registry() string
 formats.RemoteAdapter: method AcceptResponse(Path, *http.Response) error
 formats.RemoteAdapter: method BeforeArtifact(context.Context, Host, *Request, Path) (Digests, error)
@@ -297,8 +298,8 @@ formats.RemoteBase: method ExpectsType(Path, string) bool
 formats.RemoteBase: method UpstreamQuery(context.Context, RemoteContext, Query) (*http.Request, error)
 formats.RemoteCaps: field Discovery Discoverer
 formats.RemoteCaps: field Fill FillInspector
-formats.RemoteCaps: field Mirror MirrorLister
 formats.RemoteCaps: field Gate FactsGate
+formats.RemoteCaps: field Mirror MirrorLister
 formats.RemoteContext: field Discovery any
 formats.RemoteContext: field Repo *repository.Repository
 formats.RemoteContext: field Settings json.RawMessage
@@ -339,7 +340,7 @@ formats.RenditionKey: field Variant string
 formats.RepoRef: field Class Class
 formats.RepoRef: field Format ID
 formats.RepoRef: field ID int64
-formats.RepoRef: field Key string
+formats.RepoRef: field Name qname.Repo
 formats.Request: embedded *http.Request
 formats.Request: field CacheView bool
 formats.Request: field Endpoint EndpointFacts
@@ -352,7 +353,7 @@ formats.Request: field Path Path
 formats.Request: field Repo *repository.Repository
 formats.Request: field Route *Route
 formats.Request: field Subject authz.Subject
-formats.Request: method Addressed() string
+formats.Request: method Addressed() qname.Repo
 formats.Request: method Member(*repository.Repository) (*Request, error)
 formats.Request: method RepoRef() RepoRef
 formats.Request: method WriteTarget(*repository.Repository) *Request
@@ -362,7 +363,7 @@ formats.Resolver: method DeployTarget(context.Context, *Request) (*repository.Re
 formats.Resolver: method KeepsAway(context.Context, *Request, RepoRef, string) (bool, error)
 formats.Resolver: method Metadata(context.Context, *Request, Path, PathInfo, string) (*Merged, error)
 formats.Resolver: method Plan(context.Context, *Request, Path, PathInfo) (*VirtualPlan, error)
-formats.Resolver: method ReadScope(context.Context, *Request, []string) (ReadScope, error)
+formats.Resolver: method ReadScope(context.Context, *Request, []qname.Repo) (ReadScope, error)
 formats.Resolver: method ShadowCheck(context.Context, *Request, string) (ShadowOutcome, error)
 formats.RevSeq: type int64
 formats.Revision: field Digest [32]byte
@@ -524,6 +525,7 @@ formats.GuideEndpoint: value = "endpoint"
 formats.GuideInstall: value = "install"
 formats.GuideLockfiles: value = "lockfiles"
 formats.GuideMaintain: value = "maintain"
+formats.GuideProjectPlaceholder: value = "<project>"
 formats.GuidePublish: value = "publish"
 formats.GuideRepositoryPlaceholder: value = "<repository>"
 formats.GuideTroubleshooting: value = "troubleshooting"

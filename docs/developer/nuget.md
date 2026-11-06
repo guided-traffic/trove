@@ -33,14 +33,14 @@ imports the format contract and the leaf packages below, and reaches its tables 
 
 ### Two kinds of path
 
-A *protocol path* is what a client requests below `/api/nuget/<key>/` (`v3/flatcontainer/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg`); the routes match
+A *protocol path* is what a client requests below `/api/nuget/<projectKey>/<repoKey>/` (`v3/flatcontainer/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg`); the routes match
 it. A *canonical path* is where the item lives (`acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg`, R-NUGET-005); `Classify`, `PackageDocumentPath` and the helpers of
 `paths.go` speak it, and `CanonicalPath(route, params)` maps one to the other. The two are never mixed, because the package ID `v3` has the canonical path
 `v3/index.json`, which is also the service index (Q-NUGET-29). The kit's fixture maps between them (`Fixture.Canonical`, `Fixture.Protocol`, [formats.md](formats.md)).
 
 ### The routes
 
-Names are the handler names of R-NUGET-028; paths are relative to `/api/nuget/<key>/`. A write is a `Local` class route with `Route.APIKey`.
+Names are the handler names of R-NUGET-028; paths are relative to `/api/nuget/<projectKey>/<repoKey>/`. A write is a `Local` class route with `Route.APIKey`.
 
 | Route | Method and path | Kind and action |
 |---|---|---|

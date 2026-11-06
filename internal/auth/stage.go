@@ -16,6 +16,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // SessionCookie is the name of the UI session cookie (Q-AUTH-2).
@@ -132,12 +133,14 @@ func (s *Stage) Authenticate(r *http.Request, ep EndpointRules) (Result, error) 
 // unserved family is so decided like an unknown path by every rule at once - the exchange routes, the path rule of the
 // session cookie, the routes that are always open, the public operations, the hard limit on an unsafe anonymous request
 // to /api/v1 and the challenge - and its answer, before and after authentication, is the one of GET /does-not-exist
+// The path is the escaped one as received, so that the repository address of the npm routes is read by
+// qname.ParseAddress as the dispatcher reads it (a "%" in a named segment is no address).
 // (R-EP-005, Q-ARCH-302, Q-ARCH-306).
 func rulePath(r *http.Request, ep EndpointRules) string {
 	if ep.Served != nil && !ep.Served(r) {
 		return ""
 	}
-	return r.URL.Path
+	return r.URL.EscapedPath()
 }
 
 // routeAnswer asks [EndpointRules.APIKeyRoute] at most once per request, and only
@@ -523,19 +526,16 @@ func alwaysOpen(method, p string) bool {
 }
 
 // npmLoginStart reports whether p is the npm web login start (R-AUTH-034):
-// /-/v1/login, or /api/npm/<repoKey>/-/v1/login with one key segment. Any other
-// path that merely ends in /-/v1/login, under /files/ or /api/v1/ for example,
-// is not open.
+// /-/v1/login, or /api/npm/<projectKey>/<repoKey>/-/v1/login, read by
+// qname.ParseAddress (one segment after the format is no address, and a "%" in the
+// named segments is none either). Any other path that merely ends in /-/v1/login,
+// under /files/ or /api/v1/ for example, is not open.
 func npmLoginStart(p string) bool {
 	if p == "/-/v1/login" {
 		return true
 	}
-	rest, ok := strings.CutPrefix(p, "/api/npm/")
-	if !ok {
-		return false
-	}
-	key, tail, ok := strings.Cut(rest, "/")
-	return ok && key != "" && tail == "-/v1/login"
+	a, ok := qname.ParseAddress(p)
+	return ok && a.Family == qname.FamilyAPI && a.Format == "npm" && a.Rest == "-/v1/login"
 }
 
 // isExchangeRoute reports whether a request is a POST to a route that takes a
@@ -555,9 +555,6 @@ func isExchangeRoute(method, p string) bool {
 	if strings.HasPrefix(p, "/-/npm/v1/oidc/token/exchange/package/") {
 		return true
 	}
-	if rest, ok := strings.CutPrefix(p, "/api/npm/"); ok {
-		_, tail, ok := strings.Cut(rest, "/")
-		return ok && strings.HasPrefix(tail, marker[1:])
-	}
-	return false
+	a, ok := qname.ParseAddress(p)
+	return ok && a.Family == qname.FamilyAPI && a.Format == "npm" && strings.HasPrefix(a.Rest, marker[1:])
 }

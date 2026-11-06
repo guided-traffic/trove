@@ -20,24 +20,24 @@ func TestR_NPM_001_TheRegistryURL(t *testing.T) {
 	a := e.replica("web-a")
 	t.Run("R-NPM-001 the registry URL answers 200 {} to GET and HEAD", func(t *testing.T) {
 		for _, m := range []string{"GET", "HEAD"} {
-			ans := e.st.Do(a, m, "/api/npm/npm-local/", e.tokC, nil)
+			ans := e.st.Do(a, m, "/api/npm/it/npm-local/", e.tokC, nil)
 			if ans.Status != 200 || (m == "GET" && strings.TrimSpace(string(ans.Body)) != "{}") {
 				t.Fatalf("%s: %d %q", m, ans.Status, ans.Body)
 			}
 		}
-		if ans := e.st.Do(a, "GET", "/api/npm/npm-local", e.tokC, nil); ans.Status != 200 {
+		if ans := e.st.Do(a, "GET", "/api/npm/it/npm-local", e.tokC, nil); ans.Status != 200 {
 			t.Fatalf("without the slash: %d", ans.Status)
 		}
 	})
 	t.Run("R-NPM-001 a repository that does not exist is 404 in the native shape", func(t *testing.T) {
-		ans := e.st.Do(a, "GET", "/api/npm/does-not-exist/lodash", e.tokA, nil)
+		ans := e.st.Do(a, "GET", "/api/npm/it/does-not-exist/lodash", e.tokA, nil)
 		if ans.Status != 404 {
 			t.Fatalf("%d %s", ans.Status, ans.Body)
 		}
 		code(t, ans)
 	})
 	t.Run("R-NPM-001 a repository of another format is 404 as well", func(t *testing.T) {
-		ans := e.st.Do(a, "GET", "/api/npm/gen-local/lodash", e.tokA, nil)
+		ans := e.st.Do(a, "GET", "/api/npm/it/gen-local/lodash", e.tokA, nil)
 		if ans.Status != 404 {
 			t.Fatalf("%d %s", ans.Status, ans.Body)
 		}
@@ -57,7 +57,7 @@ func TestR_NPM_001_TheRegistryURL(t *testing.T) {
 			{"POST", "-/npm/v1/security/advisories/bulk", 501},
 			{"POST", "-/stage/package/lodash", 501},
 		} {
-			ans := e.st.Do(a, c.method, "/api/npm/npm-local/"+c.path, e.tokA, nil)
+			ans := e.st.Do(a, c.method, "/api/npm/it/npm-local/"+c.path, e.tokA, nil)
 			if ans.Status != c.status {
 				t.Errorf("%s %s: %d %s", c.method, c.path, ans.Status, ans.Body)
 				continue
@@ -66,14 +66,14 @@ func TestR_NPM_001_TheRegistryURL(t *testing.T) {
 		}
 	})
 	t.Run("R-NPM-001 an operation of the wrong method is 405 with Allow", func(t *testing.T) {
-		ans := e.st.Do(a, "DELETE", "/api/npm/npm-local/-/ping", e.tokA, nil)
+		ans := e.st.Do(a, "DELETE", "/api/npm/it/npm-local/-/ping", e.tokA, nil)
 		if ans.Status != 405 || ans.Header.Get("Allow") != "GET, HEAD" {
 			t.Fatalf("%d Allow %q", ans.Status, ans.Header.Get("Allow"))
 		}
 		code(t, ans)
 	})
 	t.Run("R-NPM-002 a second layer of escapes never reaches a route", func(t *testing.T) {
-		ans := e.st.Do(a, "GET", "/api/npm/npm-local/a%2525b", e.tokA, nil)
+		ans := e.st.Do(a, "GET", "/api/npm/it/npm-local/a%2525b", e.tokA, nil)
 		if ans.Status != 400 || code(t, ans) != "npm_invalid_name" {
 			t.Fatalf("%d %s", ans.Status, ans.Body)
 		}
@@ -95,7 +95,7 @@ func TestR_NPM_005_EveryRouteAnswersInTheNativeShape(t *testing.T) {
 	for _, r := range f.Routes() {
 		for _, ex := range r.Examples {
 			for who, tok := range map[string]string{"anonymous": "", "reader": e.tokC, "writer": e.tokA} {
-				ans := e.st.Do(a, r.Method, "/api/npm/npm-local/"+ex, tok, []byte(`{}`))
+				ans := e.st.Do(a, r.Method, "/api/npm/it/npm-local/"+ex, tok, []byte(`{}`))
 				n++
 				if h := strings.ToLower(ans.Header.Get("WWW-Authenticate")); strings.Contains(h, "otp") || strings.Contains(h, "ipaddress") {
 					t.Errorf("%s %s as %s: WWW-Authenticate %q", r.Method, ex, who, h)
@@ -132,7 +132,7 @@ func TestR_NPM_005_AccessLogAndMetrics(t *testing.T) {
 	if ans.Status != 201 {
 		t.Fatalf("%d %s", ans.Status, ans.Body)
 	}
-	e.st.Do(a, "GET", "/api/npm/npm-local/-/v1/search", e.tokA, nil, "npm-command", "search", "npm-session", "feedface")
+	e.st.Do(a, "GET", "/api/npm/it/npm-local/-/v1/search", e.tokA, nil, "npm-command", "search", "npm-session", "feedface")
 	logs := a.Logs.String()
 	for _, want := range []string{
 		`"handler":"npm.publish"`, `"npm-command":"publish"`, `"npm-session":"0123456789abcdef"`,

@@ -16,7 +16,7 @@ import (
 
 // documentURL is the path of a tarball below the registry URL of a repository.
 func tarballRoute(repo, name, version string) string {
-	return "/api/npm/" + repo + "/" + name + "/-/" + corpus.TarballFile(name, version)
+	return "/api/npm/it/" + repo + "/" + name + "/-/" + corpus.TarballFile(name, version)
 }
 
 func (r *renv) tarball(rep *testenv.Replica, repo, name, version, token string) testenv.Answer {
@@ -264,7 +264,7 @@ func TestR_NPM_026_AVersionTheUpstreamDroppedIsGoneFromDocumentsAndTarballs(t *t
 	if vs := versionsOf(t, r.view(reps[1], rRemote, p.Name, r.tokA)); len(vs) != len(p.Versions)-1 || contains(strings.Join(vs, ","), evil+",") {
 		t.Errorf("the document lists %v", vs)
 	}
-	files := r.st.Do(reps[1], http.MethodGet, "/files/"+rRemote+"/"+p.Name+"/-/"+corpus.TarballFile(p.Name, evil), r.tokA, nil)
+	files := r.st.Do(reps[1], http.MethodGet, "/files/it/"+rRemote+"/"+p.Name+"/-/"+corpus.TarballFile(p.Name, evil), r.tokA, nil)
 	if files.Status != 404 {
 		t.Errorf("/files/: %d", files.Status)
 	}
@@ -356,7 +356,7 @@ func TestR_NPM_025_AGonePackageIs404UnlessRemovedVersionsAreServed(t *testing.T)
 	if a := r.tarball(rep, rRemote, p.Name, v, r.tokA); a.Status != 404 {
 		t.Errorf("the tarball of a gone package: %d", a.Status)
 	}
-	if n := r.st.Number(`SELECT count(*) FROM audit_event WHERE action = 'proxy.upstream_gone' AND repository = $1`, rRemote); n < 1 {
+	if n := r.st.Number(`SELECT count(*) FROM audit_event WHERE action = 'proxy.upstream_gone' AND repository = $1`, "it/"+rRemote); n < 1 {
 		t.Errorf("%d proxy.upstream_gone events", n)
 	}
 }

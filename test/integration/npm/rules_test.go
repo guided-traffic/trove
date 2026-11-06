@@ -190,7 +190,7 @@ func TestR_NPM_007_RequestRules(t *testing.T) {
 		e.mustPublish(a, "npm-claims", e.tokA, pkg{Name: "acme_ui"})
 	})
 	t.Run("R-NPM-002 a second layer of escapes is 400 before anything is read", func(t *testing.T) {
-		ans := e.st.Do(a, "PUT", "/api/npm/npm-local/a%2525b", e.tokA, []byte(`{}`))
+		ans := e.st.Do(a, "PUT", "/api/npm/it/npm-local/a%2525b", e.tokA, []byte(`{}`))
 		if ans.Status != 400 || code(t, ans) != "npm_invalid_name" {
 			t.Fatalf("%d %s", ans.Status, ans.Body)
 		}

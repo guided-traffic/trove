@@ -173,6 +173,8 @@ func newEnv(t *testing.T) *env {
 		cfg = testenv.ThroughPgBouncer(t, cfg, user, maint)
 	}
 	e := &env{t: t, db: name, cfg: cfg, admin: connect(name), people: map[string]person{}}
+	// Every repository belongs to a project (Q-AUTHZ-206): the tests of this package use "it".
+	e.exec("INSERT INTO project (id, key, display_name) VALUES (gen_random_uuid(), 'it', 'it') ON CONFLICT (key) DO NOTHING")
 	e.s3 = newS3(t)
 	return e
 }
@@ -841,7 +843,7 @@ func (r *replica) createRepository(key string, extra map[string]any) {
 	for k, v := range extra {
 		body[k] = v
 	}
-	if res := r.postJSON("admin", "/api/v1/repositories", body); res.status != 201 {
+	if res := r.postJSON("admin", "/api/v1/projects/it/repositories", body); res.status != 201 {
 		r.t.Fatalf("create %s: %d %s", key, res.status, res.body)
 	}
 }
@@ -850,7 +852,7 @@ func (r *replica) createRepository(key string, extra map[string]any) {
 // optional path patterns.
 func (e *env) grant(r *replica, name string, repos []string, paths authz.PatternLists, entries map[string][]string) {
 	e.t.Helper()
-	in := authz.PolicyInput{Name: name, Resources: authz.Resources{Repositories: repos, Paths: paths}}
+	in := authz.PolicyInput{Name: name, Resources: authz.Resources{Repositories: qualified(repos), Paths: paths}}
 	for who, actions := range entries {
 		in.Entries = append(in.Entries, authz.Entry{Principal: who, Actions: actions})
 	}
@@ -886,3 +888,18 @@ func waitFor(t testing.TB, what string, within time.Duration, cond func() bool) 
 
 // contentLimit is ui.deploy.max_upload_bytes of the test replicas: small enough to cross in a test.
 const contentLimit = 1 << 20
+
+// qualified puts the selectors of a global policy or a token scope into the project "it": a bare
+// key names a repository of the project of the tests, a class selector (@any…) and a qualified
+// name stay (R-AUTHZ-004).
+func qualified(repos []string) []string {
+	out := make([]string, len(repos))
+	for i, r := range repos {
+		if strings.HasPrefix(r, "@") || strings.Contains(r, "/") {
+			out[i] = r
+		} else {
+			out[i] = "it/" + r
+		}
+	}
+	return out
+}

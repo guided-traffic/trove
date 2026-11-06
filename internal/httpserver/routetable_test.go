@@ -19,7 +19,7 @@ func TestRouteTable(t *testing.T) {
 	t.Run("R-HA-041 the planned client routes pass", func(t *testing.T) {
 		r := NewClientRouter()
 		for _, p := range []string{
-			"/api/v1/", "GET /api/v1/system/ping", "/api/npm/{repoKey}/{rest...}", "/files/{repoKey}/{path...}",
+			"/api/v1/", "GET /api/v1/system/ping", "/api/npm/{projectKey}/{repoKey}/{rest...}", "/files/{projectKey}/{repoKey}/{path...}",
 			"/auth/", "/ui/", "POST /-/npm/v1/oidc/token/exchange/package/{name...}",
 		} {
 			r.HandleFunc(p, noop)

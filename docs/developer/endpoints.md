@@ -307,7 +307,7 @@ every endpoint's patterns, and the unit test fails on a `files` pattern register
 `Document.CheckRoutes` (API routes against the OpenAPI document) runs only for endpoints that serve `api`, over the
 registered and the dropped patterns (`checkAPIRoutes`): the ci_exchange route of a surface without it is not missing.
 `CheckRouteTable` also fails a pattern of another family that can match a path of the API or of the exchange
-(`/api/{format}/{repoKey}/…` matches `/api/v1/…`; checked by trying the pattern in a ServeMux against probe paths).
+(`/api/{format}/{projectKey}/{repoKey}/…` matches `/api/v1/…`; checked by trying the pattern in a ServeMux against probe paths).
 The router's fallback answers a path of a family outside the surface with the plain 404, never a 405 with `Allow`.
 The stages ask the same question per request (`Endpoint.ServesRequest`): the authentication stage through
 `EndpointRules.Served`, the preflight and stage 7 through `familyServed` in [ratelimit.go](../../internal/api/v1/ratelimit.go), so an
