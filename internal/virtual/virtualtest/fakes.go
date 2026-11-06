@@ -301,7 +301,10 @@ type Artifacts struct {
 	// HitErr makes serving a stored item of a repository (a local or cached hit) fail with the error before any byte,
 	// as the item store does for an object that cannot be opened.
 	HitErr map[string]error
-	calls  []string
+	// CachedErr makes the cache tier of a remote repository answer the error, as the engine does for a cached item whose
+	// object is lost (proxy.IsLost).
+	CachedErr map[string]error
+	calls     []string
 }
 
 var _ virtual.Tiers = (*Artifacts)(nil)
@@ -310,7 +313,7 @@ var _ virtual.Tiers = (*Artifacts)(nil)
 func NewArtifacts() *Artifacts {
 	return &Artifacts{
 		LocalItems: map[string]map[string]string{}, CachedItems: map[string]map[string]string{}, UpstreamItems: map[string]map[string]string{},
-		FetchErr: map[string]error{}, FailAfterBytes: map[string]error{}, HitErr: map[string]error{},
+		FetchErr: map[string]error{}, FailAfterBytes: map[string]error{}, HitErr: map[string]error{}, CachedErr: map[string]error{},
 	}
 }
 
@@ -354,6 +357,15 @@ func (a *Artifacts) Local(_ context.Context, mem virtual.Member, d virtual.Descr
 
 // RemoteCached implements virtual.Tiers.
 func (a *Artifacts) RemoteCached(_ context.Context, mem virtual.Member, d virtual.Descriptor) (virtual.Hit, bool, error) {
+	a.mu.Lock()
+	err := a.CachedErr[mem.Repo.Key]
+	a.mu.Unlock()
+	if err != nil {
+		a.mu.Lock()
+		a.calls = append(a.calls, "cached:"+mem.Repo.Key)
+		a.mu.Unlock()
+		return nil, false, err
+	}
 	return a.hit(a.CachedItems, "cached", mem, d)
 }
 

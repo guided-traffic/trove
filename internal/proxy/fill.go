@@ -50,6 +50,7 @@ func (e *Engine) Fill(ctx context.Context, rq Request) (FillOutcome, error) {
 		return FillOutcome{}, errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist.")
 	}
 	// hitDamaged is a miss: the pass fills the item again, and its commit writes the object again (R-STOR-027, Q-REPO-202).
+	lost := state == hitDamaged
 	if e.offline(rem) {
 		return FillOutcome{}, offlineMiss(rem)
 	}
@@ -72,22 +73,25 @@ func (e *Engine) Fill(ctx context.Context, rq Request) (FillOutcome, error) {
 	}); err != nil {
 		return FillOutcome{}, err
 	}
+	if left, ok := e.backedOff(rq); lost && ok {
+		return FillOutcome{}, unrepairedError(left) // the last fill could not restore it (Q-REPO-205)
+	}
 	// The slot comes first: a background request that may not run yet holds neither the flight nor a client's wait (Q-REPO-179).
 	rq, sctx, release, err := e.holdBackground(ctx, rq)
 	if err != nil {
 		return FillOutcome{}, err
 	}
 	defer release()
-	st := &reqState{role: roleLeader}
+	st := &reqState{role: roleLeader, lost: lost}
 	res, end := e.collapse(sctx, rq, st)
-	if st.collapsed && end == endDone && res.err != nil && !res.negative {
+	if st.collapsed && end == endDone && res.err != nil && !res.negative && !errors.Is(res.err, errUnrepaired) {
 		// The flight was a client's and failed with the client's classification (R-REPO-029): a 429 would be an item failure
 		// here, with no wait and no halving. The circuit says what happened to the upstream; when it is closed the pass fetches
 		// once for itself (Q-REPO-180).
 		if open, retry, perr := e.circuitPeek(ctx, rem); perr == nil && open {
 			return FillOutcome{}, circuitWait(retry)
 		}
-		st = &reqState{role: roleLeader}
+		st = &reqState{role: roleLeader, lost: lost}
 		res, end = e.collapse(sctx, rq, st)
 	}
 	switch {
@@ -102,23 +106,31 @@ func (e *Engine) Fill(ctx context.Context, rq Request) (FillOutcome, error) {
 	case res.negative:
 		return FillOutcome{}, errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist upstream.", errs.WithAbsent())
 	case res.stored:
-		if st.collapsed {
-			return FillOutcome{Present: true}, nil // a client's fetch or an earlier flight stored it
-		}
-		it, found, err := e.o.Items.Live(ctx, e.liveRef(rem.Repo, rq.Facts), rq.Path)
-		if err != nil {
-			return FillOutcome{}, err
-		}
-		if !found {
-			return FillOutcome{}, errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist.")
-		}
-		if items.ContentError(it) != nil {
-			// The item's object was lost and the commit kept its recorded digest: the upstream serves other bytes now
-			// (R-REPO-041, Q-REPO-202). A failure of the item.
-			return FillOutcome{}, lostContent("the upstream now serves other content for it", nil)
-		}
-		return FillOutcome{Bytes: it.Size}, nil
+		return e.filled(ctx, rq, st.collapsed, lost)
 	}
 	return FillOutcome{}, errs.E(errs.Unavailable, errs.CodeObjectStoreUnavail,
 		"The artifact could not be stored; retry.", errs.WithRetryAfter(5*time.Second))
+}
+
+// filled is the outcome of a pass's fill whose flight stored the artifact: Present when another request's flight stored it,
+// else the bytes this one stored. An item that was lost before the flight is read again whichever flight fetched it: a commit
+// that kept the recorded digest (the upstream serves other bytes now, R-REPO-041) left it lost, which is a failure of the item
+// and starts the backoff, never Present (Q-REPO-202, Q-REPO-205).
+func (e *Engine) filled(ctx context.Context, rq Request, collapsed, lost bool) (FillOutcome, error) {
+	if collapsed && !lost {
+		return FillOutcome{Present: true}, nil // a client's fetch or an earlier flight stored it
+	}
+	it, found, err := e.o.Items.Live(ctx, e.liveRef(rq.Remote.Repo, rq.Facts), rq.Path)
+	switch {
+	case err != nil:
+		return FillOutcome{}, err
+	case !found:
+		return FillOutcome{}, errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist.")
+	case items.ContentError(it) != nil:
+		e.noteUnrepaired(rq)
+		return FillOutcome{}, unrepairedError(unrepairedBackoff)
+	case collapsed:
+		return FillOutcome{Present: true}, nil // a client's refill restored it
+	}
+	return FillOutcome{Bytes: it.Size}, nil
 }

@@ -1,6 +1,7 @@
 package virtual
 
 import (
+	"cmp"
 	"context"
 	"maps"
 	"net/http"
@@ -46,10 +47,18 @@ func (r *Resolver) Artifact(ctx context.Context, c Caller, p *Plan, t Tiers, w h
 		}
 	}
 	remotes := p.Remote()
+	// failure is the first transient failure of a member: the answer when no member serves the item (step 7).
+	var failure error
 	for _, m := range remotes {
 		hit, ok, err := t.RemoteCached(ctx, m, d)
-		if err != nil {
+		if err != nil && !contentLost(err) {
 			return err
+		}
+		if err != nil {
+			// The member's cache holds the item and its object is lost (Q-REPO-205): the walk goes on, its fetch tier
+			// included, which fills it again for a caller who may; a caller who may not gets this 503, not a 404.
+			failure = cmp.Or(failure, err)
+			continue
 		}
 		if !ok {
 			continue
@@ -58,16 +67,18 @@ func (r *Resolver) Artifact(ctx context.Context, c Caller, p *Plan, t Tiers, w h
 		if !c.Rules {
 			tw.Header().Set(ResolvedFromHeader, m.Repo.Key)
 		}
-		if err := hit(tw); err == nil || tw.wrote || !contentLost(err) {
+		herr := hit(tw)
+		if herr == nil || tw.wrote || !contentLost(herr) {
 			r.m.resolved(repo, sourceCache)
-			return err
+			return herr
 		}
+		failure = cmp.Or(failure, herr)
 		// The read found the cached copy's object missing or damaged and marked it, before anything was written: the
 		// member's cache does not have the item, and the walk goes on, its fetch tier included, which fills it again
-		// (storage.md R-STOR-027, Q-REPO-204). A local member's lost object stays its answer: that is data loss.
+		// (storage.md R-STOR-027, Q-REPO-204); the loss is the answer when nothing serves it (Q-REPO-205). A local member's
+		// lost object stays its answer: that is data loss.
 		tw.Header().Del(ResolvedFromHeader)
 	}
-	var failure error
 	for _, m := range remotes {
 		if !m.MayFill {
 			// A member the caller may not fill counts as a miss (R-AUTHZ-009 rule 3).

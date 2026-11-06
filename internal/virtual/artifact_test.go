@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -76,6 +77,45 @@ func TestR_REPO_019_ArtifactTiers(t *testing.T) {
 		}
 		if n := counter(t, w.reg, "trove_virtual_resolutions_total", map[string]string{"source": "cache"}); n != 0 {
 			t.Fatalf("source cache = %v: the cache tier did not serve", n)
+		}
+	})
+
+	t.Run("Q-REPO-205 a lost cached copy of a member the caller may not fill is 503 content_unavailable, never 404", func(t *testing.T) {
+		lost := errs.E(errs.Unavailable, errs.CodeContentUnavailable, "lost", errs.WithRetryAfter(30*time.Second))
+		for name, arrange := range map[string]func(w *world){
+			// The first request: the cache tier serves, and the read finds the object gone.
+			"found at the read": func(w *world) {
+				vt.Put(w.arts.CachedItems, "npm-remote", tgz, "cached-bytes")
+				w.arts.HitErr["npm-remote"] = lost
+			},
+			// Every later request: the engine's cache tier answers the loss (proxy.IsLost).
+			"marked before": func(w *world) { w.arts.CachedErr["npm-remote"] = lost },
+		} {
+			t.Run(name, func(t *testing.T) {
+				w := newWorld(t, func(o *worldOpts) { o.fill = "deploy" })
+				arrange(w)
+				vt.Put(w.arts.UpstreamItems, "npm-remote", tgz, "upstream-bytes")
+				_, err := w.artifact(alice, "left-pad", "1.0.0") // read only: may not fill
+				if k, code := kind(err); k != errs.Unavailable || code != errs.CodeContentUnavailable {
+					t.Fatalf("err = %v, want the member's 503", err)
+				}
+				if slices.Contains(w.arts.Calls(), "fetch:npm-remote") {
+					t.Fatalf("a caller who may not fill reached the upstream: %v", w.arts.Calls())
+				}
+			})
+		}
+	})
+
+	t.Run("Q-REPO-205 a lost cached copy is no answer while another member's cache serves the item", func(t *testing.T) {
+		w := newWorld(t, func(o *worldOpts) {
+			o.fill = "deploy"
+			o.members = []repository.Repository{local, remote, remote2}
+		})
+		w.arts.CachedErr["npm-remote"] = errs.E(errs.Unavailable, errs.CodeContentUnavailable, "lost")
+		vt.Put(w.arts.CachedItems, "npm-remote2", tgz, "second-bytes")
+		rec, err := w.artifact(alice, "left-pad", "1.0.0")
+		if err != nil || rec.Body.String() != "second-bytes" || rec.Header().Get(virtual.ResolvedFromHeader) != "npm-remote2" {
+			t.Fatalf("body %q err %v headers %v", rec.Body.String(), err, rec.Header())
 		}
 	})
 

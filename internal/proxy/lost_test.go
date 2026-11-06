@@ -86,6 +86,42 @@ func TestR_STOR_027_ALostItemIsAMissAndItsAnswerIs503(t *testing.T) {
 		}
 	})
 
+	t.Run("Q-REPO-205 the cache tier's answer for a lost item is a 503 that IsLost tells apart", func(t *testing.T) {
+		err := lostContent("the cache cannot serve it until its upstream fills it again", errLost)
+		if !IsLost(err) || !items.ContentLost(err) || err.Status() != 503 || err.RetryAfter != lostRetry {
+			t.Fatalf("%v: lost %v, status %d", err, IsLost(err), err.Status())
+		}
+		if IsLost(lostContent("x is offline", nil)) || IsLost(unrepairedError(time.Minute)) {
+			t.Fatal("another 503 counts as the cache tier's")
+		}
+	})
+
+	t.Run("Q-REPO-205 an item whose fill left it lost is not fetched again on this replica for the backoff", func(t *testing.T) {
+		now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+		e := &Engine{o: Options{Now: func() time.Time { return now }}}
+		rq := Request{Remote: Remote{id: 7}, Path: "left-pad/-/left-pad-1.0.0.tgz"}
+		if _, ok := e.backedOff(rq); ok {
+			t.Fatal("a backoff before any fill")
+		}
+		e.noteUnrepaired(rq)
+		now = now.Add(time.Minute)
+		left, ok := e.backedOff(rq)
+		if !ok || left != unrepairedBackoff-time.Minute {
+			t.Fatalf("backoff %v %v", left, ok)
+		}
+		if _, ok := e.backedOff(Request{Remote: Remote{id: 7}, Path: "left-pad/-/left-pad-1.0.1.tgz"}); ok {
+			t.Fatal("the backoff of one item holds another")
+		}
+		ee := unrepairedError(left)
+		if ee.Status() != 503 || ee.Code != errs.CodeContentUnavailable || ee.RetryAfter != left || !errors.Is(ee, errUnrepaired) {
+			t.Fatalf("%v", ee)
+		}
+		now = now.Add(unrepairedBackoff)
+		if _, ok := e.backedOff(rq); ok {
+			t.Fatal("the backoff outlived its period")
+		}
+	})
+
 	t.Run("Q-REPO-202 a client that cannot fill a lost item gets 503 content_unavailable with the cause's Retry-After, or 30 s", func(t *testing.T) {
 		e := lostContent("the upstream is assumed to be offline", assumedOffline(42*time.Second))
 		if e.Status() != 503 || e.Code != errs.CodeContentUnavailable || e.RetryAfter != 42*time.Second {

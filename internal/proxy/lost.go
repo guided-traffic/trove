@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/blob"
@@ -26,6 +27,66 @@ const lostRetry = 30 * time.Second
 // changedRetry is the Retry-After of a document whose refill brought another digest than the request had read: the new
 // document is stored already, and the next request reads it.
 const changedRetry = time.Second
+
+// unrepairedBackoff is how long a replica does not fetch a lost item again after a fill of it left it lost: the upstream now
+// serves other bytes for an artifact, whose recorded digest stays (R-REPO-041), or the format kept the stored document (npm
+// keeps one that is newer than the upstream's). Neither changes within seconds, and each fetch would be a whole transfer, an
+// audit event and an object for collection (Q-REPO-205).
+const unrepairedBackoff = 5 * time.Minute
+
+// errLost is the cause of the answer for an item whose object is lost and that the cache tier cannot serve ([Engine.Cached]),
+// and errUnrepaired that of an item whose last fill left it lost.
+var (
+	errLost       = errors.New("proxy: the object of the cached item is lost")
+	errUnrepaired = errors.New("proxy: the last fill of the lost item did not restore it")
+)
+
+// IsLost reports whether err is the answer of [Engine.Cached] for a cached item whose object is missing or damaged: a 503
+// content_unavailable that a caller who can fill the item again treats as a miss (the remote's own request path, a mirror's
+// pass), and that a virtual repository answers when no member serves the item (Q-REPO-205).
+func IsLost(err error) bool { return errors.Is(err, errLost) }
+
+// unrepairedError is the answer while the backoff of an unrepaired item lasts: 503 content_unavailable with the backoff's rest.
+func unrepairedError(left time.Duration) *errs.Error {
+	return errs.E(errs.Unavailable, errs.CodeContentUnavailable,
+		"The stored object of the item is missing, and the last fill from the upstream could not restore it; it is fetched again later.",
+		errs.WithRetryAfter(max(left, time.Second)), errs.WithCause(errUnrepaired))
+}
+
+// unrepairedKey is the key of an item in the backoff.
+func unrepairedKey(rq Request) string {
+	return strconv.FormatInt(rq.Remote.id, 10) + "\x00" + rq.Path + "\x00" + rq.Variant
+}
+
+// noteUnrepaired starts the backoff of an item whose fill left it lost, on this replica.
+func (e *Engine) noteUnrepaired(rq Request) {
+	now := e.now()
+	e.umu.Lock()
+	defer e.umu.Unlock()
+	if e.unrepaired == nil {
+		e.unrepaired = map[string]time.Time{}
+	}
+	if len(e.unrepaired) > 4096 {
+		for k, t := range e.unrepaired {
+			if now.Sub(t) >= unrepairedBackoff {
+				delete(e.unrepaired, k)
+			}
+		}
+	}
+	e.unrepaired[unrepairedKey(rq)] = now
+}
+
+// backedOff reports how long the backoff of an unrepaired item still lasts on this replica, false when it has none.
+func (e *Engine) backedOff(rq Request) (time.Duration, bool) {
+	e.umu.Lock()
+	t, ok := e.unrepaired[unrepairedKey(rq)]
+	e.umu.Unlock()
+	if !ok {
+		return 0, false
+	}
+	left := unrepairedBackoff - e.now().Sub(t)
+	return left, left > 0
+}
 
 // refillKey marks the context of a refill of a document by the digest the request read: the bytes of that digest are not
 // filled a second time under it, and the documents the flight reads besides (a discovery document) still are.
@@ -116,13 +177,16 @@ func (e *Engine) refillArtifact(ctx context.Context, rq Request, w http.Response
 	}); err != nil {
 		return err // the block of the vulnerability scanning answers as for any miss (R-VULN-015)
 	}
+	if left, ok := e.backedOff(rq); ok {
+		return unrepairedError(left) // the last fill could not restore it (Q-REPO-205)
+	}
 	if r.Method == http.MethodHead {
 		if err := e.head(ctx, rq, w); err != nil {
 			return lostContent("the upstream could not serve it again", err)
 		}
 		return nil
 	}
-	st := &reqState{role: roleLeader}
+	st := &reqState{role: roleLeader, lost: true}
 	res, end := e.collapse(ctx, rq, st)
 	if end == endGone {
 		return ctx.Err()
@@ -135,6 +199,9 @@ func (e *Engine) refillArtifact(ctx context.Context, rq Request, w http.Response
 	case res.err != nil:
 		if ee, ok := errs.As(res.err); ok && ee.Code == errs.CodeObjectStoreUnavail {
 			return withStatus(res.err, fwd) // the store that lost the object cannot take it either: its own 503 (R-STOR-036)
+		}
+		if errors.Is(res.err, errUnrepaired) {
+			return withStatus(res.err, fwd)
 		}
 		return withStatus(lostContent("the upstream could not serve it again", res.err), fwd)
 	case res.negative:
@@ -154,8 +221,10 @@ func (e *Engine) refillArtifact(ctx context.Context, rq Request, w http.Response
 	case !found:
 		return errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist.")
 	case items.ContentError(again) != nil:
-		// The fill kept the recorded digest: the upstream serves other bytes now (R-REPO-041).
-		return withStatus(lostContent("the upstream now serves other content for it", nil), cs)
+		// The fill kept the recorded digest: the upstream serves other bytes now (R-REPO-041). This replica does not fetch
+		// it again for the backoff (Q-REPO-205).
+		e.noteUnrepaired(rq)
+		return withStatus(unrepairedError(unrepairedBackoff), cs)
 	}
 	return e.serveItem(ctx, rq, w, cs, again, false)
 }

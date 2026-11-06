@@ -107,30 +107,18 @@ func (e *Engine) metadata(ctx context.Context, rq Request, restoredAt time.Time)
 		}
 		return nil, withStatus(lostOr(rq, lost, "the upstream is assumed to be offline", circuitOpenError(rq, retry)), CacheStatus{})
 	}
-	// Step 8: the negative entry, the replica's L1 first and then Valkey.
-	if _, hit := e.neg.lookup(ctx, rem, rq.Path, rq.Variant); hit {
-		e.m.lookup(rem.Repo.Key, Metadata, resultNegative)
-		return negativeDocument(false), nil
-	}
-	// Step 9: the cache-fill check.
-	if !e.mayFill(ctx, rq) {
-		if found {
-			e.m.lookup(rem.Repo.Key, Metadata, resultStale)
-			return e.storedDocument(rq, restoredAt, en, servedStale()), nil
-		}
-		if lost && !rq.background() {
-			return nil, lostContent("the caller may not fill the cache of "+rem.Repo.Key, nil)
-		}
-		return nil, e.denyFill(ctx, rq)
+	// The stored copy that the answer may fall back on reads its bytes for the request as it came: the request the flight
+	// runs holds the pass's slot, which is released when this function returns.
+	held := heldCopy{en: en, found: found, lost: lost, doc: func(cs CacheStatus) *Document { return e.storedDocument(rq, restoredAt, en, cs) }}
+	if doc, done, err := e.beforeFetch(ctx, rq, held); done {
+		return doc, err
 	}
 	// Step 10: the collapsing protocol and the fetch.
 	e.m.lookup(rem.Repo.Key, Metadata, resultMiss)
 	if found && !rq.background() { // a pass waits for the refresh: it has no client to answer with the stored copy
 		st.refresh = time.Duration(rem.Settings.Cache.MetadataRefreshTimeoutSeconds) * time.Second
 	}
-	// The stored copy that the answer may fall back on reads its bytes for the request as it came: the request the flight
-	// runs holds the pass's slot, which is released when this function returns.
-	held := heldCopy{en: en, found: found, lost: lost, doc: func(cs CacheStatus) *Document { return e.storedDocument(rq, restoredAt, en, cs) }}
+	st.lost = lost
 	rq, sctx, release, err := e.holdBackground(ctx, rq)
 	if err != nil {
 		return nil, err
@@ -141,6 +129,37 @@ func (e *Engine) metadata(ctx context.Context, rq Request, restoredAt time.Time)
 		return nil, ErrPreempted
 	}
 	return e.metadataAnswer(ctx, rq, st, held, res, end)
+}
+
+// beforeFetch is steps 8 and 9 of R-REPO-025 for a request that has no fresh document to serve, and the backoff of a lost
+// one (Q-REPO-205): done is true when they answer the request, with the document or the error.
+func (e *Engine) beforeFetch(ctx context.Context, rq Request, held heldCopy) (doc *Document, done bool, err error) {
+	rem := rq.Remote
+	// Step 8: the negative entry, the replica's L1 first and then Valkey.
+	if _, hit := e.neg.lookup(ctx, rem, rq.Path, rq.Variant); hit {
+		e.m.lookup(rem.Repo.Key, Metadata, resultNegative)
+		if held.lost && !rq.background() {
+			// The entry is stored, not gone, and lost, and a negative entry stands for the path (a 404 of another flight
+			// that did not see the entry): the item exists, so its loss is the answer, not the 404 (Q-REPO-205).
+			return nil, true, lostContent("the upstream answered that it does not have it", nil)
+		}
+		return negativeDocument(false), true, nil
+	}
+	// Step 9: the cache-fill check.
+	if !e.mayFill(ctx, rq) {
+		if held.found {
+			e.m.lookup(rem.Repo.Key, Metadata, resultStale)
+			return held.doc(servedStale()), true, nil
+		}
+		if held.lost && !rq.background() {
+			return nil, true, lostContent("the caller may not fill the cache of "+rem.Repo.Key, nil)
+		}
+		return nil, true, e.denyFill(ctx, rq)
+	}
+	if left, ok := e.backedOff(rq); held.lost && ok {
+		return nil, true, unrepairedError(left) // the last fill could not restore it
+	}
+	return nil, false, nil
 }
 
 // heldCopy is what a request read of the stored document before the flight: the entry, whether it serves (found), whether
@@ -397,8 +416,10 @@ func (f *fetcher) metadata(ctx context.Context, resp *http.Response, idle *atomi
 	}
 	if en.Damaged() {
 		// The format kept the stored document, whose object is lost: npm keeps a document that is newer than the upstream's
-		// (R-NPM-024). Nothing can serve it until the upstream's copy is as new (Q-REPO-202).
-		return flightResult{err: lostContent("the upstream's copy is older than the stored one", nil), status: resp.StatusCode}
+		// (R-NPM-024). Nothing can serve it until the upstream's copy is as new (Q-REPO-202); fetching it again before then
+		// would end the same, on this replica (the backoff) and on the others (the flight is released stored, Q-REPO-205).
+		e.noteUnrepaired(rq)
+		return flightResult{err: unrepairedError(unrepairedBackoff), status: resp.StatusCode, unrepaired: true}
 	}
 	if b, rerr := io.ReadAll(sp.Reader()); rerr == nil && en.Digest == [32]byte(sp.SHA256) {
 		e.keepBytes(en.Digest, b)

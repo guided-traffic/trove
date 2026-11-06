@@ -250,6 +250,56 @@ func (r *renv) ageCheck(d []byte) {
 	r.st.Exec(`UPDATE blobs SET checked_at = checked_at - make_interval(secs => $2) WHERE sha256 = $1`, d, blob.MissingRecheckInterval.Seconds()+1)
 }
 
+func TestR_STOR_027_AVirtualAnswers503ForALostCachedTarballOfAMemberTheCallerMayNotFill(t *testing.T) {
+	r := newRemoteEnv(t, remoteOptions{})
+	rep := r.start(1)[0]
+	p := upstreamPackage(t, 3)
+	first := p.Versions[0]
+	// bob may fill npm-gated (cacheFillAction: deploy) and caches one version through the virtual repository; alice may read
+	// both and fill neither.
+	b := r.view(rep, rGatedV, p.Name, r.tokB)
+	if b.Status != 200 {
+		t.Fatalf("bob: %d %.200s", b.Status, b.Body)
+	}
+	if got := r.install(rep, tarballsOf(t, b)[first.Version], r.tokB); got.Status != 200 {
+		t.Fatalf("bob's install: %d", got.Status)
+	}
+	tgz := r.entryBlob(rGated, "artifact", p.Name+"/-/"+corpus.TarballFile(p.Name, first.Version))
+	r.st.DeleteObject(t, tgz)
+	r.stub.Reset()
+
+	// Q-REPO-206: alice's document still lists the version; a loss of the store does not change what the documents say.
+	a := r.view(rep, rGatedV, p.Name, r.tokA)
+	if vs := versionsOf(t, a); a.Status != 200 || len(vs) != 1 || vs[0] != first.Version {
+		t.Fatalf("alice sees %v (%d)", vs, a.Status)
+	}
+	// Q-REPO-205: her download is the member's 503, on the read that finds the object gone and on every later one, never 404.
+	for i := range 3 {
+		lostAnswer(t, fmt.Sprintf("alice's download %d", i+1), r.tarball(rep, rGatedV, p.Name, first.Version, r.tokA))
+	}
+	if got := r.contentStatus(tgz); got != "missing" {
+		t.Fatalf("content_status %s, want missing", got)
+	}
+	// The same for a corrupt object (the scrub's or the verification's mark).
+	r.st.Exec(`UPDATE blobs SET content_status = 'corrupt' WHERE sha256 = $1`, tgz)
+	lostAnswer(t, "a corrupt object", r.tarball(rep, rGatedV, p.Name, first.Version, r.tokA))
+	// The remote addressed directly answers the same.
+	lostAnswer(t, "the remote itself", r.tarball(rep, rGated, p.Name, first.Version, r.tokA))
+	if n := r.stub.Counts().Total(); n != 0 {
+		t.Fatalf("the upstream was asked %d times on behalf of a caller who may not fill", n)
+	}
+	// bob's download fills it again through the virtual repository, and then alice gets it too.
+	if got := r.tarball(rep, rGatedV, p.Name, first.Version, r.tokB); got.Status != 200 || integrityOf(got.Body) != first.Dist.Integrity {
+		t.Fatalf("bob's refill: %d %.200s", got.Status, got.Body)
+	}
+	if got := r.tarball(rep, rGatedV, p.Name, first.Version, r.tokA); got.Status != 200 || integrityOf(got.Body) != first.Dist.Integrity {
+		t.Fatalf("alice after the refill: %d %.200s", got.Status, got.Body)
+	}
+	if got := r.contentStatus(tgz); got != "ok" {
+		t.Fatalf("content_status %s after the refill", got)
+	}
+}
+
 func TestR_HA_024_AMissingMarkHealsOnceTheObjectIsBack(t *testing.T) {
 	r := newRemoteEnv(t, remoteOptions{})
 	reps := r.start(2)

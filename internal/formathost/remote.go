@@ -84,7 +84,7 @@ func (r *remote) Artifact(ctx context.Context, rq *formats.Request, p formats.Pa
 		// statement with the rows the gate decides on, so that the hit costs no second one (R-ARCH-027): the gate works on
 		// those rows and the engine serves the item it read.
 		hit, cached, herr := r.e.Cached(ctx, preq)
-		if herr != nil {
+		if herr != nil && !proxy.IsLost(herr) { // a lost item is a miss here: the engine fills it again (Q-REPO-202)
 			noteRemote(rq, herr)
 			return herr
 		}

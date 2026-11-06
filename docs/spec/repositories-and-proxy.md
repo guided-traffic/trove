@@ -909,7 +909,9 @@ For a request to virtual repository V with descriptor d (R-REPO-003) by caller c
    R-REPO-029), because "not found" would be a false statement about an item that may exist.
    A member that the caller may not populate and whose cache lacks the item is not consulted and
    counts as "not found"; a failure after the first byte of an artifact ends the request, because
-   another member cannot continue it (Q-REPO-111).
+   another member cannot continue it (Q-REPO-111). A remote member whose cache holds the item with
+   its object lost has failed transiently with `503 content_unavailable`, whether or not the caller
+   may populate it: the walk goes on, and that is the answer when nothing serves the item (Q-REPO-205).
 
 - Artifact responses MUST carry `Trove-Resolved-From: <member key>`; the member is one the caller
   can read, so the header discloses nothing new. On an endpoint with exposure rules the header is
@@ -1632,9 +1634,14 @@ execute these steps in order:
   item and never `500`; a document the upstream answers 404 or 410 is marked gone as on any refresh (R-REPO-029). A document
   whose object turns out to be lost when its bytes are read is filled again once and served when the upstream's copy has the
   digest the request read, else answered `503` with `Retry-After: 1`. Through a virtual repository a remote member's lost
-  cached copy is a miss of the cache tier (R-REPO-019); a local member's loss is that member's answer. An entry marked
-  `missing` whose object is back (found by the read's recheck, once per blob and 30 s, [storage.md](storage.md) Q-STOR-153)
-  is served again without an upstream fetch.
+  cached copy is a miss of the cache tier and a transient failure of the member (R-REPO-019 step 7): the member's fetch tier
+  fills it again for a caller who may populate it, and a caller who may not gets the `503`, never the `404` (Q-REPO-205); a
+  local member's loss is that member's answer. A merged document keeps listing a version whose cached artifact is lost
+  (Q-REPO-206). An entry marked `missing` whose object is back (found by the read's recheck, once per blob and 30 s,
+  [storage.md](storage.md) Q-STOR-153) is served again without an upstream fetch. A fill that leaves the item lost (an
+  artifact whose upstream serves other bytes, a document the format keeps) is not repeated for 5 minutes on the replica, and a
+  request that waited for it on another replica does not fetch it again; the `503` carries the rest of the 5 minutes as
+  `Retry-After` (Q-REPO-205).
 - Replicas SHOULD keep recently served metadata bytes in a bounded in-memory cache keyed by blob
   digest, so a fresh hit costs no object-store round trip. Which digest a request serves is always
   read from `remote_cache_entries`; the key is the content address, so this cache can never make
@@ -6837,6 +6844,77 @@ asks for local members to be backed by remote ones, which is a feature, not a re
 
 **Applied in the spec:** R-REPO-025 ("Lost content"). Code: `internal/virtual/artifact.go` (`Artifact`). Tests:
 `TestR_REPO_019_ArtifactTiers` (`internal/virtual/artifact_test.go`), `TestR_STOR_027_ACachedNPMItemWhoseObjectIsMissingIsFilledAgainFromTheUpstream`.
+
+### Q-REPO-205 · A lost item that cannot be filled is a 503 everywhere, and a fill that cannot restore it is not repeated for 5 minutes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: an independent review of Q-REPO-202 to Q-REPO-204 found five gaps, each confirmed by a test on the code before this decision.
+(1) Through a virtual repository a caller who may read the remote member and not fill it got `404` for a cached artifact whose object is
+lost: the cache tier dropped the loss, the fetch tier skips a member the caller may not fill, and nothing else was found (the remote itself
+answered `503`); npm and NuGet take a `404` as final. (2) An artifact whose upstream now serves other bytes was fetched whole on every
+request, each with an unthrottled `proxy.upstream_digest_changed` and an object for collection, and a request that waited on another
+replica fetched once more; a document that npm keeps (stored newer than the upstream's) the same. (3) A mirror's pass that joined a
+client's refill reported the item present when the refill had left it lost. (4) A lost document beside a negative entry answered the
+format's `404`. Such a pair exists: a negative entry is never removed by a fill, and a flight that went on without the cross-replica lock
+(R-REPO-026: Valkey unavailable, the wait bound) can record a 404 while another one stores the document, with no gone mark, because the
+404's flight did not see the entry.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One answer for a lost item that is not filled, and a backoff for a fill that cannot restore it (chosen) | `Engine.Cached` answers a lost item with `503 content_unavailable` that `proxy.IsLost` tells apart; the remote's request path and the mirror take it as a miss and fill, the virtual cache tier records it as the member's failure; a fill that commits and leaves the item lost starts a backoff of 5 minutes on its replica and releases the flight stored, and a request that waited for it elsewhere and finds the item lost still answers the `503` instead of fetching | Every route answers a lost item alike (R-HA-024: never `404`); the upstream sees at most one whole transfer per replica and 5 minutes, the audit log one event per item and hour per replica | The backoff is per replica: n replicas fetch up to n times per 5 minutes when their requests do not overlap |
+| (b) A negative entry for the digest change, shared through Valkey | One fetch per cluster and period | A negative entry means "the upstream answered 404 or 410" (R-REPO-028): the explanation, the gone rules and every miss of the path would read it so, for up to 24 hours, and `notFoundTtlSeconds: 0` turns it off |
+| (c) Report the item not cached, as before, and let the virtual repository count it as a miss | No change | Simplest | The `404` of (1) |
+
+**Choice:** (a), with these rules:
+
+- `Cached` (the cache tier, the mirror's "present", the explanation) answers a lost item with the `503`; `formathost`'s remote request path
+  and the mirror's `Fill` treat it as a miss and fill it (Q-REPO-202), the explanation reports it as not cached, and
+  [internal/virtual](../../internal/virtual/artifact.go) records it, and a hit that fails with `content_unavailable` before the first byte, as
+  the member's transient failure (R-REPO-019 step 7): another member may still serve the item, the member's fetch tier fills it for a caller
+  who may populate it, and otherwise the walk ends with that `503`. A corrupt object counts alike.
+- A fill of a lost item that commits and leaves it lost (R-REPO-041 kept the recorded digest; the format kept the stored document) answers
+  `503 content_unavailable` with a `Retry-After` of the rest of 5 minutes, and for those 5 minutes that replica answers so without a fetch
+  (`unrepairedBackoff`), for client requests and passes alike. The flight is released stored; a request that waited for it, found the item
+  lost before and finds it lost still, answers the same and starts its own replica's backoff. 5 minutes: neither cause changes within
+  seconds, and each fetch is a whole transfer; the read's recheck of Q-STOR-153 still serves an object that comes back meanwhile.
+- `proxy.upstream_digest_changed` is written once an hour per item and pair of digests on a replica, as the check of announced digests is
+  (`trove_remote_integrity_failures_total{reason="digest_changed"}` counts every fetch).
+- A pass that joined a client's flight reads the item again when it found it lost: still lost is a failure of the item, never Present.
+- A lost document beside a negative entry answers the `503` (step 8), as an artifact does.
+
+**Rationale:** the loss of an object is the store's, not the item's: no route may turn it into "does not exist". The backoff bounds what the
+review found unbounded with state the replica holds anyway, without giving a negative entry a second meaning. The development agent would
+revisit (b) with an entry of its own kind if the per-replica bound is seen to load an upstream with many replicas.
+
+**Applied in the spec:** R-REPO-019 (step 7), R-REPO-025 ("Lost content"). Code: `internal/proxy/lost.go` (`IsLost`, `unrepairedBackoff`,
+`noteUnrepaired`, `backedOff`), `internal/proxy/artifact.go` (`Cached`, `digestChanged`), `internal/proxy/flight.go` (`waitOnce`, `recheck`),
+`internal/proxy/fill.go` (`filled`), `internal/proxy/metadata.go` (`beforeFetch`), `internal/virtual/artifact.go`, `internal/formathost/remote.go`,
+`internal/formathost/mirror_host.go`, `internal/formathost/virtual_remotes.go`. Tests: `TestR_STOR_027_AVirtualAnswers503ForALostCachedTarballOfAMemberTheCallerMayNotFill`
+(`test/integration/npm/remote_lost_test.go`), the four `TestR_STOR_027_*` of `test/integration/proxy/lost_test.go`, `TestR_REPO_019_ArtifactTiers`,
+`internal/proxy/lost_test.go`.
+
+### Q-REPO-206 · A merged document keeps listing a version whose cached artifact is lost
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: for a remote member the caller may not populate, the merged document of a virtual repository lists only the versions whose artifact
+is cached (R-AUTHZ-008, `ProxyCachedArtifacts`), "so that every version a document lists can be downloaded". The statement does not read
+`content_status`, so a version whose cached artifact is lost stays listed, and its download answers `503` (Q-REPO-205).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep listing it: `ProxyCachedArtifacts` ignores `content_status` (chosen) | No change to the statement | A loss of the store does not change what the documents say: a client resolves the same versions before, during and after the loss, gets a `503` that names the cause and retries, and the alert tells the operator | A client of that caller fails on the version until the object is back or a caller who may populate fills it |
+| (b) Leave it out while the object is lost | Join `blobs` and filter on `ok` | Every listed version downloads | A client silently resolves another version (or none) because of a store fault, and back again when the object returns or the recheck heals the mark; lockfiles that pin the version fail with "no matching version", a permanent-looking error for a transient fault |
+
+**Choice:** (a).
+
+**Rationale:** R-HA-024 says the item exists and its content may come back; a document that hides it states otherwise, and dependency
+resolution that changes with the store's health is worse than a retryable `503`. The development agent would revisit (b) if losses are seen
+to last long enough that callers who may not populate cannot work around them.
+
+**Applied in the spec:** R-REPO-025 ("Lost content"). Code: none (`internal/meta/postgres/queries/proxy.sql`, `ProxyCachedArtifacts`, unchanged).
+Test: `TestR_STOR_027_AVirtualAnswers503ForALostCachedTarballOfAMemberTheCallerMayNotFill`.
 
 ### Q-REPO-211 · The nightly install-time ratio of clients first runs on the large class
 

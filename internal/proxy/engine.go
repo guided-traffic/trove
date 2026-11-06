@@ -149,6 +149,10 @@ type Engine struct {
 
 	tmu       sync.Mutex
 	throttled map[string]time.Time
+
+	// umu guards unrepaired: when a fill of a lost item last left it lost, by item (Q-REPO-205).
+	umu        sync.Mutex
+	unrepaired map[string]time.Time
 }
 
 // New creates the engine and registers its caches (R-ARCH-032): the per-repository
@@ -199,7 +203,7 @@ func newEngine(o Options, readOnly bool) (*Engine, error) {
 		o: o, log: o.Log, m: newMetrics(o.Metrics),
 		slots:   newSlots(o.Config.MaxConcurrentFetches, o.Replicas),
 		flights: map[string]*flight{}, probes: map[int64]*atomic.Bool{}, ensured: map[int64]bool{},
-		throttled: map[string]time.Time{}, qcalls: map[queryKey]*queryCall{},
+		throttled: map[string]time.Time{}, qcalls: map[queryKey]*queryCall{}, unrepaired: map[string]time.Time{},
 	}
 	e.slots.now = o.Now
 	e.readOnly = readOnly

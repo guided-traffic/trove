@@ -266,8 +266,11 @@ func (e *Engine) lookupHit(ctx context.Context, rq Request, asEntry bool) (items
 
 // Cached reads the cache tier of an artifact and never contacts the upstream. The
 // item is returned unless the entry is marked gone or the package is gone. An item
-// whose object is missing or damaged is not cached: the cache tier misses, and the
-// request path fills it again (R-STOR-027, Q-REPO-202).
+// whose object is missing or damaged, and not back (Q-STOR-153), is not served by the
+// cache tier: the answer is a 503 content_unavailable that [IsLost] recognises. A
+// caller that can fill the item again treats it as a miss, and the request path fills
+// it (R-STOR-027, Q-REPO-202); every other caller answers it, so that a lost item is
+// never the 404 of an item the cache does not hold (Q-REPO-205).
 func (e *Engine) Cached(ctx context.Context, rq Request) (items.Item, bool, error) {
 	if err := e.validate(rq, Artifact); err != nil {
 		return items.Item{}, false, err
@@ -276,7 +279,13 @@ func (e *Engine) Cached(ctx context.Context, rq Request) (items.Item, bool, erro
 		return items.Item{}, false, err
 	}
 	it, state, err := e.lookupHit(ctx, rq, false)
-	return it, state == hitStored, err
+	switch {
+	case err != nil:
+		return items.Item{}, false, err
+	case state == hitDamaged:
+		return items.Item{}, false, lostContent("the cache cannot serve it until its upstream fills it again", errLost)
+	}
+	return it, state == hitStored, nil
 }
 
 // liveRef is the reference a stored artifact is read with: the repository and its download policy, so that the lookup reads
@@ -506,14 +515,21 @@ func (f *fetcher) integrityMismatch(ctx context.Context, sp *items.Spooled) flig
 
 // digestChanged ends a fetch that lost to a duplicate flight: another flight
 // committed different content under the same path, the entry upsert refuses this one
-// and everybody is served the committed entry (R-REPO-026).
+// and everybody is served the committed entry (R-REPO-026). The same ends the refill of
+// a lost item whose upstream serves other bytes now; its recorded digest stays
+// (R-REPO-041, Q-REPO-202). The security event is written once an hour per item and
+// pair of digests on a replica, as the check of announced digests is: the counter
+// counts every fetch (Q-REPO-205).
 func (f *fetcher) digestChanged(ctx context.Context, sp *items.Spooled, cached [32]byte) flightResult {
 	e, rq := f.e, f.rq
 	e.m.integrity.WithLabelValues(rq.Remote.Repo.Key, "digest_changed").Inc()
-	e.o.Audit.Record(ctx, e.event(rq, audit.EventProxyUpstreamDigestChanged, map[string]any{
-		"path": rq.Path, "cachedSha256": hex.EncodeToString(cached[:]), "fetchedSha256": hex.EncodeToString(sp.SHA256[:]),
-		"announced": announcedJSON(rq.Expected),
-	}))
+	key := rq.Remote.Repo.Key + "\x00" + rq.Path + "\x00" + hex.EncodeToString(cached[:]) + hex.EncodeToString(sp.SHA256[:])
+	if e.throttle(key, time.Hour) {
+		e.o.Audit.Record(ctx, e.event(rq, audit.EventProxyUpstreamDigestChanged, map[string]any{
+			"path": rq.Path, "cachedSha256": hex.EncodeToString(cached[:]), "fetchedSha256": hex.EncodeToString(sp.SHA256[:]),
+			"announced": announcedJSON(rq.Expected),
+		}))
+	}
 	return flightResult{stored: true}
 }
 

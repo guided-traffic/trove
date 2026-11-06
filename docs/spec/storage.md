@@ -4336,6 +4336,13 @@ repair), by a remote's refill of the same content, and by the recheck of a read 
 which finds an object that an operator restored, or that a store answering 404 for objects that exist (a wrong `storage.s3.prefix` that the start-up
 check cannot see, because it writes its own probe below whatever prefix it is given, R-STOR-035) had hidden. Such a store marks every blob that is read
 while it does; `TroveBlobMissing` fires at the first, and the marks heal within 30 s of the next read after the prefix is corrected.
+What counts as "no such object" is the client's mapping ([internal/blob/s3/errors.go](../../internal/blob/s3/errors.go)): the codes
+`NoSuchKey` and `NotFound`, and any other `404` that is not `NoSuchBucket` or `NoSuchUpload`. So a gateway, load balancer or proxy in
+front of the store that answers `404` while it is rolled out or misrouted marks every blob that is read meanwhile, exactly as a wrong prefix
+does, and the remote repositories fetch those items again from their upstreams (Q-REPO-202). The marks heal by the recheck of Q-STOR-153
+once the store answers again. A narrower mapping (`NoSuchKey` alone) was weighed and not taken: S3-compatible stores differ in the code of a
+missing key, and a loss the mapping does not mark is a loss a remote cannot repair, because the commit of the same content deduplicates on
+a row that says `ok` (R-STOR-005).
 
 Not changed: the audit event that R-STOR-027 asks of every detection is not written, for `missing` as for `corrupt`: the store's damage hook
 (`blob.WithDamageHook`) has no caller in the composition root.
@@ -4399,6 +4406,9 @@ repository) and the mirror source of the vulnerability scanning call it. The rem
 with `blob.Store.RecheckMissing` before it counts either as lost ([repositories-and-proxy.md](repositories-and-proxy.md) Q-REPO-202): a cached item
 whose object is back is served without an upstream fetch. `HEAD` and conditional requests of a missing blob, which ask nothing of the store
 otherwise, may make that one look per interval. The engine of a `View` (the explanation on `api`) asks no store.
+
+The same heals the marks that a `404` of something in front of the store left (a gateway during a rollout, Q-STOR-151): within 30 s of
+the first read of each blob after the store answers again.
 
 **Rationale:** a mark is a statement about the store at one moment; it has to be checked again, and the column for that already exists. The
 development agent would revisit the interval if a store's outage that answers 404 is seen to make the looks a load, and would move the recheck into the
