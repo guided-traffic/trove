@@ -934,9 +934,16 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   expired and the reaper counted the attempts (no counting defect). CPU profile of a `web` pod: 57 % in the virtual tarball
   path, 35 % TLS writes, 30 % per-tarball PostgreSQL reads (`TarballFacts`, `items.read`, `proxy.getEntry`, `Tombstoned`).
   The per-tarball reads are one statement per route ([Q-ARCH-291](../spec/architecture.md#q-arch-291--how-does-a-download-read-the-rows-its-serve-check-decides-on-without-a-statement-of-its-own);
-  a per-replica cache of the facts was weighed there and rejected: they are not immutable). Open: shedding by memory in use instead of a worst case per request
-  (after measuring a held download), the full settle deadline for the release writes at shutdown, and a load the runner
-  can carry
+  a per-replica cache of the facts was weighed there and rejected: they are not immutable). Done 2026-11-06: shedding by memory in
+  use ([Q-ARCH-328](../spec/architecture.md#q-arch-328--admission-charges-the-bytes-a-request-holds-and-the-caches-hold-now-not-a-worst-case-per-request-and-the-caches-budgets)):
+  a held download of 1 to 5 MiB measured 636 to 659 KiB against the 640 KiB charged (`TestHeldDownloadCost`), so the worst case was
+  right for large files and wrong for small tarballs (about 242 KiB) and for empty caches, whose full budgets (648 MiB) were reserved
+  and left 77 slots on 1 GiB; a download now settles to what it holds and the caches count by the bytes they hold
+  (`TestBurstBesideEmptyCaches`: 300 held downloads on 1 GiB, nothing shed; `TestMemoryAdmission` still sheds a real exhaustion; gap
+  H-539). The release writes at shutdown get their whole settle deadline
+  ([Q-ARCH-329](../spec/architecture.md#q-arch-329--the-job-worker-is-cancelled-early-enough-that-the-release-writes-of-its-jobs-get-their-whole-settle-deadline)):
+  the job worker is cancelled 15 s before the close deadline (`TestShutdownReleaseWrites`). The nightly `npm-ha` passed on the class
+  `large` in run 42126196109. Open: green nightly runs in a row on the fix
 - 🟡 The drain criterion of the security audit (R-NPM-038, moved from phase 3): the `web` pod that forwards an `npm audit`
   to a provider answering after 20 s is deleted 1 s in; `npm audit` succeeds and no pod gets `SIGKILL`
 - ⚪ The default of `health.shutdown_drain_delay` (5 s, proposed) set from the endpoint-removal time of the target Ingress measured under load; the dev profile needs 15 s on the CI runners (Actions run 41241903588)
