@@ -8629,6 +8629,10 @@ type ListPackagesParams struct {
 	// Format Repeat the parameter for several formats (`npm`, `nuget`, …).
 	Format *[]string `form:"format,omitempty" json:"format,omitempty"`
 
+	// Project A project key: only the versions in the physical repositories of that project count (Q-UI-129). It
+	// combines with `repository` by intersection. A project the caller cannot see lists nothing.
+	Project *string `form:"project,omitempty" json:"project,omitempty"`
+
 	// Repository Repeat the parameter for several repository keys.
 	Repository *[]string `form:"repository,omitempty" json:"repository,omitempty"`
 
@@ -13171,6 +13175,19 @@ func (siw *ServerInterfaceWrapper) ListPackages(w http.ResponseWriter, r *http.R
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "format"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "format", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
 		}
 		return
 	}

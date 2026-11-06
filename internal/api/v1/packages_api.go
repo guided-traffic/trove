@@ -143,6 +143,7 @@ func packageFilter(lq ListQuery) (view.Filter, error) {
 	f := view.Filter{
 		Formats: splitValues(lq.Filter["format"]),
 		Q:       lq.First("q"), Keyword: lq.First("keyword"), NamePrefix: lq.First("namePrefix"),
+		Project: lq.First("project"),
 	}
 	if reps, ok := lq.Filter["repository"]; ok {
 		f.Repositories, f.HasRepositories = splitValues(reps), true
@@ -170,7 +171,7 @@ func (s *Server) ListPackages(w http.ResponseWriter, r *http.Request, _ gen.List
 		return
 	}
 	lq, err := ParseList(r, ListSpec{
-		Filters:     []string{"format", "repository", "q", "namePrefix", "keyword", "createdFrom", "createdTo"},
+		Filters:     []string{"format", "project", "repository", "q", "namePrefix", "keyword", "createdFrom", "createdTo"},
 		Sorts:       []string{"name", "createdAt", "updatedAt"},
 		DefaultSort: "name",
 	}, s.o.API.Config)

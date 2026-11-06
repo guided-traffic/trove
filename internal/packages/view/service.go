@@ -242,11 +242,14 @@ type Filter struct {
 	// nothing.
 	Repositories    []string
 	HasRepositories bool
-	Q               string
-	Keyword         string
-	NamePrefix      string
-	CreatedFrom     *time.Time
-	CreatedTo       *time.Time
+	// Project narrows the list to the physical repositories of that project
+	// (Q-UI-129); it combines with Repositories by intersection.
+	Project     string
+	Q           string
+	Keyword     string
+	NamePrefix  string
+	CreatedFrom *time.Time
+	CreatedTo   *time.Time
 }
 
 // Order is the sort of the list: name, createdAt or updatedAt.
@@ -324,6 +327,7 @@ func (s *Service) List(ctx context.Context, sc Scope, f Filter, o Order, after *
 	if len(formats) == 0 {
 		return nil, nil
 	}
+	f = sc.topo.InProject(f)
 	repos := sc.reposOf(f)
 	universe := intersectOrAll(sc.Repos(), repos, f.HasRepositories)
 	var qIDs, kwIDs []int64

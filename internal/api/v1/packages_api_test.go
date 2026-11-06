@@ -328,7 +328,7 @@ func TestR_API_029_DownloadURLs(t *testing.T) {
 }
 
 func TestR_API_029_FilterParsing(t *testing.T) {
-	spec := ListSpec{Filters: []string{"format", "repository", "q", "namePrefix", "keyword", "createdFrom", "createdTo"}, Sorts: []string{"name", "createdAt", "updatedAt"}, DefaultSort: "name"}
+	spec := ListSpec{Filters: []string{"format", "project", "repository", "q", "namePrefix", "keyword", "createdFrom", "createdTo"}, Sorts: []string{"name", "createdAt", "updatedAt"}, DefaultSort: "name"}
 	parse := func(query string) (ListQuery, error) {
 		return ParseList(httptest.NewRequest("GET", "/api/v1/packages?"+query, nil), spec, apiCfg())
 	}
@@ -342,6 +342,10 @@ func TestR_API_029_FilterParsing(t *testing.T) {
 	}
 	if lq.Sort != "updatedAt" || !lq.Desc {
 		t.Fatalf("sort %q desc %v", lq.Sort, lq.Desc)
+	}
+	lq, _ = parse("project=team-a")
+	if f, _ := packageFilter(lq); f.Project != "team-a" || f.HasRepositories {
+		t.Fatalf("the project filter is kept apart from the repository filter: %+v", f)
 	}
 	lq, _ = parse("")
 	if f, _ := packageFilter(lq); f.HasRepositories {
