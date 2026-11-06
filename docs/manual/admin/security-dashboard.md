@@ -1,6 +1,8 @@
 # Security dashboard
 
-The security dashboard is the instance-wide view of the vulnerability findings, in the admin area. It shows the counts and the trend over every project, finds a finding by advisory identifier, package or project, lists the findings with the project of each, and lets the people who may triage change their status. The project's own **Vulnerabilities** screen in the content area is the same report for the repositories you read; this page covers what differs. For what a finding is and what the triage statuses mean, see [Vulnerabilities](../user/vulnerabilities.md).
+The security dashboard is the instance-wide view of the vulnerability findings, in the admin area. It shows the counts and the trend over every project, finds a finding by advisory identifier, package or project, lists the findings with the project of each, and lets the people who may triage change their status.
+
+The **Vulnerabilities** screen in the content area is the same report for the repositories you read; this page covers what differs. For what a finding is and what the triage statuses mean, see [Vulnerabilities](../user/vulnerabilities.md).
 
 ## Who sees it
 
