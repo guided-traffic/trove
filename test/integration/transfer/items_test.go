@@ -464,7 +464,7 @@ func TestR_STOR_015_StatisticsActivityAndAudit(t *testing.T) {
 		}
 	})
 	t.Run("R-OPS-015 artifact.deployed is transactional, artifact.downloaded is recorded with audit.record_downloads", func(t *testing.T) {
-		if ev := a.rec.ofType("artifact.deployed"); len(ev) == 0 || ev[len(ev)-1].Repository != "generic-local" || ev[len(ev)-1].Actor.Name != "ci" {
+		if ev := a.rec.ofType("artifact.deployed"); len(ev) == 0 || ev[len(ev)-1].Repository != "it/generic-local" || ev[len(ev)-1].Actor.Name != "ci" {
 			t.Errorf("artifact.deployed = %+v", ev)
 		}
 		waitFor(t, "the download event", 5*time.Second, func() bool { return len(a.rec.ofType("artifact.downloaded")) > 0 })

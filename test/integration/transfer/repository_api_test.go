@@ -84,7 +84,7 @@ func TestRepositoryResourceContract(t *testing.T) {
 
 	apitest.RunContract(t, apitest.Resource{
 		Name: "repositories", Do: across("admin", a, b), //nolint:bodyclose // the contract tests close the bodies
-		Collection: a.baseURL + "/api/v1/repositories",
+		Collection: a.baseURL + "/api/v1/projects/it/repositories",
 		Create: func(n int) map[string]any {
 			return map[string]any{"key": fmt.Sprintf("contract-%s-%d", run, n), "class": "local", "format": "generic", "description": "contract"}
 		},
@@ -96,7 +96,7 @@ func TestRepositoryResourceContract(t *testing.T) {
 		OtherQuery: "class=local", Put: true,
 	})
 	t.Run("R-API-002 E1.6 the answers of the repository operations were validated against the document", func(t *testing.T) {
-		if missing := val.Uncovered("createRepository", "listRepositories", "getRepository", "updateRepository", "replaceRepository"); len(missing) > 0 {
+		if missing := val.Uncovered("createProjectRepository", "listProjectRepositories", "getRepository", "updateRepository", "replaceRepository"); len(missing) > 0 {
 			t.Fatalf("not reached: %v", missing)
 		}
 	})
@@ -358,7 +358,7 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 		}
 		// A project filter selects the repositories assigned to the project; an unknown key selects none (Q-REPO-22).
 		e.project("acme")
-		if res := a.postJSON("admin", "/api/v1/projects/it/repositories", map[string]any{"key": "acme-one", "class": "local", "format": "generic", "project": "acme"}); res.status != 201 {
+		if res := a.postJSON("admin", "/api/v1/projects/acme/repositories", map[string]any{"key": "acme-one", "class": "local", "format": "generic"}); res.status != 201 {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
 		if got := items(list("admin", "?project=acme")); fmt.Sprint(got) != "[acme-one]" {
@@ -462,7 +462,7 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 	})
 
 	t.Run("R-API-002 the answers of every repository operation matched the document", func(t *testing.T) {
-		if missing := val.Uncovered("createRepository", "listRepositories", "getRepository", "updateRepository", "deleteRepository"); len(missing) > 0 {
+		if missing := val.Uncovered("createProjectRepository", "listRepositories", "getRepository", "updateRepository", "deleteRepository"); len(missing) > 0 {
 			t.Fatalf("not reached: %v", missing)
 		}
 	})
