@@ -146,11 +146,16 @@ DELETE FROM vuln_advisory WHERE ecosystem = sqlc.arg(ecosystem)::text AND id = A
 -- The stored records that are or alias any of the names: one round of the closure that finds an alias group (R-VULN-006).
 -- severity* is the severity decided for the record, own_* the record's own; a row stored before 00038 has no own_* and its
 -- decided columns stand in.
--- One lookup of the primary key and of the aliases index per name (Q-VULN-90). `id = ANY(names) OR aliases && names` left the
+-- One lookup of the primary key and of the aliases index per name (Q-VULN-90, Q-VULN-94). `id = ANY(names) OR aliases && names` left the
 -- choice to estimates the data misleads: a table whose aliases are mostly empty makes `&&` look like it matches a share of the
--- table, and the plan was a sequential scan of the whole table for every round; the index lookup of a name costs microseconds,
--- the sequential scan seconds on a loaded host. The OR in the join condition allows a nested loop only, so every name is
--- probed through the two indexes; `@> ARRAY[name]` is the one-key form of `&&`. A record two names reach is returned once.
+-- table, and the plan was a sequential scan of the whole table for every round. The first form of this statement joined the names
+-- to the table with the OR in the join condition and left the order of the join to the planner: on a table that has not been
+-- analyzed yet, the first full import of an installation, `ecosystem = ...` is estimated at 0.5 % of the rows, the planner makes the
+-- table the outer side and tests every row against every name (99,998,000 tests for 2,000 names and 50,000 rows, 13 s, the statement
+-- timeout in the failure suite). The LATERAL makes the names the outer side whatever the estimates are, and each name is looked up
+-- in the primary key and, in the second branch, in the aliases index only: `OFFSET 0` keeps the planner from adding the
+-- ecosystem's index (which returns the whole ecosystem for every name before the aliases index narrows it) to that branch, the
+-- ecosystem is tested on the rows it returns. `@> ARRAY[name]` is the one-key form of `&&`. A record two names reach is returned once.
 SELECT DISTINCT ON (v.id) v.id, v.canonical_id, v.aliases, v.kind, (v.withdrawn IS NOT NULL)::boolean AS is_withdrawn, v.severity, v.severity_source,
        COALESCE(v.cvss_version, '')::text AS cvss_version, COALESCE(v.cvss_vector, '')::text AS cvss_vector,
        COALESCE(v.cvss_score, 0)::float8 AS cvss_score,
@@ -160,7 +165,11 @@ SELECT DISTINCT ON (v.id) v.id, v.canonical_id, v.aliases, v.kind, (v.withdrawn 
        (CASE WHEN v.own_severity IS NULL THEN COALESCE(v.cvss_vector, '') ELSE COALESCE(v.own_cvss_vector, '') END)::text AS own_cvss_vector,
        (CASE WHEN v.own_severity IS NULL THEN COALESCE(v.cvss_score, 0) ELSE COALESCE(v.own_cvss_score, 0) END)::float8 AS own_cvss_score
   FROM unnest(sqlc.arg(names)::text[]) AS n(name)
-  JOIN vuln_advisory v ON v.ecosystem = sqlc.arg(ecosystem)::text AND (v.id = n.name OR v.aliases @> ARRAY[n.name])
+ CROSS JOIN LATERAL (
+       SELECT x.* FROM vuln_advisory x WHERE x.ecosystem = sqlc.arg(ecosystem)::text AND x.id = n.name
+       UNION ALL
+       (SELECT x.* FROM vuln_advisory x WHERE x.aliases @> ARRAY[n.name] OFFSET 0)) AS v
+ WHERE v.ecosystem = sqlc.arg(ecosystem)::text
  ORDER BY v.id;
 
 -- name: VulnAdvisorySetCanonical :exec

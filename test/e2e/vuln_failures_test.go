@@ -57,9 +57,12 @@ func restoreSourceAfter(t *testing.T, e *vulnEnv, osv *stubControl) {
 // bulkVersions are the stored versions of every seeded package; the filler advisory of the test source (introduced 0, fixed 1.0.1)
 // affects the first two.
 var (
-	bulkVersions  = []string{"0.9.0", "1.0.0", "1.0.1", "1.1.0"}
-	bulkAffected  = []string{"0.9.0", "1.0.0"}
-	bulkNameQuery = `'trove-test-filler-' || lpad(i::text, 4, '0')`
+	bulkVersions = []string{"0.9.0", "1.0.0", "1.0.1", "1.1.0"}
+	bulkAffected = []string{"0.9.0", "1.0.0"}
+	// lpad cuts a longer text to its length: the number has at least four digits and as many more as it needs, as the source's %04d
+	bulkNumber    = `lpad(i::text, greatest(4, length(i::text)), '0')`
+	bulkNameQuery = `'trove-test-filler-' || ` + bulkNumber
+	bulkAdvQuery  = `'GHSA-fill-' || ` + bulkNumber + ` || '-0000'`
 )
 
 // bulkSQL is the list of an SQL array literal.
@@ -202,8 +205,8 @@ func TestVulnLong_R_VULN_011_SwitchoverDuringEvaluation(t *testing.T) {
 	e.awaitEvaluated(t)
 
 	t.Run("R-VULN-011 no finding twice, none lost", func(t *testing.T) {
-		expected := fmt.Sprintf(`SELECT %[1]s AS name, v AS version, 'GHSA-fill-' || lpad(i::text, 4, '0') || '-0000' AS adv FROM generate_series(0, %[2]d) i, unnest(%[3]s) v`,
-			bulkNameQuery, names-1, bulkSQL(bulkAffected))
+		expected := fmt.Sprintf(`SELECT %[1]s AS name, v AS version, %[4]s AS adv FROM generate_series(0, %[2]d) i, unnest(%[3]s) v`,
+			bulkNameQuery, names-1, bulkSQL(bulkAffected), bulkAdvQuery)
 		got := `SELECT package_name AS name, version, advisory_id AS adv FROM trove.vuln_finding WHERE repo_id = ` + repo + ` AND status <> 'resolved'`
 		counts := sql(t, fmt.Sprintf(`SELECT (SELECT count(*) FROM (%[1]s EXCEPT %[2]s) a) || '|' || (SELECT count(*) FROM (%[2]s EXCEPT %[1]s) b) || '|' || (SELECT count(*) FROM (%[2]s) c)`, expected, got))
 		want := fmt.Sprintf("0|0|%d", names*len(bulkAffected))

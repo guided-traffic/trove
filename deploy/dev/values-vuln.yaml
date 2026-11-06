@@ -27,3 +27,12 @@ config:
       vuln-sync-osv: {enabled: false, schedule: "*/15 * * * *"}
       vuln-sync-osv-full: {enabled: false, schedule: "17 3 * * 0"}
       vuln-sync-kev: {enabled: false, schedule: "41 */6 * * *"}
+worker:
+  pools:
+    # A worker of the pool is released 14 s after SIGTERM with this grace period (grace - 5 s of margin - 11 s, internal/app/shutdown.go),
+    # not the 44 s of values-dev.yaml: since Q-VULN-90 and Q-VULN-91 the full sync of the 100,000 filler records takes under a minute, and
+    # the drain test of R-VULN-004 needs a run that is still working when the release is due (Q-VULN-92).
+    - name: vuln
+      queues: [vuln]
+      replicaCount: 2
+      terminationGracePeriodSeconds: 30

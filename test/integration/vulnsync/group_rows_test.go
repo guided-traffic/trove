@@ -130,3 +130,54 @@ func TestR_VULN_028_TheGroupRowsRoundReadsTheIndexesOnly(t *testing.T) {
 		t.Errorf("the round scanned the table sequentially %d times and used its indexes %d times; every name must be looked up in the indexes", seq, idx)
 	}
 }
+
+// TestR_VULN_028_TheGroupRowsRoundDoesNotDependOnTheStatistics is the failure of the nightly run 42177273488 (Q-VULN-94). The first
+// full import of an installation fills a table that no ANALYZE has seen (the autovacuum analyzes it a minute or more later), and
+// then the planner estimates `ecosystem = ...` at a share of the rows nothing supports. The statement of the closure's round used
+// to leave the order of its join to the planner, which made the table the outer side and tested every row against every name:
+// 99,998,000 tests for 2,000 names and 50,000 rows, 13 s, past the 30 s statement timeout on a loaded host, twice, and the
+// synchronization ended `database_timeout`. A generic plan, which a pooled prepared statement gets after five runs, is the one
+// that was measured. The round reads the table through the indexes whatever the statistics: no row is read more than a few times
+// per name, which the tuples fetched by index scans count, and it takes milliseconds.
+func TestR_VULN_028_TheGroupRowsRoundDoesNotDependOnTheStatistics(t *testing.T) {
+	st, conn := groupRowsDB(t)
+	st.Exec(`ALTER TABLE vuln_advisory SET (autovacuum_enabled = false)`)
+	st.Exec(`INSERT INTO vuln_advisory (ecosystem, id, canonical_id, modified, kind, aliases, summary, severity, severity_source, record_sha256)
+		SELECT 'npm', 'GHSA-fill-' || g, 'GHSA-fill-' || g, now(), 'vulnerability', '{}', '', 'high', 'cvss', '\x00' FROM generate_series(0, 49999) g`)
+	if n := st.Number(`SELECT count(*) FROM pg_stats WHERE tablename = 'vuln_advisory'`); n != 0 {
+		t.Fatalf("the table was analyzed (%d columns with statistics): the test needs the state of a first import", n)
+	}
+	if _, err := conn.Exec(t.Context(), `SET plan_cache_mode = force_generic_plan`); err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, 0, 2000)
+	for i := range 2000 {
+		names = append(names, "GHSA-fill-"+strconv.Itoa(40000+i))
+	}
+	tx, err := conn.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	start := time.Now()
+	rows, err := store.Sync{}.GroupRows(t.Context(), tx, "npm", names)
+	d := time.Since(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != len(names) {
+		t.Fatalf("%d rows, want %d", len(rows), len(names))
+	}
+	var fetched, seqRead int64
+	if err := tx.QueryRow(t.Context(), `SELECT COALESCE(sum(idx_tup_fetch), 0), COALESCE(sum(seq_tup_read), 0) FROM pg_stat_xact_user_tables WHERE relname = 'vuln_advisory'`).
+		Scan(&fetched, &seqRead); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("one round of %d names against 50,000 records without statistics: %v, %d tuples fetched through indexes, %d read sequentially", len(names), d.Round(time.Millisecond), fetched, seqRead)
+	if limit := int64(4 * len(names)); fetched > limit || seqRead != 0 {
+		t.Errorf("the round fetched %d tuples through indexes (limit %d) and read %d sequentially: the table is not looked up name by name", fetched, limit, seqRead)
+	}
+	if d > 5*time.Second {
+		t.Errorf("the round took %v", d)
+	}
+}
