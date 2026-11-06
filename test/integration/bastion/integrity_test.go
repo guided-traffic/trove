@@ -159,7 +159,7 @@ func TestR_BAS_032_CorruptCacheContentAndForgedEntries(t *testing.T) {
 			}
 			for _, e := range entries {
 				doc := st.read(t, e)
-				forged := bytes.Replace(doc, []byte(`"repository":"npm-all"`), []byte(`"repository":"npm-xxx"`), 1)
+				forged := bytes.Replace(doc, []byte(`"repository":"it/npm-all"`), []byte(`"repository":"it/npm-xxx"`), 1)
 				if bytes.Equal(forged, doc) {
 					forged = bytes.Replace(doc, []byte(`"size":`), []byte(`"size":1`), 1)
 				}

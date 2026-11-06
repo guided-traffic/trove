@@ -409,7 +409,7 @@ func TestR_BAS_004_ABastionHoldsNoGrant(t *testing.T) {
 
 	t.Run("a policy entry", func(t *testing.T) {
 		policy := map[string]any{
-			"name": "p", "resources": map[string]any{"repositories": []string{"npm-*"}},
+			"name": "p", "resources": map[string]any{"repositories": []string{"*/npm-*"}},
 			"entries": []any{map[string]any{"principal": "bastion:partners", "actions": []string{"read"}}},
 		}
 		want(t, r.call("POST", "/api/v1/permission-policies", c.admin, policy), http.StatusUnprocessableEntity, errs.CodePrincipalNotAllowed)

@@ -164,29 +164,32 @@ func TestR_BAS_015_TheLookbackBoundsWhatIsRepeated(t *testing.T) {
 func TestR_BAS_015_AnUnpublishNamesTheRepositoryAndEveryVirtualRepositoryIncludingIt(t *testing.T) {
 	s, e, bst := feedSite(t, siteOpts{})
 	b := s.bastionClient(bst)
-	e.repository("npm-local", "local")
-	e.repository("npm-remote", "remote")
-	e.repository("npm-all", "virtual", "npm-local", "npm-remote")
-	e.repository("npm-everything", "virtual", "npm-all")
-	e.repository("npm-other", "virtual", "npm-remote")
+	e.repository("web/npm-local", "local")
+	e.repository("web/npm-remote", "remote")
+	e.repository("web/npm-all", "virtual", "web/npm-local", "web/npm-remote")
+	e.repository("web/npm-everything", "virtual", "web/npm-all")
+	e.repository("web/npm-other", "virtual", "web/npm-remote")
+	// The same key in another project is another repository: its virtual repositories do not join the closure.
+	e.repository("data/npm-local", "local")
+	e.repository("data/npm-all", "virtual", "data/npm-local")
 	cursor := "t:" + time.Now().Add(-time.Minute).UTC().Format(time.RFC3339Nano)
-	id := e.journaled(audit.EventNPMUnpublish, time.Second, "", "npm-local", `{"package":"@acme/sdk","version":"1.0.0","integrity":"sha512-x"}`)
-	del := e.journaled(audit.EventPackageDeleted, time.Second, "", "npm-gone", `{"package":"acme.sdk","version":"1.0.0"}`)
+	id := e.journaled(audit.EventNPMUnpublish, time.Second, "", "web/npm-local", `{"package":"@acme/sdk","version":"1.0.0","integrity":"sha512-x"}`)
+	del := e.journaled(audit.EventPackageDeleted, time.Second, "", "web/npm-gone", `{"package":"acme.sdk","version":"1.0.0"}`)
 	ans, _ := b.read(cursor, 0)
 	if len(ans.Entries) != 2 || ans.Entries[0].ID != id || ans.Entries[1].ID != del {
 		t.Fatalf("entries = %+v", ans.Entries)
 	}
-	if got := ans.Entries[0]; got.Kind != iface.FeedContent || !slices.Equal(got.Repositories, []string{"npm-local", "npm-all", "npm-everything"}) {
+	if got := ans.Entries[0]; got.Kind != iface.FeedContent || !slices.Equal(got.Repositories, []string{"web/npm-local", "web/npm-all", "web/npm-everything"}) {
 		t.Errorf("content entry = %+v", got)
 	}
-	if got := ans.Entries[1]; !slices.Equal(got.Repositories, []string{"npm-gone"}) {
+	if got := ans.Entries[1]; !slices.Equal(got.Repositories, []string{"web/npm-gone"}) {
 		t.Errorf("an unknown repository is reported alone: %+v", got)
 	}
-	// The closure is read at the time the feed is read: a repository that includes npm-local from now on is in
+	// The closure is read at the time the feed is read: a repository that includes web/npm-local from now on is in
 	// the next answer for the same event.
-	e.repository("npm-late", "virtual", "npm-local")
+	e.repository("web/npm-late", "virtual", "web/npm-local")
 	ans, _ = b.read(cursor, 0)
-	if !slices.Equal(ans.Entries[0].Repositories, []string{"npm-local", "npm-all", "npm-everything", "npm-late"}) {
+	if !slices.Equal(ans.Entries[0].Repositories, []string{"web/npm-local", "web/npm-all", "web/npm-everything", "web/npm-late"}) {
 		t.Errorf("closure at read time = %v", ans.Entries[0].Repositories)
 	}
 }

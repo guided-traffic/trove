@@ -191,16 +191,13 @@ func mapEvent(ev FeedEvent, defaultEndpoint string) []rawEntry {
 		return grants
 	case audit.EventGroupDeleted, "authz.policy.deleted", "authz.policy.updated", "authz.settings.changed",
 		audit.EventCIIssuerUpdated, audit.EventCIIssuerDisabled, audit.EventCIIssuerDeleted,
-		audit.EventCIMappingUpdated, audit.EventCIMappingDisabled, audit.EventCIMappingDeleted:
-		return grants
-	case eventRepositoryMoved:
-		// The repository leaves its project's roles and policies behind and changes its address (R-REPO-060): any
-		// caller's read of it, and of every virtual repository over it, may have narrowed. A content entry drops
-		// only the URL answers of a repository, not its shape answers, so only grants is exact enough (Q-BAS-120).
-		return grants
-	case eventProjectMemberRemoved, eventProjectMemberChanged:
-		// A member's role grants reads on every repository of the project (R-AUTHZ-026): a removal or a lower role
-		// narrows every answer of that member, and the event names the project, not the repositories.
+		audit.EventCIMappingUpdated, audit.EventCIMappingDisabled, audit.EventCIMappingDeleted,
+		eventRepositoryMoved, eventProjectMemberRemoved, eventProjectMemberChanged:
+		// A move takes the repository out of its project's roles and policies and changes its address (R-REPO-060),
+		// and a removed or re-roled member loses reads on every repository of the project (R-AUTHZ-026): the event
+		// names a project or one repository, not the callers or the virtual repositories over it. A content entry
+		// drops only the URL answers of a repository, not its shape answers, so only grants is exact enough
+		// (Q-BAS-120).
 		return grants
 	case "endpoint.exposure.updated", "endpoint.exposure.deleted":
 		// Only the exposure of the default endpoint reaches a Bastion, which connects to it (Q-BAS-4).

@@ -27,7 +27,7 @@ func TestR_BAS_008_AFloodOfBastionTokensFromOneAddressIsThrottledBeforeTheTokenS
 	// sent is a request as the ingress passes it on: the sender's own entry, then the address the ingress saw.
 	sent := func(sender, raw string, extra ...string) reply {
 		h := append([]string{"X-Forwarded-For", "192.0.2.77, " + sender, iface.HeaderAuthorization, "Bearer " + raw, iface.HeaderInterface, v}, extra...)
-		return s.do(packageRequest("/api/npm/npm-all/lodash", h...))
+		return s.do(packageRequest("/api/npm/it/npm-all/lodash", h...))
 	}
 	flood := func(sender string) reply {
 		raw, err := token.Generate(token.TypeBST)

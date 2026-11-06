@@ -49,7 +49,7 @@ func TestR_BAS_014_AForwardOutsideThePackageFamiliesReachesNoRoute(t *testing.T)
 		t.Errorf("the handshake on a path the router decodes to it, as an interface call: %d %s", rp.Status, rp.Body)
 	}
 	// A forward of a package family is served.
-	if rp := s.do(packageRequest("/api/npm/npm-all/lodash", "Authorization", "Bearer "+caller, iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, v)); rp.Status != http.StatusOK {
+	if rp := s.do(packageRequest("/api/npm/it/npm-all/lodash", "Authorization", "Bearer "+caller, iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, v)); rp.Status != http.StatusOK {
 		t.Errorf("a forward of a package route: %d %s", rp.Status, rp.Body)
 	}
 }
@@ -68,13 +68,13 @@ func TestR_BAS_017_AnUnrecognizedRequestFromTheBastionsEgressForwardsNothing(t *
 	}
 	v := strconv.Itoa(iface.InterfaceVersion)
 	var got echo
-	rp := s.do(packageRequest("/api/npm/npm-all/lodash", bastionForwarded("203.0.113.7")...))
+	rp := s.do(packageRequest("/api/npm/it/npm-all/lodash", bastionForwarded("203.0.113.7")...))
 	rp.decode(t, &got)
 	if rp.Status != http.StatusOK || got.Client == "203.0.113.7" || got.BaseURL == "https://packages.example.com" {
 		t.Errorf("a request without a Bastion token chose its address or base URL: %d %+v", rp.Status, got)
 	}
 	// The same headers with the Bastion token count.
-	rp = s.do(packageRequest("/api/npm/npm-all/lodash", append(bastionForwarded("203.0.113.7"), iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, v)...))
+	rp = s.do(packageRequest("/api/npm/it/npm-all/lodash", append(bastionForwarded("203.0.113.7"), iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, v)...))
 	rp.decode(t, &got)
 	if got.Client != "203.0.113.7" || got.BaseURL != "https://packages.example.com" {
 		t.Errorf("a recognized request: %d %+v", rp.Status, got)
