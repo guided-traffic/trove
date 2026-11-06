@@ -52,7 +52,7 @@ func TestCreateReadUpdate(t *testing.T) {
 		if got := types(events()); len(got) != 1 || got[0] != repository.EventCreated {
 			t.Fatalf("events = %v", got)
 		}
-		if ev := last(); ev.Subject != "generic-local" || ev.Actor != "alice" || ev.Kind != "repository" {
+		if ev := last(); ev.Subject != "it/generic-local" || ev.Actor != "alice" || ev.Kind != "repository" {
 			t.Fatalf("event = %+v", ev)
 		}
 		if epoch() != before+1 || e.scalar(`SELECT count(*) FROM cluster_change WHERE area = 'repo_config'`) != before+1 {

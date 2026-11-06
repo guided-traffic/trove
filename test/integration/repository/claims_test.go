@@ -217,7 +217,7 @@ func TestClaims(t *testing.T) {
 		}
 		waitFor(t, "B to see the claim", 2*time.Second, func() bool {
 			m, err := b.routing.ClaimsFor(ctx, "pkgfmt", "@fresh/x")
-			return err == nil && len(m) == 1 && m[0].Repository == "sandbox"
+			return err == nil && len(m) == 1 && m[0].Repository == "it/sandbox"
 		})
 		if d := time.Since(start); d > 2*time.Second {
 			t.Fatalf("took %s", d)
@@ -444,7 +444,7 @@ func TestAutoClaim(t *testing.T) {
 		}
 		waitFor(t, "B to see the auto claim", 2*time.Second, func() bool {
 			m, err := b.routing.ClaimsFor(ctx, "pkgfmt", "fast-name")
-			return err == nil && len(m) == 1 && m[0].Source == "auto" && m[0].Repository == "team-a"
+			return err == nil && len(m) == 1 && m[0].Source == "auto" && m[0].Repository == "it/team-a"
 		})
 	})
 
