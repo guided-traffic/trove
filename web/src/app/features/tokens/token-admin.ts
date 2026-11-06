@@ -1,6 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatCheckboxModule } from '@angular/material/checkbox';
+import { Checkbox } from '../../shared/ui/checkbox';
 import { ApiError } from '../../api/problem';
 import { Token, TokenFilters, TokensApi } from '../../api/tokens-api';
 import { Notifier } from '../../core/notifier';
@@ -23,8 +22,7 @@ import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filte
 @Component({
   selector: 'trove-token-admin',
   imports: [
-    MatButtonModule,
-    MatCheckboxModule,
+    Checkbox,
     ErrorNotice,
     FilterCategory,
     FilterPanel,

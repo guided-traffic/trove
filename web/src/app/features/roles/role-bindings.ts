@@ -1,6 +1,5 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { Role, RoleBinding, RoleName, RolesApi } from '../../api/authz-api';
 import { collectAll } from '../../api/pagination';
 import { ApiError } from '../../api/problem';
@@ -26,7 +25,7 @@ import { ErrorNotice } from '../../shared/error-notice';
  */
 @Component({
   selector: 'trove-role-bindings',
-  imports: [DatePipe, MatButtonModule, ErrorNotice, Needs, TextField],
+  imports: [DatePipe, ErrorNotice, Needs, TextField],
   templateUrl: './role-bindings.html',
   styleUrl: '../../shared/access/access.scss',
 })

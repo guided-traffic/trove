@@ -1,5 +1,4 @@
 import { Component, computed, effect, inject, input, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { RouterLink } from '@angular/router';
 import { PermissionPolicy, PolicyApi } from '../../api/authz-api';
 import { SessionStore } from '../../core/session-store';
@@ -15,19 +14,18 @@ import { ProjectNeeds, createState } from './project-access';
  */
 @Component({
   selector: 'trove-project-policies',
-  imports: [MatButtonModule, RouterLink, DataTable, ProjectNeeds],
+  imports: [RouterLink, DataTable, ProjectNeeds],
   template: `
     <div class="toolbar">
       @if (state() === 'enabled') {
-        <a
-          mat-flat-button
+        <a class="btn btn-confirm"
           routerLink="/admin/permissions/new"
           [queryParams]="{ project: project() }"
           i18n="@@project-policies.create"
           >Create policy</a
         >
       } @else {
-        <button mat-flat-button type="button" disabled aria-describedby="needs-project-policies" i18n="@@project-policies.create-disabled">
+        <button class="btn btn-confirm" type="button" disabled aria-describedby="needs-project-policies" i18n="@@project-policies.create-disabled">
           Create policy
         </button>
       }

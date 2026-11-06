@@ -61,22 +61,22 @@ written into trove's own tokens.
 
 | Role | Reference light | Reference dark | trove light | trove dark | Notes |
 |---|---|---|---|---|---|
-| Page, panel | `#ffffff` | `#18171d` | `#ffffff` | `#18171d` | `--mat-sys-surface` |
+| Page, panel | `#ffffff` | `#18171d` | `#ffffff` | `#18171d` | `--trove-surface` |
 | Frame (top bar, sidebar) | `#ececef` | `#28272d` | `#ececef` | `#28272d` | `--trove-nav-bg`; the reference's `--body-background-color` of the neutral theme |
 | Card, licence bar | `#ececef` | `#3a383f` | `#ececef` | `#3a383f` | `--trove-card-bg`; the content inside on the page's fill |
 | Table head | `#fbfafd` | `#28272d` | `#fbfafd` | `#28272d` | `--trove-table-head-bg`, the subtle fill |
 | Row under the pointer | `#e9f3fc` | `#1d283e` | `#e9f3fc` | `#1d283e` | `--trove-row-hover` |
-| Menu, dialog | `#ffffff` | `#28272d` | `#ffffff` | `#28272d` | `--trove-menu-bg`, `--mat-sys-surface-container(-high)`; menus with a `#bfbfc3` / `#4c4b51` hairline |
-| Hairline | `#dcdcde` | `#4c4b51` | `#dcdcde` | `#4c4b51` | `--mat-sys-outline-variant`; decoration, no contrast rule |
+| Menu, dialog | `#ffffff` | `#28272d` | `#ffffff` | `#28272d` | `--trove-menu-bg` (menus), `--trove-dialog-bg` (dialogs); menus with a `#bfbfc3` / `#4c4b51` hairline |
+| Hairline | `#dcdcde` | `#4c4b51` | `#dcdcde` | `#4c4b51` | `--trove-border`; decoration, no contrast rule |
 | Field outline | `#89888d` | `#737278` | `#89888d` | `#737278` | `--trove-control-border`: 3.5:1 and 3.7:1 against the page |
 | Text | `#3a383f` | `#ececef` | `#3a383f` | `#ececef` | 11.6:1 and 15.1:1 |
 | Heading | `#18171d` | `#ffffff` | `#18171d` | `#ffffff` | `--trove-heading` |
 | Muted text | `#626168` | `#bfbfc3` | `#626168` | `#bfbfc3` | 6.1:1 and 9.7:1 |
 | Confirm button | `#1f75cb`, white text | `#63a6e9`, `#18171d` text | `#1f75cb` | `#63a6e9` | `--trove-accent-fill`; 4.7:1 and 6.9:1; hover `#2f68b4` / `#9dc7f1` |
-| Accent as text, focus ring | `#1f75cb` | `#63a6e9` | `#2f68b4` | `#66a8ea` | `--mat-sys-primary`, moved in its hue: `#1f75cb` is 4.0:1 on a filled field (light), `#63a6e9` 4.49:1 (dark); now 4.7:1 and 4.6:1 |
+| Accent as text, focus ring | `#1f75cb` | `#63a6e9` | `#2f68b4` | `#66a8ea` | `--trove-accent`, moved in its hue: `#1f75cb` is 4.0:1 on a filled field (light), `#63a6e9` 4.49:1 (dark); now 4.7:1 and 4.6:1 |
 | Link | `#2f5ca0` | `#9dc7f1` | `#2f5ca0` | `#9dc7f1` | `--trove-link`; 6.6:1 and 10.1:1 |
 | Default button | white, `#bfbfc3` hairline | `#89888d` at 40 %, no hairline | as measured | as measured | `--trove-btn-default-*`; the Admin button on the frame: 11.6:1 and 7.0:1 |
-| Selection fills | `#e9f3fc` | `#1d283e` | `#e9f3fc` | `#1d283e` | `--mat-sys-primary-container`, `--mat-sys-secondary-container`: the reference's info fill |
+| Selection fills | `#e9f3fc` | `#1d283e` | `#e9f3fc` | `#1d283e` | `--trove-accent-container`: the reference's info fill |
 | Current navigation entry | `#1f75cb` at 16 %, text `#0a335c` | `#68a8e8` at 25 %, text `#cae0f7` | as measured | as measured | `--trove-nav-active`, `--trove-nav-active-fg` (also the area's title); label at weight 500; 8.9:1 and 7.0:1 |
 | Entry under the pointer | `#050506` at 6 % | `#ffffff` at 8 % | as measured | as measured | `--trove-nav-hover`, also the top bar's quiet buttons |
 | Search field in the top bar | white, hairline `#050506` at 24 % | `#ffffff` at 8 %, hairline `#ffffff` at 16 % | white, outline `#858489` | as measured, outline `#737278` | `--trove-search-*`, 12 px round; the reference's hairlines are 1.7:1 against the frame, trove's outline 3.1:1 and 3.1:1 (WCAG 1.4.11) |
@@ -86,9 +86,10 @@ written into trove's own tokens.
 Since Q-UI-127 the top bar and the side bar share one fill; the panel's fill and rounded corners set the content off from
 the frame instead of a step between the two bars.
 
-The Material base palette is `mat.$azure-palette`: its tone 40 (`#005cbb`) has the reference blue's hue, 210°, where
-`mat.$blue-palette` sits at 237°, toward violet. It fills only the tokens `main.scss` does not set (the `secondary` and
-`primary-fixed` families), which neither a Material component trove uses nor a trove style reads today.
+No component library supplies a palette: every colour a style reads is a token of
+[_tokens.scss](../../web/src/styles/_tokens.scss) (Q-UI-126). The error, the inverse (the tooltip) and the banner
+colours that Angular Material's generated palette used to provide are literal `light-dark()` pairs there, with the values
+the screens had.
 
 ## The two-pane browser
 
@@ -114,14 +115,12 @@ Its styles are the global partial [_browse.scss](../../web/src/styles/_browse.sc
 Since 2026-11-06 the controls are trove's own, not Angular Material's
 ([Q-UI-126](../spec/api-and-ui.md#q-ui-126--troves-own-controls-in-place-of-angular-material)): the owner asked for the
 design language of a sign-in page he showed, flat controls with the labels above the fields. They are plain HTML elements
-with the classes of [_controls.scss](../../web/src/styles/_controls.scss); the composite widgets take their behaviour from
-the CDK and `@angular/aria`. The move runs screen by screen: the sign-in and signed-out screens, the shell and the admin
-dashboard are done, the other screens still use Material's buttons, dialogs, checkboxes, tabs and menus until their turn.
-Since Q-UI-128 their measures and colours are the reference's, and Material's buttons and tabs are themed to match
-(`mat.button-overrides`, `mat.tabs-overrides` in `main.scss`): filled is the confirm button, outlined the default button
-with its grey fill, text the quiet one in the text colour, all 32 px and 8 px round with the label at weight 400; a tab's
-label is in the text colour at 14 px, the current one at weight 600 over a 2 px line in `--trove-tab-indicator`
-(`#1f75cb`, `#428fdc`), the strip on a hairline. The shared data table has the reference's shape: no frame, on the
+with the classes of [_controls.scss](../../web/src/styles/_controls.scss), and the composite widgets take their behaviour
+from the CDK and `@angular/aria`. The move is finished: `@angular/material` is no dependency of the web UI any more, and
+no screen carries a Material control or a `--mat-sys-*` token. Their measures and colours are the reference's (Q-UI-128):
+the confirm button, the default button with its grey fill, the quiet one in the text colour, all 32 px and 8 px round
+with the label at weight 400; a tab's label is in the text colour at 14 px, the current one at weight 600 over a 2 px line
+in `--trove-tab-indicator` (`#1f75cb`, `#428fdc`), the strip on a hairline. The shared data table has the reference's shape: no frame, on the
 page's fill, 16 px in every cell, the head in the heading colour at weight 600 between two hairlines, a hairline under
 every row.
 
@@ -136,7 +135,12 @@ every row.
 | Text field, select, area | `<label class="field-label" for>` above `<input class="text-input">`, `select-input`, `area-input` | `--trove-control-bg` (white; `#050506` at 40 % over the page in the dark scheme), a 1 px `--trove-control-border` (3.5:1 light, 3.7:1 dark against the page, WCAG 1.4.11) that darkens or lightens under the pointer, the semibold label above |
 | Tabs that are links | `<nav class="tab-nav">` with `<a class="tab-link" aria-current="page">` | the reference's tab strip: labels in the text colour, 16 px above and below; the current one at weight 600 over a 2 px `--trove-tab-indicator` line; a neutral veil and a `--trove-border-strong` line under the pointer; the strip on a hairline (the package views) |
 | Badge | `<span class="badge">` (neutral), with `ok`, `warn`, `bad` or `info`; every `<span class="ok\|warn\|bad">` that holds an icon and a word | the reference's badge: a pill 20 px high, 12 px text at weight 400, a 12 px icon 4 px before it; `--trove-badge-*-bg`, `-fg`, `-icon`: a pale fill with deep text (light), a full fill with near-black text (dark) |
-| Checkbox, radio | native `<input type="checkbox">` | 16 px, `accent-color` the accent |
+| Checkbox, radio | native `<input type="checkbox">`; `<trove-checkbox>` ([checkbox.ts](../../web/src/app/shared/ui/checkbox.ts)) for a checkbox with its label as content, an optional `describedBy` note and an `ariaLabel` for a row's box | 16 px, `accent-color` the accent; the input sits inside its `label.check-row`, so the whole label is the click target |
+| Tabs that switch a view | `<trove-tab-group>` with `<trove-tab label>` ([tabs.ts](../../web/src/app/shared/ui/tabs.ts)); `<ng-template troveTabContent>` for lazy content | the strip of the row above (`.tab-nav`, `.tab-link`, selected by `aria-selected`); the roles, arrow keys, Home and End and the single tab stop are `@angular/aria`'s tabs, the selected tab's panel is a `tabpanel` named by its tab; only the selected tab's content is in the page |
+| Dialog | `TroveDialog.open(Component, { data, width, maxWidth, disableClose })` with `<h2 troveDialogTitle>`, `<div class="dialog-body">`, `<div class="dialog-actions">` and `troveDialogClose` on a closing button ([dialog.ts](../../web/src/app/shared/ui/dialog.ts), [_dialog.scss](../../web/src/styles/_dialog.scss)) | the CDK dialog: `role="dialog"`, `aria-modal`, named by its title, the focus trapped inside and returned to the opener, Escape and the backdrop close it unless `disableClose`; the panel on `--trove-dialog-bg`, 16 px round, the title in the heading-3 size, the body scrolling between title and actions, the actions right-aligned |
+| Menu | `cdkMenuTriggerFor` and `<div class="menu" cdkMenu>` with `class="menu-item" cdkMenuItem` (or `cdkMenuItemRadio`) | the CDK menu, in `_shell.scss`; the user menu, the sort menu of the browser and the mirror's run menu |
+| Tooltip | `[troveTooltip]="text"` ([tooltip.ts](../../web/src/app/shared/ui/tooltip.ts)) | a small bubble on `--trove-inverse-surface` under the element, on pointer and keyboard focus, closed by Escape, blur or leaving it (WCAG 1.4.13); the element is always described by the text (the CDK's hidden description), the bubble itself is `aria-hidden` |
+| Text field, select with label and error | `<trove-text-field>`, `<trove-select-field>` ([fields.ts](../../web/src/app/shared/access/fields.ts)) | the label above, `text-input` / `area-input` / `select-input`, the hint and the error as text below, joined by `aria-describedby`, with `aria-invalid` on an error |
 | Focus | every control | `--trove-focus-ring` (2 px solid accent), offset 2 px for buttons and 1 px for fields |
 
 One height (`--trove-control-height`, 32 px) and one radius (`--trove-control-radius`, 8 px) for every control, the label at
@@ -190,10 +194,11 @@ parameter, run `node scripts/brand-logo.mjs` in `web/`, and the dev server reloa
 
 | File | What it holds |
 |---|---|
-| [web/src/styles/main.scss](../../web/src/styles/main.scss) | `mat.theme` with the azure and violet palettes and the Inter family, then `mat.theme-overrides` with every Material system colour above as `light-dark(<light>, <dark>)`; the button shape; the body type and the page title |
+| [web/src/styles/main.scss](../../web/src/styles/main.scss) | The partials in order, the CDK's overlay structure (`cdk.overlay()`, which dialogs, menus and tooltips open in), the body type and the page title |
 | [web/angular.json](../../web/angular.json) | `@fontsource-variable/inter/wght.css` ahead of `main.scss` in the build's styles: Inter as one variable font (weights 100 to 900) in unicode-range subsets, so a page in Latin script loads the 48 KB Latin file; OFL-1.1, its licence in the build's `3rdpartylicenses.txt` |
-| [web/src/styles/_tokens.scss](../../web/src/styles/_tokens.scss) | trove's own properties: the type (`--trove-font-*`, `--trove-text-*`, `--trove-heading-*`), the radii, the link, the heading colour, the focus ring, the raised surface, the card, the table head, the frame (`--trove-nav-*`, the panel's radius and gap, the breadcrumb bar's height), the search field, the menus, the status colours |
+| [web/src/styles/_tokens.scss](../../web/src/styles/_tokens.scss) | trove's own properties: the page palette (`--trove-surface`, `--trove-on-surface`, `--trove-border`, `--trove-text-muted`, `--trove-accent`, `--trove-dialog-bg`, `--trove-error*`, `--trove-inverse-*`, `--trove-banner-*`), the type (`--trove-font-*`, `--trove-text-*`, `--trove-heading-*`, `--trove-type-*` as font shorthands), the radii (`--trove-radius-s` to `-full`), the link, the heading colour, the focus ring, the raised surface, the card, the table head, the frame (`--trove-nav-*`, the panel's radius and gap, the breadcrumb bar's height), the search field, the menus, the status colours |
 | [web/src/styles/_controls.scss](../../web/src/styles/_controls.scss) | The controls of the table above, from the `--trove-control-*`, `--trove-accent-fill`, `--trove-btn-*` and `--trove-danger-*` tokens |
+| [web/src/styles/_dialog.scss](../../web/src/styles/_dialog.scss) | The dialog panel: backdrop, container, title, body, actions |
 | [web/src/styles/_shell.scss](../../web/src/styles/_shell.scss) | How the frame uses them: the sidebar's entries (28 px, 8 px round, a 16 px icon in a 24 px box), the current entry, the panel, the breadcrumb bar (40 px), the top bar's actions and the avatar, the menus |
 | [web/scripts/build-embed.mjs](../../web/scripts/build-embed.mjs) | The notices of the bundled software: Angular's `3rdpartylicenses.txt` (the Inter font's OFL-1.1 notice among the libraries') plus the icon font's Apache-2.0 licence, which Angular does not collect; written as `<locale>/3rdpartylicenses.txt` into the embedded build, and the build fails when either licence is missing (Q-UI-144) |
 | [web/src/styles/palette.spec.ts](../../web/src/styles/palette.spec.ts) | The contrast of the pairs below, computed from the two stylesheets, and the rule that only `--trove-status-ok` is green |
@@ -204,12 +209,11 @@ never asks which scheme is on.
 
 ## Changing a colour
 
-1. Change the pair in `main.scss` or `_tokens.scss`, never in a component.
+1. Change the pair in `_tokens.scss`, never in a component.
 2. Recompute the contrast of every pair it takes part in (text 4.5:1, large text and marks 3:1) and update the numbers in
-   the comment above the token and in the table here. A text tone is not only on the page: Material sets the label of a
-   form field on its filled container (`surface-variant`, `#ececef` in the light scheme, `#3a383f` in the dark one), a
-   dialog sits on `surface-container-high`, and a selected row on `secondary-container`. The focused label is the
-   accent, so the accent has to pass on those too (found by axe when the accent was `#1d7a43`: 4.3:1 on the field; and
+   the comment above the token and in the table here. A text tone is not only on the page: a muted fill is
+   `--trove-surface-variant` (`#ececef` in the light scheme, `#3a383f` in the dark one), a dialog sits on
+   `--trove-dialog-bg`, and a selected row on `--trove-accent-container`. The accent has to pass on those too (found by axe when the accent was `#1d7a43`: 4.3:1 on the field; and
    the reason cogpit's `#0a6fd6` is not the light accent: 4.0:1 there). `palette.spec.ts` recomputes the pairs in
    `make web-test` and fails below the minimum; a new surface under the accent or the link gets a pair there.
 3. Run the browser journeys ([e2e.md](e2e.md#browser-journeys)): they check `color-contrast` with axe in the light scheme
@@ -353,8 +357,9 @@ on it today.
 - The reference's icons are its own line icons; trove's are Material Icons in the outlined variant (owner, 2026-11-06),
   close to them but not the same drawings.
 - The vulnerability trend is the one chart; its series colours are tokens (`--trove-chart-*`). Another chart takes its series from the same family and adds its pairs to `palette.spec.ts`.
-- The dialogs and menus still take Material's components with the system colours above (menus on the card fill, dialogs one
-  step lighter) until their turn in the move of Q-UI-126; no screen of the owner has confirmed their look yet.
+- The dialogs, tabs, checkboxes, menus and tooltips are trove's own since Q-UI-126 was finished; their measures follow the
+  reference's modal and tab strip as far as the development agent measured them, and no screen of the owner has confirmed
+  their look yet (the walkthrough does).
 - The blue palette of Q-UI-96 has not been through the browser tier's axe run. axe checks text against the background it
   is rendered on; the computed pairs cover every surface the accent, the link and the containers sit on in the screens
   named above, but a component's own fill that is not in the list is covered only once the browser journeys run again.

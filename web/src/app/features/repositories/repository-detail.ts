@@ -9,8 +9,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatTabsModule } from '@angular/material/tabs';
+import { TabContent, TabGroup, TabPage } from '../../shared/ui/tabs';
 import { Router, RouterLink } from '@angular/router';
 import { newIdempotencyKey } from '../../api/client';
 import { ApiError, FieldProblem } from '../../api/problem';
@@ -68,8 +67,7 @@ import { UpstreamSettings, upstreamTarget } from './upstream-settings';
   selector: 'trove-repository-detail',
   imports: [
     DatePipe,
-    MatButtonModule,
-    MatTabsModule,
+    TabContent, TabGroup, TabPage,
     RouterLink,
     CopyButton,
     ErrorNotice,

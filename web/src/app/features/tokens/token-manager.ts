@@ -1,7 +1,6 @@
 import { Component, DestroyRef, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatCheckboxModule } from '@angular/material/checkbox';
-import { MatDialog, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
+import { Checkbox } from '../../shared/ui/checkbox';
+import { DialogClose, DialogRef, DialogTitle, TroveDialog } from '../../shared/ui/dialog';
 import { firstValueFrom } from 'rxjs';
 import { newIdempotencyKey } from '../../api/client';
 import { ApiError } from '../../api/problem';
@@ -35,10 +34,10 @@ interface RotateChoice {
 /** Asks how long the old value of a rotated token stays valid (R-AUTH-030). */
 @Component({
   selector: 'trove-rotate-dialog',
-  imports: [MatButtonModule, MatDialogModule, SelectField],
+  imports: [DialogTitle, DialogClose, SelectField],
   template: `
-    <h2 mat-dialog-title i18n="@@rotate.title">Rotate this token?</h2>
-    <mat-dialog-content>
+    <h2 troveDialogTitle i18n="@@rotate.title">Rotate this token?</h2>
+    <div class="dialog-body">
       <p i18n="@@rotate.text">
         A new token with the same scope is created and shown once. Everything that uses the old token must switch to it.
       </p>
@@ -48,15 +47,15 @@ interface RotateChoice {
         [options]="options"
         [(value)]="overlap"
       />
-    </mat-dialog-content>
-    <mat-dialog-actions align="end">
-      <button mat-button type="button" mat-dialog-close i18n="@@rotate.cancel">Cancel</button>
-      <button mat-flat-button type="button" (click)="confirm()" i18n="@@rotate.confirm">Rotate</button>
-    </mat-dialog-actions>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn btn-tertiary" type="button" troveDialogClose i18n="@@rotate.cancel">Cancel</button>
+      <button class="btn btn-confirm" type="button" (click)="confirm()" i18n="@@rotate.confirm">Rotate</button>
+    </div>
   `,
 })
 export class RotateDialog {
-  private readonly ref = inject<MatDialogRef<RotateDialog, RotateChoice>>(MatDialogRef);
+  private readonly ref = inject<DialogRef<RotateChoice, RotateDialog>>(DialogRef);
   protected readonly overlap = signal('0');
   protected readonly options = [
     { value: '0', label: $localize`:@@rotate.overlap.none:Not at all (revoked now)` },
@@ -79,17 +78,17 @@ export class RotateDialog {
  */
 @Component({
   selector: 'trove-token-manager',
-  imports: [MatButtonModule, MatCheckboxModule, ErrorNotice, TokenForm, TokenSecret, TokenTable],
+  imports: [Checkbox, ErrorNotice, TokenForm, TokenSecret, TokenTable],
   template: `
     <div class="toolbar">
       @if (canCreate() && !formOpen()) {
-        <button mat-flat-button type="button" (click)="openForm()" i18n="@@tokens.create">Create token</button>
+        <button class="btn btn-confirm" type="button" (click)="openForm()" i18n="@@tokens.create">Create token</button>
       }
-      <mat-checkbox [checked]="showAll()" (change)="setShowAll($event.checked)">
+      <trove-checkbox [checked]="showAll()" (checkedChange)="setShowAll($event)">
         <ng-container i18n="@@tokens.show-all">Show revoked and expired tokens</ng-container>
-      </mat-checkbox>
+      </trove-checkbox>
       @if (canRevokeAll() && list.items().length > 0) {
-        <button mat-button type="button" (click)="revokeAllTokens()" i18n="@@tokens.revoke-all">
+        <button class="btn btn-tertiary" type="button" (click)="revokeAllTokens()" i18n="@@tokens.revoke-all">
           Revoke all tokens
         </button>
       }
@@ -151,7 +150,7 @@ export class TokenManager {
   private readonly confirmer = inject(Confirm);
   private readonly notifier = inject(Notifier);
   private readonly drafts = inject(DraftStore);
-  private readonly dialog = inject(MatDialog);
+  private readonly dialog = inject(TroveDialog);
 
   protected readonly list = new PagedResource<Token>();
   protected readonly showAll = signal(false);
@@ -315,7 +314,7 @@ export class TokenManager {
 
   protected async rotate(token: Token): Promise<void> {
     const ref = this.dialog.open<RotateDialog, undefined, RotateChoice>(RotateDialog, { maxWidth: '32rem' });
-    const choice = await firstValueFrom(ref.afterClosed());
+    const choice = await firstValueFrom(ref.closed);
     if (!choice) return;
     const key = newIdempotencyKey();
     await this.act(async () => {

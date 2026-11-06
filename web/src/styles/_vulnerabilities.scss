@@ -50,8 +50,8 @@
   gap: var(--trove-space-1);
   margin-inline-start: var(--trove-space-2);
   padding: 0 var(--trove-space-2);
-  border: 1px solid var(--mat-sys-outline);
-  border-radius: var(--mat-sys-corner-extra-small);
+  border: 1px solid var(--trove-border-strong);
+  border-radius: var(--trove-radius-s);
   font-size: 0.75rem;
   font-weight: 400;
 
@@ -81,7 +81,7 @@
   border: 1px solid var(--trove-border);
   border-radius: var(--trove-radius-m);
   background: var(--trove-surface-raised);
-  color: var(--mat-sys-on-surface);
+  color: var(--trove-on-surface);
   text-decoration: none;
 
   &:hover {
@@ -95,7 +95,7 @@
 }
 
 .vuln-count-number {
-  font: var(--mat-sys-headline-small);
+  font: var(--trove-type-headline-small);
   font-variant-numeric: tabular-nums;
 }
 
@@ -145,7 +145,7 @@
   h2 {
     margin: 0;
     margin-inline-end: auto;
-    font: var(--mat-sys-title-medium);
+    font: var(--trove-type-title-medium);
   }
 }
 
@@ -277,7 +277,7 @@
 
 .vuln-list-title {
   margin-block: var(--trove-space-4) var(--trove-space-2);
-  font: var(--mat-sys-title-medium);
+  font: var(--trove-type-title-medium);
 }
 
 .vuln-selected {
@@ -298,7 +298,7 @@
 
 .finding-title {
   margin-block: var(--trove-space-3);
-  font: var(--mat-sys-title-large);
+  font: var(--trove-type-title-large);
   overflow-wrap: anywhere;
 }
 
@@ -334,7 +334,7 @@
 
 .advisory h3 {
   margin-block: var(--trove-space-4) var(--trove-space-2);
-  font: var(--mat-sys-title-small);
+  font: var(--trove-type-title-small);
 }
 
 .vuln-source {
@@ -374,7 +374,7 @@ table.history {
 
   h2 {
     margin-block: 0 var(--trove-space-2);
-    font: var(--mat-sys-title-medium);
+    font: var(--trove-type-title-medium);
   }
 }
 

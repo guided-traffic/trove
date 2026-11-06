@@ -1,7 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MAT_DIALOG_DATA, MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { DIALOG_DATA, DialogClose, DialogTitle, TroveDialog } from '../../shared/ui/dialog';
 import { CiApi, CiIssuance, CiIssuanceDetail, IssuanceFilters, CiRevokeRequest } from '../../api/ci-api';
 import { collectAll } from '../../api/pagination';
 import { ApiError } from '../../api/problem';
@@ -30,10 +29,10 @@ export interface IssuanceDetailData {
  */
 @Component({
   selector: 'trove-ci-issuance-detail',
-  imports: [DatePipe, MatButtonModule, MatDialogModule, ErrorNotice],
+  imports: [DatePipe, DialogTitle, DialogClose, ErrorNotice],
   template: `
-    <h2 mat-dialog-title i18n="@@ci.issuance.title">Issued token</h2>
-    <mat-dialog-content tabindex="0">
+    <h2 troveDialogTitle i18n="@@ci.issuance.title">Issued token</h2>
+    <div class="dialog-body" tabindex="0">
       @if (error(); as e) {
         <trove-error-notice [error]="e" />
       }
@@ -90,10 +89,10 @@ export interface IssuanceDetailData {
       <pre translate="no" tabindex="0" i18n-aria-label="@@ci.issuance.grants" aria-label="Grants of the token">{{ grants }}</pre>
       <h3 i18n="@@ci.issuance.claims">Claims at the time of the exchange</h3>
       <pre translate="no" tabindex="0" i18n-aria-label="@@ci.issuance.claims" aria-label="Claims at the time of the exchange">{{ claims }}</pre>
-    </mat-dialog-content>
-    <mat-dialog-actions align="end">
-      <button mat-button type="button" mat-dialog-close i18n="@@ci.close">Close</button>
-    </mat-dialog-actions>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn btn-tertiary" type="button" troveDialogClose i18n="@@ci.close">Close</button>
+    </div>
   `,
   styleUrl: '../../shared/access/access.scss',
   styles: `
@@ -109,12 +108,12 @@ export interface IssuanceDetailData {
     }
     h3 {
       margin: var(--trove-space-3) 0 var(--trove-space-1);
-      font: var(--mat-sys-title-small);
+      font: var(--trove-type-title-small);
     }
   `,
 })
 export class IssuanceDetailDialog {
-  protected readonly data = inject<IssuanceDetailData>(MAT_DIALOG_DATA);
+  protected readonly data = inject<IssuanceDetailData>(DIALOG_DATA);
   private readonly api = inject(CiApi);
 
   protected readonly usage = signal<CiIssuanceDetail['usage'] | null>(null);
@@ -151,14 +150,14 @@ function dayStart(value: string, plusDays = 0): string | undefined {
  */
 @Component({
   selector: 'trove-ci-issuance-list',
-  imports: [DatePipe, MatButtonModule, ErrorNotice, DataTable, FilterCategory, FilterPanel, FilterToggle, SelectField, TextField],
+  imports: [DatePipe, ErrorNotice, DataTable, FilterCategory, FilterPanel, FilterToggle, SelectField, TextField],
   template: `
     <div class="list-layout" [class.panel-open]="panelOpen()">
       <div class="list-main">
         <div class="list-toolbar">
           <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
           @if (canRevoke()) {
-            <button mat-stroked-button type="button" [disabled]="!revocable() || busy()" aria-describedby="ci-revoke-note" (click)="revokeMatching()" i18n="@@ci.issuances.revoke-matching">
+            <button class="btn btn-default" type="button" [disabled]="!revocable() || busy()" aria-describedby="ci-revoke-note" (click)="revokeMatching()" i18n="@@ci.issuances.revoke-matching">
               Revoke matching tokens
             </button>
           }
@@ -215,7 +214,7 @@ function dayStart(value: string, plusDays = 0): string | undefined {
                   }
                 </td>
                 <td class="actions">
-                  <button mat-button type="button" (click)="open(i)" i18n="@@ci.issuances.details">Details</button>
+                  <button class="btn btn-tertiary" type="button" (click)="open(i)" i18n="@@ci.issuances.details">Details</button>
                 </td>
               </tr>
             }
@@ -276,7 +275,7 @@ export class IssuanceList {
   readonly project = input<string | null>(null);
 
   private readonly api = inject(CiApi);
-  private readonly dialog = inject(MatDialog);
+  private readonly dialog = inject(TroveDialog);
   private readonly confirmer = inject(Confirm);
   private readonly notifier = inject(Notifier);
   private readonly session = inject(SessionStore);

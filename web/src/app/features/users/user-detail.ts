@@ -1,6 +1,5 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { Router, RouterLink } from '@angular/router';
 import { IdentityApi, User, UserGroupMembership, UserPatch } from '../../api/identity-api';
 import { ApiError } from '../../api/problem';
@@ -28,7 +27,7 @@ import { isLocked, originLabel } from './user-labels';
  */
 @Component({
   selector: 'trove-user-detail',
-  imports: [DatePipe, MatButtonModule, RouterLink, ErrorNotice, Needs, PrincipalRoles, TextField, TokenManager],
+  imports: [DatePipe, RouterLink, ErrorNotice, Needs, PrincipalRoles, TextField, TokenManager],
   templateUrl: './user-detail.html',
   styleUrl: '../../shared/access/access.scss',
 })

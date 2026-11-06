@@ -13,10 +13,9 @@ import {
   viewChild,
 } from '@angular/core';
 import { Tree, TreeItem, TreeItemGroup } from '@angular/aria/tree';
-import { MatButtonModule } from '@angular/material/button';
-import { MatDialog } from '@angular/material/dialog';
-import { MatMenuModule } from '@angular/material/menu';
-import { MatTabsModule } from '@angular/material/tabs';
+import { TroveDialog } from '../../shared/ui/dialog';
+import { CdkMenu, CdkMenuItemRadio, CdkMenuTrigger } from '@angular/cdk/menu';
+import { TabGroup, TabPage } from '../../shared/ui/tabs';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { newIdempotencyKey } from '../../api/client';
@@ -87,9 +86,8 @@ const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")
   imports: [
     DatePipe,
     NgTemplateOutlet,
-    MatButtonModule,
-    MatMenuModule,
-    MatTabsModule,
+    CdkMenu, CdkMenuItemRadio, CdkMenuTrigger,
+    TabGroup, TabPage,
     RouterLink,
     Tree,
     TreeItem,
@@ -112,7 +110,7 @@ export class Browse {
   private readonly session = inject(SessionStore);
   private readonly notifier = inject(Notifier);
   private readonly confirm = inject(Confirm);
-  private readonly dialog = inject(MatDialog);
+  private readonly dialog = inject(TroveDialog);
   private readonly dom = inject(DOCUMENT);
   private readonly locale = inject(LOCALE_ID);
   private readonly destroyRef = inject(DestroyRef);
@@ -746,7 +744,7 @@ export class Browse {
       width: '40rem',
       maxWidth: '95vw',
     });
-    const uploaded = (await firstValueFrom(ref.afterClosed())) ?? 0;
+    const uploaded = (await firstValueFrom(ref.closed)) ?? 0;
     if (uploaded > 0) this.refreshSelectedFolder();
   }
 
@@ -760,7 +758,7 @@ export class Browse {
       width: '32rem',
       maxWidth: '95vw',
     });
-    const created = await firstValueFrom(ref.afterClosed());
+    const created = await firstValueFrom(ref.closed);
     if (created) {
       this.notifier.status($localize`:@@browse.folder.created:Folder ${created}:path: created.`);
       this.refreshSelectedFolder();

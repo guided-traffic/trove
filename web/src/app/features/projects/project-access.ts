@@ -52,7 +52,7 @@ export function createState(
       align-items: center;
       gap: var(--trove-space-2);
       margin-block: var(--trove-space-2);
-      color: var(--mat-sys-on-surface-variant);
+      color: var(--trove-text-muted);
     }
     .material-icons {
       font-size: 1.125rem;

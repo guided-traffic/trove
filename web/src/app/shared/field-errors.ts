@@ -61,11 +61,11 @@ export function problemsAt(
       margin-block: var(--trove-space-3);
       padding: var(--trove-space-3) var(--trove-space-4);
       border: 2px solid var(--trove-status-bad);
-      border-radius: var(--mat-sys-corner-small);
+      border-radius: var(--trove-radius-m);
     }
     .title {
       margin: 0 0 var(--trove-space-2);
-      font: var(--mat-sys-title-small);
+      font: var(--trove-type-title-small);
     }
     ul {
       margin: 0;

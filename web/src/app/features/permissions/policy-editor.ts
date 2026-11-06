@@ -1,7 +1,6 @@
 import { DestroyRef, Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatCheckboxModule } from '@angular/material/checkbox';
-import { MatDialog } from '@angular/material/dialog';
+import { Checkbox } from '../../shared/ui/checkbox';
+import { TroveDialog } from '../../shared/ui/dialog';
 import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { newIdempotencyKey } from '../../api/client';
@@ -56,8 +55,7 @@ export const PREVIEW_DEBOUNCE_MS = 500;
 @Component({
   selector: 'trove-policy-editor',
   imports: [
-    MatButtonModule,
-    MatCheckboxModule,
+    Checkbox,
     RouterLink,
     ErrorNotice,
     Needs,
@@ -79,7 +77,7 @@ export class PolicyEditor {
   private readonly projectsApi = inject(ProjectsApi);
   private readonly repositoriesApi = inject(RepositoriesApi);
   private readonly explainer = inject(PolicyExplainer);
-  private readonly dialog = inject(MatDialog);
+  private readonly dialog = inject(TroveDialog);
   private readonly confirmer = inject(Confirm);
   private readonly conflicts = inject(ConflictResolver);
   private readonly notifier = inject(Notifier);
@@ -437,7 +435,7 @@ export class PolicyEditor {
           data: { name: l.policy.name, lines: diff },
           maxWidth: '40rem',
         });
-        if ((await firstValueFrom(ref.afterClosed())) === true) await this.replace(l);
+        if ((await firstValueFrom(ref.closed)) === true) await this.replace(l);
       }
     } catch (e) {
       await this.failed(asApiError(e));

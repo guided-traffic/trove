@@ -1,5 +1,4 @@
 import { Component, computed, inject } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { Notifier } from '../core/notifier';
 
 /**
@@ -9,7 +8,7 @@ import { Notifier } from '../core/notifier';
  */
 @Component({
   selector: 'trove-notices',
-  imports: [MatButtonModule],
+  imports: [],
   template: `
     <div class="notices">
       <div role="status">
@@ -17,11 +16,11 @@ import { Notifier } from '../core/notifier';
           <div class="notice">
             <span>{{ n.text }}</span>
             @if (n.action; as action) {
-              <button mat-button type="button" (click)="action.run(); notifier.dismiss(n.id)">
+              <button class="btn btn-tertiary" type="button" (click)="action.run(); notifier.dismiss(n.id)">
                 {{ action.label }}
               </button>
             }
-            <button mat-button type="button" (click)="notifier.dismiss(n.id)" i18n="@@notice.dismiss">
+            <button class="btn btn-tertiary" type="button" (click)="notifier.dismiss(n.id)" i18n="@@notice.dismiss">
               Dismiss
             </button>
           </div>
@@ -32,11 +31,11 @@ import { Notifier } from '../core/notifier';
           <div class="notice alert">
             <span>{{ n.text }}</span>
             @if (n.action; as action) {
-              <button mat-button type="button" (click)="action.run(); notifier.dismiss(n.id)">
+              <button class="btn btn-tertiary" type="button" (click)="action.run(); notifier.dismiss(n.id)">
                 {{ action.label }}
               </button>
             }
-            <button mat-button type="button" (click)="notifier.dismiss(n.id)" i18n="@@notice.dismiss-alert">
+            <button class="btn btn-tertiary" type="button" (click)="notifier.dismiss(n.id)" i18n="@@notice.dismiss-alert">
               Dismiss
             </button>
           </div>
@@ -60,13 +59,13 @@ import { Notifier } from '../core/notifier';
       align-items: center;
       gap: var(--trove-space-2);
       padding: var(--trove-space-2) var(--trove-space-4);
-      border-radius: var(--mat-sys-corner-small);
-      background: var(--mat-sys-inverse-surface);
-      color: var(--mat-sys-inverse-on-surface);
+      border-radius: var(--trove-radius-m);
+      background: var(--trove-inverse-surface);
+      color: var(--trove-on-inverse-surface);
     }
     .notice.alert {
-      background: var(--mat-sys-error-container);
-      color: var(--mat-sys-on-error-container);
+      background: var(--trove-error-container);
+      color: var(--trove-on-error-container);
     }
     .notice button {
       color: inherit;

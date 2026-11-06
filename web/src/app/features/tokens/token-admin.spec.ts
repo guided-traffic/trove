@@ -67,7 +67,7 @@ describe('Token administration (R-UI-030)', () => {
         ];
       },
     });
-    const boxes = root.querySelectorAll<HTMLInputElement>('tbody mat-checkbox input');
+    const boxes = root.querySelectorAll<HTMLInputElement>('tbody trove-checkbox input');
     boxes[0]!.click();
     boxes[1]!.click();
     await settle(fixture);

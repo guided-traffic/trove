@@ -9,7 +9,6 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { Router, RouterLink } from '@angular/router';
 import { AUDIT_CATEGORIES, AuditApi, AuditEvent, AuditFilters } from '../../api/audit-api';
 import { CopyButton } from '../../shared/copy-button';
@@ -41,7 +40,6 @@ const PRESETS: Readonly<Record<string, number>> = {
   selector: 'trove-audit-log',
   imports: [
     DatePipe,
-    MatButtonModule,
     RouterLink,
     CopyButton,
     DataTable,

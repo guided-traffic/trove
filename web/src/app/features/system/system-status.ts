@@ -1,6 +1,5 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, resource, signal, viewChild } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { RouterLink } from '@angular/router';
 import { newIdempotencyKey } from '../../api/client';
 // >>> M1 ui-a
@@ -51,7 +50,7 @@ export const PRIMARY_DISAGREEMENT_GRACE_MS = 30_000;
 /** System status (R-UI-038): installation facts, replicas per role, Valkey, stored-secret keys. */
 @Component({
   selector: 'trove-system-status',
-  imports: [DatePipe, MatButtonModule, RouterLink, ErrorNotice, JobProgress, JobTable, TasksCard],
+  imports: [DatePipe, RouterLink, ErrorNotice, JobProgress, JobTable, TasksCard],
   templateUrl: './system-status.html',
   styleUrl: './system-status.scss',
 })

@@ -1,6 +1,5 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatDialog } from '@angular/material/dialog';
+import { TroveDialog } from '../../shared/ui/dialog';
 import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { ApiError } from '../../api/problem';
@@ -23,12 +22,11 @@ import { ProjectDialog } from './project-dialog';
  */
 @Component({
   selector: 'trove-project-list',
-  imports: [MatButtonModule, RouterLink, DataTable, ErrorNotice, FilterCategory, FilterPanel, FilterToggle, Needs, TextField],
+  imports: [RouterLink, DataTable, ErrorNotice, FilterCategory, FilterPanel, FilterToggle, Needs, TextField],
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@projects.heading">Projects</h1>
-      <button
-        mat-flat-button
+      <button class="btn btn-confirm"
         type="button"
         [disabled]="!canWrite()"
         aria-describedby="needs-projects"
@@ -88,7 +86,7 @@ import { ProjectDialog } from './project-dialog';
               </td>
               <td class="actions">
                 @if (canWrite()) {
-                  <button mat-button type="button" (click)="edit(p)">
+                  <button class="btn btn-tertiary" type="button" (click)="edit(p)">
                     <ng-container i18n="@@projects.edit">Edit</ng-container>
                     <span class="visually-hidden"> {{ p.key }}</span>
                   </button>
@@ -121,13 +119,13 @@ import { ProjectDialog } from './project-dialog';
       align-items: center;
       gap: var(--trove-space-1);
       margin-inline-end: var(--trove-space-3);
-      color: var(--mat-sys-on-surface-variant);
+      color: var(--trove-text-muted);
     }
   `,
 })
 export class ProjectList {
   private readonly api = inject(ProjectsApi);
-  private readonly dialog = inject(MatDialog);
+  private readonly dialog = inject(TroveDialog);
   private readonly router = inject(Router);
   private readonly filter = inject(ProjectFilter);
   protected readonly session = inject(SessionStore);
@@ -186,7 +184,7 @@ export class ProjectList {
       data: {},
       maxWidth: '40rem',
     });
-    const created = await firstValueFrom(ref.afterClosed());
+    const created = await firstValueFrom(ref.closed);
     if (created) await this.router.navigate(['/admin/projects', created.key]);
   }
 
@@ -198,7 +196,7 @@ export class ProjectList {
         data: { project: loaded },
         maxWidth: '40rem',
       });
-      const saved = await firstValueFrom(ref.afterClosed());
+      const saved = await firstValueFrom(ref.closed);
       if (saved) {
         this.list.replace((x) => x.key === saved.key, saved);
         void this.filter.refresh();

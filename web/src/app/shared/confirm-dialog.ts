@@ -1,11 +1,5 @@
 import { Component, Injectable, inject, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import {
-  MAT_DIALOG_DATA,
-  MatDialog,
-  MatDialogModule,
-  MatDialogRef,
-} from '@angular/material/dialog';
+import { DIALOG_DATA, DialogClose, DialogRef, DialogTitle, TroveDialog } from './ui/dialog';
 import { firstValueFrom } from 'rxjs';
 
 export interface ConfirmData {
@@ -28,10 +22,10 @@ export interface ConfirmResult {
 /** A confirmation that names what is affected and, for large deletes, asks for the name (R-UI-011). */
 @Component({
   selector: 'trove-confirm-dialog',
-  imports: [MatButtonModule, MatDialogModule],
+  imports: [DialogTitle, DialogClose],
   template: `
-    <h2 mat-dialog-title>{{ data.title }}</h2>
-    <mat-dialog-content>
+    <h2 troveDialogTitle>{{ data.title }}</h2>
+    <div class="dialog-body">
       @for (line of data.lines; track $index) {
         <p>{{ line }}</p>
       }
@@ -61,13 +55,13 @@ export interface ConfirmResult {
           <span>{{ choice }}</span>
         </label>
       }
-    </mat-dialog-content>
-    <mat-dialog-actions align="end">
-      <button mat-button type="button" mat-dialog-close i18n="@@confirm.cancel">Cancel</button>
-      <button mat-flat-button type="button" [disabled]="!ready()" (click)="confirm()">
+    </div>
+    <div class="dialog-actions">
+      <button class="btn btn-tertiary" type="button" troveDialogClose i18n="@@confirm.cancel">Cancel</button>
+      <button class="btn btn-confirm" type="button" [disabled]="!ready()" (click)="confirm()">
         {{ data.confirmLabel }}
       </button>
-    </mat-dialog-actions>
+    </div>
   `,
   styles: `
     .field {
@@ -84,8 +78,8 @@ export interface ConfirmResult {
   `,
 })
 export class ConfirmDialog {
-  protected readonly data = inject<ConfirmData>(MAT_DIALOG_DATA);
-  private readonly ref = inject<MatDialogRef<ConfirmDialog, ConfirmResult>>(MatDialogRef);
+  protected readonly data = inject<ConfirmData>(DIALOG_DATA);
+  private readonly ref = inject<DialogRef<ConfirmResult, ConfirmDialog>>(DialogRef);
 
   protected readonly typed = signal('');
   protected readonly checked = signal(this.data.choiceChecked ?? false);
@@ -101,7 +95,7 @@ export class ConfirmDialog {
 
 @Injectable({ providedIn: 'root' })
 export class Confirm {
-  private readonly dialog = inject(MatDialog);
+  private readonly dialog = inject(TroveDialog);
 
   /** Resolves with the answer when confirmed, null when cancelled. */
   async ask(data: ConfirmData): Promise<ConfirmResult | null> {
@@ -109,6 +103,6 @@ export class Confirm {
       data,
       maxWidth: '40rem',
     });
-    return (await firstValueFrom(ref.afterClosed())) ?? null;
+    return (await firstValueFrom(ref.closed)) ?? null;
   }
 }

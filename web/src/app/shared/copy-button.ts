@@ -1,5 +1,4 @@
 import { Component, inject, input } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { Notifier } from '../core/notifier';
 
 /**
@@ -8,10 +7,9 @@ import { Notifier } from '../core/notifier';
  */
 @Component({
   selector: 'trove-copy-button',
-  imports: [MatButtonModule],
+  imports: [],
   template: `
-    <button
-      mat-icon-button
+    <button class="btn btn-icon"
       type="button"
       [attr.aria-label]="label()"
       [title]="label()"

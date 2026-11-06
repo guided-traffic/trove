@@ -1,6 +1,5 @@
 import { Component, computed, effect, inject, input, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatDialog } from '@angular/material/dialog';
+import { TroveDialog } from '../../shared/ui/dialog';
 import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { IdentityApi, ServiceAccount } from '../../api/identity-api';
@@ -17,11 +16,10 @@ import { ProjectNeeds, createState } from './project-access';
  */
 @Component({
   selector: 'trove-project-service-accounts',
-  imports: [MatButtonModule, RouterLink, DataTable, ProjectNeeds],
+  imports: [RouterLink, DataTable, ProjectNeeds],
   template: `
     <div class="toolbar">
-      <button
-        mat-flat-button
+      <button class="btn btn-confirm"
         type="button"
         [disabled]="state() !== 'enabled'"
         aria-describedby="needs-project-sas"
@@ -67,7 +65,7 @@ export class ProjectServiceAccounts {
   readonly project = input.required<string>();
 
   private readonly api = inject(IdentityApi);
-  private readonly dialog = inject(MatDialog);
+  private readonly dialog = inject(TroveDialog);
   private readonly router = inject(Router);
   private readonly session = inject(SessionStore);
 
@@ -92,7 +90,7 @@ export class ProjectServiceAccounts {
       ServiceAccountCreateDialog,
       { data: { project: this.project() }, maxWidth: '36rem' },
     );
-    const created = await firstValueFrom(ref.afterClosed());
+    const created = await firstValueFrom(ref.closed);
     if (created) await this.router.navigate(['/admin/service-accounts', created.name]);
   }
 }

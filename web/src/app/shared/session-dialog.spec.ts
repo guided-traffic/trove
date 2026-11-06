@@ -1,6 +1,6 @@
 import { DestroyRef } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { MatDialog } from '@angular/material/dialog';
+import { TroveDialog } from './ui/dialog';
 import { Router, provideRouter } from '@angular/router';
 import { DraftStore } from './drafts';
 import { settle } from '../testing/screen';
@@ -17,7 +17,7 @@ async function openDialog(kind: 'ended' | 'reauth') {
     providers: [provideRouter([{ path: '**', children: [] }]), provideHttpClient(), ...provideFakeApis()],
   }).compileComponents();
   const fixture = TestBed.createComponent(App);
-  TestBed.inject(MatDialog).open(SessionDialog, { data: { kind } });
+  TestBed.inject(TroveDialog).open(SessionDialog, { data: { kind } });
   await settle(fixture);
   return { fixture, dialog: document.querySelector('trove-session-dialog') as HTMLElement };
 }
@@ -32,7 +32,7 @@ describe('Session dialogs (R-UI-004, R-UI-042)', () => {
     const fixture = TestBed.createComponent(App);
     const drafts = TestBed.inject(DraftStore);
     drafts.track(() => ({ name: 'team-x', entries: [] }), TestBed.inject(DestroyRef));
-    TestBed.inject(MatDialog).open(SessionDialog, { data: { kind: 'ended' } });
+    TestBed.inject(TroveDialog).open(SessionDialog, { data: { kind: 'ended' } });
     await settle(fixture);
     const dialog = document.querySelector('trove-session-dialog') as HTMLElement;
     const copy = [...dialog.querySelectorAll('button')].find((b) => b.textContent?.includes('Copy draft as JSON'));

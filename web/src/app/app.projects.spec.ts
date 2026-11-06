@@ -1,7 +1,6 @@
 import { provideHttpClient } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { MATERIAL_ANIMATIONS } from '@angular/material/core';
 import { Router, TitleStrategy, provideRouter, withComponentInputBinding } from '@angular/router';
 import { App } from './app';
 import { routes } from './app.routes';
@@ -28,7 +27,6 @@ async function render(url: string, me?: Me, setup?: (projects: FakeProjectsApi, 
       { provide: TitleStrategy, useExisting: TroveTitleStrategy },
       provideHttpClient(),
       ...provideFakeApis(),
-      { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } },
       // jsdom has no viewport: the sidebar is pinned.
       { provide: Layout, useValue: { pinned: signal(true) } },
     ],

@@ -1,5 +1,4 @@
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { Router, RouterLink } from '@angular/router';
 import { Job, JobState, JobsApi, jobActive } from '../../api/jobs-api';
 import { describeProblem } from '../../core/http/problem-messages';
@@ -30,12 +29,11 @@ export const JOBS_REFRESH_MS = 5_000;
  */
 @Component({
   selector: 'trove-jobs-page',
-  imports: [MatButtonModule, RouterLink, ErrorNotice, JobTable],
+  imports: [RouterLink, ErrorNotice, JobTable],
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@jobs.heading">Jobs</h1>
-      <button
-        mat-stroked-button
+      <button class="btn btn-default"
         type="button"
         [attr.aria-pressed]="paused()"
         (click)="paused.set(!paused())"
@@ -46,8 +44,8 @@ export const JOBS_REFRESH_MS = 5_000;
           <ng-container i18n="@@system.pause">Pause automatic refresh</ng-container>
         }
       </button>
-      <button mat-button type="button" (click)="load()" i18n="@@system.refresh">Refresh now</button>
-      <a mat-button routerLink="/admin/system" i18n="@@jobs.back">System status</a>
+      <button class="btn btn-tertiary" type="button" (click)="load()" i18n="@@system.refresh">Refresh now</button>
+      <a class="btn btn-tertiary" routerLink="/admin/system" i18n="@@jobs.back">System status</a>
     </header>
 
     <form class="toolbar" role="search" (submit)="apply($event)">
@@ -77,7 +75,7 @@ export const JOBS_REFRESH_MS = 5_000;
           </label>
         }
       </fieldset>
-      <button mat-flat-button type="submit" i18n="@@repo.filter.apply">Search</button>
+      <button class="btn btn-confirm" type="submit" i18n="@@repo.filter.apply">Search</button>
     </form>
 
     @if (list.error(); as f) {
@@ -94,8 +92,7 @@ export const JOBS_REFRESH_MS = 5_000;
         />
         @if (list.hasMore()) {
           <p>
-            <button
-              mat-stroked-button
+            <button class="btn btn-default"
               type="button"
               [disabled]="list.loading()"
               (click)="list.more()"

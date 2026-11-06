@@ -1,10 +1,5 @@
 import { Injectable, Component, inject } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import {
-  MAT_DIALOG_DATA,
-  MatDialog,
-  MatDialogModule,
-} from '@angular/material/dialog';
+import { DIALOG_DATA, DialogClose, DialogTitle, TroveDialog } from './ui/dialog';
 import { firstValueFrom } from 'rxjs';
 import { Versioned } from '../api/repositories-api';
 import { ApiError } from '../api/problem';
@@ -36,10 +31,10 @@ export function diffFields(data: ConflictData): ConflictRow[] {
 /** "Changed by someone else since you opened it" (R-UI-042): their version against yours. */
 @Component({
   selector: 'trove-conflict-dialog',
-  imports: [MatButtonModule, MatDialogModule],
+  imports: [DialogTitle, DialogClose],
   template: `
-    <h2 mat-dialog-title i18n="@@conflict.title">Changed by someone else since you opened it</h2>
-    <mat-dialog-content>
+    <h2 troveDialogTitle i18n="@@conflict.title">Changed by someone else since you opened it</h2>
+    <div class="dialog-body">
       @if (rows.length === 0) {
         <p i18n="@@conflict.same">The stored version already equals yours.</p>
       } @else {
@@ -65,23 +60,22 @@ export function diffFields(data: ConflictData): ConflictRow[] {
           </tbody>
         </table>
       }
-    </mat-dialog-content>
-    <mat-dialog-actions align="end">
-      <button mat-button type="button" (click)="copyMine()" i18n="@@conflict.copy">
+    </div>
+    <div class="dialog-actions">
+      <button class="btn btn-tertiary" type="button" (click)="copyMine()" i18n="@@conflict.copy">
         Copy my changes
       </button>
-      <button mat-button type="button" [mat-dialog-close]="'reload'" i18n="@@conflict.reload">
+      <button class="btn btn-tertiary" type="button" [troveDialogClose]="'reload'" i18n="@@conflict.reload">
         Reload (discard mine)
       </button>
-      <button
-        mat-flat-button
+      <button class="btn btn-confirm"
         type="button"
-        [mat-dialog-close]="'overwrite'"
+        [troveDialogClose]="'overwrite'"
         i18n="@@conflict.overwrite"
       >
         Overwrite
       </button>
-    </mat-dialog-actions>
+    </div>
   `,
   styles: `
     .diff {
@@ -92,7 +86,7 @@ export function diffFields(data: ConflictData): ConflictRow[] {
     td {
       padding: var(--trove-space-1) var(--trove-space-3);
       text-align: start;
-      border-block-end: 1px solid var(--mat-sys-outline-variant);
+      border-block-end: 1px solid var(--trove-border);
       overflow-wrap: anywhere;
     }
     .visually-hidden {
@@ -105,7 +99,7 @@ export function diffFields(data: ConflictData): ConflictRow[] {
   `,
 })
 export class ConflictDialog {
-  private readonly data = inject<ConflictData>(MAT_DIALOG_DATA);
+  private readonly data = inject<ConflictData>(DIALOG_DATA);
   protected readonly rows = diffFields(this.data);
 
   protected async copyMine(): Promise<void> {
@@ -142,14 +136,14 @@ export type GuardedOutcome<T> =
 /** Opens the conflict dialog; resolves with the choice, or null when it was dismissed. */
 @Injectable({ providedIn: 'root' })
 export class ConflictResolver {
-  private readonly dialog = inject(MatDialog);
+  private readonly dialog = inject(TroveDialog);
 
   async resolve(data: ConflictData): Promise<ConflictDecision | null> {
     const ref = this.dialog.open<ConflictDialog, ConflictData, ConflictDecision>(ConflictDialog, {
       data,
       maxWidth: '48rem',
     });
-    return (await firstValueFrom(ref.afterClosed())) ?? null;
+    return (await firstValueFrom(ref.closed)) ?? null;
   }
 
   /**

@@ -1,6 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatDialog } from '@angular/material/dialog';
+import { TroveDialog } from '../../shared/ui/dialog';
 import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { Group, GroupFilters, IdentityApi } from '../../api/identity-api';
@@ -27,7 +26,6 @@ export function groupOriginLabel(origin: Group['origin']): string {
 @Component({
   selector: 'trove-group-list',
   imports: [
-    MatButtonModule,
     RouterLink,
     DataTable,
     FilterCategory,
@@ -40,7 +38,7 @@ export function groupOriginLabel(origin: Group['origin']): string {
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@groups.heading">Groups</h1>
-      <button mat-flat-button type="button" [disabled]="!session.has('identities:write')" aria-describedby="needs-groups" (click)="add()" i18n="@@groups.add">New group</button>
+      <button class="btn btn-confirm" type="button" [disabled]="!session.has('identities:write')" aria-describedby="needs-groups" (click)="add()" i18n="@@groups.add">New group</button>
     </header>
     <trove-needs id="needs-groups" capability="identities:write" />
 
@@ -97,7 +95,7 @@ export function groupOriginLabel(origin: Group['origin']): string {
 })
 export class GroupList {
   private readonly api = inject(IdentityApi);
-  private readonly dialog = inject(MatDialog);
+  private readonly dialog = inject(TroveDialog);
   private readonly router = inject(Router);
   protected readonly session = inject(SessionStore);
 
@@ -153,7 +151,7 @@ export class GroupList {
 
   protected async add(): Promise<void> {
     const ref = this.dialog.open<GroupCreateDialog, undefined, Group>(GroupCreateDialog, { maxWidth: '36rem' });
-    const created = await firstValueFrom(ref.afterClosed());
+    const created = await firstValueFrom(ref.closed);
     if (created) await this.router.navigate(['/admin/groups', created.name]);
   }
 }

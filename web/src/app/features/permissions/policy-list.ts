@@ -1,5 +1,4 @@
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { RouterLink } from '@angular/router';
 import { PermissionPolicy, PolicyApi, PolicyFilters } from '../../api/authz-api';
 import { ProjectFilter } from '../../core/project-filter';
@@ -41,7 +40,7 @@ export function actionSummary(policy: Pick<PermissionPolicy, 'entries'>): string
  */
 @Component({
   selector: 'trove-policy-list',
-  imports: [MatButtonModule, RouterLink, DataTable, FilterCategory, FilterPanel, FilterToggle, Needs, TextField],
+  imports: [RouterLink, DataTable, FilterCategory, FilterPanel, FilterToggle, Needs, TextField],
   templateUrl: './policy-list.html',
   styleUrl: '../../shared/access/access.scss',
 })

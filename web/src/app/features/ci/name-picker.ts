@@ -1,5 +1,4 @@
 import { Component, computed, input, model, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 
 let nextPickerId = 1;
 
@@ -11,7 +10,7 @@ let nextPickerId = 1;
  */
 @Component({
   selector: 'trove-ci-name-picker',
-  imports: [MatButtonModule],
+  imports: [],
   template: `
     <div class="picker">
       <span class="label" [id]="id + '-label'">{{ label() }}</span>
@@ -53,7 +52,7 @@ let nextPickerId = 1;
               (input)="typed.set($any($event.target).value)"
               (keydown.enter)="$event.preventDefault(); addTyped()"
             />
-            <button mat-stroked-button type="button" [disabled]="typed().trim() === ''" (click)="addTyped()" i18n="@@ci.picker.add">Add</button>
+            <button class="btn btn-default" type="button" [disabled]="typed().trim() === ''" (click)="addTyped()" i18n="@@ci.picker.add">Add</button>
           }
         </div>
       }
@@ -69,7 +68,7 @@ let nextPickerId = 1;
       gap: var(--trove-space-2);
     }
     .label {
-      font: var(--mat-sys-label-large);
+      font: var(--trove-type-label-large);
     }
     .chips {
       display: flex;
@@ -85,7 +84,7 @@ let nextPickerId = 1;
       gap: var(--trove-space-1);
       padding: 0 var(--trove-space-2);
       border: 1px solid var(--trove-border-strong);
-      border-radius: var(--mat-sys-corner-full);
+      border-radius: var(--trove-radius-full);
       background: var(--trove-surface-raised);
     }
     .chip-remove {
@@ -114,14 +113,14 @@ let nextPickerId = 1;
       border: 1px solid var(--trove-border-strong);
       border-radius: var(--trove-radius-s);
       background: var(--trove-surface-raised);
-      color: var(--mat-sys-on-surface);
+      color: var(--trove-on-surface);
       font: inherit;
       min-inline-size: 14rem;
     }
     .field-error {
       margin: 0;
       color: var(--trove-status-bad);
-      font: var(--mat-sys-body-small);
+      font: var(--trove-type-body-small);
     }
     .visually-hidden {
       position: absolute;

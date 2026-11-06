@@ -39,7 +39,7 @@ trove-package-readme {
 
     :not(pre) > code {
       padding: 0 var(--trove-space-1);
-      border-radius: var(--mat-sys-corner-extra-small);
+      border-radius: var(--trove-radius-s);
       background: var(--trove-table-head-bg);
     }
 

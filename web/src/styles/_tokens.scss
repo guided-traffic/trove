@@ -1,7 +1,7 @@
 // trove design tokens. Components read these custom properties and never a literal colour or
-// length, so both themes and the density stay one-place changes. The Material system tokens
-// (--mat-sys-*) come from mat.theme and mat.theme-overrides in main.scss, where the page palette
-// of the design language (Q-UI-88, Q-UI-128, docs/developer/design-language.md) is set.
+// length, so both themes and the density stay one-place changes. The page palette of the design
+// language (Q-UI-88, Q-UI-128, docs/developer/design-language.md) is set here; no component library
+// supplies tokens (Q-UI-126).
 
 :root {
   color-scheme: light dark;
@@ -27,6 +27,14 @@
   --trove-heading-1: clamp(1.5rem, 0.8333rem + 1.3889vw, 1.875rem);
   --trove-heading-2: clamp(1.3125rem, 0.8681rem + 0.9259vw, 1.5625rem);
   --trove-heading-3: clamp(1.125rem, 0.9028rem + 0.463vw, 1.25rem);
+  --trove-type-title-large: 400 1.375rem / 1.75rem var(--trove-font-sans);
+  --trove-type-title-medium: 500 1rem / 1.5rem var(--trove-font-sans);
+  --trove-type-title-small: 500 0.875rem / 1.25rem var(--trove-font-sans);
+  --trove-type-headline-small: 400 1.5rem / 2rem var(--trove-font-sans);
+  --trove-type-label-large: 500 0.875rem / 1.25rem var(--trove-font-sans);
+  --trove-type-label-medium: 500 0.75rem / 1rem var(--trove-font-sans);
+  --trove-type-label-small: 500 0.688rem / 1rem var(--trove-font-sans);
+  --trove-type-body-small: 400 0.75rem / 1rem var(--trove-font-sans);
   --trove-heading-weight: 600;
   --trove-heading-tracking: -0.01em;
 
@@ -36,27 +44,45 @@
   --trove-radius-m: 8px;
   --trove-radius-l: 12px;
   --trove-radius-xl: 16px;
+  --trove-radius-full: 9999px;
   --trove-elevation-1: 0 1px 2px light-dark(rgb(5 5 6 / 6%), transparent);
   --trove-elevation-2: 0 4px 12px light-dark(rgb(5 5 6 / 12%), rgb(0 0 0 / 55%));
 
-  // Content area (Q-UI-128): the reference's semantic colours, light from its token set, dark as measured; a pair that
-  // misses WCAG AA is moved in its own hue and listed in design-language.md. The accent is the Material primary, so a
-  // theme change moves every accent-coloured control with it; a positive status is --trove-status-ok.
-  --trove-border: var(--mat-sys-outline-variant);
-  --trove-border-strong: var(--mat-sys-outline);
-  --trove-text-muted: var(--mat-sys-on-surface-variant);
+  // Content area (Q-UI-128): a theme change moves every accent-coloured control with --trove-accent; a positive status is
+  // --trove-status-ok.
+  // The page palette (Q-UI-128): the reference's semantic colours, light from its token set and dark as measured on the
+  // owner's GitLab 19.0.1, where the two agree token for token. The accent as text and focus ring is one step deeper than
+  // the confirm button's #1f75cb in the light scheme (#2f68b4; #1f75cb gives 4.0:1 on a filled field) and a hair lighter
+  // than #63a6e9 in the dark one (#66a8ea; 4.49:1 on a filled field); trove's confirm button keeps the exact pair
+  // (--trove-accent-fill). The page is white / #18171d, text #3a383f / #ececef, muted text #626168 / #bfbfc3, hairlines
+  // #dcdcde / #4c4b51, menus and dialogs white / #28272d. A pair that misses WCAG AA is moved in its own hue (R-UI-044);
+  // palette.spec.ts recomputes the pairs.
+  --trove-surface: light-dark(#ffffff, #18171d);
+  --trove-on-surface: light-dark(#3a383f, #ececef);
+  --trove-surface-variant: light-dark(#ececef, #3a383f);
+  --trove-surface-container: light-dark(#ffffff, #28272d);
+  --trove-dialog-bg: light-dark(#ffffff, #28272d);
+  --trove-border: light-dark(#dcdcde, #4c4b51);
+  --trove-border-strong: light-dark(#89888d, #737278);
+  --trove-text-muted: light-dark(#626168, #bfbfc3);
+  --trove-inverse-surface: light-dark(#28272d, #ececef);
+  --trove-on-inverse-surface: light-dark(#ececef, #28272d);
+  --trove-inverse-accent: light-dark(#66a8ea, #2f68b4);
+  --trove-error: light-dark(#ba1a1a, #ffb4ab);
+  --trove-error-container: light-dark(#ffdad6, #93000a);
+  --trove-on-error-container: light-dark(#93000a, #ffdad6);
   --trove-heading: light-dark(#18171d, #ffffff);
-  --trove-accent: var(--mat-sys-primary);
+  --trove-accent: light-dark(#2f68b4, #66a8ea);
   --trove-link: light-dark(#2f5ca0, #9dc7f1);
-  --trove-accent-container: var(--mat-sys-secondary-container);
-  --trove-on-accent-container: var(--mat-sys-on-secondary-container);
+  --trove-accent-container: light-dark(#e9f3fc, #1d283e);
+  --trove-on-accent-container: light-dark(#18171d, #ececef);
   // A raised surface (table frame, panel in the page) and a card: the reference's card is a strong fill (#ececef /
   // #3a383f) around a body on the page's fill, 12 px round outside and 8 px inside.
   --trove-surface-raised: light-dark(#ffffff, #18171d);
   --trove-card-bg: light-dark(#ececef, #3a383f);
   --trove-table-head-bg: light-dark(#fbfafd, #28272d);
   --trove-row-hover: light-dark(#e9f3fc, #1d283e);
-  --trove-focus-ring: 2px solid var(--mat-sys-primary);
+  --trove-focus-ring: 2px solid var(--trove-accent);
   // The current tab's line: the reference's blue of the focus ring (#1f75cb / #428fdc).
   --trove-tab-indicator: light-dark(#1f75cb, #428fdc);
 
@@ -95,9 +121,6 @@
   // The logo's hues (web/scripts/brand-logo.mjs; the inline mark of shared/brand/trove-mark.ts reads them).
   --trove-brand-blue: light-dark(#0a84ff, #1fb6ff);
   --trove-brand-red: light-dark(#ff1f4b, #ff2d55);
-
-  --trove-surface: var(--mat-sys-surface);
-  --trove-on-surface: var(--mat-sys-on-surface);
 
   // Controls (_controls.scss, Q-UI-126, Q-UI-128): buttons, text fields, selects and checkboxes of trove's own, in the
   // reference's measures (32 px, 8 px round, label weight 400) and colours. The default button is white with a grey
@@ -155,8 +178,8 @@
   --trove-chart-low: light-dark(#347da0, #5cb3d6);
   --trove-chart-none: light-dark(#5b6270, #9aa1ad);
   --trove-chart-unknown: light-dark(#8577e6, #a99cff);
-  --trove-banner-bg: var(--mat-sys-tertiary-container);
-  --trove-banner-fg: var(--mat-sys-on-tertiary-container);
+  --trove-banner-bg: light-dark(#ecdcff, #5f00c0);
+  --trove-banner-fg: light-dark(#5f00c0, #ecdcff);
 }
 
 // An explicit user choice (R-API-021) overrides prefers-color-scheme by setting data-theme on

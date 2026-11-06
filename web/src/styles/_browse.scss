@@ -84,7 +84,7 @@
     min-inline-size: 0;
     min-block-size: 36px;
     padding-inline: var(--trove-space-2);
-    border: 1px solid var(--mat-sys-outline);
+    border: 1px solid var(--trove-border-strong);
     border-radius: var(--trove-radius-s);
     background: var(--trove-surface);
 
@@ -303,7 +303,7 @@
 
     h3 {
       margin-block: var(--trove-space-4) var(--trove-space-2);
-      font: var(--mat-sys-title-small);
+      font: var(--trove-type-title-small);
     }
   }
 
@@ -352,7 +352,7 @@
 
     .empty-title {
       color: var(--trove-on-surface);
-      font: var(--mat-sys-title-medium);
+      font: var(--trove-type-title-medium);
     }
   }
 

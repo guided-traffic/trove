@@ -12,7 +12,6 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 
 let nextPanelId = 1;
 
@@ -22,12 +21,11 @@ let nextPanelId = 1;
  */
 @Component({
   selector: 'trove-filter-toggle',
-  imports: [MatButtonModule],
+  imports: [],
   template: `
     <button
-      mat-stroked-button
       type="button"
-      class="filter-toggle"
+      class="btn btn-default filter-toggle"
       [attr.aria-expanded]="open()"
       [attr.aria-controls]="open() ? controls() : null"
       (click)="open.set(!open())"
@@ -105,7 +103,7 @@ export class FilterCategory {
  */
 @Component({
   selector: 'trove-filter-panel',
-  imports: [MatButtonModule],
+  imports: [],
   template: `
     @if (open()) {
       <form
@@ -118,8 +116,8 @@ export class FilterCategory {
       >
         <header class="panel-head">
           <h2 #heading [id]="panelId + '-title'" tabindex="-1" i18n="@@filters.title">Filters</h2>
-          <button mat-button type="button" class="clear-all" [disabled]="activeCount() === 0" (click)="clearAll.emit()" i18n="@@filters.clear-all">Clear all</button>
-          <button mat-icon-button type="button" class="close" (click)="close()" i18n-aria-label="@@filters.close" aria-label="Close filters">
+          <button type="button" class="btn btn-tertiary clear-all" [disabled]="activeCount() === 0" (click)="clearAll.emit()" i18n="@@filters.clear-all">Clear all</button>
+          <button type="button" class="btn btn-icon close" (click)="close()" i18n-aria-label="@@filters.close" aria-label="Close filters">
             <span class="material-icons" aria-hidden="true">close</span>
           </button>
         </header>
@@ -127,7 +125,7 @@ export class FilterCategory {
           <ng-content />
         </div>
         <footer class="panel-foot">
-          <button mat-flat-button type="submit">{{ applyLabel() }}</button>
+          <button class="btn btn-confirm" type="submit">{{ applyLabel() }}</button>
         </footer>
       </form>
     }

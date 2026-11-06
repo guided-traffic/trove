@@ -1,6 +1,5 @@
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { MATERIAL_ANIMATIONS } from '@angular/material/core';
 import { seriousViolations } from '../../testing/axe';
 import { FilterCategory, FilterPanel, FilterToggle } from './filter-panel';
 
@@ -35,7 +34,6 @@ class Host {
 async function render() {
   await TestBed.configureTestingModule({
     imports: [Host],
-    providers: [{ provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } }],
   }).compileComponents();
   const fixture = TestBed.createComponent(Host);
   document.body.appendChild(fixture.nativeElement);

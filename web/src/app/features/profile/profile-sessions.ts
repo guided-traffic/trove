@@ -1,6 +1,5 @@
 import { DatePipe } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { ApiError } from '../../api/problem';
 import { SessionsApi, UserSession } from '../../api/sessions-api';
 import { Notifier } from '../../core/notifier';
@@ -16,12 +15,12 @@ import { ProfileNav } from './profile-nav';
  */
 @Component({
   selector: 'trove-profile-sessions',
-  imports: [DatePipe, MatButtonModule, ErrorNotice, ProfileNav],
+  imports: [DatePipe, ErrorNotice, ProfileNav],
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@profile.sessions.heading">Sessions</h1>
       @if (others() > 0) {
-        <button mat-flat-button type="button" (click)="endOthers()" i18n="@@profile.sessions.end-others">
+        <button class="btn btn-confirm" type="button" (click)="endOthers()" i18n="@@profile.sessions.end-others">
           End all other sessions
         </button>
       }
@@ -60,7 +59,7 @@ import { ProfileNav } from './profile-nav';
                 <td translate="no">{{ s.providerId ?? s.authMethod }}</td>
                 <td class="actions">
                   @if (!s.current) {
-                    <button mat-button type="button" (click)="end(s)">
+                    <button class="btn btn-tertiary" type="button" (click)="end(s)">
                       <ng-container i18n="@@profile.sessions.end">End</ng-container>
                       <span class="visually-hidden"> {{ s.createdAt | date: 'medium' }}</span>
                     </button>

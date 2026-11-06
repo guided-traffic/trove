@@ -1,6 +1,5 @@
 import { DecimalPipe } from '@angular/common';
 import { Component, computed, inject, input, output, resource, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { SEVERITIES, VulnerabilitiesApi, VulnerabilitySeverity, VulnerabilityTrend } from '../../api/vulnerabilities-api';
 import { ErrorNotice } from '../../shared/error-notice';
 import { asApiError, valueOf } from '../../shared/paged-resource';
@@ -79,19 +78,19 @@ export function trendGeometry(trend: VulnerabilityTrend): TrendGeometry {
  */
 @Component({
   selector: 'trove-vuln-trend',
-  imports: [DecimalPipe, MatButtonModule, ErrorNotice],
+  imports: [DecimalPipe, ErrorNotice],
   template: `
     <section class="vuln-trend" aria-labelledby="vuln-trend-title">
       <div class="vuln-trend-head">
         <h2 id="vuln-trend-title" i18n="@@vuln.trend.title">Open findings over time</h2>
         <div class="vuln-range" role="group" aria-label="Period" i18n-aria-label="@@vuln.trend.period">
           @for (r of ranges; track r) {
-            <button mat-stroked-button type="button" [attr.aria-pressed]="range() === r" (click)="rangeChange.emit(r)">
+            <button class="btn btn-default" type="button" [attr.aria-pressed]="range() === r" (click)="rangeChange.emit(r)">
               {{ rangeLabel(r) }}
             </button>
           }
         </div>
-        <button mat-button type="button" [attr.aria-expanded]="asTable()" aria-controls="vuln-trend-body" (click)="asTable.set(!asTable())">
+        <button class="btn btn-tertiary" type="button" [attr.aria-expanded]="asTable()" aria-controls="vuln-trend-body" (click)="asTable.set(!asTable())">
           @if (asTable()) {
             <ng-container i18n="@@vuln.trend.show-chart">Show as chart</ng-container>
           } @else {

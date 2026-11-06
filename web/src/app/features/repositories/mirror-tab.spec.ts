@@ -191,7 +191,7 @@ describe('The Mirror tab of the edit form: status, pause, resume, run (R-UI-021,
       };
       button(r.root, 'Pause').click();
       await settle(r.fixture);
-      expect(r.root.ownerDocument.body.querySelector('mat-dialog-container')).toBeNull();
+      expect(r.root.ownerDocument.body.querySelector('[role="dialog"]')).toBeNull();
       expect(fake.patches).toHaveLength(1);
       expect(control(r.root, 'f-remote-mirror-paused').checked).toBe(true);
     });

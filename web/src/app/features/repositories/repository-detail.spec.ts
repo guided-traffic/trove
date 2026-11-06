@@ -91,7 +91,7 @@ describe('Repository edit form', () => {
     expect(text(body)).toContain('Changed by someone else since you opened it');
     expect(text(body)).toContain('Theirs');
     expect(text(body)).toContain('Mine');
-    await expectAccessible(body.querySelector('mat-dialog-container')!);
+    await expectAccessible(body.querySelector('[role="dialog"]')!);
 
     button(body, 'Overwrite').click();
     await settle(r.fixture);
@@ -113,7 +113,7 @@ describe('Repository edit form', () => {
     await settle(r.fixture);
     button(r.root, 'Save changes').click();
     await settle(r.fixture);
-    expect(r.root.ownerDocument.body.querySelector('mat-dialog-container')).toBeNull();
+    expect(r.root.ownerDocument.body.querySelector('[role="dialog"]')).toBeNull();
     expect(r.fixture.componentInstance.hasUnsavedChanges()).toBe(false);
   });
 

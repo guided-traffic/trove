@@ -1,6 +1,5 @@
 import { Component, inject } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
+import { DIALOG_DATA, DialogClose, DialogRef, DialogTitle } from './ui/dialog';
 import { Router } from '@angular/router';
 // >>> M1 ui-b
 import { DraftStore } from './drafts';
@@ -18,37 +17,37 @@ export interface SessionDialogData {
  */
 @Component({
   selector: 'trove-session-dialog',
-  imports: [MatButtonModule, MatDialogModule],
+  imports: [DialogTitle, DialogClose],
   template: `
     @if (data.kind === 'ended') {
-      <h2 mat-dialog-title i18n="@@session.ended.title">Your session has ended</h2>
-      <mat-dialog-content i18n="@@session.ended.text">
+      <h2 troveDialogTitle i18n="@@session.ended.title">Your session has ended</h2>
+      <div class="dialog-body" i18n="@@session.ended.text">
         You were signed out. Sign in again to continue where you left off.
-      </mat-dialog-content>
+      </div>
     } @else {
-      <h2 mat-dialog-title i18n="@@session.reauth.title">Confirm it is you</h2>
-      <mat-dialog-content i18n="@@session.reauth.text">
+      <h2 troveDialogTitle i18n="@@session.reauth.title">Confirm it is you</h2>
+      <div class="dialog-body" i18n="@@session.reauth.text">
         This action needs a recent sign-in. Sign in again, then repeat the action.
-      </mat-dialog-content>
+      </div>
     }
-    <mat-dialog-actions align="end">
+    <div class="dialog-actions">
       <!-- >>> M1 ui-b -->
       @if (data.kind === 'ended' && draft !== null) {
-        <button mat-button type="button" (click)="copyDraft()" i18n="@@session.copy-draft">
+        <button class="btn btn-tertiary" type="button" (click)="copyDraft()" i18n="@@session.copy-draft">
           Copy draft as JSON
         </button>
       }
       <!-- <<< M1 ui-b -->
-      <button mat-button type="button" mat-dialog-close i18n="@@session.later">Not now</button>
-      <button mat-flat-button type="button" (click)="signIn()" i18n="@@session.sign-in-again">
+      <button class="btn btn-tertiary" type="button" troveDialogClose i18n="@@session.later">Not now</button>
+      <button class="btn btn-confirm" type="button" (click)="signIn()" i18n="@@session.sign-in-again">
         Sign in again
       </button>
-    </mat-dialog-actions>
+    </div>
   `,
 })
 export class SessionDialog {
-  protected readonly data = inject<SessionDialogData>(MAT_DIALOG_DATA);
-  private readonly ref = inject(MatDialogRef<SessionDialog>);
+  protected readonly data = inject<SessionDialogData>(DIALOG_DATA);
+  private readonly ref = inject(DialogRef<unknown, SessionDialog>);
   private readonly router = inject(Router);
   // >>> M1 ui-b
   /** The unsaved draft of an open editor (R-UI-004: "Copy draft as JSON"), or null. */

@@ -1,6 +1,6 @@
 <header class="page-header">
   <h1 tabindex="-1" i18n="@@group.heading">Group</h1>
-  <a mat-button routerLink="/admin/groups" i18n="@@group.back">All groups</a>
+  <a class="btn btn-tertiary" routerLink="/admin/groups" i18n="@@group.back">All groups</a>
 </header>
 <p class="subject" translate="no">{{ name() }}</p>
 <trove-needs capability="identities:write" />
@@ -24,9 +24,9 @@
     <form class="form-grid" (submit)="save($event)">
       <trove-text-field i18n-label="@@group.name" label="Name" name="name" [(value)]="newName" [readonly]="readOnly() || !canWrite()" [error]="fieldError('/name')" />
       <trove-text-field i18n-label="@@group.description" label="Description" name="description" [(value)]="description" [readonly]="readOnly() || !canWrite()" [error]="fieldError('/description')" />
-      <mat-checkbox [checked]="autoJoin()" [disabled]="readOnly() || !canWrite()" (change)="autoJoin.set($event.checked)">
+      <trove-checkbox [checked]="autoJoin()" [disabled]="readOnly() || !canWrite()" (checkedChange)="autoJoin.set($event)">
         <ng-container i18n="@@group.auto-join">Every user joins this group automatically</ng-container>
-      </mat-checkbox>
+      </trove-checkbox>
       <dl class="facts">
         <dt i18n="@@group.origin">Origin</dt>
         <dd>{{ originLabel(g.origin) }}</dd>
@@ -35,8 +35,8 @@
       </dl>
       @if (canWrite() && !readOnly()) {
         <div class="row-actions">
-          <button mat-flat-button type="submit" [disabled]="busy()" i18n="@@group.save">Save group</button>
-          <button mat-button type="button" [disabled]="busy()" (click)="remove()" i18n="@@group.delete">Delete group</button>
+          <button class="btn btn-confirm" type="submit" [disabled]="busy()" i18n="@@group.save">Save group</button>
+          <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="remove()" i18n="@@group.delete">Delete group</button>
         </div>
       }
     </form>
@@ -78,7 +78,7 @@
                   </td>
                   <td class="actions">
                     @if (removable(m)) {
-                      <button mat-button type="button" [disabled]="busy()" (click)="removeMember(m)">
+                      <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="removeMember(m)">
                         <ng-container i18n="@@group.remove">Remove</ng-container>
                         <span class="visually-hidden" translate="no"> {{ m.principal }}</span>
                       </button>
@@ -90,7 +90,7 @@
           </table>
         </div>
         @if (members.hasMore()) {
-          <p><button mat-button type="button" [disabled]="members.loading()" (click)="members.more()" i18n="@@group.more">Load more</button></p>
+          <p><button class="btn btn-tertiary" type="button" [disabled]="members.loading()" (click)="members.more()" i18n="@@group.more">Load more</button></p>
         }
       }
     }
@@ -104,7 +104,7 @@
           i18n-hint="@@group.add-member-hint"
           hint="A user name, or sa:name for a service account"
         />
-        <button mat-flat-button type="submit" [disabled]="busy() || newMember().trim() === ''" i18n="@@group.add-member-submit">Add</button>
+        <button class="btn btn-confirm" type="submit" [disabled]="busy() || newMember().trim() === ''" i18n="@@group.add-member-submit">Add</button>
       </form>
     }
   </section>

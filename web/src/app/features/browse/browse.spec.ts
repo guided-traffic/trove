@@ -171,7 +171,7 @@ describe('File tree', () => {
     body.querySelector('.drop')!.dispatchEvent(drop);
     await settle(fixture);
     expect(text(body)).toContain('Larger than 100 MiB');
-    await expectAccessible(body.querySelector('mat-dialog-container')!);
+    await expectAccessible(body.querySelector('[role="dialog"]')!);
 
     button(body, 'Upload').click();
     await sleep(fixture);
@@ -209,7 +209,7 @@ describe('File tree', () => {
     await sleep(fixture);
     await sleep(fixture);
     expect(text(body)).toContain('do not admit this path');
-    await expectAccessible(body.querySelector('mat-dialog-container')!);
+    await expectAccessible(body.querySelector('[role="dialog"]')!);
   });
 
   it('R-UI-011 deleting a folder with more than 100 items requires typing its name and runs as a job whose progress is shown', async () => {
@@ -233,7 +233,7 @@ describe('File tree', () => {
     const body = root.ownerDocument.body;
     expect(text(body)).toContain('more than 100 items');
     const confirm = button(body, 'Delete');
-    const dialogConfirm = [...body.querySelectorAll('mat-dialog-actions button')].find(
+    const dialogConfirm = [...body.querySelectorAll('.dialog-actions button')].find(
       (b) => b.textContent?.trim() === 'Delete',
     ) as HTMLButtonElement;
     expect(dialogConfirm.disabled).toBe(true);
@@ -258,7 +258,7 @@ describe('File tree', () => {
     expect(text(body)).toContain('Delete readme.txt?');
     expect(body.querySelector('#confirm-name')).toBeNull();
     (
-      [...body.querySelectorAll('mat-dialog-actions button')].find(
+      [...body.querySelectorAll('.dialog-actions button')].find(
         (b) => b.textContent?.trim() === 'Delete',
       ) as HTMLButtonElement
     ).click();

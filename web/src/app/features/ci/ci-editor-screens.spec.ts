@@ -25,7 +25,7 @@ const token = (claims: unknown): string => `${b64url({ alg: 'RS256', typ: 'JWT' 
 
 const valueArea = (root: HTMLElement): HTMLTextAreaElement => root.querySelector('textarea[id$="-value"]') as HTMLTextAreaElement;
 const checkbox = (root: HTMLElement, label: string): HTMLInputElement =>
-  [...root.querySelectorAll('mat-checkbox')].find((c) => text(c).startsWith(label))!.querySelector('input') as HTMLInputElement;
+  [...root.querySelectorAll('trove-checkbox')].find((c) => text(c).startsWith(label))!.querySelector('input') as HTMLInputElement;
 const select = (root: HTMLElement, i = 0): HTMLSelectElement => root.querySelectorAll('trove-ci-name-picker select')[i] as HTMLSelectElement;
 
 /** A caller without any capability that administers `web` (Q-AUTHZ-181, Q-CI-26). */

@@ -1,6 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
+import { DIALOG_DATA, DialogClose, DialogRef, DialogTitle } from '../../shared/ui/dialog';
 import { FilesApi } from '../../api/files-api';
 import { ApiError } from '../../api/problem';
 import { ErrorNotice } from '../../shared/error-notice';
@@ -15,10 +14,10 @@ export interface FolderDialogData {
 /** "New folder" (R-UI-011): an explicit folder below the selected one, created with `PUT …/folder/`. */
 @Component({
   selector: 'trove-folder-dialog',
-  imports: [MatButtonModule, MatDialogModule, ErrorNotice],
+  imports: [DialogTitle, DialogClose, ErrorNotice],
   template: `
-    <h2 mat-dialog-title i18n="@@folder.title">New folder</h2>
-    <mat-dialog-content>
+    <h2 troveDialogTitle i18n="@@folder.title">New folder</h2>
+    <div class="dialog-body">
       <div class="field">
         <label class="field-label" for="folder-name" i18n="@@folder.name">Folder name</label>
         <input
@@ -40,11 +39,10 @@ export interface FolderDialogData {
       @if (failure(); as f) {
         <trove-error-notice [error]="f" />
       }
-    </mat-dialog-content>
-    <mat-dialog-actions align="end">
-      <button mat-button type="button" mat-dialog-close i18n="@@folder.cancel">Cancel</button>
-      <button
-        mat-flat-button
+    </div>
+    <div class="dialog-actions">
+      <button class="btn btn-tertiary" type="button" troveDialogClose i18n="@@folder.cancel">Cancel</button>
+      <button class="btn btn-confirm"
         type="button"
         [disabled]="busy() || name().trim() === ''"
         (click)="create()"
@@ -52,7 +50,7 @@ export interface FolderDialogData {
       >
         Create folder
       </button>
-    </mat-dialog-actions>
+    </div>
   `,
   styles: `
     .field {
@@ -63,8 +61,8 @@ export interface FolderDialogData {
   `,
 })
 export class FolderDialog {
-  private readonly data = inject<FolderDialogData>(MAT_DIALOG_DATA);
-  private readonly ref = inject<MatDialogRef<FolderDialog, string>>(MatDialogRef);
+  private readonly data = inject<FolderDialogData>(DIALOG_DATA);
+  private readonly ref = inject<DialogRef<string, FolderDialog>>(DialogRef);
   private readonly files = inject(FilesApi);
 
   protected readonly name = signal('');

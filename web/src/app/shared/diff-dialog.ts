@@ -1,6 +1,5 @@
 import { Component, Injectable, inject } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MAT_DIALOG_DATA, MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { DIALOG_DATA, DialogClose, DialogTitle, TroveDialog } from './ui/dialog';
 import { firstValueFrom } from 'rxjs';
 import { ConflictData, diffFields } from './conflict-dialog';
 
@@ -12,10 +11,10 @@ export interface DiffData extends ConflictData {
 /** "What will change" before a save (R-EP-017): the stored values against the draft, field by field. */
 @Component({
   selector: 'trove-diff-dialog',
-  imports: [MatButtonModule, MatDialogModule],
+  imports: [DialogTitle, DialogClose],
   template: `
-    <h2 mat-dialog-title>{{ data.title }}</h2>
-    <mat-dialog-content>
+    <h2 troveDialogTitle>{{ data.title }}</h2>
+    <div class="dialog-body">
       @if (rows.length === 0) {
         <p i18n="@@diff.none">Nothing differs from the stored version.</p>
       } @else {
@@ -45,30 +44,29 @@ export interface DiffData extends ConflictData {
           </tbody>
         </table>
       }
-    </mat-dialog-content>
-    <mat-dialog-actions align="end">
-      <button mat-button type="button" [mat-dialog-close]="false" i18n="@@diff.cancel">
+    </div>
+    <div class="dialog-actions">
+      <button class="btn btn-tertiary" type="button" [troveDialogClose]="false" i18n="@@diff.cancel">
         Cancel
       </button>
-      <button
-        mat-flat-button
+      <button class="btn btn-confirm"
         type="button"
         [disabled]="rows.length === 0"
-        [mat-dialog-close]="true"
+        [troveDialogClose]="true"
       >
         {{ data.confirmLabel }}
       </button>
-    </mat-dialog-actions>
+    </div>
   `,
 })
 export class DiffDialog {
-  protected readonly data = inject<DiffData>(MAT_DIALOG_DATA);
+  protected readonly data = inject<DiffData>(DIALOG_DATA);
   protected readonly rows = diffFields(this.data);
 }
 
 @Injectable({ providedIn: 'root' })
 export class DiffReview {
-  private readonly dialog = inject(MatDialog);
+  private readonly dialog = inject(TroveDialog);
 
   /** True when the user confirms the save. */
   async confirm(data: DiffData): Promise<boolean> {
@@ -76,6 +74,6 @@ export class DiffReview {
       data,
       maxWidth: '48rem',
     });
-    return (await firstValueFrom(ref.afterClosed())) === true;
+    return (await firstValueFrom(ref.closed)) === true;
   }
 }

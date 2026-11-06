@@ -10,8 +10,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatTabsModule } from '@angular/material/tabs';
+import { TabGroup, TabPage } from '../../shared/ui/tabs';
 import { Router, RouterLink } from '@angular/router';
 import { newIdempotencyKey } from '../../api/client';
 import { Bastion, BastionsApi } from '../../api/bastions-api';
@@ -51,7 +50,7 @@ export function fillToken(content: string, token: string | null): string {
  */
 @Component({
   selector: 'trove-client-setup',
-  imports: [MatButtonModule, MatTabsModule, NgTemplateOutlet, RouterLink, CopyButton, ErrorNotice],
+  imports: [TabGroup, TabPage, NgTemplateOutlet, RouterLink, CopyButton, ErrorNotice],
   templateUrl: './client-setup.html',
   styleUrl: './client-setup.scss',
 })

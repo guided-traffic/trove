@@ -2553,14 +2553,14 @@ Priority: **MVP** · Covers: UI-058
     `PUT /files/{projectKey}/{repoKey}/{path}` of R-API-025. It always targets the UI's own origin, because the
     content origin serves only `GET` and `HEAD` (R-ARCH-029), and it is built in one place, the
     `files` client in `web/src/app/api/`, like every other API call.
-- Component library (Q-UI-1): Angular Material and the Angular CDK in the release line of the
-  Angular major in use (22.x, pinned once in the lockfile with the rest of Angular), plus
-  `@angular/aria` for the widgets Material lacks (the tree of R-UI-010 and the listboxes of the
-  member editor, R-UI-022). No other component
-  suite is added. Material is themed through its design tokens (`mat.theme`,
-  [Angular Material theming](https://material.angular.dev/guide/theming)) mapped to trove's CSS
-  custom properties for both themes. Icons come from a self-hosted icon font used through
-  ligatures (`font-src 'self'`); SVG icon registration through `MatIconRegistry` is not used,
+- Component library (Q-UI-1, replaced by Q-UI-126): trove's own controls, plain HTML elements with the classes of
+  `web/src/styles/_controls.scss`, on the Angular CDK in the release line of the Angular major in use (22.x,
+  pinned once in the lockfile with the rest of Angular) for the behaviour of dialogs, menus and overlays, plus
+  `@angular/aria` for the widgets the CDK lacks (the tabs, the tree of R-UI-010 and the listboxes of the
+  member editor, R-UI-022). No other component suite is added, and `@angular/material` is not a dependency.
+  Colours, type and measures are trove's CSS custom properties (`web/src/styles/_tokens.scss`) for both themes.
+  Icons come from a self-hosted icon font used through
+  ligatures (`font-src 'self'`); SVG icon registration is not used,
   because it takes URLs only as `SafeResourceUrl` values from a security bypass (banned by
   R-UI-046) and inserts the SVG through the Trusted Types policy `angular#components`, which this
   CSP does not list.
@@ -2621,8 +2621,8 @@ Priority: **MVP** · Covers: UI-001, UI-004
   at its foot hides it and the menu button of the top bar brings it back. The collapsed state and the
   folded groups are kept in browser storage per signed-in principal (non-secret, R-UI-043) and are
   a convenience only. The active entry is marked by a tinted pill, a bar in the accent colour (blue, Q-UI-96)
-  and bold text, never by colour alone. Tables, lists and form fields use compact density (Angular
-  Material density scale `-2`) on every screen; interactive targets stay at least 24 × 24 CSS px
+  and bold text, never by colour alone. Tables, lists and form fields use compact density (the 32 px
+  control height and the 16 px cell padding of Q-UI-128) on every screen; interactive targets stay at least 24 × 24 CSS px
   (R-UI-044). Screen layouts that switch between one and two columns use CSS container queries on
   the content area, so collapsing the side bar never breaks them.
 - Breadcrumbs: a trail on a bar at the top of the content panel, 40 px high as the reference's (Q-UI-128), derived from the route configuration (R-UI-003) and
@@ -7888,7 +7888,10 @@ instead of a replica failing at start-up.
 
 ### Q-UI-126 · trove's own controls in place of Angular Material
 
-Status: **Decided by the owner on 2026-11-06.**
+Status: **Decided by the owner on 2026-11-06.** Built: the sign-in screens, the shell and the admin dashboard first, then
+every other screen, the dialogs, tabs, checkboxes, menus and the tooltip, and the Material theme last
+([Q-UI-153](#q-ui-153--the-last-material-controls-become-small-shared-pieces-on-the-cdk-and-angulararia)); `@angular/material`
+is no dependency of `web/` any more.
 
 The owner asked to leave the look of Angular Material for the design language of the sign-in page he showed: flat
 controls, labels above the fields, a primary button in the accent, neutral grey secondary buttons. Measured on
@@ -7914,8 +7917,10 @@ The controls: one height (32 px) and radius (6 px) for buttons and fields; butto
 `btn-icon`, with `btn-block` and `btn-sm`; text fields, selects and areas with a 1px outline of 3.2:1 and 3.4:1 (WCAG
 1.4.11) and a semibold label above; native checkboxes and radios in the accent; a solid focus outline for every control.
 
-**Applied in the spec:** R-UI-044 (contrast and focus unchanged), R-UI-046. Code: `_tokens.scss`, `_controls.scss`; the
-screens as they move. Documented in [design-language.md](../developer/design-language.md#controls).
+**Applied in the spec:** R-UI-044 (contrast and focus unchanged), R-UI-046; R-UI-001's component-library bullet and the
+density sentence of R-UI-002 name the result. Code: `_tokens.scss`, `_controls.scss`, `_dialog.scss`, `shared/ui/`; every
+screen. Documented in [design-language.md](../developer/design-language.md#controls) and
+[web-ui.md](../developer/web-ui.md#controls).
 
 ### Q-UI-127 · The admin area has a sidebar of its own behind an Admin button, and the shell takes the reference's frame
 
@@ -8285,6 +8290,64 @@ a table cell (then it needs the underline); revisit (submenu) when the CDK menu 
 [_shell.scss](../../web/src/styles/_shell.scss); `OpenSubmenuOnClick` and the `Language` item in
 [app.html](../../web/src/app/app.html). Tests: `app.spec.ts` (the submenu stays open after hover and click); the browser
 journeys `07-german-dark.spec.ts` and `vuln/15-vulnerabilities.spec.ts` (axe in both schemes).
+
+### Q-UI-153 · The last Material controls become small shared pieces on the CDK and `@angular/aria`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-UI-126 moved the sign-in screens and the shell to trove's own controls and left the rest on Angular Material:
+about 250 buttons in 80 files, 28 dialogs, 24 checkboxes, 5 tab groups with 10 tabs, 2 menus, one tooltip and the two
+field components `TextField` and `SelectField` (a `mat-form-field` around a native control). Finishing it needed one
+answer for how a screen opens a dialog, since the CDK's `Dialog` differs from `MatDialog` in its type parameters
+(`open<Result, Data, Component>` against `open<Component, Data, Result>`), its result stream (`closed` against `afterClosed()`),
+and in what it leaves to the caller (the dialog is named by nothing until a title is attached, and there is no close
+directive in the CDK of this release).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A thin `TroveDialog` service on the CDK `Dialog`, with a title directive and a close directive (chosen) | One place sets `role="dialog"`, `aria-modal`, the first-tabbable focus, focus restore, the panel and backdrop classes and a width that never exceeds the window; `DialogTitle` names the container through the CDK's own `aria-labelledby` queue; `DialogClose` closes with an optional value | A dialog is opened and written the way the 22 call sites already were (component, data, result); the accessibility contract is in one tested file; no screen can forget the title association | One 90-line file of ours beside the CDK |
+| (b) The CDK `Dialog` in each screen | `inject(Dialog)` and a config at every call site | Nothing of ours to maintain | The config (role, modal, focus, classes) repeated 22 times and the title association forgotten once; the reversed type parameters invite mistakes |
+| (c) The native `<dialog>` element | `showModal()` | No library | The result and data plumbing, the focus return and the stacking with the CDK's overlays (menus, tooltips) are ours to write; jsdom lacks `showModal` |
+
+**Choice (dialogs):** (a). The same decision for the rest:
+
+- Buttons: `mat-flat-button` is `btn btn-confirm`, `mat-stroked-button` `btn btn-default`, `mat-button` `btn btn-tertiary`,
+  `mat-icon-button` `btn btn-icon`: the shapes Q-UI-128 had already themed Material's variants to, so no screen changes its
+  look by the move. A button that was `mat-flat-button` keeps being the confirm button even where it deletes; a destructive
+  action asks through `Confirm` as before.
+- Checkboxes: a small component `trove-checkbox`, not the bare input with a label in every template, because 24 uses share the
+  label wrapper, the `describedBy` note and the `ariaLabel` of a row's box (the table's selection boxes have no visible label).
+  The output is `checkedChange` with the new state, not `change`: a native `change` event bubbles from the input and would
+  reach a `(change)` handler of the host with an `Event`.
+- Tabs: a `trove-tab-group` over `@angular/aria`'s tabs (the roles, the arrow keys, Home and End, the roving tab stop) in the
+  `.tab-nav` look of the package views, because the five groups switch a view in place and a tab that is a route is already
+  a `.tab-nav` link. Only the selected tab's content is in the page, as with Material's tabs; content a screen wants created
+  on selection is wrapped in `<ng-template troveTabContent>`.
+- Tooltip: a directive on the CDK overlay with the hidden description of the CDK's `AriaDescriber`, so the help button of a
+  table column is described whether or not the bubble shows (WCAG 1.4.13: Escape dismisses it, the pointer can move onto it).
+- Menus: the CDK menu, as the user menu already was.
+- Fields: the two field components render the label, the control and the text below with trove's classes; the label sits above
+  and is bound with `for`, so every field has a visible, programmatic name (the `display: none` label of the density -2
+  Material field that axe found in the browser tier cannot recur).
+- Tokens: every `--mat-sys-*` property became a `--trove-*` property in `_tokens.scss`. The page palette moved over with its
+  values; the error, inverse, banner and surface-container tones the screens read from Material's generated palette are
+  literal `light-dark()` pairs with the values they had, so no screen changes its colour. Type scale properties became
+  font shorthands (`--trove-type-*`), the corner sizes the radii (`--trove-radius-*`).
+- Unit tests: `settle` follows each `whenStable` with a turn of the event loop through a message channel. With Material gone,
+  nothing held the application unstable while a chain of awaits ran (the file tree's deep link loads one folder after the
+  other), so six rounds no longer reached the end; a timer would not do, because specs with fake timers use `settle` too.
+
+Rationale: every composite widget keeps its behaviour from the CDK or `@angular/aria` (focus trap and return, Escape,
+roving focus, menu keys) and the screens carry no copy of it; the look is `_controls.scss` and `_dialog.scss`. The development
+agent revisits the tabs if a screen needs a tab strip with overflow or closable tabs (the aria package has no pattern for
+them), and the checkbox component if a form needs an indeterminate state.
+
+**Applied in the spec:** Q-UI-126 (status), R-UI-001 (component library), R-UI-002 (density). Code: `web/src/app/shared/ui/`
+(`dialog.ts`, `checkbox.ts`, `tabs.ts`, `tooltip.ts`), `web/src/styles/` (`_dialog.scss`, `_controls.scss`, `_tokens.scss`,
+`main.scss`), `shared/access/fields.ts`, every screen that opened a `MatDialog` or used a Material control,
+`web/package.json` and the lock file. Tests: `dialog.spec.ts`, `tabs.spec.ts`, `checkbox.spec.ts`, `tooltip.spec.ts`, and the
+screens' specs, which query roles, labels and `[role="dialog"]`. Documented in
+[design-language.md](../developer/design-language.md#controls) and [web-ui.md](../developer/web-ui.md#controls).
 
 ## What this does not cover
 

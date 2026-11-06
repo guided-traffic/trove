@@ -472,10 +472,6 @@ tasks come before the phase's own work packages (step 2, item 5), in this order;
   H-551): in the admin area, for `vulnerabilities:triage` or `content:metadata-read`: the counts and trend over all projects, a
   search by advisory ID (CVE, GHSA), package and project, and the triage of each finding; the project's own Vulnerabilities screen
   shows that project only. Check first what the current report already searches.
-- **T-11 · Finish trove's own controls** ([Q-UI-126](../spec/api-and-ui.md#q-ui-126--troves-own-controls-in-place-of-angular-material)):
-  the screens still on Angular Material move to the classes of `_controls.scss` (about 250 Material buttons in about 80 files,
-  dialogs to the CDK dialog, tabs to `.tab-nav` or `@angular/aria`, checkboxes, menus), the `--mat-sys-*` tokens to trove's own,
-  and `@angular/material` is removed. The measures and colours are Q-UI-128's; Material is themed to them meanwhile.
 - **T-12 · The logo's open point** ([design-language.md](../developer/design-language.md#logo)): `web/public/brand/drafts/` and
   the preview on the sign-in page removed once the owner calls the logo final. The reduced form for the favicon and the
   wordmark as paths are built ([Q-UI-145](../spec/api-and-ui.md#q-ui-145--the-logos-wordmark-as-paths-from-inter-bold-and-a-reduced-mark-as-the-favicon)).

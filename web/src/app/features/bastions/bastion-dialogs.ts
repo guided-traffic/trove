@@ -1,6 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
+import { DIALOG_DATA, DialogClose, DialogRef, DialogTitle } from '../../shared/ui/dialog';
 import { newIdempotencyKey } from '../../api/client';
 import { ApiError } from '../../api/problem';
 import { Bastion, BASTION_NAME_PATTERN, BastionsApi, BastionTokenCreated, NewBastionToken } from '../../api/bastions-api';
@@ -18,11 +17,11 @@ import { asApiError } from '../../shared/paged-resource';
  */
 @Component({
   selector: 'trove-bastion-create-dialog',
-  imports: [MatButtonModule, MatDialogModule, ErrorNotice, TextField],
+  imports: [DialogTitle, DialogClose, ErrorNotice, TextField],
   template: `
-    <h2 mat-dialog-title i18n="@@bastion-create.title">New Bastion</h2>
+    <h2 troveDialogTitle i18n="@@bastion-create.title">New Bastion</h2>
     <form (submit)="submit($event)" novalidate>
-      <mat-dialog-content>
+      <div class="dialog-body">
         @if (error(); as e) {
           <trove-error-notice [error]="e" />
         }
@@ -42,18 +41,18 @@ import { asApiError } from '../../shared/paged-resource';
           [(value)]="description"
           [error]="fieldError('/description')"
         />
-      </mat-dialog-content>
-      <mat-dialog-actions align="end">
-        <button mat-button type="button" mat-dialog-close i18n="@@bastion-create.cancel">Cancel</button>
-        <button mat-flat-button type="submit" [disabled]="busy()" i18n="@@bastion-create.submit">Create Bastion</button>
-      </mat-dialog-actions>
+      </div>
+      <div class="dialog-actions">
+        <button class="btn btn-tertiary" type="button" troveDialogClose i18n="@@bastion-create.cancel">Cancel</button>
+        <button class="btn btn-confirm" type="submit" [disabled]="busy()" i18n="@@bastion-create.submit">Create Bastion</button>
+      </div>
     </form>
   `,
   styleUrl: '../../shared/access/access.scss',
 })
 export class BastionCreateDialog {
   private readonly api = inject(BastionsApi);
-  private readonly ref = inject<MatDialogRef<BastionCreateDialog, Bastion>>(MatDialogRef);
+  private readonly ref = inject<DialogRef<Bastion, BastionCreateDialog>>(DialogRef);
   private readonly notifier = inject(Notifier);
   private readonly key = newIdempotencyKey();
 
@@ -119,11 +118,11 @@ export interface BastionTokenDialogData {
  */
 @Component({
   selector: 'trove-bastion-token-dialog',
-  imports: [MatButtonModule, MatDialogModule, ErrorNotice, TextField],
+  imports: [DialogTitle, DialogClose, ErrorNotice, TextField],
   template: `
-    <h2 mat-dialog-title i18n="@@bastion-token.title">Issue a token for the Bastion</h2>
+    <h2 troveDialogTitle i18n="@@bastion-token.title">Issue a token for the Bastion</h2>
     <form (submit)="submit($event)" novalidate>
-      <mat-dialog-content>
+      <div class="dialog-body">
         <p class="subject" translate="no">{{ data.name }}</p>
         <p i18n="@@bastion-token.text">
           The token goes into the Secret of the Bastion's chart. It is shown once, when you create it.
@@ -148,19 +147,19 @@ export interface BastionTokenDialogData {
           [error]="daysError()"
           [hint]="daysHint"
         />
-      </mat-dialog-content>
-      <mat-dialog-actions align="end">
-        <button mat-button type="button" mat-dialog-close i18n="@@bastion-token.cancel">Cancel</button>
-        <button mat-flat-button type="submit" [disabled]="busy()" i18n="@@bastion-token.submit">Issue token</button>
-      </mat-dialog-actions>
+      </div>
+      <div class="dialog-actions">
+        <button class="btn btn-tertiary" type="button" troveDialogClose i18n="@@bastion-token.cancel">Cancel</button>
+        <button class="btn btn-confirm" type="submit" [disabled]="busy()" i18n="@@bastion-token.submit">Issue token</button>
+      </div>
     </form>
   `,
   styleUrl: '../../shared/access/access.scss',
 })
 export class BastionTokenDialog {
-  protected readonly data = inject<BastionTokenDialogData>(MAT_DIALOG_DATA);
+  protected readonly data = inject<BastionTokenDialogData>(DIALOG_DATA);
   private readonly api = inject(BastionsApi);
-  private readonly ref = inject<MatDialogRef<BastionTokenDialog, BastionTokenCreated>>(MatDialogRef);
+  private readonly ref = inject<DialogRef<BastionTokenCreated, BastionTokenDialog>>(DialogRef);
   private readonly drafts = inject(DraftStore);
   private key = newIdempotencyKey();
 

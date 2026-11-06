@@ -1,6 +1,5 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, inject, input, model, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { ApiError, FieldProblem } from '../../api/problem';
 import {
   FormatDescriptor,
@@ -71,7 +70,7 @@ export function upstreamPointerLabel(pointer: string): string | null {
  */
 @Component({
   selector: 'trove-upstream-settings',
-  imports: [DatePipe, MatButtonModule, ErrorNotice],
+  imports: [DatePipe, ErrorNotice],
   template: `
     <section class="upstream" [id]="sectionId" tabindex="-1" aria-labelledby="upstream-heading">
       <h2 id="upstream-heading" i18n="@@upstream.heading">Upstream</h2>
@@ -105,7 +104,7 @@ export function upstreamPointerLabel(pointer: string): string | null {
             }
           </p>
           @if (preset() && upstream().url.trim() !== '' && !isPreset()) {
-            <button mat-button type="button" (click)="set({ url: preset()! })">
+            <button class="btn btn-tertiary" type="button" (click)="set({ url: preset()! })">
               <ng-container i18n="@@upstream.url.use-preset">Use the well-known upstream</ng-container>
             </button>
           }
@@ -268,7 +267,7 @@ export function upstreamPointerLabel(pointer: string): string | null {
       </div>
 
       <div class="test">
-        <button mat-stroked-button type="button" [disabled]="testing()" (click)="test()">
+        <button class="btn btn-default" type="button" [disabled]="testing()" (click)="test()">
           <ng-container i18n="@@upstream.test">Test connection</ng-container>
         </button>
         @if (upstream().passwordStored !== 'none' && upstream().password === '') {

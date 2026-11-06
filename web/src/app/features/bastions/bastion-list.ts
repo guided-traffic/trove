@@ -1,6 +1,5 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatDialog } from '@angular/material/dialog';
+import { TroveDialog } from '../../shared/ui/dialog';
 import { firstValueFrom } from 'rxjs';
 import { Bastion, BastionsApi } from '../../api/bastions-api';
 import { ApiError } from '../../api/problem';
@@ -21,11 +20,11 @@ import { BastionCreateDialog, BastionTokenDraft } from './bastion-dialogs';
  */
 @Component({
   selector: 'trove-bastion-list',
-  imports: [MatButtonModule, BastionCard, ErrorNotice, Needs],
+  imports: [BastionCard, ErrorNotice, Needs],
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@bastions.heading">Bastions</h1>
-      <button mat-flat-button type="button" [disabled]="!canWrite()" aria-describedby="needs-bastions" (click)="add()" i18n="@@bastions.add">New Bastion</button>
+      <button class="btn btn-confirm" type="button" [disabled]="!canWrite()" aria-describedby="needs-bastions" (click)="add()" i18n="@@bastions.add">New Bastion</button>
     </header>
     <trove-needs id="needs-bastions" capability="endpoints:write" />
     <p i18n="@@bastions.hint">
@@ -51,7 +50,7 @@ import { BastionCreateDialog, BastionTokenDraft } from './bastion-dialogs';
 })
 export class BastionList {
   private readonly api = inject(BastionsApi);
-  private readonly dialog = inject(MatDialog);
+  private readonly dialog = inject(TroveDialog);
   private readonly session = inject(SessionStore);
 
   protected readonly items = signal<readonly Bastion[]>([]);
@@ -78,7 +77,7 @@ export class BastionList {
 
   protected async add(): Promise<void> {
     const ref = this.dialog.open<BastionCreateDialog, undefined, Bastion>(BastionCreateDialog, { maxWidth: '36rem' });
-    const created = await firstValueFrom(ref.afterClosed());
+    const created = await firstValueFrom(ref.closed);
     if (created) await this.load();
   }
 }

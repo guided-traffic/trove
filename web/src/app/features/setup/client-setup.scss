@@ -22,7 +22,7 @@
   legend,
   .step-title {
     padding-inline: var(--trove-space-1);
-    font: var(--mat-sys-title-medium);
+    font: var(--trove-type-title-medium);
   }
 
   .step-title {
@@ -37,9 +37,9 @@
   inline-size: 1.5rem;
   block-size: 1.5rem;
   margin-inline-end: var(--trove-space-1);
-  border-radius: var(--mat-sys-corner-full);
+  border-radius: var(--trove-radius-full);
   background: var(--trove-accent);
-  color: var(--mat-sys-on-primary);
+  color: var(--trove-on-accent);
   font-size: 0.8125rem;
 }
 

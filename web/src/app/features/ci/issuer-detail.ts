@@ -1,6 +1,5 @@
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatTabsModule } from '@angular/material/tabs';
+import { TabContent, TabGroup, TabPage } from '../../shared/ui/tabs';
 import { Router, RouterLink } from '@angular/router';
 import { CiApi, CiIssuer } from '../../api/ci-api';
 import { ApiError } from '../../api/problem';
@@ -27,14 +26,14 @@ export type IssuerTab = (typeof ISSUER_TABS)[number];
  */
 @Component({
   selector: 'trove-ci-issuer-detail',
-  imports: [MatButtonModule, MatTabsModule, RouterLink, ErrorNotice, IssuanceList, IssuerForm, IssuerKeys, MappingList],
+  imports: [TabContent, TabGroup, TabPage, RouterLink, ErrorNotice, IssuanceList, IssuerForm, IssuerKeys, MappingList],
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@ci.issuer.heading">CI issuer</h1>
-      <a mat-button routerLink="/admin/ci" i18n="@@ci.issuer.back">All issuers</a>
-      <a mat-stroked-button [routerLink]="testLink()" i18n="@@ci.issuer.test">Test with claims</a>
+      <a class="btn btn-tertiary" routerLink="/admin/ci" i18n="@@ci.issuer.back">All issuers</a>
+      <a class="btn btn-default" [routerLink]="testLink()" i18n="@@ci.issuer.test">Test with claims</a>
       @if (session.has('ci:write') && deletable()) {
-        <button mat-button type="button" [disabled]="busy()" (click)="remove()" i18n="@@ci.issuer.delete">Delete issuer</button>
+        <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="remove()" i18n="@@ci.issuer.delete">Delete issuer</button>
       }
     </header>
     <p class="subject" translate="no">{{ issuer() }}</p>
@@ -44,40 +43,40 @@ export type IssuerTab = (typeof ISSUER_TABS)[number];
     }
     @if (current(); as i) {
       <p class="muted" translate="no">{{ i.issuer }}</p>
-      <mat-tab-group animationDuration="0ms" [selectedIndex]="index()" (selectedIndexChange)="select($event)">
-        <mat-tab label="Settings" i18n-label="@@ci.issuer.tab.settings">
-          <ng-template matTabContent>
+      <trove-tab-group [selectedIndex]="index()" (selectedIndexChange)="select($event)">
+        <trove-tab label="Settings" i18n-label="@@ci.issuer.tab.settings">
+          <ng-template troveTabContent>
             <section class="card" aria-labelledby="ci-settings">
               <h2 id="ci-settings" i18n="@@ci.issuer.settings">Settings</h2>
               <trove-ci-issuer-form [issuer]="i" [etag]="etag()" (saved)="saved($event.value, $event.etag)" />
             </section>
           </ng-template>
-        </mat-tab>
-        <mat-tab label="Keys" i18n-label="@@ci.issuer.tab.keys">
-          <ng-template matTabContent>
+        </trove-tab>
+        <trove-tab label="Keys" i18n-label="@@ci.issuer.tab.keys">
+          <ng-template troveTabContent>
             <section class="card" aria-labelledby="ci-keys">
               <h2 id="ci-keys" i18n="@@ci.issuer.keys">Signing keys</h2>
               <trove-ci-issuer-keys [issuer]="i.name" />
             </section>
           </ng-template>
-        </mat-tab>
-        <mat-tab label="Mappings" i18n-label="@@ci.issuer.tab.mappings">
-          <ng-template matTabContent>
+        </trove-tab>
+        <trove-tab label="Mappings" i18n-label="@@ci.issuer.tab.mappings">
+          <ng-template troveTabContent>
             <section class="card" aria-labelledby="ci-mappings">
               <h2 id="ci-mappings" i18n="@@ci.issuer.mappings">Mappings</h2>
               <trove-ci-mapping-list [issuer]="i.name" />
             </section>
           </ng-template>
-        </mat-tab>
-        <mat-tab label="Issuances" i18n-label="@@ci.issuer.tab.issuances">
-          <ng-template matTabContent>
+        </trove-tab>
+        <trove-tab label="Issuances" i18n-label="@@ci.issuer.tab.issuances">
+          <ng-template troveTabContent>
             <section class="card" aria-labelledby="ci-issuances">
               <h2 id="ci-issuances" i18n="@@ci.issuer.issuances">Issued tokens</h2>
               <trove-ci-issuance-list [issuer]="i.name" />
             </section>
           </ng-template>
-        </mat-tab>
-      </mat-tab-group>
+        </trove-tab>
+      </trove-tab-group>
     }
   `,
   styleUrl: '../../shared/access/access.scss',
@@ -173,11 +172,11 @@ export class IssuerDetail {
 /** The form of a new issuer (R-UI-035): after the save the issuer's page opens. */
 @Component({
   selector: 'trove-ci-issuer-create',
-  imports: [MatButtonModule, RouterLink, IssuerForm],
+  imports: [RouterLink, IssuerForm],
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@ci.create.heading">New CI issuer</h1>
-      <a mat-button routerLink="/admin/ci" i18n="@@ci.issuer.back">All issuers</a>
+      <a class="btn btn-tertiary" routerLink="/admin/ci" i18n="@@ci.issuer.back">All issuers</a>
     </header>
     <section class="card" aria-labelledby="ci-create">
       <h2 id="ci-create" i18n="@@ci.create.settings">Settings</h2>

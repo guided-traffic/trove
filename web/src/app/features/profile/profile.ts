@@ -1,7 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatCheckboxModule } from '@angular/material/checkbox';
+import { Checkbox } from '../../shared/ui/checkbox';
 import { IdentityApi, User } from '../../api/identity-api';
 import { LoadedPreferences, PreferencesApi, PreferencesPatch } from '../../api/preferences-api';
 import { ApiError } from '../../api/problem';
@@ -24,7 +23,7 @@ import { ProfileNav } from './profile-nav';
  */
 @Component({
   selector: 'trove-profile',
-  imports: [DatePipe, MatButtonModule, MatCheckboxModule, ErrorNotice, ProfileNav, SelectField],
+  imports: [DatePipe, Checkbox, ErrorNotice, ProfileNav, SelectField],
   templateUrl: './profile.html',
   styleUrl: '../../shared/access/access.scss',
 })

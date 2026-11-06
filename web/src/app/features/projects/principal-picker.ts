@@ -1,5 +1,4 @@
 import { Component, effect, input, output, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { TextField } from '../../shared/access/fields';
 
 /** One user or group a picker offers; `ref` is `user:<name>` or `group:<name>`. */
@@ -25,7 +24,7 @@ export const PICKER_MIN_CHARS = 2;
   selector: 'trove-principal-picker',
   // Enter in the search box searches; it must not submit the dialog or form around it.
   host: { '(keydown.enter)': '$event.preventDefault()' },
-  imports: [MatButtonModule, TextField],
+  imports: [TextField],
   template: `
     <div class="picker">
       <trove-text-field
@@ -46,7 +45,7 @@ export const PICKER_MIN_CHARS = 2;
         <ul class="matches" [attr.aria-label]="resultsLabel">
           @for (r of results(); track r.ref) {
             <li>
-              <button mat-stroked-button type="button" (click)="pick(r)">
+              <button class="btn btn-default" type="button" (click)="pick(r)">
                 <span class="material-icons" aria-hidden="true">{{ r.kind === 'group' ? 'group' : 'person' }}</span>
                 <span translate="no">{{ r.ref }}</span>
               </button>
@@ -63,8 +62,8 @@ export const PICKER_MIN_CHARS = 2;
     .status {
       margin: 0;
       min-block-size: 1.25rem;
-      color: var(--mat-sys-on-surface-variant);
-      font: var(--mat-sys-body-small);
+      color: var(--trove-text-muted);
+      font: var(--trove-type-body-small);
     }
     .matches {
       display: flex;

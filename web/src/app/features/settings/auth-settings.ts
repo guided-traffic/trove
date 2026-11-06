@@ -1,6 +1,5 @@
 import { Component, DestroyRef, LOCALE_ID, computed, inject, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatCheckboxModule } from '@angular/material/checkbox';
+import { Checkbox } from '../../shared/ui/checkbox';
 import { RouterLink } from '@angular/router';
 import {
   AuthSettings as AuthSettingsModel,
@@ -39,7 +38,7 @@ interface Form {
  */
 @Component({
   selector: 'trove-auth-settings',
-  imports: [MatButtonModule, MatCheckboxModule, RouterLink, ErrorNotice, Needs, TextField],
+  imports: [Checkbox, RouterLink, ErrorNotice, Needs, TextField],
   templateUrl: './auth-settings.html',
   styleUrl: '../../shared/access/access.scss',
 })

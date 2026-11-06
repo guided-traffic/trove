@@ -115,7 +115,7 @@ describe('Personal tokens (R-UI-029)', () => {
     buttonByText(root, 'Create token').click();
     await settle(fixture);
     const form = root.querySelector('trove-token-form') as HTMLElement;
-    const names = Array.from(form.querySelectorAll('.endpoints mat-checkbox')).map((e) => e.textContent?.trim());
+    const names = Array.from(form.querySelectorAll('.endpoints trove-checkbox')).map((e) => e.textContent?.trim());
     expect(names).toEqual(['default']);
     typeInto(form, 'Description', 'bound pat');
     form.querySelector<HTMLInputElement>('.endpoints input[type="checkbox"]')!.click();
@@ -169,7 +169,7 @@ describe('Personal tokens (R-UI-029)', () => {
     await settle(fixture);
     typeInto(form, 'Repositories', 'npm-internal\nnpm-team-*');
     await settle(fixture);
-    (form.querySelectorAll('mat-checkbox input')[2] as HTMLInputElement).click();
+    (form.querySelectorAll('trove-checkbox input')[2] as HTMLInputElement).click();
     await settle(fixture);
     buttonByText(form, 'Create token').click();
     await settle(fixture);

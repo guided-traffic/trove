@@ -1,7 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { Component, DestroyRef, LOCALE_ID, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatDialog } from '@angular/material/dialog';
+import { TroveDialog } from '../../shared/ui/dialog';
 import { firstValueFrom } from 'rxjs';
 import { Bastion, BastionsApi, BastionTokenCreated, BastionTokenSummary } from '../../api/bastions-api';
 import { ApiError } from '../../api/problem';
@@ -36,7 +35,7 @@ export function tokenExpiry(token: Pick<BastionTokenSummary, 'expiresAt'>, now: 
  */
 @Component({
   selector: 'trove-bastion-card',
-  imports: [DatePipe, MatButtonModule, DataTable, ErrorNotice, TokenSecret],
+  imports: [DatePipe, DataTable, ErrorNotice, TokenSecret],
   template: `
     <section class="card" [attr.aria-labelledby]="headingId()">
       <h2 [id]="headingId()" translate="no">{{ bastion().name }}</h2>
@@ -59,22 +58,22 @@ export function tokenExpiry(token: Pick<BastionTokenSummary, 'expiresAt'>, now: 
 
       @if (canWrite()) {
         <div class="row-actions">
-          <button mat-flat-button type="button" [disabled]="busy()" (click)="issue()">
+          <button class="btn btn-confirm" type="button" [disabled]="busy()" (click)="issue()">
             <ng-container i18n="@@bastion.issue">Issue token</ng-container>
             <span class="visually-hidden"> {{ bastion().name }}</span>
           </button>
           @if (bastion().enabled) {
-            <button mat-button type="button" [disabled]="busy()" (click)="disable()">
+            <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="disable()">
               <ng-container i18n="@@bastion.disable">Disable</ng-container>
               <span class="visually-hidden"> {{ bastion().name }}</span>
             </button>
           } @else {
-            <button mat-button type="button" [disabled]="busy()" (click)="enable()">
+            <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="enable()">
               <ng-container i18n="@@bastion.enable">Enable</ng-container>
               <span class="visually-hidden"> {{ bastion().name }}</span>
             </button>
           }
-          <button mat-button type="button" [disabled]="busy()" (click)="remove()">
+          <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="remove()">
             <ng-container i18n="@@bastion.delete">Delete</ng-container>
             <span class="visually-hidden"> {{ bastion().name }}</span>
           </button>
@@ -143,7 +142,7 @@ export function tokenExpiry(token: Pick<BastionTokenSummary, 'expiresAt'>, now: 
             </td>
             <td class="actions">
               @if (canRevoke()) {
-                <button mat-button type="button" [disabled]="busy()" (click)="revoke(t)">
+                <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="revoke(t)">
                   <ng-container i18n="@@bastion.token.revoke">Revoke</ng-container>
                   <span class="visually-hidden"> {{ t.description }}</span>
                 </button>
@@ -165,7 +164,7 @@ export class BastionCard {
 
   private readonly api = inject(BastionsApi);
   private readonly confirmer = inject(Confirm);
-  private readonly dialog = inject(MatDialog);
+  private readonly dialog = inject(TroveDialog);
   private readonly notifier = inject(Notifier);
   private readonly session = inject(SessionStore);
   private readonly locale = inject(LOCALE_ID);
@@ -252,7 +251,7 @@ export class BastionCard {
       data: { name: this.bastion().name, draft },
       maxWidth: '36rem',
     });
-    const created = await firstValueFrom(ref.afterClosed());
+    const created = await firstValueFrom(ref.closed);
     if (!created) return;
     this.secret.set(created);
     this.changed.emit();

@@ -205,8 +205,7 @@
             </div>
           } @else {
             <p>
-              <button
-                mat-flat-button
+              <button class="btn btn-confirm"
                 type="button"
                 [disabled]="creating() || !activeRepository() || !setup()"
                 (click)="createToken()"
@@ -233,8 +232,7 @@
                 [value]="pasted()"
                 (input)="onPaste($any($event.target).value)"
               />
-              <button
-                mat-button
+              <button class="btn btn-tertiary"
                 type="button"
                 [attr.aria-pressed]="reveal()"
                 (click)="reveal.set(!reveal())"
@@ -293,22 +291,22 @@
         </span>
       </p>
     }
-    <mat-tab-group animationDuration="0ms">
-      <mat-tab label="Configure" i18n-label="@@setup.tab.configure">
+    <trove-tab-group>
+      <trove-tab label="Configure" i18n-label="@@setup.tab.configure">
         <div class="tab">
           @for (sn of byTab().configure; track sn.id) {
             <ng-container *ngTemplateOutlet="snippet; context: { $implicit: sn }" />
           }
         </div>
-      </mat-tab>
-      <mat-tab label="Install" i18n-label="@@setup.tab.install">
+      </trove-tab>
+      <trove-tab label="Install" i18n-label="@@setup.tab.install">
         <div class="tab">
           @for (sn of byTab().install; track sn.id) {
             <ng-container *ngTemplateOutlet="snippet; context: { $implicit: sn }" />
           }
         </div>
-      </mat-tab>
-      <mat-tab label="Publish" i18n-label="@@setup.tab.publish">
+      </trove-tab>
+      <trove-tab label="Publish" i18n-label="@@setup.tab.publish">
         <div class="tab">
           @if (byTab().publish.length === 0) {
             @if (activeBastion() !== null) {
@@ -335,8 +333,8 @@
             <ng-container *ngTemplateOutlet="snippet; context: { $implicit: sn }" />
           }
         </div>
-      </mat-tab>
-    </mat-tab-group>
+      </trove-tab>
+    </trove-tab-group>
   </section>
 }
 
@@ -358,7 +356,7 @@
       <div class="snippet-actions">
         <trove-copy-button [value]="sn.content" [label]="copyLabel" />
         @if (sn.fileName) {
-          <button mat-button type="button" (click)="download(sn)" i18n="@@setup.download">Download</button>
+          <button class="btn btn-tertiary" type="button" (click)="download(sn)" i18n="@@setup.download">Download</button>
         }
       </div>
     </div>

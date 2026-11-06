@@ -1,7 +1,6 @@
 import { expect } from 'vitest';
 import { Provider, Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { MATERIAL_ANIMATIONS } from '@angular/material/core';
 import { provideRouter } from '@angular/router';
 import { provideFakeApis } from '../api/testing/fakes';
 import { SessionApi } from '../api/session-api';
@@ -28,10 +27,27 @@ export interface RenderOptions {
   readonly setup?: (get: <A>(token: abstract new (...args: never[]) => A) => A) => unknown;
 }
 
-/** Lets promises, resources and effects settle: a few rounds of `whenStable`. */
+/** One turn of the event loop: every promise continuation queued so far has run when it returns. */
+function turn(): Promise<void> {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      resolve();
+    };
+    channel.port2.postMessage(0);
+  });
+}
+
+/**
+ * Lets promises, resources and effects settle: rounds of `whenStable`, each followed by a turn of the event loop so that a
+ * chain of awaits (the tree's deep link loads one folder after the other) runs through before the next check. A message
+ * channel, not a timer: tests with fake timers settle too.
+ */
 export async function settle(fixture: ComponentFixture<unknown>, rounds = 6): Promise<void> {
   for (let i = 0; i < rounds; i++) {
     await fixture.whenStable();
+    await turn();
     fixture.detectChanges();
   }
 }
@@ -50,13 +66,11 @@ export async function renderScreen<T>(
   TestBed.resetTestingModule();
   await TestBed.configureTestingModule({
     imports: [component],
-    // Dialogs close at once: jsdom plays no CSS animation, so `afterClosed` would never fire.
     providers: [
       // A catch-all: a screen that navigates after a save (a dialog closes at once here) must find a route.
       provideRouter([{ path: '**', children: [] }]),
       ...provideFakeApis(),
       ...(options.providers ?? []),
-      { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } },
     ],
   }).compileComponents();
   const get = <A>(token: abstract new (...args: never[]) => A): A =>
@@ -121,15 +135,15 @@ export function buttonByText(root: ParentNode, label: string): HTMLButtonElement
   return found;
 }
 
-/** Sets the value of the Material field labelled `label` and fires the matching event. */
+/** Sets the value of the field labelled `label` and fires the matching event. */
 export function typeInto(root: ParentNode, label: string, value: string): void {
-  const field = [...root.querySelectorAll('mat-form-field')].find((f) =>
-    text(f.querySelector('mat-label') ?? f).startsWith(label),
+  const labelEl = [...root.querySelectorAll<HTMLLabelElement>('label')].find((l) =>
+    text(l).startsWith(label),
   );
-  const input = field?.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
-    'input, textarea, select',
-  );
-  if (!input) throw new Error(`no field labelled "${label}"`);
+  const input = labelEl?.control;
+  if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement || input instanceof HTMLSelectElement)) {
+    throw new Error(`no field labelled "${label}"`);
+  }
   type(input, value);
 }
 

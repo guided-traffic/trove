@@ -9,7 +9,7 @@
     <div class="list-toolbar">
       <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
       @if (session.has('tokens:revoke') && selected().length > 0) {
-        <button mat-flat-button type="button" (click)="revokeSelected()">
+        <button class="btn btn-confirm" type="button" (click)="revokeSelected()">
           <ng-container i18n="@@tokens-admin.revoke-selected">Revoke selected</ng-container> ({{ selected().length }})
         </button>
       }
@@ -101,11 +101,11 @@
         [secret]="true"
         [(value)]="pasted"
       />
-      <mat-checkbox [checked]="reveal()" (change)="reveal.set($event.checked)">
+      <trove-checkbox [checked]="reveal()" (checkedChange)="reveal.set($event)">
         <ng-container i18n="@@tokens-admin.reveal">Show the value</ng-container>
-      </mat-checkbox>
+      </trove-checkbox>
       <div class="row-actions">
-        <button mat-flat-button type="submit" [disabled]="busy() || pasted().trim() === ''" i18n="@@tokens-admin.revoke-value">
+        <button class="btn btn-confirm" type="submit" [disabled]="busy() || pasted().trim() === ''" i18n="@@tokens-admin.revoke-value">
           Revoke token
         </button>
       </div>

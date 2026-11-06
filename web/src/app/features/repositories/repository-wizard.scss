@@ -32,7 +32,7 @@
 
   legend {
     margin-block-end: var(--trove-space-2);
-    font: var(--mat-sys-title-small);
+    font: var(--trove-type-title-small);
   }
 }
 
@@ -41,8 +41,8 @@
   grid-template-columns: auto 1fr;
   column-gap: var(--trove-space-2);
   padding: var(--trove-space-3);
-  border: 1px solid var(--mat-sys-outline-variant);
-  border-radius: var(--mat-sys-corner-medium);
+  border: 1px solid var(--trove-border);
+  border-radius: var(--trove-radius-l);
 
   input {
     grid-row: 1 / span 3;
@@ -89,10 +89,10 @@
   align-items: center;
   gap: var(--trove-space-2);
   padding: var(--trove-space-4) var(--trove-space-2);
-  border: 1px solid var(--mat-sys-outline);
-  border-radius: var(--mat-sys-corner-medium);
+  border: 1px solid var(--trove-border-strong);
+  border-radius: var(--trove-radius-l);
   background: var(--trove-surface-raised);
-  color: var(--mat-sys-on-surface);
+  color: var(--trove-on-surface);
   text-align: center;
   cursor: pointer;
 
@@ -106,10 +106,10 @@
   }
 
   &[aria-selected='true'] {
-    border: 2px solid var(--mat-sys-primary);
+    border: 2px solid var(--trove-accent);
     padding: calc(var(--trove-space-4) - 1px) calc(var(--trove-space-2) - 1px);
-    background: var(--mat-sys-primary-container);
-    color: var(--mat-sys-on-primary-container);
+    background: var(--trove-accent-container);
+    color: var(--trove-on-accent-container);
   }
 }
 

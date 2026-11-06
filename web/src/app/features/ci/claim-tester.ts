@@ -1,5 +1,4 @@
 import { Component, DestroyRef, LOCALE_ID, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { RouterLink } from '@angular/router';
 import { CiApi, CiEvaluateResult, CiIssuerChoice, CiLeafResult, CiMapping } from '../../api/ci-api';
 import { ApiError } from '../../api/problem';
@@ -44,11 +43,11 @@ function valueFor(previous: unknown, text: string): unknown {
  */
 @Component({
   selector: 'trove-ci-claim-tester',
-  imports: [MatButtonModule, RouterLink, ErrorNotice, CiWarnings, SelectField],
+  imports: [RouterLink, ErrorNotice, CiWarnings, SelectField],
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@ci.test.heading">Claim tester</h1>
-      <a mat-button [routerLink]="back()" [queryParams]="backQuery()" i18n="@@ci.test.back">Back</a>
+      <a class="btn btn-tertiary" [routerLink]="back()" [queryParams]="backQuery()" i18n="@@ci.test.back">Back</a>
     </header>
     <p class="subject" translate="no">{{ project() ? project() + ' · ' : '' }}{{ issuerName() }}</p>
     <p i18n="@@ci.test.hint">
@@ -65,8 +64,8 @@ function valueFor(previous: unknown, text: string): unknown {
     <section class="card" aria-labelledby="ci-t-input">
       <h2 id="ci-t-input" i18n="@@ci.test.input">Claims</h2>
       <div class="view-switch" role="group" aria-label="View" i18n-aria-label="@@ci.test.view">
-        <button mat-stroked-button type="button" class="switch" [attr.aria-pressed]="view() === 'json'" (click)="showJson()" i18n="@@ci.test.view-json">JSON</button>
-        <button mat-stroked-button type="button" class="switch" [attr.aria-pressed]="view() === 'form'" (click)="showForm()" i18n="@@ci.test.view-form">Form</button>
+        <button type="button" class="btn btn-default switch" [attr.aria-pressed]="view() === 'json'" (click)="showJson()" i18n="@@ci.test.view-json">JSON</button>
+        <button type="button" class="btn btn-default switch" [attr.aria-pressed]="view() === 'form'" (click)="showForm()" i18n="@@ci.test.view-form">Form</button>
       </div>
       @if (view() === 'json') {
         <label class="block-label" for="ci-t-claims" i18n="@@ci.test.label">Claims as JSON, or paste an ID token</label>
@@ -94,11 +93,11 @@ function valueFor(previous: unknown, text: string): unknown {
               <div class="claim-field">
                 <input class="claim-input" type="text" [name]="'claim-value-' + row.id" [value]="row.text" spellcheck="false" autocomplete="off" [attr.aria-label]="valueLabel(i)" (input)="setValue(row.id, $any($event.target).value)" />
               </div>
-              <button mat-button type="button" [attr.aria-label]="removeLabel(i)" (click)="removeRow(row.id)" i18n="@@ci.test.remove-claim">Remove</button>
+              <button class="btn btn-tertiary" type="button" [attr.aria-label]="removeLabel(i)" (click)="removeRow(row.id)" i18n="@@ci.test.remove-claim">Remove</button>
             </div>
           }
         </div>
-        <button mat-stroked-button type="button" (click)="addRow()" i18n="@@ci.test.add-claim">Add claim</button>
+        <button class="btn btn-default" type="button" (click)="addRow()" i18n="@@ci.test.add-claim">Add claim</button>
       }
       @if (inputError(); as message) {
         <p class="field-error" id="ci-t-error">{{ message }}</p>
@@ -116,8 +115,8 @@ function valueFor(previous: unknown, text: string): unknown {
         </p>
       }
       <div class="row-actions">
-        <button mat-flat-button type="button" [disabled]="busy()" (click)="evaluate()" i18n="@@ci.test.evaluate">Evaluate</button>
-        <button mat-stroked-button type="button" (click)="insertSample()" i18n="@@ci.test.sample">Insert sample GitLab claims</button>
+        <button class="btn btn-confirm" type="button" [disabled]="busy()" (click)="evaluate()" i18n="@@ci.test.evaluate">Evaluate</button>
+        <button class="btn btn-default" type="button" (click)="insertSample()" i18n="@@ci.test.sample">Insert sample GitLab claims</button>
       </div>
     </section>
 
@@ -235,7 +234,7 @@ function valueFor(previous: unknown, text: string): unknown {
     .block-label {
       display: block;
       margin-block: var(--trove-space-2) var(--trove-space-1);
-      font: var(--mat-sys-label-large);
+      font: var(--trove-type-label-large);
     }
     .claims-input {
       box-sizing: border-box;
@@ -244,7 +243,7 @@ function valueFor(previous: unknown, text: string): unknown {
       border: 1px solid var(--trove-border-strong);
       border-radius: var(--trove-radius-s);
       background: var(--trove-surface-raised);
-      color: var(--mat-sys-on-surface);
+      color: var(--trove-on-surface);
       font-family: var(--trove-font-mono);
       font-size: 0.8125rem;
     }
@@ -280,7 +279,7 @@ function valueFor(previous: unknown, text: string): unknown {
       border: 1px solid var(--trove-border-strong);
       border-radius: var(--trove-radius-s);
       background: var(--trove-surface-raised);
-      color: var(--mat-sys-on-surface);
+      color: var(--trove-on-surface);
       font-family: var(--trove-font-mono);
       font-size: 0.8125rem;
     }
@@ -300,11 +299,11 @@ function valueFor(previous: unknown, text: string): unknown {
       display: flex;
       gap: var(--trove-space-2);
       align-items: center;
-      font: var(--mat-sys-title-medium);
+      font: var(--trove-type-title-medium);
     }
     h3 {
       margin: var(--trove-space-4) 0 var(--trove-space-2);
-      font: var(--mat-sys-title-small);
+      font: var(--trove-type-title-small);
     }
     .candidate {
       margin-block: var(--trove-space-2);

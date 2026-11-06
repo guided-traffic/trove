@@ -57,8 +57,7 @@
                       @if (fromConfiguration(b)) {
                         <span class="muted" i18n="@@roles.managed-by-configuration">Managed in the configuration</span>
                       } @else {
-                        <button
-                          mat-button
+                        <button class="btn btn-tertiary"
                           type="button"
                           [disabled]="busy() || isLastAdmin(b)"
                           [attr.aria-describedby]="isLastAdmin(b) ? 'last-admin-guard' : null"
@@ -98,7 +97,7 @@
             i18n-hint="@@roles.bind-hint"
             hint="user:name, group:name or sa:name"
           />
-          <button mat-flat-button type="submit" [disabled]="busy() || draft(r.name).trim() === ''">
+          <button class="btn btn-confirm" type="submit" [disabled]="busy() || draft(r.name).trim() === ''">
             <ng-container i18n="@@roles.bind-button">Bind</ng-container>
             <span class="visually-hidden" translate="no"> {{ r.name }}</span>
           </button>

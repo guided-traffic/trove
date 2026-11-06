@@ -1,6 +1,5 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, inject, resource, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { newIdempotencyKey } from '../../api/client';
 import { ApiError } from '../../api/problem';
 import { JobsApi, Task } from '../../api/jobs-api';
@@ -19,12 +18,12 @@ import { asApiError, valueOf } from '../../shared/paged-resource';
  */
 @Component({
   selector: 'trove-tasks-card',
-  imports: [DatePipe, MatButtonModule, ErrorNotice, JobProgress],
+  imports: [DatePipe, ErrorNotice, JobProgress],
   template: `
     <section class="card" aria-labelledby="card-tasks">
       <div class="head">
         <h2 id="card-tasks" i18n="@@tasks.heading">Scheduled tasks</h2>
-        <button mat-button type="button" (click)="tasks.reload()" i18n="@@tasks.refresh">
+        <button class="btn btn-tertiary" type="button" (click)="tasks.reload()" i18n="@@tasks.refresh">
           Refresh
         </button>
       </div>
@@ -83,8 +82,7 @@ import { asApiError, valueOf } from '../../shared/paged-resource';
                           (finished)="completed(t)"
                         />
                       } @else if (canRun() && !t.running) {
-                        <button
-                          mat-stroked-button
+                        <button class="btn btn-default"
                           type="button"
                           [disabled]="busy() === t.name"
                           [attr.aria-label]="runLabel(t.name)"

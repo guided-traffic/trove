@@ -1,7 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatDialog } from '@angular/material/dialog';
+import { TroveDialog } from '../../shared/ui/dialog';
 import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { IdentityApi, User, UserFilters } from '../../api/identity-api';
@@ -24,7 +23,6 @@ import { originLabel } from './user-labels';
   selector: 'trove-user-list',
   imports: [
     DatePipe,
-    MatButtonModule,
     RouterLink,
     DataTable,
     FilterCategory,
@@ -39,7 +37,7 @@ import { originLabel } from './user-labels';
 })
 export class UserList {
   private readonly api = inject(IdentityApi);
-  private readonly dialog = inject(MatDialog);
+  private readonly dialog = inject(TroveDialog);
   private readonly router = inject(Router);
   protected readonly session = inject(SessionStore);
 
@@ -123,7 +121,7 @@ export class UserList {
 
   protected async add(): Promise<void> {
     const ref = this.dialog.open<UserCreateDialog, undefined, User>(UserCreateDialog, { maxWidth: '36rem' });
-    const created = await firstValueFrom(ref.afterClosed());
+    const created = await firstValueFrom(ref.closed);
     if (created) await this.router.navigate(['/admin/users', created.username]);
   }
 }

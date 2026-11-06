@@ -164,8 +164,8 @@ function shown(value: unknown): string {
     .settings-group {
       margin: 0;
       padding: var(--trove-space-3) var(--trove-space-4);
-      border: 1px solid var(--mat-sys-outline-variant);
-      border-radius: var(--mat-sys-corner-medium);
+      border: 1px solid var(--trove-border);
+      border-radius: var(--trove-radius-l);
 
       legend {
         padding-inline: var(--trove-space-1);

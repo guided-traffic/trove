@@ -12,7 +12,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { CdkTrapFocus } from '@angular/cdk/a11y';
 import { OpenSubmenuOnClick } from './shared/ui/open-submenu-on-click';
 import { CdkMenu, CdkMenuItem, CdkMenuItemRadio, CdkMenuTrigger } from '@angular/cdk/menu';
-import { MatDialog } from '@angular/material/dialog';
+import { TroveDialog } from './shared/ui/dialog';
 import {
   ActivatedRouteSnapshot,
   NavigationEnd,
@@ -85,7 +85,7 @@ export class App {
   protected readonly projectFilter = inject(ProjectFilter);
   protected readonly breadcrumbs = inject(Breadcrumbs);
   private readonly router = inject(Router);
-  private readonly dialog = inject(MatDialog);
+  private readonly dialog = inject(TroveDialog);
   private readonly main = viewChild.required<ElementRef<HTMLElement>>('main');
 
   /**
@@ -164,7 +164,7 @@ export class App {
         untracked(() => {
           const ref = this.dialog.open(SessionDialog, { data: { kind: 'reauth' } });
           // `afterClosed` is an observable; the flag only has to be cleared, so use the promise form.
-          void ref.afterClosed().forEach(() => this.session.clearReauthRequired());
+          void ref.closed.forEach(() => this.session.clearReauthRequired());
         });
       }
     });

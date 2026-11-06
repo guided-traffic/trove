@@ -77,7 +77,7 @@ describe('Authentication settings (R-UI-031)', () => {
         };
       },
     });
-    expect(root.querySelector<HTMLInputElement>('mat-checkbox input')!.disabled).toBe(true);
+    expect(root.querySelector<HTMLInputElement>('trove-checkbox input')!.disabled).toBe(true);
     expect(text(root)).toContain('does not allow anonymous access');
   });
 

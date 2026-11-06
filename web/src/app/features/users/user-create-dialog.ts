@@ -1,6 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatDialogModule, MatDialogRef } from '@angular/material/dialog';
+import { DialogClose, DialogRef, DialogTitle } from '../../shared/ui/dialog';
 import { newIdempotencyKey } from '../../api/client';
 import { IdentityApi, NewUser, User } from '../../api/identity-api';
 import { LoginApi } from '../../api/login-api';
@@ -18,11 +17,11 @@ import { ErrorNotice } from '../../shared/error-notice';
  */
 @Component({
   selector: 'trove-user-create-dialog',
-  imports: [MatButtonModule, MatDialogModule, ErrorNotice, SelectField, TextField],
+  imports: [DialogTitle, DialogClose, ErrorNotice, SelectField, TextField],
   template: `
-    <h2 mat-dialog-title i18n="@@user-create.title">Add user</h2>
+    <h2 troveDialogTitle i18n="@@user-create.title">Add user</h2>
     <form (submit)="submit($event)" novalidate>
-      <mat-dialog-content>
+      <div class="dialog-body">
         @if (error(); as e) {
           <trove-error-notice [error]="e" />
         }
@@ -48,11 +47,11 @@ import { ErrorNotice } from '../../shared/error-notice';
             [error]="fieldError('/identities')"
           />
         }
-      </mat-dialog-content>
-      <mat-dialog-actions align="end">
-        <button mat-button type="button" mat-dialog-close i18n="@@user-create.cancel">Cancel</button>
-        <button mat-flat-button type="submit" [disabled]="busy()" i18n="@@user-create.submit">Add user</button>
-      </mat-dialog-actions>
+      </div>
+      <div class="dialog-actions">
+        <button class="btn btn-tertiary" type="button" troveDialogClose i18n="@@user-create.cancel">Cancel</button>
+        <button class="btn btn-confirm" type="submit" [disabled]="busy()" i18n="@@user-create.submit">Add user</button>
+      </div>
     </form>
   `,
   styleUrl: '../../shared/access/access.scss',
@@ -60,7 +59,7 @@ import { ErrorNotice } from '../../shared/error-notice';
 export class UserCreateDialog {
   private readonly api = inject(IdentityApi);
   private readonly login = inject(LoginApi);
-  private readonly ref = inject<MatDialogRef<UserCreateDialog, User>>(MatDialogRef);
+  private readonly ref = inject<DialogRef<User, UserCreateDialog>>(DialogRef);
   private readonly notifier = inject(Notifier);
   private readonly key = newIdempotencyKey();
 

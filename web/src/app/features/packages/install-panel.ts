@@ -1,5 +1,4 @@
 import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { RouterLink } from '@angular/router';
 import { ClientSetupApi } from '../../api/packages-api';
 import { PackageVersion } from '../../api/packages-api';
@@ -20,7 +19,7 @@ export const COLLAPSE_AFTER_LINES = 3;
  */
 @Component({
   selector: 'trove-install-panel',
-  imports: [MatButtonModule, RouterLink, CopyButton, ErrorNotice],
+  imports: [RouterLink, CopyButton, ErrorNotice],
   templateUrl: './install-panel.html',
   styleUrl: './install-panel.scss',
 })
