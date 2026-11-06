@@ -42,7 +42,7 @@ const (
 	haCILoops   = 8   // R-HA-059: eight parallel npm ci loops
 	haMinLocked = 400 // R-HA-059: a fixture with 400 locked dependencies
 	// haK6Rate is the npm share of R-HA-059's 150 requests/s: its 50 % documents and 30 % tarballs (Q-HA-65); the
-	// 20 % of NuGet requests join with M3.
+	// 20 % of NuGet requests are k6/nuget.js at nugetK6Rate (nuget_load_test.go, Q-HA-100).
 	haK6Rate = 120
 	haRow    = "npm11"
 )
@@ -404,11 +404,24 @@ func startNPMLoad(t *testing.T, h *npmHAFixture, name string, o npmLoadOpts) *np
 	t.Cleanup(func() {
 		// a test that fails before stop leaves no loop running into the next scenario
 		for _, lp := range l.loops {
-			_, _ = kubectl("-n", cfg.namespace, "exec", npmClientPod(t, lp.c.pod), "--", "touch", lp.dir+"/stop")
+			touchStop(npmClientPod(t, lp.c.pod), lp.dir+"/stop")
 		}
 	})
 	t.Logf("npm load %s: %d npm ci loops, publish %v, k6 %v, every locked package's document %v", name, o.ciLoops, o.publish, o.k6, o.allDocuments)
 	return l
+}
+
+// touchStop creates the file that ends a loop, trying again when the API server does not answer. A test that fails because
+// the control plane was slow must still stop its loops: the next scenario mints new tokens and revokes these, and a loop that
+// runs on with a revoked token meets 401 over and over, which trips the rate limit of rejected credentials for the address of
+// its pod and fails the commands of the loops that share the pod (R-API-016; seen in the NuGet scenarios, e2e.md finding 2).
+func touchStop(pod, path string) {
+	for range 6 {
+		if _, err := kubectl("-n", cfg.namespace, "exec", pod, "--", "touch", path); err == nil {
+			return
+		}
+		time.Sleep(5 * time.Second)
+	}
 }
 
 // npmCommand is one command of a loop.
@@ -497,6 +510,17 @@ func (r npmLoadResult) allExitZero(t *testing.T) {
 				c.End.Sub(c.Start).Round(100*time.Millisecond), c.Start.Format("15:04:05.000"), c.Log)
 		}
 	}
+}
+
+// count says how many commands of a kind (ci, publish) the load ran.
+func (r npmLoadResult) count(kind string) int {
+	n := 0
+	for _, c := range r.Commands {
+		if c.Kind == kind {
+			n++
+		}
+	}
+	return n
 }
 
 // loopsSpan requires that every npm ci loop ran a command that overlapped [from, to]: the fault happened during the
@@ -619,7 +643,11 @@ var npmK6Pattern = regexp.MustCompile(`^N (\d+) (\d+) (\S+) (\d+) (document|tarb
 // "context canceled", ending within two seconds of the last request's end) is set aside; every other status 0 is a
 // failure. A line carries the request's start, and a tarball can run for seconds before the stop cuts it, so the end
 // decides, not the start as in parseK6's short requests.
-func parseNPMK6(t *testing.T, k *k6run) npmK6Result {
+func parseNPMK6(t *testing.T, k *k6run) npmK6Result { return parseK6Lines(t, k, npmK6Pattern) }
+
+// parseK6Lines is parseNPMK6 for any script whose lines have the shape of k6/npm.js's: the NuGet script's differ in the prefix
+// and the kinds (nuget_load_test.go).
+func parseK6Lines(t *testing.T, k *k6run, pattern *regexp.Regexp) npmK6Result {
 	t.Helper()
 	stopK6(t, k)
 	r := npmK6Result{Status: map[string]int{}, Replicas: map[string]int{}}
@@ -632,7 +660,7 @@ func parseNPMK6(t *testing.T, k *k6run) npmK6Result {
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), 1<<20)
 	for sc.Scan() {
-		m := npmK6Pattern.FindStringSubmatch(sc.Text())
+		m := pattern.FindStringSubmatch(sc.Text())
 		if m == nil {
 			continue
 		}
@@ -703,11 +731,17 @@ func stopK6(t *testing.T, k *k6run) {
 // (k6 does not retry), no tarball with other bytes than were published, and the arrival rate held.
 func (r npmK6Result) only2xx304(t *testing.T) {
 	t.Helper()
+	r.holds(t, haK6Rate, "document 200", "document 304", "tarball 200")
+}
+
+// holds is only2xx304 for a script of another rate and other kinds of request: every status in seen must have occurred.
+func (r npmK6Result) holds(t *testing.T, rate int, seen ...string) {
+	t.Helper()
 	secs := r.Last.Sub(r.First).Seconds()
 	if secs < 20 {
 		t.Errorf("k6 ran for %.0f s, too short to say anything", secs)
 	}
-	if want := int(0.95 * haK6Rate * secs); r.Total < want {
+	if want := int(0.95 * float64(rate) * secs); r.Total < want {
 		t.Errorf("k6 sent %d requests in %.0f s, want at least %d", r.Total, secs, want)
 	}
 	if len(r.Failures) != 0 {
@@ -720,8 +754,11 @@ func (r npmK6Result) only2xx304(t *testing.T) {
 	if r.Dropped != 0 {
 		t.Errorf("k6 dropped %v iterations: the load fell behind its rate", r.Dropped)
 	}
-	if r.Status["document 200"] == 0 || r.Status["document 304"] == 0 || r.Status["tarball 200"] == 0 {
-		t.Errorf("k6 did not exercise every kind of request: %v", r.Status)
+	for _, s := range seen {
+		if r.Status[s] == 0 {
+			t.Errorf("k6 did not exercise every kind of request (no %q): %v", s, r.Status)
+			break
+		}
 	}
 }
 

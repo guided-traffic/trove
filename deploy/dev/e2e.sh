@@ -40,8 +40,9 @@
 #   e2e.sh nuget        the NuGet acceptance tests (every TestNuGet... except TestNuGetClosing... and TestNuGetHA...), the counting
 #                       NuGet test upstream and three client pods; CI: job e2e-nuget
 #   e2e.sh nuget-closing  TestNuGetClosing...: the additions of the run that closes the phase (CI: job e2e-nuget, closing=true)
-#   e2e.sh nuget-ha     TestNuGetHA...: drain and failover under the NuGet load (CI: job e2e-nuget in the nightly HA and
-#                       Performance workflow). A set may name no test (nuget-ha today): then it passes with a notice (Q-ARCH-276)
+#   e2e.sh nuget-ha     TestNuGetHA...: drain variant A and the failovers of R-HA-052 under the npm and NuGet load together
+#                       (CI: job e2e-nuget in the nightly HA and Performance workflow); starts the npm and the NuGet client pods
+#                       and both counting test upstreams. A set may name no test (nuget-closing today): then it passes with a notice (Q-ARCH-276)
 #   e2e.sh ci           the reference pipeline of GitLab CI OIDC (TestCI..., not TestCIHA...) against the issuer double with the npm and
 #                       NuGet client pods, E4.1 and E4.4 to E4.6; CI: job e2e-ci
 #   e2e.sh ci-ha        TestCIHA...: the pipeline under a drained node, with Valkey stopped, across a forced Sentinel failover and FLUSHALL,
@@ -118,7 +119,8 @@ case "$set_name" in
   nuget) run='^TestNuGet'; skip='^TestNuGet(Closing|HA)'; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NUGETSTUB=1 ;;
   # empty_ok: the set may name no test yet (Q-ARCH-276); see the check after the case statement.
   nuget-closing) run='^TestNuGetClosing'; empty_ok=1; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NUGETSTUB=1 TROVE_E2E_NUGET_CLOSING=1 ;;
-  nuget-ha) run='^TestNuGetHA'; empty_ok=1; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NUGETSTUB=1 ;;
+  # The drain runs the npm load and the NuGet load together (R-HA-059): both client pods and both test upstreams, the scatter profile.
+  nuget-ha) run='^TestNuGetHA'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 ;;
   # <<< M3 nuget-clients
   # Drain and failover under npm load (E2.11, test/e2e/npm_ha_test.go): drain variant A of R-HA-059, the PostgreSQL
   # switchover and the Valkey failover of R-HA-052 under eight npm ci loops, a publish loop and k6 (CI: e2e-npm leg
@@ -402,7 +404,8 @@ npm_clients_up() {
   if [ "${TROVE_E2E_NPM_CLIENTS_IMAGE_BUILD:-1}" != 0 ]; then
     "$REPO_ROOT/test/e2e/clients/build.sh" "$NPM_CLIENTS_IMAGE" >"$OUT/npm-clients-image.log" 2>&1 || { tail -20 "$OUT/npm-clients-image.log" >&2; die "clients image build failed"; }
   fi
-  kind load docker-image "$NPM_CLIENTS_IMAGE" --name "$CLUSTER" >"$OUT/npm-clients-load.log" 2>&1 || { tail -20 "$OUT/npm-clients-load.log" >&2; die "kind load failed"; }
+  # the pods run on the control-plane node only (nodeSelector below): one copy of the image, not one per node
+  kind load docker-image "$NPM_CLIENTS_IMAGE" --name "$CLUSTER" --nodes "${CLUSTER}-control-plane" >"$OUT/npm-clients-load.log" 2>&1 || { tail -20 "$OUT/npm-clients-load.log" >&2; die "kind load failed"; }
   npm_clients_down
   kn create configmap trove-e2e-npm-ca --from-file=ca.crt="$CA_FILE" >/dev/null
   log "starting $NPM_CLIENTS_COUNT client pod(s) forwarding localhost:$EDGE_PORT to $target"
@@ -470,7 +473,8 @@ nuget_clients_up() {
   if [ "${TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD:-1}" != 0 ]; then
     "$REPO_ROOT/test/e2e/nugetclients/build.sh" "$NUGET_CLIENTS_IMAGE" >"$OUT/nuget-clients-image.log" 2>&1 || { tail -20 "$OUT/nuget-clients-image.log" >&2; die "NuGet clients image build failed"; }
   fi
-  kind load docker-image "$NUGET_CLIENTS_IMAGE" --name "$CLUSTER" >"$OUT/nuget-clients-load.log" 2>&1 || { tail -20 "$OUT/nuget-clients-load.log" >&2; die "kind load failed"; }
+  # the pods run on the control-plane node only (nodeSelector below): one copy of the 2.3 GB image, not one per node
+  kind load docker-image "$NUGET_CLIENTS_IMAGE" --name "$CLUSTER" --nodes "${CLUSTER}-control-plane" >"$OUT/nuget-clients-load.log" 2>&1 || { tail -20 "$OUT/nuget-clients-load.log" >&2; die "kind load failed"; }
   nuget_clients_down
   kn create configmap trove-e2e-nuget-ca --from-file=ca.crt="$CA_FILE" >/dev/null
   log "starting $NUGET_CLIENTS_COUNT NuGet client pod(s) forwarding localhost:$EDGE_PORT to $target"

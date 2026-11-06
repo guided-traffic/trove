@@ -7254,6 +7254,79 @@ red until (c) is built. Revisited when (c) is built: the cut test keeps (b) for 
 `upCmd.Skew` and `requireClean` in [upgrade_loops_test.go](../../test/e2e/upgrade_loops_test.go),
 [web/e2e/upgrade/16-upgrade.spec.ts](../../web/e2e/upgrade/16-upgrade.spec.ts).
 
+### Q-HA-100 · The NuGet part of R-HA-059's load and how it runs beside npm's
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-059's table has two `dotnet` rows (four `dotnet restore --no-cache --force` loops of a fixture with 60 packages through
+`nuget-all`; a `dotnet nuget push` of a new version to `nuget-local` every 10 s) and a k6 row of 150 requests/s of which 50 % are npm
+package documents, 30 % npm tarballs and 20 % NuGet registration and flat-container requests. The npm part runs in `TestNPMHA`
+([Q-HA-65](#q-ha-65--the-npm-part-of-r-ha-059s-load-before-nuget-exists-and-how-its-commands-are-counted)): 120 requests/s of
+[k6/npm.js](../../test/e2e/k6/npm.js), which `TestDrainRoles` and `TestNPMPerf` also use. Phase 7 builds the NuGet part
+([Q-NUGET-73](formats/nuget.md#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs)).
+
+| Question | Options | Choice |
+|---|---|---|
+| How k6 reaches the 150 requests/s with the 50/30/20 mix | (a) a second script, [k6/nuget.js](../../test/e2e/k6/nuget.js), at 30 requests/s beside `npm.js` at 120 (four in ten registration indexes, three flat-container version lists, three package downloads; every second round conditional with the ETag the test read); (b) one script with the three-way mix, replacing `npm.js`; (c) a switch in `npm.js` that adds the NuGet requests | (a). (b) and (c) change a script that `TestDrainRoles`, `TestNPMPerf` and the npm tests parse line by line, for a mix that two processes at fixed rates reproduce exactly (arrival rates add up). Each script keeps its own VU pool, so a slow NuGet request cannot starve the npm tarballs of VUs |
+| The p99 bound of R-HA-059 | (a) the p99 of all k6 requests of both scripts together (the spec's "k6 requests"), the NuGet requests' own p99 reported; (b) additionally gate the NuGet requests' own p99 at twice their warm-up's | (a). The documents of NuGet are small and their p99 is a few milliseconds, so twice the warm-up is a bound on scheduling noise, not on the drain; the tarballs of 1 to 5 MiB set the p99 of the mix, as [Q-HA-94](#q-ha-94--the-load-of-the-drain-per-role) found. Revisit with (b) if a drain regression ever shows in the NuGet requests alone |
+| How a `dotnet` command is counted | (a) as an `npm` command: a shell loop per load source detached in its client pod, one record per command with its exit status, the output of a failed one kept; a restore that exits `0` but extracted another number of packages than the fixture has counts as failed (exit status 96), and a push that exits `0` without printing "Your package was pushed." too (97); (b) the exit status alone | (a). `dotnet` exits `0` on some failures ([e2e.md](../developer/e2e.md#the-nuget-clients)) |
+| Why a restore reaches the server | (a) `--no-cache --force` and a new, empty `NUGET_PACKAGES` and `NUGET_HTTP_CACHE_PATH` per iteration, removed afterwards; (b) the flags alone | (a). With the flags alone the global packages folder of the loop's first iteration satisfies the later ones and a restore asks for the registrations only |
+| Tokens | (a) another service account, `e2e-nuget-ha`, with two tokens per restore loop (alternated per command), three for k6, one for the publisher; (b) the npm account's | (a). The account holds at most 20 active tokens (`auth.tokens.max_active_per_principal`); the npm load uses 20 |
+
+**Rationale:** the pass conditions of R-HA-059 are the clients' and k6's, whichever format the request is; the second k6 process and the
+second set of loops reproduce the table's rates without touching the scripts the other tests share. The development agent revisits the
+split when the long-transfer probes join the drain (they are a third load and need a third script) or when k6's NuGet requests must
+follow the corpus of a customer endpoint.
+
+**Applied in the spec:** none; R-HA-059 already states the table. [../developer/e2e.md](../developer/e2e.md#drain-and-failover-under-nuget-load),
+[test/e2e/nuget_load_test.go](../../test/e2e/nuget_load_test.go), [test/e2e/nuget_ha_test.go](../../test/e2e/nuget_ha_test.go).
+
+### Q-HA-101 · How R-ARCH-024's drain criterion is counted
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the first acceptance criterion of R-ARCH-024 asks that `kubectl drain` runs "during a loop of 100 `npm ci`, 20 `npm publish`,
+100 `dotnet restore` and 20 `dotnet nuget push`" through the Service, all with default retries, with no failed operation and every
+published version installable afterwards. R-HA-059's drain test runs a load of parallel loops of the same four commands for 5 minutes
+and more; its variant A is the run that satisfies the criterion ([Q-NUGET-73](formats/nuget.md#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs)).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The commands the load of the drain run completed count; the test asserts at least 100, 20, 100 and 20 (chosen) | `fullHAResult.conditions` in [nuget_ha_test.go](../../test/e2e/nuget_ha_test.go), in the drain subtest that names R-ARCH-024 | One run, one set of pass conditions; a load that falls behind (a runner too small for eight `npm ci` and four `dotnet restore` loops) fails the criterion visibly instead of passing with fewer commands | The commands before and after the drain count too |
+| (b) Only the commands that overlap the drain count | Count by the interval of `kubectl drain` | Closer to "during" | `drain.sh` returns in 40 to 60 s; 100 `dotnet restore` in that interval needs a rate the criterion's loop does not imply |
+| (c) A test of its own with fixed counts | A sequential loop of exactly the four counts around a drain | The numbers literally | A second drain test with a load that R-HA-059 already covers with more clients in parallel |
+
+**Choice:** (a). **Rationale:** "a loop of 100 commands" describes the length of the load the drain runs in; the run of variant A is that
+load, and its pass conditions (every command exits `0`, every acknowledged publish installs) are the criterion's. The development agent
+revisits this if the owner wants the count restricted to the interval of the drain.
+
+**Applied in the spec:** R-ARCH-024's first acceptance criterion names the test; [../developer/e2e.md](../developer/e2e.md#drain-and-failover-under-nuget-load).
+
+### Q-HA-102 · The CPU of the NuGet drain and where its leg runs
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the leg `nuget-ha` (job `e2e-nuget` of the nightly workflow) runs `TestNuGetHA`, which carries the whole load of R-HA-059's table for
+both clients. The job ran on GitHub-hosted `ubuntu-24.04` with 4 vCPUs since 2026-11-05, because the kind legs that load the NuGet clients image
+were evicted from `large` for disk (`kind load` copied the 2.3 GB image into four nodes). Measured on the local profile
+([e2e.md](../developer/e2e.md#drain-and-failover-under-nuget-load)): the load used 16.1 cores on average over the drain (peak 17.1), 10.3 of
+them on the control-plane node that hosts the client pods and the edge, 5.0 on the workers, 0.8 in k6; Docker had 20 CPUs, and two runs
+failed from starvation.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the leg on `ubuntu-24.04` (4 vCPUs) | No change | Nothing to move | A quarter of the CPU the scenario used: the clients alone would run for minutes per command, the p99 condition would measure the runner, and the leg would be red every night for capacity (the situation Q-NUGET-73 avoided) |
+| (b) Move the leg to `large` (limit 16 CPUs, 20 GiB) and load the clients images into the control-plane node only (chosen) | `runs-on: large` for `e2e-nuget (nuget-ha)`; `deploy/dev/e2e.sh` runs `kind load docker-image --nodes <cluster>-control-plane` for both clients images, so the 2.3 GB image occupies one copy of the runner's Docker disk (30 GiB) instead of four | The scenario's load fits the limit of `large` at the edge of what was measured; the disk reason for leaving `large` no longer applies | 16 CPUs is the measured mean, the peak is above it, and the measurement is from an arm64 laptop, not from the runner; the first nightly on `large` is the evidence |
+| (c) Scale the load down on the small runner (fewer loops, a lower rate) | A reduced R-HA-059 table | Fits 4 vCPUs | It is not the acceptance test of R-HA-059 any more; the conditions would pass on a load the spec does not name |
+
+**Choice:** (b). **Rationale:** the load is the spec's and cannot shrink; the one reason the NuGet legs left `large` is removed by loading the image
+into the one node that uses it (verified locally: `make e2e SET=nuget-clients` 43 s instead of 4.5 minutes, the pods start). Not verified: the
+scenario on a runner of either class. The development agent revisits this when the first nightly runs on `large` (a red leg for capacity would
+mean a larger class, not a smaller load).
+
+**Applied in the spec:** none. [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) (`--nodes` for the two clients images). The job's `runs-on` in
+[performance.yml](../../.github/workflows/performance.yml) is the CI change of the same phase, not made in this decision's commit.
+
 ### Q-HA-103 · The node-loss bound is counted from the moment the cluster declares the node lost
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.

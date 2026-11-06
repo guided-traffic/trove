@@ -4448,7 +4448,7 @@ Context: E3.1 asks for nuget.exe and the .NET 10 SDK on a Windows runner and for
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-Context: E3.6 asks that variant A of the drain test gains the NuGet part of its load and that R-ARCH-024's drain criterion, whose load needs both formats, passes. On 2026-11-01 the owner moved the drain, failover and soak legs out of the per-change pipeline into `HA and Performance (nightly)`, and npm's drain reliability with them into phase 7 ([ha-and-helm.md](../ha-and-helm.md) Q-HA-67): the scenario needs about twelve cores and the CI runners are held to fewer. The nightly leg `nuget-ha` exists and runs its set (Q-ARCH-276, Q-ARCH-277); the set names no test yet.
+Context: E3.6 asks that variant A of the drain test gains the NuGet part of its load and that R-ARCH-024's drain criterion, whose load needs both formats, passes. On 2026-11-01 the owner moved the drain, failover and soak legs out of the per-change pipeline into `HA and Performance (nightly)`, and npm's drain reliability with them into phase 7 ([ha-and-helm.md](../ha-and-helm.md) Q-HA-67): the scenario needs about twelve cores and the CI runners are held to fewer. The nightly leg `nuget-ha` exists and runs its set (Q-ARCH-276, Q-ARCH-277); the set names no test yet (see Revisited).
 
 | Option | What it means | For | Against |
 |---|---|---|---|
@@ -4459,7 +4459,15 @@ Context: E3.6 asks that variant A of the drain test gains the NuGet part of its 
 
 **Rationale:** the owner's rule of 2026-11-01 says long legs run nightly and their reliability is phase 7's; building the NuGet load where its capacity question is answered avoids a second leg that is red for the same reason. The development agent revisits this when phase 7 starts.
 
-**Applied in the spec:** none. Plan: [BETA.md](../../projektplan/BETA.md) phases 4 and 7; [roadmap](../../coverage/roadmap.md) E3.6.
+**Revisited** in phase 7 (the item "Node drain under npm and NuGet load with zero failed requests"): `TestNuGetHA` exists. Its load is
+R-HA-059's whole table for both clients ([Q-HA-100](../ha-and-helm.md#q-ha-100--the-nuget-part-of-r-ha-059s-load-and-how-it-runs-beside-npms),
+[Q-NUGET-111](#q-nuget-111--the-fixture-of-the-nuget-drain-load-repositories-restore-project-and-pushed-archives)), and its drain subtest
+is R-ARCH-024's first acceptance criterion ([Q-HA-101](../ha-and-helm.md#q-ha-101--how-r-arch-024s-drain-criterion-is-counted)). The set
+`nuget-ha` is no longer `empty_ok`.
+
+**Applied in the spec:** none. Code: [nuget_ha_test.go](../../../test/e2e/nuget_ha_test.go),
+[nuget_load_test.go](../../../test/e2e/nuget_load_test.go), [k6/nuget.js](../../../test/e2e/k6/nuget.js),
+[deploy/dev/e2e.sh](../../../deploy/dev/e2e.sh). Plan: [BETA.md](../../projektplan/BETA.md) phases 4 and 7; [roadmap](../../coverage/roadmap.md) E3.6.
 
 ### Q-NUGET-74 · A search term meets only the versions the caller may read
 
@@ -5241,6 +5249,29 @@ Status: **Decided by the development agent** — selected from the options below
 adds a limit on consecutive empty pages.
 
 **Applied in the spec:** the section "Mirror discovery" (Methods, `feed`).
+
+### Q-NUGET-111 · The fixture of the NuGet drain load: repositories, restore project and pushed archives
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `TestNuGetHA` ([Q-NUGET-73](#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs)) needs the
+NuGet rows of R-HA-059's table: four `dotnet restore --no-cache --force` loops of a project of about 60 packages through `nuget-all`
+(remote and local members), and a `dotnet nuget push` of a new version to `nuget-local` every 10 s for the whole run (eight minutes and
+more, every acknowledged version installed afterwards). The load is shared with the npm part
+([Q-HA-100](../ha-and-helm.md#q-ha-100--the-nuget-part-of-r-ha-059s-load-and-how-it-runs-beside-npms)).
+
+| Question | Options | Choice |
+|---|---|---|
+| The repositories | (a) three of their own, created once and left in place: `nuget-ha-local`, `nuget-ha-remote` over the counting test upstream, `nuget-ha-all` (members both, deployment target the local one); (b) the repositories of one test of the NuGet suite (`upstreamRepos`), which that test deletes at its end | (a). The load runs across three scenarios and the fixture is built once per process; package IDs carry the run (`E2e.NugetHa<run>`), so a rerun on the same cluster meets no stored version |
+| The restore project | (a) one corpus package, the first generated one in corpus order whose dependency closure and the three local packages reach 60 (`Contoso.Text.Hosting`: 58 and 3, 61 packages), referenced at `1.0.0`; one restore through `nuget-all` fills trove's cache before the loops start; (b) the roots of E3.2's reference solution (the stride of `ReferenceRoots`, about 120 packages) | (a). R-HA-059 says 60, and the corpus chains its packages, so a stride over several roots overshoots (the last generated package alone reaches a closure of 174) |
+| The pushed archives | (a) built before the loop by the generator of the test upstream (`nugetstub.Nupkg`: a valid archive with a nuspec and one placeholder file), one per version, handed to the pod as one tar on standard input; (b) `dotnet pack` in the loop; (c) one archive pushed again | (a). `dotnet pack` builds a project, which costs seconds of CPU per push and lengthens the loop's period beyond the 10 s; (c) is a replay (R-NUGET-012), not a publish. The hash of each archive is known to the test, which compares it with the `.nupkg.sha512` the client writes into the packages folder when it installs the version afterwards (`PackageDownload` with the exact version) |
+
+**Rationale:** the fixture is the table's, built from what the NuGet suite already has (the counting upstream's corpus, its package
+generator, the virtual repository's deployment target). The development agent revisits the generator if trove starts to validate more of
+an archive than its manifest on push (a placeholder file under `lib/` would then not do).
+
+**Applied in the spec:** none. [../../developer/e2e.md](../../developer/e2e.md#drain-and-failover-under-nuget-load),
+[test/e2e/nuget_load_test.go](../../../test/e2e/nuget_load_test.go).
 
 ## What this does not cover
 

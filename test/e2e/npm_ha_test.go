@@ -12,6 +12,7 @@ package e2e
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math/rand/v2"
 	"os"
 	"sort"
@@ -166,9 +167,9 @@ func TestNPMHAClosing(t *testing.T) {
 	})
 }
 
-// npmFaultRun is one fault under the npm load.
-type npmFaultRun struct {
-	res      npmLoadResult
+// loadFaultRun is one fault under a load: what the load returned when it stopped, and what the monitor and the clock saw.
+type loadFaultRun[R any] struct {
+	res      R
 	mon      *monitor
 	initial  map[string]bool // the trove pods when the monitor started
 	restarts map[string]int
@@ -176,14 +177,18 @@ type npmFaultRun struct {
 	faultEnd time.Time
 }
 
-// runNPMFault starts the load on a settled release, lets it run for before, injects the fault (the fault waits for its
-// own recovery), lets the load run for after and stops it.
-func runNPMFault(t *testing.T, h *npmHAFixture, name string, o npmLoadOpts, before, after time.Duration, fault func()) npmFaultRun {
+// npmFaultRun is one fault under the npm load.
+type npmFaultRun = loadFaultRun[npmLoadResult]
+
+// runLoadFault starts the load on a settled release, lets it run for before, injects the fault (the fault waits for its own
+// recovery), lets the load run for after and stops it. start begins the load and returns the function that ends it and
+// returns its result; note adds the load's numbers to the JSON record next to the fault's.
+func runLoadFault[R any](t *testing.T, record, name string, before, after time.Duration, start func() func(*testing.T) R, fault func(), note func(R) map[string]any) loadFaultRun[R] {
 	t.Helper()
 	troveSettled(t, 3, 3, 4)
-	load := startNPMLoad(t, h, name, o)
+	stop := start()
 	time.Sleep(before)
-	r := npmFaultRun{initial: map[string]bool{}}
+	r := loadFaultRun[R]{initial: map[string]bool{}}
 	for _, p := range livePods(t, selTrove) {
 		r.initial[p.Name] = true
 	}
@@ -194,19 +199,30 @@ func runNPMFault(t *testing.T, h *npmHAFixture, name string, o npmLoadOpts, befo
 	time.Sleep(after)
 	r.mon.stop()
 	r.restarts = r.mon.restarts(t)
-	r.res = load.stop(t)
-	noteResult(t, "npm-ha-"+name, map[string]any{
-		"fault_seconds": r.faultEnd.Sub(r.faultAt).Seconds(), "readyz_non200": r.mon.ready, "healthz_non200": r.mon.health,
-		"restarts": r.restarts, "commands": len(r.res.Commands), "published": len(r.res.Published), "k6": k6Summary(r.res.K6),
-	})
+	r.res = stop(t)
+	rec := map[string]any{
+		"fault_seconds": r.faultEnd.Sub(r.faultAt).Seconds(), "readyz_non200": r.mon.ready, "healthz_non200": r.mon.health, "restarts": r.restarts,
+	}
+	maps.Copy(rec, note(r.res))
+	noteResult(t, record, rec)
 	t.Logf("%s: fault took %s; readyz non-200 per pod %v; healthz non-200 per pod %v; restarts %v",
 		name, r.faultEnd.Sub(r.faultAt).Round(time.Second), r.mon.ready, r.mon.health, r.restarts)
 	return r
 }
 
+// runNPMFault is runLoadFault under the npm load.
+func runNPMFault(t *testing.T, h *npmHAFixture, name string, o npmLoadOpts, before, after time.Duration, fault func()) npmFaultRun {
+	t.Helper()
+	return runLoadFault(t, "npm-ha-"+name, name, before, after, func() func(*testing.T) npmLoadResult {
+		return startNPMLoad(t, h, name, o).stop
+	}, fault, func(res npmLoadResult) map[string]any {
+		return map[string]any{"commands": len(res.Commands), "published": len(res.Published), "k6": k6Summary(res.K6)}
+	})
+}
+
 // steady requires that no container restarted and that /healthz answered 200 throughout on every pod the fault did
 // not remove: the deleted pods (and the replacements, which the monitor met before they ran) are left out.
-func (r npmFaultRun) steady(t *testing.T, removed ...string) {
+func (r loadFaultRun[R]) steady(t *testing.T, removed ...string) {
 	t.Helper()
 	gone := map[string]bool{}
 	for _, p := range removed {
@@ -229,9 +245,64 @@ func k6Summary(k *npmK6Result) map[string]any {
 	return map[string]any{"total": k.Total, "status": k.Status, "failures": len(k.Failures), "bad": k.Bad, "dropped": k.Dropped}
 }
 
+// drainLoad is a load the drain of variant A runs under; drainOutcome is what it returns when it stops. The drain
+// (the node, the pod watch, the probe jobs, the events) is the same under the npm load and under npm and NuGet together,
+// the conditions of the clients are the load's.
+type drainLoad interface {
+	begun() time.Time
+	stop(t *testing.T) drainOutcome
+}
+
+type drainOutcome interface {
+	allExitZero(t *testing.T)
+	loopsSpan(t *testing.T, from, to time.Time)
+	k6Holds(t *testing.T)
+	// k6P99 is the 99th percentile of the duration of every k6 request started in [from, to), and their number
+	k6P99(from, to time.Time) (time.Duration, int)
+	k6First() time.Time
+	installPublished(t *testing.T)
+	// conditions are the load's own further conditions and reports (the minimum counts of R-ARCH-024, the p99 of one stream)
+	conditions(t *testing.T, firstEviction, drainEnd time.Time)
+	note() map[string]any
+}
+
+type npmDrainLoad struct {
+	*npmLoad
+	h *npmHAFixture
+}
+
+func (l npmDrainLoad) begun() time.Time { return l.started }
+func (l npmDrainLoad) stop(t *testing.T) drainOutcome {
+	return npmDrainOutcome{res: l.npmLoad.stop(t), h: l.h}
+}
+
+type npmDrainOutcome struct {
+	res npmLoadResult
+	h   *npmHAFixture
+}
+
+func (o npmDrainOutcome) allExitZero(t *testing.T)                   { o.res.allExitZero(t) }
+func (o npmDrainOutcome) loopsSpan(t *testing.T, from, to time.Time) { o.res.loopsSpan(t, from, to) }
+func (o npmDrainOutcome) k6Holds(t *testing.T)                       { o.res.K6.only2xx304(t) }
+func (o npmDrainOutcome) k6P99(from, to time.Time) (time.Duration, int) {
+	return o.res.K6.p99(from, to)
+}
+func (o npmDrainOutcome) k6First() time.Time                          { return o.res.K6.First }
+func (o npmDrainOutcome) installPublished(t *testing.T)               { o.res.installPublished(t, o.h) }
+func (o npmDrainOutcome) conditions(*testing.T, time.Time, time.Time) {}
+func (o npmDrainOutcome) note() map[string]any {
+	return map[string]any{"k6": k6Summary(o.res.K6), "commands": len(o.res.Commands), "published": len(o.res.Published)}
+}
+
 // npmDrainVariantA is R-HA-059's acceptance test, variant A, with the npm part of its load: two minutes of load before
 // the drain and three after it (the length of the variant that runs on every change to main).
 func npmDrainVariantA(t *testing.T, h *npmHAFixture) {
+	drainVariantA(t, "npm", func() drainLoad { return npmDrainLoad{startNPMLoad(t, h, "drain", haFullLoad()), h} })
+}
+
+// drainVariantA is variant A of R-HA-059 under the load start begins: two minutes of load before the drain and three after
+// it. kind ("npm", "nuget") names the artifacts.
+func drainVariantA(t *testing.T, kind string, start func() drainLoad) {
 	const before, after = 2 * time.Minute, 3 * time.Minute
 	const steps = 330 // probe jobs that run through the warm-up and the drain
 	troveSettled(t, 3, 3, 4)
@@ -244,10 +315,10 @@ func npmDrainVariantA(t *testing.T, h *npmHAFixture) {
 		}
 	}
 	t.Logf("draining %s, which hosts %v", node, podNames(onNode))
-	streams := streamPodLogs(t, "npm-drain-", onNode)
+	streams := streamPodLogs(t, kind+"-drain-", onNode)
 
 	watch := startPodWatch(t, selTrove)
-	load := startNPMLoad(t, h, "drain", haFullLoad())
+	load := start()
 	var ids []string
 	for i := 0; i < 6; i++ {
 		ids = append(ids, strings.TrimSpace(driver(t, "probe", "-steps", fmt.Sprint(steps), "-interval-ms", "1000")))
@@ -256,7 +327,7 @@ func npmDrainVariantA(t *testing.T, h *npmHAFixture) {
 		rows := sql(t, fmt.Sprintf(`SELECT r.name FROM trove.job j JOIN trove.replica r ON r.instance_uid = j.locked_by WHERE j.kind = 'system.probe' AND j.state = 'running' AND j.progress_total = %d GROUP BY 1`, steps))
 		return len(strings.Fields(rows)) >= 2
 	})
-	time.Sleep(time.Until(load.started.Add(before)))
+	time.Sleep(time.Until(load.begun().Add(before)))
 
 	drainStart := time.Now()
 	t.Logf("drain starts %s", drainStart.Format("15:04:05"))
@@ -295,10 +366,9 @@ func npmDrainVariantA(t *testing.T, h *npmHAFixture) {
 	// the pass conditions of R-HA-059
 	res.allExitZero(t)
 	res.loopsSpan(t, firstEviction, drainEnd)
-	k := res.K6
-	k.only2xx304(t)
-	warm, nWarm := k.p99(k.First, firstEviction)
-	during, nDuring := k.p99(firstEviction, drainEnd.Add(2*time.Minute))
+	res.k6Holds(t)
+	warm, nWarm := res.k6P99(res.k6First(), firstEviction)
+	during, nDuring := res.k6P99(firstEviction, drainEnd.Add(2*time.Minute))
 	t.Logf("k6 p99: warm-up %s over %d requests, from the first eviction until 2 minutes after the drain %s over %d", warm, nWarm, during, nDuring)
 	if nWarm < 1000 || nDuring < 1000 {
 		t.Errorf("too few requests for the latency condition: %d in the warm-up, %d in the drain window", nWarm, nDuring)
@@ -306,7 +376,8 @@ func npmDrainVariantA(t *testing.T, h *npmHAFixture) {
 	if during > 2*warm {
 		t.Errorf("R-HA-059: p99 from the first eviction until 2 minutes after the drain is %s, more than twice the warm-up's %s", during, warm)
 	}
-	res.installPublished(t, h)
+	res.installPublished(t)
+	res.conditions(t, firstEviction, drainEnd)
 
 	moved := 0
 	for _, id := range ids {
@@ -343,12 +414,13 @@ func npmDrainVariantA(t *testing.T, h *npmHAFixture) {
 		t.Logf("longest Pending of a trove pod: %s (%s)", d.Round(100*time.Millisecond), name)
 	}
 	checkEvents(t, onNode)
-	checkEndpointRemoval(t, "npm-ha-drain", streams)
-	noteResult(t, "npm-ha-drain", map[string]any{
+	checkEndpointRemoval(t, kind+"-ha-drain", streams)
+	rec := map[string]any{
 		"node": node, "drain_seconds": drainTook.Seconds(), "first_eviction": firstEviction, "p99_warmup_ms": warm.Milliseconds(),
-		"p99_drain_ms": during.Milliseconds(), "k6": k6Summary(k), "moved_jobs": moved, "pending_pods": watch.pendFor,
-		"commands": len(res.Commands), "published": len(res.Published),
-	})
+		"p99_drain_ms": during.Milliseconds(), "moved_jobs": moved, "pending_pods": watch.pendFor,
+	}
+	maps.Copy(rec, res.note())
+	noteResult(t, kind+"-ha-drain", rec)
 	troveSettled(t, 3, 3, 4)
 }
 

@@ -4103,6 +4103,9 @@ Acceptance criteria:
   100 `npm ci`, 20 `npm publish`, 100 `dotnet restore` and 20 `dotnet nuget push` through the
   Service, all with their default retry settings. No client operation fails, and every published
   version is installable afterwards.
+  Automated by the drain subtest of `TestNuGetHA` (`make e2e SET=nuget-ha`), whose load runs the four
+  commands in parallel loops and is checked for at least these counts
+  ([Q-HA-101](ha-and-helm.md#q-ha-101--how-r-arch-024s-drain-criterion-is-counted)).
 - `kubectl rollout restart deployment/trove-web` runs during a
   `curl --limit-rate 20M -o f.bin …/files/generic-local/400MiB.bin` (about 20 s). curl exits `0`,
   and `sha256sum f.bin` matches.

@@ -88,6 +88,10 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
                             the audit forward cut by a pod deletion (TestHASuite_..., set ha-suite)
   npm_perf_test.go          R-ARCH-027: perf/k6/npm.js against one web replica from inside the cluster, reported (TestNPMPerf)
   k6/npm.js                 the k6 npm requests of R-HA-059: documents and 1 to 5 MiB tarballs of npm-all, 120 requests/s
+  nuget_load_test.go        the NuGet load of R-HA-059: the fixture (nuget-ha-local, -remote, -all, 61 packages per restore), the dotnet restore and
+                            push loops detached in the client pods, the k6 NuGet requests and their conditions
+  nuget_ha_test.go          drain variant A, PostgreSQL switchover and Valkey failover under the npm and NuGet load; R-ARCH-024's drain (TestNuGetHA)
+  k6/nuget.js               the k6 NuGet requests of R-HA-059: registrations, version lists and packages of nuget-all, 30 requests/s
   mirror_env_test.go        the mirror harness (R-REPO-059): the profile `mirror`, the repositories in mode mirror, the status and the run, the
                             pool's counters, the CoreDNS rewrite of the public registry's name, the sampler of the job table, the clients
   mirror_clients_test.go    R-REPO-055: npm ci and dotnet restore while a pass runs (TestMirror_R_REPO_055_ClientsFirst)
@@ -134,7 +138,7 @@ make e2e SET=nuget-clients   # build the NuGet clients image, start the client p
 make e2e SET=nuget-clients-down  # remove the NuGet client pods
 make e2e SET=nuget           # every TestNuGet... but TestNuGetClosing... and TestNuGetHA...: local, remote and virtual repositories, a project's partner (TestNuGetProjectPartner), E3.2, E3.6 and E3.7 with the real clients; the test upstream and three client pods (Q-NUGET-34, Q-NUGET-70); CI job e2e-nuget on every change
 make e2e SET=nuget-closing   # the additions of the closing run (TestNuGetClosing: R-NUGET-030 and R-NUGET-031 with Valkey stopped; TestNuGetClosingPublic: the read-only subset against nuget.org; exports TROVE_E2E_NUGET_CLOSING=1); CI leg of a closing dispatch
-make e2e SET=nuget-ha        # TestNuGetHA...: drain and failover under the NuGet load; CI job e2e-nuget in the nightly workflow; no such test yet: a notice and exit 0 (Q-ARCH-276)
+make e2e SET=nuget-ha        # TestNuGetHA: drain variant A, the PostgreSQL switchover and the Valkey failover under the npm and NuGet load together (R-HA-059, R-ARCH-024); CI job e2e-nuget in the nightly workflow; starts both client pods and both test upstreams
 make nuget-clients-image     # only build the NuGet clients image into the local Docker
 make nuget-clients-smoke     # the image like a pod against the counting NuGet test upstream, without a cluster
 make nuget-reference-check   # perf/nuget/reference against a regeneration (no cluster, no Docker)
@@ -1091,7 +1095,8 @@ profile the node still carries a Sentinel and often the PostgreSQL standby or a 
 ([Q-HA-68](../spec/ha-and-helm.md#q-ha-68--the-node-variant-a-drains-on-the-three-node-local-profile)). The first eviction is the first pod
 the pod watch sees with a deletion timestamp; the warm-up is every k6 request before it.
 
-**Not built in M2, with where it lands:** the NuGet rows of the load (`dotnet restore`, `dotnet nuget push`, k6's 20 %) in M3; the
+**Not built in M2, with where it lands:** the NuGet rows of the load (`dotnet restore`, `dotnet nuget push`, k6's 20 %) are built
+([Drain and failover under NuGet load](#drain-and-failover-under-nuget-load)); the
 long-transfer probes of R-HA-059 and variants B to E in E5.9; R-HA-057's "every replica writes to the new primary within 10 s", the alerts
 (`TroveValkeyUnavailable`; the dev profile runs no Prometheus) and the other Valkey rows in E5.10; `trove admin storage verify` in E5.2. The
 Valkey-primary-loss row of R-HA-052, which ran on every change until 2026-11-01 and now runs in the nightly failover set, is E0.13's (`valkey-kill.sh` under the ping load); its npm load
@@ -1272,6 +1277,133 @@ commands); a run on a CI runner.
    the existing cluster was recreated once. That a metadata document whose object is missing answers `500` and is not fetched again is not covered by a test and not analysed.
 8. **The dev profile: a CloudNativePG instance can sit in a smart shutdown for its `stopDelay` of 30 minutes** while sessions stay open (seen at the start of the work on this set: the primary had been in a smart shutdown since 03:19 UTC; the cause was not found,
    and the cluster was healthy when the 30 minutes were over).
+## Drain and failover under NuGet load
+
+`make e2e SET=nuget-ha` (CI leg `e2e-nuget (nuget-ha)` of the nightly workflow, on dispatch and locally) runs `TestNuGetHA`: variant A of
+[R-HA-059](../spec/ha-and-helm.md#r-ha-059--node-drain-without-outage)'s drain test and the PostgreSQL-switchover and Valkey-failover
+scenarios of [R-HA-052](../spec/ha-and-helm.md#r-ha-052--failure-injection-test-suite), each under the whole load of R-HA-059's table that the two
+clients make: the [npm part](#drain-and-failover-under-npm-load) and the NuGet part together. It is the phase-7 item "Node drain under npm and NuGet
+load with zero failed requests" ([Q-NUGET-73](../spec/formats/nuget.md#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs)),
+and its drain scenario is the first acceptance criterion of R-ARCH-024. Decisions:
+[Q-HA-100](../spec/ha-and-helm.md#q-ha-100--the-nuget-part-of-r-ha-059s-load-and-how-it-runs-beside-npms),
+[Q-HA-101](../spec/ha-and-helm.md#q-ha-101--how-r-arch-024s-drain-criterion-is-counted),
+[Q-HA-102](../spec/ha-and-helm.md#q-ha-102--the-cpu-of-the-nuget-drain-and-where-its-leg-runs),
+[Q-NUGET-111](../spec/formats/nuget.md#q-nuget-111--the-fixture-of-the-nuget-drain-load-repositories-restore-project-and-pushed-archives).
+
+The set starts the npm and the NuGet client pods (three each) and both counting test upstreams, and switches to the scatter profile (three `api`,
+three `packages`, four `worker` replicas). The drain, the pod watch, the probe jobs, `checkEvents` and the monitor are those of the npm tests
+(`drainVariantA` and `runLoadFault` in [npm_ha_test.go](../../test/e2e/npm_ha_test.go), which `TestNPMHA` uses as well); the NuGet load is
+[nuget_load_test.go](../../test/e2e/nuget_load_test.go), the scenarios [nuget_ha_test.go](../../test/e2e/nuget_ha_test.go).
+
+### The NuGet load
+
+| Source | What it runs | Where |
+|---|---|---|
+| four `dotnet restore` loops | `dotnet restore fixture.csproj --no-cache --force` of the 61-package project through `nuget-ha-all`, again and again, with a new empty `NUGET_PACKAGES`, `NUGET_HTTP_CACHE_PATH` and `NUGET_PLUGINS_CACHE_PATH` per iteration; dotnet's default retries | the three NuGet client pods, loops spread over them |
+| one push loop | `dotnet nuget push` of `E2e.NugetHa<run>.<scenario>.Pub` 1.0.`<n>` to `nuget-ha-local` every 10 s, counted from the start of the previous push, from archives built beforehand | NuGet client pod 0 |
+| k6, [k6/nuget.js](../../test/e2e/k6/nuget.js) | 30 requests/s through the edge to `nuget-ha-all`: four in ten a registration index, three in ten a flat-container version list (every second round conditional with the weak ETag the test read, so `304`s are part of it), three in ten a `.nupkg` from the flat container, compared with its length and `sha512` | a container on the Docker network `kind`, beside the npm k6 container (120 requests/s) |
+
+The fixture (`nugetHAFx`, once per process):
+
+- three repositories that stay on the cluster: `nuget-ha-local`, `nuget-ha-remote` over the counting NuGet test upstream and `nuget-ha-all`
+  (both as members, `nuget-ha-local` the deployment target), and the service account `e2e-nuget-ha` with `read`, `deploy`, `delete` on the
+  local and `read` on the other two; 12 tokens: two per restore loop (alternated per command), three for k6, one for the publisher (the npm
+  account holds 20, the bound per principal);
+- three packages `E2e.NugetHa<run>.Lib0..2` 1.0.0 in `nuget-ha-local`, pushed with `dotnet nuget push`;
+- the restore project: `Contoso.Text.Hosting` of the test upstream's corpus (a closure of 58 packages) and the three local packages, 61
+  packages in all (R-HA-059 asks for 60). One restore through `nuget-ha-all` fills trove's cache, so every loop runs with the cache warm
+  and the test knows the number a restore extracts;
+- k6's input: the registration index and the version list of the three local packages and 17 remote ones, the `.nupkg` of 1.0.0 of about
+  half of them, and the ETags and hashes read through the edge once.
+
+**How a command is counted** ([Q-HA-100](../spec/ha-and-helm.md#q-ha-100--the-nuget-part-of-r-ha-059s-load-and-how-it-runs-beside-npms)). As for npm:
+`restoreLoopScript` and `pushLoopScript` are started once per pod with `setsid` and write `R <restore|push> <start ms> <end ms> <exit status> <n> [version]`
+per command, and keep the output of a failed one. `dotnet` exits `0` on some failures, so two checks turn a silent failure into a record
+that fails the test: a restore that exits `0` but extracted other than the fixture's number of `.nupkg` files (exit status 96), and a push
+that exits `0` without "Your package was pushed." in its output (97); a missing archive is 95. A push whose acknowledgement is lost
+and which the client repeats answers `201` on the replay ([E3.6](../spec/formats/nuget.md), `trove_nuget_push_replayed_total`) and counts as one acknowledged push.
+"Every acknowledged push installs afterwards" is one `dotnet restore` of a project of `PackageDownload` items with the exact version of each
+acknowledged push, through `nuget-ha-all`; the `.nupkg.sha512` the client writes for each version equals the hash of the archive the loop pushed.
+
+### The scenarios
+
+`TestNuGetHA` has three subtests, with the injections and the pass conditions of `TestNPMHA`'s drain, switchover and Valkey failover
+([above](#the-scenarios)), each for both clients:
+
+| Subtest | Injection | Load | Pass conditions |
+|---|---|---|---|
+| drain variant A (R-HA-059, R-ARCH-024) | `drain.sh <node>`, 2 minutes after the load started; 3 more minutes after it returns; six `system.probe` jobs of 330 steps | npm and NuGet | every `npm` and `dotnet` command exits `0`; every restore loop and `npm ci` loop ran a command during the drain; k6 (both scripts) only `2xx` and `304`, no connection error, no wrong tarball or package, no dropped iteration and 95 % of each rate; the p99 of all k6 requests from the first eviction until 2 minutes after the drain at most twice the warm-up's (the NuGet requests' own p99 is logged next to it); every acknowledged `npm publish` and `dotnet nuget push` installs; every probe job `succeeded` with `attempt` 1, at least one moved and resumed; no SIGKILL; no trove pod `Pending` for more than 60 s; `drain.sh` within 10 minutes and the node uncordoned; **R-ARCH-024**: the run reached 100 `npm ci`, 20 `npm publish`, 100 `dotnet restore` and 20 `dotnet nuget push` |
+| PostgreSQL switchover | `failover.sh` after 1 minute; 1 minute after | npm and NuGet | every command exits `0`, every `npm ci` and restore loop ran a command during the switchover; k6 as above; every acknowledged publish and push installs; `/healthz` 200 on every pod, no restart |
+| Valkey failover | `valkey-failover.sh` after 1 minute; 1 minute after | npm and NuGet | as the switchover, and `/readyz` 200 on every pod throughout, and `trove_valkey_primary_changes_total` rises by exactly one on every `api`, `packages` and `worker` replica (R-HA-057) |
+
+### Artifacts
+
+Those of the npm tests, for both clients: `.out/e2e/nuget-load-<scenario>.json` (every command with its times and exit status, the output of
+a failed one), `nuget-ha-drain.json`, `nuget-ha-pg-switchover.json` and `nuget-ha-valkey-failover.json` (the conditions' numbers, both
+clients), `k6-nuget-<scenario>/` (one line per request: `G <unix ms> <status> <replica> <ms> <registration|flat|nupkg> <ok|bad> <path>`, and k6's summary),
+next to the npm load's `npm-load-<scenario>.json` and `k6-npm-<scenario>/`; `drain-pod-watch.jsonl`, `drain-events.json`,
+`nuget-drain-<pod>.log` (the drained pods' logs). The loops' own files stay in the client pods below `/work/ha-<scenario>-restore<i>-<run>` and `/work/ha-<scenario>-push-<run>`.
+
+### Measured on the dev cluster
+
+Apple-silicon laptop (arm64), Docker with 20 CPUs and 16 GB, kind v0.33.0, edge on `https://localhost:8080`, a fresh cluster (`make dev-down`,
+`make dev-up`), the release image built from the working tree of 2026-11-06. One run of `make e2e SET=nuget-ha` (the fifth, the first green one;
+the four before it found the harness findings below): 772 s of tests, 13 minutes with the fixtures; the first run on a cluster adds about 5
+minutes for loading the NuGet clients image (2.3 GB).
+
+| Scenario | Result |
+|---|---|
+| fixtures | npm: 475 locked packages, 20 tokens, 23 s; NuGet: 61 packages per restore (58 from the upstream's corpus, 3 local), 12 tokens, 4 s |
+| drain variant A (`trove-worker3`: an `api`, a `packages`, a `worker` and a `worker-vuln` pod, a Sentinel) | `drain.sh` 38 s. npm: 543 `npm ci` and 34 publishes, all exit `0`, slowest 8.1 s. NuGet: 305 `dotnet restore` and 36 `dotnet nuget push`, all exit `0`, slowest 11.7 s; **R-ARCH-024: 543, 34, 305 and 36, against 100, 20, 100 and 20**. Every loop ran 6 to 8 commands (the push loop 4) during the drain. k6 npm 40,370 requests in 5 min 37 s (`document 200` 21,193, `document 304` 4,041, `tarball 200` 15,136), k6 NuGet 10,765 in 5 min 59 s (`registration` 2,156 and 2,152, `flat` 1,615 and 1,614 as `200` and `304`, `nupkg 200` 3,228); nothing else, no wrong tarball or package, 0 dropped. p99 of all k6 requests 741 ms in the warm-up (17,825 requests) and 789 ms from the first eviction until 2 minutes after the drain (23,649); alone: npm 771 and 845 ms, NuGet 358 and 400 ms. The 34 publishes and 36 pushes installed with their content. Six probe jobs, all `succeeded` with `attempt` 1, three moved and resumed at step 150 or 151. Longest `Pending` 1.4 s, four `Killing` events, no SIGKILL |
+| PostgreSQL switchover | `failover.sh` 17 s. npm 219 `npm ci` and 15 publishes, NuGet 167 restores and 17 pushes, all exit `0`, slowest 15.7 s; every loop ran 2 or 3 commands during the switchover; k6 npm 16,776 and NuGet 4,865 requests, only `2xx` and `304`, p99 7.3 s and 7.2 s (requests held by the database retry); `/healthz` and `/readyz` 200 on every pod, no restart; every acknowledged publish and push installed |
+| Valkey failover | 2 s. npm 214 `npm ci` and 13 publishes, NuGet 159 restores and 15 pushes, all exit `0`, slowest 6.6 s; k6 npm 14,964 requests (p99 776 ms) and NuGet 4,409 (p99 354 ms), only `2xx` and `304`; `/readyz` 200 on every pod; `trove_valkey_primary_changes_total` +1 on each of the ten replicas |
+| the same drain in two runs before | 474 `npm ci`, 34 publishes, 283 restores, 37 pushes (drain.sh 39 s, p99 874 and 897 ms); 482, 34, 278, 36 |
+
+**CPU the scenario uses** (a sample of `docker stats` every few seconds over the 5 minutes of the drain's load, a mean over 64 samples):
+
+| Where | Mean | Peak |
+|---|---|---|
+| `trove-control-plane` (the six client pods with their forwarders, the driver pod, both HAProxy Ingress pods, the API server) | 10.3 cores | 12.8 |
+| the three worker nodes together (the `api`, `packages`, `worker` pods, PostgreSQL, Valkey, S3, the test upstreams) | 5.0 cores | |
+| the two k6 containers | 0.8 cores | 1.3 |
+| **all** | **16.1 cores** (median 16.1) | 17.1 |
+
+The clients are the larger part: eight `npm ci` loops and four `dotnet restore` loops of a 61-package project, each restore with a cold
+runtime. A runner with 4 vCPUs (GitHub-hosted `ubuntu-24.04`) offers a quarter of that, and `large` (limit 16 CPUs) is at the edge
+([Q-HA-102](../spec/ha-and-helm.md#q-ha-102--the-cpu-of-the-nuget-drain-and-where-its-leg-runs)). On the laptop, with 20 CPUs for Docker
+and the macOS host, the scenario leaves little room (finding 3).
+
+### Findings of the scenarios under NuGet load
+
+1. **The harness: `PackageDownload` of several versions.** The first verification of "every acknowledged push installs" wrote one
+   `PackageDownload` item per version. NuGet restores the first of several items of one ID and no other; the versions go into one item,
+   `Version="[1.0.1];[1.0.2];..."`. Fixed in `installPublished`.
+2. **The harness: a loop that outlives its test meets the rate limit of rejected credentials.** In one run the pod listing of the
+   switchover scenario failed (finding 3) after its loops had started, and `touch stop` of one npm loop failed on the same slow API server.
+   The next run revoked that run's tokens when it built its fixture; the stray loop sent the revoked token again and again, and the
+   limiter of rejected credentials (`429 Too many rejected credentials from this address`) refused the three loops that share its client
+   pod, 1 minute 14 seconds a command. `touchStop` now tries six times, five seconds apart. It is not a product defect: the limiter
+   answered a client that sent a revoked credential ten times a second.
+3. **Observed, host capacity: the scenario starves a 20-CPU Docker VM.** The switchover scenario, the second of the three, failed in
+   three of the four runs that reached it (the third is finding 2). Once the whole cluster stalled 1.5 minutes into its load, before
+   `failover.sh` had started: every pod, idle `api` pods too, logged I/O timeouts and failed readiness checks within the same
+   seconds, and 8,594 npm and 2,593 NuGet k6 requests, three `dotnet restore` and one `npm ci` and a push failed after connection
+   resets and `503`s of the database retry running out. Once the harness's `kubectl get pods` got `TLS handshake timeout` from the API
+   server (the control-plane node then ran 10 cores of clients). The drain and the Valkey failover passed in every run that reached
+   them. The passing run used 16 of the 20 CPUs. No product defect was found: with the cluster not starved, no request failed and the
+   switchover took 17 s (9 s under the npm load alone). Whether the stall was the VM or the host (other work on the laptop ran at the time)
+   is not established.
+4. **The dev profile loses blobs when the S3 pod is replaced.** The S3 Deployment of the dev profile keeps its data in `emptyDir`; PostgreSQL
+   persists. A `make dev-up` over a cluster that already holds data replaced the S3 pod, and `npm-all` documents of cached remote
+   packages then answered `500` with `object not found` until the cluster was recreated. The production chart's object store is the operator's, so this is a trap for a reused local cluster, not a verified defect: recreate it (`make dev-down`) before this
+   set. Whether a cached document whose blob is gone should be fetched again instead of answered `500` is not decided here.
+5. **`kind load` copied the NuGet clients image (2.3 GB) into all four nodes** although the pods run on the control-plane node only, which is the
+   disk the hosted runners lacked (releasing.md#ci). `deploy/dev/e2e.sh` loads both client images into the control-plane node
+   (`--nodes`): 43 s instead of 4.5 minutes for `make e2e SET=nuget-clients`.
+
+**Not covered here:** the long-transfer probes and variants B to E of R-HA-059; the pod crash and the Valkey outage under the NuGet load
+(R-HA-052's other rows); a run on a CI runner.
+
 
 ## The counting npm test upstream
 
@@ -1628,9 +1760,9 @@ test/e2e/nugetclients/
   [performance.yml](../../.github/workflows/performance.yml)). The job builds the clients image with `make nuget-clients-image` first
   and sets `TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD=0`, so the set loads it instead of building it again. The fuzz targets of the closing run
   are in [releasing.md](releasing.md#ci) too.
-- **Sets that name no test yet.** `nuget-closing` and `nuget-ha` are declared `empty_ok` in [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh); `nuget-closing` names `TestNuGetClosing` since phase 4, `nuget-ha` none yet.
-  While no `func Test...` in `test/e2e/*_test.go` matches their expression, the script logs a notice and exits 0 before it looks for a
-  cluster ([Q-ARCH-276](../spec/architecture.md#q-arch-276--how-does-an-e2e-set-that-names-no-test-pass-and-when-does-it-fail)). Every other
+- **Sets that name no test yet.** `nuget-closing` is declared `empty_ok` in [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) and names `TestNuGetClosing` since phase 4; `nuget-ha` was one too until `TestNuGetHA` landed ([Drain and failover under NuGet load](#drain-and-failover-under-nuget-load)).
+  While no `func Test...` in `test/e2e/*_test.go` matches the expression of an `empty_ok` set, the script logs a notice and exits 0 before it looks for a cluster
+  ([Q-ARCH-276](../spec/architecture.md#q-arch-276--how-does-an-e2e-set-that-names-no-test-pass-and-when-does-it-fail)). Every other
   set still fails when its expression matches no test, and once a test of the name exists, a run that ran nothing still fails.
 - **Not built.** The Windows row (nuget.exe and the SDK on a Windows runner) and Visual Studio (manual). The run against nuget.org of the
   closing run (R-NUGET-027) is not in CI.
