@@ -4,14 +4,18 @@
 // release loads its scripts from replicas of the other.
 //
 // The content is a blob like any other (INV-4): spooled, hashed and committed through the commit protocol of R-STOR-005,
-// read back with the verification of R-STOR-013. A row of ui_assets names it by the locale directory and the path below
-// it, holds the reference that keeps the collector away (R-STOR-024), and records when a replica whose build has the
-// file last said so. Nothing here is reachable from a request but the read; the writes are the replica's own start-up and
+// read back with the verification of R-STOR-013 whatever storage.download.verify says (Q-UI-143), because the bytes reach a
+// browser as code of trove's origin. A row of ui_assets names it by the locale directory and the path below it, holds the
+// reference that keeps the collector away (R-STOR-024), and records when a replica whose build has the row's bytes last
+// said so; which bytes a name keeps when two builds fill it differently is Q-UI-142. Nothing here is reachable from a request but the read; the writes are the replica's own start-up and
 // its hourly renewal (Keeper).
 package shared
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -33,6 +37,10 @@ const (
 	// RenewEvery is how often a running replica renews its files and publishes what is missing (Keeper), for instance
 	// after a restore, which leaves the table empty.
 	RenewEvery = time.Hour
+	// StaleAfter is how long a row stays with its bytes when no replica whose build has them renews it (Q-UI-142): after
+	// that, a replica whose build fills the name with other bytes replaces them. Twice RenewEvery, so that a running
+	// release's row is never replaced between two of its renewals.
+	StaleAfter = 2 * RenewEvery
 	// MaxFileSize bounds a file of the store: a request holds it in memory. The production build's largest file is about
 	// 200 KiB; a larger one is served by its own replicas only.
 	MaxFileSize = 8 << 20
@@ -92,12 +100,23 @@ func (s *Store) Asset(ctx context.Context, locale, path string) ([]byte, error) 
 	if row.Size > MaxFileSize || len(row.BlobSha256) != len(blob.Digest{}) {
 		return nil, fmt.Errorf("%s/%s: the row names %d bytes of a %d-byte digest", locale, path, row.Size, len(row.BlobSha256))
 	}
-	body, err := s.blobs.Open(ctx, blob.Digest(row.BlobSha256), row.Size, blob.OpenOptions{})
+	data, err := readVerified(ctx, s.blobs, blob.Digest(row.BlobSha256), row.Size)
 	if err != nil {
-		return nil, fmt.Errorf("open %s/%s: %w", locale, path, err)
+		return nil, fmt.Errorf("%s/%s: %w", locale, path, err)
+	}
+	return data, nil
+}
+
+// readVerified reads a whole blob and returns it only when its length and its SHA-256 are the row's (Q-UI-143). The
+// blob store verifies the read whatever storage.download.verify says (OpenOptions.Verify) and marks a mismatch corrupt;
+// the bytes are checked here once more, in memory, so that nothing this package hands the UI handler is unverified.
+func readVerified(ctx context.Context, blobs Blobs, d blob.Digest, size int64) ([]byte, error) {
+	body, err := blobs.Open(ctx, d, size, blob.OpenOptions{Verify: true})
+	if err != nil {
+		return nil, fmt.Errorf("open: %w", err)
 	}
 	defer func() { _ = body.Close() }()
-	data := make([]byte, 0, row.Size)
+	data := make([]byte, 0, size)
 	buf := make([]byte, 32<<10)
 	for {
 		n, err := body.Read(buf)
@@ -106,15 +125,17 @@ func (s *Store) Asset(ctx context.Context, locale, path string) ([]byte, error) 
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("read %s/%s: %w", locale, path, err)
+			return nil, fmt.Errorf("read: %w", err)
 		}
-		if int64(len(data)) > row.Size {
-			return nil, fmt.Errorf("read %s/%s: more than the %d bytes of its row", locale, path, row.Size)
+		if int64(len(data)) > size {
+			return nil, fmt.Errorf("read: more than the %d bytes of its row", size)
 		}
 	}
-	// With storage.download.verify off nothing else catches a short object; a short file must never be served as immutable.
-	if int64(len(data)) != row.Size {
-		return nil, fmt.Errorf("read %s/%s: %d bytes, its row says %d", locale, path, len(data), row.Size)
+	if int64(len(data)) != size {
+		return nil, fmt.Errorf("read: %d bytes, its row says %d", len(data), size)
+	}
+	if sha256.Sum256(data) != d {
+		return nil, fmt.Errorf("read: %w: the bytes do not have the row's SHA-256", blob.ErrCorrupt)
 	}
 	return data, nil
 }
@@ -125,20 +146,21 @@ type PublishResult struct {
 	Files int
 	// Renewed is the number of rows whose seen_at this call renewed.
 	Renewed int64
-	// Inserted is the number of rows this call inserted; the files another replica inserted meanwhile are not counted.
+	// Inserted is the number of rows this call inserted, or replaced because their blob was damaged or their bytes stale
+	// (Q-UI-142); the rows another replica wrote meanwhile are not counted.
 	Inserted int64
 	// Skipped is the number of files larger than MaxFileSize, which are not published.
 	Skipped int
 }
 
-// Publish puts the hashed files of a build into the store and renews the rows of the ones that are there (Q-HA-121): it
-// renews first, so that a row another replica's Prune is about to delete is kept or gone before the presence is read,
-// then reads which files have a row, then commits the missing ones in batches. tree is the build, files its hashed files
-// (webui.HashedFiles). It is safe to run on several replicas at once: the blobs are deduplicated by the commit protocol and
-// the rows are write-once.
+// Publish puts the hashed files of a build into the store and renews the rows that hold the build's own bytes (Q-HA-121,
+// Q-UI-142): it hashes the build's files, renews first, so that a row another replica's Prune is about to delete is kept or
+// gone before the presence is read, then reads which files have a row with the build's bytes and a sound blob, then commits
+// the others in batches. tree is the build, files its hashed files (webui.HashedFiles). It is safe to run on several
+// replicas at once: the blobs are deduplicated by the commit protocol and InsertUIAsset decides a name's row.
 func (s *Store) Publish(ctx context.Context, tree fs.FS, files []webui.File) (PublishResult, error) {
 	res := PublishResult{Files: len(files)}
-	names := make([]string, 0, len(files))
+	own := make([]ownFile, 0, len(files))
 	for _, f := range files {
 		if f.Size > MaxFileSize {
 			res.Skipped++
@@ -146,20 +168,28 @@ func (s *Store) Publish(ctx context.Context, tree fs.FS, files []webui.File) (Pu
 				"file", f.Name(), "size", f.Size, "max", MaxFileSize)
 			continue
 		}
-		names = append(names, f.Name())
+		sum, err := digestOf(tree, f)
+		if err != nil {
+			return res, err
+		}
+		own = append(own, ownFile{Locale: f.Locale, Path: f.Path, SHA256: hex.EncodeToString(sum[:])})
+	}
+	list, err := json.Marshal(own)
+	if err != nil {
+		return res, err
 	}
 	present := map[string]bool{}
-	err := s.db.InTx(ctx, func(tx meta.Tx) error {
+	err = s.db.InTx(ctx, func(tx meta.Tx) error {
 		qs, err := queries(tx)
 		if err != nil {
 			return err
 		}
-		n, err := qs.TouchUIAssets(ctx, q.TouchUIAssetsParams{Names: names, FreshSecs: (RenewEvery / 2).Seconds()})
+		n, err := qs.TouchUIAssets(ctx, q.TouchUIAssetsParams{Files: string(list), FreshSecs: (RenewEvery / 2).Seconds()})
 		if err != nil {
 			return err
 		}
 		res.Renewed = n
-		got, err := qs.UIAssetsPresent(ctx, names)
+		got, err := qs.UIAssetsPresent(ctx, string(list))
 		if err != nil {
 			return err
 		}
@@ -188,6 +218,27 @@ func (s *Store) Publish(ctx context.Context, tree fs.FS, files []webui.File) (Pu
 	return res, nil
 }
 
+// ownFile is one file of a build in the list the statements read (queries/ui_assets.sql).
+type ownFile struct {
+	Locale string `json:"locale"`
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
+}
+
+// digestOf is the SHA-256 of a file of the build.
+func digestOf(tree fs.FS, f webui.File) ([32]byte, error) {
+	file, err := tree.Open(f.Name())
+	if err != nil {
+		return [32]byte{}, fmt.Errorf("open %s: %w", f.Name(), err)
+	}
+	defer func() { _ = file.Close() }()
+	h := sha256.New()
+	if _, err := io.Copy(h, io.LimitReader(file, MaxFileSize+1)); err != nil {
+		return [32]byte{}, fmt.Errorf("read %s: %w", f.Name(), err)
+	}
+	return [32]byte(h.Sum(nil)), nil
+}
+
 // commit spools a batch of files and links them in one transaction.
 func (s *Store) commit(ctx context.Context, tree fs.FS, batch []webui.File) (int64, error) {
 	sps := make([]*blob.Spooled, 0, len(batch))
@@ -213,14 +264,15 @@ func (s *Store) commit(ctx context.Context, tree fs.FS, batch []webui.File) (int
 		for i, f := range batch {
 			n, err := qs.InsertUIAsset(ctx, q.InsertUIAssetParams{
 				Locale: f.Locale, Path: f.Path, BlobSha256: sps[i].SHA256.Bytes(), Size: sps[i].Size, PublishedBy: s.release,
+				StaleSecs: StaleAfter.Seconds(),
 			})
 			if err != nil {
 				return err
 			}
 			if n == 0 {
-				// Another replica's row names the file, maybe with other bytes (another translation): the blob this
-				// commit wrote may have no reference, so the collector is told; it checks the references before it
-				// deletes anything (R-STOR-024).
+				// The name's row stays with another replica's bytes (Q-UI-142), or with these bytes, whose object the commit
+				// repaired: the blob this commit wrote may have no reference, so the collector is told; it checks the
+				// references before it deletes anything (R-STOR-024).
 				if err := qs.EnqueueBlobForGC(ctx, sps[i].SHA256.Bytes()); err != nil {
 					return err
 				}

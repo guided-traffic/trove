@@ -2445,7 +2445,8 @@ Priority: **MVP** · Covers: UI-058
   ([Q-UI-140](#q-ui-140--which-file-names-of-the-ui-build-are-hashed)); `build:embed` fails a build whose files do not follow
   that rule. A hashed asset the replica's own build lacks, which during a rolling upgrade is one of the other release, is
   served from the shared asset store that every replica serving the UI publishes its build to ([ha-and-helm.md](ha-and-helm.md)
-  R-HA-020, Q-HA-120); an unknown one is a `404`, and one the store cannot be asked for is a `503` with `Retry-After`
+  R-HA-020, Q-HA-120), verified against its digest in every case
+  ([Q-UI-143](#q-ui-143--a-file-of-the-shared-store-is-verified-whatever-storagedownloadverify-says)); an unknown one is a `404`, and one the store cannot be asked for is a `503` with `Retry-After`
   ([Q-UI-141](#q-ui-141--what-a-replica-answers-for-a-hashed-file-of-another-release)). Nothing else under `/ui/` is ever
   served from the store. This page adds:
   - the UI lives under `/ui/{locale}/` (R-UI-045); `/` redirects to `/ui/`, and `/ui/` as well as
@@ -7747,19 +7748,75 @@ browser handles, for a file that exists, one that does not and a store that cann
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) The file, `404`, or `503` (chosen) | A file from the store has the headers of the replica's own (type by extension, `nosniff`, immutable); a name no release published is `404` problem+json; a store that cannot be asked is `503` problem+json with `Retry-After: 1` and `Cache-Control: no-store`, logged. A replica keeps the files it read in memory (32 MiB at most, the oldest out first), remembers an unknown name for 10 s (4,096 names at most), and reads a file once for concurrent requests; a read is bounded by 10 s | A browser caches a found file as its own; the `503` says the file may exist and is never cached; repeated requests cost one read | Memory per replica for the files of the other release; a name published within 10 s of a miss is found 10 s later on that replica |
+| (a) The file, `404`, or `503` (chosen) | A file from the store has the headers of the replica's own (type by extension, `nosniff`, immutable); a name no release published is `404` problem+json; a store that cannot be asked is `503` problem+json with `Retry-After: 1` and `Cache-Control: no-store`, logged. A replica keeps the files it read in memory (32 MiB at most, the oldest out first, read again after an hour, Q-UI-142), remembers an unknown name for 10 s (4,096 names at most), and reads a file once for concurrent requests; a read is bounded by 10 s and always verified (Q-UI-143) | A browser caches a found file as its own; the `503` says the file may exist and is never cached; repeated requests cost one read | Memory per replica for the files of the other release; a name published within 10 s of a miss is found 10 s later on that replica |
 | (b) `404` when the store cannot be asked | One answer for every miss | Simple | Says the file does not exist; a heuristic cache may keep it |
 | (c) Forward the request to a replica of the other release | A proxy hop | No store | Needs an address per release, a second hop, and nothing for a release whose replicas are gone (the open tab) |
 
 **Choice:** (a).
 
-**Rationale:** the answers say what is true about the file. A file of a hashed name never changes its code, so a kept copy is never
-stale, and the memory is the bound of a working set of one release's bundle (about 5 MB in two locales). Revisit if the files of
+**Rationale:** the answers say what is true about the file. A file of a hashed name never changes its code, so a kept copy differs
+from the store's at most in translated strings (Q-UI-142), and the memory is the bound of a working set of one release's bundle
+(about 5 MB in two locales). Revisit if the files of
 more than one other release are read in one window.
 
 **Applied in the spec:** R-UI-001 (serving), [docs/developer/web-ui.md](../developer/web-ui.md). Code:
 [shared.go](../../internal/webui/shared.go). Tests: `TestSharedAssets`, `TestSharedCacheBound`, and
 `TestR_HA_020_SharedUIAssetsWithoutTheObjectStore`.
+
+### Q-UI-142 · Which bytes the shared store keeps for a name that two builds fill differently
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the hash in a file's name covers the code before the translations are inlined
+([Q-UI-140](#q-ui-140--which-file-names-of-the-ui-build-are-hashed)), so a release that changes only a German string keeps the
+chunk's name and changes its `de` bytes. The store has one row per `(locale, path)`, because the URL a page asks for names no build.
+The first design kept the first publisher's row for good, renewed it by name from every build that had the name, and never replaced
+a row whose blob was damaged: a row could hold the bytes of a release that no longer ran, and a lost object answered `503` on every
+replica that lacked the file until the retention ended (review of 2026-11-06).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The row of the bytes that run: renewed by content, replaced when stale or damaged (chosen) | A replica renews only the rows that hold its own bytes (`TouchUIAssets` compares the digest), counts as present only a row with its bytes and a live, `ok` blob, and its insert replaces a row with other bytes when that row's blob is not live and `ok`, or when no replica whose build has those bytes renewed it for `shared.StaleAfter` (2 h, twice the renewal); the update trigger queues the old blob. A replica keeps a file it read for an hour, then reads it again (on a store that cannot be asked it serves the kept copy on) | While two releases with different bytes for a name run side by side, the row stays with the one that wrote it, so the rows do not flip; within about three hours after a release's last replica stopped, the name holds the bytes of a build that still runs; a damaged row is replaced or repaired at the next renewal of any build that has the name | During the window a replica that lacks the name serves one release's bytes to the pages of both; a missing object that no check has marked yet still answers `503` until the blob check of R-STOR-013 marks it |
+| (b) First writer, for good | As built first | Stable | Keeps the bytes of a release that no longer runs as long as any build renews the name, and a damaged blob for good |
+| (c) Last writer | Every publish replaces a row with other bytes | The newest bytes | Two releases that run side by side replace each other's row every hour |
+| (d) A row per build | The key holds the digest | Every build's bytes kept | The request names no build, so the replica still has to pick one; more rows for nothing |
+
+**Choice:** (a). For the window itself nothing better is possible than one release's bytes per name: the URL is the same for both,
+and a browser that loaded the file once keeps it for a year (`immutable`) whichever release's page asks for it later. The bytes differ
+in translated strings, not in code, because a code change changes the name.
+
+**Rationale:** the store follows the builds that run, as the retention of Q-HA-122 does, and a damaged row heals instead of waiting
+out the retention. Revisit if a build's translation must be exact on every replica during an upgrade: that needs names that cover the
+translated bytes, a change of the build, not of the store.
+
+**Applied in the spec:** R-UI-001 (serving), [ha-and-helm.md](ha-and-helm.md) Q-HA-122. Code: the statements `UIAssetsPresent`,
+`InsertUIAsset` and `TouchUIAssets` of [ui_assets.sql](../../internal/meta/postgres/queries/ui_assets.sql), `Publish` in
+[shared.go](../../internal/webui/shared/shared.go), `sharedFileTTL` in [internal/webui/shared.go](../../internal/webui/shared.go).
+Tests: `TestR_HA_020_SharedUIAssets` (a name two builds fill with other bytes; a row whose blob is damaged), `TestSharedAssets`.
+
+### Q-UI-143 · A file of the shared store is verified whatever storage.download.verify says
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `storage.download.verify: false` (R-STOR-013, Q-STOR-6) hands out an object's bytes unchecked. For a package file that is
+the operator's choice; a file of the shared store is served from trove's origin as script, kept in a replica's memory and cached by
+browsers as immutable, so an object replaced in the bucket with bytes of the same length would run as trove's code (review of
+2026-11-06).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Always verify this path (chosen) | `blob.OpenOptions.Verify` verifies a full read whatever the setting; the store asks for it and checks the length and the SHA-256 of the buffered bytes once more; a mismatch marks the blob corrupt as every verified read does, and the request answers `503` | A writer of the bucket alone cannot put code into the UI; the cost is a hash of at most 8 MiB per file and replica, kept in memory afterwards | None of weight: the files are small and read rarely |
+| (b) Follow the setting | As before | One rule | The setting would decide whether the bucket can inject script into trove's origin |
+
+**Choice:** (a).
+
+**Rationale:** the setting trades a hash for speed on large downloads; it was never meant to decide what runs in the browser.
+Revisit if a file of the store can exceed `shared.MaxFileSize`.
+
+**Applied in the spec:** R-UI-001 (serving), [docs/security/ui-asset-store.md](../security/ui-asset-store.md). Code:
+`OpenOptions.Verify` in [download.go](../../internal/blob/download.go), `readVerified` in
+[shared.go](../../internal/webui/shared/shared.go). Tests: `TestDownloadVerification` (a swapped object with verification off),
+`TestReadVerified`.
 
 ## What this does not cover
 

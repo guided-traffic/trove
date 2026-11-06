@@ -151,8 +151,8 @@ replica of release N (api, web, all)                         replica of release 
 | File | Responsibility |
 |---|---|
 | [internal/webui/hashed.go](../../internal/webui/hashed.go) | `IsHashed` (the pattern of R-UI-001, Q-UI-140), `HashedFiles` (a build's hashed files by locale and path), `Tree` (the embedded build or `Options.Assets`) |
-| [internal/webui/shared.go](../../internal/webui/shared.go) | The interface `Shared` and `ErrNotShared`; the replica's memory of the store (files up to 32 MiB, misses for 10 s, one read per name in flight that ends even when the store panics, 10 s per read); `serveShared`: the file, `404` or `503` (Q-UI-141) |
-| [internal/webui/shared/shared.go](../../internal/webui/shared/shared.go) | `Store`: `Asset` (the row, then the blob read with the digest check and its length against the row), `Publish` (renew, read what is present (a row whose blob is marked damaged counts as missing, so the commit repairs the object), commit the missing files in batches of 32 through `blob.CommitAll`, rows write-once; a blob whose row another replica wrote first is queued for the collector), `Prune` |
+| [internal/webui/shared.go](../../internal/webui/shared.go) | The interface `Shared` and `ErrNotShared`; the replica's memory of the store (files up to 32 MiB, read again after an hour and served on while the store cannot be asked, misses for 10 s, one read per name in flight that ends even when the store panics, 10 s per read); `serveShared`: the file, `404` or `503` (Q-UI-141) |
+| [internal/webui/shared/shared.go](../../internal/webui/shared/shared.go) | `Store`: `Asset` (the row, then `readVerified`: the blob read with verification whatever `storage.download.verify` says and a second check of the length and the SHA-256, Q-UI-143), `Publish` (hash the build's files; renew the rows that hold its bytes; read which files have a row with its bytes and a live, `ok` blob; commit the others in batches of 32 through `blob.CommitAll`, whose link inserts or replaces a row as Q-UI-142 says; a blob whose row stays with other bytes is queued for the collector), `Prune` |
 | [internal/webui/shared/keeper.go](../../internal/webui/shared/keeper.go) | `Keeper`: `PublishAtStart` (attempts and retries within `PublishWait`, a minute, as one deadline), the loop (`RenewEvery` after a cycle that succeeded, a minute after one that failed), the retention (`Retention`, 7 days) |
 | [internal/app/wire_ui_assets.go](../../internal/app/wire_ui_assets.go) | The area `ui-assets` (`api`, `web`, `all`): the store over the `infra` area's database and blob store, the publish before ready, the keeper; `uiShared` for `startClient` |
 | [00043_ui_assets.sql](../../internal/meta/postgres/migrations/00043_ui_assets.sql), [ui_assets.sql](../../internal/meta/postgres/queries/ui_assets.sql) | The table (primary key `(locale, path)`, `blob_sha256` with the guard and release triggers of R-STOR-003, `seen_at`), export class transient ([tables_ui.go](../../internal/meta/postgres/tables_ui.go)); the statements `GetUIAsset`, `UIAssetsPresent`, `InsertUIAsset`, `TouchUIAssets`, `PruneUIAssets` |
@@ -161,7 +161,11 @@ Rules the code keeps:
 
 - A file is named by its locale and its path. The name's hash covers the code before the translations are inlined, so the `en` and
   `de` builds share every name and most of the files differ between them; a later release that changes only a translation keeps the
-  names too. A row is therefore write-once (the first publisher decides) and a replica always serves its own file first.
+  names too. A replica always serves its own file first. A replica renews only the rows that hold its own bytes; a row with other
+  bytes stays while a build with those bytes renews it, and is replaced when no such build renewed it for 2 hours or its blob is
+  damaged ([Q-UI-142](../spec/api-and-ui.md#q-ui-142--which-bytes-the-shared-store-keeps-for-a-name-that-two-builds-fill-differently)).
+- Every read of the store is verified, whatever `storage.download.verify` says
+  ([Q-UI-143](../spec/api-and-ui.md#q-ui-143--a-file-of-the-shared-store-is-verified-whatever-storagedownloadverify-says)).
 - Only `IsHashed` paths are published and looked up; `index.html`, the routes and `favicon.ico` are always the replica's own.
 - The publish at start-up runs before the client listener opens, so the first `index.html` a new replica serves names only files the
   old replicas can already serve. A store that does not take the build within a minute is logged and the replica starts anyway

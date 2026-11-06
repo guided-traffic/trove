@@ -300,6 +300,27 @@ func TestDownloadVerification(t *testing.T) {
 			t.Fatal("unexpected content")
 		}
 	})
+	t.Run("R-STOR-013 R-HA-020 OpenOptions.Verify checks a swapped object of the same length with verification turned off (Q-UI-143)", func(t *testing.T) {
+		f, sp, damaged := setup(t, func(c *config.Storage) { c.Download.Verify = false })
+		bad := bytes.Clone(data)
+		bad[0] ^= 1
+		f.mem.Set(f.store.Key(sp.SHA256), bad, f.mem.Now())
+		r, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{Verify: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := io.ReadAll(r)
+		_ = r.Close()
+		if !errors.Is(err, blob.ErrCorrupt) {
+			t.Fatalf("read %d bytes, err %v, want ErrCorrupt", len(got), err)
+		}
+		if bytes.Equal(got, bad) {
+			t.Fatal("the swapped object was handed out whole")
+		}
+		if f.db.rows[sp.SHA256].status != "corrupt" || damaged.Load() != 1 {
+			t.Fatalf("status %q, damage hook %d times", f.db.rows[sp.SHA256].status, damaged.Load())
+		}
+	})
 	t.Run("R-STOR-013 a ranged read is returned as stored and is not verified", func(t *testing.T) {
 		f, sp, _ := setup(t, nil)
 		r, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{Range: &blob.ByteRange{Offset: 10, Length: 100}})

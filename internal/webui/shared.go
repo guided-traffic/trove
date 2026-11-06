@@ -26,10 +26,13 @@ const (
 	// sharedTimeout bounds what a file from the shared store may cost a request: a slow store turns into a 503 the
 	// browser shows as a failed load, never into a page that hangs (Q-UI-141).
 	sharedTimeout = 10 * time.Second
-	// sharedCacheBytes bounds the files a replica keeps in memory after it read them from the store. A file of a hashed
-	// name never changes its code, so a kept copy is never stale; the files of one release's bundle are about 5 MiB in
-	// both locales.
+	// sharedCacheBytes bounds the files a replica keeps in memory after it read them from the store; the files of one
+	// release's bundle are about 5 MiB in both locales.
 	sharedCacheBytes = 32 << 20
+	// sharedFileTTL is how long a kept file is served before the store is read again. A hashed name never changes its
+	// code, but two builds can fill it with other translated strings, and the store's row for it can change (Q-UI-142):
+	// a replica follows that within the hour. While the store cannot be asked, the kept copy is served on.
+	sharedFileTTL = time.Hour
 	// sharedMissTTL and sharedMissEntries bound the memory of names the store did not know: a burst of requests for one
 	// unknown name costs one read of the store in the TTL, and a replica of a release that publishes later is found
 	// within it.
@@ -37,19 +40,25 @@ const (
 	sharedMissEntries = 4096
 )
 
-// sharedCache is a replica's memory of the shared store: the files it read (bounded, the oldest first out), the names
-// the store did not know (bounded, for sharedMissTTL), and the reads in flight, so that concurrent requests for one file
-// read the store once.
+// sharedCache is a replica's memory of the shared store: the files it read (bounded, the oldest first out, read again
+// after sharedFileTTL), the names the store did not know (bounded, for sharedMissTTL), and the reads in flight, so that
+// concurrent requests for one file read the store once.
 type sharedCache struct {
 	store Shared
 	now   func() time.Time
 
 	mu     sync.Mutex
-	files  map[string][]byte
+	files  map[string]keptFile
 	order  []string
 	bytes  int
 	misses map[string]time.Time
 	flight map[string]*sharedFlight
+}
+
+// keptFile is a file in a replica's memory and when it was read.
+type keptFile struct {
+	data []byte
+	at   time.Time
 }
 
 type sharedFlight struct {
@@ -61,7 +70,7 @@ type sharedFlight struct {
 func newSharedCache(store Shared) *sharedCache {
 	return &sharedCache{
 		store: store, now: time.Now,
-		files: map[string][]byte{}, misses: map[string]time.Time{}, flight: map[string]*sharedFlight{},
+		files: map[string]keptFile{}, misses: map[string]time.Time{}, flight: map[string]*sharedFlight{},
 	}
 }
 
@@ -69,9 +78,9 @@ func newSharedCache(store Shared) *sharedCache {
 func (c *sharedCache) get(ctx context.Context, locale, path string) ([]byte, error) {
 	key := locale + "/" + path
 	c.mu.Lock()
-	if data, ok := c.files[key]; ok {
+	if kept, ok := c.files[key]; ok && c.now().Sub(kept.at) < sharedFileTTL {
 		c.mu.Unlock()
-		return data, nil
+		return kept.data, nil
 	}
 	if until, ok := c.misses[key]; ok {
 		if c.now().Before(until) {
@@ -98,18 +107,21 @@ func (c *sharedCache) get(ctx context.Context, locale, path string) ([]byte, err
 
 	// The flight ends whatever way the read ends, a panic included, so a waiter never waits for a read that is gone.
 	f.err = errSharedRead
-	defer c.land(key, f)
-	// The read does not end with the first request's context: the requests that wait for it would fail with it.
-	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sharedTimeout)
-	defer cancel()
-	f.data, f.err = c.store.Asset(rctx, locale, path)
+	func() {
+		defer c.land(key, f)
+		// The read does not end with the first request's context: the requests that wait for it would fail with it.
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sharedTimeout)
+		defer cancel()
+		f.data, f.err = c.store.Asset(rctx, locale, path)
+	}()
 	return f.data, f.err
 }
 
 // errSharedRead is the answer of a read that ended without one (a panic of the store).
 var errSharedRead = errors.New("webui: the read of the shared asset store ended without an answer")
 
-// land ends a read in flight: it keeps a found file, remembers a name the store did not know, and releases the waiters.
+// land ends a read in flight: it keeps a found file, forgets and remembers a name the store does not know (any more),
+// serves on the copy it kept when the store could not be asked, and releases the waiters.
 func (c *sharedCache) land(key string, f *sharedFlight) {
 	c.mu.Lock()
 	delete(c.flight, key)
@@ -117,30 +129,48 @@ func (c *sharedCache) land(key string, f *sharedFlight) {
 	case f.err == nil:
 		c.keep(key, f.data)
 	case errors.Is(f.err, ErrNotShared):
+		c.drop(key)
 		if len(c.misses) >= sharedMissEntries {
 			clear(c.misses)
 		}
 		c.misses[key] = c.now().Add(sharedMissTTL)
+	default:
+		if kept, ok := c.files[key]; ok {
+			f.data, f.err = kept.data, nil
+		}
 	}
 	c.mu.Unlock()
 	close(f.done)
 }
 
-// keep adds a file and drops the oldest ones over the bound; c.mu is held. A file larger than the bound is served and
-// not kept.
+// keep adds or replaces a file and drops the oldest ones over the bound; c.mu is held. A file larger than the bound is
+// served and not kept.
 func (c *sharedCache) keep(key string, data []byte) {
 	if len(data) > sharedCacheBytes {
+		c.drop(key)
+		return
+	}
+	if old, ok := c.files[key]; ok {
+		c.bytes += len(data) - len(old.data)
+		c.files[key] = keptFile{data: data, at: c.now()}
 		return
 	}
 	for c.bytes+len(data) > sharedCacheBytes && len(c.order) > 0 {
 		old := c.order[0]
 		c.order = c.order[1:]
-		c.bytes -= len(c.files[old])
-		delete(c.files, old)
+		c.drop(old)
 	}
-	c.files[key] = data
+	c.files[key] = keptFile{data: data, at: c.now()}
 	c.order = append(c.order, key)
 	c.bytes += len(data)
+}
+
+// drop forgets a kept file; c.mu is held. Its entry in order stays and is skipped when it comes up.
+func (c *sharedCache) drop(key string) {
+	if old, ok := c.files[key]; ok {
+		c.bytes -= len(old.data)
+		delete(c.files, key)
+	}
 }
 
 // serveShared answers a hashed file that the replica's own bundle lacks from the shared store (R-HA-020, Q-HA-120,

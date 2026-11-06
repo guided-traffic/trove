@@ -522,9 +522,10 @@ An expand step of F-58 ([web-ui.md](web-ui.md#the-shared-asset-store), R-HA-020,
 build that a replica published: the primary key `(locale, path)`, `blob_sha256` with the reference rule of R-STOR-003 (indexed, guard
 trigger, delete and update release triggers, the surrogate `id` for the update trigger), `size`, `published_by` (the publisher's
 version and commit), `published_at` and `seen_at`. CHECKs keep the locale to the locale-code form and the path to `[A-Za-z0-9_./-]`
-without a dot segment; the hashed pattern itself is the code's (`webui.IsHashed`). A row is write-once (`ON CONFLICT DO NOTHING`);
-`seen_at` is renewed by every replica whose build has the file (`TouchUIAssets`, rows renewed in the last half hour are left alone),
-and `PruneUIAssets` deletes the rows not renewed for 7 days, which queues their blobs for the collector. The table is transient in
+without a dot segment; the hashed pattern itself is the code's (`webui.IsHashed`). The statements compare a row's `blob_sha256` with the
+replica's own digest: `seen_at` is renewed only by a replica whose build has the row's bytes (`TouchUIAssets`, rows renewed in the last
+half hour are left alone), and `InsertUIAsset` replaces a row with other bytes only when its blob is not live and `ok` or it was not
+renewed for 2 hours (Q-UI-142), and `PruneUIAssets` deletes the rows not renewed for 7 days, which queues their blobs for the collector. The table is transient in
 backups ([tables_ui.go](../../internal/meta/postgres/tables_ui.go)): a restore leaves it empty and the replicas publish again. The
 statements are in [ui_assets.sql](../../internal/meta/postgres/queries/ui_assets.sql); a list of files travels as one array of
 `<locale>/<path>` names, because sqlc has no multi-array `unnest`. Tested by

@@ -25,9 +25,11 @@ type GetUIAssetRow struct {
 	Size       int64
 }
 
-// The statements of the UI's shared asset store (R-HA-020, Q-HA-120 to Q-HA-122, internal/webui/shared). A file is named
-// by its locale directory and its path below it; a list of files travels as one array of "<locale>/<path>" names, because
-// a locale never holds a slash and sqlc has no multi-array unnest.
+// The statements of the UI's shared asset store (R-HA-020, Q-HA-120 to Q-HA-122, Q-UI-142, internal/webui/shared). A row is
+// keyed by the locale directory and the path below it, and a replica's file is told by its bytes as well: the hash in a
+// file's name covers the code before the translations are inlined, so two builds can fill one name with different bytes
+// (Q-UI-140). A build's files travel as one JSON array of {"locale", "path", "sha256" (hex)} objects, because sqlc has no
+// multi-array unnest.
 // The lookup of a request for a hashed file the replica's own build lacks: the primary key.
 func (q *Queries) GetUIAsset(ctx context.Context, arg GetUIAssetParams) ([]GetUIAssetRow, error) {
 	rows, err := q.db.Query(ctx, getUIAsset, arg.Locale, arg.Path)
@@ -52,7 +54,13 @@ func (q *Queries) GetUIAsset(ctx context.Context, arg GetUIAssetParams) ([]GetUI
 const insertUIAsset = `-- name: InsertUIAsset :execrows
 INSERT INTO ui_assets (locale, path, blob_sha256, size, published_by)
 VALUES ($1::text, $2::text, $3::bytea, $4::bigint, $5::text)
-ON CONFLICT (locale, path) DO NOTHING
+ON CONFLICT (locale, path) DO UPDATE
+   SET blob_sha256 = EXCLUDED.blob_sha256, size = EXCLUDED.size, published_by = EXCLUDED.published_by,
+       published_at = now(), seen_at = now()
+ WHERE ui_assets.blob_sha256 <> EXCLUDED.blob_sha256
+   AND (ui_assets.seen_at < now() - make_interval(secs => $6::float8)
+        OR NOT EXISTS (SELECT 1 FROM blobs b
+                        WHERE b.sha256 = ui_assets.blob_sha256 AND b.state = 'live' AND b.content_status = 'ok'))
 `
 
 type InsertUIAssetParams struct {
@@ -61,10 +69,13 @@ type InsertUIAssetParams struct {
 	BlobSha256  []byte
 	Size        int64
 	PublishedBy string
+	StaleSecs   float64
 }
 
-// Write-once: a row another replica inserted first stays as it is. Runs in the link transaction of the blob's commit, whose
-// guard trigger checks the blob is live under the commit's lock (R-STOR-005).
+// The row of a name another replica wrote first stays, with two exceptions (Q-UI-142): its blob is not live and ok any more,
+// or no replica whose build has its bytes renewed it within stale_secs. Then the row takes this replica's bytes, and the
+// update trigger queues the old blob for collection (R-STOR-003). Runs in the link transaction of the blob's commit, whose
+// guard trigger checks the new blob is live under the commit's lock (R-STOR-005).
 func (q *Queries) InsertUIAsset(ctx context.Context, arg InsertUIAssetParams) (int64, error) {
 	result, err := q.db.Exec(ctx, insertUIAsset,
 		arg.Locale,
@@ -72,6 +83,7 @@ func (q *Queries) InsertUIAsset(ctx context.Context, arg InsertUIAssetParams) (i
 		arg.BlobSha256,
 		arg.Size,
 		arg.PublishedBy,
+		arg.StaleSecs,
 	)
 	if err != nil {
 		return 0, err
@@ -94,20 +106,20 @@ func (q *Queries) PruneUIAssets(ctx context.Context, retentionSecs float64) (int
 
 const touchUIAssets = `-- name: TouchUIAssets :execrows
 UPDATE ui_assets a SET seen_at = now()
-  FROM unnest($2::text[]) AS n(name)
- WHERE a.locale = split_part(n.name, '/', 1) AND a.path = substr(n.name, strpos(n.name, '/') + 1)
+  FROM jsonb_to_recordset($2::text::jsonb) AS f(locale text, path text, sha256 text)
+ WHERE a.locale = f.locale AND a.path = f.path AND a.blob_sha256 = decode(f.sha256, 'hex')
    AND a.seen_at < now() - make_interval(secs => $1::float8)
 `
 
 type TouchUIAssetsParams struct {
 	FreshSecs float64
-	Names     []string
+	Files     string
 }
 
-// A replica renews the rows of its build's files; a row renewed within fresh_secs is left alone, so that the replicas of
-// one release do not all rewrite the same rows.
+// A replica renews the rows that hold its build's own bytes, never a row of the same name with other bytes; a row renewed
+// within fresh_secs is left alone, so that the replicas of one release do not all rewrite the same rows.
 func (q *Queries) TouchUIAssets(ctx context.Context, arg TouchUIAssetsParams) (int64, error) {
-	result, err := q.db.Exec(ctx, touchUIAssets, arg.FreshSecs, arg.Names)
+	result, err := q.db.Exec(ctx, touchUIAssets, arg.FreshSecs, arg.Files)
 	if err != nil {
 		return 0, err
 	}
@@ -116,15 +128,16 @@ func (q *Queries) TouchUIAssets(ctx context.Context, arg TouchUIAssetsParams) (i
 
 const uIAssetsPresent = `-- name: UIAssetsPresent :many
 SELECT (a.locale || '/' || a.path)::text AS name
-  FROM unnest($1::text[]) AS n(name)
-  JOIN ui_assets a ON a.locale = split_part(n.name, '/', 1) AND a.path = substr(n.name, strpos(n.name, '/') + 1)
-  JOIN blobs b ON b.sha256 = a.blob_sha256 AND b.content_status = 'ok'
+  FROM jsonb_to_recordset($1::text::jsonb) AS f(locale text, path text, sha256 text)
+  JOIN ui_assets a ON a.locale = f.locale AND a.path = f.path AND a.blob_sha256 = decode(f.sha256, 'hex')
+  JOIN blobs b ON b.sha256 = a.blob_sha256 AND b.state = 'live' AND b.content_status = 'ok'
 `
 
-// Which of a build's files have a row, whoever published it, whose blob is not marked damaged: a file whose object a read
-// found missing or corrupt (R-STOR-013) is committed again, and the commit's repair writes the object anew.
-func (q *Queries) UIAssetsPresent(ctx context.Context, names []string) ([]string, error) {
-	rows, err := q.db.Query(ctx, uIAssetsPresent, names)
+// Which of a build's files have a row with the build's own bytes whose blob is live and not marked damaged. A row with other
+// bytes, or whose object a read found missing or corrupt (R-STOR-013), counts as missing: the replica commits its file, the
+// commit repairs an object of the same bytes, and InsertUIAsset decides whether the row takes the replica's bytes.
+func (q *Queries) UIAssetsPresent(ctx context.Context, files string) ([]string, error) {
+	rows, err := q.db.Query(ctx, uIAssetsPresent, files)
 	if err != nil {
 		return nil, err
 	}

@@ -16,6 +16,9 @@ import (
 type OpenOptions struct {
 	// Range reads part of the blob. Ranged reads cannot be verified (R-STOR-013).
 	Range *ByteRange
+	// Verify verifies a full read even when storage.download.verify is off: a caller whose bytes reach a browser as
+	// code of trove's origin, the shared asset store of the UI (Q-UI-143), never serves an object it has not checked.
+	Verify bool
 }
 
 // Open opens the content of a blob for reading. size is the blob row's size.
@@ -53,7 +56,7 @@ func (s *Store) Open(ctx context.Context, d Digest, size int64, o OpenOptions) (
 		}
 		return nil, mapStoreErr(err)
 	}
-	if o.Range != nil || !s.cfg.Download.Verify {
+	if o.Range != nil || (!s.cfg.Download.Verify && !o.Verify) {
 		return &chargedBody{ReadCloser: body, undo: undo}, nil
 	}
 	if info.Size >= 0 && info.Size != size { // -1: the response did not say; the digest check at the end decides

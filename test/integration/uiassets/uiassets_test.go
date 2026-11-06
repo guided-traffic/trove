@@ -8,6 +8,8 @@ package uiassets
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"net"
 	"net/url"
@@ -236,6 +238,66 @@ func TestR_HA_020_SharedUIAssets(t *testing.T) {
 		if got := st.Text(`SELECT content_status FROM blobs WHERE sha256 = ` + blobOfMain); got != "ok" {
 			t.Errorf("the blob of A's main script is %q after a replica of A started, want ok", got)
 		}
+	})
+
+	// d is a build without the name both A and B fill with their own translation, so it serves that name from the store.
+	d := newBuild("D", nil)
+	for _, l := range []string{"en", "de"} {
+		delete(d.tree, l+"/chunk-TRANSLAT.js")
+	}
+	rd := st.Start(t, testenv.ReplicaOptions{Name: "ui-d", Role: "api", UI: d.tree})
+	rowOf := func(locale string) string {
+		return st.Text(`SELECT encode(blob_sha256, 'hex') FROM ui_assets WHERE locale = $1 AND path = 'chunk-TRANSLAT.js'`, locale)
+	}
+	digest := func(b build, locale string) string {
+		sum := sha256.Sum256(b.file(t, locale, "chunk-TRANSLAT.js"))
+		return hex.EncodeToString(sum[:])
+	}
+
+	t.Run("R-HA-020 a name two builds fill with other bytes: renewed only by the build whose bytes it holds, replaced when they went stale (Q-UI-142)", func(t *testing.T) {
+		if rowOf("en") != digest(a, "en") {
+			t.Fatalf("the row of en/chunk-TRANSLAT.js holds %s, want A's bytes %s (A published first)", rowOf("en"), digest(a, "en"))
+		}
+		// 90 minutes: older than the half hour a renewal skips, younger than StaleAfter (2 h)
+		st.Exec(`UPDATE ui_assets SET seen_at = now() - interval '90 minutes' WHERE locale = 'en' AND path = 'chunk-TRANSLAT.js'`)
+		st.Start(t, testenv.ReplicaOptions{Name: "ui-b3", Role: "api", UI: b.tree})
+		if n := st.Number(`SELECT count(*) FROM ui_assets WHERE locale = 'en' AND path = 'chunk-TRANSLAT.js' AND seen_at > now() - interval '1 hour'`); n != 0 {
+			t.Error("a replica of B renewed the row that holds A's bytes")
+		}
+		if rowOf("en") != digest(a, "en") {
+			t.Errorf("a replica of B replaced A's bytes before they went stale")
+		}
+		// no replica of A's bytes renewed the row for 3 hours: A no longer runs
+		st.Exec(`UPDATE ui_assets SET seen_at = now() - interval '3 hours' WHERE locale = 'en' AND path = 'chunk-TRANSLAT.js'`)
+		st.Start(t, testenv.ReplicaOptions{Name: "ui-b4", Role: "api", UI: b.tree})
+		if got := rowOf("en"); got != digest(b, "en") {
+			t.Fatalf("the stale row holds %s, want B's bytes %s", got, digest(b, "en"))
+		}
+		if n := st.Number(`SELECT count(*) FROM blob_gc_queue WHERE encode(sha256, 'hex') = $1`, digest(a, "en")); n != 1 {
+			t.Errorf("A's replaced blob is not queued for collection")
+		}
+		wantFile(t, st, rd, "en", "chunk-TRANSLAT.js", b.file(t, "en", "chunk-TRANSLAT.js"))
+	})
+
+	t.Run("R-HA-020 R-STOR-013 a row whose blob is damaged takes the bytes of a build that has the name, whoever published it first (Q-UI-142)", func(t *testing.T) {
+		if rowOf("de") != digest(a, "de") {
+			t.Fatalf("the row of de/chunk-TRANSLAT.js holds %s, want A's bytes", rowOf("de"))
+		}
+		// the row's object is gone from the bucket: a blob row without an object stands for it, and the row points at it
+		lost := bytes.Repeat([]byte{0x5a}, 32)
+		st.Exec(`INSERT INTO blobs (sha256, sha1, md5, sha512, size, state) VALUES ($1, $2, $3, $4, 24, 'live')`,
+			lost, make([]byte, 20), make([]byte, 16), make([]byte, 64))
+		st.Exec(`UPDATE ui_assets SET blob_sha256 = $1, size = 24 WHERE locale = 'de' AND path = 'chunk-TRANSLAT.js'`, lost)
+		// D lacks the file and cannot read it from the store
+		wantStatus(t, st, rd, "/ui/de/chunk-TRANSLAT.js", 503)
+		// the blob check finds the object missing and marks the blob (R-STOR-013); the next replica of a build with the name
+		// gives the row its own bytes
+		st.Exec(`UPDATE blobs SET content_status = 'missing' WHERE sha256 = $1`, lost)
+		st.Start(t, testenv.ReplicaOptions{Name: "ui-b5", Role: "api", UI: b.tree})
+		if got := rowOf("de"); got != digest(b, "de") {
+			t.Fatalf("the row with the damaged blob holds %s, want B's bytes %s", got, digest(b, "de"))
+		}
+		wantFile(t, st, rd, "de", "chunk-TRANSLAT.js", b.file(t, "de", "chunk-TRANSLAT.js"))
 	})
 
 	t.Run("R-HA-020 a file no replica renewed within the retention is pruned and its blob queued for collection", func(t *testing.T) {

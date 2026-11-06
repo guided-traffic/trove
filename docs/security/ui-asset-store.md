@@ -21,11 +21,17 @@ stays. It describes [internal/webui/shared.go](../../internal/webui/shared.go) a
   directories, then `<name>-<8 characters>.<extension>`. `index.html`, the copies of `web/public` (the favicon) and every other
   path are never published, and `build:embed` fails a build in which a copy of `web/public` would match the pattern. The table's
   CHECK refuses a path with a dot segment or a character outside `[A-Za-z0-9_./-]`.
-- **Write-once by name.** A row is inserted with `ON CONFLICT DO NOTHING`: the first replica that publishes a `(locale, path)`
-  decides its content, and no later replica replaces it. A replica serves its own file before the store's in every case.
-- **The content is a blob.** It is spooled, hashed and committed by the protocol of R-STOR-005, deduplicated by SHA-256 with the
-  rest of the blob store, and verified against its digest when it is read (R-STOR-013): an object that was changed in the bucket
-  is not served (the read fails, the request answers `503`, the blob is marked corrupt).
+- **One row per name, renewed by content.** A replica renews only the rows that hold its own bytes. A row with other bytes stays as
+  long as a build with those bytes renews it; a replica replaces it with its own bytes only when the row's blob is not live and `ok`
+  or no replica renewed it for 2 hours ([Q-UI-142](../spec/api-and-ui.md#q-ui-142--which-bytes-the-shared-store-keeps-for-a-name-that-two-builds-fill-differently)).
+  Either way the new bytes are those of a build embedded in a replica. A replica serves its own file before the store's in every
+  case.
+- **The content is a blob, always verified.** It is spooled, hashed and committed by the protocol of R-STOR-005, deduplicated by
+  SHA-256 with the rest of the blob store, and verified against its digest whenever it is read, also with
+  `storage.download.verify: false` ([Q-UI-143](../spec/api-and-ui.md#q-ui-143--a-file-of-the-shared-store-is-verified-whatever-storagedownloadverify-says)):
+  the blob store verifies the read (`OpenOptions.Verify`) and the store checks the length and the SHA-256 of the buffered bytes once
+  more. An object that was changed in the bucket is not served: the read fails, the request answers `503`, the blob is marked
+  corrupt.
 
 ## What a request can read
 
@@ -42,8 +48,8 @@ stays. It describes [internal/webui/shared.go](../../internal/webui/shared.go) a
 
 ## What it costs a replica
 
-- A found file is kept in the replica's memory, 32 MiB at most, the oldest out first; a name the store did not know is remembered
-  for 10 s, 4,096 names at most; concurrent requests for one file read the store once. A file larger than 8 MiB is never
+- A found file is kept in the replica's memory, 32 MiB at most, the oldest out first, and read again after an hour; a name the
+  store did not know is remembered for 10 s, 4,096 names at most; concurrent requests for one file read the store once. A file larger than 8 MiB is never
   published, so a read holds at most that much.
 - The publish at start-up waits for the store for at most a minute before the replica turns ready
   ([Q-HA-123](../spec/ha-and-helm.md#q-ha-123--when-a-replica-publishes-its-build)); a store that refuses writes delays the
@@ -71,7 +77,8 @@ something names it: an `index.html` of trove never does, so the writer still nee
 
 What makes it real: write access to the database, which already decides every role binding and token of the installation
 ([roles-and-trust-boundaries.md](roles-and-trust-boundaries.md)): the store adds a path from that access into the browser. The
-digest check of a read protects against a writer of the bucket alone, not against one of the database. A signature of the
+digest check of every read, which holds whatever `storage.download.verify` says (Q-UI-143), protects against a writer of the bucket
+alone, not against one of the database, which names the digest. A signature of the
 build's files that a replica checks before it serves them is not built.
 
 ### H-544 · A request for an unknown hashed name costs a database read, and `/ui/` has no request limit

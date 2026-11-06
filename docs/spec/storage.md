@@ -1193,7 +1193,9 @@ Priority: **MVP** · Covers: trove-only
   fault.
 - Ranged responses and presigned redirects (R-STOR-014) cannot be verified this way; see H-11.
 - The check is on by default (Q-STOR-6). `storage.download.verify: false` disables it for
-  replicas whose CPU, not their network, limits download throughput.
+  replicas whose CPU, not their network, limits download throughput. The reads of the UI's shared asset store are verified
+  whatever the setting says, because their bytes run in the browser as trove's code
+  ([api-and-ui.md](api-and-ui.md#q-ui-143--a-file-of-the-shared-store-is-verified-whatever-storagedownloadverify-says)).
 
 Configuration:
 

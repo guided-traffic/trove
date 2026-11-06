@@ -147,7 +147,7 @@ Gaps against the specification, all visible at construction (nothing is silently
 ## Download verification (R-STOR-013, Q-STOR-6)
 
 `Store.Open(ctx, digest, size, OpenOptions)` returns a reader. A full read is verified unless
-`storage.download.verify` is false: SHA-256 is computed while reading and the last `hold_back` bytes are not released
+`storage.download.verify` is false and the caller did not set `OpenOptions.Verify` (the UI's shared asset store sets it, Q-UI-143): SHA-256 is computed while reading and the last `hold_back` bytes are not released
 before the body ended and the digest matched. On a mismatch the reader returns `ErrCorrupt` instead of the held bytes
 (the HTTP layer aborts the response). Only evidence about the object marks the blob `corrupt`: an object whose size
 differs from the row's, or a body read to its end with another digest. A transport error aborts the read but changes no

@@ -257,6 +257,37 @@ func TestSharedAssets(t *testing.T) {
 		}
 	})
 
+	t.Run("R-HA-020 a kept file is read again after its TTL: new bytes replace it, a store away leaves it served, a name gone is a 404 (Q-UI-142)", func(t *testing.T) {
+		store := otherRelease()
+		h := newHandler(t, builtFS(), func(o *Options) { o.Shared = store })
+		now := time.Unix(1_800_000_000, 0)
+		h.shared.now = func() time.Time { return now }
+		if rec := do(h, "GET", "/ui/de/main-OTHER123.js"); rec.Body.String() != "console.log('other de')" {
+			t.Fatalf("first read: %q", rec.Body.String())
+		}
+		// the row of the name took another build's bytes (another translation)
+		store.files["de/main-OTHER123.js"] = []byte("console.log('third de')")
+		if rec := do(h, "GET", "/ui/de/main-OTHER123.js"); rec.Body.String() != "console.log('other de')" {
+			t.Fatalf("within the TTL the kept copy is served: %q", rec.Body.String())
+		}
+		now = now.Add(sharedFileTTL + time.Second)
+		if rec := do(h, "GET", "/ui/de/main-OTHER123.js"); rec.Body.String() != "console.log('third de')" {
+			t.Fatalf("after the TTL: %q", rec.Body.String())
+		}
+		now = now.Add(sharedFileTTL + time.Second)
+		store.err = errors.New("object store unreachable")
+		var reported int
+		h.onSharedError = func(string, string, error) { reported++ }
+		if rec := do(h, "GET", "/ui/de/main-OTHER123.js"); rec.Code != 200 || rec.Body.String() != "console.log('third de')" || reported != 0 {
+			t.Fatalf("store away after the TTL: code %d body %q reported %d", rec.Code, rec.Body.String(), reported)
+		}
+		store.err = nil
+		delete(store.files, "de/main-OTHER123.js")
+		if rec := do(h, "GET", "/ui/de/main-OTHER123.js"); rec.Code != 404 {
+			t.Fatalf("a name the store no longer has: code %d", rec.Code)
+		}
+	})
+
 	t.Run("R-HA-020 concurrent requests for one file read the store once", func(t *testing.T) {
 		store := otherRelease()
 		store.gate = make(chan struct{})
