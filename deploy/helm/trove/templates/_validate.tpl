@@ -218,9 +218,6 @@ Endpoints (R-EP-008, R-HA-029): every failure names the value. Argument: the roo
 {{- end -}}
 {{- $_ := set $wild (lower $e.wildcardHost) $name -}}
 {{- end -}}
-{{- if and (eq $e.wildcardRoot "label") (not $e.wildcardHost) -}}
-{{- fail (printf "trove: %s.wildcardRoot is label, which needs %s.wildcardHost" $key $key) -}}
-{{- end -}}
 {{- /* TLS inputs need TLS on trove's listeners (R-HA-063). */ -}}
 {{- if and (not $v.tls.enabled) (or $e.tlsSecret $e.tlsExtraSecrets $e.tlsClientCaSecret) -}}
 {{- fail (printf "trove: %s.tls.existingSecret, extraSecrets and clientCaSecret need tls.enabled: true" $key) -}}

@@ -3184,13 +3184,6 @@
                 "type": "string"
               }
             },
-            "wildcardRoot": {
-              "type": "string",
-              "enum": [
-                "none",
-                "label"
-              ]
-            },
             "surface": {
               "type": "array",
               "items": {
@@ -3270,13 +3263,6 @@
             "additionalProperties": {
               "type": "string"
             }
-          },
-          "wildcardRoot": {
-            "type": "string",
-            "enum": [
-              "none",
-              "label"
-            ]
           },
           "surface": {
             "type": "array",

@@ -147,8 +147,8 @@ func TestEndpoints(t *testing.T) {
 		}
 		c := eps["customers"]
 		if str(c, "listen") != ":8443" || str(c, "base_url") != "https://packages.example.com" || str(c, "wildcard_host") != "*.registry.example.com" ||
-			str(c, "wildcard_root") != "label" || str(c, "exposure") != "rules" || str(c, "replica_header") != "never" ||
-			at(c, "max_in_flight") != 1024 || str(c, "rate_limit_class") != "external" || str(c, "host_roots", "pkgs.example.org") != "docker-hub" {
+			str(c, "exposure") != "rules" || str(c, "replica_header") != "never" ||
+			at(c, "max_in_flight") != 1024 || str(c, "rate_limit_class") != "external" || str(c, "host_roots", "pkgs.example.org") != "web/docker-hub" {
 			t.Errorf("customers config = %v", c)
 		}
 		if at(c, "auth", "bound_tokens_only") != true || at(c, "auth", "anonymous") != false || at(c, "cache_fill") != false {
@@ -397,7 +397,6 @@ func TestEndpoints(t *testing.T) {
 			{"a pool below two replicas", base("endpoints.c.pool.enabled=true", "endpoints.c.pool.replicaCount=1"), []string{"endpoints.c.pool.replicaCount"}},
 			{"extra pairs without TLS", base("tls.enabled=false", "endpoints.c.tls.extraSecrets={wild}"), []string{"endpoints.c.tls", "tls.enabled"}},
 			{"a client CA without TLS", base("tls.enabled=false", "endpoints.c.tls.clientCaSecret=ca"), []string{"endpoints.c.tls", "tls.enabled"}},
-			{"label roots without a wildcard host", base("endpoints.c.wildcardRoot=label"), []string{"endpoints.c.wildcardRoot"}},
 			{"an endpoint Ingress that verifies with haproxy and names no CA (the default controller)", base("endpoints.c.ingress.enabled=true"), []string{"endpoints.c.ingress.backendTLS.caSecret", "haproxy", "verify"}},
 			{"an endpoint Ingress that verifies with ingress-nginx and names no CA", base("endpoints.c.ingress.enabled=true", "endpoints.c.ingress.backendTLS.controller=ingress-nginx"), []string{"endpoints.c.ingress.backendTLS.caSecret", "ingress-nginx"}},
 			{"an endpoint Ingress that verifies with traefik and names no ServersTransport", base("endpoints.c.ingress.enabled=true", "endpoints.c.ingress.backendTLS.controller=traefik"), []string{"endpoints.c.ingress.backendTLS.serversTransport", "traefik"}},
