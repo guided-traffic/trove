@@ -69,7 +69,7 @@ func (s *Service) resolveVirtual(ctx context.Context, qs *q.Queries, v *validati
 		case k == "" || k == d.Key || strings.Contains(k, "/"):
 			// reported with the document rules
 		case !found:
-			v.add(ptr, errs.CodeInvalidMember, "no repository has the key "+strconv.Quote(k))
+			v.add(ptr, errs.CodeInvalidMember, "the project "+project+" has no repository with the key "+strconv.Quote(k))
 		case Lifecycle(row.Lifecycle) == Deleting:
 			v.add(ptr, errs.CodeInvalidMember, "the repository is being deleted")
 		case row.Format != d.Format:

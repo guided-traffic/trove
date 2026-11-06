@@ -274,7 +274,7 @@ func TestR_REPO_048_ShadowingCheckAgainstTheRealExposureSet(t *testing.T) {
 			t.Fatalf("ci-bot: %+v", out)
 		}
 		// The remote member is in two virtual repositories, and ci-bot reads one of them.
-		if probes() != 1 || !slices.Equal(out.Virtuals, []string{"all"}) {
+		if probes() != 1 || !slices.Equal(out.Virtuals, []string{"it/all"}) {
 			t.Fatalf("probes %d virtual repositories %v", probes(), out.Virtuals)
 		}
 		out = check("lead", "team-local", "lodash")
