@@ -39,7 +39,7 @@ func TestR_AUTHZ_026_KeyRule(t *testing.T) {
 }
 
 func TestR_AUTHZ_026_ValidationOfTheFields(t *testing.T) {
-	ok := Input{Key: "web", DisplayName: "Web platform", Rights: DefaultRights()}
+	ok := Input{Key: "web", DisplayName: "Web platform"}
 	if err := problems(ok, true); err != nil {
 		t.Fatalf("valid input: %v", err)
 	}
@@ -146,22 +146,18 @@ func rawOf(t *testing.T, raw json.RawMessage) map[string]any {
 
 func TestR_AUTHZ_031_ProjectEventsCarryTheirJournalEntries(t *testing.T) {
 	actor := authz.Subject{Kind: principal.KindUser, ID: "u1", Name: "root"}
-	p := Project{ID: "p1", Key: "web", DisplayName: "Web", Rights: Rights{ManagePolicies: true}, Version: 4}
-	before := stateOf(Project{DisplayName: "Web", Rights: Rights{ManagePolicies: true, ManageRepositories: true}})
+	p := Project{ID: "p1", Key: "web", DisplayName: "Web", Version: 4}
+	before := stateOf(Project{DisplayName: "Web"})
 	after := stateOf(p)
 
-	t.Run("R-AUTHZ-031 an update journals the two switches before and after", func(t *testing.T) {
+	t.Run("R-AUTHZ-031 an update journals the identity of the project", func(t *testing.T) {
 		ev := projectEvent(audit.EventProjectUpdated, actor, p, before, after, 9, nil)
 		j := rawOf(t, ev.Journal)
 		if j["projectId"] != "p1" || j["project"] != "web" {
 			t.Errorf("identity: %v", j)
 		}
-		b, a := j["before"].(map[string]any), j["after"].(map[string]any)
-		if b["manageRepositories"] != true || a["manageRepositories"] != false || a["managePolicies"] != true {
-			t.Errorf("switches: %v", j)
-		}
-		if _, leaked := b["displayName"]; leaked {
-			t.Errorf("the journal holds what is not access-bearing: %v", b)
+		if _, leaked := j["before"]; leaked {
+			t.Errorf("the journal holds what is not access-bearing: %v", j)
 		}
 		if d := rawOf(t, ev.Details); d["epoch"] != float64(9) || d["version"] != float64(4) {
 			t.Errorf("details: %v", d)
@@ -176,24 +172,9 @@ func TestR_AUTHZ_031_ProjectEventsCarryTheirJournalEntries(t *testing.T) {
 			t.Errorf("%v", d)
 		}
 	})
-	t.Run("R-AUTHZ-031 a removed administrator and an unassigned repository journal IDs", func(t *testing.T) {
-		ev := adminEvent(audit.EventProjectAdminRemoved, actor, p, PrincipalRef{Kind: KindGroup, Name: "web-leads", ID: "g1"}, 11)
-		if j := rawOf(t, ev.Journal); j["principalId"] != "g1" || j["principal"] != "group:web-leads" || j["projectId"] != "p1" {
-			t.Errorf("admin: %v", j)
-		}
-		ev = assignmentEvent(audit.EventProjectRepositoryUnassigned, actor, p, repoMove{ID: "7", Key: "web-npm", Moved: true, Other: "docs"}, 12)
-		if j := rawOf(t, ev.Journal); j["repositoryId"] != "7" || j["repository"] != "web-npm" || j["projectId"] != "p1" {
-			t.Errorf("unassign: %v", j)
-		}
-		if d := rawOf(t, ev.Details); d["otherProject"] != "docs" || d["moved"] != true {
-			t.Errorf("details: %v", d)
-		}
-	})
 	t.Run("R-AUTHZ-031 the events that grant carry no journal entry", func(t *testing.T) {
 		for _, ev := range []audit.Event{
 			projectEvent(audit.EventProjectCreated, actor, p, nil, after, 1, nil),
-			adminEvent(audit.EventProjectAdminAdded, actor, p, PrincipalRef{Kind: KindUser, Name: "alice", ID: "u2"}, 2),
-			assignmentEvent(audit.EventProjectRepositoryAssigned, actor, p, repoMove{ID: "7", Key: "web-npm"}, 3),
 		} {
 			if ev.Journal != nil {
 				t.Errorf("%s has a journal entry", ev.Type)

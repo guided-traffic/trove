@@ -29,19 +29,18 @@ import (
 // repository_in_use; 409 repository_exists; 412 precondition_failed; 422
 // validation_failed with the field codes of R-AUTHZ-026.
 type Service interface {
-	// List returns every project with its administrators and counts, ordered by key.
-	// The caller filters to the projects it may see (an administrator of a project
-	// sees that project only, Q-AUTHZ-180).
+	// List returns every project with its members and counts, ordered by key. The
+	// caller filters to the projects it may see (a member sees its projects only,
+	// Q-AUTHZ-207).
 	List(ctx context.Context) ([]Project, error)
 	// Get returns one project.
 	Get(ctx context.Context, key string) (Project, error)
 	// CreateIn creates a project on the caller's transaction, for an idempotent
 	// create (R-API-014). *epoch is set by a hook that runs after the change log
-	// raised it. The key must not overlap another project's key or a global service
-	// account's name (409 project_key_overlap, Q-AUTHZ-176).
+	// raised it.
 	CreateIn(ctx context.Context, tx meta.Tx, actor authz.Subject, in Input, epoch *int64) (Project, error)
-	// Replace changes display name, description and switches; the key is the
-	// project's own. It returns the project and the epoch.
+	// Replace changes display name and description; the key is the project's own.
+	// It returns the project and the epoch.
 	Replace(ctx context.Context, actor authz.Subject, key string, expected int64, in Input) (Project, int64, error)
 	// Delete deletes an empty project: first its policies, one by one through the
 	// policy store so that each deletion is audited and journaled, then the project
@@ -73,7 +72,7 @@ type Service interface {
 	// the epoch.
 	MoveRepository(ctx context.Context, actor authz.Subject, from qname.Repo, toProject string) (to qname.Repo, epoch int64, err error)
 	// LookupPrincipals returns active users and groups whose name starts with prefix,
-	// for a project administrator who names principals in policies (Q-AUTHZ-182). kind
+	// for an Owner of a project who names principals in policies (Q-AUTHZ-182). kind
 	// is "", user or group; limit is at most MaxLookup. The answer holds the kind and
 	// the name, nothing else.
 	LookupPrincipals(ctx context.Context, prefix string, kind PrincipalKind, limit int) ([]PrincipalRef, error)

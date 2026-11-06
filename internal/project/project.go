@@ -15,26 +15,11 @@ const (
 	MaxDescription = 1024
 )
 
-// Rights are the two privilege switches an administrator of trove sets per
-// project (R-AUTHZ-026). They bound what the project's administrators may do.
-type Rights struct {
-	// ManagePolicies lets them create, change and delete project policies, create and
-	// enable project service accounts and issue their tokens, and look up users and
-	// groups. Default true.
-	ManagePolicies bool
-	// ManageRepositories lets them create, change and delete the project's
-	// repositories of every class and test the upstream of its remotes. Default false.
-	ManageRepositories bool
-}
-
-// DefaultRights are the switches of a project created without them.
-func DefaultRights() Rights { return Rights{ManagePolicies: true, ManageRepositories: false} }
-
-// PrincipalKind is the kind of a project administrator or of a lookup result: a user
-// or a group (Q-AUTHZ-183). Service accounts and CI mappings never administer.
+// PrincipalKind is the kind of a project member or of a lookup result: a user or a
+// group (Q-AUTHZ-183). Service accounts and CI mappings are no members.
 type PrincipalKind string
 
-// The two kinds that administer a project.
+// The two kinds that are members of a project.
 const (
 	KindUser  PrincipalKind = "user"
 	KindGroup PrincipalKind = "group"
@@ -58,7 +43,6 @@ type Input struct {
 	Key         string
 	DisplayName string
 	Description string
-	Rights
 }
 
 // Project is a stored project as the service returns it.
@@ -68,9 +52,8 @@ type Project struct {
 	Key         string
 	DisplayName string
 	Description string
-	Rights
-	// Admins are the administrators, users and groups, ordered by kind and name.
-	Admins []PrincipalRef
+	// Members are the users and groups that are members, with their role, ordered by kind and name.
+	Members []Member
 	// Repositories, ServiceAccounts, Policies and CIMappings count what belongs to the
 	// project; a project with a repository (in any lifecycle state), a service account
 	// or a CI mapping of its tier is not empty and cannot be deleted (Q-AUTHZ-169,
@@ -80,8 +63,7 @@ type Project struct {
 	Policies        int
 	CIMappings      int
 	// Version is the ETag source. It moves with the fields of the PUT (display name,
-	// description, switches) and with nothing else: administrators and assignments
-	// leave it (Q-AUTHZ-185).
+	// description) and with nothing else: members and repositories leave it (Q-AUTHZ-185).
 	Version   int64
 	CreatedAt time.Time
 	CreatedBy string

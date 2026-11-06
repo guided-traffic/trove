@@ -9,7 +9,6 @@ import (
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/authz"
-	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
@@ -64,22 +63,23 @@ func (s *service) List(ctx context.Context) ([]Project, error) {
 		if err != nil {
 			return err
 		}
-		adm, err := qs.ProjectAdminsOfAll(ctx)
+		mem, err := qs.ProjectMembersOfAll(ctx)
 		if err != nil {
 			return err
 		}
-		byKey := map[string][]PrincipalRef{}
-		for _, a := range adm {
-			byKey[a.ProjectKey] = append(byKey[a.ProjectKey],
-				PrincipalRef{Kind: PrincipalKind(a.PrincipalKind), Name: a.PrincipalName, ID: a.PrincipalID})
+		byKey := map[string][]Member{}
+		for _, m := range mem {
+			if member, ok := memberOf(m.ProjectKey, m.PrincipalKind, m.PrincipalName, m.PrincipalID, m.Role); ok {
+				byKey[m.ProjectKey] = append(byKey[m.ProjectKey], member)
+			}
 		}
 		out = make([]Project, 0, len(rows))
 		for _, r := range rows {
-			admins := byKey[r.Key]
-			if admins == nil {
-				admins = []PrincipalRef{}
+			members := byKey[r.Key]
+			if members == nil {
+				members = []Member{}
 			}
-			out = append(out, toProject(head(r), admins))
+			out = append(out, toProject(head(r), members))
 		}
 		return nil
 	})
@@ -90,7 +90,7 @@ func (s *service) List(ctx context.Context) ([]Project, error) {
 	return out, nil
 }
 
-// Get returns one project with its administrators.
+// Get returns one project with its members.
 func (s *service) Get(ctx context.Context, key string) (Project, error) {
 	var p Project
 	err := s.inTx(ctx, func(_ meta.Tx, qs *q.Queries) (err error) {
@@ -100,10 +100,7 @@ func (s *service) Get(ctx context.Context, key string) (Project, error) {
 	return p, err
 }
 
-// CreateIn creates a project on the caller's transaction (R-AUTHZ-026). The keys of
-// all projects are serialised by an advisory lock: two creates of `web` and
-// `web-app` would each pass the overlap rule against the state the other has not
-// committed.
+// CreateIn creates a project on the caller's transaction (R-AUTHZ-026).
 func (s *service) CreateIn(ctx context.Context, tx meta.Tx, actor authz.Subject, in Input, epoch *int64) (Project, error) {
 	if err := problems(in, true); err != nil {
 		return Project{}, err
@@ -112,16 +109,9 @@ func (s *service) CreateIn(ctx context.Context, tx meta.Tx, actor authz.Subject,
 	if err != nil {
 		return Project{}, err
 	}
-	if err := cluster.LockConfigObject(ctx, tx, cluster.ConfigProjects); err != nil {
-		return Project{}, err
-	}
-	if err := checkKeyOverlap(ctx, qs, in.Key); err != nil {
-		return Project{}, err
-	}
 	id := newID()
 	rows, err := qs.ProjectInsert(ctx, q.ProjectInsertParams{
-		ID: id, Key: in.Key, DisplayName: in.DisplayName, Description: in.Description,
-		ManagePolicies: in.ManagePolicies, ManageRepositories: in.ManageRepositories, Actor: actorID(actor),
+		ID: id, Key: in.Key, DisplayName: in.DisplayName, Description: in.Description, Actor: actorID(actor),
 	})
 	if err != nil {
 		return Project{}, err
@@ -142,32 +132,8 @@ func (s *service) CreateIn(ctx context.Context, tx meta.Tx, actor authz.Subject,
 	return out, nil
 }
 
-// checkKeyOverlap refuses a key that is another project's key followed by a hyphen
-// and more (or the reverse), and a key that starts, up to a hyphen, the name of a
-// global service account (Q-AUTHZ-176): the administrator of `web` could otherwise
-// create `web-app-…` names that read as another project's.
-func checkKeyOverlap(ctx context.Context, qs *q.Queries, key string) error {
-	others, err := qs.ProjectKeysOverlapping(ctx, key)
-	if err != nil {
-		return err
-	}
-	if len(others) > 0 {
-		return errs.E(errs.Conflict, errs.CodeProjectKeyOverlap,
-			fmt.Sprintf("The key %q overlaps the project %q: no project key is another's key followed by a hyphen.", key, others[0]))
-	}
-	names, err := qs.ProjectGlobalAccountsWithPrefix(ctx, key)
-	if err != nil {
-		return err
-	}
-	if len(names) > 0 {
-		return errs.E(errs.Conflict, errs.CodeProjectKeyOverlap,
-			fmt.Sprintf("The key %q is the start of the global service account %q: rename or delete the account first.", key, names[0]))
-	}
-	return nil
-}
-
-// Replace changes display name, description and switches under the version check
-// (R-API-012). The version moves with these four fields only (Q-AUTHZ-185).
+// Replace changes display name and description under the version check
+// (R-API-012). The version moves with these two fields only (Q-AUTHZ-185).
 func (s *service) Replace(ctx context.Context, actor authz.Subject, key string, expected int64, in Input) (Project, int64, error) {
 	if err := problems(in, false); err != nil {
 		return Project{}, 0, err
@@ -184,7 +150,6 @@ func (s *service) Replace(ctx context.Context, actor authz.Subject, key string, 
 		}
 		rows, err := qs.ProjectUpdate(ctx, q.ProjectUpdateParams{
 			DisplayName: in.DisplayName, Description: in.Description,
-			ManagePolicies: in.ManagePolicies, ManageRepositories: in.ManageRepositories,
 			Actor: actorID(actor), Key: key, Expected: expected,
 		})
 		if err != nil {
@@ -288,7 +253,7 @@ func checkDeletable(p Project, expected int64) error {
 	}
 	if !p.Empty() {
 		return errs.E(errs.Conflict, errs.CodeProjectNotEmpty,
-			fmt.Sprintf("The project %q still has %d repositories, %d service accounts and %d CI mappings; unassign the repositories and delete the accounts and the CI mappings first.",
+			fmt.Sprintf("The project %q still has %d repositories, %d service accounts and %d CI mappings; delete the repositories, the accounts and the CI mappings first.",
 				p.Key, p.Repositories, p.ServiceAccounts, p.CIMappings))
 	}
 	return nil
