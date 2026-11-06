@@ -331,7 +331,7 @@ removed between that decision and the commit does not stop it, and the credentia
 
 ### H-396 · A project administrator's policy write is decided on the replica's index
 
-The declaration admits an Owner of the project (the project administrator of the previous model) on the index of the request, which
+The declaration admits an Owner of the project on the index of the request, which
 may be up to `authz.cache.max_staleness` behind (R-AUTHZ-028), and the policy write does not decide again on the state its own
 transaction reads. An Owner that was removed or demoted, or a group it belonged to that lost the role, can therefore still create,
 replace or delete a project policy, and change members, for as long as the replica it reaches holds the older index: typically

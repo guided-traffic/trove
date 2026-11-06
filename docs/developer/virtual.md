@@ -28,7 +28,7 @@ catalog and the fakes of [virtualtest](../../internal/virtual/virtualtest/); npm
 | [pins.go](../../internal/repository/pins.go) | the prefix trie of claim and pin-rule patterns (`patTrie`) and the pin index of one virtual repository (`pinIndex.best`) |
 | [claims.go](../../internal/repository/claims.go) | `ClaimPattern` (the two admitted forms, specificity, overlap), the claim index (`claimIndex`), and the API service: `Service.Claims`, `Service.PutClaims`, the audit event |
 | [routing.go](../../internal/repository/routing.go) | `Routing`: `Route`, `RemoteRefused`, `CoveredByOwnClaim`, `ClaimsFor`, `ExposureSet`, `AutoClaim` |
-| [claims_api.go](../../internal/api/v1/claims_api.go) | `GET` and `PUT /api/v1/repositories/{repoKey}/claims` |
+| [claims_api.go](../../internal/api/v1/claims_api.go) | `GET` and `PUT /api/v1/projects/{projectKey}/repositories/{repoKey}/claims` |
 | [app/wire_virtual.go](../../internal/app/wire_virtual.go) | builds `Routing` after the repository snapshot; `wireRepository` calls it, the result is `a.m1.routing` |
 
 ## Where the data lives
@@ -132,8 +132,8 @@ R-NPM-033 withhold every name any claim or pin rule covers).
 
 | Operation | Declaration | Behavior |
 |---|---|---|
-| `GET /api/v1/repositories/{repoKey}/claims` | `read` on the repository | the claims sorted by pattern (byte order), `ETag: "<claims_version>"`, `304` on `If-None-Match`; a repository that cannot hold claims answers an empty list |
-| `PUT /api/v1/repositories/{repoKey}/claims` | `manage` on the repository, `x-trove-if-match: required` | replaces the manual set; `removeAuto` lists automatic claims to drop; 428 without `If-Match` (the shared step), 412 with `currentEtag` when stale |
+| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/claims` | `read` on the repository | the claims sorted by pattern (byte order), `ETag: "<claims_version>"`, `304` on `If-None-Match`; a repository that cannot hold claims answers an empty list |
+| `PUT /api/v1/projects/{projectKey}/repositories/{repoKey}/claims` | `manage` on the repository, `x-trove-if-match: required` | replaces the manual set; `removeAuto` lists automatic claims to drop; 428 without `If-Match` (the shared step), 412 with `currentEtag` when stale |
 
 `Service.PutClaims(ctx, caller, key, pre, in, guard)` runs in one transaction under the row lock: compare `claims_version`, validate
 (`invalid_pattern`, `invalid_value`, `out_of_range`, `not_applicable`), call `guard` when the request adds, keeps, narrows or removes a
@@ -206,7 +206,7 @@ what it needs of its neighbours it declares as interfaces ([Q-REPO-111](../spec/
 | [metrics.go](../../internal/virtual/metrics.go) | `trove_virtual_resolutions_total`, `trove_shadow_checks_total` |
 | [virtualtest](../../internal/virtual/virtualtest/) | the fakes and fixtures: repositories with members, `Rows` (package rows), `Merger` (a test format), `Remote` (a programmable remote engine), `Artifacts` (tiers), `Router`, `NewDecider` (the real decision point over a few grants) |
 | [formathost/virtual.go](../../internal/formathost/virtual.go) | `NewResolver` (the `formats.Resolver` over the engine), `NewVirtualLocals` (`Locals` over the package rows and the item store) |
-| [api/v1/resolution_api.go](../../internal/api/v1/resolution_api.go) | `GET /api/v1/repositories/{repoKey}/resolution?path=` |
+| [api/v1/resolution_api.go](../../internal/api/v1/resolution_api.go) | `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/resolution?path=` |
 | [app/wire_virtual_engine.go](../../internal/app/wire_virtual_engine.go) | the wiring step `virtual-engine` (inputs: `infra`, `virtualArea`, `authzArea`; the item store from the files area): builds the engine as a component; `resolutionExplainer` for the API |
 
 ### The request path
