@@ -1,11 +1,12 @@
 package repository
 
 import (
-	"github.com/guided-traffic/trove/internal/qname"
 	"log/slog"
 	"maps"
 	"slices"
 	"testing"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"

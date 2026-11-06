@@ -2,8 +2,9 @@ package evaluate
 
 import (
 	"context"
-	"github.com/guided-traffic/trove/internal/qname"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"

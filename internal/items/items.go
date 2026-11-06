@@ -23,11 +23,12 @@ package items
 
 import (
 	"context"
-	"github.com/guided-traffic/trove/internal/qname"
 	"io"
 	"log/slog"
 	"strconv"
 	"strings"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/principal"

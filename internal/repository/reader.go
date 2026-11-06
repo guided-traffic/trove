@@ -3,11 +3,12 @@ package repository
 import (
 	"context"
 	"errors"
-	"github.com/guided-traffic/trove/internal/qname"
 	"log/slog"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/cluster"

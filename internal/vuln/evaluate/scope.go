@@ -9,10 +9,11 @@ package evaluate
 
 import (
 	"context"
-	"github.com/guided-traffic/trove/internal/qname"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/vuln"

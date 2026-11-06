@@ -2,10 +2,11 @@ package edge
 
 import (
 	"encoding/hex"
-	"github.com/guided-traffic/trove/internal/qname"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/items"
 )

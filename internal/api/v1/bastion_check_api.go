@@ -1,11 +1,12 @@
 package v1
 
 import (
-	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"net/netip"
 	"strconv"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/bastion/iface"

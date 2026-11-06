@@ -3,11 +3,12 @@ package v1
 import (
 	"context"
 	"fmt"
-	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/api/v1/gen"

@@ -2,6 +2,7 @@ package vuln
 
 import (
 	"context"
+
 	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/meta"

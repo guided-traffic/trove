@@ -3,12 +3,13 @@ package authz
 import (
 	"context"
 	"fmt"
-	"github.com/guided-traffic/trove/internal/qname"
 	"maps"
 	"regexp"
 	"slices"
 	"time"
 	"unicode/utf8"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/errs"

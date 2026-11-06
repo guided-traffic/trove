@@ -2,8 +2,9 @@ package files
 
 import (
 	"context"
-	"github.com/guided-traffic/trove/internal/qname"
 	"io"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/bastionmain"

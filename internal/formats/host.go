@@ -2,10 +2,11 @@ package formats
 
 import (
 	"context"
-	"github.com/guided-traffic/trove/internal/qname"
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // Host is the core as a format reaches it (R-ARCH-009). One Host serves a replica

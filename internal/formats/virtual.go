@@ -2,9 +2,10 @@ package formats
 
 import (
 	"context"
-	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/repository"
 )

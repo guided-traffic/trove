@@ -2,10 +2,11 @@ package virtual
 
 import (
 	"context"
-	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/formats/catalog"

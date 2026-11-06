@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/guided-traffic/trove/internal/qname"
 	"log/slog"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/principal"

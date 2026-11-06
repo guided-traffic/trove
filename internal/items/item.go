@@ -1,8 +1,9 @@
 package items
 
 import (
-	"github.com/guided-traffic/trove/internal/qname"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"

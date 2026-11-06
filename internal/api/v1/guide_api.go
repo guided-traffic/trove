@@ -2,10 +2,11 @@ package v1
 
 import (
 	"context"
-	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"slices"
 	"strings"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/config"

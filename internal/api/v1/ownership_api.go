@@ -2,9 +2,10 @@ package v1
 
 import (
 	"context"
-	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"net/url"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/api/v1/gen"

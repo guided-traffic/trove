@@ -16,10 +16,11 @@ package dispatch
 
 import (
 	"context"
-	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"slices"
 	"strings"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/authz"

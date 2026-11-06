@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
-	"github.com/guided-traffic/trove/internal/packages/view"
-	"github.com/guided-traffic/trove/internal/qname"
 	"html"
 	"net/http"
 	"regexp"
@@ -13,6 +11,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/packages/view"
+	"github.com/guided-traffic/trove/internal/qname"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 

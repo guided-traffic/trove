@@ -1,10 +1,10 @@
 package authz
 
 import (
+	"context"
+
 	"github.com/guided-traffic/trove/internal/qname"
 )
-
-import "context"
 
 // Ceiling is the endpoint exposure of R-EP-013 (R-AUTHZ-001 item 3,
 // R-AUTHZ-015): a ceiling of the same kind as a token scope, which binds every

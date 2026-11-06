@@ -3,9 +3,10 @@ package formats
 import (
 	"context"
 	"encoding/json"
-	"github.com/guided-traffic/trove/internal/qname"
 	"io"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/formats/untrusted"
 	"github.com/guided-traffic/trove/internal/repository"

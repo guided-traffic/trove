@@ -6,8 +6,9 @@
 package virtualtest
 
 import (
-	"github.com/guided-traffic/trove/internal/qname"
 	"strconv"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/repository"

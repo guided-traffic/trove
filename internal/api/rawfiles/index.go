@@ -1,10 +1,11 @@
 package rawfiles
 
 import (
-	"github.com/guided-traffic/trove/internal/qname"
 	"html"
 	"net/http"
 	"strings"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/files"

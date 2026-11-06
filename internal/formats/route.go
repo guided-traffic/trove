@@ -3,13 +3,14 @@ package formats
 import (
 	"context"
 	"fmt"
-	"github.com/guided-traffic/trove/internal/qname"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"slices"
 	"strings"
 	"sync"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"

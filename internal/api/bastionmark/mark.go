@@ -10,12 +10,13 @@
 package bastionmark
 
 import (
-	"github.com/guided-traffic/trove/internal/qname"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/bastion/iface"

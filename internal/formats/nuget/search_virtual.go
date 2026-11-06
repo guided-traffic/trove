@@ -3,9 +3,10 @@ package nuget
 import (
 	"context"
 	"fmt"
-	"github.com/guided-traffic/trove/internal/qname"
 	"slices"
 	"sync"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"

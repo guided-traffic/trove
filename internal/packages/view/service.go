@@ -3,12 +3,13 @@ package view
 import (
 	"context"
 	"errors"
-	"github.com/guided-traffic/trove/internal/qname"
 	"math"
 	"slices"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"

@@ -3,7 +3,6 @@ package v1
 import (
 	"context"
 	"encoding/json"
-	"github.com/guided-traffic/trove/internal/qname"
 	"math"
 	"net/http"
 	"net/url"
@@ -11,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/api/v1/gen"

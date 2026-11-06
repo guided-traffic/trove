@@ -3,8 +3,9 @@ package formathost
 import (
 	"context"
 	"fmt"
-	"github.com/guided-traffic/trove/internal/qname"
 	"sort"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/formats"

@@ -1,8 +1,9 @@
 package v1
 
 import (
-	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/httpserver"
 )

@@ -15,13 +15,14 @@ package rawfiles
 
 import (
 	"context"
-	"github.com/guided-traffic/trove/internal/qname"
 	"io"
 	"mime"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/authz"

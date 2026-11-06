@@ -2,8 +2,9 @@ package edge
 
 import (
 	"context"
-	"github.com/guided-traffic/trove/internal/qname"
 	"sync/atomic"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/meta"

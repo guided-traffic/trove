@@ -23,7 +23,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/guided-traffic/trove/internal/qname"
 	"io"
 	"log/slog"
 	"net/http"
@@ -35,6 +34,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"

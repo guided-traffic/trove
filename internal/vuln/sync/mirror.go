@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
-	"github.com/guided-traffic/trove/internal/qname"
 	"io"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/items"

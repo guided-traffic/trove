@@ -25,9 +25,10 @@ package files
 
 import (
 	"context"
-	"github.com/guided-traffic/trove/internal/qname"
 	"io"
 	"log/slog"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/authz"

@@ -1,9 +1,10 @@
 package v1
 
 import (
-	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"strconv"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/api/v1/gen"

@@ -3,8 +3,9 @@ package repository
 import (
 	"context"
 	"encoding/json"
-	"github.com/guided-traffic/trove/internal/qname"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/observability"

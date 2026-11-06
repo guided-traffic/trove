@@ -2,9 +2,10 @@ package repository
 
 import (
 	"encoding/json"
-	"github.com/guided-traffic/trove/internal/qname"
 	"strings"
 	"testing"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats/catalog"

@@ -11,10 +11,11 @@ package report
 
 import (
 	"context"
-	"github.com/guided-traffic/trove/internal/qname"
 	"slices"
 	"sort"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
