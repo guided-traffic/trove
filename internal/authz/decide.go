@@ -381,7 +381,7 @@ func (e *Engine) scopeAdmitsThrough(st *evalState, a Action, r *repoInfo, repoLe
 	// selector or a key glob that happens to cover it does not (Q-AUTHZ-164).
 	exact := &scope.Scope{}
 	for _, el := range sc.Repositories {
-		if slices.Contains(el.Repositories, v.Name.Key) {
+		if slices.Contains(el.Repositories, v.Name.String()) {
 			exact.Repositories = append(exact.Repositories, el)
 		}
 	}

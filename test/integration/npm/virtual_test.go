@@ -99,7 +99,7 @@ func TestR_NPM_030_ALocalNameThatAClaimCoversNeverMixesWithTheUpstreamAndNeverAs
 		t.Errorf("%d repository.remote_package_shadowed events", n)
 	}
 	exposure := r.st.Text(`SELECT COALESCE(string_agg(details::text, ' '), '') FROM audit_event WHERE action = 'repository.remote_package_shadowed' AND path = 'acme-internal'`)
-	if !strings.Contains(exposure, `"virtual": "npm-claimed-all"`) || !strings.Contains(exposure, `"remote": "npm-remote"`) {
+	if !strings.Contains(exposure, `"virtual": "it/npm-claimed-all"`) || !strings.Contains(exposure, `"remote": "it/npm-remote"`) {
 		t.Errorf("the event names %s", exposure)
 	}
 

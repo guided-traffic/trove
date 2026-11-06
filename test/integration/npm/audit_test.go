@@ -217,7 +217,7 @@ func TestR_NPM_038_WhereTheAuditAnswers501And413And502(t *testing.T) {
 	}
 	r.stub.Reset()
 	text := func(key string) string {
-		return "security audit is not available on repository " + key + "; it is disabled or no upstream provides advisories"
+		return "security audit is not available on repository it/" + key + "; it is disabled or no upstream provides advisories"
 	}
 
 	unavailable := func(t *testing.T, key, path string) {

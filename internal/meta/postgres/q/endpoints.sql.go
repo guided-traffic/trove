@@ -141,7 +141,7 @@ func (q *Queries) EndpointsExposureBuild(ctx context.Context) ([]EndpointsExposu
 }
 
 const endpointsGetRule = `-- name: EndpointsGetRule :many
-SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, p.key AS repository, p.format, p.class,
+SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, (pj.key || '/' || p.key)::text AS repository, p.format, p.class,
        r.enabled, r.packages::text AS packages, r.paths::text AS paths, r.versions::text AS versions,
        r.prereleases, r.dist_tags::text AS dist_tags, r.revision,
        (extract(epoch FROM r.created_at) * 1000000)::bigint AS created_us,
@@ -150,6 +150,7 @@ SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, p.key AS 
        COALESCE(ub.kind, '')::text AS updated_by_kind, COALESCE(ub.name, '')::text AS updated_by_name
   FROM endpoint_exposure_rule r
   JOIN repositories p ON p.id = r.repo_id
+  JOIN project pj ON pj.id = p.project_id
   LEFT JOIN principal cb ON cb.id = r.created_by
   LEFT JOIN principal ub ON ub.id = r.updated_by
  WHERE r.endpoint = $1::text AND r.name = $2::text
@@ -292,7 +293,7 @@ func (q *Queries) EndpointsInsertRule(ctx context.Context, arg EndpointsInsertRu
 }
 
 const endpointsListRules = `-- name: EndpointsListRules :many
-SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, p.key AS repository, p.format, p.class,
+SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, (pj.key || '/' || p.key)::text AS repository, p.format, p.class,
        r.enabled, r.packages::text AS packages, r.paths::text AS paths, r.versions::text AS versions,
        r.prereleases, r.dist_tags::text AS dist_tags, r.revision,
        (extract(epoch FROM r.created_at) * 1000000)::bigint AS created_us,
@@ -301,6 +302,7 @@ SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, p.key AS 
        COALESCE(ub.kind, '')::text AS updated_by_kind, COALESCE(ub.name, '')::text AS updated_by_name
   FROM endpoint_exposure_rule r
   JOIN repositories p ON p.id = r.repo_id
+  JOIN project pj ON pj.id = p.project_id
   LEFT JOIN principal cb ON cb.id = r.created_by
   LEFT JOIN principal ub ON ub.id = r.updated_by
  WHERE r.endpoint = $1::text
@@ -377,7 +379,7 @@ func (q *Queries) EndpointsListRules(ctx context.Context, endpoint string) ([]En
 }
 
 const endpointsListRulesOfRepository = `-- name: EndpointsListRulesOfRepository :many
-SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, p.key AS repository, p.format, p.class,
+SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, (pj.key || '/' || p.key)::text AS repository, p.format, p.class,
        r.enabled, r.packages::text AS packages, r.paths::text AS paths, r.versions::text AS versions,
        r.prereleases, r.dist_tags::text AS dist_tags, r.revision,
        (extract(epoch FROM r.created_at) * 1000000)::bigint AS created_us,
@@ -386,6 +388,7 @@ SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, p.key AS 
        COALESCE(ub.kind, '')::text AS updated_by_kind, COALESCE(ub.name, '')::text AS updated_by_name
   FROM endpoint_exposure_rule r
   JOIN repositories p ON p.id = r.repo_id
+  JOIN project pj ON pj.id = p.project_id
   LEFT JOIN principal cb ON cb.id = r.created_by
   LEFT JOIN principal ub ON ub.id = r.updated_by
  WHERE r.repo_id = $1::bigint

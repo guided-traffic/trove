@@ -409,7 +409,7 @@ func TestR_EP_016_EndpointAndExposureAPI(t *testing.T) {
 			}
 			return out
 		}
-		if got := names("repository=generic-other"); !slices.Equal(got, []string{"f-two"}) {
+		if got := names("repository=it%2Fgeneric-other"); !slices.Equal(got, []string{"f-two"}) {
 			t.Errorf("repository: %v", got)
 		}
 		if got := names("enabled=false"); !slices.Equal(got, []string{"f-two"}) {
