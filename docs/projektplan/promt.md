@@ -48,7 +48,14 @@ Hard rules, also for every subagent (put them into every subagent prompt):
    project plans. English for code, comments, commits and docs. German for messages to the owner.
 7. **No shortcuts to green.** Never skip, disable or weaken a test or a check to make the pipeline
    pass, never use `--no-verify`, never retry a flaky test until it happens to pass: fix the cause.
+   The one exception is the owner's: the compatibility checks are switched off until the first stable
+   release ([Q-ARCH-332](../spec/architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release),
+   the checklist in [releasing.md](../developer/releasing.md)); they stay off, and no other check joins them.
 8. **No force push, no history rewrite.**
+9. **No backward compatibility until the first stable release** (owner, 2026-11-06; `CLAUDE.md` at the repository root).
+   trove has no users and no installations: change APIs, URLs, configuration, schema and stored formats the way that
+   is technically best, with no deprecations, aliases, fallbacks or migration paths; a changed migration needs a fresh
+   database, which is acceptable until then.
 
 ## 1 · Find the next phase
 
@@ -81,7 +88,8 @@ Hard rules, also for every subagent (put them into every subagent prompt):
    unavoidable, run them with `isolation: "worktree"` and merge their branches afterwards.
 4. Resume rule: for a 🟡 phase, compare the checklist with the code and with `git log` since the
    last tag, keep what is done and tested, and plan only the rest.
-5. Open findings: plan every finding of [section 8](#8--open-findings) as a work package of this run,
+5. Open findings: plan every finding of [section 8](#8--open-findings), and every task of
+   [section 9](#9--owner-review-of-2026-11-06-tasks-and-open-questions) in its order, as a work package of this run,
    in front of the phase's own packages. Before fixing one, reproduce it (a failing test first); a
    finding that does not reproduce is removed with a one-line reason in the commit message. Remove each
    finding from section 8 in the commit that fixes it.
@@ -387,3 +395,104 @@ Found on 2026-11-01 while writing the manual (`docs/manual`) and the design chan
   (`ln -sf /opt/homebrew/bin/docker-buildx ~/.docker/cli-plugins/docker-buildx`, no admin password; Docker Desktop may
   relink it on its next update unless its CLI plugin management is turned off). Machine-level: the owner runs it; a run
   does not change the machine.
+
+## 9 · Owner review of 2026-11-06: tasks and open questions
+
+The owner reviewed the UI, the documentation and the domain model with the development agent on 2026-11-06, on the branch
+`ui-review` (worktree `/Users/hfi/repos/trove-ui-review`). What was decided is recorded in the spec; what is left is below. The
+tasks come before the phase's own work packages (step 2, item 5), in this order; remove a task in the commit that finishes it.
+
+### Integrate the branch first
+
+- **T-1 · Bring `ui-review` onto `main`.** Three commits are pushed to `origin/ui-review` (the UI development profile; the sign-in,
+  own controls, logo and the separate admin area, Q-UI-125 to Q-UI-127; the admin dashboard, Q-OPS-175). Everything after them was
+  uncommitted when this section was written: the reference's design (Q-UI-128: Inter with `cv05`, the palette of both schemes, the
+  measures of frame, controls, cards, tables, tabs, badges, the link rule), the Admin button and the "Documentation" link, the
+  content area renamed "Artifacts", the decisions below with their gaps H-540 to H-547, the outlined icons, the help area titled "Documentation", `CLAUDE.md`, and the switched-off
+  compatibility checks (Q-ARCH-332). Steps: commit the rest on `ui-review` in coherent conventional commits; rebase on
+  `origin/main` (which had moved on by 18 commits and more), merging appended decision blocks, index rows and gap lists as a union
+  and re-checking every `Q-…` and `H-…` number against `main`. Introduced on the branch: Q-UI-125 to Q-UI-130, Q-OPS-175,
+  Q-AUTHZ-206 to Q-AUTHZ-209, Q-REPO-212, Q-STOR-154 and Q-STOR-155, Q-ARCH-332 and Q-ARCH-333, H-540 to H-547. Already taken on
+  `main` when this was written: Q-ARCH-332 ("Where the shared asset store of the UI sits in the code") and H-543 to H-545 (gaps of
+  that asset store); renumber the branch's ones with every link, anchor and reference (spec, decisions.md, BETA.md, this file,
+  the security pages, `CLAUDE.md`, code comments); the migration `00042_replica_runtime.sql` collides with `main`'s
+  `00042_vulnerability_ecosystem_without_statistics.sql` and takes the next free number (references in
+  `docs/developer/database.md`, `docs/developer/coordination.md`, `test/integration/postgres/overview_test.go` and the
+  `CREATE TABLE` comment of R-OPS-003 in `docs/spec/operations-and-observability.md`); every database that applied the old 00042
+  (the `trove-ui-dev-*` profile: `make ui-dev-down PURGE=1`, then `make ui-dev-up`; the dev cluster) needs a fresh one (rule 9).
+  Then the full checks, among them what never ran on the branch: the integration tier (`overview_test.go` of Q-OPS-175 and the
+  seven integration tests adjusted for Q-ARCH-332), the browser journeys (their selectors: the sign-in with
+  `?auto_sign_in=false`, the link "Documentation", "Admin area", the new tables, tabs and badges) with axe's colour contrast in
+  both schemes for the palette of Q-UI-128, coverage evidence for the new named tests, the white-label scan. Push `main`; ask the
+  owner before deleting the branch.
+- **T-2 · Check the switched-off compatibility checks.** A background agent switched the checks off (not removed them) on
+  2026-11-06, uncommitted when this section was written: `make compat-check` and its CI job off and out of the release's `needs:`, `test/compat/` kept and
+  compiling, the migration phase rules behind `enforceMigrationPhases = false` with their strict-mode tests still running, the
+  nightly `upgrade` set only by dispatch (`-f sets=upgrade`), and one checklist "Switched off until the first stable release" in
+  [releasing.md](../developer/releasing.md). Its checks passed except `make versions-check` (the local buildx, F-17); it could not run the
+  integration tier, the `upgrade` set or `make compat-check` itself. Confirm each switch against the code and the checklist.
+
+### Build what the owner decided (spec first, then code)
+
+- **T-3 · Every repository belongs to exactly one project; none is shared**
+  ([Q-AUTHZ-206](../spec/authorization.md#q-authz-206--every-repository-belongs-to-exactly-one-project), gap H-540). The schema
+  makes `repositories.project_id` required (in place, rule 9); creating a repository names its project in the API and the wizard;
+  unassignment goes, a move to another project stays and changes the address; a virtual repository lists only repositories of
+  its own project; a public registry is proxied by a remote repository per project. Update R-AUTHZ-026, the manual page
+  `admin/projects.md` and the security page `delegated-administration.md`.
+- **T-4 · A repository is addressed inside its project**
+  ([Q-REPO-212](../spec/repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared),
+  gap H-541): `/api/<format>/<projectKey>/<repoKey>/…`, `/files/<projectKey>/<repoKey>/…`,
+  `/api/v1/projects/<projectKey>/repositories/<repoKey>…`; the key is unique within the project; the prefix rule for repository
+  keys and its overlap checks go. Every route, format page, client guide, endpoint and exposure rule, CI mapping and policy
+  selector that names a repository changes; the browser journeys and the e2e clients with them.
+- **T-5 · Members of a project with four roles**
+  ([Q-AUTHZ-207](../spec/authorization.md#q-authz-207--a-user-or-group-is-a-member-of-a-project-with-a-role-and-the-role-grants-the-projects-repositories),
+  [Q-AUTHZ-208](../spec/authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner), gap H-542): users and
+  groups are members with Reader (`read`), Developer (+ `annotate`, `deploy`), Maintainer (every action) or Owner (+ members and
+  roles, repositories, policies, service accounts, settings). The Owner administers the project on its own, so the switches
+  `managePolicies` and `manageRepositories` go; project policies stay for exceptions. `admin` creates and deletes projects and
+  names the first Owner; `admin` and `auditor` see every project. The project administrator of today becomes the Owner.
+- **T-6 · Names within the project**
+  ([Q-AUTHZ-209](../spec/authorization.md#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones),
+  gap H-546): a project's policies and service accounts are named within the project, without the `<key>-` prefix, addressed under
+  `/api/v1/projects/<key>/…`; the prefix rules and their overlap checks go; administrators keep instance-wide service accounts and
+  their tokens. Build with T-4.
+- **T-7 · The project is the context of the content**
+  ([Q-UI-129](../spec/api-and-ui.md#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects), gap H-543): the
+  start page lists your projects (one project: start in it); the content screens move under `/projects/<key>/…` with the
+  project's sidebar (packages, browse, repositories, members, settings) and a switcher at its top (recent, search); the top bar's
+  project filter (R-UI-041) goes; the admin area's lists name the project in a column. Needs T-5 for "your projects".
+- **T-8 · Storage per project** ([Q-STOR-155](../spec/storage.md#q-stor-155--a-project-is-charged-the-logical-size-of-what-it-holds),
+  gap H-547): a project shows and is charged the logical size of the files it holds; the admin dashboard keeps the physical
+  figure of the store.
+- **T-9 · The auditor's security dashboard**
+  ([Q-UI-130](../spec/api-and-ui.md#q-ui-130--the-auditor-has-an-instance-wide-vulnerability-dashboard-in-the-admin-area), gap
+  H-544): in the admin area, for `vulnerabilities:triage` or `content:metadata-read`: the counts and trend over all projects, a
+  search by advisory ID (CVE, GHSA), package and project, and the triage of each finding; the project's own Vulnerabilities screen
+  shows that project only. Check first what the current report already searches.
+- **T-10 · Clean up what only the compatibility rules shaped**
+  ([Q-ARCH-333](../spec/architecture.md#q-arch-333--code-shaped-only-by-the-compatibility-rules-is-cleaned-up-the-cluster-minimum-version-stays)):
+  the replica list reports each replica's own role (no `roleClass` mapping onto a closed enum), a list cursor has one format
+  without a version (R-API-010), `local` becomes a value of `npm.audit.mode` and the boolean of Q-VULN-74 goes; the cluster
+  minimum-version gate of R-HA-020 and R-HA-022 stays.
+- **T-11 · Finish trove's own controls** ([Q-UI-126](../spec/api-and-ui.md#q-ui-126--troves-own-controls-in-place-of-angular-material)):
+  the screens still on Angular Material move to the classes of `_controls.scss` (about 250 Material buttons in about 80 files,
+  dialogs to the CDK dialog, tabs to `.tab-nav` or `@angular/aria`, checkboxes, menus), the `--mat-sys-*` tokens to trove's own,
+  and `@angular/material` is removed. The measures and colours are Q-UI-128's; Material is themed to them meanwhile.
+- **T-12 · The logo's open points** ([design-language.md](../developer/design-language.md#logo)): a reduced form for the favicon,
+  the wordmark as paths instead of `<text>`, and `web/public/brand/drafts/` and the preview on the sign-in page removed once the
+  owner calls the logo final.
+- **T-13 · Ship the third-party notices with the binary** (design-language.md, "What this does not cover"): the build's
+  `3rdpartylicenses.txt` (Inter's OFL-1.1, the icon font, the bundled libraries) is not embedded; serve it with the UI.
+
+The owner answered every open question of the review on 2026-11-06; a new question during the run is asked one at a time, with
+options and a recommendation, and what depends on it is not built before the answer.
+
+### Housekeeping of the review session
+
+- **T-14 · The shared browser window.** The review read the owner's GitLab through a separate Chrome for Testing window with a
+  debugging port on `127.0.0.1:9333` and its own profile, which holds the owner's GitLab session:
+  `/private/tmp/claude-501/-Users-hfi-repos-trove-ui-review/1ac9eb74-ba5b-44d7-bd76-154bcdbbefa7/scratchpad/gitlab-profile`. When
+  the owner has finished comparing, close the window and delete the profile (ask first: it is the owner's session).
+
