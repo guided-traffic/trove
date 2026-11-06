@@ -42,7 +42,7 @@ func (s *Server) TestUpstream(w http.ResponseWriter, r *http.Request, _ string) 
 		httpserver.Problem(w, r, err)
 		return
 	}
-	res, err := svc.UpstreamTestUnsaved(r.Context(), body)
+	res, err := svc.UpstreamTestUnsaved(r.Context(), repositoryCaller(r), body)
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return

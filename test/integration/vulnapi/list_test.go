@@ -70,7 +70,7 @@ func TestR_VULN_020_List(t *testing.T) {
 			want  []string
 		}{
 			{q("format", "nuget"), []string{"p-nuget"}},
-			{q("repository", "nuget-local"), []string{"p-nuget"}},
+			{q("repository", "it/nuget-local"), []string{"p-nuget"}},
 			{q("kind", "malicious"), []string{"p-mal"}},
 			{q("fixAvailable", "true"), []string{"p-high"}},
 			{q("knownExploited", "true"), []string{"p-high"}},
@@ -212,7 +212,7 @@ func TestR_VULN_020_Detail(t *testing.T) {
 	if d.Advisory.ID != "GHSA-aaaa-bbbb-cccc" || !slices.Equal(d.Advisory.Cwe, []string{"CWE-79"}) || !strings.Contains(d.Advisory.Source.Name, "GitHub") {
 		t.Errorf("advisory = %+v", d.Advisory)
 	}
-	if !slices.Equal(d.VirtualRepositories, []string{"npm-all"}) {
+	if !slices.Equal(d.VirtualRepositories, []string{"it/npm-all"}) {
 		t.Errorf("virtualRepositories = %v", d.VirtualRepositories)
 	}
 	etag := a.Header.Get("ETag")

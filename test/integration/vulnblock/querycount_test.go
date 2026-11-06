@@ -103,7 +103,7 @@ func TestR_VULN_015_ScanningAddsNoQueryToADownload(t *testing.T) {
 	for name, path := range map[string]string{
 		"a local npm tarball":     tgzPath(rNPM, mal, "1.0.0"),
 		"a local npm tarball (2)": tgzPath(rNPM, mal, "1.0.1"),
-		"the raw view":            "/files/" + rNPM + "/" + e.itemPath(rNPM, "-1.0.0.tgz"),
+		"the raw view":            "/files/it/" + rNPM + "/" + e.itemPath(rNPM, "-1.0.0.tgz"),
 	} {
 		t.Run(name, func(t *testing.T) { statementsPerDownload(t, e, on, off, path) })
 	}
@@ -115,7 +115,7 @@ func TestR_VULN_015_ScanningAddsNoQueryToARemoteHit(t *testing.T) {
 	e.st.LogStatements(t)
 	on := e.replica("scan-on")
 	off := e.replica("scan-off", "TROVE_VULNERABILITIES_ENABLED=false")
-	if a := e.do(on, "GET", "/api/npm/"+rRemote+"/"+e.pkg, e.tokReader); a.Status != 200 {
+	if a := e.do(on, "GET", "/api/npm/it/"+rRemote+"/"+e.pkg, e.tokReader); a.Status != 200 {
 		t.Fatalf("document: %d %s", a.Status, a.Body)
 	}
 	if a := e.do(on, "GET", tgzPath(rRemote, e.pkg, e.ver), e.tokReader); a.Status != 200 {

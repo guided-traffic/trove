@@ -156,7 +156,6 @@ type endpointConfD struct {
 	Hosts         []string          `json:"hosts"`
 	WildcardHost  *string           `json:"wildcardHost"`
 	HostRoots     map[string]string `json:"hostRoots"`
-	WildcardRoot  string            `json:"wildcardRoot"`
 	Pool          *string           `json:"pool"`
 	Surface       []string          `json:"surface"`
 	Auth          endpointAuthD     `json:"auth"`
@@ -194,7 +193,7 @@ func listenPort(addr string) *int {
 func (s *Server) configurationOf(e config.ResolvedEndpoint) *endpointConfD {
 	c := &endpointConfD{
 		Default: e.Default, Port: listenPort(e.Listen), BaseURL: e.BaseURL, Hosts: orEmpty(e.Hosts),
-		WildcardHost: optString(e.WildcardHost), HostRoots: e.HostRoots, WildcardRoot: e.WildcardRoot,
+		WildcardHost: optString(e.WildcardHost), HostRoots: e.HostRoots,
 		Pool: optString(e.Pool), Surface: orEmpty(e.Surface),
 		Auth:     endpointAuthD{TokenTypes: orEmpty(e.TokenTypes), BoundTokensOnly: e.BoundTokensOnly, Anonymous: e.Anonymous},
 		Exposure: e.Exposure, CacheFill: e.CacheFill, ReplicaHeader: e.ReplicaHeader,

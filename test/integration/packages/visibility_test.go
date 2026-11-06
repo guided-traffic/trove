@@ -25,7 +25,7 @@ func TestR_API_029_ListCountsOnlyWhatTheCallerMayRead(t *testing.T) {
 			t.Fatalf("names %v, want %v", got, want)
 		}
 		ui := pkgByName(items, "@team-a/ui")
-		if num(ui["versionCount"]) != 3 || ui["latestVersion"] != "1.4.0" || !slices.Equal(toStrings(ui["repositories"]), []string{"npm-local"}) {
+		if num(ui["versionCount"]) != 3 || ui["latestVersion"] != "1.4.0" || !slices.Equal(toStrings(ui["repositories"]), []string{"it/npm-local"}) {
 			t.Fatalf("a hidden version leaks into %v", ui)
 		}
 	})
@@ -58,7 +58,7 @@ func TestR_API_029_ListCountsOnlyWhatTheCallerMayRead(t *testing.T) {
 	})
 
 	t.Run("a repository filter on a repository the caller may not read lists nothing", func(t *testing.T) {
-		if got := names(e.all(e.tokB, "/api/v1/packages?repository=npm-team")); len(got) != 0 {
+		if got := names(e.all(e.tokB, "/api/v1/packages?repository=it/npm-team")); len(got) != 0 {
 			t.Fatalf("%v", got)
 		}
 	})
@@ -69,7 +69,7 @@ func TestR_API_029_ListCountsOnlyWhatTheCallerMayRead(t *testing.T) {
 			t.Fatalf("names %v", got)
 		}
 		ui := items[0]
-		if num(ui["versionCount"]) != 2 || ui["latestVersion"] != "1.5.0" || !slices.Equal(toStrings(ui["repositories"]), []string{"npm-team"}) {
+		if num(ui["versionCount"]) != 2 || ui["latestVersion"] != "1.5.0" || !slices.Equal(toStrings(ui["repositories"]), []string{"it/npm-team"}) {
 			t.Fatalf("%v", ui)
 		}
 		if got := names(e.all(e.tokC, "/api/v1/packages?q=needle-word")); len(got) != 0 {
@@ -118,7 +118,7 @@ func TestR_API_029_ListCountsOnlyWhatTheCallerMayRead(t *testing.T) {
 
 	t.Run("downloads of a hidden repository are not part of the count", func(t *testing.T) {
 		tgz := func(repo, name, file string) {
-			if a := e.st.Do(e.r, "GET", "/api/npm/"+repo+"/"+name+"/-/"+file, e.tokA, nil); a.Status != 200 {
+			if a := e.st.Do(e.r, "GET", "/api/npm/it/"+repo+"/"+name+"/-/"+file, e.tokA, nil); a.Status != 200 {
 				t.Fatalf("download %s: %d", file, a.Status)
 			}
 		}
@@ -180,7 +180,7 @@ func TestR_EP_014_PackagesOfAnEndpointWithRules(t *testing.T) {
 		t.Fatalf("names %v", got)
 	}
 	ui := list.Items[0]
-	if num(ui["versionCount"]) != 1 || ui["latestVersion"] != "1.4.0" || !slices.Equal(toStrings(ui["repositories"]), []string{"npm-local"}) {
+	if num(ui["versionCount"]) != 1 || ui["latestVersion"] != "1.4.0" || !slices.Equal(toStrings(ui["repositories"]), []string{"it/npm-local"}) {
 		t.Fatalf("the counts are not computed after the filter: %v", ui)
 	}
 	id := ui["id"].(string)

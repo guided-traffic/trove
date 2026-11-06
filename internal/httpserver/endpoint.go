@@ -35,8 +35,8 @@ type Endpoint struct {
 	// origin (default endpoint only).
 	additional map[string]string
 
-	hostRoots    map[string]string
-	wildcardRoot string
+	// hostRoots maps an exact host to the qualified name <projectKey>/<repoKey> of its repository (R-EP-006).
+	hostRoots map[string]string
 
 	// surface is the effective surface: the configured one narrowed to the families of the process's role.
 	surface         []string
@@ -71,8 +71,8 @@ func NewEndpoint(r config.ResolvedEndpoint, additionalBaseURLs []string, opts ..
 	e := &Endpoint{
 		name: r.Name, def: r.Default, listen: r.Listen, hosts: slices.Clone(r.Hosts), hostSet: map[string]struct{}{},
 		wildcard: strings.ToLower(r.WildcardHost), check: r.CheckHost, additional: map[string]string{},
-		hostRoots: map[string]string{}, wildcardRoot: r.WildcardRoot,
-		surface: slices.Clone(r.Surface), tokenTypes: slices.Clone(r.TokenTypes), boundTokensOnly: r.BoundTokensOnly,
+		hostRoots: map[string]string{},
+		surface:   slices.Clone(r.Surface), tokenTypes: slices.Clone(r.TokenTypes), boundTokensOnly: r.BoundTokensOnly,
 		anonymous: r.Anonymous, exposure: r.Exposure, cacheFill: r.CacheFill, rateClass: r.RateLimitClass,
 		replicaHeader: r.ReplicaHeader, maxInFlight: r.MaxInFlight, pool: r.Pool, trustedProxies: slices.Clone(r.TrustedProxies),
 	}
@@ -222,16 +222,10 @@ func (e *Endpoint) baseURLFor(host string) string {
 	return ""
 }
 
-// rootFor returns the repository a host's root is bound to (R-EP-006): an exact
-// binding of host_roots, else the host label under wildcard_root: label.
-func (e *Endpoint) rootFor(host, label string) string {
-	if repo, ok := e.hostRoots[host]; ok {
-		return repo
-	}
-	if e.wildcardRoot == config.WildcardRootLabel && label != "" {
-		return label
-	}
-	return ""
+// rootFor returns the qualified name of the repository a host's root is bound to
+// (R-EP-006, Q-EP-76): an exact binding of host_roots. A wildcard host binds nothing.
+func (e *Endpoint) rootFor(host string) string {
+	return e.hostRoots[host]
 }
 
 // HostRoot returns the repository key the host is bound to, "" when unbound. It
@@ -243,8 +237,7 @@ func (e *Endpoint) HostRoot(host string) string {
 		return ""
 	}
 	host = strings.ToLower(host)
-	label, _ := e.matchHost(host)
-	return e.rootFor(host, label)
+	return e.rootFor(host)
 }
 
 type ctxEndpoint struct{}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
@@ -80,6 +81,22 @@ type After struct {
 	Txt string
 	ID  string
 }
+
+// ProjectOf is the project key of a repository's qualified name "<project>/<key>", the form the findings statements
+// return as the repository (R-VULN-020); "" for a string that is none.
+func ProjectOf(repository string) string {
+	project, _, ok := strings.Cut(repository, "/")
+	if !ok {
+		return ""
+	}
+	return project
+}
+
+// Project is the key of the project of the finding's repository, the `project` of the findings API and the CSV column.
+func (r Row) Project() string { return ProjectOf(r.Repository) }
+
+// Project is the key of the project of the finding's repository.
+func (l Locked) Project() string { return ProjectOf(l.Repository) }
 
 // Row is one finding as the list reads it, with the lookups of its advisory.
 type Row struct {

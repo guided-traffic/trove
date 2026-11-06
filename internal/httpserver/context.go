@@ -44,7 +44,7 @@ type RequestInfo struct {
 	Host string
 	// HostLabel is the label a wildcard host matched (R-EP-003), "" otherwise.
 	HostLabel string
-	// RootRepository is the repository the effective host's root is bound to
+	// RootRepository is the qualified name <projectKey>/<repoKey> of the repository the effective host's root is bound to
 	// (R-EP-006), "" when unbound. No route reads it in the MVP.
 	RootRepository string
 	// ForwardedHostIgnored is true when a trusted peer sent a forwarded host

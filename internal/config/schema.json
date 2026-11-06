@@ -2052,6 +2052,7 @@
         },
         "repository_label_include": {
           "default": [],
+          "description": "Selectors of an instance context (R-AUTHZ-004), such as web/npm-* or */nuget-*, that give the repositories they match a series of their own before the others; a repository is named by its qualified name \u003cprojectKey\u003e/\u003crepoKey\u003e, a bare key stops startup (R-OPS-007).",
           "items": {
             "type": "string"
           },
@@ -2630,7 +2631,7 @@
         },
         "endpoints": {
           "default": {},
-          "description": "Further endpoints by name (R-EP-001): each needs listen and base_url. The entry default may set only hosts, wildcard_host, host_roots, wildcard_root, surface, auth, exposure, cache_fill, rate_limit_class and replica_header.",
+          "description": "Further endpoints by name (R-EP-001): each needs listen and base_url. The entry default may set only hosts, wildcard_host, host_roots, surface, auth, exposure, cache_fill, rate_limit_class and replica_header.",
           "type": "object",
           "x-trove-env": "TROVE_SERVER_ENDPOINTS"
         },
@@ -4033,7 +4034,7 @@
                 },
                 "repository": {
                   "default": "",
-                  "description": "Mode repository: the key of a generic local repository.",
+                  "description": "Mode repository: the qualified name \u003cprojectKey\u003e/\u003crepoKey\u003e of a generic local repository.",
                   "type": "string",
                   "x-trove-env": "TROVE_VULNERABILITIES_SOURCES_EPSS_REPOSITORY"
                 },
@@ -4062,7 +4063,7 @@
                 },
                 "repository": {
                   "default": "",
-                  "description": "Mode repository: the key of a generic local repository.",
+                  "description": "Mode repository: the qualified name \u003cprojectKey\u003e/\u003crepoKey\u003e of a generic local repository.",
                   "type": "string",
                   "x-trove-env": "TROVE_VULNERABILITIES_SOURCES_KEV_REPOSITORY"
                 },
@@ -4149,7 +4150,7 @@
                 },
                 "repository": {
                   "default": "",
-                  "description": "Mode repository: the key of a generic local repository that holds osv/\u003cecosystem\u003e/all.zip (R-VULN-005). Whoever holds deploy on it decides the advisory data of the installation.",
+                  "description": "Mode repository: the qualified name \u003cprojectKey\u003e/\u003crepoKey\u003e of a generic local repository that holds osv/\u003cecosystem\u003e/all.zip (R-VULN-005). Whoever holds deploy on it decides the advisory data of the installation.",
                   "type": "string",
                   "x-trove-env": "TROVE_VULNERABILITIES_SOURCES_OSV_REPOSITORY"
                 },

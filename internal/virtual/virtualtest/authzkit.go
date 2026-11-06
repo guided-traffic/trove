@@ -56,7 +56,7 @@ func NewDecider(tb testing.TB, repos []RepoSpec, grants []Grant) *authz.Engine {
 			}
 			cfg = fmt.Sprintf(`{"remote":{"cacheFillAction":%q}}`, fill)
 		}
-		snap.Repositories = append(snap.Repositories, q.AuthzBuildRepositoriesRow{ID: id, Key: r.Key, Class: r.Class, Format: Format, Config: []byte(cfg)})
+		snap.Repositories = append(snap.Repositories, q.AuthzBuildRepositoriesRow{ID: id, Key: r.Key, Class: r.Class, Format: Format, Config: []byte(cfg), ProjectKey: "it"})
 	}
 	for _, r := range repos {
 		for _, m := range r.Members {

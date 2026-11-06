@@ -50,7 +50,7 @@ func TestR_VULN_010_AClaimedNameIsInternalAndAnUnclaimedOneIsMatched(t *testing.
 	if got := e.events("vulnerability.claimed_name_match"); got != 1 {
 		t.Errorf("the event was written %d times, want once per advisory and name", got)
 	}
-	if got := e.st.Text(`SELECT details->>'claimRepository' FROM audit_event WHERE action = 'vulnerability.claimed_name_match'`); got != "npm-local" {
+	if got := e.st.Text(`SELECT details->>'claimRepository' FROM audit_event WHERE action = 'vulnerability.claimed_name_match'`); got != "it/npm-local" {
 		t.Errorf("claimRepository %q", got)
 	}
 }

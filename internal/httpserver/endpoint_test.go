@@ -41,7 +41,7 @@ func twoEndpoints() config.Server {
 			"customers": {
 				Listen: ":8443", BaseURL: "https://packages.example.com", Hosts: []string{"pkgs.example.org"},
 				WildcardHost: "*.registry.example.com",
-				HostRoots:    map[string]string{"pkgs.example.org": "docker-hub"},
+				HostRoots:    map[string]string{"pkgs.example.org": "web/docker-hub"},
 			},
 		},
 	}
@@ -481,17 +481,14 @@ func TestEndpointSurface(t *testing.T) {
 
 func TestHostRootBinding(t *testing.T) {
 	s := twoEndpoints()
-	c := s.Endpoints["customers"]
-	c.WildcardRoot = "label"
-	s.Endpoints["customers"] = c
 	e := endpointFixture(t, s, "customers")
 
 	t.Run("R-EP-006 step 5 finds the binding of the effective host", func(t *testing.T) {
 		for host, want := range map[string]string{
-			"pkgs.example.org":                "docker-hub",
-			"PKGS.example.org":                "docker-hub",
+			"pkgs.example.org":                "web/docker-hub",
+			"PKGS.example.org":                "web/docker-hub",
 			"packages.example.com":            "",
-			"docker-all.registry.example.com": "docker-all",
+			"docker-all.registry.example.com": "", // a wildcard host binds no repository (Q-EP-76)
 			"registry.example.com":            "",
 			"unknown.example":                 "",
 		} {
@@ -506,7 +503,7 @@ func TestHostRootBinding(t *testing.T) {
 		var got map[string]string
 		w := call(h, "GET", "/api/npm/npm-all/x", "pkgs.example.org", "192.0.2.9:1")
 		_ = json.Unmarshal(w.Body.Bytes(), &got)
-		if w.Code != 200 || got["root"] != "docker-hub" {
+		if w.Code != 200 || got["root"] != "web/docker-hub" {
 			t.Errorf("bound host: %d %v", w.Code, got)
 		}
 		// /v2/ and /.well-known/ on a bound host answer the 404 problem: no format uses them yet.

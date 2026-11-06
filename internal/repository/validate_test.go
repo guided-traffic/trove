@@ -291,7 +291,7 @@ func TestConsumerView(t *testing.T) {
 			t.Fatal(err)
 		}
 		raw, _ := json.Marshal(d.ConsumerView("/files/{project}/{key}/", qname.Repo{Project: "it", Key: "files"}))
-		want := `{"key":"files","class":"local","format":"generic","description":"d","layout":"generic","addresses":["/files/it/files/"]}`
+		want := `{"key":"files","project":"it","class":"local","format":"generic","description":"d","layout":"generic","addresses":["/files/it/files/"]}`
 		if string(raw) != want {
 			t.Fatalf("view = %s", raw)
 		}

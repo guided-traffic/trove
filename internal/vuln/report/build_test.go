@@ -51,11 +51,11 @@ func buildFixture() (*Service, *Snapshot) {
 // On the per-version path MayRead gets the version of each row, so a rule that reads it (an exposure range) is applied.
 func TestR_VULN_028_ScopeLoadsTheRowsTheScopeCanDecide(t *testing.T) {
 	triples := []store.Candidate{
-		{Repository: "npm-part", Package: "@acme/sdk", Version: "1.9.0"},
-		{Repository: "npm-part", Package: "@acme/sdk", Version: "2.1.0"},
-		{Repository: "npm-part", Package: "other", Version: "1.0.0"},
+		{Repository: "it/npm-part", Package: "@acme/sdk", Version: "1.9.0"},
+		{Repository: "it/npm-part", Package: "@acme/sdk", Version: "2.1.0"},
+		{Repository: "it/npm-part", Package: "other", Version: "1.0.0"},
 	}
-	pairs := []store.Pair{{Repository: "npm-part", Package: "@acme/sdk"}, {Repository: "npm-part", Package: "other"}}
+	pairs := []store.Pair{{Repository: "it/npm-part", Package: "@acme/sdk"}, {Repository: "it/npm-part", Package: "other"}}
 	// A rule of an endpoint: @acme/sdk only from 2.0.0.
 	rule := func(pkg, version string) bool { return pkg == "@acme/sdk" && version >= "2" }
 	byPackage := func(pkg, version string) bool { return pkg == "@acme/sdk" }
@@ -83,7 +83,7 @@ func TestR_VULN_028_ScopeLoadsTheRowsTheScopeCanDecide(t *testing.T) {
 		if n != (loaders{pairs: 1}) {
 			t.Fatalf("loaders %+v, want the pairs only", n)
 		}
-		if len(sc.Packages) != 1 || sc.Packages[0] != "npm-part\x1f@acme/sdk" || len(sc.Rows) != 0 {
+		if len(sc.Packages) != 1 || sc.Packages[0] != "it/npm-part\x1f@acme/sdk" || len(sc.Rows) != 0 {
 			t.Errorf("scope %+v", sc)
 		}
 		for _, a := range fs.asked {
@@ -98,7 +98,7 @@ func TestR_VULN_028_ScopeLoadsTheRowsTheScopeCanDecide(t *testing.T) {
 		if n != (loaders{triples: 1}) {
 			t.Fatalf("loaders %+v, want the triples only", n)
 		}
-		if len(sc.Rows) != 1 || sc.Rows[0] != "npm-part\x1f@acme/sdk\x1f2.1.0" || len(sc.Packages) != 0 {
+		if len(sc.Rows) != 1 || sc.Rows[0] != "it/npm-part\x1f@acme/sdk\x1f2.1.0" || len(sc.Packages) != 0 {
 			t.Errorf("scope %+v: only 2.1.0 may be read", sc)
 		}
 		want := map[string]bool{"npm-part @acme/sdk 1.9.0": true, "npm-part @acme/sdk 2.1.0": true, "npm-part other 1.0.0": true}

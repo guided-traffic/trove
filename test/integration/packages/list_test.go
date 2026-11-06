@@ -26,7 +26,7 @@ func TestR_API_029_ListFiltersAndSorts(t *testing.T) {
 		if num(ui["versionCount"]) != 4 || ui["latestVersion"] != "1.5.0" {
 			t.Fatalf("versionCount %v latestVersion %v", ui["versionCount"], ui["latestVersion"])
 		}
-		if !slices.Equal(toStrings(ui["repositories"]), []string{"npm-local", "npm-team"}) {
+		if !slices.Equal(toStrings(ui["repositories"]), []string{"it/npm-local", "it/npm-team"}) {
 			t.Fatalf("repositories %v", ui["repositories"])
 		}
 		if ui["description"] != "Shared UI components" || !slices.Equal(toStrings(ui["keywords"]), []string{"ui", "components"}) {
@@ -105,17 +105,17 @@ func TestR_API_029_ListFiltersAndSorts(t *testing.T) {
 		if got := filter("format=npm&format=generic"); len(got) != 4 {
 			t.Errorf("two formats: %v", got)
 		}
-		if got := filter("repository=npm-local"); !slices.Equal(got, []string{"@team-a/ui", "left-pad"}) {
-			t.Errorf("repository=npm-local: %v", got)
+		if got := filter("repository=it/npm-local"); !slices.Equal(got, []string{"@team-a/ui", "left-pad"}) {
+			t.Errorf("repository=it/npm-local: %v", got)
 		}
-		if got := filter("repository=npm-local&repository=npm-team"); len(got) != 4 {
+		if got := filter("repository=it/npm-local&repository=it/npm-team"); len(got) != 4 {
 			t.Errorf("both repositories: %v", got)
 		}
-		if got := filter("repository=nope"); len(got) != 0 {
+		if got := filter("repository=it/nope"); len(got) != 0 {
 			t.Errorf("an unknown repository: %v", got)
 		}
-		ui := pkgByName(e.all(e.tokE, "/api/v1/packages?repository=npm-local"), "@team-a/ui")
-		if num(ui["versionCount"]) != 3 || ui["latestVersion"] != "1.4.0" || !slices.Equal(toStrings(ui["repositories"]), []string{"npm-local"}) {
+		ui := pkgByName(e.all(e.tokE, "/api/v1/packages?repository=it/npm-local"), "@team-a/ui")
+		if num(ui["versionCount"]) != 3 || ui["latestVersion"] != "1.4.0" || !slices.Equal(toStrings(ui["repositories"]), []string{"it/npm-local"}) {
 			t.Errorf("in npm-local: %v", ui)
 		}
 	})

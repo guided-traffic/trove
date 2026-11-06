@@ -157,7 +157,7 @@ func TestR_REPO_055_APreEmptedDiscoveryRequestIsRetriedAndNeverFailsThePass(t *t
 	}
 	mustEqual(t, "outcome", fmt.Sprint(res.get("outcome")), "complete")
 	mustEqual(t, "failures", g.store.state(rigRepoID).ConsecutiveFailures, 0)
-	mustEqual(t, "pre-emptions counted", val(g.met.Preempted.WithLabelValues("npm-mirror")), 3)
+	mustEqual(t, "pre-emptions counted", val(g.met.Preempted.WithLabelValues("it/npm-mirror")), 3)
 	if got := g.clock.slept(); len(got) != 3 || got[0] != PreemptRetry {
 		t.Fatalf("waits %v, want three of %v", got, PreemptRetry)
 	}
@@ -529,9 +529,9 @@ func TestR_REPO_057_TheGaugesCarryFailuresAndTheNextPassOfAMirrorInService(t *te
 	repos.set(mk("pull", 3, `{"remote":{"url":"https://a.example/"}}`))
 	now := time.Unix(1_800_000_000, 0).UTC()
 	rows := []GaugeRow{
-		{Key: "live", Pending: 4, LastComplete: now.Add(-time.Hour), ConsecutiveFailures: 3, NextPass: now},
-		{Key: "paused", Pending: 1, ConsecutiveFailures: 5, NextPass: now.Add(-48 * time.Hour)},
-		{Key: "pull", Pending: 9},
+		{Key: "it/live", Pending: 4, LastComplete: now.Add(-time.Hour), ConsecutiveFailures: 3, NextPass: now},
+		{Key: "it/paused", Pending: 1, ConsecutiveFailures: 5, NextPass: now.Add(-48 * time.Hour)},
+		{Key: "it/pull", Pending: 9},
 	}
 	src := GaugeSource(func(context.Context) ([]GaugeRow, error) { return rows, nil }, repos)
 	ms, err := src.Collect(t.Context())
@@ -550,10 +550,10 @@ func TestR_REPO_057_TheGaugesCarryFailuresAndTheNextPassOfAMirrorInService(t *te
 		}
 	}
 	want := map[string]float64{
-		MetricConsecutiveFailures + "/live": 3, MetricNextPass + "/live": float64(now.Unix()),
-		MetricPending + "/live": 4, MetricPending + "/paused": 1,
-		MetricLastComplete + "/live": float64(now.Add(-time.Hour).Unix()),
-		MetricInterval + "/live":     600, MetricInterval + "/paused": 3600,
+		MetricConsecutiveFailures + "/it/live": 3, MetricNextPass + "/it/live": float64(now.Unix()),
+		MetricPending + "/it/live": 4, MetricPending + "/it/paused": 1,
+		MetricLastComplete + "/it/live": float64(now.Add(-time.Hour).Unix()),
+		MetricInterval + "/it/live":     600, MetricInterval + "/it/paused": 3600,
 	}
 	for k, v := range want {
 		if got[k] != v {

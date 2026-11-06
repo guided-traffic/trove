@@ -19,9 +19,9 @@ const hostileReadme = `# Hostile
 
 ![build status](https://img.shields.example/badge.svg)
 
-![own](/api/npm/npm-local/left-pad)
+![own](/api/npm/it/npm-local/left-pad)
 
-<img src="http://trove.test/files/npm-local/x.png">
+<img src="http://trove.test/files/it/npm-local/x.png">
 
 [js](javascript:alert(1)) <a href="https://example.com" target="_blank">out</a>
 

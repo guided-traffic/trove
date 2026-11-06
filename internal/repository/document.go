@@ -91,9 +91,13 @@ type LocalSettings struct {
 // Document is the configuration document of a repository (R-REPO-004): the body
 // of a create, the response of a read and the object of configuration as code.
 type Document struct {
-	Key    string `json:"key"`
-	Class  Class  `json:"class"`
-	Format string `json:"format"`
+	// Project is the key of the repository's project: read-only, set by the
+	// address of the create and changed only by a move (R-REPO-001, R-REPO-009,
+	// R-REPO-060). A request that names another project is refused as immutable.
+	Project string `json:"project,omitempty"`
+	Key     string `json:"key"`
+	Class   Class  `json:"class"`
+	Format  string `json:"format"`
 	// Layout is read-only and equals the format's layout (R-REPO-006).
 	Layout string `json:"layout,omitempty"`
 	Settings
@@ -111,6 +115,7 @@ type Warning struct {
 // members.
 type ConsumerView struct {
 	Key         string   `json:"key"`
+	Project     string   `json:"project"`
 	Class       Class    `json:"class"`
 	Format      string   `json:"format"`
 	Description string   `json:"description"`
@@ -130,7 +135,7 @@ func (d Document) WithoutAdminNotes() Document {
 // ProtocolBasePath template ("/files/{project}/{key}/") and name the repository's; the raw file address is always
 // listed (R-REPO-002).
 func (d Document) ConsumerView(protocolBase string, name qname.Repo) ConsumerView {
-	v := ConsumerView{Key: d.Key, Class: d.Class, Format: d.Format, Description: d.Description, Layout: d.Layout}
+	v := ConsumerView{Project: name.Project, Key: d.Key, Class: d.Class, Format: d.Format, Description: d.Description, Layout: d.Layout}
 	seen := map[string]bool{}
 	for _, tmpl := range []string{protocolBase, "/files/{project}/{key}/"} {
 		if tmpl == "" {

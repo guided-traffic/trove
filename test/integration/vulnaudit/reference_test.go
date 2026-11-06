@@ -278,7 +278,7 @@ func TestR_VULN_017_TheReferenceLockfileMatchesThePublicAnswer(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, repo := range []string{npmAll, npmLocal, npmRemote} {
-			a := st.Do(web, "POST", "/api/npm/"+repo+"/"+bulk, read, gz(t, compact.Bytes()),
+			a := st.Do(web, "POST", "/api/npm/it/"+repo+"/"+bulk, read, gz(t, compact.Bytes()),
 				"Content-Type", "application/json", "Content-Encoding", "gzip")
 			if a.Status != http.StatusOK {
 				t.Fatalf("%s through %s: %d %s", b.label, repo, a.Status, a.Body)

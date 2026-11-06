@@ -231,18 +231,18 @@ func TestR_VULN_010_ClaimRule(t *testing.T) {
 	}
 	repos := fakeRepos{"npm-local": local("npm-local", "npm"), "npm-nugetish": local("npm-nugetish", "nuget"), "npm-remote": {Name: qr("npm-remote"), Class: repository.Remote, Format: "npm"}}
 	claims := fakeClaims{
-		"npm/@acme/ui":   {{Repository: "npm-local", Pattern: "@acme/*"}},
-		"npm/other":      {{Repository: "npm-nugetish"}},
-		"npm/remote-one": {{Repository: "npm-remote"}},
-		"npm/ghost":      {{Repository: "missing"}},
-		"npm/two":        {{Repository: "npm-remote"}, {Repository: "npm-local"}},
+		"npm/@acme/ui":   {{Repository: "it/npm-local", Pattern: "@acme/*"}},
+		"npm/other":      {{Repository: "it/npm-nugetish"}},
+		"npm/remote-one": {{Repository: "it/npm-remote"}},
+		"npm/ghost":      {{Repository: "it/missing"}},
+		"npm/two":        {{Repository: "it/npm-remote"}, {Repository: "it/npm-local"}},
 	}
 	rule := ClaimRule{Claims: claims, Repos: repos}
 	cases := map[string]struct {
 		internal bool
 		repo     string
 	}{
-		"@acme/ui": {true, "npm-local"}, "other": {false, ""}, "remote-one": {false, ""}, "ghost": {true, "missing"}, "two": {true, "npm-local"}, "free": {false, ""},
+		"@acme/ui": {true, "it/npm-local"}, "other": {false, ""}, "remote-one": {false, ""}, "ghost": {true, "it/missing"}, "two": {true, "it/npm-local"}, "free": {false, ""},
 	}
 	for name, want := range cases {
 		repo, internal, err := rule.Claim(context.Background(), "npm", name)

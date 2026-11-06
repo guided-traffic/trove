@@ -67,7 +67,7 @@ func TestR_VULN_018_TheServiceIndexListsTheResourceOnEveryClass(t *testing.T) {
 	e.changed("vuln_data", `{"ecosystem":"NuGet","epoch":1}`, a)
 	for _, repo := range []string{nugetLocal, nugetRemote, nugetAll} {
 		id := serviceIndexEntry(t, e.get(a, repo, "v3/index.json", e.tokReader))
-		if want := feedBase + "/api/nuget/" + repo + "/v3/vulnerabilities/index.json"; id != want {
+		if want := feedBase + "/api/nuget/it/" + repo + "/v3/vulnerabilities/index.json"; id != want {
 			t.Errorf("%s: @id %q, want %q", repo, id, want)
 		}
 	}
@@ -94,7 +94,7 @@ func TestR_VULN_018_TheDocuments(t *testing.T) {
 	}
 	var entries []map[string]string
 	if err := json.Unmarshal(idx.Body, &entries); err != nil || len(entries) != 1 ||
-		entries[0]["@name"] != "trove" || entries[0]["@id"] != feedBase+"/api/nuget/"+nugetRemote+"/v3/vulnerabilities/trove.json" ||
+		entries[0]["@name"] != "trove" || entries[0]["@id"] != feedBase+"/api/nuget/it/"+nugetRemote+"/v3/vulnerabilities/trove.json" ||
 		entries[0]["@updated"] == "" || entries[0]["comment"] != "Advisory data mirrored by trove" {
 		t.Fatalf("index: %v %s", err, idx.Body)
 	}

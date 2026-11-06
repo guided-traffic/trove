@@ -23,7 +23,7 @@ SELECT r.id::text AS id, r.endpoint, r.name, r.repo_id, r.enabled,
 -- The rules of one endpoint by name, with the repository they belong to. An
 -- endpoint holds at most 1,000 rules (R-EP-012), so the list handler pages over
 -- this one bounded read.
-SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, p.key AS repository, p.format, p.class,
+SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, (pp.key || '/' || p.key)::text AS repository, p.format, p.class,
        r.enabled, r.packages::text AS packages, r.paths::text AS paths, r.versions::text AS versions,
        r.prereleases, r.dist_tags::text AS dist_tags, r.revision,
        (extract(epoch FROM r.created_at) * 1000000)::bigint AS created_us,
@@ -32,6 +32,7 @@ SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, p.key AS 
        COALESCE(ub.kind, '')::text AS updated_by_kind, COALESCE(ub.name, '')::text AS updated_by_name
   FROM endpoint_exposure_rule r
   JOIN repositories p ON p.id = r.repo_id
+  JOIN project pp ON pp.id = p.project_id
   LEFT JOIN principal cb ON cb.id = r.created_by
   LEFT JOIN principal ub ON ub.id = r.updated_by
  WHERE r.endpoint = sqlc.arg(endpoint)::text
@@ -40,7 +41,7 @@ SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, p.key AS 
 -- name: EndpointsListRulesOfRepository :many
 -- The rules that refer to a repository, locked: the deletion of the repository
 -- removes them by the foreign key and records each one first (H-164).
-SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, p.key AS repository, p.format, p.class,
+SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, (pp.key || '/' || p.key)::text AS repository, p.format, p.class,
        r.enabled, r.packages::text AS packages, r.paths::text AS paths, r.versions::text AS versions,
        r.prereleases, r.dist_tags::text AS dist_tags, r.revision,
        (extract(epoch FROM r.created_at) * 1000000)::bigint AS created_us,
@@ -49,6 +50,7 @@ SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, p.key AS 
        COALESCE(ub.kind, '')::text AS updated_by_kind, COALESCE(ub.name, '')::text AS updated_by_name
   FROM endpoint_exposure_rule r
   JOIN repositories p ON p.id = r.repo_id
+  JOIN project pp ON pp.id = p.project_id
   LEFT JOIN principal cb ON cb.id = r.created_by
   LEFT JOIN principal ub ON ub.id = r.updated_by
  WHERE r.repo_id = sqlc.arg(repo_id)::bigint
@@ -56,7 +58,7 @@ SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, p.key AS 
    FOR UPDATE OF r;
 
 -- name: EndpointsGetRule :many
-SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, p.key AS repository, p.format, p.class,
+SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, (pp.key || '/' || p.key)::text AS repository, p.format, p.class,
        r.enabled, r.packages::text AS packages, r.paths::text AS paths, r.versions::text AS versions,
        r.prereleases, r.dist_tags::text AS dist_tags, r.revision,
        (extract(epoch FROM r.created_at) * 1000000)::bigint AS created_us,
@@ -65,6 +67,7 @@ SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, p.key AS 
        COALESCE(ub.kind, '')::text AS updated_by_kind, COALESCE(ub.name, '')::text AS updated_by_name
   FROM endpoint_exposure_rule r
   JOIN repositories p ON p.id = r.repo_id
+  JOIN project pp ON pp.id = p.project_id
   LEFT JOIN principal cb ON cb.id = r.created_by
   LEFT JOIN principal ub ON ub.id = r.updated_by
  WHERE r.endpoint = sqlc.arg(endpoint)::text AND r.name = sqlc.arg(name)::text;

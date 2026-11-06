@@ -53,7 +53,7 @@ func TestR_API_029_VersionList(t *testing.T) {
 	t.Run("an entry holds the members of the contract", func(t *testing.T) {
 		items := e.all(e.tokE, base+"?sort=version")
 		v := items[1] // 1.4.0, stored in both repositories
-		if v["version"] != "1.4.0" || v["prerelease"] != false || num(v["sizeBytes"]) <= 0 || !slices.Equal(toStrings(v["repositories"]), []string{"npm-local", "npm-team"}) {
+		if v["version"] != "1.4.0" || v["prerelease"] != false || num(v["sizeBytes"]) <= 0 || !slices.Equal(toStrings(v["repositories"]), []string{"it/npm-local", "it/npm-team"}) {
 			t.Fatalf("%v", v)
 		}
 		if items[3]["prerelease"] != true {
@@ -67,10 +67,10 @@ func TestR_API_029_VersionList(t *testing.T) {
 		if got := versionsOf(e.all(e.tokE, base+"?prerelease=false&sort=version")); !slices.Equal(got, []string{"1.3.0", "1.4.0", "1.5.0"}) {
 			t.Errorf("prerelease=false: %v", got)
 		}
-		if got := versionsOf(e.all(e.tokE, base+"?repository=npm-team&sort=version")); !slices.Equal(got, []string{"1.4.0", "1.5.0"}) {
-			t.Errorf("repository=npm-team: %v", got)
+		if got := versionsOf(e.all(e.tokE, base+"?repository=it/npm-team&sort=version")); !slices.Equal(got, []string{"1.4.0", "1.5.0"}) {
+			t.Errorf("repository=it/npm-team: %v", got)
 		}
-		if got := versionsOf(e.all(e.tokB, base+"?repository=npm-team")); len(got) != 0 {
+		if got := versionsOf(e.all(e.tokB, base+"?repository=it/npm-team")); len(got) != 0 {
 			t.Errorf("a repository the caller may not read lists %v", got)
 		}
 	})
@@ -79,7 +79,7 @@ func TestR_API_029_VersionList(t *testing.T) {
 			t.Fatal(got)
 		}
 		for _, v := range e.all(e.tokB, base) {
-			if !slices.Equal(toStrings(v["repositories"]), []string{"npm-local"}) {
+			if !slices.Equal(toStrings(v["repositories"]), []string{"it/npm-local"}) {
 				t.Errorf("%v", v)
 			}
 		}
@@ -149,7 +149,7 @@ func TestR_API_029_VersionDetails(t *testing.T) {
 		t.Errorf("distTags %v", tags)
 	}
 	repos := v["repositories"].([]any)
-	if len(repos) != 1 || repos[0].(map[string]any)["key"] != "npm-local" || repos[0].(map[string]any)["class"] != "local" {
+	if len(repos) != 1 || repos[0].(map[string]any)["key"] != "it/npm-local" || repos[0].(map[string]any)["class"] != "local" {
 		t.Errorf("repositories %v", repos)
 	}
 	files := v["files"].([]any)
@@ -157,7 +157,7 @@ func TestR_API_029_VersionDetails(t *testing.T) {
 		t.Fatalf("files %v", files)
 	}
 	f := files[0].(map[string]any)
-	if f["path"] != "rich/-/rich-3.2.1.tgz" || f["downloadUrl"] != "http://trove.test/api/npm/npm-local/rich/-/rich-3.2.1.tgz" {
+	if f["path"] != "rich/-/rich-3.2.1.tgz" || f["downloadUrl"] != "http://trove.test/api/npm/it/npm-local/rich/-/rich-3.2.1.tgz" {
 		t.Fatalf("file %v", f)
 	}
 	// The address works, and what it serves is what the digest says.
@@ -170,7 +170,7 @@ func TestR_API_029_VersionDetails(t *testing.T) {
 	t.Run("a scoped name, escaped once in the address", func(t *testing.T) {
 		ui := e.get(e.tokE, "/api/v1/packages/"+e.idOf(e.tokE, "@team-a/ui")+"/versions/1.5.0").JSON(t)
 		f := ui["files"].([]any)[0].(map[string]any)
-		if f["downloadUrl"] != "http://trove.test/api/npm/npm-team/@team-a/ui/-/ui-1.5.0.tgz" {
+		if f["downloadUrl"] != "http://trove.test/api/npm/it/npm-team/@team-a/ui/-/ui-1.5.0.tgz" {
 			t.Fatalf("%v", f["downloadUrl"])
 		}
 	})
@@ -240,8 +240,8 @@ func TestR_API_029_ETags(t *testing.T) {
 	})
 	t.Run("a download changes the tag of the package", func(t *testing.T) {
 		before := e.get(e.tokE, paths["package"]).Header.Get("ETag")
-		e.st.Do(e.r, "GET", "/api/npm/npm-local/left-pad/-/left-pad-1.0.0.tgz", e.tokA, nil)
-		e.st.Do(e.r, "GET", "/api/npm/npm-local/@team-a/ui/-/ui-1.3.0.tgz", e.tokA, nil)
+		e.st.Do(e.r, "GET", "/api/npm/it/npm-local/left-pad/-/left-pad-1.0.0.tgz", e.tokA, nil)
+		e.st.Do(e.r, "GET", "/api/npm/it/npm-local/@team-a/ui/-/ui-1.3.0.tgz", e.tokA, nil)
 		testenv.WaitFor(t, "the download statistics", 30*time.Second, func() bool {
 			return e.get(e.tokE, paths["package"]).Header.Get("ETag") != before
 		})

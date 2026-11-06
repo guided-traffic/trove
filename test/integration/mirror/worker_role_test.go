@@ -109,10 +109,10 @@ func TestR_REPO_055_AWorkerRunsAPassThroughItsOwnEngineAgainstTheNpmUpstream(t *
 		n, err := st.TryNumber(`SELECT count(*) FROM mirror_state s JOIN repositories r ON r.id = s.repo_id WHERE r.key = $1 AND s.last_pass->>'outcome' = 'complete'`, repoKey)
 		return err == nil && n == 1
 	})
-	if n := st.Number(`SELECT count(*) FROM audit_event WHERE action = 'authz.write.allowed' AND reason = 'mirror' AND repository = $1`, repoKey); n < 2 {
+	if n := st.Number(`SELECT count(*) FROM audit_event WHERE action = 'authz.write.allowed' AND reason = 'mirror' AND repository = $1`, repoName); n < 2 {
 		t.Fatalf("%d populate events of the mirror for the stored artifacts", n)
 	}
-	if n := st.Number(`SELECT count(*) FROM audit_event WHERE action = 'authz.write.allowed' AND reason = 'mirror' AND actor_type = 'system' AND repository = $1`, repoKey); n < 2 {
+	if n := st.Number(`SELECT count(*) FROM audit_event WHERE action = 'authz.write.allowed' AND reason = 'mirror' AND actor_type = 'system' AND repository = $1`, repoName); n < 2 {
 		t.Fatalf("%d of them name the system as actor", n)
 	}
 	if strings.Contains(rep.Logs.String(), "registered twice") {

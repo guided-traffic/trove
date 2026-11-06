@@ -45,9 +45,8 @@ endpoints:
     baseUrl: https://packages.example.com
     hosts: [pkgs.example.org]
     wildcardHost: "*.registry.example.com"
-    wildcardRoot: label
     hostRoots:
-      pkgs.example.org: docker-hub                 # example: reserved, no format uses it yet
+      pkgs.example.org: web/docker-hub             # example: the qualified name <projectKey>/<repoKey>; reserved, no format uses it yet
     surface: [packages, files]
     trustedProxies: ["10.244.0.0/16"]
     tls:

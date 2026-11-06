@@ -237,7 +237,7 @@ func (r *Resolver) resolveHost(req *http.Request, trusted bool, info *RequestInf
 	label, ok := e.matchHost(host)
 	if ok {
 		info.HostLabel = label
-		info.RootRepository = e.rootFor(host, label)
+		info.RootRepository = e.rootFor(host)
 	}
 	if !e.check {
 		return

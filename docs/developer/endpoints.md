@@ -58,8 +58,7 @@ server:
       base_url: https://packages.example.com   # example; required; an origin
       hosts: []                        # default: only the host of base_url; example [pkgs.example.org]
       wildcard_host: ""                # default: none; example "*.registry.example.com"
-      host_roots: {}                   # default; example {pkgs.example.org: docker-hub}: reserved, no route uses it
-      wildcard_root: none              # default: none | label
+      host_roots: {}                   # default; example {pkgs.example.org: web/docker-hub}: host to <projectKey>/<repoKey>, reserved, no route uses it
       trusted_proxies: []              # default: server.trusted_proxies
       pool: ""                         # default: served by the main web Deployment; example ep-customers
       max_in_flight: 1024              # default, per replica and endpoint
@@ -72,7 +71,7 @@ server:
       cache_fill: false                # default for a further endpoint; the remote and virtual engines contact no upstream (R-EP-019)
       rate_limit_class: external       # default for a further endpoint; "" = no class (R-EP-015)
       replica_header: never            # default for a further endpoint: authenticated | always | never
-    default:                           # optional; hosts, wildcard_host, host_roots, wildcard_root, surface, auth,
+    default:                           # optional; hosts, wildcard_host, host_roots, surface, auth,
       hosts: [trove.example.com]       #   exposure, cache_fill, rate_limit_class, replica_header only
   endpoint_rate_limits:                # default: the class below
     external: {requests_per_second: 50, burst: 200, key: principal}   # default
@@ -85,8 +84,8 @@ missing `listen` or `base_url`, two listeners on one port (among `server.listen`
 another endpoint's wildcard matches, one wildcard host on two endpoints, a host equal to the host of
 `server.content_base_url`, an empty or unknown `surface`, `ui` on a further endpoint (`surface_not_supported`), a
 `rate_limit_class` without an entry, a malformed wildcard host (`*.<domain>` with at least two labels), a
-`host_roots` key that is not an exact host of the endpoint or a value that is not a repository key, `wildcard_root:
-label` without `wildcard_host`, a `pool` outside the name syntax, an empty `auth.token_types` list (the
+`host_roots` key that is not an exact host of the endpoint or a value that is not a qualified name `<projectKey>/<repoKey>`
+(`qname.ParseRepo`; a bare key or a pattern is refused), a `pool` outside the name syntax, an empty `auth.token_types` list (the
 authentication stage reads an empty list as no restriction, so it is refused rather than accepted, Q-EP-23), and the
 TLS block rules of `server.tls` applied to the effective block.
 
@@ -97,7 +96,7 @@ The effective TLS block of a further endpoint is `server.tls` with the endpoint'
 
 | File | Responsibility |
 |---|---|
-| [internal/config/endpoints.go](../../internal/config/endpoints.go) | `Endpoint`, `ResolvedEndpoint`, `ResolveEndpoints`, `WildcardLabel`, `validateEndpoints`, `fillEndpointDefaults` |
+| [internal/config/endpoints.go](../../internal/config/endpoints.go) | `Endpoint`, `ResolvedEndpoint`, `ResolveEndpoints`, `validateEndpoints`, `fillEndpointDefaults` |
 | [internal/httpserver/endpoint.go](../../internal/httpserver/endpoint.go) | `Endpoint` (the immutable snapshot), `NewEndpoint`, `EndpointFrom`, `RootRepository`, host set matching, response base URL, host-root lookup |
 | [internal/httpserver/surface.go](../../internal/httpserver/surface.go) | `FamilyOf(pattern)`, `CheckSurface` |
 | [internal/httpserver/router.go](../../internal/httpserver/router.go) | `NewEndpointRouter(e)`: registers only the routes of the surface; `Dropped()` |
@@ -147,8 +146,8 @@ to `server.base_url`). Forwarded hosts are not read on an endpoint that does not
 `additional_base_urls` entry (default endpoint) gives that entry; another exact host or a wildcard match gives the
 scheme and port of `base_url` on that host. `RequestInfo.BaseURL` carries it; no handler reads a host itself.
 
-**Host-root binding** (R-EP-006): `RequestInfo.RootRepository` (`httpserver.RootRepository(ctx)`) is `host_roots[host]`,
-else the host label under `wildcard_root: label`. Nothing reads it yet. A format that needs host roots declares
+**Host-root binding** (R-EP-006): `RequestInfo.RootRepository` (`httpserver.RootRepository(ctx)`) is `host_roots[host]`, a
+qualified name `<projectKey>/<repoKey>` (Q-EP-76); a wildcard host binds nothing, and `wildcard_root` is an unknown key. Nothing reads it yet. A format that needs host roots declares
 literal bound-host patterns; the route-table rule reserves `/v2/` and `/.well-known/` on every endpoint, so until a
 format registers them every path below answers the `404` problem on a bound and an unbound host alike.
 

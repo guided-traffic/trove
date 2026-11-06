@@ -32,7 +32,7 @@ func TestR_REPO_056_AStatusFollowsARunningPassAndEveryReplicaAnswersTheSame(t *t
 	r.publishMany("@acme", packages)
 	r.setStub(npmstub.Mode{DelayMS: map[string]int{npmstub.KindTarball: 300}})
 	run, a, b := r.runner("runner"), r.web("web-a"), r.web("web-b")
-	status := "/api/v1/repositories/" + repoKey + "/mirror"
+	status := "/api/v1/projects/it/repositories/" + repoKey + "/mirror"
 	before := r.api(a, http.MethodGet, status, nil).JSON(t)
 
 	t.Run("R-REPO-056 a status before any pass is scheduled", func(t *testing.T) {
@@ -128,17 +128,17 @@ func TestR_REPO_056_AStatusFollowsARunningPassAndEveryReplicaAnswersTheSame(t *t
 		populate := `SELECT count(*) FROM audit_event WHERE action = 'authz.write.allowed' AND repository = $1 AND actor_type = 'system'
 			AND actor_name = 'mirror' AND reason = 'mirror' AND details->>'reason' = 'mirror' AND `
 		r.waitAudit("mirror.pass_completed", 1)
-		if n := r.number(populate+`path LIKE '%.tgz'`, repoKey); n != packages {
+		if n := r.number(populate+`path LIKE '%.tgz'`, repoName); n != packages {
 			t.Errorf("%d populate events of tarballs by the system with the reason mirror, want %d", n, packages)
 		}
 		// Every document a pass stores writes the populate event as well (R-REPO-057, Q-REPO-145).
-		if n := r.number(populate+`path NOT LIKE '%.tgz'`, repoKey); n != packages {
+		if n := r.number(populate+`path NOT LIKE '%.tgz'`, repoName); n != packages {
 			t.Errorf("%d populate events of documents, want %d", n, packages)
 		}
 		if n := r.waitAudit("mirror.pass_completed", 1); n != 1 {
 			t.Errorf("%d mirror.pass_completed events, want 1", n)
 		}
-		if n := r.number(`SELECT count(*) FROM audit_event WHERE action = 'mirror.pass_requested' AND repository = $1`, repoKey); n != 1 {
+		if n := r.number(`SELECT count(*) FROM audit_event WHERE action = 'mirror.pass_requested' AND repository = $1`, repoName); n != 1 {
 			t.Errorf("%d mirror.pass_requested events, want 1 (the second run was refused)", n)
 		}
 	})

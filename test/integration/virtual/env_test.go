@@ -123,6 +123,10 @@ func newEnv(t *testing.T) *env {
 	}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	// Every repository belongs to a project (Q-AUTHZ-206): the tests use the project it.
+	if _, err := admin(t, name).Exec(context.Background(), "INSERT INTO "+schemaName+".project (id, key, display_name) VALUES (gen_random_uuid(), 'it', 'it')"); err != nil {
+		t.Fatalf("project: %v", err)
+	}
 	if testenv.PgPooled(t) {
 		cfg = testenv.ThroughPgBouncer(t, cfg, user, maint)
 	}

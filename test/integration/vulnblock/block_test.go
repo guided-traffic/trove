@@ -72,7 +72,7 @@ func TestR_VULN_015_ALocalNpmTarballWithAnOpenMaliciousFindingIsRefused(t *testi
 	if body["code"] != errs.CodeVulnerabilityBlocked {
 		t.Errorf("code = %q", body["code"])
 	}
-	for _, want := range []string{"trove blocked trove-test-mal@1.0.0 in npm-local: malicious package (" + malA + ")", "/ui/vulnerabilities/findings/" + id} {
+	for _, want := range []string{"trove blocked trove-test-mal@1.0.0 in it/npm-local: malicious package (" + malA + ")", "/ui/vulnerabilities/findings/" + id} {
 		if !strings.Contains(body["error"], want) {
 			t.Errorf("error text %q lacks %q", body["error"], want)
 		}
@@ -85,7 +85,7 @@ func TestR_VULN_015_ALocalNpmTarballWithAnOpenMaliciousFindingIsRefused(t *testi
 		t.Errorf("1.0.1: %d %s", other.Status, other.Body)
 	}
 	// The package document (metadata) is not changed (H-311).
-	if doc := e.do(r, "GET", "/api/npm/"+rNPM+"/"+mal, e.tokReader); doc.Status != 200 {
+	if doc := e.do(r, "GET", "/api/npm/it/"+rNPM+"/"+mal, e.tokReader); doc.Status != 200 {
 		t.Errorf("document: %d", doc.Status)
 	}
 	// A dismissal lifts the block, and the next request serves; a re-opened finding blocks again.
@@ -174,7 +174,7 @@ func TestR_VULN_016_ANuGetPackageIsRefusedWithOnePlainLine(t *testing.T) {
 		t.Errorf("Content-Type = %q", ct)
 	}
 	line := string(a.Body)
-	if strings.ContainsAny(line, "\r\n") || !strings.HasPrefix(line, "vulnerability_blocked: trove blocked contoso.json.codecs@1.0.0 in nuget-local: malicious package (MAL-2026-1301). Details: ") ||
+	if strings.ContainsAny(line, "\r\n") || !strings.HasPrefix(line, "vulnerability_blocked: trove blocked contoso.json.codecs@1.0.0 in it/nuget-local: malicious package (MAL-2026-1301). Details: ") ||
 		!strings.Contains(line, "/ui/vulnerabilities/findings/"+id) {
 		t.Errorf("body %q", line)
 	}
@@ -187,12 +187,12 @@ func TestR_VULN_016_ANuGetPackageIsRefusedWithOnePlainLine(t *testing.T) {
 	}
 }
 
-// R-VULN-016: /files/ answers problem details with the code, the advisory and the finding.
+// R-VULN-016: /files/it/ answers problem details with the code, the advisory and the finding.
 func TestR_VULN_016_TheRawViewAnswersProblemDetailsWithTheAdvisoryAndTheFinding(t *testing.T) {
 	e := newEnv(t, options{})
 	r := e.replica("web-1")
 	e.publish(r, rNPM, mal, "1.0.0")
-	path := "/files/" + rNPM + "/" + e.itemPath(rNPM, ".tgz")
+	path := "/files/it/" + rNPM + "/" + e.itemPath(rNPM, ".tgz")
 	ok := e.do(r, "GET", path, e.tokAdmin)
 	if ok.Status != 200 {
 		t.Fatalf("before the finding: %d %s", ok.Status, ok.Body)
@@ -206,7 +206,7 @@ func TestR_VULN_016_TheRawViewAnswersProblemDetailsWithTheAdvisoryAndTheFinding(
 	if p["code"] != errs.CodeVulnerabilityBlocked || p["advisory"] != malA || p["findingId"] != id || p["status"] != float64(403) {
 		t.Errorf("problem = %v", p)
 	}
-	if detail, _ := p["detail"].(string); !strings.Contains(detail, "trove blocked trove-test-mal@1.0.0 in npm-local") {
+	if detail, _ := p["detail"].(string); !strings.Contains(detail, "trove blocked trove-test-mal@1.0.0 in it/npm-local") {
 		t.Errorf("detail = %q", detail)
 	}
 }
@@ -223,7 +223,7 @@ func TestR_VULN_015_OnMissingDataBlockRefusesWhileTheDataIsNotComplete(t *testin
 	if a.Status != http.StatusForbidden {
 		t.Fatalf("onMissingData block: %d %s", a.Status, a.Body)
 	}
-	if body := npmError(t, a); body["code"] != errs.CodeVulnerabilityDataMissing || !strings.Contains(body["error"], "trove blocked trove-test-mal@1.0.0 in npm-strict") {
+	if body := npmError(t, a); body["code"] != errs.CodeVulnerabilityDataMissing || !strings.Contains(body["error"], "trove blocked trove-test-mal@1.0.0 in it/npm-strict") {
 		t.Errorf("body = %v", body)
 	}
 	if a.Header.Get("Cache-Control") != "no-store" {
@@ -306,7 +306,7 @@ func TestR_VULN_015_ABlockInAVirtualRepositoryEndsResolution(t *testing.T) {
 	}
 	e.finding(rNPM, "npm", mal, "1.0.0", malA, "malicious", "needs_triage")
 	a := refusedEverywhere(t, e, r, path, e.tokReader, "")
-	if body := npmError(t, a); body["code"] != errs.CodeVulnerabilityBlocked || !strings.Contains(body["error"], " in "+rTwin+": ") || strings.Contains(body["error"], rNPM) {
+	if body := npmError(t, a); body["code"] != errs.CodeVulnerabilityBlocked || !strings.Contains(body["error"], " in it/"+rTwin+": ") || strings.Contains(body["error"], rNPM) {
 		t.Errorf("body = %v: the text names the addressed repository and no member", body)
 	}
 	// The second member serves the version on its own address: nothing blocks it there.
@@ -320,7 +320,7 @@ func TestR_VULN_015_ABlockInAVirtualRepositoryEndsResolution(t *testing.T) {
 func TestR_VULN_015_ACachedRemoteArtifactIsRefusedOnEveryRouteAndTheDismissalReachesTheOtherReplica(t *testing.T) {
 	e := newEnv(t, options{Valkey: true})
 	r1, r2 := e.replica("web-1"), e.replica("web-2")
-	if a := e.do(r1, "GET", "/api/npm/"+rRemote+"/"+e.pkg, e.tokReader); a.Status != 200 {
+	if a := e.do(r1, "GET", "/api/npm/it/"+rRemote+"/"+e.pkg, e.tokReader); a.Status != 200 {
 		t.Fatalf("document: %d %s", a.Status, a.Body)
 	}
 	path := tgzPath(rRemote, e.pkg, e.ver)
@@ -339,8 +339,8 @@ func TestR_VULN_015_ACachedRemoteArtifactIsRefusedOnEveryRouteAndTheDismissalRea
 	}
 	for name, p := range map[string]string{
 		"the remote hit":      path,
-		"the cache view":      "/api/npm/" + rRemote + "~cache/" + e.pkg + "/-/" + e.pkg + "-" + e.ver + ".tgz",
-		"the raw view":        "/files/" + rRemote + "/" + e.itemPath(rRemote, ".tgz"),
+		"the cache view":      "/api/npm/it/" + rRemote + "~cache/" + e.pkg + "/-/" + e.pkg + "-" + e.ver + ".tgz",
+		"the raw view":        "/files/it/" + rRemote + "/" + e.itemPath(rRemote, ".tgz"),
 		"the virtual tier":    tgzPath(rVirtual, e.pkg, e.ver),
 		"the second replica":  path,
 		"the virtual, second": tgzPath(rVirtual, e.pkg, e.ver),
@@ -349,7 +349,7 @@ func TestR_VULN_015_ACachedRemoteArtifactIsRefusedOnEveryRouteAndTheDismissalRea
 		if strings.HasPrefix(name, "the second") {
 			rep = r2
 		}
-		if strings.HasPrefix(p, "/files/") {
+		if strings.HasPrefix(p, "/files/it/") {
 			tok = e.tokAdmin
 		}
 		t.Run(name, func(t *testing.T) { refusedEverywhere(t, e, rep, p, tok, etag) })
@@ -375,7 +375,7 @@ func TestR_VULN_015_ABlockedRemoteMissIsNeitherFetchedNorStored(t *testing.T) {
 	e := newEnv(t, options{})
 	r := e.replica("web-1")
 	e.eval.block(rRemote, e.pkg, e.ver, vuln.Block{Reason: vuln.BlockMalicious, AdvisoryID: malA})
-	if a := e.do(r, "GET", "/api/npm/"+rRemote+"/"+e.pkg, e.tokReader); a.Status != 200 {
+	if a := e.do(r, "GET", "/api/npm/it/"+rRemote+"/"+e.pkg, e.tokReader); a.Status != 200 {
 		t.Fatalf("document: %d %s", a.Status, a.Body)
 	}
 	for _, p := range []string{tgzPath(rRemote, e.pkg, e.ver), tgzPath(rVirtual, e.pkg, e.ver)} {
@@ -416,7 +416,7 @@ func TestR_VULN_015_ARemoteMissWithMissingDataIsRefusedBeforeTheFetchWhenTheRepo
 	r := e.replica("web-1")
 	e.states.set("npm", advisory.DataState{})
 	for _, repo := range []string{"npm-remote-strict", rRemote} {
-		if a := e.do(r, "GET", "/api/npm/"+repo+"/"+e.pkg, e.tokReader); a.Status != 200 {
+		if a := e.do(r, "GET", "/api/npm/it/"+repo+"/"+e.pkg, e.tokReader); a.Status != 200 {
 			t.Fatalf("document of %s: %d %s", repo, a.Status, a.Body)
 		}
 	}
@@ -440,7 +440,7 @@ func TestR_VULN_015_MissingDataAppliesOnlyToVersionsInScope(t *testing.T) {
 	r := e.replica("web-1")
 	e.states.set("npm", advisory.DataState{})
 	for _, repo := range []string{"npm-remote-strict", rPrivate} {
-		if a := e.do(r, "GET", "/api/npm/"+repo+"/"+e.pkg, e.tokReader); a.Status != 200 {
+		if a := e.do(r, "GET", "/api/npm/it/"+repo+"/"+e.pkg, e.tokReader); a.Status != 200 {
 			t.Fatalf("document of %s: %d %s", repo, a.Status, a.Body)
 		}
 	}
