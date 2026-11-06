@@ -118,7 +118,7 @@ func buildNPMHAFixture(t *testing.T, fx *npmFixture) *npmHAFixture {
 	waitFor(t, "the load's token to read npm-local and npm-all on every replica", 30*time.Second, 500*time.Millisecond, func() bool {
 		for i := 0; i < 6; i++ {
 			for _, key := range []string{npmLocalKey, npmAllKey} {
-				if r := adm.withToken(h.tokens[0]).get(npmBase + key + "/-/whoami"); r.Status != 200 {
+				if r := adm.withToken(h.tokens[0]).get(npmAddr(key) + "/-/whoami"); r.Status != 200 {
 					return false
 				}
 			}
@@ -226,17 +226,17 @@ func buildNPMHAFixture(t *testing.T, fx *npmFixture) *npmHAFixture {
 	// k6's documents: the local packages and the first twenty roots of the remote, by name
 	var docs []string
 	for _, name := range append(append([]string{}, h.locals...), blob) {
-		docs = append(docs, npmBase+npmAllKey+"/"+url.PathEscape(name))
+		docs = append(docs, npmAddr(npmAllKey)+"/"+url.PathEscape(name))
 	}
 	names := sortedKeys(roots)
 	h.remoteRoots = names[:min(20, len(names))]
 	for _, name := range h.remoteRoots {
-		docs = append(docs, npmBase+npmAllKey+"/"+url.PathEscape(name))
+		docs = append(docs, npmAddr(npmAllKey)+"/"+url.PathEscape(name))
 	}
 	h.k6Input, _ = json.Marshal(map[string]any{"documents": docs, "tarballs": tarballs})
-	all := []string{npmBase + npmAllKey + "/" + url.PathEscape(blob)}
+	all := []string{npmAddr(npmAllKey) + "/" + url.PathEscape(blob)}
 	for _, name := range sortedKeys(lockedNames) {
-		all = append(all, npmBase+npmAllKey+"/"+url.PathEscape(name))
+		all = append(all, npmAddr(npmAllKey)+"/"+url.PathEscape(name))
 	}
 	h.allDocuments = len(all)
 	h.k6InputAll, _ = json.Marshal(map[string]any{"documents": all, "tarballs": tarballs})

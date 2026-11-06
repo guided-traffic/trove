@@ -45,7 +45,7 @@ func setupSnippet(t testing.TB, row, host, repo string) (file, content string) {
 	}[familyOf(row)]
 	regURL := registryURL(t, host, repo)
 	data := formats.SetupData{
-		RegistryURL: regURL, Repository: repo, Endpoint: "default",
+		RegistryURL: regURL, Repository: repoRef(repo), Endpoint: "default",
 		RequiresAuth: true,
 	}
 	for _, tpl := range npm.New().SetupTemplates() {
@@ -143,7 +143,7 @@ func (c *npmClient) publish(name, version string) string {
 // check of the result that does not trust the client's report does.
 func (fx *npmFixture) registryDoc(t testing.TB, key, name string) reply {
 	t.Helper()
-	return fx.publisherGet(t, npmBase+key+"/"+url.PathEscape(name))
+	return fx.publisherGet(t, npmAddr(key)+"/"+url.PathEscape(name))
 }
 
 // publisherGet reads a path with the publisher's token and waits out a 429 as the clients do: the eight rows share the
@@ -200,7 +200,7 @@ func requireScatter(t testing.TB, fx *npmFixture) {
 	t.Helper()
 	seen := map[string]bool{}
 	for i := 0; i < 6 && len(seen) < 2; i++ {
-		seen[fx.publisherGet(t, npmBase+fx.registry()+"/-/ping").Replica()] = true
+		seen[fx.publisherGet(t, npmAddr(fx.registry())+"/-/ping").Replica()] = true
 	}
 	if len(seen) < 2 {
 		t.Fatalf("six consecutive requests reached %d replica(s): the cluster is not in the scatter profile", len(seen))
@@ -505,7 +505,7 @@ func scenarioUnpublish(t *testing.T, c *npmClient) {
 	if len(versions) != 1 || versions[0] != "1.0.0" || tags["latest"] != "1.0.0" {
 		t.Fatalf("after unpublish of 1.1.0: versions %v, dist-tags %v, want 1.0.0 as latest", versions, tags)
 	}
-	r := c.fx.publisherGet(t, npmBase+c.registryKey+"/"+url.PathEscape(name)+"/-/"+name+"-1.1.0.tgz")
+	r := c.fx.publisherGet(t, npmAddr(c.registryKey)+"/"+url.PathEscape(name)+"/-/"+name+"-1.1.0.tgz")
 	if r.Status != 404 && r.Status != 410 {
 		t.Fatalf("the tarball of the unpublished version answers %s, want 404 or 410", r)
 	}

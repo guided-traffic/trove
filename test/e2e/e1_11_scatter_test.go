@@ -264,7 +264,7 @@ func TestE1_11Scatter(t *testing.T) {
 				key := fmt.Sprintf("e2e-vis-%d-%d", time.Now().Unix(), i)
 				adm.do(http.MethodPost, reposRoute, map[string]string{"key": key, "class": "local", "format": "generic"}).want(t, "create repository", 201)
 				for k := 0; k < 3; k++ { // one request per replica in turn
-					r := adm.do(http.MethodPut, filesBase+key+"/a.txt", "x")
+					r := adm.do(http.MethodPut, filesAddr(key)+"/a.txt", "x")
 					if r.Status != 201 && r.Status != 200 {
 						t.Fatalf("upload to the new repository %s through %s = %s", key, r.Replica(), r)
 					}

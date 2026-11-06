@@ -617,6 +617,26 @@ const (
 // the exposure rule's repository, of the findings filter and of the authorization check.
 func qn(key string) string { return e2eProject + "/" + key }
 
+// repoRef is the qualified name <projectKey>/<repoKey> of a repository reference: a bare key is a repository of e2eProject, a
+// reference with a "/" (a repository of a partner project) is kept.
+func repoRef(ref string) string {
+	if strings.Contains(ref, "/") {
+		return ref
+	}
+	return qn(ref)
+}
+
+// npmAddr, nugetAddr and filesAddr are the address of a repository reference without the trailing slash.
+func npmAddr(ref string) string   { return "/api/npm/" + repoRef(ref) }
+func nugetAddr(ref string) string { return "/api/nuget/" + repoRef(ref) }
+func filesAddr(ref string) string { return "/files/" + repoRef(ref) }
+
+// repoAPI is the management path /api/v1/projects/<projectKey>/repositories/<repoKey> of a repository reference.
+func repoAPI(ref string) string {
+	project, key, _ := strings.Cut(repoRef(ref), "/")
+	return "/api/v1/projects/" + project + "/repositories/" + key
+}
+
 var (
 	projectMu   sync.Mutex
 	projectMade bool

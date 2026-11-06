@@ -30,6 +30,13 @@ failovers under npm load, in [Drain and failover under npm load](#drain-and-fail
   create` through `kubectl exec` into a worker pod); everything else is the management API. They run in the `scatter`
   profile (three `api` and three `packages` replicas, every request to another one) and `TestMain` returns the cluster to the default profile at
   the end.
+- **Every repository of the suite is in the project `e2e`** (`e2eProject` in [m1_env_test.go](../../test/e2e/m1_env_test.go)).
+  `adminAPI` creates the project once per run (`POST /api/v1/projects`, 409 is fine), so a repository is created with
+  `POST /api/v1/projects/e2e/repositories`, addressed as `/api/<format>/e2e/<key>/` and `/files/e2e/<key>/`, and named in
+  instance-wide policies, exposure rules, findings filters and authorization checks by its qualified name `e2e/<key>`
+  (`qn`, `ensurePolicy` qualifies bare keys). The partner project tests below use projects of their own. The upgrade tests
+  start on the release before the upgrade, which has no projects: until a release with projects exists their fixtures
+  (`buildUpgradeFixture`) cannot be created there.
 - **A failing test here is a finding.** When a criterion fails because of the product, the test stays red
   and [Findings of the suite](#findings-of-the-suite) says what was measured. No threshold is moved to make it pass.
 
@@ -2494,19 +2501,20 @@ in the `scatter` profile through the edge, so every request of a client reaches 
 `Project` (deploy/dev/e2e.sh); `nuget` takes every `TestNuGet...`.
 
 The harness is [project_env_test.go](../../test/e2e/project_env_test.go). `newPartnerProject` creates the project `<label>-<run>`
-(`partner-npm-<hex>`, `partner-nuget-<hex>`) with `managePolicies` and `manageRepositories` on, signs bob in through the IdP (a
-session, no system role) and makes him the project's administrator (`PUT /projects/{key}/admins/user%3Abob`), then waits until
-nine requests, spread over the replicas, all show the project in bob's `authz/me` `projects` and no role. Everything inside the project
-is done with bob's session (the project administrator's credential is a session or a token with `admin: true`, Q-AUTHZ-183), not
-with the administrator token. The administrator token only creates the project and cleans up.
+(`partner-npm-<hex>`, `partner-nuget-<hex>`), signs bob in through the IdP (a session, no system role) and makes him an Owner of the
+project (`PUT /projects/{key}/members/user%3Abob` with `{"role":"owner"}`, Q-AUTHZ-207), then waits until nine requests, spread over the
+replicas, all show the project in bob's `authz/me` `projects` with the role `owner` and no system role. Everything inside the project
+is done with bob's session (the Owner's administration needs a session or a token with `admin: true`, Q-AUTHZ-183), not with the
+administrator token. The administrator token only creates the project and cleans up. The names inside the project carry no prefix
+(Q-AUTHZ-209): the repositories are addressed as `<key>/local` and so on.
 
 | Step | Who | Request |
 |---|---|---|
-| project, administrator | administrator | `POST /projects`, `PUT /projects/{key}/admins/user%3Abob` |
-| local, remote and virtual repository `<key>-local`, `<key>-remote`, `<key>-all` | bob | `POST /repositories` with `project` (the virtual one: both as members, the local one as deployment target) |
-| service account `<key>-ci` | bob | `POST /service-accounts` with `project` |
-| policies `<key>-write` (`read`, `deploy` on the local repository) and `<key>-read` (`read` on the remote and the virtual repository) | bob | `POST /permission-policies` with `project` |
-| a token, no endpoint, scope `inherit`, one hour | bob | `POST /service-accounts/<key>-ci/tokens` |
+| project, Owner | administrator | `POST /projects`, `PUT /projects/{key}/members/user%3Abob` |
+| local, remote and virtual repository `local`, `remote`, `all` of the project | bob | `POST /projects/{key}/repositories` (the virtual one: both as members by their bare keys, the local one as deployment target) |
+| service account `ci`, principal `sa:<key>/ci` | bob | `POST /projects/{key}/service-accounts` |
+| policies `write` (`read`, `deploy` on the local repository) and `read` (`read` on the remote and the virtual repository) | bob | `POST /projects/{key}/policies` |
+| a token, no endpoint, scope `inherit`, one hour | bob | `POST /projects/{key}/service-accounts/ci/tokens` |
 | publish, install, refusals | the partner, with that token only | the real clients |
 | revoke | bob | `DELETE /tokens/{id}`; the test then waits until the replicas refuse the token |
 | clean up | administrator | the account, the repositories, the project (the project is deleted when the workers have removed the repositories: a repository of any lifecycle counts as a member, `project_not_empty`) |

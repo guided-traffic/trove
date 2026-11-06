@@ -149,7 +149,7 @@ func (fx *npmFixture) registry() string { return npmAllKey }
 
 // registryURL is the base URL of a repository as the setup snippets print it (R-NPM-041): the edge's address.
 func registryURL(t testing.TB, host, key string) string {
-	return "https://" + host + ":" + edgePort(t) + npmBase + key + "/"
+	return "https://" + host + ":" + edgePort(t) + "/api/npm/" + repoRef(key) + "/"
 }
 
 // pkgName is a package name of this run: unique per row and run, so a rerun on the same cluster never meets

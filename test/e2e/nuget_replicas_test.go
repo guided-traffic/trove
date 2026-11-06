@@ -65,7 +65,7 @@ func (fx *nugetFixture) sameOnEveryReplica(t *testing.T, path, kind string) {
 func (fx *nugetFixture) documentsOnEveryReplica(t *testing.T, repo, id, version string) {
 	t.Helper()
 	lower := strings.ToLower(id)
-	base := nugetBase + repo + "/"
+	base := nugetAddr(repo) + "/"
 	// path -> the ETag it carries; the .nuspec is not fetched first: the first answer of a cache miss within the
 	// withheld tail carries the validator of the stored answer (Q-NUGET-86)
 	docs := map[string]string{

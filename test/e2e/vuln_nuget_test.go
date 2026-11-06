@@ -186,7 +186,7 @@ func TestVuln_R_VULN_015_NuGetBlockedRestoreInTriage(t *testing.T) {
 	t.Run("R-VULN-016 the refusal on the wire: one line, no-store", func(t *testing.T) {
 		id := e.nugetTri["replicas"]
 		a := e.adm.withToken(e.nuget.token)
-		path := nugetBase + vulnNuGetRemote + "/v3/flatcontainer/" + strings.ToLower(id) + "/1.0.0/" + strings.ToLower(id) + ".1.0.0.nupkg"
+		path := nugetAddr(vulnNuGetRemote) + "/v3/flatcontainer/" + strings.ToLower(id) + "/1.0.0/" + strings.ToLower(id) + ".1.0.0.nupkg"
 		a.get(path).want(t, "the first download fills the cache", 200)
 		f := e.finding(t, vulnNuGetRemote, strings.ToLower(id), "1.0.0")
 		e.block(t, e.adm, f.ID)
@@ -216,13 +216,13 @@ func TestVuln_R_VULN_018_NuGetVulnerabilityInfoOnTheWire(t *testing.T) {
 	var etags []string
 	for i, addr := range addrs {
 		a := apiAtPod(t, addr, e.nuget.token)
-		idx := a.get(nugetBase+vulnNuGetRemote+"/v3/index.json").want(t, "service index of nuget-remote", 200)
+		idx := a.get(nugetAddr(vulnNuGetRemote)+"/v3/index.json").want(t, "service index of nuget-remote", 200)
 		if strings.Contains(string(idx.Body), "VulnerabilityInfo") {
 			t.Errorf("replica %d: the service index of nuget-remote lists the vulnerability resource although the mode is off", i)
 		}
-		a.get(nugetBase+vulnNuGetRemote+"/v3/vulnerabilities/index.json").want(t, "vulnerabilities of nuget-remote (off)", 404)
+		a.get(nugetAddr(vulnNuGetRemote)+"/v3/vulnerabilities/index.json").want(t, "vulnerabilities of nuget-remote (off)", 404)
 		for _, key := range []string{vulnNuGetLocal, vulnNuGetAll} {
-			si := a.get(nugetBase+key+"/v3/index.json").want(t, "service index of "+key, 200)
+			si := a.get(nugetAddr(key)+"/v3/index.json").want(t, "service index of "+key, 200)
 			requireAll(t, "the service index of "+key, string(si.Body), "VulnerabilityInfo/6.7.0")
 			ix := a.get(vulnResourcePath(t, si, "VulnerabilityInfo/6.7.0")).want(t, "vulnerability index of "+key, 200)
 			var entries []struct {
@@ -291,7 +291,7 @@ func vulnResourcePath(t testing.TB, serviceIndex reply, resourceType string) str
 // resource, the resource's index lists the page.
 func vulnPagePath(t testing.TB, a *api, key string) string {
 	t.Helper()
-	si := a.get(nugetBase+key+"/v3/index.json").want(t, "service index of "+key, 200)
+	si := a.get(nugetAddr(key)+"/v3/index.json").want(t, "service index of "+key, 200)
 	ix := a.get(vulnResourcePath(t, si, "VulnerabilityInfo/6.7.0")).want(t, "vulnerability index of "+key, 200)
 	var entries []struct {
 		ID string `json:"@id"`

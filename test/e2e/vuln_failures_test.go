@@ -353,7 +353,7 @@ func (e *vulnEnv) blockedPaths(t *testing.T) []blockProbe {
 	nugetA := e.adm.withToken(e.nuget.token)
 	nupkg := func(repo, id string) string {
 		l := strings.ToLower(id)
-		return nugetBase + repo + "/v3/flatcontainer/" + l + "/1.0.0/" + l + ".1.0.0.nupkg"
+		return nugetAddr(repo) + "/v3/flatcontainer/" + l + "/1.0.0/" + l + ".1.0.0.nupkg"
 	}
 	npmName, nugetID := e.npmTri["fault"], e.nugetTri["fault"]
 	npmTri, nugetTri := tarballPath(npmRemoteKey, npmName), nupkg(vulnNuGetRemote, nugetID)

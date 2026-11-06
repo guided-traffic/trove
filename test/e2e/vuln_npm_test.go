@@ -123,7 +123,7 @@ func TestVuln_R_VULN_017_NPMAuditThroughEveryRepository(t *testing.T) {
 		a := apiAtPod(t, addr, e.npm.token)
 		for _, key := range repos {
 			for _, name := range []string{vulnNPMVuln, vulnNPMAlias} {
-				a.getOverForward(npmBase + key + "/" + name)
+				a.getOverForward(npmAddr(key) + "/" + name)
 			}
 		}
 	}
@@ -218,7 +218,7 @@ func TestVuln_R_VULN_017_NPMAuditBody(t *testing.T) {
 		var bodies [][]byte
 		for i, addr := range addrs[:2] {
 			a := apiAtPod(t, addr, e.npm.token)
-			r := a.do(http.MethodPost, npmBase+key+"/-/npm/v1/security/advisories/bulk", req, "Content-Type", "application/json", "Content-Encoding", "gzip")
+			r := a.do(http.MethodPost, npmAddr(key)+"/-/npm/v1/security/advisories/bulk", req, "Content-Type", "application/json", "Content-Encoding", "gzip")
 			r.want(t, fmt.Sprintf("audit of %s at replica %d", key, i), 200)
 			bodies = append(bodies, r.Body)
 			if i > 0 {
@@ -283,7 +283,7 @@ func TestVuln_R_VULN_015_NPMBlockedInstallMalicious(t *testing.T) {
 	})
 	t.Run("the refusal on the wire, no tarball request upstream, nothing stored", func(t *testing.T) {
 		a := e.adm.withToken(e.npm.token)
-		r := a.get(npmBase+npmRemoteKey+"/"+vulnNPMMal+"/-/"+vulnNPMMal+"-1.0.0.tgz").want(t, "tarball of the malicious version", 403)
+		r := a.get(npmAddr(npmRemoteKey)+"/"+vulnNPMMal+"/-/"+vulnNPMMal+"-1.0.0.tgz").want(t, "tarball of the malicious version", 403)
 		if cc := r.Header.Get("Cache-Control"); !strings.Contains(cc, "no-store") {
 			t.Errorf("Cache-Control of the refusal = %q, want no-store", cc)
 		}
@@ -297,7 +297,7 @@ func TestVuln_R_VULN_015_NPMBlockedInstallMalicious(t *testing.T) {
 			t.Errorf("the refusal = %+v, want code vulnerability_blocked and trove's text", body)
 		}
 		for _, m := range []string{http.MethodHead} {
-			a.do(m, npmBase+npmAllKey+"/"+vulnNPMMal+"/-/"+vulnNPMMal+"-1.0.0.tgz", nil).want(t, m+" of the malicious version", 403)
+			a.do(m, npmAddr(npmAllKey)+"/"+vulnNPMMal+"/-/"+vulnNPMMal+"-1.0.0.tgz", nil).want(t, m+" of the malicious version", 403)
 		}
 		if n := stub(t).counts(t).Tarballs(vulnNPMMal); n != 0 {
 			t.Errorf("the npm test upstream served the tarball of %s %d times, want none", vulnNPMMal, n)

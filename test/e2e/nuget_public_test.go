@@ -100,7 +100,7 @@ func requireTroveAddresses(t *testing.T, what string, raw []byte, prefix string)
 
 // repoPrefix is the start of every address a repository's documents may name: <base>/api/nuget/<key>/v3/.
 func repoPrefix(key string) string {
-	return strings.TrimRight(cfg.edgeURL, "/") + nugetBase + key + "/v3/"
+	return strings.TrimRight(cfg.edgeURL, "/") + nugetAddr(key) + "/v3/"
 }
 
 // registrationLeaves reads the SemVer 2.0.0 registration of an ID through a repository the way a client finds it (the
@@ -109,7 +109,7 @@ func repoPrefix(key string) string {
 func registrationLeaves(t *testing.T, a *api, key, lowerID string) []string {
 	t.Helper()
 	prefix := repoPrefix(key)
-	idx := a.get(nugetBase+key+"/v3/index.json").want(t, "the service index of "+key, 200)
+	idx := a.get(nugetAddr(key)+"/v3/index.json").want(t, "the service index of "+key, 200)
 	requireTroveAddresses(t, "the service index of "+key, idx.Body, prefix)
 	var service struct {
 		Resources []struct {
@@ -219,7 +219,7 @@ func TestNuGetClosingPublic(t *testing.T) {
 			t.Errorf("%s is listed with %d downloads, want nuget.org's count (R-NUGET-016 keeps the download counts)", nugetOrgOne, downloads)
 		}
 		a := newAPI(t).withToken(fx.token)
-		r := a.get(nugetBase+remote+"/v3/search?q=newtonsoft&take=20&semVerLevel=2.0.0").want(t, "search through "+remote, 200)
+		r := a.get(nugetAddr(remote)+"/v3/search?q=newtonsoft&take=20&semVerLevel=2.0.0").want(t, "search through "+remote, 200)
 		requireTroveAddresses(t, "the search answer of "+remote, r.Body, repoPrefix(remote))
 	})
 

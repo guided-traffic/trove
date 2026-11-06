@@ -113,7 +113,7 @@ func TestVuln_SetupSurvivesABrokenForward(t *testing.T) {
 		defer stop()
 		a := apiAtPod(t, addrs[0], "")
 		dials := breakFirstConnection(t, a.c, forwardAt(addrs[0]))
-		r := a.getOverForward(npmBase + npmLocalKey + "/-/ping")
+		r := a.getOverForward(npmAddr(npmLocalKey) + "/-/ping")
 		if r.Status == 0 {
 			t.Fatal("no answer")
 		}

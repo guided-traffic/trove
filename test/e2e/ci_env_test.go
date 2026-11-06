@@ -901,7 +901,7 @@ func (fx *ciFixture) publishDependencies(t testing.TB) error {
 	if out, code := podExec(t, pod, "", 10*time.Minute, append(append([]string{}, nenv...), "dotnet", "pack", "lib.csproj", "-c", "Release", "-o", "out", "--nologo")...); code != 0 {
 		return fmt.Errorf("dotnet pack of %s: %d\n%s", nugetDependency, code, tailLines(out, 30))
 	}
-	source := fx.base + nugetBase + ciNugetInt + "/v3/index.json"
+	source := fx.base + nugetAddr(ciNugetInt) + "/v3/index.json"
 	if out, code := podExec(t, pod, "", 5*time.Minute, append(append([]string{}, nenv...), "sh", "-c", `cd push && dotnet nuget push ../out/`+nugetDependency+`.1.0.0.nupkg --source "$1" --api-key "$TROVE_TOKEN"`, "sh", source)...); code != 0 || !pushedRE.MatchString(out) {
 		return fmt.Errorf("push %s 1.0.0: %d\n%s", nugetDependency, code, tailLines(out, 30))
 	}

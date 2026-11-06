@@ -95,7 +95,7 @@ func TestNPMReplicas(t *testing.T) {
 		c, undo := pinnedClient(t, fx, "npm11", 2, webs[2])
 		defer undo()
 		c.publish(name, "1.0.0")
-		path := npmBase + fx.registry() + "/" + url.PathEscape(name)
+		path := npmAddr(fx.registry()) + "/" + url.PathEscape(name)
 		at := func(i int) *api { return apiAtPod(t, addrs[i], fx.token) }
 		first := at(0).get(path).want(t, "document through replica A", 200)
 		etag := first.Header.Get("ETag")
@@ -118,7 +118,7 @@ func TestNPMReplicas(t *testing.T) {
 			t.Fatalf("after a publish through replica C, replica A answered the old validator with %s (ETag %q), want 200 and a new ETag", r, r.Header.Get("ETag"))
 		}
 		// the same for the local repository itself
-		local := npmBase + npmLocalKey + "/" + url.PathEscape(name)
+		local := npmAddr(npmLocalKey) + "/" + url.PathEscape(name)
 		e := at(0).get(local).want(t, "document of npm-local", 200).Header.Get("ETag")
 		for i := 1; i < len(addrs); i++ {
 			if r := at(i).get(local, "If-None-Match", e); r.Status != 304 {
@@ -132,7 +132,7 @@ func TestNPMReplicas(t *testing.T) {
 		s.resetAll(t)
 		defer s.resetAll(t)
 		const remotePkg = "@cobalt/nimble-ledger"
-		remotePath := npmBase + repos.remote + "/" + url.PathEscape(remotePkg)
+		remotePath := npmAddr(repos.remote) + "/" + url.PathEscape(remotePkg)
 		re := at(0).get(remotePath).want(t, "document of the remote", 200).Header.Get("ETag")
 		for i := 1; i < len(addrs); i++ {
 			if r := at(i).get(remotePath, "If-None-Match", re); r.Status != 304 {
@@ -307,7 +307,7 @@ func cacheInvalidationOnEveryReplica(t *testing.T, fx *npmFixture) {
 	defer s.resetAll(t)
 	addrs, stop := packagesForwards(t)
 	defer stop()
-	path := npmBase + repos.remote + "/" + url.PathEscape(pkg)
+	path := npmAddr(repos.remote) + "/" + url.PathEscape(pkg)
 	for i := range addrs {
 		apiAtPod(t, addrs[i], fx.token).get(path).want(t, fmt.Sprintf("document through replica %d", i), 200)
 	}

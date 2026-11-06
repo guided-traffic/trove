@@ -34,7 +34,7 @@ func maliciousRecord(id, name string) osvstub.Advisory {
 
 // tarballPath is the path of version 1.0.0 of an unscoped package below a repository.
 func tarballPath(repo, name string) string {
-	return npmBase + repo + "/" + name + "/-/" + name + "-1.0.0.tgz"
+	return npmAddr(repo) + "/" + name + "/-/" + name + "-1.0.0.tgz"
 }
 
 // replicaClients are the clients of the default endpoint, each dialing one replica's pod: the administrator's (triage), each
@@ -238,7 +238,7 @@ func TestVuln_R_VULN_010_ClaimedNamesAreInternal(t *testing.T) {
 	if !found {
 		t.Errorf("the claimed-name matches %s do not list %s with MAL-2026-1235", r.Body, vulnAcme)
 	}
-	e.adm.withToken(e.npm.token).get(npmBase+vulnNPMInternal+"/"+vulnAcme+"/-/ui-1.0.0.tgz").want(t, "the download of the claimed package", 200)
+	e.adm.withToken(e.npm.token).get(npmAddr(vulnNPMInternal)+"/"+vulnAcme+"/-/ui-1.0.0.tgz").want(t, "the download of the claimed package", 200)
 }
 
 // TestVuln_R_VULN_011_R_VULN_018_AnAdvisoryAppearsLate: the test source publishes an advisory for a version npm-remote has cached
@@ -274,7 +274,7 @@ func TestVuln_R_VULN_011_R_VULN_018_AnAdvisoryAppearsLate(t *testing.T) {
 	t.Run("R-VULN-011 a cached version gets its finding", func(t *testing.T) {
 		const late = osvLate
 		stub(t).publish(t, late, "2.0.0", nil)
-		path := npmBase + npmRemoteKey + "/" + late + "/-/" + late + "-2.0.0.tgz"
+		path := npmAddr(npmRemoteKey) + "/" + late + "/-/" + late + "-2.0.0.tgz"
 		a := e.adm.withToken(e.npm.token)
 		a.get(path).want(t, "cache "+late, 200)
 		if got := e.findings(t, url.Values{"repository": {qn(npmRemoteKey)}, "package": {late}}); len(got) != 0 {

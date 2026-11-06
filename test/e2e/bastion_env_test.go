@@ -490,7 +490,7 @@ func (e *basEnv) publishNPM(t testing.TB, repo, name, version string, deps map[s
 	}
 	pub := newAPI(t).withToken(e.pub)
 	for range 20 {
-		r := pub.do(http.MethodPut, npmBase+repo+"/"+strings.ReplaceAll(name, "/", "%2f"), doc)
+		r := pub.do(http.MethodPut, npmAddr(repo)+"/"+strings.ReplaceAll(name, "/", "%2f"), doc)
 		if r.Status == http.StatusTooManyRequests {
 			time.Sleep(2 * time.Second)
 			continue
@@ -593,11 +593,11 @@ func (m mainReq) kind() string {
 	switch {
 	case strings.HasPrefix(p, "/api/v1/bastion"):
 		return "iface"
-	case strings.HasPrefix(p, npmBase+basNPMRepo+"/") && strings.HasSuffix(p, ".tgz"):
+	case strings.HasPrefix(p, npmAddr(basNPMRepo)+"/") && strings.HasSuffix(p, ".tgz"):
 		return "artifact"
-	case strings.HasPrefix(p, nugetBase+basNuGetRepo+"/") && strings.HasSuffix(p, ".nupkg"):
+	case strings.HasPrefix(p, nugetAddr(basNuGetRepo)+"/") && strings.HasSuffix(p, ".nupkg"):
 		return "artifact"
-	case strings.HasPrefix(p, npmBase+basNPMRepo+"/"), strings.HasPrefix(p, nugetBase+basNuGetRepo+"/"):
+	case strings.HasPrefix(p, npmAddr(basNPMRepo)+"/"), strings.HasPrefix(p, nugetAddr(basNuGetRepo)+"/"):
 		return "document"
 	}
 	return "other"

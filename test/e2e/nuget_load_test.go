@@ -192,7 +192,7 @@ func buildNuGetHAFixture(t *testing.T, fx *nugetFixture) *nugetHAFixture {
 		ETags        map[string]string `json:"etags"`
 		Nupkgs       []map[string]any  `json:"nupkgs"`
 	}{ETags: map[string]string{}}
-	base := nugetBase + nugetHAAll + "/v3/"
+	base := nugetAddr(nugetHAAll) + "/v3/"
 	ids := append(append([]string{}, h.locals...), closure[:min(17, len(closure))]...)
 	for i, id := range ids {
 		lower := strings.ToLower(id)

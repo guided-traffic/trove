@@ -171,7 +171,7 @@ func TestE03Roles(t *testing.T) {
 	t.Run("R-HA-037 R-ARCH-001 E6a.5 package traffic appears only in the access logs of the packages pods, and UI, sign-in and management traffic only in those of the api pods", func(t *testing.T) {
 		start := time.Now().Add(-5 * time.Second)
 		marker := fmt.Sprintf("e2e-roles-%d", time.Now().UnixNano())
-		pkgPaths := []string{npmBase + marker, nugetBase + marker + "/v3/index.json", filesBase + marker + "/x", "/v2/" + marker + "/x", "/.well-known/" + marker}
+		pkgPaths := []string{npmBase + marker, nugetAddr(marker) + "/v3/index.json", filesAddr(marker) + "/x", "/v2/" + marker + "/x", "/.well-known/" + marker}
 		apiPaths := []string{reposBase + marker, "/ui/" + marker, "/auth/oidc/" + marker + "/start", "/api/v1/system/ping"}
 		for i := 0; i < 24; i++ {
 			for _, p := range append(append([]string{}, pkgPaths...), apiPaths...) {

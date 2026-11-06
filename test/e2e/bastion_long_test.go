@@ -145,7 +145,7 @@ func TestBastionLong_R_BAS_049_AnonymousMissFlood(t *testing.T) {
 
 	anon := site.api(t, "")
 	waitFor(t, "the Bastion to admit an anonymous request", 90*time.Second, 2*time.Second, func() bool {
-		return anon.get(npmBase+openRepo+"/"+known).Status == 200
+		return anon.get(npmAddr(openRepo)+"/"+known).Status == 200
 	})
 	window := openMainWindow(t)
 	inflightMax := int64(0)
@@ -170,7 +170,7 @@ func TestBastionLong_R_BAS_049_AnonymousMissFlood(t *testing.T) {
 			time.Sleep(300 * time.Millisecond)
 		}
 	}()
-	res := site.flood(t, 10000, 50, 90, func(i int) string { return npmBase + openRepo + "/nonexistent-" + env.run + "-" + itoa(i) }, func(int) string { return "" })
+	res := site.flood(t, 10000, 50, 90, func(i int) string { return npmAddr(openRepo) + "/nonexistent-" + env.run + "-" + itoa(i) }, func(int) string { return "" })
 	close(stop)
 	sampler.Wait()
 	reqs := window.done()

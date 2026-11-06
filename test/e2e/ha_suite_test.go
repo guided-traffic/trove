@@ -251,7 +251,7 @@ func (p *s3Prober) probes() []s3Probe {
 
 func (p *s3Prober) probeMetadata() {
 	for _, q := range []struct{ kind, path, token string }{
-		{"document", npmBase + npmAllKey + "/" + url.PathEscape(p.h.locals[0]), p.h.k6Token()},
+		{"document", npmAddr(npmAllKey) + "/" + url.PathEscape(p.h.locals[0]), p.h.k6Token()},
 		{"api", "/api/v1/repositories?limit=5", ""},
 	} {
 		a := p.h.fx.adm

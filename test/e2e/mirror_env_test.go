@@ -138,7 +138,7 @@ func (e *mirrorEnv) removeStaleMirrors(t testing.TB) {
 			Key string `json:"key"`
 		} `json:"items"`
 	}
-	e.adm.get(reposRoute + "?limit=500").want(t, "list the repositories", 200).JSON(t, &l)
+	e.adm.get(reposRoute+"?limit=500").want(t, "list the repositories", 200).JSON(t, &l)
 	for _, it := range l.Items {
 		if strings.HasPrefix(it.Key, "npm-mirror-") || strings.HasPrefix(it.Key, "nuget-mirror-") {
 			deleteRepository(t, e.adm, it.Key)

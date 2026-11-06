@@ -34,7 +34,7 @@ func newClaimTiming(t *testing.T, purpose string) *claimTiming {
 	// The ID is the run's and the test's (one process may run both tests), the query is its second part.
 	stem, word := "Partner"+fx.run, purpose+fx.run
 	c := &claimTiming{t: t, fx: fx, stub: nugetStub(t), id: stem + "." + word, pattern: stem + ".*"}
-	c.path = nugetBase + repos.all + "/v3/search?take=20&q=" + strings.ToLower(word)
+	c.path = nugetAddr(repos.all) + "/v3/search?take=20&q=" + strings.ToLower(word)
 	c.stub.nugetPublish(t, c.id, "1.0.0")
 	addrs, stop := packagesForwards(t)
 	t.Cleanup(stop)

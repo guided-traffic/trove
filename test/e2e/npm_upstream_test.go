@@ -71,7 +71,7 @@ func awaitReadableOnEveryReplica(t testing.TB, token string, keys ...string) {
 		for _, key := range keys {
 			start := time.Now()
 			for {
-				r := a.getOverForward(npmBase + key + "/-/ping") // action read: the repository and the grant on that replica
+				r := a.getOverForward("/api/npm/" + repoRef(key) + "/-/ping") // action read: the repository and the grant on that replica
 				if r.Status == 200 {
 					break
 				}
@@ -84,11 +84,11 @@ func awaitReadableOnEveryReplica(t testing.TB, token string, keys ...string) {
 	}
 }
 
-// deleteRepository deletes a repository, waiting out the admin API's rate limit (R-API-016).
+// deleteRepository deletes a repository (a bare key of the suite's project or `<project>/<key>`), waiting out the admin API's rate limit (R-API-016).
 func deleteRepository(t testing.TB, adm *api, key string) {
 	t.Helper()
 	for i := 0; i < 20; i++ {
-		r, err := adm.send(http.MethodDelete, reposBase+key, nil)
+		r, err := adm.send(http.MethodDelete, repoAPI(key), nil)
 		if err != nil {
 			t.Errorf("delete %s: %v", key, err)
 			return
@@ -234,7 +234,7 @@ func TestNPMCollapse(t *testing.T) {
 		defer s.resetAll(t)
 		webs := packagesReplicas(t, 2)
 		const name, misses = "@cobalt/eager-lantern", 100
-		path := npmBase + repos.remote + "/" + url.PathEscape(name)
+		path := npmAddr(repos.remote) + "/" + url.PathEscape(name)
 		// the system is quiet when the flight starts: a replica that came up a moment ago (the profile switch) may still
 		// be settling its sessions, which is not what the criterion measures
 		waitFor(t, "no session idle in transaction", 60*time.Second, time.Second, func() bool {
@@ -290,7 +290,7 @@ func TestNPMCollapse(t *testing.T) {
 		defer s.resetAll(t)
 		webs := packagesReplicas(t, 2)
 		const name = "@cobalt/early-nozzle"
-		path := npmBase + repos.remote + "/" + url.PathEscape(name)
+		path := npmAddr(repos.remote) + "/" + url.PathEscape(name)
 		withValkeyStopped(t, func() {
 			servingReadyDegraded(t, true)
 			for i, st := range burstOver(t, webs, path, fx.token, 30) {
@@ -315,7 +315,7 @@ func TestNPMCollapse(t *testing.T) {
 		defer s.resetAll(t)
 		webs := packagesReplicas(t, 2)
 		const name = "@cobalt/lucid-dial"
-		path := npmBase + repos.remote + "/" + url.PathEscape(name)
+		path := npmAddr(repos.remote) + "/" + url.PathEscape(name)
 		var statuses []int
 		var wg sync.WaitGroup
 		wg.Add(1)
@@ -355,7 +355,7 @@ func TestNPMCollapse(t *testing.T) {
 		addrs, stop := packagesForwards(t)
 		defer stop()
 		const name = "@cobalt/ivory-ember"
-		path := npmBase + repos.remote + "/" + url.PathEscape(name)
+		path := npmAddr(repos.remote) + "/" + url.PathEscape(name)
 		held := make(chan reply, 1)
 		go func() { r, _ := apiAtPod(t, addrs[0], fx.token).send(http.MethodGet, path, nil); held <- r }()
 		time.Sleep(1200 * time.Millisecond) // the first replica holds the flight lock and waits for the upstream
@@ -413,7 +413,7 @@ func TestNPMUpstream(t *testing.T) {
 		s.resetAll(t)
 		defer s.resetAll(t)
 		name := "e2e-no-such-" + fx.run
-		path := npmBase + repos.remote + "/" + name
+		path := npmAddr(repos.remote) + "/" + name
 		for i := 0; i < 12; i++ { // scattered over the replicas by the edge
 			fx.publisherGet(t, path).want(t, "document of a missing name", 404)
 		}

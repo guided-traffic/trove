@@ -212,7 +212,7 @@ func (e *basEnv) buildNuGet(t testing.TB) {
 	}
 	// every package that was pushed is listed by the flat container of the main installation
 	for _, id := range set.ids {
-		path := nugetBase + basNuGetRepo + "/v3/flatcontainer/" + strings.ToLower(id) + "/index.json"
+		path := nugetAddr(basNuGetRepo) + "/v3/flatcontainer/" + strings.ToLower(id) + "/index.json"
 		waitFor(t, "the main installation to list "+id+" after its push", 30*time.Second, time.Second, func() bool {
 			return e.adm.get(path).Status == 200
 		})
@@ -223,7 +223,7 @@ func (e *basEnv) buildNuGet(t testing.TB) {
 
 // npmDocURL is the path of a package document at a Bastion.
 func npmDocPath(name string) string {
-	return npmBase + basNPMRepo + "/" + strings.ReplaceAll(name, "/", "%2f")
+	return npmAddr(basNPMRepo) + "/" + strings.ReplaceAll(name, "/", "%2f")
 }
 
 // getAt is a GET of the Bastion from this machine with a token; a transport error is a failure.

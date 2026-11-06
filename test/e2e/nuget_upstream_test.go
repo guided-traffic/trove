@@ -150,7 +150,7 @@ func nugetReadableOnEveryReplica(t testing.TB, token string, keys ...string) {
 		for _, key := range keys {
 			start := time.Now()
 			for {
-				r := a.getOverForward(nugetBase + key + "/v3/index.json")
+				r := a.getOverForward(nugetAddr(key) + "/v3/index.json")
 				if r.Status == 200 {
 					break
 				}

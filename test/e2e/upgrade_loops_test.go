@@ -102,7 +102,7 @@ func buildUpgradeFixture(t *testing.T) *upgradeFx {
 	waitFor(t, "the NuGet publisher to read the virtual repository on at least two replicas", 60*time.Second, 500*time.Millisecond, func() bool {
 		seen := map[string]bool{}
 		for range 12 {
-			r := newAPI(t).withToken(fx.nuget.token).get(nugetBase + fx.nugetAll + "/v3/index.json")
+			r := newAPI(t).withToken(fx.nuget.token).get(nugetAddr(fx.nugetAll) + "/v3/index.json")
 			if r.Status != 200 {
 				return false
 			}

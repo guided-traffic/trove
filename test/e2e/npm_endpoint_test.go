@@ -126,19 +126,19 @@ func TestNPMEndpoint(t *testing.T) {
 
 		// the bodies of the endpoint name only the endpoint: tarball URLs carry its host and no member's key appears
 		api := customersAPI(t, bound)
-		doc := api.get(npmBase+repos.all+"/"+url.PathEscape(sdk)).want(t, "document on customers", 200)
+		doc := api.get(npmAddr(repos.all)+"/"+url.PathEscape(sdk)).want(t, "document on customers", 200)
 		body := string(doc.Body)
 		if !strings.Contains(body, "https://"+custHost+":"+edgePort(t)+"/") {
 			t.Fatalf("tarball URLs on customers do not name the endpoint's host:\n%s", tailLines(body, 6))
 		}
 		// the tarball of a hidden version is the 404 of R-EP-013, and no tarball URL names anything but the endpoint
-		api.get(npmBase+repos.all+"/"+url.PathEscape(sdk)+"/-/sdk-1.9.0.tgz").want(t, "the tarball of a hidden version", 404)
+		api.get(npmAddr(repos.all)+"/"+url.PathEscape(sdk)+"/-/sdk-1.9.0.tgz").want(t, "the tarball of a hidden version", 404)
 		for _, member := range []string{npmLocalKey, repos.remote} {
 			if strings.Contains(body, member) {
 				t.Fatalf("the document on customers names the member %s", member)
 			}
 		}
-		if tags := api.get(npmBase+repos.all+"/-/package/"+url.PathEscape(sdk)+"/dist-tags").want(t, "dist-tags on customers", 200); !strings.Contains(string(tags.Body), `"latest":"2.1.0"`) {
+		if tags := api.get(npmAddr(repos.all)+"/-/package/"+url.PathEscape(sdk)+"/dist-tags").want(t, "dist-tags on customers", 200); !strings.Contains(string(tags.Body), `"latest":"2.1.0"`) {
 			t.Fatalf("dist-tags on customers: %s, want latest on 2.1.0", tags)
 		}
 
@@ -151,7 +151,7 @@ func TestNPMEndpoint(t *testing.T) {
 		defer stop()
 		for i, p := range pods {
 			waitFor(t, fmt.Sprintf("replica %d to answer the earlier ETag with 200", i), 10*time.Second, 200*time.Millisecond, func() bool {
-				x := p.get(npmBase+repos.all+"/"+url.PathEscape(sdk), "If-None-Match", etag)
+				x := p.get(npmAddr(repos.all)+"/"+url.PathEscape(sdk), "If-None-Match", etag)
 				return x.Status == 200 && !strings.Contains(string(x.Body), `"2.0.0"`)
 			})
 		}
@@ -171,11 +171,11 @@ func TestNPMEndpoint(t *testing.T) {
 		}()
 		for i, p := range pods {
 			waitFor(t, fmt.Sprintf("replica %d to know the rule", i), 10*time.Second, 200*time.Millisecond, func() bool {
-				return p.get(npmBase+repos.all+"/-/ping").Status == 200
+				return p.get(npmAddr(repos.all)+"/-/ping").Status == 200
 			})
 		}
 		s.reset(t)
-		api.get(npmBase+repos.all+"/"+url.PathEscape(cobalt)).want(t, "an uncached remote package on customers", 404)
+		api.get(npmAddr(repos.all)+"/"+url.PathEscape(cobalt)).want(t, "an uncached remote package on customers", 404)
 		if n := s.counts(t).Documents(cobalt) + s.counts(t).Tarballs(cobalt); n != 0 {
 			t.Fatalf("customers made %d requests to the upstream for %s, want none (cache_fill false)", n, cobalt)
 		}
@@ -188,7 +188,7 @@ func TestNPMEndpoint(t *testing.T) {
 		if s.counts(t).Documents(cobalt) < 1 || s.counts(t).Tarballs(cobalt) < 1 {
 			t.Fatalf("the install through default did not fill the cache for %s: %s", cobalt, s.counts(t).Summary())
 		}
-		api.get(npmBase+repos.all+"/"+url.PathEscape(cobalt)).want(t, "the package on customers after the fill", 200)
+		api.get(npmAddr(repos.all)+"/"+url.PathEscape(cobalt)).want(t, "the package on customers after the fill", 200)
 		_ = npmstub.KindDocument
 	})
 }
