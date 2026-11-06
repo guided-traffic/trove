@@ -49,7 +49,7 @@ func (s *repoState) halfOpen(now time.Time) bool { return s.hasOpen && !now.Befo
 // stateOf returns the state of a repository, loading it on a miss under the fill
 // rule of R-ARCH-018.
 func (e *Engine) stateOf(ctx context.Context, rem Remote) (*repoState, error) {
-	e.keys.Store(rem.id, rem.Repo.Name)
+	e.keys.Store(rem.id, rem.Repo.Name.String())
 	st, err := e.state.Load(ctx, rem.id, func(ctx context.Context) (*repoState, error) { return e.loadState(ctx, rem.id) })
 	if err != nil {
 		return nil, err

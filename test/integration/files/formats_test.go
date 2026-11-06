@@ -86,7 +86,7 @@ func (f *formatsFixture) rev(name string) int64 {
 }
 
 func (f *formatsFixture) publish(user, name, version string) response {
-	return f.r.put(user, "/api/probe/probe-local/"+name+"/-/"+name+"-"+version+".tgz", "content of "+name+"@"+version)
+	return f.r.put(user, "/api/probe/it/probe-local/"+name+"/-/"+name+"-"+version+".tgz", "content of "+name+"@"+version)
 }
 
 // TestR_ARCH_009_PackageWriterBumpsRevSeqOncePerTransaction: every write to the rows
@@ -310,7 +310,7 @@ func TestR_ARCH_009_FormatHooksRunInTheItemTransaction(t *testing.T) {
 	})
 
 	t.Run("a tag change without content raises the revision through the format's own BumpRevision", func(t *testing.T) {
-		res := f.r.do("writer", http.MethodPut, "/api/probe/probe-local/left-pad/tag/latest", nil)
+		res := f.r.do("writer", http.MethodPut, "/api/probe/it/probe-local/left-pad/tag/latest", nil)
 		if res.status != http.StatusNoContent {
 			t.Fatalf("tag: %d %s", res.status, res.body)
 		}
@@ -320,7 +320,7 @@ func TestR_ARCH_009_FormatHooksRunInTheItemTransaction(t *testing.T) {
 	})
 
 	t.Run("the package document is rendered from the rows and carries its revision", func(t *testing.T) {
-		res := f.r.get("reader", "/api/probe/probe-local/left-pad")
+		res := f.r.get("reader", "/api/probe/it/probe-local/left-pad")
 		if res.status != http.StatusOK {
 			t.Fatalf("get: %d %s", res.status, res.body)
 		}
@@ -328,7 +328,7 @@ func TestR_ARCH_009_FormatHooksRunInTheItemTransaction(t *testing.T) {
 		if doc["rev"].(float64) != 3 || len(doc["versions"].([]any)) != 2 {
 			t.Fatalf("document = %v", doc)
 		}
-		if !strings.HasPrefix(doc["base"].(string), f.r.baseURL+"/api/probe/probe-local/") {
+		if !strings.HasPrefix(doc["base"].(string), f.r.baseURL+"/api/probe/it/probe-local/") {
 			t.Fatalf("base = %v: links come from the link builder on the endpoint's base URL", doc["base"])
 		}
 	})
@@ -359,47 +359,47 @@ func TestR_ARCH_005_DispatcherRoutesAndRefuses(t *testing.T) {
 				t.Fatalf("generic registered %s", p)
 			}
 		}
-		res := f.r.get("writer", "/api/generic/gen-local/x")
+		res := f.r.get("writer", "/api/generic/it/gen-local/x")
 		if res.status != http.StatusNotFound || res.header.Get("X-Probe-Error") != "" {
 			t.Fatalf("/api/generic/: %d %v", res.status, res.header)
 		}
 	})
 	t.Run("R-ARCH-005 an unknown route is 404 in the format's shape", func(t *testing.T) {
-		shaped(t, f.r.get("writer", "/api/probe/probe-local/a/b/c/d"), 404, "not_found")
+		shaped(t, f.r.get("writer", "/api/probe/it/probe-local/a/b/c/d"), 404, "not_found")
 	})
 	t.Run("R-ARCH-005 a wrong method is 405 with Allow", func(t *testing.T) {
-		res := f.r.do("writer", http.MethodPost, "/api/probe/probe-local/left-pad", nil)
+		res := f.r.do("writer", http.MethodPost, "/api/probe/it/probe-local/left-pad", nil)
 		shaped(t, res, 405, "method_not_allowed")
 		if res.header.Get("Allow") != "GET, HEAD" {
 			t.Fatalf("Allow = %q", res.header.Get("Allow"))
 		}
 	})
 	t.Run("R-ARCH-005 a path with an escaped dot is 400 invalid_path before authorization", func(t *testing.T) {
-		shaped(t, f.r.get("", "/api/probe/probe-local/%2e%2e/x"), 400, "invalid_path")
-		shaped(t, f.r.get("", "/api/probe/probe-local/a//b"), 400, "invalid_path")
-		shaped(t, f.r.get("", "/api/probe/probe-local/a/../b"), 400, "invalid_path")
+		shaped(t, f.r.get("", "/api/probe/it/probe-local/%2e%2e/x"), 400, "invalid_path")
+		shaped(t, f.r.get("", "/api/probe/it/probe-local/a//b"), 400, "invalid_path")
+		shaped(t, f.r.get("", "/api/probe/it/probe-local/a/../b"), 400, "invalid_path")
 	})
 	t.Run("R-ARCH-005 a repository key of the wrong shape is repository_not_found without a lookup", func(t *testing.T) {
-		shaped(t, f.r.get("writer", "/api/probe/UPPER/left-pad"), 404, "repository_not_found")
+		shaped(t, f.r.get("writer", "/api/probe/it/UPPER/left-pad"), 404, "repository_not_found")
 	})
 	t.Run("R-ARCH-011 the coarse check runs first: a caller without read gets the same 404 as a missing repository", func(t *testing.T) {
-		shaped(t, f.r.get("nobody", "/api/probe/probe-local/left-pad"), 404, "not_found")
-		shaped(t, f.r.get("nobody", "/api/probe/no-such-repo/left-pad"), 404, "not_found")
+		shaped(t, f.r.get("nobody", "/api/probe/it/probe-local/left-pad"), 404, "not_found")
+		shaped(t, f.r.get("nobody", "/api/probe/it/no-such-repo/left-pad"), 404, "not_found")
 	})
 	t.Run("R-ARCH-011 a write without deploy is 403 before the body is read", func(t *testing.T) {
-		shaped(t, f.r.put("reader", "/api/probe/probe-local/left-pad/-/left-pad-2.0.0.tgz", "x"), 403, "forbidden")
+		shaped(t, f.r.put("reader", "/api/probe/it/probe-local/left-pad/-/left-pad-2.0.0.tgz", "x"), 403, "forbidden")
 		if n := f.e.number("SELECT count(*) FROM items WHERE path LIKE 'left-pad/-/left-pad-2.0.0%'"); n != 0 {
 			t.Fatalf("%d items", n)
 		}
 	})
 	t.Run("R-ARCH-005 a repository of another format is a missing repository", func(t *testing.T) {
-		shaped(t, f.r.get("writer", "/api/probe/gen-local/left-pad"), 404, "repository_not_found")
+		shaped(t, f.r.get("writer", "/api/probe/it/gen-local/left-pad"), 404, "repository_not_found")
 	})
 	t.Run("R-REPO-005 a package the repository's patterns exclude is not admitted: 403 for a write", func(t *testing.T) {
 		shaped(t, f.publish("writer", "hidden-pkg", "1.0.0"), 403, "not_admitted")
 	})
 	t.Run("R-ARCH-023 a refusal of the authentication stage on the prefix is rendered by the format", func(t *testing.T) {
-		res := f.r.get("not-a-user", "/api/probe/probe-local/left-pad")
+		res := f.r.get("not-a-user", "/api/probe/it/probe-local/left-pad")
 		shaped(t, res, 401, "invalid_token")
 		if res.header.Get("WWW-Authenticate") == "" {
 			t.Fatal("the challenge was lost")
@@ -430,7 +430,7 @@ func TestR_ARCH_007_FormatRoutesCarryTheContentHeaders(t *testing.T) {
 		}
 	}
 	t.Run("a Download route", func(t *testing.T) {
-		res := f.r.get("reader", "/api/probe/probe-local/left-pad/-/left-pad-1.0.0.tgz")
+		res := f.r.get("reader", "/api/probe/it/probe-local/left-pad/-/left-pad-1.0.0.tgz")
 		if res.status != 200 || res.text() != "content of left-pad@1.0.0" {
 			t.Fatalf("get: %d %s", res.status, res.body)
 		}
@@ -440,19 +440,19 @@ func TestR_ARCH_007_FormatRoutesCarryTheContentHeaders(t *testing.T) {
 		}
 	})
 	t.Run("a Metadata route has the policy and no file name", func(t *testing.T) {
-		check(t, f.r.get("reader", "/api/probe/probe-local/left-pad"), false)
+		check(t, f.r.get("reader", "/api/probe/it/probe-local/left-pad"), false)
 	})
 	t.Run("a handler that removes and weakens the headers still sends them", func(t *testing.T) {
-		check(t, f.r.get("reader", "/api/probe/probe-local/left-pad?strip=1"), false)
+		check(t, f.r.get("reader", "/api/probe/it/probe-local/left-pad?strip=1"), false)
 	})
 	t.Run("a failing Download route is no attachment", func(t *testing.T) {
-		res := f.r.get("reader", "/api/probe/probe-local/left-pad/-/left-pad-9.9.9.tgz")
+		res := f.r.get("reader", "/api/probe/it/probe-local/left-pad/-/left-pad-9.9.9.tgz")
 		if res.status != 404 || res.header.Get("Content-Disposition") != "" {
 			t.Fatalf("answer %d disposition %q", res.status, res.header.Get("Content-Disposition"))
 		}
 	})
 	t.Run("Q-ARCH-258 a Volatile route that returns package-derived bytes has the metadata policy and no file name", func(t *testing.T) {
-		res := f.r.get("reader", "/api/probe/probe-local/left-pad/leak")
+		res := f.r.get("reader", "/api/probe/it/probe-local/left-pad/leak")
 		if res.status != 200 {
 			t.Fatalf("answer %d %s", res.status, res.body)
 		}
@@ -470,10 +470,10 @@ func TestR_ARCH_008_ServeCheckRunsOnEveryRoute(t *testing.T) {
 		}
 	}
 	t.Run("the format's route", func(t *testing.T) {
-		if res := f.r.get("reader", "/api/probe/probe-local/fine/-/fine-1.0.0.tgz"); res.status != 200 {
+		if res := f.r.get("reader", "/api/probe/it/probe-local/fine/-/fine-1.0.0.tgz"); res.status != 200 {
 			t.Fatalf("fine: %d", res.status)
 		}
-		if res := f.r.get("reader", "/api/probe/probe-local/tombstoned/-/tombstoned-1.0.0.tgz"); res.status != 404 || res.header.Get("X-Probe-Error") == "" {
+		if res := f.r.get("reader", "/api/probe/it/probe-local/tombstoned/-/tombstoned-1.0.0.tgz"); res.status != 404 || res.header.Get("X-Probe-Error") == "" {
 			t.Fatalf("tombstoned: %d %v", res.status, res.header)
 		}
 	})
