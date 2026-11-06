@@ -3,7 +3,6 @@ package ci
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // What the policies, the groups and the repositories of a mapping's grants resolve to: the existence
@@ -47,6 +47,19 @@ type resolvedGrants struct {
 	current []binding
 	// actions are the actions the listed policies and groups give the mapping, for claims.Check.
 	actions []claims.Action
+	// listed are the stored names of the policies the save lists, in the order of the grants: the name
+	// within the project qualified by the project for a project's mapping (a project policy is stored as
+	// <project>/<name>, Q-AUTHZ-209), as written for a system mapping.
+	listed []string
+}
+
+// storedPolicyName is the stored name of the policy a mapping of the project lists by name: a project's mapping
+// names the policies of its own project, which the table keeps as <project>/<name>.
+func storedPolicyName(project, name string) string {
+	if project == "" {
+		return name
+	}
+	return project + "/" + name
 }
 
 // resolveGrants reads and locks what the grants name: it answers the unknown policies and groups, a
@@ -67,7 +80,10 @@ func (s *MappingService) resolveGrants(ctx context.Context, qs *q.Queries, proje
 			rg.current = append(rg.current, binding{PolicyID: r.PolicyID, Policy: r.Policy, Actions: r.Actions})
 		}
 	}
-	names := slices.Clone(spec.Policies)
+	for _, name := range spec.Policies {
+		rg.listed = append(rg.listed, storedPolicyName(project, name))
+	}
+	names := slices.Clone(rg.listed)
 	for _, b := range rg.current {
 		names = append(names, b.Policy)
 	}
@@ -85,7 +101,7 @@ func (s *MappingService) resolveGrants(ctx context.Context, qs *q.Queries, proje
 	var fields []errs.FieldError
 	for i, name := range spec.Policies {
 		ptr := "/grants/policies/" + strconv.Itoa(i)
-		p, ok := rg.locked[name]
+		p, ok := rg.locked[rg.listed[i]]
 		switch {
 		case !ok && project != "":
 			// A project's administrator learns nothing about the policies of others: a name that does not exist
@@ -115,7 +131,7 @@ func (s *MappingService) resolveGrants(ctx context.Context, qs *q.Queries, proje
 			rg.actions = append(rg.actions, claims.Action(a))
 		}
 	}
-	for _, name := range spec.Policies {
+	for _, name := range rg.listed {
 		if _, ok := rg.locked[name]; !ok {
 			continue
 		}
@@ -136,7 +152,8 @@ func (s *MappingService) resolveGrants(ctx context.Context, qs *q.Queries, proje
 // entry that stays keeps its actions. A policy whose list changed moves its version and notifies the
 // change area authz, so the authorization index rebuilds (R-AUTHZ-028). It returns the names of the
 // policies added and removed, for the event.
-func (s *MappingService) applyBindings(ctx context.Context, tx meta.Tx, qs *q.Queries, principalID string, rg resolvedGrants, listed []string) (added, removed []string, err error) {
+func (s *MappingService) applyBindings(ctx context.Context, tx meta.Tx, qs *q.Queries, principalID string, rg resolvedGrants) (added, removed []string, err error) {
+	listed := rg.listed
 	for _, name := range listed {
 		p := rg.locked[name]
 		if slices.ContainsFunc(rg.current, func(b binding) bool { return b.PolicyID == p.ID }) {
@@ -192,8 +209,6 @@ func (s *MappingService) releaseBindings(ctx context.Context, tx meta.Tx, qs *q.
 	return nil
 }
 
-var repositoryKey = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,63}$`)
-
 // outsideFields are the key selectors of a project mapping's inline grants that name no repository of the
 // project (R-CI-019, Q-CI-26): 422 repository_outside_project, and a key that does not exist answers the
 // same, so the answer never tells whether a repository of another project exists. A pattern or a class
@@ -205,7 +220,7 @@ func outsideFields(ctx context.Context, qs *q.Queries, project, projectID string
 	var keys []string
 	for i, g := range spec.Inline {
 		for j, sel := range g.Repositories {
-			if strings.Contains(sel, "{{") || !repositoryKey.MatchString(sel) {
+			if strings.Contains(sel, "{{") || !qname.ValidKey(sel) {
 				continue
 			}
 			uses = append(uses, use{"/grants/inline/" + strconv.Itoa(i) + "/repositories/" + strconv.Itoa(j), sel})

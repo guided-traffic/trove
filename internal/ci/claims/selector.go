@@ -1,130 +1,94 @@
 package claims
 
 import (
-	"errors"
-	"regexp"
-	"strings"
-	"unicode/utf8"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
-// The repository selectors of R-AUTHZ-004, as the token scope and the inline grants write them:
+// The repository selectors of R-AUTHZ-004 are one grammar (R-CI-007, Q-AUTHZ-216), parsed by
+// [qname.ParseSelector] and read in a context:
 //
-//	npm-internal          a key
-//	npm-team-*            a key pattern (contains * or ?)
-//	@any-local            a class; @any-remote, @any-virtual, @any
-//	@any-local:npm        a class or pattern restricted to a format
+//	instance context (the scope parameter of the exchange, the grants of a system mapping, a token scope):
+//	  web/npm-internal      a key: project and key
+//	  web/npm-team-*        a pattern of project glob and key glob
+//	  @any-local            a class across all projects; @any-remote, @any-virtual, @any
+//	  @any-local:npm        a class or pattern restricted to a format
+//	project context (the grants of a project mapping):
+//	  npm-internal          a bare key of the project
+//	  npm-team-*            a bare key glob
 //
-// This is the syntax only, the same rules as the authorization engine's selector parser
-// (internal/authz, ValidateSelector): whether a key names an existing repository and whether a
-// format is known needs the repository index and stays with the caller.
+// A bare key in an instance context and a qualified one in a project context are errors, never a
+// selector that silently matches nothing. This is the syntax only: whether a key names an existing
+// repository needs the repository index and stays with the caller.
 
-var (
-	selectorKey     = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,63}$`)
-	selectorPattern = regexp.MustCompile(`^[a-z0-9._*?-]+$`)
-)
+// contextOf is the context the selectors of a mapping of the tier project are read in; "" is the
+// system tier, whose selectors are instance selectors.
+func contextOf(project string) qname.Context { return qname.Context{Project: project} }
 
-// maxSelectorLength is the pattern limit of R-AUTHZ-005, in characters.
-const maxSelectorLength = 1024
-
-// selectorKind is what a valid selector is.
-type selectorKind int
-
-const (
-	selKey selectorKind = iota
-	selPattern
-	selClass
-)
-
-// parsedSelector is a selector split into its base and its format filter.
-type parsedSelector struct {
-	kind   selectorKind
-	base   string
-	format string
+// parseSelector checks the syntax of a selector (R-AUTHZ-004) in the context in.
+func parseSelector(s string, in qname.Context) (qname.Selector, error) {
+	return qname.ParseSelector(s, in)
 }
 
-// parseSelector checks the syntax of a selector (R-AUTHZ-004).
-func parseSelector(s string) (parsedSelector, error) {
-	if n := utf8.RuneCountInString(s); n < 1 || n > maxSelectorLength {
-		return parsedSelector{}, errors.New("a selector has 1 to 1024 characters")
-	}
-	base, format := s, ""
-	if i := strings.LastIndexByte(s, ':'); i >= 0 {
-		base, format = s[:i], s[i+1:]
-		if format == "" {
-			return parsedSelector{}, errors.New("an empty format filter")
-		}
+// instanceForm writes a selector of a project mapping's grant, read in the project's context, as the
+// instance selector the token carries: a key `k` becomes `<project>/k`, a pattern `g` becomes
+// `<project>/g`, `@any` becomes `<project>/*` (a format filter stays), and a class that is not `@any`
+// stays as it is, because the token's grants for a project tier are bounded to the project anyway
+// (R-AUTHZ-026, Q-AUTHZ-179). A selector that does not parse is returned unchanged: the engine counts
+// it as matching nothing.
+func instanceForm(project, s string) string {
+	sel, err := qname.ParseSelector(s, contextOf(project))
+	if err != nil {
+		return s
 	}
 	switch {
-	case strings.HasPrefix(base, "@"):
-		switch base {
-		case "@any", "@any-local", "@any-remote", "@any-virtual":
-			return parsedSelector{kind: selClass, base: base, format: format}, nil
-		}
-		return parsedSelector{}, errors.New("a class selector is one of @any-local, @any-remote, @any-virtual, @any")
-	case strings.ContainsAny(base, "*?"):
-		if !selectorPattern.MatchString(base) {
-			return parsedSelector{}, errors.New("not a repository key pattern")
-		}
-		return parsedSelector{kind: selPattern, base: base, format: format}, nil
-	case format != "":
-		return parsedSelector{}, errors.New("a format filter needs a pattern or a class selector")
-	case !selectorKey.MatchString(base):
-		return parsedSelector{}, errors.New("not a repository key")
+	case sel.Kind == qname.SelectorClass && sel.Class == "any":
+		return qname.Selector{Kind: qname.SelectorPattern, ProjectGlob: project, KeyGlob: "*", Format: sel.Format}.Text(qname.Context{})
+	case sel.Kind == qname.SelectorClass:
+		return s
 	}
-	return parsedSelector{kind: selKey, base: base}, nil
+	sel.ProjectGlob = project
+	return sel.Text(qname.Context{})
 }
 
 // covers reports whether the grant selector g certainly covers every repository the selector t
 // selects, as far as the text tells without the repository index: the same selector, the class
-// @any without a format filter, or a key pattern without a format filter that matches the key t.
-// false means "not known here", not "disjoint".
+// @any without a format filter, or a key pattern without a format filter that matches the project
+// and the key of t. Both are instance selectors. false means "not known here", not "disjoint".
 func covers(g, t string) bool {
 	if g == t || g == "@any" {
 		return true
 	}
-	gs, err := parseSelector(g)
-	if err != nil || gs.kind != selPattern || gs.format != "" {
+	gs, err := parseSelector(g, qname.Context{})
+	if err != nil || gs.Kind != qname.SelectorPattern || gs.Format != "" {
 		return false
 	}
-	ts, err := parseSelector(t)
-	return err == nil && ts.kind == selKey && keyGlob(gs.base, ts.base)
+	ts, err := parseSelector(t, qname.Context{})
+	return err == nil && ts.Kind == qname.SelectorKey && qname.Glob(gs.ProjectGlob, ts.Project) && qname.Glob(gs.KeyGlob, ts.Key)
 }
 
-// disjoint reports whether the two selectors certainly select no common repository: two different
-// keys, or a key that a format-free key pattern does not match. Everything else may overlap.
+// disjoint reports whether the two instance selectors certainly select no common repository: two
+// different keys, or a key that a format-free pattern does not match. Everything else may overlap.
 func disjoint(a, b string) bool {
 	if a == b {
 		return false
 	}
-	as, errA := parseSelector(a)
-	bs, errB := parseSelector(b)
+	as, errA := parseSelector(a, qname.Context{})
+	bs, errB := parseSelector(b, qname.Context{})
 	if errA != nil || errB != nil {
 		return false
 	}
 	switch {
-	case as.kind == selKey && bs.kind == selKey:
+	case as.Kind == qname.SelectorKey && bs.Kind == qname.SelectorKey:
 		return true
-	case as.kind == selKey && bs.kind == selPattern && bs.format == "":
-		return !keyGlob(bs.base, as.base)
-	case bs.kind == selKey && as.kind == selPattern && as.format == "":
-		return !keyGlob(as.base, bs.base)
+	case as.Kind == qname.SelectorKey && bs.Kind == qname.SelectorPattern && bs.Format == "":
+		return !patternMatches(bs, as)
+	case bs.Kind == qname.SelectorKey && as.Kind == qname.SelectorPattern && as.Format == "":
+		return !patternMatches(as, bs)
 	}
 	return false
 }
 
-// keyGlob matches a repository key against a key pattern: `*` any run of characters, `?` one
-// character (a key holds no "/", so the segment glob is exact).
-func keyGlob(pattern, key string) bool {
-	toks := make([]globTok, 0, len(pattern))
-	for _, r := range pattern {
-		switch r {
-		case '*':
-			toks = append(toks, globTok{kind: '*'})
-		case '?':
-			toks = append(toks, globTok{kind: '?'})
-		default:
-			toks = append(toks, globTok{kind: 'l', r: r})
-		}
-	}
-	return segmentMatch(toks, key, false)
+// patternMatches reports whether the pattern selector p matches the key selector k.
+func patternMatches(p, k qname.Selector) bool {
+	return qname.Glob(p.ProjectGlob, k.Project) && qname.Glob(p.KeyGlob, k.Key)
 }

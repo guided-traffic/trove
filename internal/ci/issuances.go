@@ -147,12 +147,11 @@ func onlyProject(is Issuance, tier string) Issuance {
 	return is
 }
 
-// mappingName is the mapping's name of a reference "ci:<issuer>/<mapping>".
+// mappingName is the mapping's name of a reference "ci:<issuer>/<mapping>" or
+// "ci:<issuer>/<project>/<mapping>" without its issuer: "<mapping>" or "<project>/<mapping>" (R-CI-007).
 func mappingName(ref string) string {
-	for i := len(ref) - 1; i >= 0; i-- {
-		if ref[i] == '/' {
-			return ref[i+1:]
-		}
+	if _, name, ok := strings.Cut(ref, "/"); ok {
+		return name
 	}
 	return ref
 }

@@ -2,6 +2,7 @@ package claims
 
 import (
 	"errors"
+	"github.com/guided-traffic/trove/internal/qname"
 	"slices"
 	"strconv"
 	"strings"
@@ -81,16 +82,13 @@ const maxPatterns = 256
 // that is neither required nor guarded, a write mapping without a pipeline_source condition, and the
 // visible opt-ins (unprotected refs, cross-project read_only).
 //
-// The order of the refusals: the subject kinds, the project's name prefix, the condition
+// The order of the refusals: the subject kinds, the condition
 // (catch_all_condition, condition_invalid), the grants (empty_grant, groups_not_allowed_in_project,
 // action_not_allowed, the shape and templates of each inline grant), the options, then pin_required,
 // unprotected_write and unpinned_write. Every pointer is relative to the mapping's body ("/match/all/1",
 // "/grants/inline/0/packages/include/1").
 func Check(f IssuerFacts, in SaveInput, l Limits) (Checked, []Warning, error) {
 	if err := checkSubjectKinds(in.SubjectKinds); err != nil {
-		return Checked{}, nil, err
-	}
-	if err := CheckProjectName(f.Project, in.Name); err != nil {
 		return Checked{}, nil, err
 	}
 	if err := in.Match.Validate(l); err != nil {
@@ -131,19 +129,6 @@ func checkSubjectKinds(kinds []string) error {
 	return nil
 }
 
-// CheckProjectName is the name rule of a project's mapping (Q-CI-26): "<project>-" and more; "" is the system tier,
-// which has none. The mapping service applies it before it looks the name up, so a taken name answers 409 only for a
-// name under the caller's own prefix (H-413, Q-CI-51).
-func CheckProjectName(project, name string) error {
-	if project == "" {
-		return nil
-	}
-	if rest, ok := strings.CutPrefix(name, project+"-"); !ok || rest == "" {
-		return refuse(reason.ProjectPrefixRequired, "/name", "the name of a mapping of the project "+project+" starts with "+project+"- and goes on after it")
-	}
-	return nil
-}
-
 // checkGrants checks the grant specification and returns it with the resolved ownership of every
 // inline grant; it fills templates with every parsed pattern.
 func checkGrants(f IssuerFacts, in SaveInput, templates map[string]*Template) (Spec, error) {
@@ -161,7 +146,7 @@ func checkGrants(f IssuerFacts, in SaveInput, templates map[string]*Template) (S
 	}
 	out := Spec{Policies: slices.Clone(g.Policies), Groups: slices.Clone(g.Groups)}
 	for i, ig := range g.Inline {
-		resolved, err := checkInline(ig, "/grants/inline/"+strconv.Itoa(i), templates)
+		resolved, err := checkInline(ig, "/grants/inline/"+strconv.Itoa(i), contextOf(f.Project), templates)
 		if err != nil {
 			return Spec{}, err
 		}
@@ -170,7 +155,7 @@ func checkGrants(f IssuerFacts, in SaveInput, templates map[string]*Template) (S
 	return out, nil
 }
 
-func checkInline(g InlineGrant, ptr string, templates map[string]*Template) (InlineGrant, error) {
+func checkInline(g InlineGrant, ptr string, in qname.Context, templates map[string]*Template) (InlineGrant, error) {
 	if len(g.Repositories) == 0 {
 		return InlineGrant{}, refuse(reason.EmptyGrant, ptr+"/repositories", "an inline grant names at least one repository selector")
 	}
@@ -191,7 +176,7 @@ func checkInline(g InlineGrant, ptr string, templates map[string]*Template) (Inl
 	default:
 		return InlineGrant{}, refuse(reason.InvalidValue, ptr+"/ownership", "ownership is bind_project or none")
 	}
-	if err := checkRepositories(g.Repositories, ptr+"/repositories", templates); err != nil {
+	if err := checkRepositories(g.Repositories, ptr+"/repositories", in, templates); err != nil {
 		return InlineGrant{}, err
 	}
 	if g.Packages != nil {
@@ -209,7 +194,7 @@ func checkInline(g InlineGrant, ptr string, templates map[string]*Template) (Inl
 	return out, nil
 }
 
-func checkRepositories(list []string, ptr string, templates map[string]*Template) error {
+func checkRepositories(list []string, ptr string, in qname.Context, templates map[string]*Template) error {
 	if len(list) > maxPatterns {
 		return refuse(reason.InvalidPattern, ptr, "a selector list holds at most 256 selectors")
 	}
@@ -222,13 +207,21 @@ func checkRepositories(list []string, ptr string, templates map[string]*Template
 		templates[p] = t
 		switch {
 		case t.IsLiteral():
-			if _, err := parseSelector(src); err != nil {
+			if _, err := parseSelector(src, in); err != nil {
 				return refuse(reason.InvalidPattern, p, "invalid repository selector: "+err.Error())
 			}
 		case t.classLike():
 			return refuse(reason.TemplateInvalid, p, "a template never renders a class selector (@…); write the class without a substitution")
 		case !t.Anchored():
 			return refuse(reason.TemplateUnanchored, p, "a repositories template needs literal text other than * and ? next to every claim substitution, for example {{ … }}-releases, so a claim value alone cannot select a repository")
+		}
+		if !t.IsLiteral() {
+			// The shape of the rendered selector is checked with a stand-in for every substitution: a
+			// template of a system mapping names the project (web/{{ … }}-releases), one of a project's
+			// mapping names a bare key, so a template of the wrong shape is refused at the save.
+			if _, err := parseSelector(t.Skeleton("a0"), in); err != nil {
+				return refuse(reason.InvalidPattern, p, "invalid repository selector: "+err.Error())
+			}
 		}
 	}
 	return nil

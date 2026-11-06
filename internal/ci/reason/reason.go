@@ -90,8 +90,6 @@ const (
 	UnknownPolicy                Reason = "unknown_policy"
 	UnknownGroup                 Reason = "unknown_group"
 	InvalidSnippet               Reason = "invalid_snippet"
-	// ProjectPrefixRequired: a project mapping's name does not start with "<project>-" (Q-CI-26).
-	ProjectPrefixRequired Reason = "project_prefix_required"
 	// InvalidPattern: a repository selector, package pattern or path pattern has invalid syntax or exceeds the
 	// limits of R-AUTHZ-004 and R-AUTHZ-005 (1024 characters, 256 patterns per list).
 	InvalidPattern Reason = "invalid_pattern"

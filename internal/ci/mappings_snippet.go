@@ -4,12 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"regexp"
 	"strings"
 
-	"github.com/guided-traffic/trove/internal/ci/claims"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // The CI snippet (R-API-035, R-UI-035; R-CI-027 is the broader P1 requirement): a `.gitlab-ci.yml` fragment
@@ -25,10 +24,25 @@ const (
 	FormatNuGet     = "nuget"
 )
 
-var snippetKey = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,63}$`)
+// The protocol addresses of a repository carry its project (R-ARCH-005): /api/<format>/<project>/<key>/.
+const (
+	npmBaseTemplate   = "/api/npm/{project}/{key}/"
+	nugetBaseTemplate = "/api/nuget/{project}/{key}/"
+)
 
-// Snippet renders the CI snippet of a mapping as text/plain. The mapping must exist on the issuer; a
-// project's form is the handler's call of GetIn first.
+// placeholderRepo stands for the repository the administrator names when the mapping's grants name none.
+var placeholderRepo = qname.Repo{Project: "<project>", Key: "<repository>"}
+
+// protocolBase is the base path of the repository in the template; the placeholder is written as it is.
+func protocolBase(tmpl string, r qname.Repo) string {
+	if r == placeholderRepo {
+		return strings.NewReplacer("{project}", r.Project, "{key}", r.Key).Replace(tmpl)
+	}
+	return qname.ProtocolBase(tmpl, r)
+}
+
+// Snippet renders the CI snippet of a mapping as text/plain. The mapping must exist on the issuer, in the
+// tier of req.Project (the system tier when it is empty); a project's form is the handler's call of GetIn first.
 func (s *MappingService) Snippet(ctx context.Context, issuer string, req SnippetRequest) (string, error) {
 	format := req.Format
 	if format == "" {
@@ -47,26 +61,38 @@ func (s *MappingService) Snippet(ctx context.Context, issuer string, req Snippet
 	if err := mappingViolation(bad); err != nil {
 		return "", err
 	}
-	m, err := s.Get(ctx, issuer, req.Mapping)
+	tier := TierSystem
+	if req.Project != "" {
+		tier = ProjectTier(req.Project)
+	}
+	m, err := s.get(ctx, issuer, tier, req.Mapping)
 	if err != nil {
 		return "", err
 	}
 	var audience string
-	var formats map[string]string
+	var formats map[qname.Repo]string
 	err = s.o.DB.Read(ctx, func(db q.DBTX) error {
 		qs := q.New(db)
 		rows, err := qs.CiIssuerAudiences(ctx, issuer)
 		if err != nil {
 			return err
 		}
-		keys, _ := literalRepositories(m.Grants)
-		frows, err := qs.CiRepositoryFormats(ctx, keys)
+		keys, _ := literalRepositories(m)
+		names := make([]string, len(keys))
+		for i, k := range keys {
+			names[i] = k.String()
+		}
+		frows, err := qs.CiRepositoryFormats(ctx, names)
 		if err != nil {
 			return err
 		}
-		formats = map[string]string{}
+		formats = map[qname.Repo]string{}
 		for _, r := range frows {
-			formats[r.Key] = r.Format
+			repo, err := qname.ParseRepo(r.Name)
+			if err != nil {
+				return err
+			}
+			formats[repo] = r.Format
 		}
 		if len(rows) == 0 {
 			return notFound(issuer)
@@ -95,24 +121,31 @@ type snippetInput struct {
 	Format   string
 	// Formats is the format of each literal repository of the mapping that exists; the snippet configures the
 	// repositories of the client's format only.
-	Formats map[string]string
+	Formats map[qname.Repo]string
 }
 
-// literalRepositories are the keys the mapping's inline grants name literally, in the order of the grants,
-// each once, with whether any grant of that key writes. A pattern, a class or a template names no
-// repository the snippet could configure.
-func literalRepositories(g claims.Spec) (keys []string, writes map[string]bool) {
-	writes = map[string]bool{}
-	for _, ig := range g.Inline {
+// literalRepositories are the repositories the mapping's inline grants name literally, in the order of the
+// grants, each once, with whether any grant of that repository writes. A grant of a system mapping names
+// `<project>/<key>`, one of a project's mapping the bare key of its project. A pattern, a class or a template
+// names no repository the snippet could configure.
+func literalRepositories(m Mapping) (keys []qname.Repo, writes map[qname.Repo]bool) {
+	writes = map[qname.Repo]bool{}
+	in := qname.Context{Project: m.Project}
+	for _, ig := range m.Grants.Inline {
 		for _, r := range ig.Repositories {
-			if strings.Contains(r, "{{") || !snippetKey.MatchString(r) {
+			if strings.Contains(r, "{{") {
 				continue
 			}
-			if _, seen := writes[r]; !seen {
-				keys = append(keys, r)
-				writes[r] = false
+			sel, err := qname.ParseSelector(r, in)
+			if err != nil || sel.Kind != qname.SelectorKey {
+				continue
 			}
-			writes[r] = writes[r] || ig.Writes()
+			repo := qname.Repo{Project: sel.Project, Key: sel.Key}
+			if _, seen := writes[repo]; !seen {
+				keys = append(keys, repo)
+				writes[repo] = false
+			}
+			writes[repo] = writes[repo] || ig.Writes()
 		}
 	}
 	return keys, writes
@@ -123,8 +156,8 @@ func renderSnippet(in snippetInput) string {
 	if u, err := url.Parse(in.BaseURL); err == nil && u.Host != "" {
 		host = u.Host
 	}
-	all, writes := literalRepositories(in.Mapping.Grants)
-	var keys []string
+	all, writes := literalRepositories(in.Mapping)
+	var keys []qname.Repo
 	for _, k := range all {
 		if in.Formats[k] == in.Format {
 			keys = append(keys, k)
@@ -171,7 +204,7 @@ func renderSnippet(in snippetInput) string {
 
 // publishTarget is the repository the job publishes to: the first literal repository a grant writes to,
 // else the first literal repository, else a placeholder the administrator names.
-func publishTarget(keys []string, writes map[string]bool) (string, bool) {
+func publishTarget(keys []qname.Repo, writes map[qname.Repo]bool) (qname.Repo, bool) {
 	for _, k := range keys {
 		if writes[k] {
 			return k, true
@@ -180,7 +213,7 @@ func publishTarget(keys []string, writes map[string]bool) (string, bool) {
 	if len(keys) > 0 {
 		return keys[0], false
 	}
-	return "<repository>", false
+	return placeholderRepo, false
 }
 
 func jobRules(m Mapping, w func(string, ...any)) {
@@ -190,7 +223,7 @@ func jobRules(m Mapping, w func(string, ...any)) {
 	}
 }
 
-func writeNPMJob(w func(string, ...any), in snippetInput, host string, keys []string, writes map[string]bool) {
+func writeNPMJob(w func(string, ...any), in snippetInput, host string, keys []qname.Repo, writes map[qname.Repo]bool) {
 	target, canWrite := publishTarget(keys, writes)
 	w("publish-npm:")
 	w("  stage: publish")
@@ -201,24 +234,24 @@ func writeNPMJob(w func(string, ...any), in snippetInput, host string, keys []st
 	w("    # npm expands ${TROVE_TOKEN} at run time; the token is never written to disk.")
 	w("    - |")
 	w("      cat > .npmrc <<'EOF'")
-	w("      registry=%s/api/npm/%s/", in.BaseURL, target)
+	w("      registry=%s%s", in.BaseURL, protocolBase(npmBaseTemplate, target))
 	for _, k := range keys {
-		w("      //%s/api/npm/%s/:_authToken=${TROVE_TOKEN}", host, k)
+		w("      //%s%s:_authToken=${TROVE_TOKEN}", host, protocolBase(npmBaseTemplate, k))
 	}
 	if len(keys) == 0 {
-		w("      //%s/api/npm/%s/:_authToken=${TROVE_TOKEN}", host, target)
+		w("      //%s%s:_authToken=${TROVE_TOKEN}", host, protocolBase(npmBaseTemplate, target))
 	}
 	w("      EOF")
 	w("    - npm ci")
 	if canWrite {
-		w("    - npm publish --registry %s/api/npm/%s/", in.BaseURL, target)
+		w("    - npm publish --registry %s%s", in.BaseURL, protocolBase(npmBaseTemplate, target))
 	} else {
 		w("    # The mapping's grants name no repository this job can publish to; add your npm commands here.")
 	}
 	revocation(w)
 }
 
-func writeNuGetJob(w func(string, ...any), in snippetInput, host string, keys []string, writes map[string]bool) {
+func writeNuGetJob(w func(string, ...any), in snippetInput, host string, keys []qname.Repo, writes map[qname.Repo]bool) {
 	_ = host
 	target, canWrite := publishTarget(keys, writes)
 	w("push-nuget:")
@@ -233,7 +266,7 @@ func writeNuGetJob(w func(string, ...any), in snippetInput, host string, keys []
 	w("    #   <configuration>")
 	w("    #     <packageSources>")
 	w("    #       <clear />")
-	w(`    #       <add key="trove" value="%s/api/nuget/%s/v3/index.json" />`, in.BaseURL, target)
+	w(`    #       <add key="trove" value="%s%sv3/index.json" />`, in.BaseURL, protocolBase(nugetBaseTemplate, target))
 	w("    #     </packageSources>")
 	w("    #     <packageSourceCredentials>")
 	w("    #       <trove>")
@@ -247,7 +280,7 @@ func writeNuGetJob(w func(string, ...any), in snippetInput, host string, keys []
 	if canWrite {
 		w("    - >-")
 		w("      dotnet nuget push \"out/*.nupkg\"")
-		w("      --source \"$TROVE_URL/api/nuget/%s/v3/index.json\"", target)
+		w("      --source \"$TROVE_URL%sv3/index.json\"", protocolBase(nugetBaseTemplate, target))
 		w("      --api-key \"$TROVE_TOKEN\"")
 	} else {
 		w("    # The mapping's grants name no repository this job can push to; add your dotnet commands here.")

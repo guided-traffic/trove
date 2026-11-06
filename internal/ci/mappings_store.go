@@ -15,6 +15,12 @@ import (
 // The rows of the identity mappings: the mapping between the queries of ci_mappings.sql and [Mapping], the
 // stored JSON forms and the record that the audit events carry.
 
+// principalNameOf is the name of a mapping's principal (R-CI-009): "<issuer>/<name>", or
+// "<issuer>/<project>/<name>" for a mapping of a project's tier (Q-AUTHZ-214).
+func principalNameOf(issuer, project, name string) string {
+	return strings.TrimPrefix(claims.MappingRef(issuer, project, name), "ci:")
+}
+
 // toMapping maps the columns every read statement of a mapping returns. The stored match, grants and
 // options are the wire forms of internal/ci/claims; a value that does not decode is a storage fault.
 // The policies of the mapping are not in the row: the binding lives in the policy's principal list
@@ -25,11 +31,11 @@ func toMapping(r q.CiMappingListRow) (Mapping, error) {
 		ProjectID: r.ProjectID, Priority: int(r.Priority), Enabled: r.Enabled, SubjectKinds: r.SubjectKinds,
 		Description: r.Description, Version: r.Version, CreatedBy: r.CreatedBy,
 		CreatedAt: time.UnixMicro(r.CreatedUs).UTC(), UpdatedAt: time.UnixMicro(r.UpdatedUs).UTC(),
-		Ref: claims.MappingRef(r.Issuer, r.Name),
 	}
 	if key, ok := strings.CutPrefix(r.Tier, "project:"); ok {
 		m.Project = key
 	}
+	m.Ref = claims.MappingRef(r.Issuer, m.Project, r.Name)
 	if r.MaxTtlSecs > 0 {
 		v := r.MaxTtlSecs
 		m.MaxTTLSeconds = &v
@@ -115,7 +121,7 @@ func mappingEvent(name string, actor audit.Actor, before, after *Mapping, cascad
 	}
 	ev := audit.Event{
 		Type: name, Actor: actor, Outcome: audit.Success,
-		Subject: audit.Subject{Kind: "ci_mapping", ID: subj.ID, Name: subj.Issuer + "/" + subj.Name}, Details: mustJSON(details),
+		Subject: audit.Subject{Kind: "ci_mapping", ID: subj.ID, Name: subj.PrincipalName()}, Details: mustJSON(details),
 	}
 	entry := map[string]any{
 		"mappingId": subj.ID, "issuerId": subj.IssuerID, "issuer": subj.Issuer, "name": subj.Name, "tier": subj.Tier,

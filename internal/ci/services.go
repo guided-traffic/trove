@@ -44,6 +44,9 @@ type SnippetRequest struct {
 	// Mapping names the mapping the snippet is for; Format is npm or nuget.
 	Mapping string
 	Format  string
+	// Project is the key of the project whose tier holds the mapping (a name is unique within an issuer's
+	// tier, R-CI-009); empty for a mapping of the system tier.
+	Project string
 }
 
 // Issuers is the issuer and signing-key service (R-CI-001, R-CI-002, R-CI-003, R-CI-005, Q-CI-16),
