@@ -33,7 +33,7 @@ func TestR_API_029_WithoutTheReadModelEveryOperationAnswers503(t *testing.T) {
 		"/api/v1/packages/" + view.ID("npm", "left-pad") + "/versions",
 		"/api/v1/packages/" + view.ID("npm", "left-pad") + "/versions/1.0.0",
 		"/api/v1/packages/" + view.ID("npm", "left-pad") + "/versions/1.0.0/readme",
-		"/api/v1/repositories/npm-local/client-setup?client=npm",
+		"/api/v1/projects/it/repositories/npm-local/client-setup?client=npm",
 	} {
 		w := s.get(path)
 		var p errs.Problem
@@ -155,7 +155,7 @@ func get(h http.Handler, path string) *httptest.ResponseRecorder {
 
 func TestR_API_030_ClientSetupAnswer(t *testing.T) {
 	h := setupServer(t, "https://trove.example.com", true)
-	w := get(h, "/api/v1/repositories/npm-local/client-setup?client=pnpm&credentials=env&package=a(b)&version=1.0.0")
+	w := get(h, "/api/v1/projects/it/repositories/npm-local/client-setup?client=pnpm&credentials=env&package=a(b)&version=1.0.0")
 	if w.Code != 200 {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
@@ -206,7 +206,7 @@ func TestR_GENERIC_016_TheClientSetupOfCurl(t *testing.T) {
 		{"none", true, map[string]string{"curl.configure.function": function(""), "curl.install": install, "curl.publish": publish}},
 		{"env", false, map[string]string{"curl.configure.function": function("header = \"Authorization: Bearer ${MY_TOKEN}\"\n"), "curl.install": install}},
 	} {
-		w := get(setupServer(t, "https://trove.example.com", c.deploy), "/api/v1/repositories/files/client-setup?client=curl&credentials="+c.credentials)
+		w := get(setupServer(t, "https://trove.example.com", c.deploy), "/api/v1/projects/it/repositories/files/client-setup?client=curl&credentials="+c.credentials)
 		var out gen.ClientSetup
 		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || w.Code != 200 {
 			t.Fatalf("%s: %d %s", c.credentials, w.Code, w.Body.String())
@@ -229,7 +229,7 @@ func TestR_GENERIC_016_TheClientSetupOfCurl(t *testing.T) {
 
 func TestR_API_030_PublishTargetFollowsTheDeployRight(t *testing.T) {
 	for deploy, want := range map[bool]bool{true: true, false: false} {
-		w := get(setupServer(t, "https://trove.example.com", deploy), "/api/v1/repositories/npm-local/client-setup?client=npm")
+		w := get(setupServer(t, "https://trove.example.com", deploy), "/api/v1/projects/it/repositories/npm-local/client-setup?client=npm")
 		var out gen.ClientSetup
 		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
 			t.Fatal(err)
@@ -239,7 +239,7 @@ func TestR_API_030_PublishTargetFollowsTheDeployRight(t *testing.T) {
 		}
 	}
 	// A remote repository takes no publish.
-	w := get(setupServer(t, "https://trove.example.com", true), "/api/v1/repositories/npm-remote/client-setup?client=npm")
+	w := get(setupServer(t, "https://trove.example.com", true), "/api/v1/projects/it/repositories/npm-remote/client-setup?client=npm")
 	var out gen.ClientSetup
 	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || w.Code != 200 || out.PublishTarget != nil {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
@@ -251,7 +251,7 @@ func TestR_API_030_PublishTargetFollowsTheDeployRight(t *testing.T) {
 func TestR_API_030_AddressesNeverComeFromTheHostOfTheRequest(t *testing.T) {
 	h := setupServer(t, "", true)
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/api/v1/repositories/npm-local/client-setup?client=npm", nil)
+	req := httptest.NewRequest("GET", "/api/v1/projects/it/repositories/npm-local/client-setup?client=npm", nil)
 	req.Host = "evil.example"
 	h.ServeHTTP(w, req)
 	if w.Code != 503 || strings.Contains(w.Body.String(), "evil.example") {
@@ -286,7 +286,7 @@ func TestR_API_030_ClientSetupRefusesWhatItCannotAnswer(t *testing.T) {
 			t.Errorf("%s: %d %s", q, w.Code, w.Body.String())
 		}
 	}
-	if w := get(h, "/api/v1/repositories/ghost/client-setup?client=npm"); w.Code != 404 {
+	if w := get(h, "/api/v1/projects/it/repositories/ghost/client-setup?client=npm"); w.Code != 404 {
 		t.Errorf("a missing repository: %d", w.Code)
 	}
 }

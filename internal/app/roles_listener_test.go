@@ -94,7 +94,7 @@ func TestR_ARCH_001_RouteFamiliesPerRole(t *testing.T) {
 				{"GET", "/api/v1/repositories"},
 				{"POST", "/api/v1/repositories"},
 				{"POST", "/api/v1/auth/oidc/token"},
-				{"DELETE", "/api/v1/repositories/generic-local/content/x"},
+				{"DELETE", "/api/v1/projects/it/repositories/generic-local/content/x"},
 			},
 			own: []probe{{"GET", "/files/generic-local/x"}},
 		},

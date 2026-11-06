@@ -40,7 +40,7 @@ func TestDescribeItem(t *testing.T) {
 		if m["downloadUrl"] != "https://trove.example.com/files/generic-local/tools/wid%20get/widget%202.3.bin" {
 			t.Errorf("downloadUrl = %v", m["downloadUrl"])
 		}
-		if m["itemUrl"] != "https://trove.example.com/api/v1/repositories/generic-local/items?path=tools%2Fwid+get%2Fwidget+2.3.bin" {
+		if m["itemUrl"] != "https://trove.example.com/api/v1/projects/it/repositories/generic-local/items?path=tools%2Fwid+get%2Fwidget+2.3.bin" {
 			t.Errorf("itemUrl = %v", m["itemUrl"])
 		}
 		if c := m["created"].(map[string]any); c["at"] != "2026-10-28T09:14:03.117Z" || c["by"] != "user:alice" {
@@ -64,7 +64,7 @@ func TestDescribeItem(t *testing.T) {
 		raw, _ := json.Marshal(DescribeItem(file, links))
 		var m map[string]any
 		_ = json.Unmarshal(raw, &m)
-		if m["contentUrl"] != "/api/v1/repositories/generic-local/content/tools/wid%20get/widget%202.3.bin" {
+		if m["contentUrl"] != "/api/v1/projects/it/repositories/generic-local/content/tools/wid%20get/widget%202.3.bin" {
 			t.Errorf("contentUrl = %v", m["contentUrl"])
 		}
 		raw, _ = json.Marshal(DescribeItem(items.Item{Repository: qr("generic-local"), Path: "tools", Kind: items.KindFolder}, links))
@@ -91,7 +91,7 @@ func TestDescribeItem(t *testing.T) {
 		raw, _ := json.Marshal(DescribeItem(folder, links))
 		var m map[string]any
 		_ = json.Unmarshal(raw, &m)
-		if m["kind"] != "folder" || m["explicit"] != true || m["listingUrl"] != "https://trove.example.com/api/v1/repositories/generic-local/children?path=tools" {
+		if m["kind"] != "folder" || m["explicit"] != true || m["listingUrl"] != "https://trove.example.com/api/v1/projects/it/repositories/generic-local/children?path=tools" {
 			t.Errorf("%s", raw)
 		}
 		for _, k := range []string{"size", "digests", "downloadUrl"} {

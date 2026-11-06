@@ -76,7 +76,7 @@ func (f *Format) Descriptor() formats.Descriptor {
 			DisplayName:      "NuGet",
 			Classes:          []formats.Class{formats.Local, formats.Remote, formats.Virtual},
 			Layout:           Layout,
-			ProtocolBasePath: "/api/nuget/{project}/{project}/{key}/",
+			ProtocolBasePath: "/api/nuget/{project}/{key}/",
 			// The upstream a remote repository proposes and the host family nuget.org serves
 			// search and symbols from (R-NUGET-014). The upstream test requests the service
 			// index itself, so there is no probe path (R-REPO-024).

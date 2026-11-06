@@ -54,8 +54,8 @@ func TestR_API_029_PackageFileContentURL(t *testing.T) {
 	}
 	out := versionOf("https://trove.example.com", d)
 	for i, want := range []string{
-		"/api/v1/repositories/npm-local/content/@team-a/ui/-/ui-1.4.0.tgz",
-		"/api/v1/repositories/gen%20eric/content/dir%20with%20space/a%23b.bin",
+		"/api/v1/projects/it/repositories/npm-local/content/@team-a/ui/-/ui-1.4.0.tgz",
+		"/api/v1/projects/it/repositories/gen%20eric/content/dir%20with%20space/a%23b.bin",
 	} {
 		if got := out.Files[i].ContentUrl; got != want {
 			t.Errorf("file %d: contentUrl %q, want %q", i, got, want)

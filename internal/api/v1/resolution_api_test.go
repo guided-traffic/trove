@@ -118,7 +118,7 @@ func TestResolutionAPI(t *testing.T) {
 
 	t.Run("R-REPO-019 a missing or invalid path is 400", func(t *testing.T) {
 		s := resolutionSetup(t, val, &actionAccess{}, &fakeExplainer{}, virtualRepo)
-		if w := s.do("GET", "/api/v1/repositories/all/resolution", "", nil); w.Code != 400 {
+		if w := s.do("GET", "/api/v1/projects/it/repositories/all/resolution", "", nil); w.Code != 400 {
 			t.Fatalf("no path: %d %s", w.Code, w.Body)
 		}
 		problem(t, s.do("GET", resolutionURL("all", "a/../b"), "", nil), 400, "invalid_path")

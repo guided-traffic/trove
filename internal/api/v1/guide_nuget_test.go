@@ -35,7 +35,7 @@ func snippetContent(s gen.ClientSetup, id string) (string, bool) {
 // version the way each client takes it.
 func TestR_NUGET_026_TheSetupSnippetsOfEveryClient(t *testing.T) {
 	const feed = "https://trove.example.com/api/nuget/nuget-local/v3/index.json"
-	dotnet := setupOf(t, "/api/v1/repositories/nuget-local/client-setup?client=dotnet&credentials=env&package=Acme.Widgets&version=1.2.3-rc.1")
+	dotnet := setupOf(t, "/api/v1/projects/it/repositories/nuget-local/client-setup?client=dotnet&credentials=env&package=Acme.Widgets&version=1.2.3-rc.1")
 	for id, want := range map[string]string{
 		"dotnet.configure.shell":      "dotnet nuget add source " + feed + " --name trove \\\n  --username trove --password \"${MY_TOKEN}\" --store-password-in-clear-text\n",
 		"dotnet.configure.powershell": "dotnet nuget add source " + feed + " --name trove `\n  --username trove --password \"$env:MY_TOKEN\" --store-password-in-clear-text\n",
@@ -59,7 +59,7 @@ func TestR_NUGET_026_TheSetupSnippetsOfEveryClient(t *testing.T) {
 		}
 	}
 
-	nuget := setupOf(t, "/api/v1/repositories/nuget-local/client-setup?client=nuget&credentials=env&package=Acme.Widgets&version=1.2.3")
+	nuget := setupOf(t, "/api/v1/projects/it/repositories/nuget-local/client-setup?client=nuget&credentials=env&package=Acme.Widgets&version=1.2.3")
 	for id, want := range map[string]string{
 		"nuget.configure.cmd":        "nuget sources add -Name trove -Source " + feed + " ^\n  -Username trove -Password %MY_TOKEN%\n",
 		"nuget.install":              "nuget install acme.widgets -Version 1.2.3 -Source trove -OutputDirectory packages\n",
@@ -72,7 +72,7 @@ func TestR_NUGET_026_TheSetupSnippetsOfEveryClient(t *testing.T) {
 		}
 	}
 
-	vs := setupOf(t, "/api/v1/repositories/nuget-local/client-setup?client=visual-studio&credentials=env&package=Acme.Widgets&version=1.2.3")
+	vs := setupOf(t, "/api/v1/projects/it/repositories/nuget-local/client-setup?client=visual-studio&credentials=env&package=Acme.Widgets&version=1.2.3")
 	if got, _ := snippetContent(vs, "visual-studio.install.packagereference"); got != "<PackageReference Include=\"acme.widgets\" Version=\"1.2.3\" />\n" {
 		t.Errorf("PackageReference: %q", got)
 	}
@@ -80,7 +80,7 @@ func TestR_NUGET_026_TheSetupSnippetsOfEveryClient(t *testing.T) {
 		t.Error("Visual Studio has a publish snippet")
 	}
 	// A package that is no NuGet ID is refused, so no value reaches an XML attribute or a shell unchecked.
-	if w := get(setupServer(t, "https://trove.example.com", true), "/api/v1/repositories/nuget-local/client-setup?client=visual-studio&package="+url.QueryEscape(`A"B`)); w.Code != 400 {
+	if w := get(setupServer(t, "https://trove.example.com", true), "/api/v1/projects/it/repositories/nuget-local/client-setup?client=visual-studio&package="+url.QueryEscape(`A"B`)); w.Code != 400 {
 		t.Errorf("a package that is no ID: %d", w.Code)
 	}
 }
@@ -88,14 +88,14 @@ func TestR_NUGET_026_TheSetupSnippetsOfEveryClient(t *testing.T) {
 // TestR_NUGET_026_TheSetupWithoutACredential: with credentials=none the snippets are complete commands and files
 // without any credential part, and a placeholder request gets the browser's placeholder in every spelling.
 func TestR_NUGET_026_TheSetupWithoutACredential(t *testing.T) {
-	none := setupOf(t, "/api/v1/repositories/nuget-local/client-setup?client=dotnet&credentials=none")
+	none := setupOf(t, "/api/v1/projects/it/repositories/nuget-local/client-setup?client=dotnet&credentials=none")
 	if got, _ := snippetContent(none, "dotnet.configure.shell"); got != "dotnet nuget add source https://trove.example.com/api/nuget/nuget-local/v3/index.json --name trove\n" {
 		t.Errorf("%q", got)
 	}
 	if cfg, _ := snippetContent(none, "dotnet.configure.nugetconfig"); strings.Contains(cfg, "Password") || strings.Contains(cfg, "packageSourceCredentials") {
 		t.Errorf("%s", cfg)
 	}
-	ph := setupOf(t, "/api/v1/repositories/nuget-local/client-setup?client=nuget&credentials=placeholder")
+	ph := setupOf(t, "/api/v1/projects/it/repositories/nuget-local/client-setup?client=nuget&credentials=placeholder")
 	for _, id := range []string{"nuget.configure.cmd", "nuget.configure.powershell", "nuget.publish.cmd"} {
 		if got, _ := snippetContent(ph, id); !strings.Contains(got, "{{token}}") || strings.Contains(got, "TROVE_TOKEN") {
 			t.Errorf("%s: %q", id, got)
@@ -109,8 +109,8 @@ func TestR_NUGET_026_TheSetupWithoutACredential(t *testing.T) {
 func TestR_UI_049_TheNuGetGuideShowsTheSnippetsOfTheClientSetup(t *testing.T) {
 	h := setupServer(t, "https://trove.example.com", true)
 	for _, client := range []string{"dotnet", "nuget", "visual-studio"} {
-		g := guideOf(t, get(h, "/api/v1/repositories/nuget-local/guide?client="+client))
-		setup := setupOf(t, "/api/v1/repositories/nuget-local/client-setup?credentials=env&client="+client)
+		g := guideOf(t, get(h, "/api/v1/projects/it/repositories/nuget-local/guide?client="+client))
+		setup := setupOf(t, "/api/v1/projects/it/repositories/nuget-local/client-setup?credentials=env&client="+client)
 		for _, tab := range []string{"configure", "install", "publish"} {
 			var want []gen.ClientSnippet
 			for _, sn := range setup.Snippets {
@@ -142,7 +142,7 @@ func TestR_UI_049_TheNuGetGuideShowsTheSnippetsOfTheClientSetup(t *testing.T) {
 			t.Errorf("%s: %s", client, conf.Html)
 		}
 	}
-	if w := get(h, "/api/v1/repositories/nuget-local/guide?client=npm"); w.Code != 400 {
+	if w := get(h, "/api/v1/projects/it/repositories/nuget-local/guide?client=npm"); w.Code != 400 {
 		t.Errorf("a client of another format: %d", w.Code)
 	}
 }

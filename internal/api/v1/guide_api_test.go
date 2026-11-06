@@ -52,9 +52,9 @@ func sectionOf(t *testing.T, g gen.Guide, id string) gen.GuideSection {
 func TestR_API_053_TheGuideShowsTheSnippetsOfTheClientSetup(t *testing.T) {
 	h := setupServer(t, "https://trove.example.com", true)
 	for _, client := range []string{"npm", "pnpm", "yarn", "yarn-classic"} {
-		g := guideOf(t, get(h, "/api/v1/repositories/npm-local/guide?client="+client))
+		g := guideOf(t, get(h, "/api/v1/projects/it/repositories/npm-local/guide?client="+client))
 		var setup gen.ClientSetup
-		w := get(h, "/api/v1/repositories/npm-local/client-setup?credentials=env&client="+client)
+		w := get(h, "/api/v1/projects/it/repositories/npm-local/client-setup?credentials=env&client="+client)
 		if err := json.Unmarshal(w.Body.Bytes(), &setup); err != nil || w.Code != 200 {
 			t.Fatalf("%d %s", w.Code, w.Body.String())
 		}
@@ -87,7 +87,7 @@ func snippetsEqual(a, b gen.ClientSnippet) bool {
 // variable's.
 func TestR_API_053_TheSectionsFollowTheClassInTopicOrder(t *testing.T) {
 	h := setupServer(t, "https://trove.example.com", true)
-	local := guideOf(t, get(h, "/api/v1/repositories/npm-local/guide?client=yarn"))
+	local := guideOf(t, get(h, "/api/v1/projects/it/repositories/npm-local/guide?client=yarn"))
 	want := []string{"npm.local.what", "npm.configure", "npm.authenticate", "npm.install", "npm.publish", "npm.maintain", "npm.audit", "npm.lockfiles", "npm.troubleshooting"}
 	if got := sectionIDs(local); !slices.Equal(got, want) {
 		t.Fatalf("sections %v, want %v", got, want)
@@ -104,7 +104,7 @@ func TestR_API_053_TheSectionsFollowTheClassInTopicOrder(t *testing.T) {
 		t.Errorf("the credential reference is not the configured variable's: %s", conf.Html)
 	}
 
-	remote := guideOf(t, get(h, "/api/v1/repositories/npm-remote/guide?client=npm"))
+	remote := guideOf(t, get(h, "/api/v1/projects/it/repositories/npm-remote/guide?client=npm"))
 	for _, id := range sectionIDs(remote) {
 		if id == "npm.publish" || id == "npm.maintain" || id == "npm.local.what" {
 			t.Errorf("a remote repository's guide has %s", id)
@@ -121,7 +121,7 @@ func TestR_API_053_TheSectionsFollowTheClassInTopicOrder(t *testing.T) {
 // TestR_API_053_ACallerWhoMayNotPublishIsTold: without deploy on the target the guide
 // names no target and says why.
 func TestR_API_053_ACallerWhoMayNotPublishIsTold(t *testing.T) {
-	g := guideOf(t, get(setupServer(t, "https://trove.example.com", false), "/api/v1/repositories/npm-local/guide?client=npm"))
+	g := guideOf(t, get(setupServer(t, "https://trove.example.com", false), "/api/v1/projects/it/repositories/npm-local/guide?client=npm"))
 	if g.PublishTarget != nil {
 		t.Fatalf("%v", *g.PublishTarget)
 	}
@@ -134,7 +134,7 @@ func TestR_API_053_ACallerWhoMayNotPublishIsTold(t *testing.T) {
 // snippets without a credential line and no publishing sections.
 func TestR_API_053_AnAnonymousReaderGetsNoCredentialSteps(t *testing.T) {
 	h := setupServerAs(t, "https://trove.example.com", true, nil)
-	g := guideOf(t, get(h, "/api/v1/repositories/npm-local/guide?client=yarn"))
+	g := guideOf(t, get(h, "/api/v1/projects/it/repositories/npm-local/guide?client=yarn"))
 	if g.Credentials != gen.GuideCredentialsNone || g.PublishTarget != nil {
 		t.Fatalf("%+v", g)
 	}
@@ -174,17 +174,17 @@ func TestR_API_053_TheGuideOfAFormat(t *testing.T) {
 		t.Errorf("%+v", conf)
 	}
 	for q, want := range map[string]int{
-		"/api/v1/formats/maven/guide?class=local&client=mvn":     404,
-		"/api/v1/formats/nuget/guide?class=local&client=dotnet":  200,
-		"/api/v1/formats/npm/guide?class=bogus&client=npm":       400,
-		"/api/v1/formats/npm/guide?class=local&client=bun":       400,
-		"/api/v1/formats/generic/guide?class=local&client=curl":  200,
-		"/api/v1/formats/generic/guide?class=remote&client=curl": 400,
-		"/api/v1/formats/generic/guide?class=local&client=npm":   400,
-		"/api/v1/repositories/files/guide?client=curl":           200,
-		"/api/v1/repositories/files/guide?client=npm":            400,
-		"/api/v1/repositories/npm-local/guide?client=bun":        400,
-		"/api/v1/repositories/ghost/guide?client=npm":            404,
+		"/api/v1/formats/maven/guide?class=local&client=mvn":          404,
+		"/api/v1/formats/nuget/guide?class=local&client=dotnet":       200,
+		"/api/v1/formats/npm/guide?class=bogus&client=npm":            400,
+		"/api/v1/formats/npm/guide?class=local&client=bun":            400,
+		"/api/v1/formats/generic/guide?class=local&client=curl":       200,
+		"/api/v1/formats/generic/guide?class=remote&client=curl":      400,
+		"/api/v1/formats/generic/guide?class=local&client=npm":        400,
+		"/api/v1/projects/it/repositories/files/guide?client=curl":    200,
+		"/api/v1/projects/it/repositories/files/guide?client=npm":     400,
+		"/api/v1/projects/it/repositories/npm-local/guide?client=bun": 400,
+		"/api/v1/projects/it/repositories/ghost/guide?client=npm":     404,
 	} {
 		if w := get(h, q); w.Code != want {
 			t.Errorf("%s: %d %s", q, w.Code, w.Body.String())
@@ -223,9 +223,9 @@ func (clientless) Guide() []formats.GuideSection { return nil }
 // answer for curl with credentials=env, byte for byte.
 func TestR_GENERIC_016_TheGuideShowsTheSnippetsOfTheClientSetup(t *testing.T) {
 	h := setupServer(t, "https://trove.example.com", true)
-	g := guideOf(t, get(h, "/api/v1/repositories/files/guide?client=curl"))
+	g := guideOf(t, get(h, "/api/v1/projects/it/repositories/files/guide?client=curl"))
 	var setup gen.ClientSetup
-	w := get(h, "/api/v1/repositories/files/client-setup?credentials=env&client=curl")
+	w := get(h, "/api/v1/projects/it/repositories/files/client-setup?credentials=env&client=curl")
 	if err := json.Unmarshal(w.Body.Bytes(), &setup); err != nil || w.Code != 200 {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
@@ -256,7 +256,7 @@ func TestR_GENERIC_016_TheGuideShowsTheSnippetsOfTheClientSetup(t *testing.T) {
 // both guides answer 503.
 func TestR_API_053_AddressesNeverComeFromTheHostOfTheRequest(t *testing.T) {
 	h := setupServer(t, "", true)
-	for _, p := range []string{"/api/v1/repositories/npm-local/guide?client=npm", "/api/v1/formats/npm/guide?class=local&client=npm"} {
+	for _, p := range []string{"/api/v1/projects/it/repositories/npm-local/guide?client=npm", "/api/v1/formats/npm/guide?class=local&client=npm"} {
 		req := httptest.NewRequest("GET", p, nil)
 		req.Host = "evil.example"
 		w := httptest.NewRecorder()

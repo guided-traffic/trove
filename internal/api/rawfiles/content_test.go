@@ -19,7 +19,7 @@ import (
 	"github.com/guided-traffic/trove/internal/items"
 )
 
-const contentDownload = "/api/v1/repositories/generic-local/content/a.bin"
+const contentDownload = "/api/v1/projects/it/repositories/generic-local/content/a.bin"
 
 // as returns r carrying the credential method of a principal; the authentication stage sets it in a server.
 func as(r *http.Request, method httpserver.AuthMethod) *http.Request {
@@ -129,7 +129,7 @@ func TestContentRoutes(t *testing.T) {
 
 	t.Run("R-API-025 Q-UI-106 a path that is not stored answers 404", func(t *testing.T) {
 		h := handler(t, &decider{}, &store{})
-		rec := serveContent(t, h, 0, as(httptest.NewRequest(http.MethodGet, "/api/v1/repositories/generic-local/content/missing.bin", nil), httpserver.MethodSession))
+		rec := serveContent(t, h, 0, as(httptest.NewRequest(http.MethodGet, "/api/v1/projects/it/repositories/generic-local/content/missing.bin", nil), httpserver.MethodSession))
 		want := httptest.NewRecorder()
 		h.ServeHTTP(want, httptest.NewRequest(http.MethodGet, "/files/generic-local/missing.bin", nil))
 		if rec.Code != http.StatusNotFound || rec.Code != want.Code {
@@ -182,14 +182,14 @@ func TestContentRoutes(t *testing.T) {
 
 	t.Run("R-API-025 Q-UI-106 an upload within the limit is stored", func(t *testing.T) {
 		h := handlerOver(t, &decider{}, &countingStore{})
-		rec := serveContent(t, h, 4, as(httptest.NewRequest(http.MethodPut, "/api/v1/repositories/generic-local/content/new/b.bin", strings.NewReader("xyz")), httpserver.MethodSession))
+		rec := serveContent(t, h, 4, as(httptest.NewRequest(http.MethodPut, "/api/v1/projects/it/repositories/generic-local/content/new/b.bin", strings.NewReader("xyz")), httpserver.MethodSession))
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 		}
 		var d struct {
 			ContentURL string `json:"contentUrl"`
 		}
-		if err := jsonDecode(rec.Body.Bytes(), &d); err != nil || d.ContentURL != "/api/v1/repositories/generic-local/content/new/b.bin" {
+		if err := jsonDecode(rec.Body.Bytes(), &d); err != nil || d.ContentURL != "/api/v1/projects/it/repositories/generic-local/content/new/b.bin" {
 			t.Errorf("the answer's contentUrl = %q (%v)", d.ContentURL, err)
 		}
 	})
@@ -197,12 +197,12 @@ func TestContentRoutes(t *testing.T) {
 	t.Run("R-API-025 Q-UI-106 an upload above ui.deploy.max_upload_bytes answers 413, a declared length before anything is spooled", func(t *testing.T) {
 		st := &countingStore{}
 		h := handlerOver(t, &decider{}, st)
-		rec := serveContent(t, h, 4, as(httptest.NewRequest(http.MethodPut, "/api/v1/repositories/generic-local/content/big.bin", strings.NewReader("12345")), httpserver.MethodSession))
+		rec := serveContent(t, h, 4, as(httptest.NewRequest(http.MethodPut, "/api/v1/projects/it/repositories/generic-local/content/big.bin", strings.NewReader("12345")), httpserver.MethodSession))
 		if rec.Code != http.StatusRequestEntityTooLarge || !strings.Contains(rec.Body.String(), "payload_too_large") {
 			t.Fatalf("declared: %d %s", rec.Code, rec.Body.String())
 		}
 		// A body of unknown length is cut when it crosses the limit.
-		req := httptest.NewRequest(http.MethodPut, "/api/v1/repositories/generic-local/content/big.bin", io.NopCloser(strings.NewReader("12345")))
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/projects/it/repositories/generic-local/content/big.bin", io.NopCloser(strings.NewReader("12345")))
 		req.ContentLength = -1
 		if rec := serveContent(t, h, 4, as(req, httpserver.MethodSession)); rec.Code != http.StatusRequestEntityTooLarge {
 			t.Fatalf("chunked: %d %s", rec.Code, rec.Body.String())
@@ -212,7 +212,7 @@ func TestContentRoutes(t *testing.T) {
 	t.Run("R-API-025 Q-UI-106 a limit of 0 is no limit, and /files/ has none of its own", func(t *testing.T) {
 		h := handlerOver(t, &decider{}, &countingStore{})
 		body := strings.Repeat("x", 1<<16)
-		if rec := serveContent(t, h, 0, as(httptest.NewRequest(http.MethodPut, "/api/v1/repositories/generic-local/content/big.bin", strings.NewReader(body)), httpserver.MethodSession)); rec.Code != http.StatusCreated {
+		if rec := serveContent(t, h, 0, as(httptest.NewRequest(http.MethodPut, "/api/v1/projects/it/repositories/generic-local/content/big.bin", strings.NewReader(body)), httpserver.MethodSession)); rec.Code != http.StatusCreated {
 			t.Errorf("content: %d %s", rec.Code, rec.Body.String())
 		}
 		rec := httptest.NewRecorder()
@@ -225,7 +225,7 @@ func TestContentRoutes(t *testing.T) {
 	t.Run("R-API-025 Q-UI-106 a caller who may not deploy is refused before the body is read, not told 413", func(t *testing.T) {
 		st := &countingStore{}
 		h := handlerOver(t, &denier{outcome: authz.DenyVisible}, st)
-		rec := serveContent(t, h, 4, as(httptest.NewRequest(http.MethodPut, "/api/v1/repositories/generic-local/content/big.bin", strings.NewReader("123456789")), httpserver.MethodSession))
+		rec := serveContent(t, h, 4, as(httptest.NewRequest(http.MethodPut, "/api/v1/projects/it/repositories/generic-local/content/big.bin", strings.NewReader("123456789")), httpserver.MethodSession))
 		if rec.Code != http.StatusForbidden || st.spooled.Load() != 0 {
 			t.Errorf("status %d, %d bodies spooled: %s", rec.Code, st.spooled.Load(), rec.Body.String())
 		}
@@ -233,8 +233,8 @@ func TestContentRoutes(t *testing.T) {
 
 	t.Run("R-API-025 Q-API-195 a path ServeMux would clean is redirected, not served", func(t *testing.T) {
 		h := handler(t, &decider{}, &store{file: file, body: []byte("abc")})
-		rec := serveContent(t, h, 0, as(httptest.NewRequest(http.MethodGet, "/api/v1/repositories/generic-local/content/x/../a.bin", nil), httpserver.MethodSession))
-		if rec.Code/100 != 3 || rec.Header().Get("Location") != "/api/v1/repositories/generic-local/content/a.bin" || rec.Body.String() == "abc" {
+		rec := serveContent(t, h, 0, as(httptest.NewRequest(http.MethodGet, "/api/v1/projects/it/repositories/generic-local/content/x/../a.bin", nil), httpserver.MethodSession))
+		if rec.Code/100 != 3 || rec.Header().Get("Location") != "/api/v1/projects/it/repositories/generic-local/content/a.bin" || rec.Body.String() == "abc" {
 			t.Errorf("status %d, location %q", rec.Code, rec.Header().Get("Location"))
 		}
 	})
@@ -263,7 +263,7 @@ func TestContentRoutes(t *testing.T) {
 		handler(t, &decider{}, &store{file: file}).Content(0).Register(router)
 		router.HandleFunc("GET /api/v1/repositories/{repoKey}", func(w http.ResponseWriter, _ *http.Request) {})
 		rec := httptest.NewRecorder()
-		router.ServeHTTP(rec, as(httptest.NewRequest(http.MethodDelete, "/api/v1/repositories/generic-local", nil), httpserver.MethodBearer))
+		router.ServeHTTP(rec, as(httptest.NewRequest(http.MethodDelete, "/api/v1/projects/it/repositories/generic-local", nil), httpserver.MethodBearer))
 		if rec.Code != http.StatusMethodNotAllowed {
 			t.Errorf("DELETE of a repository with a token: %d", rec.Code)
 		}
@@ -284,7 +284,7 @@ func TestSplitContentPath(t *testing.T) {
 		{"/api/v1/projects//repositories/r1/content/x", "", "", false},
 		{"/api/v1/projects/it/repositories/r1/items", "", "", false},
 		{"/api/v1/projects/it/repositories/a/b/content/x", "", "", false},
-		{"/api/v1/repositories/r1/content/x", "", "", false},
+		{"/api/v1/projects/it/repositories/r1/content/x", "", "", false},
 		{"/files/it/r1/x", "", "", false},
 	} {
 		name, rest, ok := splitContentPath(tc.in)
@@ -334,12 +334,12 @@ func TestContentRoutesAgreeWithTheDocument(t *testing.T) {
 	})
 	t.Run("R-API-002 a content route that the document lacks is named", func(t *testing.T) {
 		router := httpserver.NewClientRouter()
-		router.HandleFunc("DELETE /api/v1/repositories/{repoKey}/content/{path...}", func(http.ResponseWriter, *http.Request) {})
+		router.HandleFunc("DELETE /api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path...}", func(http.ResponseWriter, *http.Request) {})
 		patterns := router.Patterns()
 		for p := range doc.Operations() {
 			patterns = append(patterns, p)
 		}
-		if err := doc.CheckRoutes(patterns); err == nil || !strings.Contains(err.Error(), "DELETE /api/v1/repositories/{repoKey}/content/{path...}") {
+		if err := doc.CheckRoutes(patterns); err == nil || !strings.Contains(err.Error(), "DELETE /api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path...}") {
 			t.Fatalf("err = %v", err)
 		}
 	})

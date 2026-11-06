@@ -58,7 +58,7 @@ func TestR_EP_016_TheExposureCheckKeepsFromTheListingWhatTheReadScopeRefuses(t *
 	sc := &checkScoper{}
 	dec := &scopeDecider{}
 	acc := &edge.Access{Subject: authz.Subject{Name: "alice", Endpoint: "customers"}, D: dec}
-	may, err := checkServer(sc).checkReadFilter(context.Background(), acc, "npm-local")
+	may, err := checkServer(sc).checkReadFilter(context.Background(), acc, "it/npm-local")
 	if err != nil || may == nil {
 		t.Fatalf("filter %v, err %v", may != nil, err)
 	}
@@ -79,7 +79,7 @@ func TestR_EP_016_TheExposureCheckWritesNoDecisionPerListedVersion(t *testing.T)
 	sc := &checkScoper{}
 	dec := &scopeDecider{}
 	acc := &edge.Access{Subject: authz.Subject{Name: "alice", Endpoint: "customers"}, D: dec}
-	may, err := checkServer(sc).checkReadFilter(context.Background(), acc, "npm-local")
+	may, err := checkServer(sc).checkReadFilter(context.Background(), acc, "it/npm-local")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,11 +98,11 @@ func TestR_EP_016_TheExposureCheckWritesNoDecisionPerListedVersion(t *testing.T)
 // service reads a nil filter as "nothing" (Q-EP-66); a refusal to scope is the refusal of the check.
 func TestR_EP_016_TheExposureCheckWithoutAReadScopeListsNothing(t *testing.T) {
 	acc := &edge.Access{Subject: authz.Subject{Name: "alice"}, D: &scopeDecider{}}
-	if may, err := checkServer(nil).checkReadFilter(context.Background(), acc, "npm-local"); may != nil || err != nil {
+	if may, err := checkServer(nil).checkReadFilter(context.Background(), acc, "it/npm-local"); may != nil || err != nil {
 		t.Fatalf("filter %v, err %v", may != nil, err)
 	}
 	refusal := errs.E(errs.Unavailable, errs.CodeUnavailable, "no index")
-	if _, err := checkServer(&checkScoper{err: refusal}).checkReadFilter(context.Background(), acc, "npm-local"); err == nil {
+	if _, err := checkServer(&checkScoper{err: refusal}).checkReadFilter(context.Background(), acc, "it/npm-local"); err == nil {
 		t.Fatal("a refusal to scope was swallowed")
 	}
 }

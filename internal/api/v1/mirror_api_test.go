@@ -178,8 +178,8 @@ func (d mirrorDecider) DecideOn(_ context.Context, _ *authz.Index, _ authz.Subje
 }
 
 const (
-	mirrorPath = "/api/v1/repositories/npm-mirror/mirror"
-	runPath    = "/api/v1/repositories/npm-mirror/mirror/run"
+	mirrorPath = "/api/v1/projects/it/repositories/npm-mirror/mirror"
+	runPath    = "/api/v1/projects/it/repositories/npm-mirror/mirror/run"
 )
 
 // The callers, one right each. cacheDecider answers the decision on manage.
@@ -252,9 +252,9 @@ func TestR_REPO_056_MirrorStatusPermissions(t *testing.T) {
 	})
 	t.Run("R-REPO-056 a local and a virtual repository answer 400 not_applicable, an unknown one 404", func(t *testing.T) {
 		e := get(readConfigCaller, mirrorDecider{})
-		problem(t, e.do("GET", "/api/v1/repositories/npm-local/mirror", "", nil), 400, "not_applicable")
-		problem(t, e.do("GET", "/api/v1/repositories/npm-virtual/mirror", "", nil), 400, "not_applicable")
-		problem(t, e.do("GET", "/api/v1/repositories/nothing-here/mirror", "", nil), 404, "repository_not_found")
+		problem(t, e.do("GET", "/api/v1/projects/it/repositories/npm-local/mirror", "", nil), 400, "not_applicable")
+		problem(t, e.do("GET", "/api/v1/projects/it/repositories/npm-virtual/mirror", "", nil), 400, "not_applicable")
+		problem(t, e.do("GET", "/api/v1/projects/it/repositories/nothing-here/mirror", "", nil), 404, "repository_not_found")
 	})
 	t.Run("an unwired database is 503", func(t *testing.T) {
 		s := newSetup(t, func(o *Options) {
@@ -568,14 +568,14 @@ func TestR_REPO_056_MirrorRun(t *testing.T) {
 		}
 	})
 	t.Run("R-REPO-056 a remote in mode pullThrough answers 409 mirror_off", func(t *testing.T) {
-		e, w := run(t, writeConfigCall, mirrorDecider{read: true}, "/api/v1/repositories/npm-pull/mirror/run", "", nil)
+		e, w := run(t, writeConfigCall, mirrorDecider{read: true}, "/api/v1/projects/it/repositories/npm-pull/mirror/run", "", nil)
 		problem(t, w, 409, "mirror_off")
 		if len(e.queue.specs) != 0 {
 			t.Errorf("enqueued %+v", e.queue.specs)
 		}
 	})
 	t.Run("R-REPO-056 a paused mirror answers 409 mirror_paused", func(t *testing.T) {
-		e, w := run(t, writeConfigCall, mirrorDecider{read: true}, "/api/v1/repositories/npm-paused/mirror/run", "", nil)
+		e, w := run(t, writeConfigCall, mirrorDecider{read: true}, "/api/v1/projects/it/repositories/npm-paused/mirror/run", "", nil)
 		problem(t, w, 409, "mirror_paused")
 		if len(e.queue.specs) != 0 {
 			t.Errorf("enqueued %+v", e.queue.specs)
@@ -589,7 +589,7 @@ func TestR_REPO_056_MirrorRun(t *testing.T) {
 				t.Errorf("%s: enqueued", key)
 			}
 		}
-		_, w := run(t, writeConfigCall, mirrorDecider{read: true}, "/api/v1/repositories/nothing-here/mirror/run", "", nil)
+		_, w := run(t, writeConfigCall, mirrorDecider{read: true}, "/api/v1/projects/it/repositories/nothing-here/mirror/run", "", nil)
 		problem(t, w, 404, "repository_not_found")
 	})
 	t.Run("R-API-003 a body that is not the request is refused before anything is enqueued", func(t *testing.T) {

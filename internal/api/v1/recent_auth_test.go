@@ -97,7 +97,7 @@ func TestR_API_007_SharedStepEnforcesRecentAuth(t *testing.T) {
 		{"changing authentication settings", "PATCH", "/api/v1/settings/auth"},
 		{"deleting a permission policy", "DELETE", "/api/v1/permission-policies/p"},
 		{"binding a role", "PUT", "/api/v1/role-bindings/admin/user:alice"},
-		{"deleting a repository", "DELETE", "/api/v1/repositories/npm-old"},
+		{"deleting a repository", "DELETE", "/api/v1/projects/it/repositories/npm-old"},
 		{"deleting an exposure rule", "DELETE", "/api/v1/endpoints/default/exposure-rules/r"},
 	}
 	for _, tc := range cases {
@@ -120,7 +120,7 @@ func TestR_API_007_SharedStepEnforcesRecentAuth(t *testing.T) {
 			withSessions(o)
 			o.Access = accessFunc(func(context.Context, string) error { return errs.E(errs.Forbidden, errs.CodeForbidden, "no") })
 		}, sessionCaller)
-		if w := call(s, "DELETE", "/api/v1/repositories/npm-old", ""); w.Code != 403 {
+		if w := call(s, "DELETE", "/api/v1/projects/it/repositories/npm-old", ""); w.Code != 403 {
 			t.Fatalf("%d %s", w.Code, w.Body.String())
 		}
 	})

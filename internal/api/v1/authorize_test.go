@@ -22,18 +22,18 @@ func TestR_API_008_ParseRequirementForms(t *testing.T) {
 		{"a role", map[string]any{"role": "admin"}, Requirement{Role: "admin"}},
 		{
 			"an action on a repository from the query",
-			map[string]any{"action": "deploy", "repository": "query.repository"},
-			Requirement{Action: authz.Deploy, Repository: "query.repository"},
+			map[string]any{"action": "deploy", "repository": "query.repository", "project": "query.project"},
+			Requirement{Action: authz.Deploy, Repository: "query.repository", Project: "query.project"},
 		},
 		{
 			"an action with a path",
-			map[string]any{"action": "read", "repository": "path.key", "path": "query.path"},
-			Requirement{Action: authz.Read, Repository: "path.key", Path: "query.path"},
+			map[string]any{"action": "read", "repository": "path.key", "project": "path.projectKey", "path": "query.path"},
+			Requirement{Action: authz.Read, Repository: "path.key", Project: "path.projectKey", Path: "query.path"},
 		},
 		{
 			"an action with a package and a path",
-			map[string]any{"action": "delete", "repository": "path.repoKey", "package": "path.name", "path": "query.path"},
-			Requirement{Action: authz.Delete, Repository: "path.repoKey", Package: "path.name", Path: "query.path"},
+			map[string]any{"action": "delete", "repository": "path.repoKey", "project": "path.projectKey", "package": "path.name", "path": "query.path"},
+			Requirement{Action: authz.Delete, Repository: "path.repoKey", Project: "path.projectKey", Package: "path.name", Path: "query.path"},
 		},
 	}
 	for _, tc := range good {
@@ -89,15 +89,16 @@ func (a *actionAccess) RequireAction(_ context.Context, c authz.Coordinate) erro
 }
 
 func TestR_API_008_DecideActionAndRoleForms(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/things/npm-internal?repository=npm-internal&path=a/b.tgz&package=%40web%2Fbutton", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/things/npm-internal?repository=npm-internal&project=it&path=a/b.tgz&package=%40web%2Fbutton", nil)
 	req.SetPathValue("key", "npm-internal")
+	req.SetPathValue("projectKey", "it")
 	withUser := func(r *http.Request) *http.Request {
 		return r.WithContext(httpserver.WithPrincipal(r.Context(), httpserver.Principal{Kind: httpserver.KindUser, ID: "u", Name: "alice"}))
 	}
 	t.Run("R-API-008 the action form builds the coordinate from the request", func(t *testing.T) {
 		acc := &actionAccess{}
 		s := New(Options{Access: acc})
-		q := Requirement{Action: authz.Deploy, Repository: "query.repository", Package: "query.package", Path: "query.path"}
+		q := Requirement{Action: authz.Deploy, Repository: "query.repository", Project: "query.project", Package: "query.package", Path: "query.path"}
 		if err := s.decide(withUser(req), q); err != nil {
 			t.Fatal(err)
 		}
@@ -110,7 +111,7 @@ func TestR_API_008_DecideActionAndRoleForms(t *testing.T) {
 	t.Run("R-API-008 a route wildcard is a source and a read is a metadata request", func(t *testing.T) {
 		acc := &actionAccess{}
 		s := New(Options{Access: acc})
-		if err := s.decide(withUser(req), Requirement{Action: authz.Read, Repository: "path.key"}); err != nil {
+		if err := s.decide(withUser(req), Requirement{Action: authz.Read, Repository: "path.key", Project: "path.projectKey"}); err != nil {
 			t.Fatal(err)
 		}
 		if acc.coordinate.Repository != qr("npm-internal") || acc.coordinate.Kind != authz.KindMetadata {
@@ -120,7 +121,7 @@ func TestR_API_008_DecideActionAndRoleForms(t *testing.T) {
 	t.Run("R-API-008 a source the request lacks names no repository", func(t *testing.T) {
 		acc := &actionAccess{}
 		s := New(Options{Access: acc})
-		_ = s.decide(withUser(req), Requirement{Action: authz.Read, Repository: "query.nothing"})
+		_ = s.decide(withUser(req), Requirement{Action: authz.Read, Repository: "query.nothing", Project: "query.project"})
 		if acc.coordinate.Repository != qr("") {
 			t.Fatalf("coordinate = %+v", acc.coordinate)
 		}
@@ -128,7 +129,7 @@ func TestR_API_008_DecideActionAndRoleForms(t *testing.T) {
 	t.Run("R-API-008 the refusal of the evaluator is the answer", func(t *testing.T) {
 		acc := &actionAccess{err: authz.Decision{Outcome: authz.DenyHidden}.Err()}
 		s := New(Options{Access: acc})
-		err := s.decide(withUser(req), Requirement{Action: authz.Read, Repository: "query.repository"})
+		err := s.decide(withUser(req), Requirement{Action: authz.Read, Repository: "query.repository", Project: "query.project"})
 		if ee, _ := errs.As(err); ee == nil || ee.Status() != 404 {
 			t.Fatalf("err = %v", err)
 		}
@@ -156,7 +157,7 @@ func TestR_API_008_DecideActionAndRoleForms(t *testing.T) {
 	})
 	t.Run("R-API-008 an Access that cannot decide actions refuses the action form", func(t *testing.T) {
 		s := New(Options{Access: accessFunc(func(context.Context, string) error { return nil })})
-		if ee, _ := errs.As(s.decide(withUser(req), Requirement{Action: authz.Read, Repository: "query.repository"})); ee == nil || ee.Status() != 403 {
+		if ee, _ := errs.As(s.decide(withUser(req), Requirement{Action: authz.Read, Repository: "query.repository", Project: "query.project"})); ee == nil || ee.Status() != 403 {
 			t.Fatalf("err = %v", ee)
 		}
 	})

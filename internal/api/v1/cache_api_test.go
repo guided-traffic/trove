@@ -159,7 +159,7 @@ func problem(t *testing.T, w *httptest.ResponseRecorder, status int, code string
 	return m
 }
 
-const invalidatePath = "/api/v1/repositories/npm-remote/cache/invalidate"
+const invalidatePath = "/api/v1/projects/it/repositories/npm-remote/cache/invalidate"
 
 func testInvalidateRepositoryCache(t *testing.T, val *apitest.Validator) {
 	remote := storedRepo("7", "npm-remote", repository.Remote)
@@ -264,7 +264,7 @@ func entryRows(n int) []invalidation.Entry {
 	return out
 }
 
-const entriesPath = "/api/v1/repositories/npm-remote/cache/entries"
+const entriesPath = "/api/v1/projects/it/repositories/npm-remote/cache/entries"
 
 func testListCacheEntries(t *testing.T, val *apitest.Validator) {
 	remote := storedRepo("7", "npm-remote", repository.Remote)
@@ -351,7 +351,7 @@ func testListCacheEntries(t *testing.T, val *apitest.Validator) {
 	})
 	t.Run("only a remote repository has entries", func(t *testing.T) {
 		s := cacheSetup(t, val, fc(), holdsAccess{}, cacheDecider{manage: true})
-		problem(t, s.do("GET", "/api/v1/repositories/local-one/cache/entries", "", nil), 400, "not_applicable")
+		problem(t, s.do("GET", "/api/v1/projects/it/repositories/local-one/cache/entries", "", nil), 400, "not_applicable")
 	})
 	t.Run("R-API-010 a bad kind, a bad prefix, an unknown parameter and a foreign cursor are 400", func(t *testing.T) {
 		s := cacheSetup(t, val, fc(), holdsAccess{}, cacheDecider{manage: true})
