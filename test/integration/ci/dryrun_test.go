@@ -74,7 +74,7 @@ func TestR_CI_019_TheDryRunOfTheExampleClaimSet(t *testing.T) {
 		return r.JSON(t)
 	}
 
-	got := evaluate(map[string]any{"claims": exampleClaims(), "scope": "deploy:npm-internal"})
+	got := evaluate(map[string]any{"claims": exampleClaims(), "scope": "deploy:it/npm-internal"})
 	if sel := strs(got["selected"]); len(sel) != 1 || sel[0] != "acme-release-publish" {
 		t.Fatalf("selected = %v, want acme-release-publish", sel)
 	}
@@ -84,7 +84,7 @@ func TestR_CI_019_TheDryRunOfTheExampleClaimSet(t *testing.T) {
 	grantsOut := got["grants"].(map[string]any)
 	inl := grantsOut["inline"].([]any)
 	if len(inl) != 1 {
-		t.Fatalf("the scope deploy:npm-internal narrows to one inline grant, got %v", inl)
+		t.Fatalf("the scope deploy:it/npm-internal narrows to one inline grant, got %v", inl)
 	}
 	first := inl[0].(map[string]any)
 	if inc := strs(first["packages"].(map[string]any)["include"]); len(inc) != 1 || inc[0] != "@acme-billing/*" {
@@ -96,8 +96,8 @@ func TestR_CI_019_TheDryRunOfTheExampleClaimSet(t *testing.T) {
 	if pol := strs(grantsOut["policies"]); len(pol) != 1 || pol[0] != "ci-read-internal" {
 		t.Errorf("policies = %v", pol)
 	}
-	if got["scope"] != "deploy:npm-internal" || got["ttlSeconds"] != float64(900) {
-		t.Errorf("scope %v, ttlSeconds %v, want deploy:npm-internal and 900", got["scope"], got["ttlSeconds"])
+	if got["scope"] != "deploy:it/npm-internal" || got["ttlSeconds"] != float64(900) {
+		t.Errorf("scope %v, ttlSeconds %v, want deploy:it/npm-internal and 900", got["scope"], got["ttlSeconds"])
 	}
 	trace := got["trace"].([]any)
 	if len(trace) != 2 {
@@ -139,7 +139,7 @@ func TestR_CI_019_TheDryRunOfTheExampleClaimSet(t *testing.T) {
 	})
 
 	t.Run("a policy's scope items are taken as held with a warning, and manage is no scope", func(t *testing.T) {
-		got := evaluate(map[string]any{"claims": exampleClaims(), "scope": "delete:npm-internal"})
+		got := evaluate(map[string]any{"claims": exampleClaims(), "scope": "delete:it/npm-internal"})
 		// The mapping lists a policy, which the dry run does not read.
 		if got["failure"] != nil {
 			t.Fatalf("failure = %v", got["failure"])
@@ -232,7 +232,7 @@ func TestR_CI_012_TheDryRunClassifiesAForkPipelineAndHonoursTheOptIn(t *testing.
 	body["grants"] = grants(inline("it/npm-internal", []string{"*"}, "read"))
 	wantStatus(t, e.do(a, "PUT", path+"/first", body, "If-Match", "*"), 200, "")
 	got = evaluate()
-	if got["failure"] != nil || got["scope"] != "read:npm-internal" {
+	if got["failure"] != nil || got["scope"] != "read:it/npm-internal" {
 		t.Errorf("failure %v, scope %v: with read_only the token holds read items only", got["failure"], got["scope"])
 	}
 }

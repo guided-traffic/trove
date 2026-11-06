@@ -4,7 +4,7 @@ package ci
 
 import (
 	"encoding/json"
-	"net/url"
+	"strconv"
 	"testing"
 
 	"github.com/guided-traffic/trove/test/integration/testenv"
@@ -28,13 +28,15 @@ func (e *env) issuer(t *testing.T, r *testenv.Replica, name string, public bool)
 
 func mappingsOf(issuer string) string { return issuersPath + "/" + issuer + "/mappings" }
 
-// addOwner makes the principal (a reference such as "user:bob") an Owner of the project and returns the answer, whose
-// Trove-Authz-Epoch header names the index every replica must have reached before the owner's request.
-func (e *env) addOwner(r *testenv.Replica, project, principalRef string) testenv.Answer {
+// addOwner makes the user an Owner of the project (the row of project_member, Q-AUTHZ-208) and announces the change the
+// way the commit of the members route does. It returns the authz epoch every replica must have reached before the
+// owner's request (the header Trove-Authz-Min-Epoch). The membership itself is the members route's to test
+// (test/integration/projects); here it is the starting point of what an Owner does with CI mappings.
+func (e *env) addOwner(project, userID string) string {
 	e.t.Helper()
-	a := e.do(r, "PUT", "/api/v1/projects/"+project+"/members/"+url.PathEscape(principalRef), map[string]any{"role": "owner"})
-	wantStatus(e.t, a, 201, "")
-	return a
+	e.exec(`INSERT INTO project_member (project_id, principal_id, role) SELECT id, $2::uuid, 'owner' FROM project WHERE key = $1`, project, userID)
+	e.bump("authz", nil)
+	return strconv.FormatInt(e.epoch("authz"), 10)
 }
 
 func projectMappings(project string) string { return "/api/v1/projects/" + project + "/ci/mappings" }

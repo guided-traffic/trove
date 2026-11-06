@@ -33,8 +33,7 @@ func newTierEnv(t *testing.T) *tierEnv {
 	for _, key := range []string{"web", "data", "shop"} {
 		wantStatus(t, x.do(e.a, "POST", "/api/v1/projects", map[string]any{"key": key, "displayName": key}), 201, "")
 		x.stack.Repository(key+"/"+key+"-npm", "local", "npm", "{}")
-		added := x.addOwner(e.a, key, "user:bob")
-		e.epoch = added.Header.Get("Trove-Authz-Epoch")
+		e.epoch = x.addOwner(key, x.bobID)
 	}
 	return e
 }

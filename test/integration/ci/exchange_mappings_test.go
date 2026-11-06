@@ -63,7 +63,7 @@ func TestR_CI_007_AReplicaWithALaggingCopyIssuesWhatIsCommitted(t *testing.T) {
 		before := stale()
 		wantStatus(t, x.do(a, "POST", mappingsOf(xIssuer), mrReadOnly("acme-mr-readonly", 10)), 201, "")
 		g := wantToken(t, x.exchange(b, x.mint(oidcstub.MintOptions{Claims: mrClaims()})))
-		if len(g.Mappings) != 1 || g.Mappings[0] != "acme-mr-readonly" || g.Scope != "read:npm-internal" {
+		if len(g.Mappings) != 1 || g.Mappings[0] != "acme-mr-readonly" || g.Scope != "read:it/npm-internal" {
 			t.Errorf("B issued %v with scope %q", g.Mappings, g.Scope)
 		}
 		if got := stale() - before; got != 1 {
@@ -140,7 +140,7 @@ func TestR_CI_009_AMergeRequestPipelineOfAProtectedBranchCannotPublish(t *testin
 	})
 	t.Run("R-CI-009 a merge request pipeline whose source branch is protected matches both and gets only p10's: its publish is 403", func(t *testing.T) {
 		g := wantToken(t, x.exchange(a, x.mint(oidcstub.MintOptions{Claims: mrClaims()})))
-		if len(g.Mappings) != 1 || g.Mappings[0] != "p10" || g.Scope != "read:npm-internal" {
+		if len(g.Mappings) != 1 || g.Mappings[0] != "p10" || g.Scope != "read:it/npm-internal" {
 			t.Fatalf("mappings %v, scope %q", g.Mappings, g.Scope)
 		}
 		if pub := x.stack.Do(a, "PUT", npmPath("npm-internal", "@acme-billing/invoice-client"), g.Token, npmBody(t, "@acme-billing/invoice-client", "1.0.1")); pub.Status != 403 {
@@ -314,7 +314,7 @@ func TestR_CI_020_TheIssuanceRecordOfAnExchange(t *testing.T) {
 	a := x.web("web-a")
 	x.issuer(a)
 	x.addMapping(a, releaseMapping("acme-release-publish", 100))
-	g := wantToken(t, x.exchangeFrom(a, "198.51.100.30", x.mint(oidcstub.MintOptions{}), "scope", "read:npm-internal deploy:npm-internal"))
+	g := wantToken(t, x.exchangeFrom(a, "198.51.100.30", x.mint(oidcstub.MintOptions{}), "scope", "read:it/npm-internal deploy:it/npm-internal"))
 
 	t.Run("R-CI-020 GET /ci/issuances?job_id= returns the record with the verified job identity and the allowlisted snapshot", func(t *testing.T) {
 		r := x.do(a, "GET", "/api/v1/ci/issuances?issuer="+xIssuer+"&jobId=123456", nil)
@@ -324,7 +324,7 @@ func TestR_CI_020_TheIssuanceRecordOfAnExchange(t *testing.T) {
 			t.Fatalf("%d records\n%s", len(items), r.Body)
 		}
 		rec, _ := json.Marshal(items[0])
-		for _, want := range []string{`"projectId":"1234"`, `"pipelineId":"98765"`, `"ref":"v1.4.0"`, `"acme-release-publish"`, `"read:npm-internal deploy:npm-internal"`, `"198.51.100.30"`} {
+		for _, want := range []string{`"projectId":"1234"`, `"pipelineId":"98765"`, `"ref":"v1.4.0"`, `"acme-release-publish"`, `"read:it/npm-internal deploy:it/npm-internal"`, `"198.51.100.30"`} {
 			if !strings.Contains(string(rec), want) {
 				t.Errorf("the record lacks %s: %s", want, rec)
 			}

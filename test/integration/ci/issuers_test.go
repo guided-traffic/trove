@@ -407,8 +407,7 @@ func TestQ_CI_26_AProjectOwnerListsTheIssuersReadOnly(t *testing.T) {
 	wantStatus(t, e.do(a, "POST", issuersPath, d.body("gitlab-main")), 201, "")
 	wantStatus(t, e.do(a, "POST", "/api/v1/projects", map[string]any{"key": "web", "displayName": "Web"}), 201, "")
 	wantStatus(t, e.do(a, "POST", "/api/v1/projects", map[string]any{"key": "data", "displayName": "Data"}), 201, "")
-	added := e.addOwner(a, "web", "user:bob")
-	epoch := added.Header.Get("Trove-Authz-Epoch")
+	epoch := e.addOwner("web", e.bobID)
 
 	r := e.as(a, e.bobPAT, "GET", "/api/v1/projects/web/ci/issuers", nil, "Trove-Authz-Min-Epoch", epoch)
 	wantStatus(t, r, 200, "")

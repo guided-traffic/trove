@@ -314,8 +314,8 @@ func TestR_CI_029_AValkeyOutageChangesNoAnswerButThe429Budget(t *testing.T) {
 		var got []string
 		for _, s := range []testenv.Answer{
 			x.exchange(a, x.mint(oidcstub.MintOptions{})),
-			x.exchange(b, x.mint(oidcstub.MintOptions{}), "scope", "read:npm-internal"),
-			x.exchange(b, x.mint(oidcstub.MintOptions{}), "scope", "deploy:nuget-internal"),
+			x.exchange(b, x.mint(oidcstub.MintOptions{}), "scope", "read:it/npm-internal"),
+			x.exchange(b, x.mint(oidcstub.MintOptions{}), "scope", "deploy:it/nuget-internal"),
 			x.exchange(a, x.mint(oidcstub.MintOptions{Claims: map[string]any{"namespace_id": "9999"}})),
 			x.exchange(a, x.mint(oidcstub.MintOptions{ForeignSignature: true})),
 			x.exchange(a, once), x.exchange(b, once),

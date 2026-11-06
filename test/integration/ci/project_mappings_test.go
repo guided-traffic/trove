@@ -38,8 +38,7 @@ func newProjectEnv(t *testing.T) *projectEnv {
 	}
 	e.stack.Policy("ci-read-global", nil, []string{"data/other-npm"})
 	e.exec("INSERT INTO authz_policy (id, name, project_id) SELECT gen_random_uuid(), key || '/ci-read', id FROM project WHERE key = 'web'")
-	added := e.addOwner(p.a, "web", "user:bob")
-	p.epoch = added.Header.Get("Trove-Authz-Epoch")
+	p.epoch = e.addOwner("web", e.bobID)
 	return p
 }
 

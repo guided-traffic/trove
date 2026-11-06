@@ -18,7 +18,7 @@ or its TLS, can sign for it; the specification keeps that case as [H-24](../spec
 |---|---|---|
 | a system administrator (`ci:write`, recent authentication) | create, replace and delete issuers; force a key refresh | the operation declarations; [issuers_write.go](../../internal/ci/issuers_write.go) |
 | an auditor or security administrator (`ci:read`) | read issuers and their key status | the declarations |
-| a project administrator with `managePolicies` | list the issuers read-only: name, kind, issuer URL, public flag | [ci_project_api.go](../../internal/api/v1/ci_project_api.go) (`requireProject`) |
+| an Owner of a project | list the issuers read-only: name, kind, issuer URL, public flag | [ci_project_api.go](../../internal/api/v1/ci_project_api.go) (`requireProject`) |
 | `trove migrate` | create, replace and disable the issuers of `ci.issuers` (source `configuration`) | [issuers_declared.go](../../internal/ci/issuers_declared.go) |
 | a CI token | nothing: the management API refuses it ([Q-CI-18](../spec/gitlab-ci-oidc.md)) | `ciGate` |
 
@@ -108,7 +108,7 @@ through to the next one of the tier, which can grant more; the event of the disa
 |---|---|---|
 | a system administrator (`ci:write`, recent authentication) | create, replace and delete mappings of every tier; a project's mapping keeps the bounds of its tier | the declarations; [mappings_write.go](../../internal/ci/mappings_write.go) |
 | an auditor or security administrator (`ci:read`) | read the mappings, run the dry run, read the snippet | the declarations |
-| a project administrator with `managePolicies` | the same for the tier of its project, within the bounds below | [ci_project_api.go](../../internal/api/v1/ci_project_api.go) (`requireProject`), [mappings_bind.go](../../internal/ci/mappings_bind.go) |
+| an Owner of a project | the same for the tier of its project, within the bounds below | [ci_project_api.go](../../internal/api/v1/ci_project_api.go) (`requireProject`), [mappings_bind.go](../../internal/ci/mappings_bind.go) |
 | a holder of `policies:write` | change what a policy gives a mapping that it lists, which no check of the mapping sees ([H-412](#h-412--a-policy-or-group-widened-after-the-save-is-not-held-to-the-write-rules)) | the policy store |
 | a CI token | nothing: the management API refuses it ([Q-CI-18](../spec/gitlab-ci-oidc.md)) | `ciGate` |
 
@@ -135,12 +135,13 @@ hand an anonymous caller more than its author meant:
   ([select.go](../../internal/ci/select.go)).
 
 **A project's mapping** is bounded like a project policy ([Q-CI-26](../spec/gitlab-ci-oidc.md), [Q-CI-37](../spec/gitlab-ci-oidc.md)):
-its name starts with the project key, its policies are the project's, it has no groups, a literal repository of an inline grant is a
+its name is a name within the project (the principal is `<issuer>/<projectKey>/<name>`), its policies are the project's, it has no groups, its
+selectors are bare keys of the project (a qualified selector is refused as `invalid_pattern`), a literal repository of an inline grant is a
 repository of the project, and every contribution of the token names the project, so the evaluator compiles `@any` and patterns
-against the project's repositories only. A policy name that is not the project's, existing or not, answers the same
-(`policy_outside_project`). A create in the tier locks the project row, so a project cannot be deleted under a mapping, and checks the
-prefix before the name is looked up, so `409 already_exists` answers only under the project's own prefix
-([H-413](#h-413--a-project-administrator-can-probe-the-mapping-names-of-the-system-tier-below-its-prefix)).
+against the project's repositories only; the token carries the selectors in their instance form (`web/npm-*`). A policy name that is not the project's, existing or not, answers the same
+(`policy_outside_project`). A create in the tier locks the project row, so a project cannot be deleted under a mapping. A name is unique within
+the issuer's tier, so `409 already_exists` answers only for a name of the caller's own tier and tells nothing of the system tier's or another project's
+mappings.
 
 A project's mapping reaches its own contribution to a token and nothing else of it
 ([Q-CI-47](../spec/gitlab-ci-oidc.md#q-ci-47--a-project-tier-changes-only-what-its-own-tier-gives-a-token)): a token belongs to the
@@ -324,23 +325,10 @@ an `allow_cidrs` entry covers an internal range.
 `unprotected_write` and `unpinned_write` count the actions that the listed policies and groups give a mapping when the mapping is
 saved. An administrator who later widens the mapping's entry in the policy, or the grants of a group the mapping lists, gives the
 mapping, and every token it issues, writes that the rules never saw: policy and group grants are evaluated when a token is used. Live
-today for every mapping that lists a policy or a group, for holders of `policies:write` and for project administrators with
-`managePolicies` on their project's policies. What bounds it: a policy entry of a mapping never holds `manage`, a write is still
+today for every mapping that lists a policy or a group, for holders of `policies:write` and for the Owners of a project on
+its policies. What bounds it: a policy entry of a mapping never holds `manage`, a write is still
 decided by the package ownership of the repository ([R-CI-015](../spec/gitlab-ci-oidc.md)), and a project policy reaches the
 project's repositories only. The widening is visible in the policy's own event, not in the mapping's.
-
-### H-413 · A project administrator can probe the mapping names of the system tier below its prefix
-
-The name of a mapping is unique per issuer across all tiers, and a create that finds the name taken answers 409 `already_exists`
-([mappings_write.go](../../internal/ci/mappings_write.go)). A project administrator names its mappings `<key>-…` and can therefore
-learn whether a mapping of the system tier has a given name that starts with its own project key on an issuer it can see. Live for
-project administrators with `managePolicies`; the answer reveals the existence of one name at a time and nothing of the mapping.
-
-The gap was wider than written until Q-CI-51: the create looked the name up before it applied the project's prefix, so the 409 answered
-for any name of any tier. The prefix is now checked first (`claims.CheckProjectName`), and the prefix covers no other project's names,
-because no project key is another's followed by a hyphen ([authorization.md](../spec/authorization.md) Q-AUTHZ-176); what stays open is
-the system tier's names under the prefix, which a system administrator can choose freely (option (c) of
-[Q-CI-51](../spec/gitlab-ci-oidc.md#q-ci-51--what-the-exchange-tells-a-caller-and-when-a-replica-learns-an-issuer) would reserve them).
 
 ### H-414 · A binding removed by a mapping save is not in the policy's own journal
 

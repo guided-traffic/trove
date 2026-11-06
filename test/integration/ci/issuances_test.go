@@ -147,9 +147,8 @@ func TestQ_CI_26_AProjectOwnerListsTheTokensOfItsMappings(t *testing.T) {
 	a := e.web("web-a")
 	wantStatus(t, e.do(a, "POST", "/api/v1/projects", map[string]any{"key": "web", "displayName": "Web"}), 201, "")
 	wantStatus(t, e.do(a, "POST", "/api/v1/projects", map[string]any{"key": "data", "displayName": "Data"}), 201, "")
-	e.addOwner(a, "web", "user:bob")
-	added := e.addOwner(a, "data", "user:carol")
-	epoch := added.Header.Get("Trove-Authz-Epoch")
+	e.addOwner("web", e.bobID)
+	epoch := e.addOwner("data", carol.ID)
 	webID := e.text(`SELECT id::text FROM project WHERE key = 'web'`)
 	// The project mapping as W3's store writes one (tier project:web, its project's ID).
 	pid := e.text(`INSERT INTO principal (id, kind, name) VALUES (gen_random_uuid(), 'ci_mapping', 'gitlab-main/web/web-publish') RETURNING id::text`)

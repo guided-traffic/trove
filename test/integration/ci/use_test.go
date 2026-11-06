@@ -163,7 +163,7 @@ func (e *ciEnv) issueScoped(r *testenv.Replica, f claims.Frozen, j job, ttl time
 		return q.New(ptx).CiExchangeInsertIssuance(e.t.Context(), q.CiExchangeInsertIssuanceParams{
 			TokenID: out.ID, IssuerID: e.issuerID, MappingIds: f.MappingIDs, MappingNames: names, SubjectKind: "id_token",
 			ProjectID: f.ProjectID, ProjectPath: f.ProjectPath, PipelineID: j.pipeline, JobID: j.job, Ref: "main", RefProtected: "true",
-			Claims: `{"project_id":"` + f.ProjectID + `"}`, Grants: string(grants), GrantedScope: "read:npm-internal",
+			Claims: `{"project_id":"` + f.ProjectID + `"}`, Grants: string(grants), GrantedScope: "read:it/npm-internal",
 			ExpiresUs: out.ExpiresAt.UnixMicro(), ClientIp: "192.0.2.7", UserAgent: "curl/8",
 		})
 	})

@@ -31,8 +31,7 @@ func newBoundsEnv(t *testing.T) *boundsEnv {
 		wantStatus(t, e.do(b.a, "POST", "/api/v1/projects", map[string]any{"key": key, "displayName": key}), 201, "")
 		e.stack.Repository(key+"/"+key+"-npm", "local", "npm", "{}")
 	}
-	added := e.addOwner(b.a, "web", "user:bob")
-	b.epoch = added.Header.Get("Trove-Authz-Epoch")
+	b.epoch = e.addOwner("web", e.bobID)
 	return b
 }
 

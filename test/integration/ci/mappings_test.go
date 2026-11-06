@@ -157,7 +157,7 @@ func TestR_CI_009_FirstMatchPerTier(t *testing.T) {
 	if sel := strs(push["selected"]); len(sel) != 1 || sel[0] != "p20" {
 		t.Errorf("a push on a protected tag selected %v, want p20", sel)
 	}
-	if !strings.Contains(fmt.Sprint(push["scope"]), "deploy:npm-internal") {
+	if !strings.Contains(fmt.Sprint(push["scope"]), "deploy:it/npm-internal") {
 		t.Errorf("the push pipeline's scope = %v, want deploy on npm-internal", push["scope"])
 	}
 	mr := evaluate(map[string]any{"project_id": "4242", "ref_protected": "true", "pipeline_source": "merge_request_event"})
@@ -172,7 +172,7 @@ func TestR_CI_009_FirstMatchPerTier(t *testing.T) {
 		t.Errorf("the trace %v shows a mapping after the first match of the tier", trace)
 	}
 	// Asking for the write the first match does not hold is refused, not served from the second mapping.
-	denied := evaluate(map[string]any{"project_id": "4242", "ref_protected": "true", "pipeline_source": "merge_request_event"}, "deploy:npm-internal")
+	denied := evaluate(map[string]any{"project_id": "4242", "ref_protected": "true", "pipeline_source": "merge_request_event"}, "deploy:it/npm-internal")
 	if denied["failure"] != "scope_not_granted" {
 		t.Errorf("deploy on a merge request pipeline: failure %v, want scope_not_granted", denied["failure"])
 	}
