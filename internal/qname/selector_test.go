@@ -82,8 +82,11 @@ func TestR_AUTHZ_004_SelectorFlags(t *testing.T) {
 		s            Selector
 		dynamic, all bool
 	}{
-		{"key", key, false, false}, {"pattern", pat, true, true}, {"class", cls, true, true},
-		{"project class", pcls, true, false}, {"project pattern", ppat, true, false},
+		{"key", key, false, false},
+		{"pattern", pat, true, true},
+		{"class", cls, true, true},
+		{"project class", pcls, true, false},
+		{"project pattern", ppat, true, false},
 	} {
 		if tc.s.Dynamic() != tc.dynamic || tc.s.AllProjects() != tc.all {
 			t.Errorf("%s: Dynamic=%v AllProjects=%v, want %v %v", tc.name, tc.s.Dynamic(), tc.s.AllProjects(), tc.dynamic, tc.all)
@@ -96,8 +99,13 @@ func TestR_AUTHZ_004_SelectorTextRoundTrip(t *testing.T) {
 		in  string
 		ctx Context
 	}{
-		{"web/npm-internal", instance}, {"w*/npm-*:npm", instance}, {"@any", instance}, {"@any-remote:npm", instance},
-		{"npm-internal", inWeb}, {"npm-*:npm", inWeb}, {"@any-virtual", inWeb},
+		{"web/npm-internal", instance},
+		{"w*/npm-*:npm", instance},
+		{"@any", instance},
+		{"@any-remote:npm", instance},
+		{"npm-internal", inWeb},
+		{"npm-*:npm", inWeb},
+		{"@any-virtual", inWeb},
 	} {
 		s, err := ParseSelector(tc.in, tc.ctx)
 		if err != nil {
@@ -114,10 +122,25 @@ func TestR_AUTHZ_004_Glob(t *testing.T) {
 		glob, name string
 		want       bool
 	}{
-		{"npm-*", "npm-remote", true}, {"npm-*", "npm-", true}, {"npm-*", "npm", false}, {"*", "anything", true},
-		{"*", "", true}, {"", "", true}, {"", "a", false}, {"a?c", "abc", true}, {"a?c", "ac", false}, {"a?c", "abbc", false},
-		{"*-remote", "npm-remote", true}, {"*-remote", "npm-remotes", false}, {"a*b*c", "aXXbYYc", true}, {"a*b*c", "aXXcYYb", false},
-		{"**", "x", true}, {"a**b", "aXb", true}, {"w*", "web", true}, {"w*", "ops", false}, {"*a*a*a*a*b", strings.Repeat("a", 40), false},
+		{"npm-*", "npm-remote", true},
+		{"npm-*", "npm-", true},
+		{"npm-*", "npm", false},
+		{"*", "anything", true},
+		{"*", "", true},
+		{"", "", true},
+		{"", "a", false},
+		{"a?c", "abc", true},
+		{"a?c", "ac", false},
+		{"a?c", "abbc", false},
+		{"*-remote", "npm-remote", true},
+		{"*-remote", "npm-remotes", false},
+		{"a*b*c", "aXXbYYc", true},
+		{"a*b*c", "aXXcYYb", false},
+		{"**", "x", true},
+		{"a**b", "aXb", true},
+		{"w*", "web", true},
+		{"w*", "ops", false},
+		{"*a*a*a*a*b", strings.Repeat("a", 40), false},
 	} {
 		if got := Glob(tc.glob, tc.name); got != tc.want {
 			t.Errorf("Glob(%q, %q) = %v, want %v", tc.glob, tc.name, got, tc.want)

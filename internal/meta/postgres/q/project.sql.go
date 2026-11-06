@@ -158,6 +158,34 @@ func (q *Queries) ProjectGet(ctx context.Context, key string) ([]ProjectGetRow, 
 	return items, nil
 }
 
+const projectGroupAutoJoinShare = `-- name: ProjectGroupAutoJoinShare :many
+SELECT auto_join FROM user_group WHERE principal_id = $1::text::uuid FOR SHARE
+`
+
+// The auto-join flag of a group under a shared row lock. Turning the flag on takes the
+// same row FOR UPDATE (IdentityLockGroup) and then looks for project memberships, so
+// the member write and that change run one after the other and the second sees what
+// the first left (R-AUTH-019, R-AUTHZ-026). No row for a principal that is no group.
+func (q *Queries) ProjectGroupAutoJoinShare(ctx context.Context, id string) ([]bool, error) {
+	rows, err := q.db.Query(ctx, projectGroupAutoJoinShare, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []bool{}
+	for rows.Next() {
+		var auto_join bool
+		if err := rows.Scan(&auto_join); err != nil {
+			return nil, err
+		}
+		items = append(items, auto_join)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const projectInsert = `-- name: ProjectInsert :many
 INSERT INTO project (id, key, display_name, description, created_by, updated_by)
 VALUES ($1::text::uuid, $2::text, $3::text, $4::text,

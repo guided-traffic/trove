@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/items"
@@ -213,7 +214,10 @@ type fakeRepos map[string]repository.Repository
 func (f fakeRepos) ByName(_ context.Context, name qname.Repo) (repository.Repository, error) {
 	r, ok := f[name.Key]
 	if !ok {
-		return repository.Repository{}, errors.New("not found")
+		if name.Key == "broken" {
+			return repository.Repository{}, errors.New("the snapshot cannot be read")
+		}
+		return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no such repository")
 	}
 	return r, nil
 }
@@ -248,6 +252,13 @@ func TestR_VULN_010_ClaimRule(t *testing.T) {
 		repo, internal, err := rule.Claim(context.Background(), "npm", name)
 		if err != nil || internal != want.internal || repo != want.repo {
 			t.Errorf("Claim(%q) = %q, %v, %v; want %q, %v", name, repo, internal, err, want.repo, want.internal)
+		}
+	}
+	// A holder the snapshot cannot read is an error, never an answer: a failing read must not pass for "withheld".
+	for name, claim := range map[string]string{"unreadable": "it/broken", "malformed": "no-slash"} {
+		failing := ClaimRule{Claims: fakeClaims{"npm/" + name: {{Repository: claim}}}, Repos: repos}
+		if repo, internal, err := failing.Claim(context.Background(), "npm", name); err == nil {
+			t.Errorf("Claim(%q) = %q, %v, nil; want an error", name, repo, internal)
 		}
 	}
 	got, err := rule.InternalNames(context.Background(), "npm", []string{"@acme/ui", "free", "two"})

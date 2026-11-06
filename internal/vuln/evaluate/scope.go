@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/qname"
-
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/vuln"
 	"github.com/guided-traffic/trove/internal/vuln/match"
@@ -101,11 +101,14 @@ func (r ClaimRule) Claim(ctx context.Context, format, name string) (claimRepo st
 		} else {
 			name, perr := qname.ParseRepo(m.Repository)
 			if perr != nil {
-				return m.Repository, true, nil // an unreadable holder still withholds
+				return "", false, perr // a claim naming no valid repository is corrupt data, not a holder to guess about
 			}
 			repo, err := r.Repos.ByName(ctx, name)
 			if err != nil {
-				return m.Repository, true, nil //nolint:nilerr // see above: an unreadable holder still withholds
+				if errs.KindOf(err) == errs.NotFound {
+					return m.Repository, true, nil // a holder the snapshot does not hold still withholds
+				}
+				return "", false, err
 			}
 			h = ClaimHolder{Key: repo.Name.String(), Format: repo.Format, Class: repo.Class, Settings: repo.VulnerabilitySettings()}
 		}

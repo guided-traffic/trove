@@ -160,6 +160,13 @@ SELECT p.id::text AS id, p.kind, p.name, p.status, COALESCE(g.auto_join, false):
   LEFT JOIN user_group g ON g.principal_id = p.id
  WHERE p.kind = sqlc.arg(kind)::text AND p.name = sqlc.arg(name)::text;
 
+-- name: ProjectGroupAutoJoinShare :many
+-- The auto-join flag of a group under a shared row lock. Turning the flag on takes the
+-- same row FOR UPDATE (IdentityLockGroup) and then looks for project memberships, so
+-- the member write and that change run one after the other and the second sees what
+-- the first left (R-AUTH-019, R-AUTHZ-026). No row for a principal that is no group.
+SELECT auto_join FROM user_group WHERE principal_id = sqlc.arg(id)::text::uuid FOR SHARE;
+
 -- name: ProjectRepositoryLock :many
 -- The repository a move takes (R-REPO-060), by its project and key, under its row
 -- lock: the move changes its project_id in the same transaction. Every lifecycle

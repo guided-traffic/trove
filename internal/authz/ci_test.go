@@ -227,6 +227,30 @@ func TestR_AUTHZ_014_AProjectTiersGrantsStayInsideItsProject(t *testing.T) {
 	}
 }
 
+// Q-CI-67: a frozen project tier carries instance selectors (claims.Freeze writes <project>/<key>), and the engine reads them
+// in the instance context; the tier stays bounded to its project.
+func TestQ_CI_67_AFrozenProjectTierIsReadAsInstanceSelectors(t *testing.T) {
+	e, idx := ciEngine(t)
+	m := projectTier("gitlab-internal/acme", "web", idProjWeb,
+		inline([]string{"web/npm-web"}, nil, "", claims.Read, claims.Deploy),
+		inline([]string{"shop/npm-shop"}, nil, "", claims.Read))
+	sub := ciSubject(frozenOf("101", m))
+	for _, tc := range []struct {
+		name string
+		c    Coordinate
+		want bool
+	}{
+		{"the instance key of the project's repository grants", publish("npm-web", "@web/button"), true},
+		{"the instance key of another project's repository is inert", npmRead("npm-shop", "x"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ciAllows(e, idx, sub, tc.c); got != tc.want {
+				t.Fatalf("allowed %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // R-CI-016, R-CI-017, Q-CI-47: a contribution gives its grants until its own expiry and while its mapping is active;
 // a contribution that ended or whose mapping was disabled or deleted takes none of the other contributions' grants
 // with it.

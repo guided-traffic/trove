@@ -1517,6 +1517,9 @@ Priority: **P1** · Covers: IAM-015
 - A group that carries any administration role binding ([authorization.md](authorization.md))
   MUST NOT be auto-join. Setting the flag on such a group, or binding such a role to an
   auto-join group, answers 409 `auto_join_admin_conflict`. Both pages enforce this.
+- A group that is a member of a project MUST NOT be auto-join: every user is in an auto-join group, so the membership would make
+  every user a member of the project ([authorization.md](authorization.md), R-AUTHZ-026). Setting the flag on such a group answers
+  409 `auto_join_member_conflict` and names the projects; the member write refuses an auto-join group with 422 `principal_not_allowed`.
 - CI tokens never pick up auto-join groups. Their principal is a CI mapping, not a user, so the
   catalog's widening of CI tokens through default groups (TOK-015) cannot occur.
 - The MVP built-in principal `authenticated` (R-AUTH-037, [authorization.md](authorization.md)

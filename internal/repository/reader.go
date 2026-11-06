@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -54,6 +55,10 @@ type ReaderOptions struct {
 	// LookupWait bounds the wait for the poll (repositories.lookup_wait).
 	LookupWait time.Duration
 	Log        *slog.Logger
+	// OnLoad is optional: it is called with every repository of a snapshot, in creation order, each time the
+	// snapshot is built, so a consumer that derives from it (the metrics label cap, R-OPS-007) follows its
+	// changes. It runs in the caller of the rebuild and must not block or read the Reader.
+	OnLoad func(repos []Repository)
 }
 
 // snapshot is the repository table as one replica holds it: immutable once built.
@@ -88,6 +93,7 @@ type SnapshotReader struct {
 	wait   time.Duration
 	log    *slog.Logger
 	flight flight
+	onLoad func(repos []Repository)
 }
 
 var _ Reader = (*SnapshotReader)(nil)
@@ -110,7 +116,7 @@ func NewReader(o ReaderOptions) (*SnapshotReader, error) {
 		o.LookupWait = 5 * time.Second
 	}
 	r := &SnapshotReader{
-		run: o.Runner, cat: catalog.Or(o.Catalog), poll: o.Poller, wait: o.LookupWait, log: o.Log,
+		run: o.Runner, cat: catalog.Or(o.Catalog), poll: o.Poller, wait: o.LookupWait, log: o.Log, onLoad: o.OnLoad,
 		flight: flight{calls: map[qname.Repo]*flightCall{}},
 	}
 	areas := []string{cluster.AreaRepoConfig}
@@ -219,6 +225,11 @@ func (r *SnapshotReader) load(ctx context.Context) (*snapshot, error) {
 		}
 		return a.Key < b.Key
 	})
+	if r.onLoad != nil {
+		created := slices.Clone(repos)
+		sort.Slice(created, func(i, j int) bool { return created[i].rid < created[j].rid })
+		r.onLoad(created)
+	}
 	return s, nil
 }
 

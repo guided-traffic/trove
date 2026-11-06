@@ -4,9 +4,9 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/qname"
-	"time"
 )
 
 // Vulnerabilities is the vulnerabilities section (R-VULN-025): the advisory sources, matching, findings and export of the

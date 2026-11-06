@@ -69,6 +69,12 @@ project's objects inside it. It does not repeat the model of permissions ([permi
   bound of R-AUTHZ-028. An addition records `authz.project.member_added`; a change and a removal record `member_changed` and
   `member_removed` with the journal entry of R-AUTHZ-031 (the project and the principal by ID, the roles of a change), so a restore
   replays no role above the one in force. The same role written again changes nothing and records nothing (Q-AUTHZ-193).
+- A group that is an auto-join group is never a member, in either order, because every user is in it and the membership would make
+  every user a member. The member write reads the flag under a shared lock of the group's row and answers 422 `principal_not_allowed`
+  ([members.go](../../internal/project/members.go), `memberPrincipal`, query `ProjectGroupAutoJoinShare`). Turning the flag on takes the
+  same row `FOR UPDATE` and then looks for the group's project memberships; a group that is a member of a project answers 409
+  `auto_join_member_conflict` and names the projects ([groups.go](../../internal/auth/principal/groups.go), `UpdateGroup`, query
+  `IdentityGroupProjects`). The two checks run one after the other, so neither can pass on a state the other is changing.
 
 ## What keeps a project's objects inside it
 
@@ -134,17 +140,6 @@ The gaps of these mechanisms recorded on the spec pages are linked here; the one
   delete that fails after the policy deletions leaves the project with fewer policies.
 - [H-406](../spec/authorization.md#h-406--the-audit-event-of-a-refused-project-administrator-does-not-name-the-project) — the audit
   event of a refused declaration does not name the project.
-
-### H-565 · A group that becomes an auto-join group stays a member without a role
-
-Stage: the members of a project ([index.go](../../internal/authz/index.go), `addProjects`). Subject: a group that an administrator turns
-into an auto-join group after it was made a member.
-
-- **Live, fail closed.** The member write refuses an auto-join group, but the identity side does not refuse turning a member group into
-  one. The membership row stays, the build skips it and logs it, so no user gains the role; the members list still shows the group with
-  its role, which grants nothing. What makes it real: an administrator who reads the list and expects the group's members to hold the
-  role.
-- What would close it: refusing the change of a group that is a member of a project, or removing its memberships in that transaction.
 
 ### H-403 · What a project administrator still reaches of an upstream an administrator configured
 

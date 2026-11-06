@@ -244,6 +244,16 @@ type discard struct{}
 
 func (*discard) Write(p []byte) (int, error) { return len(p), nil }
 
+// repoLabels is the snapshot of the keys "<project>/<key>" as the label cap reads it, in the given order.
+func repoLabels(names []string) []RepoLabel {
+	out := make([]RepoLabel, len(names))
+	for i, n := range names {
+		project, key, _ := strings.Cut(n, "/")
+		out[i] = RepoLabel{Name: n, Project: project, Key: key}
+	}
+	return out
+}
+
 func TestCappedLabels(t *testing.T) {
 	t.Run("R-OPS-007 repository cap: include patterns first, then creation order, rest is _other", func(t *testing.T) {
 		m := NewMetrics("web", WithMetricsConfig(config.Metrics{
@@ -251,7 +261,7 @@ func TestCappedLabels(t *testing.T) {
 			LabelLimits: config.MetricsLabelLimits{Repository: 3}, RepositoryLabelInclude: []string{"web/npm-*", "*/nuget-prod"},
 		}))
 		keys := []string{"web/a", "web/b", "web/npm-x", "ops/nuget-prod", "web/npm-y", "ops/c", "ops/npm-z"}
-		m.Repos().Update(keys)
+		m.Repos().UpdateRepositories(repoLabels(keys))
 		got := []string{}
 		for _, k := range keys {
 			got = append(got, m.Repos().Value("trove_repository_requests_total", k))
@@ -266,6 +276,25 @@ func TestCappedLabels(t *testing.T) {
 		}
 		if !strings.Contains(scrapeBody(t, m, ""), `trove_metrics_label_overflow_total{family="trove_repository_requests_total",label="repo"} 4`) {
 			t.Errorf("overflow:\n%s", grepLines(scrapeBody(t, m, ""), "overflow"))
+		}
+	})
+
+	t.Run("R-OPS-007 a class selector and a format filter match the snapshot's repositories", func(t *testing.T) {
+		m := NewMetrics("web", WithMetricsConfig(config.Metrics{
+			Enabled:     true,
+			LabelLimits: config.MetricsLabelLimits{Repository: 2}, RepositoryLabelInclude: []string{"@any-remote", "web/*:nuget"},
+		}))
+		m.Repos().UpdateRepositories([]RepoLabel{
+			{Name: "web/a", Project: "web", Key: "a", Class: "local", Format: "npm"},
+			{Name: "web/b", Project: "web", Key: "b", Class: "local", Format: "nuget"},
+			{Name: "ops/up", Project: "ops", Key: "up", Class: "remote", Format: "npm"},
+			{Name: "web/c", Project: "web", Key: "c", Class: "virtual", Format: "npm"},
+		})
+		// limit 2: @any-remote selects ops/up, then web/*:nuget selects web/b; web/a would be first by creation order.
+		for key, want := range map[string]string{"ops/up": "ops/up", "web/b": "web/b", "web/a": OtherLabel, "web/c": OtherLabel} {
+			if got := m.Repos().Value("f", key); got != want {
+				t.Errorf("%s -> %s, want %s", key, got, want)
+			}
 		}
 	})
 

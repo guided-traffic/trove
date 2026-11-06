@@ -540,7 +540,7 @@ type forbiddenRepos struct {
 
 func (f forbiddenRepos) ByKey(ctx context.Context, key string) (repository.Repository, error) {
 	f.t.Errorf("the commit's evaluation read the replica's repository snapshot for %s", key)
-	return f.Reader.ByName(ctx, qr(key))
+	return f.ByName(ctx, qr(key))
 }
 
 func (f forbiddenRepos) List(ctx context.Context) ([]repository.Repository, error) {
@@ -592,7 +592,7 @@ func TestR_VULN_011_TheCommitEvaluationReadsTheClaimsAndTheRepositoryInItsTransa
 func TestR_VULN_010_InScopeIsTheRuleOfTheMiss(t *testing.T) {
 	e := newEnv(t)
 	e.publish("npm-local", "trove-test-scope", "1.0.0")
-	svc := e.service(evaluate.Options{Claims: fixedClaims{"trove-test-scope": "npm-local"}})
+	svc := e.service(evaluate.Options{Claims: fixedClaims{"trove-test-scope": "it/npm-local"}})
 	ctx := context.Background()
 	for _, tc := range []struct {
 		repo, name string

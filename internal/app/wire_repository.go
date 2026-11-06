@@ -7,6 +7,7 @@ import (
 	_ "github.com/guided-traffic/trove/internal/formats/all" // registers every format (R-ARCH-010)
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/jobs"
+	"github.com/guided-traffic/trove/internal/observability"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/vuln/evaluate"
 )
@@ -24,6 +25,8 @@ func (a *App) wireRepository(_ context.Context, in infra, ex exposureArea) (repo
 		Runner: in.db, Catalog: catalog.Default(), Caches: in.caches, Poller: in.changes,
 		SafetyTTL: a.cfg.Cache.SnapshotSafetyTTL, UnknownKeys: a.cfg.Cache.UnknownRepoKeys,
 		LookupWait: a.cfg.Repositories.LookupWait, Log: log,
+		// The metrics label cap follows the snapshot (R-OPS-007, Q-OPS-10).
+		OnLoad: a.updateRepoLabels,
 	})
 	if err != nil {
 		return repositoryArea{}, err
@@ -45,6 +48,17 @@ func (a *App) wireRepository(_ context.Context, in infra, ex exposureArea) (repo
 	}
 	a.repoSvc.set(svc)
 	return repositoryArea{reader: reader, snapshot: reader, service: svc}, nil
+}
+
+// updateRepoLabels hands the repositories of a rebuilt snapshot, in creation order, to the metrics label cap.
+func (a *App) updateRepoLabels(repos []repository.Repository) {
+	labels := make([]observability.RepoLabel, len(repos))
+	for i, r := range repos {
+		labels[i] = observability.RepoLabel{
+			Name: r.Name.String(), Project: r.Name.Project, Key: r.Name.Key, Class: string(r.Class), Format: r.Format,
+		}
+	}
+	a.tele.metrics.Repos().UpdateRepositories(labels)
 }
 
 // registerRepositoryJobs registers the deletion job of R-REPO-013 in the replica's

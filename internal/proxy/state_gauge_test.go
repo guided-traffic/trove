@@ -14,8 +14,8 @@ import (
 func TestR_REPO_029_TheUpstreamGaugeCarriesTheQualifiedName(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	e := &Engine{m: newMetrics(prometheus.NewRegistry()), o: Options{Now: func() time.Time { return now }}}
-	e.keys.Store(int64(1), qnameRepo("web", "npm-remote"))
-	e.keys.Store(int64(2), qnameRepo("mobile", "npm-remote"))
+	e.keys.Store(int64(1), qnameRepo("web", "npm-remote").String())
+	e.keys.Store(int64(2), qnameRepo("mobile", "npm-remote").String())
 
 	e.publishUp(1, &repoState{hasOpen: true, openUntil: now.Add(time.Minute)})
 	e.publishUp(2, &repoState{})

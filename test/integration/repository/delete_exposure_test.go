@@ -67,8 +67,8 @@ func TestH164_DeletingARepositoryRecordsItsExposureRules(t *testing.T) {
 		}
 		waitFor(t, "the events", 5*time.Second, func() bool { return len(exposureEvents()) == 2 })
 		got := exposureEvents()
-		check(t, got[0], "customers", "rel", "doomed-rules")
-		check(t, got[1], "partners", "rel", "doomed-rules")
+		check(t, got[0], "customers", "rel", "it/doomed-rules")
+		check(t, got[1], "partners", "rel", "it/doomed-rules")
 	})
 
 	t.Run("H-164 a repository without rules records no exposure event", func(t *testing.T) {

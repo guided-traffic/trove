@@ -108,7 +108,7 @@ const policiesPath = "/api/v1/permission-policies"
 
 func policy(name string) map[string]any {
 	return map[string]any{
-		"name": name, "resources": map[string]any{"repositories": []string{"npm-internal"}},
+		"name": name, "resources": map[string]any{"repositories": []string{"it/npm-internal"}},
 		"entries": []any{map[string]any{"principal": "user:bob", "actions": []string{"read"}}},
 	}
 }
@@ -170,14 +170,14 @@ func TestE1_5_PolicyChangesAndDeniedDeploysAreFoundAndLogged(t *testing.T) {
 		}
 		items := f.find(t, "action=authz.denied&outcome=denied&actor=bob", 1)
 		ev := items[0]
-		if ev["repository"] != "npm-internal" || ev["path"] != "a/b.zip" || detail(ev, "required_action") != "deploy" || ev["reason"] != "deny.no-grant" {
+		if ev["repository"] != "it/npm-internal" || ev["path"] != "a/b.zip" || detail(ev, "required_action") != "deploy" || ev["reason"] != "deny.no-grant" {
 			t.Fatalf("%v", ev)
 		}
 		if !f.inLog(ev["id"].(string)) {
 			t.Fatal("not in the log stream")
 		}
 		// The same by the actor's ID and by the repository filter.
-		f.find(t, "actor="+f.bob.ID+"&repository=npm-internal&category=authz", 1)
+		f.find(t, "actor="+f.bob.ID+"&repository=it/npm-internal&category=authz", 1)
 	})
 	t.Run("E1.5 R-OPS-017 a refused management operation is found by the trace ID the client received", func(t *testing.T) {
 		r := f.b.Do(f.bob.Name, "POST", policiesPath, policy("nope"))
@@ -313,7 +313,7 @@ func TestR_OPS_017_DenialSummariesStayCorrect(t *testing.T) {
 		items := f.find(t, "action=authz.denied&actor=bob&limit=100", 5)
 		var first, summary map[string]any
 		for _, ev := range items {
-			if ev["path"] == "x.zip" && ev["repository"] == "npm-internal" && detail(ev, "required_action") == "deploy" {
+			if ev["path"] == "x.zip" && ev["repository"] == "it/npm-internal" && detail(ev, "required_action") == "deploy" {
 				if detail(ev, "repeat_of") != nil {
 					summary = ev
 				} else {
@@ -332,7 +332,7 @@ func TestR_OPS_017_DenialSummariesStayCorrect(t *testing.T) {
 		}
 		sum := 0.0
 		for _, ev := range items {
-			if ev["path"] == "x.zip" && ev["repository"] == "npm-internal" && detail(ev, "required_action") == "deploy" {
+			if ev["path"] == "x.zip" && ev["repository"] == "it/npm-internal" && detail(ev, "required_action") == "deploy" {
 				sum += detail(ev, "count").(float64)
 			}
 		}
@@ -515,7 +515,7 @@ func TestR_AUTHZ_031_RepositoryUpdateRecordsSettingsChanged(t *testing.T) {
 	ev := f.find(t, "action=authz.settings.changed", 1)[0]
 	before, _ := detail(ev, "before").(map[string]any)
 	after, _ := detail(ev, "after").(map[string]any)
-	if ev["repository"] != "generic-hook" || before["requireAuthentication"] != false || after["requireAuthentication"] != true || ev["actor"].(map[string]any)["name"] != "sec-alice" {
+	if ev["repository"] != "it/generic-hook" || before["requireAuthentication"] != false || after["requireAuthentication"] != true || ev["actor"].(map[string]any)["name"] != "sec-alice" {
 		t.Fatalf("%v", ev)
 	}
 	// The journal row of the revocation journal was written with the event.

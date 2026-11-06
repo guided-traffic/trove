@@ -67,7 +67,17 @@ func memberPrincipal(ctx context.Context, qs *q.Queries, ref string) (PrincipalR
 	if len(rows) == 0 {
 		return PrincipalRef{}, errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The principal %s does not exist.", ref))
 	}
-	if rows[0].AutoJoin {
+	autoJoin := rows[0].AutoJoin
+	if kind == KindGroup {
+		// Under the group's row lock, so that turning the flag on, which takes the lock and then looks for
+		// memberships, and this write run one after the other (H-565).
+		flags, err := qs.ProjectGroupAutoJoinShare(ctx, rows[0].ID)
+		if err != nil {
+			return PrincipalRef{}, err
+		}
+		autoJoin = len(flags) > 0 && flags[0]
+	}
+	if autoJoin {
 		return PrincipalRef{}, principalNotAllowed(ref, "it is an auto-join group, which every user is in")
 	}
 	return PrincipalRef{Kind: kind, Name: rows[0].Name, ID: rows[0].ID}, nil
