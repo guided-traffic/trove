@@ -124,23 +124,6 @@ func TestR_AUTHZ_026_ACreateRacingAProjectDeleteIsUnknownProject(t *testing.T) {
 	problem(t, err, 422, errs.CodeUnknownProject)
 }
 
-// A global policy does not take the name of a project's policies; the policies that
-// exist keep theirs and stay writable (Q-AUTHZ-200).
-func TestR_AUTHZ_026_AGlobalPolicyDoesNotTakeAProjectsPrefixAgainstTheTables(t *testing.T) {
-	p := newProjectEnv(t)
-	ctx := context.Background()
-	_, _, err := p.a.svc.Create(ctx, p.root, authz.PolicyInput{Name: "web-extra", Resources: authz.Resources{Repositories: []string{"npm-internal"}}})
-	problem(t, err, 422, errs.CodeNameReservedByProject)
-	if _, _, err := p.a.svc.Create(ctx, p.root, authz.PolicyInput{Name: "webinar", Resources: authz.Resources{Repositories: []string{"npm-internal"}}}); err != nil {
-		t.Fatal(err)
-	}
-	// A policy that was there before the project: written by SQL, as the old release left it.
-	p.exec("INSERT INTO authz_policy (id, name, description, resource_type) VALUES (gen_random_uuid(), 'web-legacy', '', 'repository')")
-	if _, _, err := p.a.svc.Update(ctx, p.root, "web-legacy", errs.AnyRevision, authz.PolicyInput{Description: "kept", Resources: authz.Resources{Repositories: []string{"npm-internal"}}}); err != nil {
-		t.Fatalf("the update of a policy that predates the project: %v", err)
-	}
-}
-
 // A group that is an auto-join group is refused in a project policy and skipped by
 // the build when it became one afterwards (Q-AUTHZ-200).
 func TestR_AUTHZ_026_AProjectPolicyNamesNoAutoJoinGroupAgainstTheTables(t *testing.T) {

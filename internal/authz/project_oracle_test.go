@@ -67,43 +67,6 @@ func TestR_AUTHZ_026_AnotherProjectsAccountAnswersAsAnUnknownPrincipalToADelegat
 	})
 }
 
-func TestR_AUTHZ_026_AGlobalPolicyDoesNotTakeAProjectsPrefix(t *testing.T) {
-	s := projectService()
-	global := func(name string) PolicyInput {
-		in := projectPolicy(name, "web", "npm-internal")
-		in.Project = nil
-		return in
-	}
-	for _, tc := range []struct {
-		name, policy string
-		code         string
-	}{
-		{"a name of the form <key>-… is the project's", "web-extra", errs.CodeNameReservedByProject},
-		{"the key without the hyphen is free", "webinar", ""},
-		{"another project's key is not a prefix of the name", "shopping", ""},
-		{"a name of no project", "ops-read", ""},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if p, _ := firstProblem(t, s, global(tc.policy)); p.Code != tc.code || (tc.code != "" && p.Pointer != "/name") {
-				t.Fatalf("%+v, want %q", p, tc.code)
-			}
-		})
-	}
-	t.Run("a stored global policy of such a name keeps validating", func(t *testing.T) {
-		in := global("web-legacy")
-		rp, problems, err := s.resolve(t.Context(), in, true)
-		if err != nil || len(problems) != 0 || rp == nil {
-			t.Fatal(err, problems)
-		}
-	})
-	t.Run("an update does not meet the reservation", func(t *testing.T) {
-		in := global("web-legacy")
-		if _, problems, err := s.resolve(t.Context(), in, false); err != nil || len(problems) != 0 {
-			t.Fatal(err, problems)
-		}
-	})
-}
-
 func TestR_AUTHZ_026_AProjectPolicyNamesNoAutoJoinGroup(t *testing.T) {
 	s := projectService()
 	t.Run("an auto-join group is refused in a project policy, whatever the action", func(t *testing.T) {

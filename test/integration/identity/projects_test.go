@@ -81,30 +81,6 @@ func TestR_AUTH_020_ProjectServiceAccountsOfTheDomain(t *testing.T) {
 			t.Errorf("serviceaccount.updated details %v", d)
 		}
 	})
-	t.Run("Q-AUTHZ-176 the name starts with the key and a hyphen, and the project exists", func(t *testing.T) {
-		_, err := create("ci-web", "web")
-		wantCode(t, err, 422, errs.CodeProjectPrefixRequired)
-		_, err = create("web-x", "nope")
-		wantCode(t, err, 422, errs.CodeUnknownProject)
-		_, err = a.manager.CreateProjectServiceAccount(ctx, admin, "web", principal.NewServiceAccount{Name: "web-adm", Admin: true})
-		wantCode(t, err, 400, errs.CodeRoleNotAllowed)
-		// The key and the hyphen alone name nothing: the trigger (AI003) refuses it, and the
-		// code answers before it does (Q-AUTH-193).
-		_, err = create("web-", "web")
-		wantCode(t, err, 422, errs.CodeProjectPrefixRequired)
-		if n := e.scalar(`SELECT count(*) FROM principal WHERE name = 'web-'`); n != 0 {
-			t.Fatal("the refused create left a principal")
-		}
-	})
-	t.Run("Q-AUTHZ-176 a global service account takes no name that a project reserves", func(t *testing.T) {
-		_, err := create("web-global", "")
-		wantCode(t, err, 422, errs.CodeNameReservedByProject)
-		for _, name := range []string{"webby", "web", "shop-bot"} { // no hyphen after the key, or no such project
-			if _, err := create(name, ""); err != nil {
-				t.Errorf("%s: %v", name, err)
-			}
-		}
-	})
 	t.Run("R-AUTH-020 the list filters by project", func(t *testing.T) {
 		got, err := a.manager.ListServiceAccounts(ctx, "", "web", "", 50)
 		if err != nil || len(got) != 1 || got[0].Name != "web-ci" {

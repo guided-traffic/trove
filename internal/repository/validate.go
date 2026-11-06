@@ -222,7 +222,7 @@ func applyOwnershipDefault(info catalog.Entry, d *Document) {
 // Q-REPO-128).
 func isTopLevelCode(code string) bool {
 	switch code {
-	case codeReservedName, errs.CodeProjectPrefixRequired, errs.CodeRepositoryOutsideProject,
+	case codeReservedName, errs.CodeRepositoryOutsideProject,
 		errs.CodeSecretValueRequired, errs.CodeOutboundPathRestricted:
 		return true
 	}

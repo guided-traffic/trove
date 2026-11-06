@@ -161,36 +161,17 @@ const (
 	// CodePrincipalOutsideProject: a project service account named in a global
 	// policy, in another project's policy, or as a package owner outside its project.
 	CodePrincipalOutsideProject = "principal_outside_project"
-	// CodeProjectPrefixRequired: the name of a project repository, project policy or
-	// project service account does not start with <projectKey>-.
-	CodeProjectPrefixRequired = "project_prefix_required"
-	// CodeNameReservedByProject: a global service account takes a name that starts
-	// with the key of a project and a hyphen.
-	CodeNameReservedByProject = "name_reserved_by_project"
 	// CodeProjectAccountNotGroupable: a project service account as a group member.
 	CodeProjectAccountNotGroupable = "project_account_not_groupable"
 	// CodeProjectNotEmpty: a delete of a project that still has repositories (also
 	// those being deleted), service accounts or CI mappings.
 	CodeProjectNotEmpty = "project_not_empty"
-	// CodeRepositoryAssigned: an assignment of a repository that belongs to another
-	// project, without ?move=true.
-	CodeRepositoryAssigned = "repository_assigned"
-	// CodeProjectOwnerChanged: an assignment that names the project it expects the
-	// repository to belong to (?from=) finds another owner under the locks of the
-	// write (Q-AUTHZ-205).
-	CodeProjectOwnerChanged = "project_owner_changed"
-	// CodeProjectKeyOverlap: a project key that is another key's prefix up to a
-	// hyphen, or the prefix of the name of a global service account.
-	CodeProjectKeyOverlap = "project_key_overlap"
 	// CodeRepositoryInUse: a move of a repository that an object of its project still references (a virtual
 	// repository's member list or pin rule, a project policy entry, a CI mapping grant, a deployment target).
 	CodeRepositoryInUse = "repository_in_use"
 	// CodeUnknownProject: a policy names a project that does not exist, or one the
 	// caller does not administer; the answer does not tell them apart.
 	CodeUnknownProject = "unknown_project"
-	// CodeProjectSwitchOff: a project administrator's operation that a privilege
-	// switch of the project (managePolicies, manageRepositories) does not allow.
-	CodeProjectSwitchOff = "project_switch_off"
 	// CodeSecretValueRequired: a project administrator's remote section, or its
 	// unsaved upstream test, names a secret reference other than the stored one, or
 	// keeps a stored credential while it changes where credentials go (url, an extra
@@ -667,16 +648,10 @@ var registry = []CodeInfo{
 	// >>> M5a projects
 	{CodeRepositoryOutsideProject, Invalid, "Repository outside the project", "A project policy, or a virtual repository of a project administrator, names a repository that is not assigned to the project; a key that does not exist answers the same."},
 	{CodePrincipalOutsideProject, Invalid, "Principal outside the project", "A service account of a project is granted only through the policies of its project and owns packages only in its project's repositories."},
-	{CodeProjectPrefixRequired, Invalid, "Project prefix required", "The names of a project's repositories, policies and service accounts start with the project key and a hyphen."},
-	{CodeNameReservedByProject, Invalid, "Name reserved by a project", "A service account that belongs to no project cannot take a name that starts with the key of a project and a hyphen."},
 	{CodeProjectAccountNotGroupable, Invalid, "Project service account cannot join a group", "A service account of a project is no group member: a group's grants would reach the project's account."},
 	{CodeProjectNotEmpty, Conflict, "Project not empty", "The project still has repositories (also ones being deleted), service accounts or CI mappings; unassign the repositories and delete the accounts and the CI mappings first."},
-	{CodeRepositoryAssigned, Conflict, "Repository assigned to another project", "The repository belongs to another project; send move=true to move it."},
-	{CodeProjectOwnerChanged, Conflict, "Project owner changed", "The repository belongs to another project than the request expected (from); the extension currentProject names it, null for none. Read it again and decide again."},
-	{CodeProjectKeyOverlap, Conflict, "Project key overlaps", "A project key is not the prefix, up to a hyphen, of another project's key or of a global service account's name."},
 	{CodeRepositoryInUse, Conflict, "Repository in use", "An object of the project still references the repository: a virtual repository's members, pin rules or deployment target, a project policy, or a CI mapping. Remove the references, then move it."},
 	{CodeUnknownProject, Invalid, "Unknown project", "The project does not exist, or the caller does not administer it; the answer does not tell which."},
-	{CodeProjectSwitchOff, Forbidden, "Project switch off", "The project's administrator right for this operation (managePolicies or manageRepositories) is switched off; an administrator turns it on."},
 	{CodeSecretValueRequired, Invalid, "Secret value required", "A project administrator gives an upstream secret as a value: a secret reference is the installation's, and a stored credential does not follow a change of url, of an extra host that receives credentials or of forwardAuthOnRedirect."},
 	{CodeOutboundPathRestricted, Invalid, "Outbound path restricted", "A project administrator's remote repository takes the installation's outbound path: outboundProxy.mode direct and a sourceNetwork are an administrator's, and stay only while the url and the extra hosts do."},
 	// <<< M5a projects
