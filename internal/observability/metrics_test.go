@@ -248,21 +248,23 @@ func TestCappedLabels(t *testing.T) {
 	t.Run("R-OPS-007 repository cap: include patterns first, then creation order, rest is _other", func(t *testing.T) {
 		m := NewMetrics("web", WithMetricsConfig(config.Metrics{
 			Enabled:     true,
-			LabelLimits: config.MetricsLabelLimits{Repository: 3}, RepositoryLabelInclude: []string{"npm-*", "nuget-prod"},
+			LabelLimits: config.MetricsLabelLimits{Repository: 3}, RepositoryLabelInclude: []string{"web/npm-*", "*/nuget-prod"},
 		}))
-		m.Repos().Update([]string{"a", "b", "npm-x", "nuget-prod", "npm-y", "c"})
+		keys := []string{"web/a", "web/b", "web/npm-x", "ops/nuget-prod", "web/npm-y", "ops/c", "ops/npm-z"}
+		m.Repos().Update(keys)
 		got := []string{}
-		for _, k := range []string{"a", "b", "npm-x", "nuget-prod", "npm-y", "c"} {
+		for _, k := range keys {
 			got = append(got, m.Repos().Value("trove_repository_requests_total", k))
 		}
-		// limit 3: npm-x, npm-y (pattern npm-*), then nuget-prod
-		exp := map[string]string{"a": "_other", "b": "_other", "npm-x": "npm-x", "nuget-prod": "nuget-prod", "npm-y": "npm-y", "c": "_other"}
-		for i, k := range []string{"a", "b", "npm-x", "nuget-prod", "npm-y", "c"} {
+		// limit 3: web/npm-x, web/npm-y (pattern web/npm-*; "*" does not cross the "/" of the qualified name),
+		// then ops/nuget-prod (pattern */nuget-prod). ops/npm-z matches no pattern and comes after the cap.
+		exp := map[string]string{"web/a": "_other", "web/b": "_other", "web/npm-x": "web/npm-x", "ops/nuget-prod": "ops/nuget-prod", "web/npm-y": "web/npm-y", "ops/c": "_other", "ops/npm-z": "_other"}
+		for i, k := range keys {
 			if got[i] != exp[k] {
 				t.Errorf("%s -> %s, want %s", k, got[i], exp[k])
 			}
 		}
-		if !strings.Contains(scrapeBody(t, m, ""), `trove_metrics_label_overflow_total{family="trove_repository_requests_total",label="repo"} 3`) {
+		if !strings.Contains(scrapeBody(t, m, ""), `trove_metrics_label_overflow_total{family="trove_repository_requests_total",label="repo"} 4`) {
 			t.Errorf("overflow:\n%s", grepLines(scrapeBody(t, m, ""), "overflow"))
 		}
 	})

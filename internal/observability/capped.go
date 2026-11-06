@@ -9,7 +9,9 @@ import (
 const OtherLabel = "_other"
 
 // CappedLabels decides which repository (or subscription) keys get their own
-// series. The decision is a pure function of the snapshot, so every replica
+// series. A repository key is the qualified name qname.Repo.String(), "<project>/<key>"
+// (Q-REPO-212): the include patterns are path.Match patterns on it, so "*" stays within
+// the project or the key. The decision is a pure function of the snapshot, so every replica
 // that holds the same snapshot decides the same (Q-OPS-10): keys matching the
 // include patterns first, in pattern order, then the others in the snapshot
 // order (creation order), up to the limit.
