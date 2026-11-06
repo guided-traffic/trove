@@ -223,6 +223,8 @@ type replicaOpts struct {
 	// lateKeyspace creates the Valkey client without the keyspace ID, as a
 	// replica whose system_state is not readable yet; the test sets it later.
 	lateKeyspace bool
+	// db replaces the test's database configuration for this replica.
+	db *config.Database
 }
 
 func defaultJobs() config.Jobs {
@@ -286,7 +288,11 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	defer cancel()
 
 	var err error
-	r.db, err = postgres.Open(ctx, e.cfg, name, o.role, quiet)
+	dbCfg := e.cfg
+	if o.db != nil {
+		dbCfg = *o.db
+	}
+	r.db, err = postgres.Open(ctx, dbCfg, name, o.role, quiet)
 	if err != nil {
 		t.Fatalf("Open(%s, %s): %v", name, o.role, err)
 	}

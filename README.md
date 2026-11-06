@@ -889,7 +889,7 @@ database:
     interval: 5s                        # default
     count: 3                            # default
     user_timeout: 30s                   # default
-  server_keepalive:
+  server_keepalive:                     # idle + interval x count is also the idle_session_timeout of the lease sessions; at least 3 x lease_check_interval
     idle: 60s                           # default
     interval: 10s                       # default
     count: 6                            # default

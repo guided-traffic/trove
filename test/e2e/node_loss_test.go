@@ -3,13 +3,15 @@
 package e2e
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 // What the loss of a node takes away from trove's own dependencies for longer than a node-loss scenario's bound, and the
-// steps that put it elsewhere first (Q-HA-104, Q-HA-106): the pods of the two operators, which the dev profile runs once and
+// steps that put it elsewhere first (Q-HA-104, Q-HA-106, Q-HA-126): the pods of the two operators, which the dev profile runs once and
 // which Kubernetes replaces only after its default toleration of 300 s, and the two primaries. The PostgreSQL standby is the
 // primary's synchronous partner: while it is gone the commits wait until the CloudNativePG operator drops it from the set, which
 // needs the operator and the cluster's detection time.
@@ -75,10 +77,14 @@ func dependentsOn(t testing.TB) map[string]nodeDependents {
 }
 
 // clearNode puts what the loss of the node would take away for longer than the scenario's bound elsewhere, and leaves the
-// node as it was found: it is cordoned while the pods are replaced, so that the scheduler cannot put them back, and
-// uncordoned before the function returns. The standby stays (a node that hosts it stalls the primary's commits for the
-// cluster's detection time, which the PostgreSQL rows of R-HA-052 cover); the PostgreSQL primary is switched over, which
-// makes the standby the primary and the old primary the standby.
+// node as it was found. The primaries are moved first, while the node is schedulable and the operators that follow a
+// switchover run (F-65, Q-HA-126): a cordon of the PostgreSQL primary's node makes CloudNativePG switch the primary away by
+// itself, and a switchover asked for in that moment named the old primary, on the cordoned node, as its target. Then the
+// node is cordoned while the operators' pods are replaced, so that the scheduler cannot put them back, and uncordoned before
+// the function returns; the replacements must be ready and hold their operator's lease (replaceOperators), so that the
+// operator that drops a lost standby from the synchronous set is in charge when the node goes. The standby stays (a node
+// that hosts it stalls the primary's commits for the cluster's detection time, which the PostgreSQL rows of R-HA-052
+// cover); the PostgreSQL primary is switched over, which makes the standby the primary and the old primary the standby.
 func clearNode(t *testing.T, node string) {
 	t.Helper()
 	d := dependentsOn(t)[node]
@@ -86,30 +92,90 @@ func clearNode(t *testing.T, node string) {
 	if d.blockers() == 0 {
 		return
 	}
-	kubectlMust(t, "cordon", node)
-	defer func() {
-		if out, err := kubectl("uncordon", node); err != nil {
-			t.Errorf("uncordon %s: %v: %s", node, err, out)
-		}
-	}()
-	if d.CNPG || d.ValkeyOp {
-		t.Logf("deleting the operators' pods so that they start on another node")
-		kubectlMust(t, "-n", "cnpg-system", "delete", "pod", "-l", "app.kubernetes.io/name=cloudnative-pg", "--wait=true")
-		kubectlMust(t, "-n", "valkey-operator-system", "delete", "pod", "-l", "app.kubernetes.io/component=operator", "--wait=true")
-		kubectlMust(t, "-n", "cnpg-system", "rollout", "status", "deployment", "--timeout=3m")
-		kubectlMust(t, "-n", "valkey-operator-system", "rollout", "status", "deployment", "--timeout=3m")
-	}
 	if d.Valkey {
 		t.Logf("the Valkey primary runs on %s: failing it over first", node)
 		script(t, "valkey-failover.sh")
 	}
 	if d.PG {
-		t.Logf("the PostgreSQL primary runs on %s: switching it over first", node)
+		t.Logf("the PostgreSQL primary runs on %s: switching it over first, before the node is cordoned", node)
 		script(t, "failover.sh")
+	}
+	if d.CNPG || d.ValkeyOp {
+		kubectlMust(t, "cordon", node)
+		defer func() {
+			if out, err := kubectl("uncordon", node); err != nil {
+				t.Errorf("uncordon %s: %v: %s", node, err, out)
+			}
+		}()
+		replaceOperators(t, node)
 	}
 	if after := dependentsOn(t)[node]; after.blockers() != 0 {
 		t.Fatalf("node %s still hosts %s after they were moved", node, after)
 	}
+}
+
+// devOperator is one of the two operators the dev profile runs once; lease is its leader election, and a replacement acts
+// only once it holds it.
+type devOperator struct{ name, namespace, selector, lease string }
+
+var devOperators = []devOperator{
+	{"the CloudNativePG operator", "cnpg-system", "app.kubernetes.io/name=cloudnative-pg", "db9c8771.cnpg.io"},
+	{"the Valkey operator", "valkey-operator-system", "app.kubernetes.io/component=operator", "valkey-operator.vko.gtrfc.com"},
+}
+
+// replaceOperators deletes the operators' pods (the node is cordoned, so their replacements start elsewhere) and waits until
+// each operator is in charge from another node again. `kubectl rollout status` is not that: it reads the Deployment's
+// status, which can still count the deleted pod, and a ready pod has not necessarily taken the lease over yet.
+func replaceOperators(t *testing.T, node string) {
+	t.Helper()
+	t.Logf("deleting the operators' pods so that they start on another node")
+	for _, op := range devOperators {
+		kubectlMust(t, "-n", op.namespace, "delete", "pod", "-l", op.selector, "--wait=true")
+	}
+	const within = 3 * time.Minute
+	for _, op := range devOperators {
+		start := time.Now()
+		for {
+			problem := operatorProblem(t, op, node)
+			if problem == "" {
+				t.Logf("%s is in charge again after %s", op.name, time.Since(start).Round(time.Second))
+				break
+			}
+			if time.Since(start) > within {
+				t.Fatalf("%s did not take over from another node within %s: %s", op.name, within, problem)
+			}
+			time.Sleep(time.Second)
+		}
+	}
+}
+
+// operatorProblem says why the operator is not in charge from outside the node, or "" when it is: a ready pod that is not
+// being deleted runs on another node and holds the operator's lease.
+func operatorProblem(t testing.TB, op devOperator, node string) string {
+	t.Helper()
+	out, err := kubectl("-n", op.namespace, "get", "lease", op.lease, "-o", "jsonpath={.spec.holderIdentity}")
+	if err != nil {
+		return fmt.Sprintf("its lease %s/%s could not be read: %v: %s", op.namespace, op.lease, err, strings.TrimSpace(out))
+	}
+	holder, _, _ := strings.Cut(strings.TrimSpace(out), "_")
+	var ready []string
+	for _, p := range podsOfIn(t, op.namespace, op.selector) {
+		switch {
+		case p.Deleting:
+			continue
+		case p.Node == node:
+			return fmt.Sprintf("its pod %s runs on %s", p.Name, node)
+		case !p.Ready:
+			continue
+		case p.Name == holder:
+			return ""
+		}
+		ready = append(ready, p.Name)
+	}
+	if holder == "" {
+		return fmt.Sprintf("no pod holds its lease %s/%s (ready pods %v)", op.namespace, op.lease, ready)
+	}
+	return fmt.Sprintf("its lease %s/%s is held by %s, not by a ready pod off the node (ready pods %v)", op.namespace, op.lease, holder, ready)
 }
 
 // pickByLeastBlockers returns the candidate with the fewest blockers, one without the standby first; ties by name.

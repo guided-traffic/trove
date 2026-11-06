@@ -152,4 +152,9 @@ func (d *Database) Validate(r *Report) {
 	if d.Retry.InitialBackoff > d.Retry.MaxBackoff {
 		r.Add("retry.initial_backoff", "must not exceed retry.max_backoff")
 	}
+	// The lease sessions end after the keepalive's bound without a statement (idle_session_timeout, R-HA-006): a holder
+	// that pings every lease_check_interval stays well inside it.
+	if bound := d.ServerKeepalive.Idle + time.Duration(d.ServerKeepalive.Count)*d.ServerKeepalive.Interval; bound < 3*d.LeaseCheckInterval {
+		r.Add("server_keepalive", "idle + interval x count (%s) must be at least 3 times lease_check_interval (%s): it is the idle_session_timeout of the lease sessions", bound, d.LeaseCheckInterval)
+	}
 }

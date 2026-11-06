@@ -1007,7 +1007,14 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 - 🟡 The mirror sync of phase 6b under the failure suite: a `worker` drained and lost mid-pass, the upstream throttling. Built
   2026-11-06 in the set `mirror-long` ([Q-REPO-198](../spec/repositories-and-proxy.md#q-repo-198--the-failure-suite-of-the-mirror-a-remote-and-a-range-of-names-per-scenario-the-upstreams-request-log-for-the-waits-the-process-lost-three-ways)):
   the pass's process force-deleted, its node stopped and frozen, a `429` and a `503 SlowDown` across a drain and a kill (witnessed by the
-  counting upstream's new request log), a switchover and a Valkey failover during a pass. Open: their first run (nightly)
+  counting upstream's new request log), a switchover and a Valkey failover during a pass. Their first nightly run (dispatched,
+  42211913572) passed the pod crash, both throttling scenarios, the switchover and the drain, and failed the node loss and the frozen node
+  (F-65): the clearance raced the operator's own switchover off the cordoned node, fixed by moving the primaries before the cordon and
+  making `failover.sh` wait for what it needs ([Q-HA-126](../spec/ha-and-helm.md#q-ha-126--the-node-clearance-moves-the-primaries-before-the-cordon-and-failoversh-waits-for-what-a-switchover-needs));
+  a paused holder of the `scheduler` lease kept it for as long as the pause lasted, fixed by `idle_session_timeout` on the lease sessions
+  ([Q-HA-127](../spec/ha-and-helm.md#q-ha-127--a-lease-session-that-stays-silent-is-ended-by-the-server-within-the-keepalives-bound)).
+  Both fixes passed the whole set on the dev cluster (25 min 51 s), and the frozen node with the lease's holder on it
+  progressed again after 2 min 7 s. Open: a nightly run of the set
 - 🟢 The Bastion under the failure suite: a Bastion replica drained and lost, the main installation unreachable and
   failing over, a rolling upgrade of either side. Built 2026-11-06 in the set `bastion-long` (Q-BAS-141 to Q-BAS-144) and green on the
   dev cluster under `npm ci`, `dotnet restore` and cold-miss loops: a replica force-deleted on either backend (about 100 commands each,

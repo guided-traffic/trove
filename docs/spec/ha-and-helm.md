@@ -595,7 +595,13 @@ A lease works as follows:
    session that holds advisory locks (R-HA-015), so the server-side bound holds even where the
    server's own settings are left at the operating-system default. Client-side detection
    (default ≤ 30 s) is shorter than server-side release (default ≤ 120 s), and fencing (2) covers
-   the remaining window.
+   the remaining window. A *silent* holder, whose process stopped while its kernel keeps the
+   connection (a paused container, a stopped process), answers every keepalive probe, so the
+   keepalive never ends its session. The lease sessions therefore also carry
+   `idle_session_timeout` at the same bound (`idle + interval × count` of
+   `database.server_keepalive`, R-HA-015): the server ends a session that sent no statement for that
+   long, and the lock with it. A live holder sends `SELECT 1` every `database.lease_check_interval`
+   (3), and the configuration refuses a bound below three of those (Q-HA-127).
 5. Session-level locks need a session that stays on one server connection, which
    transaction-mode and statement-mode poolers break. Only three things therefore connect to the
    *session host* (`database.session_host`, R-HA-058): the lease pool of `worker` replicas,
@@ -637,6 +643,11 @@ Acceptance criteria:
   `scheduler` lease and a schedule `* * * * *` is due. A commits no `schedule` update and no job
   insert after its session is gone, B takes the lease after the server releases the session, and
   every minute's occurrence is enqueued exactly once.
+- A holder falls silent with its connection open (its traffic relayed through a TCP relay that stops
+  moving bytes and closing sockets): the server ends its session within `idle + interval × count` of
+  `database.server_keepalive`, another worker holds the lease within that bound plus
+  `cluster.lease_retry_interval`, and at no instant do two sessions hold it
+  (`TestLeases_R_HA_006_FrozenHolder`).
 - With three workers and no other singleton work running, a GC run and a retention run in progress
   hold no advisory lock of category 1 (`pg_locks` shows only the `scheduler` lease), and their job
   rows carry an exclusive dedup key (Q-STOR-13).
@@ -654,6 +665,7 @@ trove MUST behave as in this table. Each row is exercised by the failure-injecti
 | Container crash (panic, OOM kill) | kubelet; session end releases locks | In-flight requests of that pod end; nothing half-committed (a `201` means durable, R-STOR-004); its job leases expire; its advisory locks are released immediately; its Valkey locks expire after their TTL | Requests on that pod fail with connection reset or `502` from the proxy; npm (`fetch-retries`) and NuGet clients retry | kubelet restarts the container; the spool directory is emptied at start (R-HA-012) |
 | Pod eviction, node drain, rolling restart, autoscaler scale-down | `SIGTERM` | Drain (R-HA-011): readiness fails at once, in-flight requests finish within the grace period, jobs are released | None for requests shorter than the grace period; longer transfers are cut (tolerance in R-HA-059) | PDB keeps all but one replica per role serving (R-HA-032); the capacity rule of R-HA-059 keeps the rest from overload |
 | Node loss (no `SIGTERM`) | Node controller marks the node not ready | Endpoints of the lost pods are removed when their Ready condition flips; job leases expire; advisory locks are released by the server's TCP keepalive, which trove sets on its lock-holding sessions (R-HA-013, R-HA-015); Valkey locks expire | Requests routed to the lost pods fail until the endpoints are removed (tens of seconds) | Pods are recreated after `nodeFailureTolerationSeconds` of their role (R-HA-032) |
+| Processes stopped with their connections open (a paused node or container, `SIGSTOP`) | Their kernel keeps answering TCP keepalives, so the keepalive sees nothing; the node controller marks a paused node not ready | Job leases expire; the server ends a lock-holding session after `idle + interval × count` of `database.server_keepalive` without a statement (`idle_session_timeout` of the lease sessions, R-HA-006, Q-HA-127), which releases its advisory locks; when the processes run again their lease sessions are gone, so they commit nothing under a lease | As for node loss while the node is marked not ready | Automatic; the pods come back with the node, or are replaced after `nodeFailureTolerationSeconds` |
 | One replica cut off from PostgreSQL | `database` check (R-OPS-001) | That replica answers `503` and turns not ready once the cut has lasted the check threshold and `health.database_outage_grace` (Q-OPS-31); its singleton work stops (R-HA-006) | Traffic moves to the other replicas | Automatic when the network heals |
 | PostgreSQL switchover or failover | Connection errors, SQLSTATE `57P01`, `25006`, class `08` | Retry with backoff within `database.retry.max_elapsed`, pool reset, the change-log poll resumes (an area whose epoch went backwards or was reused is flushed, R-HA-004), singleton work aborts and resumes on the next run (R-HA-009) | Requests stall for up to the retry budget; those that exceed it get `503` with `Retry-After` | Automatic |
 | PostgreSQL unavailable beyond the retry budget | `database` check on every replica | Every replica answers `503` and turns not ready; liveness stays `200`, so nothing restarts; authorization decides nothing on a grant index unconfirmed for longer than `authz.cache.max_staleness` (10 s); such requests wait within the retry budget like database calls, then get `503` `authz_stale` ([authorization.md](authorization.md) R-AUTHZ-028, Q-AUTHZ-13) | `503` for everything (the Service has no ready endpoints) | Readiness returns when PostgreSQL does; no manual step |
@@ -1444,6 +1456,7 @@ is reported as a reload failure.
 | `TimeZone` | `UTC` |
 | `search_path` | `database.schema` |
 | `tcp_keepalives_idle`, `tcp_keepalives_interval`, `tcp_keepalives_count` | `database.server_keepalive.idle`, `.interval` (whole seconds) and `.count` |
+| `idle_session_timeout` (lease sessions only) | `idle + interval × count` of `database.server_keepalive`, in the whole seconds above (120 s with the defaults) |
 
 - The server-side keepalive parameters are user-settable (context `user`), so they need no
   privilege and no server configuration. They make the server end the session of a vanished
@@ -1451,6 +1464,11 @@ is reported as a reload failure.
   2 minutes with the defaults), the bound R-HA-013 recommends for the server setting. They are sent
   on every session that connects to the session host, which includes the lease pool that holds
   session-level locks.
+- `idle_session_timeout` (context `user` as well) ends a lease session that sent no statement for
+  the same bound: a holder whose process stopped while its kernel keeps answering the keepalive
+  probes (R-HA-006 item 4, Q-HA-127). Only the lease pool sends it; a lease holder pings every
+  `database.lease_check_interval`, and a keepalive bound below three of those is refused at
+  startup naming `database.server_keepalive`.
 
 Configuration:
 
@@ -5273,7 +5291,9 @@ kubectl -n trove port-forward svc/trove-api 8080:8080   # phase 6a; svc/trove be
   Git and recreated by `dev-up`.
 - Further targets:
   - `dev-down` deletes the kind cluster;
-  - `dev-failover` runs `kubectl cnpg promote trove-db <standby>`;
+  - `dev-failover` does what `kubectl cnpg promote trove-db <standby>` does (it sets `status.targetPrimary`), once the operator holds
+    its lease, the cluster is settled and a ready standby runs on a schedulable node, and waits until the new primary serves
+    `trove-db-rw` (Q-HA-126);
   - `dev-valkey-failover` runs `SENTINEL FAILOVER trove` on a Sentinel; `dev-valkey-kill`
     force-deletes the Valkey primary pod; `dev-valkey-outage` scales Valkey and the Sentinels to 0
     for a given duration;
@@ -7525,7 +7545,9 @@ only costs trove its pods.
 **Rationale:** R-HA-052's rows are single failures, so the precondition has to be made, not hoped for. The development agent would revisit it if the dev profile runs
 its operators with two replicas.
 
-**Applied in the spec:** R-HA-052, the node-loss row (unchanged text: the node still hosts no primary and no operator).
+**Applied in the spec:** R-HA-052, the node-loss row (unchanged text: the node still hosts no primary and no operator). The order of
+the clearance was changed by [Q-HA-126](#q-ha-126--the-node-clearance-moves-the-primaries-before-the-cordon-and-failoversh-waits-for-what-a-switchover-needs):
+the primaries are moved before the node is cordoned.
 
 ### Q-HA-110 · How the drain test measures the edge's endpoint-removal time
 
@@ -7724,6 +7746,78 @@ its step 2. Revisited when every release an upgrade test starts from has the rou
 
 **Applied in the spec:** R-HA-020 (the status line), Q-HA-96 (superseded). Code: `upMigrations` and `requireMigrationsDone` in
 [upgrade_env_test.go](../../test/e2e/upgrade_env_test.go), [upgrade_test.go](../../test/e2e/upgrade_test.go),
+
+### Q-HA-126 · The node clearance moves the primaries before the cordon, and failover.sh waits for what a switchover needs
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: finding F-65. In the dispatched nightly run 42211913572 (leg `mirror-long`) `clearNode` ([Q-HA-106](#q-ha-106--the-node-of-the-node-loss-scenario-is-chosen-first-and-cleared-not-searched-for))
+cordoned the node of the pass's process, which hosted the PostgreSQL primary `trove-db-1` and the CloudNativePG operator, deleted the
+operators' pods, and 14 s after the cordon ran `failover.sh`, which logged `switchover trove-db: trove-db-2 -> trove-db-1` and exited 1
+three minutes later: "switchover did not finish in 3 minutes (primary trove-db-2, ready 2, phase 'Cluster in healthy state')". The
+cluster's event "SwitchingOver: Current primary is running on unschedulable node …, switching over from trove-db-1 to trove-db-2" names
+the cause: CloudNativePG switches a primary off a node that is cordoned (its handling of a drain, `reconcileTargetPrimaryFromPods` of
+the operator 1.30). When the script read the status the primary had already moved, so "the first standby" it picked was `trove-db-1`,
+the old primary on the cordoned node; the operator moved the primary off that node again, and the script's wait for `trove-db-1` as
+primary could not end. The operator was there: its replacement had taken the lease. Reproduced on the dev cluster: the same order on the
+node of the primary and the operator ended with the same error; a watch of the cluster's status shows the operator's switchover 1.3 s
+after the cordon (started by the old operator pod, finished by its replacement), the script's switchover back onto the cordoned node
+13 s later and the operator's second switchover 15 s after that.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Run `failover.sh` again when it fails | A retry | One line | Races the operator again and makes the primary bounce; a blind retry hides what the switchover lacked |
+| (b) Keep the order and wait for the operator's own switchover | After the cordon, wait until the primary is off the node and the cluster is healthy | The path of a real drain | Two actors at once (the operator switches over while its own pod is replaced); the scenario's precondition rests on the operator's internal conditions for that switchover (every instance ready, the candidate streaming) |
+| (c) The primaries first, then the cordon; `failover.sh` waits for its preconditions (chosen) | `clearNode` fails the Valkey primary over and switches the PostgreSQL primary over while the node is schedulable and the operators run, then cordons the node, deletes the operators' pods and waits until each replacement is ready on another node and holds its operator's lease (`replaceOperators`; `rollout status` reads a Deployment status that can still count the deleted pod). `failover.sh`, for every caller: waits up to 180 s until a ready pod that is not being deleted holds the lease `db9c8771.cnpg.io` and the cluster is settled (target primary = current primary, every instance ready, phase "Cluster in healthy state"); takes a ready standby on a schedulable node and refuses one on a cordoned node; asks with a JSON patch that tests the primary it read, so a switchover that started in between refuses the request; ends when the new primary also carries the label `cnpg.io/instanceRole=primary` that `trove-db-rw` selects. Each wait fails with the precondition it did not see met | One actor at a time; every failure names its precondition; no script can ask for a primary on a cordoned node; the operator that drops a lost standby from the synchronous set is in charge before the node goes | The clearance's order differs from a drain, where the cordon comes first and the operator moves the primary itself; the drain is its own scenario (`drain.sh`, R-HA-059) |
+
+**Choice:** (c).
+
+**Rationale:** the clearance makes a precondition of a single-failure scenario, so it must not depend on a race; the hardened script
+also protects the other callers (`avoidPrimary`, the switchover scenarios), which were safe only because nothing else moved the primary
+at the time. The development agent would revisit it if the dev profile runs its operators with two replicas (Q-HA-104 (c)), which makes
+the operators' replacement unnecessary, or if CloudNativePG stops switching a primary off a cordoned node.
+
+**Applied in the spec:** R-HA-051, the target `dev-failover`. Code: [failover.sh](../../deploy/dev/failover.sh),
+[node_loss_test.go](../../test/e2e/node_loss_test.go) (`clearNode`, `replaceOperators`, `operatorProblem`).
+
+### Q-HA-127 · A lease session that stays silent is ended by the server within the keepalive's bound
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the same nightly run 42211913572 failed the frozen-node subtest of the mirror's failure suite: after `docker pause` of the
+node of the pass's process (it hosted the PostgreSQL standby, so the clearance moved nothing), the pass did not continue in another process
+for 15 minutes. The test upstream's log has no request of the pass from the pause (11:55:28) to the unpause of the test's cleanup
+(12:10:36), and the pass went on 0.2 s after it: the paused process itself continued, nobody had taken the pass over. A pass moves after a
+lost process through the reaper (on every worker) and the next `mirror-dispatch`, which only the holder of the `scheduler` lease enqueues
+(R-HA-005). The lease is a session-level advisory lock (R-HA-006); a paused container's processes stop, but its kernel keeps the TCP
+connection and answers every keepalive probe, so the server never ends the session and the lock stays for as long as the pause lasts. The
+run's artifacts cannot name the holder (the worker pods were replaced before the cluster state was taken); the other runs' frozen subtests
+progressed after about a minute. Reproduced in the integration tier: a holder whose lease pool runs through a TCP relay that stops moving
+bytes and closing sockets kept the lock for 34 s against a server keepalive bound of 4 s, and no other replica got the lease
+(`TestLeases_R_HA_006_FrozenHolder` before the fix). Reproduced on the dev cluster: `docker pause` of the node of the worker that held the
+`scheduler` lease left its session in `pg_locks`, idle, for the 172 s of the pause (the keepalive bound is 120 s); the lease moved only
+after the unpause. With the fix the same experiment ended the session between 115 and 120 s of idleness (a sample every 5 s), and another
+worker held the lease in the sample 16 s later (`cluster.lease_retry_interval` is 15 s).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `idle_session_timeout` on the lease sessions at the keepalive's bound (chosen) | A startup parameter of the lease pool only, `idle + interval × count` of `database.server_keepalive` (120 s with the defaults); the configuration refuses a bound below three `database.lease_check_interval` | The silent holder is released within the bound a vanished one already has; no new key; the server decides, whatever the holder's process does; fencing stays "the writes run on the lease's session", so the thawed holder can write nothing | A holder that is alive but sends nothing for 2 minutes (a stall longer than any measured: 40 s on a starved runner) loses its lease and restarts its work from the cursor |
+| (b) A separate, shorter timeout | e.g. three lease checks (15 s) | Faster takeover | A new key; a starved but live holder loses its lease often (stalls of 40 s were measured) |
+| (c) Leases as rows with an expiry, like the job leases | Renewed by the holder, taken over after expiry | No dependence on the session | A redesign of R-HA-006: fencing by the session goes, every singleton write would need a token check |
+| (d) Keep the holder of the `scheduler` lease off the frozen node in the test | `clearNode` moves it too | No product change | Hides the gap: R-REPO-053's criterion names a frozen node, and the scheduler of a production cluster would stop for as long as a stopped holder lasts |
+| (e) `tcp_user_timeout` on the server | A bound on unacknowledged data | Server-side | The paused kernel acknowledges: nothing is ever unacknowledged |
+
+**Choice:** (a).
+
+**Rationale:** a stopped process with a live kernel is the one case of a gone holder the keepalive cannot see; the lease check makes
+"no statement for the keepalive's bound" a reliable sign of it, and the bound is the one the specification already gives for a vanished
+holder. With it, the frozen-node subtest's path is: the lease free after at most 120 s, the next worker holds it within
+`cluster.lease_retry_interval`, the scheduler enqueues the due `mirror-dispatch` at once, inside R-REPO-053's 5 minutes. The
+development agent would revisit it if `trove_lease_lost_total` shows live holders losing their leases under load, or if leases move to rows.
+
+**Applied in the spec:** R-HA-006 item 4 and an acceptance criterion, R-HA-015 (the parameter table). Code: `runtimeParams` and
+`ServerReleaseBound` in `internal/meta/postgres/connect.go`, `Database.Validate` in `internal/config/database.go`;
+[lease_frozen_test.go](../../test/integration/coordination/lease_frozen_test.go).
 
 ### Q-HA-130 · The cut moves the edge and removes the bridge in two separate upgrades
 

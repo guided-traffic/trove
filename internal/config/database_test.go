@@ -40,3 +40,21 @@ func TestDatabaseTLSProblem(t *testing.T) {
 		}
 	})
 }
+
+func TestDatabaseLeaseSessionBound(t *testing.T) {
+	load := func(file string) error {
+		_, err := Load(Options{File: "/c.yaml", ReadFile: fakeFS(map[string]string{"/c.yaml": file}), Environ: servableEnv(), Command: CommandServe})
+		return err
+	}
+	t.Run("R-HA-006 the defaults leave the lease check well inside the server's release bound", func(t *testing.T) {
+		if err := load(""); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("R-HA-006 a server keepalive bound below 3 lease checks is refused naming server_keepalive", func(t *testing.T) {
+		err := load("database:\n  lease_check_interval: 10s\n  server_keepalive:\n    idle: 10s\n    interval: 5s\n    count: 2\n")
+		if !hasIssue(err, "database.server_keepalive") || !strings.Contains(err.Error(), "idle_session_timeout") {
+			t.Fatalf("got %v", err)
+		}
+	})
+}

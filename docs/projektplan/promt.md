@@ -217,12 +217,35 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
   `large` since [Q-REPO-211](../spec/repositories-and-proxy.md#q-repo-211--the-nightly-install-time-ratio-of-clients-first-runs-on-the-large-class).
   The dispatched nightly run 42226311597 (2026-11-06, `large`) passed it: 96 % (pairs 90 %, 133 %, 96 %; the open requests within the
   bound, the pre-emptions grew); one pair of three above the bound on `large` too, so the scheduled nightly run is the second reading. Done when the nightly leg passes the bound on `large`; a miss there is a product finding (split the phases as Q-REPO-211 did).
-- **F-65 · `failover.sh` failed inside the node clearance of the mirror's failure suite in CI** (read from the job log of the dispatched
-  nightly run 42211913572, leg `e2e-mirror (mirror-long)`, 2026-11-06). `clearNode` (test/e2e/node_loss_test.go) deleted the operators'
-  pods so that they start elsewhere, then switched the PostgreSQL primary off the node with `failover.sh`, which exited 1; the scenario that
-  needs the node failed. The force-delete scenario passed in the same run (the pass continued on another process, 2 tarballs twice, 16
-  installs during the loss). Not known: whether the switchover was refused because the CloudNativePG operator had not come back yet. Done
-  when the clearance waits for what `failover.sh` needs and the set passes in a nightly run.
+- **F-65 · The node clearance of the mirror's failure suite raced the operator's own switchover, and a paused lease holder kept the
+  scheduler** (read from the job log and the cluster state of the dispatched nightly run 42211913572, leg `e2e-mirror (mirror-long)`,
+  2026-11-06; both causes reproduced on the dev cluster and fixed the same day; the entry stays until a nightly run passes the set).
+  Node loss: `clearNode` (test/e2e/node_loss_test.go) cordoned the node of the PostgreSQL primary and the CloudNativePG operator and
+  replaced the operator; the operator switches a primary off a cordoned node by itself (event `SwitchingOver … unschedulable node`), so
+  `failover.sh`, 14 s after the cordon, found the primary already moved, asked to switch back to the old primary on the cordoned node,
+  which the operator undid, and exited 1 after 3 minutes. The operator had come back and held its lease: that was not the cause. Fixed:
+  the primaries are moved before the cordon, the operators' replacements must be ready elsewhere and hold their leases, and
+  `failover.sh` waits for the operator and a settled cluster, refuses a standby on a cordoned node and asks with a tested patch
+  ([Q-HA-126](../spec/ha-and-helm.md#q-ha-126--the-node-clearance-moves-the-primaries-before-the-cordon-and-failoversh-waits-for-what-a-switchover-needs)).
+  Frozen node, the same run: the pass did not continue in another process for 15 minutes, and the test upstream saw no request of it
+  from the pause to the unpause. A pass moves through the next `mirror-dispatch`, which only the holder of the `scheduler` lease
+  enqueues; the lease is a session-level advisory lock, and a paused process's kernel keeps answering the server's keepalive, so a
+  paused holder keeps it (dev cluster: held for the whole 172 s of a pause; the run's artifacts cannot name that run's holder). Fixed:
+  the lease sessions carry `idle_session_timeout` at the keepalive's bound, 120 s with the defaults
+  ([Q-HA-127](../spec/ha-and-helm.md#q-ha-127--a-lease-session-that-stays-silent-is-ended-by-the-server-within-the-keepalives-bound),
+  `TestLeases_R_HA_006_FrozenHolder`). The earlier red `mirror-long` legs failed otherwise: 42177273488 on the policy write's `412`, a
+  remote left behind and the frozen loop's install (Q-REPO-199), 42192042297 on the node loss with the operator on the node (Q-REPO-200,
+  Q-HA-106) and the throttled count (Q-REPO-201), the scheduled 42194413882 on the throttled count; all fixed before 42211913572, whose
+  throttling and drain subtests passed. On the dev cluster (2026-11-06) `make e2e SET=mirror-long` with both fixes passed whole in 25
+  min 51 s (the passes progressed again 1 min 47 s after the pod crash, 1 min 55 s after the node loss with the primary switched over
+  first, 1 min 12 s after the freeze), and the frozen-node scenario with the holder of the `scheduler` lease and the standby on the
+  paused node, the configuration of 42211913572, progressed after 2 min 7 s and passed. A first run with the clearance fix alone passed
+  the three node scenarios, the throttling and the drain, and failed the switchover scenario on two tarballs served twice while the host
+  was loaded by lint and race-test runs beside it (the switchover took 103 s instead of 14 to 18 s); the run with both fixes on a quiet
+  host passed it. The clearance alone cleared the configuration of F-65 (the primary and the operator on one node, made on purpose)
+  three times in a row; `TestE13Failover` passed with the new `failover.sh` (k6 only `200`, the switchover 17 s); `TestHASuite_NodeLoss`
+  cleared a node of the Valkey operator and failed afterwards on a timeout of the kind API server under a host load average of 36, and
+  passed in the run after it (its node then hosted none of the dependencies). Done when the set passes in a nightly run.
 - **F-58 · A browser page loaded during a rolling upgrade can fail on a UI asset of the other release** (confirmed by
   `TestUpgrade_R_HA_064_AcrossTheCut` on the dev cluster, 2026-11-06: 2 of 25 journey iterations in step 1). Angular names every asset
   after its content; `index.html` came from a pod of one release and `main-<hash>.js`, `polyfills-<hash>.js` and `chunk-<hash>.js` went
