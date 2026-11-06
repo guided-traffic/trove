@@ -961,7 +961,8 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   outage passed; the 30 s outage failed on two defects of the test (the outage was counted from before the stop script, which takes
   26 s, and two answers that started before the window were judged by their start), fixed (Q-STOR-150). Pod crash, switchover, Valkey
   failover and outage were green before. In the dispatched nightly run 42192042297 both object-store outages, both primary losses and
-  the audit drain passed; node loss failed there (42 s), being analysed. Objects lost from the store (F-62, seen on the dev cluster): a
+  the audit drain passed; node loss failed there (42 s), being analysed. The dispatched nightly run 42258656348 (release v0.20.2)
+  failed the 30 s object-store outage: the `packages` replicas stalled at its start (F-66), a regression against 42211913572. Objects lost from the store (F-62, seen on the dev cluster): a
   remote's cached document, tarball or package without its object is filled again from the upstream, `503 content_unavailable` while it
   cannot, never `500` and never `404` (also through a virtual repository for a caller who may not fill); a fill that cannot restore it
   backs off for 5 minutes; the read marks the blob, `TroveBlobMissing` fires, and the mark heals once the object is back (a read asks the
@@ -1011,7 +1012,7 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   13.4 s on a CPU-starved one; the default stays 5 s and the dev profile keeps 15 s
   ([Q-HA-111](../spec/ha-and-helm.md#q-ha-111--the-default-of-healthshutdown_drain_delay), Q-HA-112). `TestE14Drain` passed with the
   measurement on kind, and the dispatched nightly run 42177273488 passed `drain-roles` and `npm-ha` with it
-- 🟡 The mirror sync of phase 6b under the failure suite: a `worker` drained and lost mid-pass, the upstream throttling. Built
+- 🟢 The mirror sync of phase 6b under the failure suite: a `worker` drained and lost mid-pass, the upstream throttling. Built
   2026-11-06 in the set `mirror-long` ([Q-REPO-198](../spec/repositories-and-proxy.md#q-repo-198--the-failure-suite-of-the-mirror-a-remote-and-a-range-of-names-per-scenario-the-upstreams-request-log-for-the-waits-the-process-lost-three-ways)):
   the pass's process force-deleted, its node stopped and frozen, a `429` and a `503 SlowDown` across a drain and a kill (witnessed by the
   counting upstream's new request log), a switchover and a Valkey failover during a pass. Their first nightly run (dispatched,
@@ -1023,7 +1024,8 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   Both fixes passed the whole set on the dev cluster (25 min 51 s), and the frozen node with the lease's holder on it
   progressed again after 2 min 7 s; released in v0.20.1. The set `mirror` runs its install-time ratio on `large` since
   [Q-REPO-211](../spec/repositories-and-proxy.md#q-repo-211--the-nightly-install-time-ratio-of-clients-first-runs-on-the-large-class)
-  (F-63; 96 % in the dispatched nightly run 42226311597). Open: a nightly run of the set (dispatched as 42258656348 on v0.20.2)
+  (F-63; 96 % in the dispatched nightly run 42226311597, 131 % in 42258656348, now a product finding). The set `mirror-long` passed whole
+  in the dispatched nightly run 42258656348 (release v0.20.2)
 - 🟢 The Bastion under the failure suite: a Bastion replica drained and lost, the main installation unreachable and
   failing over, a rolling upgrade of either side. Built 2026-11-06 in the set `bastion-long` (Q-BAS-141 to Q-BAS-144) and green on the
   dev cluster under `npm ci`, `dotnet restore` and cold-miss loops: a replica force-deleted on either backend (about 100 commands each,
@@ -1053,8 +1055,8 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   restore`, 44 journeys, 0 failed) and the cut test (2 journeys met the skew against v0.16.0, counted as Q-HA-99 says) passed. The
   rolling test from the previous release stays strict; it is green with a changed bundle once a release with the store is published
   (Q-HA-125). The store is released in v0.20.2 (the review's fixes included: rows kept by content, every read verified, Q-UI-142,
-  Q-UI-143); a UI change that alters the bundle must be released after it. The test across two bundles runs in CI first in the
-  dispatched nightly run 42258656348
+  Q-UI-143); a UI change that alters the bundle must be released after it. The set `upgrade` with the test across two bundles passed
+  in the dispatched nightly run 42258656348
 - 🟡 Performance targets met in two nightly runs in a row. Worked on 2026-11-06 (F-43): the findings page of a pattern grant decides each
   package once (V-7b), a publish's evaluation makes two round trips instead of eight (V-4), the advisory import's statements reach rows by
   their primary key and the `ecosystem` columns carry no planner statistics (V-1, F-57), and the perf jobs run after the kind legs
