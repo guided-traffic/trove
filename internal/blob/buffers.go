@@ -68,3 +68,18 @@ func Release(b *[]byte) {
 	}
 	bufferPools[s-minBufferShift].Put(b)
 }
+
+// RangeCost is what a ranged read of r from an object of size bytes holds: the
+// size class of a buffer of the range's length, at most storage.download.buffer_size,
+// and the bytes the object store can send ahead, at most the receive window
+// (Q-ARCH-330). A length that is not positive or reaches past the end reads to
+// the end.
+func RangeCost(cfg config.Storage, size int64, r ByteRange) int64 {
+	n := r.Length
+	if n <= 0 || r.Offset+n > size {
+		n = size - r.Offset
+	}
+	n = max(n, 0)
+	buf := min(n, max(int64(cfg.Download.BufferSize), 4096))
+	return downloadBuffer(config.StorageDownload{BufferSize: config.ByteSize(buf), HoldBack: 0}, math.MaxInt64) + min(n, int64(cfg.S3.HTTP.ReceiveWindow))
+}

@@ -849,9 +849,13 @@ a replica admits is bounded by its memory as well as by `max_in_flight`:
   - **A download settles.** The blob store knows the size of the object before it asks the object
     store (`blob.Store.Open`), and tells the request's charge what the download will hold: the
     buffer class of that size plus the bytes the store can send ahead, at most the window
-    (`blob.DownloadCost`). The charge falls to that and the 128 KiB: a 50 KiB tarball holds about
-    242 KiB, not 640 KiB. A charge only ever falls after the admission, so a request is never
-    refused half way, and the admission needs a full request's bytes free.
+    (`blob.DownloadCost`; a ranged read by its length, `blob.RangeCost`). The charge falls to that
+    and the 128 KiB: a 50 KiB tarball holds about 242 KiB, not 640 KiB. The charge is of the
+    readers open now ([Q-ARCH-330](#q-arch-330--the-charge-of-a-request-is-the-overhead-and-the-readers-it-has-open-now)):
+    closing a reader takes its bytes off again, so objects read one after the other (the ranged
+    reads of a NuGet package's README, the pages of a registration index) never pass the admission
+    charge, and only readers open together add. A request refuses nothing half way, and one that
+    has ended, or a fetch that outlives it, settles nothing of its ticket.
   - **The caches count by what they hold.** The bytes of the replica's caches (the registry's
     weighted sizes: the rendition cache, the two metadata caches, the pass-through cache and the
     smaller ones), read with every heap sample, are subtracted from 0.8 × `L`, not their byte
@@ -8966,7 +8970,7 @@ Context: The set `nuget-ha` now starts the npm client pods as well (the drain of
 
 ### Q-ARCH-328 · Admission charges the bytes a request holds and the caches hold now, not a worst case per request and the caches' budgets
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Revises [Q-ARCH-240](#q-arch-240--a-replica-admits-what-its-memory-holds-memory-slots-and-a-heap-gate-in-step-4) and [Q-ARCH-243](#q-arch-243--the-memory-slots-leave-the-caches-byte-budgets-aside) in part.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Superseded in part by [Q-ARCH-330](#q-arch-330--the-charge-of-a-request-is-the-overhead-and-the-readers-it-has-open-now): what a request is charged after it settles. Revises [Q-ARCH-240](#q-arch-240--a-replica-admits-what-its-memory-holds-memory-slots-and-a-heap-gate-in-step-4) and [Q-ARCH-243](#q-arch-243--the-memory-slots-leave-the-caches-byte-budgets-aside) in part.
 
 Context: with the kind nodes held to 6 CPUs, the drain of the leg `npm-ha` got 1,062 `503 server_busy`, every one counted as `memory_slots`, on a `web` pod whose heap was 111 MB of a 1 GiB limit. Two things in Q-ARCH-240 and Q-ARCH-243 made the slots few: every request was charged a download of a large object (640 KiB), and the three caches' byte budgets (648 MiB with the defaults) were taken out of the 0.8 × `L` whether the caches held anything or not, which left 48 MiB, 77 slots, on a 1 GiB container.
 
@@ -8984,7 +8988,7 @@ A download of 1 to 5 MiB therefore holds 636 to 659 KiB whatever its size, again
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Charge a download of a large object at step 4, hand back the difference when the blob store knows the size, and count the caches by the bytes they hold at the last heap sample (chosen) | `MemoryGuard` counts bytes; `Ticket.Settle` lowers the request's charge to the 128 KiB plus `blob.DownloadCost`; the registry's weighted sizes replace the budgets | A refusal is still at the door, before authentication and database reads; a charge never grows after the admission, so no request is refused half way; a held tarball costs what it holds; empty caches reserve nothing; metrics, error code and refusal unchanged | The charge of a request that is no download stays at 640 KiB until it ends (short requests); the caches' growth is not charged (H-539) |
+| (a) Charge a download of a large object at step 4, hand back the difference when the blob store knows the size, and count the caches by the bytes they hold at the last heap sample (chosen) | `MemoryGuard` counts bytes; `Ticket.Settle` lowers the request's charge to the 128 KiB plus `blob.DownloadCost`; the registry's weighted sizes replace the budgets | A refusal is still at the door, before authentication and database reads; a charge grows only for readers open together, so no request is refused half way; a held tarball costs what it holds; empty caches reserve nothing; metrics, error code and refusal unchanged | The charge of a request that is no download stays at 640 KiB until it ends (short requests); the caches' growth is not charged (H-539) |
 | (b) Charge only the overhead at step 4 and the download at `Open`, refusing there | Late refusal at the blob store | Exact accounting for every request | Measured, with 1,000 downloads of 1 MiB offered to a 256 MiB replica: the runtime held 237 MiB against 211 MiB with (a), because the 722 refused requests had already authenticated and run the handler up to the blob store, and the refusal is a 503 in the middle of a handler |
 | (c) Admit by the live heap only | Drop the charges | One number | The live heap is as old as the last GC cycle: a burst of 2,000 is admitted inside one cycle (Q-ARCH-240 option (c)) |
 | (d) Keep the budgets, lower them in the dev profile | Configuration only | No code | The operator pays a fixed reservation for caches that are empty; the small-tarball cost stays at the worst case |
@@ -9014,6 +9018,42 @@ Context: a job that ends writes its end with a fresh context of `jobs.SettleDead
 **Rationale:** The job framework promises that a drained worker hands its jobs back at once (R-HA-011, R-ARCH-016), and the promise holds only if the write that does it can finish. Eleven seconds still leave long jobs time to end by themselves: the worker stops claiming at `SIGTERM` and `Settle` waits for the running jobs until then. The development agent revisits this when the settle deadline changes, or when a job kind needs more than 11 s to persist its checkpoint (the handler's return counts against the same 15 s).
 
 **Applied in the spec:** R-ARCH-024 (step 4), R-HA-011 (workers). Code: `internal/app/shutdown.go` (`shutdownPlan.ReleaseAt`, `shutdownBudget.Release`), `internal/app/app.go` (`quiesceGroups`), `internal/jobs/worker.go` (`SettleDeadline`). Tests: `TestShutdownReleaseWrites`, `TestShutdownPlan`.
+
+### Q-ARCH-330 · The charge of a request is the overhead and the readers it has open now
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Revises [Q-ARCH-328](#q-arch-328--admission-charges-the-bytes-a-request-holds-and-the-caches-hold-now-not-a-worst-case-per-request-and-the-caches-budgets).
+
+Context: a code review of Q-ARCH-328 found that every `Settle` after the first added to the request's charge and was never taken off, and that a ranged read was charged as a read of the whole object. The NuGet package page reads a README through the ranged reader of `internal/app/wire_nuget_blobs.go`, one `Open` per `ReadAt`; the zip reader makes about 215 of them, at 512 KiB each about 107 MiB for one page view, so three to six views on a 1 GiB pod would have refused every download with `memory_slots`. The registration pages of NuGet and the merges of virtual metadata open one object after the other the same way. Separately, a flight that outlives its request (`endGone`, serve-stale) carries the request's context, so its `Open` settled the ticket of a request that had already released it: the bytes stayed charged for the life of the process.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Settle` returns an undo that the reader's `Close` calls; the charge is the overhead plus the costs of the readers open now, a ranged read costs its length, a released ticket and a flight's context settle nothing (chosen) | `Ticket` keeps `open` and a reader count; the first settle lowers the charge from the admission charge, the undo takes a reader's bytes off | Sequential reads never pass the admission charge; the ranged reads of a README cost 8 KiB each, one at a time | Readers open together exceed the admission charge without admission (bounded by the readers the code opens together, none today) |
+| (b) Settle only the first `Open` of a request | The rest are free | Simple | Concurrent large readers of one request are not counted |
+| (c) Charge every `Open` with admission and refuse late | A refused `Open` is a 503 | Exact | Measured in Q-ARCH-328 option (b): refusals half way through a handler and more memory held |
+| (d) Keep the peak of the request | Never lower the charge again | Cannot overshoot its own peak | A README view stays at the cost of its largest read for the rest of the request |
+
+**Choice:** (a). `blob.Store.Open` calls the settle function before it asks the object store and hands the undo to the reader: `verifyReader.Close` for a verified download, a wrapper for a ranged or unverified body; a failed open undoes at once. A ranged read costs `blob.RangeCost`: the size class of a buffer of its length, at most `storage.download.buffer_size`, plus its length up to the receive window. A ticket knows when its request has ended, and `Settle` and the undos of an ended request do nothing. `proxy.Options.Detach` (`httpserver.WithoutTicket` in the composition root) strips the ticket from the context of a flight, whose memory belongs to the flight. The charge a request has freed by closing a reader may be taken by another request meanwhile, so a later reader of the first can bring the sum past the budget by at most the admission charge of that request; that is H-539's kind of overshoot and the heap gate's.
+
+**Rationale:** The charge has to track what a request holds, and a request that reads a package one range after another holds one range. The development agent revisits this when a code path opens several large readers of one request at once (the charge then needs admission, option (c)).
+
+**Applied in the spec:** R-ARCH-005 (a download settles). Code: `internal/httpserver/memory.go` (`Ticket.Settle`, `WithoutTicket`), `internal/blob/download.go`, `internal/blob/buffers.go` (`RangeCost`), `internal/proxy/flight.go` (`detached`), `internal/app/wire_proxy_engine.go`. Tests: `TestMemoryChargeSequence`, `TestMemoryCharges`, `TestDownloadVerification`, `TestDownloadBuffers`, `TestNuGetReadmePathMemory`, `TestDetachedContext`.
+
+### Q-ARCH-331 · The quiesce of the shutdown is stopped when the server phase ends, or waited for
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Revises [Q-ARCH-329](#q-arch-329--the-job-worker-is-cancelled-early-enough-that-the-release-writes-of-its-jobs-get-their-whole-settle-deadline).
+
+Context: the quiesce runs from a timer (`time.AfterFunc`) that was stopped only when `Shutdown` returned. With the worker cancelled 6 s earlier (Q-ARCH-329) a timer that came due after the server phase had ended, or a quiesce still running when it ended, could cancel handlers and engines while the components close, or after `Shutdown` returned.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Stop the timer when the server phase ends; if its callback has started, wait for it up to the close deadline (chosen) | A quiesce is either finished before step 6 or never starts | Nothing is cancelled during the close | A quiesce that ignores its context holds the start of step 6 until the close deadline, which the plan bounds |
+| (b) Leave it to the end of `Shutdown` | As before | No change | The defect |
+
+**Choice:** (a).
+
+**Rationale:** The plan is absolute (R-ARCH-024): the close phase starts when the server phase ends and nothing of step 4 may run in it. The development agent revisits this if a component's `Quiesce` is found to block past `ServerBy` in practice.
+
+**Applied in the spec:** R-ARCH-024 (step 4). Code: `Shutdown` in `internal/app/app.go`. Test: `TestShutdownQuiesceTimer`.
 
 ## What this does not cover
 

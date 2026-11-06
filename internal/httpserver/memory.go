@@ -40,11 +40,12 @@ const memoryRecheck = time.Second
 //   - Charges: a request is charged what it may hold, a download of a large
 //     object (RequestBytes), when it is admitted and until it ends. A download
 //     that knows its size hands back the difference at once (Ticket.Settle), so
-//     what a long transfer holds is what it uses. A request is refused when the
+//     what a long transfer holds is what it uses, and the readers it opens one
+//     after the other never pass the admission charge. A request is refused when the
 //     charges of the admitted requests plus the bytes the caches hold would pass
 //     the high-water mark of the Go memory limit. It bounds a burst that arrives
-//     faster than a GC cycle can show it, and a charge never grows after the
-//     admission.
+//     faster than a GC cycle can show it. A charge grows after the admission only
+//     for readers open together, beyond the one the admission paid for.
 //   - Heap: while the live heap and the goroutine stacks are at the high-water
 //     mark, no request is admitted, until they fall below the low-water mark. It
 //     bounds what the charges do not see, such as a cache that grew after its
@@ -154,50 +155,89 @@ func (g *MemoryGuard) charge(n int64) bool {
 
 // Ticket is what one admitted request holds of the guard.
 type Ticket struct {
-	g       *MemoryGuard
-	mu      sync.Mutex
-	held    int64
-	settled bool
+	g        *MemoryGuard
+	mu       sync.Mutex
+	held     int64 // what the request is charged now
+	open     int64 // the costs of the readers open now
+	readers  int
+	settled  bool
+	released bool
 }
 
-// Settle tells the guard that the request is a download whose buffer and
-// receive window take n bytes (blob.DownloadCost): the request is charged that
-// and the overhead instead of a download of a large object. The first call
-// gives the difference back; a request that opens more than one object holds
-// the others' bytes on top. A nil ticket charges nothing.
-func (t *Ticket) Settle(n int64) {
-	if t == nil || n < 0 {
+// resize moves the charge to what the request holds now: the admission charge
+// until the first Settle, then the overhead plus the readers open right now,
+// which for one reader at a time never passes the admission charge. mu is held.
+func (t *Ticket) resize() {
+	if !t.settled {
 		return
+	}
+	want := t.g.overhead + t.open
+	if t.readers <= 1 {
+		want = min(want, t.g.perSlot)
+	}
+	t.g.used.Add(want - t.held)
+	t.held = want
+}
+
+// Settle tells the guard that the request opened a reader whose buffer and
+// receive window take n bytes (blob.DownloadCost): the request is charged that
+// and the overhead instead of a download of a large object. The returned
+// function, called when the reader is closed, takes the n bytes off again, so
+// objects read one after the other never pass the admission charge and readers
+// open together are charged together. Nothing is charged to a request that has
+// ended. A nil ticket charges nothing.
+func (t *Ticket) Settle(n int64) (undo func()) {
+	if t == nil || n < 0 {
+		return func() {}
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.settled {
-		t.held += n
-		t.g.used.Add(n)
-		return
+	if t.released {
+		return func() {}
 	}
 	t.settled = true
-	if want := min(t.held, t.g.overhead+n); want < t.held {
-		t.g.used.Add(want - t.held)
-		t.held = want
+	t.open += n
+	t.readers++
+	t.resize()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			t.mu.Lock()
+			defer t.mu.Unlock()
+			if t.released {
+				return
+			}
+			t.open -= n
+			t.readers--
+			t.resize()
+		})
 	}
 }
 
-// release gives back everything the request holds.
+// release gives back everything the request holds, and later Settles charge
+// nothing.
 func (t *Ticket) release() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.g.used.Add(-t.held)
-	t.held = 0
+	t.held, t.released = 0, true
 }
 
 type ticketKey struct{}
 
 // SettleMemory is Ticket.Settle for the request of ctx; it does nothing for a
-// context outside a request or on a replica without a guard.
-func SettleMemory(ctx context.Context, n int64) {
+// context outside a request, one without a ticket or on a replica without a
+// guard.
+func SettleMemory(ctx context.Context, n int64) (undo func()) {
 	t, _ := ctx.Value(ticketKey{}).(*Ticket)
-	t.Settle(n)
+	return t.Settle(n)
+}
+
+// WithoutTicket returns ctx without the request's ticket: work that outlives
+// the request, such as a fetch that a flight runs for other waiters, holds its
+// own memory and settles nothing of the request's.
+func WithoutTicket(ctx context.Context) context.Context {
+	return context.WithValue(ctx, ticketKey{}, (*Ticket)(nil))
 }
 
 // Admit charges a request what a download of a large object holds. reason is

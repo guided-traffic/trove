@@ -101,20 +101,30 @@ func TestMemoryCharges(t *testing.T) {
 		}
 	})
 
-	t.Run("R-ARCH-005 Q-ARCH-328 a second object opened by one request is charged on top, and release gives back everything", func(t *testing.T) {
+	t.Run("R-ARCH-005 Q-ARCH-330 readers open together are charged together, a closed reader's bytes are taken off again, and release gives back everything", func(t *testing.T) {
 		var held int64
 		g := chargeGuard(&held)
 		tk, release, _ := g.Admit()
-		tk.Settle(100 << 10)
-		tk.Settle(50 << 10)
+		u1 := tk.Settle(100 << 10)
+		u2 := tk.Settle(50 << 10)
 		if want := int64(128<<10 + 100<<10 + 50<<10); g.used.Load() != want {
 			t.Fatalf("%d bytes charged, want %d", g.used.Load(), want)
 		}
+		u1()
+		u1() // closing twice takes nothing more off
+		if want := int64(128<<10 + 50<<10); g.used.Load() != want {
+			t.Fatalf("%d bytes charged after one close, want %d", g.used.Load(), want)
+		}
+		u2()
+		if g.used.Load() != 128<<10 {
+			t.Fatalf("%d bytes charged with no reader open, want the overhead", g.used.Load())
+		}
+		tk.Settle(10)
 		release()
 		if g.used.Load() != 0 {
 			t.Fatalf("%d bytes charged after the release", g.used.Load())
 		}
-		(*Ticket)(nil).Settle(1 << 20) // a request without a guard
+		(*Ticket)(nil).Settle(1 << 20)() // a request without a guard
 	})
 
 	t.Run("R-ARCH-005 Q-ARCH-328 a request that is alone is always served, however small the limit", func(t *testing.T) {

@@ -93,6 +93,21 @@ func TestDownloadBuffers(t *testing.T) {
 				t.Errorf("size %d: cost %d, want %d", c.size, got, c.want)
 			}
 		}
+		for _, c := range []struct {
+			size int64
+			r    ByteRange
+			want int64
+		}{
+			{5 << 20, ByteRange{Offset: 0, Length: 4096}, 4<<10 + 4<<10},
+			{5 << 20, ByteRange{Offset: 100, Length: 100 << 10}, 128<<10 + 100<<10},
+			{5 << 20, ByteRange{Offset: 0, Length: 4 << 20}, 256<<10 + 256<<10},
+			{10 << 10, ByteRange{Offset: 8 << 10, Length: 1 << 20}, 4<<10 + 2<<10}, // past the end reads to the end
+			{10 << 10, ByteRange{Offset: 0, Length: 0}, 16<<10 + 10<<10},           // no length reads to the end
+		} {
+			if got := RangeCost(cfg, c.size, c.r); got != c.want {
+				t.Errorf("range %+v of %d: cost %d, want %d", c.r, c.size, got, c.want)
+			}
+		}
 		if got, want := DownloadCost(cfg, math.MaxInt64), DownloadBufferBytes(cfg.Download)+int64(cfg.S3.HTTP.ReceiveWindow); got != want {
 			t.Errorf("the cost of a large object is %d, want the full buffer and window %d", got, want)
 		}

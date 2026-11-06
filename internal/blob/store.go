@@ -28,7 +28,7 @@ type Store struct {
 	parts     chan struct{}
 	onDamage  func(ctx context.Context, d Digest, status string)
 	spoolOpts []SpoolOption
-	memory    func(ctx context.Context, n int64)
+	memory    func(ctx context.Context, n int64) (undo func())
 }
 
 // Option configures a Store.
@@ -52,9 +52,11 @@ func WithSpoolOptions(opts ...SpoolOption) Option {
 }
 
 // WithMemory makes Open tell settle, before it asks the object store, what the
-// download will hold: DownloadCost bytes, for the request of its context
-// (Q-ARCH-328).
-func WithMemory(settle func(ctx context.Context, n int64)) Option {
+// reader will hold: DownloadCost bytes, or RangeCost for a ranged read, for the
+// request of its context (Q-ARCH-328, Q-ARCH-330). settle returns the function
+// that takes them off again; Open calls it when the reader is closed or the
+// open fails.
+func WithMemory(settle func(ctx context.Context, n int64) (undo func())) Option {
 	return func(s *Store) { s.memory = settle }
 }
 

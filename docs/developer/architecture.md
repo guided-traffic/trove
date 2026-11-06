@@ -158,9 +158,12 @@ in-flight limit and no memory guard, so a probe is never refused because the req
    nothing else is held. The caches' byte budgets (`cacheBudgets`, Q-ARCH-243) are no longer subtracted; they are the floor that
    the chart checks and what the start logs an error about (budgets at 80 % of the limit).
    `Admit` returns a `Ticket`; `Chain.inflightStage` puts it in the request's context. `blob.Store.Open` (option
-   `blob.WithMemory(httpserver.SettleMemory)`) calls `Ticket.Settle(blob.DownloadCost(size))`, which lowers the charge to the
-   overhead plus the buffer class of that size plus `min(size, window)`; a second `Settle` of the same request adds. A charge
-   never grows after the admission, so nothing is refused half way. `Slots()` is (0.8 × limit − caches) ÷ request bytes and `InUse()`
+   `blob.WithMemory(httpserver.SettleMemory)`) calls `Ticket.Settle(blob.DownloadCost(size))` (`blob.RangeCost` for a range), which lowers the charge to the
+   overhead plus the buffer class of that size plus `min(size, window)` and returns an undo that the reader's `Close` calls
+   (a failed open calls it at once; [Q-ARCH-330](../spec/architecture.md#q-arch-330--the-charge-of-a-request-is-the-overhead-and-the-readers-it-has-open-now)).
+   The charge is the overhead plus the readers open now, so objects read one after the other never pass the admission charge.
+   A released ticket settles nothing, and `proxy.Options.Detach` (`httpserver.WithoutTicket`) strips the ticket from a flight's
+   context. Nothing is refused half way. `Slots()` is (0.8 × limit − caches) ÷ request bytes and `InUse()`
    the charges in the same unit, rounded up: the two gauges keep their names.
 3. `Run` reads `/gc/heap/live:bytes` + `/memory/classes/heap/stacks:bytes` every 50 ms. At 80 % of the limit the gate closes
    (`Admit` refuses with `heap`) until the value is below 70 %. Why not the allocated heap: near the Go limit it is high by design.
@@ -307,6 +310,8 @@ start ──drain──▶ ReleaseAt ─▶ QuiesceAt ─▶ ServerBy ──comm
    quiesce first (the job worker) are cancelled, and their handlers' jobs get their release writes with the whole settle deadline
    ([Q-ARCH-329](../spec/architecture.md#q-arch-329--the-job-worker-is-cancelled-early-enough-that-the-release-writes-of-its-jobs-get-their-whole-settle-deadline)).
    `QuiesceAt` (`ServerBy - 5 s`, later when the worker is still returning): `Quiesce` of the others cancels what still runs.
+   When step 3 ends, `Shutdown` stops the timer of this step, or waits for a callback that has started, up to `CloseBy`
+   ([Q-ARCH-331](../spec/architecture.md#q-arch-331--the-quiesce-of-the-shutdown-is-stopped-when-the-server-phase-ends-or-waited-for)).
 5. At `ServerBy` the remaining requests are cut by closing their connections and counted in
    `trove_http_transfers_cut_total{direction}`, with one exception: a request that is **committing** runs
    on until `CommitBy`. A handler marks itself with `httpserver.BeginCommit(ctx)` right before the step

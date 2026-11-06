@@ -44,13 +44,18 @@ func TestDownloadVerification(t *testing.T) {
 			t.Fatal("status changed")
 		}
 	})
-	t.Run("R-ARCH-005 Q-ARCH-328 Open tells the request's memory charge what the download will hold", func(t *testing.T) {
+	t.Run("R-ARCH-005 Q-ARCH-328 Q-ARCH-330 Open charges what the reader will hold until it is closed: a whole object by DownloadCost, a range by its length", func(t *testing.T) {
 		var charged []int64
+		var open int
 		f := newFixture(t, func(c *config.Storage) {
 			c.Download.HoldBack = 64 << 10
 			c.Download.BufferSize = 32 << 10
 			c.S3.HTTP.ReceiveWindow = 256 << 10
-		}, blob.WithMemory(func(_ context.Context, n int64) { charged = append(charged, n) }))
+		}, blob.WithMemory(func(_ context.Context, n int64) func() {
+			charged = append(charged, n)
+			open++
+			return func() { open-- }
+		}))
 		sp := f.ingest(t, data)
 		if _, err := f.store.Commit(context.Background(), sp, noLink); err != nil {
 			t.Fatal(err)
@@ -59,10 +64,43 @@ func TestDownloadVerification(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if open != 1 {
+			t.Fatalf("%d readers charged while one is open", open)
+		}
 		_ = r.Close()
+		if open != 0 {
+			t.Fatalf("%d readers still charged after Close", open)
+		}
 		// The buffer is twice the hold-back, 128 KiB, and a 1 MiB object fills the 256 KiB window.
 		if want := int64(128<<10 + 256<<10); len(charged) != 1 || charged[0] != want {
 			t.Fatalf("charged %v, want [%d]", charged, want)
+		}
+		// A README read: many ranged opens one after the other, each a few KiB of a 1 MiB object.
+		charged = nil
+		for i := range 200 {
+			rr, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{Range: &blob.ByteRange{Offset: int64(i) * 4096, Length: 4096}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if open != 1 {
+				t.Fatalf("range %d: %d readers charged", i, open)
+			}
+			_ = rr.Close()
+		}
+		if open != 0 {
+			t.Fatalf("%d ranged readers still charged", open)
+		}
+		for _, n := range charged {
+			if want := int64(4<<10 + 4<<10); n != want { // a 4 KiB buffer and the 4 KiB range
+				t.Fatalf("a 4 KiB range was charged %d, want %d", n, want)
+			}
+		}
+		// A refused or failed open takes its charge off again.
+		if _, err := f.store.Open(context.Background(), blob.Digest{1}, 10, blob.OpenOptions{}); err == nil {
+			t.Fatal("an absent object opened")
+		}
+		if open != 0 {
+			t.Fatalf("%d readers charged after a failed open", open)
 		}
 	})
 	t.Run("Q-STOR-6 a corrupted object of the same length is detected, the held-back bytes are never released and the blob is marked corrupt", func(t *testing.T) {

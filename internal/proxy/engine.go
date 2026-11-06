@@ -61,6 +61,10 @@ type Notifier interface {
 
 // Options configure [New].
 type Options struct {
+	// Detach strips what belongs to the request from the context of a fetch that
+	// outlives it, such as the request's memory ticket: a flight's memory is the
+	// flight's. Optional.
+	Detach func(context.Context) context.Context
 	Runner meta.Runner
 	Items  ItemStore
 	Blobs  BlobStore

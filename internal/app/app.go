@@ -638,7 +638,9 @@ func (a *App) Shutdown(ctx context.Context) error {
 	if len(first) > 0 {
 		at = plan.ReleaseAt
 	}
+	quiesced := make(chan struct{})
 	quiesce := time.AfterFunc(time.Until(at), func() {
+		defer close(quiesced)
 		for _, q := range first {
 			q.Quiesce(sctx)
 		}
@@ -675,6 +677,16 @@ func (a *App) Shutdown(ctx context.Context) error {
 		}
 	}
 	wg.Wait()
+	// A quiesce that is not due yet never starts; one that has started is waited for, so no
+	// handler is being cancelled while the components close, and no more than until the close
+	// deadline.
+	if !quiesce.Stop() {
+		select {
+		case <-quiesced:
+		case <-time.After(time.Until(plan.CloseBy)):
+			a.log.Warn("a quiesce was still running at the close deadline")
+		}
+	}
 
 	// Step 6: flush the buffers, then stop the components (signals first, then
 	// reverse start order: leases, registry row, change log, Valkey, pools), then

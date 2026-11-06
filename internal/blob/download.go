@@ -30,27 +30,50 @@ type OpenOptions struct {
 // Only evidence about the stored object marks the blob corrupt: a Content-Length
 // different from the blob's size, or a body read to its end with another digest.
 // A transport error aborts the same way but changes no status.
+//
+// The reader is charged to the memory of the request of ctx (WithMemory) from
+// before the object store is asked until it is closed: DownloadCost of the
+// object, or RangeCost of the range.
 func (s *Store) Open(ctx context.Context, d Digest, size int64, o OpenOptions) (io.ReadCloser, error) {
+	undo := func() {}
 	if s.memory != nil {
-		s.memory(ctx, DownloadCost(s.cfg, size))
+		cost := DownloadCost(s.cfg, size)
+		if o.Range != nil {
+			cost = RangeCost(s.cfg, size, *o.Range)
+		}
+		undo = s.memory(ctx, cost)
 	}
 	body, info, err := s.objects.Get(ctx, s.Key(d), o.Range)
 	if err != nil {
+		undo()
 		return nil, mapStoreErr(err)
 	}
 	if o.Range != nil || !s.cfg.Download.Verify {
-		return body, nil
+		return &chargedBody{ReadCloser: body, undo: undo}, nil
 	}
 	if info.Size >= 0 && info.Size != size { // -1: the response did not say; the digest check at the end decides
 		_ = body.Close()
+		undo()
 		s.markDamaged(ctx, d, "corrupt")
 		return nil, fmt.Errorf("%w: the object has %d bytes, the blob row says %d", ErrCorrupt, info.Size, size)
 	}
 	return &verifyReader{
-		src: body, store: s, ctx: ctx, digest: d, size: size,
+		src: body, store: s, ctx: ctx, digest: d, size: size, undo: undo,
 		hash: sha256.New(), hold: int(s.cfg.Download.HoldBack),
 		capacity: verifyBuffer(int(s.cfg.Download.BufferSize), int(s.cfg.Download.HoldBack), size),
 	}, nil
+}
+
+// chargedBody gives the memory of a reader back when it is closed.
+type chargedBody struct {
+	io.ReadCloser
+	undo func()
+}
+
+func (c *chargedBody) Close() error {
+	err := c.ReadCloser.Close()
+	c.undo()
+	return err
 }
 
 // verifyBuffer is the length of a verified download's one buffer:
@@ -95,6 +118,7 @@ func (s *Store) markDamaged(ctx context.Context, d Digest, status string) {
 // buf[ready:k] is the withheld tail, which the next refill moves to the front.
 type verifyReader struct {
 	src      io.ReadCloser
+	undo     func()
 	store    *Store
 	ctx      context.Context
 	digest   Digest
@@ -206,7 +230,11 @@ func (v *verifyReader) Close() error {
 	if v.err == nil {
 		v.err = errReadAfterClose
 	}
-	return v.src.Close()
+	err := v.src.Close()
+	if v.undo != nil {
+		v.undo()
+	}
+	return err
 }
 
 var errReadAfterClose = errors.New("blob: read after close")

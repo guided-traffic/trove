@@ -193,7 +193,11 @@ func (e *Engine) fetchDirect(ctx context.Context, rq Request, st *reqState) flig
 // detached returns a context that outlives the client but ends at Quiesce: the
 // fetch is the flight's, not the request's (R-REPO-026 "detached fetch").
 func (e *Engine) detached(ctx context.Context) (context.Context, context.CancelFunc) {
-	c, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	base := context.WithoutCancel(ctx)
+	if e.o.Detach != nil {
+		base = e.o.Detach(base)
+	}
+	c, cancel := context.WithCancel(base)
 	stop := context.AfterFunc(e.base, cancel)
 	return c, func() { stop(); cancel() }
 }
