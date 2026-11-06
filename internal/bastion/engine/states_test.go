@@ -33,7 +33,7 @@ func TestR_BAS_027_AnswersHeldServeCachedContentForThePeriodAndTheGraceThenNothi
 	s := newSiteHarness(t, options{})
 	var paths []string
 	for i := 0; i < 5; i++ {
-		p := fmt.Sprintf("/api/npm/npm-all/pkg%d.tgz", i)
+		p := fmt.Sprintf("/api/npm/web/npm-all/pkg%d.tgz", i)
 		s.site.artifacts[p] = payload(300 + i)
 		paths = append(paths, p)
 		s.get(p, "Authorization", bearer(s.full))
@@ -56,9 +56,9 @@ func TestR_BAS_027_AnswersHeldServeCachedContentForThePeriodAndTheGraceThenNothi
 	}
 	// a token never seen, and a miss, get 503 main_unreachable with Retry-After: 30
 	for name, c := range map[string][]string{
-		"an unseen token": {"/api/npm/npm-all/pkg0.tgz", bearer(s.part)},
-		"a cold package":  {"/api/npm/npm-all/cold.tgz", bearer(s.full)},
-		"anonymous":       {"/api/npm/npm-all/pkg0.tgz", ""},
+		"an unseen token": {"/api/npm/web/npm-all/pkg0.tgz", bearer(s.part)},
+		"a cold package":  {"/api/npm/web/npm-all/cold.tgz", bearer(s.full)},
+		"anonymous":       {"/api/npm/web/npm-all/pkg0.tgz", ""},
 	} {
 		hdr := []string{}
 		if c[1] != "" {
@@ -105,7 +105,7 @@ func TestR_BAS_027_TheGraceExtendsOnlyWhileTheMainInstallationIsUnreachable(t *t
 func TestR_BAS_027_AWriteWhileUnreachableAnswers503(t *testing.T) {
 	s := newSiteHarness(t, options{})
 	s.setUnreachable(true)
-	w := s.do(http.MethodPut, "/api/npm/npm-all/pkg", strings.NewReader("x"), "Authorization", bearer(s.full))
+	w := s.do(http.MethodPut, "/api/npm/web/npm-all/pkg", strings.NewReader("x"), "Authorization", bearer(s.full))
 	if w.Code != 503 || problemCode(w) != "main_unreachable" {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -212,13 +212,13 @@ func TestR_BAS_029_EveryOwnAnswerIsProblemDetailsWithNoStoreAndTheRightFields(t 
 			return s.get(tgz, "Authorization", bearer(s.none))
 		}},
 		{name: "none 403", status: 403, code: "forbidden", call: func(s *siteHarness) *httptest.ResponseRecorder {
-			s.e.answers.put(context.Background(), answers.Shape, shapeKey(credentialKey(s.full), "npm-all"),
-				&answerVal{Answer: answerBase(answers.Shape, s.clock.now(), tokenSubject("full", nil), "npm-all"), Read: iface.ReadNone, Status: 403})
+			s.e.answers.put(context.Background(), answers.Shape, shapeKey(credentialKey(s.full), "web/npm-all"),
+				&answerVal{Answer: answerBase(answers.Shape, s.clock.now(), tokenSubject("full", nil), "web/npm-all"), Read: iface.ReadNone, Status: 403})
 			return s.get(tgz, "Authorization", bearer(s.full))
 		}},
 		{name: "none 401", status: 401, code: "credentials_required", call: func(s *siteHarness) *httptest.ResponseRecorder {
-			s.e.answers.put(context.Background(), answers.Shape, shapeKey(credentialKey(s.full), "npm-all"),
-				&answerVal{Answer: answerBase(answers.Shape, s.clock.now(), tokenSubject("full", nil), "npm-all"), Read: iface.ReadNone, Status: 401})
+			s.e.answers.put(context.Background(), answers.Shape, shapeKey(credentialKey(s.full), "web/npm-all"),
+				&answerVal{Answer: answerBase(answers.Shape, s.clock.now(), tokenSubject("full", nil), "web/npm-all"), Read: iface.ReadNone, Status: 401})
 			return s.get(tgz, "Authorization", bearer(s.full))
 		}, auth: true},
 		{name: "bastion_not_served", status: 404, code: "bastion_not_served", call: get("/ui/")},
@@ -311,7 +311,7 @@ func (c *countingReader) Read(p []byte) (int, error) {
 func TestR_BAS_014_AWriteIsProbedWithoutBodyAndCredentialAndTheRefusalIsReplayed(t *testing.T) {
 	s := newSiteHarness(t, options{})
 	body := &countingReader{r: strings.NewReader(strings.Repeat("u", 1<<20))}
-	w := s.do(http.MethodPut, "/api/npm/npm-all/acme-sdk", body, "Authorization", bearer(s.full), "Content-Type", "application/json", "Cookie", "a=b")
+	w := s.do(http.MethodPut, "/api/npm/web/npm-all/acme-sdk", body, "Authorization", bearer(s.full), "Content-Type", "application/json", "Cookie", "a=b")
 	if w.Code != 403 || !strings.Contains(w.Body.String(), "bastion_read_only") {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -323,7 +323,7 @@ func TestR_BAS_014_AWriteIsProbedWithoutBodyAndCredentialAndTheRefusalIsReplayed
 		t.Fatalf("%d requests", len(reqs))
 	}
 	r := reqs[0]
-	if r.Kind != mainclient.KindProbe || !r.Probe || r.Method != http.MethodPut || r.Target != "/api/npm/npm-all/acme-sdk" || r.Class != mainclient.Authenticated {
+	if r.Kind != mainclient.KindProbe || !r.Probe || r.Method != http.MethodPut || r.Target != "/api/npm/web/npm-all/acme-sdk" || r.Class != mainclient.Authenticated {
 		t.Fatalf("%+v", r)
 	}
 	if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" || len(r.Body) != 0 {
@@ -347,14 +347,14 @@ func TestR_BAS_014_ThousandWritesToOnePathCauseOneProbe(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if w := s.do(http.MethodPut, "/api/npm/npm-all/acme-sdk", strings.NewReader("x")); w.Code != 403 {
+			if w := s.do(http.MethodPut, "/api/npm/web/npm-all/acme-sdk", strings.NewReader("x")); w.Code != 403 {
 				t.Errorf("%d", w.Code)
 			}
 		}()
 	}
 	wg.Wait()
 	for i := 0; i < 950; i++ {
-		if w := s.do(http.MethodPut, "/api/npm/npm-all/acme-sdk", strings.NewReader("x")); w.Code != 403 || !strings.Contains(w.Body.String(), "bastion_read_only") {
+		if w := s.do(http.MethodPut, "/api/npm/web/npm-all/acme-sdk", strings.NewReader("x")); w.Code != 403 || !strings.Contains(w.Body.String(), "bastion_read_only") {
 			t.Fatalf("%d", w.Code)
 		}
 	}
@@ -362,14 +362,14 @@ func TestR_BAS_014_ThousandWritesToOnePathCauseOneProbe(t *testing.T) {
 		t.Fatalf("%d probes for 1000 writes, want 1", n)
 	}
 	// another method and another path are probes of their own
-	s.do(http.MethodDelete, "/api/npm/npm-all/acme-sdk", nil)
-	s.do(http.MethodPut, "/api/npm/npm-all/other", nil)
+	s.do(http.MethodDelete, "/api/npm/web/npm-all/acme-sdk", nil)
+	s.do(http.MethodPut, "/api/npm/web/npm-all/other", nil)
 	if m.count() != 3 {
 		t.Fatalf("%d probes", m.count())
 	}
 	// the answer is kept for metadata_revalidate_after
 	s.clock.advance(s.cfg.Bastion.Cache.MetadataRevalidateAfter + time.Second)
-	s.do(http.MethodPut, "/api/npm/npm-all/acme-sdk", nil)
+	s.do(http.MethodPut, "/api/npm/web/npm-all/acme-sdk", nil)
 	if m.count() != 4 {
 		t.Fatalf("%d probes after the period", m.count())
 	}
@@ -378,7 +378,7 @@ func TestR_BAS_014_ThousandWritesToOnePathCauseOneProbe(t *testing.T) {
 func TestR_BAS_014_ANuGetPushWithoutACredentialIsStillRefusedByTheProbe(t *testing.T) {
 	s := newSiteHarness(t, options{})
 	s.setAnonymous(false)
-	w := s.do(http.MethodPut, "/api/nuget/nuget-all/v2/package", strings.NewReader("nupkg"), "X-NuGet-ApiKey", "key")
+	w := s.do(http.MethodPut, "/api/nuget/web/nuget-all/v2/package", strings.NewReader("nupkg"), "X-NuGet-ApiKey", "key")
 	if w.Code != 403 || !strings.Contains(w.Body.String(), "bastion_read_only") {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -391,18 +391,18 @@ func TestR_BAS_014_ARouteThatTakesABodyIsForwardedWithTheCallersCredentialAfter2
 	s := newSiteHarness(t, options{})
 	s.site.probe = func(f mainclient.Forward) (*mainclient.Response, error) {
 		// The client removes the marking headers and hands the route over in its own field.
-		r := resp(204, marking(iface.ClassPass, "", "npm-all", iface.Subject{Kind: iface.SubjectAnonymous}), nil, "")
+		r := resp(204, marking(iface.ClassPass, "", "web/npm-all", iface.Subject{Kind: iface.SubjectAnonymous}), nil, "")
 		r.Route = iface.RouteReadWithBody
 		return r, nil
 	}
 	inner := s.main.doFn
 	s.main.doFn = func(f mainclient.Forward) (*mainclient.Response, error) {
 		if !f.Probe && f.Request.Method == http.MethodPost {
-			return resp(200, marking(iface.ClassPass, iface.ReadFull, "npm-all", tokenSubject("full", nil)), http.Header{"Content-Type": {"application/json"}}, `{"audit":"ok"}`), nil
+			return resp(200, marking(iface.ClassPass, iface.ReadFull, "web/npm-all", tokenSubject("full", nil)), http.Header{"Content-Type": {"application/json"}}, `{"audit":"ok"}`), nil
 		}
 		return inner(f)
 	}
-	w := s.do(http.MethodPost, "/api/npm/npm-all/-/npm/v1/security/advisories/bulk", strings.NewReader(`{"lodash":["1.0.0"]}`), "Authorization", bearer(s.full))
+	w := s.do(http.MethodPost, "/api/npm/web/npm-all/-/npm/v1/security/advisories/bulk", strings.NewReader(`{"lodash":["1.0.0"]}`), "Authorization", bearer(s.full))
 	if w.Code != 200 || w.Body.String() != `{"audit":"ok"}` {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -418,7 +418,7 @@ func TestR_BAS_014_ARouteThatTakesABodyIsForwardedWithTheCallersCredentialAfter2
 	}
 	// a chunked body is held up to the limit, and 413 above it
 	s.cfg.Bastion.Main.MaxForwardedBody = 10
-	r := httptest.NewRequest(http.MethodPost, "https://packages.example.com/api/npm/npm-all/-/npm/v1/security/advisories/bulk2", io.NopCloser(strings.NewReader(strings.Repeat("z", 100))))
+	r := httptest.NewRequest(http.MethodPost, "https://packages.example.com/api/npm/web/npm-all/-/npm/v1/security/advisories/bulk2", io.NopCloser(strings.NewReader(strings.Repeat("z", 100))))
 	r.ContentLength = -1
 	r.RemoteAddr = "203.0.113.7:1"
 	r.Header.Set("Authorization", bearer(s.full))
@@ -431,7 +431,7 @@ func TestR_BAS_014_ARouteThatTakesABodyIsForwardedWithTheCallersCredentialAfter2
 
 func TestR_BAS_014_ABodyAboveTheLimitIsRefusedBeforeTheProbe(t *testing.T) {
 	s := newSiteHarness(t, options{})
-	r := httptest.NewRequest(http.MethodPut, "https://packages.example.com/api/npm/npm-all/x", strings.NewReader("x"))
+	r := httptest.NewRequest(http.MethodPut, "https://packages.example.com/api/npm/web/npm-all/x", strings.NewReader("x"))
 	r.ContentLength = int64(s.cfg.Bastion.Main.MaxForwardedBody) + 1
 	r.RemoteAddr = "203.0.113.7:1"
 	w := httptest.NewRecorder()
@@ -447,7 +447,7 @@ func TestR_BAS_014_AProbeAnswerThatIsNotARefusalIsReplayedAndNotKept(t *testing.
 		return resp(404, marking(iface.ClassPass, "", "", iface.Subject{Kind: iface.SubjectAnonymous}), nil, `{"code":"not_found"}`), nil
 	}
 	for i := 0; i < 3; i++ {
-		if w := s.do(http.MethodPut, "/api/npm/npm-all/x", nil); w.Code != 404 {
+		if w := s.do(http.MethodPut, "/api/npm/web/npm-all/x", nil); w.Code != 404 {
 			t.Fatalf("%d", w.Code)
 		}
 	}
@@ -455,7 +455,7 @@ func TestR_BAS_014_AProbeAnswerThatIsNotARefusalIsReplayedAndNotKept(t *testing.
 		t.Fatalf("a 404 probe answer is kept: %d probes", s.main.count())
 	}
 	s.site.probe = func(mainclient.Forward) (*mainclient.Response, error) { return respUnmarked(502, nil, "gw"), nil }
-	if w := s.do(http.MethodPost, "/api/npm/npm-all/y", nil); w.Code != 502 || problemCode(w) != "main_failed" {
+	if w := s.do(http.MethodPost, "/api/npm/web/npm-all/y", nil); w.Code != 502 || problemCode(w) != "main_failed" {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 }
@@ -464,10 +464,10 @@ func TestR_BAS_014_TheMissLimitAppliesToProbes(t *testing.T) {
 	g := newGuard()
 	g.missLimit = 1
 	s := newSiteHarness(t, options{guard: g})
-	if w := s.do(http.MethodPut, "/api/npm/npm-all/a", nil); w.Code != 403 {
+	if w := s.do(http.MethodPut, "/api/npm/web/npm-all/a", nil); w.Code != 403 {
 		t.Fatalf("%d", w.Code)
 	}
-	if w := s.do(http.MethodPut, "/api/npm/npm-all/b", nil); w.Code != 429 || problemCode(w) != "rate_limited" {
+	if w := s.do(http.MethodPut, "/api/npm/web/npm-all/b", nil); w.Code != 429 || problemCode(w) != "rate_limited" {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 }
@@ -482,7 +482,7 @@ func TestR_BAS_035_AMissLimitedAddressKeepsGettingItsHits(t *testing.T) {
 	if w := s.get(tgz, "Authorization", bearer(s.full)); w.Code != 200 {
 		t.Fatalf("a hit was refused: %d", w.Code)
 	}
-	w := s.get("/api/npm/npm-all/cold.tgz", "Authorization", bearer(s.full))
+	w := s.get("/api/npm/web/npm-all/cold.tgz", "Authorization", bearer(s.full))
 	if w.Code != 429 || problemCode(w) != "rate_limited" || !strings.Contains(w.Header().Get("RateLimit-Policy"), "bastion:misses") {
 		t.Fatalf("%d %s %v", w.Code, w.Body, w.Header())
 	}
@@ -514,7 +514,7 @@ func TestR_BAS_042_TheRequestLogCarriesTheFieldsOfTheBastionAndNoToken(t *testin
 	var hit, refused map[string]any
 	_ = json.Unmarshal([]byte(lines[0]), &hit)
 	_ = json.Unmarshal([]byte(lines[1]), &refused)
-	if hit["remote_addr"] != "203.0.113.7" || hit["repo"] != "npm-all" || hit["format"] != "npm" || hit["cache"] != "hit" ||
+	if hit["remote_addr"] != "203.0.113.7" || hit["repo"] != "web/npm-all" || hit["format"] != "npm" || hit["cache"] != "hit" ||
 		hit["bastion_class"] != "artifact" || hit["bastion_result"] != "hit" || hit["token_id"] != "full" || !strings.HasPrefix(fmt.Sprint(hit["token_hint"]), "trv_pat_") {
 		t.Fatalf("%v", hit)
 	}

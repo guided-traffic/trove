@@ -244,31 +244,36 @@ func (q *Queries) BastionPrincipalKinds(ctx context.Context, ids []string) ([]Ba
 
 const bastionVirtualClosure = `-- name: BastionVirtualClosure :many
 WITH RECURSIVE up AS (
-    SELECT r.id, r.key FROM repositories r WHERE r.key = ANY($1::text[])
+    SELECT r.id, p.key || '/' || r.key AS name
+      FROM repositories r
+      JOIN project p ON p.id = r.project_id
+     WHERE p.key || '/' || r.key = ANY($1::text[])
   UNION
-    SELECT v.id, v.key
+    SELECT v.id, vp.key || '/' || v.key
       FROM up
       JOIN virtual_members m ON m.member_id = up.id
       JOIN repositories v ON v.id = m.virtual_id
+      JOIN project vp ON vp.id = v.project_id
 )
-SELECT key FROM up ORDER BY key
+SELECT name::text AS name FROM up ORDER BY name
 `
 
 // The repository and every virtual repository that includes it, recursively, at the time the feed is read
-// (the content entry of R-BAS-015). Unknown keys return no rows; the caller then reports the key alone.
-func (q *Queries) BastionVirtualClosure(ctx context.Context, keys []string) ([]string, error) {
-	rows, err := q.db.Query(ctx, bastionVirtualClosure, keys)
+// (the content entry of R-BAS-015), by their qualified names "<projectKey>/<repoKey>". Unknown names return no
+// rows; the caller then reports the name alone. A virtual repository and its members may lie in other projects.
+func (q *Queries) BastionVirtualClosure(ctx context.Context, names []string) ([]string, error) {
+	rows, err := q.db.Query(ctx, bastionVirtualClosure, names)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	items := []string{}
 	for rows.Next() {
-		var key string
-		if err := rows.Scan(&key); err != nil {
+		var name string
+		if err := rows.Scan(&name); err != nil {
 			return nil, err
 		}
-		items = append(items, key)
+		items = append(items, name)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

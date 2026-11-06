@@ -89,15 +89,16 @@ type CheckRequest struct {
 	// (R-BAS-019); the failed-credential throttle and token.rejected count
 	// against it.
 	ClientAddress string `json:"clientAddress"`
-	// Repositories are the repository keys to answer for, at most
-	// bastions.check.max_repositories.
+	// Repositories are the qualified repository names "<projectKey>/<repoKey>" to
+	// answer for, at most bastions.check.max_repositories. A name without a
+	// project is refused with 400 malformed_request (R-BAS-011).
 	Repositories []string `json:"repositories"`
 }
 
 // CheckAnswer is the answer of the check (R-BAS-011).
 type CheckAnswer struct {
 	Subject Subject `json:"subject"`
-	// Repositories maps every requested key to the caller's shape on it.
+	// Repositories maps every requested qualified name to the caller's shape on it.
 	Repositories map[string]RepositoryRead `json:"repositories"`
 }
 
@@ -146,7 +147,7 @@ func (k FeedKind) Valid() bool {
 // that yields a second entry (settings and grants) gives it the ID
 // "<event ID>:1", a third "<event ID>:2", so every entry has an ID of its own
 // and the same event always yields the same IDs. Entries
-// carry IDs and repository keys, never names or secrets. Exactly one of the
+// carry IDs and qualified repository names, never names or secrets. Exactly one of the
 // lists is set, by Kind: Tokens for token, Principals for principal,
 // Repositories for content, none for grants and settings.
 type FeedEntry struct {
@@ -190,9 +191,10 @@ type DownloadEvent struct {
 	TokenID       string `json:"tokenId,omitempty"`
 	PrincipalID   string `json:"principalId,omitempty"`
 	ClientAddress string `json:"clientAddress"`
-	Repository    string `json:"repository"`
-	Path          string `json:"path"`
-	SHA256        string `json:"sha256"`
-	UserAgent     string `json:"userAgent,omitempty"`
-	Replica       string `json:"replica"`
+	// Repository is the qualified name "<projectKey>/<repoKey>".
+	Repository string `json:"repository"`
+	Path       string `json:"path"`
+	SHA256     string `json:"sha256"`
+	UserAgent  string `json:"userAgent,omitempty"`
+	Replica    string `json:"replica"`
 }

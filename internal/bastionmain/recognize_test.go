@@ -92,7 +92,7 @@ func problem(t *testing.T, w *httptest.ResponseRecorder) map[string]any {
 func TestR_BAS_008_ARevokedBastionTokenAnswersAProblemOnAPackageRoute(t *testing.T) {
 	m, _ := NewMetrics(nil)
 	w, seen := run(t, RecognizeOptions{Tokens: &fakeTokens{}, Metrics: m},
-		forwarded("/api/npm/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+tokRevoked, iface.HeaderInterface, version()))
+		forwarded("/api/npm/web/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+tokRevoked, iface.HeaderInterface, version()))
 	if w.Code != http.StatusUnauthorized || seen != nil {
 		t.Fatalf("status %d, handler reached: %v", w.Code, seen != nil)
 	}
@@ -110,11 +110,11 @@ func TestR_BAS_008_ARevokedBastionTokenAnswersAProblemOnAPackageRoute(t *testing
 func TestR_BAS_008_ATokenOfAnotherTypeLeavesTheRequestOrdinary(t *testing.T) {
 	tokens := &fakeTokens{}
 	for name, r := range map[string]*http.Request{
-		"a personal access token":     forwarded("/api/npm/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+pat, iface.HeaderInterface, version(), iface.HeaderReplica, "pod-1"),
-		"no Bastion token":            forwarded("/api/npm/npm-all/lodash", iface.HeaderInterface, version(), iface.HeaderProbe, "1", iface.HeaderReplica, "pod-1"),
-		"another scheme":              forwarded("/api/npm/npm-all/lodash", iface.HeaderAuthorization, "Basic "+tokValid),
-		"a bare token":                forwarded("/api/npm/npm-all/lodash", iface.HeaderAuthorization, tokValid),
-		"an empty value":              forwarded("/api/npm/npm-all/lodash", iface.HeaderAuthorization, ""),
+		"a personal access token":     forwarded("/api/npm/web/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+pat, iface.HeaderInterface, version(), iface.HeaderReplica, "pod-1"),
+		"no Bastion token":            forwarded("/api/npm/web/npm-all/lodash", iface.HeaderInterface, version(), iface.HeaderProbe, "1", iface.HeaderReplica, "pod-1"),
+		"another scheme":              forwarded("/api/npm/web/npm-all/lodash", iface.HeaderAuthorization, "Basic "+tokValid),
+		"a bare token":                forwarded("/api/npm/web/npm-all/lodash", iface.HeaderAuthorization, tokValid),
+		"an empty value":              forwarded("/api/npm/web/npm-all/lodash", iface.HeaderAuthorization, ""),
 		"a PAT on an interface route": forwarded(iface.PathHandshake, "Authorization", "Bearer "+pat, iface.HeaderInterface, version()),
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -137,7 +137,7 @@ func TestR_BAS_008_ATokenOfAnotherTypeLeavesTheRequestOrdinary(t *testing.T) {
 
 func TestR_BAS_008_AValidTokenRecognizesTheRequest(t *testing.T) {
 	t.Run("a forwarded request keeps the caller's credential and loses the Bastion token", func(t *testing.T) {
-		r := forwarded("/api/npm/npm-all/lodash",
+		r := forwarded("/api/npm/web/npm-all/lodash",
 			iface.HeaderAuthorization, "bearer "+tokValid, iface.HeaderInterface, version(), iface.HeaderReplica, "trove-bastion-7d9c-x2k4q",
 			"Authorization", "Bearer caller-credential")
 		w, seen := run(t, RecognizeOptions{Tokens: &fakeTokens{}}, r)
@@ -182,7 +182,7 @@ func TestR_BAS_008_AValidTokenRecognizesTheRequest(t *testing.T) {
 
 	t.Run("the probe flag needs a method that is not GET or HEAD", func(t *testing.T) {
 		for method, want := range map[string]bool{http.MethodPut: true, http.MethodPost: true, http.MethodDelete: true, http.MethodGet: false, http.MethodHead: false} {
-			r := httptest.NewRequest(method, "/api/npm/npm-all/lodash", nil)
+			r := httptest.NewRequest(method, "/api/npm/web/npm-all/lodash", nil)
 			r.Header.Set(iface.HeaderAuthorization, "Bearer "+tokValid)
 			r.Header.Set(iface.HeaderInterface, version())
 			r.Header.Set(iface.HeaderProbe, iface.ProbeValue)
@@ -195,7 +195,7 @@ func TestR_BAS_008_AValidTokenRecognizesTheRequest(t *testing.T) {
 	})
 
 	t.Run("the replica name is clipped and holds no control characters", func(t *testing.T) {
-		r := forwarded("/api/npm/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokValid, iface.HeaderInterface, version())
+		r := forwarded("/api/npm/web/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokValid, iface.HeaderInterface, version())
 		r.Header.Set(iface.HeaderReplica, "pod\x01"+strings.Repeat("é", 300))
 		_, seen := run(t, RecognizeOptions{Tokens: &fakeTokens{}}, r)
 		rec, _ := RecognitionFrom(seen.Context())
@@ -210,8 +210,8 @@ func TestR_BAS_008_AValidTokenRecognizesTheRequest(t *testing.T) {
 func TestR_BAS_009_AMissingOrDifferentInterfaceVersionAnswersAMismatch(t *testing.T) {
 	m, _ := NewMetrics(nil)
 	for name, r := range map[string]*http.Request{
-		"missing on a package route": forwarded("/api/npm/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+tokValid),
-		"another version":            forwarded("/api/npm/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+tokValid, iface.HeaderInterface, "2"),
+		"missing on a package route": forwarded("/api/npm/web/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+tokValid),
+		"another version":            forwarded("/api/npm/web/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+tokValid, iface.HeaderInterface, "2"),
 		"not a number":               forwarded(iface.PathFeed, "Authorization", "Bearer "+tokValid, iface.HeaderInterface, "one"),
 		"leading zero":               forwarded(iface.PathFeed, "Authorization", "Bearer "+tokValid, iface.HeaderInterface, "01"),
 		"missing on a route":         forwarded(iface.PathHandshake, "Authorization", "Bearer "+tokValid),
@@ -232,7 +232,7 @@ func TestR_BAS_009_AMissingOrDifferentInterfaceVersionAnswersAMismatch(t *testin
 	}
 
 	t.Run("two version headers are a mismatch, not a pick", func(t *testing.T) {
-		r := forwarded("/api/npm/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokValid)
+		r := forwarded("/api/npm/web/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokValid)
 		r.Header.Add(iface.HeaderInterface, version())
 		r.Header.Add(iface.HeaderInterface, version())
 		if w, _ := run(t, RecognizeOptions{Tokens: &fakeTokens{}}, r); w.Code != http.StatusBadRequest {
@@ -241,7 +241,7 @@ func TestR_BAS_009_AMissingOrDifferentInterfaceVersionAnswersAMismatch(t *testin
 	})
 
 	t.Run("an invalid token is refused before the version is looked at", func(t *testing.T) {
-		w, _ := run(t, RecognizeOptions{Tokens: &fakeTokens{}}, forwarded("/api/npm/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokRevoked, iface.HeaderInterface, "9"))
+		w, _ := run(t, RecognizeOptions{Tokens: &fakeTokens{}}, forwarded("/api/npm/web/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokRevoked, iface.HeaderInterface, "9"))
 		if w.Code != http.StatusUnauthorized {
 			t.Errorf("status %d", w.Code)
 		}
@@ -249,7 +249,7 @@ func TestR_BAS_009_AMissingOrDifferentInterfaceVersionAnswersAMismatch(t *testin
 }
 
 func TestR_BAS_008_ABastionTokenTheStoreCannotCheckIsAnOutageNotAVerdict(t *testing.T) {
-	w, seen := run(t, RecognizeOptions{Tokens: &fakeTokens{}}, forwarded("/api/npm/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokStore, iface.HeaderInterface, version()))
+	w, seen := run(t, RecognizeOptions{Tokens: &fakeTokens{}}, forwarded("/api/npm/web/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokStore, iface.HeaderInterface, version()))
 	if w.Code != http.StatusServiceUnavailable || seen != nil {
 		t.Fatalf("status %d", w.Code)
 	}
@@ -259,7 +259,7 @@ func TestR_BAS_008_ABastionTokenTheStoreCannotCheckIsAnOutageNotAVerdict(t *test
 }
 
 func TestR_BAS_008_WithoutAnAuthenticatorEveryBastionTokenIsInvalid(t *testing.T) {
-	w, _ := run(t, RecognizeOptions{}, forwarded("/api/npm/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokValid, iface.HeaderInterface, version()))
+	w, _ := run(t, RecognizeOptions{}, forwarded("/api/npm/web/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokValid, iface.HeaderInterface, version()))
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("status %d", w.Code)
 	}
@@ -293,7 +293,7 @@ func TestR_BAS_008_InterfaceRequestsAreCountedByRegistrationOperationAndOutcome(
 	serve(forwarded(iface.PathHandshake, "Authorization", "Bearer "+tokValid))
 	serve(good("/api/v1/bastion/unknown"))
 	status = http.StatusOK
-	serve(forwarded("/api/npm/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokValid, iface.HeaderInterface, version()))
+	serve(forwarded("/api/npm/web/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokValid, iface.HeaderInterface, version()))
 
 	for _, c := range []struct {
 		bastion, op, outcome string

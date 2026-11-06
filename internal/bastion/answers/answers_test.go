@@ -70,7 +70,7 @@ func TestR_BAS_020_EachFeedKindMatchesItsAnswers(t *testing.T) {
 	log := NewFeedLog()
 	at := t0.Add(time.Second)
 	log.Record(iface.FeedEntry{ID: "p", Kind: iface.FeedPrincipal, Principals: []string{"u1"}}, at)
-	log.Record(iface.FeedEntry{ID: "c", Kind: iface.FeedContent, Repositories: []string{"npm-local"}}, at)
+	log.Record(iface.FeedEntry{ID: "c", Kind: iface.FeedContent, Repositories: []string{"web/npm-local"}}, at)
 	s := state(t0.Add(2*time.Second), log)
 	cases := []struct {
 		name string
@@ -78,9 +78,9 @@ func TestR_BAS_020_EachFeedKindMatchesItsAnswers(t *testing.T) {
 		want Reason
 	}{
 		{"credential of the principal", Answer{Kind: Credential, ObtainedAt: t0, PrincipalID: "u1"}, Revoked},
-		{"url answer of the repository", Answer{Kind: URL, ObtainedAt: t0, Repository: "npm-local"}, Revoked},
+		{"url answer of the repository", Answer{Kind: URL, ObtainedAt: t0, Repository: "web/npm-local"}, Revoked},
 		{"url answer of another repository", Answer{Kind: URL, ObtainedAt: t0, Repository: "npm-other"}, Usable},
-		{"shape answer is not about content", Answer{Kind: Shape, ObtainedAt: t0, Repository: "npm-local"}, Usable},
+		{"shape answer is not about content", Answer{Kind: Shape, ObtainedAt: t0, Repository: "web/npm-local"}, Usable},
 		{"credential answer is not about grants", Answer{Kind: Credential, ObtainedAt: t0, PrincipalID: "u2"}, Usable},
 	}
 	for _, c := range cases {

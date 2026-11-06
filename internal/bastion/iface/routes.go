@@ -40,8 +40,8 @@ const (
 )
 
 // The families of the mirrored URL space (R-BAS-003, R-BAS-018). The Bastion
-// serves a path only below one of them: /api/<format>/<repoKey>/… (every path
-// below /api/ except /api/v1/…) and /files/<repoKey>/….
+// serves a path only below one of them: /api/<format>/<projectKey>/<repoKey>/…
+// (every path below /api/ except /api/v1/…) and /files/<projectKey>/<repoKey>/….
 const (
 	// FilesPrefix is the raw transfer family of INV-6.
 	FilesPrefix = "/files/"

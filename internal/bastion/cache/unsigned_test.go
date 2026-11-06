@@ -38,7 +38,7 @@ func TestR_BAS_032_WithoutASigningKeyTheVolumeKeepsPlainEntriesAndStillVerifiesT
 	if err := f.Commit(ctx, digest(data)); err != nil {
 		t.Fatal(err)
 	}
-	e := Entry{Kind: EntryArtifact, SHA256: digest(data), Size: int64(len(data)), Repository: "npm-all", Status: 200}
+	e := Entry{Kind: EntryArtifact, SHA256: digest(data), Size: int64(len(data)), Repository: "web/npm-all", Status: 200}
 	if err := c.StoreEntry(ctx, "/k", e); err != nil {
 		t.Fatal(err)
 	}

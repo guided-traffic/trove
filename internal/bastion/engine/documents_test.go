@@ -161,7 +161,7 @@ func TestR_BAS_023_A304ForAPrivateDocumentAnswersTheCallerWithTheSharedEntrysByt
 func TestR_BAS_023_SearchAndEveryOtherPassAnswerGoToTheMainInstallationPerCallerAndAreNeverKept(t *testing.T) {
 	s := newSiteHarness(t, options{})
 	for i := 0; i < 2; i++ {
-		if w := s.get("/api/npm/npm-all/-/v1/search?text=acme", "Authorization", bearer(s.full)); w.Code != 200 || !strings.Contains(w.Body.String(), "objects") {
+		if w := s.get("/api/npm/web/npm-all/-/v1/search?text=acme", "Authorization", bearer(s.full)); w.Code != 200 || !strings.Contains(w.Body.String(), "objects") {
 			t.Fatalf("%d", w.Code)
 		}
 	}
@@ -234,7 +234,7 @@ func TestR_BAS_024_AMissingNameIsAbsorbedAtTheBastionForFullReaders(t *testing.T
 	s := newSiteHarness(t, options{})
 	names := 20
 	for i := 0; i < 1000; i++ {
-		path := fmt.Sprintf("/api/npm/npm-all/missing-%d", i%names)
+		path := fmt.Sprintf("/api/npm/web/npm-all/missing-%d", i%names)
 		if code := anonRequest(s, path, fmt.Sprintf("198.51.100.%d:1", i%100)); code != http.StatusNotFound {
 			t.Fatalf("%d", code)
 		}
@@ -255,7 +255,7 @@ func TestR_BAS_024_AMissingNameIsAbsorbedAtTheBastionForFullReaders(t *testing.T
 		t.Fatal("the replays are not counted")
 	}
 	// the body of the replay is the main installation's
-	r := httptest.NewRequest(http.MethodGet, "https://packages.example.com/api/npm/npm-all/missing-1", nil)
+	r := httptest.NewRequest(http.MethodGet, "https://packages.example.com/api/npm/web/npm-all/missing-1", nil)
 	r.RemoteAddr = "192.0.2.1:1"
 	w := httptest.NewRecorder()
 	s.e.ServeHTTP(w, r)
@@ -267,7 +267,7 @@ func TestR_BAS_024_AMissingNameIsAbsorbedAtTheBastionForFullReaders(t *testing.T
 func TestR_BAS_024_APartialReaderAsksTheMainInstallationEveryTime(t *testing.T) {
 	s := newSiteHarness(t, options{})
 	for i := 0; i < 2; i++ {
-		if w := s.get("/api/npm/npm-all/missing", "Authorization", bearer(s.part)); w.Code != 404 {
+		if w := s.get("/api/npm/web/npm-all/missing", "Authorization", bearer(s.part)); w.Code != 404 {
 			t.Fatalf("%d", w.Code)
 		}
 	}
@@ -281,14 +281,14 @@ func TestR_BAS_024_APartialReaderAsksTheMainInstallationEveryTime(t *testing.T) 
 		t.Fatalf("%d requests for a missing name asked by a partial reader, want 2", n)
 	}
 	// and the partial reader's miss never fills the negative cache
-	if w := s.get("/api/npm/npm-all/missing", "Authorization", bearer(s.full)); w.Code != 404 {
+	if w := s.get("/api/npm/web/npm-all/missing", "Authorization", bearer(s.full)); w.Code != 404 {
 		t.Fatal(w.Code)
 	}
 }
 
 func TestR_BAS_024_ANegativeEntryLastsTheNegativePeriodAndIsBounded(t *testing.T) {
 	s := newSiteHarness(t, options{cfg: []func(*configT){func(c *configT) { c.Bastion.Answers.Period = time.Hour }}})
-	get := func() { s.get("/api/npm/npm-all/missing", "Authorization", bearer(s.full)) }
+	get := func() { s.get("/api/npm/web/npm-all/missing", "Authorization", bearer(s.full)) }
 	get()
 	get()
 	if s.main.count() != 1 {
@@ -301,7 +301,7 @@ func TestR_BAS_024_ANegativeEntryLastsTheNegativePeriodAndIsBounded(t *testing.T
 	}
 	s.e.neg.maxItems = 3
 	for i := 0; i < 10; i++ {
-		s.get(fmt.Sprintf("/api/npm/npm-all/m%d", i), "Authorization", bearer(s.full))
+		s.get(fmt.Sprintf("/api/npm/web/npm-all/m%d", i), "Authorization", bearer(s.full))
 	}
 	if n := s.e.neg.len(); n > 3 {
 		t.Fatalf("%d negative entries, at most 3", n)
@@ -310,12 +310,12 @@ func TestR_BAS_024_ANegativeEntryLastsTheNegativePeriodAndIsBounded(t *testing.T
 
 func TestR_BAS_024_ACallerWithoutAnAnswerGetsOneCheckBeforeANegativeEntryIsReplayed(t *testing.T) {
 	s := newSiteHarness(t, options{})
-	s.get("/api/npm/npm-all/missing", "Authorization", bearer(s.full))
+	s.get("/api/npm/web/npm-all/missing", "Authorization", bearer(s.full))
 	second := newToken(t, "pat")
 	s.site.addReader(second, &reader{id: "full2", read: iface.ReadFull})
 	before := s.main.count()
 	for i := 0; i < 3; i++ {
-		if w := s.get("/api/npm/npm-all/missing", "Authorization", bearer(second)); w.Code != 404 {
+		if w := s.get("/api/npm/web/npm-all/missing", "Authorization", bearer(second)); w.Code != 404 {
 			t.Fatal(w.Code)
 		}
 	}
@@ -324,7 +324,7 @@ func TestR_BAS_024_ACallerWithoutAnAnswerGetsOneCheckBeforeANegativeEntryIsRepla
 		t.Fatalf("%+v", reqs)
 	}
 	// a partial reader's check says partial: its request goes to the main installation
-	if w := s.get("/api/npm/npm-all/missing", "Authorization", bearer(s.part)); w.Code != 404 {
+	if w := s.get("/api/npm/web/npm-all/missing", "Authorization", bearer(s.part)); w.Code != 404 {
 		t.Fatal(w.Code)
 	}
 	if last := s.main.requests(); last[len(last)-1].Kind != mainclient.KindForward {
@@ -336,11 +336,11 @@ func TestR_BAS_024_NegativeEntriesAreSharedThroughTheSharedStore(t *testing.T) {
 	st := shared.NewLocal(1, nil)
 	st.Shared = func() bool { return true }
 	a := newSiteHarness(t, options{signer: true, state: st})
-	a.get("/api/npm/npm-all/missing", "Authorization", bearer(a.full))
+	a.get("/api/npm/web/npm-all/missing", "Authorization", bearer(a.full))
 	b := newHarness(t, options{signer: true, state: st, cache: a.cache, main: a.main, clock: a.clock})
 	// replica B has the answers of replica A and the negative entry: no request
 	before := a.main.count()
-	if w := b.get("/api/npm/npm-all/missing", "Authorization", bearer(a.full)); w.Code != 404 {
+	if w := b.get("/api/npm/web/npm-all/missing", "Authorization", bearer(a.full)); w.Code != 404 {
 		t.Fatal(w.Code)
 	}
 	if a.main.count() != before {
@@ -348,7 +348,7 @@ func TestR_BAS_024_NegativeEntriesAreSharedThroughTheSharedStore(t *testing.T) {
 	}
 	// The record is plain JSON in the store; the Valkey form signs it and verifies it on the way back
 	// (internal/bastion/shared), so a forged or a moved record never reaches the engine.
-	rec, ok, _ := st.Answers.Get(context.Background(), shared.AnswerNegative, hashKey("/api/npm/npm-all/missing"))
+	rec, ok, _ := st.Answers.Get(context.Background(), shared.AnswerNegative, hashKey("/api/npm/web/npm-all/missing"))
 	if !ok || !json.Valid(rec) {
 		t.Fatalf("no readable shared record: %v %q", ok, rec)
 	}
@@ -366,7 +366,7 @@ func TestR_BAS_025_MissesNeverPutMoreThanTheBudgetOntoTheMainInstallation(t *tes
 		QueueTimeout: s.cfg.Bastion.Main.QueueTimeout, Metrics: s.m,
 	})
 	for i := 0; i < 500; i++ {
-		s.site.artifacts[fmt.Sprintf("/api/npm/npm-all/p%d.tgz", i)] = []byte("x")
+		s.site.artifacts[fmt.Sprintf("/api/npm/web/npm-all/p%d.tgz", i)] = []byte("x")
 	}
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -375,7 +375,7 @@ func TestR_BAS_025_MissesNeverPutMoreThanTheBudgetOntoTheMainInstallation(t *tes
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			path := fmt.Sprintf("/api/npm/npm-all/p%d.tgz", i)
+			path := fmt.Sprintf("/api/npm/web/npm-all/p%d.tgz", i)
 			var code int
 			if i%2 == 0 {
 				code = s.get(path, "Authorization", bearer(s.full)).Code

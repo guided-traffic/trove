@@ -40,8 +40,8 @@ func realStageChain(t *testing.T) (http.Handler, *rig) {
 	d, err := dispatch.New(dispatch.Options{
 		Host: fakeHost{}, Decider: r.decider, Formats: func() []formats.Format { return fs },
 		Repos: &fakeRepos{byKey: map[string]repository.Repository{
-			"npm-all":  {ID: "2", Name: qr("npm-all"), Class: repository.Virtual, Format: "npm"},
-			"nuget-v3": {ID: "3", Name: qr("nuget-v3"), Class: repository.Local, Format: "nuget"},
+			"web/npm-all":  {ID: "2", Name: qr("npm-all"), Class: repository.Virtual, Format: "npm"},
+			"web/nuget-v3": {ID: "3", Name: qr("nuget-v3"), Class: repository.Local, Format: "nuget"},
 		}},
 	})
 	if err != nil {
@@ -93,24 +93,24 @@ func TestR_BAS_014_AProbeIsAnsweredThroughTheRealAuthenticationStage(t *testing.
 		h.ServeHTTP(rec, req)
 		return rec
 	}
-	rec := do(http.MethodPut, "/api/npm/npm-all/lodash", true)
+	rec := do(http.MethodPut, "/api/npm/web/npm-all/lodash", true)
 	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), `"code":"bastion_read_only"`) ||
-		!strings.Contains(rec.Body.String(), "publish to "+mainURL+"/api/npm/npm-all/") {
+		!strings.Contains(rec.Body.String(), "publish to "+mainURL+"/api/npm/web/npm-all/") {
 		t.Fatalf("npm publish as a probe: %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := do(http.MethodPut, "/api/nuget/nuget-v3/v3/package", true); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "bastion_read_only") {
+	if rec := do(http.MethodPut, "/api/nuget/web/nuget-v3/v3/package", true); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "bastion_read_only") {
 		t.Fatalf("dotnet nuget push as a probe: %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := do(http.MethodPost, "/api/npm/npm-all/-/npm/v1/security/advisories/bulk", true); rec.Code != http.StatusNoContent || rec.Header().Get(iface.HeaderRoute) != iface.RouteReadWithBody {
+	if rec := do(http.MethodPost, "/api/npm/web/npm-all/-/npm/v1/security/advisories/bulk", true); rec.Code != http.StatusNoContent || rec.Header().Get(iface.HeaderRoute) != iface.RouteReadWithBody {
 		t.Fatalf("npm audit as a probe: %d %v", rec.Code, rec.Header())
 	}
-	if rec := do(http.MethodPut, "/files/files-local/a/b.zip", true); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "bastion_read_only") {
+	if rec := do(http.MethodPut, "/files/web/files-local/a/b.zip", true); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "bastion_read_only") {
 		t.Fatalf("a raw file upload as a probe: %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := do(http.MethodGet, "/api/npm/npm-all/lodash", false); rec.Code != http.StatusUnauthorized {
+	if rec := do(http.MethodGet, "/api/npm/web/npm-all/lodash", false); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("a forwarded read without a credential with anonymous access off: %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := do(http.MethodPut, "/api/npm/npm-all/lodash", false); rec.Code != http.StatusUnauthorized {
+	if rec := do(http.MethodPut, "/api/npm/web/npm-all/lodash", false); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("a forwarded write without a credential that is no probe: %d %s", rec.Code, rec.Body.String())
 	}
 	if len(r.reached) != 0 {

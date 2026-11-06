@@ -55,16 +55,21 @@ SELECT id::text AS id, occurred_at
 
 -- name: BastionVirtualClosure :many
 -- The repository and every virtual repository that includes it, recursively, at the time the feed is read
--- (the content entry of R-BAS-015). Unknown keys return no rows; the caller then reports the key alone.
+-- (the content entry of R-BAS-015), by their qualified names "<projectKey>/<repoKey>". Unknown names return no
+-- rows; the caller then reports the name alone. A virtual repository and its members may lie in other projects.
 WITH RECURSIVE up AS (
-    SELECT r.id, r.key FROM repositories r WHERE r.key = ANY(sqlc.arg(keys)::text[])
+    SELECT r.id, p.key || '/' || r.key AS name
+      FROM repositories r
+      JOIN project p ON p.id = r.project_id
+     WHERE p.key || '/' || r.key = ANY(sqlc.arg(names)::text[])
   UNION
-    SELECT v.id, v.key
+    SELECT v.id, vp.key || '/' || v.key
       FROM up
       JOIN virtual_members m ON m.member_id = up.id
       JOIN repositories v ON v.id = m.virtual_id
+      JOIN project vp ON vp.id = v.project_id
 )
-SELECT key FROM up ORDER BY key;
+SELECT name::text AS name FROM up ORDER BY name;
 
 -- name: BastionPrincipalKinds :many
 -- The kinds of principals named by an event's details, for the entries that depend on the kind (a role

@@ -103,7 +103,7 @@ func TestR_BAS_008_EveryRequestCarriesTheInterfaceHeaders(t *testing.T) {
 	if _, err := r.c.Handshake(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.c.Check(ctx, mainclient.Authenticated, iface.CheckRequest{ClientAddress: "203.0.113.7", Repositories: []string{"npm-all"}}); err != nil {
+	if _, err := r.c.Check(ctx, mainclient.Authenticated, iface.CheckRequest{ClientAddress: "203.0.113.7", Repositories: []string{"web/npm-all"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.c.Feed(ctx, iface.Cursor{At: time.Now()}, 50); err != nil {
@@ -112,7 +112,7 @@ func TestR_BAS_008_EveryRequestCarriesTheInterfaceHeaders(t *testing.T) {
 	if err := r.c.Downloads(ctx, iface.DownloadsRequest{Events: []iface.DownloadEvent{}}); err != nil {
 		t.Fatal(err)
 	}
-	resp, err := r.c.Do(ctx, forward(http.MethodGet, "/api/npm/npm-all/lodash", "Authorization", "Bearer caller"))
+	resp, err := r.c.Do(ctx, forward(http.MethodGet, "/api/npm/web/npm-all/lodash", "Authorization", "Bearer caller"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestR_BAS_017_AForwardCarriesOneClientAddressInBothFamilies(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRig(t, nil)
-			f := forward(http.MethodGet, "/api/npm/npm-all/@acme%2fsdk?write=false",
+			f := forward(http.MethodGet, "/api/npm/web/npm-all/@acme%2fsdk?write=false",
 				"Authorization", "Basic Zm9vOmJhcg==",
 				"X-Forwarded-For", "192.0.2.1, 192.0.2.2", "X-Forwarded-Host", "evil.example", "X-Forwarded-Proto", "http", "X-Forwarded-Port", "80",
 				"Forwarded", "for=192.0.2.1;host=evil.example", "Cookie", "sid=1", "Range", "bytes=0-9", "If-None-Match", `"callers"`,
@@ -251,7 +251,7 @@ func TestR_BAS_017_AForwardCarriesOneClientAddressInBothFamilies(t *testing.T) {
 			if strings.Contains(h.Get("Traceparent"), "4bf92f3577b34da6a3ce929d0e0e4736") {
 				t.Error("the caller's trace context was continued")
 			}
-			if got[0].Path != "/api/npm/npm-all/@acme%2fsdk" || got[0].Query != "write=false" {
+			if got[0].Path != "/api/npm/web/npm-all/@acme%2fsdk" || got[0].Query != "write=false" {
 				t.Errorf("path %q query %q", got[0].Path, got[0].Query)
 			}
 		})
@@ -289,20 +289,20 @@ func TestR_BAS_021_AForwardedBodyIsStreamedAndTheMarkingIsStripped(t *testing.T)
 	r := newRig(t, nil)
 	r.main.SetForward(func(w http.ResponseWriter, _ *http.Request) {
 		r.main.Mark(w, iface.Marking{
-			Class: iface.ClassArtifact, Repository: "npm-all", Read: iface.ReadFull,
+			Class: iface.ClassArtifact, Repository: "web/npm-all", Read: iface.ReadFull,
 			Subject: iface.Subject{Kind: iface.SubjectToken, TokenID: "tok-1", PrincipalID: "p-1"},
 		})
 		w.Header().Set("ETag", `"abc"`)
 		_, _ = w.Write([]byte("tarball"))
 	})
-	f := forward(http.MethodPost, "/api/npm/npm-all/-/npm/v1/security/audits/quick")
+	f := forward(http.MethodPost, "/api/npm/web/npm-all/-/npm/v1/security/audits/quick")
 	f.Body = strings.NewReader(`{"a":1}`)
 	f.Request.ContentLength = 7
 	resp, err := r.c.Do(context.Background(), f)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !resp.Marked || resp.Marking.Class != iface.ClassArtifact || resp.Marking.Repository != "npm-all" || resp.Marking.Read != iface.ReadFull {
+	if !resp.Marked || resp.Marking.Class != iface.ClassArtifact || resp.Marking.Repository != "web/npm-all" || resp.Marking.Read != iface.ReadFull {
 		t.Errorf("marking = %+v marked %v", resp.Marking, resp.Marked)
 	}
 	for k := range resp.Header {
@@ -324,11 +324,11 @@ func TestR_BAS_021_AForwardedBodyIsStreamedAndTheMarkingIsStripped(t *testing.T)
 func TestR_BAS_014_TheRouteOfAProbeAnswerSurvivesTheStrippedMarking(t *testing.T) {
 	r := newRig(t, nil)
 	r.main.SetForward(func(w http.ResponseWriter, _ *http.Request) {
-		r.main.Mark(w, iface.Marking{Class: iface.ClassPass, Repository: "npm-all", Subject: iface.Subject{Kind: iface.SubjectAnonymous}})
+		r.main.Mark(w, iface.Marking{Class: iface.ClassPass, Repository: "web/npm-all", Subject: iface.Subject{Kind: iface.SubjectAnonymous}})
 		w.Header().Set(iface.HeaderRoute, iface.RouteReadWithBody)
 		w.WriteHeader(http.StatusNoContent)
 	})
-	f := forward(http.MethodPost, "/api/npm/npm-all/-/npm/v1/security/advisories/bulk")
+	f := forward(http.MethodPost, "/api/npm/web/npm-all/-/npm/v1/security/advisories/bulk")
 	f.Probe = true
 	resp, err := r.c.Do(context.Background(), f)
 	if err != nil {
@@ -396,7 +396,7 @@ func TestR_BAS_006_ARefusedTokenAndAMismatchAreTypedErrors(t *testing.T) {
 			},
 			"downloads": func() error { return r.c.Downloads(ctx, iface.DownloadsRequest{Events: []iface.DownloadEvent{}}) },
 			"forward": func() error {
-				resp, err := r.c.Do(ctx, forward(http.MethodGet, "/api/npm/npm-all/x"))
+				resp, err := r.c.Do(ctx, forward(http.MethodGet, "/api/npm/web/npm-all/x"))
 				if resp != nil {
 					closeBody(t, resp)
 				}
@@ -413,7 +413,7 @@ func TestR_BAS_006_ARefusedTokenAndAMismatchAreTypedErrors(t *testing.T) {
 		// An answer that only states its version in the header (a main installation that did not reject the
 		// request) is a mismatch as well.
 		r.main.Force("forward", http.StatusOK)
-		if resp, err := r.c.Do(ctx, forward(http.MethodGet, "/api/npm/npm-all/x")); !errors.Is(err, mainclient.ErrInterfaceMismatch) {
+		if resp, err := r.c.Do(ctx, forward(http.MethodGet, "/api/npm/web/npm-all/x")); !errors.Is(err, mainclient.ErrInterfaceMismatch) {
 			if resp != nil {
 				closeBody(t, resp)
 			}
@@ -429,7 +429,7 @@ func TestR_BAS_021_FailuresAreUnreachableOrBadAnswers(t *testing.T) {
 	ctx := context.Background()
 	r := newRig(t, func(o *mainclient.Options) { o.ResponseHeaderTimeout = 150 * time.Millisecond })
 	do := func() (*mainclient.Response, error) {
-		return r.c.Do(ctx, forward(http.MethodGet, "/api/npm/npm-all/x?token=secret-query"))
+		return r.c.Do(ctx, forward(http.MethodGet, "/api/npm/web/npm-all/x?token=secret-query"))
 	}
 
 	r.main.SetDown(true)
@@ -502,7 +502,7 @@ func TestR_BAS_021_ARedirectIsTheMainInstallationsAnswer(t *testing.T) {
 		w.Header().Set("Location", "https://elsewhere.example/x")
 		w.WriteHeader(http.StatusFound)
 	})
-	resp, err := r.c.Do(context.Background(), forward(http.MethodGet, "/api/npm/npm-all/x"))
+	resp, err := r.c.Do(context.Background(), forward(http.MethodGet, "/api/npm/web/npm-all/x"))
 	if err != nil || resp.Status != http.StatusFound || resp.Header.Get("Location") == "" {
 		t.Fatalf("%v %+v", err, resp)
 	}
@@ -670,7 +670,7 @@ func TestR_BAS_025_TheBodyHoldsTheSlot(t *testing.T) {
 		o.Budget = mainclient.NewBudget(mainclient.BudgetOptions{MaxConcurrent: 1, Replicas: 1, AnonymousShare: 0.5, QueueTimeout: 50 * time.Millisecond, Metrics: nil})
 	})
 	ctx := context.Background()
-	resp, err := r.c.Do(ctx, forward(http.MethodGet, "/api/npm/npm-all/x"))
+	resp, err := r.c.Do(ctx, forward(http.MethodGet, "/api/npm/web/npm-all/x"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -678,7 +678,7 @@ func TestR_BAS_025_TheBodyHoldsTheSlot(t *testing.T) {
 	if _, err := r.c.Check(ctx, mainclient.Authenticated, iface.CheckRequest{Repositories: []string{"a"}}); !errors.Is(err, mainclient.ErrBusy) {
 		t.Errorf("check while the body is open: %v", err)
 	}
-	if _, err := r.c.Do(ctx, forward(http.MethodGet, "/api/npm/npm-all/y")); !errors.Is(err, mainclient.ErrBusy) {
+	if _, err := r.c.Do(ctx, forward(http.MethodGet, "/api/npm/web/npm-all/y")); !errors.Is(err, mainclient.ErrBusy) {
 		t.Errorf("forward while the body is open: %v", err)
 	}
 	if n := maintest.Value(r.m.MainRequests.WithLabelValues("check", "busy")); n != 1 {
@@ -695,7 +695,7 @@ func TestR_BAS_025_TheBodyHoldsTheSlot(t *testing.T) {
 		t.Errorf("check after the body was closed: %v", err)
 	}
 	// A body that is read to its end releases as well.
-	resp, err = r.c.Do(ctx, forward(http.MethodGet, "/api/npm/npm-all/x"))
+	resp, err = r.c.Do(ctx, forward(http.MethodGet, "/api/npm/web/npm-all/x"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -736,7 +736,7 @@ func TestR_BAS_025_TheMainInstallationNeverSeesMoreThanTheBudget(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			f := forward(http.MethodGet, "/api/npm/npm-all/pkg")
+			f := forward(http.MethodGet, "/api/npm/web/npm-all/pkg")
 			f.Class = mainclient.Authenticated
 			if i%3 == 0 {
 				f.Class = mainclient.Anonymous
@@ -771,7 +771,7 @@ func TestR_BAS_039_ADownloadBatchIsOneRequestWithItsBody(t *testing.T) {
 	at := time.Date(2026, 11, 2, 10, 0, 3, 100_000_000, time.UTC)
 	since := at.Add(-time.Hour)
 	req := iface.DownloadsRequest{
-		Events:  []iface.DownloadEvent{{At: at, TokenID: "t", ClientAddress: "203.0.113.7", Repository: "npm-all", Path: "/api/npm/npm-all/x.tgz", SHA256: strings.Repeat("a", 64), Replica: "replica-a"}},
+		Events:  []iface.DownloadEvent{{At: at, TokenID: "t", ClientAddress: "203.0.113.7", Repository: "web/npm-all", Path: "/api/npm/web/npm-all/x.tgz", SHA256: strings.Repeat("a", 64), Replica: "replica-a"}},
 		Dropped: 7, DroppedSince: &since,
 	}
 	if err := r.c.Downloads(context.Background(), req); err != nil {
@@ -792,8 +792,8 @@ func TestR_BAS_044_ForwardsGoToThePackagesURLAndTheInterfaceToTheMainURL(t *test
 	packages.Force("forward", http.StatusBadGateway) // the call is what is counted; no token of this fake is needed
 	r := newRig(t, func(o *mainclient.Options) { o.PackagesURL = packages.URL() })
 
-	_, _ = r.c.Do(ctx, forward(http.MethodGet, "/api/npm/npm-all/lodash"))
-	probe := forward(http.MethodGet, "/api/npm/npm-all/lodash")
+	_, _ = r.c.Do(ctx, forward(http.MethodGet, "/api/npm/web/npm-all/lodash"))
+	probe := forward(http.MethodGet, "/api/npm/web/npm-all/lodash")
 	probe.Probe, probe.Kind = true, mainclient.KindProbe
 	_, _ = r.c.Do(ctx, probe)
 	if got := packages.Calls("forward"); got != 2 {
@@ -813,7 +813,7 @@ func TestR_BAS_044_ForwardsGoToThePackagesURLAndTheInterfaceToTheMainURL(t *test
 	t.Run("an empty packages_url means the main URL for both", func(t *testing.T) {
 		r := newRig(t, nil)
 		r.main.Force("forward", http.StatusBadGateway)
-		_, _ = r.c.Do(ctx, forward(http.MethodGet, "/api/npm/npm-all/lodash"))
+		_, _ = r.c.Do(ctx, forward(http.MethodGet, "/api/npm/web/npm-all/lodash"))
 		if got := r.main.Calls("forward"); got != 1 {
 			t.Errorf("the main URL received %d forwards, want 1", got)
 		}

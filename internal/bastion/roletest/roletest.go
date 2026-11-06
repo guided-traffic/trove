@@ -73,8 +73,8 @@ func (c *clock) Advance(d time.Duration) {
 }
 
 const (
-	pkg      = "/api/npm/npm-all/lodash/-/lodash-1.0.0.tgz"
-	repo     = "npm-all"
+	pkg      = "/api/npm/web/npm-all/lodash/-/lodash-1.0.0.tgz"
+	repo     = "web/npm-all"
 	period   = 30 * time.Second
 	grace    = time.Minute
 	bound    = 5 * time.Second

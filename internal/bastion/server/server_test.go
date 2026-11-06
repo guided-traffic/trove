@@ -163,7 +163,7 @@ func TestR_BAS_001_TheRoleServesItsTwoListenersAndAnswersWithItsOwnProblems(t *t
 	}{
 		"/api/v1/system/ping": {404, iface.CodeNotServed}, "/ui/": {404, iface.CodeNotServed}, "/auth/oidc/corp/start": {404, iface.CodeNotServed},
 		"/": {404, iface.CodeNotServed}, "/v2/": {404, iface.CodeNotServed}, "/.well-known/x": {404, iface.CodeNotServed},
-		"/api/npm/npm-all/lodash": {503, "main_unreachable"}, "/files/raw/x": {503, "main_unreachable"},
+		"/api/npm/web/npm-all/lodash": {503, "main_unreachable"}, "/files/web/raw/x": {503, "main_unreachable"},
 	} {
 		code, header, body := get(t, client+path)
 		var p struct {
@@ -178,7 +178,7 @@ func TestR_BAS_001_TheRoleServesItsTwoListenersAndAnswersWithItsOwnProblems(t *t
 		}
 	}
 	// Another host is not this Bastion's (R-BAS-018 step 1).
-	req, _ := http.NewRequest(http.MethodGet, client+"/api/npm/npm-all/lodash", nil)
+	req, _ := http.NewRequest(http.MethodGet, client+"/api/npm/web/npm-all/lodash", nil)
 	req.Host = "other.example.com"
 	if resp, err := http.DefaultClient.Do(req); err != nil {
 		t.Fatal(err)
@@ -189,7 +189,7 @@ func TestR_BAS_001_TheRoleServesItsTwoListenersAndAnswersWithItsOwnProblems(t *t
 		}
 	}
 	// A write goes to the probe, which needs the main installation (R-BAS-014).
-	req, _ = http.NewRequest(http.MethodPut, client+"/api/npm/npm-all/x", strings.NewReader("{}"))
+	req, _ = http.NewRequest(http.MethodPut, client+"/api/npm/web/npm-all/x", strings.NewReader("{}"))
 	req.Host = "packages.example.com"
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
