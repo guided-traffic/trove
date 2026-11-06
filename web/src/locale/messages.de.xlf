@@ -49,7 +49,7 @@
     </unit>
     <unit id="shell.menu.language">
       <notes>
-        <note category="location">src/app/app.html:116,117</note>
+        <note category="location">src/app/app.html:119,120</note>
       </notes>
       <segment>
         <source>Language</source>
@@ -58,7 +58,7 @@
     </unit>
     <unit id="shell.menu.sign-out">
       <notes>
-        <note category="location">src/app/app.html:121,124</note>
+        <note category="location">src/app/app.html:124,127</note>
       </notes>
       <segment>
         <source> Sign out </source>
@@ -94,7 +94,7 @@
     </unit>
     <unit id="shell.nav">
       <notes>
-        <note category="location">src/app/app.html:177,178</note>
+        <note category="location">src/app/app.html:180,181</note>
       </notes>
       <segment>
         <source>Main navigation</source>
@@ -532,7 +532,7 @@
     </unit>
     <unit id="shell.collapse">
       <notes>
-        <note category="location">src/app/app.html:234,236</note>
+        <note category="location">src/app/app.html:237,239</note>
       </notes>
       <segment>
         <source>Collapse sidebar</source>
@@ -551,7 +551,7 @@
     </unit>
     <unit id="shell.close-nav">
       <notes>
-        <note category="location">src/app/app.html:161,164</note>
+        <note category="location">src/app/app.html:164,167</note>
       </notes>
       <segment>
         <source>Close navigation</source>
@@ -13102,7 +13102,7 @@
     </unit>
     <unit id="shell.breadcrumbs">
       <notes>
-        <note category="location">src/app/app.html:245,247</note>
+        <note category="location">src/app/app.html:248,250</note>
       </notes>
       <segment>
         <source>Breadcrumb</source>
@@ -16141,7 +16141,7 @@
     <unit id="projects.col.key">
       <notes>
         <note category="location">src/app/features/projects/project-list.ts:124</note>
-        <note category="location">src/app/features/projects/projects-home.ts:79</note>
+        <note category="location">src/app/features/projects/projects-home.ts:80</note>
       </notes>
       <segment>
         <source>Key</source>
@@ -16151,7 +16151,7 @@
     <unit id="projects.col.name">
       <notes>
         <note category="location">src/app/features/projects/project-list.ts:125</note>
-        <note category="location">src/app/features/projects/projects-home.ts:80</note>
+        <note category="location">src/app/features/projects/projects-home.ts:81</note>
       </notes>
       <segment>
         <source>Display name</source>
@@ -16161,7 +16161,7 @@
     <unit id="projects.col.repositories">
       <notes>
         <note category="location">src/app/features/projects/project-list.ts:128</note>
-        <note category="location">src/app/features/projects/projects-home.ts:87</note>
+        <note category="location">src/app/features/projects/projects-home.ts:88</note>
       </notes>
       <segment>
         <source>Repositories</source>
@@ -25328,7 +25328,7 @@
     <unit id="projects.col.members">
       <notes>
         <note category="location">src/app/features/projects/project-list.ts:127</note>
-        <note category="location">src/app/features/projects/projects-home.ts:88</note>
+        <note category="location">src/app/features/projects/projects-home.ts:89</note>
       </notes>
       <segment>
         <source>Members</source>
@@ -25338,7 +25338,7 @@
     <unit id="projects.col.role">
       <notes>
         <note category="location">src/app/features/projects/project-list.ts:131</note>
-        <note category="location">src/app/features/projects/projects-home.ts:84</note>
+        <note category="location">src/app/features/projects/projects-home.ts:85</note>
       </notes>
       <segment>
         <source>Your role</source>
@@ -25348,7 +25348,7 @@
     <unit id="projects.help.role">
       <notes>
         <note category="location">src/app/features/projects/project-list.ts:132</note>
-        <note category="location">src/app/features/projects/projects-home.ts:85</note>
+        <note category="location">src/app/features/projects/projects-home.ts:86</note>
       </notes>
       <segment>
         <source>Your role in the project; empty when you see it through a system role and are no member.</source>
@@ -25902,7 +25902,7 @@
     </unit>
     <unit id="projects-home.empty">
       <notes>
-        <note category="location">src/app/features/projects/projects-home.ts:74</note>
+        <note category="location">src/app/features/projects/projects-home.ts:76</note>
       </notes>
       <segment>
         <source>You are not a member of a project yet. An Owner of a project adds you with a role.</source>
@@ -25911,7 +25911,7 @@
     </unit>
     <unit id="projects-home.empty-filtered">
       <notes>
-        <note category="location">src/app/features/projects/projects-home.ts:75</note>
+        <note category="location">src/app/features/projects/projects-home.ts:73</note>
       </notes>
       <segment>
         <source>No project matches.</source>
@@ -25920,7 +25920,7 @@
     </unit>
     <unit id="projects-home.caption">
       <notes>
-        <note category="location">src/app/features/projects/projects-home.ts:77</note>
+        <note category="location">src/app/features/projects/projects-home.ts:78</note>
       </notes>
       <segment>
         <source>Your projects</source>
@@ -25929,7 +25929,7 @@
     </unit>
     <unit id="projects-home.col.description">
       <notes>
-        <note category="location">src/app/features/projects/projects-home.ts:81</note>
+        <note category="location">src/app/features/projects/projects-home.ts:82</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -25956,11 +25956,20 @@
     </unit>
     <unit id="shell.menu.guides">
       <notes>
-        <note category="location">src/app/app.html:114,116</note>
+        <note category="location">src/app/app.html:115,117</note>
       </notes>
       <segment>
-        <source>Guides</source>
+        <source> Guides </source>
         <target>Anleitungen</target>
+      </segment>
+    </unit>
+    <unit id="projects-home.empty-anonymous">
+      <notes>
+        <note category="location">src/app/features/projects/projects-home.ts:75</note>
+      </notes>
+      <segment>
+        <source>Sign in to see your projects.</source>
+        <target>Melden Sie sich an, um Ihre Projekte zu sehen.</target>
       </segment>
     </unit>
 </file>

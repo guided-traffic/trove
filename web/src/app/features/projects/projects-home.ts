@@ -69,11 +69,12 @@ export class ProjectsHome {
       .projects()
       .filter((p) => !q || p.key.includes(q) || p.displayName.toLowerCase().includes(q));
   });
-  protected readonly emptyText = computed(() =>
-    this.context.projects().length === 0
-      ? $localize`:@@projects-home.empty:You are not a member of a project yet. An Owner of a project adds you with a role.`
-      : $localize`:@@projects-home.empty-filtered:No project matches.`,
-  );
+  protected readonly emptyText = computed(() => {
+    if (this.context.projects().length > 0) return $localize`:@@projects-home.empty-filtered:No project matches.`;
+    return this.session.state() === 'anonymous'
+      ? $localize`:@@projects-home.empty-anonymous:Sign in to see your projects.`
+      : $localize`:@@projects-home.empty:You are not a member of a project yet. An Owner of a project adds you with a role.`;
+  });
   protected readonly caption = $localize`:@@projects-home.caption:Your projects`;
   protected readonly columns: readonly TableColumn[] = [
     { id: 'key', label: $localize`:@@projects.col.key:Key` },
