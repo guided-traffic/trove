@@ -4,7 +4,7 @@ The file browser shows the repositories you may read as a tree of folders and fi
 
 ## The file browser
 
-Select **Browse** in the side bar. It is also the start page of trove. The screen has two panes side by side: the tree of repositories and files on the left, and the details of what you select on the right. On a narrow screen one pane shows at a time; **Back to the tree** returns from the details.
+Select **Browse** in the side bar of a project. The screen has two panes side by side: the tree of repositories and files on the left, and the details of what you select on the right. On a narrow screen one pane shows at a time; **Back to the tree** returns from the details.
 
 ### The tree
 
@@ -16,7 +16,7 @@ Expand a repository or a folder to load its entries, 200 at a time; **Load more*
 
 What a repository holds depends on its class: a local repository shows what was uploaded or published to it, a remote repository the files it has cached so far, and npm repositories show their package files as trove stores them. See [Repositories](repositories.md#repository-classes).
 
-The selection is part of the page address, for example `https://trove.example.com/ui/en/browse/generic-local/releases/app-1.2.0.tar.gz`, so you can bookmark a file or send the link; opening it expands the tree down to the file. The browser's back and forward buttons walk through your selections.
+The selection is part of the page address, for example `https://trove.example.com/ui/en/projects/web/browse/generic-local/releases/app-1.2.0.tar.gz`, so you can bookmark a file or send the link; opening it expands the tree down to the file. The browser's back and forward buttons walk through your selections.
 
 The tree works with the keyboard: the arrow keys move and expand, Home and End jump to the first and last entry, and typing a name jumps to it. Shift+F10 or the context-menu key moves the focus to the actions of the selection.
 

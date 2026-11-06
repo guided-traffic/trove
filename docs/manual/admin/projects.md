@@ -78,7 +78,7 @@ Saving sends the changes one by one: the project, then its administrators, then 
 
 ## The project page
 
-Select a project's key to open it. The page shows the overview, with the switches and administrators read-only for a project administrator, and three sections:
+Select a project's key to open it. Its screens are in the project's side bar; **Settings** shows the overview, with the switches and administrators read-only for a project administrator, and these screens hold the rest:
 
 - **Repositories** lists the project's repositories. **Create repository** opens the creation wizard with the project and the key prefix filled in. It needs the permission to change repository configuration, or the switch **Manage repositories**. A repository's own screen shows its project and lets a project administrator with the switch change and delete it.
 - **Permission policies** lists the project's policies. **Create policy** opens the policy editor for the project: the name starts with the key, the repositories of the project are offered as selectors, and **Find a user or group** looks up principals by the start of their name (at least two characters, at most 20 matches, kind and name only) and adds the match as a new entry. It needs the permission to change policies, or the switch **Manage policies and service accounts**.
@@ -86,13 +86,13 @@ Select a project's key to open it. The page shows the overview, with the switche
 
 An action whose switch is off is shown disabled, with the reason beside it. Enabling a disabled service account needs the switch **Manage policies and service accounts**; disabling, deleting and revoking do not.
 
-## The project filter in the top bar
+## Where the project's screens are
 
-When at least one project exists and you administer one or may read projects, the top bar shows a **Project filter** menu. The selection is stored as your preference and limits the repository list and the policy list to the project (`project=`). **All projects** removes it. A project that no longer exists, or that you cannot see, filters nothing. **New policy** in the policy list creates a policy of the selected project; without a selection it creates a global policy. The policy editor says which one it is: **Global policy — applies to every repository**, or **Project policy of** the key.
+The project is the context of its screens. Open it from the start page or with the project switcher at the top of any project's side bar; its address is `/projects/<key>/…`. The side bar of a project holds **Packages**, **Browse**, **Repositories**, **Vulnerabilities**, **Members**, **Permission policies**, **Service accounts**, **CI identity** and **Settings**. The top bar has no project filter any more. **New policy** in a project's **Permission policies** creates a policy of that project; **New policy** in the admin area's list creates a global policy. The policy editor says which one it is: **Global policy — applies to every repository**, or **Project policy of** the key. The admin area's lists (repositories, service accounts, permission policies, audit log) name the project of each item in a **Project** column.
 
 ## For a project administrator without a system role
 
-After you sign in, **Admin** in the top bar leads to the **Admin area**, which shows **Projects** only. The global lists, such as **Permission policies**, **Users** and **Service accounts**, are not offered; a project's own policies and service accounts are on its page.
+A project's owner has no admin area. After you sign in you see the start page or, with one project, that project; its side bar holds the screens you may use, among them **Members**, **Permission policies**, **Service accounts**, **CI identity** and **Settings**. The global lists, such as **Users**, are not offered.
 
 ## When an action is refused
 

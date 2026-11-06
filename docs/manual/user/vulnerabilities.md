@@ -10,7 +10,7 @@ The report shows the findings of the repositories you may read, and only those. 
 
 ## The report
 
-Select **Vulnerabilities** in the side bar.
+Select **Vulnerabilities** in the side bar of a project. The report shows the findings of that project's repositories.
 
 **The counts.** The top of the screen counts the open findings by severity (**Critical**, **High**, **Medium**, **Low**, **Unknown**), then **Malicious**, **Needs triage** and **Blocked versions**. An open finding is one that needs triage, is confirmed, or is blocked. Each count is a link: it opens the list below with that filter applied. A line under the counts says how many of your repositories are scanned, hold only internal names, wait for advisory data or are not covered.
 

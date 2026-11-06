@@ -75,7 +75,8 @@ Permissions can be narrower than a whole repository: a permission may cover only
 Open a repository in one of these ways:
 
 1. In **Browse**, select the repository at the top of the tree, then select **Repository configuration** in the details.
-2. If you may read repository configuration, select it in **Admin area › Repositories** or search for it with **Find a repository**.
+2. Select it in the project's **Repositories**.
+3. If you may read repository configuration, select it in **Admin area › Repositories** (every project, each row naming its project) or search for it with **Find a repository**.
 
 The screen is titled **Repository** and shows the key. **Browse** opens the repository in the file browser.
 
@@ -107,4 +108,4 @@ If you may read repository configuration, the screen also shows the layout, the 
 
 The sections cover what the repository is, pointing the client at it, signing the client in, installing, publishing and maintaining (where the class allows writes), and troubleshooting; the npm guide adds security audits and lockfiles. A guide never contains a token: snippets read it from an environment variable such as `TROVE_TOKEN`, and the guide for an anonymous reader uses no credential at all.
 
-The **Guides** area in the side bar holds the same guides without opening a repository first: choose a **Package type**, a **Client**, and either a **Repository** or **None in particular: the guide of a repository class** together with a **Repository class**. To configure a client step by step, see [Connecting a package client](client-setup.md).
+**Guides** in the start side bar and in the user menu holds the same guides without opening a repository first: choose a **Package type**, a **Client**, and either a **Repository** or **None in particular: the guide of a repository class** together with a **Repository class**. To configure a client step by step, see [Connecting a package client](client-setup.md).
