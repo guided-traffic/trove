@@ -60,6 +60,10 @@
 #                       CI: job e2e-mirror (a change to the mirror)
 #   e2e.sh mirror-long  the long scenario of R-REPO-058: `kubectl drain` of the node of the process that runs a pass of 300 packages
 #                       (nightly, dispatch, locally: a red long leg is a finding, not a blocker, owner 2026-11-01)
+#   e2e.sh ha-suite     the failure suite's scenarios under the npm load that npm-ha does not run (R-HA-052: the object-store outage,
+#                       node loss, the PostgreSQL and Valkey primary loss, the drain criterion of R-NPM-038); nightly, dispatch, locally
+#   e2e.sh upgrade      the upgrade across the cut from the last release before it (R-HA-064, E6a.7) and the rolling upgrade and rollback
+#                       from the previous release (R-HA-020) under npm and NuGet loops and a browser journey; nightly, dispatch, locally
 #   e2e.sh <regex>      any other argument is a `go test -run` expression
 #
 # Environment: TROVE_DEV_HTTP_PORT (the port the cluster was created with; read back from the node),
@@ -154,6 +158,12 @@ case "$set_name" in
   mirror) run='^TestMirror_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 ;;
   mirror-long) run='^TestMirrorLong_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
   # <<< M6b mirror
+  # The failure suite under the npm load (R-HA-052: the object-store outage, node loss, the PostgreSQL and Valkey primary loss, the
+  # drain criterion of R-NPM-038) and the upgrade tests (R-HA-064 across the cut, R-HA-020 from the previous release, with npm and
+  # NuGet loops and a browser journey). Both are nightly legs; until their tests land the sets name none and pass with a notice
+  # (Q-ARCH-276).
+  ha-suite) run='^TestHASuite_'; empty_ok=1; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
+  upgrade) run='^TestUpgrade_'; empty_ok=1; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=2; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=2; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 ;;
   *) run="$set_name" ;;
 esac
 
