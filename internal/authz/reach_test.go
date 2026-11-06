@@ -88,8 +88,8 @@ func TestR_BAS_012_ShapeAgreesWithTheDecisionPoint(t *testing.T) {
 		"bot": botSub, "alice": aliceSub, "bob": bobSub, "carol": carolSub, "admin": adminSub, "anonymous": anonSub,
 		"auditor": userSub(idAuditorDirect, "auditor"), "reader": userSub("user-reader", "reader", "group-readers"),
 		"v2 reader":                userSub("user-v2", "v2", "group-v2"),
-		"scoped bot":               tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-a"}, Actions: []string{"read"}}}}),
-		"scoped bot through npm-v": tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-v"}, Actions: []string{"read"}}}}),
+		"scoped bot":               tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-a"}, Actions: []string{"read"}}}}),
+		"scoped bot through npm-v": tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-v"}, Actions: []string{"read"}}}}),
 		"inheriting bot":           tokenScop(botSub, scope.Scope{Inherit: true}),
 		"session bot":              session(botSub),
 	}
@@ -280,7 +280,7 @@ func TestR_BAS_012_Shapes(t *testing.T) {
 		want(t, reach(t, on, session(botSub)), "npmjs", ReachPartial, Allow)
 	})
 	t.Run("a token scope that narrows is partial", func(t *testing.T) {
-		sub := tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-a"}, Actions: []string{"read"}}}})
+		sub := tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-a"}, Actions: []string{"read"}}}})
 		want(t, reach(t, on, sub), "npm-a", ReachPartial, Allow)
 	})
 }

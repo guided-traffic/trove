@@ -311,6 +311,13 @@ func (b *builder) addProjects(rows []q.AuthzBuildProjectsRow, members []q.AuthzB
 			b.log.Error("authz: membership skipped, its principal is neither a user nor a group", "project", pi.key, "principal", m.PrincipalID)
 			continue
 		}
+		if m.PrincipalAutoJoin {
+			// Every user is in an auto-join group, so its role would reach every user, which
+			// authenticated in a global policy says (R-AUTHZ-026, Q-AUTHZ-200); the member write
+			// refuses one, so this group became auto-join later. Fail closed.
+			b.log.Error("authz: membership skipped, its group is an auto-join group", "project", pi.key, "principal", m.PrincipalID)
+			continue
+		}
 		if _, dup := pi.members[m.PrincipalID]; dup {
 			continue // the primary key holds one row per principal and project
 		}

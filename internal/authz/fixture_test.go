@@ -69,8 +69,24 @@ func (f *fixture) repo(key, class, format, cfg string) *fixture {
 	if doc.Virtual.DeployTarget != "" {
 		f.s.DeployTargets = append(f.s.DeployTargets, q.AuthzBuildDeployTargetsRow{VirtualID: f.next, TargetKey: doc.Virtual.DeployTarget})
 	}
-	f.s.Repositories = append(f.s.Repositories, q.AuthzBuildRepositoriesRow{ID: f.next, Key: key, ProjectKey: testProject(key), Class: class, Format: format, Config: []byte(cfg)})
+	project := testProject(key)
+	f.s.Repositories = append(f.s.Repositories, q.AuthzBuildRepositoriesRow{
+		ID: f.next, Key: key, ProjectKey: project, ProjectID: f.ensureProject(project), Class: class, Format: format, Config: []byte(cfg),
+	})
 	return f
+}
+
+// ensureProject adds the row of the project with the key once, with the ID "project-<key>", and returns the
+// ID: every repository belongs to a project (Q-AUTHZ-206).
+func (f *fixture) ensureProject(key string) string {
+	id := "project-" + key
+	for _, p := range f.s.Projects {
+		if p.ID == id {
+			return id
+		}
+	}
+	f.s.Projects = append(f.s.Projects, q.AuthzBuildProjectsRow{ID: id, Key: key})
+	return id
 }
 
 // policyDef describes one policy.

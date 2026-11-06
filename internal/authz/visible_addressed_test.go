@@ -75,7 +75,7 @@ func TestQ_AUTHZ_168_AListingThroughAVirtualRepositoryAppliesItsExposure(t *test
 // not on their own.
 func TestQ_AUTHZ_168_AListingThroughAVirtualRepositoryLiftsATokenScopeThatNamesIt(t *testing.T) {
 	e := newTestEngine(t, addressedFixture(), func(o *Options) { o.Ceiling = exposureCeiling() })
-	sub := onEP(tokenScop(bearer(botSub), scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-v"}, Actions: []string{"read"}}}}), "default")
+	sub := onEP(tokenScop(bearer(botSub), scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-v"}, Actions: []string{"read"}}}}), "default")
 	through := scopeOn(t, e, sub, "npm-v", "npm-a")
 	if through.Shape(qr("npm-a")) != ReadRows || !through.MayRead(qr("npm-a"), "left-pad", "1.0.0") {
 		t.Fatalf("through npm-v: shape %s, read %v", through.Shape(qr("npm-a")), through.MayRead(qr("npm-a"), "left-pad", "1.0.0"))
@@ -108,8 +108,8 @@ func TestQ_AUTHZ_168_AReadScopeThroughAVirtualRepositoryAgreesWithTheDecisionPoi
 	e := newTestEngine(t, addressedFixture(), func(o *Options) { o.Ceiling = exposureCeiling() })
 	subjects := map[string]Subject{
 		"bot": botSub, "carol": carolSub, "admin": adminSub,
-		"scoped to the virtual repository": tokenScop(bearer(botSub), scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-v"}, Actions: []string{"read"}}}}),
-		"scoped to the member":             tokenScop(bearer(botSub), scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-a"}, Actions: []string{"read"}}}}),
+		"scoped to the virtual repository": tokenScop(bearer(botSub), scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-v"}, Actions: []string{"read"}}}}),
+		"scoped to the member":             tokenScop(bearer(botSub), scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-a"}, Actions: []string{"read"}}}}),
 	}
 	checked := 0
 	for name, base := range subjects {

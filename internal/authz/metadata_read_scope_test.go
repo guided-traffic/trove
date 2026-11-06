@@ -37,7 +37,7 @@ func TestQ_AUTHZ_172_AuditorReadScope(t *testing.T) {
 	t.Run("R-AUTHZ-013 a token scope narrows the listing row by row", func(t *testing.T) {
 		sub := tokenScop(userSub(idAuditorDirect, "auditor"), scope.Scope{
 			System:       []string{string(ContentMetadataRead)},
-			Repositories: []scope.Grant{{Repositories: []string{"npm-internal"}, Actions: []string{"read"}}},
+			Repositories: []scope.Grant{{Repositories: []string{"it/npm-internal"}, Actions: []string{"read"}}},
 		})
 		rs, got := shapes(t, sub)
 		if got["npm-internal"] != ReadRows || !rs.MayRead(qr("npm-internal"), "left-pad", "") || rs.MayRead(qr("nuget-local"), "acme.widgets", "") {

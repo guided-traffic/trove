@@ -457,7 +457,7 @@ func TestR_AUTHZ_029_DecisionAudit(t *testing.T) {
 		ev := evs[0]
 		var d map[string]any
 		_ = json.Unmarshal(ev.Details, &d)
-		if ev.Outcome != audit.Denied || ev.Repository != "npm-internal" || ev.Path != "x" || d["required_action"] != "deploy,overwrite" {
+		if ev.Outcome != audit.Denied || ev.Repository != "it/npm-internal" || ev.Path != "x" || d["required_action"] != "deploy,overwrite" {
 			t.Fatalf("%+v %v", ev, d)
 		}
 		if _, ok := d["count"]; ok {
@@ -625,5 +625,5 @@ func TestR_AUTHZ_023_CheckForTheCaller(t *testing.T) {
 }
 
 func tokenScopOf(s Subject) Subject {
-	return tokenScop(s, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-all"}, Actions: []string{"read"}}}})
+	return tokenScop(s, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-all"}, Actions: []string{"read"}}}})
 }
