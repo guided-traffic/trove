@@ -204,6 +204,23 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
+Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
+
+### Product
+
+- **F-58 · A browser page loaded during a rolling upgrade can fail on a UI asset of the other release** (confirmed by
+  `TestUpgrade_R_HA_064_AcrossTheCut` on the dev cluster, 2026-11-06: 2 of 25 journey iterations in step 1). Angular names every asset
+  after its content; `index.html` came from a pod of one release and `main-<hash>.js`, `polyfills-<hash>.js` and `chunk-<hash>.js` went
+  to pods of both and answered `404` on the other release's pods, so the login page stayed blank. R-HA-020 asks that anything a client
+  carries between requests is understood by both releases; the asset URLs are such a thing. For the cut from v0.16.0 the old pods cannot
+  be changed and the test counts the skew as a finding (Q-HA-99); every other upgrade test is strict, so the rolling upgrade's leg turns
+  red with the first release that changes the bundle. Fix (option (c) of Q-HA-99, to be designed): the image carries the previous
+  release's bundle and a replica that misses a hashed asset serves or fetches it, or the edge keeps a page on one release. Done when the
+  rolling upgrade passes across two releases with different bundles.
+- **F-59 · `GET /api/v1/system/migrations` of R-HA-020's upgrade verification is not built** (confirmed: it answers `404` on the dev
+  cluster; only the `StatusReport` type exists). The upgrade tests read `trove migrate status` in a worker pod instead (Q-HA-96). Done
+  when the endpoint answers as R-HA-020 and R-HA-021 step 4 describe and the tests read it.
+
 Found on 2026-11-06 while reviewing the nightly runs for phase 7:
 
 ### Tests and tools

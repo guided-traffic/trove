@@ -1661,10 +1661,12 @@ jobs:
       TROVE_E2E_NPM_CLIENTS_IMAGE_BUILD: "0"
       TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD: "0"
     steps:
+      # The rolling upgrade resolves the latest release from the tags, and the cut installs v0.16.0: the checkout needs every tag.
       - name: Checkout
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
       # nodes, the images and the build caches need; no job here uses them.

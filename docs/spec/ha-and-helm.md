@@ -7236,13 +7236,18 @@ is the working tree's, ran 71 journey iterations without a failure.
 | (c) Make the product serve the other release's assets | The image carries the previous bundle, or the edge pins a browser to one release (cookie affinity) | Removes the failure for a user | Needs a release pipeline step, or an edge feature that not every ingress controller has, and it cannot reach the pods of releases that are already published; an owner decision about the UI's serving (R-ARCH-004), outside this work package |
 | (d) Retry the page load in the journey | The journey reloads on a blank page | Green | Hides the finding and tests a journey no user has |
 
-**Choice:** (b), with (c) as the open design question for the owner.
+**Choice:** (b) for the cut from v0.16.0 alone, whose pods cannot be changed any more; (a) for every other upgrade test, the
+rolling upgrade of R-HA-020 among them, with (c) as the product's open work (finding F-58 in
+[promt.md](../projektplan/promt.md#8--open-findings)). `requireClean` takes the release whose skew it counts; the rolling upgrade
+passes none, so a skew there fails the test.
 
 **Rationale:** the test's job is to find what an upgrade breaks, and it found this; hiding it (d) or leaving a test red that nothing
 in this repository can turn green (a) would both cost more than counting it. What does not change is every other pass condition:
 sign-in across releases, the replica registry, the local and the remote repositories, publishes. A user who meets the skew presses
-reload, which fetches a consistent set from whichever pods answer. Revisited when the owner decides (c): the test then returns to (a)
-for the releases that carry it.
+reload, which fetches a consistent set from whichever pods answer. The tolerance is not extended to the rolling upgrade: between two
+releases that are both built from this repository the skew is a product defect that (c) can remove for every later upgrade, and the
+v0.19.0 run passed only because its bundle equals the working tree's, so the first release that changes the bundle makes that test
+red until (c) is built. Revisited when (c) is built: the cut test keeps (b) for v0.16.0 only.
 
 **Applied in the spec:** R-HA-020 (the sentence on the UI in the mixed-version list), R-HA-064 and the roadmap's E6a.7. Code:
 `upCmd.Skew` and `requireClean` in [upgrade_loops_test.go](../../test/e2e/upgrade_loops_test.go),

@@ -206,7 +206,7 @@ func TestUpgrade_R_HA_064_AcrossTheCut(t *testing.T) {
 	time.Sleep(upgradeHold)
 
 	res := loops.stop(t)
-	res.requireClean(t, upWindow{"step 1", from1, to1}, upWindow{"step 2", from2, to2})
+	res.requireClean(t, upgradeCutRelease, upWindow{"step 1", from1, to1}, upWindow{"step 2", from2, to2})
 	res.publishedAreReadable(t, fx)
 	rolloutComplete(t, deploymentNames(upDeployments(t)))
 }
@@ -288,7 +288,7 @@ func TestUpgrade_R_HA_020_RollingFromThePreviousRelease(t *testing.T) {
 	time.Sleep(upgradeHold)
 
 	res := loops.stop(t)
-	res.requireClean(t, upWindow{"the upgrade", from1, to1}, upWindow{"the rollback", fromR, toR})
+	res.requireClean(t, "", upWindow{"the upgrade", from1, to1}, upWindow{"the rollback", fromR, toR})
 	res.publishedAreReadable(t, fx)
 }
 

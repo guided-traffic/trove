@@ -372,8 +372,11 @@ func (l *upLoops) stop(t *testing.T) upResult {
 
 // requireClean is the pass condition of both tests: no iteration of any loop failed after the client's own retries, and
 // every loop ran an iteration during every window of the upgrade, so the upgrade met each of them. The publish loop runs one
-// short command every 10 s and is not required to overlap a window; its overlap is reported.
-func (r upResult) requireClean(t *testing.T, windows ...upWindow) {
+// short command every 10 s and is not required to overlap a window; its overlap is reported. skewFrom names a release whose
+// pods cannot serve the hashed UI assets of the release under test and cannot be changed any more (Q-HA-99): a journey
+// iteration that failed on that 404 only is a finding of that release, counted and shown; with skewFrom empty it fails the
+// test like any other failure (F-58).
+func (r upResult) requireClean(t *testing.T, skewFrom string, windows ...upWindow) {
 	t.Helper()
 	type tally struct{ n, failed int }
 	byKind := map[string]*tally{}
@@ -389,11 +392,12 @@ func (r upResult) requireClean(t *testing.T, windows ...upWindow) {
 		k.n++
 		loops[c.Loop] = c.Kind
 		slowest = max(slowest, c.End.Sub(c.Start))
-		if c.Code != 0 && c.Skew {
-			// Q-HA-99: the asset skew of the UI is a finding that is counted and shown, and no other failure is let through
+		if c.Code != 0 && c.Skew && skewFrom != "" {
+			// Q-HA-99: the asset skew of the UI against the pods of skewFrom is a finding that is counted and shown, and no other
+			// failure is let through
 			skewed++
-			t.Logf("FINDING (Q-HA-99): journey iteration %d met a 404 for a hashed asset of the other release and failed after %s, started %s:\n%s",
-				c.N, c.End.Sub(c.Start).Round(100*time.Millisecond), c.Start.Format("15:04:05.000"), grepLines(c.Log, "ASSET-SKEW"))
+			t.Logf("FINDING (Q-HA-99): journey iteration %d met a 404 for a hashed asset between the release under test and %s and failed after %s, started %s:\n%s",
+				c.N, skewFrom, c.End.Sub(c.Start).Round(100*time.Millisecond), c.Start.Format("15:04:05.000"), grepLines(c.Log, "ASSET-SKEW"))
 			continue
 		}
 		if c.Code != 0 {
