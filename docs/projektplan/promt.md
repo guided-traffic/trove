@@ -208,16 +208,6 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
 
 ### Product
 
-- **F-57 · The full npm import of the advisory sync met the 30 s statement timeout on the CI runner** (confirmed by the dispatched
-  nightly runs 42177273488 and 42192042297, job `vuln-perf`; reproduced and fixed on 2026-11-06, the nightly run is the last check). The
-  first statement after the last batch, `VulnAdvisoryOrphans`, ran out the timeout: the source syncs NuGet first, and the autovacuum
-  analyzes a new database about a minute in, so a table analyzed while it held NuGet only estimates `ecosystem = 'npm'` at one row; both
-  indexes that start with `ecosystem` then tie and the one without the identifier wins, a nested loop of 231,012 × 231,012 (358 s and
-  counting when cancelled). The statement of Q-VULN-94 had the same tie (259 s for one round). Fixed in Q-VULN-95 to Q-VULN-97: the
-  import's statements reach a row by its primary key, the `ecosystem` columns carry no planner statistics (migration 00042), a large
-  import runs `ANALYZE`, and a statement timeout names its sqlc query in the log; the pins in `test/integration/vulnsync/unanalyzed_test.go`
-  fail without the migration and the statements. A whole performance run on a fresh database met all eleven values (V-1 0.69 and
-  0.71 min). Done when V-1 passes in a nightly run; remove the entry then.
 - **F-63 · `TestMirror_R_REPO_055_ClientsFirst/npm` missed its install-time bound in the scheduled nightly run 42194413882** (read from
   the job log, 2026-11-06, release v0.19.4, GitHub-hosted runner). `npm ci` with a pass running took 161 % of the best install without it
   (22.6 s against 14.0 s, the bound 120 %, R-REPO-055, Q-REPO-197); the run overlapped for 23 minutes with the dispatched run 42192042297
@@ -228,6 +218,12 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
   other iterations met the skew and were counted as Q-HA-99 allows; every client loop passed. The leg passed in the dispatched run
   42177273488. Not known: which step of the journey failed (the Playwright trace is in the run's artifact `e2e-upgrade-playwright-upgrade`).
   Done when the cause is named and fixed.
+- **F-65 · `failover.sh` failed inside the node clearance of the mirror's failure suite in CI** (read from the job log of the dispatched
+  nightly run 42211913572, leg `e2e-mirror (mirror-long)`, 2026-11-06). `clearNode` (test/e2e/node_loss_test.go) deleted the operators'
+  pods so that they start elsewhere, then switched the PostgreSQL primary off the node with `failover.sh`, which exited 1; the scenario that
+  needs the node failed. The force-delete scenario passed in the same run (the pass continued on another process, 2 tarballs twice, 16
+  installs during the loss). Not known: whether the switchover was refused because the CloudNativePG operator had not come back yet. Done
+  when the clearance waits for what `failover.sh` needs and the set passes in a nightly run.
 - **F-58 · A browser page loaded during a rolling upgrade can fail on a UI asset of the other release** (confirmed by
   `TestUpgrade_R_HA_064_AcrossTheCut` on the dev cluster, 2026-11-06: 2 of 25 journey iterations in step 1). Angular names every asset
   after its content; `index.html` came from a pod of one release and `main-<hash>.js`, `polyfills-<hash>.js` and `chunk-<hash>.js` went
@@ -332,6 +328,11 @@ Found on 2026-11-03 while building phase 6:
   revises V-4 with the measured floor (Q-VULN-82 names the next step). V-1 met its statement timeout under load: the advisory
   group statement was planned as a sequential scan and read the aliases index's pending list in full; fixed with Q-VULN-90 and Q-VULN-91
   (V-1 1.45 min on the integration stack, the whole run passed, V-5b 1.036 transactions against 1).
+  The dispatched nightly run 42211913572 (release v0.19.5, perf after the kind legs, Q-ARCH-325) met ten of eleven: V-1 1.01 min (F-57
+  fixed: the import's statements by primary key, no planner statistics on `ecosystem`, Q-VULN-95 to Q-VULN-97), V-2 0.65 min, V-3 0.10 min,
+  V-4 3.18 ms (median 1.02 ms), V-5a 0.81 ms, V-6 125 ms, V-7a 21 ms, V-7b 112 ms, V-8 2.5 ms, V-9 0.19 GiB; V-5b missed with 1.065
+  transactions per cached download against 1 (0.83 to 0.94 in earlier nightly runs, 1.036 once on the integration stack). Left: V-5b's
+  cause, and a second nightly run in a row with every value met.
 
 Found on 2026-11-03 while closing phase 5:
 

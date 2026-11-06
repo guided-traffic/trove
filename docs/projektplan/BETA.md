@@ -939,7 +939,7 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   `open_duration`, an upload with `Expect: 100-continue` sent its body before the `503`, the audit forward's timeout (Q-STOR-147 to
   Q-STOR-149, Q-HA-103 to Q-HA-105, Q-NPM-77). Node loss met its bounds (replacements ready 65 s after the node was declared lost,
   the lease moved, never two holders); a command running on the lost node may fail with a network error (Q-HA-105). Open: a run of the
-  whole set after the fixes. In the dispatched nightly run 42177273488 the node loss, both primary losses, the audit drain and the 5-minute
+  whole set after the fixes. The set `ha-suite` passed whole in the dispatched nightly run 42211913572. In the dispatched nightly run 42177273488 the node loss, both primary losses, the audit drain and the 5-minute
   outage passed; the 30 s outage failed on two defects of the test (the outage was counted from before the stop script, which takes
   26 s, and two answers that started before the window were judged by their start), fixed (Q-STOR-150). Pod crash, switchover, Valkey
   failover and outage were green before. In the dispatched nightly run 42192042297 both object-store outages, both primary losses and
@@ -1008,7 +1008,12 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   (rollout status, only the new version listed, no pending migration through `trove migrate status`, since the endpoint is F-59). The
   test is strict on the UI's assets: the first release that changes the bundle makes it red until F-58 is fixed. Passed in the dispatched
   nightly run 42177273488 as well
-- 🟡 Performance targets met in two nightly runs in a row
+- 🟡 Performance targets met in two nightly runs in a row. Worked on 2026-11-06 (F-43): the findings page of a pattern grant decides each
+  package once (V-7b), a publish's evaluation makes two round trips instead of eight (V-4), the advisory import's statements reach rows by
+  their primary key and the `ecosystem` columns carry no planner statistics (V-1, F-57), and the perf jobs run after the kind legs
+  (Q-ARCH-325). The dispatched nightly run 42211913572 met ten of the eleven values of R-VULN-028 (V-1 1.01 min, V-4 3.18 ms, V-7b 112 ms);
+  V-5b missed with 1.065 transactions per cached download against 1. P-13 and P-14 were green in every nightly run of the day. Open: V-5b,
+  and two nightly runs in a row
 
 **Backup and restore**
 - ⚪ Backup job (CronJob): consistent database snapshot, blobs copied incrementally to the backup S3 target
