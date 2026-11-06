@@ -66,7 +66,7 @@ type Entry struct {
 	// Header holds the response headers to replay: Content-Type, ETag, Cache-Control, Content-Disposition,
 	// Vary and the like, never a Trove-Bastion-* header, Set-Cookie or a hop-by-hop header.
 	Header http.Header `json:"header"`
-	// Repository is the addressed repository key (Trove-Bastion-Repository).
+	// Repository is the addressed repository's qualified name "<projectKey>/<repoKey>" (Trove-Bastion-Repository).
 	Repository string `json:"repository"`
 	// Status is the status the main installation answered (200).
 	Status int `json:"status"`

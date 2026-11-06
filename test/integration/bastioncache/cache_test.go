@@ -32,7 +32,7 @@ func TestR_BAS_030_TwoReplicasSharingABucketSeeEachOthersBytes(t *testing.T) {
 	}
 
 	data := payload(1, 300*1024)
-	key := "/api/npm/npm-all/lodash/-/lodash-4.17.21.tgz"
+	key := "/api/npm/it/npm-all/lodash/-/lodash-4.17.21.tgz"
 	want := a.put(t, cache.EntryArtifact, key, data)
 
 	// B finds the entry and the bytes A filled, without having seen the request.
@@ -41,13 +41,13 @@ func TestR_BAS_030_TwoReplicasSharingABucketSeeEachOthersBytes(t *testing.T) {
 		t.Fatalf("replica B did not read A's bytes: %d bytes, %v", len(got), err)
 	}
 	entry, info, err := b.LookupEntry(ctx, key)
-	if err != nil || entry.SHA256 != want.SHA256 || entry.Repository != "npm-all" || info.Size != int64(len(data)) {
+	if err != nil || entry.SHA256 != want.SHA256 || entry.Repository != "it/npm-all" || info.Size != int64(len(data)) {
 		t.Fatalf("entry as B sees it: %+v %+v %v", entry, info, err)
 	}
 	// A shared document has its own area and is shared too.
 	doc := payload(2, 4096)
-	a.put(t, cache.EntryDocument, "/api/npm/npm-all/lodash", doc)
-	if got, err := b.read("/api/npm/npm-all/lodash"); err != nil || !bytes.Equal(got, doc) {
+	a.put(t, cache.EntryDocument, "/api/npm/it/npm-all/lodash", doc)
+	if got, err := b.read("/api/npm/it/npm-all/lodash"); err != nil || !bytes.Equal(got, doc) {
 		t.Fatalf("document: %v", err)
 	}
 	// The bytes are kept once per content address, however many keys point at them.

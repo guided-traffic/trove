@@ -55,7 +55,7 @@ var (
 	oneEvent = func(at time.Time) iface.DownloadEvent {
 		return iface.DownloadEvent{
 			At: at, TokenID: "0192f1c4-0000-7000-8000-0000000000e1", PrincipalID: "0192f1c4-0000-7000-8000-0000000000e2", ClientAddress: "203.0.113.7",
-			Repository: "npm-all", Path: "/api/npm/npm-all/@acme/sdk/-/sdk-2.1.0.tgz", SHA256: digest, UserAgent: "npm/11.20.0 node/v24.0.0", Replica: "bastion-1",
+			Repository: "web/npm-all", Path: "/api/npm/web/npm-all/@acme/sdk/-/sdk-2.1.0.tgz", SHA256: digest, UserAgent: "npm/11.20.0 node/v24.0.0", Replica: "bastion-1",
 		}
 	}
 )
@@ -83,7 +83,7 @@ func TestR_BAS_016_AnEventBecomesAnArtifactDownloadedOfTheBastionOrigin(t *testi
 	if ev.Source.ClientAddr != "203.0.113.7" || ev.Source.UserAgent != "npm/11.20.0 node/v24.0.0" {
 		t.Errorf("source = %+v", ev.Source)
 	}
-	if ev.Repository != "npm-all" || ev.Path != "/api/npm/npm-all/@acme/sdk/-/sdk-2.1.0.tgz" || !ev.At.Equal(at) {
+	if ev.Repository != "web/npm-all" || ev.Path != "/api/npm/web/npm-all/@acme/sdk/-/sdk-2.1.0.tgz" || !ev.At.Equal(at) {
 		t.Errorf("repository %q path %q at %v", ev.Repository, ev.Path, ev.At)
 	}
 	d := details(t, ev)

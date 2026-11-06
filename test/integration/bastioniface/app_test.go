@@ -37,14 +37,14 @@ func TestR_BAS_008_TheRecognizeStageIsInTheChainOfTheComposedReplica(t *testing.
 		t.Errorf("the handshake with a Bastion token no registration owns: %d %s", a.Status, a.Body)
 	}
 
-	a = s.Do(r, http.MethodGet, "/api/npm/npm-all/lodash", "", nil, iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, v)
+	a = s.Do(r, http.MethodGet, "/api/npm/it/npm-all/lodash", "", nil, iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, v)
 	if a.Status != http.StatusUnauthorized || a.Code(t) != errs.CodeBastionTokenInvalid || a.Header.Get("Content-Type") != errs.ProblemContentType {
 		t.Errorf("a forwarded request with such a token: %d %s %s", a.Status, a.Header.Get("Content-Type"), a.Body)
 	}
 
 	// A token of another type in Trove-Bastion-Authorization leaves the request ordinary: whatever the main
 	// installation says to the request, it carries no mark of a Bastion.
-	a = s.Do(r, http.MethodGet, "/api/npm/npm-all/lodash", "", nil, iface.HeaderAuthorization, "Bearer "+pat, iface.HeaderInterface, v)
+	a = s.Do(r, http.MethodGet, "/api/npm/it/npm-all/lodash", "", nil, iface.HeaderAuthorization, "Bearer "+pat, iface.HeaderInterface, v)
 	for k := range a.Header {
 		if strings.HasPrefix(k, iface.HeaderPrefix) {
 			t.Errorf("an ordinary request is answered with %s", k)

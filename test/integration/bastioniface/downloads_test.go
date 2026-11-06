@@ -15,8 +15,8 @@ import (
 func downloadEvent(i int, at time.Time) iface.DownloadEvent {
 	return iface.DownloadEvent{
 		At: at, TokenID: "0192f1c4-0000-7000-8000-0000000000e1", PrincipalID: "0192f1c4-0000-7000-8000-0000000000e2",
-		ClientAddress: "203.0.113." + strconv.Itoa(10+i%5), Repository: "npm-all",
-		Path:   "/api/npm/npm-all/pkg-" + strconv.Itoa(i) + "/-/pkg-" + strconv.Itoa(i) + "-1.0.0.tgz",
+		ClientAddress: "203.0.113." + strconv.Itoa(10+i%5), Repository: "it/npm-all",
+		Path:   "/api/npm/it/npm-all/pkg-" + strconv.Itoa(i) + "/-/pkg-" + strconv.Itoa(i) + "-1.0.0.tgz",
 		SHA256: strings.Repeat("9f", 31) + strconv.Itoa(10+i), UserAgent: "npm/11.20.0 node/v24.0.0", Replica: "trove-bastion-7d9c-x2k4q",
 	}
 }
@@ -47,8 +47,8 @@ func TestR_BAS_016_AWarmInstallIsTwentyArtifactDownloadedEventsOfTheBastionOrigi
 	})
 	if n := e.number(`SELECT count(*) FROM audit_event WHERE action = 'artifact.downloaded' AND details->>'bastion' = 'partners'
 		AND details->>'replica' = 'trove-bastion-7d9c-x2k4q' AND token_id = '0192f1c4-0000-7000-8000-0000000000e1'::uuid
-		AND actor_id = '0192f1c4-0000-7000-8000-0000000000e2'::uuid AND repository = 'npm-all' AND user_agent = 'npm/11.20.0 node/v24.0.0'
-		AND host(source_ip) LIKE '203.0.113.%' AND path LIKE '/api/npm/npm-all/pkg-%' AND details->>'sha256' ~ '^[0-9a-f]{64}$'
+		AND actor_id = '0192f1c4-0000-7000-8000-0000000000e2'::uuid AND repository = 'it/npm-all' AND user_agent = 'npm/11.20.0 node/v24.0.0'
+		AND host(source_ip) LIKE '203.0.113.%' AND path LIKE '/api/npm/it/npm-all/pkg-%' AND details->>'sha256' ~ '^[0-9a-f]{64}$'
 		AND details->>'path' = path`); n != 20 {
 		t.Errorf("%d of 20 events have the fields of R-BAS-016", n)
 	}

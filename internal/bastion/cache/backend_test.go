@@ -66,7 +66,7 @@ func TestR_BAS_030_VolumeKeepsBytesOnceByContentAddressInTheLayout(t *testing.T)
 func TestR_BAS_030_EntriesMarkersAndTheSpoolHaveTheirPlaces(t *testing.T) {
 	r := newRig(t)
 	ctx := context.Background()
-	kh := KeyHash("/api/npm/npm-all/x")
+	kh := KeyHash("/api/npm/web/npm-all/x")
 	if err := r.Backend().PutEntry(ctx, kh, []byte("record")); err != nil {
 		t.Fatal(err)
 	}

@@ -65,7 +65,7 @@ type Answer struct {
 	// TokenExpiresAt is the token's expiry; nil when the token does not expire or the answer is not about a
 	// valid token.
 	TokenExpiresAt *time.Time
-	// Repository is the repository key of a Shape or URL answer.
+	// Repository is the qualified repository name "<projectKey>/<repoKey>" of a Shape or URL answer.
 	Repository string
 }
 

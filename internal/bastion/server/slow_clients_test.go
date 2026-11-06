@@ -60,7 +60,7 @@ func bigArtifactMain(t *testing.T) (*maintest.Main, []byte, string) {
 	sum := sha256.Sum256(big)
 	sha := hex.EncodeToString(sum[:])
 	main.SetForward(func(w http.ResponseWriter, r *http.Request) {
-		main.Mark(w, iface.Marking{Class: iface.ClassArtifact, Repository: "npm-all", Read: iface.ReadFull, Subject: iface.Subject{Kind: iface.SubjectAnonymous}})
+		main.Mark(w, iface.Marking{Class: iface.ClassArtifact, Repository: "web/npm-all", Read: iface.ReadFull, Subject: iface.Subject{Kind: iface.SubjectAnonymous}})
 		w.Header().Set("Etag", `"`+sha+`"`)
 		w.Header().Set("Content-Length", strconv.Itoa(len(big)))
 		w.Header().Set("Content-Type", "application/octet-stream")
@@ -116,14 +116,14 @@ func TestR_BAS_025_ClientsThatReadSlowlyDoNotHoldTheBudgetSlots(t *testing.T) {
 	addr := srv.ClientAddr().String()
 
 	for i := 0; i < 3; i++ {
-		trickleGet(t, addr, "/api/npm/npm-all/pkg/-/pkg-1.0.0.tgz?v="+strconv.Itoa(i))
+		trickleGet(t, addr, "/api/npm/web/npm-all/pkg/-/pkg-1.0.0.tgz?v="+strconv.Itoa(i))
 		time.Sleep(100 * time.Millisecond)
 	}
 	// The spools are complete although nobody reads them.
 	eventually(t, 20*time.Second, "the three fills to end", func() bool {
 		return strings.Contains(grepLines(metricsBody(t, srv), "trove_bastion_main_in_flight"), `anonymous"} 0`)
 	})
-	code, got, took := fetchAll(addr, "/api/npm/npm-all/other/-/other-2.0.0.tgz", 20*time.Second)
+	code, got, took := fetchAll(addr, "/api/npm/web/npm-all/other/-/other-2.0.0.tgz", 20*time.Second)
 	if code != http.StatusOK || got != sha {
 		t.Fatalf("an unrelated anonymous request behind three slow readers: %d %.80s after %v (want 200, %d bytes)", code, got, took, len(big))
 	}
@@ -140,7 +140,7 @@ func TestR_BAS_025_AWaiterOfACollapsedFetchIsNotHeldByTheLeadersClient(t *testin
 	eventually(t, 10*time.Second, "reachable", func() bool { st := srv.link.State(); return st.Reachable && st.Handshaken })
 	addr := srv.ClientAddr().String()
 
-	const path = "/api/npm/npm-all/pkg/-/pkg-1.0.0.tgz"
+	const path = "/api/npm/web/npm-all/pkg/-/pkg-1.0.0.tgz"
 	trickleGet(t, addr, path)
 	time.Sleep(300 * time.Millisecond)
 	code, got, took := fetchAll(addr, path, 20*time.Second)

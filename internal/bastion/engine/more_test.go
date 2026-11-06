@@ -154,7 +154,7 @@ func TestR_BAS_019_TheForwardedFamilyDecidesWhichHeaderCarriesTheHost(t *testing
 		c.Server.ForwardedHeader = "forwarded"
 	}}})
 	do := func(hdr, val string) int {
-		r := httptest.NewRequest(http.MethodGet, "/api/npm/npm-all/lodash", nil)
+		r := httptest.NewRequest(http.MethodGet, "/api/npm/web/npm-all/lodash", nil)
 		r.Host = "ingress.internal"
 		r.RemoteAddr = "10.244.0.1:1"
 		r.Header.Set(hdr, val)
@@ -223,13 +223,13 @@ func TestR_BAS_030_AFillLeavesNoSpoolFileBehind(t *testing.T) {
 	if w := s.get(tgz, "Authorization", bearer(s.full)); w.Code != 200 {
 		t.Fatal(w.Code)
 	}
-	other := "/api/npm/npm-all/other-1.0.0.tgz"
+	other := "/api/npm/web/npm-all/other-1.0.0.tgz"
 	s.site.artifacts[other] = payload(100 << 10)
 	if w := s.get(other, "Authorization", bearer(s.full), "Range", "bytes=10-99"); w.Code != http.StatusPartialContent {
 		t.Fatal(w.Code)
 	}
 	s.cache.fault.SetFailPut(true)
-	third := "/api/npm/npm-all/third-1.0.0.tgz"
+	third := "/api/npm/web/npm-all/third-1.0.0.tgz"
 	s.site.artifacts[third] = payload(100 << 10)
 	if w := s.get(third, "Authorization", bearer(s.full), "Range", "bytes=10-99"); w.Code != http.StatusPartialContent {
 		t.Fatalf("a Range request while the backend refuses writes: %d", w.Code)

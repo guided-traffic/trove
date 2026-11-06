@@ -21,9 +21,9 @@ import (
 )
 
 const (
-	tgz   = "/api/npm/npm-all/@acme/sdk/-/sdk-1.0.0.tgz"
-	other = "/api/npm/npm-all/lodash/-/lodash-4.0.0.tgz"
-	doc   = "/api/npm/npm-all/lodash"
+	tgz   = "/api/npm/web/npm-all/@acme/sdk/-/sdk-1.0.0.tgz"
+	other = "/api/npm/web/npm-all/lodash/-/lodash-4.0.0.tgz"
+	doc   = "/api/npm/web/npm-all/lodash"
 )
 
 func payload(n int) []byte {
@@ -103,7 +103,7 @@ func TestR_BAS_021_AnArtifactIsSpooledKeptAndServedWithoutARequestTheSecondTime(
 		t.Fatal("the object is not stored under its content address")
 	}
 	ent, ok := s.e.loadEntry(context.Background(), tgz)
-	if !ok || ent.Kind != cache.EntryArtifact || ent.SHA256 != sha(body) || ent.Size != int64(len(body)) || ent.Repository != "npm-all" || ent.Header.Get("Etag") != `"`+sha(body)+`"` {
+	if !ok || ent.Kind != cache.EntryArtifact || ent.SHA256 != sha(body) || ent.Size != int64(len(body)) || ent.Repository != "web/npm-all" || ent.Header.Get("Etag") != `"`+sha(body)+`"` {
 		t.Fatalf("%+v", ent)
 	}
 	for k := range ent.Header {
@@ -237,9 +237,9 @@ func TestR_BAS_021_AnArtifactAboveTheLimitOrWithoutALengthIsPassedThrough(t *tes
 		}
 		return r, err
 	}
-	s.site.artifacts["/api/npm/npm-all/nolen.tgz"] = small
+	s.site.artifacts["/api/npm/web/npm-all/nolen.tgz"] = small
 	for i := 0; i < 2; i++ {
-		if w := s.get("/api/npm/npm-all/nolen.tgz", "Authorization", bearer(s.full)); w.Code != http.StatusOK || !bytes.Equal(w.Body.Bytes(), small) {
+		if w := s.get("/api/npm/web/npm-all/nolen.tgz", "Authorization", bearer(s.full)); w.Code != http.StatusOK || !bytes.Equal(w.Body.Bytes(), small) {
 			t.Fatalf("%d", w.Code)
 		}
 	}
@@ -261,7 +261,7 @@ func TestR_BAS_021_AHeadMissIsForwardedAsHeadAndKeepsAnswersOnly(t *testing.T) {
 	if s.cache.objectCount() != 0 || s.cache.entryCount() != 0 {
 		t.Fatal("a HEAD kept content")
 	}
-	if s.e.answers.shape(context.Background(), credentialKey(s.full), "npm-all") == nil || s.e.answers.credential(context.Background(), credentialKey(s.full)) == nil {
+	if s.e.answers.shape(context.Background(), credentialKey(s.full), "web/npm-all") == nil || s.e.answers.credential(context.Background(), credentialKey(s.full)) == nil {
 		t.Fatal("a HEAD kept no answers")
 	}
 	// the answers allow the GET that follows to be a miss for the bytes only: one request
@@ -350,7 +350,7 @@ func fillTarballs(t *testing.T, s *siteHarness, n int, token string) []string {
 	t.Helper()
 	var paths []string
 	for i := 0; i < n; i++ {
-		p := fmt.Sprintf("/api/npm/npm-all/@acme/sdk%d/-/sdk%d-1.0.0.tgz", i, i)
+		p := fmt.Sprintf("/api/npm/web/npm-all/@acme/sdk%d/-/sdk%d-1.0.0.tgz", i, i)
 		s.site.artifacts[p] = payload(500 + i)
 		paths = append(paths, p)
 		if w := s.get(p, "Authorization", bearer(token)); w.Code != http.StatusOK {
@@ -380,7 +380,7 @@ func TestR_BAS_022_AWarmCacheServesAFullReaderWithoutARequestAndReportsTheDownlo
 		t.Fatalf("%d download events", len(ev))
 	}
 	e := ev[0]
-	if e.TokenID != "full" || e.PrincipalID != "p-full" || e.ClientAddress != "203.0.113.7" || e.Repository != "npm-all" || e.Path != paths[0] ||
+	if e.TokenID != "full" || e.PrincipalID != "p-full" || e.ClientAddress != "203.0.113.7" || e.Repository != "web/npm-all" || e.Path != paths[0] ||
 		e.SHA256 != sha(s.site.artifacts[paths[0]]) || e.UserAgent != "npm/10" || e.Replica != "bastion-0" || !e.At.Equal(epoch) {
 		t.Fatalf("%+v", e)
 	}
@@ -417,7 +417,7 @@ func TestR_BAS_022_ACallerWithoutAnAnswerCostsOneCollapsedCheckAndNoBytes(t *tes
 	if len(reqs) != 1 || reqs[0].Kind != mainclient.KindCheck {
 		t.Fatalf("%+v", reqs)
 	}
-	if reqs[0].Check.Credential == nil || *reqs[0].Check.Credential != other || len(reqs[0].Check.Repositories) != 1 || reqs[0].Check.Repositories[0] != "npm-all" || reqs[0].Check.ClientAddress != "203.0.113.7" {
+	if reqs[0].Check.Credential == nil || *reqs[0].Check.Credential != other || len(reqs[0].Check.Repositories) != 1 || reqs[0].Check.Repositories[0] != "web/npm-all" || reqs[0].Check.ClientAddress != "203.0.113.7" {
 		t.Fatalf("%+v", reqs[0].Check)
 	}
 	if counterValue(t, s.harness, "requests", metrics.ClassArtifact, metrics.ResultHit) != 10 {
@@ -436,7 +436,7 @@ func TestR_BAS_022_ACallerReachingTheCheckAfterAnEarlierCheckEndedSendsNoSecond(
 		t.Fatal(w.Code)
 	}
 	before := s.main.count()
-	q := &rq{e: s.e, r: httptest.NewRequest(http.MethodGet, tgz, nil), cred: credential{token: tok, key: credentialKey(tok)}, repo: "npm-all", addr: "203.0.113.7", clientText: "203.0.113.7"}
+	q := &rq{e: s.e, r: httptest.NewRequest(http.MethodGet, tgz, nil), cred: credential{token: tok, key: credentialKey(tok)}, repo: "web/npm-all", addr: "203.0.113.7", clientText: "203.0.113.7"}
 	shape, done := s.e.checkShape(q)
 	if done || shape == nil || shape.Read != iface.ReadFull {
 		t.Fatalf("the stored answers did not answer the late caller: done=%v shape=%+v", done, shape)
@@ -678,7 +678,7 @@ func TestR_BAS_022_AContentEntryOfTheFeedMakesTheEntryStale(t *testing.T) {
 		t.Fatal("not a hit")
 	}
 	s.clock.advance(time.Second)
-	s.feed.Record(iface.FeedEntry{ID: "e1", Kind: iface.FeedContent, Repositories: []string{"npm-all"}}, s.clock.now())
+	s.feed.Record(iface.FeedEntry{ID: "e1", Kind: iface.FeedContent, Repositories: []string{"web/npm-all"}}, s.clock.now())
 	s.clock.advance(time.Second)
 	s.get(tgz, "Authorization", bearer(s.full))
 	reqs := s.main.requests()[before:]

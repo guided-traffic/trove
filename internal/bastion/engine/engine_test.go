@@ -46,7 +46,7 @@ func TestR_BAS_037_ARefusalTheGuardCallsQuietIsMarkedForTheRequestLog(t *testing
 	h.guard.blocked = guard.Verdict{Status: 429, Code: iface.CodeAddressBlocked, RetryAfter: 60e9, Reason: metrics.RefusedBlocked, Quiet: true}
 	for _, quiet := range []bool{true, false} {
 		h.guard.blocked.Quiet = quiet
-		r := httptest.NewRequest(http.MethodGet, "https://packages.example.com/api/npm/npm-all/lodash", nil)
+		r := httptest.NewRequest(http.MethodGet, "https://packages.example.com/api/npm/web/npm-all/lodash", nil)
 		r = r.WithContext(WithQuietSlot(r.Context()))
 		w := httptest.NewRecorder()
 		h.e.ServeHTTP(w, r)
@@ -60,7 +60,7 @@ func TestR_BAS_037_ARefusalTheGuardCallsQuietIsMarkedForTheRequestLog(t *testing
 	// Without a slot (no request log in front) marking is harmless.
 	h.guard.blocked.Quiet = true
 	w := httptest.NewRecorder()
-	h.e.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "https://packages.example.com/api/npm/npm-all/lodash", nil))
+	h.e.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "https://packages.example.com/api/npm/web/npm-all/lodash", nil))
 	if w.Code != http.StatusTooManyRequests {
 		t.Fatalf("%d", w.Code)
 	}

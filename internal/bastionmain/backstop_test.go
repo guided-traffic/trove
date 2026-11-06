@@ -40,7 +40,7 @@ func TestR_BAS_014_AForwardReachesOnlyThePackageFamilies(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"/api/npm/npm-all/lodash", "/api/%6Epm/npm-all/lodash", "/api/nuget/nuget-v3/v3/index.json", "/files/files-local/a.zip", "/files/files-local/"} {
+	for _, path := range []string{"/api/npm/web/npm-all/lodash", "/api/%6Epm/npm-all/lodash", "/api/nuget/web/nuget-v3/v3/index.json", "/files/web/files-local/a.zip", "/files/web/files-local/"} {
 		r := forwarded(path, iface.HeaderAuthorization, "Bearer "+tokValid, iface.HeaderInterface, version())
 		w, seen := run(t, RecognizeOptions{Tokens: &fakeTokens{}}, r)
 		if seen == nil {
@@ -108,12 +108,12 @@ func TestR_BAS_017_TheForwardedHeadersAreReDerivedOnlyAfterTheTokenCheck(t *test
 		}
 		return context.WithValue(r.Context(), key{}, "re-derived")
 	}}
-	_, seen := run(t, o, forwarded("/api/npm/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokValid, iface.HeaderInterface, version()))
+	_, seen := run(t, o, forwarded("/api/npm/web/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokValid, iface.HeaderInterface, version()))
 	if seen == nil || seen.Context().Value(key{}) != "re-derived" || calls != 1 {
 		t.Fatalf("calls %d", calls)
 	}
-	run(t, o, forwarded("/api/npm/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokRevoked, iface.HeaderInterface, version()))
-	run(t, o, forwarded("/api/npm/npm-all/x", iface.HeaderAuthorization, "Bearer "+pat, "X-Forwarded-For", "192.0.2.1"))
+	run(t, o, forwarded("/api/npm/web/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokRevoked, iface.HeaderInterface, version()))
+	run(t, o, forwarded("/api/npm/web/npm-all/x", iface.HeaderAuthorization, "Bearer "+pat, "X-Forwarded-For", "192.0.2.1"))
 	run(t, o, forwarded("/api/v1/tokens", iface.HeaderAuthorization, "Bearer "+tokValid, iface.HeaderInterface, version()))
 	if calls != 1 {
 		t.Fatalf("re-derived %d times; only the recognized forward of a package family is", calls)

@@ -68,7 +68,7 @@ func paceRequestBuffered(t *testing.T, s *siteHarness, addr string, rcvbuf int) 
 		_ = tc.SetReadBuffer(rcvbuf)
 	}
 	t.Cleanup(func() { _ = c.Close() })
-	fmt.Fprintf(c, "GET /api/npm/npm-all/some/big HTTP/1.1\r\nHost: packages.example.com\r\nConnection: close\r\nAuthorization: Bearer %s\r\n\r\n", s.full)
+	fmt.Fprintf(c, "GET /api/npm/web/npm-all/some/big HTTP/1.1\r\nHost: packages.example.com\r\nConnection: close\r\nAuthorization: Bearer %s\r\n\r\n", s.full)
 	return c
 }
 

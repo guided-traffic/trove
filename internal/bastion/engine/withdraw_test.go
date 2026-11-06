@@ -33,13 +33,13 @@ func TestR_BAS_022_R_BAS_027_AWithdrawnArtifactIsNotServedWhileTheMainInstallati
 				t.Fatalf("a hit: %d", w.Code)
 			}
 			if when == "before the outage" {
-				s.content("c1", "npm-all")
+				s.content("c1", "web/npm-all")
 				s.clock.advance(time.Second)
 				s.tick()
 				s.setUnreachable(true)
 			} else {
 				s.setUnreachable(true)
-				s.content("c1", "npm-all")
+				s.content("c1", "web/npm-all")
 				s.clock.advance(time.Second)
 				s.tick()
 			}

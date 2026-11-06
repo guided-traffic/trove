@@ -30,16 +30,16 @@ func TestR_BAS_008_TheRecognitionAppliesTheFailedCredentialThrottle(t *testing.T
 		Tokens: tokens, Throttle: func(*http.Request) Throttle { return th },
 		Source: func(*http.Request) (string, string) { return "198.51.100.20", "trove-bastion/0.15.0" },
 	}
-	if w, _ := run(t, o, forwarded("/api/npm/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokRevoked, iface.HeaderInterface, version())); w.Code != http.StatusUnauthorized || th.counted != 1 {
+	if w, _ := run(t, o, forwarded("/api/npm/web/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokRevoked, iface.HeaderInterface, version())); w.Code != http.StatusUnauthorized || th.counted != 1 {
 		t.Errorf("a revoked token: %d, counted %d", w.Code, th.counted)
 	}
 	th.exceeded = true
 	th.asked = 0
-	w, seen := run(t, o, forwarded("/api/npm/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokValid, iface.HeaderInterface, version()))
+	w, seen := run(t, o, forwarded("/api/npm/web/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokValid, iface.HeaderInterface, version()))
 	if w.Code != http.StatusOK || seen == nil || th.counted != 1 || th.asked != 0 {
 		t.Errorf("a valid token the replica holds, from a throttled address: %d, counted %d, throttle asked %d", w.Code, th.counted, th.asked)
 	}
-	w, seen = run(t, o, forwarded("/api/npm/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokRevoked, iface.HeaderInterface, version()))
+	w, seen = run(t, o, forwarded("/api/npm/web/npm-all/x", iface.HeaderAuthorization, "Bearer "+tokRevoked, iface.HeaderInterface, version()))
 	if w.Code != http.StatusTooManyRequests || seen != nil || th.counted != 1 || w.Header().Get("Retry-After") == "" {
 		t.Errorf("a token the replica does not hold, from a throttled address: %d, counted %d, Retry-After %q", w.Code, th.counted, w.Header().Get("Retry-After"))
 	}
@@ -52,7 +52,7 @@ func TestR_BAS_008_TheRecognitionAppliesTheFailedCredentialThrottle(t *testing.T
 		}
 	}
 	// A request without a Bastion token is not the stage's business: it neither counts nor is refused.
-	if w, _ := run(t, o, forwarded("/api/npm/npm-all/x", iface.HeaderAuthorization, "Bearer "+pat)); w.Code != http.StatusOK {
+	if w, _ := run(t, o, forwarded("/api/npm/web/npm-all/x", iface.HeaderAuthorization, "Bearer "+pat)); w.Code != http.StatusOK {
 		t.Errorf("an ordinary request from a throttled address: %d", w.Code)
 	}
 }

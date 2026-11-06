@@ -33,12 +33,12 @@ const (
 
 // The repositories of the main installation.
 const (
-	npmLocal  = "npm-local"
-	npmRemote = "npm-remote"
-	npmAll    = "npm-all"
-	ngLocal   = "nuget-local"
-	ngRemote  = "nuget-remote"
-	ngAll     = "nuget-all"
+	npmLocal  = testenv.DefaultProject + "/npm-local"
+	npmRemote = testenv.DefaultProject + "/npm-remote"
+	npmAll    = testenv.DefaultProject + "/npm-all"
+	ngLocal   = testenv.DefaultProject + "/nuget-local"
+	ngRemote  = testenv.DefaultProject + "/nuget-remote"
+	ngAll     = testenv.DefaultProject + "/nuget-all"
 )
 
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }
@@ -201,10 +201,14 @@ func (w *world) seedRepositories(npmURL, nugetIndex string) {
 		st.Repository(key, "virtual", format, `{}`)
 		for i, m := range []string{local, remoteKey} {
 			st.Exec(`INSERT INTO virtual_members (virtual_id, position, member_id)
-				SELECT v.id, $2, m.id FROM repositories v, repositories m WHERE v.key = $1 AND m.key = $3`, key, i, m)
+				SELECT v.id, $2, m.id FROM repositories v JOIN project vp ON vp.id = v.project_id,
+				       repositories m JOIN project mp ON mp.id = m.project_id
+				 WHERE vp.key || '/' || v.key = $1 AND mp.key || '/' || m.key = $3`, key, i, m)
 		}
 		st.Exec(`INSERT INTO virtual_deploy_targets (virtual_id, target_id)
-			SELECT v.id, t.id FROM repositories v, repositories t WHERE v.key = $1 AND t.key = $2`, key, local)
+			SELECT v.id, t.id FROM repositories v JOIN project vp ON vp.id = v.project_id,
+			       repositories t JOIN project tp ON tp.id = t.project_id
+			 WHERE vp.key || '/' || v.key = $1 AND tp.key || '/' || t.key = $2`, key, local)
 	}
 	virtual(npmAll, "npm", npmLocal, npmRemote)
 	virtual(ngAll, "nuget", ngLocal, ngRemote)

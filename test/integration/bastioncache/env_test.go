@@ -291,7 +291,7 @@ func (r *replica) put(t *testing.T, kind cache.EntryKind, cacheKey string, data 
 		t.Fatal(err)
 	}
 	e := cache.Entry{
-		Kind: kind, SHA256: digest(data), Size: int64(len(data)), Repository: "npm-all", Status: 200,
+		Kind: kind, SHA256: digest(data), Size: int64(len(data)), Repository: "it/npm-all", Status: 200,
 		Header: http.Header{"Content-Type": {"application/octet-stream"}}, ValidatedAt: time.Now().UTC().Truncate(time.Second),
 	}
 	if err := r.StoreEntry(ctx, cacheKey, e); err != nil {

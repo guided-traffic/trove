@@ -26,7 +26,7 @@ const (
 const (
 	// HeaderClass is the [Class] of the response.
 	HeaderClass = "Trove-Bastion-Class"
-	// HeaderRepository is the addressed repository key.
+	// HeaderRepository is the addressed repository's qualified name "<projectKey>/<repoKey>".
 	HeaderRepository = "Trove-Bastion-Repository"
 	// HeaderRead is the caller's [Read] shape on the addressed repository.
 	HeaderRead = "Trove-Bastion-Read"
