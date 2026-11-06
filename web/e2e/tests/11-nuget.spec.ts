@@ -151,7 +151,7 @@ test('R-UI-021 R-ARCH-004 the NuGet settings in the wizard and on the edit form,
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.getByText('deleteMode: delete')).toBeVisible();
     await page.getByRole('button', { name: 'Create repository' }).click();
-    await expect(page).toHaveURL(new RegExp(`/admin/repositories/${e2eProject}/${wizardKey}$`));
+    await expect(page).toHaveURL(new RegExp(`/projects/${e2eProject}/repositories/${wizardKey}$`));
     expect(await nugetMember()).toEqual({ deleteMode: 'delete' });
   });
 

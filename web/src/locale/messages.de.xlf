@@ -25954,5 +25954,14 @@
         <target>Projekte ansehen</target>
       </segment>
     </unit>
+    <unit id="shell.menu.guides">
+      <notes>
+        <note category="location">src/app/app.html:114,116</note>
+      </notes>
+      <segment>
+        <source>Guides</source>
+        <target>Anleitungen</target>
+      </segment>
+    </unit>
 </file>
 </xliff>

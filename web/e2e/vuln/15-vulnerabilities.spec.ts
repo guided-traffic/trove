@@ -53,7 +53,7 @@ test('R-VULN-022 the Critical-style count filters the list, the sort and the fin
     const label = SEVERITY[finding!.severity as keyof typeof SEVERITY];
     await signInLocal(page);
 
-    await page.goto(`/ui/en/vulnerabilities?repository=${qualified(repo)}`);
+    await page.goto(`/ui/en/projects/${e2eProject}/vulnerabilities?repository=${qualified(repo)}`);
     await expect(page.getByRole('heading', { name: 'Vulnerabilities', level: 1 })).toBeVisible();
     const counts = page.getByRole('list', { name: 'Open findings' });
     const count = counts.getByRole('link', { name: new RegExp(`^1\\s*${label}`) });
@@ -130,7 +130,7 @@ test('R-VULN-022 three findings are confirmed at once, the CSV holds the rows of
     expect(granted.status(), await granted.text()).toBe(201);
 
     await signInLocal(page);
-    await page.goto(`/ui/en/vulnerabilities?repository=${qualified(repo)}&status=needs_triage`);
+    await page.goto(`/ui/en/projects/${e2eProject}/vulnerabilities?repository=${qualified(repo)}&status=needs_triage`);
     const rows = page.locator('trove-data-table tbody tr');
     await expect(rows).toHaveCount(3);
 
@@ -148,7 +148,7 @@ test('R-VULN-022 three findings are confirmed at once, the CSV holds the rows of
     });
 
     await test.step('three rows show confirmed, and the CSV has the same rows', async () => {
-      await page.goto(`/ui/en/vulnerabilities?repository=${qualified(repo)}&status=confirmed`);
+      await page.goto(`/ui/en/projects/${e2eProject}/vulnerabilities?repository=${qualified(repo)}&status=confirmed`);
       await expect(rows).toHaveCount(3);
       for (const row of await rows.all()) await expect(row).toContainText('Confirmed');
       const download = page.waitForEvent('download');
@@ -170,7 +170,7 @@ test('R-VULN-022 three findings are confirmed at once, the CSV holds the rows of
     });
 
     await test.step('a reader without the triage capability sees the findings and no selection column', async () => {
-      await bob.goto(`/ui/en/vulnerabilities?repository=${qualified(repo)}`);
+      await bob.goto(`/ui/en/projects/${e2eProject}/vulnerabilities?repository=${qualified(repo)}`);
       await expect(bob.locator('trove-data-table tbody tr')).toHaveCount(3);
       await expect(bob.getByRole('button', { name: 'Select all loaded findings' })).toHaveCount(0);
       await expect(bob.getByRole('columnheader', { name: 'Select' })).toHaveCount(0);
@@ -199,7 +199,7 @@ test('R-VULN-023 R-VULN-022 the package page shows the finding on the affected v
     const [finding] = await findingsOf(admin, repo, 1);
     expect((await admin.get(tarball)).status(), 'download before the block').toBe(200);
     await signInLocal(page);
-    const packagePage = (version: string, tab: string) => `/ui/en/packages/npm/trove-test-cvss?version=${version}&tab=${tab}`;
+    const packagePage = (version: string, tab: string) => `/ui/en/projects/${e2eProject}/packages/npm/trove-test-cvss?version=${version}&tab=${tab}`;
 
     await test.step('the tab shows one finding on 1.0.0 and none on 1.0.1', async () => {
       await page.goto(packagePage('1.0.0', 'vulnerabilities'));
@@ -220,7 +220,7 @@ test('R-VULN-023 R-VULN-022 the package page shows the finding on the affected v
     });
 
     await test.step('confirm the finding, then block downloads', async () => {
-      await page.goto(`/ui/en/vulnerabilities/findings/${finding!.id}`);
+      await page.goto(`/ui/en/projects/${e2eProject}/vulnerabilities/findings/${finding!.id}`);
       await page.getByRole('button', { name: 'Confirm' }).click();
       await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click();
       await expect(page.getByRole('button', { name: 'Block downloads' })).toBeVisible();
@@ -234,7 +234,7 @@ test('R-VULN-023 R-VULN-022 the package page shows the finding on the affected v
     });
 
     await test.step('the row, the count, the package page and the download show the block', async () => {
-      await page.goto(`/ui/en/vulnerabilities?repository=${qualified(repo)}`);
+      await page.goto(`/ui/en/projects/${e2eProject}/vulnerabilities?repository=${qualified(repo)}`);
       await expect(page.getByRole('row', { name: new RegExp(finding!.advisory) })).toContainText('Blocked (blocked in triage)');
       await expect(page.getByRole('list', { name: 'Open findings' }).getByRole('link', { name: /^1\s*Blocked versions/ })).toBeVisible();
       await page.goto(packagePage('1.0.0', 'vulnerabilities'));
@@ -244,13 +244,13 @@ test('R-VULN-023 R-VULN-022 the package page shows the finding on the affected v
     });
 
     await test.step('lifting the block reverts all three', async () => {
-      await page.goto(`/ui/en/vulnerabilities/findings/${finding!.id}`);
+      await page.goto(`/ui/en/projects/${e2eProject}/vulnerabilities/findings/${finding!.id}`);
       await page.getByRole('button', { name: 'Lift block' }).click();
       await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click();
       await expect(page.locator('.vuln-blocked')).toHaveCount(0);
       await page.goto(packagePage('1.0.0', 'vulnerabilities'));
       await expect(page.locator('.pkg-header .banner-warning')).toHaveCount(0);
-      await page.goto(`/ui/en/vulnerabilities?repository=${qualified(repo)}`);
+      await page.goto(`/ui/en/projects/${e2eProject}/vulnerabilities?repository=${qualified(repo)}`);
       await expect(page.getByRole('list', { name: 'Open findings' }).getByRole('link', { name: /^0\s*Blocked versions/ })).toBeVisible();
       expect((await admin.get(tarball)).status(), 'download after the block is lifted').toBe(200);
     });
@@ -265,12 +265,12 @@ test('R-VULN-022 the sources screen shows the state of the test source, and the 
   try {
     const [finding] = await findingsOf(admin, repo, 1);
     await signInLocal(page);
-    await page.goto('/ui/en/vulnerabilities/sources');
+    await page.goto('/ui/en/admin/advisory-sources');
     await expect(page.getByRole('heading', { name: 'Advisory sources', level: 1 })).toBeVisible();
     await expect(page.locator('trove-data-table tbody tr').filter({ hasText: 'OSV' }).first()).toContainText('Online');
     await expectAccessible(page, 'the advisory sources');
 
-    await page.goto(`/ui/en/vulnerabilities/advisories/npm/${finding!.advisory}`);
+    await page.goto(`/ui/en/projects/${e2eProject}/vulnerabilities/advisories/npm/${finding!.advisory}`);
     await expect(page.getByRole('heading', { name: 'Advisory', level: 1 })).toBeVisible();
     await expect(page.getByRole('row', { name: new RegExp(repo) }).or(page.getByRole('row', { name: /trove-test-cvss/ })).first()).toBeVisible();
     await expectAccessible(page, 'an advisory');

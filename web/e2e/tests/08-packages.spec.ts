@@ -141,7 +141,7 @@ test('E2.8 R-UI-006 R-UI-008 R-UI-016 the published version in the list, its san
   await signInLocal(page);
 
   await test.step('the published version appears in the packages list', async () => {
-    await page.goto('/ui/en/packages');
+    await page.goto(`/ui/en/projects/${e2eProject}/packages`);
     await expect(page.getByRole('heading', { name: 'Packages', level: 1 })).toBeVisible();
     await expectAccessible(page, 'package list');
     await openFilter(page, 'Repository');
@@ -228,7 +228,7 @@ test('R-UI-021 R-ARCH-004 the npm settings in the wizard and on the edit form, r
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.getByText('latestGuard: false')).toBeVisible();
     await page.getByRole('button', { name: 'Create repository' }).click();
-    await expect(page).toHaveURL(new RegExp(`/admin/repositories/${e2eProject}/${wizardKey}$`));
+    await expect(page).toHaveURL(new RegExp(`/projects/${e2eProject}/repositories/${wizardKey}$`));
     expect(await npmMember()).toEqual({ latestGuard: false });
   });
 
@@ -309,7 +309,7 @@ test('R-UI-021 R-REPO-050 the Mirror section of a remote npm repository in the w
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.getByText('Pull-through (no mirror).')).toBeVisible();
     await page.getByRole('button', { name: 'Create repository' }).click();
-    await expect(page).toHaveURL(new RegExp(`/admin/repositories/${e2eProject}/${mirrorKey}$`));
+    await expect(page).toHaveURL(new RegExp(`/projects/${e2eProject}/repositories/${mirrorKey}$`));
     const res = await admin.get(repositoryApi(mirrorKey));
     expect(res.status()).toBe(200);
     const remote = ((await res.json()) as { remote?: { mode?: string; mirror?: Record<string, unknown> } }).remote;

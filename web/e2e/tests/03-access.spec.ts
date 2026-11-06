@@ -34,7 +34,7 @@ test('R-UI-025 R-UI-026 a group, a policy with its preview, and the effect for b
   });
   await signInWithKeycloak(bob, 'bob', bobPassword);
   const bobSearch = async () => {
-    await bob.goto('/ui/en/browse');
+    await bob.goto(`/ui/en/projects/${e2eProject}/browse`);
     await bob.getByLabel('Filter repositories').fill(repoKey);
   };
   await bobSearch();
@@ -93,7 +93,7 @@ test('R-UI-025 R-UI-026 a group, a policy with its preview, and the effect for b
   await test.step('bob sees the repository now, and its file', async () => {
     await bobSearch();
     await expect(bob.getByRole('treeitem', { name: new RegExp(repoKey) })).toBeVisible();
-    await bob.goto(`/ui/en/browse/${e2eProject}/${repoKey}`);
+    await bob.goto(`/ui/en/projects/${e2eProject}/browse/${repoKey}`);
     await bob.getByRole('treeitem', { name: /docs/ }).click();
     await expect(bob.getByRole('navigation', { name: 'Location' })).toContainText('docs');
     await expectAccessible(bob, 'the file tree of a consumer');

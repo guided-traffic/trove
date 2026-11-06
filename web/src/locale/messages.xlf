@@ -164,9 +164,17 @@
         <source> Client setup </source>
       </segment>
     </unit>
+    <unit id="shell.menu.guides">
+      <notes>
+        <note category="location">src/app/app.html:115,117</note>
+      </notes>
+      <segment>
+        <source> Guides </source>
+      </segment>
+    </unit>
     <unit id="shell.menu.language">
       <notes>
-        <note category="location">src/app/app.html:116,117</note>
+        <note category="location">src/app/app.html:119,120</note>
       </notes>
       <segment>
         <source>Language</source>
@@ -174,7 +182,7 @@
     </unit>
     <unit id="shell.menu.sign-out">
       <notes>
-        <note category="location">src/app/app.html:121,124</note>
+        <note category="location">src/app/app.html:124,127</note>
       </notes>
       <segment>
         <source> Sign out </source>
@@ -182,7 +190,7 @@
     </unit>
     <unit id="shell.close-nav">
       <notes>
-        <note category="location">src/app/app.html:161,164</note>
+        <note category="location">src/app/app.html:164,167</note>
       </notes>
       <segment>
         <source>Close navigation</source>
@@ -190,7 +198,7 @@
     </unit>
     <unit id="shell.nav">
       <notes>
-        <note category="location">src/app/app.html:177,178</note>
+        <note category="location">src/app/app.html:180,181</note>
       </notes>
       <segment>
         <source>Main navigation</source>
@@ -198,7 +206,7 @@
     </unit>
     <unit id="shell.collapse">
       <notes>
-        <note category="location">src/app/app.html:234,236</note>
+        <note category="location">src/app/app.html:237,239</note>
       </notes>
       <segment>
         <source>Collapse sidebar</source>
@@ -206,7 +214,7 @@
     </unit>
     <unit id="shell.breadcrumbs">
       <notes>
-        <note category="location">src/app/app.html:245,247</note>
+        <note category="location">src/app/app.html:248,250</note>
       </notes>
       <segment>
         <source>Breadcrumb</source>

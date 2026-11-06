@@ -5,7 +5,8 @@ import { alicePassword, breakGlassPassword, expect, expectAccessible, signInWith
 
 test('R-UI-004 R-AUTH-009 sign-in with the identity provider and sign-out', async ({ page, replicas }) => {
   await signInWithKeycloak(page, 'alice', alicePassword);
-  await expect(page).toHaveURL(/\/ui\/en\/browse/);
+  // The administrator sees every project: the start page is the list of them, or the only project (Q-UI-129).
+  await expect(page).toHaveURL(/\/ui\/en\/projects/);
   await expect(page.locator('.user-name')).toHaveText('alice');
   await expectAccessible(page, 'start page after the sign-in');
 

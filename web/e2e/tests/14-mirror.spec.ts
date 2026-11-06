@@ -69,7 +69,7 @@ test('R-REPO-059 R-UI-021 Q-UI-104 Q-UI-105 the status of a mirror, pause, resum
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.getByText('Mirror mode: a background pass stores what the upstream offers.')).toBeVisible();
     await page.getByRole('button', { name: 'Create repository' }).click();
-    await expect(page).toHaveURL(new RegExp(`/admin/repositories/${e2eProject}/${mirrorKey}$`));
+    await expect(page).toHaveURL(new RegExp(`/projects/${e2eProject}/repositories/${mirrorKey}$`));
     const remote = await remoteOf();
     expect(remote?.mode).toBe('mirror');
     expect(remote?.url).toBe(stubUrl);
@@ -180,7 +180,7 @@ test('F-54 R-UI-021 R-REPO-024 R-REPO-033 a remote with a non-default upstream, 
     await expect(page.getByText('<the password>').first()).toBeVisible();
     await expect(page.locator('body')).not.toContainText(secret);
     await page.getByRole('button', { name: 'Create repository' }).click();
-    await expect(page).toHaveURL(new RegExp(`/admin/repositories/${e2eProject}/${upstreamKey}$`));
+    await expect(page).toHaveURL(new RegExp(`/projects/${e2eProject}/repositories/${upstreamKey}$`));
     const { text, remote } = await remoteOf();
     expect(text).not.toContain(secret);
     expect(remote).toMatchObject({

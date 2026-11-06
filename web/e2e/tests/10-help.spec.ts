@@ -1,4 +1,4 @@
-import { expect, expectAccessible, signInLocal, signOut, test } from '../support';
+import { e2eProject, expect, expectAccessible, signInLocal, signOut, test } from '../support';
 
 // R-UI-050 journey "help" (R-API-054, R-UI-044, R-UI-047, F-16): "Documentation" in the top bar opens the manual page of the
 // current screen, `/help` lists the manual, and a page opens from the list. Axe runs, with `color-contrast`, on each
@@ -8,6 +8,9 @@ import { expect, expectAccessible, signInLocal, signOut, test } from '../support
 const manual = [
   { section: 'user', page: 'access-tokens', screen: '/profile/tokens' },
   { section: 'admin', page: 'sign-in-and-identity', screen: '/admin/groups' },
+  // The screens of a project are explained by the page of what they show (Q-UI-129).
+  { section: 'user', page: 'packages', screen: `/projects/${e2eProject}/packages` },
+  { section: 'admin', page: 'projects', screen: `/projects/${e2eProject}/members` },
 ];
 
 test.describe('light, English', () => {
