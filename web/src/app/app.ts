@@ -10,6 +10,7 @@ import {
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { CdkTrapFocus } from '@angular/cdk/a11y';
+import { OpenSubmenuOnClick } from './shared/ui/open-submenu-on-click';
 import { CdkMenu, CdkMenuItem, CdkMenuItemRadio, CdkMenuTrigger } from '@angular/cdk/menu';
 import { MatDialog } from '@angular/material/dialog';
 import {
@@ -63,6 +64,7 @@ function isBare(route: ActivatedRouteSnapshot | null): boolean {
     CdkMenuItem,
     CdkMenuItemRadio,
     CdkMenuTrigger,
+    OpenSubmenuOnClick,
     CdkTrapFocus,
     TroveMark,
     Banner,

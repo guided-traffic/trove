@@ -297,4 +297,22 @@ describe('App shell', () => {
     expect(menu.some((t) => t?.startsWith('Language'))).toBe(true);
     expect(menu).not.toContain('Theme');
   });
+
+  it('R-UI-045 the Language item opens a submenu whose languages are menu items', async () => {
+    const { fixture, root } = await render();
+    root.querySelector<HTMLButtonElement>('header .user-button')!.click();
+    await fixture.whenStable();
+    const language = [...document.querySelectorAll<HTMLElement>('.menu [role="menuitem"]')].find((e) =>
+      e.textContent?.trim().startsWith('Language'),
+    )!;
+    // A pointer opens the submenu on entering the item; the click that follows must not close it again.
+    language.dispatchEvent(new MouseEvent('mouseenter'));
+    await fixture.whenStable();
+    expect(language.getAttribute('aria-expanded')).toBe('true');
+    language.click();
+    await fixture.whenStable();
+    expect(language.getAttribute('aria-expanded')).toBe('true');
+    const languages = [...document.querySelectorAll<HTMLElement>('[role="menuitem"][lang]')];
+    expect(languages.map((e) => e.textContent?.trim())).toEqual(['English', 'Deutsch']);
+  });
 });

@@ -53,7 +53,9 @@ written into trove's own tokens.
   colour, the reference's badge (Q-UI-128); a line of text that reports a state (a note, a hint) keeps the status colour
   as text.
 - **Links.** The link colour, underlined in running text so a link is not told apart by colour alone; in tables and
-  key-value lists underlined only under the pointer and on focus (Q-UI-128).
+  key-value lists underlined only under the pointer and on focus (Q-UI-128). There a link is an inline-block box
+  (`.content :is(table, dl) a` in `_shell.scss`), so axe's `link-in-text-block` does not count a cell with a link and
+  a badge or a second line as running text (Q-UI-148); text that is real running text inside a cell needs the underline.
 
 ## The two schemes
 

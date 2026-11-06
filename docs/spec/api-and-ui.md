@@ -8133,6 +8133,47 @@ files or fontkit instances WOFF2 outlines (then (b) drops the second font packag
 `wordPath`, `faviconSvg`, `faviconPixels` in [brand-logo.mjs](../../web/scripts/brand-logo.mjs); the icons in
 [index.html](../../web/src/index.html); `.svg` content type in `contentType` of [webui.go](../../internal/webui/webui.go).
 
+### Q-UI-148 · A link in a table or a key-value list is its own box, and the language submenu opens on a click
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the owner's review (Q-UI-128) set links in tables and key-value lists to "underlined only under the pointer and on
+focus". axe's `link-in-text-block` (WCAG 1.4.1, colour as the only mark) then fired in the browser journeys on the package
+page's Vulnerabilities tab: a row header with the advisory link and the summary as an inline span after it is a link in a
+block of text, and the link blue is 1.5:1 against the text. Other cells have the same shape (a link and a badge, a link and a
+hint, a link and a path). The same review replaced the Material menu by the CDK menu, whose submenu opens when the pointer
+enters its trigger and toggles on click, so the click of a pointer user, whose pointer is already on the item, closed the
+submenu the hover had just opened (journey 07, R-UI-045).
+
+How a link in a table or a key-value list stays clear of the rule:
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The link is an inline-block box there (chosen) | One rule for `.content :is(table, dl) a`; axe does not take an inline-block link for a link in a text block (it ends the check before comparing colours) | No template changes and every present and future cell of that shape is covered; looks the same (the link keeps its line, a long name wraps inside its own box); the underline stays under the pointer and on focus as decided | The reason sits in one comment of the stylesheet, not in each template |
+| (b) Every second line a block (`.secondary` as `display: block`) | Cell text after the link starts a new block | Matches the layout of the data table | Covers only the elements that carry the class; a badge (inline flex) or a path in a cell still counts as text, so each new cell shape can fail again |
+| (c) Underline links in cells | Reverses Q-UI-128 | Passes everywhere | The owner decided against it for tables and lists |
+
+**Choice (links):** (a). A cell that holds a link and other things is not running text, the case Q-UI-128 kept the underline for.
+
+How the language submenu is opened:
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A click on the trigger opens the submenu and never closes it (chosen) | The directive `troveOpenSubmenuOnClick` ([open-submenu-on-click.ts](../../web/src/app/shared/ui/open-submenu-on-click.ts)) swallows the click while the submenu is open and moves the focus into it; Escape and the left arrow still close it | Mouse, touch (the first tap opens) and keyboard (arrow right, Enter) all reach the languages as `menuitem`s of a `menu`, the ARIA menu pattern | One small directive over the CDK |
+| (b) Languages as `menuitemradio` entries inside the user menu, no submenu | The theme menu's pattern; the current language is checked | No nested menu | R-UI-045 and the top bar's description are "Language with its submenu"; changes a decided structure for a bug in the hover/click interplay |
+
+**Choice (submenu):** (a). The journey's roles (`menuitem` "Sprache", then `menuitem` "English") are what the ARIA menu pattern
+gives a submenu; the test is right and stays unchanged.
+
+**Rationale:** both findings came from the review's restyle and control swap, and both are found only in a real browser (jsdom
+has no hover and no colours). Revisit (links) when axe changes what it counts as a text block, or when running text moves into
+a table cell (then it needs the underline); revisit (submenu) when the CDK menu stops toggling an open trigger on click.
+
+**Applied in the spec:** none; R-UI-044 and R-UI-045 already state the behaviour. Code: `.content :is(table, dl) a` in
+[_shell.scss](../../web/src/styles/_shell.scss); `OpenSubmenuOnClick` and the `Language` item in
+[app.html](../../web/src/app/app.html). Tests: `app.spec.ts` (the submenu stays open after hover and click); the browser
+journeys `07-german-dark.spec.ts` and `vuln/15-vulnerabilities.spec.ts` (axe in both schemes).
+
 ## What this does not cover
 
 
