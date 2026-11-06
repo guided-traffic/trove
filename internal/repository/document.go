@@ -114,8 +114,8 @@ type Warning struct {
 // configuration sees (R-REPO-010): no notes, patterns, upstream settings or
 // members.
 type ConsumerView struct {
-	Project     string   `json:"project"`
 	Key         string   `json:"key"`
+	Project     string   `json:"project"`
 	Class       Class    `json:"class"`
 	Format      string   `json:"format"`
 	Description string   `json:"description"`

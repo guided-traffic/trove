@@ -716,14 +716,14 @@ func TestUpstreamTestAgainstThePrivateUpstream(t *testing.T) {
 
 	t.Run("R-REPO-024 the test of an unsaved section validates, probes and stores nothing", func(t *testing.T) {
 		before := e.scalar(`SELECT count(*) FROM repositories`)
-		res, err := r.svc.UpstreamTestUnsaved(ctx, []byte(fmt.Sprintf(`{"format":"npmlike","remote":{"url":%q,"authMode":"bearer","password":{"value":"probe-only"}}}`, stub.srv.URL)))
+		res, err := r.svc.UpstreamTestUnsaved(ctx, caller, []byte(fmt.Sprintf(`{"format":"npmlike","remote":{"url":%q,"authMode":"bearer","password":{"value":"probe-only"}}}`, stub.srv.URL)))
 		if err != nil || !res.Reachable || stub.last(t) != "Bearer probe-only" {
 			t.Fatalf("%+v %q %v", res, stub.last(t), err)
 		}
 		if e.scalar(`SELECT count(*) FROM repositories`) != before || e.scalar(`SELECT count(*) FROM repository_secrets WHERE sealed IS NOT NULL AND repo_id NOT IN (SELECT id FROM repositories)`) != 0 {
 			t.Fatal("the unsaved test stored something")
 		}
-		_, err = r.svc.UpstreamTestUnsaved(ctx, []byte(`{"format":"npmlike","remote":{"readTimeoutMs":1}}`))
+		_, err = r.svc.UpstreamTestUnsaved(ctx, caller, []byte(`{"format":"npmlike","remote":{"readTimeoutMs":1}}`))
 		wantCode(t, err, 422, errs.CodeValidation)
 	})
 

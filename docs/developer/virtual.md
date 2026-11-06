@@ -105,7 +105,7 @@ declares `PriorityMembers`, else in list order. Per-member `read`, the cache-fil
 engine and follow `Route`.
 
 `Route` takes the member `Repository` values from the snapshot of the `virtual` it is given, so pass a value that came from
-`Reader.ByKey` or `List`; a `Repository` from `Service.Get` has no resolved members. `Admitted` is false when the virtual
+`Reader.ByName` or `List`; a `Repository` from `Service.Get` has no resolved members. `Admitted` is false when the virtual
 repository's own patterns refuse the request.
 
 `AutoClaim` is called inside the publish transaction of a local repository whose format supports claims, after the package row
@@ -180,7 +180,7 @@ last transaction notifies `claims` when the repository had any, so every replica
 ## How to
 
 **Call the auto claim from a format's publish.** In the publish transaction, after the version row and the ownership claim: look the
-local repository up with `Reader.ByKey`, call `Routing.AutoClaim(ctx, tx, repo, name, caller)` with the normalized name, put the result
+local repository up with `Reader.ByName`, call `Routing.AutoClaim(ctx, tx, repo, name, caller)` with the normalized name, put the result
 in the deploy's audit event (`autoClaim`), and do nothing else with it. Do not call it for a later version of a name the repository holds.
 
 **Add a new pin or claim form.** Do not: both are limited to the forms for which `rank()` is total. A new form needs a new total order,

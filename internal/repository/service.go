@@ -169,6 +169,12 @@ type Caller struct {
 	Actor    audit.Actor
 	Source   audit.Source
 	Endpoint string
+	// Restricted is set by the API layer for a write that is allowed by the role owner of the repository's project and not by
+	// repositories:write-config (R-AUTHZ-026): the upstream rules of Q-REPO-127, Q-REPO-128, Q-REPO-142 and Q-REPO-193 apply
+	// (restrictedRemote), and the member vulnerabilities may not be weakened (Q-VULN-69) unless MayWeakenVulnerabilities.
+	Restricted bool
+	// MayWeakenVulnerabilities is set for a caller who holds vulnerabilities:triage (Q-VULN-69).
+	MayWeakenVulnerabilities bool
 }
 
 // principalID returns the actor id when it is a uuid and "" otherwise (a break-glass
@@ -231,6 +237,7 @@ func (s *Service) CreateTx(ctx context.Context, tx meta.Tx, c Caller, project st
 		v.add("/project", codeImmutable, "the project is the one of the address; a repository changes it only by a move")
 	}
 	d.Project = project
+	restrictedRemote(v, c, nil, &d)
 	qs, err := queries(tx)
 	if err != nil {
 		return Stored{}, err
@@ -383,6 +390,10 @@ func (s *Service) update(ctx context.Context, c Caller, name qname.Repo, pre Pre
 			return err
 		}
 		nd, v := s.checkUpdate(cur, nd)
+		restrictedRemote(v, c, &cur, &nd)
+		if err := restrictedVulnerabilities(c, &cur, &nd); err != nil {
+			return err
+		}
 		// >>> M2 virtual
 		rel, err := s.resolveVirtual(ctx, qs, v, name.Project, &nd)
 		if err != nil {

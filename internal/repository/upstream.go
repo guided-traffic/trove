@@ -118,8 +118,9 @@ type UnsavedTestRequest struct {
 // UpstreamTestUnsaved implements POST /api/v1/upstream-tests: the section is
 // validated like the one of a create, with the same defaults of the format, and
 // then probed. A secret value in it is used for the probe and not stored; the
-// marker {"set": true} of a stored value has nothing to refer to here.
-func (s *Service) UpstreamTestUnsaved(ctx context.Context, body []byte) (UpstreamTestResult, error) {
+// marker {"set": true} of a stored value has nothing to refer to here. A restricted caller
+// (Caller.Restricted) is held to the rules of a create.
+func (s *Service) UpstreamTestUnsaved(ctx context.Context, c Caller, body []byte) (UpstreamTestResult, error) {
 	p, err := s.prober()
 	if err != nil {
 		return UpstreamTestResult{}, err
@@ -134,6 +135,7 @@ func (s *Service) UpstreamTestUnsaved(ctx context.Context, body []byte) (Upstrea
 		return UpstreamTestResult{}, err
 	}
 	_, v := validate(s.cat, &d, false)
+	restrictedRemote(v, c, nil, &d)
 	probe := UnsavedProbe{Format: d.Format}
 	for _, ps := range d.pending {
 		switch ps.op {
