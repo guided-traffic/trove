@@ -251,7 +251,7 @@ Job `e2e-mirror` runs the sets `mirror` and `mirror-long` (edge ports 8098 and 8
 artifacts `e2e-mirror-report-<set>`, `e2e-mirror-artifacts-<set>`, `e2e-mirror-playwright-<set>`, kept 14 days): the short set as in Test and Release (on a GitHub-hosted runner, because
 it loads the NuGet clients image), and the long set (on a `large` runner; it needs the npm clients image only), R-REPO-058's drain: `kubectl drain` of the node of the process of the
 pool `mirror` that runs a pass of 300 packages (the job is `queued` again with its attempt unchanged, the other process of the pool ends the pass, and the test upstream served every
-tarball, `concurrency` of them twice at most). A red long leg is a finding and holds nothing ([e2e.md](e2e.md#the-mirror-tests)). By hand: `make dev-up && make e2e SET=mirror-long`.
+tarball, `concurrency` of them twice at most), followed by the failure suite of R-HA-052 on passes of 100 packages (the process of the pass force-deleted, its node stopped and frozen, the upstream throttling across a drain and a kill, a PostgreSQL switchover and a Valkey failover; about 40 minutes more). A red long leg is a finding and holds nothing ([e2e.md](e2e.md#the-mirror-tests)). By hand: `make dev-up && make e2e SET=mirror-long`.
 
 ### Renovate
 

@@ -12,6 +12,7 @@ import (
 //
 //	GET  /-/stub/counts             the counters (Counts as JSON)
 //	GET  /-/stub/inflight           {"open","max","requests"}: the registry requests open now and the most open at once since the last reset
+//	GET  /-/stub/requests           {"requests":[RequestRecord],"dropped"}: the registry host's requests with their times and statuses (requestlog.go)
 //	GET  /-/stub/audits             the log of the advisory requests ({"requests": [AuditRequest]})
 //	POST /-/stub/reset[?all=true]   zero the counters and the log; with all, also modes and changes to packages
 //	GET  /-/stub/mode               the failure switches
@@ -49,6 +50,8 @@ func (s *Server) serveControl(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, s.Counts())
 	case "GET /-/stub/inflight":
 		writeJSON(w, s.Inflight())
+	case "GET /-/stub/requests":
+		writeJSON(w, s.Requests())
 	case "GET /-/stub/audits":
 		writeJSON(w, struct {
 			Requests []AuditRequest `json:"requests"`

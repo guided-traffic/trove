@@ -3459,11 +3459,27 @@ Priority: **MVP** · Covers: trove-only
   (status, pause, run a pass) with axe ([api-and-ui.md](api-and-ui.md) Q-UI-104). The drain of R-REPO-058 is the set `mirror-long`, which runs
   in the nightly workflow (owner, 2026-11-01); the rest is the set `mirror`. The profile, the way the npm mirrors get the feed, the measure of the
   stub's connections, the baseline of the install time, the size of the passes and the CI wiring are Q-REPO-173 to Q-REPO-178.
-- The failure suite of phase 7 adds the mirror to its drains, failovers and throttling ([ha-and-helm.md](ha-and-helm.md)).
+- **The failure suite of phase 7** ([ha-and-helm.md](ha-and-helm.md) R-HA-052) adds the mirror to its drains, failovers and throttling; it is
+  part of the set `mirror-long` (Q-REPO-198): the process of the pool that holds a pass lost (its pod force-deleted, its kind node stopped,
+  its kind node frozen and thawed), the upstream throttling a pass while its process is drained or killed, and a PostgreSQL switchover and
+  a Valkey failover during a pass.
 
 Acceptance criteria:
 
 - The tests of `test/integration/mirror` and the e2e set `mirror` pass, and each names the requirement it checks.
+- e2e (set `mirror-long`, R-HA-052): the process that holds a pass of a hundred packages is lost, by `kubectl delete pod --grace-period=0
+  --force`, by `docker stop` of its kind node (then `docker start`) and by `docker pause` of its kind node (thawed after another process has
+  taken the pass over). The pass progresses again in another process within 5 minutes of the loss (`jobs.lease_duration` of 60 s, the
+  reaper, the next `mirror-dispatch`), ends `complete` with each package counted once, the test upstream served every tarball and at most
+  `concurrency` of them twice, and every `npm install` of a stored version through the same remote while the clients' path is whole
+  succeeds (R-REPO-053, R-REPO-055, R-REPO-058).
+- e2e (set `mirror-long`, R-HA-052): the upstream answers `429` with `Retry-After: 30` for 45 s while the node of the pass's process is
+  drained, and `503` with the `SlowDown` body eight times while the pass's process is killed. The upstream's own request log shows no request
+  of the mirror inside a wait that an answer named (`Retry-After`; at least one second without it), the throttled answers stay few (six and
+  twelve at most), the pass ends `complete` with every tarball served, and a client install of a stored version during the wait sends the
+  upstream nothing (R-REPO-054, Q-REPO-187).
+- e2e (set `mirror-long`, R-HA-052): a PostgreSQL switchover and a Valkey failover during a pass of a hundred packages leave the pass
+  `complete` with each package counted once and every tarball served exactly once (R-REPO-053 "Crash and failover", R-REPO-026).
 
 ## Behavior across replicas
 
@@ -6602,6 +6618,32 @@ Context: the owner's rule of 2026-11-01 puts drains, failovers and soaks into th
 **Rationale:** as the owner's rule says. The development agent would revisit it when `mirror` has been seen to take longer than the other per-change legs.
 
 **Applied in the spec:** R-REPO-059. Code: `.github/workflows/release.yml`, `.github/workflows/performance.yml`, `deploy/dev/e2e.sh`.
+
+### Q-REPO-198 · The failure suite of the mirror: a remote and a range of names per scenario, the upstream's request log for the waits, the process lost three ways
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: phase 7's failure suite (R-HA-052) is to cover the mirror's pass: its process lost (R-REPO-053 "Crash and failover"), the upstream
+throttling it while it moves (R-REPO-054) and the database and Valkey failing over. The drain of R-REPO-058 is one remote over the 300 extra
+packages of the run; its pass lasts 150 s. The counting npm upstream counted requests by path, which says how many tarballs were served
+but not when: a pass that sends nothing during a wait is a statement about times.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One remote per scenario over its own hundred of the extras (the include pattern `e2e-mirror-<run>-<digit>*`), the upstream's request log with arrival times, statuses and `Retry-After`, the process lost by a force-delete, a stop and a freeze of its node (chosen) | Every scenario starts from an empty store for its names, so "no tarball fetched twice beyond the fetches in flight" is exact; the waits are checked on the upstream's clock alone | No clock of the test host enters the assertions; a scenario that fails leaves the others unaffected; the freeze lets the lost process come back and write under an old fence | Seven scenarios of 3 to 7 minutes make the long set about 40 minutes |
+| (b) One remote over the 300 extras for all scenarios, one after the other | Fewer remotes | Fewer API calls | The second scenario finds the first one's tarballs stored and asks the upstream for nothing: the counters prove nothing |
+| (c) The waits read from the status (`rateLimit.until`) and the test host's clock | No new stub endpoint | Smaller stub | The status is trove's view, the test host's clock is not the cluster's: an assertion about what the upstream received would rest on the thing under test |
+
+**Choice:** (a). The stub's `GET /-/stub/requests` returns the registry host's requests with their arrival and completion times, status and
+`Retry-After`; a wait is held against the pass from 500 ms after the answer that named it (fetches already on their way) to its end less one
+second (two clocks of the cluster's processes). A lost process must progress again within 5 minutes: the lease of 60 s, the reaper's tick and
+one dispatch tick of a minute, with a margin.
+
+**Rationale:** the criteria are statements about what the upstream saw, so the upstream is the witness. The development agent would revisit the
+margin of the wait check if a fast cluster shows requests inside the tolerance, and the range size if the passes outlast the nightly budget.
+
+**Applied in the spec:** R-REPO-053, R-REPO-054, R-REPO-059 (acceptance criteria). Code: `test/e2e/mirror_long_fault_test.go`,
+`test/npmstub/requestlog.go`.
 
 ## What this does not cover
 

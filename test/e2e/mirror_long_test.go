@@ -4,7 +4,7 @@ package e2e
 
 // The long test of the mirror (R-REPO-058, R-REPO-059, E6b.6; owner rule of 2026-11-01: drain, failover and soak run in the nightly
 // workflow, on dispatch and locally, never in Test and Release): `kubectl drain` of the node of the process that runs a pass of 300
-// packages.
+// packages. The failure suite of R-HA-052 on a pass (a process lost, a throttling upstream) is in mirror_long_fault_test.go.
 
 import (
 	"fmt"

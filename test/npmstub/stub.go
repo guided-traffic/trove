@@ -76,6 +76,11 @@ type Server struct {
 	thr      throttleState
 	// fl counts the requests open at once (inflight.go); it has a lock of its own, so a request is counted while it waits.
 	fl inflightState
+	// reqlog is the log of the registry host's requests with their times (requestlog.go), under reqmu.
+	reqmu      sync.Mutex
+	reqlog     []RequestRecord
+	reqDropped int
+	reqEpoch   int
 }
 
 // staleLeft is the state of the older copy of one package: the document requests to answer
@@ -157,6 +162,7 @@ func (s *Server) Counts() Counts {
 // published or dropped versions stay.
 func (s *Server) Reset() {
 	s.fl.reset()
+	s.resetRequests()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.counts = map[countKey]*Entry{}
@@ -167,6 +173,7 @@ func (s *Server) Reset() {
 // ResetAll returns the stub to its initial state: counters zero, healthy, no change to the corpus.
 func (s *Server) ResetAll() {
 	s.fl.reset()
+	s.resetRequests()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.resetLocked()
