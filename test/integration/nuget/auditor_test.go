@@ -14,7 +14,7 @@ import (
 // auditorScope is the scope of an auditor's token that carries the metadata read
 // (R-AUTHZ-013: a token exercises a role's capability only through its system items).
 func auditorScope() scope.Scope {
-	return scope.Scope{Inherit: true, System: []string{"content:metadata-read", "repositories:read-config"}}
+	return scope.Scope{Inherit: true, System: []string{"content:metadata-read", "repositories:read-config", "projects:read"}}
 }
 
 // auditorEnv is the write installation with a user bound to auditor directly, a

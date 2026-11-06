@@ -151,7 +151,9 @@ func TestR_REPO_003_Formats(t *testing.T) {
 func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 	e := newWebEnv(t)
 	e.breakGlass()
-	e.user("bob")
+	bob := e.user("bob")
+	// bob is a developer of the project: a member whose role is too low gets 403, a caller that is no member gets 404.
+	e.exec(`INSERT INTO project_member (project_id, principal_id, role) SELECT id, $1::uuid, 'developer' FROM project WHERE key = 'it'`, bob.ID)
 	rita := e.user("rita")
 	val := e.stack.Validator()
 	a := e.newReplica("a", webOpts{})
