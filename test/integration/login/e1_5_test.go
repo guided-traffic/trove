@@ -145,7 +145,7 @@ func TestE1_5_EveryProducerIsAuditedAndLogged(t *testing.T) {
 		}
 	}
 	// The repository exists before the replica builds its grant index.
-	if _, err := e.admin.Exec(ctx, `INSERT INTO repositories (key, class, format, config) VALUES ('generic-local', 'local', 'generic', '{}'::jsonb)`); err != nil {
+	if _, err := e.admin.Exec(ctx, `INSERT INTO project (id, key, display_name) VALUES (gen_random_uuid(), 'it', 'it') ON CONFLICT (key) DO NOTHING; INSERT INTO repositories (key, class, format, config, project_id) SELECT 'generic-local', 'local', 'generic', '{}'::jsonb, id FROM project WHERE key = 'it'`); err != nil {
 		t.Fatal(err)
 	}
 	e.start(1, e.defaultAuth())
@@ -186,7 +186,7 @@ func TestE1_5_EveryProducerIsAuditedAndLogged(t *testing.T) {
 	_, deploySecret := create("e1.5 to deploy")
 
 	// 4. A policy change.
-	policy := `{"name":"e15-read","description":"read only","resources":{"repositories":["generic-local"]},"entries":[{"principal":"user:alice","actions":["read"]}]}`
+	policy := `{"name":"e15-read","description":"read only","resources":{"repositories":["it/generic-local"]},"entries":[{"principal":"user:alice","actions":["read"]}]}`
 	if resp, body := b.post("/api/v1/permission-policies", policy, nil); resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create policy: %d %s", resp.StatusCode, body)
 	}
@@ -246,14 +246,14 @@ func TestE1_5_EveryProducerIsAuditedAndLogged(t *testing.T) {
 		})
 	}
 	t.Run("E1.5 the denied deploy names the action, the repository and the caller", func(t *testing.T) {
-		_, body := b.get(e.baseURL + "/api/v1/audit/events?action=authz.denied&repository=generic-local&limit=10")
+		_, body := b.get(e.baseURL + "/api/v1/audit/events?action=authz.denied&repository=it%2Fgeneric-local&limit=10")
 		items, _ := jsonOf(t, body)["items"].([]any)
 		if len(items) == 0 {
 			t.Fatalf("no authz.denied event: %s", body)
 		}
 		ev := items[0].(map[string]any)
 		actor, _ := ev["actor"].(map[string]any)
-		if ev["repository"] != "generic-local" || actor["name"] != "alice" || !strings.Contains(fmt.Sprint(ev["details"]), "deploy") {
+		if ev["repository"] != "it/generic-local" || actor["name"] != "alice" || !strings.Contains(fmt.Sprint(ev["details"]), "deploy") {
 			t.Errorf("event = %v", ev)
 		}
 	})

@@ -17,7 +17,7 @@ import (
 // entries pkg-00 … that expire in an hour.
 func (e *env) seedRemote(key, class string, n int) int64 {
 	e.t.Helper()
-	id := e.number(`INSERT INTO repositories (key, format, class) VALUES ($1, 'npm', $2) RETURNING id`, key, class)
+	id := e.number(`INSERT INTO repositories (key, format, class, project_id) SELECT $1, 'npm', $2, id FROM project WHERE key = 'it' RETURNING id`, key, class)
 	if n > 0 {
 		e.exec(`INSERT INTO blobs (sha256, sha1, md5, sha512, size)
 		        VALUES (decode(repeat('ab', 32), 'hex'), decode(repeat('cd', 20), 'hex'), decode(repeat('ef', 16), 'hex'), decode(repeat('01', 64), 'hex'), 10)
