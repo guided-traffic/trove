@@ -940,8 +940,13 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   the lease moved, never two holders); a command running on the lost node may fail with a network error (Q-HA-105). Open: a run of the
   whole set after the fixes, and the nightly leg. Pod crash, switchover, Valkey failover and outage were green before
   (`TestNPMHACrash`, `TestNPMHA`, `TestNPMHAClosing`, `TestE13Failover`)
-- 🟡 Node drain under npm and NuGet load with zero failed requests; the NuGet load (`TestNuGetHA`) and R-ARCH-024's drain
-  criterion move here from phase 4 ([Q-NUGET-73](../spec/formats/nuget.md#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs))
+- 🟢 Node drain under npm and NuGet load with zero failed requests; the NuGet load (`TestNuGetHA`) and R-ARCH-024's drain
+  criterion move here from phase 4 ([Q-NUGET-73](../spec/formats/nuget.md#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs)). `TestNuGetHA` (set `nuget-ha`, nightly leg `e2e-nuget (nuget-ha)`
+  on the large class, Q-HA-100 to Q-HA-102, Q-NUGET-111) passed on kind on 2026-11-06: drain variant A under the whole load of R-HA-059,
+  543 `npm ci`, 34 `npm publish`, 305 `dotnet restore` and 36 `dotnet nuget push`, every command exit 0 (R-ARCH-024's 100, 20, 100 and
+  20 met), k6 40,370 npm and 10,765 NuGet requests, only `2xx` and `304`, p99 741 ms warm-up against 789 ms in the drain, every
+  acknowledged publish and push installed, probe jobs resumed with `attempt` 1, no SIGKILL; the PostgreSQL switchover and the Valkey
+  failover under the same load without a failed command. The load took 16 cores of the dev cluster
 - 🟡 npm load in the drain and failover tests reliably green (moved from phase 3, owner 2026-11-01). Diagnosis of
   2026-11-01: `make e2e SET=npm-ha` passes on a 17-CPU kind cluster (drain: 40,894 k6 requests, 0 failures, every job at
   attempt 1); with the kind nodes held to 6 CPUs the drain gets 1,062 `503`s, all `memory_slots` shedding of Q-ARCH-240 (no
@@ -1043,7 +1048,7 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
 | Foundation (storage, coordination) | 🟢 | — | 🟢 |
 | Access core (login, tokens, permissions) | 🟢 | 🟢 | 🟢 |
 | **npm** | 🟢 | 🟢 | 🟡 |
-| **NuGet (.NET)** | 🟢 | 🟡 | ⚪ |
+| **NuGet (.NET)** | 🟢 | 🟡 | 🟢 |
 | Projects (delegated administration) | 🟢 | 🟢 | — |
 | GitLab CI OIDC | 🟢 | 🟢 | 🟢 |
 | trove Bastion | 🟢 | 🟢 | 🟢 |
