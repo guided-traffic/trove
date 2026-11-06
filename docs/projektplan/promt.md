@@ -435,20 +435,19 @@ tasks come before the phase's own work packages (step 2, item 5), in this order;
 
 ### Integrate the branch first
 
-- **T-1 · Keep `ui-review` current with `main`, then bring it onto `main`.** The review's work is committed on `ui-review`
-  (the UI development profile; sign-in, own controls, logo and the separate admin area, Q-UI-125 to Q-UI-127; the admin
-  dashboard, Q-OPS-175; the reference's design, Q-UI-128; the model decisions below; `CLAUDE.md`; the switched-off compatibility
-  checks, Q-ARCH-340) and was merged with `origin/main` on 2026-11-06. The next runs work on this branch (owner, 2026-11-06);
-  when it goes onto `main` is the owner's call. At the start of each run: `git merge origin/main` (another agent works on
-  `main`), merging appended decision blocks, index rows and gap lists as a union and checking every new `Q-…` and `H-…` number
-  against `main` (the merge of 2026-11-06 renumbered the branch's Q-ARCH-332/333 to Q-ARCH-340/341 and its H-543 to H-545 to
-  H-550 to H-552, because `main` had taken them for the UI asset store). The branch's migration is
-  `00044_replica_runtime.sql` (`main` had taken 00042 and 00043): every database that applied it as 00042 needs a fresh one
-  (rule 9): the `trove-ui-dev-*` profile (`make ui-dev-down PURGE=1`, then `make ui-dev-up`) and the dev cluster. Not run on the
-  branch yet: the integration tier (`overview_test.go` of Q-OPS-175, the adjusted `slowFirstStep` of `migrate_test.go`), the
-  browser journeys (sign-in with `?auto_sign_in=false`, the link and area "Documentation", "Admin area", "Artifacts", the new
-  tables, tabs and badges) with axe's colour contrast in both schemes for the palette of Q-UI-128, and the coverage evidence
-  of the new named tests.
+- **T-1 · Get the review's work green on `main`.** The review's work went onto `main` on 2026-11-06, merged from the branch
+  `ui-review`, after the agent that had worked on `main` finished; one line of work continues from here, on `main` (owner,
+  2026-11-06). It holds the UI development profile; sign-in, own controls, logo and the separate admin area (Q-UI-125 to
+  Q-UI-127); the admin dashboard (Q-OPS-175); the reference's design (Q-UI-128); the model decisions below; `CLAUDE.md`; and the
+  switched-off compatibility checks (Q-ARCH-340). The merges renumbered the branch's Q-ARCH-332/333 to Q-ARCH-340/341 and its
+  H-543 to H-545 to H-550 to H-552, and its migration to `00044_replica_runtime.sql`. Every database that applied it as 00042
+  needs a fresh one (rule 9): the `trove-ui-dev-*` profile (`make ui-dev-down PURGE=1`, then `make ui-dev-up`) and the dev
+  cluster. Never run before the push: the integration tier (`overview_test.go` of Q-OPS-175, the adjusted `slowFirstStep` of
+  `migrate_test.go`), the browser journeys (sign-in with `?auto_sign_in=false`, the link and area "Documentation", "Admin
+  area", "Artifacts", the new tables, tabs and badges) with axe's colour contrast in both schemes for the palette of Q-UI-128,
+  and the coverage evidence of the new named tests. Watch the `Test and Release` run of the push and fix what it finds
+  (step 5). The branch `ui-review` and its worktree `/Users/hfi/repos/trove-ui-review` stay until the owner says to delete
+  them.
 - **T-2 · Check the switched-off compatibility checks.** A background agent switched the checks off (not removed them) on
   2026-11-06, uncommitted when this section was written: `make compat-check` and its CI job off and out of the release's `needs:`, `test/compat/` kept and
   compiling, the migration phase rules behind `enforceMigrationPhases = false` with their strict-mode tests still running, the

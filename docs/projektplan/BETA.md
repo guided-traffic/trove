@@ -898,7 +898,9 @@ areas.
   the guard also refuses the last step while the edge still routes to the bridge, and both upgrade tests fail on any answer of the
   edge without a backend ([Q-HA-131](../spec/ha-and-helm.md#q-ha-131--the-upgrade-tests-read-the-edges-access-lines-for-answers-without-a-backend));
   verified by the chart test and against an API server for the guard, and the three steps under the loops passed in the dispatched
-  nightly run 42234688882
+  nightly run 42234688882; the guard checks the targets' readiness only on the upgrade that moves the edge, and the cut is rolled back one step at
+  a time ([Q-HA-132](../spec/ha-and-helm.md#q-ha-132--the-bridge-guard-checks-readiness-only-on-the-upgrade-that-moves-the-edge),
+  passed in the dispatched nightly run 42250739860)
 
 ## Phase 6b · Remote full mirror
 
@@ -1019,7 +1021,9 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   a paused holder of the `scheduler` lease kept it for as long as the pause lasted, fixed by `idle_session_timeout` on the lease sessions
   ([Q-HA-127](../spec/ha-and-helm.md#q-ha-127--a-lease-session-that-stays-silent-is-ended-by-the-server-within-the-keepalives-bound)).
   Both fixes passed the whole set on the dev cluster (25 min 51 s), and the frozen node with the lease's holder on it
-  progressed again after 2 min 7 s. Open: a nightly run of the set
+  progressed again after 2 min 7 s; released in v0.20.1. The set `mirror` runs its install-time ratio on `large` since
+  [Q-REPO-211](../spec/repositories-and-proxy.md#q-repo-211--the-nightly-install-time-ratio-of-clients-first-runs-on-the-large-class)
+  (F-63; 96 % in the dispatched nightly run 42226311597). Open: a nightly run of the set (dispatched as 42258656348 on v0.20.2)
 - 🟢 The Bastion under the failure suite: a Bastion replica drained and lost, the main installation unreachable and
   failing over, a rolling upgrade of either side. Built 2026-11-06 in the set `bastion-long` (Q-BAS-141 to Q-BAS-144) and green on the
   dev cluster under `npm ci`, `dotnet restore` and cold-miss loops: a replica force-deleted on either backend (about 100 commands each,
@@ -1048,7 +1052,9 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   the set the rolling test from v0.19.5 (the migration 00043 and the rollback included; 271 `npm ci`, 29 publishes, 333 `dotnet
   restore`, 44 journeys, 0 failed) and the cut test (2 journeys met the skew against v0.16.0, counted as Q-HA-99 says) passed. The
   rolling test from the previous release stays strict; it is green with a changed bundle once a release with the store is published
-  (Q-HA-125)
+  (Q-HA-125). The store is released in v0.20.2 (the review's fixes included: rows kept by content, every read verified, Q-UI-142,
+  Q-UI-143); a UI change that alters the bundle must be released after it. The test across two bundles runs in CI first in the
+  dispatched nightly run 42258656348
 - 🟡 Performance targets met in two nightly runs in a row. Worked on 2026-11-06 (F-43): the findings page of a pattern grant decides each
   package once (V-7b), a publish's evaluation makes two round trips instead of eight (V-4), the advisory import's statements reach rows by
   their primary key and the `ecosystem` columns carry no planner statistics (V-1, F-57), and the perf jobs run after the kind legs
