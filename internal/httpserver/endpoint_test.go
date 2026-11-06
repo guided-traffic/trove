@@ -428,7 +428,7 @@ func TestEndpointSurface(t *testing.T) {
 			"GET /{$}": "ui", "/ui/": "ui", "/auth/": "ui", "GET /auth/oidc/{name}/start": "ui",
 			"/api/v1/": "api", "GET /api/v1/system/ping": "api", "POST /api/v1/auth/oidc/token": "ci_exchange",
 			"POST /-/npm/v1/oidc/token/exchange/package/{name...}": "ci_exchange",
-			"/api/npm/{projectKey}/{repoKey}/{rest...}":                         "packages", "/v2/": "packages", "/.well-known/terraform.json": "packages",
+			"/api/npm/{projectKey}/{repoKey}/{rest...}":            "packages", "/v2/": "packages", "/.well-known/terraform.json": "packages",
 			"/files/{projectKey}/{repoKey}/{path...}": "files", "GET /test-fixture/hold": "other",
 		} {
 			if got := FamilyOf(p); got != want {

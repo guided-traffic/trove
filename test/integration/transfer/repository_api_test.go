@@ -213,7 +213,9 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 	})
 
 	t.Run("R-REPO-008 the validation reports unknown members, classes, formats, keys and several violations at once", func(t *testing.T) {
-		post := func(body map[string]any) response { return a.postJSON("admin", "/api/v1/projects/it/repositories", body) }
+		post := func(body map[string]any) response {
+			return a.postJSON("admin", "/api/v1/projects/it/repositories", body)
+		}
 		base := func(extra map[string]any) map[string]any {
 			m := map[string]any{"key": "val-" + randHex(2), "class": "local", "format": "generic"}
 			for k, v := range extra {

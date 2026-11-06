@@ -54,20 +54,20 @@ func TestQ_ARCH_302_ServesRequestFollowsTheEffectiveSurface(t *testing.T) {
 	api := roleEndpoint(t, config.Surfaces(), "api")
 	packages := roleEndpoint(t, config.Surfaces(), "packages")
 	for path, want := range map[string]struct{ api, packages bool }{
-		"/":                                    {true, false},
-		"/ui/":                                 {true, false},
-		"/auth/oidc/corp/start":                {true, false},
-		"/api/v1/system/ping":                  {true, false},
-		"/api/v1/auth/oidc/token":              {true, false},
-		"/-/npm/v1/oidc/token/exchange/x":      {true, false},
-		"/files/it/generic-local/x":               {false, true},
-		"/api/npm/it/npm-local/lodash":            {false, true},
+		"/":                               {true, false},
+		"/ui/":                            {true, false},
+		"/auth/oidc/corp/start":           {true, false},
+		"/api/v1/system/ping":             {true, false},
+		"/api/v1/auth/oidc/token":         {true, false},
+		"/-/npm/v1/oidc/token/exchange/x": {true, false},
+		"/files/it/generic-local/x":       {false, true},
+		"/api/npm/it/npm-local/lodash":    {false, true},
 		"/api/nuget/it/nuget-local/v3/index.json": {false, true},
-		"/v2/":                                 {false, true},
-		"/.well-known/x":                       {false, true},
-		"/-/v1/login":                          {false, true},
-		"/does-not-exist":                      {true, true}, // no family: the router decides
-		"/metrics":                             {true, true},
+		"/v2/":            {false, true},
+		"/.well-known/x":  {false, true},
+		"/-/v1/login":     {false, true},
+		"/does-not-exist": {true, true}, // no family: the router decides
+		"/metrics":        {true, true},
 	} {
 		if got := api.ServesRequest(path); got != want.api {
 			t.Errorf("api ServesRequest(%s) = %v, want %v", path, got, want.api)
