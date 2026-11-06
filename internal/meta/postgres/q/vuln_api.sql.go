@@ -288,10 +288,13 @@ SELECT count(*)::bigint AS n
      AND ($8::text = '' OR starts_with(f.package_name, lower($8::text)))
      AND (cardinality($9::text[]) = 0 OR f.version = ANY($9::text[]))
      AND ($10::text = '' OR f.ecosystem = $10::text)
-     AND ($11::text = '' OR f.advisory_id = $11::text
-          OR EXISTS (SELECT 1 FROM vuln_advisory a
-                      WHERE a.ecosystem = f.ecosystem AND a.canonical_id = f.advisory_id
-                        AND (a.id = $11::text OR $11::text = ANY(a.aliases))))
+     AND ($11::text = '' OR (f.ecosystem, f.advisory_id) IN (
+          SELECT a.ecosystem, a.canonical_id FROM vuln_advisory a
+           WHERE a.id = $11::text OR a.aliases @> ARRAY[$11::text]
+          UNION
+          SELECT v.ecosystem, v.advisory_id FROM vuln_finding v
+           WHERE v.advisory_id = $11::text
+             AND NOT EXISTS (SELECT 1 FROM vuln_advisory n WHERE n.id = $11::text OR n.aliases @> ARRAY[$11::text])))
      AND (cardinality($12::text[]) = 0 OR f.severity = ANY($12::text[]))
      AND ((cardinality($13::text[]) = 0 AND f.status <> 'resolved') OR f.status = ANY($13::text[]))
      AND ($14::text = '' OR f.kind = $14::text)
@@ -411,10 +414,13 @@ WITH base AS NOT MATERIALIZED (
      AND ($9::text = '' OR starts_with(f.package_name, lower($9::text)))
      AND (cardinality($10::text[]) = 0 OR f.version = ANY($10::text[]))
      AND ($11::text = '' OR f.ecosystem = $11::text)
-     AND ($12::text = '' OR f.advisory_id = $12::text
-          OR EXISTS (SELECT 1 FROM vuln_advisory a
-                      WHERE a.ecosystem = f.ecosystem AND a.canonical_id = f.advisory_id
-                        AND (a.id = $12::text OR $12::text = ANY(a.aliases))))
+     AND ($12::text = '' OR (f.ecosystem, f.advisory_id) IN (
+          SELECT a.ecosystem, a.canonical_id FROM vuln_advisory a
+           WHERE a.id = $12::text OR a.aliases @> ARRAY[$12::text]
+          UNION
+          SELECT v.ecosystem, v.advisory_id FROM vuln_finding v
+           WHERE v.advisory_id = $12::text
+             AND NOT EXISTS (SELECT 1 FROM vuln_advisory n WHERE n.id = $12::text OR n.aliases @> ARRAY[$12::text])))
      AND (cardinality($13::text[]) = 0 OR f.severity = ANY($13::text[]))
      AND ((cardinality($14::text[]) = 0 AND f.status <> 'resolved') OR f.status = ANY($14::text[]))
      AND ($15::text = '' OR f.kind = $15::text)

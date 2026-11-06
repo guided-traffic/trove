@@ -95,10 +95,13 @@ WITH base AS NOT MATERIALIZED (
      AND (sqlc.arg(package_prefix)::text = '' OR starts_with(f.package_name, lower(sqlc.arg(package_prefix)::text)))
      AND (cardinality(sqlc.arg(versions)::text[]) = 0 OR f.version = ANY(sqlc.arg(versions)::text[]))
      AND (sqlc.arg(ecosystem)::text = '' OR f.ecosystem = sqlc.arg(ecosystem)::text)
-     AND (sqlc.arg(advisory)::text = '' OR f.advisory_id = sqlc.arg(advisory)::text
-          OR EXISTS (SELECT 1 FROM vuln_advisory a
-                      WHERE a.ecosystem = f.ecosystem AND a.canonical_id = f.advisory_id
-                        AND (a.id = sqlc.arg(advisory)::text OR sqlc.arg(advisory)::text = ANY(a.aliases))))
+     AND (sqlc.arg(advisory)::text = '' OR (f.ecosystem, f.advisory_id) IN (
+          SELECT a.ecosystem, a.canonical_id FROM vuln_advisory a
+           WHERE a.id = sqlc.arg(advisory)::text OR a.aliases @> ARRAY[sqlc.arg(advisory)::text]
+          UNION
+          SELECT v.ecosystem, v.advisory_id FROM vuln_finding v
+           WHERE v.advisory_id = sqlc.arg(advisory)::text
+             AND NOT EXISTS (SELECT 1 FROM vuln_advisory n WHERE n.id = sqlc.arg(advisory)::text OR n.aliases @> ARRAY[sqlc.arg(advisory)::text])))
      AND (cardinality(sqlc.arg(severities)::text[]) = 0 OR f.severity = ANY(sqlc.arg(severities)::text[]))
      AND ((cardinality(sqlc.arg(statuses)::text[]) = 0 AND f.status <> 'resolved') OR f.status = ANY(sqlc.arg(statuses)::text[]))
      AND (sqlc.arg(kind)::text = '' OR f.kind = sqlc.arg(kind)::text)
@@ -226,10 +229,13 @@ SELECT count(*)::bigint AS n
      AND (sqlc.arg(package_prefix)::text = '' OR starts_with(f.package_name, lower(sqlc.arg(package_prefix)::text)))
      AND (cardinality(sqlc.arg(versions)::text[]) = 0 OR f.version = ANY(sqlc.arg(versions)::text[]))
      AND (sqlc.arg(ecosystem)::text = '' OR f.ecosystem = sqlc.arg(ecosystem)::text)
-     AND (sqlc.arg(advisory)::text = '' OR f.advisory_id = sqlc.arg(advisory)::text
-          OR EXISTS (SELECT 1 FROM vuln_advisory a
-                      WHERE a.ecosystem = f.ecosystem AND a.canonical_id = f.advisory_id
-                        AND (a.id = sqlc.arg(advisory)::text OR sqlc.arg(advisory)::text = ANY(a.aliases))))
+     AND (sqlc.arg(advisory)::text = '' OR (f.ecosystem, f.advisory_id) IN (
+          SELECT a.ecosystem, a.canonical_id FROM vuln_advisory a
+           WHERE a.id = sqlc.arg(advisory)::text OR a.aliases @> ARRAY[sqlc.arg(advisory)::text]
+          UNION
+          SELECT v.ecosystem, v.advisory_id FROM vuln_finding v
+           WHERE v.advisory_id = sqlc.arg(advisory)::text
+             AND NOT EXISTS (SELECT 1 FROM vuln_advisory n WHERE n.id = sqlc.arg(advisory)::text OR n.aliases @> ARRAY[sqlc.arg(advisory)::text])))
      AND (cardinality(sqlc.arg(severities)::text[]) = 0 OR f.severity = ANY(sqlc.arg(severities)::text[]))
      AND ((cardinality(sqlc.arg(statuses)::text[]) = 0 AND f.status <> 'resolved') OR f.status = ANY(sqlc.arg(statuses)::text[]))
      AND (sqlc.arg(kind)::text = '' OR f.kind = sqlc.arg(kind)::text)

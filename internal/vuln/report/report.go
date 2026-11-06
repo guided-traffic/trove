@@ -121,29 +121,6 @@ func (sn *Snapshot) Repository(key string) (repository.Repository, bool) {
 	return r, ok
 }
 
-// NarrowToProject narrows the repository filter to the physical repositories of the project (R-VULN-020, R-VULN-021 `project`):
-// the filter's repositories that are in the project, or, without a repository filter, every physical repository of the project.
-// A project that has none narrows the filter to nothing. An empty project leaves the filter as it is.
-func (sn *Snapshot) NarrowToProject(f store.Filter, project string) store.Filter {
-	if project == "" {
-		return f
-	}
-	var keys []string
-	if f.HasRepos {
-		keys = f.Repos
-	} else {
-		keys = sn.Topo.Physical()
-	}
-	f.Repos = make([]string, 0, len(keys))
-	for _, k := range keys {
-		if store.ProjectOf(k) == project {
-			f.Repos = append(f.Repos, k)
-		}
-	}
-	f.HasRepos = true
-	return f
-}
-
 // Keys returns the keys of every repository of the snapshot, for the request's authorization index.
 func (sn *Snapshot) Keys() []string { return append(sn.Topo.Physical(), sn.Topo.Virtual()...) }
 

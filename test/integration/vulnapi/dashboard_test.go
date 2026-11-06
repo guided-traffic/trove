@@ -164,6 +164,13 @@ func TestR_VULN_020_TheProjectFilterAndTheSearchAcrossProjects(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("R-VULN-020 a finding whose advisory record is gone is still found by its canonical identifier", func(t *testing.T) {
+		e.addFinding(finding{Repo: "shop-npm", Package: "orphan", Advisory: "GHSA-gone-gone-gone"})
+		if got := e.list(e.r, e.tokRita, q("advisory", "GHSA-gone-gone-gone")).packages(); !slices.Equal(got, []string{"orphan"}) {
+			t.Errorf("orphan: %v", got)
+		}
+	})
 }
 
 // Q-UI-130, R-VULN-013: a holder of vulnerabilities:triage triages a finding of any project from the dashboard; a holder of
