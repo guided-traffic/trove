@@ -20,8 +20,35 @@ share the pod's budget, without `make` or a C compiler.
 | Class | Label | Pods | CPU request / limit | RAM request / limit (runner and dind together) | Disk: `_work` / Docker | Jobs |
 |---|---|---|---|---|---|---|
 | wds18-small | `runs-on: self-hosted` | 0–24 | 1 / 6 | 4 GiB / 10 GiB | 10 GiB / 15 GiB | every job of Test and Release except the kind legs, Release Docker & Helm, Renovate |
-| wds18-large | `runs-on: large` | 0–6 | 2 / 16 | 8 GiB / 20 GiB | 20 GiB / 30 GiB | the kind legs `e2e` (push, access-long) and `e2e-npm` of Test and Release; `latency`, `vuln-perf`, `npm-ha-soak`, `e2e` (failover, drain-roles), `e2e-npm` (npm-ha) and `e2e-mirror` (the set mirror-long) of HA and Performance |
-| GitHub-hosted | `runs-on: ubuntu-24.04` | GitHub's | 4 vCPU | 16 GB | 108 GB free on `/` after the job deletes the preinstalled SDKs | the kind legs that load the NuGet clients image: `e2e-nuget`, `e2e-ci`, `e2e-bastion`, `e2e-vuln`, and the set `mirror` of `e2e-mirror`, in both workflows |
+| wds18-large | `runs-on: large` | 0–6 | 2 / 16 | 8 GiB / 20 GiB | 20 GiB / 30 GiB | the kind legs `e2e` (push, access-long) and `e2e-npm` of Test and Release; `e2e` (failover, drain-roles), `e2e-npm` (npm-ha, ha-suite), `npm-ha-soak`, `e2e-mirror` (the set mirror-long) and, after all of them, `latency` and `vuln-perf` ([Q-ARCH-325](../spec/architecture.md#q-arch-325--where-do-the-perf-jobs-run-relative-to-the-kind-legs)) of HA and Performance |
+| GitHub-hosted | `runs-on: ubuntu-24.04` | GitHub's | 4 vCPU | 16 GB | 108 GB free on `/` after the job deletes the preinstalled SDKs | the kind legs that load the NuGet clients image: `e2e-nuget`, `e2e-ci`, `e2e-bastion`, `e2e-vuln`, and the set `mirror` of `e2e-mirror`, in both workflows; `e2e-upgrade` (HA and Performance only, set `upgrade`, which loads both clients images) |
+
+The measured basis of the nightly assignment ([Q-ARCH-326](../spec/architecture.md#q-arch-326--which-runner-class-runs-which-leg-the-runner-review-of-the-nightly-run)):
+the six nightly runs of 2026-11-03 to 2026-11-05 (`gh run view <id> --json jobs`, the `runner_name` and the labels of each job), per leg the class that ran it and the
+result. `self` is `self-hosted` (the CPU-limited pods of that time), `hosted` is `ubuntu-24.04`, `large` is `large`; `RED` is a failed job, `–` a leg that
+the run did not have. The code changed between the runs (F-43; the drain per role was added in 41902592855), so the table shows what happened, not a cause.
+
+| Leg | 41739280012 (11-03, dispatch) | 41748522448 (11-04 00:40, dispatch) | 41804996351 (11-04 09:08, schedule) | 41902592855 (11-04 20:01, dispatch) | 42002617340 (11-05 09:28, schedule) | 42126196109 (11-05 23:00, dispatch) |
+|---|---|---|---|---|---|---|
+| `e2e` failover | self ok | self ok | self RED | hosted ok | hosted ok | large ok |
+| `e2e` drain-roles | – | – | – | hosted ok | hosted ok | large ok |
+| `e2e-npm` npm-ha | self RED | self RED | self RED | hosted RED | hosted RED | large ok |
+| `npm-ha-soak` | self ok | self RED | self ok | hosted ok | hosted ok | large ok |
+| `e2e-nuget` nuget-ha | self ok | self ok | self ok | hosted ok | hosted ok | hosted ok |
+| `e2e-ci` ci-ha | self ok | self ok | self ok | hosted ok | hosted ok | hosted ok |
+| `e2e-bastion` bastion | self RED | self RED | self ok | hosted ok | hosted RED (lost, no test run) | hosted ok |
+| `e2e-bastion` bastion-long | self ok | self RED | self ok | hosted ok | hosted ok | hosted ok |
+| `e2e-vuln` vuln | self ok | self ok | self ok | hosted ok | hosted RED (one `EOF` of the npm test upstream in setup) | hosted ok |
+| `e2e-vuln` vuln-long | self RED | self RED | self ok | hosted ok | hosted ok | hosted ok |
+| `e2e-mirror` mirror | – | – | – | – | – | hosted ok |
+| `e2e-mirror` mirror-long | – | – | – | – | – | large ok |
+| `latency` (P-13, P-14) | self ok | self ok | self ok | hosted ok | hosted ok | large ok |
+| `vuln-perf` (R-VULN-028) | self RED | self RED | self RED | hosted RED | hosted RED | large RED |
+
+Per class over the six runs: `self` 20 of 33 jobs green, `hosted` 25 of 31, `large` 6 of 7 (its one red job is `vuln-perf`). Reds that no test decided:
+the `bastion` of 42002617340 was lost after eleven minutes inside `make e2e SET=bastion`, with no step after it and no log (a runner loss; F-40 in the project plan),
+and the `vuln` of 42002617340 failed its first test in the environment's setup, on one `EOF` of `POST /-/stub/publish` to the in-cluster npm test upstream;
+the later tests of the set then reported that the environment did not finish. `npm-ha` was red in five of five runs off `large` and green once on `large` (42126196109).
 
 What the assignment rests on, measured on 2026-11-05 on a developer machine (linux/arm64 containers with 6 CPUs, a cold
 start, the cgroup's `memory.peak`, page cache included): `lint` 4.7 GiB, `unit` 4.6 GiB, `generate` 3.9 GiB, `web` 3.2 GiB,
@@ -203,14 +230,32 @@ Test and Release runs `push` and `access-long` (job `e2e`), `npm` (job `e2e-npm`
 `failover` set (job `e2e`, E0.13 and E1.8), the drain per role (job `e2e`, set `drain-roles`, E6a.6, edge port 8097: the evictions run
 under the npm load of `npm-ha` too, so the set starts the npm client pods and the counting test upstream,
 [Q-HA-94](../spec/ha-and-helm.md#q-ha-94--the-load-of-the-drain-per-role)), the `npm-ha` leg (job `e2e-npm`, E2.11), `npm-ha-soak` and
-the `nuget-ha` leg (job `e2e-nuget`, Q-ARCH-277), beside the latency job. Dispatch it with `gh workflow run "HA and Performance (nightly)" --ref main`.
+the `ha-suite` leg (job `e2e-npm`, the failure suite under the npm load), the `upgrade` leg (job `e2e-upgrade`, below), the `nuget-ha` leg (job `e2e-nuget`,
+Q-ARCH-277, which starts the npm client pods too), and last the perf jobs `latency` and `vuln-perf`, which start after every kind leg
+([Q-ARCH-325](../spec/architecture.md#q-arch-325--where-do-the-perf-jobs-run-relative-to-the-kind-legs)). Dispatch it with `gh workflow run "HA and Performance (nightly)" --ref main`, or one leg of it with `-f sets=` ([below](#dispatching-one-leg)).
 Locally, from the repository root, after `make image VERSION=dev` and `make dev-up`: `make e2e SET=failover`, `make e2e SET=drain-roles`, `make e2e SET=npm-ha`,
-`make e2e SET=npm-ha-crash` (the three-force-delete crash, which has no CI job), `make e2e SET=npm-ha-soak` or `make e2e SET=nuget-ha`,
+`make e2e SET=npm-ha-crash` (the three-force-delete crash, which has no CI job), `make e2e SET=npm-ha-soak`, `make e2e SET=nuget-ha`, `make e2e SET=ha-suite` or `make e2e SET=upgrade`,
 then `make dev-down`; the latency tests need `make integration-up && make test-performance`.
 A red long leg does not hold the release: it is recorded as an open finding instead (owner, 2026-11-01).
 
+#### Dispatching one leg
+
+The input `sets` of a dispatch is a comma-separated list of set names or job keys, without spaces: `gh workflow run "HA and Performance (nightly)" --ref main -f sets=upgrade,ha-suite`
+runs the leg `upgrade` and the leg `ha-suite` and no other. A job key selects every leg of its job (`-f sets=e2e-npm` runs `npm-ha` and `ha-suite`), and the perf jobs are
+selected by their keys `latency` and `vuln-perf`. An empty list runs everything, as the schedule does. A matrix leg that the list does not name shows as green with its
+steps skipped, and its job summary says so; a job without a matrix that the list does not name is skipped. A list with a space fails every matrix leg with an error.
+The composite action [select-leg](../../.github/actions/select-leg/action.yml) decides for a matrix leg ([Q-ARCH-324](../spec/architecture.md#q-arch-324--how-is-one-leg-of-the-nightly-run-dispatched)).
+The input exists on `main` once the change is merged, because `gh` runs the workflow file of the ref.
+
+#### Order and wall time
+
+The kind legs start at once, as before. The perf jobs start after all of them have finished: `latency` (P-13 and P-14) after the nine kind jobs, and `vuln-perf` after
+`latency` ([Q-ARCH-325](../spec/architecture.md#q-arch-325--where-do-the-perf-jobs-run-relative-to-the-kind-legs)). So neither perf job shares the large VM with a kind cluster of this
+workflow or with the other perf job (a Test and Release run that starts meanwhile can still share it). The cost is wall time: in run 42126196109 the two jobs took 5 min 17 s and 7 min 22 s, so a nightly ends about 13 minutes after its longest kind
+leg. Not measured yet: the wall time of a whole nightly in this order, and the V-4 and V-7b results under it.
+
 [`performance.yml`](../../.github/workflows/performance.yml) ("HA and Performance (nightly)") runs every night at 02:17 UTC and on demand
-(`workflow_dispatch`), on the large runners and, for the legs that load the NuGet clients image, on GitHub-hosted runners ([CI](#ci)). It brings up the integration stack (`make integration-up`), runs
+(`workflow_dispatch`, with the input `sets`, [above](#dispatching-one-leg)), on the large runners and, for the legs that load the NuGet clients image, on GitHub-hosted runners ([CI](#ci)). It brings up the integration stack (`make integration-up`), runs
 `make test-performance` and stops the stack. That target runs `TestChangePropagation`, `TestJobPickup`, `TestR_NPM_010_ThousandVersions` and
 `TestIdempotentCreate` with `TROVE_PERF_GATE=1`, which enforces the p99 bounds of P-13 (100 ms) and P-14 (1 s) with Valkey available, R-NPM-010's
 200 ms for a miss, 10 ms for a cached hit and 50 ms for a `304` of a document of 1,000 versions ([Q-ARCH-293](../spec/architecture.md#q-arch-293--where-a-wall-clock-target-of-a-functional-test-is-enforced)) and R-API-014's 1.5 s for a concurrent duplicate; it then runs `TestR_BAS_026_AFeedPageOfAThousandEntriesIsAppliedAgainstTwoHundredThousandAnswersWithinTheBound` of `internal/bastion/engine` with the gate (the 5 s of a burst page, R-BAS-026; per change the page is bounded by 100 matching passes over the same answers, [Q-BAS-140](../spec/bastion.md#q-bas-140--where-the-5-s-of-a-burst-page-is-enforced)) and `TestR_EP_013_CeilingPerformance` of `internal/authz` the same way
@@ -223,7 +268,7 @@ in its leg `npm-ha-closing` ([Q-HA-67](../spec/ha-and-helm.md#q-ha-67--where-and
 `e2e-npm-report-npm-ha-soak` and `e2e-npm-artifacts-npm-ha-soak` are kept for 30 days. A failed night is not wired to an issue or a
 notification, except the job `vuln-perf` (below): look at the Actions list. The other targets of R-ARCH-027 (`perf/`) are not part of this workflow.
 
-Job `vuln-perf` runs the performance run of the vulnerability scanning (R-VULN-028, scenarios V-1 to V-9, [perf/vuln](../../perf/vuln)) against the
+Job `vuln-perf` runs, after `latency` and every kind leg ([Q-ARCH-325](../spec/architecture.md#q-arch-325--where-do-the-perf-jobs-run-relative-to-the-kind-legs)), the performance run of the vulnerability scanning (R-VULN-028, scenarios V-1 to V-9, [perf/vuln](../../perf/vuln)) against the
 integration stack with `TROVE_PERF_GATE=1`: it seeds 100,000 stored versions in SQL, imports the 231,000-record npm dump of the test advisory source,
 evaluates, and measures; it uploads `perf-vuln.json`, the `go test -json` stream and, when the run failed, the replicas' whole logs
 (`perf-vuln-logs/`) as `vuln-perf` (30 days) and, when a scenario is above its target or the run fails, opens an issue that lists the misses
@@ -234,7 +279,22 @@ opens an issue ([Q-VULN-57](../spec/vulnerability-scanning.md#q-vuln-57--the-per
 Job `e2e-nuget` runs `make e2e SET=nuget-ha` on a kind cluster (edge port 8090, cluster `trove-nuget-ha-<run id>`, reports
 `e2e-nuget-report-nuget-ha` and `e2e-nuget-artifacts-nuget-ha`, kept 14 days). No test is named `TestNuGetHA...` yet, so the set passes
 with a notice and the job checks nothing beyond the cluster coming up ([Q-ARCH-276](../spec/architecture.md#q-arch-276--how-does-an-e2e-set-that-names-no-test-pass-and-when-does-it-fail)).
-The nightly run therefore costs a cluster bring-up and proves no NuGet behavior under load until the drain and failover tests land.
+The job builds both clients images in its own steps, `make npm-clients-image` and `make nuget-clients-image`, and the set loads them, because the set starts the npm
+client pods too ([Q-ARCH-327](../spec/architecture.md#q-arch-327--how-do-the-legs-that-load-both-client-images-get-them-and-who-builds-them)). The nightly run therefore
+costs a cluster bring-up and proves no NuGet behavior under load until the drain and failover tests land.
+
+Job `e2e-upgrade` runs `make e2e SET=upgrade` on a kind cluster (edge port 8101, cluster `trove-upgrade-<run id>`, reports and artifacts `e2e-upgrade-report-upgrade`,
+`e2e-upgrade-artifacts-upgrade` and `e2e-upgrade-playwright-upgrade`, kept 14 days; on failure `e2e-upgrade-cluster-state-upgrade`). The set installs published releases
+of the chart from <https://guided-traffic.github.io/trove/> and their images from Docker Hub, loads them into the cluster, upgrades to the image built from the commit, and
+runs the npm and NuGet client loops and a browser journey. The job runs on a GitHub-hosted runner with the disk space freed, because it loads both clients images; its
+budgets are 120 minutes for the job and 90 for the set. Not verified on this commit: the set is not in [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) yet, so the leg fails at
+`make e2e` until the change that defines it lands.
+
+Set `ha-suite` (job `e2e-npm`, edge port 8100, the budgets of `npm-ha`: 120 minutes for the job, 80 for the set) runs the failure suite under the npm load: the S3 outage,
+the loss of a kind worker node with `docker stop`, the loss of the PostgreSQL and of the Valkey primary, and the npm-audit drain. Not verified on this commit: the set is not
+in [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) yet, so its scenarios are the ones the plan names, not the ones the code runs.
+
+Job `e2e-ci` runs `make e2e SET=ci-ha` on a kind cluster
 
 Job `e2e-ci` runs `make e2e SET=ci-ha` on a kind cluster (edge port 8092, cluster `trove-ci-ha-<run id>`, reports `e2e-ci-report-ci-ha` and
 `e2e-ci-artifacts-ci-ha`, kept 14 days): E4.7, the reference pipeline while the node of a `web` replica is drained and again with Valkey

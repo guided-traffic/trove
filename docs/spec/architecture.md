@@ -8887,6 +8887,83 @@ A rate-limit answer with a wait over 300 s ends the attempt. The workers that we
 
 **Applied in the spec:** R-REPO-054 (a long wait ends the attempt). Code: `throttle.go`. Test: `TestR_REPO_054_ALongWaitReleasesEveryWorkerAtOnce`.
 
+### Q-ARCH-324 · How is one leg of the nightly run dispatched?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `HA and Performance (nightly)` has eleven jobs and sixteen legs. A manual dispatch ran all of them, 38 to 53 minutes and up to six kind clusters at once, so a look at one leg paid for the rest. The owner asked for a dispatch that names the legs, and the schedule keeps running everything. GitHub expressions have no split function and no `matrix` context in a job's `if`, so the filter needs a step in each matrix job, or a matrix built by a job before it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One input `sets`, a comma-separated list of set names or job keys; a job-level `if` for the jobs without a matrix; in each matrix job a first step (`.github/actions/select-leg`) whose output conditions every later step (chosen) | `gh workflow run "HA and Performance (nightly)" --ref main -f sets=upgrade,ha-suite` runs two legs | One input for every leg, decided in one place; the matrix keeps its entries, names and ports; actionlint checks the file as it did | A matrix job whose legs are all dropped still starts its runner pod for the seconds of checkout and the decision; every step of a matrix job carries one more condition |
+| (b) One boolean input per leg | One checkbox per leg in the Actions form | Typed by the form | One input per leg to keep in step with the matrix; `gh` needs one `-f` per leg; a new leg is a new input |
+| (c) A first job that emits the matrix with `fromJSON` | The matrix holds the selected legs only | Only the selected legs start a pod | The entries leave the file, so actionlint cannot check them; one more job before every leg |
+| (d) One workflow file per leg or per group | Separate files with their own dispatch | Each file reads on its own | The e2e legs are several hundred lines each; copies drift |
+
+**Choice:** (a).
+
+**Rationale:** The names a dispatch takes are the ones the logs and the reports already carry: the sets of [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) and the job keys. A list with a space fails in every matrix leg, so the run is red and visible, because the job-level conditions compare the raw string. Verified in this change: actionlint 1.7.12 (the pin) passes [performance.yml](../../.github/workflows/performance.yml); the decision block of the action passes thirteen dispatch cases run with bash (the empty list, a single leg, a job key, a prefix and a substring that must not match, a list with a space). Not verified: a dispatch on GitHub, which runs the file of its ref, so the input exists once the change is on `main`. Revisit when the list needs a value GitHub must check (then a choice input), or when a dropped matrix job costs visible time on the large class.
+
+**Applied in the spec:** none (CI wiring). Code: [performance.yml](../../.github/workflows/performance.yml) (input `sets`, the job-level `if`, the step `Select the leg`), [select-leg/action.yml](../../.github/actions/select-leg/action.yml). Elsewhere: [releasing.md](../developer/releasing.md#ha-and-performance-nightly).
+
+### Q-ARCH-325 · Where do the perf jobs run relative to the kind legs?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: The jobs `latency` (P-13 and P-14) and `vuln-perf` (R-VULN-028, V-1 to V-9) ran at the same time as the kind legs on the large class, which holds six pods, so each measured on a VM where the kind clusters of the same night were running. F-43 records V-4 (p99 bound 5 ms) and V-7b (300 ms) missed on some nights and met on others with the same code. Measured over the six nightly runs 41739280012 to 42126196109 (the table in [releasing.md](../developer/releasing.md#ci)): `latency` was green in six of six runs, `vuln-perf` red in six of six; V-1 did not finish in 41748522448 and 42002617340 (F-43).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Both perf jobs after every kind leg (`needs` on the nine kind jobs, `if: !cancelled()`), `vuln-perf` after `latency`, so no perf job shares the VM with a kind cluster or with the other perf job (chosen) | The nightly ends with the longest kind leg, then the two perf jobs | The perf jobs measure without this workflow's clusters beside them; one `needs` list per job | About 13 minutes more per night: 5 min 17 s for `latency` and 7 min 22 s for `vuln-perf` in 42126196109, which ran beside other jobs; the nightly ends later |
+| (b) Status quo: in parallel with the kind legs on large | No change | No wall time | The load of our own clusters stays in the measurement; F-43's misses are not explained |
+| (c) GitHub-hosted `ubuntu-24.04` for the perf jobs | Each job gets its own VM, no CPU limit | Free for the public repository; no wall time | Measured: `vuln-perf` V-4 at 7.7 ms missed (41902592855) and 2.98 ms met (42002617340); V-7b 329 ms missed and 205 ms met; the hosted runs miss for the same reason as the large run (V-4 9.7 ms in 42126196109), so no gain is measured |
+| (d) A concurrency group over the large jobs, one at a time | Every large job waits for the one before | Nothing else of ours shares the VM | The kind legs would run in sequence, about two hours instead of 50 minutes |
+| (e) A runner class of its own for the perf jobs | A third self-hosted class, dedicated | The measurement shares nothing | The organisation has the small and large classes only; a class is the owner's decision to provision |
+
+**Choice:** (a).
+
+**Rationale:** The one load that is ours and under our control is the neighbour of the perf job, and (a) removes it. It does not claim to remove the variance of the VM. In 42126196109 `vuln-perf` ran beside the other large legs and missed V-4 (9.7 ms) and V-7b (340 ms). In the two hosted runs it ran beside no job of ours and still missed V-4 in one of two runs, so the data does not show that our neighbours are the whole cause. Verified: actionlint passes; the `needs` lists of both perf jobs name all nine kind jobs, the new `e2e-upgrade` among them. Not verified: the wall time of the new order and the V-4 result under it (no nightly run has them yet), and whether a Test and Release run or another repository of the organisation shares the large VM at the same time; the order removes this workflow's clusters from the perf jobs' neighbours and nothing else. Revisit after five nightly runs in the new order: if V-4 or V-7b still misses in each of them on large, the bound is read against the reference environment ([H-491](../security/vulnerability-scanning.md#h-491--the-performance-run-is-not-the-reference-environment)) or option (e) is asked of the owner; if the perf jobs pass in all of them, (a) stays.
+
+**Applied in the spec:** none (CI wiring). Code: [performance.yml](../../.github/workflows/performance.yml) (jobs `latency` and `vuln-perf`). Elsewhere: [releasing.md](../developer/releasing.md#ha-and-performance-nightly), [Q-VULN-57](vulnerability-scanning.md#q-vuln-57--the-performance-run-is-a-test-package-on-the-integration-stack-gated-and-reported-by-the-nightly-workflow).
+
+### Q-ARCH-326 · Which runner class runs which leg? The runner review of the nightly run
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: The nightly legs ran on three assignments in six runs: the CPU-limited self-hosted pods (41739280012, 41748522448, 41804996351), GitHub-hosted runners for every job (41902592855, 42002617340), and the assignment of the owner's note of 2026-11-05 (42126196109: large for the legs without the NuGet clients image, hosted for those with it). The table of leg by run, with the class and the result of each job, is in [releasing.md](../developer/releasing.md#ci). The code changed between the runs (the NuGet dump fix of 2026-11-05 in F-43, the drain per role added in 41902592855), so the class and the code cannot be separated with six nights. Per class over the six runs: self-hosted 20 of 33 jobs green, hosted 25 of 31, large 6 of 7 (its one red job is the perf job `vuln-perf`). `npm-ha` was red in all five runs off large and green once on large.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the assignment of 42126196109 (chosen): the npm-load and drain legs on large, the legs with the NuGet clients image and the new `upgrade` on `ubuntu-24.04`, `ha-suite` on large | No change of any class | The best measured night; the NuGet image cannot go on large (its Docker storage, 30 GiB, evicted the legs in 42046280787); the one leg with a class signal (`npm-ha`) points to large | One large night is one night; `ha-suite` adds a fourth npm-load leg to the large wave, which fills the six pods of the class |
+| (b) Move `npm-ha`, `npm-ha-soak` and `drain-roles` to `ubuntu-24.04` | No shared VM, no CPU limit | More CPU headroom in principle | `npm-ha` was red in both hosted runs; the hosted runner has 16 GB of RAM and 4 vCPU, against 20 GiB and 16 CPUs of the large pod |
+| (c) Move the legs with the NuGet clients image to large | One class for every leg | Fewer hosted minutes | Their clients image (2.3 GB) copied into four kind nodes exceeds the 30 GiB of Docker storage of a large pod (eviction in run 42046280787) |
+| (d) `max-parallel: 1` on job `e2e-npm`, so `npm-ha` and `ha-suite` run one after the other | Two npm-load legs fewer at a time | Less load on the VM | The nightly grows by the first leg's time (21 minutes for `npm-ha` in 42126196109, 27 to 53 minutes in the runs off large); no measured failure of the pair |
+| (e) A small self-hosted pod for the short kind legs | Ten GiB for the runner and dind together | Cheap | The drain per role under the npm load held 9.9 GiB in Docker (measured, [releasing.md](../developer/releasing.md#ci)), which leaves no room for the runner container |
+
+**Choice:** (a).
+
+**Rationale:** No leg has a measured case for a move. Per leg, the only signal across classes is `npm-ha`, red in five of five runs off large and green on large once, so it stays on large. The hosted reds are one perf job, one leg lost after eleven minutes with no test run (F-40, `bastion`, 42002617340), one leg whose tests all failed behind one `EOF` of the in-cluster npm test upstream during setup (`vuln`, 42002617340, not classified further), and `npm-ha` (two). The small class cannot carry a kind leg (option e). Verified: the assignment in the workflow files (`runs-on`) and the job classes in the API of the six runs. Not verified: that the class explains the differences, because the code changed between the runs. Revisit after five nightly runs on this assignment, or when a red leg on large has a runner cause (a lost pod, an eviction, a DNS failure): then option (b) or (d) is decided on that evidence.
+
+**Applied in the spec:** none (CI wiring). Code: [performance.yml](../../.github/workflows/performance.yml) (`runs-on` of each job, unchanged). Elsewhere: [releasing.md](../developer/releasing.md#ci) (the runner table and the measured basis), [releasing.md](../developer/releasing.md#ha-and-performance-nightly).
+
+### Q-ARCH-327 · How do the legs that load both client images get them, and who builds them?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: The set `nuget-ha` now starts the npm client pods as well (the drain of R-HA-059 under the npm and NuGet load together), so job `e2e-nuget` needs both clients images, and so does the new job `e2e-upgrade`. Until now the nightly `e2e-nuget` let [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) build the NuGet image inside the set, and the npm-only legs (`npm-ha`, `drain-roles`) do the same for the npm image.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The job builds both images in its own steps (`make npm-clients-image`, `make nuget-clients-image`) and sets `TROVE_E2E_NPM_CLIENTS_IMAGE_BUILD` and `TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD` to `0`, as the jobs `e2e-ci`, `e2e-bastion`, `e2e-vuln` and `e2e-mirror` of Test and Release do (chosen) | Named steps before the set; the set loads the images and builds none | The build has its own step and log, and its time is outside the set's 80-minute budget; one way for every job that loads both | Two more steps per job |
+| (b) The set builds the images it needs (the status quo of the npm-only legs and of the nightly `e2e-nuget` before this change) | No steps, no flags | Fewer lines | The build runs inside the set's timeout and its log is mixed with the test's |
+| (c) One job builds the images and passes them to the legs as artifacts | One build for all legs | Builds happen once | The NuGet clients image (2.3 GB) would be uploaded and downloaded per leg; not measured, rejected for that transfer |
+
+**Choice:** (a) for the jobs that load both images (`e2e-nuget` and `e2e-upgrade` here). The npm-only legs keep (b): changing them is not needed for this change.
+
+**Rationale:** The same two steps and flags as the jobs of Test and Release mean that a reader finds the build in the same place in every job. Verified: the flags `TROVE_E2E_NPM_CLIENTS_IMAGE_BUILD` and `TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD` are the ones the Test and Release jobs set, and the targets `npm-clients-image` and `nuget-clients-image` exist in the Makefile (the Test and Release jobs run them). Not verified: that `nuget-ha` loads the npm pods without a rebuild, because the set's npm pod support is the other agents' change to deploy/dev/e2e.sh. Revisit when a leg needs an image on a runner that cannot hold it, or when the npm-only legs move to (a) with the next change of their job.
+
+**Applied in the spec:** none (CI wiring). Code: [performance.yml](../../.github/workflows/performance.yml) (jobs `e2e-nuget` and `e2e-upgrade`). Elsewhere: [releasing.md](../developer/releasing.md#ha-and-performance-nightly).
+
 ### Q-ARCH-328 · Admission charges the bytes a request holds and the caches hold now, not a worst case per request and the caches' budgets
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Revises [Q-ARCH-240](#q-arch-240--a-replica-admits-what-its-memory-holds-memory-slots-and-a-heap-gate-in-step-4) and [Q-ARCH-243](#q-arch-243--the-memory-slots-leave-the-caches-byte-budgets-aside) in part.

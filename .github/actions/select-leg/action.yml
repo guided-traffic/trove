@@ -1,0 +1,51 @@
+# Decides whether one leg of a matrix job of "HA and Performance (nightly)" runs in this dispatch (the input `sets`,
+# docs/developer/releasing.md#ha-and-performance-nightly, Q-ARCH-324). A leg runs when `sets` is empty (the schedule's
+# behaviour) or names its set or its job key among the comma-separated values. A leg that does not run says so in the
+# job summary, so a green job with skipped steps is not read as a passed test. Run after actions/checkout.
+name: Select the legs of a dispatch
+description: Output run=true when the leg runs in this dispatch; an empty sets runs every leg
+inputs:
+  leg:
+    description: The set of the matrix leg, for example ha-suite
+    required: true
+  job:
+    description: The job key; a dispatch that names it runs every leg of that job
+    required: true
+  sets:
+    description: The comma-separated sets of the dispatch input; empty runs every leg
+    required: false
+    default: ""
+outputs:
+  run:
+    description: "true when the leg runs, false when it does not"
+    value: ${{ steps.decide.outputs.run }}
+runs:
+  using: composite
+  steps:
+    - name: Decide whether the leg runs
+      id: decide
+      shell: bash
+      env:
+        LEG: ${{ inputs.leg }}
+        JOB: ${{ inputs.job }}
+        SETS: ${{ inputs.sets }}
+      run: |
+        set -euo pipefail
+        # The job-level conditions of this workflow compare the same string, so a space would select a non-matrix job
+        # and not a matrix leg: a list with spaces fails here, in every leg, instead.
+        if [[ "$SETS" == *[[:space:]]* ]]; then
+          echo "::error::the input sets is a comma-separated list without spaces, got '$SETS'"
+          exit 1
+        fi
+        run=false
+        if [ -z "$SETS" ]; then
+          run=true
+        else
+          case ",$SETS," in
+            *",$LEG,"*|*",$JOB,"*) run=true ;;
+          esac
+        fi
+        echo "run=$run" >> "$GITHUB_OUTPUT"
+        if [ "$run" != true ]; then
+          echo "Leg $LEG of job $JOB is not in the sets of this dispatch ($SETS): its steps are skipped." >> "$GITHUB_STEP_SUMMARY"
+        fi

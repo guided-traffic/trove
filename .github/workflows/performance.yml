@@ -1,31 +1,42 @@
 # HA and Performance (nightly): the long tests, which run nightly and on dispatch and not on every change (owner,
 # 2026-11-01). Per change, Test and Release runs the e2e legs push and access-long, the npm leg and the NuGet leg; the long legs of the
-# failure suite (failover, npm-ha) run here instead; npm-ha-crash, the three-force-delete form of the pod crash, runs by
-# hand (make e2e SET=npm-ha-crash), and job npm-ha-soak runs the same test with ten. The job latency enforces the p99 bounds of P-13
-# (change propagation) and P-14 (job pick-up) with Valkey available, against the integration stack (R-ARCH-027,
-# Q-ARCH-220): the per-change integration tier asserts delivery and the p50 only, because the runner pods keep a CPU
-# limit and a throttled process stalls for 100 ms or more at a time. On kind clusters, job e2e runs the failover set
-# (E0.13, E1.8) and the drain per role (set drain-roles, E6a.6, under the npm load of npm-ha as well, Q-HA-94), job e2e-npm runs leg npm-ha (drain variant A and the PostgreSQL switchover and Valkey failover under the
-# npm load, E2.11), job npm-ha-soak runs the 20-minute pod crash of R-HA-052 under the npm load and the npm load
-# scripts of R-ARCH-027 (Q-HA-67), job e2e-nuget runs leg nuget-ha (the drain and failover under the NuGet load, Q-ARCH-277;
-# no test of that name exists yet, so the set passes with a notice, Q-ARCH-276) and job e2e-ci runs leg ci-ha (the long legs of the GitLab CI OIDC
-# suite, E4.7) and job e2e-bastion runs the sets bastion and bastion-long (R-BAS-049: the Bastion's scenarios on kind, the long ones being the drain
-# and the floods), job e2e-vuln runs the sets vuln and vuln-long (R-VULN-029: the scanning's scenarios on kind, the long ones being the drain of a
-# full synchronization and the client tests with Valkey stopped), job e2e-mirror runs the sets mirror and mirror-long (R-REPO-059: the mirror's
-# scenarios on kind, the long one being the drain of the process that runs a pass), and job vuln-perf runs the performance run of the vulnerability scanning (R-VULN-028, V-1 to V-9, perf/vuln) against the
-# integration stack and opens an issue on a miss. What the jobs run and how to reproduce them:
+# failure suite (failover, npm-ha) run here instead; npm-ha-crash, the three-force-delete form of the pod crash, runs by hand
+# (make e2e SET=npm-ha-crash), and job npm-ha-soak runs the same test with ten. On kind clusters: job e2e runs the failover set (E0.13,
+# E1.8) and the drain per role (set drain-roles, E6a.6, under the npm load of npm-ha too, Q-HA-94); job e2e-npm runs the sets npm-ha
+# (drain variant A, the PostgreSQL switchover and the Valkey failover under the npm load, E2.11) and ha-suite (the failure suite under the
+# npm load); job e2e-upgrade runs the set upgrade (published releases upgraded to the commit's image under the npm and NuGet loads, with a
+# browser journey); job npm-ha-soak runs the 20-minute pod crash of R-HA-052 under the npm load and the npm load scripts of R-ARCH-027
+# (Q-HA-67); job e2e-nuget runs nuget-ha (the drain and failover under the NuGet load and the npm load, Q-ARCH-277; no test of that name
+# exists yet, so the set passes with a notice, Q-ARCH-276); job e2e-ci runs ci-ha (E4.7); job e2e-bastion runs the sets bastion and
+# bastion-long (R-BAS-049); job e2e-vuln runs vuln and vuln-long (R-VULN-029); job e2e-mirror runs mirror and mirror-long (R-REPO-059).
+# The perf jobs start after every kind leg of this workflow has finished, so they measure on the large VM without this workflow's
+# clusters beside them (Q-ARCH-325; a Test and Release run that starts meanwhile can still share the VM): job latency enforces the p99 bounds of P-13 (change propagation) and P-14 (job pick-up) with Valkey available, against
+# the integration stack (R-ARCH-027, Q-ARCH-220), and job vuln-perf, after latency, runs the performance run of the vulnerability scanning
+# (R-VULN-028, V-1 to V-9, perf/vuln) and opens an issue on a miss.
+#
+# A dispatch can run a part of the nightly (Q-ARCH-324): `gh workflow run "HA and Performance (nightly)" --ref main -f sets=upgrade,ha-suite`.
+# The input sets is a comma-separated list of set names or job keys; empty runs every leg, as the schedule does. A leg the list does not
+# name shows as a job with skipped steps, and its job summary says so. What the jobs run and how to reproduce them:
 # docs/developer/releasing.md#ha-and-performance-nightly.
 #
-# Runners (owner, 2026-11-05): the jobs run on the organisation's large runners (runs-on: large), the class for kind,
-# e2e and load tests, except the kind legs that load the NuGet clients image (e2e-nuget, e2e-ci, e2e-bastion,
-# e2e-vuln, and the set mirror of e2e-mirror): they need more than a large pod's 30 GiB of Docker storage and run on GitHub-hosted runners
-# (runs-on: ubuntu-24.04). Sizes: docs/developer/releasing.md#ci.
+# Runners (owner, 2026-11-05; the assignment and its measured basis, Q-ARCH-326): the jobs run on the organisation's large runners (runs-on:
+# large), the class for kind, e2e and load tests, except the kind legs that load the NuGet clients image (e2e-nuget, e2e-ci, e2e-bastion,
+# e2e-vuln, e2e-upgrade, and the set mirror of e2e-mirror): they need more than a large pod's 30 GiB of Docker storage and run on GitHub-hosted
+# runners (runs-on: ubuntu-24.04). Sizes: docs/developer/releasing.md#ci.
 name: HA and Performance (nightly)
 
 on:
   schedule:
     - cron: "17 2 * * *"
   workflow_dispatch:
+    inputs:
+      sets:
+        description: >-
+          Comma-separated set names or job keys to run, without spaces, for example upgrade,ha-suite. Empty runs every leg, as the
+          schedule does. A job key (for example e2e-npm) runs every leg of that job.
+        type: string
+        required: false
+        default: ""
 
 concurrency:
   group: ${{ github.workflow }}
@@ -38,8 +49,12 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # Q-ARCH-325: the perf jobs start after every kind leg has finished (!cancelled() lets them run when a leg failed), and vuln-perf
+  # after latency, so that no perf job shares the large VM with another job of this workflow or with the other perf job.
   latency:
     name: P-13 and P-14 latency (Valkey 9.1)
+    needs: [e2e, e2e-npm, npm-ha-soak, e2e-nuget, e2e-ci, e2e-bastion, e2e-vuln, e2e-mirror, e2e-upgrade]
+    if: ${{ !cancelled() && (!inputs.sets || contains(format(',{0},', inputs.sets), ',latency,')) }}
     runs-on: large
     timeout-minutes: 45
     steps:
@@ -108,6 +123,8 @@ jobs:
   # TROVE_PERF_GATE=1 makes a value above its target fail the job; a failed job opens an issue that lists the misses.
   vuln-perf:
     name: R-VULN-028 vulnerability scanning performance (V-1 to V-9)
+    needs: [e2e, e2e-npm, npm-ha-soak, e2e-nuget, e2e-ci, e2e-bastion, e2e-vuln, e2e-mirror, e2e-upgrade, latency]
+    if: ${{ !cancelled() && (!inputs.sets || contains(format(',{0},', inputs.sets), ',vuln-perf,')) }}
     runs-on: large
     timeout-minutes: 150
     permissions:
@@ -212,6 +229,7 @@ jobs:
   # closing run of Test and Release runs the ten force-deletes too, in its leg npm-ha-closing (Q-HA-67).
   npm-ha-soak:
     name: e2e-npm on kind (npm-ha-soak)
+    if: ${{ !inputs.sets || contains(format(',{0},', inputs.sets), ',npm-ha-soak,') }}
     runs-on: large
     timeout-minutes: 90
     env:
@@ -362,30 +380,44 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Select the leg (the dispatch input sets)
+        id: leg
+        uses: ./.github/actions/select-leg
+        with:
+          leg: ${{ matrix.set }}
+          job: e2e
+          sets: ${{ inputs.sets }}
+
       - name: Load the tool pins
+        if: steps.leg.outputs.run == 'true'
         uses: ./.github/actions/load-pins
 
       - name: Set up Go
+        if: steps.leg.outputs.run == 'true'
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
       - name: Install build tools
+        if: steps.leg.outputs.run == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential jq
 
       - name: Install the pinned helm
+        if: steps.leg.outputs.run == 'true'
         uses: azure/setup-helm@v5
         with:
           version: ${{ env.HELM_VERSION }}
 
       - name: Install the pinned kubectl
+        if: steps.leg.outputs.run == 'true'
         uses: azure/setup-kubectl@v5
         with:
           version: ${{ env.KUBECTL_VERSION }}
 
       - name: Install the pinned kind
+        if: steps.leg.outputs.run == 'true'
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/bin"
@@ -393,7 +425,7 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Install the shared library the pinned Node.js loads
-        if: matrix.browser
+        if: matrix.browser && steps.leg.outputs.run == 'true'
         run: |
           set -euo pipefail
           # Node.js 26 links libatomic.so.1, which the runner image does not ship (Q-ARCH-218).
@@ -401,13 +433,13 @@ jobs:
           sudo apt-get install -y libatomic1
 
       - name: Set up Node.js (the Playwright journeys of E1.11)
-        if: matrix.browser
+        if: matrix.browser && steps.leg.outputs.run == 'true'
         uses: actions/setup-node@v7
         with:
           node-version-file: web/.nvmrc
 
       - name: Install the Playwright journeys and their browser
-        if: matrix.browser
+        if: matrix.browser && steps.leg.outputs.run == 'true'
         working-directory: web
         run: |
           set -euo pipefail
@@ -417,17 +449,20 @@ jobs:
           npx playwright install --with-deps chromium
 
       - name: Set up Docker Buildx
+        if: steps.leg.outputs.run == 'true'
         uses: docker/setup-buildx-action@v4
         with:
           version: ${{ env.BUILDX_VERSION }}
 
       - name: Log in to Docker Hub (the dev profile's images)
+        if: steps.leg.outputs.run == 'true'
         uses: docker/login-action@v4
         with:
           username: guidedtraffic
           password: ${{ secrets.DOCKERHUB_PAT }}
 
       - name: Tools on the runner
+        if: steps.leg.outputs.run == 'true'
         run: |
           set -euo pipefail
           docker version --format '{{.Server.Version}}'
@@ -439,6 +474,7 @@ jobs:
           free -g
 
       - name: The dev profile's dependency pins and the runner architecture
+        if: steps.leg.outputs.run == 'true'
         run: |
           set -euo pipefail
           # The Valkey operator and the internal-secrets-operator images are published for linux/amd64
@@ -454,18 +490,21 @@ jobs:
           done
 
       - name: make image
+        if: steps.leg.outputs.run == 'true'
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
 
       - name: make dev-up
+        if: steps.leg.outputs.run == 'true'
         timeout-minutes: 25
         run: make dev-up
 
       - name: make e2e SET=${{ matrix.set }}
+        if: steps.leg.outputs.run == 'true'
         timeout-minutes: 60
         run: make e2e SET=${{ matrix.set }}
 
       - name: Upload the go test -json report
-        if: always()
+        if: always() && steps.leg.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-report-${{ matrix.set }}
@@ -474,7 +513,7 @@ jobs:
           retention-days: 14
 
       - name: Upload the k6 logs and summaries, the pod watch, the events and the driver output
-        if: always()
+        if: always() && steps.leg.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-artifacts-${{ matrix.set }}
@@ -483,7 +522,7 @@ jobs:
           retention-days: 14
 
       - name: Upload the Playwright report, traces and screenshots
-        if: always()
+        if: always() && steps.leg.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-playwright-${{ matrix.set }}
@@ -492,7 +531,7 @@ jobs:
           retention-days: 14
 
       - name: Cluster state (failure only)
-        if: failure()
+        if: failure() && steps.leg.outputs.run == 'true'
         run: |
           set -u
           ctx="kind-${TROVE_DEV_CLUSTER}"
@@ -510,7 +549,7 @@ jobs:
           cp -r .dev/logs .out/cluster-state/dev-logs 2>/dev/null || true
 
       - name: Upload the cluster state (failure only)
-        if: failure()
+        if: failure() && steps.leg.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-cluster-state-${{ matrix.set }}
@@ -519,7 +558,7 @@ jobs:
           retention-days: 14
 
       - name: make dev-down
-        if: always()
+        if: always() && steps.leg.outputs.run == 'true'
         run: make dev-down
 
   # The drain and failover under the npm load of E2.11, leg npm-ha (drain variant A of R-HA-059, and the PostgreSQL
@@ -527,16 +566,21 @@ jobs:
   # It left Test and Release for this workflow (owner, 2026-11-01); the steps are those of the e2e-npm job there, unchanged.
   # The pod crash with three force-deletes (npm-ha-crash) has no job here: npm-ha-soak below runs the crash with ten
   # force-deletes over 20 minutes. Edge port 8087 differs from the other ports of this file (8081, 8085) and from the closing leg npm-ha-closing (8084).
+  # Leg ha-suite (the failure suite under the npm load: S3 outage, node loss, PostgreSQL and Valkey primary loss, the npm-audit drain;
+  # its set is added to deploy/dev/e2e.sh by another change, so this leg fails at make e2e until then) has the budgets of npm-ha, 120 and
+  # 80 minutes, and edge port 8100, the first free one.
   e2e-npm:
     name: e2e-npm on kind (${{ matrix.set }})
     runs-on: large
-    timeout-minutes: ${{ startsWith(matrix.set, 'npm-ha') && 120 || 90 }}
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         include:
           - set: npm-ha
             port: "8087"
+          - set: ha-suite
+            port: "8100"
     env:
       TROVE_IMAGE: guidedtraffic/trove:dev
       TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}
@@ -547,30 +591,44 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Select the leg (the dispatch input sets)
+        id: leg
+        uses: ./.github/actions/select-leg
+        with:
+          leg: ${{ matrix.set }}
+          job: e2e-npm
+          sets: ${{ inputs.sets }}
+
       - name: Load the tool pins
+        if: steps.leg.outputs.run == 'true'
         uses: ./.github/actions/load-pins
 
       - name: Set up Go
+        if: steps.leg.outputs.run == 'true'
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
       - name: Install build tools
+        if: steps.leg.outputs.run == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential jq
 
       - name: Install the pinned helm
+        if: steps.leg.outputs.run == 'true'
         uses: azure/setup-helm@v5
         with:
           version: ${{ env.HELM_VERSION }}
 
       - name: Install the pinned kubectl
+        if: steps.leg.outputs.run == 'true'
         uses: azure/setup-kubectl@v5
         with:
           version: ${{ env.KUBECTL_VERSION }}
 
       - name: Install the pinned kind
+        if: steps.leg.outputs.run == 'true'
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/bin"
@@ -581,17 +639,20 @@ jobs:
       # Node.js on the runner and none of the libraries the pinned Node.js loads (Q-ARCH-218).
 
       - name: Set up Docker Buildx
+        if: steps.leg.outputs.run == 'true'
         uses: docker/setup-buildx-action@v4
         with:
           version: ${{ env.BUILDX_VERSION }}
 
       - name: Log in to Docker Hub (the dev profile's images)
+        if: steps.leg.outputs.run == 'true'
         uses: docker/login-action@v4
         with:
           username: guidedtraffic
           password: ${{ secrets.DOCKERHUB_PAT }}
 
       - name: The dev profile's dependency pins and the runner architecture
+        if: steps.leg.outputs.run == 'true'
         run: |
           set -euo pipefail
           [ "$(uname -m)" = "x86_64" ] || { echo "::error::the dev profile needs an amd64 runner (or qemu), got $(uname -m)"; exit 1; }
@@ -604,18 +665,21 @@ jobs:
           done
 
       - name: make image
+        if: steps.leg.outputs.run == 'true'
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
 
       - name: make dev-up
+        if: steps.leg.outputs.run == 'true'
         timeout-minutes: 25
         run: make dev-up
 
       - name: make e2e SET=${{ matrix.set }}
-        timeout-minutes: ${{ startsWith(matrix.set, 'npm-ha') && 80 || 60 }}
+        if: steps.leg.outputs.run == 'true'
+        timeout-minutes: 80
         run: make e2e SET=${{ matrix.set }}
 
       - name: Upload the go test -json report
-        if: always()
+        if: always() && steps.leg.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-npm-report-${{ matrix.set }}
@@ -624,7 +688,7 @@ jobs:
           retention-days: 14
 
       - name: Upload the matrix report, the client logs, the test upstream's counters, the load records and k6 logs
-        if: always()
+        if: always() && steps.leg.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-npm-artifacts-${{ matrix.set }}
@@ -633,7 +697,7 @@ jobs:
           retention-days: 14
 
       - name: Cluster state (failure only)
-        if: failure()
+        if: failure() && steps.leg.outputs.run == 'true'
         run: |
           set -u
           ctx="kind-${TROVE_DEV_CLUSTER}"
@@ -650,7 +714,7 @@ jobs:
           cp -r .dev/logs .out/cluster-state/dev-logs 2>/dev/null || true
 
       - name: Upload the cluster state (failure only)
-        if: failure()
+        if: failure() && steps.leg.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-npm-cluster-state-${{ matrix.set }}
@@ -659,14 +723,15 @@ jobs:
           retention-days: 14
 
       - name: make dev-down
-        if: always()
+        if: always() && steps.leg.outputs.run == 'true'
         run: make dev-down
 
   # The NuGet leg of the drain and failover tests under the NuGet load (nuget-ha, Q-ARCH-277): every TestNuGetHA..., on a kind
   # cluster with the scatter profile and the counting NuGet test upstream. It left Test and Release with the npm-ha legs (owner,
-  # 2026-11-01); its steps are those of the e2e-nuget job there, except that the clients image is not built here: deploy/dev/e2e.sh
-  # builds it when the set starts client pods. No test is named TestNuGetHA yet, so the set passes with a notice (Q-ARCH-276) and
-  # this job checks nothing beyond the bring-up of the cluster until one lands. Edge port 8090 is the first free port of both workflows.
+  # 2026-11-01); its steps are those of the e2e-nuget job there. The set also starts the npm client pods and the npm test upstream
+  # (the drain of R-HA-059 runs npm and NuGet load together), so the job builds both clients images in its own steps, as e2e-ci does,
+  # and the set loads them without building them again (Q-ARCH-327). No test is named TestNuGetHA yet, so the set passes with a notice
+  # (Q-ARCH-276) and this job checks nothing beyond the bring-up of the cluster until one lands. Edge port 8090 is the first free port of both workflows.
   e2e-nuget:
     name: e2e-nuget on kind (${{ matrix.set }})
     runs-on: ubuntu-24.04
@@ -681,43 +746,62 @@ jobs:
       TROVE_IMAGE: guidedtraffic/trove:dev
       TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}
       TROVE_DEV_HTTP_PORT: ${{ matrix.port }}
+      # Both clients images are built once by the steps make npm-clients-image and make nuget-clients-image; deploy/dev/e2e.sh loads them
+      # and does not build them again.
+      TROVE_E2E_NPM_CLIENTS_IMAGE_BUILD: "0"
+      TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD: "0"
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           persist-credentials: false
 
+      - name: Select the leg (the dispatch input sets)
+        id: leg
+        uses: ./.github/actions/select-leg
+        with:
+          leg: ${{ matrix.set }}
+          job: e2e-nuget
+          sets: ${{ inputs.sets }}
+
       # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
       # nodes, the images and the build caches need; no job here uses them.
       - name: Free disk space (GitHub-hosted runner)
+        if: steps.leg.outputs.run == 'true'
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
           df -h /
 
       - name: Load the tool pins
+        if: steps.leg.outputs.run == 'true'
         uses: ./.github/actions/load-pins
 
       - name: Set up Go
+        if: steps.leg.outputs.run == 'true'
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
       - name: Install build tools
+        if: steps.leg.outputs.run == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential jq
 
       - name: Install the pinned helm
+        if: steps.leg.outputs.run == 'true'
         uses: azure/setup-helm@v5
         with:
           version: ${{ env.HELM_VERSION }}
 
       - name: Install the pinned kubectl
+        if: steps.leg.outputs.run == 'true'
         uses: azure/setup-kubectl@v5
         with:
           version: ${{ env.KUBECTL_VERSION }}
 
       - name: Install the pinned kind
+        if: steps.leg.outputs.run == 'true'
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/bin"
@@ -725,17 +809,28 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Set up Docker Buildx
+        if: steps.leg.outputs.run == 'true'
         uses: docker/setup-buildx-action@v4
         with:
           version: ${{ env.BUILDX_VERSION }}
 
       - name: Log in to Docker Hub (the dev profile's images)
+        if: steps.leg.outputs.run == 'true'
         uses: docker/login-action@v4
         with:
           username: guidedtraffic
           password: ${{ secrets.DOCKERHUB_PAT }}
 
+      - name: make npm-clients-image
+        if: steps.leg.outputs.run == 'true'
+        run: make npm-clients-image
+
+      - name: make nuget-clients-image
+        if: steps.leg.outputs.run == 'true'
+        run: make nuget-clients-image
+
       - name: The dev profile's dependency pins and the runner architecture
+        if: steps.leg.outputs.run == 'true'
         run: |
           set -euo pipefail
           [ "$(uname -m)" = "x86_64" ] || { echo "::error::the dev profile needs an amd64 runner (or qemu), got $(uname -m)"; exit 1; }
@@ -748,18 +843,21 @@ jobs:
           done
 
       - name: make image
+        if: steps.leg.outputs.run == 'true'
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
 
       - name: make dev-up
+        if: steps.leg.outputs.run == 'true'
         timeout-minutes: 25
         run: make dev-up
 
       - name: make e2e SET=${{ matrix.set }}
+        if: steps.leg.outputs.run == 'true'
         timeout-minutes: 80
         run: make e2e SET=${{ matrix.set }}
 
       - name: Upload the go test -json report
-        if: always()
+        if: always() && steps.leg.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-nuget-report-${{ matrix.set }}
@@ -768,7 +866,7 @@ jobs:
           retention-days: 14
 
       - name: Upload the matrix report, the clients image log, the test upstream's counters, the client logs and the k6 logs
-        if: always()
+        if: always() && steps.leg.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-nuget-artifacts-${{ matrix.set }}
@@ -777,7 +875,7 @@ jobs:
           retention-days: 14
 
       - name: Cluster state (failure only)
-        if: failure()
+        if: failure() && steps.leg.outputs.run == 'true'
         run: |
           set -u
           ctx="kind-${TROVE_DEV_CLUSTER}"
@@ -794,7 +892,7 @@ jobs:
           cp -r .dev/logs .out/cluster-state/dev-logs 2>/dev/null || true
 
       - name: Upload the cluster state (failure only)
-        if: failure()
+        if: failure() && steps.leg.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-nuget-cluster-state-${{ matrix.set }}
@@ -803,7 +901,7 @@ jobs:
           retention-days: 14
 
       - name: make dev-down
-        if: always()
+        if: always() && steps.leg.outputs.run == 'true'
         run: make dev-down
 
   # The long legs of the GitLab CI OIDC suite (set ci-ha, roadmap M4 E4.7): the reference pipeline while the node of an api replica is
@@ -830,37 +928,52 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Select the leg (the dispatch input sets)
+        id: leg
+        uses: ./.github/actions/select-leg
+        with:
+          leg: ${{ matrix.set }}
+          job: e2e-ci
+          sets: ${{ inputs.sets }}
+
       # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
       # nodes, the images and the build caches need; no job here uses them.
       - name: Free disk space (GitHub-hosted runner)
+        if: steps.leg.outputs.run == 'true'
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
           df -h /
 
       - name: Load the tool pins
+        if: steps.leg.outputs.run == 'true'
         uses: ./.github/actions/load-pins
 
       - name: Set up Go
+        if: steps.leg.outputs.run == 'true'
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
       - name: Install build tools
+        if: steps.leg.outputs.run == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential jq
 
       - name: Install the pinned helm
+        if: steps.leg.outputs.run == 'true'
         uses: azure/setup-helm@v5
         with:
           version: ${{ env.HELM_VERSION }}
 
       - name: Install the pinned kubectl
+        if: steps.leg.outputs.run == 'true'
         uses: azure/setup-kubectl@v5
         with:
           version: ${{ env.KUBECTL_VERSION }}
 
       - name: Install the pinned kind
+        if: steps.leg.outputs.run == 'true'
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/bin"
@@ -868,17 +981,20 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Set up Docker Buildx
+        if: steps.leg.outputs.run == 'true'
         uses: docker/setup-buildx-action@v4
         with:
           version: ${{ env.BUILDX_VERSION }}
 
       - name: Log in to Docker Hub (the dev profile's images)
+        if: steps.leg.outputs.run == 'true'
         uses: docker/login-action@v4
         with:
           username: guidedtraffic
           password: ${{ secrets.DOCKERHUB_PAT }}
 
       - name: The dev profile's dependency pins and the runner architecture
+        if: steps.leg.outputs.run == 'true'
         run: |
           set -euo pipefail
           [ "$(uname -m)" = "x86_64" ] || { echo "::error::the dev profile needs an amd64 runner (or qemu), got $(uname -m)"; exit 1; }
@@ -891,18 +1007,21 @@ jobs:
           done
 
       - name: make image
+        if: steps.leg.outputs.run == 'true'
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
 
       - name: make dev-up
+        if: steps.leg.outputs.run == 'true'
         timeout-minutes: 25
         run: make dev-up
 
       - name: make e2e SET=${{ matrix.set }}
+        if: steps.leg.outputs.run == 'true'
         timeout-minutes: 80
         run: make e2e SET=${{ matrix.set }}
 
       - name: Upload the go test -json report
-        if: always()
+        if: always() && steps.leg.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-ci-report-${{ matrix.set }}
@@ -911,7 +1030,7 @@ jobs:
           retention-days: 14
 
       - name: Upload the job logs (ci-job-*.log), the clients image logs and the test output
-        if: always()
+        if: always() && steps.leg.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-ci-artifacts-${{ matrix.set }}
@@ -920,7 +1039,7 @@ jobs:
           retention-days: 14
 
       - name: Cluster state (failure only)
-        if: failure()
+        if: failure() && steps.leg.outputs.run == 'true'
         run: |
           set -u
           ctx="kind-${TROVE_DEV_CLUSTER}"
@@ -937,7 +1056,7 @@ jobs:
           cp -r .dev/logs .out/cluster-state/dev-logs 2>/dev/null || true
 
       - name: Upload the cluster state (failure only)
-        if: failure()
+        if: failure() && steps.leg.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-ci-cluster-state-${{ matrix.set }}
@@ -946,7 +1065,7 @@ jobs:
           retention-days: 14
 
       - name: make dev-down
-        if: always()
+        if: always() && steps.leg.outputs.run == 'true'
         run: make dev-down
 
   # The Bastion suite (R-BAS-049, docs/developer/e2e.md#the-bastion-tests) on a kind cluster: the short set `bastion`, as in Test and
@@ -975,6 +1094,575 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Select the leg (the dispatch input sets)
+        id: leg
+        uses: ./.github/actions/select-leg
+        with:
+          leg: ${{ matrix.set }}
+          job: e2e-bastion
+          sets: ${{ inputs.sets }}
+
+      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
+      # nodes, the images and the build caches need; no job here uses them.
+      - name: Free disk space (GitHub-hosted runner)
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Load the tool pins
+        if: steps.leg.outputs.run == 'true'
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Go
+        if: steps.leg.outputs.run == 'true'
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential jq
+
+      - name: Set up Node.js (the Playwright journey of R-BAS-007)
+        if: steps.leg.outputs.run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+
+      - name: Install the Playwright journey and its browser
+        if: steps.leg.outputs.run == 'true'
+        working-directory: web
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Install the pinned helm
+        if: steps.leg.outputs.run == 'true'
+        uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install the pinned kubectl
+        if: steps.leg.outputs.run == 'true'
+        uses: azure/setup-kubectl@v5
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Install the pinned kind
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Set up Docker Buildx
+        if: steps.leg.outputs.run == 'true'
+        uses: docker/setup-buildx-action@v4
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
+      - name: Log in to Docker Hub (the dev profile's images)
+        if: steps.leg.outputs.run == 'true'
+        uses: docker/login-action@v4
+        with:
+          username: guidedtraffic
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: The dev profile's dependency pins and the runner architecture
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          [ "$(uname -m)" = "x86_64" ] || { echo "::error::the dev profile needs an amd64 runner (or qemu), got $(uname -m)"; exit 1; }
+          echo "kind $KIND_VERSION, kubectl $KUBECTL_VERSION, helm $HELM_VERSION, NuGet SDK $E2E_NUGETCLIENTS_SDK_IMAGE"
+          kind version
+          kubectl version --client
+          helm version --short
+          for u in https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
+            curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
+          done
+
+      - name: make image
+        if: steps.leg.outputs.run == 'true'
+        run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      - name: make dev-up
+        if: steps.leg.outputs.run == 'true'
+        timeout-minutes: 25
+        run: make dev-up
+
+      - name: make e2e SET=${{ matrix.set }}
+        if: steps.leg.outputs.run == 'true'
+        timeout-minutes: 80
+        run: make e2e SET=${{ matrix.set }}
+
+      - name: Upload the go test -json report
+        if: always() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-bastion-report-${{ matrix.set }}
+          path: .out/test-e2e.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload the job logs (ci-job-*.log), the clients image logs and the test output
+        if: always() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-bastion-artifacts-${{ matrix.set }}
+          path: .out/e2e/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload the Playwright report, traces and screenshots
+        if: always() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-bastion-playwright-${{ matrix.set }}
+          path: .out/playwright/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Cluster state (failure only)
+        if: failure() && steps.leg.outputs.run == 'true'
+        run: |
+          set -u
+          ctx="kind-${TROVE_DEV_CLUSTER}"
+          mkdir -p .out/cluster-state
+          for ns in trove trove-bastion ingress-controller cert-manager valkey-operator-system internal-secrets-operator-system cnpg-system kube-system; do
+            kubectl --context "$ctx" -n "$ns" get pods -o wide > ".out/cluster-state/pods-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
+          done
+          deploy/dev/cluster-logs.sh .out/cluster-state
+          kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
+          helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
+          docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
+          cp -r .dev/logs .out/cluster-state/dev-logs 2>/dev/null || true
+
+      - name: Upload the cluster state (failure only)
+        if: failure() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-bastion-cluster-state-${{ matrix.set }}
+          path: .out/cluster-state/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: make dev-down
+        if: always() && steps.leg.outputs.run == 'true'
+        run: make dev-down
+
+  # The vulnerability suite (R-VULN-029, docs/developer/e2e.md#the-vulnerability-tests) on a kind cluster: the short set `vuln`, as in
+  # Test and Release, and the long set `vuln-long` (a full synchronization drained mid-run, and the client tests once more with Valkey
+  # stopped). A red long leg is a finding and holds nothing (owner, 2026-11-01). Edge ports 8095 and 8096 are the first free ones of
+  # both workflows.
+  e2e-vuln:
+    name: e2e-vuln on kind (${{ matrix.set }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - set: vuln
+            port: "8095"
+          - set: vuln-long
+            port: "8096"
+    env:
+      TROVE_IMAGE: guidedtraffic/trove:dev
+      TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}
+      TROVE_DEV_HTTP_PORT: ${{ matrix.port }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Select the leg (the dispatch input sets)
+        id: leg
+        uses: ./.github/actions/select-leg
+        with:
+          leg: ${{ matrix.set }}
+          job: e2e-vuln
+          sets: ${{ inputs.sets }}
+
+      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
+      # nodes, the images and the build caches need; no job here uses them.
+      - name: Free disk space (GitHub-hosted runner)
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Load the tool pins
+        if: steps.leg.outputs.run == 'true'
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Go
+        if: steps.leg.outputs.run == 'true'
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential jq
+
+      - name: Set up Node.js (the Playwright journeys of R-VULN-022)
+        if: steps.leg.outputs.run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+
+      - name: Install the Playwright journeys and their browser
+        if: steps.leg.outputs.run == 'true'
+        working-directory: web
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Install the pinned helm
+        if: steps.leg.outputs.run == 'true'
+        uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install the pinned kubectl
+        if: steps.leg.outputs.run == 'true'
+        uses: azure/setup-kubectl@v5
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Install the pinned kind
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Set up Docker Buildx
+        if: steps.leg.outputs.run == 'true'
+        uses: docker/setup-buildx-action@v4
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
+      - name: Log in to Docker Hub (the dev profile's images)
+        if: steps.leg.outputs.run == 'true'
+        uses: docker/login-action@v4
+        with:
+          username: guidedtraffic
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: The dev profile's dependency pins and the runner architecture
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          [ "$(uname -m)" = "x86_64" ] || { echo "::error::the dev profile needs an amd64 runner (or qemu), got $(uname -m)"; exit 1; }
+          echo "kind $KIND_VERSION, kubectl $KUBECTL_VERSION, helm $HELM_VERSION, NuGet SDK $E2E_NUGETCLIENTS_SDK_IMAGE"
+          kind version
+          kubectl version --client
+          helm version --short
+          for u in https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
+            curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
+          done
+
+      - name: make image
+        if: steps.leg.outputs.run == 'true'
+        run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      - name: make dev-up
+        if: steps.leg.outputs.run == 'true'
+        timeout-minutes: 25
+        run: make dev-up
+
+      - name: make e2e SET=${{ matrix.set }}
+        if: steps.leg.outputs.run == 'true'
+        timeout-minutes: 100
+        run: make e2e SET=${{ matrix.set }}
+
+      - name: Upload the go test -json report
+        if: always() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-vuln-report-${{ matrix.set }}
+          path: .out/test-e2e.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload the job logs (ci-job-*.log), the clients image logs and the test output
+        if: always() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-vuln-artifacts-${{ matrix.set }}
+          path: .out/e2e/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload the Playwright report, traces and screenshots
+        if: always() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-vuln-playwright-${{ matrix.set }}
+          path: .out/playwright/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Cluster state (failure only)
+        if: failure() && steps.leg.outputs.run == 'true'
+        run: |
+          set -u
+          ctx="kind-${TROVE_DEV_CLUSTER}"
+          mkdir -p .out/cluster-state
+          for ns in trove ingress-controller cert-manager valkey-operator-system internal-secrets-operator-system cnpg-system kube-system; do
+            kubectl --context "$ctx" -n "$ns" get pods -o wide > ".out/cluster-state/pods-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
+          done
+          deploy/dev/cluster-logs.sh .out/cluster-state
+          kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
+          helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
+          docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
+          cp -r .dev/logs .out/cluster-state/dev-logs 2>/dev/null || true
+
+      - name: Upload the cluster state (failure only)
+        if: failure() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-vuln-cluster-state-${{ matrix.set }}
+          path: .out/cluster-state/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: make dev-down
+        if: always() && steps.leg.outputs.run == 'true'
+        run: make dev-down
+
+  # The mirror suite (R-REPO-059, docs/developer/e2e.md#the-mirror-tests) on a kind cluster in the profile `mirror`: the short set `mirror`, as in
+  # Test and Release, and the long set `mirror-long` (`kubectl drain` of the node of the process that runs a pass of 300 packages). A red long
+  # leg is a finding and holds nothing (owner, 2026-11-01). `mirror` loads the NuGet clients image and runs on a GitHub-hosted runner,
+  # `mirror-long` on a large one. Edge ports 8098 and 8099 are the first free ones of both workflows.
+  e2e-mirror:
+    name: e2e-mirror on kind (${{ matrix.set }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - set: mirror
+            port: "8098"
+            runner: ubuntu-24.04    # loads the NuGet clients image: it outgrows a large pod's Docker storage
+          - set: mirror-long
+            port: "8099"
+            runner: large
+    env:
+      TROVE_IMAGE: guidedtraffic/trove:dev
+      TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}
+      TROVE_DEV_HTTP_PORT: ${{ matrix.port }}
+      # The install-time bound of R-REPO-055's clients first is enforced here, not per change (Q-REPO-197).
+      TROVE_PERF_GATE: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Select the leg (the dispatch input sets)
+        id: leg
+        uses: ./.github/actions/select-leg
+        with:
+          leg: ${{ matrix.set }}
+          job: e2e-mirror
+          sets: ${{ inputs.sets }}
+
+      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
+      # nodes, the images and the build caches need; no job here uses them.
+      - name: Free disk space (GitHub-hosted runner)
+        if: matrix.runner == 'ubuntu-24.04' && steps.leg.outputs.run == 'true'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Load the tool pins
+        if: steps.leg.outputs.run == 'true'
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Go
+        if: steps.leg.outputs.run == 'true'
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential jq
+
+      - name: Set up Node.js (the browser journey of the mirror panel, R-REPO-059)
+        if: matrix.set == 'mirror' && steps.leg.outputs.run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+
+      - name: Install the Playwright journeys and their browser
+        if: matrix.set == 'mirror' && steps.leg.outputs.run == 'true'
+        working-directory: web
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Install the pinned helm
+        if: steps.leg.outputs.run == 'true'
+        uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install the pinned kubectl
+        if: steps.leg.outputs.run == 'true'
+        uses: azure/setup-kubectl@v5
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Install the pinned kind
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Set up Docker Buildx
+        if: steps.leg.outputs.run == 'true'
+        uses: docker/setup-buildx-action@v4
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
+      - name: Log in to Docker Hub (the dev profile's images)
+        if: steps.leg.outputs.run == 'true'
+        uses: docker/login-action@v4
+        with:
+          username: guidedtraffic
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: The dev profile's dependency pins and the runner architecture
+        if: steps.leg.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          [ "$(uname -m)" = "x86_64" ] || { echo "::error::the dev profile needs an amd64 runner (or qemu), got $(uname -m)"; exit 1; }
+          echo "kind $KIND_VERSION, kubectl $KUBECTL_VERSION, helm $HELM_VERSION, NuGet SDK $E2E_NUGETCLIENTS_SDK_IMAGE"
+          kind version
+          kubectl version --client
+          helm version --short
+          for u in https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
+            curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
+          done
+
+      - name: make image
+        if: steps.leg.outputs.run == 'true'
+        run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      - name: make dev-up
+        if: steps.leg.outputs.run == 'true'
+        timeout-minutes: 25
+        run: make dev-up
+
+      - name: make e2e SET=${{ matrix.set }}
+        if: steps.leg.outputs.run == 'true'
+        timeout-minutes: 90
+        run: make e2e SET=${{ matrix.set }}
+
+      - name: Upload the go test -json report
+        if: always() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-mirror-report-${{ matrix.set }}
+          path: .out/test-e2e.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload the job logs (ci-job-*.log), the clients image logs and the test output
+        if: always() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-mirror-artifacts-${{ matrix.set }}
+          path: .out/e2e/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload the Playwright report, traces and screenshots
+        if: always() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-mirror-playwright-${{ matrix.set }}
+          path: .out/playwright/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Cluster state (failure only)
+        if: failure() && steps.leg.outputs.run == 'true'
+        run: |
+          set -u
+          ctx="kind-${TROVE_DEV_CLUSTER}"
+          mkdir -p .out/cluster-state
+          for ns in trove ingress-controller cert-manager valkey-operator-system internal-secrets-operator-system cnpg-system kube-system; do
+            kubectl --context "$ctx" -n "$ns" get pods -o wide > ".out/cluster-state/pods-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
+          done
+          deploy/dev/cluster-logs.sh .out/cluster-state
+          kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
+          helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
+          docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
+          cp -r .dev/logs .out/cluster-state/dev-logs 2>/dev/null || true
+
+      - name: Upload the cluster state (failure only)
+        if: failure() && steps.leg.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-mirror-cluster-state-${{ matrix.set }}
+          path: .out/cluster-state/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: make dev-down
+        if: always() && steps.leg.outputs.run == 'true'
+        run: make dev-down
+
+  # The upgrade leg (set upgrade, deploy/dev/e2e.sh; docs/developer/e2e.md): published releases of the chart (https://guided-traffic.github.io/trove/)
+  # and their images (guidedtraffic/trove:<x.y.z> on Docker Hub) are installed on a kind cluster and upgraded to the image built from the
+  # commit, under the npm and the NuGet client loops and with a browser journey. Both clients images are needed, so the job runs on a
+  # GitHub-hosted runner with the disk space freed, as e2e-vuln does (Q-ARCH-326). Edge port 8101 is the first free one after ha-suite's 8100.
+  # A red leg is a finding and holds nothing (owner, 2026-11-01).
+  e2e-upgrade:
+    name: e2e-upgrade on kind (upgrade)
+    if: ${{ !inputs.sets || contains(format(',{0},', inputs.sets), ',upgrade,') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      TROVE_IMAGE: guidedtraffic/trove:dev
+      TROVE_DEV_CLUSTER: trove-upgrade-${{ github.run_id }}
+      TROVE_DEV_HTTP_PORT: "8101"
+      # Both clients images are built once by the steps make npm-clients-image and make nuget-clients-image; deploy/dev/e2e.sh loads them
+      # and does not build them again.
+      TROVE_E2E_NPM_CLIENTS_IMAGE_BUILD: "0"
+      TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
       # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
       # nodes, the images and the build caches need; no job here uses them.
       - name: Free disk space (GitHub-hosted runner)
@@ -995,7 +1683,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential jq
 
-      - name: Set up Node.js (the Playwright journey of R-BAS-007)
+      - name: Set up Node.js (the browser journey of the upgrade)
         uses: actions/setup-node@v7
         with:
           node-version-file: web/.nvmrc
@@ -1029,21 +1717,28 @@ jobs:
         with:
           version: ${{ env.BUILDX_VERSION }}
 
-      - name: Log in to Docker Hub (the dev profile's images)
+      - name: Log in to Docker Hub (the dev profile's images and the published releases)
         uses: docker/login-action@v4
         with:
           username: guidedtraffic
           password: ${{ secrets.DOCKERHUB_PAT }}
 
+      - name: make npm-clients-image
+        run: make npm-clients-image
+
+      - name: make nuget-clients-image
+        run: make nuget-clients-image
+
       - name: The dev profile's dependency pins and the runner architecture
         run: |
           set -euo pipefail
           [ "$(uname -m)" = "x86_64" ] || { echo "::error::the dev profile needs an amd64 runner (or qemu), got $(uname -m)"; exit 1; }
-          echo "kind $KIND_VERSION, kubectl $KUBECTL_VERSION, helm $HELM_VERSION, NuGet SDK $E2E_NUGETCLIENTS_SDK_IMAGE"
+          echo "kind $KIND_VERSION, kubectl $KUBECTL_VERSION, helm $HELM_VERSION, clients Node image $E2E_CLIENTS_NODE_IMAGE, NuGet SDK $E2E_NUGETCLIENTS_SDK_IMAGE"
           kind version
           kubectl version --client
           helm version --short
-          for u in https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
+          # The published releases come from the chart repository of GitHub Pages; the rest is the dev profile's own.
+          for u in https://guided-traffic.github.io/trove https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
             curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
           done
 
@@ -1054,363 +1749,24 @@ jobs:
         timeout-minutes: 25
         run: make dev-up
 
-      - name: make e2e SET=${{ matrix.set }}
-        timeout-minutes: 80
-        run: make e2e SET=${{ matrix.set }}
-
-      - name: Upload the go test -json report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: e2e-bastion-report-${{ matrix.set }}
-          path: .out/test-e2e.json
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: Upload the job logs (ci-job-*.log), the clients image logs and the test output
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: e2e-bastion-artifacts-${{ matrix.set }}
-          path: .out/e2e/
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: Upload the Playwright report, traces and screenshots
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: e2e-bastion-playwright-${{ matrix.set }}
-          path: .out/playwright/
-          if-no-files-found: ignore
-          retention-days: 14
-
-      - name: Cluster state (failure only)
-        if: failure()
-        run: |
-          set -u
-          ctx="kind-${TROVE_DEV_CLUSTER}"
-          mkdir -p .out/cluster-state
-          for ns in trove trove-bastion ingress-controller cert-manager valkey-operator-system internal-secrets-operator-system cnpg-system kube-system; do
-            kubectl --context "$ctx" -n "$ns" get pods -o wide > ".out/cluster-state/pods-$ns.txt" 2>&1 || true
-            kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
-            kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
-          done
-          deploy/dev/cluster-logs.sh .out/cluster-state
-          kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
-          helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
-          docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
-          cp -r .dev/logs .out/cluster-state/dev-logs 2>/dev/null || true
-
-      - name: Upload the cluster state (failure only)
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: e2e-bastion-cluster-state-${{ matrix.set }}
-          path: .out/cluster-state/
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: make dev-down
-        if: always()
-        run: make dev-down
-
-  # The vulnerability suite (R-VULN-029, docs/developer/e2e.md#the-vulnerability-tests) on a kind cluster: the short set `vuln`, as in
-  # Test and Release, and the long set `vuln-long` (a full synchronization drained mid-run, and the client tests once more with Valkey
-  # stopped). A red long leg is a finding and holds nothing (owner, 2026-11-01). Edge ports 8095 and 8096 are the first free ones of
-  # both workflows.
-  e2e-vuln:
-    name: e2e-vuln on kind (${{ matrix.set }})
-    runs-on: ubuntu-24.04
-    timeout-minutes: 150
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - set: vuln
-            port: "8095"
-          - set: vuln-long
-            port: "8096"
-    env:
-      TROVE_IMAGE: guidedtraffic/trove:dev
-      TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}
-      TROVE_DEV_HTTP_PORT: ${{ matrix.port }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
-      # nodes, the images and the build caches need; no job here uses them.
-      - name: Free disk space (GitHub-hosted runner)
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
-          df -h /
-
-      - name: Load the tool pins
-        uses: ./.github/actions/load-pins
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-
-      - name: Install build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential jq
-
-      - name: Set up Node.js (the Playwright journeys of R-VULN-022)
-        uses: actions/setup-node@v7
-        with:
-          node-version-file: web/.nvmrc
-
-      - name: Install the Playwright journeys and their browser
-        working-directory: web
-        run: |
-          set -euo pipefail
-          npm ci
-          npx playwright install --with-deps chromium
-
-      - name: Install the pinned helm
-        uses: azure/setup-helm@v5
-        with:
-          version: ${{ env.HELM_VERSION }}
-
-      - name: Install the pinned kubectl
-        uses: azure/setup-kubectl@v5
-        with:
-          version: ${{ env.KUBECTL_VERSION }}
-
-      - name: Install the pinned kind
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/bin"
-          GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-        with:
-          version: ${{ env.BUILDX_VERSION }}
-
-      - name: Log in to Docker Hub (the dev profile's images)
-        uses: docker/login-action@v4
-        with:
-          username: guidedtraffic
-          password: ${{ secrets.DOCKERHUB_PAT }}
-
-      - name: The dev profile's dependency pins and the runner architecture
-        run: |
-          set -euo pipefail
-          [ "$(uname -m)" = "x86_64" ] || { echo "::error::the dev profile needs an amd64 runner (or qemu), got $(uname -m)"; exit 1; }
-          echo "kind $KIND_VERSION, kubectl $KUBECTL_VERSION, helm $HELM_VERSION, NuGet SDK $E2E_NUGETCLIENTS_SDK_IMAGE"
-          kind version
-          kubectl version --client
-          helm version --short
-          for u in https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
-            curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
-          done
-
-      - name: make image
-        run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
-
-      - name: make dev-up
-        timeout-minutes: 25
-        run: make dev-up
-
-      - name: make e2e SET=${{ matrix.set }}
-        timeout-minutes: 100
-        run: make e2e SET=${{ matrix.set }}
-
-      - name: Upload the go test -json report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: e2e-vuln-report-${{ matrix.set }}
-          path: .out/test-e2e.json
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: Upload the job logs (ci-job-*.log), the clients image logs and the test output
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: e2e-vuln-artifacts-${{ matrix.set }}
-          path: .out/e2e/
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: Upload the Playwright report, traces and screenshots
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: e2e-vuln-playwright-${{ matrix.set }}
-          path: .out/playwright/
-          if-no-files-found: ignore
-          retention-days: 14
-
-      - name: Cluster state (failure only)
-        if: failure()
-        run: |
-          set -u
-          ctx="kind-${TROVE_DEV_CLUSTER}"
-          mkdir -p .out/cluster-state
-          for ns in trove ingress-controller cert-manager valkey-operator-system internal-secrets-operator-system cnpg-system kube-system; do
-            kubectl --context "$ctx" -n "$ns" get pods -o wide > ".out/cluster-state/pods-$ns.txt" 2>&1 || true
-            kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
-            kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
-          done
-          deploy/dev/cluster-logs.sh .out/cluster-state
-          kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
-          helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
-          docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
-          cp -r .dev/logs .out/cluster-state/dev-logs 2>/dev/null || true
-
-      - name: Upload the cluster state (failure only)
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: e2e-vuln-cluster-state-${{ matrix.set }}
-          path: .out/cluster-state/
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: make dev-down
-        if: always()
-        run: make dev-down
-
-  # The mirror suite (R-REPO-059, docs/developer/e2e.md#the-mirror-tests) on a kind cluster in the profile `mirror`: the short set `mirror`, as in
-  # Test and Release, and the long set `mirror-long` (`kubectl drain` of the node of the process that runs a pass of 300 packages). A red long
-  # leg is a finding and holds nothing (owner, 2026-11-01). `mirror` loads the NuGet clients image and runs on a GitHub-hosted runner,
-  # `mirror-long` on a large one. Edge ports 8098 and 8099 are the first free ones of both workflows.
-  e2e-mirror:
-    name: e2e-mirror on kind (${{ matrix.set }})
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - set: mirror
-            port: "8098"
-            runner: ubuntu-24.04    # loads the NuGet clients image: it outgrows a large pod's Docker storage
-          - set: mirror-long
-            port: "8099"
-            runner: large
-    env:
-      TROVE_IMAGE: guidedtraffic/trove:dev
-      TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}
-      TROVE_DEV_HTTP_PORT: ${{ matrix.port }}
-      # The install-time bound of R-REPO-055's clients first is enforced here, not per change (Q-REPO-197).
-      TROVE_PERF_GATE: "1"
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
-      # nodes, the images and the build caches need; no job here uses them.
-      - name: Free disk space (GitHub-hosted runner)
-        if: matrix.runner == 'ubuntu-24.04'
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
-          df -h /
-
-      - name: Load the tool pins
-        uses: ./.github/actions/load-pins
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-
-      - name: Install build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential jq
-
-      - name: Set up Node.js (the browser journey of the mirror panel, R-REPO-059)
-        if: matrix.set == 'mirror'
-        uses: actions/setup-node@v7
-        with:
-          node-version-file: web/.nvmrc
-
-      - name: Install the Playwright journeys and their browser
-        if: matrix.set == 'mirror'
-        working-directory: web
-        run: |
-          set -euo pipefail
-          npm ci
-          npx playwright install --with-deps chromium
-
-      - name: Install the pinned helm
-        uses: azure/setup-helm@v5
-        with:
-          version: ${{ env.HELM_VERSION }}
-
-      - name: Install the pinned kubectl
-        uses: azure/setup-kubectl@v5
-        with:
-          version: ${{ env.KUBECTL_VERSION }}
-
-      - name: Install the pinned kind
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/bin"
-          GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-        with:
-          version: ${{ env.BUILDX_VERSION }}
-
-      - name: Log in to Docker Hub (the dev profile's images)
-        uses: docker/login-action@v4
-        with:
-          username: guidedtraffic
-          password: ${{ secrets.DOCKERHUB_PAT }}
-
-      - name: The dev profile's dependency pins and the runner architecture
-        run: |
-          set -euo pipefail
-          [ "$(uname -m)" = "x86_64" ] || { echo "::error::the dev profile needs an amd64 runner (or qemu), got $(uname -m)"; exit 1; }
-          echo "kind $KIND_VERSION, kubectl $KUBECTL_VERSION, helm $HELM_VERSION, NuGet SDK $E2E_NUGETCLIENTS_SDK_IMAGE"
-          kind version
-          kubectl version --client
-          helm version --short
-          for u in https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
-            curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
-          done
-
-      - name: make image
-        run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
-
-      - name: make dev-up
-        timeout-minutes: 25
-        run: make dev-up
-
-      - name: make e2e SET=${{ matrix.set }}
+      - name: make e2e SET=upgrade
         timeout-minutes: 90
-        run: make e2e SET=${{ matrix.set }}
+        run: make e2e SET=upgrade
 
       - name: Upload the go test -json report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: e2e-mirror-report-${{ matrix.set }}
+          name: e2e-upgrade-report-upgrade
           path: .out/test-e2e.json
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Upload the job logs (ci-job-*.log), the clients image logs and the test output
+      - name: Upload the job logs (ci-job-*.log), the clients image logs, the upgrade's records and the test output
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: e2e-mirror-artifacts-${{ matrix.set }}
+          name: e2e-upgrade-artifacts-upgrade
           path: .out/e2e/
           if-no-files-found: warn
           retention-days: 14
@@ -1419,7 +1775,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: e2e-mirror-playwright-${{ matrix.set }}
+          name: e2e-upgrade-playwright-upgrade
           path: .out/playwright/
           if-no-files-found: ignore
           retention-days: 14
@@ -1430,6 +1786,7 @@ jobs:
           set -u
           ctx="kind-${TROVE_DEV_CLUSTER}"
           mkdir -p .out/cluster-state
+          kubectl config get-contexts || true
           for ns in trove ingress-controller cert-manager valkey-operator-system internal-secrets-operator-system cnpg-system kube-system; do
             kubectl --context "$ctx" -n "$ns" get pods -o wide > ".out/cluster-state/pods-$ns.txt" 2>&1 || true
             kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
@@ -1445,7 +1802,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: e2e-mirror-cluster-state-${{ matrix.set }}
+          name: e2e-upgrade-cluster-state-upgrade
           path: .out/cluster-state/
           if-no-files-found: warn
           retention-days: 14
