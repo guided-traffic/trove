@@ -84,7 +84,7 @@ func (r *Resolver) Explain(ctx context.Context, c Caller, v repository.Repositor
 	}
 	ex.DecidedBy = r.decidedBy(ctx, c, p, readConfig)
 	for _, m := range v.Members() {
-		line := MemberDecision{Key: m.Name.String(), Class: string(m.Class)}
+		line := MemberDecision{Key: m.Name.Key, Class: string(m.Class)}
 		if !p.usable[m.Name.String()].read {
 			if !readConfig {
 				continue

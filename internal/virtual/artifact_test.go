@@ -33,7 +33,7 @@ func TestR_REPO_019_ArtifactTiers(t *testing.T) {
 		if slices.Contains(w.arts.Calls(), "fetch:npm-remote") || slices.Contains(w.arts.Calls(), "cached:npm-remote") {
 			t.Fatalf("a lower tier was asked: %v", w.arts.Calls())
 		}
-		if n := counter(t, w.reg, "trove_virtual_resolutions_total", map[string]string{"repo": "npm-all", "source": "local"}); n != 1 {
+		if n := counter(t, w.reg, "trove_virtual_resolutions_total", map[string]string{"repo": "it/npm-all", "source": "local"}); n != 1 {
 			t.Fatalf("trove_virtual_resolutions_total{local} = %v", n)
 		}
 	})
@@ -340,7 +340,7 @@ func TestR_AUTHZ_009_PerMemberDecisions(t *testing.T) {
 		// Alice may deploy into npm-local and read npm-all: the write through npm-all is allowed;
 		// a grant of deploy on npm-all itself would not matter (checked in the decision point).
 		e := vt.NewDecider(t, specs("read"), append(grants(), vt.Grant{Repos: []string{"npm-local"}, Principal: vt.Alice, Actions: []string{"deploy"}},
-			vt.Grant{Repos: []string{"npm-all"}, Principal: vt.Bob, Actions: []string{"deploy"}}))
+			vt.Grant{Repos: []string{"it/npm-all"}, Principal: vt.Bob, Actions: []string{"deploy"}}))
 		write := authz.Coordinate{Repository: qr("npm-all"), Class: repository.Virtual, Format: vt.Format, Kind: "write", Package: "p", Actions: []authz.Action{authz.Deploy}}
 		aIdx, _ := e.Begin(context.Background(), alice, qr("npm-all"))
 		if d := e.DecideOn(context.Background(), aIdx, alice, write); d.Outcome != authz.Allow {

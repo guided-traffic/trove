@@ -44,7 +44,7 @@ func (w *world) shadow(sub authz.Subject, name string) (virtual.ShadowOutcome, e
 }
 
 func shadowCount(t *testing.T, w *world, outcome string) float64 {
-	return counter(t, w.reg, "trove_shadow_checks_total", map[string]string{"repo": "npm-local", "outcome": outcome})
+	return counter(t, w.reg, "trove_shadow_checks_total", map[string]string{"repo": "it/npm-local", "outcome": outcome})
 }
 
 func TestR_REPO_048_Outcomes(t *testing.T) {
@@ -98,7 +98,7 @@ func TestR_REPO_048_Outcomes(t *testing.T) {
 		if refusal == nil || refusal.Kind != errs.Forbidden || refusal.Code != errs.CodeShadowsRemotePackage {
 			t.Fatalf("refusal = %v", out.Err("lodash"))
 		}
-		if !slices.Equal(out.Virtuals, []string{"npm-all"}) {
+		if !slices.Equal(out.Virtuals, []string{"it/npm-all"}) {
 			t.Fatalf("virtual repositories named: %v", out.Virtuals)
 		}
 		if refusal.Detail == "" || containsAny(refusal.Detail, "npm-remote") {
@@ -242,7 +242,7 @@ func TestR_REPO_048_OneProbePerPublish(t *testing.T) {
 			t.Fatalf("pairs = %+v", out.Shadowed)
 		}
 		refused, _ := w.shadow(ciBot, "lodash")
-		if !slices.Equal(refused.Virtuals, []string{"npm-all"}) {
+		if !slices.Equal(refused.Virtuals, []string{"it/npm-all"}) {
 			t.Fatalf("ci-bot is told about %v and may only read npm-all", refused.Virtuals)
 		}
 	})

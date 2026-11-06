@@ -42,12 +42,12 @@ func TestR_REPO_019_Explanation(t *testing.T) {
 		if !mapsEqual(got, want) {
 			t.Fatalf("decisions = %v, want %v", got, want)
 		}
-		if ex.Repository != "npm-all" || ex.UnreadableMembers != 0 || ex.Members[0].Class != "local" || ex.Members[1].Class != "remote" {
+		if ex.Repository != "it/npm-all" || ex.UnreadableMembers != 0 || ex.Members[0].Class != "local" || ex.Members[1].Class != "remote" {
 			t.Fatalf("explanation = %+v", ex)
 		}
 		// The spec's shape.
 		b, _ := json.Marshal(ex)
-		for _, want := range []string{`"repository":"npm-all"`, `"descriptor":{"path":"left-pad/-/1.0.0.tgz","kind":"artifact","package":"left-pad"}`, `"unreadableMembers":0`} {
+		for _, want := range []string{`"repository":"it/npm-all"`, `"descriptor":{"path":"left-pad/-/1.0.0.tgz","kind":"artifact","package":"left-pad"}`, `"unreadableMembers":0`} {
 			if !strings.Contains(string(b), want) {
 				t.Errorf("%s lacks %s", b, want)
 			}

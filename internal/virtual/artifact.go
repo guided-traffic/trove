@@ -32,7 +32,7 @@ func (r *Resolver) Artifact(ctx context.Context, c Caller, p *Plan, t Tiers, w h
 	}
 	serve := func(m Member, hit Hit, source string) error {
 		if !c.Rules {
-			w.Header().Set(ResolvedFromHeader, m.Repo.Name.String())
+			w.Header().Set(ResolvedFromHeader, m.Repo.Name.Key)
 		}
 		r.m.resolved(repo.String(), source)
 		return hit(w)
@@ -65,7 +65,7 @@ func (r *Resolver) Artifact(ctx context.Context, c Caller, p *Plan, t Tiers, w h
 		}
 		tw := &trackWriter{ResponseWriter: w}
 		if !c.Rules {
-			tw.Header().Set(ResolvedFromHeader, m.Repo.Name.String())
+			tw.Header().Set(ResolvedFromHeader, m.Repo.Name.Key)
 		}
 		herr := hit(tw)
 		if herr == nil || tw.wrote || !contentLost(herr) {
@@ -91,7 +91,7 @@ func (r *Resolver) Artifact(ctx context.Context, c Caller, p *Plan, t Tiers, w h
 		}
 		tw := &trackWriter{ResponseWriter: w}
 		if !c.Rules {
-			tw.Header().Set(ResolvedFromHeader, m.Repo.Name.String())
+			tw.Header().Set(ResolvedFromHeader, m.Repo.Name.Key)
 		}
 		found, err := t.RemoteFetch(ctx, m, d, tw)
 		if found && err == nil {

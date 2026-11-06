@@ -99,11 +99,11 @@ func TestR_API_029_HoldersShowOnlyReadableVirtualRepositories(t *testing.T) {
 	inner := repository.Assemble(repoOf("it/npm-all", repository.Virtual), []repository.Repository{a, c}, nil, 0)
 	hidden := repository.Assemble(repoOf("it/npm-secret", repository.Virtual), []repository.Repository{a}, nil, 0)
 	topo := NewTopology([]repository.Repository{a, c, inner, hidden})
-	sc := Scope{topo: topo, virtualReadable: map[string]bool{"npm-all": true}}
-	if got := sc.holders([]string{"npm-remote", "npm-a"}); !slices.Equal(got, []string{"npm-a", "npm-remote", "npm-all"}) {
+	sc := Scope{topo: topo, virtualReadable: map[string]bool{"it/npm-all": true}}
+	if got := sc.holders([]string{"it/npm-remote", "it/npm-a"}); !slices.Equal(got, []string{"it/npm-a", "it/npm-remote", "it/npm-all"}) {
 		t.Fatalf("%v", got)
 	}
-	if got := sc.holders([]string{"npm-a"}); slices.Contains(got, "npm-secret") {
+	if got := sc.holders([]string{"it/npm-a"}); slices.Contains(got, "it/npm-secret") {
 		t.Fatalf("a virtual repository the caller may not read is shown: %v", got)
 	}
 }

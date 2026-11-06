@@ -19,11 +19,11 @@ import (
 // requirement it checks.
 
 func (g *rig) item(result string) float64 {
-	return val(g.met.Items.WithLabelValues("npm-mirror", result))
+	return val(g.met.Items.WithLabelValues("it/npm-mirror", result))
 }
 
 func (g *rig) passes(kind, outcome string) float64 {
-	return val(g.met.Passes.WithLabelValues("npm-mirror", kind, outcome))
+	return val(g.met.Passes.WithLabelValues("it/npm-mirror", kind, outcome))
 }
 
 func (g *rig) lastPass() map[string]any {
@@ -79,10 +79,10 @@ func TestR_REPO_053_APassDiscoversFillsAndEnds(t *testing.T) {
 	mustEqual(t, "summary method", fmt.Sprint(sum["method"]), "feed")
 	mustEqual(t, "summary discoveryComplete", sum["discoveryComplete"].(bool), true)
 	mustEqual(t, "stored items counted", g.item(ResultStored), 3)
-	mustEqual(t, "bytes counted", val(g.met.Bytes.WithLabelValues("npm-mirror")), 300)
+	mustEqual(t, "bytes counted", val(g.met.Bytes.WithLabelValues("it/npm-mirror")), 300)
 	mustEqual(t, "complete passes counted", g.passes("full", OutcomeComplete), 1)
 	evs := g.rec.of(audit.EventMirrorPassCompleted)
-	if len(evs) != 1 || evs[0].Repository != "npm-mirror" || evs[0].Actor.Kind != "system" {
+	if len(evs) != 1 || evs[0].Repository != "it/npm-mirror" || evs[0].Actor.Kind != "system" {
 		t.Fatalf("pass_completed events: %+v", evs)
 	}
 }
@@ -353,8 +353,8 @@ func TestR_REPO_054_ARateLimitWaitsForTheHintAndRepeatsTheRequest(t *testing.T) 
 	}
 	mustContain(t, "each tarball stored once", g.host.stored(), g.paths("a", "b")...)
 	mustEqual(t, "failed items", g.item(ResultFailed), 0)
-	mustEqual(t, "rate limits counted", val(g.met.RateLimited.WithLabelValues("npm-mirror", "too_many_requests")), 1)
-	mustEqual(t, "wait seconds counted", val(g.met.RateLimitWait.WithLabelValues("npm-mirror")), 7)
+	mustEqual(t, "rate limits counted", val(g.met.RateLimited.WithLabelValues("it/npm-mirror", "too_many_requests")), 1)
+	mustEqual(t, "wait seconds counted", val(g.met.RateLimitWait.WithLabelValues("it/npm-mirror")), 7)
 	evs := g.rec.of(audit.EventMirrorRateLimited)
 	if len(evs) != 1 {
 		t.Fatalf("rate_limited events: %+v", evs)
@@ -442,8 +442,8 @@ func TestR_REPO_054_APreEmptedFetchAndAWaitAreNotFailures(t *testing.T) {
 	mustEqual(t, "packagesFailed", g.lastPass()["packagesFailed"].(float64), 0)
 	mustEqual(t, "failed items", g.item(ResultFailed), 0)
 	mustEqual(t, "pre-empted items", g.item(ResultPreempted), 1)
-	mustEqual(t, "pre-empted counter", val(g.met.Preempted.WithLabelValues("npm-mirror")), 1)
-	mustEqual(t, "no rate limit", val(g.met.RateLimited.WithLabelValues("npm-mirror", "too_many_requests")), 0)
+	mustEqual(t, "pre-empted counter", val(g.met.Preempted.WithLabelValues("it/npm-mirror")), 1)
+	mustEqual(t, "no rate limit", val(g.met.RateLimited.WithLabelValues("it/npm-mirror", "too_many_requests")), 0)
 	got := g.host.stored()
 	sort.Strings(got)
 	mustContain(t, "each tarball stored once", got, g.paths("a", "b")...)
@@ -696,7 +696,7 @@ func TestR_REPO_053_AReleasedAttemptLeavesThePassForAnotherProcess(t *testing.T)
 	}
 	g.jobs++
 	res := &result{}
-	err := g.eng.RunPass(rctx, "00000000-0000-0000-0000-000000000099", []byte(`{"repository":"npm-mirror","repositoryId":7}`), res)
+	err := g.eng.RunPass(rctx, "00000000-0000-0000-0000-000000000099", []byte(`{"repository":"it/npm-mirror","repositoryId":7}`), res)
 	if err == nil {
 		t.Fatal("a released attempt returned nil: the job would be completed")
 	}
@@ -729,7 +729,7 @@ func TestR_REPO_053_TheDispatchEnqueuesTheDuePassesOnce(t *testing.T) {
 		}
 	}
 	mustEqual(t, "enqueued", g.queue.count(), 1)
-	if got := g.queue.specs[0]; got.Kind != KindPass || got.DedupKey != PassKey(rigRepoID) || got.TargetKey != "npm-mirror" {
+	if got := g.queue.specs[0]; got.Kind != KindPass || got.DedupKey != PassKey(rigRepoID) || got.TargetKey != "it/npm-mirror" {
 		t.Fatalf("spec %+v", got)
 	}
 	var a PassArgs
@@ -864,7 +864,7 @@ func TestR_REPO_054_SeveralWorkersStoreEveryItemOnceWithinTheCeiling(t *testing.
 	if peak > 4 {
 		t.Fatalf("%d requests in flight, the ceiling is 4", peak)
 	}
-	mustEqual(t, "the window gauge is cleared at the end", val(g.met.Concurrency.WithLabelValues("npm-mirror")), 0)
+	mustEqual(t, "the window gauge is cleared at the end", val(g.met.Concurrency.WithLabelValues("it/npm-mirror")), 0)
 }
 
 // R-REPO-057: an artifact that is stored already is counted as present and adds no bytes.
@@ -883,7 +883,7 @@ func TestR_REPO_057_APresentArtifactIsCountedAndAddsNoBytes(t *testing.T) {
 	}
 	mustEqual(t, "present", g.item(ResultPresent), 1)
 	mustEqual(t, "stored", g.item(ResultStored), 1)
-	mustEqual(t, "bytes", val(g.met.Bytes.WithLabelValues("npm-mirror")), 100)
+	mustEqual(t, "bytes", val(g.met.Bytes.WithLabelValues("it/npm-mirror")), 100)
 }
 
 // R-REPO-053: a repository that is gone, one that is no mirror and a format without discovery start no pass.
