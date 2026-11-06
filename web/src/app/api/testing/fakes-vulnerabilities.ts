@@ -46,7 +46,8 @@ export const FINDING_RESOLVED = '0193a000-0000-7000-8000-000000000006';
 export function sampleFinding(over: Partial<VulnerabilityFinding> = {}): VulnerabilityFinding {
   return {
     id: FINDING_VULN,
-    repository: 'npm-remote',
+    project: 'web',
+    repository: 'web/npm-remote',
     format: 'npm',
     package: 'trove-test-vuln',
     version: '1.0.0',
@@ -137,7 +138,8 @@ const SEED: readonly VulnerabilityFinding[] = [
   }),
   sampleFinding({
     id: FINDING_NUGET,
-    repository: 'nuget-local',
+    project: 'web',
+    repository: 'web/nuget-local',
     format: 'nuget',
     package: 'newtonsoft.json',
     version: '13.0.1',
@@ -308,7 +310,7 @@ export class FakeVulnerabilitiesApi extends VulnerabilitiesApi {
     return {
       finding: f,
       advisory,
-      virtualRepositories: f.repository === 'npm-remote' ? ['npm-all'] : [],
+      virtualRepositories: f.repository === 'web/npm-remote' ? ['web/npm-all'] : [],
       blockedBy:
         f.blockReason === 'triage' && by
           ? { principal: { id: 'u-alice', name: 'alice' }, at: by.at, comment: by.comment }

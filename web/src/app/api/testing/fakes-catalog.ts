@@ -26,6 +26,9 @@ import {
   UpstreamTestBody,
   UpstreamTestResult,
   Versioned,
+  refOf,
+  repoRef,
+  repositoryUrl,
 } from '../repositories-api';
 
 /*
@@ -210,6 +213,7 @@ export class FakeRepositoriesApi extends RepositoriesApi {
   repositories: Repository[] = [
     {
       key: 'generic-local',
+      project: 'web',
       class: 'local',
       format: 'generic',
       description: 'Installers and build outputs',
@@ -224,15 +228,19 @@ export class FakeRepositoriesApi extends RepositoriesApi {
     },
     {
       key: 'releases',
+      project: 'web',
       class: 'local',
       format: 'generic',
       description: 'Customer releases',
       disabled: true,
     },
   ];
-  /** The version of each repository; the ETag is `"<n>"`. */
+  /** The version of each repository by qualified name; the ETag is `"<n>"`. */
   versions = new Map<string, number>();
   createKeys: string[] = [];
+  /** The project of each create, in order. */
+  createProjects: string[] = [];
+  moves: { ref: string; project: string }[] = [];
   patches: { key: string; patch: Readonly<Record<string, unknown>>; etag: string }[] = [];
   deleteResult: DeleteOutcome = { done: true };
   /** Set to make the next `get` answer the consumer view. */
@@ -268,17 +276,17 @@ export class FakeRepositoriesApi extends RepositoriesApi {
           r.key.includes(filters.q.toLowerCase()) ||
           (r.description ?? '').toLowerCase().includes(filters.q.toLowerCase()),
       )
-      .sort((a, b) => a.key.localeCompare(b.key))
+      .sort((a, b) => refOf(a).localeCompare(refOf(b)))
       .map((r) => ({
         key: r.key,
         class: r.class,
         format: r.format,
         description: r.description ?? '',
-        addresses: [`https://trove.example.net/files/${r.key}/`],
+        addresses: [`https://trove.example.net/files/${refOf(r)}/`],
         disabled: r.disabled ?? false,
         lifecycle: 'active' as const,
         lastActivityAt: r.lastActivityAt ?? null,
-        project: r.project ?? null,
+        project: r.project ?? '',
       }));
   }
 
@@ -291,18 +299,19 @@ export class FakeRepositoriesApi extends RepositoriesApi {
     return this.summaries({});
   }
 
-  override async get(key: string): Promise<Versioned<Repository | RepositoryConsumerView>> {
-    const repo = this.repositories.find((r) => r.key === key);
+  override async get(ref: string): Promise<Versioned<Repository | RepositoryConsumerView>> {
+    const key = ref;
+    const repo = this.repositories.find((r) => refOf(r) === ref);
     if (!repo) throw notFound();
     if (this.consumerOnly) {
       return {
         value: {
-          key,
+          key: repo.key,
           class: repo.class,
           format: repo.format,
           description: repo.description ?? '',
           layout: 'generic',
-          addresses: [`https://trove.example.net/files/${key}/`],
+          addresses: [`https://trove.example.net/files/${ref}/`],
         },
         etag: `"${this.version(key)}-consumer"`,
       };
@@ -310,8 +319,9 @@ export class FakeRepositoriesApi extends RepositoriesApi {
     return { value: structuredClone(repo), etag: `"${this.version(key)}"` };
   }
 
-  override async create(doc: Repository, idempotencyKey: string): Promise<Versioned<Repository>> {
+  override async create(project: string, doc: Repository, idempotencyKey: string): Promise<Versioned<Repository>> {
     this.createKeys.push(idempotencyKey);
+    this.createProjects.push(project);
     if (!/^[a-z0-9][a-z0-9._-]{1,63}$/.test(doc.key)) {
       throw new ApiError(
         422,
@@ -323,23 +333,12 @@ export class FakeRepositoriesApi extends RepositoriesApi {
         null,
       );
     }
-    if (doc.project && !doc.key.startsWith(`${doc.project}-`)) {
-      throw new ApiError(
-        422,
-        {
-          code: 'project_prefix_required',
-          detail: 'the key starts with the project key and a hyphen',
-          errors: [{ pointer: '/key', code: 'project_prefix_required', detail: 'prefix' }],
-        },
-        null,
-      );
+    if (this.repositories.some((r) => r.project === project && r.key === doc.key)) {
+      throw new ApiError(409, { code: 'already_exists', detail: 'exists' }, null);
     }
-    if (this.repositories.some((r) => r.key === doc.key)) {
-      throw new ApiError(409, { code: 'repository_exists', detail: 'exists' }, null);
-    }
-    const stored = sealed(structuredClone(doc) as unknown as JsonObject) as unknown as Repository;
+    const stored = sealed({ ...(structuredClone(doc) as unknown as JsonObject), project }) as unknown as Repository;
     this.repositories.push(stored);
-    this.versions.set(doc.key, 1);
+    this.versions.set(repoRef(project, doc.key), 1);
     return { value: structuredClone(stored), etag: '"1"' };
   }
 
@@ -350,7 +349,7 @@ export class FakeRepositoriesApi extends RepositoriesApi {
   ): Promise<Versioned<Repository>> {
     this.beforePatch?.();
     this.patches.push({ key, patch, etag });
-    const index = this.repositories.findIndex((r) => r.key === key);
+    const index = this.repositories.findIndex((r) => refOf(r) === key);
     const current = this.repositories[index];
     if (!current) throw notFound();
     if (etag !== `"${this.version(key)}"`) {
@@ -376,8 +375,18 @@ export class FakeRepositoriesApi extends RepositoriesApi {
     detach = false,
   ): Promise<DeleteOutcome> {
     this.deleteCalls.push({ key, idempotencyKey, detach });
-    if (this.deleteResult.done) this.repositories = this.repositories.filter((r) => r.key !== key);
+    if (this.deleteResult.done) this.repositories = this.repositories.filter((r) => refOf(r) !== key);
     return this.deleteResult;
+  }
+
+  override async move(ref: string, targetProject: string, _idempotencyKey: string): Promise<Versioned<Repository>> {
+    this.moves.push({ ref, project: targetProject });
+    const index = this.repositories.findIndex((r) => refOf(r) === ref);
+    const current = this.repositories[index];
+    if (!current) throw notFound();
+    const moved = { ...current, project: targetProject } as Repository;
+    this.repositories[index] = moved;
+    return { value: structuredClone(moved), etag: '"1"' };
   }
 
   /** The answers of `GET …/mirror`: the next ones are taken in order, the last one stays. */
@@ -394,13 +403,14 @@ export class FakeRepositoriesApi extends RepositoriesApi {
   };
   mirrorRuns: { key: string; full: boolean; idempotencyKey: string }[] = [];
   upstreamTests: UpstreamTestBody[] = [];
+  upstreamTestProjects: string[] = [];
   upstreamTestResult: UpstreamTestResult = sampleUpstreamTestResult();
   upstreamTestError: ApiError | null = null;
 
   override async mirrorStatus(key: string): Promise<MirrorStatus> {
     this.mirrorStatusCalls++;
     if (this.mirrorStatusError) throw this.mirrorStatusError;
-    if (!this.repositories.some((r) => r.key === key)) throw notFound();
+    if (!this.repositories.some((r) => refOf(r) === key)) throw notFound();
     const index = Math.min(this.mirrorStatusCalls - 1, this.mirrorStatuses.length - 1);
     return structuredClone(this.mirrorStatuses[index]!);
   }
@@ -411,8 +421,9 @@ export class FakeRepositoriesApi extends RepositoriesApi {
     return this.runMirrorResult;
   }
 
-  override async testUpstream(body: UpstreamTestBody): Promise<UpstreamTestResult> {
+  override async testUpstream(project: string, body: UpstreamTestBody): Promise<UpstreamTestResult> {
     this.upstreamTests.push(body);
+    this.upstreamTestProjects.push(project);
     if (this.upstreamTestError) throw this.upstreamTestError;
     return structuredClone(this.upstreamTestResult);
   }
@@ -470,7 +481,7 @@ export class FakeFilesApi extends FilesApi {
   /** Items by repository; folders are listed explicitly. */
   tree = new Map<string, FakeNode[]>([
     [
-      'generic-local',
+      'web/generic-local',
       [
         { path: 'releases', kind: 'folder' },
         { path: 'releases/1.0', kind: 'folder' },
@@ -509,7 +520,7 @@ export class FakeFilesApi extends FilesApi {
             digests: { sha256: 'a'.repeat(64), sha1: 'b'.repeat(40) },
             contentStatus: 'ok' as const,
             downloadUrl: `https://trove.example.net/files/${repository}/${node.path}`,
-            contentUrl: `/api/v1/repositories/${repository}/content/${node.path}`,
+            contentUrl: `${repositoryUrl(repository)}/content/${node.path}`,
           }
         : {
             explicit: true,
@@ -520,7 +531,7 @@ export class FakeFilesApi extends FilesApi {
       updatedAt: stamp.at,
       package: null,
       upstreamUrl: null,
-      itemUrl: `https://trove.example.net/api/v1/repositories/${repository}/items?path=${node.path}`,
+      itemUrl: `https://trove.example.net${repositoryUrl(repository)}/items?path=${node.path}`,
     };
   }
 
