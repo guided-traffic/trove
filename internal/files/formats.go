@@ -86,7 +86,7 @@ func (s *Service) Classified(ctx context.Context, c authz.Coordinate) authz.Coor
 	if s.formats == nil || c.Path == "" || c.Package != "" {
 		return c
 	}
-	repo, err := s.repos.ByKey(ctx, c.Repository)
+	repo, err := s.repos.ByName(ctx, c.Repository)
 	if err != nil {
 		return c
 	}

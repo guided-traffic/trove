@@ -6,6 +6,7 @@
 package virtualtest
 
 import (
+	"github.com/guided-traffic/trove/internal/qname"
 	"strconv"
 
 	"github.com/guided-traffic/trove/internal/formats/catalog"
@@ -38,7 +39,7 @@ func RemoteRepo(id int64, key string) repository.Repository { return repo(id, ke
 
 func repo(id int64, key string, class repository.Class) repository.Repository {
 	return repository.Repository{
-		ID: strconv.FormatInt(id, 10), Name: key, Class: class, Format: Format,
+		ID: strconv.FormatInt(id, 10), Name: qname.Repo{Project: "it", Key: key}, Class: class, Format: Format,
 		HideExistence: "inherit", Lifecycle: repository.Active,
 	}
 }

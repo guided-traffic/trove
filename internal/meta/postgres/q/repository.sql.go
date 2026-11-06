@@ -163,7 +163,7 @@ type InsertRepositoryParams struct {
 
 // A key that is taken in the project (also by a repository being deleted) conflicts
 // on the unique constraint repositories_project_key; ON CONFLICT DO NOTHING returns
-// no row and the caller answers repository_exists. The project is required
+// no row and the caller answers already_exists. The project is required
 // (Q-AUTHZ-206): the repository is created in it, in this statement.
 func (q *Queries) InsertRepository(ctx context.Context, arg InsertRepositoryParams) ([]Repository, error) {
 	rows, err := q.db.Query(ctx, insertRepository,
@@ -428,7 +428,7 @@ type MoveRepositoryParams struct {
 // concurrent moves cannot both win; the callers hold ProjectLock of both projects
 // and the row lock. No row back: the repository is gone or no longer in `from`. A
 // target that has the key answers SQLSTATE 23505 on repositories_project_key (409
-// repository_exists). config_version moves on: the project is a member of the
+// already_exists). config_version moves on: the project is a member of the
 // repository's document.
 func (q *Queries) MoveRepository(ctx context.Context, arg MoveRepositoryParams) ([]Repository, error) {
 	rows, err := q.db.Query(ctx, moveRepository,

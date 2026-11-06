@@ -202,7 +202,7 @@ func stale(current int64) error { return errs.Stale("The repository", current) }
 // Create implements R-REPO-009: validate, then write the row, the audit event and
 // the change-log row in one transaction. The repository is created in project.
 // Create is never an upsert: a key that is taken in the project, also by a
-// repository being deleted, answers 409 repository_exists.
+// repository being deleted, answers 409 already_exists.
 func (s *Service) Create(ctx context.Context, c Caller, project string, body []byte) (Stored, error) {
 	var out Stored
 	err := s.run.InTx(ctx, func(tx meta.Tx) error {
@@ -254,7 +254,7 @@ func (s *Service) CreateTx(ctx context.Context, tx meta.Tx, c Caller, project st
 		return Stored{}, err
 	}
 	if len(rows) == 0 {
-		return Stored{}, errs.E(errs.Conflict, errs.CodeRepositoryExists,
+		return Stored{}, errs.E(errs.Conflict, errs.CodeAlreadyExists,
 			"The project "+strconv.Quote(project)+" has a repository with the key "+strconv.Quote(d.Key)+", or one that is still being deleted; a key stays taken until the deletion job completes.")
 	}
 	if d.Class == Remote {

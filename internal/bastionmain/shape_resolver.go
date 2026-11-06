@@ -2,6 +2,7 @@ package bastionmain
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 
 	"github.com/guided-traffic/trove/internal/authz"
@@ -17,12 +18,12 @@ type reachResolver struct{ r authz.Reacher }
 func NewShapeResolver(r authz.Reacher) ShapeResolver { return reachResolver{r: r} }
 
 // Shapes implements [ShapeResolver].
-func (s reachResolver) Shapes(ctx context.Context, idx *authz.Index, subject authz.Subject, keys []string) (map[string]Shape, error) {
+func (s reachResolver) Shapes(ctx context.Context, idx *authz.Index, subject authz.Subject, keys []qname.Repo) (map[qname.Repo]Shape, error) {
 	got, err := s.r.ReachOn(ctx, idx, subject, keys)
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]Shape, len(got))
+	out := make(map[qname.Repo]Shape, len(got))
 	for k, res := range got {
 		out[k] = shapeOf(res)
 	}

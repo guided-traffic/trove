@@ -26,7 +26,7 @@ import (
 //
 // Errors: 404 not_found for an unknown project, user, group or repository; 409
 // already_exists for a key that exists; 409 project_not_empty; 409 last_owner; 409
-// repository_in_use; 409 repository_exists; 412 precondition_failed; 422
+// repository_in_use; 409 already_exists; 412 precondition_failed; 422
 // validation_failed with the field codes of R-AUTHZ-026.
 type Service interface {
 	// List returns every project with its members and counts, ordered by key. The
@@ -67,7 +67,7 @@ type Service interface {
 	// address changes, the id and the content do not. It locks both projects and the repository,
 	// refuses with 409 repository_in_use while an object of the source project references the
 	// repository (a virtual repository's member list or pin rules or deploy target, a project policy
-	// selector, a CI mapping grant) and with 409 repository_exists when the target has the key. The
+	// selector, a CI mapping grant) and with 409 already_exists when the target has the key. The
 	// caller has checked that the actor may administer both projects. It returns the new name and
 	// the epoch.
 	MoveRepository(ctx context.Context, actor authz.Subject, from qname.Repo, toProject string) (to qname.Repo, epoch int64, err error)

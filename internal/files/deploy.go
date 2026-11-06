@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/guided-traffic/trove/internal/qname"
 	"io"
 	"strconv"
 
@@ -17,7 +18,7 @@ import (
 
 // DeployRequest is one PUT of /files/ (R-STOR-007).
 type DeployRequest struct {
-	Repo string
+	Repo qname.Repo
 	// Path is the canonical path; Folder says the request ended in a slash and
 	// creates an explicit folder.
 	Path repository.Cleaned
@@ -201,7 +202,7 @@ func (s *Service) deployFile(ctx context.Context, c Caller, repo repository.Repo
 // audit event: it is asked in case a concurrent upload makes the deploy an
 // overwrite, which usually does not happen. PathsAllowed is the non-auditing
 // evaluation.
-func (c Caller) mayOverwrite(ctx context.Context, repo, path string, pc PathClass) (bool, error) {
+func (c Caller) mayOverwrite(ctx context.Context, repo qname.Repo, path string, pc PathClass) (bool, error) {
 	same := func(string) (string, string) { return pc.Package, pc.Version }
 	ok, err := c.Access.PathsAllowed(ctx, coordinate(repo, path, pc, authz.KindWrite), authz.Overwrite, []string{path}, same)
 	if err != nil {

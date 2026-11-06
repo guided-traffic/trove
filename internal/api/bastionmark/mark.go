@@ -10,6 +10,7 @@
 package bastionmark
 
 import (
+	"github.com/guided-traffic/trove/internal/qname"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -152,10 +153,10 @@ func readRoute(mt bastionmain.RouteMatch) bool {
 // the main installation's URL of the addressed repository (R-BAS-014).
 func (m *Marker) readOnly(mt bastionmain.RouteMatch) error {
 	detail := "This is a read-only Bastion; publish to the main installation."
-	if base := strings.TrimRight(m.o.MainURL, "/"); base != "" && mt.Repo != "" {
-		target := base + "/api/" + mt.Format + "/" + mt.Repo + "/"
+	if base := strings.TrimRight(m.o.MainURL, "/"); base != "" && !mt.Repo.IsZero() {
+		target := base + qname.ProtocolBase("/api/"+mt.Format+"/{project}/{key}/", mt.Repo)
 		if mt.Format == bastionmain.FormatFiles {
-			target = base + "/files/" + mt.Repo + "/"
+			target = base + qname.FilesBase(mt.Repo)
 		}
 		detail = "This is a read-only Bastion of " + base + "; publish to " + target
 	}
@@ -171,10 +172,10 @@ func (o *observer) Decided(r *http.Request, d bastionmain.RouteDecision) {
 		return
 	}
 	key := d.Match.Repo
-	shapes, err := st.m.o.Shapes.Shapes(r.Context(), d.Index, d.Subject, []string{key})
+	shapes, err := st.m.o.Shapes.Shapes(r.Context(), d.Index, d.Subject, []qname.Repo{key})
 	if err != nil {
 		// The marking stays without a shape: the response is `pass`, never shared.
-		st.m.o.Log.Warn("bastion: the read shape could not be computed", "repository", key, "error", err)
+		st.m.o.Log.Warn("bastion: the read shape could not be computed", "repository", key.String(), "error", err)
 		return
 	}
 	st.mu.Lock()
@@ -195,7 +196,7 @@ func (s *state) marking(status int) iface.Marking {
 	if s.match == nil {
 		return mk
 	}
-	mk.Repository = s.match.Repo
+	mk.Repository = s.match.Repo.String()
 	mk.Read = s.read
 	if s.probe {
 		return mk

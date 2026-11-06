@@ -182,9 +182,6 @@ const (
 	// CodeProjectKeyOverlap: a project key that is another key's prefix up to a
 	// hyphen, or the prefix of the name of a global service account.
 	CodeProjectKeyOverlap = "project_key_overlap"
-	// CodeRepositoryExists: a repository key that is taken within the project, by a repository being deleted
-	// too; or the target project of a move already has the key (Q-REPO-212).
-	CodeRepositoryExists = "repository_exists"
 	// CodeRepositoryInUse: a move of a repository that an object of its project still references (a virtual
 	// repository's member list or pin rule, a project policy entry, a CI mapping grant, a deployment target).
 	CodeRepositoryInUse = "repository_in_use"
@@ -677,7 +674,6 @@ var registry = []CodeInfo{
 	{CodeRepositoryAssigned, Conflict, "Repository assigned to another project", "The repository belongs to another project; send move=true to move it."},
 	{CodeProjectOwnerChanged, Conflict, "Project owner changed", "The repository belongs to another project than the request expected (from); the extension currentProject names it, null for none. Read it again and decide again."},
 	{CodeProjectKeyOverlap, Conflict, "Project key overlaps", "A project key is not the prefix, up to a hyphen, of another project's key or of a global service account's name."},
-	{CodeRepositoryExists, Conflict, "Repository exists", "The project already has a repository with this key, one being deleted included."},
 	{CodeRepositoryInUse, Conflict, "Repository in use", "An object of the project still references the repository: a virtual repository's members, pin rules or deployment target, a project policy, or a CI mapping. Remove the references, then move it."},
 	{CodeUnknownProject, Invalid, "Unknown project", "The project does not exist, or the caller does not administer it; the answer does not tell which."},
 	{CodeProjectSwitchOff, Forbidden, "Project switch off", "The project's administrator right for this operation (managePolicies or manageRepositories) is switched off; an administrator turns it on."},

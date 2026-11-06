@@ -3,6 +3,7 @@ package files
 import (
 	"context"
 	"errors"
+	"github.com/guided-traffic/trove/internal/qname"
 	"slices"
 	"strings"
 	"testing"

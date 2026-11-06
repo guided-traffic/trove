@@ -48,7 +48,7 @@ SELECT *
 -- name: InsertRepository :many
 -- A key that is taken in the project (also by a repository being deleted) conflicts
 -- on the unique constraint repositories_project_key; ON CONFLICT DO NOTHING returns
--- no row and the caller answers repository_exists. The project is required
+-- no row and the caller answers already_exists. The project is required
 -- (Q-AUTHZ-206): the repository is created in it, in this statement.
 INSERT INTO repositories (key, format, class, config, project_id, created_by, updated_by)
 VALUES (sqlc.arg(key)::text, sqlc.arg(format)::text, sqlc.arg(class)::text, sqlc.arg(config)::text::jsonb,
@@ -62,7 +62,7 @@ RETURNING *;
 -- concurrent moves cannot both win; the callers hold ProjectLock of both projects
 -- and the row lock. No row back: the repository is gone or no longer in `from`. A
 -- target that has the key answers SQLSTATE 23505 on repositories_project_key (409
--- repository_exists). config_version moves on: the project is a member of the
+-- already_exists). config_version moves on: the project is a member of the
 -- repository's document.
 UPDATE repositories
    SET project_id = sqlc.arg(project_id)::text::uuid, updated_at = now(),
