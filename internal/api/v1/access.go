@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/authz"
@@ -17,7 +18,7 @@ type Beginner interface {
 	// check, empty for an action declaration; keys are the repositories the
 	// request names. A nil holder with no error means the access needs no index
 	// for this permission (the bootstrap bridge opens it without a decision).
-	Begin(ctx context.Context, permission string, keys ...string) (*edge.Access, error)
+	Begin(ctx context.Context, permission string, keys ...qname.Repo) (*edge.Access, error)
 }
 
 // NewAccess adapts the decision point to [Access]: the permission of an
@@ -29,12 +30,12 @@ type authzAccess struct{ d authz.Decider }
 
 // holder is the request's holder: the one the shared step stored, brought up to
 // keys, or a new one for a request that reached the handler without the step.
-func (x authzAccess) holder(ctx context.Context, keys ...string) (*edge.Access, error) {
+func (x authzAccess) holder(ctx context.Context, keys ...qname.Repo) (*edge.Access, error) {
 	return edge.Resolve(ctx, x.d, SubjectFrom(ctx), keys...)
 }
 
 // Begin implements [Beginner].
-func (x authzAccess) Begin(ctx context.Context, _ string, keys ...string) (*edge.Access, error) {
+func (x authzAccess) Begin(ctx context.Context, _ string, keys ...qname.Repo) (*edge.Access, error) {
 	return edge.Begin(ctx, x.d, SubjectFrom(ctx), keys...)
 }
 
@@ -68,37 +69,35 @@ func (x authzAccess) RequireAction(ctx context.Context, c authz.Coordinate) erro
 	return a.Decide(ctx, c).Err()
 }
 
-// ProjectAccess is the optional fourth method set of an [Access]: the questions of
-// a delegable operation about the projects of the caller (R-AUTHZ-026, Q-AUTHZ-180).
-// They are answered on the request's index and audit nothing; an Access that does not
-// implement them (or a replica without a decision point) knows no project, so a
-// delegated operation refuses its project administrators.
+// ProjectAccess is the optional fourth method set of an [Access]: the questions about the
+// projects of the caller (Q-AUTHZ-207, Q-AUTHZ-208). They are answered on the request's index and
+// audit nothing; an Access that does not implement them (or a replica without a decision point)
+// knows no membership, so a declaration that names projectRole admits nobody through it.
 type ProjectAccess interface {
-	// AdministeredProjects lists the projects the caller administers, with their
-	// switches (authz.Decider.ProjectsOn).
-	AdministeredProjects(ctx context.Context) ([]authz.AdministeredProject, error)
-	// AdministersRepository reports whether the caller administers the project of the
-	// repository with the right, and names the project (authz.Decider.AdministersRepositoryOn).
-	AdministersRepository(ctx context.Context, repository string, right authz.ProjectRight) (project string, ok bool, err error)
+	// Memberships lists the projects the caller is a member of, with its role
+	// (authz.Decider.MembershipsOn).
+	Memberships(ctx context.Context) ([]authz.Membership, error)
+	// Owns reports whether the caller may administer the project: an Owner of it through a
+	// session or a token with admin: true (authz.Decider.OwnsOn).
+	Owns(ctx context.Context, project string) (bool, error)
 }
 
-// AdministeredProjects implements [ProjectAccess].
-func (x authzAccess) AdministeredProjects(ctx context.Context) ([]authz.AdministeredProject, error) {
+// Memberships implements [ProjectAccess].
+func (x authzAccess) Memberships(ctx context.Context) ([]authz.Membership, error) {
 	a, err := x.holder(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return a.Projects(), nil
+	return a.Memberships(), nil
 }
 
-// AdministersRepository implements [ProjectAccess].
-func (x authzAccess) AdministersRepository(ctx context.Context, repository string, right authz.ProjectRight) (string, bool, error) {
-	a, err := x.holder(ctx, repository)
+// Owns implements [ProjectAccess].
+func (x authzAccess) Owns(ctx context.Context, project string) (bool, error) {
+	a, err := x.holder(ctx)
 	if err != nil {
-		return "", false, err
+		return false, err
 	}
-	project, ok := a.AdministersRepository(repository, right)
-	return project, ok, nil
+	return a.Owns(project), nil
 }
 
 var (
@@ -114,7 +113,7 @@ var (
 // permission questions the handler asks through [Access] are answered on the
 // same index. Without a decision point wired the holder is nil and the context
 // unchanged; the caller answers 503 where it needs a decision.
-func requestHolder(ctx context.Context, d authz.Decider, keys ...string) (context.Context, *edge.Access, error) {
+func requestHolder(ctx context.Context, d authz.Decider, keys ...qname.Repo) (context.Context, *edge.Access, error) {
 	if d == nil {
 		return ctx, nil, nil
 	}

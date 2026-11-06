@@ -3,8 +3,10 @@ package v1
 import (
 	"context"
 	"encoding/json"
+	"github.com/guided-traffic/trove/internal/qname"
 	"math"
 	"net/http"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -49,8 +51,8 @@ type RepositoryServices struct {
 }
 
 // capabilityReadConfig is the capability of reading configuration and
-// capabilityWriteConfig that of writing it (R-AUTHZ-010). A project administrator
-// holds neither; the handlers narrow its operations to its project (R-AUTHZ-026).
+// capabilityWriteConfig that of writing it (R-AUTHZ-010). An Owner of a project administers the
+// repositories of its project without them (Q-AUTHZ-208).
 const (
 	capabilityReadConfig  = string(authz.RepositoriesRead)
 	capabilityWriteConfig = string(authz.RepositoriesWrite)
@@ -94,8 +96,8 @@ func repositoryCaller(r *http.Request) repository.Caller {
 // way in (readOnlyMembers).
 type repositoryRep struct {
 	repository.Document
-	// Project is the key of the project the repository is assigned to, null for none
-	// (R-AUTHZ-026). The body of a create names it; afterwards it is read-only.
+	// Project is the key of the project the repository belongs to (Q-AUTHZ-206). It is read-only: the path
+	// names the project, and a body that names another answers 422.
 	Project        *string               `json:"project"`
 	Lifecycle      string                `json:"lifecycle"`
 	CreatedAt      time.Time             `json:"createdAt"`
@@ -117,7 +119,7 @@ func toRep(st repository.Stored, notes, withWarnings bool) repositoryRep {
 		d = d.WithoutAdminNotes()
 	}
 	rep := repositoryRep{
-		Document: d, Project: optString(st.Repository.ProjectKey), Lifecycle: string(st.Repository.Lifecycle),
+		Document: d, Project: optString(st.Repository.Name.Project), Lifecycle: string(st.Repository.Lifecycle),
 		CreatedAt: st.Repository.CreatedAt.UTC(), UpdatedAt: st.Repository.UpdatedAt.UTC(),
 	}
 	if t := st.Repository.LastActivityAt; !t.IsZero() {
@@ -143,8 +145,8 @@ func protocolBase(format string) string {
 }
 
 // addresses are the client addresses of a repository on the public base URL.
-func addresses(base string, d repository.Document) []string {
-	view := d.ConsumerView(protocolBase(d.Format))
+func addresses(base string, name qname.Repo, d repository.Document) []string {
+	view := d.ConsumerView(protocolBase(d.Format), name)
 	out := make([]string, len(view.Addresses))
 	for i, a := range view.Addresses {
 		out[i] = strings.TrimSuffix(base, "/") + a
@@ -168,8 +170,8 @@ type summaryRep struct {
 func toSummary(base string, st repository.Stored, showLifecycle bool) summaryRep {
 	r := summaryRep{
 		Key: st.Document.Key, Class: string(st.Document.Class), Format: st.Document.Format,
-		Description: st.Document.Description, Addresses: addresses(base, st.Document), Disabled: st.Repository.Disabled,
-		Project: optString(st.Repository.ProjectKey),
+		Description: st.Document.Description, Addresses: addresses(base, st.Repository.Name, st.Document), Disabled: st.Repository.Disabled,
+		Project: optString(st.Repository.Name.Project),
 	}
 	if t := st.Repository.LastActivityAt; !t.IsZero() {
 		u := t.UTC()
@@ -184,8 +186,8 @@ func toSummary(base string, st repository.Stored, showLifecycle bool) summaryRep
 // consumerRep is the view of a caller who may read a repository but not its
 // configuration (R-REPO-010).
 func consumerRep(base string, st repository.Stored) repository.ConsumerView {
-	v := st.Document.ConsumerView(protocolBase(st.Document.Format))
-	v.Addresses = addresses(base, st.Document)
+	v := st.Document.ConsumerView(protocolBase(st.Document.Format), st.Repository.Name)
+	v.Addresses = addresses(base, st.Repository.Name, st.Document)
 	return v
 }
 
@@ -208,7 +210,8 @@ func stripReadOnly(body []byte) ([]byte, error) {
 
 // takeProject removes the "project" member from a document body and returns it:
 // nil when the body has none, the key for a string, "" for null. The member is not
-// part of the configuration; the service compares or assigns it (R-AUTHZ-026).
+// part of the configuration; the handler compares it with the project of the path
+// ([sameProject]).
 func takeProject(doc []byte) ([]byte, *string, error) {
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(doc, &m); err != nil {
@@ -272,6 +275,16 @@ func (s *Server) patchBody(w http.ResponseWriter, r *http.Request) (doc []byte, 
 	return doc, project, nil
 }
 
+// sameProject is the 422 of a body that names another project than the path does (Q-AUTHZ-206): the
+// repository stays in the project of its path, and the move operation changes it.
+func sameProject(body *string, path string) error {
+	if body == nil || *body == path {
+		return nil
+	}
+	return errs.E(errs.Invalid, errs.CodeValidation, "The project of a repository is the one of the path; the move operation changes it.",
+		errs.WithFields(errs.FieldError{Pointer: "/project", Code: "immutable", Detail: "the project is the one of the path"}))
+}
+
 // repositoryPrecondition turns the parsed If-Match into the service's input. A tag
 // that was never issued, such as "0", matches nothing: the service then answers
 // 412 with the current tag.
@@ -316,8 +329,8 @@ func withoutActivity(p Precondition) Precondition {
 	return p
 }
 
-func repositoryURL(r *http.Request, key string) string {
-	return strings.TrimSuffix(httpserver.InfoFrom(r.Context()).BaseURL, "/") + "/api/v1/repositories/" + key
+func repositoryURL(r *http.Request, name qname.Repo) string {
+	return strings.TrimSuffix(httpserver.InfoFrom(r.Context()).BaseURL, "/") + "/api/v1/projects/" + url.PathEscape(name.Project) + "/repositories/" + url.PathEscape(name.Key)
 }
 
 // ListFormats implements GET /api/v1/formats (R-REPO-003).
@@ -416,8 +429,19 @@ func badParam(name, why string) error {
 	return errs.E(errs.Invalid, errs.CodeInvalid, "The query parameter "+`"`+name+`"`+" "+why+".")
 }
 
-// ListRepositories implements GET /api/v1/repositories (R-REPO-012).
+// ListRepositories implements GET /api/v1/repositories (R-REPO-012): every repository of the installation the
+// caller may see, ordered by project key and key, with the project of each.
 func (s *Server) ListRepositories(w http.ResponseWriter, r *http.Request, _ gen.ListRepositoriesParams) {
+	s.listRepositories(w, r, "")
+}
+
+// ListProjectRepositories implements GET /api/v1/projects/{projectKey}/repositories.
+func (s *Server) ListProjectRepositories(w http.ResponseWriter, r *http.Request, projectKey string, _ gen.ListProjectRepositoriesParams) {
+	s.listRepositories(w, r, projectKey)
+}
+
+// listRepositories is the list of both operations; project narrows it to one project, "" lists all.
+func (s *Server) listRepositories(w http.ResponseWriter, r *http.Request, project string) {
 	ctx := r.Context()
 	svc, err := s.repositoryService()
 	if err != nil {
@@ -434,43 +458,91 @@ func (s *Server) ListRepositories(w http.ResponseWriter, r *http.Request, _ gen.
 		httpserver.Problem(w, r, err)
 		return
 	}
+	if project != "" {
+		f.Project = project
+	}
 	if len(lq.After) > 1 {
 		httpserver.Problem(w, r, invalidCursor())
 		return
 	}
 	if len(lq.After) == 1 {
-		f.After = lq.After[0]
+		after, perr := qname.ParseRepo(lq.After[0])
+		if perr != nil {
+			httpserver.Problem(w, r, invalidCursor())
+			return
+		}
+		f.After = after
 	}
 	if err := s.anonymousGate(ctx); err != nil {
 		httpserver.Problem(w, r, err)
 		return
 	}
 	ctx, acc, err := requestHolder(ctx, s.o.Repositories.Authz)
-	var d DelegatedScope
+	var own *configScope
 	if err == nil {
-		d, err = s.delegatedScope(ctx, capabilityReadConfig)
+		own, err = s.configScope(ctx)
 	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
 	}
-	if view == "full" && !d.Global && len(d.Projects) == 0 {
+	if view == "full" && !own.global && !own.anyOwned() {
 		httpserver.Problem(w, r, errs.E(errs.Forbidden, errs.CodeForbidden, "view=full needs the permission "+capabilityReadConfig+"."))
 		return
 	}
-	f.IncludeDeleting = d.Global || len(d.Projects) > 0
-	rows, err := s.visibleRepositories(ctx, acc, svc, f, d, view == "full")
+	f.IncludeDeleting = own.global || own.anyOwned()
+	rows, err := s.visibleRepositories(ctx, acc, svc, f, own, view == "full")
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
 	}
 	base := httpserver.InfoFrom(ctx).BaseURL
-	page := NewPage(lq, rows, func(st repository.Stored) []string { return []string{st.Document.Key} })
+	page := NewPage(lq, rows, func(st repository.Stored) []string { return []string{st.Repository.Name.String()} })
 	if view == "full" {
 		WritePage(w, r, MapPage(page, func(st repository.Stored) any { return toRep(st, true, false) }))
 		return
 	}
-	WritePage(w, r, MapPage(page, func(st repository.Stored) any { return toSummary(base, st, d.Sees(st.Repository.ProjectKey)) }))
+	WritePage(w, r, MapPage(page, func(st repository.Stored) any { return toSummary(base, st, own.sees(st.Repository.Name.Project)) }))
+}
+
+// configScope is what the caller sees of the configuration: all of it with repositories:read-config, otherwise
+// that of the projects it is an Owner of (Q-AUTHZ-208).
+type configScope struct {
+	global bool
+	owned  map[string]bool
+}
+
+func (c *configScope) anyOwned() bool { return len(c.owned) > 0 }
+
+// sees reports whether the caller sees the configuration of the repositories of the project.
+func (c *configScope) sees(project string) bool { return c.global || c.owned[project] }
+
+// configScope reads the scope on the request's index.
+func (s *Server) configScope(ctx context.Context) (*configScope, error) {
+	held, err := s.holds(ctx, capabilityReadConfig)
+	if err != nil {
+		return nil, err
+	}
+	c := &configScope{global: held, owned: map[string]bool{}}
+	pa, ok := s.o.Access.(ProjectAccess)
+	if held || !ok {
+		return c, nil
+	}
+	members, err := pa.Memberships(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range members {
+		if m.Role != authz.ProjectRoleOwner {
+			continue
+		}
+		if owns, err := pa.Owns(ctx, m.Key); err != nil {
+			return nil, err
+		} else if owns {
+			c.owned[m.Key] = true
+		}
+	}
+	return c, nil
 }
 
 // repositoryFilter reads the filters of the list.
@@ -500,44 +572,43 @@ func repositoryFilter(lq ListQuery) (repository.ListFilter, string, error) {
 // visibleRepositories reads the page of repositories the caller may see: for a
 // holder of repositories:read-config every repository the endpoint exposes,
 // else those it may read, which the exposure narrows as well (R-AUTHZ-016,
-// R-EP-014). An administrator of a project sees the repositories of its project
-// in the same way, those being deleted included, as with the capability
-// (R-AUTHZ-026, Q-AUTHZ-184); full documents (view=full) are those of such
-// repositories only. The filtering runs over the rows after the cursor, in key
-// order, so the cursor stays the key of the last row of the page.
-func (s *Server) visibleRepositories(ctx context.Context, acc *edge.Access, svc *repository.Service, f repository.ListFilter, d DelegatedScope, full bool) ([]repository.Stored, error) {
+// R-EP-014). An Owner of a project sees the repositories of its project in the same
+// way, those being deleted included (Q-AUTHZ-208); full documents (view=full) are those
+// of such repositories only. The filtering runs over the rows after the cursor, in
+// (project, key) order, so the cursor stays the name of the last row of the page.
+func (s *Server) visibleRepositories(ctx context.Context, acc *edge.Access, svc *repository.Service, f repository.ListFilter, own *configScope, full bool) ([]repository.Stored, error) {
 	res, err := svc.List(ctx, f)
 	if err != nil {
 		return nil, err
 	}
 	rows := res.Items
-	var keys, administered []string
+	var names, owned []qname.Repo
 	for _, st := range rows {
-		keys = append(keys, st.Document.Key)
-		if !d.Global && d.Sees(st.Repository.ProjectKey) {
-			administered = append(administered, st.Document.Key)
+		names = append(names, st.Repository.Name)
+		if !own.global && own.sees(st.Repository.Name.Project) {
+			owned = append(owned, st.Repository.Name)
 		}
 	}
-	visible, err := s.visibleKeys(ctx, acc, keys, d.Global)
-	if err == nil && len(administered) > 0 {
-		var extra []string
-		if extra, err = s.visibleKeys(ctx, acc, administered, true); err == nil {
+	visible, err := s.visibleKeys(ctx, acc, names, own.global)
+	if err == nil && len(owned) > 0 {
+		var extra []qname.Repo
+		if extra, err = s.visibleKeys(ctx, acc, owned, true); err == nil {
 			visible = append(visible, extra...)
 		}
 	}
 	if err != nil {
 		return nil, err
 	}
-	allowed := make(map[string]bool, len(visible))
+	allowed := make(map[qname.Repo]bool, len(visible))
 	for _, k := range visible {
 		allowed[k] = true
 	}
 	kept := rows[:0:0]
 	for _, st := range rows {
-		own := d.Global || d.Sees(st.Repository.ProjectKey)
+		mine := own.sees(st.Repository.Name.Project)
 		switch {
-		case !allowed[st.Document.Key]:
-		case !own && (full || st.Repository.Lifecycle != repository.Active):
+		case !allowed[st.Repository.Name]:
+		case !mine && (full || st.Repository.Lifecycle != repository.Active):
 		default:
 			kept = append(kept, st)
 		}
@@ -545,12 +616,12 @@ func (s *Server) visibleRepositories(ctx context.Context, acc *edge.Access, svc 
 	return kept, nil
 }
 
-// visibleKeys filters repository keys for the subject of the request, on the
+// visibleKeys filters repository names for the subject of the request, on the
 // index the request holds. A holder of repositories:read-config needs no read
 // grant, but the exposure ceiling of the request's endpoint binds it like every
 // subject (R-EP-013, Q-EP-12): config selects the view, never what the endpoint
 // shows. Without a holder no decision point is wired and nothing is shown.
-func (s *Server) visibleKeys(ctx context.Context, acc *edge.Access, keys []string, cfg bool) ([]string, error) {
+func (s *Server) visibleKeys(ctx context.Context, acc *edge.Access, keys []qname.Repo, cfg bool) ([]qname.Repo, error) {
 	if acc == nil {
 		return nil, errNoDecisionPoint()
 	}
@@ -560,8 +631,11 @@ func (s *Server) visibleKeys(ctx context.Context, acc *edge.Access, keys []strin
 	return acc.Exposed(keys), nil
 }
 
-// CreateRepository implements POST /api/v1/repositories (R-REPO-009).
-func (s *Server) CreateRepository(w http.ResponseWriter, r *http.Request, _ gen.CreateRepositoryParams) {
+// CreateRepository implements POST /api/v1/repositories (R-REPO-009). The old unscoped route is gone: the
+// path names the project (see [Server.CreateProjectRepository]).
+
+// CreateProjectRepository implements POST /api/v1/projects/{projectKey}/repositories (R-REPO-009).
+func (s *Server) CreateProjectRepository(w http.ResponseWriter, r *http.Request, projectKey string, _ gen.CreateProjectRepositoryParams) {
 	svc, err := s.repositoryService()
 	if err == nil && s.idem == nil {
 		err = unavailable("The repository service")
@@ -571,28 +645,26 @@ func (s *Server) CreateRepository(w http.ResponseWriter, r *http.Request, _ gen.
 	if err == nil {
 		raw, doc, project, err = s.documentBody(w, r)
 	}
-	var delegate string
 	if err == nil {
-		delegate, err = s.createDelegate(r.Context(), project)
+		err = sameProject(project, projectKey)
 	}
 	var cfg bool
 	if err == nil {
-		cfg, err = s.holds(r.Context(), capabilityReadConfig)
+		cfg, err = s.readsConfig(r.Context(), projectKey)
 	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
 	}
-	cfg = cfg || delegate != "" // the full document, as read-config gives it (Q-AUTHZ-184)
 	caller := repositoryCaller(r)
 	err = s.idem.Do(w, r, raw, IdempotentOp{Run: func(ctx context.Context, tx meta.Tx) (Outcome, error) {
-		st, err := svc.CreateTxIn(ctx, tx, caller, doc, repository.Write{Project: project, Delegate: delegate})
+		st, err := svc.CreateTx(ctx, tx, caller, projectKey, doc)
 		if err != nil {
 			return Outcome{}, err
 		}
 		return Outcome{
 			Status: http.StatusCreated,
-			Header: map[string]string{"Location": repositoryURL(r, st.Document.Key), "ETag": ETag(st.Repository.Version, "")},
+			Header: map[string]string{"Location": repositoryURL(r, st.Repository.Name), "ETag": ETag(st.Repository.Version, "")},
 			Body:   toRep(st, cfg, true),
 		}, nil
 	}})
@@ -601,35 +673,9 @@ func (s *Server) CreateRepository(w http.ResponseWriter, r *http.Request, _ gen.
 	}
 }
 
-// createDelegate narrows a create to the caller's rights: a holder of
-// repositories:write-config creates any repository and may assign any project;
-// an administrator of a project creates in the project the body names, which
-// needs manageRepositories (403 project_switch_off while it is off, 404 for a
-// project it does not administer). It returns the project the caller acts for,
-// "" for a holder of the capability (R-AUTHZ-026, Q-AUTHZ-184).
-func (s *Server) createDelegate(ctx context.Context, project *string) (string, error) {
-	d, err := s.delegatedScope(ctx, capabilityWriteConfig)
-	if err != nil || d.Global {
-		return "", err
-	}
-	key := derefString(project)
-	if key == "" {
-		return "", errs.E(errs.Forbidden, errs.CodeForbidden, "An administrator of a project creates repositories in its project: name it in project.")
-	}
-	return key, refuseProject(d, key, authz.ProjectManageRepositories)
-}
-
-// writeDelegate narrows a write of an existing repository: the project of the
-// repository the caller administers with manageRepositories, "" for a holder of
-// repositories:write-config. A repository of no project or of another answers 404.
-func (s *Server) writeDelegate(ctx context.Context, key string) (string, error) {
-	return s.requireProjectOfRepository(ctx, capabilityWriteConfig, key, authz.ProjectManageRepositories)
-}
-
-// readsConfig reports whether the caller sees the full configuration of the
-// repository: it holds repositories:read-config, or it administers the project the
-// repository belongs to (R-AUTHZ-026, Q-AUTHZ-184).
-func (s *Server) readsConfig(ctx context.Context, key string) (bool, error) {
+// readsConfig reports whether the caller sees the full configuration of the repositories of the
+// project: it holds repositories:read-config, or it is an Owner of the project (Q-AUTHZ-208).
+func (s *Server) readsConfig(ctx context.Context, project string) (bool, error) {
 	held, err := s.holds(ctx, capabilityReadConfig)
 	if err != nil || held {
 		return held, err
@@ -638,15 +684,15 @@ func (s *Server) readsConfig(ctx context.Context, key string) (bool, error) {
 	if !ok {
 		return false, nil
 	}
-	_, admin, err := pa.AdministersRepository(ctx, key, authz.ProjectAny)
-	return admin, err
+	return pa.Owns(ctx, project)
 }
 
-// GetRepository implements GET /api/v1/repositories/{key} (R-REPO-010): the full
+// GetRepository implements GET /api/v1/projects/{projectKey}/repositories/{repoKey} (R-REPO-010): the full
 // document for a holder of repositories:read-config, the consumer view for a
 // caller who may read the repository, and one 404 for everyone else, whether the
 // repository exists or not (R-AUTHZ-016).
-func (s *Server) GetRepository(w http.ResponseWriter, r *http.Request, key string, _ gen.GetRepositoryParams) {
+func (s *Server) GetRepository(w http.ResponseWriter, r *http.Request, projectKey, repoKey string, _ gen.GetRepositoryParams) {
+	key := qname.Repo{Project: projectKey, Key: repoKey}
 	ctx := r.Context()
 	svc, err := s.repositoryService()
 	if err != nil {
@@ -660,7 +706,7 @@ func (s *Server) GetRepository(w http.ResponseWriter, r *http.Request, key strin
 	ctx, acc, err := requestHolder(ctx, s.o.Repositories.Authz, key)
 	var cfg bool
 	if err == nil {
-		cfg, err = s.readsConfig(ctx, key)
+		cfg, err = s.readsConfig(ctx, projectKey)
 	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
@@ -683,7 +729,7 @@ func (s *Server) GetRepository(w http.ResponseWriter, r *http.Request, key strin
 		// The ceiling binds a configuration reader too, before the lookup, so a
 		// repository the endpoint does not expose answers like a missing one
 		// (R-EP-013, R-EP-014).
-		exposed, err := s.visibleKeys(ctx, acc, []string{key}, true)
+		exposed, err := s.visibleKeys(ctx, acc, []qname.Repo{key}, true)
 		if err != nil {
 			httpserver.Problem(w, r, err)
 			return
@@ -721,34 +767,31 @@ func (s *Server) GetRepository(w http.ResponseWriter, r *http.Request, key strin
 	writeJSON(w, r, http.StatusOK, toRep(st, true, false))
 }
 
-// ReplaceRepository implements PUT /api/v1/repositories/{key} (R-REPO-011).
-func (s *Server) ReplaceRepository(w http.ResponseWriter, r *http.Request, key string, _ gen.ReplaceRepositoryParams) {
-	s.writeRepository(w, r, key, func(svc *repository.Service, pre repository.Precondition, doc []byte, wr repository.Write) (repository.Stored, error) {
-		return svc.ReplaceIn(r.Context(), repositoryCaller(r), key, pre, doc, wr)
+// ReplaceRepository implements PUT /api/v1/projects/{projectKey}/repositories/{repoKey} (R-REPO-011).
+func (s *Server) ReplaceRepository(w http.ResponseWriter, r *http.Request, projectKey, repoKey string, _ gen.ReplaceRepositoryParams) {
+	name := qname.Repo{Project: projectKey, Key: repoKey}
+	s.writeRepository(w, r, name, func(svc *repository.Service, pre repository.Precondition, doc []byte) (repository.Stored, error) {
+		return svc.Replace(r.Context(), repositoryCaller(r), name, pre, doc)
 	}, func() ([]byte, *string, error) {
 		_, doc, project, err := s.documentBody(w, r)
 		return doc, project, err
 	})
 }
 
-// UpdateRepository implements PATCH /api/v1/repositories/{key} (R-REPO-011).
-func (s *Server) UpdateRepository(w http.ResponseWriter, r *http.Request, key string, _ gen.UpdateRepositoryParams) {
-	s.writeRepository(w, r, key, func(svc *repository.Service, pre repository.Precondition, patch []byte, wr repository.Write) (repository.Stored, error) {
-		return svc.PatchIn(r.Context(), repositoryCaller(r), key, pre, MergePatcher(patch), wr)
+// UpdateRepository implements PATCH /api/v1/projects/{projectKey}/repositories/{repoKey} (R-REPO-011).
+func (s *Server) UpdateRepository(w http.ResponseWriter, r *http.Request, projectKey, repoKey string, _ gen.UpdateRepositoryParams) {
+	name := qname.Repo{Project: projectKey, Key: repoKey}
+	s.writeRepository(w, r, name, func(svc *repository.Service, pre repository.Precondition, patch []byte) (repository.Stored, error) {
+		return svc.Patch(r.Context(), repositoryCaller(r), name, pre, MergePatcher(patch))
 	}, func() ([]byte, *string, error) { return s.patchBody(w, r) })
 }
 
-// writeRepository is the shape of PUT and PATCH: the narrowing to the caller's
-// project, 428 without If-Match before the body is read, the body, the write, the
-// new tag.
-func (s *Server) writeRepository(w http.ResponseWriter, r *http.Request, key string,
-	write func(*repository.Service, repository.Precondition, []byte, repository.Write) (repository.Stored, error), body func() ([]byte, *string, error),
+// writeRepository is the shape of PUT and PATCH: 428 without If-Match before the body is read, the
+// body, the write, the new tag.
+func (s *Server) writeRepository(w http.ResponseWriter, r *http.Request, name qname.Repo,
+	write func(*repository.Service, repository.Precondition, []byte) (repository.Stored, error), body func() ([]byte, *string, error),
 ) {
 	svc, err := s.repositoryService()
-	var delegate string
-	if err == nil {
-		delegate, err = s.writeDelegate(r.Context(), key)
-	}
 	var pre Precondition
 	if err == nil {
 		pre, err = ParseIfMatch(r)
@@ -758,36 +801,31 @@ func (s *Server) writeRepository(w http.ResponseWriter, r *http.Request, key str
 	if err == nil {
 		doc, project, err = body()
 	}
+	if err == nil {
+		err = sameProject(project, name.Project)
+	}
 	var cfg bool
 	if err == nil {
-		cfg, err = s.holds(r.Context(), capabilityReadConfig)
-	}
-	// A project administrator may weaken the member `vulnerabilities` only with the triage capability (R-VULN-002, Q-VULN-69).
-	var triage bool
-	if err == nil && delegate != "" {
-		triage, err = s.holds(r.Context(), string(authz.VulnerabilitiesTriage))
+		cfg, err = s.readsConfig(r.Context(), name.Project)
 	}
 	var st repository.Stored
 	if err == nil {
-		st, err = write(svc, repositoryPrecondition(pre), doc, repository.Write{Project: project, Delegate: delegate, MayWeakenVulnerabilities: triage})
+		st, err = write(svc, repositoryPrecondition(pre), doc)
 	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
 	}
 	SetETag(w, st.Repository.Version, "")
-	writeJSON(w, r, http.StatusOK, toRep(st, cfg || delegate != "", true))
+	writeJSON(w, r, http.StatusOK, toRep(st, cfg, true))
 }
 
-// DeleteRepository implements DELETE /api/v1/repositories/{key} (R-REPO-013).
-func (s *Server) DeleteRepository(w http.ResponseWriter, r *http.Request, key string, params gen.DeleteRepositoryParams) {
+// DeleteRepository implements DELETE /api/v1/projects/{projectKey}/repositories/{repoKey} (R-REPO-013).
+func (s *Server) DeleteRepository(w http.ResponseWriter, r *http.Request, projectKey, repoKey string, params gen.DeleteRepositoryParams) {
+	key := qname.Repo{Project: projectKey, Key: repoKey}
 	svc, err := s.repositoryService()
 	if err == nil && s.idem == nil {
 		err = unavailable("The repository service")
-	}
-	delegate := ""
-	if err == nil {
-		delegate, err = s.writeDelegate(r.Context(), key)
 	}
 	var pre Precondition
 	if err == nil {
@@ -805,7 +843,7 @@ func (s *Server) DeleteRepository(w http.ResponseWriter, r *http.Request, key st
 	detach := params.Detach != nil && *params.Detach
 	caller := repositoryCaller(r)
 	err = s.idem.Do(w, r, nil, IdempotentOp{Run: func(ctx context.Context, tx meta.Tx) (Outcome, error) {
-		res, err := svc.DeleteTxIn(ctx, tx, caller, key, detach, cond, delegate)
+		res, err := svc.DeleteTx(ctx, tx, caller, key, detach, cond)
 		if err != nil {
 			return Outcome{}, err
 		}
@@ -821,4 +859,27 @@ func (s *Server) DeleteRepository(w http.ResponseWriter, r *http.Request, key st
 	if err != nil {
 		httpserver.Problem(w, r, err)
 	}
+}
+
+// MoveRepository implements POST /api/v1/projects/{projectKey}/repositories/{repoKey}/move (Q-REPO-212): the
+// address of the repository changes, its content does not. The project service answers 501 until the move is
+// built.
+func (s *Server) MoveRepository(w http.ResponseWriter, r *http.Request, projectKey, repoKey string, _ gen.MoveRepositoryParams) {
+	svc, err := s.projects()
+	var in gen.MoveRepositoryRequest
+	if err == nil {
+		err = DecodeJSON(w, r, &in, s.bodyLimit())
+	}
+	var to qname.Repo
+	var epoch int64
+	if err == nil {
+		to, epoch, err = svc.MoveRepository(r.Context(), caller(r), qname.Repo{Project: projectKey, Key: repoKey}, in.Project)
+	}
+	if err != nil {
+		httpserver.Problem(w, r, err)
+		return
+	}
+	setEpoch(w, epoch)
+	w.Header().Set("Location", repositoryURL(r, to))
+	w.WriteHeader(http.StatusNoContent)
 }

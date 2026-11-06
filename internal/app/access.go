@@ -130,20 +130,19 @@ func (b bridgeAccess) RequireAction(ctx context.Context, c authz.Coordinate) err
 	return errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
 }
 
-// AdministeredProjects implements [v1.ProjectAccess]: the questions about the
-// projects of the caller are the engine's; the bridge opens no project. Without
-// a decision point the caller administers none.
-func (b bridgeAccess) AdministeredProjects(ctx context.Context) ([]authz.AdministeredProject, error) {
+// Memberships implements [v1.ProjectAccess]: the questions about the projects of the caller are
+// the engine's; the bridge opens no project. Without a decision point the caller is a member of none.
+func (b bridgeAccess) Memberships(ctx context.Context) ([]authz.Membership, error) {
 	if pa, ok := b.inner.(v1.ProjectAccess); ok {
-		return pa.AdministeredProjects(ctx)
+		return pa.Memberships(ctx)
 	}
 	return nil, nil
 }
 
-// AdministersRepository implements [v1.ProjectAccess].
-func (b bridgeAccess) AdministersRepository(ctx context.Context, repository string, right authz.ProjectRight) (string, bool, error) {
+// Owns implements [v1.ProjectAccess].
+func (b bridgeAccess) Owns(ctx context.Context, project string) (bool, error) {
 	if pa, ok := b.inner.(v1.ProjectAccess); ok {
-		return pa.AdministersRepository(ctx, repository, right)
+		return pa.Owns(ctx, project)
 	}
-	return "", false, nil
+	return false, nil
 }

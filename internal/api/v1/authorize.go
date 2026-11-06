@@ -3,6 +3,7 @@ package v1
 import (
 	"context"
 	"fmt"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"regexp"
 	"sort"
@@ -34,17 +35,16 @@ type Requirement struct {
 	// Permission is the capability Access.Require must grant:
 	// {permission: <capability>}, a name of R-AUTHZ-010.
 	Permission string
-	// ProjectAdmin widens a Permission declaration to project administrators
-	// (R-AUTHZ-026, Q-AUTHZ-180): {permission: <capability>, projectAdmin: <right>}
-	// admits a caller that holds the capability, or administers at least one project,
-	// whichever right is named (any, managePolicies or manageRepositories): the
-	// right is the handler's to enforce, so a switch that is off answers
-	// project_switch_off whatever other projects the caller administers. The step is coarse
-	// on purpose: which project the operation addresses is known only to the handler,
-	// which narrows with requireProject and delegatedScope (project_scope.go). A
-	// caller that holds the capability has the whole installation, a project
-	// administrator only the projects it administers.
-	ProjectAdmin authz.ProjectRight
+	// ProjectRole widens a Permission declaration to the members of a project
+	// (Q-AUTHZ-207, Q-AUTHZ-208): {permission: <capability>, project: path.projectKey,
+	// projectRole: owner} admits a caller that holds the capability, or is an Owner of the
+	// addressed project (through a session or a token with admin: true); projectRole: reader
+	// admits a member of the addressed project, whatever its role. Without project the
+	// declaration admits a member of any project (GET /projects), and the handler narrows
+	// the answer to the caller's projects. Project is a value expression (path.<name>).
+	ProjectRole string
+	// Project is the value expression of the project ProjectRole is about.
+	Project string
 	// Role is the system role the caller must hold: {role: admin}.
 	Role string
 	// Action is a repository action on the coordinate the request names:
@@ -69,8 +69,8 @@ func (q Requirement) String() string {
 		return "authenticated, or public with " + q.PublicSwitch
 	case q.Authenticated:
 		return "authenticated"
-	case q.Permission != "" && q.ProjectAdmin != "":
-		return "permission " + q.Permission + ", or administrator of a project (" + string(q.ProjectAdmin) + ")"
+	case q.Permission != "" && q.ProjectRole != "":
+		return "permission " + q.Permission + ", or " + q.ProjectRole + " of a project"
 	case q.Permission != "":
 		return "permission " + q.Permission
 	case q.Role != "":
@@ -125,7 +125,7 @@ func parseRequirement(raw map[string]any) (Requirement, error) {
 			q.PublicSwitch = name
 		}
 		return q, nil
-	case "permission", "permission,projectAdmin":
+	case "permission", "permission,projectRole", "permission,project,projectRole":
 		name, ok := raw["permission"].(string)
 		if !ok || name == "" {
 			return Requirement{}, fmt.Errorf("permission must name a permission")
@@ -134,12 +134,22 @@ func parseRequirement(raw map[string]any) (Requirement, error) {
 			return Requirement{}, fmt.Errorf("permission %q is not a capability of R-AUTHZ-010", name)
 		}
 		q := Requirement{Permission: name}
-		if v, has := raw["projectAdmin"]; has {
-			right, _ := v.(string)
-			if !authz.ProjectRight(right).Valid() {
-				return Requirement{}, fmt.Errorf("projectAdmin %v is not one of any, managePolicies, manageRepositories", v)
+		if v, has := raw["projectRole"]; has {
+			role, _ := v.(string)
+			if role != "owner" && role != "reader" {
+				return Requirement{}, fmt.Errorf("projectRole %v is not owner or reader", v)
 			}
-			q.ProjectAdmin = authz.ProjectRight(right)
+			q.ProjectRole = role
+		}
+		if v, has := raw["project"]; has {
+			src, _ := v.(string)
+			if !sourceRE.MatchString(src) {
+				return Requirement{}, fmt.Errorf("project %v is not a value expression (query.<name> or path.<name>)", v)
+			}
+			if q.ProjectRole == "" {
+				return Requirement{}, fmt.Errorf("project needs projectRole")
+			}
+			q.Project = src
 		}
 		return q, nil
 	case "role":
@@ -149,17 +159,17 @@ func parseRequirement(raw map[string]any) (Requirement, error) {
 		}
 		return Requirement{Role: name}, nil
 	}
-	return Requirement{}, fmt.Errorf("the declaration %v has a form this build does not enforce (public, authenticated[+publicSwitch], permission[+projectAdmin], role, action+repository[+package][+path])", raw)
+	return Requirement{}, fmt.Errorf("the declaration %v has a form this build does not enforce (public, authenticated[+publicSwitch], permission[+project][+projectRole], role, action+project+repository[+package][+path])", raw)
 }
 
-// parseActionForm decodes {action, repository[, package][, path]}.
+// parseActionForm decodes {action, repository[, project][, package][, path]}.
 func parseActionForm(raw map[string]any) (Requirement, error) {
 	var q Requirement
 	for k := range raw {
 		switch k {
-		case "action", "repository", "package", "path":
+		case "action", "repository", "project", "package", "path":
 		default:
-			return Requirement{}, fmt.Errorf("the action form has no member %q (action, repository, package, path)", k)
+			return Requirement{}, fmt.Errorf("the action form has no member %q (action, repository, project, package, path)", k)
 		}
 	}
 	a, _ := raw["action"].(string)
@@ -170,7 +180,7 @@ func parseActionForm(raw map[string]any) (Requirement, error) {
 	for _, f := range []struct {
 		key string
 		dst *string
-	}{{"repository", &q.Repository}, {"package", &q.Package}, {"path", &q.Path}} {
+	}{{"repository", &q.Repository}, {"project", &q.Project}, {"package", &q.Package}, {"path", &q.Path}} {
 		v, present := raw[f.key]
 		if !present {
 			continue
@@ -183,6 +193,9 @@ func parseActionForm(raw map[string]any) (Requirement, error) {
 	}
 	if q.Repository == "" {
 		return Requirement{}, fmt.Errorf("the action form needs a repository source")
+	}
+	if q.Project == "" {
+		return Requirement{}, fmt.Errorf("the action form needs a project source: a repository is named by its project and its key")
 	}
 	return q, nil
 }
@@ -291,14 +304,14 @@ func (s *Server) begin(r *http.Request, q Requirement) (*http.Request, error) {
 		return r, nil
 	}
 	var permission string
-	var keys []string
+	var keys []qname.Repo
 	switch {
 	case q.Permission != "":
 		permission = q.Permission
 	case q.Role != "":
 		permission = authz.RolePermission(authz.Role(q.Role))
 	case q.Action != "":
-		keys = []string{valueOf(r, q.Repository)}
+		keys = []qname.Repo{nameOf(r, q)}
 	default:
 		return r, nil
 	}
@@ -343,7 +356,7 @@ func (s *Server) decide(r *http.Request, q Requirement) error {
 		if s.o.Access == nil {
 			return refuse()
 		}
-		if q.ProjectAdmin != "" && s.projectAdminAdmits(ctx, q) {
+		if q.ProjectRole != "" && s.projectRoleAdmits(r, q) {
 			return nil
 		}
 		return s.o.Access.Require(ctx, q.Permission)
@@ -367,7 +380,7 @@ func (s *Server) decide(r *http.Request, q Requirement) error {
 // names no repository: authorization then refuses, and the handler never runs.
 func coordinateOf(r *http.Request, q Requirement) authz.Coordinate {
 	c := authz.Coordinate{
-		Repository: valueOf(r, q.Repository), Package: valueOf(r, q.Package), Path: valueOf(r, q.Path),
+		Repository: nameOf(r, q), Package: valueOf(r, q.Package), Path: valueOf(r, q.Path),
 		Kind: authz.KindWrite, Actions: []authz.Action{q.Action},
 	}
 	if q.Action == authz.Read {
@@ -390,6 +403,12 @@ func (s *Server) classified(ctx context.Context, c authz.Coordinate) authz.Coord
 		return c
 	}
 	return s.o.Files.Classified(ctx, c)
+}
+
+// nameOf is the repository an action declaration names: the project and the key sources. A source that is
+// absent from the request gives the zero name, which no repository has.
+func nameOf(r *http.Request, q Requirement) qname.Repo {
+	return qname.Repo{Project: valueOf(r, q.Project), Key: valueOf(r, q.Repository)}
 }
 
 // valueOf reads a value expression: "query.<name>" or "path.<name>".
@@ -416,16 +435,14 @@ func (s *Server) switchOn(name string) bool {
 	return false
 }
 
-// projectAdminAdmits is the extra way in of a declaration that names projectAdmin
-// (Q-AUTHZ-180): the caller does not hold the capability, as a question without an
-// audit event, and administers at least one project. The declared right is not
-// asked here: a switch that is off is the answer of the project the handler
-// narrows to (403 project_switch_off), and it must not depend on whether the
-// caller administers other projects (Q-AUTHZ-180, amended). A caller that holds
-// the capability, or that administers none, is left to Access.Require, so the
-// refusal and its audit event are the ones of any capability. An Access that
-// cannot answer the question admits nobody here.
-func (s *Server) projectAdminAdmits(ctx context.Context, q Requirement) bool {
+// projectRoleAdmits is the extra way in of a declaration that names projectRole (Q-AUTHZ-207): the
+// caller does not hold the capability, as a question without an audit event, and is an Owner of the
+// addressed project (projectRole owner), or a member of it (reader); without a project source a member
+// of any project. A caller that holds the capability, or is no member, is left to Access.Require, so the
+// refusal and its audit event are the ones of any capability. An Access that cannot answer the question
+// admits nobody here.
+func (s *Server) projectRoleAdmits(r *http.Request, q Requirement) bool {
+	ctx := r.Context()
 	if held, err := s.holds(ctx, q.Permission); err != nil || held {
 		return false
 	}
@@ -433,9 +450,24 @@ func (s *Server) projectAdminAdmits(ctx context.Context, q Requirement) bool {
 	if !ok {
 		return false
 	}
-	projects, err := pa.AdministeredProjects(ctx)
+	project := ""
+	if q.Project != "" {
+		if project = valueOf(r, q.Project); project == "" {
+			return false
+		}
+	}
+	if q.ProjectRole == "owner" {
+		owns, err := pa.Owns(ctx, project)
+		return err == nil && owns
+	}
+	members, err := pa.Memberships(ctx)
 	if err != nil {
 		return false
 	}
-	return len(projects) > 0
+	for _, m := range members {
+		if project == "" || m.Key == project {
+			return true
+		}
+	}
+	return false
 }
