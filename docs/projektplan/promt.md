@@ -208,6 +208,14 @@ Found on 2026-11-06 while reviewing the nightly runs for phase 7:
 
 ### Tests and tools
 
+- **F-57 · The statement `VulnAdvisoryGroupRows` takes about 6 s a round and meets the 30 s statement timeout under load, so
+  V-1 of R-VULN-028 fails** (confirmed by the development agent on the integration stack, 2026-11-06, with `log_min_duration_statement`
+  at 5 s; not yet diagnosed). The statement (`internal/meta/postgres/queries/vuln_sync.sql`, about line 145) matches `id = ANY(names) OR
+  aliases && names`; a GIN index on `aliases` exists. In 5 of 14 performance runs at a high load average V-1 failed after about 72 s with
+  `database_timeout` and the progress at 231,012 of 231,012; once V-1 took 11.4 min, otherwise 1.3 to 2.5 min. Probably the V-1 that did
+  not finish in the nightly runs 41748522448 and 42002617340. Done when the statement's plan is known and the round stays far below the
+  timeout under load.
+
 - **F-56 · The set `vuln` of the scheduled nightly run 42002617340 failed in its setup on one `EOF` from the npm test upstream**
   (confirmed in the job log, not reproduced). `vuln_env_test.go:214` seeds the upstream with `POST
   https://npmstub.trove.svc/-/stub/publish` and got `EOF` (09:48:00 UTC, GitHub-hosted runner); `TestVuln_R_VULN_022_Journeys` failed on
@@ -279,6 +287,15 @@ Found on 2026-11-03 while building phase 6:
   The dispatched nightly run 42126196109 (2026-11-05, phase 6b's closing commit, the self-hosted class `large`, the fixed dump): V-1 1.5 min, V-2
   0.72 min, V-3 0.10 min, V-5a, V-5b 0.92 transactions, V-6 62 ms, V-7a 20 ms, V-8 3.3 ms and V-9 0.19 GiB met; V-4 9.7 ms (median
   2.5 ms) against 5 ms and V-7b 340 ms against 300 ms missed, as in 41902592855.
+  Worked on 2026-11-06 ([Q-VULN-81](../spec/vulnerability-scanning.md#q-vuln-81--a-scope-whose-decision-does-not-look-at-the-version-decides-each-package-once-and-the-statements-compare-the-package),
+  [Q-VULN-82](../spec/vulnerability-scanning.md#q-vuln-82--the-commit-hooks-evaluation-reads-in-one-round-trip-and-writes-its-claimed-name-matches-in-a-second-through-a-pipeline-over-the-generated-statements)).
+  V-7b: the first page of a pattern grant spent its time reading and deciding every version's triple and planning an 11,000-element array
+  (50 ms of planning for 2 ms of execution); a scope whose decision does not look at the version (`authz.VersionIndependent`) now decides
+  each (repository, package) once: 160 ms to 59 ms interleaved at the run's shape, and V-7b p99 75 to 148 ms in five whole runs on the
+  integration stack (load 5 to 25). V-4: a publish's evaluation made 8 sequential round trips of 0.42 to 0.70 ms; it makes 2 now
+  (`q.Pipeline`): V-4 p99 4.6 ms (median 1.32 ms) in the last whole run at load 8 to 13, 5.8 ms in the run before; the margin is thin. The
+  perf jobs of the nightly run after its kind legs since Q-ARCH-325. Done when two nightly runs in a row meet all nine, or a decision
+  revises V-4 with the measured floor (Q-VULN-82 names the next step). V-1's failures are F-57.
 
 Found on 2026-11-03 while closing phase 5:
 
