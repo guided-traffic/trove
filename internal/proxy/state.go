@@ -11,7 +11,6 @@ import (
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
-	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // CacheState is the name of the registered cache of the per-repository state: the
@@ -99,7 +98,7 @@ func (e *Engine) publishUp(repoID int64, st *repoState) {
 	if st.open(e.now()) {
 		up = 0
 	}
-	e.m.upstreamUp.WithLabelValues(key.(qname.Repo).String()).Set(up)
+	e.m.upstreamUp.WithLabelValues(key.(string)).Set(up)
 }
 
 // onStateChange is the OnChange of the state cache: a replica reloads the
