@@ -17,7 +17,7 @@ async function page(section: string, id: string, setup?: (api: FakeManualApi) =>
 describe('Help', () => {
   it('R-UI-050 the overview lists both guides with every page title and summary, linked to the page', async () => {
     const r = await renderScreen(HelpOverview);
-    expect(r.root.querySelector('h1')?.textContent?.trim()).toBe('Help');
+    expect(r.root.querySelector('h1')?.textContent?.trim()).toBe('Documentation');
     const sections = [...r.root.querySelectorAll('section.help-section')];
     expect(sections.map((s) => s.querySelector('h2')?.textContent?.trim())).toEqual(['User guide', 'Administrator guide']);
     const cards = [...r.root.querySelectorAll<HTMLAnchorElement>('a.help-card')];

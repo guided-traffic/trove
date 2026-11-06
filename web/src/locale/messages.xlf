@@ -110,7 +110,7 @@
     <unit id="shell.project.all">
       <notes>
         <note category="location">src/app/app.html:65,67</note>
-        <note category="location">src/app/app.html:137,139</note>
+        <note category="location">src/app/app.html:126,128</note>
       </notes>
       <segment>
         <source>All projects</source>
@@ -126,25 +126,24 @@
     </unit>
     <unit id="shell.admin">
       <notes>
-        <note category="location">src/app/app.html:79,81</note>
+        <note category="location">src/app/app.html:74,76</note>
       </notes>
       <segment>
         <source>Admin</source>
       </segment>
     </unit>
-    <unit id="shell.help">
+    <unit id="shell.documentation">
       <notes>
-        <note category="location">src/app/app.html:89</note>
-        <note category="location">src/app/app.html:91,92</note>
+        <note category="location">src/app/app.html:81,84</note>
       </notes>
       <segment>
-        <source>Help</source>
+        <source>Documentation</source>
       </segment>
     </unit>
     <unit id="shell.theme">
       <notes>
-        <note category="location">src/app/app.html:101</note>
-        <note category="location">src/app/app.html:103,104</note>
+        <note category="location">src/app/app.html:90</note>
+        <note category="location">src/app/app.html:92,93</note>
       </notes>
       <segment>
         <source>Theme</source>
@@ -152,7 +151,7 @@
     </unit>
     <unit id="shell.user-menu">
       <notes>
-        <note category="location">src/app/app.html:114,115</note>
+        <note category="location">src/app/app.html:103,104</note>
       </notes>
       <segment>
         <source>User menu</source>
@@ -160,7 +159,7 @@
     </unit>
     <unit id="shell.sign-in">
       <notes>
-        <note category="location">src/app/app.html:119,122</note>
+        <note category="location">src/app/app.html:108,111</note>
       </notes>
       <segment>
         <source>Sign in</source>
@@ -168,7 +167,7 @@
     </unit>
     <unit id="shell.menu.profile">
       <notes>
-        <note category="location">src/app/app.html:159,161</note>
+        <note category="location">src/app/app.html:148,150</note>
       </notes>
       <segment>
         <source> Profile and tokens </source>
@@ -176,7 +175,7 @@
     </unit>
     <unit id="shell.menu.setup">
       <notes>
-        <note category="location">src/app/app.html:163,165</note>
+        <note category="location">src/app/app.html:152,154</note>
       </notes>
       <segment>
         <source> Client setup </source>
@@ -184,7 +183,7 @@
     </unit>
     <unit id="shell.menu.language">
       <notes>
-        <note category="location">src/app/app.html:167,168</note>
+        <note category="location">src/app/app.html:156,157</note>
       </notes>
       <segment>
         <source>Language</source>
@@ -192,7 +191,7 @@
     </unit>
     <unit id="shell.menu.sign-out">
       <notes>
-        <note category="location">src/app/app.html:172,175</note>
+        <note category="location">src/app/app.html:161,164</note>
       </notes>
       <segment>
         <source> Sign out </source>
@@ -200,7 +199,7 @@
     </unit>
     <unit id="shell.close-nav">
       <notes>
-        <note category="location">src/app/app.html:212,215</note>
+        <note category="location">src/app/app.html:201,204</note>
       </notes>
       <segment>
         <source>Close navigation</source>
@@ -208,7 +207,7 @@
     </unit>
     <unit id="shell.nav">
       <notes>
-        <note category="location">src/app/app.html:224,225</note>
+        <note category="location">src/app/app.html:213,214</note>
       </notes>
       <segment>
         <source>Main navigation</source>
@@ -216,7 +215,7 @@
     </unit>
     <unit id="shell.collapse">
       <notes>
-        <note category="location">src/app/app.html:281,283</note>
+        <note category="location">src/app/app.html:270,272</note>
       </notes>
       <segment>
         <source>Collapse sidebar</source>
@@ -224,7 +223,7 @@
     </unit>
     <unit id="shell.breadcrumbs">
       <notes>
-        <note category="location">src/app/app.html:292,294</note>
+        <note category="location">src/app/app.html:281,283</note>
       </notes>
       <segment>
         <source>Breadcrumb</source>
@@ -236,7 +235,7 @@
         <note category="location">src/app/core/navigation.ts:45</note>
       </notes>
       <segment>
-        <source>Packages and files</source>
+        <source>Artifacts</source>
       </segment>
     </unit>
     <unit id="nav.context.admin">
@@ -297,7 +296,7 @@
         <note category="location">src/app/features/help/help.routes.ts:5</note>
       </notes>
       <segment>
-        <source>Help</source>
+        <source>Documentation</source>
       </segment>
     </unit>
     <unit id="route.vulnerabilities.title">
@@ -7333,7 +7332,7 @@
     <unit id="ep.col.base-url">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:47,48</note>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:98</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:93</note>
       </notes>
       <segment>
         <source>Base URL</source>
@@ -7342,7 +7341,7 @@
     <unit id="ep.col.hosts">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:49,50</note>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:99</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:94</note>
       </notes>
       <segment>
         <source>Hosts</source>
@@ -7359,7 +7358,7 @@
     <unit id="ep.col.surface">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:55,56</note>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:102</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:97</note>
       </notes>
       <segment>
         <source>Surface</source>
@@ -7368,7 +7367,7 @@
     <unit id="ep.col.mode">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:57,58</note>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:107</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:102</note>
       </notes>
       <segment>
         <source>Exposure</source>
@@ -7385,7 +7384,7 @@
     <unit id="ep.col.pool">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:64,65</note>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:111</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:106</note>
       </notes>
       <segment>
         <source>Pool</source>
@@ -7426,7 +7425,7 @@
     <unit id="ep.col.name">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:96,97</note>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:97</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:92</note>
       </notes>
       <segment>
         <source>Name</source>
@@ -7689,7 +7688,7 @@
     </unit>
     <unit id="ep.list.caption">
       <notes>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:95</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:90</note>
       </notes>
       <segment>
         <source>Endpoints</source>
@@ -7697,7 +7696,7 @@
     </unit>
     <unit id="ep.help.surface">
       <notes>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:103</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:98</note>
       </notes>
       <segment>
         <source>Which parts of trove this endpoint serves: the web interface, the management API, the CI token exchange, package clients and file downloads.</source>
@@ -7705,7 +7704,7 @@
     </unit>
     <unit id="ep.help.mode">
       <notes>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:108</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:103</note>
       </notes>
       <segment>
         <source>In mode &quot;all&quot; the endpoint serves every repository its surface allows; in mode &quot;rules&quot; only what its exposure rules select.</source>
@@ -7713,7 +7712,7 @@
     </unit>
     <unit id="ep.col.rules">
       <notes>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:110</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:105</note>
       </notes>
       <segment>
         <source>Rules (enabled)</source>
@@ -9132,7 +9131,7 @@
         <note category="location">src/app/features/help/help-overview.ts:15,16</note>
       </notes>
       <segment>
-        <source>Help</source>
+        <source>Documentation</source>
       </segment>
     </unit>
     <unit id="help.lead">
@@ -9181,7 +9180,7 @@
         <note category="location">src/app/features/help/help-page.html:22,23</note>
       </notes>
       <segment>
-        <source>All help pages</source>
+        <source>All documentation pages</source>
       </segment>
     </unit>
     <unit id="help.toc">
@@ -10004,7 +10003,7 @@
     </unit>
     <unit id="pkg.views.all">
       <notes>
-        <note category="location">src/app/features/packages/package-list.html:14,17</note>
+        <note category="location">src/app/features/packages/package-list.html:14,16</note>
       </notes>
       <segment>
         <source>All packages</source>
@@ -10012,7 +10011,7 @@
     </unit>
     <unit id="pkg.views.recent">
       <notes>
-        <note category="location">src/app/features/packages/package-list.html:22,25</note>
+        <note category="location">src/app/features/packages/package-list.html:22,24</note>
       </notes>
       <segment>
         <source>Recently viewed</source>
@@ -17504,7 +17503,7 @@
     </unit>
     <unit id="dashboard.check.ok">
       <notes>
-        <note category="location">src/app/features/system/dashboard.html:409,410</note>
+        <note category="location">src/app/features/system/dashboard.html:410,412</note>
       </notes>
       <segment>
         <source>Connected</source>
@@ -17512,7 +17511,7 @@
     </unit>
     <unit id="dashboard.check.bad">
       <notes>
-        <note category="location">src/app/features/system/dashboard.html:419,420</note>
+        <note category="location">src/app/features/system/dashboard.html:421,422</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="INTERPOLATION" disp="{{ c.failing }}"/> of <ph id="1" equiv="INTERPOLATION_1" disp="{{ c.reporting }}"/> replicas fail</source>
@@ -17520,7 +17519,7 @@
     </unit>
     <unit id="dashboard.check.none">
       <notes>
-        <note category="location">src/app/features/system/dashboard.html:424,428</note>
+        <note category="location">src/app/features/system/dashboard.html:426,430</note>
       </notes>
       <segment>
         <source>No report</source>

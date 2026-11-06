@@ -19,7 +19,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--trove-space-2);
+  gap: var(--trove-space-1);
   min-block-size: var(--trove-control-height);
   padding: 0 var(--trove-space-3);
   border: 1px solid transparent;
@@ -27,9 +27,9 @@
   background: transparent;
   color: var(--trove-control-fg);
   font: inherit;
-  font-size: 0.875rem;
-  font-weight: 500;
-  line-height: 1.25rem;
+  font-size: var(--trove-text-size);
+  font-weight: 400;
+  line-height: 1rem;
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
@@ -49,7 +49,7 @@
   }
 
   .material-icons {
-    font-size: 1.125rem;
+    font-size: 1rem;
   }
 }
 
@@ -67,6 +67,7 @@
   background: var(--trove-btn-default-bg);
 
   &:hover {
+    border-color: var(--trove-btn-default-border-hover);
     background: var(--trove-btn-default-bg-hover);
   }
 }
@@ -101,10 +102,131 @@
   inline-size: 100%;
 }
 
+// The reference's small button keeps the text size and only loses height and padding.
 .btn-sm {
   min-block-size: 24px;
   padding: 0 var(--trove-space-2);
-  font-size: 0.8125rem;
+}
+
+// ---- Tabs as links ---------------------------------------------------------------------------------------
+//
+//   <nav class="tab-nav" aria-label="…"><a class="tab-link" [attr.aria-current]="… ? 'page' : null">…</a></nav>
+//
+// The reference's tab strip (Q-UI-128) for views that are links: the labels in the text colour at 14 px, 16 px above and
+// below; the current one at weight 600 over a 2 px line in --trove-tab-indicator; under the pointer a neutral veil and
+// a line in the strong border colour; the strip on a hairline. Material's tabs take the same look (main.scss).
+
+.tab-nav {
+  display: flex;
+  flex-wrap: wrap;
+  border-block-end: 1px solid var(--trove-border);
+}
+
+.tab-link {
+  position: relative;
+  padding: var(--trove-space-4) var(--trove-space-3);
+  color: var(--trove-control-fg);
+  font-size: var(--trove-text-size);
+  line-height: 1rem;
+  text-decoration: none;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: auto 0 -1px;
+    border-block-end: 2px solid transparent;
+  }
+
+  &:hover {
+    background: var(--trove-btn-tertiary-bg-hover);
+
+    &::before {
+      border-block-end-color: var(--trove-border-strong);
+    }
+  }
+
+  &:focus-visible {
+    outline: var(--trove-focus-ring);
+    outline-offset: -2px;
+  }
+
+  &[aria-current='page'] {
+    font-weight: 600;
+
+    &::before {
+      border-block-end-color: var(--trove-tab-indicator);
+    }
+  }
+}
+
+// ---- Badges ------------------------------------------------------------------------------------------
+//
+//   <span class="badge">disabled</span>  <span class="badge ok|warn|bad|info"><span class="material-icons">…</span>…</span>
+//
+// The reference's badge (Q-UI-128): a pill 20 px high, 12 px text at weight 400, an optional 12 px icon 4 px before it;
+// neutral grey unless it carries a status class. Every status of trove, an icon and a word in a span with .ok, .warn or
+// .bad, is drawn as one, so a list shows "Active" the way the reference shows "Admin".
+
+.badge,
+span:is(.ok, .warn, .bad):has(> .material-icons) {
+  --badge-bg: var(--trove-badge-neutral-bg);
+  --badge-fg: var(--trove-badge-neutral-fg);
+  --badge-icon: var(--trove-badge-neutral-icon);
+
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--trove-space-1);
+  min-block-size: 20px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--badge-bg);
+  color: var(--badge-fg);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1rem;
+  white-space: nowrap;
+  vertical-align: middle;
+
+  .material-icons {
+    margin: 0;
+    color: var(--badge-icon);
+    font-size: 0.75rem;
+  }
+}
+
+.badge.ok,
+span.ok:has(> .material-icons) {
+  --badge-bg: var(--trove-badge-ok-bg);
+  --badge-fg: var(--trove-badge-ok-fg);
+  --badge-icon: var(--trove-badge-ok-icon);
+
+  color: var(--badge-fg);
+}
+
+.badge.warn,
+span.warn:has(> .material-icons) {
+  --badge-bg: var(--trove-badge-warn-bg);
+  --badge-fg: var(--trove-badge-warn-fg);
+  --badge-icon: var(--trove-badge-warn-icon);
+
+  color: var(--badge-fg);
+}
+
+.badge.bad,
+span.bad:has(> .material-icons) {
+  --badge-bg: var(--trove-badge-bad-bg);
+  --badge-fg: var(--trove-badge-bad-fg);
+  --badge-icon: var(--trove-badge-bad-icon);
+
+  color: var(--badge-fg);
+}
+
+.badge.info {
+  --badge-bg: var(--trove-badge-info-bg);
+  --badge-fg: var(--trove-badge-info-fg);
+  --badge-icon: var(--trove-badge-info-icon);
 }
 
 // ---- Text fields, selects, checkboxes ----------------------------------------------------------------
@@ -130,6 +252,10 @@
 
   &::placeholder {
     color: var(--trove-control-placeholder);
+  }
+
+  &:hover:not(:disabled, :focus-visible) {
+    border-color: var(--trove-control-border-hover);
   }
 
   &:focus-visible {

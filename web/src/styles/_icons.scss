@@ -1,10 +1,11 @@
-// Self-hosted icon font used through ligatures (Q-UI-1); no SVG icon registration.
+// Self-hosted icon font used through ligatures (Q-UI-1); no SVG icon registration. The outlined variant (owner,
+// 2026-11-06, Q-UI-128): line icons like the reference's, at the same ligature names.
 @font-face {
   font-family: 'Material Icons';
   font-style: normal;
   font-weight: 400;
   font-display: block;
-  src: url('../../node_modules/material-icons/iconfont/material-icons.woff2') format('woff2');
+  src: url('../../node_modules/material-icons/iconfont/material-icons-outlined.woff2') format('woff2');
 }
 
 .material-icons {

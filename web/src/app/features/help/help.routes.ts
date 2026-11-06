@@ -2,9 +2,9 @@ import { inject } from '@angular/core';
 import { ResolveFn, Routes } from '@angular/router';
 import { ManualApi } from '../../api/manual-api';
 
-const HELP = $localize`:@@route.help.title:Help`;
+const HELP = $localize`:@@route.help.title:Documentation`;
 
-/** The page's own title, or "Help" while it cannot be read (the screen then shows the failure). */
+/** The page's own title, or "Documentation" while it cannot be read (the screen then shows the failure). */
 const pageTitle: ResolveFn<string> = async (route) => {
   try {
     return (await inject(ManualApi).page(route.paramMap.get('section') ?? '', route.paramMap.get('page') ?? '')).title;

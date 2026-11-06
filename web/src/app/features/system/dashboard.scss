@@ -4,22 +4,25 @@
   gap: var(--trove-space-2);
 }
 
+// Section titles in the reference's heading-2 size.
 h2 {
-  margin: var(--trove-space-6) 0 var(--trove-space-3);
-  font-size: 1.125rem;
-  font-weight: 600;
+  margin: var(--trove-space-6) 0 var(--trove-space-4);
+  color: var(--trove-heading);
+  font-size: var(--trove-heading-2);
+  font-weight: var(--trove-heading-weight);
+  line-height: 1.25;
+  letter-spacing: var(--trove-heading-tracking);
 }
 
+// The instance bar: the reference's licence bar, a strong fill 12 px round.
 .instance-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--trove-space-2) var(--trove-space-6);
-  padding: var(--trove-space-3) var(--trove-space-4);
-  border: 1px solid var(--trove-border);
-  border-radius: var(--trove-radius-m);
-  background: var(--trove-table-head-bg);
-  font-size: 0.875rem;
+  padding: var(--trove-space-2) var(--trove-space-2) var(--trove-space-2) var(--trove-space-3);
+  border-radius: var(--trove-radius-l);
+  background: var(--trove-card-bg);
 
   .label {
     margin-inline-end: var(--trove-space-2);
@@ -37,13 +40,32 @@ h2 {
   gap: var(--trove-space-4);
 }
 
+// A card as the reference draws it: a strong fill 12 px round with 4 px inside, the title on it, the content on the
+// page's fill 8 px round, the actions on the fill below. The content is the card's children between head and foot;
+// they sit flush, so they read as one body.
 .card {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--trove-border);
-  border-radius: var(--trove-radius-m);
-  background: var(--trove-surface-raised);
-  overflow: hidden;
+  padding: var(--trove-space-1);
+  border-radius: var(--trove-radius-l);
+  background: var(--trove-card-bg);
+
+  > :not(.card-head, .card-foot) {
+    margin: 0;
+    background: var(--trove-surface);
+  }
+
+  > .card-head + :not(.card-foot) {
+    border-start-start-radius: var(--trove-radius-m);
+    border-start-end-radius: var(--trove-radius-m);
+  }
+
+  > :not(.card-head, .card-foot):has(+ .card-foot),
+  > :not(.card-head, .card-foot):last-child {
+    flex: 1 1 auto;
+    border-end-start-radius: var(--trove-radius-m);
+    border-end-end-radius: var(--trove-radius-m);
+  }
 }
 
 .card-head {
@@ -51,34 +73,34 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: var(--trove-space-3);
-  padding: var(--trove-space-2) var(--trove-space-4);
-  border-block-end: 1px solid var(--trove-border);
-  background: var(--trove-table-head-bg);
+  margin-block: var(--trove-space-1);
+  padding: var(--trove-space-1) var(--trove-space-2) var(--trove-space-2);
 
   h3 {
     margin: 0;
-    font-size: 0.875rem;
+    color: var(--trove-heading);
+    font-size: var(--trove-text-size);
     font-weight: 600;
+    line-height: 1.2;
   }
 }
 
 .count {
   color: var(--trove-text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--trove-text-muted-size);
 }
 
+// Rows as the reference's lists: 12 px above and below, a hairline between, the value at text weight.
 .kv {
   display: block;
-  margin: 0;
-  padding: var(--trove-space-1) var(--trove-space-4);
+  padding: 0 var(--trove-space-2);
 
   > div {
     display: flex;
     justify-content: space-between;
     gap: var(--trove-space-3);
-    padding-block: var(--trove-space-2);
+    padding-block: var(--trove-space-3);
     border-block-end: 1px solid var(--trove-border);
-    font-size: 0.875rem;
 
     &:last-child {
       border-block-end: 0;
@@ -87,7 +109,6 @@ h2 {
 
   dd {
     margin: 0;
-    font-weight: 600;
     text-align: end;
   }
 }
@@ -96,8 +117,7 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: var(--trove-space-1);
-  padding: var(--trove-space-1) var(--trove-space-4) var(--trove-space-2);
-  font-size: 0.875rem;
+  padding: var(--trove-space-1) var(--trove-space-2) var(--trove-space-2);
 }
 
 .meter-label {
@@ -123,34 +143,20 @@ h2 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--trove-space-2);
-  margin-block-start: auto;
-  padding: var(--trove-space-3) var(--trove-space-4);
-  border-block-start: 1px solid var(--trove-border);
+  padding: var(--trove-space-2) var(--trove-space-2) var(--trove-space-1);
 }
 
-.state {
+// A state is a badge (_controls.scss); a check's duration stands beside it, a note with a state is a line of text in
+// the state's colour.
+.check {
   display: inline-flex;
   align-items: center;
-  gap: var(--trove-space-1);
-  font-size: 0.8125rem;
-  font-weight: 600;
+  gap: var(--trove-space-2);
+}
 
-  .material-icons {
-    font-size: 1.125rem;
-  }
-
-  &.ok .material-icons {
-    color: var(--trove-status-ok);
-  }
-
-  &.warn .material-icons {
-    color: var(--trove-status-warn);
-  }
-
-  &.bad .material-icons,
-  &.bad {
-    color: var(--trove-status-bad);
-  }
+p.state .material-icons {
+  font-size: 1.125rem;
+  vertical-align: middle;
 }
 
 .muted {
@@ -165,7 +171,11 @@ h2 {
 .note {
   margin: var(--trove-space-2) var(--trove-space-4) var(--trove-space-3);
   color: var(--trove-text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--trove-text-muted-size);
+}
+
+.card > .note {
+  padding: var(--trove-space-2);
 }
 
 .cards + .note {

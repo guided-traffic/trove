@@ -1712,7 +1712,7 @@ Acceptance criteria:
 Priority: **MVP** · Covers: trove-only
 
 The owner's requirement of 2026-11-01: the documentation for the people who use trove and the people who run it is
-delivered by trove itself, behind the help button of the UI (R-UI-050). The manual is Markdown in
+delivered by trove itself, behind the Documentation link of the UI (R-UI-050). The manual is Markdown in
 [docs/manual/](../manual/README.md), embedded into the binary (`docs/manual/embed.go`), so an installation always shows the
 manual of the version it runs; [internal/manual](../../internal/manual/) loads and renders it once at start-up (Q-UI-89).
 
@@ -2517,11 +2517,12 @@ Priority: **MVP** · Covers: UI-001, UI-004
 
 - Top bar (slim, on one fill with the side bar, Q-UI-127, in the colours of the design language, Q-UI-88): the
   mark and the product name, a repository search field in the middle, the project filter, the **Admin** button (shown
-  to a caller who has the admin area; it leads into it and is pressed while it is open), the help button, the theme
-  button and the user menu. The search
+  to a caller who has the admin area; it leads into it and looks the same inside it), the **Documentation** link, the
+  theme button and the user menu. The search
   field takes a text and opens the repository list (R-UI-020) filtered by it; it is shown only to a caller who
-  holds `repositories:read-config`, because that list is the API behind it. The help button ("?", R-UI-050) opens
-  the manual page of the current screen, or the overview of the help area (Q-UI-90). The theme button offers
+  holds `repositories:read-config`, because that list is the API behind it. The **Documentation** link (R-UI-050) opens
+  the manual page of the current screen, or the overview of the help area, which is titled "Documentation" like the link
+  (owner, 2026-11-06; Q-UI-90). The theme button offers
   "Follow the system", "Light" and "Dark" as radio items (R-API-021); the user menu is a round badge with the
   first letter of the name, the name in its accessible name and on top of the menu, and holds profile, client setup,
   language and sign-out. The global
@@ -2529,7 +2530,7 @@ Priority: **MVP** · Covers: UI-001, UI-004
   bar when their APIs exist. A configurable server name is P2 on
   [operations-and-observability.md](operations-and-observability.md).
 - Navigation with two areas, each with a side bar of its own that shows while one of its routes is open (Q-UI-127):
-  **Packages and files** (packages, browser, guides (R-UI-049), search, trash, builds; from
+  **Artifacts** (named "Packages and files" until 2026-11-06; packages, browser, guides (R-UI-049), search, trash, builds; from
   M4b also vulnerabilities, shown to every signed-in user,
   [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022) and the
   **Admin area** (`/admin/…`, reached through the Admin button; shown when `/api/v1/authz/me` reports any
@@ -2550,7 +2551,7 @@ Priority: **MVP** · Covers: UI-001, UI-004
   Material density scale `-2`) on every screen; interactive targets stay at least 24 × 24 CSS px
   (R-UI-044). Screen layouts that switch between one and two columns use CSS container queries on
   the content area, so collapsing the side bar never breaks them.
-- Breadcrumbs: a trail on a bar at the top of the content panel, derived from the route configuration (R-UI-003) and
+- Breadcrumbs: a trail on a bar at the top of the content panel, 40 px high as the reference's (Q-UI-128), derived from the route configuration (R-UI-003) and
   not written by the screens: the area name (no link), the screen, and for a detail screen the
   object's name. The file tree adds one step per path segment. A trail of one step is not shown.
 - List screens: the repository, user, group, service account, token, permission policy, endpoint
@@ -3267,7 +3268,7 @@ configures, signs in, installs, publishes, changes tags, unpublishes, audits and
 endpoint with exposure rules changes, and what each answer of the protocol means. The text is the format's
 (R-ARCH-008 `Guide()`, kit check 8), rendered by the server (R-API-053); the UI adds no format knowledge.
 
-- **Where.** A side bar entry **Guides** in the area Packages and files, route `/guides`
+- **Where.** A side bar entry **Guides** in the area Artifacts, route `/guides`
   (`?format=&client=&repository=&class=`); a tab **How to use** on the repository screen (and the same guide below the
   facts of the consumer view) for the repository's class and the client the reader picks; links between the guide and
   the client setup page of R-UI-016 in both directions, carrying the choice (Q-UI-84).
@@ -3304,7 +3305,7 @@ Priority: **MVP** · Covers: trove-only
 The owner's requirement of 2026-11-01: a "?" at the top right behind which the user and administrator documentation of
 trove is found, delivered by the frontend. The text is the manual of R-API-054; the UI renders no Markdown.
 
-- **Entry.** The help button of the top bar (R-UI-002) links to the manual page of the current screen: the longest route
+- **Entry.** The Documentation link of the top bar (R-UI-002) links to the manual page of the current screen: the longest route
   prefix of `HELP_TOPICS` in [core/help-topics.ts](../../web/src/app/core/help-topics.ts) (for example `/admin/endpoints`
   to the administrator guide's endpoints page), or the overview `/help` where none matches (Q-UI-90). The lint
   (`web/scripts/check-rules.mjs`) fails when a page named there is not a file of `docs/manual/`.
@@ -3325,7 +3326,7 @@ trove is found, delivered by the frontend. The text is the manual of R-API-054; 
 
 Acceptance criteria:
 
-- The help button links to `/help/admin/endpoints` on the endpoints screen, to `/help/user/files` on the file browser,
+- The Documentation link leads to `/help/admin/endpoints` on the endpoints screen, to `/help/user/files` on the file browser,
   to `/help/admin/operations` on the jobs screen and to `/help` on the signed-out screen (`app.spec.ts`).
 - The overview lists both guides with every page linked; a page shows its title, its headings, the contents and its
   neighbours; a link to another page navigates in the application to that page and heading, a link inside the page
@@ -5888,7 +5889,8 @@ R-UI-047 gives each format a browser journey. The npm journey publishes a packag
 
 ### Q-UI-96 · cogpit blue as the primary colour, green only for positive status
 
-Status: **Decided by the owner on 2026-11-02.**
+Status: **Decided by the owner on 2026-11-02.** **Superseded by [Q-UI-128](#q-ui-128--the-references-type-colours-and-measures)**
+for the blue: the accent is the reference's blue since 2026-11-06; green still marks a positive status only.
 
 Context: Q-UI-88 took the green of the owner's example screens as trove's one accent, so green marked the current
 navigation entry, the primary button, links, the focus ring and a selected row as well as a positive status
@@ -7804,7 +7806,7 @@ a sidebar that collapses away instead of shrinking to icons.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Two areas, one sidebar each: `/admin/…` shows the admin area's entries under the title "Admin area", every other route the content's; an Admin button in the top bar for every caller with `SessionStore.hasAdminArea()`, pressed while the admin area is open (chosen) | The two kinds of work apart | The sidebar holds what belongs to the task at hand; the admin entries no longer push the content's down; the same rule as before decides who sees the admin area | One more click from a content screen into an admin screen |
+| (a) Two areas, one sidebar each: `/admin/…` shows the admin area's entries under the title "Admin area", every other route the content's; an Admin button in the top bar for every caller with `SessionStore.hasAdminArea()` (chosen) | The two kinds of work apart | The sidebar holds what belongs to the task at hand; the admin entries no longer push the content's down; the same rule as before decides who sees the admin area | One more click from a content screen into an admin screen |
 | (b) Both areas in one sidebar, the admin area folded | One sidebar | No extra click | The separation the owner asked for is not there |
 | (c) A separate admin application | Clean split | Independent | Two shells to maintain, a reload between them |
 
@@ -7813,12 +7815,19 @@ screen the caller may use (repositories, or projects for a project administrator
 Who sees the button is who saw the Administration area before (any capability, or the administration of a project,
 Q-AUTHZ-181), so nothing new is shown or hidden.
 
-The frame: one fill for the top bar and the sidebar (light grey `#f1f4f8` in the light scheme, where the frame was navy;
-`#121822` in the dark one), the content as a panel on the page's fill with a hairline and a rounded corner where it meets
-both, and the breadcrumb trail as a bar on top of it. The top bar holds the mark and the name, the repository search in
-the middle, then the project filter, the Admin button, help, theme and the user's round badge; the name is in the badge's
+The owner's corrections of 2026-11-06, after the first draft: the Admin button keeps the reference's default button, at the
+controls' full height and in the neutral fill, inside the admin area as well (the draft had made it small and tinted it in
+the accent while the area was open; `aria-current` alone marks that now). And the link to the manual reads
+"Documentation" next to its icon, not a bare "?". Below 768 CSS px both labels give way to their icons and remain the
+links' accessible names. The breadcrumb bar is as high as the reference's: 40 px with its hairline, as measured on the
+owner's instance (the owner had asked for 48 px "like GitLab"; 48 px is the reference's top bar, Q-UI-128).
+
+The frame: one fill for the top bar and the sidebar (since Q-UI-128 the reference's `#ececef` and `#28272d`; light grey
+`#f1f4f8` before, where the frame had been navy), the content as a panel on the page's fill with rounded corners, and the
+breadcrumb trail as a bar on top of it. The top bar holds the mark and the name, the repository search in
+the middle, then the project filter, the Admin button, the Documentation link, theme and the user's round badge; the name is in the badge's
 accessible name and on top of its menu. The sidebar's title is the area's name; its entries are pills, the current one
-tinted with a bar in the accent and bold text. "Collapse sidebar" at its foot hides it where it is pinned (the choice is
+tinted in the blue with its text in a deep or pale step of it and heavier (Q-UI-128; a bar in the accent before). "Collapse sidebar" at its foot hides it where it is pinned (the choice is
 stored per principal, as the folded groups are), and "Open navigation" in the top bar brings it back; below 1024 CSS px it
 is a drawer over the content with a backdrop, closed by Escape, the backdrop or a link. This replaces the icon rail of
 Q-UI-68. The top bar, the sidebar and the menus are no longer Angular Material's (Q-UI-126): the menus are the CDK's
@@ -7827,6 +7836,115 @@ Q-UI-68. The top bar, the sidebar and the menus are no longer Angular Material's
 **Applied in the spec:** R-UI-002. Code: `app.html`, `app.ts`, `core/navigation.ts` (`areaOf`, `area`),
 `core/nav-state.ts` (`collapsed`), `_shell.scss`, `_tokens.scss` (`--trove-nav-*`, `--trove-search-*`,
 `--trove-brand-*`), `shared/brand/trove-mark.ts`. Tests: `app.spec.ts`, `app.projects.spec.ts`, `palette.spec.ts`.
+
+### Q-UI-128 · The reference's type, colours and measures
+
+Status: **Decided by the owner on 2026-11-06.**
+
+Context: in the review of the shell the owner found the Admin button harder to read than the reference's and asked for
+the reference's colours, then, in its admin area: "Ich will dass du das Design (auch Schriftgröße) von hier übernimmst".
+The reference is his own GitLab (19.0.1), which he opened in a browser window the development agent could read. Asked
+whether that raises a legal problem: the values (colours, sizes, radii) are taken and written into trove's own tokens;
+GitLab's design tokens and component library are MIT-licensed (`@gitlab/ui`), its font is OFL-1.1, and no code, name or
+logo of GitLab enters trove.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The reference's values in trove's tokens: colours of both schemes, the type, the measures of the frame, controls, cards and lists; a pair that misses WCAG AA is moved in its own hue (chosen) | trove looks like the reference's admin area | One look across the owner's tools; values measured, not guessed; R-UI-044 holds | trove's own colour (cogpit's blue, Q-UI-96) goes |
+| (b) Only the type and measures, cogpit's colours kept | Half the reference | trove keeps a colour of its own | Not what the owner asked |
+| (c) GitLab's stylesheet or component library itself | Its CSS in trove | Exact | Its CSS carries GitLab's class names and EE parts under GitLab's own licence; a second component system next to Q-UI-126 |
+
+**Choice:** (a). The font, one decision of its own (owner, 2026-11-06): the reference's "GitLab Sans" is Inter with the
+`cv05` form of the lower-case l; trove ships Inter (`@fontsource-variable/inter`, OFL-1.1) with `cv05` switched on, so
+the look is the reference's without its name in trove (the options were GitLab Sans itself, or the system font as before).
+
+What was measured, and where it went (the values per scheme are in [design-language.md](../developer/design-language.md#the-two-schemes)):
+
+- Type: 14 px on 21 px at weight 400 for text and controls, 12 px for small text, sidebar entries at 425 and the current
+  one at 500, headings at 600 with -0.01em tracking: page titles in the heading-1 size (24 to 30 px by the window's
+  width), section titles in heading-2 (21 to 25 px).
+- Frame: `#ececef` / `#28272d` around panels of the page's fill, 16 px round, 8 px from the window's right and bottom
+  edge, no border; the sidebar 240 px wide, its title in the current entry's text colour, entries 28 px high and 8 px
+  round with a 16 px icon in a 24 px box, the current one tinted in the blue (`#1f75cb` at 16 % / `#68a8e8` at 25 %) with
+  its text `#0a335c` / `#cae0f7`; the breadcrumb bar 40 px with a hairline, its text 12 px; the search field 12 px round.
+- Controls: 32 px, 8 px round, label weight 400; the default button white with a grey hairline / `#89888d` at 40 % without
+  one, which makes the Admin button on the dark frame 7.0:1 where it was a fill barely set off from the frame; the confirm
+  button `#1f75cb` / `#63a6e9`; menus white / `#28272d`, 8 px round.
+- Cards: a strong fill (`#ececef` / `#3a383f`) 12 px round with 4 px inside, the title on it, the content on the page's
+  fill 8 px round, rows with 12 px above and below and a hairline between.
+- Lists (measured on the reference's Admin → Users): page titles at 30 px confirmed; tables without a frame on the page's
+  fill, 16 px in every cell, the head at weight 600 in the heading colour between two hairlines, a hairline under every
+  row; tabs with the current label at weight 600 over a 2 px line in the focus ring's blue (`#1f75cb` / `#428fdc`).
+  Material's buttons and tabs, which most screens still use (Q-UI-126), are themed to these measures.
+- Statuses (owner, 2026-11-06: "Status auf GitLab Standard umstellen"): a status is the reference's badge, a pill 20 px
+  high with 12 px text and a 12 px icon, pale with deep text in the light scheme and full with near-black text in the
+  dark one (success, warning, danger, info, neutral); every status of trove (an icon and a word with `.ok`, `.warn` or
+  `.bad`) is drawn as one, and the outlined tags of the screens became neutral badges. The content width stays the
+  panel's (owner, the same day), where the reference centres a 1280 px column.
+- Top bar, compared side by side with the reference at 100 % zoom: the Admin button 88 × 32 px with 14 px text, the
+  avatar 32 px, 8 px between the actions.
+- Links (owner, 2026-11-06, one decision of its own): underlined in running text, so a link there is not told apart by
+  colour alone (R-UI-044, WCAG 1.4.1: the link blue is 1.5:1 against the text); in a table or a key-value list, where the
+  column or the row says what is a link, underlined only under the pointer and on focus, as the reference shows them.
+  The other options were the underline everywhere (as before) and nowhere (as the reference, which fails 1.4.1 in
+  running text).
+- Moved for WCAG AA (R-UI-044): the accent as text and focus ring is `#2f68b4` / `#66a8ea` (the confirm blue is 4.0:1 and
+  4.49:1 on a filled field); the search field's outline is `#858489` / `#737278` (the reference's hairlines are 1.7:1
+  against the frame, WCAG 1.4.11 asks 3:1).
+
+- Icons (owner, 2026-11-06): Material Icons in the outlined variant, line icons like the reference's (the same font package
+  and ligature names; the reference's own icon set was not taken, it is part of its identity).
+
+**Applied in the spec:** R-UI-002 (the breadcrumb bar). Code: `web/angular.json` (the font), `_icons.scss` (the outlined icons), `main.scss` (Material's
+palette and type, the body, the page title), `_tokens.scss`, `_controls.scss`, `_shell.scss`,
+`features/system/dashboard.scss`, `_list-screens.scss` (the data table), `features/audit/audit-log.scss` (the link button
+in its table), the badges in `_controls.scss` (the screens' own tag styles removed). Tests: `palette.spec.ts` (the new surfaces: the
+default button on the frame, the hover of the top bar and the menus, the search field, the card; the tab line; each
+badge's text and icon on its pill; the positive badge is the one other green).
+
+### Q-UI-129 · The project is the context of the content, chosen from your projects
+
+Status: **Decided by the development agent on 2026-11-06**, proposed to the owner with the membership of
+[Q-AUTHZ-207](authorization.md#q-authz-207--a-user-or-group-is-a-member-of-a-project-with-a-role-and-the-role-grants-the-projects-repositories),
+which he chose. Not built yet ([H-543](#h-543--the-project-is-a-filter-of-the-top-bar-not-the-context-of-the-content)).
+
+Context: every repository belongs to exactly one project and is addressed inside it (Q-AUTHZ-206, Q-REPO-212), and a user is a
+member of few projects, typically one to five; the platform team and the administrators see many. Today the project is a
+filter of the top bar (R-UI-041), offered to administrators and project administrators only.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The project as context (chosen) | The start page lists your projects; a project's screens live under `/projects/<key>/…` with a sidebar of the project (packages, browse, repositories, members, settings) and a project switcher at its top (recently visited, search); the top bar's project filter goes; the admin area keeps its lists over all projects | The address and the sidebar say which project you are in, as the reference shows a project; few projects make a short start page | Every content route moves under the project |
+| (b) The project as a filter, as today, for everybody | The content screens stay global and filter by the chosen project | Fewer route changes | A repository's address contains its project (Q-REPO-212), the screens would not; the filter hides where you are |
+| (c) A project picker at sign-in | One project per session | Simple | Switching projects means signing in again or a mode; most users work in more than one |
+
+**Choice:** (a). A user with exactly one project starts in it; with several, on the list. A repository, package or file is
+always shown inside its project; the admin area's lists name the project in a column.
+
+**Applied in the spec:** nothing yet; R-UI-002 (the areas and the sidebar), R-UI-041 (the project filter) and the routes of
+the content screens change when it is built.
+
+### Q-UI-130 · The auditor has an instance-wide vulnerability dashboard in the admin area
+
+Status: **Decided by the owner on 2026-11-06** (what), **placed by the development agent** (where). Not built yet
+([H-544](#h-544--the-instance-wide-vulnerability-report-is-a-content-screen-not-an-admin-dashboard)).
+
+Context: the owner: "Ein Instanz-Auditor bekommt ein Dashboard, mit dem er instanzweit CVEs suchen und flagen kann." Today
+the Vulnerabilities screen of the content area lists the findings of every repository the caller may read; the `auditor`
+reads the metadata of every repository and holds `vulnerabilities:triage` (Q-AUTHZ-172, R-VULN-013), so for an auditor that
+screen is already instance-wide and the triage (confirm, dismiss, block) already exists. With the content inside its project
+(Q-UI-129), an instance-wide view has no place in the content area.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A security dashboard in the admin area (chosen) | For holders of `vulnerabilities:triage` or `content:metadata-read` (auditor, security administrator, administrator): the counts and trend over all projects, a search by advisory (CVE or GHSA ID), package and project, and the triage of each finding | The instance-wide view sits with the other instance-wide screens; the project's own Vulnerabilities screen stays per project | A second report beside the project's |
+| (b) The project's Vulnerabilities screen with an "all projects" choice | One screen | Fewer screens | Mixes the project context with the instance; an auditor is no project member |
+
+**Choice:** (a). The project's Vulnerabilities screen shows that project's findings; the admin area's dashboard all of
+them, with the project as a column and a filter.
+
+**Applied in the spec:** nothing yet; R-UI-002 (the admin area) and the vulnerability screens of
+[vulnerability-scanning.md](vulnerability-scanning.md) change when it is built.
 
 ## What this does not cover
 
@@ -7906,3 +8024,17 @@ snippets, besides the base URL that the format list already serves. The name is 
 read a developer's environment which variable holds a trove token. What makes it real: anonymous access on, a variable
 name other than the default, and an attacker with read access to process environments of developer machines or CI
 runners, who could read every variable anyway.
+
+### H-543 · The project is a filter of the top bar, not the context of the content
+
+The decided form ([Q-UI-129](#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects)) shows the
+content inside its project, `/projects/<key>/…`, with the start page listing your projects and a switcher in the sidebar.
+Today the content screens are global, and the project filter of the top bar narrows the repository and policy lists for
+administrators and project administrators only. Live in every content screen.
+
+### H-544 · The instance-wide vulnerability report is a content screen, not an admin dashboard
+
+The decided form ([Q-UI-130](#q-ui-130--the-auditor-has-an-instance-wide-vulnerability-dashboard-in-the-admin-area)) gives the
+auditor a dashboard in the admin area to search findings by advisory, package and project and to triage them. Today the
+Vulnerabilities screen of the content area is instance-wide for whoever may read every repository, and has no search by
+advisory ID or project (not verified in detail).

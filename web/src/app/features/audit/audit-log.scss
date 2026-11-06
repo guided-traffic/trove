@@ -50,8 +50,13 @@
   color: var(--trove-link);
   font: inherit;
   text-align: start;
-  text-decoration: underline;
+  text-decoration: none;
   cursor: pointer;
+
+  // In the table the row says what is a link: the underline under the pointer and on focus only (Q-UI-128).
+  &:is(:hover, :focus-visible) {
+    text-decoration: underline;
+  }
 }
 
 tr.current {

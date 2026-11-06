@@ -7,7 +7,7 @@ const wrapper = (label: string): { crumbs: CrumbSpec[] } => ({ crumbs: [{ label,
 
 /** The named areas of the breadcrumb trail (R-UI-002); they are names, not pages. */
 const area = {
-  content: { label: $localize`:@@nav.group.content:Packages and files`, link: false },
+  content: { label: $localize`:@@nav.group.content:Artifacts`, link: false },
   admin: { label: $localize`:@@nav.context.admin:Admin area`, link: false },
 } satisfies Record<string, CrumbSpec>;
 
@@ -72,7 +72,7 @@ export const routes: Routes = [
       // >>> M2 manual
       {
         path: 'help',
-        data: wrapper($localize`:@@route.help.title:Help`),
+        data: wrapper($localize`:@@route.help.title:Documentation`),
         loadChildren: () => import('./features/help/help.routes').then((m) => m.HELP_ROUTES),
       },
       // <<< M2 manual

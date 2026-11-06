@@ -9,7 +9,7 @@ trove gives you the configuration for your installation in four places. All of t
 | Place | How to open it | What it gives you |
 |---|---|---|
 | **Client setup** | User menu › **Client setup**, or **Set up your client for this repository** on a package page | Configuration snippets in the tabs **Configure**, **Install** and **Publish**, with a choice of credentials |
-| **Guides** | **Packages and files › Guides** | The full guide of a client: what the repository class is, configuring, signing in, installing, publishing, dist-tags or unlisting, security audit, lockfiles, troubleshooting |
+| **Guides** | **Artifacts › Guides** | The full guide of a client: what the repository class is, configuring, signing in, installing, publishing, dist-tags or unlisting, security audit, lockfiles, troubleshooting |
 | **How to use** | A tab on the screen of a repository (a section, if you may use the repository but not see its configuration) | The guide of that one repository, with a choice of client and links **Open the client setup** and **Open in the guides** |
 | **Install** panel | On the page of a package | The install command of the selected version for the client and repository you choose |
 

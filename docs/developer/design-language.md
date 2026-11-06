@@ -2,8 +2,10 @@
 
 The look of the UI: what it is made of, which values carry it in the light and the dark scheme, and where those
 values live. Decision [Q-UI-88](../spec/api-and-ui.md#q-ui-88--the-design-language-and-its-two-colour-schemes);
-the accent is the blue of cogpit since [Q-UI-96](../spec/api-and-ui.md#q-ui-96--cogpit-blue-as-the-primary-colour-green-only-for-positive-status);
-the shell and list layout it dresses is [Q-UI-68](../spec/api-and-ui.md#q-ui-68--layout-of-the-application-shell-and-the-list-screens).
+since [Q-UI-128](../spec/api-and-ui.md#q-ui-128--the-references-type-colours-and-measures) the colours, the type and the
+measures are the reference's, the owner's GitLab, where [Q-UI-96](../spec/api-and-ui.md#q-ui-96--cogpit-blue-as-the-primary-colour-green-only-for-positive-status)
+had cogpit's blue; the shell and list layout it dresses is [Q-UI-68](../spec/api-and-ui.md#q-ui-68--layout-of-the-application-shell-and-the-list-screens)
+and [Q-UI-127](../spec/api-and-ui.md#q-ui-127--the-admin-area-has-a-sidebar-of-its-own-behind-an-admin-button-and-the-shell-takes-the-references-frame).
 The tokens and how components use them are in [web-ui.md](web-ui.md#design-tokens).
 
 ## Where it comes from
@@ -17,53 +19,72 @@ On 2026-11-02 the owner replaced the screens' green accent with the blue of his 
 light palettes of `internal/ui/fyneui/theme.go` in guided-traffic/cogpit), and kept green for a positive status alone
 (Q-UI-96). The surfaces, borders, chrome and type of the screens stay as measured.
 
+On 2026-11-06 the owner made his GitLab the reference for colours, type and measures (Q-UI-128): "Ich will dass du das
+Design (auch Schriftgröße) von hier übernimmst", in its admin area. The values were read from the rendered page of his
+instance (GitLab 19.0.1, neutral navigation theme) in the dark scheme: the computed styles of the frame, the sidebar, the
+breadcrumb bar, the cards, buttons, headings and lists, and the instance's 1068 `--gl-*` custom properties. The light
+scheme's semantic colours come from the MIT-licensed token set of `@gitlab/ui` 134.1.3, whose dark tokens agree with the
+instance's for every colour (1044 of 1064 properties; the 20 others are font stacks and empty letter spacings); the light
+frame's values (`--body-background-color`, the sidebar's current-entry tint) are the instance stylesheet's own rules for
+the light scheme, which it ships beside the dark ones. Nothing of GitLab's code, name or logo is in trove: the values are
+written into trove's own tokens.
+
 ## What the language is made of
 
 - **A frame around the work, the work as a panel.** The top bar and the full-height side bar share one fill; the content
-  is a panel set into them, with a hairline and a rounded corner where it meets both (Q-UI-127, after the reference the
-  owner showed on 2026-11-06). In the light scheme the frame is light grey and the panel white; in the dark scheme the
-  frame is one step lighter than the near-black panel. Until then the light frame was navy, after the first reference
-  screens.
-- **One accent, blue.** cogpit's glow blue marks what is active or primary: the current navigation entry (a bar at its
-  start edge, and in the dark scheme the text), the selected tab's underline, the primary button, the focus ring, links,
-  progress, and as a pale or deep fill a selected row or tree item. The accent is not a status.
+  is a panel set into them with 16 px corners and an 8 px gap to the window's right and bottom edge, without a border
+  (Q-UI-127, Q-UI-128). The frame is `#ececef` around white panels in the light scheme and `#28272d` around `#18171d`
+  panels in the dark one.
+- **One accent, blue.** The reference's blue marks what is active or primary: the confirm button (`#1f75cb`, `#63a6e9`),
+  links (`#2f5ca0`, `#9dc7f1`), the focus ring, the current navigation entry (a blue tint, its text in a deep or pale step
+  of the blue), the selected tab's underline, and as a pale or deep fill a selected row. The accent is not a status.
 - **Green is a positive status, and nothing else.** "Active", "ok", "success", "allowed", the added lines of a diff:
   `--trove-status-ok` beside its icon. No other token is green (the unit tier checks it), so green always means "fine".
-- **Flat surfaces.** Cards and tables are separated by a fill and a 1 px border with a small radius (about 4 px), not by
-  shadows. Buttons are rectangles with the same small radius, not pills.
-- **Dense, quiet type.** A humanist sans at about 13 to 14 px for body text, semibold for titles and table headings, muted
-  grey for secondary text (units, dates, captions). Upper-case is not used for labels, the side bar's title included.
+- **Flat surfaces.** A card is a strong fill (`#ececef`, `#3a383f`) 12 px round with 4 px inside, its title on that fill
+  and its content on the page's fill 8 px round; tables and lists are separated by hairlines (`#dcdcde`, `#4c4b51`), not
+  by shadows. Controls and menus are 8 px round, dialogs and panels 16 px.
+- **Dense, quiet type.** Inter with the reference's lower-case l (`cv05`), 14 px on 21 px at weight 400 for text and
+  controls, 12 px for small text (breadcrumbs, counts, dates); sidebar entries at weight 425, the current one at 500;
+  headings at 600 with a hair less tracking, page titles 24 to 30 px and section titles 21 to 25 px by the window's width.
+  Muted grey (`#626168`, `#bfbfc3`) for secondary text. Upper-case is not used for labels.
 - **Data colours beside the accent.** The screens' charts use green, a muted teal and a violet. Green marks a positive
   status only (Q-UI-96), so a chart in trove does not take it for a series; the teal and violet never mark state.
-- **Status with an icon.** A status is an icon and a word ("Completed" with a check in a circle), the icon tinted.
+- **Status as a badge.** A status is an icon and a word ("Active" with a check in a circle) on a pill in the status's
+  colour, the reference's badge (Q-UI-128); a line of text that reports a state (a note, a hint) keeps the status colour
+  as text.
+- **Links.** The link colour, underlined in running text so a link is not told apart by colour alone; in tables and
+  key-value lists underlined only under the pointer and on focus (Q-UI-128).
 
 ## The two schemes
 
-| Role | Light, measured | Dark, measured | trove light | trove dark | Notes |
+| Role | Reference light | Reference dark | trove light | trove dark | Notes |
 |---|---|---|---|---|---|
-| Page (content background) | `#ffffff` | `#040c18` | `#ffffff` | `#040c18` | `--mat-sys-surface` |
-| Raised surface (card, panel) | `#ffffff` with border | `#121822` | `#ffffff` | `#121822` | `--trove-surface-raised` |
-| Table head | `#f8f9fc` | — | `#f8f9fc` | `#121822` | `--trove-table-head-bg`; the dark screen has no table, a card's fill is used |
-| Hairline border | `#dbdde1` to `#e4e6ea` | `#1e2530` | `#dbdde1` | `#1e2530` | `--mat-sys-outline-variant`; decoration, no contrast rule |
-| Control outline (input) | — | — | `#8a919c` | `#646c78` | `--mat-sys-outline`; set for WCAG 1.4.11 (3.2:1 and 3.4:1) |
-| Text | dark navy grey | `#e8eaec` | `#1c2433` | `#e8eaec` | 15.6:1 and 16.3:1 |
-| Muted text | grey | `#737984` | `#5b6270` | `#9aa1ad` | the measured dark grey is 4.1:1 on a card and fails AA; `#9aa1ad` is 6.9:1 |
-| Accent | `#3eb164` | `#3db064` | `#0a62c2` | `#4aa8ff` | cogpit's blue, not the screens' green (Q-UI-96); `--mat-sys-primary`. Dark: cogpit's glow blue as it is, 7.8:1 on the page and 5.7:1 on the filled form field. Light: cogpit's primary `#0a6fd6` is 4.9:1 on white, but 4.0:1 on the filled form field (`#e4e7ec`) and 4.2:1 on a dialog, which fails the focused label; trove takes cogpit's deeper link blue `#0a62c2` of the same hue (211° against 210°) for the light accent as a whole: 5.9:1 on white and under white text, 4.8:1 on the field, 5.1:1 on a dialog |
-| On the accent | `#ffffff` | — | `#ffffff` | `#04111f` | cogpit's text on primary, on a filled button: 5.9:1 and 7.5:1 |
-| Link | — | — | `#0a62c2` | `#7cc4ff` | `--trove-link`, cogpit's hyperlink: the accent itself in the light scheme, a step lighter than the accent in the dark one (10.5:1 on the page), with an underline |
-| Focus ring | — | — | `#0a62c2`, solid 2 px | `#4aa8ff`, solid 2 px | `--trove-focus-ring`. cogpit's focus is translucent (`#0a6fd6` at alpha `0x99`, `#4aa8ff` at `0xaa`); over white that is 2.5:1 and misses the 3:1 of WCAG 1.4.11, so trove's ring stays solid in both schemes |
-| Selection fills | — | — | `#cfe2ff`, `#d6e6ff` | `#22406a`, `#183252` | `--mat-sys-primary-container` is cogpit's selection, `--mat-sys-secondary-container` (the selected tree item, the current audit row, the active access tab) cogpit's selected row; the text on both is cogpit's selected-row text `#0b1a33` and `#f2f7ff` |
-| Positive status | green check | — | `#1a6e3c` | `#3db064` | `--trove-status-ok`: the green the accent had before Q-UI-96, unchanged (6.3:1 and 7.1:1 on the page) |
-| Frame (top bar and side bar) | `#233564`, `#1e2e4a` | `#121822`, `#060e19` | `#f1f4f8` | `#121822` | `--trove-nav-bg`; one fill for both since Q-UI-127 (the light frame was navy, the top bar a step deeper) |
-| Side bar text, muted | white, light blue grey | `#e8eaec`, grey | `#1c2433`, `#5b6270` | `#e8eaec`, `#9aa1ad` | 14.1:1 and 5.6:1; 14.8:1 and 6.8:1 |
-| Current navigation entry | white text, green bar | green text and icon | blue bold on a blue tint, blue bar | blue bold on a blue tint, blue bar | `--trove-nav-active-fg`, `--trove-nav-accent`: the accent of the scheme; the text 4.7:1 and 5.8:1 on the tint; the bar and the weight carry the state as well (R-UI-044) |
-| Search field in the top bar | white field | card fill with border | `#ffffff`, outline `#7d8490` | `#040c18`, outline `#646c78` | `--trove-search-*`; the outline keeps 3.4:1 against the frame in both schemes |
-| Data: teal, violet | `#347da0`, `#8577e6` | `#347da0`, `#8577e6` | `#347da0`, `#8577e6` | `#5cb3d6`, `#a99cff` | the vulnerability trend's low and unknown series (`--trove-chart-low`, `--trove-chart-unknown`); the other four series are `--trove-chart-critical` (`#b3261e`, `#ff8a80`), `-high` (`#c2570c`, `#ff9d57`), `-medium` (`#8a5a00`, `#ffc857`) and `-none` (`#5b6270`, `#9aa1ad`). None is green and none is the accent; each keeps 3:1 against the page and the raised surface in both schemes (`palette.spec.ts`), and the chart names every series in a legend and a table, so the colour is never the only carrier (Q-VULN-53) |
+| Page, panel | `#ffffff` | `#18171d` | `#ffffff` | `#18171d` | `--mat-sys-surface` |
+| Frame (top bar, sidebar) | `#ececef` | `#28272d` | `#ececef` | `#28272d` | `--trove-nav-bg`; the reference's `--body-background-color` of the neutral theme |
+| Card, licence bar | `#ececef` | `#3a383f` | `#ececef` | `#3a383f` | `--trove-card-bg`; the content inside on the page's fill |
+| Table head | `#fbfafd` | `#28272d` | `#fbfafd` | `#28272d` | `--trove-table-head-bg`, the subtle fill |
+| Row under the pointer | `#e9f3fc` | `#1d283e` | `#e9f3fc` | `#1d283e` | `--trove-row-hover` |
+| Menu, dialog | `#ffffff` | `#28272d` | `#ffffff` | `#28272d` | `--trove-menu-bg`, `--mat-sys-surface-container(-high)`; menus with a `#bfbfc3` / `#4c4b51` hairline |
+| Hairline | `#dcdcde` | `#4c4b51` | `#dcdcde` | `#4c4b51` | `--mat-sys-outline-variant`; decoration, no contrast rule |
+| Field outline | `#89888d` | `#737278` | `#89888d` | `#737278` | `--trove-control-border`: 3.5:1 and 3.7:1 against the page |
+| Text | `#3a383f` | `#ececef` | `#3a383f` | `#ececef` | 11.6:1 and 15.1:1 |
+| Heading | `#18171d` | `#ffffff` | `#18171d` | `#ffffff` | `--trove-heading` |
+| Muted text | `#626168` | `#bfbfc3` | `#626168` | `#bfbfc3` | 6.1:1 and 9.7:1 |
+| Confirm button | `#1f75cb`, white text | `#63a6e9`, `#18171d` text | `#1f75cb` | `#63a6e9` | `--trove-accent-fill`; 4.7:1 and 6.9:1; hover `#2f68b4` / `#9dc7f1` |
+| Accent as text, focus ring | `#1f75cb` | `#63a6e9` | `#2f68b4` | `#66a8ea` | `--mat-sys-primary`, moved in its hue: `#1f75cb` is 4.0:1 on a filled field (light), `#63a6e9` 4.49:1 (dark); now 4.7:1 and 4.6:1 |
+| Link | `#2f5ca0` | `#9dc7f1` | `#2f5ca0` | `#9dc7f1` | `--trove-link`; 6.6:1 and 10.1:1 |
+| Default button | white, `#bfbfc3` hairline | `#89888d` at 40 %, no hairline | as measured | as measured | `--trove-btn-default-*`; the Admin button on the frame: 11.6:1 and 7.0:1 |
+| Selection fills | `#e9f3fc` | `#1d283e` | `#e9f3fc` | `#1d283e` | `--mat-sys-primary-container`, `--mat-sys-secondary-container`: the reference's info fill |
+| Current navigation entry | `#1f75cb` at 16 %, text `#0a335c` | `#68a8e8` at 25 %, text `#cae0f7` | as measured | as measured | `--trove-nav-active`, `--trove-nav-active-fg` (also the area's title); label at weight 500; 8.9:1 and 7.0:1 |
+| Entry under the pointer | `#050506` at 6 % | `#ffffff` at 8 % | as measured | as measured | `--trove-nav-hover`, also the top bar's quiet buttons |
+| Search field in the top bar | white, hairline `#050506` at 24 % | `#ffffff` at 8 %, hairline `#ffffff` at 16 % | white, outline `#858489` | as measured, outline `#737278` | `--trove-search-*`, 12 px round; the reference's hairlines are 1.7:1 against the frame, trove's outline 3.1:1 and 3.1:1 (WCAG 1.4.11) |
+| Positive, warning, error status | `#2f7549`, `#995715`, `#c02f12` | `#52b87a`, `#d99530`, `#f6806d` | as measured | as measured | `--trove-status-ok`, `-warn`, `-bad`: the reference's text colours for success, warning and danger |
+| Data: teal, violet | `#347da0`, `#8577e6` | `#347da0`, `#8577e6` | `#347da0`, `#8577e6` | `#5cb3d6`, `#a99cff` | the vulnerability trend's low and unknown, from the first reference screens (Q-UI-88), unchanged |
 
-Since Q-UI-127 the top bar and the side bar share one fill; the panel's hairline and rounded corner set the content off
-from the frame instead of a step between the two bars.
+Since Q-UI-127 the top bar and the side bar share one fill; the panel's fill and rounded corners set the content off from
+the frame instead of a step between the two bars.
 
-The Material base palette is `mat.$azure-palette`: its tone 40 (`#005cbb`) has cogpit's hue, 210°, where
+The Material base palette is `mat.$azure-palette`: its tone 40 (`#005cbb`) has the reference blue's hue, 210°, where
 `mat.$blue-palette` sits at 237°, toward violet. It fills only the tokens `main.scss` does not set (the `secondary` and
 `primary-fixed` families), which neither a Material component trove uses nor a trove style reads today.
 
@@ -92,22 +113,32 @@ Since 2026-11-06 the controls are trove's own, not Angular Material's
 ([Q-UI-126](../spec/api-and-ui.md#q-ui-126--troves-own-controls-in-place-of-angular-material)): the owner asked for the
 design language of a sign-in page he showed, flat controls with the labels above the fields. They are plain HTML elements
 with the classes of [_controls.scss](../../web/src/styles/_controls.scss); the composite widgets take their behaviour from
-the CDK and `@angular/aria`. The move runs screen by screen: the sign-in and signed-out screens are done, the other screens
-still use Material's buttons, dialogs, checkboxes, tabs and menus until their turn.
+the CDK and `@angular/aria`. The move runs screen by screen: the sign-in and signed-out screens, the shell and the admin
+dashboard are done, the other screens still use Material's buttons, dialogs, checkboxes, tabs and menus until their turn.
+Since Q-UI-128 their measures and colours are the reference's, and Material's buttons and tabs are themed to match
+(`mat.button-overrides`, `mat.tabs-overrides` in `main.scss`): filled is the confirm button, outlined the default button
+with its grey fill, text the quiet one in the text colour, all 32 px and 8 px round with the label at weight 400; a tab's
+label is in the text colour at 14 px, the current one at weight 600 over a 2 px line in `--trove-tab-indicator`
+(`#1f75cb`, `#428fdc`), the strip on a hairline. The shared data table has the reference's shape: no frame, on the
+page's fill, 16 px in every cell, the head in the heading colour at weight 600 between two hairlines, a hairline under
+every row.
 
 | Control | Markup | Look |
 |---|---|---|
 | Primary button | `<button class="btn btn-confirm">` | the accent fill (`--trove-accent-fill`), `--trove-on-accent` text, a deeper or lighter step of the hue on hover |
-| Secondary button | `class="btn btn-default"` | white with a `#c4c9d1` hairline (light), the filled grey `#222a36` (dark) |
-| Quiet button | `class="btn btn-tertiary"` | text only, a pale fill on hover |
+| Secondary button | `class="btn btn-default"` | white with a `#bfbfc3` hairline, `#ececef` and a `#89888d` hairline on hover (light); `#89888d` at 40 % without a hairline, 64 % on hover (dark) |
+| Quiet button | `class="btn btn-tertiary"` | text only, a neutral veil on hover (`#a4a3a8` at 16 %, `#89888d` at 40 %) |
 | Destructive button | `class="btn btn-danger"` | `--trove-danger-fill` (the bad status's hue) |
 | Icon button | `class="btn btn-icon"` with an `aria-label` | 32 × 32, text only |
-| Modifiers | `btn-block`, `btn-sm` | full width; 24 px high |
-| Text field, select, area | `<label class="field-label" for>` above `<input class="text-input">`, `select-input`, `area-input` | `--trove-control-bg`, a 1 px `--trove-control-border` (3.2:1 light, 3.4:1 dark against the page, WCAG 1.4.11), the semibold label above |
+| Modifiers | `btn-block`, `btn-sm` | full width; 24 px high at the same text size |
+| Text field, select, area | `<label class="field-label" for>` above `<input class="text-input">`, `select-input`, `area-input` | `--trove-control-bg` (white; `#050506` at 40 % over the page in the dark scheme), a 1 px `--trove-control-border` (3.5:1 light, 3.7:1 dark against the page, WCAG 1.4.11) that darkens or lightens under the pointer, the semibold label above |
+| Tabs that are links | `<nav class="tab-nav">` with `<a class="tab-link" aria-current="page">` | the reference's tab strip: labels in the text colour, 16 px above and below; the current one at weight 600 over a 2 px `--trove-tab-indicator` line; a neutral veil and a `--trove-border-strong` line under the pointer; the strip on a hairline (the package views) |
+| Badge | `<span class="badge">` (neutral), with `ok`, `warn`, `bad` or `info`; every `<span class="ok\|warn\|bad">` that holds an icon and a word | the reference's badge: a pill 20 px high, 12 px text at weight 400, a 12 px icon 4 px before it; `--trove-badge-*-bg`, `-fg`, `-icon`: a pale fill with deep text (light), a full fill with near-black text (dark) |
 | Checkbox, radio | native `<input type="checkbox">` | 16 px, `accent-color` the accent |
 | Focus | every control | `--trove-focus-ring` (2 px solid accent), offset 2 px for buttons and 1 px for fields |
 
-One height (`--trove-control-height`, 32 px) and one radius (`--trove-control-radius`, 6 px) for every control. A disabled
+One height (`--trove-control-height`, 32 px) and one radius (`--trove-control-radius`, 8 px) for every control, the label at
+14 px and weight 400 with a 16 px icon 4 px before it, as the reference sets its buttons. A disabled
 control is `--trove-control-disabled-bg` with `--trove-control-disabled-fg` (WCAG exempts disabled controls from the
 contrast rule). The screens without the shell (sign-in, signed out) are one column of at most 25rem in the middle of the
 page, under the wordmark (`.bare`, `.bare-panel`, `.bare-wordmark` in `_shell.scss`, Q-UI-125).
@@ -141,10 +172,11 @@ dev server reloads.
 
 | File | What it holds |
 |---|---|
-| [web/src/styles/main.scss](../../web/src/styles/main.scss) | `mat.theme` with the azure and violet palettes, then `mat.theme-overrides` with every Material system colour above as `light-dark(<light>, <dark>)`; the button shape |
-| [web/src/styles/_tokens.scss](../../web/src/styles/_tokens.scss) | trove's own properties: the link, the focus ring, the raised surface, the table head, the frame (`--trove-nav-*`), the search field, the status colours |
+| [web/src/styles/main.scss](../../web/src/styles/main.scss) | `mat.theme` with the azure and violet palettes and the Inter family, then `mat.theme-overrides` with every Material system colour above as `light-dark(<light>, <dark>)`; the button shape; the body type and the page title |
+| [web/angular.json](../../web/angular.json) | `@fontsource-variable/inter/wght.css` ahead of `main.scss` in the build's styles: Inter as one variable font (weights 100 to 900) in unicode-range subsets, so a page in Latin script loads the 48 KB Latin file; OFL-1.1, its licence in the build's `3rdpartylicenses.txt` |
+| [web/src/styles/_tokens.scss](../../web/src/styles/_tokens.scss) | trove's own properties: the type (`--trove-font-*`, `--trove-text-*`, `--trove-heading-*`), the radii, the link, the heading colour, the focus ring, the raised surface, the card, the table head, the frame (`--trove-nav-*`, the panel's radius and gap, the breadcrumb bar's height), the search field, the menus, the status colours |
 | [web/src/styles/_controls.scss](../../web/src/styles/_controls.scss) | The controls of the table above, from the `--trove-control-*`, `--trove-accent-fill`, `--trove-btn-*` and `--trove-danger-*` tokens |
-| [web/src/styles/_shell.scss](../../web/src/styles/_shell.scss) | How the frame uses them: the active entry, the open group's fill, the top bar's actions and the avatar |
+| [web/src/styles/_shell.scss](../../web/src/styles/_shell.scss) | How the frame uses them: the sidebar's entries (28 px, 8 px round, a 16 px icon in a 24 px box), the current entry, the panel, the breadcrumb bar (40 px), the top bar's actions and the avatar, the menus |
 | [web/src/styles/palette.spec.ts](../../web/src/styles/palette.spec.ts) | The contrast of the pairs below, computed from the two stylesheets, and the rule that only `--trove-status-ok` is green |
 
 A scheme is chosen by `color-scheme` on the root element: without a choice the browser's setting decides, the theme button
@@ -156,7 +188,7 @@ never asks which scheme is on.
 1. Change the pair in `main.scss` or `_tokens.scss`, never in a component.
 2. Recompute the contrast of every pair it takes part in (text 4.5:1, large text and marks 3:1) and update the numbers in
    the comment above the token and in the table here. A text tone is not only on the page: Material sets the label of a
-   form field on its filled container (`surface-variant`, `#e4e7ec` in the light scheme, `#222a36` in the dark one), a
+   form field on its filled container (`surface-variant`, `#ececef` in the light scheme, `#3a383f` in the dark one), a
    dialog sits on `surface-container-high`, and a selected row on `secondary-container`. The focused label is the
    accent, so the accent has to pass on those too (found by axe when the accent was `#1d7a43`: 4.3:1 on the field; and
    the reason cogpit's `#0a6fd6` is not the light accent: 4.0:1 there). `palette.spec.ts` recomputes the pairs in
@@ -166,73 +198,97 @@ never asks which scheme is on.
 
 ## Contrast of the text tones on the surfaces they sit on
 
-Computed on 2026-11-02 from the values in `main.scss` and `_tokens.scss` (WCAG 2 relative luminance; a translucent fill
+Computed on 2026-11-06 from the values in `main.scss` and `_tokens.scss` (WCAG 2 relative luminance; a translucent fill
 is composited over the surface beneath it in sRGB, as a browser paints it), for the same pairs `palette.spec.ts` holds.
 The browser tier's axe `color-contrast` confirmed the green palette of Q-UI-88 on 2026-11-01 (a local trove process, the
 break-glass administrator, 108 checks: 28 routes with the manual's pages, the new-group dialog, the new-token form
-unfocused, focused and invalid, a form field touched while empty, the help opened by the "?", and the list, detail and
-audit screens with data, light in English and dark in German; no violation and no "incomplete" result). The blue palette
-of Q-UI-96 is computed only: the browser tier has not run against it yet.
+unfocused, focused and invalid, a form field touched while empty, the help opened by "Documentation", and the list, detail and
+audit screens with data, light in English and dark in German; no violation and no "incomplete" result). The palettes of
+Q-UI-96 and Q-UI-128 are computed only: the browser tier has not run against them yet.
 
 | Pair | Light | Dark |
 |---|---|---|
-| Accent as text on the page, the filled field, a dialog | 5.9:1, 4.8:1, 5.1:1 | 7.8:1, 5.7:1, 6.4:1 |
-| Text on a filled button (`on-primary` on `primary`) | 5.9:1 | 7.5:1 |
-| Link on the page, on the current audit row | 5.9:1, 4.7:1 | 10.5:1, 6.9:1 |
-| Focus ring on the page, the filled field | 5.9:1, 4.8:1 | 7.8:1, 5.7:1 |
-| Navigation accent on the side bar, the icon on the current entry | 4.7:1, 3.3:1 | 7.1:1, 5.8:1 |
-| Positive status on the page, on the current audit row | 6.3:1, 5.0:1 | 7.1:1, 4.7:1 |
+| Accent as text on the page, the filled field, a dialog | 5.6:1, 4.7:1, 5.6:1 | 7.1:1, 4.6:1, 5.9:1 |
+| Text on the confirm button (`--trove-on-accent` on `--trove-accent-fill`) | 4.7:1 | 6.9:1 |
+| Link on the page, on the current audit row | 6.6:1, 5.9:1 | 10.1:1, 8.3:1 |
+| Focus ring on the page, the filled field | 5.6:1, 4.7:1 | 7.1:1, 4.6:1 |
+| Current navigation entry: its text on its tint, the area title on the frame | 8.9:1, 10.9:1 | 7.0:1, 10.9:1 |
+| Admin button: its label on the default fill over the frame | 11.6:1 | 7.0:1 |
+| Positive status on the page, on the current audit row | 5.6:1, 5.0:1 | 7.2:1, 6.0:1 |
 
 <details>
 <summary>Every pair, computed</summary>
 
 | Foreground | On | Needs | Light | Dark | Where |
 |---|---|---|---|---|---|
-| `primary` | page | 4.5:1 | `#0a62c2` on `#ffffff`: 5.9:1 | `#4aa8ff` on `#040c18`: 7.8:1 | accent text: focused label, outlined and text button, tab label, access tabs |
-| `primary` | raised | 4.5:1 | `#0a62c2` on `#ffffff`: 5.9:1 | `#4aa8ff` on `#121822`: 7.1:1 | current entry of the help contents |
-| `primary` | table head | 4.5:1 | `#0a62c2` on `#f8f9fc`: 5.6:1 | `#4aa8ff` on `#121822`: 7.1:1 | button label in a table head |
-| `primary` | row hover | 4.5:1 | `#0a62c2` on `#f1f4f8`: 5.4:1 | `#4aa8ff` on `#0d141e`: 7.3:1 | button label in a hovered row |
-| `primary` | menu | 4.5:1 | `#0a62c2` on `#f1f4f8`: 5.4:1 | `#4aa8ff` on `#121822`: 7.1:1 | menu and select panel |
-| `primary` | dialog | 4.5:1 | `#0a62c2` on `#eaedf2`: 5.1:1 | `#4aa8ff` on `#1a212c`: 6.4:1 | focused label and button label in a dialog |
-| `primary` | filled field | 4.5:1 | `#0a62c2` on `#e4e7ec`: 4.8:1 | `#4aa8ff` on `#222a36`: 5.7:1 | focused label of a filled form field |
-| `on-primary` | primary | 4.5:1 | `#ffffff` on `#0a62c2`: 5.9:1 | `#04111f` on `#4aa8ff`: 7.5:1 | filled button, step number, filter count |
-| `--trove-link` | page | 4.5:1 | `#0a62c2` on `#ffffff`: 5.9:1 | `#7cc4ff` on `#040c18`: 10.5:1 | link in the content, breadcrumb, link button |
-| `--trove-link` | raised | 4.5:1 | `#0a62c2` on `#ffffff`: 5.9:1 | `#7cc4ff` on `#121822`: 9.5:1 | help card title |
-| `--trove-link` | table head | 4.5:1 | `#0a62c2` on `#f8f9fc`: 5.6:1 | `#7cc4ff` on `#121822`: 9.5:1 | help page contents ("On this page") |
-| `--trove-link` | row hover | 4.5:1 | `#0a62c2` on `#f1f4f8`: 5.4:1 | `#7cc4ff` on `#0d141e`: 9.9:1 | link in a hovered row |
-| `--trove-link` | dialog | 4.5:1 | `#0a62c2` on `#eaedf2`: 5.1:1 | `#7cc4ff` on `#1a212c`: 8.6:1 | link in a dialog |
-| `--trove-link` | selected row | 4.5:1 | `#0a62c2` on `#d6e6ff`: 4.7:1 | `#7cc4ff` on `#183252`: 6.9:1 | link in the current audit row |
-| `on-secondary-container` | selected row | 4.5:1 | `#0b1a33` on `#d6e6ff`: 13.7:1 | `#f2f7ff` on `#183252`: 12.1:1 | selected tree item, active access tab |
-| `on-surface` | selected row | 4.5:1 | `#1c2433` on `#d6e6ff`: 12.3:1 | `#e8eaec` on `#183252`: 10.8:1 | cell text in the current audit row |
-| `on-surface-variant` | selected row | 4.5:1 | `#5b6270` on `#d6e6ff`: 4.9:1 | `#9aa1ad` on `#183252`: 5.0:1 | muted text in the current audit row |
-| `on-primary-container` | primary-container | 4.5:1 | `#0b1a33` on `#cfe2ff`: 13.2:1 | `#f2f7ff` on `#22406a`: 9.7:1 | text on primary-container |
-| `inverse-primary` | inverse surface | 4.5:1 | `#4aa8ff` on `#1c2433`: 6.2:1 | `#0a62c2` on `#e8eaec`: 4.9:1 | action of a snack bar |
-| `on-surface` | page | 4.5:1 | `#1c2433` on `#ffffff`: 15.6:1 | `#e8eaec` on `#040c18`: 16.3:1 | text (unchanged) |
-| `on-surface` | raised | 4.5:1 | `#1c2433` on `#ffffff`: 15.6:1 | `#e8eaec` on `#121822`: 14.8:1 | text on a card (unchanged) |
-| `on-surface-variant` | page | 4.5:1 | `#5b6270` on `#ffffff`: 6.1:1 | `#9aa1ad` on `#040c18`: 7.5:1 | muted text, field label (unchanged) |
-| `on-surface-variant` | filled field | 4.5:1 | `#5b6270` on `#e4e7ec`: 4.9:1 | `#9aa1ad` on `#222a36`: 5.6:1 | field label (unchanged) |
-| `on-surface-variant` | dialog | 4.5:1 | `#5b6270` on `#eaedf2`: 5.2:1 | `#9aa1ad` on `#1a212c`: 6.2:1 | muted text in a dialog (unchanged) |
-| `--trove-status-bad` | page | 4.5:1 | `#b3261e` on `#ffffff`: 6.5:1 | `#ffb4ab` on `#040c18`: 11.5:1 | error text (unchanged) |
-| `--trove-status-bad` | filled field | 4.5:1 | `#b3261e` on `#e4e7ec`: 5.3:1 | `#ffb4ab` on `#222a36`: 8.5:1 | error text under a field (unchanged) |
-| `--trove-status-warn` | page | 4.5:1 | `#8a5a00` on `#ffffff`: 5.9:1 | `#ffc857` on `#040c18`: 12.7:1 | warning text (unchanged) |
-| `--trove-status-warn` | filled field | 4.5:1 | `#8a5a00` on `#e4e7ec`: 4.8:1 | `#ffc857` on `#222a36`: 9.4:1 | warning text on a field (unchanged) |
-| `--trove-status-ok` | page | 4.5:1 | `#1a6e3c` on `#ffffff`: 6.3:1 | `#3db064` on `#040c18`: 7.1:1 | positive status (unchanged green) |
-| `--trove-status-ok` | raised | 4.5:1 | `#1a6e3c` on `#ffffff`: 6.3:1 | `#3db064` on `#121822`: 6.4:1 | positive status on a card |
-| `--trove-status-ok` | dialog | 4.5:1 | `#1a6e3c` on `#eaedf2`: 5.4:1 | `#3db064` on `#1a212c`: 5.9:1 | added lines of the policy diff |
-| `--trove-status-ok` | selected row | 4.5:1 | `#1a6e3c` on `#d6e6ff`: 5.0:1 | `#3db064` on `#183252`: 4.7:1 | success in the current audit row |
-| `--trove-nav-active-fg` | active entry | 4.5:1 | `#ffffff` on `#3d4d77`: 8.3:1 | `#4aa8ff` on `#19293d`: 5.8:1 | current navigation entry |
-| `--trove-nav-active-fg` | active entry in an open group | 4.5:1 | `#ffffff` on `#354063`: 10.1:1 | `#4aa8ff` on `#142537`: 6.2:1 | current entry in an open group |
-| `primary` | page | 3:1 | `#0a62c2` on `#ffffff`: 5.9:1 | `#4aa8ff` on `#040c18`: 7.8:1 | focus ring, tab underline, checkbox, filter dot (non-text) |
-| `primary` | raised | 3:1 | `#0a62c2` on `#ffffff`: 5.9:1 | `#4aa8ff` on `#121822`: 7.1:1 | focus ring, help card border on hover (non-text) |
-| `primary` | dialog | 3:1 | `#0a62c2` on `#eaedf2`: 5.1:1 | `#4aa8ff` on `#1a212c`: 6.4:1 | focus ring, drop zone border, checkbox in a dialog (non-text) |
-| `primary` | filled field | 3:1 | `#0a62c2` on `#e4e7ec`: 4.8:1 | `#4aa8ff` on `#222a36`: 5.7:1 | active indicator of a filled field (non-text) |
-| `--trove-nav-accent` | side bar | 3:1 | `#4aa8ff` on `#233564`: 4.7:1 | `#4aa8ff` on `#121822`: 7.1:1 | bar of the current entry, focus outline (non-text) |
-| `--trove-nav-accent` | open group | 3:1 | `#4aa8ff` on `#1a264e`: 5.8:1 | `#4aa8ff` on `#0d131c`: 7.4:1 | bar and icon in an open group (non-text) |
-| `--trove-nav-accent` | top bar | 3:1 | `#4aa8ff` on `#1e2e4a`: 5.4:1 | `#4aa8ff` on `#060e19`: 7.7:1 | focus outline in the top bar (non-text) |
-| `--trove-nav-accent` | active entry | 3:1 | `#4aa8ff` on `#3d4d77`: 3.3:1 | `#4aa8ff` on `#19293d`: 5.8:1 | icon of the current entry (non-text) |
-| `--trove-nav-accent` | active entry in an open group | 3:1 | `#4aa8ff` on `#354063`: 4.0:1 | `#4aa8ff` on `#142537`: 6.2:1 | icon of the current entry in an open group (non-text) |
-| `primary` | primary-container | 4.5:1 | `#0a62c2` on `#cfe2ff`: 4.51:1 | `#4aa8ff` on `#22406a`: 4.1:1, fails | not used: accent text on primary-container |
-| `on-surface-variant` | primary-container | 4.5:1 | `#5b6270` on `#cfe2ff`: 4.7:1 | `#9aa1ad` on `#22406a`: 4.0:1, fails | not used: muted text on primary-container |
+| `primary` | page | 4.5:1 | `#2f68b4` on `#ffffff`: 5.6:1 | `#66a8ea` on `#18171d`: 7.1:1 | accent text: focused label, outlined and text button, tab label, access tabs |
+| `primary` | raised | 4.5:1 | `#2f68b4` on `#ffffff`: 5.6:1 | `#66a8ea` on `#18171d`: 7.1:1 | current entry of the help contents |
+| `primary` | table head | 4.5:1 | `#2f68b4` on `#fbfafd`: 5.4:1 | `#66a8ea` on `#28272d`: 5.9:1 | button label in a table head |
+| `primary` | row hover | 4.5:1 | `#2f68b4` on `#e9f3fc`: 5.0:1 | `#66a8ea` on `#1d283e`: 5.9:1 | button label in a hovered row |
+| `primary` | menu | 4.5:1 | `#2f68b4` on `#ffffff`: 5.6:1 | `#66a8ea` on `#28272d`: 5.9:1 | menu and select panel |
+| `primary` | dialog | 4.5:1 | `#2f68b4` on `#ffffff`: 5.6:1 | `#66a8ea` on `#28272d`: 5.9:1 | focused label and button label in a dialog |
+| `primary` | filled field | 4.5:1 | `#2f68b4` on `#ececef`: 4.7:1 | `#66a8ea` on `#3a383f`: 4.6:1 | focused label of a filled form field |
+| `on-primary` | primary | 4.5:1 | `#ffffff` on `#2f68b4`: 5.6:1 | `#18171d` on `#66a8ea`: 7.1:1 | filled button, step number, filter count |
+| `--trove-link` | page | 4.5:1 | `#2f5ca0` on `#ffffff`: 6.6:1 | `#9dc7f1` on `#18171d`: 10.1:1 | link in the content, breadcrumb, link button |
+| `--trove-link` | raised | 4.5:1 | `#2f5ca0` on `#ffffff`: 6.6:1 | `#9dc7f1` on `#18171d`: 10.1:1 | help card title |
+| `--trove-link` | table head | 4.5:1 | `#2f5ca0` on `#fbfafd`: 6.4:1 | `#9dc7f1` on `#28272d`: 8.4:1 | help page contents ("On this page") |
+| `--trove-link` | row hover | 4.5:1 | `#2f5ca0` on `#e9f3fc`: 5.9:1 | `#9dc7f1` on `#1d283e`: 8.3:1 | link in a hovered row |
+| `--trove-link` | dialog | 4.5:1 | `#2f5ca0` on `#ffffff`: 6.6:1 | `#9dc7f1` on `#28272d`: 8.4:1 | link in a dialog |
+| `--trove-link` | selected row | 4.5:1 | `#2f5ca0` on `#e9f3fc`: 5.9:1 | `#9dc7f1` on `#1d283e`: 8.3:1 | link in the current audit row |
+| `on-secondary-container` | selected row | 4.5:1 | `#18171d` on `#e9f3fc`: 15.9:1 | `#ececef` on `#1d283e`: 12.5:1 | selected tree item, active access tab |
+| `on-surface` | selected row | 4.5:1 | `#3a383f` on `#e9f3fc`: 10.3:1 | `#ececef` on `#1d283e`: 12.5:1 | cell text in the current audit row |
+| `on-surface-variant` | selected row | 4.5:1 | `#626168` on `#e9f3fc`: 5.5:1 | `#bfbfc3` on `#1d283e`: 8.0:1 | muted text in the current audit row |
+| `on-primary-container` | primary-container | 4.5:1 | `#18171d` on `#e9f3fc`: 15.9:1 | `#ececef` on `#1d283e`: 12.5:1 | text on primary-container |
+| `inverse-primary` | inverse surface | 4.5:1 | `#66a8ea` on `#28272d`: 5.9:1 | `#2f68b4` on `#ececef`: 4.7:1 | action of a snack bar |
+| `on-surface` | page | 4.5:1 | `#3a383f` on `#ffffff`: 11.6:1 | `#ececef` on `#18171d`: 15.1:1 | text |
+| `on-surface` | raised | 4.5:1 | `#3a383f` on `#ffffff`: 11.6:1 | `#ececef` on `#18171d`: 15.1:1 | text on a card |
+| `on-surface-variant` | page | 4.5:1 | `#626168` on `#ffffff`: 6.1:1 | `#bfbfc3` on `#18171d`: 9.7:1 | muted text, field label |
+| `on-surface-variant` | filled field | 4.5:1 | `#626168` on `#ececef`: 5.2:1 | `#bfbfc3` on `#3a383f`: 6.3:1 | field label |
+| `on-surface-variant` | dialog | 4.5:1 | `#626168` on `#ffffff`: 6.1:1 | `#bfbfc3` on `#28272d`: 8.1:1 | muted text in a dialog |
+| `--trove-status-bad` | page | 4.5:1 | `#c02f12` on `#ffffff`: 5.7:1 | `#f6806d` on `#18171d`: 7.0:1 | error text |
+| `--trove-status-bad` | filled field | 4.5:1 | `#c02f12` on `#ececef`: 4.9:1 | `#f6806d` on `#3a383f`: 4.5:1 | error text under a field |
+| `--trove-status-warn` | page | 4.5:1 | `#995715` on `#ffffff`: 5.6:1 | `#d99530` on `#18171d`: 7.0:1 | warning text |
+| `--trove-status-warn` | filled field | 4.5:1 | `#995715` on `#ececef`: 4.8:1 | `#d99530` on `#3a383f`: 4.6:1 | warning text on a field |
+| `--trove-status-ok` | page | 4.5:1 | `#2f7549` on `#ffffff`: 5.6:1 | `#52b87a` on `#18171d`: 7.2:1 | positive status |
+| `--trove-status-ok` | raised | 4.5:1 | `#2f7549` on `#ffffff`: 5.6:1 | `#52b87a` on `#18171d`: 7.2:1 | positive status on a card |
+| `--trove-status-ok` | dialog | 4.5:1 | `#2f7549` on `#ffffff`: 5.6:1 | `#52b87a` on `#28272d`: 6.0:1 | added lines of the policy diff |
+| `--trove-status-ok` | selected row | 4.5:1 | `#2f7549` on `#e9f3fc`: 5.0:1 | `#52b87a` on `#1d283e`: 6.0:1 | success in the current audit row |
+| `--trove-nav-active-fg` | active entry | 4.5:1 | `#0a335c` on `#cbd9e9`: 8.9:1 | `#cae0f7` on `#38475c`: 7.0:1 | current navigation entry |
+| `--trove-nav-active-fg` | active entry in an open group | 4.5:1 | `#0a335c` on `#cbd9e9`: 8.9:1 | `#cae0f7` on `#38475c`: 7.0:1 | current entry in an open group |
+| `primary` | page | 3:1 | `#2f68b4` on `#ffffff`: 5.6:1 | `#66a8ea` on `#18171d`: 7.1:1 | focus ring, tab underline, checkbox, filter dot (non-text) |
+| `primary` | raised | 3:1 | `#2f68b4` on `#ffffff`: 5.6:1 | `#66a8ea` on `#18171d`: 7.1:1 | focus ring, help card border on hover (non-text) |
+| `primary` | dialog | 3:1 | `#2f68b4` on `#ffffff`: 5.6:1 | `#66a8ea` on `#28272d`: 5.9:1 | focus ring, drop zone border, checkbox in a dialog (non-text) |
+| `primary` | filled field | 3:1 | `#2f68b4` on `#ececef`: 4.7:1 | `#66a8ea` on `#3a383f`: 4.6:1 | active indicator of a filled field (non-text) |
+| `--trove-nav-accent` | side bar | 3:1 | `#0a335c` on `#ececef`: 10.9:1 | `#cae0f7` on `#28272d`: 10.9:1 | the area's title above the sidebar, focus outline (text and non-text) |
+| `--trove-nav-accent` | open group | 3:1 | `#0a335c` on `#ececef`: 10.9:1 | `#cae0f7` on `#28272d`: 10.9:1 | icon of the current entry in an open group (non-text) |
+| `--trove-nav-accent` | top bar | 3:1 | `#0a335c` on `#ececef`: 10.9:1 | `#cae0f7` on `#28272d`: 10.9:1 | focus outline in the top bar (non-text) |
+| `--trove-nav-accent` | active entry | 3:1 | `#0a335c` on `#cbd9e9`: 8.9:1 | `#cae0f7` on `#38475c`: 7.0:1 | icon of the current entry (non-text) |
+| `--trove-nav-accent` | active entry in an open group | 3:1 | `#0a335c` on `#cbd9e9`: 8.9:1 | `#cae0f7` on `#38475c`: 7.0:1 | icon of the current entry in an open group (non-text) |
+| `primary` | primary-container | 4.5:1 | `#2f68b4` on `#e9f3fc`: 5.0:1 | `#66a8ea` on `#1d283e`: 5.9:1 | not used today: accent text on primary-container |
+| `on-surface-variant` | primary-container | 4.5:1 | `#626168` on `#e9f3fc`: 5.5:1 | `#bfbfc3` on `#1d283e`: 8.0:1 | not used today: muted text on primary-container |
+| `--trove-control-fg` | default button on the frame | 4.5:1 | `#3a383f` on `#ffffff`: 11.6:1 | `#ececef` on `#4f4e53`: 7.0:1 | the Admin button in the top bar |
+| `--trove-control-fg` | default button hover on the frame | 4.5:1 | `#3a383f` on `#ececef`: 9.8:1 | `#ececef` on `#66656a`: 4.9:1 | the Admin button under the pointer |
+| `--trove-nav-fg` | side bar | 4.5:1 | `#3a383f` on `#ececef`: 9.8:1 | `#ececef` on `#28272d`: 12.6:1 | sidebar entries, the top bar's quiet buttons |
+| `--trove-nav-fg` | top bar hover | 4.5:1 | `#3a383f` on `#dedee1`: 8.6:1 | `#ececef` on `#39383e`: 9.8:1 | a sidebar entry or a top bar button under the pointer |
+| `--trove-control-fg` | menu item hover | 4.5:1 | `#3a383f` on `#f0f0f1`: 10.2:1 | `#ececef` on `#4f4e53`: 7.0:1 | a menu item under the pointer |
+| `--trove-search-fg` | search | 4.5:1 | `#3a383f` on `#ffffff`: 11.6:1 | `#ececef` on `#39383e`: 9.8:1 | the text typed into the top bar's search |
+| `--trove-search-muted` | search | 4.5:1 | `#626168` on `#ffffff`: 6.1:1 | `#bfbfc3` on `#39383e`: 6.3:1 | the search field's placeholder and icon |
+| `--trove-heading` | card | 4.5:1 | `#18171d` on `#ececef`: 15.1:1 | `#ffffff` on `#3a383f`: 11.6:1 | a card's title on its strong fill |
+| `on-surface-variant` | card | 4.5:1 | `#626168` on `#ececef`: 5.2:1 | `#bfbfc3` on `#3a383f`: 6.3:1 | a count or muted text in a card's head |
+| `--trove-search-border` | top bar | 3:1 | `#858489` on `#ececef`: 3.1:1 | `#737278` on `#28272d`: 3.1:1 | outline of the top bar's search field (non-text) |
+| `--trove-control-border` | page | 3:1 | `#89888d` on `#ffffff`: 3.5:1 | `#737278` on `#18171d`: 3.7:1 | outline of a field (non-text) |
+| `--trove-accent-fill` | page | 3:1 | `#1f75cb` on `#ffffff`: 4.7:1 | `#63a6e9` on `#18171d`: 6.9:1 | the confirm button against the page (non-text) |
+| `--trove-tab-indicator` | page | 3:1 | `#1f75cb` on `#ffffff`: 4.7:1 | `#428fdc` on `#18171d`: 5.3:1 | the current tab's line (non-text) |
+| `--trove-badge-neutral-fg` | neutral badge | 4.5:1 | `#4c4b51` on `#dcdcde`: 6.3:1 | `#18171d` on `#a4a3a8`: 7.1:1 | text of a neutral badge |
+| `--trove-badge-neutral-icon` | neutral badge | 3:1 | `#737278` on `#dcdcde`: 3.5:1 | `#18171d` on `#a4a3a8`: 7.1:1 | icon of a neutral badge (non-text) |
+| `--trove-badge-ok-fg` | positive badge | 4.5:1 | `#306440` on `#c3e6cd`: 5.1:1 | `#17291c` on `#52b87a`: 6.2:1 | text of a positive badge |
+| `--trove-badge-ok-icon` | positive badge | 3:1 | `#108548` on `#c3e6cd`: 3.5:1 | `#17291c` on `#52b87a`: 6.2:1 | icon of a positive badge (non-text) |
+| `--trove-badge-warn-fg` | warning badge | 4.5:1 | `#894b16` on `#f5d9a8`: 5.0:1 | `#382315` on `#d99530`: 5.8:1 | text of a warning badge |
+| `--trove-badge-warn-icon` | warning badge | 3:1 | `#ab6100` on `#f5d9a8`: 3.5:1 | `#382315` on `#d99530`: 5.8:1 | icon of a warning badge (non-text) |
+| `--trove-badge-bad-fg` | error badge | 4.5:1 | `#a32c12` on `#fdd4cd`: 5.3:1 | `#3e1a14` on `#f6806d`: 6.0:1 | text of an error badge |
+| `--trove-badge-bad-icon` | error badge | 3:1 | `#a32c12` on `#fdd4cd`: 5.3:1 | `#3e1a14` on `#f6806d`: 6.0:1 | icon of an error badge (non-text) |
+| `--trove-badge-info-fg` | info badge | 4.5:1 | `#2f5ca0` on `#cbe2f9`: 5.0:1 | `#1d283e` on `#63a6e9`: 5.7:1 | text of an info badge |
+| `--trove-badge-info-icon` | info badge | 3:1 | `#1f75cb` on `#cbe2f9`: 3.5:1 | `#1d283e` on `#63a6e9`: 5.7:1 | icon of an info badge (non-text) |
 </details>
 
 <details>
@@ -240,6 +296,13 @@ of Q-UI-96 is computed only: the browser tier has not run against it yet.
 
 | Candidate, not taken | On | Needs | Scheme | Ratio | What |
 |---|---|---|---|---|---|
+| `#1f75cb` | filled field `#ececef` | 4.5:1 | light | 3.99:1 fails | the reference's confirm blue as the focused label |
+| `#1f75cb` | row hover `#e9f3fc` | 4.5:1 | light | 4.19:1 fails | the reference's confirm blue in a hovered row |
+| `#63a6e9` | filled field `#3a383f` | 4.5:1 | dark | 4.49:1 fails | the reference's dark confirm blue as the focused label |
+| `#1f75cb` | inverse surface `#ececef` | 4.5:1 | dark | 3.99:1 fails | the reference's blue as a snack bar's action |
+| `#050506 @ 24 %` | frame `#ececef` | 3:1 | light | 1.74:1 fails | the reference's search hairline |
+| `#ffffff @ 16 %` | frame `#28272d` | 3:1 | dark | 1.67:1 fails | the reference's search hairline |
+| `#89888d` | frame `#ececef` | 3:1 | light | 2.98:1 fails | the field outline as the search outline on the frame |
 | `#0a6fd6` | page `#ffffff` | 4.5:1 | light | 4.9:1 passes | cogpit's light primary as text |
 | `#ffffff` | `#0a6fd6` | 4.5:1 | light | 4.9:1 passes | white text on cogpit's light primary |
 | `#0a6fd6` | filled field `#e4e7ec` | 4.5:1 | light | 4.0:1 fails | cogpit's light primary as the focused label |
@@ -251,10 +314,9 @@ of Q-UI-96 is computed only: the browser tier has not run against it yet.
 | `#4aa8ff @ 0xaa` | filled field `#222a36` | 3:1 | dark | 3.4:1 passes | cogpit's dark focus on a filled field |
 </details>
 
-Not met on purpose: on the dark `primary-container` (`#22406a`), `primary` is 4.1:1 and the muted text 4.0:1. No component
-of trove sets text other than `on-primary-container` on it: the Material components that read `primary-container` (the
-FAB, the list, the datepicker, the slide toggle) are not used, and trove's own selected fills are `secondary-container`.
-Do not start using either pair.
+Under the palette of Q-UI-96, `primary` and the muted text missed AA on the dark `primary-container` (4.1:1 and 4.0:1);
+with the reference's info fill (`#1d283e`) both pass. No component of trove sets text other than `on-primary-container`
+on it today.
 
 ## What this does not cover
 
@@ -262,7 +324,16 @@ Do not start using either pair.
   until it becomes paths; at 16 px the four lanes run together, so a favicon needs a reduced form; `drafts/` and the
   preview ship in the build until the logo is chosen and they are removed; the files follow the system's colour scheme,
   not trove's theme button, because an `<img>` cannot read `data-theme`.
-- The type is the system font stack, not the humanist sans of the screens (Q-UI-88): no web font is shipped.
+- The reference's type is Inter with its lower-case l; trove ships Inter 4 of `@fontsource-variable/inter`, the
+  reference's "GitLab Sans" is built on an earlier Inter. Glyph differences between the two versions were not compared.
+- The values of Q-UI-128 come from the reference's admin dashboard and its user list; its forms and dialogs were not
+  measured. The reference limits its content to a centred column of 1280 px; trove's content runs the panel's full width,
+  by the owner's choice of 2026-11-06 for now. Links differ on purpose: the reference underlines none, trove underlines
+  links in running text and, in tables and key-value lists, only under the pointer and on focus (Q-UI-128, R-UI-044).
+- The reference's icons are its own line icons; trove's are Material Icons in the outlined variant (owner, 2026-11-06),
+  close to them but not the same drawings.
+- The binary embeds Inter's font files, but not the build's `3rdpartylicenses.txt` with the OFL-1.1 notice the font's
+  licence asks to travel with it; the same holds for the icon font and the bundled libraries' licences.
 - The vulnerability trend is the one chart; its series colours are tokens (`--trove-chart-*`). Another chart takes its series from the same family and adds its pairs to `palette.spec.ts`.
 - The dialogs and menus still take Material's components with the system colours above (menus on the card fill, dialogs one
   step lighter) until their turn in the move of Q-UI-126; no screen of the owner has confirmed their look yet.

@@ -340,8 +340,8 @@
         <note category="location">src/app/core/navigation.ts:43</note>
       </notes>
       <segment>
-        <source>Packages and files</source>
-        <target>Pakete und Dateien</target>
+        <source>Artifacts</source>
+        <target>Artefakte</target>
       </segment>
     </unit>
     <unit id="nav.browse">
@@ -15208,10 +15208,10 @@
         <target>Zur Anleitung: was das Repository ist, Veröffentlichen, Lockfiles und Fehlersuche</target>
       </segment>
     </unit>
-    <unit id="shell.help">
+    <unit id="shell.documentation">
       <segment>
-        <source>Help</source>
-        <target>Hilfe</target>
+        <source>Documentation</source>
+        <target>Dokumentation</target>
       </segment>
     </unit>
     <unit id="shell.theme">
@@ -15222,14 +15222,14 @@
     </unit>
     <unit id="route.help.title">
       <segment>
-        <source>Help</source>
-        <target>Hilfe</target>
+        <source>Documentation</source>
+        <target>Dokumentation</target>
       </segment>
     </unit>
     <unit id="help.title">
       <segment>
-        <source>Help</source>
-        <target>Hilfe</target>
+        <source>Documentation</source>
+        <target>Dokumentation</target>
       </segment>
     </unit>
     <unit id="help.lead">
@@ -15264,8 +15264,8 @@
     </unit>
     <unit id="help.all-pages">
       <segment>
-        <source>All help pages</source>
-        <target>Alle Hilfeseiten</target>
+        <source>All documentation pages</source>
+        <target>Alle Seiten der Dokumentation</target>
       </segment>
     </unit>
     <unit id="help.toc">

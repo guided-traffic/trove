@@ -28,7 +28,7 @@ trove-root {
     align-items: center;
     gap: var(--trove-space-3);
     block-size: var(--trove-topbar-height);
-    padding-inline: var(--trove-space-3);
+    padding-inline: var(--trove-space-3) var(--trove-space-2);
     background: var(--trove-nav-bg);
     color: var(--trove-nav-fg);
 
@@ -49,7 +49,7 @@ trove-root {
     display: flex;
     align-items: center;
     justify-self: end;
-    gap: var(--trove-space-1);
+    gap: var(--trove-space-2);
   }
 
   // Icon buttons and quiet buttons on the frame take its text colour and its hover fill.
@@ -93,7 +93,7 @@ trove-root {
       position: absolute;
       inset-inline-start: var(--trove-space-2);
       z-index: 1;
-      font-size: 1.125rem;
+      font-size: 1rem;
       color: var(--trove-search-muted);
       pointer-events: none;
     }
@@ -104,7 +104,7 @@ trove-root {
       block-size: var(--trove-control-height);
       padding: 0 var(--trove-space-3) 0 2rem;
       border: 1px solid var(--trove-search-border);
-      border-radius: var(--trove-control-radius);
+      border-radius: var(--trove-search-radius);
       background: var(--trove-search-bg);
       color: var(--trove-search-fg);
       font: inherit;
@@ -125,17 +125,27 @@ trove-root {
     white-space: nowrap;
   }
 
-  // The Admin button is pressed while the admin area is open.
-  .admin-button.active {
-    border-color: var(--trove-nav-accent);
-    background: var(--trove-nav-active);
-    color: var(--trove-nav-active-fg);
+  // The labels of the Admin button and the documentation link give way to their icons on a narrow top bar; they stay
+  // the links' accessible names.
+  @media (max-width: 47.99rem) {
+    .topbar-label {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .admin-button,
+    .docs-link {
+      padding-inline: var(--trove-space-2);
+    }
   }
 
   .user-button {
     display: inline-flex;
-    padding: 2px;
-    margin-inline-start: var(--trove-space-1);
+    padding: 0;
     border: 0;
     border-radius: 50%;
     background: none;
@@ -151,12 +161,12 @@ trove-root {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    inline-size: 1.75rem;
-    block-size: 1.75rem;
+    inline-size: 2rem;
+    block-size: 2rem;
     border-radius: 50%;
     background: var(--trove-accent-fill);
     color: var(--trove-on-accent);
-    font-size: 0.8125rem;
+    font-size: 0.875rem;
     font-weight: 600;
     text-transform: uppercase;
   }
@@ -203,16 +213,19 @@ trove-root {
     background: rgb(0 0 0 / 40%);
   }
 
+  // The area's name on top of its sidebar, in the current entry's colour (the reference's context header).
   .context-title {
-    margin: var(--trove-space-3) var(--trove-space-4) var(--trove-space-2);
-    font-size: 0.875rem;
+    margin: var(--trove-space-1) 0 0;
+    padding: var(--trove-space-2) var(--trove-space-4);
+    color: var(--trove-nav-accent);
+    font-size: var(--trove-text-size);
     font-weight: 600;
   }
 
   .sidebar nav {
     flex: 1 1 auto;
     overflow-y: auto;
-    padding: 0 var(--trove-space-2) var(--trove-space-3);
+    padding: var(--trove-space-1) var(--trove-space-2) var(--trove-space-3);
   }
 
   .nav-list {
@@ -224,21 +237,23 @@ trove-root {
     padding: 0;
   }
 
+  // An entry as the reference draws it: 28 px, 8 px round, a 16 px icon in a 24 px box, the label at weight 425.
   .nav-link {
     position: relative;
     display: flex;
     align-items: center;
-    gap: var(--trove-space-3);
+    gap: var(--trove-space-2);
     inline-size: 100%;
     box-sizing: border-box;
-    min-block-size: 2rem;
-    padding: var(--trove-space-1) var(--trove-space-3);
+    min-block-size: 28px;
+    padding: 2px var(--trove-space-1);
     border: 0;
-    border-radius: var(--trove-control-radius);
+    border-radius: var(--trove-radius-m);
     background: none;
     color: var(--trove-nav-fg);
     font: inherit;
-    font-size: 0.875rem;
+    font-size: var(--trove-text-size);
+    font-weight: 425;
     text-align: start;
     text-decoration: none;
     cursor: pointer;
@@ -249,8 +264,10 @@ trove-root {
 
     .nav-icon {
       flex: none;
-      font-size: 1.125rem;
-      color: var(--trove-nav-fg-muted);
+      inline-size: 24px;
+      font-size: 1rem;
+      text-align: center;
+      color: inherit;
     }
 
     .nav-label {
@@ -258,26 +275,15 @@ trove-root {
       min-inline-size: 0;
     }
 
-    // The current page: a tinted pill with a bar in the accent; the text is bold as well, so the state is not
-    // carried by colour alone (R-UI-044).
-    &.active {
+    // The current page: tinted in the blue, the text and icon in its deep or pale step and at weight 500, so the state
+    // is not carried by colour alone (R-UI-044).
+    &.active:not(:hover) {
       background: var(--trove-nav-active);
       color: var(--trove-nav-active-fg);
-      font-weight: 600;
+    }
 
-      &::before {
-        content: '';
-        position: absolute;
-        inset-block: var(--trove-space-1);
-        inset-inline-start: 0;
-        inline-size: 3px;
-        border-radius: 2px;
-        background: var(--trove-nav-accent);
-      }
-
-      .nav-icon {
-        color: var(--trove-nav-accent);
-      }
+    &.active .nav-label {
+      font-weight: 500;
     }
   }
 
@@ -285,14 +291,15 @@ trove-root {
     margin-block-start: 2px;
   }
 
+  // A nested entry has no icon; its label lines up with the labels of the entries above.
   .nested .nav-link {
-    padding-inline-start: var(--trove-space-8);
+    padding-inline-start: calc(var(--trove-space-1) + 24px + var(--trove-space-2));
   }
 
   .group-toggle {
     .chevron {
       flex: none;
-      font-size: 1.125rem;
+      font-size: 1rem;
       color: var(--trove-nav-fg-muted);
     }
 
@@ -303,34 +310,35 @@ trove-root {
 
   .sidebar-foot {
     flex: none;
-    padding: var(--trove-space-2);
-    border-block-start: 1px solid var(--trove-nav-border);
+    padding: var(--trove-space-1) var(--trove-space-2) var(--trove-space-2);
   }
 
-  // The content: a panel on the page's fill, set into the frame with a rounded corner and a hairline.
+  // The content: a panel on the page's fill, set into the frame with 16 px corners and an 8 px gap to the window's
+  // edge, without a border (the reference's static panel).
   .panel {
     flex: 1 1 auto;
     display: flex;
     flex-direction: column;
     min-inline-size: 0;
-    border-block-start: 1px solid var(--trove-nav-border);
-    border-inline-start: 1px solid var(--trove-nav-border);
-    border-start-start-radius: var(--trove-panel-radius);
+    margin: 0 var(--trove-panel-gap) var(--trove-panel-gap) 0;
+    border-radius: var(--trove-panel-radius);
     background: var(--trove-surface);
     overflow: hidden;
   }
 
   .bare-frame .panel {
-    border: 0;
+    margin: 0;
     border-radius: 0;
   }
 
+  // The breadcrumb bar: 40 px with its hairline, small text, the current step in the text colour at weight 600.
   .breadcrumbs {
     flex: none;
+    box-sizing: border-box;
     display: flex;
     align-items: center;
-    min-block-size: 2.5rem;
-    padding: 0 var(--trove-space-4);
+    min-block-size: var(--trove-breadcrumb-height);
+    padding: 0 var(--trove-space-2) 0 var(--trove-space-3);
     border-block-end: 1px solid var(--trove-border);
 
     ol {
@@ -342,12 +350,13 @@ trove-root {
       list-style: none;
       color: var(--trove-text-muted);
       font-size: var(--trove-text-muted-size);
+      line-height: 1rem;
     }
 
     li + li::before {
       content: '/';
       margin-inline: var(--trove-space-2);
-      color: var(--trove-text-muted);
+      color: var(--trove-control-disabled-fg);
     }
 
     a {
@@ -426,7 +435,7 @@ trove-root {
     margin: 0 auto var(--trove-space-3);
   }
 
-  .bare a:not([class*='mat-']):not([class*='mdc-']):not(.btn) {
+  .bare a:not([class*='mat-']):not([class*='mdc-']):not(.btn):not(.tab-link) {
     color: var(--trove-link);
     text-underline-offset: 0.2em;
 
@@ -436,14 +445,24 @@ trove-root {
     }
   }
 
-  // Links in the page: the link colour and an underline, so a link is not told apart by colour alone.
-  .content a:not([class*='mat-']):not([class*='mdc-']):not(.btn) {
+  // Links in the page: the link colour and an underline, so a link in running text is not told apart by colour alone
+  // (R-UI-044). In a table or a key-value list the column or the row says what is a link, so there the underline
+  // appears under the pointer and on focus only, as in the reference (Q-UI-128).
+  .content a:not([class*='mat-']):not([class*='mdc-']):not(.btn):not(.tab-link) {
     color: var(--trove-link);
     text-underline-offset: 0.2em;
 
     &:focus-visible {
       outline: var(--trove-focus-ring);
       outline-offset: 2px;
+    }
+  }
+
+  .content :is(table, dl) a:not([class*='mat-']):not([class*='mdc-']):not(.btn):not(.tab-link) {
+    text-decoration: none;
+
+    &:is(:hover, :focus-visible) {
+      text-decoration: underline;
     }
   }
 }
@@ -455,9 +474,9 @@ trove-root {
   flex-direction: column;
   min-inline-size: 12rem;
   padding: var(--trove-space-1);
-  border: 1px solid var(--trove-border);
+  border: 1px solid var(--trove-menu-border);
   border-radius: var(--trove-radius-m);
-  background: var(--trove-surface-raised);
+  background: var(--trove-menu-bg);
   color: var(--trove-control-fg);
   box-shadow: var(--trove-elevation-2);
 }
@@ -482,7 +501,7 @@ trove-root {
 
   &:hover,
   &:focus {
-    background: var(--trove-row-hover);
+    background: var(--trove-menu-hover);
     outline: none;
   }
 

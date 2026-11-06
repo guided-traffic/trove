@@ -55,7 +55,7 @@ describe('Breadcrumbs', () => {
 
   it('R-UI-002 the file tree adds one step per path segment, each linking to its folder', async () => {
     const trail = await trailAt('/browse/generic-local/docs/guide');
-    expect(trail.map((c) => c.label)).toEqual(['Packages and files', 'Browse', 'generic-local', 'docs', 'guide']);
+    expect(trail.map((c) => c.label)).toEqual(['Artifacts', 'Browse', 'generic-local', 'docs', 'guide']);
     expect(trail.at(-1)?.link).toBe('//browse/generic-local/docs/guide');
     expect(trail.slice(2).every((c) => c.literal)).toBe(true);
     expect(trail[0]?.link).toBeNull();
@@ -64,7 +64,7 @@ describe('Breadcrumbs', () => {
 
   it('R-UI-002 R-UI-003 a package adds one step with its whole name, scope slash included, linking the package', async () => {
     const trail = await trailAt('/packages/npm/@team-a/ui');
-    expect(trail.map((c) => c.label)).toEqual(['Packages and files', 'Packages', '@team-a/ui']);
+    expect(trail.map((c) => c.label)).toEqual(['Artifacts', 'Packages', '@team-a/ui']);
     expect(trail[1]?.link).toBe('//packages');
     expect(trail[2]).toEqual({ label: '@team-a/ui', link: '//packages/npm/@team-a/ui', literal: true });
   });

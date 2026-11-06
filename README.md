@@ -94,7 +94,7 @@ Built (M1, access core):
 - 🧾 **Audit.** An event registry, transactional and asynchronous recording, a PostgreSQL journal with partitions and retention, and the query and export API. See [audit](docs/developer/audit.md) and [audit trail](docs/security/audit.md).
 - 🧭 **Management API.** Under `/api/v1/`, described by [api/openapi.yaml](api/openapi.yaml): problem+json errors, cursor paging, ETags with `If-Match`, idempotency keys, and a permission declared on every operation. See [API families](#management-api).
 - 🖥️ **Admin UI.** The Angular application, embedded in the binary: sign-in, the file tree, repositories, users, groups, service accounts, tokens, policies, endpoints, audit and the system status, in a light and a dark scheme. See [web UI](docs/developer/web-ui.md) and [design language](docs/developer/design-language.md).
-- ❓ **Manual in the product.** The user and administrator manual is embedded in the binary and opens from the "?" of the top bar, on the page of the current screen. See [docs/manual](docs/manual/README.md).
+- ❓ **Manual in the product.** The user and administrator manual is embedded in the binary and opens from **Documentation** in the top bar, on the page of the current screen. See [docs/manual](docs/manual/README.md).
 
 Built (M2, npm registry):
 
@@ -547,7 +547,7 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 
 | Document | What it holds |
 |---|---|
-| [docs/manual/](docs/manual/README.md) | The user and administrator manual; the binary embeds it and the UI shows it behind the "?" of the top bar |
+| [docs/manual/](docs/manual/README.md) | The user and administrator manual; the binary embeds it and the UI shows it behind **Documentation** in the top bar |
 | [docs/developer/](docs/developer/README.md) | Contributor entry point; the M1 pages: [login](docs/developer/login.md), [identity](docs/developer/identity.md), [authorization](docs/developer/authorization.md), [files](docs/developer/files.md), [m1-contracts](docs/developer/m1-contracts.md), [audit](docs/developer/audit.md), [repositories](docs/developer/repositories.md); the package screens: [packages](docs/developer/packages.md); projects: [projects](docs/developer/projects.md) |
 | [docs/developer/ci-oidc.md](docs/developer/ci-oidc.md) | GitLab CI OIDC: the contracts laid for beta phase 5 (schema, packages, the token and evaluation seam, API, configuration, events), the work packages and their files |
 | [docs/developer/vulnerabilities.md](docs/developer/vulnerabilities.md) | Vulnerability scanning (M4b): the packages and layers, the ports, the download policy, the format contract's addition, the schema, the API, the configuration and the work packages with their files |

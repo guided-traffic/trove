@@ -116,11 +116,25 @@ const surfaces: Record<string, string | readonly [string, string]> = {
   // trove's own controls (Q-UI-126, _controls.scss).
   'accent fill': '--trove-accent-fill',
   'accent fill hover': '--trove-accent-fill-hover',
-  'default button': '--trove-btn-default-bg',
-  'default button hover': '--trove-btn-default-bg-hover',
-  'tertiary button hover': '--trove-btn-tertiary-bg-hover',
+  'default button': ['--trove-btn-default-bg', '--mat-sys-surface'],
+  'default button hover': ['--trove-btn-default-bg-hover', '--mat-sys-surface'],
+  'tertiary button hover': ['--trove-btn-tertiary-bg-hover', '--mat-sys-surface'],
   'danger fill': '--trove-danger-fill',
-  control: '--trove-control-bg',
+  control: ['--trove-control-bg', '--mat-sys-surface'],
+  // The reference's translucent fills, measured over what they sit on (Q-UI-128): the default button on the page and on
+  // the frame (the Admin button), a menu item under the pointer, the search field on the frame, a card's strong fill.
+  'default button on the frame': ['--trove-btn-default-bg', '--trove-nav-bg'],
+  'default button hover on the frame': ['--trove-btn-default-bg-hover', '--trove-nav-bg'],
+  'top bar hover': ['--trove-nav-hover', '--trove-nav-bg'],
+  'menu item hover': ['--trove-menu-hover', '--trove-menu-bg'],
+  // The badges (Q-UI-128): each status's pill.
+  'neutral badge': '--trove-badge-neutral-bg',
+  'positive badge': '--trove-badge-ok-bg',
+  'warning badge': '--trove-badge-warn-bg',
+  'error badge': '--trove-badge-bad-bg',
+  'info badge': '--trove-badge-info-bg',
+  search: ['--trove-search-bg', '--trove-nav-bg'],
+  card: '--trove-card-bg',
 };
 
 function surface(name: string, scheme: Scheme): Rgba {
@@ -183,6 +197,23 @@ const textPairs: readonly (readonly [string, string])[] = [
   ['--trove-on-danger', 'danger fill'],
   ['--trove-control-fg', 'control'],
   ['--trove-control-placeholder', 'control'],
+  // The frame and its controls (Q-UI-128): the Admin button, the hover of the top bar and the sidebar, menus, the
+  // search field, the sidebar's text and a card's title and muted text.
+  ['--trove-control-fg', 'default button on the frame'],
+  ['--trove-control-fg', 'default button hover on the frame'],
+  ['--trove-nav-fg', 'side bar'],
+  ['--trove-nav-fg', 'top bar hover'],
+  ['--trove-control-fg', 'menu item hover'],
+  ['--trove-search-fg', 'search'],
+  ['--trove-search-muted', 'search'],
+  ['--trove-heading', 'card'],
+  ['--mat-sys-on-surface-variant', 'card'],
+  // A badge's text on its pill (Q-UI-128).
+  ['--trove-badge-neutral-fg', 'neutral badge'],
+  ['--trove-badge-ok-fg', 'positive badge'],
+  ['--trove-badge-warn-fg', 'warning badge'],
+  ['--trove-badge-bad-fg', 'error badge'],
+  ['--trove-badge-info-fg', 'info badge'],
 ];
 
 // Marks: WCAG 1.4.11, 3:1 (focus ring, tab underline, checkbox, the navigation's bar and icon).
@@ -202,6 +233,13 @@ const markPairs: readonly (readonly [string, string])[] = [
   ['--trove-control-border', 'page'],
   ['--trove-control-border', 'control'],
   ['--trove-accent-fill', 'page'],
+  // The current tab's line on the page, a badge's icon on its pill (Q-UI-128).
+  ['--trove-tab-indicator', 'page'],
+  ['--trove-badge-neutral-icon', 'neutral badge'],
+  ['--trove-badge-ok-icon', 'positive badge'],
+  ['--trove-badge-warn-icon', 'warning badge'],
+  ['--trove-badge-bad-icon', 'error badge'],
+  ['--trove-badge-info-icon', 'info badge'],
   // The marks of the vulnerability trend (R-VULN-022), on the page and on the raised surface the chart sits on.
   ...['critical', 'high', 'medium', 'low', 'none', 'unknown'].flatMap((s): [string, string][] => [
     [`--trove-chart-${s}`, 'page'],
@@ -248,7 +286,8 @@ describe('palette', () => {
       expect(isGreen(colour('--trove-status-ok', scheme)), `--trove-status-ok (${scheme})`).toBe(true);
       const green: string[] = [];
       for (const name of palette.keys()) {
-        if (name === '--trove-status-ok') continue;
+        // The positive status, as text or as its badge (Q-UI-128).
+        if (name === '--trove-status-ok' || name.startsWith('--trove-badge-ok-')) continue;
         let c: Rgba;
         try {
           c = colour(name, scheme);

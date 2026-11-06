@@ -46,7 +46,7 @@
                 "input": "public"
               }
             ],
-            "styles": ["src/styles/main.scss"]
+            "styles": ["node_modules/@fontsource-variable/inter/wght.css", "src/styles/main.scss"]
           },
           "configurations": {
             "production": {

@@ -69,27 +69,16 @@
       }
       @if (session.hasAdminArea()) {
         <!-- The way into the admin area, for those who have one (Q-UI-127). -->
-        <a
-          class="btn btn-default btn-sm admin-button"
-          routerLink="/admin"
-          [class.active]="area() === 'admin'"
-          [attr.aria-current]="area() === 'admin' ? 'true' : null"
-        >
+        <a class="btn btn-default admin-button" routerLink="/admin" [attr.aria-current]="area() === 'admin' ? 'true' : null">
           <span class="material-icons" aria-hidden="true">build</span>
-          <span i18n="@@shell.admin">Admin</span>
+          <span class="topbar-label" i18n="@@shell.admin">Admin</span>
         </a>
       }
       @if (showNav()) {
         <!-- The manual page of the current screen, or the overview of the help area (R-UI-050). -->
-        <a
-          class="btn btn-icon topbar-icon"
-          [routerLink]="help()"
-          i18n-aria-label="@@shell.help"
-          aria-label="Help"
-          i18n-title="@@shell.help"
-          title="Help"
-        >
+        <a class="btn btn-tertiary docs-link" [routerLink]="help()">
           <span class="material-icons" aria-hidden="true">help_outline</span>
+          <span class="topbar-label" i18n="@@shell.documentation">Documentation</span>
         </a>
       }
       <button

@@ -103,16 +103,6 @@ dl.facts {
   font: var(--mat-sys-body-small);
 }
 
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--trove-space-1);
-  padding-inline: var(--trove-space-2);
-  border: 1px solid var(--mat-sys-outline);
-  border-radius: var(--mat-sys-corner-full);
-  font: var(--mat-sys-label-medium);
-  white-space: nowrap;
-}
 
 .material-icons {
   font-size: 1.125rem;

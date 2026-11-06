@@ -4,8 +4,8 @@
 </header>
 
 @if (memory.available()) {
-  <nav class="view-tabs" aria-label="Package views" i18n-aria-label="@@pkg.views.label">
-    <a
+  <nav class="view-tabs tab-nav" aria-label="Package views" i18n-aria-label="@@pkg.views.label">
+    <a class="tab-link"
       routerLink="/packages"
       [queryParams]="{ tab: null }"
       queryParamsHandling="merge"
@@ -13,7 +13,7 @@
       i18n="@@pkg.views.all"
       >All packages</a
     >
-    <a
+    <a class="tab-link"
       routerLink="/packages"
       [queryParams]="{ tab: 'recent' }"
       queryParamsHandling="merge"
@@ -21,7 +21,7 @@
       i18n="@@pkg.views.recent"
       >Recently viewed</a
     >
-    <a
+    <a class="tab-link"
       routerLink="/packages"
       [queryParams]="{ tab: 'views' }"
       queryParamsHandling="merge"

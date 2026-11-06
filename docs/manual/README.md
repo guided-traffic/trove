@@ -1,7 +1,7 @@
 # trove manual
 
 The manual for the people who use trove and the people who run it. The binary embeds these pages and the UI shows
-them under **Help** (the "?" in the top bar), so the manual of an installation always matches the version it runs.
+them under **Documentation** in the top bar, so the manual of an installation always matches the version it runs.
 Readers on GitHub can browse the same files here.
 
 | Section | Directory | For |

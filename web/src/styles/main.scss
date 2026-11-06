@@ -25,60 +25,110 @@ html {
         tertiary: mat.$violet-palette,
       ),
       typography: (
-        plain-family: string.unquote('system-ui, -apple-system, "Segoe UI", sans-serif'),
-        brand-family: string.unquote('system-ui, -apple-system, "Segoe UI", sans-serif'),
+        plain-family: string.unquote('"Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'),
+        brand-family: string.unquote('"Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'),
       ),
       density: -2,
     )
   );
-  // The palette of the design language (Q-UI-88, docs/developer/design-language.md): the values
-  // measured on the owner's reference screens, light first, dark second, with the blue of the
-  // owner's cogpit as the accent (Q-UI-96); green is the positive status's alone (_tokens.scss).
-  // The primary and its containers are cogpit's: glow blue #4aa8ff with #04111f on it (dark), the
-  // selection as primary-container and the selected row as secondary-container. Where a value
-  // misses WCAG AA it is darkened (light) or lightened (dark) in its own hue: the light accent is
-  // cogpit's deeper link blue #0a62c2 (5.9:1 on white and under white text, 4.8:1 on the filled
-  // field of a form, 5.1:1 on a dialog), because its light primary #0a6fd6 gives 4.0:1 on the
-  // field and 4.2:1 on a dialog; and the muted text of the dark scheme (#9aa1ad is 6.9:1 on a
-  // card). The generated azure (cogpit's hue, 210 degrees) and violet palettes fill the tokens not
-  // named here. web/src/styles/palette.spec.ts recomputes the pairs.
+  // The page palette (Q-UI-128, docs/developer/design-language.md): the reference's semantic colours, light from its
+  // token set and dark as measured on the owner's GitLab 19.0.1, where the two agree token for token. The primary is
+  // its blue, as text one step deeper than the confirm button's #1f75cb in the light scheme (#2f68b4, its hover; #1f75cb
+  // gives 4.0:1 on a filled field) and a hair lighter than #63a6e9 in the dark one (#66a8ea; 4.49:1 on a filled
+  // field); trove's own confirm button keeps the exact pair (--trove-accent-fill). White or #18171d on it; the page is
+  // white / #18171d, text #3a383f / #ececef, muted text #626168 / #bfbfc3, hairlines #dcdcde / #4c4b51, menus and
+  // dialogs white / #28272d. A pair that misses WCAG AA is moved in its own hue (R-UI-044); web/src/styles/
+  // palette.spec.ts recomputes the pairs. The generated azure (the blue's hue, 210 degrees) and violet palettes fill
+  // the tokens not named here.
   @include mat.theme-overrides(
     (
-      primary: light-dark(#0a62c2, #4aa8ff),
-      on-primary: light-dark(#ffffff, #04111f),
-      primary-container: light-dark(#cfe2ff, #22406a),
-      on-primary-container: light-dark(#0b1a33, #f2f7ff),
-      inverse-primary: light-dark(#4aa8ff, #0a62c2),
-      surface-tint: light-dark(#0a62c2, #4aa8ff),
-      secondary-container: light-dark(#d6e6ff, #183252),
-      on-secondary-container: light-dark(#0b1a33, #f2f7ff),
-      background: light-dark(#ffffff, #040c18),
-      on-background: light-dark(#1c2433, #e8eaec),
-      surface: light-dark(#ffffff, #040c18),
-      on-surface: light-dark(#1c2433, #e8eaec),
-      surface-variant: light-dark(#e4e7ec, #222a36),
-      on-surface-variant: light-dark(#5b6270, #9aa1ad),
-      surface-dim: light-dark(#e4e7ec, #040c18),
-      surface-bright: light-dark(#ffffff, #222a36),
-      surface-container-lowest: light-dark(#ffffff, #02070f),
-      surface-container-low: light-dark(#f8f9fc, #0b121c),
-      surface-container: light-dark(#f1f4f8, #121822),
-      surface-container-high: light-dark(#eaedf2, #1a212c),
-      surface-container-highest: light-dark(#e4e7ec, #222a36),
-      inverse-surface: light-dark(#1c2433, #e8eaec),
-      inverse-on-surface: light-dark(#f1f4f8, #121822),
-      outline: light-dark(#8a919c, #646c78),
-      outline-variant: light-dark(#dbdde1, #1e2530),
+      primary: light-dark(#2f68b4, #66a8ea),
+      on-primary: light-dark(#ffffff, #18171d),
+      primary-container: light-dark(#e9f3fc, #1d283e),
+      on-primary-container: light-dark(#18171d, #ececef),
+      inverse-primary: light-dark(#66a8ea, #2f68b4),
+      surface-tint: light-dark(#2f68b4, #66a8ea),
+      secondary-container: light-dark(#e9f3fc, #1d283e),
+      on-secondary-container: light-dark(#18171d, #ececef),
+      background: light-dark(#ffffff, #18171d),
+      on-background: light-dark(#3a383f, #ececef),
+      surface: light-dark(#ffffff, #18171d),
+      on-surface: light-dark(#3a383f, #ececef),
+      surface-variant: light-dark(#ececef, #3a383f),
+      on-surface-variant: light-dark(#626168, #bfbfc3),
+      surface-dim: light-dark(#ececef, #18171d),
+      surface-bright: light-dark(#ffffff, #3a383f),
+      surface-container-lowest: light-dark(#ffffff, #18171d),
+      surface-container-low: light-dark(#fbfafd, #28272d),
+      surface-container: light-dark(#ffffff, #28272d),
+      surface-container-high: light-dark(#ffffff, #28272d),
+      surface-container-highest: light-dark(#ececef, #3a383f),
+      inverse-surface: light-dark(#28272d, #ececef),
+      inverse-on-surface: light-dark(#ececef, #28272d),
+      outline: light-dark(#89888d, #737278),
+      outline-variant: light-dark(#dcdcde, #4c4b51),
     )
   );
-  // Buttons are rectangles with a small radius, not pills.
+  // Material's buttons, until their screens move to trove's own (Q-UI-126), look like the reference's (Q-UI-128): 32 px,
+  // 8 px round, the label at 14 px and weight 400; filled is the confirm button, outlined the default button (its grey
+  // fill below), text the quiet one in the text colour.
   @include mat.button-overrides(
     (
-      filled-container-shape: var(--trove-radius-s),
-      outlined-container-shape: var(--trove-radius-s),
-      protected-container-shape: var(--trove-radius-s),
-      text-container-shape: var(--trove-radius-s),
-      tonal-container-shape: var(--trove-radius-s),
+      filled-container-shape: var(--trove-radius-m),
+      outlined-container-shape: var(--trove-radius-m),
+      protected-container-shape: var(--trove-radius-m),
+      text-container-shape: var(--trove-radius-m),
+      tonal-container-shape: var(--trove-radius-m),
+      filled-container-height: var(--trove-control-height),
+      outlined-container-height: var(--trove-control-height),
+      protected-container-height: var(--trove-control-height),
+      text-container-height: var(--trove-control-height),
+      tonal-container-height: var(--trove-control-height),
+      filled-container-color: var(--trove-accent-fill),
+      filled-label-text-color: var(--trove-on-accent),
+      outlined-outline-color: var(--trove-btn-default-border),
+      outlined-label-text-color: var(--trove-control-fg),
+      text-label-text-color: var(--trove-control-fg),
+      filled-label-text-weight: 400,
+      outlined-label-text-weight: 400,
+      protected-label-text-weight: 400,
+      text-label-text-weight: 400,
+      tonal-label-text-weight: 400,
+      filled-label-text-size: var(--trove-text-size),
+      outlined-label-text-size: var(--trove-text-size),
+      protected-label-text-size: var(--trove-text-size),
+      text-label-text-size: var(--trove-text-size),
+      tonal-label-text-size: var(--trove-text-size),
+      filled-label-text-tracking: normal,
+      outlined-label-text-tracking: normal,
+      protected-label-text-tracking: normal,
+      text-label-text-tracking: normal,
+      tonal-label-text-tracking: normal,
+      filled-horizontal-padding: var(--trove-space-3),
+      outlined-horizontal-padding: var(--trove-space-3),
+      text-horizontal-padding: var(--trove-space-3),
+    )
+  );
+  // Material's tabs as the reference's: the labels in the text colour at 14 px, the current one at weight 600 (below)
+  // over a 2 px blue line, a hairline under the strip.
+  @include mat.tabs-overrides(
+    (
+      active-indicator-color: var(--trove-tab-indicator),
+      active-indicator-height: 2px,
+      active-label-text-color: var(--trove-control-fg),
+      inactive-label-text-color: var(--trove-control-fg),
+      active-hover-label-text-color: var(--trove-control-fg),
+      inactive-hover-label-text-color: var(--trove-control-fg),
+      active-focus-label-text-color: var(--trove-control-fg),
+      inactive-focus-label-text-color: var(--trove-control-fg),
+      active-hover-indicator-color: var(--trove-tab-indicator),
+      active-focus-indicator-color: var(--trove-tab-indicator),
+      label-text-size: var(--trove-text-size),
+      label-text-weight: 400,
+      label-text-tracking: normal,
+      divider-color: var(--trove-border),
+      divider-height: 1px,
+      container-height: 48px,
     )
   );
   // The density of -2 sets the label of a filled field to `display: none`, which leaves the input without a
@@ -96,14 +146,30 @@ body {
   height: 100%;
 }
 
+// The reference's type (Q-UI-128): Inter with its lower-case l, 14 px on 21 px; page titles in its heading-1 size,
+// 600 and a hair tighter.
 body {
   background: var(--trove-surface);
   color: var(--trove-on-surface);
-  font: var(--mat-sys-body-medium);
+  font: 400 var(--trove-text-size) / var(--trove-text-line) var(--trove-font-sans);
+  font-feature-settings: var(--trove-font-features);
+}
+
+// The rest of Material's default and confirm buttons (Q-UI-128): the outlined button takes the default button's fill,
+// the current tab's label is heavier.
+.mat-mdc-outlined-button:not(:disabled) {
+  background-color: var(--trove-btn-default-bg);
+}
+
+.mdc-tab--active .mdc-tab__text-label {
+  font-weight: 600;
 }
 
 h1 {
-  font: var(--mat-sys-headline-small);
-  font-weight: 600;
   margin-block: 0 var(--trove-space-4);
+  color: var(--trove-heading);
+  font-size: var(--trove-heading-1);
+  font-weight: var(--trove-heading-weight);
+  line-height: 1.25;
+  letter-spacing: var(--trove-heading-tracking);
 }

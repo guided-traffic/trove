@@ -12,7 +12,7 @@ import { asApiError, valueOf } from '../../shared/paged-resource';
   selector: 'trove-help-overview',
   imports: [RouterLink, ErrorNotice],
   template: `
-    <h1 i18n="@@help.title">Help</h1>
+    <h1 i18n="@@help.title">Documentation</h1>
     <p class="help-lead" i18n="@@help.lead">
       The manual of the trove version this installation runs, for the people who use it and the people who run it.
     </p>

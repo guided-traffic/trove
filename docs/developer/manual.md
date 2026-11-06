@@ -1,7 +1,7 @@
 # The manual and the help area
 
 The user and administrator manual lives in [docs/manual/](../manual/README.md), is embedded into the binary and is shown
-in the UI behind the "?" of the top bar. Requirements [R-API-054](../spec/api-and-ui.md) (the operations) and
+in the UI behind the Documentation link of the top bar. Requirements [R-API-054](../spec/api-and-ui.md) (the operations) and
 [R-UI-050](../spec/api-and-ui.md) (the help area); decisions
 [Q-UI-89](../spec/api-and-ui.md#q-ui-89--how-the-manual-reaches-the-ui) (delivery) and
 [Q-UI-90](../spec/api-and-ui.md#q-ui-90--what-the-help-button-opens) (the help button).
@@ -13,7 +13,7 @@ docs/manual/{user,admin}/*.md ──go:embed (docs/manual/embed.go)──> manua
 GET /api/v1/manual, /api/v1/manual/{section}/{page} <────────────────┘
         │
         ▼
-/ui/<locale>/help (overview), /ui/<locale>/help/<section>/<page>   ← the "?" (core/help-topics.ts)
+/ui/<locale>/help (overview), /ui/<locale>/help/<section>/<page>   ← "Documentation" (core/help-topics.ts)
 ```
 
 ## Files
@@ -28,7 +28,7 @@ GET /api/v1/manual, /api/v1/manual/{section}/{page} <─────────
 | [internal/app/app.go](../../internal/app/app.go) | `startClient` loads the manual once; a failing load stops start-up |
 | [web/src/app/api/manual-api.ts](../../web/src/app/api/manual-api.ts) | `ManualApi`, `HttpManualApi` (keeps every read for the tab: the route title and the screen share one request) |
 | [web/src/app/features/help/](../../web/src/app/features/help/) | `help.routes.ts` (the page title from the page), `help-overview.ts`, `help-page.ts` and `.html`, `help.scss`, `help.spec.ts` |
-| [web/src/app/core/help-topics.ts](../../web/src/app/core/help-topics.ts) | `HELP_TOPICS` (route prefix to page) and `helpFor`, which the top bar's "?" links with |
+| [web/src/app/core/help-topics.ts](../../web/src/app/core/help-topics.ts) | `HELP_TOPICS` (route prefix to page) and `helpFor`, which the top bar's Documentation link uses |
 | [web/src/app/features/packages/package-readme.ts](../../web/src/app/features/packages/package-readme.ts) | The binding component; `pageLinks="help/"` keeps the manual's page links and routes them in the application |
 | [web/scripts/check-rules.mjs](../../web/scripts/check-rules.mjs) | Fails the lint when `HELP_TOPICS` names a page that is not a file of `docs/manual/` |
 
@@ -62,7 +62,7 @@ rules are shared with package READMEs except the measure.
    plain summary, `##`/`###` headings, relative `.md` links, only what the code of this version does.
 2. Add the page id to `contents` in [internal/manual/manual.go](../../internal/manual/manual.go) and the same line to
    both lists of `docs/manual/README.md`, in the same position and with the page's title.
-3. If a screen should open the page from its "?", add the route prefix to `HELP_TOPICS`.
+3. If a screen should open the page from the Documentation link, add the route prefix to `HELP_TOPICS`.
 4. Run `go test ./internal/manual/ ./internal/api/v1/ -run R_API_054` and `npm run lint` in `web/`.
 5. Run the white-label scan before the commit (the manual is the most likely place for a product comparison to slip in).
 
@@ -75,7 +75,7 @@ rules are shared with package READMEs except the measure.
 | `TestR_API_054_LinksBecomeHelpRoutes`, `TestR_API_054_DefectsAreRefused` | Link rewriting, reading order, and every defect that stops a load |
 | `TestR_API_054_LinkedRenderingResolvesRelativeLinks` | `RenderLinked` in the README renderer; `Render` still drops relative links |
 | `TestR_API_054_TheManualOperations`, `TestR_API_054_AnonymousReadersFollowTheAnonymousAccessSetting` | The operations: order, page fields, ETag and `304`, `404`, the anonymous gate, `503` without a manual |
-| [help.spec.ts](../../web/src/app/features/help/help.spec.ts), `app.spec.ts`, `app.routes.spec.ts` | The overview, a page, link navigation and scrolling, errors; the "?" target per screen; both routes with title and axe |
+| [help.spec.ts](../../web/src/app/features/help/help.spec.ts), `app.spec.ts`, `app.routes.spec.ts` | The overview, a page, link navigation and scrolling, errors; the Documentation link's target per screen; both routes with title and axe |
 
 ## What is not done yet
 

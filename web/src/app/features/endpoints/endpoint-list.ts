@@ -40,7 +40,7 @@ import { asApiError, valueOf } from '../../shared/paged-resource';
           <th scope="row">
             <a [routerLink]="['/admin/endpoints', e.name]" translate="no">{{ e.name }}</a>
             @if (e.inert) {
-              <span class="badge" i18n="@@ep.badge.inert">not configured</span>
+              <span class="badge warn" i18n="@@ep.badge.inert">not configured</span>
             }
           </th>
           @if (e.configuration; as c) {
@@ -73,11 +73,6 @@ import { asApiError, valueOf } from '../../shared/paged-resource';
   styles: `
     .badge {
       margin-inline-start: var(--trove-space-2);
-      padding: 0 var(--trove-space-2);
-      border: 1px solid var(--trove-status-warn);
-      border-radius: var(--mat-sys-corner-extra-small);
-      font-size: 0.75rem;
-      font-weight: 400;
     }
   `,
 })

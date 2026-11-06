@@ -72,7 +72,7 @@ describe('App shell', () => {
   it('R-UI-002 Q-UI-127 the admin area has a sidebar of its own behind the Admin button, which only its users see', async () => {
     const admin = await render();
     const sidebar = () => admin.root.querySelector('aside.sidebar')?.textContent ?? '';
-    expect(sidebar()).toContain('Packages and files');
+    expect(sidebar()).toContain('Artifacts');
     expect(sidebar()).not.toContain('System status');
     const button = admin.root.querySelector<HTMLAnchorElement>('header a.admin-button')!;
     expect(button.getAttribute('href')).toBe('/admin');
@@ -83,10 +83,12 @@ describe('App shell', () => {
     expect(sidebar()).toContain('System status');
     expect(sidebar()).not.toContain('Browse');
     expect(button.getAttribute('aria-current')).toBe('true');
+    // Inside the admin area the button keeps the default look of the reference; only aria-current tells it apart.
+    expect([...button.classList]).toEqual(['btn', 'btn-default', 'admin-button']);
     TestBed.resetTestingModule();
 
     const plain = await render('/', (api) => (api.meResult = { capabilities: [] }));
-    expect(plain.root.querySelector('aside.sidebar')?.textContent).toContain('Packages and files');
+    expect(plain.root.querySelector('aside.sidebar')?.textContent).toContain('Artifacts');
     expect(plain.root.querySelector('header a.admin-button')).toBeNull();
   });
 
@@ -245,9 +247,9 @@ describe('App shell', () => {
     expect(root.querySelector('header form[role="search"]')).toBeNull();
   });
 
-  it('R-UI-050 the help button opens the manual page of the current screen, or the overview', async () => {
+  it('R-UI-050 the Documentation link opens the manual page of the current screen, or the overview', async () => {
     const { fixture, root } = await render('/admin/endpoints');
-    const help = () => root.querySelector<HTMLAnchorElement>('header a[aria-label="Help"]');
+    const help = () => [...root.querySelectorAll<HTMLAnchorElement>('header a')].find((a) => a.textContent?.trim().endsWith('Documentation'));
     expect(help()?.getAttribute('href')).toBe('/help/admin/endpoints');
     await TestBed.inject(Router).navigateByUrl('/browse');
     await fixture.whenStable();

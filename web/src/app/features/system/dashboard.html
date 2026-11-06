@@ -404,9 +404,11 @@
 <ng-template #check let-c>
   @switch (checkState(c)) {
     @case ('ok') {
-      <span class="state ok"
-        ><span class="material-icons" aria-hidden="true">check_circle</span
-        ><ng-container i18n="@@dashboard.check.ok">Connected</ng-container>
+      <span class="check"
+        ><span class="state ok"
+          ><span class="material-icons" aria-hidden="true">check_circle</span
+          ><ng-container i18n="@@dashboard.check.ok">Connected</ng-container></span
+        >
         @if (c.maxMs !== null) {
           <span class="muted">{{ c.maxMs | number: '1.0-1' }} ms</span>
         }

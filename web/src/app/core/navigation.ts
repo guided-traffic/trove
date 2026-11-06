@@ -30,7 +30,7 @@ export interface NavArea {
 }
 
 /**
- * The information architecture of R-UI-002 (Q-UI-68, Q-UI-127): the areas **Packages and files** and
+ * The information architecture of R-UI-002 (Q-UI-68, Q-UI-127): the areas **Artifacts** and
  * the **Admin area**, each with a sidebar of its own; the sidebar shows the area of the current route
  * (`/admin/…` is the admin area), and the top bar's Admin button leads into it. In the admin area,
  * single entries (repositories, endpoints) and folding groups (identity, access, system). Only the screens that exist in the current milestone are listed;
@@ -42,7 +42,7 @@ export interface NavArea {
 export const NAV_AREAS: readonly NavArea[] = [
   {
     id: 'content',
-    label: $localize`:@@nav.group.content:Packages and files`,
+    label: $localize`:@@nav.group.content:Artifacts`,
     entries: [
       // >>> M2 ui-packages
       { kind: 'item', route: '/packages', icon: 'category', label: $localize`:@@nav.packages:Packages` },

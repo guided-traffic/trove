@@ -1,25 +1,5 @@
 .view-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--trove-space-1);
   margin-block-end: var(--trove-space-4);
-  border-block-end: 1px solid var(--trove-border);
-
-  a {
-    padding: var(--trove-space-2) var(--trove-space-3);
-    border-block-end: 2px solid transparent;
-    color: var(--trove-on-surface);
-    text-decoration: none;
-
-    &:hover {
-      background: var(--trove-row-hover);
-    }
-
-    &[aria-current='page'] {
-      border-block-end-color: var(--trove-accent);
-      font-weight: 600;
-    }
-  }
 }
 
 .plain-list {
@@ -68,12 +48,6 @@ td .ellipsis {
   max-inline-size: 16ch;
 }
 
-.badge {
-  padding: 0 var(--trove-space-2);
-  border: 1px solid var(--mat-sys-outline);
-  border-radius: var(--mat-sys-corner-extra-small);
-  font-size: 0.75rem;
-}
 
 .check-list {
   display: flex;

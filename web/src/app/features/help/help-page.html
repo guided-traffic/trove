@@ -19,7 +19,7 @@
   </nav>
 
   <div class="help-main">
-    <a class="help-back" routerLink="/help" i18n="@@help.all-pages">All help pages</a>
+    <a class="help-back" routerLink="/help" i18n="@@help.all-pages">All documentation pages</a>
     @if (answer.error(); as e) {
       <trove-error-notice [error]="error(e)" (retry)="answer.reload()" />
     } @else if (current(); as p) {

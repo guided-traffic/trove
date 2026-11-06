@@ -15,7 +15,7 @@ const SCREENS: readonly (readonly [url: string, heading: string])[] = [
   ['/packages', 'Packages'],
   ['/setup', 'Client setup'],
   ['/guides', 'Guides'],
-  ['/help', 'Help'],
+  ['/help', 'Documentation'],
   ['/help/user/getting-started', 'Getting started'],
   ['/browse', 'Browse'],
   ['/browse/npm-local/@team-a/ui/-/ui-1.0.0.tgz', 'File tree'],

@@ -67,11 +67,9 @@
 .trove-data-table {
   display: block;
 
+  // The reference's table (Q-UI-128): no frame, on the page's fill, hairlines above and below the head and under every row.
   .table-frame {
-    border: 1px solid var(--trove-border);
-    border-radius: var(--trove-radius-m);
-    background: var(--trove-surface-raised);
-    overflow: hidden;
+    background: var(--trove-surface);
   }
 
   // The inner scroll keeps the header in view: the region scrolls, not the page.
@@ -92,19 +90,21 @@
 
     th,
     td {
-      padding: var(--trove-space-3);
+      padding: var(--trove-space-4);
       text-align: start;
       vertical-align: middle;
       border-block-end: 1px solid var(--trove-border);
+      line-height: 1rem;
     }
 
     thead th {
       position: sticky;
       inset-block-start: 0;
       z-index: 1;
-      background: var(--trove-table-head-bg);
-      border-block-end: 1px solid var(--trove-border-strong);
-      font: var(--mat-sys-label-large);
+      background: var(--trove-surface);
+      border-block-start: 1px solid var(--trove-border);
+      color: var(--trove-heading);
+      font-weight: 600;
       white-space: nowrap;
     }
 
@@ -116,10 +116,6 @@
 
     tbody th[scope='row'] {
       font-weight: 600;
-    }
-
-    tbody tr:last-child > * {
-      border-block-end: 0;
     }
 
     tbody tr:hover > * {
