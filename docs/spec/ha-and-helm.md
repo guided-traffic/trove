@@ -2815,8 +2815,11 @@ that restores to older points must work.
   out-of-band deletion, disaster-recovery lag), reading it MUST answer `503` with `Retry-After`,
   never `404`. The item exists, and its content may come back through replication or version
   restore. It also counts `trove_storage_blobs_damaged_total{status="missing"}` and marks the blob
-  `content_status = 'missing'` per R-STOR-027. A remote repository treats it as a cache miss and
-  fetches again (R-STOR-027).
+  `content_status = 'missing'` per R-STOR-027 (the read of `blob.Store.Open`, which looks for the object once more after
+  the mark, so that a concurrent repair stays, [storage.md](storage.md) Q-STOR-151; the alert `TroveBlobMissing` of
+  R-HA-045 reads the counter). A remote repository treats it as a cache miss and
+  fetches again (R-STOR-027; [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-025 "Lost content",
+  Q-REPO-202), and answers `503 content_unavailable` while it cannot.
 - **Orphans after restore.** Objects written after *t* have no row in the restored database. The
   orphan sweep removes them after `storage.orphans.min_age` (R-STOR-026), unless deletions are paused
   (R-HA-025).
@@ -4907,10 +4910,11 @@ Priority: **MVP** · Covers: HA-055
 (`disabledAlerts` refuses a name that is no alert), tested by `promtool test rules`
 ([deploy/helm/trove/tests/rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml), `make chart-test`). It carries the three alerts
 of the vulnerability scanning ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-024, Q-VULN-55): `TroveVulnerabilityDataStale`,
-`TroveVulnerabilitySyncFailing` and `TroveVulnerabilityClaimedNameMalicious`. The rows of the table below are **not** rendered yet:
+`TroveVulnerabilitySyncFailing` and `TroveVulnerabilityClaimedNameMalicious`, and `TroveBlobMissing` (severity `critical`, summed over the
+replicas, [storage.md](storage.md) Q-STOR-152). The other rows of the table below are **not** rendered yet:
 `TroveReplicasNotReady`, `TroveDatabaseUnreachable`, `TroveObjectStoreUnreachable`, `TroveObjectStoreUnreachableSingleReplica`,
 `TroveDatabasePoolSaturated`, `TroveControlConnectionWaits`, `TroveJobsStuck`, `TroveLeaseLost`, `TroveMixedVersions`,
-`TroveSpoolNearlyFull`, `TroveBlobMissing`, `TroveGCStale`, `TroveBackupCheckFailed`, `TroveRevocationJournalBacklog`,
+`TroveSpoolNearlyFull`, `TroveGCStale`, `TroveBackupCheckFailed`, `TroveRevocationJournalBacklog`,
 `TroveValkeyUnavailable`, `TroveValkeyUnavailableSingleReplica`, `TroveValkeySentinelsDegraded`, `TroveValkeyFailoverFlapping`,
 `TroveValkeyPrimaryDisagreement`, `TroveBackupStale`, `TroveBackupFailed`, `TroveBackupRunningLong`, `TroveBackupGlobalHoldLong`,
 `TroveBackupSourceDamage` and `TroveBackupVerifyFindings`. The ServiceMonitor and its `role` and `pool` relabelings are not rendered

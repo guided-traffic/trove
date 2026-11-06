@@ -210,7 +210,9 @@ func (s itemStore) Serve(ctx context.Context, rq *formats.Request, w http.Respon
 		bastionmain.NoteUnknown(ctx) // a block is never a negative entry (R-BAS-013)
 		return err
 	}
-	edge.ServeItem(w, rq.Request, row,
+	// An object that cannot be opened is returned unwritten: the format's dispatcher answers it, and the remote engine
+	// first fills the item of a remote repository again when its object is missing (R-STOR-027).
+	return edge.ServeItem(w, rq.Request, row,
 		func(rng *items.Range) (io.ReadCloser, error) { return s.h.o.Items.Open(ctx, row, rng) },
 		edge.ServeOptions{
 			Buffer: s.h.o.DownloadBuffer,
@@ -221,7 +223,6 @@ func (s itemStore) Serve(ctx context.Context, rq *formats.Request, w http.Respon
 				})
 			},
 		})
-	return nil
 }
 
 // Open implements [formats.ItemStore].

@@ -231,11 +231,6 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
   red with the first release that changes the bundle. Fix (option (c) of Q-HA-99, to be designed): the image carries the previous
   release's bundle and a replica that misses a hashed asset serves or fetches it, or the edge keeps a page on one release. Done when the
   rolling upgrade passes across two releases with different bundles.
-- **F-62 · A cached document of a remote repository whose object is missing from the store answers `500` and is not fetched
-  again** (seen twice on the dev cluster on 2026-11-06, by the failure suite and by the NuGet drain test, each after the dev profile's
-  object store had lost its data; not reproduced by a test). The metadata row outlives the object; a remote could treat the missing
-  object as a cache miss and fill it again from its upstream. Done when a test pins what a remote answers for a cached item without its
-  object (fill again, or a `503` that names the store), and the product does that.
 
 Found on 2026-11-04 while cutting trove into task areas (phase 6a):
 

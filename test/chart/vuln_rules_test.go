@@ -65,8 +65,8 @@ func TestR_VULN_024_PromtoolRules(t *testing.T) {
 			}
 		}
 		rendered := list(pr, "spec", "groups", "0", "rules")
-		if len(rendered) != 6 {
-			t.Errorf("rendered %d alerts, want the three of R-VULN-024, the two of the mirror (R-OPS-046) and TroveBridgeLeftOn", len(rendered))
+		if len(rendered) != 7 {
+			t.Errorf("rendered %d alerts, want the three of R-VULN-024, the two of the mirror (R-OPS-046), TroveBridgeLeftOn and TroveBlobMissing", len(rendered))
 		}
 		for _, r := range rendered {
 			name := str(r, "alert")
@@ -105,12 +105,13 @@ func TestR_VULN_024_PrometheusRuleValues(t *testing.T) {
 			"TroveMirrorFailing":                     "warning",
 			"TroveMirrorStale":                       "warning",
 			"TroveBridgeLeftOn":                      "warning",
+			"TroveBlobMissing":                       "critical",
 		}
 		for _, r := range list(pr, "spec", "groups", "0", "rules") {
 			name := str(r, "alert")
 			sev, ok := want[name]
 			if !ok {
-				t.Errorf("unexpected alert %s: only the alerts of R-VULN-024, R-OPS-046 (the mirror) and TroveBridgeLeftOn (R-HA-064) are rendered by this chart so far", name)
+				t.Errorf("unexpected alert %s: only the alerts of R-VULN-024, R-OPS-046 (the mirror), TroveBridgeLeftOn (R-HA-064) and TroveBlobMissing (R-HA-024) are rendered by this chart so far", name)
 				continue
 			}
 			if got := str(r, "labels", "severity"); got != sev {
@@ -149,7 +150,7 @@ func TestR_VULN_024_PrometheusRuleValues(t *testing.T) {
 		for _, r := range list(find(docs, "PrometheusRule", "trove"), "spec", "groups", "0", "rules") {
 			names = append(names, str(r, "alert"))
 		}
-		if got := strings.Join(names, ","); got != "TroveVulnerabilityDataStale,TroveVulnerabilityClaimedNameMalicious,TroveMirrorFailing,TroveMirrorStale,TroveBridgeLeftOn,Mine" {
+		if got := strings.Join(names, ","); got != "TroveVulnerabilityDataStale,TroveVulnerabilityClaimedNameMalicious,TroveMirrorFailing,TroveMirrorStale,TroveBridgeLeftOn,TroveBlobMissing,Mine" {
 			t.Errorf("alerts = %s", got)
 		}
 	})
@@ -161,7 +162,7 @@ func TestR_VULN_024_PrometheusRuleValues(t *testing.T) {
 
 	t.Run("every alert disabled renders no PrometheusRule", func(t *testing.T) {
 		out, _ := render(t, []string{monitoringSet()},
-			"metrics.prometheusRule.disabledAlerts={TroveVulnerabilityDataStale,TroveVulnerabilitySyncFailing,TroveVulnerabilityClaimedNameMalicious,TroveMirrorFailing,TroveMirrorStale,TroveBridgeLeftOn}")
+			"metrics.prometheusRule.disabledAlerts={TroveVulnerabilityDataStale,TroveVulnerabilitySyncFailing,TroveVulnerabilityClaimedNameMalicious,TroveMirrorFailing,TroveMirrorStale,TroveBridgeLeftOn,TroveBlobMissing}")
 		if strings.Contains(out, "kind: PrometheusRule") {
 			t.Error("an empty PrometheusRule is rendered")
 		}

@@ -51,9 +51,21 @@ func (r *Resolver) Artifact(ctx context.Context, c Caller, p *Plan, t Tiers, w h
 		if err != nil {
 			return err
 		}
-		if ok {
-			return serve(m, hit, sourceCache)
+		if !ok {
+			continue
 		}
+		tw := &trackWriter{ResponseWriter: w}
+		if !c.Rules {
+			tw.Header().Set(ResolvedFromHeader, m.Repo.Key)
+		}
+		if err := hit(tw); err == nil || tw.wrote || !contentLost(err) {
+			r.m.resolved(repo, sourceCache)
+			return err
+		}
+		// The read found the cached copy's object missing or damaged and marked it, before anything was written: the
+		// member's cache does not have the item, and the walk goes on, its fetch tier included, which fills it again
+		// (storage.md R-STOR-027, Q-REPO-204). A local member's lost object stays its answer: that is data loss.
+		tw.Header().Del(ResolvedFromHeader)
 	}
 	var failure error
 	for _, m := range remotes {
@@ -157,6 +169,13 @@ func isMiss(err error) bool {
 		return false
 	}
 	return e.Kind == errs.NotFound || (e.Kind == errs.Forbidden && e.Code == errs.CodePopulateNotPermitted)
+}
+
+// contentLost reports whether an error refuses a stored item because its object is missing or failed verification
+// (content_unavailable, storage.md R-STOR-012).
+func contentLost(err error) bool {
+	e, ok := errs.As(err)
+	return ok && e.Code == errs.CodeContentUnavailable
 }
 
 // isTransient reports whether an error says the member could not be asked or did not answer.

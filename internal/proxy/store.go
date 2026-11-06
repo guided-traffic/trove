@@ -55,10 +55,22 @@ type entry struct {
 	// TTL is the remaining lifetime of a metadata entry on the database clock;
 	// zero or negative when it has expired.
 	TTL time.Duration
+	// ContentStatus is the content_status of the entry's blob: ok, or missing or
+	// corrupt once a read or the scrub found its object gone or damaged
+	// (storage.md R-STOR-027).
+	ContentStatus string
 }
 
 // Gone reports a gone mark (R-REPO-029).
 func (e entry) Gone() bool { return !e.GoneAt.IsZero() }
+
+// Damaged reports that the entry's blob has no usable object: the entry serves
+// nobody and counts as a cache miss (R-STOR-027, Q-REPO-202).
+func (e entry) Damaged() bool { return damagedStatus(e.ContentStatus) }
+
+// damagedStatus reports a content_status other than ok; "" is a row read without
+// its blob's status and counts as ok.
+func damagedStatus(s string) bool { return s != "" && s != "ok" }
 
 // getEntry reads one entry; found is false when there is none.
 func (e *Engine) getEntry(ctx context.Context, repoID int64, path, variant string) (en entry, found bool, err error) {
@@ -78,6 +90,7 @@ func (e *Engine) getEntry(ctx context.Context, repoID int64, path, variant strin
 			Kind: r.Kind, ItemID: r.ItemID, Size: r.BlobSize, URL: r.UpstreamUrl, ETag: r.UpstreamEtag,
 			LastModified: micro(r.LastModifiedUs), FetchedAt: micro(r.FetchedUs), ValidatedAt: micro(r.ValidatedUs),
 			ExpiresAt: micro(r.ExpiresUs), GoneAt: micro(r.GoneUs), TTL: time.Duration(r.TtlUs) * time.Microsecond,
+			ContentStatus: r.BlobContentStatus,
 		}
 		copy(en.Digest[:], r.BlobSha256)
 		return nil

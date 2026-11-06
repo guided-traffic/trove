@@ -1622,6 +1622,17 @@ execute these steps in order:
   refreshed metadata document is served but not stored, and entries are not updated. The
   requests that waited for the flight fetch for themselves, and a ranged request is answered
   503 `object_store_unavailable`, because the range is served from a stored item (Q-REPO-95).
+- **Lost content** ([storage.md](storage.md) R-STOR-027, [ha-and-helm.md](ha-and-helm.md) R-HA-024, Q-REPO-202 to
+  Q-REPO-204): an entry whose blob is marked `missing` or `corrupt`, by the read that found its object gone or damaged or by the
+  scrub, counts as absent in step 4 and every later step, and is filled again under steps 5 to 10, one flight per cluster
+  (R-REPO-026); the commit of the same content writes the object again (R-STOR-005). A metadata document is fetched without
+  validators. An artifact keeps its recorded digest (R-REPO-041): an upstream that serves other bytes now repairs nothing. A
+  client's request that cannot fill it (the cache view, `only-if-cached`, offline, an open circuit, a negative entry, the
+  populate check, an upstream failure) is answered `503 content_unavailable` with `Retry-After`, never the `404` of an uncached
+  item and never `500`; a document the upstream answers 404 or 410 is marked gone as on any refresh (R-REPO-029). A document
+  whose object turns out to be lost when its bytes are read is filled again once and served when the upstream's copy has the
+  digest the request read, else answered `503` with `Retry-After: 1`. Through a virtual repository a remote member's lost
+  cached copy is a miss of the cache tier (R-REPO-019); a local member's loss is that member's answer.
 - Replicas SHOULD keep recently served metadata bytes in a bounded in-memory cache keyed by blob
   digest, so a fresh hit costs no object-store round trip. Which digest a request serves is always
   read from `remote_cache_entries`; the key is the content address, so this cache can never make
@@ -6715,6 +6726,113 @@ few names. The function's bound "no name more than twice" meant fetches and coun
 throttled answer is ever seen to carry a body the pass stores.
 
 **Applied in the spec:** none (test harness). Code: `test/e2e/mirror_long_fault_test.go` (`assertFetchedOnce`).
+
+### Q-REPO-202 · A cached item whose object is lost is a cache miss: filled again from the upstream, or 503 content_unavailable
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: finding F-62. On the dev cluster, after its object store had lost its data, a cached document of a remote repository
+answered `500` and was never fetched again (seen by the failure suite and by the NuGet drain test). The metadata rows outlive
+the objects. The engine handed the store's "no such object" of a document through as an unclassified error (`500 internal`),
+and a cached tarball or package answered `503 content_unavailable` from the item store, also without a fetch. [storage.md](storage.md)
+R-STOR-012 and R-STOR-027 and [ha-and-helm.md](ha-and-helm.md) R-HA-024 already said that a remote repository treats such an
+item as a cache miss and fetches it again; nothing implemented it, and no read marked the blob.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A cache miss, filled again under steps 5 to 10 of R-REPO-025; a client that cannot fill it gets `503 content_unavailable` (chosen) | The read that finds the object gone marks its blob `missing` ([storage.md](storage.md) Q-STOR-151); every replica sees the mark in PostgreSQL; the fill is an ordinary fill in one flight, and its commit of the same content writes the object again | The remote has the upstream to restore from; one fetch per lost item; the recorded digest and the item's rows stay | A large loss turns into a burst of upstream fetches, bounded by R-REPO-040's slots |
+| (b) Answer `503` and wait for an operator's restore or repair | No upstream traffic | The cache stays broken until someone acts, as on the dev cluster |
+| (c) Delete the entry and the item when the object is missing, so that the next request misses | No new state | The recorded digest is gone, so the next fill accepts whatever the upstream serves (R-REPO-041 lost); the item's properties and statistics go; races with readers and collection |
+
+**Choice:** (a), with these rules:
+
+- **What is lost.** An entry or item whose blob's `content_status` is `missing` or `corrupt`. The item lookup and the entry
+  lookup read the status in the statement they already make (`GetLiveItem`, `ProxyEntryGet`), so no request pays a further
+  statement. A read that finds the object gone, the scrub, and the download verification of R-STOR-013 set it.
+- **Artifacts.** A lost item is a miss of step 4, and of `Engine.Cached` (the cache tier of a virtual repository, the mirror's
+  "present"). A request that served a hit and found the object gone at the read, before anything was written (`edge.ServeItem`
+  returns the error of the open instead of writing it), reads the item again: marked, it is filled; ok again (another request
+  filled it, or the mark did not reach the row), it is served once more and a second loss is the answer. Nothing streams to the
+  leader's client while the fetch runs: it is served from the stored item like the requests that waited, so that every outcome
+  is a clean answer. The commit keeps the recorded digest (R-REPO-041's commit-time rule): an upstream that now serves other
+  bytes repairs nothing, raises `proxy.upstream_digest_changed`, and the answer is the `503`. The vulnerability block answers as
+  for any miss (R-VULN-015); `HEAD` asks the upstream's `HEAD` as for a miss.
+- **Metadata documents.** A lost document is a miss of step 4, fetched without `If-None-Match` or `If-Modified-Since` (a `304`
+  would renew an entry that has no bytes to serve). The fill writes the object again or stores the upstream's new copy. A format
+  that keeps the stored document (npm keeps a stored document newer than the upstream's, R-NPM-024) leaves it lost: `503`. A
+  `404` or `410` marks the document gone as on any refresh (R-REPO-029), and the answer is the format's `404`.
+- **Answers.** A client's request that cannot fill a lost item is answered `503 content_unavailable` with `Retry-After`: the
+  cause's (an open circuit's), else 30 s as for any missing object (R-STOR-012). The detail names why it was not filled (the cache
+  view, offline, the circuit, the upstream's answer, the populate check, other content upstream). Never the `404` of an uncached
+  item (the item exists, R-HA-024) and never `500`. A mirror's pass keeps the outcomes of a miss, which it reads (an open circuit is
+  a wait, R-REPO-054). An object store that is unavailable during the fill keeps its own `503 object_store_unavailable`.
+- **Observability.** The blob store counts `trove_storage_blobs_damaged_total{status="missing"}` once per blob and logs the
+  digest; the engine logs the repository, the path, the digest and the status at most once a minute per item and replica; the
+  chart's `TroveBlobMissing` reads the counter ([storage.md](storage.md) Q-STOR-152).
+- **Concurrency.** The fill is R-REPO-026's: one flight per replica and the flight lock across replicas.
+
+**Rationale:** the specification had decided the behaviour (R-STOR-027: "a remote repository treats an item with damaged content
+as a cache miss and refetches it"); what was open was how a lost object is told apart and what a request answers that cannot fill
+it. Marking the blob makes the loss a fact every replica reads in the statement it makes anyway, and the commit protocol's repair
+path writes the object again without anything new. The development agent would revisit (b) for remotes whose upstream counts
+requests against a quota, if refills after a large loss are seen to exhaust it.
+
+**Applied in the spec:** R-REPO-025 ("Lost content"); [storage.md](storage.md) R-STOR-012 and R-STOR-027; [ha-and-helm.md](ha-and-helm.md)
+R-HA-024. Code: `internal/proxy/lost.go`, `internal/proxy/artifact.go` (`Artifact`, `lookupHit`), `internal/proxy/metadata.go`,
+`internal/proxy/fill.go`, `internal/proxy/flight.go` (`recheck`), `internal/proxy/fetch.go` (`request`), `internal/api/edge/content.go`
+(`ServeItem`). Tests: `TestR_STOR_027_*` in `test/integration/npm/remote_lost_test.go` and `test/integration/nuget/remote_lost_test.go`,
+`internal/proxy/lost_test.go`.
+
+### Q-REPO-203 · A document found lost when its bytes are read is filled again once and served only with the digest the request read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the engine hands a format a `Document` whose bytes are read later, when the format needs them: `HEAD` and conditional
+requests are answered from the digest alone. The first read of a lost object therefore happens inside `Document.Bytes`, after the
+format may have used the digest: as the validator of its answer, and as the key of the caches that render documents (npm's
+documents, NuGet's registrations, the merged documents of a virtual repository).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Bytes` fills the document again under the request path, once, and returns the bytes when the upstream's copy has the digest the request read; another digest is stored and answered `503` with `Retry-After: 1` (chosen) | One refill per read; the next request reads the new document | The first request is answered when the document did not change, which is the common case after a loss; the digest, the validator and the body stay one document | A request whose document changed upstream meanwhile gets a `503` and retries |
+| (b) Return the refilled bytes whatever their digest | The first request is always answered | The validators and the digest-keyed render caches would describe another document than the body: one strong ETag, two bodies |
+| (c) Read the bytes of every stored document before handing it over | The loss is found before the digest is used | An object-store read for every `HEAD` and conditional request, and for every hit the replica's bytes cache misses (R-STOR-012's principle that these need no object) |
+| (d) Answer `503` and let the next request fill | Simplest | Every first request after a loss fails, also when the upstream's copy is the same |
+
+**Choice:** (a). The refill runs for the request as it came (its mode, its populate check, its restore bound); the cache view and
+`only-if-cached` never fill and answer the `503`. A context mark by digest keeps the bytes of the refilled document from being filled
+a second time; a document the flight reads besides (a discovery document, whose object can be lost too) is filled as usual. A
+document that a flight produced (a fill, a `304`, the entry another replica wrote while this one waited) does not fill its bytes: its
+loss is the `503`, and the read has marked it for the next request.
+
+**Rationale:** the validator of a document is its digest, and npm and NuGet clients retry a `503` that carries `Retry-After`. The
+development agent would revisit (b) with a revision that does not reuse the digest if the `503` of a changed document is seen to
+fail installs.
+
+**Applied in the spec:** R-REPO-025 ("Lost content"). Code: `internal/proxy/metadata.go` (`storedDocument`, `bytesOf`),
+`internal/proxy/lost.go` (`refillBytes`).
+
+### Q-REPO-204 · Through a virtual repository a remote member's lost cached copy is a miss of the cache tier; a local member's loss is the answer
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the second tier of R-REPO-019 serves a remote member's cached artifact without contacting its upstream. A cached copy whose
+object is gone is found at the read, after the tier chose it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A `content_unavailable` of the cache tier before the first byte is a miss of the tier: the walk goes on, through the other members' caches to the fetch tier, which fills the item again; a local member's loss ends the walk with its `503` (chosen) | The cache tier is the remote's cache, and a lost item is not in it | A client of the virtual repository triggers the refill as one of the remote does | The walk asks one tier more, as for any miss |
+| (b) Both tiers go on | One rule | A local member's loss is data loss; serving another member's file of the same path hides it and can serve other content than the local member published (the reason of R-REPO-023's pin rules) |
+| (c) Neither goes on | Simplest | A client of the virtual repository answers `503` until somebody asks the remote directly |
+
+**Choice:** (a). The mark the read sets makes `Engine.Cached` report the item as not cached from then on, so the cache tier is not
+chosen again.
+
+**Rationale:** it is the same rule as for the remote itself (Q-REPO-202). The development agent would revisit (b) only if an owner
+asks for local members to be backed by remote ones, which is a feature, not a repair.
+
+**Applied in the spec:** R-REPO-025 ("Lost content"). Code: `internal/virtual/artifact.go` (`Artifact`). Tests:
+`TestR_REPO_019_ArtifactTiers` (`internal/virtual/artifact_test.go`), `TestR_STOR_027_ACachedNPMItemWhoseObjectIsMissingIsFilledAgainFromTheUpstream`.
 
 ### Q-REPO-211 · The nightly install-time ratio of clients first runs on the large class
 

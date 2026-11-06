@@ -955,7 +955,10 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   outage passed; the 30 s outage failed on two defects of the test (the outage was counted from before the stop script, which takes
   26 s, and two answers that started before the window were judged by their start), fixed (Q-STOR-150). Pod crash, switchover, Valkey
   failover and outage were green before. In the dispatched nightly run 42192042297 both object-store outages, both primary losses and
-  the audit drain passed; node loss failed there (42 s), being analysed
+  the audit drain passed; node loss failed there (42 s), being analysed. Objects lost from the store (F-62, seen on the dev cluster): a
+  remote's cached document, tarball or package without its object is filled again from the upstream, `503 content_unavailable` while it
+  cannot, never `500`; the read marks the blob and `TroveBlobMissing` fires (Q-REPO-202 to Q-REPO-204, Q-STOR-151, Q-STOR-152,
+  `TestR_STOR_027_*`)
   (`TestNPMHACrash`, `TestNPMHA`, `TestNPMHAClosing`, `TestE13Failover`)
 - 🟢 Node drain under npm and NuGet load with zero failed requests; the NuGet load (`TestNuGetHA`) and R-ARCH-024's drain
   criterion move here from phase 4 ([Q-NUGET-73](../spec/formats/nuget.md#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs)). `TestNuGetHA` (set `nuget-ha`, nightly leg `e2e-nuget (nuget-ha)`

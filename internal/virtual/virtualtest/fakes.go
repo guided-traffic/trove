@@ -298,7 +298,10 @@ type Artifacts struct {
 	FetchErr map[string]error
 	// FailAfterBytes makes the fetch of a repository write a first chunk and then fail.
 	FailAfterBytes map[string]error
-	calls          []string
+	// HitErr makes serving a stored item of a repository (a local or cached hit) fail with the error before any byte,
+	// as the item store does for an object that cannot be opened.
+	HitErr map[string]error
+	calls  []string
 }
 
 var _ virtual.Tiers = (*Artifacts)(nil)
@@ -307,7 +310,7 @@ var _ virtual.Tiers = (*Artifacts)(nil)
 func NewArtifacts() *Artifacts {
 	return &Artifacts{
 		LocalItems: map[string]map[string]string{}, CachedItems: map[string]map[string]string{}, UpstreamItems: map[string]map[string]string{},
-		FetchErr: map[string]error{}, FailAfterBytes: map[string]error{},
+		FetchErr: map[string]error{}, FailAfterBytes: map[string]error{}, HitErr: map[string]error{},
 	}
 }
 
@@ -334,7 +337,11 @@ func (a *Artifacts) hit(m map[string]map[string]string, tier string, mem virtual
 	if !ok {
 		return nil, false, nil
 	}
+	failure := a.HitErr[mem.Repo.Key]
 	return func(w http.ResponseWriter) error {
+		if failure != nil {
+			return failure
+		}
 		_, err := w.Write([]byte(body))
 		return err
 	}, true, nil

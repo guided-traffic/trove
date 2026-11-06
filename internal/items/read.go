@@ -79,6 +79,14 @@ func ContentError(it Item) error {
 	return errs.E(errs.Internal, errs.CodeContentUnavailable, "The stored object of this file failed verification.")
 }
 
+// ContentLost reports whether err refuses a file because its stored object is missing or failed verification: the
+// content_unavailable of [ContentError] and [Store.Open]. A remote repository treats such an item as a cache miss
+// (R-STOR-027); a local repository answers the error.
+func ContentLost(err error) bool {
+	e, ok := errs.As(err)
+	return ok && e.Code == errs.CodeContentUnavailable
+}
+
 // Range is a byte range of a download; Length < 0 reads to the end.
 type Range struct{ Offset, Length int64 }
 

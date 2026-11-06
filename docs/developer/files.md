@@ -152,8 +152,11 @@ leading slash; the stored media type is the request's `Content-Type` parsed with
   content, a start beyond the end is `416` with `Content-Range: bytes */size`;
 - declares `Content-Length` for 200 and 206 and never uses the chunked coding;
 - opens the body (`Store.Open`, passed to `ServeItem` as a function: a whole body through the verifying reader that holds back the last bytes, a range as stored) **before**
-  the status line, so an object-store failure is a problem the client can read; an error in the middle of the body ends in
-  `panic(http.ErrAbortHandler)`, which cuts the connection: the client sees a truncated transfer, never a complete corrupted file.
+  the status line, so an object-store failure is a problem the client can read: `ServeItem` returns the error of the open with nothing written,
+  and the caller answers it (`/files/` writes the problem; the remote engine first fills an item of a remote repository again whose object is
+  missing, [proxy.md](proxy.md#lost-content-r-stor-027-q-repo-202-to-q-repo-204)). The first open that finds the object missing marks the blob
+  `missing` ([blob-store.md](blob-store.md#download-verification-r-stor-013-q-stor-6)), so later requests are refused by `Stat`. An error in the middle of
+  the body ends in `panic(http.ErrAbortHandler)`, which cuts the connection: the client sees a truncated transfer, never a complete corrupted file.
 
 Any replica answers a resumed range alike, because the ETag is the content address and the item is read from PostgreSQL. The
 integration test `TestR_ARCH_024_ADownloadCutAtTheShutdownDeadlineResumesOnAnotherReplica` cuts a download at the shutdown deadline

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/vuln/enforce"
 )
 
@@ -48,6 +49,7 @@ func (e *Engine) Fill(ctx context.Context, rq Request) (FillOutcome, error) {
 	case hitEntryOnly:
 		return FillOutcome{}, errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist.")
 	}
+	// hitDamaged is a miss: the pass fills the item again, and its commit writes the object again (R-STOR-027, Q-REPO-202).
 	if e.offline(rem) {
 		return FillOutcome{}, offlineMiss(rem)
 	}
@@ -109,6 +111,11 @@ func (e *Engine) Fill(ctx context.Context, rq Request) (FillOutcome, error) {
 		}
 		if !found {
 			return FillOutcome{}, errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist.")
+		}
+		if items.ContentError(it) != nil {
+			// The item's object was lost and the commit kept its recorded digest: the upstream serves other bytes now
+			// (R-REPO-041, Q-REPO-202). A failure of the item.
+			return FillOutcome{}, lostContent("the upstream now serves other content for it", nil)
 		}
 		return FillOutcome{Bytes: it.Size}, nil
 	}

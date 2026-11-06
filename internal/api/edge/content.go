@@ -42,11 +42,14 @@ func CacheControl(r *http.Request) string {
 // file (200, 206, 304) and never to a problem.
 //
 // The status line is written only after open succeeded, so an object that cannot
-// be opened is a problem the client can read. A body that fails in the middle
-// aborts the response (panic(http.ErrAbortHandler)): the client sees a truncated
-// transfer, never a complete corrupted file (R-STOR-013). Content-Length is
-// always set, so a response is never chunked.
-func ServeItem(w http.ResponseWriter, r *http.Request, it items.Item, open func(*items.Range) (io.ReadCloser, error), o ServeOptions) {
+// be opened is a problem the client can read: ServeItem returns the error of open
+// and writes nothing, and the caller answers it, or does something else first (a
+// remote repository fills the item again when its object is missing, R-STOR-027).
+// Every other outcome is written and the result is nil. A body that fails in the
+// middle aborts the response (panic(http.ErrAbortHandler)): the client sees a
+// truncated transfer, never a complete corrupted file (R-STOR-013). Content-Length
+// is always set, so a response is never chunked.
+func ServeItem(w http.ResponseWriter, r *http.Request, it items.Item, open func(*items.Range) (io.ReadCloser, error), o ServeOptions) error {
 	etag, modified := it.ETag(), it.ModifiedAt.Truncate(time.Second)
 	hd := http.Header{}
 	hd.Set("ETag", etag)
@@ -66,10 +69,10 @@ func ServeItem(w http.ResponseWriter, r *http.Request, it items.Item, open func(
 	switch evaluate(r, etag, modified) {
 	case notModified:
 		content().WriteHeader(http.StatusNotModified)
-		return
+		return nil
 	case preconditionFailed:
 		httpserver.Problem(w, r, errs.E(errs.PreconditionFailed, errs.CodePreconditionFailed, "A precondition of the request does not hold."))
-		return
+		return nil
 	}
 	start, length, rr := byteRange(r, etag, modified, it.Size)
 	status := http.StatusOK
@@ -77,7 +80,7 @@ func ServeItem(w http.ResponseWriter, r *http.Request, it items.Item, open func(
 	case unsatisfiable:
 		w.Header().Set("Content-Range", "bytes */"+strconv.FormatInt(it.Size, 10))
 		httpserver.Problem(w, r, errs.E(errs.RangeNotSatisfiable, errs.CodeRangeNotSatisfiable, "The requested range is not satisfiable."))
-		return
+		return nil
 	case partialContent:
 		status = http.StatusPartialContent
 		hd.Set("Content-Range", "bytes "+strconv.FormatInt(start, 10)+"-"+strconv.FormatInt(start+length-1, 10)+"/"+strconv.FormatInt(it.Size, 10))
@@ -87,23 +90,22 @@ func ServeItem(w http.ResponseWriter, r *http.Request, it items.Item, open func(
 	hd.Set("Content-Length", strconv.FormatInt(length, 10))
 	if r.Method == http.MethodHead {
 		content().WriteHeader(status)
-		return
+		return nil
 	}
 	var rng *items.Range
 	if rr == partialContent {
 		rng = &items.Range{Offset: start, Length: length}
 	}
 	body, err := open(rng)
-	if err != nil { // before the status line: a problem the client can read
-		httpserver.Problem(w, r, err)
-		return
+	if err != nil { // before the status line: the caller's to answer
+		return err
 	}
 	defer body.Close()
 	cw := content()
 	cw.WriteHeader(status)
 	if err := copyBody(cw, body, min(int64(max(o.Buffer, 4096)), max(length, 1))); err != nil {
 		if r.Context().Err() != nil { // the client went away
-			return
+			return nil
 		}
 		// The held-back bytes were not released, or the object store failed in the
 		// middle of the body.
@@ -113,6 +115,7 @@ func ServeItem(w http.ResponseWriter, r *http.Request, it items.Item, open func(
 	if start == 0 && o.Served != nil {
 		o.Served()
 	}
+	return nil
 }
 
 // copyBody streams the body: the verifying reader writes from its own buffer

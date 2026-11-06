@@ -1131,7 +1131,11 @@ content) resolve the item (virtual and remote resolution:
   `missing`, because the object may come back through a version restore, replication or a restore
   ([ha-and-helm.md](ha-and-helm.md) R-HA-024, [backup-and-restore.md](backup-and-restore.md)
   R-BAK-001), and `500` for `corrupt`; remote repositories instead treat the item as a cache miss
-  and refetch. `503` with `Retry-After` when the object store is unreachable (R-STOR-036).
+  and refetch, and a request that cannot refetch it is answered `503 content_unavailable`
+  ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-025 "Lost content", Q-REPO-202). The first read
+  that finds no object marks the blob `missing` ([ha-and-helm.md](ha-and-helm.md) R-HA-024, Q-STOR-151), so every
+  later request is answered from PostgreSQL. `/files/` never contacts an upstream: an item of a remote repository
+  answers the `503` there. `503` with `Retry-After` when the object store is unreachable (R-STOR-036).
 - A `GET` on a folder returns the directory index (R-STOR-017).
 - `?stats=false` suppresses the download statistics update (R-STOR-015).
 
@@ -2093,7 +2097,8 @@ Priority: **P1** · Covers: trove-only
   `storage.scrub.deep_interval`, throttled to `storage.scrub.deep_bytes_per_second` per run (the
   task is `exclusive`, so one run reads at a time whatever the number of `worker` replicas); a
   SHA-256 mismatch sets `corrupt`.
-- Every detection (here and in R-STOR-013) increments the counter
+- Every detection (here, in R-STOR-013, and a download or a document read that the store answers "no such
+  object", [ha-and-helm.md](ha-and-helm.md) R-HA-024, Q-STOR-151) increments the counter
   `trove_storage_blobs_damaged_total{status}` and writes an audit event per blob; the gauge
   `trove_storage_blobs_damaged{status}` reports the current number of damaged blobs from the
   latest storage summary (R-STOR-028).
@@ -2101,7 +2106,8 @@ Priority: **P1** · Covers: trove-only
   (permission: `storage.read` or system administrator).
 - **Repair**: a later upload of identical content rewrites the object and resets the status
   (R-STOR-005); a remote repository treats an item with damaged content as a cache miss and
-  refetches it; `POST /api/v1/storage/damaged-blobs/{sha256}/recheck` re-runs both checks
+  refetches it, and the commit of the refetched content is that repair
+  ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-025 "Lost content", Q-REPO-202); `POST /api/v1/storage/damaged-blobs/{sha256}/recheck` re-runs both checks
   (permission: system administrator).
 - The scrub is the task `scrub` of the shared task framework (Q-STOR-10; R-OPS-019). A scheduled
   run performs the existence checks and the deep checks that are due. A manual trigger
@@ -4296,6 +4302,68 @@ leaving pod) was counted as outside the outage because the k6 line carries the r
 **Rationale:** the spec's "stopped for 30 s" is a statement about the store being unreachable, which `s3-stop.sh` establishes by returning. The development agent would revisit it if the stop script is made fast enough that both counts agree.
 
 **Applied in the spec:** R-HA-052 (the object-store row: the 30 s and 5 min count from the store being stopped).
+
+### Q-STOR-151 · A read that finds no object marks the blob missing, and looks once more after the mark
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: finding F-62 ([repositories-and-proxy.md](repositories-and-proxy.md) Q-REPO-202). [ha-and-helm.md](ha-and-helm.md) R-HA-024 says that a read
+of a missing object counts `trove_storage_blobs_damaged_total{status="missing"}` and marks the blob `content_status = 'missing'`; `blob.Store.Open`
+returned `ErrNotFound` and marked nothing, so the loss was invisible to every other request and to the counter. A remote repository's refill needs
+the mark as well: the commit protocol deduplicates against a live row that is `ok` (R-STOR-005) and would not write the object again. The mark
+changes only a row that is `ok`, so it never undoes a repair that came after it; a repair that came between the read and the mark (a commit of the
+same content) it would undo.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every read that the store answers "no such object" marks the blob, then looks for the object once more; an object that is there again makes the row `ok` (chosen) | `Store.markMissing` in `Store.Open`: `MarkBlobDamaged`, then `HeadObject`, then `MarkBlobOK` | One rule for every reader (downloads, documents, ranged reads); the counter and `TroveBlobMissing` see local and cached losses alike; whichever order a repair and the mark take, the row ends `ok` when the object is there | One `HeadObject` per detection; a detection that a concurrent repair overtook is counted once |
+| (b) Mark only from the remote engine's path | A file of a local repository keeps asking the store | The counter and the alert would miss the losses of local repositories, which are the data loss R-HA-024 is about |
+| (c) Look before the mark | No row changes for an object that is back | A repair between the look and the mark is still undone |
+| (d) Mark without a look | Simplest | The race above leaves an object that is there marked `missing`; a local file then answers `503` until the next upload of the same content |
+
+**Choice:** (a).
+
+What it means for a local repository (unchanged answer, a new mark): the first read of a lost object answers `503 content_unavailable` with
+`Retry-After: 30` as before, and marks the blob; every later read is answered the same `503` from PostgreSQL without asking the store (R-STOR-012),
+and the counter counts the blob once and the log names its digest. The mark is cleared by an upload of identical content (R-STOR-005's repair), by a remote's
+refill of the same content, and, once they exist, by the scrub's recheck (R-STOR-027, P1). An object that an operator restores in the bucket stays
+marked until one of these: until the recheck exists, re-uploading the file is the repair. A store that answers 404 for objects that exist (a wrong
+`storage.s3.prefix` that the start-up check cannot see, because it writes its own probe below whatever prefix it is given, R-STOR-035) marks every
+blob that is read while it does; `TroveBlobMissing` fires at the first.
+
+Not changed: the audit event that R-STOR-027 asks of every detection is not written, for `missing` as for `corrupt`: the store's damage hook
+(`blob.WithDamageHook`) has no caller in the composition root.
+
+**Rationale:** the mark is R-HA-024's own requirement, and the read is the only place where a loss is found before the scrub exists. The development
+agent would revisit the look after the mark when the recheck of R-STOR-027 ships (the recheck could then clear a stale mark instead), and the
+marking itself if an object store is seen to answer 404 for objects that exist.
+
+**Applied in the spec:** R-STOR-012 (the first read marks), R-STOR-027 (a read is a detection). Code: `internal/blob/download.go` (`markMissing`,
+`markDamaged`). Tests: `TestDownloadVerification` (`internal/blob/download_test.go`), `TestR_HA_024_ALocalTarballWhoseObjectIsMissingIs503AndItsBlobIsMarkedMissing`
+(`test/integration/npm/remote_lost_test.go`).
+
+### Q-STOR-152 · The chart renders TroveBlobMissing, severity critical
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: [ha-and-helm.md](ha-and-helm.md) R-HA-045 lists `TroveBlobMissing` (`increase(trove_storage_blobs_damaged_total{status="missing"}[1h]) > 0`,
+for 0m) among the alerts the chart does not render yet. Until Q-STOR-151 nothing produced the counter outside a test. F-62 was an object store that
+lost its data without anyone being told.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Render it now, severity `critical` (chosen) | One rule in `_rules.tpl`, scoped to the namespace, summed over the replicas | A lost object of a local repository is data loss; the operator learns of a loss from the first read | It also fires for a cache whose items are filled again at once |
+| (b) Render it, severity `warning` | Same rule | Fewer pages for a remote that heals itself | Data loss of a local repository is not a warning |
+| (c) Leave it with the other rows of R-HA-045 | Nothing changes | — | The counter would exist without anyone watching it |
+
+**Choice:** (a). The counter has no repository label (a blob is shared by every item of the same content); the alert's description points to the
+log lines that name the digest and, for a cached item, the repository and the path.
+
+**Rationale:** an object store that loses objects is an incident whatever repository the object served. The development agent would revisit the
+severity if remote caches are seen to page operators for losses that healed themselves.
+
+**Applied in the spec:** [ha-and-helm.md](ha-and-helm.md) R-HA-045 (status). Chart: `deploy/helm/trove/templates/_rules.tpl`,
+`deploy/helm/trove/tests/rules_test.yaml`, `test/chart/vuln_rules_test.go`.
 
 ## What this does not cover
 

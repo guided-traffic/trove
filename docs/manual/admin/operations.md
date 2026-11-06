@@ -189,6 +189,11 @@ Change replica counts through `helm upgrade` rather than `kubectl scale`: the mi
 | PostgreSQL | Outages shorter than `health.database_outage_grace` (20 s) show as degraded; longer ones make the replicas unready. PostgreSQL holds everything durable, so trove cannot serve without it |
 | Object store | Requests for stored content fail with a retryable `503` on the affected replica; everything else keeps working. Readiness depends on it only with `health.require_object_store: true` |
 
+**When the object store loses objects.** The bucket can lose objects behind trove's back: a restore of the database to a point older than `storage.gc.grace_period`, a lifecycle rule or a deletion by another tool, an object store that lost its data. The rows that describe the content stay. The first read that finds an object missing marks its blob `missing`, logs `the object of a blob is missing from the object store` with its digest, and counts `trove_storage_blobs_damaged_total{status="missing"}`, which the alert `TroveBlobMissing` reads. What the clients see then:
+
+- **A remote repository** fetches the item again from its upstream on the next request, a cached package document as well as a tarball or a package, and writes the object again; the log line `the stored object of a cached item is not usable` names the repository, the path and the digest. While it cannot (offline, the upstream down, the cache view), the answer is `503 content_unavailable` with `Retry-After`. An artifact keeps the digest it was cached with: when the upstream now serves other bytes, nothing is stored and the answer stays `503`, with the audit event `proxy.upstream_digest_changed`.
+- **A local repository** answers `503 content_unavailable` (with `Retry-After: 30`) from then on, without asking the object store again. Restoring the object in the bucket is not enough while the blob is marked: upload the same file again, which writes the object and clears the mark.
+
 ## Caches
 
 Each replica keeps caches in memory: sessions, tokens, the permission index, the repository list, rendered package documents and the keys of unknown repositories. A change made on one replica reaches the caches of the others through the PostgreSQL change log, polled every `cluster.epoch_poll_interval` (1 s); Valkey messages only make it faster. Every cache also expires its entries after a safety interval. No cache needs to be cleared by hand.
@@ -222,6 +227,7 @@ metrics:
 | `TroveVulnerabilityDataStale` | no sync run of a source and ecosystem has ended successfully for longer than `vulnerabilities.stale_after` (default 24h, read from `config.vulnerabilities.stale_after`) for 15 minutes. A source that never synced counts: its last success is 0 | warning |
 | `TroveVulnerabilitySyncFailing` | three consecutive runs of one source and ecosystem failed; a cancelled run does not count. The last error is on the sources page of the vulnerability section | warning |
 | `TroveVulnerabilityClaimedNameMalicious` | a malicious-package advisory names a package name that a local repository claims | critical |
+| `TroveBlobMissing` | a replica found the object of a blob missing from the object store within the last hour (see "When the object store loses objects" above) | critical |
 
 A name in `disabledAlerts` that is no alert of the chart fails the install. If you set `stale_after` only through an environment variable (`extraEnv`), set it in `config.vulnerabilities.stale_after` as well, or the alert keeps the 24-hour default.
 

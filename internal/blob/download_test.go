@@ -124,6 +124,53 @@ func TestDownloadVerification(t *testing.T) {
 			t.Fatalf("status %s damaged hook %d", f.db.rows[sp.SHA256].status, damaged.Load())
 		}
 	})
+	t.Run("R-HA-024 R-STOR-027 an object that is gone is ErrNotFound and marks its blob missing once; a commit of the same content writes it again", func(t *testing.T) {
+		f, sp, damaged := setup(t, nil)
+		if err := f.mem.Delete(context.Background(), f.store.Key(sp.SHA256)); err != nil {
+			t.Fatal(err)
+		}
+		for _, o := range []blob.OpenOptions{{}, {Range: &blob.ByteRange{Offset: 0, Length: 10}}} {
+			if _, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, o); !errors.Is(err, blob.ErrNotFound) {
+				t.Fatalf("open %+v: %v, want ErrNotFound", o, err)
+			}
+		}
+		if f.db.rows[sp.SHA256].status != "missing" || damaged.Load() != 1 {
+			t.Fatalf("status %s, damaged hook %d: one detection, whatever the number of reads", f.db.rows[sp.SHA256].status, damaged.Load())
+		}
+		// The repair of R-STOR-027: an upload of identical content is no deduplication while the row is missing.
+		again := f.ingest(t, data)
+		res, err := f.store.Commit(context.Background(), again, noLink)
+		if err != nil || !res.Wrote || res.Deduplicated {
+			t.Fatalf("commit %+v, %v: the object must be written again", res, err)
+		}
+		if f.db.rows[sp.SHA256].status != "ok" {
+			t.Fatalf("status %s after the repair", f.db.rows[sp.SHA256].status)
+		}
+		r, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := readAll(t, r); !bytes.Equal(got, data) {
+			t.Fatal("the repaired object differs")
+		}
+	})
+	t.Run("Q-STOR-151 a read that found no object does not undo a repair that wrote it again before the mark", func(t *testing.T) {
+		f, sp, damaged := setup(t, nil)
+		// The read misses the object, which a commit of the same content writes again before the mark: the store answers
+		// the read "no such object" and the look after the mark finds it.
+		f.mem.SetFault(func(op, _ string) error {
+			if op == "get" {
+				return blob.ErrNotFound
+			}
+			return nil
+		})
+		if _, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{}); !errors.Is(err, blob.ErrNotFound) {
+			t.Fatalf("open: %v", err)
+		}
+		if f.db.rows[sp.SHA256].status != "ok" || damaged.Load() != 1 {
+			t.Fatalf("status %s, damaged hook %d: the detection counts, the row ends ok", f.db.rows[sp.SHA256].status, damaged.Load())
+		}
+	})
 	t.Run("R-STOR-013 an object of the wrong length is refused before any byte and marked corrupt", func(t *testing.T) {
 		f, sp, _ := setup(t, nil)
 		f.mem.Set(f.store.Key(sp.SHA256), data[:len(data)-1], f.mem.Now())

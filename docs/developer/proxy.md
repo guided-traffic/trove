@@ -356,6 +356,7 @@ flowchart TD
 | [metadata.go](../../internal/proxy/metadata.go) | `Metadata`, `EnsureCurrent`, freshness, the document answer, the metadata fill transaction and the URL map |
 | [artifact.go](../../internal/proxy/artifact.go) | `Artifact`, `Cached`, `HEAD`, the artifact fetch, the entry written in the item commit, the immutability checks |
 | [flight.go](../../internal/proxy/flight.go) | the in-process flight, `lead` (Acquire, Wait, re-check, bypass), `recheck` |
+| [lost.go](../../internal/proxy/lost.go) | a cached item whose object is missing or damaged: the refill of an artifact (`refillArtifact`) and of a document's bytes (`refillBytes`), the `503 content_unavailable` of a request that cannot fill it (`lostContent`, `lostOr`), the log line (Q-REPO-202, Q-REPO-203) |
 | [fetch.go](../../internal/proxy/fetch.go), [classify.go](../../internal/proxy/classify.go) | one fetch: slots, circuit, request, the retry, classification of the outcome (R-REPO-029 table) |
 | [exchange.go](../../internal/proxy/exchange.go) | `Exchange`: one request of a format outside the cache, through the repository's client, without slot or circuit (Q-NPM-62) |
 | [query.go](../../internal/proxy/query.go) | `Query`: the pass-through of a `Volatile` request under slot, circuit and egress rules (the slots and the circuit are the remote's own, shared with its downloads: [H-353](../security/nuget-remote.md#h-353--forwarded-searches-share-the-remotes-circuit-and-fetch-slots-with-its-downloads)), the registered cache `proxy_query_results`, the in-process collapse of identical queries (Q-ARCH-270) |
@@ -402,6 +403,31 @@ and writes the populate event. The engine sends no `metadata_changed` signal: th
 (`proxy.upstream_digest_changed`), inserts the entry and writes the populate and `artifact.cached` events. No transaction is open during a
 transfer, a wait or an extension.
 
+### Lost content (R-STOR-027, Q-REPO-202 to Q-REPO-204)
+
+A cached item whose object is gone from the store, or failed verification, is a cache miss. How the engine tells:
+
+- **The mark.** `blob.Store.Open` marks the blob `missing` when the store answers "no such object", and looks once more after the mark so that a
+  concurrent repair stays (Q-STOR-151, [blob-store.md](blob-store.md)). From then on the item lookup (`GetLiveItem`, `items.Item.ContentStatus`) and
+  the entry lookup (`ProxyEntryGet`, `entry.ContentStatus`) carry the status in the statement they make anyway: `hitOf` classifies an artifact
+  `hitDamaged`, `entry.Damaged` a document. `recheck` does not count a damaged entry as stored, and `fetcher.request` sends no validators for a
+  damaged document (a `304` would renew an entry without bytes).
+- **The first read.** A hit is served before anything knows: `edge.ServeItem` returns the error of the open unwritten, `Artifact` sees
+  `items.ContentLost`, reads the item again and fills it when it is marked (served once more when it reads ok: another request filled it).
+  A document's bytes are read by the format after `Metadata` returned: `storedDocument` wraps `Bytes`, and a lost object fills the document again
+  once for the request as it came (`refillBytes`), served only when the upstream's copy has the digest the request read (Q-REPO-203). The fill's
+  own documents (`document`) do not refill; their loss is the `503` and the mark makes the next request fill.
+- **The fill.** An ordinary one, through `collapse` (one flight per cluster). The commit of the same content writes the object again (the commit
+  protocol's repair, R-STOR-005). An artifact keeps its recorded digest: `artifactEntry` refuses another one (`proxy.upstream_digest_changed`) and the
+  answer is the `503`. Nothing streams to the leader's client during an artifact's refill, so every outcome is a clean answer.
+- **The answer.** A client's request that cannot fill (cache view, `only-if-cached`, offline, circuit, negative entry, populate check, upstream failure)
+  gets `503 content_unavailable` with `Retry-After` (the cause's, else 30 s) and a detail that names why: `lostContent`; `lostOr` keeps the miss's own
+  answer for a mirror's pass and for an item that is not lost. `Cached` reports a lost item as not cached, which is what the cache tier of a virtual
+  repository and the mirror's "present" read; the cache tier of [internal/virtual](../../internal/virtual/artifact.go) also treats a
+  `content_unavailable` of a remote member's hit before the first byte as a miss (Q-REPO-204).
+- **The log.** `noteDamaged`: repository, path, digest and status, once a minute per item and replica. The blob store logs the digest and counts
+  `trove_storage_blobs_damaged_total{status="missing"}`, which `TroveBlobMissing` reads.
+
 ### Wiring
 
 [wire_proxy_engine.go](../../internal/app/wire_proxy_engine.go) is the area `proxy-engine` (a component with `Drain` and `Quiesce`); its
@@ -427,6 +453,8 @@ virtual request records its allowed populate event with the grant reason of the 
 | unit | [preempt_test.go](../../internal/proxy/preempt_test.go) | R-REPO-055: a client fetch pre-empts the youngest background fetch and takes its slot at once, a joined fetch and a fetch of another repository are left, a waiting client keeps the background from starting, the yield with a fake clock, the signal, the throttling of the raise; R-REPO-054: the classification of a background answer as a rate limit, a client's staying as it is, the outcomes that are the leader's own, the wait for an open circuit |
 | integration | [mirror_test.go](../../test/integration/proxy/mirror_test.go), [mirror_host_test.go](../../test/integration/proxy/mirror_host_test.go) | R-REPO-054, R-REPO-055, R-REPO-057 against the real engine, the object store and Valkey: see [mirror.md](mirror.md#tests) |
 | unit | [fillrefused_test.go](../../internal/proxy/fillrefused_test.go) | `FillRefused` counts per endpoint (R-EP-019) |
+| unit | [lost_test.go](../../internal/proxy/lost_test.go) | R-STOR-027: what counts as lost, the `503 content_unavailable` and its `Retry-After`, a pass and a healthy item keep the miss's answer, a document's lost object is `503`, a corrupt one `500`, the refill of a document's bytes only on the request path and once per digest |
+| integration | [npm/remote_lost_test.go](../../test/integration/npm/remote_lost_test.go), [nuget/remote_lost_test.go](../../test/integration/nuget/remote_lost_test.go) | R-STOR-027, R-HA-024 (finding F-62): the object behind a cached tarball, package document, `.nupkg`, version list and service index is deleted from the stack's S3; each is filled again from the counting upstream with its bytes (directly, through a virtual repository, on a replica that does not hold a document's bytes), once for 20 concurrent requests over two replicas, and answers `503 content_unavailable` with `Retry-After` while the upstream is down; a local tarball's loss is `503` and marks the blob |
 | unit | [change_test.go](../../internal/repository/change_test.go) | `ChangeEviction`: which configuration versions a `repo_config` payload drops, shared by `proxy_query_results` and `proxy_upstream_clients` (Q-NUGET-94) |
 | unit | [remote_caps_test.go](../../internal/formathost/remote_caps_test.go), [remote_caps_test.go](../../internal/formats/remote_caps_test.go) | the adapter binds the parsed discovery data without changing the adapter it was called on; the hook is declared per path, reads the spooled body and its inspection travels as the commit payload; `Register` records the optional interfaces |
 | integration | [hook_test.go](../../test/integration/proxy/hook_test.go) | R-NUGET-015 at the engine: a refusal answers 502 to 40 concurrent requests and stores nothing, no byte before the hook accepted (with a control that streams without one), the object store down, the payload at the storage hook; R-NUGET-014: the discovery document is resolved once, a repository with one fetch slot does not wait for itself, a missing, unparsable or unpopulatable document; R-REPO-043: a mapped metadata path and its foreign host; the metadata-only bound |
@@ -444,7 +472,9 @@ wrapper. Not tested here: the criteria with a `sourceNetwork` on two pods (R-REP
 [Q-ARCH-200 to Q-ARCH-204](../spec/architecture.md#q-arch-200--the-engine-takes-a-format-through-its-own-adapter-and-the-populate-check-through-an-interface),
 [Q-ARCH-267](../spec/architecture.md#q-arch-267--a-format-inspects-a-fetched-artifact-before-it-is-stored-and-no-byte-goes-out-before-it-did),
 [Q-ARCH-268](../spec/architecture.md#q-arch-268--upstream-addressing-follows-a-discovery-document-the-engine-resolves-and-the-url-map-holds-metadata-paths),
-[Q-ARCH-269](../spec/architecture.md#q-arch-269--a-format-can-declare-that-checksumpolicy-require-is-unsupported).
+[Q-ARCH-269](../spec/architecture.md#q-arch-269--a-format-can-declare-that-checksumpolicy-require-is-unsupported),
+[Q-REPO-202 to Q-REPO-204](../spec/repositories-and-proxy.md#q-repo-202--a-cached-item-whose-object-is-lost-is-a-cache-miss-filled-again-from-the-upstream-or-503-content_unavailable)
+(lost content).
 
 ### Security notes
 
@@ -455,6 +485,9 @@ wrapper. Not tested here: the criteria with a `sourceNetwork` on two pods (R-REP
 - A value read from Valkey (a negative entry, a lock) can only make a request answer 404 or wait at most `proxy.fetch_wait_timeout_seconds`;
   the probe of a shadowing check reads neither (R-ARCH-030).
 - A refused fill (`populate_not_permitted`, an endpoint without `cache_fill`) writes no negative entry and sends no request.
+- A lost item is filled again only by a request that may fill the cache, through the same checks as a miss (populate check, vulnerability
+  block, egress); the refill cannot replace an artifact's recorded digest, so an upstream that serves other bytes after a loss gets nothing
+  stored (R-REPO-041).
 - A format with a fill hook has no unverified or uninspected byte on the wire: nothing leaves before `InspectFill` accepted the body, so a package whose
   declared identity differs from the requested one (R-NUGET-015) is refused for the leader as for every waiter and never stored.
 - The discovery document is trusted as far as any upstream metadata is: the addresses it names pass `Client.Allowed` (the upstream origin or an

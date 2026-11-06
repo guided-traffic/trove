@@ -37,6 +37,7 @@ A NuGet client prints its own error numbers and often only the status of the ans
 | 502 | `egress_denied` | The outbound address policy refuses the upstream's address | An administrator checks the upstream and the egress rules |
 | 502 | `foreign_host_denied` | The upstream's service index points at a host that is neither the upstream nor one of the extra hosts of the remote repository | An administrator adds the host to the remote repository if it is trusted |
 | 503 | `upstream_assumed_offline` | Repeated failures opened the circuit of the upstream, and the package is not cached | Wait for the period of `Retry-After`; trove probes the upstream again |
+| 503 | `content_unavailable` | The stored copy of a document or package is missing from trove's object store. A remote repository fetches it again from its upstream and answers this only while it cannot; a local repository answers it until the package is restored | Retry after `Retry-After`; tell an administrator when it persists |
 | 503 | `shadow_check_unavailable` | trove could not ask a remote member whether it serves the ID of a first push; nothing was stored | Retry later |
 | 503 | `server_busy` | The replica that answered is at its concurrency limit | Retry; NuGet repeats a failed request itself |
 | 503 | `shutting_down` | The replica that answered is stopping | Retry |

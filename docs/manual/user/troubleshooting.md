@@ -214,6 +214,7 @@ Each code with its status and meaning. `GET /api/v1/problems/<code>` gives the d
 | `server_busy`, `shutting_down` | 503 | The replica is at its limit or stopping; retry |
 | `database_unavailable`, `authz_stale`, `unavailable` | 503 | A dependency is temporarily unavailable; retry |
 | `upstream_assumed_offline`, `shadow_check_unavailable`, `fetch_queue_timeout` | 503 | The upstream is assumed down, or busy; retry after `Retry-After` |
+| `content_unavailable` | 503 | The stored object of the file is missing from the object store. A remote repository fetches it again from its upstream and answers this only while it cannot (offline, the upstream down, the cache view); a local repository answers it until an administrator restores the object or the same file is uploaded again. Retry after `Retry-After`; tell an administrator when it persists. The status is 500 when the object failed trove's verification instead |
 | `upstream_timeout` | 504 | The upstream did not answer in time |
 | `internal` | 500 | A defect; give the request ID to an administrator |
 

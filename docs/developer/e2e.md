@@ -1290,7 +1290,12 @@ commands); a run on a CI runner.
 7. **The dev profile: the object store lost its objects over a scale to 0** (`emptyDir`), after which the metadata named blobs the store did not have: every download of earlier
    content answered `503 content_unavailable`, and a stored upstream document whose object was gone answered `500` on `npm-all` until the cluster was recreated (the comment of `storeNonce` in
    [e1_13_transfer_test.go](../../test/e2e/e1_13_transfer_test.go) says why a fill of identical content does not repair it: the blob row says the object exists). A PersistentVolumeClaim ([Q-STOR-147](../spec/storage.md#q-stor-147--the-dev-profiles-object-store-keeps-its-objects-over-an-outage)) keeps the objects;
-   the existing cluster was recreated once. That a metadata document whose object is missing answers `500` and is not fetched again is not covered by a test and not analysed.
+   the existing cluster was recreated once. The `500` of the document was finding F-62, fixed: the first read of a missing object marks its blob `missing`, and a remote
+   fills the document, tarball or package again from its upstream (`503 content_unavailable` while it cannot); an upload of identical content after that read repairs the object
+   ([Q-REPO-202](../spec/repositories-and-proxy.md#q-repo-202--a-cached-item-whose-object-is-lost-is-a-cache-miss-filled-again-from-the-upstream-or-503-content_unavailable),
+   [Q-STOR-151](../spec/storage.md#q-stor-151--a-read-that-finds-no-object-marks-the-blob-missing-and-looks-once-more-after-the-mark), `TestR_STOR_027_*` in
+   [test/integration/npm](../../test/integration/npm/remote_lost_test.go) and [test/integration/nuget](../../test/integration/nuget/remote_lost_test.go)). An upload of content
+   whose lost object no read has found yet still deduplicates onto it, which is why `storeNonce` stays.
 8. **The dev profile: a CloudNativePG instance can sit in a smart shutdown for its `stopDelay` of 30 minutes** while sessions stay open (seen at the start of the work on this set: the primary had been in a smart shutdown since 03:19 UTC; the cause was not found,
    and the cluster was healthy when the 30 minutes were over).
 9. **Fixed in the harness: the 30 s case counted its 30 s from before `s3-stop.sh`, and a k6 failure by its start.** Nightly run 42177273488 (runner class `large`) failed the case twice and passed the 5 min case,

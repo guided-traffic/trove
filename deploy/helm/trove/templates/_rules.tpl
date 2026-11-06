@@ -1,7 +1,8 @@
 {{/*
 The alerts of the PrometheusRule (R-HA-045) as a YAML list, before disabledAlerts is applied. Names are
 stable. Only the alerts of the vulnerability scanning (R-VULN-024), the two alerts of the mirror mode (R-OPS-046,
-Q-OPS-160, Q-OPS-171) and the alert of a bridge left on (R-HA-064, Q-HA-92) are rendered so far: the other rows of R-HA-045 are not implemented in this chart (docs/developer/helm-chart.md lists them).
+Q-OPS-160, Q-OPS-171), the alert of a bridge left on (R-HA-064, Q-HA-92) and TroveBlobMissing (R-HA-024, Q-STOR-152) are
+rendered so far: the other rows of R-HA-045 are not implemented in this chart (docs/developer/helm-chart.md lists them).
 
 Every selector is scoped to the namespace of the release, because one Prometheus can scrape several
 installations and a max() over all of them would blend their states. A scrape through the Prometheus
@@ -59,9 +60,16 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
   annotations:
     summary: A web replica of the upgrade bridge has been running for 24 hours.
     description: web.enabled is still true, so the web pods stay registered and hold the login secrets (R-HA-064, H-518). Finish the cut, once api, packages and their pools are ready; step 2 with web.routed false moves the edge onto them, step 3 with web.enabled false removes the bridge.
+- alert: TroveBlobMissing
+  expr: sum(increase(trove_storage_blobs_damaged_total{ {{ $ns }},status="missing" }[1h])) > 0
+  labels:
+    severity: critical
+  annotations:
+    summary: The object store has lost the object of at least one blob within the last hour.
+    description: A read found no object behind a blob row and marked the blob missing (R-HA-024, R-STOR-027). The replicas log every such blob with its digest ("the object of a blob is missing from the object store") and every cached item of a remote repository with its repository and path. A remote repository fills its items again from the upstream; a file of a local repository answers 503 content_unavailable until its object is restored or the same content is uploaded again. Check the bucket, its lifecycle rules and who else writes to it.
 {{- end -}}
 
 {{/* The names of every alert the chart can render, for the check of disabledAlerts. */}}
 {{- define "trove.rules.names" -}}
-{{- toJson (list "TroveVulnerabilityDataStale" "TroveVulnerabilitySyncFailing" "TroveVulnerabilityClaimedNameMalicious" "TroveMirrorFailing" "TroveMirrorStale" "TroveBridgeLeftOn") -}}
+{{- toJson (list "TroveVulnerabilityDataStale" "TroveVulnerabilitySyncFailing" "TroveVulnerabilityClaimedNameMalicious" "TroveMirrorFailing" "TroveMirrorStale" "TroveBridgeLeftOn" "TroveBlobMissing") -}}
 {{- end -}}

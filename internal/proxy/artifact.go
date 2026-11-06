@@ -47,10 +47,27 @@ func (e *Engine) Artifact(ctx context.Context, rq Request, w http.ResponseWriter
 	if err != nil {
 		return err
 	}
+	if state == hitStored { // step 4: an artifact entry is served
+		served := e.serveItem(ctx, rq, w, CacheStatus{Hit: true, TTL: -1}, it, true)
+		if !items.ContentLost(served) {
+			e.m.lookup(rem.Repo.Key, Artifact, resultHit)
+			return served
+		}
+		// The read found the object missing or damaged and marked its blob (R-STOR-027); nothing was written. The item is
+		// read again: a marked one is a cache miss that is filled again (Q-REPO-202). One that reads ok was filled again by
+		// another request meanwhile, or the mark did not reach its row: it is served once more, and a second loss is the answer.
+		rq.Hit = nil
+		if it, state, err = e.lookupHit(ctx, rq, true); err != nil {
+			return err
+		}
+		if state == hitStored {
+			e.m.lookup(rem.Repo.Key, Artifact, resultHit)
+			return e.serveItem(ctx, rq, w, CacheStatus{Hit: true, TTL: -1}, it, true)
+		}
+	}
 	switch state {
-	case hitStored: // step 4: an artifact entry is served
-		e.m.lookup(rem.Repo.Key, Artifact, resultHit)
-		return e.serveItem(ctx, rq, w, CacheStatus{Hit: true, TTL: -1}, it, true)
+	case hitDamaged:
+		return e.refillArtifact(ctx, rq, w, r, it)
 	case hitEntryOnly:
 		e.m.lookup(rem.Repo.Key, Artifact, resultHit)
 		return errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist.")
@@ -178,7 +195,18 @@ const (
 	hitStored
 	// hitEntryOnly: the entry exists and the item it names does not.
 	hitEntryOnly
+	// hitDamaged: the cache entry and its item, whose blob has no usable object (content_status missing or corrupt): a cache
+	// miss that is filled again (R-STOR-027, Q-REPO-202).
+	hitDamaged
 )
+
+// hitOf classifies a cached item that has its entry.
+func hitOf(it items.Item) hitState {
+	if damagedStatus(it.ContentStatus) {
+		return hitDamaged
+	}
+	return hitStored
+}
 
 // lookupHit reads the cached artifact of a request in one statement (R-ARCH-027): the item, whether its cache entry exists, the
 // verdict of the vulnerability scanning and the rows the format's serve check decides on all come with the item lookup. Only a
@@ -186,7 +214,7 @@ const (
 // that serves needs: asEntry). A caller that read the artifact already hands it in as rq.Hit.
 func (e *Engine) lookupHit(ctx context.Context, rq Request, asEntry bool) (items.Item, hitState, error) {
 	if rq.Hit != nil {
-		return *rq.Hit, hitStored, nil
+		return *rq.Hit, hitOf(*rq.Hit), nil
 	}
 	ref := e.liveRef(rq.Remote.Repo, rq.Facts)
 	ref.Entry = &items.EntryProbe{Variant: rq.Variant}
@@ -196,7 +224,7 @@ func (e *Engine) lookupHit(ctx context.Context, rq Request, asEntry bool) (items
 	}
 	if found {
 		if it.EntryStored {
-			return it, hitStored, nil
+			return it, hitOf(it), nil
 		}
 		return items.Item{}, hitNone, nil
 	}
@@ -215,13 +243,15 @@ func (e *Engine) lookupHit(ctx context.Context, rq Request, asEntry bool) (items
 		return items.Item{}, hitNone, err
 	}
 	if found {
-		return it, hitStored, nil
+		return it, hitOf(it), nil
 	}
 	return items.Item{}, hitEntryOnly, nil
 }
 
 // Cached reads the cache tier of an artifact and never contacts the upstream. The
-// item is returned unless the entry is marked gone or the package is gone.
+// item is returned unless the entry is marked gone or the package is gone. An item
+// whose object is missing or damaged is not cached: the cache tier misses, and the
+// request path fills it again (R-STOR-027, Q-REPO-202).
 func (e *Engine) Cached(ctx context.Context, rq Request) (items.Item, bool, error) {
 	if err := e.validate(rq, Artifact); err != nil {
 		return items.Item{}, false, err

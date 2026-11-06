@@ -276,6 +276,7 @@ SELECT e.kind,
        COALESCE(e.item_id, 0)::bigint AS item_id,
        e.blob_sha256,
        b.size AS blob_size,
+       b.content_status AS blob_content_status,
        e.upstream_url,
        COALESCE(e.upstream_etag, '')::text AS upstream_etag,
        COALESCE((extract(epoch FROM e.upstream_last_modified) * 1000000)::bigint, 0)::bigint AS last_modified_us,
@@ -298,22 +299,25 @@ type ProxyEntryGetParams struct {
 }
 
 type ProxyEntryGetRow struct {
-	Kind           string
-	ItemID         int64
-	BlobSha256     []byte
-	BlobSize       int64
-	UpstreamUrl    string
-	UpstreamEtag   string
-	LastModifiedUs int64
-	FetchedUs      int64
-	ValidatedUs    int64
-	ExpiresUs      int64
-	GoneUs         int64
-	TtlUs          int64
+	Kind              string
+	ItemID            int64
+	BlobSha256        []byte
+	BlobSize          int64
+	BlobContentStatus string
+	UpstreamUrl       string
+	UpstreamEtag      string
+	LastModifiedUs    int64
+	FetchedUs         int64
+	ValidatedUs       int64
+	ExpiresUs         int64
+	GoneUs            int64
+	TtlUs             int64
 }
 
-// One cache entry with the size of its blob. ttl_us is the remaining lifetime of a
-// metadata entry on the database clock (negative when expired), 0 for an artifact.
+// One cache entry with the size and the content status of its blob. ttl_us is the
+// remaining lifetime of a metadata entry on the database clock (negative when expired),
+// 0 for an artifact. A blob whose content_status is not ok makes the entry a cache miss
+// (storage.md R-STOR-027).
 func (q *Queries) ProxyEntryGet(ctx context.Context, arg ProxyEntryGetParams) ([]ProxyEntryGetRow, error) {
 	rows, err := q.db.Query(ctx, proxyEntryGet, arg.RepoID, arg.Path, arg.Variant)
 	if err != nil {
@@ -328,6 +332,7 @@ func (q *Queries) ProxyEntryGet(ctx context.Context, arg ProxyEntryGetParams) ([
 			&i.ItemID,
 			&i.BlobSha256,
 			&i.BlobSize,
+			&i.BlobContentStatus,
 			&i.UpstreamUrl,
 			&i.UpstreamEtag,
 			&i.LastModifiedUs,

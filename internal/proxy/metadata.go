@@ -62,9 +62,16 @@ func (e *Engine) metadata(ctx context.Context, rq Request, restoredAt time.Time)
 	if found && en.Gone() {
 		found = false // counts as absent in every later step (R-REPO-025 step 4)
 	}
+	// A document whose object is missing or damaged serves nobody: it counts as absent in every later step and is filled
+	// again; a client's request that cannot fill it is answered 503 content_unavailable (R-STOR-027, Q-REPO-202).
+	lost := found && en.Damaged()
+	if lost {
+		found = false
+		e.noteDamaged(rq, en.Digest, en.ContentStatus)
+	}
 	if found && e.fresh(rem, rq.Path, en, restoredAt) {
 		e.m.lookup(rem.Repo.Key, Metadata, resultHit)
-		return e.document(en, hitStatus(en.TTL)), nil
+		return e.storedDocument(rq, restoredAt, en, hitStatus(en.TTL)), nil
 	}
 	st := &reqState{role: roleLeader, restoredAt: restoredAt}
 	if found {
@@ -76,18 +83,18 @@ func (e *Engine) metadata(ctx context.Context, rq Request, restoredAt time.Time)
 	case CacheView, OnlyIfCached:
 		if found {
 			e.m.lookup(rem.Repo.Key, Metadata, resultStale)
-			return e.document(en, e.storedStatus(en)), nil
+			return e.storedDocument(rq, restoredAt, en, e.storedStatus(en)), nil
 		}
 		e.m.lookup(rem.Repo.Key, Metadata, resultMiss)
-		return nil, notStored(rq.Mode)
+		return nil, lostOr(rq, lost, "this request is answered from the cache alone", notStored(rq.Mode))
 	}
 	// Step 6: offline.
 	if e.offline(rem) {
 		if found {
 			e.m.lookup(rem.Repo.Key, Metadata, resultStale)
-			return e.document(en, servedStale()), nil
+			return e.storedDocument(rq, restoredAt, en, servedStale()), nil
 		}
-		return nil, offlineMiss(rem)
+		return nil, lostOr(rq, lost, rem.Repo.Key+" is offline", offlineMiss(rem))
 	}
 	// Step 7: the circuit.
 	open, retry, err := e.circuitPeek(ctx, rem)
@@ -97,9 +104,9 @@ func (e *Engine) metadata(ctx context.Context, rq Request, restoredAt time.Time)
 	if open {
 		if found && e.withinMaxStale(rem, en) {
 			e.m.lookup(rem.Repo.Key, Metadata, resultStale)
-			return e.document(en, servedStale()), nil
+			return e.storedDocument(rq, restoredAt, en, servedStale()), nil
 		}
-		return nil, withStatus(circuitOpenError(rq, retry), CacheStatus{})
+		return nil, withStatus(lostOr(rq, lost, "the upstream is assumed to be offline", circuitOpenError(rq, retry)), CacheStatus{})
 	}
 	// Step 8: the negative entry, the replica's L1 first and then Valkey.
 	if _, hit := e.neg.lookup(ctx, rem, rq.Path, rq.Variant); hit {
@@ -110,7 +117,10 @@ func (e *Engine) metadata(ctx context.Context, rq Request, restoredAt time.Time)
 	if !e.mayFill(ctx, rq) {
 		if found {
 			e.m.lookup(rem.Repo.Key, Metadata, resultStale)
-			return e.document(en, servedStale()), nil
+			return e.storedDocument(rq, restoredAt, en, servedStale()), nil
+		}
+		if lost && !rq.background() {
+			return nil, lostContent("the caller may not fill the cache of "+rem.Repo.Key, nil)
 		}
 		return nil, e.denyFill(ctx, rq)
 	}
@@ -119,6 +129,9 @@ func (e *Engine) metadata(ctx context.Context, rq Request, restoredAt time.Time)
 	if found && !rq.background() { // a pass waits for the refresh: it has no client to answer with the stored copy
 		st.refresh = time.Duration(rem.Settings.Cache.MetadataRefreshTimeoutSeconds) * time.Second
 	}
+	// The stored copy that the answer may fall back on reads its bytes for the request as it came: the request the flight
+	// runs holds the pass's slot, which is released when this function returns.
+	held := heldCopy{en: en, found: found, lost: lost, doc: func(cs CacheStatus) *Document { return e.storedDocument(rq, restoredAt, en, cs) }}
 	rq, sctx, release, err := e.holdBackground(ctx, rq)
 	if err != nil {
 		return nil, err
@@ -128,7 +141,16 @@ func (e *Engine) metadata(ctx context.Context, rq Request, restoredAt time.Time)
 	if end == endGone && rq.background() && errors.Is(context.Cause(sctx), ErrPreempted) {
 		return nil, ErrPreempted
 	}
-	return e.metadataAnswer(ctx, rq, st, en, found, res, end)
+	return e.metadataAnswer(ctx, rq, st, held, res, end)
+}
+
+// heldCopy is what a request read of the stored document before the flight: the entry, whether it serves (found), whether
+// its object is lost, and the document of the entry with a status.
+type heldCopy struct {
+	en    entry
+	found bool
+	lost  bool
+	doc   func(cs CacheStatus) *Document
 }
 
 func firstError(err error, blocked *errs.Error) error {
@@ -141,7 +163,7 @@ func firstError(err error, blocked *errs.Error) error {
 // metadataAnswer turns the flight's result into the request's answer: the document
 // the flight stored, a negative entry, or the stored copy when the refresh failed or
 // ran past the refresh timeout.
-func (e *Engine) metadataAnswer(ctx context.Context, rq Request, st *reqState, en entry, found bool, res flightResult, end waitEnd) (*Document, error) {
+func (e *Engine) metadataAnswer(ctx context.Context, rq Request, st *reqState, held heldCopy, res flightResult, end waitEnd) (*Document, error) {
 	rem := rq.Remote
 	switch end {
 	case endGone:
@@ -149,7 +171,7 @@ func (e *Engine) metadataAnswer(ctx context.Context, rq Request, st *reqState, e
 	case endTimeout:
 		// The refresh runs on, detached; the client gets what is stored (R-REPO-027).
 		e.m.lookup(rem.Repo.Key, Metadata, resultStale)
-		return e.document(en, staleAfterFailure(0)), nil
+		return held.doc(staleAfterFailure(0)), nil
 	}
 	if st.collapsed {
 		e.m.collapsed.WithLabelValues(rem.Repo.Key).Inc()
@@ -158,11 +180,11 @@ func (e *Engine) metadataAnswer(ctx context.Context, rq Request, st *reqState, e
 	case res.own != nil:
 		return nil, res.own // a background request's own outcome: pre-empted, the circuit is open, the spool is busy, rate-limited
 	case res.err != nil:
-		if found && e.withinMaxStale(rem, en) {
+		if held.found && e.withinMaxStale(rem, held.en) {
 			e.m.lookup(rem.Repo.Key, Metadata, resultStale)
-			return e.document(en, staleAfterFailure(res.status)), nil
+			return held.doc(staleAfterFailure(res.status)), nil
 		}
-		return nil, withStatus(res.err, CacheStatus{Forwarded: "uri-miss", FwdStatus: res.status})
+		return nil, withStatus(lostOr(rq, held.lost, "the upstream could not serve it again", res.err), CacheStatus{Forwarded: "uri-miss", FwdStatus: res.status})
 	case res.negative:
 		return negativeDocument(st.collapsed), nil
 	case res.doc != nil:
@@ -206,7 +228,9 @@ func (e *Engine) storedStatus(en entry) CacheStatus {
 	return servedStale()
 }
 
-// document builds the Document of a stored entry.
+// document builds the Document of a stored entry. An object that turns out to be
+// missing is 503 content_unavailable; the read marked its blob, so the next request
+// fills the entry again (Q-REPO-202).
 func (e *Engine) document(en entry, cs CacheStatus) *Document {
 	d := &Document{
 		Digest: en.Digest, Size: en.Size, FetchedAt: en.FetchedAt, ValidatedAt: en.ValidatedAt,
@@ -214,6 +238,22 @@ func (e *Engine) document(en entry, cs CacheStatus) *Document {
 	}
 	digest, size := en.Digest, en.Size
 	d.Bytes = func(ctx context.Context) ([]byte, error) { return e.bytesOf(ctx, digest, size) }
+	return d
+}
+
+// storedDocument is the Document of the entry a request found stored, before any flight: an object that turns out to be
+// missing or damaged when the bytes are read is filled again under the request path, once, for the request as it came
+// ([Engine.refillBytes], Q-REPO-203). The cache view and only-if-cached never contact the upstream and answer the 503.
+func (e *Engine) storedDocument(rq Request, restoredAt time.Time, en entry, cs CacheStatus) *Document {
+	d := e.document(en, cs)
+	read := d.Bytes
+	d.Bytes = func(ctx context.Context) ([]byte, error) {
+		b, err := read(ctx)
+		if err == nil || !items.ContentLost(err) || rq.Mode != Normal || refilling(ctx, en.Digest) {
+			return b, err
+		}
+		return e.refillBytes(ctx, rq, restoredAt, en.Digest)
+	}
 	return d
 }
 
@@ -228,12 +268,12 @@ func (e *Engine) bytesOf(ctx context.Context, d [32]byte, size int64) ([]byte, e
 	}
 	rc, err := e.o.Blobs.Open(ctx, blob.Digest(d), size, blob.OpenOptions{})
 	if err != nil {
-		return nil, err
+		return nil, storedObjectError(err)
 	}
 	defer func() { _ = rc.Close() }()
 	b, err := io.ReadAll(io.LimitReader(rc, size+1))
 	if err != nil {
-		return nil, err
+		return nil, storedObjectError(err)
 	}
 	e.keepBytes(d, b)
 	return b, nil
@@ -341,6 +381,11 @@ func (f *fetcher) metadata(ctx context.Context, resp *http.Response, idle *atomi
 	en, found, err := e.getEntry(ctx, rem.id, rq.Path, rq.Variant)
 	if err != nil || !found {
 		return flightResult{err: firstNonNil(err, errs.E(errs.Unavailable, errs.CodeUnavailable, "The stored document disappeared after its fill; retry."))}
+	}
+	if en.Damaged() {
+		// The format kept the stored document, whose object is lost: npm keeps a document that is newer than the upstream's
+		// (R-NPM-024). Nothing can serve it until the upstream's copy is as new (Q-REPO-202).
+		return flightResult{err: lostContent("the upstream's copy is older than the stored one", nil), status: resp.StatusCode}
 	}
 	if b, rerr := io.ReadAll(sp.Reader()); rerr == nil && en.Digest == [32]byte(sp.SHA256) {
 		e.keepBytes(en.Digest, b)

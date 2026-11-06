@@ -62,6 +62,51 @@ func TestR_REPO_019_ArtifactTiers(t *testing.T) {
 		}
 	})
 
+	t.Run("R-STOR-027 Q-REPO-204 a cached copy whose object is lost is a miss of the cache tier: the member's fetch tier fills it again", func(t *testing.T) {
+		w := newWorld(t)
+		vt.Put(w.arts.CachedItems, "npm-remote", tgz, "cached-bytes")
+		vt.Put(w.arts.UpstreamItems, "npm-remote", tgz, "upstream-bytes")
+		w.arts.HitErr["npm-remote"] = errs.E(errs.Unavailable, errs.CodeContentUnavailable, "missing")
+		rec, err := w.artifact(alice, "left-pad", "1.0.0")
+		if err != nil || rec.Body.String() != "upstream-bytes" || rec.Header().Get(virtual.ResolvedFromHeader) != "npm-remote" {
+			t.Fatalf("body %q err %v headers %v", rec.Body.String(), err, rec.Header())
+		}
+		if got := w.arts.Calls(); !slices.Equal(got, []string{"local:npm-local", "cached:npm-remote", "fetch:npm-remote"}) {
+			t.Fatalf("calls %v", got)
+		}
+		if n := counter(t, w.reg, "trove_virtual_resolutions_total", map[string]string{"source": "cache"}); n != 0 {
+			t.Fatalf("source cache = %v: the cache tier did not serve", n)
+		}
+	})
+
+	t.Run("R-HA-024 a local member's lost object is its answer: data loss is not hidden behind another member", func(t *testing.T) {
+		w := newWorld(t)
+		vt.Put(w.arts.LocalItems, "npm-local", tgz, "local-bytes")
+		vt.Put(w.arts.UpstreamItems, "npm-remote", tgz, "upstream-bytes")
+		w.arts.HitErr["npm-local"] = errs.E(errs.Unavailable, errs.CodeContentUnavailable, "missing")
+		_, err := w.artifact(alice, "left-pad", "1.0.0")
+		if k, code := kind(err); k != errs.Unavailable || code != errs.CodeContentUnavailable {
+			t.Fatalf("err = %v", err)
+		}
+		if slices.Contains(w.arts.Calls(), "fetch:npm-remote") {
+			t.Fatalf("another member was asked: %v", w.arts.Calls())
+		}
+	})
+
+	t.Run("R-REPO-019 a cached copy that fails for another reason ends the walk", func(t *testing.T) {
+		w := newWorld(t)
+		vt.Put(w.arts.CachedItems, "npm-remote", tgz, "cached-bytes")
+		vt.Put(w.arts.UpstreamItems, "npm-remote", tgz, "upstream-bytes")
+		w.arts.HitErr["npm-remote"] = errs.E(errs.Unavailable, errs.CodeObjectStoreUnavail, "outage")
+		_, err := w.artifact(alice, "left-pad", "1.0.0")
+		if k, code := kind(err); k != errs.Unavailable || code != errs.CodeObjectStoreUnavail {
+			t.Fatalf("err = %v", err)
+		}
+		if slices.Contains(w.arts.Calls(), "fetch:npm-remote") {
+			t.Fatalf("the upstream was asked: %v", w.arts.Calls())
+		}
+	})
+
 	t.Run("R-REPO-019 no Trove-Resolved-From on an endpoint with exposure rules", func(t *testing.T) {
 		w := newWorld(t)
 		vt.Put(w.arts.LocalItems, "npm-local", tgz, "x")

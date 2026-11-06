@@ -260,12 +260,17 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request, caller files.Calle
 		h.index(w, r, caller, key, p)
 		return
 	}
-	edge.ServeItem(w, r, res.Item,
+	if err := edge.ServeItem(w, r, res.Item,
 		func(rng *items.Range) (io.ReadCloser, error) { return h.svc.Open(r.Context(), res.Item, rng) },
 		edge.ServeOptions{
 			Buffer: h.buf,
 			Served: func() { h.svc.Served(r.Context(), caller, res, r.URL.Query().Get("stats") != "false") },
-		})
+		}); err != nil {
+		// The object cannot be opened: 503 content_unavailable when it is missing, 500 when it failed verification,
+		// 503 object_store_unavailable during an outage (R-STOR-012, R-STOR-036). /files/ never contacts an upstream, so
+		// an item of a remote repository answers the same here; its own route fills it again (R-STOR-027).
+		httpserver.Problem(w, r, err)
+	}
 }
 
 func queryOf(r *http.Request) string {

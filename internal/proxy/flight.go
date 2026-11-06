@@ -342,7 +342,7 @@ func (e *Engine) recheck(ctx context.Context, rq Request, st *reqState) (res fli
 	if err != nil {
 		return flightResult{}, false, err
 	}
-	if found && !en.Gone() {
+	if found && !en.Gone() && !en.Damaged() { // a damaged entry is a miss until a fill wrote its object again (Q-REPO-202)
 		if rq.Kind == Artifact {
 			return flightResult{stored: true}, true, nil
 		}
