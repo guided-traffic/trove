@@ -7,10 +7,9 @@ import (
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 )
 
-// TestQ_API_194_RoleMembersOfTheCut: the enums of the released contract stay closed at web, worker and all, so an api or
-// packages replica is listed with the class web and its exact role in roleName, and the pool is carried (R-OPS-003,
-// R-OPS-004, Q-OPS-161, Q-API-194).
-func TestQ_API_194_RoleMembersOfTheCut(t *testing.T) {
+// TestQ_ARCH_341_EveryReplicaIsListedWithItsOwnRole: an api or packages replica is listed with its own role, not with a
+// class, and the pool is carried (R-OPS-003, R-OPS-004, Q-OPS-161, Q-ARCH-341).
+func TestQ_ARCH_341_EveryReplicaIsListedWithItsOwnRole(t *testing.T) {
 	pool := "ep-customers"
 	reps := fakeReplicas{
 		replica("trove-api-1", "api", "n1", gen.Ready, false),
@@ -25,7 +24,7 @@ func TestQ_API_194_RoleMembersOfTheCut(t *testing.T) {
 		o.Identity = Identity{Replica: "trove-api-1", Role: "api"}
 	}, authed)
 
-	t.Run("R-OPS-003 the list names the class and the exact role of every replica, and the pool", func(t *testing.T) {
+	t.Run("R-OPS-003 the list names the own role of every replica, and the pool", func(t *testing.T) {
 		w := s.get("/api/v1/system/replicas")
 		if w.Code != 200 {
 			t.Fatalf("%d %s", w.Code, w.Body.String())
@@ -34,16 +33,16 @@ func TestQ_API_194_RoleMembersOfTheCut(t *testing.T) {
 		if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil {
 			t.Fatal(err)
 		}
-		got := map[string][2]string{}
+		got := map[string]string{}
 		for _, r := range list.Items {
 			if len(r.Roles) != 1 {
 				t.Fatalf("%s roles = %v", r.Name, r.Roles)
 			}
-			got[r.Name] = [2]string{string(r.Roles[0]), r.RoleName}
+			got[r.Name] = string(r.Roles[0])
 		}
-		for name, want := range map[string][2]string{
-			"trove-api-1": {"web", "api"}, "trove-packages-1": {"web", "packages"}, "trove-worker-1": {"worker", "worker"},
-			"trove-web-1": {"web", "web"}, "trove-all-1": {"all", "all"},
+		for name, want := range map[string]string{
+			"trove-api-1": "api", "trove-packages-1": "packages", "trove-worker-1": "worker",
+			"trove-web-1": "web", "trove-all-1": "all",
 		} {
 			if got[name] != want {
 				t.Errorf("%s = %v, want %v", name, got[name], want)
@@ -66,7 +65,7 @@ func TestQ_API_194_RoleMembersOfTheCut(t *testing.T) {
 				t.Errorf("replicas.roles[%s] = %+v", role, info.Replicas.Roles[role])
 			}
 		}
-		if info.AnsweredBy.Role != "web" || info.AnsweredBy.RoleName != "api" {
+		if info.AnsweredBy.Role != "api" {
 			t.Errorf("answeredBy = %+v", info.AnsweredBy)
 		}
 	})

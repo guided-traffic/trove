@@ -518,8 +518,7 @@ API: `GET /api/v1/system/replicas` → `200`. Requires `system.read`.
       "instanceUid": "8a0b…",
       "version": "0.3.0",
       "revision": "4f1c2a9e0d7b…",
-      "roles": ["web"],
-      "roleName": "packages",
+      "roles": ["packages"],
       "pool": null,
       "state": "ready",
       "lost": false,
@@ -540,7 +539,6 @@ API: `GET /api/v1/system/replicas` → `200`. Requires `system.read`.
       "version": "0.3.0",
       "revision": "4f1c2a9e0d7b…",
       "roles": ["worker"],
-      "roleName": "worker",
       "pool": null,
       "state": "ready",
       "lost": false,
@@ -559,10 +557,9 @@ API: `GET /api/v1/system/replicas` → `200`. Requires `system.read`.
 }
 ```
 
-`roleName` is the role the replica registered with: `api`, `packages`, `worker`, `web` or `all` (Q-OPS-161). `roles` keeps the
-role class of the releases before the cut into task areas, whose enum the compatibility check (R-ARCH-025) closes at `web`,
-`worker` and `all`: `web` for every replica that serves client endpoints, so for `api`, `packages` and the bridge alike
-(Q-API-194). A client that wants the role reads `roleName`; `pool` is the replica's pool or `null`.
+`roles` is the role the replica registered with, one entry: `api`, `packages`, `worker`, `web` (the bridge of the upgrade across
+the cut) or `all` (Q-OPS-161). Every replica is listed with its own role; no class stands in for it (Q-ARCH-341). `pool` is the
+replica's pool or `null`.
 
 *(example values)* The UI shows this list as the service status screen
 ([api-and-ui.md](api-and-ui.md) R-UI-038). Mixed versions during a rolling upgrade, the replicas of
@@ -576,8 +573,8 @@ system:
 
 **Acceptance criteria:**
 
-- With two `api`, three `packages` and two `worker` replicas, the list shows seven `ready` entries, two with `roleName`
-  `api`, three with `packages` and two with `worker` (`roles` `["web"]`, `["web"]` and `["worker"]`), each with the node it
+- With two `api`, three `packages` and two `worker` replicas, the list shows seven `ready` entries, two with `roles`
+  `["api"]`, three with `["packages"]` and two with `["worker"]`, each with the node it
   runs on; only a `worker` entry
   lists a lease; a pod of a pool carries its `pool`. After
   `kubectl delete pod --grace-period=0 --force <replica>`, that entry shows `"lost": true` within
@@ -604,7 +601,7 @@ replica registry (R-OPS-003) holds the per-replica view of every replica.
 {
   "installationId": "0b7c3f5e-…",
   "incarnation": "5d10e2a4-…",
-  "answeredBy": {"replica": "trove-api-6f9c7d8b5-x2v4q", "role": "web", "roleName": "api"},
+  "answeredBy": {"replica": "trove-api-6f9c7d8b5-x2v4q", "role": "api"},
   "version": {"version": "0.3.0", "revision": "4f1c2a9e0d7b…", "goVersion": "go1.27.3"},
   "baseUrl": "https://trove.example.com",
   "baseUrlSource": "config",
@@ -656,9 +653,9 @@ replica registry (R-OPS-003) holds the per-replica view of every replica.
 }
 ```
 
-`replicas.roles` has one member per `roleName` of the live replicas (`api`, `packages`, `worker`, `web` while the bridge runs,
-`all`), the pools of a role counting in it. `answeredBy.role` is the role class of `roles` (`web` for `api` and `packages`) and
-`answeredBy.roleName` the exact role (Q-API-194).
+`replicas.roles` has one member per role of the live replicas (`api`, `packages`, `worker`, `web` while the bridge runs,
+`all`), the pools of a role counting in it. `answeredBy.role` is the role of the replica that answered, in the same vocabulary
+(Q-ARCH-341).
 
 `maintenanceMode` is `normal` or the mode of R-OPS-024. Only `normal` exists in this build, because the
 read-only mode is P1: the member is part of the contract so that clients need no change when the mode

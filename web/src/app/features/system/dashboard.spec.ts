@@ -61,7 +61,7 @@ describe('Admin dashboard (Q-OPS-175)', () => {
 
   it('R-UI-038 next to a live replica of the development role all, the roles it covers are not shown as missing', async () => {
     const { root } = await render((s) => {
-      s.replicasResult = [sampleReplica({ roleName: 'all', roles: ['all'] })];
+      s.replicasResult = [sampleReplica({ roles: ['all'] })];
       s.infoResult = { ...s.infoResult, replicas: { live: 1, ready: 1, versions: { dev: 1 }, roles: { all: { live: 1, ready: 1, degraded: 0, nodes: 0 } } } };
     });
     expect(text(root)).not.toContain('No replica of this role is running.');

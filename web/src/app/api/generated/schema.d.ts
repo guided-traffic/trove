@@ -3787,17 +3787,11 @@ export interface components {
             answeredBy: {
                 replica: string;
                 /**
-                 * @description The role class of the replica that answered, in the vocabulary of the releases before the cut into task areas,
-                 *     which this enum keeps (R-ARCH-025): `web` for a replica that serves client endpoints, so for `api`, `packages`
-                 *     and the upgrade bridge `web` alike, `worker`, and `all` for the development role. `roleName` is the exact role.
+                 * @description The role the replica that answered runs in (`--role`, Q-OPS-161), as the registry, `trove_build_info{role}` and the logs name it: `api`, `packages`, `worker`, `web` (the upgrade bridge) or `all` (the development role).
+                 * @example api
                  * @enum {string}
                  */
-                role: "web" | "worker" | "all";
-                /**
-                 * @description The role the replica runs in (`--role`, Q-OPS-161), as the registry, `trove_build_info{role}` and the logs name it; open for further roles.
-                 * @example api
-                 */
-                roleName: string;
+                role: "api" | "packages" | "worker" | "web" | "all";
             };
             version: {
                 version: string;
@@ -3845,7 +3839,7 @@ export interface components {
             versions: {
                 [key: string]: number;
             };
-            /** @description Per role (`api`, `packages`, `worker`, and during an upgrade across the cut `web`; `all` in the development role), keyed by `roleName`; the replicas of a role's pools count in the role. */
+            /** @description Per role (`api`, `packages`, `worker`, and during an upgrade across the cut `web`; `all` in the development role), keyed by the role of the replica; the replicas of a role's pools count in the role. */
             roles: {
                 [key: string]: components["schemas"]["RoleSummary"];
             };
@@ -4045,16 +4039,12 @@ export interface components {
             version: string;
             revision: string;
             /**
-             * @description The role class of the replica, in the vocabulary of the releases before the cut into task areas, which this enum
-             *     keeps (R-ARCH-025): `web` for a replica that serves client endpoints, so for `api`, `packages` and the upgrade
-             *     bridge `web` alike, `worker`, and `all` for the development role. `roleName` is the exact role.
+             * @description The role the replica registered with (Q-OPS-161), as the registry names it: `api`, `packages`, `worker`, `web` (the upgrade bridge) or `all` (the development role). One entry per replica.
+             * @example [
+             *       "packages"
+             *     ]
              */
-            roles: ("web" | "worker" | "all")[];
-            /**
-             * @description The role the replica registered with (Q-OPS-161): `api`, `packages`, `worker`, `web` (the upgrade bridge and the releases before the cut) or `all` (the development role); open for further roles.
-             * @example packages
-             */
-            roleName: string;
+            roles: ("api" | "packages" | "worker" | "web" | "all")[];
             /** @description The endpoint pool or worker pool the replica belongs to (`TROVE_POOL_NAME`); `null` for the main Deployment of its role. */
             pool?: string | null;
             /** @enum {string} */
@@ -4300,12 +4290,10 @@ export interface components {
         EncryptionReplica: {
             name: string;
             /**
-             * @description The role class of the replica as `answeredBy.role` of the system information names it; `roleName` is the exact role.
+             * @description The role the replica runs in (Q-OPS-161), as `answeredBy.role` of the system information names it.
              * @enum {string}
              */
-            role: "web" | "worker" | "all";
-            /** @description The role the replica runs in (Q-OPS-161). */
-            roleName: string;
+            role: "api" | "packages" | "worker" | "web" | "all";
             activeKeyId: string;
             keyIds: string[];
         };
@@ -5984,19 +5972,15 @@ export interface components {
              */
             audit?: {
                 /**
-                 * @description `true` answers from trove's own advisory data and sends nothing out (every class; `503 vulnerability_data_unavailable`
-                 *     until the npm data is complete; answers like `disabled` while `vulnerabilities.enabled` is false); `false` lets `mode`
-                 *     apply as before the scanning existed. Left out, the audit answers from trove's data while `vulnerabilities.enabled` is true
-                 *     and the OSV source is not `off` and the document sets no `mode`; a document that sets `mode` keeps it (Q-VULN-74).
-                 */
-                local?: boolean;
-                /**
-                 * @description Used while `local` is not `true`. `forward` answers through the first remote that forwards (remote and virtual
-                 *     repositories; a local repository answers like `disabled`); `disabled` answers 501 `npm_audit_unavailable`. Left out,
-                 *     and with `local` false, the mode is `forward` on remote and virtual repositories and `disabled` on local ones.
+                 * @description `local` answers from trove's own advisory data and sends nothing out (every class; `503 vulnerability_data_unavailable`
+                 *     until the npm data is complete; answers like `disabled` while `vulnerabilities.enabled` is false). `forward` answers
+                 *     through the first remote that forwards (remote and virtual repositories; a local repository answers like `disabled`);
+                 *     `disabled` answers 501 `npm_audit_unavailable`. Left out, the audit answers from trove's data while
+                 *     `vulnerabilities.enabled` is true and the OSV source is not `off`; else the mode is `forward` on remote and virtual
+                 *     repositories and `disabled` on local ones (Q-ARCH-341).
                  * @enum {string}
                  */
-                mode?: "forward" | "disabled";
+                mode?: "local" | "forward" | "disabled";
                 /**
                  * Format: uri
                  * @description Mode `forward` only. The https registry URL of the advisory provider, without user info, query or fragment; null is the remote's

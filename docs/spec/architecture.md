@@ -9170,7 +9170,7 @@ with `sets=upgrade` only), `enforceMigrationPhases` in `internal/meta/postgres/s
 
 ### Q-ARCH-341 · Code shaped only by the compatibility rules is cleaned up, the cluster minimum version stays
 
-Status: **Decided by the owner on 2026-11-06.** Not built yet.
+Status: **Decided by the owner on 2026-11-06.** Built: (1) to (3) are cleaned up, (4) stays.
 
 Context: with the compatibility checks switched off (Q-ARCH-340), four places keep a shape that only the rules of R-ARCH-025
 and R-HA-020 gave them: (1) the replica list reports roles through a closed enum and maps every role that serves client
@@ -9188,7 +9188,17 @@ through an extra boolean, because `npm.audit.mode` was a frozen enum
 
 **Choice:** (a), the owner's.
 
-**Applied in the spec:** nothing yet; R-API-010, the replica schema of R-OPS-003, R-VULN-017 and Q-VULN-74 change when it is built.
+**Applied in the spec:** R-API-010 (one cursor format, no version, no expand/contract), the replica schema of R-OPS-003 and R-OPS-004
+(`roles` lists the replica's own role; `answeredBy.role` and the encryption status's `role` list the real roles; the member `roleName` is
+gone), R-VULN-017 and R-NPM-038 (`local` is a value of `npm.audit.mode`), Q-VULN-74 (superseded by this decision), Q-API-194 (superseded
+for the role members). R-HA-020 and R-HA-022 are unchanged.
+
+**Built:** `api/openapi.yaml` (the three role enums list `api`, `packages`, `worker`, `web`, `all`; `roleName` removed; `npm.audit.local`
+removed, `npm.audit.mode` is `local | forward | disabled`), `internal/api/v1/roles.go` (`roleClass` and `describeRole` removed),
+`internal/api/edge/list.go` (`cursorVersion` and `decodableCursorVersions` removed; the cursor is the base64url of `{"k","f"}`, and a body
+of another shape is refused with `invalid_cursor`), `internal/formats/npm` (`settings.go`, `settings.schema.json`,
+`handlers_audit_local.go`), the status screen of the UI (`web/src/app/features/system`). The audit setting lives in the repository
+document, so no migration and no database column changed.
 
 ## What this does not cover
 

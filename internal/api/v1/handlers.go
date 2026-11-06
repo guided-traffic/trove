@@ -326,8 +326,7 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 
 	var out gen.SystemInfo
 	out.InstallationId, out.Incarnation = facts.InstallationID, facts.Incarnation
-	out.AnsweredBy.Replica, out.AnsweredBy.Role = s.o.Identity.Replica, gen.SystemInfoAnsweredByRole(roleClass(s.o.Identity.Role))
-	out.AnsweredBy.RoleName = s.o.Identity.Role
+	out.AnsweredBy.Replica, out.AnsweredBy.Role = s.o.Identity.Replica, gen.SystemInfoAnsweredByRole(s.o.Identity.Role)
 	out.Version.Version, out.Version.Revision, out.Version.GoVersion = bi.Version, bi.Commit, bi.GoVersion
 	out.BaseUrl, out.BaseUrlSource = info.BaseURL, gen.SystemInfoBaseUrlSource(info.BaseURLSource)
 	// R-OPS-004 fixes the member; the read-only mode of R-OPS-024 is P1 and not built, so
@@ -370,14 +369,11 @@ func Summarise(replicas []gen.Replica) gen.ReplicaSummary {
 			sum.Ready++
 		}
 		sum.Versions[rep.Version]++
-		// A replica has one role; the members of the role summary are keyed by its exact name (Q-API-194).
-		role := rep.RoleName
-		if role == "" && len(rep.Roles) > 0 {
-			role = string(rep.Roles[0])
-		}
-		if role == "" {
+		// A replica has one role; the members of the role summary are keyed by its name (Q-ARCH-341).
+		if len(rep.Roles) == 0 {
 			continue
 		}
+		role := string(rep.Roles[0])
 		rs := sum.Roles[role]
 		rs.Live++
 		if ready {

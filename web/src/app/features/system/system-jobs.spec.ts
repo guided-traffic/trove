@@ -20,22 +20,19 @@ const RING: EncryptionStatus = {
   replicas: [
     {
       name: 'trove-api-0',
-      role: 'web',
-      roleName: 'api',
+      role: 'api',
       activeKeyId: '2026-10',
       keyIds: ['2026-04', '2026-10'],
     },
     {
       name: 'trove-packages-0',
-      role: 'web',
-      roleName: 'packages',
+      role: 'packages',
       activeKeyId: '2026-04',
       keyIds: ['2026-04'],
     },
     {
       name: 'trove-worker-0',
       role: 'worker',
-      roleName: 'worker',
       activeKeyId: '2026-10',
       keyIds: ['2026-04', '2026-10'],
     },

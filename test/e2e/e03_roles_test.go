@@ -123,8 +123,8 @@ func TestE03Roles(t *testing.T) {
 			default:
 				continue
 			}
-			if r.RoleName != wantRole || r.Pool != wantPool {
-				t.Errorf("%s is listed as role %q pool %q, want %q and %q", r.Name, r.RoleName, r.Pool, wantRole, wantPool)
+			if r.role() != wantRole || r.Pool != wantPool {
+				t.Errorf("%s is listed as role %q pool %q, want %q and %q", r.Name, r.role(), r.Pool, wantRole, wantPool)
 			}
 		}
 	})

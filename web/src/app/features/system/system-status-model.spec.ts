@@ -13,9 +13,9 @@ import {
 const web = (name: string, node: string | null, over = {}) =>
   sampleReplica({ name, instanceUid: name, node, ...over });
 const worker = (name: string, node: string | null, over = {}) =>
-  sampleReplica({ name, instanceUid: name, node, roles: ['worker'], roleName: 'worker', ...over });
+  sampleReplica({ name, instanceUid: name, node, roles: ['worker'], ...over });
 const packages = (name: string, node: string | null, over = {}) =>
-  sampleReplica({ name, instanceUid: name, node, roleName: 'packages', ...over });
+  sampleReplica({ name, instanceUid: name, node, roles: ['packages'], ...over });
 
 describe('system status model', () => {
   it('R-UI-038 a role with two ready replicas on two nodes is drain-safe', () => {
@@ -48,7 +48,7 @@ describe('system status model', () => {
     expect(roleGroups(sampleInfo(), [web('a', 'n1')]).map((g) => g.role)).toEqual(['api', 'packages', 'worker']);
   });
 
-  it('R-UI-038 Q-UI-107 a replica lands in the group of its roleName, not of the closed role class', () => {
+  it('R-UI-038 Q-UI-107 a replica lands in the group of its own role', () => {
     const groups = roleGroups(sampleInfo(), [web('a', 'n1'), packages('p', 'n2'), worker('w', 'n3')]);
     expect(groups.map((g) => [g.role, g.replicas.map((r) => r.name)])).toEqual([
       ['api', ['a']],
@@ -97,17 +97,17 @@ describe('system status model', () => {
 
   it('R-UI-038 Q-UI-107 the bridge role web and the development role all have a group only while a replica reports them', () => {
     expect(roleGroups(sampleInfo(), [web('a', 'n1')]).map((g) => g.role)).not.toContain('web');
-    expect(roleGroups(sampleInfo(), [web('a', 'n1', { roleName: 'web' })]).map((g) => g.role)).toEqual([
+    expect(roleGroups(sampleInfo(), [web('a', 'n1', { roles: ['web'] })]).map((g) => g.role)).toEqual([
       'api',
       'packages',
       'worker',
       'web',
     ]);
-    expect(roleGroups(sampleInfo(), [web('a', 'n1', { roles: ['all'], roleName: 'all' })]).map((g) => g.role)).toContain('all');
+    expect(roleGroups(sampleInfo(), [web('a', 'n1', { roles: ['all'] })]).map((g) => g.role)).toContain('all');
   });
 
   it('R-UI-038 a role this screen does not know is shown after the known ones', () => {
-    expect(roleGroups(sampleInfo(), [web('a', 'n1', { roleName: 'fetch' })]).map((g) => g.role).at(-1)).toBe('fetch');
+    expect(roleGroups(sampleInfo(), [web('a', 'n1', { roles: ['fetch'] })]).map((g) => g.role).at(-1)).toBe('fetch');
   });
 
   it('R-UI-038 failing and degraded checks stay separate kinds', () => {

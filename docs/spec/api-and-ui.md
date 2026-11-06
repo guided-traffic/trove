@@ -493,12 +493,13 @@ Every list endpoint is paginated by keyset (cursor) pagination; SCIM is the only
   ([RFC 8288](https://www.rfc-editor.org/rfc/rfc8288)) when more items exist:
 
 ```json
-{"items": [], "nextCursor": "djEuZXlKcklqb2libkJ0TFdGc2JDSjk"}
+{"items": [], "nextCursor": "eyJrIjpbIm5wbS1hbGwiXSwiZiI6InEzWnMxYjB4VHEwR20yZjlYazFwUncifQ"}
 ```
 
-- The cursor is opaque: a versioned base64url encoding of the sort-key values of the last item and
-  a fingerprint of the filters and sort order. A cursor that does not decode, or that was issued
-  for other filters or another sort, answers 400 `invalid_cursor`. A cursor grants nothing: every
+- The cursor is opaque: a base64url encoding of the sort-key values of the last item and a
+  fingerprint of the filters and sort order. It has one format and no version field, and the server
+  decodes no other shape (Q-ARCH-341). A cursor that does not decode, is of another shape, or was
+  issued for other filters or another sort, answers 400 `invalid_cursor`. A cursor grants nothing: every
   page is filtered by the caller's permissions again.
 - The cursor is self-contained (INV-18). Each page is one keyset query in its own transaction, and
   the cursor holds everything the next query needs, so the next page may come from any `web`
@@ -507,13 +508,9 @@ Every list endpoint is paginated by keyset (cursor) pagination; SCIM is the only
   fingerprint is a SHA-256 over a canonical form of the filters the request actually uses, so a
   release that adds an optional filter does not change the fingerprint of requests that do not use
   it.
-- Cursor versions follow expand/contract, because the pages of one traversal may alternate between
-  replicas of release N and N-1 during a rolling upgrade (INV-3, R-HA-020 in
-  [ha-and-helm.md](ha-and-helm.md)). A release that introduces a new cursor version decodes it but
-  still emits the previous one; the next minor release emits it. Every release therefore decodes
-  every version the previous minor release emits, and a traversal never fails because a rollout is
-  in progress. A cursor of an older version answers 400 `invalid_cursor`, and the client restarts
-  the traversal.
+- A cursor is as old as its traversal: a traversal that spans a release change may meet a replica that
+  refuses its cursor with 400 `invalid_cursor`, and the client restarts the traversal. The cursor
+  format carries no version to bridge releases (Q-ARCH-341).
 - Every sort order ends with the item's unique identifier as tie-breaker, so a traversal returns
   no duplicates and skips nothing among items that do not change during it; items created or
   deleted meanwhile may or may not appear.
@@ -972,7 +969,7 @@ back:
 
 | Protocol | Where its state lives | Rule |
 |---|---|---|
-| Paged lists (R-API-010) | In the cursor | One keyset query per page; no server-side cursor, no stored result set; versions follow expand/contract |
+| Paged lists (R-API-010) | In the cursor | One keyset query per page; no server-side cursor, no stored result set; one format, no version |
 | Idempotent creates and job starts (R-API-014) | `api_idempotency_keys` in PostgreSQL | A retry replays, answers 409 `idempotency_in_progress`, or runs again on whichever replica it reaches |
 | Long-running work (R-API-015) | Job rows | Enqueued by the answering `web` replica, run by `worker` replicas |
 | Optimistic concurrency (R-API-012) | Revision columns in PostgreSQL | Every replica computes the same `ETag`; a restore lifts every revision column, so an `ETag` from before it never matches |
@@ -2026,10 +2023,10 @@ their favour.
 Acceptance criteria:
 
 - With two `api` and two `worker` replicas running, `GET /api/v1/system/replicas` lists all four
-  with their `roleName` and nodes, and `GET /api/v1/system/info` reports `replicas.roles.api.live` and
+  with their `roles` and nodes, and `GET /api/v1/system/info` reports `replicas.roles.api.live` and
   `replicas.roles.worker.live` as `2`; the system status screen (R-UI-038) renders from these
   answers, the task and job API, R-API-049 and R-API-050 without other endpoints.
-- A replica started with the development role lists `"roles": ["all"]` and `"roleName": "all"`.
+- A replica started with the development role lists `"roles": ["all"]`.
 - With Valkey stopped, every item lists `valkey` under `degraded`, with `valkey.state`
   `degraded` and `valkey.reason` `connection` or `timeout`, within `health.failure_threshold` ×
   `valkey.health_check_interval` plus `system.heartbeat_interval` plus 1 s; every item's `state`
@@ -3834,8 +3831,8 @@ INV-12 makes roles, drains and Valkey MVP and INV-19 the backup job (Q-UI-7).
   source; the maintenance mode, as a row only while it is not `normal` (Q-OPS-156); database (server version, schema version against the supported ones);
   scheduled tasks (`/system/tasks`: next run, last outcome) with "Run now", which runs on a
   `worker` replica; recent jobs (`/system/jobs`) with cancel.
-- **Replicas by role** (Q-UI-7, Q-UI-107). One group per role in the order `api`, `packages`, `worker`, taken from the replica's `roleName`
-  (Q-API-194); a group `web` while a replica of that role is live, during the
+- **Replicas by role** (Q-UI-7, Q-UI-107). One group per role in the order `api`, `packages`, `worker`, taken from the replica's `roles`
+  (Q-ARCH-341); a group `web` while a replica of that role is live, during the
   upgrade across the cut ([ha-and-helm.md](ha-and-helm.md) R-HA-064); a replica with roles
   `["all"]` of the development role forms a group `all`; within a group, one sub-group per pool of R-HA-062 and per
   endpoint pool, each with its own counts and drain safety,
@@ -7206,7 +7203,7 @@ Q-OPS-161 (the role values).
 
 ### Q-API-194 · The role members of the replica descriptions are additive, because the role enums are frozen
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Superseded by [Q-ARCH-341](architecture.md#q-arch-341--code-shaped-only-by-the-compatibility-rules-is-cleaned-up-the-cluster-minimum-version-stays)** (owner, 2026-11-06): the three enums list the real roles and `roleName` is gone. The text below is the record of the superseded decision.
 
 Context: Q-OPS-161 makes the registry's role the `--role` name (`api`, `packages`, `worker`, `web`, `all`). Three enums of the
 released contract list roles: `answeredBy.role` of the system information, `Replica.roles` and `EncryptionReplica.role`, each
@@ -7443,15 +7440,15 @@ by the server with `413`.
 `features/browse/browse.html`, `features/packages/package-detail.html`. Tests: `files-api.spec.ts`, `browse.spec.ts`,
 `package-detail.spec.ts`.
 
-### Q-UI-110 · The status screen groups by `roleName` and shows a role it does not know after the known ones
+### Q-UI-110 · The status screen groups by the replica's role and shows a role it does not know after the known ones
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-Context: Q-API-194 keeps `roles` a closed class and adds `roleName`. The role vocabulary is open (`roleName` is a string).
+Context: the registry names one role per replica (`roles`, Q-ARCH-341); the screen keeps a group for a role it does not know.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) The group of a replica is its `roleName`; a role other than `api`, `packages`, `worker`, `web`, `all` is a group after them (chosen) | The screen hides nothing | A further role, or a registry of a newer release, never disappears from the screen | The screen has no text for such a role beyond its name |
+| (a) The group of a replica is its role; a role other than `api`, `packages`, `worker`, `web`, `all` is a group after them (chosen) | The screen hides nothing | A further role, or a registry of a newer release, never disappears from the screen | The screen has no text for such a role beyond its name |
 | (b) Group by the class in `roles` | No new member needed | Works with the old data | `api` and `packages` would be one group `web`, which Q-UI-107 rejects |
 | (c) Drop unknown roles | Only the known groups | Tidy | A running replica would be missing from the screen |
 

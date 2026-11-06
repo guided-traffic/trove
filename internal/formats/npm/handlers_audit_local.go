@@ -38,21 +38,19 @@ const (
 	malwareCWE = "CWE-506"
 )
 
-// auditModeOf resolves the audit mode of a repository of the class (R-VULN-017, Q-VULN-44, Q-VULN-74). npm.audit.local true
-// answers from trove's data, which needs the installation's vulnerabilities.enabled and answers like disabled otherwise.
-// npm.audit.local false, or a document without it that sets npm.audit.mode, leaves the answer to the mode of v0.15.1:
-// forward needs a class that can forward (a local repository has no upstream) and answers like disabled otherwise. A
-// document that sets neither is local while the installation answers audits from its own data, else forward on remote and
-// virtual repositories and disabled on local ones (R-NPM-038).
+// auditModeOf resolves the audit mode of a repository of the class (R-VULN-017, Q-VULN-44, Q-ARCH-341). npm.audit.mode
+// local answers from trove's data, which needs the installation's vulnerabilities.enabled and answers like disabled
+// otherwise. forward needs a class that can forward (a local repository has no upstream) and answers like disabled
+// otherwise. A document that sets no mode is local while the installation answers audits from its own data, else forward
+// on remote and virtual repositories and disabled on local ones (R-NPM-038).
 func auditModeOf(h formats.Host, class formats.Class, s auditSettings) string {
 	d := h.Vulnerabilities()
-	if s.Local != nil && *s.Local {
+	switch s.Mode {
+	case auditLocal:
 		if d.Enabled() {
 			return auditLocal
 		}
 		return auditDisabled
-	}
-	switch s.Mode {
 	case auditForward:
 		if class == formats.Local {
 			return auditDisabled
@@ -62,7 +60,7 @@ func auditModeOf(h formats.Host, class formats.Class, s auditSettings) string {
 		return auditDisabled
 	}
 	switch {
-	case s.Local == nil && d.LocalByDefault():
+	case d.LocalByDefault():
 		return auditLocal
 	case class == formats.Local:
 		return auditDisabled

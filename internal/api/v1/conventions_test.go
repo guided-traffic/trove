@@ -1,6 +1,8 @@
 package v1
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -340,6 +342,19 @@ func TestPaging(t *testing.T) {
 		for _, bad := range []string{"%%%", "bm90LWEtY3Vyc29y", "", "djIuZXlKcklqcGJYWDA"} {
 			if _, err := parse("cursor=" + bad); err == nil {
 				t.Errorf("cursor %q accepted", bad)
+			}
+		}
+		// Q-ARCH-341: a cursor has one format and no version; the versioned shape and a body with another member are refused.
+		body, err := base64.RawURLEncoding.DecodeString(*p.NextCursor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		versioned := base64.RawURLEncoding.EncodeToString([]byte("v1." + base64.RawURLEncoding.EncodeToString(body)))
+		extra := base64.RawURLEncoding.EncodeToString(append(bytes.TrimSuffix(body, []byte("}")), []byte(`,"v":1}`)...))
+		for name, bad := range map[string]string{"versioned": versioned, "extra member": extra} {
+			_, err := parse("cursor=" + bad)
+			if st, code, _ := problemOf(t, err); st != 400 || code != "invalid_cursor" {
+				t.Errorf("%s cursor: %v", name, err)
 			}
 		}
 	})

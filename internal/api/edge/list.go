@@ -1,6 +1,7 @@
 package edge
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -25,13 +26,6 @@ import (
 // and a fingerprint of the filters and the sort order, nothing else, so the
 // next page may come from any replica and no result set or cursor state lives
 // in a process (R-API-051, INV-18).
-
-// cursorVersion is the version this release emits. Every release decodes all
-// versions in decodableCursorVersions, which the next minor release extends
-// before it starts emitting the new one (expand/contract, R-API-010).
-const cursorVersion = 1
-
-func decodableCursorVersions() []int { return []int{1} }
 
 // ListSpec declares what one list endpoint accepts (R-API-011).
 type ListSpec struct {
@@ -198,12 +192,11 @@ type cursorBody struct {
 	Fingerprint string   `json:"f"`
 }
 
-// EncodeCursor builds the opaque cursor of the last item of a page: a
-// versioned base64url encoding of its sort-key values and the fingerprint.
+// EncodeCursor builds the opaque cursor of the last item of a page: the base64url encoding of its sort-key values and
+// the fingerprint. The cursor has one format and no version field (R-API-010, Q-ARCH-341).
 func (q ListQuery) EncodeCursor(key []string) string {
 	b, _ := json.Marshal(cursorBody{Key: key, Fingerprint: q.fingerprint})
-	inner := "v" + strconv.Itoa(cursorVersion) + "." + base64.RawURLEncoding.EncodeToString(b)
-	return base64.RawURLEncoding.EncodeToString([]byte(inner))
+	return base64.RawURLEncoding.EncodeToString(b)
 }
 
 // InvalidCursor is the 400 of a cursor that does not belong to the request.
@@ -212,35 +205,18 @@ func InvalidCursor() error {
 		"The cursor is not valid for this request. Start the traversal again without a cursor.")
 }
 
+// decodeCursor reads a cursor of the one format; anything of another shape (not base64url, not the two members, a
+// member more, no key, another fingerprint) is the 400 invalid_cursor.
 func decodeCursor(c, wantFingerprint string) ([]string, error) {
-	outer, err := base64.RawURLEncoding.DecodeString(c)
-	if err != nil {
-		return nil, InvalidCursor()
-	}
-	ver, payload, ok := strings.Cut(string(outer), ".")
-	if !ok || !strings.HasPrefix(ver, "v") {
-		return nil, InvalidCursor()
-	}
-	n, err := strconv.Atoi(ver[1:])
-	if err != nil || !containsInt(decodableCursorVersions(), n) {
-		return nil, InvalidCursor()
-	}
-	raw, err := base64.RawURLEncoding.DecodeString(payload)
+	raw, err := base64.RawURLEncoding.DecodeString(c)
 	if err != nil {
 		return nil, InvalidCursor()
 	}
 	var body cursorBody
-	if err := json.Unmarshal(raw, &body); err != nil || body.Fingerprint != wantFingerprint || len(body.Key) == 0 {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil || dec.More() || body.Fingerprint != wantFingerprint || len(body.Key) == 0 {
 		return nil, InvalidCursor()
 	}
 	return body.Key, nil
-}
-
-func containsInt(list []int, n int) bool {
-	for _, x := range list {
-		if x == n {
-			return true
-		}
-	}
-	return false
 }

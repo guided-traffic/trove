@@ -306,7 +306,7 @@ and `TestR_OPS_003_RowsWithoutRuntime` ([replica_runtime_test.go](../../internal
 
 `cluster.ListReplicas(ctx, db, cfg.System)` reads the table on the request pool (`DB.Main`; there is no `Registry.List`); a lost replica lists no leases, so a lease name appears on one live row only. `Lost` is `heartbeat_at < now() - system.heartbeat_stale_after` on PostgreSQL's clock. `PruneReplicas` and `jobs.KindReplicaRegistryPrune`
 delete rows stale for 24 h. The HTTP layer converts `cluster.ReplicaInfo` to its own type; `internal/cluster` imports no edge package. The role of a row is the exact
-`--role` name; the API reports it as `roleName` and keeps the closed role class in `roles` (Q-API-194, [http-api.md](http-api.md)).
+`--role` name; the API reports it in `roles` (Q-ARCH-341, [http-api.md](http-api.md)).
 
 `cluster.FillCount` (same file) is the n of the fetch share of a remote repository (R-REPO-040, Q-ARCH-297, Q-OPS-165): the live replicas whose role fills client misses
 (`FillsClientMisses`: `packages`, `web`, `all`, pools included), counted by `CountFillingReplicas` once per heartbeat interval over the control connection. A failed read keeps the

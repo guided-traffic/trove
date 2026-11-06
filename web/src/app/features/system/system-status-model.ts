@@ -35,7 +35,7 @@ export interface PoolGroup extends GroupHealth {
 
 /** One role of the registry: its counts as `/system/info` reports them, and its replicas by pool (Q-UI-107). */
 export interface RoleGroup extends GroupHealth {
-  /** The exact role of the registry (`roleName`): api, packages, worker, web (the upgrade bridge), all. */
+  /** The role of the registry: api, packages, worker, web (the upgrade bridge), all. */
   readonly role: string;
   /** One sub-group per pool, the role's main Deployment first; the pools of a role count in the role. */
   readonly pools: readonly PoolGroup[];
@@ -46,9 +46,9 @@ const MAIN_ROLES = ['api', 'packages', 'worker'] as const;
 /** Roles that have a group only while a replica reports them: the upgrade bridge and the development role. */
 const OPTIONAL_ROLES = ['web', 'all'] as const;
 
-/** The exact role of a replica; `roles` holds the closed class of the released contract (Q-API-194). */
+/** The role of a replica: the registry names one role per replica (Q-ARCH-341). */
 export function roleOf(replica: Replica): string {
-  return replica.roleName || replica.roles[0] || '';
+  return replica.roles[0] ?? '';
 }
 
 interface Counts {
@@ -214,7 +214,7 @@ export function ringGaps(status: EncryptionStatus): RingGap[] {
   return status.replicas
     .map((r) => ({
       replica: r.name,
-      role: r.roleName,
+      role: r.role,
       missing: [...needed].filter((id) => !r.keyIds.includes(id)).sort(),
     }))
     .filter((g) => g.missing.length > 0);

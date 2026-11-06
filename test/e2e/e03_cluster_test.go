@@ -12,7 +12,7 @@ import (
 
 // checkReleaseServes is the part of E0.3 that also holds in the scatter profile (E0.11): every
 // trove pod answers 200 on :8081/readyz, the registry lists the replicas of every role under
-// its exact name (roleName) and the Ingress answers ping with OK. wantWorker counts the pods of
+// its own role (roles) and the Ingress answers ping with OK. wantWorker counts the pods of
 // the main worker and of the worker pool vuln.
 func checkReleaseServes(t *testing.T, wantAPI, wantPackages, wantWorker int) {
 	t.Helper()
@@ -39,7 +39,7 @@ func checkReleaseServes(t *testing.T, wantAPI, wantPackages, wantWorker int) {
 		got := map[string]int{}
 		for _, r := range rs {
 			if !r.Lost {
-				got[r.RoleName]++
+				got[r.role()]++
 			}
 		}
 		return got["api"] == wantAPI && got["packages"] == wantPackages && got["worker"] == wantWorker
@@ -47,7 +47,7 @@ func checkReleaseServes(t *testing.T, wantAPI, wantPackages, wantWorker int) {
 	names := map[string]string{}
 	for _, r := range rs {
 		if !r.Lost {
-			names[r.Name] = r.RoleName
+			names[r.Name] = r.role()
 		}
 	}
 	for role, ps := range map[string][]pod{"api": apis, "packages": pkgs, "worker": workers} {

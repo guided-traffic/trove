@@ -163,8 +163,7 @@ export class FakeEncryptionApi extends EncryptionApi {
     replicas: [
       {
         name: 'trove-api-0',
-        role: 'web',
-        roleName: 'api',
+        role: 'api',
         activeKeyId: '2026-10',
         keyIds: ['2026-04', '2026-10'],
       },
@@ -191,8 +190,7 @@ export function sampleReplica(over: Partial<Replica> = {}): Replica {
     instanceUid: 'uid-0',
     version: '0.1.1',
     revision: 'abc',
-    roles: ['web'],
-    roleName: 'api',
+    roles: ['api'],
     pool: null,
     state: 'ready',
     lost: false,
@@ -220,7 +218,7 @@ export function sampleInfo(over: Partial<SystemInfo> = {}): SystemInfo {
   return {
     installationId: null,
     incarnation: null,
-    answeredBy: { replica: 'trove-api-0', role: 'web', roleName: 'api' },
+    answeredBy: { replica: 'trove-api-0', role: 'api' },
     version: { version: '0.1.1', revision: 'abc', goVersion: 'go1.27.3' },
     baseUrl: 'https://trove.example.net',
     baseUrlSource: 'config',

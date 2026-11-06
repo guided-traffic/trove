@@ -249,20 +249,16 @@ func collectMigrationEvidence(t testing.TB, label string) {
 // ── what the installation reports ────────────────────────────────────────────
 
 type upReplica struct {
-	Name     string   `json:"name"`
-	Roles    []string `json:"roles"`
-	RoleName string   `json:"roleName"`
-	Pool     string   `json:"pool"`
-	Version  string   `json:"version"`
-	State    string   `json:"state"`
-	Lost     bool     `json:"lost"`
+	Name    string   `json:"name"`
+	Roles   []string `json:"roles"`
+	Pool    string   `json:"pool"`
+	Version string   `json:"version"`
+	State   string   `json:"state"`
+	Lost    bool     `json:"lost"`
 }
 
-// role is the exact role of a replica: roleName of the releases since the cut, the class `roles` of the releases before.
+// role is the role of a replica as the registry names it (Q-ARCH-341).
 func (r upReplica) role() string {
-	if r.RoleName != "" {
-		return r.RoleName
-	}
 	return strings.Join(r.Roles, ",")
 }
 

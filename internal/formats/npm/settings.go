@@ -37,11 +37,8 @@ type settings struct {
 
 // auditSettings are npm.audit (R-NPM-038, R-VULN-017, Q-NPM-64).
 type auditSettings struct {
-	// Local is npm.audit.local: true answers from trove's own advisory data, false leaves the answer to Mode (Q-VULN-74); nil
-	// when the document leaves it out, which the default rule of [auditModeOf] resolves because it depends on the
-	// installation (Q-VULN-44).
-	Local *bool
-	// Mode is npm.audit.mode, the frozen enum of v0.15.1: forward or disabled; "" when the document leaves it out.
+	// Mode is npm.audit.mode: local, forward or disabled; "" when the document leaves it out, which the default rule of
+	// [auditModeOf] resolves because it depends on the installation (Q-VULN-44, Q-ARCH-341).
 	Mode string
 	// Provider is providerURL; nil is the remote's upstream URL.
 	Provider    *url.URL
@@ -49,8 +46,7 @@ type auditSettings struct {
 	MaxBodySize int64
 }
 
-// The audit modes. auditLocal is not a value of npm.audit.mode, which stays the enum of v0.15.1 (R-ARCH-025); it is the
-// resolved mode of npm.audit.local (Q-VULN-74).
+// The audit modes: the values of npm.audit.mode (R-VULN-017, Q-ARCH-341).
 const (
 	auditLocal    = "local"
 	auditForward  = "forward"
@@ -76,7 +72,6 @@ func settingsOf(config []byte) settings {
 			LatestStrategy       string `json:"latestStrategy"`
 			DistTagStrategy      string `json:"distTagStrategy"`
 			Audit                struct {
-				Local       *bool   `json:"local"`
 				Mode        string  `json:"mode"`
 				ProviderURL *string `json:"providerURL"`
 				Timeout     string  `json:"timeout"`
@@ -100,9 +95,8 @@ func settingsOf(config []byte) settings {
 		out.DistTagStrategy = doc.NPM.DistTagStrategy
 	}
 	a := doc.NPM.Audit
-	out.Audit.Local = a.Local
 	switch a.Mode {
-	case auditForward, auditDisabled:
+	case auditLocal, auditForward, auditDisabled:
 		out.Audit.Mode = a.Mode
 	}
 	// A provider gets credentials only through the remote's sealed upstream credentials, never

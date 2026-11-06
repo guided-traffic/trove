@@ -329,7 +329,7 @@ func TestR_VULN_017_WhereLocalStillAnswers501(t *testing.T) {
 		{"the cache view", formats.Remote, `{}`, formats.EndpointFacts{Name: "default", CacheFill: true}, true, nil},
 		{"an endpoint with exposure rules", formats.Remote, `{}`, formats.EndpointFacts{Name: "customers", Rules: true, CacheFill: true}, false, nil},
 		{"mode disabled", formats.Remote, `{"npm":{"audit":{"mode":"disabled"}}}`, formats.EndpointFacts{Name: "default", CacheFill: true}, false, nil},
-		{"local while the scanning is off", formats.Remote, `{"npm":{"audit":{"local":true}}}`, formats.EndpointFacts{Name: "default", CacheFill: true}, false, func(s *scanning) { s.enabled = false }},
+		{"mode local while the scanning is off", formats.Remote, `{"npm":{"audit":{"mode":"local"}}}`, formats.EndpointFacts{Name: "default", CacheFill: true}, false, func(s *scanning) { s.enabled = false }},
 		{"mode forward on a local repository", formats.Local, `{"npm":{"audit":{"mode":"forward"}}}`, formats.EndpointFacts{Name: "default", CacheFill: true}, false, nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -463,19 +463,14 @@ func TestR_VULN_017_TheDefaultMode(t *testing.T) {
 		{formats.Virtual, `{}`, false, true, auditForward},
 		{formats.Local, `{}`, false, true, auditDisabled},
 		{formats.Remote, `{}`, false, false, auditForward},
-		{formats.Remote, `{"npm":{"audit":{"local":true}}}`, false, true, auditLocal},
-		{formats.Remote, `{"npm":{"audit":{"local":true}}}`, false, false, auditDisabled},
-		{formats.Remote, `{"npm":{"audit":{"local":true,"mode":"forward"}}}`, true, true, auditLocal},
-		// npm.audit.local false hands the answer to the frozen mode of v0.15.1 (Q-VULN-74).
-		{formats.Remote, `{"npm":{"audit":{"local":false}}}`, true, true, auditForward},
-		{formats.Local, `{"npm":{"audit":{"local":false}}}`, true, true, auditDisabled},
-		{formats.Remote, `{"npm":{"audit":{"local":false,"mode":"disabled"}}}`, true, true, auditDisabled},
-		{formats.Remote, `{"npm":{"audit":{"local":false,"mode":"forward"}}}`, true, true, auditForward},
-		// a stored mode "local" of a document written before the member existed is no mode: the default applies.
-		{formats.Remote, `{"npm":{"audit":{"mode":"local"}}}`, true, true, auditLocal},
+		{formats.Remote, `{"npm":{"audit":{"mode":"local"}}}`, false, true, auditLocal},
+		{formats.Local, `{"npm":{"audit":{"mode":"local"}}}`, false, true, auditLocal},
+		{formats.Virtual, `{"npm":{"audit":{"mode":"local"}}}`, false, true, auditLocal},
+		{formats.Remote, `{"npm":{"audit":{"mode":"local"}}}`, false, false, auditDisabled},
+		// a mode in the document wins over the installation's default (Q-ARCH-341).
+		{formats.Remote, `{"npm":{"audit":{"mode":"disabled"}}}`, true, true, auditDisabled},
 		{formats.Remote, `{"npm":{"audit":{"mode":"forward"}}}`, true, true, auditForward},
 		{formats.Local, `{"npm":{"audit":{"mode":"forward"}}}`, true, true, auditDisabled},
-		{formats.Remote, `{"npm":{"audit":{"mode":"disabled"}}}`, true, true, auditDisabled},
 	} {
 		data := newScanning()
 		data.enabled, data.byDef = c.enabled, c.scanning

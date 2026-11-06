@@ -852,15 +852,21 @@ func (e EncryptionKeyCanary) Valid() bool {
 
 // Defines values for EncryptionReplicaRole.
 const (
-	EncryptionReplicaRoleAll    EncryptionReplicaRole = "all"
-	EncryptionReplicaRoleWeb    EncryptionReplicaRole = "web"
-	EncryptionReplicaRoleWorker EncryptionReplicaRole = "worker"
+	EncryptionReplicaRoleAll      EncryptionReplicaRole = "all"
+	EncryptionReplicaRoleApi      EncryptionReplicaRole = "api"
+	EncryptionReplicaRolePackages EncryptionReplicaRole = "packages"
+	EncryptionReplicaRoleWeb      EncryptionReplicaRole = "web"
+	EncryptionReplicaRoleWorker   EncryptionReplicaRole = "worker"
 )
 
 // Valid indicates whether the value is a known member of the EncryptionReplicaRole enum.
 func (e EncryptionReplicaRole) Valid() bool {
 	switch e {
 	case EncryptionReplicaRoleAll:
+		return true
+	case EncryptionReplicaRoleApi:
+		return true
+	case EncryptionReplicaRolePackages:
 		return true
 	case EncryptionReplicaRoleWeb:
 		return true
@@ -1523,6 +1529,7 @@ func (e MirrorStatusState) Valid() bool {
 const (
 	NpmSettingsAuditModeDisabled NpmSettingsAuditMode = "disabled"
 	NpmSettingsAuditModeForward  NpmSettingsAuditMode = "forward"
+	NpmSettingsAuditModeLocal    NpmSettingsAuditMode = "local"
 )
 
 // Valid indicates whether the value is a known member of the NpmSettingsAuditMode enum.
@@ -1531,6 +1538,8 @@ func (e NpmSettingsAuditMode) Valid() bool {
 	case NpmSettingsAuditModeDisabled:
 		return true
 	case NpmSettingsAuditModeForward:
+		return true
+	case NpmSettingsAuditModeLocal:
 		return true
 	default:
 		return false
@@ -1965,15 +1974,21 @@ func (e RemoteSettingsOutboundProxyMode) Valid() bool {
 
 // Defines values for ReplicaRoles.
 const (
-	ReplicaRolesAll    ReplicaRoles = "all"
-	ReplicaRolesWeb    ReplicaRoles = "web"
-	ReplicaRolesWorker ReplicaRoles = "worker"
+	ReplicaRolesAll      ReplicaRoles = "all"
+	ReplicaRolesApi      ReplicaRoles = "api"
+	ReplicaRolesPackages ReplicaRoles = "packages"
+	ReplicaRolesWeb      ReplicaRoles = "web"
+	ReplicaRolesWorker   ReplicaRoles = "worker"
 )
 
 // Valid indicates whether the value is a known member of the ReplicaRoles enum.
 func (e ReplicaRoles) Valid() bool {
 	switch e {
 	case ReplicaRolesAll:
+		return true
+	case ReplicaRolesApi:
+		return true
+	case ReplicaRolesPackages:
 		return true
 	case ReplicaRolesWeb:
 		return true
@@ -2373,15 +2388,21 @@ func (e SessionAuthMethod) Valid() bool {
 
 // Defines values for SystemInfoAnsweredByRole.
 const (
-	SystemInfoAnsweredByRoleAll    SystemInfoAnsweredByRole = "all"
-	SystemInfoAnsweredByRoleWeb    SystemInfoAnsweredByRole = "web"
-	SystemInfoAnsweredByRoleWorker SystemInfoAnsweredByRole = "worker"
+	SystemInfoAnsweredByRoleAll      SystemInfoAnsweredByRole = "all"
+	SystemInfoAnsweredByRoleApi      SystemInfoAnsweredByRole = "api"
+	SystemInfoAnsweredByRolePackages SystemInfoAnsweredByRole = "packages"
+	SystemInfoAnsweredByRoleWeb      SystemInfoAnsweredByRole = "web"
+	SystemInfoAnsweredByRoleWorker   SystemInfoAnsweredByRole = "worker"
 )
 
 // Valid indicates whether the value is a known member of the SystemInfoAnsweredByRole enum.
 func (e SystemInfoAnsweredByRole) Valid() bool {
 	switch e {
 	case SystemInfoAnsweredByRoleAll:
+		return true
+	case SystemInfoAnsweredByRoleApi:
+		return true
+	case SystemInfoAnsweredByRolePackages:
 		return true
 	case SystemInfoAnsweredByRoleWeb:
 		return true
@@ -4950,14 +4971,11 @@ type EncryptionReplica struct {
 	KeyIds      []string `json:"keyIds"`
 	Name        string   `json:"name"`
 
-	// Role The role class of the replica as `answeredBy.role` of the system information names it; `roleName` is the exact role.
+	// Role The role the replica runs in (Q-OPS-161), as `answeredBy.role` of the system information names it.
 	Role EncryptionReplicaRole `json:"role"`
-
-	// RoleName The role the replica runs in (Q-OPS-161).
-	RoleName string `json:"roleName"`
 }
 
-// EncryptionReplicaRole The role class of the replica as `answeredBy.role` of the system information names it; `roleName` is the exact role.
+// EncryptionReplicaRole The role the replica runs in (Q-OPS-161), as `answeredBy.role` of the system information names it.
 type EncryptionReplicaRole string
 
 // EncryptionStatus defines model for EncryptionStatus.
@@ -5855,18 +5873,15 @@ type NpmSettings struct {
 	// Audit Every class (R-NPM-038, R-VULN-017). The security audit endpoint: answer from trove's own advisory data, or
 	// forward the names this remote has fetched, and that nothing marks internal, to an advisory provider.
 	Audit *struct {
-		// Local `true` answers from trove's own advisory data and sends nothing out (every class; `503 vulnerability_data_unavailable`
-		// until the npm data is complete; answers like `disabled` while `vulnerabilities.enabled` is false); `false` lets `mode`
-		// apply as before the scanning existed. Left out, the audit answers from trove's data while `vulnerabilities.enabled` is true
-		// and the OSV source is not `off` and the document sets no `mode`; a document that sets `mode` keeps it (Q-VULN-74).
-		Local *bool `json:"local,omitempty"`
-
 		// MaxBodySize The largest audit body as sent, `1KiB` to `10MiB`; ten times that decompressed. Larger bodies answer 413.
 		MaxBodySize *string `json:"maxBodySize,omitempty"`
 
-		// Mode Used while `local` is not `true`. `forward` answers through the first remote that forwards (remote and virtual
-		// repositories; a local repository answers like `disabled`); `disabled` answers 501 `npm_audit_unavailable`. Left out,
-		// and with `local` false, the mode is `forward` on remote and virtual repositories and `disabled` on local ones.
+		// Mode `local` answers from trove's own advisory data and sends nothing out (every class; `503 vulnerability_data_unavailable`
+		// until the npm data is complete; answers like `disabled` while `vulnerabilities.enabled` is false). `forward` answers
+		// through the first remote that forwards (remote and virtual repositories; a local repository answers like `disabled`);
+		// `disabled` answers 501 `npm_audit_unavailable`. Left out, the audit answers from trove's data while
+		// `vulnerabilities.enabled` is true and the OSV source is not `off`; else the mode is `forward` on remote and virtual
+		// repositories and `disabled` on local ones (Q-ARCH-341).
 		Mode *NpmSettingsAuditMode `json:"mode,omitempty"`
 
 		// ProviderURL Mode `forward` only. The https registry URL of the advisory provider, without user info, query or fragment; null is the remote's
@@ -5891,9 +5906,12 @@ type NpmSettings struct {
 	ServeRemovedVersions *bool `json:"serveRemovedVersions,omitempty"`
 }
 
-// NpmSettingsAuditMode Used while `local` is not `true`. `forward` answers through the first remote that forwards (remote and virtual
-// repositories; a local repository answers like `disabled`); `disabled` answers 501 `npm_audit_unavailable`. Left out,
-// and with `local` false, the mode is `forward` on remote and virtual repositories and `disabled` on local ones.
+// NpmSettingsAuditMode `local` answers from trove's own advisory data and sends nothing out (every class; `503 vulnerability_data_unavailable`
+// until the npm data is complete; answers like `disabled` while `vulnerabilities.enabled` is false). `forward` answers
+// through the first remote that forwards (remote and virtual repositories; a local repository answers like `disabled`);
+// `disabled` answers 501 `npm_audit_unavailable`. Left out, the audit answers from trove's data while
+// `vulnerabilities.enabled` is true and the OSV source is not `off`; else the mode is `forward` on remote and virtual
+// repositories and `disabled` on local ones (Q-ARCH-341).
 type NpmSettingsAuditMode string
 
 // NpmSettingsDistTagStrategy Virtual repositories (R-NPM-031). How the other dist-tags are merged.
@@ -6615,12 +6633,7 @@ type Replica struct {
 	Pool     *string `json:"pool,omitempty"`
 	Revision string  `json:"revision"`
 
-	// RoleName The role the replica registered with (Q-OPS-161): `api`, `packages`, `worker`, `web` (the upgrade bridge and the releases before the cut) or `all` (the development role); open for further roles.
-	RoleName string `json:"roleName"`
-
-	// Roles The role class of the replica, in the vocabulary of the releases before the cut into task areas, which this enum
-	// keeps (R-ARCH-025): `web` for a replica that serves client endpoints, so for `api`, `packages` and the upgrade
-	// bridge `web` alike, `worker`, and `all` for the development role. `roleName` is the exact role.
+	// Roles The role the replica registered with (Q-OPS-161), as the registry names it: `api`, `packages`, `worker`, `web` (the upgrade bridge) or `all` (the development role). One entry per replica.
 	Roles []ReplicaRoles `json:"roles"`
 
 	// Runtime The replica's own measurements of its last heartbeat period (Q-OPS-175); `null` until its first heartbeat after the start, and for a replica of a release before them.
@@ -6682,7 +6695,7 @@ type ReplicaSummary struct {
 	Live  int `json:"live"`
 	Ready int `json:"ready"`
 
-	// Roles Per role (`api`, `packages`, `worker`, and during an upgrade across the cut `web`; `all` in the development role), keyed by `roleName`; the replicas of a role's pools count in the role.
+	// Roles Per role (`api`, `packages`, `worker`, and during an upgrade across the cut `web`; `all` in the development role), keyed by the role of the replica; the replicas of a role's pools count in the role.
 	Roles map[string]RoleSummary `json:"roles"`
 
 	// Versions Live replicas per version.
@@ -7080,13 +7093,8 @@ type SystemInfo struct {
 	AnsweredBy struct {
 		Replica string `json:"replica"`
 
-		// Role The role class of the replica that answered, in the vocabulary of the releases before the cut into task areas,
-		// which this enum keeps (R-ARCH-025): `web` for a replica that serves client endpoints, so for `api`, `packages`
-		// and the upgrade bridge `web` alike, `worker`, and `all` for the development role. `roleName` is the exact role.
+		// Role The role the replica that answered runs in (`--role`, Q-OPS-161), as the registry, `trove_build_info{role}` and the logs name it: `api`, `packages`, `worker`, `web` (the upgrade bridge) or `all` (the development role).
 		Role SystemInfoAnsweredByRole `json:"role"`
-
-		// RoleName The role the replica runs in (`--role`, Q-OPS-161), as the registry, `trove_build_info{role}` and the logs name it; open for further roles.
-		RoleName string `json:"roleName"`
 	} `json:"answeredBy"`
 
 	// Backup Always `null` until the backup runs exist.
@@ -7134,9 +7142,7 @@ type SystemInfo struct {
 	VulnerabilityData *VulnerabilityDataFacts `json:"vulnerabilityData,omitempty"`
 }
 
-// SystemInfoAnsweredByRole The role class of the replica that answered, in the vocabulary of the releases before the cut into task areas,
-// which this enum keeps (R-ARCH-025): `web` for a replica that serves client endpoints, so for `api`, `packages`
-// and the upgrade bridge `web` alike, `worker`, and `all` for the development role. `roleName` is the exact role.
+// SystemInfoAnsweredByRole The role the replica that answered runs in (`--role`, Q-OPS-161), as the registry, `trove_build_info{role}` and the logs name it: `api`, `packages`, `worker`, `web` (the upgrade bridge) or `all` (the development role).
 type SystemInfoAnsweredByRole string
 
 // SystemInfoBaseUrlSource `request` means `server.base_url` is unset and the origin was derived from the request (development only).

@@ -386,8 +386,7 @@ func TestR_NPM_038_SettingsSchemaAndDefaults(t *testing.T) {
 	for _, ok := range []string{
 		`{"audit":{}}`,
 		`{"audit":{"mode":"disabled"}}`,
-		`{"audit":{"local":true}}`,
-		`{"audit":{"local":false,"mode":"forward"}}`,
+		`{"audit":{"mode":"local"}}`,
 		`{"audit":{"mode":"forward","providerURL":null,"timeout":"30s","maxBodySize":"10MiB"}}`,
 		`{"audit":{"providerURL":"https://advisories.example.org/","timeout":"300s","maxBodySize":"64KiB"}}`,
 	} {
@@ -397,8 +396,7 @@ func TestR_NPM_038_SettingsSchemaAndDefaults(t *testing.T) {
 	}
 	for _, bad := range []string{
 		`{"audit":{"mode":"always"}}`,
-		`{"audit":{"mode":"local"}}`, // the enum is frozen (R-ARCH-025, Q-VULN-74)
-		`{"audit":{"local":"yes"}}`,
+		`{"audit":{"local":true}}`, // local is a value of mode (Q-ARCH-341), no member of its own
 		`{"audit":{"providerURL":"http://advisories.example.org/"}}`,
 		`{"audit":{"providerURL":"https://user:secret@advisories.example.org/"}}`,
 		`{"audit":{"providerURL":"https://token@advisories.example.org/npm/"}}`,
@@ -416,7 +414,7 @@ func TestR_NPM_038_SettingsSchemaAndDefaults(t *testing.T) {
 	}
 	// npm.audit is a member of every class from M4b (R-VULN-017).
 	for _, class := range []catalog.Class{catalog.Local, catalog.Remote, catalog.Virtual} {
-		if vs := e.ValidateSettings(class, []byte(`{"audit":{"local":true}}`)); len(vs) != 0 {
+		if vs := e.ValidateSettings(class, []byte(`{"audit":{"mode":"local"}}`)); len(vs) != 0 {
 			t.Errorf("audit local on %s: %+v", class, vs)
 		}
 	}

@@ -153,7 +153,7 @@ func (s *Server) GetEncryptionStatus(w http.ResponseWriter, r *http.Request) {
 		ids := append([]string{}, rep.KeyIDs...)
 		sort.Strings(ids)
 		out.Replicas = append(out.Replicas, gen.EncryptionReplica{
-			Name: rep.Name, Role: gen.EncryptionReplicaRole(roleClass(rep.Role)), RoleName: rep.Role, ActiveKeyId: rep.ActiveKeyID, KeyIds: ids,
+			Name: rep.Name, Role: gen.EncryptionReplicaRole(rep.Role), ActiveKeyId: rep.ActiveKeyID, KeyIds: ids,
 		})
 	}
 	sort.Slice(out.Replicas, func(i, j int) bool { return out.Replicas[i].Name < out.Replicas[j].Name })

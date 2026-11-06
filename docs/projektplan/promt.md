@@ -494,11 +494,6 @@ tasks come before the phase's own work packages (step 2, item 5), in this order;
   H-551): in the admin area, for `vulnerabilities:triage` or `content:metadata-read`: the counts and trend over all projects, a
   search by advisory ID (CVE, GHSA), package and project, and the triage of each finding; the project's own Vulnerabilities screen
   shows that project only. Check first what the current report already searches.
-- **T-10 · Clean up what only the compatibility rules shaped**
-  ([Q-ARCH-341](../spec/architecture.md#q-arch-341--code-shaped-only-by-the-compatibility-rules-is-cleaned-up-the-cluster-minimum-version-stays)):
-  the replica list reports each replica's own role (no `roleClass` mapping onto a closed enum), a list cursor has one format
-  without a version (R-API-010), `local` becomes a value of `npm.audit.mode` and the boolean of Q-VULN-74 goes; the cluster
-  minimum-version gate of R-HA-020 and R-HA-022 stays.
 - **T-11 · Finish trove's own controls** ([Q-UI-126](../spec/api-and-ui.md#q-ui-126--troves-own-controls-in-place-of-angular-material)):
   the screens still on Angular Material move to the classes of `_controls.scss` (about 250 Material buttons in about 80 files,
   dialogs to the CDK dialog, tabs to `.tab-nav` or `@angular/aria`, checkboxes, menus), the `--mat-sys-*` tokens to trove's own,

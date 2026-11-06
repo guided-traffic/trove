@@ -303,7 +303,6 @@ type replica struct {
 		Name string `json:"name"`
 	} `json:"leases"`
 	InstanceUID string `json:"instanceUid"`
-	RoleName    string `json:"roleName"`
 	Pool        string `json:"pool"`
 }
 

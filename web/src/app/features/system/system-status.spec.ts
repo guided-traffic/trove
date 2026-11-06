@@ -47,7 +47,7 @@ describe('System status screen', () => {
   it('R-UI-038 Q-UI-107 groups the replicas by role in the order api, packages, worker, and by pool within a role', async () => {
     const { root } = await render((system) => {
       const sample = (name: string, roleName: string, node: string, pool: string | null = null) =>
-        sampleReplica({ name, instanceUid: name, roleName, node, pool, roles: [roleName === 'worker' ? 'worker' : 'web'] });
+        sampleReplica({ name, instanceUid: name, node, pool, roles: [roleName as 'api' | 'packages' | 'worker'] });
       system.replicasResult = [
         sample('trove-api-0', 'api', 'n1'),
         sample('trove-api-1', 'api', 'n2'),
@@ -92,7 +92,7 @@ describe('System status screen', () => {
     const { root } = await render((system) => {
       system.replicasResult = [
         sampleReplica({ name: 'trove-api-0', instanceUid: 'a' }),
-        sampleReplica({ name: 'trove-web-0', instanceUid: 'b', roleName: 'web', node: 'node-b' }),
+        sampleReplica({ name: 'trove-web-0', instanceUid: 'b', roles: ['web'], node: 'node-b' }),
       ];
     });
     const headings = [...root.querySelectorAll('section.role > h3 > span:first-child')].map((h) => h.textContent?.trim());
