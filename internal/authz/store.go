@@ -120,7 +120,7 @@ func (s *Service) CreateIn(ctx context.Context, tx meta.Tx, actor Subject, in Po
 		return Policy{}, err
 	}
 	// The project lookups run on this transaction, like the insert (Q-AUTHZ-199).
-	rp, problems, err := s.resolve(ctx, in, false, append(opts, s.inTx(qs))...)
+	rp, problems, err := s.resolve(ctx, in, append(opts, s.inTx(qs))...)
 	if err != nil {
 		return Policy{}, err
 	}
@@ -196,7 +196,7 @@ func (s *Service) Update(ctx context.Context, actor Subject, name string, expect
 			return problemError([]ProblemField{field("/project", "immutable", "The project of a policy is fixed when it is created.")})
 		}
 		var problems []ProblemField
-		if rp, problems, err = s.resolve(ctx, in, false, append(opts, s.inTx(qs))...); err != nil {
+		if rp, problems, err = s.resolve(ctx, in, append(opts, s.inTx(qs))...); err != nil {
 			return err
 		}
 		if len(problems) > 0 {
@@ -335,7 +335,7 @@ func (s *Service) Get(ctx context.Context, name string) (Policy, error) {
 	if err != nil {
 		return Policy{}, err
 	}
-	if rp, problems, rerr := s.resolve(ctx, p.PolicyInput, true); rerr == nil && len(problems) == 0 {
+	if rp, problems, rerr := s.resolve(ctx, p.PolicyInput); rerr == nil && len(problems) == 0 {
 		p.Warnings = nonNilStrings(rp.warnings)
 	}
 	return p, nil

@@ -9,7 +9,6 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/ci/claims"
-	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
 
 // The CI evaluator (R-AUTHZ-014, R-CI-012, R-CI-013, R-CI-015) on the grant index, without PostgreSQL: the
@@ -388,9 +387,4 @@ func TestR_CI_015_TheClaimOfACIPublish(t *testing.T) {
 			t.Error("an unclaimed name with versions was allowed without manage")
 		}
 	})
-}
-
-func projectRow(id, key string) (r q.AuthzBuildProjectsRow) {
-	r.ID, r.Key = id, key
-	return r
 }

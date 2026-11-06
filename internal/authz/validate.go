@@ -189,7 +189,7 @@ func problemError(ps []ProblemField) error {
 // (POST /api/v1/authz/validate-policy). A policy of a project (in.Project) is
 // validated in the project's context: bare keys of that project only (R-AUTHZ-026).
 func (s *Service) Validate(ctx context.Context, in PolicyInput, opts ...WriteOption) (Report, error) {
-	rp, problems, err := s.resolve(ctx, in, false, opts...)
+	rp, problems, err := s.resolve(ctx, in, opts...)
 	if err != nil {
 		return Report{}, err
 	}
@@ -297,9 +297,9 @@ func (s *Service) resolveProject(ctx context.Context, rp *resolvedPolicy) ([]Pro
 
 // resolve validates the input against R-AUTHZ-021 and R-AUTHZ-026 and resolves
 // selectors and principals. Problems of the input are returned as fields; an
-// error is a failure of a dependency. stored is true for a policy that was read
-// from the store to compute its warnings.
-func (s *Service) resolve(ctx context.Context, in PolicyInput, stored bool, opts ...WriteOption) (*resolvedPolicy, []ProblemField, error) {
+// error is a failure of a dependency. A stored policy is resolved the same way to
+// compute its warnings.
+func (s *Service) resolve(ctx context.Context, in PolicyInput, opts ...WriteOption) (*resolvedPolicy, []ProblemField, error) {
 	var ps []ProblemField
 	rp := &resolvedPolicy{in: in, o: collectOptions(opts)}
 	if in.ResourceType == "" {

@@ -188,7 +188,7 @@ func (s *Service) Annotate(ctx context.Context, ps []Policy) error {
 			return err
 		}
 		for i := range ps {
-			rp, problems, err := s.resolve(ctx, ps[i].PolicyInput, true, s.inTx(qs))
+			rp, problems, err := s.resolve(ctx, ps[i].PolicyInput, s.inTx(qs))
 			if err != nil {
 				return err
 			}
