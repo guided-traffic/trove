@@ -207,8 +207,9 @@ accept session cookies on package routes. After the second step (`web.routed: fa
 the pods keep running behind the Service `<fullname>` and stay reachable inside the cluster wherever a NetworkPolicy admits their port,
 until the third step removes them. The mitigation is the duration, and the chart bounds it by a signal, not by a refusal: the
 alert `TroveBridgeLeftOn` (PrometheusRule, `metrics.prometheusRule.enabled`) fires when a `web` replica has been registered for 24
-hours, and `NOTES.txt` names the next step. The guard of R-HA-064 acts only on the second and third steps: it refuses them while a
-Deployment of the target shape is not ready, and refuses the third while the edge still routes to the bridge (Q-HA-130).
+hours, and `NOTES.txt` names the next step. The guard of R-HA-064 acts only on the second and third steps: it refuses the upgrade
+that moves the edge while a Deployment of the target shape is not ready, and refuses the third while the edge still routes to the
+bridge (Q-HA-130, Q-HA-132).
 
 In the chart the bridge is `web.enabled: true` ([_secrets.tpl](../../deploy/helm/trove/templates/_secrets.tpl),
 [_units.tpl](../../deploy/helm/trove/templates/_units.tpl)): its pods mount the login secrets (`secrets.oidc[]`,

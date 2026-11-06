@@ -802,6 +802,59 @@ func TestRolesBridge(t *testing.T) {
 		}
 	})
 
+	t.Run("R-HA-064 Q-HA-132 the guard refuses only the upgrade that moves the edge onto a target that is not ready, and step 3 before step 2", func(t *testing.T) {
+		// The decision is a function of what trove.bridgeFacts reads with lookup; here the facts are given. The units of
+		// ci/bridge.yaml: trove-api, trove-packages and the endpoint pool trove-packages-ep-customers.
+		const ready = "deployments: {trove-api: {replicas: 3, ready: 3}, trove-packages: {replicas: 4, ready: 4}, trove-packages-ep-customers: {replicas: 3, ready: 3}}\n"
+		const apiDown = "deployments: {trove-api: {replicas: 3, ready: 1}, trove-packages: {replicas: 4, ready: 4}, trove-packages-ep-customers: {replicas: 3, ready: 3}}\n"
+		const noAPI = "deployments: {trove-packages: {replicas: 4, ready: 4}, trove-packages-ep-customers: {replicas: 3, ready: 3}}\n"
+		const onBridge = "web: true\ningress: true\ningressToBridge: [/]\nendpointServices: {customers: web}\n"
+		const moved = "web: true\ningress: true\ningressToBridge: []\nendpointServices: {customers: packages}\n"
+		const unread = "web: true\ningress: false\ningressToBridge: []\nendpointServices: {}\n"
+		step2 := []string{"web.routed=false"}
+		step3 := []string{"web.enabled=false"}
+		for _, c := range []struct {
+			name  string
+			sets  []string
+			facts string
+			want  []string // empty: the guard lets the upgrade through
+		}{
+			{"step 2 at step 2 with api crash-looping (the edge has moved)", step2, moved + apiDown, nil},
+			{"step 3 at step 2 with api crash-looping (the edge has moved)", step3, moved + apiDown, nil},
+			{"step 2 from step 1 with every target ready", step2, onBridge + ready, nil},
+			{
+				"step 2 from step 1 with api not ready", step2, onBridge + apiDown,
+				[]string{"moves the edge", "the Ingress trove routes / to the Service trove", "the Service trove-ep-customers selects the web pods", "trove-api is missing or not fully ready", "three upgrades"},
+			},
+			{"step 2 from the old shape (no trove-api)", step2, onBridge + noAPI, []string{"trove-api is missing or not fully ready", "--set web.enabled=true"}},
+			{
+				"step 3 from step 1 (step 2 skipped)", step3, onBridge + ready,
+				[]string{"web.enabled is false while the edge still routes to the bridge", "Run step 2 first", "--set web.enabled=true --set web.routed=false", "three upgrades"},
+			},
+			{
+				"step 3 from step 1 with only the endpoint Service on the bridge", step3, "web: true\ningress: true\ningressToBridge: []\nendpointServices: {customers: web}\n" + ready,
+				[]string{"still routes to the bridge (the Service trove-ep-customers selects the web pods)"},
+			},
+			{"no readable edge and no trove-api: step 1 has not run", step3, unread + noAPI, []string{"trove-api does not exist, so step 1 has not run", "three upgrades"}},
+			{"no readable edge and trove-api not ready", step2, unread + apiDown, nil},
+			{"no trove-web", step3, "web: false\n" + noAPI, nil},
+			{"step 1 is never refused", nil, onBridge + noAPI, nil},
+		} {
+			got := bridgeGuardOf(t, bridgeSet(), c.sets, c.facts)
+			if len(c.want) == 0 && got != "" {
+				t.Errorf("%s: refused: %s", c.name, got)
+			}
+			if len(c.want) > 0 && got == "" {
+				t.Errorf("%s: let through, want a refusal naming %q", c.name, c.want)
+			}
+			for _, w := range c.want {
+				if got != "" && !strings.Contains(got, w) {
+					t.Errorf("%s: the refusal does not name %q:\n%s", c.name, w, got)
+				}
+			}
+		}
+	})
+
 	t.Run("R-HA-064 the guard reads the cluster only: helm template, which has none, renders web.enabled=false next to a trove-web", func(t *testing.T) {
 		// lookup returns nothing without a cluster, so the two steps are enforced under helm upgrade only
 		// (helm upgrade --dry-run=server, the upgrade e2e test); the rendering must not depend on it.
@@ -824,6 +877,36 @@ func TestRolesBridge(t *testing.T) {
 		renderFails(t, bridgeSet(), []string{"web.replicaCount=1"}, "web.replicaCount", "trove-web")
 		renderFails(t, bridgeSet(), []string{"web.resources.limits=null"}, "web.resources.limits.memory is required")
 	})
+}
+
+// bridgeGuardOf renders the decision of the bridge guard (trove.bridgeGuard) in a copy of the chart for the given facts
+// of the cluster (the YAML trove.bridgeFacts reads with lookup) and returns its refusal, empty when it lets the upgrade
+// through.
+func bridgeGuardOf(t *testing.T, files, sets []string, facts string) string {
+	t.Helper()
+	dir := t.TempDir()
+	copyDir(t, chartDir, filepath.Join(dir, "trove"))
+	probe := "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: guard\ndata:\n  message: {{ include \"trove.bridgeGuard\" (dict \"root\" . \"facts\" (`" +
+		facts + "` | fromYaml)) | quote }}\n"
+	if err := os.WriteFile(filepath.Join(dir, "trove", "templates", "guard-probe.yaml"), []byte(probe), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"template", "trove", filepath.Join(dir, "trove"), "--show-only", "templates/guard-probe.yaml", "--namespace", "default"}
+	for _, f := range files {
+		args = append(args, "-f", f)
+	}
+	for _, s := range sets {
+		args = append(args, "--set", s)
+	}
+	out, stderr, err := helm(t, args...)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, stderr)
+	}
+	docs := parse(t, out)
+	if len(docs) != 1 {
+		t.Fatalf("the probe rendered %d documents", len(docs))
+	}
+	return str(docs[0], "data", "message")
 }
 
 // notesOf renders NOTES.txt through the template trove.notes in a copy of the chart.

@@ -2432,8 +2432,9 @@ Acceptance criteria:
 Priority: **MVP** · Covers: HA-069, OPS-073
 
 **Status.** Built (phase 6a, WP6a.3; the third step since F-64, Q-HA-130): the bridge, its edge, step 2's value `web.routed`
-and the guard ([_validate_roles.tpl](../../deploy/helm/trove/templates/_validate_roles.tpl)). The guard's refusals read the
-cluster and are verified by the upgrade e2e test, not by the chart test (Q-HA-86): `TestUpgrade_R_HA_064_AcrossTheCut`
+and the guard ([_validate_roles.tpl](../../deploy/helm/trove/templates/_validate_roles.tpl)). The guard reads the cluster
+(`trove.bridgeFacts`) and decides on what it read (`trove.bridgeGuard`); the chart test `TestRolesBridge` checks the decision
+with given facts (Q-HA-132), and the reads are verified by the upgrade e2e test (Q-HA-86): `TestUpgrade_R_HA_064_AcrossTheCut`
 ([upgrade_test.go](../../test/e2e/upgrade_test.go), the set `upgrade`, [Q-HA-95](#q-ha-95--how-the-upgrade-tests-get-and-install-the-older-release))
 installs v0.16.0, checks both refusals and that `helm template` renders, and runs the three steps under client and browser
 loops, with the edge's access lines read for answers without a backend (Q-HA-131). The chart test `TestRolesBridge` checks
@@ -2484,13 +2485,21 @@ values `web.enabled` and `web.routed` (Q-ARCH-295, Q-HA-73, Q-HA-130).
   the role Services now.
 - **Step 3.** `helm upgrade` with `web.enabled: false` (the default): Helm deletes `<fullname>-web`, its endpoint pools and the
   Service `<fullname>`, which no route names any more; their pods drain by R-HA-011. No route changes.
-- **Guard.** Where the chart can read the cluster (`helm upgrade`, `helm install --dry-run=server`; Helm's `lookup`) and the
-  release's namespace holds a Deployment `<fullname>-web`, it refuses to render:
-  - the edge of the target shape (step 2 or step 3) while a serving Deployment of the target shape (`<fullname>-api`,
-    `<fullname>-packages`, their path pools and their endpoint pools) does not exist or has fewer ready replicas than its
-    `spec.replicas`; the message names the Deployment and the three steps;
-  - `web.enabled: false` while the chart's Ingress `<fullname>` still routes a path to the Service `<fullname>`, which is
-    step 3 without step 2; the message names the path and the three steps.
+- **Guard.** Where the chart can read the cluster (`helm upgrade`, `helm install --dry-run=server`; Helm's `lookup`), the
+  release's namespace holds a Deployment `<fullname>-web` and the rendered edge is the target shape's (step 2 or step 3), it
+  reads where the edge points: the edge is still on the bridge while the chart's Ingress `<fullname>` routes a path to the
+  Service `<fullname>`, or a further endpoint's Service `<fullname>-ep-<name>` selects the `web` pods. It refuses to render
+  ([_validate_roles.tpl](../../deploy/helm/trove/templates/_validate_roles.tpl): `trove.bridgeFacts` reads, `trove.bridgeGuard`
+  decides):
+  - the upgrade that moves the edge (the edge is still on the bridge) while a serving Deployment of the target shape
+    (`<fullname>-api`, `<fullname>-packages`, their path pools and their endpoint pools) does not exist or has fewer ready
+    replicas than its `spec.replicas`; the message names what still routes to the bridge, the Deployment and the three steps.
+    Once the edge has moved, an upgrade at step 2 or 3 passes whatever the readiness of the target shape: it moves nothing,
+    and a refusal would leave a crash-looping `api` or a rollout in progress only the way back to step 1 (Q-HA-132);
+  - `web.enabled: false` while the edge is still on the bridge, which is step 3 without step 2; the message names what
+    still routes to the bridge and the three steps;
+  - where it reads no edge at all (no Ingress `<fullname>`, no endpoint Service), the target shape while `<fullname>-api` or
+    `<fullname>-packages` does not exist: step 1 has not run.
 
   Under `helm template` and other renderers without cluster access the guard has nothing to read, and the release notes carry
   the three steps. An edge outside the chart is not read: an operator who skips step 2 there meets the gap of F-64.
@@ -2511,8 +2520,10 @@ values `web.enabled` and `web.routed` (Q-ARCH-295, Q-HA-73, Q-HA-130).
 - **The way back** is a rollback of a release (R-ARCH-025). Each step's rollback is the reverse of a step that changes one
   kind of thing: rolling back step 3 recreates `<fullname>-web` and the Service `<fullname>` without a route to them, rolling
   back step 2 moves the edge back onto `<fullname>`, whose pods still run, and rolling back step 1 is a rollback of
-  `<fullname>-web` alone. None of them leaves a route without a ready backend. Rolling back from step 3 straight to step 1
-  restores the edge and the backend in one apply and meets the gap of the restored pods' start time.
+  `<fullname>-web` alone. None of them leaves a route without a ready backend, so a rollback goes one step at a time: from
+  step 3 to step 2, then from step 2 to step 1. `helm rollback` applies a stored release without rendering it, so no guard
+  can refuse a rollback from step 3 straight to a revision of step 1: it recreates `<fullname>-web` and points the Ingress
+  at `<fullname>` in one apply, and the host answers `503` until the restored `web` pods are ready.
 - A fresh installation never renders `web`: `web.enabled` defaults to `false`, `web.routed` has no effect without it, and the
   chart's `ci/` value sets render the bridge only in the value set that tests it.
 
@@ -2527,6 +2538,8 @@ Acceptance criteria:
   anything changes, names `web.enabled` and the three steps; the same values under `helm template` render.
 - `helm upgrade` with `web.enabled: false` after step 1, while the Ingress `trove` routes `/` to the Service `trove`, fails
   before anything changes and names step 2.
+- After step 2, `helm upgrade` with the values of step 2 or 3 renders while a Deployment of the target shape is not ready
+  (Q-HA-132).
 - `helm template … --set web.enabled=true` renders `trove-web` with `--role web`, the Service `trove` selecting its pods, an
   Ingress whose every rule is `/` to `trove`, and the Deployments and Services of `api`, `packages` and `worker`; with
   `--set web.routed=false` the same Deployments and Services and the Ingress of the target shape.
@@ -3330,8 +3343,9 @@ The chart MUST refuse to render, naming the offending value, before anything is 
 | `restore.enabled` without `restore.backupId` | `restore.backupId` |
 | `restore.enabled` with a replica count above 0 or autoscaling enabled for any role or pool | `restore.enabled` and the value |
 | Two pools of a role with the same name, two pools with the same path prefix or queue, a pool path outside the families of its role or equal to one of the role's own prefixes of R-HA-037, a worker pool queue that does not exist, or a pool whose name starts with `ep-` (R-HA-062) | the pools |
-| The edge of the target shape (`web.enabled: false`, or `web.routed: false`) while the namespace holds `<fullname>-web` and a serving Deployment of the target shape (api, packages, path pools, endpoint pools) is missing or not fully ready, read through `lookup` where the chart can read the cluster (R-HA-064) | the Deployment and the three steps |
-| `web.enabled: false` while the namespace holds `<fullname>-web` and the chart's Ingress `<fullname>` still routes a path to the Service `<fullname>`, read through `lookup` (R-HA-064, Q-HA-130) | the path and the three steps |
+| The edge of the target shape (`web.enabled: false`, or `web.routed: false`) while the namespace holds `<fullname>-web`, the edge is still on the bridge (the chart's Ingress `<fullname>` routes a path to the Service `<fullname>`, or a `<fullname>-ep-<name>` selects the `web` pods) and a serving Deployment of the target shape (api, packages, path pools, endpoint pools) is missing or not fully ready, read through `lookup` where the chart can read the cluster (R-HA-064, Q-HA-132) | what still routes to the bridge, the Deployment and the three steps |
+| `web.enabled: false` while the namespace holds `<fullname>-web` and the edge is still on the bridge, read through `lookup` (R-HA-064, Q-HA-130) | what still routes to the bridge and the three steps |
+| The edge of the target shape while the namespace holds `<fullname>-web`, the chart reads no edge (no Ingress `<fullname>`, no endpoint Service) and `<fullname>-api` or `<fullname>-packages` does not exist: step 1 has not run (R-HA-064, Q-HA-132) | the Deployment and the three steps |
 | Worker pools that claim every queue; a worker pool without a replica; an `endpoints.default.surface` without a family of a role that no further endpoint is served by (R-HA-062) | the pool or the surface |
 | A provider of `config.auth.oidc.providers` with a `client_auth_method` other than `none` and no entry in `secrets.oidc` (R-HA-030, Q-HA-93) | the provider |
 | An endpoint whose `port` equals 8080, 8081 or another endpoint's port; an invalid endpoint name or one for which `<fullname>-api-ep-<name>` (a surface with families of both roles) or `<fullname>-packages-ep-<name>` (a pool) exceeds 63 characters; a missing `baseUrl`; a host in two endpoints; `extraSecrets` or `clientCaSecret` with `tls.enabled: false`; an endpoint pool below two replicas with `highAvailability.enforce` ([endpoints.md](endpoints.md) R-EP-008) | the endpoint and the value |
@@ -7885,6 +7899,38 @@ rollback. The development agent would revisit the format if the dev profile chan
 
 **Applied in the spec:** R-HA-064 (acceptance criteria), [upgrade_test.go](../../test/e2e/upgrade_test.go),
 [docs/developer/e2e.md](../developer/e2e.md#the-upgrade-tests).
+
+### Q-HA-132 · The bridge guard checks readiness only on the upgrade that moves the edge
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a review of Q-HA-130 found that the readiness refusal ran on every upgrade with the values of step 2, because
+`<fullname>-web` exists for the whole of step 2. An `api` that crash-loops at step 2, an autoscaler scaling up or a rollout in
+progress made the upgrade that carries the fix fail, and the only way through was back to step 1, which moves the edge back to
+the `web` pods. The refusal exists for one transition: the apply that moves the edge onto the target shape. Where the edge
+points is in the cluster: the chart's Ingress `<fullname>` routes to the Service `<fullname>`, and each further endpoint's
+Service `<fullname>-ep-<name>` selects the `web` pods, until step 2 has been applied. An installation without the chart's
+Ingress (an edge of its own) and without further endpoints shows the chart no edge.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Read where the edge points (the Ingress and the endpoint Services); check readiness only while it is still on the bridge; with no edge to read, refuse only a missing main `api` or `packages` Deployment, which says step 1 has not run (chosen) | The refusal follows the transition, not the values | An upgrade at step 2 with the edge moved passes whatever the readiness; the endpoint Services give a signal without the chart's Ingress; a one-step upgrade from the old shape is still refused | Without a readable edge, a target that exists but is not ready is not refused when the operator's own route moves |
+| (b) Read the chart's Ingress only; no Ingress, no guard | The review's minimum | Simplest | An installation with `ingress.enabled: false` loses the refusal of the one-step upgrade from the old shape, and an endpoint whose Service moves in step 2 is not read |
+| (c) Keep the readiness check on every upgrade at step 2 or 3 while `<fullname>-web` exists | No change | Strict | The defect of the review: a fix cannot be applied at step 2 while a target Deployment is not ready |
+| (d) A value that skips the guard | `web.skipGuard` | An escape | A switch that turns the safety off is set once and forgotten; the facts are in the cluster |
+
+**Choice:** (a).
+
+**Rationale:** the refusal protects the moment the edge moves, so it reads whether the edge has moved; every other upgrade at
+step 2 or 3 moves nothing and must be able to repair a role. The decision is a template over facts (`trove.bridgeGuard` over
+what `trove.bridgeFacts` reads with `lookup`), so the chart test checks it with given facts and an API server checks the reads
+(the cases of the decision: the edge on the bridge with `api` not ready, step 3 before step 2, the edge moved with `api` not
+ready, no readable edge with and without `api`, an endpoint Service on the `web` pods). The development agent would revisit
+the fallback without a readable edge if an installation with its own edge reports a refusal it needs or a gap it met.
+
+**Applied in the spec:** R-HA-064 (the guard, the way back), R-HA-029 (the rows of the guard),
+[_validate_roles.tpl](../../deploy/helm/trove/templates/_validate_roles.tpl), `TestRolesBridge`, the upgrade guide
+([docs/manual/admin/upgrades.md](../manual/admin/upgrades.md)).
 
 ## What this does not cover
 
