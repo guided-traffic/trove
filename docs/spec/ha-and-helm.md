@@ -2400,7 +2400,12 @@ value `web.enabled` (Q-ARCH-295, Q-HA-73).
 - **Step 1.** `helm upgrade` with `--set web.enabled=true` and the values otherwise unchanged: `<fullname>-web` rolls to the
   new release by R-HA-020 with no gap, because the edge keeps its Service, and the new Deployments become ready meanwhile.
   Between the steps, in-cluster callers move to `<fullname>-api` and `<fullname>-packages` (R-HA-002), and the values gain
-  the `api.*` and `packages.*` sizing the installation wants.
+  the `api.*` and `packages.*` sizing the installation wants. Before step 1, policies outside the chart that admit trove's pods by
+  `app.kubernetes.io/component` (an ingress policy of PostgreSQL, Valkey or the Sentinels) must admit `api` and `packages` beside
+  `web`, and the labels cluster-wide policies key on move from `web.podLabels` to `api.podLabels` and `packages.podLabels`; otherwise
+  the new pods cannot reach their dependencies and stay not ready, which the guard of step 2 then reports. The upgrade guide
+  ([docs/manual/admin/upgrades.md](../manual/admin/upgrades.md)) lists this as the first check (seen on the owner's cluster on
+  2026-11-06, where the policies of the database and Valkey admitted `web`, `worker` and `migrate` only).
 - **Step 2.** `helm upgrade` with `web.enabled: false` (the default): the edge switches to the path routing of R-HA-037 onto
   Services whose pods have been ready since step 1, and Helm deletes `<fullname>-web`, its endpoint pools and the Service
   `<fullname>`; their pods drain by R-HA-011, so a request the edge still sends them is served.
