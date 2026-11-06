@@ -14,7 +14,7 @@ import (
 const (
 	customersHost     = "registry.acme.test"
 	customersEndpoint = `{"customers":{"listen":"127.0.0.1:0","base_url":"https://` + customersHost + `","surface":["packages"]}}`
-	acmeRule          = `{"name":"acme-sdk","repository":"npm-customers","enabled":true,
+	acmeRule          = `{"name":"acme-sdk","repository":"it/npm-customers","enabled":true,
 	"packages":{"include":["@acme/sdk"],"exclude":[]},"versions":{"include":[],"exclude":[],"range":""},"prereleases":false,
 	"distTags":{"include":["latest"],"exclude":[]}}`
 )

@@ -267,7 +267,7 @@ func TestR_VULN_021_Summary(t *testing.T) {
 	if !foundNPM {
 		t.Errorf("data = %+v", s.Data)
 	}
-	if a := e.get(e.r, "/api/v1/vulnerabilities/summary"+q("repository", "nuget-local"), e.tokRita); a.Status != 200 {
+	if a := e.get(e.r, "/api/v1/vulnerabilities/summary"+q("repository", "it/nuget-local"), e.tokRita); a.Status != 200 {
 		t.Errorf("repository filter: %d", a.Status)
 	}
 }
@@ -304,7 +304,7 @@ func TestR_VULN_020_PackageViews(t *testing.T) {
 	for i, r := range v.Repositories {
 		got[r.Repository] = i
 	}
-	local, mirror, off := v.Repositories[got["npm-local"]], v.Repositories[got["npm-mirror"]], v.Repositories[got["npm-off"]]
+	local, mirror, off := v.Repositories[got["it/npm-local"]], v.Repositories[got["it/npm-mirror"]], v.Repositories[got["it/npm-off"]]
 	if local.Evaluation != "evaluated" || local.SyncedAt == nil || !local.Blocked || local.BlockReason == nil || *local.BlockReason != "malicious" || len(local.Findings) != 1 {
 		t.Errorf("npm-local = %+v", local)
 	}
@@ -358,7 +358,7 @@ func TestR_VULN_015_MissingData(t *testing.T) {
 	}
 	for _, r := range v.Repositories {
 		switch r.Repository {
-		case "npm-strict":
+		case "it/npm-strict":
 			if r.Evaluation != "pending_data" || !r.Blocked || r.BlockReason == nil || *r.BlockReason != "missing_data" {
 				t.Errorf("npm-strict = %+v", r)
 			}
@@ -394,7 +394,7 @@ func TestR_VULN_010_ClaimedNameMatches(t *testing.T) {
 		_ = json.Unmarshal(a.Body, &p)
 		for _, it := range p.Items {
 			names = append(names, it.Name)
-			if it.ClaimRepository == nil || *it.ClaimRepository != "npm-local" || it.Kind != "malicious" {
+			if it.ClaimRepository == nil || *it.ClaimRepository != "it/npm-local" || it.Kind != "malicious" {
 				t.Errorf("%+v", it)
 			}
 		}

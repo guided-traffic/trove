@@ -29,6 +29,9 @@ const (
 	taskOSVFull = "vuln-sync-osv-full"
 	taskKEV     = "vuln-sync-kev"
 	mirrorRepo  = "vuln-mirror"
+
+	// mirrorName is the qualified name the configuration takes (R-VULN-025).
+	mirrorName = testenv.DefaultProject + "/" + mirrorRepo
 	kevPathName = "/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 )
 

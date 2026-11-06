@@ -55,14 +55,14 @@ func TestR_VULN_019_Scope(t *testing.T) {
 		if got := e.list(e.r, e.tokCarol, q("package", "left-pad")).packages(); len(got) != 0 {
 			t.Errorf("package filter: %v", got)
 		}
-		if got := e.list(e.r, e.tokCarol, q("repository", "nuget-local")).packages(); len(got) != 0 {
+		if got := e.list(e.r, e.tokCarol, q("repository", "it/nuget-local")).packages(); len(got) != 0 {
 			t.Errorf("repository filter: %v", got)
 		}
 		if got := e.list(e.r, e.tokCarol, q("q", "team-b")).packages(); len(got) != 0 {
 			t.Errorf("text filter: %v", got)
 		}
 		// npm-all is a virtual repository over npm-local that carol may read: it stands for the members, narrowed again.
-		got := e.list(e.r, e.tokCarol, q("repository", "npm-all")).packages()
+		got := e.list(e.r, e.tokCarol, q("repository", "it/npm-all")).packages()
 		if len(got) != 3 {
 			t.Errorf("a virtual repository filter: %v", got)
 		}

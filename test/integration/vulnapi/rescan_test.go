@@ -101,8 +101,8 @@ func TestR_VULN_001_TheEvaluationStatesOfAVersion(t *testing.T) {
 	}
 
 	// No import yet: the data was never complete.
-	expect("pending_data before the first import", "open-pkg", map[string]string{"npm-local": "pending_data", "npm-off": "not_covered"})
+	expect("pending_data before the first import", "open-pkg", map[string]string{"it/npm-local": "pending_data", "it/npm-off": "not_covered"})
 	e.st.Exec(`INSERT INTO vuln_source_state (source, ecosystem, state, synced_at) VALUES ('osv', 'npm', 'complete', now())`)
-	expect("evaluated after the import", "open-pkg", map[string]string{"npm-local": "evaluated", "npm-off": "not_covered"})
-	expect("internal for a claimed name", "@acme/ui", map[string]string{"npm-local": "internal"})
+	expect("evaluated after the import", "open-pkg", map[string]string{"it/npm-local": "evaluated", "it/npm-off": "not_covered"})
+	expect("internal for a claimed name", "@acme/ui", map[string]string{"it/npm-local": "internal"})
 }
