@@ -419,30 +419,6 @@ tasks come before the phase's own work packages (step 2, item 5), in this order;
 
 ### Build what the owner decided (spec first, then code)
 
-- **T-3 · Every repository belongs to exactly one project; none is shared**
-  ([Q-AUTHZ-206](../spec/authorization.md#q-authz-206--every-repository-belongs-to-exactly-one-project), gap H-540). The schema
-  makes `repositories.project_id` required (in place, rule 9); creating a repository names its project in the API and the wizard;
-  unassignment goes, a move to another project stays and changes the address; a virtual repository lists only repositories of
-  its own project; a public registry is proxied by a remote repository per project. Update R-AUTHZ-026, the manual page
-  `admin/projects.md` and the security page `delegated-administration.md`.
-- **T-4 · A repository is addressed inside its project**
-  ([Q-REPO-212](../spec/repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared),
-  gap H-541): `/api/<format>/<projectKey>/<repoKey>/…`, `/files/<projectKey>/<repoKey>/…`,
-  `/api/v1/projects/<projectKey>/repositories/<repoKey>…`; the key is unique within the project; the prefix rule for repository
-  keys and its overlap checks go. Every route, format page, client guide, endpoint and exposure rule, CI mapping and policy
-  selector that names a repository changes; the browser journeys and the e2e clients with them.
-- **T-5 · Members of a project with four roles**
-  ([Q-AUTHZ-207](../spec/authorization.md#q-authz-207--a-user-or-group-is-a-member-of-a-project-with-a-role-and-the-role-grants-the-projects-repositories),
-  [Q-AUTHZ-208](../spec/authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner), gap H-542): users and
-  groups are members with Reader (`read`), Developer (+ `annotate`, `deploy`), Maintainer (every action) or Owner (+ members and
-  roles, repositories, policies, service accounts, settings). The Owner administers the project on its own, so the switches
-  `managePolicies` and `manageRepositories` go; project policies stay for exceptions. `admin` creates and deletes projects and
-  names the first Owner; `admin` and `auditor` see every project. The project administrator of today becomes the Owner.
-- **T-6 · Names within the project**
-  ([Q-AUTHZ-209](../spec/authorization.md#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones),
-  gap H-546): a project's policies and service accounts are named within the project, without the `<key>-` prefix, addressed under
-  `/api/v1/projects/<key>/…`; the prefix rules and their overlap checks go; administrators keep instance-wide service accounts and
-  their tokens. Build with T-4.
 - **T-7 · The project is the context of the content**
   ([Q-UI-129](../spec/api-and-ui.md#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects), gap H-550): the
   start page lists your projects (one project: start in it); the content screens move under `/projects/<key>/…` with the

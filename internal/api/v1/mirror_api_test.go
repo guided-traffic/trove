@@ -447,7 +447,7 @@ func TestR_REPO_056_MirrorRun(t *testing.T) {
 		}{
 			"repositories:write-config": {writeConfigCall, mirrorDecider{}},
 			"manage":                    {readOnlyCaller, mirrorDecider{manage: true}},
-			"project Owner":              {webAdmin, mirrorDecider{}},
+			"project Owner":             {webAdmin, mirrorDecider{}},
 		} {
 			e, w := run(t, c.access, c.dec, runPath, "", nil)
 			if w.Code != 202 {
