@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/guided-traffic/trove/internal/qname"
 	"log/slog"
 	"slices"
 	"sort"
@@ -199,28 +200,14 @@ func MatchAny() Precondition { return Precondition{Any: true} }
 func stale(current int64) error { return errs.Stale("The repository", current) }
 
 // Create implements R-REPO-009: validate, then write the row, the audit event and
-// the change-log row in one transaction. Create is never an upsert: a key that is
-// taken, also by a repository being deleted, answers 409 already_exists.
-func (s *Service) Create(ctx context.Context, c Caller, body []byte) (Stored, error) {
+// the change-log row in one transaction. The repository is created in project.
+// Create is never an upsert: a key that is taken in the project, also by a
+// repository being deleted, answers 409 repository_exists.
+func (s *Service) Create(ctx context.Context, c Caller, project string, body []byte) (Stored, error) {
 	var out Stored
 	err := s.run.InTx(ctx, func(tx meta.Tx) error {
 		var err error
-		out, err = s.CreateTx(ctx, tx, c, body)
-		return err
-	})
-	if err != nil {
-		return Stored{}, err
-	}
-	return out, nil
-}
-
-// CreateIn is [Service.Create] for a write that names a project or is a project
-// administrator's (R-AUTHZ-026).
-func (s *Service) CreateIn(ctx context.Context, c Caller, body []byte, w Write) (Stored, error) {
-	var out Stored
-	err := s.run.InTx(ctx, func(tx meta.Tx) error {
-		var err error
-		out, err = s.CreateTxIn(ctx, tx, c, body, w)
+		out, err = s.CreateTx(ctx, tx, c, project, body)
 		return err
 	})
 	if err != nil {
@@ -233,14 +220,7 @@ func (s *Service) CreateIn(ctx context.Context, c Caller, body []byte, w Write) 
 // inside the transaction of an Idempotency-Key (R-API-014), so the stored outcome
 // and the repository commit together. A validation failure is returned before
 // anything is written.
-func (s *Service) CreateTx(ctx context.Context, tx meta.Tx, c Caller, body []byte) (Stored, error) {
-	return s.CreateTxIn(ctx, tx, c, body, Write{})
-}
-
-// CreateTxIn is [Service.CreateTx] for a write that names a project or is a project
-// administrator's (R-AUTHZ-026): the repository is assigned to the project in the
-// statement that inserts it, in the caller's transaction.
-func (s *Service) CreateTxIn(ctx context.Context, tx meta.Tx, c Caller, body []byte, w Write) (Stored, error) {
+func (s *Service) CreateTx(ctx context.Context, tx meta.Tx, c Caller, project string, body []byte) (Stored, error) {
 	d, err := DecodeDocument(body)
 	if err != nil {
 		return Stored{}, err
@@ -250,13 +230,12 @@ func (s *Service) CreateTxIn(ctx context.Context, tx meta.Tx, c Caller, body []b
 	if err != nil {
 		return Stored{}, err
 	}
-	projectID, err := s.resolveProject(ctx, qs, v, d, w)
+	projectID, err := lockProject(ctx, qs, project)
 	if err != nil {
 		return Stored{}, err
 	}
-	delegatedRemote(v, w, nil, &d)
 	// >>> M2 virtual
-	rel, err := s.resolveVirtual(ctx, qs, v, &d, newVirtualGuard(w, nil))
+	rel, err := s.resolveVirtual(ctx, qs, v, project, &d)
 	if err != nil {
 		return Stored{}, err
 	}
@@ -275,8 +254,8 @@ func (s *Service) CreateTxIn(ctx context.Context, tx meta.Tx, c Caller, body []b
 		return Stored{}, err
 	}
 	if len(rows) == 0 {
-		return Stored{}, errs.E(errs.Conflict, errs.CodeAlreadyExists,
-			"A repository with the key "+strconv.Quote(d.Key)+" exists or is still being deleted; a key stays taken until the deletion job completes.")
+		return Stored{}, errs.E(errs.Conflict, errs.CodeRepositoryExists,
+			"The project "+strconv.Quote(project)+" has a repository with the key "+strconv.Quote(d.Key)+", or one that is still being deleted; a key stays taken until the deletion job completes.")
 	}
 	if d.Class == Remote {
 		if err := s.writeSecrets(ctx, tx, rows[0].ID, d.pending); err != nil {
@@ -290,7 +269,7 @@ func (s *Service) CreateTxIn(ctx context.Context, tx meta.Tx, c Caller, body []b
 		}
 	}
 	// <<< M2 virtual
-	out, err := s.stored(ctx, qs, rows[0], v.warnings)
+	out, err := s.stored(ctx, qs, rows[0], project, v.warnings)
 	if err != nil {
 		return Stored{}, err
 	}
@@ -310,21 +289,21 @@ func (s *Service) CreateTxIn(ctx context.Context, tx meta.Tx, c Caller, body []b
 // Get implements R-REPO-010: the stored document, read from PostgreSQL. A
 // repository being deleted is returned with Lifecycle Deleting; the handler shows
 // it only to holders of repositories:read-config.
-func (s *Service) Get(ctx context.Context, key string) (Stored, error) {
+func (s *Service) Get(ctx context.Context, name qname.Repo) (Stored, error) {
 	var out Stored
 	err := s.run.InTx(ctx, func(tx meta.Tx) error {
 		qs, err := queries(tx)
 		if err != nil {
 			return err
 		}
-		rows, err := qs.GetRepositoryByKey(ctx, key)
+		rows, err := qs.GetRepositoryByName(ctx, q.GetRepositoryByNameParams{Project: name.Project, Key: name.Key})
 		if err != nil {
 			return err
 		}
 		if len(rows) == 0 {
-			return notFound(key)
+			return notFound(name)
 		}
-		out, err = s.stored(ctx, qs, rows[0], nil)
+		out, err = s.stored(ctx, qs, rows[0], name.Project, nil)
 		return err
 	})
 	if err != nil {
@@ -336,14 +315,8 @@ func (s *Service) Get(ctx context.Context, key string) (Stored, error) {
 // Replace implements PUT of R-REPO-011: the body is a complete document and
 // omitted settings revert to their defaults. Key, class and format must equal the
 // stored ones (422 validation_failed with the field code immutable otherwise).
-func (s *Service) Replace(ctx context.Context, c Caller, key string, pre Precondition, body []byte) (Stored, error) {
-	return s.ReplaceIn(ctx, c, key, pre, body, Write{})
-}
-
-// ReplaceIn is [Service.Replace] for a write that carries the body's project or is a
-// project administrator's.
-func (s *Service) ReplaceIn(ctx context.Context, c Caller, key string, pre Precondition, body []byte, w Write) (Stored, error) {
-	return s.update(ctx, c, key, pre, w, func(Document) (Document, error) { return DecodeDocument(body) })
+func (s *Service) Replace(ctx context.Context, c Caller, name qname.Repo, pre Precondition, body []byte) (Stored, error) {
+	return s.update(ctx, c, name, pre, func(Document) (Document, error) { return DecodeDocument(body) })
 }
 
 // Patcher applies a client's patch to the stored document: the current document
@@ -355,14 +328,8 @@ type Patcher func(current []byte) ([]byte, error)
 // Patch implements PATCH of R-REPO-011: apply is the client's patch, run on the
 // stored document under the row lock. The result is read strictly like a
 // document of a PUT, so a patch cannot introduce an unknown member.
-func (s *Service) Patch(ctx context.Context, c Caller, key string, pre Precondition, apply Patcher) (Stored, error) {
-	return s.PatchIn(ctx, c, key, pre, apply, Write{})
-}
-
-// PatchIn is [Service.Patch] for a write that carries the body's project or is a
-// project administrator's.
-func (s *Service) PatchIn(ctx context.Context, c Caller, key string, pre Precondition, apply Patcher, w Write) (Stored, error) {
-	return s.update(ctx, c, key, pre, w, func(cur Document) (Document, error) {
+func (s *Service) Patch(ctx context.Context, c Caller, name qname.Repo, pre Precondition, apply Patcher) (Stored, error) {
+	return s.update(ctx, c, name, pre, func(cur Document) (Document, error) {
 		base, err := json.Marshal(cur)
 		if err != nil {
 			return Document{}, err
@@ -375,7 +342,7 @@ func (s *Service) PatchIn(ctx context.Context, c Caller, key string, pre Precond
 	})
 }
 
-func (s *Service) update(ctx context.Context, c Caller, key string, pre Precondition, w Write,
+func (s *Service) update(ctx context.Context, c Caller, name qname.Repo, pre Precondition,
 	build func(cur Document) (Document, error),
 ) (Stored, error) {
 	if !pre.Any && pre.Version < 1 {
@@ -387,12 +354,12 @@ func (s *Service) update(ctx context.Context, c Caller, key string, pre Precondi
 		if err != nil {
 			return err
 		}
-		rows, err := qs.LockRepositoryByKey(ctx, key)
+		rows, err := qs.LockRepositoryByName(ctx, q.LockRepositoryByNameParams{Project: name.Project, Key: name.Key})
 		if err != nil {
 			return err
 		}
 		if len(rows) == 0 {
-			return notFound(key)
+			return notFound(name)
 		}
 		row := rows[0]
 		if Lifecycle(row.Lifecycle) == Deleting {
@@ -401,27 +368,18 @@ func (s *Service) update(ctx context.Context, c Caller, key string, pre Precondi
 		if !pre.Any && pre.Version != row.ConfigVersion {
 			return stale(row.ConfigVersion)
 		}
-		project, err := checkProjectOfUpdate(ctx, qs, row, w)
-		if err != nil {
-			return err
-		}
 		cur, curRel, err := s.document(ctx, qs, row)
 		if err != nil {
-			return fmt.Errorf("repository: stored document of %q: %w", key, err)
+			return fmt.Errorf("repository: stored document of %q: %w", name, err)
 		}
-		before, _ := toRepository(row, s.cat)
+		before, _ := toRepository(row, name.Project, s.cat)
 		nd, err := build(cur)
 		if err != nil {
 			return err
 		}
 		nd, v := s.checkUpdate(cur, nd)
-		refuseProjectChange(v, w, project)
-		delegatedRemote(v, w, &cur, &nd)
-		if err := delegatedVulnerabilities(w, &cur, &nd); err != nil {
-			return err
-		}
 		// >>> M2 virtual
-		rel, err := s.resolveVirtual(ctx, qs, v, &nd, newVirtualGuard(w, curRel))
+		rel, err := s.resolveVirtual(ctx, qs, v, name.Project, &nd)
 		if err != nil {
 			return err
 		}
@@ -446,7 +404,7 @@ func (s *Service) update(ctx context.Context, c Caller, key string, pre Precondi
 		changes := changedMembers(oldFull, newFull)
 		changes = withSecretChange(changes, nd)
 		if len(changes) == 0 {
-			out, err = s.stored(ctx, qs, row, v.warnings) // nothing to write: same version, no event
+			out, err = s.stored(ctx, qs, row, name.Project, v.warnings) // nothing to write: same version, no event
 			return err
 		}
 		updated, err := qs.UpdateRepositoryConfig(ctx, q.UpdateRepositoryConfigParams{
@@ -474,7 +432,7 @@ func (s *Service) update(ctx context.Context, c Caller, key string, pre Precondi
 			}
 		}
 		// <<< M2 virtual
-		out, err = s.stored(ctx, qs, updated[0], v.warnings)
+		out, err = s.stored(ctx, qs, updated[0], name.Project, v.warnings)
 		if err != nil {
 			return err
 		}
@@ -549,7 +507,7 @@ func changedMembers(a, b []byte) []string {
 // stored renders a row as the management API shows it. The members, the deploy
 // target and the pin rules of a virtual repository are read from their rows
 // through qs (M2 virtual).
-func (s *Service) stored(ctx context.Context, qs *q.Queries, row q.Repository, warnings []Warning) (Stored, error) {
+func (s *Service) stored(ctx context.Context, qs *q.Queries, row q.Repository, project string, warnings []Warning) (Stored, error) {
 	var rel *virtualRel
 	if Class(row.Class) == Virtual {
 		rels, err := loadVirtualRels(ctx, qs, []int64{row.ID})
@@ -558,22 +516,17 @@ func (s *Service) stored(ctx context.Context, qs *q.Queries, row q.Repository, w
 		}
 		rel = rels[row.ID]
 	}
-	st, err := s.storedRel(row, rel, warnings)
-	if err != nil || !row.ProjectID.Valid {
-		return st, err
-	}
-	st.Repository.ProjectKey, err = projectKeyOf(ctx, qs, row)
-	return st, err
+	return s.storedRel(row, project, rel, warnings)
 }
 
-func (s *Service) storedRel(row q.Repository, rel *virtualRel, warnings []Warning) (Stored, error) {
-	r, err := toRepository(row, s.cat)
+func (s *Service) storedRel(row q.Repository, project string, rel *virtualRel, warnings []Warning) (Stored, error) {
+	r, err := toRepository(row, project, s.cat)
 	if err != nil {
-		s.log.Warn("repository: stored configuration does not load", "key", row.Key, "error", err)
+		s.log.Warn("repository: stored configuration does not load", "name", r.Name.String(), "error", err)
 	}
 	d, derr := toDocument(row, s.cat)
 	if derr != nil {
-		return Stored{}, fmt.Errorf("repository: stored document of %q: %w", row.Key, derr)
+		return Stored{}, fmt.Errorf("repository: stored document of %q: %w", r.Name.String(), derr)
 	}
 	d.renderVirtual(rel)
 	if r.virt != nil && d.Virtual != nil {
@@ -670,7 +623,7 @@ func withSecretChange(changes []string, nd Document) []string {
 // updateDetails is the audit details of an update: what changed, and, for a write that weakens the member `vulnerabilities`,
 // `block: lifted` (Q-VULN-69).
 func updateDetails(r Repository, changes []string, cur, nd *Document) eventDetails {
-	d := eventDetails{Class: r.Class, Format: r.Format, Changes: changes, Project: r.ProjectKey}
+	d := eventDetails{Class: r.Class, Format: r.Format, Changes: changes, Project: r.Name.Project}
 	if weak := weakenedVulnerabilities(cur, nd); len(weak) > 0 {
 		d.Block, d.Weakened = "lifted", weak
 	}
@@ -678,11 +631,11 @@ func updateDetails(r Repository, changes []string, cur, nd *Document) eventDetai
 }
 
 // afterWrite records the audit event and the change-log row of a write in the
-// writer's transaction. r.ProjectKey names the project in the event.
+// writer's transaction. r.Name.Project names the project in the event.
 func (s *Service) afterWrite(ctx context.Context, tx meta.Tx, c Caller, event string, r Repository,
 	changes []string,
 ) error {
-	return s.recordAndNotify(ctx, tx, c, event, r, eventDetails{Class: r.Class, Format: r.Format, Changes: changes, Project: r.ProjectKey},
+	return s.recordAndNotify(ctx, tx, c, event, r, eventDetails{Class: r.Class, Format: r.Format, Changes: changes, Project: r.Name.Project},
 		strings.TrimPrefix(event, "repository."))
 }
 
@@ -698,11 +651,11 @@ func (s *Service) recordAndNotify(ctx context.Context, tx meta.Tx, c Caller, eve
 	}
 	if err := s.rec.RecordTx(ctx, tx, audit.Event{
 		Type: event, Actor: c.Actor, Outcome: audit.Success, Source: c.Source,
-		Subject: audit.Subject{Kind: "repository", ID: r.ID, Name: r.Name}, Details: raw,
+		Subject: audit.Subject{Kind: "repository", ID: r.ID, Name: r.Name.String()}, Project: r.Name.Project, Details: raw,
 	}); err != nil {
 		return err
 	}
-	return s.notif.Notify(tx, cluster.AreaRepoConfig, 1, changePayload{ID: r.ID, Key: r.Name, Op: op, Version: r.Version})
+	return s.notif.Notify(tx, cluster.AreaRepoConfig, 1, changePayload{ID: r.ID, Key: r.Name.String(), Op: op, Version: r.Version})
 }
 
 // ListFilter selects repositories (R-REPO-012). Class and format values are
@@ -719,9 +672,9 @@ type ListFilter struct {
 	// IncludeDeleting adds repositories being deleted, for holders of
 	// repositories:read-config.
 	IncludeDeleting bool
-	// After is the keyset cursor: the last key of the previous page. Limit 0 means
-	// no limit.
-	After string
+	// After is the keyset cursor: the last name of the previous page, by project key
+	// and key. Limit 0 means no limit.
+	After qname.Repo
 	Limit int
 }
 
@@ -760,7 +713,8 @@ func (s *Service) List(ctx context.Context, f ListFilter) (ListResult, error) {
 	needle := strings.ToLower(f.Query)
 	var res ListResult
 	for _, row := range rows {
-		if f.After != "" && row.Key <= f.After {
+		project := projects[row.ProjectID.String()]
+		if !f.After.IsZero() && !afterRepo(project, row.Key, f.After) {
 			continue
 		}
 		if Lifecycle(row.Lifecycle) == Deleting && !f.IncludeDeleting {
@@ -772,16 +726,12 @@ func (s *Service) List(ctx context.Context, f ListFilter) (ListResult, error) {
 		if len(f.Formats) > 0 && !slices.Contains(f.Formats, row.Format) {
 			continue
 		}
-		project := projects[row.ProjectID.String()]
-		if f.Project != "" && (!row.ProjectID.Valid || project != f.Project) {
+		if f.Project != "" && project != f.Project {
 			continue
 		}
-		st, err := s.storedRel(row, rels[row.ID], nil)
+		st, err := s.storedRel(row, project, rels[row.ID], nil)
 		if err != nil {
 			return ListResult{}, err
-		}
-		if row.ProjectID.Valid {
-			st.Repository.ProjectKey = project
 		}
 		if needle != "" && !strings.Contains(strings.ToLower(row.Key), needle) &&
 			!strings.Contains(strings.ToLower(st.Document.Description), needle) {
@@ -797,4 +747,13 @@ func (s *Service) List(ctx context.Context, f ListFilter) (ListResult, error) {
 		res.Items = append(res.Items, st)
 	}
 	return res, nil
+}
+
+// afterRepo reports whether the repository (project, key) sorts after the cursor, byte by byte as the
+// list's order is (project key, then key).
+func afterRepo(project, key string, cursor qname.Repo) bool {
+	if project != cursor.Project {
+		return project > cursor.Project
+	}
+	return key > cursor.Key
 }

@@ -60,6 +60,7 @@ type row struct {
 	ResourceType string          `json:"resource_type"`
 	ResourceID   string          `json:"resource_id"`
 	Repository   string          `json:"repository"`
+	Project      string          `json:"project"`
 	Path         string          `json:"path"`
 	Reason       string          `json:"reason"`
 	Details      json.RawMessage `json:"details"`
@@ -76,7 +77,7 @@ func toRow(t EventType, ev Event, id string, at time.Time, replica string) (row,
 		SourceIP: addrOrEmpty(ev.Source.ClientAddr), UserAgent: clip(ev.Source.UserAgent, maxLongTxt),
 		TraceID: clip(ev.Source.TraceID, maxText), Endpoint: clip(ev.Endpoint, maxText),
 		ResourceType: clip(ev.Subject.Kind, maxText), ResourceID: clip(firstNonEmpty(ev.Subject.ID, ev.Subject.Name), maxText),
-		Repository: clip(ev.Repository, maxText), Path: clip(ev.Path, maxLongTxt), Reason: clip(ev.Reason, maxText),
+		Repository: clip(ev.Repository, maxText), Project: clip(ev.Project, maxText), Path: clip(ev.Path, maxLongTxt), Reason: clip(ev.Reason, maxText),
 	}
 	if !at.IsZero() {
 		r.At = at.UTC().Format(time.RFC3339Nano)

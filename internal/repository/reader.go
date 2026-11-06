@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"github.com/guided-traffic/trove/internal/qname"
 	"log/slog"
 	"sort"
 	"sync"
@@ -56,20 +57,20 @@ type ReaderOptions struct {
 
 // snapshot is the repository table as one replica holds it: immutable once built.
 type snapshot struct {
-	byKey map[string]Repository
-	list  []Repository
+	byName map[qname.Repo]Repository
+	list   []Repository
 	// >>> M2 virtual
 
 	// keys maps a repository id to its key; containing maps the id of a local or
 	// remote repository to the virtual repositories that list it as a member.
-	keys       map[int64]string
+	keys       map[int64]qname.Repo
 	containing map[int64][]Repository
 
 	// <<< M2 virtual
 }
 
-// keyOf returns the key of a repository id, or "" for an id the snapshot lacks.
-func (s *snapshot) keyOf(id int64) string { return s.keys[id] }
+// keyOf returns the qualified name "project/key" of a repository id, or "" for an id the snapshot lacks.
+func (s *snapshot) keyOf(id int64) string { return s.keys[id].String() }
 
 // SnapshotReader answers [Reader] from a per-replica snapshot of the repository
 // table (R-REPO-049: an in-process copy of PostgreSQL rows). Every change of the
@@ -81,7 +82,7 @@ type SnapshotReader struct {
 	run    meta.Runner
 	cat    *catalog.Registry
 	snap   *cache.Cache[struct{}, *snapshot]
-	misses *cache.Cache[string, struct{}]
+	misses *cache.Cache[qname.Repo, struct{}]
 	poll   Poller
 	wait   time.Duration
 	log    *slog.Logger
@@ -109,21 +110,21 @@ func NewReader(o ReaderOptions) (*SnapshotReader, error) {
 	}
 	r := &SnapshotReader{
 		run: o.Runner, cat: catalog.Or(o.Catalog), poll: o.Poller, wait: o.LookupWait, log: o.Log,
-		flight: flight{calls: map[string]*flightCall{}},
+		flight: flight{calls: map[qname.Repo]*flightCall{}},
 	}
 	areas := []string{cluster.AreaRepoConfig}
 	r.snap = cache.Register(o.Caches, CacheSnapshot, cache.Options[struct{}, *snapshot]{
 		MaxEntries: 1, SafetyTTL: o.SafetyTTL, Areas: areas,
 	})
 	if o.UnknownKeys > 0 {
-		r.misses = cache.Register(o.Caches, CacheKeyMisses, cache.Options[string, struct{}]{
+		r.misses = cache.Register(o.Caches, CacheKeyMisses, cache.Options[qname.Repo, struct{}]{
 			MaxEntries: o.UnknownKeys, SafetyTTL: missSafetyTTL, Areas: areas,
 		})
 	}
 	return r, nil
 }
 
-// ByKey implements [Reader]. A repository being deleted is returned with
+// ByName implements [Reader]. A repository being deleted is returned with
 // Lifecycle Deleting; its key is taken, so it is not "unknown", and the caller
 // treats it as not addressable (R-REPO-013).
 //
@@ -134,25 +135,25 @@ func NewReader(o ReaderOptions) (*SnapshotReader, error) {
 // query; if it exists, the replica polls the change log at once and rebuilds the
 // snapshot; if it does not, the miss is remembered until the next repo_config
 // change.
-func (r *SnapshotReader) ByKey(ctx context.Context, key string) (Repository, error) {
-	if !ValidKeyShape(key) {
-		return Repository{}, notFound(key)
+func (r *SnapshotReader) ByName(ctx context.Context, name qname.Repo) (Repository, error) {
+	if !name.Valid() {
+		return Repository{}, notFound(name)
 	}
 	s, err := r.snapshot(ctx)
 	if err != nil {
 		return Repository{}, err
 	}
-	if repo, ok := s.byKey[key]; ok {
+	if repo, ok := s.byName[name]; ok {
 		return repo, nil
 	}
-	return r.flight.do(key, func() (Repository, error) {
+	return r.flight.do(name, func() (Repository, error) {
 		// The lookup belongs to every waiting caller, so it does not end with the
 		// first one's request.
-		return r.lookup(context.WithoutCancel(ctx), key)
+		return r.lookup(context.WithoutCancel(ctx), name)
 	})
 }
 
-// List implements [Reader]: every repository of the snapshot, sorted by key.
+// List implements [Reader]: every repository of the snapshot, sorted by project key and key.
 func (r *SnapshotReader) List(ctx context.Context) ([]Repository, error) {
 	s, err := r.snapshot(ctx)
 	if err != nil {
@@ -160,6 +161,21 @@ func (r *SnapshotReader) List(ctx context.Context) ([]Repository, error) {
 	}
 	out := make([]Repository, len(s.list))
 	copy(out, s.list)
+	return out, nil
+}
+
+// ListProject implements [Reader]: the repositories of one project, sorted by key.
+func (r *SnapshotReader) ListProject(ctx context.Context, project string) ([]Repository, error) {
+	s, err := r.snapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []Repository
+	for _, repo := range s.list {
+		if repo.Name.Project == project {
+			out = append(out, repo)
+		}
+	}
 	return out, nil
 }
 
@@ -174,22 +190,19 @@ func (r *SnapshotReader) load(ctx context.Context) (*snapshot, error) {
 	}
 	repos := make([]Repository, 0, len(rows))
 	for _, row := range rows {
-		repo, err := toRepository(row, r.cat)
+		repo, err := toRepository(row, projects[row.ProjectID.String()], r.cat)
 		if err != nil {
-			r.log.Error("repository: stored configuration does not load; the repository is disabled", "key", row.Key, "error", err)
-		}
-		if row.ProjectID.Valid {
-			repo.ProjectKey = projects[row.ProjectID.String()]
+			r.log.Error("repository: stored configuration does not load; the repository is disabled", "name", repo.Name.String(), "error", err)
 		}
 		repos = append(repos, repo)
 	}
 	linkVirtual(repos, rels, r.cat, r.log)
 	s := &snapshot{
-		byKey: make(map[string]Repository, len(rows)), list: make([]Repository, 0, len(rows)),
-		keys: make(map[int64]string, len(rows)), containing: map[int64][]Repository{},
+		byName: make(map[qname.Repo]Repository, len(rows)), list: make([]Repository, 0, len(rows)),
+		keys: make(map[int64]qname.Repo, len(rows)), containing: map[int64][]Repository{},
 	}
 	for _, repo := range repos {
-		s.byKey[repo.Name] = repo
+		s.byName[repo.Name] = repo
 		s.list = append(s.list, repo)
 		s.keys[repo.rid] = repo.Name
 		if repo.virt != nil {
@@ -198,17 +211,25 @@ func (r *SnapshotReader) load(ctx context.Context) (*snapshot, error) {
 			}
 		}
 	}
-	sort.Slice(s.list, func(i, j int) bool { return s.list[i].Name < s.list[j].Name })
+	sort.Slice(s.list, func(i, j int) bool {
+		a, b := s.list[i].Name, s.list[j].Name
+		if a.Project != b.Project {
+			return a.Project < b.Project
+		}
+		return a.Key < b.Key
+	})
 	return s, nil
 }
 
 var errPresent = errors.New("repository: the key exists")
 
 // lookup resolves a key the snapshot does not hold.
-func (r *SnapshotReader) lookup(ctx context.Context, key string) (Repository, error) {
+func (r *SnapshotReader) lookup(ctx context.Context, name qname.Repo) (Repository, error) {
 	var row q.Repository
 	loader := func(ctx context.Context) (struct{}, error) {
-		rows, err := readRows(ctx, r.run, func(qs *q.Queries) ([]q.Repository, error) { return qs.GetRepositoryByKey(ctx, key) })
+		rows, err := readRows(ctx, r.run, func(qs *q.Queries) ([]q.Repository, error) {
+			return qs.GetRepositoryByName(ctx, q.GetRepositoryByNameParams{Project: name.Project, Key: name.Key})
+		})
 		if err != nil {
 			return struct{}{}, err
 		}
@@ -220,13 +241,13 @@ func (r *SnapshotReader) lookup(ctx context.Context, key string) (Repository, er
 	}
 	var err error
 	if r.misses != nil {
-		_, err = r.misses.Load(ctx, key, loader)
+		_, err = r.misses.Load(ctx, name, loader)
 	} else {
 		_, err = loader(ctx)
 	}
 	switch {
 	case err == nil:
-		return Repository{}, notFound(key)
+		return Repository{}, notFound(name)
 	case !errors.Is(err, errPresent):
 		return Repository{}, err
 	}
@@ -247,16 +268,16 @@ func (r *SnapshotReader) lookup(ctx context.Context, key string) (Repository, er
 	if err != nil {
 		return Repository{}, err
 	}
-	if repo, ok := s.byKey[key]; ok {
+	if repo, ok := s.byName[name]; ok {
 		return repo, nil
 	}
 	// The row has been deleted since, or the poll has not seen the change: the
 	// row we read is the truth (PostgreSQL decides). A virtual repository comes
 	// without its members here (they are rows of their own and the snapshot
 	// holds them), so it resolves nothing until the next snapshot: fail closed.
-	repo, err := toRepository(row, r.cat)
+	repo, err := toRepository(row, name.Project, r.cat)
 	if err != nil {
-		r.log.Error("repository: stored configuration does not load; the repository is disabled", "key", row.Key, "error", err)
+		r.log.Error("repository: stored configuration does not load; the repository is disabled", "name", name.String(), "error", err)
 	}
 	return repo, nil
 }
@@ -265,7 +286,7 @@ func (r *SnapshotReader) lookup(ctx context.Context, key string) (Repository, er
 // key, so that a flood of requests for one unknown key costs one query.
 type flight struct {
 	mu    sync.Mutex
-	calls map[string]*flightCall
+	calls map[qname.Repo]*flightCall
 }
 
 type flightCall struct {
@@ -274,7 +295,7 @@ type flightCall struct {
 	err  error
 }
 
-func (f *flight) do(key string, fn func() (Repository, error)) (Repository, error) {
+func (f *flight) do(key qname.Repo, fn func() (Repository, error)) (Repository, error) {
 	f.mu.Lock()
 	if c, ok := f.calls[key]; ok {
 		f.mu.Unlock()

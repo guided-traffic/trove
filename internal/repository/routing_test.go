@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"github.com/guided-traffic/trove/internal/qname"
 	"log/slog"
 	"maps"
 	"slices"
@@ -39,7 +40,7 @@ func exclude(p ...string) repoOpt { return func(_ *Repository, a *admLists) { a.
 func (f *routeFixture) repo(key string, class Class, format string, opts ...repoOpt) Repository {
 	f.t.Helper()
 	f.next++
-	r := Repository{ID: key, Name: key, Class: class, Format: format, Lifecycle: Active, rid: f.next, autoClaim: true}
+	r := Repository{ID: key, Name: rn(key), Class: class, Format: format, Lifecycle: Active, rid: f.next, autoClaim: true}
 	var lists admLists
 	for _, o := range opts {
 		o(&r, &lists)
@@ -89,7 +90,7 @@ func (f *routeFixture) route(v Repository, name string) Route {
 func memberKeys(r Route) []string {
 	out := make([]string, len(r.Members))
 	for i, m := range r.Members {
-		out[i] = m.Name
+		out[i] = m.Name.Key
 	}
 	return out
 }
@@ -129,7 +130,7 @@ func TestRouteDropsMembers(t *testing.T) {
 	if want := []string{"scoped", "plain"}; !slices.Equal(memberKeys(r), want) {
 		t.Fatalf("members = %v, want %v", memberKeys(r), want)
 	}
-	wantDropped := map[string]string{"off": DropDisabled, "going": DropDisabled, "closed": DropNotAdmitted}
+	wantDropped := map[qname.Repo]string{rn("off"): DropDisabled, rn("going"): DropDisabled, rn("closed"): DropNotAdmitted}
 	if !maps.Equal(r.Dropped, wantDropped) {
 		t.Fatalf("dropped = %v, want %v", r.Dropped, wantDropped)
 	}
@@ -138,7 +139,7 @@ func TestRouteDropsMembers(t *testing.T) {
 		if want := []string{"closed", "plain"}; !slices.Equal(memberKeys(r), want) {
 			t.Fatalf("members = %v, want %v", memberKeys(r), want)
 		}
-		if r.Dropped["scoped"] != DropNotAdmitted {
+		if r.Dropped[rn("scoped")] != DropNotAdmitted {
 			t.Fatalf("dropped = %v", r.Dropped)
 		}
 	})
@@ -192,7 +193,7 @@ func TestRouteClaims(t *testing.T) {
 			r.Decision.Pattern != "@acme/*" || !slices.Equal(r.Decision.ClaimedBy, []string{"team-a"}) {
 			t.Fatalf("route = %+v", r)
 		}
-		if r.Dropped["team-b"] != DropClaimedElsewhere || r.Dropped["remote"] != DropClaimedElsewhere {
+		if r.Dropped[rn("team-b")] != DropClaimedElsewhere || r.Dropped[rn("remote")] != DropClaimedElsewhere {
 			t.Fatalf("dropped = %v", r.Dropped)
 		}
 	})
@@ -214,7 +215,7 @@ func TestRouteClaims(t *testing.T) {
 			t.Fatalf("route = %+v", r)
 		}
 		for _, k := range []string{"team-a", "team-b", "remote"} {
-			if r.Dropped[k] != DropClaimedElsewhere {
+			if r.Dropped[rn(k)] != DropClaimedElsewhere {
 				t.Fatalf("dropped = %v", r.Dropped)
 			}
 		}
@@ -231,7 +232,7 @@ func TestRouteClaims(t *testing.T) {
 		w := g.virtual("all", "npmlike", []string{"internal", "remote"}, nil)
 		g.claim("internal", "left-pad", ScopeMembers)
 		r := g.route(w, "left-pad")
-		if len(r.Members) != 0 || r.Dropped["internal"] != DropDisabled || r.Dropped["remote"] != DropClaimedElsewhere {
+		if len(r.Members) != 0 || r.Dropped[rn("internal")] != DropDisabled || r.Dropped[rn("remote")] != DropClaimedElsewhere {
 			t.Fatalf("route = %+v", r)
 		}
 	})
@@ -281,7 +282,7 @@ func TestRoutePins(t *testing.T) {
 		if !slices.Equal(memberKeys(r), []string{"partner"}) || r.Decision.Kind != DecidedByPin || r.Decision.Pattern != "@partner/*" {
 			t.Fatalf("route = %+v", r)
 		}
-		if r.Dropped["local"] != DropPinnedOut || r.Dropped["remote"] != DropPinnedOut {
+		if r.Dropped[rn("local")] != DropPinnedOut || r.Dropped[rn("remote")] != DropPinnedOut {
 			t.Fatalf("dropped = %v", r.Dropped)
 		}
 	})
@@ -308,7 +309,7 @@ func TestRoutePins(t *testing.T) {
 		g.repo("remote", Remote, "npmlike")
 		w := g.virtual("all", "npmlike", []string{"partner", "remote"}, []PinRule{{Packages: []string{"@p/*"}, Members: []string{"partner"}}})
 		r := g.route(w, "@p/x")
-		if len(r.Members) != 0 || r.Dropped["partner"] != DropDisabled || r.Dropped["remote"] != DropPinnedOut {
+		if len(r.Members) != 0 || r.Dropped[rn("partner")] != DropDisabled || r.Dropped[rn("remote")] != DropPinnedOut {
 			t.Fatalf("route = %+v", r)
 		}
 	})
@@ -464,3 +465,6 @@ func TestRemoteRefusedAndOwnClaim(t *testing.T) {
 		}
 	})
 }
+
+// rn is the name of the repository key in the project the routing tests use.
+func rn(key string) qname.Repo { return qname.Repo{Project: "it", Key: key} }

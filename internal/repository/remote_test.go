@@ -522,7 +522,7 @@ func TestRepositoryRemote(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		repo, err := toRepository(q.Repository{ID: 7, Key: "npm-remote", Class: "remote", Format: "npmlike", ConfigVersion: 3, Config: cfg}, remoteCatalog())
+		repo, err := toRepository(q.Repository{ID: 7, Key: "npm-remote", Class: "remote", Format: "npmlike", ConfigVersion: 3, Config: cfg}, "it", remoteCatalog())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -538,7 +538,7 @@ func TestRepositoryRemote(t *testing.T) {
 			t.Fatal(err)
 		}
 		cfg, _ := d.marshalConfig()
-		repo, err := toRepository(q.Repository{ID: 1, Key: "pk-local", Class: "local", Format: "pkgfmt", Config: cfg}, remoteCatalog())
+		repo, err := toRepository(q.Repository{ID: 1, Key: "pk-local", Class: "local", Format: "pkgfmt", Config: cfg}, "it", remoteCatalog())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -550,7 +550,7 @@ func TestRepositoryRemote(t *testing.T) {
 		repo, err := toRepository(q.Repository{
 			ID: 1, Key: "npm-remote", Class: "remote", Format: "npmlike",
 			Config: []byte(`{"remote":{"url":"https://x.example/","connectTimeoutMs":"fast"},"hideExistence":"inherit"}`),
-		}, remoteCatalog())
+		}, "it", remoteCatalog())
 		if err == nil || !repo.Disabled {
 			t.Fatalf("err = %v, disabled = %v", err, repo.Disabled)
 		}

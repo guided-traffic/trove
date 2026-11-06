@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"github.com/guided-traffic/trove/internal/qname"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
@@ -82,31 +83,19 @@ func (s *Service) prober() (UpstreamProber, error) {
 	return p, nil
 }
 
-// UpstreamTest implements POST /api/v1/repositories/{key}/upstream-test: it probes
-// the saved configuration of a remote repository. The state is read from
-// PostgreSQL, so a configuration saved through another replica is tested at once.
-func (s *Service) UpstreamTest(ctx context.Context, key string) (UpstreamTestResult, error) {
-	return s.UpstreamTestIn(ctx, key, "")
-}
-
-// UpstreamTestIn is [Service.UpstreamTest] for a project administrator: delegate is
-// the key of the project it administers, "" for a holder of
-// repositories:write-config. The project of the stored row is checked again here, as
-// replace, patch and delete check it under the row lock, so a repository that left
-// the project after the handler decided answers 404 and is not contacted
-// (R-AUTHZ-026, Q-AUTHZ-184).
-func (s *Service) UpstreamTestIn(ctx context.Context, key, delegate string) (UpstreamTestResult, error) {
+// UpstreamTest implements POST /api/v1/projects/{projectKey}/repositories/{repoKey}/upstream-test: it
+// probes the saved configuration of a remote repository. The state is read from PostgreSQL, so a
+// configuration saved through another replica is tested at once.
+func (s *Service) UpstreamTest(ctx context.Context, name qname.Repo) (UpstreamTestResult, error) {
 	p, err := s.prober()
 	if err != nil {
 		return UpstreamTestResult{}, err
 	}
-	st, err := s.Get(ctx, key)
+	st, err := s.Get(ctx, name)
 	if err != nil {
 		return UpstreamTestResult{}, err
 	}
 	switch {
-	case delegate != "" && st.Repository.ProjectKey != delegate:
-		return UpstreamTestResult{}, notFound(key)
 	case st.Repository.Lifecycle == Deleting:
 		return UpstreamTestResult{}, errs.E(errs.Conflict, errs.CodeConflict, "the repository is being deleted")
 	case st.Repository.Class != Remote:
@@ -130,14 +119,6 @@ type UnsavedTestRequest struct {
 // then probed. A secret value in it is used for the probe and not stored; the
 // marker {"set": true} of a stored value has nothing to refer to here.
 func (s *Service) UpstreamTestUnsaved(ctx context.Context, body []byte) (UpstreamTestResult, error) {
-	return s.UpstreamTestUnsavedIn(ctx, body, Write{})
-}
-
-// UpstreamTestUnsavedIn is [Service.UpstreamTestUnsaved] for a project
-// administrator (w.Delegate set): the section follows the rules of a project
-// administrator's create, so it names no secretRef, no sourceNetwork and no
-// outbound proxy mode but default (Q-REPO-127, Q-REPO-128).
-func (s *Service) UpstreamTestUnsavedIn(ctx context.Context, body []byte, w Write) (UpstreamTestResult, error) {
 	p, err := s.prober()
 	if err != nil {
 		return UpstreamTestResult{}, err
@@ -162,7 +143,6 @@ func (s *Service) UpstreamTestUnsavedIn(ctx context.Context, body []byte, w Writ
 			v.add(ps.field, codeInvalidSecret, `{"set": true} refers to a stored value, and an unsaved section has none`)
 		}
 	}
-	delegatedRemote(v, w, nil, &d)
 	if err := v.err(); err != nil {
 		return UpstreamTestResult{}, err
 	}

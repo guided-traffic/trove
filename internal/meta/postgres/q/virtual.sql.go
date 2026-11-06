@@ -382,12 +382,18 @@ func (q *Queries) ListVirtualPinRules(ctx context.Context, ids []int64) ([]Virtu
 }
 
 const lockRepositoriesByKeys = `-- name: LockRepositoriesByKeys :many
-SELECT id, key, class, format, lifecycle, config
-  FROM repositories
- WHERE key = ANY($1::text[])
- ORDER BY id
-   FOR SHARE
+SELECT r.id, r.key, r.class, r.format, r.lifecycle, r.config
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE p.key = $1::text AND r.key = ANY($2::text[])
+ ORDER BY r.id
+   FOR SHARE OF r
 `
+
+type LockRepositoriesByKeysParams struct {
+	Project string
+	Keys    []string
+}
 
 type LockRepositoriesByKeysRow struct {
 	ID        int64
@@ -400,9 +406,11 @@ type LockRepositoriesByKeysRow struct {
 
 // Resolves the keys a virtual repository names and keeps the rows from being
 // marked for deletion before the transaction ends: FOR SHARE conflicts with the
-// update that sets lifecycle = 'deleting'. The order by id is the lock order.
-func (q *Queries) LockRepositoriesByKeys(ctx context.Context, keys []string) ([]LockRepositoriesByKeysRow, error) {
-	rows, err := q.db.Query(ctx, lockRepositoriesByKeys, keys)
+// update that sets lifecycle = 'deleting'. The order by id is the lock order. The
+// keys are bare keys of one project: a virtual repository holds repositories of its
+// own project only (Q-AUTHZ-206).
+func (q *Queries) LockRepositoriesByKeys(ctx context.Context, arg LockRepositoriesByKeysParams) ([]LockRepositoriesByKeysRow, error) {
+	rows, err := q.db.Query(ctx, lockRepositoriesByKeys, arg.Project, arg.Keys)
 	if err != nil {
 		return nil, err
 	}

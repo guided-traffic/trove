@@ -3,6 +3,7 @@ package formats
 import (
 	"context"
 	"fmt"
+	"github.com/guided-traffic/trove/internal/qname"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -332,7 +333,10 @@ type Refusal struct {
 	Format ID
 	// Name is the repository segment as addressed: the key, or "<remote>~cache" for the
 	// cache view of a remote repository (R-REPO-032). It has the shape of a key.
-	Name string
+	Name qname.Repo
+	// CacheView is true when the path addressed the cache view of the remote repository, Name
+	// without the "~cache" suffix.
+	CacheView bool
 	// BaseURL is the response base URL, "https://trove.example.com", without a
 	// trailing slash.
 	BaseURL string

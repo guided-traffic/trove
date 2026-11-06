@@ -23,6 +23,7 @@ package items
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"io"
 	"log/slog"
 	"strconv"
@@ -131,7 +132,7 @@ func New(o Options) (*Store, error) {
 // carried them.
 type RepoRef struct {
 	ID     int64
-	Name   string
+	Name   qname.Repo
 	Class  string
 	Format string
 	// Vuln is the download policy of the vulnerability scanning for the repository (R-VULN-015). A lookup of an item

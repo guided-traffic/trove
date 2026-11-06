@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"github.com/guided-traffic/trove/internal/qname"
 	"log/slog"
 	"slices"
 	"sort"
@@ -157,9 +158,9 @@ type Route struct {
 	// Members are the members that take part, in resolution order: priority
 	// members first (R-REPO-022), else the order of the member list.
 	Members []Repository
-	// Dropped maps the key of a member that takes no part to the reason
+	// Dropped maps the name of a member that takes no part to the reason
 	// (the Drop* constants).
-	Dropped map[string]string
+	Dropped map[qname.Repo]string
 	// Decision is the pin rule or claim that narrowed the members.
 	Decision RouteDecision
 }
@@ -184,7 +185,7 @@ func (rt *Routing) Route(ctx context.Context, virtual Repository, req RouteReque
 
 // routeOf is Route on explicit inputs.
 func routeOf(cat *catalog.Registry, idx *claimIndex, keyOf func(int64) string, virtual Repository, req RouteRequest) Route {
-	out := Route{Dropped: map[string]string{}}
+	out := Route{Dropped: map[qname.Repo]string{}}
 	info, known := cat.Lookup(virtual.Format)
 	if !known || virtual.virt == nil {
 		return out
@@ -222,7 +223,7 @@ func routeOf(cat *catalog.Registry, idx *claimIndex, keyOf func(int64) string, v
 			out.Dropped[m.Name] = DropDisabled
 		case !admits(m, info, req), unfoldable && m.Class == Remote:
 			out.Dropped[m.Name] = DropNotAdmitted
-		case pinned && !pin.names(m.Name):
+		case pinned && !pin.names(m.Name.Key):
 			out.Dropped[m.Name] = DropPinnedOut
 		case claimed != nil && !claimedBy(claimed, m.rid):
 			out.Dropped[m.Name] = DropClaimedElsewhere
@@ -312,7 +313,7 @@ func remoteRefused(cat *catalog.Registry, idx *claimIndex, remote Repository, na
 		return false
 	}
 	if via != nil && via.virt != nil {
-		if pin, ok := via.virt.pins.best(name); ok && pin.names(remote.Name) {
+		if pin, ok := via.virt.pins.best(name); ok && pin.names(remote.Name.Key) {
 			return false
 		}
 	}

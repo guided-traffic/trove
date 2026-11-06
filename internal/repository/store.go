@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/guided-traffic/trove/internal/qname"
 	"strconv"
 
 	"github.com/guided-traffic/trove/internal/errs"
@@ -42,13 +43,13 @@ func readRows(ctx context.Context, run meta.Runner, fn func(*q.Queries) ([]q.Rep
 }
 
 // toRepository converts a row to the read model and compiles the repository's
-// patterns. A row whose stored document does not decode, or whose patterns do not
+// patterns. project is the key of the project the row belongs to. A row whose stored document does not decode, or whose patterns do not
 // compile, cannot have been written by this package; it is loaded disabled, so
 // that it takes no part in resolution, download or deploy (fail closed), and the
 // returned error says why.
-func toRepository(r q.Repository, cat *catalog.Registry) (Repository, error) {
+func toRepository(r q.Repository, project string, cat *catalog.Registry) (Repository, error) {
 	out := Repository{
-		ID: strconv.FormatInt(r.ID, 10), Name: r.Key, Class: Class(r.Class), Format: r.Format,
+		ID: strconv.FormatInt(r.ID, 10), Name: qname.Repo{Project: project, Key: r.Key}, Class: Class(r.Class), Format: r.Format,
 		HideExistence: HideInherit, Lifecycle: Lifecycle(r.Lifecycle), Version: r.ConfigVersion,
 		Config: r.Config, CreatedAt: r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}
@@ -151,6 +152,6 @@ func toDocument(r q.Repository, cat *catalog.Registry) (Document, error) {
 	return d, nil
 }
 
-func notFound(key string) *errs.Error {
-	return errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository has the key "+strconv.Quote(key))
+func notFound(name qname.Repo) *errs.Error {
+	return errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository is named "+strconv.Quote(name.String()))
 }

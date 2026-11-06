@@ -70,6 +70,9 @@ type Event struct {
 	Repository string
 	Path       string
 	Endpoint   string
+	// Project is the key of the project the event concerns, the audit_event.project column (Q-AUTHZ-209);
+	// empty for an event of no project. Repository holds the qualified name <project>/<key>.
+	Project string
 	// At, when set, is the time the event happened (occurred_at) for an asynchronous event
 	// whose producer learned of it later: the download intake of the Bastion interface
 	// records the time the Bastion reports (R-BAS-016). The zero value is the time of the

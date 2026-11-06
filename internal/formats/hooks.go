@@ -3,6 +3,7 @@ package formats
 import (
 	"context"
 	"encoding/json"
+	"github.com/guided-traffic/trove/internal/qname"
 	"io"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 type RepoRef struct {
 	// ID is the numeric id of the repository row.
 	ID     int64
-	Name   string
+	Name   qname.Repo
 	Class  Class
 	Format ID
 }

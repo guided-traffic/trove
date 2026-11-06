@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/formats/catalog"
@@ -46,8 +47,9 @@ const (
 // Repository is the read model other packages use. Config is the document of
 // R-REPO-004 as stored, without secrets; the repository owner decodes it.
 type Repository struct {
-	ID     string
-	Name   string
+	ID string
+	// Name is the qualified name of the repository: its project key and its key (Q-REPO-212).
+	Name   qname.Repo
 	Class  Class
 	Format string
 	// Disabled repositories take no part in resolution, download or deploy.
@@ -58,13 +60,9 @@ type Repository struct {
 	// HideExistence is "inherit", "true" or "false" (R-AUTHZ-017).
 	HideExistence string
 	Lifecycle     Lifecycle
-	// ProjectID is the ID (uuid text) of the project the repository is assigned to,
-	// "" when it belongs to none (R-AUTHZ-026). Every reader fills it.
+	// ProjectID is the ID (uuid text) of the project the repository belongs to
+	// (R-AUTHZ-026); Name.Project is its key. Every reader fills both.
 	ProjectID string
-	// ProjectKey is the key of that project, "" when there is none. The readers
-	// (the snapshot and the service) fill it from the project table; a Repository
-	// built from a bare row has only ProjectID.
-	ProjectKey string
 	// Version is config_version, the ETag source (R-REPO-011).
 	Version   int64
 	Config    []byte
@@ -134,11 +132,15 @@ func (r Repository) Restricts() bool { return r.adm.restricts() }
 // Reader is the read interface other packages use. It answers from the
 // replica's snapshot, which the change area repo_config keeps current.
 type Reader interface {
-	// ByKey returns the repository, or an *errs.Error of kind NotFound with code
+	// ByName returns the repository, or an *errs.Error of kind NotFound with code
 	// repository_not_found. It does not apply authorization: callers decide
 	// first (R-AUTHZ-016: authorization runs before the existence lookup).
-	ByKey(ctx context.Context, key string) (Repository, error)
-	// List returns every repository, sorted by key. Callers filter it through
-	// authz; a listing contains only what the caller may read (R-AUTHZ-016).
+	ByName(ctx context.Context, name qname.Repo) (Repository, error)
+	// List returns every repository, sorted by project key and key. Callers filter
+	// it through authz; a listing contains only what the caller may read
+	// (R-AUTHZ-016).
 	List(ctx context.Context) ([]Repository, error)
+	// ListProject returns the repositories of one project, sorted by key; none
+	// for a project that does not exist.
+	ListProject(ctx context.Context, project string) ([]Repository, error)
 }

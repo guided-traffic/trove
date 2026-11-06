@@ -2,6 +2,7 @@ package bastionmain
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 
 	"github.com/guided-traffic/trove/internal/authz"
@@ -29,7 +30,7 @@ type RouteMatch struct {
 	// Format is the format ID of the prefix ("npm") and RepoKey the addressed repository key as the path
 	// names it, without the "~cache" view suffix.
 	Format string
-	Repo   string
+	Repo   qname.Repo
 	// Name is the route's stable label ("npm.tarball.get").
 	Name string
 	// Method is the request method.

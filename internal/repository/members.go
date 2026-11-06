@@ -22,9 +22,10 @@ import (
 // being deleted, of another format or itself virtual (nesting is R-REPO-018,
 // P1), and a deploy target that is not local. The members are locked FOR SHARE
 // in id order, so a concurrent deletion of a member waits for this transaction
-// instead of marking the repository after it was checked. g is the rule of a
-// project administrator's write (Q-AUTHZ-178), nil for any other.
-func (s *Service) resolveVirtual(ctx context.Context, qs *q.Queries, v *validation, d *Document, g *virtualGuard) (*virtualRel, error) {
+// instead of marking the repository after it was checked. The members, the deploy
+// target and the pin members are bare keys of project: a virtual repository holds
+// repositories of its own project only (Q-AUTHZ-206).
+func (s *Service) resolveVirtual(ctx context.Context, qs *q.Queries, v *validation, project string, d *Document) (*virtualRel, error) {
 	if d.Class != Virtual || d.Virtual == nil {
 		return nil, nil
 	}
@@ -48,7 +49,7 @@ func (s *Service) resolveVirtual(ctx context.Context, qs *q.Queries, v *validati
 	}
 	byKey := map[string]q.LockRepositoriesByKeysRow{}
 	if len(keys) > 0 {
-		rows, err := qs.LockRepositoriesByKeys(ctx, keys)
+		rows, err := qs.LockRepositoriesByKeys(ctx, q.LockRepositoriesByKeysParams{Project: project, Keys: keys})
 		if err != nil {
 			return nil, err
 		}
@@ -59,10 +60,6 @@ func (s *Service) resolveVirtual(ctx context.Context, qs *q.Queries, v *validati
 	if len(vs.Members) > s.maxMembers {
 		v.add("/virtual/members", codeOutOfRange, "at most "+strconv.Itoa(s.maxMembers)+" members (repositories.max_virtual_members)")
 	}
-	outside, err := g.outside(ctx, qs, keys)
-	if err != nil {
-		return nil, err
-	}
 	rel := &virtualRel{}
 	ref := func(k string) relRef { return relRef{id: byKey[k].ID, key: k} }
 	for i, k := range vs.Members {
@@ -71,8 +68,6 @@ func (s *Service) resolveVirtual(ctx context.Context, qs *q.Queries, v *validati
 		switch {
 		case k == "" || k == d.Key:
 			// reported with the document rules
-		case g != nil && outside[k] && g.isNewMember(k):
-			v.add(ptr, errs.CodeRepositoryOutsideProject, outsideDetail)
 		case !found:
 			v.add(ptr, errs.CodeInvalidMember, "no repository has the key "+strconv.Quote(k))
 		case Lifecycle(row.Lifecycle) == Deleting:
@@ -85,7 +80,6 @@ func (s *Service) resolveVirtual(ctx context.Context, qs *q.Queries, v *validati
 			rel.members = append(rel.members, ref(k))
 		}
 	}
-	g.checkTarget(v, vs.DeployTarget, outside)
 	if vs.DeployTarget != nil {
 		if row, found := byKey[*vs.DeployTarget]; found && slices.Contains(vs.Members, *vs.DeployTarget) {
 			if Class(row.Class) != Local {
@@ -124,7 +118,7 @@ func (s *Service) warnUnprotected(ctx context.Context, qs *q.Queries, v *validat
 		switch Class(row.Class) {
 		case Local:
 			locals = append(locals, m.id)
-			if r, err := toRepository(q.Repository{ID: row.ID, Key: row.Key, Class: row.Class, Format: row.Format, Config: row.Config}, s.cat); err == nil && r.autoClaim {
+			if r, err := toRepository(q.Repository{ID: row.ID, Key: row.Key, Class: row.Class, Format: row.Format, Config: row.Config}, "", s.cat); err == nil && r.autoClaim {
 				return nil
 			}
 		case Remote:
@@ -218,7 +212,7 @@ func pinsEqual(a, b []relPin) bool {
 // area claims carries them as well (R-REPO-023), so that everything that routes
 // reads one area.
 func (s *Service) notifyPins(tx meta.Tx, r Repository) error {
-	return s.notif.Notify(tx, cluster.AreaClaims, 1, claimsPayload{ID: r.ID, Key: r.Name, Op: "pins"})
+	return s.notif.Notify(tx, cluster.AreaClaims, 1, claimsPayload{ID: r.ID, Key: r.Name.String(), Op: "pins"})
 }
 
 // detachReferences handles the virtual repositories that list a repository when
@@ -226,13 +220,7 @@ func (s *Service) notifyPins(tx meta.Tx, r Repository) error {
 // repository_referenced naming them. With detach the same transaction removes
 // the repository from every member list, deploy target and pin rule, moves the
 // ETag of each virtual repository and records an update of it.
-//
-// delegate is the project of a project administrator's delete, "" for a holder of
-// repositories:write-config. A project administrator changes nothing outside its
-// project and learns no key there: while a virtual repository outside the project
-// lists the repository, its delete answers 409 with or without detach, naming the
-// project's own virtual repositories only (Q-REPO-129).
-func (s *Service) detachReferences(ctx context.Context, tx meta.Tx, qs *q.Queries, c Caller, row q.Repository, detach bool, delegate string) error {
+func (s *Service) detachReferences(ctx context.Context, tx meta.Tx, qs *q.Queries, c Caller, row q.Repository, project string, detach bool) error {
 	refs, err := qs.ListReferencingVirtuals(ctx, row.ID)
 	if err != nil {
 		return err
@@ -243,11 +231,6 @@ func (s *Service) detachReferences(ctx context.Context, tx meta.Tx, qs *q.Querie
 	keys := make([]string, len(refs))
 	for i, r := range refs {
 		keys[i] = r.Key
-	}
-	if delegate != "" {
-		if err := refuseForeignReferences(ctx, qs, keys, delegate); err != nil {
-			return err
-		}
 	}
 	if !detach {
 		return errs.E(errs.Conflict, errs.CodeRepositoryReferenced,
@@ -274,42 +257,10 @@ func (s *Service) detachReferences(ctx context.Context, tx meta.Tx, qs *q.Querie
 		if err != nil || len(rows) == 0 {
 			return err
 		}
-		v, _ := toRepository(rows[0], s.cat)
-		if v.ProjectKey, err = projectKeyOf(ctx, qs, rows[0]); err != nil {
-			return err
-		}
+		v, _ := toRepository(rows[0], project, s.cat)
 		if err := s.afterWrite(ctx, tx, c, EventUpdated, v, []string{"virtual"}); err != nil {
 			return err
 		}
 	}
-	return s.notif.Notify(tx, cluster.AreaClaims, 1, claimsPayload{ID: strconv.FormatInt(row.ID, 10), Key: row.Key, Op: "detach"})
-}
-
-// refuseForeignReferences is the 409 of a project administrator's delete while a
-// virtual repository outside its project lists the repository (Q-REPO-129). keys are
-// the referencing virtual repositories; the answer names those of the project and
-// none of the others.
-func refuseForeignReferences(ctx context.Context, qs *q.Queries, keys []string, project string) error {
-	rows, err := qs.RepositoryProjectsByKeys(ctx, keys)
-	if err != nil {
-		return err
-	}
-	var own []string
-	foreign := false
-	for _, r := range rows {
-		if r.Project == project {
-			own = append(own, r.Key)
-		} else {
-			foreign = true
-		}
-	}
-	if !foreign {
-		return nil
-	}
-	slices.Sort(own)
-	detail := "The repository is referenced by virtual repositories outside the project; an administrator of trove removes those references."
-	if len(own) > 0 {
-		detail += " It is also referenced by the project's virtual repositories " + strings.Join(own, ", ") + "."
-	}
-	return errs.E(errs.Conflict, errs.CodeRepositoryReferenced, detail)
+	return s.notif.Notify(tx, cluster.AreaClaims, 1, claimsPayload{ID: strconv.FormatInt(row.ID, 10), Key: project + "/" + row.Key, Op: "detach"})
 }

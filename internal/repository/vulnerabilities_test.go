@@ -99,7 +99,7 @@ func TestR_VULN_002_TheReadModelCarriesTheMemberAndThePolicy(t *testing.T) {
 		return q.Repository{ID: 7, Key: "r", Class: class, Format: format, Config: []byte(config), Lifecycle: "active"}
 	}
 	t.Run("a scanned format without the member has the defaults", func(t *testing.T) {
-		r, err := toRepository(row("remote", "npm", `{}`), cat)
+		r, err := toRepository(row("remote", "npm", `{}`), "it", cat)
 		if err != nil && r.Class != Remote {
 			t.Logf("err = %v", err)
 		}
@@ -111,7 +111,7 @@ func TestR_VULN_002_TheReadModelCarriesTheMemberAndThePolicy(t *testing.T) {
 		}
 	})
 	t.Run("the stored member is read, and the installation's switches apply", func(t *testing.T) {
-		r, _ := toRepository(row("local", "npm", `{"vulnerabilities":{"enabled":true,"matchPublicAdvisories":"always","blockMalicious":false,"onMissingData":"block"}}`), cat)
+		r, _ := toRepository(row("local", "npm", `{"vulnerabilities":{"enabled":true,"matchPublicAdvisories":"always","blockMalicious":false,"onMissingData":"block"}}`), "it", cat)
 		s := r.VulnerabilitySettings()
 		if s.MatchPublicAdvisories != vuln.MatchAlways || s.BlockMalicious || s.OnMissingData != vuln.MissingBlock {
 			t.Fatalf("settings %+v", s)
@@ -124,7 +124,7 @@ func TestR_VULN_002_TheReadModelCarriesTheMemberAndThePolicy(t *testing.T) {
 		}
 	})
 	t.Run("enabled false disables the policy", func(t *testing.T) {
-		r, _ := toRepository(row("local", "npm", `{"vulnerabilities":{"enabled":false}}`), cat)
+		r, _ := toRepository(row("local", "npm", `{"vulnerabilities":{"enabled":false}}`), "it", cat)
 		if p := r.VulnerabilityPolicy(true, vuln.EnforceBlocks); p.Enabled || p.QueryEnforce() {
 			t.Errorf("policy %+v", p)
 		}
@@ -135,7 +135,7 @@ func TestR_VULN_002_TheReadModelCarriesTheMemberAndThePolicy(t *testing.T) {
 		"generic":                      row("local", "generic", `{}`),
 	} {
 		t.Run(name+" is not scanned", func(t *testing.T) {
-			r, _ := toRepository(rw, cat)
+			r, _ := toRepository(rw, "it", cat)
 			if r.VulnerabilityEcosystem() != "" || r.VulnerabilityPolicy(true, vuln.EnforceBlocks).Enabled {
 				t.Errorf("ecosystem %q policy %+v", r.VulnerabilityEcosystem(), r.VulnerabilityPolicy(true, vuln.EnforceBlocks))
 			}

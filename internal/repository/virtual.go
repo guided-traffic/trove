@@ -317,7 +317,7 @@ func linkVirtual(repos []Repository, rels map[int64]*virtualRel, cat *catalog.Re
 		for _, m := range rel.members {
 			j, ok := byID[m.id]
 			if !ok {
-				log.Warn("repository: a virtual repository names a member that is not in the snapshot yet", "virtual", v.Name, "member", m.key)
+				log.Warn("repository: a virtual repository names a member that is not in the snapshot yet", "virtual", v.Name.String(), "member", m.key)
 				continue
 			}
 			st.members = append(st.members, repos[j])
@@ -327,7 +327,7 @@ func linkVirtual(repos []Repository, rels map[int64]*virtualRel, cat *catalog.Re
 				st.target = &t
 			}
 		}
-		st.pins = newPinIndex(cat, v.Format, st.settings.Pinning.Rules, log, v.Name)
+		st.pins = newPinIndex(cat, v.Format, st.settings.Pinning.Rules, log, v.Name.String())
 		v.virt = st
 	}
 }

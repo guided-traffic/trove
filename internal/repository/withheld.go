@@ -80,7 +80,7 @@ func keptFromMember(rt *Routing, idx *claimIndex, via *Repository, member Reposi
 		}
 	}
 	for _, rule := range via.virt.pins.rules {
-		if slices.Contains(rule.Members, member.Name) {
+		if slices.Contains(rule.Members, member.Name.Key) {
 			continue
 		}
 		for _, raw := range rule.Packages {

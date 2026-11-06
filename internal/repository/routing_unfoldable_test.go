@@ -49,7 +49,7 @@ func TestR_ARCH_008_AnUnfoldableNameFailsClosedInRouting(t *testing.T) {
 		if r.Admitted || slices.Contains(memberKeys(r), "remote") || r.Decision.Kind != "" {
 			t.Fatalf("route = %+v", r)
 		}
-		if r.Dropped["remote"] != DropNotAdmitted {
+		if r.Dropped[rn("remote")] != DropNotAdmitted {
 			t.Fatalf("dropped = %v", r.Dropped)
 		}
 	})
