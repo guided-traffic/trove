@@ -6645,6 +6645,31 @@ margin of the wait check if a fast cluster shows requests inside the tolerance, 
 **Applied in the spec:** R-REPO-053, R-REPO-054, R-REPO-059 (acceptance criteria). Code: `test/e2e/mirror_long_fault_test.go`,
 `test/npmstub/requestlog.go`.
 
+### Q-REPO-199 · The scenarios of the failure suite do not outlive each other: the remote is removed and gone before the next scenario, and a policy write that meets a moved version is read and written again
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the first nightly run of `mirror-long` (run 42177273488) failed three scenarios at once with one cause, and the scenarios after them with its consequences. The suite's account reads
+the remotes through one policy that lists them. Deleting a remote with content is a job (`202`), and the job's end removes the repository row
+and, with it, moves the version of the policies that name it (R-AUTHZ-028). The next scenario's create wrote the policy on the version it had
+read a few milliseconds before and got `412` (R-API-012), so its remote existed but its cleanup, registered after the create, never ran: the
+unpaused remote went on to run passes against the test upstream during the scenarios after it, whose counters (tarballs served twice) and
+wait checks (requests inside a wait) then counted its requests.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The cleanup is registered before the remote is created; removing a remote waits until the repository answers `404`; the policy write reads the version again and writes again on `412`, five times at most (chosen) | The scenario owns its remote from the first request on and leaves nothing running; a moved version is what `412` says and the client's answer to it is to reload | Each cause is closed at its own place; the pass conditions are unchanged | A scenario waits for the deletion job (seconds) |
+| (b) One policy per scenario | No shared version | No retry | A policy per remote multiplies the policies of the run and the replicas' agreement checks |
+| (c) Filter the upstream's log by the scenario's range of names | A leftover remote would not count | No wait for deletions | Hides a leftover instead of removing it, and a leftover still takes the pool's slots and the upstream's throttled answers |
+
+**Choice:** (a).
+
+**Rationale:** the counters of the suite are exact only when the scenario's remote is the only one that sends. The development agent would
+revisit the retry count if a deletion job is seen to outlast five reads.
+
+**Applied in the spec:** none (test harness; the product behaves as R-API-012 and R-AUTHZ-028 say). Code: `test/e2e/mirror_env_test.go`
+(`drop`), `test/e2e/m1_env_test.go` (`ensurePolicy`), `test/e2e/mirror_long_fault_test.go` (`startHeldPass`).
+
 ## What this does not cover
 
 ### H-4 · Malicious content from a legitimate upstream

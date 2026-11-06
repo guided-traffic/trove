@@ -188,11 +188,23 @@ func (e *mirrorEnv) create(t testing.TB, body map[string]any) string {
 	return key
 }
 
-// drop deletes repositories of the run and takes them out of the account's grant, so that the next policy lists what exists.
+// drop deletes repositories of the run and takes them out of the account's grant, so that the next policy lists what exists. A
+// repository with content is deleted by a job after the request has answered 202: drop waits until the repository is gone, so that
+// its passes, its pool slots and its change of the policies do not run into the next scenario.
 func (e *mirrorEnv) drop(t testing.TB, keys ...string) {
 	t.Helper()
 	for _, key := range keys {
 		deleteRepository(t, e.adm, key)
+	}
+	for _, key := range keys {
+		deadline := time.Now().Add(3 * time.Minute)
+		for e.adm.get("/api/v1/repositories/"+key).Status != http.StatusNotFound {
+			if time.Now().After(deadline) {
+				t.Errorf("the repository %s is still there 3 minutes after its deletion", key)
+				break
+			}
+			time.Sleep(time.Second)
+		}
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()

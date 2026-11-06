@@ -623,7 +623,10 @@ func ensurePolicy(t testing.TB, adm *api, name string, repos []string, entries .
 	}
 	body := map[string]any{"name": name, "description": "end-to-end tests", "resources": map[string]any{"repositories": repos}, "entries": es}
 	r := adm.do(http.MethodPost, "/api/v1/permission-policies", body)
-	if r.Status == 409 {
+	// A policy that names a repository changes its version when the repository's deletion finishes (R-AUTHZ-028), which a deletion job
+	// does after the request that started it has answered. A 412 is the answer to a write on a version that moved since it was read
+	// (R-API-012): read it again and write again, as the answer says, a few times.
+	for attempt := 0; r.Status == 409 || (r.Status == 412 && attempt < 5); attempt++ {
 		g := adm.get("/api/v1/permission-policies/"+name).want(t, "read policy "+name, 200)
 		r = adm.do(http.MethodPut, "/api/v1/permission-policies/"+name, body, "If-Match", g.Header.Get("ETag"))
 	}

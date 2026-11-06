@@ -102,12 +102,15 @@ func (e *mirrorEnv) startHeldPass(t *testing.T, label string, digit int, mode np
 	body := e.npmBody("npm-mirror-"+label+"-"+e.run, false)
 	body["includePatterns"] = []string{fmt.Sprintf("e2e-mirror-%s-%d*", e.run, digit)}
 	body["remote"].(map[string]any)["mirror"] = map[string]any{"concurrency": longPassConcurrency, "maxVersionsPerPackage": 1}
-	hp.key = e.create(t, body)
-	hp.stored, hp.unfilled = hp.names[0], hp.names[len(hp.names)-1]
+	hp.key = body["key"].(string)
+	// registered before the remote is created: a scenario that fails in the create or the grant still removes it, and a remote left
+	// behind would run passes of its own against the test upstream during the scenarios after it
 	t.Cleanup(func() {
 		s.setMode(t, npmstub.Mode{})
 		e.drop(t, hp.key)
 	})
+	e.create(t, body)
+	hp.stored, hp.unfilled = hp.names[0], hp.names[len(hp.names)-1]
 	s.setMode(t, mode)
 	s.reset(t)
 
@@ -339,7 +342,9 @@ func (e *mirrorEnv) runLostWorker(t *testing.T, l lossOf) {
 			}
 			nextInstall = time.Now().Add(5 * time.Second)
 		}
-		return resumedAfter != 0 && last >= atLoss+10
+		// the loop also runs until a client has installed while the loss lasts: the endpoints of a lost node are gone only after the node
+		// controller has marked it (about a minute), which the pass can outrun
+		return resumedAfter != 0 && last >= atLoss+10 && installs > 0
 	})
 	if resumedAfter > resumeWithin {
 		t.Errorf("R-REPO-053: the pass progressed again %s after the loss, want within %s", resumedAfter.Round(time.Second), resumeWithin)
