@@ -1659,8 +1659,11 @@ export interface paths {
         /**
          * Create a project
          * @description Creates a project (R-AUTHZ-026). The key is immutable; a key that exists answers `409 already_exists`. A new project
-         *     has no member and no repository; the first Owner is added by `PUT /api/v1/projects/{projectKey}/members/{principalRef}`
-         *     and a repository is created in it by `POST /api/v1/projects/{projectKey}/repositories`. Only a holder of
+         *     has no repository; `owners` names the users and groups that become its first Owners in the same transaction, each
+         *     recorded as `authz.project.member_added` (Q-AUTHZ-229): an unknown principal answers `404`, a reference that is no user or
+         *     group, or an auto-join group, `422 principal_not_allowed`, and the whole create is refused. Without `owners` the project has no
+         *     member; members are added by `PUT /api/v1/projects/{projectKey}/members/{principalRef}`. A repository is created in it
+         *     by `POST /api/v1/projects/{projectKey}/repositories`. Only a holder of
          *     `projects:write` creates a project. The write notifies the `authz` change area and records `authz.project.created`.
          *     Optional `Idempotency-Key`.
          */
@@ -1756,8 +1759,8 @@ export interface paths {
          *     the same role); the pair needs no `If-Match`. A user or group that does not exist answers `404`. An Owner of the
          *     project, or a holder of `projects:write`, may call it. The last Owner of a project cannot be demoted:
          *     `409 last_owner`, unless the caller holds `projects:write` (an administrator of trove may). Granting or removing
-         *     a role is effective on every replica at once. Records `authz.project.member_set` (journaled, R-AUTHZ-031) with the
-         *     previous and the new role.
+         *     a role is effective on every replica at once. Records `authz.project.member_added` when the member was added and `authz.project.member_changed` when its role
+         *     changed (journaled, R-AUTHZ-031; a change to a lower role narrows), the latter with the previous and the new role.
          */
         put: operations["setProjectMember"];
         post?: never;
@@ -1963,9 +1966,11 @@ export interface paths {
          *
          *     The move is refused with `409 repository_in_use` while an object of the source project references the
          *     repository: a virtual repository lists it as a member or pin-rule member or deploys into it, a project policy
-         *     selects it by key, or a CI mapping of the project grants on it. The answer names the references; remove them,
+         *     selects it by key, or a CI mapping of the project grants on it. The answer carries the extension member `references`, a list of `{kind, name}` (the kinds are
+         *     `virtual_member`, `pin_rule`, `virtual_deployment_target`, `policy`, `ci_mapping`, `member` and
+         *     `deployment_target`; `name` is the name of the object within the source project); remove them,
          *     then move. It is refused with `409 already_exists` when the target project has a repository with the key,
-         *     also one being deleted. A target equal to the source changes nothing and answers `200`. The move needs no
+         *     also one being deleted. A target equal to the source changes nothing and answers `200` with the repository as it is. The move needs no
          *     `If-Match`: the path names the source. It records `repository.moved` with both projects, notifies `authz`
          *     and `repo_config`, and moves the repository's `ETag`. The caller holds `repositories:write-config`, or is an
          *     Owner of both projects: a target project the caller is no member of answers `404`, one where its role is
@@ -4046,7 +4051,7 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** @description RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`. */
+        /** @description RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`. */
         Problem: {
             /**
              * @description The relative URI `/api/v1/problems/<code>`.
@@ -4069,6 +4074,14 @@ export interface components {
             /** @description Extension of `precondition_failed`: the current ETag of the resource (R-API-012). */
             currentEtag?: string;
             job?: components["schemas"]["JobReference"];
+            /** @description Extension of `repository_in_use` (409 of a move): the objects of the source project that name the repository (R-REPO-060). */
+            references?: components["schemas"]["RepositoryReference"][];
+        };
+        RepositoryReference: {
+            /** @enum {string} */
+            kind: "virtual_member" | "pin_rule" | "virtual_deployment_target" | "policy" | "ci_mapping" | "member" | "deployment_target";
+            /** @description The name of the object within the source project. */
+            name: string;
         };
         FieldError: {
             /** @description RFC 6901 JSON pointer into the request body. */
@@ -4902,7 +4915,8 @@ export interface components {
             displayName?: string;
             /** @default  */
             description: string;
-            readonly owners?: string[];
+            /** @description On create, the references (`user:<name>`, `group:<name>`) that become the first Owners of the project in the transaction of the create (Q-AUTHZ-229); a reference that is no user or group answers `422 principal_not_allowed`, one that does not exist `404`. Ignored on replace. */
+            owners?: string[];
             readonly members?: number;
             readonly role?: components["schemas"]["ProjectRole"];
             readonly repositories?: number;
@@ -4954,7 +4968,7 @@ export interface components {
             items: components["schemas"]["Member"][];
         };
         MoveRepositoryRequest: {
-            /** @description The key of the target project. Must differ from the project of the path (`422`). */
+            /** @description The key of the target project. The project of the path itself is allowed, and the answer is `200` with nothing changed. */
             project: string;
         };
         ProjectPrincipal: {
@@ -6025,7 +6039,7 @@ export interface components {
             readonly updatedAt?: string;
             readonly updatedBy?: string;
         };
-        /** @description A permission policy (R-AUTHZ-021). `inert` is true when no selector is left (a key selector goes with its repository); the policy stays and grants nothing. `warnings` are `path_patterns_on_package_format`, `selector_matches_nothing`, `anonymous_populates_remote` and, for a project policy, `selector_outside_project` (a key selector whose repository left the project by a move, Q-AUTHZ-179; a move that leaves such a selector is refused with `409 repository_in_use`). `version` is the ETag source. */
+        /** @description A permission policy (R-AUTHZ-021). `inert` is true when no selector is left (a key selector goes with its repository); the policy stays and grants nothing. `warnings` are `path_patterns_on_package_format`, `selector_matches_nothing` and `anonymous_populates_remote`; a move that would leave a key selector of a project policy behind is refused with `409 repository_in_use`. `version` is the ETag source. */
         PermissionPolicy: {
             name: string;
             description: string;
@@ -6504,12 +6518,10 @@ export interface components {
             /** @description The exact hosts of the host set (R-EP-003). */
             hosts: string[];
             wildcardHost: string | null;
-            /** @description Host-root bindings, host to repository key (R-EP-006). */
+            /** @description Host-root bindings, host to repository, the value being `<projectKey>/<repoKey>` (R-EP-006). */
             hostRoots: {
                 [key: string]: string;
             };
-            /** @enum {string} */
-            wildcardRoot: "none" | "label";
             /** @description The web pool that serves the endpoint; `null` for the main web Deployment. */
             pool: string | null;
             surface: ("ui" | "api" | "ci_exchange" | "packages" | "files")[];
@@ -9667,6 +9679,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];
@@ -9705,6 +9718,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
@@ -11124,6 +11138,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             412: components["responses"]["PreconditionFailed"];
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
@@ -11194,6 +11209,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             412: components["responses"]["PreconditionFailed"];
             413: components["responses"]["PayloadTooLarge"];
@@ -12033,6 +12049,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
@@ -12900,6 +12917,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];
@@ -13140,6 +13158,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];
@@ -13623,6 +13642,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];
@@ -14490,7 +14510,6 @@ export interface operations {
                      *             ],
                      *             "wildcardHost": null,
                      *             "hostRoots": {},
-                     *             "wildcardRoot": "none",
                      *             "pool": null,
                      *             "surface": [
                      *               "ui",
@@ -14528,7 +14547,6 @@ export interface operations {
                      *             ],
                      *             "wildcardHost": null,
                      *             "hostRoots": {},
-                     *             "wildcardRoot": "none",
                      *             "pool": "ep-customers",
                      *             "surface": [
                      *               "packages"
@@ -15762,6 +15780,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];
