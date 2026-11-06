@@ -806,6 +806,11 @@ profile after the fixes (`SET=push` and `SET=failover`, above): the measurements
    After the fix, on the dev cluster: `TestNuGetSearchClaimTiming` alone 5 of 5 green, with the warm-ups still 0.76 to 0.90 s
    after the creation and no upstream search after the claim, then `make e2e SET=nuget` twice in a row green (79 tests and
    subtests, 274 s and 275 s).
+11. **Fixed in the harness: one `kubectl get pods` that did not reach the API server ended a drain test** (`TestDrainRoles`, twice
+   on the dev cluster on 2026-11-06 at a load average of 16 to 27 on 20 CPUs: `Unable to connect to the server: net/http: TLS
+   handshake timeout` in `livePods`, once before the first eviction and once during it). The listing is a read of the kind API
+   server, not of trove, so `podsOfIn` ([env_test.go](../../test/e2e/env_test.go)) repeats a call whose error says it never reached
+   the server up to three times, 2 s apart; any other error, and a fourth unreachable answer, still fail the test.
 
 ## TLS in the suite
 

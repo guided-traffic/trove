@@ -181,10 +181,20 @@ const (
 
 func podsOf(t testing.TB, selector string) []pod { return podsOfIn(t, cfg.namespace, selector) }
 
-// podsOfIn lists the pods of a namespace.
+// apiServerUnreachable reports a kubectl error that never reached the kind API server: on a starved runner its
+// TLS handshake or connection times out now and then, while trove under test is not involved.
+var apiServerUnreachable = regexp.MustCompile(`Unable to connect to the server|TLS handshake timeout|connect: connection refused|i/o timeout`)
+
+// podsOfIn lists the pods of a namespace. The read is idempotent, so a call that did not reach the API server is
+// repeated up to three times, 2 s apart; any other error fails the test at once.
 func podsOfIn(t testing.TB, namespace, selector string) []pod {
 	t.Helper()
 	raw, kerr := kubectl("-n", namespace, "get", "pods", "-l", selector, "-o", "json")
+	for attempt := 1; kerr != nil && attempt <= 3 && apiServerUnreachable.MatchString(kerr.Error()); attempt++ {
+		t.Logf("listing pods %q: the API server was not reached (%v); attempt %d of 3 again in 2 s", selector, kerr, attempt)
+		time.Sleep(2 * time.Second)
+		raw, kerr = kubectl("-n", namespace, "get", "pods", "-l", selector, "-o", "json")
+	}
 	if kerr != nil {
 		t.Fatal(kerr)
 	}
