@@ -314,7 +314,7 @@ Built families, all with the `trove_` prefix:
 | `trove_http_requests_total`, `trove_http_request_duration_seconds` | `listener`, `endpoint`, `handler`, `method`, `code` (and `le` for the histogram) |
 | `trove_http_requests_in_flight` | `listener`, `endpoint` |
 | `trove_http_requests_shed_total` | `endpoint`, `reason` (`in_flight`, `memory_slots`, `heap`): requests answered `503 server_busy` by the replica's load protection |
-| `trove_http_memory_slots` | none; the concurrent requests the replica's memory admits, `0` without a known memory limit |
+| `trove_http_memory_slots` | none; the downloads of a large object the replica's memory admits beside the bytes its caches hold, `0` without a known memory limit |
 | `trove_endpoint_listener_up`, `trove_endpoint_misdirected_total`, `trove_endpoint_forwarded_host_ignored_total` | `endpoint` |
 | `trove_ready` | none; 1 while `/readyz` answers 200 |
 | `trove_tls_certificate_expiry_timestamp_seconds`, `trove_tls_reloads_total`, `trove_tls_reload_errors_total` | `kind` (`listener`, `database`, `valkey`, `objectstore`, `outbound`), `listener` (`client`, `client:<endpoint>`, `ops`, or empty), `name` (the configured file) |

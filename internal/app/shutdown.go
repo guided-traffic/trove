@@ -5,6 +5,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/jobs"
 )
 
 // shutdownBudget is how the 5 s margin of the pod's grace period is spent
@@ -20,6 +21,10 @@ type shutdownBudget struct {
 	// Quiesce is how long before the end of the server phase running work is
 	// cancelled and released (step 4).
 	Quiesce time.Duration
+	// Release is the time the job release writes get, from the cancel of the
+	// handlers to the close deadline: the settle deadline of the job worker
+	// (jobs.SettleDeadline, Q-ARCH-329).
+	Release time.Duration
 	// CommitGrace is the longest a committing request runs on past the server
 	// phase; the exit deadline can shorten it.
 	CommitGrace time.Duration
@@ -38,6 +43,7 @@ func defaultBudget() shutdownBudget {
 		Margin:       config.ShutdownMargin,
 		Slack:        500 * time.Millisecond,
 		Quiesce:      5 * time.Second,
+		Release:      jobs.SettleDeadline,
 		CommitGrace:  httpserver.DefaultCommitGrace,
 		CloseReserve: time.Second,
 		OpsReserve:   500 * time.Millisecond,
@@ -54,6 +60,11 @@ type shutdownPlan struct {
 	ServerBy time.Time
 	// QuiesceAt is when running work is cancelled and released.
 	QuiesceAt time.Time
+	// ReleaseAt is when the components that quiesce first (the job worker) are
+	// cancelled: early enough that the release writes of their jobs get the whole
+	// settle deadline before CloseBy, and never before the drain ends or after
+	// QuiesceAt (Q-ARCH-329).
+	ReleaseAt time.Time
 	// CommitBy bounds the commit grace of requests that are committing.
 	CommitBy time.Time
 	// CloseBy ends the flush and the close of the components (step 6).
@@ -75,6 +86,13 @@ func planShutdown(start time.Time, drain, timeout time.Duration, b shutdownBudge
 		p.QuiesceAt = floor
 	}
 	p.CloseBy = p.ExitBy.Add(-b.OpsReserve)
+	p.ReleaseAt = p.CloseBy.Add(-b.Release)
+	if floor := start.Add(drain); p.ReleaseAt.Before(floor) {
+		p.ReleaseAt = floor
+	}
+	if p.ReleaseAt.After(p.QuiesceAt) {
+		p.ReleaseAt = p.QuiesceAt
+	}
 	p.CommitBy = p.ServerBy.Add(b.CommitGrace)
 	if limit := p.CloseBy.Add(-b.CloseReserve); p.CommitBy.After(limit) {
 		p.CommitBy = limit

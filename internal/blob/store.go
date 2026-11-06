@@ -28,6 +28,7 @@ type Store struct {
 	parts     chan struct{}
 	onDamage  func(ctx context.Context, d Digest, status string)
 	spoolOpts []SpoolOption
+	memory    func(ctx context.Context, n int64)
 }
 
 // Option configures a Store.
@@ -48,6 +49,13 @@ func WithWaitPoll(d time.Duration) Option { return func(s *Store) { s.wait = d }
 // WithSpoolOptions passes options to the spool the store creates.
 func WithSpoolOptions(opts ...SpoolOption) Option {
 	return func(s *Store) { s.spoolOpts = append(s.spoolOpts, opts...) }
+}
+
+// WithMemory makes Open tell settle, before it asks the object store, what the
+// download will hold: DownloadCost bytes, for the request of its context
+// (Q-ARCH-328).
+func WithMemory(settle func(ctx context.Context, n int64)) Option {
+	return func(s *Store) { s.memory = settle }
 }
 
 // WithDamageHook is called after a download verification marked a blob damaged

@@ -11,10 +11,12 @@ import (
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
-// requestOverhead is what a download holds besides its buffer and the object
-// store's receive window: the connection, the goroutine stacks, the request and
-// the object-store call. 400 downloads held open measured 81 KiB of heap and
-// 50 KiB of stacks each (Q-ARCH-240).
+// requestOverhead is what a request holds besides a download's buffer and the
+// object store's receive window: the connection, the goroutine stacks, the
+// request and the object-store call. It is charged to every admitted request
+// (Q-ARCH-328). 100 downloads of 1, 2 and 5 MiB held open measured 110 KiB of
+// heap beside the buffer and the window and 73 KiB of stacks each, 636 to
+// 659 KiB in all against the 640 KiB charged.
 const requestOverhead = 128 << 10
 
 // applyMemoryLimit applies R-HA-036: unless GOMEMLIMIT is set, the Go runtime's
@@ -37,16 +39,31 @@ func applyMemoryLimit(rt config.Runtime, environ []string) (int64, string) {
 	return l, "runtime.memory_limit_bytes"
 }
 
-// cacheBudgets is what the per-replica caches hold when they are full, which the
-// memory slots leave aside (Q-ARCH-243): the rendition cache, the two metadata
-// caches of the proxy and virtual engines and the cache of pass-through answers.
+// cacheBudgets is what the per-replica caches hold when they are full
+// (Q-ARCH-243): the rendition cache, the two metadata caches of the proxy and
+// virtual engines and the cache of pass-through answers. The guard charges the
+// bytes the caches hold now (cacheBytes); the budgets are the most they can
+// hold, which the chart's check of the slots and the warning at start use.
 func cacheBudgets(c *config.Config) int64 {
 	return int64(c.Cache.RenditionBytes) + int64(c.Proxy.MetadataCacheBytes) + int64(c.Proxy.MergedMetadataCacheBytes) + int64(c.Proxy.QueryCacheBytes)
 }
 
-// requestMemory is what one request may hold, for the memory slots
-// (Q-ARCH-240): the buffer of a verified download, the object store's receive
-// window and the overhead.
+// cacheBytes is the weighted size of the replica's caches now.
+func (a *App) cacheBytes() int64 {
+	r := a.Caches()
+	if r == nil {
+		return 0
+	}
+	var n int64
+	for _, s := range r.Stats() {
+		n += s.Bytes
+	}
+	return n
+}
+
+// requestMemory is what a download of a large object holds, the unit of the
+// memory slots (Q-ARCH-240): the buffer of a verified download, the object
+// store's receive window and the overhead.
 func requestMemory(c *config.Config) int64 {
 	return blob.DownloadBufferBytes(c.Storage.Download) + int64(c.Storage.S3.HTTP.ReceiveWindow) + requestOverhead
 }
@@ -62,9 +79,10 @@ func (a *App) startMemoryGuard(ctx context.Context) *httpserver.MemoryGuard {
 		}
 		return nil
 	}
-	per, reserved := requestMemory(a.cfg), cacheBudgets(a.cfg)
+	per, budgets := requestMemory(a.cfg), cacheBudgets(a.cfg)
 	g := httpserver.NewMemoryGuard(httpserver.MemoryGuardConfig{
-		Limit: limit, RequestBytes: per, Reserved: reserved,
+		Limit: limit, RequestBytes: per, Overhead: requestOverhead, Held: a.cacheBytes,
+		OnSlots: a.tele.metrics.MemorySlots,
 		OnChange: func(shedding bool, heap uint64) {
 			if shedding {
 				a.log.Warn("the live heap reached the high-water mark: new requests answer 503 server_busy until it falls below the low-water mark",
@@ -80,11 +98,11 @@ func (a *App) startMemoryGuard(ctx context.Context) *httpserver.MemoryGuard {
 		return nil
 	}
 	a.tele.metrics.MemorySlotsInUse(g.InUse)
-	if float64(reserved) >= 0.8*float64(limit) {
-		a.log.Error("the caches' byte budgets take the memory the requests need: one request at a time is admitted; lower cache.rendition_bytes, proxy.metadata_cache_bytes, proxy.merged_metadata_cache_bytes and proxy.query_cache_bytes or raise the memory limit",
-			"cache_budget_bytes", reserved, "go_memory_limit_bytes", limit)
+	if float64(budgets) >= 0.8*float64(limit) {
+		a.log.Error("the caches' byte budgets take the memory the requests need once the caches are full: one request at a time is then admitted; lower cache.rendition_bytes, proxy.metadata_cache_bytes, proxy.merged_metadata_cache_bytes and proxy.query_cache_bytes or raise the memory limit",
+			"cache_budget_bytes", budgets, "go_memory_limit_bytes", limit)
 	}
-	a.log.Info("memory limit", "go_memory_limit_bytes", limit, "source", source, "memory_slots", g.Slots(), "request_bytes", per, "cache_budget_bytes", reserved)
+	a.log.Info("memory limit", "go_memory_limit_bytes", limit, "source", source, "memory_slots", g.Slots(), "request_bytes", per, "cache_budget_bytes", budgets)
 	a.bg.Add(1)
 	go func() {
 		defer a.bg.Done()

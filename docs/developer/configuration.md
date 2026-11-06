@@ -236,10 +236,13 @@ storage:
       receive_window: 256KiB          # default; 16KiB to 1GiB; the HTTP/2 window per object, Go's default is 4 MiB
 ```
 
-Memory slots = ⌊(0.8 × Go limit − cache budgets) ÷ (class of max(`buffer_size`, 2 × `hold_back`, 4 KiB) + `receive_window` + 128 KiB)⌋,
-at least 1. The cache budgets are `cache.rendition_bytes` + `proxy.metadata_cache_bytes` + `proxy.merged_metadata_cache_bytes` + `proxy.query_cache_bytes`, 648 MiB
-by default ([Q-ARCH-243](../spec/architecture.md#q-arch-243--the-memory-slots-leave-the-caches-byte-budgets-aside)): 77 for a 1 GiB
-container, 1,191 for 2 GiB; without caches 278 for 256 MiB and 1,114 for 1 GiB. The 80 % and 70 % of the heap gate are constants
+Memory slots = ⌊(0.8 × Go limit − the bytes the caches hold now) ÷ (class of max(`buffer_size`, 2 × `hold_back`, 4 KiB) + `receive_window` + 128 KiB)⌋,
+at least 1 ([Q-ARCH-328](../spec/architecture.md#q-arch-328--admission-charges-the-bytes-a-request-holds-and-the-caches-hold-now-not-a-worst-case-per-request-and-the-caches-budgets)).
+A request is charged that much at admission, and a download that knows its size settles to its buffer class, `min(size, receive_window)`
+and 128 KiB. The caches count by what they hold, not by their budgets (`cache.rendition_bytes` + `proxy.metadata_cache_bytes` +
+`proxy.merged_metadata_cache_bytes` + `proxy.query_cache_bytes`, 648 MiB by default, [Q-ARCH-243](../spec/architecture.md#q-arch-243--the-memory-slots-leave-the-caches-byte-budgets-aside)):
+empty caches 1,114 slots for 1 GiB, 278 for 256 MiB and 2,228 for 2 GiB; with the default caches full 77 for a 1 GiB
+container and 1,191 for 2 GiB, which is the floor the chart checks. The 80 % and 70 % of the heap gate are constants
 ([Q-ARCH-240](../spec/architecture.md#q-arch-240--a-replica-admits-what-its-memory-holds-memory-slots-and-a-heap-gate-in-step-4)).
 
 ## M2 keys

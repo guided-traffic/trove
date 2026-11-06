@@ -44,6 +44,27 @@ func TestDownloadVerification(t *testing.T) {
 			t.Fatal("status changed")
 		}
 	})
+	t.Run("R-ARCH-005 Q-ARCH-328 Open tells the request's memory charge what the download will hold", func(t *testing.T) {
+		var charged []int64
+		f := newFixture(t, func(c *config.Storage) {
+			c.Download.HoldBack = 64 << 10
+			c.Download.BufferSize = 32 << 10
+			c.S3.HTTP.ReceiveWindow = 256 << 10
+		}, blob.WithMemory(func(_ context.Context, n int64) { charged = append(charged, n) }))
+		sp := f.ingest(t, data)
+		if _, err := f.store.Commit(context.Background(), sp, noLink); err != nil {
+			t.Fatal(err)
+		}
+		r, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = r.Close()
+		// The buffer is twice the hold-back, 128 KiB, and a 1 MiB object fills the 256 KiB window.
+		if want := int64(128<<10 + 256<<10); len(charged) != 1 || charged[0] != want {
+			t.Fatalf("charged %v, want [%d]", charged, want)
+		}
+	})
 	t.Run("Q-STOR-6 a corrupted object of the same length is detected, the held-back bytes are never released and the blob is marked corrupt", func(t *testing.T) {
 		f, sp, damaged := setup(t, nil)
 		bad := bytes.Clone(data)

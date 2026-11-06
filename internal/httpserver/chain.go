@@ -253,12 +253,15 @@ func (c Chain) inflightStage(next http.Handler) http.Handler {
 				return
 			}
 		}
-		release, reason := c.Memory.Admit()
+		t, release, reason := c.Memory.Admit()
 		if reason != "" {
 			c.shed(w, r, reason)
 			return
 		}
 		defer release()
+		if t != nil {
+			r = r.WithContext(context.WithValue(r.Context(), ticketKey{}, t))
+		}
 		next.ServeHTTP(w, r)
 	})
 }

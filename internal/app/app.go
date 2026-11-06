@@ -628,11 +628,24 @@ func (a *App) Shutdown(ctx context.Context) error {
 	}
 
 	// Steps 3 and 4: stop accepting, let in-flight requests and running work
-	// finish until the deadline; cancel what still runs 5 s before it.
+	// finish until the deadline; cancel what still runs 5 s before it, and the job
+	// worker early enough for the release writes of its jobs to get their whole
+	// settle deadline (Q-ARCH-329).
 	sctx, cancel := context.WithDeadline(ctx, plan.ServerBy)
 	defer cancel()
-	quiesce := time.AfterFunc(time.Until(plan.QuiesceAt), func() {
-		for _, q := range quiesceOrder(comps) {
+	first, rest := quiesceGroups(comps)
+	at := plan.QuiesceAt
+	if len(first) > 0 {
+		at = plan.ReleaseAt
+	}
+	quiesce := time.AfterFunc(time.Until(at), func() {
+		for _, q := range first {
+			q.Quiesce(sctx)
+		}
+		if len(first) > 0 && len(rest) > 0 {
+			sleep(sctx, time.Until(plan.QuiesceAt))
+		}
+		for _, q := range rest {
 			q.Quiesce(sctx)
 		}
 	})
@@ -706,7 +719,12 @@ func (a *App) Shutdown(ctx context.Context) error {
 // handlers run the passes of a mirror through the remote engine and a pass whose engine was cancelled under it would record failures
 // while its context is live; then the others in reverse start order (Q-ARCH-318).
 func quiesceOrder(comps []Component) []Quiescer {
-	var first, rest []Quiescer
+	first, rest := quiesceGroups(comps)
+	return append(first, rest...)
+}
+
+// quiesceGroups splits quiesceOrder into the components that quiesce first and the others.
+func quiesceGroups(comps []Component) (first, rest []Quiescer) {
 	for i := len(comps) - 1; i >= 0; i-- {
 		switch q := comps[i].(type) {
 		case QuiescesFirst:
@@ -715,7 +733,7 @@ func quiesceOrder(comps []Component) []Quiescer {
 			rest = append(rest, q)
 		}
 	}
-	return append(first, rest...)
+	return first, rest
 }
 
 // closeComponents flushes, then stops, every component. Signals stop first: the

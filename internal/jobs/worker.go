@@ -432,6 +432,13 @@ func (w *Worker) forget(rj *runningJob) {
 	w.perQueue[rj.job.Queue]--
 }
 
+// SettleDeadline is the time the writes that end an attempt (completion,
+// failure, cancellation and the release at a shutdown) get together, retries
+// included. The shutdown plan cancels the worker this long before its close
+// deadline, so a release write at a shutdown has all of it (R-ARCH-024 step 4,
+// Q-ARCH-329).
+const SettleDeadline = 15 * time.Second
+
 // The settle writes retry on a failed statement: a few attempts with a short
 // backoff, inside the settle's own deadline.
 const (
@@ -471,7 +478,7 @@ func (w *Worker) writeWithRetry(ctx context.Context, log *slog.Logger, what stri
 // is left to expire and the reaper returns the job.
 func (w *Worker) settle(rj *runningJob, err error, cause error, took time.Duration) {
 	j := rj.job
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(w.root), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(w.root), SettleDeadline)
 	defer cancel()
 	qs := q.New(w.o.Main)
 	outcome := OutcomeSucceeded

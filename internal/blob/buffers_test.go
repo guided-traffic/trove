@@ -77,4 +77,24 @@ func TestDownloadBuffers(t *testing.T) {
 			t.Error("the smallest buffer is 4 KiB")
 		}
 	})
+
+	t.Run("R-ARCH-005 Q-ARCH-328 a download costs the size class of its buffer plus what the object store sends ahead, at most the receive window", func(t *testing.T) {
+		var cfg config.Storage
+		cfg.Download = config.StorageDownload{BufferSize: 256 << 10, HoldBack: 64 << 10}
+		cfg.S3.HTTP.ReceiveWindow = 256 << 10
+		for _, c := range []struct{ size, want int64 }{
+			{50 << 10, 64<<10 + 50<<10},    // a 50 KiB tarball: a 64 KiB buffer and its own bytes
+			{200 << 10, 256<<10 + 200<<10}, // one byte more than the object rounds up to the 256 KiB class
+			{1 << 20, 256<<10 + 256<<10},   // a large object: the full buffer and the full window
+			{5 << 20, 256<<10 + 256<<10},
+			{0, 4 << 10}, // the smallest buffer
+		} {
+			if got := DownloadCost(cfg, c.size); got != c.want {
+				t.Errorf("size %d: cost %d, want %d", c.size, got, c.want)
+			}
+		}
+		if got, want := DownloadCost(cfg, math.MaxInt64), DownloadBufferBytes(cfg.Download)+int64(cfg.S3.HTTP.ReceiveWindow); got != want {
+			t.Errorf("the cost of a large object is %d, want the full buffer and window %d", got, want)
+		}
+	})
 }

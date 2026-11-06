@@ -164,8 +164,10 @@ What a download holds ([Q-ARCH-241](../spec/architecture.md#q-arch-241--a-downlo
   longer than the row has nothing more cleared and is read to its end, where the digest check fails.
 - It implements `io.WriterTo`, and `edge.ServeItem` uses it, so a verified download needs no copy buffer. Any other body (a range,
   `verify: false`) is copied through a pooled buffer of at most `buffer_size` and its length.
-- `blob.DownloadBufferBytes` is the class of the full buffer; the memory guard counts it per request
-  ([architecture.md](architecture.md#stage-4-and-the-memory-guard)).
+- `blob.DownloadBufferBytes` is the class of the full buffer, the unit of the memory guard's request bytes;
+  `blob.DownloadCost(cfg, size)` is what a download of that size holds (its buffer class plus `min(size, receive_window)`), which
+  `Store.Open` hands to the request's memory charge through `blob.WithMemory` before it asks the object store
+  ([architecture.md](architecture.md#stage-4-and-the-memory-guard), Q-ARCH-328).
 - The object-store client's HTTP/2 receive window per stream is `storage.s3.http.receive_window` (`outbound.WithStreamReceiveWindow`);
   without it Go's transport lets the store send 4 MiB of an object ahead of a slow reader.
 

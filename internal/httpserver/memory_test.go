@@ -17,11 +17,16 @@ func TestMemoryGuard(t *testing.T) {
 		if g.Slots() != 80 {
 			t.Fatalf("slots = %d, want 80", g.Slots())
 		}
-		if g := NewMemoryGuard(MemoryGuardConfig{Limit: 100 << 20, RequestBytes: 1 << 20, Reserved: 30 << 20}); g.Slots() != 50 {
-			t.Fatalf("with 30 MiB of cache budgets the slots are %d, want (80 - 30) MiB / 1 MiB = 50 (Q-ARCH-243)", g.Slots())
+		held := func(n int64) *MemoryGuard {
+			g := NewMemoryGuard(MemoryGuardConfig{Limit: 100 << 20, RequestBytes: 1 << 20, Held: func() int64 { return n }, Read: func() (uint64, uint64) { return 0, 0 }})
+			g.Sample()
+			return g
 		}
-		if g := NewMemoryGuard(MemoryGuardConfig{Limit: 100 << 20, RequestBytes: 1 << 20, Reserved: 90 << 20}); g.Slots() != 1 {
-			t.Fatalf("cache budgets above the high-water mark give %d slots, want 1", g.Slots())
+		if g := held(30 << 20); g.Slots() != 50 {
+			t.Fatalf("with 30 MiB in the caches the slots are %d, want (80 - 30) MiB / 1 MiB = 50 (Q-ARCH-328)", g.Slots())
+		}
+		if g := held(90 << 20); g.Slots() != 1 {
+			t.Fatalf("caches above the high-water mark give %d slots, want 1", g.Slots())
 		}
 		if g := NewMemoryGuard(MemoryGuardConfig{Limit: 1 << 20, RequestBytes: 4 << 20}); g.Slots() != 1 {
 			t.Fatalf("a limit below one request gives %d slots, want 1", g.Slots())
@@ -31,7 +36,7 @@ func TestMemoryGuard(t *testing.T) {
 			if g != nil || g.Slots() != 0 {
 				t.Fatalf("limit %d: a guard without a known limit", l)
 			}
-			release, reason := g.Admit()
+			_, release, reason := g.Admit()
 			if reason != "" {
 				t.Fatalf("limit %d: a nil guard refused with %q", l, reason)
 			}
@@ -42,12 +47,12 @@ func TestMemoryGuard(t *testing.T) {
 
 	t.Run("R-ARCH-005 InUse counts the slots admitted requests hold, and a full guard sheds", func(t *testing.T) {
 		g := NewMemoryGuard(MemoryGuardConfig{Limit: 5 << 20, RequestBytes: 2 << 20, Read: func() (uint64, uint64) { return 0, 0 }})
-		r1, _ := g.Admit()
-		r2, _ := g.Admit()
+		_, r1, _ := g.Admit()
+		_, r2, _ := g.Admit()
 		if g.Slots() != 2 || g.InUse() != 2 {
 			t.Fatalf("slots %d, in use %d, want 2 and 2", g.Slots(), g.InUse())
 		}
-		if _, reason := g.Admit(); reason != ShedMemorySlots {
+		if _, _, reason := g.Admit(); reason != ShedMemorySlots {
 			t.Fatalf("a full guard answered %q, want %q", reason, ShedMemorySlots)
 		}
 		r1()
@@ -83,7 +88,7 @@ func TestMemoryGuard(t *testing.T) {
 		for _, s := range steps {
 			heap.Store(s.heap)
 			g.Sample()
-			release, reason := g.Admit()
+			_, release, reason := g.Admit()
 			if reason != s.reason {
 				t.Fatalf("heap %d: reason %q, want %q", s.heap, reason, s.reason)
 			}
@@ -165,8 +170,8 @@ func TestMemoryGuard(t *testing.T) {
 		if w.Code != 503 || len(reasons) != 1 || reasons[0] != ShedInFlight {
 			t.Fatalf("status %d, reasons %v", w.Code, reasons)
 		}
-		if len(g.slots) != 0 {
-			t.Fatalf("%d memory slots still taken", len(g.slots))
+		if g.used.Load() != 0 {
+			t.Fatalf("%d bytes still charged", g.used.Load())
 		}
 	})
 
@@ -191,7 +196,7 @@ func TestMemoryGuard(t *testing.T) {
 		g.now = func() time.Time { return clock }
 		g.collect = func() { collected++; cycles++; heap = 100 }
 		g.Sample()
-		if _, r := g.Admit(); r != ShedHeap {
+		if _, _, r := g.Admit(); r != ShedHeap {
 			t.Fatalf("reason %q, want heap", r)
 		}
 		clock = clock.Add(memoryRecheck / 2)
@@ -204,7 +209,7 @@ func TestMemoryGuard(t *testing.T) {
 		if collected != 1 {
 			t.Fatalf("%d GC runs, want 1", collected)
 		}
-		release, r := g.Admit()
+		_, release, r := g.Admit()
 		if r != "" {
 			t.Fatalf("the gate stayed closed after the GC showed the heap free: %q", r)
 		}

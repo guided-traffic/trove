@@ -925,8 +925,12 @@ background work.
 - Responses completed during the drain carry `Connection: close`, so clients reconnect through the
   Service to a remaining replica.
 - Workers stop claiming jobs at `SIGTERM`. Running jobs get the shutdown timeout to finish or to
-  persist their cursor. At the deadline their job leases are released explicitly
-  (`state = 'queued'`, `attempt` unchanged), and their advisory-lock sessions are closed.
+  persist their cursor. A handler still running 11 s before the deadline is cancelled and its job
+  lease released explicitly (`state = 'queued'`, `attempt` unchanged): the release write has the
+  whole settle deadline of the worker, 15 s with its retries, before the process stops waiting for
+  it ([architecture.md](architecture.md) R-ARCH-024 step 4, Q-ARCH-329), so a release during a
+  PostgreSQL switchover is not left to the lease's expiry and the reaper. The advisory-lock
+  sessions are closed at the end.
 - A fetch that the replica leads for other waiters (R-REPO-026) finishes within the shutdown timeout
   or is abandoned; either way the replica releases its Valkey fetch lock explicitly (delete only if
   the lock still carries this replica's token), so waiters on other replicas take over at once
@@ -4310,10 +4314,13 @@ Priority: **MVP** · Covers: HA-052
   The rest is headroom for non-heap memory. `GOMEMLIMIT=off` is an explicit setting too: no limit.
 - **Admission follows the memory.** The same limit sizes what a `web` replica admits: memory slots
   and a heap gate in step 4 of the chain ([architecture.md](architecture.md) R-ARCH-005,
-  Q-ARCH-240). A replica that the CPU cannot keep up with answers the excess `503 server_busy`
-  instead of collecting requests until the memory runs out. `server.max_in_flight` stays an upper
-  bound; with the chart's 2 GiB and the default caches the 1,191 memory slots bind first (Q-ARCH-243, Q-ARCH-270). The chart refuses a `web` pod
-  without a memory limit and one whose limit admits fewer than 64 requests (R-HA-029, Q-HA-70).
+  Q-ARCH-240, Q-ARCH-328). A replica that the CPU cannot keep up with answers the excess `503 server_busy`
+  instead of collecting requests until the memory runs out. The admission counts bytes: a request
+  holds a download of a large object until its download knows its size and settles to what it holds,
+  and the caches count by what they hold, so empty caches reserve nothing. `server.max_in_flight`
+  stays an upper bound; with the chart's 2 GiB and the default caches full the 1,191 memory slots bind first
+  (Q-ARCH-243, Q-ARCH-270), 2,228 with empty ones. The chart refuses a `web` pod
+  without a memory limit and one whose limit, with the caches full, admits fewer than 64 requests (R-HA-029, Q-HA-70).
 - Buffers are bounded so that memory does not scale with transfer size: streaming bodies, spool
   instead of memory above `storage.spool.memory_threshold`, bounded metadata documents (format pages
   set limits for npm packuments and NuGet registration pages).

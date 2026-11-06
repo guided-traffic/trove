@@ -3407,7 +3407,7 @@ The rows below extend the table of R-REPO-049 and of [architecture.md](architect
 | State | Where | Across replicas | Valkey unavailable | Valkey lost its data | Drain or crash of the replica |
 |---|---|---|---|---|---|
 | Mirror state, pending names, cursors, the fence (R-REPO-053) | PostgreSQL | One copy; the fence names the one writer | Unaffected | Unaffected | Drain: the job is released and continued elsewhere; crash: the next dispatch continues the pass, the fence stops a late write |
-| The pass's window, waits and in-flight fetches (R-REPO-054) | In the process that runs the pass | That process only | Unaffected | Unaffected | Cancelled 5 s before the shutdown deadline; nothing partial stored; the next attempt starts its window at 1 |
+| The pass's window, waits and in-flight fetches (R-REPO-054) | In the process that runs the pass | That process only | Unaffected | Unaffected | Cancelled 11 s before the shutdown deadline (with its job, Q-ARCH-329); nothing partial stored; the next attempt starts its window at 1 |
 | Background slot counters (R-REPO-055) | Per-replica counters | The ceiling B per pass | Unaffected | Unaffected | End with the process |
 | The signal `mirror_yield` (R-REPO-055) | Valkey Pub/Sub, at most once | Reaches the process that runs the pass | Lost: the pass keeps within B, which the cluster bound counts | As unavailable | — |
 | Mirror gauges (R-REPO-057) | Each process that claims the queue `mirror`, from PostgreSQL | Equal values in each | Unaffected | Unaffected | End with the process |

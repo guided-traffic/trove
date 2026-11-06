@@ -232,7 +232,7 @@ R-ARCH-024. This page owns what probes, the registry and the records show:
    `Shutdown` waits for active connections to become idle and does not end such streams itself
    ([`net/http`](https://pkg.go.dev/net/http#Server.Shutdown)); their clients reconnect to another
    replica ([api-and-ui.md](api-and-ui.md) R-API-051). `worker`: running jobs finish, or are
-   released without counting the attempt 5 s before the deadline
+   released without counting the attempt 11 s before the deadline
    ([architecture.md](architecture.md) R-ARCH-016).
 4. Write the open audit deduplication summaries and flush the asynchronous audit buffer
    (R-OPS-015), so that a drain loses no audit event while PostgreSQL is reachable.
@@ -934,8 +934,8 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 | `trove_http_request_duration_seconds` | histogram | `listener`, `endpoint` (client listener), `handler`, `method`, `code_class` | Time from first byte received to last byte sent |
 | `trove_http_requests_in_flight` | gauge | `listener`, `endpoint` (client listener) | Requests in progress |
 | `trove_http_requests_shed_total` | counter | `endpoint`, `reason` (`in_flight`, `memory_slots`, `heap`) | Requests step 4 of the chain answered `503 server_busy`: beyond the endpoint's `max_in_flight`, beyond the replica's memory slots, or while the heap gate was closed ([architecture.md](architecture.md) R-ARCH-005, Q-ARCH-240) |
-| `trove_http_memory_slots` | gauge | — | Concurrent requests the replica's memory admits; `0` when no memory limit is known (R-ARCH-005) |
-| `trove_http_memory_slots_in_use` | gauge | — | Memory slots admitted requests hold now; only present while the replica knows a memory limit (R-ARCH-005) |
+| `trove_http_memory_slots` | gauge | — | Downloads of a large object the replica's memory admits beside the bytes its caches hold now, in units of the request bytes (R-ARCH-005, Q-ARCH-328); `0` when no memory limit is known |
+| `trove_http_memory_slots_in_use` | gauge | — | What admitted requests are charged now, in the same unit and rounded up; only present while the replica knows a memory limit (R-ARCH-005) |
 | `trove_http_received_bytes_total` | counter | `handler` | Request body bytes |
 | `trove_http_sent_bytes_total` | counter | `handler` | Response body bytes |
 | `trove_http_transfers_cut_total` | counter | `direction` | Transfers cut at the shutdown deadline ([architecture.md](architecture.md) R-ARCH-024, Q-ARCH-18) |

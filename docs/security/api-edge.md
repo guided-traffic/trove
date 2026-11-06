@@ -26,12 +26,13 @@ only. The break-glass lockout stays in PostgreSQL for that reason (R-AUTH-038).
 The rate limits share a budget between callers; stage 4 of the chain protects the replica itself, before authentication
 ([R-ARCH-005](../spec/architecture.md#r-arch-005--http-listeners-routing-and-middleware-chain),
 [Q-ARCH-240](../spec/architecture.md#q-arch-240--a-replica-admits-what-its-memory-holds-memory-slots-and-a-heap-gate-in-step-4)).
-A request beyond the endpoint's `max_in_flight`, beyond the replica's memory slots, or while the live heap is at 80 % of the Go
+A request beyond the endpoint's `max_in_flight`, beyond the bytes the replica's memory holds for requests (the memory slots, [Q-ARCH-328](../spec/architecture.md#q-arch-328--admission-charges-the-bytes-a-request-holds-and-the-caches-hold-now-not-a-worst-case-per-request-and-the-caches-budgets)), or while the live heap is at 80 % of the Go
 memory limit, gets `503 server_busy` with `Retry-After: 1` and costs nothing more than the answer
 ([memory.go](../../internal/httpserver/memory.go), [chain.go](../../internal/httpserver/chain.go)). A replica under overload
 therefore refuses instead of being OOM-killed, which would cut every transfer it holds. What the guard does not stop: one client's
 slow requests holding every slot ([H-322](../spec/architecture.md#h-322--slow-requests-of-one-client-take-the-memory-slots-of-every-client)),
 retained memory above the high-water mark ([H-323](../spec/architecture.md#h-323--a-replica-that-retains-memory-above-the-high-water-mark-refuses-every-request)),
+a cache that grows after a request was admitted ([H-539](../spec/architecture.md#h-539--a-cache-that-grows-after-a-request-was-admitted-is-outside-the-memory-charges)),
 and connections that send no request ([H-324](../spec/architecture.md#h-324--connections-that-send-no-request-are-outside-the-memory-guard)).
 
 ## Cross-origin access

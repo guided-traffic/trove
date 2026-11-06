@@ -31,6 +31,9 @@ type OpenOptions struct {
 // different from the blob's size, or a body read to its end with another digest.
 // A transport error aborts the same way but changes no status.
 func (s *Store) Open(ctx context.Context, d Digest, size int64, o OpenOptions) (io.ReadCloser, error) {
+	if s.memory != nil {
+		s.memory(ctx, DownloadCost(s.cfg, size))
+	}
 	body, info, err := s.objects.Get(ctx, s.Key(d), o.Range)
 	if err != nil {
 		return nil, mapStoreErr(err)

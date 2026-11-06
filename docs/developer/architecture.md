@@ -148,10 +148,19 @@ in-flight limit and no memory guard, so a probe is never refused because the req
 1. `applyMemoryLimit` sets the Go memory limit of R-HA-036: `runtime.memory_limit_ratio` × `runtime.memory_limit_bytes`, unless
    `GOMEMLIMIT` is in the environment. No limit known means no guard (`NewMemoryGuard` returns nil, which admits everything), and a
    warning.
-2. `requestMemory` is what one request may hold: `blob.DownloadBufferBytes` (the verified download's buffer, rounded to its pool
-   class) + `storage.s3.http.receive_window` + `requestOverhead` (128 KiB, measured). The guard has ⌊(0.8 × limit − `cacheBudgets`) ÷ that⌋
-   slots, at least 1, a buffered channel; `cacheBudgets` is the three caches' byte budgets (Q-ARCH-243), and budgets at 80 % of the
-   limit log an error; `Admit` takes one without waiting or refuses with `memory_slots`.
+2. `requestMemory` is what a download of a large object holds, the request bytes: `blob.DownloadBufferBytes` (the verified
+   download's buffer, rounded to its pool class) + `storage.s3.http.receive_window` + `requestOverhead` (128 KiB; 100 downloads of
+   1, 2 and 5 MiB held open measured 636 to 659 KiB each, `TestHeldDownloadCost`). The guard counts bytes
+   ([Q-ARCH-328](../spec/architecture.md#q-arch-328--admission-charges-the-bytes-a-request-holds-and-the-caches-hold-now-not-a-worst-case-per-request-and-the-caches-budgets)):
+   `Admit` adds the request bytes to `used` in a compare-and-swap loop and refuses with `memory_slots` when `used` would pass
+   0.8 × limit less the caches' bytes (`App.cacheBytes`, the sum of `cache.Registry.Stats()` read with every heap sample), unless
+   nothing else is held. The caches' byte budgets (`cacheBudgets`, Q-ARCH-243) are no longer subtracted; they are the floor that
+   the chart checks and what the start logs an error about (budgets at 80 % of the limit).
+   `Admit` returns a `Ticket`; `Chain.inflightStage` puts it in the request's context. `blob.Store.Open` (option
+   `blob.WithMemory(httpserver.SettleMemory)`) calls `Ticket.Settle(blob.DownloadCost(size))`, which lowers the charge to the
+   overhead plus the buffer class of that size plus `min(size, window)`; a second `Settle` of the same request adds. A charge
+   never grows after the admission, so nothing is refused half way. `Slots()` is (0.8 × limit − caches) ÷ request bytes and `InUse()`
+   the charges in the same unit, rounded up: the two gauges keep their names.
 3. `Run` reads `/gc/heap/live:bytes` + `/memory/classes/heap/stacks:bytes` every 50 ms. At 80 % of the limit the gate closes
    (`Admit` refuses with `heap`) until the value is below 70 %. Why not the allocated heap: near the Go limit it is high by design.
    A closed gate that sees `/gc/cycles/total:gc-cycles` unchanged for a second calls `runtime.GC` (Q-ARCH-242): an idle replica
@@ -159,8 +168,9 @@ in-flight limit and no memory guard, so a probe is never refused because the req
 4. `Chain.shed` answers every refusal the same way, `503 server_busy` with `Retry-After: 1`, rendered through the path's error
    shape, and calls `OnShed(reason)`, which the composition root counts in `trove_http_requests_shed_total{endpoint,reason}`.
 
-The endpoint's `max_in_flight` is asked first and its slot released if the guard refuses. The slots are what makes a burst safe:
-admission happens before the request allocates, so the heap gate alone would admit a whole burst inside one GC cycle.
+The endpoint's `max_in_flight` is asked first and its slot released if the guard refuses. The charges are what makes a burst safe:
+admission happens before the request allocates, so the heap gate alone would admit a whole burst inside one GC cycle. What they
+do not see is a cache that grows after the admission (H-539): that is the heap gate's.
 
 Every route of a listener is registered through `httpserver.Router`. The generated API operations, the
 UI and later the format dispatcher all use `Router.Handle`, so `Router.Patterns()` is the whole route
@@ -283,8 +293,8 @@ All phases work against one plan, computed once at the start of `Shutdown`
 runs long shortens the ones after it and never moves the end:
 
 ```text
-start ──drain──▶ QuiesceAt ─────▶ ServerBy ──commit grace──▶ CommitBy ──▶ CloseBy ──ops──▶ ExitBy < start + grace
-        (web only)  ServerBy-5 s   start+drain+timeout    ≤ 3 s          flush+stop   0.5 s   ServerBy + 5 s - 0.5 s
+start ──drain──▶ ReleaseAt ─▶ QuiesceAt ─▶ ServerBy ──commit grace──▶ CommitBy ──▶ CloseBy ──ops──▶ ExitBy < start + grace
+        (web only)  CloseBy-15 s  ServerBy-5 s  start+drain+timeout    ≤ 3 s          flush+stop   0.5 s   ServerBy + 5 s - 0.5 s
 ```
 
 1. `SetDraining`: `/readyz` turns 503 at once, `Drain` of every component (a worker stops claiming).
@@ -292,7 +302,10 @@ start ──drain──▶ QuiesceAt ─────▶ ServerBy ──commit gr
    `worker`: no delay.
 3. `Server.ShutdownBy` until `ServerBy`: the listener closes, in-flight requests finish; `Settle` of
    every component runs alongside.
-4. `QuiesceAt` (`ServerBy - 5 s`): `Quiesce` cancels what still runs.
+4. `ReleaseAt` (`CloseBy - jobs.SettleDeadline`, 15 s, so `ServerBy - 11 s`; not before the drain ends, not after `QuiesceAt`): the components that
+   quiesce first (the job worker) are cancelled, and their handlers' jobs get their release writes with the whole settle deadline
+   ([Q-ARCH-329](../spec/architecture.md#q-arch-329--the-job-worker-is-cancelled-early-enough-that-the-release-writes-of-its-jobs-get-their-whole-settle-deadline)).
+   `QuiesceAt` (`ServerBy - 5 s`, later when the worker is still returning): `Quiesce` of the others cancels what still runs.
 5. At `ServerBy` the remaining requests are cut by closing their connections and counted in
    `trove_http_transfers_cut_total{direction}`, with one exception: a request that is **committing** runs
    on until `CommitBy`. A handler marks itself with `httpserver.BeginCommit(ctx)` right before the step
@@ -385,6 +398,9 @@ listeners, rotating the certificate under load (E0.15 at process level, [tls.md]
 [test/integration/overload](../../test/integration/overload) seeds an installation through `testenv.NewStack` and runs the binary
 (`Stack.Environ`) with `TROVE_RUNTIME_MEMORY_LIMIT_BYTES` of 256 MiB: 1,000 downloads whose clients read nothing, the memory
 guard's slots and `503`s, and the memory the runtime holds, sampled from `/metrics` ([Stage 4 and the memory guard](#stage-4-and-the-memory-guard)).
+`TestBurstBesideEmptyCaches` offers 300 held downloads to a 1 GiB replica with the default caches (none is shed, where the
+budgets would have left 77 slots), and `TestHeldDownloadCost` measures what a held download of 1, 2 and 5 MiB costs (heap in use,
+stacks, resident set per download, logged with `-v`): the basis of the request bytes in Q-ARCH-328.
 A memory limit is per process, which is why this suite cannot use the in-process harness.
 
 ## Test builds

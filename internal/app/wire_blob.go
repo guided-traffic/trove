@@ -10,6 +10,7 @@ import (
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/blob/s3"
 	"github.com/guided-traffic/trove/internal/cluster"
+	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/observability/health"
 )
 
@@ -49,7 +50,7 @@ func (a *App) wireBlob(ctx context.Context, keys keysArea, pg postgresArea) (blo
 	bm := blob.NewMetrics(a.tele.metrics)
 	log := a.log.With("component", "blob")
 	objects := blob.NewGuard(client, cfg.S3.CircuitBreaker, blob.WithGuardMetrics(bm))
-	store, err := blob.New(cfg, objects, db, blob.WithLogger(log), blob.WithMetrics(bm))
+	store, err := blob.New(cfg, objects, db, blob.WithLogger(log), blob.WithMetrics(bm), blob.WithMemory(httpserver.SettleMemory))
 	if err != nil {
 		return blobArea{}, err
 	}

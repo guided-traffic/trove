@@ -11,6 +11,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/jobs"
 )
 
 // derived returns server.shutdown_timeout the way the loader derives it.
@@ -64,7 +65,7 @@ func TestShutdownPlan(t *testing.T) {
 					}
 					p := planShutdown(t0, d, timeout, b)
 					name := fmt.Sprintf("grace %s drain %s web=%v", grace, drain, web)
-					chain := []time.Time{p.Start, p.QuiesceAt, p.ServerBy, p.CommitBy, p.CloseBy, p.ExitBy}
+					chain := []time.Time{p.Start, p.ReleaseAt, p.QuiesceAt, p.ServerBy, p.CommitBy, p.CloseBy, p.ExitBy}
 					for i := 1; i < len(chain); i++ {
 						if chain[i].Before(chain[i-1]) {
 							t.Errorf("%s: phase %d ends before phase %d: %v", name, i, i-1, chain)
@@ -91,6 +92,36 @@ func TestShutdownPlan(t *testing.T) {
 		// Whatever time the drain or the server phase used, ExitBy stays where it is.
 		if p.ExitBy.Sub(t0) != 5*time.Second+25*time.Second+b.Margin-b.Slack {
 			t.Errorf("exit deadline %s", p.ExitBy.Sub(t0))
+		}
+	})
+
+	t.Run("R-ARCH-024 R-HA-011 the job worker is cancelled so that the release writes of its jobs get the whole settle deadline before the close deadline, as far as the shutdown timeout allows", func(t *testing.T) {
+		if b.Release != jobs.SettleDeadline {
+			t.Fatalf("the budget's release time %s is not the job worker's settle deadline %s", b.Release, jobs.SettleDeadline)
+		}
+		for _, c := range []struct {
+			grace, drain time.Duration
+			web          bool
+		}{{300 * time.Second, 0, false}, {120 * time.Second, 15 * time.Second, true}, {45 * time.Second, 5 * time.Second, true}, {45 * time.Second, 0, false}} {
+			d := c.drain
+			if !c.web {
+				d = 0
+			}
+			p := planShutdown(t0, d, derived(c.grace, c.drain), b)
+			if got := p.CloseBy.Sub(p.ReleaseAt); got != jobs.SettleDeadline {
+				t.Errorf("grace %s drain %s web=%v: the release writes get %s before the close deadline, want %s", c.grace, c.drain, c.web, got, jobs.SettleDeadline)
+			}
+			if !p.ReleaseAt.Before(p.QuiesceAt) {
+				t.Errorf("grace %s: the worker is cancelled at %s, not before the engines at %s", c.grace, p.ReleaseAt.Sub(t0), p.QuiesceAt.Sub(t0))
+			}
+		}
+		// A timeout too short for it cancels the worker when the drain ends and gives the writes what is left.
+		p := planShutdown(t0, 5*time.Second, 8*time.Second, b)
+		if p.ReleaseAt != t0.Add(5*time.Second) {
+			t.Errorf("a short timeout cancels the worker at %s, want the end of the drain", p.ReleaseAt.Sub(t0))
+		}
+		if got := p.CloseBy.Sub(p.ReleaseAt); got != 8*time.Second+b.Margin-b.Slack-b.OpsReserve {
+			t.Errorf("the release writes get %s", got)
 		}
 	})
 
@@ -124,7 +155,7 @@ func scaledBudget() shutdownBudget {
 	return shutdownBudget{
 		Margin: 800 * time.Millisecond, Slack: 100 * time.Millisecond, Quiesce: 600 * time.Millisecond,
 		CommitGrace: 500 * time.Millisecond, CloseReserve: 200 * time.Millisecond,
-		OpsReserve: 100 * time.Millisecond, Abandon: 50 * time.Millisecond,
+		OpsReserve: 100 * time.Millisecond, Abandon: 50 * time.Millisecond, Release: 2 * time.Second,
 	}
 }
 
@@ -184,6 +215,67 @@ func TestShutdownBudgetEndToEnd(t *testing.T) {
 		_ = h.app.Shutdown(context.Background())
 		if took := time.Since(begin); took > 1700*time.Millisecond+400*time.Millisecond {
 			t.Errorf("Shutdown took %s, the commit grace pushed it past the plan of 1.7 s", took)
+		}
+	})
+}
+
+// releasingComp models the job worker: it is quiesced first, its handlers end at once and
+// each settles with a release write that needs release to finish and, like Worker.Stop,
+// is waited for in the close phase until its context ends.
+type releasingComp struct {
+	blockingComp
+	write    time.Duration
+	started  atomic.Int64 // unix nanos of the Quiesce call
+	finished atomic.Bool
+	pending  chan struct{}
+}
+
+func (c *releasingComp) QuiescesFirst() {}
+func (c *releasingComp) Quiesce(context.Context) {
+	c.started.Store(time.Now().UnixNano())
+	c.pending = make(chan struct{})
+	go func() {
+		time.Sleep(c.write)
+		c.finished.Store(true)
+		close(c.pending)
+	}()
+}
+func (c *releasingComp) Flush(context.Context) error { return nil }
+func (c *releasingComp) Stop(ctx context.Context) error {
+	select {
+	case <-c.pending:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("a release write still running at the end of the shutdown")
+	}
+}
+func (c *releasingComp) Settle(ctx context.Context) error { <-ctx.Done(); return nil }
+
+func TestShutdownReleaseWrites(t *testing.T) {
+	t.Run("R-ARCH-024 R-HA-011 a job's release write gets the full settle deadline inside the grace period: the worker is quiesced early enough that the write ends before the close deadline", func(t *testing.T) {
+		// grace 9 s, drain 1 s -> derived timeout 3 s; a worker skips the drain. The scaled
+		// budget's settle deadline is 2 s: the write needs most of it.
+		h := start(t, "worker", map[string]string{
+			"TROVE_RUNTIME_TERMINATION_GRACE_PERIOD": "9s", "TROVE_HEALTH_SHUTDOWN_DRAIN_DELAY": "1s", "TROVE_SERVER_SHUTDOWN_TIMEOUT": "0s",
+		})
+		if got := h.app.cfg.Server.ShutdownTimeout; got != 3*time.Second {
+			t.Fatalf("derived timeout %s, want 3s", got)
+		}
+		h.app.budget = scaledBudget()
+		comp := &releasingComp{blockingComp: blockingComp{name: "jobs", release: make(chan struct{})}, write: h.app.budget.Release - 200*time.Millisecond}
+		t.Cleanup(func() { close(comp.release) })
+		h.app.comps = append(h.app.comps, comp)
+
+		begin := time.Now()
+		err := h.app.Shutdown(context.Background())
+		if err != nil {
+			t.Errorf("the release write was cut by the shutdown: %v", err)
+		}
+		if !comp.finished.Load() {
+			t.Error("the release write did not finish before the process stopped waiting for it")
+		}
+		if took := time.Since(begin); took > 3*time.Second+600*time.Millisecond+400*time.Millisecond {
+			t.Errorf("Shutdown took %s, past the plan", took)
 		}
 	})
 }

@@ -837,27 +837,45 @@ a replica admits is bounded by its memory as well as by `max_in_flight`:
   [ha-and-helm.md](ha-and-helm.md) R-HA-036: `runtime.memory_limit_ratio` ×
   `runtime.memory_limit_bytes`, or `GOMEMLIMIT` when it is set. Without a known limit there is no
   guard, only `max_in_flight`, and the replica logs a warning at start.
-- **Memory slots.** A request holds one slot from step 4 to its end. The replica has
-  ⌊(0.8 × `L` − cache budgets) ÷ request bytes⌋ slots, at least one; the cache budgets are what the
-  replica's caches hold when full, `cache.rendition_bytes`, `proxy.metadata_cache_bytes` and
-  `proxy.merged_metadata_cache_bytes` and `proxy.query_cache_bytes` (648 MiB with the defaults, Q-ARCH-243, Q-ARCH-270). The request bytes are what one download may hold
-  (Q-ARCH-241): the buffer of a verified download (`storage.download.buffer_size`, at least twice
-  `storage.download.hold_back` and 4 KiB, rounded up to a power of two), the object store's receive
-  window `storage.s3.http.receive_window` and 128 KiB for the rest (connection, TLS state, stacks,
-  the object-store call), 640 KiB with the defaults. With the default caches a 1 GiB container (`L` = 870 MiB) has
-  77 slots and the chart's default of 2 GiB 1,191; without caches 1 GiB has 1,114 and 256 MiB 278. The slots bound a burst that arrives
-  faster than a GC cycle can show it. An endpoint admits the smaller of its `max_in_flight` and the
-  slots the replica has left.
+- **Memory slots** ([Q-ARCH-328](#q-arch-328--admission-charges-the-bytes-a-request-holds-and-the-caches-hold-now-not-a-worst-case-per-request-and-the-caches-budgets)).
+  The guard counts bytes. A request is charged the request bytes at step 4 and holds them to its
+  end, and the replica admits a request while the charges plus the bytes its caches hold now stay
+  below 0.8 × `L`; a request that is alone is always admitted. The request bytes are what a
+  download of a large object holds (Q-ARCH-241): the buffer of a verified download
+  (`storage.download.buffer_size`, at least twice `storage.download.hold_back` and 4 KiB, rounded up
+  to a power of two), the object store's receive window `storage.s3.http.receive_window` and 128 KiB
+  for the rest (connection, TLS state, stacks, the object-store call), 640 KiB with the defaults;
+  100 downloads of 1, 2 and 5 MiB held open measured 636 to 659 KiB each.
+  - **A download settles.** The blob store knows the size of the object before it asks the object
+    store (`blob.Store.Open`), and tells the request's charge what the download will hold: the
+    buffer class of that size plus the bytes the store can send ahead, at most the window
+    (`blob.DownloadCost`). The charge falls to that and the 128 KiB: a 50 KiB tarball holds about
+    242 KiB, not 640 KiB. A charge only ever falls after the admission, so a request is never
+    refused half way, and the admission needs a full request's bytes free.
+  - **The caches count by what they hold.** The bytes of the replica's caches (the registry's
+    weighted sizes: the rendition cache, the two metadata caches, the pass-through cache and the
+    smaller ones), read with every heap sample, are subtracted from 0.8 × `L`, not their byte
+    budgets (`cache.rendition_bytes`, `proxy.metadata_cache_bytes`,
+    `proxy.merged_metadata_cache_bytes`, `proxy.query_cache_bytes`: 648 MiB with the defaults,
+    Q-ARCH-243, Q-ARCH-270). A cache that is full takes what its budget says; one that is empty
+    takes nothing. The growth of a cache after a request was admitted is the heap gate's (H-539).
+  - **Slots.** `trove_http_memory_slots` is (0.8 × `L` − the caches' bytes) ÷ the request bytes,
+    at least one, in downloads of a large object. With empty caches a 1 GiB container (`L` =
+    870 MiB) has 1,114 slots, 256 MiB has 278, and the chart's 2 GiB 2,228; with the caches full
+    (648 MiB) 1 GiB has 77 and 2 GiB 1,191, which is what the chart checks (R-HA-029, Q-HA-70).
+    `trove_http_memory_slots_in_use` is the charges in the same unit, rounded up.
+  The charges bound a burst that arrives faster than a GC cycle can show it. An endpoint admits
+  the smaller of its `max_in_flight` and what the replica has left.
 - **Heap gate.** Every 50 ms the guard reads the live heap of the last GC cycle plus the goroutine
   stacks (`runtime/metrics`). At 80 % of `L` it admits no request until they fall below 70 %. The
   gate bounds requests that hold more than a download, such as a document held in memory
   (R-ARCH-028). A closed gate that sees no GC cycle for 1 s runs one, so it opens once the load is
   gone ([Q-ARCH-242](#q-arch-242--a-closed-heap-gate-runs-a-gc-cycle-when-none-came-for-a-second)).
 - **Visibility.** Every refusal of step 4 counts in `trove_http_requests_shed_total{endpoint,reason}`
-  (`in_flight`, `memory_slots`, `heap`); `trove_http_memory_slots` is the number of slots
+  (`in_flight`, `memory_slots`, `heap`); `trove_http_memory_slots` is the number of slots in downloads of a large object
   ([operations-and-observability.md](operations-and-observability.md) R-OPS-008). The gate logs when it
   closes and when it opens.
-- Not bounded by the guard: connections that send no request (H-324), memory a replica retains
+- Not bounded by the guard: connections that send no request (H-324), the growth of a cache after a request was admitted (H-539), memory a replica retains
   beyond the high-water mark (H-323), and slots that slow requests hold (H-322).
 
 Transfer rules:
@@ -911,7 +929,11 @@ Acceptance criteria:
   file whose clients do not read: at most 278 complete with their bytes once the clients read, every
   other one answers `503` `server_busy` with `Retry-After: 1`, the memory the Go runtime holds stays
   below 256 MiB, and the process does not exit. Afterwards a download answers `200` again
-  (`test/integration/overload`).
+  (`test/integration/overload`, `TestMemoryAdmission`).
+- A replica with `runtime.memory_limit_bytes` of 1 GiB and the default caches, still empty, and 300
+  concurrent downloads of a 1 MiB file whose clients do not read: none is shed, although the
+  caches' budgets (648 MiB) would have left 77 slots under Q-ARCH-240, and every download completes
+  with its bytes (`TestBurstBesideEmptyCaches`).
 
 ### R-ARCH-006 · Client address and trusted proxies
 Priority: **MVP** · Covers: HA-025
@@ -4000,9 +4022,14 @@ learns of the removal with a delay. The steps cover that delay first:
    and the commit-time re-checks of uploads that complete now depend on them
    ([authorization.md](authorization.md) R-AUTHZ-028, "Drain").
 4. Every watched loop that stops leaves the watchdog first (R-ARCH-016), so the stop does not fail
-   liveness. Job handlers still running 5 s before the deadline are cancelled and their jobs
-   released without counting the attempt (R-ARCH-016). Remote fetches still running then are
-   cancelled, and their flight locks released with `failed` (R-ARCH-033).
+   liveness. Job handlers still running 11 s before the deadline are cancelled and their jobs
+   released without counting the attempt (R-ARCH-016). The 11 s are the 15 s settle deadline of the
+   job worker (`jobs.SettleDeadline`) less the 4 s between the deadline and the close deadline of
+   step 6, so the release write of a job has its whole settle deadline, retries included
+   ([Q-ARCH-329](#q-arch-329--the-job-worker-is-cancelled-early-enough-that-the-release-writes-of-its-jobs-get-their-whole-settle-deadline)).
+   A shutdown timeout under 11 s cancels the handlers when the drain delay ends. Remote fetches
+   still running 5 s before the deadline are cancelled, after the job worker has returned, and
+   their flight locks released with `failed` (R-ARCH-033).
 5. At the deadline, the requests still running are cut by closing their connections, with one
    exception. A request whose request body has been read completely is storing and committing an
    upload, and it is never cut between its commit and its status line. It runs on into the 5 s
@@ -7036,7 +7063,7 @@ Context: check 8 asked that every client have configure and install templates an
 
 ### Q-ARCH-240 · A replica admits what its memory holds: memory slots and a heap gate in step 4
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Superseded in part by [Q-ARCH-328](#q-arch-328--admission-charges-the-bytes-a-request-holds-and-the-caches-hold-now-not-a-worst-case-per-request-and-the-caches-budgets): the slots count bytes, and a download that knows its size hands back what a large object would have held.
 
 Context: the leg `npm-ha` offered P-8's 1,000 requests/s of a 50 KiB tarball to one `web` pod of the dev profile (memory limit 1 GiB, CPU request 250m, `GOMAXPROCS` 1) on a CI runner. The pod served 587/s at a p50 of 3.7 s and was OOM-killed; k6 saw 1,998 unexpected ends of a connection and 761 refused connections. A slow replica keeps more requests in flight (587/s × 3.7 s ≈ 2,000, k6's virtual users), and nothing tied that number to memory: `server.max_in_flight` was 4,096, and a download held about 650 KiB (Q-ARCH-241). R-HA-036's `debug.SetMemoryLimit` was specified but not called, so the garbage collector did not work harder near the limit either. Measured with the binary on the integration stack, before this decision: a download held open costs 1.2 MiB of live heap; 800 of them took the heap to 960 MiB and what the runtime held from the system to 2 GiB.
 
@@ -7091,7 +7118,7 @@ Context: the live heap is known only at the end of a GC cycle. Under load cycles
 
 ### Q-ARCH-243 · The memory slots leave the caches' byte budgets aside
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Superseded in part by [Q-ARCH-328](#q-arch-328--admission-charges-the-bytes-a-request-holds-and-the-caches-hold-now-not-a-worst-case-per-request-and-the-caches-budgets): the admission leaves aside the bytes the caches hold now, not their budgets; the budgets remain the floor the chart checks.
 
 Context: the closing run of phase 3 (Actions run 41235811145, leg `npm-ha-closing`, two kind clusters on one runner) had `web` pods
 OOMKilled under the npm load although the memory guard of Q-ARCH-240 was on. The slots shared 80 % of the Go limit among requests, but the
@@ -8650,7 +8677,7 @@ Q-ARCH-285 puts the passes in a queue of their own run by whatever process claim
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-R-ARCH-024 cancels the handlers of the jobs 5 s before the shutdown deadline and releases them; a lost lease cancels the handler with its own cause. A handler that wrote on its way out would write under a fence it may no longer hold.
+R-ARCH-024 cancels the handlers of the jobs 11 s before the shutdown deadline (Q-ARCH-329) and releases them; a lost lease cancels the handler with its own cause. A handler that wrote on its way out would write under a fence it may no longer hold.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
@@ -8860,6 +8887,55 @@ A rate-limit answer with a wait over 300 s ends the attempt. The workers that we
 
 **Applied in the spec:** R-REPO-054 (a long wait ends the attempt). Code: `throttle.go`. Test: `TestR_REPO_054_ALongWaitReleasesEveryWorkerAtOnce`.
 
+### Q-ARCH-328 · Admission charges the bytes a request holds and the caches hold now, not a worst case per request and the caches' budgets
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Revises [Q-ARCH-240](#q-arch-240--a-replica-admits-what-its-memory-holds-memory-slots-and-a-heap-gate-in-step-4) and [Q-ARCH-243](#q-arch-243--the-memory-slots-leave-the-caches-byte-budgets-aside) in part.
+
+Context: with the kind nodes held to 6 CPUs, the drain of the leg `npm-ha` got 1,062 `503 server_busy`, every one counted as `memory_slots`, on a `web` pod whose heap was 111 MB of a 1 GiB limit. Two things in Q-ARCH-240 and Q-ARCH-243 made the slots few: every request was charged a download of a large object (640 KiB), and the three caches' byte budgets (648 MiB with the defaults) were taken out of the 0.8 × `L` whether the caches held anything or not, which left 48 MiB, 77 slots, on a 1 GiB container.
+
+Measured on the integration stack (`TestHeldDownloadCost`: a fresh replica per size, caches off, an 8 GiB limit, `GOGC=10` so that the heap in use is close to the live heap; 100 slow downloads held in their writes; the numbers are per held download against the idle replica):
+
+| File | Heap in use | Goroutine stacks | Resident set |
+|---|---|---|---|
+| 1 MiB | 586 KiB | 74 KiB | 639 KiB |
+| 2 MiB | 563 KiB | 73 KiB | 642 KiB |
+| 5 MiB | 586 KiB | 73 KiB | 661 KiB |
+
+A download of 1 to 5 MiB therefore holds 636 to 659 KiB whatever its size, against the 640 KiB charged: for a large object the worst case is the real case (the 256 KiB buffer, 220 to 256 KiB of window, 110 KiB of heap beside them and 73 KiB of stacks). A file of 50 KiB cannot be held open this way, because the kernel takes it whole into the socket buffer; what it holds follows from the code (`blob.DownloadCost`): a buffer of the class that fits it, 64 KiB, its own 50 KiB in the receive window, and the 128 KiB: about 242 KiB for as long as the request is in flight, which under a CPU-starved replica is long. So the worst case is wrong for the small tarballs of an npm install and for every request that is no download, and the reservation of the caches' budgets is wrong for every replica whose caches are not full.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Charge a download of a large object at step 4, hand back the difference when the blob store knows the size, and count the caches by the bytes they hold at the last heap sample (chosen) | `MemoryGuard` counts bytes; `Ticket.Settle` lowers the request's charge to the 128 KiB plus `blob.DownloadCost`; the registry's weighted sizes replace the budgets | A refusal is still at the door, before authentication and database reads; a charge never grows after the admission, so no request is refused half way; a held tarball costs what it holds; empty caches reserve nothing; metrics, error code and refusal unchanged | The charge of a request that is no download stays at 640 KiB until it ends (short requests); the caches' growth is not charged (H-539) |
+| (b) Charge only the overhead at step 4 and the download at `Open`, refusing there | Late refusal at the blob store | Exact accounting for every request | Measured, with 1,000 downloads of 1 MiB offered to a 256 MiB replica: the runtime held 237 MiB against 211 MiB with (a), because the 722 refused requests had already authenticated and run the handler up to the blob store, and the refusal is a 503 in the middle of a handler |
+| (c) Admit by the live heap only | Drop the charges | One number | The live heap is as old as the last GC cycle: a burst of 2,000 is admitted inside one cycle (Q-ARCH-240 option (c)) |
+| (d) Keep the budgets, lower them in the dev profile | Configuration only | No code | The operator pays a fixed reservation for caches that are empty; the small-tarball cost stays at the worst case |
+| (e) Make every cache charge its growth to the guard | A cache asks before it inserts and gives back when it evicts | The sum of the charges is a promise again | Four caches in three packages and their eviction paths change; a refused insert is a cache miss on the next request. Not done: H-539 records what it would close |
+
+**Choice:** (a). The request bytes stay 640 KiB with the defaults and the overhead 128 KiB, since the measurement is within 3 % of them. `trove_http_memory_slots` and `trove_http_memory_slots_in_use` keep their names and become the byte accounting in units of the request bytes: slots are (0.8 × `L` − the caches' bytes) ÷ the request bytes, in use is the charges rounded up. The chart's check of 64 slots (R-HA-029, Q-HA-70) keeps computing with the full budgets: it is the floor for a replica whose caches are full. Without a known limit there is no guard, as before.
+
+**Rationale:** The promise of R-ARCH-005, a replica sheds and is never killed, is kept by two numbers that fail in different ways: the charges bound what is admitted before any GC cycle can show it, and the heap gate bounds everything the charges do not see. With empty caches the charges are exact for downloads (measured above) and conservative for everything else; with full caches they leave what Q-ARCH-243 left. What changes is the case between: a cache that grows after requests were admitted can push the heap past 0.8 × `L` by what it grows, and the heap gate closes then (H-539). The margin to the container limit is the 15 % of R-HA-036 plus the 20 % above the high-water mark, 328 MiB on a 1 GiB container. The development agent revisits this when the heap gate closes in a run with filled caches (the growth is then real, and option (e) is due), or when a request kind other than a download is held long enough to need a settle of its own.
+
+**Applied in the spec:** R-ARCH-005 (memory slots, visibility, two acceptance criteria), [operations-and-observability.md](operations-and-observability.md) R-OPS-008 (the two gauges), [ha-and-helm.md](ha-and-helm.md) R-HA-036 (admission follows the memory), H-322, H-539. Code: `internal/httpserver/memory.go` (`MemoryGuard`, `Ticket`, `SettleMemory`), `internal/httpserver/chain.go`, `internal/blob/buffers.go` (`DownloadCost`), `internal/blob/download.go` (`Store.Open`), `internal/app/memory.go` (`cacheBytes`). Tests: `TestMemoryCharges`, `TestMemoryGuard`, `TestBurstBesideEmptyCaches`, `TestMemoryAdmission`, `TestHeldDownloadCost`.
+
+### Q-ARCH-329 · The job worker is cancelled early enough that the release writes of its jobs get their whole settle deadline
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a job that ends writes its end with a fresh context of `jobs.SettleDeadline` (15 s), retries included: complete, fail, cancel and, at a shutdown, the release that returns it to the queue without counting the attempt (R-ARCH-016). The shutdown plan cancelled the handlers 5 s before the end of the server phase and waited for the worker until the close deadline, 4 s after it (5 s margin − 0.5 s slack − 0.5 s ops reserve). The release writes therefore had 9 s of their 15 s; a write that needed longer, as one does while PostgreSQL switches over, was abandoned with the process, and the job waited for its lease to expire and the reaper (R-HA-005) instead of returning at once. Reproduced by `TestShutdownReleaseWrites`: a release write of 1.8 s against a settle deadline of 2 s was cut by the close deadline.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Cancel the worker `SettleDeadline` before the close deadline, the other quiescers at 5 s before the end of the server phase as before (chosen) | The plan has a time of its own for the components that quiesce first (`ReleaseAt` = `CloseBy` − 15 s, not before the drain ends, not after `QuiesceAt`) | The write gets the deadline it was written with; engines and fetches keep their 5 s | Jobs lose 6 s of run time at a shutdown (11 s instead of 5 s before the end of the server phase); a shutdown timeout under 11 s cancels the worker when the drain ends |
+| (b) Lower the settle deadline to the 9 s the plan gives | One constant | No plan change | A release during a PostgreSQL switchover, which takes 10 to 30 s, loses 6 s of tolerance in normal operation as well |
+| (c) Give the writes more of the grace period | A larger margin | None needed | The margin is the 5 s the chart keeps for the exit before the kubelet's `SIGKILL` (R-HA-011) |
+| (d) Run the release writes in a goroutine that outlives the close phase | Abandon nothing | None | The process exits before the kubelet's `SIGKILL`; a write still running dies with it, which is the case |
+
+**Choice:** (a). The remaining quiescers wait for the worker as Q-ARCH-318 says and are cancelled at the later of their own time and the worker's return.
+
+**Rationale:** The job framework promises that a drained worker hands its jobs back at once (R-HA-011, R-ARCH-016), and the promise holds only if the write that does it can finish. Eleven seconds still leave long jobs time to end by themselves: the worker stops claiming at `SIGTERM` and `Settle` waits for the running jobs until then. The development agent revisits this when the settle deadline changes, or when a job kind needs more than 11 s to persist its checkpoint (the handler's return counts against the same 15 s).
+
+**Applied in the spec:** R-ARCH-024 (step 4), R-HA-011 (workers). Code: `internal/app/shutdown.go` (`shutdownPlan.ReleaseAt`, `shutdownBudget.Release`), `internal/app/app.go` (`quiesceGroups`), `internal/jobs/worker.go` (`SettleDeadline`). Tests: `TestShutdownReleaseWrites`, `TestShutdownPlan`.
+
 ## What this does not cover
 
 
@@ -8992,8 +9068,8 @@ A request holds its slot until it ends, and step 4 runs before authentication (s
 prefer anyone. A client that keeps as many requests open as the replica has slots, for example
 downloads it reads at a trickle or uploads it sends at one, gets every other request answered `503`
 until its own end. `server.transfer_stall_timeout` ends a request that moves no byte for 60 s, not
-one that moves a byte now and then. The number to reach is the slot count, which the cache budgets lower (Q-ARCH-243):
-1,204 on the chart's 2 GiB container with the default caches and 90 on 1 GiB, where `server.max_in_flight` alone allowed 4,096.
+one that moves a byte now and then. The number to reach is the charge of a large download in slots, which the bytes in the caches lower (Q-ARCH-328):
+2,228 on the chart's 2 GiB container with empty caches, 1,191 with the default caches full, and 77 on 1 GiB with full caches, where `server.max_in_flight` alone allowed 4,096.
 
 What makes it real: a listener reachable by an unauthenticated client, a repository readable
 anonymously or a token with `read`, and enough connections from one place. Rate limits (step 7)
@@ -9032,6 +9108,16 @@ number of connections a replica accepts.
 What makes it real: a client that opens connections faster than the timeouts close them, tens of
 thousands at a time. Mitigation today: connection limits at the edge and the pod's file-descriptor
 limit.
+
+### H-539 · A cache that grows after a request was admitted is outside the memory charges
+
+Stage: the memory slots of R-ARCH-005 step 4 (Q-ARCH-328), on every client listener of a `web` replica with a known memory limit.
+
+Live for every such installation whose caches are not yet full. Subject: the memory headroom of the replica between the high-water mark and the container limit.
+
+The charges count the bytes the caches held at the last heap sample (every 50 ms) and the requests admitted since. A cache that grows afterwards, because admitted requests fill it, takes memory the admission has already given to those requests: the sum can pass 0.8 × `L` by what the caches grow, at most their budgets less what they held (648 MiB with the defaults). The heap gate closes when the live heap reaches 0.8 × `L` and refuses new requests until it falls below 0.7 × `L`; the 15 % that R-HA-036 keeps between `L` and the container limit and the 20 % between the mark and `L` are what carries the replica meanwhile. Before Q-ARCH-328 the full budgets were reserved, so the sum held by construction (Q-ARCH-243).
+
+What makes it real: a burst of requests that fill the metadata caches while many downloads are held, on a container whose limit leaves less than the growth: the 1 GiB dev profile with the default 648 MiB of budgets. Mitigation today: the heap gate, the 64-slot floor of the chart's check (R-HA-029) computed with the full budgets, and smaller cache budgets. What would close it is a cache that charges its growth to the guard before it inserts (option (e) of Q-ARCH-328).
 
 ### H-517 · The cut into roles separates the login secrets, not the data credentials
 

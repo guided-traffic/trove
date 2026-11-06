@@ -5,6 +5,7 @@ import (
 	"math"
 	"runtime"
 	"runtime/metrics"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -12,7 +13,7 @@ import (
 // Reasons of a request the in-flight stage refused (trove_http_requests_shed_total).
 const (
 	ShedInFlight    = "in_flight"    // the endpoint's max_in_flight
-	ShedMemorySlots = "memory_slots" // the replica's memory slots
+	ShedMemorySlots = "memory_slots" // the replica's memory charges
 	ShedHeap        = "heap"         // the live heap at the high-water mark
 )
 
@@ -33,19 +34,33 @@ const MemorySampleInterval = 50 * time.Millisecond
 const memoryRecheck = time.Second
 
 // MemoryGuard bounds what the client listeners of one replica admit by its
-// memory (R-ARCH-005 step 4, Q-ARCH-240). Every endpoint's chain shares it.
+// memory (R-ARCH-005 step 4, Q-ARCH-240, Q-ARCH-328). Every endpoint's chain
+// shares it.
 //
-//   - Slots: a request holds one of high-water × limit / request bytes slots from
-//     the in-flight stage to its end. It bounds a burst that arrives faster than
-//     a GC cycle can show it.
+//   - Charges: a request is charged what it may hold, a download of a large
+//     object (RequestBytes), when it is admitted and until it ends. A download
+//     that knows its size hands back the difference at once (Ticket.Settle), so
+//     what a long transfer holds is what it uses. A request is refused when the
+//     charges of the admitted requests plus the bytes the caches hold would pass
+//     the high-water mark of the Go memory limit. It bounds a burst that arrives
+//     faster than a GC cycle can show it, and a charge never grows after the
+//     admission.
 //   - Heap: while the live heap and the goroutine stacks are at the high-water
 //     mark, no request is admitted, until they fall below the low-water mark. It
-//     bounds requests that hold more than a download does.
+//     bounds what the charges do not see, such as a cache that grew after its
+//     requests were admitted.
 type MemoryGuard struct {
-	slots     chan struct{}
+	budget    int64 // the high-water mark in bytes
+	perSlot   int64 // what a download of a large object holds: the charge at admission
+	overhead  int64 // what a download holds besides its buffer and window
 	high, low uint64
+	used      atomic.Int64 // charges of the admitted requests
+	held      atomic.Int64 // bytes the caches held at the last sample
 	shedding  atomic.Bool
 	read      func() (heap, cycles uint64)
+	readHeld  func() int64
+	onSlots   func(slots int)
+	slots     int
 	onChange  func(shedding bool, heap uint64)
 	collect   func()
 	now       func() time.Time
@@ -59,17 +74,24 @@ type MemoryGuard struct {
 type MemoryGuardConfig struct {
 	// Limit is the Go memory limit in bytes (debug.SetMemoryLimit).
 	Limit int64
-	// RequestBytes is what one request may hold: the slots are (high-water ×
-	// Limit − Reserved) / RequestBytes, at least 1.
+	// RequestBytes is what a download of a large object holds: the charge at
+	// admission and the unit in which Slots and InUse count.
 	RequestBytes int64
-	// Reserved is what the replica holds outside requests once its caches are
-	// full: the sum of their byte budgets.
-	Reserved int64
+	// Overhead is what a download holds besides its buffer and receive window:
+	// the connection, the goroutine stacks, the request. It is what a settled
+	// request keeps charged on top of its download. Zero, or more than
+	// RequestBytes, settles to RequestBytes.
+	Overhead int64
+	// Held returns the bytes the replica's caches hold now; nil holds none. It
+	// is read at each sample, not per request.
+	Held func() int64
 	// Read returns the live heap plus the goroutine stacks and the number of
 	// completed GC cycles; nil reads them from runtime/metrics.
 	Read func() (heap, cycles uint64)
 	// OnChange is called when the heap mark is crossed, with the heap read.
 	OnChange func(shedding bool, heap uint64)
+	// OnSlots is called when Slots changes, which the caches' bytes cause.
+	OnSlots func(slots int)
 }
 
 // NewMemoryGuard returns the guard for a limit; nil when no limit is known
@@ -80,9 +102,12 @@ func NewMemoryGuard(c MemoryGuardConfig) *MemoryGuard {
 	}
 	high := memoryHighWater * float64(c.Limit)
 	g := &MemoryGuard{
-		slots: make(chan struct{}, max(1, int((high-float64(c.Reserved))/float64(c.RequestBytes)))),
-		high:  uint64(high), low: uint64(memoryLowWater * float64(c.Limit)),
-		read: c.Read, onChange: c.OnChange, collect: runtime.GC, now: time.Now,
+		budget: int64(high), perSlot: c.RequestBytes, overhead: c.Overhead,
+		high: uint64(high), low: uint64(memoryLowWater * float64(c.Limit)),
+		read: c.Read, readHeld: c.Held, onSlots: c.OnSlots, onChange: c.OnChange, collect: runtime.GC, now: time.Now,
+	}
+	if g.overhead <= 0 || g.overhead > g.perSlot {
+		g.overhead = g.perSlot
 	}
 	if g.read == nil {
 		g.read = readHeap
@@ -90,37 +115,106 @@ func NewMemoryGuard(c MemoryGuardConfig) *MemoryGuard {
 	return g
 }
 
-// Slots is the number of requests the guard admits at once; 0 for a nil guard.
+// avail is what the admitted requests may hold together: the high-water mark
+// less what the caches held at the last sample.
+func (g *MemoryGuard) avail() int64 { return g.budget - g.held.Load() }
+
+// Slots is the number of downloads of a large object the guard admits at once
+// beside what the caches hold, at least 1; 0 for a nil guard.
 func (g *MemoryGuard) Slots() int {
 	if g == nil {
 		return 0
 	}
-	return cap(g.slots)
+	return int(max(1, g.avail()/g.perSlot))
 }
 
-// InUse is the number of slots admitted requests hold now; 0 for a nil guard.
+// InUse is what the admitted requests hold, in downloads of a large object,
+// rounded up; 0 for a nil guard.
 func (g *MemoryGuard) InUse() int {
 	if g == nil {
 		return 0
 	}
-	return len(g.slots)
+	return int((g.used.Load() + g.perSlot - 1) / g.perSlot)
 }
 
-// Admit takes a slot. reason is empty when the request is admitted; release
-// gives the slot back and must be called once.
-func (g *MemoryGuard) Admit() (release func(), reason string) {
+// charge adds n to what the admitted requests hold if it fits. A request is
+// always admitted when nothing else is held, so a limit smaller than one
+// request still serves one at a time.
+func (g *MemoryGuard) charge(n int64) bool {
+	for {
+		u := g.used.Load()
+		if u+n > g.avail() && u > 0 {
+			return false
+		}
+		if g.used.CompareAndSwap(u, u+n) {
+			return true
+		}
+	}
+}
+
+// Ticket is what one admitted request holds of the guard.
+type Ticket struct {
+	g       *MemoryGuard
+	mu      sync.Mutex
+	held    int64
+	settled bool
+}
+
+// Settle tells the guard that the request is a download whose buffer and
+// receive window take n bytes (blob.DownloadCost): the request is charged that
+// and the overhead instead of a download of a large object. The first call
+// gives the difference back; a request that opens more than one object holds
+// the others' bytes on top. A nil ticket charges nothing.
+func (t *Ticket) Settle(n int64) {
+	if t == nil || n < 0 {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.settled {
+		t.held += n
+		t.g.used.Add(n)
+		return
+	}
+	t.settled = true
+	if want := min(t.held, t.g.overhead+n); want < t.held {
+		t.g.used.Add(want - t.held)
+		t.held = want
+	}
+}
+
+// release gives back everything the request holds.
+func (t *Ticket) release() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.g.used.Add(-t.held)
+	t.held = 0
+}
+
+type ticketKey struct{}
+
+// SettleMemory is Ticket.Settle for the request of ctx; it does nothing for a
+// context outside a request or on a replica without a guard.
+func SettleMemory(ctx context.Context, n int64) {
+	t, _ := ctx.Value(ticketKey{}).(*Ticket)
+	t.Settle(n)
+}
+
+// Admit charges a request what a download of a large object holds. reason is
+// empty when the request is admitted; release gives back everything it holds
+// and must be called once. The ticket is nil for a nil guard.
+func (g *MemoryGuard) Admit() (t *Ticket, release func(), reason string) {
 	if g == nil {
-		return func() {}, ""
+		return nil, func() {}, ""
 	}
 	if g.shedding.Load() {
-		return nil, ShedHeap
+		return nil, nil, ShedHeap
 	}
-	select {
-	case g.slots <- struct{}{}:
-		return func() { <-g.slots }, ""
-	default:
-		return nil, ShedMemorySlots
+	if !g.charge(g.perSlot) {
+		return nil, nil, ShedMemorySlots
 	}
+	t = &Ticket{g: g, held: g.perSlot}
+	return t, t.release, ""
 }
 
 // Run reads the heap every interval until ctx ends.
@@ -140,11 +234,18 @@ func (g *MemoryGuard) Run(ctx context.Context, every time.Duration) {
 	}
 }
 
-// Sample reads the heap once and moves the gate: closed at the high-water mark,
-// open again below the low-water mark. A gate that has been closed for
-// memoryRecheck without a GC cycle runs one, so it opens once the load is gone.
-// Only one goroutine samples: Run, or a test.
+// Sample reads the caches' bytes and the heap once and moves the gate: closed at
+// the high-water mark, open again below the low-water mark. A gate that has
+// been closed for memoryRecheck without a GC cycle runs one, so it opens once
+// the load is gone. Only one goroutine samples: Run, or a test.
 func (g *MemoryGuard) Sample() {
+	if g.readHeld != nil {
+		g.held.Store(g.readHeld())
+		if n := g.Slots(); n != g.slots && g.onSlots != nil {
+			g.slots = n
+			g.onSlots(n)
+		}
+	}
 	heap, cycles := g.read()
 	if t := g.now(); cycles != g.cycles || g.lastCycle.IsZero() {
 		g.cycles, g.lastCycle = cycles, t

@@ -93,8 +93,9 @@ Spec pages hold the gaps of their mechanisms, among them [H-41](../spec/operatio
 [H-55](../spec/architecture.md#h-55--key-files-of-the-stored-secret-key-ring-are-read-once-at-start-up),
 [H-56](../spec/architecture.md#h-56--the-object-store-endpoint-skips-the-egress-address-policy),
 the gaps of the replica's load protection [H-322](../spec/architecture.md#h-322--slow-requests-of-one-client-take-the-memory-slots-of-every-client),
-[H-323](../spec/architecture.md#h-323--a-replica-that-retains-memory-above-the-high-water-mark-refuses-every-request) and
-[H-324](../spec/architecture.md#h-324--connections-that-send-no-request-are-outside-the-memory-guard), and
+[H-323](../spec/architecture.md#h-323--a-replica-that-retains-memory-above-the-high-water-mark-refuses-every-request),
+[H-324](../spec/architecture.md#h-324--connections-that-send-no-request-are-outside-the-memory-guard),
+[H-539](../spec/architecture.md#h-539--a-cache-that-grows-after-a-request-was-admitted-is-outside-the-memory-charges), and
 [H-6](../spec/repositories-and-proxy.md#h-6--remote-repositories-reach-private-networks), and the gaps of the mirror mode of remote
 repositories (phase 6b, specified, the engine not built)
 [H-503](../spec/repositories-and-proxy.md#h-503--a-mirror-stores-a-malicious-version-before-anyone-asked-for-it),
