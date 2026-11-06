@@ -215,9 +215,11 @@ func TestQ_CI_26_AProjectOwnerManagesTheMappingsOfItsProject(t *testing.T) {
 	})
 
 	t.Run("Q-CI-26 a system administrator who edits a project's mapping keeps the bounds of its tier", func(t *testing.T) {
-		body := p.do(a, "GET", mappingsOf("gitlab-main")+"/web-publish", nil).JSON(t)
+		// R-CI-009: a name is unique within a tier, so the issuer's routes (the system tier) do not address the project's mapping.
+		wantStatus(t, p.do(a, "GET", mappingsOf("gitlab-main")+"/web-publish", nil), 404, "not_found")
+		body := p.do(a, "GET", path+"/gitlab-main/web-publish", nil).JSON(t)
 		body["grants"] = map[string]any{"groups": []string{"ci-publishers"}}
-		wantStatus(t, p.do(a, "PUT", mappingsOf("gitlab-main")+"/web-publish", body, "If-Match", "*"), 422, "groups_not_allowed_in_project")
+		wantStatus(t, p.do(a, "PUT", path+"/gitlab-main/web-publish", body, "If-Match", "*"), 422, "groups_not_allowed_in_project")
 	})
 
 	t.Run("Q-CI-26 replace and delete under the project route", func(t *testing.T) {
@@ -237,7 +239,7 @@ func TestQ_CI_26_AProjectOwnerManagesTheMappingsOfItsProject(t *testing.T) {
 	})
 
 	t.Run("Q-AUTHZ-208 only an Owner of the project reaches its CI routes, a lower role does not", func(t *testing.T) {
-		wantStatus(t, p.do(a, "PUT", "/api/v1/projects/web/members/user%3Aalice", map[string]any{"role": "maintainer"}), 201, "")
+		p.epoch = p.addMember("web", p.env.aliceID, "maintainer")
 		for _, op := range []struct{ method, path string }{{"GET", path}, {"POST", path}, {"GET", path + "/gitlab-main/web-publish"}} {
 			r := p.as(a, p.alicePAT, op.method, op.path, webPublish("web-late", 500))
 			if r.Status != 403 && r.Status != 404 {

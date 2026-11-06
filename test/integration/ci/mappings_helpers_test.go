@@ -32,9 +32,12 @@ func mappingsOf(issuer string) string { return issuersPath + "/" + issuer + "/ma
 // way the commit of the members route does. It returns the authz epoch every replica must have reached before the
 // owner's request (the header Trove-Authz-Min-Epoch). The membership itself is the members route's to test
 // (test/integration/projects); here it is the starting point of what an Owner does with CI mappings.
-func (e *env) addOwner(project, userID string) string {
+func (e *env) addOwner(project, userID string) string { return e.addMember(project, userID, "owner") }
+
+// addMember is addOwner for any role of Q-AUTHZ-208.
+func (e *env) addMember(project, userID, role string) string {
 	e.t.Helper()
-	e.exec(`INSERT INTO project_member (project_id, principal_id, role) SELECT id, $2::uuid, 'owner' FROM project WHERE key = $1`, project, userID)
+	e.exec(`INSERT INTO project_member (project_id, principal_id, role) SELECT id, $2::uuid, $3 FROM project WHERE key = $1`, project, userID, role)
 	e.bump("authz", nil)
 	return strconv.FormatInt(e.epoch("authz"), 10)
 }

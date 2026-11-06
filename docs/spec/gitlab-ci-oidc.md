@@ -4772,6 +4772,32 @@ attached without the lock), and the number of indexes if the exchange's insert r
 **Applied in the spec:** R-CI-020 (the data model lists the three indexes). Code: migrations 00029 to 00031,
 `internal/meta/postgres/queries/ci_issuances.sql`, `internal/meta/postgres/queries/ci_mappings.sql` (`CiMappingHasIssuances`).
 
+### Q-CI-67 · A project mapping writes bare keys, the token carries instance selectors
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a project mapping's grants are a project context ([Q-AUTHZ-216](authorization.md#q-authz-216--repository-selectors-name-the-project-in-instance-contexts-and-a-bare-key-inside-a-project)):
+`npm-*`, `npm-local`, `@any`. The `scope` parameter of the exchange, the token's stored scope, the issuance record's granted
+scope and the engine's reading of a CI token's inline grants are instance contexts: `web/npm-*`. A token carries the
+contributions of a system mapping and of any number of projects' mappings, so one grammar has to read them all at use time.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The token carries every inline selector in its instance form, written when the contribution is frozen (chosen) | `Freeze` turns a project mapping's `k` into `<project>/k`, a pattern `g` into `<project>/g`, `@any[:fmt]` into `<project>/*[:fmt]`; a class other than `@any` stays, bounded to the project by the contribution | One grammar at use time, in the index, in `NarrowFrozen` and in the `scope` answer; the answer shows the project of every item | The stored bundle differs from the mapping's text |
+| (b) The engine reads each contribution's selectors in the context of its tier | `authz` parses a project contribution's inline grants with the project context | The bundle keeps the mapping's text | Two readings in the engine and in the scope intersection; every consumer of a frozen grant has to know the tier |
+| (c) A project mapping writes instance selectors too | The project part is repeated and checked | No translation | A project's Owner could name another project: the bound becomes a check instead of a grammar |
+
+**Choice:** (a). The exchange's `scope`, the stored scope and the dry run show `<project>/<key>` for the items a project's
+mapping gives; `Frozen.InlineScope` is in the request grammar. A template of a system mapping names the project (`web/{{ … }}-npm`), one of a
+project's mapping a bare key, and the save reads the template with a stand-in for every substitution, so a template of the wrong shape is 422
+`invalid_pattern` and never a selector that matches nothing.
+
+**Rationale:** the token is the one place where tiers meet, so it speaks the one grammar of the instance. Revisit when a tier's
+selector gains a form that has no instance spelling (then (b)).
+
+**Applied in the spec:** R-CI-007 (the `scope` items), R-CI-009 (the tier's selectors). Code: `internal/ci/claims/selector.go`
+(`instanceForm`, `covers`, `disjoint`), `internal/ci/claims/scope.go` (`Freeze`), `internal/ci/claims/check.go`.
+
 ## What this does not cover
 
 ### H-24 · Trust in the GitLab instance and its signing key

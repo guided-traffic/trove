@@ -112,7 +112,7 @@ func (keyedFormat) WriteError(w http.ResponseWriter, r *http.Request, err error)
 
 const (
 	repoKey   = "keyed-local"
-	feed      = "/api/keyed/" + repoKey
+	feed      = "/api/keyed/it/" + repoKey
 	push      = feed + "/package"
 	version   = feed + "/package/acme.widgets/1.2.3"
 	apiKey    = "X-NuGet-ApiKey"

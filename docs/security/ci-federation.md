@@ -283,7 +283,7 @@ longer holds the mapping as active, within the index's bound
 statements read the unexpired issuance records only, through the expiry index, so a revocation under the issuer row's `FOR UPDATE`
 costs the tokens of the last `ci.token.max_ttl`, not the records of the retention. An issuance record outlives its token
 (Q-CI-20); once the token row is gone it reads as `expired` after the record's expiry and as `removed` before it (the row went with the
-principal of a deleted mapping), and in both cases as not active ([Q-CI-52](../spec/gitlab-ci-oidc.md)). A project administrator's view of a
+principal of a deleted mapping), and in both cases as not active ([Q-CI-52](../spec/gitlab-ci-oidc.md)). A project Owner's view of a
 record shows its own mappings and the job's identity only: the scope strings (they list every tier's items), the person who started the
 pipeline, the runner and the client address are left out of the record and of its claim snapshot.
 
@@ -374,7 +374,7 @@ Component: the `scope` parameter of the exchange (R-CI-007). Subject: a job whos
 The earlier gap is closed ([Q-CI-51](../spec/gitlab-ci-oidc.md#q-ci-51--what-the-exchange-tells-a-caller-and-when-a-replica-learns-an-issuer),
 [exchange_scope.go](../../internal/ci/exchange_scope.go)): a key that named no repository answered `scope_malformed` and one that exists
 and is not granted `scope_not_granted`, so the job learnt whether a repository of that key exists, which `authz.hide_existence` hides
-from every other caller. It was wider than written: every project administrator who controls a pipeline can save a mapping of its tier
+from every other caller. It was wider than written: every project Owner who controls a pipeline can save a mapping of its tier
 that matches it, so the oracle reached every repository key of the installation from any project, not only from the jobs of a system
 mapping. Now an item whose key names no repository is held by no grant and answers `scope_not_granted` with the same description as
 every item the grants do not hold.
@@ -420,7 +420,7 @@ deleted. The token is not revoked; the evaluator ignores the contribution once t
 poll, never more than `authz.cache.max_staleness` plus a build, about 10.5 s), not within `auth.revocation_bound` (2 s), and no
 `ci.token.revoked` names those tokens. After a point-in-time restore the mapping's `.disabled` or `.deleted` journal entry is replayed,
 which disables the principal again, and the next index drops the contribution. Live today for every token in which a project mapping
-contributes beside another tier. What makes it real: a project administrator who disables a mapping to stop a leaked token's project
+contributes beside another tier. What makes it real: a project Owner who disables a mapping to stop a leaked token's project
 grants and expects the 2-second bound; the bulk revoke by `mapping` (R-CI-020) ends such tokens at once, the other tier's grants with
 them.
 
@@ -429,7 +429,7 @@ them.
 Component: the mapping limits (R-CI-009, Q-CI-49). Subject: an issuer on which many projects save mappings. `ci.mappings.max_per_project`
 (100) keeps one project from filling `ci.mappings.max_per_issuer` (1,000), but ten projects at their quota fill it, and the next save of
 any tier, a system administrator's included, answers `422 mapping_limit_reached`. Live when many projects use one issuer. What bounds
-it: project administrators are named by the administrators of trove, the quota is a configuration key, and every mapping is listed
+it: project Owners are named by the administrators of trove or by other Owners, the quota is a configuration key, and every mapping is listed
 with its project.
 
 ### H-427 · A replica of the previous release refuses the CI tokens of bundle version 2
