@@ -78,6 +78,7 @@ before using a new term in a German text.
 | known exploited (CISA list) | bekannt ausgenutzt |
 | resolved (finding) | behoben |
 | advisory source, mirror repository | Advisory-Quelle, Spiegel-Repository |
+| security dashboard (admin area), advisory ID (CVE, GHSA) | Sicherheits-Dashboard, Advisory-Kennung |
 | mirror (mode of a remote repository), pull-through, pass (of a mirror) | Mirror, Pull-through, Durchlauf |
 | mirror state (off, paused, scheduled, running, waiting, bound reached, failing) | Aus, Pausiert, Geplant, Läuft, Wartet, Grenze erreicht, Fehlerhaft |
 | pause, resume (a mirror); run a pass now, run a full pass | pausieren, fortsetzen; Durchlauf jetzt starten, Vollständigen Durchlauf starten |

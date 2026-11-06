@@ -2610,7 +2610,8 @@ Priority: **MVP** · Covers: UI-001, UI-004
   **Admin area** (`/admin/…`, reached through the Admin button; shown when `/api/v1/authz/me` reports any
   administrative capability or the role `owner` in a project). The
   sections are the routes of R-UI-003. Inside the admin area, the single entries (repositories,
-  endpoints) come first and related screens are grouped under folding headings: identity (users,
+  endpoints, and *Security*, the auditor's dashboard of Q-UI-130 for `vulnerabilities:triage` or
+  `content:metadata-read`) come first and related screens are grouped under folding headings: identity (users,
   groups, service accounts, tokens), access (permission policies, system roles) and system (system
   status, audit log, settings). Every entry has an icon, which is decoration: the label is the
   accessible name. Entries the caller may not use are hidden (R-UI-005); a group without a visible
@@ -8053,8 +8054,8 @@ the content screens change when it is built.
 
 ### Q-UI-130 · The auditor has an instance-wide vulnerability dashboard in the admin area
 
-Status: **Decided by the owner on 2026-11-06** (what), **placed by the development agent** (where). Not built yet
-([H-551](#h-551--the-instance-wide-vulnerability-report-is-a-content-screen-not-an-admin-dashboard)).
+Status: **Decided by the owner on 2026-11-06** (what), **placed by the development agent** (where). **Built**: the entry
+*Security* of the admin area, `/admin/security` ([Q-UI-165](#q-ui-165--the-security-dashboard-is-the-content-report-mounted-in-the-admin-area-with-its-own-links-project-column-and-search)).
 
 Context: the owner: "Ein Instanz-Auditor bekommt ein Dashboard, mit dem er instanzweit CVEs suchen und flagen kann." Today
 the Vulnerabilities screen of the content area lists the findings of every repository the caller may read; the `auditor`
@@ -8070,8 +8071,8 @@ screen is already instance-wide and the triage (confirm, dismiss, block) already
 **Choice:** (a). The project's Vulnerabilities screen shows that project's findings; the admin area's dashboard all of
 them, with the project as a column and a filter.
 
-**Applied in the spec:** nothing yet; R-UI-002 (the admin area) and the vulnerability screens of
-[vulnerability-scanning.md](vulnerability-scanning.md) change when it is built.
+**Applied in the spec:** R-VULN-022 (the instance-wide bullet) and, for the form of the screen, [Q-UI-165](#q-ui-165--the-security-dashboard-is-the-content-report-mounted-in-the-admin-area-with-its-own-links-project-column-and-search). R-UI-002's
+list of admin entries gains *Security* (`vulnerabilities:triage` or `content:metadata-read`).
 
 ### Q-UI-140 · Which file names of the UI build are hashed
 
@@ -8349,6 +8350,44 @@ them), and the checkbox component if a form needs an indeterminate state.
 screens' specs, which query roles, labels and `[role="dialog"]`. Documented in
 [design-language.md](../developer/design-language.md#controls) and [web-ui.md](../developer/web-ui.md#controls).
 
+### Q-UI-165 · The security dashboard is the content report mounted in the admin area, with its own links, project column and search
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: [Q-UI-130](#q-ui-130--the-auditor-has-an-instance-wide-vulnerability-dashboard-in-the-admin-area) asks for counts, a
+trend, a search by advisory, package and project, a list with the project as a column and the triage of each finding in the
+admin area. The Vulnerabilities screen of the content area already has the counts, the trend (`--trove-chart-*`), the list with
+its filters, the bulk triage, and the finding, advisory and sources screens behind it; only the `project` filter and the search
+were missing in the UI.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The same screens, mounted a second time below `/admin/security` (chosen) | The report, the finding, the advisory and the sources screens are routed in both areas; a route-level provider (`VULN_CONTEXT`) says where a screen lives (`base`) and whether it reads every project (`instanceWide`), which switches on the project column, the search and the heading, and keeps every link inside the area | One implementation of the counts, the trend, the filters, the triage and the export; the project's own screen and the dashboard cannot drift apart; the project screen's change is the `project` filter alone | A change to the report is a change to both screens; the report component carries two small conditions |
+| (b) A second report component for the dashboard | A copy with the project column and the search | The project screen stays untouched | Two lists, two sets of filters and chips and two triage flows to keep equal; a fix lands in one of them |
+| (c) The project filter and a project column on the content screen, no admin screen | One screen for both | No new route | Q-UI-130 (b), which the owner rejected: it mixes the project context with the instance |
+
+**Choice:** (a). The entry *Security* of the admin area is shown to a holder of `vulnerabilities:triage` or
+`content:metadata-read` (`NavItem.anyCapability`); the admin area's start page is the dashboard for a caller who holds one of
+the two and neither `settings:read`, `repositories:read-config`, `projects:read` nor a project of their own. A holder of
+`content:metadata-read` alone reads; the selection column, the bulk action and the status buttons of the finding appear only
+with `vulnerabilities:triage` (R-UI-005), as in the content area, and the dashboard says so. The advisory field of the search
+writes the identifier in its canonical spelling (`cve-2021-23337` becomes `CVE-2021-23337`, a GHSA identifier keeps its
+lower-case groups), because the API compares identifiers exactly and finds a finding by any alias of its advisory (R-VULN-006).
+The package field is a prefix search (`packagePrefix`), the project field a project key (`project`); the exact package name,
+the version and every other filter stay in the filter panel.
+
+**Rationale:** the dashboard is the report with a wider scope, and the API already scopes by `project`; what differs is where
+the links go and which columns show. The development agent would revisit this when the dashboard needs a layout of its own
+(per-project tiles, a ranking of packages) that the report's header cannot grow into, or when T-7's project-scoped Vulnerabilities
+screen needs more than `VULN_CONTEXT` to tell the two apart; then the dashboard becomes its own component over the same
+services.
+
+**Applied in the spec:** Q-UI-130 (status: built), R-VULN-022 (instance-wide bullet), H-551 closed. Code:
+`web/src/app/features/vulnerabilities/` (`vuln-context.ts`, `security.routes.ts`, `vulnerability-report.ts` and `.html`),
+`web/src/app/core/navigation.ts`, `auth-guard.ts`, `help-topics.ts`, `web/src/app/app.routes.ts`. Tests: `security-dashboard.spec.ts`,
+`admin-home.spec.ts`, `vulnerabilities-api.spec.ts`; the browser journey `web/e2e/vuln/16-security-dashboard.spec.ts` (axe in both
+schemes). Documented in [web-ui.md](../developer/web-ui.md) and [vulnerabilities.md](../developer/vulnerabilities.md).
+
 ## What this does not cover
 
 
@@ -8434,10 +8473,3 @@ The decided form ([Q-UI-129](#q-ui-129--the-project-is-the-context-of-the-conten
 content inside its project, `/projects/<key>/…`, with the start page listing your projects and a switcher in the sidebar.
 Today the content screens are global, and the project filter of the top bar narrows the repository and policy lists for
 administrators and project administrators only. Live in every content screen.
-
-### H-551 · The instance-wide vulnerability report is a content screen, not an admin dashboard
-
-The decided form ([Q-UI-130](#q-ui-130--the-auditor-has-an-instance-wide-vulnerability-dashboard-in-the-admin-area)) gives the
-auditor a dashboard in the admin area to search findings by advisory, package and project and to triage them. Today the
-Vulnerabilities screen of the content area is instance-wide for whoever may read every repository, and has no search by
-advisory ID or project (not verified in detail).

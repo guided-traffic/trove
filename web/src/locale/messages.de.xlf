@@ -558,10 +558,29 @@
         <target>Dashboard</target>
       </segment>
     </unit>
+    <unit id="route.security.title">
+      <notes>
+        <note category="location">src/app/app.routes.ts:172</note>
+        <note category="location">src/app/features/vulnerabilities/security.routes.ts:19</note>
+      </notes>
+      <segment>
+        <source>Security dashboard</source>
+        <target>Sicherheits-Dashboard</target>
+      </segment>
+    </unit>
     <unit id="nav.dashboard">
       <segment>
         <source>Dashboard</source>
         <target>Dashboard</target>
+      </segment>
+    </unit>
+    <unit id="nav.security">
+      <notes>
+        <note category="location">src/app/core/navigation.ts:66</note>
+      </notes>
+      <segment>
+        <source>Security</source>
+        <target>Sicherheit</target>
       </segment>
     </unit>
     <unit id="dashboard.title">
@@ -22405,6 +22424,15 @@
         <target>Repository</target>
       </segment>
     </unit>
+    <unit id="vuln.col.project">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:250</note>
+      </notes>
+      <segment>
+        <source>Project</source>
+        <target>Projekt</target>
+      </segment>
+    </unit>
     <unit id="vuln.col.detected">
       <notes>
         <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:98</note>
@@ -22793,6 +22821,78 @@
         <target>Schwachstellen</target>
       </segment>
     </unit>
+    <unit id="security.read-only">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:37,41</note>
+      </notes>
+      <segment>
+        <source>You can read the findings of every project. Changing their status needs the permission to triage vulnerabilities.</source>
+        <target>Sie können die Befunde aller Projekte lesen. Ihren Status zu ändern, braucht die Berechtigung zur Triage von Schwachstellen.</target>
+      </segment>
+    </unit>
+    <unit id="security.search.submit">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:34,36</note>
+      </notes>
+      <segment>
+        <source>Search</source>
+        <target>Suchen</target>
+      </segment>
+    </unit>
+    <unit id="security.search.project">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:31,32</note>
+      </notes>
+      <segment>
+        <source>Project key</source>
+        <target>Projektschlüssel</target>
+      </segment>
+    </unit>
+    <unit id="security.search.package">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:27,28</note>
+      </notes>
+      <segment>
+        <source>Package starts with</source>
+        <target>Paket beginnt mit</target>
+      </segment>
+    </unit>
+    <unit id="security.search.advisory">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:23,24</note>
+      </notes>
+      <segment>
+        <source>Advisory ID</source>
+        <target>Advisory-Kennung</target>
+      </segment>
+    </unit>
+    <unit id="security.search.label">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:21</note>
+      </notes>
+      <segment>
+        <source>Search findings</source>
+        <target>Befunde suchen</target>
+      </segment>
+    </unit>
+    <unit id="security.intro">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:19,21</note>
+      </notes>
+      <segment>
+        <source> The findings of every project, with the counts and the trend over all of them. Search by advisory identifier (a CVE or GHSA number finds the finding by any of its aliases), by package or by project. </source>
+        <target>Die Befunde aller Projekte mit den Zahlen und dem Verlauf über alle. Suche nach Advisory-Kennung (eine CVE- oder GHSA-Nummer findet den Befund über jeden seiner Aliase), nach Paket oder nach Projekt.</target>
+      </segment>
+    </unit>
+    <unit id="security.heading">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:3,5</note>
+      </notes>
+      <segment>
+        <source>Security dashboard</source>
+        <target>Sicherheits-Dashboard</target>
+      </segment>
+    </unit>
     <unit id="vuln.sources-link">
       <notes>
         <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:4,6</note>
@@ -22944,6 +23044,15 @@
       <segment>
         <source>Repository</source>
         <target>Repository</target>
+      </segment>
+    </unit>
+    <unit id="vuln.filter.project">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:315</note>
+      </notes>
+      <segment>
+        <source>Project</source>
+        <target>Projekt</target>
       </segment>
     </unit>
     <unit id="vuln.filter.format">

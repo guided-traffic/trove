@@ -1106,7 +1106,7 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
     administers the project on its own and the two switches go; `admin` and
     `auditor` see every project, `admin` creates projects and assigns members; the auditor's instance-wide vulnerability
     dashboard in the admin area ([Q-UI-130](../spec/api-and-ui.md#q-ui-130--the-auditor-has-an-instance-wide-vulnerability-dashboard-in-the-admin-area),
-    gap H-551)
+    built)
 - ⚪ All exit checks green again
 - 🟡 Beta documentation: installation guide, configuration reference, known limitations. The first edition of the
   [manual](../manual/README.md) (7 user and 12 administrator pages, among them installation, configuration and known
