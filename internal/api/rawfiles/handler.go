@@ -15,10 +15,10 @@ package rawfiles
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"io"
 	"mime"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -69,7 +69,7 @@ func New(o Options) *Handler {
 // are answered 400 invalid_path (R-GENERIC-002).
 func (h *Handler) Register(r *httpserver.Router) {
 	for _, m := range []string{http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete} {
-		r.Handle(m+" "+Prefix+"{repoKey}/{path...}", h)
+		r.Handle(m+" "+Prefix+"{projectKey}/{repoKey}/{path...}", h)
 	}
 	r.HandleUncleaned(Prefix, h)
 }
@@ -88,7 +88,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // serve answers a request of repository key whose escaped path below the repository is rest: the transfer of /files/
 // and, with maxUpload set by the content routes (content.go), the same transfer behind the limit of the UI's uploads.
 // maxUpload is the largest PUT the route takes; 0 is no limit of its own.
-func (h *Handler) serve(w http.ResponseWriter, r *http.Request, key, rest string, maxUpload int64) {
+func (h *Handler) serve(w http.ResponseWriter, r *http.Request, key qname.Repo, rest string, maxUpload int64) {
 	if strings.HasPrefix(rest, "/") {
 		// "/files/<key>//x": CleanPath ignores one leading slash, which here is an
 		// empty first segment (R-GENERIC-002).
@@ -148,7 +148,7 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request, key, rest string
 // routeOf is the route a request on /files/ is, as the marking stage sees it (R-BAS-013): a GET or HEAD of a
 // file is a download, of a folder (a path with a trailing slash, or the root) a listing that is like a
 // document, a PUT an upload and a DELETE a delete. It reports false for a method the handler refuses.
-func routeOf(r *http.Request, key string, p repository.Cleaned) (bastionmain.RouteMatch, bool) {
+func routeOf(r *http.Request, key qname.Repo, p repository.Cleaned) (bastionmain.RouteMatch, bool) {
 	m := bastionmain.RouteMatch{Format: bastionmain.FormatFiles, Repo: key, Method: r.Method}
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
@@ -196,19 +196,14 @@ func (a *observedAccess) Decide(ctx context.Context, c authz.Coordinate) authz.D
 	return d
 }
 
-// splitPath cuts "/files/<key>/<rest>" at the first slash after the key and
-// decodes the key. rest stays escaped.
-func splitPath(escaped string) (key, rest string, ok bool) {
-	tail, found := strings.CutPrefix(escaped, Prefix)
-	if !found {
-		return "", "", false
+// splitPath cuts "/files/<project>/<key>/<rest>" with qname.ParseAddress, the one parser of these paths. rest
+// stays escaped.
+func splitPath(escaped string) (key qname.Repo, rest string, ok bool) {
+	a, ok := qname.ParseAddress(escaped)
+	if !ok || a.Family != qname.FamilyFiles || a.CacheView {
+		return qname.Repo{}, "", false
 	}
-	rawKey, rest, _ := strings.Cut(tail, "/")
-	key, err := url.PathUnescape(rawKey)
-	if err != nil || key == "" {
-		return "", "", false
-	}
-	return key, rest, true
+	return a.Repo, a.Rest, true
 }
 
 // caller takes the index the request decides on, with the key made known, and
@@ -216,7 +211,7 @@ func splitPath(escaped string) (key, rest string, ok bool) {
 // decision of the request. The subject carries the endpoint whose listener
 // accepted it (R-EP-013). An index that cannot be confirmed is 503 authz_stale,
 // an unreached Trove-Authz-Min-Epoch 412.
-func (h *Handler) caller(r *http.Request, key string) (files.Caller, error) {
+func (h *Handler) caller(r *http.Request, key qname.Repo) (files.Caller, error) {
 	ctx := r.Context()
 	if _, ok := edge.AccessFrom(ctx); !ok && h.decider == nil { // a replica without the authz area
 		return files.Caller{}, errs.E(errs.Unavailable, errs.CodeUnavailable, "The files service is not available on this replica.", errs.WithRetryAfter(time.Second))
@@ -229,7 +224,7 @@ func (h *Handler) caller(r *http.Request, key string) (files.Caller, error) {
 		Access: acc, Subject: acc.Subject,
 		Actor: edge.ActorFrom(httpserver.PrincipalFrom(ctx)), Source: httpserver.SourceFrom(ctx),
 		// A write that waited for its body decides again on a new index (R-AUTHZ-015).
-		Recheck: func(ctx context.Context, key string) (files.Access, error) {
+		Recheck: func(ctx context.Context, key qname.Repo) (files.Access, error) {
 			fresh, err := edge.Begin(ctx, acc.D, acc.Subject, key)
 			if err != nil {
 				return nil, err
@@ -245,7 +240,7 @@ func (h *Handler) links(r *http.Request) edge.Links {
 
 // get serves GET and HEAD: a file with the semantics of R-STOR-012, a folder as
 // the directory index of R-STOR-017.
-func (h *Handler) get(w http.ResponseWriter, r *http.Request, caller files.Caller, key string, p repository.Cleaned) {
+func (h *Handler) get(w http.ResponseWriter, r *http.Request, caller files.Caller, key qname.Repo, p repository.Cleaned) {
 	res, err := h.svc.Stat(r.Context(), caller, key, p)
 	if err != nil {
 		httpserver.Problem(w, r, err)
@@ -281,7 +276,7 @@ func queryOf(r *http.Request) string {
 }
 
 // put deploys a file or creates a folder (R-STOR-007).
-func (h *Handler) put(w http.ResponseWriter, r *http.Request, caller files.Caller, key string, p repository.Cleaned, maxUpload int64) {
+func (h *Handler) put(w http.ResponseWriter, r *http.Request, caller files.Caller, key qname.Repo, p repository.Cleaned, maxUpload int64) {
 	expect, err := edge.ParseReprDigest(r.Header)
 	if err != nil {
 		httpserver.Problem(w, r, err)
@@ -344,7 +339,7 @@ func mediaType(r *http.Request) (string, error) {
 }
 
 // delete removes a file, or a folder with its subtree (R-STOR-018).
-func (h *Handler) delete(w http.ResponseWriter, r *http.Request, caller files.Caller, key string, p repository.Cleaned) {
+func (h *Handler) delete(w http.ResponseWriter, r *http.Request, caller files.Caller, key qname.Repo, p repository.Cleaned) {
 	res, err := h.svc.Delete(r.Context(), caller, files.DeleteRequest{Repo: key, Path: p.Path, Strict: true})
 	if err != nil {
 		httpserver.Problem(w, r, err)

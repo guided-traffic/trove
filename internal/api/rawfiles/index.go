@@ -1,6 +1,7 @@
 package rawfiles
 
 import (
+	"github.com/guided-traffic/trove/internal/qname"
 	"html"
 	"net/http"
 	"strings"
@@ -20,7 +21,7 @@ import (
 // name, so a name such as `javascript:x` stays a relative path. The listing holds
 // the entries the caller may read, in pages of storage.listing limits: the
 // `limit` and `cursor` query parameters of the management API.
-func (h *Handler) index(w http.ResponseWriter, r *http.Request, caller files.Caller, key string, p repository.Cleaned) {
+func (h *Handler) index(w http.ResponseWriter, r *http.Request, caller files.Caller, key qname.Repo, p repository.Cleaned) {
 	lq, err := edge.ParseList(r, edge.ListSpec{}, h.api)
 	if err != nil {
 		httpserver.Problem(w, r, err)
@@ -50,7 +51,7 @@ func (h *Handler) index(w http.ResponseWriter, r *http.Request, caller files.Cal
 		cw.Header().Set("Content-Type", "text/html; charset=utf-8")
 		cw.WriteHeader(http.StatusOK)
 		if r.Method != http.MethodHead {
-			_, _ = cw.Write([]byte(renderHTML(key, p.Path, page.Items, next, r)))
+			_, _ = cw.Write([]byte(renderHTML(key.String(), p.Path, page.Items, next, r)))
 		}
 		return
 	}
@@ -59,7 +60,7 @@ func (h *Handler) index(w http.ResponseWriter, r *http.Request, caller files.Cal
 		Path       string        `json:"path"`
 		Items      []items.Child `json:"items"`
 		NextCursor *string       `json:"nextCursor"`
-	}{Repository: key, Path: p.Path, Items: page.Items}
+	}{Repository: key.String(), Path: p.Path, Items: page.Items}
 	if next != "" {
 		body.NextCursor = &next
 	}
