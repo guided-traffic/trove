@@ -1,39 +1,23 @@
 <header class="page-header">
   <h1 tabindex="-1" i18n="@@repo.list.heading">Repositories</h1>
-  @if (canCreate()) {
-    <a class="btn btn-confirm" routerLink="/admin/repositories/new" i18n="@@repo.list.create"
+  @if (inProject() && canCreateHere()) {
+    <a class="btn btn-confirm" [routerLink]="['/projects', projectKey(), 'repositories', 'new']" i18n="@@repo.list.create"
       >Create repository</a
     >
-  } @else if (canCreateHere()) {
-    <a class="btn btn-confirm"
-      routerLink="/admin/repositories/new"
-      [queryParams]="{ project: projectKey() }"
-      i18n="@@repo.list.create"
+  } @else if (!inProject() && canCreate()) {
+    <a class="btn btn-confirm" routerLink="/admin/repositories/new" i18n="@@repo.list.create"
       >Create repository</a
     >
   }
 </header>
 
-@if (projectKey(); as key) {
-  <p class="project-note" role="status">
-    <span class="material-icons inline" aria-hidden="true">folder_shared</span>
-    <ng-container i18n="@@repo.list.project-note">Showing the repositories of project</ng-container>&ngsp;
-    <strong translate="no">{{ key }}</strong>.
-    @if (project()) {
-      <a routerLink="/admin/repositories" i18n="@@repo.list.project-clear">Show all repositories</a>
-    } @else {
-      <ng-container i18n="@@repo.list.project-hint">Change it with the project filter in the top bar.</ng-container>
-    }
-  </p>
-}
-
-@if (recent.keys().length > 0 && !filtered()) {
+@if (recentKeys().length > 0 && !filtered()) {
   <section aria-labelledby="recent-heading" class="recent">
     <h2 id="recent-heading" i18n="@@repo.recent">Recently viewed</h2>
     <ul>
-      @for (key of recent.keys(); track key) {
+      @for (key of recentKeys(); track key) {
         <li>
-          <a [routerLink]="['/admin/repositories', ...key.split('/')]" translate="no">{{ key }}</a>
+          <a [routerLink]="repositoryLink(key)" translate="no">{{ key }}</a>
         </li>
       }
     </ul>
@@ -51,7 +35,7 @@
 
     <trove-data-table
       [caption]="tableCaption"
-      [columns]="columns"
+      [columns]="columns()"
       [loaded]="list.loaded()"
       [loading]="list.loading()"
       [error]="list.error()"
@@ -65,7 +49,7 @@
         <tr>
           <th scope="row">
             <a
-              [routerLink]="['/admin/repositories', row.project, row.key]"
+              [routerLink]="['/projects', row.project, 'repositories', row.key]"
               (click)="visit(refOf(row))"
               translate="no"
               >{{ row.key }}</a
@@ -77,7 +61,9 @@
               <span class="badge" i18n="@@repo.badge.deleting">being deleted</span>
             }
           </th>
-          <td><a [routerLink]="['/admin/projects', row.project]" translate="no">{{ row.project }}</a></td>
+          @if (!inProject()) {
+            <td><a [routerLink]="['/projects', row.project]" translate="no">{{ row.project }}</a></td>
+          }
           <td translate="no">{{ row.format }}</td>
           <td>
             <span class="type-cell">
@@ -100,17 +86,17 @@
           <td class="actions">
             <div class="row-actions">
               <a class="btn btn-tertiary"
-                [routerLink]="['/admin/repositories', row.project, row.key]"
+                [routerLink]="['/projects', row.project, 'repositories', row.key]"
                 (click)="visit(refOf(row))"
                 i18n="@@repo.action.edit"
                 >Edit</a
               >
-              <a class="btn btn-tertiary" [routerLink]="['/browse', row.project, row.key]" i18n="@@repo.action.browse"
+              <a class="btn btn-tertiary" [routerLink]="['/projects', row.project, 'browse', row.key]" i18n="@@repo.action.browse"
                 >Browse</a
               >
               <!-- >>> M4b vulnerabilities -->
               @if (row.format !== 'generic' && row.class !== 'virtual') {
-                <a class="btn btn-tertiary" routerLink="/vulnerabilities" [queryParams]="{ repository: refOf(row) }" i18n="@@repo.action.vulnerabilities"
+                <a class="btn btn-tertiary" [routerLink]="['/projects', row.project, 'vulnerabilities']" [queryParams]="{ repository: refOf(row) }" i18n="@@repo.action.vulnerabilities"
                   >Vulnerabilities</a
                 >
               }
@@ -161,17 +147,19 @@
         (input)="search.set($any($event.target).value)"
       />
     </trove-filter-category>
-    <trove-filter-category i18n-label="@@repo.col.project" label="Project" [active]="!!project()" [expanded]="!!project()">
-      <input
-        class="text-input"
-        type="text"
-        autocomplete="off"
-        i18n-aria-label="@@repo.col.project"
-        aria-label="Project"
-        [value]="stagedProject()"
-        (input)="stagedProject.set($any($event.target).value)"
-      />
-    </trove-filter-category>
+    @if (!inProject()) {
+      <trove-filter-category i18n-label="@@repo.col.project" label="Project" [active]="!!filterProject()" [expanded]="!!filterProject()">
+        <input
+          class="text-input"
+          type="text"
+          autocomplete="off"
+          i18n-aria-label="@@repo.col.project"
+          aria-label="Project"
+          [value]="stagedProject()"
+          (input)="stagedProject.set($any($event.target).value)"
+        />
+      </trove-filter-category>
+    }
     <trove-filter-category i18n-label="@@repo.col.class" label="Class" [active]="!!class()" [expanded]="!!class()">
       <select
         class="select-input"

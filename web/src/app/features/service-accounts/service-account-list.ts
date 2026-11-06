@@ -138,7 +138,7 @@ export class ServiceAccountCreateDialog {
               <td>{{ a.description }}</td>
               <td>
                 @if (a.project) {
-                  <a [routerLink]="['/admin/projects', a.project]" translate="no">{{ a.project }}</a>
+                  <a [routerLink]="['/projects', a.project]" translate="no">{{ a.project }}</a>
                 } @else {
                   –
                 }
@@ -196,9 +196,9 @@ export class ServiceAccountList {
     void this.apply();
   }
 
-  /** `/admin/service-accounts/<project>/<name>` for a project's account, `/admin/service-accounts/<name>` otherwise. */
+  /** `/projects/<project>/service-accounts/<name>` for a project's account, `/admin/service-accounts/<name>` otherwise. */
   protected saLink(a: ServiceAccount): string[] {
-    return a.project ? ['/admin/service-accounts', a.project, a.name] : ['/admin/service-accounts', a.name];
+    return a.project ? ['/projects', a.project, 'service-accounts', a.name] : ['/admin/service-accounts', a.name];
   }
 
   protected async apply(): Promise<void> {

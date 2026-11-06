@@ -86,6 +86,8 @@ export interface FindingFilters {
 
 /** What the summary and the trend can be narrowed by (R-VULN-021). */
 export interface ScopeFilters {
+  /** A project key: only the findings of that project's repositories (Q-UI-129). */
+  readonly project?: string;
   readonly repository?: readonly string[];
   readonly format?: readonly string[];
 }

@@ -1,7 +1,6 @@
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { PermissionPolicy, PolicyApi, PolicyFilters } from '../../api/authz-api';
-import { ProjectFilter } from '../../core/project-filter';
 import { SessionStore } from '../../core/session-store';
 import { TextField } from '../../shared/access/fields';
 import { Needs } from '../../shared/access/needs';
@@ -48,29 +47,27 @@ export class PolicyList {
   /** Query parameters, bound by the router's component input binding. */
   readonly principal = input<string | undefined>();
   readonly repository = input<string | undefined>();
-  /** A project key (the project screen links here); without it the project filter of the top bar applies (R-UI-041). */
+  /** A project key: only the policies of that project (R-UI-041); the list is instance-wide without it (Q-UI-129). */
   readonly project = input<string | undefined>();
 
   private readonly api = inject(PolicyApi);
   protected readonly session = inject(SessionStore);
-  private readonly projectFilter = inject(ProjectFilter);
 
-  /** The project the list is limited to: the query parameter, else the filter of the top bar. */
-  protected readonly projectKey = computed(() => this.project() || this.projectFilter.active());
-  /** "New policy" belongs to the project the list is limited to; only an unscoped list creates a global policy. */
-  protected readonly newPolicyParams = computed(() => {
-    const key = this.projectKey();
-    return key ? { project: key } : {};
-  });
   protected readonly list = new PagedResource<PermissionPolicy>();
   protected readonly principalFilter = signal('');
   protected readonly repositoryFilter = signal('');
+  protected readonly projectFilter = signal('');
   protected readonly panelOpen = signal(false);
   protected readonly activeCount = signal(0);
   protected readonly sort = signal<TableSort>({ column: 'name', direction: 'asc' });
   protected readonly caption = $localize`:@@policies.caption:Permission policies`;
   protected readonly columns: readonly TableColumn[] = [
     { id: 'name', label: $localize`:@@policies.col.name:Name`, sortable: true },
+    {
+      id: 'project',
+      label: $localize`:@@policies.col.project:Project`,
+      help: $localize`:@@policies.help.project:The project a policy belongs to; a dash is a global policy. A project's policy grants on that project's repositories only.`,
+    },
     { id: 'description', label: $localize`:@@policies.col.description:Description` },
     {
       id: 'principals',
@@ -91,9 +88,9 @@ export class PolicyList {
     effect(() => {
       this.principalFilter.set(this.principal() ?? '');
       this.repositoryFilter.set(this.repository() ?? '');
-      this.projectKey();
+      this.projectFilter.set(this.project() ?? '');
       // A link with a filter (the authentication settings point at `principal=anonymous`) shows it.
-      if (this.principal() || this.repository()) this.panelOpen.set(true);
+      if (this.principal() || this.repository() || this.project()) this.panelOpen.set(true);
       untracked(() => void this.apply());
     });
   }
@@ -102,16 +99,13 @@ export class PolicyList {
     const filters: PolicyFilters = {
       principal: this.principalFilter().trim() || undefined,
       repository: this.repositoryFilter().trim() || undefined,
+      project: this.projectFilter().trim() || undefined,
       // Groups are expanded by the API unless told otherwise; the list shows policies that name
       // the principal or one of its groups, as the filter says.
     };
     this.activeCount.set(Object.values(filters).filter((v) => v !== undefined).length);
     const sort = this.sort();
-    // The project is not a panel field: a line above the table says it applies (R-UI-041).
-    const project = this.projectKey() ?? undefined;
-    await this.list.start(
-      this.api.list({ ...filters, project, sort: sort.direction === 'desc' ? '-name' : 'name' }),
-    );
+    await this.list.start(this.api.list({ ...filters, sort: sort.direction === 'desc' ? '-name' : 'name' }));
   }
 
   protected sortBy(sort: TableSort): void {
@@ -122,12 +116,13 @@ export class PolicyList {
   protected clear(): void {
     this.principalFilter.set('');
     this.repositoryFilter.set('');
+    this.projectFilter.set('');
     void this.apply();
   }
 
-  /** `/admin/permissions/<project>/<name>` for a project's policy, `/admin/permissions/<name>` otherwise. */
+  /** `/projects/<project>/policies/<name>` for a project's policy, `/admin/permissions/<name>` otherwise. */
   protected policyLink(p: PermissionPolicy): string[] {
-    return p.project ? ['/admin/permissions', p.project, p.name] : ['/admin/permissions', p.name];
+    return p.project ? ['/projects', p.project, 'policies', p.name] : ['/admin/permissions', p.name];
   }
 
   protected repositorySummary(p: PermissionPolicy): string {

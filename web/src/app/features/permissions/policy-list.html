@@ -1,25 +1,12 @@
 <header class="page-header">
   <h1 tabindex="-1" i18n="@@policies.heading">Permission policies</h1>
   @if (session.has('policies:write')) {
-    <a class="btn btn-confirm" routerLink="/admin/permissions/new" [queryParams]="newPolicyParams()" i18n="@@policies.new">New policy</a>
+    <a class="btn btn-confirm" routerLink="/admin/permissions/new" i18n="@@policies.new">New policy</a>
   } @else {
     <button class="btn btn-confirm" type="button" disabled aria-describedby="needs-policies" i18n="@@policies.new-disabled">New policy</button>
   }
 </header>
 <trove-needs id="needs-policies" capability="policies:write" />
-
-@if (projectKey(); as key) {
-  <p class="muted" role="status">
-    <span class="material-icons" aria-hidden="true">folder_shared</span>
-    <ng-container i18n="@@policies.project-note">Showing the policies of project</ng-container>&ngsp;
-    <strong translate="no">{{ key }}</strong>.
-    @if (project()) {
-      <a routerLink="/admin/permissions" i18n="@@policies.project-clear">Show all policies</a>
-    } @else {
-      <ng-container i18n="@@policies.project-hint">Change it with the project filter in the top bar.</ng-container>
-    }
-  </p>
-}
 
 <div class="list-layout" [class.panel-open]="panelOpen()">
   <div class="list-main">
@@ -50,6 +37,13 @@
               <span class="badge warn"><span class="material-icons" aria-hidden="true">warning</span><ng-container i18n="@@policies.inert">Grants nothing</ng-container></span>
             }
           </th>
+          <td>
+            @if (p.project) {
+              <a [routerLink]="['/projects', p.project]" translate="no">{{ p.project }}</a>
+            } @else {
+              –
+            }
+          </td>
           <td>{{ p.description }}</td>
           <td>{{ principalSummary(p) }}</td>
           <td class="wrap" translate="no">{{ repositorySummary(p) }}</td>
@@ -79,6 +73,9 @@
     </trove-filter-category>
     <trove-filter-category i18n-label="@@policies.repository" label="Repository" [active]="!!repositoryFilter().trim()" [expanded]="!!repositoryFilter().trim()">
       <trove-text-field i18n-label="@@policies.repository" label="Repository" name="repository" [(value)]="repositoryFilter" />
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@policies.project" label="Project" [active]="!!projectFilter().trim()" [expanded]="!!projectFilter().trim()">
+      <trove-text-field i18n-label="@@policies.project" label="Project" name="project" [(value)]="projectFilter" />
     </trove-filter-category>
   </trove-filter-panel>
 </div>

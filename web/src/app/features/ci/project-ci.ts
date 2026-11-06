@@ -20,10 +20,9 @@ import { ErrorNotice } from '../../shared/error-notice';
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@ci.project.heading">CI identity</h1>
-      <a class="btn btn-tertiary" [routerLink]="['/admin/projects', key()]" i18n="@@ci.project.back">Back to the project</a>
       <a class="btn btn-default" [routerLink]="testLink()" i18n="@@ci.project.test">Test with claims</a>
     </header>
-    <p class="subject" translate="no">{{ key() }}</p>
+    <p class="subject" translate="no">{{ project() }}</p>
     <p i18n="@@ci.project.hint">
       Jobs of your GitLab projects exchange their ID token for a short-lived token. The mappings below decide what such a job may do in the repositories of this project. They apply next to the administrators' mappings; yours can never take anything away from theirs.
     </p>
@@ -55,20 +54,20 @@ import { ErrorNotice } from '../../shared/error-notice';
 
       <section class="card" aria-labelledby="ci-p-mappings">
         <h2 id="ci-p-mappings" i18n="@@ci.project.mappings">Mappings of the project</h2>
-        <trove-ci-mapping-list [project]="key()" />
+        <trove-ci-mapping-list [project]="project()" />
       </section>
 
       <section class="card" aria-labelledby="ci-p-issuances">
         <h2 id="ci-p-issuances" i18n="@@ci.project.issuances">Issued tokens</h2>
-        <trove-ci-issuance-list [project]="key()" />
+        <trove-ci-issuance-list [project]="project()" />
       </section>
     }
   `,
   styleUrl: '../../shared/access/access.scss',
 })
 export class ProjectCi {
-  /** Route parameter `:key`. */
-  readonly key = input.required<string>();
+  /** Route parameter `:project`. */
+  readonly project = input.required<string>();
 
   private readonly api = inject(CiApi);
 
@@ -88,19 +87,19 @@ export class ProjectCi {
 
   constructor() {
     effect(() => {
-      this.key();
+      this.project();
       untracked(() => void this.load());
     });
   }
 
   protected testLink(): string[] {
-    return ciRoutes.test(this.key(), '');
+    return ciRoutes.test(this.project(), '');
   }
 
   protected async load(): Promise<void> {
     this.error.set(null);
     try {
-      this.issuers.set(await this.api.projectIssuers(this.key()));
+      this.issuers.set(await this.api.projectIssuers(this.project()));
       this.loaded.set(true);
     } catch (e) {
       this.error.set(asApiError(e));

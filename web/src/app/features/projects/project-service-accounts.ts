@@ -46,7 +46,7 @@ import { ProjectNeeds, createState } from './project-access';
     >
       @for (a of list.items(); track a.id) {
         <tr>
-          <th scope="row"><a [routerLink]="['/admin/service-accounts', project(), a.name]" translate="no">{{ a.name }}</a></th>
+          <th scope="row"><a [routerLink]="['/projects', project(), 'service-accounts', a.name]" translate="no">{{ a.name }}</a></th>
           <td>{{ a.description }}</td>
           <td>
             @if (a.status === 'active') {
@@ -91,6 +91,6 @@ export class ProjectServiceAccounts {
       { data: { project: this.project() }, maxWidth: '36rem' },
     );
     const created = await firstValueFrom(ref.closed);
-    if (created) await this.router.navigate(['/admin/service-accounts', this.project(), created.name]);
+    if (created) await this.router.navigate(['/projects', this.project(), 'service-accounts', created.name]);
   }
 }

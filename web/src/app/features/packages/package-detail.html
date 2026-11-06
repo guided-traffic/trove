@@ -4,7 +4,7 @@
     <span class="material-icons" aria-hidden="true">inventory_2</span>
     <span translate="no">{{ format() }}</span>
   </span>
-  <a class="btn btn-tertiary" routerLink="/packages" i18n="@@pkg.detail.back">All packages</a>
+  <a class="btn btn-tertiary" [routerLink]="['/projects', project(), 'packages']" i18n="@@pkg.detail.back">All packages</a>
 </header>
 
 @if (loadFailure(); as f) {
@@ -222,7 +222,7 @@
                           <time [attr.datetime]="r.publishedAt">{{ r.publishedAt | date: 'medium' }}</time>
                         </td>
                         <td>
-                          <a class="btn btn-tertiary" [routerLink]="['/browse', ...r.key.split('/')]" i18n="@@pkg.repo.show-in-browser">Show in browser</a>
+                          <a class="btn btn-tertiary" [routerLink]="browseLink(r.key)" i18n="@@pkg.repo.show-in-browser">Show in browser</a>
                         </td>
                       </tr>
                     }

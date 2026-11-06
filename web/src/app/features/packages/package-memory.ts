@@ -1,4 +1,5 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
+import { ProjectContext } from '../../core/project-context';
 import { SessionStore } from '../../core/session-store';
 import { BrowserStorage } from '../../core/storage';
 
@@ -28,20 +29,22 @@ interface Stored {
 const EMPTY: Stored = { recent: [], views: [], defaultView: null };
 
 /**
- * What the packages list remembers per signed-in principal in browser storage: the last packages
- * opened and the saved views (R-UI-006). Non-secret convenience data (R-UI-043). Where storage is
+ * What the packages list remembers per signed-in principal and project in browser storage: the last packages
+ * opened and the saved views (R-UI-006, Q-UI-129). Non-secret convenience data (R-UI-043). Where storage is
  * blocked, or nobody is signed in, `available` is false and the screens hide the two tabs.
  */
 @Injectable({ providedIn: 'root' })
 export class PackageMemory {
   private readonly storage = inject(BrowserStorage);
   private readonly session = inject(SessionStore);
+  private readonly context = inject(ProjectContext);
   private readonly usable = this.storage.available('local');
   private readonly state = signal<{ key: string | null; value: Stored }>({ key: null, value: EMPTY });
 
   private readonly key = computed(() => {
     const name = this.session.whoami()?.principal?.name;
-    return name ? `trove.packages.${name}` : null;
+    const project = this.context.key();
+    return name && project ? `trove.packages.${name}.${project}` : null;
   });
   private readonly current = computed<Stored>(() => {
     const key = this.key();

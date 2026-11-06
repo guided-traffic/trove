@@ -19,8 +19,7 @@ import { ProjectNeeds, createState } from './project-access';
     <div class="toolbar">
       @if (state() === 'enabled') {
         <a class="btn btn-confirm"
-          routerLink="/admin/permissions/new"
-          [queryParams]="{ project: project() }"
+          [routerLink]="['/projects', project(), 'policies', 'new']"
           i18n="@@project-policies.create"
           >Create policy</a
         >
@@ -48,7 +47,7 @@ import { ProjectNeeds, createState } from './project-access';
       @for (p of list.items(); track p.name) {
         <tr>
           <th scope="row">
-            <a [routerLink]="['/admin/permissions', project(), p.name]" translate="no">{{ p.name }}</a>
+            <a [routerLink]="['/projects', project(), 'policies', p.name]" translate="no">{{ p.name }}</a>
             @if (p.inert) {
               <span class="badge warn"><span class="material-icons" aria-hidden="true">warning</span><ng-container i18n="@@project-policies.inert">Grants nothing</ng-container></span>
             }

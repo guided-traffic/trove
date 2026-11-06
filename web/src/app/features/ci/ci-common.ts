@@ -64,15 +64,15 @@ export const ciRoutes = {
   issuer: (issuer: string): string[] => ['/admin/ci', issuer],
   mapping: (project: string | null, issuer: string, name: string | null): string[] =>
     project
-      ? ['/admin/projects', project, 'ci', 'mappings', name ?? 'new']
+      ? ['/projects', project, 'ci', 'mappings', name ?? 'new']
       : ['/admin/ci', issuer, 'mappings', name ?? 'new'],
   /** A project's mapping routes carry the issuer in the query; the system routes carry it in the path. */
   mappingQuery: (project: string | null, issuer: string): Record<string, string> | null =>
     project && issuer ? { issuer } : null,
   test: (project: string | null, issuer: string): string[] =>
-    project ? ['/admin/projects', project, 'ci', 'test'] : ['/admin/ci', issuer, 'test'],
+    project ? ['/projects', project, 'ci', 'test'] : ['/admin/ci', issuer, 'test'],
   overview: (project: string | null, issuer: string | null): string[] =>
-    project ? ['/admin/projects', project, 'ci'] : issuer ? ['/admin/ci', issuer] : ['/admin/ci'],
+    project ? ['/projects', project, 'ci'] : issuer ? ['/admin/ci', issuer] : ['/admin/ci'],
 };
 
 /** The changed top-level members of a write body against the stored record: what the conflict dialog compares. */

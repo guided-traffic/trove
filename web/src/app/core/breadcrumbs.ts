@@ -28,7 +28,8 @@ export interface CrumbSpec {
  *   "Repositories > my-repo";
  * - the file tree's matcher route adds one step per path segment;
  * - a matcher route with `data.crumbParam` adds one step with that parameter's value (a package
- *   name such as `@team-a/ui`, whose slash belongs to the name).
+ *   name such as `@team-a/ui`, whose slash belongs to the name); so does a path route with
+ *   `data.crumbParam` (the project of `/projects/:project`), whose step links to that route itself.
  *
  * A trail of one step repeats the page title and is not shown.
  */
@@ -79,7 +80,11 @@ export function collect(root: ActivatedRouteSnapshot): Crumb[] {
 
     const title = typeof config?.title === 'string' ? config.title : undefined;
     const crumbParam = config?.data?.['crumbParam'] as string | undefined;
-    if (config && config.path === undefined && config.matcher && crumbParam) {
+    if (config && config.path !== undefined && !config.matcher && crumbParam) {
+      // A path route whose parameter names the thing (the project of `/projects/:project`): one step whose target is
+      // that route itself, so the route has to answer there (it redirects to the project's first screen).
+      add({ label: route.params[crumbParam] ?? crumbParam, commands: [...before, ...own], literal: true });
+    } else if (config && config.path === undefined && config.matcher && crumbParam) {
       // A matcher route whose parameter names the thing (a package name with its slash): one step.
       add({ label: route.params[crumbParam] ?? crumbParam, commands: [...before, ...own], literal: true });
     } else if (config && config.path === undefined && config.matcher) {

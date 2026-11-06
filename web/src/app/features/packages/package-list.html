@@ -6,7 +6,7 @@
 @if (memory.available()) {
   <nav class="view-tabs tab-nav" aria-label="Package views" i18n-aria-label="@@pkg.views.label">
     <a class="tab-link"
-      routerLink="/packages"
+      [routerLink]="listLink()"
       [queryParams]="{ tab: null }"
       queryParamsHandling="merge"
       [attr.aria-current]="activeTab() === 'all' ? 'page' : null"
@@ -14,7 +14,7 @@
       >All packages</a
     >
     <a class="tab-link"
-      routerLink="/packages"
+      [routerLink]="listLink()"
       [queryParams]="{ tab: 'recent' }"
       queryParamsHandling="merge"
       [attr.aria-current]="activeTab() === 'recent' ? 'page' : null"
@@ -22,7 +22,7 @@
       >Recently viewed</a
     >
     <a class="tab-link"
-      routerLink="/packages"
+      [routerLink]="listLink()"
       [queryParams]="{ tab: 'views' }"
       queryParamsHandling="merge"
       [attr.aria-current]="activeTab() === 'views' ? 'page' : null"
@@ -93,7 +93,7 @@
               />
               <button class="btn btn-tertiary" type="button" (click)="finishRename(v)" i18n="@@pkg.views.rename-save">Save name</button>
             } @else {
-              <a routerLink="/packages" [queryParams]="v.query">{{ v.name }}</a>
+              <a [routerLink]="listLink()" [queryParams]="v.query">{{ v.name }}</a>
               @if (memory.defaultView()?.id === v.id) {
                 <span class="badge" i18n="@@pkg.views.default">default</span>
               }

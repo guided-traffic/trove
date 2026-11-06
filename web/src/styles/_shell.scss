@@ -117,14 +117,6 @@ trove-root {
     }
   }
 
-  // The project filter: an icon, then the key or "All projects".
-  .project-name {
-    max-inline-size: 12rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   // The labels of the Admin button and the documentation link give way to their icons on a narrow top bar; they stay
   // the links' accessible names.
   @media (max-width: 47.99rem) {
@@ -220,6 +212,163 @@ trove-root {
     color: var(--trove-nav-accent);
     font-size: var(--trove-text-size);
     font-weight: 600;
+  }
+
+  // The project switcher on top of a project's sidebar (Q-UI-129): the project's mark and name as a button, and a panel
+  // with the search field, the recent projects and the matches over the entries below.
+  .project-switcher {
+    position: relative;
+    display: block;
+    margin: var(--trove-space-1) var(--trove-space-2) 0;
+  }
+
+  .switcher-button {
+    display: flex;
+    align-items: center;
+    gap: var(--trove-space-2);
+    inline-size: 100%;
+    box-sizing: border-box;
+    min-block-size: 40px;
+    padding: var(--trove-space-1);
+    border: 0;
+    border-radius: var(--trove-radius-m);
+    background: none;
+    color: var(--trove-nav-fg);
+    font: inherit;
+    font-size: var(--trove-text-size);
+    font-weight: 600;
+    text-align: start;
+    cursor: pointer;
+
+    &:hover,
+    &[aria-expanded='true'] {
+      background: var(--trove-nav-hover);
+    }
+  }
+
+  // The project's initial in a rounded square, as the reference marks a project; decoration, the name is the label.
+  .switcher-mark {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 2rem;
+    block-size: 2rem;
+    border-radius: var(--trove-radius-m);
+    background: var(--trove-accent-fill);
+    color: var(--trove-on-accent);
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .switcher-text {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+
+  .switcher-name {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .switcher-chevron {
+    flex: none;
+    font-size: 1rem;
+    color: var(--trove-nav-fg-muted);
+  }
+
+  .switcher-panel {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-start: calc(100% + 2px);
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: var(--trove-space-1);
+    box-sizing: border-box;
+    max-block-size: 24rem;
+    padding: var(--trove-space-2);
+    overflow-y: auto;
+    border: 1px solid var(--trove-menu-border);
+    border-radius: var(--trove-radius-m);
+    background: var(--trove-menu-bg);
+    color: var(--trove-control-fg);
+    box-shadow: var(--trove-elevation-2);
+  }
+
+  .switcher-search {
+    box-sizing: border-box;
+    inline-size: 100%;
+    block-size: var(--trove-control-height);
+    padding: 0 var(--trove-space-3);
+    border: 1px solid var(--trove-search-border);
+    border-radius: var(--trove-search-radius);
+    background: var(--trove-search-bg);
+    color: var(--trove-search-fg);
+    font: inherit;
+    font-size: 0.875rem;
+  }
+
+  .switcher-heading {
+    margin: var(--trove-space-1) var(--trove-space-1) 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--trove-nav-fg-muted);
+  }
+
+  .switcher-list {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .switcher-item,
+  .switcher-all {
+    display: flex;
+    align-items: baseline;
+    gap: var(--trove-space-2);
+    min-block-size: 2rem;
+    box-sizing: border-box;
+    padding: var(--trove-space-1) var(--trove-space-2);
+    border-radius: var(--trove-radius-s);
+    color: inherit;
+    font-size: 0.875rem;
+    text-decoration: none;
+
+    &:hover {
+      background: var(--trove-menu-hover);
+    }
+
+    &:focus-visible {
+      outline: var(--trove-focus-ring);
+      outline-offset: -2px;
+    }
+
+    &[aria-current='true'] {
+      font-weight: 600;
+    }
+  }
+
+  .switcher-key {
+    margin-inline-start: auto;
+    color: var(--trove-nav-fg-muted);
+    font-size: 0.75rem;
+  }
+
+  .switcher-empty {
+    margin: var(--trove-space-1);
+    font-size: 0.875rem;
+  }
+
+  .switcher-all {
+    border-block-start: 1px solid var(--trove-border);
+    border-radius: 0;
+    margin-block-start: var(--trove-space-1);
   }
 
   .sidebar nav {

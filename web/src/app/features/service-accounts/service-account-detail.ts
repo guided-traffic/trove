@@ -28,7 +28,7 @@ import { TokenManager, TokenOwnerScope } from '../tokens/token-manager';
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@sa.heading">Service account</h1>
       @if (projectKey(); as key) {
-        <a class="btn btn-tertiary" [routerLink]="['/admin/projects', key]" i18n="@@sa.back-project">Back to the project</a>
+        <a class="btn btn-tertiary" [routerLink]="['/projects', key, 'service-accounts']" i18n="@@sa.back-project">All service accounts of the project</a>
       } @else {
         <a class="btn btn-tertiary" routerLink="/admin/service-accounts" i18n="@@sa.back">All service accounts</a>
       }
@@ -37,7 +37,7 @@ import { TokenManager, TokenOwnerScope } from '../tokens/token-manager';
     @if (projectKey(); as key) {
       <p class="subject">
         <ng-container i18n="@@sa.project">Service account of project</ng-container>&ngsp;
-        <a [routerLink]="['/admin/projects', key]" translate="no">{{ key }}</a>
+        <span translate="no">{{ key }}</span>
       </p>
     }
     @if (!canWrite()) {
@@ -220,7 +220,7 @@ export class ServiceAccountDetail {
       await this.api.deleteServiceAccount(this.name(), this.projectKey());
       this.notifier.status($localize`:@@sa.deleted:Service account deleted.`);
       const projectKey = this.projectKey();
-      await this.router.navigate(projectKey ? ['/admin/projects', projectKey] : ['/admin/service-accounts']);
+      await this.router.navigate(projectKey ? ['/projects', projectKey, 'service-accounts'] : ['/admin/service-accounts']);
     } catch (e) {
       this.actionError.set(asApiError(e));
     }

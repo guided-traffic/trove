@@ -19,7 +19,7 @@ export function safeHttpUrl(value: unknown): string | null {
 /** The rel of every link that leaves trove for an address a package author chose. */
 export const EXTERNAL_REL = 'nofollow noopener noreferrer';
 
-/** The router commands of a package page: the name keeps its slash as a separator (`@team-a/ui`). */
-export function packageCommands(format: string, name: string): string[] {
-  return ['/packages', format, ...name.split('/')];
+/** The router commands of a package page in its project: the name keeps its slash as a separator (`@team-a/ui`). */
+export function packageCommands(project: string, format: string, name: string): string[] {
+  return ['/projects', project, 'packages', format, ...name.split('/')];
 }
