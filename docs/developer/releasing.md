@@ -304,7 +304,7 @@ pod deleted gracefully under 50 exchanging jobs ([e2e.md](e2e.md#the-ci-tests)).
 Job `e2e-vuln` runs the sets `vuln` and `vuln-long` (edge ports 8095 and 8096, clusters `trove-vuln-<run id>` and `trove-vuln-long-<run id>`, reports and
 artifacts `e2e-vuln-report-<set>`, `e2e-vuln-artifacts-<set>`, `e2e-vuln-playwright-<set>`, kept 14 days): the short set as in Test and Release, and the long
 set, R-VULN-029's drain and E4b.8: a full synchronization of 100,000 npm records drained mid-run (`kubectl drain` of the node that runs the job: it is `queued`
-again with its attempt unchanged and another `worker` completes it from its checkpoint), and the client tests once more with Valkey stopped. A red long leg is
+again with its attempt unchanged and another `worker` completes it from its checkpoint), and the client tests once more with Valkey stopped, and E5.13's scanning under failures: a worker killed in the middle of a full synchronization, a PostgreSQL switchover during an evaluation, and four blocked versions probed through a node drain and the Valkey and PostgreSQL failovers ([e2e.md](e2e.md#the-vulnerability-tests)). A red long leg is
 a finding and holds nothing ([e2e.md](e2e.md#the-vulnerability-tests)). By hand: `make dev-up && make e2e SET=vuln-long`.
 
 Job `e2e-mirror` runs the sets `mirror` and `mirror-long` (edge ports 8098 and 8099, clusters `trove-mirror-<run id>` and `trove-mirror-long-<run id>`, reports and

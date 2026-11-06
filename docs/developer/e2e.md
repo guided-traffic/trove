@@ -93,6 +93,7 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
   mirror_ui_test.go         the browser journey of the Mirror tab in the profile `mirror`
   mirror_long_test.go       the long set `mirror-long`: the drain of the node of the process that runs a pass
   mirror_long_fault_test.go the failure suite of R-HA-052 on a pass (`mirror-long`): the process lost three ways, the upstream throttling across a drain and a kill, a PostgreSQL switchover and a Valkey failover
+  vuln_failures_test.go     the vulnerability scanning under the failure suite (E5.13): a switchover during an evaluation, the block through a drain and the primaries' failovers, a killed worker
   clients/                  the npm client matrix image (below): package.json + package-lock.json, bin/ wrappers, shim/npm, fwd/ forwarder,
                             Dockerfile, build.sh, check-pins.mjs
 web/e2e/                    the Playwright journeys of R-UI-047 (TypeScript, in the web workspace's lockfile)
@@ -2472,6 +2473,9 @@ Every test runs against the one environment; the npm rows and the SDKs run side 
 | `TestVuln_R_VULN_022_Journeys` | R-VULN-022, R-VULN-023, E4b.6 | [web/e2e/vuln](../../web/e2e/vuln) with axe: the report with its filters and the dismissal, the bulk triage, the CSV, 390 px, a reader without selection, the package page with its tab, the block and the lift, the sources screen and the advisory page |
 | `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` | R-VULN-004, E4b.1 | the source holds 100,000 filler records; `vuln-sync-osv-full` runs on a worker; once it has committed batches the node is drained (the PostgreSQL primary is moved away first): the job runs on a second worker (so it was released and queued again; the queued state is logged when the one-second sampling sees it), its attempt is unchanged (a queued job shows one less), the second run starts at or after the checkpoint, the ecosystem holds every record |
 | `TestVulnLong_R_VULN_027_ClientsWithValkeyStopped` | R-VULN-027, E4b.8 | the tests above that drive clients (audits, the endpoint's body, the blocked installs and restores, the NuGet resource) once more with Valkey stopped |
+| `TestVulnLong_R_VULN_011_SwitchoverDuringEvaluation` | R-VULN-011, R-HA-052, E5.13 | the repository `npm-vuln-bulk` stores 20,000 packages with four versions each (0.9.0, 1.0.0, 1.0.1, 1.1.0), seeded in the tables under the names of the source's filler records; a full sync imports the 20,000 filler records (introduced 0, fixed 1.0.1), which queues them all; once the `vuln-evaluate` job has committed batches, `failover.sh` switches the PostgreSQL primary over. The job ends `succeeded` (a later attempt is allowed and logged); the findings of the repository are exactly the 40,000 of the two affected versions of every name (missing and unexpected computed with `EXCEPT` against the rule, not counted), no identity exists twice, every finding has exactly one `detected` event, nothing waits in `vuln_pending_evaluation`, no finding lacks its package or version |
+| `TestVulnLong_R_VULN_015_BlockHoldsDuringFailures` | R-VULN-015, R-VULN-016, R-VULN-027, R-HA-059, R-HA-052, E5.13 | four versions are probed through the edge by one loop each, 10 requests a second as GET, HEAD and Range GET in turn, with the replica named in `X-Trove-Replica`: the tarball of an npm version and the `.nupkg` of a NuGet version, each blocked in triage after its cache fill, and the tarball of `trove-test-mal` and the `.nupkg` of `Contoso.Json.Codecs` (malicious, never stored). Three faults, each after 10 to 20 s of probing and followed by 30 to 40 s: the drain of the node of variant A (R-HA-059; the PostgreSQL and Valkey primaries are moved away first), `valkey-failover.sh`, `failover.sh`. Every answer is `403` (the GET with `vulnerability_blocked` in the body); a `200`, `206` or `304` is a breach of R-VULN-015, any other status or a transport error a failed request; the drain's probes reach the three `packages` replicas and the replacement of the drained one |
+| `TestVulnLong_R_VULN_004_FullSyncWorkerKilledMidRun` | R-VULN-004, H-523, E5.13 | the source holds 60,000 filler records; once the full sync has committed batches its worker pod is deleted with `--grace-period=0 --force`: the reaper ends the job `failed` with `attempts_exhausted` within the lease plus a poll (MaxAttempts is 1, a killed worker releases nothing, so this is not a resumption); the next full run succeeds, the ecosystem is `complete` and holds the source's records, the advisory table agrees with the state, `vuln_sync_touched` is empty, the evaluation catches up |
 
 Yarn 4 fetches the package document of every package it audits from the registry it audits through (`YN0035`, a `404` of `npm-local` for a package only `npm-remote` holds), so its trees are per repository, each of what that repository
 holds; npm and pnpm audit one tree through all three.
@@ -2481,7 +2485,8 @@ holds; npm and pnpm audit one tree through all three.
 ```shell
 make image VERSION=dev && make dev-up
 make e2e SET=vuln          # the short set: the profile, the upstreams, the clients and the tests (about 20 minutes)
-make e2e SET=vuln-long     # the drain of a full sync, and the client tests with Valkey stopped
+make e2e SET=vuln-long     # the drain of a full sync, the client tests with Valkey stopped, and the scanning under the failure suite (E5.13)
+TROVE_E2E_RUN='^TestVulnLong_R_VULN_015_' make e2e SET=vuln-long   # one of them: the blocks through a drain and the failovers (about 8 minutes of probing plus the drain)
 TROVE_E2E_REUSE_CLIENTS=1 make e2e SET=vuln TROVE_E2E_RUN='^TestVuln_R_VULN_017_'   # one test; client pods that are running stay
 ```
 
@@ -2504,12 +2509,22 @@ the scanning ([releasing.md](releasing.md#ci)), job `e2e-vuln` of HA and Perform
 | A blocked restore and a blocked `pnpm add` succeeded | the SDK's global packages folder and pnpm 11's store below `$HOME/.local` still held the version | the scenarios remove them (`rm -rf packages obj httpcache`, `wipeAll`) |
 | The findings filter `package` found nothing for a NuGet ID with capitals | the findings carry the normalized (lowercase) name and the filter compares it as it is | the tests filter with the lowercase ID; reported as a product observation |
 
+### Not yet run
+
+The three tests of E5.13 (`vuln_failures_test.go`) compile, pass `go vet -tags e2e` and the linter, and have not run on a cluster yet: the local kind cluster was held by other runs for more than 45 minutes. The first nightly run of
+`e2e-vuln` (set `vuln-long`) measures them; the sizes that may need tuning are `names` (20,000 packages) of the evaluation test, which must still be running when the switchover takes effect (the test fails with "too small" otherwise),
+and the 60,000 filler records of the killed-worker test. Numbers (durations, attempts of the evaluation job, requests per replica) belong in this section once a run has produced them.
+
 ### Not covered by the vulnerability tests
 
 - The reference lockfile's recorded public answer (R-VULN-017's first criterion, E4b.5): no recorded answer exists in the repository (H-494).
 - Mode `repository` and the offline import (R-VULN-005), the fault cases of R-VULN-004, the matching corpus and the lifecycle's re-detection are the integration tier's.
 - `pg_stat_statements` over 10,000 cached downloads (R-VULN-015) and the object-store GET counters of a late advisory (R-VULN-011): the e2e profile has neither.
-- Restore of a backup (E4b.7): phase 7.
+- Restore of a backup (E4b.7) and E5.13's last clause (blocks and triage restored and reconciled after the first sync): they need `trove backup` and the restore, which are
+  not built; the emulated restore state of the integration tier (`test/integration/vulnrestore`, H-492) is what exists.
+- Drain variants B to E of R-HA-059 for the blocks (E5.13): B and C need the node of the Valkey and PostgreSQL primaries drained with their own rules, D the pooler profile, E the backup
+  job; `TestVulnLong_R_VULN_015_BlockHoldsDuringFailures` runs variant A and the planned Valkey failover and the PostgreSQL switchover as stand-ins for B and C without their node drain.
+- A worker killed mid-sync is not resumed (Q-VULN-89): the test asserts the specified outcome, a `failed` job and a clean next run; H-523 is the missing failure record.
 - A Windows row and Visual Studio: the NuGet clients image is Linux.
 
 ## The mirror tests

@@ -50,8 +50,9 @@
 #                       edge, the scanning reading the test advisory source) with the npm, pnpm, Yarn 4 and dotnet clients, the audits,
 #                       the blocked installs and restores, the replicas with Valkey stopped and the browser journeys; CI: job e2e-vuln
 #                       (a change to the scanning) and the nightly HA and Performance workflow
-#   e2e.sh vuln-long    the long scenarios of R-VULN-029: a full synchronization drained mid-run, and the client tests once more with
-#                       Valkey stopped (nightly, dispatch, locally)
+#   e2e.sh vuln-long    the long scenarios of R-VULN-029: a full synchronization drained mid-run and one whose worker is killed, the client tests once
+#                       more with Valkey stopped, a PostgreSQL switchover during an evaluation, and the block of four versions through a node
+#                       drain and the failovers of Valkey and PostgreSQL (E5.13; nightly, dispatch, locally)
 #   e2e.sh mirror       the short scenarios of R-REPO-059: the chart in the `mirror` profile (three api and three packages replicas, the main worker
 #                       and a pool of two processes that claim the queue `mirror` alone, the scatter edge), npm and NuGet remotes in mode mirror
 #                       over the counting test upstreams (the npm one also under the names of the public registry, through a CoreDNS rewrite
@@ -146,7 +147,7 @@ case "$set_name" in
   # The vulnerability scanning (R-VULN-029, docs/developer/e2e.md#the-vulnerability-tests): the `vuln` profile (up.sh, values-vuln.yaml),
   # the three test upstreams (npm, NuGet, advisory source) and three client pods of each kind. `vuln` is the short scenarios
   # (CI: job e2e-vuln on a change to the scanning, and nightly); `vuln-long` the drain of a full synchronization and the client tests
-  # with Valkey stopped (nightly, on dispatch, locally: a red long leg is a finding, not a blocker, owner 2026-11-01).
+  # with Valkey stopped, and the scanning under the failure suite of E5.13 (nightly, on dispatch, locally: a red long leg is a finding, not a blocker, owner 2026-11-01).
   vuln) run='^TestVuln_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 TROVE_E2E_OSVSTUB=1 ;;
   vuln-long) run='^TestVulnLong_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 TROVE_E2E_OSVSTUB=1 ;;
   # <<< M4b vuln
