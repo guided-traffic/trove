@@ -211,7 +211,7 @@ type evalState struct {
 	// roles are the subject's project roles, the highest over its user and its groups per
 	// project (R-AUTHZ-026), derived once; empty for a credential that carries no role
 	// (Q-AUTHZ-215). A decision looks a repository's project up in it.
-	roles []membership
+	roles subjectRoles
 }
 
 func (e *Engine) newEvalState(idx *Index, sub Subject) *evalState {
@@ -329,7 +329,7 @@ func (st *evalState) grantedBy(a Action, r *repoInfo, repoLevel bool, pkg, path 
 			}
 		}
 	}
-	if role := roleIn(st.roles, r.proj); role != ProjectRoleNone && roleActions(role, r).Has(a) {
+	if role := st.roles.in(r.proj); role != ProjectRoleNone && roleActions(role, r).Has(a) {
 		out = append(out, r.proj.source(role))
 	}
 	return out

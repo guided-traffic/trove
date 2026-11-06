@@ -7,7 +7,8 @@ package audit
 // entry of R-AUTHZ-031 so that a restore cannot bring the access back: a project
 // deleted, a member removed, a role changed (the comparator replays only a role that
 // is not higher, so a raise is journaled too and never replayed as one), a
-// repository moved to another project.
+// repository moved to another project. The display name and the description of a
+// project are not access-bearing, so its update is not journaled (R-AUTHZ-031).
 //
 // Project service accounts and their tokens are recorded by the identity events
 // (serviceaccount.*, token.*), which carry the member project.
@@ -21,24 +22,16 @@ const (
 	// EventRepositoryMoved is the move of a repository to another project (R-REPO-060): the
 	// repository's ID, the source and the target project.
 	EventRepositoryMoved = "repository.moved"
-
-	// The events of the project administrators and of the assignment of repositories, which
-	// the project model replaced (Q-AUTHZ-207, Q-REPO-217). Nothing records them any more;
-	// they stay registered while the Bastion's feed (internal/bastionmain) still names them.
-	EventProjectAdminAdded           = "authz.project.admin_added"
-	EventProjectAdminRemoved         = "authz.project.admin_removed"
-	EventProjectRepositoryAssigned   = "authz.project.repository_assigned"
-	EventProjectRepositoryUnassigned = "authz.project.repository_unassigned"
 )
 
 func init() {
 	// before and after of an update hold displayName and description, which are not
-	// access-bearing: the journal entry names the project only.
+	// access-bearing; the journal entry of a delete names the project.
 	project := `{"type":"object","properties":{"epoch":{"type":"integer"},"project":{"type":"string"},"projectId":{"type":"string"},` +
 		`"version":{"type":"integer"},"before":{"type":["object","null"]},"after":{"type":["object","null"]},` +
 		`"policiesDeleted":{"type":"array","maxItems":1000,"items":{"type":"string"}}}}`
 	Register(EventType{Name: EventProjectCreated, Category: CategoryAuthz, Mode: Transactional, Schema: project})
-	Register(EventType{Name: EventProjectUpdated, Category: CategoryAuthz, Mode: Transactional, Journal: JournalRevocation, Schema: project})
+	Register(EventType{Name: EventProjectUpdated, Category: CategoryAuthz, Mode: Transactional, Schema: project})
 	Register(EventType{Name: EventProjectDeleted, Category: CategoryAuthz, Mode: Transactional, Journal: JournalRevocation, Schema: project})
 	// role is the role a member was added or removed with; before and after the roles of a
 	// change (reader, developer, maintainer, owner).
@@ -58,13 +51,4 @@ func init() {
 		`"configVersion":{"type":"integer"}},` +
 		`"required":["epoch","repository","repositoryId","from","fromId","to","toId"],"additionalProperties":false}`
 	Register(EventType{Name: EventRepositoryMoved, Category: CategoryRepository, Mode: Transactional, Journal: JournalRevocation, Schema: moved})
-
-	admin := `{"type":"object","properties":{"epoch":{"type":"integer"},"project":{"type":"string"},"projectId":{"type":"string"},` +
-		`"principal":{"type":"string"},"principalId":{"type":"string"}}}`
-	Register(EventType{Name: EventProjectAdminAdded, Category: CategoryAuthz, Mode: Transactional, Schema: admin})
-	Register(EventType{Name: EventProjectAdminRemoved, Category: CategoryAuthz, Mode: Transactional, Journal: JournalRevocation, Schema: admin})
-	assignment := `{"type":"object","properties":{"epoch":{"type":"integer"},"project":{"type":"string"},"projectId":{"type":"string"},` +
-		`"repository":{"type":"string"},"repositoryId":{"type":"string"},"moved":{"type":"boolean"},"otherProject":{"type":"string"}}}`
-	Register(EventType{Name: EventProjectRepositoryAssigned, Category: CategoryAuthz, Mode: Transactional, Schema: assignment})
-	Register(EventType{Name: EventProjectRepositoryUnassigned, Category: CategoryAuthz, Mode: Transactional, Journal: JournalRevocation, Schema: assignment})
 }

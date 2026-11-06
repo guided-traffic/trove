@@ -90,11 +90,11 @@ func TestR_BAS_015_TheMappingTableOfTheFeed(t *testing.T) {
 			Action:  audit.EventSettingsAuthChanged,
 			Details: []byte(`{"before":{"anonymousAccess":true},"after":{"anonymousAccess":false}}`),
 		}, []rawEntry{{kind: iface.FeedSettings}, {kind: iface.FeedGrants}}},
-		{"npm.unpublish names the repository", FeedEvent{Action: audit.EventNPMUnpublish, Repository: "npm-local"}, []rawEntry{{kind: iface.FeedContent, repository: "npm-local"}}},
-		{"package.deleted names the repository", FeedEvent{Action: audit.EventPackageDeleted, Repository: "nuget-local"}, []rawEntry{{kind: iface.FeedContent, repository: "nuget-local"}}},
+		{"npm.unpublish names the repository", FeedEvent{Action: audit.EventNPMUnpublish, Repository: "web/npm-local"}, []rawEntry{{kind: iface.FeedContent, repository: "web/npm-local"}}},
+		{"package.deleted names the repository", FeedEvent{Action: audit.EventPackageDeleted, Repository: "web/nuget-local"}, []rawEntry{{kind: iface.FeedContent, repository: "web/nuget-local"}}},
 		{"a withdrawal without a repository yields no entry", FeedEvent{Action: audit.EventPackageDeleted}, nil},
 		{"authz.ownership.removed bounds writes", FeedEvent{Action: "authz.ownership.removed"}, nil},
-		{"package.published reserves numbers", FeedEvent{Action: audit.EventPackagePublished, Repository: "npm-local"}, nil},
+		{"package.published reserves numbers", FeedEvent{Action: audit.EventPackagePublished, Repository: "web/npm-local"}, nil},
 		{"an event of no table row", FeedEvent{Action: "project.updated"}, nil},
 	}
 	for _, c := range cases {
@@ -150,7 +150,7 @@ func TestR_BAS_015_EveryJournaledEventIsClassified(t *testing.T) {
 		if !ok || typ.Journal != audit.JournalRevocation {
 			t.Errorf("%s is listed as yielding no entry but is no journaled event: drop it from the list", name)
 		}
-		if got := mapEvent(FeedEvent{Action: name, Repository: "npm-local", ResourceID: "0192f1c4-0000-7000-8000-0000000000a1"}, "default"); got != nil {
+		if got := mapEvent(FeedEvent{Action: name, Repository: "web/npm-local", ResourceID: "0192f1c4-0000-7000-8000-0000000000a1"}, "default"); got != nil {
 			t.Errorf("%s is listed as yielding no entry and yields %+v", name, got)
 		}
 	}
@@ -159,20 +159,46 @@ func TestR_BAS_015_EveryJournaledEventIsClassified(t *testing.T) {
 	}
 }
 
-// TestR_BAS_015_UnassigningARepositoryDropsEveryPermissionAnswer: a repository that leaves its project leaves the
-// project's policies behind (R-AUTHZ-026), so every caller's read of it may have narrowed. A content entry would
-// not do: the Bastion drops the URL answers of a repository on it, not the shape answers (R-BAS-026), so a full
-// answer the unassignment ended would be kept (Q-BAS-120).
-func TestR_BAS_015_UnassigningARepositoryDropsEveryPermissionAnswer(t *testing.T) {
+// TestR_BAS_015_MovingARepositoryDropsEveryPermissionAnswer: a repository that moves leaves its project's roles and
+// policies behind and changes its address (R-REPO-060), so every caller's read of it may have narrowed. A content
+// entry would not do: the Bastion drops the URL answers of a repository on it, not the shape answers (R-BAS-026), so
+// a full answer the move ended would be kept (Q-BAS-120).
+func TestR_BAS_015_MovingARepositoryDropsEveryPermissionAnswer(t *testing.T) {
 	ev := FeedEvent{
-		Action: audit.EventProjectRepositoryUnassigned, Repository: "acme-npm",
-		Details: []byte(`{"epoch":7,"project":"acme","projectId":"p","repository":"acme-npm","repositoryId":"r","moved":false}`),
+		Action: eventRepositoryMoved, Repository: "web/npm-local",
+		Details: []byte(`{"epoch":7,"repository":"web/npm-local","repositoryId":"r","fromProject":"web","toProject":"data"}`),
 	}
 	if got := mapEvent(ev, "default"); !reflect.DeepEqual(got, []rawEntry{{kind: iface.FeedGrants}}) {
 		t.Errorf("entries = %+v, want one grants entry", got)
 	}
-	if !slices.Contains(FeedActions(), audit.EventProjectRepositoryUnassigned) {
-		t.Error("the feed's query does not read authz.project.repository_unassigned")
+	if !slices.Contains(FeedActions(), eventRepositoryMoved) {
+		t.Error("the feed's query does not read repository.moved")
+	}
+}
+
+// TestR_BAS_015_AMemberLosingARoleDropsEveryPermissionAnswer: a member's role grants reads on every repository of the
+// project (R-AUTHZ-026), so a removal or a changed role narrows every answer of the member; the event names the
+// project, not the repositories, so only grants is exact enough.
+func TestR_BAS_015_AMemberLosingARoleDropsEveryPermissionAnswer(t *testing.T) {
+	for _, action := range []string{eventProjectMemberRemoved, eventProjectMemberChanged} {
+		ev := FeedEvent{Action: action, Details: []byte(`{"epoch":7,"project":"web","projectId":"p","principal":"group:web-devs","principalId":"g"}`)}
+		if got := mapEvent(ev, "default"); !reflect.DeepEqual(got, []rawEntry{{kind: iface.FeedGrants}}) {
+			t.Errorf("%s: entries = %+v, want one grants entry", action, got)
+		}
+		if !slices.Contains(FeedActions(), action) {
+			t.Errorf("the feed's query does not read %s", action)
+		}
+	}
+}
+
+// TestR_BAS_015_ContentEntriesCarryQualifiedNames: the repository of a withdrawal event is the qualified name the
+// audit row holds, and the entry lists it and every virtual repository over it by qualified name.
+func TestR_BAS_015_ContentEntriesCarryQualifiedNames(t *testing.T) {
+	ev := FeedEvent{ID: "0192f2a0-0000-7000-8000-000000000003", Action: audit.EventNPMUnpublish, Repository: "web/npm-local"}
+	l := lookups{closure: map[string][]string{"web/npm-local": {"web/npm-local", "data/npm-all", "web/npm-all"}}}
+	got := l.entries(ev, mapEvent(ev, "default"))
+	if len(got) != 1 || got[0].Kind != iface.FeedContent || !reflect.DeepEqual(got[0].Repositories, []string{"web/npm-local", "data/npm-all", "web/npm-all"}) {
+		t.Errorf("entries = %+v", got)
 	}
 }
 

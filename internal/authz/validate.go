@@ -305,10 +305,12 @@ func (s *Service) resolve(ctx context.Context, in PolicyInput, stored bool, opts
 	if in.ResourceType == "" {
 		rp.in.ResourceType = "repository"
 	}
-	if !policyNameRE.MatchString(in.Name) {
-		// The name of a project's policy is its name within the project; the project is
-		// the policy's member project, never a part of the name (Q-AUTHZ-209).
+	if project, name := splitPolicyName(in.Name); !policyNameRE.MatchString(name) {
 		ps = append(ps, field("/name", "invalid_name", "The name matches ^[a-z0-9][a-z0-9._-]{0,127}$."))
+	} else if !sameProject(project, in.Project) {
+		// The stored name of a project's policy carries the key of its project and that of a
+		// global policy none (Q-AUTHZ-209, StoredPolicyName).
+		ps = append(ps, field("/name", "invalid_name", "The stored name of a project's policy is <projectKey>/<name> of its project; a global policy has no project in its name."))
 	}
 	if utf8.RuneCountInString(in.Description) > 1024 {
 		ps = append(ps, field("/description", "invalid_description", "The description has at most 1024 characters."))

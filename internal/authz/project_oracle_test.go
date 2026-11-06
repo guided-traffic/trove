@@ -85,7 +85,7 @@ func TestR_AUTHZ_026_AProjectPolicyNamesNoAutoJoinGroup(t *testing.T) {
 	})
 	t.Run("a global policy may name it", func(t *testing.T) {
 		in := projectPolicy("p", "web", "it/npm-internal", Entry{"group:everyone", []string{"read"}})
-		in.Project = nil
+		in.Name, in.Project = "p", nil
 		if p, _ := firstProblem(t, s, in); p.Code != "" {
 			t.Fatalf("%+v", p)
 		}

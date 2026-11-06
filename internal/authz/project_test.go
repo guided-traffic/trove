@@ -321,13 +321,19 @@ func projectService() *Service {
 	})
 }
 
+// projectPolicy is a policy of the project: its name within the project is stored as <project>/<name>
+// (StoredPolicyName); global() turns it into a global policy named name.
 func projectPolicy(name, project string, selector string, entries ...Entry) PolicyInput {
-	return PolicyInput{Name: name, Project: &project, Resources: Resources{Repositories: []string{selector}}, Entries: entries}
+	return PolicyInput{Name: project + "/" + name, Project: &project, Resources: Resources{Repositories: []string{selector}}, Entries: entries}
 }
 
 func TestR_AUTHZ_026_ProjectPolicyValidation(t *testing.T) {
 	s := projectService()
-	global := func(in PolicyInput) PolicyInput { in.Project = nil; return in }
+	global := func(in PolicyInput) PolicyInput {
+		_, in.Name = splitPolicyName(in.Name)
+		in.Project = nil
+		return in
+	}
 	for _, tc := range []struct {
 		name string
 		in   PolicyInput
@@ -352,7 +358,9 @@ func TestR_AUTHZ_026_ProjectPolicyValidation(t *testing.T) {
 		{"a service account of another project", projectPolicy("web-shopbot", "web", "web-npm", Entry{"sa:shop-bot", []string{"deploy"}}), errs.CodePrincipalOutsideProject, "/entries/0/principal"},
 		{"a global policy naming a project service account", global(projectPolicy("p", "web", "it/npm-internal", Entry{"sa:web-bot", []string{"read"}})), errs.CodePrincipalOutsideProject, "/entries/0/principal"},
 		{"a global policy may name a global service account", global(projectPolicy("p", "web", "it/npm-internal", Entry{"sa:ci-bot", []string{"read"}})), "", ""},
-		{"Q-AUTHZ-209 a project policy's name is its name within the project", projectPolicy("web/read", "web", "web-npm"), "invalid_name", "/name"},
+		{"Q-AUTHZ-209 the stored name of a project policy carries its project", PolicyInput{Name: "read", Project: ptr("web"), Resources: Resources{Repositories: []string{"web-npm"}}}, "invalid_name", "/name"},
+		{"Q-AUTHZ-209 and no other project", PolicyInput{Name: "shop/read", Project: ptr("web"), Resources: Resources{Repositories: []string{"web-npm"}}}, "invalid_name", "/name"},
+		{"Q-AUTHZ-209 the name within the project follows the name rule", projectPolicy("Read", "web", "web-npm"), "invalid_name", "/name"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p, _ := firstProblem(t, s, tc.in)
@@ -385,11 +393,12 @@ func TestR_AUTHZ_026_ProjectPolicyValidation(t *testing.T) {
 	t.Run("Q-AUTHZ-209 the same name in two projects and once instance-wide are three policies", func(t *testing.T) {
 		web, mobile := "web", "mobile"
 		names := map[string]bool{}
-		for _, in := range []PolicyInput{{Name: "npm-read", Project: &web}, {Name: "npm-read", Project: &mobile}, {Name: "npm-read"}} {
-			names[in.StoredName()] = true
-			project, name := splitPolicyName(in.StoredName())
-			if name != "npm-read" || !sameProject(project, in.Project) {
-				t.Errorf("%s reads back as %v %q", in.StoredName(), project, name)
+		for _, project := range []*string{&web, &mobile, nil} {
+			stored := StoredPolicyName(project, "npm-read")
+			names[stored] = true
+			p, name := splitPolicyName(stored)
+			if name != "npm-read" || !sameProject(p, project) {
+				t.Errorf("%s reads back as %v %q", stored, p, name)
 			}
 		}
 		if len(names) != 3 || !names["web/npm-read"] || !names["npm-read"] {
@@ -423,11 +432,11 @@ func TestR_AUTHZ_026_ListFilterByProject(t *testing.T) {
 	web, shop := "web", "shop"
 	all := []Policy{
 		{PolicyInput: PolicyInput{Name: "global"}},
-		{PolicyInput: PolicyInput{Name: "a", Project: &web, Resources: Resources{Repositories: []string{"*"}}}},
-		{PolicyInput: PolicyInput{Name: "a", Project: &shop, Resources: Resources{Repositories: []string{"*"}}}},
+		{PolicyInput: PolicyInput{Name: "web/a", Project: &web, Resources: Resources{Repositories: []string{"*"}}}},
+		{PolicyInput: PolicyInput{Name: "shop/a", Project: &shop, Resources: Resources{Repositories: []string{"*"}}}},
 	}
 	got, err := s.Select(t.Context(), all, ListFilter{Project: "web"})
-	if err != nil || len(got) != 1 || got[0].StoredName() != "web/a" {
+	if err != nil || len(got) != 1 || got[0].Name != "web/a" {
 		t.Fatalf("%v %v", got, err)
 	}
 	if _, err := s.Select(t.Context(), all, ListFilter{Project: "nope"}); err == nil {
@@ -435,7 +444,7 @@ func TestR_AUTHZ_026_ListFilterByProject(t *testing.T) {
 	}
 	got, err = s.Select(t.Context(), all, ListFilter{Repository: "web/web-npm"})
 	// The global policy has no selector, so only the web policy covers web-npm.
-	if err != nil || len(got) != 1 || got[0].StoredName() != "web/a" {
+	if err != nil || len(got) != 1 || got[0].Name != "web/a" {
 		t.Fatalf("a repository filter must keep a project policy only for its project's repositories: %v %v", got, err)
 	}
 	if _, err := s.Select(t.Context(), all, ListFilter{Repository: "web-npm"}); err == nil {

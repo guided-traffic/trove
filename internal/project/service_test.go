@@ -168,14 +168,10 @@ func TestR_AUTHZ_031_ProjectEventsCarryTheirJournalEntries(t *testing.T) {
 	before := stateOf(Project{DisplayName: "Web"})
 	after := stateOf(p)
 
-	t.Run("R-AUTHZ-031 an update journals the identity of the project", func(t *testing.T) {
+	t.Run("R-AUTHZ-031 an update changes nothing access-bearing and journals nothing", func(t *testing.T) {
 		ev := projectEvent(audit.EventProjectUpdated, actor, p, before, after, 9, nil)
-		j := rawOf(t, ev.Journal)
-		if j["projectId"] != "p1" || j["project"] != "web" {
-			t.Errorf("identity: %v", j)
-		}
-		if _, leaked := j["before"]; leaked {
-			t.Errorf("the journal holds what is not access-bearing: %v", j)
+		if ev.Journal != nil || ev.Project != "web" {
+			t.Errorf("journal %s, project %q", ev.Journal, ev.Project)
 		}
 		if d := rawOf(t, ev.Details); d["epoch"] != float64(9) || d["version"] != float64(4) {
 			t.Errorf("details: %v", d)
@@ -201,7 +197,7 @@ func TestR_AUTHZ_031_ProjectEventsCarryTheirJournalEntries(t *testing.T) {
 	})
 	t.Run("R-AUTHZ-031 the flagged types of the registry are the ones that journal", func(t *testing.T) {
 		for name, want := range map[string]bool{
-			audit.EventProjectCreated: false, audit.EventProjectUpdated: true, audit.EventProjectDeleted: true,
+			audit.EventProjectCreated: false, audit.EventProjectUpdated: false, audit.EventProjectDeleted: true,
 			audit.EventProjectMemberAdded: false, audit.EventProjectMemberChanged: true, audit.EventProjectMemberRemoved: true,
 			audit.EventRepositoryMoved: true,
 		} {

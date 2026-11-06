@@ -32,9 +32,10 @@ type Entry struct {
 
 // PolicyInput is what a client writes (R-AUTHZ-021).
 type PolicyInput struct {
-	// Name is the policy's name within its project, or among the policies of no project
-	// (Q-AUTHZ-209): the same name may exist in two projects and once instance-wide. The
-	// store keeps [StoredPolicyName].
+	// Name is the stored name of the policy ([StoredPolicyName]): "<projectKey>/<name>"
+	// for a policy of a project, the bare name for a global one (Q-AUTHZ-209). The same
+	// name within a project may exist in two projects and once instance-wide. The API
+	// shows a project's policy with the name within the project and the member project.
 	Name         string `json:"name"`
 	Description  string `json:"description"`
 	ResourceType string `json:"resourceType"`
@@ -52,17 +53,14 @@ type PolicyInput struct {
 // "<projectKey>/<name>" for a policy of a project, the bare name for a global one
 // (Q-AUTHZ-209). The `/` is in no project key and no policy name, so one unique column
 // holds the policies of every project and those of none. The API addresses a project's
-// policy as /api/v1/projects/<projectKey>/policies/<name> and shows the bare name with
-// the member project.
+// policy as /api/v1/projects/<projectKey>/policies/<name> and shows the name within the
+// project with the member project.
 func StoredPolicyName(project *string, name string) string {
 	if project == nil {
 		return name
 	}
 	return qname.Object{Project: *project, Name: name}.String()
 }
-
-// StoredName is [StoredPolicyName] of the policy.
-func (p PolicyInput) StoredName() string { return StoredPolicyName(p.Project, p.Name) }
 
 // splitPolicyName reads a stored policy name into its project (nil for a global policy)
 // and its name within the project.

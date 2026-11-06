@@ -88,8 +88,8 @@ func afterEpoch(tx meta.Tx, epoch *int64, fn func(ctx context.Context, tx meta.T
 
 // Create stores a new policy (R-AUTHZ-021). The answer carries the epoch the
 // write produced, for the header Trove-Authz-Epoch (R-AUTHZ-032). in.Name is the
-// name within in.Project; the policy is stored as [StoredPolicyName] and every
-// later call of this service addresses it by that name.
+// stored name ([StoredPolicyName]), by which every later call of this service
+// addresses the policy.
 func (s *Service) Create(ctx context.Context, actor Subject, in PolicyInput, opts ...WriteOption) (Policy, int64, error) {
 	var out Policy
 	var epoch int64
@@ -124,9 +124,8 @@ func (s *Service) CreateIn(ctx context.Context, tx meta.Tx, actor Subject, in Po
 		return Policy{}, problemError(problems)
 	}
 	id := newID()
-	stored := in.StoredName()
 	rows, err := qs.AuthzInsertPolicy(ctx, q.AuthzInsertPolicyParams{
-		ID: id, Name: stored, Description: in.Description, ResourceType: rp.in.ResourceType, ProjectID: rp.project, Actor: actorID(actor),
+		ID: id, Name: in.Name, Description: in.Description, ResourceType: rp.in.ResourceType, ProjectID: rp.project, Actor: actorID(actor),
 	})
 	if err != nil {
 		if rp.project != "" && postgres.IsState(err, pgForeignKeyViolation) {
@@ -136,11 +135,11 @@ func (s *Service) CreateIn(ctx context.Context, tx meta.Tx, actor Subject, in Po
 		return Policy{}, err
 	}
 	if len(rows) == 0 {
-		where := "instance-wide"
-		if in.Project != nil {
-			where = "in the project " + *in.Project
+		where, name := "instance-wide", in.Name
+		if project, bare := splitPolicyName(in.Name); project != nil {
+			where, name = "in the project "+*project, bare
 		}
-		return Policy{}, errs.E(errs.Conflict, errs.CodeAlreadyExists, fmt.Sprintf("A permission policy named %q exists %s.", in.Name, where))
+		return Policy{}, errs.E(errs.Conflict, errs.CodeAlreadyExists, fmt.Sprintf("A permission policy named %q exists %s.", name, where))
 	}
 	if err := writeChildren(ctx, qs, id, rp); err != nil {
 		return Policy{}, err
@@ -148,7 +147,7 @@ func (s *Service) CreateIn(ctx context.Context, tx meta.Tx, actor Subject, in Po
 	if err := s.o.Changes.Notify(tx, AreaAuthz, payloadVersion, changePayload{Type: "policy", ID: id}); err != nil {
 		return Policy{}, err
 	}
-	out, err := s.load(ctx, qs, stored)
+	out, err := s.load(ctx, qs, in.Name)
 	if err != nil {
 		return Policy{}, err
 	}
@@ -160,17 +159,13 @@ func (s *Service) CreateIn(ctx context.Context, tx meta.Tx, actor Subject, in Po
 }
 
 // Update replaces a policy as a whole (R-AUTHZ-021: full replacements). name is
-// the stored name ([StoredPolicyName]); the name and the project are the policy's
-// and immutable: in.Name is taken from it, and in.Project, when set, must be the
-// policy's project (Q-AUTHZ-186), when nil it is taken from the name. expected is
-// the version the client saw (If-Match); errs.AnyRevision is the deliberate blind
-// write. A different version answers 412, a missing policy 404.
+// the stored name ([StoredPolicyName]); the name and the project are immutable:
+// in.Name is taken from it, and in.Project must be the policy's project
+// (Q-AUTHZ-186). expected is the version the client saw (If-Match);
+// errs.AnyRevision is the deliberate blind write. A different version answers
+// 412, a missing policy 404.
 func (s *Service) Update(ctx context.Context, actor Subject, name string, expected int64, in PolicyInput, opts ...WriteOption) (Policy, int64, error) {
-	addressed, bare := splitPolicyName(name)
-	in.Name = bare // the name is immutable
-	if in.Project == nil {
-		in.Project = addressed
-	}
+	in.Name = name // the name is immutable
 	o := collectOptions(opts)
 	var out Policy
 	var epoch int64
@@ -350,9 +345,8 @@ func sameProject(a, b *string) bool {
 	return *a == *b
 }
 
-// List returns every policy sorted by stored name (the global ones first, then
-// those of each project by key), without warnings. The cursor paging and the
-// filters of R-AUTHZ-021 are the handler's.
+// List returns every policy sorted by stored name, without warnings. The cursor
+// paging and the filters of R-AUTHZ-021 are the handler's.
 func (s *Service) List(ctx context.Context) ([]Policy, error) {
 	var out []Policy
 	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
@@ -405,12 +399,10 @@ func (s *Service) load(ctx context.Context, qs *q.Queries, name string) (Policy,
 	})
 }
 
-// assemble reads the children of a policy row. The row's stored name becomes the name within the
-// project and the member project (Q-AUTHZ-209).
+// assemble reads the children of a policy row; the name is the stored name (Q-AUTHZ-209).
 func (s *Service) assemble(ctx context.Context, qs *q.Queries, h policyHead) (Policy, error) {
 	p := Policy{ID: h.ID, Version: h.Version, Warnings: []string{}}
-	_, p.Name = splitPolicyName(h.Name)
-	p.Description, p.ResourceType = h.Description, h.ResourceType
+	p.Name, p.Description, p.ResourceType = h.Name, h.Description, h.ResourceType
 	if h.Project != "" {
 		key := h.Project
 		p.Project = &key

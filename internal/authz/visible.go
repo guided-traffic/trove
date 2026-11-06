@@ -213,7 +213,7 @@ func (e *Engine) readShape(st *evalState, sub Subject, r *repoInfo, allEndpoint 
 			}
 		}
 	}
-	if !st.isCI && roleActions(roleIn(st.roles, r.proj), r).Has(Read) {
+	if !st.isCI && roleActions(st.roles.in(r.proj), r).Has(Read) {
 		// A project role reads every package of every repository of its project (R-AUTHZ-026).
 		any, unrestricted = true, true
 	}

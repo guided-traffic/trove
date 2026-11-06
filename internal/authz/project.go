@@ -38,33 +38,78 @@ func (p *projectInfo) roleOf(sub Subject) ProjectRole {
 	return role
 }
 
-// projectRoles derives the roles of the subject in every project it is a member of, from its user ID and
-// its group IDs, once per decision (evalState): the cost depends on the subject's groups and memberships,
-// never on the number of projects, and every later question of the decision is a lookup in the short
-// list (R-AUTHZ-015 performance target).
-func (x *Index) projectRoles(sub Subject) []membership {
-	if len(x.memberships) == 0 || !carriesRoles(sub) {
-		return nil
+// subjectRoles are the roles of one subject, one per project it is a member of: the highest over its user
+// and its groups (R-AUTHZ-026). A decision derives them once (evalState) and asks them per repository.
+type subjectRoles struct {
+	list []membership
+	// at indexes list by project once the list is longer than smallRoles, so that both the derivation and
+	// every question stay constant per membership however many projects the subject's groups are members of.
+	at map[*projectInfo]int
+}
+
+// smallRoles is the length up to which a scan of the list is cheaper than a map.
+const smallRoles = 8
+
+// find returns the index of the project in the list, -1 for none.
+func (r *subjectRoles) find(p *projectInfo) int {
+	if r.at != nil {
+		if i, ok := r.at[p]; ok {
+			return i
+		}
+		return -1
 	}
-	var out []membership
+	for i := range r.list {
+		if r.list[i].p == p {
+			return i
+		}
+	}
+	return -1
+}
+
+// in is the subject's role in the project, ProjectRoleNone for no membership and for no project.
+func (r *subjectRoles) in(p *projectInfo) ProjectRole {
+	if p == nil {
+		return ProjectRoleNone
+	}
+	if i := r.find(p); i >= 0 {
+		return r.list[i].role
+	}
+	return ProjectRoleNone
+}
+
+// merge adds one membership row, keeping the higher role of a project the list holds.
+func (r *subjectRoles) merge(m membership) {
+	if i := r.find(m.p); i >= 0 {
+		r.list[i].role = max(r.list[i].role, m.role)
+		return
+	}
+	r.list = append(r.list, m)
+	switch {
+	case r.at != nil:
+		r.at[m.p] = len(r.list) - 1
+	case len(r.list) > smallRoles:
+		r.at = make(map[*projectInfo]int, 2*len(r.list))
+		for i, o := range r.list {
+			r.at[o.p] = i
+		}
+	}
+}
+
+// projectRoles derives the roles of the subject from its user ID and its group IDs through the index's
+// memberships by principal (R-AUTHZ-015 performance target, R-ARCH-033): no query, a map lookup per ID and
+// work per membership of the subject, none per project of the installation. A credential that carries no
+// role (Q-AUTHZ-215) and an index without memberships answer the empty set without work.
+func (x *Index) projectRoles(sub Subject) subjectRoles {
+	var out subjectRoles
+	if len(x.memberships) == 0 || !carriesRoles(sub) {
+		return out
+	}
 	add := func(id string) {
 		if id == "" {
 			return
 		}
 		for _, m := range x.memberships[id] {
-			merged := false
-			for i := range out {
-				if out[i].p == m.p {
-					if m.role > out[i].role {
-						out[i].role = m.role
-					}
-					merged = true
-					break
-				}
-			}
-			if !merged {
-				out = append(out, m)
-			}
+			out.merge(m)
 		}
 	}
 	add(sub.ID)
@@ -72,19 +117,6 @@ func (x *Index) projectRoles(sub Subject) []membership {
 		add(g.ID)
 	}
 	return out
-}
-
-// roleIn looks the project up in the roles a decision derived (projectRoles).
-func roleIn(roles []membership, p *projectInfo) ProjectRole {
-	if p == nil {
-		return ProjectRoleNone
-	}
-	for _, m := range roles {
-		if m.p == p {
-			return m.role
-		}
-	}
-	return ProjectRoleNone
 }
 
 // inForce is the role as the credential may exercise it: the administration of an Owner needs a UI
@@ -106,11 +138,11 @@ func (e *Engine) MembershipsOn(idx *Index, sub Subject) []Membership {
 		return nil
 	}
 	roles := idx.projectRoles(sub)
-	if len(roles) == 0 {
+	if len(roles.list) == 0 {
 		return nil
 	}
-	out := make([]Membership, 0, len(roles))
-	for _, m := range roles {
+	out := make([]Membership, 0, len(roles.list))
+	for _, m := range roles.list {
 		out = append(out, Membership{Key: m.p.key, Role: inForce(m.role, sub)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
