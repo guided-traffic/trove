@@ -22,7 +22,7 @@ import { projectRoleLabel } from './project-roles';
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@projects-home.heading">Projects</h1>
       @if (canCreate()) {
-        <button class="btn btn-confirm" type="button" (click)="create()" i18n="@@projects.add">New project</button>
+        <button class="btn btn-confirm" type="button" (click)="create()" i18n="@@projects-home.add">New project</button>
       }
     </header>
     <p i18n="@@projects-home.hint">
