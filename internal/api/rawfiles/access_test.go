@@ -30,7 +30,7 @@ type decider struct {
 	begins  int
 	issued  []*authz.Index
 	asked   []*authz.Index
-	keys    [][]string
+	keys    [][]qname.Repo
 	recordN int
 }
 
@@ -40,7 +40,7 @@ func (d *decider) Begin(_ context.Context, _ authz.Subject, keys ...qname.Repo) 
 	d.begins++
 	idx := new(authz.Index)
 	d.issued = append(d.issued, idx)
-	d.keys = append(d.keys, qkeys(keys))
+	d.keys = append(d.keys, keys)
 	return idx, nil
 }
 
@@ -120,11 +120,10 @@ func (s *store) Served(context.Context, items.ServedEvent) {}
 type repos struct{}
 
 func (repos) ByName(_ context.Context, name qname.Repo) (repository.Repository, error) {
-	key := name.Key
-	if key != "generic-local" {
+	if name != qr("generic-local") {
 		return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository")
 	}
-	return repository.Repository{ID: "5", Name: qr(key), Class: repository.Local, Format: "generic"}, nil
+	return repository.Repository{ID: "5", Name: name, Class: repository.Local, Format: "generic"}, nil
 }
 
 func (repos) List(context.Context) ([]repository.Repository, error) { return nil, nil }
@@ -148,11 +147,11 @@ func TestOneIndexPerRequest(t *testing.T) {
 	t.Run("R-AUTHZ-015 a download begins one index, with the repository key, and decides on it", func(t *testing.T) {
 		d := &decider{}
 		rec := httptest.NewRecorder()
-		handler(t, d, &store{file: file, body: []byte("abc")}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/files/generic-local/a.bin", nil))
+		handler(t, d, &store{file: file, body: []byte("abc")}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/files/it/generic-local/a.bin", nil))
 		if rec.Code != http.StatusOK || rec.Body.String() != "abc" {
 			t.Fatalf("status %d, body %q", rec.Code, rec.Body.String())
 		}
-		if d.begins != 1 || len(d.keys[0]) != 1 || d.keys[0][0] != "generic-local" {
+		if d.begins != 1 || len(d.keys[0]) != 1 || d.keys[0][0] != qr("generic-local") {
 			t.Errorf("begins %d, keys %v", d.begins, d.keys)
 		}
 		if len(d.asked) == 0 {
@@ -168,12 +167,12 @@ func TestOneIndexPerRequest(t *testing.T) {
 	t.Run("R-AUTHZ-015 an upload decides before its body on the request's index and after it on a new one", func(t *testing.T) {
 		d := &decider{}
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPut, "/files/generic-local/new/b.bin", strings.NewReader("xyz"))
+		req := httptest.NewRequest(http.MethodPut, "/files/it/generic-local/new/b.bin", strings.NewReader("xyz"))
 		handler(t, d, &store{}).ServeHTTP(rec, req)
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 		}
-		if d.begins != 2 || d.keys[1][0] != "generic-local" {
+		if d.begins != 2 || d.keys[1][0] != qr("generic-local") {
 			t.Fatalf("begins %d, keys %v: the request begins once and its commit-time re-check once, with the key", d.begins, d.keys)
 		}
 		// The coarse check is the first question; the re-check, the overwrite question and
@@ -190,7 +189,7 @@ func TestOneIndexPerRequest(t *testing.T) {
 		d := &decider{}
 		h := handler(t, d, &store{file: file, body: []byte("abc")})
 		for range 2 {
-			h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/files/generic-local/a.bin", nil))
+			h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/files/it/generic-local/a.bin", nil))
 		}
 		if d.begins != 2 || d.issued[0] == d.issued[1] {
 			t.Errorf("begins %d", d.begins)
@@ -200,7 +199,7 @@ func TestOneIndexPerRequest(t *testing.T) {
 	t.Run("R-ARCH-024 a replica without the authz area answers 503 instead of deciding without a decision point", func(t *testing.T) {
 		svc, _ := files.New(files.Options{Items: &store{}, Repos: repos{}})
 		rec := httptest.NewRecorder()
-		New(Options{Service: svc}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/files/generic-local/a.bin", nil))
+		New(Options{Service: svc}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/files/it/generic-local/a.bin", nil))
 		if rec.Code != http.StatusServiceUnavailable {
 			t.Errorf("status %d", rec.Code)
 		}
