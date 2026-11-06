@@ -218,6 +218,16 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
   import runs `ANALYZE`, and a statement timeout names its sqlc query in the log; the pins in `test/integration/vulnsync/unanalyzed_test.go`
   fail without the migration and the statements. A whole performance run on a fresh database met all eleven values (V-1 0.69 and
   0.71 min). Done when V-1 passes in a nightly run; remove the entry then.
+- **F-63 · `TestMirror_R_REPO_055_ClientsFirst/npm` missed its install-time bound in the scheduled nightly run 42194413882** (read from
+  the job log, 2026-11-06, release v0.19.4, GitHub-hosted runner). `npm ci` with a pass running took 161 % of the best install without it
+  (22.6 s against 14.0 s, the bound 120 %, R-REPO-055, Q-REPO-197); the run overlapped for 23 minutes with the dispatched run 42192042297
+  on the same runner classes, and the bound is a ratio of two timings on one runner. Done when the bound holds in nightly runs that do not
+  overlap another workflow, or a run without overlap misses it, which makes it a product finding.
+- **F-64 · One browser journey of `TestUpgrade_R_HA_064_AcrossTheCut` failed without the asset skew of Q-HA-99** (read from the job log of
+  the scheduled nightly run 42194413882, release v0.19.4): iteration 11 of 14 exited 1 after 20.2 s at 10:03:10, no `ASSET-SKEW` line; two
+  other iterations met the skew and were counted as Q-HA-99 allows; every client loop passed. The leg passed in the dispatched run
+  42177273488. Not known: which step of the journey failed (the Playwright trace is in the run's artifact `e2e-upgrade-playwright-upgrade`).
+  Done when the cause is named and fixed.
 - **F-58 · A browser page loaded during a rolling upgrade can fail on a UI asset of the other release** (confirmed by
   `TestUpgrade_R_HA_064_AcrossTheCut` on the dev cluster, 2026-11-06: 2 of 25 journey iterations in step 1). Angular names every asset
   after its content; `index.html` came from a pod of one release and `main-<hash>.js`, `polyfills-<hash>.js` and `chunk-<hash>.js` went
