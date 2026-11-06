@@ -65,7 +65,8 @@ func (s *Service) Stat(ctx context.Context, c Caller, repoKey string, p reposito
 	if it.Kind == items.KindFolder {
 		return Resolved{Repo: repo, Item: it, IsFolder: true}, nil
 	}
-	if err := items.ContentError(it); err != nil {
+	// A blob marked missing is looked for again once per interval, and served when its object is back (Q-STOR-153).
+	if it, err = s.items.Usable(ctx, it); err != nil {
 		return Resolved{}, err
 	}
 	// A format keeps a say about its own items on this raw view too (R-ARCH-008

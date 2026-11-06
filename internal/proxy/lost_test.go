@@ -28,6 +28,27 @@ func (b *lostBlobs) Open(context.Context, blob.Digest, int64, blob.OpenOptions) 
 	return nil, b.err
 }
 
+func (b *lostBlobs) RecheckMissing(context.Context, blob.Digest, int64) bool { return false }
+
+// recheckItems is an item store whose recheck of a missing object finds it back or not (items.Store.Usable).
+type recheckItems struct {
+	ItemStore
+	back  bool
+	asked int
+}
+
+func (r *recheckItems) Usable(_ context.Context, it items.Item) (items.Item, error) {
+	if it.ContentStatus != "missing" {
+		return it, items.ContentError(it)
+	}
+	r.asked++
+	if !r.back {
+		return it, items.ContentError(it)
+	}
+	it.ContentStatus = "ok"
+	return it, nil
+}
+
 func TestR_STOR_027_ALostItemIsAMissAndItsAnswerIs503(t *testing.T) {
 	t.Run("Q-REPO-202 an entry or an item whose blob is not ok is damaged; an unread status is ok", func(t *testing.T) {
 		for status, want := range map[string]bool{"": false, "ok": false, "missing": true, "corrupt": true} {
@@ -41,6 +62,27 @@ func TestR_STOR_027_ALostItemIsAMissAndItsAnswerIs503(t *testing.T) {
 			if got := hitOf(items.Item{ContentStatus: status}); got != wantHit {
 				t.Errorf("item %q: %v", status, got)
 			}
+		}
+	})
+
+	t.Run("Q-STOR-153 an item marked missing whose object is back is a hit again; a View asks no store", func(t *testing.T) {
+		back := &recheckItems{back: true}
+		e := &Engine{o: Options{Items: back}}
+		if it, state := e.classify(context.Background(), items.Item{ContentStatus: "missing"}); state != hitStored || it.ContentStatus != "ok" || back.asked != 1 {
+			t.Fatalf("back: %v %q, %d rechecks", state, it.ContentStatus, back.asked)
+		}
+		gone := &recheckItems{}
+		e = &Engine{o: Options{Items: gone}}
+		if _, state := e.classify(context.Background(), items.Item{ContentStatus: "missing"}); state != hitDamaged {
+			t.Fatalf("gone: %v", state)
+		}
+		if _, state := e.classify(context.Background(), items.Item{ContentStatus: "ok"}); state != hitStored || gone.asked != 1 {
+			t.Fatalf("an ok item was rechecked: %d", gone.asked)
+		}
+		view := &recheckItems{back: true}
+		e = &Engine{o: Options{Items: view}, readOnly: true}
+		if _, state := e.classify(context.Background(), items.Item{ContentStatus: "missing"}); state != hitDamaged || view.asked != 0 {
+			t.Fatalf("a View: %v, %d rechecks", state, view.asked)
 		}
 	})
 

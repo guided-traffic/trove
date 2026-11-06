@@ -35,6 +35,7 @@ type ItemOps interface {
 	Commit(ctx context.Context, spec items.CommitSpec) (items.CommitResult, error)
 	Live(ctx context.Context, repo items.RepoRef, path string) (items.Item, bool, error)
 	Open(ctx context.Context, it items.Item, rng *items.Range) (io.ReadCloser, error)
+	Usable(ctx context.Context, it items.Item) (items.Item, error)
 	Served(ctx context.Context, e items.ServedEvent)
 }
 

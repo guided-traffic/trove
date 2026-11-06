@@ -55,6 +55,7 @@ type Blobs interface {
 	Ingest(ctx context.Context, body io.Reader, o blob.IngestOptions) (*blob.Spooled, error)
 	CommitAll(ctx context.Context, sps []*blob.Spooled, link blob.LinkFunc) ([]blob.CommitResult, error)
 	Open(ctx context.Context, d blob.Digest, size int64, o blob.OpenOptions) (io.ReadCloser, error)
+	RecheckMissing(ctx context.Context, d blob.Digest, size int64) bool
 }
 
 // JobEnqueuer enqueues a job in the caller's transaction; *jobs.Queue implements

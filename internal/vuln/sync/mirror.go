@@ -74,7 +74,7 @@ func (m RepositoryMirror) Stat(ctx context.Context, key, path string) (*MirrorIt
 	if !found || it.Kind != items.KindFile {
 		return nil, nil
 	}
-	if err := items.ContentError(it); err != nil {
+	if it, err = itemStore.Usable(ctx, it); err != nil { // a missing object that is back is served again (Q-STOR-153)
 		return nil, err
 	}
 	by := it.ModifiedBy

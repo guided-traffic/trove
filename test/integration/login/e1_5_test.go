@@ -80,6 +80,8 @@ func (noBlobs) Open(context.Context, blob.Digest, int64, blob.OpenOptions) (io.R
 	return nil, errNoBlobs
 }
 
+func (noBlobs) RecheckMissing(context.Context, blob.Digest, int64) bool { return false }
+
 // TestE1_5_EveryProducerIsAuditedAndLogged runs every kind of event that exit
 // criterion E1.5 names through the real HTTP routes on the harness of the
 // identity and login tests (test/integration/idapi) with the fake provider: a

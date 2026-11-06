@@ -1134,8 +1134,12 @@ content) resolve the item (virtual and remote resolution:
   and refetch, and a request that cannot refetch it is answered `503 content_unavailable`
   ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-025 "Lost content", Q-REPO-202). The first read
   that finds no object marks the blob `missing` ([ha-and-helm.md](ha-and-helm.md) R-HA-024, Q-STOR-151), so every
-  later request is answered from PostgreSQL. `/files/` never contacts an upstream: an item of a remote repository
-  answers the `503` there. `503` with `Retry-After` when the object store is unreachable (R-STOR-036).
+  later request is answered from PostgreSQL. The mark does not outlive the loss (Q-STOR-153): once the blob's last
+  existence check (`checked_at`) is 30 s old, the next read asks the store again with one `HeadObject`, whichever
+  replica (the read whose statement moves `checked_at` asks, every other read of the interval does not); an object
+  that is back, unchanged in size, sets `content_status = 'ok'` and the read serves it, and one that is still gone
+  starts the interval again. A lost object therefore costs the store one request per blob and 30 s, not one per read.
+  `/files/` never contacts an upstream: an item of a remote repository answers the `503` there. `503` with `Retry-After` when the object store is unreachable (R-STOR-036).
 - A `GET` on a folder returns the directory index (R-STOR-017).
 - `?stats=false` suppresses the download statistics update (R-STOR-015).
 
@@ -2107,7 +2111,9 @@ Priority: **P1** · Covers: trove-only
 - **Repair**: a later upload of identical content rewrites the object and resets the status
   (R-STOR-005); a remote repository treats an item with damaged content as a cache miss and
   refetches it, and the commit of the refetched content is that repair
-  ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-025 "Lost content", Q-REPO-202); `POST /api/v1/storage/damaged-blobs/{sha256}/recheck` re-runs both checks
+  ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-025 "Lost content", Q-REPO-202); a `missing` mark
+  heals by itself: a read of the blob after its last existence check is 30 s old asks the store again, and an
+  object that is back sets `ok` (R-STOR-012, Q-STOR-153); `POST /api/v1/storage/damaged-blobs/{sha256}/recheck` re-runs both checks
   (permission: system administrator).
 - The scrub is the task `scrub` of the shared task framework (Q-STOR-10; R-OPS-019). A scheduled
   run performs the existence checks and the deep checks that are due. A manual trigger
@@ -4324,19 +4330,19 @@ same content) it would undo.
 **Choice:** (a).
 
 What it means for a local repository (unchanged answer, a new mark): the first read of a lost object answers `503 content_unavailable` with
-`Retry-After: 30` as before, and marks the blob; every later read is answered the same `503` from PostgreSQL without asking the store (R-STOR-012),
-and the counter counts the blob once and the log names its digest. The mark is cleared by an upload of identical content (R-STOR-005's repair), by a remote's
-refill of the same content, and, once they exist, by the scrub's recheck (R-STOR-027, P1). An object that an operator restores in the bucket stays
-marked until one of these: until the recheck exists, re-uploading the file is the repair. A store that answers 404 for objects that exist (a wrong
-`storage.s3.prefix` that the start-up check cannot see, because it writes its own probe below whatever prefix it is given, R-STOR-035) marks every
-blob that is read while it does; `TroveBlobMissing` fires at the first.
+`Retry-After: 30` as before, and marks the blob; later reads are answered the same `503` from PostgreSQL without asking the store (R-STOR-012) for
+30 s per blob, and the counter counts the blob once and the log names its digest. The mark is cleared by an upload of identical content (R-STOR-005's
+repair), by a remote's refill of the same content, and by the recheck of a read once the mark is 30 s old ([Q-STOR-153](#q-stor-153--a-missing-mark-heals-by-itself-a-read-asks-the-store-again-once-per-blob-and-30-s)),
+which finds an object that an operator restored, or that a store answering 404 for objects that exist (a wrong `storage.s3.prefix` that the start-up
+check cannot see, because it writes its own probe below whatever prefix it is given, R-STOR-035) had hidden. Such a store marks every blob that is read
+while it does; `TroveBlobMissing` fires at the first, and the marks heal within 30 s of the next read after the prefix is corrected.
 
 Not changed: the audit event that R-STOR-027 asks of every detection is not written, for `missing` as for `corrupt`: the store's damage hook
 (`blob.WithDamageHook`) has no caller in the composition root.
 
 **Rationale:** the mark is R-HA-024's own requirement, and the read is the only place where a loss is found before the scrub exists. The development
-agent would revisit the look after the mark when the recheck of R-STOR-027 ships (the recheck could then clear a stale mark instead), and the
-marking itself if an object store is seen to answer 404 for objects that exist.
+agent would revisit the look after the mark when the recheck of R-STOR-027 ships (the recheck could then clear a stale mark instead). A mark that
+outlived its loss was found in review (amended 2026-11-06): Q-STOR-153 makes it heal.
 
 **Applied in the spec:** R-STOR-012 (the first read marks), R-STOR-027 (a read is a detection). Code: `internal/blob/download.go` (`markMissing`,
 `markDamaged`). Tests: `TestDownloadVerification` (`internal/blob/download_test.go`), `TestR_HA_024_ALocalTarballWhoseObjectIsMissingIs503AndItsBlobIsMarkedMissing`
@@ -4364,6 +4370,45 @@ severity if remote caches are seen to page operators for losses that healed them
 
 **Applied in the spec:** [ha-and-helm.md](ha-and-helm.md) R-HA-045 (status). Chart: `deploy/helm/trove/templates/_rules.tpl`,
 `deploy/helm/trove/tests/rules_test.yaml`, `test/chart/vuln_rules_test.go`.
+
+### Q-STOR-153 · A missing mark heals by itself: a read asks the store again, once per blob and 30 s
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: review of Q-STOR-151. A store that answers 404 for objects that exist, for example a wrong `storage.s3.prefix` that an operator corrects an
+hour later, marks every blob read in that hour `missing`; R-STOR-012 then answers every read of them from PostgreSQL, and before this decision only an
+upload of the same content cleared a mark (the scrub's recheck is P1 and not built). Before Q-STOR-151, correcting the prefix healed everything: a
+mistake that is otherwise reversible would have left damage that does not go away. The owner's rule is reliability first.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A read of a blob marked `missing` asks the store again once its last existence check is 30 s old; the claim of the look is a conditional `UPDATE` of the row's `checked_at` (chosen) | `ClaimMissingRecheck`: `checked_at` moves only when it is 30 s old, so one read per blob and interval asks, across replicas; `HeadObject`; found with the row's size, `MarkBlobOK` and the read serves it; not found, the interval starts again | One look per blob and 30 s whatever the number of replicas and reads; the column exists (`checked_at`, "last existence check", R-STOR-027), so no migration; the scrub that orders by it later sees the reads' checks | A read of a missing blob costs one statement more (an `UPDATE` that matches nothing inside the interval) |
+| (b) A bounded map of last-check times per replica | Each replica keeps when it last asked about a blob | No statement per read | n replicas ask n times per interval, the map forgets under pressure, and a replica that starts asks at once |
+| (c) Ask the store on every read of a missing blob | No short circuit for `missing` | Heals at the first read | A lost popular object is a request storm against the store, which R-STOR-012's short circuit exists to prevent |
+| (d) Keep the mark until an upload or the scrub's recheck | Q-STOR-151 as it was | The store is never asked about a missing blob | The reversible mistake above becomes permanent damage |
+
+**Choice:** (a). The interval is a constant, `blob.MissingRecheckInterval`, 30 s: the `Retry-After` a client is given for a missing object, so the
+client that retries is the one whose read looks. No setting: nothing in the spec asks to tune it, and 30 s bounds both the store's load (one
+`HeadObject` per lost blob and interval) and how long a healed blob is still refused. The detection itself (`MarkBlobDamaged`) sets `checked_at`, so
+the interval starts at the mark, and the look after the mark of Q-STOR-151 is not followed by a second one. A `corrupt` blob is not rechecked: a
+`HeadObject` cannot tell whether its bytes are right.
+
+Where it runs: every read that would refuse a blob marked `missing` from PostgreSQL. `items.Store.Usable` is `ContentError` with the recheck; the
+generic layer's `Stat` (`/files/`), the format host's `Serve` (every format's download, the remote hit, the cache view and the tiers of a virtual
+repository) and the mirror source of the vulnerability scanning call it. The remote engine classifies a marked artifact with it and a marked document
+with `blob.Store.RecheckMissing` before it counts either as lost ([repositories-and-proxy.md](repositories-and-proxy.md) Q-REPO-202): a cached item
+whose object is back is served without an upstream fetch. `HEAD` and conditional requests of a missing blob, which ask nothing of the store
+otherwise, may make that one look per interval. The engine of a `View` (the explanation on `api`) asks no store.
+
+**Rationale:** a mark is a statement about the store at one moment; it has to be checked again, and the column for that already exists. The
+development agent would revisit the interval if a store's outage that answers 404 is seen to make the looks a load, and would move the recheck into the
+scrub's existence check when R-STOR-027's scrub ships, keeping the read's look for the blobs the scrub has not reached.
+
+**Applied in the spec:** R-STOR-012 (errors), R-STOR-027 (repair), Q-STOR-151 (consequences), [ha-and-helm.md](ha-and-helm.md) R-HA-024. Code:
+`internal/blob/download.go` (`RecheckMissing`, `MissingRecheckInterval`), `internal/meta/postgres/queries/blob.sql` (`ClaimMissingRecheck`,
+`MarkBlobDamaged`), `internal/items/read.go` (`Usable`), `internal/files/download.go`, `internal/formathost/ingest.go`, `internal/vuln/sync/mirror.go`,
+`internal/proxy/artifact.go` (`classify`), `internal/proxy/metadata.go`. Tests: `TestDownloadVerification` (`internal/blob/download_test.go`),
+`TestR_HA_024_AMissingMarkHealsOnceTheObjectIsBack` (`test/integration/npm/remote_lost_test.go`), `internal/proxy/lost_test.go`.
 
 ## What this does not cover
 

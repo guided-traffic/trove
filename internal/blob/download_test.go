@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"testing/iotest"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/config"
@@ -169,6 +170,60 @@ func TestDownloadVerification(t *testing.T) {
 		}
 		if f.db.rows[sp.SHA256].status != "ok" || damaged.Load() != 1 {
 			t.Fatalf("status %s, damaged hook %d: the detection counts, the row ends ok", f.db.rows[sp.SHA256].status, damaged.Load())
+		}
+	})
+	t.Run("Q-STOR-153 a blob marked missing asks the store again once per interval, and an object that is back makes it ok", func(t *testing.T) {
+		f, sp, _ := setup(t, nil)
+		clock := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+		f.db.now = func() time.Time { return clock }
+		key := f.store.Key(sp.SHA256)
+		_ = f.mem.Delete(context.Background(), key)
+		if _, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{}); !errors.Is(err, blob.ErrNotFound) {
+			t.Fatalf("open: %v", err)
+		}
+		heads := func() int { return f.mem.Count("head") }
+		before := heads()
+		// Still gone, inside the interval: no look at the store.
+		if f.store.RecheckMissing(context.Background(), sp.SHA256, sp.Size) || heads() != before {
+			t.Fatalf("a recheck inside the interval asked the store (%d heads)", heads()-before)
+		}
+		// The object is back, still inside the interval: the mark stands and the store is not asked.
+		f.mem.Set(key, data, f.mem.Now())
+		clock = clock.Add(blob.MissingRecheckInterval - time.Second)
+		if f.store.RecheckMissing(context.Background(), sp.SHA256, sp.Size) || heads() != before {
+			t.Fatal("a recheck inside the interval asked the store")
+		}
+		// Gone again, after the interval: one look, the mark stands and the interval starts again.
+		_ = f.mem.Delete(context.Background(), key)
+		clock = clock.Add(2 * time.Second)
+		if f.store.RecheckMissing(context.Background(), sp.SHA256, sp.Size) || heads() != before+1 || f.db.rows[sp.SHA256].status != "missing" {
+			t.Fatalf("after the interval: %d heads, status %s", heads()-before, f.db.rows[sp.SHA256].status)
+		}
+		if f.store.RecheckMissing(context.Background(), sp.SHA256, sp.Size) || heads() != before+1 {
+			t.Fatal("the interval did not start again")
+		}
+		// Back with another size: not ok.
+		f.mem.Set(key, data[:10], f.mem.Now())
+		clock = clock.Add(blob.MissingRecheckInterval)
+		if f.store.RecheckMissing(context.Background(), sp.SHA256, sp.Size) || f.db.rows[sp.SHA256].status != "missing" {
+			t.Fatal("an object of another size made the row ok")
+		}
+		// Back unchanged, after the interval: ok, and the read serves it.
+		f.mem.Set(key, data, f.mem.Now())
+		clock = clock.Add(blob.MissingRecheckInterval)
+		if !f.store.RecheckMissing(context.Background(), sp.SHA256, sp.Size) || f.db.rows[sp.SHA256].status != "ok" {
+			t.Fatalf("status %s after the object came back", f.db.rows[sp.SHA256].status)
+		}
+		r, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := readAll(t, r); !bytes.Equal(got, data) {
+			t.Fatal("the object that came back differs")
+		}
+		// A row that is ok is never rechecked.
+		if f.store.RecheckMissing(context.Background(), sp.SHA256, sp.Size) {
+			t.Fatal("an ok row was rechecked")
 		}
 	})
 	t.Run("R-STOR-013 an object of the wrong length is refused before any byte and marked corrupt", func(t *testing.T) {

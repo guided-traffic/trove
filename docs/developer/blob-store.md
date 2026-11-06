@@ -18,7 +18,7 @@ the verifying reader or a range.
 | [spool.go](../../internal/blob/spool.go) | `Spool`: admission, the budget, spool files, the single hashing pass, cleanup |
 | [store.go](../../internal/blob/store.go), [commit.go](../../internal/blob/commit.go) | `Store`, `Ingest`, `Commit` (the commit protocol), `Lookup` |
 | [transfer.go](../../internal/blob/transfer.go) | single `PutObject` or multipart from the spool file, part sizing, abort |
-| [download.go](../../internal/blob/download.go) | `Store.Open` and the verifying reader (hold-back, `content_status`), the mark of a missing object (`markMissing`) |
+| [download.go](../../internal/blob/download.go) | `Store.Open` and the verifying reader (hold-back, `content_status`), the mark of a missing object (`markMissing`) and its recheck (`RecheckMissing`) |
 | [guard.go](../../internal/blob/guard.go) | `Guard`: circuit breaker and request metrics around any `ObjectStore` |
 | [gc.go](../../internal/blob/gc.go), [gcjob.go](../../internal/blob/gcjob.go) | `Collector` (per-blob protocol, hand-over, pause, hold, fault hook) and the job adapter |
 | [usagefold.go](../../internal/blob/usagefold.go) | `UsageFolder`: the fold loop of the usage counters (R-STOR-003) and its `Fold` iteration |
@@ -161,7 +161,14 @@ R-HA-024, [Q-STOR-151](../spec/storage.md#q-stor-151--a-read-that-finds-no-objec
 content that wrote it again between the read and the mark would otherwise be undone, so a row whose object is there again is set `ok`. The
 error stays `ErrNotFound`; `items.Store.Open` answers it `503 content_unavailable`, and a remote repository fills the item again
 ([proxy.md](proxy.md#lost-content-r-stor-027-q-repo-202-to-q-repo-204)). The mark is cleared by the commit protocol's repair (the next
-commit of the same content writes the object, table above).
+commit of the same content writes the object, table above), and it heals by itself
+([Q-STOR-153](../spec/storage.md#q-stor-153--a-missing-mark-heals-by-itself-a-read-asks-the-store-again-once-per-blob-and-30-s)):
+`Store.RecheckMissing(digest, size)`, which every read of a blob marked `missing` calls through `items.Store.Usable` (`/files/`, the format
+host's `Serve`, the remote engine), claims the one look of `MissingRecheckInterval` (30 s) with `ClaimMissingRecheck`, a conditional `UPDATE`
+of the row's `checked_at` that moves it only when it is that old, so one read per blob and interval asks whatever the number of replicas.
+The claimer sends `HeadObject`; an object of the row's size sets `ok` (`MarkBlobOK`) and the read serves it; anything else leaves the mark,
+and the moved `checked_at` starts the interval again. `MarkBlobDamaged` sets `checked_at` too, so the interval starts at the detection.
+`checked_at` is the column R-STOR-027's scrub orders its existence checks by; no migration.
 
 What a download holds ([Q-ARCH-241](../spec/architecture.md#q-arch-241--a-download-holds-one-buffer-of-its-own-size-and-the-object-store-sends-no-more-than-one-window-ahead)):
 
@@ -288,7 +295,7 @@ not an error there; the credential test uses a wrong secret key instead.
 
 | Tier | Where | What it proves |
 |---|---|---|
-| unit | [internal/blob](../../internal/blob/), [s3](../../internal/blob/s3/), [blobtest](../../internal/blob/blobtest/) | key layout, spool admission and cleanup on every error path, single pass digests, the commit protocol and its branches against a fake database, multipart (threshold, parts, concurrency, abort, checksums), the breaker, verification, the mark of a missing object and its repair (`TestDownloadVerification`, Q-STOR-151), conformance logic, the SDK adapter against a fake endpoint (retries, error mapping, stall, credentials) |
+| unit | [internal/blob](../../internal/blob/), [s3](../../internal/blob/s3/), [blobtest](../../internal/blob/blobtest/) | key layout, spool admission and cleanup on every error path, single pass digests, the commit protocol and its branches against a fake database, multipart (threshold, parts, concurrency, abort, checksums), the breaker, verification, the mark of a missing object, its repair and its recheck once per interval (`TestDownloadVerification`, Q-STOR-151, Q-STOR-153), conformance logic, the SDK adapter against a fake endpoint (retries, error mapping, stall, credentials) |
 | integration | [test/integration/blob](../../test/integration/blob/) | SeaweedFS conformance; the 100-upload race through four replicas; the race with deletes and collection; the collector killed or cancelled at random points; the drain; hand-over; `AS001`; the usage fold (counters after uploads, an overwrite and a delete against a recount; two loops and four callers on 50,000 and 40,000 deltas with the deadlock counter of the database; a deleted repository with unfolded deltas; a backlog of 25,000 under an interval of one hour); a table added by a newer release; pause, hold, dry run; checkpoint resume; the job handler; verification of a corrupted object |
 
 `make test` runs the unit tier, `make test-integration` the integration tier (`TROVE_TEST_BLOB_RACE_SECONDS` stretches the race test from 15 s to a soak run). The

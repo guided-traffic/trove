@@ -64,10 +64,9 @@ func (e *Engine) metadata(ctx context.Context, rq Request, restoredAt time.Time)
 	}
 	// A document whose object is missing or damaged serves nobody: it counts as absent in every later step and is filled
 	// again; a client's request that cannot fill it is answered 503 content_unavailable (R-STOR-027, Q-REPO-202).
-	lost := found && en.Damaged()
+	lost := found && e.lostEntry(ctx, rq, &en)
 	if lost {
 		found = false
-		e.noteDamaged(rq, en.Digest, en.ContentStatus)
 	}
 	if found && e.fresh(rem, rq.Path, en, restoredAt) {
 		e.m.lookup(rem.Repo.Key, Metadata, resultHit)
@@ -151,6 +150,20 @@ type heldCopy struct {
 	found bool
 	lost  bool
 	doc   func(cs CacheStatus) *Document
+}
+
+// lostEntry reports whether a stored document's object is lost (R-STOR-027, Q-REPO-202), and logs it. One marked missing is
+// looked for in the store again first, at most once per blob and interval (Q-STOR-153): an object that is back makes the entry
+// serve again without an upstream fetch.
+func (e *Engine) lostEntry(ctx context.Context, rq Request, en *entry) bool {
+	if en.ContentStatus == "missing" && e.o.Blobs.RecheckMissing(ctx, blob.Digest(en.Digest), en.Size) {
+		en.ContentStatus = "ok"
+	}
+	if !en.Damaged() {
+		return false
+	}
+	e.noteDamaged(rq, en.Digest, en.ContentStatus)
+	return true
 }
 
 func firstError(err error, blocked *errs.Error) error {

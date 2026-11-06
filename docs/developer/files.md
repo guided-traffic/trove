@@ -155,7 +155,8 @@ leading slash; the stored media type is the request's `Content-Type` parsed with
   the status line, so an object-store failure is a problem the client can read: `ServeItem` returns the error of the open with nothing written,
   and the caller answers it (`/files/` writes the problem; the remote engine first fills an item of a remote repository again whose object is
   missing, [proxy.md](proxy.md#lost-content-r-stor-027-q-repo-202-to-q-repo-204)). The first open that finds the object missing marks the blob
-  `missing` ([blob-store.md](blob-store.md#download-verification-r-stor-013-q-stor-6)), so later requests are refused by `Stat`. An error in the middle of
+  `missing` ([blob-store.md](blob-store.md#download-verification-r-stor-013-q-stor-6)), so later requests are refused by `Stat` from PostgreSQL, except
+  that `Stat` asks the store again through `items.Store.Usable` once the mark is 30 s old and serves an object that is back (Q-STOR-153). An error in the middle of
   the body ends in `panic(http.ErrAbortHandler)`, which cuts the connection: the client sees a truncated transfer, never a complete corrupted file.
 
 Any replica answers a resumed range alike, because the ETag is the content address and the item is read from PostgreSQL. The

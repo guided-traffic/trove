@@ -3,6 +3,7 @@ package blob
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
@@ -61,6 +62,9 @@ type blobRows interface {
 	Row(ctx context.Context, tx meta.Tx, d Digest) (Row, bool, error)
 	// MarkDamaged moves a live, ok row to status and reports whether it changed.
 	MarkDamaged(ctx context.Context, tx meta.Tx, d Digest, status string) (changed bool, err error)
+	// ClaimRecheck moves checked_at of a live row marked missing whose last existence check is at least interval old,
+	// and reports whether it did: the claim of the one look at the store of the interval (Q-STOR-153).
+	ClaimRecheck(ctx context.Context, tx meta.Tx, d Digest, interval time.Duration) (claimed bool, err error)
 }
 
 type pgRows struct{}
@@ -140,5 +144,14 @@ func (pgRows) MarkDamaged(ctx context.Context, tx meta.Tx, d Digest, status stri
 		return false, err
 	}
 	n, err := qs.MarkBlobDamaged(ctx, q.MarkBlobDamagedParams{Sha256: d.Bytes(), ContentStatus: status})
+	return n > 0, err
+}
+
+func (pgRows) ClaimRecheck(ctx context.Context, tx meta.Tx, d Digest, interval time.Duration) (bool, error) {
+	qs, err := queries(tx)
+	if err != nil {
+		return false, err
+	}
+	n, err := qs.ClaimMissingRecheck(ctx, q.ClaimMissingRecheckParams{Sha256: d.Bytes(), IntervalSeconds: interval.Seconds()})
 	return n > 0, err
 }

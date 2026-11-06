@@ -2817,7 +2817,8 @@ that restores to older points must work.
   restore. It also counts `trove_storage_blobs_damaged_total{status="missing"}` and marks the blob
   `content_status = 'missing'` per R-STOR-027 (the read of `blob.Store.Open`, which looks for the object once more after
   the mark, so that a concurrent repair stays, [storage.md](storage.md) Q-STOR-151; the alert `TroveBlobMissing` of
-  R-HA-045 reads the counter). A remote repository treats it as a cache miss and
+  R-HA-045 reads the counter). The mark heals by itself: once it is 30 s old a read asks the store again, and an
+  object that came back is served ([storage.md](storage.md) R-STOR-012, Q-STOR-153). A remote repository treats it as a cache miss and
   fetches again (R-STOR-027; [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-025 "Lost content",
   Q-REPO-202), and answers `503 content_unavailable` while it cannot.
 - **Orphans after restore.** Objects written after *t* have no row in the restored database. The

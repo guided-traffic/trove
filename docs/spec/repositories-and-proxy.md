@@ -1632,7 +1632,9 @@ execute these steps in order:
   item and never `500`; a document the upstream answers 404 or 410 is marked gone as on any refresh (R-REPO-029). A document
   whose object turns out to be lost when its bytes are read is filled again once and served when the upstream's copy has the
   digest the request read, else answered `503` with `Retry-After: 1`. Through a virtual repository a remote member's lost
-  cached copy is a miss of the cache tier (R-REPO-019); a local member's loss is that member's answer.
+  cached copy is a miss of the cache tier (R-REPO-019); a local member's loss is that member's answer. An entry marked
+  `missing` whose object is back (found by the read's recheck, once per blob and 30 s, [storage.md](storage.md) Q-STOR-153)
+  is served again without an upstream fetch.
 - Replicas SHOULD keep recently served metadata bytes in a bounded in-memory cache keyed by blob
   digest, so a fresh hit costs no object-store round trip. Which digest a request serves is always
   read from `remote_cache_entries`; the key is the content address, so this cache can never make
@@ -6748,7 +6750,9 @@ item as a cache miss and fetches it again; nothing implemented it, and no read m
 
 - **What is lost.** An entry or item whose blob's `content_status` is `missing` or `corrupt`. The item lookup and the entry
   lookup read the status in the statement they already make (`GetLiveItem`, `ProxyEntryGet`), so no request pays a further
-  statement. A read that finds the object gone, the scrub, and the download verification of R-STOR-013 set it.
+  statement. A read that finds the object gone, the scrub, and the download verification of R-STOR-013 set it. A `missing`
+  item is looked for in the store again before it counts as lost, at most once per blob and 30 s ([storage.md](storage.md)
+  Q-STOR-153): an object that is back is a hit, with no upstream fetch.
 - **Artifacts.** A lost item is a miss of step 4, and of `Engine.Cached` (the cache tier of a virtual repository, the mirror's
   "present"). A request that served a hit and found the object gone at the read, before anything was written (`edge.ServeItem`
   returns the error of the open instead of writing it), reads the item again: marked, it is filled; ok again (another request

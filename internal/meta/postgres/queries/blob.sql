@@ -27,9 +27,20 @@ SELECT sha256, sha1, md5, sha512, size, state, content_status, created_at
 
 -- name: MarkBlobDamaged :execrows
 -- Only a live row that was ok changes, so a repair or a concurrent detection is
--- not overwritten.
-UPDATE blobs SET content_status = $2
+-- not overwritten. A detection is an existence check of the object: checked_at
+-- (R-STOR-027) is now, which starts the recheck interval of a missing object
+-- (Q-STOR-153).
+UPDATE blobs SET content_status = $2, checked_at = clock_timestamp()
  WHERE sha256 = $1 AND state = 'live' AND content_status = 'ok';
+
+-- name: ClaimMissingRecheck :execrows
+-- The recheck of a blob marked missing (Q-STOR-153): the statement that moves
+-- checked_at, the time of the last existence check (R-STOR-027), claims the one
+-- look at the store of the interval for every replica; a read inside the interval
+-- matches nothing and does not ask the store.
+UPDATE blobs SET checked_at = clock_timestamp()
+ WHERE sha256 = sqlc.arg(sha256) AND state = 'live' AND content_status = 'missing'
+   AND (checked_at IS NULL OR checked_at <= clock_timestamp() - make_interval(secs => sqlc.arg(interval_seconds)::double precision));
 
 -- name: DeletionsPaused :many
 SELECT 1::int AS paused FROM system_state

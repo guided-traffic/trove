@@ -129,6 +129,11 @@ func (s *store) Open(context.Context, items.Item, *items.Range) (io.ReadCloser, 
 	return nil, errors.New("not used")
 }
 
+// Usable never finds a missing object again: the store holds none.
+func (s *store) Usable(_ context.Context, it items.Item) (items.Item, error) {
+	return it, items.ContentError(it)
+}
+
 func (s *store) Children(ctx context.Context, _ items.RepoRef, _ items.ChildrenQuery, visible items.Visibility) (items.ChildrenPage, error) {
 	rows := []items.Child{{Abs: "a.bin", Kind: items.KindFile}, {Abs: "secret/b.bin", Kind: items.KindFile}}
 	ok, err := visible(ctx, rows)

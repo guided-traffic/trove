@@ -193,7 +193,8 @@ func (s itemStore) Serve(ctx context.Context, rq *formats.Request, w http.Respon
 	if err != nil {
 		return err
 	}
-	if err := items.ContentError(row); err != nil {
+	// A blob marked missing is looked for again once per interval, and served when its object is back (Q-STOR-153).
+	if row, err = s.h.o.Items.Usable(ctx, row); err != nil {
 		bastionmain.NoteUnknown(ctx) // a serve-time refusal is never a negative entry (R-BAS-013)
 		return err
 	}

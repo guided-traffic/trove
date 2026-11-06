@@ -79,6 +79,20 @@ func ContentError(it Item) error {
 	return errs.E(errs.Internal, errs.CodeContentUnavailable, "The stored object of this file failed verification.")
 }
 
+// Usable is [ContentError] for a read that may ask the object store: a file whose blob is marked missing is looked for
+// again once the mark's last look is MissingRecheckInterval old (blob.Store.RecheckMissing, Q-STOR-153), and an object that
+// is back makes the row ok and the item usable (ContentStatus ok). Inside the interval, and for an object that is still gone,
+// the answer is ContentError's 503 from PostgreSQL alone, so a lost object costs the store one request per interval, not one
+// per read (R-STOR-012). A corrupt blob is refused as before.
+func (s *Store) Usable(ctx context.Context, it Item) (Item, error) {
+	err := ContentError(it)
+	if err == nil || it.ContentStatus != "missing" || !s.blobs.RecheckMissing(ctx, it.Digest, it.Size) {
+		return it, err
+	}
+	it.ContentStatus = "ok"
+	return it, nil
+}
+
 // ContentLost reports whether err refuses a file because its stored object is missing or failed verification: the
 // content_unavailable of [ContentError] and [Store.Open]. A remote repository treats such an item as a cache miss
 // (R-STOR-027); a local repository answers the error.

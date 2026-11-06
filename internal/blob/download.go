@@ -117,6 +117,52 @@ func (s *Store) markMissing(ctx context.Context, d Digest) {
 	s.log.Info("the object of a blob that a read found missing is there again", "sha256", d.Hex())
 }
 
+// MissingRecheckInterval is how long a blob marked missing is answered from PostgreSQL alone before a read asks the object
+// store again (Q-STOR-153): the Retry-After a client is given for a missing object, so that the client that retries is the one
+// whose read looks. Per blob and across replicas, the store is asked at most once per interval.
+const MissingRecheckInterval = 30 * time.Second
+
+// RecheckMissing looks for the object of a blob marked missing once more, so that a mark does not outlive the loss it
+// records (Q-STOR-153): an object that is back (an operator restored it, or the store answered 404 for objects that exist,
+// as with a wrong storage.s3.prefix that was corrected) turns the row ok, and the caller serves it. At most one read per blob
+// and MissingRecheckInterval asks the store, whichever replica: the read whose statement moves the row's checked_at, the time
+// of its last existence check (R-STOR-027); every other read is refused from PostgreSQL as before (R-STOR-012). It reports
+// whether the row is ok now; a blob that is not marked missing, an object that is still gone, one of another size and a store
+// that cannot answer are false, and the interval starts again.
+func (s *Store) RecheckMissing(ctx context.Context, d Digest, size int64) bool {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	var claimed bool
+	if err := s.db.InTx(ctx, func(tx meta.Tx) error {
+		var err error
+		claimed, err = s.rows.ClaimRecheck(ctx, tx, d, MissingRecheckInterval)
+		return err
+	}); err != nil {
+		s.log.Warn("could not claim the recheck of a blob marked missing", "sha256", d.Hex(), "error", err)
+		return false
+	}
+	if !claimed {
+		return false
+	}
+	info, err := s.objects.Head(ctx, s.Key(d))
+	switch {
+	case errors.Is(err, ErrNotFound):
+		return false
+	case err != nil:
+		s.log.Warn("could not recheck a blob marked missing", "sha256", d.Hex(), "error", err)
+		return false
+	case info.Size >= 0 && info.Size != size:
+		s.log.Error("the object of a blob marked missing is back with another size", "sha256", d.Hex(), "size", info.Size, "want", size)
+		return false
+	}
+	if err := s.db.InTx(ctx, func(tx meta.Tx) error { return s.rows.MarkOK(ctx, tx, d) }); err != nil {
+		s.log.Error("could not mark a blob ok whose object is there again", "sha256", d.Hex(), "error", err)
+		return false
+	}
+	s.log.Info("the object of a blob marked missing is there again", "sha256", d.Hex())
+	return true
+}
+
 // markDamaged records a detection: content_status leaves 'ok', the counter
 // grows and the hook (the audit event) runs. It only ever changes a live row
 // that was ok, so a repair or a concurrent detection is not overwritten. It

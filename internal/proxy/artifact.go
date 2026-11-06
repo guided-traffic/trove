@@ -208,13 +208,27 @@ func hitOf(it items.Item) hitState {
 	return hitStored
 }
 
+// classify is hitOf for a request that may ask the object store: an item marked missing whose object is back, found by the
+// recheck that runs at most once per interval and blob (Q-STOR-153), is a hit again and costs no upstream fetch. The engine of
+// a View asks no store.
+func (e *Engine) classify(ctx context.Context, it items.Item) (items.Item, hitState) {
+	if hitOf(it) == hitStored || e.readOnly {
+		return it, hitOf(it)
+	}
+	if usable, err := e.o.Items.Usable(ctx, it); err == nil {
+		return usable, hitStored
+	}
+	return it, hitDamaged
+}
+
 // lookupHit reads the cached artifact of a request in one statement (R-ARCH-027): the item, whether its cache entry exists, the
 // verdict of the vulnerability scanning and the rows the format's serve check decides on all come with the item lookup. Only a
 // path that holds no item asks for the entry itself, to tell a miss from an entry whose item is gone (an answer only the request
 // that serves needs: asEntry). A caller that read the artifact already hands it in as rq.Hit.
 func (e *Engine) lookupHit(ctx context.Context, rq Request, asEntry bool) (items.Item, hitState, error) {
 	if rq.Hit != nil {
-		return *rq.Hit, hitOf(*rq.Hit), nil
+		it, state := e.classify(ctx, *rq.Hit)
+		return it, state, nil
 	}
 	ref := e.liveRef(rq.Remote.Repo, rq.Facts)
 	ref.Entry = &items.EntryProbe{Variant: rq.Variant}
@@ -224,7 +238,8 @@ func (e *Engine) lookupHit(ctx context.Context, rq Request, asEntry bool) (items
 	}
 	if found {
 		if it.EntryStored {
-			return it, hitOf(it), nil
+			it, state := e.classify(ctx, it)
+			return it, state, nil
 		}
 		return items.Item{}, hitNone, nil
 	}
@@ -243,7 +258,8 @@ func (e *Engine) lookupHit(ctx context.Context, rq Request, asEntry bool) (items
 		return items.Item{}, hitNone, err
 	}
 	if found {
-		return it, hitOf(it), nil
+		it, state := e.classify(ctx, it)
+		return it, state, nil
 	}
 	return items.Item{}, hitEntryOnly, nil
 }

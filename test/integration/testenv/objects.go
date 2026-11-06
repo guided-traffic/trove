@@ -1,8 +1,10 @@
 package testenv
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"testing"
 	"time"
 
@@ -45,6 +47,38 @@ func (s *Stack) DeleteObject(tb testing.TB, digest []byte) {
 	}
 	if s.ObjectExists(tb, digest) {
 		tb.Fatal("the object is still there after its deletion")
+	}
+}
+
+// TakeObject moves the object of the blob with the SHA-256 digest out of the installation's object store and returns its
+// bytes, for PutObject to put back: an object store that answers 404 for an object that exists, as with a wrong prefix.
+func (s *Stack) TakeObject(tb testing.TB, digest []byte) []byte {
+	tb.Helper()
+	c, prefix := s.objects(tb)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	body, _, err := c.Get(ctx, blob.Key(prefix, blob.Digest(digest)), nil)
+	if err != nil {
+		tb.Fatalf("read the object: %v", err)
+	}
+	data, err := io.ReadAll(body)
+	_ = body.Close()
+	if err != nil {
+		tb.Fatalf("read the object: %v", err)
+	}
+	s.DeleteObject(tb, digest)
+	return data
+}
+
+// PutObject writes the object of the blob with the SHA-256 digest into the installation's object store, as an operator's
+// restore does; the rows are not touched.
+func (s *Stack) PutObject(tb testing.TB, digest, data []byte) {
+	tb.Helper()
+	c, prefix := s.objects(tb)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := c.Put(ctx, blob.Key(prefix, blob.Digest(digest)), bytes.NewReader(data), int64(len(data)), blob.Checksum{}); err != nil {
+		tb.Fatalf("put the object: %v", err)
 	}
 }
 

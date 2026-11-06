@@ -45,6 +45,7 @@ type Items interface {
 	CreateFolder(ctx context.Context, spec items.FolderSpec) (items.FolderResult, error)
 	Live(ctx context.Context, repo items.RepoRef, path string) (items.Item, bool, error)
 	Open(ctx context.Context, it items.Item, rng *items.Range) (io.ReadCloser, error)
+	Usable(ctx context.Context, it items.Item) (items.Item, error)
 	Children(ctx context.Context, repo items.RepoRef, cq items.ChildrenQuery, visible items.Visibility) (items.ChildrenPage, error)
 	DownloadStats(ctx context.Context, itemID int64) (items.DownloadStats, error)
 	Delete(ctx context.Context, spec items.DeleteSpec) (items.DeleteResult, error)

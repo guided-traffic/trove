@@ -144,6 +144,29 @@ func (q *Queries) ClaimBlob(ctx context.Context, sha256 []byte) error {
 	return err
 }
 
+const claimMissingRecheck = `-- name: ClaimMissingRecheck :execrows
+UPDATE blobs SET checked_at = clock_timestamp()
+ WHERE sha256 = $1 AND state = 'live' AND content_status = 'missing'
+   AND (checked_at IS NULL OR checked_at <= clock_timestamp() - make_interval(secs => $2::double precision))
+`
+
+type ClaimMissingRecheckParams struct {
+	Sha256          []byte
+	IntervalSeconds float64
+}
+
+// The recheck of a blob marked missing (Q-STOR-153): the statement that moves
+// checked_at, the time of the last existence check (R-STOR-027), claims the one
+// look at the store of the interval for every replica; a read inside the interval
+// matches nothing and does not ask the store.
+func (q *Queries) ClaimMissingRecheck(ctx context.Context, arg ClaimMissingRecheckParams) (int64, error) {
+	result, err := q.db.Exec(ctx, claimMissingRecheck, arg.Sha256, arg.IntervalSeconds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countDeletingBlobs = `-- name: CountDeletingBlobs :one
 SELECT count(*) FROM blobs WHERE state = 'deleting'
 `
@@ -432,7 +455,7 @@ func (q *Queries) LockBlobUpdate(ctx context.Context, sha256 []byte) ([]LockBlob
 }
 
 const markBlobDamaged = `-- name: MarkBlobDamaged :execrows
-UPDATE blobs SET content_status = $2
+UPDATE blobs SET content_status = $2, checked_at = clock_timestamp()
  WHERE sha256 = $1 AND state = 'live' AND content_status = 'ok'
 `
 
@@ -442,7 +465,9 @@ type MarkBlobDamagedParams struct {
 }
 
 // Only a live row that was ok changes, so a repair or a concurrent detection is
-// not overwritten.
+// not overwritten. A detection is an existence check of the object: checked_at
+// (R-STOR-027) is now, which starts the recheck interval of a missing object
+// (Q-STOR-153).
 func (q *Queries) MarkBlobDamaged(ctx context.Context, arg MarkBlobDamagedParams) (int64, error) {
 	result, err := q.db.Exec(ctx, markBlobDamaged, arg.Sha256, arg.ContentStatus)
 	if err != nil {

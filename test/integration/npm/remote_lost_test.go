@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 	"github.com/guided-traffic/trove/test/npmstub"
 	"github.com/guided-traffic/trove/test/npmstub/corpus"
@@ -240,6 +241,87 @@ func TestR_HA_024_ALocalTarballWhoseObjectIsMissingIs503AndItsBlobIsMarkedMissin
 	if a := r.tarball(rep, rLocal, pk.Name, pk.Version, r.tokA); a.Status != 200 {
 		t.Fatalf("after the repair: %d %.300s", a.Status, a.Body)
 	}
+}
+
+// ageCheck moves the last existence check of a blob back by more than the recheck interval, as if the interval had passed
+// (Q-STOR-153): the test does not wait 30 s.
+func (r *renv) ageCheck(d []byte) {
+	r.t.Helper()
+	r.st.Exec(`UPDATE blobs SET checked_at = checked_at - make_interval(secs => $2) WHERE sha256 = $1`, d, blob.MissingRecheckInterval.Seconds()+1)
+}
+
+func TestR_HA_024_AMissingMarkHealsOnceTheObjectIsBack(t *testing.T) {
+	r := newRemoteEnv(t, remoteOptions{})
+	reps := r.start(2)
+
+	t.Run("Q-STOR-153 a local tarball: 503 while its object is away, still 503 inside the interval, 200 with its bytes after it", func(t *testing.T) {
+		pk := pkg{Name: "moved-local", Version: "1.0.0"}
+		r.publishTo(reps[0], rLocal, r.tokA, pk)
+		want := r.tarball(reps[0], rLocal, pk.Name, pk.Version, r.tokA)
+		if want.Status != 200 {
+			t.Fatalf("%d", want.Status)
+		}
+		d := r.itemBlob(rLocal, "moved-local/-/moved-local-1.0.0.tgz")
+		data := r.st.TakeObject(t, d) // a wrong storage.s3.prefix: the store answers 404 for an object that exists
+		lostAnswer(t, "object away", r.tarball(reps[0], rLocal, pk.Name, pk.Version, r.tokA))
+		if got := r.contentStatus(d); got != "missing" {
+			t.Fatalf("content_status %s, want missing", got)
+		}
+		r.st.PutObject(t, d, data) // the prefix is corrected
+		// Inside the interval the store is not asked: the object is back, and the answer is still the 503 from PostgreSQL.
+		lostAnswer(t, "inside the interval", r.tarball(reps[1], rLocal, pk.Name, pk.Version, r.tokA))
+		lostAnswer(t, "inside the interval, /files/", r.st.Do(reps[1], http.MethodGet, "/files/"+rLocal+"/moved-local/-/moved-local-1.0.0.tgz", r.tokA, nil))
+		if got := r.contentStatus(d); got != "missing" {
+			t.Fatalf("content_status %s inside the interval", got)
+		}
+		r.ageCheck(d)
+		a := r.tarball(reps[1], rLocal, pk.Name, pk.Version, r.tokA)
+		if a.Status != 200 || string(a.Body) != string(want.Body) {
+			t.Fatalf("after the interval: %d %.300s", a.Status, a.Body)
+		}
+		if got := r.contentStatus(d); got != "ok" {
+			t.Fatalf("content_status %s after the object came back", got)
+		}
+		if a := r.tarball(reps[0], rLocal, pk.Name, pk.Version, r.tokA); a.Status != 200 {
+			t.Fatalf("the other replica: %d", a.Status)
+		}
+	})
+
+	t.Run("Q-STOR-153 a remote's marked tarball and document are served again without an upstream fetch once their objects are back", func(t *testing.T) {
+		p := upstreamPackage(t, 2)
+		v := p.Versions[0]
+		file := corpus.TarballFile(p.Name, v.Version)
+		if a := r.tarball(reps[0], rRemote, p.Name, v.Version, r.tokA); a.Status != 200 {
+			t.Fatalf("fill: %d %s", a.Status, a.Body)
+		}
+		tgz, doc := r.entryBlob(rRemote, "artifact", p.Name+"/-/"+file), r.entryBlob(rRemote, "metadata", p.Name)
+		tgzData, docData := r.st.TakeObject(t, tgz), r.st.TakeObject(t, doc)
+		// The cache view never fills: the reads mark both blobs and answer 503, and the upstream is not asked.
+		cold := r.start(1)[0] // holds no document bytes in memory
+		lostAnswer(t, "tarball, cache view", r.tarball(cold, rRemote+"~cache", p.Name, v.Version, r.tokA))
+		lostAnswer(t, "document, cache view", r.view(cold, rRemote+"~cache", p.Name, r.tokA))
+		if r.contentStatus(tgz) != "missing" || r.contentStatus(doc) != "missing" {
+			t.Fatalf("content_status %s and %s, want missing", r.contentStatus(tgz), r.contentStatus(doc))
+		}
+		r.st.PutObject(t, tgz, tgzData)
+		r.st.PutObject(t, doc, docData)
+		r.ageCheck(tgz)
+		r.ageCheck(doc)
+		before := r.stub.Counts().Total()
+		a := r.tarball(cold, rRemote, p.Name, v.Version, r.tokA)
+		if a.Status != 200 || integrityOf(a.Body) != v.Dist.Integrity {
+			t.Fatalf("tarball: %d %.300s", a.Status, a.Body)
+		}
+		if b := r.view(r.start(1)[0], rRemote, p.Name, r.tokA); b.Status != 200 || len(versionsOf(t, b)) != len(p.Versions) {
+			t.Fatalf("document: %d %.300s", b.Status, b.Body)
+		}
+		if got := r.stub.Counts().Total(); got != before {
+			t.Errorf("%d upstream requests: the objects were back, nothing had to be fetched", got-before)
+		}
+		if r.contentStatus(tgz) != "ok" || r.contentStatus(doc) != "ok" {
+			t.Fatalf("content_status %s and %s after the objects came back", r.contentStatus(tgz), r.contentStatus(doc))
+		}
+	})
 }
 
 // itemBlob is the digest of the blob of an item.
