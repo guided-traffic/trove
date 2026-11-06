@@ -540,10 +540,10 @@ func (r npmLoadResult) outageCommands(t *testing.T, w haWindow) {
 		switch {
 		case !overlap:
 			t.Errorf("npm %s (%s, command %d) exited %d outside the outage, started %s:\n%s", c.Kind, c.Loop, c.N, c.Code, c.Start.Format("15:04:05.000"), c.Log)
-		case !strings.Contains(c.Log, "503") && !networkFailure.MatchString(c.Log):
-			t.Errorf("npm %s (%s, command %d) exited %d during the outage with neither a 503 nor a network error in its output, started %s:\n%s", c.Kind, c.Loop, c.N, c.Code, c.Start.Format("15:04:05.000"), c.Log)
 		case !strings.Contains(c.Log, "503"):
-			t.Logf("npm %s (%s, command %d) exited %d during the outage with a network error and no 503, started %s:\n%s", c.Kind, c.Loop, c.N, c.Code, c.Start.Format("15:04:05.000"), tailLines(c.Log, 6))
+			// Q-STOR-148: an outage shows as the registry's 503 and nothing else. A cut connection is not what R-STOR-036 answers;
+			// one that never reached the edge is finding F-50 and stays visible here instead of passing as an outage.
+			t.Errorf("npm %s (%s, command %d) exited %d during the outage without the registry's 503 in its output (a network error is no outage answer, F-50), started %s:\n%s", c.Kind, c.Loop, c.N, c.Code, c.Start.Format("15:04:05.000"), c.Log)
 		}
 	}
 	for _, lp := range r.loopNames("ci") {

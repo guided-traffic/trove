@@ -1252,7 +1252,8 @@ commands); a run on a CI runner.
    by a stage of the client chain before its body ([Q-STOR-149](../spec/storage.md#q-stor-149--an-upload-that-waits-for-100-continue-is-refused-before-its-body-while-the-circuit-is-open)).
    Unit tests `TestGuardRejecting`, `TestExpectGate`.
 3. **Open: one `npm publish` of 273 commands in the 30 s run ended with `ECONNRESET` ("socket hang up") instead of the `503`** at 05:42:55, 8 s into the outage. The edge's log
-   has two `503` for that package's `PUT` (04:42:55 and 04:43:05, UTC) and no third line. The check accepts a network error beside the `503` and logs the command; the cause was not found.
+   has two `503` for that package's `PUT` (04:42:55 and 04:43:05, UTC) and no third line, so the third attempt never reached the edge (it logs every connection, empty ones
+   included): the class of F-50. The check requires the `503` (Q-STOR-148) and fails on a network error, so the next one stays visible with its artifact.
 4. **The dev profile: the loss of a node with the CloudNativePG operator stalls PostgreSQL for the operator's toleration of 300 s.** With `dataDurability: preferred` the primary's commits wait
    for the synchronous standby until the operator drops it from the set; the operator pod was on the lost node, so the replicas could not write for about 5 minutes, turned unready and the
    replacements could not become ready. `nodeLossNode` keeps the operators and the primaries off the node ([Q-HA-104](../spec/ha-and-helm.md#q-ha-104--the-node-of-the-node-loss-scenario)).
