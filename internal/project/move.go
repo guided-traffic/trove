@@ -151,7 +151,9 @@ func lockBoth(ctx context.Context, qs *q.Queries, from, to string) (fromID, toID
 // references lists what of the source project names the repository (ProjectRepositoryReferences) and the CI
 // mappings of the project's tier whose inline grants name it by key. A pattern or a class names no
 // repository: it matches by address and simply stops covering the moved one. A template that has not been
-// rendered names none either.
+// rendered names none either. A shared ownership domain of the project (R-AUTHZ-020, P1) would be a reference
+// too; no repository can name one today (`ownershipDomain` is 422 not_applicable, Q-AUTHZ-155), so there is
+// nothing to read for it.
 func references(ctx context.Context, qs *q.Queries, repoID int64, projectID string, from qname.Repo) ([]Reference, error) {
 	rows, err := qs.ProjectRepositoryReferences(ctx, q.ProjectRepositoryReferencesParams{ID: repoID, ProjectID: projectID})
 	if err != nil {

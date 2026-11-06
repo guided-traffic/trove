@@ -95,6 +95,7 @@ A move ([move.go](../../internal/project/move.go)) takes both projects' row lock
 refused with 409 `repository_in_use`, the member `references` listing each object by kind and name, while anything of the source
 project names the repository: a virtual repository's member list, pin rule or deployment target, a key selector of a project policy, an
 inline grant of a project CI mapping that names its key; a virtual repository moves only without members and deployment target. A
+shared ownership domain, which R-REPO-060 counts as well, cannot be set yet (`ownershipDomain` is 422 `not_applicable`). A
 target that holds the key, also by a repository being deleted, is 409 `already_exists`. Nothing is rewritten on the caller's behalf,
 so no grant or resolution changes behind the back of the people who wrote those objects. The move notifies `authz` and `repo_config`
 with the repository's ID and raises its `config_version`, so the old address answers 404 and every cache keyed by the configuration
