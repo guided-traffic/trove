@@ -42,6 +42,7 @@ deploy/dev/drain.sh         E0.14 as a script (`make dev-drain`), and the drain 
 deploy/dev/pg-kill.sh       force-delete the PostgreSQL primary, wait for the recovery
 deploy/dev/pg-stop.sh       stop PostgreSQL for a time by fencing the CloudNativePG cluster
 deploy/dev/valkey-stop.sh   stop Valkey and the Sentinels until valkey-start.sh (the M1 tests hold the outage themselves)
+deploy/dev/s3-stop.sh       scale the object store to 0 until s3-start.sh (its objects stay on the volume); s3-outage.sh is stop, sleep, start (TestHASuite_ObjectStoreOutage)
 deploy/dev/valkey-cli.sh    valkey-cli against the current primary (FLUSHALL of E1.11, CLIENT PAUSE of E1.8)
 deploy/dev/bastion.sh       the e2e Bastions of R-BAS-049: infra, install <volume|bucket>, status, down (the Bastion tests, below)
 deploy/dev/bastion*.yaml    their manifests and chart values; values-bastion.yaml is the main installation's `bastion` profile
@@ -83,6 +84,8 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
                             and publish loops detached in the client pods, the k6 npm requests and their conditions
   npm_ha_test.go            E2.11: drain variant A, PostgreSQL switchover, Valkey failover, pod crash (TestNPMHA); the Valkey
                             outage of the closing run (TestNPMHAClosing)
+  ha_suite_test.go          R-HA-052 under the npm load, the rest of it: the object-store outage, node loss, PostgreSQL and Valkey primary loss,
+                            the audit forward cut by a pod deletion (TestHASuite_..., set ha-suite)
   npm_perf_test.go          R-ARCH-027: perf/k6/npm.js against one web replica from inside the cluster, reported (TestNPMPerf)
   k6/npm.js                 the k6 npm requests of R-HA-059: documents and 1 to 5 MiB tarballs of npm-all, 120 requests/s
   mirror_env_test.go        the mirror harness (R-REPO-059): the profile `mirror`, the repositories in mode mirror, the status and the run, the
@@ -125,6 +128,7 @@ make e2e SET=npm-ha          # E2.11: drain variant A and the failovers under th
 make e2e SET=npm-ha-crash    # E2.11: the pod crash under the npm load, three force-deletes (no CI leg since 2026-11-01; run by hand)
 make e2e SET=npm-ha-soak     # the pod crash with ten force-deletes over 20 minutes, then perf/k6/npm.js (nightly)
 make e2e SET=npm-ha-closing  # npm-ha, npm-ha-soak and the 5-minute Valkey outage under the npm load (the closing run's leg)
+make e2e SET=ha-suite        # the failure scenarios of R-HA-052 that npm-ha leaves out, under the same npm load: the audit forward cut by a pod deletion, the object-store outage, PostgreSQL and Valkey primary loss, node loss (about 50 minutes; nightly and by hand)
 make npm-clients-image       # only build the image into the local Docker
 make e2e SET=nuget-clients   # build the NuGet clients image, start the client pods, run the smoke test (the pods stay up)
 make e2e SET=nuget-clients-down  # remove the NuGet client pods
@@ -1179,6 +1183,90 @@ Not verified here: a run of the leg on a CI runner (the runners were queued), an
 7. **Observed on the dev profile, not gated:** `p8` of the R-ARCH-027 report held 1,000 requests/s with a p99 of 16.5 ms in one run and
    dropped 126 iterations with a p99 of 649 ms in the run before, on the same cluster; a kind cluster on a laptop is no reference
    environment.
+
+## The failure suite under npm load
+
+`make e2e SET=ha-suite` runs the scenarios of [R-HA-052](../spec/ha-and-helm.md#r-ha-052--failure-injection-test-suite) that `npm-ha`
+leaves out, under the same load ([The load](#the-load): eight `npm ci` loops, a publish loop, k6 at 120 requests/s, npm's default retries), in the
+scatter profile with the counting npm test upstream and three client pods: [test/e2e/ha_suite_test.go](../../test/e2e/ha_suite_test.go). A long set
+(about 50 minutes), for the nightly workflow, a dispatch and by hand. The decisions are
+[Q-STOR-147 to Q-STOR-149](../spec/storage.md#q-stor-147--the-dev-profiles-object-store-keeps-its-objects-over-an-outage),
+[Q-HA-103 to Q-HA-105](../spec/ha-and-helm.md#q-ha-103--the-node-loss-bound-is-counted-from-the-moment-the-cluster-declares-the-node-lost) and
+[Q-NPM-76 and Q-NPM-77](../spec/formats/npm.md#q-npm-76--how-the-drain-criterion-of-the-audit-forward-is-run).
+
+| Test | Injection | Load | Pass conditions |
+|---|---|---|---|
+| `TestHASuite_AuditDrain` | the counting upstream answers an audit after 20 s (`delay_ms.audit`); the `packages` pod with a client request in flight (`trove_http_requests_in_flight`) is deleted 1 s after the request reached the provider | one `npm audit` of a package without an advisory | R-NPM-038: the audit exits 0 ("found 0 vulnerabilities") after the 20 s; the provider logged one request; no SIGKILL event and no container exit 137 |
+| `TestHASuite_ObjectStoreOutage`, 30 s | `s3-stop.sh`; `s3-start.sh` 30 s later | all three, plus a prober (below) | R-HA-052, R-HA-010, R-STOR-036: documents and the management API answer 200 throughout; tarballs answer `503` with `Retry-After` = `open_duration` rounded up, at least 5 (10 s in the dev profile), once the circuit is open; `curl -T` of 64 MiB with `Expect: 100-continue` is `503` with `Retry-After`, three in five before the body; no pod turns unready or restarts; a tarball and an upload succeed again within `open_duration` + 10 s of the return (`s3-start.sh` returns when the store stores a file); k6: every failure a tarball `503` inside the outage and the recovery bound; an `npm` command that overlaps the outage may fail (with the `503`), every other one exits 0 and every `npm ci` loop completes one after it ([Q-STOR-148](../spec/storage.md#q-stor-148--what-the-npm-loops-may-see-of-an-object-store-outage)); every acknowledged publish installs |
+| `TestHASuite_ObjectStoreOutage`, 5 min | as above; a `packages` pod deleted 60 s into the outage | as above | as above, and: the replacement pod is not ready at any of the samples taken every 2 s while the store is down (at least 20) and its restart count stays 0 (R-STOR-035); it is ready within 60 s of the return |
+| `TestHASuite_NodeLoss` | `docker stop` of the node `nodeLossNode` picks, 1 min into the load; the node comes back after the replacements and the scheduler lease are settled | all three | replacement pods ready (3 `api`, 3 `packages`, 4 `worker` outside the node) within `nodeFailureTolerationSeconds` + 60 s of the `unreachable` taint; the scheduler lease held by one live worker again, never by two connections (a 200 ms sample of `pg_locks`), within the server keepalive's `idle + interval x count` + 30 s of the stop when the holder was on the node; no `(task, scheduled_for)` slot twice; no job locked by an `api` or `packages` replica; the pods outside the node stay ready and are not restarted; k6 fails no request more than 10 s after the replacements are ready; a command running at the stop may fail with a network error, every later one exits 0 ([Q-HA-105](../spec/ha-and-helm.md#q-ha-105--what-the-npm-loops-may-see-of-a-lost-node)); the node, PostgreSQL (2 instances), Valkey and the Sentinels are whole again at the end |
+| `TestHASuite_PostgresPrimaryLoss` | `pg-kill.sh` after 1 minute | all three | R-HA-052: every k6 failure is a `503` within `retry.max_elapsed` (30 s) of the kill and none after the cluster reports healthy; every `npm` command exits 0 (after their retries); no restart; `ping` answers after the recovery; every acknowledged publish installs |
+| `TestHASuite_ValkeyPrimaryLoss` | `valkey-kill.sh` after 1 minute | all three | R-HA-057: every `npm` command exits 0, k6 only `2xx` and `304`, `/readyz` 200 on every pod throughout, `valkey` degraded on a replica for at most `down-after-milliseconds` + 15 s |
+
+`nodeLossNode` picks a node that hosts an `api`, a `packages` and a main `worker` pod and neither the PostgreSQL primary, nor the Valkey primary, nor the pod of the
+CloudNativePG or the Valkey operator, nor (if another node qualifies) the PostgreSQL standby. An operator or a primary in the way is moved first, before the load starts
+([Q-HA-104](../spec/ha-and-helm.md#q-ha-104--the-node-of-the-node-loss-scenario)).
+
+**The prober of the outage test** asks once a second for a document of `npm-all` and `GET /api/v1/repositories` (metadata), for the 1 MiB tarball of the fixture (a blob),
+and every fifth second for an upload of a 64 MiB file to `generic-local` with `curl -T -H 'Expect: 100-continue'`, which records the bytes curl sent.
+
+**Dev scripts.** [s3-stop.sh](../../deploy/dev/s3-stop.sh) scales the Deployment `trove-s3` to 0 and waits for its pod; [s3-start.sh](../../deploy/dev/s3-start.sh) scales it to 1,
+waits for the pod and then until the filer stores and returns a file (the pod's readiness is a TCP check that the S3 gateway passes before the volume server has registered);
+[s3-outage.sh](../../deploy/dev/s3-outage.sh) (`make dev-s3-outage DURATION=60s`) is stop, sleep, start. The store's data directory is a PersistentVolumeClaim, so the
+objects survive a scale to 0 ([Q-STOR-147](../spec/storage.md#q-stor-147--the-dev-profiles-object-store-keeps-its-objects-over-an-outage)).
+The counting upstream's `delay_ms.audit` switch ([Failure switches](#failure-switches)) needed no change.
+
+### Artifacts
+
+`.out/e2e/ha-suite-<scenario>.json` (the numbers of the conditions), `npm-ha-<scenario>.json`, `npm-load-<scenario>.json` and `k6-npm-<scenario>/` as in
+[Artifacts](#artifacts) above (`s3-outage-30s`, `s3-outage-300s`, `node-loss`, `pg-primary-loss`, `valkey-primary-loss`), `ha-audit-<pod>.log` (the followed log of the pod that
+forwarded the audit, which ends with the pod), `drain-pod-watch.jsonl` and `drain-events.json`.
+
+### Measured on the dev cluster
+
+Apple-silicon laptop (arm64), kind v1.37, edge on `https://localhost:8080`, the working tree of 2026-11-06. Each test ran at least once; the table gives the
+last run of each unless it says otherwise.
+
+| Scenario | Result |
+|---|---|
+| audit forward | the audit ended after 20.3 s with exit 0; the pod was deleted 1,002 ms after the request reached the provider, drained its 15 s and answered after the delay; 1 `Killing` event (SIGTERM) |
+| object store, 30 s (after the fixes below) | `s3-stop.sh` took 26 s (the store terminates slowly), the outage 65 s from the first second of the scale-down to the end of `s3-start.sh`; a tarball was served again 30 ms and an upload accepted 1.8 s after the return (bound 20 s); 273 `npm` commands, 1 failed (a publish, see finding 3), 18 publishes installed; k6 29,925 requests: `document 200` 16,409, `document 304` 2,296, `tarball 200` 9,011, `tarball 503` 2,209, nothing else; no pod unready, no restart |
+| object store, 5 min with a `packages` pod deleted (the run before the fixes) | 547 `npm` commands, 36 failed, each with the `503`; 27 publishes installed; the replacement was sampled 116 times while the store was down, never ready, 0 restarts, ready 5 s after the return; `/readyz` non-200 only on the deleted pod (16) and on the replacement before its first readiness (267); k6 73,166 requests, `tarball 503` 15,571 and `tarball 500` 39 (finding 1) |
+| PostgreSQL primary loss | the fault took 31 s; 301 `npm` commands, all exit 0, 15 publishes installed; k6 18,146 requests, `document 200` 10,537, `document 304` 807, `tarball 200` 6,802, no failure, 345 dropped iterations (the requests that waited for the new primary); no pod unready, no restart |
+| Valkey primary loss | 145 s test; all `npm` commands exit 0; k6 only `2xx` and `304`; `/readyz` 200 throughout; three `packages` replicas reported `valkey` degraded for 4 to 5 samples (about a second apart; bound 20 s) |
+| node loss, a node with the operators (the first run, finding 4) | the node was declared lost 53 s after the stop, the replacements were ready 321 s after that (bound 120 s), the scheduler lease moved 374 s after the stop; every replica's `/readyz` answered `503` for about 5 minutes; 34 of 458 `npm` commands failed with the `503` |
+| node loss, `trove-worker` (an `api`, two `packages`, a `worker` and a `worker-vuln` pod, no operator or primary; standby elsewhere) | `docker stop` returned after 10 s; declared lost 44 s after the stop; the replacements were ready 65 s after the declaration and 109 s after the stop (bound 120 s); the scheduler lease, held by a worker on the node, moved to a live worker 109 s after the stop, never two holders in 1,711 samples; the pods outside the node were ready throughout and did not restart; 477 `npm` commands, 3 `npm ci` failed with `ECONNRESET` after 37 to 40 s (finding 5), 32 publishes installed; k6 39,642 requests, 781 without answer or `502`, none after the replacements were ready |
+
+Not verified here: a run of the whole set in one go (the scenarios ran separately, in three groups, because the kind cluster is shared); the 5-minute outage after the fixes
+of findings 1 to 3 (the 30 s one ran after them); the node-loss test with the command rule of Q-HA-105 (the run above used `allExitZero` and failed on the three
+commands); a run on a CI runner.
+
+### Findings of the failure suite
+
+1. **Fixed in trove: a download that timed out in the transport answered `500`.** The first requests that met a store that was gone (the dial timed out after
+   5 s) became `500 internal` instead of `503 object_store_unavailable`: `mapStoreErr` returned any error that wraps `context.DeadlineExceeded` as it was, before it looked at
+   the transient `StoreError` around it (8 of 3,379 failures in the 30 s run, 39 of 15,610 in the 5 minute run). Unit test `TestMapStoreErrTransportTimeout`.
+2. **Fixed in trove: `Retry-After` of an open circuit was always 5 s and uploads with `Expect: 100-continue` sent their whole body.** R-HA-010 states `open_duration` rounded up
+   (at least 5) and a refusal before the body; the dev profile's 10 s showed `Retry-After: 5`, and `Guard.Open` had no caller, so `curl -T` of 64 MiB sent 64 MiB and then received the `503`.
+   Now the failure that opens the circuit, a call on the open circuit and a failing probe carry the circuit's `Retry-After`, and a write with `Expect: 100-continue` is refused
+   by a stage of the client chain before its body ([Q-STOR-149](../spec/storage.md#q-stor-149--an-upload-that-waits-for-100-continue-is-refused-before-its-body-while-the-circuit-is-open)).
+   Unit tests `TestGuardRejecting`, `TestExpectGate`.
+3. **Open: one `npm publish` of 273 commands in the 30 s run ended with `ECONNRESET` ("socket hang up") instead of the `503`** at 05:42:55, 8 s into the outage. The edge's log
+   has two `503` for that package's `PUT` (04:42:55 and 04:43:05, UTC) and no third line. The check accepts a network error beside the `503` and logs the command; the cause was not found.
+4. **The dev profile: the loss of a node with the CloudNativePG operator stalls PostgreSQL for the operator's toleration of 300 s.** With `dataDurability: preferred` the primary's commits wait
+   for the synchronous standby until the operator drops it from the set; the operator pod was on the lost node, so the replicas could not write for about 5 minutes, turned unready and the
+   replacements could not become ready. `nodeLossNode` keeps the operators and the primaries off the node ([Q-HA-104](../spec/ha-and-helm.md#q-ha-104--the-node-of-the-node-loss-scenario)).
+   A node with the standby alone was not run; the commits would wait for the detection time and the operator's reaction.
+5. **Observed, decided: `npm ci` commands that were running when a node stopped fail with `ECONNRESET`** ([Q-HA-105](../spec/ha-and-helm.md#q-ha-105--what-the-npm-loops-may-see-of-a-lost-node)).
+6. **Fixed in trove: the audit forward gave up after the remote's `readTimeoutMs` (15 s), not `npm.audit.timeout` (30 s).** The first run of `TestHASuite_AuditDrain` ended with `502 upstream_timeout` 15 s after
+   the provider got the request, whatever the replica did ([Q-NPM-77](../spec/formats/npm.md#q-npm-77--the-wait-for-the-advisory-providers-answer-is-bounded-by-npmaudittimeout-alone)).
+   Unit test `TestExchangeClientIsBoundByTheCallersContext`.
+7. **The dev profile: the object store lost its objects over a scale to 0** (`emptyDir`), after which the metadata named blobs the store did not have: every download of earlier
+   content answered `503 content_unavailable`, and a stored upstream document whose object was gone answered `500` on `npm-all` until the cluster was recreated (the comment of `storeNonce` in
+   [e1_13_transfer_test.go](../../test/e2e/e1_13_transfer_test.go) says why a fill of identical content does not repair it: the blob row says the object exists). A PersistentVolumeClaim ([Q-STOR-147](../spec/storage.md#q-stor-147--the-dev-profiles-object-store-keeps-its-objects-over-an-outage)) keeps the objects;
+   the existing cluster was recreated once. That a metadata document whose object is missing answers `500` and is not fetched again is not covered by a test and not analysed.
+8. **The dev profile: a CloudNativePG instance can sit in a smart shutdown for its `stopDelay` of 30 minutes** while sessions stay open (seen at the start of the work on this set: the primary had been in a smart shutdown since 03:19 UTC; the cause was not found,
+   and the cluster was healthy when the 30 minutes were over).
 
 ## The counting npm test upstream
 

@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/blob/blobtest"
 	"github.com/guided-traffic/trove/internal/config"
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/observability"
 )
 
@@ -192,4 +194,59 @@ func TestGuardBreaker(t *testing.T) {
 			t.Fatalf("metric naming: %v", errs)
 		}
 	})
+}
+
+// R-HA-010: while the circuit is open, a client is told to come back after its open duration, rounded up to whole seconds
+// and at least five, and an upload that waits for "100 Continue" is refused before its body.
+func TestGuardRejecting(t *testing.T) {
+	fail := func(op, _ string) error {
+		return &blob.StoreError{Op: op, Status: 503, Code: "SlowDown", Kind: blob.KindTransient}
+	}
+	for _, c := range []struct {
+		open time.Duration
+		want time.Duration
+	}{{2 * time.Second, 5 * time.Second}, {10 * time.Second, 10 * time.Second}, {10500 * time.Millisecond, 11 * time.Second}} {
+		now := time.Now()
+		mem := blobtest.New()
+		g := blob.NewGuard(mem, config.StorageS3Breaker{FailureThreshold: 2, OpenDuration: c.open}, blob.WithGuardClock(func() time.Time { return now }))
+		if _, rej := g.Rejecting(); rej {
+			t.Fatal("a closed circuit rejects")
+		}
+		mem.SetFault(fail)
+		var opening error
+		for i := 0; i < 2; i++ {
+			_, opening = g.Head(context.Background(), "k")
+		}
+		after, rej := g.Rejecting()
+		if !rej || after != c.want {
+			t.Fatalf("open duration %s: rejecting %v, Retry-After %s, want %s", c.open, rej, after, c.want)
+		}
+		var e *errs.Error
+		if !errors.As(blob.MapStoreErr(opening), &e) || e.RetryAfter != c.want {
+			t.Fatalf("the failure that opened the circuit answered with %v, want Retry-After %s", opening, c.want)
+		}
+		if _, err := g.Head(context.Background(), "k"); !errors.Is(err, blob.ErrCircuitOpen) || !errors.As(blob.MapStoreErr(err), &e) || e.RetryAfter != c.want {
+			t.Fatalf("a call on the open circuit answered %v", err)
+		}
+		now = now.Add(c.open + time.Second)
+		if _, rej := g.Rejecting(); rej {
+			t.Fatalf("the circuit still rejects after its open duration %s", c.open)
+		}
+	}
+}
+
+// R-STOR-036: a call that timed out inside the transport (a dial to a store that is gone) answers 503, not 500; a deadline
+// or a cancellation of the caller's own context stays what it is.
+func TestMapStoreErrTransportTimeout(t *testing.T) {
+	var e *errs.Error
+	timeout := &blob.StoreError{Op: "GetObject", Kind: blob.KindTransient, Err: fmt.Errorf("dial tcp 10.96.0.1:9000: i/o timeout: %w", context.DeadlineExceeded)}
+	if err := blob.MapStoreErr(timeout); !errors.As(err, &e) || e.Kind != errs.Unavailable || e.RetryAfter <= 0 {
+		t.Fatalf("a transport timeout mapped to %v", err)
+	}
+	if err := blob.MapStoreErr(context.DeadlineExceeded); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("the caller's own deadline mapped to %v", err)
+	}
+	if err := blob.MapStoreErr(context.Canceled); !errors.Is(err, context.Canceled) {
+		t.Fatalf("the caller's own cancellation mapped to %v", err)
+	}
 }

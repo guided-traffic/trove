@@ -469,3 +469,36 @@ func TestNoSniff(t *testing.T) {
 		}
 	})
 }
+
+func TestExpectGate(t *testing.T) {
+	gate := func(*http.Request) error {
+		return errs.E(errs.Unavailable, errs.CodeObjectStoreUnavail, "the object store is unavailable; retry", errs.WithRetryAfter(10*time.Second))
+	}
+	handled := 0
+	router := newTestRouter("PUT /files/x", func(w http.ResponseWriter, r *http.Request) { handled++ })
+	h := Chain{Router: router, ExpectGate: gate}.Handler()
+
+	t.Run("R-HA-010 a write that waits for 100 Continue is refused by the gate before its body is read", func(t *testing.T) {
+		req := httptest.NewRequest("PUT", "/files/x", strings.NewReader("body"))
+		req.Header.Set("Expect", "100-continue")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != 503 || w.Header().Get("Retry-After") != "10" || handled != 0 {
+			t.Fatalf("status %d, Retry-After %q, handled %d", w.Code, w.Header().Get("Retry-After"), handled)
+		}
+	})
+	t.Run("R-HA-010 a write without Expect and a request without a body go on", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("PUT", "/files/x", strings.NewReader("body")))
+		if w.Code != 200 || handled != 1 {
+			t.Fatalf("status %d, handled %d", w.Code, handled)
+		}
+		req := httptest.NewRequest("PUT", "/files/x", nil)
+		req.Header.Set("Expect", "100-continue")
+		w = httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != 200 || handled != 2 {
+			t.Fatalf("status %d, handled %d", w.Code, handled)
+		}
+	})
+}

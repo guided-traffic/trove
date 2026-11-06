@@ -1957,7 +1957,9 @@ names, each with a list of versions:
   without `read` on the forwarding member gets the refusal of R-AUTHZ-016 and no provider is asked.
 - The forward holds no PostgreSQL connection while it waits: its one query runs before the
   provider is called. Its deadline is `min(npm.audit.timeout, server.shutdown_timeout − 1 s)`,
-  counted from the arrival of the request. npm never retries a `POST` (R-NPM-001), so a forward cut
+  counted from the arrival of the request, and it is the only bound on the wait for the provider's answer: the remote's
+  `readTimeoutMs`, which bounds the silence in a transfer, does not apply to the forward
+  ([Q-NPM-77](#q-npm-77--the-wait-for-the-advisory-providers-answer-is-bounded-by-npmaudittimeout-alone)). npm never retries a `POST` (R-NPM-001), so a forward cut
   by its replica's shutdown would fail `npm audit`; with this deadline, a forward that is running
   when its replica starts to drain ends before the shutdown deadline
   ([architecture.md](../architecture.md) R-ARCH-024, R-NPM-046).
@@ -2005,8 +2007,9 @@ Acceptance criteria:
   `disabled`.)
 - A small gzip body that inflates beyond the limit answers 413.
 - A `providerURL` with user info is refused with 422 when the repository document is written.
-- The test provider answers after 20 s. The `web` pod that forwards an `npm audit` is deleted
-  1 s after the request arrived; `npm audit` succeeds, and the kubelet events show no `SIGKILL`.
+- The test provider answers after 20 s. The `packages` pod (a `web` pod before phase 6a) that forwards an `npm audit` is deleted
+  1 s after the request arrived; `npm audit` succeeds, and the kubelet events show no `SIGKILL`. `TestHASuite_AuditDrain`
+  runs it ([Q-NPM-76](#q-npm-76--how-the-drain-criterion-of-the-audit-forward-is-run)).
 
 From M4b, while scanning is on, the forwarding criteria above run with `npm-remote` and `npm-all`
 set to `forward`; the criteria of mode `local` are those of
@@ -4782,6 +4785,55 @@ rule (R-REPO-052) compared strings; `https://registry.npmjs.org/?` passed the fi
 being the same upstream.
 
 **Applied in the spec:** the section "Mirror discovery" (the methods bullet and the hosts bullet read "the public registry" as this predicate).
+
+### Q-NPM-76 · How the drain criterion of the audit forward is run
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the last acceptance criterion of R-NPM-038 needs a provider that answers after 20 s, the moment the request arrived at the provider, the
+pod that forwards it, and a reading of "`npm audit` succeeds". The forward is made by the `packages` pod that the edge gave the client's
+`POST` (format traffic is served by the `packages` role, R-ARCH-001); the counting test upstream delays an answer by class (`delay_ms.audit`) and counts the
+requests it has open, including those it holds (`/-/stub/inflight`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The existing switch and counters (chosen) | `delay_ms: {"audit": 20000}`; the request has arrived when the stub reports one open request; the forwarding pod is the `packages` pod whose `trove_http_requests_in_flight{listener="client"}` is above 0 | No new switch; the arrival is the provider's, not the client's | The pod is found a few hundred milliseconds after the arrival, inside the second the criterion allows |
+| (b) A new stub switch that answers an audit after a delay and logs the arrival | A second way to delay | The arrival is logged by the stub | The stub already holds the delayed request open and counts it |
+| (c) Find the pod from the logs afterwards | Delete the pod after the answer | No race | The criterion is a deletion *during* the forward |
+
+`npm audit` of a package without an advisory exits 0 and prints "found 0 vulnerabilities"; one with an advisory exits 1 with the report, which is a
+success of the forward and not of the exit status. The test audits a package of the counting upstream's corpus that has no advisory, so "succeeds" is the exit status.
+
+**Choice:** (a), `TestHASuite_AuditDrain` in [ha_suite_test.go](../../../test/e2e/ha_suite_test.go).
+
+**Rationale:** the criterion is about the pod, the provider and the client, and the stub already exposes what the test needs of the provider. The
+development agent would revisit it if the forward moves to another role.
+
+**Applied in the spec:** R-NPM-038, the last acceptance criterion (the `packages` pod).
+
+### Q-NPM-77 · The wait for the advisory provider's answer is bounded by `npm.audit.timeout` alone
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `TestHASuite_AuditDrain` (R-NPM-038's drain criterion: the provider answers after 20 s) found that the forward ended after 15 s with
+`502 upstream_timeout`, whatever the replica did. The forward goes through the remote's upstream client, whose transport waits for response
+headers for the remote's `readTimeoutMs` (default 15 s, "longest time without receiving a byte", [repositories-and-proxy.md](../repositories-and-proxy.md)). `npm.audit.timeout` (default 30 s, up
+to 300 s) is documented as the longest a forward may take, so with the default `readTimeoutMs` it never was: a provider that answers after 16 s
+failed the audit of every default installation, and the setting could only lower the bound.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The forward's own client waits for headers as long as its context allows (chosen) | `upstream.Client` carries a second `http.Client` with the same transport policy and a header timeout of 5 minutes (the largest `npm.audit.timeout`); `Engine.Exchange` uses it | `npm.audit.timeout` is the one bound the schema and the spec name; the egress, TLS, redirect and credential rules are the same | A second connection pool per remote client |
+| (b) Tell the operator to raise `readTimeoutMs` of the remote | Documentation only | No code | The setting also governs every fetch of the remote, where a silent upstream should be given up on after 15 s; the default configuration contradicts its own default |
+| (c) Make the transport's header timeout a per-request value | The caller sets it on the request | One pool | `net/http` has no per-request response-header timeout; it would need a custom transport |
+
+**Choice:** (a), `ExchangeHTTP` in [client.go](../../../internal/proxy/upstream/client.go), `TestExchangeClientIsBoundByTheCallersContext`.
+
+**Rationale:** the forward is one request whose duration the format bounds with its own context; the repository's read timeout is about stalls in a
+transfer, which a provider that is still computing is not. The development agent would revisit it if another format makes an exchange that should
+keep the repository's read timeout.
+
+**Applied in the spec:** R-NPM-038 (the deadline bullet).
 
 ## What this does not cover
 

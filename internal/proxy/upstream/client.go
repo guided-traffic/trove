@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -22,8 +23,13 @@ type Client struct {
 	settings repository.RemoteSettings
 	origin   *url.URL
 	http     *http.Client
+	exchange *http.Client // the same policy, without the repository's read timeout (ExchangeHTTP)
 	cred     *credential
 }
+
+// ExchangeHeaderTimeout is the longest an exchange waits for response headers when its context does not end it first: the
+// largest bound a format sets (npm.audit.timeout, 300 s).
+const ExchangeHeaderTimeout = 5 * time.Minute
 
 // Key is the key of the repository.
 func (c *Client) Key() string { return c.key }
@@ -42,8 +48,24 @@ func (c *Client) Origin() *url.URL {
 // applies the egress rules, the TLS verification and the redirect rules.
 func (c *Client) HTTP() *http.Client { return c.http }
 
-// Close drops the idle connections of the client's pool.
-func (c *Client) Close() { c.http.CloseIdleConnections() }
+// ExchangeHTTP returns the client for a request that a format makes outside the cache and bounds with its own context
+// (the advisory request of an npm audit, R-NPM-038). It has the transport of [Client.HTTP] with the same credential,
+// egress, TLS and redirect rules; its wait for response headers is [ExchangeHeaderTimeout] and not the repository's
+// readTimeoutMs, which bounds the silence of a transfer. A client built without one (a test's) answers HTTP().
+func (c *Client) ExchangeHTTP() *http.Client {
+	if c.exchange != nil {
+		return c.exchange
+	}
+	return c.http
+}
+
+// Close drops the idle connections of the client's pools.
+func (c *Client) Close() {
+	c.http.CloseIdleConnections()
+	if c.exchange != nil {
+		c.exchange.CloseIdleConnections()
+	}
+}
 
 // Allowed reports whether a request to u may be sent for this repository: its
 // host is the upstream's, or matches an entry of extraHosts (R-REPO-043). The

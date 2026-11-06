@@ -102,6 +102,21 @@ func (s *Store) Ingest(ctx context.Context, body io.Reader, o IngestOptions) (*S
 	return s.spool.Ingest(ctx, body, o)
 }
 
+// RejectUpload is the answer to an upload that has not sent its body yet, nil when it may go on: while the object
+// store's circuit is open a new blob cannot be stored, and a client that waits for "100 Continue" is told so before it
+// sends the body (R-HA-010).
+func (s *Store) RejectUpload() error {
+	c, ok := s.objects.(interface{ Rejecting() (time.Duration, bool) })
+	if !ok {
+		return nil
+	}
+	after, rejecting := c.Rejecting()
+	if !rejecting {
+		return nil
+	}
+	return storeUnavailable(&circuitOpenError{retry: after})
+}
+
 // Key is the object key of a blob under the configured prefix.
 func (s *Store) Key(d Digest) string { return Key(s.cfg.S3.Prefix, d) }
 

@@ -54,7 +54,37 @@ func digestMismatch(algorithm string) error {
 	return errs.E(errs.Conflict, errs.CodeConflict, "the declared "+algorithm+" digest differs from the content", errs.WithCause(ErrDigestMismatch))
 }
 
-// storeUnavailable maps an object-store failure to the 503 of R-STOR-036.
+// circuitOpenError is ErrCircuitOpen with the Retry-After of R-HA-010: the circuit's open duration rounded up to whole
+// seconds, at least five.
+type circuitOpenError struct{ retry time.Duration }
+
+func (e *circuitOpenError) Error() string        { return ErrCircuitOpen.Error() }
+func (e *circuitOpenError) Is(target error) bool { return target == ErrCircuitOpen }
+
+// retryHintError is a transient store failure that left the circuit open: the Retry-After of the circuit goes with it.
+type retryHintError struct {
+	err   error
+	retry time.Duration
+}
+
+func (e *retryHintError) Error() string { return e.err.Error() }
+func (e *retryHintError) Unwrap() error { return e.err }
+
+func circuitRetryAfter(openFor time.Duration) time.Duration {
+	return max(retryAfter, (openFor+time.Second-1)/time.Second*time.Second)
+}
+
+// storeUnavailable maps an object-store failure to the 503 of R-STOR-036. While the circuit is open its Retry-After is
+// the circuit's open duration (R-HA-010).
 func storeUnavailable(err error) error {
-	return errs.E(errs.Unavailable, errs.CodeObjectStoreUnavail, "the object store is unavailable; retry", errs.WithRetryAfter(retryAfter), errs.WithCause(err))
+	after := retryAfter
+	var open *circuitOpenError
+	var hint *retryHintError
+	switch {
+	case errors.As(err, &open):
+		after = open.retry
+	case errors.As(err, &hint):
+		after = hint.retry
+	}
+	return errs.E(errs.Unavailable, errs.CodeObjectStoreUnavail, "the object store is unavailable; retry", errs.WithRetryAfter(after), errs.WithCause(err))
 }

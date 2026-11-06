@@ -30,6 +30,10 @@
 #   e2e.sh npm-ha-soak  the pod crash with ten force-deletes over 20 minutes, then the npm load scripts of R-ARCH-027
 #                       (perf/k6/npm.js, reported); the nightly Performance workflow runs it. npm-ha-closing runs npm-ha,
 #                       npm-ha-soak and the Valkey outage in one go
+#   e2e.sh ha-suite    the failure scenarios of R-HA-052 that npm-ha does not run, under the npm load (TestHASuite_...): the audit forward of
+#                       R-NPM-038 cut by a pod deletion, the object-store outage (30 s, and 5 min with a replica deleted), the PostgreSQL
+#                       and the Valkey primary loss and the loss of a node (docker stop); the scatter profile, three client pods, the counting
+#                       npm test upstream (nightly, dispatch, locally)
 #   e2e.sh nuget-clients  the smoke test of the NuGet client pods (R-NUGET-027: dotnet and nuget.exe run, the base URL reaches the
 #                       cluster with a verified certificate); builds the clients image and starts the pods, which stay up
 #   e2e.sh nuget-clients-down  removes the NuGet client pods
@@ -62,8 +66,6 @@
 #                       CI: job e2e-mirror (a change to the mirror)
 #   e2e.sh mirror-long  the long scenario of R-REPO-058: `kubectl drain` of the node of the process that runs a pass of 300 packages
 #                       (nightly, dispatch, locally: a red long leg is a finding, not a blocker, owner 2026-11-01)
-#   e2e.sh ha-suite     the failure suite's scenarios under the npm load that npm-ha does not run (R-HA-052: the object-store outage,
-#                       node loss, the PostgreSQL and Valkey primary loss, the drain criterion of R-NPM-038); nightly, dispatch, locally
 #   e2e.sh upgrade      the upgrade tests (E6a.7 and R-HA-020): the cut into roles in the two steps of R-HA-064 from v0.16.0, and the rolling
 #                       upgrade and rollback from the latest release, each under npm, NuGet and browser loops; it replaces the
 #                       installation and returns the cluster to the current dev release (nightly, dispatch, locally)
@@ -128,6 +130,10 @@ case "$set_name" in
   npm-ha-crash) run='^TestNPMHACrash$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
   npm-ha-soak) run='^TestNPM(HACrash|Perf)$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NPM_CRASH_SOAK=1 ;;
   npm-ha-closing) run='^TestNPM(HA|HACrash|HAClosing|Perf)$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NPM_CLOSING=1 TROVE_E2E_NPM_CRASH_SOAK=1 ;;
+  # The failure suite under npm load (test/e2e/ha_suite_test.go, docs/developer/e2e.md#the-failure-suite-under-npm-load): the
+  # scenarios of R-HA-052 that npm-ha and npm-ha-crash leave out, with the same load (eight npm ci loops, a publish loop, k6).
+  # A long set (about 50 minutes): nightly, on dispatch and locally, like the closing run's Valkey outage.
+  ha-suite) run='^TestHASuite_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
   # >>> M4 ci
   # GitLab CI OIDC (R-CI-028, roadmap M4 E4.1 to E4.7, docs/developer/e2e.md#the-ci-tests): the reference pipeline's steps
   # with the real npm and .NET clients of the client pods against the issuer double, in the scatter profile. `ci` runs on
@@ -161,9 +167,6 @@ case "$set_name" in
   mirror) run='^TestMirror_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 ;;
   mirror-long) run='^TestMirrorLong_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
   # <<< M6b mirror
-  # The failure suite under the npm load (R-HA-052: the object-store outage, node loss, the PostgreSQL and Valkey primary loss, the
-  # drain criterion of R-NPM-038), a nightly leg; until its tests land the set names none and passes with a notice (Q-ARCH-276).
-  ha-suite) run='^TestHASuite_'; empty_ok=1; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
   # >>> M6a upgrade
   # The upgrade tests (R-HA-020, R-HA-064, E6a.7, docs/developer/e2e.md#the-upgrade-tests): the release is removed, the database
   # and Valkey are emptied, an older release is installed from the published chart and image (v0.16.0 for the cut into roles, the

@@ -42,7 +42,7 @@ func (e *Engine) Exchange(ctx context.Context, rem Remote, req *http.Request, ca
 	out := req.Clone(rctx)
 	out.Header.Del("Authorization") // the client's hop policy alone adds the credential
 	start := time.Now()
-	resp, err := cl.HTTP().Do(out) //nolint:gosec // G704: the URL is the remote's upstream or its providerURL, which only repository configuration sets; the client checks every address against the egress policy (R-REPO-038)
+	resp, err := cl.ExchangeHTTP().Do(out) //nolint:gosec // G704: the URL is the remote's upstream or its providerURL, which only repository configuration sets; the client checks every address against the egress policy (R-REPO-038)
 	if err != nil {
 		e.m.request(rem.Repo.Key, 0)
 		return nil, e.exchangeFailure(ctx, rem, out, caller, err)

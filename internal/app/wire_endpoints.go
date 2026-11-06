@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"slices"
 	"strings"
@@ -150,7 +151,8 @@ func (a *App) startEndpoint(rt *endpointRuntime, router *httpserver.Router) erro
 		OnRequest: label, MaxInFlight: rt.ep.MaxInFlight(), Resolver: resolver, Annotate: annotate,
 		Memory: a.memGuard, OnShed: func(reason string) { a.tele.metrics.RequestShed(rt.cfg.Name, reason) },
 		Authenticate: a.authenticate(rt), Bastion: bastion, Preflight: part[apiArea](a.parts).preflight, RateLimit: a.endpointStage(rt), Replica: a.id.Instance, ReplicaHeader: rt.ep.ReplicaHeader(),
-		Draining: a.health.Draining,
+		Draining:   a.health.Draining,
+		ExpectGate: func(*http.Request) error { return a.uploadGate() },
 	}.Handler()
 
 	name := "client"
@@ -224,4 +226,13 @@ type endpointEvents struct{ m *observability.Metrics }
 func (e endpointEvents) Misdirected(endpoint string) { e.m.EndpointMisdirected(endpoint) }
 func (e endpointEvents) ForwardedHostIgnored(endpoint string) {
 	e.m.EndpointForwardedHostIgnored(endpoint)
+}
+
+// uploadGate refuses an upload that waits for "100 Continue" while the object store's circuit is open (R-HA-010); a
+// replica without a blob store lets it pass.
+func (a *App) uploadGate() error {
+	if b := part[blobArea](a.parts); b.store != nil {
+		return b.store.RejectUpload()
+	}
+	return nil
 }

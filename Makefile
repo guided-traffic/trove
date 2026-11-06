@@ -416,6 +416,10 @@ dev-valkey-failover: ## Valkey Sentinel failover under load (deploy/dev/valkey-f
 dev-valkey-kill: ## Kill the Valkey primary under load (deploy/dev/valkey-kill.sh)
 	deploy/dev/valkey-kill.sh
 
+.PHONY: dev-s3-outage
+dev-s3-outage: ## Stop the object store for DURATION (default 60s) under load (deploy/dev/s3-outage.sh)
+	deploy/dev/s3-outage.sh $(or $(DURATION),60s)
+
 .PHONY: dev-valkey-outage
 dev-valkey-outage: ## Stop Valkey for DURATION (default 60s) under load (deploy/dev/valkey-outage.sh)
 	deploy/dev/valkey-outage.sh $(or $(DURATION),60s)
@@ -441,7 +445,7 @@ dev-drain: ## Drain a node under k6 load with cursor-persisting jobs; fails on a
 	deploy/dev/drain.sh
 
 .PHONY: e2e
-e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failover|access-long|access|full|drain|drain-roles|npm|npm-closing|npm-ha|npm-ha-crash|npm-ha-soak|npm-ha-closing|nuget-clients|nuget|nuget-closing|nuget-ha|ci|ci-ha|bastion|bastion-long|vuln|vuln-long|mirror|mirror-long|upgrade|<go test -run regexp>, default: all but the profile switch
+e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failover|access-long|access|full|drain|drain-roles|npm|npm-closing|npm-ha|npm-ha-crash|npm-ha-soak|npm-ha-closing|ha-suite|nuget-clients|nuget|nuget-closing|nuget-ha|ci|ci-ha|bastion|bastion-long|vuln|vuln-long|mirror|mirror-long|upgrade|<go test -run regexp>, default: all but the profile switch
 	deploy/dev/e2e.sh '$(SET)'
 
 # >>> M2 npm-clients

@@ -40,10 +40,12 @@ func mapStoreErr(err error) error {
 	switch {
 	case err == nil:
 		return nil
+	case errors.Is(err, ErrCircuitOpen), IsTransient(err), IsConfig(err):
+		// before the context cases: a deadline that ended a call inside the transport (a dial that timed out) arrives as a
+		// transient StoreError wrapping context.DeadlineExceeded, and the client is owed the 503 of R-STOR-036
+		return storeUnavailable(err)
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return err
-	case errors.Is(err, ErrCircuitOpen), IsTransient(err), IsConfig(err):
-		return storeUnavailable(err)
 	}
 	return err
 }

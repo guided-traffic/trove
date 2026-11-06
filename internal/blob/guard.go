@@ -59,6 +59,17 @@ func (g *Guard) Open() bool {
 	return g.open
 }
 
+// Rejecting reports whether a call would fail at once with ErrCircuitOpen, and the Retry-After a client is given
+// (R-HA-010): the circuit is open and its open duration has not passed, or the probe is out.
+func (g *Guard) Rejecting() (time.Duration, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if !g.open || (!g.probing && !g.now().Before(g.openUntil)) {
+		return 0, false
+	}
+	return circuitRetryAfter(g.openFor), true
+}
+
 // admit decides whether a call may go to the store.
 func (g *Guard) admit() (probe bool, err error) {
 	g.mu.Lock()
@@ -67,7 +78,7 @@ func (g *Guard) admit() (probe bool, err error) {
 		return false, nil
 	}
 	if g.probing || g.now().Before(g.openUntil) {
-		return false, ErrCircuitOpen
+		return false, &circuitOpenError{retry: circuitRetryAfter(g.openFor)}
 	}
 	g.probing = true
 	return true, nil
@@ -125,6 +136,12 @@ func (g *Guard) call(op string, f func() error) error {
 	start := g.now()
 	err = f()
 	g.settle(probe, err)
+	if err != nil && IsTransient(err) {
+		// the call that opened the circuit, or the probe that kept it open, is answered with the circuit's Retry-After too
+		if after, rejecting := g.Rejecting(); rejecting {
+			err = &retryHintError{err: err, retry: after}
+		}
+	}
 	g.metrics.request(op, requestOutcome(err), g.now().Sub(start).Seconds())
 	return err
 }

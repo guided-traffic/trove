@@ -1075,3 +1075,40 @@ func TestClassify(t *testing.T) {
 		t.Fatal("a nil error has a code")
 	}
 }
+
+// R-NPM-038: the advisory request of an npm audit waits for a provider that answers later than the repository's
+// readTimeoutMs; its context (npm.audit.timeout) bounds it, as the exchange client's header timeout does not.
+func TestExchangeClientIsBoundByTheCallersContext(t *testing.T) {
+	slow := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(1500 * time.Millisecond):
+			_, _ = io.WriteString(w, "{}")
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(slow.Close)
+	f := newFixture(t, fixtureOpts{servers: []*httptest.Server{slow}})
+	s := settings(slow.URL, repository.AuthNone)
+	s.ReadTimeoutMs = 1000
+	cl, err := f.clients.For(t.Context(), repo(61, "npm-slow", 1), s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := getErr(t, cl, slow.URL+"/answer"); err == nil || !strings.Contains(err.Error(), "timeout") {
+		t.Fatalf("the fetch client answered %v, want its response-header timeout of readTimeoutMs", err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, slow.URL+"/answer", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := cl.ExchangeHTTP().Do(req)
+	if err != nil {
+		t.Fatalf("the exchange client gave up before its context did: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+}

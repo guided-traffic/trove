@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
@@ -115,6 +116,11 @@ type Chain struct {
 	// RateLimit is stage 7.
 	RateLimit func(http.Handler) http.Handler
 
+	// ExpectGate runs after stage 7 for a request that waits for "100 Continue" before it sends its body (a write with
+	// Expect: 100-continue): an error answers the request, and the body is never asked for, so the client does not send
+	// it. R-HA-010 uses it for an upload while the object store's circuit is open. Nil means none.
+	ExpectGate func(*http.Request) error
+
 	// Replica and ReplicaHeader implement X-Trove-Replica (R-OPS-002).
 	Replica       string
 	ReplicaHeader string
@@ -127,7 +133,7 @@ type Chain struct {
 
 // Handler builds the chain around the router.
 func (c Chain) Handler() http.Handler {
-	var h http.Handler = c.Router
+	h := c.expectStage(c.Router)
 	if c.RateLimit != nil {
 		h = c.RateLimit(h)
 	}
@@ -148,6 +154,22 @@ func (c Chain) Handler() http.Handler {
 		h = c.Trace(h)
 	}
 	return c.recoverStage(h)
+}
+
+// expectStage refuses a request that announced a body with Expect: 100-continue before the body is read, when the gate says so.
+func (c Chain) expectStage(next http.Handler) http.Handler {
+	if c.ExpectGate == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ContentLength != 0 && strings.EqualFold(strings.TrimSpace(r.Header.Get("Expect")), "100-continue") {
+			if err := c.ExpectGate(r); err != nil {
+				Problem(w, r, err)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // recoverStage is step 1. It also puts the logger in the context, labels the

@@ -881,9 +881,10 @@ Priority: **MVP** · Covers: HA-004
 object-storage outage, and R-STOR-033 specifies the per-replica circuit breaker. On top of that,
 this page requires the following:
 
-- An upload rejected because the circuit is open MUST be rejected *before* the body is read
-  (`503` with `Retry-After`), so clients that send `Expect: 100-continue` (`dotnet nuget push`,
-  `curl -T`) do not transfer the body at all.
+- An upload that sends `Expect: 100-continue` and is rejected because the circuit is open MUST be
+  rejected *before* the body is read (`503` with `Retry-After`), so clients that send it
+  (`dotnet nuget push`, `curl -T`) do not transfer the body at all. A write without `Expect` is read
+  and a deduplicated upload succeeds ([Q-STOR-149](storage.md#q-stor-149--an-upload-that-waits-for-100-continue-is-refused-before-its-body-while-the-circuit-is-open)).
 - `Retry-After` on these `503` responses is `storage.s3.circuit_breaker.open_duration` rounded up to
   whole seconds, at least 5.
 - The circuit state is a per-replica gauge (`trove_storage_s3_circuit_open`). The chart's alert
@@ -5249,9 +5250,9 @@ against the local profile (R-HA-051) in CI. Load comes from real clients in para
 | PostgreSQL primary loss | Force-delete the primary pod | Failures only within `retry.maxElapsed`, all `503`; recovery without intervention |
 | PostgreSQL partition of one replica | NetworkPolicy denying egress to PostgreSQL for one pod | That pod unready within 15 s; no failed iteration overall; its leases move |
 | PostgreSQL outage | Scale the database to 0 instances for 2 min (hibernation) | No container restart; full recovery within 30 s of return |
-| Object-store outage | The S3 store scaled to 0 for 30 s and for 5 min; during the 5-minute run one replica is deleted | Metadata, UI and API succeed throughout; blob transfers answer `503` with `Retry-After` (R-STOR-036); no running replica turns unready (R-HA-008); the replacement pod started during the outage stays not ready with its container restart count unchanged, because the startup check retries without exiting (R-STOR-035), and becomes ready within 60 s after the store returns; full recovery within `storage.s3.circuit_breaker.open_duration` + 10 s |
+| Object-store outage | The S3 store scaled to 0 for 30 s and for 5 min; during the 5-minute run one replica is deleted | Metadata, UI and API succeed throughout; blob transfers answer `503` with `Retry-After` (R-STOR-036); no running replica turns unready (R-HA-008); the replacement pod started during the outage stays not ready with its container restart count unchanged, because the startup check retries without exiting (R-STOR-035), and becomes ready within 60 s after the store returns; full recovery within `storage.s3.circuit_breaker.open_duration` + 10 s. The store keeps its objects over the outage ([Q-STOR-147](storage.md#q-stor-147--the-dev-profiles-object-store-keeps-its-objects-over-an-outage)); an `npm` command that overlaps the outage may fail, with the `503`, and every other one exits `0` ([Q-STOR-148](storage.md#q-stor-148--what-the-npm-loops-may-see-of-an-object-store-outage)) |
 | Node drain | R-HA-059's drain test, variants A to E | R-HA-059's pass conditions |
-| Node loss | `docker stop` of a kind worker node | Replacement pods ready within `nodeFailureTolerationSeconds` + 60 s; no duplicate singleton work (the lease sessions of R-HA-006) |
+| Node loss | `docker stop` of a kind worker node that hosts an `api`, a `packages` and a `worker` pod and no primary and no operator ([Q-HA-104](#q-ha-104--the-node-of-the-node-loss-scenario)) | Replacement pods ready within `nodeFailureTolerationSeconds` + 60 s of the node being declared lost ([Q-HA-103](#q-ha-103--the-node-loss-bound-is-counted-from-the-moment-the-cluster-declares-the-node-lost)); no duplicate singleton work (the lease sessions of R-HA-006); a client command that was running at the loss may fail with a network error, every later one exits `0` ([Q-HA-105](#q-ha-105--what-the-npm-loops-may-see-of-a-lost-node)) |
 | Change propagation without Valkey | `CLIENT KILL TYPE pubsub` for one replica, then Valkey stopped | R-HA-004: changes take effect within `cluster.epoch_poll_interval` + 1 s; replicas stay ready |
 | Change log unreachable for one replica | NetworkPolicy denying its egress to PostgreSQL | R-HA-004: `invalidation` fails, the replica leaves the Service and catches up before it returns |
 | Valkey planned failover | `SENTINEL FAILOVER trove` | R-HA-057 |
@@ -7252,6 +7253,79 @@ red until (c) is built. Revisited when (c) is built: the cut test keeps (b) for 
 **Applied in the spec:** R-HA-020 (the sentence on the UI in the mixed-version list), R-HA-064 and the roadmap's E6a.7. Code:
 `upCmd.Skew` and `requireClean` in [upgrade_loops_test.go](../../test/e2e/upgrade_loops_test.go),
 [web/e2e/upgrade/16-upgrade.spec.ts](../../web/e2e/upgrade/16-upgrade.spec.ts).
+
+### Q-HA-103 · The node-loss bound is counted from the moment the cluster declares the node lost
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the node-loss row of R-HA-052 requires "replacement pods ready within `nodeFailureTolerationSeconds` + 60 s". The chart sets the
+`node.kubernetes.io/unreachable` toleration of every pod to `nodeFailureTolerationSeconds` (60 s), and Kubernetes starts that clock when the
+node controller puts the taint on the node, which it does after `node-monitor-grace-period` of the controller manager (about 40 s plus
+the controller's period; 53 s in the local runs). Between `docker stop` and the taint nothing in the chart acts.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) From `docker stop` | The bound includes the cluster's detection time | The client's view | The grace period is a setting of the cluster, not of the chart; 120 s cannot hold with the 53 s of detection, 60 s of toleration and the start of a pod |
+| (b) From the taint `node.kubernetes.io/unreachable:NoExecute` (chosen) | The `timeAdded` of the taint is the start | It is the moment the toleration clock starts, so the bound measures what the chart configures plus the start of the replacement | The detection time is reported beside it |
+| (c) From `docker stop`, plus the grace period of the controller manager | The bound is 120 s plus the cluster's | Includes everything | The test would read a setting of the node image's control plane |
+
+**Choice:** (b). The test reports both durations (`docker stop` to the taint, taint to the last replacement ready).
+
+**Rationale:** the row asks what the chart's tolerations buy; detection is the cluster's. The development agent would revisit it if the chart ever sets
+a kubelet or controller-manager value.
+
+**Applied in the spec:** R-HA-052, the node-loss row.
+
+### Q-HA-104 · The node of the node-loss scenario
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the first run of `TestHASuite_NodeLoss` used the node of the drain's variant A (`api`, `packages` and `worker` pod, not the PostgreSQL or
+Valkey primary). The node also carried the CloudNativePG operator, which the local profile runs once, and the PostgreSQL standby. The primary's
+commits wait for the synchronous standby (`dataDurability: preferred`) until the operator drops it from the set; with the operator gone
+with the node that took until Kubernetes had replaced the operator after its own default toleration of 300 s (the operator pod was 4 minutes
+old when the run ended). In that time every replica's `/readyz` answered `503`, no replacement pod could be ready and 34 of 458 `npm` commands failed
+with the `503`. That is the loss of a dependency's operator, which the PostgreSQL rows of R-HA-052 cover, not of trove's pods.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The node of variant A | `drainNodeVariantA` | One rule for the drain and the node loss | Takes the operators with it |
+| (b) A node with an `api`, a `packages` and a `worker` pod and neither a primary, nor an operator, nor the standby where one exists (chosen) | `nodeLossNode`: an operator or a primary in the way is moved first, before the load starts; the node with the standby is taken only if no other qualifies and the test then says so | The scenario measures trove's replacement pods, the lease and the clients; no other row's failure is mixed in | The standby is not lost together with the pods, which the PostgreSQL rows cover |
+| (c) Run the operators with two replicas in the local profile | Change the dev profile | Realistic for production | The chart under test would not change; the operators are not trove |
+
+**Choice:** (b).
+
+**Rationale:** R-HA-052's rows are single failures. The development agent would revisit it if the local profile runs its operators with two replicas.
+
+**Applied in the spec:** R-HA-052, the node-loss row.
+
+### Q-HA-105 · What the npm loops may see of a lost node
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the node-loss row of R-HA-052 states no client condition, and the other scenarios under npm load require that every `npm` command exits `0` with npm's
+default retries. On the loss of a node that hosts two of the three `packages` pods, three of 445 `npm ci` commands (`ci0`, `ci2`, `ci4`) failed with `ECONNRESET`
+after 37 to 40 seconds; each had been running when the node stopped (started one second before), no command that started later failed, and the k6 load, which does
+not retry, saw `502` and connections without an answer (781 of 39,642 requests), none after the replacements were ready. Why: the node's network is gone at once, so a
+request in flight on one of its pods is never answered and never reset; the controller manager declares the node lost only after `node-monitor-grace-period` (44 s in
+the run), and until HAProxy's health check (`check inter 2s`) takes the pod out of rotation a second attempt may go to a dead pod again. npm's two
+retries (waits of 10 s and up to 60 s, requests that hang until the edge's `timeout server` of 50 s) are used up in under 40 s. Measured: the three commands, their duration, the
+detection time and that no later command failed. Not verified: which attempt of each command hung on a dead pod and which was refused (the edge's log of the failed
+requests was not read), and that the edge keeps sessions of a pod it has marked down. That is the behavior of the cluster and the edge, not a defect of trove's pods; the
+chart sets only the toleration (Q-HA-103).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every command exits `0` | The rule of the other scenarios | One rule | Fails on a cluster property that a trove release cannot change |
+| (b) A command that was running when the node stopped may fail with a network error; every command that started later exits `0` (chosen) | `nodeLossCommands` | States what the clients see and bounds it to the commands the loss met; a failure of another kind or of a later command is a finding | The window of the failure is the cluster's detection time, not a number of the chart |
+| (c) Shorten the cluster's detection | A `node-monitor-grace-period` of the kind control plane, `on-marked-down shutdown-sessions` on the edge | Fewer failed commands | A setting of the test cluster and not of the product; the scenario would test the tuned cluster |
+
+**Choice:** (b). The test logs each failed command with its duration.
+
+**Rationale:** R-HA-052's pass condition is about the replacement pods and the singleton work; the clients' part is what Kubernetes' failure detection leaves. The development
+agent would revisit it if the edge's handling of sessions to a pod that was marked down is configured (`on-marked-down shutdown-sessions` was not tried).
+
+**Applied in the spec:** R-HA-052, the node-loss row.
 
 ### Q-HA-110 · How the drain test measures the edge's endpoint-removal time
 

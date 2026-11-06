@@ -4203,6 +4203,77 @@ fills appears.
 
 **Applied in the spec:** R-STOR-016 (the description's `upstreamUrl`) reads unchanged.
 
+### Q-STOR-147 · The dev profile's object store keeps its objects over an outage
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the object-store row of R-HA-052 and the acceptance criteria of R-HA-010 stop the store of the local profile by scaling it to 0. The store
+was one pod on an `emptyDir`, so a scale to 0 deleted every object while the metadata kept naming them: after the return every download of content
+written before the outage answered `503 content_unavailable`, and so did every `npm ci` of the load's lockfile, whatever trove did (R-STOR-036: no
+blob is marked missing because of errors, which holds only for a store that still has its objects).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A PersistentVolumeClaim for the data directory (chosen) | `deploy/dev/s3.yaml` claims 20 Gi of the cluster's default class (local-path in kind); `s3-stop.sh` scales the Deployment to 0 and `s3-start.sh` back | The outage is the one the spec names; the objects are there after the return, as they are after a real store's outage | The volume is bound to the control-plane node the store already runs on; a store that was wiped by an earlier outage had been wiped with the cluster anyway |
+| (b) Cut the store off the network instead of stopping it | A NetworkPolicy or a Service without endpoints | The data stays on the `emptyDir` | A connection that trove's pool holds open keeps working through its conntrack entry, so the outage is partial and depends on what the pool held; the chart's policies are ingress rules only (ADR-154) |
+| (c) Keep the `emptyDir` and rebuild every fixture after an outage | The scenario re-creates the content of the repositories it uses | No change to the profile | Every other test's content is gone after the scenario, and the metadata of earlier runs names objects that no longer exist |
+
+**Choice:** (a).
+
+**Rationale:** the outage must be what R-HA-052 says, and its aftermath must be a store that has what it had. The development agent would revisit it if
+the local profile moves to a store that cannot use a volume.
+
+**Applied in the spec:** R-HA-052, the object-store row (the data survives the outage).
+
+### Q-STOR-148 · What the npm loops may see of an object-store outage
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-052 states the pass condition of the object-store row for the service ("metadata, UI and API succeed throughout; blob transfers answer `503`
+with `Retry-After`") and not for the clients of the load. An `npm ci` with trove's cache warm still reads every tarball of its lockfile, which are
+blobs: during the outage they answer `503`, and npm's default retries (two retries, 10 s to 60 s apart, `Retry-After` is not read) end after about
+half a minute, so a command that overlaps an outage of 5 minutes cannot succeed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every npm command exits 0 | The rule of the other scenarios | One rule | Cannot hold: the spec requires the `503` that npm gives up on |
+| (b) A command that overlaps the outage and its recovery bound may fail, and then only with the registry's `503`; every other command exits 0, and every `npm ci` loop completes a command after the bound (chosen) | The load is metadata (k6's documents and the API probe) and blob transfers that are expected to be `503` | States what R-HA-052 requires of the clients; a failure with another status, or one outside the window, is a finding; the commands after the bound read the whole lockfile from the restored store | The loops are partly idle during the outage |
+| (c) Pause the loops during the outage | The load stops where it cannot succeed | No expected failures to classify | It tests nothing about the transition into and out of the outage |
+
+**Choice:** (b), `outageCommands` in [ha_suite_test.go](../../test/e2e/ha_suite_test.go). The recovery bound is `storage.s3.circuit_breaker.open_duration` + 10 s after the store returns.
+
+**Rationale:** R-HA-052's pass condition is about the service; the clients' share of it is exactly "`503` while the blobs are unreachable, success when they
+are back". The development agent would revisit it if npm learns to honour `Retry-After` on a `503` of a tarball.
+
+**Applied in the spec:** R-HA-052, the object-store row (what the clients of the load see).
+
+### Q-STOR-149 · An upload that waits for 100 Continue is refused before its body while the circuit is open
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-010 requires that "an upload rejected because the circuit is open [...] be rejected before the body is read (`503` with `Retry-After`), so clients
+that send `Expect: 100-continue` (`dotnet nuget push`, `curl -T`) do not transfer the body at all". R-STOR-036 requires that an upload of content that is already
+stored succeeds in an outage, which only the body can show. `Guard.Open` had no caller: `TestHASuite_ObjectStoreOutage` found `curl -T` of 64 MiB with
+`Expect: 100-continue` sending all 64 MiB and then receiving the `503`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The spool refuses every new upload while the circuit is open | `Store.Ingest` checks the circuit before the first read | One place | A deduplicated upload of a client without announced digests fails in an outage, against R-STOR-036's second row; the check cannot tell the clients that wait for `100 Continue` from the others |
+| (b) A stage of the client chain refuses a write that carries `Expect: 100-continue`, after authentication and the rate limit (chosen) | `Chain.ExpectGate`, answered by `Store.RejectUpload` | Only the clients that gain from it are affected; the body of a client without `Expect` is read and a deduplicated upload succeeds; a refusal is never an answer to an unauthenticated request | A client that waits for `100 Continue` and sends content that is already stored is refused in an outage and succeeds when it retries |
+| (c) Leave it | The body is read, then refused | No code | The criterion of R-HA-010 fails |
+
+**Choice:** (b), [chain.go](../../internal/httpserver/chain.go) (`expectStage`), [store.go](../../internal/blob/store.go) (`RejectUpload`), wired in
+[wire_endpoints.go](../../internal/app/wire_endpoints.go). The `Retry-After` of every `503` that the open circuit causes (the refusal, a call on the open circuit, the
+failure that opened it, a failing probe) is `storage.s3.circuit_breaker.open_duration` rounded up to whole seconds, at least 5, as R-HA-010 states; a failure before
+the circuit opened keeps 5. A call that timed out in the transport (a dial to a store that is gone) is a `503` like any other transient failure and was a `500`. Between the end of the open duration
+and the probe (the next call to the store: the readiness check makes one every 5 s) the circuit does not reject, so an upload that arrives in that gap sends its body and
+is answered `503` after it; the test requires three in five of the uploads of an outage to be refused before their body.
+
+**Rationale:** the sentence of R-HA-010 names `Expect: 100-continue` as the reason; a client without it sends its body anyway and keeps R-STOR-036's deduplication.
+The development agent would revisit it if a client without `Expect` shows up that sends large bodies in outages.
+
+**Applied in the spec:** R-HA-010 (first bullet: a write that sends `Expect: 100-continue`).
+
 ## What this does not cover
 
 ### H-11 · Object-store principals bypass trove's authorization and integrity checks

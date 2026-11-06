@@ -376,20 +376,27 @@ func (c *Clients) build(key string, s repository.RemoteSettings, sec *secretValu
 			policy.SendCredentials = append(policy.SendCredentials, h.Pattern)
 		}
 	}
-	opts := []outbound.ClientOption{
-		outbound.WithConnectTimeout(time.Duration(s.ConnectTimeoutMs) * time.Millisecond),
-		outbound.WithResponseHeaderTimeout(time.Duration(s.ReadTimeoutMs) * time.Millisecond),
-		outbound.WithMaxRedirects(c.o.Proxy.MaxRedirects),
-		outbound.WithLogAttrs(slog.String("repo", key)),
-		outbound.WithHopPolicy(policy),
+	opts := func(header time.Duration) []outbound.ClientOption {
+		o := []outbound.ClientOption{
+			outbound.WithConnectTimeout(time.Duration(s.ConnectTimeoutMs) * time.Millisecond),
+			outbound.WithResponseHeaderTimeout(header),
+			outbound.WithMaxRedirects(c.o.Proxy.MaxRedirects),
+			outbound.WithLogAttrs(slog.String("repo", key)),
+			outbound.WithHopPolicy(policy),
+		}
+		if s.SourceNetwork != nil {
+			o = append(o, outbound.WithLocalPrefix(*s.SourceNetwork, c.o.Interfaces))
+		}
+		if s.OutboundProxy.Mode == repository.ProxyDirect {
+			o = append(o, outbound.WithDirect())
+		}
+		return o
 	}
-	if s.SourceNetwork != nil {
-		opts = append(opts, outbound.WithLocalPrefix(*s.SourceNetwork, c.o.Interfaces))
-	}
-	if s.OutboundProxy.Mode == repository.ProxyDirect {
-		opts = append(opts, outbound.WithDirect())
-	}
-	hc := c.o.Factory.Client(outbound.PurposeRemote, opts...)
+	hc := c.o.Factory.Client(outbound.PurposeRemote, opts(time.Duration(s.ReadTimeoutMs)*time.Millisecond)...)
 	hc.Transport = &guard{next: hc.Transport, repo: key, cred: cred}
-	return &Client{key: key, settings: s, origin: origin, http: hc, cred: cred}, nil
+	// The client of a format's own exchange (the advisory request of an npm audit) waits for a provider that computes its
+	// answer: the caller's context bounds it, not the repository's read timeout, which is about silence in a transfer.
+	ex := c.o.Factory.Client(outbound.PurposeRemote, opts(ExchangeHeaderTimeout)...)
+	ex.Transport = &guard{next: ex.Transport, repo: key, cred: cred}
+	return &Client{key: key, settings: s, origin: origin, http: hc, exchange: ex, cred: cred}, nil
 }
