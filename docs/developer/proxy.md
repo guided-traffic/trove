@@ -66,7 +66,7 @@ to `outbound.Factory.Client(PurposeRemote, …)`:
 | `sourceNetwork` | `WithLocalPrefix(prefix, nil)`: the replica's first interface address inside the prefix, re-enumerated every 60 s; none: `outbound.ErrSourceNetworkUnavailable`, no fallback |
 | `outboundProxy.mode: direct` | `WithDirect` |
 | `url`, `extraHosts[].sendCredentials`, `forwardAuthOnRedirect`, the credential | `WithHopPolicy(&outbound.CredentialPolicy{Origin, SendCredentials, ForwardOnRedirect, Headers})` |
-| the repository key | `WithLogAttrs(repo)` |
+| the repository's qualified name (`<projectKey>/<repoKey>`) | `WithLogAttrs(repo)` |
 
 The credential reaches the wire only through `CredentialPolicy.Headers`, which reads the current secret on every request. Nothing that builds
 a request for an upstream sets `Authorization`: the policy removes any header of that name from every hop and adds the credential where the
@@ -88,8 +88,9 @@ answers with 401.
 A failure is `502 upstream_secret_unavailable` (`errs.CodeUpstreamSecretUnavailable`), logged once when the build fails with the cause (the log
 line names the repository and the field, never the value); the text for the client names the repository only. `Clients` remembers the refusal
 for 5 s. The `Ephemeral` client of the unsaved test takes the inline value or a reference from the request and reads no row. Whether
-the request may name a reference is the repository service's to decide before the probe: a project administrator's section never reaches
-`Ephemeral` with one (`UpstreamTestUnsavedIn`, Q-REPO-127), so the client has no rule of its own about the caller.
+the request may name a reference is the repository service's to decide before the probe: the section of a restricted caller
+(`Caller.Restricted`, an Owner of the project without `repositories:write-config`) never reaches `Ephemeral` with one (`UpstreamTestUnsaved`
+through `restrictedRemote`, Q-REPO-127), so the client has no rule of its own about the caller.
 
 ### The cache
 
@@ -276,8 +277,8 @@ integration stack; the call that created the row does not wait for it.
 
 | Operation | Declaration | Handler |
 |---|---|---|
-| `POST /api/v1/repositories/{repoKey}/cache/invalidate` | `action: manage` on the path's repository; the system administrator holds it | `InvalidateRepositoryCache` |
-| `GET /api/v1/repositories/{repoKey}/cache/entries` | `authenticated: true`; the handler admits a holder of `repositories:read-config` or of `manage` and applies the endpoint ceiling to both (Q-OPS-155) | `ListCacheEntries` |
+| `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/cache/invalidate` | `action: manage` on the path's repository; the system administrator, and the roles `maintainer` and `owner` in the repository's project, hold it | `InvalidateRepositoryCache` |
+| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/cache/entries` | `authenticated: true`; the handler admits a holder of `repositories:read-config` or of `manage` and applies the endpoint ceiling to both (Q-OPS-155) | `ListCacheEntries` |
 
 Both live in [cache_api.go](../../internal/api/v1/cache_api.go) and follow the shared authorization step:
 the request's holder (`edge.Access`) is the one the step took, and the handler asks it. The services

@@ -2,7 +2,7 @@
 
 The dashboard is the first screen of the admin area. It shows the state of the installation in one place: the roles and their load, the dependencies and their checks, and how much content and how many principals exist, with links to the screens that hold the details.
 
-**Admin** in the top bar opens it for everyone who holds the capability `settings:read` (roles `admin`, `security-admin`, `auditor`). Without `settings:read`, **Admin** opens **Repositories**, or **Projects** for a project administrator.
+**Admin** in the top bar opens it for everyone who holds the capability `settings:read` (roles `admin`, `security-admin`, `auditor`). Without `settings:read`, **Admin** opens **Repositories**, or **Projects** for a member of a project without a system role.
 
 The screen refreshes every 15 seconds; **Pause automatic refresh** stops that and **Refresh now** loads it once.
 

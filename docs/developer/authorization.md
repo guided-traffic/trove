@@ -276,7 +276,7 @@ Every operation in `api/openapi.yaml` carries `x-trove-permission`. `parseRequir
 | `public: true` | nobody is checked |
 | `authenticated: true` [`publicSwitch: …`] | any authenticated caller |
 | `permission: <capability>` | `Access.Require(ctx, capability)`; the name must be a capability of R-AUTHZ-010 |
-| `permission: <capability>`, `projectAdmin: any \| managePolicies \| manageRepositories` | the capability, or administration of at least one project, whatever the right (`ProjectAccess`; Q-AUTHZ-180 amended); the handler narrows to the addressed project ([projects.md](projects.md), Q-AUTHZ-180) |
+| `permission: <capability>`, `project: path.projectKey`, `projectRole: owner \| reader` | the capability, or a member of the project the path names whose role is at least the declared one (`ProjectAccess.Owns` for `owner`, through a session or an `admin: true` token; `Memberships` for `reader`); a non-member gets `404`, a lower role `403` (`hideProject`). Without `project` (`GET /projects`) a member of any project, and the handler narrows to its projects ([projects.md](projects.md), Q-AUTHZ-207) |
 | `role: <role>` | `Access.Require(ctx, "role:<role>")`: the subject holds the role and its credential exercises roles |
 | `action: deploy`, `repository: query.repository` [, `package: …`] [, `path: query.path`] | `ActionAccess.RequireAction` with a coordinate built from the request; sources are `query.<name>` and `path.<name>` |
 

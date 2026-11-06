@@ -126,7 +126,7 @@ paths, the responses and the schemas), with its `x-trove-permission` (R-VULN-019
 | `getVulnerabilitySummary`, `getVulnerabilityTrend` | `GET /vulnerabilities/summary`, `…/trend` | E |
 | `listVulnerabilitySources`, `listClaimedNameMatches` | `GET /vulnerabilities/sources`, `…/claimed-name-matches` | E |
 | `getPackageVersionVulnerabilities`, `getPackageVulnerabilities` | `GET /packages/{packageId}/versions/{version}/vulnerabilities`, `…/{packageId}/vulnerabilities` | E |
-| `rescanRepositoryVulnerabilities` | `POST /repositories/{key}/vulnerabilities/rescan` (`202` with the job, `409`) | E (the job: B) |
+| `rescanRepositoryVulnerabilities` | `POST /projects/{projectKey}/repositories/{repoKey}/vulnerabilities/rescan` (`202` with the job, `409`) | E (the job: B) |
 | `vulnerabilityData` of `getSystemInfo` | `Facts` of [handlers.go](../../internal/api/v1/handlers.go) | G |
 
 The generated interface is implemented by the `vulnerabilities*_api.go` files of [internal/api/v1](../../internal/api/v1) (they replaced the 503 stubs of Q-VULN-25); a replica that has not wired the scanning still answers 503 (`VulnServices` zero). The filters of the list are the document's query parameters, the sorts its `sort` enum; the permission narrowing in SQL is E's design.

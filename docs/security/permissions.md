@@ -124,7 +124,7 @@ is what **Create a token for this setup** creates, used to pass the gate and be 
 
 What does not change: the grants of the owner are evaluated before the scope and decide alone whether anything is allowed, so the lift
 removes a refusal by the scope and grants nothing; a token never reads more through the virtual repository than its owner reads
-through it. A member addressed directly (`/api/npm/<member>/…`), a repository that is no member, search and listing across
+through it. A member addressed directly (`/api/npm/<projectKey>/<member>/…`), a repository that is no member, search and listing across
 repositories (decided on the repository itself), writes (decided on the deploy target, which a scope names itself) and every other action
 are decided by the scope as before. Tests: `TestR_AUTHZ_013_AScopeOnAVirtualRepositoryCoversItsMembersWhenReadThroughIt` (the
 cases above one by one, a token of a user without the right included) and
@@ -283,7 +283,7 @@ Bastion interface, and the interface admits the recognition stage's proof, not a
 
 | Line | What refuses | Answer |
 |---|---|---|
-| The writes | a policy entry and its validation, a role binding, an owner record, a group member and a project administrator that names `bastion:<name>` ([Q-BAS-60](../spec/bastion.md#q-bas-60--a-bastion-registration-is-refused-by-every-write-path-with-one-top-level-422-principal_not_allowed)) | `422 principal_not_allowed`; `TestR_BAS_004_ABastionHoldsNoGrant` and the unit tests next to each path |
+| The writes | a policy entry and its validation, a role binding, an owner record, a group member and a project member that names `bastion:<name>` ([Q-BAS-60](../spec/bastion.md#q-bas-60--a-bastion-registration-is-refused-by-every-write-path-with-one-top-level-422-principal_not_allowed)) | `422 principal_not_allowed`; `TestR_BAS_004_ABastionHoldsNoGrant` and the unit tests next to each path |
 | The database | the guards of `authz_role_binding` and `group_membership` name the kinds they admit (`AI001`) | the row is refused; the same test writes around the API |
 | The decision point | the kind `bastion` has an empty principal set: no `authenticated`, no own ID, no role, no capability ([decide.go](../../internal/authz/decide.go), [index.go](../../internal/authz/index.go)) | every decision refuses it, should a route ever ask; `TestR_BAS_004_ABastionRegistrationIsNeverPartOfAuthenticated` |
 
@@ -331,7 +331,7 @@ removed between that decision and the commit does not stop it, and the credentia
 
 ### H-396 · A project administrator's policy write is decided on the replica's index
 
-The declaration admits an Owner of the project (the project administrator of the previous model) on the index of the request, which
+The declaration admits an Owner of the project on the index of the request, which
 may be up to `authz.cache.max_staleness` behind (R-AUTHZ-028), and the policy write does not decide again on the state its own
 transaction reads. An Owner that was removed or demoted, or a group it belonged to that lost the role, can therefore still create,
 replace or delete a project policy, and change members, for as long as the replica it reaches holds the older index: typically

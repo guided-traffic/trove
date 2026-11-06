@@ -124,7 +124,8 @@ The routing above is the same for everybody; the engine ([virtual.md](../develop
 
 Component: the member named after the format in the repository document (`npm`; R-REPO-004, Q-ARCH-229) and the settings form rendered
 from the format's schema ([web-ui.md](../developer/web-ui.md#the-repository-settings-form-rendered-from-the-formats-schema), Q-UI-78).
-Subject: every holder of `repositories:read-config`, who reads the member in `GET /api/v1/repositories/{key}` and sees it on the edit
+Subject: every holder of `repositories:read-config` and every Owner of the repository's project, who read the member in
+`GET /api/v1/projects/{projectKey}/repositories/{repoKey}` and see it on the edit
 form, in its API tab and in the conflict dialog (the audit event names the changed member, not its value). The upstream credential of a remote repository is
 sealed and answered as `{"set": true}` ([data-and-secret-flow.md](data-and-secret-flow.md)); the format member has no such
 treatment: what a format declares in its schema is stored in `repositories.config` and returned as it was written. Dormant: npm's

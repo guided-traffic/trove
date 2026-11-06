@@ -332,7 +332,7 @@ A Bastion registration is a principal of the kind `bastion` plus a row of the ta
   `bastionmain.Authenticator` maps its verdicts to `ErrTokenInvalid` and notes the use for `lastUsedAt`. Disabling a registration
   notifies `ChangePrincipal` (the cache flushes) and revokes nothing; deleting one revokes every token with its journal entry first.
 - **A registration holds nothing.** `authz.ParseRef` parses `bastion:<name>`; the policy writes, role bindings, owner records, group
-  members and project administrators refuse it with `principal.BastionNotAllowed` (422 `principal_not_allowed`); the database guards are
+  members and project members refuse it with `principal.BastionNotAllowed` (422 `principal_not_allowed`); the database guards are
   the second line.
 - **Events**: the three `bastion.*` events and `token.created` / `token.revoked` with `resource_type` `bastion` (the token as the resource,
   the registration in `details.bastion`).

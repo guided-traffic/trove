@@ -73,7 +73,7 @@ config:
       external: {requests_per_second: 50, burst: 200, key: principal}   # default; key: principal | address
 ```
 
-The keys `hostRoots` and `wildcardRoot` are reserved for later package formats and have no effect yet. The complete list, including the Service and Ingress keys, is in the [full reference](https://github.com/guided-traffic/trove/blob/main/README.md#-full-reference).
+The key `hostRoots` maps an exact host of the endpoint to a repository's qualified name, `<projectKey>/<repoKey>` (for example `{pkgs.example.org: web/docker-hub}`); it is reserved for later package formats and has no effect yet, and a value that is no qualified name fails the start. The complete list, including the Service and Ingress keys, is in the [full reference](https://github.com/guided-traffic/trove/blob/main/README.md#-full-reference).
 
 ### What the chart creates
 
@@ -88,7 +88,7 @@ A pool keeps external load off the internal pods, but its pods hold the same dat
 
 ### The default endpoint
 
-The entry `endpoints.default` tunes the default endpoint and may set only `hosts`, `wildcardHost`, `hostRoots`, `wildcardRoot`, `surface`, `auth`, `exposure`, `cacheFill`, `rateLimitClass` and `replicaHeader`. Its own defaults are all five route families, token types `pat`, `sat` and `cit`, unbound tokens, anonymous access allowed, exposure `all` and cache fill on. Its port, certificate and concurrency come from `server.listen`, `tls.*` and `server.max_in_flight`.
+The entry `endpoints.default` tunes the default endpoint and may set only `hosts`, `wildcardHost`, `hostRoots`, `surface`, `auth`, `exposure`, `cacheFill`, `rateLimitClass` and `replicaHeader`. Its own defaults are all five route families, token types `pat`, `sat` and `cit`, unbound tokens, anonymous access allowed, exposure `all` and cache fill on. Its port, certificate and concurrency come from `server.listen`, `tls.*` and `server.max_in_flight`.
 
 ## Accepted credentials
 
@@ -102,7 +102,7 @@ A refused credential answers `401` exactly like an unknown token, so the answer 
 
 ### Bind a token to an endpoint
 
-A token's scope has a list of endpoint names; an empty list means unbound. The token screens of the web UI do not offer the binding yet. Create the token through the management API, for example `POST /api/v1/service-accounts/{name}/tokens` with `"scope": {"endpoints": ["customers"], ...}`, or with `trove admin token` and a scope file. A token bound to `customers` works only there, so a leaked customer token is useless on the default endpoint.
+A token's scope has a list of endpoint names; an empty list means unbound. The token screens of the web UI do not offer the binding yet. Create the token through the management API, for example `POST /api/v1/service-accounts/{name}/tokens`, or `POST /api/v1/projects/{projectKey}/service-accounts/{name}/tokens` for a service account of a project, with `"scope": {"endpoints": ["customers"], ...}`, or with `trove admin token` and a scope file. A token bound to `customers` works only there, so a leaked customer token is useless on the default endpoint.
 
 ## Exposure rules
 
@@ -122,7 +122,7 @@ An endpoint in mode `all` has no ceiling; its rules have no effect. At most 1,00
 | Field | Meaning |
 |---|---|
 | **Name** | lower-case letters, digits, dot, underscore and hyphen, up to 64 characters; fixed after creation |
-| **Repository** | the repository the rule is about; fixed after creation. For a virtual repository, the rule applies to what is requested through it |
+| **Repository** | the repository the rule is about, named in the API by its qualified name `<projectKey>/<repoKey>` (a bare key, a pattern or a class is refused with `invalid_pattern`); fixed after creation. The rule holds the repository itself: after a move to another project it keeps applying, and reads back the new name. For a virtual repository, the rule applies to what is requested through it |
 | **Description**, **Enabled** | free text; a disabled rule exposes nothing |
 | **Package names** | include and exclude patterns (formats with package names) |
 | **Version range** | in the format's syntax: for npm a node-semver range such as `>=2.0.0`, for NuGet the interval notation of its dependency ranges, such as `[2.0,4.0)`; a bare `2.0` means 2.0 or higher, and floating versions such as `1.*` are refused |
@@ -162,7 +162,7 @@ The result says whether the repository or package is exposed and, per path or ve
 
 ## npm through a customer endpoint
 
-An npm client configured with the endpoint's client address (the base URL plus `/api/npm/<repository>/`) sees only what the rules expose:
+An npm client configured with the endpoint's client address (the base URL plus `/api/npm/<project>/<repository>/`) sees only what the rules expose:
 
 - Package documents list only exposed versions. `time`, `maintainers` and the dist-tags follow; a tag that points at a hidden version disappears, and `latest` moves to the highest exposed release (or the highest exposed pre-release when there is none). The README of a hidden former `latest` is not shown.
 - Every URL in a document, tarball links included, uses the endpoint's base URL host, never the default endpoint's.
@@ -176,7 +176,7 @@ The package-level times `time.created`, `time.modified` and the `Last-Modified` 
 
 ## NuGet through a customer endpoint
 
-A NuGet client configured with the endpoint's feed (the base URL plus `/api/nuget/<repository>/v3/index.json`) sees only what the rules expose:
+A NuGet client configured with the endpoint's feed (the base URL plus `/api/nuget/<project>/<repository>/v3/index.json`) sees only what the rules expose:
 
 - The version list (`flatcontainer/<id>/index.json`), the registration index, its pages and its leaves, in all three hives, list only exposed versions. The paging of the registration follows the exposed versions, so the page bounds and counts are those of the filtered list.
 - Search lists only exposed packages and versions. `version` is the latest exposed version that the request's filters leave, `totalHits` counts exposed packages only.

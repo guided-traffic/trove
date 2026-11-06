@@ -88,9 +88,9 @@ Built (M1, access core):
 - 🛂 **Permission policies.** Deny by default; allow-only policies over repository and package-name patterns, five system roles and role bindings; a grant index per replica that is consistent through an epoch. See [authorization](docs/developer/authorization.md) and [permissions](docs/security/permissions.md).
 - 🪪 **Role bindings from the Helm values.** `authz.role_bindings` makes an IdP group the administrator or the auditor from a GitOps repository: `trove migrate` applies the list, the API and the UI show it read-only. See [sign-in and identity](docs/manual/admin/sign-in-and-identity.md#administrators-from-the-helm-values).
 - 🔎 **Auditor.** Reads the configuration, the audit log and the metadata of every repository (package lists, documents, search, package pages) and downloads, publishes and changes nothing. See [permissions](docs/security/permissions.md#the-auditor).
-- 🗂️ **Projects and delegated administration.** A project groups repositories under a key; its administrators (users and groups) hold `manage` on them and, with the switches `managePolicies` and `manageRepositories`, write the project's policies, create its repositories of every class and the service accounts of external partners with their tokens, all named `<projectKey>-…` and never reaching beyond the project; an older replica of a rolling upgrade sees a project policy as covering nobody. See [projects](docs/developer/projects.md), [delegated administration](docs/security/delegated-administration.md) and the [manual](docs/manual/admin/projects.md).
+- 🗂️ **Projects, members and roles.** Every repository belongs to exactly one project and is addressed inside it (`/api/<format>/<projectKey>/<repoKey>/`), its key unique within the project; users and groups are members with the role Reader, Developer, Maintainer or Owner, which grants the project's repositories through the member's session and personal tokens; the Owner administers the project: members, repositories of every class, a move to another project it owns, policies, service accounts of external partners with their tokens and CI mappings, all named within the project (`sa:<projectKey>/<name>`) and never reaching beyond it. An administrator creates projects and names their first Owners. See [projects](docs/developer/projects.md), [delegated administration](docs/security/delegated-administration.md) and the [manual](docs/manual/admin/projects.md).
 - 🚪 **Endpoints and exposure rules.** Further endpoints on their own listeners and hosts; exposure rules are a ceiling on what each endpoint serves. See [endpoints](docs/developer/endpoints.md) and [endpoints and exposure](docs/security/endpoints-and-exposure.md).
-- 📦 **Generic repositories.** Local repositories with flat paths; raw transfer under `/files/{repoKey}/{path}` with `PUT`, `GET` (with `Range`), `HEAD` and `DELETE`; folders and the items API. See [files](docs/developer/files.md) and [repository model](docs/security/repository-model.md).
+- 📦 **Generic repositories.** Local repositories with flat paths; raw transfer under `/files/{projectKey}/{repoKey}/{path}` with `PUT`, `GET` (with `Range`), `HEAD` and `DELETE`; folders and the items API. See [files](docs/developer/files.md) and [repository model](docs/security/repository-model.md).
 - 🧾 **Audit.** An event registry, transactional and asynchronous recording, a PostgreSQL journal with partitions and retention, and the query and export API. See [audit](docs/developer/audit.md) and [audit trail](docs/security/audit.md).
 - 🧭 **Management API.** Under `/api/v1/`, described by [api/openapi.yaml](api/openapi.yaml): problem+json errors, cursor paging, ETags with `If-Match`, idempotency keys, and a permission declared on every operation. See [API families](#management-api).
 - 🖥️ **Admin UI.** The Angular application, embedded in the binary: sign-in, the file tree, repositories, users, groups, service accounts, tokens, policies, endpoints, audit and the system status, in a light and a dark scheme. See [web UI](docs/developer/web-ui.md) and [design language](docs/developer/design-language.md).
@@ -159,26 +159,26 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | `/api/v1/openapi.json`, `/api/v1/openapi.yaml` | GET | yes, from [api/openapi.yaml](api/openapi.yaml) |
 | `/api/v1/problems/{code}` | GET | yes; the `type` of every problem is this path |
 | `/healthz`, `/readyz`, `/metrics` | GET, ops listener | yes (`/metrics` unless `metrics.enabled: false`) |
-| `/files/{repoKey}/{path}` | GET, HEAD, PUT, DELETE | yes (M1; [files](docs/developer/files.md)) |
+| `/files/{projectKey}/{repoKey}/{path}` | GET, HEAD, PUT, DELETE | yes (M1; [files](docs/developer/files.md)); a path without the project key, or with a `%` in the project or repository segment, is no repository address |
 | `/auth/oidc/{providerId}/start`, `/auth/oidc/{providerId}/callback` | GET | yes (M1; [login](docs/developer/login.md)) |
 | `/auth/local/login`, `/auth/logout` | POST | yes (M1; the break-glass login and logout) |
 | `/api/v1/…` (the management API) | see the [API families](#management-api) | yes (M1; [api/openapi.yaml](api/openapi.yaml)) |
-| `/api/<format>/<repoKey>/…` | per route (npm: GET, PUT, DELETE, POST; NuGet: GET, HEAD, PUT, DELETE, POST) | yes, npm (M2) and NuGet (M3; [dispatcher](internal/api/dispatch/dispatcher.go)) |
-| `/api/nuget/<repoKey>/v3`, `…/v3/`, `…/v3/index.json` | GET, HEAD | yes, the service index of a local or virtual repository (M3 skeleton; the same body at the three spellings) |
-| `/api/nuget/<repoKey>/v3/flatcontainer/{id}/index.json`, `…/{version}/{id}.{version}.nupkg`, `…/{version}/{id}.nuspec` | GET, HEAD | yes, the version list, the package and the `.nuspec` of a local repository (M3; [documents](docs/developer/nuget.md#rendered-documents-and-package-files)) |
-| `/api/nuget/<repoKey>/v3/{registration,registration-gz,registration-semver2}/{id}/index.json`, `…/page/{lower}/{upper}.json`, `…/{version}.json` | GET, HEAD | yes, the registration index, page and leaf in three hives; the gzip hives compress for a client that accepts it |
-| `/api/nuget/<repoKey>/v3/search?q=&skip=&take=&prerelease=&semVerLevel=&packageType=` | GET, HEAD | yes, the search of a local repository (R-NUGET-010) and the merged search of a virtual one (R-NUGET-018): terms, phrases and the fields `id`, `packageid`, `version`, `title`, `tags`, `author`, `description`, `summary`; `totalHits` counts the packages the caller may read ([NuGet](docs/developer/nuget.md#search)) |
-| `/api/nuget/<repoKey>/v3/{autocomplete,symbols}/…` | GET | routed, answers `501 nuget_not_implemented` until its work package lands ([NuGet](docs/developer/nuget.md#the-routes)) |
-| `/api/nuget/<repoKey>/v3/package` | PUT | yes, the push of a package to a local repository (a multipart form whose first part is the package, or the bare package); `201`, `400`, `403`, `409` ([NuGet](docs/developer/nuget.md#the-write-side)) |
-| `/api/nuget/<repoKey>/v3/symbolpackage` | PUT | yes, the push of a `.snupkg` to a local repository after its package (R-NUGET-020); `201` (also for the identical package again), `400`, `403`, `404` (no such package), `409` `nuget_symbol_package_exists`; one `nuget-symbol-index` job per symbol package ([NuGet](docs/developer/nuget.md#symbol-packages)) |
-| `/api/nuget/<repoKey>/v3/package/{id}/{version}` | DELETE, POST | yes, DELETE unlists (or removes, with `deleteMode: delete`) and answers `204`, POST lists again and answers `200` |
-| `/api/nuget/<repoKey>/v3/…` of a remote repository (and `<repoKey>~cache`, the cache view) | GET, HEAD | yes, the service index, version list, registrations and package files of a cached NuGet feed; a push, unlist or delete answers `405` ([NuGet](docs/developer/nuget.md#the-remote-class)) |
-| `/api/nuget/<repoKey>/v3/vulnerabilities/index.json`, `…/v3/vulnerabilities/trove.json` | GET, HEAD | yes (M4b), every class: the index of the `VulnerabilityInfo/6.7.0` resource and its one page, trove's NuGet advisory data keyed by the lower-case ID, `Cache-Control: private, max-age=1800`; listed in the service index while `nuget.vulnerabilityInfo` is `local` and the NuGet data is complete; a request answers `404` when the mode is not `local`, on the cache view and on an endpoint with exposure rules, and `503 vulnerability_data_unavailable` before the data is complete ([vuln_documents.go](internal/formats/nuget/vuln_documents.go)) |
-| any other path below `/api/nuget/<repoKey>/` (every NuGet v2 shape) | any | `404 nuget_v2_unsupported`, the message names `…/v3/index.json` of the repository |
-| `/api/npm/<repoKey>/-/npm/v1/security/advisories/bulk` | POST | yes: the bulk audit, answered from trove's data (mode `local`, M4b) or forwarded (`npm.audit.mode: forward`, M2); `…/-/npm/v1/security/audits` and `…/audits/quick` answer `501 npm_audit_unavailable` in every mode ([routes.go](internal/formats/npm/routes.go)) |
+| `/api/<format>/<projectKey>/<repoKey>/…` | per route (npm: GET, PUT, DELETE, POST; NuGet: GET, HEAD, PUT, DELETE, POST) | yes, npm (M2) and NuGet (M3; [dispatcher](internal/api/dispatch/dispatcher.go)) |
+| `/api/nuget/<projectKey>/<repoKey>/v3`, `…/v3/`, `…/v3/index.json` | GET, HEAD | yes, the service index of a local or virtual repository (M3 skeleton; the same body at the three spellings) |
+| `/api/nuget/<projectKey>/<repoKey>/v3/flatcontainer/{id}/index.json`, `…/{version}/{id}.{version}.nupkg`, `…/{version}/{id}.nuspec` | GET, HEAD | yes, the version list, the package and the `.nuspec` of a local repository (M3; [documents](docs/developer/nuget.md#rendered-documents-and-package-files)) |
+| `/api/nuget/<projectKey>/<repoKey>/v3/{registration,registration-gz,registration-semver2}/{id}/index.json`, `…/page/{lower}/{upper}.json`, `…/{version}.json` | GET, HEAD | yes, the registration index, page and leaf in three hives; the gzip hives compress for a client that accepts it |
+| `/api/nuget/<projectKey>/<repoKey>/v3/search?q=&skip=&take=&prerelease=&semVerLevel=&packageType=` | GET, HEAD | yes, the search of a local repository (R-NUGET-010) and the merged search of a virtual one (R-NUGET-018): terms, phrases and the fields `id`, `packageid`, `version`, `title`, `tags`, `author`, `description`, `summary`; `totalHits` counts the packages the caller may read ([NuGet](docs/developer/nuget.md#search)) |
+| `/api/nuget/<projectKey>/<repoKey>/v3/{autocomplete,symbols}/…` | GET | routed, answers `501 nuget_not_implemented` until its work package lands ([NuGet](docs/developer/nuget.md#the-routes)) |
+| `/api/nuget/<projectKey>/<repoKey>/v3/package` | PUT | yes, the push of a package to a local repository (a multipart form whose first part is the package, or the bare package); `201`, `400`, `403`, `409` ([NuGet](docs/developer/nuget.md#the-write-side)) |
+| `/api/nuget/<projectKey>/<repoKey>/v3/symbolpackage` | PUT | yes, the push of a `.snupkg` to a local repository after its package (R-NUGET-020); `201` (also for the identical package again), `400`, `403`, `404` (no such package), `409` `nuget_symbol_package_exists`; one `nuget-symbol-index` job per symbol package ([NuGet](docs/developer/nuget.md#symbol-packages)) |
+| `/api/nuget/<projectKey>/<repoKey>/v3/package/{id}/{version}` | DELETE, POST | yes, DELETE unlists (or removes, with `deleteMode: delete`) and answers `204`, POST lists again and answers `200` |
+| `/api/nuget/<projectKey>/<repoKey>/v3/…` of a remote repository (and `<projectKey>/<repoKey>~cache`, the cache view) | GET, HEAD | yes, the service index, version list, registrations and package files of a cached NuGet feed; a push, unlist or delete answers `405` ([NuGet](docs/developer/nuget.md#the-remote-class)) |
+| `/api/nuget/<projectKey>/<repoKey>/v3/vulnerabilities/index.json`, `…/v3/vulnerabilities/trove.json` | GET, HEAD | yes (M4b), every class: the index of the `VulnerabilityInfo/6.7.0` resource and its one page, trove's NuGet advisory data keyed by the lower-case ID, `Cache-Control: private, max-age=1800`; listed in the service index while `nuget.vulnerabilityInfo` is `local` and the NuGet data is complete; a request answers `404` when the mode is not `local`, on the cache view and on an endpoint with exposure rules, and `503 vulnerability_data_unavailable` before the data is complete ([vuln_documents.go](internal/formats/nuget/vuln_documents.go)) |
+| any other path below `/api/nuget/<projectKey>/<repoKey>/` (every NuGet v2 shape) | any | `404 nuget_v2_unsupported`, the message names `…/v3/index.json` of the repository |
+| `/api/npm/<projectKey>/<repoKey>/-/npm/v1/security/advisories/bulk` | POST | yes: the bulk audit, answered from trove's data (mode `local`, M4b) or forwarded (`npm.audit.mode: forward`, M2); `…/-/npm/v1/security/audits` and `…/audits/quick` answer `501 npm_audit_unavailable` in every mode ([routes.go](internal/formats/npm/routes.go)) |
 | `/api/v1/vulnerabilities/findings`, `…/findings/export`, `…/findings/{id}`, `…/findings/set-status`, `…/advisories/{ecosystem}/{id}`, `…/summary`, `…/trend`, `…/sources`, `…/claimed-name-matches` | GET; PATCH on `…/findings/{id}`, POST on `…/set-status` | yes (M4b; [the operations](#management-api)) |
-| `/api/v1/packages/{packageId}/vulnerabilities`, `/api/v1/packages/{packageId}/versions/{version}/vulnerabilities`, `/api/v1/repositories/{key}/vulnerabilities/rescan` | GET; POST for the rescan | yes (M4b) |
-| `/api/v1/repositories/{key}/mirror`, `/api/v1/repositories/{key}/mirror/run` | GET; POST | yes (phase 6b): the status of a remote repository's mirror and a request for a pass now ([mirror_api.go](internal/api/v1/mirror_api.go)); both answer `400 not_applicable` for a local or virtual repository |
+| `/api/v1/packages/{packageId}/vulnerabilities`, `/api/v1/packages/{packageId}/versions/{version}/vulnerabilities`, `/api/v1/projects/{projectKey}/repositories/{repoKey}/vulnerabilities/rescan` | GET; POST for the rescan | yes (M4b) |
+| `/api/v1/projects/{projectKey}/repositories/{repoKey}/mirror`, `/api/v1/projects/{projectKey}/repositories/{repoKey}/mirror/run` | GET; POST | yes (phase 6b): the status of a remote repository's mirror and a request for a pass now ([mirror_api.go](internal/api/v1/mirror_api.go)); both answer `400 not_applicable` for a local or virtual repository |
 | `/ui/{locale}/…` | GET, HEAD | yes, locales `en` and `de` ([webui](internal/webui/webui.go)) |
 | `/ui/{locale}/vulnerabilities`, `…/vulnerabilities/findings/{id}`, `…/vulnerabilities/advisories/{ecosystem}/{id}`, `…/vulnerabilities/sources` | GET, HEAD | yes (M4b): the report, a finding, an advisory and the advisory sources ([vulnerabilities.routes.ts](web/src/app/features/vulnerabilities/vulnerabilities.routes.ts)) |
 
@@ -409,8 +409,8 @@ The label sets of the M1 families are not restated per family in this pass; read
 | Name | Pattern | Rule |
 |---|---|---|
 | CI issuer name | `^[a-z0-9][a-z0-9._-]{1,63}$` | unique; immutable; the handle in the API, the audit and the metrics |
-| Mapping name | `^[a-z0-9][a-z0-9._-]{1,63}$` | unique within the issuer; immutable |
-| Mapping principal | `<issuer>/<mapping>` (kind `ci_mapping`); API reference `ci:<issuer>/<mapping>` | created and deleted with the mapping; the principal set of a CI token |
+| Mapping name | `^[a-z0-9][a-z0-9._-]{1,63}$` | unique within the issuer and the tier (the system tier, or one project's tier `project:<projectKey>`); immutable |
+| Mapping principal | `<issuer>/<mapping>` for the system tier, `<issuer>/<projectKey>/<mapping>` for a project's tier (kind `ci_mapping`); API reference `ci:<issuer>/<mapping>`, `ci:<issuer>/<projectKey>/<mapping>` | created and deleted with the mapping; the principal set of a CI token ([Q-AUTHZ-214](docs/spec/authorization.md)) |
 | Package owner identity of a CI project | `ci:<issuer>:project:<project_id>` | the immutable project ID with the issuer; stored by issuer ID ([R-CI-015](docs/spec/gitlab-ci-oidc.md)) |
 | CI token | `trv_cit_…` | issued by `POST /api/v1/auth/oidc/token`; `created_via` `ci-exchange`; owner is the mapping principal; its grants are `api_token.ci_context` |
 | Limiters | `ci_exchange_address`, `ci_exchange_subject` | cluster scope ([R-CI-021](docs/spec/gitlab-ci-oidc.md)) |
@@ -432,12 +432,17 @@ The label sets of the M1 families are not restated per family in this pass; read
 
 | Name | Pattern | Rule |
 |---|---|---|
-| Project key | `^[a-z][a-z0-9-]{1,31}$` | immutable; no key is another key followed by a hyphen and more, and none is the start of a global service account's name |
-| Repository of a project administrator | `<projectKey>-…`, at least one character after the hyphen | 422 `project_prefix_required`; an existing repository keeps its key when it is assigned |
-| Project policy | `<projectKey>-…`, at least one character after the hyphen | with `"project": "<key>"` (422 `project_prefix_required` otherwise); a new global policy takes no such name (422 `name_reserved_by_project`) |
-| Project service account | `<projectKey>-…`, at least one character after the hyphen | with `"project": "<key>"` (422 `project_prefix_required` otherwise); a global service account takes no such name (422 `name_reserved_by_project`) |
-| Source of a project administrator's `manage` in a decision | `project:<key>` | `manage` on every repository of the project; decided from the administration of the project, not stored as a grant |
-| Database guards | SQLSTATE `AI002`, `AI003`, `AI004`, `AI005` | project service account in a group; name prefix and project of a service account; entry of a project policy in the table of global grants; project service account in a role binding or an entry of a global policy (the writes map it to 422 `role_not_allowed` and `principal_outside_project`) |
+| Project key | `^[a-z][a-z0-9-]{1,31}$` | unique; immutable ([qname.ValidProjectKey](internal/qname/qname.go)) |
+| Repository key | `^[a-z0-9][a-z0-9._-]{1,63}$`, no `..`, no trailing `.`; `batch-create`, `batch-update`, `batch-get`, `batch-delete` and `quick-setup` reserved | unique within its project (`UNIQUE (project_id, key)`); the same key may exist in several projects |
+| Qualified repository name | `<projectKey>/<repoKey>` | the name outside the project: global policies, token scopes, exposure rules, `host_roots`, `vulnerabilities.sources.*.repository`, job targets, audit events, the `repo` label of metrics |
+| Repository addresses | `/api/<format>/<projectKey>/<repoKey>/…`, `/files/<projectKey>/<repoKey>/…`, `/api/v1/projects/<projectKey>/repositories/<repoKey>…`; the cache view `<repoKey>~cache` | change with a move to another project (R-REPO-060) |
+| Selector in an instance context | `<projectKey>/<repoKey>`, `<projectGlob>/<keyGlob>[:<format>]`, `@any`, `@any-local`, `@any-remote`, `@any-virtual` `[:<format>]` | global policies, token scopes, the system CI tier, exposure rules, configuration; `*` and `?` never cross the `/`; a bare key is refused (422 `invalid_pattern`, 400 `invalid_scope` in a token scope) |
+| Selector in a project context | `<repoKey>`, `<keyGlob>[:<format>]`, a class | project policies, a project's CI tier, a virtual repository's members and deployment target; a `/` is refused (422 `invalid_pattern`) |
+| Member | `user:<name>`, `group:<name>` with the role `reader`, `developer`, `maintainer` or `owner` | users and groups only (422 `principal_not_allowed`); a project keeps one Owner unless an administrator removes it (409 `last_owner`) |
+| Project policy | stored as `<projectKey>/<name>`, shown and addressed as `<name>` under `/api/v1/projects/<projectKey>/policies/` | unique within the project; the same name may exist in another project and once instance-wide |
+| Project service account | stored as `<projectKey>/<name>`, referenced as `sa:<projectKey>/<name>`, addressed under `/api/v1/projects/<projectKey>/service-accounts/` | unique within the project; an instance-wide one is `sa:<name>` |
+| Source of a role in a decision | `role:<projectKey>:<role>` | the role's actions on every repository of the project (`read` and `manage` only on a virtual repository); decided from the membership, not stored as a grant |
+| Database guards | SQLSTATE `AI002`, `AI003`, `AI004`, `AI005` | project service account in a group; stored name and project of a service account; entry of a project policy in the table of global grants; project service account in a role binding or an entry of a global policy (the writes map it to 422 `role_not_allowed` and `principal_outside_project`) |
 
 ### Vulnerability scanning
 
@@ -466,14 +471,14 @@ The names of the event registry ([internal/audit](internal/audit/)). Each event 
 | Area | Event types |
 |---|---|
 | Login | `auth.login.succeeded`, `auth.login.failed`, `auth.breakglass.login`, `auth.breakglass.locked`, `auth.breakglass.unlocked`, `auth.logout`, `auth.session.ended`, `auth.csrf_failed`, `auth.credential.rejected` |
-| Authorization | `authz.denied`, `authz.read.allowed`, `authz.write.allowed`, `authz.policy.created`, `authz.policy.updated`, `authz.policy.deleted`, `authz.project.created`, `authz.project.updated`, `authz.project.deleted`, `authz.project.admin_added`, `authz.project.admin_removed`, `authz.project.repository_assigned`, `authz.project.repository_unassigned`, `authz.role.bound`, `authz.role.unbound`, `authz.settings.changed`, `authz.ownership.claimed`, `authz.ownership.added`, `authz.ownership.removed`, `authz.ownership.released` |
+| Authorization | `authz.denied`, `authz.read.allowed`, `authz.write.allowed`, `authz.policy.created`, `authz.policy.updated`, `authz.policy.deleted`, `authz.project.created`, `authz.project.updated`, `authz.project.deleted`, `authz.project.member_added`, `authz.project.member_changed`, `authz.project.member_removed`, `authz.role.bound`, `authz.role.unbound`, `authz.settings.changed`, `authz.ownership.claimed`, `authz.ownership.added`, `authz.ownership.removed`, `authz.ownership.released` |
 | Tokens | `token.created`, `token.rotated`, `token.revoked`, `token.expiring`, `token.rejected`; for a Bastion token (type `bst`) `token.created` and `token.revoked` carry `resource_type` `bastion` and the registration in the data (`token.revoked` keeps its journal entry) |
 | Bastion registrations | `bastion.created`, `bastion.updated`, `bastion.deleted` ([internal/audit/events_bastion.go](internal/audit/events_bastion.go); no journal entry) |
 | CI federation | `ci.exchange.succeeded`, `ci.exchange.denied`, `ci.exchange.replayed`, `ci.exchange.repeated`, `ci.token.revoked`, `ci.issuer.created`, `ci.issuer.updated`, `ci.issuer.disabled`, `ci.issuer.enabled`, `ci.issuer.deleted`, `ci.mapping.created`, `ci.mapping.updated`, `ci.mapping.disabled`, `ci.mapping.enabled`, `ci.mapping.deleted`, `ci.keys.refreshed`, `ci.keys.refresh_failed`, `ci.package_ownership.claimed`, `ci.package_ownership.conflict`, `ci.job_token.lookup` ([internal/audit/events_ci.go](internal/audit/events_ci.go)); `ci.token.revoked` and the `.updated`, `.disabled` and `.deleted` events of issuers and mappings carry the journal entry |
 | Users | `user.created`, `user.updated`, `user.renamed`, `user.rename_conflict`, `user.disabled`, `user.enabled`, `user.deleted`, `user.dormancy_warning`, `user.groups.synced`, `user.groups.claim_missing` |
 | Groups and service accounts | `group.created`, `group.updated`, `group.deleted`, `group.members.changed`, `serviceaccount.created`, `serviceaccount.updated`, `serviceaccount.disabled`, `serviceaccount.deleted` |
 | Settings | `settings.auth.changed` |
-| Repositories and endpoints | `repository.created`, `repository.updated`, `repository.deleted`, `endpoint.exposure.created`, `endpoint.exposure.updated`, `endpoint.exposure.deleted` |
+| Repositories and endpoints | `repository.created`, `repository.updated`, `repository.deleted`, `repository.moved` (a move to another project, journaled as a narrowing), `endpoint.exposure.created`, `endpoint.exposure.updated`, `endpoint.exposure.deleted` |
 | Mirror | `mirror.pass_requested` (transactional, the caller; `full` and the `job` it enqueued; [internal/audit/events_mirror_api.go](internal/audit/events_mirror_api.go)) |
 | Files | `artifact.deployed`, `artifact.deleted`, `artifact.downloaded` |
 | Packages (NuGet) | `package.published`, `package.deleted`, `package.metadata_changed`; `package.published` and `package.deleted` carry the journal entry `{"repository", "id", "version", "sha512"}` of a local NuGet repository |
@@ -489,17 +494,17 @@ The names of the event registry ([internal/audit](internal/audit/)). Each event 
 The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every problem answer carries one of these values as `code`. The HTTP status of each code is in the registry.
 
 <details>
-<summary>Error codes (222 codes in the registry, grouped as the file groups them)</summary>
+<summary>Error codes (228 codes in the registry, grouped as the file groups them)</summary>
 
 - Audit (M1): `invalid_audit_range`
-- General: `internal`, `malformed_request`, `validation_failed`, `unauthenticated`, `forbidden`, `not_found`, `method_not_allowed`, `conflict`, `precondition_failed`, `payload_too_large`, `unsupported_media_type`, `rate_limited`, `insufficient_storage`, `unavailable`, `upstream_failed`, `upstream_timeout`, `repository_not_found`, `database_unavailable`, `egress_denied`, `key_ring_incompatible`, `object_store_unavailable`, `shutting_down`, `server_busy`, `database_timeout`, `misdirected_request`, `invalid_cursor`, `invalid_header`, `already_exists`, `idempotency_in_progress`, `idempotency_key_reused`, `precondition_required`, `reserved_name`, `managed_by_config`
+- General: `internal`, `malformed_request`, `validation_failed`, `unauthenticated`, `not_implemented`, `forbidden`, `not_found`, `method_not_allowed`, `conflict`, `precondition_failed`, `payload_too_large`, `unsupported_media_type`, `rate_limited`, `insufficient_storage`, `unavailable`, `upstream_failed`, `upstream_timeout`, `repository_not_found`, `database_unavailable`, `egress_denied`, `key_ring_incompatible`, `object_store_unavailable`, `shutting_down`, `server_busy`, `database_timeout`, `misdirected_request`, `invalid_cursor`, `invalid_header`, `already_exists`, `idempotency_in_progress`, `idempotency_key_reused`, `precondition_required`, `reserved_name`, `managed_by_config`
 - Tokens: `invalid_token`, `credentials_required`, `invalid_credentials`, `principal_disabled`, `invalid_scope`, `invalid_ttl`, `ttl_exceeds_maximum`, `default_above_maximum`, `exceeds_ceiling`, `non_expiring_not_allowed`, `non_expiring_restricted`, `pat_not_allowed`, `ci_token_restricted`, `token_already_issued`, `token_limit_reached`, `derivation_exceeds_parent`, `description_required`, `not_a_token`
 - Identities and login: `managed_by_scim`, `last_admin`, `anonymous_not_allowed`, `auto_join_admin_conflict`, `username_invalid`, `session_expired`, `reauthentication_required`, `csrf_failed`, `browser_mismatch`, `flow_expired`, `provider_unavailable`, `break_glass_restricted`, `break_glass_immutable`, `break_glass_rotating`, `local_login_disabled`, `break_glass_locked`, `too_many_pending_logins`
-- Authorization: `authz_stale`, `authz_epoch_unknown`, `role_not_allowed`, `unknown_role`, `authenticated_write_action`, `anonymous_write_action`, `anonymous_dynamic_selector`, `action_not_allowed`, `invalid_action`, `invalid_pattern`, `unknown_principal`, `unknown_repository`, `unknown_format`, `duplicate_principal`, `virtual_action_not_applicable`, `role_binding_managed_by_configuration`, `repository_outside_project`, `unknown_project`, `principal_outside_project`, `principal_not_allowed`, `project_prefix_required`, `name_reserved_by_project`, `project_account_not_groupable`, `project_not_empty`, `repository_assigned`, `project_owner_changed`, `project_key_overlap`, `project_switch_off`, `secret_value_required`, `outbound_path_restricted`
+- Authorization: `authz_stale`, `authz_epoch_unknown`, `role_not_allowed`, `unknown_role`, `authenticated_write_action`, `anonymous_write_action`, `anonymous_dynamic_selector`, `action_not_allowed`, `invalid_action`, `invalid_pattern`, `unknown_principal`, `unknown_repository`, `unknown_format`, `duplicate_principal`, `virtual_action_not_applicable`, `role_binding_managed_by_configuration`, `repository_outside_project`, `unknown_project`, `principal_outside_project`, `principal_not_allowed`, `project_account_not_groupable`, `project_not_empty`, `repository_in_use` (`409`, a move while an object of the source project names the repository; the member `references` lists them), `secret_value_required`, `outbound_path_restricted`
 - Repositories and formats: `repository_disabled`, `repository_referenced`, `invalid_key`, `invalid_member`, `invalid_document`, `not_applicable`, `unsupported_class`, `unsupported_layout`, `batch_too_large`, `not_a_package`, `no_deploy_target`
 - Files: `invalid_path`, `not_admitted`, `path_conflict`, `content_unavailable`, `range_not_satisfiable`
 - Endpoints and exposure: `endpoint_read_only`, `invalid_version_range`, `dimension_not_supported`, `format_not_exposable`, `endpoint_not_configured`, `exposure_rule_limit_reached`
-- Package ownership and populating (M2): `package_owned_by_other_owner`, `last_owner`, `populate_not_permitted`
+- Package ownership and populating (M2): `package_owned_by_other_owner`, `last_owner` (also the last Owner of a project, `409`), `populate_not_permitted`
 - npm (M2): `npm_invalid_name`, `npm_invalid_version`, `npm_invalid_range`, `npm_invalid_tag`, `npm_bad_publish`, `npm_manifest_mismatch`, `npm_too_large`, `npm_class_not_writable`, `npm_version_exists`, `npm_version_unpublished`, `npm_stale_rev`, `npm_not_implemented`, `npm_audit_unavailable`, `npm_invalid_upstream_document`
 - NuGet (M3): `nuget_invalid_package`, `nuget_invalid_version`, `nuget_invalid_version_range`, `nuget_invalid_id`, `nuget_version_exists`, `nuget_version_deleted`, `nuget_version_reserved`, `nuget_symbol_package_exists`, `nuget_v2_unsupported`, `nuget_not_implemented`, `upstream_package_mismatch`, `nuget_invalid_upstream_document`
 - Remote repositories (M2): `upstream_secret_unavailable`, `source_network_unavailable`, `foreign_host_denied`; the proxy's `not_cached_offline`, `upstream_assumed_offline`, `upstream_auth_failed`, `upstream_error`, `upstream_unreachable`, `upstream_unexpected_status`, `upstream_item_too_large`, `upstream_integrity_mismatch`, `upstream_digest_missing`, `upstream_content_type_blocked`, `tls_untrusted`, `too_many_redirects`, `insecure_redirect`, `fetch_queue_timeout`, `not_cached_only_if_cached`
@@ -507,7 +512,7 @@ The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every pro
 - Virtual repositories (M2): `shadows_remote_package`, `shadow_check_unavailable`
 - Package content (M2): `content_refused`
 - Bastion interface (phase 5b): `bastion_token_invalid` (`401`, the Bastion token of a request is invalid, on every path as problem details), `bastion_interface_mismatch` (`400`, with the member `interfaceVersion`), `invalid_cursor` (`400`, a feed cursor that does not parse), `rate_limited` (`429`, an address with too many rejected Bastion tokens, or a batch of download events beyond the registration's budget) and `not_found` (`404`, a forward of a path outside `/api/<format>/` and `/files/`); the registry also holds `bastion_read_only`, `bastion_not_served`, `bastion_base_url_unknown`, `bastion_not_implemented` and `principal_not_allowed`, and the Bastion's own refusals of R-BAS-029 (`main_failed`, `main_unreachable`, `bastion_busy`, `main_timeout`, `auth_timeout`, `address_blocked`)
-- Vulnerability scanning (M4b): `vulnerability_blocked` (`403`, a finding blocks the version), `vulnerability_data_missing` (`403`, the repository sets `onMissingData: block` and the ecosystem's data was never imported completely), `vulnerability_data_unavailable` (`503`, the npm audit or the NuGet vulnerability documents before the data is complete), `vulnerability_weakening_refused` (`403`, a project administrator's write that weakens the member `vulnerabilities`), `finding_not_confirmed` (`409`, `blocked` on a finding that is not confirmed), `finding_resolved` (`409`), `status_not_settable` (`422`, a person sets `resolved`), `export_too_large` (`422`, above `vulnerabilities.export.max_rows`); the codes of a failed sync run, recorded in `vuln_source_state.last_error` and never an answer to a request: `archive_too_large`, `archive_digest_mismatch`, `archive_limit`, `too_many_invalid_records`, `shrink_refused`, `mirror_repository_invalid`, and for a run that ended before its sync `sync_lease_lost`, `sync_panicked`, `sync_interrupted` and `sync_cancelled` (an operator's cancel, which does not count as a failure)
+- Vulnerability scanning (M4b): `vulnerability_blocked` (`403`, a finding blocks the version), `vulnerability_data_missing` (`403`, the repository sets `onMissingData: block` and the ecosystem's data was never imported completely), `vulnerability_data_unavailable` (`503`, the npm audit or the NuGet vulnerability documents before the data is complete), `vulnerability_weakening_refused` (`403`, a write of an Owner without `repositories:write-config` or `vulnerabilities:triage` that weakens the member `vulnerabilities`), `finding_not_confirmed` (`409`, `blocked` on a finding that is not confirmed), `finding_resolved` (`409`), `status_not_settable` (`422`, a person sets `resolved`), `export_too_large` (`422`, above `vulnerabilities.export.max_rows`); the codes of a failed sync run, recorded in `vuln_source_state.last_error` and never an answer to a request: `archive_too_large`, `archive_digest_mismatch`, `archive_limit`, `too_many_invalid_records`, `shrink_refused`, `mirror_repository_invalid`, and for a run that ended before its sync `sync_lease_lost`, `sync_panicked`, `sync_interrupted` and `sync_cancelled` (an operator's cancel, which does not count as a failure)
 - Mirror passes (phase 6b): the codes of a failed pass attempt, recorded in `mirror_state.last_error_code`, in `mirror.pass_failed` and in the status, and never an answer to a request: `discovery_unavailable` (the method that `discovery` names is not offered), `discovery_failed`, `discovery_stalled`, `cursor_too_large`, `not_applicable`, `upstream_unavailable`, `internal`
 - GitLab CI OIDC (M4): `ci_not_implemented`, `pin_required`, `pin_claim_not_immutable`, `public_issuer_required`, `kind_not_available`, `issuer_managed_by_configuration`, `discovery_unreachable`, `issuer_mismatch`, `no_usable_keys`, `algorithms_not_offered`, `condition_invalid`, `catch_all_condition`, `unprotected_write`, `unpinned_write`, `empty_grant`, `template_invalid`, `template_unanchored`, `unknown_policy`, `unknown_group`, `mapping_limit_reached`, `priority_taken`, `job_token_fallback_not_available`, `groups_not_allowed_in_project`, `policy_outside_project`, `mappings_unpinned`; the exchange's own `reason` values are in [internal/ci/reason](internal/ci/reason/reason.go) and answer in the OAuth error shape (R-CI-008): `malformed_request`, `unsupported_content_type`, `unsupported_subject_token_type`, `unsupported_requested_token_type`, `actor_token_not_supported`, `subject_token_malformed`, `wrong_subject_token_type`, `unknown_issuer`, `issuer_disabled`, `issuer_mismatch`, `algorithm_not_allowed`, `token_type_not_allowed`, `unknown_signing_key`, `signature_invalid`, `audience_invalid`, `audience_not_exclusive`, `token_expired`, `token_not_yet_valid`, `issued_in_future`, `required_claim_missing`, `subject_token_replayed`, `subject_token_predates_restore`, `cross_project_source_denied`, `no_matching_mapping`, `grant_render_failed`, `subject_token_expires_too_soon`, `ttl_below_minimum`, `job_token_rejected` (P2), `job_not_running` (P2) (all `400 invalid_request`); `grant_type_unsupported` (`unsupported_grant_type`); `scope_malformed`, `scope_not_granted` (`invalid_scope`); `audience_not_this_server` (`invalid_target`); `rate_limited` (`429 slow_down`); `signing_keys_unavailable`, `gitlab_unreachable` (P2), `database_unavailable`, `configuration_changed` (`503 temporarily_unavailable`); `internal` (`500 server_error`)
 
@@ -531,8 +536,8 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 | `ci-keys-refresh`, `ci-replay-cleanup`, `ci-issuance-retention` | `internal/app/wire_ci.go` | tasks (`maintenance` queue, exclusive, 3 attempts): `*/5 * * * *`, `7 * * * *`, `40 3 * * *`; `ci-keys-refresh` fetches the due issuers, the other two succeed and do nothing until their services are built ([R-CI-030](docs/spec/gitlab-ci-oidc.md)) |
 | `vuln-sync-osv`, `vuln-sync-osv-full`, `vuln-sync-kev` | `internal/app/wire_vuln_sync.go` | tasks (`maintenance` queue, exclusive, 1 attempt): `*/15 * * * *`, `17 3 * * 0`, `41 */6 * * *`; the two OSV tasks share the dedup key `vuln-sync-osv`, so one OSV sync runs at a time and a colliding slot is postponed; a failed run waits for the next slot. A manual run of an OSV task takes `{"acceptShrink": true}` ([advisory sources](docs/manual/admin/vulnerability-sources.md#the-tasks)) |
 | `vuln-evaluate` | `internal/app/wire_vuln_eval.go` | queue `default`, coalesce; enqueued by a sync run that changed data; reads its work from tables, not from its arguments |
-| `vuln-rescan` | `internal/app/wire_vuln_eval.go` | queue `default`, exclusive per repository (`vuln-rescan:<repository id>`); enqueued in the transaction of a change of the repository's `vulnerabilities.enabled`, `matchPublicAdvisories` or upstream URL, and by `POST /api/v1/repositories/{key}/vulnerabilities/rescan` |
-| `mirror-pass` | `internal/app/wire_mirror.go` (kind), `internal/api/v1/mirror_api.go` (enqueue) | queue `mirror`, exclusive per repository (`mirror-pass:<repository id>`), 1 attempt; arguments `{"repository": "<key>", "repositoryId": <id>, "full": <bool>}`; enqueued by `POST /api/v1/repositories/{key}/mirror/run` in the transaction that records the request in `mirror_state.pass_requested_*` and writes `mirror.pass_requested`, listed by `GET /api/v1/system/jobs?kind=mirror-pass`; the engine that runs it is not built yet, the registered handler only records that |
+| `vuln-rescan` | `internal/app/wire_vuln_eval.go` | queue `default`, exclusive per repository (`vuln-rescan:<repository id>`); enqueued in the transaction of a change of the repository's `vulnerabilities.enabled`, `matchPublicAdvisories` or upstream URL, and by `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/vulnerabilities/rescan` |
+| `mirror-pass` | `internal/app/wire_mirror.go` (kind), `internal/api/v1/mirror_api.go` (enqueue) | queue `mirror`, exclusive per repository (`mirror-pass:<repository id>`), 1 attempt; arguments `{"repository": "<projectKey>/<repoKey>", "repositoryId": <id>, "full": <bool>}`, the job's target the qualified name; enqueued by `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror/run` in the transaction that records the request in `mirror_state.pass_requested_*` and writes `mirror.pass_requested`, listed by `GET /api/v1/system/jobs?kind=mirror-pass`; the engine runs it as below |
 | `vuln-findings-retention` | `internal/app/wire_vuln_eval.go` | task (`maintenance` queue, exclusive, 3 attempts), `50 3 * * *`: deletes the resolved findings older than `vulnerabilities.findings.resolved_retention` |
 | `mirror-dispatch` | `internal/app/wire_mirror.go` | task, queue `maintenance` (so that passes holding the slots of the queue `mirror` cannot starve it), exclusive, 1 attempt, `* * * * *`; ensures a `mirror_state` row for every remote in mode `mirror` and enqueues `mirror-pass` for each that is due; `maintenance.tasks.mirror-dispatch` overrides the schedule |
 | `mirror-pass` | `internal/app/wire_mirror.go`, `internal/mirror/pass.go` | queue `mirror`, exclusive per repository (`mirror-pass:<repository id>`), 1 attempt, no timeout; enqueued by the dispatch and by the run operation; a failed, released or crashed attempt is continued by the next dispatch; the result is `{"outcome", …}`, `{"deferred": "rate_limited", "until"}` or `{"skipped": "repository_gone" \| "not_mirror" \| "paused" \| "invalid_document" \| "rate_limited"}` |
@@ -646,25 +651,30 @@ secrets:
       key: client-secret                  # default
 ```
 
-Sign in as the break-glass administrator with a cookie jar, create a generic repository, mint a personal token, then upload
-and download a file. The `__Host-trv_csrf` cookie goes back as `X-CSRF-Token` on each change, with a same-origin `Origin`:
+Sign in as the break-glass administrator with a cookie jar, create a project and a generic repository in it, mint a personal
+token, then upload and download a file. Every repository belongs to a project, and its addresses carry the project key. The
+`__Host-trv_csrf` cookie goes back as `X-CSRF-Token` on each change, with a same-origin `Origin`:
 
 ```shell
 curl -s -c jar.txt -b jar.txt -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"<the password>"}' https://trove.example.com/auth/local/login       # example
 CSRF=$(awk '$6 == "__Host-trv_csrf" {print $7}' jar.txt)
 curl -s -b jar.txt -H "X-CSRF-Token: $CSRF" -H 'Origin: https://trove.example.com' -H 'Content-Type: application/json' \
-  -d '{"key":"generic-local","class":"local","format":"generic"}' https://trove.example.com/api/v1/repositories   # example
+  -d '{"key":"demo","displayName":"Demo"}' https://trove.example.com/api/v1/projects                        # example
+curl -s -b jar.txt -H "X-CSRF-Token: $CSRF" -H 'Origin: https://trove.example.com' -H 'Content-Type: application/json' \
+  -d '{"key":"generic-local","class":"local","format":"generic"}' \
+  https://trove.example.com/api/v1/projects/demo/repositories                                             # example
 curl -s -b jar.txt -H "X-CSRF-Token: $CSRF" -H 'Origin: https://trove.example.com' -H 'Content-Type: application/json' \
   -d '{"description":"laptop","ttlSeconds":2592000,"scope":{"inherit":true}}' https://trove.example.com/api/v1/tokens  # example
 TOKEN=trv_pat_...                                     # example: the value the token answer carries once
 curl -s -H "Authorization: Bearer $TOKEN" -H 'If-None-Match: *' --data-binary @hello.txt \
-  https://trove.example.com/files/generic-local/docs/hello.txt                                             # example
-curl -s -H "Authorization: Bearer $TOKEN" https://trove.example.com/files/generic-local/docs/hello.txt     # example
+  https://trove.example.com/files/demo/generic-local/docs/hello.txt                                        # example
+curl -s -H "Authorization: Bearer $TOKEN" https://trove.example.com/files/demo/generic-local/docs/hello.txt   # example
 ```
 
-Verify the session and the principal: `curl -s -b jar.txt https://trove.example.com/api/v1/auth/whoami` answers the
-principal, and its `principal.kind` is `break_glass` for this account (the kinds are listed in Q-AUTH-44 of [the identity spec](docs/spec/identity-and-authentication.md#q-auth-44--the-shape-of-whoami)).
+To hand the project to a team, add its group as Owner: `PUT /api/v1/projects/demo/members/group:<name>` with
+`{"role": "owner"}` ([projects](docs/manual/admin/projects.md#members-and-roles)). Verify the session and the principal:
+`curl -s -b jar.txt https://trove.example.com/api/v1/auth/whoami` answers the principal, and its `principal.kind` is `break_glass` for this account (the kinds are listed in Q-AUTH-44 of [the identity spec](docs/spec/identity-and-authentication.md#q-auth-44--the-shape-of-whoami)).
 
 Not verified in this pass: no stack was started for these steps. The request shapes come from the OpenAPI document and the
 login code. The dev edge serves HTTPS (`tls.enabled: true` in the dev values), which the `__Host-` cookies need. Whether a break-glass session may
@@ -806,7 +816,7 @@ runtime:
 ```
 
 Further endpoints, one entry per name (`server.endpoints.<name>`; at most 16 further endpoints; the name `default` tunes the
-default endpoint with `hosts`, `wildcard_host`, `host_roots`, `wildcard_root`, `surface`, `auth`, `exposure`, `cache_fill`,
+default endpoint with `hosts`, `wildcard_host`, `host_roots`, `surface`, `auth`, `exposure`, `cache_fill`,
 `rate_limit_class` and `replica_header` only):
 
 ```yaml
@@ -817,8 +827,7 @@ server:
       base_url: https://packages.example.com   # example; required; an origin
       hosts: []                         # default: the host of base_url only; example: [pkgs.example.org]
       wildcard_host: ""                 # default: none; example: "*.registry.example.com"
-      host_roots: {}                    # default; example: {pkgs.example.org: docker-hub}; reserved, no route uses it yet
-      wildcard_root: none               # default: none | label
+      host_roots: {}                    # default; example: {pkgs.example.org: web/docker-hub}; an exact host of the endpoint -> a repository's qualified name <projectKey>/<repoKey>; reserved, no route uses it yet
       trusted_proxies: []               # default: server.trusted_proxies
       pool: ""                          # default: served by the main web Deployment; example: ep-customers
       max_in_flight: 1024               # default, per replica and endpoint
@@ -1139,7 +1148,7 @@ metrics:
   label_limits:
     repository: 500                     # default
     subscription: 100                   # default
-  repository_label_include: []          # default
+  repository_label_include: []          # default; example: [web/npm-*, "*/nuget-*"]: selectors of an instance context whose repositories keep a repo series of their own; a bare key stops the start
   slow_query_threshold: 500ms           # default
   db_query_histograms: false            # default
   native_histograms: false              # default
@@ -1385,7 +1394,7 @@ vulnerabilities:
       mode: online                      # default: online | repository | off; only the worker role fetches; off keeps the stored data, which ages
       base_url: https://osv-vulnerabilities.storage.googleapis.com/   # default; https only; the sync requests <ecosystem>/all.zip, <ecosystem>/modified_id.csv and <ecosystem>/<id>.json below it
       ecosystems: []                    # default: every ecosystem with a vulnerability adapter (npm, NuGet); may only narrow; another name stops the start-up
-      repository: ""                    # default; required with mode repository; example: vuln-mirror (a generic local repository holding osv/<ecosystem>/all.zip)
+      repository: ""                    # default; required with mode repository; example: ops/vuln-mirror, the qualified name <projectKey>/<repoKey> of a generic local repository holding osv/<ecosystem>/all.zip
       full_resync_threshold: 2000       # default; at least 1: changed records above which an incremental run turns into a full one
       overlap: 1h                       # default; 0 to 168h: subtracted from the download start to set the watermark
       max_shrink: 0.2                   # default; 0 to 1: the share of stored records a full sync may delete; above it the run fails with shrink_refused
@@ -1395,7 +1404,7 @@ vulnerabilities:
     kev:
       mode: online                      # default: online | repository | off; off keeps every known-exploited flag as last computed
       url: https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json   # default; https only
-      repository: ""                    # default; required with mode repository (kev/known_exploited_vulnerabilities.json)
+      repository: ""                    # default; required with mode repository; the qualified name <projectKey>/<repoKey> (kev/known_exploited_vulnerabilities.json)
     epss:
       mode: "off"                       # default; only off is accepted in this build (R-VULN-030, P1); see the terms note below
       url: https://epss.empiricalsecurity.com/epss_scores-current.csv.gz   # default; https only; not fetched while off
@@ -1432,7 +1441,7 @@ Security notes:
 <details>
 <summary>Vulnerability scanning: the repository document members (M4b)</summary>
 
-Members of the repository document of `POST`, `PUT` and `PATCH /api/v1/repositories` (JSON, shown as YAML), not keys of
+Members of the repository document of `POST /api/v1/projects/{projectKey}/repositories`, `PUT` and `PATCH /api/v1/projects/{projectKey}/repositories/{repoKey}` (JSON, shown as YAML), not keys of
 `trove.yaml`. Sources: [internal/vuln/settings.go](internal/vuln/settings.go), the schemas
 [npm/settings.schema.json](internal/formats/npm/settings.schema.json) and
 [nuget/settings.schema.json](internal/formats/nuget/settings.schema.json). A member that sets some fields takes the defaults of the
@@ -1496,7 +1505,7 @@ transaction; `blockMalicious` and `onMissingData` act from the repository snapsh
 | `vulnerabilities.sources.osv.mode`, `…kev.mode`, `….repository` | `online`, empty | `online`: the `worker` fetches over the outbound client (`vuln_source`). `repository`: the files come from a generic local repository, and whoever holds `deploy` on it decides the installation's advisory data, so what is reported and which malicious versions are blocked; each import is audited with its digest and deployer. `off`: the stored data stays and ages. | [who decides the data](docs/security/vulnerability-scanning.md#who-decides-the-data-in-mode-repository), [H-309](docs/spec/vulnerability-scanning.md#h-309--advisory-data-is-not-signed) |
 | `vulnerabilities.sources.osv.base_url`, `…kev.url`, `…epss.url` | the public sources | `https` only; a refusal at start-up names the key. The address policy of `proxy.outbound` applies when the worker connects; the guards (digest, `max_shrink`, the 1 % invalid share, `max_archive_size`) bound a damaged source, not a malicious one. | [who fetches it](docs/security/vulnerability-scanning.md#who-fetches-it-and-over-what), [H-478](docs/security/vulnerability-scanning.md#h-478--the-integrity-guards-bound-a-damaged-source-not-a-malicious-one) |
 | `vulnerabilities.sources.epss.mode` | `off` | Only `off` is accepted in this build. The operator who switches it on later decides whether the data's terms permit the use. | [Q-VULN-21](docs/spec/vulnerability-scanning.md#q-vuln-21--epss-is-an-operator-option-whose-terms-the-operator-decides) |
-| Repository member `vulnerabilities.blockMalicious` | `true` | `false` serves a version with an open malicious finding. A write that weakens the member (`enabled` off, a `matchPublicAdvisories` that matches fewer advisories, `blockMalicious` off, `onMissingData` from `block` to `allow`) needs `repositories:write-config` or `vulnerabilities:triage`: a project administrator's `manageRepositories` alone answers `403 vulnerability_weakening_refused`. Its `repository.updated` event carries `block: lifted` and `weakened`. | [Q-VULN-69](docs/spec/vulnerability-scanning.md#q-vuln-69--weakening-the-vulnerabilities-member-needs-the-triage-capability-or-repositorieswrite-config) |
+| Repository member `vulnerabilities.blockMalicious` | `true` | `false` serves a version with an open malicious finding. A write that weakens the member (`enabled` off, a `matchPublicAdvisories` that matches fewer advisories, `blockMalicious` off, `onMissingData` from `block` to `allow`) needs `repositories:write-config` or `vulnerabilities:triage`: the role Owner of the project alone answers `403 vulnerability_weakening_refused`. Its `repository.updated` event carries `block: lifted` and `weakened`. | [Q-VULN-69](docs/spec/vulnerability-scanning.md#q-vuln-69--weakening-the-vulnerabilities-member-needs-the-triage-capability-or-repositorieswrite-config) |
 | Repository member `vulnerabilities.onMissingData` | `allow` | `allow` serves versions of an ecosystem whose data was never imported completely, unevaluated. `block` refuses them with `403 vulnerability_data_missing` until the first complete import, claimed names of a local repository included (H-502). | [R-VULN-015](docs/spec/vulnerability-scanning.md#r-vuln-015--download-blocking), [H-502](docs/security/vulnerability-scanning.md#h-502--a-claimed-name-in-a-local-repository-that-blocks-missing-data-is-refused-until-the-first-import-completes) |
 | Repository member `vulnerabilities.matchPublicAdvisories` | `auto` | `always` on a local repository applies public advisories to its claimed names: a public package published under an internal name can then make trove report, and with `blockMalicious` block, the internal package, and the name is no longer withheld from the audits. | [R-VULN-010](docs/spec/vulnerability-scanning.md#r-vuln-010--which-stored-versions-public-advisories-apply-to) |
 | Repository member `npm.audit.mode` (`local`, `forward`, `disabled`) | left out: `local` while scanning is on | `local` answers from trove's data and sends nothing out; withheld internal names are counted in `npm-notice`, so a reader can tell them apart (H-486). `forward` sends the audited names that nothing marks internal to the provider. | [client audits](docs/security/vulnerability-scanning.md#client-audits), [H-486](docs/security/vulnerability-scanning.md#h-486--a-reader-of-an-npm-repository-can-tell-internal-names-from-the-audit) |
@@ -1509,7 +1518,7 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 `x-trove-permission` block; `Document.CheckRoutes` checks the routes against the document at start-up. The table lists every operation with its
 `x-trove-permission` and whether it requires a recent sign-in (`x-trove-recent-auth`, R-API-007).
 
-"Project administrator (`right`)" is a second way in (`projectAdmin` in the declaration, R-AUTHZ-026): the shared step admits every caller that administers at least one project, whatever `right` says, and the handler narrows to the project the request addresses. A project the caller does not administer answers `404`; the addressed project's switch off (`managePolicies`, `manageRepositories`) answers `403 project_switch_off`, whatever other projects the caller administers.
+"or Owner of the project" and "or a member of the project" are the second way in of a declaration with `project: path.projectKey` and `projectRole: owner` or `reader` (R-AUTHZ-026, Q-AUTHZ-207): the shared step admits the holder of the capability, or a member of the project the path names whose role is at least the declared one; the Owner's administration needs a session or a token with `admin: true`, through any other token an Owner counts as a Maintainer. A project the caller is no member of answers `404` like a missing one, a role below the declared one `403`. The repository-content operations declare their action on `path.projectKey`/`path.repoKey` and are decided with the roles, the policies and the token scope.
 
 <details>
 <summary>Every operation with its permission (generated from api/openapi.yaml)</summary>
@@ -1522,8 +1531,9 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 | `GET /api/v1/system/version` | `getVersion` | authenticated, public with `system.public_version` |
 | `GET /api/v1/system/info` | `getSystemInfo` | `settings:read` |
 | `GET /api/v1/system/replicas` | `listReplicas` | `settings:read` |
-| `GET /api/v1/system/encryption` | `getEncryptionStatus` | `settings:read` |
 | `GET /api/v1/system/migrations` | `getMigrationStatus` | `settings:read` |
+| `GET /api/v1/system/overview` | `getSystemOverview` | `settings:read` |
+| `GET /api/v1/system/encryption` | `getEncryptionStatus` | `settings:read` |
 
 **meta**
 
@@ -1582,20 +1592,27 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 
 | Method and path | Operation | Permission |
 |---|---|---|
-| `GET /api/v1/service-accounts` | `listServiceAccounts` | `identities:read` or project administrator (`any`) |
-| `POST /api/v1/service-accounts` | `createServiceAccount` | `identities:write` or project administrator (`managePolicies`) |
-| `GET /api/v1/service-accounts/{name}` | `getServiceAccount` | `identities:read` or project administrator (`any`) |
-| `PATCH /api/v1/service-accounts/{name}` | `updateServiceAccount` | `identities:write` or project administrator (`any`) |
-| `DELETE /api/v1/service-accounts/{name}` | `deleteServiceAccount` | `identities:write` or project administrator (`any`) |
-| `POST /api/v1/service-accounts/{name}/disable` | `disableServiceAccount` | `identities:write` or project administrator (`any`) |
-| `POST /api/v1/service-accounts/{name}/enable` | `enableServiceAccount` | `identities:write` or project administrator (`managePolicies`) |
+| `GET /api/v1/service-accounts` | `listServiceAccounts` | `identities:read` |
+| `POST /api/v1/service-accounts` | `createServiceAccount` | `identities:write` |
+| `GET /api/v1/projects/{projectKey}/service-accounts` | `listProjectServiceAccounts` | `identities:read` or Owner of the project |
+| `POST /api/v1/projects/{projectKey}/service-accounts` | `createProjectServiceAccount` | `identities:write` or Owner of the project |
+| `GET /api/v1/service-accounts/{name}` | `getServiceAccount` | `identities:read` |
+| `PATCH /api/v1/service-accounts/{name}` | `updateServiceAccount` | `identities:write` |
+| `DELETE /api/v1/service-accounts/{name}` | `deleteServiceAccount` | `identities:write` |
+| `GET /api/v1/projects/{projectKey}/service-accounts/{name}` | `getProjectServiceAccount` | `identities:read` or Owner of the project |
+| `PATCH /api/v1/projects/{projectKey}/service-accounts/{name}` | `updateProjectServiceAccount` | `identities:write` or Owner of the project |
+| `DELETE /api/v1/projects/{projectKey}/service-accounts/{name}` | `deleteProjectServiceAccount` | `identities:write` or Owner of the project |
+| `POST /api/v1/service-accounts/{name}/disable` | `disableServiceAccount` | `identities:write` |
+| `POST /api/v1/projects/{projectKey}/service-accounts/{name}/disable` | `disableProjectServiceAccount` | `identities:write` or Owner of the project |
+| `POST /api/v1/service-accounts/{name}/enable` | `enableServiceAccount` | `identities:write` |
+| `POST /api/v1/projects/{projectKey}/service-accounts/{name}/enable` | `enableProjectServiceAccount` | `identities:write` or Owner of the project |
 
 **tokens**
 
 | Method and path | Operation | Permission |
 |---|---|---|
-| `POST /api/v1/tokens` | `createToken` | authenticated · recent sign-in |
 | `GET /api/v1/tokens` | `listTokens` | authenticated |
+| `POST /api/v1/tokens` | `createToken` | authenticated · recent sign-in |
 | `GET /api/v1/tokens/current` | `getCurrentToken` | authenticated |
 | `DELETE /api/v1/tokens/current` | `revokeCurrentToken` | authenticated |
 | `POST /api/v1/tokens/current/rotate` | `rotateCurrentToken` | authenticated |
@@ -1605,20 +1622,10 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 | `POST /api/v1/tokens/{id}/rotate` | `rotateToken` | authenticated · recent sign-in |
 | `DELETE /api/v1/users/me/tokens` | `revokeOwnTokens` | authenticated |
 | `DELETE /api/v1/users/{username}/tokens` | `revokeUserTokens` | `tokens:revoke` |
-| `POST /api/v1/service-accounts/{name}/tokens` | `createServiceAccountToken` | authenticated · recent sign-in |
-| `DELETE /api/v1/service-accounts/{name}/tokens` | `revokeServiceAccountTokens` | `tokens:revoke` or project administrator (`any`) |
-
-**bastions**
-
-| Method and path | Operation | Permission |
-|---|---|---|
-| `GET /api/v1/bastions` | `listBastions` | `endpoints:read` |
-| `POST /api/v1/bastions` | `createBastion` | `endpoints:write` |
-| `GET /api/v1/bastions/{name}` | `getBastion` | `endpoints:read` |
-| `PATCH /api/v1/bastions/{name}` | `updateBastion` | `endpoints:write` · `If-Match` |
-| `DELETE /api/v1/bastions/{name}` | `deleteBastion` | `endpoints:write` |
-| `POST /api/v1/bastions/{name}/tokens` | `createBastionToken` | `endpoints:write` · recent sign-in · idempotent · the secret once |
-| `DELETE /api/v1/bastions/{name}/tokens/{id}` | `revokeBastionToken` | `endpoints:write` or `tokens:revoke` |
+| `POST /api/v1/service-accounts/{name}/tokens` | `createServiceAccountToken` | authenticated; an administrator, or a token of the account itself, decided in the handler · recent sign-in |
+| `DELETE /api/v1/service-accounts/{name}/tokens` | `revokeServiceAccountTokens` | `tokens:revoke` |
+| `POST /api/v1/projects/{projectKey}/service-accounts/{name}/tokens` | `createProjectServiceAccountToken` | authenticated; an administrator, an Owner of the project, or a token of the account itself, decided in the handler; an Owner's token always expires, has `admin: false` and no `system` item, and is not self-rotatable · recent sign-in |
+| `DELETE /api/v1/projects/{projectKey}/service-accounts/{name}/tokens` | `revokeProjectServiceAccountTokens` | `tokens:revoke` or Owner of the project |
 
 **auth-settings**
 
@@ -1655,13 +1662,19 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 
 | Method and path | Operation | Permission |
 |---|---|---|
-| `GET /api/v1/permission-policies` | `listPermissionPolicies` | `policies:read` or project administrator (`any`) |
-| `POST /api/v1/permission-policies` | `createPermissionPolicy` | `policies:write` or project administrator (`managePolicies`) · recent sign-in |
-| `GET /api/v1/permission-policies/{name}` | `getPermissionPolicy` | `policies:read` or project administrator (`any`) |
-| `PUT /api/v1/permission-policies/{name}` | `replacePermissionPolicy` | `policies:write` or project administrator (`managePolicies`) · recent sign-in |
-| `PATCH /api/v1/permission-policies/{name}` | `patchPermissionPolicy` | `policies:write` or project administrator (`managePolicies`) · recent sign-in |
-| `DELETE /api/v1/permission-policies/{name}` | `deletePermissionPolicy` | `policies:write` or project administrator (`managePolicies`) · recent sign-in |
-| `POST /api/v1/authz/validate-policy` | `validatePermissionPolicy` | `policies:read` or project administrator (`managePolicies`) |
+| `GET /api/v1/permission-policies` | `listPermissionPolicies` | `policies:read` |
+| `POST /api/v1/permission-policies` | `createPermissionPolicy` | `policies:write` · recent sign-in |
+| `GET /api/v1/projects/{projectKey}/policies` | `listProjectPermissionPolicies` | `policies:read` or Owner of the project |
+| `POST /api/v1/projects/{projectKey}/policies` | `createProjectPermissionPolicy` | `policies:write` or Owner of the project · recent sign-in |
+| `GET /api/v1/permission-policies/{name}` | `getPermissionPolicy` | `policies:read` |
+| `PUT /api/v1/permission-policies/{name}` | `replacePermissionPolicy` | `policies:write` · recent sign-in |
+| `PATCH /api/v1/permission-policies/{name}` | `patchPermissionPolicy` | `policies:write` · recent sign-in |
+| `DELETE /api/v1/permission-policies/{name}` | `deletePermissionPolicy` | `policies:write` · recent sign-in |
+| `GET /api/v1/projects/{projectKey}/policies/{name}` | `getProjectPermissionPolicy` | `policies:read` or Owner of the project |
+| `PUT /api/v1/projects/{projectKey}/policies/{name}` | `replaceProjectPermissionPolicy` | `policies:write` or Owner of the project · recent sign-in |
+| `PATCH /api/v1/projects/{projectKey}/policies/{name}` | `patchProjectPermissionPolicy` | `policies:write` or Owner of the project · recent sign-in |
+| `DELETE /api/v1/projects/{projectKey}/policies/{name}` | `deleteProjectPermissionPolicy` | `policies:write` or Owner of the project · recent sign-in |
+| `POST /api/v1/authz/validate-policy` | `validatePermissionPolicy` | authenticated; `policies:read`, or for a policy of a project (`"project"` in the body) an Owner of it, decided in the handler |
 | `GET /api/v1/roles` | `listRoles` | authenticated |
 | `GET /api/v1/role-bindings` | `listRoleBindings` | `roles:read` |
 | `PUT /api/v1/role-bindings/{role}/{principalRef}` | `bindRole` | `roles:write` · recent sign-in |
@@ -1669,9 +1682,23 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 | `GET /api/v1/authz/me` | `getAuthzMe` | authenticated |
 | `POST /api/v1/authz/check` | `checkPermissions` | authenticated |
 
+**projects**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/projects` | `listProjects` | `projects:read` or a member of a project (its own projects) |
+| `POST /api/v1/projects` | `createProject` | `projects:write`; `owners` names the first Owners (users and groups) |
+| `GET /api/v1/projects/{projectKey}` | `getProject` | `projects:read` or a member of the project |
+| `PUT /api/v1/projects/{projectKey}` | `replaceProject` | `projects:write` or Owner of the project · recent sign-in |
+| `DELETE /api/v1/projects/{projectKey}` | `deleteProject` | `projects:write` · recent sign-in |
+| `GET /api/v1/projects/{projectKey}/members` | `listProjectMembers` | `projects:read` or a member of the project |
+| `PUT /api/v1/projects/{projectKey}/members/{principalRef}` | `setProjectMember` | `projects:write` or Owner of the project; the body `{"role": "<role>"}` with `reader`, `developer`, `maintainer` or `owner`; `201` added, `200` changed; `409 last_owner` unless the caller holds `projects:write` · recent sign-in |
+| `DELETE /api/v1/projects/{projectKey}/members/{principalRef}` | `removeProjectMember` | `projects:write` or Owner of the project; `409 last_owner` unless the caller holds `projects:write` · recent sign-in |
+| `GET /api/v1/projects/{projectKey}/principals` | `lookupProjectPrincipals` | `identities:read` or Owner of the project |
+
 **ci**
 
-The operations of GitLab CI federation ([docs/developer/ci-oidc.md](docs/developer/ci-oidc.md), [admin manual](docs/manual/admin/gitlab-ci.md)). A CI token is refused on every operation of this document except the repository-content operations and `GET` and `DELETE /api/v1/tokens/current` (`403 ci_token_restricted`).
+The operations of GitLab CI federation ([docs/developer/ci-oidc.md](docs/developer/ci-oidc.md), [admin manual](docs/manual/admin/gitlab-ci.md)). A CI token is refused on every operation of this document except the repository-content operations and `GET` and `DELETE /api/v1/tokens/current` (`403 ci_token_restricted`). The operations under `/api/v1/projects/{projectKey}/ci/` manage the mappings of the tier `project:<projectKey>`, named within the project (`ci:<issuer>/<projectKey>/<mapping>`, Q-AUTHZ-214).
 
 | Method and path | Operation | Permission |
 |---|---|---|
@@ -1693,85 +1720,62 @@ The operations of GitLab CI federation ([docs/developer/ci-oidc.md](docs/develop
 | `GET /api/v1/ci/issuances/{tokenId}` | `getCiIssuance` | `tokens:read` |
 | `POST /api/v1/ci/issuances/revoke` | `revokeCiIssuances` | `tokens:revoke` |
 | `POST /api/v1/auth/oidc/token` | `exchangeCiToken` | public: the subject token is the credential; no trove credential, session or CSRF token is read |
-
-A project's administrators (with `managePolicies`) manage the CI mappings of their project (the owner's decision of 2026-11-02, Q-CI-26):
-
-| Method and path | Operation | Permission |
-|---|---|---|
-| `GET /api/v1/projects/{key}/ci/issuers` | `listProjectCiIssuers` | `ci:read` or project administrator (`managePolicies`) |
-| `GET /api/v1/projects/{key}/ci/mappings` | `listProjectCiMappings` | `ci:read` or project administrator (`managePolicies`) |
-| `POST /api/v1/projects/{key}/ci/mappings` | `createProjectCiMapping` | `ci:write` or project administrator (`managePolicies`) · recent sign-in |
-| `GET /api/v1/projects/{key}/ci/mappings/{issuer}/{name}` | `getProjectCiMapping` | `ci:read` or project administrator (`managePolicies`) |
-| `PUT /api/v1/projects/{key}/ci/mappings/{issuer}/{name}` | `replaceProjectCiMapping` | `ci:write` or project administrator (`managePolicies`) · recent sign-in |
-| `DELETE /api/v1/projects/{key}/ci/mappings/{issuer}/{name}` | `deleteProjectCiMapping` | `ci:write` or project administrator (`managePolicies`) · recent sign-in |
-| `POST /api/v1/projects/{key}/ci/issuers/{issuer}/evaluate` | `evaluateProjectCiMappings` | `ci:read` or project administrator (`managePolicies`) |
-| `GET /api/v1/projects/{key}/ci/issuances` | `listProjectCiIssuances` | `tokens:read` or project administrator (`managePolicies`) |
-
-**projects**
-
-| Method and path | Operation | Permission |
-|---|---|---|
-| `GET /api/v1/projects` | `listProjects` | `projects:read` or project administrator (`any`) |
-| `POST /api/v1/projects` | `createProject` | `projects:write` |
-| `GET /api/v1/projects/{key}` | `getProject` | `projects:read` or project administrator (`any`) |
-| `PUT /api/v1/projects/{key}` | `replaceProject` | `projects:write` · recent sign-in |
-| `DELETE /api/v1/projects/{key}` | `deleteProject` | `projects:write` · recent sign-in |
-| `PUT /api/v1/projects/{key}/admins/{principalRef}` | `addProjectAdmin` | `projects:write` · recent sign-in |
-| `DELETE /api/v1/projects/{key}/admins/{principalRef}` | `removeProjectAdmin` | `projects:write` · recent sign-in |
-| `PUT /api/v1/projects/{key}/repositories/{repoKey}` | `assignProjectRepository` | `repositories:write-config` · recent sign-in |
-| `DELETE /api/v1/projects/{key}/repositories/{repoKey}` | `unassignProjectRepository` | `repositories:write-config` · recent sign-in |
-| `GET /api/v1/projects/{key}/principals` | `lookupProjectPrincipals` | `identities:read` or project administrator (`managePolicies`) |
+| `GET /api/v1/projects/{projectKey}/ci/issuers` | `listProjectCiIssuers` | `ci:read` or Owner of the project |
+| `GET /api/v1/projects/{projectKey}/ci/mappings` | `listProjectCiMappings` | `ci:read` or Owner of the project |
+| `POST /api/v1/projects/{projectKey}/ci/mappings` | `createProjectCiMapping` | `ci:write` or Owner of the project · recent sign-in |
+| `GET /api/v1/projects/{projectKey}/ci/mappings/{issuer}/{name}` | `getProjectCiMapping` | `ci:read` or Owner of the project |
+| `PUT /api/v1/projects/{projectKey}/ci/mappings/{issuer}/{name}` | `replaceProjectCiMapping` | `ci:write` or Owner of the project · recent sign-in |
+| `DELETE /api/v1/projects/{projectKey}/ci/mappings/{issuer}/{name}` | `deleteProjectCiMapping` | `ci:write` or Owner of the project · recent sign-in |
+| `POST /api/v1/projects/{projectKey}/ci/issuers/{issuer}/evaluate` | `evaluateProjectCiMappings` | `ci:read` or Owner of the project |
+| `GET /api/v1/projects/{projectKey}/ci/issuers/{issuer}/snippets/{kind}` | `getProjectCiSnippet` | `ci:read` or Owner of the project |
+| `GET /api/v1/projects/{projectKey}/ci/issuances` | `listProjectCiIssuances` | `tokens:read` or Owner of the project |
 
 **repositories**
 
 | Method and path | Operation | Permission |
 |---|---|---|
 | `GET /api/v1/formats` | `listFormats` | public; also carries `baseUrl`, the configured base URL of the endpoint (`null` when none is configured) |
-| `GET /api/v1/repositories` | `listRepositories` | public |
-| `POST /api/v1/repositories` | `createRepository` | `repositories:write-config` or project administrator (`manageRepositories`) |
-| `GET /api/v1/repositories/{key}` | `getRepository` | public |
-| `PUT /api/v1/repositories/{key}` | `replaceRepository` | `repositories:write-config` or project administrator (`manageRepositories`) |
-| `PATCH /api/v1/repositories/{key}` | `updateRepository` | `repositories:write-config` or project administrator (`manageRepositories`) |
-| `DELETE /api/v1/repositories/{key}` | `deleteRepository` | `repositories:write-config` or project administrator (`manageRepositories`) · recent sign-in |
-| `GET /api/v1/repositories/{key}/mirror` | `getRepositoryMirror` | `repositories:read-config`, `manage` on the repository, or administrator of its project (decided in the handler, so the declaration is `authenticated`); `404` where the repository is hidden from the caller, `400 not_applicable` for a local or virtual repository |
-| `POST /api/v1/repositories/{key}/mirror/run` | `runRepositoryMirror` | `repositories:write-config`, `manage` on the repository, or administrator of its project (which holds `manage` on it) · idempotent; optional body `{"full": false}` (`MirrorRunRequest`); `202` with the `mirror-pass` job; `409 mirror_pass_running` naming it while one is queued or running, `409 mirror_off`, `409 mirror_paused`, `400 not_applicable` |
+| `GET /api/v1/repositories` | `listRepositories` | public; the repositories of every project the caller may see, each with its `project`; filter `project` |
+| `GET /api/v1/projects/{projectKey}/repositories` | `listProjectRepositories` | public; the repositories of the project the caller may see |
+| `POST /api/v1/projects/{projectKey}/repositories` | `createProjectRepository` | `repositories:write-config` or Owner of the project |
+| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}` | `getRepository` | public; the full document for `repositories:read-config` or an Owner of the project, otherwise the consumer view |
+| `PUT /api/v1/projects/{projectKey}/repositories/{repoKey}` | `replaceRepository` | `repositories:write-config` or Owner of the project |
+| `PATCH /api/v1/projects/{projectKey}/repositories/{repoKey}` | `updateRepository` | `repositories:write-config` or Owner of the project |
+| `DELETE /api/v1/projects/{projectKey}/repositories/{repoKey}` | `deleteRepository` | `repositories:write-config` or Owner of the project · recent sign-in |
+| `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/move` | `moveRepository` | `repositories:write-config` or Owner of the project; the body `{"project": "<target>"}`; an Owner must be Owner of the target too (`404` for a target it is no member of, `403` below Owner); `409 repository_in_use` with `references`, `409 already_exists` · recent sign-in |
+| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/client-setup` | `getClientSetup` | action `read` on `path.projectKey`/`path.repoKey`; the publish snippets need `deploy` on the publish target; `bastion=<name>` renders on the address of a [Bastion](docs/manual/admin/bastion.md) and has no publish snippets |
+| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/guide` | `getRepositoryGuide` | action `read` on `path.projectKey`/`path.repoKey` |
+| `GET /api/v1/formats/{format}/guide` | `getFormatGuide` | public |
+| `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/cache/invalidate` | `invalidateRepositoryCache` | action `manage` on `path.projectKey`/`path.repoKey` |
+| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/cache/entries` | `listCacheEntries` | authenticated; `repositories:read-config`, or `manage` on the repository, decided in the handler |
+| `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/upstream-test` | `testRepositoryUpstream` | `repositories:write-config` or Owner of the project; the saved settings of a remote repository |
+| `POST /api/v1/projects/{projectKey}/upstream-tests` | `testUpstream` | `repositories:write-config` or Owner of the project; settings that are not saved; an Owner without `repositories:write-config` gives secrets as values (`secret_value_required`) |
+| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/claims` | `getRepositoryClaims` | action `read` on `path.projectKey`/`path.repoKey` |
+| `PUT /api/v1/projects/{projectKey}/repositories/{repoKey}/claims` | `putRepositoryClaims` | action `manage` on `path.projectKey`/`path.repoKey` |
+| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/resolution` | `getRepositoryResolution` | action `read` on `path.projectKey`/`path.repoKey` |
+| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror` | `getRepositoryMirror` | authenticated; `repositories:read-config`, an Owner of the project, or `manage` on the repository, decided in the handler; `404` where the repository is hidden from the caller, `400 not_applicable` for a local or virtual repository |
+| `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror/run` | `runRepositoryMirror` | authenticated; `repositories:write-config`, an Owner of the project, or `manage` on the repository, decided in the handler · idempotent; optional body `{"full": false}` (`MirrorRunRequest`); `202` with the `mirror-pass` job; `409 mirror_pass_running` naming it while one is queued or running, `409 mirror_off`, `409 mirror_paused`, `400 not_applicable` |
 
 **items**
 
 | Method and path | Operation | Permission |
 |---|---|---|
-| `GET /api/v1/repositories/{repoKey}/items` | `getItem` | action `read` on `path.repoKey` |
-| `DELETE /api/v1/repositories/{repoKey}/items` | `deleteItem` | action `delete` on `path.repoKey` |
-| `GET /api/v1/repositories/{repoKey}/children` | `listChildren` | action `read` on `path.repoKey` |
-| `GET /api/v1/repositories/{repoKey}/stats` | `getItemStats` | action `read` on `path.repoKey` |
+| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/items` | `getItem` | action `read` on `path.projectKey`/`path.repoKey` |
+| `DELETE /api/v1/projects/{projectKey}/repositories/{repoKey}/items` | `deleteItem` | action `delete` on `path.projectKey`/`path.repoKey` |
+| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/children` | `listChildren` | action `read` on `path.projectKey`/`path.repoKey` |
+| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/stats` | `getItemStats` | action `read` on `path.projectKey`/`path.repoKey` |
 
 **files**
 
 | Method and path | Operation | Permission |
 |---|---|---|
-| `GET /files/{repoKey}/{path}` | `downloadFile` | action `read` on `path.repoKey` |
-| `HEAD /files/{repoKey}/{path}` | `headFile` | action `read` on `path.repoKey` |
-| `PUT /files/{repoKey}/{path}` | `deployFile` | action `deploy` on `path.repoKey` |
-| `DELETE /files/{repoKey}/{path}` | `deleteFile` | action `delete` on `path.repoKey` |
-
-**packages**
-
-| Method and path | Operation | Permission |
-|---|---|---|
-| `GET /api/v1/packages` | `listPackages` | public; lists and counts only the versions the caller may read |
-| `GET /api/v1/packages/lookup` | `lookupPackage` | public; as above |
-| `GET /api/v1/packages/{packageId}` | `getPackage` | public; as above |
-| `GET /api/v1/packages/{packageId}/versions` | `listPackageVersions` | public; as above |
-| `GET /api/v1/packages/{packageId}/versions/{version}` | `getPackageVersion` | public; as above |
-| `GET /api/v1/packages/{packageId}/versions/{version}/readme` | `getPackageVersionReadme` | public; as above |
-| `GET /api/v1/repositories/{repoKey}/client-setup` | `getClientSetup` | action `read` on `path.repoKey`; the publish snippets need `deploy` on the publish target; `bastion=<name>` renders on the address of a [Bastion](docs/manual/admin/bastion.md) and has no publish snippets |
-
-**manual**
-
-| Method and path | Operation | Permission |
-|---|---|---|
-| `GET /api/v1/manual` | `getManualContents` | public; anonymous only where anonymous access is on. The manual the binary embeds ([docs/manual](docs/manual/README.md)) |
-| `GET /api/v1/manual/{section}/{page}` | `getManualPage` | public; as above |
+| `GET /files/{projectKey}/{repoKey}/{path}` | `downloadFile` | action `read` on `path.projectKey`/`path.repoKey` |
+| `HEAD /files/{projectKey}/{repoKey}/{path}` | `headFile` | action `read` on `path.projectKey`/`path.repoKey` |
+| `PUT /files/{projectKey}/{repoKey}/{path}` | `deployFile` | action `deploy` on `path.projectKey`/`path.repoKey` |
+| `DELETE /files/{projectKey}/{repoKey}/{path}` | `deleteFile` | action `delete` on `path.projectKey`/`path.repoKey` |
+| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}` | `downloadContent` | action `read` on `path.projectKey`/`path.repoKey` |
+| `HEAD /api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}` | `headContent` | action `read` on `path.projectKey`/`path.repoKey` |
+| `PUT /api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}` | `deployContent` | action `deploy` on `path.projectKey`/`path.repoKey` |
 
 **endpoints**
 
@@ -1787,14 +1791,53 @@ A project's administrators (with `managePolicies`) manage the CI mappings of the
 | `DELETE /api/v1/endpoints/{endpoint}/exposure-rules/{name}` | `deleteExposureRule` | `endpoints:write` · recent sign-in |
 | `POST /api/v1/endpoints/{endpoint}/check-exposure` | `checkExposure` | `endpoints:read` |
 
+**packages**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/packages` | `listPackages` | public; lists and counts only the versions the caller may read |
+| `GET /api/v1/packages/lookup` | `lookupPackage` | public; as above |
+| `GET /api/v1/packages/{packageId}` | `getPackage` | public; as above |
+| `GET /api/v1/packages/{packageId}/versions` | `listPackageVersions` | public; as above |
+| `GET /api/v1/packages/{packageId}/versions/{version}` | `getPackageVersion` | public; as above |
+| `GET /api/v1/packages/{packageId}/versions/{version}/readme` | `getPackageVersionReadme` | public; as above |
+
 **ownership**
 
 | Method and path | Operation | Permission |
 |---|---|---|
-| `GET /api/v1/repositories/{repoKey}/packages/{packageName}/owners` | `getPackageOwners` | action `read` on `path.repoKey`; `read` on the package in the handler |
-| `POST /api/v1/repositories/{repoKey}/packages/{packageName}/owners` | `addPackageOwner` | authenticated; an owner, `manage` or `content:bypass` in the handler · recent sign-in |
-| `DELETE /api/v1/repositories/{repoKey}/packages/{packageName}/owners/{owner}` | `removePackageOwner` | authenticated; as adding, `release=true` needs `manage` · recent sign-in |
+| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners` | `getPackageOwners` | action `read` on `path.projectKey`/`path.repoKey`; `read` on the package in the handler |
+| `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners` | `addPackageOwner` | authenticated; an owner, `manage` or `content:bypass` in the handler · recent sign-in |
+| `DELETE /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners/{owner}` | `removePackageOwner` | authenticated; as adding, `release=true` needs `manage` · recent sign-in |
 | `GET /api/v1/package-owners` | `listOwnedPackages` | authenticated; `policies:read`, or the caller's own identity or group |
+
+**manual**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/manual` | `getManualContents` | public; anonymous only where anonymous access is on. The manual the binary embeds ([docs/manual](docs/manual/README.md)) |
+| `GET /api/v1/manual/{section}/{page}` | `getManualPage` | public; as above |
+
+**bastions**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/bastions` | `listBastions` | `endpoints:read` |
+| `POST /api/v1/bastions` | `createBastion` | `endpoints:write` |
+| `GET /api/v1/bastions/{name}` | `getBastion` | `endpoints:read` |
+| `PATCH /api/v1/bastions/{name}` | `updateBastion` | `endpoints:write` · `If-Match` |
+| `DELETE /api/v1/bastions/{name}` | `deleteBastion` | `endpoints:write` |
+| `POST /api/v1/bastions/{name}/tokens` | `createBastionToken` | `endpoints:write` · recent sign-in · idempotent · the secret once |
+| `DELETE /api/v1/bastions/{name}/tokens/{id}` | `revokeBastionToken` | authenticated; `endpoints:write` or `tokens:revoke`, decided in the handler |
+
+**bastion**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/bastion/handshake` | `bastionHandshake` | a recognized Bastion (the Bastion interface) |
+| `POST /api/v1/bastion/check` | `bastionCheck` | a recognized Bastion (the Bastion interface) |
+| `GET /api/v1/bastion/feed` | `bastionFeed` | a recognized Bastion (the Bastion interface) |
+| `POST /api/v1/bastion/downloads` | `bastionDownloads` | a recognized Bastion (the Bastion interface) |
 
 **vulnerabilities**
 
@@ -1804,17 +1847,17 @@ The operations of the vulnerability scanning ([docs/developer/vulnerabilities.md
 |---|---|---|
 | `GET /api/v1/vulnerabilities/findings` | `listVulnerabilityFindings` | authenticated; the readable findings; without a `status` filter the resolved ones are left out |
 | `GET /api/v1/vulnerabilities/findings/export` | `exportVulnerabilityFindings` | authenticated; the list's filters as CSV; above `vulnerabilities.export.max_rows` `422 export_too_large` |
+| `POST /api/v1/vulnerabilities/findings/set-status` | `setVulnerabilityFindingsStatus` | `vulnerabilities:triage` and `read` on each finding · idempotent; up to 500 ids in one transaction, one result per id |
 | `GET /api/v1/vulnerabilities/findings/{id}` | `getVulnerabilityFinding` | authenticated; `404` for a finding the caller cannot read |
 | `PATCH /api/v1/vulnerabilities/findings/{id}` | `updateVulnerabilityFinding` | `vulnerabilities:triage` and `read` on the finding · `If-Match`; a JSON merge patch with `status`, `dismissalReason`, `comment` |
-| `POST /api/v1/vulnerabilities/findings/set-status` | `setVulnerabilityFindingsStatus` | `vulnerabilities:triage` and `read` on each finding · idempotent; up to 500 ids in one transaction, one result per id |
 | `GET /api/v1/vulnerabilities/advisories/{ecosystem}/{id}` | `getVulnerabilityAdvisory` | authenticated; the advisory is public data, its findings are the readable ones |
 | `GET /api/v1/vulnerabilities/summary` | `getVulnerabilitySummary` | authenticated; counted over the readable findings |
 | `GET /api/v1/vulnerabilities/trend` | `getVulnerabilityTrend` | authenticated; as above, at most 400 days |
 | `GET /api/v1/vulnerabilities/sources` | `listVulnerabilitySources` | `settings:read` |
 | `GET /api/v1/vulnerabilities/claimed-name-matches` | `listClaimedNameMatches` | `repositories:read-config` |
-| `GET /api/v1/packages/{packageId}/vulnerabilities` | `getPackageVulnerabilities` | authenticated; the readable open findings per version |
 | `GET /api/v1/packages/{packageId}/versions/{version}/vulnerabilities` | `getPackageVersionVulnerabilities` | authenticated; per readable repository that holds the version: evaluation, block and findings |
-| `POST /api/v1/repositories/{key}/vulnerabilities/rescan` | `rescanRepositoryVulnerabilities` | action `manage` on `path.key` · idempotent; `202` with the `vuln-rescan` job, `409` while one is queued or running |
+| `GET /api/v1/packages/{packageId}/vulnerabilities` | `getPackageVulnerabilities` | authenticated; the readable open findings per version |
+| `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/vulnerabilities/rescan` | `rescanRepositoryVulnerabilities` | action `manage` on `path.projectKey`/`path.repoKey` · idempotent; `202` with the `vuln-rescan` job, `409` while one is queued or running |
 
 </details>
 
@@ -2096,8 +2139,7 @@ endpoints: {}                           # default: only the default endpoint; th
 #    baseUrl: https://packages.example.com   # example; required; an origin
 #    hosts: []                          # default; example: [pkgs.example.org]
 #    wildcardHost: ""                   # default; example: "*.packages.example.com"
-#    hostRoots: {}                      # default; host -> repository key, reserved
-#    wildcardRoot: none                 # default: none | label
+#    hostRoots: {}                      # default; host -> qualified repository name <projectKey>/<repoKey>, reserved
 #    surface: [packages]                # default: ui is refused on a further endpoint
 #    auth: {tokenTypes: [sat], boundTokensOnly: true, anonymous: false}   # default
 #    exposure: rules                    # default: rules | all

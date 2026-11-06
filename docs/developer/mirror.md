@@ -56,8 +56,8 @@ planned versions) in [npm.md](../spec/formats/npm.md).
 | [mirror_plan.go](../../internal/formats/npm/mirror_plan.go) | `MirrorPlan`: the full document through `Upstream.Document`, versions newest first, tarball paths, `Prerelease`, `Pinned` for `latest`, the size from `_attachments` only |
 | [mirror_test.go](../../internal/formats/npm/mirror_test.go) | the fake upstream and the tests: the exact query strings, paging, cursors, ranges, deletions, `names`, plan order and pins, a rate-limit error returned unchanged, admitted names only |
 
-Two rules of the validation changed after the audit: a project administrator's update of a mirror that stays a mirror keeps the include and
-exclude lists, `remote.url` and `remote.extraHosts` as stored (Q-REPO-193, `checkDelegatedMirrorScope`), and "is this the well-known upstream" is
+Two rules of the validation changed after the audit: the update of a mirror that stays a mirror, by an Owner of the project without
+`repositories:write-config`, keeps the include and exclude lists, `remote.url` and `remote.extraHosts` as stored (Q-REPO-193, `checkDelegatedMirrorScope`), and "is this the well-known upstream" is
 `discover.SameUpstream` for the bound rule and for npm's lister (Q-REPO-194, Q-NPM-75), with a query in a mirror's url refused (Q-REPO-195). A
 format's lister that must know its well-known upstream calls `discover.SameUpstream` with the catalog's default upstream and does not compare
 strings.
@@ -88,8 +88,9 @@ changes (`Change`, `POST /-/stub/change`, `Publish`); `throttle.go` holds the th
 
 ## The status and run operations (work package D)
 
-`GET /api/v1/repositories/{key}/mirror` (`getRepositoryMirror`) and `POST /api/v1/repositories/{key}/mirror/run`
-(`runRepositoryMirror`), R-REPO-056. The decisions are Q-API-196 to Q-API-200 and Q-REPO-163 to Q-REPO-166.
+`GET /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror` (`getRepositoryMirror`) and
+`POST /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror/run` (`runRepositoryMirror`), R-REPO-056. The decisions are Q-API-196
+to Q-API-200 and Q-REPO-163 to Q-REPO-166.
 
 | File | Responsibility |
 |---|---|
@@ -99,7 +100,8 @@ changes (`Change`, `POST /-/stub/change`, `Publish`); `throttle.go` holds the th
 | [internal/errs/codes.go](../../internal/errs/codes.go) | `mirror_pass_running`, `mirror_off`, `mirror_paused` (all 409) |
 | [internal/api/v1/repositories_api.go](../../internal/api/v1/repositories_api.go) | `ListFormats` serves `mirror` from the catalog fact (`mirrorFact`) |
 
-The run, in order: the permission (write-config, a project administrator with the switch, or `manage`), the body, the repository from
+The run, in order: the permission (write-config, an Owner of the repository's project, or `manage`, which the roles `maintainer` and
+`owner` hold), the body, the repository from
 PostgreSQL (`not_applicable`, `mirror_off`, `mirror_paused` before anything is written), then one transaction that enqueues
 `mirror.KindPass` under `mirror.PassKey(id)` (an existing queued, running or cancelling job answers 409 `mirror_pass_running` and nothing is
 written), upserts the request and records `mirror.pass_requested`. The status never writes.
@@ -125,8 +127,9 @@ written), upserts the request and records `mirror.pass_requested`. The status ne
 [internal/api/v1/mirror_api_test.go](../../internal/api/v1/mirror_api_test.go) (the decider `mirrorDecider` answers as the engine does: a refused
 `manage` is 403, only a refused `read` is hidden) and
 [mirror_format_test.go](../../internal/api/v1/mirror_format_test.go). Integration, against the stack:
-[test/integration/mirrorapi](../../test/integration/mirrorapi): the permission table of both operations with the real decision point and a
-project administrator, 202 then 409 with the same job, the three refused modes, the status of a seeded row in each state, the request columns
+[test/integration/mirrorapi](../../test/integration/mirrorapi): the permission table of both operations with the real decision point, an
+Owner and a Maintainer of the repository's project, 202 then 409 with the same job, the three refused modes, the status of a seeded row in
+each state, the request columns
 and the audit event, the pause through `PATCH` with `If-Match`.
 
 The suite creates its mirrors as npm remotes through the management API, like any other repository (`mirrorFormat` in
@@ -317,7 +320,7 @@ suite takes about three minutes; the throttling tests wait for the real seconds 
   in one process and across a client-serving process and one that claims the queue `mirror`; the e2e set `mirror`: a pass
   while `npm ci` and `dotnet restore` run through the same remotes (clients first), the drain of the node of the process that
   runs a pass, once with Valkey stopped.
-- **D:** handler tests with permission-narrowed callers and a project administrator; `test/integration/mirrorapi` for the status
+- **D:** handler tests with permission-narrowed callers and the Owner of a project; `test/integration/mirrorapi` for the status
   and the run (202, 409 `mirror_pass_running`, `mirror_off`, `mirror_paused`); the browser journey of the Mirror tab with axe.
 
 Every test names the requirement it checks (R-REPO-050 to R-REPO-059), so that the coverage generator counts it.

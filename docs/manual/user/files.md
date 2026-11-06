@@ -16,7 +16,7 @@ Expand a repository or a folder to load its entries, 200 at a time; **Load more*
 
 What a repository holds depends on its class: a local repository shows what was uploaded or published to it, a remote repository the files it has cached so far, and npm repositories show their package files as trove stores them. See [Repositories](repositories.md#repository-classes).
 
-The selection is part of the page address, for example `https://trove.example.com/ui/en/browse/generic-local/releases/app-1.2.0.tar.gz`, so you can bookmark a file or send the link; opening it expands the tree down to the file. The browser's back and forward buttons walk through your selections.
+The selection is part of the page address below `/ui/en/browse/`, so you can bookmark a file or send the link; opening it expands the tree down to the file. The browser's back and forward buttons walk through your selections.
 
 The tree works with the keyboard: the arrow keys move and expand, Home and End jump to the first and last entry, and typing a name jumps to it. Shift+F10 or the context-menu key moves the focus to the actions of the selection.
 
@@ -81,10 +81,10 @@ Deleting is final: trove has no trash can yet. A very large folder (by default m
 
 ## Transfer files with curl
 
-Every file of a repository has an address below the files path:
+Every file of a repository has an address below the files path, with the key of the repository's project and the repository's own key:
 
 ```text
-https://trove.example.com/files/<repository-key>/<path>
+https://trove.example.com/files/<project-key>/<repository-key>/<path>
 ```
 
 | Method | On a file | On a folder (address ends with `/`) |
@@ -115,7 +115,7 @@ Set `TROVE_TOKEN` in the environment curl runs in, for example from a masked CI 
 The examples keep the address of one file in a shell variable:
 
 ```shell
-FILE="https://trove.example.com/files/generic-local/releases/app-1.2.0.tar.gz"
+FILE="https://trove.example.com/files/web/generic-local/releases/app-1.2.0.tar.gz"
 trove_curl --fail --remote-name "$FILE"
 trove_curl --fail --head "$FILE"
 trove_curl --fail --continue-at - --output app-1.2.0.tar.gz "$FILE"
@@ -143,7 +143,7 @@ trove answers `201` for a new or replaced file and `200` when the path already h
 ### List and delete
 
 ```shell
-trove_curl --fail "https://trove.example.com/files/generic-local/releases/?limit=100"
+trove_curl --fail "https://trove.example.com/files/web/generic-local/releases/?limit=100"
 trove_curl --fail --request DELETE "$FILE"
 ```
 
@@ -156,7 +156,7 @@ The first command lists a folder as JSON: `items` holds the entries you may read
 | 401 | `invalid_token` | The token is unknown, expired or revoked, or the variable is empty |
 | 403 | `forbidden` | The token lacks the permission: deploy, overwrite or delete |
 | 403 | `not_admitted` | The repository's include and exclude patterns refuse this path |
-| 404 | `not_found` | The file does not exist, or you may not read it |
+| 404 | `not_found` | The file, the repository or the project does not exist, or you may not read it |
 | 405 | `method_not_allowed` | An upload to a remote or virtual repository |
 | 409 | `conflict` | An upload to an npm repository, or bytes that differ from the `Repr-Digest` sent |
 | 409 | `path_conflict` | A file where a folder is, or the other way round |

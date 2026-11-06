@@ -93,9 +93,9 @@ values are `NULLIF(text, '')` or `0`. [TestCIMigration](../../test/integration/p
 [ci_services.go](../../internal/api/v1/ci_services.go) holds `CIServices`; one handler file per work package:
 [ci_issuers_api.go](../../internal/api/v1/ci_issuers_api.go) (W1), [ci_mappings_api.go](../../internal/api/v1/ci_mappings_api.go) and
 [ci_snippets_api.go](../../internal/api/v1/ci_snippets_api.go) (W3), [ci_exchange.go](../../internal/api/v1/ci_exchange.go) (W4),
-[ci_issuances_api.go](../../internal/api/v1/ci_issuances_api.go) (W5), [ci_project_api.go](../../internal/api/v1/ci_project_api.go) (the project routes: the
-narrowing `requireProject(…, managePolicies)` is real, the work behind it W1, W3, W5). Declarations: `ci:read` and `ci:write` (recent authentication on create, replace, delete),
-`tokens:read` and `tokens:revoke` (Q-CI-22); the project routes add `projectAdmin: managePolicies`; the exchange is `public: true` with `security: []`.
+[ci_issuances_api.go](../../internal/api/v1/ci_issuances_api.go) (W5), [ci_project_api.go](../../internal/api/v1/ci_project_api.go) (the project routes of the
+tier `project:<projectKey>`, the work behind them W1, W3, W5). Declarations: `ci:read` and `ci:write` (recent authentication on create, replace, delete),
+`tokens:read` and `tokens:revoke` (Q-CI-22); the project routes add `project: path.projectKey` and `projectRole: owner`; the exchange is `public: true` with `security: []`.
 
 | Operation | Path | Package |
 |---|---|---|
@@ -136,7 +136,7 @@ Order: W2 first (pure), then W1 and W3, then W4, then W5 and W6; W7 throughout.
 ### The manual pages
 
 The behaviour is documented for users while it is built (owner, 2026-11-02): [admin/gitlab-ci.md](../manual/admin/gitlab-ci.md) (issuers,
-the project administrator's how-tos, dry run, issuances, revocation, every refusal reason, rate limits, the `ci.*` keys) and
+the Owner's how-tos, dry run, issuances, revocation, every refusal reason, rate limits, the `ci.*` keys) and
 [user/gitlab-ci-pipelines.md](../manual/user/gitlab-ci-pipelines.md) (`id_tokens:`, the exchange, `scope`, npm and NuGet, the closing
 revocation). A work package that changes a documented path, field, code, default or rule updates the page in the same change.
 The notes "Not available in this version yet" of both pages and the "not released yet" wording of [tokens.md](../manual/admin/tokens.md),
