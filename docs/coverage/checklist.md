@@ -9,7 +9,7 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 445 of 689 spec requirements are implemented: a passing test names them and no
+**Status.** 446 of 689 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
@@ -3113,7 +3113,7 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-VULN-024 (implemented) | Metrics, audit events, alerts and status | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
 | R-VULN-026 (implemented) | Vulnerability data in backups and restores | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
 | R-VULN-027 (implemented) | Across replicas, without Valkey and during a drain | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
-| R-VULN-028 | Performance bounds | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
+| R-VULN-028 (implemented) | Performance bounds | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
 | R-VULN-029 | Acceptance suite | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
 | R-VULN-031 | Time-limited dismissals | P1 | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
 
