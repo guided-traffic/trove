@@ -27,6 +27,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/guided-traffic/trove/test/integration/testenv"
 )
 
 // The size of the installation (R-VULN-028): 90,000 npm versions in 9,000 packages across npm-local and npm-remote, 10,000
@@ -60,7 +62,7 @@ var rows = map[string]row{
 	"V-3":  {"incremental sync with 500 changed records and their evaluation", "min", 2},
 	"V-4":  {"evaluation added to a publish commit, p99 (exact, per call)", "ms", 5},
 	"V-5a": {"latency added by the block check on a cached download, p99", "ms", 1},
-	"V-5b": {"database transactions per cached download (both replicas)", "tx", 1.0},
+	"V-5b": {"database statements of a cached download, p99 (the larger of the two replicas, counted per request)", "statements", 1.0},
 	"V-6":  {"npm local audit of a 1,000-package lockfile, p99", "ms", 500},
 	"V-7a": {"first page of the findings list for an admin, p99", "ms", 300},
 	"V-7b": {"first page of the findings list for a caller with package-pattern grants, p99", "ms", 300},
@@ -251,6 +253,73 @@ func percentile(samples []time.Duration, p float64) time.Duration {
 }
 
 func ms(d time.Duration) float64 { return float64(d) / float64(time.Millisecond) }
+
+// downloadCosts is what each of a set of downloads ran in the database, counted in its replica by its request ID (V-5b,
+// Q-VULN-98).
+type downloadCosts []testenv.RequestCost
+
+// statements is the number of statements a download ran, without the transaction control.
+func statements(rc testenv.RequestCost) int {
+	n := 0
+	for _, v := range rc.Statements {
+		n += v
+	}
+	return n
+}
+
+// cost is what V-5b counts of one download: its statements, or its transactions where they are more (a transaction runs at
+// least one statement, so this is the statements unless a transaction ran none).
+func cost(rc testenv.RequestCost) int { return max(statements(rc), rc.Transactions) }
+
+// p99 is the 99th percentile of the downloads' costs, by the nearest rank as percentile reads it: what 99 downloads in 100
+// stay within. With no download it is the largest int, a miss of every target.
+func (c downloadCosts) p99() int {
+	if len(c) == 0 {
+		return math.MaxInt
+	}
+	s := make([]int, len(c))
+	for i, rc := range c {
+		s[i] = cost(rc)
+	}
+	sort.Ints(s)
+	return s[max(0, min(int(math.Ceil(0.99*float64(len(s))))-1, len(s)-1))]
+}
+
+// String names the p99, the means of the statements and the transactions per download, how many downloads cost how much, and
+// every statement the downloads ran by name: a download above the p99 is listed here even when the value does not show it.
+func (c downloadCosts) String() string {
+	byCost, names := map[int]int{}, map[string]int{}
+	stmts, txs := 0, 0
+	for _, rc := range c {
+		byCost[cost(rc)]++
+		stmts += statements(rc)
+		txs += rc.Transactions
+		for k, v := range rc.Statements {
+			names[k] += v
+		}
+	}
+	costs := make([]int, 0, len(byCost))
+	for k := range byCost {
+		costs = append(costs, k)
+	}
+	sort.Ints(costs)
+	parts := make([]string, 0, len(costs))
+	for _, k := range costs {
+		parts = append(parts, fmt.Sprintf("%d cost %d", byCost[k], k))
+	}
+	keys := make([]string, 0, len(names))
+	for k := range names {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	ran := make([]string, 0, len(keys))
+	for _, k := range keys {
+		ran = append(ran, fmt.Sprintf("%s x%d", k, names[k]))
+	}
+	n := float64(max(len(c), 1))
+	return fmt.Sprintf("%d downloads, p99 %d, mean %.4f statements and %.4f transactions per download; %s; statements %s",
+		len(c), c.p99(), float64(stmts)/n, float64(txs)/n, strings.Join(parts, ", "), strings.Join(ran, ", "))
+}
 
 // logExcerpt returns the last n lines of a replica's JSON log that say why a sync or a job ended: every WARN and ERROR line,
 // the lines of the components vulnerabilities and jobs, and the requests to the advisory source. The rest, mostly the probes

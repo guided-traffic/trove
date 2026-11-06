@@ -442,7 +442,11 @@ findings gauge, `ExpectedSources`) and [app/vuln_facts_test.go](../../internal/a
 
 **Performance.** `perf/vuln` seeds in SQL and measures V-1 to V-9 against the scanning; its setup is
 tested (`TestR_VULN_028_TheSeededInstallation`, 100,000 versions in about 2 s) and the scenarios run in the nightly workflow. How to read
-a run: [perf/README.md](../../perf/README.md#reading-a-run).
+a run: [perf/README.md](../../perf/README.md#reading-a-run). V-5b is counted in the two `web` replicas by request
+(`testenv.RequestTransactions` through `testenv.ReplicaOptions.Database`, [Q-VULN-98](../spec/vulnerability-scanning.md#q-vuln-98--v-5b-is-counted-in-the-replicas-by-request-not-from-the-databases-commit-counter)):
+every download of a replica with the scanning on and of one with it off runs one statement, `GetLiveItem`, whose lateral join is the block
+check ([the download policy](#the-download-policy)); a refill of the authentication caches adds three statements to one or two downloads of each replica about
+every 15 s, which the p99 of [Q-VULN-99](../spec/vulnerability-scanning.md#q-vuln-99--v-5b-is-the-p99-of-the-statements-of-one-download-not-the-mean-of-the-transactions-of-a-window) leaves out and the note lists.
 
 Two integration tests measure the paths of V-4 and V-7b in minutes and not in the run's tens: `TestR_VULN_028_TheEvaluationOfAPublishIsMeasured`
 ([vulnfindings](../../test/integration/vulnfindings/publish_cost_test.go)) and `TestR_VULN_028_TheFirstPageOfAPatternGrantAtTheShapeOfTheRun`

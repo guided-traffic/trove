@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/auth/scope"
+	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/jobs"
+	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 	"github.com/guided-traffic/trove/test/osvstub"
 )
@@ -31,6 +33,8 @@ type installation struct {
 	tokAdmin, tokGrantee string
 	// active are the states of a job that has not ended (activeStates).
 	active []string
+	// requests counts, in every web replica, the transactions each request ran (V-5b).
+	requests *testenv.RequestTransactions
 }
 
 const (
@@ -73,7 +77,7 @@ func newInstallation(t *testing.T) *installation {
 		// run of V-1 answer 409 (one OSV sync at a time, R-VULN-004): the test decides when the sync runs.
 		`TROVE_MAINTENANCE_TASKS={"vuln-sync-osv":{"enabled":false,"schedule":"*/15 * * * *"},"vuln-sync-osv-full":{"enabled":false,"schedule":"17 3 * * 0"},"vuln-sync-kev":{"enabled":false,"schedule":"41 */6 * * *"}}`,
 	}})
-	in := &installation{t: t, st: st, stub: stub, active: activeStates(t, st)}
+	in := &installation{t: t, st: st, stub: stub, active: activeStates(t, st), requests: testenv.NewRequestTransactions()}
 	in.admin, in.grantee = st.User("rita"), st.User("grace")
 	st.Bind("admin", in.admin)
 	in.tokAdmin = st.Token(in.admin, scope.Scope{Inherit: true, Admin: true})
@@ -132,10 +136,10 @@ func (in *installation) seed() {
 		SELECT p.id, '1.' || v || '.0', '1.' || v || '.0' FROM packages p, generate_series(0, $1::int) v`, versionsPerPkg-1)
 }
 
-// web and worker start the replicas of the run.
+// web and worker start the replicas of the run. A web replica counts the transactions of its requests (in.requests).
 func (in *installation) web(name string, env ...string) *testenv.Replica {
 	in.t.Helper()
-	return in.st.Start(in.t, testenv.ReplicaOptions{Name: name, Env: env})
+	return in.st.Start(in.t, testenv.ReplicaOptions{Name: name, Env: env, Database: []postgres.Option{in.requests.Option()}})
 }
 
 func (in *installation) worker(name string) *testenv.Replica {
@@ -373,43 +377,56 @@ func TestR_VULN_028_PerformanceRun(t *testing.T) {
 	})
 
 	// V-5: the block check of a download of a stored item. One replica has the scanning on, one off; the same stored
-	// item is requested alternately from both, so that the difference is the block check. The queries are the commits
-	// and rollbacks of the database over the run, minus the idle rate of the same time on the same stack.
+	// item is requested alternately from both, so that the latency difference is the block check (V-5a). V-5b is what each
+	// download ran in the database, counted in its replica by its request ID (Q-VULN-98): its statements without the
+	// transaction control, or its transactions where they are more, as the p99 over the downloads of a replica, the larger of
+	// the two (Q-VULN-99). The database-wide count of earlier runs (the commits over the window minus an idle window) stays in
+	// the note: it moves with the background of the database and with when PostgreSQL publishes its counters, so it is not
+	// the value, but it also sees work a download would leave to a context without its request ID.
 	rep.scenario(t, "V-5 block check on a cached download", []string{"V-5a", "V-5b"}, evaluated, func(t *testing.T) {
 		off := in.web("web-off", "TROVE_VULNERABILITIES_ENABLED=false")
 		name := "perf-cached"
 		publish(t, in, web, repoNPMLocal, name, "1.0.0")
 		path := fmt.Sprintf("/api/npm/%s/%s/-/%s-1.0.0.tgz", repoNPMLocal, name, name)
-		get := func(r *testenv.Replica) time.Duration {
+		get := func(r *testenv.Replica) (time.Duration, string) {
 			start := time.Now()
-			if a := in.st.Do(r, "GET", path, in.tokAdmin, nil); a.Status != 200 {
+			a := in.st.Do(r, "GET", path, in.tokAdmin, nil)
+			if a.Status != 200 {
 				t.Fatalf("download from %s: %d %s", r.Name, a.Status, a.Body)
 			}
-			return time.Since(start)
+			return time.Since(start), a.Header.Get(httpserver.HeaderRequestID)
 		}
 		for range 50 { // warm both caches
 			get(web)
 			get(off)
 		}
+		// The replicas count what each request runs from here to the end of the idle window, and not in the other scenarios.
+		in.requests.Count(true)
 		xacts := func() int64 {
 			return in.st.Number(`SELECT xact_commit + xact_rollback FROM pg_stat_database WHERE datname = current_database()`)
 		}
 		var on, offS []time.Duration
+		var onIDs, offIDs []string
 		x0, began := xacts(), time.Now()
 		for range cachedDownloads {
-			on = append(on, get(web))
-			offS = append(offS, get(off))
+			d, id := get(web)
+			on, onIDs = append(on, d), append(onIDs, id)
+			d, id = get(off)
+			offS, offIDs = append(offS, d), append(offIDs, id)
 		}
 		x1, loaded := xacts(), time.Since(began)
 		// The idle rate: the same wall time without requests.
 		idle0 := xacts()
 		time.Sleep(loaded)
 		idle1 := xacts()
-		queries := float64((x1-x0)-(idle1-idle0)) / float64(2*cachedDownloads)
+		in.requests.Count(false) // after the idle window, so a statement a download ran after its answer is still its own
+		database := float64((x1-x0)-(idle1-idle0)) / float64(2*cachedDownloads)
+		onCost, offCost := in.downloadCosts(t, onIDs), in.downloadCosts(t, offIDs)
 		rep.record("V-5a", ms(percentile(on, 0.99))-ms(percentile(offS, 0.99)),
 			fmt.Sprintf("p99 on %.2f ms, off %.2f ms", ms(percentile(on, 0.99)), ms(percentile(offS, 0.99))))
-		rep.record("V-5b", max(queries, 0),
-			"the target is 0 added queries; the bound allows one background transaction per request of noise on a shared stack, read the value")
+		rep.record("V-5b", float64(max(onCost.p99(), offCost.p99())),
+			fmt.Sprintf("scanning on: %s; scanning off: %s; database-wide over the window, background included: %.3f transactions per download",
+				onCost, offCost, database))
 	})
 
 	// V-6: the local audit of a lockfile of 1,000 packages: 1,000 names with one version each, half of them with an advisory.
@@ -476,6 +493,20 @@ func TestR_VULN_028_PerformanceRun(t *testing.T) {
 		}
 		rep.record("V-8", ms(percentile(samples, 0.99)), "")
 	})
+}
+
+// downloadCosts is what the downloads with the request IDs ran, as their replicas counted it (in.requests). A download whose
+// answer carried no request ID fails the test: what it ran could not be attributed to it.
+func (in *installation) downloadCosts(t *testing.T, ids []string) downloadCosts {
+	t.Helper()
+	var c downloadCosts
+	for _, id := range ids {
+		if id == "" {
+			t.Fatal("a download answered without X-Request-Id: what it ran in the database cannot be counted")
+		}
+		c = append(c, in.requests.Of(id))
+	}
+	return c
 }
 
 // fillFindings brings the findings to 100,000, one per stored version, by SQL: the findings the evaluation made are kept,

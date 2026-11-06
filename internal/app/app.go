@@ -60,6 +60,9 @@ type Options struct {
 	// DialOverride points the connections of the outbound clients at other addresses (outbound.WithDialOverride): a test
 	// reaches a stub as the public registry's host name. Tests only. Production passes nil.
 	DialOverride map[string]string
+	// Database adds options to the database pools of the replica (postgres.WithQueryTracer): a test counts the transactions
+	// a request runs in the replica itself (R-ARCH-027, R-VULN-028 V-5). Tests only. Production passes nil.
+	Database []postgres.Option
 	// SkipInfrastructure starts the HTTP shell without PostgreSQL and Valkey. The
 	// shell tests use it; a production caller never sets it.
 	SkipInfrastructure bool

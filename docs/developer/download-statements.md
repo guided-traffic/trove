@@ -21,6 +21,10 @@ database of its own stack, warms a path, sends 30 downloads to one replica and c
 | `.nupkg`, virtual repository, file in the remote member (local member first) | 3 (`GetLiveItem` x2, `ProxyEntryGet`) | 2 | 2 |
 
 The vulnerability scanning adds none: its block is a lateral join of the same statement ([vulnerabilities.md](vulnerabilities.md#the-download-policy)).
+At the scale of the performance run of R-VULN-028 (100,000 stored versions, 10,000 findings), V-5b counts the same in the replicas by request ID
+(`testenv.RequestTransactions`, [Q-VULN-98](../spec/vulnerability-scanning.md#q-vuln-98--v-5b-is-counted-in-the-replicas-by-request-not-from-the-databases-commit-counter)):
+2,000 downloads of an npm tarball of a local repository from a replica with the scanning on and 2,000 from one with it off, one statement
+(`GetLiveItem`) and one transaction each, except the one or two downloads per replica and about 15 s that refill the authentication caches.
 A remote hit whose package document is expired, or was validated before a restore, revalidates the document first (one conditional request in one flight,
 [Q-NPM-13](../spec/formats/npm.md#q-npm-13--removal-marks-after-a-restore-and-for-cached-tarballs)) and then reads the facts again; that request is outside the budget and costs the statements of the revalidation.
 

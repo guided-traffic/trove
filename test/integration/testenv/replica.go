@@ -16,6 +16,7 @@ import (
 	"github.com/guided-traffic/trove/internal/app"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/meta/postgres"
 )
 
 // SyncBuffer is a log sink that is safe to read while a replica writes.
@@ -58,6 +59,9 @@ type ReplicaOptions struct {
 	// stub's "127.0.0.1:port"), app.Options.DialOverride; the egress policy still applies to the address connected to,
 	// so the stack's allow list has to admit it.
 	DialOverride map[string]string
+	// Database adds options to the replica's database pools (app.Options.Database), such as the tracer of a
+	// RequestTransactions counter.
+	Database []postgres.Option
 }
 
 // Replica is one in-process replica started through app.New.
@@ -96,7 +100,7 @@ func (s *Stack) Start(tb testing.TB, o ReplicaOptions) *Replica {
 		tb.Fatalf("config: %v", err)
 	}
 	logs := &SyncBuffer{}
-	a, err := app.New(app.Options{Loaded: loaded, Role: o.Role, Environ: environ, LogWriter: logs, Extra: o.Extra, Vuln: o.Vuln, Mirror: o.Mirror, DialOverride: o.DialOverride})
+	a, err := app.New(app.Options{Loaded: loaded, Role: o.Role, Environ: environ, LogWriter: logs, Extra: o.Extra, Vuln: o.Vuln, Mirror: o.Mirror, DialOverride: o.DialOverride, Database: o.Database})
 	if err != nil {
 		tb.Fatalf("new %s: %v", o.Name, err)
 	}

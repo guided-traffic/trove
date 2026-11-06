@@ -55,8 +55,14 @@ func StatementsSince(t testing.TB, at time.Time) []string {
 // StatementName is the sqlc name of a statement ("-- name: GetLiveItem :many"), or its first words.
 func StatementName(s string) string {
 	if i := strings.Index(s, "-- name: "); i >= 0 {
-		if f := strings.Fields(s[i+len("-- name: "):]); len(f) > 0 {
-			return f[0]
+		// The first word after the marker, without splitting the rest of the statement (RequestTransactions names every
+		// statement of a request with it while the request runs).
+		rest := strings.TrimLeft(s[i+len("-- name: "):], " \t\r\n")
+		if j := strings.IndexAny(rest, " \t\r\n"); j >= 0 {
+			rest = rest[:j]
+		}
+		if rest != "" {
+			return rest
 		}
 	}
 	s = strings.Join(strings.Fields(s), " ")

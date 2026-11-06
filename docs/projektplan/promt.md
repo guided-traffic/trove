@@ -316,8 +316,25 @@ Found on 2026-11-03 while building phase 6:
   The dispatched nightly run 42211913572 (release v0.19.5, perf after the kind legs, Q-ARCH-325) met ten of eleven: V-1 1.01 min (F-57
   fixed: the import's statements by primary key, no planner statistics on `ecosystem`, Q-VULN-95 to Q-VULN-97), V-2 0.65 min, V-3 0.10 min,
   V-4 3.18 ms (median 1.02 ms), V-5a 0.81 ms, V-6 125 ms, V-7a 21 ms, V-7b 112 ms, V-8 2.5 ms, V-9 0.19 GiB; V-5b missed with 1.065
-  transactions per cached download against 1 (0.83 to 0.94 in earlier nightly runs, 1.036 once on the integration stack). Left: V-5b's
-  cause, and a second nightly run in a row with every value met.
+  transactions per cached download against 1 (0.83 to 0.94 in earlier nightly runs, 1.036 once on the integration stack).
+  V-5b's cause, established on 2026-11-06: the measurement, not the downloads. A run on the integration stack with `log_statement` on for
+  its database showed every cached download running exactly one transaction (`BEGIN`, `GetLiveItem`, `COMMIT`), 4,000 for 4,000. V-5b was
+  the commits of the whole database over the window minus an idle window: the health checks, registration and change-log loops of three
+  replicas, the worker's scheduler tick (15 inserts every 10 s), the batched writers and the autovacuum, and PostgreSQL publishes a
+  session's counters up to 10 s after its transactions (a burst of 2,000 commits appeared 10.5 s later, all at once), so transactions of
+  V-4's publishes before the window and of the last downloads fell into the wrong window; in 42211913572 the window began 1.4 s after the
+  last of 300 publishes of about 7.6 transactions each (read from the replicas' logs, not verified by a statement log there). Fixed with
+  [Q-VULN-98](../spec/vulnerability-scanning.md#q-vuln-98--v-5b-is-counted-in-the-replicas-by-request-not-from-the-databases-commit-counter)
+  and [Q-VULN-99](../spec/vulnerability-scanning.md#q-vuln-99--v-5b-is-the-p99-of-the-statements-of-one-download-not-the-mean-of-the-transactions-of-a-window):
+  V-5b is counted in the replicas by request ID and is the p99 of a download's statements, bound 1 unchanged. Local runs on the
+  integration stack, V-5b and in brackets the old database-wide count of the same window: 1 (0.956), 1 (0.859), 1 (1.051), 1 (0.806),
+  1 (0.930); the base commit's measure read 0.983 and 0.767 on the same day. With a cost added to the lookup on purpose (not committed)
+  it read 2 (a second statement in every download: old count 0.867; a transaction of its own in one download of 25: old count 0.718, both
+  passes of the old measure). The last of those runs met all eleven values with the gate on (V-4 3.81 ms). Under the shared host's load
+  five local runs missed V-4 (5.0 to 12.1 ms at load averages of 10 to 120; the base commit's code missed it too, 5.4 ms, so it is the
+  thin margin named above, not the counter), and in one at a load average of 110 to 123 a download from the replica without the scanning
+  answered `503 authz_stale` (its grant index unconfirmed within `authz.cache.max_staleness`, R-AUTHZ-028), so V-5 did not finish there;
+  neither was seen on a CI runner. Left: two nightly runs in a row with every value met.
 
 Found on 2026-11-03 while closing phase 5:
 

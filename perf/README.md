@@ -30,7 +30,7 @@ a push stores them, so version 1.0.0 of every package has one finding: 10,000 fi
 
 | File | What it is |
 |---|---|
-| `vuln/env_test.go` | the report (`.out/perf-vuln.json`), the percentile and histogram helpers, the publish body |
+| `vuln/env_test.go` | the report (`.out/perf-vuln.json`), the percentile and histogram helpers, the cost of a download (V-5b), the publish body |
 | `vuln/perf_test.go` | `TestR_VULN_028_PerformanceRun`: V-1 to V-9 in order |
 | `vuln/seed_test.go` | `TestR_VULN_028_TheSeededInstallation`: the shape of the seeded installation |
 
@@ -64,6 +64,20 @@ measured value above its target, and a scenario that does not finish fails it wi
 | V-2 | V-1 | its clock starts when the import completed, and the full evaluation is the one that completion requests |
 | V-9 | V-1 | the size of the tables after the import |
 | V-3 to V-8 | V-1 and V-2 | each measures an installation that is imported and evaluated; V-3 is an incremental sync only on a complete ecosystem, a full one otherwise |
+
+V-5b ([Q-VULN-98](../docs/spec/vulnerability-scanning.md#q-vuln-98--v-5b-is-counted-in-the-replicas-by-request-not-from-the-databases-commit-counter),
+[Q-VULN-99](../docs/spec/vulnerability-scanning.md#q-vuln-99--v-5b-is-the-p99-of-the-statements-of-one-download-not-the-mean-of-the-transactions-of-a-window))
+is counted in the two `web` replicas, not in the database: `testenv.RequestTransactions` is the tracer of their request pools and gives a
+statement to the download whose request ID (the answer's `X-Request-Id`) its context carries. The value is the p99 of a download's
+statements (its transactions where they are more) over the 2,000 downloads of a replica, the larger of the two, against 1: the item
+lookup. The note gives per replica the mean statements and transactions of a download, how many downloads cost how much, and every
+statement by name; a run on the integration stack reads for each replica about `1999 cost 1, 1 cost 4` and `GetLiveItem x2000,
+IdentityGroupsOfMember x1, IdentityPrincipalByID x1, IdentityTokenBySecret x1`: the download of more than one statement is the refill of
+the authentication caches after `auth.tokens.cache_ttl`, one or two in a window (the three statements can also fall to two downloads). A
+statement the block check added reads `cost 2` for nearly every download of the scanning replica, and the value is 2. The note ends
+with the count of runs before 2026-11-06, the database's commits over the window minus an idle window: it includes the database's
+background and lags by up to 10 s, so it moved between 0.72 and 1.07 from run to run; it compares with those runs and is not the
+value.
 
 The regression issue lists every row that does not meet its target with its outcome and the note (`its wait ran out after 40m0s`,
 `V-1 did not finish`). A wait that gives up logs, in the test output: the advisory source state of each ecosystem (`state`,
