@@ -237,17 +237,6 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
   object as a cache miss and fill it again from its upstream. Done when a test pins what a remote answers for a cached item without its
   object (fill again, or a `503` that names the store), and the product does that.
 
-Found on 2026-11-06 while reviewing the nightly runs for phase 7:
-
-### Tests and tools
-
-- **F-56 · The set `vuln` of the scheduled nightly run 42002617340 failed in its setup on one `EOF` from the npm test upstream**
-  (confirmed in the job log, not reproduced). `vuln_env_test.go:214` seeds the upstream with `POST
-  https://npmstub.trove.svc/-/stub/publish` and got `EOF` (09:48:00 UTC, GitHub-hosted runner); `TestVuln_R_VULN_022_Journeys` failed on
-  it and the six tests after it failed at 0 s because the environment never finished. The same set passed in run 42126196109. Not known:
-  whether the stub's pod restarted or the connection was cut on the way (the run's cluster-state artifact has the stub's log). Done when
-  the cause is named and fixed in the stub or the seed, or shown to lie in the runner; remove the entry then.
-
 Found on 2026-11-04 while cutting trove into task areas (phase 6a):
 
 ### Tests and tools
@@ -270,6 +259,12 @@ Found on 2026-11-04 while cutting trove into task areas (phase 6a):
   container, instead of the last 500 lines. Six local runs of `TestE1_14Exposure` (three with the edge logging, 17,891 access lines
   in the three, every one with the clean state `----`) and three of `TestE1_08RateLimits` showed no `EOF` at the edge. Done when a
   failed run's artifact names the closing side and the cause is fixed or shown to lie outside trove; remove the entry then.
+  Checked on 2026-11-06: the logs of the 26 Test and Release runs since 2026-11-05 (42035411725 to 42207790533) hold no `EOF` at the
+  edge; `TestE1_14Exposure` passed in the `push` leg (42207790533 among them). Their `EOF` lines are expected negative cases of the unit
+  tests, Valkey's replication messages, `EOF`s on port-forwards that were repeated (the `vuln` and `mirror` legs), and two failures of
+  `e2e-vuln (vuln)` in run 42160309458 (04:22 and 04:23 UTC, `vuln_npm_test.go:126` and `vuln_replicas_test.go:81`) whose request went
+  through the port-forward of one `packages` pod (`apiAtPod`), not through the edge, and was not repeated at that commit (ee274214); both
+  call sites repeat over a new forward now (`getOverForward`, `safeOverForward`). No run named a closing side yet.
 
 Found on 2026-11-03 while building phase 6:
 
@@ -347,10 +342,16 @@ Found on 2026-11-03 while closing phase 5:
   matter: done when `e2e on kind (push)` runs next to a nightly run without PostgreSQL probe timeouts in
   `events-trove.txt` of the cluster-state artifact (more CPU for the runners or runner labels that keep the two apart);
   a probe-timeout setting in `deploy/dev/postgres.yaml` would hide the starvation and is not the fix.
+  Checked on 2026-11-06: none of the 26 Test and Release runs since 2026-11-05 (42035411725 to 42207790533) overlapped a nightly run
+  in time (each nightly run since 42126196109 was created 27 to 78 s after the Test and Release run before it ended, or after it), so
+  the criterion has no run to read yet; `e2e on kind (push)` passed in every completed run (on `large`, once on a GitHub-hosted
+  runner in 42035411725), and no run has an `e2e-cluster-state-push` artifact. The two workflows share the runner class `large`
+  (`e2e on kind (push)`; the nightly `e2e`, `e2e-npm`, `npm-ha-soak`, `e2e-nuget`, `latency`, `vuln-perf` and `mirror-long`), and their
+  concurrency groups are per workflow, so nothing but timing keeps them apart.
 - **F-40 · The scheduled nightly run 41611487424 was red in `failover` and `ci-ha` on the runner's DNS, not on a test** (read).
   Both jobs failed in their artifact upload step: `ci-ha` with `getaddrinfo EAI_AGAIN` for the artifact service after its test
   step passed, `failover` in the step "Upload the go test -json report", whose log is no longer retrievable (`BlobNotFound`), so
-  its test result is unconfirmed. `npm-ha` in the same run is F-38. The same DNS error is part of F-37. Test and Release run
+  its test result is unconfirmed. `npm-ha` in the same run was F-38 (closed with the phase 7 item on 2026-11-06). The same DNS error is part of F-37. Test and Release run
   41637173366 lost `e2e-nuget on kind (nuget)` the same way, in "Set up job", when the runner could not download
   `docker/login-action`. Machine-level (the self-hosted runners' network and resolver). Done when two scheduled nightly runs pass their upload steps, or the `failover` test is shown
   red in a run whose log is kept, which makes it a test finding of its own.
@@ -362,19 +363,12 @@ Found on 2026-11-03 while closing phase 5:
   `mcr.microsoft.com/dotnet/sdk:9.0.320` and `getaddrinfo EAI_AGAIN`.
   The scheduled nightly run 42002617340 (2026-11-05, GitHub-hosted runner) lost `e2e-bastion (bastion)` after 11 minutes inside the
   step `make e2e SET=bastion`: no step after it has a conclusion and the job's log is not retrievable (`BlobNotFound`), so the
-  runner was lost, not a test; `bastion-long` passed in the same run.
-- **F-38 · `npm-ha` and `npm-ha-soak` were red in the nightly run 41575201390** (read). The npm load under drains and
-  failovers is the phase 7 item "npm load in the drain and failover tests reliably green"; `npm-ha` passed in run 41568514247
-  hours before. The dispatched nightly run 41739280012 (2026-11-04) was red in `npm-ha` again, in the drain variant A and the
-  PostgreSQL switchover case under the npm load. In the dispatched nightly run 41902592855 (GitHub-hosted runner, no CPU limit) the
-  drain variant A passed (no failed `npm ci` or publish, k6 only 2xx and 304) and the switchover case failed: k6 saw 205 answers `503`
-  and 135 connections without an answer during the 16 s of the fault, and sent 16,145 requests in 153 s against at least 17,474;
-  `npm ci` and publish had no failure. In the scheduled nightly run 42002617340 on the same code all three cases failed: in the drain
-  variant A 24 of 24 `npm ci` failed, k6 saw 6,103 answers `503` and 458 without an answer, and the driver reported
-  `database_unavailable`; in the switchover 2,096 of 17,395 k6 requests were `503`; in the Valkey failover 8 of 16 `npm ci` failed.
-  `events-trove.txt` of the cluster-state artifact shows the pattern of F-37 on a GitHub-hosted runner: the probes of both PostgreSQL
-  pods time out, the liveness probe kills both, and CloudNativePG fails over; the events carry relative times, so which case they fall
-  into is not established. Done with that item.
+  runner was lost, not a test; `bastion-long` passed in the same run. The job's check-run annotation (read on 2026-11-06) names the
+  cause: `System.IO.IOException: No space left on device` for the runner's own diagnostics log, so the hosted runner's disk filled
+  during the set.
+  Checked on 2026-11-06: of the scheduled runs since this finding, 41804996351 (2026-11-04) and 42194413882 (2026-11-06, 53 upload
+  steps) passed every upload step, and 42002617340 between them did not run the upload steps of `e2e-bastion (bastion)` (above). Read
+  as two scheduled runs in a row, the criterion is not met yet: the next scheduled run decides.
 - **F-36 · The issuer double's fixtures were recorded on a local GitLab 19.0.1-ee, not on the owner's instance**
   (confirmed). The owner's GitLab (namespace `gitlab` of his cluster) cannot create projects: the web service dials Gitaly
   under a name its certificate does not carry. Machine-level for the owner (his GitOps repository). Done when, after the

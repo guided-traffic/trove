@@ -965,7 +965,7 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   acknowledged publish and push installed, probe jobs resumed with `attempt` 1, no SIGKILL; the PostgreSQL switchover and the Valkey
   failover under the same load without a failed command. The load took 16 cores of the dev cluster. The leg passed on the large class in
   the dispatched nightly run 42177273488
-- 🟡 npm load in the drain and failover tests reliably green (moved from phase 3, owner 2026-11-01). Diagnosis of
+- 🟢 npm load in the drain and failover tests reliably green (moved from phase 3, owner 2026-11-01). Diagnosis of
   2026-11-01: `make e2e SET=npm-ha` passes on a 17-CPU kind cluster (drain: 40,894 k6 requests, 0 failures, every job at
   attempt 1); with the kind nodes held to 6 CPUs the drain gets 1,062 `503`s, all `memory_slots` shedding of Q-ARCH-240 (no
   OOM, heap 111 MB), and the PostgreSQL switchover fails too. The scenario needs about 12 cores. In CI run 41322837920 the
@@ -982,7 +982,12 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   H-539). The release writes at shutdown get their whole settle deadline
   ([Q-ARCH-329](../spec/architecture.md#q-arch-329--the-job-worker-is-cancelled-early-enough-that-the-release-writes-of-its-jobs-get-their-whole-settle-deadline)):
   the job worker is cancelled 15 s before the close deadline (`TestShutdownReleaseWrites`). The nightly `npm-ha` passed on the class
-  `large` in run 42126196109. Open: green nightly runs in a row on the fix
+  `large` in run 42126196109 (whose commit b8d60cd9 did not carry the fix). On the fix (f99d7105, 64368aea), checked 2026-11-06: every
+  nightly run that ran the legs passed them, two in a row: the dispatched run 42177273488 (all legs, commit 8dbe649b) and the
+  scheduled run 42194413882 (commit 24a29ff5), each `e2e-npm (npm-ha)` (`TestNPMHA`: drain variant A, PostgreSQL switchover and Valkey
+  failover under the npm load), `e2e-npm (npm-ha-soak)` (`TestNPMHACrash` with ten force-deletes, `TestNPMPerf`) and `e2e (failover)`;
+  the dispatched runs 42192042297 and 42211913572 ran other sets only. The failure suite under the npm load (`ha-suite`) is the item
+  "Failure suite" of this phase
 - 🟢 The drain criterion of the security audit (R-NPM-038, moved from phase 3): the `web` pod that forwards an `npm audit`
   to a provider answering after 20 s is deleted 1 s in; `npm audit` succeeds and no pod gets `SIGKILL`. `TestHASuite_R_NPM_038_AuditDrain`
   (set `ha-suite`) passed on kind on 2026-11-06: the audit exited 0 after 20.3 s, the `packages` pod deleted 1,002 ms after the
