@@ -25,7 +25,7 @@ type fakeExplainer struct {
 func (f *fakeExplainer) Explain(_ context.Context, c virtual.Caller, v repository.Repository, d virtual.Descriptor) (virtual.Explanation, error) {
 	f.caller, f.repo, f.d = c, v, d
 	if f.out.Repository == "" {
-		return virtual.Explanation{Repository: v.Key, Descriptor: virtual.ExplainedPath{Path: d.Path, Kind: string(d.Kind)}, Members: []virtual.MemberDecision{}}, f.err
+		return virtual.Explanation{Repository: v.Name, Descriptor: virtual.ExplainedPath{Path: d.Path, Kind: string(d.Kind)}, Members: []virtual.MemberDecision{}}, f.err
 	}
 	return f.out, f.err
 }
@@ -49,7 +49,7 @@ func resolutionSetup(t *testing.T, val *apitest.Validator, acc Access, ex *fakeE
 	t.Helper()
 	byKey := map[string]repository.Repository{}
 	for _, r := range repos {
-		byKey[r.Key] = r
+		byKey[r.Name] = r
 	}
 	s := newSetup(t, func(o *Options) {
 		o.Access = acc
@@ -69,7 +69,7 @@ func resolutionURL(key, path string) string {
 
 func TestResolutionAPI(t *testing.T) {
 	val := apitest.New(t, EmbeddedYAML())
-	virtualRepo := repository.Repository{Name: "4", Key: "all", Class: repository.Virtual, Format: "generic", Lifecycle: repository.Active}
+	virtualRepo := repository.Repository{ID: "4", Name: "all", Class: repository.Virtual, Format: "generic", Lifecycle: repository.Active}
 
 	t.Run("R-REPO-019 the operation declares read on the virtual repository of the path", func(t *testing.T) {
 		acc := &actionAccess{}
@@ -98,13 +98,13 @@ func TestResolutionAPI(t *testing.T) {
 		if w := s.do("GET", resolutionURL("all", "docs/readme.txt"), "", nil); w.Code != 200 {
 			t.Fatalf("%d %s", w.Code, w.Body)
 		}
-		if ex.repo.Key != "all" || ex.d.Path != "docs/readme.txt" || ex.d.Format != "generic" || ex.d.Kind == "" {
-			t.Fatalf("repo %q descriptor %+v", ex.repo.Key, ex.d)
+		if ex.repo.Name != "all" || ex.d.Path != "docs/readme.txt" || ex.d.Format != "generic" || ex.d.Kind == "" {
+			t.Fatalf("repo %q descriptor %+v", ex.repo.Name, ex.d)
 		}
 	})
 
 	t.Run("R-REPO-019 a repository that is not virtual answers 400 not_applicable", func(t *testing.T) {
-		local := repository.Repository{Name: "1", Key: "files", Class: repository.Local, Format: "generic", Lifecycle: repository.Active}
+		local := repository.Repository{ID: "1", Name: "files", Class: repository.Local, Format: "generic", Lifecycle: repository.Active}
 		s := resolutionSetup(t, val, &actionAccess{}, &fakeExplainer{}, local)
 		problem(t, s.do("GET", resolutionURL("files", "x"), "", nil), 400, "not_applicable")
 	})

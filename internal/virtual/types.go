@@ -131,7 +131,7 @@ func (p *Plan) byClass(c repository.Class) []Member {
 
 // repoID parses the numeric id of a repository; 0 for one that has none.
 func repoID(r repository.Repository) int64 {
-	n, err := strconv.ParseInt(r.Name, 10, 64)
+	n, err := strconv.ParseInt(r.ID, 10, 64)
 	if err != nil {
 		return 0
 	}

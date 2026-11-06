@@ -559,7 +559,7 @@ func (s *Service) resolveSelectors(ctx context.Context, rp *resolvedPolicy, stor
 				ps = append(ps, field(ptr, errs.CodeUnknownRepository, "The repository could not be read."))
 				continue
 			}
-			id, perr := strconv.ParseInt(r.Name, 10, 64)
+			id, perr := strconv.ParseInt(r.ID, 10, 64)
 			if perr != nil {
 				ps = append(ps, field(ptr, errs.CodeUnknownRepository, "The repository has no usable identifier."))
 				continue
@@ -628,8 +628,8 @@ func warningsFor(rp *resolvedPolicy, all []repository.Repository, reg *catalog.R
 		if rp.project != "" && r.ProjectID != rp.project {
 			continue // a project policy covers only the repositories of its project (Q-AUTHZ-179)
 		}
-		id, _ := strconv.ParseInt(r.Name, 10, 64)
-		v := repoView{ID: id, Key: r.Key, Class: r.Class, Format: r.Format}
+		id, _ := strconv.ParseInt(r.ID, 10, 64)
+		v := repoView{ID: id, Key: r.Name, Class: r.Class, Format: r.Format}
 		hit := false
 		for i, sel := range rp.selectors {
 			if sel.matches(v) {
@@ -639,7 +639,7 @@ func warningsFor(rp *resolvedPolicy, all []repository.Repository, reg *catalog.R
 		}
 		if hit {
 			covered = append(covered, r)
-			covers = append(covers, r.Key)
+			covers = append(covers, r.Name)
 		}
 	}
 	sort.Strings(covers)

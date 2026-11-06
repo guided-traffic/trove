@@ -310,7 +310,7 @@ func (f *Format) versionTakenAfterCommit(ctx context.Context, rq *formats.Reques
 	if err != nil {
 		return false, err
 	}
-	rep.met.retryAcknowledged(rq.Repo.Key)
+	rep.met.retryAcknowledged(rq.Repo.Name)
 	row, found, err := rq.Host.Packages().Package(ctx, rq.RepoRef(), n.String())
 	if err != nil {
 		return false, err
@@ -433,7 +433,7 @@ func auditOf(rq *formats.Request) rows.Audit {
 		kind = "anonymous"
 	}
 	return rows.Audit{
-		RepoKey: rq.Repo.Key, Endpoint: s.Endpoint,
+		RepoKey: rq.Repo.Name, Endpoint: s.Endpoint,
 		Actor: rows.Actor{Kind: kind, ID: s.ID, Name: s.Name, TokenID: s.TokenID, AuthMethod: s.AuthMethod},
 	}
 }

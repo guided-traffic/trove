@@ -90,7 +90,7 @@ func (f *Format) handleSearch(ctx context.Context, rq *formats.Request, w http.R
 // include or exclude patterns is counted and paged by the store; any other is scanned in rank
 // order (Q-NUGET-45, Q-NUGET-77).
 func (f *Format) runSearch(ctx context.Context, rq *formats.Request, st Store, p search.Params) (hits []rows.SearchHit, total int, err error) {
-	key := rq.Repo.Key
+	key := rq.Repo.Name
 	scope, err := rq.Host.Resolver().ReadScope(ctx, rq, []string{key})
 	if err != nil {
 		return nil, 0, err

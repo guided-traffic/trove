@@ -91,7 +91,7 @@ func (r *remote) discovery(ctx context.Context, rq *formats.Request, d formats.D
 		return nil, err
 	}
 	if doc.Status.Negative || doc.Bytes == nil {
-		return nil, errs.E(errs.UpstreamFailed, errs.CodeUpstreamError, "The upstream of "+rq.Repo.Key+" has no discovery document, so the addresses of its resources are unknown.")
+		return nil, errs.E(errs.UpstreamFailed, errs.CodeUpstreamError, "The upstream of "+rq.Repo.Name+" has no discovery document, so the addresses of its resources are unknown.")
 	}
 	b, err := doc.Bytes(ctx)
 	if err != nil {

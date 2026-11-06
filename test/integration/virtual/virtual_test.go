@@ -233,8 +233,8 @@ func TestR_REPO_019_ExplanationAgainstTheRealRouting(t *testing.T) {
 
 	t.Run("R-REPO-021 the deploy target is the member the document names; without one the repository is read-only", func(t *testing.T) {
 		tgt, err := a.engine.DeployTarget(a.repo("all"))
-		if err != nil || tgt.Key != "team-local" {
-			t.Fatalf("target %q err %v", tgt.Key, err)
+		if err != nil || tgt.Name != "team-local" {
+			t.Fatalf("target %q err %v", tgt.Name, err)
 		}
 		_, err = a.engine.DeployTarget(a.repo("all2"))
 		if ee, ok := errs.As(err); !ok || ee.Code != errs.CodeNoDeployTarget || ee.Kind != errs.MethodNotAllowed {

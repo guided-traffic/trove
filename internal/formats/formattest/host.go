@@ -148,7 +148,7 @@ func NewHost(f formats.Format, o HostOptions) *Host {
 	}
 	h := &Host{
 		f: f, opts: o,
-		repo:    &repository.Repository{Name: "1", Key: o.RepoKey, Class: o.Class, Format: string(d.ID), Lifecycle: repository.Active},
+		repo:    &repository.Repository{ID: "1", Name: o.RepoKey, Class: o.Class, Format: string(d.ID), Lifecycle: repository.Active},
 		items:   map[string]*itemRec{},
 		byID:    map[int64]*itemRec{},
 		pkgs:    map[string]*pkgRec{},
@@ -241,7 +241,7 @@ func (h *Host) Begin(*formats.Request) func() { return func() {} }
 // Authorize implements formats.Host.
 func (h *Host) Authorize(_ context.Context, rq *formats.Request, t formats.Target) error {
 	h.mu.Lock()
-	h.authz = append(h.authz, AuthorizeCall{Route: rq.Route.Name, Target: t, Repo: rq.Repo.Key, Addressed: rq.Addressed()})
+	h.authz = append(h.authz, AuthorizeCall{Route: rq.Route.Name, Target: t, Repo: rq.Repo.Name, Addressed: rq.Addressed()})
 	h.mu.Unlock()
 	if h.opts.Allow != nil {
 		return h.opts.Allow(t)
@@ -294,7 +294,7 @@ func (h *Host) Resolver() formats.Resolver {
 
 // Links implements formats.Host.
 func (h *Host) Links(rq *formats.Request) formats.LinkBuilder {
-	return links{base: h.opts.BaseURL, format: h.f.Descriptor().ID, key: rq.Repo.Key}
+	return links{base: h.opts.BaseURL, format: h.f.Descriptor().ID, key: rq.Repo.Name}
 }
 
 // Renditions implements formats.Host.
@@ -466,7 +466,7 @@ func (h *Host) NewRequest(ctx context.Context, method, escapedPath string, body 
 	if err != nil {
 		return nil, err
 	}
-	u := &url.URL{Scheme: "https", Host: strings.TrimPrefix(h.opts.BaseURL, "https://"), Path: "/api/" + string(h.f.Descriptor().ID) + "/" + h.repo.Key + "/" + clean.Path, RawPath: ""}
+	u := &url.URL{Scheme: "https", Host: strings.TrimPrefix(h.opts.BaseURL, "https://"), Path: "/api/" + string(h.f.Descriptor().ID) + "/" + h.repo.Name + "/" + clean.Path, RawPath: ""}
 	hr, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {
 		return nil, err

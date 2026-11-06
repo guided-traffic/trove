@@ -76,7 +76,7 @@ func TestSnapshotAcrossReplicas(t *testing.T) {
 		}
 		start := time.Now()
 		r, err := b.reader.ByKey(ctx, "fresh-key")
-		if err != nil || r.Key != "fresh-key" || r.Format != "generic" || r.Lifecycle != repository.Active {
+		if err != nil || r.Name != "fresh-key" || r.Format != "generic" || r.Lifecycle != repository.Active {
 			t.Fatalf("ByKey = %+v, %v", r, err)
 		}
 		if d := time.Since(start); d > poll {
@@ -97,7 +97,7 @@ func TestSnapshotAcrossReplicas(t *testing.T) {
 		}
 		waitFor(t, "B to find the repository", within, func() bool {
 			r, err := b.reader.ByKey(ctx, "unknown-key")
-			return err == nil && r.Key == "unknown-key"
+			return err == nil && r.Name == "unknown-key"
 		})
 	})
 
@@ -136,7 +136,7 @@ func TestSnapshotAcrossReplicas(t *testing.T) {
 		for name, reader := range map[string]repository.Reader{"B": b.reader, "the second replica": b2.reader} {
 			waitFor(t, name+" to list both repositories", within, func() bool {
 				l, err := reader.List(ctx)
-				return err == nil && len(l) == 3 && l[0].Key == "fresh-key" && l[1].Key == "second-one" && l[2].Key == "unknown-key"
+				return err == nil && len(l) == 3 && l[0].Name == "fresh-key" && l[1].Name == "second-one" && l[2].Name == "unknown-key"
 			})
 		}
 	})

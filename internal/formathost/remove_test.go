@@ -42,7 +42,7 @@ func (r *recordRemover) RemoveIn(_ context.Context, _ meta.Tx, spec items.Remove
 // request, refuses.
 func TestR_STOR_018_DeleteItemsOfThePackageWriter(t *testing.T) {
 	repo := formats.RepoRef{ID: 7, Name: "npm-local", Class: formats.Local, Format: "npm"}
-	rq := &formats.Request{Repo: &repository.Repository{Key: "npm-local"}}
+	rq := &formats.Request{Repo: &repository.Repository{Name: "npm-local"}}
 	rm := &recordRemover{}
 	w := &writer{req: rq, d: writerDeps{remove: rm}}
 	if err := w.DeleteItems(t.Context(), repo, "a/-/a-1.0.0.tgz", "a/-/a-1.0.0.sigstore"); err != nil {

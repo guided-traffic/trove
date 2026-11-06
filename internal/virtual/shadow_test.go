@@ -109,7 +109,7 @@ func TestR_REPO_048_Outcomes(t *testing.T) {
 		if err != nil || !out.Proceed || out.Outcome != virtual.OutcomeShadowingApproved || out.Undetermined || out.Err("lodash") != nil {
 			t.Fatalf("lead: out %+v err %v", out, err)
 		}
-		if len(out.Shadowed) != 1 || out.Shadowed[0].Virtual.Key != "npm-all" || out.Shadowed[0].Remote.Key != "npm-remote" {
+		if len(out.Shadowed) != 1 || out.Shadowed[0].Virtual.Name != "npm-all" || out.Shadowed[0].Remote.Name != "npm-remote" {
 			t.Fatalf("the audit event lacks the pairs: %+v", out.Shadowed)
 		}
 	})

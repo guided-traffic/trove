@@ -349,7 +349,7 @@ func (r *replica) repo(key string) repository.Repository {
 }
 
 func (r *replica) id(key string) int64 {
-	n, err := strconv.ParseInt(r.repo(key).Name, 10, 64)
+	n, err := strconv.ParseInt(r.repo(key).ID, 10, 64)
 	if err != nil {
 		r.t.Fatal(err)
 	}

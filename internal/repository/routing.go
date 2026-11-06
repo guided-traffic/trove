@@ -219,13 +219,13 @@ func routeOf(cat *catalog.Registry, idx *claimIndex, keyOf func(int64) string, v
 	for _, m := range virtual.virt.members {
 		switch {
 		case m.Disabled || m.Lifecycle != Active:
-			out.Dropped[m.Key] = DropDisabled
+			out.Dropped[m.Name] = DropDisabled
 		case !admits(m, info, req), unfoldable && m.Class == Remote:
-			out.Dropped[m.Key] = DropNotAdmitted
-		case pinned && !pin.names(m.Key):
-			out.Dropped[m.Key] = DropPinnedOut
+			out.Dropped[m.Name] = DropNotAdmitted
+		case pinned && !pin.names(m.Name):
+			out.Dropped[m.Name] = DropPinnedOut
 		case claimed != nil && !claimedBy(claimed, m.rid):
-			out.Dropped[m.Key] = DropClaimedElsewhere
+			out.Dropped[m.Name] = DropClaimedElsewhere
 		default:
 			out.Members = append(out.Members, m)
 		}
@@ -312,7 +312,7 @@ func remoteRefused(cat *catalog.Registry, idx *claimIndex, remote Repository, na
 		return false
 	}
 	if via != nil && via.virt != nil {
-		if pin, ok := via.virt.pins.best(name); ok && pin.names(remote.Key) {
+		if pin, ok := via.virt.pins.best(name); ok && pin.names(remote.Name) {
 			return false
 		}
 	}

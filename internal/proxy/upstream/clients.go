@@ -165,9 +165,9 @@ func New(o Options) (*Clients, error) {
 // credential that cannot be unsealed or resolved is 502
 // upstream_secret_unavailable, and other repositories are unaffected.
 func (c *Clients) For(ctx context.Context, r repository.Repository, s repository.RemoteSettings) (*Client, error) {
-	id, err := strconv.ParseInt(r.Name, 10, 64)
+	id, err := strconv.ParseInt(r.ID, 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("upstream: repository id %q: %w", r.Name, err)
+		return nil, fmt.Errorf("upstream: repository id %q: %w", r.ID, err)
 	}
 	k := clientKey{repo: id, version: r.Version}
 	if cl, ok := c.cache.Get(k); ok {
@@ -181,7 +181,7 @@ func (c *Clients) For(ctx context.Context, r repository.Repository, s repository
 		if cl, ok := c.cache.Get(k); ok {
 			return cl, nil
 		}
-		cl, err := c.buildSaved(ctx, id, r.Key, s)
+		cl, err := c.buildSaved(ctx, id, r.Name, s)
 		if err != nil {
 			return nil, err
 		}

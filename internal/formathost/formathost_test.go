@@ -133,7 +133,7 @@ func (d *fakeDecider) RecordAllowed(_ context.Context, _ meta.Tx, _ authz.Subjec
 func testRequest(kind formats.RouteKind) *formats.Request {
 	rq := &formats.Request{
 		Request: httptest.NewRequest(http.MethodGet, "/api/probe/key/x", nil),
-		Repo:    &repository.Repository{Name: "42", Key: "key", Class: repository.Local, Format: "probe"},
+		Repo:    &repository.Repository{ID: "42", Name: "key", Class: repository.Local, Format: "probe"},
 		Route:   &formats.Route{Name: "probe.get", Kind: kind},
 		Subject: authz.Subject{Name: "alice", Endpoint: "default"},
 	}

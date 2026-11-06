@@ -39,7 +39,7 @@ func exclude(p ...string) repoOpt { return func(_ *Repository, a *admLists) { a.
 func (f *routeFixture) repo(key string, class Class, format string, opts ...repoOpt) Repository {
 	f.t.Helper()
 	f.next++
-	r := Repository{Name: key, Key: key, Class: class, Format: format, Lifecycle: Active, rid: f.next, autoClaim: true}
+	r := Repository{ID: key, Name: key, Class: class, Format: format, Lifecycle: Active, rid: f.next, autoClaim: true}
 	var lists admLists
 	for _, o := range opts {
 		o(&r, &lists)
@@ -89,7 +89,7 @@ func (f *routeFixture) route(v Repository, name string) Route {
 func memberKeys(r Route) []string {
 	out := make([]string, len(r.Members))
 	for i, m := range r.Members {
-		out[i] = m.Key
+		out[i] = m.Name
 	}
 	return out
 }

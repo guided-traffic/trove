@@ -70,7 +70,7 @@ func keepsAway(rt *Routing, idx *claimIndex, via *Repository, member Repository,
 // the claims in effect in it.
 func keptFromMember(rt *Routing, idx *claimIndex, via *Repository, member Repository, name string, stems []string) bool {
 	r := routeOf(rt.cat, idx, func(int64) string { return "" }, *via, RouteRequest{Name: name})
-	switch r.Dropped[member.Key] {
+	switch r.Dropped[member.Name] {
 	case DropPinnedOut, DropClaimedElsewhere:
 		return true
 	}
@@ -80,7 +80,7 @@ func keptFromMember(rt *Routing, idx *claimIndex, via *Repository, member Reposi
 		}
 	}
 	for _, rule := range via.virt.pins.rules {
-		if slices.Contains(rule.Members, member.Key) {
+		if slices.Contains(rule.Members, member.Name) {
 			continue
 		}
 		for _, raw := range rule.Packages {

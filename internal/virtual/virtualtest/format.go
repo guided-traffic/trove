@@ -137,7 +137,7 @@ func (r *Rows) HoldsVersion(_ context.Context, m repository.Repository, name str
 
 func idOf(m repository.Repository) int64 {
 	var n int64
-	for _, c := range m.Name {
+	for _, c := range m.ID {
 		n = n*10 + int64(c-'0')
 	}
 	return n
@@ -193,7 +193,7 @@ func (m *Merger) Merge(_ context.Context, _ virtual.Descriptor, parts []virtual.
 					continue
 				}
 			}
-			c := pick{rank, p.Member.Position, p.Member.Repo.Key}
+			c := pick{rank, p.Member.Position, p.Member.Repo.Name}
 			if b, ok := best[v]; !ok || c.rank < b.rank || (c.rank == b.rank && c.pos < b.pos) {
 				best[v] = c
 			}

@@ -49,7 +49,7 @@ func TestR_VULN_016_TheMissRefusalNamesTheAddressedRepository(t *testing.T) {
 	f := newFixture(t, states{"npm": {Complete: true}}, vuln.EnforceBlocks)
 	f.ev.block = vuln.Block{Reason: vuln.BlockMalicious, AdvisoryID: "MAL-2026-1234"}
 	m := Miss{Addressed: "npm-all", Package: "trove-test-mal", Version: "1.0.0", Path: "p"}
-	m.Repo.Key = "npm-member-remote"
+	m.Repo.Name = "npm-member-remote"
 	err := f.e.gate(context.Background(), scanned, m)
 	e, ok := errs.As(err)
 	if !ok || !strings.Contains(e.Detail, " in npm-all: ") || strings.Contains(e.Detail, "npm-member-remote") {

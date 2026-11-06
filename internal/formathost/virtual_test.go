@@ -110,7 +110,7 @@ type fakeEngine struct {
 
 func (e *fakeEngine) KeepsAway(_ context.Context, via *repository.Repository, member repository.Repository, term string) (bool, error) {
 	e.gotAway.via, e.gotAway.member, e.gotAway.term = via, member, term
-	return e.away[member.Key+"/"+term], nil
+	return e.away[member.Name+"/"+term], nil
 }
 
 func (e *fakeEngine) Plan(_ context.Context, c virtual.Caller, v repository.Repository, d virtual.Descriptor) (*virtual.Plan, error) {
@@ -190,22 +190,22 @@ type fakeRemote struct {
 }
 
 func (f *fakeRemote) Gate(_ context.Context, rq *formats.Request, _ formats.Path) error {
-	f.gatedFor = rq.Repo.Key
+	f.gatedFor = rq.Repo.Name
 	return f.gateErr
 }
 
 func (f *fakeRemote) GateWith(_ context.Context, rq *formats.Request, _ formats.Path, have formats.ServeFacts) (formats.ServeFacts, error) {
-	f.gatedFor = rq.Repo.Key
+	f.gatedFor = rq.Repo.Name
 	return have, f.gateErr
 }
 
 func (f *fakeRemote) Cached(_ context.Context, rq *formats.Request, p formats.Path) (formats.Item, bool, error) {
-	f.cachedFor = rq.Repo.Key
-	return formats.Item{Ref: formats.ItemRef{Repo: formats.RepoRef{Name: rq.Repo.Key}, Path: p.Path}}, f.cachedErr == nil, f.cachedErr
+	f.cachedFor = rq.Repo.Name
+	return formats.Item{Ref: formats.ItemRef{Repo: formats.RepoRef{Name: rq.Repo.Name}, Path: p.Path}}, f.cachedErr == nil, f.cachedErr
 }
 
 func (f *fakeRemote) Artifact(_ context.Context, rq *formats.Request, _ formats.Path, _ formats.Digests, w http.ResponseWriter) error {
-	f.fetchedFor = rq.Repo.Key
+	f.fetchedFor = rq.Repo.Name
 	if f.fetchErr == nil {
 		_, _ = io.WriteString(w, "fetched")
 	}
@@ -297,8 +297,8 @@ func TestR_ARCH_015_BridgeArtifact(t *testing.T) {
 			t.Fatalf("found %v err %v", found, err)
 		}
 		// The request of the virtual repository itself is untouched.
-		if b.rq.Repo.Key != "all" {
-			t.Fatalf("request repo = %s", b.rq.Repo.Key)
+		if b.rq.Repo.Name != "all" {
+			t.Fatalf("request repo = %s", b.rq.Repo.Name)
 		}
 	})
 }
@@ -395,7 +395,7 @@ func TestR_REPO_021_BridgeDeployTarget(t *testing.T) {
 	}
 	b.eng.target, b.eng.targetOK = vt.LocalRepo(1, "team-local"), true
 	got, err := b.r.DeployTarget(t.Context(), b.rq)
-	if err != nil || got.Key != "team-local" {
+	if err != nil || got.Name != "team-local" {
 		t.Fatalf("target %v err %v", got, err)
 	}
 }
@@ -418,8 +418,8 @@ func TestR_REPO_048_BridgeShadowCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b.eng.local.Key != "team-local" || b.eng.docPath != "lodash" {
-		t.Fatalf("the check ran for %q on %q: a deploy through a virtual repository is checked for its target", b.eng.local.Key, b.eng.docPath)
+	if b.eng.local.Name != "team-local" || b.eng.docPath != "lodash" {
+		t.Fatalf("the check ran for %q on %q: a deploy through a virtual repository is checked for its target", b.eng.local.Name, b.eng.docPath)
 	}
 	if out.Proceed || out.Code != errs.CodeShadowsRemotePackage || !out.Undetermined || out.RetryAfter != time.Second {
 		t.Fatalf("outcome = %+v", out)
@@ -435,8 +435,8 @@ func TestR_REPO_048_BridgeShadowCheck(t *testing.T) {
 		local := vt.LocalRepo(1, "team-local")
 		local.Format = "virtfmt"
 		b.rq.Repo = &local
-		if _, err := b.r.ShadowCheck(t.Context(), b.rq, "lodash"); err != nil || b.eng.local.Key != "team-local" {
-			t.Fatalf("local %q err %v", b.eng.local.Key, err)
+		if _, err := b.r.ShadowCheck(t.Context(), b.rq, "lodash"); err != nil || b.eng.local.Name != "team-local" {
+			t.Fatalf("local %q err %v", b.eng.local.Name, err)
 		}
 	})
 
@@ -513,7 +513,7 @@ func TestR_NUGET_016_BridgeKeepsAway(t *testing.T) {
 		if away, err := b.r.KeepsAway(t.Context(), b.rq, remote, "acme"); err != nil || !away {
 			t.Fatalf("away %v err %v", away, err)
 		}
-		if g := b.eng.gotAway; g.via == nil || g.via.Key != "all" || g.member.Key != "member-remote" || g.term != "acme" {
+		if g := b.eng.gotAway; g.via == nil || g.via.Name != "all" || g.member.Name != "member-remote" || g.term != "acme" {
 			t.Fatalf("asked %+v", g)
 		}
 		if away, _ := b.r.KeepsAway(t.Context(), b.rq, remote, "other"); away {

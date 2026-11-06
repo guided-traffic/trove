@@ -108,10 +108,10 @@ func (a virtualAdapter) Merge(ctx context.Context, rq *formats.Request, p format
 		return nil, err
 	}
 	if len(res.Conflicts) > 0 {
-		a.f.replicaOf(rq.Host).met.versionConflicts(rq.Repo.Key, len(res.Conflicts))
+		a.f.replicaOf(rq.Host).met.versionConflicts(rq.Repo.Name, len(res.Conflicts))
 		for _, c := range res.Conflicts {
 			slog.WarnContext(ctx, "two members of a virtual repository hold a version with different integrity",
-				"repo", rq.Repo.Key, "package", n.String(), "version", c.Version, "winner", c.Winner, "other", c.Other)
+				"repo", rq.Repo.Name, "package", n.String(), "version", c.Version, "winner", c.Winner, "other", c.Other)
 		}
 	}
 	return res.Doc, nil

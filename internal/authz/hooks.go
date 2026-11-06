@@ -65,9 +65,9 @@ func (h *PolicyHook) OnUpdated(context.Context, meta.Tx, repository.Caller, repo
 
 // OnDelete implements [repository.Hooks].
 func (h *PolicyHook) OnDelete(ctx context.Context, tx meta.Tx, _ repository.Caller, r repository.Repository) error {
-	id, err := strconv.ParseInt(r.Name, 10, 64)
+	id, err := strconv.ParseInt(r.ID, 10, 64)
 	if err != nil {
-		return fmt.Errorf("authz: the repository id %q is no number: %w", r.Name, err)
+		return fmt.Errorf("authz: the repository id %q is no number: %w", r.ID, err)
 	}
 	qs, err := queriesOf(tx)
 	if err != nil {
@@ -80,5 +80,5 @@ func (h *PolicyHook) OnDelete(ctx context.Context, tx meta.Tx, _ repository.Call
 	if len(touched) == 0 {
 		return nil
 	}
-	return h.changes.Notify(tx, AreaAuthz, payloadVersion, changePayload{Type: "repository", ID: r.Name})
+	return h.changes.Notify(tx, AreaAuthz, payloadVersion, changePayload{Type: "repository", ID: r.ID})
 }

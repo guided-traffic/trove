@@ -85,15 +85,15 @@ func TestR_EP_014_FilesSeamClassifiesForTheGenericLayer(t *testing.T) {
 
 func TestR_STOR_007_FilesSeamRefusesRawDeploysIntoAProtocolOfItsOwn(t *testing.T) {
 	s := seamOf(nil)
-	if err := s.RawDeploy(repository.Repository{Key: "raw-local", Format: "raw"}); err != nil {
+	if err := s.RawDeploy(repository.Repository{Name: "raw-local", Format: "raw"}); err != nil {
 		t.Fatalf("a format whose protocol is /files/: %v", err)
 	}
-	err := s.RawDeploy(repository.Repository{Key: "named-local", Format: "named"})
+	err := s.RawDeploy(repository.Repository{Name: "named-local", Format: "named"})
 	e, ok := errs.As(err)
 	if !ok || e.Kind != errs.Conflict || e.Code != errs.CodeConflict || !strings.Contains(e.Detail, "/api/named/named-local/") {
 		t.Fatalf("err = %v", err)
 	}
-	if e, ok := errs.As(s.RawDeploy(repository.Repository{Key: "x", Format: "ghost"})); !ok || e.Kind != errs.Conflict {
+	if e, ok := errs.As(s.RawDeploy(repository.Repository{Name: "x", Format: "ghost"})); !ok || e.Kind != errs.Conflict {
 		t.Fatalf("an unknown format takes nothing: %v", e)
 	}
 }
@@ -104,8 +104,8 @@ func TestR_STOR_007_FilesSeamRefusesRawDeploysIntoAProtocolOfItsOwn(t *testing.T
 // runs against PostgreSQL in the npm integration tests.
 func TestR_AUTHZ_018_FilesSeamCheckRemovalFailsClosed(t *testing.T) {
 	ctx := context.Background()
-	local := repository.Repository{Name: "3", Key: "named-local", Class: repository.Local, Format: "named"}
-	remote := repository.Repository{Name: "4", Key: "named-remote", Class: repository.Remote, Format: "named"}
+	local := repository.Repository{ID: "3", Name: "named-local", Class: repository.Local, Format: "named"}
+	remote := repository.Repository{ID: "4", Name: "named-remote", Class: repository.Remote, Format: "named"}
 	idx := new(authz.Index)
 	for _, tc := range []struct {
 		name string

@@ -43,7 +43,7 @@ func TestCreateReadUpdate(t *testing.T) {
 		}
 		v1 = st
 		r := st.Repository
-		if r.Key != "generic-local" || r.Class != repository.Local || r.Format != "generic" || r.Version != 1 || r.Lifecycle != repository.Active {
+		if r.Name != "generic-local" || r.Class != repository.Local || r.Format != "generic" || r.Version != 1 || r.Lifecycle != repository.Active {
 			t.Fatalf("repository = %+v", r)
 		}
 		if st.Document.Layout != "generic" || st.Document.HideExistence != "inherit" || st.Document.IncludePatterns == nil {
@@ -259,7 +259,7 @@ func TestList(t *testing.T) {
 		}
 		var out []string
 		for _, it := range res.Items {
-			out = append(out, it.Repository.Key)
+			out = append(out, it.Repository.Name)
 		}
 		return out
 	}
@@ -287,8 +287,8 @@ func TestList(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, it := range res.Items {
-				all = append(all, it.Repository.Key)
-				after = it.Repository.Key
+				all = append(all, it.Repository.Name)
+				after = it.Repository.Name
 			}
 			if !res.HasMore {
 				break

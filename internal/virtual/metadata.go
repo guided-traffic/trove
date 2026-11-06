@@ -30,7 +30,7 @@ const (
 // never cached.
 func (r *Resolver) Metadata(ctx context.Context, c Caller, p *Plan, m Merger) (_ *Merged, err error) {
 	defer func() { err = c.asAddressed(p, err) }()
-	repo, d := p.Virtual.Key, p.Descriptor
+	repo, d := p.Virtual.Name, p.Descriptor
 	if !p.Admitted {
 		r.m.resolved(repo, sourceNone)
 		return nil, notFound()
@@ -298,7 +298,7 @@ func mergeFingerprint(plan [32]byte, parts []Part, merged []byte) [32]byte {
 // then the remote members in order. Nothing is merged and nothing is cached here: a local document
 // is cached by the rendition cache, a remote one by the remote engine.
 func (r *Resolver) firstMatch(ctx context.Context, c Caller, p *Plan, m Merger) (*Merged, error) {
-	repo, d := p.Virtual.Key, p.Descriptor
+	repo, d := p.Virtual.Name, p.Descriptor
 	var failure error
 	for _, mem := range p.Local() {
 		doc, rev, found, err := m.LocalDocument(ctx, mem, d)

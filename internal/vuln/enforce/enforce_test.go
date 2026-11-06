@@ -230,7 +230,7 @@ func TestR_VULN_015_ReportModeCountsAndRefusesNothing(t *testing.T) {
 func TestR_VULN_015_TheMissGateAppliesTheEvaluationAndTheMissingDataRule(t *testing.T) {
 	f := newFixture(t, states{"npm": {Complete: true}}, vuln.EnforceBlocks)
 	m := Miss{Package: "trove-test-mal", Version: "1.0.0", Path: "trove-test-mal/-/trove-test-mal-1.0.0.tgz"}
-	m.Repo.Key = "npm-remote"
+	m.Repo.Name = "npm-remote"
 	if err := f.e.gate(context.Background(), scanned, m); err != nil {
 		t.Fatalf("nothing blocks: %v", err)
 	}

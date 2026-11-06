@@ -471,7 +471,7 @@ func TestAutoClaim(t *testing.T) {
 			t.Fatal("covered a name no claim covers")
 		}
 		set, err := b.routing.ExposureSet(ctx, teamA, "brand-new")
-		if err != nil || len(set) != 1 || set[0].Virtual.Key != "all" || set[0].Remote.Key != "remote" {
+		if err != nil || len(set) != 1 || set[0].Virtual.Name != "all" || set[0].Remote.Name != "remote" {
 			t.Fatalf("exposure set = %+v, %v", set, err)
 		}
 		if set, _ := b.routing.ExposureSet(ctx, lonely, "brand-new"); len(set) != 0 {
@@ -490,7 +490,7 @@ func TestAutoClaim(t *testing.T) {
 			set, err := b.routing.ExposureSet(ctx, teamA, "@remote-only/x")
 			return err == nil && len(set) == 0
 		})
-		if set, err := b.routing.ExposureSet(ctx, teamA, "@both/x"); err != nil || len(set) != 1 || set[0].Remote.Key != "remote" {
+		if set, err := b.routing.ExposureSet(ctx, teamA, "@both/x"); err != nil || len(set) != 1 || set[0].Remote.Name != "remote" {
 			t.Fatalf("a pin rule naming both repositories: exposure set = %+v, %v", set, err)
 		}
 	})

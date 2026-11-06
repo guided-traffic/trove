@@ -600,7 +600,7 @@ func TestUpstreamChangeHook(t *testing.T) {
 	var calls []string
 	var failNext bool
 	r.svc.Bind(repository.RemoteDeps{Ring: r.ring, OnUpstreamChanged: func(_ context.Context, _ meta.Tx, _ repository.Caller, repo repository.Repository) error {
-		calls = append(calls, repo.Key)
+		calls = append(calls, repo.Name)
 		if failNext {
 			return errors.New("invalidation store unavailable")
 		}

@@ -104,11 +104,11 @@ func (h *SettingsHook) OnUpdated(ctx context.Context, tx meta.Tx, c repository.C
 	if len(a) == 0 {
 		return nil
 	}
-	details := mustJSON(map[string]any{"repository": after.Key, "repositoryId": after.Name, "before": b, "after": a})
-	journal := mustJSON(map[string]any{"repositoryId": after.Name, "key": after.Key, "before": b, "after": a})
+	details := mustJSON(map[string]any{"repository": after.Name, "repositoryId": after.ID, "before": b, "after": a})
+	journal := mustJSON(map[string]any{"repositoryId": after.ID, "key": after.Name, "before": b, "after": a})
 	return h.rec.RecordTx(ctx, tx, audit.Event{
 		Type: EventSettingsChanged, Actor: c.Actor, Source: c.Source, Outcome: audit.Success,
-		Subject:    audit.Subject{Kind: "repository", ID: after.Name, Name: after.Key},
-		Repository: after.Key, Details: details, Journal: journal,
+		Subject:    audit.Subject{Kind: "repository", ID: after.ID, Name: after.Name},
+		Repository: after.Name, Details: details, Journal: journal,
 	})
 }

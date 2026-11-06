@@ -37,7 +37,7 @@ func withRepositories(ctx context.Context, rq *Request) context.Context {
 const maxScopeDepth = 16
 
 func collect(sc *repositoryScope, r repository.Repository, depth int) {
-	id, err := strconv.ParseInt(r.Name, 10, 64)
+	id, err := strconv.ParseInt(r.ID, 10, 64)
 	if err == nil && !slices.Contains(sc.ids, id) {
 		sc.ids = append(sc.ids, id)
 	}

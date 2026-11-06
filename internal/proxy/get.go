@@ -103,7 +103,7 @@ func (e *Engine) get(ctx context.Context, g Get, cl *upstream.Client, viaMirror 
 	if viaMirror {
 		rctx = outbound.WithoutCredentials(rctx)
 	}
-	rctx = outbound.WithCall(rctx, outbound.Call{Repo: rem.Repo.Key, FlightRole: roleMirror, JobID: g.JobID})
+	rctx = outbound.WithCall(rctx, outbound.Call{Repo: rem.Repo.Name, FlightRole: roleMirror, JobID: g.JobID})
 	req, err := http.NewRequestWithContext(rctx, http.MethodGet, g.URL.String(), nil)
 	if err != nil {
 		return nil, errs.E(errs.Internal, errs.CodeInternal, "", errs.WithCause(err))
@@ -119,13 +119,13 @@ func (e *Engine) get(ctx context.Context, g Get, cl *upstream.Client, viaMirror 
 	start := time.Now()
 	resp, err := cl.HTTP().Do(req) //nolint:bodyclose // closed through the idle body below
 	if err != nil {
-		e.m.request(rem.Repo.Key, 0)
+		e.m.request(rem.Repo.Name, 0)
 		return nil, f.transportFailure(ctx, err, false).err
 	}
-	e.m.request(rem.Repo.Key, resp.StatusCode)
+	e.m.request(rem.Repo.Name, resp.StatusCode)
 	idle := new(atomic.Bool)
 	body := newIdleBody(resp.Body, time.Duration(rem.Settings.ReadTimeoutMs)*time.Millisecond, rcancel, idle, func() {
-		e.m.upstreamDur.WithLabelValues(rem.Repo.Key).Observe(time.Since(start).Seconds())
+		e.m.upstreamDur.WithLabelValues(rem.Repo.Name).Observe(time.Since(start).Seconds())
 	})
 	defer func() { _ = body.Close() }()
 	limit := g.Max
@@ -140,7 +140,7 @@ func (e *Engine) get(ctx context.Context, g Get, cl *upstream.Client, viaMirror 
 		return nil, f.transportFailure(ctx, err, idle.Load()).err
 	}
 	if rl, ok := upstream.RateLimitOf(resp.StatusCode, resp.Header, data[:min(len(data), upstream.SlowDownSniffBytes)], e.now()); ok {
-		return nil, &upstream.RateLimitError{RateLimit: rl, Repo: rem.Repo.Key}
+		return nil, &upstream.RateLimitError{RateLimit: rl, Repo: rem.Repo.Name}
 	}
 	return &GetResult{Status: resp.StatusCode, Header: resp.Header, Body: data}, nil
 }

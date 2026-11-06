@@ -86,7 +86,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 		return ShadowOutcome{}, err
 	}
 	if len(set) == 0 {
-		r.m.checked(local.Key, OutcomeNoExposure)
+		r.m.checked(local.Name, OutcomeNoExposure)
 		proceed.Outcome = OutcomeNoExposure
 		return proceed, nil
 	}
@@ -94,8 +94,8 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 	var remotes []Exposure
 	seen := map[string]bool{}
 	for _, x := range set {
-		if !seen[x.Remote.Key] {
-			seen[x.Remote.Key] = true
+		if !seen[x.Remote.Name] {
+			seen[x.Remote.Name] = true
 			remotes = append(remotes, x)
 		}
 	}
@@ -108,7 +108,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 			defer wg.Done()
 			res := r.serves(ctx, c, x, name, docPath)
 			mu.Lock()
-			results[x.Remote.Key] = &res
+			results[x.Remote.Name] = &res
 			mu.Unlock()
 		}()
 	}
@@ -117,7 +117,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 	var served, undetermined bool
 	var retry time.Duration
 	for _, x := range remotes {
-		res := results[x.Remote.Key]
+		res := results[x.Remote.Name]
 		if res.err != nil {
 			return ShadowOutcome{}, res.err
 		}
@@ -130,7 +130,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 		}
 	}
 	if !served && !undetermined {
-		r.m.checked(local.Key, OutcomeClear)
+		r.m.checked(local.Name, OutcomeClear)
 		proceed.Outcome = OutcomeClear
 		return proceed, nil
 	}
@@ -140,7 +140,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 	switch {
 	case served:
 		for _, x := range set {
-			if results[x.Remote.Key].outcome == Served {
+			if results[x.Remote.Name].outcome == Served {
 				out.Shadowed = append(out.Shadowed, x)
 			}
 		}
@@ -162,7 +162,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 			}
 		}
 	}
-	r.m.checked(local.Key, out.Outcome)
+	r.m.checked(local.Name, out.Outcome)
 	return out, nil
 }
 
@@ -201,7 +201,7 @@ func (r *Resolver) serves(ctx context.Context, c Caller, x Exposure, name, docPa
 // holdsManage reports whether the caller holds manage on the name in the local repository, or
 // content:bypass, which the decision point folds into the same question.
 func (r *Resolver) holdsManage(c Caller, local repository.Repository, name string) bool {
-	ok, err := r.o.Decider.CheckOn(c.Index, c.Subject, []authz.CheckItem{{Repository: local.Key, Package: name, Action: authz.Manage}})
+	ok, err := r.o.Decider.CheckOn(c.Index, c.Subject, []authz.CheckItem{{Repository: local.Name, Package: name, Action: authz.Manage}})
 	return err == nil && len(ok) == 1 && ok[0]
 }
 
@@ -211,9 +211,9 @@ func (r *Resolver) readableVirtuals(ctx context.Context, c Caller, pairs []Expos
 	var keys []string
 	seen := map[string]bool{}
 	for _, x := range pairs {
-		if !seen[x.Virtual.Key] {
-			seen[x.Virtual.Key] = true
-			keys = append(keys, x.Virtual.Key)
+		if !seen[x.Virtual.Name] {
+			seen[x.Virtual.Name] = true
+			keys = append(keys, x.Virtual.Name)
 		}
 	}
 	readable, err := r.o.Decider.ReadableOn(ctx, c.Index, c.Subject, keys)

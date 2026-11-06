@@ -73,7 +73,7 @@ func (r *Resolver) Explain(ctx context.Context, c Caller, v repository.Repositor
 	}
 	readConfig := r.o.Decider.HoldsOn(c.Index, c.Subject, string(authz.RepositoriesRead))
 	ex := Explanation{
-		Repository: v.Key,
+		Repository: v.Name,
 		Descriptor: ExplainedPath{Path: d.Path, Kind: string(d.Kind), Package: d.Package},
 		Members:    []MemberDecision{},
 	}
@@ -82,8 +82,8 @@ func (r *Resolver) Explain(ctx context.Context, c Caller, v repository.Repositor
 	}
 	ex.DecidedBy = r.decidedBy(ctx, c, p, readConfig)
 	for _, m := range v.Members() {
-		line := MemberDecision{Key: m.Key, Class: string(m.Class)}
-		if !p.usable[m.Key].read {
+		line := MemberDecision{Key: m.Name, Class: string(m.Class)}
+		if !p.usable[m.Name].read {
 			if !readConfig {
 				continue
 			}
@@ -121,7 +121,7 @@ func (r *Resolver) decide(ctx context.Context, c Caller, p *Plan, m repository.R
 	case !p.Route.Admitted:
 		return DecisionNotAdmitted, nil
 	}
-	if why, dropped := p.Route.Dropped[m.Key]; dropped {
+	if why, dropped := p.Route.Dropped[m.Name]; dropped {
 		return why, nil
 	}
 	d := p.Descriptor
@@ -144,7 +144,7 @@ func (r *Resolver) decide(ctx context.Context, c Caller, p *Plan, m repository.R
 			return DecisionRefusedClaimed, nil
 		}
 	}
-	mem := Member{Repo: m, ID: repoID(m), MayFill: p.usable[m.Key].fill}
+	mem := Member{Repo: m, ID: repoID(m), MayFill: p.usable[m.Name].fill}
 	rc := r.call(c, p.Virtual, mem, d)
 	cached, err := r.o.Remotes.Cached(ctx, rc)
 	if err != nil {

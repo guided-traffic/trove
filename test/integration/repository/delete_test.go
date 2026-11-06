@@ -150,14 +150,14 @@ func TestDelete(t *testing.T) {
 		}
 		list, _ := web.svc.List(ctx, repository.ListFilter{})
 		for _, it := range list.Items {
-			if it.Repository.Key == "held" {
+			if it.Repository.Name == "held" {
 				t.Fatal("a repository being deleted is listed without IncludeDeleting")
 			}
 		}
 		list, _ = web.svc.List(ctx, repository.ListFilter{IncludeDeleting: true})
 		found := false
 		for _, it := range list.Items {
-			found = found || it.Repository.Key == "held"
+			found = found || it.Repository.Name == "held"
 		}
 		if !found {
 			t.Fatal("IncludeDeleting does not list it")

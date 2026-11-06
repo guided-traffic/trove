@@ -112,16 +112,16 @@ func setupServerWith(t *testing.T, baseURL string, deploy bool, authn func(*http
 	if err != nil {
 		t.Fatal(err)
 	}
-	local := repository.Repository{Key: "npm-local", Class: repository.Local, Format: "npm"}
-	remote := repository.Repository{Key: "npm-remote", Class: repository.Remote, Format: "npm"}
+	local := repository.Repository{Name: "npm-local", Class: repository.Local, Format: "npm"}
+	remote := repository.Repository{Name: "npm-remote", Class: repository.Remote, Format: "npm"}
 	repos := packagesReader{repos: map[string]repository.Repository{
 		"npm-local":   local,
 		"npm-remote":  remote,
-		"files":       {Key: "files", Class: repository.Local, Format: "generic"},
-		"nuget-local": {Key: "nuget-local", Class: repository.Local, Format: "nuget"},
-		"npm-all": repository.Assemble(repository.Repository{Key: "npm-all", Class: repository.Virtual, Format: "npm"},
+		"files":       {Name: "files", Class: repository.Local, Format: "generic"},
+		"nuget-local": {Name: "nuget-local", Class: repository.Local, Format: "nuget"},
+		"npm-all": repository.Assemble(repository.Repository{Name: "npm-all", Class: repository.Virtual, Format: "npm"},
 			[]repository.Repository{local, remote}, &local, 0),
-		"npm-readonly": repository.Assemble(repository.Repository{Key: "npm-readonly", Class: repository.Virtual, Format: "npm"},
+		"npm-readonly": repository.Assemble(repository.Repository{Name: "npm-readonly", Class: repository.Virtual, Format: "npm"},
 			[]repository.Repository{remote}, nil, 0),
 	}}
 	services := PackageServices{

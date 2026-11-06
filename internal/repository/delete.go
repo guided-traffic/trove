@@ -276,7 +276,7 @@ func (s *Service) finishDelete(ctx context.Context, a DeleteArgs) error {
 		}
 		// >>> M2 virtual
 		if claims > 0 {
-			if err := s.notif.Notify(tx, cluster.AreaClaims, 1, claimsPayload{ID: r.Name, Key: r.Key, Op: "deleted"}); err != nil {
+			if err := s.notif.Notify(tx, cluster.AreaClaims, 1, claimsPayload{ID: r.ID, Key: r.Name, Op: "deleted"}); err != nil {
 				return err
 			}
 		}

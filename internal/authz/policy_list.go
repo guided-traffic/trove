@@ -62,8 +62,8 @@ func (s *Service) Select(ctx context.Context, all []Policy, f ListFilter) ([]Pol
 			}
 			return nil, err
 		}
-		id, _ := strconv.ParseInt(r.Name, 10, 64)
-		repo = &repoView{ID: id, Key: r.Key, Class: r.Class, Format: r.Format}
+		id, _ := strconv.ParseInt(r.ID, 10, 64)
+		repo = &repoView{ID: id, Key: r.Name, Class: r.Class, Format: r.Format}
 		repoProject = r.ProjectID
 	}
 	projectIDs := map[string]string{} // project key -> ID, for the policies of a project

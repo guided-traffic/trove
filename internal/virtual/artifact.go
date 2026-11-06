@@ -25,14 +25,14 @@ func (r *Resolver) Artifact(ctx context.Context, c Caller, p *Plan, t Tiers, w h
 	// >>> WP2.9 exposure
 	defer func() { err = c.asAddressed(p, err) }()
 	// <<< WP2.9 exposure
-	repo, d := p.Virtual.Key, p.Descriptor
+	repo, d := p.Virtual.Name, p.Descriptor
 	if !p.Admitted {
 		r.m.resolved(repo, sourceNone)
 		return notFound()
 	}
 	serve := func(m Member, hit Hit, source string) error {
 		if !c.Rules {
-			w.Header().Set(ResolvedFromHeader, m.Repo.Key)
+			w.Header().Set(ResolvedFromHeader, m.Repo.Name)
 		}
 		r.m.resolved(repo, source)
 		return hit(w)
@@ -65,7 +65,7 @@ func (r *Resolver) Artifact(ctx context.Context, c Caller, p *Plan, t Tiers, w h
 		}
 		tw := &trackWriter{ResponseWriter: w}
 		if !c.Rules {
-			tw.Header().Set(ResolvedFromHeader, m.Repo.Key)
+			tw.Header().Set(ResolvedFromHeader, m.Repo.Name)
 		}
 		herr := hit(tw)
 		if herr == nil || tw.wrote || !contentLost(herr) {
@@ -91,7 +91,7 @@ func (r *Resolver) Artifact(ctx context.Context, c Caller, p *Plan, t Tiers, w h
 		}
 		tw := &trackWriter{ResponseWriter: w}
 		if !c.Rules {
-			tw.Header().Set(ResolvedFromHeader, m.Repo.Key)
+			tw.Header().Set(ResolvedFromHeader, m.Repo.Name)
 		}
 		found, err := t.RemoteFetch(ctx, m, d, tw)
 		if found && err == nil {
@@ -164,7 +164,7 @@ func (c Caller) asAddressed(p *Plan, err error) error {
 	if info, found := errs.Lookup(e.Code); found {
 		title = info.Title
 	}
-	out := errs.E(e.Kind, e.Code, p.Virtual.Key+" could not answer the request: "+strings.ToLower(title)+".",
+	out := errs.E(e.Kind, e.Code, p.Virtual.Name+" could not answer the request: "+strings.ToLower(title)+".",
 		errs.WithCause(err), errs.WithRetryAfter(e.RetryAfter))
 	out.Headers = maps.Clone(e.Headers)
 	return out

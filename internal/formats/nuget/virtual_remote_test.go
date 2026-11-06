@@ -59,7 +59,7 @@ func remoteMemberHost(t *testing.T, res *mergeResolver, fetcher formats.RemoteFe
 	f := New()
 	res.f = f
 	h := formattest.NewHost(f, formattest.HostOptions{Class: formats.Virtual, RepoKey: "all", Data: newDocStore(), Resolver: res, Remote: fetcher})
-	member := repository.Repository{Name: "7", Key: "remote", Class: repository.Remote, Format: string(ID), Lifecycle: repository.Active}
+	member := repository.Repository{ID: "7", Name: "remote", Class: repository.Remote, Format: string(ID), Lifecycle: repository.Active}
 	*h.Repo() = repository.Assemble(*h.Repo(), []repository.Repository{member}, nil, 60)
 	return h
 }

@@ -65,7 +65,7 @@ func (r *remoteResolver) ReadScope(context.Context, *formats.Request, []string) 
 }
 
 func (r *remoteResolver) KeepsAway(_ context.Context, rq *formats.Request, member formats.RepoRef, term string) (bool, error) {
-	if member.Name != rq.Repo.Key {
+	if member.Name != rq.Repo.Name {
 		return false, errs.E(errs.Internal, errs.CodeInternal, "not the request's repository")
 	}
 	r.mu.Lock()
@@ -94,8 +94,8 @@ func newForwarding(t *testing.T, subject authz.Subject, cached ...rows.SearchHit
 	m := &formattest.MemRemote{Queries: func(_ context.Context, rq *formats.Request, q formats.Query) (*formats.QueryResult, error) {
 		fw.mu.Lock()
 		defer fw.mu.Unlock()
-		if rq.Repo.Key != "nuget-org" {
-			t.Errorf("the query ran on %q", rq.Repo.Key)
+		if rq.Repo.Name != "nuget-org" {
+			t.Errorf("the query ran on %q", rq.Repo.Name)
 		}
 		fw.queries = append(fw.queries, q)
 		if fw.err != nil {

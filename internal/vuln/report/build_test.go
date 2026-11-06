@@ -38,7 +38,7 @@ type independent struct {
 func (i independent) VersionIndependent() bool { return i.free }
 
 func buildFixture() (*Service, *Snapshot) {
-	repos := []repository.Repository{{Key: "npm-part", Class: repository.Local, Format: "npm"}}
+	repos := []repository.Repository{{Name: "npm-part", Class: repository.Local, Format: "npm"}}
 	sn := &Snapshot{Repos: repos, Topo: view.NewTopology(repos), byKey: map[string]repository.Repository{"npm-part": repos[0]}}
 	return &Service{cfg: Config{MaxScopeRows: 1000}}, sn
 }

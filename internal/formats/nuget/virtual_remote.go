@@ -62,7 +62,7 @@ func (f *Format) remoteMemberEntries(ctx context.Context, rq *formats.Request, d
 // member both use it; a key that is no member is an internal error, never an omission.
 func memberRequest(rq *formats.Request, key string) (*formats.Request, error) {
 	for _, m := range rq.Repo.Members() {
-		if m.Key == key {
+		if m.Name == key {
 			return rq.Member(&m)
 		}
 	}

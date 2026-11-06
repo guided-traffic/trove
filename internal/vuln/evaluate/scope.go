@@ -101,7 +101,7 @@ func (r ClaimRule) Claim(ctx context.Context, format, name string) (claimRepo st
 			if err != nil {
 				return m.Repository, true, nil //nolint:nilerr // see above: an unreadable holder still withholds
 			}
-			h = ClaimHolder{Key: repo.Key, Format: repo.Format, Class: repo.Class, Settings: repo.VulnerabilitySettings()}
+			h = ClaimHolder{Key: repo.Name, Format: repo.Format, Class: repo.Class, Settings: repo.VulnerabilitySettings()}
 		}
 		if h.counts(format) {
 			return h.Key, true, nil
@@ -146,11 +146,11 @@ func viewOf(repo repository.Repository) (repoView, bool) {
 	if eco == "" || repo.Class == repository.Virtual {
 		return repoView{}, false
 	}
-	id, err := strconv.ParseInt(repo.Name, 10, 64)
+	id, err := strconv.ParseInt(repo.ID, 10, 64)
 	if err != nil {
 		return repoView{}, false
 	}
-	v := repoView{ID: id, Key: repo.Key, Format: repo.Format, Class: repo.Class, Ecosystem: eco, Settings: repo.VulnerabilitySettings()}
+	v := repoView{ID: id, Key: repo.Name, Format: repo.Format, Class: repo.Class, Ecosystem: eco, Settings: repo.VulnerabilitySettings()}
 	if rs, ok := repo.Remote(); ok {
 		v.UpstreamHost = hostOf(rs.URL)
 	}

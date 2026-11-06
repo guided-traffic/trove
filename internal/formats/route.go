@@ -459,7 +459,7 @@ func (rq *Request) Addressed() string {
 	if rq.via != "" {
 		return rq.via
 	}
-	return rq.Repo.Key
+	return rq.Repo.Name
 }
 
 // Member returns a copy of the request made for a member of the repository the request
@@ -467,13 +467,13 @@ func (rq *Request) Addressed() string {
 // client named. A repository that is not a member of rq.Repo is refused, so a request can
 // never be given the standing of a virtual repository it does not belong to.
 func (rq *Request) Member(m *repository.Repository) (*Request, error) {
-	if m == nil || !slices.ContainsFunc(rq.Repo.Members(), func(x repository.Repository) bool { return x.Key == m.Key }) {
+	if m == nil || !slices.ContainsFunc(rq.Repo.Members(), func(x repository.Repository) bool { return x.Name == m.Name }) {
 		key := ""
 		if m != nil {
-			key = m.Key
+			key = m.Name
 		}
 		return nil, errs.E(errs.Internal, errs.CodeInternal, "A repository that is not a member was asked for as a member.",
-			errs.WithCause(fmt.Errorf("%q is not a member of %q", key, rq.Repo.Key)))
+			errs.WithCause(fmt.Errorf("%q is not a member of %q", key, rq.Repo.Name)))
 	}
 	c := *rq
 	c.Repo = m
@@ -498,12 +498,12 @@ func (rq *Request) WriteTarget(target *repository.Repository) *Request {
 // class and format.
 func (rq *Request) RepoRef() RepoRef {
 	var n int64
-	for i := range len(rq.Repo.Name) {
-		if rq.Repo.Name[i] < '0' || rq.Repo.Name[i] > '9' {
+	for i := range len(rq.Repo.ID) {
+		if rq.Repo.ID[i] < '0' || rq.Repo.ID[i] > '9' {
 			n = 0
 			break
 		}
-		n = n*10 + int64(rq.Repo.Name[i]-'0')
+		n = n*10 + int64(rq.Repo.ID[i]-'0')
 	}
-	return RepoRef{ID: n, Name: rq.Repo.Key, Class: rq.Repo.Class, Format: ID(rq.Repo.Format)}
+	return RepoRef{ID: n, Name: rq.Repo.Name, Class: rq.Repo.Class, Format: ID(rq.Repo.Format)}
 }

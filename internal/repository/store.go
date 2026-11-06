@@ -48,7 +48,7 @@ func readRows(ctx context.Context, run meta.Runner, fn func(*q.Queries) ([]q.Rep
 // returned error says why.
 func toRepository(r q.Repository, cat *catalog.Registry) (Repository, error) {
 	out := Repository{
-		Name: strconv.FormatInt(r.ID, 10), Key: r.Key, Class: Class(r.Class), Format: r.Format,
+		ID: strconv.FormatInt(r.ID, 10), Name: r.Key, Class: Class(r.Class), Format: r.Format,
 		HideExistence: HideInherit, Lifecycle: Lifecycle(r.Lifecycle), Version: r.ConfigVersion,
 		Config: r.Config, CreatedAt: r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}

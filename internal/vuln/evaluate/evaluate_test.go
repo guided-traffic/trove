@@ -221,9 +221,9 @@ func (f fakeRepos) List(context.Context) ([]repository.Repository, error) { retu
 // claim of a repository with always, of a remote or of another format does not count.
 func TestR_VULN_010_ClaimRule(t *testing.T) {
 	local := func(key, format string) repository.Repository {
-		return repository.Repository{Key: key, Class: repository.Local, Format: format}
+		return repository.Repository{Name: key, Class: repository.Local, Format: format}
 	}
-	repos := fakeRepos{"npm-local": local("npm-local", "npm"), "npm-nugetish": local("npm-nugetish", "nuget"), "npm-remote": {Key: "npm-remote", Class: repository.Remote, Format: "npm"}}
+	repos := fakeRepos{"npm-local": local("npm-local", "npm"), "npm-nugetish": local("npm-nugetish", "nuget"), "npm-remote": {Name: "npm-remote", Class: repository.Remote, Format: "npm"}}
 	claims := fakeClaims{
 		"npm/@acme/ui":   {{Repository: "npm-local", Pattern: "@acme/*"}},
 		"npm/other":      {{Repository: "npm-nugetish"}},

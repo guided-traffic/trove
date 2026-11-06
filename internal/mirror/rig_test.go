@@ -457,14 +457,14 @@ func (r *memRepos) List(context.Context) ([]repository.Repository, error) {
 	for _, repo := range r.repos {
 		out = append(out, repo)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 
 func (r *memRepos) set(repo repository.Repository) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.repos[repo.Key] = repo
+	r.repos[repo.Name] = repo
 }
 
 func (r *memRepos) remove(key string) {

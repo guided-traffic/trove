@@ -37,7 +37,7 @@ type fakeRepos struct{ list []repository.Repository }
 
 func (f fakeRepos) ByKey(_ context.Context, key string) (repository.Repository, error) {
 	for _, r := range f.list {
-		if r.Key == key {
+		if r.Name == key {
 			return r, nil
 		}
 	}
@@ -58,13 +58,13 @@ func testService() *Service {
 	}
 	repos := fakeRepos{}
 	for i, r := range []repository.Repository{
-		{Key: "npm-internal", Class: repository.Local, Format: "npm"},
-		{Key: "npmjs", Class: repository.Remote, Format: "npm", Config: []byte(`{"remote":{"cacheFillAction":"read"}}`)},
-		{Key: "npm-frozen", Class: repository.Remote, Format: "npm", Config: []byte(`{"remote":{"cacheFillAction":"deploy"}}`)},
-		{Key: "npm-all", Class: repository.Virtual, Format: "npm"},
-		{Key: "files-internal", Class: repository.Local, Format: "generic"},
+		{Name: "npm-internal", Class: repository.Local, Format: "npm"},
+		{Name: "npmjs", Class: repository.Remote, Format: "npm", Config: []byte(`{"remote":{"cacheFillAction":"read"}}`)},
+		{Name: "npm-frozen", Class: repository.Remote, Format: "npm", Config: []byte(`{"remote":{"cacheFillAction":"deploy"}}`)},
+		{Name: "npm-all", Class: repository.Virtual, Format: "npm"},
+		{Name: "files-internal", Class: repository.Local, Format: "generic"},
 	} {
-		r.Name = strconv.Itoa(i + 1)
+		r.ID = strconv.Itoa(i + 1)
 		repos.list = append(repos.list, r)
 	}
 	return NewService(ServiceOptions{Principals: p, Repositories: repos, Formats: testRegistry(), Projects: fakeProjects{}})

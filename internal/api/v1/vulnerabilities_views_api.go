@@ -391,7 +391,7 @@ func (s *Server) RescanRepositoryVulnerabilities(w http.ResponseWriter, r *http.
 			err = errs.E(errs.Invalid, errs.CodeNotApplicable, "The vulnerability scanning does not apply to this repository: it is virtual or of a format without the vulnerability adapter.",
 				errs.WithFields(errs.FieldError{Pointer: "/vulnerabilities", Code: errs.CodeNotApplicable, Detail: "does not apply to this repository"}))
 		default:
-			id, err = parseRepositoryID(repo.Name)
+			id, err = parseRepositoryID(repo.ID)
 		}
 	}
 	if err != nil {

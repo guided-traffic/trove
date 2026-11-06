@@ -63,7 +63,7 @@ func virtualSearchHost(t *testing.T, window int, members []formats.PlannedMember
 func withMembers(h *formattest.Host, members []formats.PlannedMember) {
 	var repos []repository.Repository
 	for _, m := range members {
-		repos = append(repos, repository.Repository{Name: strconv.FormatInt(m.Member.ID, 10), Key: m.Member.Name, Class: m.Member.Class, Format: string(ID)})
+		repos = append(repos, repository.Repository{ID: strconv.FormatInt(m.Member.ID, 10), Name: m.Member.Name, Class: m.Member.Class, Format: string(ID)})
 	}
 	*h.Repo() = repository.Assemble(*h.Repo(), repos, nil, 60)
 }

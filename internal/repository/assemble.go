@@ -10,7 +10,7 @@ func Assemble(v Repository, members []Repository, target *Repository, mergedTTLS
 	keys := make([]string, len(members))
 	ids := make(map[int64]bool, len(members))
 	for i, m := range members {
-		keys[i] = m.Key
+		keys[i] = m.Name
 		ids[m.rid] = true
 	}
 	st := &virtualState{
@@ -21,7 +21,7 @@ func Assemble(v Repository, members []Repository, target *Repository, mergedTTLS
 	if target != nil {
 		t := *target
 		st.target = &t
-		k := target.Key
+		k := target.Name
 		st.settings.DeployTarget = &k
 	}
 	v.virt = st

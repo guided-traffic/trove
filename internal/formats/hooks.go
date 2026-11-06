@@ -15,7 +15,7 @@ import (
 type RepoRef struct {
 	// ID is the numeric id of the repository row.
 	ID     int64
-	Name    string
+	Name   string
 	Class  Class
 	Format ID
 }

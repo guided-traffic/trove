@@ -64,7 +64,7 @@ func TestInvalidationPropagation(t *testing.T) {
 				`INSERT INTO repositories (key, format, class) VALUES ('npm-remote', 'npm', 'remote') RETURNING id`).Scan(&repoID); err != nil {
 				t.Fatal(err)
 			}
-			repo := repository.Repository{Name: strconv.FormatInt(repoID, 10), Key: "npm-remote", Class: repository.Remote, Format: "npm", Lifecycle: repository.Active}
+			repo := repository.Repository{ID: strconv.FormatInt(repoID, 10), Name: "npm-remote", Class: repository.Remote, Format: "npm", Lifecycle: repository.Active}
 			cc := defaultCluster()
 			cc.EpochPollInterval = mode.poll
 			a := e.newInvReplica("inv-a", replicaOpts{role: "web", valkey: mode.valkey, clu: cc})

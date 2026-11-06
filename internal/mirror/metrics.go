@@ -204,7 +204,7 @@ func GaugeSource(read func(ctx context.Context) ([]GaugeRow, error), repos repos
 			active := map[string]repository.RemoteSettings{}
 			for _, repo := range list {
 				if s, ok := repo.Remote(); ok && s.Mirrored() && repo.Lifecycle != repository.Deleting {
-					active[repo.Key] = s
+					active[repo.Name] = s
 				}
 			}
 			var out []prometheus.Metric
@@ -213,7 +213,7 @@ func GaugeSource(read func(ctx context.Context) ([]GaugeRow, error), repos repos
 			}
 			disabled := map[string]bool{}
 			for _, repo := range list {
-				disabled[repo.Key] = repo.Disabled
+				disabled[repo.Name] = repo.Disabled
 			}
 			for _, r := range rows {
 				s, ok := active[r.Key]

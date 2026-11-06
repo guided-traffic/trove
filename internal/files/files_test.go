@@ -108,7 +108,7 @@ func (s *store) Commit(ctx context.Context, spec items.CommitSpec) (items.Commit
 			return items.CommitResult{}, err
 		}
 	}
-	return items.CommitResult{Created: true, Item: items.Item{Repository: spec.Repo.Key, Path: spec.Path.Path, Kind: items.KindFile}}, nil
+	return items.CommitResult{Created: true, Item: items.Item{Repository: spec.Repo.Name, Path: spec.Path.Path, Kind: items.KindFile}}, nil
 }
 
 func (s *store) CreateFolder(ctx context.Context, spec items.FolderSpec) (items.FolderResult, error) {
@@ -184,8 +184,8 @@ func (r repos) List(context.Context) ([]repository.Repository, error) { return n
 func service(t *testing.T, st *store) *Service {
 	t.Helper()
 	svc, err := New(Options{Items: st, Repos: repos{
-		"generic-local":  {Name: "5", Key: "generic-local", Class: repository.Local, Format: "generic"},
-		"generic-remote": {Name: "6", Key: "generic-remote", Class: repository.Remote, Format: "generic"},
+		"generic-local":  {ID: "5", Name: "generic-local", Class: repository.Local, Format: "generic"},
+		"generic-remote": {ID: "6", Name: "generic-remote", Class: repository.Remote, Format: "generic"},
 	}})
 	if err != nil {
 		t.Fatal(err)

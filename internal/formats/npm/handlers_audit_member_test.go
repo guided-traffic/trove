@@ -13,7 +13,7 @@ import (
 // Q-ARCH-252). The integration case is TestR_AUTHZ_013_ASetupTokenRunsTheAuditThroughTheVirtualRepository.
 func TestR_AUTHZ_013_TheAuditForwarderAsksForTheMemberOnBehalfOfTheAddressedVirtualRepository(t *testing.T) {
 	h, _, _ := auditHost(t, formats.Virtual, `{}`)
-	member := repository.Repository{Name: "2", Key: "up", Class: formats.Remote, Format: "npm", Lifecycle: repository.Active, Config: []byte(`{}`)}
+	member := repository.Repository{ID: "2", Name: "up", Class: formats.Remote, Format: "npm", Lifecycle: repository.Active, Config: []byte(`{}`)}
 	*h.Repo() = repository.Assemble(*h.Repo(), []repository.Repository{member}, nil, 60)
 
 	r := audit(t, h, auditBulkPath, `{"lodash":["4.17.21"]}`)

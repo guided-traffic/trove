@@ -74,7 +74,7 @@ func descriptorOf(rq *formats.Request, p formats.Path, info formats.PathInfo, va
 }
 
 func memberRef(m virtual.Member) formats.RepoRef {
-	return formats.RepoRef{ID: m.ID, Name: m.Repo.Key, Class: m.Repo.Class, Format: formats.ID(m.Repo.Format)}
+	return formats.RepoRef{ID: m.ID, Name: m.Repo.Name, Class: m.Repo.Class, Format: formats.ID(m.Repo.Format)}
 }
 
 // Artifact implements [formats.Resolver].
@@ -136,7 +136,7 @@ func (r *resolver) KeepsAway(ctx context.Context, rq *formats.Request, member fo
 		via = rq.Repo
 		found := false
 		for _, m := range rq.Repo.Members() {
-			if m.Key == member.Name {
+			if m.Name == member.Name {
 				target, found = m, true
 				break
 			}
@@ -144,7 +144,7 @@ func (r *resolver) KeepsAway(ctx context.Context, rq *formats.Request, member fo
 		if !found {
 			return false, errs.E(errs.Internal, errs.CodeInternal, "The repository is not a member of the request's virtual repository.")
 		}
-	} else if member.Name != rq.Repo.Key {
+	} else if member.Name != rq.Repo.Name {
 		return false, errs.E(errs.Internal, errs.CodeInternal, "The repository is not the request's repository.")
 	}
 	return r.e.KeepsAway(ctx, via, target, term)
@@ -217,7 +217,7 @@ func (r *resolver) ShadowCheck(ctx context.Context, rq *formats.Request, name st
 		Proceed: out.Proceed, Code: out.Code, RetryAfter: out.RetryAfter, Undetermined: out.Undetermined, Refusal: out.Err(name),
 	}
 	for _, x := range out.Shadowed {
-		res.Shadowed = append(res.Shadowed, formats.ShadowPair{Virtual: x.Virtual.Key, Remote: x.Remote.Key})
+		res.Shadowed = append(res.Shadowed, formats.ShadowPair{Virtual: x.Virtual.Name, Remote: x.Remote.Name})
 	}
 	return res, nil
 }

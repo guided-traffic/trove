@@ -122,8 +122,8 @@ func (r *Resolver) Stop() {
 // coordinate is the coordinate of the request as the decision point asks it of a member.
 func coordinate(v repository.Repository, d Descriptor) authz.Coordinate {
 	return authz.Coordinate{
-		Repository: v.Key, Class: v.Class, Format: v.Format, Kind: d.Kind,
-		Path: d.Path, Package: d.Package, Version: d.Version, Addressed: v.Key,
+		Repository: v.Name, Class: v.Class, Format: v.Format, Kind: d.Kind,
+		Path: d.Path, Package: d.Package, Version: d.Version, Addressed: v.Name,
 	}
 }
 
@@ -153,8 +153,8 @@ func (r *Resolver) plan(ctx context.Context, c Caller, v repository.Repository, 
 	}
 	coord := coordinate(v, d)
 	for _, m := range candidates {
-		read, fill := r.o.Decider.MemberUsableOn(ctx, c.Index, c.Subject, m.Key, coord)
-		p.usable[m.Key] = usable{read: read, fill: fill}
+		read, fill := r.o.Decider.MemberUsableOn(ctx, c.Index, c.Subject, m.Name, coord)
+		p.usable[m.Name] = usable{read: read, fill: fill}
 		if !read {
 			p.Unreadable++
 		}
@@ -163,7 +163,7 @@ func (r *Resolver) plan(ctx context.Context, c Caller, v repository.Repository, 
 		return p, nil
 	}
 	for _, m := range route.Members {
-		u := p.usable[m.Key]
+		u := p.usable[m.Name]
 		if !u.read {
 			continue
 		}

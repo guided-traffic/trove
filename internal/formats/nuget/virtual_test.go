@@ -86,7 +86,7 @@ func (r *mergeResolver) DeployTarget(context.Context, *formats.Request) (*reposi
 	if r.target != nil {
 		return nil, r.target
 	}
-	return &repository.Repository{Name: "2", Key: "target", Class: repository.Local, Format: string(ID)}, nil
+	return &repository.Repository{ID: "2", Name: "target", Class: repository.Local, Format: string(ID)}, nil
 }
 
 func (r *mergeResolver) Artifact(_ context.Context, rq *formats.Request, p formats.Path, _ formats.PathInfo, w http.ResponseWriter) error {

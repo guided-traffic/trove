@@ -103,9 +103,9 @@ func New(o Options) (*Engine, error) {
 
 // repoID returns the numeric id of a repository of the snapshot.
 func repoID(r repository.Repository) (int64, error) {
-	id, err := strconv.ParseInt(r.Name, 10, 64)
+	id, err := strconv.ParseInt(r.ID, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("mirror: repository id %q: %w", r.Name, err)
+		return 0, fmt.Errorf("mirror: repository id %q: %w", r.ID, err)
 	}
 	return id, nil
 }
@@ -148,7 +148,7 @@ func (e *Engine) Dispatch(ctx context.Context) (DispatchResult, error) {
 		}
 		id, err := repoID(r)
 		if err != nil {
-			e.o.Log.Warn("a repository of the snapshot has no numeric id", "repository", r.Key, "error", err)
+			e.o.Log.Warn("a repository of the snapshot has no numeric id", "repository", r.Name, "error", err)
 			continue
 		}
 		if _, ok := mirrored(r); !ok {
@@ -185,11 +185,11 @@ func (e *Engine) Dispatch(ctx context.Context) (DispatchResult, error) {
 			return res, errors.New("mirror: no job queue")
 		}
 		out, err := e.o.Queue.EnqueueNow(ctx, jobs.EnqueueSpec{
-			Kind: KindPass, DedupKey: PassKey(id), Args: PassArgs{Repository: r.Key, RepositoryID: id},
-			TargetKind: "repository", TargetKey: r.Key,
+			Kind: KindPass, DedupKey: PassKey(id), Args: PassArgs{Repository: r.Name, RepositoryID: id},
+			TargetKind: "repository", TargetKey: r.Name,
 		})
 		if err != nil {
-			return res, fmt.Errorf("mirror: enqueue the pass of %s: %w", r.Key, err)
+			return res, fmt.Errorf("mirror: enqueue the pass of %s: %w", r.Name, err)
 		}
 		if out.Created {
 			res.Enqueued++

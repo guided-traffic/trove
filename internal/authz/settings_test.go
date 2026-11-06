@@ -20,7 +20,7 @@ func (r *txRecorder) RecordTx(_ context.Context, _ meta.Tx, ev audit.Event) erro
 func (r *txRecorder) Record(context.Context, audit.Event) {}
 
 func settingsRepo(class repository.Class, requireAuth bool, hide, config string) repository.Repository {
-	return repository.Repository{Name: "12", Key: "r", Class: class, Format: "generic", RequireAuthentication: requireAuth, HideExistence: hide, Config: []byte(config)}
+	return repository.Repository{ID: "12", Name: "r", Class: class, Format: "generic", RequireAuthentication: requireAuth, HideExistence: hide, Config: []byte(config)}
 }
 
 func TestR_AUTHZ_031_SettingsChangedIsRecordedByTheRepositoryUpdate(t *testing.T) {

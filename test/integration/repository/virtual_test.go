@@ -85,7 +85,7 @@ func fieldPointers(t *testing.T, err error) map[string]string {
 func memberKeysOf(r repository.Repository) []string {
 	var out []string
 	for _, m := range r.Members() {
-		out = append(out, m.Key)
+		out = append(out, m.Name)
 	}
 	return out
 }
@@ -151,8 +151,8 @@ func TestVirtualMembers(t *testing.T) {
 		})
 		r, _ := b.reader.ByKey(ctx, "pkg-all")
 		tgt, ok := r.DeployTarget()
-		if !ok || tgt.Key != "pkg-local" {
-			t.Fatalf("deploy target = %v, %v", tgt.Key, ok)
+		if !ok || tgt.Name != "pkg-local" {
+			t.Fatalf("deploy target = %v, %v", tgt.Name, ok)
 		}
 		vs, _ := r.Virtual()
 		if *vs.MergedMetadataTTLSeconds != 600 {
@@ -305,7 +305,7 @@ func TestVirtualMembers(t *testing.T) {
 func keysOf(repos []repository.Repository) []string {
 	var out []string
 	for _, r := range repos {
-		out = append(out, r.Key)
+		out = append(out, r.Name)
 	}
 	return out
 }

@@ -217,11 +217,11 @@ func (f *Format) remoteSource(ctx context.Context, rq *formats.Request, n name.N
 		return fullSource{}, errs.E(errs.NotFound, errs.CodeNotFound, "The resource does not exist.", errs.WithHeader("Cache-Status", doc.Status.Header))
 	}
 	src := fullSource{
-		form: fm, ref: ref, kind: "remote", servingKey: rq.Repo.Key, repoID: rq.RepoRef().ID,
+		form: fm, ref: ref, kind: "remote", servingKey: rq.Repo.Name, repoID: rq.RepoRef().ID,
 		content: hex.EncodeToString(doc.Digest[:]), bytes: doc.Bytes, status: doc.Status.Header,
 	}
 	if rq.CacheView {
-		src.kind, src.servingKey = "cache", rq.Repo.Key+"~cache"
+		src.kind, src.servingKey = "cache", rq.Repo.Name+"~cache"
 	}
 	return src, nil
 }

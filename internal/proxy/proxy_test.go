@@ -384,7 +384,7 @@ func TestSlots(t *testing.T) {
 }
 
 func TestClassification(t *testing.T) {
-	rem := Remote{Repo: repository.Repository{Key: "r"}}
+	rem := Remote{Repo: repository.Repository{Name: "r"}}
 	rem.Settings.Availability.CircuitOpenSeconds = 300
 	resp := func(status int, h ...string) *http.Response {
 		r := &http.Response{StatusCode: status, Header: http.Header{}, Body: http.NoBody}

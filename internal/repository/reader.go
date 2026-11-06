@@ -189,16 +189,16 @@ func (r *SnapshotReader) load(ctx context.Context) (*snapshot, error) {
 		keys: make(map[int64]string, len(rows)), containing: map[int64][]Repository{},
 	}
 	for _, repo := range repos {
-		s.byKey[repo.Key] = repo
+		s.byKey[repo.Name] = repo
 		s.list = append(s.list, repo)
-		s.keys[repo.rid] = repo.Key
+		s.keys[repo.rid] = repo.Name
 		if repo.virt != nil {
 			for _, m := range repo.virt.members {
 				s.containing[m.rid] = append(s.containing[m.rid], repo)
 			}
 		}
 	}
-	sort.Slice(s.list, func(i, j int) bool { return s.list[i].Key < s.list[j].Key })
+	sort.Slice(s.list, func(i, j int) bool { return s.list[i].Name < s.list[j].Name })
 	return s, nil
 }
 

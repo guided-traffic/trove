@@ -272,7 +272,7 @@ func TestR_REPO_019_StepsOneToFive(t *testing.T) {
 		// Bob reads npm-all and npm-local only: the remote member is unreadable for him.
 		vt.Put(w.arts.UpstreamItems, "npm-remote", "only-upstream/-/1.0.0.tgz", "public")
 		c, p := w.plan(bob, artifactOf("only-upstream", "1.0.0"))
-		if p.Unreadable != 1 || len(p.Members) != 1 || p.Members[0].Repo.Key != "npm-local" {
+		if p.Unreadable != 1 || len(p.Members) != 1 || p.Members[0].Repo.Name != "npm-local" {
 			t.Fatalf("plan: unreadable %d members %v", p.Unreadable, p.Members)
 		}
 		rec := httptest.NewRecorder()
@@ -288,7 +288,7 @@ func TestR_REPO_019_StepsOneToFive(t *testing.T) {
 	t.Run("R-REPO-019 step 5 the order of the plan is the order of the route", func(t *testing.T) {
 		w := newWorld(t, func(o *worldOpts) { o.members = []repository.Repository{remote, local} })
 		_, p := w.plan(alice, artifactOf("left-pad", "1.0.0"))
-		if len(p.Members) != 2 || p.Members[0].Repo.Key != "npm-remote" || p.Members[0].Position != 0 || p.Members[1].Position != 1 {
+		if len(p.Members) != 2 || p.Members[0].Repo.Name != "npm-remote" || p.Members[0].Position != 0 || p.Members[1].Position != 1 {
 			t.Fatalf("members %+v", p.Members)
 		}
 	})
@@ -334,8 +334,8 @@ func TestR_AUTHZ_009_PerMemberDecisions(t *testing.T) {
 	t.Run("R-AUTHZ-009 rule 5 a write is decided on the deploy target and the deploy target is the one of the repository", func(t *testing.T) {
 		w := newWorld(t)
 		tgt, err := w.r.DeployTarget(w.v)
-		if err != nil || tgt.Key != "npm-local" {
-			t.Fatalf("target %v err %v", tgt.Key, err)
+		if err != nil || tgt.Name != "npm-local" {
+			t.Fatalf("target %v err %v", tgt.Name, err)
 		}
 		// Alice may deploy into npm-local and read npm-all: the write through npm-all is allowed;
 		// a grant of deploy on npm-all itself would not matter (checked in the decision point).

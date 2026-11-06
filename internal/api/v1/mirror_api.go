@@ -64,11 +64,11 @@ func (t serviceTargets) Target(ctx context.Context, key string) (MirrorTarget, e
 	if err != nil {
 		return MirrorTarget{}, err
 	}
-	id, err := parseRepositoryID(st.Repository.Name)
+	id, err := parseRepositoryID(st.Repository.ID)
 	if err != nil {
 		return MirrorTarget{}, err
 	}
-	out := MirrorTarget{ID: id, Key: st.Repository.Key, Class: st.Repository.Class}
+	out := MirrorTarget{ID: id, Key: st.Repository.Name, Class: st.Repository.Class}
 	if out.Class != repository.Remote {
 		return out, nil
 	}

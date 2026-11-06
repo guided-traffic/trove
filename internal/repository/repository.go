@@ -46,8 +46,8 @@ const (
 // Repository is the read model other packages use. Config is the document of
 // R-REPO-004 as stored, without secrets; the repository owner decodes it.
 type Repository struct {
-	Name     string
-	Key    string
+	ID     string
+	Name   string
 	Class  Class
 	Format string
 	// Disabled repositories take no part in resolution, download or deploy.

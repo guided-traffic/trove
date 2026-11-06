@@ -171,10 +171,10 @@ func (s *FilesSeam) RawDeploy(repo repository.Repository) error {
 	way := "the protocol of its format " + repo.Format
 	if ok {
 		d := f.Descriptor()
-		way = "the " + d.DisplayName + " protocol under " + strings.ReplaceAll(d.ProtocolBasePath, "{key}", repo.Key)
+		way = "the " + d.DisplayName + " protocol under " + strings.ReplaceAll(d.ProtocolBasePath, "{key}", repo.Name)
 	}
 	return errs.E(errs.Conflict, errs.CodeConflict,
-		"The repository "+repo.Key+" takes content only through "+way+"; /files/ does not deploy into it.")
+		"The repository "+repo.Name+" takes content only through "+way+"; /files/ does not deploy into it.")
 }
 
 // CheckRemoval implements [files.Formats]: the ownership of R-AUTHZ-018 for every
@@ -225,7 +225,7 @@ func (s *FilesSeam) CheckRemoval(ctx context.Context, tx meta.Tx, rm files.Remov
 		err := s.d.Ownership.EnforceTx(ctx, tx, OwnershipCheck{
 			Index: rm.Index, Subject: rm.Subject,
 			Coordinate: authz.Coordinate{
-				Repository: rm.Repo.Key, Class: rm.Repo.Class, Format: rm.Repo.Format, Kind: authz.KindWrite,
+				Repository: rm.Repo.Name, Class: rm.Repo.Class, Format: rm.Repo.Format, Kind: authz.KindWrite,
 				Package: n, Actions: []authz.Action{authz.Delete},
 			},
 		})

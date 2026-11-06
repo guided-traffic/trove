@@ -162,7 +162,7 @@ func (e *Engine) Query(ctx context.Context, rq QueryRequest) (*QueryResponse, er
 	if e.queries != nil && ttl > 0 {
 		if ent, ok := e.queries.Get(key); ok {
 			if e.now().Before(ent.expires) {
-				e.m.lookups.WithLabelValues(rem.Repo.Key, "query", resultHit).Inc()
+				e.m.lookups.WithLabelValues(rem.Repo.Name, "query", resultHit).Inc()
 				out := ent.resp
 				out.Cached = true
 				return &out, nil
@@ -170,11 +170,11 @@ func (e *Engine) Query(ctx context.Context, rq QueryRequest) (*QueryResponse, er
 			e.queries.Remove(key)
 		}
 	}
-	e.m.lookups.WithLabelValues(rem.Repo.Key, "query", resultMiss).Inc()
+	e.m.lookups.WithLabelValues(rem.Repo.Name, "query", resultMiss).Inc()
 	if rq.Mode != Normal || e.offline(rem) || !e.mayContact(ctx, rq.Populate) {
 		return nil, ErrOffline
 	}
-	return e.queryOnce(ctx, rem.Repo.Key, key, func(ctx context.Context) (*QueryResponse, error) {
+	return e.queryOnce(ctx, rem.Repo.Name, key, func(ctx context.Context) (*QueryResponse, error) {
 		keep := e.queries != nil && ttl > 0
 		if keep {
 			// A leader that ended just before this one began has stored the answer.
@@ -258,7 +258,7 @@ func (e *Engine) queryFetch(ctx context.Context, rq QueryRequest, cl *upstream.C
 		st: &reqState{role: "query"}, fl: &flight{done: make(chan struct{})}, cl: cl,
 	}
 	release, wait, err := e.slots.acquire(ctx, rem.id, rem.Settings.Limits.MaxConcurrentFetches, e.o.Config.QueueTimeout())
-	e.m.queueWait.WithLabelValues(rem.Repo.Key).Observe(wait.Seconds())
+	e.m.queueWait.WithLabelValues(rem.Repo.Name).Observe(wait.Seconds())
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +286,7 @@ func (e *Engine) queryFetch(ctx context.Context, rq QueryRequest, cl *upstream.C
 	case s >= 200 && s < 300:
 		return f.queryBody(ctx, rq, resp, idle, ttl)
 	case s == http.StatusNotFound || s == http.StatusGone:
-		return nil, errs.E(errs.NotFound, errs.CodeNotFound, "The upstream of "+rem.Repo.Key+" has no such resource.", errs.WithAbsent())
+		return nil, errs.E(errs.NotFound, errs.CodeNotFound, "The upstream of "+rem.Repo.Name+" has no such resource.", errs.WithAbsent())
 	}
 	return nil, f.failed(ctx, classifyStatus(rem, resp)).err
 }
@@ -301,7 +301,7 @@ func (f *fetcher) queryBody(ctx context.Context, rq QueryRequest, resp *http.Res
 	}
 	if f.contentTypeBlocked(resp) {
 		return nil, f.failed(ctx, failure{count: true, status: resp.StatusCode, err: errs.E(errs.UpstreamFailed, errs.CodeUpstreamContentTypeBlocked,
-			"The upstream of "+rem.Repo.Key+" answered with a media type that is not expected for the item.")}).err
+			"The upstream of "+rem.Repo.Name+" answered with a media type that is not expected for the item.")}).err
 	}
 	lim := f.limit()
 	if lim > 0 && resp.ContentLength > lim {

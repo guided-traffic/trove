@@ -88,7 +88,7 @@ func (h *RepositoryHook) OnUpdated(ctx context.Context, tx meta.Tx, _ repository
 		return nil
 	}
 	_, err := h.jobs.Enqueue(ctx, tx, jobs.EnqueueSpec{
-		Kind: vuln.KindRescan, Args: vuln.RescanArgs{Repository: after.Key, RepositoryID: id}, DedupKey: vuln.RescanKey(id), TargetKind: "repository", TargetKey: after.Key,
+		Kind: vuln.KindRescan, Args: vuln.RescanArgs{Repository: after.Name, RepositoryID: id}, DedupKey: vuln.RescanKey(id), TargetKind: "repository", TargetKey: after.Name,
 	})
 	return err
 }

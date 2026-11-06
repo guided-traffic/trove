@@ -218,7 +218,7 @@ func pinsEqual(a, b []relPin) bool {
 // area claims carries them as well (R-REPO-023), so that everything that routes
 // reads one area.
 func (s *Service) notifyPins(tx meta.Tx, r Repository) error {
-	return s.notif.Notify(tx, cluster.AreaClaims, 1, claimsPayload{ID: r.Name, Key: r.Key, Op: "pins"})
+	return s.notif.Notify(tx, cluster.AreaClaims, 1, claimsPayload{ID: r.ID, Key: r.Name, Op: "pins"})
 }
 
 // detachReferences handles the virtual repositories that list a repository when

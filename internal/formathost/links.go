@@ -23,7 +23,7 @@ var _ formats.LinkBuilder = linkBuilder{}
 func newLinks(rq *formats.Request) linkBuilder {
 	return linkBuilder{
 		base:   strings.TrimSuffix(httpserver.InfoFrom(rq.Context()).BaseURL, "/"),
-		format: formats.ID(rq.Repo.Format), key: rq.Repo.Key,
+		format: formats.ID(rq.Repo.Format), key: rq.Repo.Name,
 	}
 }
 

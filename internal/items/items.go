@@ -131,7 +131,7 @@ func New(o Options) (*Store, error) {
 // carried them.
 type RepoRef struct {
 	ID     int64
-	Name    string
+	Name   string
 	Class  string
 	Format string
 	// Vuln is the download policy of the vulnerability scanning for the repository (R-VULN-015). A lookup of an item
@@ -154,14 +154,14 @@ type EntryProbe struct{ Variant string }
 // text of its row; one that is not a number yields 0 and matches no item.
 func RepoOf(r repository.Repository) RepoRef {
 	var n int64
-	for i := range len(r.Name) {
-		if r.Name[i] < '0' || r.Name[i] > '9' {
+	for i := range len(r.ID) {
+		if r.ID[i] < '0' || r.ID[i] > '9' {
 			n = 0
 			break
 		}
-		n = n*10 + int64(r.Name[i]-'0')
+		n = n*10 + int64(r.ID[i]-'0')
 	}
-	return RepoRef{ID: n, Name: r.Key, Class: string(r.Class), Format: r.Format}
+	return RepoRef{ID: n, Name: r.Name, Class: string(r.Class), Format: r.Format}
 }
 
 // touch records the use of a repository.

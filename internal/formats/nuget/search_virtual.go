@@ -171,14 +171,14 @@ func memberPatterns(rq *formats.Request, plan *formats.VirtualPlan) (map[string]
 	for _, m := range plan.Members {
 		found := false
 		for j := range all {
-			if all[j].Key == m.Member.Name {
+			if all[j].Name == m.Member.Name {
 				out[m.Member.Name], found = patternsOf(&all[j], rq.Repo), true
 				break
 			}
 		}
 		if !found {
 			return nil, errs.E(errs.Internal, errs.CodeInternal, "A planned member is not a member of the virtual repository.",
-				errs.WithCause(fmt.Errorf("%q is not a member of %q", m.Member.Name, rq.Repo.Key)))
+				errs.WithCause(fmt.Errorf("%q is not a member of %q", m.Member.Name, rq.Repo.Name)))
 		}
 	}
 	return out, nil

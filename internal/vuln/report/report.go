@@ -108,7 +108,7 @@ func (s *Service) Snapshot(ctx context.Context) (*Snapshot, error) {
 	}
 	sn := &Snapshot{Repos: repos, Topo: view.NewTopology(repos), byKey: make(map[string]repository.Repository, len(repos))}
 	for _, r := range repos {
-		sn.byKey[r.Key] = r
+		sn.byKey[r.Name] = r
 	}
 	return sn, nil
 }

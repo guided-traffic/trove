@@ -62,8 +62,8 @@ func (s *packageSeam) CheckRemoval(_ context.Context, _ meta.Tx, rm Removal) err
 func packageService(t *testing.T, st *store, seam *packageSeam) *Service {
 	t.Helper()
 	svc, err := New(Options{Items: st, Formats: seam, Repos: repos{
-		"generic-local": {Name: "5", Key: "generic-local", Class: repository.Local, Format: "generic"},
-		"pkg-local":     {Name: "7", Key: "pkg-local", Class: repository.Local, Format: "pkgfmt"},
+		"generic-local": {ID: "5", Name: "generic-local", Class: repository.Local, Format: "generic"},
+		"pkg-local":     {ID: "7", Name: "pkg-local", Class: repository.Local, Format: "pkgfmt"},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -163,7 +163,7 @@ func TestR_AUTHZ_018_FilesDeleteAsksTheFormat(t *testing.T) {
 			t.Fatalf("removals = %+v", seam.removals)
 		}
 		rm := seam.removals[0]
-		if rm.Repo.Key != "pkg-local" || !slices.Equal(rm.Files, []string{"ui/x", "ui/y"}) || rm.Index != idx || rm.Subject.Endpoint != "customers" {
+		if rm.Repo.Name != "pkg-local" || !slices.Equal(rm.Files, []string{"ui/x", "ui/y"}) || rm.Index != idx || rm.Subject.Endpoint != "customers" {
 			t.Fatalf("removal = %+v", rm)
 		}
 	})

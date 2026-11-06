@@ -30,7 +30,7 @@ func (f *Format) virtualSource(ctx context.Context, rq *formats.Request, n name.
 	}
 	bytes := m.Bytes
 	return fullSource{
-		form: fm, ref: ref, kind: "virtual", servingKey: rq.Repo.Key, repoID: rq.RepoRef().ID,
+		form: fm, ref: ref, kind: "virtual", servingKey: rq.Repo.Name, repoID: rq.RepoRef().ID,
 		content: hex.EncodeToString(m.MergeFingerprint[:]), status: m.CacheStatus,
 		bytes: func(context.Context) ([]byte, error) { return bytes, nil },
 		rev:   "1-" + hex.EncodeToString(m.MergeFingerprint[:16]),
@@ -90,7 +90,7 @@ func (f *Format) virtualWriteDocument(ctx context.Context, rq *formats.Request, 
 	rep := f.replicaOf(rq.Host)
 	body, err := document.FullDocument(&p, document.Options{
 		Name: n.String(), Basename: n.Package(),
-		TarballPrefix: remote.TarballPrefix(rq.Host.Links(rq).Registry(rq.Repo.Key), n.String()),
+		TarballPrefix: remote.TarballPrefix(rq.Host.Links(rq).Registry(rq.Repo.Name), n.String()),
 		Rev:           Rev(trq.RepoRef().ID, formats.PackageID(p.PackageID), formats.RevSeq(p.RevSeq)), AbbreviatedTime: rep.cfg.AbbreviatedTime,
 	})
 	if err != nil {

@@ -15,7 +15,7 @@ import (
 func virtualRequest(t *testing.T, v repository.Repository) *formats.Request {
 	t.Helper()
 	rq := &formats.Request{
-		Request: httptest.NewRequest(http.MethodGet, "/api/probe/"+v.Key+"/x", nil),
+		Request: httptest.NewRequest(http.MethodGet, "/api/probe/"+v.Name+"/x", nil),
 		Repo:    &v,
 		Route:   &formats.Route{Name: "probe.get", Kind: formats.Download},
 		Subject: authz.Subject{Name: "alice", Endpoint: "default"},
@@ -40,10 +40,10 @@ func TestR_AUTHZ_013_AMemberRequestCarriesTheOutermostAddressedKeyIntoBothCoordi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mrq.Repo.Key != "member-remote" || mrq.Addressed() != "all" {
-		t.Fatalf("member request on %q addressed %q", mrq.Repo.Key, mrq.Addressed())
+	if mrq.Repo.Name != "member-remote" || mrq.Addressed() != "all" {
+		t.Fatalf("member request on %q addressed %q", mrq.Repo.Name, mrq.Addressed())
 	}
-	if rq.Repo.Key != "all" || rq.Addressed() != "all" {
+	if rq.Repo.Name != "all" || rq.Addressed() != "all" {
 		t.Fatal("deriving a member request changed the request it came from")
 	}
 
@@ -79,8 +79,8 @@ func TestR_AUTHZ_013_TheOutermostAddressedKeyIsKeptOnADerivedRequest(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m2.Repo.Key != "leaf" || m2.Addressed() != "outer" {
-		t.Fatalf("leaf request on %q addressed %q, want addressed outer", m2.Repo.Key, m2.Addressed())
+	if m2.Repo.Name != "leaf" || m2.Addressed() != "outer" {
+		t.Fatalf("leaf request on %q addressed %q, want addressed outer", m2.Repo.Name, m2.Addressed())
 	}
 }
 
@@ -111,8 +111,8 @@ func TestR_AUTHZ_013_TheDeployTargetReadCarriesNoAddressedKey(t *testing.T) {
 	v.Format = "probe"
 	rq := virtualRequest(t, v)
 	trq := rq.WriteTarget(&target)
-	if trq.Repo.Key != "team-local" || trq.Addressed() != "team-local" {
-		t.Fatalf("target request on %q addressed %q", trq.Repo.Key, trq.Addressed())
+	if trq.Repo.Name != "team-local" || trq.Addressed() != "team-local" {
+		t.Fatalf("target request on %q addressed %q", trq.Repo.Name, trq.Addressed())
 	}
 	// Also when the request it comes from was derived itself.
 	mrq, err := rq.Member(&target)

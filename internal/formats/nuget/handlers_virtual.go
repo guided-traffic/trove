@@ -56,7 +56,7 @@ func (f *Format) serveVirtual(ctx context.Context, rq *formats.Request, w http.R
 		return err
 	}
 	if m.Partial {
-		f.replicaOf(rq.Host).virt.skipped(rq.Repo.Key, reasonUnavailable)
+		f.replicaOf(rq.Host).virt.skipped(rq.Repo.Name, reasonUnavailable)
 	}
 	links := rq.Host.Links(rq)
 	serving := rq.Addressed()

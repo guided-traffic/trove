@@ -72,13 +72,13 @@ type Remote struct {
 // remote, or whose id is not a number, is an error: the dispatcher routes only
 // remote repositories here.
 func NewRemote(repo repository.Repository) (Remote, error) {
-	id, err := strconv.ParseInt(repo.Name, 10, 64)
+	id, err := strconv.ParseInt(repo.ID, 10, 64)
 	if err != nil {
-		return Remote{}, fmt.Errorf("proxy: repository id %q: %w", repo.Name, err)
+		return Remote{}, fmt.Errorf("proxy: repository id %q: %w", repo.ID, err)
 	}
 	s, ok := repo.Remote()
 	if !ok {
-		return Remote{}, fmt.Errorf("proxy: repository %q is not a remote repository", repo.Key)
+		return Remote{}, fmt.Errorf("proxy: repository %q is not a remote repository", repo.Name)
 	}
 	return Remote{Repo: repo, Settings: s, id: id}, nil
 }

@@ -699,13 +699,13 @@ func (s *Server) publishTarget(acc *edge.Access, repo repository.Repository) (*s
 	var key string
 	switch repo.Class {
 	case repository.Local:
-		key = repo.Key
+		key = repo.Name
 	case repository.Virtual:
 		t, ok := repo.DeployTarget()
 		if !ok {
 			return nil, false
 		}
-		key = t.Key
+		key = t.Name
 	default:
 		return nil, false
 	}

@@ -334,13 +334,13 @@ func projectService() *Service {
 	}
 	repos := fakeRepos{}
 	for i, r := range []repository.Repository{
-		{Key: "web-npm", Class: repository.Local, Format: "npm", ProjectID: pWeb},
-		{Key: "web-files", Class: repository.Local, Format: "generic", ProjectID: pWeb},
-		{Key: "shop-npm", Class: repository.Local, Format: "npm", ProjectID: pShop},
-		{Key: "npm-internal", Class: repository.Local, Format: "npm"},
-		{Key: "web-moved", Class: repository.Local, Format: "npm"},
+		{Name: "web-npm", Class: repository.Local, Format: "npm", ProjectID: pWeb},
+		{Name: "web-files", Class: repository.Local, Format: "generic", ProjectID: pWeb},
+		{Name: "shop-npm", Class: repository.Local, Format: "npm", ProjectID: pShop},
+		{Name: "npm-internal", Class: repository.Local, Format: "npm"},
+		{Name: "web-moved", Class: repository.Local, Format: "npm"},
 	} {
-		r.Name = strconv.Itoa(i + 1)
+		r.ID = strconv.Itoa(i + 1)
 		repos.list = append(repos.list, r)
 	}
 	return NewService(ServiceOptions{

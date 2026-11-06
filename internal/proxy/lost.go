@@ -134,12 +134,12 @@ func storedObjectError(err error) error {
 // repository, the path and the digest (blob.Store logs the detection itself, with the counter
 // trove_storage_blobs_damaged_total{status} that the alert TroveBlobMissing reads, R-HA-045).
 func (e *Engine) noteDamaged(rq Request, digest [32]byte, status string) {
-	key := rq.Remote.Repo.Key + "\x00" + rq.Path + "\x00" + rq.Variant + "\x00lost"
+	key := rq.Remote.Repo.Name + "\x00" + rq.Path + "\x00" + rq.Variant + "\x00lost"
 	if !e.throttle(key, time.Minute) {
 		return
 	}
 	e.log.Warn("the stored object of a cached item is not usable; the item is a cache miss and is filled again from the upstream",
-		"repo", rq.Remote.Repo.Key, "path", rq.Path, "sha256", hex.EncodeToString(digest[:]), "status", status)
+		"repo", rq.Remote.Repo.Name, "path", rq.Path, "sha256", hex.EncodeToString(digest[:]), "status", status)
 }
 
 // refillArtifact answers a client's request for a cached artifact whose object is missing or damaged (Q-REPO-202): a cache
@@ -150,13 +150,13 @@ func (e *Engine) noteDamaged(rq Request, digest [32]byte, status string) {
 func (e *Engine) refillArtifact(ctx context.Context, rq Request, w http.ResponseWriter, r *http.Request, it items.Item) error {
 	rem := rq.Remote
 	e.noteDamaged(rq, it.Digest, it.ContentStatus)
-	e.m.lookup(rem.Repo.Key, Artifact, resultMiss)
+	e.m.lookup(rem.Repo.Name, Artifact, resultMiss)
 	switch rq.Mode {
 	case CacheView, OnlyIfCached:
 		return lostContent("this request is answered from the cache alone", nil)
 	}
 	if e.offline(rem) {
-		return lostContent(rem.Repo.Key+" is offline", nil)
+		return lostContent(rem.Repo.Name+" is offline", nil)
 	}
 	open, retry, err := e.circuitPeek(ctx, rem)
 	if err != nil {
@@ -169,7 +169,7 @@ func (e *Engine) refillArtifact(ctx context.Context, rq Request, w http.Response
 		return lostContent("the upstream does not have it", nil)
 	}
 	if !e.mayFill(ctx, rq) {
-		return lostContent("the caller may not fill the cache of "+rem.Repo.Key, nil)
+		return lostContent("the caller may not fill the cache of "+rem.Repo.Name, nil)
 	}
 	if err := e.o.Enforce.GateMiss(ctx, enforce.Miss{
 		Repo: rem.Repo, Addressed: rq.Addressed, Package: rq.Package, Version: rq.Version, Path: rq.Path,
@@ -192,7 +192,7 @@ func (e *Engine) refillArtifact(ctx context.Context, rq Request, w http.Response
 		return ctx.Err()
 	}
 	if st.collapsed {
-		e.m.collapsed.WithLabelValues(rem.Repo.Key).Inc()
+		e.m.collapsed.WithLabelValues(rem.Repo.Name).Inc()
 	}
 	fwd := CacheStatus{Forwarded: "uri-miss", FwdStatus: res.status}
 	switch {

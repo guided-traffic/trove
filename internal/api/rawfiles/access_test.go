@@ -82,7 +82,7 @@ func (s *store) Commit(ctx context.Context, spec items.CommitSpec) (items.Commit
 			return items.CommitResult{}, err
 		}
 	}
-	return items.CommitResult{Created: true, Item: items.Item{Repository: spec.Repo.Key, Path: spec.Path.Path, Kind: items.KindFile}}, nil
+	return items.CommitResult{Created: true, Item: items.Item{Repository: spec.Repo.Name, Path: spec.Path.Path, Kind: items.KindFile}}, nil
 }
 
 func (s *store) CreateFolder(context.Context, items.FolderSpec) (items.FolderResult, error) {
@@ -122,7 +122,7 @@ func (repos) ByKey(_ context.Context, key string) (repository.Repository, error)
 	if key != "generic-local" {
 		return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository")
 	}
-	return repository.Repository{Name: "5", Key: key, Class: repository.Local, Format: "generic"}, nil
+	return repository.Repository{ID: "5", Name: key, Class: repository.Local, Format: "generic"}, nil
 }
 
 func (repos) List(context.Context) ([]repository.Repository, error) { return nil, nil }

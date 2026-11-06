@@ -94,7 +94,7 @@ func TestQ_ARCH_259_APackageTheTransactionRaisedSignalsOnce(t *testing.T) {
 func TestQ_ARCH_260_AWriterWritesToItsOwnRepositoryOnly(t *testing.T) {
 	own := formats.RepoRef{ID: 7, Name: "npm-local", Class: formats.Local, Format: "npm"}
 	other := formats.RepoRef{ID: 8, Name: "npm-team", Class: formats.Local, Format: "npm"}
-	rq := &formats.Request{Repo: &repository.Repository{Key: "npm-local"}}
+	rq := &formats.Request{Repo: &repository.Repository{Name: "npm-local"}}
 	rm := &recordRemover{}
 	w := &writer{req: rq, bound: &own, d: writerDeps{remove: rm}}
 
@@ -129,7 +129,7 @@ func TestQ_ARCH_260_TheStoresRefuseARepositoryOutsideTheRequest(t *testing.T) {
 		t.Helper()
 		var got error
 		rq := &formats.Request{
-			Request: httptest.NewRequest(http.MethodGet, "/api/probe/"+repo.Key+"/x", nil),
+			Request: httptest.NewRequest(http.MethodGet, "/api/probe/"+repo.Name+"/x", nil),
 			Repo:    &repo,
 			Route: &formats.Route{Name: "probe.get", Kind: formats.Metadata, Handler: func(ctx context.Context, _ *formats.Request, _ http.ResponseWriter) error {
 				got = probe(ctx)

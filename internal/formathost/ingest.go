@@ -134,7 +134,7 @@ func (i ingestor) Commit(ctx context.Context, rq *formats.Request, sp formats.Sp
 			denied = od.Path
 		}
 		return formats.Committed{}, errs.E(errs.Forbidden, errs.CodeForbidden,
-			"The action overwrite is not permitted on "+rq.Repo.Key+"/"+denied+".")
+			"The action overwrite is not permitted on "+rq.Repo.Name+"/"+denied+".")
 	}
 	if err != nil {
 		return formats.Committed{}, err
