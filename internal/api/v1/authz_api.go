@@ -532,7 +532,7 @@ type authzMe struct {
 	Principals   []string `json:"principals"`
 	// Memberships are the projects the caller is a member of through this credential, with the role in
 	// force (Q-AUTHZ-207); [] for a caller that is a member of none.
-	Memberships []authz.Membership `json:"memberships"`
+	Memberships []authz.Membership `json:"projects"`
 	Scope       *scopeSummary      `json:"scope"`
 	Epoch       int64              `json:"epoch"`
 }

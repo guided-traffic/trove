@@ -4516,7 +4516,7 @@ paths:
                 roles: [auditor]
                 capabilities: ["audit:read", "policies:read", "roles:read"]
                 principals: ["user:alice", "group:team-web", authenticated]
-                memberships:
+                projects:
                   - {key: web, role: developer}
                 scope: null
                 epoch: 1842
@@ -4550,8 +4550,8 @@ paths:
               $ref: "#/components/schemas/PermissionCheckRequest"
             example:
               checks:
-                - {repository: npm-internal, package: "@web/button", action: deploy}
-                - {repository: npm-all, action: read}
+                - {repository: web/npm-internal, package: "@web/button", action: deploy}
+                - {repository: web/npm-all, action: read}
       responses:
         "200":
           description: One result per check, in order.
@@ -8889,7 +8889,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ClientSetup"
               example:
-                repository: npm-all
+                repository: web/npm-all
                 format: npm
                 client: npm
                 credentials: placeholder
@@ -8976,7 +8976,7 @@ paths:
                 format: npm
                 class: virtual
                 client: npm
-                repository: npm-all
+                repository: web/npm-all
                 registryUrl: https://trove.example.com/api/npm/web/npm-all/
                 publishTarget: web/npm-local
                 credentials: env
@@ -9605,7 +9605,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/RepositoryResolution"
               example:
-                repository: npm-all
+                repository: web/npm-all
                 descriptor: {path: "@acme/util/-/util-1.4.0.tgz", kind: artifact, package: "@acme/util"}
                 decidedBy: {claim: "@acme/*", claimedBy: [npm-local]}
                 members:
@@ -9668,7 +9668,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/PackageOwners"
               example:
-                repository: npm-internal
+                repository: web/npm-internal
                 domain: npm-internal
                 format: npm
                 package: "@acme/frontend"
@@ -9862,7 +9862,7 @@ paths:
                 $ref: "#/components/schemas/OwnedPackageList"
               example:
                 items:
-                  - repository: npm-internal
+                  - repository: web/npm-internal
                     format: npm
                     package: "@acme/frontend"
                     state: claimed
@@ -14262,7 +14262,7 @@ components:
     AuthzMe:
       type: object
       additionalProperties: false
-      required: [roles, capabilities, principals, memberships, scope, epoch]
+      required: [roles, capabilities, principals, projects, scope, epoch]
       properties:
         roles:
           type: array
@@ -14278,7 +14278,7 @@ components:
           description: The references the caller acts as; it never lists other principals.
           items:
             type: string
-        memberships:
+        projects:
           type: array
           description: The projects the caller is a member of through this credential, with the role in force, ordered by key (R-AUTHZ-026, Q-AUTHZ-181, Q-AUTHZ-207). A member through a group is listed with the highest role of the user and its groups. The UI shows the project screens from it.
           items:
@@ -15059,7 +15059,7 @@ components:
       example:
         name: acme-sdk
         description: SDK releases for customers
-        repository: npm-customers
+        repository: web/npm-customers
         enabled: true
         packages: {include: ["@acme/sdk", "@acme/sdk-*"], exclude: ["@acme/sdk-internal"]}
         paths: {include: [], exclude: []}
@@ -16647,7 +16647,8 @@ components:
         resolvedAt: {type: [string, "null"], format: date-time}
       example:
         id: 01933b2a-7c1e-7d10-9a4b-3f0e2c1d0a11
-        repository: npm-remote
+        project: web
+        repository: web/npm-remote
         format: npm
         package: lodash
         version: 4.17.20

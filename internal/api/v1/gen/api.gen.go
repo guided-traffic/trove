@@ -4075,13 +4075,13 @@ type AuthzMe struct {
 	Capabilities []string `json:"capabilities"`
 	Epoch        int64    `json:"epoch"`
 
-	// Memberships The projects the caller is a member of through this credential, with the role in force, ordered by key (R-AUTHZ-026, Q-AUTHZ-181, Q-AUTHZ-207). A member through a group is listed with the highest role of the user and its groups. The UI shows the project screens from it.
-	Memberships []Membership `json:"memberships"`
-
 	// Principals The references the caller acts as; it never lists other principals.
-	Principals []string      `json:"principals"`
-	Roles      []RoleName    `json:"roles"`
-	Scope      *ScopeSummary `json:"scope"`
+	Principals []string `json:"principals"`
+
+	// Projects The projects the caller is a member of through this credential, with the role in force, ordered by key (R-AUTHZ-026, Q-AUTHZ-181, Q-AUTHZ-207). A member through a group is listed with the highest role of the user and its groups. The UI shows the project screens from it.
+	Projects []Membership  `json:"projects"`
+	Roles    []RoleName    `json:"roles"`
+	Scope    *ScopeSummary `json:"scope"`
 }
 
 // BackgroundMigration A background data migration (R-HA-022): a data change too large for the migration Job, run as the job kind
