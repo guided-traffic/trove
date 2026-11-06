@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"net"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -19,11 +20,16 @@ import (
 	"github.com/guided-traffic/trove/internal/tlsfiles/tlstest"
 )
 
+// cancelRequestCode is the request code of a PostgreSQL CancelRequest, which
+// takes the place of the protocol version in the first message of a connection.
+const cancelRequestCode = 80877102
+
 // handshake is what the fake server saw of one connection.
 type handshake struct {
 	peer         string // the client's address
 	err          error
 	clientSerial int64 // 0 without a client certificate
+	cancel       bool  // a CancelRequest connection, not a session
 }
 
 // fakeTLSServer answers PostgreSQL's SSLRequest with 'S', runs the TLS handshake
@@ -59,7 +65,9 @@ func fakeTLSServer(t *testing.T, cfg *tls.Config) (port int, seen <-chan handsha
 				if err == nil {
 					// TLS 1.3: the client's verdict on the server certificate and its own
 					// certificate arrive with its Finished; read once so both are in.
-					_, _ = tc.Read(make([]byte, 1))
+					var msg [8]byte
+					_, _ = io.ReadFull(tc, msg[:])
+					h.cancel = binary.BigEndian.Uint32(msg[4:]) == cancelRequestCode
 					if pcs := tc.ConnectionState().PeerCertificates; len(pcs) > 0 {
 						h.clientSerial = pcs[0].SerialNumber.Int64()
 					}
@@ -84,7 +92,12 @@ type dbClient struct {
 
 // tryConnect opens one new pool connection, which fails after the handshake
 // because the fake server speaks no further protocol, and returns what the
-// server saw of the attempt's first connection and the client's error.
+// server saw of that session and the client's error. pgx closes the failed
+// connection asynchronously and sends a CancelRequest on a connection of its own
+// (pgconn.PgConn.asyncClose); that one is dialed whenever its goroutine runs,
+// maybe after the next attempt began, and it reuses the TLS configuration of the
+// failed session without a BeforeConnect, so it presents whatever material the
+// reloader holds then. It is not the attempt's session and is skipped.
 func (d *dbClient) tryConnect(t *testing.T) (handshake, error) {
 	t.Helper()
 	d.mu.Lock()
@@ -107,11 +120,11 @@ func (d *dbClient) tryConnect(t *testing.T) (handshake, error) {
 	for {
 		select {
 		case h := <-d.seen:
-			if h.peer == local[0] {
+			if !h.cancel && slices.Contains(local, h.peer) {
 				return h, err
 			}
 		case <-timeout:
-			t.Fatalf("the server saw no connection from %s; client error %v", local[0], err)
+			t.Fatalf("the server saw no session from %v; client error %v", local, err)
 			return handshake{}, err
 		}
 	}
