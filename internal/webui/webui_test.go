@@ -26,6 +26,7 @@ func builtFS() fstest.MapFS {
 		m[l+"/media/font-ABCD1234.woff2"] = &fstest.MapFile{Data: []byte("font")}
 		m[l+"/assets.d/x.txt"] = &fstest.MapFile{Data: []byte("x")}
 		m[l+"/favicon.ico"] = &fstest.MapFile{Data: []byte("ico")}
+		m[l+"/favicon.svg"] = &fstest.MapFile{Data: []byte("<svg/>")}
 	}
 	return m
 }
@@ -178,6 +179,7 @@ func TestCacheRules(t *testing.T) {
 			"/ui/en/styles-ABCD1234.css":       "text/css; charset=utf-8",
 			"/ui/en/media/font-ABCD1234.woff2": "font/woff2",
 			"/ui/en/favicon.ico":               "image/x-icon",
+			"/ui/en/favicon.svg":               "image/svg+xml",
 		}
 		for p, want := range cases {
 			if got := do(h, "GET", p).Header().Get("Content-Type"); got != want {

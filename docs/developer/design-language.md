@@ -162,11 +162,27 @@ the right from there.
 [web/scripts/brand-logo.mjs](../../web/scripts/brand-logo.mjs) generates every file from one set of parameters (band
 width, lane count, gap, fan, the lane shape) into [web/public/brand/](../../web/public/brand/): the mark, the square app
 icon with the wordmark (dark ground in both schemes), and the horizontal lockup. The mark and the lockup switch to deeper
-hues and the dark band on a light ground through `prefers-color-scheme` inside the SVG. The sign-in and signed-out screens show the lockup;
-in development builds (`isDevMode()`) the sign-in screen also shows the preview of
-[logo-preview.ts](../../web/src/app/features/login/logo-preview.ts): the three forms on both grounds, the mark at 64,
-32 and 16 px, and the alternatives of `drafts/`. Change a parameter, run `node scripts/brand-logo.mjs` in `web/`, and the
-dev server reloads.
+hues and the dark band on a light ground through `prefers-color-scheme` inside the SVG. The wordmark is outlined paths of
+Inter Bold (one `<path class="word">`), not `<text>`, so it renders the same on every platform: the script reads
+`inter-latin-700-normal.woff` of `@fontsource/inter` with `opentype.js` (both dev dependencies, pinned exactly, used only by
+the script; the static file is the same Inter release as the UI's variable font, because opentype.js reads no `.woff2`) and
+sets the word with the font's advances and the tracking the old text had (6 and 4 units). The pair kerning comes from
+`Font.getKerningValue`, which returns 0 for the pairs of "trove".
+[Q-UI-145](../spec/api-and-ui.md#q-ui-145--the-logos-wordmark-as-paths-from-inter-bold-and-a-reduced-mark-as-the-favicon)
+has the options.
+
+The favicon is a reduced form of the mark, because the three lanes run together below 32 px: two lanes (blue and red; the
+neutral one is the band's colour) with a band of 48 and lanes of 34 units, the red lane still curving out from beneath the
+blue one, on the app icon's dark tile in both schemes (`reduced` and `faviconSvg` in the script). The script writes
+[web/public/favicon.svg](../../web/public/favicon.svg) and [web/public/favicon.ico](../../web/public/favicon.ico) (PNG
+frames of 16, 32 and 48 px, rasterised by the script itself from the same shapes, so no image tool is needed and the bytes
+are deterministic); [index.html](../../web/src/index.html) links the SVG first and the ICO as the fallback.
+
+The sign-in and signed-out screens show the lockup; in development builds (`isDevMode()`) the sign-in screen also shows the
+preview of [logo-preview.ts](../../web/src/app/features/login/logo-preview.ts): the three forms on both grounds, the full
+mark and the favicon's reduced form side by side at 64, 32 and 16 px, and the alternatives of `drafts/`. Change a
+parameter, run `node scripts/brand-logo.mjs` in `web/`, and the dev server reloads. The same run rewrites
+`shared/brand/mark-geometry.ts` without the repository's formatting: run Prettier on it when the geometry changed.
 
 ## Where the values live
 
@@ -320,10 +336,11 @@ on it today.
 
 ## What this does not cover
 
-- The logo is a draft: the wordmark is SVG `<text>` in the system font, so it renders in a different face per platform
-  until it becomes paths; at 16 px the four lanes run together, so a favicon needs a reduced form; `drafts/` and the
-  preview ship in the build until the logo is chosen and they are removed; the files follow the system's colour scheme,
-  not trove's theme button, because an `<img>` cannot read `data-theme`.
+- The logo is a draft, and the owner has not called it final: `drafts/` and the preview ship in the build until the logo is
+  chosen, and removing them then is the third open point. Done: the wordmark is paths (Inter Bold) and the favicon has a
+  reduced form. Not checked: the pair kerning of the static font file reads as 0, and the favicon was checked on rendered
+  frames, not in the browser tabs of every platform. Still open: the files follow the system's colour scheme, not trove's
+  theme button, because an `<img>` cannot read `data-theme`.
 - The reference's type is Inter with its lower-case l; trove ships Inter 4 of `@fontsource-variable/inter`, the
   reference's "GitLab Sans" is built on an earlier Inter. Glyph differences between the two versions were not compared.
 - The values of Q-UI-128 come from the reference's admin dashboard and its user list; its forms and dialogs were not

@@ -178,7 +178,7 @@ must be exact `https://host[:port]` values.
 `<name>-<8 characters of A–Z, a–z, 0–9, _ and ->.<extension>` in at most two plain directories (`webui.IsHashed`, Q-UI-140).
 esbuild names the entry files with eight upper-case base32 characters (`main-6E6OBYEH.js`), the chunk optimizer the chunks with
 eight base64url characters of either case (`chunk-Bo__WLzq.js`, `chunk-b3RHWPW-.js`); the earlier pattern took only the first, so
-the chunks were served `no-cache`. `index.html` and other files (`favicon.ico`) get `no-cache`. The build runs with
+the chunks were served `no-cache`. `index.html` and other files (`favicon.ico`, `favicon.svg`) get `no-cache`. The build runs with
 `outputHashing: all`, so every script, stylesheet and font is hashed. Unhashed files have no validator yet, so `no-cache` means a
 full download each time; that is acceptable for the favicon and revisited if the unhashed set grows.
 

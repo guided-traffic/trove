@@ -9,7 +9,8 @@ const ALTERNATIVES: readonly { key: string; note: string }[] = [
 
 /**
  * The logo while it is being designed with the owner: the three forms of the candidate (the mark, the square with
- * the wordmark, the horizontal lockup) on a dark and a light ground, the mark at small sizes, and the alternatives.
+ * the wordmark, the horizontal lockup) on a dark and a light ground, the full mark and the favicon's reduced form at
+ * small sizes side by side, and the alternatives.
  * Rendered by the sign-in screen in development builds only (`isDevMode()`); it goes once the logo is chosen.
  * The files come from web/scripts/brand-logo.mjs.
  */
@@ -59,7 +60,20 @@ const ALTERNATIVES: readonly { key: string; note: string }[] = [
                   />
                 }
               </span>
-              <figcaption>64, 32, 16 px</figcaption>
+              <figcaption>Full mark at 64, 32, 16 px</figcaption>
+            </figure>
+            <figure>
+              <span class="sizes">
+                @for (size of sizes; track size) {
+                  <img
+                    src="favicon.svg"
+                    [alt]="'Favicon at ' + size + ' px'"
+                    [width]="size"
+                    [height]="size"
+                  />
+                }
+              </span>
+              <figcaption>Favicon (reduced mark) at 64, 32, 16 px</figcaption>
             </figure>
           </div>
         }

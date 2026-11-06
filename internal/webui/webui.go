@@ -325,6 +325,8 @@ func contentType(name string) string {
 		return "application/json"
 	case ".ico":
 		return "image/x-icon"
+	case ".svg":
+		return "image/svg+xml"
 	case ".txt":
 		return "text/plain; charset=utf-8"
 	}

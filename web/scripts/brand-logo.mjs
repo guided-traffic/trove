@@ -4,14 +4,23 @@
 // (an upload from CI, or the first fetch through a proxy); the point at the bottom is trove, the store; the
 // right arm is the same band split into lanes that fan out, the requests trove serves from then on.
 //
+// The wordmark is outlined paths of Inter Bold (no <text>, so it looks the same on every platform), and the
+// favicon is a reduced form of the mark (two lanes, thicker strokes) on a dark tile, as SVG and as an ICO whose
+// PNG frames this script rasterises itself.
+//
 // Work in progress with the owner: the candidate and the alternatives below are drafts, shown on the sign-in
 // page in development builds only (features/login/logo-preview.ts). Once one is chosen, the drafts directory
-// and the preview go, and the wordmark's text becomes paths.
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+// and the preview go.
+import { Buffer } from 'node:buffer';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { crc32, deflateSync } from 'node:zlib';
+import opentype from 'opentype.js';
 
-const outDir = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'public', 'brand');
+const webDir = join(fileURLToPath(new URL('.', import.meta.url)), '..');
+const outDir = join(webDir, 'public', 'brand');
 const draftsDir = join(outDir, 'drafts');
 
 // ---- Geometry ----------------------------------------------------------------------------------
@@ -212,7 +221,43 @@ function style(palette, scheme) {
   return `<style>${rules(colours(palette, scheme))}</style>`;
 }
 
-const FONT = 'system-ui, -apple-system, &quot;Segoe UI&quot;, sans-serif';
+// ---- The wordmark as paths ---------------------------------------------------------------------
+
+// Inter Bold of @fontsource/inter, a static file of the same Inter release as the UI's variable font
+// (@fontsource-variable/inter): opentype.js reads .woff but not .woff2, and fontkit cannot instance a variable
+// .woff2 font's outlines.
+const inter = (() => {
+  const file = join(
+    dirname(createRequire(import.meta.url).resolve('@fontsource/inter/package.json')),
+    'files',
+    'inter-latin-700-normal.woff',
+  );
+  const buf = readFileSync(file);
+  return opentype.parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length));
+})();
+
+/**
+ * The word as one path (class word), its left edge at x and its baseline at y, set at fontSize with the font's pair
+ * kerning and `tracking` user units after each letter. Returns the path markup and the word's width.
+ */
+function wordPath(word, x, y, fontSize, tracking, anchor = 'start') {
+  const glyphs = [...word].map((c) => inter.charToGlyph(c));
+  const scale = fontSize / inter.unitsPerEm;
+  let width = 0;
+  const advances = glyphs.map((g, i) => {
+    const kern = i + 1 < glyphs.length ? inter.getKerningValue(g, glyphs[i + 1]) : 0;
+    const a = (g.advanceWidth + kern) * scale + (i + 1 < glyphs.length ? tracking : 0);
+    width += a;
+    return a;
+  });
+  let pen = anchor === 'middle' ? x - width / 2 : x;
+  let d = '';
+  glyphs.forEach((g, i) => {
+    d += g.getPath(pen, y, fontSize).toPathData(2);
+    pen += advances[i];
+  });
+  return { markup: `<path class="word" d="${d}"/>`, width };
+}
 
 // ---- The three forms ---------------------------------------------------------------------------
 
@@ -232,7 +277,7 @@ function squareSvg(p, palette) {
     style(palette, 'dark') +
     `<rect width="512" height="512" rx="96" fill="#121822"/>` +
     `<g transform="translate(112 40) scale(1.125)">${markShapes(p)}</g>` +
-    `<text class="word" x="256" y="436" text-anchor="middle" font-family="${FONT}" font-size="104" font-weight="700" letter-spacing="4">trove</text>` +
+    wordPath('trove', 256, 436, 104, 4, 'middle').markup +
     `</svg>\n`
   );
 }
@@ -243,7 +288,7 @@ function horizontalSvg(p, palette, scheme) {
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 256" role="img" aria-label="trove">` +
     style(palette, scheme) +
     markShapes(p) +
-    `<text class="word" x="252" y="196" font-family="${FONT}" font-size="168" font-weight="700" letter-spacing="6">trove</text>` +
+    wordPath('trove', 252, 196, 168, 6).markup +
     `</svg>\n`
   );
 }
@@ -283,6 +328,191 @@ const alternatives = {
     'before: green, neutral, red',
   ],
 };
+
+// ---- The favicon: a reduced form of the mark ---------------------------------------------------
+
+// At 16 and 32 px three slim lanes run together. The reduced form keeps the idea (a band that splits and fans out,
+// the outer lane curving right from beneath its neighbour) with two lanes instead of three and a much thicker band
+// and lanes, in the candidate's blue and red, on the app icon's dark tile (the same in both schemes, so the tab's
+// colour does not decide whether the mark can be read).
+const reduced = {
+  W: 76,
+  band: 48,
+  n: 2,
+  gap: 8,
+  fan: 1.8,
+  top: 40,
+  mode: 'swoosh',
+  bend: [0, 22],
+  under: [undefined, 0],
+  share: 1,
+};
+const reducedPalette = { in: 'neutral', out: ['blue', 'red'] };
+const TILE = '#121822';
+const TILE_RADIUS = 56;
+/** The mark's share of the tile: it is drawn at this scale around the tile's centre. */
+const FAVICON_SCALE = 0.84;
+const FAVICON_SIZES = [16, 32, 48];
+
+function faviconSvg(p, palette) {
+  const o = (1 - FAVICON_SCALE) * 128;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">` +
+    style(palette, 'dark') +
+    `<rect width="256" height="256" rx="${TILE_RADIUS}" fill="${TILE}"/>` +
+    `<g transform="translate(${r(o)} ${r(o)}) scale(${FAVICON_SCALE})">${markShapes(p)}</g>` +
+    `</svg>\n`
+  );
+}
+
+/** The points of a path of M, C and Q commands (as markGeometry writes them), flattened to a polyline. */
+function flatten(d) {
+  const n = d.match(/-?\d+(?:\.\d+)?/g).map(Number);
+  let i = 0;
+  const take = () => [n[i++], n[i++]];
+  const out = [];
+  let cur;
+  for (const c of d.match(/[MCQL]/g)) {
+    if (c === 'M' || c === 'L') {
+      cur = take();
+      out.push(cur);
+    } else {
+      const ctrl = c === 'C' ? [take(), take()] : [take()];
+      const end = take();
+      for (let k = 1; k <= 48; k++) {
+        const t = k / 48;
+        const u = 1 - t;
+        out.push(
+          [0, 1].map((a) =>
+            ctrl.length === 2
+              ? u * u * u * cur[a] +
+                3 * u * u * t * ctrl[0][a] +
+                3 * u * t * t * ctrl[1][a] +
+                t * t * t * end[a]
+              : u * u * cur[a] + 2 * u * t * ctrl[0][a] + t * t * end[a],
+          ),
+        );
+      }
+      cur = end;
+    }
+  }
+  return out;
+}
+
+/** Distance of point q to the polyline. */
+function distance(poly, q) {
+  let best = Infinity;
+  for (let k = 1; k < poly.length; k++) {
+    const a = poly[k - 1];
+    const ab = sub(poly[k], a);
+    const len2 = ab[0] * ab[0] + ab[1] * ab[1];
+    const t =
+      len2 === 0
+        ? 0
+        : Math.max(0, Math.min(1, ((q[0] - a[0]) * ab[0] + (q[1] - a[1]) * ab[1]) / len2));
+    best = Math.min(best, Math.hypot(q[0] - a[0] - t * ab[0], q[1] - a[1] - t * ab[1]));
+  }
+  return best;
+}
+
+const hex = (h) => [1, 3, 5].map((k) => parseInt(h.slice(k, k + 2), 16));
+
+/** The favicon at size × size pixels as RGBA, by 8 × 8 samples per pixel: the same shapes and colours as the SVG. */
+function faviconPixels(p, palette, size) {
+  const g = markGeometry(p);
+  const [dx, dy] = g.transform.match(/-?\d+(?:\.\d+)?/g).map(Number);
+  const k = hex(TILE);
+  const c = colours(palette, 'dark');
+  // Painted in the SVG's order: the lanes (outermost first), then the band.
+  const shapes = [
+    ...g.lanes.map((l) => ({ poly: flatten(l.d), half: l.width / 2, rgb: hex(c.out[l.lane]) })),
+    { poly: flatten(g.band.d), half: g.band.width / 2, rgb: hex(c.in) },
+  ];
+  const N = 8;
+  const px = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let a = 0;
+      const sum = [0, 0, 0];
+      for (let j = 0; j < N; j++) {
+        for (let i = 0; i < N; i++) {
+          const q = [((x + (i + 0.5) / N) / size) * 256, ((y + (j + 0.5) / N) / size) * 256];
+          // The tile: a square with rounded corners.
+          const cx = Math.min(Math.max(q[0], TILE_RADIUS), 256 - TILE_RADIUS);
+          const cy = Math.min(Math.max(q[1], TILE_RADIUS), 256 - TILE_RADIUS);
+          if (Math.hypot(q[0] - cx, q[1] - cy) > TILE_RADIUS) continue;
+          let rgb = k;
+          // The same point in the mark's own coordinates (before the scale around the centre and the centring translate).
+          const m = [
+            (q[0] - 128) / FAVICON_SCALE + 128 - dx,
+            (q[1] - 128) / FAVICON_SCALE + 128 - dy,
+          ];
+          if (m[1] >= g.top) {
+            for (const s of shapes) if (distance(s.poly, m) <= s.half) rgb = s.rgb;
+          }
+          a++;
+          for (let ch = 0; ch < 3; ch++) sum[ch] += rgb[ch];
+        }
+      }
+      const o = (y * size + x) * 4;
+      for (let ch = 0; ch < 3; ch++) px[o + ch] = a ? Math.round(sum[ch] / a) : 0;
+      px[o + 3] = Math.round((a / (N * N)) * 255);
+    }
+  }
+  return px;
+}
+
+function png(size, rgba) {
+  const chunk = (type, data) => {
+    const head = Buffer.alloc(8);
+    head.writeUInt32BE(data.length, 0);
+    head.write(type, 4, 'latin1');
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), data])), 0);
+    return Buffer.concat([head, data, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(size, 0);
+  ihdr.writeUInt32BE(size, 4);
+  ihdr.set([8, 6, 0, 0, 0], 8); // 8 bits, RGBA, no interlace
+  const rows = Buffer.alloc((size * 4 + 1) * size);
+  for (let y = 0; y < size; y++) {
+    rows[y * (size * 4 + 1)] = 0; // filter: none
+    Buffer.from(rgba.buffer, y * size * 4, size * 4).copy(rows, y * (size * 4 + 1) + 1);
+  }
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(rows, { level: 9 })),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+/** An ICO whose frames are PNGs (every browser that reads .ico reads those). */
+function ico(frames) {
+  const head = Buffer.alloc(6);
+  head.writeUInt16LE(1, 2); // type: icon
+  head.writeUInt16LE(frames.length, 4);
+  let offset = 6 + 16 * frames.length;
+  const dir = frames.map(([size, data]) => {
+    const e = Buffer.alloc(16);
+    e[0] = size;
+    e[1] = size;
+    e.writeUInt16LE(1, 4); // planes
+    e.writeUInt16LE(32, 6); // bits per pixel
+    e.writeUInt32LE(data.length, 8);
+    e.writeUInt32LE(offset, 12);
+    offset += data.length;
+    return e;
+  });
+  return Buffer.concat([head, ...dir, ...frames.map(([, data]) => data)]);
+}
+
+writeFileSync(join(webDir, 'public', 'favicon.svg'), faviconSvg(reduced, reducedPalette));
+writeFileSync(
+  join(webDir, 'public', 'favicon.ico'),
+  ico(FAVICON_SIZES.map((n) => [n, png(n, faviconPixels(reduced, reducedPalette, n))])),
+);
 
 rmSync(draftsDir, { recursive: true, force: true });
 mkdirSync(draftsDir, { recursive: true });

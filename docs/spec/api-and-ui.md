@@ -8059,6 +8059,45 @@ Revisit if a file of the store can exceed `shared.MaxFileSize`.
 [shared.go](../../internal/webui/shared/shared.go). Tests: `TestDownloadVerification` (a swapped object with verification off),
 `TestReadVerified`.
 
+### Q-UI-145 · The logo's wordmark as paths from Inter Bold, and a reduced mark as the favicon
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the logo's wordmark was SVG `<text>` in the system font, so the lockup and the app icon rendered in another face per
+platform; at 16 px the three lanes of the mark ran together, and `favicon.ico` was the framework's default icon. Two open
+points of the logo (the third, removing the drafts and the preview, waits for the owner to call the logo final).
+
+How the outlines are made, in `web/scripts/brand-logo.mjs` (the generator stays the one source):
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) opentype.js on the static Inter Bold file (chosen) | Dev dependencies `opentype.js` and `@fontsource/inter`, both pinned exactly; the script reads `inter-latin-700-normal.woff` and writes one `<path class="word">` per lockup, with the font's advances and the tracking of the `<text>` | The weight is a parameter of the generator (a file name); no path data to keep in step; the font is the release the UI ships, as a static file of the same package family | Two dev dependencies (neither is shipped: the build does not import them) |
+| (b) fontkit on the variable `.woff2` of `@fontsource-variable/inter` | One font package already in the tree | No second font package | Tried and dropped: fontkit's WOFF2 reader fails on `getVariation` and applies no variation to the outlines of a transformed `glyf` table, so it yields the regular weight only without patching its private API |
+| (c) Generate the paths once, commit them as constants | No dependency | Nothing to install | The tool that made them is not in the repo; a change of weight, size or spacing means redoing a manual step |
+
+**Choice (outlines):** (a). Not verified: the pair kerning of the static file is read through `Font.getKerningValue`, which
+returns 0 for the pairs of "trove"; the spacing is the advances plus the 6 and 4 unit tracking the `<text>` had.
+
+How the favicon is made:
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The mark reduced to two lanes, thicker strokes, on the app icon's dark tile; SVG and ICO (chosen) | Band 48 and lanes of 34 units (of 256) in the candidate's blue and red, the red one still curving out from beneath the blue; the tile is the same in both schemes; `favicon.svg` plus `favicon.ico` with PNG frames of 16, 32 and 48 px, both generated | The v, the split and the curve survive at 16 px; the tab's colour does not decide the contrast; the ICO is what the setup had, so it stays as the fallback | The favicon is a tile, the mark in the lockup is not |
+| (b) The full mark scaled down, no tile | No second form | Nothing to maintain | The three lanes run together at 16 px, the reason for the task |
+| (c) The reduced mark without a tile, following `prefers-color-scheme` | Same as the lockup | One look for the logo | The ICO fallback cannot follow the scheme; neutral on a light or dark tab bar needs two files |
+
+**Choice (favicon):** (a). The ICO's frames are rasterised by the generator itself (distance to the flattened lane paths, 8 by 8
+samples per pixel, PNG through `node:zlib`), so no image tool is a dependency and the output is deterministic.
+
+**Rationale:** the wordmark's face is a property of the brand, not of the viewer's platform; the favicon is read at 16 px, where
+the mark's detail is below a pixel, so the form is drawn for that size. Revisit when the owner changes the weight or the lane
+count of the mark (the reduced form takes its own parameters in the script), or when `@fontsource-variable/inter` ships static
+files or fontkit instances WOFF2 outlines (then (b) drops the second font package).
+
+**Applied in the spec:** the [design language's logo section](../developer/design-language.md#logo). Code:
+`wordPath`, `faviconSvg`, `faviconPixels` in [brand-logo.mjs](../../web/scripts/brand-logo.mjs); the icons in
+[index.html](../../web/src/index.html); `.svg` content type in `contentType` of [webui.go](../../internal/webui/webui.go).
+
 ## What this does not cover
 
 
