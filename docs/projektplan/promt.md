@@ -208,6 +208,13 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
 
 ### Product
 
+- **F-57 · The full npm import of the advisory sync still meets the 30 s statement timeout on the CI runner** (confirmed by the
+  dispatched nightly run 42177273488, job `vuln-perf`, 2026-11-06, after the fix of Q-VULN-90 and Q-VULN-91). `vuln-sync-osv-full` ended
+  `failed` after 1 min 37 s with `database_timeout ... canceling statement due to statement timeout (SQLSTATE 57014)` at 231,012 of
+  231,012 records, so V-1 and every value that needs it went unmeasured. The fix made the alias closure's round probe its two indexes
+  (1.45 min for V-1 on the integration stack locally); which statement times out at the end of the import in CI is not known yet. The
+  same run's `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` failed, possibly on the same statement. Done when the statement is named,
+  bounded by a test, and V-1 passes in a nightly run.
 - **F-58 · A browser page loaded during a rolling upgrade can fail on a UI asset of the other release** (confirmed by
   `TestUpgrade_R_HA_064_AcrossTheCut` on the dev cluster, 2026-11-06: 2 of 25 journey iterations in step 1). Angular names every asset
   after its content; `index.html` came from a pod of one release and `main-<hash>.js`, `polyfills-<hash>.js` and `chunk-<hash>.js` went
