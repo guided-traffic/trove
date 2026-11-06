@@ -65,7 +65,7 @@ trove shows you only what you may read. A repository you may not read is not lis
 |---|---|
 | Read on a repository | It appears in the **Browse** tree and, for npm, under **Packages**; you can open its repository screen, download, and install from it |
 | Deploy, overwrite or delete | Upload or publish, replace, and delete, on the paths and packages your permission names |
-| The permission to read repository configuration | Every repository, the full repository screen with all settings, the **Find a repository** search in the top bar, and **Administration › Repositories** |
+| The permission to read repository configuration | Every repository, the full repository screen with all settings, the **Find a repository** search in the top bar, and **Admin area › Repositories** |
 | Nothing, as an anonymous reader | Only the repositories open to anonymous readers, and nothing you can change |
 
 Permissions can be narrower than a whole repository: a permission may cover only some paths or package names, and you then see only those. Ask whoever manages a repository if something you need is missing.
@@ -75,7 +75,7 @@ Permissions can be narrower than a whole repository: a permission may cover only
 Open a repository in one of these ways:
 
 1. In **Browse**, select the repository at the top of the tree, then select **Repository configuration** in the details.
-2. If you may read repository configuration, select it in **Administration › Repositories** or search for it with **Find a repository**.
+2. If you may read repository configuration, select it in **Admin area › Repositories** or search for it with **Find a repository**.
 
 The screen is titled **Repository** and shows the key. **Browse** opens the repository in the file browser.
 

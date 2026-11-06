@@ -26,7 +26,7 @@ The Bastion has a credential of its own, a token of the type `bst` (prefix `trv_
 
 ## Register a Bastion
 
-1. Open **Administration › Bastions** and choose **New Bastion**. The screen needs the permission to read endpoints (`endpoints:read`: the roles admin, security-admin, auditor and repository-admin); the actions need the permission to change them (`endpoints:write`: admin and security-admin). Revoking a token alone needs `endpoints:write` or `tokens:revoke`.
+1. Open **Admin area › Bastions** and choose **New Bastion**. The screen needs the permission to read endpoints (`endpoints:read`: the roles admin, security-admin, auditor and repository-admin); the actions need the permission to change them (`endpoints:write`: admin and security-admin). Revoking a token alone needs `endpoints:write` or `tokens:revoke`.
 2. Enter a **Name** that starts with a lower-case letter and holds lower-case letters, digits and `-`, at most 20 characters (`partners`, for example). The name cannot be changed later. The **Description** is free text.
 
 A registration is a principal of its own kind, `bastion:<name>`. It has no permission policy, no role, no group and no package ownership; a policy, role binding or ownership that names it is refused with `422` `principal_not_allowed`. It never belongs to the group of all authenticated users. A registration can be **disabled**, which refuses its tokens until it is **enabled** again, and **deleted**, which revokes its tokens at once. Each action is an audit event (`bastion.created`, `bastion.updated`, `bastion.deleted`).
@@ -164,7 +164,7 @@ The chart's `ingress` values carry annotations of HAProxy Ingress (a request lim
 
 ## Verify
 
-1. Open **Administration › Bastions**. Within `bastion.main.handshake_interval` (default `1m`) of the start, every replica appears in the table **Last contact** with its time, the client address the main installation saw, its release, its interface version and the base URL it reported, which must equal the `server.base_url` you set. A replica that is missing has not completed a handshake: look at its log and at the metrics below. The token's **Last used** column shows the same moment.
+1. Open **Admin area › Bastions**. Within `bastion.main.handshake_interval` (default `1m`) of the start, every replica appears in the table **Last contact** with its time, the client address the main installation saw, its release, its interface version and the base URL it reported, which must equal the `server.base_url` you set. A replica that is missing has not completed a handshake: look at its log and at the metrics below. The token's **Last used** column shows the same moment.
 2. On every replica the ops listener (port 8081) serves the metrics; the ServiceMonitor of the chart scrapes them. These series say that the handshake works:
 
 | Series | Healthy | Otherwise |

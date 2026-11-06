@@ -14,7 +14,7 @@ A token acts as its owner and its scope can only narrow the owner's permissions.
 
 ## The Tokens screen
 
-**Administration › Identity › Tokens** opens **Token administration**, the list of every token of the installation. It needs the permission to read tokens (the roles admin, security-admin and auditor); revoking needs the permission to revoke tokens (admin and security-admin).
+**Admin area › Identity › Tokens** opens **Token administration**, the list of every token of the installation. It needs the permission to read tokens (the roles admin, security-admin and auditor); revoking needs the permission to revoke tokens (admin and security-admin).
 
 The filter panel narrows the list:
 
@@ -32,8 +32,8 @@ To revoke, choose **Revoke** on a row, or tick active tokens and choose **Revoke
 
 ## Tokens of users and service accounts
 
-- **A user's screen** (**Administration › Identity › Users**) lists the user's tokens in the section **Tokens**, with **Revoke** and **Revoke all tokens**. Nobody creates or rotates a personal token for another user. Disabling a user offers **Also revoke all tokens of this user**; without it the tokens remain but answer `401` `principal_disabled` while the user is disabled. Deleting a user removes the tokens.
-- **A service account's screen** (**Administration › Identity › Service accounts**) has a section **Tokens** with **Create token**, **Rotate**, **Revoke** and **Revoke all tokens**. The form is the one of personal tokens, plus the lifetime **Never expires** (see [Lifetime limits and defaults](#lifetime-limits-and-defaults)). The section needs the permission to read tokens. Creating and rotating a service-account token needs the administrator role and a recent sign-in, or a token of the account itself; the buttons **Create token** and **Rotate** therefore appear for the administrator role only, not for a holder of the permission to change identities alone (for example a security administrator), whom the server would refuse. Disabling the account offers **Also revoke all tokens of this account**; deleting it removes its tokens.
+- **A user's screen** (**Admin area › Identity › Users**) lists the user's tokens in the section **Tokens**, with **Revoke** and **Revoke all tokens**. Nobody creates or rotates a personal token for another user. Disabling a user offers **Also revoke all tokens of this user**; without it the tokens remain but answer `401` `principal_disabled` while the user is disabled. Deleting a user removes the tokens.
+- **A service account's screen** (**Admin area › Identity › Service accounts**) has a section **Tokens** with **Create token**, **Rotate**, **Revoke** and **Revoke all tokens**. The form is the one of personal tokens, plus the lifetime **Never expires** (see [Lifetime limits and defaults](#lifetime-limits-and-defaults)). The section needs the permission to read tokens. Creating and rotating a service-account token needs the administrator role and a recent sign-in, or a token of the account itself; the buttons **Create token** and **Rotate** therefore appear for the administrator role only, not for a holder of the permission to change identities alone (for example a security administrator), whom the server would refuse. Disabling the account offers **Also revoke all tokens of this account**; deleting it removes its tokens.
 - **A project's service account** (the project page, then the account) is managed by the administrators of its project without any system role; see [Projects and delegated administration](projects.md). They see the section **Tokens**, create tokens while the project's switch **Manage policies and service accounts** is on, and revoke them whatever the switches say. They do not rotate tokens. A token they create always expires, at most after the maximum lifetime of **Service account tokens**, so the form does not offer **Never expires** and refuses a longer lifetime (`ttl_exceeds_maximum`); it has no administrator scope and names no system item. They may bind it to endpoints like any service-account token.
 
 A rotation creates a new value with the same scope and gives the old one an overlap of **Not at all (revoked now)**, **One hour** or **One day** (the API accepts up to 86,400 seconds). If the token is bound to an endpoint that no longer accepts its type (the endpoint's `auth.token_types` changed, or the token was bound before trove checked this), the rotation is refused with `invalid_scope` naming the endpoint, because the new token would work nowhere; the old token stays as it is and can be revoked.
@@ -69,7 +69,7 @@ A token can create another token of the same type and owner through the API. The
 
 ## Lifetime limits and defaults
 
-**Administration › System › Settings** opens **Authentication settings**. Its section **Token lifetimes** holds, for **Personal tokens** and **Service account tokens**, the **Default lifetime (days)** and the **Maximum lifetime (days)**, and under **Expiry notice** the period **Notify this many days before a token expires**. Values are in days, fractions allowed, at least 60 seconds. Each field shows its ceiling from the configuration, which it cannot exceed (`exceeds_ceiling`), and a default cannot exceed its maximum (`default_above_maximum`). **Save settings** needs the permission to change settings and a recent sign-in; the change applies on every replica and is recorded as `settings.auth.changed`.
+**Admin area › System › Settings** opens **Authentication settings**. Its section **Token lifetimes** holds, for **Personal tokens** and **Service account tokens**, the **Default lifetime (days)** and the **Maximum lifetime (days)**, and under **Expiry notice** the period **Notify this many days before a token expires**. Values are in days, fractions allowed, at least 60 seconds. Each field shows its ceiling from the configuration, which it cannot exceed (`exceeds_ceiling`), and a default cannot exceed its maximum (`default_above_maximum`). **Save settings** needs the permission to change settings and a recent sign-in; the change applies on every replica and is recorded as `settings.auth.changed`.
 
 The ceilings and the other token limits are configuration keys:
 
@@ -142,7 +142,7 @@ A token is revoked by its owner, by a holder of the permission to revoke tokens,
 
 ## Audit of token events
 
-The token events appear under **Administration › System › Audit log**. None of them holds a token value.
+The token events appear under **Admin area › System › Audit log**. None of them holds a token value.
 
 | Event | Recorded when | Details |
 |---|---|---|

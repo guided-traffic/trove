@@ -113,6 +113,14 @@ const surfaces: Record<string, string | readonly [string, string]> = {
   'top bar': '--trove-nav-bg-deep',
   'active entry': ['--trove-nav-active', '--trove-nav-bg'],
   'active entry in an open group': ['--trove-nav-active', '--trove-nav-bg-nested'],
+  // trove's own controls (Q-UI-126, _controls.scss).
+  'accent fill': '--trove-accent-fill',
+  'accent fill hover': '--trove-accent-fill-hover',
+  'default button': '--trove-btn-default-bg',
+  'default button hover': '--trove-btn-default-bg-hover',
+  'tertiary button hover': '--trove-btn-tertiary-bg-hover',
+  'danger fill': '--trove-danger-fill',
+  control: '--trove-control-bg',
 };
 
 function surface(name: string, scheme: Scheme): Rgba {
@@ -164,6 +172,17 @@ const textPairs: readonly (readonly [string, string])[] = [
   ['--trove-status-ok', 'selected row'],
   ['--trove-nav-active-fg', 'active entry'],
   ['--trove-nav-active-fg', 'active entry in an open group'],
+  // trove's own controls (Q-UI-126): the label of each button on its fill, at rest and under the pointer, and the
+  // text and placeholder of a field.
+  ['--trove-on-accent', 'accent fill'],
+  ['--trove-on-accent', 'accent fill hover'],
+  ['--trove-control-fg', 'default button'],
+  ['--trove-control-fg', 'default button hover'],
+  ['--trove-control-fg', 'tertiary button hover'],
+  ['--trove-control-fg', 'page'],
+  ['--trove-on-danger', 'danger fill'],
+  ['--trove-control-fg', 'control'],
+  ['--trove-control-placeholder', 'control'],
 ];
 
 // Marks: WCAG 1.4.11, 3:1 (focus ring, tab underline, checkbox, the navigation's bar and icon).
@@ -177,6 +196,12 @@ const markPairs: readonly (readonly [string, string])[] = [
   ['--trove-nav-accent', 'top bar'],
   ['--trove-nav-accent', 'active entry'],
   ['--trove-nav-accent', 'active entry in an open group'],
+  // The search field's outline against the frame it sits on (Q-UI-127).
+  ['--trove-search-border', 'top bar'],
+  // The outline of a field against the page and its own fill, and the primary button against the page (Q-UI-126).
+  ['--trove-control-border', 'page'],
+  ['--trove-control-border', 'control'],
+  ['--trove-accent-fill', 'page'],
   // The marks of the vulnerability trend (R-VULN-022), on the page and on the raised surface the chart sits on.
   ...['critical', 'high', 'medium', 'low', 'none', 'unknown'].flatMap((s): [string, string][] => [
     [`--trove-chart-${s}`, 'page'],

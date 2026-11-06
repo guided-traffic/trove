@@ -46,34 +46,60 @@
   // Solid in both schemes: cogpit's translucent focus (#0a6fd6 at alpha 0x99) is 2.5:1 on white.
   --trove-focus-ring: 2px solid var(--mat-sys-primary);
 
-  // Navigation sidebar and top bar: dark in both schemes, navy in the light one and near-black
-  // in the dark one, so the accent is cogpit's glow blue of the dark scheme in both (Q-UI-96).
-  // Measured contrast (R-UI-044, AA asks 4.5:1 for text and 3:1 for marks): text 11.9:1 (light)
-  // and 14.8:1 (dark), muted text 6.7:1 and 6.9:1, the accent on the sidebar 4.7:1 and 7.1:1, on
-  // the nested group 5.8:1 and 7.4:1, the current entry's icon 3.3:1 (light, a mark) and its text
-  // 5.8:1 (dark). Recompute when a value changes; palette.spec.ts holds the accent pairs.
-  --trove-nav-bg: light-dark(#233564, #121822);
-  --trove-nav-bg-deep: light-dark(#1e2e4a, #060e19);
-  --trove-nav-bg-nested: light-dark(#1a264e, #0d131c);
-  --trove-nav-fg: light-dark(#ffffff, #e8eaec);
-  --trove-nav-fg-muted: light-dark(#b9c3d9, #9aa1ad);
-  --trove-nav-hover: rgb(255 255 255 / 8%);
-  --trove-nav-active: light-dark(rgb(255 255 255 / 12%), rgb(74 168 255 / 12%));
-  --trove-nav-active-fg: light-dark(#ffffff, #4aa8ff);
-  --trove-nav-accent: #4aa8ff;
-  --trove-nav-border: light-dark(rgb(255 255 255 / 10%), #1e2530);
-  --trove-nav-width: 15rem;
-  --trove-nav-width-collapsed: 3.75rem;
+  // The frame: top bar and sidebar on one fill, the content as a panel set into it (Q-UI-127). Light grey in the
+  // light scheme, near-black in the dark one; the current entry is a tinted pill with a bar in the accent and bold text,
+  // so its state is not carried by colour alone (R-UI-044). palette.spec.ts computes the pairs (text 4.5:1, marks 3:1).
+  --trove-nav-bg: light-dark(#f1f4f8, #121822);
+  --trove-nav-bg-deep: var(--trove-nav-bg);
+  --trove-nav-bg-nested: var(--trove-nav-bg);
+  --trove-nav-fg: light-dark(#1c2433, #e8eaec);
+  --trove-nav-fg-muted: light-dark(#5b6270, #9aa1ad);
+  --trove-nav-hover: light-dark(rgb(16 24 40 / 6%), rgb(255 255 255 / 6%));
+  --trove-nav-active: light-dark(rgb(10 98 194 / 10%), rgb(74 168 255 / 12%));
+  --trove-nav-active-fg: light-dark(#0a62c2, #4aa8ff);
+  --trove-nav-accent: light-dark(#0a62c2, #4aa8ff);
+  --trove-nav-border: light-dark(#dbdde1, #1e2530);
+  --trove-nav-width: 16rem;
   --trove-topbar-height: 3rem;
-  // The top bar's search field: a white field on the navy bar, a card-coloured one on the
-  // near-black bar. Its fill sets it off from the bar (11.9:1 and 1.3:1 plus the outline at 3.4:1).
-  --trove-search-bg: light-dark(#ffffff, #121822);
+  --trove-panel-radius: 12px;
+  // The top bar's search field on the frame's fill. Its outline is a step deeper than a field's on the page, because
+  // the light frame is grey: #7d8490 keeps 3.4:1 against it (WCAG 1.4.11), #646c78 3.4:1 against the dark one.
+  --trove-search-bg: light-dark(#ffffff, #040c18);
   --trove-search-fg: light-dark(#1c2433, #e8eaec);
   --trove-search-muted: light-dark(#5b6270, #9aa1ad);
-  --trove-search-border: light-dark(transparent, #646c78);
+  --trove-search-border: light-dark(#7d8490, #646c78);
+  // The logo's hues (web/scripts/brand-logo.mjs; the inline mark of shared/brand/trove-mark.ts reads them).
+  --trove-brand-blue: light-dark(#0a84ff, #1fb6ff);
+  --trove-brand-red: light-dark(#ff1f4b, #ff2d55);
 
   --trove-surface: var(--mat-sys-surface);
   --trove-on-surface: var(--mat-sys-on-surface);
+
+  // Controls (_controls.scss, Q-UI-126): buttons, text fields, selects and checkboxes of trove's own,
+  // without Angular Material. One height and radius for all of them; the colours are the palette's,
+  // set here without the Material tokens so they stay when Material is gone. The accent pair is
+  // cogpit's (Q-UI-96): white on #0a62c2 is 5.9:1, #04111f on #4aa8ff 8.3:1; the hover steps keep
+  // the hue and raise the contrast (7.6:1 and 10.4:1). The control outline is the one measured for
+  // WCAG 1.4.11 (3.2:1 light, 3.4:1 dark on the page).
+  --trove-control-height: 32px;
+  --trove-control-radius: var(--trove-radius-m);
+  --trove-control-bg: light-dark(#ffffff, #02070f);
+  --trove-control-fg: light-dark(#1c2433, #e8eaec);
+  --trove-control-border: light-dark(#8a919c, #646c78);
+  --trove-control-placeholder: light-dark(#5b6270, #9aa1ad);
+  --trove-control-disabled-bg: light-dark(#f1f4f8, #121822);
+  --trove-control-disabled-fg: light-dark(#8a919c, #646c78);
+  --trove-accent-fill: light-dark(#0a62c2, #4aa8ff);
+  --trove-accent-fill-hover: light-dark(#0855a8, #7cc4ff);
+  --trove-on-accent: light-dark(#ffffff, #04111f);
+  // The default button: a white button with a hairline in the light scheme, a filled grey one in the
+  // dark scheme (the filled field's #222a36), as the sign-in screens of comparable tools draw it.
+  --trove-btn-default-bg: light-dark(#ffffff, #222a36);
+  --trove-btn-default-bg-hover: light-dark(#f1f4f8, #2b3442);
+  --trove-btn-default-border: light-dark(#c4c9d1, #222a36);
+  --trove-btn-tertiary-bg-hover: light-dark(#f1f4f8, #121822);
+  --trove-danger-fill: light-dark(#b3261e, #ffb4ab);
+  --trove-on-danger: light-dark(#ffffff, #04111f);
   // Status colours reinforce an icon and a text, never replace them (R-UI-044); the pairs keep
   // a contrast ratio of at least 4.5:1 on the surface of their scheme. Green is OK's alone: no
   // other token is green, so green always means a positive status (Q-UI-96).

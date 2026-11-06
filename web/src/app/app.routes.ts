@@ -8,19 +8,21 @@ const wrapper = (label: string): { crumbs: CrumbSpec[] } => ({ crumbs: [{ label,
 /** The named areas of the breadcrumb trail (R-UI-002); they are names, not pages. */
 const area = {
   content: { label: $localize`:@@nav.group.content:Packages and files`, link: false },
-  admin: { label: $localize`:@@nav.group.admin:Administration`, link: false },
+  admin: { label: $localize`:@@nav.context.admin:Admin area`, link: false },
 } satisfies Record<string, CrumbSpec>;
 
 /**
  * The route map of R-UI-003 for the M1 screens. Every area is lazy (R-ARCH-004); the screens that
  * a later work package builds are placeholders with their final path and title. `/login` and
- * `/logged-out` need no session. Everything else sits behind `authGuard`, which only shapes
- * navigation: the API decides (R-UI-005).
+ * `/logged-out` need no session and stand alone, without the shell (`data.bare`, Q-UI-125).
+ * Everything else sits behind `authGuard`, which only shapes navigation: the API decides (R-UI-005).
  */
 export const routes: Routes = [
   {
     path: 'login',
     title: $localize`:@@route.login.title:Sign in`,
+    // Without a session nothing of the shell can be used: the screen stands alone (Q-UI-125).
+    data: { bare: true },
     // >>> M1 ui-b
     loadComponent: () => import('./features/login/login').then((m) => m.Login),
     // <<< M1 ui-b
@@ -29,6 +31,7 @@ export const routes: Routes = [
     // The post-logout redirect URI registered at the identity provider (R-UI-004): a contract.
     path: 'logged-out',
     title: $localize`:@@route.logged-out.title:Signed out`,
+    data: { bare: true },
     // >>> M1 ui-b
     loadComponent: () => import('./features/login/logged-out').then((m) => m.LoggedOut),
     // <<< M1 ui-b

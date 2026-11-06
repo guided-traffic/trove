@@ -13,10 +13,10 @@ trove has no password database. People sign in through an OpenID Connect identit
 | Session lifetimes and the recent sign-in window | Configuration file, `auth.sessions` | When a replica starts |
 | Break-glass account | Configuration file, `auth.break_glass` | When a replica starts; the password file is re-read when it changes |
 | Anonymous access ceiling | Configuration file, `auth.anonymous.allowed` | When a replica starts |
-| Anonymous access switch, token lifetimes | **Administration › System › Settings** | Within seconds, on every replica |
-| Users, groups, memberships, service accounts | **Administration › Identity** | Within seconds, on every replica |
+| Anonymous access switch, token lifetimes | **Admin area › System › Settings** | Within seconds, on every replica |
+| Users, groups, memberships, service accounts | **Admin area › Identity** | Within seconds, on every replica |
 
-The **Authentication settings** screen under **Administration › System › Settings** also shows a read-only **Status (read only)** section: each identity provider with **discovery document loaded** or **not available on this replica**, whether the break-glass account is enabled or locked and, when it is enabled but cannot verify a password, an error that says why (see [The break-glass administrator](#the-break-glass-administrator)), the session timeouts and whether HTTP Basic with a token is allowed. Reading the screen needs the `settings:read` capability, saving needs `settings:write` and a recent sign-in. The token lifetimes on the same screen are described in [Managing tokens](tokens.md).
+The **Authentication settings** screen under **Admin area › System › Settings** also shows a read-only **Status (read only)** section: each identity provider with **discovery document loaded** or **not available on this replica**, whether the break-glass account is enabled or locked and, when it is enabled but cannot verify a password, an error that says why (see [The break-glass administrator](#the-break-glass-administrator)), the session timeouts and whether HTTP Basic with a token is allowed. Reading the screen needs the `settings:read` capability, saving needs `settings:write` and a recent sign-in. The token lifetimes on the same screen are described in [Managing tokens](tokens.md).
 
 ## Configure an OpenID Connect provider
 
@@ -37,7 +37,7 @@ server:
   base_url: https://trove.example.com            # example
 auth:
   login_page:
-    auto_redirect: true                          # default: go straight to the provider when exactly one is configured
+    auto_redirect: true                          # default: go straight to the provider when exactly one is configured; /ui/login?auto_sign_in=false shows the page anyway
   oidc:
     providers:
       corp:                                      # example: the provider ID, ^[a-z0-9][a-z0-9-]{0,31}$
@@ -90,7 +90,7 @@ The secret is never written into the configuration file. `client_secret_file` is
 
 ### Check the provider
 
-Open **Administration › System › Settings**. Under **Identity providers**, every provider should show **discovery document loaded**. A provider whose discovery failed shows **not available on this replica**, and its button on the sign-in screen is disabled with **Currently unavailable**.
+Open **Admin area › System › Settings**. Under **Identity providers**, every provider should show **discovery document loaded**. A provider whose discovery failed shows **not available on this replica**, and its button on the sign-in screen is disabled with **Currently unavailable**.
 
 ## Map claims to users and groups
 
@@ -164,7 +164,7 @@ config:
 - A group that does not exist yet is created as a local group, so the binding holds before anyone has signed in. At sign-in, group synchronization puts the members in; `create_groups` is not needed.
 - A declared user or service account must exist. If it does not, the Job fails and its log names the entry: `kubectl -n trove logs job/trove-migrate`.
 - An unknown role, an entry with two principals or none, and `anonymous` or `authenticated` fail the Job before it touches the database, and the message names the key, for example `authz.role_bindings[0].role "root" is not a system role`.
-- **Administration › Access › System roles** shows these bindings with the source **Configuration** and without **Unbind**; the API answers `409 role_binding_managed_by_configuration`. Bindings you made on that screen stay as they are. A binding you made there and then add to the list is taken over by the configuration.
+- **Admin area › Access › System roles** shows these bindings with the source **Configuration** and without **Unbind**; the API answers `409 role_binding_managed_by_configuration`. Bindings you made on that screen stay as they are. A binding you made there and then add to the list is taken over by the configuration.
 - An entry you remove from the list is unbound at the next upgrade. The Job refuses to remove the last administrator while the break-glass account is disabled (`last_admin`). To hand administration from one group to another, add the new group first and remove the old one in a later upgrade, after a member of the new group has signed in, or keep `secrets.breakGlass` set.
 - A group with auto-join cannot be declared (`auto_join_admin_conflict`).
 - Deleting a declared user or group on the **Users** or **Groups** screen removes its binding until the next upgrade, which creates a declared group again (empty until its members sign in) and fails for a declared user.
@@ -172,7 +172,7 @@ config:
 
 Whoever can change the membership of the declared group at your identity provider decides who administers trove. With a GitHub team behind Dex, that is the team's maintainers and the organization's owners. A membership change there reaches trove at the member's next sign-in.
 
-To check an upgrade, look for the line `role bindings of the configuration applied` in the Job's log, then sign in as a member of the group: the **Administration** area appears.
+To check an upgrade, look for the line `role bindings of the configuration applied` in the Job's log, then sign in as a member of the group: the **Admin** button appears in the top bar.
 
 ## Sessions
 
@@ -199,7 +199,7 @@ The break-glass account is the one local account. It holds the `admin` role with
 
 1. Create a Kubernetes Secret that holds a plaintext password of at least 20 characters or an Argon2id hash in PHC string format.
 2. Name it in the Helm value `secrets.breakGlass.existingSecret`. Without it, the chart sets `auth.break_glass.enabled: false`.
-3. Sign in at `https://trove.example.com/ui/login?local=1`, or set `show_on_login_page: true` to show the **Local administrator** form on the sign-in screen.
+3. Sign in at `https://trove.example.com/ui/login?auto_sign_in=false`, or set `show_on_login_page: true` to show the username and password form on the sign-in screen.
 
 ```yaml
 auth:
@@ -227,7 +227,7 @@ auth:
 Requests without a credential act as the built-in principal `anonymous`. They are admitted only when all of these hold:
 
 1. `auth.anonymous.allowed` is true (the default) in the configuration.
-2. **Allow requests without a credential to read what the anonymous principal may read** is switched on under **Administration › System › Settings**. It is off on a fresh installation.
+2. **Allow requests without a credential to read what the anonymous principal may read** is switched on under **Admin area › System › Settings**. It is off on a fresh installation.
 3. The endpoint the request arrives on admits anonymous requests; see [Endpoints and exposure rules](endpoints.md).
 4. A permission policy grants `read` to `anonymous` on the repository, which must not have **Require authentication** set; see [Permissions](permissions.md#anonymous-and-all-signed-in-users).
 
@@ -247,7 +247,7 @@ An IPv6 address counts per `/64`. The break-glass lockout applies on top of thes
 
 ## The Users screen
 
-**Administration › Identity › Users** lists every user with **User name**, **Display name**, **Email**, **Origin**, **Status** and **Last sign-in**. Filter by **Name or email**, **Status** (**Active**, **Disabled**, **Locked**), **Origin**, **Group** and **Administrator**. **Origin** is **Identity provider** for users created at first sign-in, **Created by an administrator**, or **Break-glass**. Reading needs `identities:read`, changing needs `identities:write`.
+**Admin area › Identity › Users** lists every user with **User name**, **Display name**, **Email**, **Origin**, **Status** and **Last sign-in**. Filter by **Name or email**, **Status** (**Active**, **Disabled**, **Locked**), **Origin**, **Group** and **Administrator**. **Origin** is **Identity provider** for users created at first sign-in, **Created by an administrator**, or **Break-glass**. Reading needs `identities:read`, changing needs `identities:write`.
 
 To pre-provision a user, select **Add user** and fill in:
 
@@ -269,7 +269,7 @@ Nobody can disable or delete their own account here. Disabling or deleting the l
 
 ## The Groups screen
 
-**Administration › Identity › Groups** lists **Name**, **Description**, **Origin** and **Members**. Select **New group** and enter:
+**Admin area › Identity › Groups** lists **Name**, **Description**, **Origin** and **Members**. Select **New group** and enter:
 
 | Field | Meaning |
 |---|---|
@@ -283,7 +283,7 @@ A group's page lets you rename it, change the description and auto-join flag (**
 
 A service account is a non-human principal for CI systems and automation. Its tokens act as the account, not as a person, and it is never part of `authenticated`.
 
-**Administration › Identity › Service accounts** lists **Name**, **Description** and **Status**. Select **New service account** and enter a **Name** (lower-case letters, digits and `-`, two to 63 characters) and a **Description**. On the account's page you can **Save description**, **Disable** (with **Also revoke all tokens of this account**, unchecked by default), **Enable**, **Delete** the account with its tokens, see its system roles and manage its **Tokens**; see [Managing tokens](tokens.md). Grant it rights with a permission policy entry `sa:<name>`, or add it to a group.
+**Admin area › Identity › Service accounts** lists **Name**, **Description** and **Status**. Select **New service account** and enter a **Name** (lower-case letters, digits and `-`, two to 63 characters) and a **Description**. On the account's page you can **Save description**, **Disable** (with **Also revoke all tokens of this account**, unchecked by default), **Enable**, **Delete** the account with its tokens, see its system roles and manage its **Tokens**; see [Managing tokens](tokens.md). Grant it rights with a permission policy entry `sa:<name>`, or add it to a group.
 
 ## Commands for bootstrap and recovery
 

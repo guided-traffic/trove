@@ -5406,10 +5406,10 @@ type LocalFormatName string
 type LoginOptions struct {
 	AnonymousAccess bool `json:"anonymousAccess"`
 
-	// AutoRedirect The provider ID to redirect to at once; `null` shows the buttons.
+	// AutoRedirect The provider ID to redirect to at once; `null` shows the buttons. `?auto_sign_in=false` on the sign-in page waives the redirect.
 	AutoRedirect *string `json:"autoRedirect"`
 
-	// LocalLogin The break-glass form is offered on the page; it is reachable with `?local=1` regardless.
+	// LocalLogin The break-glass form is offered on the page; it is reachable with `?auto_sign_in=false` regardless.
 	LocalLogin bool `json:"localLogin"`
 
 	// Providers In configuration order (`order`, then ID).

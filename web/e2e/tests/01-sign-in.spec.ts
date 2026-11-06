@@ -29,8 +29,8 @@ test('R-UI-004 R-AUTH-009 sign-in with the identity provider and sign-out', asyn
 });
 
 test('R-UI-004 R-AUTH-022 the break-glass administrator signs in with the local form', async ({ page, replicas }) => {
-  await page.goto('/ui/en/login?local=1');
-  await expect(page.getByRole('heading', { name: 'Local administrator' })).toBeVisible();
+  await page.goto('/ui/en/login?auto_sign_in=false');
+  await expect(page.getByRole('form', { name: 'Local administrator' })).toBeVisible();
   await expectAccessible(page, 'sign-in with the local form');
   await page.getByLabel('Username').fill('admin');
   await page.getByLabel('Password').fill(breakGlassPassword);
@@ -64,7 +64,7 @@ test('R-AUTH-014 the local sign-in waits out the break-glass rotation hold', asy
     await route.continue();
   });
   const started = Date.now();
-  await page.goto('/ui/en/login?local=1');
+  await page.goto('/ui/en/login?auto_sign_in=false');
   await page.getByLabel('Username').fill('admin');
   await page.getByLabel('Password').fill(breakGlassPassword);
   await submitLocalForm(page, () => page.getByRole('button', { name: 'Sign in', exact: true }).last().click());
@@ -83,7 +83,7 @@ test('R-AUTH-014 a 503 that is not the rotation hold is not waited for', async (
       body: JSON.stringify({ status: 503, code: 'server_busy', title: 'Service Unavailable' }),
     }),
   );
-  await page.goto('/ui/en/login?local=1');
+  await page.goto('/ui/en/login?auto_sign_in=false');
   await page.getByLabel('Username').fill('admin');
   await page.getByLabel('Password').fill(breakGlassPassword);
   const started = Date.now();

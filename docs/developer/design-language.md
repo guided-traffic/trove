@@ -19,9 +19,11 @@ light palettes of `internal/ui/fyneui/theme.go` in guided-traffic/cogpit), and k
 
 ## What the language is made of
 
-- **A dark frame around the work.** A full-height side bar and a slim top bar enclose the content in both schemes. In the
-  light scheme the frame is navy and the content white; in the dark scheme the frame and the content are both near-black,
-  told apart by one step of lightness and a hairline border.
+- **A frame around the work, the work as a panel.** The top bar and the full-height side bar share one fill; the content
+  is a panel set into them, with a hairline and a rounded corner where it meets both (Q-UI-127, after the reference the
+  owner showed on 2026-11-06). In the light scheme the frame is light grey and the panel white; in the dark scheme the
+  frame is one step lighter than the near-black panel. Until then the light frame was navy, after the first reference
+  screens.
 - **One accent, blue.** cogpit's glow blue marks what is active or primary: the current navigation entry (a bar at its
   start edge, and in the dark scheme the text), the selected tab's underline, the primary button, the focus ring, links,
   progress, and as a pale or deep fill a selected row or tree item. The accent is not a status.
@@ -30,8 +32,7 @@ light palettes of `internal/ui/fyneui/theme.go` in guided-traffic/cogpit), and k
 - **Flat surfaces.** Cards and tables are separated by a fill and a 1 px border with a small radius (about 4 px), not by
   shadows. Buttons are rectangles with the same small radius, not pills.
 - **Dense, quiet type.** A humanist sans at about 13 to 14 px for body text, semibold for titles and table headings, muted
-  grey for secondary text (units, dates, captions). Upper-case is not used for labels in the content; trove keeps it for
-  the small area titles of the side bar.
+  grey for secondary text (units, dates, captions). Upper-case is not used for labels, the side bar's title included.
 - **Data colours beside the accent.** The screens' charts use green, a muted teal and a violet. Green marks a positive
   status only (Q-UI-96), so a chart in trove does not take it for a series; the teal and violet never mark state.
 - **Status with an icon.** A status is an icon and a word ("Completed" with a check in a circle), the icon tinted.
@@ -53,16 +54,14 @@ light palettes of `internal/ui/fyneui/theme.go` in guided-traffic/cogpit), and k
 | Focus ring | — | — | `#0a62c2`, solid 2 px | `#4aa8ff`, solid 2 px | `--trove-focus-ring`. cogpit's focus is translucent (`#0a6fd6` at alpha `0x99`, `#4aa8ff` at `0xaa`); over white that is 2.5:1 and misses the 3:1 of WCAG 1.4.11, so trove's ring stays solid in both schemes |
 | Selection fills | — | — | `#cfe2ff`, `#d6e6ff` | `#22406a`, `#183252` | `--mat-sys-primary-container` is cogpit's selection, `--mat-sys-secondary-container` (the selected tree item, the current audit row, the active access tab) cogpit's selected row; the text on both is cogpit's selected-row text `#0b1a33` and `#f2f7ff` |
 | Positive status | green check | — | `#1a6e3c` | `#3db064` | `--trove-status-ok`: the green the accent had before Q-UI-96, unchanged (6.3:1 and 7.1:1 on the page) |
-| Side bar | `#233564` | `#121822` | `#233564` | `#121822` | `--trove-nav-bg` |
-| Open group in the side bar | `#1a264e` | — | `#1a264e` | `#0d131c` | `--trove-nav-bg-nested` |
-| Top bar | `#1e2e4a` | `#060e19` | `#1e2e4a` | `#060e19` | `--trove-nav-bg-deep` |
-| Side bar text, muted | white, light blue grey | `#e8eaec`, grey | `#ffffff`, `#b9c3d9` | `#e8eaec`, `#9aa1ad` | 11.9:1 and 6.7:1; 14.8:1 and 6.9:1 |
-| Current navigation entry | white text, green bar | green text and icon | white bold, blue bar | blue bold, blue bar | `--trove-nav-accent` is `#4aa8ff` in both schemes, because the frame is dark in both: 4.7:1 on the light side bar, the icon 3.3:1 on the light active row (a mark); the bar and the weight carry the state as well (R-UI-044) |
-| Search field in the top bar | white field | card fill with border | `#ffffff` | `#121822`, outline `#646c78` | `--trove-search-*` |
+| Frame (top bar and side bar) | `#233564`, `#1e2e4a` | `#121822`, `#060e19` | `#f1f4f8` | `#121822` | `--trove-nav-bg`; one fill for both since Q-UI-127 (the light frame was navy, the top bar a step deeper) |
+| Side bar text, muted | white, light blue grey | `#e8eaec`, grey | `#1c2433`, `#5b6270` | `#e8eaec`, `#9aa1ad` | 14.1:1 and 5.6:1; 14.8:1 and 6.8:1 |
+| Current navigation entry | white text, green bar | green text and icon | blue bold on a blue tint, blue bar | blue bold on a blue tint, blue bar | `--trove-nav-active-fg`, `--trove-nav-accent`: the accent of the scheme; the text 4.7:1 and 5.8:1 on the tint; the bar and the weight carry the state as well (R-UI-044) |
+| Search field in the top bar | white field | card fill with border | `#ffffff`, outline `#7d8490` | `#040c18`, outline `#646c78` | `--trove-search-*`; the outline keeps 3.4:1 against the frame in both schemes |
 | Data: teal, violet | `#347da0`, `#8577e6` | `#347da0`, `#8577e6` | `#347da0`, `#8577e6` | `#5cb3d6`, `#a99cff` | the vulnerability trend's low and unknown series (`--trove-chart-low`, `--trove-chart-unknown`); the other four series are `--trove-chart-critical` (`#b3261e`, `#ff8a80`), `-high` (`#c2570c`, `#ff9d57`), `-medium` (`#8a5a00`, `#ffc857`) and `-none` (`#5b6270`, `#9aa1ad`). None is green and none is the accent; each keeps 3:1 against the page and the raised surface in both schemes (`palette.spec.ts`), and the chart names every series in a legend and a table, so the colour is never the only carrier (Q-VULN-53) |
 
-The light top bar and side bar differ slightly (`#1e2e4a` and `#233564`); the dark ones too (`#060e19` and `#121822`). Both
-are kept, because the step is what lets the top bar read as a bar.
+Since Q-UI-127 the top bar and the side bar share one fill; the panel's hairline and rounded corner set the content off
+from the frame instead of a step between the two bars.
 
 The Material base palette is `mat.$azure-palette`: its tone 40 (`#005cbb`) has cogpit's hue, 210°, where
 `mat.$blue-palette` sits at 237°, toward violet. It fills only the tokens `main.scss` does not set (the `secondary` and
@@ -87,12 +86,64 @@ Its styles are the global partial [_browse.scss](../../web/src/styles/_browse.sc
   sticky.
 - Under 48 rem of content width (the `content` container query) one pane shows at a time and the details get a back button.
 
+## Controls
+
+Since 2026-11-06 the controls are trove's own, not Angular Material's
+([Q-UI-126](../spec/api-and-ui.md#q-ui-126--troves-own-controls-in-place-of-angular-material)): the owner asked for the
+design language of a sign-in page he showed, flat controls with the labels above the fields. They are plain HTML elements
+with the classes of [_controls.scss](../../web/src/styles/_controls.scss); the composite widgets take their behaviour from
+the CDK and `@angular/aria`. The move runs screen by screen: the sign-in and signed-out screens are done, the other screens
+still use Material's buttons, dialogs, checkboxes, tabs and menus until their turn.
+
+| Control | Markup | Look |
+|---|---|---|
+| Primary button | `<button class="btn btn-confirm">` | the accent fill (`--trove-accent-fill`), `--trove-on-accent` text, a deeper or lighter step of the hue on hover |
+| Secondary button | `class="btn btn-default"` | white with a `#c4c9d1` hairline (light), the filled grey `#222a36` (dark) |
+| Quiet button | `class="btn btn-tertiary"` | text only, a pale fill on hover |
+| Destructive button | `class="btn btn-danger"` | `--trove-danger-fill` (the bad status's hue) |
+| Icon button | `class="btn btn-icon"` with an `aria-label` | 32 × 32, text only |
+| Modifiers | `btn-block`, `btn-sm` | full width; 24 px high |
+| Text field, select, area | `<label class="field-label" for>` above `<input class="text-input">`, `select-input`, `area-input` | `--trove-control-bg`, a 1 px `--trove-control-border` (3.2:1 light, 3.4:1 dark against the page, WCAG 1.4.11), the semibold label above |
+| Checkbox, radio | native `<input type="checkbox">` | 16 px, `accent-color` the accent |
+| Focus | every control | `--trove-focus-ring` (2 px solid accent), offset 2 px for buttons and 1 px for fields |
+
+One height (`--trove-control-height`, 32 px) and one radius (`--trove-control-radius`, 6 px) for every control. A disabled
+control is `--trove-control-disabled-bg` with `--trove-control-disabled-fg` (WCAG exempts disabled controls from the
+contrast rule). The screens without the shell (sign-in, signed out) are one column of at most 25rem in the middle of the
+page, under the wordmark (`.bare`, `.bare-panel`, `.bare-wordmark` in `_shell.scss`, Q-UI-125).
+[palette.spec.ts](../../web/src/styles/palette.spec.ts) computes every label on its button fill (at rest and under the
+pointer), the field's text and placeholder on the field (4.5:1), and the field outline and the primary fill against the
+page (3:1), in both schemes.
+
+## Logo
+
+In design with the owner since 2026-11-06; nothing below is final. The mark is the "v" of trove drawn as a flow: the left
+arm is one solid band, a package coming in once (an upload from CI, or the first fetch through a proxy); the point at the
+bottom is trove, the store; the right arm is the band split into lanes that fan out, the requests trove serves from then
+on. Lanes of different colours are the idea the owner brought from a game logo's parallel stripes. The state of the draft
+(owner, 2026-11-06): the band is slimmer than the lanes' bundle (26 against 44, as slim as two lanes) and has the
+wordmark's colour (`#e8eaec` on a dark ground, `#1c2433` on a light one), so the v sits in the lockup like a letter of the
+name; three lanes in flat neon tones, from the inside out blue (`#1fb6ff`), the band's neutral colour, and red
+(`#ff2d55`); a halo was tried and dropped (it read as washed out), and so was green for the inner lane. The red lane
+starts beneath the middle one (drawn first, from its start), runs hidden under it until half its height and curves to
+the right from there.
+
+[web/scripts/brand-logo.mjs](../../web/scripts/brand-logo.mjs) generates every file from one set of parameters (band
+width, lane count, gap, fan, the lane shape) into [web/public/brand/](../../web/public/brand/): the mark, the square app
+icon with the wordmark (dark ground in both schemes), and the horizontal lockup. The mark and the lockup switch to deeper
+hues and the dark band on a light ground through `prefers-color-scheme` inside the SVG. The sign-in and signed-out screens show the lockup;
+in development builds (`isDevMode()`) the sign-in screen also shows the preview of
+[logo-preview.ts](../../web/src/app/features/login/logo-preview.ts): the three forms on both grounds, the mark at 64,
+32 and 16 px, and the alternatives of `drafts/`. Change a parameter, run `node scripts/brand-logo.mjs` in `web/`, and the
+dev server reloads.
+
 ## Where the values live
 
 | File | What it holds |
 |---|---|
 | [web/src/styles/main.scss](../../web/src/styles/main.scss) | `mat.theme` with the azure and violet palettes, then `mat.theme-overrides` with every Material system colour above as `light-dark(<light>, <dark>)`; the button shape |
 | [web/src/styles/_tokens.scss](../../web/src/styles/_tokens.scss) | trove's own properties: the link, the focus ring, the raised surface, the table head, the frame (`--trove-nav-*`), the search field, the status colours |
+| [web/src/styles/_controls.scss](../../web/src/styles/_controls.scss) | The controls of the table above, from the `--trove-control-*`, `--trove-accent-fill`, `--trove-btn-*` and `--trove-danger-*` tokens |
 | [web/src/styles/_shell.scss](../../web/src/styles/_shell.scss) | How the frame uses them: the active entry, the open group's fill, the top bar's actions and the avatar |
 | [web/src/styles/palette.spec.ts](../../web/src/styles/palette.spec.ts) | The contrast of the pairs below, computed from the two stylesheets, and the rule that only `--trove-status-ok` is green |
 
@@ -207,10 +258,14 @@ Do not start using either pair.
 
 ## What this does not cover
 
+- The logo is a draft: the wordmark is SVG `<text>` in the system font, so it renders in a different face per platform
+  until it becomes paths; at 16 px the four lanes run together, so a favicon needs a reduced form; `drafts/` and the
+  preview ship in the build until the logo is chosen and they are removed; the files follow the system's colour scheme,
+  not trove's theme button, because an `<img>` cannot read `data-theme`.
 - The type is the system font stack, not the humanist sans of the screens (Q-UI-88): no web font is shipped.
 - The vulnerability trend is the one chart; its series colours are tokens (`--trove-chart-*`). Another chart takes its series from the same family and adds its pairs to `palette.spec.ts`.
-- The example screens show no dialog, menu or form field; those take Material's components with the system colours above
-  (menus on the card fill, dialogs one step lighter), which no screen of the owner has confirmed yet.
+- The dialogs and menus still take Material's components with the system colours above (menus on the card fill, dialogs one
+  step lighter) until their turn in the move of Q-UI-126; no screen of the owner has confirmed their look yet.
 - The blue palette of Q-UI-96 has not been through the browser tier's axe run. axe checks text against the background it
   is rendered on; the computed pairs cover every surface the accent, the link and the containers sit on in the screens
   named above, but a component's own fill that is not in the list is covered only once the browser journeys run again.

@@ -12517,12 +12517,12 @@ components:
             $ref: "#/components/schemas/LoginProvider"
         localLogin:
           type: boolean
-          description: The break-glass form is offered on the page; it is reachable with `?local=1` regardless.
+          description: The break-glass form is offered on the page; it is reachable with `?auto_sign_in=false` regardless.
         anonymousAccess:
           type: boolean
         autoRedirect:
           type: [string, "null"]
-          description: The provider ID to redirect to at once; `null` shows the buttons.
+          description: The provider ID to redirect to at once; `null` shows the buttons. `?auto_sign_in=false` on the sign-in page waives the redirect.
       example:
         providers: [{id: corp, displayName: Corporate SSO, startUrl: /auth/oidc/corp/start, available: true}]
         localLogin: false

@@ -24,14 +24,16 @@ export type NavEntry = ({ readonly kind: 'item' } & NavItem) | ({ readonly kind:
 
 export interface NavArea {
   readonly id: 'content' | 'admin';
+  /** The title at the top of the sidebar while the area is shown. */
   readonly label: string;
   readonly entries: readonly NavEntry[];
 }
 
 /**
- * The information architecture of R-UI-002 (Q-UI-68): the areas **Packages and files** and
- * **Administration**; in the second, single entries (repositories, endpoints) and folding groups
- * (identity, access, system). Only the screens that exist in the current milestone are listed;
+ * The information architecture of R-UI-002 (Q-UI-68, Q-UI-127): the areas **Packages and files** and
+ * the **Admin area**, each with a sidebar of its own; the sidebar shows the area of the current route
+ * (`/admin/…` is the admin area), and the top bar's Admin button leads into it. In the admin area,
+ * single entries (repositories, endpoints) and folding groups (identity, access, system). Only the screens that exist in the current milestone are listed;
  * the capabilities are those of R-AUTHZ-010. The router and the API decide access, this only
  * hides entries (R-UI-005). A project administrator without any capability sees the Administration
  * area with the Projects entry only (R-UI-041). Packages, search and the other later screens are added by their
@@ -54,7 +56,7 @@ export const NAV_AREAS: readonly NavArea[] = [
   },
   {
     id: 'admin',
-    label: $localize`:@@nav.group.admin:Administration`,
+    label: $localize`:@@nav.context.admin:Admin area`,
     entries: [
       { kind: 'item', route: '/admin/projects', icon: 'folder_shared', label: $localize`:@@nav.projects:Projects`, capability: 'projects:read', projectAdmin: true },
       { kind: 'item', route: '/admin/repositories', icon: 'inventory_2', label: $localize`:@@nav.repositories:Repositories`, capability: 'repositories:read-config' },
@@ -124,4 +126,14 @@ export class Navigation {
       }))
       .filter((a) => a.entries.length > 0);
   });
+
+  /** The area a route belongs to: `/admin` and below is the admin area, everything else the content. */
+  static areaOf(url: string): NavArea['id'] {
+    return url === '/admin' || url.startsWith('/admin/') || url.startsWith('/admin?') ? 'admin' : 'content';
+  }
+
+  /** The entries of one area for the caller, or null when the caller has none of it. */
+  area(id: NavArea['id']): NavArea | null {
+    return this.areas().find((a) => a.id === id) ?? null;
+  }
 }

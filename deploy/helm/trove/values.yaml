@@ -323,6 +323,9 @@ config:
       max_size: 10GiB                   # must fit the spool
   metrics:
     auth: none                          # none | static (needs secrets.metricsToken)
+  auth:                                 # identity-and-authentication.md
+    login_page:
+      auto_redirect: true               # true: with exactly one OIDC provider the sign-in page goes straight to it; /ui/login?auto_sign_in=false still shows the page with the break-glass form. false: the page lists the providers
   # The vulnerability scanning (docs/spec/vulnerability-scanning.md). Every key has a default in the binary and
   # is rendered only when set here; the chart reads three of them: enabled, sources.osv.mode and sources.osv.max_archive_size
   # (the worker spool must hold one archive, validated), and stale_after (the threshold of TroveVulnerabilityDataStale).

@@ -1,194 +1,229 @@
-<a class="skip-link" href="#main" (click)="skipToMain($event)" i18n="@@shell.skip"
-  >Skip to main content</a
->
+@if (shell()) {
+  <a class="skip-link" href="#main" (click)="skipToMain($event)" i18n="@@shell.skip"
+    >Skip to main content</a
+  >
 
-<mat-toolbar class="header topbar">
-  @if (showNav() && !layout.pinned()) {
-    <button
-      mat-icon-button
-      type="button"
-      (click)="sidenav()?.toggle()"
-      i18n-aria-label="@@shell.menu"
-      aria-label="Open navigation"
-      [attr.aria-expanded]="sidenav()?.opened ?? false"
-    >
-      <span class="material-icons" aria-hidden="true">menu</span>
-    </button>
-  }
-  <a class="product" routerLink="/" translate="no">trove</a>
-  <span class="spacer"></span>
-
-  @if (canSearch()) {
-    <form
-      class="search"
-      role="search"
-      i18n-aria-label="@@shell.search.label"
-      aria-label="Find a repository"
-      (submit)="submitSearch($event)"
-    >
-      <label class="visually-hidden" for="global-search" i18n="@@shell.search.label"
-        >Find a repository</label
-      >
-      <span class="material-icons search-icon" aria-hidden="true">search</span>
-      <input
-        id="global-search"
-        type="search"
-        autocomplete="off"
-        spellcheck="false"
-        i18n-placeholder="@@shell.search.placeholder"
-        placeholder="Find a repository"
-        [value]="searchText()"
-        (input)="searchText.set($any($event.target).value)"
-      />
-    </form>
-  }
-
-  <div class="topbar-actions">
-    @if (projectFilter.visible()) {
-      <!-- The project filter of R-UI-041: the selection filters the repository and policy lists. -->
-      <button
-        mat-button
-        type="button"
-        class="project-button"
-        [matMenuTriggerFor]="projectMenu"
-      >
-        <span class="material-icons" aria-hidden="true">folder_shared</span>
-        @if (projectFilter.active(); as key) {
-          <span class="project-name" translate="no">{{ key }}</span>
-        } @else {
-          <span i18n="@@shell.project.all">All projects</span>
-        }
-        <span class="visually-hidden">&ngsp;<ng-container i18n="@@shell.project.menu">Project filter</ng-container></span>
-      </button>
-    }
-    @if (showNav()) {
-      <!-- The manual page of the current screen, or the overview of the help area (R-UI-050). -->
-      <a
-        mat-icon-button
-        class="topbar-icon"
-        [routerLink]="help()"
-        i18n-aria-label="@@shell.help"
-        aria-label="Help"
-        i18n-matTooltip="@@shell.help"
-        matTooltip="Help"
-      >
-        <span class="material-icons" aria-hidden="true">help_outline</span>
-      </a>
-    }
-    <button
-      mat-icon-button
-      type="button"
-      class="topbar-icon"
-      [matMenuTriggerFor]="themeMenu"
-      i18n-aria-label="@@shell.theme"
-      aria-label="Theme"
-      i18n-matTooltip="@@shell.theme"
-      matTooltip="Theme"
-    >
-      <span class="material-icons" aria-hidden="true">contrast</span>
-    </button>
-
-    @switch (session.state()) {
-      @case ('authenticated') {
+  <!-- The top bar (Q-UI-127): the mark and the sidebar toggle, the search in the middle, the actions at the end. -->
+  <header class="topbar">
+    <div class="topbar-start">
+      @if (showNav() && !sidebarOpen()) {
         <button
-          mat-button
           type="button"
-          class="user-button"
-          [matMenuTriggerFor]="userMenu"
+          class="btn btn-icon topbar-icon"
+          (click)="openSidebar()"
+          i18n-aria-label="@@shell.menu"
+          aria-label="Open navigation"
+          i18n-title="@@shell.menu"
+          title="Open navigation"
+          aria-controls="sidebar"
+          aria-expanded="false"
         >
-          <span class="avatar" aria-hidden="true" translate="no">{{ initial() }}</span>
-          <span class="user-name" translate="no">{{ session.whoami()?.principal?.name }}</span>
-          <!-- The visible name is the first part of the accessible name (WCAG 2.5.3, axe label-content-name-mismatch). -->
-          <span class="visually-hidden">&ngsp;<ng-container i18n="@@shell.user-menu">User menu</ng-container></span>
+          <span class="material-icons" aria-hidden="true">menu</span>
         </button>
       }
-      @case ('anonymous') {
-        <a mat-button routerLink="/login" i18n="@@shell.sign-in">Sign in</a>
-      }
+      <a class="product" routerLink="/">
+        <trove-mark class="product-mark" />
+        <span class="product-name" translate="no">trove</span>
+      </a>
+    </div>
+
+    @if (canSearch()) {
+      <form
+        class="search"
+        role="search"
+        i18n-aria-label="@@shell.search.label"
+        aria-label="Find a repository"
+        (submit)="submitSearch($event)"
+      >
+        <label class="visually-hidden" for="global-search" i18n="@@shell.search.label"
+          >Find a repository</label
+        >
+        <span class="material-icons search-icon" aria-hidden="true">search</span>
+        <input
+          id="global-search"
+          type="search"
+          autocomplete="off"
+          spellcheck="false"
+          i18n-placeholder="@@shell.search.placeholder"
+          placeholder="Find a repository"
+          [value]="searchText()"
+          (input)="searchText.set($any($event.target).value)"
+        />
+      </form>
+    } @else {
+      <span></span>
     }
-  </div>
-</mat-toolbar>
+
+    <div class="topbar-actions">
+      @if (projectFilter.visible()) {
+        <!-- The project filter of R-UI-041: the selection filters the repository and policy lists. -->
+        <button type="button" class="btn btn-tertiary project-button" [cdkMenuTriggerFor]="projectMenu">
+          <span class="material-icons" aria-hidden="true">folder_shared</span>
+          @if (projectFilter.active(); as key) {
+            <span class="project-name" translate="no">{{ key }}</span>
+          } @else {
+            <span i18n="@@shell.project.all">All projects</span>
+          }
+          <span class="visually-hidden">&ngsp;<ng-container i18n="@@shell.project.menu">Project filter</ng-container></span>
+        </button>
+      }
+      @if (session.hasAdminArea()) {
+        <!-- The way into the admin area, for those who have one (Q-UI-127). -->
+        <a
+          class="btn btn-default btn-sm admin-button"
+          routerLink="/admin"
+          [class.active]="area() === 'admin'"
+          [attr.aria-current]="area() === 'admin' ? 'true' : null"
+        >
+          <span class="material-icons" aria-hidden="true">build</span>
+          <span i18n="@@shell.admin">Admin</span>
+        </a>
+      }
+      @if (showNav()) {
+        <!-- The manual page of the current screen, or the overview of the help area (R-UI-050). -->
+        <a
+          class="btn btn-icon topbar-icon"
+          [routerLink]="help()"
+          i18n-aria-label="@@shell.help"
+          aria-label="Help"
+          i18n-title="@@shell.help"
+          title="Help"
+        >
+          <span class="material-icons" aria-hidden="true">help_outline</span>
+        </a>
+      }
+      <button
+        type="button"
+        class="btn btn-icon topbar-icon"
+        [cdkMenuTriggerFor]="themeMenu"
+        i18n-aria-label="@@shell.theme"
+        aria-label="Theme"
+        i18n-title="@@shell.theme"
+        title="Theme"
+      >
+        <span class="material-icons" aria-hidden="true">contrast</span>
+      </button>
+
+      @switch (session.state()) {
+        @case ('authenticated') {
+          <button type="button" class="user-button" [cdkMenuTriggerFor]="userMenu">
+            <span class="avatar" aria-hidden="true" translate="no">{{ initial() }}</span>
+            <!-- The name is the first part of the accessible name; the avatar shows its first letter. -->
+            <span class="visually-hidden"
+              ><span class="user-name" translate="no">{{ session.whoami()?.principal?.name }}</span
+              >&ngsp;<ng-container i18n="@@shell.user-menu">User menu</ng-container></span
+            >
+          </button>
+        }
+        @case ('anonymous') {
+          <a class="btn btn-default btn-sm" routerLink="/login" i18n="@@shell.sign-in">Sign in</a>
+        }
+      }
+    </div>
+  </header>
+}
 
 <!-- The selection is the `projectFilter` preference; "All projects" clears it. -->
-<mat-menu #projectMenu="matMenu" class="project-menu">
-  <button
-    mat-menu-item
-    type="button"
-    role="menuitemradio"
-    [attr.aria-checked]="projectFilter.active() === null"
-    (click)="setProject(null)"
-  >
-    <span class="material-icons" aria-hidden="true">{{ projectFilter.active() === null ? 'check' : 'folder_open' }}</span>
-    <span i18n="@@shell.project.all">All projects</span>
-  </button>
-  @for (p of projectFilter.projects(); track p.key) {
+<ng-template #projectMenu>
+  <div class="menu project-menu" cdkMenu>
     <button
-      mat-menu-item
       type="button"
-      role="menuitemradio"
-      [attr.aria-checked]="projectFilter.active() === p.key"
-      (click)="setProject(p.key)"
+      class="menu-item"
+      cdkMenuItemRadio
+      [cdkMenuItemChecked]="projectFilter.active() === null"
+      (cdkMenuItemTriggered)="setProject(null)"
     >
-      <span class="material-icons" aria-hidden="true">{{ projectFilter.active() === p.key ? 'check' : 'folder_open' }}</span>
-      <span translate="no">{{ p.displayName }} ({{ p.key }})</span>
+      <span class="material-icons" aria-hidden="true">{{ projectFilter.active() === null ? 'check' : 'folder_open' }}</span>
+      <span i18n="@@shell.project.all">All projects</span>
     </button>
-  }
-</mat-menu>
+    @for (p of projectFilter.projects(); track p.key) {
+      <button
+        type="button"
+        class="menu-item"
+        cdkMenuItemRadio
+        [cdkMenuItemChecked]="projectFilter.active() === p.key"
+        (cdkMenuItemTriggered)="setProject(p.key)"
+      >
+        <span class="material-icons" aria-hidden="true">{{ projectFilter.active() === p.key ? 'check' : 'folder_open' }}</span>
+        <span translate="no">{{ p.displayName }} ({{ p.key }})</span>
+      </button>
+    }
+  </div>
+</ng-template>
 
-<mat-menu #userMenu="matMenu">
-  <a mat-menu-item routerLink="/profile/tokens" i18n="@@shell.menu.profile">Profile and tokens</a>
-  <!-- >>> M2 ui-packages -->
-  <a mat-menu-item routerLink="/setup" i18n="@@shell.menu.setup">Client setup</a>
-  <!-- <<< M2 ui-packages -->
-  <button
-    mat-menu-item
-    type="button"
-    [matMenuTriggerFor]="languageMenu"
-    i18n="@@shell.menu.language"
-  >
-    Language
-  </button>
-  <button mat-menu-item type="button" (click)="signOut()" i18n="@@shell.menu.sign-out">
-    Sign out
-  </button>
-</mat-menu>
+<ng-template #userMenu>
+  <div class="menu" cdkMenu>
+    <p class="menu-heading" translate="no">{{ session.whoami()?.principal?.name }}</p>
+    <!-- Buttons, not links: a CDK menu item handles Enter itself and would keep a link from navigating. -->
+    <button type="button" class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="go('/profile/tokens')" i18n="@@shell.menu.profile">
+      Profile and tokens
+    </button>
+    <!-- >>> M2 ui-packages -->
+    <button type="button" class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="go('/setup')" i18n="@@shell.menu.setup">
+      Client setup
+    </button>
+    <!-- <<< M2 ui-packages -->
+    <button type="button" class="menu-item" cdkMenuItem [cdkMenuTriggerFor]="languageMenu">
+      <span i18n="@@shell.menu.language">Language</span>
+      <span class="material-icons menu-chevron" aria-hidden="true">chevron_right</span>
+    </button>
+    <div class="menu-divider" role="separator"></div>
+    <button type="button" class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="signOut()" i18n="@@shell.menu.sign-out">
+      Sign out
+    </button>
+  </div>
+</ng-template>
 
-<mat-menu #languageMenu="matMenu">
-  <button mat-menu-item type="button" lang="en" (click)="setLocale('en')">English</button>
-  <button mat-menu-item type="button" lang="de" (click)="setLocale('de')">Deutsch</button>
-</mat-menu>
+<ng-template #languageMenu>
+  <div class="menu" cdkMenu>
+    <button type="button" class="menu-item" cdkMenuItem lang="en" (cdkMenuItemTriggered)="setLocale('en')">English</button>
+    <button type="button" class="menu-item" cdkMenuItem lang="de" (cdkMenuItemTriggered)="setLocale('de')">Deutsch</button>
+  </div>
+</ng-template>
 
 <!-- The three choices of R-API-021 as radio items; the checked one is the current choice. -->
-<mat-menu #themeMenu="matMenu" class="theme-menu">
-  @for (t of themes; track t.value) {
-    <button
-      mat-menu-item
-      type="button"
-      role="menuitemradio"
-      [attr.aria-checked]="preferences.theme() === t.value"
-      (click)="setTheme(t.value)"
-    >
-      <span class="material-icons" aria-hidden="true">{{ preferences.theme() === t.value ? 'check' : t.icon }}</span>
-      <span>{{ t.label }}</span>
-    </button>
-  }
-</mat-menu>
+<ng-template #themeMenu>
+  <div class="menu theme-menu" cdkMenu>
+    @for (t of themes; track t.value) {
+      <button
+        type="button"
+        class="menu-item"
+        cdkMenuItemRadio
+        [cdkMenuItemChecked]="preferences.theme() === t.value"
+        (cdkMenuItemTriggered)="setTheme(t.value)"
+      >
+        <span class="material-icons" aria-hidden="true">{{ preferences.theme() === t.value ? 'check' : t.icon }}</span>
+        <span>{{ t.label }}</span>
+      </button>
+    }
+  </div>
+</ng-template>
 
-<mat-sidenav-container class="frame">
-  @if (showNav()) {
-    <mat-sidenav
-      #drawer
+<div class="frame" [class.bare-frame]="!shell()">
+  @if (shell() && showNav() && sidebarOpen()) {
+    @if (!layout.pinned()) {
+      <!-- The backdrop closes the drawer; outside the tab order, the keyboard uses Escape inside the drawer. -->
+      <button
+        type="button"
+        class="backdrop"
+        tabindex="-1"
+        (click)="closeSidebar()"
+        i18n-aria-label="@@shell.close-nav"
+        aria-label="Close navigation"
+      ></button>
+    }
+    <aside
+      id="sidebar"
       class="sidebar"
-      [class.rail]="rail()"
-      [mode]="layout.pinned() ? 'side' : 'over'"
-      [opened]="layout.pinned()"
-      [fixedInViewport]="false"
+      [class.drawer]="!layout.pinned()"
+      [cdkTrapFocus]="!layout.pinned()"
+      [cdkTrapFocusAutoCapture]="!layout.pinned()"
     >
-      <nav i18n-aria-label="@@shell.nav" aria-label="Main navigation">
-        @for (area of navigation.areas(); track area.id) {
-          <p class="area-title" [id]="'nav-' + area.id">{{ area.label }}</p>
-          <ul class="nav-list" [attr.aria-labelledby]="'nav-' + area.id">
-            @for (entry of area.entries; track entry.kind === 'group' ? entry.id : entry.route) {
+      @if (sidebarArea(); as a) {
+        <p class="context-title" [id]="'nav-' + a.id">{{ a.label }}</p>
+        <nav i18n-aria-label="@@shell.nav" aria-label="Main navigation">
+          <ul class="nav-list" [attr.aria-labelledby]="'nav-' + a.id">
+            @for (entry of a.entries; track entry.kind === 'group' ? entry.id : entry.route) {
               @if (entry.kind === 'item') {
                 <li>
                   <a
@@ -196,7 +231,7 @@
                     [routerLink]="entry.route"
                     routerLinkActive="active"
                     ariaCurrentWhenActive="page"
-                    (click)="closeDrawer(drawer)"
+                    (click)="closeDrawer()"
                   >
                     <span class="material-icons nav-icon" aria-hidden="true">{{ entry.icon }}</span>
                     <span class="nav-label">{{ entry.label }}</span>
@@ -218,7 +253,7 @@
                       navState.isOpen(entry.id) ? 'expand_less' : 'expand_more'
                     }}</span>
                   </button>
-                  <ul class="nav-list nested" [id]="'nav-group-' + entry.id" [hidden]="!rail() && !navState.isOpen(entry.id)">
+                  <ul class="nav-list nested" [id]="'nav-group-' + entry.id" [hidden]="!navState.isOpen(entry.id)">
                     @for (item of entry.items; track item.route) {
                       <li>
                         <a
@@ -226,7 +261,7 @@
                           [routerLink]="item.route"
                           routerLinkActive="active"
                           ariaCurrentWhenActive="page"
-                          (click)="closeDrawer(drawer)"
+                          (click)="closeDrawer()"
                         >
                           <span class="material-icons nav-icon" aria-hidden="true">{{ item.icon }}</span>
                           <span class="nav-label">{{ item.label }}</span>
@@ -238,27 +273,21 @@
               }
             }
           </ul>
-        }
-      </nav>
-      @if (layout.pinned()) {
-        <div class="sidebar-foot">
-          <button
-            type="button"
-            class="rail-toggle"
-            [attr.aria-pressed]="rail()"
-            (click)="navState.setRail(!rail())"
-          >
-            <span class="material-icons" aria-hidden="true">{{ rail() ? 'last_page' : 'first_page' }}</span>
-            <span class="nav-label" i18n="@@shell.rail">Compact navigation</span>
-          </button>
-        </div>
+        </nav>
       }
-    </mat-sidenav>
+      <div class="sidebar-foot">
+        <button type="button" class="nav-link collapse-toggle" (click)="closeSidebar()" aria-controls="sidebar">
+          <span class="material-icons nav-icon" aria-hidden="true">first_page</span>
+          <span class="nav-label" i18n="@@shell.collapse">Collapse sidebar</span>
+        </button>
+      </div>
+    </aside>
   }
 
-  <mat-sidenav-content>
-    <trove-banner />
-    <main #main id="main" tabindex="-1" class="content">
+  <!-- The content panel, set into the frame; one router outlet for both forms, so a screen is never created twice. -->
+  <div class="panel">
+    @if (shell()) {
+      <trove-banner />
       @if (breadcrumbs.trail().length > 0) {
         <nav class="breadcrumbs" i18n-aria-label="@@shell.breadcrumbs" aria-label="Breadcrumb">
           <ol>
@@ -274,12 +303,14 @@
           </ol>
         </nav>
       }
-      @if (loadFailure(); as failure) {
+    }
+    <main #main id="main" tabindex="-1" [class.content]="shell()" [class.bare]="!shell()">
+      @if (shell() && loadFailure(); as failure) {
         <trove-error-notice [error]="failure" (retry)="retrySession()" />
       }
       <router-outlet />
     </main>
-  </mat-sidenav-content>
-</mat-sidenav-container>
+  </div>
+</div>
 
 <trove-notices />

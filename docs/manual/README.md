@@ -59,6 +59,6 @@ sanitizer allowlist) and shown in the UI. That sets a few rules:
   by their absolute GitHub addresses. Links to upstream documentation (npm, Helm, PostgreSQL, RFCs) are absolute.
 - **No images and no raw HTML** other than `<details>` and `<summary>` for long reference blocks.
 - **English**, present tense, second person for instructions. UI labels in bold as the English UI shows them
-  (**Administration › Endpoints**). Values in configuration snippets are marked `# default` or `# example`.
+  (**Admin area › Endpoints**). Values in configuration snippets are marked `# default` or `# example`.
 - **Only what is built.** Every statement is checked against the code of this version. A feature that does not exist
   yet is not described as if it did; [Known limitations](admin/limitations.md) lists what is missing.

@@ -750,7 +750,8 @@ Priority: **MVP** · Covers: AUTHN-007, AUTHN-037
   set only when exactly one provider is configured and `auth.login_page.auto_redirect` is true.
 - `localLogin` is true only when the break-glass account is enabled and
   `auth.break_glass.show_on_login_page` is true. Independently of that, the local form at
-  `/ui/login?local=1` is reachable whenever the break-glass account is enabled (R-AUTH-014).
+  `/ui/login?auto_sign_in=false` is reachable whenever the break-glass account is enabled
+  (R-AUTH-014); the parameter also waives `auto_redirect` for that visit (Q-UI-125).
 
 Configuration:
 

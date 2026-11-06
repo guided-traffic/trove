@@ -1,4 +1,5 @@
 import { provideHttpClient } from '@angular/common/http';
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { MATERIAL_ANIMATIONS } from '@angular/material/core';
 import { Router, TitleStrategy, provideRouter, withComponentInputBinding } from '@angular/router';
@@ -10,6 +11,7 @@ import { ProjectsApi } from './api/projects-api';
 import { SessionApi } from './api/session-api';
 import { FakePreferencesApi, FakeSessionApi, provideFakeApis } from './api/testing/fakes';
 import { FakeProjectsApi, sampleProject } from './api/testing/fakes-projects';
+import { Layout } from './core/layout';
 import { BrowserStorage } from './core/storage';
 import { TroveTitleStrategy } from './core/title-strategy';
 import { seriousViolations } from './testing/axe';
@@ -27,6 +29,8 @@ async function render(url: string, me?: Me, setup?: (projects: FakeProjectsApi, 
       provideHttpClient(),
       ...provideFakeApis(),
       { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } },
+      // jsdom has no viewport: the sidebar is pinned.
+      { provide: Layout, useValue: { pinned: signal(true) } },
     ],
   }).compileComponents();
   if (me) (TestBed.inject(SessionApi) as FakeSessionApi).meResult = me;
@@ -53,9 +57,8 @@ const PROJECT_ADMIN: Me = {
 describe('The administration area for project administrators (R-UI-041, Q-AUTHZ-181)', () => {
   it('R-UI-041 a caller without any capability that administers a project sees the project screens only', async () => {
     const { root } = await render('/admin', PROJECT_ADMIN);
-    expect(root.querySelector('nav [id="nav-admin"]')?.textContent).toContain('Administration');
-    const admin = navLabels(root).filter((l) => !['Packages', 'Browse', 'Guides', 'Vulnerabilities'].includes(l));
-    expect(admin).toEqual(['Projects']);
+    expect(root.querySelector('#nav-admin')?.textContent).toContain('Admin area');
+    expect(navLabels(root)).toEqual(['Projects']);
     // /admin starts at the projects, because the repository list is not for this caller.
     expect(root.querySelector('main h1')?.textContent?.trim()).toBe('Projects');
     expect(await seriousViolations(root)).toEqual([]);
@@ -63,14 +66,15 @@ describe('The administration area for project administrators (R-UI-041, Q-AUTHZ-
 
   it('R-UI-041 a caller that administers no project and holds no capability sees no administration area', async () => {
     const { root } = await render('/browse', { roles: [], capabilities: [], principals: [], projects: [] });
-    expect(root.querySelector('nav [id="nav-admin"]')).toBeNull();
+    expect(root.querySelector('header a.admin-button')).toBeNull();
+    expect(root.querySelector('#nav-admin')).toBeNull();
   });
 
   it('R-UI-041 the administrator sees the projects next to the other entries; the auditor too', async () => {
-    const admin = await render('/browse');
+    const admin = await render('/admin/projects');
     expect(navLabels(admin.root)).toContain('Projects');
     expect(navLabels(admin.root)).toContain('Repositories');
-    const auditor = await render('/browse', {
+    const auditor = await render('/admin/audit', {
       roles: ['auditor'],
       capabilities: ['projects:read', 'repositories:read-config', 'audit:read'],
       principals: [],
@@ -80,7 +84,7 @@ describe('The administration area for project administrators (R-UI-041, Q-AUTHZ-
   });
 
   it('R-UI-041 a caller with capabilities but no project and no projects:read has no Projects entry', async () => {
-    const { root } = await render('/browse', { roles: [], capabilities: ['audit:read'], principals: [], projects: [] });
+    const { root } = await render('/admin/audit', { roles: [], capabilities: ['audit:read'], principals: [], projects: [] });
     expect(navLabels(root)).not.toContain('Projects');
   });
 });

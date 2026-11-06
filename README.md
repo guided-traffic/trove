@@ -699,7 +699,7 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/js
       export TROVE_TOKEN
 ```
 
-Verify with the claim tester (**Administration › CI identity**, the issuer, **Test with claims**) before the first pipeline runs, and with
+Verify with the claim tester (**Admin area › CI identity**, the issuer, **Test with claims**) before the first pipeline runs, and with
 `GET /api/v1/ci/issuances?jobId=<CI_JOB_ID>` afterwards.
 
 **5. Check the vulnerability scanning.** It is on by default; the `worker` fetches the advisory data on its first slot (every 15
@@ -1244,7 +1244,7 @@ auth:
     max_pending_flows: 100000           # default
     exempt_cidrs: []                    # default; example: ["10.42.0.0/24"]
   login_page:
-    auto_redirect: true                 # default: redirect to the provider when exactly one is configured
+    auto_redirect: true                 # default: redirect to the provider when exactly one is configured; /ui/login?auto_sign_in=false shows the page anyway
   oidc:
     providers: {}                       # default; a map keyed by the provider ID (example: corp)
     # per provider (no default in the tags; the doc of the field names R-AUTH-004, R-AUTH-007 and R-AUTH-008):
@@ -2071,7 +2071,7 @@ helm upgrade --install trove trove/trove -n trove -f values.yaml --set secrets.b
 kubectl -n trove get secret trove-break-glass -o jsonpath='{.data.password}' | base64 -d; echo
 ```
 
-Open `/ui/login?local=1` on the installation's base URL (trove redirects it to the negotiated locale, `/ui/<locale>/login?local=1`) and sign in as `admin` (`auth.break_glass.username`, default `admin`) with that
+Open `/ui/login?auto_sign_in=false` on the installation's base URL (trove redirects it to the negotiated locale, `/ui/<locale>/login?auto_sign_in=false`) and sign in as `admin` (`auth.break_glass.username`, default `admin`) with that
 password. Without the operator, `kubectl create secret generic trove-break-glass --from-literal=password="$(head -c 24 /dev/urandom | base64)"`
 does the same once.
 
@@ -2235,6 +2235,7 @@ requirement of the chart is [HA and Helm](docs/spec/ha-and-helm.md).
 |---|---|
 | `make build` | Static binary in `bin/trove` |
 | `make web` | Angular build into `internal/webui/dist/` (needs Node.js 26.13.0) |
+| `make ui-dev-up`, `make ui-dev-backend`, `make ui-dev-web`, `make ui-dev-down` | UI work with hot reload: backing containers, one trove on the host, the Angular dev server on `https://localhost:4200/ui/` ([local UI development](docs/developer/web-ui.md#local-ui-development)) |
 | `make generate`, `make generate-check` | Every `go:generate` directive; the check fails on any diff |
 | `make lint`, `make fmt` | `golangci-lint` and `go vet`; the formatters of `.golangci.yml` |
 | `make gosec` | gosec through the pinned golangci-lint, with the settings of `.golangci.yml` |

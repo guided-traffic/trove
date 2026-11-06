@@ -63,7 +63,7 @@ Open the user menu and select **Sign out**. trove ends your session, also in you
 
 ## The screen layout
 
-Every screen has a top bar, a side bar on the left, and the content area. Above the content, a breadcrumb trail shows where you are and links back to the screens above it. On a narrow screen the side bar is hidden and opens from the menu button.
+Every screen has a top bar, a side bar on the left, and the content area. At the top of the content, a breadcrumb trail shows where you are and links back to the screens above it. On a narrow screen the side bar is hidden and opens from the menu button.
 
 ### The top bar
 
@@ -71,21 +71,25 @@ From left to right:
 
 | Element | What it does |
 |---|---|
-| Menu button | Narrow screens only: opens the side bar |
+| Menu button | Opens the side bar when it is collapsed, or on a narrow screen |
 | **trove** | Returns to the start page, **Browse** |
-| **Find a repository** | Searches repositories by key and description and opens the matching list in **Administration › Repositories**. Shown only if you may read the configuration of repositories |
+| **Find a repository** | Searches repositories by key and description and opens the matching list in the admin area's **Repositories**. Shown only if you may read the configuration of repositories |
+| Project filter | Shown when projects exist and you may see them: limits the repository and policy lists to one project |
+| **Admin** | Opens the admin area. Shown only if you hold an administrative permission or administer a project |
 | **?** (**Help**) | Opens the help area with this manual. On a screen that has a matching manual page, it opens that page |
 | **Theme** | **Follow the system**, **Light** or **Dark** |
-| User menu | A round badge with your initial and your name. It holds **Profile and tokens**, **Client setup**, **Language** and **Sign out** |
+| User menu | A round badge with your initial. Its menu shows your name and holds **Profile and tokens**, **Client setup**, **Language** and **Sign out** |
 
 ### The side bar
 
+The side bar shows the area you are in:
+
 | Area | Entries | Who sees it |
 |---|---|---|
-| **Packages and files** | **Packages**, **Browse**, **Guides** | Everyone, anonymous readers included |
-| **Administration** | Repositories, endpoints, identity, access and system screens | Only people who hold an administrative permission, and only the entries they may use |
+| **Packages and files** | **Packages**, **Browse**, **Guides**, **Vulnerabilities** | Everyone, anonymous readers included |
+| **Admin area** | Projects, repositories, endpoints, Bastions, identity, access and system screens | Only people who hold an administrative permission or administer a project, and only the entries they may use. **Admin** in the top bar leads there, **trove** leads back |
 
-The side bar is pinned on wide screens. **Compact navigation** at its foot shrinks it to icons; trove remembers the choice in this browser. Groups such as **Identity** fold and unfold with a click on their heading.
+The side bar is pinned on wide screens. **Collapse sidebar** at its foot hides it, and the menu button in the top bar brings it back; trove remembers the choice in this browser. On a narrow screen it opens over the content and closes with Escape, a click beside it, or when you pick an entry. Groups such as **Identity** fold and unfold with a click on their heading.
 
 ## Language and theme
 

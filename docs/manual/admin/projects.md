@@ -58,7 +58,7 @@ Deleting a repository that a virtual repository outside the project lists is ref
 
 ## The Projects screen
 
-**Administration › Projects** lists **Key**, **Display name**, **Administrators**, **Repositories** and the **Switches** of each project, with a filter on key or name. An administrator of trove or a holder of the permission to read projects sees every project, the `auditor` read-only; a project administrator without any system role sees the projects it administers.
+**Admin area › Projects** lists **Key**, **Display name**, **Administrators**, **Repositories** and the **Switches** of each project, with a filter on key or name. An administrator of trove or a holder of the permission to read projects sees every project, the `auditor` read-only; a project administrator without any system role sees the projects it administers.
 
 ### Create or edit a project
 
@@ -92,7 +92,7 @@ When at least one project exists and you administer one or may read projects, th
 
 ## For a project administrator without a system role
 
-After you sign in, **Administration** shows **Projects** only. The global lists, such as **Permission policies**, **Users** and **Service accounts**, are not offered; a project's own policies and service accounts are on its page.
+After you sign in, **Admin** in the top bar leads to the **Admin area**, which shows **Projects** only. The global lists, such as **Permission policies**, **Users** and **Service accounts**, are not offered; a project's own policies and service accounts are on its page.
 
 ## When an action is refused
 

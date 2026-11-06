@@ -106,7 +106,7 @@ Every answer carries `X-Request-Id`. Problem answers repeat it as `requestId`, a
 
 ## System status
 
-**Administration › System › System status** (capability `settings:read`: roles `admin`, `security-admin`, `auditor`) refreshes every 15 seconds; **Pause automatic refresh** stops that.
+**Admin area › System › System status** (capability `settings:read`: roles `admin`, `security-admin`, `auditor`) refreshes every 15 seconds; **Pause automatic refresh** stops that.
 
 - A summary line: **All ready**, **Degraded** or **Replicas unready**, and **Not drain-safe** when a role has fewer than two ready replicas or all of them on one node.
 - **Installation**: version, **Base URL** and its source, and **Answered by**, the replica that answered. **Database**: server and schema version, and whether this build supports the schema.
@@ -124,7 +124,7 @@ The screen cannot see disruption budgets or free capacity on other nodes, becaus
 
 ## The audit log
 
-**Administration › System › Audit log** (capability `audit:read`: roles `admin`, `security-admin`, `auditor`) shows events newest first, by default of the last 24 hours. Filters: **Time range**, **Actor (name or ID)**, **Action** (an exact type or a prefix such as `token.*`), **Category**, **Repository** and **Outcome** (success, failure, denied). **Show times in UTC** switches the time zone. Selecting a row opens the event with its actor, token, resource, **Source address**, **Endpoint**, **Replica**, **Event ID**, **Trace ID** and details. **Export CSV** and **Export JSON Lines** download the current filter, oldest first, for a range of at most 400 days; every export is itself recorded as `audit.exported`. Reading the log is not recorded.
+**Admin area › System › Audit log** (capability `audit:read`: roles `admin`, `security-admin`, `auditor`) shows events newest first, by default of the last 24 hours. Filters: **Time range**, **Actor (name or ID)**, **Action** (an exact type or a prefix such as `token.*`), **Category**, **Repository** and **Outcome** (success, failure, denied). **Show times in UTC** switches the time zone. Selecting a row opens the event with its actor, token, resource, **Source address**, **Endpoint**, **Replica**, **Event ID**, **Trace ID** and details. **Export CSV** and **Export JSON Lines** download the current filter, oldest first, for a range of at most 400 days; every export is itself recorded as `audit.exported`. Reading the log is not recorded.
 
 <details>
 <summary>What is recorded</summary>

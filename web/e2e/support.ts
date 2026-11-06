@@ -153,7 +153,7 @@ export async function submitLocalForm(page: Page, submit: () => Promise<void>): 
 
 /** Signs in as the break-glass administrator with the local form and waits for the session. */
 export async function signInLocal(page: Page, ui = '/ui/en'): Promise<void> {
-  await page.goto(`${ui}/login?local=1`);
+  await page.goto(`${ui}/login?auto_sign_in=false`);
   await page.getByLabel(/Username|Benutzername/).fill('admin');
   await page.getByLabel(/Password|Passwort/).fill(breakGlassPassword);
   await submitLocalForm(page, () => page.locator('form.local button[type=submit]').click());

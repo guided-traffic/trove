@@ -22,8 +22,8 @@ async function render(url = '/', setup?: (api: FakeSessionApi) => void, pinned?:
       provideRouter(routes, withComponentInputBinding()),
       provideHttpClient(),
       ...provideFakeApis(),
-      // jsdom has no viewport: the specs that need the pinned sidebar say so.
-      ...(pinned === undefined ? [] : [{ provide: Layout, useValue: { pinned: signal(pinned) } }]),
+      // jsdom has no viewport: the sidebar is pinned unless a spec asks for the drawer.
+      { provide: Layout, useValue: { pinned: signal(pinned ?? true) } },
     ],
   }).compileComponents();
   setup?.(TestBed.inject(SessionApi) as FakeSessionApi);
@@ -36,7 +36,7 @@ async function render(url = '/', setup?: (api: FakeSessionApi) => void, pinned?:
 describe('App shell', () => {
   it('R-UI-002 renders header, navigation, main region and the first content screen', async () => {
     const { root } = await render();
-    expect(root.querySelector('mat-toolbar')?.textContent).toContain('trove');
+    expect(root.querySelector('header.topbar')?.textContent).toContain('trove');
     expect(root.querySelector('nav[aria-label]')).toBeTruthy();
     expect(root.querySelector('main#main')).toBeTruthy();
     expect(root.querySelector('main h1')?.textContent).toContain('Browse');
@@ -69,21 +69,34 @@ describe('App shell', () => {
     expect(root.querySelector('main h1')?.textContent).toContain('Page not found');
   });
 
-  it('R-UI-002 an administrator sees the Administration area, a user without capabilities does not', async () => {
+  it('R-UI-002 Q-UI-127 the admin area has a sidebar of its own behind the Admin button, which only its users see', async () => {
     const admin = await render();
-    expect(admin.root.querySelector('nav')?.textContent).toContain('Administration');
-    expect(admin.root.querySelector('nav')?.textContent).toContain('System status');
+    const sidebar = () => admin.root.querySelector('aside.sidebar')?.textContent ?? '';
+    expect(sidebar()).toContain('Packages and files');
+    expect(sidebar()).not.toContain('System status');
+    const button = admin.root.querySelector<HTMLAnchorElement>('header a.admin-button')!;
+    expect(button.getAttribute('href')).toBe('/admin');
+    expect(button.getAttribute('aria-current')).toBeNull();
+    await TestBed.inject(Router).navigateByUrl('/admin/system');
+    await admin.fixture.whenStable();
+    expect(sidebar()).toContain('Admin area');
+    expect(sidebar()).toContain('System status');
+    expect(sidebar()).not.toContain('Browse');
+    expect(button.getAttribute('aria-current')).toBe('true');
     TestBed.resetTestingModule();
 
     const plain = await render('/', (api) => (api.meResult = { capabilities: [] }));
-    expect(plain.root.querySelector('nav')?.textContent).toContain('Packages and files');
-    expect(plain.root.querySelector('nav')?.textContent).not.toContain('Administration');
+    expect(plain.root.querySelector('aside.sidebar')?.textContent).toContain('Packages and files');
+    expect(plain.root.querySelector('header a.admin-button')).toBeNull();
   });
 
-  it('R-UI-002 shows only the entries whose capability the caller holds', async () => {
-    const { root } = await render('/', (api) => (api.meResult = { capabilities: ['audit:read'] }));
-    const links = [...root.querySelectorAll('nav a .nav-label')].map((a) => a.textContent?.trim());
-    expect(links).toEqual(['Packages', 'Browse', 'Guides', 'Vulnerabilities', 'Audit log']);
+  it('R-UI-002 shows only the entries whose capability the caller holds, in each area', async () => {
+    const { fixture, root } = await render('/', (api) => (api.meResult = { capabilities: ['audit:read'] }));
+    const links = () => [...root.querySelectorAll('nav a .nav-label')].map((a) => a.textContent?.trim());
+    expect(links()).toEqual(['Packages', 'Browse', 'Guides', 'Vulnerabilities']);
+    await TestBed.inject(Router).navigateByUrl('/admin/audit');
+    await fixture.whenStable();
+    expect(links()).toEqual(['Audit log']);
   });
 
   it('R-UI-004 a missing session sends the caller to /login with the route as returnTo', async () => {
@@ -94,6 +107,34 @@ describe('App shell', () => {
     expect(router.url).toBe('/login?returnTo=%2Fadmin%2Fusers');
     expect(root.querySelector('main h1')?.textContent).toContain('Sign in');
     expect(TestBed.inject(SessionStore).state()).toBe('anonymous');
+  });
+
+  it('R-UI-004 Q-UI-125 the sign-in screen stands alone, whether opened directly or reached from a guarded route', async () => {
+    const shellOf = (root: HTMLElement) => ({
+      toolbar: root.querySelector('header.topbar') !== null,
+      sidebar: root.querySelector('aside.sidebar') !== null,
+      skipLink: root.querySelector('.skip-link') !== null,
+      heading: root.querySelector('main h1')?.textContent?.trim(),
+    });
+    const guarded = await render('/admin/users', (api) => {
+      api.whoamiResult = new ApiError(401, { code: 'unauthenticated' }, null);
+    });
+    const viaGuard = shellOf(guarded.root);
+    TestBed.resetTestingModule();
+    const direct = await render('/login');
+    expect(viaGuard).toEqual({ toolbar: false, sidebar: false, skipLink: false, heading: 'Sign in' });
+    expect(shellOf(direct.root)).toEqual(viaGuard);
+    expect(await seriousViolations(direct.root)).toEqual([]);
+  });
+
+  it('Q-UI-125 the signed-out screen stands alone, and the shell returns on the next screen', async () => {
+    const { root, fixture } = await render('/logged-out');
+    expect(root.querySelector('header.topbar')).toBeNull();
+    expect(root.querySelector('main h1')?.textContent).toContain('Signed out');
+    await TestBed.inject(Router).navigateByUrl('/admin/users');
+    await fixture.whenStable();
+    expect(root.querySelector('header.topbar')).toBeTruthy();
+    expect(root.querySelector('nav[aria-label]')).toBeTruthy();
   });
 
   it('R-UI-044 reports no serious accessibility violation on the shell', async () => {
@@ -126,7 +167,7 @@ describe('App shell', () => {
     await first.fixture.whenStable();
     const storage = new BrowserStorage();
     const key = storage.entries('local').find(([k]) => k.startsWith('trove.nav.'))![0];
-    expect(JSON.parse(storage.get('local', key)!)).toEqual({ rail: false, closed: ['identity'] });
+    expect(JSON.parse(storage.get('local', key)!)).toEqual({ collapsed: false, closed: ['identity'] });
     // Nothing of the layout is a secret (R-UI-043): the key carries the principal's name only.
     expect(key).toMatch(/^trove\.nav\.[^\s]+$/);
 
@@ -137,42 +178,50 @@ describe('App shell', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('R-UI-002 the pinned sidebar can be compacted to an icon rail that keeps every accessible name, and the choice is stored', async () => {
+  it('R-UI-002 Q-UI-127 the pinned sidebar can be collapsed and opened again from the top bar, and the choice is stored', async () => {
     const { fixture, root } = await render('/admin/users', undefined, true);
-    const sidebar = root.querySelector('mat-sidenav')!;
-    const rail = root.querySelector<HTMLButtonElement>('button.rail-toggle')!;
-    expect(rail.getAttribute('aria-pressed')).toBe('false');
-    expect(sidebar.classList.contains('rail')).toBe(false);
+    const open = () => root.querySelector<HTMLButtonElement>('header button[aria-label="Open navigation"]');
+    expect(root.querySelector('aside.sidebar')).toBeTruthy();
+    expect(open()).toBeNull();
 
-    rail.click();
+    [...root.querySelectorAll<HTMLButtonElement>('aside button')].find((b) => b.textContent?.includes('Collapse sidebar'))!.click();
     await fixture.whenStable();
-    expect(rail.getAttribute('aria-pressed')).toBe('true');
-    expect(sidebar.classList.contains('rail')).toBe(true);
-    expect(TestBed.inject(NavState).rail()).toBe(true);
-    // The labels are still in the document for assistive technology.
-    expect([...root.querySelectorAll('nav a .nav-label')].map((l) => l.textContent)).toContain('Users');
+    expect(root.querySelector('aside.sidebar')).toBeNull();
+    expect(TestBed.inject(NavState).collapsed()).toBe(true);
     expect(await seriousViolations(root)).toEqual([]);
+
+    open()!.click();
+    await fixture.whenStable();
+    expect(root.querySelector('aside.sidebar')).toBeTruthy();
+    expect(TestBed.inject(NavState).collapsed()).toBe(false);
   });
 
-  it('R-UI-002 below the pinned width there is no rail toggle and the menu button opens the drawer', async () => {
-    const { root } = await render('/', undefined, false);
-    expect(root.querySelector('button.rail-toggle')).toBeNull();
-    expect(root.querySelector('mat-toolbar button[aria-label="Open navigation"]')).toBeTruthy();
+  it('R-UI-002 below the pinned width the sidebar is a drawer: closed at first, opened from the top bar, closed by Escape', async () => {
+    const { fixture, root } = await render('/', undefined, false);
+    expect(root.querySelector('aside.sidebar')).toBeNull();
+    root.querySelector<HTMLButtonElement>('header button[aria-label="Open navigation"]')!.click();
+    await fixture.whenStable();
+    const drawer = root.querySelector<HTMLElement>('aside.sidebar.drawer')!;
+    expect(drawer).toBeTruthy();
+    expect(root.querySelector('.backdrop')).toBeTruthy();
+    drawer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await fixture.whenStable();
+    expect(root.querySelector('aside.sidebar')).toBeNull();
   });
 
   it('R-UI-002 the breadcrumb trail names the area and the screen and marks the current page', async () => {
     const { root } = await render('/admin/users');
-    const crumbs = root.querySelector('main nav[aria-label="Breadcrumb"]')!;
-    expect([...crumbs.querySelectorAll('li')].map((li) => li.textContent?.trim())).toEqual(['Administration', 'Users']);
+    const crumbs = root.querySelector('nav[aria-label="Breadcrumb"]')!;
+    expect([...crumbs.querySelectorAll('li')].map((li) => li.textContent?.trim())).toEqual(['Admin area', 'Users']);
     expect(crumbs.querySelector('[aria-current="page"]')?.textContent).toBe('Users');
     expect(crumbs.querySelectorAll('a')).toHaveLength(0);
   });
 
   it('R-UI-002 a detail screen links back to its list in the breadcrumb trail', async () => {
     const { root } = await render('/admin/users/alice');
-    const crumbs = root.querySelector('main nav[aria-label="Breadcrumb"]')!;
+    const crumbs = root.querySelector('nav[aria-label="Breadcrumb"]')!;
     expect([...crumbs.querySelectorAll('li')].map((li) => li.textContent?.trim())).toEqual([
-      'Administration',
+      'Admin area',
       'Users',
       'alice',
     ]);
@@ -181,7 +230,7 @@ describe('App shell', () => {
 
   it('R-UI-002 the repository search is offered to a caller who may list repositories and opens the list filtered', async () => {
     const { fixture, root } = await render();
-    const search = root.querySelector<HTMLFormElement>('mat-toolbar form[role="search"]')!;
+    const search = root.querySelector<HTMLFormElement>('header form[role="search"]')!;
     expect(search.querySelector('label')?.textContent).toContain('Find a repository');
     const input = search.querySelector<HTMLInputElement>('input')!;
     input.value = 'generic';
@@ -193,12 +242,12 @@ describe('App shell', () => {
 
   it('R-UI-005 the repository search is hidden from a caller without the capability behind it', async () => {
     const { root } = await render('/', (api) => (api.meResult = { capabilities: ['audit:read'] }));
-    expect(root.querySelector('mat-toolbar form[role="search"]')).toBeNull();
+    expect(root.querySelector('header form[role="search"]')).toBeNull();
   });
 
   it('R-UI-050 the help button opens the manual page of the current screen, or the overview', async () => {
     const { fixture, root } = await render('/admin/endpoints');
-    const help = () => root.querySelector<HTMLAnchorElement>('mat-toolbar a[aria-label="Help"]');
+    const help = () => root.querySelector<HTMLAnchorElement>('header a[aria-label="Help"]');
     expect(help()?.getAttribute('href')).toBe('/help/admin/endpoints');
     await TestBed.inject(Router).navigateByUrl('/browse');
     await fixture.whenStable();
@@ -206,14 +255,15 @@ describe('App shell', () => {
     await TestBed.inject(Router).navigateByUrl('/admin/system/jobs');
     await fixture.whenStable();
     expect(help()?.getAttribute('href')).toBe('/help/admin/operations');
-    await TestBed.inject(Router).navigateByUrl('/logged-out');
+    // A screen without a manual page of its own (here the not-found screen) opens the overview.
+    await TestBed.inject(Router).navigateByUrl('/no/such/page');
     await fixture.whenStable();
     expect(help()?.getAttribute('href')).toBe('/help');
   });
 
   it('R-API-021 the theme button offers the three choices, marks the current one and applies a choice', async () => {
     const { fixture, root } = await render();
-    const button = root.querySelector<HTMLButtonElement>('mat-toolbar button[aria-label="Theme"]')!;
+    const button = root.querySelector<HTMLButtonElement>('header button[aria-label="Theme"]')!;
     button.click();
     await fixture.whenStable();
     const items = () => [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')];
@@ -236,13 +286,13 @@ describe('App shell', () => {
 
   it('R-UI-002 the user menu shows the initial and the name; the theme is not in it any more', async () => {
     const { fixture, root } = await render();
-    const user = root.querySelector<HTMLButtonElement>('mat-toolbar .user-button')!;
+    const user = root.querySelector<HTMLButtonElement>('header .user-button')!;
     const name = user.querySelector('.user-name')?.textContent?.trim() ?? '';
     expect(user.querySelector('.avatar')?.textContent?.trim()).toBe(name.charAt(0));
     user.click();
     await fixture.whenStable();
-    const menu = [...document.querySelectorAll('.mat-mdc-menu-panel button, .mat-mdc-menu-panel a')].map((e) => e.textContent?.trim());
-    expect(menu).toContain('Language');
+    const menu = [...document.querySelectorAll('.menu [role="menuitem"]')].map((e) => e.textContent?.trim());
+    expect(menu.some((t) => t?.startsWith('Language'))).toBe(true);
     expect(menu).not.toContain('Theme');
   });
 });

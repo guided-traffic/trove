@@ -1,6 +1,6 @@
 import { expect, expectAccessible, signInLocal, test, unique } from '../support';
 
-// R-BAS-007 journey "Bastions" (R-BAS-049): an administrator opens Administration > Bastions, sees the last contact of the
+// R-BAS-007 journey "Bastions" (R-BAS-049): an administrator opens Admin area > Bastions, sees the last contact of the
 // replicas of the e2e Bastion, registers a Bastion, issues a token that expires in 20 days, copies it once, and sees the
 // warning mark on the token afterwards. The token's value is never shown again.
 

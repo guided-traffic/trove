@@ -15,7 +15,7 @@ Viewing configurations needs the capability `repositories:read-config`; creating
 
 ## The Repositories screen
 
-**Administration › Repositories** lists **Key**, **Format**, **Class**, **Description**, **Client address** (with **Copy client address**) and **Last activity**. Badges mark repositories that are **disabled** or **being deleted**. **Filters** narrow the list by **Key or description**, **Class**, **Format** and **State** (**Disabled only**). **Recently viewed** shows the repositories you opened last in this browser.
+**Admin area › Repositories** lists **Key**, **Format**, **Class**, **Description**, **Client address** (with **Copy client address**) and **Last activity**. Badges mark repositories that are **disabled** or **being deleted**. **Filters** narrow the list by **Key or description**, **Class**, **Format** and **State** (**Disabled only**). **Recently viewed** shows the repositories you opened last in this browser.
 
 Each row offers **Edit**, **Browse** and, with `repositories:write-config`, **Delete**. **Create repository** opens the wizard.
 

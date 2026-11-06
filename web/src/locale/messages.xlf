@@ -75,7 +75,7 @@
     </unit>
     <unit id="shell.skip">
       <notes>
-        <note category="location">src/app/app.html:2,5</note>
+        <note category="location">src/app/app.html:3,6</note>
       </notes>
       <segment>
         <source>Skip to main content</source>
@@ -83,7 +83,8 @@
     </unit>
     <unit id="shell.menu">
       <notes>
-        <note category="location">src/app/app.html:12,13</note>
+        <note category="location">src/app/app.html:15,16</note>
+        <note category="location">src/app/app.html:17,18</note>
       </notes>
       <segment>
         <source>Open navigation</source>
@@ -91,8 +92,8 @@
     </unit>
     <unit id="shell.search.label">
       <notes>
-        <note category="location">src/app/app.html:26,27</note>
-        <note category="location">src/app/app.html:30,32</note>
+        <note category="location">src/app/app.html:35,36</note>
+        <note category="location">src/app/app.html:39,41</note>
       </notes>
       <segment>
         <source>Find a repository</source>
@@ -100,7 +101,7 @@
     </unit>
     <unit id="shell.search.placeholder">
       <notes>
-        <note category="location">src/app/app.html:39,41</note>
+        <note category="location">src/app/app.html:48,50</note>
       </notes>
       <segment>
         <source>Find a repository</source>
@@ -108,8 +109,8 @@
     </unit>
     <unit id="shell.project.all">
       <notes>
-        <note category="location">src/app/app.html:59,61</note>
-        <note category="location">src/app/app.html:122,124</note>
+        <note category="location">src/app/app.html:65,67</note>
+        <note category="location">src/app/app.html:137,139</note>
       </notes>
       <segment>
         <source>All projects</source>
@@ -117,16 +118,24 @@
     </unit>
     <unit id="shell.project.menu">
       <notes>
-        <note category="location">src/app/app.html:61,62</note>
+        <note category="location">src/app/app.html:67,68</note>
       </notes>
       <segment>
         <source>Project filter</source>
       </segment>
     </unit>
+    <unit id="shell.admin">
+      <notes>
+        <note category="location">src/app/app.html:79,81</note>
+      </notes>
+      <segment>
+        <source>Admin</source>
+      </segment>
+    </unit>
     <unit id="shell.help">
       <notes>
-        <note category="location">src/app/app.html:72</note>
-        <note category="location">src/app/app.html:74,75</note>
+        <note category="location">src/app/app.html:89</note>
+        <note category="location">src/app/app.html:91,92</note>
       </notes>
       <segment>
         <source>Help</source>
@@ -134,8 +143,8 @@
     </unit>
     <unit id="shell.theme">
       <notes>
-        <note category="location">src/app/app.html:85</note>
-        <note category="location">src/app/app.html:87,88</note>
+        <note category="location">src/app/app.html:101</note>
+        <note category="location">src/app/app.html:103,104</note>
       </notes>
       <segment>
         <source>Theme</source>
@@ -143,7 +152,7 @@
     </unit>
     <unit id="shell.user-menu">
       <notes>
-        <note category="location">src/app/app.html:102,103</note>
+        <note category="location">src/app/app.html:114,115</note>
       </notes>
       <segment>
         <source>User menu</source>
@@ -151,7 +160,7 @@
     </unit>
     <unit id="shell.sign-in">
       <notes>
-        <note category="location">src/app/app.html:106,110</note>
+        <note category="location">src/app/app.html:119,122</note>
       </notes>
       <segment>
         <source>Sign in</source>
@@ -159,55 +168,63 @@
     </unit>
     <unit id="shell.menu.profile">
       <notes>
-        <note category="location">src/app/app.html:139,140</note>
+        <note category="location">src/app/app.html:159,161</note>
       </notes>
       <segment>
-        <source>Profile and tokens</source>
+        <source> Profile and tokens </source>
       </segment>
     </unit>
     <unit id="shell.menu.setup">
       <notes>
-        <note category="location">src/app/app.html:141,142</note>
+        <note category="location">src/app/app.html:163,165</note>
       </notes>
       <segment>
-        <source>Client setup</source>
+        <source> Client setup </source>
       </segment>
     </unit>
     <unit id="shell.menu.language">
       <notes>
-        <note category="location">src/app/app.html:149,151</note>
+        <note category="location">src/app/app.html:167,168</note>
       </notes>
       <segment>
-        <source> Language </source>
+        <source>Language</source>
       </segment>
     </unit>
     <unit id="shell.menu.sign-out">
       <notes>
-        <note category="location">src/app/app.html:152,156</note>
+        <note category="location">src/app/app.html:172,175</note>
       </notes>
       <segment>
         <source> Sign out </source>
       </segment>
     </unit>
+    <unit id="shell.close-nav">
+      <notes>
+        <note category="location">src/app/app.html:212,215</note>
+      </notes>
+      <segment>
+        <source>Close navigation</source>
+      </segment>
+    </unit>
     <unit id="shell.nav">
       <notes>
-        <note category="location">src/app/app.html:187,188</note>
+        <note category="location">src/app/app.html:224,225</note>
       </notes>
       <segment>
         <source>Main navigation</source>
       </segment>
     </unit>
-    <unit id="shell.rail">
+    <unit id="shell.collapse">
       <notes>
-        <note category="location">src/app/app.html:252,253</note>
+        <note category="location">src/app/app.html:281,283</note>
       </notes>
       <segment>
-        <source>Compact navigation</source>
+        <source>Collapse sidebar</source>
       </segment>
     </unit>
     <unit id="shell.breadcrumbs">
       <notes>
-        <note category="location">src/app/app.html:263,265</note>
+        <note category="location">src/app/app.html:292,294</note>
       </notes>
       <segment>
         <source>Breadcrumb</source>
@@ -216,19 +233,19 @@
     <unit id="nav.group.content">
       <notes>
         <note category="location">src/app/app.routes.ts:10</note>
-        <note category="location">src/app/core/navigation.ts:43</note>
+        <note category="location">src/app/core/navigation.ts:45</note>
       </notes>
       <segment>
         <source>Packages and files</source>
       </segment>
     </unit>
-    <unit id="nav.group.admin">
+    <unit id="nav.context.admin">
       <notes>
         <note category="location">src/app/app.routes.ts:11</note>
-        <note category="location">src/app/core/navigation.ts:57</note>
+        <note category="location">src/app/core/navigation.ts:59</note>
       </notes>
       <segment>
-        <source>Administration</source>
+        <source>Admin area</source>
       </segment>
     </unit>
     <unit id="route.login.title">
@@ -241,7 +258,7 @@
     </unit>
     <unit id="route.logged-out.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:31</note>
+        <note category="location">src/app/app.routes.ts:33</note>
       </notes>
       <segment>
         <source>Signed out</source>
@@ -249,8 +266,8 @@
     </unit>
     <unit id="nav.browse">
       <notes>
-        <note category="location">src/app/app.routes.ts:45</note>
-        <note category="location">src/app/core/navigation.ts:48</note>
+        <note category="location">src/app/app.routes.ts:48</note>
+        <note category="location">src/app/core/navigation.ts:50</note>
       </notes>
       <segment>
         <source>Browse</source>
@@ -258,8 +275,8 @@
     </unit>
     <unit id="nav.packages">
       <notes>
-        <note category="location">src/app/app.routes.ts:52</note>
-        <note category="location">src/app/core/navigation.ts:46</note>
+        <note category="location">src/app/app.routes.ts:55</note>
+        <note category="location">src/app/core/navigation.ts:48</note>
       </notes>
       <segment>
         <source>Packages</source>
@@ -267,8 +284,8 @@
     </unit>
     <unit id="nav.guides">
       <notes>
-        <note category="location">src/app/app.routes.ts:64</note>
-        <note category="location">src/app/core/navigation.ts:49</note>
+        <note category="location">src/app/app.routes.ts:67</note>
+        <note category="location">src/app/core/navigation.ts:51</note>
       </notes>
       <segment>
         <source>Guides</source>
@@ -276,7 +293,7 @@
     </unit>
     <unit id="route.help.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:72</note>
+        <note category="location">src/app/app.routes.ts:75</note>
         <note category="location">src/app/features/help/help.routes.ts:5</note>
       </notes>
       <segment>
@@ -285,7 +302,7 @@
     </unit>
     <unit id="route.vulnerabilities.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:79</note>
+        <note category="location">src/app/app.routes.ts:82</note>
         <note category="location">src/app/features/vulnerabilities/vulnerabilities.routes.ts:20</note>
       </notes>
       <segment>
@@ -294,7 +311,7 @@
     </unit>
     <unit id="route.profile.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:86</note>
+        <note category="location">src/app/app.routes.ts:89</note>
         <note category="location">src/app/features/profile/profile.routes.ts:7</note>
       </notes>
       <segment>
@@ -303,7 +320,7 @@
     </unit>
     <unit id="route.projects.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:97</note>
+        <note category="location">src/app/app.routes.ts:100</note>
         <note category="location">src/app/features/projects/projects.routes.ts:10</note>
       </notes>
       <segment>
@@ -312,7 +329,7 @@
     </unit>
     <unit id="route.repositories.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:102</note>
+        <note category="location">src/app/app.routes.ts:105</note>
         <note category="location">src/app/features/repositories/repositories.routes.ts:8</note>
       </notes>
       <segment>
@@ -321,7 +338,7 @@
     </unit>
     <unit id="route.users.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:108</note>
+        <note category="location">src/app/app.routes.ts:111</note>
         <note category="location">src/app/features/users/users.routes.ts:7</note>
       </notes>
       <segment>
@@ -330,7 +347,7 @@
     </unit>
     <unit id="route.groups.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:113</note>
+        <note category="location">src/app/app.routes.ts:116</note>
         <note category="location">src/app/features/groups/groups.routes.ts:7</note>
       </notes>
       <segment>
@@ -339,7 +356,7 @@
     </unit>
     <unit id="route.service-accounts.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:118</note>
+        <note category="location">src/app/app.routes.ts:121</note>
         <note category="location">src/app/features/service-accounts/service-accounts.routes.ts:7</note>
       </notes>
       <segment>
@@ -348,7 +365,7 @@
     </unit>
     <unit id="route.permissions.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:126</note>
+        <note category="location">src/app/app.routes.ts:129</note>
         <note category="location">src/app/features/permissions/permissions.routes.ts:7</note>
       </notes>
       <segment>
@@ -357,7 +374,7 @@
     </unit>
     <unit id="route.roles.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:132</note>
+        <note category="location">src/app/app.routes.ts:135</note>
         <note category="location">src/app/features/roles/roles.routes.ts:7</note>
       </notes>
       <segment>
@@ -366,7 +383,7 @@
     </unit>
     <unit id="route.tokens.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:137</note>
+        <note category="location">src/app/app.routes.ts:140</note>
         <note category="location">src/app/features/tokens/tokens.routes.ts:7</note>
       </notes>
       <segment>
@@ -375,7 +392,7 @@
     </unit>
     <unit id="route.ci.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:143</note>
+        <note category="location">src/app/app.routes.ts:146</note>
         <note category="location">src/app/features/ci/ci.routes.ts:13</note>
       </notes>
       <segment>
@@ -384,7 +401,7 @@
     </unit>
     <unit id="route.bastions.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:150</note>
+        <note category="location">src/app/app.routes.ts:153</note>
         <note category="location">src/app/features/bastions/bastions.routes.ts:7</note>
       </notes>
       <segment>
@@ -393,7 +410,7 @@
     </unit>
     <unit id="route.endpoints.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:156</note>
+        <note category="location">src/app/app.routes.ts:159</note>
         <note category="location">src/app/features/endpoints/endpoints.routes.ts:8</note>
       </notes>
       <segment>
@@ -402,7 +419,7 @@
     </unit>
     <unit id="route.audit.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:162</note>
+        <note category="location">src/app/app.routes.ts:165</note>
         <note category="location">src/app/features/audit/audit.routes.ts:7</note>
       </notes>
       <segment>
@@ -411,7 +428,7 @@
     </unit>
     <unit id="route.system.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:167</note>
+        <note category="location">src/app/app.routes.ts:170</note>
         <note category="location">src/app/features/system/system.routes.ts:8</note>
       </notes>
       <segment>
@@ -420,8 +437,8 @@
     </unit>
     <unit id="nav.settings">
       <notes>
-        <note category="location">src/app/app.routes.ts:172</note>
-        <note category="location">src/app/core/navigation.ts:98</note>
+        <note category="location">src/app/app.routes.ts:175</note>
+        <note category="location">src/app/core/navigation.ts:100</note>
       </notes>
       <segment>
         <source>Settings</source>
@@ -429,7 +446,7 @@
     </unit>
     <unit id="route.notfound.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:182</note>
+        <note category="location">src/app/app.routes.ts:185</note>
       </notes>
       <segment>
         <source>Page not found</source>
@@ -437,7 +454,7 @@
     </unit>
     <unit id="shell.theme.system">
       <notes>
-        <note category="location">src/app/app.ts:97</note>
+        <note category="location">src/app/app.ts:137</note>
       </notes>
       <segment>
         <source>Follow the system</source>
@@ -445,7 +462,7 @@
     </unit>
     <unit id="shell.theme.light">
       <notes>
-        <note category="location">src/app/app.ts:98</note>
+        <note category="location">src/app/app.ts:138</note>
       </notes>
       <segment>
         <source>Light</source>
@@ -453,7 +470,7 @@
     </unit>
     <unit id="shell.theme.dark">
       <notes>
-        <note category="location">src/app/app.ts:99</note>
+        <note category="location">src/app/app.ts:139</note>
       </notes>
       <segment>
         <source>Dark</source>
@@ -1573,7 +1590,7 @@
     </unit>
     <unit id="nav.vulnerabilities">
       <notes>
-        <note category="location">src/app/core/navigation.ts:51</note>
+        <note category="location">src/app/core/navigation.ts:53</note>
       </notes>
       <segment>
         <source>Vulnerabilities</source>
@@ -1581,7 +1598,7 @@
     </unit>
     <unit id="nav.projects">
       <notes>
-        <note category="location">src/app/core/navigation.ts:59</note>
+        <note category="location">src/app/core/navigation.ts:61</note>
       </notes>
       <segment>
         <source>Projects</source>
@@ -1589,7 +1606,7 @@
     </unit>
     <unit id="nav.repositories">
       <notes>
-        <note category="location">src/app/core/navigation.ts:60</note>
+        <note category="location">src/app/core/navigation.ts:62</note>
       </notes>
       <segment>
         <source>Repositories</source>
@@ -1597,7 +1614,7 @@
     </unit>
     <unit id="nav.endpoints">
       <notes>
-        <note category="location">src/app/core/navigation.ts:61</note>
+        <note category="location">src/app/core/navigation.ts:63</note>
       </notes>
       <segment>
         <source>Endpoints</source>
@@ -1605,7 +1622,7 @@
     </unit>
     <unit id="nav.bastions">
       <notes>
-        <note category="location">src/app/core/navigation.ts:63</note>
+        <note category="location">src/app/core/navigation.ts:65</note>
       </notes>
       <segment>
         <source>Bastions</source>
@@ -1613,7 +1630,7 @@
     </unit>
     <unit id="nav.section.identity">
       <notes>
-        <note category="location">src/app/core/navigation.ts:69</note>
+        <note category="location">src/app/core/navigation.ts:71</note>
       </notes>
       <segment>
         <source>Identity</source>
@@ -1621,7 +1638,7 @@
     </unit>
     <unit id="nav.users">
       <notes>
-        <note category="location">src/app/core/navigation.ts:71</note>
+        <note category="location">src/app/core/navigation.ts:73</note>
       </notes>
       <segment>
         <source>Users</source>
@@ -1629,7 +1646,7 @@
     </unit>
     <unit id="nav.groups">
       <notes>
-        <note category="location">src/app/core/navigation.ts:72</note>
+        <note category="location">src/app/core/navigation.ts:74</note>
       </notes>
       <segment>
         <source>Groups</source>
@@ -1637,7 +1654,7 @@
     </unit>
     <unit id="nav.service-accounts">
       <notes>
-        <note category="location">src/app/core/navigation.ts:73</note>
+        <note category="location">src/app/core/navigation.ts:75</note>
       </notes>
       <segment>
         <source>Service accounts</source>
@@ -1645,7 +1662,7 @@
     </unit>
     <unit id="nav.tokens">
       <notes>
-        <note category="location">src/app/core/navigation.ts:74</note>
+        <note category="location">src/app/core/navigation.ts:76</note>
       </notes>
       <segment>
         <source>Tokens</source>
@@ -1653,7 +1670,7 @@
     </unit>
     <unit id="nav.ci">
       <notes>
-        <note category="location">src/app/core/navigation.ts:76</note>
+        <note category="location">src/app/core/navigation.ts:78</note>
       </notes>
       <segment>
         <source>CI identity</source>
@@ -1661,7 +1678,7 @@
     </unit>
     <unit id="nav.section.access">
       <notes>
-        <note category="location">src/app/core/navigation.ts:84</note>
+        <note category="location">src/app/core/navigation.ts:86</note>
       </notes>
       <segment>
         <source>Access</source>
@@ -1669,7 +1686,7 @@
     </unit>
     <unit id="nav.permissions">
       <notes>
-        <note category="location">src/app/core/navigation.ts:86</note>
+        <note category="location">src/app/core/navigation.ts:88</note>
       </notes>
       <segment>
         <source>Permission policies</source>
@@ -1677,7 +1694,7 @@
     </unit>
     <unit id="nav.roles">
       <notes>
-        <note category="location">src/app/core/navigation.ts:87</note>
+        <note category="location">src/app/core/navigation.ts:89</note>
       </notes>
       <segment>
         <source>System roles</source>
@@ -1685,7 +1702,7 @@
     </unit>
     <unit id="nav.section.system">
       <notes>
-        <note category="location">src/app/core/navigation.ts:94</note>
+        <note category="location">src/app/core/navigation.ts:96</note>
       </notes>
       <segment>
         <source>System</source>
@@ -1693,7 +1710,7 @@
     </unit>
     <unit id="nav.system">
       <notes>
-        <note category="location">src/app/core/navigation.ts:96</note>
+        <note category="location">src/app/core/navigation.ts:98</note>
       </notes>
       <segment>
         <source>System status</source>
@@ -1701,7 +1718,7 @@
     </unit>
     <unit id="nav.audit">
       <notes>
-        <note category="location">src/app/core/navigation.ts:97</note>
+        <note category="location">src/app/core/navigation.ts:99</note>
       </notes>
       <segment>
         <source>Audit log</source>
@@ -9185,7 +9202,7 @@
     </unit>
     <unit id="loggedout.heading">
       <notes>
-        <note category="location">src/app/features/login/logged-out.ts:15,16</note>
+        <note category="location">src/app/features/login/logged-out.ts:17,18</note>
       </notes>
       <segment>
         <source>Signed out</source>
@@ -9193,7 +9210,7 @@
     </unit>
     <unit id="loggedout.text">
       <notes>
-        <note category="location">src/app/features/login/logged-out.ts:16,17</note>
+        <note category="location">src/app/features/login/logged-out.ts:18,19</note>
       </notes>
       <segment>
         <source>You have been signed out.</source>
@@ -9201,7 +9218,7 @@
     </unit>
     <unit id="loggedout.again">
       <notes>
-        <note category="location">src/app/features/login/logged-out.ts:17,20</note>
+        <note category="location">src/app/features/login/logged-out.ts:20,24</note>
       </notes>
       <segment>
         <source>Sign in again</source>
@@ -9209,7 +9226,7 @@
     </unit>
     <unit id="login.heading">
       <notes>
-        <note category="location">src/app/features/login/login.ts:25,27</note>
+        <note category="location">src/app/features/login/login.ts:29,31</note>
       </notes>
       <segment>
         <source>Sign in</source>
@@ -9217,7 +9234,7 @@
     </unit>
     <unit id="login.reauth">
       <notes>
-        <note category="location">src/app/features/login/login.ts:29,33</note>
+        <note category="location">src/app/features/login/login.ts:33,35</note>
       </notes>
       <segment>
         <source> The action you tried needs a recent sign-in. Sign in again, then repeat it. Your entries are kept. </source>
@@ -9225,7 +9242,7 @@
     </unit>
     <unit id="login.loading">
       <notes>
-        <note category="location">src/app/features/login/login.ts:36,37</note>
+        <note category="location">src/app/features/login/login.ts:40,41</note>
       </notes>
       <segment>
         <source>Loading the sign-in options.</source>
@@ -9233,7 +9250,7 @@
     </unit>
     <unit id="login.redirecting">
       <notes>
-        <note category="location">src/app/features/login/login.ts:39,41</note>
+        <note category="location">src/app/features/login/login.ts:43,45</note>
       </notes>
       <segment>
         <source>Redirecting to the identity provider.</source>
@@ -9241,39 +9258,15 @@
     </unit>
     <unit id="login.no-providers">
       <notes>
-        <note category="location">src/app/features/login/login.ts:42,44</note>
+        <note category="location">src/app/features/login/login.ts:46,49</note>
       </notes>
       <segment>
         <source>No sign-in method is configured.</source>
       </segment>
     </unit>
-    <unit id="login.with">
-      <notes>
-        <note category="location">src/app/features/login/login.ts:53,54</note>
-      </notes>
-      <segment>
-        <source>Sign in with</source>
-      </segment>
-    </unit>
-    <unit id="login.unavailable">
-      <notes>
-        <note category="location">src/app/features/login/login.ts:57,59</note>
-      </notes>
-      <segment>
-        <source>Currently unavailable</source>
-      </segment>
-    </unit>
-    <unit id="login.anonymous">
-      <notes>
-        <note category="location">src/app/features/login/login.ts:65,68</note>
-      </notes>
-      <segment>
-        <source>Continue without signing in</source>
-      </segment>
-    </unit>
     <unit id="login.local.heading">
       <notes>
-        <note category="location">src/app/features/login/login.ts:71,72</note>
+        <note category="location">src/app/features/login/login.ts:53,54</note>
       </notes>
       <segment>
         <source>Local administrator</source>
@@ -9281,7 +9274,7 @@
     </unit>
     <unit id="login.local.username">
       <notes>
-        <note category="location">src/app/features/login/login.ts:73,75</note>
+        <note category="location">src/app/features/login/login.ts:57,59</note>
       </notes>
       <segment>
         <source>Username</source>
@@ -9289,7 +9282,7 @@
     </unit>
     <unit id="login.local.password">
       <notes>
-        <note category="location">src/app/features/login/login.ts:83,85</note>
+        <note category="location">src/app/features/login/login.ts:68,70</note>
       </notes>
       <segment>
         <source>Password</source>
@@ -9297,10 +9290,42 @@
     </unit>
     <unit id="login.local.submit">
       <notes>
-        <note category="location">src/app/features/login/login.ts:97,98</note>
+        <note category="location">src/app/features/login/login.ts:83,84</note>
       </notes>
       <segment>
         <source> Sign in </source>
+      </segment>
+    </unit>
+    <unit id="login.or">
+      <notes>
+        <note category="location">src/app/features/login/login.ts:90,91</note>
+      </notes>
+      <segment>
+        <source>or sign in with</source>
+      </segment>
+    </unit>
+    <unit id="login.with">
+      <notes>
+        <note category="location">src/app/features/login/login.ts:105,106</note>
+      </notes>
+      <segment>
+        <source>Sign in with</source>
+      </segment>
+    </unit>
+    <unit id="login.unavailable">
+      <notes>
+        <note category="location">src/app/features/login/login.ts:110,112</note>
+      </notes>
+      <segment>
+        <source>Currently unavailable</source>
+      </segment>
+    </unit>
+    <unit id="login.anonymous">
+      <notes>
+        <note category="location">src/app/features/login/login.ts:119,121</note>
+      </notes>
+      <segment>
+        <source>Continue without signing in</source>
       </segment>
     </unit>
     <unit id="notfound.heading">

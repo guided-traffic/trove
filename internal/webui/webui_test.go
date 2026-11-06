@@ -239,7 +239,7 @@ func TestLocaleRedirects(t *testing.T) {
 		{"R-UI-001 /ui/ lands on the negotiated locale", "/ui/", "de-DE,de;q=0.9,en;q=0.5", "/ui/de/"},
 		{"R-UI-001 without a matching language the default applies", "/ui/", "fr-FR,fr;q=0.9", "/ui/en/"},
 		{"R-UI-001 without Accept-Language the default applies", "/ui/", "", "/ui/en/"},
-		{"R-UI-001 a route without locale keeps route and query", "/ui/login?local=1", "de", "/ui/de/login?local=1"},
+		{"R-UI-001 a route without locale keeps route and query", "/ui/login?auto_sign_in=false", "de", "/ui/de/login?auto_sign_in=false"},
 		{"R-UI-001 a locale without trailing slash gets one", "/ui/de?x=1", "en", "/ui/de/?x=1"},
 		{"R-UI-001 q-values order the languages", "/ui/admin/jobs", "en;q=0.3, de;q=0.8", "/ui/de/admin/jobs"},
 	}

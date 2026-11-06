@@ -20,14 +20,14 @@ async function trailAt(url: string) {
 describe('Breadcrumbs', () => {
   it('R-UI-002 a list screen reads area, then screen; the area is a name without a link', async () => {
     expect(await trailAt('/admin/repositories')).toEqual([
-      { label: 'Administration', link: null, literal: false },
+      { label: 'Admin area', link: null, literal: false },
       { label: 'Repositories', link: '//admin/repositories', literal: false },
     ]);
   });
 
   it('R-UI-002 a detail screen shows the parameter value, not the generic route title, and links the list', async () => {
     expect(await trailAt('/admin/repositories/my-repo')).toEqual([
-      { label: 'Administration', link: null, literal: false },
+      { label: 'Admin area', link: null, literal: false },
       { label: 'Repositories', link: '//admin/repositories', literal: false },
       { label: 'my-repo', link: '//admin/repositories/my-repo', literal: true },
     ]);
@@ -35,18 +35,18 @@ describe('Breadcrumbs', () => {
 
   it('R-UI-002 a literal child route such as "new" uses its title', async () => {
     const trail = await trailAt('/admin/repositories/new');
-    expect(trail.map((c) => c.label)).toEqual(['Administration', 'Repositories', 'New repository']);
+    expect(trail.map((c) => c.label)).toEqual(['Admin area', 'Repositories', 'New repository']);
   });
 
   it('R-UI-002 a multi-segment route skips the fixed word and keeps the parameters', async () => {
     expect((await trailAt('/admin/endpoints/customers/rules/docs')).map((c) => c.label)).toEqual([
-      'Administration',
+      'Admin area',
       'Endpoints',
       'customers',
       'docs',
     ]);
     expect((await trailAt('/admin/endpoints/customers/rules/new')).map((c) => c.label)).toEqual([
-      'Administration',
+      'Admin area',
       'Endpoints',
       'customers',
       'New exposure rule',
@@ -70,7 +70,7 @@ describe('Breadcrumbs', () => {
   });
 
   it('R-UI-002 a nested system screen reads area, screen group, screen', async () => {
-    expect((await trailAt('/admin/system/jobs')).map((c) => c.label)).toEqual(['Administration', 'System status', 'Jobs']);
+    expect((await trailAt('/admin/system/jobs')).map((c) => c.label)).toEqual(['Admin area', 'System status', 'Jobs']);
   });
 
   it('R-UI-002 a trail of one step is left out because it repeats the page title', async () => {

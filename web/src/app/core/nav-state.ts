@@ -3,16 +3,16 @@ import { SessionStore } from './session-store';
 import { BrowserStorage } from './storage';
 
 interface StoredNavState {
-  /** True when the sidebar is the narrow icon rail. */
-  readonly rail: boolean;
+  /** True when the viewer collapsed the pinned sidebar (Q-UI-127). */
+  readonly collapsed: boolean;
   /** Ids of the groups the viewer folded. */
   readonly closed: readonly string[];
 }
 
-const EMPTY: StoredNavState = { rail: false, closed: [] };
+const EMPTY: StoredNavState = { collapsed: false, closed: [] };
 
 /**
- * How the viewer left the navigation sidebar (R-UI-002, Q-UI-68): compact rail or full width, and
+ * How the viewer left the navigation sidebar (R-UI-002, Q-UI-68, Q-UI-127): shown or collapsed, and
  * which groups are folded. Non-secret convenience data in browser storage, keyed by the signed-in
  * principal so that two people on one browser keep their own layout (R-UI-043); when storage is
  * blocked the state lasts for the tab only.
@@ -28,8 +28,8 @@ export class NavState {
     return name ? `trove.nav.${name}` : null;
   });
 
-  /** The sidebar is the icon rail. Only honoured where the sidebar is pinned. */
-  readonly rail = computed(() => this.state().rail);
+  /** The viewer collapsed the sidebar. Only honoured where the sidebar is pinned; the drawer starts closed. */
+  readonly collapsed = computed(() => this.state().collapsed);
 
   constructor() {
     effect(() => {
@@ -38,8 +38,8 @@ export class NavState {
     });
   }
 
-  setRail(rail: boolean): void {
-    this.update({ ...this.state(), rail });
+  setCollapsed(collapsed: boolean): void {
+    this.update({ ...this.state(), collapsed });
   }
 
   isOpen(groupId: string): boolean {
@@ -48,7 +48,9 @@ export class NavState {
 
   toggleGroup(groupId: string): void {
     const s = this.state();
-    const closed = s.closed.includes(groupId) ? s.closed.filter((id) => id !== groupId) : [...s.closed, groupId];
+    const closed = s.closed.includes(groupId)
+      ? s.closed.filter((id) => id !== groupId)
+      : [...s.closed, groupId];
     this.update({ ...s, closed });
   }
 
@@ -62,10 +64,12 @@ export class NavState {
     try {
       const parsed: unknown = JSON.parse(this.storage.get('local', key) ?? 'null');
       if (typeof parsed !== 'object' || parsed === null) return EMPTY;
-      const { rail, closed } = parsed as Record<string, unknown>;
+      const { collapsed, closed } = parsed as Record<string, unknown>;
       return {
-        rail: rail === true,
-        closed: Array.isArray(closed) ? closed.filter((c): c is string => typeof c === 'string') : [],
+        collapsed: collapsed === true,
+        closed: Array.isArray(closed)
+          ? closed.filter((c): c is string => typeof c === 'string')
+          : [],
       };
     } catch {
       return EMPTY;

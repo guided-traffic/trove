@@ -2443,7 +2443,7 @@ Priority: **MVP** · Covers: UI-058
   page adds:
   - the UI lives under `/ui/{locale}/` (R-UI-045); `/` redirects to `/ui/`, and `/ui/` as well as
     any `/ui/<route>` without a locale redirects to the same route under the preferred locale, so
-    links such as `/ui/login?local=1` of [identity-and-authentication.md](identity-and-authentication.md)
+    links such as `/ui/login?auto_sign_in=false` of [identity-and-authentication.md](identity-and-authentication.md)
     keep working;
   - `index.html` gets a per-response CSP nonce as the `ngCspNonce` attribute of the root element,
     which Angular applies to the styles it inserts.
@@ -2515,37 +2515,42 @@ Acceptance criteria:
 ### R-UI-002 · Application shell
 Priority: **MVP** · Covers: UI-001, UI-004
 
-- Top bar (slim, dark in both colour schemes, Q-UI-68, in the colours of the design language, Q-UI-88): the
-  product name, a repository search field, the help button, the theme button and the user menu. The search
+- Top bar (slim, on one fill with the side bar, Q-UI-127, in the colours of the design language, Q-UI-88): the
+  mark and the product name, a repository search field in the middle, the project filter, the **Admin** button (shown
+  to a caller who has the admin area; it leads into it and is pressed while it is open), the help button, the theme
+  button and the user menu. The search
   field takes a text and opens the repository list (R-UI-020) filtered by it; it is shown only to a caller who
   holds `repositories:read-config`, because that list is the API behind it. The help button ("?", R-UI-050) opens
   the manual page of the current screen, or the overview of the help area (Q-UI-90). The theme button offers
-  "Follow the system", "Light" and "Dark" as radio items (R-API-021); the user menu shows a round badge with the
-  first letter of the name beside the name and holds profile, client setup, language and sign-out. The global
+  "Follow the system", "Light" and "Dark" as radio items (R-API-021); the user menu is a round badge with the
+  first letter of the name, the name in its accessible name and on top of the menu, and holds profile, client setup,
+  language and sign-out. The global
   search over packages and files (P1, R-UI-015) and the project filter (P1, R-UI-041) take their place in the same
   bar when their APIs exist. A configurable server name is P2 on
   [operations-and-observability.md](operations-and-observability.md).
-- Navigation with two areas: **Packages and files** (packages, browser, guides (R-UI-049), search, trash, builds; from
+- Navigation with two areas, each with a side bar of its own that shows while one of its routes is open (Q-UI-127):
+  **Packages and files** (packages, browser, guides (R-UI-049), search, trash, builds; from
   M4b also vulnerabilities, shown to every signed-in user,
-  [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022) and
-  **Administration** (shown when `/api/v1/authz/me` reports any administrative capability). The
-  sections are the routes of R-UI-003. Inside Administration, the single entries (repositories,
+  [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022) and the
+  **Admin area** (`/admin/…`, reached through the Admin button; shown when `/api/v1/authz/me` reports any
+  administrative capability or the administration of a project). The
+  sections are the routes of R-UI-003. Inside the admin area, the single entries (repositories,
   endpoints) come first and related screens are grouped under folding headings: identity (users,
   groups, service accounts, tokens), access (permission policies, system roles) and system (system
   status, audit log, settings). Every entry has an icon, which is decoration: the label is the
   accessible name. Entries the caller may not use are hidden (R-UI-005); a group without a visible
   entry disappears.
-- Layout and density (Q-UI-2, Q-UI-68): the navigation is a dark left side bar below the top bar,
-  permanently visible at viewport widths of 1024 CSS px and more, and a drawer opened from a menu
-  button in the top bar below that width. Where it is pinned, a button at its foot compacts it to
-  an icon rail and back; the rail keeps every entry's accessible name. The rail state and the
+- Layout and density (Q-UI-2, Q-UI-68, Q-UI-127): the navigation is a left side bar below the top bar, on the
+  same fill, and the content is a panel set into them; the side bar is visible at viewport widths of 1024 CSS px and
+  more, and a drawer opened from a menu button in the top bar below that width. Where it is pinned, "Collapse sidebar"
+  at its foot hides it and the menu button of the top bar brings it back. The collapsed state and the
   folded groups are kept in browser storage per signed-in principal (non-secret, R-UI-043) and are
-  a convenience only. The active entry is marked by a filled row, a bar in the accent colour (blue, Q-UI-96)
+  a convenience only. The active entry is marked by a tinted pill, a bar in the accent colour (blue, Q-UI-96)
   and bold text, never by colour alone. Tables, lists and form fields use compact density (Angular
   Material density scale `-2`) on every screen; interactive targets stay at least 24 × 24 CSS px
   (R-UI-044). Screen layouts that switch between one and two columns use CSS container queries on
   the content area, so collapsing the side bar never breaks them.
-- Breadcrumbs: a trail above the page title, derived from the route configuration (R-UI-003) and
+- Breadcrumbs: a trail on a bar at the top of the content panel, derived from the route configuration (R-UI-003) and
   not written by the screens: the area name (no link), the screen, and for a detail screen the
   object's name. The file tree adds one step per path segment. A trail of one step is not shown.
 - List screens: the repository, user, group, service account, token, permission policy, endpoint
@@ -2569,7 +2574,7 @@ Priority: **MVP** · Covers: UI-001, UI-004
 
 Acceptance criteria:
 
-- A user without administrative capabilities sees no Administration area; an administrator does.
+- A user without administrative capabilities sees no Admin button and no admin area; an administrator does.
 - With the keyboard only, the first Tab focuses the skip link, and Enter moves focus to the main
   heading.
 - At 1280 CSS px the side bar is visible without interaction; at 800 CSS px it is hidden and the
@@ -2617,7 +2622,7 @@ selected tab and selected version live in query parameters.
 | `/admin/system`, `/admin/system/jobs`, `/admin/system/backups` | System status, jobs, backups | R-UI-038, R-UI-048 |
 | `/admin/settings/auth`, `/admin/settings/general`, `/admin/settings/sign-in` (P1), `/admin/settings/storage` (P1) | Settings | R-UI-031 to R-UI-034 |
 | `/admin/projects…` | Projects (P1) | R-UI-041 |
-| `/login` (`?local=1`), `/logged-out` | Sign-in, signed out | R-UI-004 |
+| `/login` (`?auto_sign_in=false`), `/logged-out` | Sign-in, signed out | R-UI-004 |
 | `/cli-login/{publicId}` | Command-line login approval of `npm login` (P1; R-AUTH-034) | R-UI-004 |
 | `/device` (`?code=`) | Device-code login approval for other command-line tools (P1; R-AUTH-036) | R-UI-004 |
 | anything else | Not found, with a search field | — |
@@ -2648,8 +2653,10 @@ The flow and its security properties are owned by
   (from `login-options`), the application runs anonymously with a "Sign in" button.
 - `/login` renders only from `GET /api/v1/auth/login-options`: one button per provider, each
   navigating (full page) to the provider's `startUrl` with `return_to` set to the UI route. With
-  `autoRedirect` set, the page navigates at once. The break-glass form appears when `localLogin`
-  is true or the URL carries `?local=1`, and posts to the local login endpoint of the owning page.
+  `autoRedirect` set, the page navigates at once unless the URL carries `?auto_sign_in=false`. The
+  break-glass form appears when `localLogin` is true or the URL carries `?auto_sign_in=false`, and
+  posts to the local login endpoint of the owning page. The screen stands alone, without the shell,
+  in one column: the form first, then the providers below "or sign in with" (Q-UI-125).
   A login notice is P2 ([operations-and-observability.md](operations-and-observability.md)).
 - A 401 during use (expired or revoked session) opens a dialog "Your session has ended" with "Sign
   in again"; editors with unsaved changes first offer "Copy draft as JSON".
@@ -7704,6 +7711,110 @@ A refused test (403, 422) is an error notice.
 **Rationale:** the section is what the user is about to save; the test of the saved one is the API's. The development agent would revisit (b) for the edit form when the API's unsaved test accepts `{"set": true}` of a stored repository.
 
 **Applied in the spec:** R-UI-021. Code: `upstream-settings.ts` (`test`, `outcome`), `repository-model.ts` (`upstreamTestBody`). Tests: `upstream-settings.spec.ts`, journey `14-mirror.spec.ts` (F-54).
+
+### Q-UI-125 · The sign-in screen stands alone, and ?auto_sign_in=false waives the automatic sign-in
+
+Status: **Decided by the owner on 2026-11-06.**
+
+The sign-in screen showed the navigation sidebar of the shell, none of whose entries can be used without a session, and it
+did so only when it was reached from a guarded route: opened directly at `/ui/login`, the shell stayed hidden, because the
+session was never asked for. The owner asked for a sign-in page without the menu, laid out as one column (a form, then the
+providers below "or sign in with"), for the automatic sign-in at the provider to be a chart setting, and for a URL parameter
+that waives it even when it is on.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `/login` and `/logged-out` carry `data: { bare: true }`; the root component renders none of the shell around such a screen, and none at all before the first navigation has ended (chosen) | The screen alone, in the middle of the page | The same screen whether opened directly or reached from a guard; nothing that cannot be used is shown | Two forms of the frame in one template |
+| (b) Hide only the sidebar while no session is known | Top bar stays | Smaller change | The top bar's theme and sign-in controls are as useless before a sign-in; the direct/guarded difference stays |
+| (c) A second root component for the screens without a session | Clean split | No condition in the shell | Two bootstraps or a router-level layout switch; the outlet moves and a screen is created twice |
+
+**Choice:** (a). The router outlet stays in one place, so a screen is created once; a navigation that is cancelled (a
+guard's redirect) does not decide the frame, the one that ends does. With anonymous access on, an anonymous visitor keeps
+the sidebar on every other screen, because there its entries work.
+
+The sign-in screen is one column of at most 25rem: the wordmark, the heading, the break-glass form when it is offered
+(labels above the fields, a primary "Sign in" across the column), then the providers. Below the form a provider is a
+neutral button with its display name under a divider "or sign in with"; without the form each provider is a primary
+button "Sign in with <name>". "Continue without signing in" closes the column when anonymous access is on.
+
+`?auto_sign_in=false` replaces `?local=1` with the same meaning: no redirect to the single provider of `autoRedirect`, and
+the break-glass form shown whether or not `auth.break_glass.show_on_login_page` offers it. Only the value `false` waives
+the redirect. `?local=1` is not kept as a second name: the installations so far are the owner's, and two parameters for
+one switch would both have to be documented and tested. The automatic sign-in itself is `auth.login_page.auto_redirect`
+(R-AUTH-009), which the chart already passed through; `values.yaml` now shows it as
+`config.auth.login_page.auto_redirect`, and `values.schema.json` types it as a boolean, so Helm refuses another value
+instead of a replica failing at start-up.
+
+**Applied in the spec:** R-UI-004 above, R-AUTH-009 and R-AUTH-014 in
+[identity-and-authentication.md](identity-and-authentication.md). Code: `app.ts` (`bare`, `shell`), `app.html`,
+`app.routes.ts`, `features/login/login.ts`, `features/login/logged-out.ts`, `_shell.scss` (`.bare`, `.bare-panel`),
+`deploy/helm/trove/values.yaml`, `values.schema.json`. Tests: `app.spec.ts`, `login.spec.ts`, journey `01-sign-in.spec.ts`.
+
+### Q-UI-126 · trove's own controls in place of Angular Material
+
+Status: **Decided by the owner on 2026-11-06.**
+
+The owner asked to leave the look of Angular Material for the design language of the sign-in page he showed: flat
+controls, labels above the fields, a primary button in the accent, neutral grey secondary buttons. Measured on
+2026-11-06: the forms were already native (147 `input`, `select` and `textarea` elements with trove's own classes against
+4 `mat-form-field`); Material remained in the buttons (253 uses in 81 files), the dialogs (28 files), the checkboxes (12),
+the tabs (5), the menus (3), the tooltip (2), and the top bar and sidebar. `@angular/cdk` and `@angular/aria` were
+already dependencies.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Replace Material: trove's own classes for the controls (`_controls.scss`), the behaviour of the composite widgets from the CDK (dialog, menu, overlay) and `@angular/aria` (tabs), screen by screen; `@angular/material` leaves `package.json` at the end (chosen) | The look is trove's alone | Full control of the look; no ripple, state layer or MDC structure to fight; a smaller bundle; focus trap, keyboard handling and ARIA still come from the Angular team's packages | Every template with a Material control changes; the dialogs move to the CDK's API |
+| (b) Restyle Material through its tokens and overrides | Templates stay | Fewer changes | The ink bar, the state layers and the dialog structure stay visible; every Material release can move the overrides; `main.scss` already carries many |
+| (c) Only the sign-in screen and the shell | Small | Quick | Two design languages side by side until the rest is decided |
+
+**Choice:** (a), in this order: the control styles and the sign-in screens first, then the buttons of every screen, the
+shell (top bar, sidebar, menus, tooltip), the dialogs, the tabs and checkboxes, and last the Material theme, whose
+`--mat-sys-*` tokens give way to trove's. The colours stay those of Q-UI-88 and Q-UI-96 (cogpit's blue as the accent,
+green for a positive status only); the controls take them from tokens of their own (`--trove-control-*`,
+`--trove-accent-fill`, `--trove-btn-*`), so they no longer depend on Material.
+
+The controls: one height (32 px) and radius (6 px) for buttons and fields; buttons `btn-confirm` (the accent), `btn-default`
+(white with a hairline in the light scheme, filled grey in the dark one), `btn-tertiary` (text only), `btn-danger`,
+`btn-icon`, with `btn-block` and `btn-sm`; text fields, selects and areas with a 1px outline of 3.2:1 and 3.4:1 (WCAG
+1.4.11) and a semibold label above; native checkboxes and radios in the accent; a solid focus outline for every control.
+
+**Applied in the spec:** R-UI-044 (contrast and focus unchanged), R-UI-046. Code: `_tokens.scss`, `_controls.scss`; the
+screens as they move. Documented in [design-language.md](../developer/design-language.md#controls).
+
+### Q-UI-127 · The admin area has a sidebar of its own behind an Admin button, and the shell takes the reference's frame
+
+Status: **Decided by the owner on 2026-11-06.**
+
+The owner asked for the administration to be separated from the rest of the navigation, entered through an Admin button
+of the top bar that only its users see, and for the shell to take the structure and look of the reference he showed:
+a top bar and a sidebar on one fill, the content as a panel set into them, the breadcrumb trail on top of the panel, and
+a sidebar that collapses away instead of shrinking to icons.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Two areas, one sidebar each: `/admin/…` shows the admin area's entries under the title "Admin area", every other route the content's; an Admin button in the top bar for every caller with `SessionStore.hasAdminArea()`, pressed while the admin area is open (chosen) | The two kinds of work apart | The sidebar holds what belongs to the task at hand; the admin entries no longer push the content's down; the same rule as before decides who sees the admin area | One more click from a content screen into an admin screen |
+| (b) Both areas in one sidebar, the admin area folded | One sidebar | No extra click | The separation the owner asked for is not there |
+| (c) A separate admin application | Clean split | Independent | Two shells to maintain, a reload between them |
+
+**Choice:** (a). The button reads "Admin" with a wrench icon and leads to `/admin`, whose guard opens the first admin
+screen the caller may use (repositories, or projects for a project administrator); the logo leads back to the start page.
+Who sees the button is who saw the Administration area before (any capability, or the administration of a project,
+Q-AUTHZ-181), so nothing new is shown or hidden.
+
+The frame: one fill for the top bar and the sidebar (light grey `#f1f4f8` in the light scheme, where the frame was navy;
+`#121822` in the dark one), the content as a panel on the page's fill with a hairline and a rounded corner where it meets
+both, and the breadcrumb trail as a bar on top of it. The top bar holds the mark and the name, the repository search in
+the middle, then the project filter, the Admin button, help, theme and the user's round badge; the name is in the badge's
+accessible name and on top of its menu. The sidebar's title is the area's name; its entries are pills, the current one
+tinted with a bar in the accent and bold text. "Collapse sidebar" at its foot hides it where it is pinned (the choice is
+stored per principal, as the folded groups are), and "Open navigation" in the top bar brings it back; below 1024 CSS px it
+is a drawer over the content with a backdrop, closed by Escape, the backdrop or a link. This replaces the icon rail of
+Q-UI-68. The top bar, the sidebar and the menus are no longer Angular Material's (Q-UI-126): the menus are the CDK's
+(`cdkMenu`, radio items for the theme and the project filter), the drawer traps the focus with `cdkTrapFocus`.
+
+**Applied in the spec:** R-UI-002. Code: `app.html`, `app.ts`, `core/navigation.ts` (`areaOf`, `area`),
+`core/nav-state.ts` (`collapsed`), `_shell.scss`, `_tokens.scss` (`--trove-nav-*`, `--trove-search-*`,
+`--trove-brand-*`), `shared/brand/trove-mark.ts`. Tests: `app.spec.ts`, `app.projects.spec.ts`, `palette.spec.ts`.
 
 ## What this does not cover
 

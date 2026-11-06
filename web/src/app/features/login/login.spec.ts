@@ -59,14 +59,29 @@ describe('Sign-in screen', () => {
     expect(target.searchParams.get('return_to')).toBe('/ui/en/');
   });
 
-  it('R-UI-004 autoRedirect navigates at once, unless ?local=1 asks for the break-glass form', async () => {
+  it('R-UI-004 Q-UI-125 autoRedirect navigates at once, unless ?auto_sign_in=false waives it and shows the break-glass form', async () => {
     const auto = await open('/login', (api) => (api.optionsResult = { ...api.optionsResult, autoRedirect: 'corp' }));
     expect(auto.assign).toHaveBeenCalledTimes(1);
     TestBed.resetTestingModule();
 
-    const local = await open('/login?local=1', (api) => (api.optionsResult = { ...api.optionsResult, autoRedirect: 'corp' }));
-    expect(local.assign).not.toHaveBeenCalled();
-    expect(local.root.querySelector('input[type="password"]')).toBeTruthy();
+    const waived = await open('/login?auto_sign_in=false', (api) => (api.optionsResult = { ...api.optionsResult, autoRedirect: 'corp' }));
+    expect(waived.assign).not.toHaveBeenCalled();
+    expect(waived.root.querySelector('input[type="password"]')).toBeTruthy();
+    TestBed.resetTestingModule();
+
+    // Only the value false waives it, as on the sign-in pages this parameter comes from.
+    const other = await open('/login?auto_sign_in=true', (api) => (api.optionsResult = { ...api.optionsResult, autoRedirect: 'corp' }));
+    expect(other.assign).toHaveBeenCalledTimes(1);
+  });
+
+  it('Q-UI-125 with the break-glass form the providers follow below "or sign in with", the form first', async () => {
+    const { root } = await open('/login?auto_sign_in=false', (api) => (api.optionsResult = { ...api.optionsResult, autoRedirect: 'corp' }));
+    const order = [...root.querySelectorAll('form.local, .divider, .providers')].map((e) => e.className.split(' ')[0]);
+    expect(order).toEqual(['local', 'divider', 'providers']);
+    expect(root.querySelector('.divider')?.textContent?.trim()).toBe('or sign in with');
+    expect(root.querySelector('.providers button')?.textContent?.trim()).toBe('Corporate SSO');
+    expect(root.querySelector('form.local')?.getAttribute('aria-label')).toBe('Local administrator');
+    expect(await seriousViolations(root)).toEqual([]);
   });
 
   it('R-UI-004 the break-glass form shows when localLogin is true', async () => {
@@ -98,7 +113,7 @@ describe('Sign-in screen', () => {
   });
 
   it('R-UI-004 a refused break-glass sign-in shows the translated reason and no password stays in the field', async () => {
-    const { root, fixture } = await open('/login?local=1', (api) => {
+    const { root, fixture } = await open('/login?auto_sign_in=false', (api) => {
       api.localLogin = async () => {
         throw new ApiError(401, { code: 'invalid_credentials' }, null);
       };

@@ -135,7 +135,7 @@ Pattern syntax for names: `*` matches any run of characters except `/`, `**` any
 
 ## The Endpoints screen
 
-Open **Administration › Endpoints** (capability `endpoints:read`, held by the roles `admin`, `security-admin`, `auditor` and `repository-admin`). The list shows each endpoint with **Base URL**, **Hosts**, **Surface**, **Exposure**, **Rules (enabled)** and **Pool**. An endpoint in mode `all` is marked "all (rules have no effect)". A name that is no longer configured but still has rules is marked **not configured**: its rules have no effect and can only be read and deleted.
+Open **Admin area › Endpoints** (capability `endpoints:read`, held by the roles `admin`, `security-admin`, `auditor` and `repository-admin`). The list shows each endpoint with **Base URL**, **Hosts**, **Surface**, **Exposure**, **Rules (enabled)** and **Pool**. An endpoint in mode `all` is marked "all (rules have no effect)". A name that is no longer configured but still has rules is marked **not configured**: its rules have no effect and can only be read and deleted.
 
 Select an endpoint to see its read-only **Configuration** (including **Accepted credentials** and **Rate limit**) and its **Exposure rules**. The rule table shows the patterns, versions, pre-release setting, an **Enabled** switch, and the **Client address** of the repository on this endpoint with a copy button. "This endpoint does not serve this address." means the endpoint's surface lacks the route family of that repository's format.
 

@@ -5308,10 +5308,10 @@ export interface components {
         LoginOptions: {
             /** @description In configuration order (`order`, then ID). */
             providers: components["schemas"]["LoginProvider"][];
-            /** @description The break-glass form is offered on the page; it is reachable with `?local=1` regardless. */
+            /** @description The break-glass form is offered on the page; it is reachable with `?auto_sign_in=false` regardless. */
             localLogin: boolean;
             anonymousAccess: boolean;
-            /** @description The provider ID to redirect to at once; `null` shows the buttons. */
+            /** @description The provider ID to redirect to at once; `null` shows the buttons. `?auto_sign_in=false` on the sign-in page waives the redirect. */
             autoRedirect: string | null;
         };
         WhoamiPrincipal: {

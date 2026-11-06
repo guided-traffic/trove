@@ -65,11 +65,11 @@ trove reads the configuration file and the environment once, at start. A change 
 | Break-glass password file | Live: checked every `auth.break_glass.check_interval` (10 s); a rotation refuses the local sign-in for `auth.break_glass.rotation_hold` (2 min) and ends the break-glass sessions |
 | Metrics bearer token file (`metrics.bearer_token_file`) | Live: read on each scrape |
 | Tracing CA file (`tracing.ca_file`) | At the next start; read once |
-| Settings changed in **Administration › System › Settings** | Live on every replica within `auth.revocation_bound` (2 s) |
+| Settings changed in **Admin area › System › Settings** | Live on every replica within `auth.revocation_bound` (2 s) |
 
 ## Settings in the UI versus the configuration file
 
-**Administration › System › Settings** opens **Authentication settings**. It holds the runtime settings, which are stored in PostgreSQL, apply to every replica and survive restarts and upgrades:
+**Admin area › System › Settings** opens **Authentication settings**. It holds the runtime settings, which are stored in PostgreSQL, apply to every replica and survive restarts and upgrades:
 
 | Setting in the UI | What it does | Bounded by the file key |
 |---|---|---|
@@ -161,14 +161,14 @@ The tables below list the keys an installation most often sets. Every key with i
 | Key | Default | Meaning |
 |---|---|---|
 | `auth.oidc.providers` | `{}` | The OIDC providers, keyed by provider ID: `display_name`, `issuer`, `client_id`, the client secret and claim mapping. See [Sign-in and identities](sign-in-and-identity.md). |
-| `auth.login_page.auto_redirect` | `true` | Redirect the sign-in page to the provider when exactly one is configured |
+| `auth.login_page.auto_redirect` | `true` | Redirect the sign-in page to the provider when exactly one is configured; `/ui/login?auto_sign_in=false` shows the page anyway. Helm: `config.auth.login_page.auto_redirect` |
 | `auth.sessions.idle_timeout` | `1h` | A browser session ends this long after its last request |
 | `auth.sessions.absolute_timeout` | `12h` | A browser session ends this long after sign-in |
 | `auth.sessions.max_per_user` | `20` | Concurrent sessions of one user; one more ends the oldest |
 | `auth.sessions.recent_auth_window` | `1h` | Actions that create credentials need a sign-in this recent |
 | `auth.break_glass.enabled` | `true` | The local administrator account; the chart sets `false` without `secrets.breakGlass` |
 | `auth.break_glass.username` | `admin` | Its username |
-| `auth.break_glass.show_on_login_page` | `false` | Show the local form on the sign-in page; it is always reachable with `?local=1` |
+| `auth.break_glass.show_on_login_page` | `false` | Show the local form on the sign-in page; it is always reachable with `?auto_sign_in=false` |
 | `auth.anonymous.allowed` | `true` | Ceiling of the **Anonymous access** switch |
 | `auth.revocation_bound` | `2s` | Time within which a revocation or settings change is in force on every replica |
 | `auth.clients.basic.enabled` | `true` | Accept tokens in HTTP Basic authentication, which some package clients need |

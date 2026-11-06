@@ -407,7 +407,7 @@ Real claims come from an earlier exchange: the issuance record holds the claim s
 
 ## In the administration area
 
-Everything above is also available as screens, under **Administration › CI identity** (`/admin/ci`). The screens call the same operations, so what the API refuses they refuse with the same reason.
+Everything above is also available as screens, under **Admin area › CI identity** (`/admin/ci`). The screens call the same operations, so what the API refuses they refuse with the same reason.
 
 - **CI identity** lists the issuers with their name, kind, issuer URL, accepted audiences, the number of mappings, the state of the signing keys (the number of usable keys and when they were fetched, or the failure) and the source (`api` or `configuration`). **Issued tokens** opens the issuances of all issuers; **New issuer** (holders of `ci:write`) opens the form.
 - **New CI issuer** has the fields of [the issuer settings](#register-a-gitlab-instance): **Name**, **Issuer URL**, **Description**, **Enabled**, **Accepted audiences** (one per line; empty means the base URL and `npm:` with the host name), **Public issuer** and **Pin claims**. **More settings** holds the discovery document and key set URLs, the signing algorithms, the exclusive-audience switch, the required claims, the clock skew, the maximum token lifetime, **Reject a second exchange of the same ID token**, the outbound proxy and the **CA bundle** (`file:/path` or `env:NAME`). **Check the discovery document and the keys before saving** is on by default; **Create issuer** then opens the issuer on its **Keys** tab.
@@ -415,7 +415,7 @@ Everything above is also available as screens, under **Administration › CI ide
 - The **Mappings** tab lists the mappings in evaluation order with **New mapping**. The **mapping editor** has the cards **General** (**Name**, **Description**, **Priority**, **Enabled**), **Condition** (the **Builder** or the **JSON** view of the same condition, with a line that reads it back), **Grants** (**Policies**, **Groups** and **Inline grants** with **Repositories**, **Applies to**, **Include**, **Exclude**, the **Actions** and the **Ownership of package names**) and **Options and lifetime** (**Maximum token lifetime (seconds)**, **Pipelines from other projects** with `deny` or `read_only`, and **Allow unprotected refs to use write grants**). The editor warns before the server does, for a public issuer without a pin, for a writing grant without `ref_protected`, and for an ownership of `none`. **Create mapping** or **Save mapping** saves; the warnings of the save appear under **Saved, with warnings**. **Test with claims** tests the saved mapping, and **CI snippet** prints the `id_tokens:` and exchange lines for the mapping in the shell of a package client.
 - The **claim tester** (**Test with claims**) takes **Claims as JSON, or paste an ID token**. A pasted token is decoded in the browser and discarded; only its claims are sent, and the screen says that the signature was not checked and that the token is still a credential until it expires. **Insert sample GitLab claims** fills in a typical set. **Evaluate** shows whether a mapping matches, every mapping looked at with the first failed leaf and the expected and actual value of each leaf, the resulting grants and the token that would be issued. It is the dry run of [Test a mapping](#test-a-mapping-with-the-dry-run); it issues nothing.
 - **Issued tokens** filters the issuances by issuer, GitLab project ID, project path, pipeline, job, mapping, state and period. **Details** shows one record with its grants, its claims and, for holders of `tokens:read`, its use. **Revoke matching tokens** (holders of `tokens:revoke`) needs one issuer and one of project ID, pipeline ID, job ID or mapping among the filters, counts the active tokens first and asks before it revokes them.
-- A project administrator finds the same under **Administration › Projects › the project › CI identity**: the issuers they may name, the mappings of the project, the tokens issued through them, **New mapping** and **Test with claims** over the project's tier. The grants offer the repositories of the project and `@any` for all of them.
+- A project administrator finds the same under **Admin area › Projects › the project › CI identity**: the issuers they may name, the mappings of the project, the tokens issued through them, **New mapping** and **Test with claims** over the project's tier. The grants offer the repositories of the project and `@any` for all of them.
 
 ## Read the issuance records
 
@@ -444,7 +444,7 @@ A record names `tokenId`, `issuer`, `mappingNames`, `projectId`, `projectPath`, 
 
 A project administrator's view of a record leaves out `grantedScope`, `requestedScope`, `jti`, `userId`, `userLogin`, `clientIp` and `userAgent`, and `user_id`, `user_login`, `jti`, `runner_id` and `runner_environment` of the claim snapshot: the scopes list the items of every mapping that contributed, and the person and the runner are not a project's business. The job's project, pipeline, job, ref, commit and the state stay.
 
-The exchange and its consequences are also audit events under **Administration › System › Audit log**:
+The exchange and its consequences are also audit events under **Admin area › System › Audit log**:
 
 | Event | Category | When |
 |---|---|---|

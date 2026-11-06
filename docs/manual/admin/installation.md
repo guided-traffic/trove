@@ -168,9 +168,9 @@ kubectl -n trove rollout status deployment/trove-worker
 ## First sign-in
 
 1. Read the break-glass password: `kubectl -n trove get secret trove-break-glass -o jsonpath='{.data.password}' | base64 -d`.
-2. Open `https://trove.example.com/ui/login?local=1`. The `local=1` parameter shows the **Local administrator** form even when the sign-in page would redirect to your provider.
+2. Open `https://trove.example.com/ui/login?auto_sign_in=false`. The parameter keeps the sign-in page from redirecting to your provider and shows the username and password form.
 3. Sign in with the username `admin` (`auth.break_glass.username`) and the password, then select **Sign in**.
-4. Open **Administration › Access › System roles** and use **Bind** to give the administrator role to your own user or to a group from your identity provider. [Permissions](permissions.md) describes the roles. To keep this in your GitOps repository instead, declare the group in `config.authz.role_bindings` ([Administrators from the Helm values](sign-in-and-identity.md#administrators-from-the-helm-values)); the binding then exists after the install.
+4. Open **Admin area › Access › System roles** and use **Bind** to give the administrator role to your own user or to a group from your identity provider. [Permissions](permissions.md) describes the roles. To keep this in your GitOps repository instead, declare the group in `config.authz.role_bindings` ([Administrators from the Helm values](sign-in-and-identity.md#administrators-from-the-helm-values)); the binding then exists after the install.
 5. Sign out and sign in again through your provider. [Sign-in and identities](sign-in-and-identity.md) covers provider options and group mapping.
 
 The break-glass account has no role binding; it holds system administration because it is the local administrator. With the default settings it locks for 15 minutes after 5 failed attempts within 15 minutes, its sessions end after 15 minutes idle or one hour in total, and it cannot own tokens. When a rotated Secret reaches the pods, each `api` replica notices the new file within 10 seconds (`auth.break_glass.check_interval`), refuses the local sign-in for 2 minutes (`auth.break_glass.rotation_hold`) and ends the break-glass sessions. To switch the account off, remove `secrets.breakGlass` from your values; the chart then renders `auth.break_glass.enabled: false`.
@@ -209,7 +209,7 @@ Every command that changes something writes an audit event with the actor `admin
    ```
 
    A ready replica answers `200` with `"status":"ready"` and lists each check. `degraded` names checks that fail without making the replica unready, `valkey` for example; `failing` names the checks that keep it unready.
-4. In the UI, **Administration › System › System status** shows **All ready** when every replica is ready and none is degraded, and lists the **Installation** version, the **Replicas by role**, the **Database** schema version, the **Valkey** connection and the **Stored-secret keys** each replica holds.
+4. In the UI, **Admin area › System › System status** shows **All ready** when every replica is ready and none is degraded, and lists the **Installation** version, the **Replicas by role**, the **Database** schema version, the **Valkey** connection and the **Stored-secret keys** each replica holds.
 5. The effective configuration of a pod: `kubectl -n trove exec deploy/trove-api -- /usr/local/bin/trove admin config validate`.
 
 [Monitoring and operations](operations.md) describes the metrics and the day-to-day checks.

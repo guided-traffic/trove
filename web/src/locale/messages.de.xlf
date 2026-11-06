@@ -355,16 +355,6 @@
         <target>Durchsuchen</target>
       </segment>
     </unit>
-    <unit id="nav.group.admin">
-      <notes>
-        <note category="location">src/app/app.routes.ts:11</note>
-        <note category="location">src/app/core/navigation.ts:54</note>
-      </notes>
-      <segment>
-        <source>Administration</source>
-        <target>Administration</target>
-      </segment>
-    </unit>
     <unit id="nav.repositories">
       <notes>
         <note category="location">src/app/core/navigation.ts:57</note>
@@ -536,6 +526,36 @@
       <segment>
         <source>No sign-in method is configured.</source>
         <target>Es ist keine Anmeldemethode konfiguriert.</target>
+      </segment>
+    </unit>
+    <unit id="shell.admin">
+      <segment>
+        <source>Admin</source>
+        <target>Admin</target>
+      </segment>
+    </unit>
+    <unit id="shell.collapse">
+      <segment>
+        <source>Collapse sidebar</source>
+        <target>Seitenleiste einklappen</target>
+      </segment>
+    </unit>
+    <unit id="nav.context.admin">
+      <segment>
+        <source>Admin area</source>
+        <target>Adminbereich</target>
+      </segment>
+    </unit>
+    <unit id="shell.close-nav">
+      <segment>
+        <source>Close navigation</source>
+        <target>Navigation schließen</target>
+      </segment>
+    </unit>
+    <unit id="login.or">
+      <segment>
+        <source>or sign in with</source>
+        <target>oder anmelden mit</target>
       </segment>
     </unit>
     <unit id="login.with">
@@ -12344,15 +12364,6 @@
       <segment>
         <source>Find a repository</source>
         <target>Repository suchen</target>
-      </segment>
-    </unit>
-    <unit id="shell.rail">
-      <notes>
-        <note category="location">src/app/app.html:252,253</note>
-      </notes>
-      <segment>
-        <source>Compact navigation</source>
-        <target>Navigation verkleinern</target>
       </segment>
     </unit>
     <unit id="shell.breadcrumbs">

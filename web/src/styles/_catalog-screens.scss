@@ -28,30 +28,7 @@
   }
 }
 
-.field-label {
-  font-size: 0.8125rem;
-  font-weight: 600;
-}
-
-.text-input,
-.select-input,
-.area-input {
-  box-sizing: border-box;
-  min-block-size: 32px;
-  padding: var(--trove-space-1) var(--trove-space-2);
-  border: 1px solid var(--mat-sys-outline);
-  border-radius: var(--mat-sys-corner-extra-small);
-  background: var(--trove-surface);
-  color: var(--trove-on-surface);
-  font: inherit;
-}
-
-.text-input[aria-invalid='true'],
-.select-input[aria-invalid='true'],
-.area-input[aria-invalid='true'] {
-  border-color: var(--trove-status-bad);
-  border-width: 2px;
-}
+// The field label and the text, select and area inputs are controls: _controls.scss (Q-UI-126).
 
 .area-input {
   inline-size: 100%;

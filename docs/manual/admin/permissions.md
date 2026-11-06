@@ -106,18 +106,18 @@ Roles are fixed; there are no custom roles. A role is bound to a user, a group o
 | `settings:read`, `settings:write` | **System status** and **Settings**: read; change the authentication settings and run maintenance tasks |
 | `audit:read` | **Audit log** |
 | `projects:read`, `projects:write` | **Projects**: read every project with its administrators and counts; create, change and delete projects, and set their switches and administrators. Only the `admin` role holds `projects:write`. See [Projects and delegated administration](projects.md) |
-| `ci:read`, `ci:write` | The CI issuers, mappings and dry run of [GitLab CI federation](gitlab-ci.md), which administers the issuers and mappings under **Administration › CI identity** |
+| `ci:read`, `ci:write` | The CI issuers, mappings and dry run of [GitLab CI federation](gitlab-ci.md), which administers the issuers and mappings under **Admin area › CI identity** |
 | `webhooks:read`, `webhooks:write`, `security-settings:write` | Reserved; no screen or operation of this version uses them |
 
 </details>
 
-The **Administration** area of the UI appears for anyone who holds at least one capability, and each entry only with its capability. It also appears for an administrator of a project who holds no capability, with the **Projects** screen only: a project administrator is not a role but a right on one project, described in [Projects and delegated administration](projects.md). Only the `admin` role unlocks the break-glass account.
+The **Admin area** of the UI, and the **Admin** button in the top bar that leads to it, appear for anyone who holds at least one capability, and each entry only with its capability. It also appears for an administrator of a project who holds no capability, with the **Projects** screen only: a project administrator is not a role but a right on one project, described in [Projects and delegated administration](projects.md). Only the `admin` role unlocks the break-glass account.
 
 The `auditor` reads everything that is not secret and changes nothing: the configuration, users, groups, service accounts, policies, role bindings, token metadata, settings, the audit log, and the metadata of every repository. It downloads no file, publishes, tags and deletes nothing, and the exposure rules of an endpoint apply to it as to everyone. A token of an auditor carries the metadata read only when its scope lists the system item `content:metadata-read`, for example `{"inherit": true, "system": ["content:metadata-read", "repositories:read-config"]}`. To make an identity provider group the auditor from your Helm values, see [Administrators from the Helm values](sign-in-and-identity.md#administrators-from-the-helm-values).
 
 ## The Permission policies screen
 
-**Administration › Access › Permission policies** lists **Name**, **Description**, **Principals**, **Repositories** and **Actions**. A policy that covers no repository any more, for example because its repository was deleted, shows **Grants nothing**. Filter by **Principal** (also lists the policies of the principal's groups) or by **Repository** (the policies whose selectors cover it).
+**Admin area › Access › Permission policies** lists **Name**, **Description**, **Principals**, **Repositories** and **Actions**. A policy that covers no repository any more, for example because its repository was deleted, shows **Grants nothing**. Filter by **Principal** (also lists the policies of the principal's groups) or by **Repository** (the policies whose selectors cover it).
 
 To create a policy, select **New policy**. When the list is limited to a project (the project filter of the top bar, or the page of a project), the policy belongs to that project; otherwise it is a global policy, and the editor says **Global policy — applies to every repository**:
 
@@ -139,7 +139,7 @@ The answer evaluates only the draft. Other policies, token scopes, exposure rule
 
 ## The System roles screen
 
-**Administration › Access › System roles** shows every role with its **Capabilities** and the principals that hold it, with **Granted**, **Granted by** and **Source**. To bind a role, enter `user:<name>`, `group:<name>` or `sa:<name>` in **Bind to** and select **Bind**; **Unbind** removes a holder. Both need `roles:write` and a recent sign-in. The last administrator cannot be removed (`last_admin`) while the break-glass account is disabled, and a group with auto-join cannot hold a role. A binding with the source **Configuration** is declared in `authz.role_bindings` and shows **Managed in the configuration** instead of **Unbind**; change it in your Helm values ([Administrators from the Helm values](sign-in-and-identity.md#administrators-from-the-helm-values)).
+**Admin area › Access › System roles** shows every role with its **Capabilities** and the principals that hold it, with **Granted**, **Granted by** and **Source**. To bind a role, enter `user:<name>`, `group:<name>` or `sa:<name>` in **Bind to** and select **Bind**; **Unbind** removes a holder. Both need `roles:write` and a recent sign-in. The last administrator cannot be removed (`last_admin`) while the break-glass account is disabled, and a group with auto-join cannot hold a role. A binding with the source **Configuration** is declared in `authz.role_bindings` and shows **Managed in the configuration** instead of **Unbind**; change it in your Helm values ([Administrators from the Helm values](sign-in-and-identity.md#administrators-from-the-helm-values)).
 
 ## Anonymous and all signed-in users
 
@@ -179,7 +179,7 @@ Members of `team-web` read, publish and change dist-tags of `@web/*` packages in
 
 ### A CI service account
 
-1. Create the service account `ci-web` under **Administration › Identity › Service accounts** and create a token for it.
+1. Create the service account `ci-web` under **Admin area › Identity › Service accounts** and create a token for it.
 2. Create a policy `ci-web-publish`: selector `npm-internal`, package include `@web/*`, entry `sa:ci-web` with `read` and `deploy`.
 3. Create a policy `ci-web-install`: selector `@any:npm`, entry `sa:ci-web` with `read`. Service accounts are not part of `authenticated`, so they need their own read grant, also on the members of a virtual repository and on remote repositories they fill.
 4. Give the token a scope that names only these repositories and actions, so a leaked token can do no more.

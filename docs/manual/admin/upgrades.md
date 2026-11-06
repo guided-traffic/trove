@@ -39,7 +39,7 @@ Before step 1, check what your installation admits by the pods' labels outside t
 1. `helm upgrade … --set web.enabled=true` with your values otherwise unchanged. The chart keeps `trove-web` (rolled to the new release) and the Service `trove`, and the edge keeps sending every host whole to it. The Deployments and Services of `api`, `packages` and `worker` start beside it. Wait until `kubectl -n trove rollout status` reports `trove-api` and `trove-packages` ready, move in-cluster callers from the Service `trove` to `trove-api` and `trove-packages`, and add the `api.*` and `packages.*` sizing you want.
 2. `helm upgrade … --set web.enabled=false` (the default). The edge switches to the path routing onto the role Services, which have been ready since step 1, and Helm deletes `trove-web`, its endpoint pools and the Service `trove`; their pods drain first.
 
-**Administration › System › System status** shows a group `web` between the steps, next to `api`, `packages` and `worker`, and none after step 2. Where the chart can read the cluster (`helm upgrade`, `helm install --dry-run=server`), it refuses `web.enabled: false` while `trove-web` exists and `trove-api` or `trove-packages` is not ready, and names the two steps; under `helm template` there is nothing to read, so follow the steps. Rolling back from step 2 recreates `trove-web` while the edge already points at the Service `trove`, so the host answers `503` while the restored pods start; rolling back step 1 has no gap.
+**Admin area › System › System status** shows a group `web` between the steps, next to `api`, `packages` and `worker`, and none after step 2. Where the chart can read the cluster (`helm upgrade`, `helm install --dry-run=server`), it refuses `web.enabled: false` while `trove-web` exists and `trove-api` or `trove-packages` is not ready, and names the two steps; under `helm template` there is nothing to read, so follow the steps. Rolling back from step 2 recreates `trove-web` while the edge already points at the Service `trove`, so the host answers `503` while the restored pods start; rolling back step 1 has no gap.
 
 ## Upgrade with Helm
 
@@ -89,7 +89,7 @@ kubectl -n trove exec deploy/trove-api -- /usr/local/bin/trove migrate status
 A correction of stored data runs after the upgrade as a job on a worker, not in the migration Job, so the Job does not take longer with more data. This version has one, `data_migration_nuget_semver2`. It finds the NuGet versions stored by 0.9.0 or older that have a dependency range with a SemVer 2.0.0 bound, such as `[2.0.0-rc.1, )`, and marks them SemVer 2.0.0. NuGet clients older than 4.3 then no longer get these versions in the SemVer 1 registrations or in a search without `semVerLevel=2.0.0`.
 
 - The first worker that starts after the upgrade queues it. While a pod of 0.9.0 or older is still live, it waits: the result says `state: waiting` and names those pods, and it tries again a minute later. Once the rollout has finished, it runs.
-- Follow it under **Administration › System › Jobs** with the kind `data_migration_nuget_semver2`. A run that reached the end shows `state: recomputed` with the number of versions it `examined` and `changed` and the `packages` they belong to. A version it could not read is counted as `unreadable` and named in the worker's log.
+- Follow it under **Admin area › System › Jobs** with the kind `data_migration_nuget_semver2`. A run that reached the end shows `state: recomputed` with the number of versions it `examined` and `changed` and the `packages` they belong to. A version it could not read is counted as `unreadable` and named in the worker's log.
 - It runs once per installation: trove records the completion in the database, and a worker that starts later queues nothing. A package it changed gets a new revision, so clients and caches see the change.
 
 ## After the upgrade
@@ -97,7 +97,7 @@ A correction of stored data runs after the upgrade as a job on a worker, not in 
 1. `helm status trove -n trove` shows `deployed`, and `helm history trove -n trove` lists the new revision.
 2. The Job log ends with a JSON summary: `applied` lists the migrations of this run, `nothingToDo` is `true` when none was pending, and `schemaApplied` is the schema version now.
 3. Every pod of `trove-api`, `trove-packages` and `trove-worker` is ready and none restarts repeatedly.
-4. **Administration › System › System status** shows **All ready**; every replica in the replica table shows the new **Version**, and the **Database** part shows the new **Schema version**.
+4. **Admin area › System › System status** shows **All ready**; every replica in the replica table shows the new **Version**, and the **Database** part shows the new **Schema version**.
 5. Sign in, open a repository and download a file, as a quick check of the full request path.
 
 [Monitoring and operations](operations.md) describes the metrics and logs to watch.

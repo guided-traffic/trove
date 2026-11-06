@@ -1,0 +1,170 @@
+// trove's own controls (Q-UI-126): buttons, text fields, selects and checkboxes as plain HTML elements with
+// classes, replacing Angular Material's. The behaviour of the composite widgets (dialog, menu, tabs) comes
+// from @angular/cdk and @angular/aria; this file is only the look. Every colour and length is a token of
+// _tokens.scss. The design language: flat controls of one height (32 px) and radius, labels above the
+// field in semibold, a primary ("confirm") button in the accent, a neutral default button, a text-only
+// tertiary button, and a solid focus outline that does not rely on colour alone (WCAG 2.4.7, 2.4.11).
+
+// ---- Buttons -------------------------------------------------------------------------------------
+//
+//   <button class="btn btn-confirm" type="submit">Save</button>      the primary action of a screen or dialog
+//   <button class="btn btn-default" type="button">Cancel</button>    a secondary action
+//   <button class="btn btn-tertiary" type="button">Details</button>  a quiet action in a row or a toolbar
+//   <button class="btn btn-danger" type="button">Delete</button>     a destructive action
+//   <button class="btn btn-icon" type="button" aria-label="…">…</button>  an icon alone, always with a name
+//   modifiers: btn-block (full width), btn-sm (24 px high)
+
+.btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--trove-space-2);
+  min-block-size: var(--trove-control-height);
+  padding: 0 var(--trove-space-3);
+  border: 1px solid transparent;
+  border-radius: var(--trove-control-radius);
+  background: transparent;
+  color: var(--trove-control-fg);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 80ms linear;
+
+  &:focus-visible {
+    outline: var(--trove-focus-ring);
+    outline-offset: 2px;
+  }
+
+  &:disabled,
+  &[aria-disabled='true'] {
+    border-color: transparent;
+    background: var(--trove-control-disabled-bg);
+    color: var(--trove-control-disabled-fg);
+    cursor: not-allowed;
+  }
+
+  .material-icons {
+    font-size: 1.125rem;
+  }
+}
+
+.btn-confirm:not(:disabled, [aria-disabled='true']) {
+  background: var(--trove-accent-fill);
+  color: var(--trove-on-accent);
+
+  &:hover {
+    background: var(--trove-accent-fill-hover);
+  }
+}
+
+.btn-default:not(:disabled, [aria-disabled='true']) {
+  border-color: var(--trove-btn-default-border);
+  background: var(--trove-btn-default-bg);
+
+  &:hover {
+    background: var(--trove-btn-default-bg-hover);
+  }
+}
+
+.btn-tertiary:not(:disabled, [aria-disabled='true']),
+.btn-icon:not(:disabled, [aria-disabled='true']) {
+  &:hover {
+    background: var(--trove-btn-tertiary-bg-hover);
+  }
+}
+
+.btn-tertiary:disabled,
+.btn-icon:disabled {
+  background: transparent;
+}
+
+.btn-danger:not(:disabled, [aria-disabled='true']) {
+  background: var(--trove-danger-fill);
+  color: var(--trove-on-danger);
+
+  &:hover {
+    filter: brightness(0.92);
+  }
+}
+
+.btn-icon {
+  inline-size: var(--trove-control-height);
+  padding: 0;
+}
+
+.btn-block {
+  inline-size: 100%;
+}
+
+.btn-sm {
+  min-block-size: 24px;
+  padding: 0 var(--trove-space-2);
+  font-size: 0.8125rem;
+}
+
+// ---- Text fields, selects, checkboxes ----------------------------------------------------------------
+//
+//   <div class="field">
+//     <label class="field-label" for="x">Name</label>
+//     <input id="x" class="text-input" />
+//     <p class="hint">…</p>
+//   </div>
+
+.text-input,
+.select-input,
+.area-input {
+  box-sizing: border-box;
+  min-block-size: var(--trove-control-height);
+  padding: var(--trove-space-1) var(--trove-space-3);
+  border: 1px solid var(--trove-control-border);
+  border-radius: var(--trove-control-radius);
+  background: var(--trove-control-bg);
+  color: var(--trove-control-fg);
+  font: inherit;
+  font-size: 0.875rem;
+
+  &::placeholder {
+    color: var(--trove-control-placeholder);
+  }
+
+  &:focus-visible {
+    outline: var(--trove-focus-ring);
+    outline-offset: 1px;
+  }
+
+  &:disabled {
+    background: var(--trove-control-disabled-bg);
+    color: var(--trove-control-disabled-fg);
+    cursor: not-allowed;
+  }
+}
+
+.text-input[aria-invalid='true'],
+.select-input[aria-invalid='true'],
+.area-input[aria-invalid='true'] {
+  border-color: var(--trove-status-bad);
+  border-width: 2px;
+}
+
+.field-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  inline-size: 1rem;
+  block-size: 1rem;
+  margin: 0.125rem 0 0;
+  accent-color: var(--trove-accent-fill);
+
+  &:focus-visible {
+    outline: var(--trove-focus-ring);
+    outline-offset: 2px;
+  }
+}
