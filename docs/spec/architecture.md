@@ -3992,7 +3992,9 @@ a step it runs needs: the missing prerequisite stops the start-up with an error 
 missing part and the role, instead of a replica that is ready and answers `503` on the routes of the
 area (Q-ARCH-209). Whether a prerequisite is reachable is a different matter: a database or an object
 store that cannot be reached yet is retried as steps 3 to 7 say; a part that the role's wiring does not
-provide at all is a defect and is refused before anything starts.
+provide at all is a defect and is refused before anything starts. On a role that serves the UI the area `ui-assets` publishes the
+hashed files of the build to the shared asset store in step 8, before the listener opens, and waits for it at most a minute
+([ha-and-helm.md](ha-and-helm.md) Q-HA-123).
 
 Shutdown on `SIGTERM`. Kubernetes removes the pod from the EndpointSlices at the same time as it
 sends the signal, and every proxy in front of trove (kube-proxy, the Ingress or Gateway controller)

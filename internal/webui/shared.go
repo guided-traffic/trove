@@ -143,7 +143,8 @@ func (h *Handler) serveShared(w http.ResponseWriter, r *http.Request, locale, pa
 		problem(w, http.StatusNotFound, "Not Found")
 		return
 	case err != nil:
-		if h.onSharedError != nil {
+		// a client that went away while it waited for the read is no failure of the store
+		if h.onSharedError != nil && r.Context().Err() == nil {
 			h.onSharedError(locale, path, err)
 		}
 		w.Header().Set("Cache-Control", "no-store")

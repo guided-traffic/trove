@@ -2325,7 +2325,7 @@ browser loops ([Q-HA-95](#q-ha-95--how-the-upgrade-tests-get-and-install-the-old
 release under test, waits for the background migrations to succeed and checks it against `trove migrate status`
 ([Q-HA-116](#q-ha-116--the-upgrade-tests-read-get-apiv1systemmigrations-from-the-release-under-test), which supersedes Q-HA-96); the
 cut test runs the same check after its step 2. Both upgrade tests passed with that read in the dispatched nightly run 42230022283. The gate on the cluster minimum version
-(the second acceptance criterion) has no feature to gate yet and is not tested. The UI's hashed files across the window (F-58) are
+(the second acceptance criterion) has no feature to gate yet and is not tested. The UI's hashed files across the window are
 tested by `TestUpgrade_R_HA_020_AcrossTwoBundles` ([upgrade_bundles_test.go](../../test/e2e/upgrade_bundles_test.go), the set
 `upgrade`): the working tree with its second UI bundle is upgraded to the image under test under the same loops, strict
 ([Q-HA-124](#q-ha-124--how-the-upgrade-tests-prove-an-upgrade-between-two-bundles)); and by `TestR_HA_020_SharedUIAssets` and
