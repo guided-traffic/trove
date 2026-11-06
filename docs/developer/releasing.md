@@ -254,6 +254,8 @@ The kind legs start at once, as before. The perf jobs start after all of them ha
 workflow or with the other perf job (a Test and Release run that starts meanwhile can still share it). The cost is wall time: in run 42126196109 the two jobs took 5 min 17 s and 7 min 22 s, so a nightly ends about 13 minutes after its longest kind
 leg. Not measured yet: the wall time of a whole nightly in this order, and the V-4 and V-7b results under it.
 
+The longest kind leg is `e2e-bastion (bastion-long)`: the Bastion's drain, its floods and its failure suite (a replica lost on either backend, the main installation failing over, a rolling upgrade of either side; [Q-BAS-142](../spec/bastion.md#q-bas-142--the-failure-suite-runs-one-load-with-a-miss-loop-and-one-fault-after-the-other)) take about 80 minutes of tests, so its `make e2e` step has 120 minutes and `TROVE_E2E_TIMEOUT=110m`, and the job 180 minutes; the other legs keep 80 and 90.
+
 [`performance.yml`](../../.github/workflows/performance.yml) ("HA and Performance (nightly)") runs every night at 02:17 UTC and on demand
 (`workflow_dispatch`, with the input `sets`, [above](#dispatching-one-leg)), on the large runners and, for the legs that load the NuGet clients image, on GitHub-hosted runners ([CI](#ci)). It brings up the integration stack (`make integration-up`), runs
 `make test-performance` and stops the stack. That target runs `TestChangePropagation`, `TestJobPickup`, `TestR_NPM_010_ThousandVersions` and

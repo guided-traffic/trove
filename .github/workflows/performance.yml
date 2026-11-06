@@ -1075,7 +1075,7 @@ jobs:
   e2e-bastion:
     name: e2e-bastion on kind (${{ matrix.set }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -1197,7 +1197,10 @@ jobs:
 
       - name: make e2e SET=${{ matrix.set }}
         if: steps.leg.outputs.run == 'true'
-        timeout-minutes: 80
+        # bastion-long carries the drain, the floods and the failure suite of the Bastion (Q-BAS-142): about 80 minutes of tests
+        timeout-minutes: ${{ matrix.set == 'bastion-long' && 120 || 80 }}
+        env:
+          TROVE_E2E_TIMEOUT: ${{ matrix.set == 'bastion-long' && '110m' || '90m' }}
         run: make e2e SET=${{ matrix.set }}
 
       - name: Upload the go test -json report
