@@ -171,6 +171,9 @@ func (s *Server) CreateProject(w http.ResponseWriter, r *http.Request, _ gen.Cre
 	input := project.Input{
 		Key: *in.Key, DisplayName: derefStr(in.DisplayName), Description: derefStr(in.Description),
 	}
+	if in.Owners != nil {
+		input.Owners = *in.Owners
+	}
 	actor := caller(r)
 	var epoch int64
 	err = s.idem.Do(w, r, body, IdempotentOp{Run: func(ctx context.Context, tx meta.Tx) (Outcome, error) {

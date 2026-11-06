@@ -180,7 +180,9 @@ func (s *Server) GetProjectCiSnippet(w http.ResponseWriter, r *http.Request, key
 			f := string(*params.Format)
 			format = &f
 		}
-		text, err = svc.Snippet(r.Context(), issuer, snippetRequest(kind, params.Mapping, format))
+		req := snippetRequest(kind, params.Mapping, format)
+		req.Project = key
+		text, err = svc.Snippet(r.Context(), issuer, req)
 	}
 	if err != nil {
 		httpserver.Problem(w, r, err)

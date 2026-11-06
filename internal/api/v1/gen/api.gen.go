@@ -964,24 +964,6 @@ func (e EndpointConfigurationSurface) Valid() bool {
 	}
 }
 
-// Defines values for EndpointConfigurationWildcardRoot.
-const (
-	EndpointConfigurationWildcardRootLabel EndpointConfigurationWildcardRoot = "label"
-	EndpointConfigurationWildcardRootNone  EndpointConfigurationWildcardRoot = "none"
-)
-
-// Valid indicates whether the value is a known member of the EndpointConfigurationWildcardRoot enum.
-func (e EndpointConfigurationWildcardRoot) Valid() bool {
-	switch e {
-	case EndpointConfigurationWildcardRootLabel:
-		return true
-	case EndpointConfigurationWildcardRootNone:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for EndpointRateLimitKey.
 const (
 	EndpointRateLimitKeyAddress   EndpointRateLimitKey = "address"
@@ -2194,6 +2176,39 @@ func (e RepositoryConsumerViewClass) Valid() bool {
 	case RepositoryConsumerViewClassRemote:
 		return true
 	case RepositoryConsumerViewClassVirtual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RepositoryReferenceKind.
+const (
+	RepositoryReferenceKindCiMapping               RepositoryReferenceKind = "ci_mapping"
+	RepositoryReferenceKindDeploymentTarget        RepositoryReferenceKind = "deployment_target"
+	RepositoryReferenceKindMember                  RepositoryReferenceKind = "member"
+	RepositoryReferenceKindPinRule                 RepositoryReferenceKind = "pin_rule"
+	RepositoryReferenceKindPolicy                  RepositoryReferenceKind = "policy"
+	RepositoryReferenceKindVirtualDeploymentTarget RepositoryReferenceKind = "virtual_deployment_target"
+	RepositoryReferenceKindVirtualMember           RepositoryReferenceKind = "virtual_member"
+)
+
+// Valid indicates whether the value is a known member of the RepositoryReferenceKind enum.
+func (e RepositoryReferenceKind) Valid() bool {
+	switch e {
+	case RepositoryReferenceKindCiMapping:
+		return true
+	case RepositoryReferenceKindDeploymentTarget:
+		return true
+	case RepositoryReferenceKindMember:
+		return true
+	case RepositoryReferenceKindPinRule:
+		return true
+	case RepositoryReferenceKindPolicy:
+		return true
+	case RepositoryReferenceKindVirtualDeploymentTarget:
+		return true
+	case RepositoryReferenceKindVirtualMember:
 		return true
 	default:
 		return false
@@ -5143,7 +5158,7 @@ type EndpointConfiguration struct {
 	Default  bool                          `json:"default"`
 	Exposure EndpointConfigurationExposure `json:"exposure"`
 
-	// HostRoots Host-root bindings, host to repository key (R-EP-006).
+	// HostRoots Host-root bindings, host to repository, the value being `<projectKey>/<repoKey>` (R-EP-006).
 	HostRoots map[string]string `json:"hostRoots"`
 
 	// Hosts The exact hosts of the host set (R-EP-003).
@@ -5160,7 +5175,6 @@ type EndpointConfiguration struct {
 	ReplicaHeader EndpointConfigurationReplicaHeader `json:"replicaHeader"`
 	Surface       []EndpointConfigurationSurface     `json:"surface"`
 	WildcardHost  *string                            `json:"wildcardHost"`
-	WildcardRoot  EndpointConfigurationWildcardRoot  `json:"wildcardRoot"`
 }
 
 // EndpointConfigurationAuthTokenTypes defines model for EndpointConfiguration.Auth.TokenTypes.
@@ -5174,9 +5188,6 @@ type EndpointConfigurationReplicaHeader string
 
 // EndpointConfigurationSurface defines model for EndpointConfiguration.Surface.
 type EndpointConfigurationSurface string
-
-// EndpointConfigurationWildcardRoot defines model for EndpointConfiguration.WildcardRoot.
-type EndpointConfigurationWildcardRoot string
 
 // EndpointList defines model for EndpointList.
 type EndpointList struct {
@@ -5998,7 +6009,7 @@ type MirrorStatusState string
 
 // MoveRepositoryRequest defines model for MoveRepositoryRequest.
 type MoveRepositoryRequest struct {
-	// Project The key of the target project. Must differ from the project of the path (`422`).
+	// Project The key of the target project. The project of the path itself is allowed, and the answer is `200` with nothing changed.
 	Project string `json:"project"`
 }
 
@@ -6401,7 +6412,7 @@ type PermissionCheckResult struct {
 	Allowed bool `json:"allowed"`
 }
 
-// PermissionPolicy A permission policy (R-AUTHZ-021). `inert` is true when no selector is left (a key selector goes with its repository); the policy stays and grants nothing. `warnings` are `path_patterns_on_package_format`, `selector_matches_nothing`, `anonymous_populates_remote` and, for a project policy, `selector_outside_project` (a key selector whose repository left the project by a move, Q-AUTHZ-179; a move that leaves such a selector is refused with `409 repository_in_use`). `version` is the ETag source.
+// PermissionPolicy A permission policy (R-AUTHZ-021). `inert` is true when no selector is left (a key selector goes with its repository); the policy stays and grants nothing. `warnings` are `path_patterns_on_package_format`, `selector_matches_nothing` and `anonymous_populates_remote`; a move that would leave a key selector of a project policy behind is refused with `409 repository_in_use`. `version` is the ETag source.
 type PermissionPolicy struct {
 	CreatedAt time.Time `json:"createdAt"`
 
@@ -6541,7 +6552,7 @@ type PreferencesPatch struct {
 	Theme *string `json:"theme,omitempty"`
 }
 
-// Problem RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// Problem RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type Problem struct {
 	// Code Stable snake_case identifier; clients match on it.
 	Code string `json:"code"`
@@ -6554,6 +6565,9 @@ type Problem struct {
 	// Instance The request path.
 	Instance *string       `json:"instance,omitempty"`
 	Job      *JobReference `json:"job,omitempty"`
+
+	// References Extension of `repository_in_use` (409 of a move): the objects of the source project that name the repository (R-REPO-060).
+	References *[]RepositoryReference `json:"references,omitempty"`
 
 	// RequestId Equals the `X-Request-Id` response header.
 	RequestId *string `json:"requestId,omitempty"`
@@ -6608,8 +6622,10 @@ type ProjectInput struct {
 	DisplayName *string    `json:"displayName,omitempty"`
 
 	// Key Required on create; on replace it must equal the key of the path.
-	Key          *string   `json:"key,omitempty"`
-	Members      *int      `json:"members,omitempty"`
+	Key     *string `json:"key,omitempty"`
+	Members *int    `json:"members,omitempty"`
+
+	// Owners On create, the references (`user:<name>`, `group:<name>`) that become the first Owners of the project in the transaction of the create (Q-AUTHZ-229); a reference that is no user or group answers `422 principal_not_allowed`, one that does not exist `404`. Ignored on replace.
 	Owners       *[]string `json:"owners,omitempty"`
 	Policies     *int      `json:"policies,omitempty"`
 	Repositories *int      `json:"repositories,omitempty"`
@@ -7032,6 +7048,17 @@ type RepositoryList_Items_Item struct {
 type RepositoryRead struct {
 	union json.RawMessage
 }
+
+// RepositoryReference defines model for RepositoryReference.
+type RepositoryReference struct {
+	Kind RepositoryReferenceKind `json:"kind"`
+
+	// Name The name of the object within the source project.
+	Name string `json:"name"`
+}
+
+// RepositoryReferenceKind defines model for RepositoryReference.Kind.
+type RepositoryReferenceKind string
 
 // RepositoryResolution defines model for RepositoryResolution.
 type RepositoryResolution struct {
@@ -8203,55 +8230,55 @@ type ProjectKey = string
 // RepoKey defines model for RepoKey.
 type RepoKey = string
 
-// BadGateway RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// BadGateway RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type BadGateway = Problem
 
-// BadRequest RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// BadRequest RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type BadRequest = Problem
 
-// BastionInterfaceMismatch RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// BastionInterfaceMismatch RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type BastionInterfaceMismatch = Problem
 
-// BastionTokenInvalid RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// BastionTokenInvalid RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type BastionTokenInvalid = Problem
 
-// Conflict RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// Conflict RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type Conflict = Problem
 
-// Forbidden RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// Forbidden RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type Forbidden = Problem
 
-// Internal RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// Internal RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type Internal = Problem
 
-// NotFound RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// NotFound RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type NotFound = Problem
 
-// NotImplemented RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// NotImplemented RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type NotImplemented = Problem
 
-// PayloadTooLarge RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// PayloadTooLarge RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type PayloadTooLarge = Problem
 
-// PreconditionFailed RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// PreconditionFailed RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type PreconditionFailed = Problem
 
-// PreconditionRequired RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// PreconditionRequired RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type PreconditionRequired = Problem
 
-// TooManyRequests RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// TooManyRequests RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type TooManyRequests = Problem
 
-// Unauthenticated RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// Unauthenticated RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type Unauthenticated = Problem
 
-// Unavailable RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// Unavailable RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type Unavailable = Problem
 
-// Unprocessable RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// Unprocessable RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type Unprocessable = Problem
 
-// UnsupportedMediaType RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// UnsupportedMediaType RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type UnsupportedMediaType = Problem
 
 // ListAuditEventsParams defines parameters for ListAuditEvents.
