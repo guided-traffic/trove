@@ -85,7 +85,7 @@ func (s CIScope) holdsOn(act Action, r *repoInfo) bool {
 			}
 		}
 		for _, ig := range c.inlineFor(r) {
-			if slices.Contains(ig.Actions, claims.Action(act)) && s.e.compile.selectorsMatch(ig.Repositories, r.repoView) {
+			if slices.Contains(ig.Actions, claims.Action(act)) && s.e.compile.selectorsMatch(ig.Repositories, c.in, r.repoView) {
 				return true
 			}
 		}

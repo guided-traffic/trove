@@ -287,7 +287,35 @@ func (o *Ownership) factsOf(idx *Index, sub Subject, k ownKey, c Coordinate) own
 			}
 		}
 	}
+	f.claimers = append(f.claimers, roleClaimers(k.repo.proj, sub, refs, f.claimers)...)
 	return f
+}
+
+// roleClaimers are the owners a claim records for a project role that allowed deploy (R-AUTHZ-018 rule 2,
+// R-AUTHZ-026): the member through which the role came, the user for its own membership and each group whose
+// membership carries a role with deploy. A role is never an owner identity of its own. have are the claimers
+// the grants named already; a principal is recorded once.
+func roleClaimers(p *projectInfo, sub Subject, refs map[string]Ref, have []claimOwner) []claimOwner {
+	if p == nil || !carriesRoles(sub) {
+		return nil
+	}
+	var out []claimOwner
+	add := func(id string) {
+		if id == "" || !p.members[id].Actions().Has(Deploy) {
+			return
+		}
+		for _, c := range append(have, out...) {
+			if c.principalID == id {
+				return
+			}
+		}
+		out = append(out, claimOwner{principalID: id, ref: refs[id]})
+	}
+	add(sub.ID)
+	for _, g := range sub.Groups {
+		add(g.ID)
+	}
+	return out
 }
 
 // identityRefs maps the principal IDs of the subject's owner identities to their

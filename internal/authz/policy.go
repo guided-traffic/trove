@@ -2,6 +2,8 @@ package authz
 
 import (
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // PatternLists is the include and exclude list of one dimension of a resource
@@ -30,17 +32,47 @@ type Entry struct {
 
 // PolicyInput is what a client writes (R-AUTHZ-021).
 type PolicyInput struct {
+	// Name is the policy's name within its project, or among the policies of no project
+	// (Q-AUTHZ-209): the same name may exist in two projects and once instance-wide. The
+	// store keeps [StoredPolicyName].
 	Name         string `json:"name"`
 	Description  string `json:"description"`
 	ResourceType string `json:"resourceType"`
 	// Project is the key of the project the policy belongs to, nil for a global
 	// policy (R-AUTHZ-026). It is written with the policy and never changes; a
-	// project policy covers only the repositories of its project, is named
-	// <project>-… and grants only to principals the project may name (Q-AUTHZ-175,
-	// Q-AUTHZ-176).
+	// project policy covers only the repositories of its project, names them by
+	// bare key and grants only to principals the project may name (Q-AUTHZ-175,
+	// Q-AUTHZ-216).
 	Project   *string   `json:"project"`
 	Resources Resources `json:"resources"`
 	Entries   []Entry   `json:"entries"`
+}
+
+// StoredPolicyName is the name a policy is stored and addressed under in this package:
+// "<projectKey>/<name>" for a policy of a project, the bare name for a global one
+// (Q-AUTHZ-209). The `/` is in no project key and no policy name, so one unique column
+// holds the policies of every project and those of none. The API addresses a project's
+// policy as /api/v1/projects/<projectKey>/policies/<name> and shows the bare name with
+// the member project.
+func StoredPolicyName(project *string, name string) string {
+	if project == nil {
+		return name
+	}
+	return qname.Object{Project: *project, Name: name}.String()
+}
+
+// StoredName is [StoredPolicyName] of the policy.
+func (p PolicyInput) StoredName() string { return StoredPolicyName(p.Project, p.Name) }
+
+// splitPolicyName reads a stored policy name into its project (nil for a global policy)
+// and its name within the project.
+func splitPolicyName(stored string) (*string, string) {
+	o, err := qname.ParseObject(stored)
+	if err != nil || o.Project == "" {
+		return nil, stored
+	}
+	project := o.Project
+	return &project, o.Name
 }
 
 // Policy is a stored permission policy as the API returns it.
@@ -65,9 +97,6 @@ const (
 	WarnPathPatternsOnPackageFormat = "path_patterns_on_package_format"
 	WarnSelectorMatchesNothing      = "selector_matches_nothing"
 	WarnAnonymousPopulatesRemote    = "anonymous_populates_remote"
-	// WarnSelectorOutsideProject: a key selector of a project policy names a
-	// repository that is no longer in the project; it covers nothing (Q-AUTHZ-179).
-	WarnSelectorOutsideProject = "selector_outside_project"
 )
 
 // Report is the answer of the validate-policy operation (R-AUTHZ-021): the

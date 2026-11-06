@@ -1,6 +1,9 @@
 package authz
 
 import (
+	"fmt"
+
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
@@ -83,44 +86,104 @@ func parseSelector(s string, in qname.Context) (selector, error) {
 	return sel, nil
 }
 
-// ValidateSelector reports why a repository selector text of an instance context (a token scope, a global
-// policy) is invalid, nil if it is valid: a key, a key pattern, a class selector, each with the optional
-// format filter (R-AUTHZ-004). A token scope names its repositories with it (R-AUTH-024).
-func ValidateSelector(s string) error {
+// ValidateSelector reports why a repository selector text of an instance context (a token scope, a
+// global policy, the system tier of a CI mapping, an exposure rule) is invalid, nil if it is valid:
+// <project>/<key>, <projectGlob>/<keyGlob>, a class, the last two with the optional format filter
+// (R-AUTHZ-004). It is [ValidateSelectorIn] with no project.
+func ValidateSelector(s string) error { return ValidateSelectorIn(s, "") }
+
+// ValidateSelectorIn reports why a repository selector text is invalid in the context of the project
+// with the key project, "" for an instance context; nil if it is valid. A project context (a project
+// policy, the project tier of a CI mapping, a virtual repository's members and deployment target) takes
+// a bare key, a bare key pattern or a class, each with the optional format filter.
+//
+// The error says which rule the text broke, so that each surface answers with its own code
+// (R-AUTHZ-004, Q-AUTHZ-216): errors.Is(err, qname.ErrBareKeyInInstanceContext) for a bare key or key
+// pattern in an instance context, which a token scope answers 400 invalid_scope (R-AUTH-024) and the CI
+// exchange scope_malformed (R-CI-007); errors.Is(err, qname.ErrQualifiedInProject) for a selector with a
+// "/" in a project context; qname.ErrInvalidSelector for every other syntax error. A policy, a CI mapping
+// and an exposure rule answer all three with 422 invalid_pattern ([SelectorProblemCode]). Whether a key
+// names an existing repository and a format filter a known format is the caller's question.
+func ValidateSelectorIn(s, project string) error {
 	if err := checkLength(s); err != nil {
-		return err
+		return fmt.Errorf("%w: %w", qname.ErrInvalidSelector, err)
 	}
-	_, err := parseSelector(s, instanceContext)
+	in := instanceContext
+	if project != "" {
+		in = projectContext(project)
+	}
+	_, err := parseSelector(s, in)
 	return err
 }
+
+// SelectorProblemCode is the field code of a selector that [ValidateSelectorIn] refused, where selectors
+// are validated as patterns: a permission policy, a CI mapping, an exposure rule (R-AUTHZ-004).
+const SelectorProblemCode = errs.CodeInvalidPattern
 
 // dynamic reports whether the selector covers repositories created later.
 func (s selector) dynamic() bool { return s.kind != selKey }
 
-// text renders the selector in the API form of its context. keyOf resolves the key of a policy's key
-// selector by repository ID (the project is s.project then).
-func (s selector) text(keyOf func(int64) string) string {
-	suffix := ""
-	if s.format != "" {
-		suffix = ":" + s.format
+// text renders the selector in the API form of its context: a key as <project>/<key> in an instance
+// context and as the bare key in a project context. nameOf resolves the name of a policy's key selector
+// by repository ID; nil, or a zero answer, keeps the name the selector holds (project and key).
+func (s selector) text(nameOf func(int64) qname.Repo) string {
+	switch s.kind {
+	case selKey:
+		name := s.keyName(nameOf)
+		if s.inProject || name.Project == "" {
+			return name.Key
+		}
+		return name.String()
+	case selPattern:
+		return s.pattern + s.suffix()
+	}
+	if s.class == classAny {
+		return "@any" + s.suffix()
+	}
+	return "@any-" + s.class + s.suffix()
+}
+
+// instanceText renders the selector in the grammar of an instance context, where a selector of a
+// project context gains its project: a key as <project>/<key>, a key pattern as <project>/<keyGlob>.
+// ok is false for a class of a project context, which an instance context cannot spell (Q-AUTHZ-216
+// "web/@any-local cannot be written"), and for a key whose repository nameOf does not know.
+func (s selector) instanceText(nameOf func(int64) qname.Repo) (string, bool) {
+	if !s.inProject {
+		if s.kind == selKey && s.keyName(nameOf).Key == "" {
+			return "", false
+		}
+		return s.text(nameOf), true
 	}
 	switch s.kind {
 	case selKey:
-		key := s.key
-		if key == "" && keyOf != nil {
-			key = keyOf(s.repoID)
+		name := s.keyName(nameOf)
+		if name.Key == "" {
+			return "", false
 		}
-		if s.inProject || s.project == "" {
-			return key
-		}
-		return s.project + "/" + key
+		return qname.Repo{Project: s.project, Key: name.Key}.String(), true
 	case selPattern:
-		return s.pattern + suffix
+		return s.project + "/" + s.keyGlob + s.suffix(), true
 	}
-	if s.class == classAny {
-		return "@any" + suffix
+	return "", false
+}
+
+// keyName is the name of a key selector: by repository ID through nameOf when it knows it, else the
+// project and key the selector holds.
+func (s selector) keyName(nameOf func(int64) qname.Repo) qname.Repo {
+	if s.repoID != 0 && nameOf != nil {
+		if n := nameOf(s.repoID); !n.IsZero() {
+			return n
+		}
 	}
-	return "@any-" + s.class + suffix
+	return qname.Repo{Project: s.project, Key: s.key}
+}
+
+// suffix is the format filter as text, ":<format>" or "".
+func (s selector) suffix() string {
+	if s.format == "" {
+		return ""
+	}
+	return ":" + s.format
 }
 
 // matches reports whether the selector covers the repository.

@@ -270,6 +270,11 @@ type Decider interface {
 	// MembershipsOn lists the projects the subject is a member of with the role in
 	// force for its credential, on the index the request decides on (Q-AUTHZ-207).
 	MembershipsOn(idx *Index, sub Subject) []Membership
+	// RoleOn returns the subject's role in the named project in force for its
+	// credential (an Owner through a credential that may not administer holds
+	// ProjectRoleMaintainer), ProjectRoleNone for no membership and for an unknown
+	// project alike; it is a question and audits nothing (Q-AUTHZ-215).
+	RoleOn(idx *Index, sub Subject, project string) ProjectRole
 	// OwnsOn asks whether the subject may administer the named project: an Owner of
 	// it through a session or a token with admin: true (Q-AUTHZ-208); it is a
 	// question and audits nothing. An unknown project is false, as is one the subject

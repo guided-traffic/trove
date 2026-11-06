@@ -208,10 +208,14 @@ type evalState struct {
 	// contributions with their caps and bounds, never the plain principal set.
 	isCI bool
 	ci   CIGrantSet
+	// roles are the subject's project roles, the highest over its user and its groups per
+	// project (R-AUTHZ-026), derived once; empty for a credential that carries no role
+	// (Q-AUTHZ-215). A decision looks a repository's project up in it.
+	roles []membership
 }
 
 func (e *Engine) newEvalState(idx *Index, sub Subject) *evalState {
-	st := &evalState{idx: idx, sub: sub, pset: idx.principalIDs(sub)}
+	st := &evalState{idx: idx, sub: sub, pset: idx.principalIDs(sub), roles: idx.projectRoles(sub)}
 	if kindOf(sub) == kindCI {
 		st.isCI, st.ci = true, idx.CIGrants(sub)
 	}
@@ -292,7 +296,7 @@ func (e *Engine) scopeAdmits(sc *scope.Scope, a Action, r *repoInfo, repoLevel b
 		if len(bad) > 0 || !acts.Has(a) {
 			continue
 		}
-		if !e.compile.selectorsMatch(el.Repositories, r.repoView) {
+		if !e.compile.selectorsMatch(el.Repositories, instanceContext, r.repoView) {
 			continue
 		}
 		pkgs, err := e.compile.set(dimPackage, el.Packages.Include, el.Packages.Exclude, r.Format, e.namesOf(r.Format))
@@ -310,8 +314,12 @@ func (e *Engine) scopeAdmits(sc *scope.Scope, a Action, r *repoInfo, repoLevel b
 	return false
 }
 
-// grantedBy returns the names of the policies whose grants give the action on
-// the coordinate to a principal of the set (R-AUTHZ-015 `granted`).
+// grantedBy returns the sources that give the action on the coordinate to the
+// subject (R-AUTHZ-015 `granted`): the names of the policies whose grants give it to
+// a principal of the set, and the role the subject holds in the repository's project,
+// as "role:<projectKey>:<role>" (R-AUTHZ-026). A role covers every package and path
+// of every repository of its project; on a virtual repository only read and manage
+// have an effect, as for a grant (R-AUTHZ-009).
 func (st *evalState) grantedBy(a Action, r *repoInfo, repoLevel bool, pkg, path string) []string {
 	var out []string
 	for _, p := range st.pset {
@@ -321,9 +329,20 @@ func (st *evalState) grantedBy(a Action, r *repoInfo, repoLevel bool, pkg, path 
 			}
 		}
 	}
-	// The role of a project member (Q-AUTHZ-207) joins here: a source "role:<project>:<role>" for the
-	// actions ProjectRole.Actions gives. Not built yet; the member holds what the policies grant.
+	if role := roleIn(st.roles, r.proj); role != ProjectRoleNone && roleActions(role, r).Has(a) {
+		out = append(out, r.proj.source(role))
+	}
 	return out
+}
+
+// roleActions are the actions a role gives on one repository of its project: the role's
+// actions, narrowed to read and manage on a virtual repository (R-AUTHZ-009).
+func roleActions(role ProjectRole, r *repoInfo) ActionSet {
+	acts := role.Actions()
+	if r.Class == repository.Virtual {
+		acts &= virtualActions
+	}
+	return acts
 }
 
 // allowedAction is `Allowed` of R-AUTHZ-015 after the endpoint ceiling, which
@@ -377,11 +396,13 @@ func (e *Engine) scopeAdmitsThrough(st *evalState, a Action, r *repoInfo, repoLe
 	if sc == nil || sc.Inherit {
 		return false
 	}
-	// Only an element that names the virtual repository by its exact key lifts: a class
-	// selector or a key glob that happens to cover it does not (Q-AUTHZ-164).
+	// Only an element that names the virtual repository by its exact name, <project>/<key> in
+	// the instance context of a token scope, lifts: a class selector or a key glob that happens
+	// to cover it does not (Q-AUTHZ-164, Q-AUTHZ-216).
 	exact := &scope.Scope{}
+	name := v.Name.String()
 	for _, el := range sc.Repositories {
-		if slices.Contains(el.Repositories, v.Name.Key) {
+		if slices.Contains(el.Repositories, name) {
 			exact.Repositories = append(exact.Repositories, el)
 		}
 	}
@@ -837,47 +858,63 @@ func (e *Engine) Effective(ctx context.Context, sub Subject) (Me, error) {
 	return me, nil
 }
 
-// patternCache compiles the patterns and selectors of token scopes, which arrive
-// with every request. It is bounded and lives in the engine, never in package
-// state (R-ARCH-032).
+// patternCache compiles the patterns and selectors of token scopes and CI inline
+// grants, which arrive with every request. It is bounded and lives in the engine,
+// never in package state (R-ARCH-032). A selector is cached per context: the same
+// text is a bare key in a project and an error in the instance (Q-AUTHZ-216).
 type patternCache struct {
 	mu   sync.RWMutex
-	sels map[string]selector
-	bad  map[string]bool
+	sels map[selKeyIn]selector
+	bad  map[selKeyIn]bool
 	res  map[string]*globSet
+}
+
+// selKeyIn is a selector text in its context, the key of patternCache.sels.
+type selKeyIn struct {
+	project string
+	text    string
 }
 
 const patternCacheMax = 4096
 
 func newPatternCache() *patternCache {
-	return &patternCache{sels: map[string]selector{}, bad: map[string]bool{}, res: map[string]*globSet{}}
+	return &patternCache{sels: map[selKeyIn]selector{}, bad: map[selKeyIn]bool{}, res: map[string]*globSet{}}
+}
+
+// reset empties the cache; the caller holds the write lock.
+func (c *patternCache) reset() {
+	c.sels, c.bad, c.res = map[selKeyIn]selector{}, map[selKeyIn]bool{}, map[string]*globSet{}
 }
 
 func (c *patternCache) full() bool { return len(c.sels)+len(c.res) > patternCacheMax }
 
-// selectorsMatch reports whether any selector text covers the repository.
-func (c *patternCache) selectorsMatch(texts []string, r repoView) bool {
+// selectorsMatch reports whether any selector text, read in the context in, covers
+// the repository. A token scope and a CI grant of the system tier are read in the
+// instance context, the inline grants of a project's CI mapping in the context of its
+// project (R-AUTHZ-004). A text that does not parse in its context covers nothing.
+func (c *patternCache) selectorsMatch(texts []string, in qname.Context, r repoView) bool {
 	for _, t := range texts {
+		k := selKeyIn{project: in.Project, text: t}
 		c.mu.RLock()
-		s, ok := c.sels[t]
-		bad := c.bad[t]
+		s, ok := c.sels[k]
+		bad := c.bad[k]
 		c.mu.RUnlock()
 		if bad {
 			continue
 		}
 		if !ok {
 			var err error
-			s, err = parseSelector(t, instanceContext)
+			s, err = parseSelector(t, in)
 			c.mu.Lock()
 			if c.full() {
-				c.sels, c.bad, c.res = map[string]selector{}, map[string]bool{}, map[string]*globSet{}
+				c.reset()
 			}
 			if err != nil {
-				c.bad[t] = true
+				c.bad[k] = true
 				c.mu.Unlock()
 				continue
 			}
-			c.sels[t] = s
+			c.sels[k] = s
 			c.mu.Unlock()
 		}
 		if s.matches(r) {
@@ -910,7 +947,7 @@ func (c *patternCache) set(dim dimension, include, exclude []string, format stri
 	}
 	c.mu.Lock()
 	if c.full() {
-		c.sels, c.bad, c.res = map[string]selector{}, map[string]bool{}, map[string]*globSet{}
+		c.reset()
 	}
 	c.res[key] = &got
 	c.mu.Unlock()

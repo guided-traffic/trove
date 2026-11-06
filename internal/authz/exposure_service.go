@@ -427,7 +427,11 @@ func (s *ExposureService) resolve(ctx context.Context, qs *q.Queries, in Exposur
 		if err != nil {
 			return rr, err
 		}
-		if len(rows) == 0 {
+		if _, perr := qname.ParseRepo(in.Repository); perr != nil {
+			// A rule names its repository in an instance context: a bare key is refused, never
+			// read as a name that matches nothing (R-AUTHZ-004, Q-AUTHZ-216).
+			ps = append(ps, ProblemField{Pointer: prefix + "/repository", Code: SelectorProblemCode, Detail: fmt.Sprintf("%q is no repository name <project>/<key>", in.Repository)})
+		} else if len(rows) == 0 {
 			ps = append(ps, ProblemField{Pointer: prefix + "/repository", Code: errs.CodeUnknownRepository, Detail: fmt.Sprintf("no repository %q exists", in.Repository)})
 		} else {
 			rr.repoID, rr.format = rows[0].ID, rows[0].Format
