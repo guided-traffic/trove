@@ -417,22 +417,6 @@ The owner reviewed the UI, the documentation and the domain model with the devel
 `ui-review` (worktree `/Users/hfi/repos/trove-ui-review`). What was decided is recorded in the spec; what is left is below. The
 tasks come before the phase's own work packages (step 2, item 5), in this order; remove a task in the commit that finishes it.
 
-### Integrate the branch first
-
-- **T-1 · Get the review's work green on `main`.** The review's work went onto `main` on 2026-11-06, merged from the branch
-  `ui-review`, after the agent that had worked on `main` finished; one line of work continues from here, on `main` (owner,
-  2026-11-06). It holds the UI development profile; sign-in, own controls, logo and the separate admin area (Q-UI-125 to
-  Q-UI-127); the admin dashboard (Q-OPS-175); the reference's design (Q-UI-128); the model decisions below; `CLAUDE.md`; and the
-  switched-off compatibility checks (Q-ARCH-340). The merges renumbered the branch's Q-ARCH-332/333 to Q-ARCH-340/341 and its
-  H-543 to H-545 to H-550 to H-552, and its migration to `00044_replica_runtime.sql`. Every database that applied it as 00042
-  needs a fresh one (rule 9): the `trove-ui-dev-*` profile (`make ui-dev-down PURGE=1`, then `make ui-dev-up`) and the dev
-  cluster. Never run before the push: the integration tier (`overview_test.go` of Q-OPS-175, the adjusted `slowFirstStep` of
-  `migrate_test.go`), the browser journeys (sign-in with `?auto_sign_in=false`, the link and area "Documentation", "Admin
-  area", "Artifacts", the new tables, tabs and badges) with axe's colour contrast in both schemes for the palette of Q-UI-128,
-  and the coverage evidence of the new named tests. Watch the `Test and Release` run of the push and fix what it finds
-  (step 5). The branch `ui-review` and its worktree `/Users/hfi/repos/trove-ui-review` stay until the owner says to delete
-  them.
-
 ### Build what the owner decided (spec first, then code)
 
 - **T-3 · Every repository belongs to exactly one project; none is shared**

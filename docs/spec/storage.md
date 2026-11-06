@@ -31,7 +31,7 @@ OPS-067 from [operations-and-monitoring.md](../features/operations-and-monitorin
 | Term | Meaning on this page |
 |---|---|
 | Blob | One immutable byte sequence, identified by its SHA-256, stored once as one S3 object. |
-| Item | Anything addressable by repository (project key and repository key) and path: a file or a folder. A file item references exactly one blob. |
+| Item | Anything addressable by repository key and path: a file or a folder. A file item references exactly one blob. |
 | Reference | A row in any table that points at a blob through a `blob_sha256` foreign key (file items, including items in the trash can; stored run reports; cached documents of other subsystems). |
 | Package, version | The logical unit a format defines (an npm package and its versions, a NuGet package id and its versions). A version groups one or more file items. |
 | Lead item | The file item whose timestamps, downloads and properties stand for its whole version in retention decisions (npm: the tarball; NuGet: the `.nupkg`). |
@@ -80,10 +80,9 @@ first and second byte. Example: content with SHA-256
 `5be0c1d2…` *(example)* lies at `trove/sha256/5b/e0/5be0c1d2…`. With an empty prefix the key
 starts at `sha256/` (no leading slash).
 
-- The key MUST NOT contain any part of a project key, repository key, item path, file name or user input.
+- The key MUST NOT contain any part of a repository key, item path, file name or user input.
   Repository paths live only in PostgreSQL; the same blob serves any number of items in any
-  number of repositories, of one project or of several: a remote repository of the same public registry in two
-  projects stores a package that both fetched once ([Q-STOR-154](#q-stor-154--blobs-are-deduplicated-across-projects)).
+  number of repositories.
 - The two-level fan-out (65,536 leaf prefixes) is fixed and not configurable. It spreads requests
   over many key prefixes, which object stores use to partition request rates, and it lets the
   orphan sweep (R-STOR-026) work prefix by prefix and resume.
@@ -108,7 +107,7 @@ starts at `sha256/` (no leading slash).
 
 Acceptance criteria:
 
-- After `curl -fsS -H "Authorization: Bearer $TROVE_TOKEN" -T widget.bin https://trove.example.com/files/web/generic-local/tools/widget.bin`
+- After `curl -fsS -H "Authorization: Bearer $TROVE_TOKEN" -T widget.bin https://trove.example.com/files/generic-local/tools/widget.bin`
   *(example)*, `aws s3api head-object --bucket trove-blobs --key trove/sha256/<h0h1>/<h2h3>/<hex>`
   succeeds, where `<hex>` is the output of `shasum -a 256 widget.bin`.
 - Uploading the same file to a second repository and a second path creates no second object
@@ -137,7 +136,7 @@ Priority: **MVP** · Covers: ART-008, STOR-004
 
 Acceptance criteria:
 
-- For a deployed file, `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/items?path=…` returns `digests.sha256`,
+- For a deployed file, `GET /api/v1/repositories/{repoKey}/items?path=…` returns `digests.sha256`,
   `digests.sha1`, `digests.md5` and `digests.sha512` equal to `shasum -a 256`, `shasum -a 1`,
   `md5sum` and `shasum -a 512` of the file.
 - `curl -T f.bin -H "Repr-Digest: sha-256=:<base64 of a wrong digest>:" …` answers `409` and
@@ -189,14 +188,12 @@ segment; no control characters (U+0000–U+001F, U+007F) and no backslash. Viola
 ```sql
 CREATE TABLE repositories (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    project_id  uuid NOT NULL REFERENCES project (id),   -- authorization.md R-AUTHZ-026: every repository is in one project
-    key         text NOT NULL CHECK (key ~ '^[a-z0-9][a-z0-9._-]{1,63}$'),  -- INV-5; unique within the project
+    key         text NOT NULL UNIQUE CHECK (key ~ '^[a-z0-9][a-z0-9._-]{1,63}$'),  -- INV-5
     format      text NOT NULL,
     class       text NOT NULL CHECK (class IN ('local', 'remote', 'virtual')),
     config      jsonb NOT NULL DEFAULT '{}',   -- repositories-and-proxy.md; member "storage" defined here
     created_at  timestamptz NOT NULL DEFAULT now(),
-    updated_at  timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT repositories_project_key UNIQUE (project_id, key)
+    updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE blobs (
@@ -549,12 +546,12 @@ conventions): `trove_storage_spool_reserved_bytes`, `trove_storage_spool_free_by
 
 Acceptance criteria:
 
-- With `storage.upload.max_size: 10MiB`, `curl -T 11mb.bin …/files/web/generic-local/x.bin` answers `413` without the
+- With `storage.upload.max_size: 10MiB`, `curl -T 11mb.bin …/files/generic-local/x.bin` answers `413` without the
   body being transferred (`curl -v` shows no `100 Continue`).
 - Killing the client mid-upload leaves no spool file and no blob row; the spool budget metric
   returns to its previous value.
 - With `storage.spool.max_bytes: 100MiB` and `storage.upload.max_size: 90MiB`, two concurrent
-  chunked uploads of 80 MiB each (`curl -T - …/files/web/generic-local/a.bin < 80mb.bin`, which sends
+  chunked uploads of 80 MiB each (`curl -T - …/files/generic-local/a.bin < 80mb.bin`, which sends
   `Transfer-Encoding: chunked`): one answers `201`, the other `503` with `Retry-After` and leaves
   no spool file and no item; repeated afterwards, it answers `201`. A chunked upload of 95 MiB
   answers `413`.
@@ -657,7 +654,7 @@ storage:
 Acceptance criteria:
 
 - Publishing the same npm tarball to `npm-a` and `npm-b`
-  (`npm publish --registry https://trove.example.com/api/npm/web/npm-b/`) causes exactly one S3
+  (`npm publish --registry https://trove.example.com/api/npm/npm-b/`) causes exactly one S3
   `PutObject` (S3 request metric `trove_storage_s3_requests_total{operation="put"}` grows by one) and
   two item rows referencing one blob row.
 - Race test (Go integration test against PostgreSQL and the per-change S3 store of
@@ -720,7 +717,7 @@ Acceptance criteria:
 ### R-STOR-007 · Raw deploy and folder creation
 Priority: **MVP** · Covers: ART-002
 
-`PUT /files/{projectKey}/{repoKey}/{path}` deploys one file into a local repository, or into the default
+`PUT /files/{repoKey}/{path}` deploys one file into a local repository, or into the default
 deployment target of a virtual repository ([repositories-and-proxy.md](repositories-and-proxy.md)).
 
 | | |
@@ -730,14 +727,14 @@ deployment target of a virtual repository ([repositories-and-proxy.md](repositor
 | Permission | `deploy` on the path; additionally `overwrite` when replacing different content. |
 | Errors | `400` invalid path or length mismatch; `401`; `403`; `404` unknown repository; `405` repository class does not accept deploys (remote, virtual without deployment target); `409` digest mismatch, or a format rule refuses the path, or a path conflict (`path_conflict`); an existing item with other content and no `overwrite` permission answers `403` (Q-STOR-17); `413` too large; `503` spool or object store unavailable; `507` quota exceeded. Bodies are problem details per [api-and-ui.md](api-and-ui.md). |
 
-`PUT /files/{projectKey}/{repoKey}/{path}/` (trailing slash, empty body) creates an explicit folder and its
+`PUT /files/{repoKey}/{path}/` (trailing slash, empty body) creates an explicit folder and its
 missing parents and answers `201`; an existing folder answers `200`.
 
 Response sketch:
 
 ```json
 {
-  "repository": "web/generic-local",
+  "repository": "generic-local",
   "path": "tools/widget/2.3/widget-2.3.bin",
   "kind": "file",
   "size": 48213,
@@ -745,8 +742,8 @@ Response sketch:
   "created": { "at": "2026-10-28T09:14:03.117Z", "by": "user:alice" },
   "digests": { "sha256": "5be0c1d2…", "sha512": "…", "sha1": "…", "md5": "…" },
   "declaredDigests": { "sha256": "5be0c1d2…" },
-  "downloadUrl": "https://trove.example.com/files/web/generic-local/tools/widget/2.3/widget-2.3.bin",
-  "itemUrl": "https://trove.example.com/api/v1/projects/web/repositories/generic-local/items?path=tools%2Fwidget%2F2.3%2Fwidget-2.3.bin"
+  "downloadUrl": "https://trove.example.com/files/generic-local/tools/widget/2.3/widget-2.3.bin",
+  "itemUrl": "https://trove.example.com/api/v1/repositories/generic-local/items?path=tools%2Fwidget%2F2.3%2Fwidget-2.3.bin"
 }
 ```
 
@@ -761,9 +758,9 @@ at a path the format writes (a version's tarball path) would block its next writ
 
 Acceptance criteria:
 
-- `curl -fsS -u ci:$TROVE_TOKEN -T widget.bin https://trove.example.com/files/web/generic-local/tools/widget.bin`
+- `curl -fsS -u ci:$TROVE_TOKEN -T widget.bin https://trove.example.com/files/generic-local/tools/widget.bin`
   answers `201` with the JSON above; repeating it answers `200`.
-- `curl -X PUT …/files/web/generic-local/empty-folder/` answers `201`; the folder appears in the
+- `curl -X PUT …/files/generic-local/empty-folder/` answers `201`; the folder appears in the
   listing (R-STOR-017) with no children.
 - A `PUT` to a virtual repository without a deployment target answers `405`.
 
@@ -772,7 +769,7 @@ Priority: **P1** · Covers: ART-004, STOR-003
 
 A client can create a file item from content trove already stores without sending the bytes.
 
-- **Explicit form.** `PUT /files/{projectKey}/{repoKey}/{path}` with an empty body, the header
+- **Explicit form.** `PUT /files/{repoKey}/{path}` with an empty body, the header
   `Trove-Deploy-By-Checksum: ?1` (a structured-field boolean) and
   `Repr-Digest: sha-256=:<base64>:`. If a `live` blob with that SHA-256 and `content_status = 'ok'`
   exists **and the caller can read at least one untrashed item that references it**, the item is
@@ -808,7 +805,7 @@ storage:
 Acceptance criteria:
 
 - After uploading `widget.bin` to `generic-a`, a user with read on `generic-a` runs
-  `curl -X PUT -H "Trove-Deploy-By-Checksum: ?1" -H "Repr-Digest: sha-256=:$(openssl dgst -sha256 -binary widget.bin | base64):" …/files/web/generic-b/widget.bin`
+  `curl -X PUT -H "Trove-Deploy-By-Checksum: ?1" -H "Repr-Digest: sha-256=:$(openssl dgst -sha256 -binary widget.bin | base64):" …/files/generic-b/widget.bin`
   and gets `201`; no S3 request is made.
 - A user without read on `generic-a` gets `404` for the same request.
 - `curl -T big.bin -H "Expect: 100-continue" -H "Repr-Digest: sha-256=:…:"` for stored content
@@ -818,12 +815,11 @@ Acceptance criteria:
 Priority: **P1** · Covers: ART-003
 
 - A raw deploy MAY carry properties as matrix parameters directly after the repository key:
-  `PUT /files/{projectKey}/{repoKey};ci.run=8812;git.sha=4f2a9c1/{path}` *(example)*. Each `key=value` pair
+  `PUT /files/{repoKey};ci.run=8812;git.sha=4f2a9c1/{path}` *(example)*. Each `key=value` pair
   becomes a property of the deployed file; a key repeated or a value list separated by `,` gives
   several values. Keys and values are percent-decoded once.
-- Matrix parameters are recognized only in the repository-key segment, the second segment after `/files/`. Project and
-  repository keys cannot contain `;` or `%` (INV-5, [architecture.md](architecture.md) R-ARCH-005), so the syntax is
-  unambiguous: the keys end at the first `;`, and only the parameters after it are percent-decoded; file names that contain `;` stay legal and
+- Matrix parameters are recognized only in the repository-key segment. Repository keys cannot
+  contain `;` (INV-5), so the syntax is unambiguous; file names that contain `;` stay legal and
   are never parsed. This position also serves build tools that template a deploy base URL and
   append the artifact path (Maven distribution URLs).
 - Alternatively the header `Trove-Properties` carries a structured-field dictionary of string
@@ -835,9 +831,9 @@ Priority: **P1** · Covers: ART-003
 
 Acceptance criteria:
 
-- `curl -T w.jar "https://trove.example.com/files/web/maven-local;build.number=17/com/acme/w/1.0/w-1.0.jar"`
+- `curl -T w.jar "https://trove.example.com/files/maven-local;build.number=17/com/acme/w/1.0/w-1.0.jar"`
   stores the file at `com/acme/w/1.0/w-1.0.jar` with property `build.number=17`.
-- A file named `a;b=c.txt` uploaded to `…/files/web/generic-local/dir/a;b=c.txt` keeps its name and
+- A file named `a;b=c.txt` uploaded to `…/files/generic-local/dir/a;b=c.txt` keeps its name and
   gets no property.
 
 ### R-STOR-010 · Client checksum policy and digest sidecar files
@@ -1074,7 +1070,7 @@ Acceptance criteria:
 ### R-STOR-012 · Streaming download, Range and conditional requests
 Priority: **MVP** · Covers: ART-011
 
-`GET` and `HEAD` on `/files/{projectKey}/{repoKey}/{path}` (and every format endpoint that returns stored
+`GET` and `HEAD` on `/files/{repoKey}/{path}` (and every format endpoint that returns stored
 content) resolve the item (virtual and remote resolution:
 [repositories-and-proxy.md](repositories-and-proxy.md)) and stream its blob from S3.
 
@@ -1159,7 +1155,7 @@ storage:
 
 Acceptance criteria:
 
-- `curl -r 0-99 -o part …/files/web/generic-local/widget.bin` answers `206` with 100 bytes equal to
+- `curl -r 0-99 -o part …/files/generic-local/widget.bin` answers `206` with 100 bytes equal to
   `head -c 100 widget.bin`.
 - `curl -I …` answers `200` with the headers above while the S3 request counter does not grow.
 - `curl -H 'If-None-Match: "<sha256>"' …` answers `304`.
@@ -1174,7 +1170,7 @@ Acceptance criteria:
 - A test handler that deletes `Content-Security-Policy` and sets
   `Cross-Origin-Resource-Policy: cross-origin` before writing still sends the sandbox CSP and
   `same-site`.
-- `npm install @acme/widget --registry https://trove.example.com/api/npm/web/npm-all/` and
+- `npm install @acme/widget --registry https://trove.example.com/api/npm/npm-all/` and
   `dotnet restore` against the NuGet source download through this path.
 
 ### R-STOR-013 · Download integrity verification
@@ -1235,6 +1231,9 @@ Specified now because the download path must leave room for it; implementation i
   R-STOR-012) and `response-content-type`, and `Cache-Control: no-store`.
 - A virtual repository redirects only when the member that serves the item has the switch on.
 - Authorization happens before the URL is issued; download statistics are counted at issuance.
+- An installation that encrypts its stored content on the client side ([R-STOR-048](#r-stor-048--client-side-encryption-of-stored-content))
+  cannot redirect: the object store holds only ciphertext, so every download is decrypted and streamed by trove, and
+  `presignedDownloads: true` is refused there.
 - URLs are signed against `storage.s3.presign.endpoint` when set (a public host name in front
   of an in-cluster object store), otherwise against the configured endpoint. With temporary
   credentials (R-STOR-031) a URL stops working when the signing credentials expire, whichever
@@ -1253,9 +1252,98 @@ storage:
 
 Acceptance criteria:
 
-- With the switch on, `curl -sI …/files/web/docker-local/<layer>` answers `302`;
+- With the switch on, `curl -sI …/files/docker-local/<layer>` answers `302`;
   `curl -L -o layer.bin …` downloads a file whose SHA-256 matches; the URL fails after `ttl`.
 - Files below `min_size` are streamed (`200`).
+
+### R-STOR-048 · Client-side encryption of stored content
+Priority: **P2** · Covers: trove-only
+
+Decided by the owner on 2026-11-06: trove will store the content of its blobs encrypted in the object store, in the
+storage format of [s3-encryption-proxy](https://github.com/guided-traffic/s3-encryption-proxy) (s3ep), with s3ep
+imported as a Go module. Not built. This block is the ticket for that work ([FULL.md](../projektplan/FULL.md), block E);
+the points under "Open before it is built" are decided when it is planned.
+
+Why: the object store, its operators, its backups and anybody who can read the bucket see only ciphertext, and the key
+encryption key stays with trove. An object trove writes is readable through s3ep with the same key and metadata prefix,
+and the other way round, so an operator can read a blob without trove.
+
+What it means:
+
+- trove is always the proxy: every download is decrypted and streamed by trove. Presigned redirects (R-STOR-014) are
+  refused while it is on. Server-side encryption (R-STOR-032) stays possible beneath it.
+- Each blob has one random 256-bit data key; the content is an AES-256-GCM segment chain closed by a sealed trailer (the
+  plaintext's length and CRC32C). The data key is wrapped by an AES-256 key encryption key and stored in four object
+  metadata keys under a prefix (s3ep's default `s3ep-`).
+- One key encryption key is active and wraps new objects; retired keys only open what they wrapped. A key is base64 of
+  32 random bytes; s3ep's rules refuse a passphrase or a low-entropy value.
+- Every byte handed out is authenticated; a whole-object read is verified when its body ends (the trailer), so the
+  hold-back of R-STOR-013 stays the gate of a complete response. Ranged reads are authenticated per segment, which narrows
+  H-11 for ranged responses.
+- An object that is not in the format is refused, never served.
+
+Reference: the owner's sketch `s3enc` of 2026-11-06, glue around s3ep's `pkg/encryption/...`: `New(api,
+Options{ActiveKey, RetiredKeys, MetadataPrefix, PartSize, Concurrency})`, `Put` (streamed, through
+`feature/s3/transfermanager`), `Get`, `GetRange` (a `HEAD` and one ranged `GET` pinned to the entity tag), `Stat` (the
+authenticated length and CRC32C from the last 40 stored bytes), `Copy` (re-encrypts, streamed) and `PlaintextSize`; the
+errors `ErrNotEncrypted`, `ErrUnknownKey`, `ErrKeyMaterialUnreadable`, `ErrCorrupt`, `ErrRangeNotSatisfiable`,
+`ErrReservedMetadata`; unit tests and an interoperability test against a running s3ep. It lives in the s3ep work area,
+not in this repository.
+
+Open before it is built, each a decision with the spec edits it causes:
+
+1. **Where the glue lives.** As a supported package of the s3ep repository that trove imports, with the
+   interoperability test in s3ep's CI; or as `internal/blob/s3enc` in trove, pinning s3ep's `pkg/encryption` by
+   pseudo-version (its module path carries no `/v5`, so a release tag cannot be required). s3ep's `pkg/` is not a
+   declared public API, and stored-data compatibility is not owed across its major releases, which favours the first.
+2. **The seam to `blob.ObjectStore`.** s3enc uploads from one stream; trove drives the multipart calls itself: parts
+   read from the spool with per-part checksums and retries (R-STOR-006), and upload sessions that append parts across
+   requests and replicas (R-STOR-011). Either an encrypting `ObjectStore` that maps trove's calls onto the segment chain
+   (a retried part must produce the same ciphertext, and a session's chain state, its segment index, running CRC32C and
+   wrapped data key, must live in PostgreSQL so that any replica continues it), or trove's upload path uses the stream
+   API for an encrypted installation and gives up its own part control there.
+3. **Server-side copies.** The segments are authenticated under the object key, so an object copied to another key
+   cannot be read. That hits the finalize of an upload session (R-STOR-011 copies `_uploads/<session-id>/data` to the
+   content address, "no byte passes through trove") and the backup copy from `<prefix>/sha256/…` to `pool/sha256/…`
+   ([backup-and-restore.md](backup-and-restore.md)) with its restore. Either re-encrypt, streamed through a replica (one
+   read and one write of the blob, multi-gigabyte blobs included), or bind the segments to a name that does not change
+   with the copy (the content address `sha256/<hex>`), which keeps server-side copies but loses reading through s3ep,
+   which binds the object key.
+4. **Confirming a file.** The object key is the plaintext's SHA-256 (R-STOR-001), so whoever can list the bucket can
+   confirm, without any key, that a known file (a public tarball, a leaked document) is stored. Either accept and
+   document it, or give an encrypted installation keyed object names (a MAC of the digest under a secret of the
+   installation), which changes R-STOR-001, the orphan sweep (R-STOR-026), the scrub (R-STOR-027) and the backup layout.
+5. **Scope.** Installation-wide, or per repository. Blobs are deduplicated across repositories and projects (INV-4), so
+   per repository needs one blob per setting and gives up that deduplication. The other key families of the bucket (the
+   UI's shared asset store, Q-HA-120; the tails of upload sessions) are either encrypted too, or read with the plain
+   client, because s3enc refuses plain objects.
+6. **Switching on and off.** An installation with plain objects cannot read them through s3enc. Before the first stable
+   release a fresh bucket is enough; after it, a resumable worker job that re-encrypts every blob (and one that reverses
+   it), or the switch only on an empty bucket.
+7. **Key custody and rotation.** The key encryption keys come from mounted files and change without a restart, as the
+   TLS certificates do. A retired key stays until every object it wrapped is moved onto the active key; whether s3ep
+   accepts a re-wrap that rewrites only the metadata (a copy of the object onto its own key) is not checked, the
+   alternative is s3enc's re-encrypting `Copy`. Losing the key encryption keys loses every blob, so they are backed up
+   apart from the bucket and its backups, and a restore (R-BAK) needs them.
+8. **Sizes.** A listing reports stored sizes (ciphertext, segment overhead and trailer); the orphan sweep, the storage
+   summary's physical figure (R-STOR-028) and the quotas convert them with `PlaintextSize` or read sizes from
+   PostgreSQL. A project is charged the logical size in any case (Q-STOR-155).
+9. **Cost.** AES-256-GCM on the `packages` pods for every upload and download; a ranged read costs a `HEAD` and a ranged
+   `GET` instead of one `GET`. The throughput targets are measured again with encryption on.
+10. **Dependencies.** The sketch requires newer patch releases of `aws-sdk-go-v2` than trove pins (`v1.47.8` against
+    `v1.47.5`, `service/s3` `v1.114.9` against `v1.114.6`) and adds `feature/s3/transfermanager` (v0.x): one version of
+    each, raised everywhere.
+11. **The Bastion.** Its cache backend is a store of its own (R-BAS-030); whether it encrypts too.
+
+Acceptance criteria, once built:
+
+- With encryption on, `aws s3api get-object` of a blob returns ciphertext whose metadata carries the four format keys;
+  a download through trove returns the original bytes (SHA-256 matches); the object read through s3ep with the same key
+  and prefix returns the same bytes, and an object written through s3ep is served by trove.
+- A blob whose stored bytes were altered fails authentication: the download is aborted (R-STOR-013) and the blob is
+  marked `corrupt`.
+- `presignedDownloads: true` is refused while encryption is on.
+- After a key rotation, objects wrapped by the retired key are still served until they are moved onto the active key.
 
 ### R-STOR-015 · Download statistics
 Priority: **P1** · Covers: ART-029
@@ -1276,7 +1364,7 @@ Priority: **P1** · Covers: ART-029
   drain loses no counts; a replica crash loses at most one interval. Statistics are not audit
   data. No request reads the buffer: the API below and the retention conditions read PostgreSQL,
   which every replica sees alike (INV-18, Q-STOR-12).
-- `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/stats?path=…` answers
+- `GET /api/v1/repositories/{repoKey}/stats?path=…` answers
   `{"downloads": 1832, "lastDownloadAt": "2026-10-27T22:01:55Z", "lastDownloader": "ci:acme/web"}`
   *(example)*. Permission: `read`.
 - `last_downloader` is set to `NULL` when the principal is erased
@@ -1301,12 +1389,12 @@ Acceptance criteria:
 ### R-STOR-016 · Item information
 Priority: **MVP** · Covers: ART-027, ART-001
 
-`GET /api/v1/projects/{projectKey}/repositories/{repoKey}/items?path={path}` returns the metadata of a file or folder
+`GET /api/v1/repositories/{repoKey}/items?path={path}` returns the metadata of a file or folder
 (an empty `path` addresses the repository root).
 
 ```json
 {
-  "repository": "web/npm-local",
+  "repository": "npm-local",
   "path": "@acme/widget/-/widget-1.4.0.tgz",
   "kind": "file",
   "size": 48213,
@@ -1320,31 +1408,31 @@ Priority: **MVP** · Covers: ART-027, ART-001
   "contentStatus": "ok",
   "package": { "name": "@acme/widget", "version": "1.4.0", "lead": true },
   "upstreamUrl": null,
-  "downloadUrl": "https://trove.example.com/files/web/npm-local/@acme/widget/-/widget-1.4.0.tgz"
+  "downloadUrl": "https://trove.example.com/files/npm-local/@acme/widget/-/widget-1.4.0.tgz"
 }
 ```
 
 Folders return `kind: "folder"`, `explicit`, timestamps and the URL of their listing; they do not
 embed their children (R-STOR-017). Through a virtual repository the item of the serving member
-is returned with an additional `resolvedFrom` repository key, a key of the same project (virtual members are repositories of the virtual repository's project). Permission: `read`. Errors: `400`
+is returned with an additional `resolvedFrom` repository key. Permission: `read`. Errors: `400`
 malformed path; `401`; `403`; `404`.
 
 Acceptance criteria:
 
-- After `dotnet nuget push Acme.Widget.1.4.0.nupkg --source https://trove.example.com/api/nuget/web/nuget-local/v3/index.json --api-key $TROVE_TOKEN`
+- After `dotnet nuget push Acme.Widget.1.4.0.nupkg --source https://trove.example.com/api/nuget/nuget-local/v3/index.json --api-key $TROVE_TOKEN`
   the item of the `.nupkg` shows `package.name = "acme.widget"`, `version = "1.4.0"`,
   `lead = true`.
 
 ### R-STOR-017 · Folder listing and directory index
 Priority: **P1** · Covers: ART-028, ART-042
 
-- `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/children?path=&recursive=false&maxDepth=&folders=true&cursor=&limit=`
+- `GET /api/v1/repositories/{repoKey}/children?path=&recursive=false&maxDepth=&folders=true&cursor=&limit=`
   lists the untrashed children of a folder in byte order of their path, with cursor pagination
   (`limit` default 1,000, maximum 10,000). `recursive=true` walks the subtree, optionally bounded
   by `maxDepth`.
 - Entry: `{"path": "<relative>", "kind": "file", "size": 48213, "modifiedAt": "…", "sha256": "…", "sha1": "…"}`;
   folders carry no size or digests.
-- `GET /files/{projectKey}/{repoKey}/{folder}/` answers with a directory index: HTML for `Accept: text/html`
+- `GET /files/{repoKey}/{folder}/` answers with a directory index: HTML for `Accept: text/html`
   (every name HTML-escaped, every link written as `./` followed by the percent-encoded name so that
   a name such as `javascript:x` stays a relative path, the same CSP as R-STOR-012 without
   `sandbox`, no scripts), JSON
@@ -1362,7 +1450,7 @@ Permission: `read` on the folder; entries the caller cannot read are omitted.
 
 Acceptance criteria:
 
-- `curl -H 'Accept: text/html' …/files/web/generic-local/tools/` returns links for each child; a file
+- `curl -H 'Accept: text/html' …/files/generic-local/tools/` returns links for each child; a file
   named `<script>.txt` appears escaped, and a file named `javascript:alert(1)` is linked as
   `./javascript%3Aalert(1)`.
 - Listing a folder with 25,000 children with `limit=10000` takes three pages and returns every
@@ -1371,7 +1459,7 @@ Acceptance criteria:
 ### R-STOR-018 · Delete items
 Priority: **MVP** · Covers: ART-034, STOR-002
 
-- `DELETE /files/{projectKey}/{repoKey}/{path}` (or `DELETE /api/v1/projects/{projectKey}/repositories/{repoKey}/items?path=…`)
+- `DELETE /files/{repoKey}/{path}` (or `DELETE /api/v1/repositories/{repoKey}/items?path=…`)
   removes a file, or a folder with its whole subtree, and answers `204`.
 - Deletion touches only PostgreSQL: items are moved to the trash can (local repositories with the
   trash can enabled, R-STOR-022) or deleted; blobs stay until garbage collection (R-STOR-024).
@@ -1409,11 +1497,11 @@ storage:
 
 Acceptance criteria:
 
-- `curl -X DELETE …/files/web/npm-local/@acme/widget/-/widget-1.4.0.tgz` answers `204`; afterwards
+- `curl -X DELETE …/files/npm-local/@acme/widget/-/widget-1.4.0.tgz` answers `204`; afterwards
   `npm view @acme/widget versions --registry …` no longer lists 1.4.0.
 - Deleting a folder that contains one file the caller may not delete answers `403` and removes
   nothing.
-- In an npm repository with `packageOwnership: enforce`, `DELETE /files/web/npm-local/@acme/` by a
+- In an npm repository with `packageOwnership: enforce`, `DELETE /files/npm-local/@acme/` by a
   holder of `delete` who does not own one of the scope's packages answers `403`
   `package_owned_by_other_owner` and removes nothing, through the job path as well
   (`TestR_AUTHZ_018_RawRemovalsAskOwnership`,
@@ -1428,8 +1516,8 @@ POST /api/v1/content/move
 Content-Type: application/json
 
 {
-  "source": { "repository": "web/generic-staging", "path": "tools/widget/2.3" },
-  "target": { "repository": "web/generic-release", "path": "tools/widget/2.3" },
+  "source": { "repository": "generic-staging", "path": "tools/widget/2.3" },
+  "target": { "repository": "generic-release", "path": "tools/widget/2.3" },
   "dryRun": false,
   "stopOnError": true,
   "overwrite": false,
@@ -1437,8 +1525,6 @@ Content-Type: application/json
 }
 ```
 
-- `repository` is the qualified name `<projectKey>/<repoKey>`; source and target may be repositories of different
-  projects, each decided by its own grants.
 - Both operations are metadata-only: copy inserts item rows that reference the same blobs (via
   the guard trigger), move updates repository and path. No S3 request is made.
 - `target.path` names the exact destination (Q-STOR-8). If a folder already exists there, the
@@ -1518,7 +1604,7 @@ Acceptance criteria:
   `nuget-local`. Moving it back, also with `overwrite: true`, reports `nuget_version_deleted`, and
   the version stays in `nuget-release`.
 - After a copy of `@acme/ui@1.4.0` into `npm-release`, the next
-  `npm view @acme/ui versions --registry …/api/npm/web/npm-release/` lists 1.4.0 on every replica.
+  `npm view @acme/ui versions --registry …/api/npm/npm-release/` lists 1.4.0 on every replica.
 
 ### R-STOR-020 · Item properties
 Priority: **P1** · Covers: ART-021, ART-022, ART-023, ART-024, ART-025
@@ -1535,9 +1621,9 @@ Priority: **P1** · Covers: ART-021, ART-022, ART-023, ART-024, ART-025
 
   | Method | Path | Body | Result |
   |---|---|---|---|
-  | `GET` | `/api/v1/projects/{projectKey}/repositories/{repoKey}/properties?path=&keys=a&keys=b` | — | `200 {"properties": {"stage": ["qa"]}}`; `{}` when none |
-  | `PATCH` | `/api/v1/projects/{projectKey}/repositories/{repoKey}/properties?path=&recursive=false` | `application/merge-patch+json` ([RFC 7396](https://www.rfc-editor.org/rfc/rfc7396)): `{"stage": "qa", "targets": ["linux", "darwin"], "obsolete": null}` | `204`; a string or array replaces the key's values, `null` removes the key, absent keys stay |
-  | `DELETE` | `/api/v1/projects/{projectKey}/repositories/{repoKey}/properties?path=&keys=a&keys=b&recursive=false` | — | `204` |
+  | `GET` | `/api/v1/repositories/{repoKey}/properties?path=&keys=a&keys=b` | — | `200 {"properties": {"stage": ["qa"]}}`; `{}` when none |
+  | `PATCH` | `/api/v1/repositories/{repoKey}/properties?path=&recursive=false` | `application/merge-patch+json` ([RFC 7396](https://www.rfc-editor.org/rfc/rfc7396)): `{"stage": "qa", "targets": ["linux", "darwin"], "obsolete": null}` | `204`; a string or array replaces the key's values, `null` removes the key, absent keys stay |
+  | `DELETE` | `/api/v1/repositories/{repoKey}/properties?path=&keys=a&keys=b&recursive=false` | — | `204` |
 
 - `keys` is repeated once per key (`keys=qa.status&keys=build.number`), the multi-value rule of
   [api-and-ui.md](api-and-ui.md) R-API-011 as settled in R-API-026. A comma-separated list is not
@@ -1578,7 +1664,7 @@ Priority: **P1** · Covers: ART-026
   |---|---|---|
   | `GET`, `POST` | `/api/v1/property-sets` | list, create |
   | `GET`, `PUT`, `DELETE` | `/api/v1/property-sets/{name}` | `DELETE` answers `409` while repositories are assigned |
-  | `PUT` | `/api/v1/property-sets/{name}/repositories` | body: list of qualified repository names (`web/generic-local`) |
+  | `PUT` | `/api/v1/property-sets/{name}/repositories` | body: list of repository keys |
 
 ```sql
 CREATE TABLE property_sets (
@@ -1655,14 +1741,14 @@ Priority: **P1** · Covers: ART-036, RET-038
 
 Acceptance criteria:
 
-- With defaults, `curl -X DELETE …/files/web/generic-local/a.bin` makes the file disappear from
-  `/files` and appear in `GET /api/v1/trash-can/items?repository=web/generic-local`.
+- With defaults, `curl -X DELETE …/files/generic-local/a.bin` makes the file disappear from
+  `/files` and appear in `GET /api/v1/trash-can/items?repository=generic-local`.
 - After setting `retention` to `0s` (a `PUT` with the current `If-Match`) and running garbage
   collection, the entry is gone and its blob is queued.
 - `PUT /api/v1/settings/storage` without `If-Match` answers 428 and changes nothing; with the
   `ETag` read before another administrator's `PUT` it answers 412 with the new tag as
   `currentEtag`.
-- With defaults, uploading `a1.bin` and then `a2.bin` to `…/files/web/generic-local/a.bin` (the second
+- With defaults, uploading `a1.bin` and then `a2.bin` to `…/files/generic-local/a.bin` (the second
   upload with `overwrite`) serves `a2.bin`'s content, and the trash can lists one entry for the
   path whose restoration (with `overwrite: true`) serves `a1.bin`'s content again (Q-STOR-5).
 
@@ -1672,7 +1758,7 @@ Priority: **P1** · Covers: ART-037, ART-038
 | Method | Path | Body / parameters | Result | Permission |
 |---|---|---|---|---|
 | `GET` | `/api/v1/trash-can/items` | `repository`, `path` (prefix), `cursor`, `limit` | entries `{id, repository, path, kind, size, trashedAt, trashedBy, operationId, expiresAt}` | visibility rule of R-STOR-022 |
-| `POST` | `/api/v1/trash-can/restorations` | `{"ids": [..]}` or `{"operationId": "…"}` or `{"source": {"repository": "web/generic-local", "path": "…"}}`; optional `"target": {"repository": "…", "path": "…"}` (qualified names `<projectKey>/<repoKey>`); `"overwrite": false` | `200 {"restored": n, "skipped": n, "messages": [..]}`; `202` with job URL above `storage.delete.max_sync_items` | `deploy` and `delete` on the original path; `deploy` (and `overwrite` if replacing) on a different target |
+| `POST` | `/api/v1/trash-can/restorations` | `{"ids": [..]}` or `{"operationId": "…"}` or `{"source": {"repository": "…", "path": "…"}}`; optional `"target": {"repository": "…", "path": "…"}`; `"overwrite": false` | `200 {"restored": n, "skipped": n, "messages": [..]}`; `202` with job URL above `storage.delete.max_sync_items` | `deploy` and `delete` on the original path; `deploy` (and `overwrite` if replacing) on a different target |
 | `DELETE` | `/api/v1/trash-can/items` | `ids` or `repository` + `path` | `204` | `delete` or `manage` on the original path |
 | `POST` | `/api/v1/trash-can/purge` | — | `202` | system administrator |
 
@@ -2179,7 +2265,7 @@ Priority: **P1** · Covers: STOR-039
     "damaged": { "missing": 0, "corrupt": 0 },
     "quota": { "enabled": true, "capacityBytes": 5497558138880, "usedRatio": 0.3444, "warnPercent": 80, "limitPercent": 95 },
     "repositories": [
-      { "project": "web", "key": "npm-local", "class": "local", "format": "npm", "files": 52011, "folders": 8812, "bytes": 81233920123, "packages": 812, "versions": 9120, "shareOfLogicalBytes": 0.0197 }
+      { "key": "npm-local", "class": "local", "format": "npm", "files": 52011, "folders": 8812, "bytes": 81233920123, "packages": 812, "versions": 9120, "shareOfLogicalBytes": 0.0197 }
     ]
   }
   ```
@@ -2243,7 +2329,7 @@ measured.
   only for the per-request size limit (R-STOR-004). The rejection happens at admission, before
   the body is read, whenever the request declares its length.
 - A `507` carries no `Retry-After` (nothing predicts when space is freed). The problem details
-  name the limit: `quota` (`"system"` or the repository's qualified name `<projectKey>/<repoKey>`), `limitBytes` and `usedBytes`. On npm
+  name the limit: `quota` (`"system"` or the repository key), `limitBytes` and `usedBytes`. On npm
   endpoints the body follows R-NPM-005 of [formats/npm.md](formats/npm.md) with
   `code: "quota_exceeded"` and a text that names the repository or the system limit; NuGet clients
   show the status line `507 (Insufficient Storage)`.
@@ -2394,9 +2480,10 @@ Priority: **P1** · Covers: STOR-022
   The mode is sent on every `PutObject` and `CreateMultipartUpload`.
 - With `kms`, the credentials need `kms:GenerateDataKey` (writes, multipart) and `kms:Decrypt`
   (reads, multipart completion, presigned downloads).
-- SSE with customer-provided keys and client-side encryption are not supported: the first would
-  make trove hold the data key and break presigned redirects, the second cannot coexist with
-  server-side payload checksums and ranged reads in the same way (Deferred).
+- SSE with customer-provided keys is not supported: it would make trove hold the data key and break
+  presigned redirects. Client-side encryption is planned as
+  [R-STOR-048](#r-stor-048--client-side-encryption-of-stored-content) (P2, not built), in the format of
+  s3-encryption-proxy.
 - Changing the mode affects new objects only; existing objects keep their encryption.
 
 Configuration:
@@ -2577,9 +2664,8 @@ Acceptance criteria:
 
 Retention policies run inside trove's job framework and delete through the normal delete path,
 so format indexes, the trash can, audit events and webhooks behave exactly as for a manual delete.
-Retention policies are instance-wide and managed by system administrators; they name repositories with the
-selectors of an instance context ([authorization.md](authorization.md) R-AUTHZ-004: `<projectGlob>/<keyGlob>` or a
-class), so one policy can reach repositories of several projects (project-scoped policies: Deferred).
+Projects do not exist in the MVP; all policies are global and managed by system administrators
+(project-scoped policies: Deferred).
 
 ### R-STOR-037 · Retention policy model and lifecycle
 Priority: **P1** · Covers: RET-001, RET-013, RET-019
@@ -2650,7 +2736,7 @@ Priority: **P1** · Covers: RET-003, RET-004, RET-005, RET-006, RET-007, RET-008
   "bypassTrash": false,
   "spec": {
     "formats": ["npm"],
-    "repositories": { "include": ["*/npm-ci-*"], "exclude": ["web/npm-ci-pinned"] },
+    "repositories": { "include": ["npm-ci-*"], "exclude": ["npm-ci-pinned"] },
     "paths": { "include": [], "exclude": [] },
     "packages": { "include": ["@acme/*"], "exclude": ["@acme/legacy-sdk"] },
     "versions": { "include": ["*-ci.*"], "exclude": [] },
@@ -2673,16 +2759,16 @@ Priority: **P1** · Covers: RET-003, RET-004, RET-005, RET-006, RET-007, RET-008
 - **Patterns (Q-STOR-9).** Retention uses the one matcher that
   [authorization.md](authorization.md) owns, so a pattern copied between a permission policy and a
   cleanup policy selects the same things:
-  - `repositories.include` and `repositories.exclude` take the repository selectors of an instance context of
-    R-AUTHZ-004 (`web/npm-ci`, `web/npm-ci-*`, `*/npm-ci-*`, `@any-local` with an optional format filter such as
-    `@any-local:npm`), parsed and validated by the same code: a bare key is refused with `422` `invalid_pattern`, and a
-    key selector (both parts literal) must name an existing repository when the policy is saved. Class selectors other than `@any-local` are rejected with
+  - `repositories.include` and `repositories.exclude` take the repository selectors of
+    R-AUTHZ-004 (keys, key patterns, `@any-local` with an optional format filter such as
+    `@any-local:npm`), parsed and validated by the same code: a key selector must name an existing
+    repository when the policy is saved. Class selectors other than `@any-local` are rejected with
     `422`, because only local repositories are processed.
   - In `repositories.include`, key selectors are stored by repository ID as R-AUTHZ-004 states, so
-    a repository deleted and created again under the same name is not covered; a policy whose
+    a repository deleted and created again under the same key is not covered; a policy whose
     include selectors all disappeared matches nothing and is reported with `"inert": true`.
-  - In `repositories.exclude`, key selectors are matched by name (project key and key) and are not removed when the
-    repository is deleted. An exclusion protects whatever repository carries the name, so deleting
+  - In `repositories.exclude`, key selectors are matched by key and are not removed when the
+    repository is deleted. An exclusion protects whatever repository carries the key, so deleting
     and re-creating a protected repository never exposes it to the policy; binding the exclusion
     to the ID, as for includes, would silently remove that protection. Authorization has no
     repository-level exclude list, so this is the only point where retention binds a selector
@@ -2719,9 +2805,8 @@ Acceptance criteria:
   the versions older than 60 days that were not downloaded in 60 days and are not among the two
   newest.
 - A policy with only `formats` and `repositories` is rejected with `422`.
-- A policy with `repositories.include: ["*/npm-ci-*"]` and `repositories.exclude: ["web/npm-ci-pinned"]`:
-  after `npm-ci-pinned` of project `web` is deleted and created again, a dry run selects nothing in it; `npm-ci-pinned`
-  of project `mobile` is in scope. `repositories.include: ["npm-ci-*"]` is refused with `422` `invalid_pattern`.
+- A policy with `repositories.include: ["npm-ci-*"]` and `repositories.exclude: ["npm-ci-pinned"]`:
+  after `npm-ci-pinned` is deleted and created again, a dry run selects nothing in it.
 
 ### R-STOR-039 · Lead item, version units and container images
 Priority: **P1** · Covers: RET-009, RET-010
@@ -3388,7 +3473,7 @@ keep their own interval keys. There is no storage key for Valkey: storage uses i
 | ART-051 | P2 | Background task list (job API in [architecture.md](architecture.md)). |
 | ART-052 | P2 | RubyGems version list. |
 | ART-053 | Out of scope | Push to a discontinued external distribution service. |
-| RET-002 | P2 | Project-scoped policies managed by a project's Owner; retention policies are instance-wide. |
+| RET-002 | P2 | Project-scoped policies; projects are not in the MVP. |
 | RET-024 | Later | Release-set cleanup policy. |
 | RET-025 | Later | Cleanup and archiving on federated repositories. |
 | RET-026 | P2 | Retention and push replication. |

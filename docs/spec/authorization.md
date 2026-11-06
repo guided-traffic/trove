@@ -5,7 +5,7 @@ Status: specification — not implemented
 This page specifies how trove decides whether a request may go ahead once the caller is known.
 It covers the principals, the resources a grant can name, the package-name and path patterns that
 narrow a grant, what each of the six repository actions permits, the fixed set of system roles,
-projects, which hold repositories and give their members roles, the evaluation algorithm, the treatment of
+projects as the unit of delegated administration, the evaluation algorithm, the treatment of
 virtual and remote repositories, how a token's scope caps a principal's rights, package ownership,
 the status code a refused request gets, how replicas keep their compiled permissions consistent,
 what is audited, and the management API for all of it. How a caller proves its identity (OIDC
@@ -15,10 +15,6 @@ verified, which identity mapping applies and how its grants are rendered is spec
 [gitlab-ci-oidc.md](gitlab-ci-oidc.md). How a request is classified and resolved through virtual
 and remote repositories is specified in [repositories-and-proxy.md](repositories-and-proxy.md).
 This page starts where those end: with an authenticated subject and a classified request.
-
-Every repository belongs to exactly one project and is addressed inside it (R-AUTHZ-026). Examples use the
-repositories of project `web` and call them by their key where only that project is involved; addresses and
-selectors of instance contexts carry the project (`/api/npm/web/npm-all/`, `web/npm-internal`, R-AUTHZ-004).
 
 Covers: this page draws on [identity-and-access.md](../features/identity-and-access.md)
 (permission policies, actions, anonymous access, system roles, projects),
@@ -35,12 +31,11 @@ claims). It also covers the permission entries of
 | Term | Meaning on this page |
 |---|---|
 | Principal | Something a grant can name: a user, a group, a service account, a CI identity mapping, or one of the built-in principals `anonymous` (R-AUTHZ-003) and `authenticated` (R-AUTHZ-030) (R-AUTHZ-002). Principals live in the `principal` table of [identity-and-authentication.md](identity-and-authentication.md) (R-AUTH-016). |
-| Subject | What authentication hands to authorization for one request: the principal set, the system roles the credential may exercise, whether the credential carries project roles (a UI session or a personal access token, Q-AUTHZ-215), the token scope and, for CI tokens, the frozen inline grants and the job's project identity. |
+| Subject | What authentication hands to authorization for one request: the principal set, the system roles the credential may exercise, the token scope and, for CI tokens, the frozen inline grants and the job's project identity. |
 | Permission policy | A named, stored object: one resource set, and entries that give actions on that resource set to principals (R-AUTHZ-021). |
 | Grant | One policy entry seen from the evaluator: principal × resource set × actions. CI inline grants ([gitlab-ci-oidc.md](gitlab-ci-oidc.md), R-CI-013) have the same shape. |
 | Resource set | Repository selectors plus optional package-name and path patterns (R-AUTHZ-004, R-AUTHZ-005). Policies, token scopes and CI inline grants all use it. |
-| Coordinate | The authorization view of the request descriptor of [repositories-and-proxy.md](repositories-and-proxy.md) (R-REPO-003): repository (its project and key), class, format, request kind, canonical path, normalized package name, and the actions the operation needs. |
-| Project, member, role | A project holds repositories, each in exactly one project, and its own policies, service accounts and CI mappings; users and groups are its members, each with one of the roles `reader`, `developer`, `maintainer`, `owner`, which grant actions on the project's repositories and, for an Owner, its administration (R-AUTHZ-026). |
+| Coordinate | The authorization view of the request descriptor of [repositories-and-proxy.md](repositories-and-proxy.md) (R-REPO-003): repository, class, format, request kind, canonical path, normalized package name, and the actions the operation needs. |
 | Owner | An identity recorded as owner of a package name in an ownership domain (R-AUTHZ-018). |
 | System role, capability | A fixed, instance-wide role and the management capabilities it bundles (R-AUTHZ-010). |
 
@@ -71,7 +66,7 @@ Decisions this page takes:
 | Who may publish the next version of a package? | Its owners, or a holder of `manage` on it. The grants that allowed the first publish decide the owners. Ownership is enforced by default in new npm and NuGet local repositories (Q-AUTHZ-2). | R-AUTHZ-018 |
 | Whom does a writing CI inline grant make the owner? | The job's GitLab project (`bind_project`), unless the grant says `"ownership": "none"` (Q-AUTHZ-6). | R-AUTHZ-014 |
 | Which reads are audited by default? | Refused reads only; allowed reads with `authz.audit.reads: all` (Q-AUTHZ-5). | R-AUTHZ-029 |
-| Projects for delegated administration | MVP (beta phase 5a): every repository belongs to exactly one project and is addressed inside it; users and groups are members with the roles Reader, Developer, Maintainer and Owner; a project's policies, service accounts and CI mappings are named within it (Q-AUTHZ-206 to Q-AUTHZ-209, Q-REPO-212). Environments and sharing stay P2; CI delegations per issuer stay P1 (Q-AUTHZ-7). | R-AUTHZ-026 |
+| Projects for delegated administration | MVP (beta phase 5a), in a reduced form: repositories, project administrators, project-owned policies, project service accounts. Roles, environments and sharing stay P2. CI delegations stay independent of projects in P1 (Q-AUTHZ-7). | R-AUTHZ-026 |
 | How do n replicas learn of a permission change? | Through the `authz` change area of [architecture.md](architecture.md) R-ARCH-018: the change log in PostgreSQL carries correctness, a Valkey message only starts the rebuild sooner. Valkey never holds a grant or a decision (Q-AUTHZ-11). | R-AUTHZ-028 |
 | How long can a removed grant still work? | Typically 100 ms plus one index build; at most `cluster.epoch_poll_interval` plus 1 s on a replica whose change-log poll works, with or without Valkey; never longer than `authz.cache.max_staleness` (10 s) plus one build on any replica. A replica that cannot confirm its index waits like a request waits for the database, then answers 503 (Q-AUTHZ-13). | R-AUTHZ-028 |
 | Can a client see its own permission change on whichever replica answers next? | Yes, by sending `Trove-Authz-Min-Epoch` with the epoch its write returned (Q-AUTHZ-12). | R-AUTHZ-032 |
@@ -82,10 +77,10 @@ Decisions this page takes:
 Priority: **MVP** · Covers: IAM-019
 
 trove MUST refuse every operation that no grant, no system role (R-AUTHZ-010) and no project
-role (R-AUTHZ-026) allows. A new installation has no permission policies; only
+administration right (R-AUTHZ-026) allows. A new installation has no permission policies; only
 the break-glass administrator (INV-7, R-AUTH-014) can act until an administrator creates policies.
 
-Grants and project roles MUST only add rights; there are no deny rules. A subject's rights can be narrowed only by:
+Grants MUST only add rights; there are no deny rules. A subject's rights can be narrowed only by:
 
 1. exclude patterns inside the same resource set (R-AUTHZ-005);
 2. the token scope (R-AUTHZ-013) and, for CI tokens, the caps and the triggering-user bound of
@@ -115,10 +110,10 @@ R-AUTHZ-006.
 Acceptance criteria:
 
 - On a fresh installation, a user who has just logged in through OIDC and holds no grant runs
-  `npm view lodash --registry https://trove.example.com/api/npm/web/npm-all/` and gets `E404`.
+  `npm view lodash --registry https://trove.example.com/api/npm/npm-all/` and gets `E404`.
 - `POST /api/v1/permission-policies` with an entry `"actions": ["write"]` answers 201, and the
   stored entry reads `"actions": ["annotate", "deploy", "read"]`.
-- A principal holding only `deploy` on `web/npm-internal` can `npm publish` a new package there. Its
+- A principal holding only `deploy` on `npm-internal` can `npm publish` a new package there. Its
   `npm view` of that package through `npm-internal` gets `E404`, because `deploy` does not imply
   `read` (R-AUTHZ-016).
 
@@ -131,24 +126,24 @@ Principal kinds and their reference syntax in this page's API:
 |---|---|---|
 | User | `user:<username>` | [identity-and-authentication.md](identity-and-authentication.md) (R-AUTH-016) |
 | Group | `group:<name>` | [identity-and-authentication.md](identity-and-authentication.md) (R-AUTH-018) |
-| Service account | `sa:<name>` for an account of no project, `sa:<projectKey>/<name>` for a project's | [identity-and-authentication.md](identity-and-authentication.md) (R-AUTH-020); a name is unique within its project or among the accounts of no project (Q-AUTHZ-209) |
-| CI identity mapping | `ci:<issuer>/<mapping>` for the system tier, `ci:<issuer>/<projectKey>/<mapping>` for a project's tier | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) (R-CI-009); mapping names are unique per CI issuer and tier only, hence the issuer and the project ([Q-AUTHZ-214](#q-authz-214--a-projects-ci-mappings-are-named-within-the-project-like-its-policies-and-service-accounts)) |
+| Service account | `sa:<name>` | [identity-and-authentication.md](identity-and-authentication.md) (R-AUTH-020) |
+| CI identity mapping | `ci:<issuer>/<mapping>` | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) (R-CI-009); mapping names are unique per CI issuer only, hence the issuer prefix |
 | Anonymous | `anonymous` | [identity-and-authentication.md](identity-and-authentication.md) (R-AUTH-037), R-AUTHZ-003 |
 | Authenticated | `authenticated` | R-AUTHZ-030; a built-in row of the `principal` table like `anonymous` |
 | Bastion | `bastion:<name>` | [bastion.md](bastion.md) R-BAS-004 (phase 5b): owns Bastion tokens only; never holds a grant, a role, an owner record or a membership (`422 principal_not_allowed`) |
 
-- Policies, role bindings, project memberships and owner records MUST reference principals by their immutable ID in
+- Policies, role bindings and owner records MUST reference principals by their immutable ID in
   the `principal` table, never by name. The API accepts and returns references by name and
   translates them. Renaming keeps the grants. Deleting a principal deletes its policy entries,
-  role bindings, memberships and owner entries through the foreign keys (audited, R-AUTHZ-029). A principal
+  role bindings and owner entries through the foreign keys (audited, R-AUTHZ-029). A principal
   created later under a reused name inherits nothing.
 - For each request, the subject's principal set is computed from the credential:
 
 | Credential | Principal set |
 |---|---|
-| UI session of user `u` | `user:u` plus every group of `u`, plus `authenticated`; carries the project roles of `u` |
-| Personal access token (`trv_pat_`) of `u` | the same, resolved when the token is used; carries the project roles of `u` within its scope |
-| Service-account token (`trv_sat_`) of `s` | `sa:s` plus every group of `s` (a project's account has none). Never `authenticated` (R-AUTHZ-030), never a project role. |
+| UI session of user `u` | `user:u` plus every group of `u`, plus `authenticated` |
+| Personal access token (`trv_pat_`) of `u` | the same, resolved when the token is used |
+| Service-account token (`trv_sat_`) of `s` | `sa:s` plus every group of `s`. Never `authenticated` (R-AUTHZ-030). |
 | CI token (`trv_cit_`) | `ci:<issuer>/<m>` for every mapping `m` recorded as the token's mapping at exchange, plus the groups those mappings list (R-CI-013); the token additionally carries its frozen inline grants and, from P1, the service accounts of R-CI-024. For a cross-project subject token, a matched mapping without the `read_only` opt-in contributes nothing and is not recorded ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-012), so policies naming it never reach that token. Never `authenticated`. |
 | No credential | `anonymous`, only while anonymous access is enabled (R-AUTHZ-003) |
 
@@ -157,10 +152,6 @@ Principal kinds and their reference syntax in this page's API:
   evaluated, not when a token was issued; tokens carry no group lists. The membership cache and
   its invalidation belong to [identity-and-authentication.md](identity-and-authentication.md)
   (R-AUTH-023).
-- A user's project roles are those of its own memberships and of its groups' memberships, the highest per project
-  (R-AUTHZ-026), resolved like its groups when the request is evaluated. Only a UI session and a personal access token
-  carry them; a service-account token and a CI token never do
-  ([Q-AUTHZ-215](#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members)).
 - There are no transient users. A CI token never stands for a user account, never picks up
   auto-join groups (R-AUTH-019, R-CI-013) and never counts as `authenticated` (R-AUTHZ-030), which
   removes the catalog's widening of CI tokens through default groups (TOK-015, CIOIDC-014).
@@ -170,10 +161,10 @@ Principal kinds and their reference syntax in this page's API:
 Acceptance criteria:
 
 - Alice is in IdP group `team-web`, synchronized to trove group `team-web`, which holds `read`
-  on `web/npm-internal`. After the IdP removes her from `team-web` and she logs in again, her existing
+  on `npm-internal`. After the IdP removes her from `team-web` and she logs in again, her existing
   personal access token no longer reads `npm-internal`, within the latency bound of R-AUTH-023.
-- Group `everyone` is auto-join and holds `read` on `web/npm-all`, and `authenticated` holds `read` on
-  `web/npm-all` as well. A CI token whose mappings list no groups and name no policy covering
+- Group `everyone` is auto-join and holds `read` on `npm-all`, and `authenticated` holds `read` on
+  `npm-all` as well. A CI token whose mappings list no groups and name no policy covering
   `npm-all` gets 404 on `npm-all`.
 - User `bob` is deleted, and a new user `bob` (different OIDC `sub`) logs in.
   `GET /api/v1/permission-policies?principal=user:bob` returns none of the old `bob`'s policies.
@@ -192,7 +183,7 @@ the rules for granting to `anonymous`:
   explicit keys (R-AUTHZ-004). Pattern and class selectors are rejected with 422
   `anonymous_dynamic_selector`, so a repository created later is never exposed to anonymous
   callers by accident (IAM-005, IAM-020).
-- `anonymous` never holds a system role, is never a project member and never becomes a
+- `anonymous` never holds a system role, is never a project administrator and never becomes a
   package owner.
 - Turning anonymous access off keeps the stored anonymous entries; they have no effect until it is
   turned on again.
@@ -202,8 +193,8 @@ the rules for granting to `anonymous`:
 
 Acceptance criteria:
 
-- Anonymous access off, a policy grants `anonymous` `read` on `web/npm-public`:
-  `npm view left-pad --registry https://trove.example.com/api/npm/web/npm-public/` without any
+- Anonymous access off, a policy grants `anonymous` `read` on `npm-public`:
+  `npm view left-pad --registry https://trove.example.com/api/npm/npm-public/` without any
   `.npmrc` credential gets `E401`.
 - Anonymous access on, same policy: the same command succeeds.
 - `POST /api/v1/permission-policies` giving `anonymous` `["read", "deploy"]` answers 422
@@ -232,9 +223,9 @@ first developer can install a package (Q-AUTHZ-3).
   `anonymous`: covering repositories created later is what this principal is for, and every caller
   it admits is known to trove.
 - `authenticated` never holds a system role (422 `role_not_allowed`, R-AUTHZ-010), is never a
-  project member, and never becomes a package owner. Because it holds only `read`, rule 2
+  project administrator, and never becomes a package owner. Because it holds only `read`, rule 2
   of R-AUTHZ-018 never names it as the owner of a claim.
-- Delegated managers (R-AUTHZ-025) and Owners of a project (R-AUTHZ-026) MUST NOT add or change
+- Delegated managers (R-AUTHZ-025) and project administrators (R-AUTHZ-026) MUST NOT add or change
   an entry for `authenticated` (403). Opening content to the whole organization stays a decision
   of a holder of `policies:write`.
 - Token scopes apply as usual (R-AUTHZ-013). A token whose scope does not admit a repository does
@@ -244,10 +235,10 @@ Acceptance criteria:
 
 - Policy `everyone-reads-npm` gives `authenticated` `read` on `["@any-virtual:npm",
   "@any-remote:npm"]`. A user who has just logged in through OIDC and belongs to no group runs
-  `npm view left-pad --registry https://trove.example.com/api/npm/web/npm-all/` and succeeds. The same
+  `npm view left-pad --registry https://trove.example.com/api/npm/npm-all/` and succeeds. The same
   command with a service-account token of `sa:ci-bot`, which has no grant of its own and no group
   that holds one, gets `E404`.
-- With the same policy, a CI token whose mappings grant nothing on `web/npm-all` gets `E404` there.
+- With the same policy, a CI token whose mappings grant nothing on `npm-all` gets `E404` there.
 - `POST /api/v1/permission-policies` giving `authenticated` `["read", "deploy"]` answers 422
   `authenticated_write_action`. `PUT /api/v1/role-bindings/auditor/authenticated` answers 422
   `role_not_allowed`.
@@ -256,67 +247,39 @@ Acceptance criteria:
 Priority: **MVP** · Covers: IAM-020
 
 A resource set selects repositories through a list of selector strings. A repository is covered
-when any selector matches it. Every repository belongs to exactly one project and its key is unique
-within the project (R-AUTHZ-026, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-002), so
-a selector names the project wherever the context does not fix it
-([Q-AUTHZ-216](#q-authz-216--repository-selectors-name-the-project-in-instance-contexts-and-a-bare-key-inside-a-project)).
-Project keys match `^[a-z][a-z0-9-]{1,31}$` and repository keys `^[a-z0-9][a-z0-9._-]{1,63}$` (INV-5), so
-the characters `/`, `*`, `?`, `@` and `:` never occur in a key and make the selector kinds unambiguous.
-
-**Instance contexts** select repositories of any project: global policies, token scopes (R-AUTHZ-013), the
-system tier of CI mappings ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-013), exposure rules and host-root
-bindings ([endpoints.md](endpoints.md) R-EP-006, R-EP-012) and configuration keys that name repositories.
+when any selector matches it. Repository keys match `^[a-z0-9][a-z0-9._-]{1,63}$` (INV-5), so the
+characters `*`, `?`, `@` and `:` never occur in a key and make the selector kinds unambiguous:
 
 | Selector | Example | Matches |
 |---|---|---|
-| Key (both parts literal) | `web/npm-internal` | That repository: repository `npm-internal` of project `web` |
-| Key pattern (`*` or `?` in either part) | `web/npm-team-*`, `*/npm-remote` | Every current and future repository whose project key matches the first glob and whose key matches the second (`*` any run of characters, `?` one character; neither crosses `/`) |
-| Class | `@any-local`, `@any-remote`, `@any-virtual`, `@any` | Every current and future repository of that class in every project (`@any`: every class) |
-| Format filter (suffix `:<format>` on a pattern or class) | `@any-local:npm`, `*/*:npm` | As before, restricted to repositories of that format |
+| Key | `npm-internal` | That repository |
+| Key pattern (contains `*` or `?`) | `npm-team-*` | Every current and future repository whose key matches the glob (`*` any run of characters, `?` one character) |
+| Class | `@any-local`, `@any-remote`, `@any-virtual`, `@any` | Every current and future repository of that class (`@any`: every class) |
+| Format filter (suffix `:<format>` on a pattern or class) | `@any-local:npm`, `npm-*:npm` | As before, restricted to repositories of that format |
 
-**Project contexts** select repositories of one project only: project policies (R-AUTHZ-026), the project tier
-of CI mappings (R-CI-013), the members and the deployment target of a virtual repository
-([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-017, R-REPO-021). A selector there is a bare key
-(`npm-internal`), a key pattern (`npm-team-*`), a class (`@any-local`) or either with a format filter
-(`@any-local:npm`, `npm-*:npm`), and it is evaluated against the repositories of the project and of no other.
-
-- A bare key or key pattern in an instance context is refused, never read as a selector that matches nothing:
-  422 `invalid_pattern` in a policy, a CI mapping and an exposure rule, 400 `invalid_scope` in a token scope
-  ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-024), `scope_malformed` in the
-  exchange's `scope` (R-CI-007). A selector with a `/` in a project context is refused with 422
-  `invalid_pattern` (a virtual repository's member with 422 `invalid_member`): a project's objects name no
-  repository of another project.
 - Pattern and class selectors are dynamic: a repository created later is covered as soon as the
   replicas have picked up the change (R-AUTHZ-028), without touching the policy.
 - Key selectors MUST name an existing repository when the policy is written (422
-  `unknown_repository` otherwise; in a project context a key of another project cannot be written at all) and are
-  stored by repository ID. A key selector of an instance context keeps naming its repository when the repository
-  moves to another project ([repositories-and-proxy.md](repositories-and-proxy.md#r-repo-060--move-a-repository-to-another-project)
-  R-REPO-060) and reads back with the new project. Deleting a repository removes its key selectors (audited). A
-  policy left without selectors stays stored, matches nothing and is reported with `"inert": true`. A repository
-  created later under the same project and key is not covered.
+  `unknown_repository` otherwise) and are stored by repository ID. Deleting a repository removes
+  its key selectors (audited). A policy left without selectors stays stored, matches nothing and is
+  reported with `"inert": true`. A repository created later under the same key is not covered.
 - A format filter MUST name a format the server knows (422 `unknown_format`).
 - Virtual repositories can be selected; R-AUTHZ-009 defines what a grant on one means. A key
   selector that names a virtual repository accepts only `read` and `manage`; other actions are
   rejected with 422 `virtual_action_not_applicable`. When a pattern or class selector covers
   virtual repositories, actions other than `read` and `manage` have no effect on them.
 - The same selector strings are used in token scopes (R-AUTHZ-013) and CI inline grants (R-CI-013),
-  where templating may produce keys and patterns but never class selectors, and a rendered value never
-  inserts a `/` (R-CI-014).
+  where templating may produce keys and patterns but never class selectors.
 
 Acceptance criteria:
 
-- A global policy grants `group:developers` `read` on `["web/npm-team-*"]`. An administrator creates local
-  repository `npm-team-x` in project `web`; within `cluster.epoch_poll_interval` plus 1 s, also with Valkey
-  stopped, a member of `developers` can `npm view` a package published there
-  (`--registry https://trove.example.com/api/npm/web/npm-team-x/`) through any replica, without any change to the
-  policy. A repository `npm-team-y` of project `mobile` is not covered.
-- A global policy with the selector `*/npm-remote` covers `web/npm-remote` and `mobile/npm-remote`; one with the
-  selector `npm-internal` answers 422 `invalid_pattern`, and so does a policy of project `web` with the selector
-  `mobile/npm-internal`.
-- Repository `npm-old` of project `web` is named by key (`web/npm-old`) in global policy `legacy`, then deleted and
-  created again. `GET /api/v1/permission-policies/legacy` reports `"inert": true` and grants nothing on the new
-  `web/npm-old`.
+- A policy grants `group:developers` `read` on `["npm-team-*"]`. An administrator creates local
+  repository `npm-team-x`; within `cluster.epoch_poll_interval` plus 1 s, also with Valkey
+  stopped, a member of `developers` can `npm view` a package published there through any replica,
+  without any change to the policy.
+- Repository `npm-old` is named by key in policy `legacy`, then deleted and created again.
+  `GET /api/v1/permission-policies/legacy` reports `"inert": true` and grants nothing on the new
+  `npm-old`.
 
 ### R-AUTHZ-005 · Package-name and path patterns
 Priority: **MVP** · Covers: IAM-021, PKG-NPM-003, PKG-NPM-047
@@ -378,7 +341,7 @@ Preconditions on coordinates:
   MUST be the name the content declares (npm `package.json` `name`, NuGet `.nuspec` `id`), which is
   also the name the package is indexed under. If the name derived from the request path or URL
   differs from the declared name, the upload is rejected with 400 before it is stored. This applies
-  to the package protocol and to the raw file endpoint `/files/<projectKey>/<repoKey>/…` alike.
+  to the package protocol and to the raw file endpoint `/files/<repoKey>/…` alike.
 
 | Resource set | Coordinate | Match? |
 |---|---|---|
@@ -388,23 +351,23 @@ Preconditions on coordinates:
 | packages include `Acme.*` | NuGet `ACME.Core` | yes |
 | packages include `Acme.*` | NuGet `AcmeCore` | no |
 | paths include `releases/**` | generic `releases/1.0/app.zip` | yes |
-| packages include `@acme/*` | raw file `/files/web/npm-internal/readme.txt` (no package name) | no |
-| packages exclude `@secret/*` | raw file `/files/web/npm-internal/@secret/x/-/x-1.0.0.tgz` (package `@secret/x`) | no |
-| packages exclude `@secret/*` | raw folder `/files/web/npm-internal/@acme/` (no package name, Q-AUTHZ-160) | no |
+| packages include `@acme/*` | raw file `/files/npm-internal/readme.txt` (no package name) | no |
+| packages exclude `@secret/*` | raw file `/files/npm-internal/@secret/x/-/x-1.0.0.tgz` (package `@secret/x`) | no |
+| packages exclude `@secret/*` | raw folder `/files/npm-internal/@acme/` (no package name, Q-AUTHZ-160) | no |
 | packages include `a\*b` (a rendered CI template) | npm `a*b` / `ab` | yes / no |
 | no include lists | anything in the selected repositories | yes |
 
 Acceptance criteria:
 
-- A policy grants `read` on `web/npm-internal` with `packages.include: ["@acme/*"]`. `npm view
+- A policy grants `read` on `npm-internal` with `packages.include: ["@acme/*"]`. `npm view
   @acme/ui` and `npm install @acme/ui` succeed; `npm view @other/ui` gets `E404`.
-- A policy grants `read` on `web/nuget-internal` with `packages.include: ["Acme.*"]`.
+- A policy grants `read` on `nuget-internal` with `packages.include: ["Acme.*"]`.
   `dotnet add package acme.core --source
-  https://trove.example.com/api/nuget/web/nuget-internal/v3/index.json` succeeds.
+  https://trove.example.com/api/nuget/nuget-internal/v3/index.json` succeeds.
 - `curl -X PUT --data-binary @evil-1.0.0.tgz
-  https://trove.example.com/files/web/npm-internal/@acme/ui/-/ui-9.9.9.tgz` with a tarball whose
+  https://trove.example.com/files/npm-internal/@acme/ui/-/ui-9.9.9.tgz` with a tarball whose
   `package.json` names `@other/evil` answers 400 and stores nothing.
-- `GET /files/web/npm-internal/%2e%2e/secret` answers 400.
+- `GET /files/npm-internal/%2e%2e/secret` answers 400.
 
 ### R-AUTHZ-006 · Repository actions
 Priority: **MVP** · Covers: IAM-022
@@ -423,7 +386,7 @@ version or relisting one changes what `npm install` or NuGet's version selection
 release decision ([formats/npm.md](formats/npm.md) takes the same position for npm).
 
 Repository configuration (creating, changing and deleting repositories) is not a repository action;
-it needs a system role (R-AUTHZ-010, R-AUTHZ-012) or the role `owner` in the repository's project (R-AUTHZ-026).
+it needs a system role (R-AUTHZ-010, R-AUTHZ-012) or project administration (R-AUTHZ-026).
 
 Compound operations:
 
@@ -439,7 +402,7 @@ Compound operations:
 Acceptance criteria:
 
 - With `read` and `deploy` but not `overwrite` on generic repository `files-internal`,
-  `curl -T app.zip https://trove.example.com/files/web/files-internal/releases/app.zip` succeeds the
+  `curl -T app.zip https://trove.example.com/files/files-internal/releases/app.zip` succeeds the
   first time, succeeds again with the same bytes, and answers 403 with different bytes.
 - With `delete` but not `deploy` on `npm-internal`, `npm unpublish @acme/ui@1.0.0` succeeds and
   `npm publish` answers 403.
@@ -529,7 +492,7 @@ move and trash-can restore targets ([storage.md](storage.md) R-STOR-019, R-STOR-
 operations report a refusal per item. A symbol package push never runs the check, because its
 version must already exist ([formats/nuget.md](formats/nuget.md) R-NUGET-020).
 
-Raw file access through `/files/<projectKey>/<repoKey>/<path>` maps `GET`/`HEAD` to `read`, `PUT` to `deploy`
+Raw file access through `/files/<repoKey>/<path>` maps `GET`/`HEAD` to `read`, `PUT` to `deploy`
 (plus `overwrite` when the path exists with different content) and `DELETE` to `delete`. In a
 repository whose format has package names, the format plug-in classifies the path, so name
 patterns and ownership apply to raw requests exactly as to protocol requests (R-AUTHZ-005).
@@ -540,7 +503,7 @@ Acceptance criteria:
   stable` gets `E403`. With `read` and `deploy`, the same command and `npm publish --tag next` of
   1.3.0 both succeed.
 - With `deploy` but not `delete` on `nuget-internal`, `dotnet nuget delete Acme.Core 1.0.0
-  --source https://trove.example.com/api/nuget/web/nuget-internal/v3/index.json --api-key
+  --source https://trove.example.com/api/nuget/nuget-internal/v3/index.json --api-key
   "$TROVE_TOKEN" --non-interactive` answers 403.
 - A user with `read` only on `Acme.*` in `nuget-internal` gets search results without any ID
   outside `acme.*`, and the total hit count counts only those.
@@ -610,7 +573,7 @@ chosen per repository.
 Acceptance criteria:
 
 - Remote `npmjs` with `cacheFillAction: read`, Bob holds `read` on it: `npm view left-pad
-  --registry https://trove.example.com/api/npm/web/npmjs/` succeeds with an empty cache.
+  --registry https://trove.example.com/api/npm/npmjs/` succeeds with an empty cache.
 - The same remote switched to `deploy`, Bob holds `read` only: `npm view is-odd` for a package
   not yet cached gets `E403` directly on `npmjs`, and `E404` through `npm-all`, and the outbound
   request log shows no upstream request. After a principal with `deploy` has fetched it, Bob's
@@ -618,10 +581,10 @@ Acceptance criteria:
 - With `cacheFillAction: deploy`, Bob's request for a cached document that expired 10 minutes ago is
   answered from the cache, and no upstream request is made.
 - Carol holds `read` and `deploy` on `npmjs` with `cacheFillAction: deploy`. `GET
-  /api/npm/web/npmjs/is-odd` for the uncached package, carrying only Carol's session cookie, answers
+  /api/npm/npmjs/is-odd` for the uncached package, carrying only Carol's session cookie, answers
   403 `populate_not_permitted`, and the test upstream records no request. The same request with
   Carol's personal access token fetches the package.
-- `POST /api/v1/permission-policies` giving `anonymous` `read` on `web/npmjs` (`cacheFillAction:
+- `POST /api/v1/permission-policies` giving `anonymous` `read` on `npmjs` (`cacheFillAction:
   read`) answers 201 with `"warnings": ["anonymous_populates_remote"]`, whether anonymous access is
   currently on or off; the same policy on a remote repository with `cacheFillAction: deploy`
   answers 201 without that warning.
@@ -664,12 +627,10 @@ Priority: **MVP** · Covers: IAM-024, PKG-NPM-042, PKG-NPM-045, PKG-NUGET-027
 
 This deliberately differs from the catalog, where a virtual repository has no permissions of its
 own (IAM-024). Policies MAY name virtual repositories by key, by pattern and by class
-(R-AUTHZ-004), and a project role covers them like every repository of its project (R-AUTHZ-026), restricted to `read` (the gate) and `manage` (metadata cache invalidation); the
+(R-AUTHZ-004), restricted to `read` (the gate) and `manage` (metadata cache invalidation); the
 catalog leaves open whether a policy may hold a virtual repository key, and trove allows it. The
 gate lets administrators decide which aggregated endpoints a group uses, at the cost of one extra
-selector (`@any-virtual:npm` covers all npm virtual repositories). A virtual repository's members are repositories of
-its own project ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-017), so a gate and its members are
-always decided within one project. Because content is always
+selector (`@any-virtual:npm` covers all npm virtual repositories). Because content is always
 decided on the member, rearranging the members of a virtual repository never exposes content to
 someone who could not read it directly. Q-AUTHZ-1 records the decision;
 [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-019 step 1 applies the gate.
@@ -677,7 +638,7 @@ someone who could not read it directly. Q-AUTHZ-1 records the decision;
 Acceptance criteria:
 
 - Virtual `npm-all` has members `npm-internal` and `npmjs`. Alice holds `read` on `npm-all` and
-  `npm-internal` only: `npm view left-pad --registry https://trove.example.com/api/npm/web/npm-all/`
+  `npm-internal` only: `npm view left-pad --registry https://trove.example.com/api/npm/npm-all/`
   gets `E404`; after `read` on `npmjs` is added, it succeeds.
 - `@acme/ui` 1.0.0 is in `npm-internal-a` (Alice may read it) and 2.0.0 in `npm-internal-b` (she
   may not); both are members of `npm-all`. `npm view @acme/ui versions` through `npm-all` shows
@@ -685,7 +646,7 @@ Acceptance criteria:
 - Anonymous access is on, and `anonymous` holds `read` on `npm-all` and `npmjs` but not on
   `npm-internal`: an anonymous `npm view left-pad` through `npm-all` gets 401.
 - Alice holds `read` on `npm-all` and `deploy` on `npm-internal` (the deploy target):
-  `npm publish --registry https://trove.example.com/api/npm/web/npm-all/` succeeds. Without `read` on
+  `npm publish --registry https://trove.example.com/api/npm/npm-all/` succeeds. Without `read` on
   `npm-all`, the same command gets 403.
 
 ### R-AUTHZ-010 · System roles and capabilities
@@ -835,22 +796,21 @@ Priority: **P1** · Covers: IAM-007, ADMAPI-027
 
 - `repository-admin` creates, changes and deletes repositories of every class, sets their
   authorization-related settings (`cacheFillAction`, `packageOwnership`, `ownershipDomain`,
-  `hideExistence`, `requireAuthentication`) and writes upstream credentials (write-only), in every
-  project, and moves repositories between projects (R-AUTHZ-026,
-  [repositories-and-proxy.md](repositories-and-proxy.md#r-repo-060--move-a-repository-to-another-project) R-REPO-060). It holds no content rights through its role and
+  `hideExistence`, `requireAuthentication`) and writes upstream credentials (write-only). It
+  assigns repositories to projects (R-AUTHZ-026). It holds no content rights through its role and
   cannot edit policies. Because content is decided on the member (R-AUTHZ-009), adding a repository
   to a virtual repository exposes nothing to anyone who could not already read it.
 - `webhook-admin` manages webhook subscriptions (specified in
   [operations-and-observability.md](operations-and-observability.md)) within two limits: a
-  subscription may cover only repositories named by project and key on which the webhook administrator holds
+  subscription may cover only repositories named by key on which the webhook administrator holds
   `read`, and only content events (deploy, delete, annotate of items and packages).
 
 Acceptance criteria:
 
-- A `repository-admin` creates remote repository `pypi-org` in project `web` (201) and gets 404 on
-  `GET /files/web/pypi-org/simple/` until a policy grants it `read`.
-- A `webhook-admin` without `read` on `web/npm-secret` gets 403 when creating a subscription for
-  `web/npm-secret`.
+- A `repository-admin` creates remote repository `pypi-org` (201) and gets 404 on
+  `GET /files/pypi-org/simple/` until a policy grants it `read`.
+- A `webhook-admin` without `read` on `npm-secret` gets 403 when creating a subscription for
+  `npm-secret`.
 
 ### R-AUTHZ-013 · Token scope as a ceiling
 Priority: **MVP** · Covers: TOK-007, TOK-008, TOK-009, TOK-010, TOK-012, ADMAPI-040
@@ -872,17 +832,13 @@ requirement fixes how the evaluator applies a scope:
   | `system` | System capabilities (R-AUTH-025, R-AUTHZ-010) | P1 |
   | `builds` | Build records: `{"builds": {"include": [...], "exclude": [...]}, "actions": [...]}` with the name globs of R-AUTHZ-027 | P1 |
 
-  There is no project resource type (TOK-011, TOK-013, P2): a project role reaches a personal
-  access token through the token's `repositories` part like any grant, and the Owner's
-  administration only through `admin: true` (R-AUTHZ-026,
-  [Q-AUTHZ-215](#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members)).
-  There is no per-repository configuration type: repository configuration is the system capability pair
-  `repositories:read-config` and `repositories:write-config` and applies to every project;
-  per-team configuration rights come from the Owner's role (R-AUTHZ-026), not from tokens.
+  There is no project resource type before project roles exist (TOK-011, TOK-013, P2). There is
+  no per-repository configuration type: repository configuration is the system capability pair
+  `repositories:read-config` and `repositories:write-config` and applies instance-wide;
+  per-team configuration rights come from projects (R-AUTHZ-026), not from tokens.
 - **Repository part (Q-AUTHZ-9).** `inherit: true` admits every repository right and, from P1,
   every build right of the subject. Otherwise each element of `repositories` has the shape of a
-  policy's resource set plus `actions`, its selectors those of an instance context (`web/npm-internal`,
-  `web/npm-*`, `@any-local:npm`, R-AUTHZ-004), and the scope admits an action on a coordinate if an
+  policy's resource set plus `actions`, and the scope admits an action on a coordinate if an
   element matches the coordinate and lists the action. A restricted scope without a `builds`
   element admits no build action.
 
@@ -890,7 +846,7 @@ requirement fixes how the evaluator applies a scope:
   that resolution consults on behalf of that repository (Q-AUTHZ-163): the check of a member
   carries the virtual repository the client addressed (`Addressed`; the populate check of a remote
   member too, Q-AUTHZ-165), and when that repository reaches the member and an element that names
-  it by its exact name (`web/npm-all`) admits `read` on it for the same package and path, the scope admits the member.
+  it by its exact key admits `read` on it for the same package and path, the scope admits the member.
   A class selector or a key glob that covers the virtual repository does not lift (Q-AUTHZ-164).
   The member addressed directly, and every action other than `read`, are decided by the scope as
   before; the subject's own grants are evaluated first and are never widened.
@@ -900,7 +856,7 @@ requirement fixes how the evaluator applies a scope:
     "inherit": false,
     "repositories": [
       {
-        "repositories": ["web/npm-internal", "web/npm-team-*"],
+        "repositories": ["npm-internal", "npm-team-*"],
         "packages": { "include": ["@web/*"], "exclude": [] },
         "paths": { "include": [], "exclude": [] },
         "actions": ["read", "deploy"]
@@ -945,20 +901,16 @@ Differences from the catalog, kept on purpose:
 Acceptance criteria:
 
 - An administrator's personal access token with the default scope gets 403 on
-  `POST /api/v1/projects/web/repositories`; a token with `{"inherit": true, "admin": true}` gets 201.
+  `POST /api/v1/repositories`; a token with `{"inherit": true, "admin": true}` gets 201.
 - Alice (who may deploy `@web/*`) creates a token whose scope admits only `read` on
-  `["web/npm-all", "@any-local:npm", "@any-remote:npm"]`. With it, `npm install` through `npm-all`
+  `["npm-all", "@any-local:npm", "@any-remote:npm"]`. With it, `npm install` through `npm-all`
   succeeds and `npm publish` gets `E403`.
 - Alice's group loses `deploy`; within the bound of R-AUTHZ-028, her token whose scope still
   admits `deploy` can no longer publish through any replica.
-- Alice's token with scope `{"repositories": [{"repositories": ["web/npm-internal"], "packages":
+- Alice's token with scope `{"repositories": [{"repositories": ["npm-internal"], "packages":
   {"include": ["@web/*"]}, "actions": ["read"]}]}` gets `@web/button` through `npm view` against
   `npm-internal` and `E404` for `@pay/core`, which her grants would let her read. Creating a token
-  whose scope element carries `"include": ["@web/*"]` at top level, or the bare key `npm-internal`,
-  answers 400 `invalid_scope`.
-- Dave is a `developer` of `web` and holds no grant. His personal access token with the default scope publishes to
-  `web/npm-internal`; his token whose scope admits only `read` on `["web/npm-all"]` installs through `npm-all` and
-  gets `E403` on `npm publish`; a service-account token never reaches the role.
+  whose scope element carries `"include": ["@web/*"]` at top level answers 400 `invalid_scope`.
 
 ### R-AUTHZ-014 · CI tokens in evaluation
 Priority: **MVP** · Covers: CIOIDC-013, CIOIDC-014, TOK-015
@@ -968,16 +920,13 @@ stores are specified in [gitlab-ci-oidc.md](gitlab-ci-oidc.md) (R-CI-009, R-CI-0
 R-CI-020). This requirement fixes how the evaluator treats a CI token:
 
 - **Rights.** The union of: policies whose entries name one of the token's mappings
-  (`ci:<issuer>/<mapping>` or, for a project's tier, `ci:<issuer>/<projectKey>/<mapping>`; the mappings recorded at
-  exchange, R-AUTHZ-002); policies naming the groups those mappings list; the frozen inline
+  (`ci:<issuer>/<mapping>`, the mappings recorded at exchange, R-AUTHZ-002); policies naming the groups those mappings list; the frozen inline
   grants of the issuance record; and from P1 the service accounts of R-CI-024. This union is
   narrowed by the caps of R-CI-013 and, where configured, by the triggering user's own rights at
   use time (R-CI-024, P1).
 - **Inline grants are resource sets.** Each rendered inline grant MUST have the shape of
   R-AUTHZ-004 and R-AUTHZ-005 (selectors, `packages` or `paths`, `actions`) plus its `ownership`
-  value, so the same matcher evaluates policies, scopes and CI grants. The selectors of a system-tier grant are those
-  of an instance context, those of a project tier's grant of a project context, evaluated against the project's
-  repositories only (R-AUTHZ-004, R-CI-013). A backslash produced by the
+  value, so the same matcher evaluates policies, scopes and CI grants. A backslash produced by the
   escaping of R-CI-014 makes the next character literal (R-AUTHZ-005), so a claim value can never
   widen a pattern.
 - **Ownership default (Q-AUTHZ-6).** An inline grant whose `actions` contain `deploy`,
@@ -998,8 +947,8 @@ R-CI-020). This requirement fixes how the evaluator treats a CI token:
 - **Lifecycle.** Disabling or deleting a mapping or CI issuer revokes its tokens (R-CI-017).
   Editing a mapping leaves the frozen inline grants of issued tokens unchanged until they expire;
   policy and group grants follow live changes.
-- A CI token never has a user identity, never receives auto-join groups (R-AUTHZ-002), never
-  holds a system role (R-AUTHZ-010) and never a project role (R-AUTHZ-026).
+- A CI token never has a user identity, never receives auto-join groups (R-AUTHZ-002) and never
+  holds a system role (R-AUTHZ-010).
 
 Acceptance criteria:
 
@@ -1011,7 +960,7 @@ Acceptance criteria:
   that mapping fail on every replica within the bound of R-AUTHZ-028, without a new exchange.
 - `POST /api/v1/authz/explain` for a CI token lists its inline grants with
   `"source": {"kind": "ci-inline", "ordinal": …}`.
-- A system-tier mapping saved with the inline grant `{"repositories": ["web/npm-internal"], "packages":
+- A mapping saved with the inline grant `{"repositories": ["npm-internal"], "packages":
   {"include": ["@acme/tools"]}, "actions": ["read", "deploy"]}` reads back with `"ownership":
   "bind_project"`; a read-only inline grant reads back with `"ownership": "none"`. Two GitLab
   projects matched by that mapping publish `@acme/tools`: the first owns it, the second gets
@@ -1028,10 +977,10 @@ Ownership rows are read inside the write transaction (R-AUTHZ-018).
 ```go
 // Begin takes the index a request decides on, once (Q-AUTHZ-159): it waits while the index is
 // staler than authz.cache.max_staleness or below Trove-Authz-Min-Epoch (R-AUTHZ-028,
-// R-AUTHZ-032), after making the names (project and key) of the repositories the request names
-// known to it (R-ARCH-011 step 2). An epoch the database never reached is answered 412; a stale
-// index 503 authz_stale.
-func Begin(ctx context.Context, sub Subject, names ...qname.Repo) (*Index, error) { /* index.ForRequest */ }
+// R-AUTHZ-032), after making the keys of the repositories the request names known to it
+// (R-ARCH-011 step 2). An epoch the database never reached is answered 412; a stale index 503
+// authz_stale.
+func Begin(ctx context.Context, sub Subject, keys ...string) (*Index, error) { /* index.ForRequest */ }
 
 // DecideOn runs for every coordinate of a request on the index Begin returned; the request
 // proceeds only if every coordinate is allowed. The resolver of R-REPO-019 calls MemberUsable
@@ -1105,11 +1054,6 @@ func Allowed(sub Subject, idx *Index, a Action, c Coordinate) bool {
 }
 
 func granted(sub Subject, idx *Index, a Action, c Coordinate) bool {
-    if sub.CarriesRoles {                                           // UI session or personal token, Q-AUTHZ-215
-        if idx.RoleOf(sub, c.Repo.Project).Actions().Has(a) {       // highest over the user and its groups,
-            return true                                             // R-AUTHZ-026; source role:<projectKey>:<role>
-        }
-    }
     for _, p := range sub.Principals {                              // user, groups, sa, ci mappings, anonymous, authenticated
         for _, g := range idx.Grants(c.Repo.ID, p) {                // selectors already expanded
             if g.Actions.Has(a) && g.Resources.Matches(c) {
@@ -1179,7 +1123,7 @@ func MayPopulate(sub Subject, idx *Index, m Repo, mc Coordinate) bool {
   `deny.endpoint_read_only` when it refuses a write ([endpoints.md](endpoints.md) R-EP-013),
   `deny.scope` when a grant would allow the action but a ceiling does not,
   `deny.triggering-user` when only the triggering-user bound refuses, and `deny.no-grant`
-  otherwise. "Grant" includes the actions of a project role (R-AUTHZ-026).
+  otherwise.
 - The subject carries the endpoint the request arrived on (`Subject.Endpoint`, set by the one
   conversion from the listener's endpoint, never by a caller; [endpoints.md](endpoints.md) Q-EP-20),
   with that endpoint's `cache_fill` (`Subject.CacheFill`, Q-AUTHZ-153), and
@@ -1195,13 +1139,13 @@ func MayPopulate(sub Subject, idx *Index, m Repo, mc Coordinate) bool {
   the commit, without a database transaction held open. It asks `Allowed(sub, idx, Manage, c)`
   for the local repository, so a token's scope and the CI caps bound it like any action, and
   refuses with reason `deny.shadowing`.
-- Performance target: with 10,000 policies, 200 groups in a principal set, 1,000 repositories and 100 projects,
+- Performance target: with 10,000 policies, 200 groups in a principal set and 1,000 repositories,
   one `Decide` call SHOULD take at most 1 ms at the 99th percentile on one CPU core, measured by
   `trove_authz_evaluation_seconds`.
 
 Worked trace (repositories and policies of the team example in
-[Worked examples](#worked-examples), all in project `web`; Alice is in `developers` and `team-web`, Bob in
-`developers`, Carol in no group, Dave in no group and a `reader` of `web`, anonymous access off):
+[Worked examples](#worked-examples); Alice is in `developers` and `team-web`, Bob in
+`developers`, Carol in no group, anonymous access off):
 
 | # | Subject | Request | Steps | Result |
 |---|---|---|---|---|
@@ -1213,8 +1157,6 @@ Worked trace (repositories and policies of the team example in
 | 6 | no credential | `npm view left-pad` via `npm-all` | anonymous access off | 401 |
 | 7 | Alice, read-only token | `npm publish @web/button@1.3.2` | grant allows `deploy`, the scope does not (`deny.scope`) | 403 |
 | 8 | Alice | `npm view left-pad` via `npm-all`, not cached | `npm-internal`: not found; `npmjs`: `read` and `cacheFillAction: read` pass; fetched | 200 |
-| 9 | Dave | `npm view @web/button` via `npm-all` | gate: `read` on `npm-all` from `role:web:reader`; member `npm-internal`: `read` from the role; found | 200 |
-| 10 | Dave | `npm publish @web/button@1.3.3` via `npm-all` | gate passes; target `npm-internal`; `deploy`: no grant, and the role `reader` holds only `read` | 403 |
 
 Acceptance criteria: each row of the trace is an automated end-to-end test in the e2e profile
 `scatter` of [architecture.md](architecture.md) R-ARCH-032 (three `web` replicas, every request
@@ -1258,30 +1200,26 @@ A refused request is answered as follows (first matching row wins):
   MUST run before the existence lookup of the item or package. The one lookup that precedes the
   decision is the repository lookup of [architecture.md](architecture.md) R-ARCH-011 step 2, which a
   repository created through another replica needs (R-API-052); what this page promises is the
-  bytes, and the response time of the first request for a name (project and key) that a replica has never seen is
+  bytes, and the response time of the first request for a key that a replica has never seen is
   not promised (Q-AUTHZ-152, H-155 in [file-transfer.md](../security/file-transfer.md)).
 - A refused write gets 403 whether or not the target exists, and the message names only the action
   and the coordinate the caller sent. Existence matters only once the caller holds `deploy` (to
   tell a new upload from an overwrite); a caller with `deploy` learns of existence through its own
   uploads anyway.
-- A project the subject is no member of, and in which it may read no repository, answers exactly like a project that
-  does not exist: on protocol and `/files/` addresses like a missing repository, and with 404 below
-  `/api/v1/projects/{projectKey}` (R-AUTHZ-026). The project segment of an address never tells whether the project
-  exists.
 - Listings, search results and their counts contain only items the subject may read.
 - On the management API, capability checks run before any lookup, so their 403 does not depend on
   whether the addressed object exists. Reads of a repository and its content
-  (`/api/v1/projects/{projectKey}/repositories/{repoKey}` and below) follow the table above. Readers without
-  `repositories:read-config` who are not an Owner of the project get the reduced repository document of
+  (`/api/v1/repositories/{key}` and below) follow the table above. Readers without
+  `repositories:read-config` get the reduced repository document of
   [repositories-and-proxy.md](repositories-and-proxy.md).
 - Error bodies follow [api-and-ui.md](api-and-ui.md) on the management API and the format's
   conventions on protocol endpoints. Audit events carry the reason codes of R-AUTHZ-029.
 
 Acceptance criteria:
 
-- Carol (no grants, no membership) gets byte-identical 404 responses for `GET
-  /api/npm/web/npm-internal/@web%2fbutton` (exists), `GET /api/npm/web/npm-internal/@web%2fnope`
-  (missing) and `GET /api/npm/nope/npm-internal/@web%2fbutton` (no such project).
+- Carol (no grants) gets byte-identical 404 responses for `GET
+  /api/npm/npm-internal/@web%2fbutton` (exists) and `GET /api/npm/npm-internal/@web%2fnope`
+  (missing).
 - Carol's `npm publish` of `@web/nope` to `npm-internal` gets `E403`, as does her publish of the
   existing `@web/button`.
 - `dotnet restore` against `nuget-internal` without a credential gets 401 with a `Basic`
@@ -1364,8 +1302,8 @@ Owner identities:
 |---|---|
 | `user:<name>` | That user |
 | `group:<name>` | Every subject whose principal set contains the group |
-| `sa:<name>`, `sa:<projectKey>/<name>` | That service account; a project's account owns names only in its project's repositories (R-AUTHZ-026) |
-| `ci:<issuer>/<mapping>`, `ci:<issuer>/<projectKey>/<mapping>` | Every CI token issued through that mapping |
+| `sa:<name>` | That service account |
+| `ci:<issuer>/<mapping>` | Every CI token issued through that mapping |
 | `ci:<issuer>:project:<project_id>` | Every CI token whose issuance record names that issuer and GitLab project ID (R-CI-015) |
 
 A subject's owner identities are its principal set plus, for a CI token, its project identity.
@@ -1400,9 +1338,6 @@ Rules:
      group `team-web` makes `group:team-web` the owner, so every team member may publish later
      versions. A policy entry or inline grant of a CI mapping without `bind_project` makes the
      mapping the owner.
-   - a project role that allowed `deploy` (R-AUTHZ-026) makes the member through which the role came an owner: the
-     group whose membership carries the role, or the user for its own membership; a project role is never an owner
-     identity of its own.
 3. **Unclaimed names with existing versions** (data imported before ownership existed, ownership
    switched on later, owners released) need `manage` for every mutating operation. A successful
    publish by a `manage` holder claims the name by rule 2. Nobody takes over an existing package
@@ -1480,8 +1415,7 @@ Acceptance criteria:
   1.0.0 first; the pipeline of 4712 then runs `npm publish` of 1.0.1 and gets `E403` with
   `package_owned_by_other_owner`; 4711 publishes 1.0.1 successfully.
 - Alice publishes `@web/new-lib` through the `team-web` grant; Dave, also in `team-web`, publishes
-  the next version successfully. Erin, a `developer` of `web` through her own membership and in no group, publishes
-  `@web/erin-lib` and becomes its owner as `user:erin`.
+  the next version successfully.
 - `@legacy/util` was imported with versions and no owner. Alice, holding `deploy` but not
   `manage`, gets 403 on `npm publish`; `lead-web`, holding `deploy` and `manage`, succeeds, after
   which the name is owned by rule 2.
@@ -1489,7 +1423,7 @@ Acceptance criteria:
   same moment on different replicas: exactly one succeeds.
 - A local npm repository and a local NuGet repository created without `packageOwnership` both read
   back `"local": {"packageOwnership": "enforce", …}`.
-- `npm-all` = [`npm-internal`, `npmjs`], all of project `web`; the stub upstream of `npmjs` serves `lodash`. Service
+- `npm-all` = [`npm-internal`, `npmjs`]; the stub upstream of `npmjs` serves `lodash`. Service
   account `ci-bot` holds `deploy`, but not `manage`, on `npm-internal`. Its `npm publish` of
   `lodash@4.17.22` through `npm-all` gets `E403` `shadows_remote_package`, and no ownership claim
   for `lodash` exists afterwards. `lead-web` pre-assigns `sa:ci-bot` as owner of `lodash`
@@ -1505,15 +1439,15 @@ an encoded `/` in that segment.
 
 | Method and path | Purpose | Status | Required |
 |---|---|---|---|
-| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners` | Read state and owners | 200; 404 per R-AUTHZ-016 | `read` on the coordinate |
-| `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners` | Add an owner. On a name that is unclaimed and has no version, this pre-assigns it: the name is claimed for the given owner before anything is published. | 201; 403; 409 `already_exists` (already an owner); 422 `unknown_principal` | an owner, `manage` on the coordinate, or `content:bypass`; pre-assigning needs `manage` or `content:bypass` |
-| `DELETE /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners/{owner}` | Remove an owner | 204; 403; 404; 409 `last_owner` unless `?release=true` | as for adding; `release=true` needs `manage` or `content:bypass` |
-| `GET /api/v1/package-owners?owner={owner}&repository={projectKey}/{repoKey}` | Names owned by an identity, for offboarding and transfers: the entries that name the identity itself, not those of its groups | 200, cursor paging per [api-and-ui.md](api-and-ui.md) | `policies:read`, or the caller is that owner (directly or as group member); such a caller sees only names of repositories it may read (R-AUTHZ-016) |
+| `GET /api/v1/repositories/{repoKey}/packages/{packageName}/owners` | Read state and owners | 200; 404 per R-AUTHZ-016 | `read` on the coordinate |
+| `POST /api/v1/repositories/{repoKey}/packages/{packageName}/owners` | Add an owner. On a name that is unclaimed and has no version, this pre-assigns it: the name is claimed for the given owner before anything is published. | 201; 403; 409 `already_exists` (already an owner); 422 `unknown_principal` | an owner, `manage` on the coordinate, or `content:bypass`; pre-assigning needs `manage` or `content:bypass` |
+| `DELETE /api/v1/repositories/{repoKey}/packages/{packageName}/owners/{owner}` | Remove an owner | 204; 403; 404; 409 `last_owner` unless `?release=true` | as for adding; `release=true` needs `manage` or `content:bypass` |
+| `GET /api/v1/package-owners?owner={owner}&repository={repoKey}` | Names owned by an identity, for offboarding and transfers: the entries that name the identity itself, not those of its groups | 200, cursor paging per [api-and-ui.md](api-and-ui.md) | `policies:read`, or the caller is that owner (directly or as group member); such a caller sees only names of repositories it may read (R-AUTHZ-016) |
 
 ```json
 {
-  "repository": "web/npm-internal",
-  "domain": "web/npm-internal",
+  "repository": "npm-internal",
+  "domain": "npm-internal",
   "format": "npm",
   "package": "@acme/frontend",
   "state": "claimed",
@@ -1539,9 +1473,7 @@ an encoded `/` in that segment.
   deleted) takes an owner only from `manage` or `content:bypass`; on an unclaimed name with
   versions this claims it with the reason `added`, without versions with `pre-assigned`.
 - The owner identities that can be added are those of R-AUTHZ-018's table: `user:`, `group:`,
-  `sa:` (with or without a project), `ci:<issuer>/<mapping>` and `ci:<issuer>/<projectKey>/<mapping>`, and from M4
-  `ci:<issuer>:project:<id>` (R-CI-015); a service account of another project than the repository's is 422
-  `principal_outside_project` (R-AUTHZ-026); every other
+  `sa:`, `ci:<issuer>/<mapping>`, and from M4 `ci:<issuer>:project:<id>` (R-CI-015); every other
   reference, `anonymous` and `authenticated` included, is 422 `unknown_principal` (Q-AUTHZ-157).
   The permission is decided before the reference is looked up.
 - Adding and removing are writes: a caller who may not change the owners gets 403 whether or not the
@@ -1562,12 +1494,12 @@ Acceptance criteria:
 
 ```sh
 curl -sS -H "Authorization: Bearer $TROVE_TOKEN" \
-  https://trove.example.com/api/v1/projects/web/repositories/npm-internal/packages/@acme%2Ffrontend/owners
+  https://trove.example.com/api/v1/repositories/npm-internal/packages/@acme%2Ffrontend/owners
 # 200, owners as above
 
 curl -sS -X POST -H "Authorization: Bearer $LEAD_TOKEN" -H 'Content-Type: application/json' \
   -d '{"owner":"group:team-web"}' \
-  https://trove.example.com/api/v1/projects/web/repositories/npm-internal/packages/@acme%2Fnot-yet/owners
+  https://trove.example.com/api/v1/repositories/npm-internal/packages/@acme%2Fnot-yet/owners
 # 201: lead-web (manage on npm-internal) pre-assigns a name nobody has published yet
 ```
 
@@ -1581,9 +1513,8 @@ curl -sS -X POST -H "Authorization: Bearer $LEAD_TOKEN" -H 'Content-Type: applic
 ### R-AUTHZ-020 · Shared ownership domains
 Priority: **P1** · Covers: trove-only
 
-- A local repository MAY set `ownershipDomain: <name>`. All local repositories of the same project and format
-  with the same domain name share one set of ownership records (`domain = 'domain:<projectKey>/<name>'`); no domain
-  spans two projects, because no repository is shared (Q-AUTHZ-206).
+- A local repository MAY set `ownershipDomain: <name>`. All local repositories of the same format
+  with the same domain name share one set of ownership records (`domain = 'domain:<name>'`).
   Without the setting, the repository is its own domain.
 - Joining a repository into a domain whose records conflict with the repository's own (the same
   name owned by different owners) is refused with 409 `ownership_conflict`, listing the conflicting
@@ -1593,7 +1524,7 @@ Priority: **P1** · Covers: trove-only
   else in the other.
 - Changing the setting requires `repositories:write-config`.
 
-Acceptance criteria: `npm-dev` and `npm-release` of project `web` share domain `acme-npm`. `@acme/ui` is owned by
+Acceptance criteria: `npm-dev` and `npm-release` share domain `acme-npm`. `@acme/ui` is owned by
 `group:team-web` through a publish to `npm-dev`. A member of `team-mobile` holding `deploy` on
 `npm-release` gets 403 `package_owned_by_other_owner` publishing `@acme/ui` there.
 
@@ -1609,7 +1540,7 @@ Representation:
   "resourceType": "repository",
   "project": null,
   "resources": {
-    "repositories": ["web/npm-internal"],
+    "repositories": ["npm-internal"],
     "packages": { "include": ["@web/*"], "exclude": [] },
     "paths": { "include": [], "exclude": [] }
   },
@@ -1627,16 +1558,10 @@ Representation:
 }
 ```
 
-- `name` matches `^[a-z0-9][a-z0-9._-]{0,127}$` and is unique among the policies of no project, or among the policies
-  of its project: the same name may exist in two projects and once among the global policies
-  ([Q-AUTHZ-209](#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones)).
-  `description` has at most 1024 characters; `resourceType` is `repository` (MVP) or `build` (P1, R-AUTHZ-027);
-  `project` is `null` for a global policy and the key of its project for a project policy (R-AUTHZ-026). It is
-  read-only: the route a policy is created under decides it (`/api/v1/permission-policies` or
-  `/api/v1/projects/{projectKey}/policies`), and it is fixed at creation; a body that names another project is 422
-  `immutable` ([Q-AUTHZ-186](#q-authz-186--the-project-of-a-policy-is-fixed-at-creation)). The selectors of a global
-  policy are those of an instance context (`web/npm-internal`, `*/npm-*`, `@any-local:npm`), those of a project
-  policy those of a project context (bare keys, R-AUTHZ-004). `entries` may be empty (a policy can be prepared before principals are added) and
+- `name` matches `^[a-z0-9][a-z0-9._-]{0,127}$`; `description` has at most 1024 characters;
+  `resourceType` is `repository` (MVP) or `build` (P1, R-AUTHZ-027); `project` is `null` for a global
+  policy and the key of a project for a project policy (R-AUTHZ-026): it is fixed at creation (a change is 422 `immutable`, [Q-AUTHZ-186](#q-authz-186--the-project-of-a-policy-is-fixed-at-creation)), the name starts with
+  `<project>-`, and the selectors stay inside the project. `entries` may be empty (a policy can be prepared before principals are added) and
   holds at most one entry per principal. `inert`, `warnings`, `version` and the timestamps are
   read-only.
 - Each policy addresses exactly one resource type, so the catalog's per-section operations
@@ -1659,26 +1584,23 @@ Representation:
 - Malformed JSON answers 400. Semantic validation answers 422 with one of: `unknown_principal`,
   `unknown_repository`, `unknown_format`, `invalid_pattern`, `invalid_action`,
   `duplicate_principal`, `anonymous_write_action`, `anonymous_dynamic_selector`,
-  `authenticated_write_action`, `virtual_action_not_applicable`, `action_not_allowed`; `invalid_pattern` also for a
-  bare key in a global policy and for a selector with a `/` in a project policy (R-AUTHZ-004); for a project policy
-  also `principal_outside_project` (R-AUTHZ-026). Warnings do not block saving: `path_patterns_on_package_format`,
-  `selector_matches_nothing` and `anonymous_populates_remote` (R-AUTHZ-008).
+  `authenticated_write_action`, `virtual_action_not_applicable`, `action_not_allowed`; for a project policy also
+  `unknown_project`, `project_prefix_required`, `repository_outside_project` and `principal_outside_project`
+  (R-AUTHZ-026). Warnings do not block saving: `path_patterns_on_package_format`, `selector_matches_nothing`,
+  `anonymous_populates_remote` (R-AUTHZ-008) and `selector_outside_project` (Q-AUTHZ-179).
 - The declarative bootstrap file (configuration as code, P1,
   [operations-and-observability.md](operations-and-observability.md)) uses the same
   representation.
 
 | Method and path | Purpose | Status | Required |
 |---|---|---|---|
-| `GET /api/v1/permission-policies` | List every policy, global and of every project; each item carries `project`. Filters: `principal=<ref>` (with `expandGroups=true`, the default, also policies granting to the principal's groups), `repository=<projectKey>/<repoKey>` (policies whose selectors cover it), `project=<key>`; cursor paging per [api-and-ui.md](api-and-ui.md) | 200; 422 unknown filter value | `policies:read`; P1: delegated managers the policies they manage |
-| `POST /api/v1/permission-policies` | Create a policy of no project | 201 with `Location`; 400; 409 name exists among the global policies; 422 | `policies:write` |
-| `GET /api/v1/permission-policies/{name}` | Read the policy of no project of that name | 200 with `ETag`; 404 | as for list |
+| `GET /api/v1/permission-policies` | List. Filters: `principal=<ref>` (with `expandGroups=true`, the default, also policies granting to the principal's groups), `repository=<key>` (policies whose selectors cover it), `project=<key>`; cursor paging per [api-and-ui.md](api-and-ui.md) | 200; 422 unknown filter value | `policies:read`; project administrators see their project's policies (`project=<key>` required, 403 without it and for a project they do not administer, R-AUTHZ-026, [Q-AUTHZ-187](#q-authz-187--what-a-project-administrator-sees-and-is-refused-on-the-policy-operations)); P1: delegated managers the policies they manage |
+| `POST /api/v1/permission-policies` | Create | 201 with `Location`; 400; 409 name exists; 422 | `policies:write`; project administrators with `managePolicies` for policies of their project (R-AUTHZ-026) |
+| `GET /api/v1/permission-policies/{name}` | Read | 200 with `ETag`; 404 | as for list |
 | `PUT /api/v1/permission-policies/{name}` | Replace (the name is immutable) | 200; 400; 404; 412; 422; 428 | as for create; P1: delegated managers per R-AUTHZ-025 |
 | `PATCH /api/v1/permission-policies/{name}` | Change members by JSON merge patch (R-API-013); an array such as `entries` is replaced as a whole (Q-AUTHZ-26) | as for `PUT` | as for `PUT` |
 | `DELETE /api/v1/permission-policies/{name}` | Delete (`If-Match` optional) | 204; 404; 412 | as for create |
-| `GET /api/v1/projects/{projectKey}/policies` | List the project's policies. Filters: `principal=<ref>`, `repository=<repoKey>`; cursor paging | 200; 404 | `policies:read` or an Owner of the project (R-AUTHZ-026) |
-| `POST /api/v1/projects/{projectKey}/policies` | Create a policy of the project | 201 with `Location`; 400; 404; 409 name exists in the project; 422 | `policies:write` or an Owner of the project |
-| `GET`, `PUT`, `PATCH`, `DELETE /api/v1/projects/{projectKey}/policies/{name}` | Read, replace, merge patch and delete a policy of the project, as for a global policy | as for a global policy | as for the project's list (read) and create (writes); P1: delegated managers per R-AUTHZ-025 |
-| `POST /api/v1/authz/validate-policy` | Validate without storing; returns errors, warnings and the repositories the selectors currently cover; a policy of a project names it in `project` | 200 | `policies:read`; an Owner of the named project for a policy of it |
+| `POST /api/v1/authz/validate-policy` | Validate without storing; returns errors, warnings and the repositories the selectors currently cover | 200 | `policies:read`; administrators of a project with `managePolicies` for a policy of their project |
 
 Acceptance criteria:
 
@@ -1691,10 +1613,6 @@ Acceptance criteria:
   within `cluster.epoch_poll_interval` plus 1 s while Valkey is stopped.
 - `GET /api/v1/permission-policies?principal=user:alice` returns `team-web-publish` (through
   `group:team-web`); with `expandGroups=false` it does not.
-- `POST /api/v1/permission-policies` with the selector `npm-internal` answers 422 `invalid_pattern`; with
-  `web/npm-internal` it answers 201. A policy `team-web-publish` created with
-  `POST /api/v1/projects/web/policies` and the selector `npm-internal` exists beside it, reads back with
-  `"project": "web"`, and `GET /api/v1/permission-policies?project=web` lists it and not the global one.
 
 ### R-AUTHZ-022 · Role binding API
 Priority: **MVP** · Covers: IAM-002, IAM-016, ADMAPI-001
@@ -1705,9 +1623,9 @@ Priority: **MVP** · Covers: IAM-002, IAM-016, ADMAPI-001
 | `GET /api/v1/role-bindings?role=&principal=` | List bindings | 200 | `roles:read` |
 | `PUT /api/v1/role-bindings/{role}/{principalRef}` | Bind (idempotent) | 201 new, 200 existing (a binding from the configuration stays one, Q-AUTHZ-171); 409 `auto_join_admin_conflict`; 422 `role_not_allowed`, unknown role or principal | `roles:write` |
 | `DELETE /api/v1/role-bindings/{role}/{principalRef}` | Unbind | 204; 404; 409 `last_admin`; 409 `role_binding_managed_by_configuration` for a binding from the configuration (R-AUTHZ-010) | `roles:write` |
-| `GET /api/v1/authz/me` | The caller's effective capabilities, scope summary, principal set and its project memberships with their roles (`projects`: `[{"key": "web", "role": "owner"}]`, R-AUTHZ-026) | 200 | any subject |
+| `GET /api/v1/authz/me` | The caller's effective capabilities, scope summary, principal set and the projects it administers with their switches (`projects`, Q-AUTHZ-181) | 200 | any subject |
 
-- `principalRef` is percent-encoded (`group:platform-admins`, `sa:ci-bot`, `sa:web%2Fpartner`).
+- `principalRef` is percent-encoded (`group:platform-admins`, `sa:ci-bot`).
 - Binding any role to an auto-join group is refused with 409 `auto_join_admin_conflict`; the
   identity page refuses the reverse (R-AUTH-019).
 - A change that would leave no active user or service account holding `admin`, directly or
@@ -1748,9 +1666,9 @@ other principals.
 ```json
 {
   "checks": [
-    { "repository": "web/npm-internal", "package": "@web/button", "action": "deploy" },
-    { "repository": "web/npm-internal", "path": "@web/button/-/button-1.2.0.tgz", "action": "delete" },
-    { "repository": "web/npm-all", "action": "read" }
+    { "repository": "npm-internal", "package": "@web/button", "action": "deploy" },
+    { "repository": "npm-internal", "path": "@web/button/-/button-1.2.0.tgz", "action": "delete" },
+    { "repository": "npm-all", "action": "read" }
   ]
 }
 ```
@@ -1759,23 +1677,22 @@ other principals.
 { "results": [ { "allowed": true }, { "allowed": false }, { "allowed": true } ], "epoch": 1842 }
 ```
 
-- `repository` is the qualified name `<projectKey>/<repoKey>`. A check on a repository the caller cannot see answers
-  `allowed: false`, exactly as for a missing repository or project. Checks of package-mutating actions include the ownership rule; the ownership rows of
+- A check on a repository the caller cannot see answers `allowed: false`, exactly as for a missing
+  repository. Checks of package-mutating actions include the ownership rule; the ownership rows of
   all checks of one call are read with one query, so a call costs at most one database round trip
   however many checks it holds.
 - Any authenticated subject may call it; anonymous callers get 401.
 - The UI hides controls whose check fails; the server enforces every operation regardless.
 
 Acceptance criteria: for Alice the example returns `[true, false, true]`; for Carol it returns
-`[false, false, false]`, also when `web/npm-internal` is replaced by a name whose key or project does not exist.
+`[false, false, false]`, also when `npm-internal` is replaced by a key that does not exist.
 
 ### R-AUTHZ-024 · Effective permissions and decision explanation
 Priority: **P1** · Covers: IAM-030, ART-031
 
-- `GET /api/v1/authz/effective?repository={projectKey}/{repoKey}&package={name}` (or `&path={path}`) lists every
+- `GET /api/v1/authz/effective?repository={key}&package={name}` (or `&path={path}`) lists every
   principal that holds actions on the coordinate, with the actions and the policies that grant
-  them; the members of the repository's project are listed with their role as the source
-  (`role:<projectKey>:<role>`, R-AUTHZ-026). CI mappings whose inline grant templates could render to the coordinate are listed with
+  them. CI mappings whose inline grant templates could render to the coordinate are listed with
   `"conditional": true` and the template, because their tokens' grants depend on claims. Required:
   `policies:read`, or `manage` on the coordinate (the answer is then limited to that coordinate).
 - `POST /api/v1/authz/explain` evaluates a decision for a principal or a token ID and returns the
@@ -1793,7 +1710,7 @@ Priority: **P1** · Covers: IAM-030, ART-031
     "scope": { "inherit": true }
   },
   "coordinate": {
-    "repository": "web/npm-internal", "class": "local", "format": "npm",
+    "repository": "npm-internal", "class": "local", "format": "npm",
     "package": "@acme/frontend", "path": null, "actions": ["deploy"]
   },
   "steps": [
@@ -1806,21 +1723,19 @@ Priority: **P1** · Covers: IAM-030, ART-031
 ```
 
   Required: `policies:read`, plus `tokens:read` when a token ID is given. Explanations contain no
-  token values and no claims beyond the issuance record (R-CI-020). A step that a project role allowed names
-  `"source": {"kind": "role", "project": "web", "role": "developer"}`.
+  token values and no claims beyond the issuance record (R-CI-020).
 
 Acceptance criteria: the explanation of trace row 7 of R-AUTHZ-015 names reason `deny.scope`. The
-effective permissions of `web/npm-internal` / `@web/button` list `group:team-web` with `annotate`,
-`deploy` and `read` from `team-web-publish`, and a `developer` of `web` with `annotate`, `deploy` and `read` from
-`role:web:developer`.
+effective permissions of `npm-internal` / `@web/button` list `group:team-web` with `annotate`,
+`deploy` and `read` from `team-web-publish`.
 
 ### R-AUTHZ-025 · Delegated policy management
 Priority: **P1** · Covers: IAM-029
 
 - A principal that holds `manage` in a policy's entries is a delegated manager of that policy. It
-  may read the policy and change its entries through `PUT /api/v1/permission-policies/{name}`, or
-  `PUT /api/v1/projects/{projectKey}/policies/{name}` for a policy of a project, provided `name`, `description`,
-  `resourceType`, `project` and `resources` stay unchanged (otherwise 403).
+  may read the policy and change its entries through `PUT /api/v1/permission-policies/{name}`,
+  provided `name`, `description`, `resourceType`, `project` and `resources` stay unchanged
+  (otherwise 403).
 - What a delegated manager may grant depends on `authz.delegation.mode`:
 
 | Mode | May grant |
@@ -1853,205 +1768,157 @@ Acceptance criteria: `lead-web` (holding `deploy`, `manage` and `read` in `team-
 `user:dave` with `["deploy", "read"]` (200). It is refused (403) when adding `["delete"]` or
 `["manage"]`, and when changing the `group:team-web` entry, because it is a member. Under
 `any-but-manage`, `lead-web`, owner of service account `sa-web-release`, is refused (403) when
-adding `sa:sa-web-release` with `["delete"]`; the same holds for a policy of project `web` and its account
-`sa:web/release`.
+adding `sa:sa-web-release` with `["delete"]`.
 
 ### R-AUTHZ-026 · Projects for delegated administration
 Priority: **MVP** · Covers: IAM-051, IAM-052, IAM-057
 
-The owner wants projects in the beta (2026-11-02), with project service accounts
+The owner wants projects in the beta (2026-11-02), with project service accounts that project administrators create
 ([Q-AUTHZ-169](#q-authz-169--a-technical-account-for-a-project-belongs-to-the-project)); BETA.md places them in phase 5a,
-before GitLab CI OIDC. In his review of 2026-11-06 he decided the model this requirement states: every repository belongs to
-exactly one project and none is shared ([Q-AUTHZ-206](#q-authz-206--every-repository-belongs-to-exactly-one-project)), it is
-addressed inside its project ([Q-REPO-212](repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared)),
-users and groups are members of a project with one of four roles
-([Q-AUTHZ-207](#q-authz-207--a-user-or-group-is-a-member-of-a-project-with-a-role-and-the-role-grants-the-projects-repositories),
-[Q-AUTHZ-208](#q-authz-208--four-project-roles-reader-developer-maintainer-owner)), and a project's policies, service
-accounts and CI mappings are named within the project
-([Q-AUTHZ-209](#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones),
-[Q-AUTHZ-214](#q-authz-214--a-projects-ci-mappings-are-named-within-the-project-like-its-policies-and-service-accounts)).
-Not built yet ([H-540](#h-540--a-repository-can-still-exist-without-a-project),
-[H-541](repositories-and-proxy.md#h-541--repositories-are-addressed-by-a-global-key),
-[H-542](#h-542--a-user-belongs-to-no-project-only-a-project-administrator-does),
-[H-546](#h-546--names-of-a-projects-policies-and-service-accounts-carry-its-prefix)).
+before GitLab CI OIDC.
 
-A project is the unit in which a team holds and administers its repositories, their policies and the technical accounts
-of its partners without a system administrator. Delegation per policy (`manage`, R-AUTHZ-025) and per CI issuer
-(R-CI-023) stay P1. The catalog's custom project roles, global roles, environments, repository sharing and project quotas
-(IAM-053 to IAM-064, IAM-068) remain P2: trove's project roles are the four fixed ones below, and no repository is shared.
+Projects come in a reduced form, so that a team can administer its own repositories, their policies and the technical
+accounts of its partners without a system administrator. Delegation per policy (`manage`, R-AUTHZ-025) and per CI issuer
+(R-CI-023) stay P1. The catalog's project roles, global roles, environments, repository sharing and project quotas
+(IAM-053 to IAM-064, IAM-068) remain P2.
 
 **The project.**
 
-- A project has a key matching `^[a-z][a-z0-9-]{1,31}$` (unique and immutable), a display name (1 to 128 characters) and a
-  description (at most 1024). It has no switches: what its Owner may do is fixed by the role (Q-AUTHZ-208).
-- An administrator of trove (`projects:write`) creates and deletes projects; the Owner changes the display name and the
-  description.
-- Every repository belongs to exactly one project. The project is named in the address of the create request and of
-  every later operation (`/api/v1/projects/<projectKey>/repositories/<repoKey>`, `/api/<format>/<projectKey>/<repoKey>/…`,
-  [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-002, R-REPO-009), and a repository changes project only
-  through a move ([R-REPO-060](repositories-and-proxy.md#r-repo-060--move-a-repository-to-another-project)). Its key is
-  unique within the project: `web` and `mobile` can each have `npm-remote`. A virtual repository lists only repositories
-  of its own project, a remote repository of a public registry exists in each project that needs it (the blob store
-  deduplicates, INV-4), and a project's policies, CI mappings and deployment targets name only its repositories
-  (R-AUTHZ-004).
-- A project holds its repositories, its members, its policies, its service accounts and the CI mappings of its tier
-  `project:<projectKey>` ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-009). The names of its policies, service accounts
-  and CI mappings are unique among the objects of the project, and among those of no project; the same name may exist in
-  two projects and once instance-wide. There is no prefix rule and no overlap rule between keys and names.
+- A project has a key matching `^[a-z][a-z0-9-]{1,31}$` (immutable), a display name (1 to 128 characters), a description
+  (at most 1024) and two privilege switches that only a holder of `projects:write` sets: `managePolicies` (default on)
+  and `manageRepositories` (default off).
+- No project key is another project's key followed by a hyphen and more (`web` and `web-app` cannot both exist), and no
+  key is the start, up to a hyphen, of the name of a global service account (409 `project_key_overlap`,
+  [Q-AUTHZ-176](#q-authz-176--names-of-a-project-are-prefixed-with-its-key-and-a-global-name-never-takes-a-project-prefix)).
+  Creating projects is serialised, so that two overlapping keys cannot both pass
+  ([Q-AUTHZ-194](#q-authz-194--project-creation-is-serialised-and-the-overlap-rule-reads-one-state),
+  [H-399](#h-399--a-global-service-account-and-a-project-key-created-at-the-same-instant-can-overlap)).
+- A repository belongs to at most one project; by the owner's decision every repository belongs to exactly one and none is
+  shared ([Q-AUTHZ-206](#q-authz-206--every-repository-belongs-to-exactly-one-project); not built yet,
+  [H-540](#h-540--a-repository-can-still-exist-without-a-project)). `admin` and `repository-admin` (`repositories:write-config`) assign and
+  unassign existing repositories; moving one between projects requires `?move=true` (409 `repository_assigned`
+  otherwise); a request that names the owner it expects (`?from=<key>`, empty for none) is refused with 409
+  `project_owner_changed` (the extension `currentProject` holds the current owner) when the owner read under the locks of the
+  write is another one, whatever `move` says ([Q-AUTHZ-205](#q-authz-205--an-assignment-names-the-owner-it-expects-and-the-write-compares-it-under-its-locks)).
+  Repository keys stay globally unique and URLs do not change (INV-5, INV-6). An assignment and an
+  unassignment move the repository's `config_version` (its ETag) and notify `authz` and `repo_config`
+  ([Q-AUTHZ-191](#q-authz-191--an-assignment-moves-the-repositorys-configuration-version-and-tells-both-areas)).
+- A repository that a project administrator creates (with `manageRepositories`) names its project in the create request,
+  MUST have a key that starts with `<projectKey>-` (422 `project_prefix_required`) and is assigned in the transaction
+  that creates it. No other path lets a project administrator assign a repository.
 
-**Members and roles.**
+**Project administrators** are the users and groups listed on the project. A service account, a CI mapping, `anonymous`
+and `authenticated` never administer one (422). They exercise it through a UI session and through a token with
+`admin: true`, as for a system role (R-AUTHZ-013, [Q-AUTHZ-183](#q-authz-183--who-administers-a-project-and-through-which-credentials)).
+What they may do, per right:
 
-- Users and groups are members of a project with one role each: `reader`, `developer`, `maintainer` or `owner`. A service
-  account, a CI mapping, a Bastion principal, `anonymous`, `authenticated` and an auto-join group are never members (422
-  `principal_not_allowed`): every user is in an auto-join group, so it would make every user a member, which is what
-  `authenticated` in a global policy says ([Q-AUTHZ-200](#q-authz-200--a-global-policy-never-takes-a-projects-prefix-and-a-project-policy-names-no-auto-join-group)).
-- Each role holds what the role before it holds:
-
-| Role | On every repository of the project | In the project |
-|---|---|---|
-| `reader` | `read` | Reads the project, its members and its repositories (the consumer view of R-REPO-010) |
-| `developer` | `read`, `annotate`, `deploy` | As `reader` |
-| `maintainer` | every action: also `overwrite`, `delete`, `manage` | As `reader` |
-| `owner` | every action | Administers the project: members and their roles, repositories, policies, service accounts, CI mappings, settings (table below) |
-
-- A user's role in a project is the highest role among its own membership and the memberships of its groups (R-AUTHZ-002,
-  resolved when the request is evaluated); a user that is no member and in no member group has no role there. The role's
-  actions are decided from the membership, never from a stored grant; they add to what global and project policies grant
-  (the union, R-AUTHZ-015), and the explanation names them as source `role:<projectKey>:<role>` (R-AUTHZ-024). A `deploy`
-  through a role makes the publishing identity the owner as a grant does (R-AUTHZ-018).
-- A role reaches every credential through which the member acts as itself, the UI session and its personal access tokens,
-  intersected with the token's scope like any grant (R-AUTHZ-013). The Owner's administration, its reads included, is
-  exercised only through a UI session or a token with `admin: true`, as for a system role. Service-account and CI tokens
-  never carry a role; they reach a project's repositories through its policies
-  ([Q-AUTHZ-215](#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members)).
-- A project keeps at least one Owner: removing or demoting the last one answers 409 `last_owner` unless the caller holds
-  `projects:write`, whose holder may leave a project without an Owner and administers it alone
-  ([Q-AUTHZ-217](#q-authz-217--the-last-owner-of-a-project-is-removed-or-demoted-only-by-an-administrator-of-trove)).
-
-What the Owner may do, within its project and nowhere else:
-
-| Area | What it allows |
+| Right | What it allows, within the project and nowhere else |
 |---|---|
-| Members | Add users and groups, change their roles, remove them; look up users and groups by a name prefix ([Q-AUTHZ-182](#q-authz-182--how-a-project-administrator-finds-the-users-and-groups-it-names)) |
-| Repositories | Create, change and delete the project's repositories of every class: local, remote and virtual ([Q-AUTHZ-173](#q-authz-173--a-project-administrator-creates-remote-repositories)); read their full configuration (as `repositories:read-config` does, never a secret value); test the saved and the unsaved upstream of a remote; request a pass of a mirror (R-REPO-056); move a repository to another project of which it is Owner too (R-REPO-060). A remote's upstream stays subject to the outbound address rules of the installation ([security/egress.md](../security/egress.md)). An Owner without `repositories:write-config` gives an upstream secret as a value, never as a reference of the installation, and a stored one does not follow a new address ([Q-REPO-127](repositories-and-proxy.md#q-repo-127--a-project-administrator-gives-an-upstream-secret-as-a-value-and-a-stored-one-stays-with-its-hosts), 422 `secret_value_required`); it takes the installation's outbound path ([Q-REPO-128](repositories-and-proxy.md#q-repo-128--a-project-administrators-remote-repository-takes-the-installations-outbound-path), 422 `outbound_path_restricted`); and it keeps `remote.mode`, `remote.mirror`, the include and exclude lists, `remote.url` and `remote.extraHosts` of a mirror as stored (Q-REPO-193), pauses and resumes it, or turns the mode back to `pullThrough` ([Q-REPO-142](repositories-and-proxy.md#q-repo-142--who-may-switch-a-remote-to-mirror), 422 `mirror_restricted`) |
-| Policies | Create, change and delete the project's policies, granting any action (`manage` included, except to CI mappings) to users, groups, the project's service accounts, service accounts of no project and CI mappings, never to `anonymous`, `authenticated` or an auto-join group; validate a policy of the project |
-| Service accounts | Create, change, disable, enable and delete the project's service accounts; issue and revoke their tokens within the bounds below ([Q-AUTHZ-177](#q-authz-177--what-a-project-administrator-may-do-with-service-accounts-and-their-tokens)) |
-| CI mappings | Manage the mappings of the tier `project:<projectKey>`, dry-run them and read the issuances of tokens through them, with the bounds of a project policy: the project's repositories only, its policies only, no groups, never `manage` ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-019) |
-| Settings | Change the display name and the description |
+| Administration (always) | `manage` on every project repository (package ownership, cache invalidation, claims of scope `members`); it is decided from the administration of the project, never from a stored grant ([Q-AUTHZ-196](#q-authz-196--the-manage-of-a-project-administrator-is-decided-from-the-administration-not-from-a-grant-per-repository)). Read the project, its administrators and counts, its policies, the full configuration of its repositories (as `repositories:read-config` does, never a secret value), its service accounts and their tokens' metadata. Change the description of the project's service accounts, disable and delete them, revoke their tokens ([Q-AUTHZ-177](#q-authz-177--what-a-project-administrator-may-do-with-service-accounts-and-their-tokens)). |
+| `managePolicies` | Create, change and delete project policies (`"project": "<key>"`), granting any action (`manage` included, except to CI mappings) to users, groups, service accounts and CI mappings, never to `anonymous` or `authenticated`; validate a policy. Create and enable project service accounts, issue their tokens. Look up the users and groups to name in policies ([Q-AUTHZ-182](#q-authz-182--how-a-project-administrator-finds-the-users-and-groups-it-names)). |
+| `managePolicies` also | Manage the project's CI mappings: list the issuers read-only, create, change and delete mappings of the tier `project:<key>` and dry-run them, and read the issuances of tokens through them ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-019, Q-CI-26). The bounds are those of a project policy: the project's repositories only, its policies only, no groups, never `manage` |
+| `manageRepositories` | Create, change and delete the project's repositories, of every class: local, remote and virtual (owner, [Q-AUTHZ-173](#q-authz-173--a-project-administrator-creates-remote-repositories)). Test the saved and the unsaved upstream of a remote. A remote's upstream stays subject to the outbound address rules of the installation ([security/egress.md](../security/egress.md)); a virtual repository's members and deploy target are repositories of the project ([Q-AUTHZ-178](#q-authz-178--a-virtual-repository-of-a-project-administrator-stays-inside-the-project)); an upstream secret is given as a value, never as a reference of the installation, and a stored one does not follow a new address ([Q-REPO-127](repositories-and-proxy.md#q-repo-127--a-project-administrator-gives-an-upstream-secret-as-a-value-and-a-stored-one-stays-with-its-hosts), 422 `secret_value_required`); the outbound path is the installation's ([Q-REPO-128](repositories-and-proxy.md#q-repo-128--a-project-administrators-remote-repository-takes-the-installations-outbound-path), 422 `outbound_path_restricted`); the mirror mode is an administrator's decision: a project administrator keeps `remote.mode`, `remote.mirror`, the include and exclude lists, `remote.url` and `remote.extraHosts` of a mirror as stored (Q-REPO-193), pauses and resumes, or turns the mode back to `pullThrough` ([Q-REPO-142](repositories-and-proxy.md#q-repo-142--who-may-switch-a-remote-to-mirror), 422 `mirror_restricted`), and may request a pass of a mirror of its project (R-REPO-056). |
 
-An Owner cannot bind system roles, see policies of no project (unless it holds `policies:read`), see or change anything of
-a project beyond what its role there allows, create or delete projects, create users, groups or service accounts of no
-project, or add or change an entry for `anonymous` or `authenticated` (R-AUTHZ-030). Delegation of CI mappings to a group
-outside projects stays with R-CI-023 (P1).
+They cannot bind system roles, cannot see global policies (unless they hold `policies:read`), cannot see or change
+repositories outside their project, cannot assign or unassign repositories, cannot change the switches or the
+administrators of any project, cannot create users, groups or global service accounts, and cannot add or change an entry
+for `anonymous` or `authenticated` (R-AUTHZ-030). The CI mappings of a project are managed by its administrators under `managePolicies` (see the table, [gitlab-ci-oidc.md](gitlab-ci-oidc.md) Q-CI-26);
+delegation of CI mappings to a group outside projects stays with R-CI-023 (P1).
 
 **Project policies.**
 
-- A project policy is addressed under its project (`/api/v1/projects/<projectKey>/policies/<name>`, R-AUTHZ-021); its
-  project is fixed at creation ([Q-AUTHZ-186](#q-authz-186--the-project-of-a-policy-is-fixed-at-creation)) and reads
-  back as `"project": "<projectKey>"`.
-- Its selectors are of a project context (R-AUTHZ-004): bare keys, key patterns and classes evaluated against the
-  project's repositories only. A key that names no repository of the project answers 422 `unknown_repository`, a selector
-  with a `/` 422 `invalid_pattern`. Global policies keep applying to the project's repositories; the effect is the union
-  of global policies, project policies and roles.
-- Entries of a project policy may name users, groups, service accounts of no project, CI mappings and the service accounts
-  of the same project. A service account of another project is refused (422 `principal_outside_project`; to an Owner
-  without `policies:read` it answers `unknown_principal` as a name that does not exist,
-  [Q-AUTHZ-197](#q-authz-197--what-a-project-administrators-policy-list-and-validation-tell-about-other-objects)).
+- A project policy carries `"project": "<key>"` (immutable) and is named `<key>-…` (422 `project_prefix_required`). A new
+  global policy takes no name that starts with the key of a project and a hyphen (422 `name_reserved_by_project`,
+  [Q-AUTHZ-200](#q-authz-200--a-global-policy-never-takes-a-projects-prefix-and-a-project-policy-names-no-auto-join-group)).
+- Project policies may select only repositories of their project: key selectors must name project repositories (422
+  `repository_outside_project`; an unknown key answers the same), and pattern and class selectors are evaluated only
+  against the project's repositories. A key selector whose repository left the project covers nothing and carries the
+  warning `selector_outside_project` ([Q-AUTHZ-179](#q-authz-179--a-repository-that-leaves-a-project-leaves-its-policies-inert)).
+  Global policies keep applying to project repositories; the effect is the union.
+- Entries of a project policy may name users, groups, global service accounts, CI mappings and the service accounts of
+  the same project. A service account of another project is refused (422 `principal_outside_project`; to a project
+  administrator it answers `unknown_principal` as a name that does not exist, [Q-AUTHZ-197](#q-authz-197--what-a-project-administrators-policy-list-and-validation-tell-about-other-objects)).
   An auto-join group is refused (422 `principal_outside_project`): every user is a member, so it would stand in for
   `authenticated` ([Q-AUTHZ-200](#q-authz-200--a-global-policy-never-takes-a-projects-prefix-and-a-project-policy-names-no-auto-join-group)).
-- The grants of a project policy are stored in their own table, `authz_project_policy_entry`
+- The grants of a project policy are stored in their own table, which releases before projects do not read, so that a
+  replica of such a release never grants beyond the project
   ([Q-AUTHZ-174](#q-authz-174--the-grants-of-a-project-policy-live-where-the-previous-release-does-not-read-them),
   [ADR-145](../decisions.md#adr-145--the-grants-of-a-project-policy-are-stored-where-the-previous-release-does-not-read-them)).
 
-**Project service accounts** (owner, [Q-AUTHZ-169](#q-authz-169--a-technical-account-for-a-project-belongs-to-the-project),
-[Q-AUTHZ-209](#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones)).
+**Project service accounts** (owner, [Q-AUTHZ-169](#q-authz-169--a-technical-account-for-a-project-belongs-to-the-project)).
 
-- A service account with a project is a *project service account*. Its project is fixed at creation, its name is unique
-  within the project, it is addressed as `/api/v1/projects/<projectKey>/service-accounts/<name>` and referenced as
-  `sa:<projectKey>/<name>` ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-020). An Owner of the
-  project creates it, as does a holder of `identities:write`. A service account of no project is created only by a holder
-  of `identities:write`, with its tokens.
+- A service account with `project` set is a *project service account*. Its name starts with `<projectKey>-` (422
+  `project_prefix_required`), the project is fixed at creation, and an administrator of the project creates it while
+  `managePolicies` is on (403 `project_switch_off`), as does a holder of `identities:write`. A service account without a
+  project takes no name that starts with the key of a project and a hyphen (422 `name_reserved_by_project`).
 - It is granted only through the policies of its project (and, where R-AUTHZ-018 asks for an owner, owns packages only in
   its project's repositories): it is refused as an entry of a global policy or of another project's policy, as a package
-  owner outside its project (422 `principal_outside_project`), as a role binding (422 `role_not_allowed`), as a group
-  member (422 `project_account_not_groupable`) and as a project member (422 `principal_not_allowed`), so no grant of a
-  global group, no role and no system role ever reaches it
+  owner outside its project (422 `principal_outside_project`), as a role binding (422 `role_not_allowed`) and as a group
+  member (422 `project_account_not_groupable`), so no grant of a global group, and no system role, ever reaches it
   ([Q-AUTHZ-175](#q-authz-175--a-project-service-account-is-granted-by-its-projects-policies-only)).
-- Owners issue its tokens (`trv_sat_`, endpoint-bound ones included) and revoke them. A token an Owner issues is never
-  non-expiring, lives at most as long as the installation's maximum for service-account tokens, has `admin: false` and
-  names no `system` item (R-AUTH-020, R-AUTH-027, Q-AUTHZ-177).
-- It can be disabled (all its tokens fail with `principal_disabled`) and deleted (its tokens go) by an Owner of the
-  project and by `identities:write`.
+- Project administrators issue its tokens (`trv_sat_`, endpoint-bound ones included) and revoke them. A token they issue
+  is never non-expiring, lives at most as long as the installation's maximum for service-account tokens, has `admin:
+  false` and names no `system` item (R-AUTH-020, R-AUTH-027, Q-AUTHZ-177).
+- It can be disabled (all its tokens fail with `principal_disabled`) and deleted (its tokens go) by an administrator of
+  the project, whatever the switches say, and by `identities:write`.
 - A project with a service account is not empty and cannot be deleted.
 
 **What others see.** `admin`, `security-admin`, `repository-admin` and `auditor` hold `projects:read`: they see every
-project with its members, their roles and counts. The `auditor` sees every project, its policies, service accounts and
-repositories read-only and changes nothing. Only `admin` holds `projects:write`: it creates, changes and deletes projects
-and adds, changes and removes the members of every project, the first Owner among them. The capabilities act in every
-project as they do outside projects: `repositories:write-config` (`admin`, `repository-admin`) creates, changes, deletes and
-moves repositories of every project, `policies:write` writes the policies of every project, `identities:write` the service
-accounts of every project. `GET /api/v1/projects` lists every project to a holder of `projects:read` and otherwise the
-projects the caller is a member of, each with the caller's role. `GET /api/v1/authz/me` lists the caller's memberships with
-their roles (`projects`: `[{"key": "web", "role": "owner"}]`), which is what the UI reads to show the project screens without
-any system capability ([R-UI-041](api-and-ui.md#r-ui-041--projects)). A project the caller is no member of and cannot read
-through `projects:read` answers 404 on every route below it, exactly like a project that does not exist; a member whose role
-is too low gets 403.
+project with its administrators, switches and counts. The `auditor` sees every project, its policies, service accounts
+and repositories read-only and changes nothing; only `admin` holds `projects:write`, and `repositories:write-config`
+(`admin`, `repository-admin`) assigns repositories. `GET /api/v1/authz/me` lists the projects the caller administers
+(`projects`), which is what the UI reads to show a project administrator the project screens without any system
+capability ([R-UI-041](api-and-ui.md#r-ui-041--projects), [Q-AUTHZ-181](#q-authz-181--authzme-names-the-projects-the-caller-administers)).
 
-**Deleting a project.** Only a holder of `projects:write` deletes a project, and only when no repository, in any lifecycle
-state, belongs to it, no service account belongs to it and no CI mapping has its tier (409 `project_not_empty`). Its
-policies are deleted with it, each through the policy store (audited and journaled like any policy deletion), and its
-member entries go ([Q-AUTHZ-185](#q-authz-185--versions-delete-order-the-epoch-and-the-journal-of-project-writes)).
+**Deleting a project.** A project can be deleted only when no repository, in any lifecycle state, is assigned, no
+service account belongs to it and no CI mapping has its tier (409 `project_not_empty`, [Q-CI-26](gitlab-ci-oidc.md#q-ci-26--project-administrators-manage-the-ci-mappings-of-their-project)). Its policies are deleted with it, each through the policy
+store (audited and journaled like any policy deletion), and its administrator entries go ([Q-AUTHZ-185](#q-authz-185--versions-delete-order-the-epoch-and-the-journal-of-project-writes)).
 Each deletion carries the version read before it as its `If-Match` and names the project, so a policy that took the name in
-between in another project or instance-wide is never removed ([Q-AUTHZ-204](#q-authz-204--a-project-delete-passes-the-version-it-read-as-the-if-match-of-each-policy-deletion),
+between, global or of another project, is never removed ([Q-AUTHZ-204](#q-authz-204--a-project-delete-passes-the-version-it-read-as-the-if-match-of-each-policy-deletion),
 [Q-AUTHZ-199](#q-authz-199--a-delegates-policy-write-is-checked-under-the-policy-lock-and-its-project-lookups-run-in-the-writes-transaction)).
 Everything a client can cause is refused before the first policy is deleted; the delete is not one transaction
 ([Q-AUTHZ-192](#q-authz-192--a-project-delete-is-not-one-transaction),
 [H-398](#h-398--a-failed-project-delete-can-leave-the-project-without-some-of-its-policies)).
 
-**The declaration.** An operation that members may call declares `permission: <capability>`, `project: path.projectKey`
-and `projectRole: owner` or `projectRole: reader` (R-API-008). The shared step admits the holder of the capability, or a
-member of the project the path names whose role is at least the declared one (`reader`: any member; `owner`: an Owner,
-through a credential that may administer). A project the caller is no member of answers 404, a role below the declared one
-403. Operations on repository content declare their action with `repository: path.repoKey` and `project: path.projectKey`,
-and the engine decides them with roles, policies and the token scope (R-AUTHZ-015).
+**The declaration.** An operation that project administrators may call declares `permission: <capability>` and
+`projectAdmin: <right>` (R-API-008): the capability, or administration of at least one project (the right is
+the handler's to enforce). The shared step is coarse; the handler narrows to the project the request addresses
+([Q-AUTHZ-180](#q-authz-180--a-declaration-admits-project-administrators-in-a-form-of-its-own-and-the-handler-narrows),
+[ADR-146](../decisions.md#adr-146--an-operation-admits-project-administrators-through-a-declaration-of-its-own)).
+A project the caller does not administer answers 404, a project whose switch is off 403 `project_switch_off`.
 
 Data model:
 
 ```sql
 CREATE TABLE project (
-  id            uuid PRIMARY KEY,
-  key           text NOT NULL UNIQUE CHECK (key ~ '^[a-z][a-z0-9-]{1,31}$'),
-  display_name  text NOT NULL CHECK (length(display_name) BETWEEN 1 AND 128),
-  description   text NOT NULL DEFAULT '' CHECK (length(description) <= 1024),
-  version       bigint NOT NULL DEFAULT 1,                                   -- ETag
-  created_at    timestamptz NOT NULL DEFAULT now(),
-  created_by    uuid NULL REFERENCES principal (id) ON DELETE SET NULL,
-  updated_at    timestamptz NOT NULL DEFAULT now(),
-  updated_by    uuid NULL REFERENCES principal (id) ON DELETE SET NULL
+  id                  uuid PRIMARY KEY,
+  key                 text NOT NULL UNIQUE CHECK (key ~ '^[a-z][a-z0-9-]{1,31}$'),
+  display_name        text NOT NULL CHECK (length(display_name) BETWEEN 1 AND 128),
+  description         text NOT NULL DEFAULT '' CHECK (length(description) <= 1024),
+  manage_policies     boolean NOT NULL DEFAULT true,
+  manage_repositories boolean NOT NULL DEFAULT false,
+  version             bigint NOT NULL DEFAULT 1,                             -- ETag
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  created_by          uuid NULL REFERENCES principal (id) ON DELETE SET NULL,
+  updated_at          timestamptz NOT NULL DEFAULT now(),
+  updated_by          uuid NULL REFERENCES principal (id) ON DELETE SET NULL
 );
 
-CREATE TABLE project_member (                                                -- users and groups
+CREATE TABLE project_admin (                                               -- users and groups
   project_id    uuid NOT NULL REFERENCES project (id) ON DELETE CASCADE,
   principal_id  uuid NOT NULL REFERENCES principal (id) ON DELETE CASCADE,
-  role          text NOT NULL CHECK (role IN ('reader', 'developer', 'maintainer', 'owner')),
   PRIMARY KEY (project_id, principal_id)
 );
--- repositories.project_id uuid NOT NULL REFERENCES project (id)               (no ON DELETE: the delete counts first)
---   CONSTRAINT repositories_project_key UNIQUE (project_id, key)             (the key is unique within its project)
--- service_account.project_id uuid NULL REFERENCES project (id)               (immutable; stored name `<projectKey>/<name>`)
--- authz_policy.project_id uuid NULL REFERENCES project (id) ON DELETE CASCADE (immutable; stored name `<projectKey>/<name>`)
--- ci_mappings.project_id: the project tier, R-CI-009 (its principal is named `<issuer>/<projectKey>/<name>`)
+-- repositories.project_id uuid NULL REFERENCES project (id)                (no ON DELETE: the delete counts first)
+-- service_account.project_id uuid NULL REFERENCES project (id)             (same; immutable, name starts with the key)
+-- authz_policy.project_id uuid NULL REFERENCES project (id) ON DELETE CASCADE
 -- authz_project_policy_entry: the grants of project policies; see the data model of R-AUTHZ-028.
 ```
 
-A repository can move, so it is held as the pair of its project and its key; a policy, a service account and a CI mapping
-never change project, so the stored name of a project's policy and service account, and the principal name of its CI
-mapping, carry the project key and a `/`, which no key and no name contains, and the existing uniqueness of the name
-columns holds for the project's objects and for those of no project at once. The migration
-is `00019_projects.sql`, changed in place: there is no installation to migrate ([CLAUDE.md](../../CLAUDE.md)). Besides the
-tables and columns it holds the guards that the database enforces whatever the API checked: members are users or groups,
-a project service account is no group member (SQLSTATE `AI002`), its stored name carries its project's key and its project
-never changes (`AI003`), and the grants of a project policy cannot be written to the table of global grants (`AI004`).
+The migration is `00019_projects.sql`. Besides the tables and columns it holds the guards that the database enforces
+whatever the API checked: administrators are users or groups, a project service account is no group member (SQLSTATE
+`AI002`), its name starts with the key and its project never changes (`AI003`), and the grants of a project policy
+cannot be written to the table of global grants (`AI004`).
 
 API:
 
@@ -2067,63 +1934,69 @@ API:
 | `DELETE /api/v1/projects/{projectKey}/members/{principalRef}` | Remove a member | 204; 404; 409 `last_owner` | `projects:write` or an Owner |
 | `GET /api/v1/projects/{projectKey}/principals?q=&kind=&limit=` | Users and groups whose name starts with `q` (2 characters at least, 20 at most): kind and name only | 200; 404; 422 | `identities:read` or an Owner |
 
-Operations of other pages below a project, each declared with `project: path.projectKey` (the declarations are in
+Operations of other pages that project administrators call, each with its project narrowing (the declarations are in
 `api/openapi.yaml`):
 
-| Operation | Declaration | The member's case |
+| Operation | Declaration | The project administrator's case |
 |---|---|---|
-| `GET/POST /projects/{projectKey}/repositories`, `GET/PUT/PATCH/DELETE …/repositories/{repoKey}` and its sub-resources, `POST …/{repoKey}/move`, `POST /projects/{projectKey}/upstream-tests` ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-009 to R-REPO-013, R-REPO-060) | `repositories:read-config` or `repositories:write-config`, `projectRole: owner`; the list `projectRole: reader` | Writes and the full document: an Owner; the list and the consumer view: every member, as far as `read` reaches |
-| `GET/POST /projects/{projectKey}/policies`, `GET/PUT/PATCH/DELETE …/policies/{name}` (R-AUTHZ-021) | `policies:read` or `policies:write`, `projectRole: owner` | An Owner |
-| `POST /authz/validate-policy` with `"project": "<projectKey>"` | `policies:read`; the handler admits an Owner of the named project | An Owner |
-| `/projects/{projectKey}/service-accounts[/{name}[/disable\|/enable\|/tokens]]` ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-020) | `identities:read`, `identities:write` or `tokens:revoke`, `projectRole: owner` | An Owner, with the token rules above |
-| `/projects/{projectKey}/ci/…` ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-019) | `ci:read` or `ci:write`, `projectRole: owner` | An Owner |
-| `GET /tokens`, `GET/DELETE /tokens/{id}` | `authenticated` | Also the tokens of the project's service accounts, for an Owner |
+| `GET/POST/PUT/PATCH/DELETE /permission-policies…`, `POST /authz/validate-policy` | `policies:read` or `policies:write`, `projectAdmin: any` (read) or `managePolicies` (write, validate) | Project policies only; `project=<key>` required on the list |
+| `POST /repositories`, `PUT/PATCH/DELETE /repositories/{key}`, the two upstream tests | `repositories:write-config`, `projectAdmin: manageRepositories` | Repositories of the project; `project` in the create request |
+| `GET /repositories` | public (the handler decides) | The project's repositories with the full document |
+| `GET/PATCH/DELETE /service-accounts…`, `POST …/disable` | `identities:read` or `identities:write`, `projectAdmin: any` | Accounts of the project; `project=<key>` required on the list |
+| `POST /service-accounts`, `POST …/enable` | `identities:write`, `projectAdmin: managePolicies` | With `"project": "<key>"` |
+| `POST /service-accounts/{name}/tokens` | `authenticated` | The project's accounts, with the token rules above |
+| `GET /tokens`, `GET/DELETE /tokens/{id}` | `authenticated` | Tokens of the project's accounts |
+| `DELETE /service-accounts/{name}/tokens` | `tokens:revoke`, `projectAdmin: any` | Accounts of the project |
 
-- `PUT /api/v1/projects/{projectKey}` follows [api-and-ui.md](api-and-ui.md) R-API-012 and Q-API-2: without `If-Match` it
-  answers 428 and changes nothing, `If-Match: *` is the deliberate blind write, and a stale tag answers 412 with
-  `currentEtag`. Adding, changing and removing a member bind one pair and are exempt; they do not move the project's
-  version (Q-AUTHZ-185). A write that changes nothing (the principal already had the role) records no event and answers the
+- `PUT /api/v1/projects/{key}` follows [api-and-ui.md](api-and-ui.md) R-API-012 and Q-API-2:
+  without `If-Match` it answers 428 and changes nothing, `If-Match: *` is the deliberate blind
+  write, and a stale tag answers 412 with `currentEtag`. The privilege switches make this a grant
+  change: a stale `PUT` could switch `manageRepositories` back on after another administrator
+  turned it off. Adding or removing a project administrator and assigning a repository bind one
+  pair and are exempt; they do not move the project's version (Q-AUTHZ-185). A write that changes nothing (the
+  administrator already was one, the repository already belongs to the project) records no event and answers the
   current epoch ([Q-AUTHZ-193](#q-authz-193--what-an-administrator-write-that-changes-nothing-does)).
-- Every write above answers `Trove-Authz-Epoch` (R-AUTHZ-032). The writes of a project and its members, and the creation
-  and deletion of project service accounts, are audited in the transaction of the change (R-AUTHZ-029):
-  `authz.project.created`, `.updated`, `.deleted`, `.member_added`, `.member_changed` and `.member_removed`; a move is
-  `repository.moved` (R-REPO-060). Every event of a project's object carries the member `project`. A removed member, a
-  lowered role and a move narrow rights and are journaled as narrowings (R-AUTHZ-031).
-- Recent authentication (R-API-007) is required for the project writes that change who may act: replace, delete, add,
-  change and remove a member, and a move.
+- Every write above answers `Trove-Authz-Epoch` (R-AUTHZ-032). The writes of a project, its administrators and its
+  assignments, and the creation and deletion of project service accounts, are audited in the transaction of the change
+  (R-AUTHZ-029): `authz.project.created`, `.updated`, `.deleted`, `.admin_added`, `.admin_removed`,
+  `.repository_assigned` and `.repository_unassigned`; the events of service accounts and tokens carry the member
+  `project`.
+- Recent authentication (R-API-007) is required for the project writes that change who may act: replace, delete, add and
+  remove an administrator, assign and unassign a repository.
 
 Acceptance criteria:
 
-- Project `web` has group `web-leads` as `owner` and group `web-devs` as `developer`; repositories `npm` and `npm-all`
-  belong to `web`, `npm-internal` to `mobile`, and no policy names `web-devs`. A member of `web-devs` publishes through
-  `https://trove.example.com/api/npm/web/npm/` with a personal access token, gets `E403` for `npm unpublish` (`delete`),
-  and `E404` through `https://trove.example.com/api/npm/mobile/npm-internal/`.
-- A member of `web-leads` creates policy `npm-read` with `POST /api/v1/projects/web/policies` on the selector `npm` (201);
-  the selector `npm-internal`, which names no repository of `web`, answers 422 `unknown_repository`, and the selector
-  `mobile/npm-internal` 422 `invalid_pattern`. Policy `npm-read` of project `mobile` and a global policy `npm-read` exist
-  beside it.
-- The same Owner creates repository `extra` with `POST /api/v1/projects/web/repositories` (201) while project `mobile` has
-  an `extra` too; a virtual repository `all` of `web` with member `extra` succeeds. A member of `web-devs` creating a
-  repository gets 403, a user that is no member of `web` gets 404 on `GET /api/v1/projects/web`.
-- The Owner adds `user:dave` as `maintainer` (201) and changes him to `reader` (200); adding `sa:web/partner` or
-  `authenticated` as a member answers 422 `principal_not_allowed`. Removing `group:web-leads`, the only Owner, answers 409
-  `last_owner` to its member and 204 to an administrator of trove.
-- The Owner's personal access token without `admin: true` reads `web/npm` and gets 403 on
-  `PUT /api/v1/projects/web/members/user:erin`; a token with `{"inherit": true, "admin": true}` gets 201.
-- The Owner creates service account `partner` in `web` (201, `sa:web/partner`), and an administrator creates the service
-  account `partner` of no project (201, `sa:partner`): two accounts. `sa:web/partner` as a member of a group (422
-  `project_account_not_groupable`), as a role binding (422 `role_not_allowed`) and as an entry of a global policy (422
-  `principal_outside_project`) is refused; as an entry of `npm-read` of `web` it is accepted, and a token of it reads
-  `web/npm` and nothing else.
-- The Owner issues a token for `sa:web/partner` with a lifetime of 30 days bound to the endpoint `partners` (201). A
-  non-expiring token, and a token whose scope names `system: ["settings:read"]` or has `admin: true`, are refused. It
-  revokes the token, and the next request with it answers 401.
-- Deleting `web` answers 409 `project_not_empty` while `extra` exists, still while only `sa:web/partner` remains, and 204
-  when both are gone; its policies and member entries go with it.
-- An Owner of `web` calling `GET /api/v1/projects` sees `web` with the role `owner` and no other project,
-  `GET /api/v1/projects/docs` answers 404 as for a project that does not exist, and `GET /api/v1/authz/me` lists
-  `{"key": "web", "role": "owner"}`. The `auditor` lists every project and gets 403 on `PUT /api/v1/projects/web`.
-- An Owner looks up `q=al` and gets users and groups that start with it, 20 at most, kind and name only; `q=a` answers 422.
+- Project `web` has administrator group `web-leads`; `web-npm` is in it, `npm-internal` is not. A
+  member of `web-leads` creates a policy `web-npm-read` with `"project": "web"` on `web-npm` (201) and is refused
+  on `npm-internal` (422 `repository_outside_project`). The same policy named `npm-read` is refused (422
+  `project_prefix_required`).
+- The same project administrator creating repository `npm-web-extra` gets 403 while
+  `manageRepositories` is off. With the switch on, that key gets 422 (missing prefix), and
+  `web-extra` succeeds; a virtual repository `web-all` with member `npm-internal` gets 422
+  `repository_outside_project`, one with member `web-extra` succeeds.
+- `PUT /api/v1/projects/web` with `{"manageRepositories": true, …}` and no `If-Match` answers 428
+  and the switch stays off; with the `ETag` read before another administrator's `PUT` it answers
+  412.
+- A member of `web-leads` creates service account `web-partner` with `"project": "web"` (201); `partner` with that project
+  is refused (422 `project_prefix_required`); an administrator creating global `web-bot` is refused (422
+  `name_reserved_by_project`). `web-partner` as a member of a group (422 `project_account_not_groupable`), as a role
+  binding (422 `role_not_allowed`) and as an entry of a global policy (422 `principal_outside_project`) is refused; as an
+  entry of policy `web-npm-read` it is accepted, and a token of it reads `web-npm` and nothing else.
+- The project administrator issues a token for `web-partner` with a lifetime of 30 days bound to the endpoint `partners`
+  (201). A non-expiring token, and a token whose scope names `system: ["settings:read"]` or has `admin: true`, are
+  refused. It revokes the token, and the next request with it answers 401. With `managePolicies` off, creating a
+  service account answers 403 `project_switch_off`, while disabling and deleting one still works.
+- Deleting `web` answers 409 `project_not_empty` while `web-extra` is assigned, still while only `web-partner` remains,
+  and 204 when both are gone; its policies and administrator entries go with it.
+- Unassigning `web-npm` leaves policy `web-npm-read` in place with the warning `selector_outside_project`; a token of
+  `web-partner` is refused on `web-npm` at once on every replica; assigning it again to `web` brings the grant back.
+- A project administrator of `web` calling `GET /api/v1/projects` sees `web` only, `GET /api/v1/projects/docs` answers 404,
+  and `GET /api/v1/authz/me` lists `web` with its switches. The `auditor` lists every project and gets 403 on
+  `PUT /api/v1/projects/web`.
+- An index built by the queries of release 0.9.x against a database that holds project policy `web-npm-read` grants
+  nothing from it, and a rewrite of that policy by that release fails (SQLSTATE `AI004`).
+- A project administrator looks up `q=al` and gets users and groups that start with it, 20 at most, kind and name only;
+  `q=a` answers 422.
 
 ### R-AUTHZ-027 · Build resources
 Priority: **P1** · Covers: IAM-025
@@ -2156,20 +2029,19 @@ table and `LISTEN/NOTIFY` on a dedicated connection per replica; both are gone (
 - **Index.** Built from:
   - policies, including entries that name CI mappings;
   - role bindings;
-  - repositories: project and key, class, format, virtual membership and deploy target, and the
+  - repositories: key, class, format, project, virtual membership and deploy target, and the
     authorization settings of R-AUTHZ-031's settings table;
-  - projects and their members with their roles (users and groups, R-AUTHZ-026).
+  - projects and their administrators (users and groups, R-AUTHZ-026).
 
-  Project rules enter the build in two places. Each project's members are kept with their roles
-  (`project_member`), and a request's role in a project is the highest over the user and its groups, decided from
-  that map, never from a grant per repository. A project policy covers only the repositories of its project: its bare
-  selectors are expanded against the project's repositories, and the memoized result of a pattern or class selector
-  is keyed by the selector and the context, so a global `*/npm-*` result is never reused for a project policy's
-  `npm-*`. The grants of project policies are read from `authz_project_policy_entry` (Q-AUTHZ-174).
+  Project rules enter the build in two places. Every administrator of a project holds `manage` on each of its
+  repositories (a grant named `project:<key>`, unrestricted in packages and paths). A project policy covers only the
+  repositories of its project, whatever its selectors say: a key selector whose repository left the project covers
+  nothing, and the memoized result of a pattern or class selector is keyed by the selector and the project, so a global
+  `npm-*` result is never reused for a project policy. The grants of project policies are read from
+  `authz_project_policy_entry` (Q-AUTHZ-174).
 
   For each repository ID, the index maps principal IDs to compiled grants: selectors expanded
-  against the current repository list, patterns compiled. Repositories are found by their name, the pair of
-  project key and repository key (`qname.Repo`), never by a key alone. A new index is built on the side and
+  against the current repository list, patterns compiled. A new index is built on the side and
   swapped in atomically. Requests in flight finish on the index they started with, except for the
   commit-time re-check of writes (R-AUTHZ-015).
 - **Who builds it.** Every `web` and `worker` replica (and `all`) builds the index during start-up
@@ -2199,9 +2071,8 @@ table and `LISTEN/NOTIFY` on a dedicated connection per replica; both are gone (
   `cluster.Notify("authz", …)` in their transaction, which increments it (R-ARCH-018):
   - every write to a policy, its selectors, patterns or entries;
   - every write to a role binding;
-  - every write to a project or its members, and every move of a repository to another project
-    (R-AUTHZ-026, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-060), which as a repository change
-    also notifies `repo_config`;
+  - every write to a project or its administrators, and every project repository assignment
+    (R-AUTHZ-026), which as a repository change also notifies `repo_config`;
   - every write that `trove admin post-restore` or a restore's journal replay makes to these
     objects (R-AUTHZ-031).
 
@@ -2325,8 +2196,7 @@ policy it never saw.
 
 CREATE TABLE authz_policy (
   id             uuid PRIMARY KEY,
-  name           text NOT NULL UNIQUE                                       -- `<projectKey>/<name>` for a project's
-                   CHECK (name ~ '^([a-z][a-z0-9-]{1,31}/)?[a-z0-9][a-z0-9._-]{0,127}$'),  -- policy (R-AUTHZ-026)
+  name           text NOT NULL UNIQUE CHECK (name ~ '^[a-z0-9][a-z0-9._-]{0,127}$'),
   description    text NOT NULL DEFAULT '' CHECK (length(description) <= 1024),
   resource_type  text NOT NULL DEFAULT 'repository' CHECK (resource_type IN ('repository', 'build')),
   project_id     uuid NULL REFERENCES project (id) ON DELETE CASCADE,       -- NULL: a global policy; added by 00019
@@ -2342,9 +2212,7 @@ CREATE TABLE authz_policy_selector (
   ordinal        smallint NOT NULL,
   kind           text NOT NULL CHECK (kind IN ('key', 'pattern', 'class')),
   repository_id  bigint NULL REFERENCES repositories (id) ON DELETE CASCADE,  -- kind = 'key'
-  key_pattern    text NULL CHECK (length(key_pattern) <= 1024),             -- kind = 'pattern': `projectGlob/keyGlob`
-                                                                            -- in a global policy, a bare glob in a
-                                                                            -- project policy (R-AUTHZ-004)
+  key_pattern    text NULL CHECK (length(key_pattern) <= 1024),             -- kind = 'pattern'
   repo_class     text NULL CHECK (repo_class IN ('local', 'remote', 'virtual', 'any')),
   format         text NULL,                                                 -- ':<format>' filter
   PRIMARY KEY (policy_id, ordinal),
@@ -2462,9 +2330,9 @@ so it now names the epoch in its request instead (Q-AUTHZ-12).
   `Trove-Authz-Epoch: <n>`, the epoch their transaction produced:
   - policy writes (R-AUTHZ-021);
   - role bindings (R-AUTHZ-022);
-  - project writes, including members and their roles, and the move of a repository (R-AUTHZ-026, R-REPO-060).
+  - project writes, including administrators and repository assignments (R-AUTHZ-026).
 
-  A move changes a column of the repositories table, so it notifies `repo_config`
+  A repository assignment changes a column of the repositories table, so it notifies `repo_config`
   as well. `POST /api/v1/authz/check` (R-AUTHZ-023) and `POST /api/v1/authz/explain`
   (R-AUTHZ-024) report the epoch of the index that answered.
 - **Epoch in.** A request on the client listener that authenticated (a valid session or token) may
@@ -2514,9 +2382,9 @@ Acceptance criteria (three `web` replicas behind the Service and Valkey stopped.
 `invalidation` check keeps passing, and `authz.cache.max_staleness` to 120 s, so only the header
 can explain a prompt result):
 
-- An administrator gives `group:team-mobile` `deploy` on `web/files-internal`; the `PUT` answers
+- An administrator gives `group:team-mobile` `deploy` on `files-internal`; the `PUT` answers
   `Trove-Authz-Epoch: n`. A member of `team-mobile` then runs 20 uploads
-  `curl -T app-<i>.zip -H "Trove-Authz-Min-Epoch: n" https://trove.example.com/files/web/files-internal/app-<i>.zip`
+  `curl -T app-<i>.zip -H "Trove-Authz-Min-Epoch: n" https://trove.example.com/files/files-internal/app-<i>.zip`
   at once. All 20 succeed, and the access logs show all three replicas. The administrator then
   removes the grant (epoch `m`). Twenty uploads with `Trove-Authz-Min-Epoch: m` all answer `403`.
 - `Trove-Authz-Min-Epoch` set to the current epoch plus 1,000 answers `412` `authz_epoch_unknown`
@@ -2541,8 +2409,7 @@ This requirement says which events authorization emits and what they contain.
 | `authz.policy.created`, `.updated`, `.deleted` | policy changes, with before and after | in the transaction of the change |
 | `authz.role.bound`, `.unbound` | role bindings | in the transaction of the change |
 | `authz.ownership.claimed`, `.added`, `.removed`, `.released` | ownership changes, CI claims included | in the transaction of the change |
-| `authz.project.created`, `.updated`, `.deleted`, `.member_added`, `.member_changed`, `.member_removed` | project and membership changes, with the epoch and the role before and after; a deletion, a removed member and a lowered role are journaled | in the transaction of the change |
-| `repository.moved` | the move of a repository to another project ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-060), with the source and the target project and the epoch; journaled | in the transaction of the change |
+| `authz.project.created`, `.updated`, `.deleted`, `.admin_added`, `.admin_removed`, `.repository_assigned`, `.repository_unassigned` | project changes, with the epoch; the removals and a switch turned off are journaled | in the transaction of the change |
 | `authz.settings.changed` | changes to authorization settings stored in PostgreSQL, today the authorization settings of a repository (R-AUTHZ-031), with before and after | in the transaction of the change |
 
 Fields of `authz.decision`:
@@ -2553,14 +2420,14 @@ Fields of `authz.decision`:
 | `actor` | Principal reference and display name; for CI tokens also the mappings and the project identity |
 | `credential` | Kind (`session`, `pat`, `sat`, `cit`, `none`) and token ID; never a token value |
 | `ci` | For CI tokens, the issuance ID of R-CI-020, which links to `project_id`, `pipeline_id`, `job_id`, `ref` and `ref_protected` |
-| `actions`, `project`, `repository`, `class`, `format`, `path`, `package` | The coordinate; `repository` is the qualified name `<projectKey>/<repoKey>` and `project` its project key |
+| `actions`, `repository`, `class`, `format`, `path`, `package` | The coordinate |
 | `outcome`, `reason`, `status` | `allow` or `deny`, the reason code below, the HTTP status sent |
-| `sources` | What allowed it: policy IDs and names, `ci-inline` with ordinal, `role:<name>` for a system role, `role:<projectKey>:<role>` for a project role, `ownership` |
+| `sources` | What allowed it: policy IDs and names, `ci-inline` with ordinal, `role:<name>`, `ownership` |
 | `sourceIp`, `userAgent` | As seen after trusted-proxy processing ([architecture.md](architecture.md)) |
 
 | Reason code | Meaning |
 |---|---|
-| `allow.grant` | A grant or a project role allowed it |
+| `allow.grant` | A grant allowed it |
 | `allow.role` | `content:bypass` or a capability allowed it |
 | `deny.unauthenticated` | No credential, or anonymous access off |
 | `deny.no-grant` | No grant for the action |
@@ -2660,10 +2527,10 @@ restore from a scheduled backup an MVP path. For this page:
 | `authz.role.unbound` | Role; principal ID and reference | Remove the role binding. The `last_admin` guard of R-AUTHZ-022 does not apply; R-HA-054 reports when no `admin` binding remains |
 | `authz.policy.deleted` | Policy ID and name | Delete the policy with its selectors, patterns and entries |
 | `authz.policy.updated` | Policy ID and name; the access-bearing state before and after the change: `resourceType`, `project`, `resources`, `entries` | Update rule of R-HA-054 with the policy comparator below |
-| `authz.project.deleted` | Project ID and key | Delete the project when it holds no repository, no service account and no CI mapping in the restored database; otherwise remove all its members, and report it |
-| `authz.project.member_removed` | Project ID and key; the principal's ID and reference | Remove the membership |
-| `authz.project.member_changed` | Project ID and key; the principal's ID and reference; the role before and after | Update rule of R-HA-054 with the role comparator below |
-| `repository.moved` | Repository ID; the source and the target project, IDs and keys | When the restored database holds the repository in the source project, disable it (`disabled: true`, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-004) and report it `suspended`; `already in effect` when it is in the target project; otherwise `subject unknown` |
+| `authz.project.updated` | Project ID and key; the two switches before and after | Update rule of R-HA-054 with the project comparator below |
+| `authz.project.deleted` | Project ID and key | Delete the project when it holds no repository and no service account in the restored database; otherwise remove its administrators and turn both switches off, and report it |
+| `authz.project.admin_removed` | Project ID and key; the principal's ID and reference | Remove the administrator |
+| `authz.project.repository_unassigned` | Project ID and key; the repository's ID and key | Unassign the repository from that project |
 | `authz.ownership.removed` | Domain, format, normalized package name; the removed owner (principal ID, or CI issuer ID and GitLab project ID) | Remove that owner |
 | `authz.ownership.released` | As for `.removed`, for the last owner | Remove that owner; the name's state is left as below |
 | `authz.settings.changed` | Repository ID; the changed access settings, before and after | Update rule of R-HA-054 with the settings comparator below |
@@ -2677,14 +2544,9 @@ restore from a scheduled backup an MVP path. For this page:
   rule 1), so setting it would grant. A name that replay leaves without owners stays `claimed` and
   needs `manage` for every mutating operation, as after rule 6 of R-AUTHZ-018, whether or not it
   holds versions.
-- **Role comparator.** `narrows(current, after)` for a membership answers true only when the membership exists in the
-  restored database and the role of `after` is not higher than the current one, in the order `reader`, `developer`,
-  `maintainer`, `owner`: a replay never adds a member or raises a role. The display name and the description of a
-  project are not access-bearing and are not journaled.
-- **A move is not replayed as a move.** Moving the repository again would give the target project's members what the
-  restored database does not give them, and leaving it would give the source project's members back what the move
-  took; the disabled repository grants nothing to either, and an administrator moves it again (R-REPO-060) and
-  enables it.
+- **Project comparator.** `narrows(current, after)` for a project answers true only when `after.managePolicies` implies
+  `current.managePolicies` and `after.manageRepositories` implies `current.manageRepositories`: a switch is never turned
+  on by a replay; the display name and the description are not access-bearing.
 - **Policy comparator.** `narrows(current, after)` for a policy answers true only when all of the
   following hold, and false otherwise:
   1. `resourceType` and `project` are equal.
@@ -2756,18 +2618,14 @@ everything, write the own scope"; `team-web-publish` gives `group:team-web` `["a
 - A trove backup is taken. Then `admin` is unbound from group `platform-admins` and `deploy` is
   removed from the `group:team-web` entry of `team-web-publish`. `trove backup restore` of that
   backup into an empty installation reports both entries `applied`. After the replicas start, a
-  member of `platform-admins` gets 403 on `POST /api/v1/projects/web/repositories`, and a member of
+  member of `platform-admins` gets 403 on `POST /api/v1/repositories`, and a member of
   `team-web` gets `E403` on `npm publish`, on every replica.
-- A journaled `authz.project.member_removed` of `group:web-devs` from `web` is reported `applied`, and a member of
-  `web-devs` whom no policy grants gets `E404` through `https://trove.example.com/api/npm/web/npm-all/` afterwards. A
-  journaled `authz.project.member_changed` whose after-state raises `user:dave` from `reader` to `developer` is
-  reported `skipped`.
 
 ## Worked examples
 
 ### Team: read everything, write the own scope
 
-Repositories of project `web`: `npm-internal` (local, npm, `packageOwnership: enforce`), `npmjs` (remote of the
+Repositories: `npm-internal` (local, npm, `packageOwnership: enforce`), `npmjs` (remote of the
 public npm registry, `cacheFillAction: read`), `npm-all` (virtual over both, deploy target
 `npm-internal`). IdP groups `developers` and `team-web` are synchronized to trove groups of the
 same names.
@@ -2784,7 +2642,7 @@ same names.
     "name": "team-web-publish",
     "description": "Team web publishes, tags and deprecates its own scope",
     "resources": {
-      "repositories": ["web/npm-internal"],
+      "repositories": ["npm-internal"],
       "packages": { "include": ["@web/*"] }
     },
     "entries": [
@@ -2798,8 +2656,8 @@ same names.
 Developer setup (token with the default scope, from the client setup instructions):
 
 ```sh
-npm config set registry https://trove.example.com/api/npm/web/npm-all/
-npm config set //trove.example.com/api/npm/web/npm-all/:_authToken "$TROVE_TOKEN"
+npm config set registry https://trove.example.com/api/npm/npm-all/
+npm config set //trove.example.com/api/npm/npm-all/:_authToken "$TROVE_TOKEN"
 ```
 
 Outcome: every developer installs everything through `npm-all`. Members of `team-web` publish
@@ -2807,11 +2665,6 @@ Outcome: every developer installs everything through `npm-all`. Members of `team
 next version. Nobody else publishes under `@web/`. `lead-web` can additionally repair ownership,
 for example after an import, and pre-assign names (R-AUTHZ-019). The trace of R-AUTHZ-015 walks
 through the individual decisions.
-
-The two policies are global, because `npm-consumers` covers the npm repositories of every project. Inside the
-project the same team can instead be given roles: `group:team-web` as `developer` and `user:lead-web` as
-`maintainer` of `web` read, publish and repair every repository of the project without any policy; the policy
-`team-web-publish` stays the way to narrow publishing to `@web/*` (R-AUTHZ-026).
 
 ### GitLab CI: read all internal npm packages, publish only project-derived names
 
@@ -2853,7 +2706,7 @@ mappings still allow.
     "grants": {
       "policies": ["ci-read-internal"],
       "inline": [
-        { "repositories": ["web/npm-internal"],
+        { "repositories": ["npm-internal"],
           "packages": { "include": [
             "@{{ project_path | segment 0 | slug }}/{{ project_path | segment -1 | slug }}",
             "@{{ project_path | segment 0 | slug }}/{{ project_path | segment -1 | slug }}-*"
@@ -2898,11 +2751,11 @@ publish-npm:
   script:
     - |
       cat > .npmrc <<'EOF'
-      registry=https://trove.example.com/api/npm/web/npm-all/
-      //trove.example.com/api/npm/web/npm-all/:_authToken=${TROVE_TOKEN}
+      registry=https://trove.example.com/api/npm/npm-all/
+      //trove.example.com/api/npm/npm-all/:_authToken=${TROVE_TOKEN}
       EOF
     - npm ci
-    - npm publish --registry https://trove.example.com/api/npm/web/npm-all/
+    - npm publish --registry https://trove.example.com/api/npm/npm-all/
 ```
 
 Expected results:
@@ -2927,12 +2780,12 @@ Expected results:
 | IAM-027 | Later | Distribution-target resources; distribution to edge instances is not planned soon. |
 | IAM-028 | Out of scope | CI pipeline-source resources; trove bundles no CI engine. |
 | IAM-033 | P2 | Older policy interfaces with whole-policy replacement; the single policy API of R-AUTHZ-021 replaces them. |
-| IAM-034 | P2 | Fine control over anonymous grants by non-administrators; until then, delegated managers and Owners of a project can never grant to `anonymous`. |
-| IAM-053 | P2 | Project members through the assignment of custom roles; the projects of R-AUTHZ-026 have members with four fixed roles and project policies. |
+| IAM-034 | P2 | Fine control over anonymous grants by non-administrators; until then, delegated managers and project administrators can never grant to `anonymous`. |
+| IAM-053 | P2 | Project members through role assignment; P1 projects know only project administrators and project policies. |
 | IAM-054 | P2 | Global roles for projects. |
-| IAM-055 | P2 | Custom project roles; the four fixed roles of R-AUTHZ-026 (Q-AUTHZ-208) cover the MVP. |
+| IAM-055 | P2 | Project roles. |
 | IAM-056 | P2 | Role action catalog. |
-| IAM-058 | P2 | Sharing repositories across projects; no repository is shared (Q-AUTHZ-206). |
+| IAM-058 | P2 | Sharing repositories across projects. |
 | IAM-059 | Later | Project-aware sharing through internal remote repositories. |
 | IAM-060 | P2 | Per-project build repositories. |
 | IAM-061 | P2 | Project storage quotas. |
@@ -2941,12 +2794,12 @@ Expected results:
 | IAM-064 | P2 | Environments on roles and repositories. |
 | IAM-065 | Later | Project-scoped scan policies. |
 | IAM-066 | Later | Migration from permission policies to projects. |
-| IAM-068 | P2 | Custom project role and environment operations; the MVP subset (projects, members with fixed roles, the move of a repository) is in R-AUTHZ-026. |
+| IAM-068 | P2 | Project role and environment operations; the P1 subset (projects, administrators, repository assignment) is in R-AUTHZ-026. |
 | ADMAPI-019 | P1 in the catalog, P2 here | Custom global role operations belong to the project-role model (IAM-054), which stays P2; the fixed system roles of R-AUTHZ-010 cover P1 needs. |
 | ADMAPI-025 | P2 | Older policy interface with resource sections (same reason as IAM-033). |
 | ADMAPI-026 | P2 | Oldest repository-only policy interface (same reason as IAM-033). |
-| TOK-011 | P2 | Project-role token scopes; a token reaches a project role only through its repository scope (R-AUTHZ-013, Q-AUTHZ-215). |
-| TOK-013 | P2 | Project membership read scopes; a token reaches a project role only through its repository scope (R-AUTHZ-013, Q-AUTHZ-215). |
+| TOK-011 | P2 | Project-role token scopes; they follow project roles. |
+| TOK-013 | P2 | Project membership read scopes; they follow project roles. |
 
 </details>
 
@@ -2963,12 +2816,8 @@ Expected results:
 - **Claim values cannot widen grants.** The escaping of R-CI-014 and the matcher's rule that a
   backslash makes the next character literal (R-AUTHZ-005) must agree, and the unit tests of both
   pages share the `a\*b` case.
-- **Principals by ID.** Grants, role bindings, memberships and owners follow the principal's immutable ID, so a
+- **Principals by ID.** Grants, role bindings and owners follow the principal's immutable ID, so a
   deleted and recreated user, group or mapping of the same name inherits nothing (R-AUTHZ-002).
-- **The project is part of every name.** A global selector, a token scope and an exposure rule name the project
-  (`web/npm-internal`), and a bare key there is refused, so a repository that another project creates under the same
-  key is never covered by accident; a project's own objects take bare keys that resolve in that project only
-  (R-AUTHZ-004). A project the caller cannot see answers like one that does not exist (R-AUTHZ-016).
 - **Path-derived names and renamed projects.** INV-10's example derives names from `project_path`,
   which changes on rename or transfer. GitLab refuses ID tokens whose `sub` contains a reused
   project path, but other path claims carry no such guard (CIOIDC-034). Owners keyed by
@@ -3030,9 +2879,7 @@ Expected results:
   co-owner of a name.
 - **Administrator power stays out of everyday tokens.** Tokens exercise roles only through
   `admin: true` or `system` items (R-AUTHZ-013). A leaked personal access token of an
-  administrator therefore exposes that person's content rights, not the instance. The same holds for a project: an
-  Owner administers it only through a session or an `admin: true` token, so its leaked everyday token carries the
-  role's content actions, not the project's members and policies (R-AUTHZ-026).
+  administrator therefore exposes that person's content rights, not the instance.
 
 ## Decisions
 
@@ -4362,7 +4209,7 @@ catalog's repository sharing, P2) arrives: that is where a cross-project grant o
 
 ### Q-AUTHZ-176 · Names of a project are prefixed with its key, and a global name never takes a project prefix
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded by [Q-AUTHZ-209](#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones) and [Q-REPO-212](repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared)**: a repository key is unique within its project and the names of a project's policies, service accounts and CI mappings are unique within the project, so no name carries a prefix and no overlap rule is left.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 Context: R-AUTHZ-026 requires the keys of repositories a project administrator creates to start with `<projectKey>-`.
 The names of project policies and project service accounts are chosen by the same delegate, in global namespaces, and
@@ -4439,7 +4286,7 @@ a legitimate member.
 
 ### Q-AUTHZ-179 · A repository that leaves a project leaves its policies inert
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded by [Q-REPO-217](repositories-and-proxy.md#q-repo-217--a-repository-moves-to-another-project-through-an-operation-of-its-own-and-only-while-nothing-of-its-project-names-it)**: a move is refused while a key selector of a project policy names the repository, so no project policy keeps a selector outside its project.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 Context: project policies may select repositories of their project by key (R-AUTHZ-026). A key selector stores the
 repository by ID. When the repository is unassigned or moved, the old project's policies still hold that selector.
@@ -4461,7 +4308,7 @@ grant after a move back proves surprising; the remedy is then (b) with a journal
 
 ### Q-AUTHZ-180 · A declaration admits project administrators in a form of its own, and the handler narrows
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-AUTHZ-208](#q-authz-208--four-project-roles-reader-developer-maintainer-owner) and [Q-REPO-212](repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared)**: the declaration names the project from the path and the least role (`project: path.projectKey`, `projectRole`), and the shared step narrows to that project itself.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 Context: the shared authorization step decides every operation from its `x-trove-permission` declaration (R-API-008). A
 project administrator holds no capability, and which project an operation addresses is often known only to the handler
@@ -4497,7 +4344,7 @@ the capability's 403 and its audit event. Revisit when an operation needs the ri
 
 ### Q-AUTHZ-181 · /authz/me names the projects the caller administers
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-AUTHZ-207](#q-authz-207--a-user-or-group-is-a-member-of-a-project-with-a-role-and-the-role-grants-the-projects-repositories)**: `/authz/me` lists the caller's memberships with their roles, not the projects it administers with their switches.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 Context: the UI shows the admin area from the capabilities of `GET /authz/me` (R-UI-040 ff.). A project administrator holds
 none, yet needs the project screens.
@@ -4557,7 +4404,7 @@ memberships come from the identity provider as for roles; whoever controls the g
 
 ### Q-AUTHZ-184 · The repository operations of a project administrator
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded by [Q-REPO-212](repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared)**: the repository operations are addressed under the project (`/api/v1/projects/{projectKey}/repositories/{repoKey}…`), option (b).
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 Context: `repositories:write-config` and `repositories:read-config` are installation-wide capabilities. A project
 administrator needs their effect on its repositories only: create, read the whole document, change, delete, test the
@@ -4623,7 +4470,7 @@ projects is asked for; the remedy is then an explicit operation, not a change of
 
 ### Q-AUTHZ-187 · What a project administrator sees and is refused on the policy operations
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-REPO-212](repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared) and [Q-AUTHZ-209](#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones)**: a project's policies are addressed under the project, so the step narrows to the path's project and no list needs `project=`.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 Context: the policy operations declare `policies:read` or `policies:write` and `projectAdmin` (Q-AUTHZ-180); the shared
 step admits a caller that administers any project with the right, and the handler must narrow to the project the request
@@ -4733,7 +4580,7 @@ store's cache: the answer is the one the write commits against.
 
 ### Q-AUTHZ-194 · Project creation is serialised, and the overlap rule reads one state
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded by [Q-AUTHZ-209](#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones)**: no overlap rule between project keys and names is left, so the unique key is the only check of a creation.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 Context: the overlap rule of Q-AUTHZ-176 compares a new key with every other key and with the names of global service
 accounts; two creates of `web` and `web-app` would each pass it against the state the other has not committed.
@@ -4752,7 +4599,7 @@ accounts; two creates of `web` and `web-app` would each pass it against the stat
 
 ### Q-AUTHZ-195 · What a project administrator gets for a request that names no project it may use
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-REPO-212](repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared) and [Q-AUTHZ-208](#q-authz-208--four-project-roles-reader-developer-maintainer-owner)**: every request below a project names it in the path, and the switches and `project_switch_off` are gone.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 Context: the shared step admits a project administrator to an operation by capability or by a project right; the handler narrows. Open: the answer when the request names no project (a create without `project`, a list of service accounts without `project=`), and the order of the answers for a project that is unknown, unadministered or switched off.
 
@@ -4769,7 +4616,7 @@ Context: the shared step admits a project administrator to an operation by capab
 
 ### Q-AUTHZ-196 · The manage of a project administrator is decided from the administration, not from a grant per repository
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-AUTHZ-208](#q-authz-208--four-project-roles-reader-developer-maintainer-owner)**: `manage` on the project's repositories comes from the role of a Maintainer or an Owner, decided from the membership.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 Context: the index materialised one grant `project:<key>` per project repository and administrator principal, keyed by the
 principal ID of the administrator. The decision matches a grant for every principal of the request's set, and that set holds the
@@ -4858,7 +4705,7 @@ deleted and created again under the same name in another project or as a global 
 
 ### Q-AUTHZ-200 · A global policy never takes a project's prefix, and a project policy names no auto-join group
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-AUTHZ-209](#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones)**: a global policy may take any name; the refusal of an auto-join group in a project policy stays.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 Context: [Q-AUTHZ-176](#q-authz-176--names-of-a-project-are-prefixed-with-its-key-and-a-global-name-never-takes-a-project-prefix) promises "no oracle on global policy names" and refuses global service account names with a project's prefix, but a global policy could still be named `web-…`; a delegate's create of `web-x` then answered 409 `already_exists` for a global policy of that name. Separately, an auto-join group holds every user that signs in, so an entry for it in a project policy stands in for `authenticated`, which a project policy never names ([Q-AUTHZ-188](#q-authz-188--a-project-policy-that-names-anonymous-or-authenticated-is-a-principal-outside-the-project)).
 
@@ -4962,7 +4809,7 @@ version, without touching the store. Since [Q-AUTHZ-199](#q-authz-199--a-delegat
 
 ### Q-AUTHZ-205 · An assignment names the owner it expects, and the write compares it under its locks
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded by [Q-REPO-217](repositories-and-proxy.md#q-repo-217--a-repository-moves-to-another-project-through-an-operation-of-its-own-and-only-while-nothing-of-its-project-names-it)**: assignment and unassignment are gone; a repository changes project only through the move, which names its source in the path and its target in the body.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 Context: a move (`?move=true`) took the repository from whichever project held it. The project dialog reads the owners right
 before the assignments and asks when one changed, which leaves the window between that read and the request: another
@@ -5018,11 +4865,7 @@ creating a repository names its project in the API and the UI; unassignment goes
 changes the repository's address, which contains its project (Q-REPO-212); deleting a project stays possible only when it
 is empty; an administrator of trove creates a repository in any project, a project administrator in its own.
 
-**Applied in the spec:** R-AUTHZ-026 (the project, its repositories, deleting a project), R-AUTHZ-004 (selectors of a
-project), R-AUTHZ-009; [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-001, R-REPO-002, R-REPO-004,
-R-REPO-009, R-REPO-013, R-REPO-017, R-REPO-021, R-REPO-060 (the move, [Q-REPO-217](repositories-and-proxy.md#q-repo-217--a-repository-moves-to-another-project-through-an-operation-of-its-own-and-only-while-nothing-of-its-project-names-it));
-[storage.md](storage.md) R-STOR-003 (`project_id` required); [README.md](README.md) INV-5; [ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project). Nothing built yet
-(H-540).
+**Applied in the spec:** R-AUTHZ-026 (the membership rule, with the gap). Nothing built yet.
 
 ### Q-AUTHZ-207 · A user or group is a member of a project with a role, and the role grants the project's repositories
 
@@ -5041,11 +4884,7 @@ administrators only, so an ordinary user sees no project at all.
 
 **Choice:** (a), the owner's. The roles and what each grants are [Q-AUTHZ-208](#q-authz-208--four-project-roles-reader-developer-maintainer-owner).
 
-**Applied in the spec:** R-AUTHZ-026 (members and roles), R-AUTHZ-001, R-AUTHZ-002 (the credentials that carry a
-role), R-AUTHZ-013, R-AUTHZ-015 (the role as a source of actions), R-AUTHZ-022 (`/authz/me` lists memberships),
-R-AUTHZ-024; [api-and-ui.md](api-and-ui.md) R-API-047, R-UI-041; the credentials are
-[Q-AUTHZ-215](#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members);
-[ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project). Nothing built yet (H-542).
+**Applied in the spec:** R-AUTHZ-026 (with the gap). Nothing built yet.
 
 ### Q-AUTHZ-208 · Four project roles: Reader, Developer, Maintainer, Owner
 
@@ -5080,12 +4919,7 @@ Owner among them. The auditor
 gets an instance-wide view of vulnerabilities to search and triage
 ([Q-UI-130](api-and-ui.md#q-ui-130--the-auditor-has-an-instance-wide-vulnerability-dashboard-in-the-admin-area)).
 
-**Applied in the spec:** R-AUTHZ-026 (the role table, the Owner's table, what others see, the declaration),
-R-AUTHZ-031 (member changes in the journal); [api-and-ui.md](api-and-ui.md) R-API-008 (`projectRole`), R-API-047,
-R-UI-041; [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-009 to R-REPO-013, R-REPO-056;
-[gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-019; the last Owner is
-[Q-AUTHZ-217](#q-authz-217--the-last-owner-of-a-project-is-removed-or-demoted-only-by-an-administrator-of-trove);
-[ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project). Nothing built yet (H-542).
+**Applied in the spec:** R-AUTHZ-026 (with the gap). Nothing built yet.
 
 ### Q-AUTHZ-209 · A project's policies and service accounts are named within the project; administrators keep instance-wide ones
 
@@ -5106,141 +4940,7 @@ its project and its key is unique within it
 is unique among the objects of its project, and among those of no project; the same name may exist in two projects and once
 instance-wide. Instance-wide listings show the project, or none, in a column; an audit event names the project with the name.
 
-**Applied in the spec:** R-AUTHZ-021 (the names and routes of policies), R-AUTHZ-026 (project policies and service
-accounts), R-AUTHZ-002 (the references `sa:<projectKey>/<name>`); [identity-and-authentication.md](identity-and-authentication.md)
-R-AUTH-020; [api-and-ui.md](api-and-ui.md) R-API-031, R-API-033; the CI mappings of a project follow in
-[Q-AUTHZ-214](#q-authz-214--a-projects-ci-mappings-are-named-within-the-project-like-its-policies-and-service-accounts);
-Q-AUTHZ-176 is marked superseded; [ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project). Nothing built yet (H-546).
-
-### Q-AUTHZ-214 · A project's CI mappings are named within the project like its policies and service accounts
-
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
-
-Context: the owner named a project's policies and service accounts within the project and removed their `<projectKey>-`
-prefix ([Q-AUTHZ-209](#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones)).
-The CI mappings of a project's tier `project:<projectKey>` are a third kind of named object of a project
-([gitlab-ci-oidc.md](gitlab-ci-oidc.md) Q-CI-26): their names are unique per CI issuer, carry the same prefix, which the
-create checks before the name is looked up (Q-CI-51), and are referenced as `ci:<issuer>/<name>`. The owner's decision does
-not name them. The prefix and its overlap checks (`project_key_overlap`, `project_prefix_required`) can only go when no
-object of a project keeps a prefixed name.
-
-| Option | What it means | For | Against |
-|---|---|---|---|
-| (a) Named within the project (chosen) | A mapping of the tier `project:<projectKey>` is unique per issuer within that tier, has no prefix, is referenced as `ci:<issuer>/<projectKey>/<name>` and stored as `<projectKey>/<name>`; a mapping of the system tier stays `ci:<issuer>/<name>` | One naming rule for everything a project holds; the prefix, its check before the lookup and every overlap rule go; two projects can both have a mapping `release` | A reference has three parts in a project's tier and two in the system tier |
-| (b) Keep the prefix for CI mappings only | As today | No change to the CI references | The overlap rule between project keys and names stays alive for one kind of object; an Owner names policies and accounts one way and mappings another |
-| (c) Unique per issuer, no prefix, no project in the reference | `ci:<issuer>/<name>` for every tier | Short references | Two projects cannot both name a mapping `release`, and a name taken by one project tells another that it exists, which is what the prefix was introduced to avoid |
-
-**Choice:** (a). [Q-CI-26](gitlab-ci-oidc.md#q-ci-26--project-administrators-manage-the-ci-mappings-of-their-project) is
-superseded in part.
-
-**Rationale:** the prefix existed to keep names unique per issuer across projects without a coordination step (Q-CI-26).
-The same reason led the owner to name policies and accounts within the project; keeping the prefix for mappings would keep
-the overlap rule, its lock and its gaps (H-399) for one kind of object. The project is already part of a mapping's identity
-(its tier and `project_id`), so the reference only says what the row says. The development agent would revisit this if
-mappings had to move between projects (then a stored name that carries the project is wrong, as for repositories), or if a
-consumer of principal references (the explanation trace, the Bastion's feed) could not take a third part.
-
-**Applied in the spec:** R-AUTHZ-002 (the reference table), R-AUTHZ-026 (the project's objects);
-[gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-007, R-CI-009, R-CI-019, R-CI-020 (names and references), Q-CI-26 and Q-CI-51
-(marked); [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-016, R-AUTH-033 (the rendered name).
-
-### Q-AUTHZ-215 · A member's role acts through its session and personal tokens within their scope, and service accounts are not members
-
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
-
-Context: a user or group is a member of a project with a role
-([Q-AUTHZ-207](#q-authz-207--a-user-or-group-is-a-member-of-a-project-with-a-role-and-the-role-grants-the-projects-repositories),
-[Q-AUTHZ-208](#q-authz-208--four-project-roles-reader-developer-maintainer-owner)). Open is which credentials carry the
-role. Today a grant reaches every credential of its principal and the token's scope narrows it (R-AUTHZ-013); a project
-administrator exercised its administration only through a UI session or a token with `admin: true`, as a system role is
-([Q-AUTHZ-183](#q-authz-183--who-administers-a-project-and-through-which-credentials)); a project service account is kept
-out of groups and system roles so that no broad grant reaches it
-([Q-AUTHZ-175](#q-authz-175--a-project-service-account-is-granted-by-its-projects-policies-only)).
-
-| Option | What it means | For | Against |
-|---|---|---|---|
-| (a) The role's actions reach the session and the personal access tokens within their scope; the Owner's administration needs a session or an `admin: true` token; service accounts are no members (chosen) | A role is decided like a grant for content; administering keeps the bar of the system roles; machines are granted through project policies | `npm install` and `npm publish` with a personal access token work from the role without a policy, and the token's scope narrows them; a leaked read-scoped token of an Owner cannot change members; a machine's rights are named per account and audited | An Owner needs a second kind of token for scripted administration |
-| (b) Every credential of the member carries the whole role, administration included | One rule | Simple | A personal access token scoped to `read` could still change members and policies: a project would be administered with a weaker credential than the installation |
-| (c) Roles only in UI sessions; tokens need a policy | No token reaches a role | Tokens stay as today | The common case, a developer who installs and publishes with a token, needs a policy per project, which is what roles were meant to spare (Q-AUTHZ-207) |
-| (d) Service accounts as members too | People and machines in one list | One mechanism | A role hands a machine every repository of the project, and a project account would be reached by what Q-AUTHZ-175 keeps away from it |
-
-**Choice:** (a). The source of a role's actions in the explanation is `role:<projectKey>:<role>`; the token's scope
-intersects it as it intersects a grant.
-
-**Rationale:** a role is a set of grants the project decides, so it should reach what a grant reaches, under the same
-ceiling. Administration changes who may act, which the installation already guards with `admin: true` for the system
-roles; the project gets the same bar, so an Owner's leaked everyday token cannot add members. Keeping service accounts and
-CI tokens out of roles keeps every machine's rights in a policy that names it. The development agent would revisit this if
-Owners need automation that administers a project (then an administering project service account, a decision of its own),
-or if a token should carry a role but not the grants of global policies.
-
-**Applied in the spec:** R-AUTHZ-026 (members and roles), R-AUTHZ-013 (the scope over a role);
-[api-and-ui.md](api-and-ui.md) R-API-008 (the declaration); [identity-and-authentication.md](identity-and-authentication.md)
-R-AUTH-024 (what a scope narrows).
-
-### Q-AUTHZ-216 · Repository selectors name the project in instance contexts and a bare key inside a project
-
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
-
-Context: a repository key is unique within its project
-([Q-REPO-212](repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared)).
-Selectors (R-AUTHZ-004) name repositories by key, key glob or class in global and project policies, token scopes, CI inline
-grants, exposure rules, host-root bindings, virtual members and deployment targets. In a context that spans projects a bare
-key no longer names one repository.
-
-| Option | What it means | For | Against |
-|---|---|---|---|
-| (a) Two contexts (chosen) | Instance contexts take `projectGlob/keyGlob[:format]` or a class for every project; project contexts take bare keys, key globs and classes; `*` and `?` never cross `/`; a bare key in an instance context and a `/` in a project context are refused | What a selector covers is visible in it; a selector never silently matches nothing; one grammar for policies, scopes, CI grants, exposure and configuration | Every global selector names the project; a class within one project (`web/@any-local`) cannot be written in an instance context |
-| (b) A bare key in an instance context matches that key in every project | `npm-internal` covers `web/npm-internal` and `mobile/npm-internal` | Short selectors | A policy written for one team's repository covers another team's repository of the same key, created later by someone else: a grant widened by a name |
-| (c) Selector objects (`{"project": "web", "key": "npm-*"}`) | Structured instead of a string | No string grammar | Token scopes, CI templates, the configuration file and the UI use strings; two representations of one thing |
-| (d) A glob that crosses `/` | `web*` or `**` reach into the key | One glob | `web*` covers `web/x` and `webshop/x`; the project boundary becomes a matter of quoting |
-
-**Choice:** (a). A key selector, both parts literal, must name an existing repository and is stored by its ID; it keeps
-naming the repository when it moves. The refusal is 422 `invalid_pattern` where selectors are validated as patterns
-(policies, CI mappings, exposure rules), 400 `invalid_scope` in a token scope and `scope_malformed` in the CI exchange,
-which keep the error each surface already answers for a malformed selector.
-
-**Rationale:** a selector that silently matches nothing is the failure a grammar change must not produce: an
-administrator who writes `npm-internal` in a global policy has to learn at once that it names no repository. Naming the
-project in every instance-wide selector makes a grant's reach readable without knowing which projects hold which keys,
-and keeping bare keys inside a project leaves the common project policy as short as before. The development agent would
-revisit this when a global policy needs every repository of one class in one project (then `web/@any-local`), or when
-selectors must cover projects by a property other than their key.
-
-**Applied in the spec:** R-AUTHZ-004, R-AUTHZ-013 (examples), R-AUTHZ-026 (project policies);
-[repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-017, R-REPO-021; [gitlab-ci-oidc.md](gitlab-ci-oidc.md)
-R-CI-007, R-CI-013, R-CI-014; [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-024;
-[endpoints.md](endpoints.md) R-EP-006, R-EP-012; [operations-and-observability.md](operations-and-observability.md)
-R-OPS-007; [storage.md](storage.md) R-STOR-037, R-STOR-038.
-
-### Q-AUTHZ-217 · The last Owner of a project is removed or demoted only by an administrator of trove
-
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
-
-Context: the Owner administers its project on its own, members included, and an administrator of trove creates projects
-and names the first Owner ([Q-AUTHZ-208](#q-authz-208--four-project-roles-reader-developer-maintainer-owner)). Open is
-what happens when a write would leave a project without an Owner: an Owner who removes or demotes itself or the other
-Owners. The installation guards its own administration the same way (`last_admin`, R-AUTHZ-022, Q-AUTHZ-70).
-
-| Option | What it means | For | Against |
-|---|---|---|---|
-| (a) 409 `last_owner`, unless the caller holds `projects:write` (chosen) | The removal or demotion of the last membership with the role `owner` is refused for an Owner; an administrator of trove may do it and administers the project alone | A project does not lose its administration by a slip; the administrator, who named the first Owner, can still take a departed person's role away | An Owner who wants to leave names another Owner first |
-| (b) Allowed; the administrators of trove remain | No special case | Simple | The team loses its administration until a system administrator acts, the opposite of the delegation the project exists for |
-| (c) Refused for everyone | An invariant of the data | No project without an Owner | An administrator cannot remove a departed person's last Ownership without inventing another Owner first |
-
-**Choice:** (a). The count is of membership rows with the role `owner`, a group among them, whatever the group's members:
-the write reads it under the project's row lock, so two Owners who remove each other at the same instant run one after
-the other and the second is refused.
-
-**Rationale:** the rule protects the delegation, not the data: the project is administered by its team, and only the
-administrator who can name a new Owner may leave it without one. Counting rows keeps the check a property of what the
-project itself states. An Owner group that its identity provider empties leaves the project without an acting Owner, as
-an identity-provider group bound to a system role can (H-394); the administrators of trove remain. The development agent
-would revisit this if projects end up unadministered that way in practice; then the count would follow `last_admin`
-(active members only, Q-AUTHZ-70).
-
-**Applied in the spec:** R-AUTHZ-026 (members and roles, the API table); [api-and-ui.md](api-and-ui.md) R-API-047,
-R-UI-041.
+**Applied in the spec:** nothing yet; R-AUTHZ-026 and Q-AUTHZ-176 change when it is built.
 
 ### Q-AUTHZ-229 · A project create names its first Owners
 

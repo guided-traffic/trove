@@ -93,9 +93,8 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 		for _, r := range m.Reqs {
 			count[r.Priority]++
 		}
-		// 690 since 2026-11-06: R-REPO-060, the move of a repository to another project (MVP, Q-REPO-217).
-		if len(m.Reqs) != 690 || count[prioMVP] != 541 || count[prioP1] != 144 || count[prioP2] != 5 {
-			t.Errorf("requirements: got %d (MVP %d, P1 %d, P2 %d), want 690 (541, 144, 5)",
+		if len(m.Reqs) != 690 || count[prioMVP] != 540 || count[prioP1] != 144 || count[prioP2] != 6 {
+			t.Errorf("requirements: got %d (MVP %d, P1 %d, P2 %d), want 690 (540, 144, 6)",
 				len(m.Reqs), count[prioMVP], count[prioP1], count[prioP2])
 		}
 	})

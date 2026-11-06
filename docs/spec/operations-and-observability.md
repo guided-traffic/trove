@@ -314,7 +314,7 @@ health:
   `worker` pods with `"failing"` containing `database`, while `/healthz` keeps answering `200`. While the policy is in
   place, no `worker` replica's instance ID appears in `job.locked_by` of a newly claimed job.
   Remove the policy, and `/readyz` returns to `200` within 5 s.
-- Run `npm ci --registry https://trove.example.com/api/npm/web/npm-all/` in a loop while
+- Run `npm ci --registry https://trove.example.com/api/npm/npm-all/` in a loop while
   `kubectl -n trove rollout restart deploy/trove-api deploy/trove-packages deploy/trove-worker` runs (before phase 6a:
   `deploy/trove-web deploy/trove-worker`). No iteration fails.
 - Kill the Valkey Pub/Sub connection of one replica (`CLIENT KILL TYPE pubsub` on the primary),
@@ -340,7 +340,7 @@ health:
   principal is 1,000 (R-OPS-015).
 - Apply a NetworkPolicy that denies egress from every trove pod to the object store for 3 minutes.
   `/readyz` keeps answering `200` with `"degraded":["objectStore"]`, no pod leaves the Service's
-  endpoints, `npm view @acme/ui --registry …/web/npm-local/` succeeds, and downloading its tarball
+  endpoints, `npm view @acme/ui --registry …/npm-local/` succeeds, and downloading its tarball
   answers `503` with `Retry-After`. A replica started while the policy is in place does not become
   ready.
 - The same policy against PostgreSQL for 5 minutes leaves every watched loop progressing:
@@ -763,10 +763,10 @@ server:
 
 **Acceptance criteria:**
 
-- With `base_url` set and no trusted proxies, `curl -H 'X-Forwarded-Host: evil.example' …/api/npm/web/npm-all/lodash`
+- With `base_url` set and no trusted proxies, `curl -H 'X-Forwarded-Host: evil.example' …/api/npm/npm-all/lodash`
   returns tarball URLs on `trove.example.com`.
 - With the ingress controller's pod CIDR trusted and `https://npm.example.com` listed,
-  `npm view lodash dist.tarball --registry https://npm.example.com/api/npm/web/npm-all/` prints a URL on
+  `npm view lodash dist.tarball --registry https://npm.example.com/api/npm/npm-all/` prints a URL on
   `npm.example.com`. An unlisted host falls back to `base_url`.
 - Each of `base_url: https://shared.example.com/trove`, `base_url: https://trove.example.com/?x=1`,
   `base_url: https://user@trove.example.com` and
@@ -862,7 +862,7 @@ Rules for every metric family, including families that format pages and other sp
   | `code_class` | `1xx` to `5xx`, on histograms |
   | `format` | Registered format names |
   | `class` | `local`, `remote`, `virtual` |
-  | `repo` | Repository, as its qualified name `<projectKey>/<repoKey>` (`web/npm-all`); capped, see below. Format pages that write `repository` in a label set (for example [formats/nuget.md](formats/nuget.md) R-NUGET-028) mean this label (cross-page) |
+  | `repo` | Repository key; capped, see below. Format pages that write `repository` in a label set (for example [formats/nuget.md](formats/nuget.md) R-NUGET-028) mean this label (cross-page) |
   | `subscription` | Webhook subscription key; capped, see below |
   | `issuer` | Configured CI issuer names ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-002); bounded by configuration |
   | `operation`, `kind`, `result`, `outcome`, `task`, `cache`, `state`, `status`, `direction`, `auth_method`, `query`, `name`, `reason`, `mode`, `family`, `label`, `source`, `check`, `action`, `trigger`, `via`, `limit` | Enumerations fixed in code; `action` takes the repository actions and capabilities of [authorization.md](authorization.md) (INV-9, R-AUTHZ-010) |
@@ -882,13 +882,11 @@ Rules for every metric family, including families that format pages and other sp
   Valkey and PostgreSQL addresses are therefore never labels; the registry and system information
   show them (R-OPS-003, R-OPS-004).
 - **Repository cap** (Q-OPS-10). A family with a `repo` label gives at most
-  `metrics.label_limits.repository` distinct repositories their own series per replica. Which repositories get one
+  `metrics.label_limits.repository` distinct keys their own series per replica. Which keys get one
   is decided from the repository snapshot ([architecture.md](architecture.md) R-ARCH-018), so every
-  replica decides the same: repositories matching `metrics.repository_label_include` first, in the order of
-  the selectors, then the other repositories in creation order (ascending repository ID). Every
-  further repository is reported as `repo="_other"` on every replica. `repository_label_include` takes the selectors
-  of an instance context of [authorization.md](authorization.md) R-AUTHZ-004 (`web/npm-*`, `*/nuget-*`, `@any-remote`);
-  a bare key stops startup and names the entry. The selection follows the snapshot,
+  replica decides the same: keys matching `metrics.repository_label_include` first, in the order of
+  the patterns, then the other repositories in creation order (ascending repository ID). Every
+  further key is reported as `repo="_other"` on every replica. The selection follows the snapshot,
   so a deleted repository frees its place on every replica within the change-area bound. The same
   rule applies to `subscription`, in subscription creation order. Each overflow increments
   `trove_metrics_label_overflow_total{family,label}`. Requests reach replicas at random
@@ -921,7 +919,7 @@ metrics:
   label_limits:
     repository: 500               # default (proposed)
     subscription: 100             # default (proposed)
-  repository_label_include: []    # default (proposed); example ["*/npm-*", "web/nuget-*"]
+  repository_label_include: []    # default (proposed); example ["npm-*", "nuget-*"]
   db_query_histograms: false      # default (proposed); see R-OPS-008
   native_histograms: false        # default (proposed); also expose native histograms
   db_gauge_interval: 30s          # default (proposed); evaluation interval of gauges read from PostgreSQL (Q-OPS-18)
@@ -1103,8 +1101,8 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 
 **Acceptance criteria:**
 
-- After a cold `npm install express --registry https://trove.example.com/api/npm/web/npm-all/`,
-  `trove_remote_cache_lookups_total{repo="web/npm-remote",kind="artifact",result="miss"}` is greater
+- After a cold `npm install express --registry https://trove.example.com/api/npm/npm-all/`,
+  `trove_remote_cache_lookups_total{repo="npm-remote",kind="artifact",result="miss"}` is greater
   than zero.
 - After `npm cache clean --force` and a second install in a fresh directory, the `result="hit"`
   series of the same family grows instead.
@@ -1338,7 +1336,7 @@ consumers can rely on every key being present.
 | `principal_id` | Opaque principal ID, `null` for anonymous callers |
 | `token_id` | ID of the token used (never the token), `null` if none |
 | `auth_method` | `bearer`, `basic`, `nuget_apikey`, `session`, `none` |
-| `project`, `repo`, `format` | Project key, repository as its qualified name `<projectKey>/<repoKey>`, and format, if the request addressed one |
+| `repo`, `format` | Repository key and format, if the request addressed one |
 | `cache` | `hit`, `miss`, `stale`, `negative_hit` or `null` (remote and virtual reads) |
 | `deny_reason` | Short code for `401`/`403` responses (`no_credentials`, `invalid_token`, `not_permitted`, …), else `null` |
 | `limiter` | For a `429`: the name of the rate limiter that refused the request ([architecture.md](architecture.md) R-ARCH-034); else `null` |
@@ -1368,8 +1366,8 @@ log:
 
 **Acceptance criteria:**
 
-- `npm view express version --registry https://trove.example.com/api/npm/web/npm-all/` produces a
-  record with `"handler":"npm.packument"`, `"project":"web"`, `"repo":"web/npm-all"` and `"status":200`.
+- `npm view express version --registry https://trove.example.com/api/npm/npm-all/` produces a
+  record with `"handler":"npm.packument"`, `"repo":"npm-all"` and `"status":200`.
 - A `dotnet nuget push … --api-key <token>` produces a record whose `token_id` is set and which
   does not contain the token.
 
@@ -1383,7 +1381,7 @@ completes or fails. The same conventions as R-OPS-010 apply.
 |---|---|
 | `time`, `trace_id` | Completion time; trace of the request or job that caused the call |
 | `purpose` | `remote` (pull-through fetch, or the probe of a shadowing check), `webhook`, `oidc_discovery`, `jwks`, `mail`, `vuln_source` (the advisory sources of the vulnerability scanning, [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-004; a purpose the sync declares, Q-VULN-32) |
-| `repo` | Remote repository as its qualified name `<projectKey>/<repoKey>` (`remote`), else `null` |
+| `repo` | Remote repository key (`remote`), else `null` |
 | `subscription` | Webhook subscription key (`webhook`), else `null` |
 | `method` | HTTP method |
 | `url` | Target URL with user information removed and query parameters redacted (R-OPS-013) |
@@ -1411,8 +1409,8 @@ log:
     enabled: true                 # default (proposed)
 ```
 
-**Acceptance criteria:** a cold `npm install left-pad --registry …/web/npm-all/` produces at least one
-`"purpose":"remote"` record with `"repo":"web/npm-remote"`, and the `trace_id` of the client request
+**Acceptance criteria:** a cold `npm install left-pad --registry …/npm-all/` produces at least one
+`"purpose":"remote"` record with `"repo":"npm-remote"`, and the `trace_id` of the client request
 that caused it.
 
 ### R-OPS-012 · Log levels and temporary overrides
@@ -1654,8 +1652,7 @@ CREATE TABLE audit_event (
   endpoint      text,                          -- endpoint of the request (endpoints.md R-EP-009); NULL for jobs
   resource_type text,                          -- repository | user | group | token | permission_policy | …
   resource_id   text,
-  project       text,                          -- key of the project the event concerns (authorization.md Q-AUTHZ-209); NULL for none
-  repository    text,                          -- qualified name <projectKey>/<repoKey>
+  repository    text,
   path          text,
   reason        text,                          -- denial or failure code
   details       jsonb       NOT NULL DEFAULT '{}'::jsonb,
@@ -1664,7 +1661,6 @@ CREATE TABLE audit_event (
 
 CREATE INDEX audit_event_actor_idx      ON audit_event (actor_id, occurred_at DESC);
 CREATE INDEX audit_event_action_idx     ON audit_event (action, occurred_at DESC);
-CREATE INDEX audit_event_project_idx    ON audit_event (project, occurred_at DESC) WHERE project IS NOT NULL;
 CREATE INDEX audit_event_repository_idx ON audit_event (repository, occurred_at DESC) WHERE repository IS NOT NULL;
 CREATE INDEX audit_event_trace_idx      ON audit_event (trace_id) WHERE trace_id IS NOT NULL;
 ```
@@ -1770,9 +1766,9 @@ audit:
 
 **Acceptance criteria:**
 
-- `dotnet nuget push Acme.Lib.1.0.0.nupkg --source https://trove.example.com/api/nuget/web/nuget-local/v3/index.json --api-key "$TOKEN"`
+- `dotnet nuget push Acme.Lib.1.0.0.nupkg --source https://trove.example.com/api/nuget/nuget-local/v3/index.json --api-key "$TOKEN"`
   yields one `package.published` event with outcome `success`, the token's `token_id` and
-  project `web` and repository `web/nuget-local`. The same event appears in `kubectl logs` as `"log":"audit"`.
+  repository `nuget-local`. The same event appears in `kubectl logs` as `"log":"audit"`.
 - A repository update whose audit insert is forced to fail (fault injection) leaves the repository
   unchanged.
 - Revoking a token commits one `revocation_outbox` row whose `id` and `at` equal the `id` and
@@ -1899,7 +1895,7 @@ API (requires `audit:read`, the capability of R-AUTHZ-010; a system administrato
 
 | Method and path | Parameters | Response |
 |---|---|---|
-| `GET /api/v1/audit/events` | `from`, `to` (default: the last 24 h), `action` (exact, or a prefix ending in `.*`), `category`, `outcome`, `actor` (ID or name), `project`, `repository` (qualified name `<projectKey>/<repoKey>`), `resourceType`, `resourceId`, `traceId`, `limit` (≤ 1000, default 100), `cursor` | `200 {"items":[…],"nextCursor":"…"}`, newest first |
+| `GET /api/v1/audit/events` | `from`, `to` (default: the last 24 h), `action` (exact, or a prefix ending in `.*`), `category`, `outcome`, `actor` (ID or name), `repository`, `resourceType`, `resourceId`, `traceId`, `limit` (≤ 1000, default 100), `cursor` | `200 {"items":[…],"nextCursor":"…"}`, newest first |
 | `GET /api/v1/audit/events/{id}` | — | `200` one event; `404` |
 | `GET /api/v1/audit/events/export` | `from`, `to` (both required, range ≤ 400 days), the same filters, `format=jsonl` (default) or `csv` | `200` streamed as [JSON Lines](https://jsonlines.org/) (`application/x-ndjson`) or CSV, oldest first; `400` for a missing or oversized range |
 
@@ -1914,9 +1910,8 @@ API (requires `audit:read`, the capability of R-AUTHZ-010; a system administrato
   "source": {"ip": "10.12.4.7", "userAgent": "npm/11.6.0 node/v24.11.0 linux x64 workspaces/false"},
   "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
   "replica": "trove-web-6f9c7d8b5-x2v4q",
-  "resource": {"type": "package", "id": "web/npm-local/@acme/ui@2.4.0"},
-  "project": "web",
-  "repository": "web/npm-local",
+  "resource": {"type": "package", "id": "npm-local/@acme/ui@2.4.0"},
+  "repository": "npm-local",
   "details": {"package": "@acme/ui", "version": "2.4.0", "files": [{"path": "@acme/ui/-/ui-2.4.0.tgz", "sha256": "…", "size": 48213}]}
 }
 ```
@@ -2064,7 +2059,7 @@ tracing:
 
 - With an OpenTelemetry Collector using the `debug` exporter, `TROVE_TRACING_ENABLED=true`,
   `TROVE_TRACING_ENDPOINT=https://otel-collector:4318` and `TROVE_TRACING_SAMPLE_RATIO=1`, a
-  cold `npm install lodash --registry …/web/npm-all/` yields one trace containing:
+  cold `npm install lodash --registry …/npm-all/` yields one trace containing:
   - a server span with `http.route`;
   - database spans;
   - a `PutObject` span;
@@ -2270,7 +2265,7 @@ semantics, is MVP and names this operation as its surface, and because the negat
 in Valkey (INV-3, [architecture.md](architecture.md) R-ARCH-030): this call is the one way to cut
 a wrong or forged negative entry short without a Valkey credential (H-49).
 
-`POST /api/v1/projects/{projectKey}/repositories/{repoKey}/cache/invalidate`
+`POST /api/v1/repositories/{key}/cache/invalidate`
 
 ```json
 {"path": "left-pad", "scope": "metadata"}
@@ -2305,15 +2300,15 @@ a wrong or forged negative entry short without a Valkey credential (H-49).
   metadata entries in PostgreSQL at the time of the call. Negative entries in Valkey are not
   counted, because counting them would need a scan of the keyspace; the scope `negative` therefore
   answers 0, and so does a virtual repository.
-- Permission: repository action `manage` on the repository (a Maintainer or Owner of its project holds it, [authorization.md](authorization.md) R-AUTHZ-026), or system administrator.
+- Permission: repository action `manage` on `{key}`, or system administrator.
 - Audit: `repository.cache_invalidated`.
 - Allowed in read-only mode (R-OPS-024).
 
 **Acceptance criteria:**
 
 - After
-  `curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"path":"left-pad"}' https://trove.example.com/api/v1/projects/web/repositories/npm-remote/cache/invalidate`,
-  the next `npm view left-pad --registry …/web/npm-remote/` produces a `"purpose":"remote"` upstream
+  `curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"path":"left-pad"}' https://trove.example.com/api/v1/repositories/npm-remote/cache/invalidate`,
+  the next `npm view left-pad --registry …/npm-remote/` produces a `"purpose":"remote"` upstream
   record. A second view within the metadata cache period produces none.
 - With Valkey stopped, an invalidation with scope `negative` through one replica makes a request
   for a negatively cached path reach the upstream on every replica within
@@ -2355,14 +2350,14 @@ closed a path that let someone write into Valkey (H-49). It never deletes Valkey
   `trove_cache_flushes_total{reason="admin"}` on all five within `cluster.epoch_poll_interval`
   plus 1 s, also with Valkey stopped.
 - A negative entry for `left-pad` is written into Valkey with a valid creation time before the
-  flush. After the flush, `npm view left-pad --registry …/web/npm-remote/` reaches the upstream, and
+  flush. After the flush, `npm view left-pad --registry …/npm-remote/` reaches the upstream, and
   `valkey-cli EXISTS` still finds the key: trove deleted nothing in Valkey.
 - `MONITOR` on the Valkey primary during the flush shows no `SCAN`, `KEYS` or `DEL`.
 
 ### R-OPS-022 · Metadata reindex
 Priority: **P1** · Covers: API-041, OPS-070
 
-`POST /api/v1/projects/{projectKey}/repositories/{repoKey}/reindex` rebuilds the derived metadata of a local repository from
+`POST /api/v1/repositories/{key}/reindex` rebuilds the derived metadata of a local repository from
 its stored package records, through the format plug-in interface of
 [architecture.md](architecture.md). Examples: npm packument documents, NuGet registration pages and
 flat-container version lists.
@@ -2385,7 +2380,7 @@ flat-container version lists.
 
 - Corrupt the derived packument of `@acme/ui` in a test database, then run a reindex with
   `{"path":"@acme/ui"}`.
-- `npm view @acme/ui versions --registry …/web/npm-local/` lists every stored version again.
+- `npm view @acme/ui versions --registry …/npm-local/` lists every stored version again.
 - The job result reports one corrected document.
 
 ### R-OPS-023 · Storage summary
@@ -2435,7 +2430,7 @@ CREATE TABLE storage_summary (
   "damaged": { "missing": 0, "corrupt": 0 },
   "quota": { "enabled": true, "capacityBytes": 5497558138880, "usedRatio": 0.3444, "warnPercent": 80, "limitPercent": 95 },
   "repositories": [
-    { "project": "web", "key": "npm-local", "class": "local", "format": "npm", "files": 52011, "folders": 8812, "bytes": 81233920123, "packages": 812, "versions": 9120, "shareOfLogicalBytes": 0.0197 }
+    { "key": "npm-local", "class": "local", "format": "npm", "files": 52011, "folders": 8812, "bytes": 81233920123, "packages": 812, "versions": 9120, "shareOfLogicalBytes": 0.0197 }
   ]
 }
 ```
@@ -2534,7 +2529,7 @@ after verifying the restore. The restore's own verification runs before any repl
 
 **Acceptance criteria:**
 
-- In `read_only` mode, `npm publish --registry …/web/npm-local/` fails with `503` and shows the
+- In `read_only` mode, `npm publish --registry …/npm-local/` fails with `503` and shows the
   message, and `dotnet nuget push …` fails with `503`.
 - `npm install` through `npm-all` succeeds, a new personal access token can be created, and an
   existing one revoked.
@@ -2945,9 +2940,6 @@ metadata:
   name: platform-baseline          # document identity; owns every object it declares
   prune: true                      # delete owned objects that are no longer declared
 spec:
-  projects:                        # key, display name, description; members are set by Owners, never by a document
-    - key: web
-      displayName: Web
   ciIssuers:                       # trusted issuers for the CI exchange (gitlab-ci-oidc.md); not login providers
     - name: gitlab
       issuer: https://gitlab.example.com
@@ -2959,25 +2951,21 @@ spec:
     - name: renovate
       description: Dependency update bot
   repositories:
-    - project: web                 # the project the repository belongs to (path parameter of its API)
-      key: npm-remote
+    - key: npm-remote
       format: npm
       class: remote
       remote:
         url: https://registry.npmjs.org/
-    - project: web
-      key: npm-local
+    - key: npm-local
       format: npm
       class: local
-    - project: web
-      key: npm-all
+    - key: npm-all
       format: npm
       class: virtual
       virtual:
-        members: [npm-local, npm-remote]   # keys of the same project
+        members: [npm-local, npm-remote]
         deployTarget: npm-local
-    - project: web
-      key: nuget-remote
+    - key: nuget-remote
       format: nuget
       class: remote
       remote:
@@ -2986,14 +2974,14 @@ spec:
   permissionPolicies:
     - name: developers-read
       principals: {groups: [developers]}
-      resources: [{repositories: ["*/npm-*", "*/nuget-*"]}]   # an instance context: projectGlob/keyGlob
+      resources: [{repositories: ["npm-*", "nuget-*"]}]
       actions: [read]
   ciMappings:
     - name: acme-publish
       issuer: gitlab               # the CI issuer the mapping belongs to (path parameter of its API)
       match: {namespace_path: acme, ref_protected: "true"}
       grants:
-        - repositories: [web/npm-local]
+        - repositories: [npm-local]
           packages: ["@acme/*"]
           actions: [read, deploy]
   webhooks: []                     # R-OPS-038; secrets as secretRef
@@ -3005,7 +2993,6 @@ page:
 
 | `spec` key | Owner |
 |---|---|
-| `projects` | [authorization.md](authorization.md) R-AUTHZ-026 |
 | `repositories` | [repositories-and-proxy.md](repositories-and-proxy.md) |
 | `permissionPolicies` | [authorization.md](authorization.md) |
 | `groups`, `serviceAccounts` | [identity-and-authentication.md](identity-and-authentication.md) |
@@ -3013,11 +3000,7 @@ page:
 | `retentionPolicies` | [storage.md](storage.md) |
 | `webhooks` | R-OPS-038 |
 
-So the document needs no second schema: the OpenAPI document generates its JSON Schema. A repository names its project in
-`project`, the path parameter of its create operation. A project's members are not part of a document: the Owner
-administers them on its own ([authorization.md](authorization.md)
-[Q-AUTHZ-208](authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner)), and a document
-that owned them would lock the Owner out of that.
+So the document needs no second schema: the OpenAPI document generates its JSON Schema.
 
 **Login providers are not a document kind** (Q-OPS-6). The browser-login OIDC clients (INV-7) live
 in the configuration file ([identity-and-authentication.md](identity-and-authentication.md)
@@ -3068,7 +3051,7 @@ CREATE TABLE config_document (
 );
 CREATE TABLE config_managed_object (
   kind         text        NOT NULL,     -- 'repository', 'permissionPolicy', …
-  object_key   text        NOT NULL,     -- the key or name; <projectKey>/<repoKey> for a repository
+  object_key   text        NOT NULL,
   document     text        NOT NULL REFERENCES config_document (name),
   fingerprint  bytea       NOT NULL,     -- HMAC-SHA-256 of the applied canonical object
   PRIMARY KEY (kind, object_key)
@@ -3084,7 +3067,7 @@ anyone with database read access guess short secrets offline.
 OpenAPI document. A document with `secretRef: {file: ../db-password}` or
 `secretRef: {env: TROVE_DATABASE_PASSWORD}` is rejected with `422`, and the error names the
 field. So is a document with a `spec.loginProviders` key, or with `claimValues` on a group.
-With the default lock, `PUT /api/v1/projects/web/repositories/npm-local` with the current `If-Match` on a
+With the default lock, `PUT /api/v1/repositories/npm-local` with the current `If-Match` on a
 repository owned by `platform-baseline` answers `409`, and the problem names the document.
 
 ### R-OPS-030 · Diff and apply
@@ -3100,14 +3083,14 @@ Priority: **P1** · Covers: OPS-043, OPS-045, ADMAPI-073
   "document": "platform-baseline",
   "planHash": "sha256:5d1f…",
   "changes": [
-    {"kind": "repository", "key": "web/npm-remote", "action": "create"},
-    {"kind": "repository", "key": "web/npm-all", "action": "update",
+    {"kind": "repository", "key": "npm-remote", "action": "create"},
+    {"kind": "repository", "key": "npm-all", "action": "update",
      "fields": [{"path": "/virtual/members", "from": ["npm-local"], "to": ["npm-local", "npm-remote"]}]},
-    {"kind": "repository", "key": "web/nuget-remote", "action": "update",
+    {"kind": "repository", "key": "nuget-remote", "action": "update",
      "fields": [{"path": "/remote/password", "change": "secret changed"}]},
     {"kind": "permissionPolicy", "key": "old-readers", "action": "delete"},
-    {"kind": "repository", "key": "web/legacy-npm", "action": "delete", "blocked": "repository holds 1204 files; requires allowDestructive"},
-    {"kind": "repository", "key": "web/npm-local", "action": "conflict", "reason": "exists and is not managed by this document; requires adopt"}
+    {"kind": "repository", "key": "legacy-npm", "action": "delete", "blocked": "repository holds 1204 files; requires allowDestructive"},
+    {"kind": "repository", "key": "npm-local", "action": "conflict", "reason": "exists and is not managed by this document; requires adopt"}
   ],
   "summary": {"create": 1, "update": 2, "delete": 2, "unchanged": 14, "conflict": 1, "blocked": 1}
 }
@@ -3128,7 +3111,7 @@ returns `412` instead of applying an unreviewed plan.
   (`pg_advisory_xact_lock(4, <n>)`, [architecture.md](architecture.md) R-ARCH-017, cross-page). Every
   change commits, or none does. The lock ends with the transaction, so the apply works through a
   transaction-mode pooler and holds no session connection.
-- Creates and updates run in dependency order: `projects`, `ciIssuers`, `groups`, `serviceAccounts`, local
+- Creates and updates run in dependency order: `ciIssuers`, `groups`, `serviceAccounts`, local
   and remote `repositories`, virtual `repositories`, `ciMappings`, `permissionPolicies`,
   `webhooks`, `retentionPolicies`. Deletes run in reverse order.
 - Other replicas learn of the changes through the change areas of the changed objects
@@ -3197,7 +3180,7 @@ document. Its credential comes from its own Kubernetes Secret
 **Acceptance criteria:**
 
 - `helm install` with a ConfigMap holding the baseline document produces the repositories before
-  the first pod reports ready, and `npm install --registry …/web/npm-all/` works without a manual step.
+  the first pod reports ready, and `npm install --registry …/npm-all/` works without a manual step.
 - Upgrading with a document that has a typo in a repository format leaves the old pods serving, and
   `kubectl rollout status` does not complete.
 
@@ -3263,7 +3246,7 @@ endpoint delivers one message whose `From` and subject prefix match the configur
 ### R-OPS-034 · Content types for raw downloads
 Priority: **P1** · Covers: OPS-050
 
-Raw file downloads (`/files/<projectKey>/<repoKey>/<path>`, INV-6) and the UI's file viewer take their
+Raw file downloads (`/files/<repoKey>/<path>`, INV-6) and the UI's file viewer take their
 `Content-Type` from one table.
 
 **Building the table.** The table is built in this order:
@@ -3303,12 +3286,12 @@ content_types:
 
 **Acceptance criteria:**
 
-- `curl -sI …/files/web/generic-local/docs/index.html` shows `Content-Disposition: attachment`,
+- `curl -sI …/files/generic-local/docs/index.html` shows `Content-Disposition: attachment`,
   `Content-Security-Policy: sandbox; default-src 'none'`, `X-Content-Type-Options: nosniff` and
   `Cross-Origin-Resource-Policy: same-site`.
-- `curl -sI …/files/web/npm-local/@acme/ui/-/ui-2.4.0.tgz` shows `Content-Type: application/gzip` and
+- `curl -sI …/files/npm-local/@acme/ui/-/ui-2.4.0.tgz` shows `Content-Type: application/gzip` and
   `Content-Disposition: attachment; filename*=UTF-8''ui-2.4.0.tgz`.
-- With `content_types.overrides: {".txt": "text/plain"}`, `curl -sI …/files/web/generic-local/notes.txt`
+- With `content_types.overrides: {".txt": "text/plain"}`, `curl -sI …/files/generic-local/notes.txt`
   still shows `Content-Disposition: attachment` and the sandbox CSP.
 
 ## Webhooks
@@ -3400,7 +3383,7 @@ SDK.
   "id": "01933b1e-7c2a-7f4e-9d1b-6a2f0c9e8b11",
   "source": "https://trove.example.com",
   "type": "trove.package.published",
-  "subject": "web/npm-local/@acme/ui@2.4.0",
+  "subject": "npm-local/@acme/ui@2.4.0",
   "time": "2026-10-28T11:58:02.417Z",
   "datacontenttype": "application/json",
   "dataschema": "https://trove.example.com/api/v1/webhooks/event-types/package.published/schema",
@@ -3408,7 +3391,7 @@ SDK.
   "trovereplica": "trove-web-6f9c7d8b5-x2v4q",
   "trovetest": false,
   "data": {
-    "repository": {"project": "web", "key": "npm-local", "format": "npm", "class": "local"},
+    "repository": {"key": "npm-local", "format": "npm", "class": "local"},
     "package": {"name": "@acme/ui", "version": "2.4.0"},
     "files": [{"path": "@acme/ui/-/ui-2.4.0.tgz", "sha256": "9b74c9897bac770ffc029102a200c5de…", "size": 48213}],
     "actor": {
@@ -3431,7 +3414,7 @@ SDK.
   - `source` is `server.base_url`.
   - `type` is `trove.` followed by the registry name. The prefix is fixed from the first release
     that ships webhooks (Q-OPS-5).
-  - `subject` is `<projectKey>/<repoKey>/<path or package@version>`.
+  - `subject` is `<repository>/<path or package@version>`.
 - **Extension attributes** (lower-case, as CloudEvents requires):
   - `trovesubscription`: the matching subscription;
   - `trovereplica`: the replica that committed the change, not the `worker` that delivers it;
@@ -3469,9 +3452,9 @@ selects them.
 
 - **Move and copy match the source.** Moved and copied files are matched against the source
   repository and path.
-- **Location fields.** `source` and `target` are objects that hold the repository's qualified name
-  `<projectKey>/<repoKey>` and the path inside that repository, for example
-  `{"repository": "web/npm-local", "path": "@acme/ui/-/ui-2.4.0.tgz"}`. They are never one joined
+- **Location fields.** `source` and `target` are objects that hold the bare repository key and the
+  path inside that repository, for example
+  `{"repository": "npm-local", "path": "@acme/ui/-/ui-2.4.0.tgz"}`. They are never one joined
   string.
 - **Folders.** Deleting, moving or copying a folder emits one event per file it contains. There is
   no folder-level event. One npm publish emits one `package.published` and one
@@ -3518,7 +3501,7 @@ handler.
   "domain": "package",
   "eventTypes": ["package.published"],
   "filter": {
-    "repositories": ["web/npm-local"],
+    "repositories": ["npm-local"],
     "anyLocal": false,
     "anyRemote": false,
     "include": ["@acme/*"],
@@ -3540,8 +3523,8 @@ handler.
   `x-trove-reserved-names`, so R-API-004's CI check covers any literal sibling added later.
 - **`enabled`** MUST be present on create, because subscriptions have no implicit default.
 - **Filter.**
-  - Repository selection is the union of `repositories`, qualified names `<projectKey>/<repoKey>`, and the
-    `anyLocal` / `anyRemote` switches over every project. The switches include repositories created later. An empty selection is invalid.
+  - Repository selection is the union of `repositories` and the `anyLocal` / `anyRemote`
+    switches. The switches include repositories created later. An empty selection is invalid.
   - `include` and `exclude` match the event's filter subject (R-OPS-037): a path for `artifact.*`,
     a package name for `package.*`, an image name for `container.*`. They use the pattern syntax of
     [authorization.md](authorization.md), so permission policies and webhooks read patterns the
@@ -4226,7 +4209,7 @@ MVP and P1 features of the catalog pages above that this page does not specify:
 | OPS-098 | P2 | Global read access to build information |
 | EVT-008 | P2 | User lockout event; trove has no passwords, so a `user.disabled` event type would be the equivalent |
 | EVT-009 to EVT-016, EVT-021 | Later | Release-set, distribution, curation, scan-status and application-lifecycle events and their filters |
-| EVT-022 | P2 | Project-scoped subscriptions managed by a project's Owner; subscriptions are instance-wide |
+| EVT-022 | P2 | Project-scoped subscriptions, with projects |
 | EVT-036 | P2 | Chat and incident-tool recipes beyond the one in R-OPS-041 |
 | EVT-038 to EVT-069 | Later | Synchronous server-side hooks and in-process extension scripts |
 | EVT-071, EVT-072 | P2 | Typed configuration media types, API deprecation lifecycle ([api-and-ui.md](api-and-ui.md)) |

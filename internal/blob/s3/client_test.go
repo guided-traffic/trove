@@ -493,7 +493,9 @@ func TestConfiguration(t *testing.T) {
 			t.Fatalf("got %v", err)
 		}
 	})
-	t.Run("R-STOR-014 a presigned URL names the bucket, the key and the validity, and honours presign.endpoint", func(t *testing.T) {
+	// The presign primitive that R-STOR-014 will use; the redirect itself is not built (P2), so the test does not name
+	// the requirement and does not count as its evidence.
+	t.Run("a presigned URL names the bucket, the key and the validity, and honours presign.endpoint", func(t *testing.T) {
 		e := newEnv(t, func(c *config.StorageS3) { c.Presign.Endpoint = "https://blobs.example.com" })
 		u, err := e.client.Presign(context.Background(), "trove/sha256/aa/bb/x", 60*time.Second)
 		if err != nil {

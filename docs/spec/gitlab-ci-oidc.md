@@ -773,7 +773,7 @@ A body larger than `ci.exchange.max_body_bytes` answers 400 [`malformed_request`
 | `subject_token` | yes | The GitLab ID token (or, R-CI-022, the job token) |
 | `subject_token_type` | yes | `urn:ietf:params:oauth:token-type:id_token` or `urn:ietf:params:oauth:token-type:jwt` (equivalent); `urn:trove:token-type:gitlab-job-token` only with R-CI-022 enabled |
 | `requested_token_type` | no | Absent or `urn:ietf:params:oauth:token-type:access_token` |
-| `scope` | no | Narrows the grants: space-delimited items `<action>` or `<action>:<repository selector>`, e.g. `read:web/npm-all deploy:web/npm-internal` (grammar below, Q-CI-2) |
+| `scope` | no | Narrows the grants: space-delimited items `<action>` or `<action>:<repository selector>`, e.g. `read:npm-all deploy:npm-internal` (grammar below, Q-CI-2) |
 | `audience`, `resource` | no | When present, MUST equal trove's configured base URL (a trailing slash aside); otherwise 400 `invalid_target` [`audience_not_this_server`] |
 | `actor_token`, `actor_token_type` | no | Not supported: present → 400 [`actor_token_not_supported`] |
 | `ci_issuer` (trove extension) | no | CI issuer name; must match the issuer selected by `iss` (R-CI-005) |
@@ -789,9 +789,8 @@ model; this is only its request syntax:
 scope     = item *( SP item )
 item      = action [ ":" selector ]
 action    = "read" / "annotate" / "deploy" / "overwrite" / "delete"
-selector  = repository selector of an instance context, authorization.md R-AUTHZ-004
-            ; project and key, their patterns, class, format filter:
-            ; web/npm-internal, web/npm-team-*, */npm-remote, @any-local:npm
+selector  = repository selector of authorization.md R-AUTHZ-004
+            ; key, key pattern, class or format filter: npm-internal, npm-team-*, @any-local:npm
 ```
 
 - Each item becomes one scope grant `{"repositories": [<selector>], "actions": [<action>]}`; an
@@ -802,8 +801,7 @@ selector  = repository selector of an instance context, authorization.md R-AUTHZ
   Items are case-sensitive, duplicates are ignored, and at most 50 distinct items are accepted
   (the grant limit of R-AUTH-024).
 - An unknown action, `manage` or an invalid selector answers 400 `invalid_scope` [`scope_malformed`] at
-  step 1. A bare key without its project (`deploy:npm-internal`) is an invalid selector: a token's scope is an instance
-  context ([Q-AUTHZ-216](authorization.md#q-authz-216--repository-selectors-name-the-project-in-instance-contexts-and-a-bare-key-inside-a-project)). An item that admits no action the matched grants hold at exchange time answers 400 `invalid_scope`
+  step 1. An item that admits no action the matched grants hold at exchange time answers 400 `invalid_scope`
   [`scope_not_granted`] at step 8; no partial token is issued. A key selector naming no existing repository is
   such an item and answers the same, with the same description, so neither an anonymous caller nor a matched job
   learns which repositories exist ([Q-CI-51](#q-ci-51--what-the-exchange-tells-a-caller-and-when-a-replica-learns-an-issuer),
@@ -873,14 +871,12 @@ Success response (200, `Content-Type: application/json`, `Cache-Control: no-stor
   "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
   "token_type": "Bearer",
   "expires_in": 900,
-  "scope": "read:web/npm-all read:web/nuget-all read:web/npm-internal deploy:web/npm-internal read:web/nuget-internal deploy:web/nuget-internal",
+  "scope": "read:npm-all read:nuget-all read:npm-internal deploy:npm-internal read:nuget-internal deploy:nuget-internal",
   "ci_issuer": "gitlab-com",
   "mappings": ["acme-release-publish"]
 }
 ```
 
-- `mappings` names the contributing mappings without their issuer, a mapping of a project's tier as
-  `<projectKey>/<name>` (`web/release-publish`, R-CI-009); the `mapping` filters of R-CI-020 take the same form.
 - `scope` is always returned, in the request grammar above: one item per action and repository
   selector of the effective grants after narrowing, selectors as written in the grants. Package and
   path patterns are not shown. The policy and group grants come first, as the policies write their
@@ -916,11 +912,10 @@ ci:
   returns 200 with the fields above and `Cache-Control: no-store`.
 - The same request as JSON (`-H 'Content-Type: application/json' -d '{"grant_type": …}'`)
   returns an equivalent response.
-- `scope=deploy:web/nuget-internal` from a job whose mapping grants only npm returns 400
+- `scope=deploy:nuget-internal` from a job whose mapping grants only npm returns 400
   `invalid_scope` with reason `scope_not_granted`. `scope=read:@any-local:npm` from a job of the
-  reference mapping returns a token that installs from `web/npm-internal` and gets 403 on
-  `npm publish`. `scope=manage:web/npm-internal` and `scope=read:npm-internal` (a bare key) return 400
-  `scope_malformed`.
+  reference mapping returns a token that installs from `npm-internal` and gets 403 on
+  `npm publish`. `scope=manage:npm-internal` returns 400 `scope_malformed`.
 - Two parallel exchanges of one ID token on two replicas both succeed under
   `single_use_subject_tokens: false`. Under `true`, exactly one succeeds.
 - With replica B's change-log poll and its Valkey subscription blocked, mapping
@@ -987,9 +982,7 @@ Priority: **MVP** · Covers: CIOIDC-007, CIOIDC-009
 
 An identity mapping belongs to one CI issuer and consists of:
 
-- a name, unique within the issuer's tier: among the issuer's system mappings, or among one project's
-  mappings of the issuer ([Q-AUTHZ-214](authorization.md#q-authz-214--a-projects-ci-mappings-are-named-within-the-project-like-its-policies-and-service-accounts)), so the same name may be a system mapping and a mapping of each
-  project; it carries no project prefix;
+- a name, unique within the issuer;
 - a `priority`, a positive integer that is unique within the issuer's tier;
 - `enabled`;
 - `subject_kinds`: `["id_token"]` by default; R-CI-022 (P2) adds `job_token`;
@@ -1004,8 +997,8 @@ Evaluation per exchange:
 
 1. Consider enabled mappings of the selected CI issuer whose `subject_kinds` include the subject
    token's kind.
-2. Group them into tiers: `system` (administrator mappings) and one tier `project:<projectKey>` per project that has
-   mappings of the issuer, managed by the project's Owners (Q-CI-26, [Q-AUTHZ-208](authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner)). P1 adds one tier per delegation to a group (R-CI-023).
+2. Group them into tiers: `system` (administrator mappings) and one tier `project:<key>` per project whose
+   administrators manage CI mappings (Q-CI-26). P1 adds one tier per delegation to a group (R-CI-023).
 3. Within a tier, evaluate in ascending `priority`. The first mapping whose condition is true is
    that tier's match. Later mappings of the tier are not evaluated.
 4. The token's grants are the union of the tier matches: at most one mapping per tier, so a job that matches the
@@ -1039,17 +1032,14 @@ replica's copy of the mapping set, whose conditions it holds compiled, without a
 **Principal.** Every mapping is a principal of kind `ci_mapping` in the principal table of
 [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-016, so policies, owner
 records and audit reference it like any other principal (INV-9). Its principal `name` is
-`<CI issuer name>/<mapping name>` for a system mapping, for example `gitlab-com/acme-release-publish` (Q-CI-10), and
-`<CI issuer name>/<projectKey>/<mapping name>` for a mapping of a project's tier, for example
-`gitlab-com/web/release-publish` ([Q-AUTHZ-214](authorization.md#q-authz-214--a-projects-ci-mappings-are-named-within-the-project-like-its-policies-and-service-accounts)):
+`<CI issuer name>/<mapping name>`, for example `gitlab-com/acme-release-publish` (Q-CI-10):
 
-- Mapping names are unique only per CI issuer and tier. Issuer and mapping names match
-  `^[a-z0-9][a-z0-9._-]{1,63}$` and project keys `^[a-z][a-z0-9-]{1,31}$`, so no part contains `/`, and the composite
-  is unique under the table's `UNIQUE (kind, name)` and splits back unambiguously: two parts name a system mapping,
-  three a project's.
-- The API reference is `ci:<CI issuer name>/<mapping name>`, for a mapping of a project's tier
-  `ci:<CI issuer name>/<projectKey>/<mapping name>` ([authorization.md](authorization.md) R-AUTHZ-002).
-- Every part is immutable (R-CI-002, R-CI-019), so the principal is never renamed.
+- Mapping names are unique only per CI issuer. Both parts match `^[a-z0-9][a-z0-9._-]{1,63}$`, so
+  neither contains `/`, and the composite is unique under the table's `UNIQUE (kind, name)` and
+  splits back unambiguously.
+- The API reference is `ci:<CI issuer name>/<mapping name>`
+  ([authorization.md](authorization.md) R-AUTHZ-002).
+- Both parts are immutable (R-CI-002, R-CI-019), so the principal is never renamed.
 - Creating a mapping inserts its principal row in the same transaction. Deleting the mapping, or
   its CI issuer with `?cascade=true`, deletes the principal row in the same transaction. Policy
   entries, role bindings and owner entries go with it through their foreign keys (R-AUTHZ-002). A
@@ -1062,9 +1052,7 @@ CREATE TABLE ci_mappings (
   id             uuid PRIMARY KEY,
   issuer_id      uuid NOT NULL REFERENCES ci_issuers(id) ON DELETE RESTRICT,
   principal_id   uuid NOT NULL UNIQUE REFERENCES principal(id),  -- kind 'ci_mapping', name '<issuer>/<mapping>'
-                                                     -- or '<issuer>/<projectKey>/<mapping>' (project tier)
-  tier           text NOT NULL DEFAULT 'system',      -- 'system', 'project:<projectKey>' or 'delegation:<uuid>' (P1)
-  project_id     uuid REFERENCES project(id) ON DELETE RESTRICT,  -- the project of a 'project:<projectKey>' tier
+  tier           text NOT NULL DEFAULT 'system',      -- 'system' or 'delegation:<uuid>' (P1)
   delegation_id  uuid,                                -- R-CI-023, NULL for the system tier
   name           text NOT NULL CHECK (name ~ '^[a-z0-9][a-z0-9._-]{1,63}$'),
   priority       integer NOT NULL CHECK (priority BETWEEN 1 AND 1000000),
@@ -1079,12 +1067,12 @@ CREATE TABLE ci_mappings (
   created_by     text NOT NULL,
   created_at     timestamptz NOT NULL DEFAULT now(),
   updated_at     timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (issuer_id, tier, name),
+  UNIQUE (issuer_id, name),
   UNIQUE (issuer_id, tier, priority)
 );
 ```
 
-`tier` is checked to be `system`, `project:<projectKey>` or `delegation:<uuid>`. A project tier names its project in `project_id`
+`tier` is checked to be `system`, `project:<key>` or `delegation:<uuid>`. A project tier names its project in `project_id`
 (a foreign key `ON DELETE RESTRICT`, so a project with mappings cannot be deleted; the project service answers 409
 `project_not_empty` first), and `delegation_id` has no foreign key until R-CI-023 adds its table.
 
@@ -1135,9 +1123,6 @@ ci:
   principals are `gitlab-com/release-publish` and `gitlab-internal/release-publish`, and a policy
   entry `ci:gitlab-com/release-publish` grants nothing to tokens of the other mapping. After the
   `gitlab-com` mapping is deleted and created again, the policy no longer lists it.
-- A system mapping `release-publish` of `gitlab-com` and mappings `release-publish` in the tiers of projects `web` and
-  `mobile` coexist as the principals `gitlab-com/release-publish`, `gitlab-com/web/release-publish` and
-  `gitlab-com/mobile/release-publish`; a second `release-publish` in the tier of `web` answers 409.
 
 ### R-CI-010 · Claim conditions: matchers and combinators
 Priority: **MVP** · Covers: CIOIDC-008
@@ -1384,7 +1369,7 @@ branch in `ref`. `ref_protected` describes the source branch, so R-CI-011 govern
 - A token that the issuer double mints with the claim set recorded from a fork merge request
   pipeline run in the parent project
   ([id-token-merge-request-fork-in-parent.json](../../test/oidcstub/testdata/id-token-merge-request-fork-in-parent.json))
-  cannot publish to `web/npm-internal`.
+  cannot publish to `npm-internal`.
 
 ### R-CI-013 · Grant specification
 Priority: **MVP** · Covers: CIOIDC-010, CIOIDC-013, CIOIDC-014
@@ -1398,13 +1383,13 @@ three, before caps and `scope` narrowing:
   "groups": ["ci-readers"],
   "inline": [
     {
-      "repositories": ["web/npm-internal"],
+      "repositories": ["npm-internal"],
       "packages": {"include": ["@{{ namespace_path | slug }}/*"], "exclude": []},
       "actions": ["read", "deploy"],
       "ownership": "bind_project"
     },
     {
-      "repositories": ["web/nuget-internal"],
+      "repositories": ["nuget-internal"],
       "packages": {
         "include": [
           "{{ project_path | replace \"/\" \".\" | replace \"-\" \"\" }}",
@@ -1418,8 +1403,7 @@ three, before caps and `scope` narrowing:
 }
 ```
 
-- `policies`: names of permission policies ([authorization.md](authorization.md)): a system mapping names policies of no
-  project, a mapping of a project's tier policies of its project by their name within it (R-CI-019). The mapping
+- `policies`: names of permission policies ([authorization.md](authorization.md)). The mapping
   becomes a principal of each listed policy (INV-9 lists CI identity mappings as a principal
   kind). It receives the actions the policy grants to that principal. The binding is stored once,
   in the policy's principal list; this field reads and writes that same binding. Policy grants
@@ -1428,11 +1412,8 @@ three, before caps and `scope` narrowing:
   lists; an entry that stays keeps the actions the policy gives it, which an administrator widens in the policy
   (Q-CI-35). The rules of R-CI-010 and R-CI-011 count the actions of these entries and of the listed groups.
 - `groups`: trove groups whose grants the token also carries, also evaluated at use time.
-- `inline`: grants defined in the mapping. Each has a set of `repositories`, selectors of
-  [authorization.md](authorization.md) R-AUTHZ-004 in the form of the mapping's tier ([Q-AUTHZ-216](authorization.md#q-authz-216--repository-selectors-name-the-project-in-instance-contexts-and-a-bare-key-inside-a-project)): a
-  system mapping's are an instance context (`web/npm-internal`, `web/npm-*`, `*/npm-remote`, `@any-local:npm`; a bare
-  key is 422 `invalid_pattern`), as in the example above; a project tier's are a project context (`npm-internal`,
-  `npm-*`, `@any-local:npm`), evaluated against the project's repositories only (R-CI-019). Each has exactly one of `packages` or `paths` (include/exclude patterns), `actions` from
+- `inline`: grants defined in the mapping. Each has a set of `repositories` (keys or patterns as
+  in INV-9), exactly one of `packages` or `paths` (include/exclude patterns), `actions` from
   `read`, `annotate`, `deploy`, `overwrite`, `delete`, and `ownership` (`bind_project` or
   `none`, see R-CI-015). Patterns may be templated (R-CI-014). trove renders inline grants once
   at exchange time and stores them with the issuance (R-CI-020); a later mapping edit does not
@@ -1467,9 +1448,9 @@ ownership check of R-CI-015 on writes.
 
 **Acceptance criteria**
 
-- With the grant above, a job of `acme/billing/invoice-api` can `npm install` from `web/npm-all`
+- With the grant above, a job of `acme/billing/invoice-api` can `npm install` from `npm-all`
   through `ci-read-internal` and can `npm publish` `@acme-billing/invoice-client` to
-  `web/npm-internal`. Publishing `@acme-shipping/x` gets 403.
+  `npm-internal`. Publishing `@acme-shipping/x` gets 403.
 - Removing the mapping from policy `ci-read-internal` makes the next `npm install` with an
   already issued token fail without a new exchange, as every refused read does: 404 under
   `authz.hide_existence`, the default, 403 with it off ([authorization.md](authorization.md) R-AUTHZ-016,
@@ -1515,19 +1496,18 @@ the value is inserted into literal text):
 
 | Context | Rule |
 |---|---|
-| `repositories` | The value MUST match `^[a-z0-9._-]+$`, otherwise it is a render error. No glob characters and no `/` can be inserted, so a value never adds a part: in a system mapping the `/` between project and key is literal text. |
+| `repositories` | The value MUST match `^[a-z0-9._-]+$`, otherwise it is a render error. No glob characters can be inserted. |
 | `packages` | Glob metacharacters (`\ * ? [ ] { }`) are backslash-escaped. The value MUST NOT contain `/`, so a claim cannot add a segment to an npm scope. |
 | `paths` | Glob metacharacters are escaped. The value MUST NOT be empty, contain `..` or empty segments, or start with `/`. |
 | all | The value MUST NOT be empty (Q-CI-29). Control characters (U+0000–U+001F, U+007F) are a render error. The rendered pattern is at most 1024 characters (IAM-021). |
 
 So a claim can never widen a pattern: a value of `*` renders as the literal `\*`, and an empty
 value cannot turn `{{ … }}*` into `*`. A template in
-`repositories` MUST contain at least one literal character next to its substitution within the same part: in a
-system mapping the project part and the key part of `<project>/<key>` count separately (for example
-`web/{{ … }}-releases` or `acme-{{ … }}/npm-releases`); the wildcards `*` and `?` do not count, because `{{ … }}*` lets
-the value alone select a repository (Q-CI-29). Without that rule, a claim value alone (such as a GitLab subgroup that a
-group member names `npm-internal`, or a project key in `{{ … }}/npm-releases`) could select an arbitrary existing
-repository or project. The save fails with 422 `template_unanchored`. A `repositories` template with a substitution never starts with
+`repositories` MUST contain at least one literal character next to its substitution (for example
+`{{ … }}-releases`); the wildcards `*` and `?` do not count, because `{{ … }}*` lets the value
+alone select a repository (Q-CI-29). Without that rule, a claim value alone (such as a GitLab subgroup that a
+group member names `npm-internal`) could select an arbitrary existing repository. The save fails
+with 422 `template_unanchored`. A `repositories` template with a substitution never starts with
 `@`, since templating never produces a class selector ([authorization.md](authorization.md)
 R-AUTHZ-004): 422 `template_invalid`.
 
@@ -1555,7 +1535,7 @@ Examples (GitLab project `acme/billing/invoice-api`, namespace `acme/billing`):
 | `@{{ namespace_path \| slug }}/*` | `@acme-billing/*` |
 | `{{ project_path \| replace "/" "." \| replace "-" "" }}.*` | `acme.billing.invoiceapi.*` (NuGet IDs compare case-insensitively, [formats/nuget.md](formats/nuget.md)) |
 | `{{ project_path \| segment -1 }}` in `paths` | `invoice-api` |
-| `web/{{ project_path \| segment 0 \| require "acme" }}-releases` in `repositories` of a system mapping | `web/acme-releases` |
+| `{{ project_path \| segment 0 \| require "acme" }}-releases` in `repositories` | `acme-releases` |
 
 **Acceptance criteria**
 
@@ -1890,39 +1870,35 @@ System administrators manage mappings (delegates in P1, R-CI-023):
 | `DELETE /api/v1/ci/issuers/{issuer}/mappings/{name}` | Delete; revokes its unexpired tokens and deletes its principal (R-CI-009); `If-Match` optional | 204 | 404, 412 |
 | `POST /api/v1/ci/issuers/{issuer}/evaluate` | Dry run against a claim set | 200 | 404, 422 |
 
-The item routes address the mappings of the system tier by their name (with `?tier=delegation:<id>`, those of a
-delegation, R-CI-023); a mapping of a project's tier is addressed under the project's routes below, which admit the
-capability holder as well, because its name is unique only within the project. The list shows every tier, each record
-with its `tier`.
-
 Representation rules (closed enums, PUT as full replacement, ETag concurrency with `If-Match`
 required on PUT, lowerCamelCase on the wire) are those of R-CI-002.
 
-**Owners of a project (Q-CI-26, Q-CI-52, [Q-AUTHZ-208](authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner)).** An Owner of a project manages the mappings of its
-project's tier through the project routes, which are these operations with the tier fixed by the path
-(`/api/v1/projects/{projectKey}/ci/…`): `GET …/ci/issuers` (the issuers read-only: name, kind, issuer URL, `publicIssuer`),
+**Project administrators (Q-CI-26, Q-CI-52).** A project administrator with `managePolicies` manages the mappings of its project's
+tier through the project routes, which are these operations with the tier fixed by the path
+(`/api/v1/projects/{key}/ci/…`): `GET …/ci/issuers` (the issuers read-only: name, kind, issuer URL, `publicIssuer`),
 `GET` and `POST …/ci/mappings` (the body names the `issuer`), `GET`, `PUT` and `DELETE …/ci/mappings/{issuer}/{name}`,
 `POST …/ci/issuers/{issuer}/evaluate`, `GET …/ci/issuers/{issuer}/snippets/{kind}` and `GET …/ci/issuances`. The record of that list
 shows the project's mappings only: the names, IDs and contributions of the other tiers are left out, and so are `grantedScope` and
 `requestedScope` (they list every tier's items), `jti`, `userId`, `userLogin`, `clientIp`, `userAgent` and the claims `user_id`,
 `user_login`, `jti`, `runner_id` and `runner_environment` of the snapshot; the job's identity, the times and the state stay (Q-CI-52).
-The step admits the holder of the capability or an Owner of the path's project (`projectRole: owner`); a project the
-caller is no member of answers 404, a member that is not its Owner 403 ([api-and-ui.md](api-and-ui.md) R-API-008). The bounds of a project mapping, on top of every rule of R-CI-010 and R-CI-011 (`pin_required`,
+The step admits the capability holder or any project
+administrator and the handler narrows (404 for a project the caller does not administer, 403 `project_switch_off`,
+ADR-146). The bounds of a project mapping, on top of every rule of R-CI-010 and R-CI-011 (`pin_required`,
 `unprotected_write`, `unpinned_write`, `catch_all_condition`):
 
-- the name is unique among the project's mappings of the issuer and carries no prefix: the principal name
-  `<issuer>/<projectKey>/<name>` keeps it apart from every other tier, so 409 `already_exists` answers only for a mapping
-  of the project's own tier ([Q-AUTHZ-214](authorization.md#q-authz-214--a-projects-ci-mappings-are-named-within-the-project-like-its-policies-and-service-accounts));
+- the name starts with `<key>-` (422 `project_prefix_required`), so the principal names `<issuer>/<key>-…` stay unique;
+  the rule is checked before the name is looked up, so 409 `already_exists` answers only for a name under the project's
+  own prefix, and since no project key is another's followed by a hyphen ([authorization.md](authorization.md) Q-AUTHZ-176),
+  that prefix covers no other project's names ([Q-CI-51](#q-ci-51--what-the-exchange-tells-a-caller-and-when-a-replica-learns-an-issuer));
 - the project's tier holds at most `ci.mappings.max_per_project` mappings of an issuer (422 `mapping_limit_reached`, Q-CI-49);
-- inline grants reach the project's repositories only: their selectors are the bare keys, key patterns and classes of a
-  project context, which the evaluator compiles against the project's repositories, so `@any` means every repository of
-  the project ([Q-AUTHZ-216](authorization.md#q-authz-216--repository-selectors-name-the-project-in-instance-contexts-and-a-bare-key-inside-a-project)); a selector with `/` is 422 `invalid_pattern`, and a key selector that names no
-  repository of the project answers as in a project policy ([authorization.md](authorization.md) R-AUTHZ-026);
-- `policies` name policies of the project by their name within it (422 `policy_outside_project` for a name that is no
-  policy of the project, Q-CI-37), `groups` are refused (422
+- inline grants reach the project's repositories only: the evaluator compiles them against those repositories, so `@any`
+  means every repository of the project (Q-AUTHZ-179), and a key selector outside the project is 422
+  `repository_outside_project`;
+- `policies` name policies of the project only (422 `policy_outside_project`, also for a name that does not exist, so the
+  answer is no oracle on the names of others, Q-CI-37), `groups` are refused (422
   `groups_not_allowed_in_project`), `manage` is never grantable (422 `action_not_allowed`);
 - the dry run evaluates and traces the project's tier only, the snippet is that of a mapping of the project's tier (another
-  tier's is 404), and an Owner lists only its project's mappings; the issuances it sees are those of tokens whose mappings include one of the project's, showing the project's
+  tier's is 404), and a project administrator lists only its project's mappings; the issuances it sees are those of tokens whose mappings include one of the project's, showing the project's
   mappings only. Audit events carry the project.
 
 Issuers stay with system administrators and the Helm values (Q-CI-16). A project with CI mappings is not empty: its
@@ -1965,7 +1941,7 @@ warning `scope_policy_grants_not_checked` (Q-CI-36):
              "project_path": "acme/billing/invoice-api", "namespace_path": "acme/billing",
              "ref": "v1.4.0", "ref_type": "tag", "ref_protected": "true",
              "pipeline_source": "push", "jti": "x", "exp": 1792940000, "iat": 1792936400},
-  "scope": "deploy:web/npm-internal"
+  "scope": "deploy:npm-internal"
 }
 ```
 
@@ -1978,9 +1954,9 @@ warning `scope_policy_grants_not_checked` (Q-CI-36):
     {"tier": "system", "mapping": "acme-release-publish", "matched": true}
   ],
   "selected": ["acme-release-publish"],
-  "grants": {"inline": [{"repositories": ["web/npm-internal"], "packages": {"include": ["@acme-billing/*"]},
+  "grants": {"inline": [{"repositories": ["npm-internal"], "packages": {"include": ["@acme-billing/*"]},
              "actions": ["read", "deploy"], "ownership": "bind_project"}], "policies": ["ci-read-internal"]},
-  "scope": "deploy:web/npm-internal",
+  "scope": "deploy:npm-internal",
   "ttl_seconds": 900,
   "warnings": []
 }
@@ -2040,7 +2016,7 @@ CREATE TABLE ci_token_issuances (
   token_id           uuid PRIMARY KEY,          -- id of the token row (identity-and-authentication.md), no foreign key
   issuer_id          uuid NOT NULL REFERENCES ci_issuers(id) ON DELETE CASCADE,
   mapping_ids        uuid[] NOT NULL,
-  mapping_names      text[] NOT NULL,           -- snapshot ('<name>', '<projectKey>/<name>'), survives mapping deletion
+  mapping_names      text[] NOT NULL,           -- snapshot, survives mapping deletion
   subject_kind       text NOT NULL CHECK (subject_kind IN ('id_token', 'job_token')),
   jti                text,
   project_id         text NOT NULL,
@@ -2225,7 +2201,7 @@ The task `ci-issuance-retention` (R-CI-030) deletes issuance records whose `expi
 
 - After the reference pipeline (R-CI-028) runs,
   `GET /api/v1/ci/issuances?job_id=<CI_JOB_ID>` returns one record per exchange. The
-  `web/npm-internal` audit entry of the publish carries the same `token_id`.
+  `npm-internal` audit entry of the publish carries the same `token_id`.
 - `POST /api/v1/ci/issuances/revoke {"issuer": "gitlab-com", "pipeline_id": "<id>"}` makes all
   of that pipeline's tokens fail with 401.
 - A forged token with a bad signature and a 10 kB `project_path` produces a
@@ -2445,13 +2421,12 @@ ci:
 ### R-CI-023 · Delegated mapping management
 Priority: **P1** · Covers: CIOIDC-006, CIOIDC-015, ADMAPI-030
 
-Projects exist (R-AUTHZ-026) and their Owners manage the CI mappings of their project in the MVP (R-CI-019, Q-CI-26).
+Projects exist (R-AUTHZ-026) and their administrators manage the CI mappings of their project in the MVP (R-CI-019, Q-CI-26).
 What stays P1 is delegation to a user or group *outside* a project, tied to a CI issuer and to explicit bounds:
 
 - A system administrator creates a *delegation* on a CI issuer for a user or group. It lists:
   - the GitLab `project_id`s and/or `namespace_id`s the delegate may write mappings for;
-  - the repositories the delegate may grant on, as selectors of an instance context (`web/npm-team-*`,
-    [authorization.md](authorization.md) R-AUTHZ-004);
+  - the repositories (keys or patterns) the delegate may grant on;
   - the maximum actions (a subset of `read`, `annotate`, `deploy`, `overwrite`, `delete`);
   - a maximum TTL.
 - The delegate manages mappings in the delegation's own tier through the same mapping API, with
@@ -2502,11 +2477,11 @@ parameter for delegates.
 
 **Acceptance criteria**
 
-- A delegate for `project_id` 4242 and repository `web/npm-team-a` can create a mapping that grants
-  `deploy` on `web/npm-team-a` to project 4242. A mapping pinned to project 5000 or granting on
-  `web/npm-internal` gets 403 `outside_delegation`.
-- A system mapping that grants project 4242 read on `web/npm-all`, plus a delegated mapping that
-  grants it deploy on `web/npm-team-a`, gives a job of project 4242 both grants.
+- A delegate for `project_id` 4242 and repository `npm-team-a` can create a mapping that grants
+  `deploy` on `npm-team-a` to project 4242. A mapping pinned to project 5000 or granting on
+  `npm-internal` gets 403 `outside_delegation`.
+- A system mapping that grants project 4242 read on `npm-all`, plus a delegated mapping that
+  grants it deploy on `npm-team-a`, gives a job of project 4242 both grants.
 
 ### R-CI-024 · Grants derived from the job's subject
 Priority: **P1** · Covers: CIOIDC-012, CIOIDC-010
@@ -2549,7 +2524,7 @@ which narrows:
 
 **Acceptance criteria**
 
-- With `triggering_user` set, a job triggered by a user without deploy on `web/npm-internal` cannot
+- With `triggering_user` set, a job triggered by a user without deploy on `npm-internal` cannot
   publish even though the mapping grants deploy. A user with deploy can.
 - `groups_from_claim` with `allowed: ["gitlab-*"]` and a claim value `admins` adds no group.
 - Saving a mapping with `groups_from_claim` for the `gitlab-com` issuer (public) answers 422
@@ -2654,12 +2629,11 @@ ready-to-paste snippet as `text/plain`:
 The snippet contains no secret. Required permission: system administrator, or the delegate who
 owns the mapping.
 
-The operation itself is MVP for `gitlab-ci` and the formats npm and NuGet: R-API-035 declares it and R-UI-035 shows it (an
-Owner of a project reads the snippet of a mapping of its project through
-`GET /api/v1/projects/{projectKey}/ci/issuers/{issuer}/snippets/{kind}`, Q-CI-37). This requirement stays P1 for what goes beyond
+The operation itself is MVP for `gitlab-ci` and the formats npm and NuGet: R-API-035 declares it and R-UI-035 shows it (a
+project administrator reads the snippet of a mapping of its project through
+`GET /api/v1/projects/{key}/ci/issuers/{issuer}/snippets/{kind}`, Q-CI-37). This requirement stays P1 for what goes beyond
 it: `github-actions` snippets and the delegate who owns the mapping. The `.npmrc` or
-`nuget.config` lines name the repositories the mapping's inline grants name by key and whose format is the client's, at
-their addresses `/api/<format>/<projectKey>/<repoKey>/`; a
+`nuget.config` lines name the repositories the mapping's inline grants name by key and whose format is the client's; a
 mapping that names none (patterns, classes, templates, policies) gets a placeholder the administrator replaces. The UI shows it on the CI identity screen
 ([api-and-ui.md](api-and-ui.md), UI-049) with a copy button.
 
@@ -2680,8 +2654,8 @@ a real instance. The test runs the pipeline's steps as its client steps: the exc
 `before_script`, the `npm` and `dotnet` steps and the closing revocation, with the job's variables.
 How GitLab itself issues those tokens is validated by hand against a real instance and recorded
 ([e2e.md](../developer/e2e.md), "Validating the double against a real GitLab"). The deployment has
-the project `web` with the repositories `npm-internal` (local), `npm-all` (virtual), `nuget-internal` (local)
-and `nuget-all` (virtual), the global policy `ci-read-internal` and the CI issuer and mapping shown there. It
+the repositories `npm-internal` (local), `npm-all` (virtual), `nuget-internal` (local),
+`nuget-all` (virtual), the policy `ci-read-internal` and the CI issuer and mapping shown there. It
 has at least two `web` and two `worker` replicas on different nodes, and the edge balances every
 request across the `web` replicas (the `scatter` profile of [architecture.md](architecture.md)
 R-ARCH-032), so a job's exchange, installs, publish and self-revocation reach different replicas.
@@ -2689,8 +2663,8 @@ R-ARCH-032), so a job's exchange, installs, publish and self-revocation reach di
 **Acceptance criteria**
 
 - With the tokens of the two jobs on a protected tag `v1.4.0` of `acme/billing/invoice-api`, both
-  jobs' steps pass: `@acme-billing/invoice-client@1.4.0` is in `web/npm-internal`, and
-  `Acme.Billing.InvoiceApi 1.4.0` is in `web/nuget-internal`.
+  jobs' steps pass: `@acme-billing/invoice-client@1.4.0` is in `npm-internal`, and
+  `Acme.Billing.InvoiceApi 1.4.0` is in `nuget-internal`.
 - With the tokens of the same jobs on an unprotected branch (the `rules:` removed), the steps fail
   at `npm publish` and `dotnet nuget push` with 403. The exchange itself succeeds through a
   read-only mapping, or fails with `no_matching_mapping` if none exists.
@@ -2839,10 +2813,10 @@ in this example:
   "grants": {
     "policies": ["ci-read-internal"],
     "inline": [
-      {"repositories": ["web/npm-internal"],
+      {"repositories": ["npm-internal"],
        "packages": {"include": ["@{{ namespace_path | slug }}/*"]},
        "actions": ["read", "deploy"], "ownership": "bind_project"},
-      {"repositories": ["web/nuget-internal"],
+      {"repositories": ["nuget-internal"],
        "packages": {"include": [
          "{{ project_path | replace \"/\" \".\" | replace \"-\" \"\" }}",
          "{{ project_path | replace \"/\" \".\" | replace \"-\" \"\" }}.*"]},
@@ -2855,12 +2829,6 @@ in this example:
 
 A second mapping with a higher priority number, for example `acme-read` at priority 900, pins
 the same namespace and grants only `ci-read-internal` to every other pipeline of the group.
-
-Both are mappings of the system tier, so their inline grants name repositories with their project (`web/npm-internal`)
-and `ci-read-internal` is a policy of no project. An Owner of `web` writes the same grants as a mapping of the project's
-tier through `POST /api/v1/projects/web/ci/mappings` with `"issuer": "gitlab-com"`: its inline `repositories` are bare
-keys (`npm-internal`, `nuget-internal`), its `policies` name policies of `web`, and its principal is
-`ci:gitlab-com/web/acme-release-publish` (R-CI-009, R-CI-019).
 
 The same CI issuer and mapping in a configuration document (P1,
 [operations-and-observability.md](operations-and-observability.md) R-OPS-029). Each entry is the
@@ -2893,11 +2861,11 @@ spec:
       grants:
         policies: [ci-read-internal]
         inline:
-          - repositories: [web/npm-internal]
+          - repositories: [npm-internal]
             packages: {include: ["@{{ namespace_path | slug }}/*"]}
             actions: [read, deploy]
             ownership: bind_project
-          - repositories: [web/nuget-internal]
+          - repositories: [nuget-internal]
             packages:
               include:
                 - '{{ project_path | replace "/" "." | replace "-" "" }}'
@@ -2950,13 +2918,13 @@ publish-npm:
     # npm expands ${TROVE_TOKEN} at run time; the token is never written to disk.
     - |
       cat > .npmrc <<'EOF'
-      registry=https://packages.example.com/api/npm/web/npm-all/
-      //packages.example.com/api/npm/web/npm-all/:_authToken=${TROVE_TOKEN}
-      //packages.example.com/api/npm/web/npm-internal/:_authToken=${TROVE_TOKEN}
+      registry=https://packages.example.com/api/npm/npm-all/
+      //packages.example.com/api/npm/npm-all/:_authToken=${TROVE_TOKEN}
+      //packages.example.com/api/npm/npm-internal/:_authToken=${TROVE_TOKEN}
       EOF
     - npm ci
     - npm version --no-git-tag-version --allow-same-version "${CI_COMMIT_TAG#v}"
-    - npm publish --registry https://packages.example.com/api/npm/web/npm-internal/
+    - npm publish --registry https://packages.example.com/api/npm/npm-internal/
     # Last step: revoke the CI token, so it does not outlive the job (R-CI-017).
     - |
       printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
@@ -2975,7 +2943,7 @@ push-nuget:
       -c Release -o out --no-restore -p:PackageVersion="${CI_COMMIT_TAG#v}"
     - >-
       dotnet nuget push "out/*.nupkg"
-      --source "$TROVE_URL/api/nuget/web/nuget-internal/v3/index.json"
+      --source "$TROVE_URL/api/nuget/nuget-internal/v3/index.json"
       --api-key "$TROVE_TOKEN"
     - |
       printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
@@ -2989,8 +2957,8 @@ token in `TROVE_TOKEN`:
 <configuration>
   <packageSources>
     <clear />
-    <add key="trove" value="https://packages.example.com/api/nuget/web/nuget-all/v3/index.json" />
-    <add key="trove-internal" value="https://packages.example.com/api/nuget/web/nuget-internal/v3/index.json" />
+    <add key="trove" value="https://packages.example.com/api/nuget/nuget-all/v3/index.json" />
+    <add key="trove-internal" value="https://packages.example.com/api/nuget/nuget-internal/v3/index.json" />
   </packageSources>
   <packageSourceCredentials>
     <trove>
@@ -3047,8 +3015,8 @@ Notes on the examples:
 
 ## Deferred
 
-- CIOIDC-016 (P2): switch hiding global mappings from the Owners of projects. Neither Owners nor
-  delegates see system-tier mappings anyway (R-CI-019, R-CI-023).
+- CIOIDC-016 (P2): switch hiding global mappings from project administrators. Delegates never
+  see system-tier mappings anyway (R-CI-023).
 - IAM-040 (P2): the same switch, as a security setting. Not needed, for the same reason.
 - CIOIDC-020 (P2): reference token in the exchange response. trove's CI tokens are already
   short opaque handles (INV-8).
@@ -3988,7 +3956,7 @@ R-CI-012 (the fork facts, the last acceptance criterion), R-CI-028 (runs against
 
 Status: **Decided by the owner on 2026-11-02** for the direction: project administrators manage the CI mappings of their
 project in the MVP. The mechanism (the switch, the tier, the bounds, the API shape) is decided by the development agent
-from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-AUTHZ-214](authorization.md#q-authz-214--a-projects-ci-mappings-are-named-within-the-project-like-its-policies-and-service-accounts) and [Q-AUTHZ-208](authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner)**: the mappings of a project are named within it without the prefix, and its Owner manages them instead of an administrator with `managePolicies`.
+from the options below; the owner reviews it at the walkthrough.
 
 The owner's use cases: a project administrator adds the pipelines of a GitLab project to those that may write to the
 project's repositories; it gives a whole GitLab instance or group read access to the whole project or to one repository of
@@ -4666,7 +4634,7 @@ would fetch before the commit.
 
 ### Q-CI-51 · What the exchange tells a caller, and when a replica learns an issuer
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-AUTHZ-214](authorization.md#q-authz-214--a-projects-ci-mappings-are-named-within-the-project-like-its-policies-and-service-accounts)**: a project's mappings are named within the project without a prefix, so the check of the prefix before the lookup goes; the 409 answers only for a name of the project's own tier because the name is scoped to it.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 Context: the security audit and the code review of phase 5 (2026-11-03, LOW). Four edges of the exchange and the mapping writes:
 a `scope` key that names no repository answered `scope_malformed` and one that exists `scope_not_granted`, an oracle of repository
